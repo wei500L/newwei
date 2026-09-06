@@ -1,15 +1,15 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { BrowserHeadersCookiesFields } from "./create-crawl-task-drawer/browser-headers-cookies-fields";
+import { MarkdownFields } from "./create-crawl-task-drawer/markdown-fields";
+import { MultiUrlFields } from "./create-crawl-task-drawer/multi-url-fields";
 import {
   advanceToAdvanced,
   renderCreateCrawlTaskDrawer,
   renderCreateCrawlTaskFormFields,
   type CreateCrawlTaskDrawerHandle,
 } from "./create-crawl-task-drawer-test-support";
-import { BrowserHeadersCookiesFields } from "./create-crawl-task-drawer/browser-headers-cookies-fields";
-import { MarkdownFields } from "./create-crawl-task-drawer/markdown-fields";
-import { MultiUrlFields } from "./create-crawl-task-drawer/multi-url-fields";
 
 /** 仅两个用例保留全树挂载（153 个 Form.Item 常驻挂载在 jsdom 中单渲染
  *  需 2-7s）：waitUntil 规范化（控制器的 useWatch 依赖高级字段注册）

@@ -1,11 +1,11 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { GeneralCrawlFields } from "./create-crawl-task-drawer/general-crawl-fields";
 import {
   renderCreateCrawlTaskDrawer,
   renderCreateCrawlTaskFormFields,
 } from "./create-crawl-task-drawer-test-support";
-import { GeneralCrawlFields } from "./create-crawl-task-drawer/general-crawl-fields";
 
 /** ingest 权限门禁在 GeneralCrawlFields 领域组件上直测（不挂载
  *  153 字段全树）；模板按钮语义断言只依赖模板步，高级配置步 mock
