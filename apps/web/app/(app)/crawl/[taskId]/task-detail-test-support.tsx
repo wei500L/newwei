@@ -6,11 +6,13 @@ import {
   type CrawlTaskQuery,
 } from "@/graphql/generated";
 import {
-  resetCrawlTaskDetailMockState,
   testSessionMock,
-  testTaskLogs,
   type TestSessionMockState,
 } from "@/test/component-mock-state";
+import {
+  resetCrawlTaskDetailMockState,
+  testTaskLogs,
+} from "@/test/crawl-task-detail-mock-state";
 import { renderWithProviders } from "@/test/render";
 import { resetTestNavigation } from "@/test/url-navigation";
 
