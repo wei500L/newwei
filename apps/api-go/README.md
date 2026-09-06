@@ -41,7 +41,7 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml \
 
 ### 远端真实栈 smoke（`api-go-entry-smoke` workflow）
 
-手动触发（`workflow_dispatch`，重型真实栈不进 push/PR CI）：真实 MySQL/Redis/Mongo service 容器 + 真实 `prisma migrate deploy` + 真实 NestJS 进程 + 构建并启动本 Dockerfile 的 api-go 容器；经 api-go 入口完成真实登录（NestJS 签发 JWT）→ 三个 user-settings PUT（NestJS 单写并持久化到 MySQL）→ 四个 Shadow GET；断言 `/__go/healthz` 的 shadow `executed` 精确 +4、`diffs`/`dropped` 零增量、`inflight` 归零、`userSettingsShadow.database=configured`、trace header 传播、三 key 数据无串读。
+手动触发，不进 push/synchronize 普通 CI。主路径 `workflow_dispatch`（workflow 在默认分支注册后 `gh workflow run`）；PR 期间（文件尚未上默认分支）用 label `api-go-entry-smoke` 显式触发——GitHub 平台限制 workflow_dispatch 无法触发仅存在于分支的 workflow（与 ci.yml 的 regen label 门禁同一模式），运行后移除 label。真实 MySQL/Redis/Mongo service 容器 + 真实 `prisma migrate deploy` + 真实 NestJS 进程 + 构建并启动本 Dockerfile 的 api-go 容器；经 api-go 入口完成真实登录（NestJS 签发 JWT）→ 三个 user-settings PUT（NestJS 单写并持久化到 MySQL）→ 四个 Shadow GET；断言 `/__go/healthz` 的 shadow `executed` 精确 +4、`diffs`/`dropped` 零增量、`inflight` 归零、`userSettingsShadow.database=configured`、trace header 传播、三 key 数据无串读。
 
 **验证状态分层**：静态代码与单元/MySQL 集成测试由普通 CI 远端验证；真实入口链（容器 + 真实 NestJS + 真实登录 + Shadow 指标增量）由 `api-go-entry-smoke` 远端真实栈运行验证完成；**生产/预发布真实流量验证未完成**（api-go 未接入任何生产入口）。
 

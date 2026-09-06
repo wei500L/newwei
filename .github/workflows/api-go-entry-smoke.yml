@@ -18,11 +18,25 @@
 #   - /__go/healthz 前后指标断言：executed 精确增量、diffs/dropped 零增量、
 #     inflight 归零、userSettingsShadow.database=configured。
 #
-# 重型真实栈（4 个容器 + 全量 install/build）——只手动触发，不进 push/PR CI。
+# 重型真实栈（4 个容器 + 全量 install/build）——不进 push/synchronize 的
+# 普通 CI。
+#
+# 触发方式：
+#   1. workflow_dispatch（主路径）：workflow 文件在默认分支注册后，
+#      `gh workflow run api-go-entry-smoke.yml --ref <branch>` 手动触发。
+#   2. pull_request types:[labeled] + label `api-go-entry-smoke`（PR 期间
+#      的路径）：GitHub 平台限制——workflow_dispatch 只能触发默认分支上
+#      已存在的 workflow 文件（API 对分支独有文件返回 404，见
+#      docs.github.com/en/actions/using-workflows/events-that-trigger-workflows）。
+#      PR 合并前用 label 手动触发（与 ci.yml 的 go-modules-regen /
+#      contract-baseline-regen label 门禁同一模式）；合并后走主路径。
+#      运行完成后移除 label——避免歧义。普通 push/synchronize 不触发。
 name: api-go-entry-smoke
 
 on:
   workflow_dispatch:
+  pull_request:
+    types: [labeled]
 
 concurrency:
   group: api-go-entry-smoke-${{ github.ref }}
@@ -74,6 +88,13 @@ env:
 
 jobs:
   api-go-entry-smoke:
+    # 手动触发双路径（见文件头注释）：workflow_dispatch 直接进入；
+    # PR 期间靠 label `api-go-entry-smoke` 显式进入（label 添加是维护者
+    # 的手动动作，与 regen job 同一模式；普通 push/synchronize 事件
+    # 因 types:[labeled] 根本不会启动本 workflow）。
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-entry-smoke')
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:
