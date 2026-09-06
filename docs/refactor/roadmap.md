@@ -31,6 +31,7 @@
 | canary 分流组件 | ◻ 仅静态/组件级验证。**信任边界**：分流依据是未验签的 orgId claim（不是可靠身份），AllowUnverifiedIdentity 默认关闭——受保护路由不可能据此进入 Go。**当前没有任何路由处于 ModeCanary**；CANARY_PERCENT 只是预留。待迁移序 5（Go JWT 验签 + membership 重推导）后激活 |
 | 首个迁移单元 `GET /api/healthz/live` | 🔶 shadow 态（NestJS 仍是响应方，Go 实现进入差分管道）。**不是 Go 全量接管**；未做真实流量 0 差异验收 |
 | 第二个迁移单元 `GET /api/user-settings/ui/onboarding`（Go-批2A） | 🔶 shadow 态（NestJS 仍是响应方）。Go 已实现**真实 MySQL 只读查询**（`UserSetting` 三条件参数化查询 + normalization 契约对齐），远端 CI 真实 MySQL service 集成验证（`api-go-user-settings-integration` job）；单元/集成测试由远端 CI 完成。身份来自 **legacy-approved shadow identity**（legacy 200 后的临时信任委托——Go 尚未独立完成 JWT 验签/membership/RBAC，不得进入 canary/go）。未做真实生产流量差分验收（api-go 尚未接入入口代理）；PUT 与其他 user-settings GET 仍全部 legacy |
+| user-settings 只读 GET 第二批：`rss-reader`、`spacetime-timeline`（Go-批2B） | 🔶 shadow 态（NestJS 仍是响应方）。复用批2A 的 repository（`SettingKey` 编译期固定常量，三个语义方法共享同一条参数化查询）、legacy-approved shadow identity 与失败非阻断语义；normalization 逐字段对齐（RSS：trim/128 截断/稳定去重/严格布尔/provider/targetLanguage；spacetime：枚举回退/浮点 clamp 不取整）；远端 CI MySQL integration 扩展验证三 key 读取与 orgId/userId/key 隔离。未做真实生产流量差分验收；**其余三个 GET（situation-monitor/war-map/newsnow）与全部 PUT 仍 legacy**——user-settings 未迁移完成 |
 | api 单测基座（vitest） | ✅ 远端 CI 已验证（SEC-01 6/6 + API-01 4/4 + 扫描器语义/基线断言全绿） |
 
 余项（按序）：
@@ -102,7 +103,7 @@
 ## 立即可做的下一轮最小任务（PR #2 合并后，新分支/新 PR）
 
 1. shadow 差分真实流量验收（首个单元 /api/healthz/live 0 差异——需要 api-go 接入入口代理；当前网关本身未上线路径）
-2. ~~第二个迁移单元：user-settings 只读 GET（shadow 模式）~~ ✅ 已完成（Go-批2A：`GET /api/user-settings/ui/onboarding` 进入 shadow，NestJS 仍是响应方；Go 真实读取 MySQL `UserSetting`，legacy-approved shadow identity 信任边界，远端 CI `api-go-user-settings-integration` 真实 MySQL service 验证）
+2. ~~第二个迁移单元：user-settings 只读 GET（shadow 模式）~~ ✅ 已完成（Go-批2A：`GET /api/user-settings/ui/onboarding` 进入 shadow，NestJS 仍是响应方；Go 真实读取 MySQL `UserSetting`，legacy-approved shadow identity 信任边界，远端 CI `api-go-user-settings-integration` 真实 MySQL service 验证。Go-批2B 扩展：`rss-reader`、`spacetime-timeline` 两个确定性 GET 以同一模式进入 shadow；其余三个 GET 与全部 PUT 仍 legacy）
 3. FE-批1 剩余原语（design/tokens.ts、DataStateBoundary、useUrlState）（TopNav 拆分已随 FE-批2 完成）
 4. canary 激活的前置件（迁移序 5 的 Go JWT 验签 + membership 重推导——在它完成前 canary 保持不激活）
 

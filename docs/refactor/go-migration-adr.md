@@ -82,8 +82,11 @@ Go 侧可信身份**。受保护业务端点进入 shadow 的唯一合法身份�
 这不是「Go 已验证身份」，更不是 canary-ready identity。shadow 单元表
 （`cmd/api/main.go` 的 `shadowUnits`）以 `RequireLegacyOK` 声明该前提；
 路由表被误切 ModeCanary/ModeGo 时状态契约测试失败（先落地 Go Auth/RBAC）。
-首个适用单元：`GET /api/user-settings/ui/onboarding`（迁移序 2 起步的
-第二个真实业务端点——从 MySQL 主数据库真实读取，进入 shadow 差分）。
+适用单元：user-settings 的确定性只读 GET——Go-批2A `GET /api/user-settings/
+ui/onboarding` 起步（迁移序 2 的首个真实业务端点，从 MySQL 主数据库真实
+读取进入 shadow 差分）；Go-批2B 扩展 `rss-reader`、`spacetime-timeline`
+（同一 repository 的固定 `SettingKey` 查询与同一身份门禁）。其余三个
+user-settings GET（situation-monitor/war-map/newsnow）与全部 PUT 仍 legacy。
 
 ## 5. 队列/cron/outbox 边界（红线）
 
