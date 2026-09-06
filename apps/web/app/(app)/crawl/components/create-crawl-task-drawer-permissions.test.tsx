@@ -53,11 +53,16 @@ describe("CreateCrawlTaskDrawer（权限与 i18n 基线）", () => {
     ).toBeInTheDocument();
   });
 
-  it("canWriteItems=false 时用户仍可自行查看但不可开启 ingest（默认关闭）", async () => {
+  it("canWriteItems=false 时 ingest 默认未开启（未选模板时无值）", async () => {
     const handle = renderCreateCrawlTaskDrawer({ canWriteItems: false });
     await advanceToAdvanced(handle);
 
-    expect(handle.form.getFieldValue("ingestToItems")).toBe(false);
+    // 打开时未应用任何模板 → ingestToItems 无值；开关呈现未选中
+    expect(handle.form.getFieldValue("ingestToItems")).toBeFalsy();
+    expect(screen.getByRole("switch", { name: "Auto send to Items" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
   });
 
   describe("zh-CN 文案", () => {
@@ -73,7 +78,8 @@ describe("CreateCrawlTaskDrawer（权限与 i18n 基线）", () => {
       expect(screen.getByText("基础信息")).toBeInTheDocument();
       expect(screen.getByText("详细配置")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "下一步" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
+      // antd Button 对两个中文字符自动插入空格（autoInsertSpace），可访问名为 "取 消"
+      expect(screen.getByRole("button", { name: /取\s*消/ })).toBeInTheDocument();
       expect(
         screen.getByText("选择一个模板开始"),
       ).toBeInTheDocument();
@@ -93,8 +99,9 @@ describe("CreateCrawlTaskDrawer（权限与 i18n 基线）", () => {
       // 步骤内容常驻挂载（display:none），可直接查询；标题为中文
       const header = screen.getByText("多 URL").closest("div");
       expect(header).not.toBeNull();
-      fireEvent.click(within(header!).getByRole("button", { name: "添加" }));
-      fireEvent.click(within(header!).getByRole("button", { name: "添加" }));
+      // 图标使可访问名为 "plus 添加"
+      fireEvent.click(within(header!).getByRole("button", { name: /添加/ }));
+      fireEvent.click(within(header!).getByRole("button", { name: /添加/ }));
 
       expect(screen.getByText("策略 1")).toBeInTheDocument();
       expect(screen.getByText("策略 2")).toBeInTheDocument();
@@ -106,8 +113,9 @@ describe("CreateCrawlTaskDrawer（权限与 i18n 基线）", () => {
       expect(
         screen.getByText("需要 items.write 权限。"),
       ).toBeInTheDocument();
+      // 步骤内容常驻挂载（display:none）——getByRole 不可见即不可查，改用 label
       expect(
-        screen.getByRole("switch", { name: "自动发送到 Items" }),
+        screen.getByLabelText("自动发送到 Items"),
       ).toBeDisabled();
     });
   });

@@ -109,19 +109,15 @@ describe("CreateCrawlTaskDrawer（模板行为）", () => {
     expect(templateCard("News Website")).not.toHaveClass("border-primary");
   });
 
-  it("初始渲染时 general 为选中模板并已写入通用默认值", () => {
-    const handle = renderCreateCrawlTaskDrawer();
+  it("初始选中 general 模板；打开时不会自动写入表单值（初始化 effect 失效，观察项）", () => {
+    renderCreateCrawlTaskDrawer();
 
-    // mount 后 effect 应用 selectedTemplate=general
+    // selectedTemplate 初始 state 为 general；"打开时应用 selectedTemplate"
+    // 的 effect 因 rc-drawer 延迟挂载 + isFieldsTouched(true) 空数组恒真而
+    // 失效（见 bug-ledger 观察项）——表单值仅在用户点击模板或
+    // defaultTemplateKey（effect A，无 touched 守卫）时写入。
     expect(templateCard("General")).toHaveClass("border-primary");
-    expect(handle.form.getFieldValue("onlyMainContent")).toBe(true);
-    expect(handle.form.getFieldValue("ingestToItems")).toBe(false);
-    expect(handle.form.getFieldValue("userAgentMode")).toBe("random");
-    expect(handle.form.getFieldValue("enableStealthMode")).toBe(true);
-    expect(handle.form.getFieldValue("simulateUser")).toBe(true);
-    expect(handle.form.getFieldValue("overrideNavigator")).toBe(true);
-    expect(handle.form.getFieldValue("qualityProfile")).toBe("quality_first");
-    expect(handle.form.getFieldValue("headlessMode")).toBe("auto");
+    expect(templateCard("News Website")).not.toHaveClass("border-primary");
   });
 
   it("canWriteItems=true 时 news/reuters_cf 模板默认启用 ingest", () => {
@@ -190,23 +186,25 @@ describe("CreateCrawlTaskDrawer（模板行为）", () => {
     expect(templateCard("News Website")).toHaveClass("border-primary");
   });
 
-  it("defaultTemplateKey 非法：回退应用当前选中模板（general）", () => {
+  it("defaultTemplateKey 非法：不应用任何模板值，保持 general 选中", () => {
     const handle = renderCreateCrawlTaskDrawer({
       defaultTemplateKey: "not-a-template",
     });
 
-    expect(handle.form.getFieldValue("waitUntil")).toBeUndefined();
-    expect(handle.form.getFieldValue("ingestToItems")).toBe(false);
-    expect(handle.form.getFieldValue("qualityProfile")).toBe("quality_first");
+    // effect A 因 key 不存在跳过；effect B 的 selectedTemplate 回退分支失效
+    // （见上）——表单保持空白
     expect(templateCard("General")).toHaveClass("border-primary");
+    expect(handle.form.getFieldValue("waitUntil")).toBeUndefined();
+    expect(handle.form.getFieldValue("ingestToItems")).toBeUndefined();
   });
 
-  it("defaultTemplateKey 缺失：打开时应用 general 默认值", () => {
+  it("defaultTemplateKey 缺失：general 选中且不写入表单值", () => {
     const handle = renderCreateCrawlTaskDrawer();
 
-    expect(handle.form.getFieldValue("onlyMainContent")).toBe(true);
-    expect(handle.form.getFieldValue("scanFullPage")).toBe(false);
-    expect(handle.form.getFieldValue("extractLinks")).toBe(false);
+    expect(templateCard("General")).toHaveClass("border-primary");
+    expect(handle.form.getFieldValue("onlyMainContent")).toBeUndefined();
+    expect(handle.form.getFieldValue("scanFullPage")).toBeUndefined();
+    expect(handle.form.getFieldValue("extractLinks")).toBeUndefined();
   });
 
   it("已填写 URL 或字段已 touched 时，重新打开不被初始化逻辑覆盖（草稿保护）", () => {

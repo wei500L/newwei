@@ -129,7 +129,8 @@ describe("CreateCrawlTaskDrawer（公共入口与三步流程）", () => {
 
     await advanceToAdvanced(handle);
 
-    const submit = screen.getByRole("button", { name: "Submit" });
+    // loading 图标参与可访问名（"loading Submit"），用正则匹配
+    const submit = screen.getByRole("button", { name: /Submit/ });
     expect(submit).toBeInTheDocument();
     expect(submit).toHaveClass("ant-btn-loading");
   });
