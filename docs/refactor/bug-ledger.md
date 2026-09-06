@@ -43,7 +43,7 @@
 | FE-01 | P2 | alert-center 过滤器不入 URL（与全局模式不一致） | ✅ | PR #4（FE-批3，run 33849497917） |
 | FE-02 | P2 | 死代码：zustand store/sidebar.ts | ✅ | 见 §3 |
 | FE-03 | P2 | vitest coverage include 仅覆盖 3 个已测文件（覆盖率数字失真） | 🔶 | 部分（include 8→22→约 40（Alert Center 9→32），见 §3） |
-| CI-01 | P2 | OpenAPI 快照生成非确定性：同一 SHA 无 API 变更时 resolved schema 可能降级为 x-unresolved-schema | ⬜ | 开放（PR #5 第五轮登记，见 §3；PR #6 第二轮执行到该步骤的 run 均首跑通过，未复现） |
+| CI-01 | P2 | OpenAPI 快照生成非确定性：同一 SHA 无 API 变更时 resolved schema 可能降级为 x-unresolved-schema | ✅ | PR #12（见 §3，根因已证：createParamDecorator 随机 uid 键被 parseInt 误读） |
 | WM-RT-01 | P1 | War Map retry 重建后新 Deck overlay 丢失业务图层（FE-批4A 拆分引入，合并前修复） | ✅ | PR #6 第二轮（见 §3） |
 | WM-RT-02 | P1 | War Map standalone 底部 Drawer 点击内部控件即被误关（非 minimal 密度） | ✅ | PR #6 第二轮（见 §3） |
 | FE-A11Y-01 | P2 | War Map legend 聚焦徽标硬编码英文 "Focus"（中文界面遗留英文） | ✅ | PR #7（FE-批4B，见 §3） |
@@ -211,7 +211,9 @@
 - **FE-批4B 合并后收口 PR**：include 107 → 111（war-map 63 → 67：symbol-svg 拆分补入 svg-primitives/glyphs 两模块，legend-model 拆分补入 item/quick/full 三模块并移除旧条目）。阈值不变（lines 35 / functions 3 / statements 35 / branches 30）。仍为「部分改善」：全仓 glob + 阈值重设待 FE-批5+（task-detail 等未拆分）。
 - **仍为「部分改善」**：全仓 glob + 阈值重设待 FE-批4+（巨型组件 war-map/task-detail 等未拆分、无测试，纳入即红 CI）。
 
-### CI-01 OpenAPI 快照生成非确定性 — ⬜ 开放 P2【PR #5 第五轮登记；PR #6 两次复现】
+### CI-01 OpenAPI 快照生成非确定性 — ✅ 已修复（PR #12 关闭）【PR #5 第五轮登记；PR #6 两次复现；main merge `bff2ebae` 后正式阻断】
+
+**（以下为历史登记，保留原始记录）**
 
 PR #6（FE-批4A，纯前端改动、无 API 变更）再次复现：run 33900456381 的
 OpenAPI snapshot drift check 首跑失败——快照中大量端点凭空出现 `query` 查询
@@ -228,10 +230,66 @@ verify success）——CI-01 本轮未复现，无重跑。
 
 - **现象**：PR #5（纯前端，`apps/api` 零改动）的 CI run `33874825439` 首次执行 `contract:openapi:snapshot` 时，`git diff --exit-code apps/api/tests/contract/openapi.snapshot.json` 失败；对同一失败 job 做单次针对性重跑后通过（同 SHA、同代码）。
 - **失败 diff 特征**：多个端点（vector settings 相关路由）新增 `requestBody` 条目且标记 `x-unresolved-schema: true`——即该次运行中 NestJS schema 未被解析，产物降级为 unresolved 占位形状，而非任何代码驱动的契约变化。
-- **根因假设**：`tsx`/`NODE_PATH` 环境下模块加载时序非确定性，导致 schema 解析偶发失败（未验证，需单独排查 `scripts/generate-openapi-snapshot.ts`）。
+- **根因假设（当时）**：`tsx`/`NODE_PATH` 环境下模块加载时序非确定性，导致 schema 解析偶发失败（未验证，需单独排查 `scripts/generate-openapi-snapshot.ts`）。
 - **风险**：契约漂移门禁可能产生**假失败**（或理论上假通过），CI 信号不可靠。
 - **证据**：run 33874825439 首次失败日志（OpenAPI contract snapshot drift check 步骤）与同 SHA 重跑成功；对照点：同一分支早前 run 33870697826 该步骤 success。
-- **状态**：**开放，待后续单独修复**（本轮仅登记，未修改生成器/快照/CI——PR #5 明确禁止触碰）。修复方向建议：生成器内显式等待/校验 schema 解析完成，或将 unresolved 输出视为生成失败而非降级继续。
+- **状态（当时）**：**开放，待后续单独修复**（本轮仅登记，未修改生成器/快照/CI——PR #5 明确禁止触碰）。
+
+**（PR #12 根因确认与修复——2026-09-06）**
+
+- **正式阻断**：PR #11（纯 web 测试精简，`apps/api` 零改动）合并 main 后
+  （merge `bff2ebae`），run `34031744982` 的 `OpenAPI contract snapshot drift
+  check` 步骤失败——大量本无 `@Body` 的端点凭空新增 `requestBody`
+  （`x-unresolved-schema` 形状），其后步骤全部取消。同一 API 源码在 PR HEAD
+  run `34030229911` 通过——两 run 的差异是随机命中，不是代码因果。
+- **根因（已证）**：Nest `createParamDecorator`（本仓库 `@CurrentUser()`，
+  全仓 289 处、唯一自定义参数装饰器）把参数元数据写到
+  `ROUTE_ARGS_METADATA` 时键为 `uid(21) 十六进制随机串 +
+  "__customRouteArgs__":序号`（`@nestjs/common` 11.1.9
+  `utils/assign-custom-metadata.util.js`；uid 2.0.2 = `Math.random` 十六进制
+  串，每冷进程重新随机）。扫描器 `scan-routes.ts` 用 `parseInt` 解析键前缀：
+  前缀以 `3`+字母开头 → 误判 `@Body`（requestBody 污染，run 33874825439 /
+  34031744982 的签名）；`4`+字母 → 误判 `@Query`（query 污染，run
+  33900456381 的签名）；`5`+字母 → 误判 `@Param`。每冷进程约 7% 的
+  `@CurrentUser` 参数被随机污染（289 个参数 → 期望约 20 个端点/次）；重跑
+  即绿是因为新一轮随机 uid 大概率不命中——"同 SHA 首跑红、重跑绿"由此而来。
+  决定性证据：失败 diff 首个污染端点 `POST /api/admin/akshare/upgrade` 的
+  签名是 `upgrade(@CurrentUser() user)`——没有任何 `@Body`。
+- **旧假设证伪**：基线 145 个 `requestBody` 全部 `typeName=null`（无 `$ref`）
+  → tsx/esbuild 不发射 `design:paramtypes`，不存在"schema 解析降级"；
+  `TS_NODE_TRANSPILE_ONLY` 对 tsx 无效（tsx 不读 ts-node 环境变量）——误导
+  排查的红鲱鱼，已从 `apps/api/package.json` 移除。
+- **修复（方向 A：最小确定性修复，非 AST、非换 runner）**：
+  1. `ROUTE_ARGS_METADATA` 键前缀与序号必须严格纯数字（内置
+     `@Body/@Query/@Param` 只写 `"3:0"` 形式），随机 uid 键一律忽略；
+  2. `ROUTE_ARGS_METADATA` 与 `design:paramtypes` 改用
+     `Reflect.getOwnMetadata`（基类/同名 handler 的参数元数据不再穿透；
+     `design:paramtypes` 读取目标修正为 `(prototype, methodName)`——TS/tlib
+     实际写入位置，经 dist 编译产物 + reflect-metadata 源码静态核实）；
+  3. routeParams 排序 comparator 严格全序（完全相等返回 0，最终排序键
+     `(kind, name, index, key)`）。
+- **快照基线**：逐字节不变（370 operations / 294 paths / 145 requestBody /
+  159 query / 199 path params）——修复读取逻辑未改变任何契约内容。
+- **CI 加固**：OpenAPI 步骤升级为 `OpenAPI contract snapshot determinism +
+  drift check`——同一 `contract:openapi:snapshot` 命令（生成器新增
+  `--output`，单一生成入口不变）在两个互相独立的冷 Node 进程各生成一次，
+  SHA-256 必须一致，再与已提交快照逐字节（`cmp`）比对；无 retry、无 sleep、
+  无重跑择优。
+- **最小回归**：扩展 `tools/scan-routes.test.ts`（不新建文件）——真实
+  `createParamDecorator` 键形状（`uid(21) + __customRouteArgs__`）不产生
+  body/query/param；基类同名 handler 参数不穿透（getOwnMetadata 语义）；
+  `@Body/@Query/@Param` 混合签名输出顺序确定性（相等返回 0）；手工注入两种
+  历史脆弱键形状（`"3a7f…:0"`、`"4f9c…__customRouteArgs__:1"`）断言零参数。
+  首个提交的断言误以为 Nest 11 键形为 `"uid:序号"`（无后缀）——CI 首跑
+  run `34033854098` 的失败日志暴露真实形态，已修正（这本身验证了
+  fail-closed 测试流程：读日志→定位→修复→重推）。
+- **验证**：PR #12 最终 HEAD `30029210` 首次执行 run `34034235302`
+  verify + vector-integration 全绿（contract-baseline-regen 按事件设计
+  skipped）。OpenAPI 步骤确认：冷进程 run1/run2 SHA-256 均为
+  `d617766a00fdc8cf665400918cea22f6fce50486406a8f32bf6802dfae19e87c`
+  （一致），与已提交快照逐字节一致（"deterministic across cold processes
+  and byte-identical to committed snapshot"）；370 端点/294 路径计数不变；
+  无 retry。
 
 
 ### FE-I18N-01：task-detail 域 14 个 i18n 键丢失插值占位符（用户可见数值不显示）

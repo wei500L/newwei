@@ -25,7 +25,7 @@
 | 3. `apps/api-go/` 骨架：legacyproxy 全量兜底 + 四态路由表 + trace 中间件 + `/__go/healthz` 自省 | ✅ 远端 CI 已验证（run 33748591315：网关行为测试全绿） |
 | 4. vector Go 重写试点 | ✅ 远端 CI 已验证（`vector-integration` job 真实 Qdrant v1.10.1 上 11/11 契约差分全绿，run 33748591315）。部署面（vector-go.Dockerfile + compose `go-pilot` profile）◻ 仅代码落地、未经真实容器构建（本机禁 Docker；CI 只验证二进制直跑）。**无真实部署流量**——切换/回滚开关 = vector 服务 baseUrl 配置 |
 | Go 工具链接入 CI（setup-go + build filter + 独立 test 步骤） | ✅ |
-| 1. 契约快照落地：OpenAPI 形快照 + schema.gql 冻结 diff 进 CI | ✅ 远端 CI 已验证（`openapi.snapshot.json` 370 端点/294 路径 + `git diff --exit-code` 门禁；schema.gql SDL 门禁已接入）。**能力边界如实登记**：这是 REST 路由/鉴权契约快照（POST=201 默认语义 + @HttpCode 提取 + unresolved schema 标注 + info.completeness），不是完整 OpenAPI 契约 |
+| 1. 契约快照落地：OpenAPI 形快照 + schema.gql 冻结 diff 进 CI | ✅ 远端 CI 已验证（`openapi.snapshot.json` 370 端点/294 路径 + `git diff --exit-code` 门禁；schema.gql SDL 门禁已接入）。**能力边界如实登记**：这是 REST 路由/鉴权契约快照（POST=201 默认语义 + @HttpCode 提取 + unresolved schema 标注 + info.completeness），不是完整 OpenAPI 契约。**确定性已修复加固（CI-01，PR #12）**：快照曾因扫描器误读 `@CurrentUser` 等自定义参数装饰器的随机 uid 元数据键而随机漂移（main 曾被阻断，run 34031744982）；现 OpenAPI 步骤为双冷进程生成 + SHA-256 一致 + 与已提交快照逐字节比对，无 retry |
 | 2. 鉴权矩阵生成（四态语义） | ✅ 远端 CI 已验证（anonymous / authenticatedWithoutPermission / authenticatedWithPermission / wrongOrg=runtime-required 四态 + ordinaryOrgAdmin/platformAdmin 画像 + platformCheckSource=handler-text-scan 启发式标注 + confidence；fail-closed；漂移检查） |
 | shadow 差分基础设施 | ✅ 远端 CI 已验证（直通 + 有界旁录：客户端流式语义保留，请求体/响应捕获独立预算，SSE/升级请求跳过，分类丢弃统计，差分正文默认只记 sha256 hash）。**仅基础设施能力**——只对 `/api/healthz/live` 生效，无真实流量差分数据 |
 | canary 分流组件 | ◻ 仅静态/组件级验证。**信任边界**：分流依据是未验签的 orgId claim（不是可靠身份），AllowUnverifiedIdentity 默认关闭——受保护路由不可能据此进入 Go。**当前没有任何路由处于 ModeCanary**；CANARY_PERCENT 只是预留。待迁移序 5（Go JWT 验签 + membership 重推导）后激活 |
