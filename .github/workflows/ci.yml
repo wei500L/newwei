@@ -108,7 +108,12 @@ jobs:
           git diff --exit-code apps/api/schema.gql
 
       - name: Go tests (api-go gateway + vector-go pilot)
-        run: pnpm --filter @modular/api-go --filter @modular/vector-go test
+        run: |
+          # api-go 自 Go-批2A 起引入 go-sql-driver/mysql（唯一第三方依赖，
+          # user-settings onboarding shadow 只读查询用）。go.sum 由远端
+          # 生成（本机禁跑 go 工具链）：tidy 幂等，仅首次/版本变化时改写。
+          cd apps/api-go && go mod tidy
+          cd ../.. && pnpm --filter @modular/api-go --filter @modular/vector-go test
 
       - name: Compose image pin check
         run: pnpm --filter @modular/infra-scripts run compose:images:check
@@ -244,6 +249,48 @@ jobs:
         run: |
           kill $(cat /tmp/vector-nestjs.pid) 2>/dev/null || true
           kill $(cat /tmp/vector-go.pid) 2>/dev/null || true
+
+  # Go-批2A：user-settings onboarding shadow 的真实 MySQL 数据访问验证。
+  # 只测 Go repository（最小 fixture 的 UserSetting 表），不启动 NestJS/
+  # 前端/Redis/Qdrant。普通 verify 的 `go test ./...` 不含 integration
+  # build tag——没有 MySQL 时 verify 不受影响。
+  api-go-user-settings-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mysql:
+        # 固定版本（不用 latest）；与 infra/docker/docker-compose.yml 的
+        # MySQL 服务同版本线。health 探针由官方镜像 healthcheck 提供。
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api-go/go.mod
+          cache: false
+
+      - name: Go module download
+        run: cd apps/api-go && go mod download
+      - name: MySQL integration tests (onboarding repository)
+        run: |
+          cd apps/api-go
+          go mod tidy
+          go test -tags=integration -count=1 ./internal/usersettings/ -run TestOnboardingMySQLIntegration -v
 
   # 契约基线一次性远端再生成（专用远端生成提交方案）。
   #
