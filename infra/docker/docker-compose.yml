@@ -602,7 +602,7 @@ services:
       base=$${API_BASE_URL%/};
       base=$${base%/api};
       url=$${base}/api/healthz/live;
-      echo \"[web] waiting for api at $${url}...\";
+      echo "[web] waiting for api at $${url}...";
       i=0;
       while [ $$i -lt 150 ]; do
         if curl -fsS $${url} >/dev/null; then
