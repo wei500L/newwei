@@ -58,12 +58,12 @@ class FixtureController {
   }
 }
 
-// CI-01 回归锚点：模拟 Nest createParamDecorator 的真实行为——用
-// uid(21) 风格的随机十六进制串作 paramtype 键写入 ROUTE_ARGS_METADATA。
-// 旧实现的 parseInt 会把 "3a…"（"4a…" / "5a…"）误读成 Body（Query /
-// Param）——每次冷进程随机命中约 7% 的自定义参数，造成快照非确定性。
-// 这个装饰器在模块加载时生成一个随机键（与真实 @CurrentUser 相同的
-// 形状），断言它绝不产生 body/query/param。
+// CI-01 回归锚点：模拟 Nest createParamDecorator 的真实行为——uid(21)
+// 十六进制随机串 + "__customRouteArgs__" 后缀合成 ROUTE_ARGS_METADATA 键
+// （Nest 11 assignCustomParameterMetadata 实际形态）。旧实现的 parseInt
+// 在 suffix 常量被移除的 Nest 版本（"3a…:0"）下会把 "3a…" 误读成 Body
+// （"4a…" / "5a…" 同理）；且对纯数字 uid（如 "3…:0"，uid 2.0.2 的十六
+// 进制串可全为数字）同样误读。此断言两种形态都必须免疫。
 const RandomUidParam = createParamDecorator((_data: unknown) => undefined);
 
 @Controller("fixture-custom-param")
@@ -173,12 +173,15 @@ describe("endpointsFromController (decorator metadata semantics)", () => {
       // 随机 uid 键（createParamDecorator 实际行为）绝不能被 parseInt
       // 误读成内置 paramtype——无论随机串以 3/4/5 开头还是其他字符。
       expect(act?.routeParams).toEqual([]);
-      // 直接锚定元数据形状：键不是 "3:0" 这类纯数字形式。
+      // 直接锚定元数据形状：键是 "uid(21) 十六进制随机串 +
+      // __customRouteArgs__:参数序号"（Nest 11 createParamDecorator 实际
+      // 生成形态——经 node_modules 源码核实：assignCustomParameterMetadata）。
+      // 它以字母开头，绝不能被 parseInt 前缀匹配成内置 "3:0"/"4:0"/"5:0"。
       const keys = Object.keys(
         Reflect.getOwnMetadata(ROUTE_ARGS_METADATA, CustomParamController, "act") ?? {},
       );
       expect(keys).toHaveLength(1);
-      expect(keys[0]).toMatch(/^[0-9a-f]{21}:\d+$/);
+      expect(keys[0]).toMatch(/^[0-9a-f]+__customRouteArgs__:\d+$/);
     });
 
     it("does not inherit parameter metadata from a base class handler of the same name (getOwnMetadata semantics)", () => {
@@ -237,9 +240,14 @@ describe("endpointsFromController (decorator metadata semantics)", () => {
       ]);
     });
 
-    it("simulates CI-01: a random-uid key that begins with '3' is not parsed as Body", () => {
-      // 在真实控制器类上手工注入旧缺陷触发的键形状（"3a7f…:0"——
-      // parseInt 前缀为 3 的 uid 键），断言修复后不产生 requestBody 数据。
+    it("simulates CI-01: random-uid keys in the legacy vulnerable shapes are not parsed as Body/Query/Param", () => {
+      // 在真实控制器类上手工注入两个历史缺陷触发的键形状：
+      //   1. "3a7f…:0"——uid 前缀以 3+字母开头（无 __customRouteArgs__
+      //      后缀的 Nest 版本/直接注入），parseInt("3a…")=3 → 旧实现
+      //      误判 Body；
+      //   2. "4f9c…__customRouteArgs__:0"——当前 Nest 形态且 uid 前缀
+      //      以 4 开头，旧实现 parseInt("4f9c…")=4 → 误判 Query。
+      // 断言修复后两者都不产生路由参数。
       @Controller("fixture-poison")
       class PoisonedController {
         @Post("upgrade")
@@ -249,7 +257,10 @@ describe("endpointsFromController (decorator metadata semantics)", () => {
       }
       Reflect.defineMetadata(
         ROUTE_ARGS_METADATA,
-        { "3a7f19c2d4e5b6f8a9c0d1e2:0": { index: 0, data: undefined } },
+        {
+          "3a7f19c2d4e5b6f8a9c0d1e2:0": { index: 0, data: undefined },
+          "4f9c8b7a6d5e3f2a1b0c9d8e7__customRouteArgs__:1": { index: 1, data: undefined },
+        },
         PoisonedController,
         "upgrade",
       );
