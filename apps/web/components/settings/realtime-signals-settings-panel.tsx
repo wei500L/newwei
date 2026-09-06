@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Form, Modal, Typography, message } from "antd";
+import { Alert, Button, Form, Modal, Spin, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -130,7 +130,11 @@ export function RealtimeSignalsSettingsPanel() {
     return (
       <>
         {contextHolder}
-        <Alert type="info" showIcon message={t("common.loading")} />
+        <div
+          style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
+        >
+          <Spin />
+        </div>
       </>
     );
   }
