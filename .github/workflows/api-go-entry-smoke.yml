@@ -349,9 +349,11 @@ jobs:
           }
 
           for path, payload in PUTS.items():
+              # 请求体只含 settings——expected 是本脚本的断言期望值，
+              # 不得混入请求（forbidNonWhitelisted 会拒绝多余属性）。
               req = urllib.request.Request(
                   f"http://127.0.0.1:4020{path}",
-                  data=json.dumps(payload).encode(),
+                  data=json.dumps({"settings": payload["settings"]}).encode(),
                   method="PUT",
                   headers={
                       "authorization": f"Bearer {token}",
