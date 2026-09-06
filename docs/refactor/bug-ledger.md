@@ -370,7 +370,7 @@ verify success）——CI-01 本轮未复现，无重跑。
 4. 隐藏写入方：news-pipeline-crawl-bridge.service.ts:185-188（结果缺失时同步触发抓取）、CrawlTaskJanitor 直改状态
 5. TopNav 589 行 / ActionRail 3 个重复图标 / newsnow 自加 1760px 宽度特例（IA 重构输入）
 6. ~~war-map-geometry.ts 零消费导出 splitDeckPathSegments/buildSanitizedPathFeatures（FE-DD-01，批4A 遗留）~~ ✅ 已随 FE-批4B 合并后收口 PR 删除（FE-DD-01，见 §3）
-7. vector-integration 的 upsert 确定性点 ID 断言偶发 500 vs 201（run 33957774254，真实 Qdrant 环境；同分支纯前端改动后的相邻 run 33957963593 通过，无代码因果，非 CI-01 变体——登记观察待复现规律）
+7. vector-integration 的 upsert 确定性点 ID 断言偶发 500 vs 201（run 33957774254，真实 Qdrant 环境；同分支纯前端改动后的相邻 run 33957963593 通过，无代码因果，非 CI-01 变体——登记观察待复现规律）。第二次复现：PR #12 文档收口提交 `1e9fe1c9`（仅改 3 个 markdown）run 34034804518 vector-integration 同断言失败（500 vs 201）；同 PR 代码提交首跑 run 34034235302 通过——两次 run 之间无代码差异，进一步佐证与代码无因果。仍为观察项。
 
 ## 6. 风险与未验证登记
 
