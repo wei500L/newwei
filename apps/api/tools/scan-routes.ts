@@ -260,35 +260,74 @@ export function endpointsFromController(
     // 路由参数（@Param/@Query/@Body）：装饰器把元数据写到类的
     // ROUTE_ARGS_METADATA[methodName] 上（不是 handler 函数上），键形如
     // "3:0"（paramtype:参数序号），值含 index/data/pipes。
-    const routeArgsAll = Reflect.getMetadata(
+    //
+    // CI-01 根因：自定义参数装饰器（createParamDecorator，如本仓库的
+    // @CurrentUser）用 uid(21) 生成的随机十六进制串作 paramtype 键
+    // （"3a7f…:0"）。parseInt 会把 "3a…" 误读成 3（Body）、"4a…" 误读成
+    // 4（Query）、"5a…" 误读成 5（Param）——每冷进程约 7% 的自定义参数
+    // 被随机污染，造成快照非确定性（run 33874825439 / 33900456381 /
+    // 34031744982）。因此键前缀必须严格为纯数字（内置装饰器只写
+    // "3:0" 这类数字键），uid 键一律忽略。
+    //
+    // 只读 own metadata（getOwnMetadata）：拒绝从基类/其他控制器的
+    // 同名 handler 继承出虚假参数（CI-01 回归锚点）。
+    const routeArgsAll = Reflect.getOwnMetadata(
       ROUTE_ARGS_METADATA,
       target,
       handlerName,
     ) as Record<string, { index: number; data?: unknown }> | undefined;
     const routeParams: RouteParam[] = [];
     if (routeArgsAll) {
-      const paramtypes = Reflect.getMetadata(
+      // design:paramtypes 由 TS/tlib 写到 (prototype, methodName) 上——
+      // 不是 handler 函数上。esbuild/tsx 不发射该元数据（恒 undefined），
+      // 但读取位置仍须与写入位置一致。
+      const paramtypes = Reflect.getOwnMetadata(
         PARAMTYPES_METADATA,
-        handler,
+        prototype,
+        handlerName,
       ) as unknown[] | undefined;
       const paramTypeNames = (paramtypes ?? []).map((t) =>
         typeof t === "function" ? (t as { name?: string }).name ?? null : null,
       );
+      type SortableRouteParam = RouteParam & { index: number; key: string };
+      const collected: SortableRouteParam[] = [];
       for (const [key, meta] of Object.entries(routeArgsAll)) {
-        const kindNum = Number.parseInt(key.split(":")[0] ?? "", 10);
+        const [paramtypePart, indexPart] = key.split(":");
+        if (!/^\d+$/.test(paramtypePart ?? "") || !/^\d+$/.test(indexPart ?? "")) {
+          continue; // 自定义参数装饰器的 uid 键——不属于本快照的参数面。
+        }
+        const kindNum = Number.parseInt(paramtypePart, 10);
         const kind: RouteParam["kind"] | null =
           kindNum === 3 ? "body" : kindNum === 4 ? "query" : kindNum === 5 ? "param" : null;
         if (!kind) {
           continue;
         }
         const data = meta.data;
-        routeParams.push({
+        collected.push({
           kind,
           name: typeof data === "string" && data.length > 0 ? data : null,
           typeName: paramTypeNames[meta.index] ?? null,
+          index: meta.index,
+          key,
         });
       }
-      routeParams.sort((a, b) => (a.kind + (a.name ?? "") < b.kind + (b.name ?? "") ? -1 : 1));
+      // 严格全序：(kind, name, index, key)——完全相等返回 0（V8 sort 稳定，
+      // 相等元素保持收集序），不依赖 Object.entries 的键插入顺序语义。
+      collected.sort((a, b) => {
+        const ka = a.kind + (a.name ?? "");
+        const kb = b.kind + (b.name ?? "");
+        if (ka !== kb) {
+          return ka < kb ? -1 : 1;
+        }
+        if (a.index !== b.index) {
+          return a.index - b.index;
+        }
+        if (a.key !== b.key) {
+          return a.key < b.key ? -1 : 1;
+        }
+        return 0;
+      });
+      routeParams.push(...collected);
     }
 
     const handlerPublic =

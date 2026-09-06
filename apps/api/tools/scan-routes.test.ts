@@ -1,4 +1,14 @@
-import { Controller, Get, Param, Put, Header } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  createParamDecorator,
+  Get,
+  Header,
+  Param,
+  Post,
+  Put,
+  Query,
+} from "@nestjs/common";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import { Permissions } from "../src/common/decorators/permissions.decorator";
 import { Public } from "../src/common/decorators/public.decorator";
 
-import { endpointsFromController } from "./scan-routes";
+import { ROUTE_ARGS_METADATA, endpointsFromController } from "./scan-routes";
 
 // 测试策略：
 //   1. 元数据语义（内联装饰器控制器 + endpointsFromController）——vitest
@@ -45,6 +55,43 @@ class FixtureController {
   // 无路由装饰器的方法：不进端点清单。
   helper() {
     return {};
+  }
+}
+
+// CI-01 回归锚点：模拟 Nest createParamDecorator 的真实行为——uid(21)
+// 十六进制随机串 + "__customRouteArgs__" 后缀合成 ROUTE_ARGS_METADATA 键
+// （Nest 11 assignCustomParameterMetadata 实际形态）。旧实现的 parseInt
+// 在 suffix 常量被移除的 Nest 版本（"3a…:0"）下会把 "3a…" 误读成 Body
+// （"4a…" / "5a…" 同理）；且对纯数字 uid（如 "3…:0"，uid 2.0.2 的十六
+// 进制串可全为数字）同样误读。此断言两种形态都必须免疫。
+const RandomUidParam = createParamDecorator((_data: unknown) => undefined);
+
+@Controller("fixture-custom-param")
+class CustomParamController {
+  @Post("act")
+  act(@RandomUidParam() user: unknown) {
+    return { user };
+  }
+}
+
+// 同名 handler：ParentController 的 getItem 带 @Param("id")，
+// ChildController 的同签名方法没有参数装饰器。旧实现用 getMetadata（沿
+// 原型链读）会把父类的参数继承给子类——伪造子类端点的参数。
+@Controller("fixture-parent")
+class ParentController {
+  @Get("items/:id")
+  getItem(@Param("id") id: string) {
+    return { id };
+  }
+}
+
+@Controller("fixture-child")
+class ChildController extends ParentController {
+  // 重写同名方法（无参数装饰器）——handler 元数据（method/path）来自
+  // 父类，路由仍在；参数必须为空（own metadata 语义）。
+  @Get("items/:id")
+  getItem(id: string) {
+    return { id };
   }
 }
 
@@ -110,6 +157,120 @@ describe("endpointsFromController (decorator metadata semantics)", () => {
     expect(
       detail?.routeParams.some((p) => p.kind === "param" && p.name === "id"),
     ).toBe(true);
+  });
+
+  // ---- CI-01 回归：参数元数据非确定性 ----
+  describe("CI-01 route parameter determinism", () => {
+    it("ignores random-uid paramtype keys from custom param decorators (no phantom body/query/param)", () => {
+      const endpoints = endpointsFromController(CustomParamController, {
+        ...OPTIONS,
+        name: "CustomParamController",
+        basePath: "fixture-custom-param",
+      });
+      expect(endpoints).toHaveLength(1);
+      const act = endpoints[0];
+      expect(act?.handler).toBe("act");
+      // 随机 uid 键（createParamDecorator 实际行为）绝不能被 parseInt
+      // 误读成内置 paramtype——无论随机串以 3/4/5 开头还是其他字符。
+      expect(act?.routeParams).toEqual([]);
+      // 直接锚定元数据形状：键是 "uid(21) 十六进制随机串 +
+      // __customRouteArgs__:参数序号"（Nest 11 createParamDecorator 实际
+      // 生成形态——经 node_modules 源码核实：assignCustomParameterMetadata）。
+      // 它以字母开头，绝不能被 parseInt 前缀匹配成内置 "3:0"/"4:0"/"5:0"。
+      const keys = Object.keys(
+        Reflect.getOwnMetadata(ROUTE_ARGS_METADATA, CustomParamController, "act") ?? {},
+      );
+      expect(keys).toHaveLength(1);
+      expect(keys[0]).toMatch(/^[0-9a-f]+__customRouteArgs__:\d+$/);
+    });
+
+    it("does not inherit parameter metadata from a base class handler of the same name (getOwnMetadata semantics)", () => {
+      const childEndpoints = endpointsFromController(ChildController, {
+        ...OPTIONS,
+        name: "ChildController",
+        basePath: "fixture-child",
+      });
+      const childGetItem = childEndpoints.find((e) => e.handler === "getItem");
+      // 子类方法自身无参数装饰器 → own ROUTE_ARGS_METADATA 为空，
+      // 父类 ParentController 上的同名参数不得穿透。
+      expect(childGetItem?.routeParams).toEqual([]);
+      // 基类自身的端点不受影响。
+      const parentEndpoints = endpointsFromController(ParentController, {
+        ...OPTIONS,
+        name: "ParentController",
+        basePath: "fixture-parent",
+      });
+      const parentGetItem = parentEndpoints.find((e) => e.handler === "getItem");
+      expect(
+        parentGetItem?.routeParams.some((p) => p.kind === "param" && p.name === "id"),
+      ).toBe(true);
+    });
+
+    it("collects @Body/@Query/@Param with a total deterministic order (comparator returns 0 when equal)", () => {
+      @Controller("fixture-mixed")
+      class MixedController {
+        @Post("mixed/:id")
+        mixed(
+          @Query("page") page: string,
+          @Body() body: unknown,
+          @Query("size") size: string,
+          @Param("id") id: string,
+        ) {
+          return { page, body, size, id };
+        }
+      }
+      // 同一控制器反复扫描输出必须逐次完全一致（严格全序：相等返回 0，
+      // 不依赖 V8 sort 的稳定性兜底）。
+      const runs = [0, 1, 2].map(() =>
+        endpointsFromController(MixedController, {
+          ...OPTIONS,
+          name: "MixedController",
+          basePath: "fixture-mixed",
+        }).find((e) => e.handler === "mixed")?.routeParams,
+      );
+      const [first] = runs;
+      expect(runs).toEqual([first, first, first]);
+      // 顺序锚点：(kind, name) 字典序 → body 先于 param/query；
+      // query 的 page 先于 size（同 kind 按 name）。
+      expect(first?.map((p) => `${p.kind}:${p.name ?? ""}`)).toEqual([
+        "body:",
+        "param:id",
+        "query:page",
+        "query:size",
+      ]);
+    });
+
+    it("simulates CI-01: random-uid keys in the legacy vulnerable shapes are not parsed as Body/Query/Param", () => {
+      // 在真实控制器类上手工注入两个历史缺陷触发的键形状：
+      //   1. "3a7f…:0"——uid 前缀以 3+字母开头（无 __customRouteArgs__
+      //      后缀的 Nest 版本/直接注入），parseInt("3a…")=3 → 旧实现
+      //      误判 Body；
+      //   2. "4f9c…__customRouteArgs__:0"——当前 Nest 形态且 uid 前缀
+      //      以 4 开头，旧实现 parseInt("4f9c…")=4 → 误判 Query。
+      // 断言修复后两者都不产生路由参数。
+      @Controller("fixture-poison")
+      class PoisonedController {
+        @Post("upgrade")
+        upgrade() {
+          return {};
+        }
+      }
+      Reflect.defineMetadata(
+        ROUTE_ARGS_METADATA,
+        {
+          "3a7f19c2d4e5b6f8a9c0d1e2:0": { index: 0, data: undefined },
+          "4f9c8b7a6d5e3f2a1b0c9d8e7__customRouteArgs__:1": { index: 1, data: undefined },
+        },
+        PoisonedController,
+        "upgrade",
+      );
+      const endpoints = endpointsFromController(PoisonedController, {
+        ...OPTIONS,
+        name: "PoisonedController",
+        basePath: "fixture-poison",
+      });
+      expect(endpoints[0]?.routeParams).toEqual([]);
+    });
   });
 
   it("exposes missing permission metadata verbatim (fail-closed input for the matrix generator)", () => {

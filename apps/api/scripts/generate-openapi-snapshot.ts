@@ -23,6 +23,21 @@ import { scanControllers, type EndpointInfo } from "../tools/scan-routes";
 const API_ROOT = join(__dirname, "..");
 const SNAPSHOT_PATH = join(API_ROOT, "tests/contract/openapi.snapshot.json");
 
+// --output <path>：写入指定路径而不动已提交基线——CI 的冷进程确定性
+// 检查用它把两次独立生成的产物导向临时文件做 SHA-256 比对（默认仍是
+// tests/contract/openapi.snapshot.json，单一生成入口不变）。
+function resolveOutputPath(args: string[]): string {
+  const flagIndex = args.indexOf("--output");
+  if (flagIndex !== -1 && args[flagIndex + 1]) {
+    return args[flagIndex + 1] as string;
+  }
+  const equalsForm = args.find((arg) => arg.startsWith("--output="));
+  if (equalsForm) {
+    return equalsForm.slice("--output=".length);
+  }
+  return SNAPSHOT_PATH;
+}
+
 function openApiMethod(method: string): string | null {
   const lower = method.toLowerCase();
   if (["get", "post", "put", "delete", "patch", "options", "head"].includes(lower)) {
@@ -171,6 +186,7 @@ function buildOperation(endpoint: EndpointInfo): Record<string, unknown> {
 }
 
 function main(): void {
+  const outputPath = resolveOutputPath(process.argv.slice(2));
   const scan = scanControllers({ apiRoot: API_ROOT });
   if (scan.errors.length > 0) {
     console.error("scan errors:", scan.errors);
@@ -249,10 +265,10 @@ function main(): void {
     },
   };
 
-  mkdirSync(dirname(SNAPSHOT_PATH), { recursive: true });
-  writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+  mkdirSync(dirname(outputPath), { recursive: true });
+  writeFileSync(outputPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
   console.log(
-    `openapi snapshot: ${scan.endpoints.length} endpoints → ${SNAPSHOT_PATH} (${Object.keys(paths).length} paths, ${skippedAll} non-OpenAPI-method handlers skipped)`,
+    `openapi snapshot: ${scan.endpoints.length} endpoints → ${outputPath} (${Object.keys(paths).length} paths, ${skippedAll} non-OpenAPI-method handlers skipped)`,
   );
 }
 
