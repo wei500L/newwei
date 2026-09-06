@@ -24,7 +24,7 @@ curl http://localhost:4020/api/healthz/live # shadow 态：NestJS 响应 + Go �
 | `SHADOW_DEBUG_BODY_LOG` | false | 差异记录是否保存截断正文（默认只记 sha256 hash） |
 | `SHADOW_DEBUG_BODY_LOG_MAX_BYTES` | 2048 | debug 正文的截断长度上限 |
 | `CANARY_PERCENT` | 0 | canary 分流比例（0=legacy，100=go；当前无 ModeCanary 路由） |
-| `DATABASE_URL` | （空） | MySQL 连接（Prisma 同名同格式 `mysql://user:pass@host:port/db`）。仅供 user-settings onboarding shadow 只读查询；**空/无效时网关照常启动并代理全部请求**（该 shadow 单元跳过，`/__go/healthz` 报 `onboardingShadow.database` 为 `unconfigured`/`invalid`）。值本身不进入日志/healthz/错误文本 |
+| `DATABASE_URL` | （空） | MySQL 连接（Prisma 同名同格式 `mysql://user:pass@host:port/db`）。仅供 user-settings onboarding shadow 只读查询；**空/无效时网关照常启动并代理全部请求**（该 shadow 单元跳过，`/__go/healthz` 报 `onboardingShadow.database` 为 `unconfigured`/`invalid`；`configured` 只代表 DSN 已解析为 driver 配置——`sql.Open` 是惰性初始化，不承诺数据库可连接）。值本身不进入日志/healthz/错误文本 |
 
 ## 四态路由（当前路由表）
 
@@ -88,6 +88,18 @@ MySQL 集成测试（Go-批2A，本机禁跑——远端 CI 的
 ```bash
 cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/
 ```
+
+## 依赖清单（go.mod / go.sum）
+
+`go.sum` 是 tracked file（Go-批2A 起有第三方依赖）。本仓库约束「生成器不在
+本机执行」：
+
+- 依赖变更时，给 PR 加 `go-modules-regen` label → CI 的 `go-modules-regen`
+  job 远端运行 `go mod tidy` 并把 `go.mod`/`go.sum` 提交回 PR 分支；完成后
+  移除 label。
+- 平时 verify 的漂移门禁保持 fail-on-drift：go.sum 必须被跟踪、远端
+  `go mod tidy` 后 `go.mod`/`go.sum` 零漂移。
+- 集成 job 只用 `go mod download` 消费已提交的校验信息，不修改清单。
 
 ## 约束
 

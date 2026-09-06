@@ -5,8 +5,9 @@
 //   - SQL 参数化，查询条件同时包含 orgId / userId / 固定 key（租户隔离）；
 //   - 正确区分 sql.ErrNoRows（无记录，业务结果）与真实数据库错误；
 //   - 使用调用方传入的 ctx（shadow runner 的超时能取消数据库请求）；
-//   - 错误对外只暴露通用错误体，DSN/凭据不进入错误文本（见 dsn.go 的
-//     errNoSecrets 包装）。
+//   - 错误对外只暴露通用错误体（ErrDatabase），详细信息只进服务端日志；
+//     DSN 解析错误不含 DSN 原文（见 mysql_repository.go 的 parseMySQLURL
+//     ——错误信息只有 scheme/host 缺失等结构信息）。
 package usersettings
 
 import (

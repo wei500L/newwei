@@ -218,8 +218,12 @@ func run() error {
 			log.Printf("api-go: onboarding shadow database not initialized (invalid DATABASE_URL): %v", err)
 			onboardingDBStatus = "invalid"
 		} else {
+			// sql.Open 是惰性初始化：只代表 DSN 成功解析为 driver 配置，
+			// 不证明数据库可连接。连接性由真实查询按需建立（失败只影响
+			// shadow 差分，不影响 legacy 响应）——不引入启动 Ping/探针/
+			// 重试，数据库连通性也不是网关的存活条件。
 			onboardingRepo = usersettings.NewMySQLRepository(db)
-			onboardingDBStatus = "ready"
+			onboardingDBStatus = "configured"
 		}
 	}
 	onboardingExec := onboardingExecutant{repo: onboardingRepo}
@@ -254,8 +258,9 @@ func run() error {
 	}
 
 	// /__go/healthz：网关存活探针 + 路由表与 shadow/canary 状态自省。
-	// onboarding shadow 状态只报配置类别（unconfigured/invalid/ready），
-	// 不含 DSN/host/凭据/数据库错误详情。
+	// onboarding shadow 状态只报配置类别（unconfigured/invalid/configured
+	// ——configured 表示 DSN 已解析为 driver 配置，不承诺可连接），不含
+	// DSN/host/凭据/数据库错误详情。
 	gateway.SetGoHandler(func(w http.ResponseWriter, _ *http.Request) {
 		routes := make([]map[string]string, 0, len(gateway.Rules()))
 		for _, rule := range gateway.Rules() {
