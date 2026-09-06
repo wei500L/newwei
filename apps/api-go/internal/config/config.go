@@ -25,8 +25,9 @@ type Config struct {
 	LegacyAPIURL string // NestJS apps/api 的基址（含协议，不含路径）
 
 	// DatabaseURL 是 Prisma 同名环境变量（mysql://user:pass@host:port/db）。
-	// 仅供 user-settings onboarding shadow 的 MySQL 只读查询使用；为空
-	// 时该 shadow 单元跳过执行，网关照常启动并代理全部请求（非阻断）。
+	// 仅供 user-settings 只读 shadow（onboarding/rss-reader/spacetime-timeline
+	// 三个 GET）的 MySQL 只读查询使用；为空时这些 shadow 单元跳过执行，
+	// 网关照常启动并代理全部请求（非阻断）。
 	// 值本身不进入日志/healthz/错误文本。
 	DatabaseURL string
 

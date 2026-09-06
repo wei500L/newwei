@@ -55,9 +55,13 @@ type Rule struct {
 //
 // 迁移单元：
 //   - 序 2：GET /api/healthz/live —— shadow（公开探针，首个单元）；
-//   - 序 3（Go-批2A）：GET /api/user-settings/ui/onboarding —— shadow。
+//   - 序 3（Go-批2A）：GET /api/user-settings/ui/onboarding —— shadow；
+//   - 序 3（Go-批2B）：GET /api/user-settings/ui/rss-reader、
+//     GET /api/user-settings/ui/spacetime-timeline —— shadow（确定性
+//     normalization，复用批2A 的 MySQL repository 与身份门禁）。
 //     精确路径规则：PUT 等写方法命中同前缀时由 serveShadow 的只读方法
-//     红线纯代理到 NestJS，绝不双发（见 isReadonlyMethod）。
+//     红线纯代理到 NestJS，绝不双发（见 isReadonlyMethod）；dispatcher
+//     的 shadowUnits 再做精确 path + method 二次限制（本表是前缀匹配）。
 //
 // 注意三个无 /api 前缀的挂载点（契约清单 §0）：/graphql、/socket.io、
 // /admin/queues（Bull Board）。代理层必须与 REST 前缀分别声明。
@@ -66,6 +70,8 @@ func DefaultRules() []Rule {
 		{Prefix: "/api/", Mode: ModeLegacy},
 		{Prefix: "/api/healthz/live", Mode: ModeShadow},
 		{Prefix: "/api/user-settings/ui/onboarding", Mode: ModeShadow},
+		{Prefix: "/api/user-settings/ui/rss-reader", Mode: ModeShadow},
+		{Prefix: "/api/user-settings/ui/spacetime-timeline", Mode: ModeShadow},
 		{Prefix: "/graphql", Mode: ModeLegacy},
 		{Prefix: "/socket.io/", Mode: ModeLegacy},
 		{Prefix: "/docs", Mode: ModeLegacy},
