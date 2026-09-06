@@ -594,19 +594,25 @@ services:
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
     restart: unless-stopped
     working_dir: /workspace
+    # 启动等待使用最终配置的 API base（API_BASE_URL，默认 NestJS），
+    # 不再硬编码 http://api:4000——api-go-pilot 模式下等待的是
+    # http://api-go:4020 的真实探活。兼容 base 已带 /api 或尾斜杠。
     command: >
       sh -ec "
-      echo '[web] waiting for api...';
+      base=$${API_BASE_URL%/};
+      base=$${base%/api};
+      url=$${base}/api/healthz/live;
+      echo \"[web] waiting for api at $${url}...\";
       i=0;
       while [ $$i -lt 150 ]; do
-        if curl -fsS http://api:4000/api/healthz/live >/dev/null; then
+        if curl -fsS $${url} >/dev/null; then
           echo '[web] api ready';
           break;
         fi;
         i=$$((i + 1));
         sleep 2;
       done;
-      if ! curl -fsS http://api:4000/api/healthz/live >/dev/null; then
+      if ! curl -fsS $${url} >/dev/null; then
         echo '[web] api not ready after 300s';
         exit 1;
       fi;
@@ -621,6 +627,12 @@ services:
       NODE_OPTIONS: "${WEB_NODE_OPTIONS:---max-old-space-size=8192}"
       CI: "true"
       HUSKY: "0"
+      # 服务端运行期 API base（apps/web/lib/env.ts 在运行时读取）：
+      # legacy 默认 http://api:4000；api-go-pilot 切到
+      # http://api-go:4020（.env 覆盖即可，无需重建镜像）。浏览器端的
+      # NEXT_PUBLIC_API_BASE_URL 是构建期内联——切换浏览器流量需以
+      # 对应构建参数重建 web 镜像。
+      API_BASE_URL: ${API_BASE_URL:-http://api:4000}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
