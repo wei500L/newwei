@@ -61,8 +61,8 @@ func TestOnboardingContract(t *testing.T) {
 			`{"version":1,"updatedAt":{"settings":"2026-09-03T00:00:00.123Z"},"settings":{"completed":false,"dismissed":true,"checklist":{"today":true,"events":false,"map":false,"finance":false},"completedTours":{"today":true}}}`)
 	})
 
-	// 代表性异常对象：字符串 "true"/数字按 false；未知 key（today2、
-	// rogue）丢弃；四个 checklist 全 true 推导 completed=true。
+	// 代表性异常对象 A：严格布尔 + 未知 key 丢弃。字符串 "true"/数字 1
+	// 都不是严格 true（checklist 与顶层布尔均按 false）；rogue/today2 丢弃。
 	t.Run("malformed object strict booleans and unknown keys", func(t *testing.T) {
 		settings := NormalizeOnboarding([]byte(`{
 			"completed": "true",
@@ -70,20 +70,43 @@ func TestOnboardingContract(t *testing.T) {
 			"checklist": {"today": "true", "events": 1, "map": true, "finance": true, "rogue": true},
 			"completedTours": {"today": "true", "today2": true, "map": true}
 		}`))
-		if settings.Completed != true {
-			t.Errorf("completed = %v, want true (all four checklist true)", settings.Completed)
+		if settings.Completed {
+			t.Error("completed = true, want false（存储值非严格 true 且 checklist 未全 true）")
 		}
-		if settings.Dismissed != false {
-			t.Errorf("dismissed = %v, want false (only strict true)", settings.Dismissed)
+		if settings.Dismissed {
+			t.Error("dismissed = true, want false（数字 1 非严格 true）")
 		}
-		if !settings.Checklist.Today || settings.Checklist.Events {
-			t.Errorf("checklist today=%v events=%v, want false/false (strict booleans)", settings.Checklist.Today, settings.Checklist.Events)
+		if settings.Checklist.Today {
+			t.Error("checklist.today = true, want false（字符串 \"true\" 非严格 true）")
+		}
+		if settings.Checklist.Events {
+			t.Error("checklist.events = true, want false（数字 1 非严格 true）")
 		}
 		if !settings.Checklist.Map || !settings.Checklist.Finance {
-			t.Errorf("checklist map/finance must be true")
+			t.Error("checklist.map/finance must be true（严格 true 原样保留）")
 		}
 		if len(settings.CompletedTours) != 1 || !settings.CompletedTours["map"] {
-			t.Errorf("completedTours = %v, want only {map:true} (strict true, unknown keys dropped)", settings.CompletedTours)
+			t.Errorf("completedTours = %v, want only {map:true}（严格 true，未知 key/非严格值丢弃）", settings.CompletedTours)
+		}
+	})
+
+	// 代表性异常对象 B：四个 checklist 全严格 true → 推导 completed=true
+	//（即使存储 completed 非严格 true）；dismissed 非严格 true 仍为 false。
+	t.Run("all checklist strictly true derives completed", func(t *testing.T) {
+		settings := NormalizeOnboarding([]byte(`{
+			"completed": "yes",
+			"dismissed": "true",
+			"checklist": {"today": true, "events": true, "map": true, "finance": true},
+			"completedTours": {"extra": 1}
+		}`))
+		if !settings.Completed {
+			t.Error("completed = false, want true（四步 checklist 全严格 true 推导）")
+		}
+		if settings.Dismissed {
+			t.Error("dismissed = true, want false（字符串 \"true\" 非严格 true）")
+		}
+		if len(settings.CompletedTours) != 0 {
+			t.Errorf("completedTours = %v, want 空（非布尔值丢弃）", settings.CompletedTours)
 		}
 	})
 

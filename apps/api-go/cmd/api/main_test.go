@@ -113,7 +113,8 @@ func TestOnboardingShadowIdentityGate(t *testing.T) {
 		req.Header.Set("Authorization", auth)
 		return req
 	}
-	validToken := forgedJWT() // 合法形态三段 JWT（sub=user-1, orgId=…）
+	// 合法形态 Bearer（forgedJWT 只返回裸 JWT——这里补 Bearer 前缀）。
+	validToken := "Bearer " + forgedJWT()
 
 	cases := []struct {
 		name          string
