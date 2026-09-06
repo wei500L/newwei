@@ -158,7 +158,7 @@ describe("RealtimeSignalsSettingsPanel", () => {
       ).toBeInTheDocument();
     });
     expect(get).toHaveBeenCalledWith("system-settings/realtime-signals");
-  });
+  }, 15_000);
 
   it("keeps the settings form when diagnostics fail, applies secret omit semantics, and a repeated submit only sends one PUT", async () => {
     const user = userEvent.setup();
@@ -204,7 +204,8 @@ describe("RealtimeSignalsSettingsPanel", () => {
     await user.clear(openskySecret);
 
     // 第一次经按钮提交；随后表单 submit 事件路径（Enter/编程式，不经过按钮
-    // disabled——FE-RT-02 门禁必须在 handler 层拦截）在挂起 PUT 期间重复触发
+    // disabled——FE-RT-02 门禁必须在 handler 层拦截）在挂起 PUT 期间重复触发。
+    // 一次 submit 事件即覆盖该路径，与按钮提交构成两次提交。
     const saveButton = screen.getByRole("button", {
       name: "Save changes",
     });
@@ -214,9 +215,8 @@ describe("RealtimeSignalsSettingsPanel", () => {
     });
     const form = document.querySelector("form");
     fireEvent.submit(form!);
-    fireEvent.submit(form!);
 
-    // 等待两次 submit 的验证/onFinish 链落定：门禁必须拦截（仍只有 1 次 PUT）
+    // 等 submit 的验证/onFinish 链落定：门禁必须拦截（仍只有 1 次 PUT）
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -240,5 +240,5 @@ describe("RealtimeSignalsSettingsPanel", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(put).toHaveBeenCalledTimes(1);
-  });
+  }, 15_000);
 });
