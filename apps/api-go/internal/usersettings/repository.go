@@ -41,8 +41,10 @@ func NewMySQLRepository(db *sql.DB) *MySQLRepository {
 //
 // 只取 value 与 updatedAt（最小列集）；DATETIME(3) 无时区，driver 以
 // time.Time 返回时按 UTC 解释（DSN parseTime=true + loc=UTC）。
+// key 是 MySQL 保留字——列名必须反引号转义（远端 MySQL 集成测试
+// 捕获的 1064 语法错误，见 PR #14 run 34047356388）。
 func (r *MySQLRepository) FindOnboarding(ctx context.Context, orgID, userID string) (Record, error) {
-	const query = `SELECT value, updatedAt FROM UserSetting WHERE orgId = ? AND userId = ? AND key = ? LIMIT 1`
+	const query = "SELECT value, updatedAt FROM UserSetting WHERE orgId = ? AND userId = ? AND `key` = ? LIMIT 1"
 
 	var value []byte
 	var updatedAt sql.NullTime

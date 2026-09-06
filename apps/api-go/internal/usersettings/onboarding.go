@@ -98,12 +98,14 @@ func NormalizeOnboarding(raw []byte) OnboardingSettings {
 		return settings
 	}
 
-	rawChecklist, _ := asJSONObject(mustJSONRaw(value["checklist"]))
+	// JSON 对象 unmarshal 后即是 map[string]any；类型断言等价于 NestJS 的
+	//「typeof === object && !Array.isArray」——数组/标量/缺失都断言失败为 nil。
+	rawChecklist, _ := value["checklist"].(map[string]any)
 	for _, key := range onboardingStepKeys {
 		settings.Checklist.set(key, rawChecklist[key] == true)
 	}
 
-	rawTours, _ := asJSONObject(mustJSONRaw(value["completedTours"]))
+	rawTours, _ := value["completedTours"].(map[string]any)
 	for _, key := range onboardingStepKeys {
 		if rawTours[key] == true {
 			settings.CompletedTours[key] = true
@@ -163,16 +165,4 @@ func asJSONObject(raw []byte) (map[string]any, bool) {
 		return nil, false
 	}
 	return obj, true
-}
-
-// mustJSONRaw 把已解析的 JSON 值重新编码为字节（子对象二次解析用）。
-func mustJSONRaw(value any) []byte {
-	if value == nil {
-		return nil
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil
-	}
-	return raw
 }
