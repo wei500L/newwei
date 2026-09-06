@@ -172,6 +172,11 @@ export default defineConfig({
         "app/(app)/crawl/*/task-detail-media-section.tsx",
         "app/(app)/crawl/*/task-detail-stored-media-section.tsx",
         "app/(app)/crawl/*/task-detail-tables-section.tsx",
+        // FE-批5B：Create Crawl Task Drawer 领域模块（编排层 + controller/
+        // template/步骤/各领域 section/纯守卫/字面量路径类型）
+        "app/(app)/crawl/components/CreateCrawlTaskDrawer.tsx",
+        "app/(app)/crawl/components/create-crawl-task-drawer/*.ts",
+        "app/(app)/crawl/components/create-crawl-task-drawer/*.tsx",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {
