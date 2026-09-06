@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -142,15 +142,15 @@ describe("RealtimeSignalsSettingsPanel", () => {
       screen.queryByRole("button", { name: "Reset to env" })
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Retry" }));
-
-    // Retry 成功后进入 ready 状态
+    // Retry 前把 mock 切为成功——Retry 必须用真实响应进入 ready 状态
     get.mockImplementation((url: string) => {
       if (url === "system-settings/realtime-signals") {
         return Promise.resolve({ data: SETTINGS });
       }
       return Promise.resolve({ data: DIAGNOSTICS });
     });
+
+    await user.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => {
       expect(
@@ -193,24 +193,34 @@ describe("RealtimeSignalsSettingsPanel", () => {
       screen.getByRole("button", { name: "Save changes" })
     ).toBeInTheDocument();
 
-    // secret：触碰后清空 → payload 中应发送 null；未触碰字段应被省略
-    const openskySecret = await screen.findByPlaceholderText(
+    // secret：触碰后清空 → payload 中应发送 null；未触碰字段应被省略。
+    // 5 个 secret 输入共用同一 placeholder，按渲染顺序取第 2 个（openskyClientSecret）。
+    const secretInputs = await screen.findAllByPlaceholderText(
       "Leave empty to keep current value"
     );
+    const openskySecret = secretInputs[1];
     await user.type(openskySecret, "x");
     await user.clear(openskySecret);
 
+    // 第一次经按钮提交；随后表单 submit 事件路径（Enter/编程式，不经过按钮
+    // disabled——FE-RT-02 门禁必须在 handler 层拦截）在挂起 PUT 期间重复触发
     const saveButton = screen.getByRole("button", {
       name: "Save changes",
     });
     await user.click(saveButton);
-    // 挂起的 PUT 期间再次点击 submit（表单路径重复触发）
-    await user.click(saveButton);
-    await user.click(saveButton);
-
     await waitFor(() => {
       expect(put).toHaveBeenCalledTimes(1);
     });
+    const form = document.querySelector("form");
+    fireEvent.submit(form!);
+    fireEvent.submit(form!);
+
+    // 等待两次 submit 的验证/onFinish 链落定：门禁必须拦截（仍只有 1 次 PUT）
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(put).toHaveBeenCalledTimes(1);
+
     expect(put).toHaveBeenCalledWith(
       "system-settings/realtime-signals",
       expect.objectContaining({
@@ -225,8 +235,9 @@ describe("RealtimeSignalsSettingsPanel", () => {
     expect(payload).not.toHaveProperty("wingbitsApiKey");
 
     putResolve?.({ data: SETTINGS });
-    await waitFor(() => {
-      expect(put).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
+    expect(put).toHaveBeenCalledTimes(1);
   });
 });
