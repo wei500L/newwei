@@ -28,22 +28,6 @@ async function openAdvanced(
   await advanceToAdvanced(handle);
 }
 
-/** 在 antd Select 中选择选项（jsdom 交互路径）。 */
-async function selectOption(
-  selectLabel: string,
-  optionText: string,
-): Promise<void> {
-  // antd Select 的 Form.Item id 落在内部 search input 上；向上找 selector 容器
-  const selector = screen.getByLabelText(selectLabel).closest(
-    ".ant-select-selector",
-  );
-  expect(selector).not.toBeNull();
-  fireEvent.mouseDown(selector as HTMLElement);
-  // rc-trigger 弹层在 mouseDown 后一帧才渲染选项——findByRole 轮询等待
-  const option = await screen.findByRole("option", { name: optionText });
-  fireEvent.click(option);
-}
-
 /** multi URL 区块头部（含 Add 按钮）。 */
 function multiUrlHeader(): HTMLElement {
   const header = screen.getByText("Multi URL").closest("div");
@@ -82,10 +66,14 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     const handle = renderCreateCrawlTaskDrawer();
     await openAdvanced(handle);
 
+    // 经 store 写入 waitUntil（watch 驱动的规范化 effect 为被测行为；
+    // antd 下拉弹层在 jsdom 中不随 mouseDown 渲染，交互路径不可靠）
     act(() => {
-      handle.form.setFieldsValue({ waitForTimeoutMs: 1000 });
+      handle.form.setFieldsValue({
+        waitForTimeoutMs: 1000,
+        waitUntil: "networkidle",
+      });
     });
-    await selectOption("Navigation wait condition", "Network idle");
 
     await waitFor(() =>
       expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(5000),
@@ -97,9 +85,11 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     await openAdvanced(handle);
 
     act(() => {
-      handle.form.setFieldsValue({ waitForTimeoutMs: 8000 });
+      handle.form.setFieldsValue({
+        waitForTimeoutMs: 8000,
+        waitUntil: "networkidle",
+      });
     });
-    await selectOption("Navigation wait condition", "Network idle");
 
     await waitFor(() =>
       expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(8000),
@@ -111,9 +101,11 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     await openAdvanced(handle);
 
     act(() => {
-      handle.form.setFieldsValue({ waitForTimeoutMs: 1000 });
+      handle.form.setFieldsValue({
+        waitForTimeoutMs: 1000,
+        waitUntil: "load",
+      });
     });
-    await selectOption("Navigation wait condition", "Load");
 
     await waitFor(() =>
       expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(1000),
@@ -460,12 +452,17 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     const handle = renderCreateCrawlTaskDrawer();
     await openAdvanced(handle);
 
-    await selectOption("Headless", "Headed (Xvfb)");
+    // 经 store 写入 headlessMode（watch 驱动的警告 Alert 为被测行为）
+    act(() => {
+      handle.form.setFieldsValue({ headlessMode: "headed" });
+    });
     expect(
       screen.getByText("Headed mode requires Xvfb"),
     ).toBeInTheDocument();
 
-    await selectOption("Headless", "Auto");
+    act(() => {
+      handle.form.setFieldsValue({ headlessMode: "auto" });
+    });
     expect(
       screen.queryByText("Headed mode requires Xvfb"),
     ).not.toBeInTheDocument();
