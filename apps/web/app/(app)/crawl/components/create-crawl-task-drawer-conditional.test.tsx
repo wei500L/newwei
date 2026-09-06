@@ -577,10 +577,10 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
       screen.getByRole("button", { name: "Auto-fill Sec-CH headers" }),
     );
 
-    const headers = handle.form.getFieldValue("browserHeaders") as Array<{
+    const headers = handle.form.getFieldValue("browserHeaders") as {
       name: string;
       value: string;
-    }>;
+    }[];
     const byName = new Map(
       headers.map((header) => [header.name.toLowerCase(), header.value]),
     );
