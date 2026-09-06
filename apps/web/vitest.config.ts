@@ -177,6 +177,13 @@ export default defineConfig({
         "app/(app)/crawl/components/CreateCrawlTaskDrawer.tsx",
         "app/(app)/crawl/components/create-crawl-task-drawer/*.ts",
         "app/(app)/crawl/components/create-crawl-task-drawer/*.tsx",
+        // FE-批6A：Realtime Signals 设置与诊断领域模块
+        // （关键测试覆盖的编排层 + 两个领域 hook + secret/payload 域；
+        //  展示叶子组件未纳入 include，见 PR 描述）
+        "components/settings/realtime-signals-settings-panel.tsx",
+        "components/settings/realtime-signals/use-realtime-signals-settings.ts",
+        "components/settings/realtime-signals/use-realtime-signals-diagnostics.ts",
+        "lib/realtime-signals-settings-payload.ts",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {

@@ -7647,7 +7647,9 @@
         "loadFailed": "加载实时信号配置失败",
         "saveFailed": "保存实时信号配置失败",
         "badRequest": "输入无效",
-        "resetFailed": "重置实时信号配置失败"
+        "resetFailed": "Failed to reset realtime signals settings",
+        "loadFailedTitle": "加载实时信号配置失败",
+        "loadFailedDescription": "无法从服务器加载已保存的配置。为避免用默认值覆盖未知配置，在成功加载真实配置前将无法编辑。"
       },
       "modal": {
         "resetTitle": "重置实时信号配置",
