@@ -8298,6 +8298,8 @@
       "generalDesc": "适用于任何网站的标准抓取",
       "news": "新闻网站",
       "newsDesc": "针对文章和新闻源优化",
+      "reutersCf": "路透社 + Cloudflare",
+      "reutersCfDesc": "面向类路透社防护站点的有头 + 隐身 + 反爬重试配置",
       "forum": "论坛",
       "forumDesc": "最适合帖子和讨论",
       "social": "社交媒体",
@@ -9100,7 +9102,7 @@
     "dynamic": {
       "title": "动态",
       "description": "动态说明",
-      "jsStep": "JS 步骤",
+      "jsStep": "JS 步骤 {{index}}",
       "jsRequired": "需要 JS",
       "placeholders": {
         "jsSnippet": "请输入 JS 片段",

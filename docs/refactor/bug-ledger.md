@@ -49,6 +49,11 @@
 | FE-A11Y-01 | P2 | War Map legend 聚焦徽标硬编码英文 "Focus"（中文界面遗留英文） | ✅ | PR #7（FE-批4B，见 §3） |
 | FE-A11Y-02 | P2 | War Map legend section 折叠按钮缺 aria-expanded/aria-controls | ✅ | PR #7（FE-批4B，见 §3） |
 | FE-DD-01 | P3 | war-map-geometry.ts 两个零消费导出（splitDeckPathSegments/buildSanitizedPathFeatures，批4A 遗留） | ✅ | FE-批4B 合并后收口 PR（见 §3） |
+| FE-TPL-01 | P1 | Create Drawer defaultTemplateKey 持续回写：用户主动选模板被立即改回 news | ✅ | FE-批5B（见 §3） |
+| FE-A11Y-03 | P2 | Create Drawer 模板选择器为 Card+onClick，无键盘语义/选中可访问状态 | ✅ | FE-批5B（见 §3） |
+| FE-SUBMIT-01 | P2 | Create Drawer loading 期间 Enter/表单 submit 仍可重复触发 onSubmit | ✅ | FE-批5B（见 §3） |
+| FE-I18N-02 | P2 | Create Drawer 域 3 个 i18n 键缺失/丢插值占位符（reutersCf×2、jsStep 序号） | ✅ | FE-批5B（见 §3） |
+| FE-TPL-02 | P3 | Create Drawer proxy 告警分支不可达：undefined 键被 hasOwn 计入，恒为 error 级 | ⬜ | 开放（FE-批5B 登记，见 §4） |
 
 ## 3. 已修复条目（详细）
 
@@ -238,6 +243,66 @@ verify success）——CI-01 本轮未复现，无重跑。
 - **波及**：`crawl.multiUrl.strategyTitle` 同时被 `CreateCrawlTaskDrawer.tsx` 消费——该文件本轮未修改，locale 修复使其策略标题从字面量「Strategy title」恢复为「Strategy {n}」（行为改善，随本条一并生效）。
 - **验证**：远端 CI（jsdom characterization 全绿）；修复措辞为机械恢复（MB/%/ms/× 等数值单位），非重新设计文案。
 - **状态**：✅ 已随 FE-批5A PR #9 修复。
+
+### FE-TPL-01：Create Drawer defaultTemplateKey 持续回写覆盖用户主动选择 — ✅ 已随 FE-批5B 修复
+
+- **现象**：news-sources 入口恒定传入 `defaultTemplateKey="news"`，原 effect 在
+  `defaultTemplateKey !== selectedTemplate` 时无条件重放模板——用户在本次打开期间
+  主动选择 general/forum/social 后被立即改回 news，无法选用其他模板。
+- **根因**：defaultTemplateKey 被当作持续受控值而非"一次打开会话的初始默认值"；
+  初始化 effect 依赖 selectedTemplate 变化反复触发。
+- **附带发现（同轮修复）**：原"打开时应用 selectedTemplate"的回退分支因 rc-drawer
+  首渲染延迟挂载（mergedOpen=false）+ `isFieldsTouched(true)` 在零注册字段时返回
+  true（空数组 every）而从未在冷启动生效（仅重开时生效）。修复后冷启动同样应用
+  默认模板（恢复原设计意图；草稿保护改用 store 值判定，不依赖字段注册时序）。
+- **修复**：单一会话初始化 effect（session 标记 + 草稿保护：已填 URL 或表单已有值
+  时跳过）；会话内用户选择优先；关闭复位会话标记。两个消费入口的既有语义保持：
+  crawl-tasks 草稿跨开合保留、news-sources 关闭 reset 后重开重新应用 news。
+- **验证**：远端 jsdom 回归测试（news 默认下切换模板不被回写、草稿保护、两种父
+  reset 语义、defaultTemplateKey 合法/trim/非法/缺失）。
+
+### FE-A11Y-03：Create Drawer 模板选择器缺少键盘语义 — ✅ 已随 FE-批5B 修复
+
+- **现象**：模板卡为 antd Card（div）+ onClick——Tab 不可达、Enter/Space 无效、
+  无 selected 可访问状态。
+- **修复**：Col 内以原生 `<button type="button" aria-pressed>` 包裹 Card（Card 改
+  纯展示，无嵌套交互元素）；布局/图标/说明/选中边框不变；按钮内容为本地化文本
+  （即可访问名）。
+- **验证**：远端 jsdom（原生 button 语义、focus 可达、aria-pressed 随选择切换、
+  鼠标点击行为保持）。Enter/Space 激活由原生 button 语义保证——jsdom 不合成键盘
+  click，未做运行时键盘断言（真实键盘/读屏未验证，见 PR 未验证清单）。
+
+### FE-SUBMIT-01：Create Drawer loading 期间表单 submit 仍可重复触发 onSubmit — ✅ 已随 FE-批5B 修复
+
+- **现象**：仅提交按钮带 loading（antd loading 按钮 disabled），但 Form 的 onFinish
+  直连外部 onSubmit——表单 submit 事件（Enter 提交路径/编程式 submit）不经过按钮，
+  loading 期间仍会再次调用 onSubmit（characterization 测试证明该路径可达且原实现
+  无拦截）。
+- **修复**：Drawer 边界 fail-closed guard：`onFinish` 在 loading 时直接返回；
+  loading=false 行为与 onSubmit 异步返回语义不变。
+- **验证**：远端 jsdom 回归测试（loading=true 时 submit 事件不触发 onSubmit；
+  loading=false 时触发）。
+
+### FE-I18N-02：Create Drawer 域 3 个 i18n 键缺失/丢插值占位符 — ✅ 已随 FE-批5B 修复
+
+- **现象**：① `crawl.templates.reutersCf` / `reutersCfDesc` 缺失于 en+zh——中文界面
+  回退英文 defaultValue（"Reuters + Cloudflare"）；② `crawl.dynamic.jsStep` 缺
+  `{{index}}` 占位符（en+zh），JS 步骤标签不显示序号（与 FE-I18N-01 同类）。
+- **修复**：补 en/zh 双语键与占位符；characterization 中记录缺陷现状的断言更新为
+  修复后行为。
+- **验证**：远端 jsdom（zh 模板名中文、JS step 1 序号）。
+
+### FE-TPL-02：Create Drawer proxy 告警分支不可达（恒为 error 级） — ⬜ 开放【FE-批5B 登记】
+
+- **现象**：创建抽屉的 proxy Alert 恒为 error 级 "Unsupported legacy proxy
+  configuration" 并列出 options.proxyUrl / options.proxyConfig——即使表单从未填写
+  代理字段，用户每次打开高级配置都看到错误级提示。
+- **根因**：组件向 `findUnsupportedProxyIssues` 传入 `{proxyUrl: watch(...),
+  proxyConfig: watch(...)}` 字面量——两键恒存在（值为 undefined），
+  `hasOwnProperty` 命中即计入 issue；"自定义上游代理已禁用"的 warning 分支不可达。
+- **修复方向（未实施）**：仅在键有值时报 issue（或由调用方过滤 undefined 键）；
+  涉及用户可见文案语义取舍（warning vs error），单独决策。
+- **状态**：开放。FE-批5B 以 characterization 锁定现状（测试内注明缺陷），未修改。
 
 ## 5. 观察项（非缺陷，迁移决策输入）
 

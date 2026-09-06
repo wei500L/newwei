@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CrawlTaskStatus } from "@/graphql/generated";
-import { testMessages, testTaskLogs } from "@/test/component-mock-state";
+import { testMessages, testTaskLogs } from "@/test/crawl-task-detail-mock-state";
 
 import {
   buildCrawlTaskDetailTask,
@@ -11,10 +11,10 @@ import {
   renderCrawlTaskDetail,
 } from "./task-detail-test-support";
 
-// ⚠️ vi.mock 工厂只动态 import 零依赖模块（@/test/component-mock-state、
+// ⚠️ vi.mock 工厂只动态 import 零依赖模块（@/test/crawl-task-detail-mock-state、
 // @/test/url-navigation），避免工厂↔被测模块加载死锁（见 alert-center.test.tsx）。
 vi.mock("next-auth/react", async () => {
-  const { createCrawlSessionMock } = await import("@/test/component-mock-state");
+  const { createCrawlSessionMock } = await import("@/test/crawl-task-detail-mock-state");
   return createCrawlSessionMock();
 });
 
@@ -23,25 +23,25 @@ vi.mock("next/navigation", async () => {
     "@/test/url-navigation"
   );
   const { createCrawlNavigationMock } = await import(
-    "@/test/component-mock-state"
+    "@/test/crawl-task-detail-mock-state"
   );
   return createCrawlNavigationMock(testNavigation, applyTestNavigationHref);
 });
 
 vi.mock("socket.io-client", async () => {
-  const { createCrawlIoMock } = await import("@/test/component-mock-state");
+  const { createCrawlIoMock } = await import("@/test/crawl-task-detail-mock-state");
   return createCrawlIoMock();
 });
 
 vi.mock("@/lib/api-client", async () => {
   const { createCrawlApiClientMock } = await import(
-    "@/test/component-mock-state"
+    "@/test/crawl-task-detail-mock-state"
   );
   return createCrawlApiClientMock();
 });
 
 vi.mock("antd", async (importOriginal) => {
-  const { createCrawlAntdMock } = await import("@/test/component-mock-state");
+  const { createCrawlAntdMock } = await import("@/test/crawl-task-detail-mock-state");
   return createCrawlAntdMock(await importOriginal());
 });
 
