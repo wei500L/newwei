@@ -4,8 +4,9 @@
 // http://localhost:4000）。已迁移路由按四态路由表分流：
 //
 //	legacy — 反向代理（当前事实源）
-//	shadow — NestJS 响应 + Go 实现异步差分（/api/healthz/live、
-//	         /api/user-settings/ui/onboarding）
+//	shadow — NestJS 响应 + Go 实现异步差分（/api/healthz/live 与三个
+//	         user-settings 只读 GET：onboarding / rss-reader /
+//	         spacetime-timeline）
 //	canary — 已验证身份的稳定哈希小比例真实流量切 Go（CANARY_PERCENT）
 //	go     — Go 原生 handler（当前仅 /__go/healthz 自省）
 //
@@ -54,7 +55,7 @@ type dispatcher struct {
 	canaryRouter *canary.Router
 	// shadowUnits 是显式的 shadow 路由分发表（替代逐路由硬编码 if）。
 	// 每个单元声明：精确 path、允许的 method、是否要求 legacy 200、
-	// executant。两个单元的规模——刻意不做成注册框架。
+	// executant。四个单元的规模——刻意不做成注册框架。
 	shadowUnits []shadowUnit
 }
 
@@ -134,8 +135,10 @@ func (healthLiveExecutant) Execute(_ context.Context, _ *http.Request, _ []byte)
 	}
 }
 
-// onboardingExecutant 是 GET /api/user-settings/ui/onboarding 的 Go
-// shadow 差分执行者（Go-批2A）。
+// userSettingsExecutant 是三个 user-settings 只读 GET（onboarding /
+// rss-reader / spacetime-timeline）共享的 Go shadow 差分执行者
+//（Go-批2A 起步，批2B 扩展——三端点信任边界与失败语义完全相同，
+// 流程只写一次，各端点注入固定 key 的查询与响应构建）。
 //
 // 信任边界：身份来自 legacy-approved shadow identity——只有 legacy 已
 // 返回 200 时才允许从（未验签的）Bearer JWT payload 读取 sub/orgId，
@@ -144,14 +147,19 @@ func (healthLiveExecutant) Execute(_ context.Context, _ *http.Request, _ []byte)
 // 任何失败（payload 解析、数据库不可达、JSON 异常）都只返回通用错误
 // Result（503 + 通用错误体），由 runner 记入差分——不影响客户端已收到
 // 的 NestJS 响应。token/orgId/userId 不进入任何日志或差分正文。
-type onboardingExecutant struct {
+type userSettingsExecutant struct {
+	// repo 为 nil 表示未配置数据库：跳过（零查询），以通用错误 Result
+	// 记入差分缺失——不影响客户端。
 	repo usersettings.Repository
+	// query 是该端点固定 key 的只读查询（编译期固定 SettingKey，
+	// 不来自 URL/query/body/header）。
+	query func(ctx context.Context, orgID, userID string) (usersettings.Record, error)
+	// build 由数据库记录构建完整响应体（各端点自己的 normalization）。
+	build func(record usersettings.Record) any
 }
 
-func (e onboardingExecutant) Execute(ctx context.Context, r *http.Request, _ []byte) *shadow.Result {
+func (e userSettingsExecutant) Execute(ctx context.Context, r *http.Request, _ []byte) *shadow.Result {
 	if e.repo == nil {
-		// 未配置数据库：跳过（零查询），以通用错误 Result 记入差分缺失
-		// ——不影响客户端。
 		return shadowErrorResult()
 	}
 	identity := shadowidentity.LegacyApprovedIdentity(r, http.StatusOK)
@@ -161,16 +169,15 @@ func (e onboardingExecutant) Execute(ctx context.Context, r *http.Request, _ []b
 		return shadowErrorResult()
 	}
 
-	record, err := e.repo.FindOnboarding(ctx, identity.OrgID, identity.UserID)
+	record, err := e.query(ctx, identity.OrgID, identity.UserID)
 	if err != nil {
 		// 详细错误只进服务端日志（repo 已保证不含凭据），差分结果只给
 		// 通用错误体。
-		log.Printf("shadow: onboarding query failed: %v", err)
+		log.Printf("shadow: user-settings query failed: %v", err)
 		return shadowErrorResult()
 	}
 
-	response := usersettings.BuildOnboardingResponse(record)
-	body, err := json.Marshal(response)
+	body, err := json.Marshal(e.build(record))
 	if err != nil {
 		return shadowErrorResult()
 	}
@@ -179,6 +186,57 @@ func (e onboardingExecutant) Execute(ctx context.Context, r *http.Request, _ []b
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}, "Cache-Control": []string{"no-store"}},
 		Body:       body,
+	}
+}
+
+// userSettingsShadowUnits 是三个 user-settings 只读 GET 的 shadow 单元：
+// 精确 path（不做前缀匹配）+ 仅 GET + RequireLegacyOK（legacy 200 是
+// 身份前提）。query 闭包绑定各自端点的 repository 语义方法（key 是
+// usersettings 包内的编译期常量）。
+func userSettingsShadowUnits(repo usersettings.Repository) []shadowUnit {
+	return []shadowUnit{
+		{
+			Path:            "/api/user-settings/ui/onboarding",
+			Methods:         map[string]bool{http.MethodGet: true},
+			RequireLegacyOK: true, // 受保护端点：legacy 200 是身份前提
+			Executant:       userSettingsExecutant{
+				repo: repo,
+				query: func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
+					return repo.FindOnboarding(ctx, orgID, userID)
+				},
+				build: func(record usersettings.Record) any {
+					return usersettings.BuildOnboardingResponse(record)
+				},
+			},
+		},
+		{
+			Path:            "/api/user-settings/ui/rss-reader",
+			Methods:         map[string]bool{http.MethodGet: true},
+			RequireLegacyOK: true, // 受保护端点：legacy 200 是身份前提
+			Executant:       userSettingsExecutant{
+				repo: repo,
+				query: func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
+					return repo.FindRSSReader(ctx, orgID, userID)
+				},
+				build: func(record usersettings.Record) any {
+					return usersettings.BuildRSSReaderResponse(record)
+				},
+			},
+		},
+		{
+			Path:            "/api/user-settings/ui/spacetime-timeline",
+			Methods:         map[string]bool{http.MethodGet: true},
+			RequireLegacyOK: true, // 受保护端点：legacy 200 是身份前提
+			Executant:       userSettingsExecutant{
+				repo: repo,
+				query: func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
+					return repo.FindSpacetimeTimeline(ctx, orgID, userID)
+				},
+				build: func(record usersettings.Record) any {
+					return usersettings.BuildSpacetimeTimelineResponse(record)
+				},
+			},
+		},
 	}
 }
 
@@ -207,42 +265,35 @@ func run() error {
 		MaxResponseCaptureByte: cfg.ShadowMaxResponseCaptureByte,
 	})
 
-	// onboarding shadow 的数据库能力（非阻断）：无 DATABASE_URL 时不配置，
+	// user-settings shadow 的数据库能力（非阻断）：无 DATABASE_URL 时不配置，
 	// 网关照常启动代理；差分执行时发现未配置即跳过（不查询、不失败上抛）。
-	var onboardingRepo usersettings.Repository
-	onboardingDBStatus := "unconfigured"
+	var userSettingsRepo usersettings.Repository
+	userSettingsDBStatus := "unconfigured"
 	if cfg.DatabaseURL != "" {
 		db, err := usersettings.OpenMySQLFromURL(cfg.DatabaseURL)
 		if err != nil {
 			// DSN 无效不阻断启动：网关继续纯代理，shadow 单元执行时跳过。
-			log.Printf("api-go: onboarding shadow database not initialized (invalid DATABASE_URL): %v", err)
-			onboardingDBStatus = "invalid"
+			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
+			userSettingsDBStatus = "invalid"
 		} else {
 			// sql.Open 是惰性初始化：只代表 DSN 成功解析为 driver 配置，
 			// 不证明数据库可连接。连接性由真实查询按需建立（失败只影响
 			// shadow 差分，不影响 legacy 响应）——不引入启动 Ping/探针/
 			// 重试，数据库连通性也不是网关的存活条件。
-			onboardingRepo = usersettings.NewMySQLRepository(db)
-			onboardingDBStatus = "configured"
+			userSettingsRepo = usersettings.NewMySQLRepository(db)
+			userSettingsDBStatus = "configured"
 		}
 	}
-	onboardingExec := onboardingExecutant{repo: onboardingRepo}
 
 	disp := &dispatcher{
-		shadowUnits: []shadowUnit{
+		shadowUnits: append([]shadowUnit{
 			{
 				Path:            "/api/healthz/live",
 				Methods:         map[string]bool{http.MethodGet: true},
 				RequireLegacyOK: false, // 公开探针：无需 legacy 认可身份
 				Executant:       healthLiveExecutant{},
 			},
-			{
-				Path:            "/api/user-settings/ui/onboarding",
-				Methods:         map[string]bool{http.MethodGet: true},
-				RequireLegacyOK: true, // 受保护端点：legacy 200 是身份前提
-				Executant:       onboardingExec,
-			},
-		},
+		}, userSettingsShadowUnits(userSettingsRepo)...),
 		shadowRunner: shadow.NewRunner(shadow.Budget{
 			TimeoutMs:            cfg.ShadowTimeoutMs,
 			MaxRequestBodyByte:   cfg.ShadowMaxRequestBodyByte,
@@ -258,9 +309,11 @@ func run() error {
 	}
 
 	// /__go/healthz：网关存活探针 + 路由表与 shadow/canary 状态自省。
-	// onboarding shadow 状态只报配置类别（unconfigured/invalid/configured
+	// user-settings shadow 状态只报配置类别（unconfigured/invalid/configured
 	// ——configured 表示 DSN 已解析为 driver 配置，不承诺可连接），不含
-	// DSN/host/凭据/数据库错误详情。
+	// DSN/host/凭据/数据库错误详情。字段名 userSettingsShadow 覆盖三个
+	// 只读 GET 共用的同一 repository（Go-批2A 时叫 onboardingShadow，
+	// 批2B 起更名——全仓唯一消费者是本文件与 README，无外部契约）。
 	gateway.SetGoHandler(func(w http.ResponseWriter, _ *http.Request) {
 		routes := make([]map[string]string, 0, len(gateway.Rules()))
 		for _, rule := range gateway.Rules() {
@@ -271,8 +324,8 @@ func run() error {
 			"routes": routes,
 			"shadow": disp.shadowRunner.Stats(),
 			"canary": map[string]int{"percent": disp.canaryRouter.Percent()},
-			"onboardingShadow": map[string]string{
-				"database": onboardingDBStatus,
+			"userSettingsShadow": map[string]string{
+				"database": userSettingsDBStatus,
 			},
 		})
 	})

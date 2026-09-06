@@ -1,14 +1,18 @@
 //go:build integration
 
-// Go-批2A 远端 MySQL 集成测试（build tag integration 与普通 go test 分离：
-// `go test ./...` 不需要数据库；`go test -tags=integration ./...` 在
-// GitHub Actions 的 MySQL service 上运行）。
+// user-settings 只读 repository 的远端 MySQL 集成测试（build tag
+// integration 与普通 go test 分离：`go test ./...` 不需要数据库；
+// `go test -tags=integration ./...` 在 GitHub Actions 的 MySQL service
+// 上运行）。
 //
-// 验证真实数据访问的边界（不追求分支全覆盖）：
+// 验证真实数据访问的边界（不追求分支全覆盖；Go-批2A onboarding 起步，
+// 批2B 扩展 rss-reader / spacetime-timeline——同一个测试函数）：
 //   - 最小 UserSetting 表结构（与 Prisma migration 20260117123000 一致）；
-//   - 无记录查询；
-//   - 插入一条 onboarding JSON 后查询（orgId/userId/key 三条件）；
+//   - 无记录查询（onboarding）；
+//   - 插入 onboarding JSON 后查询（orgId/userId/key 三条件）；
 //   - 租户隔离：另一个用户/组织读不到该记录；
+//   - 批2B：rss-reader / spacetime-timeline 两个固定 key 的真实读取与
+//     normalization 抽查；三 key 互不串读；新端点同样受租户隔离；
 //   - updatedAt 毫秒 UTC 序列化（DATETIME(3)）。
 //
 // 环境变量（CI 注入，缺省即跳过——本地无数据库不失败）：
@@ -50,7 +54,7 @@ const createIntegrationTable = "CREATE TABLE IF NOT EXISTS UserSetting (" +
 	"PRIMARY KEY (id)" +
 	") DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
 
-func TestOnboardingMySQLIntegration(t *testing.T) {
+func TestUserSettingsMySQLIntegration(t *testing.T) {
 	databaseURL := integrationDatabaseURL(t)
 	db, err := OpenMySQLFromURL(databaseURL)
 	if err != nil {
@@ -149,6 +153,73 @@ func TestOnboardingMySQLIntegration(t *testing.T) {
 	}
 	if string(record.Value) != storedJSON && !jsonEqualString(string(record.Value), storedJSON) {
 		t.Errorf("value mismatch: got %s", record.Value)
+	}
+
+	// 5. 批2B：rss-reader / spacetime-timeline 两个固定 key 的真实读取
+	//    （normalization 深度由单元测试覆盖，这里抽查读取、updatedAt 与
+	//    响应构建的关键语义）。
+	rssJSON := `{"selectedSourceIds":["  src-1 ","src-2","src-1",42],"sourceLanguageFilters":[" zh ","ZH"],"translationEnabled":true,"translationProvider":"llm","targetLanguage":"  en-US ","showOriginalContent":false}`
+	if _, err := db.ExecContext(ctx, insert, "us-it-3", orgID, userID, RSSReaderKey, rssJSON, insertedAt); err != nil {
+		t.Fatalf("insert rss-reader: %v", err)
+	}
+	rssRecord, err := repo.FindRSSReader(ctx, orgID, userID)
+	if err != nil {
+		t.Fatalf("find rss-reader: %v", err)
+	}
+	if !rssRecord.Found {
+		t.Fatal("rss-reader record.Found = false, want true")
+	}
+	rssResponse := BuildRSSReaderResponse(rssRecord)
+	if rssResponse.UpdatedAt.Settings != "2026-09-03T08:30:15.123Z" {
+		t.Errorf("rss updatedAt.settings = %q, want 2026-09-03T08:30:15.123Z（毫秒 UTC，toISOString 等价）", rssResponse.UpdatedAt.Settings)
+	}
+	if rss := rssResponse.Settings; rss == nil ||
+		len(rss.SelectedSourceIDs) != 2 ||
+		rss.SelectedSourceIDs[0] != "src-1" || rss.SelectedSourceIDs[1] != "src-2" ||
+		len(rss.SourceLanguageFilters) != 1 || rss.SourceLanguageFilters[0] != "ZH" ||
+		rss.TranslationProvider != "llm" || rss.TargetLanguage != "en-US" {
+		t.Errorf("rss normalization mismatch: %+v", rssResponse.Settings)
+	}
+
+	spacetimeJSON := `{"authoritativeLock":false,"sourceType":"blog","sortBy":"latest","minHeatScore":-5,"minCredibilityScore":150,"timelineGranularity":"week","speed":0.1}`
+	if _, err := db.ExecContext(ctx, insert, "us-it-4", orgID, userID, SpacetimeTimelineKey, spacetimeJSON, insertedAt); err != nil {
+		t.Fatalf("insert spacetime-timeline: %v", err)
+	}
+	spacetimeRecord, err := repo.FindSpacetimeTimeline(ctx, orgID, userID)
+	if err != nil {
+		t.Fatalf("find spacetime-timeline: %v", err)
+	}
+	if !spacetimeRecord.Found {
+		t.Fatal("spacetime-timeline record.Found = false, want true")
+	}
+	spacetimeResponse := BuildSpacetimeTimelineResponse(spacetimeRecord)
+	if spacetimeResponse.UpdatedAt.Settings != "2026-09-03T08:30:15.123Z" {
+		t.Errorf("spacetime updatedAt.settings = %q, want 2026-09-03T08:30:15.123Z（毫秒 UTC，toISOString 等价）", spacetimeResponse.UpdatedAt.Settings)
+	}
+	if s := spacetimeResponse.Settings; s == nil ||
+		s.AuthoritativeLock ||
+		s.SourceType != "blog" || s.SortBy != "latest" ||
+		s.MinHeatScore != 0 || s.MinCredibilityScore != 100 ||
+		s.TimelineGranularity != "week" || s.Speed != 0.25 {
+		t.Errorf("spacetime normalization mismatch: %+v", spacetimeResponse.Settings)
+	}
+
+	// 6. 三 key 互不串读：同 org+user 已有 onboarding/rss/war-map/spacetime
+	//    四条记录，onboarding 查询仍只命中自己的 key（值不被后续插入污染）；
+	//    新端点同样受 orgId/userId 隔离（代表性一例）。
+	record, err = repo.FindOnboarding(ctx, orgID, userID)
+	if err != nil {
+		t.Fatalf("find onboarding after batch2b inserts: %v", err)
+	}
+	if !record.Found || !jsonEqualString(string(record.Value), storedJSON) {
+		t.Errorf("onboarding value polluted by other keys: %s", record.Value)
+	}
+	rssIsolated, err := repo.FindRSSReader(ctx, orgID, otherUserID)
+	if err != nil {
+		t.Fatalf("find rss-reader isolated: %v", err)
+	}
+	if rssIsolated.Found {
+		t.Error("rss-reader record.Found = true — orgId/userId 隔离失败")
 	}
 }
 
