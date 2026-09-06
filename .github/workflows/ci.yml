@@ -257,9 +257,10 @@ jobs:
           kill $(cat /tmp/vector-nestjs.pid) 2>/dev/null || true
           kill $(cat /tmp/vector-go.pid) 2>/dev/null || true
 
-  # Go-批2A：user-settings onboarding shadow 的真实 MySQL 数据访问验证。
-  # 只测 Go repository（最小 fixture 的 UserSetting 表），不启动 NestJS/
-  # 前端/Redis/Qdrant。普通 verify 的 `go test ./...` 不含 integration
+  # Go-批2A/2B：user-settings 只读 shadow（onboarding / rss-reader /
+  # spacetime-timeline 三个 GET 共用同一 repository）的真实 MySQL 数据
+  # 访问验证。只测 Go repository（最小 fixture 的 UserSetting 表），不启动
+  # NestJS/前端/Redis/Qdrant。普通 verify 的 `go test ./...` 不含 integration
   # build tag——没有 MySQL 时 verify 不受影响。
   api-go-user-settings-integration:
     runs-on: ubuntu-latest
@@ -294,8 +295,8 @@ jobs:
       - name: Go modules (download with committed go.sum)
         run: cd apps/api-go && go mod download
 
-      - name: MySQL integration tests (onboarding repository)
-        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ -run TestOnboardingMySQLIntegration -v
+      - name: MySQL integration tests (user-settings read-only repository)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ -run TestUserSettingsMySQLIntegration -v
 
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
