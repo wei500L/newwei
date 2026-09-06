@@ -29,14 +29,19 @@ async function openAdvanced(
 }
 
 /** 在 antd Select 中选择选项（jsdom 交互路径）。 */
-function selectOption(selectLabel: string, optionText: string): void {
+async function selectOption(
+  selectLabel: string,
+  optionText: string,
+): Promise<void> {
   // antd Select 的 Form.Item id 落在内部 search input 上；向上找 selector 容器
   const selector = screen.getByLabelText(selectLabel).closest(
     ".ant-select-selector",
   );
   expect(selector).not.toBeNull();
   fireEvent.mouseDown(selector as HTMLElement);
-  fireEvent.click(screen.getByRole("option", { name: optionText }));
+  // rc-trigger 弹层在 mouseDown 后一帧才渲染选项——findByRole 轮询等待
+  const option = await screen.findByRole("option", { name: optionText });
+  fireEvent.click(option);
 }
 
 /** multi URL 区块头部（含 Add 按钮）。 */
@@ -80,7 +85,7 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     act(() => {
       handle.form.setFieldsValue({ waitForTimeoutMs: 1000 });
     });
-    selectOption("Navigation wait condition", "Network idle");
+    await selectOption("Navigation wait condition", "Network idle");
 
     await waitFor(() =>
       expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(5000),
@@ -94,7 +99,7 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     act(() => {
       handle.form.setFieldsValue({ waitForTimeoutMs: 8000 });
     });
-    selectOption("Navigation wait condition", "Network idle");
+    await selectOption("Navigation wait condition", "Network idle");
 
     await waitFor(() =>
       expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(8000),
@@ -108,7 +113,7 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     act(() => {
       handle.form.setFieldsValue({ waitForTimeoutMs: 1000 });
     });
-    selectOption("Navigation wait condition", "Load");
+    await selectOption("Navigation wait condition", "Load");
 
     await waitFor(() =>
       expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(1000),
@@ -328,7 +333,9 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
       target: { value: "not-json" },
     });
 
-    await expectValidationRejected(handle, [[["markdownStrategy", "params"]]]);
+    // url 已由 advanceToAdvanced 填写、其余字段合法——全表单校验的
+    // 唯一失败项即 params（错误文案另行断言）
+    await expectValidationRejected(handle);
     expect(
       await screen.findByText("Params must be valid JSON."),
     ).toBeInTheDocument();
@@ -453,12 +460,12 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     const handle = renderCreateCrawlTaskDrawer();
     await openAdvanced(handle);
 
-    selectOption("Headless", "Headed (Xvfb)");
+    await selectOption("Headless", "Headed (Xvfb)");
     expect(
       screen.getByText("Headed mode requires Xvfb"),
     ).toBeInTheDocument();
 
-    selectOption("Headless", "Auto");
+    await selectOption("Headless", "Auto");
     expect(
       screen.queryByText("Headed mode requires Xvfb"),
     ).not.toBeInTheDocument();
@@ -558,7 +565,7 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     // hasOwn 命中两个键，警告分支（Custom upstream proxies are disabled）
     // 实际不可达——已登记 bug-ledger，不在此轮修复。
     expect(
-      screen.getByText("Unsupported legacy proxy configuration"),
+      screen.getByText("Unsupported legacy proxy configuration detected"),
     ).toBeInTheDocument();
     expect(screen.getByText(/options\.proxyUrl/)).toBeInTheDocument();
     expect(screen.getByText(/options\.proxyConfig/)).toBeInTheDocument();

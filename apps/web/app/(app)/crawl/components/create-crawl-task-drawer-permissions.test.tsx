@@ -99,9 +99,14 @@ describe("CreateCrawlTaskDrawer（权限与 i18n 基线）", () => {
       // 步骤内容常驻挂载（display:none），可直接查询；标题为中文
       const header = screen.getByText("多 URL").closest("div");
       expect(header).not.toBeNull();
-      // 图标使可访问名为 "plus 添加"
-      fireEvent.click(within(header!).getByRole("button", { name: /添加/ }));
-      fireEvent.click(within(header!).getByRole("button", { name: /添加/ }));
+      // 图标使可访问名为 "plus 添加"；步骤内容隐藏（display:none）——
+      // role 查询需 hidden: true
+      fireEvent.click(
+        within(header!).getByRole("button", { name: /添加/, hidden: true }),
+      );
+      fireEvent.click(
+        within(header!).getByRole("button", { name: /添加/, hidden: true }),
+      );
 
       expect(screen.getByText("策略 1")).toBeInTheDocument();
       expect(screen.getByText("策略 2")).toBeInTheDocument();
