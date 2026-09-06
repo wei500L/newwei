@@ -1,6 +1,7 @@
 import {
   buildAisRuntimeFeedbackAlert,
   isOutagesRateLimited,
+  type RealtimeSignalRuntimeStatus,
 } from "@/lib/realtime-signals-runtime";
 
 import type {
@@ -9,7 +10,6 @@ import type {
   RealtimeOpenskyErrorKind,
   RealtimeOpenskySnapshotFreshness,
   RealtimeSignalRuntimeDiagnosticsSource,
-  RealtimeSignalRuntimeStatus,
   RealtimeSignalSourceKey,
   RealtimeSignalsTranslate,
 } from "./realtime-signals-types";

@@ -168,12 +168,13 @@ describe("RealtimeSignalsSettingsPanel", () => {
       }
       return Promise.reject(new Error("diagnostics down"));
     });
-    let putResolve: ((value: { data: unknown }) => void) | null = null;
-    put.mockImplementation(() => {
-      return new Promise((resolve) => {
-        putResolve = resolve;
-      });
-    });
+    let resolvePut!: (value: { data: unknown }) => void;
+    put.mockImplementation(
+      () =>
+        new Promise<{ data: unknown }>((resolve) => {
+          resolvePut = resolve;
+        }),
+    );
 
     const { RealtimeSignalsSettingsPanel } = await import(
       "./realtime-signals-settings-panel"
@@ -198,7 +199,7 @@ describe("RealtimeSignalsSettingsPanel", () => {
     const secretInputs = await screen.findAllByPlaceholderText(
       "Leave empty to keep current value"
     );
-    const openskySecret = secretInputs[1];
+    const openskySecret = secretInputs[1]!;
     await user.type(openskySecret, "x");
     await user.clear(openskySecret);
 
@@ -227,14 +228,14 @@ describe("RealtimeSignalsSettingsPanel", () => {
         openskyClientSecret: null,
       })
     );
-    const payload = put.mock.calls[0][1] as Record<string, unknown>;
+    const payload = put.mock.calls[0]![1] as Record<string, unknown>;
     // 未触碰的 secret 字段不出现在 payload（保留服务器/环境值）
     expect(payload).not.toHaveProperty("aisRelaySharedSecret");
     expect(payload).not.toHaveProperty("acledOauthPassword");
     expect(payload).not.toHaveProperty("cloudflareApiToken");
     expect(payload).not.toHaveProperty("wingbitsApiKey");
 
-    putResolve?.({ data: SETTINGS });
+    resolvePut({ data: SETTINGS });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
