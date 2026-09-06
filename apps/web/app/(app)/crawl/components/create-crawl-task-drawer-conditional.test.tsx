@@ -373,8 +373,8 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     const card = firstStrategyCard();
 
     fireEvent.click(within(card).getByRole("button", { name: /Add JS step/ }));
-    // jsStep 标签当前缺 {{index}} 插值（缺陷，修复后应为 JS step 1）
-    expect(within(card).getAllByText("JS step").length).toBeGreaterThan(0);
+    // FE-I18N-02 修复后 jsStep 带序号
+    expect(within(card).getByText("JS step 1")).toBeInTheDocument();
 
     const textarea = within(card).getAllByPlaceholderText(
       "Enter JS snippet",
@@ -481,7 +481,7 @@ describe("CreateCrawlTaskDrawer（条件字段与字段联动）", () => {
     const handle = renderCreateCrawlTaskDrawer();
     await openAdvanced(handle);
 
-    // 显式设置（打开时的 general 应用因 rc-drawer 延迟挂载而失效，见 bug-ledger）
+    // FE-TPL-01 修复后冷启动应用 general（userAgentMode=random）；显式设置保持确定性
     act(() => {
       handle.form.setFieldsValue({ userAgentMode: "random" });
     });

@@ -265,6 +265,19 @@ describe("CreateCrawlTaskDrawer（公共入口与三步流程）", () => {
     expect(handle.form.getFieldValue("url")).toBeUndefined();
   });
 
+  it("FE-SUBMIT-01 回归：loading 期间表单 submit 事件不触发 onSubmit", async () => {
+    const onSubmit = vi.fn();
+    const handle = renderCreateCrawlTaskDrawer({ onSubmit, loading: true });
+    await advanceToAdvanced(handle, "https://example.com/guard");
+
+    // Enter 提交路径/编程式 submit 不经过按钮 disabled——由 Drawer 边界门禁拦截
+    const form = document.querySelector("form");
+    fireEvent.submit(form!);
+
+    await act(async () => {});
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it("Cancel 触发 onClose（取消按钮路径）", () => {
     const onClose = vi.fn();
     renderCreateCrawlTaskDrawer({ onClose });

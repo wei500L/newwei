@@ -88,7 +88,19 @@ export function CreateCrawlTaskDrawer({
         style={{ marginBottom: 24 }}
       />
 
-      <Form layout="vertical" form={form} onFinish={onSubmit}>
+      <Form
+          layout="vertical"
+          form={form}
+          onFinish={(values) => {
+            // FE-SUBMIT-01：loading 期间表单 submit 事件（Enter 提交路径/
+            // 编程式 submit）不经过按钮的 disabled——Drawer 边界 fail-closed，
+            // 防止重复触发父级 mutation。
+            if (loading) {
+              return;
+            }
+            return onSubmit(values);
+          }}
+        >
         <div style={{ display: currentStep === 0 ? "block" : "none" }}>
           <TemplateStep
             templates={CREATE_CRAWL_TASK_TEMPLATES}

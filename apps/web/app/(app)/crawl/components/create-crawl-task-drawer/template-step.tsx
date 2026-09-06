@@ -30,19 +30,33 @@ export function TemplateStep({
       <Row gutter={[16, 16]}>
         {templates.map((template) => (
           <Col span={12} key={template.key}>
-            <Card
-              hoverable
+            <button
+              type="button"
+              aria-pressed={selectedTemplate === template.key}
               onClick={() => onSelect(template.key)}
-              className={
-                selectedTemplate === template.key ? "border-primary" : ""
-              }
               style={{
-                borderColor:
-                  selectedTemplate === template.key ? "#1677ff" : undefined,
-                borderWidth: selectedTemplate === template.key ? 2 : 1,
-                height: "100%",
+                display: "block",
+                width: "100%",
+                padding: 0,
+                border: "none",
+                background: "none",
+                font: "inherit",
+                textAlign: "inherit",
+                cursor: "pointer",
               }}
             >
+              <Card
+                hoverable
+                className={
+                  selectedTemplate === template.key ? "border-primary" : ""
+                }
+                style={{
+                  borderColor:
+                    selectedTemplate === template.key ? "#1677ff" : undefined,
+                  borderWidth: selectedTemplate === template.key ? 2 : 1,
+                  height: "100%",
+                }}
+              >
               <Space
                 direction="vertical"
                 align="center"
@@ -65,7 +79,8 @@ export function TemplateStep({
                   })}
                 </Typography.Text>
               </Space>
-            </Card>
+              </Card>
+            </button>
           </Col>
         ))}
       </Row>

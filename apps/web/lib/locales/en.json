@@ -8298,6 +8298,8 @@
       "generalDesc": "Standard crawling for any website",
       "news": "News Website",
       "newsDesc": "Optimized for articles and news feeds",
+      "reutersCf": "Reuters + Cloudflare",
+      "reutersCfDesc": "Headed + stealth + anti-bot retries tuned for Reuters-like protected sites",
       "forum": "Forum",
       "forumDesc": "Best for threads and discussions",
       "social": "Social Media",
@@ -9100,7 +9102,7 @@
     "dynamic": {
       "title": "Dynamic",
       "description": "Dynamic description",
-      "jsStep": "JS step",
+      "jsStep": "JS step {{index}}",
       "jsRequired": "JS required",
       "placeholders": {
         "jsSnippet": "Enter JS snippet",

@@ -83,6 +83,8 @@ describe("CreateCrawlTaskDrawer（权限与 i18n 基线）", () => {
       expect(
         screen.getByText("选择一个模板开始"),
       ).toBeInTheDocument();
+      // FE-I18N-02：reutersCf 键补齐后中文界面不再回退英文
+      expect(screen.getByText("路透社 + Cloudflare")).toBeInTheDocument();
     });
 
     it("basic 步字段标签为中文", () => {
@@ -123,6 +125,39 @@ describe("CreateCrawlTaskDrawer（权限与 i18n 基线）", () => {
         screen.getByLabelText("自动发送到 Items"),
       ).toBeDisabled();
     });
+  });
+
+  it("模板选择器为原生 button：可聚焦且 aria-pressed 表达选中态（FE-A11Y-03）", () => {
+    renderCreateCrawlTaskDrawer();
+
+    const news = screen.getByRole("button", { name: /News Website/ });
+    expect(news).toHaveAttribute("type", "button");
+    expect(news).toHaveAttribute("aria-pressed", "false");
+
+    news.focus();
+    expect(news).toHaveFocus();
+
+    fireEvent.click(news);
+    expect(news).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: /General/ }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("五个模板按钮均可聚焦（Tab 可达；Enter/Space 由原生 button 语义保证）", () => {
+    renderCreateCrawlTaskDrawer();
+
+    const buttons = [
+      screen.getByRole("button", { name: /General/ }),
+      screen.getByRole("button", { name: /News Website/ }),
+      screen.getByRole("button", { name: /Reuters \+ Cloudflare/ }),
+      screen.getByRole("button", { name: /Forum/ }),
+      screen.getByRole("button", { name: /Social Media/ }),
+    ];
+    for (const button of buttons) {
+      button.focus();
+      expect(button).toHaveFocus();
+    }
   });
 
   it("模板 Card 通过鼠标点击选择（当前唯一交互路径）", () => {

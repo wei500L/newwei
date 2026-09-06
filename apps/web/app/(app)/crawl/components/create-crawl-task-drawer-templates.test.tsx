@@ -109,15 +109,17 @@ describe("CreateCrawlTaskDrawer（模板行为）", () => {
     expect(templateCard("News Website")).not.toHaveClass("border-primary");
   });
 
-  it("初始选中 general 模板；打开时不会自动写入表单值（初始化 effect 失效，观察项）", () => {
-    renderCreateCrawlTaskDrawer();
+  it("初始选中 general 模板并写入通用默认值（FE-TPL-01 修复后恢复）", () => {
+    const handle = renderCreateCrawlTaskDrawer();
 
-    // selectedTemplate 初始 state 为 general；"打开时应用 selectedTemplate"
-    // 的 effect 因 rc-drawer 延迟挂载 + isFieldsTouched(true) 空数组恒真而
-    // 失效（见 bug-ledger 观察项）——表单值仅在用户点击模板或
-    // defaultTemplateKey（effect A，无 touched 守卫）时写入。
+    // 会话初始化应用 selectedTemplate=general（原 effect B 因 rc-drawer
+    // 延迟挂载 + isFieldsTouched 空数组恒真而失效，修复后恢复设计意图）
     expect(templateCard("General")).toHaveClass("border-primary");
     expect(templateCard("News Website")).not.toHaveClass("border-primary");
+    expect(handle.form.getFieldValue("onlyMainContent")).toBe(true);
+    expect(handle.form.getFieldValue("ingestToItems")).toBe(false);
+    expect(handle.form.getFieldValue("userAgentMode")).toBe("random");
+    expect(handle.form.getFieldValue("headlessMode")).toBe("auto");
   });
 
   it("canWriteItems=true 时 news/reuters_cf 模板默认启用 ingest", () => {
@@ -186,25 +188,24 @@ describe("CreateCrawlTaskDrawer（模板行为）", () => {
     expect(templateCard("News Website")).toHaveClass("border-primary");
   });
 
-  it("defaultTemplateKey 非法：不应用任何模板值，保持 general 选中", () => {
+  it("defaultTemplateKey 非法：回退应用当前选中模板（general）", () => {
     const handle = renderCreateCrawlTaskDrawer({
       defaultTemplateKey: "not-a-template",
     });
 
-    // effect A 因 key 不存在跳过；effect B 的 selectedTemplate 回退分支失效
-    // （见上）——表单保持空白
     expect(templateCard("General")).toHaveClass("border-primary");
     expect(handle.form.getFieldValue("waitUntil")).toBeUndefined();
-    expect(handle.form.getFieldValue("ingestToItems")).toBeUndefined();
+    expect(handle.form.getFieldValue("ingestToItems")).toBe(false);
+    expect(handle.form.getFieldValue("qualityProfile")).toBe("quality_first");
   });
 
-  it("defaultTemplateKey 缺失：general 选中且不写入表单值", () => {
+  it("defaultTemplateKey 缺失：打开时应用 general 默认值", () => {
     const handle = renderCreateCrawlTaskDrawer();
 
     expect(templateCard("General")).toHaveClass("border-primary");
-    expect(handle.form.getFieldValue("onlyMainContent")).toBeUndefined();
-    expect(handle.form.getFieldValue("scanFullPage")).toBeUndefined();
-    expect(handle.form.getFieldValue("extractLinks")).toBeUndefined();
+    expect(handle.form.getFieldValue("onlyMainContent")).toBe(true);
+    expect(handle.form.getFieldValue("scanFullPage")).toBe(false);
+    expect(handle.form.getFieldValue("extractLinks")).toBe(false);
   });
 
   it("已填写 URL 或字段已 touched 时，重新打开不被初始化逻辑覆盖（草稿保护）", () => {
@@ -226,6 +227,31 @@ describe("CreateCrawlTaskDrawer（模板行为）", () => {
     // effect 初始化逻辑因 hasUrl/touched 提前返回，用户值保留
     expect(handle.form.getFieldValue("meanDelayMs")).toBe(1234);
     expect(handle.form.getFieldValue("url")).toBe("https://example.com/draft");
+  });
+
+  it("FE-TPL-01 回归：news 默认打开后用户可主动切换模板且不被回写", async () => {
+    const handle = renderCreateCrawlTaskDrawer({ defaultTemplateKey: "news" });
+
+    // 打开即应用 news
+    expect(handle.form.getFieldValue("waitUntil")).toBe("networkidle");
+
+    // 用户主动切换到 forum——不再被 defaultTemplateKey 回写
+    fireEvent.click(screen.getByText("Forum"));
+    await act(async () => {});
+
+    expect(templateCard("Forum")).toHaveClass("border-primary");
+    expect(handle.form.getFieldValue("scanFullPage")).toBe(true);
+    expect(handle.form.getFieldValue("autoExpandDetails")).toBe(true);
+    // forum 未声明的字段保留前值（合并语义）
+    expect(handle.form.getFieldValue("waitUntil")).toBe("networkidle");
+
+    // 再切换到 social——用户选择持续优先
+    fireEvent.click(screen.getByText("Social Media"));
+    await act(async () => {});
+
+    expect(templateCard("Social Media")).toHaveClass("border-primary");
+    expect(handle.form.getFieldValue("headlessMode")).toBe("headed");
+    expect(handle.form.getFieldValue("waitForTimeoutMs")).toBe(5000);
   });
 
   it("news-sources 语义：父在关闭时 resetFields，重开后重新应用 news 默认值", () => {

@@ -9,7 +9,7 @@
  */
 
 import { Form, type FormInstance } from "antd";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { resolveCrawlTaskTemplateKey } from "@/lib/crawl-presets";
 
@@ -69,38 +69,34 @@ export function useCreateCrawlTaskDrawer(
     [canWriteItems, form],
   );
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const normalizedKey = defaultTemplateKey?.trim();
-    if (!normalizedKey) {
-      return;
-    }
-    if (normalizedKey === selectedTemplate) {
-      return;
-    }
-    if (!hasCreateCrawlTaskTemplateKey(normalizedKey)) {
-      return;
-    }
-    handleTemplateSelect(normalizedKey);
-  }, [defaultTemplateKey, handleTemplateSelect, open, selectedTemplate]);
+  // 会话级一次性初始化（FE-TPL-01）：defaultTemplateKey 只是本次打开会话的
+  // 初始默认值，不是受控值——会话内用户主动选择优先，初始化 effect 不再随
+  // selectedTemplate 变化重放。关闭时复位会话标记，与两个父组件的 reset
+  // 行为对齐（news-sources 关闭即 reset → 重开重新应用默认值；
+  // crawl-tasks 保留草稿 → 草稿保护跳过）。
+  const sessionInitializedRef = useRef(false);
 
   useEffect(() => {
     if (!open) {
+      sessionInitializedRef.current = false;
       return;
     }
+    if (sessionInitializedRef.current) {
+      return;
+    }
+    sessionInitializedRef.current = true;
+    // 草稿保护：已填写 URL 或表单已有值（含上次会话遗留）时不覆盖。
+    // 不依赖 isFieldsTouched：字段注册前其为空数组恒真（历史实现曾因此
+    // 使冷启动的回退分支失效）。
     const hasUrl =
       typeof form.getFieldValue("url") === "string" &&
       form.getFieldValue("url")?.trim()?.length > 0;
-    if (hasUrl || form.isFieldsTouched(true)) {
+    const storeValues = form.getFieldsValue(true) as Record<string, unknown>;
+    if (hasUrl || Object.keys(storeValues).length > 0) {
       return;
     }
     const normalizedKey = defaultTemplateKey?.trim();
-    if (
-      normalizedKey &&
-      hasCreateCrawlTaskTemplateKey(normalizedKey)
-    ) {
+    if (normalizedKey && hasCreateCrawlTaskTemplateKey(normalizedKey)) {
       handleTemplateSelect(normalizedKey);
       return;
     }
