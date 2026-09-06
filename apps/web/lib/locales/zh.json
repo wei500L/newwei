@@ -8675,13 +8675,13 @@
           "picture": "图片",
           "responsive": "自适应"
         },
-        "more": "更多",
+        "more": "还有 {{count}} 个 {{kind}}",
         "storedTitle": "已存储媒体",
         "unknownMime": "未知 MIME 类型",
         "thumbnailAlt": "缩略图替代文本",
         "score": "评分",
         "srcsetVariants": "srcset 变体",
-        "sources": "来源",
+        "sources": "{{label}} 来源（{{count}}）",
         "assetUnavailable": "存储媒体访问链接不可用。",
         "previewUnavailable": "暂无预览",
         "previewLoadFailed": "预览加载失败"
@@ -8689,9 +8689,9 @@
       "tables": {
         "title": "表格",
         "releaseNotes": "发布说明",
-        "defaultTitle": "默认标题",
-        "source": "来源",
-        "remaining": "剩余"
+        "defaultTitle": "表格 {{id}}",
+        "source": "来源：{{source}}",
+        "remaining": "已显示 {{preview}} 行，剩余 {{remaining}} 行"
       },
       "proxy": {
         "direct": "直连",
@@ -8851,10 +8851,10 @@
       "latestError": "最近错误",
       "scanFullPageEnabled": "扫描完整页面已启用",
       "serverDefault": "服务器默认",
-      "waitTimeoutValue": "等待超时值",
+      "waitTimeoutValue": "{{value}} 毫秒",
       "default": "默认",
-      "memoryValue": "内存值",
-      "percentValue": "百分比值",
+      "memoryValue": "{{value}} MB",
+      "percentValue": "{{value}}%",
       "robotsPolicy": {
         "ignore": "始终忽略"
       },
@@ -8863,8 +8863,8 @@
         "noLlmHint": "抓取阶段保持确定性（仅抓取 + 清洗 Markdown），LLM 摘要与分析请在下游流水线执行。"
       },
       "multiUrl": {
-        "patterns": "模式",
-        "overrides": "覆盖项",
+        "patterns": "模式（{{mode}}）：{{patterns}}",
+        "overrides": "覆盖项：{{overrides}}",
         "additionalOverrides": "另有 {{count}} 项覆盖配置"
       },
       "results": {
@@ -8891,7 +8891,7 @@
     },
     "multiUrl": {
       "title": "多 URL",
-      "strategyTitle": "策略标题",
+      "strategyTitle": "策略 {{index}}",
       "add": "添加",
       "empty": "暂无多 URL",
       "fields": {
@@ -8934,13 +8934,13 @@
         "avgIntrinsic": "平均内在"
       },
       "buckets": "分桶",
-      "bucketItem": "分桶条目",
+      "bucketItem": "{{kind}} × {{count}}",
       "topLinks": "热门链接",
       "emptyScored": "暂无评分",
-      "linkScore": "链接评分",
+      "linkScore": "{{domain}} · 评分 {{score}}",
       "lowQuality": "低质量",
       "emptyLowQuality": "暂无低质量",
-      "intrinsicScore": "内在评分",
+      "intrinsicScore": "{{domain}} · 内在分 {{score}}",
       "description": "链接说明",
       "scoreLinks": "评分链接",
       "scoreLinksHint": "评分链接提示",
