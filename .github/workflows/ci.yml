@@ -77,10 +77,27 @@ jobs:
       - name: API unit tests (SEC-01 / API-01 regression + route scanner)
         run: pnpm --filter @modular/api test
 
-      - name: OpenAPI contract snapshot drift check
+      - name: OpenAPI contract snapshot determinism + drift check
         run: |
-          pnpm --filter @modular/api run contract:openapi:snapshot
-          git diff --exit-code apps/api/tests/contract/openapi.snapshot.json
+          # CI-01：同一命令在两个互相独立的冷 Node 进程各生成一次（--output
+          # 导向临时文件，不动已提交基线），比对 SHA-256，再与已提交快照
+          # 逐字节比对。任一不同即失败——无 retry，不掩盖非确定性。
+          pnpm --filter @modular/api run contract:openapi:snapshot -- --output "$RUNNER_TEMP/openapi-snapshot-run1.json"
+          pnpm --filter @modular/api run contract:openapi:snapshot -- --output "$RUNNER_TEMP/openapi-snapshot-run2.json"
+          SHA1=$(sha256sum "$RUNNER_TEMP/openapi-snapshot-run1.json" | cut -d' ' -f1)
+          SHA2=$(sha256sum "$RUNNER_TEMP/openapi-snapshot-run2.json" | cut -d' ' -f1)
+          echo "cold-process run1 sha256: $SHA1"
+          echo "cold-process run2 sha256: $SHA2"
+          if [ "$SHA1" != "$SHA2" ]; then
+            echo "::error::OpenAPI snapshot not deterministic across cold processes ($SHA1 vs $SHA2)"
+            exit 1
+          fi
+          if ! cmp -s "$RUNNER_TEMP/openapi-snapshot-run1.json" apps/api/tests/contract/openapi.snapshot.json; then
+            echo "::error::OpenAPI snapshot drifted from committed baseline"
+            diff "$RUNNER_TEMP/openapi-snapshot-run1.json" apps/api/tests/contract/openapi.snapshot.json | head -200 || true
+            exit 1
+          fi
+          echo "deterministic across cold processes and byte-identical to committed snapshot"
 
       - name: Auth matrix drift check (fail-closed)
         run: pnpm --filter @modular/api run contract:auth-matrix:check
