@@ -35,6 +35,7 @@
 
 **Go 迁移状态（api-go 四态路由表，`apps/api-go/internal/legacyproxy/proxy.go`）**：
 - user-settings 确定性只读 GET ×3 —— **ModeShadow**（Go-批2A：onboarding；Go-批2B：rss-reader、spacetime-timeline）：NestJS 仍是客户端响应事实源；Go 旁路真实读取 MySQL `UserSetting`（`SettingKey` 编译期固定常量，orgId+userId+key 三条件参数化查询）并差分。身份来自 legacy-approved shadow identity（legacy 200 后的临时信任委托——不是 Go 已验证身份，不读 permissions claim）。其余三个 user-settings GET（situation-monitor/war-map/newsnow）与全部 PUT 仍 legacy；未迁移任何写入路径。Go Auth/RBAC 未完成，不得进入 canary/go。
+- 入口链（Go-批2C）：api-go 具备生产容器（`infra/docker/api-go.Dockerfile`，distroless nonroot + `healthcheck` 子命令）与 Compose 独立 `api-go-pilot` profile 服务；`API_BASE_URL` 可切 `http://api-go:4020` 使入口变为 `Web → api-go → NestJS`（其余请求全部纯代理，契约不变），默认部署仍直连 NestJS。已通过远端真实栈运行验证（`api-go-entry-smoke`：真实登录 JWT + 三个 PUT 持久化 + 四个 Shadow GET 零差异零丢弃）；生产/预发布真实流量验证未完成。trace header（`x-trace-id`/`traceparent`）在 api-go 入口链保持原语义（§0 TraceId 行为镜像）。
 
 ## 1. REST 契约（71 controller · 369 endpoint）
 

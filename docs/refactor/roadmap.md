@@ -32,12 +32,13 @@
 | 首个迁移单元 `GET /api/healthz/live` | 🔶 shadow 态（NestJS 仍是响应方，Go 实现进入差分管道）。**不是 Go 全量接管**；未做真实流量 0 差异验收 |
 | 第二个迁移单元 `GET /api/user-settings/ui/onboarding`（Go-批2A） | 🔶 shadow 态（NestJS 仍是响应方）。Go 已实现**真实 MySQL 只读查询**（`UserSetting` 三条件参数化查询 + normalization 契约对齐），远端 CI 真实 MySQL service 集成验证（`api-go-user-settings-integration` job）；单元/集成测试由远端 CI 完成。身份来自 **legacy-approved shadow identity**（legacy 200 后的临时信任委托——Go 尚未独立完成 JWT 验签/membership/RBAC，不得进入 canary/go）。未做真实生产流量差分验收（api-go 尚未接入入口代理）；PUT 与其他 user-settings GET 仍全部 legacy |
 | user-settings 只读 GET 第二批：`rss-reader`、`spacetime-timeline`（Go-批2B） | 🔶 shadow 态（NestJS 仍是响应方）。复用批2A 的 repository（`SettingKey` 编译期固定常量，三个语义方法共享同一条参数化查询）、legacy-approved shadow identity 与失败非阻断语义；normalization 逐字段对齐（RSS：trim/128 截断/稳定去重/严格布尔/provider/targetLanguage；spacetime：枚举回退/浮点 clamp 不取整）；远端 CI MySQL integration 扩展验证三 key 读取与 orgId/userId/key 隔离。未做真实生产流量差分验收；**其余三个 GET（situation-monitor/war-map/newsnow）与全部 PUT 仍 legacy**——user-settings 未迁移完成 |
+| api-go 真实入口接线 + 容器化（Go-批2C） | 🔶 **已完成远端真实栈运行验证**（非生产流量）。`infra/docker/api-go.Dockerfile`（多阶段、distroless nonroot、`-mod=readonly -trimpath`、内置 `healthcheck` 子命令——exec 形式 HEALTHCHECK）+ compose 独立 `api-go-pilot` profile 服务（:4020，`LEGACY_API_URL=http://api:4000`，同一 MySQL，`CANARY_PERCENT=0`）+ Web/API 入口可切换（`API_BASE_URL` 运行期可指 `http://api-go:4020`；web 启动等待不再硬编码 `api:4000`）。手动 `api-go-entry-smoke` workflow 在远端真实栈（真实 MySQL+migrate+真实 NestJS+api-go 容器+真实登录 JWT）闭环：3 个 PUT 经 api-go 由 NestJS 单写持久化、PUT 零 Shadow 执行、4 个 Shadow GET `executed` 精确 +4、`diffs`/`dropped` 零增量、`inflight` 归零、trace header 传播、三 key 无串读。**默认 legacy 部署不变；生产/预发布真实流量验证未完成；canary/go 仍禁止** |
 | api 单测基座（vitest） | ✅ 远端 CI 已验证（SEC-01 6/6 + API-01 4/4 + 扫描器语义/基线断言全绿） |
 
 余项（按序）：
 1. ~~CI 首跑闭环~~ ✅ 已完成（run 33748591315 verify + vector-integration 双绿）
-2. shadow 差分在真实流量的零差异验收（M5 迁移序 2 的 shadow 起步；当前无生产流量入口——api-go 尚未接入入口代理）
-3. 第二个迁移单元（user-settings 只读 GET → shadow）
+2. shadow 差分在真实流量的零差异验收（M5 迁移序 2 的 shadow 起步）。🔶 Go-批2C 已完成**远端真实栈运行验证**（api-go 容器入口链 + 真实 NestJS/MySQL + 真实 JWT：`api-go-entry-smoke` workflow 断言 executed 精确增量、diffs/dropped 零增量）；**生产流量差分验收仍未完成**（api-go 未接入生产入口，默认部署仍 Web → NestJS 直连）
+3. ~~第二个迁移单元（user-settings 只读 GET → shadow）~~ ✅ 已完成（Go-批2A/2B + 批2C 入口接线）
 
 ## M3 安全修复批次（与 M2 并行，纯 NestJS 侧）
 

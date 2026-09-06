@@ -10,7 +10,42 @@ curl http://localhost:4020/__go/healthz     # {"ok":true,"routes":[...],"shadow"
 curl http://localhost:4020/api/healthz/live # shadow 态：NestJS 响应 + Go 异步差分
 ```
 
-### 配置
+## 生产容器与真实入口（Go-批2C）
+
+生产镜像 `infra/docker/api-go.Dockerfile`：多阶段构建（`go mod download` → `CGO_ENABLED=0 go build -mod=readonly -trimpath`），运行阶段 distroless static nonroot（无 shell/无源码/无工具链），与 vector-go 同款策略。二进制内置 `healthcheck` 子命令：
+
+```text
+/api-go healthcheck   # GET 127.0.0.1:$PORT/__go/healthz；2xx 退出 0，否则非 0
+```
+
+distroless 无 curl——不为探针安装任何东西；Dockerfile 的 `HEALTHCHECK` 指令与 compose 服务的 healthcheck 均用 exec 形式调用该子命令（字符串形式 health-cmd 会经 `/bin/sh` 执行，distroless 下必失败）。
+
+### Compose pilot（api-go-pilot profile，默认不启动）
+
+```bash
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml \
+  --profile api-go-pilot up -d api-go
+```
+
+- 端口：容器 4020，host `${API_GO_HOST_PORT:-4020}`（默认只绑 `DOCKER_PUBLISH_HOST`，即 loopback）；
+- `LEGACY_API_URL=http://api:4000`；`DATABASE_URL` 由与 NestJS 相同的 `MYSQL_*` 派生（同一真实 MySQL，不复制数据）；
+- `CANARY_PERCENT=0`、`SHADOW_DEBUG_BODY_LOG=false` 固定；
+- 依赖 `api`（NestJS）与 `mysql` 均 healthy；
+- 默认 legacy 模式（`Web → api:4000`）不受影响——profile 服务不随普通 `up` 启动。
+
+### 入口切换与回滚
+
+- 服务端（运行期）：`infra/docker/.env` 的 `API_BASE_URL=http://api-go:4020` → `Web → api-go → NestJS`；web 启动等待自动改探 `http://api-go:4020/api/healthz/live`（不再硬编码 `api:4000`，兼容 base 带不带 `/api`）。
+- 浏览器端（构建期）：`NEXT_PUBLIC_API_BASE_URL=http://<host>:4020/api` 重建 web 镜像。
+- 回滚：`API_BASE_URL` 指回 `http://api:4000`（+ 按原值重建 web）；`--profile api-go-pilot down` 停 pilot。无数据迁移耦合——全部 user-settings PUT 始终由 NestJS 单写。
+
+### 远端真实栈 smoke（`api-go-entry-smoke` workflow）
+
+手动触发（`workflow_dispatch`，重型真实栈不进 push/PR CI）：真实 MySQL/Redis/Mongo service 容器 + 真实 `prisma migrate deploy` + 真实 NestJS 进程 + 构建并启动本 Dockerfile 的 api-go 容器；经 api-go 入口完成真实登录（NestJS 签发 JWT）→ 三个 user-settings PUT（NestJS 单写并持久化到 MySQL）→ 四个 Shadow GET；断言 `/__go/healthz` 的 shadow `executed` 精确 +4、`diffs`/`dropped` 零增量、`inflight` 归零、`userSettingsShadow.database=configured`、trace header 传播、三 key 数据无串读。
+
+**验证状态分层**：静态代码与单元/MySQL 集成测试由普通 CI 远端验证；真实入口链（容器 + 真实 NestJS + 真实登录 + Shadow 指标增量）由 `api-go-entry-smoke` 远端真实栈运行验证完成；**生产/预发布真实流量验证未完成**（api-go 未接入任何生产入口）。
+
+## 配置
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
