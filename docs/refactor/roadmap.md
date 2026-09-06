@@ -30,6 +30,7 @@
 | shadow 差分基础设施 | ✅ 远端 CI 已验证（直通 + 有界旁录：客户端流式语义保留，请求体/响应捕获独立预算，SSE/升级请求跳过，分类丢弃统计，差分正文默认只记 sha256 hash）。**仅基础设施能力**——只对 `/api/healthz/live` 生效，无真实流量差分数据 |
 | canary 分流组件 | ◻ 仅静态/组件级验证。**信任边界**：分流依据是未验签的 orgId claim（不是可靠身份），AllowUnverifiedIdentity 默认关闭——受保护路由不可能据此进入 Go。**当前没有任何路由处于 ModeCanary**；CANARY_PERCENT 只是预留。待迁移序 5（Go JWT 验签 + membership 重推导）后激活 |
 | 首个迁移单元 `GET /api/healthz/live` | 🔶 shadow 态（NestJS 仍是响应方，Go 实现进入差分管道）。**不是 Go 全量接管**；未做真实流量 0 差异验收 |
+| 第二个迁移单元 `GET /api/user-settings/ui/onboarding`（Go-批2A） | 🔶 shadow 态（NestJS 仍是响应方）。Go 已实现**真实 MySQL 只读查询**（`UserSetting` 三条件参数化查询 + normalization 契约对齐），远端 CI 真实 MySQL service 集成验证（`api-go-user-settings-integration` job）；单元/集成测试由远端 CI 完成。身份来自 **legacy-approved shadow identity**（legacy 200 后的临时信任委托——Go 尚未独立完成 JWT 验签/membership/RBAC，不得进入 canary/go）。未做真实生产流量差分验收（api-go 尚未接入入口代理）；PUT 与其他 user-settings GET 仍全部 legacy |
 | api 单测基座（vitest） | ✅ 远端 CI 已验证（SEC-01 6/6 + API-01 4/4 + 扫描器语义/基线断言全绿） |
 
 余项（按序）：
@@ -101,7 +102,7 @@
 ## 立即可做的下一轮最小任务（PR #2 合并后，新分支/新 PR）
 
 1. shadow 差分真实流量验收（首个单元 /api/healthz/live 0 差异——需要 api-go 接入入口代理；当前网关本身未上线路径）
-2. 第二个迁移单元：user-settings 只读 GET（shadow 模式）
+2. ~~第二个迁移单元：user-settings 只读 GET（shadow 模式）~~ ✅ 已完成（Go-批2A：`GET /api/user-settings/ui/onboarding` 进入 shadow，NestJS 仍是响应方；Go 真实读取 MySQL `UserSetting`，legacy-approved shadow identity 信任边界，远端 CI `api-go-user-settings-integration` 真实 MySQL service 验证）
 3. FE-批1 剩余原语（design/tokens.ts、DataStateBoundary、useUrlState）（TopNav 拆分已随 FE-批2 完成）
 4. canary 激活的前置件（迁移序 5 的 Go JWT 验签 + membership 重推导——在它完成前 canary 保持不激活）
 

@@ -30,8 +30,11 @@
 - JWT Guard 对 graphql 上下文直接放行（GraphQL 侧 GqlAuthGuard 接管，`jwt-auth.guard.ts:19-21`）
 
 **契约风险点（迁移前需决策）**——全库仅 5 个端点处于「无权限元数据 → 必 403」的死路由状态：
-- `GET/PUT /api/user-settings/ui/onboarding`（`modules/user-settings/user-ui-settings.controller.ts:110,116`）
+- `GET/PUT /api/user-settings/ui/onboarding`（`modules/user-settings/user-ui-settings.controller.ts:110,116`）——已修复（API-01，`edf0c8cf` 补 `@Permissions("items.read")`）
 - `GET /api/auth/admin/registration-applications`（`auth.controller.ts:393`）、`POST .../approve-org`（:454）、`POST .../reject-org`（:471）——handler 内部另有鉴权，但全局 Guard 先拦
+
+**Go 迁移状态（api-go 四态路由表，`apps/api-go/internal/legacyproxy/proxy.go`）**：
+- `GET /api/user-settings/ui/onboarding` —— **ModeShadow**（Go-批2A）：NestJS 仍是客户端响应事实源；Go 旁路真实读取 MySQL `UserSetting`（三条件参数化查询）并差分。身份来自 legacy-approved shadow identity（legacy 200 后的临时信任委托）。PUT 与其他五个 user-settings GET 仍全部 legacy；未迁移任何写入路径。
 
 ## 1. REST 契约（71 controller · 369 endpoint）
 
@@ -93,7 +96,7 @@ GET .../clustering/readiness · overview · failures；POST failures/:groupId/ve
 
 ### 1.7 user-settings（12 个，`user-ui-settings.controller.ts`）
 
-situation-monitor/war-map/spacetime-timeline/newsnow/rss-reader 各 GET+PUT（items.read :22-101）；**onboarding GET+PUT 无权限元数据（死路由）**（:110/116）
+situation-monitor/war-map/spacetime-timeline/newsnow/rss-reader 各 GET+PUT（items.read :22-101）；onboarding GET+PUT（items.read :110/116，API-01 已补权限元数据）。**Go-批2A：onboarding GET 处于 ModeShadow**（见 §0 Go 迁移状态），PUT 及其余 10 个端点全部 legacy。
 
 ### 1.8 public-portal（4 个，全部 @Public + Cache-Control）
 
