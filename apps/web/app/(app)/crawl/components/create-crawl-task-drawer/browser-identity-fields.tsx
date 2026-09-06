@@ -10,6 +10,7 @@ import { Card, Form, Input, InputNumber, Select, Space, Typography } from "antd"
 import { useTranslation } from "react-i18next";
 
 import type { CreateCrawlTaskFormValues } from "../../types";
+
 import { BrowserHeadersCookiesFields } from "./browser-headers-cookies-fields";
 
 export function BrowserIdentityFields() {

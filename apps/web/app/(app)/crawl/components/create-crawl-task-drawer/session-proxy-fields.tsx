@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
 
 import type { CreateCrawlTaskFormValues } from "../../types";
+
 import { formatPolicyIssues } from "./option-guards";
 
 export function SessionProxyFields() {

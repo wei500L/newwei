@@ -11,22 +11,25 @@
  */
 
 import type { FormInstance } from "antd";
-import { Card, Form, Input, InputNumber, Select, Typography } from "antd";
+import {
+  Card,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Switch,
+  Typography,
+} from "antd";
 import { useTranslation } from "react-i18next";
 
 import type { CreateCrawlTaskFormValues } from "../../types";
+
 import type { MultiUrlVirtualScrollPath } from "./field-paths";
 
 /** virtualScroll 字段组可用的路径前缀（根级或 multi URL 嵌套）。 */
 export type VirtualScrollBasePath =
   | ["virtualScroll"]
   | MultiUrlVirtualScrollPath;
-
-export interface VirtualScrollConfigItemsProps {
-  basePath: VirtualScrollBasePath;
-  /** scrollBy=pixels 时显示 scrollByPixels 字段。 */
-  showPixels: boolean;
-}
 
 export function VirtualScrollLeadingItems({
   basePath,
@@ -127,7 +130,7 @@ export interface VirtualScrollConfigItemsProps {
   showPixels: boolean;
 }
 
-export function VirtualScrollConfigItems({
+function VirtualScrollConfigItems({
   basePath,
   showPixels,
 }: VirtualScrollConfigItemsProps) {
@@ -148,7 +151,7 @@ interface VirtualScrollDefaults {
   waitAfterScrollMs: number;
 }
 
-export const readVirtualScrollDefaults = (
+const readVirtualScrollDefaults = (
   current: Record<string, unknown>,
 ): VirtualScrollDefaults => ({
   containerSelector:

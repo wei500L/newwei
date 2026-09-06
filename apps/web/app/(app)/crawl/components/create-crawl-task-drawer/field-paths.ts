@@ -8,7 +8,7 @@
  */
 
 /** multi URL 策略 options 段（第 n 个策略）。 */
-export type MultiUrlOptionsPath = ["multiUrlConfigs", number, "options"];
+type MultiUrlOptionsPath = ["multiUrlConfigs", number, "options"];
 
 /** multi URL 策略内嵌 virtualScroll 对象路径。 */
 export type MultiUrlVirtualScrollPath = [...MultiUrlOptionsPath, "virtualScroll"];
