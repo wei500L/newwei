@@ -291,6 +291,63 @@ jobs:
       - name: MySQL integration tests (onboarding repository)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ -run TestOnboardingMySQLIntegration -v
 
+  # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
+  #
+  # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从
+  # module proxy 校验和生成的产物（本机禁跑 go 工具链），只能远端生成
+  # 后作为 tracked file 提交。api-go 自 Go-批2A 起引入第三方依赖
+  # （go-sql-driver/mysql）；后续迁移批次继续新增依赖时复用同一通道。
+  #
+  # 触发边界：仅 PR 带 go-modules-regen label 时运行（维护者在有意变更
+  # 依赖时添加）；与 contract-regen 同一模式：检出 PR head → go mod
+  # tidy → 空跑构建确认清单可用 → 有差异则 bot 提交回 PR 分支。
+  # 再生成完成后必须移除 label——平时 verify 的模块文件漂移门禁保持
+  # fail-on-drift 语义。
+  go-modules-regen:
+    if: contains(github.event.pull_request.labels.*.name, 'go-modules-regen')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api-go/go.mod
+          cache: false
+
+      - name: Regenerate api-go module files
+        run: |
+          cd apps/api-go
+          go mod tidy
+          # 生成后空跑一次构建，确保清单与当前代码一致可用。
+          go build ./...
+
+      - name: Commit regenerated module files (if changed)
+        run: |
+          git config user.name "go-modules-regen[bot]"
+          git config user.email "actions@github.com"
+          # git status --porcelain 同时覆盖 tracked 修改与未跟踪文件
+          # （仅 git diff 发现不了未跟踪的 go.sum）。
+          if [ -z "$(git status --porcelain -- apps/api-go/go.mod apps/api-go/go.sum)" ]; then
+            echo "module files already in sync — nothing to commit"
+            exit 0
+          fi
+          git add apps/api-go/go.mod apps/api-go/go.sum
+          git commit -m "🔧 chore(api-go): 远端再生成 Go module 依赖清单（go.mod/go.sum）"
+          git push origin HEAD:${{ github.head_ref }}
+          echo "committed regenerated module files"
+
+      - name: Remind to remove the label
+        run: |
+          echo "::notice::go.mod/go.sum 已远端生成并提交。请从 PR 移除 go-modules-regen label，恢复漂移门禁语义。"
+
   # 契约基线一次性远端再生成（专用远端生成提交方案）。
   #
   # 背景：本仓库约束「生成器不在本机执行」——生成物（OpenAPI 快照 /
