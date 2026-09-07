@@ -164,7 +164,12 @@ func NormalizeSituationMonitors(raw []byte) []SituationMonitorCustomMonitor {
 		return []SituationMonitorCustomMonitor{}
 	}
 	out := make([]SituationMonitorCustomMonitor, 0, len(value))
-	for _, record := range value {
+	for _, entry := range value {
+		// NestJS：!entry || typeof entry !== "object" || Array.isArray → 跳过。
+		record, isObject := entry.(map[string]any)
+		if !isObject {
+			continue
+		}
 		name := normalizeSituationName(record["name"])
 		keywords := normalizeSituationKeywords(record["keywords"])
 		if name == "" || len(keywords) == 0 {

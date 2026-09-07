@@ -479,12 +479,18 @@ jobs:
                                    "resetLayoutOnPreset": True, "translateToZh": True},
                   },
                   "expected": {
+                      # monitors 第二条（Bad location）缺失 id/createdAt——
+                      # NestJS fallback 是 randomUUID()/Date.now()（非确定值）。
+                      # fixture 第一条提供稳定 id/createdAt；第二条用哨兵
+                      # 标记（"@exists:sm-"/"@exists:int"）断言 fallback 行为
+                      # 本身（id 以 sm- 开头、createdAt 是毫秒整数）——不是把
+                      # 随机字段加入 ignore 集。
                       "monitors": [
                           {"id": "mon-1", "name": "Taiwan Strait", "keywords": ["ship", "navy", "MISSING"],
                            "enabled": True, "color": "#ff00aa", "location": {"name": "Taipei", "lat": 25.03, "lng": 121.56},
                            "createdAt": 1757000000000},
-                          {"id": "Bad location", "name": "Bad location", "keywords": ["y"],
-                           "enabled": True, "createdAt": None},
+                          {"id": "@exists:sm-", "name": "Bad location", "keywords": ["y"],
+                           "enabled": True, "createdAt": "@exists:int"},
                       ],
                       "layout": {
                           "layouts": {
@@ -498,6 +504,37 @@ jobs:
                   },
               },
           }
+
+          def assert_value(got, want, context):
+              # 哨兵断言（@exists: 前缀）：只断言存在性与形态，不比较精确值
+              #（fallback 的 randomUUID/Date.now() 本身非确定——显式断言其
+              # 存在与形态，不静默 ignore）。
+              if isinstance(want, str) and want.startswith("@exists:"):
+                  assert got is not None, f"{context}: fallback value missing (want exists)"
+                  form = want[len("@exists:"):]
+                  if form == "int":
+                      assert isinstance(got, int) and got > 1_500_000_000_000, (
+                          f"{context}: createdAt = {got!r}, want 毫秒时间戳")
+                  elif form.startswith("sm-"):
+                      assert isinstance(got, str) and got.startswith("sm-"), (
+                          f"{context}: id = {got!r}, want sm- 前缀 fallback")
+                  return
+              assert got == want, (
+                  f"{context}\n  got:      {json.dumps(got, sort_keys=True)}\n"
+                  f"  expected: {json.dumps(want, sort_keys=True)}")
+
+          def assert_equal(actual, want, context):
+              if isinstance(want, dict):
+                  assert isinstance(actual, dict), f"{context}: got {type(actual).__name__}, want object"
+                  for key, value in want.items():
+                      assert_value(actual.get(key), value, f"{context}.{key}")
+              elif isinstance(want, list):
+                  assert isinstance(actual, list), f"{context}: got {type(actual).__name__}, want array"
+                  assert len(actual) == len(want), f"{context}: len {len(actual)} != {len(want)}"
+                  for i, item in enumerate(want):
+                      assert_equal(actual[i], item, f"{context}[{i}]")
+              else:
+                  assert_value(actual, want, context)
 
           for path, payload in PUTS.items():
               req = urllib.request.Request(
@@ -520,19 +557,10 @@ jobs:
               doc = json.loads(body)
               assert doc.get("version") == 1, (path, doc)
               expected = dict(payload["expected"])
-              partial = expected.pop("_partial", False)
-              actual = doc.get("settings") if "settings" in doc else {
-                  "monitors": doc.get("monitors"), "layout": doc.get("layout"), "settings": doc.get("settings")}
+              expected.pop("_partial", False)
+              actual = doc.get("settings") if "settings" in doc else doc
               for key, want in expected.items():
-                  if key == "layerVisibility":
-                      # 只断言代表性 layer（46 个全量在 Phase C 双端对比）。
-                      for layer, layer_want in want.items():
-                          assert actual["layerVisibility"].get(layer) == layer_want, (
-                              f"{path}: layerVisibility[{layer}] = {actual['layerVisibility'].get(layer)}, want {layer_want}")
-                      continue
-                  assert actual.get(key) == want, (
-                      f"{path}: {key} mismatch\n  got:      {json.dumps(actual.get(key), sort_keys=True)}\n"
-                      f"  expected: {json.dumps(want, sort_keys=True)}")
+                  assert_equal(actual.get(key), want, f"{path}: {key}")
               print(f"PUT {path} -> 200 (NestJS 响应回显 normalized settings 一致, trace header ok)")
           PY
           python3 /tmp/smoke_put.py
@@ -1172,7 +1200,10 @@ jobs:
                        "enabled": True, "color": "#ff00aa",
                        "location": {"name": "Taipei", "lat": 25.03, "lng": 121.56},
                        "createdAt": 1757000000000},
-                      {"id": "Bad location", "name": "Bad location", "keywords": ["y"], "enabled": True},
+                      # 第二条缺失 id/createdAt——fallback 是非确定值（同
+                      # Phase A 的哨兵语义：断言存在与形态，不比较精确值）。
+                      {"id": "@exists:sm-", "name": "Bad location", "keywords": ["y"], "enabled": True,
+                       "createdAt": "@exists:int"},
                   ],
                   "settings": {"windowHours": 24, "scope": "all", "autoRefresh": True,
                                "resetLayoutOnPreset": True, "translateToZh": True}},
@@ -1181,6 +1212,32 @@ jobs:
           # Phase D 核心验收：NestJS 已停止，六个 user-settings GET 仍全部
           # 由 Go 返回此前真实持久化的数据（Phase A 的 PUT 写入）——证明
           # 不是代理或 Shadow 假象。
+          def assert_value(got, want, context):
+              if isinstance(want, str) and want.startswith("@exists:"):
+                  assert got is not None, f"{context}: fallback value missing (want exists)"
+                  form = want[len("@exists:"):]
+                  if form == "int":
+                      assert isinstance(got, int) and got > 1_500_000_000_000, (
+                          f"{context}: createdAt = {got!r}, want 毫秒时间戳")
+                  elif form.startswith("sm-"):
+                      assert isinstance(got, str) and got.startswith("sm-"), (
+                          f"{context}: id = {got!r}, want sm- 前缀 fallback")
+                  return
+              assert got == want, (context, got, want)
+
+          def assert_equal(actual, want, context):
+              if isinstance(want, dict):
+                  assert isinstance(actual, dict), f"{context}: got {type(actual).__name__}, want object"
+                  for key, value in want.items():
+                      assert_equal(actual.get(key), value, f"{context}.{key}")
+              elif isinstance(want, list):
+                  assert isinstance(actual, list), f"{context}: got {type(actual).__name__}, want array"
+                  assert len(actual) == len(want), f"{context}: len {len(actual)} != {len(want)}"
+                  for i, item in enumerate(want):
+                      assert_equal(actual[i], item, f"{context}[{i}]")
+              else:
+                  assert_value(actual, want, context)
+
           for path, want in EXPECTED.items():
               req = urllib.request.Request(
                   f"http://127.0.0.1:4020{path}",
@@ -1194,10 +1251,10 @@ jobs:
               assert doc.get("version") == 1, (path, doc)
               if "_partial" in want:
                   for key, value in want["_partial"].items():
-                      assert doc.get(key) == value, (path, key, doc.get(key), value)
+                      assert_equal(doc.get(key), value, (path, key))
               else:
                   for key, value in want.items():
-                      assert doc.get(key) == value, (path, key, doc.get(key), value)
+                      assert_equal(doc.get(key), value, (path, key))
               assert isinstance(doc.get("updatedAt", {}).get("settings"), str) and doc["updatedAt"]["settings"], (path, doc)
               print(f"NestJS 停止后：GET {path} via api-go -> 200（Go handler 独立响应, 数据一致）")
 
