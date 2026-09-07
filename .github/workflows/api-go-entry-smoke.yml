@@ -1254,8 +1254,11 @@ jobs:
                   doc = json.loads(resp.read())
               assert doc.get("version") == 1, (path, doc)
               if "_partial" in want:
+                  # war-map 的 viewState 等字段在 settings 段内——partial
+                  # 断言读 doc["settings"] 的字段。
+                  assert doc.get("settings") is not None, (path, doc)
                   for key, value in want["_partial"].items():
-                      assert_equal(doc.get(key), value, (path, key))
+                      assert_equal(doc["settings"].get(key), value, (path, key))
               else:
                   for key, value in want.items():
                       assert_equal(doc.get(key), value, (path, key))
