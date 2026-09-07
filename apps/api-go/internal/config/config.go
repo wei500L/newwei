@@ -25,7 +25,8 @@ const (
 	defaultRedisPort   = 6379
 )
 
-// OnboardingMode 是 onboarding GET 迁移单元的路由模式（API_GO_ONBOARDING_MODE）。
+// OnboardingMode 是 onboarding GET 迁移单元的路由模式
+//（API_GO_ONBOARDING_MODE——Go-批3A 引入）。
 type OnboardingMode string
 
 const (
@@ -37,6 +38,21 @@ const (
 	// 鉴权（JWT 验签 + Redis blacklist + MySQL RBAC）并全响应。仅在
 	// pilot profile（compose）/ 远端 smoke 显式启用。
 	OnboardingModeGo OnboardingMode = "go"
+)
+
+// UserSettingsReadMode 是 user-settings 六个只读 GET 的统一路由模式
+//（API_GO_USER_SETTINGS_READ_MODE——Go-批3B 引入）。
+type UserSettingsReadMode string
+
+const (
+	// UserSettingsReadModeShadow：6 个 GET 都由 NestJS 响应，Go 做真实
+	// 旁路查询与差分（onboarding/rss/spacetime 是既有 shadow 语义；
+	// war-map/newsnow/situation-monitor 在本模式下由 NestJS 响应 + Go
+	// 差分——新三端点也作为 shadow 单元接线）。
+	UserSettingsReadModeShadow UserSettingsReadMode = "shadow"
+	// UserSettingsReadModeGo：6 个 GET 都由 Go 独立响应（JWT 验签 +
+	// Redis blacklist + MySQL RBAC + 独立查库 + normalization）。
+	UserSettingsReadModeGo UserSettingsReadMode = "go"
 )
 
 // Config 是网关运行所需的全部配置。
@@ -54,6 +70,13 @@ type Config struct {
 
 	// OnboardingMode 见 OnboardingMode 常量（默认 shadow）。
 	OnboardingMode OnboardingMode
+
+	// UserSettingsReadMode 见 UserSettingsReadMode 常量。未设置（空）时
+	// 保持既有行为：API_GO_ONBOARDING_MODE 继续控制 onboarding，RSS/
+	// Spacetime 保持 Shadow，War Map/NewsNow/Situation Monitor 保持
+	// Legacy（Go-批3B 之前的部署不变）。设置为 go 时六个 GET 统一由 Go
+	// 接管（优先级高于 API_GO_ONBOARDING_MODE）。非法值启动失败。
+	UserSettingsReadMode UserSettingsReadMode
 
 	// JWT 是 NestJS access token 的验签配置（与 api 服务同一
 	// JWT_SECRET/JWT_ISSUER/JWT_AUDIENCE）。OnboardingMode=go 时
@@ -146,6 +169,20 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.OnboardingMode = OnboardingModeGo
 	default:
 		errs = append(errs, "API_GO_ONBOARDING_MODE must be one of shadow|go")
+	}
+
+	// user-settings 六个只读 GET 的统一读模式（Go-批3B）：默认空 = 兼容
+	//（API_GO_ONBOARDING_MODE 继续控制 onboarding，其余端点旧去向不变）；
+	// 非法值启动失败。
+	switch strings.TrimSpace(getenv("API_GO_USER_SETTINGS_READ_MODE")) {
+	case "":
+		cfg.UserSettingsReadMode = ""
+	case string(UserSettingsReadModeShadow):
+		cfg.UserSettingsReadMode = UserSettingsReadModeShadow
+	case string(UserSettingsReadModeGo):
+		cfg.UserSettingsReadMode = UserSettingsReadModeGo
+	default:
+		errs = append(errs, "API_GO_USER_SETTINGS_READ_MODE must be one of shadow|go")
 	}
 
 	// JWT 验签配置（issuer/audience 默认值与 NestJS env schema 一致——
@@ -259,15 +296,20 @@ func Load(getenv func(string) string) (Config, error) {
 
 	// Go 接管模式的依赖前置校验：不得在依赖缺失时启动一个必然失败的
 	// 「Go 接管端点」——启动即失败，错误只指出缺失的配置项名，不打印值。
-	if cfg.OnboardingMode == OnboardingModeGo {
+	// Go-批3B：UserSettingsReadMode=go 触发同一套前置（六个 GET 全部由
+	// Go 独立鉴权响应）；API_GO_ONBOARDING_MODE=go 单独设置时沿用批3A
+	// 的同一校验（两变量叠加时只校验一次——条件取或）。
+	goTakeover := cfg.OnboardingMode == OnboardingModeGo ||
+		cfg.UserSettingsReadMode == UserSettingsReadModeGo
+	if goTakeover {
 		if cfg.JWTSecret == "" {
-			errs = append(errs, "JWT_SECRET is required when API_GO_ONBOARDING_MODE=go")
+			errs = append(errs, "JWT_SECRET is required when API_GO_ONBOARDING_MODE=go or API_GO_USER_SETTINGS_READ_MODE=go")
 		}
 		if cfg.DatabaseURL == "" {
-			errs = append(errs, "DATABASE_URL is required when API_GO_ONBOARDING_MODE=go")
+			errs = append(errs, "DATABASE_URL is required when API_GO_ONBOARDING_MODE=go or API_GO_USER_SETTINGS_READ_MODE=go")
 		}
 		if cfg.RedisHost == "" {
-			errs = append(errs, "REDIS_HOST is required when API_GO_ONBOARDING_MODE=go")
+			errs = append(errs, "REDIS_HOST is required when API_GO_ONBOARDING_MODE=go or API_GO_USER_SETTINGS_READ_MODE=go")
 		}
 	}
 
