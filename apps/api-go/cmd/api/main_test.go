@@ -62,7 +62,7 @@ func TestDispatcherCanaryNeverRoutesUnverifiedIdentityToGo(t *testing.T) {
 // ModeCanary，此测试失败——提醒先落地可信身份来源（JWT 验签 +
 // membership 重推导，迁移序 5）或证明路由无鉴权语义差异。
 func TestDefaultRulesHaveNoCanaryRoutes(t *testing.T) {
-	for _, rule := range legacyproxy.DefaultRules() {
+	for _, rule := range legacyproxy.DefaultRules(legacyproxy.ModeShadow) {
 		if rule.Mode == legacyproxy.ModeCanary {
 			t.Fatalf("route %q is ModeCanary — canary 分流依赖未验签身份，先落地可信身份来源", rule.Prefix)
 		}
@@ -72,7 +72,7 @@ func TestDefaultRulesHaveNoCanaryRoutes(t *testing.T) {
 // 首个迁移单元的状态契约：/api/healthz/live 处于 shadow（NestJS 仍是
 // 响应方），不是 go 全量接管。
 func TestHealthzLiveIsShadowNotGo(t *testing.T) {
-	for _, rule := range legacyproxy.DefaultRules() {
+	for _, rule := range legacyproxy.DefaultRules(legacyproxy.ModeShadow) {
 		if rule.Prefix == "/api/healthz/live" {
 			if rule.Mode != legacyproxy.ModeShadow {
 				t.Fatalf("/api/healthz/live mode = %s, want shadow（NestJS 仍是事实源）", rule.Mode)
@@ -207,8 +207,8 @@ func TestUserSettingsShadowIdentityGate(t *testing.T) {
 	}
 }
 
-// 路由表精确规则：三个 user-settings 只读 GET 路径均处于 shadow，且不是
-// canary/go。
+// 路由表精确规则（Go-批3A 起 onboarding 模式可配置）：shadow 模式下
+// 三个 user-settings 只读 GET 路径均处于 shadow，且不是 canary/go。
 func TestUserSettingsRoutesAreShadow(t *testing.T) {
 	for _, prefix := range []string{
 		"/api/user-settings/ui/onboarding",
@@ -216,7 +216,7 @@ func TestUserSettingsRoutesAreShadow(t *testing.T) {
 		"/api/user-settings/ui/spacetime-timeline",
 	} {
 		found := false
-		for _, rule := range legacyproxy.DefaultRules() {
+		for _, rule := range legacyproxy.DefaultRules(legacyproxy.ModeShadow) {
 			if rule.Prefix == prefix {
 				found = true
 				if rule.Mode != legacyproxy.ModeShadow {
@@ -230,22 +230,37 @@ func TestUserSettingsRoutesAreShadow(t *testing.T) {
 	}
 }
 
-// user-settings 端点未注册客户端可见的 Go handler：shadow 是旁路差分，
-// 不是客户端响应路径（若有人误加 RegisterGoHandler 接管响应，此测试
-// 失败——提醒先完成 Go Auth/RBAC）。
+// user-settings 端点的路由表现状契约（Go-批3A 起 onboarding 模式可配置）：
+// shadow 模式（默认）下三个端点都是 shadow——没有客户端可见的 Go
+// handler；go 模式下仅 onboarding 是 ModeGo（Go 鉴权 + 全响应，由
+// API_GO_ONBOARDING_MODE=go 显式启用），rss-reader / spacetime-timeline
+// 仍必须保持 shadow（若有人误把它们切到 go，此测试失败——它们的 Go
+// 侧实现仍是 legacy-approved shadow identity，不具备独立鉴权）。
 func TestUserSettingsHaveNoClientGoHandler(t *testing.T) {
-	gateway, err := legacyproxy.New("http://legacy:4000", legacyproxy.DefaultRules())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, prefix := range []string{
-		"/api/user-settings/ui/onboarding",
-		"/api/user-settings/ui/rss-reader",
-		"/api/user-settings/ui/spacetime-timeline",
+	for _, tc := range []struct {
+		mode           legacyproxy.Mode
+		wantOnboarding legacyproxy.Mode
+	}{
+		{legacyproxy.ModeShadow, legacyproxy.ModeShadow},
+		{legacyproxy.ModeGo, legacyproxy.ModeGo},
 	} {
-		for _, rule := range gateway.Rules() {
-			if rule.Prefix == prefix && rule.Mode != legacyproxy.ModeShadow {
-				t.Fatalf("%s mode = %s, want shadow", prefix, rule.Mode)
+		gateway, err := legacyproxy.New("http://legacy:4000", legacyproxy.DefaultRules(tc.mode))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, prefix := range []string{
+			"/api/user-settings/ui/onboarding",
+			"/api/user-settings/ui/rss-reader",
+			"/api/user-settings/ui/spacetime-timeline",
+		} {
+			want := legacyproxy.ModeShadow
+			if prefix == "/api/user-settings/ui/onboarding" {
+				want = tc.wantOnboarding
+			}
+			for _, rule := range gateway.Rules() {
+				if rule.Prefix == prefix && rule.Mode != want {
+					t.Fatalf("mode=%s: %s mode = %s, want %s", tc.mode, prefix, rule.Mode, want)
+				}
 			}
 		}
 	}

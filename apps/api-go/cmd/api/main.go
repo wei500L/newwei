@@ -4,41 +4,54 @@
 // http://localhost:4000）。已迁移路由按四态路由表分流：
 //
 //	legacy — 反向代理（当前事实源）
-//	shadow — NestJS 响应 + Go 实现异步差分（/api/healthz/live 与三个
-//	         user-settings 只读 GET：onboarding / rss-reader /
-//	         spacetime-timeline）
+//	shadow — NestJS 响应 + Go 实现异步差分（/api/healthz/live 与
+//	         user-settings 只读 GET：rss-reader / spacetime-timeline；
+//	         onboarding 在 shadow 模式下亦然）
 //	canary — 已验证身份的稳定哈希小比例真实流量切 Go（CANARY_PERCENT）
-//	go     — Go 原生 handler（当前仅 /__go/healthz 自省）
+//	go     — Go 原生 handler（/__go/healthz 自省；以及
+//	         API_GO_ONBOARDING_MODE=go 时的
+//	         GET /api/user-settings/ui/onboarding——Go-批3A 首个业务端点
+//	         真实接管：Go 独立 JWT 验签 + Redis blacklist + MySQL RBAC +
+//             独立响应，不依赖 NestJS 200）
 //
-// 回滚：路由表单条规则改回 legacy（配置/代码变更），或 CANARY_PERCENT=0
-// ——无数据迁移耦合。
+// 回滚：API_GO_ONBOARDING_MODE=shadow（或路由表单条规则改回 legacy，
+// 或 CANARY_PERCENT=0）——无数据迁移耦合。
 //
 // canary 信任边界（重要）：当前分流的 orgId 取自未验签的 JWT payload
-// claim，不是经过认证的组织身份。在 Go 侧完成真实 JWT 验签与 org
-// membership 重推导（迁移序 5）之前，受保护业务路由不得依赖该 claim
-// 进入 Go——fail-safe 一律回 legacy。当前没有任何路由处于 ModeCanary，
+// claim，不是经过认证的组织身份。在 Go 侧对全部受保护路由完成真实
+// JWT 验签与 org membership 重推导之前，canary 不得承载业务流量
+// （fail-safe 一律回 legacy）。当前没有任何路由处于 ModeCanary，
 // canary 仅作为待鉴权基础设施接入的分流组件存在。
 package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/authn"
+	"github.com/wei500L/newwei/apps/api-go/internal/authz"
 	"github.com/wei500L/newwei/apps/api-go/internal/canary"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/onboarding"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
@@ -289,7 +302,14 @@ func run() error {
 		return err
 	}
 
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.DefaultRules())
+	// onboarding 迁移单元的路由模式（API_GO_ONBOARDING_MODE）：
+	// shadow（默认，旧行为）或 go（Go-批3A 真实接管）。
+	onboardingMode := legacyproxy.ModeShadow
+	if cfg.OnboardingMode == config.OnboardingModeGo {
+		onboardingMode = legacyproxy.ModeGo
+	}
+
+	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.DefaultRules(onboardingMode))
 	if err != nil {
 		return err
 	}
@@ -300,12 +320,20 @@ func run() error {
 
 	// user-settings shadow 的数据库能力（非阻断）：无 DATABASE_URL 时不配置，
 	// 网关照常启动代理；差分执行时发现未配置即跳过（不查询、不失败上抛）。
+	// onboarding go 模式下同一连接池被 authz/onboarding 复用（config 已
+	// 保证 DATABASE_URL 非空；此处 DSN 无效直接启动失败——Go 接管端点
+	// 不得带病启动）。
 	var userSettingsRepo usersettings.Repository
 	userSettingsDBStatus := "unconfigured"
+	var sharedDB *sql.DB
 	if cfg.DatabaseURL != "" {
 		db, err := usersettings.OpenMySQLFromURL(cfg.DatabaseURL)
 		if err != nil {
-			// DSN 无效不阻断启动：网关继续纯代理，shadow 单元执行时跳过。
+			// DSN 无效不阻断启动：网关继续纯代理，shadow 单元执行时跳过
+			//（错误不含 DSN 原文）。
+			if cfg.OnboardingMode == config.OnboardingModeGo {
+				return fmt.Errorf("api-go: onboarding go mode requires a valid DATABASE_URL: %w", err)
+			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
 			userSettingsDBStatus = "invalid"
 		} else {
@@ -315,7 +343,42 @@ func run() error {
 			// 重试，数据库连通性也不是网关的存活条件。
 			userSettingsRepo = usersettings.NewMySQLRepository(db)
 			userSettingsDBStatus = "configured"
+			sharedDB = db
 		}
+	}
+
+	// onboarding go 模式的 Go 鉴权/响应栈装配（Go-批3A）：
+	// authn（JWT 验签 + Redis blacklist）→ authz（MySQL membership/
+	// permission 重推导，复用同一 *sql.DB 连接池）→ authhttp（契约错误）
+	// → onboarding handler（业务查询 + 响应构造）。
+	// shadow 模式完全不装配（零额外连接、旧行为不变）。
+	var redisClient *redis.Client
+	if cfg.OnboardingMode == config.OnboardingModeGo {
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
+			Username: cfg.RedisUsername,
+			Password: cfg.RedisPassword,
+			DB:       cfg.RedisDB,
+		})
+		verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
+		blacklist := authn.NewRedisBlacklist(redisClient)
+		authenticator := authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
+		gateway.RegisterGoHandler(onboarding.Path, onboarding.NewHandler(authenticator, userSettingsRepo))
+		log.Printf("api-go: onboarding GET under go takeover (JWT verify + Redis blacklist + MySQL RBAC; issuer=%s)", cfg.JWTIssuer)
+	}
+
+	// shadow 单元表：go 模式下 onboarding 不再是 shadow 差分单元（ModeGo
+	// 规则也不会进入 serveShadow——双重收口，保证 onboarding GET 不再
+	// 增加 shadow.executed）。RSS/Spacetime 保持 Shadow。
+	settingsUnits := userSettingsShadowUnits(userSettingsRepo)
+	if cfg.OnboardingMode == config.OnboardingModeGo {
+		filtered := make([]shadowUnit, 0, len(settingsUnits))
+		for _, unit := range settingsUnits {
+			if unit.Path != onboarding.Path {
+				filtered = append(filtered, unit)
+			}
+		}
+		settingsUnits = filtered
 	}
 
 	disp := &dispatcher{
@@ -326,7 +389,7 @@ func run() error {
 				RequireLegacyOK: false, // 公开探针：无需 legacy 认可身份
 				Executant:       healthLiveExecutant{},
 			},
-		}, userSettingsShadowUnits(userSettingsRepo)...),
+		}, settingsUnits...),
 		shadowRunner: shadow.NewRunner(shadow.Budget{
 			TimeoutMs:            cfg.ShadowTimeoutMs,
 			MaxRequestBodyByte:   cfg.ShadowMaxRequestBodyByte,
@@ -344,19 +407,32 @@ func run() error {
 	// /__go/healthz：网关存活探针 + 路由表与 shadow/canary 状态自省。
 	// user-settings shadow 状态只报配置类别（unconfigured/invalid/configured
 	// ——configured 表示 DSN 已解析为 driver 配置，不承诺可连接），不含
-	// DSN/host/凭据/数据库错误详情。字段名 userSettingsShadow 覆盖三个
-	// 只读 GET 共用的同一 repository（Go-批2A 时叫 onboardingShadow，
-	// 批2B 起更名——全仓唯一消费者是本文件与 README，无外部契约）。
+	// DSN/host/凭据/数据库错误详情。onboardingMode 如实展示当前模式
+	//（shadow/go）。字段名 userSettingsShadow 覆盖三个只读 GET 共用的
+	// 同一 repository（全仓唯一消费者是本文件与 README，无外部契约）。
 	gateway.SetGoHandler(func(w http.ResponseWriter, _ *http.Request) {
 		routes := make([]map[string]string, 0, len(gateway.Rules()))
 		for _, rule := range gateway.Rules() {
-			routes = append(routes, map[string]string{"prefix": rule.Prefix, "mode": string(rule.Mode)})
+			entry := map[string]string{"prefix": rule.Prefix, "mode": string(rule.Mode)}
+			if rule.Exact {
+				entry["match"] = "exact"
+				methods := make([]string, 0, len(rule.Methods))
+				for method := range rule.Methods {
+					methods = append(methods, method)
+				}
+				sort.Strings(methods)
+				entry["methods"] = strings.Join(methods, ",")
+			}
+			routes = append(routes, entry)
 		}
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"ok":     true,
 			"routes": routes,
 			"shadow": disp.shadowRunner.Stats(),
 			"canary": map[string]int{"percent": disp.canaryRouter.Percent()},
+			"onboarding": map[string]any{
+				"mode": string(cfg.OnboardingMode),
+			},
 			"userSettingsShadow": map[string]string{
 				"database": userSettingsDBStatus,
 			},
@@ -398,6 +474,15 @@ func run() error {
 		log.Printf("api-go: received %s, shutting down", sig)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		return server.Shutdown(ctx)
+		if err := server.Shutdown(ctx); err != nil {
+			return err
+		}
+		// go 模式下 onboarding 鉴权栈持有的 Redis 连接随进程收口。
+		if redisClient != nil {
+			if err := redisClient.Close(); err != nil {
+				log.Printf("api-go: redis client close: %v", err)
+			}
+		}
+		return nil
 	}
 }

@@ -1,11 +1,16 @@
 // Package legacyproxy 是 Strangler Fig 网关的路由与反向代理层。
 //
-// 路由表按前缀声明四态（对齐 docs/refactor/go-migration-adr.md §4）：
+// 路由表按单元声明四态（对齐 docs/refactor/go-migration-adr.md §4）：
 //
 //	legacy（默认）— 全量反向代理到 NestJS apps/api
 //	shadow         — 仍由 NestJS 执行，请求异步复制到 Go 实现比对（仅记录差异）
 //	canary         — 按已验证身份的稳定哈希小比例真实流量切 Go，其余 legacy
 //	go             — Go 原生 handler 全量接管
+//
+// 匹配方式（Go-批3A 起）：通用 fallback 规则按前缀匹配（任意方法）；
+// 迁移单元按 exact path + method 白名单匹配——不匹配的 method 与相似
+// 路径回落更短的通用规则（PUT /…/onboarding 回落 /api/ legacy，绝不
+// 进入 Go handler）。
 //
 // 四态实现：
 //   - shadow：客户端响应始终来自 NestJS（直通 + 有界旁录，客户端无需
@@ -18,7 +23,7 @@
 //   - 回滚：路由表单条规则改回 ModeLegacy（或 CANARY_PERCENT=0），
 //     纯配置变更，无代码回滚。
 //
-// 新增迁移 = 在 DefaultRules 中把对应前缀改为目标模式，并注册 goHandlers。
+// 新增迁移 = 在 DefaultRules 中把对应单元改为目标模式，并注册 goHandlers。
 package legacyproxy
 
 import (
@@ -45,33 +50,52 @@ const (
 	ModeGo     Mode = "go"
 )
 
-// Rule 声明一个前缀的流量去向。
+// Rule 声明一个路由单元的流量去向。
+//
+// 匹配语义（Go-批3A 起迁移单元支持 method + exact-path）：
+//   - Exact=false（默认）：前缀匹配——通用 fallback 规则的既有语义；
+//   - Exact=true：路径完全相等——迁移单元的精确边界（/…/onboarding-x
+//     等相似路径不得误命中）；
+//   - Methods 非空：方法白名单——不匹配的方法不命中本规则，回落到更短
+//     的通用规则（如 PUT /…/onboarding 回落 /api/ legacy，由 NestJS
+//     单写）；Methods 为空 = 任意方法（fallback 语义）。
 type Rule struct {
 	Prefix string
 	Mode   Mode
+	// Exact 要求路径与 Prefix 完全相等（迁移单元）。
+	Exact bool
+	// Methods 是允许的方法白名单（大写 HTTP method；nil/空 = 全部）。
+	Methods map[string]bool
 }
 
-// DefaultRules 是当前的路由表。
+// DefaultRules 是当前的路由表。onboardingMode 是 onboarding 单元的模式
+//（API_GO_ONBOARDING_MODE：ModeShadow=默认部署旧行为；ModeGo=Go-批3A
+// 真实接管——首个 Go 全响应业务端点）。
 //
 // 迁移单元：
 //   - 序 2：GET /api/healthz/live —— shadow（公开探针，首个单元）；
-//   - 序 3（Go-批2A）：GET /api/user-settings/ui/onboarding —— shadow；
-//   - 序 3（Go-批2B）：GET /api/user-settings/ui/rss-reader、
-//     GET /api/user-settings/ui/spacetime-timeline —— shadow（确定性
-//     normalization，复用批2A 的 MySQL repository 与身份门禁）。
-//     精确路径规则：PUT 等写方法命中同前缀时由 serveShadow 的只读方法
-//     红线纯代理到 NestJS，绝不双发（见 isReadonlyMethod）；dispatcher
-//     的 shadowUnits 再做精确 path + method 二次限制（本表是前缀匹配）。
+//   - 序 3（Go-批2A/2B）：GET /api/user-settings/ui/{onboarding,rss-reader,
+//     spacetime-timeline} —— shadow（legacy-approved 身份 + Go 差分）；
+//   - 序 5（Go-批3A）：GET /api/user-settings/ui/onboarding —— 由
+//     onboardingMode 决定：shadow（默认）或 go（Go 独立鉴权 + 全响应，
+//     经 API_GO_ONBOARDING_MODE=go 显式启用）。
+//     迁移单元均为 exact path + method 白名单：PUT 等写方法与相似路径
+//     （onboarding-x、onboarding/other）回落 /api/ legacy，由 NestJS
+//     处理——绝不进入 Go handler（写方法永远 NestJS 单写）。
 //
 // 注意三个无 /api 前缀的挂载点（契约清单 §0）：/graphql、/socket.io、
 // /admin/queues（Bull Board）。代理层必须与 REST 前缀分别声明。
-func DefaultRules() []Rule {
+func DefaultRules(onboardingMode Mode) []Rule {
+	if onboardingMode != ModeGo {
+		onboardingMode = ModeShadow
+	}
+	getOnly := map[string]bool{http.MethodGet: true}
 	return []Rule{
 		{Prefix: "/api/", Mode: ModeLegacy},
-		{Prefix: "/api/healthz/live", Mode: ModeShadow},
-		{Prefix: "/api/user-settings/ui/onboarding", Mode: ModeShadow},
-		{Prefix: "/api/user-settings/ui/rss-reader", Mode: ModeShadow},
-		{Prefix: "/api/user-settings/ui/spacetime-timeline", Mode: ModeShadow},
+		{Prefix: "/api/healthz/live", Mode: ModeShadow, Exact: true, Methods: getOnly},
+		{Prefix: "/api/user-settings/ui/onboarding", Mode: onboardingMode, Exact: true, Methods: getOnly},
+		{Prefix: "/api/user-settings/ui/rss-reader", Mode: ModeShadow, Exact: true, Methods: getOnly},
+		{Prefix: "/api/user-settings/ui/spacetime-timeline", Mode: ModeShadow, Exact: true, Methods: getOnly},
 		{Prefix: "/graphql", Mode: ModeLegacy},
 		{Prefix: "/socket.io/", Mode: ModeLegacy},
 		{Prefix: "/docs", Mode: ModeLegacy},
@@ -148,7 +172,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // ServeHTTPWithShadow 分发并在 shadow 路由上执行差分。
 func (g *Gateway) ServeHTTPWithShadow(w http.ResponseWriter, r *http.Request, sh ShadowDispatcher) {
-	rule := g.match(r.URL.Path)
+	rule := g.match(r.Method, r.URL.Path)
 	switch rule.Mode {
 	case ModeGo:
 		handler := g.matchGoHandler(rule.Prefix)
@@ -407,19 +431,30 @@ func (g *Gateway) matchGoHandler(prefix string) GoHandler {
 	return nil
 }
 
-// match 返回最长前缀匹配的规则（更具体的前缀优先）。
-func (g *Gateway) match(path string) Rule {
+// match 返回命中的规则：先按 Prefix 长度降序（更具体优先），每条规则
+// 要求路径匹配（Exact=完全相等；否则前缀）且方法在白名单内（白名单为
+// 空 = 任意方法）。未命中任何规则的路径（如根路径 /）交给 NestJS——
+// 它是当前的事实源。
+func (g *Gateway) match(method, path string) Rule {
+	method = strings.ToUpper(method)
 	sorted := make([]Rule, len(g.rules))
 	copy(sorted, g.rules)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		return len(sorted[i].Prefix) > len(sorted[j].Prefix)
 	})
 	for _, rule := range sorted {
-		if strings.HasPrefix(path, rule.Prefix) {
-			return rule
+		if rule.Exact {
+			if path != rule.Prefix {
+				continue
+			}
+		} else if !strings.HasPrefix(path, rule.Prefix) {
+			continue
 		}
+		if len(rule.Methods) > 0 && !rule.Methods[method] {
+			continue
+		}
+		return rule
 	}
-	// 未命中任何前缀的路径（如根路径 /）也交给 NestJS——它是当前的事实源。
 	return Rule{Prefix: path, Mode: ModeLegacy}
 }
 
