@@ -44,7 +44,10 @@ jobs:
 
       # Go 工具链供 @modular/api-go / @modular/vector-go 的 lint/test/build 脚本使用；
       # 版本以 apps/api-go/go.mod 为准（apps/vector-go/go.mod 需保持一致）。
-      # 两个 Go 模块均为纯标准库、无 go.sum，无需模块缓存。
+      # api-go 自 Go-批2A 起有第三方依赖（go.sum 为 tracked file，漂移由
+      # verify 的 drift gate 与 go-modules-regen 通道管理）；vector-go 仍为
+      # 纯标准库。两模块均不启用 setup-go 模块缓存（集成 job 用
+      # cache: false 消费已提交 go.sum）。
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
