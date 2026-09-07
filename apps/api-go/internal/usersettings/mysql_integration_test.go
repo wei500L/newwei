@@ -141,7 +141,9 @@ func TestUserSettingsMySQLIntegration(t *testing.T) {
 	}
 
 	// 4. 其他 key 不串读（同 org+user 不同 key 的记录不被 onboarding 查询命中）。
-	if _, err := db.ExecContext(ctx, insert, "us-it-2", orgID, userID, "ui:war-map:settings:v1", `{}`, insertedAt); err != nil {
+	//    （批3B 起 war-map 是真实固定 key——占位用非业务 key，避免与步骤 7
+	//    的 WarMapKey 插入撞 orgId+userId+key 唯一键。）
+	if _, err := db.ExecContext(ctx, insert, "us-it-2", orgID, userID, "ui:other-placeholder:v1", `{}`, insertedAt); err != nil {
 		t.Fatalf("insert other key: %v", err)
 	}
 	record, err = repo.FindOnboarding(ctx, orgID, userID)

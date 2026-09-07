@@ -79,10 +79,10 @@ func TestSituationMonitorContract(t *testing.T) {
 		}
 		response := BuildSituationMonitorResponse(records)
 
-		// monitors：4 条输入中 #2（name 空）与 #3（无 keywords）丢弃；
-		// #4（location lat=999 越界）location 不出现但 monitor 保留 → 3 条。
-		if len(response.Monitors) != 3 {
-			t.Fatalf("monitors = %d, want 3（name 空/无 keywords 丢弃；location 越界仅丢 location）: %+v", len(response.Monitors), response.Monitors)
+		// monitors：4 条输入中 #2（name 空）与 #3（无 keywords）整条丢弃；
+		// #4（location lat=999 越界）location 不出现但 monitor 保留 → 2 条。
+		if len(response.Monitors) != 2 {
+			t.Fatalf("monitors = %d, want 2（name 空/无 keywords 整条丢弃；location 越界仅丢 location）: %+v", len(response.Monitors), response.Monitors)
 		}
 		first := response.Monitors[0]
 		if first.ID != "mon-1" || first.Name != "Taiwan Strait" {
@@ -109,11 +109,11 @@ func TestSituationMonitorContract(t *testing.T) {
 		if first.CreatedAt != 1757000000000 {
 			t.Errorf("createdAt = %d, want 1757000000000", first.CreatedAt)
 		}
-		if response.Monitors[2].Location != nil {
-			t.Errorf("越界 location 应不出现: %+v", response.Monitors[2].Location)
+		if response.Monitors[1].Location != nil {
+			t.Errorf("越界 location 应不出现: %+v", response.Monitors[1].Location)
 		}
-		if response.Monitors[2].Name != "Bad location" {
-			t.Errorf("monitors[2].name = %q, want Bad location", response.Monitors[2].Name)
+		if response.Monitors[1].Name != "Bad location" {
+			t.Errorf("monitors[1].name = %q, want Bad location", response.Monitors[1].Name)
 		}
 
 		// layout：legacy `layout` 回退到 lg；md 断点数值取整与最小值。

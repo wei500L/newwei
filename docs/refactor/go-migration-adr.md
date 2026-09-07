@@ -169,7 +169,7 @@ handler、同一鉴权链装配、同一连接池，不复制六份实现：
   situation-monitor 一次聚合查询三个固定 key（对齐 NestJS `findMany`）。
   无任意 key 查询 API——SettingKey 封闭集合。
 - **三个新 normalization**（`internal/usersettings`）：War Map 完整移植
-  `packages/utils/src/war-map-contract.ts`（46 layer + legacy key 映射 +
+  `packages/utils/src/war-map-contract.ts`（45 layer + legacy key 映射 +
   viewState clamp + bearing/pitch 归零 + 枚举回退）；Situation Monitor
   三段聚合（monitors/layout/settings 各自规整 + 三段 updatedAt）；
   NewsNow（有序对象 columnOrders/sourceAffinity——`Object.entries` 顺序

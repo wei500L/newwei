@@ -2,7 +2,7 @@
 //
 // 权威来源是 packages/utils/src/war-map-contract.ts 的 normalizeWarMapSettings
 //（499-528 行）——完整移植，不是只实现 smoke fixture 用到的字段：
-//   - 全部 46 个 layer id 与默认 visibility（WAR_MAP_LAYER_IDS /
+//   - 全部 45 个 layer id 与默认 visibility（WAR_MAP_LAYER_IDS /
 //     WAR_MAP_DEFAULT_LAYER_VISIBILITY）；
 //   - legacy layer key 映射（LEGACY_WAR_MAP_LAYER_KEY_MAP：conflictZones→
 //     conflicts 等 7 项——只在新 key 无布尔值时作 fallback）；
@@ -26,8 +26,8 @@
 package usersettings
 
 const (
-	// warMapLayerCount 与 WAR_MAP_LAYER_IDS 长度一致（46）。
-	warMapLayerCount = 46
+	// warMapLayerCount 与 WAR_MAP_LAYER_IDS 长度一致（45）。
+	warMapLayerCount = 45
 	// warMapVisibilityLegacyCount 与 LEGACY_WAR_MAP_LAYER_KEY_MAP 条目数一致（7）。
 	warMapVisibilityLegacyCount = 7
 )
@@ -92,7 +92,7 @@ type WarMapViewState struct {
 	Pitch   float64 `json:"pitch"`
 }
 
-// WarMapSettings 对齐 NestJS WarMapSettings。LayerVisibility 用固定 46
+// WarMapSettings 对齐 NestJS WarMapSettings。LayerVisibility 用固定 45
 // 字段 struct（不是 map）：序列化顺序与 NestJS 展开顺序一致，且编译期
 // 封闭集合——不存在未知 layer。
 type WarMapSettings struct {
@@ -105,7 +105,7 @@ type WarMapSettings struct {
 	AisHighlightCandidates bool                 `json:"aisHighlightCandidates"`
 }
 
-// warMapLayerVisibility 是 46 个 layer 的固定字段 visibility（字段顺序与
+// warMapLayerVisibility 是 45 个 layer 的固定字段 visibility（字段顺序与
 // WAR_MAP_LAYER_IDS 一致）。
 type warMapLayerVisibility struct {
 	Conflicts            bool `json:"conflicts"`

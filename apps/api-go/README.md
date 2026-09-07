@@ -131,7 +131,7 @@ Go-批3B 起的四阶段验收（全部经 api-go 入口 + 真实登录 JWT）�
   `UserSetting` 表（五个单 key 端点 `orgId+userId+固定 key` 三条件参数化
   查询共用同一条私有 SQL；situation-monitor 一次聚合查询三个固定 key，
   对齐 NestJS findMany 语义），并与 NestJS 响应差分（normalization 契约
-  逐字段对齐——含批3B 的 war-map 46 layer/legacy key/clamp、newsnow
+  逐字段对齐——含批3B 的 war-map 45 layer/legacy key/clamp、newsnow
   有序对象/上限/真值、situation-monitor 三段聚合）。
 - **legacy-approved shadow identity（信任边界）**：shadow 是回滚兼容路径，
   不是 Go 的独立鉴权。身份来源是 legacy 信任委托——同一请求先由
