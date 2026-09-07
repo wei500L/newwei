@@ -112,7 +112,7 @@ api-go 自批2C 起具备真实可运行的入口链，但**默认部署仍 Web 
   验证未完成**。canary/go 接管（§4 后两态）在迁移序 5 完成前保持禁止
   （例外见 §4.3——onboarding 单元的 go 接管以最小闭环 Go Auth 为前置件）。
 
-### 4.3 Go Access Token 鉴权最小闭环 + onboarding 首个 go 接管（Go-批3A）
+### 4.3 Go Access Token 鉴权最小闭环 + onboarding 首个 go 接管（Go-批3A；Go-批3B 扩展为六端点统一接管，见 §4.4）
 
 迁移序 5（Auth/Org/RBAC）的最小闭环先行落地，并立刻服务于一个真实接管
 的业务端点（而不是只写鉴权代码）：
@@ -143,11 +143,49 @@ api-go 自批2C 起具备真实可运行的入口链，但**默认部署仍 Web 
   零 shadow 执行。
 - **边界（如实登记）**：这只是迁移序 5 的最小闭环——MFA、OIDC、refresh
   轮换、机器令牌、Platform Admin 语义未迁移（登录/refresh/logout 仍全部
-  NestJS，mtk_ 在 Go 端点被拒绝）；RSS/Spacetime 仍是 shadow
-  （`LegacyApprovedIdentity` 保留，消费者为这三个 shadow 单元）；
-  `shadowUnits` 与路由表均未为其他端点开 go；canary router 仍消费未验签
-  claim（未改造为已验证身份分流），CANARY_PERCENT 保持 0；默认部署仍
-  Web → NestJS 直连，生产流量未切换。
+  NestJS，mtk_ 在 Go 端点被拒绝）；批3B 前其余端点仍 shadow/legacy；
+  canary router 仍消费未验签 claim（未改造为已验证身份分流），
+  CANARY_PERCENT 保持 0；默认部署仍 Web → NestJS 直连，生产流量未切换。
+
+### 4.4 user-settings 只读域统一 Go 接管（Go-批3B）
+
+批3A 的单端点接管收敛为整个只读域的统一接管——六个 GET 共享同一
+handler、同一鉴权链装配、同一连接池，不复制六份实现：
+
+- **接管单元**：`GET /api/user-settings/ui/{onboarding,rss-reader,
+  spacetime-timeline,war-map,newsnow,situation-monitor}` 全部由
+  `API_GO_USER_SETTINGS_READ_MODE=go` 切到 ModeGo（compose
+  `api-go-pilot` profile 固定注入 `go`；该变量优先级高于
+  `API_GO_ONBOARDING_MODE`——批3A 变量保留为兼容：未设置 read mode 时
+  仍单独控制 onboarding。默认部署与手工裸启均未设置——旧行为零变化）。
+- **统一 handler**（`internal/usersettingsread`）：批3A 的
+  `internal/onboarding` 被完全替代并删除（不新旧并存）。请求链 = Bearer
+  提取 → JWT 验签 → Redis blacklist → MySQL membership/RBAC 重推导 →
+  `items.read` → 固定 UserSetting 查询 → normalization → Go 全响应。
+  六端点只差「查哪个语义方法 + 哪个 Build*Response」——一张编译期绑定
+  表，不是注册框架。
+- **repository 扩展**：五个单 key 端点共用同一条私有参数化查询
+  （`orgId+userId+固定 key`，key 为 `usersettings` 包编译期常量，共 8 个）；
+  situation-monitor 一次聚合查询三个固定 key（对齐 NestJS `findMany`）。
+  无任意 key 查询 API——SettingKey 封闭集合。
+- **三个新 normalization**（`internal/usersettings`）：War Map 完整移植
+  `packages/utils/src/war-map-contract.ts`（46 layer + legacy key 映射 +
+  viewState clamp + bearing/pitch 归零 + 枚举回退）；Situation Monitor
+  三段聚合（monitors/layout/settings 各自规整 + 三段 updatedAt）；
+  NewsNow（有序对象 columnOrders/sourceAffinity——`Object.entries` 顺序
+  与「前 N 项」上限语义用流式有序解码，不用 map 随机遍历；Boolean 真值；
+  clamp/round；smart→personalized 归一）。
+- **远端真实栈验收**（`api-go-entry-smoke` 四阶段）：Phase A 六个 PUT
+  NestJS 单写 + 8 key 落库确认；Phase B shadow 差分（executed 精确 +6、
+  diffs 零增量）；Phase C go 接管契约对比（六端点 NestJS 直连 vs Go
+  handler 逐字段全等）；Phase D 停止 NestJS 后六端点仍 200 + 代表性
+  PUT/未迁移 GET 502（独立接管与写路径未迁移证明）。
+- **边界（如实登记）**：六个 PUT 仍全部由 NestJS 单写（exact path +
+  method 白名单回落）；登录/refresh/logout/MFA/OIDC/机器令牌仍全部
+  NestJS；`LegacyApprovedIdentity` 保留（shadow 回滚路径的消费者——
+  Go 模式完全不经过它）；canary 仍未激活；默认生产入口未切换（pilot
+  profile 之外 Web → NestJS 直连）；远端真实栈验证不等于生产/预发布
+  真实流量验收。
 
 ## 5. 队列/cron/outbox 边界（红线）
 
