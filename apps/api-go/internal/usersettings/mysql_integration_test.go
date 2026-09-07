@@ -141,7 +141,9 @@ func TestUserSettingsMySQLIntegration(t *testing.T) {
 	}
 
 	// 4. 其他 key 不串读（同 org+user 不同 key 的记录不被 onboarding 查询命中）。
-	if _, err := db.ExecContext(ctx, insert, "us-it-2", orgID, userID, "ui:war-map:settings:v1", `{}`, insertedAt); err != nil {
+	//    （批3B 起 war-map 是真实固定 key——占位用非业务 key，避免与步骤 7
+	//    的 WarMapKey 插入撞 orgId+userId+key 唯一键。）
+	if _, err := db.ExecContext(ctx, insert, "us-it-2", orgID, userID, "ui:other-placeholder:v1", `{}`, insertedAt); err != nil {
 		t.Fatalf("insert other key: %v", err)
 	}
 	record, err = repo.FindOnboarding(ctx, orgID, userID)
@@ -220,6 +222,109 @@ func TestUserSettingsMySQLIntegration(t *testing.T) {
 	}
 	if rssIsolated.Found {
 		t.Error("rss-reader record.Found = true — orgId/userId 隔离失败")
+	}
+
+	// 7. Go-批3B：war-map / newsnow 两个新固定 key 的真实读取与
+	//    normalization 抽查。
+	warMapJSON := `{"layerVisibility":{"conflicts":false,"militaryBases":false},"viewState":{"lat":120,"zoom":99},"activePreset":"mena","aisMode":"density"}`
+	if _, err := db.ExecContext(ctx, insert, "us-it-5", orgID, userID, WarMapKey, warMapJSON, insertedAt); err != nil {
+		t.Fatalf("insert war-map: %v", err)
+	}
+	warRecord, err := repo.FindWarMap(ctx, orgID, userID)
+	if err != nil {
+		t.Fatalf("find war-map: %v", err)
+	}
+	if !warRecord.Found {
+		t.Fatal("war-map record.Found = false, want true")
+	}
+	warResponse := BuildWarMapResponse(warRecord)
+	if warResponse.UpdatedAt.Settings != "2026-09-03T08:30:15.123Z" {
+		t.Errorf("war-map updatedAt.settings = %q, want 2026-09-03T08:30:15.123Z", warResponse.UpdatedAt.Settings)
+	}
+	if s := warResponse.Settings; s == nil {
+		t.Fatal("war-map settings = nil, want object")
+	} else if s.LayerVisibility.Conflicts || s.LayerVisibility.Bases ||
+		!s.LayerVisibility.Hotspots || s.ViewState.Lat != 90 || s.ViewState.Zoom != 18 ||
+		s.ActivePreset != "mena" || s.AisMode != "density" {
+		t.Errorf("war-map normalization mismatch: %+v", s)
+	}
+
+	newsnowJSON := `{"focusSources":[" src-A ","src-A","bad!"],"sortMode":"smart","hideCrossSourceDuplicates":"yes","columnOrders":{"zz":[" s1 ","s1"]},"sourceAffinity":{"src-Z":{"score":250,"focusCount":3.7}}}`
+	if _, err := db.ExecContext(ctx, insert, "us-it-6", orgID, userID, NewsnowKey, newsnowJSON, insertedAt); err != nil {
+		t.Fatalf("insert newsnow: %v", err)
+	}
+	newsRecord, err := repo.FindNewsnow(ctx, orgID, userID)
+	if err != nil {
+		t.Fatalf("find newsnow: %v", err)
+	}
+	if !newsRecord.Found {
+		t.Fatal("newsnow record.Found = false, want true")
+	}
+	newsResponse := BuildNewsnowResponse(newsRecord)
+	if s := newsResponse.Settings; s == nil {
+		t.Fatal("newsnow settings = nil, want object")
+	} else if len(s.FocusSources) != 1 || s.FocusSources[0] != "src-A" ||
+		s.SortMode != "personalized" || !s.HideCrossSourceDuplicates ||
+		len(s.ColumnOrders) != 1 || s.ColumnOrders[0].Key != "zz" ||
+		len(s.SourceAffinity) != 1 || s.SourceAffinity[0].Affinity.Score != 100 || s.SourceAffinity[0].Affinity.FocusCount != 4 {
+		t.Errorf("newsnow normalization mismatch: %+v", s)
+	}
+
+	// 8. Go-批3B：situation-monitor 三 key 聚合——一次查询读三个固定
+	//    key；部分记录（只有 monitors）时 layout/settings Found=false
+	//    但不报错；全部三 key 写入后聚合完整；三段互不串读。
+	situationPartialJSON := `[{"id":"sm-1","name":"Watch","keywords":["a,b"],"createdAt":1757000000000}]`
+	if _, err := db.ExecContext(ctx, insert, "us-it-7", orgID, userID, SituationMonitorMonitorsKey, situationPartialJSON, insertedAt); err != nil {
+		t.Fatalf("insert situation monitors: %v", err)
+	}
+	partial, err := repo.FindSituationMonitor(ctx, orgID, userID)
+	if err != nil {
+		t.Fatalf("find situation-monitor partial: %v", err)
+	}
+	if !partial.Monitors.Found || partial.Layout.Found || partial.Settings.Found {
+		t.Errorf("partial aggregation: monitors=%v layout=%v settings=%v, want true/false/false",
+			partial.Monitors.Found, partial.Layout.Found, partial.Settings.Found)
+	}
+	partialResponse := BuildSituationMonitorResponse(partial)
+	if partialResponse.Monitors == nil || len(partialResponse.Monitors) != 1 || partialResponse.Monitors[0].ID != "sm-1" {
+		t.Errorf("partial monitors = %+v, want 1 条（id 保留）", partialResponse.Monitors)
+	}
+	if partialResponse.Layout != nil || partialResponse.Settings != nil {
+		t.Errorf("partial response layout/settings = %v/%v, want nil", partialResponse.Layout, partialResponse.Settings)
+	}
+	if partialResponse.UpdatedAt.Monitors == "" || partialResponse.UpdatedAt.Layout != "" || partialResponse.UpdatedAt.Settings != "" {
+		t.Errorf("partial updatedAt = %+v, want 只含 monitors", partialResponse.UpdatedAt)
+	}
+
+	// 全三 key 聚合 + 租户隔离。
+	if _, err := db.ExecContext(ctx, insert, "us-it-8", orgID, userID, SituationMonitorLayoutKey,
+		`{"layouts":{"lg":[{"i":"a","x":-1,"y":2.5,"w":0,"h":3}]}}`, insertedAt); err != nil {
+		t.Fatalf("insert situation layout: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, insert, "us-it-9", orgID, userID, SituationMonitorSettingsKey,
+		`{"windowHours":6,"scope":"tagged"}`, insertedAt); err != nil {
+		t.Fatalf("insert situation settings: %v", err)
+	}
+	full, err := repo.FindSituationMonitor(ctx, orgID, userID)
+	if err != nil {
+		t.Fatalf("find situation-monitor full: %v", err)
+	}
+	if !full.Monitors.Found || !full.Layout.Found || !full.Settings.Found {
+		t.Fatalf("full aggregation: %+v, want 三段全部 Found", full)
+	}
+	fullResponse := BuildSituationMonitorResponse(full)
+	if s := fullResponse.Settings; s == nil || s.WindowHours != 6 || s.Scope != "tagged" {
+		t.Errorf("full settings = %+v, want windowHours=6 scope=tagged", s)
+	}
+	if l := fullResponse.Layout; l == nil || len(l.Layouts["lg"]) != 1 || l.Layouts["lg"][0].X != 0 || l.Layouts["lg"][0].Y != 3 || l.Layouts["lg"][0].W != 1 {
+		t.Errorf("full layout = %+v, want lg=[x=0 y=3 w=1]", l)
+	}
+	isolatedSituation, err := repo.FindSituationMonitor(ctx, otherOrgID, userID)
+	if err != nil {
+		t.Fatalf("find situation-monitor isolated: %v", err)
+	}
+	if isolatedSituation.Monitors.Found || isolatedSituation.Layout.Found || isolatedSituation.Settings.Found {
+		t.Error("situation-monitor 隔离失败——其他 org 不应有任何记录")
 	}
 }
 

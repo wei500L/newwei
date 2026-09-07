@@ -81,7 +81,7 @@ func newTestGatewayWithShadow(t *testing.T, legacyURL string, rules []Rule, goHa
 // 未迁移路由（/api/*）原样代理到 NestJS：路径/方法/请求体不变。
 func TestLegacyRoutesProxyThrough(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), func(w http.ResponseWriter, _ *http.Request) {
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow, ""), func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
@@ -118,7 +118,7 @@ func TestLegacyRoutesProxyThrough(t *testing.T) {
 // 三个无 /api 前缀的挂载点同样代理：/graphql、/socket.io、/admin/queues。
 func TestNonApiPrefixesProxyThrough(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), nil)
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow, ""), nil)
 
 	for _, path := range []string{"/graphql", "/socket.io/notifications", "/admin/queues", "/docs"} {
 		req, _ := http.NewRequest(http.MethodPost, "http://gateway"+path, strings.NewReader("{}"))
@@ -145,7 +145,7 @@ func TestNonApiPrefixesProxyThrough(t *testing.T) {
 // Go 原生路由（/__go/healthz）由网关应答，不触达 NestJS。
 func TestGoRouteServedNatively(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), func(w http.ResponseWriter, _ *http.Request) {
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow, ""), func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "routes": []map[string]string{{"prefix": "/__go/healthz", "mode": "go"}}})
 	})
 
@@ -180,7 +180,7 @@ func TestGoRouteServedNatively(t *testing.T) {
 // go 路由未注册 handler → 501（fail-closed，不静默回落 legacy）。
 func TestGoRouteWithoutHandlerFailsClosed(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), nil)
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow, ""), nil)
 
 	rec := httptest.NewRecorder()
 	gateway.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://gateway/__go/healthz", nil))
@@ -192,7 +192,7 @@ func TestGoRouteWithoutHandlerFailsClosed(t *testing.T) {
 // 上游不可达 → 502 JSON（含 traceId），而不是连接重置。
 func TestUpstreamUnreachableReturns502(t *testing.T) {
 	// 127.0.0.1:1 几乎必然拒绝连接。
-	gateway := newTestGateway(t, "http://127.0.0.1:1", DefaultRules(ModeShadow), nil)
+	gateway := newTestGateway(t, "http://127.0.0.1:1", DefaultRules(ModeShadow, ""), nil)
 
 	rec := httptest.NewRecorder()
 	gateway.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil))
@@ -214,7 +214,7 @@ func TestUpstreamUnreachableReturns502(t *testing.T) {
 // trace 中间件：代理请求也带 x-trace-id 响应头，并透传到上游。
 func TestTraceHeadersOnProxiedRequest(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), nil)
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow, ""), nil)
 
 	req, _ := http.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil)
 	req.Header.Set("x-trace-id", "abcdef0123456789abcdef0123456789")
@@ -269,7 +269,7 @@ func TestLongestPrefixWins(t *testing.T) {
 //   - /api/ 其他路由保持 Legacy。
 func TestOnboardingGoModeMethodExactRouting(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway, err := New(stub.server.URL, DefaultRules(ModeGo))
+	gateway, err := New(stub.server.URL, DefaultRules(ModeGo, ""))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -394,7 +394,7 @@ func (d *fakeDispatcher) CanaryRoute(_ *http.Request) bool {
 func TestShadowRouteServesLegacyResponseAndTriggersDiff(t *testing.T) {
 	stub := newLegacyStub(t)
 	disp := &fakeDispatcher{}
-	gateway := newTestGatewayWithShadow(t, stub.server.URL, DefaultRules(ModeShadow), nil, disp)
+	gateway := newTestGatewayWithShadow(t, stub.server.URL, DefaultRules(ModeShadow, ""), nil, disp)
 
 	req, _ := http.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil)
 	rec := httptest.NewRecorder()
@@ -429,7 +429,7 @@ func TestShadowRouteServesLegacyResponseAndTriggersDiff(t *testing.T) {
 func TestShadowRouteSkipsDiffForWriteMethods(t *testing.T) {
 	stub := newLegacyStub(t)
 	disp := &fakeDispatcher{}
-	gateway := newTestGatewayWithShadow(t, stub.server.URL, DefaultRules(ModeShadow), nil, disp)
+	gateway := newTestGatewayWithShadow(t, stub.server.URL, DefaultRules(ModeShadow, ""), nil, disp)
 
 	req, _ := http.NewRequest(http.MethodPost, "http://gateway/api/healthz/live", strings.NewReader(`{"x":1}`))
 	rec := httptest.NewRecorder()
@@ -449,7 +449,7 @@ func TestShadowRouteSkipsDiffForWriteMethods(t *testing.T) {
 // shadow 路由无 dispatcher（纯代理）：不差分、不报错。
 func TestShadowRouteWithoutDispatcherStillProxies(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), nil)
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow, ""), nil)
 
 	rec := httptest.NewRecorder()
 	gateway.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil))
@@ -603,7 +603,7 @@ func TestShadowResponseOverBudgetStillStreamsFully(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow, ""))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -640,7 +640,7 @@ func TestShadowSSEResponseSkipsDiffButPassesThrough(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow, ""))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -671,7 +671,7 @@ func TestShadowUpgradeRequestSkipsDiff(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow, ""))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -700,7 +700,7 @@ func TestShadowRequestOverBudgetStillForwardsFullBody(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow, ""))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -732,7 +732,7 @@ func TestShadowSmallResponseCapturedForDiff(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow, ""))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -765,7 +765,7 @@ func TestShadowForwardsUpstreamHeaders(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow, ""))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
