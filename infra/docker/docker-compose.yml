@@ -534,21 +534,28 @@ services:
       qdrant:
         condition: service_started
 
-  # api-go：主后端 Go 网关试点（Go-批2C：真实入口接线）。独立
-  # api-go-pilot profile——默认部署不启动该服务，NestJS api 仍是唯一
-  # 入口（Web → api:4000）。
+  # api-go：主后端 Go 网关试点（Go-批2C：真实入口接线；Go-批3A：
+  # onboarding GET 首个业务端点真实接管）。独立 api-go-pilot profile
+  # ——默认部署不启动该服务，NestJS api 仍是唯一入口（Web → api:4000）。
   #
   # 启用：docker compose --profile api-go-pilot up -d api-go
   #   （或 .env 设 COMPOSE_PROFILES=api-go-pilot 后 up -d）。
   # 切流（pilot 模式）：.env 中 API_BASE_URL=http://api-go:4020（服务端
   #   运行期），浏览器端以构建参数 NEXT_PUBLIC_API_BASE_URL 指向
   #   http://<host>:${API_GO_HOST_PORT:-4020}/api 重建 web 镜像。
-  # 回滚：API_BASE_URL 指回 http://api:4000 并按原值重建 web——无数据
-  #   迁移耦合。当前进入 shadow 的端点见 apps/api-go/README.md（其余
-  #   请求全部由 api-go 代理回 NestJS）；CANARY_PERCENT 固定 0，
-  #   canary/go 模式仍禁止启用。
+  # 回滚（无数据迁移耦合，三选一或组合）：
+  #   1. API_GO_ONBOARDING_MODE=shadow——onboarding GET 回到 NestJS 响应
+  #      + Go 差分（Go-批2A/2B 行为）；
+  #   2. API_BASE_URL 指回 http://api:4000（web 侧不再经 api-go）；
+  #   3. 停止 api-go pilot 服务。
+  # Go-批3A 边界：onboarding GET 是 pilot 范围内首个 Go 全响应端点（Go
+  # 独立 JWT 验签 + Redis blacklist + MySQL RBAC + 独立查库响应，登出
+  # NestJS 后仍可用）；登录/refresh/logout/全部 PUT 及其余路由仍由
+  # NestJS 承载（RSS/Spacetime 仍是 shadow 差分）。CANARY_PERCENT
+  # 固定 0，canary 模式仍禁止启用。
   # DATABASE_URL 由与 NestJS api 相同的 MYSQL_* 值派生——同一真实
-  # MySQL，不复制数据、不引入第二个 NestJS。
+  # MySQL，不复制数据、不引入第二个 NestJS；Redis/JWT 配置与 api 服务
+  # 同源（同一 Redis 实例查 blacklist、同一 secret 验签）。
   api-go:
     <<: *app-hardening
     profiles: ["api-go-pilot"]
@@ -562,6 +569,20 @@ services:
       PORT: 4020
       LEGACY_API_URL: http://api:4000
       DATABASE_URL: mysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD}@mysql:${MYSQL_PORT:-3306}/${MYSQL_DB}
+      # pilot 明确接管 onboarding GET（默认部署不启动本服务；手工裸启
+      # api-go 时该值默认 shadow——旧行为不变）。
+      API_GO_ONBOARDING_MODE: go
+      # 与 api 服务同一 JWT 配置（issuer/audience 默认值与 NestJS env
+      # schema 一致）。secret 只经环境注入，不进日志/healthz/错误正文。
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ISSUER: ${JWT_ISSUER:-modular-monolith}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-modular-monolith-clients}
+      # 与 api 服务同一 Redis（blacklist 共享，不建第二套撤销名单）。
+      REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_USERNAME: ${REDIS_USERNAME:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_DB: ${REDIS_DB:-0}
       CANARY_PERCENT: "0"
       SHADOW_DEBUG_BODY_LOG: "false"
     ports:
@@ -571,6 +592,8 @@ services:
       api:
         condition: service_healthy
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       # distroless 无 curl：healthcheck 子命令自探活（不依赖宿主侧探测）。
