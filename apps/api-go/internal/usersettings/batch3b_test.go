@@ -148,8 +148,8 @@ func TestSituationMonitorContract(t *testing.T) {
 
 		// settings：windowHours 48 非法 → 24；scope 非法 → all；布尔严格。
 		if response.Settings.WindowHours != 24 || response.Settings.Scope != "all" ||
-			response.Settings.AutoRefresh || !response.Settings.ResetLayoutOnPreset || !response.Settings.TranslateToZh {
-			t.Errorf("settings = %+v, want windowHours=24 scope=all autoRefresh=false reset=true translate=true", response.Settings)
+			!response.Settings.AutoRefresh || !response.Settings.ResetLayoutOnPreset || !response.Settings.TranslateToZh {
+			t.Errorf("settings = %+v, want windowHours=24 scope=all autoRefresh=true(数字 0 回退默认) reset=true translate=true", response.Settings)
 		}
 
 		// updatedAt 三段与三份数据对应。
@@ -206,9 +206,9 @@ func TestWarMapContract(t *testing.T) {
 		if settings.LayerVisibility.Conflicts {
 			t.Error("conflicts = true, want false（根对象直读）")
 		}
-		if settings.LayerVisibility.Cables {
-			// cables 根对象给了 true——注意：cables 的 legacy key 是
-			// cableLandings，这里 "cables" 是新 key，true 应被采用。
+		// cables 根对象给了 true（新 key——legacy key 是 cableLandings，
+		// 不在此 fixture 中）：true 应被直接采用。
+		if !settings.LayerVisibility.Cables {
 			t.Error("cables = false, want true（新 key 布尔值采用）")
 		}
 		// legacy key：militaryBases=false → bases=false（无新 key 时回退）。
@@ -367,9 +367,11 @@ func TestNewsnowContract(t *testing.T) {
 	})
 }
 
-// 有序对象上限语义：situation visibility 的 64 项上限在「第 64 个合法
-// 项之后」停止（Object.entries 顺序决定哪 64 个 key 存活）——用 66 个
-// 交错合法/非法 key 验证存活集合与顺序无关的部分（合法项恰好前 64 个）。
+// 有序对象上限语义：situation visibility 的 64 项上限——NestJS 只过滤
+// 非布尔 value 与 trim 后空 key（key 无 pattern 检查，"bad-key!" 也占位），
+// 「前 64 个合法项」由 Object.entries 顺序决定。fixture 交错非法值/空 key/
+// 普通非法 key：非布尔值与空 key 不占位，bad-key! 占位 → 存活的是
+// v001…v063（第 64 个是 bad-key! 之后计数到 64 的最后一个合法 v）。
 func TestSituationVisibilityCapKeepsFirst64InOrder(t *testing.T) {
 	raw := []byte(`{"visibility": {` +
 		`"v001": true, "bad-key!": true, "v002": false, "": true, "v003": true,` +
@@ -390,11 +392,17 @@ func TestSituationVisibilityCapKeepsFirst64InOrder(t *testing.T) {
 	if len(layout.Visibility) != 64 {
 		t.Fatalf("visibility = %d entries, want 64（上限即停止）", len(layout.Visibility))
 	}
-	if _, exists := layout.Visibility["v064"]; !exists {
-		t.Error("v064 must survive (64th legal entry in order)")
+	// 存活集合：bad-key! 占一个位置（NestJS 只要求 key trim 后非空——无
+	// pattern 检查）；空 key（""）不占位（trim 后空丢弃）。fixture 的
+	// 67 个非空 key 中前 64 个存活 = v001…v063 + bad-key!，v064 起丢弃。
+	if _, exists := layout.Visibility["bad-key!"]; !exists {
+		t.Error("bad-key! must survive (NestJS 只要求 key trim 后非空)")
 	}
-	if _, exists := layout.Visibility["v065"]; exists {
-		t.Error("v065 must be dropped (past the 64-entry cap)")
+	if _, exists := layout.Visibility["v063"]; !exists {
+		t.Error("v063 must survive (last v before the cap)")
+	}
+	if _, exists := layout.Visibility["v064"]; exists {
+		t.Error("v064 must be dropped (past the 64-entry cap)")
 	}
 	if layout.Visibility["v002"] {
 		t.Error("v002 = true, want false（原值保留）")
