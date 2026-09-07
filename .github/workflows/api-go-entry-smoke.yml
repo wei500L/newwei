@@ -805,7 +805,8 @@ jobs:
           refresh = open("/tmp/smoke-refresh").read().strip()
 
           # 真实 logout 经 api-go 代理到 NestJS——由 NestJS 写入真实 Redis
-          # blacklist（不是本地内存模拟）。
+          # blacklist（不是本地内存模拟）。@Post 默认状态码 201（logout 无
+          # @HttpCode 装饰器，auth.controller.ts）。
           req = urllib.request.Request(
               "http://127.0.0.1:4020/api/auth/logout",
               data=json.dumps({"refreshToken": refresh}).encode(),
@@ -814,11 +815,11 @@ jobs:
                        "content-type": "application/json", "x-trace-id": TRACE})
           try:
               with urllib.request.urlopen(req, timeout=15) as resp:
-                  assert resp.status == 200, resp.status
+                  assert resp.status == 201, resp.status
                   json.loads(resp.read())
           except urllib.error.HTTPError as err:
               raise SystemExit(f"logout returned {err.code}: {err.read()[:300]!r}")
-          print("logout via api-go -> NestJS 200（blacklist 由 NestJS 写入真实 Redis）")
+          print("logout via api-go -> NestJS 201（blacklist 由 NestJS 写入真实 Redis）")
 
           # 被撤销的 accessToken 请求 Go onboarding → 按 NestJS 契约 401。
           req = urllib.request.Request(
