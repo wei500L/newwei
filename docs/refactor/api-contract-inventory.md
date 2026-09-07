@@ -34,8 +34,10 @@
 - `GET /api/auth/admin/registration-applications`（`auth.controller.ts:393`）、`POST .../approve-org`（:454）、`POST .../reject-org`（:471）——handler 内部另有鉴权，但全局 Guard 先拦
 
 **Go 迁移状态（api-go 四态路由表，`apps/api-go/internal/legacyproxy/proxy.go`）**：
-- user-settings 确定性只读 GET ×3 —— **ModeShadow**（Go-批2A：onboarding；Go-批2B：rss-reader、spacetime-timeline）：NestJS 仍是客户端响应事实源；Go 旁路真实读取 MySQL `UserSetting`（`SettingKey` 编译期固定常量，orgId+userId+key 三条件参数化查询）并差分。身份来自 legacy-approved shadow identity（legacy 200 后的临时信任委托——不是 Go 已验证身份，不读 permissions claim）。其余三个 user-settings GET（situation-monitor/war-map/newsnow）与全部 PUT 仍 legacy；未迁移任何写入路径。Go Auth/RBAC 未完成，不得进入 canary/go。
-- 入口链（Go-批2C）：api-go 具备生产容器（`infra/docker/api-go.Dockerfile`，distroless nonroot + `healthcheck` 子命令）与 Compose 独立 `api-go-pilot` profile 服务；`API_BASE_URL` 可切 `http://api-go:4020` 使入口变为 `Web → api-go → NestJS`（其余请求全部纯代理，契约不变），默认部署仍直连 NestJS。已通过远端真实栈运行验证（`api-go-entry-smoke`：真实登录 JWT + 三个 PUT 持久化 + 四个 Shadow GET 零差异零丢弃）；生产/预发布真实流量验证未完成。trace header（`x-trace-id`/`traceparent`）在 api-go 入口链保持原语义（§0 TraceId 行为镜像）。
+- `GET /api/user-settings/ui/onboarding` —— **ModeGo（Go-批3A，pilot 内 `API_GO_ONBOARDING_MODE=go` 显式启用；默认仍 ModeShadow）**：首个由 Go 独立鉴权并全响应的业务端点——Go 独立验签 HS256 access token（iss/aud/exp 按 jsonwebtoken 语义、jti 缺失按 NestJS 语义放行、拒绝 alg 混淆与 mtk_）、独立查询真实 Redis blacklist（`access-token:blacklist:<jti>` 同 key，fail-closed）、独立从 MySQL 重推导 User/Org/Membership 与 MembershipRole/RolePermission/Permission 权限（与 getUserProfile 同序同文案 401，多角色优先/primary 回退）、独立判定 `items.read`（JWT permissions claim 一律不参与）、独立查 UserSetting 并写出契约等价响应（错误形状对齐 GlobalExceptionFilter）。路由为 exact+GET：PUT 同路径与相似路径（onboarding-x/子路径）回落 legacy。已完成远端真实栈接管验证（含 NestJS 停止后仍 200 的独立证明）。
+- user-settings 确定性只读 GET ×2 —— **ModeShadow**（Go-批2B：rss-reader、spacetime-timeline）：NestJS 仍是客户端响应事实源；Go 旁路真实读取 MySQL `UserSetting`（`SettingKey` 编译期固定常量，orgId+userId+key 三条件参数化查询）并差分。身份来自 legacy-approved shadow identity（legacy 200 后的临时信任委托——不是 Go 已验证身份，不读 permissions claim）；该包（`shadowidentity`）的剩余消费者即这两个 shadow 单元与 shadow 模式下的 onboarding。其余三个 user-settings GET（situation-monitor/war-map/newsnow）与全部 PUT 仍 legacy；未迁移任何写入路径。
+- 登录/refresh/logout/MFA/OIDC/机器令牌 —— **全部仍由 NestJS 承载**（迁移序 5 余项，未动）。
+- 入口链（Go-批2C）：api-go 具备生产容器（`infra/docker/api-go.Dockerfile`，distroless nonroot + `healthcheck` 子命令）与 Compose 独立 `api-go-pilot` profile 服务；`API_BASE_URL` 可切 `http://api-go:4020` 使入口变为 `Web → api-go → NestJS`（其余请求全部纯代理，契约不变），默认部署仍直连 NestJS。已通过远端真实栈运行验证（`api-go-entry-smoke`：真实登录 JWT + 三个 PUT 持久化 + Shadow GET 零差异零丢弃 + Go-批3A 鉴权链/接管验证）；生产/预发布真实流量验证未完成。trace header（`x-trace-id`/`traceparent`）在 api-go 入口链保持原语义（§0 TraceId 行为镜像）。
 
 ## 1. REST 契约（71 controller · 369 endpoint）
 
@@ -97,7 +99,7 @@ GET .../clustering/readiness · overview · failures；POST failures/:groupId/ve
 
 ### 1.7 user-settings（12 个，`user-ui-settings.controller.ts`）
 
-situation-monitor/war-map/spacetime-timeline/newsnow/rss-reader 各 GET+PUT（items.read :22-101）；onboarding GET+PUT（items.read :110/116，API-01 已补权限元数据）。**Go-批2A/2B：onboarding、rss-reader、spacetime-timeline 三个 GET 处于 ModeShadow**（见 §0 Go 迁移状态），其余三个 GET 与全部 PUT 均为 legacy。
+situation-monitor/war-map/spacetime-timeline/newsnow/rss-reader 各 GET+PUT（items.read :22-101）；onboarding GET+PUT（items.read :110/116，API-01 已补权限元数据）。**Go-批2A/2B：onboarding、rss-reader、spacetime-timeline 三个 GET 进入 ModeShadow（NestJS 仍是响应方）；Go-批3A：onboarding GET 在 pilot 内可切 ModeGo（`API_GO_ONBOARDING_MODE=go`，Go 独立鉴权 + 全响应，默认仍 shadow）**，其余三个 GET 与全部 PUT 均为 legacy（见 §0 Go 迁移状态）。
 
 ### 1.8 public-portal（4 个，全部 @Public + Cache-Control）
 
