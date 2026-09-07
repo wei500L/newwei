@@ -558,7 +558,11 @@ jobs:
               assert doc.get("version") == 1, (path, doc)
               expected = dict(payload["expected"])
               expected.pop("_partial", False)
-              actual = doc.get("settings") if "settings" in doc else doc
+              # 响应形态判别：situation-monitor 是顶层三段（monitors/layout/
+              # settings 都是顶层段）；单 key 端点是 {settings: {...}} 包裹
+              # ——不能只看 "settings" in doc（situation-monitor 顶层也有
+              # settings 段），以 monitors 段判别。
+              actual = doc if "monitors" in doc else doc.get("settings")
               for key, want in expected.items():
                   assert_equal(actual.get(key), want, f"{path}: {key}")
               print(f"PUT {path} -> 200 (NestJS 响应回显 normalized settings 一致, trace header ok)")
