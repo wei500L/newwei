@@ -81,7 +81,7 @@ func newTestGatewayWithShadow(t *testing.T, legacyURL string, rules []Rule, goHa
 // 未迁移路由（/api/*）原样代理到 NestJS：路径/方法/请求体不变。
 func TestLegacyRoutesProxyThrough(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(), func(w http.ResponseWriter, _ *http.Request) {
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
@@ -118,7 +118,7 @@ func TestLegacyRoutesProxyThrough(t *testing.T) {
 // 三个无 /api 前缀的挂载点同样代理：/graphql、/socket.io、/admin/queues。
 func TestNonApiPrefixesProxyThrough(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(), nil)
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), nil)
 
 	for _, path := range []string{"/graphql", "/socket.io/notifications", "/admin/queues", "/docs"} {
 		req, _ := http.NewRequest(http.MethodPost, "http://gateway"+path, strings.NewReader("{}"))
@@ -145,7 +145,7 @@ func TestNonApiPrefixesProxyThrough(t *testing.T) {
 // Go 原生路由（/__go/healthz）由网关应答，不触达 NestJS。
 func TestGoRouteServedNatively(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(), func(w http.ResponseWriter, _ *http.Request) {
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "routes": []map[string]string{{"prefix": "/__go/healthz", "mode": "go"}}})
 	})
 
@@ -180,7 +180,7 @@ func TestGoRouteServedNatively(t *testing.T) {
 // go 路由未注册 handler → 501（fail-closed，不静默回落 legacy）。
 func TestGoRouteWithoutHandlerFailsClosed(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(), nil)
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), nil)
 
 	rec := httptest.NewRecorder()
 	gateway.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://gateway/__go/healthz", nil))
@@ -192,7 +192,7 @@ func TestGoRouteWithoutHandlerFailsClosed(t *testing.T) {
 // 上游不可达 → 502 JSON（含 traceId），而不是连接重置。
 func TestUpstreamUnreachableReturns502(t *testing.T) {
 	// 127.0.0.1:1 几乎必然拒绝连接。
-	gateway := newTestGateway(t, "http://127.0.0.1:1", DefaultRules(), nil)
+	gateway := newTestGateway(t, "http://127.0.0.1:1", DefaultRules(ModeShadow), nil)
 
 	rec := httptest.NewRecorder()
 	gateway.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil))
@@ -214,7 +214,7 @@ func TestUpstreamUnreachableReturns502(t *testing.T) {
 // trace 中间件：代理请求也带 x-trace-id 响应头，并透传到上游。
 func TestTraceHeadersOnProxiedRequest(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(), nil)
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), nil)
 
 	req, _ := http.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil)
 	req.Header.Set("x-trace-id", "abcdef0123456789abcdef0123456789")
@@ -255,6 +255,95 @@ func TestLongestPrefixWins(t *testing.T) {
 	gateway.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "http://gateway/api/items", nil))
 	if !strings.Contains(rec2.Body.String(), "legacy") {
 		t.Fatalf("/api/items should stay legacy, got %s", rec2.Body.String())
+	}
+}
+
+// Go-批3A 迁移单元的路由匹配契约：exact path + method 白名单。
+//
+// onboarding 在 ModeGo（API_GO_ONBOARDING_MODE=go）下：
+//   - GET 精确路径 → Go handler（不触达 NestJS）；
+//   - PUT / POST / HEAD 同路径 → 回落 /api/ legacy（NestJS 单写）；
+//   - 相似路径（onboarding-x、onboarding/other）→ Legacy，不误命中；
+//   - rss-reader / spacetime-timeline 仍是 shadow（无 dispatcher 时纯
+//     代理——NestJS 响应）；
+//   - /api/ 其他路由保持 Legacy。
+func TestOnboardingGoModeMethodExactRouting(t *testing.T) {
+	stub := newLegacyStub(t)
+	gateway, err := New(stub.server.URL, DefaultRules(ModeGo))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	gateway.RegisterGoHandler("/api/user-settings/ui/onboarding", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"impl": "go-onboarding"})
+	})
+	handler := httpx.TraceMiddleware(gateway)
+
+	// ModeGo 只切 onboarding：rss-reader / spacetime-timeline 必须仍是 shadow。
+	for _, prefix := range []string{"/api/user-settings/ui/rss-reader", "/api/user-settings/ui/spacetime-timeline"} {
+		for _, rule := range gateway.Rules() {
+			if rule.Prefix == prefix && rule.Mode != ModeShadow {
+				t.Fatalf("%s mode = %s, want shadow（本批只接管 onboarding）", prefix, rule.Mode)
+			}
+		}
+	}
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		wantGo bool
+	}{
+		{"onboarding-get", http.MethodGet, "/api/user-settings/ui/onboarding", true},
+		{"onboarding-put-stays-legacy", http.MethodPut, "/api/user-settings/ui/onboarding", false},
+		{"onboarding-post-stays-legacy", http.MethodPost, "/api/user-settings/ui/onboarding", false},
+		{"onboarding-head-stays-legacy", http.MethodHead, "/api/user-settings/ui/onboarding", false},
+		{"onboarding-suffix-does-not-match", http.MethodGet, "/api/user-settings/ui/onboarding-x", false},
+		{"onboarding-subpath-does-not-match", http.MethodGet, "/api/user-settings/ui/onboarding/other", false},
+		{"rss-reader-stays-legacy-response", http.MethodGet, "/api/user-settings/ui/rss-reader", false},
+		{"spacetime-stays-legacy-response", http.MethodGet, "/api/user-settings/ui/spacetime-timeline", false},
+		{"other-api-route-stays-legacy", http.MethodGet, "/api/items", false},
+	}
+	legacyCount := 0
+	for _, tc := range cases {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(tc.method, "http://gateway"+tc.path, nil))
+		body := rec.Body.String()
+		if tc.wantGo {
+			if !strings.Contains(body, "go-onboarding") {
+				t.Errorf("%s: want go handler response, got %s", tc.name, body)
+			}
+		} else if tc.method == http.MethodHead {
+			// HEAD 语义：Go http server 丢弃响应体（上游写了也不送达）——
+			// 以状态码与「上游收到该请求」（下方计数断言）证明走的是
+			// legacy 代理而非 Go handler。
+			legacyCount++
+			if rec.Code != http.StatusOK {
+				t.Errorf("%s: status = %d, want 200 (legacy proxy)", tc.name, rec.Code)
+			}
+			continue
+		} else {
+			legacyCount++
+			if !strings.Contains(body, "legacy") {
+				t.Errorf("%s: want legacy upstream response, got %s", tc.name, body)
+			}
+		}
+	}
+
+	// Go 命中不触达 NestJS：上游收到的请求数恰好等于非 Go 用例数，
+	// 且 PUT 以 PUT 方法原样到达（NestJS 单写）。
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	if len(stub.requests) != legacyCount {
+		t.Fatalf("upstream requests = %d, want %d（go 命中不得触达上游）", len(stub.requests), legacyCount)
+	}
+	sawPut := false
+	for _, req := range stub.requests {
+		if req.Method == http.MethodPut && req.Path == "/api/user-settings/ui/onboarding" {
+			sawPut = true
+		}
+	}
+	if !sawPut {
+		t.Error("PUT /api/user-settings/ui/onboarding did not reach upstream as PUT — 写方法必须原样代理")
 	}
 }
 
@@ -305,7 +394,7 @@ func (d *fakeDispatcher) CanaryRoute(_ *http.Request) bool {
 func TestShadowRouteServesLegacyResponseAndTriggersDiff(t *testing.T) {
 	stub := newLegacyStub(t)
 	disp := &fakeDispatcher{}
-	gateway := newTestGatewayWithShadow(t, stub.server.URL, DefaultRules(), nil, disp)
+	gateway := newTestGatewayWithShadow(t, stub.server.URL, DefaultRules(ModeShadow), nil, disp)
 
 	req, _ := http.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil)
 	rec := httptest.NewRecorder()
@@ -340,7 +429,7 @@ func TestShadowRouteServesLegacyResponseAndTriggersDiff(t *testing.T) {
 func TestShadowRouteSkipsDiffForWriteMethods(t *testing.T) {
 	stub := newLegacyStub(t)
 	disp := &fakeDispatcher{}
-	gateway := newTestGatewayWithShadow(t, stub.server.URL, DefaultRules(), nil, disp)
+	gateway := newTestGatewayWithShadow(t, stub.server.URL, DefaultRules(ModeShadow), nil, disp)
 
 	req, _ := http.NewRequest(http.MethodPost, "http://gateway/api/healthz/live", strings.NewReader(`{"x":1}`))
 	rec := httptest.NewRecorder()
@@ -360,7 +449,7 @@ func TestShadowRouteSkipsDiffForWriteMethods(t *testing.T) {
 // shadow 路由无 dispatcher（纯代理）：不差分、不报错。
 func TestShadowRouteWithoutDispatcherStillProxies(t *testing.T) {
 	stub := newLegacyStub(t)
-	gateway := newTestGateway(t, stub.server.URL, DefaultRules(), nil)
+	gateway := newTestGateway(t, stub.server.URL, DefaultRules(ModeShadow), nil)
 
 	rec := httptest.NewRecorder()
 	gateway.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://gateway/api/healthz/live", nil))
@@ -514,7 +603,7 @@ func TestShadowResponseOverBudgetStillStreamsFully(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules())
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -551,7 +640,7 @@ func TestShadowSSEResponseSkipsDiffButPassesThrough(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules())
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -582,7 +671,7 @@ func TestShadowUpgradeRequestSkipsDiff(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules())
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -611,7 +700,7 @@ func TestShadowRequestOverBudgetStillForwardsFullBody(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules())
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -643,7 +732,7 @@ func TestShadowSmallResponseCapturedForDiff(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules())
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -676,7 +765,7 @@ func TestShadowForwardsUpstreamHeaders(t *testing.T) {
 	upstream := newStubServer(t, handler)
 
 	disp := &fakeDispatcher{}
-	gateway, err := New(upstream.URL, DefaultRules())
+	gateway, err := New(upstream.URL, DefaultRules(ModeShadow))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

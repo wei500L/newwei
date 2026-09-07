@@ -87,6 +87,10 @@ ui/onboarding` 起步（迁移序 2 的首个真实业务端点，从 MySQL 主�
 读取进入 shadow 差分）；Go-批2B 扩展 `rss-reader`、`spacetime-timeline`
 （同一 repository 的固定 `SettingKey` 查询与同一身份门禁）。其余三个
 user-settings GET（situation-monitor/war-map/newsnow）与全部 PUT 仍 legacy。
+Go-批3A 起 onboarding 具备独立 Go 鉴权（§4.3）并可在 pilot 切 ModeGo——
+其 shadow 单元随之下线；`LegacyApprovedIdentity` 的剩余消费者是
+`rss-reader`/`spacetime-timeline` 两个 shadow 单元与 shadow 模式下的
+onboarding（默认部署路径）。
 
 ### 4.2 入口链与部署形态（Go-批2C）
 
@@ -105,7 +109,45 @@ api-go 自批2C 起具备真实可运行的入口链，但**默认部署仍 Web 
 - 验证分层：普通 CI 只验证静态/单元/MySQL 集成；手动 `api-go-entry-smoke`
   workflow 完成**远端真实栈运行验证**（真实 MySQL+migration+真实 NestJS+
   api-go 容器+真实登录 JWT+Shadow 指标增量断言）；**生产/预发布真实流量
-  验证未完成**。canary/go 接管（§4 后两态）在迁移序 5 完成前保持禁止。
+  验证未完成**。canary/go 接管（§4 后两态）在迁移序 5 完成前保持禁止
+  （例外见 §4.3——onboarding 单元的 go 接管以最小闭环 Go Auth 为前置件）。
+
+### 4.3 Go Access Token 鉴权最小闭环 + onboarding 首个 go 接管（Go-批3A）
+
+迁移序 5（Auth/Org/RBAC）的最小闭环先行落地，并立刻服务于一个真实接管
+的业务端点（而不是只写鉴权代码）：
+
+- **接管单元**：`GET /api/user-settings/ui/onboarding` 在 pilot 中由
+  `API_GO_ONBOARDING_MODE=go` 显式切到 ModeGo（compose `api-go-pilot`
+  profile 固定注入 `go`；默认部署与手工裸启仍 `shadow`——旧行为零变化）。
+- **Go 独立鉴权链**（`internal/authn` → `internal/authz` →
+  `internal/authhttp` → `internal/onboarding`，依赖方向单向）：HS256
+  验签（拒绝 alg=none/算法混淆/mtk_ 机器令牌；issuer/audience/exp/nbf
+  按 jsonwebtoken 语义；jti 缺失按 NestJS 当前语义放行）→ 真实 Redis
+  blacklist（`access-token:blacklist:<jti>`，与 NestJS 同一实例同一
+  key，不建第二套撤销名单；查询失败 fail-closed）→ 真实 MySQL 重推导
+  User/Org/Membership 与 MembershipRole/RolePermission/Permission 权限
+  （与 getUserProfile 同序同文案 401；多角色优先、空则 primary 回退）→
+  `items.read` 判定（JWT 的 permissions claim 一律不读——`authn.Token`
+  结构上不存在该字段）→ 既有 UserSetting repository 查询 + Go 全响应。
+  错误契约与 GlobalExceptionFilter 逐字段对齐（401/403/500/503 映射见
+  `internal/authhttp/errors.go`）。
+- **路由匹配升级**：迁移单元 exact path + method 白名单（PUT 同路径、
+  `onboarding-x`、`onboarding/other` 等回落 `/api/` legacy——写方法
+  永远 NestJS 单写，相似路径不误命中）；fallback 规则仍前缀匹配。
+- **远端真实栈验收**（`api-go-entry-smoke`）：契约对比（NestJS 直连 vs
+  Go handler 全等）、数据库无权限而 JWT claim 有 → 双端 403、
+  membership inactive → 双端 401 同文案、真实 logout blacklist → 401
+  revoked、篡改签名/alg=none → 401、**NestJS 停止后 onboarding GET 仍
+  200 且未迁移端点 502**（独立接管证明，非代理/Shadow 假象）、onboarding
+  零 shadow 执行。
+- **边界（如实登记）**：这只是迁移序 5 的最小闭环——MFA、OIDC、refresh
+  轮换、机器令牌、Platform Admin 语义未迁移（登录/refresh/logout 仍全部
+  NestJS，mtk_ 在 Go 端点被拒绝）；RSS/Spacetime 仍是 shadow
+  （`LegacyApprovedIdentity` 保留，消费者为这三个 shadow 单元）；
+  `shadowUnits` 与路由表均未为其他端点开 go；canary router 仍消费未验签
+  claim（未改造为已验证身份分流），CANARY_PERCENT 保持 0；默认部署仍
+  Web → NestJS 直连，生产流量未切换。
 
 ## 5. 队列/cron/outbox 边界（红线）
 

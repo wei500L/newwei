@@ -2,13 +2,17 @@
 
 NestJS `apps/api` 的渐进替代入口。默认全部流量反向代理到 NestJS（`LEGACY_API_URL`，默认 `http://localhost:4000`）；已迁移路由按四态路由表分流。详细语义见 `docs/refactor/api-go-four-mode.md`。
 
+Go-批3A 起，`GET /api/user-settings/ui/onboarding` 在 pilot 中可由 **Go 独立鉴权并全响应**（`API_GO_ONBOARDING_MODE=go`，见下文「onboarding Go 接管」）。
+
 ## 运行
 
 ```bash
 PORT=4020 LEGACY_API_URL=http://localhost:4000 go run ./cmd/api
-curl http://localhost:4020/__go/healthz     # {"ok":true,"routes":[...],"shadow":{...},"canary":{...}}
+curl http://localhost:4020/__go/healthz     # {"ok":true,"routes":[...],"shadow":{...},"canary":{...},"onboarding":{...}}
 curl http://localhost:4020/api/healthz/live # shadow 态：NestJS 响应 + Go 异步差分
 ```
+
+手工裸启（默认 `API_GO_ONBOARDING_MODE=shadow`）行为与批2C 完全一致——onboarding 仍是 shadow 差分，无 JWT/Redis 依赖。
 
 ## 生产容器与真实入口（Go-批2C）
 
@@ -29,21 +33,24 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml \
 
 - 端口：容器 4020，host `${API_GO_HOST_PORT:-4020}`（默认只绑 `DOCKER_PUBLISH_HOST`，即 loopback）；
 - `LEGACY_API_URL=http://api:4000`；`DATABASE_URL` 由与 NestJS 相同的 `MYSQL_*` 派生（同一真实 MySQL，不复制数据）；
+- `API_GO_ONBOARDING_MODE=go`（pilot 明确接管 onboarding GET）+ 与 NestJS 同源的 `JWT_SECRET`/`JWT_ISSUER`/`JWT_AUDIENCE` 与 `REDIS_*`（blacklist 共享，不建第二套撤销名单）；
 - `CANARY_PERCENT=0`、`SHADOW_DEBUG_BODY_LOG=false` 固定；
-- 依赖 `api`（NestJS）与 `mysql` 均 healthy；
+- 依赖 `api`（NestJS）与 `mysql`、`redis` 均 healthy；
 - 默认 legacy 模式（`Web → api:4000`）不受影响——profile 服务不随普通 `up` 启动。
 
 ### 入口切换与回滚
 
 - 服务端（运行期）：`infra/docker/.env` 的 `API_BASE_URL=http://api-go:4020` → `Web → api-go → NestJS`；web 启动等待自动改探 `http://api-go:4020/api/healthz/live`（不再硬编码 `api:4000`，兼容 base 带不带 `/api`）。
 - 浏览器端（构建期）：`NEXT_PUBLIC_API_BASE_URL=http://<host>:4020/api` 重建 web 镜像。
-- 回滚：`API_BASE_URL` 指回 `http://api:4000`（+ 按原值重建 web）；`--profile api-go-pilot down` 停 pilot。无数据迁移耦合——全部 user-settings PUT 始终由 NestJS 单写。
+- 回滚（三选一或组合）：① `API_GO_ONBOARDING_MODE=shadow`——onboarding GET 回到 NestJS 响应 + Go 差分（批2A/2B 行为）；② `API_BASE_URL` 指回 `http://api:4000`（+ 按原值重建 web）；③ `--profile api-go-pilot down` 停 pilot。无数据迁移耦合——全部 user-settings PUT 始终由 NestJS 单写。
 
 ### 远端真实栈 smoke（`api-go-entry-smoke` workflow）
 
-手动触发，不进 push/synchronize 普通 CI。主路径 `workflow_dispatch`（workflow 在默认分支注册后 `gh workflow run`）；PR 期间（文件尚未上默认分支）用 label `api-go-entry-smoke` 显式触发——GitHub 平台限制 workflow_dispatch 无法触发仅存在于分支的 workflow（与 ci.yml 的 regen label 门禁同一模式），运行后移除 label。真实 MySQL/Redis/Mongo service 容器 + 真实 `prisma migrate deploy` + 真实 NestJS 进程 + 构建并启动本 Dockerfile 的 api-go 容器；经 api-go 入口完成真实登录（NestJS 签发 JWT）→ 三个 user-settings PUT（NestJS 单写并持久化到 MySQL）→ 四个 Shadow GET；断言 `/__go/healthz` 的 shadow `executed` 精确 +4、`diffs`/`dropped` 零增量、`inflight` 归零、`userSettingsShadow.database=configured`、trace header 传播、三 key 数据无串读。
+手动触发，不进 push/synchronize 普通 CI。主路径 `workflow_dispatch`（workflow 在默认分支注册后 `gh workflow run`）；PR 期间用 label `api-go-entry-smoke` 显式触发（与 ci.yml 的 regen label 门禁同一模式），运行后移除 label。真实 MySQL/Redis/Mongo service 容器 + 真实 `prisma migrate deploy` + 真实 NestJS 进程 + 构建并启动本 Dockerfile 的 api-go 容器（`API_GO_ONBOARDING_MODE=go`）。
 
-**验证状态分层**：静态代码与单元/MySQL 集成测试由普通 CI 远端验证；真实入口链（容器 + 真实 NestJS + 真实登录 + Shadow 指标增量）由 `api-go-entry-smoke` 远端真实栈运行验证完成；**生产/预发布真实流量验证未完成**（api-go 未接入任何生产入口）。
+Go-批3A 起的验收步骤（全部经 api-go 入口 + 真实登录 JWT）：真实登录 → 三个 PUT（NestJS 单写并持久化）→ 相似路径（onboarding-x / onboarding/other）不误命中 → onboarding 契约对比（NestJS 直连 vs Go handler：status/Cache-Control/content-type/JSON 全等）→ **真实数据库无 `items.read`（JWT claim 仍有）时双端 403 契约一致** → membership 停用时双端 401 同文案 → 篡改签名与 alg=none 拒绝 → 真实 logout 写入真实 Redis blacklist → 撤销 token 401 "Access token revoked" → **停止 NestJS 后 onboarding GET 仍 200（Go 独立接管证明）且未迁移端点（rss-reader）502（非伪装成功）** → 最终 shadow 指标：onboarding 全程零 shadow 执行、executed 精确 +3（healthz/live + rss-reader + spacetime-timeline）、diffs/dropped 零增量、inflight 归零、`onboarding.mode=go`、`userSettingsShadow.database=configured`。
+
+**验证状态分层**：静态代码与单元/MySQL+Redis 集成测试由普通 CI 远端验证；真实入口链（容器 + 真实 NestJS + 真实登录 + Go 鉴权链 + Shadow 指标增量）由 `api-go-entry-smoke` 远端真实栈运行验证完成；**生产/预发布真实流量验证未完成**（api-go 未接入任何生产入口）。
 
 ## 配置
 
@@ -51,6 +58,14 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml \
 |---|---|---|
 | `PORT` | 4020 | 网关监听端口 |
 | `LEGACY_API_URL` | http://localhost:4000 | NestJS apps/api 基址 |
+| `API_GO_ONBOARDING_MODE` | shadow | onboarding GET 迁移单元模式：`shadow`（默认，批2A/2B 行为——NestJS 响应 + Go 差分）或 `go`（Go 独立鉴权 + 全响应）。非法值启动失败。`go` 模式要求 `JWT_SECRET`/`DATABASE_URL`/`REDIS_HOST` 齐备（缺失启动失败——不得起一个必然失败的接管端点）；compose pilot 固定注入 `go`。回滚 = 改回 `shadow` |
+| `JWT_SECRET` | （空） | NestJS access token 的 HMAC 验签 secret（与 api 服务同一值）。仅 `go` 模式必填。值不进入日志/healthz/错误文本 |
+| `JWT_ISSUER` | modular-monolith | 与 NestJS env schema 同默认值；`go` 模式下用于验签 |
+| `JWT_AUDIENCE` | modular-monolith-clients | 同上 |
+| `REDIS_HOST` | （空） | access-token blacklist 所用 Redis（与 api 服务同一实例）。仅 `go` 模式必填 |
+| `REDIS_PORT` | 6379 | Redis 端口 |
+| `REDIS_USERNAME` / `REDIS_PASSWORD` | （空） | Redis 凭据（可选，镜像 NestJS 语义）；不进入日志/healthz/错误文本 |
+| `REDIS_DB` | 0 | Redis DB 编号 |
 | `SHADOW_TIMEOUT_MS` | 2000 | shadow 差分单次执行超时（select 强制中止） |
 | `SHADOW_MAX_REQUEST_BODY_BYTES` | 1048576 | 差分可重放的请求体上限（超过仍完整转发，只放弃差分） |
 | `SHADOW_MAX_RESPONSE_CAPTURE_BYTES` | 1048576 | 响应差分旁录上限（超过停止旁录，主响应流式透传不变） |
@@ -59,16 +74,42 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml \
 | `SHADOW_DEBUG_BODY_LOG` | false | 差异记录是否保存截断正文（默认只记 sha256 hash） |
 | `SHADOW_DEBUG_BODY_LOG_MAX_BYTES` | 2048 | debug 正文的截断长度上限 |
 | `CANARY_PERCENT` | 0 | canary 分流比例（0=legacy，100=go；当前无 ModeCanary 路由） |
-| `DATABASE_URL` | （空） | MySQL 连接（Prisma 同名同格式 `mysql://user:pass@host:port/db`）。仅供 user-settings 只读 shadow（onboarding / rss-reader / spacetime-timeline 三个 GET）的 MySQL 只读查询；**空/无效时网关照常启动并代理全部请求**（这些 shadow 单元跳过，`/__go/healthz` 报 `userSettingsShadow.database` 为 `unconfigured`/`invalid`；`configured` 只代表 DSN 已解析为 driver 配置——`sql.Open` 是惰性初始化，不承诺数据库可连接）。值本身不进入日志/healthz/错误文本 |
+| `DATABASE_URL` | （空） | MySQL 连接（Prisma 同名同格式 `mysql://user:pass@host:port/db`）。user-settings 只读 shadow（rss-reader / spacetime-timeline 两个 GET；shadow 模式下含 onboarding）的 MySQL 只读查询 + `go` 模式下 authz RBAC 重推导与 onboarding 业务查询共用同一连接池。shadow 模式下**空/无效时网关照常启动并代理全部请求**（shadow 单元跳过，`/__go/healthz` 报 `userSettingsShadow.database` 为 `unconfigured`/`invalid`；`configured` 只代表 DSN 已解析为 driver 配置——`sql.Open` 是惰性初始化，不承诺数据库可连接）；`go` 模式下必填且 DSN 无效启动失败。值本身不进入日志/healthz/错误文本 |
 
 ## 四态路由（当前路由表）
 
+路由匹配（Go-批3A 起）：**迁移单元 = exact path + method 白名单**（`/api/user-settings/ui/onboarding-x`、`onboarding/other` 等相似路径回落 legacy，绝不误命中；PUT/POST 等不匹配方法回落 `/api/` legacy 由 NestJS 处理——写方法永远 NestJS 单写）；**通用 fallback 规则 = 前缀匹配 + 任意方法**（既有语义不变）。
+
 | 模式 | 当前路由 | 行为 |
 |---|---|---|
-| legacy | `/api/`、`/graphql`、`/socket.io/`、`/docs`、`/admin/queues` | 反向代理到 NestJS（事实源） |
-| shadow | `/api/healthz/live`、`/api/user-settings/ui/onboarding`、`/api/user-settings/ui/rss-reader`、`/api/user-settings/ui/spacetime-timeline`（均仅 GET） | NestJS 响应 + Go 实现异步差分 |
+| legacy | `/api/`、`/graphql`、`/socket.io/`、`/docs`、`/admin/queues`（含 onboarding 的 PUT 与相似路径、其余全部未迁移端点） | 反向代理到 NestJS（事实源） |
+| shadow | `/api/healthz/live`、`/api/user-settings/ui/rss-reader`、`/api/user-settings/ui/spacetime-timeline`（均 exact + 仅 GET）；`/api/user-settings/ui/onboarding` 在 `API_GO_ONBOARDING_MODE=shadow`（默认）时亦为 shadow | NestJS 响应 + Go 实现异步差分 |
 | canary | （无） | 待鉴权基础设施接入的分流组件（见下） |
-| go | `/__go/healthz` | Go 原生（网关自省） |
+| go | `/__go/healthz`；`/api/user-settings/ui/onboarding`（exact + 仅 GET）在 `API_GO_ONBOARDING_MODE=go` 时——**首个业务端点 Go 全响应** | Go 原生（前者网关自省；后者独立鉴权 + 独立查库 + 响应） |
+
+### onboarding Go 接管（Go-批3A，首个业务端点真实接管）
+
+`API_GO_ONBOARDING_MODE=go` 时，`GET /api/user-settings/ui/onboarding` 的完整请求链由 Go 独立完成——不请求 NestJS、不等待 legacy 200、不使用 `LegacyApprovedIdentity`：
+
+```text
+提取 Bearer（拒绝 mtk_ 机器令牌）
+→ JWT 验签（internal/authn：仅 HS256、issuer/audience/exp/nbf 按 jsonwebtoken
+  语义、sub/orgId 非空；拒绝 alg=none/HS384/算法混淆；不读 permissions claim）
+→ Redis blacklist（internal/authn：access-token:blacklist:<jti>，与 NestJS 同一
+  Redis 同一 key；jti 缺失按 NestJS 当前语义放行；查询失败 fail-closed 500）
+→ MySQL membership/user/permission 重推导（internal/authz：复用同一 *sql.DB；
+  User/Org/Membership active 校验与 getUserProfile 同序同文案 401；
+  MembershipRole 多角色优先、空则 primary role 回退；权限名 RolePermission→
+  Permission 去重）
+→ items.read 判定（internal/onboarding：数据库推导的权限集；JWT claim 不参与）
+→ UserSetting 查询（既有 usersettings repository + normalization）
+→ Go 写出响应（internal/authhttp 契约等价错误；200 带 Cache-Control: no-store）
+```
+
+- **错误契约**：与 NestJS `GlobalExceptionFilter` 逐字段对齐——JWT 层失败 401 `{"message":"Unauthorized"}`；撤销 401 `"Access token revoked"`；user/org/membership 状态拒绝 401 同文案（`"Organization disabled"` 等）；缺权限 403 `INSUFFICIENT_PERMISSIONS`（any 模式：`detail="Requires any permission: items.read"`，无 `missingPermissions`）；Redis 故障 fail-closed 500、MySQL 故障 fail-closed 503（均通用 `"Internal server error"`，对齐 NestJS 生产环境非 HttpException 路径）。
+- **边界**：仅此一个端点。登录/refresh/logout/MFA/OIDC/机器令牌仍全部由 NestJS 承载；PUT 同路径与全部其他写请求纯代理 NestJS；RSS Reader 与 Spacetime Timeline 仍是 shadow 差分（`shadowidentity.LegacyApprovedIdentity` 仍是这两个 shadow 单元 + shadow 模式 onboarding 的身份来源——Go-批3A 未删除该包）。
+- **`/__go/healthz`**：`onboarding.mode` 如实展示当前模式（`shadow`/`go`）；`go` 模式下 onboarding 不再增加 `shadow.executed`。
+- **回滚**：`API_GO_ONBOARDING_MODE=shadow`（配置变更）——回到批2A/2B 的 shadow 差分行为，无数据迁移耦合。
 
 ### user-settings 只读 shadow（第二/三个迁移单元，Go-批2A + 批2B）
 
@@ -76,7 +117,8 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml \
   （批2A）、`/api/user-settings/ui/rss-reader` 与
   `/api/user-settings/ui/spacetime-timeline`（批2B）。**其余三个 GET
   （situation-monitor / war-map / newsnow）与全部 PUT 保持 legacy**；
-  不迁移写入路径。
+  不迁移写入路径。（Go-批3A 起 onboarding 在 `API_GO_ONBOARDING_MODE=go`
+  时升级为 Go 全响应，见上节；rss-reader / spacetime-timeline 仍是 shadow。）
 - **行为**：客户端响应完全来自 NestJS；Go 在旁路真实读取 MySQL
   `UserSetting` 表（`orgId+userId+固定 key` 三条件参数化查询；三个端点
   共用同一 repository 的同一条查询，key 是编译期固定常量），并与
@@ -93,7 +135,9 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml \
   NestJS 原响应。
 - **不能进入 canary/go**：在 Go 完成 Auth/RBAC（迁移序 5）前，这些端点
   保持 shadow；路由表被误改为 ModeCanary/ModeGo 时
-  `cmd/api/main_test.go` 的状态契约测试会失败。
+  `cmd/api/main_test.go` 的状态契约测试会失败。（Go-批3A 已为 onboarding
+  落地最小闭环 Go Auth——它因此成为首个合法的 ModeGo 业务端点；
+  rss-reader / spacetime-timeline 尚未接入，仍必须 shadow。）
 - **回滚**：`internal/legacyproxy/proxy.go` 中对应路由单条改回
   `ModeLegacy`——纯代码变更，无数据耦合（两个新端点回滚不影响
   onboarding shadow）。
@@ -108,12 +152,12 @@ legacy。详见 `docs/refactor/api-go-four-mode.md`。
 
 ## 迁移一个路由（四态）
 
-路由表在 `internal/legacyproxy/proxy.go` 的 `DefaultRules()`：
+路由表在 `internal/legacyproxy/proxy.go` 的 `DefaultRules(onboardingMode)`（迁移单元 = exact path + method 白名单；fallback = 前缀匹配）：
 
-1. shadow 起步：把目标前缀改为 `ModeShadow`，在 `cmd/api/main.go` 的 dispatcher 里注册该路由的差分执行者；
-2. 差分 0 失败后 canary：改为 `ModeCanary` + 调 `CANARY_PERCENT` 灰度（orgId 稳定哈希）；
-3. 全量：改为 `ModeGo` 并 `RegisterGoHandler` 注册处理器；
-4. 回滚 = 任意阶段改回 `ModeLegacy`（或 `CANARY_PERCENT=0`）——纯配置变更，无数据耦合。
+1. shadow 起步：把目标单元改为 `ModeShadow`（exact + method 白名单），在 `cmd/api/main.go` 的 dispatcher 里注册该路由的差分执行者；
+2. 差分 0 失败后 canary：改为 `ModeCanary` + 调 `CANARY_PERCENT` 灰度（orgId 稳定哈希——注意当前分流依据仍是未验签 claim，见下）；
+3. 全量：改为 `ModeGo` 并 `RegisterGoHandler` 注册处理器（前置件：该路由的 Go 侧鉴权链已落地——参照 Go-批3A 的 authn/authz/authhttp）；
+4. 回滚 = 任意阶段改回 `ModeLegacy`（或 `CANARY_PERCENT=0` / 单元模式配置）——纯配置变更，无数据耦合。
 
 ## 验证
 
@@ -123,11 +167,15 @@ pnpm --filter @modular/api-go lint    # go vet
 pnpm --filter @modular/api-go build   # go build
 ```
 
-MySQL 集成测试（Go-批2A 起步、批2B 扩展三个固定 key，本机禁跑——远端 CI
-的 `api-go-user-settings-integration` job 使用固定版本 MySQL service 执行）：
+MySQL + Redis 集成测试（Go-批2A 起步、批2B 扩展三个固定 key、批3A 增加
+authz RBAC 重推导与 authn blacklist，本机禁跑——远端 CI 的
+`api-go-user-settings-integration` job 使用固定版本 MySQL + Redis service
+执行）：
 
 ```bash
-cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/
+cd apps/api-go && go test -tags=integration -count=1 \
+  ./internal/usersettings/ ./internal/authz/ \
+  -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
 ```
 
 ## 依赖清单（go.mod / go.sum）
@@ -144,8 +192,10 @@ cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/
 
 ## 约束
 
-- 标准库 + `github.com/go-sql-driver/mysql`（唯一第三方依赖，user-settings
-  只读查询用）；不引入 Web 框架/ORM/DI 容器
+- 标准库 + 三个第三方依赖：`github.com/go-sql-driver/mysql`（MySQL 查询）、
+  `github.com/golang-jwt/jwt/v5`（access token 验签——不手写密码学）、
+  `github.com/redis/go-redis/v9`（blacklist 查询）；不引入 Web 框架/ORM/DI
+  容器
 - `migrations/` 在 Phase 1 禁止 schema 变更（见该目录 README）
 - 契约以 `docs/refactor/api-contract-inventory.md` 为冻结基线；鉴权矩阵（`apps/api/tests/contract/auth-matrix.json`）驱动逐端点语义对齐
 - shadow 只对 GET/HEAD/OPTIONS 差分——写请求禁止双发（双层强制：legacyproxy + shadow runner；user-settings shadow 单元进一步收窄为仅 GET）

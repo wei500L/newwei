@@ -17,6 +17,26 @@ const (
 	defaultPort    = 4020
 	defaultLegacy  = "http://localhost:4000"
 	readTimeoutSec = 30
+
+	// 与 NestJS env schema 相同的默认值（apps/api/src/modules/config/
+	// env.schema.ts：JWT_ISSUER / JWT_AUDIENCE 的 z.string().default）。
+	defaultJWTIssuer   = "modular-monolith"
+	defaultJWTAudience = "modular-monolith-clients"
+	defaultRedisPort   = 6379
+)
+
+// OnboardingMode 是 onboarding GET 迁移单元的路由模式（API_GO_ONBOARDING_MODE）。
+type OnboardingMode string
+
+const (
+	// OnboardingModeShadow 是默认值：onboarding GET 保持 Go-批2A/2B 的
+	// shadow 语义（NestJS 响应 + Go 差分，legacy-approved 身份）——
+	// 直接手工启动 api-go 的旧行为不变。
+	OnboardingModeShadow OnboardingMode = "shadow"
+	// OnboardingModeGo 是 Go-批3A 的真实接管：onboarding GET 由 Go 独立
+	// 鉴权（JWT 验签 + Redis blacklist + MySQL RBAC）并全响应。仅在
+	// pilot profile（compose）/ 远端 smoke 显式启用。
+	OnboardingModeGo OnboardingMode = "go"
 )
 
 // Config 是网关运行所需的全部配置。
@@ -28,8 +48,30 @@ type Config struct {
 	// 仅供 user-settings 只读 shadow（onboarding/rss-reader/spacetime-timeline
 	// 三个 GET）的 MySQL 只读查询使用；为空时这些 shadow 单元跳过执行，
 	// 网关照常启动并代理全部请求（非阻断）。
-	// 值本身不进入日志/healthz/错误文本。
+	// OnboardingMode=go 时必填（启动失败——Go 接管端点不能依赖缺失的
+	// 数据库）。值本身不进入日志/healthz/错误文本。
 	DatabaseURL string
+
+	// OnboardingMode 见 OnboardingMode 常量（默认 shadow）。
+	OnboardingMode OnboardingMode
+
+	// JWT 是 NestJS access token 的验签配置（与 api 服务同一
+	// JWT_SECRET/JWT_ISSUER/JWT_AUDIENCE）。OnboardingMode=go 时
+	// JWTSecret 必填；issuer/audience 默认值与 NestJS env schema 一致。
+	// Secret 不进入日志/healthz/错误文本。
+	JWTSecret   string
+	JWTIssuer   string
+	JWTAudience string
+
+	// Redis 是 access-token blacklist 所用 Redis（与 NestJS api 服务同一
+	// 实例——Go 不建第二套撤销名单）。OnboardingMode=go 时 Host 必填；
+	// Port 默认 6379、DB 默认 0、用户名/密码可选（镜像 NestJS env
+	// schema 的可选语义）。凭据不进入日志/healthz/错误文本。
+	RedisHost     string
+	RedisPort     int
+	RedisUsername string
+	RedisPassword string
+	RedisDB       int
 
 	// shadow 差分执行的资源边界（防放大攻击/雪崩）。请求体与响应捕获是
 	// 两个独立预算——请求体决定「差分能否重放请求」，响应捕获决定
@@ -89,8 +131,57 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.LegacyAPIURL = legacy
 
 	// 只读取原文，不做解析（解析在 usersettings.OpenMySQLFromURL，错误
-	// 不阻断启动）。空值合法：数据库能力整体不启用。
+	// 不阻断启动）。空值在 shadow 模式合法：数据库能力整体不启用；
+	// OnboardingMode=go 时下方显式要求非空（启动失败）。
 	cfg.DatabaseURL = strings.TrimSpace(getenv("DATABASE_URL"))
+
+	// onboarding 迁移单元的路由模式：默认 shadow（手工启动的旧行为）；
+	// 非法值启动失败（不静默降级）。
+	switch strings.TrimSpace(getenv("API_GO_ONBOARDING_MODE")) {
+	case "":
+		cfg.OnboardingMode = OnboardingModeShadow
+	case string(OnboardingModeShadow):
+		cfg.OnboardingMode = OnboardingModeShadow
+	case string(OnboardingModeGo):
+		cfg.OnboardingMode = OnboardingModeGo
+	default:
+		errs = append(errs, "API_GO_ONBOARDING_MODE must be one of shadow|go")
+	}
+
+	// JWT 验签配置（issuer/audience 默认值与 NestJS env schema 一致——
+	// 保证与同一套 env 部署的 api 服务行为等价）。
+	cfg.JWTSecret = strings.TrimSpace(getenv("JWT_SECRET"))
+	cfg.JWTIssuer = strings.TrimSpace(getenv("JWT_ISSUER"))
+	if cfg.JWTIssuer == "" {
+		cfg.JWTIssuer = defaultJWTIssuer
+	}
+	cfg.JWTAudience = strings.TrimSpace(getenv("JWT_AUDIENCE"))
+	if cfg.JWTAudience == "" {
+		cfg.JWTAudience = defaultJWTAudience
+	}
+
+	// Redis（blacklist）配置。Port/DB 有默认值；Username/Password 可空
+	//（镜像 NestJS 的可选语义）。
+	cfg.RedisHost = strings.TrimSpace(getenv("REDIS_HOST"))
+	cfg.RedisPort = defaultRedisPort
+	if raw := strings.TrimSpace(getenv("REDIS_PORT")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 || value > 65535 {
+			errs = append(errs, fmt.Sprintf("REDIS_PORT must be a valid port number, got %q", raw))
+		} else {
+			cfg.RedisPort = value
+		}
+	}
+	cfg.RedisUsername = strings.TrimSpace(getenv("REDIS_USERNAME"))
+	cfg.RedisPassword = strings.TrimSpace(getenv("REDIS_PASSWORD"))
+	if raw := strings.TrimSpace(getenv("REDIS_DB")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			errs = append(errs, fmt.Sprintf("REDIS_DB must be a non-negative integer, got %q", raw))
+		} else {
+			cfg.RedisDB = value
+		}
+	}
 
 	if raw := strings.TrimSpace(getenv("SHADOW_TIMEOUT_MS")); raw != "" {
 		value, err := strconv.Atoi(raw)
@@ -163,6 +254,20 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Sprintf("CANARY_PERCENT must be an integer in [0,100], got %q", raw))
 		} else {
 			cfg.CanaryPercent = value
+		}
+	}
+
+	// Go 接管模式的依赖前置校验：不得在依赖缺失时启动一个必然失败的
+	// 「Go 接管端点」——启动即失败，错误只指出缺失的配置项名，不打印值。
+	if cfg.OnboardingMode == OnboardingModeGo {
+		if cfg.JWTSecret == "" {
+			errs = append(errs, "JWT_SECRET is required when API_GO_ONBOARDING_MODE=go")
+		}
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_ONBOARDING_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_ONBOARDING_MODE=go")
 		}
 	}
 
