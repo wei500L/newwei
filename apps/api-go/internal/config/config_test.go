@@ -180,3 +180,48 @@ func mustAtoi(t *testing.T, raw string) int {
 	}
 	return value
 }
+
+// Go-批3B：API_GO_USER_SETTINGS_READ_MODE 的三值语义（空=兼容旧行为、
+// shadow/go 合法、非法值启动失败）+ go 模式的依赖前置校验（合并表格）。
+func TestUserSettingsReadMode(t *testing.T) {
+	cases := []struct {
+		name      string
+		readMode  string
+		extraEnv  map[string]string
+		wantMode  string
+		wantError bool
+	}{
+		{"empty keeps compat", "", nil, "", false},
+		{"shadow accepted", "shadow", nil, "shadow", false},
+		{"go accepted with deps", "go", map[string]string{
+			"JWT_SECRET": "s", "DATABASE_URL": "mysql://u:p@h:3306/db", "REDIS_HOST": "h",
+		}, "go", false},
+		{"go without deps fails", "go", nil, "", true},
+		{"invalid value rejected", "bogus", nil, "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(func(key string) string {
+				if v, ok := tc.extraEnv[key]; ok {
+					return v
+				}
+				if key == "API_GO_USER_SETTINGS_READ_MODE" {
+					return tc.readMode
+				}
+				return ""
+			})
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("want error, got cfg %+v", cfg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if string(cfg.UserSettingsReadMode) != tc.wantMode {
+				t.Errorf("UserSettingsReadMode = %q, want %q", cfg.UserSettingsReadMode, tc.wantMode)
+			}
+		})
+	}
+}
