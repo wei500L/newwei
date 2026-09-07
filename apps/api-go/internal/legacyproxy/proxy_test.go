@@ -312,6 +312,15 @@ func TestOnboardingGoModeMethodExactRouting(t *testing.T) {
 			if !strings.Contains(body, "go-onboarding") {
 				t.Errorf("%s: want go handler response, got %s", tc.name, body)
 			}
+		} else if tc.method == http.MethodHead {
+			// HEAD 语义：Go http server 丢弃响应体（上游写了也不送达）——
+			// 以状态码与「上游收到该请求」（下方计数断言）证明走的是
+			// legacy 代理而非 Go handler。
+			legacyCount++
+			if rec.Code != http.StatusOK {
+				t.Errorf("%s: status = %d, want 200 (legacy proxy)", tc.name, rec.Code)
+			}
+			continue
 		} else {
 			legacyCount++
 			if !strings.Contains(body, "legacy") {
