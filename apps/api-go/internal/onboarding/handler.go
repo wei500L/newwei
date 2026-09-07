@@ -40,9 +40,11 @@ type Handler struct {
 	repo usersettings.Repository
 }
 
-// NewHandler 构造 onboarding GET 的 Go 原生 handler。
-func NewHandler(auth *authhttp.Authenticator, repo usersettings.Repository) *Handler {
-	return &Handler{auth: *auth, repo: repo}
+// NewHandler 构造 onboarding GET 的 Go 原生 handler（返回
+// legacyproxy.GoHandler 兼容的函数值）。
+func NewHandler(auth *authhttp.Authenticator, repo usersettings.Repository) func(http.ResponseWriter, *http.Request) {
+	handler := &Handler{auth: *auth, repo: repo}
+	return handler.ServeHTTP
 }
 
 // ServeHTTP 处理 GET /api/user-settings/ui/onboarding。

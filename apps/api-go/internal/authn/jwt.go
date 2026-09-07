@@ -17,8 +17,8 @@
 //     blacklist）；
 //   - permissions claim：一律不读取、不信任（授权只来自 authz 的 MySQL
 //     重推导）；
-//   - mtk_ 机器令牌：机器令牌迁移不在本批范围，Go 端点不接受（见
-//     authhttp 提取处的说明）。
+//   - mtk_ 机器令牌：机器令牌迁移不在本批范围，Go 端点不接受
+//     （见下方 ExtractBearerToken 的说明）。
 //
 // 信任边界：Verify 成功只代表「token 是 NestJS 以同一 secret 签发的」，
 // 不代表「请求已被授权」——可信用户上下文要等 authz 完成 membership 与
