@@ -202,8 +202,10 @@ handler、同一鉴权链装配、同一连接池，不复制六份实现：
   `settings` 各自独立 upsert，**没有事务**。某一段失败时已成功的段会
   留下，与 NestJS `Promise.all` 相同，不构成原子提交。
 - **DTO**：未知顶层字段与错误顶层类型返回 ValidationPipe 400；字段缺失、
-  显式 null、错误类型分开处理。JSON 体上限按 Nest 先注册的 body-parser
-  默认 100 KiB（`main.ts` 后挂的 10mb 解析器不会先看到超限请求）。
+  显式 null、错误类型分开处理。非法 JSON 也是 JSON 400（Nest 把
+  body-parser 错误映射成 BadRequestException）。读取上限 10 MiB，与
+  `main.ts` 的 `json({limit:"10mb"})` 一致；远端 smoke 确认 100KiB+1
+  仍会进入 JSON 解析而不是 413。
 - **回滚**：先把 `API_GO_USER_SETTINGS_WRITE_MODE` 改回 `legacy`，再按需
   把读模式改回 `shadow`、`API_BASE_URL` 指回 NestJS、停止 pilot。不新增
   表，不迁移数据。

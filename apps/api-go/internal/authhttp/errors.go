@@ -126,13 +126,25 @@ func WriteDatabaseFailure(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// WriteBadRequest 写 ValidationPipe 400（GlobalExceptionFilter 把
-// class-validator 的 message 数组用 "; " 拼成一个字符串；error 为
-// "Bad Request"）。message 由调用方按 DTO 契约拼好，本函数不追加字段。
+// WriteBadRequest 写 ValidationPipe / body-parser 映射后的 400
+//（GlobalExceptionFilter 把 class-validator 的 message 数组用 "; " 拼成
+// 一个字符串；error 为 "Bad Request"）。非法 JSON 也走这个形状：Nest
+// 的 RoutesResolver.mapExternalException 把它收成 BadRequestException。
 func WriteBadRequest(w http.ResponseWriter, r *http.Request, message string) {
 	writeError(w, r, errorBody{
 		StatusCode: http.StatusBadRequest,
 		Message:    message,
 		Error:      "Bad Request",
+	})
+}
+
+// WritePayloadTooLarge 写超过 JSON 体上限的 413。message 用 body-parser
+// 的 "request entity too large"。当前 smoke 的 100KiB 样本仍低于 10MiB
+// 限额，因此这条路径还没有与 Nest 的真实 413 正文对过。
+func WritePayloadTooLarge(w http.ResponseWriter, r *http.Request) {
+	writeError(w, r, errorBody{
+		StatusCode: http.StatusRequestEntityTooLarge,
+		Message:    "request entity too large",
+		Error:      "Payload Too Large",
 	})
 }

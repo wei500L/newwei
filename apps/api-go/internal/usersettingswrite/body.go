@@ -4,21 +4,19 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"html"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"strings"
 )
 
-// maxJSONBodyBytes 是 NestJS 实际生效的 JSON 体上限。
+// maxJSONBodyBytes 对齐 apps/api/src/main.ts 的 json({limit:"10mb"})。
 //
-// apps/api/src/main.ts 在 bootstrap 里又挂了一个 json({limit:"10mb"})，
-// 但 NestFactory.create 会先注册 platform-express 的默认 json 解析器
-// （body-parser 默认 limit = 100kb）。默认解析器在前：超限直接 413，
-// 后挂的 10mb 解析器看不到请求体。因此与真实 NestJS 对齐的边界是
-// 100 KiB，不是 10 MiB。
-const maxJSONBodyBytes = 100 * 1024
+// 远端 smoke（run 36267117840）对 100KiB+1 的非 JSON 体得到的是
+// JSON 解析 400，不是 413。因此不能把 body-parser 的 100kb 默认值
+// 当成已经生效的限额；这里用 main.ts 写明的 10 MiB，并在读取时截断。
+const maxJSONBodyBytes = 10 << 20
 
 type bodyKind int
 
@@ -64,38 +62,25 @@ func isJSONContentType(header string) bool {
 	return media == "application/json"
 }
 
-// writeParserError 复刻 Express finalhandler 在 NODE_ENV=production、
-// err.expose=true、客户端未声明 Accept 时的 HTML 400/413（body-parser
-// 错误不进入 GlobalExceptionFilter）。
-func writeParserError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Security-Policy", "default-src 'none'")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	body := "<!DOCTYPE html>\n" +
-		"<html lang=\"en\">\n" +
-		"<head>\n" +
-		"<meta charset=\"utf-8\">\n" +
-		"<title>Error</title>\n" +
-		"</head>\n" +
-		"<body>\n" +
-		"<pre>" + html.EscapeString(message) + "</pre>\n" +
-		"</body>\n" +
-		"</html>\n"
-	_, _ = w.Write([]byte(body))
-}
-
-// invalidJSONMessage 尽量对齐 Node 20 JSON.parse 对 smoke 使用的残缺
-// 对象的文案。其他非法体返回同一类「位置 0」语法错误——真实栈 smoke
-// 用 `{` 做对照；若 Nest 文案不同，以 Nest 响应为准再改这里。
+// invalidJSONMessage 对齐 Node 20 JSON.parse 经 Nest
+// RoutesResolver.mapExternalException 变成 BadRequestException 后的
+// message（smoke 1b 的响应字节长度反推，run 36267117840）：
+//   - `{` → Expected property name or '}' in JSON at position 1
+//   - 以其他字符开头 → Unexpected token '<c>', "<前 10 字符>"... is not valid JSON
 func invalidJSONMessage(body []byte) string {
 	trimmed := bytes.TrimSpace(body)
-	switch string(trimmed) {
-	case "{", "[":
-		return "Expected property name or '}' in JSON at position 1 (line 1 column 2)"
-	case "":
-		return "Unexpected end of JSON input"
-	default:
-		return "Unexpected token in JSON at position 0"
+	if bytes.Equal(trimmed, []byte("{")) {
+		return "Expected property name or '}' in JSON at position 1"
 	}
+	if len(body) == 0 {
+		return "Unexpected end of JSON input"
+	}
+	token := body[0]
+	snippet := body
+	ellipsis := ""
+	if len(snippet) > 10 {
+		snippet = snippet[:10]
+		ellipsis = "..."
+	}
+	return fmt.Sprintf("Unexpected token '%c', \"%s\"%s is not valid JSON", token, string(snippet), ellipsis)
 }

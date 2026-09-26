@@ -18,11 +18,20 @@ func TestPutInvalidJSONRejectedBeforeAuth(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
-	if !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
-		t.Fatalf("content-type = %q, want text/html", rec.Header().Get("Content-Type"))
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("content-type = %q, want application/json", rec.Header().Get("Content-Type"))
 	}
-	if !strings.Contains(rec.Body.String(), "Expected property name") {
+	if !strings.Contains(rec.Body.String(), "Expected property name or '}' in JSON at position 1") {
 		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
+func TestInvalidJSONMessageMatchesNodeSnippet(t *testing.T) {
+	body := []byte(strings.Repeat("x", 100*1024+1))
+	got := invalidJSONMessage(body)
+	want := "Unexpected token 'x', \"xxxxxxxxxx\"... is not valid JSON"
+	if got != want {
+		t.Fatalf("message = %q, want %q", got, want)
 	}
 }
 

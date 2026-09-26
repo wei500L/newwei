@@ -53,10 +53,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, kind := readBody(r)
 	switch kind {
 	case bodyTooLarge:
-		writeParserError(w, http.StatusRequestEntityTooLarge, "request entity too large")
+		authhttp.WritePayloadTooLarge(w, r)
 		return
 	case bodyInvalidJSON:
-		writeParserError(w, http.StatusBadRequest, invalidJSONMessage(body))
+		// Nest 把 body-parser 的 SyntaxError 映射成 BadRequestException JSON，
+		// 不是 Express HTML 错误页（smoke 1b：content-type application/json）。
+		authhttp.WriteBadRequest(w, r, invalidJSONMessage(body))
 		return
 	case bodyAbsent:
 		body = []byte("{}")
