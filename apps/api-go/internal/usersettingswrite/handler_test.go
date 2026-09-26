@@ -42,11 +42,14 @@ func TestPutBodyOverNestLimitRejectedBeforeAuth(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("status = %d, want 413", rec.Code)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "request entity too large") {
+	if !strings.Contains(rec.Body.String(), "Internal server error") {
 		t.Fatalf("body = %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "request entity too large") {
+		t.Fatalf("body = %s, production Nest does not echo the body-parser message", rec.Body.String())
 	}
 }
 

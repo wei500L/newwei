@@ -447,7 +447,7 @@ func run() error {
 			log.Printf("api-go: user-settings PUT write takeover enabled (readMode=%s)", cfg.UserSettingsReadMode)
 		}
 		// 同一 prefix 只能注册一个 handler。CORS 在鉴权之前：有效预检直接
-		// 204；实际 GET/PUT（含 401/400/413）先写上来源头再进入原 handler。
+		// 204；实际 GET/PUT（含 401/400/500）先写上来源头再进入原 handler。
 		// 读写模式均为 go 时，路由表才会把精确路径的 OPTIONS 送进来。
 		corsPolicy := cors.New(cfg.CorsOrigin)
 		for _, path := range usersettingsread.Paths {

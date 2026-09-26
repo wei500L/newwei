@@ -204,8 +204,10 @@ handler、同一鉴权链装配、同一连接池，不复制六份实现：
 - **DTO**：未知顶层字段与错误顶层类型返回 ValidationPipe 400；字段缺失、
   显式 null、错误类型分开处理。非法 JSON 也是 JSON 400（Nest 把
   body-parser 错误映射成 BadRequestException）。读取上限 10 MiB，与
-  `main.ts` 的 `json({limit:"10mb"})` 一致；远端 smoke 确认 100KiB+1
-  仍会进入 JSON 解析而不是 413。
+  `main.ts` 的 `json({limit:"10mb"})` 一致。远端 smoke 确认 100KiB+1
+  仍会进入 JSON 解析而不是超限；超过 10 MiB 时 Nest 生产过滤器返回
+  500 `Internal server error`（不保留 body-parser 的 413 文案），Go 与之相同。
+  超限请求不写库。
 - **浏览器 CORS**：Web 跨源请求 `:4020`。读写模式均为 `go` 时，六个精确
   路径的有效 `OPTIONS` 预检由 Go 直接 204（不验 JWT、不查 Redis/MySQL、
   不写库）。GET/PUT 的成功与 401/400 等响应使用同一份 `CORS_ORIGIN`

@@ -138,13 +138,16 @@ func WriteBadRequest(w http.ResponseWriter, r *http.Request, message string) {
 	})
 }
 
-// WritePayloadTooLarge 写超过 JSON 体上限的 413。message 用 body-parser
-// 的 "request entity too large"。当前 smoke 的 100KiB 样本仍低于 10MiB
-// 限额，因此这条路径还没有与 Nest 的真实 413 正文对过。
+// WritePayloadTooLarge 写超过 JSON 体上限的响应。
+//
+// body-parser 自己的错误是 413 "request entity too large"，但 Nest 的
+// GlobalExceptionFilter 不把它当成 HttpException。生产环境
+// （NODE_ENV=production，远端 smoke run 36270657639）因此返回 500
+// {"statusCode":500,"message":"Internal server error"}，没有 error 字段。
+// 100KiB+1 仍低于 10MiB，继续走 JSON 400，不进这里。
 func WritePayloadTooLarge(w http.ResponseWriter, r *http.Request) {
 	writeError(w, r, errorBody{
-		StatusCode: http.StatusRequestEntityTooLarge,
-		Message:    "request entity too large",
-		Error:      "Payload Too Large",
+		StatusCode: http.StatusInternalServerError,
+		Message:    "Internal server error",
 	})
 }
