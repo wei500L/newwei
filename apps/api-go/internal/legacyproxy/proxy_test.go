@@ -811,6 +811,19 @@ func TestUserSettingsWriteModeRouting(t *testing.T) {
 	if rec.Body.String() != `{"upstream":"legacy"}` {
 		t.Fatalf("legacy write mode PUT body = %s, want upstream legacy", rec.Body.String())
 	}
+	legacyOptions := httptest.NewRecorder()
+	legacyOptReq := httptest.NewRequest(http.MethodOptions, "http://gateway"+paths[0], nil)
+	legacyOptReq.Header.Set("Origin", "http://localhost:3000")
+	legacyOptReq.Header.Set("Access-Control-Request-Method", "PUT")
+	legacyGateway.ServeHTTP(legacyOptions, legacyOptReq)
+	if legacyOptions.Body.String() != `{"upstream":"legacy"}` {
+		t.Fatalf("legacy write mode OPTIONS body = %s, want upstream legacy", legacyOptions.Body.String())
+	}
+	for _, rule := range DefaultRulesWithWrite(ModeShadow, string(ModeGo), "") {
+		if rule.Exact && rule.Methods[http.MethodOptions] {
+			t.Fatalf("write mode legacy registered an OPTIONS rule: %+v", rule)
+		}
+	}
 
 	stub := newLegacyStub(t)
 	gateway, err := New(stub.server.URL, DefaultRulesWithWrite(ModeShadow, string(ModeGo), string(ModeGo)))
@@ -836,6 +849,29 @@ func TestUserSettingsWriteModeRouting(t *testing.T) {
 		}
 	}
 
+	optionsRules := 0
+	for _, rule := range DefaultRulesWithWrite(ModeShadow, string(ModeGo), string(ModeGo)) {
+		if rule.Exact && rule.Methods[http.MethodOptions] {
+			optionsRules++
+		}
+	}
+	if optionsRules != len(paths) {
+		t.Fatalf("OPTIONS rules = %d, want %d", optionsRules, len(paths))
+	}
+	optRec := httptest.NewRecorder()
+	optReq := httptest.NewRequest(http.MethodOptions, "http://gateway"+paths[0], nil)
+	optReq.Header.Set("Origin", "http://localhost:3000")
+	optReq.Header.Set("Access-Control-Request-Method", "PUT")
+	gateway.ServeHTTP(optRec, optReq)
+	if optRec.Body.String() != "go-OPTIONS" {
+		t.Fatalf("OPTIONS %s body = %s, want go-OPTIONS", paths[0], optRec.Body.String())
+	}
+	otherOpt := httptest.NewRecorder()
+	gateway.ServeHTTP(otherOpt, httptest.NewRequest(http.MethodOptions, "http://gateway/api/items", nil))
+	if otherOpt.Body.String() != `{"upstream":"legacy"}` {
+		t.Fatalf("OPTIONS /api/items body = %s, want legacy", otherOpt.Body.String())
+	}
+
 	postRec := httptest.NewRecorder()
 	gateway.ServeHTTP(postRec, httptest.NewRequest(http.MethodPost, "http://gateway"+paths[0], nil))
 	if postRec.Body.String() != `{"upstream":"legacy"}` {
@@ -852,6 +888,9 @@ func TestUserSettingsWriteModeRouting(t *testing.T) {
 	for _, req := range stub.requests {
 		if req.Method == http.MethodPut && req.Path == paths[0] {
 			t.Fatal("exact PUT reached upstream while write mode is go")
+		}
+		if req.Method == http.MethodOptions && req.Path == paths[0] {
+			t.Fatal("exact OPTIONS reached upstream while write mode is go")
 		}
 	}
 }

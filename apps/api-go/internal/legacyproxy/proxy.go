@@ -85,7 +85,9 @@ func DefaultRules(onboardingMode Mode, readMode string) []Rule {
 //   - 序 5（Go-批3A/3B）：GET /api/user-settings/ui/{六个端点} ——
 //     exact path + 仅 GET；
 //   - Go-批3C：同一六个路径的 PUT 在 writeMode=go 时 exact + 仅 PUT。
-//     POST/HEAD/相似路径仍回落 /api/ legacy。
+//     读写模式均为 go 时，再为这六个路径增加 exact + 仅 OPTIONS，让
+//     浏览器预检到达 Go handler。POST/HEAD/相似路径，以及没有预检头的
+//     OPTIONS，仍回落 /api/ legacy。
 //
 // 注意三个无 /api 前缀的挂载点（契约清单 §0）：/graphql、/socket.io、
 // /admin/queues（Bull Board）。代理层必须与 REST 前缀分别声明。
@@ -125,9 +127,11 @@ func DefaultRulesWithWrite(onboardingMode Mode, readMode, writeMode string) []Ru
 		{Prefix: "/__go/healthz", Mode: ModeGo},
 	}
 	// 写接管是另一组 exact+PUT 规则，不把 PUT 并进 GET 白名单——GET
-	// 继续走读模式，其他方法仍回落 /api/。
+	// 继续走读模式，其他方法仍回落 /api/。OPTIONS 单独成组：只有读写都
+	// 是 go 时，浏览器预检才由 Go 回答；写模式 legacy 时预检仍代理 NestJS。
 	if writeMode == string(ModeGo) {
 		putOnly := map[string]bool{http.MethodPut: true}
+		optionsOnly := map[string]bool{http.MethodOptions: true}
 		for _, path := range []string{
 			"/api/user-settings/ui/onboarding",
 			"/api/user-settings/ui/rss-reader",
@@ -137,6 +141,7 @@ func DefaultRulesWithWrite(onboardingMode Mode, readMode, writeMode string) []Ru
 			"/api/user-settings/ui/situation-monitor",
 		} {
 			rules = append(rules, Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: putOnly})
+			rules = append(rules, Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: optionsOnly})
 		}
 	}
 	return rules
@@ -201,6 +206,12 @@ func (g *Gateway) SetGoHandler(handler GoHandler) {
 // RegisterGoHandler 按前缀注册 Go 原生处理器。
 func (g *Gateway) RegisterGoHandler(prefix string, handler GoHandler) {
 	g.goHandlers[prefix] = handler
+}
+
+// ServeLegacy 把当前请求按原样代理到 NestJS。已接管路径上、缺少预检头的
+// OPTIONS 用它回到原来的代理去向。
+func (g *Gateway) ServeLegacy(w http.ResponseWriter, r *http.Request) {
+	g.proxy.ServeHTTP(w, r)
 }
 
 // ServeHTTP 按路由表分发。

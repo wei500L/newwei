@@ -206,9 +206,16 @@ handler、同一鉴权链装配、同一连接池，不复制六份实现：
   body-parser 错误映射成 BadRequestException）。读取上限 10 MiB，与
   `main.ts` 的 `json({limit:"10mb"})` 一致；远端 smoke 确认 100KiB+1
   仍会进入 JSON 解析而不是 413。
+- **浏览器 CORS**：Web 跨源请求 `:4020`。读写模式均为 `go` 时，六个精确
+  路径的有效 `OPTIONS` 预检由 Go 直接 204（不验 JWT、不查 Redis/MySQL、
+  不写库）。GET/PUT 的成功与 401/400 等响应使用同一份 `CORS_ORIGIN`
+  白名单和 `credentials: true`；未列出的 Origin 不反射，也不返回 `*`。
+  其他路径、未接管模式，以及没有预检头的 `OPTIONS`，仍代理 NestJS。
+  `X-Frame-Options` 仍只来自 NestJS `helmet()`，Go 不补：浏览器
+  `axios` 读 JSON 不依赖它。
 - **回滚**：先把 `API_GO_USER_SETTINGS_WRITE_MODE` 改回 `legacy`，再按需
   把读模式改回 `shadow`、`API_BASE_URL` 指回 NestJS、停止 pilot。不新增
-  表，不迁移数据。
+  表，不迁移数据。预检随之回到 NestJS。
 - **边界**：登录/refresh/logout/MFA/OIDC/机器令牌仍是 NestJS。canary 仍
   未启用。这不是完整 Auth 模块迁移，也没有切换生产入口。
 

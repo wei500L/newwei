@@ -239,7 +239,7 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 | LiteLLM 内部端点 | Bearer 与 `LITELLM_CONFIG_INTERNAL_TOKEN` **时序安全比较**（`common/internal-token.ts`） |
 | vector/model-service | `x-internal-token` 头；vector 侧为**普通相等比较**（SEC-04） |
 | Bull Board | Bearer JWT + queue.manage；错误为纯文本非 JSON |
-| CORS | credentials:true，origin 白名单来自 CORS_ORIGIN |
+| CORS | credentials:true，origin 白名单来自 CORS_ORIGIN。api-go 在 user-settings 读写模式均为 go 时，对六个精确 GET/PUT 使用同一白名单；不反射未列出的 Origin，携带凭据时不返回 `*` |
 
 ## 7. 保护网快照与差分测试（已落地；验证状态标注于各项）
 

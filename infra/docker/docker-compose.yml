@@ -592,6 +592,9 @@ services:
       REDIS_DB: ${REDIS_DB:-0}
       CANARY_PERCENT: "0"
       SHADOW_DEBUG_BODY_LOG: "false"
+      # 与 NestJS 同一份来源白名单。浏览器跨源访问 :4020 上已接管的
+      # user-settings GET/PUT 时，Go 用它回 CORS 头；空名单不放行任何 Origin。
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
     ports:
       - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${API_GO_HOST_PORT:-4020}:4020"
     logging: *json-file-logging

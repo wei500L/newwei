@@ -16,9 +16,14 @@
 #     NestJS 响应，Go 旁路差分（executed 精确 +6，diffs/dropped 零增量）；
 #   Phase C（read=go, write=go）：6 个 GET 与 NestJS 直连契约对比；然后
 #     六个 PUT 由 Go 真写入，NestJS GET 与 Go GET 读同一行；空写、并发
-#     upsert、校验失败不写库、跨用户隔离；
+#     upsert、校验失败不写库、跨用户隔离；浏览器 Origin 的预检由 Go 204
+#     回答，PUT/GET 带回 CORS 头并确认落库；超过 10MiB 的请求与 Nest
+#     对照状态和 JSON，且不写库；
 #   Phase D（独立性证明）：停止 NestJS——六个 PUT 与六个 GET 仍成功；
-#     未迁移 GET 502。write=legacy 阶段的 PUT 仍能看到 NestJS 响应头。
+#     浏览器 Origin 的预检和已接管读写仍可用；未迁移路径的预检与 GET
+#     为 502。runner 若自带 Chrome/Chromium，再做一次真实页面请求；
+#     没有浏览器就不把 HTTP 客户端结果叫成浏览器实测。
+#     write=legacy 阶段的 PUT 仍能看到 NestJS 响应头。
 #
 # 真实性约束（沿承 Go-批2C/3A 任务书，Go-批3B 扩展到六端点）：
 #   - 真实 MySQL/Redis/Mongo service 容器（与 docker-compose 同版本线）；
@@ -240,6 +245,7 @@ jobs:
             -e REDIS_PORT=6379 \
             -e CANARY_PERCENT=0 \
             -e SHADOW_DEBUG_BODY_LOG=false \
+            -e CORS_ORIGIN="$CORS_ORIGIN" \
             api-go-entry-smoke:ci
           for i in $(seq 1 30); do
             status=$(docker inspect --format '{{.State.Health.Status}}' api-go-smoke 2>/dev/null || echo starting)
@@ -348,7 +354,7 @@ jobs:
                   data=data, method="PUT",
                   headers={"authorization": f"Bearer {token}", "content-type": content_type, "x-trace-id": TRACE})
               try:
-                  with urllib.request.urlopen(req, timeout=20) as resp:
+                  with urllib.request.urlopen(req, timeout=60) as resp:
                       return resp.status, resp.headers.get("content-type") or "", resp.read(), dict(resp.headers)
               except urllib.error.HTTPError as err:
                   return err.code, err.headers.get("content-type") or "", err.read(), dict(err.headers)
@@ -373,6 +379,15 @@ jobs:
               print(f"nest baseline {name}: status={status} content-type={ctype} bytes={len(body)}")
           with open("/tmp/nest-put-errors.json", "w") as f:
               json.dump(recorded, f)
+          over = b"x" * (10 * 1024 * 1024 + 1)
+          status, ctype, body, headers = call(over)
+          with open("/tmp/nest-oversize.json", "w") as f:
+              json.dump({
+                  "status": status,
+                  "contentType": ctype,
+                  "body": body.decode("utf-8", "replace"),
+              }, f)
+          print(f"nest oversize >10MiB: status={status} content-type={ctype} bytes={len(body)} head={body[:180]!r}")
           PY
           python3 /tmp/smoke_put_baseline.py
           after=$(docker exec "$MYSQL_CID" mysql -uroot -psecret -N -e "SELECT COUNT(*) FROM app.UserSetting" 2>/dev/null)
@@ -807,6 +822,7 @@ jobs:
             -e REDIS_PORT=6379 \
             -e CANARY_PERCENT=0 \
             -e SHADOW_DEBUG_BODY_LOG=false \
+            -e CORS_ORIGIN="$CORS_ORIGIN" \
             api-go-entry-smoke:ci
           for i in $(seq 1 30); do
             status=$(docker inspect --format '{{.State.Health.Status}}' api-go-smoke 2>/dev/null || echo starting)
@@ -936,7 +952,7 @@ jobs:
                   headers["content-type"] = "application/json"
               req = urllib.request.Request(url, data=data, method=method, headers=headers)
               try:
-                  with urllib.request.urlopen(req, timeout=20) as resp:
+                  with urllib.request.urlopen(req, timeout=60) as resp:
                       return resp.status, resp.headers, resp.read()
               except urllib.error.HTTPError as err:
                   return err.code, err.headers, err.read()
@@ -1069,12 +1085,46 @@ jobs:
               else:
                   assert body.decode("utf-8", "replace") == base["body"], (name, body[:400], base["body"][:400])
               print(f"Go error {name} matches Nest baseline status={status}")
+
+          def setting_stamp():
+              import os
+              import subprocess
+              return subprocess.check_output(
+                  ["docker", "exec", os.environ["MYSQL_CID"], "mysql", "-uroot", "-psecret", "-N", "-e",
+                   "SELECT COUNT(*), COALESCE(GROUP_CONCAT(CONCAT(`key`, '=', updatedAt) ORDER BY `key` SEPARATOR '|'), '') FROM app.UserSetting"],
+                  stderr=subprocess.DEVNULL,
+              ).decode().strip()
+
+          def stable_json(raw):
+              text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+              try:
+                  doc = json.loads(text)
+              except Exception:
+                  return {"_raw": text[:500]}
+              if isinstance(doc, dict):
+                  doc.pop("traceId", None)
+                  doc.pop("timestamp", None)
+              return doc
+
+          before_stamp = setting_stamp()
+          over = b"x" * (10 * 1024 * 1024 + 1)
+          status, headers, body = request("PUT", "http://127.0.0.1:4020" + path, over)
+          after_stamp = setting_stamp()
+          assert before_stamp == after_stamp, (before_stamp, after_stamp)
+          base = json.load(open("/tmp/nest-oversize.json"))
+          assert status == base["status"], (status, base["status"], body[:300], base["body"][:300])
+          ctype = (headers.get("content-type") or "").split(";")[0].strip().lower()
+          base_ctype = base["contentType"].split(";")[0].strip().lower()
+          assert ctype == base_ctype, (ctype, base_ctype, body[:300])
+          assert stable_json(body) == stable_json(base["body"]), (stable_json(body), stable_json(base["body"])[:500])
+          print(f"Go >10MiB matches Nest status={status} and wrote nothing")
           PY
           # 空写断言放在 Python 之前删行、之后查行。上面的脚本把空 PUT 放在
           # 代表性写入之前，所以这里先删 onboarding 再跑脚本会把顺序弄反。
           # 改为：脚本内部空 PUT 发生在代表性写入之前，因此删行必须在脚本前。
           docker exec "$MYSQL_CID" mysql -uroot -psecret -e \
             "DELETE FROM app.UserSetting WHERE orgId='${ORG_ID}' AND userId='${USER_ID}' AND \`key\`='ui:onboarding:settings:v1'" 2>/dev/null
+          export MYSQL_CID
           python3 /tmp/smoke_go_put.py
           onboarding=$(docker exec "$MYSQL_CID" mysql -uroot -psecret -N -e \
             "SELECT COUNT(*) FROM app.UserSetting WHERE orgId='${ORG_ID}' AND userId='${USER_ID}' AND \`key\`='ui:onboarding:settings:v1'" 2>/dev/null)
@@ -1128,6 +1178,110 @@ jobs:
           with urllib.request.urlopen(req, timeout=20) as resp:
               assert resp.status == 200
           print("onboarding row restored after empty-write check")
+          PY
+
+      - name: "Smoke 8c — browser Origin preflight, Go PUT/GET, and a real row"
+        run: |
+          set -euo pipefail
+          MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
+          USER_ID=$(docker exec "$MYSQL_CID" mysql -uroot -psecret -N -e \
+            "SELECT id FROM app.User WHERE email='${SEED_ADMIN_EMAIL}'" 2>/dev/null)
+          ORG_ID=$(docker exec "$MYSQL_CID" mysql -uroot -psecret -N -e \
+            "SELECT id FROM app.Org WHERE slug='${SEED_ORG_SLUG}'" 2>/dev/null)
+          test -n "$USER_ID" && test -n "$ORG_ID"
+          export MYSQL_CID USER_ID ORG_ID
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import urllib.error
+          import urllib.request
+
+          ORIGIN = "http://localhost:3000"
+          PATH = "/api/user-settings/ui/onboarding"
+          token = open("/tmp/smoke-jwt").read().strip()
+
+          def call(method, url, data=None, origin=None, auth=False, preflight=False):
+              headers = {}
+              if origin:
+                  headers["Origin"] = origin
+              if auth:
+                  headers["authorization"] = f"Bearer {token}"
+              if preflight:
+                  headers["Access-Control-Request-Method"] = "PUT"
+                  headers["Access-Control-Request-Headers"] = "authorization,content-type,x-trace-id"
+              elif data is not None:
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(url, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      return resp.status, resp.headers, resp.read()
+              except urllib.error.HTTPError as err:
+                  return err.code, err.headers, err.read()
+
+          def allow_origin(headers):
+              return headers.get("access-control-allow-origin")
+
+          status, headers, body = call(
+              "OPTIONS", "http://127.0.0.1:4020" + PATH, origin=ORIGIN, preflight=True)
+          assert status == 204, (status, body[:200])
+          assert allow_origin(headers) == ORIGIN, dict(headers)
+          assert headers.get("access-control-allow-credentials") == "true", dict(headers)
+          assert "*" not in (allow_origin(headers) or ""), dict(headers)
+          assert "PUT" in (headers.get("access-control-allow-methods") or ""), dict(headers)
+          assert "authorization" in (headers.get("access-control-allow-headers") or "").lower(), dict(headers)
+          assert "origin" in (headers.get("vary") or "").lower(), dict(headers)
+          # Nest helmet 会带上 x-frame-options。这里没有，说明预检是 Go 自己回答的。
+          assert not headers.get("x-frame-options"), dict(headers)
+          print("preflight from web origin -> 204 by Go (no JWT, no x-frame-options)")
+
+          status, headers, body = call(
+              "OPTIONS", "http://127.0.0.1:4020" + PATH, origin="https://evil.example", preflight=True)
+          assert status == 204, (status, body[:200])
+          assert not allow_origin(headers), dict(headers)
+          assert allow_origin(headers) != "*", dict(headers)
+          print("preflight from an unlisted origin is not reflected")
+
+          status, headers, body = call(
+              "PUT", "http://127.0.0.1:4020" + PATH, data=b"{}", origin=ORIGIN)
+          assert status == 401, (status, body[:300])
+          assert allow_origin(headers) == ORIGIN, dict(headers)
+          assert headers.get("access-control-allow-credentials") == "true", dict(headers)
+          print("401 without a token still carries the web origin")
+
+          status, headers, body = call(
+              "PUT", "http://127.0.0.1:4020" + PATH, data=b"{", origin=ORIGIN, auth=True)
+          assert status == 400, (status, body[:300])
+          assert allow_origin(headers) == ORIGIN, dict(headers)
+          print("400 invalid JSON still carries the web origin")
+
+          payload = json.dumps({"settings": {"dismissed": True, "checklist": {"finance": True}}}).encode()
+          status, headers, body = call(
+              "PUT", "http://127.0.0.1:4020" + PATH, data=payload, origin=ORIGIN, auth=True)
+          assert status == 200, (status, body[:300])
+          assert allow_origin(headers) == ORIGIN, dict(headers)
+          written = json.loads(body)
+          assert written["settings"]["checklist"]["finance"] is True, written
+          status, headers, body = call("GET", "http://127.0.0.1:4020" + PATH, origin=ORIGIN, auth=True)
+          assert status == 200, (status, body[:300])
+          assert allow_origin(headers) == ORIGIN, dict(headers)
+          got = json.loads(body)
+          assert got == written, (got, written)
+          finance = subprocess.check_output(
+              ["docker", "exec", os.environ["MYSQL_CID"], "mysql", "-uroot", "-psecret", "-N", "-e",
+               "SELECT JSON_EXTRACT(value, '$.checklist.finance') FROM app.UserSetting "
+               "WHERE orgId='" + os.environ["ORG_ID"] + "' AND userId='" + os.environ["USER_ID"] +
+               "' AND `key`='ui:onboarding:settings:v1'"],
+              stderr=subprocess.DEVNULL,
+          ).decode().strip()
+          assert finance == "true", finance
+          print("browser-origin PUT then GET matched, and checklist.finance is true in MySQL")
+
+          restore = json.dumps({"settings": {"dismissed": True}}).encode()
+          status, headers, body = call(
+              "PUT", "http://127.0.0.1:4020" + PATH, data=restore, origin=ORIGIN, auth=True)
+          assert status == 200, (status, body[:300])
+          print("onboarding restored to dismissed=true for later phases")
           PY
 
       # ---- 以下步骤对真实数据库/Redis 做有状态验证，全部先备份、后恢复 ----
@@ -1595,6 +1749,55 @@ jobs:
               assert doc["updatedAt"].get(section), doc
           print("situation-monitor: 三段 updatedAt 均存在（NestJS 停止后仍由 Go 聚合返回）")
 
+          # NestJS 已停止：浏览器预检仍由 Go 回答，已接管的 PUT/GET 仍带上来源头。
+          origin = "http://localhost:3000"
+          path = "/api/user-settings/ui/onboarding"
+
+          def cors_call(method, url, data=None, preflight=False, auth=True):
+              headers = {"Origin": origin}
+              if preflight:
+                  headers["Access-Control-Request-Method"] = "PUT"
+                  headers["Access-Control-Request-Headers"] = "authorization,content-type"
+              else:
+                  if auth:
+                      headers["authorization"] = f"Bearer {token}"
+                  if data is not None:
+                      headers["content-type"] = "application/json"
+              req = urllib.request.Request(url, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      return resp.status, resp.headers, resp.read()
+              except urllib.error.HTTPError as err:
+                  return err.code, err.headers, err.read()
+
+          status, headers, body = cors_call(
+              "OPTIONS", "http://127.0.0.1:4020" + path, preflight=True, auth=False)
+          assert status == 204, (status, body[:200])
+          assert headers.get("access-control-allow-origin") == origin, dict(headers)
+          assert headers.get("access-control-allow-credentials") == "true", dict(headers)
+          assert not headers.get("x-frame-options"), dict(headers)
+          print("NestJS 停止后：浏览器 Origin 预检仍是 204")
+
+          status, headers, body = cors_call(
+              "PUT", "http://127.0.0.1:4020" + path,
+              data=json.dumps({"settings": {"dismissed": True, "completed": True}}).encode())
+          assert status == 200, (status, body[:300])
+          assert headers.get("access-control-allow-origin") == origin, dict(headers)
+          written = json.loads(body)
+          status, headers, body = cors_call("GET", "http://127.0.0.1:4020" + path)
+          assert status == 200, (status, body[:300])
+          assert headers.get("access-control-allow-origin") == origin, dict(headers)
+          assert json.loads(body) == written
+          print("NestJS 停止后：带浏览器 Origin 的 PUT+GET 仍成功")
+
+          for url in (
+              "http://127.0.0.1:4020/api/items",
+              "http://127.0.0.1:4020/api/user-settings/ui/onboarding-x",
+          ):
+              status, headers, body = cors_call("OPTIONS", url, preflight=True, auth=False)
+              assert status == 502, (url, status, body[:300])
+          print("NestJS 停止后：未接管路径的预检是 502")
+
           # NestJS 已停止：六个 PUT 仍由 Go 写入并读回。这是写路径不依赖上游的证据。
           writes = {
               "/api/user-settings/ui/onboarding": (
@@ -1678,6 +1881,107 @@ jobs:
           PY
           python3 /tmp/smoke_final.py
 
+      - name: "Smoke browser — real page only when the runner already has a browser"
+        run: |
+          set -euo pipefail
+          BROWSER=""
+          for bin in google-chrome google-chrome-stable chromium-browser chromium; do
+            if command -v "$bin" >/dev/null 2>&1; then
+              BROWSER="$bin"
+              break
+            fi
+          done
+          if [ -z "$BROWSER" ]; then
+            echo "NO_BROWSER: this runner has no Chrome or Chromium. The Origin preflight above was sent by an HTTP client, not a browser."
+            exit 0
+          fi
+          echo "browser binary: $BROWSER"
+          cat > /tmp/cors_page_server.py <<'PY'
+          from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+          TOKEN = open("/tmp/smoke-jwt").read().strip()
+          PAGE = """<!doctype html>
+          <body data-cors="pending"><script>
+          (async () => {
+            const token = await (await fetch("/token")).text();
+            const put = await fetch("http://127.0.0.1:4020/api/user-settings/ui/onboarding", {
+              method: "PUT",
+              credentials: "include",
+              headers: {
+                "authorization": "Bearer " + token,
+                "content-type": "application/json"
+              },
+              body: JSON.stringify({settings: {dismissed: true, checklist: {finance: true}}})
+            });
+            const written = await put.json();
+            const get = await fetch("http://127.0.0.1:4020/api/user-settings/ui/onboarding", {
+              credentials: "include",
+              headers: {"authorization": "Bearer " + token}
+            });
+            const got = await get.json();
+            document.body.dataset.cors = JSON.stringify({
+              put: put.status,
+              get: get.status,
+              finance: !!(got.settings && got.settings.checklist && got.settings.checklist.finance),
+              same: JSON.stringify(written) === JSON.stringify(got)
+            });
+          })().catch((error) => {
+            document.body.dataset.cors = "ERR " + String(error);
+          });
+          </script></body>
+          """
+
+          class Handler(BaseHTTPRequestHandler):
+              def do_GET(self):
+                  if self.path.startswith("/token"):
+                      body = TOKEN.encode()
+                      content_type = "text/plain; charset=utf-8"
+                  else:
+                      body = PAGE.encode()
+                      content_type = "text/html; charset=utf-8"
+                  self.send_response(200)
+                  self.send_header("content-type", content_type)
+                  self.send_header("content-length", str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+              def log_message(self, fmt, *args):
+                  return
+
+          ThreadingHTTPServer(("127.0.0.1", 3000), Handler).serve_forever()
+          PY
+          python3 /tmp/cors_page_server.py >/tmp/cors-web.log 2>&1 &
+          echo $! > /tmp/cors-web.pid
+          for _ in $(seq 1 25); do
+            if curl -fsS http://127.0.0.1:3000/cors.html >/dev/null; then
+              break
+            fi
+            sleep 0.2
+          done
+          curl -fsS http://127.0.0.1:3000/cors.html >/dev/null
+          # 页面从 localhost:3000 打开，Origin 才等于 CORS_ORIGIN。
+          set +e
+          DOM=$("$BROWSER" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --virtual-time-budget=20000 --dump-dom "http://localhost:3000/cors.html" 2>/tmp/chrome-cors.err)
+          STATUS=$?
+          set -e
+          kill "$(cat /tmp/cors-web.pid)" >/dev/null 2>&1 || true
+          printf '%s\n' "$DOM" | sed 's/Bearer [^" ]*/Bearer [redacted]/g' | head -80
+          if [ "$STATUS" -ne 0 ]; then
+            echo "chrome exited $STATUS"
+            tail -40 /tmp/chrome-cors.err || true
+            exit 1
+          fi
+          printf '%s' "$DOM" > /tmp/cors-dom.html
+          python3 - <<'PY'
+          dom = open("/tmp/cors-dom.html").read()
+          raw = '{"put":200,"get":200,"finance":true,"same":true}'
+          escaped = raw.replace('"', "&quot;")
+          if raw in dom or escaped in dom:
+              print("real browser saved and read onboarding settings through Go")
+          else:
+              raise SystemExit("browser page did not report a successful Go PUT and GET")
+          PY
+
       - name: Dump service logs on failure (hash/status/category only by design)
         if: failure()
         run: |
@@ -1691,4 +1995,5 @@ jobs:
         run: |
           docker rm -f api-go-smoke >/dev/null 2>&1 || true
           kill $(cat /tmp/api-nestjs.pid) 2>/dev/null || true
+          kill $(cat /tmp/cors-web.pid) 2>/dev/null || true
           pkill -f "dist/main.js" 2>/dev/null || true

@@ -96,6 +96,10 @@ type Config struct {
 	// go 要求 UserSettingsReadMode 同为 go，并因此具备 JWT/数据库/Redis。
 	UserSettingsWriteMode UserSettingsWriteMode
 
+	// CorsOrigin 是与 NestJS 相同的 CORS_ORIGIN 原文。空名单不放行任何
+	// 浏览器 Origin。只用于 Go 自己写出的 user-settings 响应。
+	CorsOrigin string
+
 	// JWT 是 NestJS access token 的验签配置（与 api 服务同一
 	// JWT_SECRET/JWT_ISSUER/JWT_AUDIENCE）。OnboardingMode=go 时
 	// JWTSecret 必填；issuer/audience 默认值与 NestJS env schema 一致。
@@ -217,6 +221,7 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.UserSettingsReadMode != UserSettingsReadModeGo {
 		errs = append(errs, "API_GO_USER_SETTINGS_WRITE_MODE=go requires API_GO_USER_SETTINGS_READ_MODE=go")
 	}
+	cfg.CorsOrigin = getenv("CORS_ORIGIN")
 
 	// JWT 验签配置（issuer/audience 默认值与 NestJS env schema 一致——
 	// 保证与同一套 env 部署的 api 服务行为等价）。

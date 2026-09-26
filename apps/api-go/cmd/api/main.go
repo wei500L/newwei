@@ -52,6 +52,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authz"
 	"github.com/wei500L/newwei/apps/api-go/internal/canary"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
+	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
@@ -437,27 +438,33 @@ func run() error {
 		blacklist := authn.NewRedisBlacklist(redisClient)
 		authenticator := authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
 		readHandler := usersettingsread.NewHandler(authenticator, userSettingsRepo)
+		var writeHandler *usersettingswrite.Handler
 		if cfg.UserSettingsWriteMode == config.UserSettingsWriteModeGo {
 			if settingsMySQL == nil {
 				return fmt.Errorf("api-go: user-settings write takeover requires a mysql repository")
 			}
-			// 同一 prefix 只能注册一个 handler。写接管时按方法分发：
-			// GET 仍走读 handler，PUT 走写 handler。配置层已要求读模式为 go。
-			writeHandler := usersettingswrite.NewHandler(authenticator, settingsMySQL)
-			for _, path := range usersettingsread.Paths {
-				gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
-					if r.Method == http.MethodPut {
-						writeHandler.ServeHTTP(w, r)
-						return
-					}
-					readHandler.ServeHTTP(w, r)
-				})
-			}
+			writeHandler = usersettingswrite.NewHandler(authenticator, settingsMySQL)
 			log.Printf("api-go: user-settings PUT write takeover enabled (readMode=%s)", cfg.UserSettingsReadMode)
-		} else {
-			for _, path := range usersettingsread.Paths {
-				gateway.RegisterGoHandler(path, readHandler.ServeHTTP)
-			}
+		}
+		// 同一 prefix 只能注册一个 handler。CORS 在鉴权之前：有效预检直接
+		// 204；实际 GET/PUT（含 401/400/413）先写上来源头再进入原 handler。
+		// 读写模式均为 go 时，路由表才会把精确路径的 OPTIONS 送进来。
+		corsPolicy := cors.New(cfg.CorsOrigin)
+		for _, path := range usersettingsread.Paths {
+			gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+				if corsPolicy.FinishOptions(w, r) {
+					return
+				}
+				if r.Method == http.MethodOptions {
+					gateway.ServeLegacy(w, r)
+					return
+				}
+				if writeHandler != nil && r.Method == http.MethodPut {
+					writeHandler.ServeHTTP(w, r)
+					return
+				}
+				readHandler.ServeHTTP(w, r)
+			})
 		}
 		log.Printf("api-go: user-settings read GET(s) under go takeover (JWT verify + Redis blacklist + MySQL RBAC; issuer=%s, readMode=%s, onboardingMode=%s)",
 			cfg.JWTIssuer, cfg.UserSettingsReadMode, cfg.OnboardingMode)
