@@ -1,7 +1,6 @@
-// user-settings MySQL 只读 repository（Go-批2A onboarding 起步，Go-批2B
-// 扩展 rss-reader / spacetime-timeline，Go-批3B 扩展 war-map / newsnow /
-// situation-monitor——三个端点共享同一条私有单 key 查询，situation-monitor
-// 是唯一的三 key 聚合查询）。
+// user-settings MySQL repository（Go-批2A 只读起步，Go-批3C 增加固定 key
+// upsert——见 upsert.go。五个单 key 查询共用一条 SQL，situation-monitor
+// 是三 key 聚合查询）。
 //
 // 约束：
 //   - 纯 database/sql + go-sql-driver/mysql，不引入 ORM/Web 框架/DI；

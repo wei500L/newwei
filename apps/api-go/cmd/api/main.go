@@ -52,6 +52,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authz"
 	"github.com/wei500L/newwei/apps/api-go/internal/canary"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
+	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
@@ -59,6 +60,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettingsread"
+	"github.com/wei500L/newwei/apps/api-go/internal/usersettingswrite"
 )
 
 func main() {
@@ -365,7 +367,11 @@ func run() error {
 		readMode = string(legacyproxy.ModeShadow)
 	}
 
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.DefaultRules(onboardingMode, readMode))
+	writeMode := ""
+	if cfg.UserSettingsWriteMode == config.UserSettingsWriteModeGo {
+		writeMode = string(legacyproxy.ModeGo)
+	}
+	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode))
 	if err != nil {
 		return err
 	}
@@ -380,6 +386,7 @@ func run() error {
 	// 保证 DATABASE_URL 非空；此处 DSN 无效直接启动失败——Go 接管端点
 	// 不得带病启动）。
 	var userSettingsRepo usersettings.Repository
+	var settingsMySQL *usersettings.MySQLRepository
 	userSettingsDBStatus := "unconfigured"
 	var sharedDB *sql.DB
 	if cfg.DatabaseURL != "" {
@@ -399,7 +406,8 @@ func run() error {
 			// 不证明数据库可连接。连接性由真实查询按需建立（失败只影响
 			// shadow 差分，不影响 legacy 响应）——不引入启动 Ping/探针/
 			// 重试，数据库连通性也不是网关的存活条件。
-			userSettingsRepo = usersettings.NewMySQLRepository(db)
+			settingsMySQL = usersettings.NewMySQLRepository(db)
+			userSettingsRepo = settingsMySQL
 			userSettingsDBStatus = "configured"
 			sharedDB = db
 		}
@@ -430,8 +438,33 @@ func run() error {
 		blacklist := authn.NewRedisBlacklist(redisClient)
 		authenticator := authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
 		readHandler := usersettingsread.NewHandler(authenticator, userSettingsRepo)
+		var writeHandler *usersettingswrite.Handler
+		if cfg.UserSettingsWriteMode == config.UserSettingsWriteModeGo {
+			if settingsMySQL == nil {
+				return fmt.Errorf("api-go: user-settings write takeover requires a mysql repository")
+			}
+			writeHandler = usersettingswrite.NewHandler(authenticator, settingsMySQL)
+			log.Printf("api-go: user-settings PUT write takeover enabled (readMode=%s)", cfg.UserSettingsReadMode)
+		}
+		// 同一 prefix 只能注册一个 handler。CORS 在鉴权之前：有效预检直接
+		// 204；实际 GET/PUT（含 401/400/500）先写上来源头再进入原 handler。
+		// 读写模式均为 go 时，路由表才会把精确路径的 OPTIONS 送进来。
+		corsPolicy := cors.New(cfg.CorsOrigin)
 		for _, path := range usersettingsread.Paths {
-			gateway.RegisterGoHandler(path, readHandler.ServeHTTP)
+			gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+				if corsPolicy.FinishOptions(w, r) {
+					return
+				}
+				if r.Method == http.MethodOptions {
+					gateway.ServeLegacy(w, r)
+					return
+				}
+				if writeHandler != nil && r.Method == http.MethodPut {
+					writeHandler.ServeHTTP(w, r)
+					return
+				}
+				readHandler.ServeHTTP(w, r)
+			})
 		}
 		log.Printf("api-go: user-settings read GET(s) under go takeover (JWT verify + Redis blacklist + MySQL RBAC; issuer=%s, readMode=%s, onboardingMode=%s)",
 			cfg.JWTIssuer, cfg.UserSettingsReadMode, cfg.OnboardingMode)
@@ -516,6 +549,10 @@ func run() error {
 			"userSettingsRead": map[string]any{
 				"mode":     string(cfg.UserSettingsReadMode),
 				"database": userSettingsDBStatus,
+			},
+			// 写模式只展示 legacy|go，不含 DSN/密钥。
+			"userSettingsWrite": map[string]any{
+				"mode": string(cfg.UserSettingsWriteMode),
 			},
 		})
 	})

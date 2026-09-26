@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -325,6 +326,135 @@ func TestUserSettingsMySQLIntegration(t *testing.T) {
 	}
 	if isolatedSituation.Monitors.Found || isolatedSituation.Layout.Found || isolatedSituation.Settings.Found {
 		t.Error("situation-monitor 隔离失败——其他 org 不应有任何记录")
+	}
+}
+
+// TestUserSettingsMySQLIntegrationWrite 覆盖真实 upsert：显式 id、
+// 联合唯一键不产生重复行、并发、跨用户隔离、拒绝非固定 key。
+func TestUserSettingsMySQLIntegrationWrite(t *testing.T) {
+	databaseURL := integrationDatabaseURL(t)
+	db, err := OpenMySQLFromURL(databaseURL)
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, createIntegrationTable); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	const orgID = "org-it-write"
+	const otherOrgID = "org-it-write-b"
+	const userID = "user-it-write"
+	const otherUserID = "user-it-write-2"
+	if _, err := db.ExecContext(ctx, `DELETE FROM UserSetting WHERE orgId IN (?, ?)`, orgID, otherOrgID); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	repo := NewMySQLRepository(db)
+
+	if err := repo.UpsertFixed(ctx, "", userID, OnboardingKey, []byte(`{}`)); err == nil {
+		t.Fatal("empty orgId must be rejected")
+	}
+	if err := repo.UpsertFixed(ctx, orgID, userID, SettingKey("ui:evil:v1"), []byte(`{}`)); err == nil {
+		t.Fatal("non-fixed key must be rejected")
+	}
+	var evil int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM UserSetting WHERE `key` = ?", "ui:evil:v1").Scan(&evil); err != nil {
+		t.Fatal(err)
+	}
+	if evil != 0 {
+		t.Fatalf("evil key rows = %d, want 0", evil)
+	}
+
+	past := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	const seedID = "keep-me-write"
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO UserSetting (id, orgId, userId, `key`, value, updatedAt) VALUES (?, ?, ?, ?, ?, ?)",
+		seedID, orgID, userID, string(OnboardingKey), `{"dismissed":false}`, past); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	var createdBefore time.Time
+	if err := db.QueryRowContext(ctx,
+		"SELECT createdAt FROM UserSetting WHERE id = ?", seedID).Scan(&createdBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpsertFixed(ctx, orgID, userID, OnboardingKey, []byte(`{"dismissed":true}`)); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	var id string
+	var createdAt, updatedAt time.Time
+	if err := db.QueryRowContext(ctx,
+		"SELECT id, createdAt, updatedAt FROM UserSetting WHERE orgId = ? AND userId = ? AND `key` = ?",
+		orgID, userID, string(OnboardingKey)).Scan(&id, &createdAt, &updatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if id != seedID {
+		t.Fatalf("id = %q, want %q（ON DUPLICATE 不得更换主键）", id, seedID)
+	}
+	if !createdAt.Equal(createdBefore) {
+		t.Fatalf("createdAt changed on upsert: before %s after %s", createdBefore.UTC(), createdAt.UTC())
+	}
+	if !updatedAt.After(past) {
+		t.Fatalf("updatedAt = %s, want after seed", updatedAt.UTC().Format(time.RFC3339Nano))
+	}
+	if updatedAt.Nanosecond()%int(time.Millisecond) != 0 {
+		t.Fatalf("updatedAt has sub-millisecond precision: %s", updatedAt.UTC().Format(time.RFC3339Nano))
+	}
+	record, err := repo.FindOnboarding(ctx, orgID, userID)
+	if err != nil || !record.Found {
+		t.Fatalf("reread: found=%v err=%v", record.Found, err)
+	}
+	response := BuildOnboardingResponse(record)
+	if response.Settings == nil || !response.Settings.Dismissed {
+		t.Fatalf("reread settings = %+v, want dismissed", response.Settings)
+	}
+	if response.UpdatedAt.Settings != formatJSISO(record.UpdatedAt) {
+		t.Fatalf("response updatedAt = %q", response.UpdatedAt.Settings)
+	}
+
+	other, err := repo.FindOnboarding(ctx, orgID, otherUserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.Found {
+		t.Fatal("other user can see the row — orgId/userId 隔离失败")
+	}
+	var rows int
+	if err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM UserSetting WHERE orgId = ? AND userId = ? AND `key` = ?",
+		orgID, userID, string(OnboardingKey)).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("rows = %d, want 1", rows)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := repo.UpsertFixed(ctx, otherOrgID, userID, RSSReaderKey, []byte(`{"translationEnabled":true}`)); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("concurrent upsert: %v", err)
+	}
+	if err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM UserSetting WHERE orgId = ? AND userId = ? AND `key` = ?",
+		otherOrgID, userID, string(RSSReaderKey)).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("concurrent rows = %d, want 1", rows)
 	}
 }
 

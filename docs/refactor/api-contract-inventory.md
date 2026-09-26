@@ -35,7 +35,7 @@
 
 **Go 迁移状态（api-go 四态路由表，`apps/api-go/internal/legacyproxy/proxy.go`）**：
 - user-settings 只读 GET ×6 —— **ModeGo（Go-批3B 统一接管：onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor；pilot 内 `API_GO_USER_SETTINGS_READ_MODE=go` 显式启用，优先级高于批3A 的 `API_GO_ONBOARDING_MODE`；默认未设置=兼容旧行为）**：六个 GET 全部由统一 Go handler（`internal/usersettingsread`）独立鉴权并全响应——Go 独立验签 HS256 access token（iss/aud/exp 按 jsonwebtoken 语义、jti 缺失按 NestJS 语义放行、拒绝 alg 混淆与 mtk_）、独立查询真实 Redis blacklist（`access-token:blacklist:<jti>` 同 key，fail-closed）、独立从 MySQL 重推导 User/Org/Membership 与 MembershipRole/RolePermission/Permission 权限（与 getUserProfile 同序同文案 401，多角色优先/primary 回退）、独立判定 `items.read`（JWT permissions claim 一律不参与）、独立查 UserSetting（五个单 key 端点各查一个编译期固定常量 key；situation-monitor 一次聚合查询三个固定 key，对齐 NestJS findMany）并经 normalization（War Map 完整移植 war-map-contract.ts；Situation Monitor 三段聚合；NewsNow 有序对象/上限/真值语义）写出契约等价响应（错误形状对齐 GlobalExceptionFilter）。路由为 exact+GET：六个 PUT 同路径与相似路径（onboarding-x/war-map-x/newsnow 子路径等）回落 legacy。已完成远端真实栈接管验证（Phase A-D：8 个固定 key 落库、shadow 零差异、go 契约全等、NestJS 停止后六端点仍 200 且代表性 PUT/未迁移 GET 502）。`API_GO_USER_SETTINGS_READ_MODE=shadow` 时六端点全部回 shadow 差分。
-- user-settings 全部 PUT ×6（onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor）—— **ModeLegacy（NestJS 单写，Go-批3B 不迁移写入路径）**。
+- user-settings 全部 PUT ×6（onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor）—— **`API_GO_USER_SETTINGS_WRITE_MODE`（Go-批3C）**：默认 `legacy`，精确路径 PUT 仍代理 NestJS；`go` 时由 `internal/usersettingswrite` 经同一鉴权链写入现有 `UserSetting`（八个固定 key 的 upsert，写后重读）。要求读模式同为 `go`。相似路径与其他方法仍回落 legacy。Situation Monitor 三段不是事务。
 - 登录/refresh/logout/MFA/OIDC/机器令牌 —— **全部仍由 NestJS 承载**（迁移序 5 余项，未动）。
 - 入口链（Go-批2C）：api-go 具备生产容器（`infra/docker/api-go.Dockerfile`，distroless nonroot + `healthcheck` 子命令）与 Compose 独立 `api-go-pilot` profile 服务；`API_BASE_URL` 可切 `http://api-go:4020` 使入口变为 `Web → api-go → NestJS`（其余请求全部纯代理，契约不变），默认部署仍直连 NestJS。已通过远端真实栈运行验证（`api-go-entry-smoke`：真实登录 JWT + 六个 PUT 持久化 + Shadow GET 零差异零丢弃 + Go-批3A 鉴权链 + Go-批3B 四阶段接管验证）；生产/预发布真实流量验证未完成。trace header（`x-trace-id`/`traceparent`）在 api-go 入口链保持原语义（§0 TraceId 行为镜像）。
 
@@ -99,7 +99,7 @@ GET .../clustering/readiness · overview · failures；POST failures/:groupId/ve
 
 ### 1.7 user-settings（12 个，`user-ui-settings.controller.ts`）
 
-situation-monitor/war-map/spacetime-timeline/newsnow/rss-reader 各 GET+PUT（items.read :22-101）；onboarding GET+PUT（items.read :110/116，API-01 已补权限元数据）。**Go-批2A/2B：onboarding、rss-reader、spacetime-timeline 三个 GET 进入 ModeShadow（NestJS 仍是响应方）；Go-批3A：onboarding GET 在 pilot 内可切 ModeGo（`API_GO_ONBOARDING_MODE=go`，Go 独立鉴权 + 全响应，默认仍 shadow）**，其余三个 GET 与全部 PUT 均为 legacy（见 §0 Go 迁移状态）。
+situation-monitor/war-map/spacetime-timeline/newsnow/rss-reader 各 GET+PUT（items.read :22-101）；onboarding GET+PUT（items.read :110/116，API-01 已补权限元数据）。Go-批3B 起六个 GET 在 pilot 可读模式 `go` 下由 Go 响应；Go-批3C 起六个 PUT 在 `API_GO_USER_SETTINGS_WRITE_MODE=go` 时由 Go 写入同一 `UserSetting` 表（默认 `legacy` 仍代理 NestJS）。见 §0。
 
 ### 1.8 public-portal（4 个，全部 @Public + Cache-Control）
 
@@ -239,7 +239,7 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 | LiteLLM 内部端点 | Bearer 与 `LITELLM_CONFIG_INTERNAL_TOKEN` **时序安全比较**（`common/internal-token.ts`） |
 | vector/model-service | `x-internal-token` 头；vector 侧为**普通相等比较**（SEC-04） |
 | Bull Board | Bearer JWT + queue.manage；错误为纯文本非 JSON |
-| CORS | credentials:true，origin 白名单来自 CORS_ORIGIN |
+| CORS | credentials:true，origin 白名单来自 CORS_ORIGIN。api-go 在 user-settings 读写模式均为 go 时，对六个精确 GET/PUT 使用同一白名单；不反射未列出的 Origin，携带凭据时不返回 `*` |
 
 ## 7. 保护网快照与差分测试（已落地；验证状态标注于各项）
 

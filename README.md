@@ -332,7 +332,7 @@ pnpm --filter infra-scripts run env:check
 - 数据库：`DATABASE_URL`（可选，宿主机优先）、`MYSQL_*`、`MONGO_URI`、`REDIS_*`
 - 登录与会话：`JWT_SECRET`、`NEXTAUTH_SECRET`、`NEXTAUTH_URL`。`NEXTAUTH_SECRET` 只在运行时注入（compose `env_file`），不要作为 Docker build ARG，以免进入 `docker history`
 - Web ↔ API：`NEXT_PUBLIC_API_BASE_URL`（浏览器访问 API）、`API_BASE_URL`（服务端访问 API，可选）
-- API 入口试点（Go-批2C/批3A/批3B）：`API_GO_HOST_PORT`（api-go 容器 host 侧端口，默认 4020，默认只绑 loopback）、`API_GO_IMAGE`（构建基础镜像）、`API_GO_USER_SETTINGS_READ_MODE`（user-settings 六个只读 GET 的统一读模式：空=兼容旧行为 / `shadow`=六端点全部 NestJS 响应 + Go 差分 / `go`=六端点全部由 Go 独立鉴权接管——pilot compose 注入 `go`，优先级高于 `API_GO_ONBOARDING_MODE`，回滚改回 `shadow` 或删除）、`API_GO_ONBOARDING_MODE`（批3A 兼容变量：read mode 未设时控制 onboarding）。启用/切流/回滚见下方「api-go 入口试点」
+- API 入口试点（Go-批2C/批3A/批3B/批3C）：`API_GO_HOST_PORT`、`API_GO_IMAGE`、`API_GO_USER_SETTINGS_READ_MODE`、`API_GO_USER_SETTINGS_WRITE_MODE`（`legacy` 默认，六个 PUT 代理 NestJS；`go` 要求读模式同为 `go`，pilot 注入 `go`；回滚先改回 `legacy`）、`API_GO_ONBOARDING_MODE`。启用/切流/回滚见下方「api-go 入口试点」
 - 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_SSRF_PROXY_URL`、`CRAWL4AI_*`
 - LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MASTER_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`。Docker 栈中 `LITELLM_MASTER_KEY` 必填（`openssl rand -hex 32`），空值时代理直接退出
 - Docker 端口绑定：`DOCKER_PUBLISH_HOST`（默认 `127.0.0.1`，仅本机可达；需要局域网访问时设为 `0.0.0.0`）
@@ -377,17 +377,14 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml \
   --profile api-go-pilot up -d api-go
 ```
 
-api-go 容器（distroless nonroot，端口 4020，healthcheck 为 `/api-go healthcheck` 子命令）依赖 `api` 与 `mysql`、`redis` healthy——同一真实 MySQL 与同一 Redis（blacklist 共享），`LEGACY_API_URL=http://api:4000`，`API_GO_USER_SETTINGS_READ_MODE=go`（六个 user-settings 只读 GET 由统一 Go handler 接管；`API_GO_ONBOARDING_MODE=go` 保留为批3A 兼容），`CANARY_PERCENT=0`，`SHADOW_DEBUG_BODY_LOG=false`。
+api-go 容器（distroless nonroot，端口 4020，healthcheck 为 `/api-go healthcheck` 子命令）依赖 `api` 与 `mysql`、`redis` healthy——同一真实 MySQL 与同一 Redis（blacklist 共享），`LEGACY_API_URL=http://api:4000`，`API_GO_USER_SETTINGS_READ_MODE=go` 与 `API_GO_USER_SETTINGS_WRITE_MODE=go`（六个 user-settings GET/PUT 在 pilot 内由 Go 处理；写模式默认 `legacy`，`go` 必须搭配读模式 `go`），`CANARY_PERCENT=0`，`SHADOW_DEBUG_BODY_LOG=false`。
 
 ### 切流（pilot 模式）
 
 ```text
-Web → api-go:4020 → NestJS api:4000（登录/PUT/未迁移路由）
+Web → api-go:4020 → NestJS api:4000（登录与未迁移路由）
                    ↘ Go Shadow → MySQL（read mode=shadow 时的只读差分）
-                   → Go 全响应：GET /api/user-settings/ui/{onboarding,rss-reader,
-                     spacetime-timeline,war-map,newsnow,situation-monitor}
-                     （统一 Go handler：JWT 验签 + Redis blacklist + MySQL RBAC +
-                       独立查库 + normalization；NestJS 停止后仍可用）
+                   → Go：六个 user-settings GET 与（write mode=go 时）六个 PUT
 ```
 
 1. 服务端：`infra/docker/.env` 中 `API_BASE_URL=http://api-go:4020`，然后 `docker compose ... up -d web`（运行期变量，无需重建镜像；web 启动等待会自动探测 `http://api-go:4020/api/healthz/live`）。
@@ -395,15 +392,15 @@ Web → api-go:4020 → NestJS api:4000（登录/PUT/未迁移路由）
 
 ### 回滚到 NestJS
 
-可组合：① `API_GO_USER_SETTINGS_READ_MODE=shadow`——六个 user-settings 只读 GET 回到 NestJS 响应 + Go 差分（或删除该变量：onboarding 由 `API_GO_ONBOARDING_MODE` 控制、其余端点回到批3B 前去向——批3A/批2 行为）；② `API_BASE_URL` 指回 `http://api:4000` 并按原值重建 web；③ `docker compose ... down api-go`（或去掉 profile）停掉 pilot。**无数据迁移耦合**——user-settings 的全部写入（六个 PUT）始终只有 NestJS 单写，api-go 不持有任何独立数据。
+按序：① `API_GO_USER_SETTINGS_WRITE_MODE=legacy`（六个 PUT 回到 NestJS）；② `API_GO_USER_SETTINGS_READ_MODE=shadow`（六个 GET 回到 NestJS 响应 + Go 差分）；③ `API_BASE_URL` 指回 `http://api:4000` 并按原值重建 web；④ `docker compose ... down api-go`（或去掉 profile）停掉 pilot。写入仍是原来的 `UserSetting` 表和八个 key，没有第二份存储。
 
 ### 流量去向（Go-批3B 后）
 
-经 api-go 的请求：**六个 user-settings 只读 GET（onboarding / rss-reader / spacetime-timeline / war-map / newsnow / situation-monitor）由 Go 全响应**（统一 handler：HS256 JWT 验签 + Redis blacklist + MySQL membership/RBAC 重推导 + `items.read` 判定——JWT 内 permissions claim 不参与授权；独立查库 + normalization，NestJS 停止后仍可用）；`GET /api/healthz/live` 仍为 Go Shadow 差分（`read mode=shadow` 时六个 GET 也全部 shadow）；**其余全部请求（含六个 PUT、登录/refresh/logout/MFA/OIDC、其他 GET）纯代理回 NestJS**。canary 接管仍未激活（canary router 依赖未验签 claim，`CANARY_PERCENT` 固定 0）。
+经 api-go 的请求：pilot 内六个 user-settings GET 与 PUT 由 Go 处理（写模式默认 `legacy` 时 PUT 仍代理 NestJS）。`GET /api/healthz/live` 仍是 Shadow。登录/refresh/logout/MFA/OIDC、其他路由纯代理回 NestJS。canary 未激活（`CANARY_PERCENT` 固定 0）。
 
 ### 验证状态
 
-该入口链已在 GitHub Actions 远端真实栈验证（真实 MySQL/Redis + migration + 真实 NestJS + api-go 容器 + 真实登录 JWT：手动触发 `api-go-entry-smoke` workflow）。Go-批3B 验收分四阶段：Phase A 六个 PUT（NestJS 单写，8 个固定 key 落库）→ Phase B shadow 差分（executed 精确 +6、diffs 零增量）→ Phase C Go 接管契约对比（六端点 NestJS 直连 vs Go handler 全等）→ **Phase D 停止 NestJS 后六个 GET 仍全部 200**（代表性 PUT 与未迁移 GET 返回 502，证明写路径未迁入 Go、api-go 不伪装成功）。共享鉴权链负向用例（数据库无权限双端 403、membership 停用双端 401、logout 撤销 → 401、篡改签名/alg=none → 401）沿用批3A 验证。**生产/预发布真实流量验证未完成**（api-go 仍是 pilot 入口，未接入生产流量）。这也不代表整个 NestJS 已迁移完成——登录/refresh/logout/MFA/OIDC/机器令牌与全部写路径仍在 NestJS。详见 [apps/api-go/README.md](./apps/api-go/README.md)。
+该入口链在 GitHub Actions 远端真实栈验证（真实 MySQL/Redis + migration + 真实 NestJS + api-go 容器 + 真实登录 JWT：`api-go-entry-smoke`）。Go-批3C 在读/写模式都为 `go` 时由 Go 处理六个 PUT，停止 NestJS 后 PUT 与 GET 仍成功，未迁移路由返回 502。**生产流量未切换。** 登录/refresh/logout/MFA/OIDC/机器令牌仍在 NestJS。详见 [apps/api-go/README.md](./apps/api-go/README.md)。
 
 ## 并发控制说明
 

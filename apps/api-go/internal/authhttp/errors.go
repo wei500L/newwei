@@ -125,3 +125,29 @@ func WriteDatabaseFailure(w http.ResponseWriter, r *http.Request) {
 		Message:    "Internal server error",
 	})
 }
+
+// WriteBadRequest 写 ValidationPipe / body-parser 映射后的 400
+//（GlobalExceptionFilter 把 class-validator 的 message 数组用 "; " 拼成
+// 一个字符串；error 为 "Bad Request"）。非法 JSON 也走这个形状：Nest
+// 的 RoutesResolver.mapExternalException 把它收成 BadRequestException。
+func WriteBadRequest(w http.ResponseWriter, r *http.Request, message string) {
+	writeError(w, r, errorBody{
+		StatusCode: http.StatusBadRequest,
+		Message:    message,
+		Error:      "Bad Request",
+	})
+}
+
+// WritePayloadTooLarge 写超过 JSON 体上限的响应。
+//
+// body-parser 自己的错误是 413 "request entity too large"，但 Nest 的
+// GlobalExceptionFilter 不把它当成 HttpException。生产环境
+// （NODE_ENV=production，远端 smoke run 36270657639）因此返回 500
+// {"statusCode":500,"message":"Internal server error"}，没有 error 字段。
+// 100KiB+1 仍低于 10MiB，继续走 JSON 400，不进这里。
+func WritePayloadTooLarge(w http.ResponseWriter, r *http.Request) {
+	writeError(w, r, errorBody{
+		StatusCode: http.StatusInternalServerError,
+		Message:    "Internal server error",
+	})
+}

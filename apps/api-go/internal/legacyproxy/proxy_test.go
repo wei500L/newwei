@@ -780,3 +780,117 @@ func TestShadowForwardsUpstreamHeaders(t *testing.T) {
 		t.Errorf("client Content-Type = %q, want application/json", got)
 	}
 }
+
+// 写模式 go：六个精确 PUT 进 Go handler，不触达 NestJS；GET 仍按读模式；
+// POST 与相似路径仍回落 legacy。写模式非 go 时 PUT 继续回落 legacy。
+func TestUserSettingsWriteModeRouting(t *testing.T) {
+	paths := []string{
+		"/api/user-settings/ui/onboarding",
+		"/api/user-settings/ui/rss-reader",
+		"/api/user-settings/ui/spacetime-timeline",
+		"/api/user-settings/ui/war-map",
+		"/api/user-settings/ui/newsnow",
+		"/api/user-settings/ui/situation-monitor",
+	}
+
+	legacyStub := newLegacyStub(t)
+	legacyGateway, err := New(legacyStub.server.URL, DefaultRulesWithWrite(ModeShadow, string(ModeGo), ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		legacyGateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPut {
+				t.Errorf("PUT %s hit go handler while write mode is legacy", r.URL.Path)
+			}
+			w.WriteHeader(http.StatusOK)
+		})
+	}
+	rec := httptest.NewRecorder()
+	legacyGateway.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "http://gateway"+paths[0], nil))
+	if rec.Body.String() != `{"upstream":"legacy"}` {
+		t.Fatalf("legacy write mode PUT body = %s, want upstream legacy", rec.Body.String())
+	}
+	legacyOptions := httptest.NewRecorder()
+	legacyOptReq := httptest.NewRequest(http.MethodOptions, "http://gateway"+paths[0], nil)
+	legacyOptReq.Header.Set("Origin", "http://localhost:3000")
+	legacyOptReq.Header.Set("Access-Control-Request-Method", "PUT")
+	legacyGateway.ServeHTTP(legacyOptions, legacyOptReq)
+	if legacyOptions.Body.String() != `{"upstream":"legacy"}` {
+		t.Fatalf("legacy write mode OPTIONS body = %s, want upstream legacy", legacyOptions.Body.String())
+	}
+	for _, rule := range DefaultRulesWithWrite(ModeShadow, string(ModeGo), "") {
+		if rule.Exact && rule.Methods[http.MethodOptions] {
+			t.Fatalf("write mode legacy registered an OPTIONS rule: %+v", rule)
+		}
+	}
+
+	stub := newLegacyStub(t)
+	gateway, err := New(stub.server.URL, DefaultRulesWithWrite(ModeShadow, string(ModeGo), string(ModeGo)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("go-" + r.Method))
+		})
+	}
+
+	for _, path := range paths {
+		putRec := httptest.NewRecorder()
+		gateway.ServeHTTP(putRec, httptest.NewRequest(http.MethodPut, "http://gateway"+path, strings.NewReader(`{}`)))
+		if putRec.Body.String() != "go-PUT" {
+			t.Errorf("PUT %s body = %s, want go-PUT", path, putRec.Body.String())
+		}
+		getRec := httptest.NewRecorder()
+		gateway.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "http://gateway"+path, nil))
+		if getRec.Body.String() != "go-GET" {
+			t.Errorf("GET %s body = %s, want go-GET（读模式仍是 go）", path, getRec.Body.String())
+		}
+	}
+
+	optionsRules := 0
+	for _, rule := range DefaultRulesWithWrite(ModeShadow, string(ModeGo), string(ModeGo)) {
+		if rule.Exact && rule.Methods[http.MethodOptions] {
+			optionsRules++
+		}
+	}
+	if optionsRules != len(paths) {
+		t.Fatalf("OPTIONS rules = %d, want %d", optionsRules, len(paths))
+	}
+	optRec := httptest.NewRecorder()
+	optReq := httptest.NewRequest(http.MethodOptions, "http://gateway"+paths[0], nil)
+	optReq.Header.Set("Origin", "http://localhost:3000")
+	optReq.Header.Set("Access-Control-Request-Method", "PUT")
+	gateway.ServeHTTP(optRec, optReq)
+	if optRec.Body.String() != "go-OPTIONS" {
+		t.Fatalf("OPTIONS %s body = %s, want go-OPTIONS", paths[0], optRec.Body.String())
+	}
+	otherOpt := httptest.NewRecorder()
+	gateway.ServeHTTP(otherOpt, httptest.NewRequest(http.MethodOptions, "http://gateway/api/items", nil))
+	if otherOpt.Body.String() != `{"upstream":"legacy"}` {
+		t.Fatalf("OPTIONS /api/items body = %s, want legacy", otherOpt.Body.String())
+	}
+
+	postRec := httptest.NewRecorder()
+	gateway.ServeHTTP(postRec, httptest.NewRequest(http.MethodPost, "http://gateway"+paths[0], nil))
+	if postRec.Body.String() != `{"upstream":"legacy"}` {
+		t.Fatalf("POST body = %s, want legacy", postRec.Body.String())
+	}
+	similar := httptest.NewRecorder()
+	gateway.ServeHTTP(similar, httptest.NewRequest(http.MethodPut, "http://gateway/api/user-settings/ui/onboarding-x", nil))
+	if similar.Body.String() != `{"upstream":"legacy"}` {
+		t.Fatalf("similar PUT body = %s, want legacy", similar.Body.String())
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	for _, req := range stub.requests {
+		if req.Method == http.MethodPut && req.Path == paths[0] {
+			t.Fatal("exact PUT reached upstream while write mode is go")
+		}
+		if req.Method == http.MethodOptions && req.Path == paths[0] {
+			t.Fatal("exact OPTIONS reached upstream while write mode is go")
+		}
+	}
+}
