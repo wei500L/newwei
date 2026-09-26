@@ -9,8 +9,8 @@
 //
 // 匹配方式（Go-批3A 起）：通用 fallback 规则按前缀匹配（任意方法）；
 // 迁移单元按 exact path + method 白名单匹配——不匹配的 method 与相似
-// 路径回落更短的通用规则（PUT /…/onboarding 回落 /api/ legacy，绝不
-// 进入 Go handler）。
+// 路径回落更短的通用规则。写模式 legacy 时 PUT 回落 /api/；写模式 go
+// 时同一路径的 PUT 命中独立的 exact+PUT 规则（Go-批3C）。
 //
 // 四态实现：
 //   - shadow：客户端响应始终来自 NestJS（直通 + 有界旁录，客户端无需
@@ -57,8 +57,8 @@ const (
 //   - Exact=true：路径完全相等——迁移单元的精确边界（/…/onboarding-x
 //     等相似路径不得误命中）；
 //   - Methods 非空：方法白名单——不匹配的方法不命中本规则，回落到更短
-//     的通用规则（如 PUT /…/onboarding 回落 /api/ legacy，由 NestJS
-//     单写）；Methods 为空 = 任意方法（fallback 语义）。
+//     的通用规则（写模式 legacy 时 PUT /…/onboarding 回落 /api/）；
+//     Methods 为空 = 任意方法（fallback 语义）。
 type Rule struct {
 	Prefix string
 	Mode   Mode
@@ -68,24 +68,28 @@ type Rule struct {
 	Methods map[string]bool
 }
 
-// DefaultRules 是当前的路由表。onboardingMode 是 onboarding 单元的模式
-//（API_GO_ONBOARDING_MODE：ModeShadow=默认部署旧行为；ModeGo=Go-批3A
-// 真实接管）；readMode 是 user-settings 六个只读 GET 的统一模式
-//（Go-批3B：API_GO_USER_SETTINGS_READ_MODE——go=六个 GET 全部由统一
-// Go handler 接管；shadow=六个 GET 全部 shadow（NestJS 响应 + Go 差分）；
-// 空=兼容旧行为：onboarding 由 onboardingMode 控制，rss/spacetime 保持
-// shadow，war-map/newsnow/situation-monitor 保持 legacy）。
+// DefaultRules 是当前的路由表（写模式 legacy——六个 PUT 仍回落 /api/）。
+// 见 DefaultRulesWithWrite。
+func DefaultRules(onboardingMode Mode, readMode string) []Rule {
+	return DefaultRulesWithWrite(onboardingMode, readMode, "")
+}
+
+// DefaultRulesWithWrite 是当前的路由表。onboardingMode 是 onboarding
+// 单元的模式（API_GO_ONBOARDING_MODE）；readMode 是六个只读 GET 的统一
+// 模式（API_GO_USER_SETTINGS_READ_MODE）；writeMode 是六个 PUT 的写接管
+//（API_GO_USER_SETTINGS_WRITE_MODE——仅 "go" 为六个精确路径 PUT 增加
+// ModeGo 规则；空/legacy 不增加，PUT 继续回落 /api/ 由 NestJS 处理）。
 //
 // 迁移单元：
 //   - 序 2：GET /api/healthz/live —— shadow（公开探针，首个单元）；
 //   - 序 5（Go-批3A/3B）：GET /api/user-settings/ui/{六个端点} ——
-//     exact path + method 白名单：PUT 等写方法与相似路径
-//     （onboarding-x、onboarding/other）回落 /api/ legacy，由 NestJS
-//     处理——绝不进入 Go handler（写方法永远 NestJS 单写）。
+//     exact path + 仅 GET；
+//   - Go-批3C：同一六个路径的 PUT 在 writeMode=go 时 exact + 仅 PUT。
+//     POST/HEAD/相似路径仍回落 /api/ legacy。
 //
 // 注意三个无 /api 前缀的挂载点（契约清单 §0）：/graphql、/socket.io、
 // /admin/queues（Bull Board）。代理层必须与 REST 前缀分别声明。
-func DefaultRules(onboardingMode Mode, readMode string) []Rule {
+func DefaultRulesWithWrite(onboardingMode Mode, readMode, writeMode string) []Rule {
 	if onboardingMode != ModeGo {
 		onboardingMode = ModeShadow
 	}
@@ -103,7 +107,7 @@ func DefaultRules(onboardingMode Mode, readMode string) []Rule {
 		}
 	}
 
-	return []Rule{
+	rules := []Rule{
 		{Prefix: "/api/", Mode: ModeLegacy},
 		{Prefix: "/api/healthz/live", Mode: ModeShadow, Exact: true, Methods: getOnly},
 		// 兼容模式（readMode 空）：onboarding 由 onboardingMode 决定，
@@ -120,6 +124,22 @@ func DefaultRules(onboardingMode Mode, readMode string) []Rule {
 		{Prefix: "/admin/queues", Mode: ModeLegacy},
 		{Prefix: "/__go/healthz", Mode: ModeGo},
 	}
+	// 写接管是另一组 exact+PUT 规则，不把 PUT 并进 GET 白名单——GET
+	// 继续走读模式，其他方法仍回落 /api/。
+	if writeMode == string(ModeGo) {
+		putOnly := map[string]bool{http.MethodPut: true}
+		for _, path := range []string{
+			"/api/user-settings/ui/onboarding",
+			"/api/user-settings/ui/rss-reader",
+			"/api/user-settings/ui/spacetime-timeline",
+			"/api/user-settings/ui/war-map",
+			"/api/user-settings/ui/newsnow",
+			"/api/user-settings/ui/situation-monitor",
+		} {
+			rules = append(rules, Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: putOnly})
+		}
+	}
+	return rules
 }
 
 // GoHandler 是已迁移到 Go 的原生处理器（按前缀注册）。

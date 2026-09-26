@@ -34,6 +34,7 @@ package usersettingsread
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 
@@ -92,21 +93,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 固定 repository 查询（按端点语义——key 是 usersettings 包内编译期
-	// 常量）+ normalization + 响应写出。六个端点共用同一 handler 流程，
-	// 只有 query/build 这一步不同——以一个闭包字段承接，不复制六份 handler。
-	query, build, ok := endpointBinding(r.URL.Path)
-	if !ok {
-		// 路由层 exact 匹配保证不会走到这里；防御性 404。
+	// 常量）+ normalization + 响应写出。六个端点共用 Query（同一张
+	// endpointBinding 表）——PUT 写后重读也走这张表，不复制六份构建。
+	response, err := Query(r.Context(), h.repo, r.URL.Path, identity.OrgID, identity.UserID)
+	if errors.Is(err, ErrUnknownPath) {
 		http.NotFound(w, r)
 		return
 	}
-	response, err := query(r.Context(), h.repo, identity.OrgID, identity.UserID)
 	if err != nil {
 		log.Printf("user-settings read: query failed: %v", err)
 		authhttp.WriteDatabaseFailure(w, r)
 		return
 	}
-	body, err := json.Marshal(build(response))
+	body, err := json.Marshal(response)
 	if err != nil {
 		log.Printf("user-settings read: marshal response failed: %v", err)
 		authhttp.WriteDatabaseFailure(w, r)
@@ -120,6 +119,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("content-type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
+}
+
+// ErrUnknownPath 表示 path 不在六个固定端点里（路由层 exact 匹配后不应出现）。
+var ErrUnknownPath = errors.New("unknown user-settings path")
+
+// Query 按固定端点绑定表读取并构建完整响应（GET 与 PUT 写后重读共用）。
+// 未知 path 返回 ErrUnknownPath；数据库错误原样返回（调用方写成通用 503，
+// 不把 SQL/身份写进响应）。
+func Query(ctx context.Context, repo usersettings.Repository, path, orgID, userID string) (any, error) {
+	query, build, ok := endpointBinding(path)
+	if !ok {
+		return nil, ErrUnknownPath
+	}
+	raw, err := query(ctx, repo, orgID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return build(raw), nil
 }
 
 // queryContext 是查询闭包的 context 参数类型（r.Context() 的等价物——

@@ -55,6 +55,20 @@ const (
 	UserSettingsReadModeGo UserSettingsReadMode = "go"
 )
 
+// UserSettingsWriteMode 是六个 user-settings PUT 的写接管开关
+//（API_GO_USER_SETTINGS_WRITE_MODE——Go-批3C）。只有一个开关，不按端点拆。
+type UserSettingsWriteMode string
+
+const (
+	// UserSettingsWriteModeLegacy：六个 PUT 全部纯代理 NestJS（默认，
+	// 含未设置）。旧部署行为不变。
+	UserSettingsWriteModeLegacy UserSettingsWriteMode = "legacy"
+	// UserSettingsWriteModeGo：六个精确路径 PUT 由 Go 独立鉴权并写入
+	// 现有 UserSetting。要求读模式同为 go，否则启动失败——避免 PUT 成功
+	// 但响应无法用 Go 读路径构建。
+	UserSettingsWriteModeGo UserSettingsWriteMode = "go"
+)
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -77,6 +91,10 @@ type Config struct {
 	// Legacy（Go-批3B 之前的部署不变）。设置为 go 时六个 GET 统一由 Go
 	// 接管（优先级高于 API_GO_ONBOARDING_MODE）。非法值启动失败。
 	UserSettingsReadMode UserSettingsReadMode
+
+	// UserSettingsWriteMode 见 UserSettingsWriteMode 常量。默认 legacy。
+	// go 要求 UserSettingsReadMode 同为 go，并因此具备 JWT/数据库/Redis。
+	UserSettingsWriteMode UserSettingsWriteMode
 
 	// JWT 是 NestJS access token 的验签配置（与 api 服务同一
 	// JWT_SECRET/JWT_ISSUER/JWT_AUDIENCE）。OnboardingMode=go 时
@@ -183,6 +201,21 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.UserSettingsReadMode = UserSettingsReadModeGo
 	default:
 		errs = append(errs, "API_GO_USER_SETTINGS_READ_MODE must be one of shadow|go")
+	}
+
+	// 六个 PUT 的写接管（Go-批3C）。未设置 = legacy。go 必须搭配读模式
+	// go，否则写成功后的 envelope 无法走同一套 Go 读构建。
+	switch strings.TrimSpace(getenv("API_GO_USER_SETTINGS_WRITE_MODE")) {
+	case "", string(UserSettingsWriteModeLegacy):
+		cfg.UserSettingsWriteMode = UserSettingsWriteModeLegacy
+	case string(UserSettingsWriteModeGo):
+		cfg.UserSettingsWriteMode = UserSettingsWriteModeGo
+	default:
+		errs = append(errs, "API_GO_USER_SETTINGS_WRITE_MODE must be one of legacy|go")
+	}
+	if cfg.UserSettingsWriteMode == UserSettingsWriteModeGo &&
+		cfg.UserSettingsReadMode != UserSettingsReadModeGo {
+		errs = append(errs, "API_GO_USER_SETTINGS_WRITE_MODE=go requires API_GO_USER_SETTINGS_READ_MODE=go")
 	}
 
 	// JWT 验签配置（issuer/audience 默认值与 NestJS env schema 一致——

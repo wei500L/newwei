@@ -1,6 +1,6 @@
 # api-go 四态路由与首个迁移单元（shadow/canary 实现说明）
 
-> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补（exact+method 路由与 onboarding go 接管）· 2026-09-07 Go-批3B 增补（user-settings 六个只读 GET 统一接管，`API_GO_USER_SETTINGS_READ_MODE`）
+> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补 · 2026-09-07 Go-批3B 增补 · 2026-09-26 Go-批3C 增补（六个 PUT，`API_GO_USER_SETTINGS_WRITE_MODE`，默认 legacy）
 > 关联：docs/refactor/go-migration-adr.md §3/§4/§4.3、roadmap M2
 
 ---

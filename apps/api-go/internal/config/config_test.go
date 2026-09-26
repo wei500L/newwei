@@ -222,6 +222,65 @@ func TestUserSettingsReadMode(t *testing.T) {
 			if string(cfg.UserSettingsReadMode) != tc.wantMode {
 				t.Errorf("UserSettingsReadMode = %q, want %q", cfg.UserSettingsReadMode, tc.wantMode)
 			}
+			if cfg.UserSettingsWriteMode != UserSettingsWriteModeLegacy {
+				t.Errorf("UserSettingsWriteMode = %q, want legacy by default", cfg.UserSettingsWriteMode)
+			}
+		})
+	}
+}
+
+func TestUserSettingsWriteMode(t *testing.T) {
+	deps := map[string]string{
+		"JWT_SECRET": "s", "DATABASE_URL": "mysql://u:p@h:3306/db", "REDIS_HOST": "h",
+	}
+	cases := []struct {
+		name      string
+		writeMode string
+		readMode  string
+		withDeps  bool
+		wantError bool
+	}{
+		{"default legacy", "", "", false, false},
+		{"explicit legacy", "legacy", "", false, false},
+		{"go requires read go", "go", "shadow", true, true},
+		{"go requires read go when read unset", "go", "", true, true},
+		{"go with read go", "go", "go", true, false},
+		{"go with read go but missing deps", "go", "go", false, true},
+		{"invalid", "both", "go", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(func(key string) string {
+				if tc.withDeps {
+					if v, ok := deps[key]; ok {
+						return v
+					}
+				}
+				switch key {
+				case "API_GO_USER_SETTINGS_WRITE_MODE":
+					return tc.writeMode
+				case "API_GO_USER_SETTINGS_READ_MODE":
+					return tc.readMode
+				default:
+					return ""
+				}
+			})
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("want error, got %+v", cfg.UserSettingsWriteMode)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := UserSettingsWriteModeLegacy
+			if tc.writeMode == "go" {
+				want = UserSettingsWriteModeGo
+			}
+			if cfg.UserSettingsWriteMode != want {
+				t.Fatalf("write mode = %q, want %q", cfg.UserSettingsWriteMode, want)
+			}
 		})
 	}
 }

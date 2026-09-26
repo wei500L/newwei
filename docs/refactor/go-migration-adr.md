@@ -187,6 +187,29 @@ handler、同一鉴权链装配、同一连接池，不复制六份实现：
   profile 之外 Web → NestJS 直连）；远端真实栈验证不等于生产/预发布
   真实流量验收。
 
+### 4.5 user-settings 写路径 Go 接管（Go-批3C）
+
+六个 PUT 在 `API_GO_USER_SETTINGS_WRITE_MODE=go` 时由 Go 写入现有
+`UserSetting` 表（同一八个固定 key），写后用批3B 的 `Query` 重读并返回
+完整 envelope。默认 `legacy`（未设置同义）：PUT 仍纯代理 NestJS。
+`go` 要求 `API_GO_USER_SETTINGS_READ_MODE=go`，否则进程拒绝启动。
+
+- **写入**：一条 `INSERT ... ON DUPLICATE KEY UPDATE`，命中
+  `(orgId, userId, key)`。`id` 由 Go 显式生成（列无数据库默认值）。
+  `updatedAt` 截断到毫秒。`orgId`/`userId` 只来自已验证身份。
+- **空写**：五个单 key 仅当 `settings` 出现（含显式 `null`）才 upsert；
+  请求体 `{}` 不插入行。Situation Monitor 的 `monitors`/`layout`/
+  `settings` 各自独立 upsert，**没有事务**。某一段失败时已成功的段会
+  留下，与 NestJS `Promise.all` 相同，不构成原子提交。
+- **DTO**：未知顶层字段与错误顶层类型返回 ValidationPipe 400；字段缺失、
+  显式 null、错误类型分开处理。JSON 体上限按 Nest 先注册的 body-parser
+  默认 100 KiB（`main.ts` 后挂的 10mb 解析器不会先看到超限请求）。
+- **回滚**：先把 `API_GO_USER_SETTINGS_WRITE_MODE` 改回 `legacy`，再按需
+  把读模式改回 `shadow`、`API_BASE_URL` 指回 NestJS、停止 pilot。不新增
+  表，不迁移数据。
+- **边界**：登录/refresh/logout/MFA/OIDC/机器令牌仍是 NestJS。canary 仍
+  未启用。这不是完整 Auth 模块迁移，也没有切换生产入口。
+
 ## 5. 队列/cron/outbox 边界（红线）
 
 - 全部 BullMQ 队列、21 个 @Cron/@Interval、3 套 MongoOutbox 的**写入权在最终阶段前仅属 NestJS**——Go 侧提前双写会制造消息重复/顺序破坏

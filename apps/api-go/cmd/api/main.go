@@ -59,6 +59,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettingsread"
+	"github.com/wei500L/newwei/apps/api-go/internal/usersettingswrite"
 )
 
 func main() {
@@ -365,7 +366,11 @@ func run() error {
 		readMode = string(legacyproxy.ModeShadow)
 	}
 
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.DefaultRules(onboardingMode, readMode))
+	writeMode := ""
+	if cfg.UserSettingsWriteMode == config.UserSettingsWriteModeGo {
+		writeMode = string(legacyproxy.ModeGo)
+	}
+	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode))
 	if err != nil {
 		return err
 	}
@@ -380,6 +385,7 @@ func run() error {
 	// 保证 DATABASE_URL 非空；此处 DSN 无效直接启动失败——Go 接管端点
 	// 不得带病启动）。
 	var userSettingsRepo usersettings.Repository
+	var settingsMySQL *usersettings.MySQLRepository
 	userSettingsDBStatus := "unconfigured"
 	var sharedDB *sql.DB
 	if cfg.DatabaseURL != "" {
@@ -399,7 +405,8 @@ func run() error {
 			// 不证明数据库可连接。连接性由真实查询按需建立（失败只影响
 			// shadow 差分，不影响 legacy 响应）——不引入启动 Ping/探针/
 			// 重试，数据库连通性也不是网关的存活条件。
-			userSettingsRepo = usersettings.NewMySQLRepository(db)
+			settingsMySQL = usersettings.NewMySQLRepository(db)
+			userSettingsRepo = settingsMySQL
 			userSettingsDBStatus = "configured"
 			sharedDB = db
 		}
@@ -430,8 +437,27 @@ func run() error {
 		blacklist := authn.NewRedisBlacklist(redisClient)
 		authenticator := authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
 		readHandler := usersettingsread.NewHandler(authenticator, userSettingsRepo)
-		for _, path := range usersettingsread.Paths {
-			gateway.RegisterGoHandler(path, readHandler.ServeHTTP)
+		if cfg.UserSettingsWriteMode == config.UserSettingsWriteModeGo {
+			if settingsMySQL == nil {
+				return fmt.Errorf("api-go: user-settings write takeover requires a mysql repository")
+			}
+			// 同一 prefix 只能注册一个 handler。写接管时按方法分发：
+			// GET 仍走读 handler，PUT 走写 handler。配置层已要求读模式为 go。
+			writeHandler := usersettingswrite.NewHandler(authenticator, settingsMySQL)
+			for _, path := range usersettingsread.Paths {
+				gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodPut {
+						writeHandler.ServeHTTP(w, r)
+						return
+					}
+					readHandler.ServeHTTP(w, r)
+				})
+			}
+			log.Printf("api-go: user-settings PUT write takeover enabled (readMode=%s)", cfg.UserSettingsReadMode)
+		} else {
+			for _, path := range usersettingsread.Paths {
+				gateway.RegisterGoHandler(path, readHandler.ServeHTTP)
+			}
 		}
 		log.Printf("api-go: user-settings read GET(s) under go takeover (JWT verify + Redis blacklist + MySQL RBAC; issuer=%s, readMode=%s, onboardingMode=%s)",
 			cfg.JWTIssuer, cfg.UserSettingsReadMode, cfg.OnboardingMode)
@@ -516,6 +542,10 @@ func run() error {
 			"userSettingsRead": map[string]any{
 				"mode":     string(cfg.UserSettingsReadMode),
 				"database": userSettingsDBStatus,
+			},
+			// 写模式只展示 legacy|go，不含 DSN/密钥。
+			"userSettingsWrite": map[string]any{
+				"mode": string(cfg.UserSettingsWriteMode),
 			},
 		})
 	})

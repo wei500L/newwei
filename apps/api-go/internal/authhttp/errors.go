@@ -125,3 +125,14 @@ func WriteDatabaseFailure(w http.ResponseWriter, r *http.Request) {
 		Message:    "Internal server error",
 	})
 }
+
+// WriteBadRequest 写 ValidationPipe 400（GlobalExceptionFilter 把
+// class-validator 的 message 数组用 "; " 拼成一个字符串；error 为
+// "Bad Request"）。message 由调用方按 DTO 契约拼好，本函数不追加字段。
+func WriteBadRequest(w http.ResponseWriter, r *http.Request, message string) {
+	writeError(w, r, errorBody{
+		StatusCode: http.StatusBadRequest,
+		Message:    message,
+		Error:      "Bad Request",
+	})
+}

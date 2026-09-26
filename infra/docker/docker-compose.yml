@@ -544,18 +544,15 @@ services:
   # 切流（pilot 模式）：.env 中 API_BASE_URL=http://api-go:4020（服务端
   #   运行期），浏览器端以构建参数 NEXT_PUBLIC_API_BASE_URL 指向
   #   http://<host>:${API_GO_HOST_PORT:-4020}/api 重建 web 镜像。
-  # 回滚（无数据迁移耦合，可组合）：
-  #   1. API_GO_USER_SETTINGS_READ_MODE=shadow——六个 user-settings GET
-  #      回到 NestJS 响应 + Go 差分（含批2A/2B 的 shadow 行为）；
-  #   2. API_BASE_URL 指回 http://api:4000（web 侧不再经 api-go）；
-  #   3. 停止 api-go pilot 服务。
-  # Go-批3B 边界：六个 user-settings 只读 GET（onboarding/rss-reader/
-  # spacetime-timeline/war-map/newsnow/situation-monitor）在 pilot Go
-  # 模式下由统一 Go handler 真实接管（Go 独立 JWT 验签 + Redis
-  # blacklist + MySQL RBAC + 独立查库 + normalization，NestJS 停止后仍
-  # 可用）；六个 PUT 仍全部由 NestJS 单写；登录/refresh/logout/MFA/
-  # OIDC/机器令牌及其余路由仍由 NestJS 承载。CANARY_PERCENT 固定 0，
-  # canary 模式仍禁止启用。
+  # 回滚（无数据迁移耦合，按序）：
+  #   1. API_GO_USER_SETTINGS_WRITE_MODE=legacy——六个 PUT 回到 NestJS；
+  #   2. API_GO_USER_SETTINGS_READ_MODE=shadow——六个 GET 回到 NestJS
+  #      响应 + Go 差分；
+  #   3. API_BASE_URL 指回 http://api:4000（web 侧不再经 api-go）；
+  #   4. 停止 api-go pilot 服务。
+  # Go-批3C：pilot 同时启用读模式 go 与写模式 go。六个 PUT 写入同一
+  # UserSetting 表、同一八个 key。登录/refresh/logout/MFA/OIDC/机器令牌
+  # 及其余路由仍由 NestJS 承载。CANARY_PERCENT 固定 0。
   # DATABASE_URL 由与 NestJS api 相同的 MYSQL_* 值派生——同一真实
   # MySQL，不复制数据、不引入第二个 NestJS；Redis/JWT 配置与 api 服务
   # 同源（同一 Redis 实例查 blacklist、同一 secret 验签）。
@@ -577,6 +574,8 @@ services:
       # 裸启 api-go 时该变量未设——旧行为不变：onboarding 由
       # API_GO_ONBOARDING_MODE 控制，rss/spacetime shadow，其余 legacy）。
       API_GO_USER_SETTINGS_READ_MODE: go
+      # 六个 PUT 写接管（Go-批3C）。必须与读模式同为 go；改回 legacy 即回滚写路径。
+      API_GO_USER_SETTINGS_WRITE_MODE: go
       # Go-批3A 兼容变量：readMode 未设时仍控制 onboarding（pilot 固定
       # go，保持与批3A 部署等价；readMode=go 已覆盖全部六端点）。
       API_GO_ONBOARDING_MODE: go
