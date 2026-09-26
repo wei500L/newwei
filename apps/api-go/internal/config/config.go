@@ -26,7 +26,7 @@ const (
 )
 
 // OnboardingMode 是 onboarding GET 迁移单元的路由模式
-//（API_GO_ONBOARDING_MODE——Go-批3A 引入）。
+// （API_GO_ONBOARDING_MODE——Go-批3A 引入）。
 type OnboardingMode string
 
 const (
@@ -41,7 +41,7 @@ const (
 )
 
 // UserSettingsReadMode 是 user-settings 六个只读 GET 的统一路由模式
-//（API_GO_USER_SETTINGS_READ_MODE——Go-批3B 引入）。
+// （API_GO_USER_SETTINGS_READ_MODE——Go-批3B 引入）。
 type UserSettingsReadMode string
 
 const (
@@ -56,7 +56,7 @@ const (
 )
 
 // UserSettingsWriteMode 是六个 user-settings PUT 的写接管开关
-//（API_GO_USER_SETTINGS_WRITE_MODE——Go-批3C）。只有一个开关，不按端点拆。
+// （API_GO_USER_SETTINGS_WRITE_MODE——Go-批3C）。只有一个开关，不按端点拆。
 type UserSettingsWriteMode string
 
 const (
@@ -67,6 +67,19 @@ const (
 	// 现有 UserSetting。要求读模式同为 go，否则启动失败——避免 PUT 成功
 	// 但响应无法用 Go 读路径构建。
 	UserSettingsWriteModeGo UserSettingsWriteMode = "go"
+)
+
+// PublicPortalMode 是公开首页与频道的接管开关
+// （API_GO_PUBLIC_PORTAL_MODE——Go-批4A）。故事详情不在此开关内。
+type PublicPortalMode string
+
+const (
+	// PublicPortalModeLegacy：首页与频道继续代理 NestJS（默认，含未设置）。
+	PublicPortalModeLegacy PublicPortalMode = "legacy"
+	// PublicPortalModeGo：GET /api/public-portal/home 与
+	// GET /api/public-portal/channels/:topic 由 Go 查 MySQL 并完整响应。
+	// 不要求 JWT/Redis。故事详情仍走 NestJS。
+	PublicPortalModeGo PublicPortalMode = "go"
 )
 
 // Config 是网关运行所需的全部配置。
@@ -95,6 +108,10 @@ type Config struct {
 	// UserSettingsWriteMode 见 UserSettingsWriteMode 常量。默认 legacy。
 	// go 要求 UserSettingsReadMode 同为 go，并因此具备 JWT/数据库/Redis。
 	UserSettingsWriteMode UserSettingsWriteMode
+
+	// PublicPortalMode 见 PublicPortalMode 常量。默认 legacy。
+	// go 只要求 DATABASE_URL（匿名读），不要求 JWT/Redis。
+	PublicPortalMode PublicPortalMode
 
 	// CorsOrigin 是与 NestJS 相同的 CORS_ORIGIN 原文。空名单不放行任何
 	// 浏览器 Origin。只用于 Go 自己写出的 user-settings 响应。
@@ -220,6 +237,15 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.UserSettingsWriteMode == UserSettingsWriteModeGo &&
 		cfg.UserSettingsReadMode != UserSettingsReadModeGo {
 		errs = append(errs, "API_GO_USER_SETTINGS_WRITE_MODE=go requires API_GO_USER_SETTINGS_READ_MODE=go")
+	}
+
+	switch strings.TrimSpace(getenv("API_GO_PUBLIC_PORTAL_MODE")) {
+	case "", string(PublicPortalModeLegacy):
+		cfg.PublicPortalMode = PublicPortalModeLegacy
+	case string(PublicPortalModeGo):
+		cfg.PublicPortalMode = PublicPortalModeGo
+	default:
+		errs = append(errs, "API_GO_PUBLIC_PORTAL_MODE must be one of legacy|go")
 	}
 	cfg.CorsOrigin = getenv("CORS_ORIGIN")
 
@@ -349,6 +375,9 @@ func Load(getenv func(string) string) (Config, error) {
 		if cfg.RedisHost == "" {
 			errs = append(errs, "REDIS_HOST is required when API_GO_ONBOARDING_MODE=go or API_GO_USER_SETTINGS_READ_MODE=go")
 		}
+	}
+	if cfg.PublicPortalMode == PublicPortalModeGo && cfg.DatabaseURL == "" {
+		errs = append(errs, "DATABASE_URL is required when API_GO_PUBLIC_PORTAL_MODE=go")
 	}
 
 	if len(errs) > 0 {

@@ -284,3 +284,37 @@ func TestUserSettingsWriteMode(t *testing.T) {
 		})
 	}
 }
+
+func TestPublicPortalMode(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PublicPortalMode != PublicPortalModeLegacy {
+		t.Fatalf("mode = %q, want legacy", cfg.PublicPortalMode)
+	}
+	if _, err := Load(func(key string) string {
+		if key == "API_GO_PUBLIC_PORTAL_MODE" {
+			return "go"
+		}
+		return ""
+	}); err == nil {
+		t.Fatal("go mode without DATABASE_URL should fail")
+	}
+	cfg, err = Load(func(key string) string {
+		switch key {
+		case "API_GO_PUBLIC_PORTAL_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PublicPortalMode != PublicPortalModeGo {
+		t.Fatalf("mode = %q, want go", cfg.PublicPortalMode)
+	}
+}

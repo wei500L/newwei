@@ -9,6 +9,8 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.3
 	// Go-批3A：access-token blacklist 查询（与 NestJS 同一 Redis）。
 	github.com/redis/go-redis/v9 v9.7.3
+	// Go-批4A：公开故事 slug 的 NFKD/NFC，对齐 JS String.normalize。
+	golang.org/x/text v0.29.0
 )
 
 require (

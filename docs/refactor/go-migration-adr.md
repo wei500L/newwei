@@ -221,6 +221,37 @@ handler、同一鉴权链装配、同一连接池，不复制六份实现：
 - **边界**：登录/refresh/logout/MFA/OIDC/机器令牌仍是 NestJS。canary 仍
   未启用。这不是完整 Auth 模块迁移，也没有切换生产入口。
 
+### 4.6 public-portal 首页与频道 Go 接管（Go-批4A）
+
+只接管两个匿名 GET。故事详情仍由 NestJS 响应。默认部署不改入口。
+
+- **接管单元**（`API_GO_PUBLIC_PORTAL_MODE=go`，compose `api-go-pilot`
+  固定注入；未设置或 `legacy` 时这两条仍代理 NestJS）：
+  - `GET /api/public-portal/home`（exact + 仅 GET）
+  - `GET /api/public-portal/channels/:topic`（前缀之后恰好一个路径段 + 仅 GET）
+- **不接管**：`GET /api/public-portal/stories/id/:id`、
+  `GET /api/public-portal/stories/slug/:slug`，以及 `channels` 的多段路径、
+  `home` 的子路径、这两个路径上的非 GET。它们继续回落 `/api/`。
+- **数据**：只读现有 MySQL（与 user-settings 同一连接池）。公开组织只来自
+  `SystemSetting.public_portal_org_slug`，且 `Org.isActive`。没有配置或组织
+  已停用时，首页返回 `org: null` 的空 envelope，频道返回 404
+  `Channel not found`。不回退到最近组织，不接受请求里的租户参数。
+  故事来自该组织的 `active` 事件：非空标题/摘要、至少 2 条关联、
+  来源 `authoritative` 或 `mixed`、可信度至少 60。热度、breaking、来源分类
+  和可信度读取事件条目，并套用该组织已持久化的来源策略（缺省名单 +
+  `news_event_source_policy:<orgId>` 的 delta）。策略读失败时回落默认名单；
+  事件查询失败返回通用 500，响应里不带数据库错误。
+- **分页**：每页 96 条、最多 30 页；排序 `lastAt, startAt, id` 降序。首页 12
+  条（第 1 条 featured，其余 latest），频道 18 条。`Cache-Control` 为
+  `public, max-age=60, s-maxage=60, stale-while-revalidate=300`。
+- **鉴权**：匿名。不进入 user-settings 的 JWT/RBAC 链，也不要求 Redis。
+  `go` 只要求 `DATABASE_URL`，否则进程拒绝启动。
+- **回滚**：`API_GO_PUBLIC_PORTAL_MODE=legacy`（或删除该变量）。不新增表。
+  故事详情本来就不在这个开关里。
+- **边界**：这不是整个 public-portal 已迁移。两个故事详情仍是 NestJS。
+  来源策略读的是已落库的 SystemSetting，不是 Nest 那份 60 秒 Redis 缓存副本。
+  默认生产入口仍是 Web → NestJS。
+
 ## 5. 队列/cron/outbox 边界（红线）
 
 - 全部 BullMQ 队列、21 个 @Cron/@Interval、3 套 MongoOutbox 的**写入权在最终阶段前仅属 NestJS**——Go 侧提前双写会制造消息重复/顺序破坏

@@ -4,6 +4,8 @@ NestJS `apps/api` 的渐进替代入口。默认全部流量反向代理到 Nest
 
 Go-批3B 起，**user-settings 六个只读 GET** 在 pilot 中由统一 Go handler 接管（`API_GO_USER_SETTINGS_READ_MODE=go`）。Go-批3C 起，**同一六个 PUT** 在 `API_GO_USER_SETTINGS_WRITE_MODE=go` 时由 Go 写入现有 `UserSetting` 并重读返回；该变量默认 `legacy`，且 `go` 要求读模式同为 `go`。登录、refresh、logout、MFA、OIDC、机器令牌仍是 NestJS。
 
+Go-批4A 起，**公开首页与频道**在 `API_GO_PUBLIC_PORTAL_MODE=go` 时由 Go 查 MySQL 并完整响应（匿名，不走 JWT/RBAC）。默认 `legacy`。`stories/id` 与 `stories/slug` 仍代理 NestJS——public-portal 没有整模块迁完。
+
 ## 运行
 
 ```bash
@@ -68,6 +70,7 @@ Go-批3B 起的四阶段验收（全部经 api-go 入口 + 真实登录 JWT）�
 | `LEGACY_API_URL` | http://localhost:4000 | NestJS apps/api 基址 |
 | `API_GO_USER_SETTINGS_READ_MODE` | （空） | user-settings 六个只读 GET 的统一读模式（Go-批3B）：`shadow`=六个 GET 全部 NestJS 响应 + Go 差分；`go`=六个 GET 全部由统一 Go handler 接管（独立鉴权 + 独立查库 + normalization + 全响应）。**设置时优先级高于 `API_GO_ONBOARDING_MODE`**（onboarding 也归它管）；**未设置（空）=兼容旧行为**：onboarding 由 `API_GO_ONBOARDING_MODE` 控制，rss/spacetime 保持 shadow，war-map/newsnow/situation-monitor 保持 legacy（批3B 之前的部署不变）。非法值启动失败；`go` 模式要求 `JWT_SECRET`/`DATABASE_URL`/`REDIS_HOST` 齐备（缺失启动失败）。compose pilot 固定注入 `go`。回滚 = 改回 `shadow` 或删除本变量 |
 | `API_GO_USER_SETTINGS_WRITE_MODE` | legacy | 六个 PUT（Go-批3C）。`legacy` 代理 NestJS；`go` 由 Go upsert 现有 `UserSetting` 并重读。`go` 要求读模式同为 `go`，否则启动失败。pilot 注入 `go`。回滚先改回 `legacy` |
+| `API_GO_PUBLIC_PORTAL_MODE` | legacy | 公开首页与频道（Go-批4A）。`legacy` 代理 NestJS；`go` 时 `GET /api/public-portal/home` 与 `GET /api/public-portal/channels/:topic`（恰好一个路径段）由 Go 查 MySQL 并完整响应。不接管两个故事详情。`go` 要求 `DATABASE_URL`，不要求 JWT/Redis。pilot 注入 `go`。回滚改回 `legacy` |
 | `CORS_ORIGIN` | （空） | 与 NestJS 相同的逗号分隔来源白名单。读写模式均为 `go` 时，六个精确路径的浏览器预检由 Go 204 回答，GET/PUT（含 401/400）回同一来源头。空名单不放行任何 Origin。pilot 注入与 api 服务相同的值 |
 | `API_GO_ONBOARDING_MODE` | shadow | onboarding GET 迁移单元模式（Go-批3A 兼容变量）：`shadow`（默认，批2A/2B 行为——NestJS 响应 + Go 差分）或 `go`（Go 独立鉴权 + 全响应）。仅在 `API_GO_USER_SETTINGS_READ_MODE` 未设置时生效。非法值启动失败；`go` 模式依赖同上；compose pilot 固定注入 `go`（批3A 部署等价） |
 | `JWT_SECRET` | （空） | NestJS access token 的 HMAC 验签 secret（与 api 服务同一值）。仅 `go` 模式必填。值不进入日志/healthz/错误文本 |
