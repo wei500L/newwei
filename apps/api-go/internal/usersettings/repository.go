@@ -1,5 +1,7 @@
 // user-settings MySQL 只读 repository（Go-批2A onboarding 起步，Go-批2B
-// 扩展 rss-reader / spacetime-timeline——三个端点共享同一条私有查询）。
+// 扩展 rss-reader / spacetime-timeline，Go-批3B 扩展 war-map / newsnow /
+// situation-monitor——三个端点共享同一条私有单 key 查询，situation-monitor
+// 是唯一的三 key 聚合查询）。
 //
 // 约束：
 //   - 纯 database/sql + go-sql-driver/mysql，不引入 ORM/Web 框架/DI；
@@ -39,10 +41,23 @@ const (
 	RSSReaderKey SettingKey = "ui:rss-reader:settings:v1"
 	// SpacetimeTimelineKey 是 spacetime-timeline 设置的固定存储 key（Go-批2B）。
 	SpacetimeTimelineKey SettingKey = "ui:spacetime-timeline:settings:v1"
+	// WarMapKey 是 war-map 设置的固定存储 key（Go-批3B）。
+	WarMapKey SettingKey = "ui:war-map:settings:v1"
+	// NewsnowKey 是 newsnow 设置的固定存储 key（Go-批3B）。
+	NewsnowKey SettingKey = "ui:newsnow:settings:v1"
+	// SituationMonitorMonitorsKey 是 situation-monitor 自定义监控项的
+	// 固定存储 key（Go-批3B）。
+	SituationMonitorMonitorsKey SettingKey = "ui:situation-monitor:monitors:v1"
+	// SituationMonitorLayoutKey 是 situation-monitor 布局的固定存储 key
+	//（Go-批3B）。
+	SituationMonitorLayoutKey SettingKey = "ui:situation-monitor:layout:v1"
+	// SituationMonitorSettingsKey 是 situation-monitor 设置的固定存储 key
+	//（Go-批3B）。
+	SituationMonitorSettingsKey SettingKey = "ui:situation-monitor:settings:v1"
 )
 
-// Repository 是 user-settings 只读查询接口（三个确定性 GET 端点，
-// NestJS user-settings.service.ts 的 findUnique 语义）。
+// Repository 是 user-settings 只读查询接口（六个确定性 GET 端点，
+// NestJS user-settings.service.ts 的 findUnique / findMany 语义）。
 type Repository interface {
 	// FindOnboarding 返回该 org+user 的 onboarding 记录；无记录时
 	// Found=false（非错误）。
@@ -53,6 +68,24 @@ type Repository interface {
 	// FindSpacetimeTimeline 返回该 org+user 的 spacetime-timeline 记录；
 	// 无记录时 Found=false（非错误）。
 	FindSpacetimeTimeline(ctx context.Context, orgID, userID string) (Record, error)
+	// FindWarMap 返回该 org+user 的 war-map 记录；无记录时
+	// Found=false（非错误）。
+	FindWarMap(ctx context.Context, orgID, userID string) (Record, error)
+	// FindNewsnow 返回该 org+user 的 newsnow 记录；无记录时
+	// Found=false（非错误）。
+	FindNewsnow(ctx context.Context, orgID, userID string) (Record, error)
+	// FindSituationMonitor 一次查询聚合该 org+user 的 situation-monitor
+	// 三条固定 key 记录（NestJS findMany 语义：返回的 Records 按 monitors/
+	// layout/settings 各自 Found 标记，查询 WHERE orgId+userId+key IN
+	// (三个编译期常量)——不接受任何请求传入的 key）。
+	FindSituationMonitor(ctx context.Context, orgID, userID string) (SituationMonitorRecords, error)
+}
+
+// SituationMonitorRecords 是 situation-monitor 三个固定 key 的聚合结果。
+type SituationMonitorRecords struct {
+	Monitors Record
+	Layout   Record
+	Settings Record
 }
 
 // MySQLRepository 是 UserSetting 表的只读访问实现。
@@ -81,7 +114,58 @@ func (r *MySQLRepository) FindSpacetimeTimeline(ctx context.Context, orgID, user
 	return r.findByKey(ctx, orgID, userID, SpacetimeTimelineKey)
 }
 
-// findByKey 是三个端点共享的唯一查询实现（key 是编译期固定常量，
+// FindWarMap 查询 war-map 设置（固定 key WarMapKey）。
+func (r *MySQLRepository) FindWarMap(ctx context.Context, orgID, userID string) (Record, error) {
+	return r.findByKey(ctx, orgID, userID, WarMapKey)
+}
+
+// FindNewsnow 查询 newsnow 设置（固定 key NewsnowKey）。
+func (r *MySQLRepository) FindNewsnow(ctx context.Context, orgID, userID string) (Record, error) {
+	return r.findByKey(ctx, orgID, userID, NewsnowKey)
+}
+
+// FindSituationMonitor 一次真实查询聚合三个固定 key（NestJS findMany
+// 语义：WHERE orgId+userId+key IN 三个编译期常量；每 key 至多一条——
+// orgId+userId+key 联合唯一）。任何一条记录缺失只是 Found=false（业务
+// 结果），与 NestJS「无对应记录时该字段为 null」一致。
+func (r *MySQLRepository) FindSituationMonitor(ctx context.Context, orgID, userID string) (SituationMonitorRecords, error) {
+	const query = "SELECT `key`, value, updatedAt FROM UserSetting WHERE orgId = ? AND userId = ? AND `key` IN (?, ?, ?)"
+
+	rows, err := r.db.QueryContext(ctx, query, orgID, userID,
+		SituationMonitorMonitorsKey, SituationMonitorLayoutKey, SituationMonitorSettingsKey)
+	if err != nil {
+		return SituationMonitorRecords{}, fmt.Errorf("%w: query situation-monitor: %v", ErrDatabase, err)
+	}
+	defer rows.Close()
+
+	records := SituationMonitorRecords{}
+	for rows.Next() {
+		var key string
+		var value []byte
+		var updatedAt sql.NullTime
+		if err := rows.Scan(&key, &value, &updatedAt); err != nil {
+			return SituationMonitorRecords{}, fmt.Errorf("%w: scan situation-monitor: %v", ErrDatabase, err)
+		}
+		if !updatedAt.Valid {
+			return SituationMonitorRecords{}, fmt.Errorf("%w: updatedAt is NULL", ErrDatabase)
+		}
+		record := Record{Found: true, Value: value, UpdatedAt: updatedAt.Time}
+		switch SettingKey(key) {
+		case SituationMonitorMonitorsKey:
+			records.Monitors = record
+		case SituationMonitorLayoutKey:
+			records.Layout = record
+		case SituationMonitorSettingsKey:
+			records.Settings = record
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return SituationMonitorRecords{}, fmt.Errorf("%w: iterate situation-monitor: %v", ErrDatabase, err)
+	}
+	return records, nil
+}
+
+// findByKey 是五个单 key 端点共享的唯一查询实现（key 是编译期固定常量，
 // 绝非请求输入）。
 //
 // 只取 value 与 updatedAt（最小列集）；DATETIME(3) 无时区，driver 以

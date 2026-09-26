@@ -9,13 +9,17 @@
 //	         onboarding 在 shadow 模式下亦然）
 //	canary — 已验证身份的稳定哈希小比例真实流量切 Go（CANARY_PERCENT）
 //	go     — Go 原生 handler（/__go/healthz 自省；以及
-//	         API_GO_ONBOARDING_MODE=go 时的
-//	         GET /api/user-settings/ui/onboarding——Go-批3A 首个业务端点
-//	         真实接管：Go 独立 JWT 验签 + Redis blacklist + MySQL RBAC +
-//             独立响应，不依赖 NestJS 200）
+//	         API_GO_USER_SETTINGS_READ_MODE=go 时的六个
+//	         GET /api/user-settings/ui/*——Go-批3B：onboarding/rss-reader/
+//	         spacetime-timeline/war-map/newsnow/situation-monitor 全部由
+//	         统一 handler Go 接管：Go 独立 JWT 验签 + Redis blacklist +
+//	         MySQL RBAC + 独立响应，不依赖 NestJS 200。兼容：
+//	         API_GO_ONBOARDING_MODE=go（批3A，readMode 未设时）只接管
+//	         onboarding）
 //
-// 回滚：API_GO_ONBOARDING_MODE=shadow（或路由表单条规则改回 legacy，
-// 或 CANARY_PERCENT=0）——无数据迁移耦合。
+// 回滚：API_GO_USER_SETTINGS_READ_MODE=shadow（或未设——回到
+// API_GO_ONBOARDING_MODE 控制；或路由表单条规则改回 legacy，或
+// CANARY_PERCENT=0）——无数据迁移耦合。
 //
 // canary 信任边界（重要）：当前分流的 orgId 取自未验签的 JWT payload
 // claim，不是经过认证的组织身份。在 Go 侧对全部受保护路由完成真实
@@ -51,10 +55,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
-	"github.com/wei500L/newwei/apps/api-go/internal/onboarding"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/usersettingsread"
 )
 
 func main() {
@@ -181,18 +185,18 @@ func (healthLiveExecutant) Execute(_ context.Context, _ *http.Request, _ []byte)
 	}
 }
 
-// userSettingsExecutant 是三个 user-settings 只读 GET（onboarding /
-// rss-reader / spacetime-timeline）共享的 Go shadow 差分执行者
-//（Go-批2A 起步，批2B 扩展——三端点信任边界与失败语义完全相同，
-// 流程只写一次，各端点注入固定 key 的查询与响应构建）。
+// userSettingsExecutant 是六个 user-settings 只读 GET 共享的 Go shadow
+// 差分执行者（Go-批2A 起步，批2B/3B 扩展——全部端点信任边界与失败语义
+// 完全相同，流程只写一次，各端点注入固定 key 的查询与响应构建）。
 //
 // 信任边界：身份来自 legacy-approved shadow identity——只有 legacy 已
 // 返回 200 时才允许从（未验签的）Bearer JWT payload 读取 sub/orgId，
-// 并只用于本次只读查询。这不是「Go 已验证身份」：Go 尚未完成 JWT 验签、
-// jti blacklist、membership 重推导与 RBAC。permissions claim 不读取。
-// 任何失败（payload 解析、数据库不可达、JSON 异常）都只返回通用错误
-// Result（503 + 通用错误体），由 runner 记入差分——不影响客户端已收到
-// 的 NestJS 响应。token/orgId/userId 不进入任何日志或差分正文。
+// 并只用于本次只读查询。这不是「Go 已验证身份」：shadow 模式是回滚
+// 兼容路径，Go 独立鉴权由 usersettingsread.Handler 承载（go 模式）。
+// permissions claim 不读取。任何失败（payload 解析、数据库不可达、JSON
+// 异常）都只返回通用错误 Result（503 + 通用错误体），由 runner 记入
+// 差分——不影响客户端已收到的 NestJS 响应。token/orgId/userId 不进入
+// 任何日志或差分正文。
 type userSettingsExecutant struct {
 	// repo 为 nil 表示未配置数据库：跳过（零查询），以通用错误 Result
 	// 记入差分缺失——不影响客户端。
@@ -235,54 +239,95 @@ func (e userSettingsExecutant) Execute(ctx context.Context, r *http.Request, _ [
 	}
 }
 
-// userSettingsShadowUnits 是三个 user-settings 只读 GET 的 shadow 单元：
+// userSettingsShadowUnits 是 user-settings 只读 GET 的 shadow 单元表：
 // 精确 path（不做前缀匹配）+ 仅 GET + RequireLegacyOK（legacy 200 是
 // 身份前提）。query 闭包绑定各自端点的 repository 语义方法（key 是
-// usersettings 包内的编译期常量）。
+// usersettings 包内的编译期常量）。五个单 key 端点共用
+// userSettingsExecutant 流程（表驱动接线）；situation-monitor 是三记录
+// 聚合形态，单独 executant（Go-批3B）。
 func userSettingsShadowUnits(repo usersettings.Repository) []shadowUnit {
-	return []shadowUnit{
-		{
-			Path:            "/api/user-settings/ui/onboarding",
+	singleKeyUnits := []struct {
+		path  string
+		query func(ctx context.Context, orgID, userID string) (usersettings.Record, error)
+		build func(record usersettings.Record) any
+	}{
+		{"/api/user-settings/ui/onboarding",
+			func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
+				return repo.FindOnboarding(ctx, orgID, userID)
+			},
+			func(record usersettings.Record) any { return usersettings.BuildOnboardingResponse(record) }},
+		{"/api/user-settings/ui/rss-reader",
+			func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
+				return repo.FindRSSReader(ctx, orgID, userID)
+			},
+			func(record usersettings.Record) any { return usersettings.BuildRSSReaderResponse(record) }},
+		{"/api/user-settings/ui/spacetime-timeline",
+			func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
+				return repo.FindSpacetimeTimeline(ctx, orgID, userID)
+			},
+			func(record usersettings.Record) any { return usersettings.BuildSpacetimeTimelineResponse(record) }},
+		{"/api/user-settings/ui/war-map",
+			func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
+				return repo.FindWarMap(ctx, orgID, userID)
+			},
+			func(record usersettings.Record) any { return usersettings.BuildWarMapResponse(record) }},
+		{"/api/user-settings/ui/newsnow",
+			func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
+				return repo.FindNewsnow(ctx, orgID, userID)
+			},
+			func(record usersettings.Record) any { return usersettings.BuildNewsnowResponse(record) }},
+	}
+	units := make([]shadowUnit, 0, len(singleKeyUnits)+1)
+	for _, unit := range singleKeyUnits {
+		units = append(units, shadowUnit{
+			Path:            unit.path,
 			Methods:         map[string]bool{http.MethodGet: true},
 			RequireLegacyOK: true, // 受保护端点：legacy 200 是身份前提
-			Executant:       userSettingsExecutant{
-				repo: repo,
-				query: func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
-					return repo.FindOnboarding(ctx, orgID, userID)
-				},
-				build: func(record usersettings.Record) any {
-					return usersettings.BuildOnboardingResponse(record)
-				},
+			Executant: userSettingsExecutant{
+				repo:  repo,
+				query: unit.query,
+				build: unit.build,
 			},
-		},
-		{
-			Path:            "/api/user-settings/ui/rss-reader",
-			Methods:         map[string]bool{http.MethodGet: true},
-			RequireLegacyOK: true, // 受保护端点：legacy 200 是身份前提
-			Executant:       userSettingsExecutant{
-				repo: repo,
-				query: func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
-					return repo.FindRSSReader(ctx, orgID, userID)
-				},
-				build: func(record usersettings.Record) any {
-					return usersettings.BuildRSSReaderResponse(record)
-				},
-			},
-		},
-		{
-			Path:            "/api/user-settings/ui/spacetime-timeline",
-			Methods:         map[string]bool{http.MethodGet: true},
-			RequireLegacyOK: true, // 受保护端点：legacy 200 是身份前提
-			Executant:       userSettingsExecutant{
-				repo: repo,
-				query: func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
-					return repo.FindSpacetimeTimeline(ctx, orgID, userID)
-				},
-				build: func(record usersettings.Record) any {
-					return usersettings.BuildSpacetimeTimelineResponse(record)
-				},
-			},
-		},
+		})
+	}
+	// situation-monitor：一次三 key 聚合查询（Go-批3B）。
+	units = append(units, shadowUnit{
+		Path:            "/api/user-settings/ui/situation-monitor",
+		Methods:         map[string]bool{http.MethodGet: true},
+		RequireLegacyOK: true,
+		Executant:       situationMonitorExecutant{repo: repo},
+	})
+	return units
+}
+
+// situationMonitorExecutant 是 situation-monitor GET 的 shadow 差分执行者
+//（三记录聚合形态——userSettingsExecutant 是单记录形态，不强行复用）。
+type situationMonitorExecutant struct {
+	repo usersettings.Repository
+}
+
+func (e situationMonitorExecutant) Execute(ctx context.Context, r *http.Request, _ []byte) *shadow.Result {
+	if e.repo == nil {
+		return shadowErrorResult()
+	}
+	identity := shadowidentity.LegacyApprovedIdentity(r, http.StatusOK)
+	if identity == nil {
+		return shadowErrorResult()
+	}
+	records, err := e.repo.FindSituationMonitor(ctx, identity.OrgID, identity.UserID)
+	if err != nil {
+		log.Printf("shadow: situation-monitor query failed: %v", err)
+		return shadowErrorResult()
+	}
+	body, err := json.Marshal(usersettings.BuildSituationMonitorResponse(records))
+	if err != nil {
+		return shadowErrorResult()
+	}
+	body = append(body, '\n')
+	return &shadow.Result{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "Cache-Control": []string{"no-store"}},
+		Body:       body,
 	}
 }
 
@@ -308,8 +353,19 @@ func run() error {
 	if cfg.OnboardingMode == config.OnboardingModeGo {
 		onboardingMode = legacyproxy.ModeGo
 	}
+	// user-settings 六个只读 GET 的统一读模式（API_GO_USER_SETTINGS_READ_MODE，
+	// Go-批3B）：空 = 兼容旧行为（onboardingMode 单独控制 onboarding）；
+	// go = 六个 GET 全部 Go 接管；shadow = 六个 GET 全部 shadow。
+	// 配置层已校验合法值。
+	readMode := ""
+	switch cfg.UserSettingsReadMode {
+	case config.UserSettingsReadModeGo:
+		readMode = string(legacyproxy.ModeGo)
+	case config.UserSettingsReadModeShadow:
+		readMode = string(legacyproxy.ModeShadow)
+	}
 
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.DefaultRules(onboardingMode))
+	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.DefaultRules(onboardingMode, readMode))
 	if err != nil {
 		return err
 	}
@@ -330,9 +386,11 @@ func run() error {
 		db, err := usersettings.OpenMySQLFromURL(cfg.DatabaseURL)
 		if err != nil {
 			// DSN 无效不阻断启动：网关继续纯代理，shadow 单元执行时跳过
-			//（错误不含 DSN 原文）。
-			if cfg.OnboardingMode == config.OnboardingModeGo {
-				return fmt.Errorf("api-go: onboarding go mode requires a valid DATABASE_URL: %w", err)
+			//（错误不含 DSN 原文）。go 接管模式（两变量任一）下直接启动
+			// 失败——Go 接管端点不得带病启动。
+			if cfg.OnboardingMode == config.OnboardingModeGo ||
+				cfg.UserSettingsReadMode == config.UserSettingsReadModeGo {
+				return fmt.Errorf("api-go: user-settings go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
 			userSettingsDBStatus = "invalid"
@@ -347,13 +405,21 @@ func run() error {
 		}
 	}
 
-	// onboarding go 模式的 Go 鉴权/响应栈装配（Go-批3A）：
+	// go 接管模式的 Go 鉴权/响应栈装配（Go-批3A 引入，批3B 收敛为六个
+	// user-settings 只读 GET 的统一 handler）：
 	// authn（JWT 验签 + Redis blacklist）→ authz（MySQL membership/
 	// permission 重推导，复用同一 *sql.DB 连接池）→ authhttp（契约错误）
-	// → onboarding handler（业务查询 + 响应构造）。
-	// shadow 模式完全不装配（零额外连接、旧行为不变）。
+	// → usersettingsread handler（六端点共享：固定 repository 查询 +
+	// normalization + 响应构造）。
+	// 两变量任一为 go 即装配（UserSettingsReadMode=go 是六端点全接管；
+	// OnboardingMode=go 单独设置时同一栈也覆盖统一 handler 的 onboarding
+	// 分支——但路由表只在 readMode 空时把 onboarding 切 go，此时其余五
+	// 端点仍 shadow/legacy，handler 对未接管路径不会被路由命中）。
+	// 两者都非 go 时完全不装配（零额外连接、旧行为不变）。
+	goTakeover := cfg.OnboardingMode == config.OnboardingModeGo ||
+		cfg.UserSettingsReadMode == config.UserSettingsReadModeGo
 	var redisClient *redis.Client
-	if cfg.OnboardingMode == config.OnboardingModeGo {
+	if goTakeover {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
 			Username: cfg.RedisUsername,
@@ -363,18 +429,30 @@ func run() error {
 		verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		blacklist := authn.NewRedisBlacklist(redisClient)
 		authenticator := authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
-		gateway.RegisterGoHandler(onboarding.Path, onboarding.NewHandler(authenticator, userSettingsRepo))
-		log.Printf("api-go: onboarding GET under go takeover (JWT verify + Redis blacklist + MySQL RBAC; issuer=%s)", cfg.JWTIssuer)
+		readHandler := usersettingsread.NewHandler(authenticator, userSettingsRepo)
+		for _, path := range usersettingsread.Paths {
+			gateway.RegisterGoHandler(path, readHandler.ServeHTTP)
+		}
+		log.Printf("api-go: user-settings read GET(s) under go takeover (JWT verify + Redis blacklist + MySQL RBAC; issuer=%s, readMode=%s, onboardingMode=%s)",
+			cfg.JWTIssuer, cfg.UserSettingsReadMode, cfg.OnboardingMode)
 	}
 
-	// shadow 单元表：go 模式下 onboarding 不再是 shadow 差分单元（ModeGo
-	// 规则也不会进入 serveShadow——双重收口，保证 onboarding GET 不再
-	// 增加 shadow.executed）。RSS/Spacetime 保持 Shadow。
+	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
+	//（ModeGo 规则也不会进入 serveShadow——双重收口，保证 go 接管的
+	// GET 不再增加 shadow.executed）。readMode=go 时六个端点全部过滤；
+	// readMode 空且 onboardingMode=go 时只过滤 onboarding；其余保持
+	// 既有 shadow/legacy 去向。
 	settingsUnits := userSettingsShadowUnits(userSettingsRepo)
-	if cfg.OnboardingMode == config.OnboardingModeGo {
+	goPaths := make(map[string]bool, len(usersettingsread.Paths))
+	for _, rule := range gateway.Rules() {
+		if rule.Mode == legacyproxy.ModeGo {
+			goPaths[rule.Prefix] = true
+		}
+	}
+	if len(goPaths) > 0 {
 		filtered := make([]shadowUnit, 0, len(settingsUnits))
 		for _, unit := range settingsUnits {
-			if unit.Path != onboarding.Path {
+			if !goPaths[unit.Path] {
 				filtered = append(filtered, unit)
 			}
 		}
@@ -433,7 +511,10 @@ func run() error {
 			"onboarding": map[string]any{
 				"mode": string(cfg.OnboardingMode),
 			},
-			"userSettingsShadow": map[string]string{
+			// user-settings 统一读模式（Go-批3B）：空 = 兼容旧配置
+			//（onboardingMode 单独控制）；shadow/go 如实展示。
+			"userSettingsRead": map[string]any{
+				"mode":     string(cfg.UserSettingsReadMode),
 				"database": userSettingsDBStatus,
 			},
 		})

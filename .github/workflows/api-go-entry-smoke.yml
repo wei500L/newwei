@@ -1,5 +1,5 @@
-# Go-批2C 引入 / Go-批3A 扩展：api-go 真实入口链的远端真实栈 smoke
-#（手动触发）。
+# Go-批2C 引入 / Go-批3A 扩展 / Go-批3B 重构：api-go 真实入口链的
+# 远端真实栈 smoke（手动触发）。
 #
 # 与普通 CI（ci.yml）的区别：这不是单元/集成测试，而是把迁移单元放进
 # 「真实入口链」运行——
@@ -7,34 +7,43 @@
 #   客户端 → api-go 容器 :4020 → NestJS apps/api :4000（真实进程）
 #                                   ↘ Go Shadow → 真实 MySQL（真实迁移后的 schema）
 #
-# Go-批3A 起 onboarding GET 处于真实接管（API_GO_ONBOARDING_MODE=go）：
+# Go-批3B：六个 user-settings 只读 GET 的统一读模式
+#（API_GO_USER_SETTINGS_READ_MODE）分两阶段验证：
 #
-#   GET /api/user-settings/ui/onboarding → Go 独立鉴权（JWT 验签 +
-#     Redis blacklist + MySQL RBAC 重推导）+ 独立查库 + 全响应——
-#     不依赖 NestJS 200，不读 JWT permissions claim
+#   Phase A（写入准备）：6 个 PUT 经 api-go 由 NestJS 单写（含
+#     situation-monitor 三 key 一次写入）——MySQL 直查 8 个固定 key；
+#   Phase B（shadow）：readMode=shadow 启动——6 个 GET 都由 NestJS 响应，
+#     Go 做真实旁路查询与差分（executed 精确 +6，diffs/dropped 零增量）；
+#   Phase C（go）：readMode=go 重启——6 个 GET 全部由 Go 独立鉴权
+#     （JWT 验签 + Redis blacklist + MySQL RBAC）+ 独立查库 + 全响应，
+#     与 NestJS 直连逐字段契约对比；Go 请求不增加 shadow.executed；
+#   Phase D（独立性证明）：停止 NestJS——6 个 GET 仍全部 200（数据是
+#     Phase A 真实持久化的）；代表性 PUT 与未迁移 GET 必须代理失败
+#     （502），证明写路径未迁入 Go、api-go 不伪装成功。
 #
-# 真实性约束（沿承 Go-批2C 任务书，Go-批3A 追加鉴权链验证）：
+# 真实性约束（沿承 Go-批2C/3A 任务书，Go-批3B 扩展到六端点）：
 #   - 真实 MySQL/Redis/Mongo service 容器（与 docker-compose 同版本线）；
 #   - 真实 prisma migrate deploy（不是内存库/fixture）；
 #   - 真实 NestJS 进程（node apps/api/dist/main.js，非 fake upstream）；
 #   - 真实 api-go Docker 镜像（infra/docker/api-go.Dockerfile 构建，非 go run）；
 #   - 仓库既有 seed 机制创建可登录 org+admin；
 #   - 通过 api-go 入口调用真实 NestJS 登录端点获得其签发的 JWT（不手工伪造）；
-#   - 三个 user-settings PUT 经 api-go 代理由 NestJS 单写并真实持久化
+#   - 六个 user-settings PUT 经 api-go 代理由 NestJS 单写并真实持久化
 #     （PUT 不进入 Go handler——method 白名单）；
-#   - onboarding GET 由 Go handler 全响应，与 NestJS 直连响应逐字段契约
-#     对比（status/Cache-Control/content-type/JSON 正文）；
+#   - 六个 GET 在 shadow 阶段做真实差分（零差异），go 阶段由 Go handler
+#     全响应，与 NestJS 直连响应逐字段契约对比（status/Cache-Control/
+#     content-type/JSON 正文）；
+#   - 共享鉴权链负向用例只保留代表性端点（onboarding）——Go-批3A 已
+#     验证的 JWT/RBAC 行为不重复铺测试矩阵；
 #   - 无权限：真实删除 RolePermission（items.read）+ 清 NestJS profile
 #     缓存——JWT claim 仍含 items.read 也必须双端 403（claim 不参与授权）；
 #   - membership inactive：真实 UPDATE + 缓存清理——双端 401 同文案；
 #   - 撤销：真实 NestJS logout 写入真实 Redis blacklist → Go 401
 #     "Access token revoked"（key 存在性静态确认，不打印 jti/token）；
 #   - 非法 token：真实登录 token 篡改签名 + alg=none 混淆 → Go 401；
-#   - NestJS 停止后：onboarding GET 仍 200（Go 独立接管证明）；未迁移
-#     端点（rss-reader shadow）因上游死亡返回 502（非伪装成功）；
-#   - /__go/healthz 前后指标断言：onboarding 不增加 shadow.executed、
-#     executed 精确增量（healthz/live + rss-reader + spacetime-timeline
-#     = +3）、diffs/dropped 零增量、inflight 归零。
+#   - /__go/healthz 前后指标断言：go 接管端点不增加 shadow.executed、
+#     shadow 阶段 executed 精确增量（6）、diffs/dropped 零增量、
+#     inflight 归零。
 #
 # 重型真实栈（4 个容器 + 全量 install/build）——不进 push/synchronize 的
 # 普通 CI。
@@ -179,7 +188,7 @@ jobs:
       - name: Build NestJS api (dist/main.js)
         run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
 
-      - name: Start real NestJS api (:4000)
+      - name: "Start real NestJS api (:4000)"
         run: |
           # 与 compose api 服务同一启动命令（pnpm --filter @modular/api run start
           # = node dist/main.js，含 NODE_PATH 语义）；NODE_ENV=production 只在
@@ -204,13 +213,16 @@ jobs:
       - name: Build api-go production image (infra/docker/api-go.Dockerfile)
         run: docker build -f infra/docker/api-go.Dockerfile -t api-go-entry-smoke:ci .
 
-      - name: Start api-go container (:4020, onboarding go takeover)
+      # start_api_go 是两阶段复用的容器启动步骤：Phase B 用 shadow 模式，
+      # Phase C 重启为 go 模式。模式经 API_GO_USER_SETTINGS_READ_MODE
+      # 控制（Go-批3B 统一读模式）。
+      - name: "Start api-go container (:4020, Phase B shadow mode)"
         run: |
           # healthcheck 命令来自镜像内置的 exec 形式 HEALTHCHECK 指令
           # （distroless 无 shell——字符串形式 health-cmd 会经 /bin/sh 执行
           # 而失败）；这里只覆盖探测节奏加速等待。
-          # Go-批3A：API_GO_ONBOARDING_MODE=go + 与 NestJS 同源的
-          # JWT/Redis 配置——onboarding GET 由 Go 独立鉴权并全响应。
+          # Phase B：API_GO_USER_SETTINGS_READ_MODE=shadow——六个 GET 全部
+          # 由 NestJS 响应，Go 做真实旁路查询与差分。
           docker run -d --name api-go-smoke \
             --add-host=host.docker.internal:host-gateway \
             --health-interval 5s \
@@ -221,7 +233,7 @@ jobs:
             -e PORT=4020 \
             -e LEGACY_API_URL=http://host.docker.internal:4000 \
             -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
-            -e API_GO_ONBOARDING_MODE=go \
+            -e API_GO_USER_SETTINGS_READ_MODE=shadow \
             -e JWT_SECRET="$JWT_SECRET" \
             -e JWT_ISSUER="$JWT_ISSUER" \
             -e JWT_AUDIENCE="$JWT_AUDIENCE" \
@@ -230,8 +242,6 @@ jobs:
             -e CANARY_PERCENT=0 \
             -e SHADOW_DEBUG_BODY_LOG=false \
             api-go-entry-smoke:ci
-          # 等待容器 healthcheck 真实通过（/api-go healthcheck → /__go/healthz，
-          # Go 原生路由——不产生 shadow 执行，不污染基线）。
           for i in $(seq 1 30); do
             status=$(docker inspect --format '{{.State.Health.Status}}' api-go-smoke 2>/dev/null || echo starting)
             echo "api-go container health: $status"
@@ -250,7 +260,7 @@ jobs:
 
       # ---- 以下 smoke 步骤全部经 api-go 入口（:4020）完成 ----
 
-      - name: Smoke 0/10 — baseline healthz (onboarding mode=go, shadow stats)
+      - name: "Smoke 0/13 — baseline healthz (Phase B: read mode=shadow)"
         run: |
           cat > /tmp/smoke_baseline.py <<'PY'
           import json
@@ -259,18 +269,18 @@ jobs:
           with urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10) as resp:
               doc = json.load(resp)
           assert doc.get("ok") is True, doc
-          assert doc.get("userSettingsShadow", {}).get("database") == "configured", doc
-          # Go-批3A：onboarding 当前模式如实展示为 go（接管生效）。
-          assert doc.get("onboarding", {}).get("mode") == "go", doc
+          assert doc.get("userSettingsRead", {}).get("database") == "configured", doc
+          # Phase B：统一读模式如实展示为 shadow。
+          assert doc.get("userSettingsRead", {}).get("mode") == "shadow", doc
           with open("/tmp/shadow-baseline.json", "w") as f:
               json.dump(doc["shadow"], f)
-          print("userSettingsShadow.database: configured")
-          print("onboarding.mode: go")
+          print("userSettingsRead.database: configured")
+          print("userSettingsRead.mode: shadow (Phase B)")
           print("baseline shadow:", json.dumps(doc["shadow"], sort_keys=True))
           PY
           python3 /tmp/smoke_baseline.py
 
-      - name: Smoke 1/10 — real login via api-go (NestJS-issued JWT)
+      - name: "Smoke 1/13 — real login via api-go (NestJS-issued JWT)"
         run: |
           cat > /tmp/smoke_login.py <<'PY'
           import json
@@ -313,7 +323,9 @@ jobs:
           PY
           python3 /tmp/smoke_login.py
 
-      - name: Smoke 2/10 — three user-settings PUTs via api-go (NestJS single-writer)
+      # ---- Phase A：写入准备（六个 PUT 由 NestJS 单写）----
+
+      - name: "Smoke 2/13 — Phase A: six user-settings PUTs via api-go (NestJS single-writer)"
         run: |
           cat > /tmp/smoke_put.py <<'PY'
           import json
@@ -323,21 +335,24 @@ jobs:
           TRACE = "5f1e2d3c4b5a69788697a5b4c3d2e1f0"
           token = open("/tmp/smoke-jwt").read().strip()
 
-          # 三个端点各写入与默认值不同的确定性 settings（每个端点独立 payload，
+          # 六个端点各写入与默认值不同的确定性 settings（每个端点独立 payload，
           # 后续 GET 断言各自读回自己的 key——证明无跨 key 串读）。
-          # expected 是 NestJS normalization 之后的期望值（如 RSS 语言过滤
-          # 统一大写）——PUT 响应即 GET 形状，按 normalized 值断言。
-          # onboarding PUT 经 api-go 的 method 白名单回落 /api/ legacy——
-          # 由 NestJS 单写（200 + NestJS 回显本身就是「PUT 未被 Go 接管」
-          # 的证据；Go handler 对 PUT 是 404 语义）。
+          # expected 是 NestJS normalization 之后的期望值（PUT 响应即 GET
+          # 形状，按 normalized 值断言）。PUT 全部经 api-go 的 method 白名单
+          # 回落 /api/ legacy——由 NestJS 单写（200 + NestJS 回显本身就是
+          # 「PUT 未被 Go 接管」的证据）。
+          #
+          # situation-monitor 的 body 顶层是 monitors/layout/settings 三段
+          # （不是 settings 包裹）；war-map/newsnow 用覆盖关键 normalization
+          # 的代表性数据（legacy layer key、clamp、排序、上限、真值）。
           PUTS = {
               "/api/user-settings/ui/onboarding": {
-                  "settings": {
+                  "body": {"settings": {
                       "completed": True,
                       "dismissed": True,
                       "checklist": {"today": True, "events": True, "map": True, "finance": False},
                       "completedTours": {"today": True},
-                  },
+                  }},
                   "expected": {
                       "completed": True,
                       "dismissed": True,
@@ -346,14 +361,14 @@ jobs:
                   },
               },
               "/api/user-settings/ui/rss-reader": {
-                  "settings": {
+                  "body": {"settings": {
                       "selectedSourceIds": ["src-alpha", "src-beta"],
                       "sourceLanguageFilters": ["en", "ZH"],
                       "translationEnabled": True,
                       "translationProvider": "llm",
                       "targetLanguage": "en-US",
                       "showOriginalContent": True,
-                  },
+                  }},
                   "expected": {
                       "selectedSourceIds": ["src-alpha", "src-beta"],
                       "sourceLanguageFilters": ["EN", "ZH"],
@@ -364,7 +379,7 @@ jobs:
                   },
               },
               "/api/user-settings/ui/spacetime-timeline": {
-                  "settings": {
+                  "body": {"settings": {
                       "authoritativeLock": False,
                       "requireCorroborated": False,
                       "sourceType": "mixed",
@@ -374,7 +389,7 @@ jobs:
                       "timelineGranularity": "week",
                       "speed": 4,
                       "syncStatusAutoRefresh": False,
-                  },
+                  }},
                   "expected": {
                       "authoritativeLock": False,
                       "requireCorroborated": False,
@@ -387,14 +402,144 @@ jobs:
                       "syncStatusAutoRefresh": False,
                   },
               },
+              "/api/user-settings/ui/war-map": {
+                  "body": {"settings": {
+                      # legacy layer key（militaryBases→bases）+ 根对象直读 +
+                      # viewState clamp + bearing/pitch 强制归零 + 枚举回退。
+                      "conflicts": False,
+                      "militaryBases": False,
+                      "cables": True,
+                      "viewState": {"lat": 120, "lon": -200, "zoom": 99, "bearing": 45, "pitch": 30},
+                      "activePreset": "mena",
+                      "timeRangePreset": "1y",
+                      "flightMode": "all",
+                      "aisMode": "density",
+                      "aisHighlightCandidates": False,
+                  }},
+                  "expected": {
+                      # 46 个 layer 全量出现在 NestJS 响应中——expected 只
+                      # 断言变化项与代表项（响应对比在 Phase C 逐字段做）。
+                      "_partial": True,
+                      "viewState": {"lat": 90, "lon": -180, "zoom": 18, "bearing": 0, "pitch": 0},
+                      "activePreset": "mena",
+                      "timeRangePreset": "7d",
+                      "flightMode": "all",
+                      "aisMode": "density",
+                      "aisHighlightCandidates": False,
+                      "layerVisibility": {
+                          "conflicts": False, "bases": False, "cables": True,
+                          "hotspots": True, "monitors": True, "iranAttacks": True,
+                      },
+                  },
+              },
+              "/api/user-settings/ui/newsnow": {
+                  "body": {"settings": {
+                      "focusSources": [" src-A ", "src-A", "src-B!", "src-c", 42, ""],
+                      "columnOrders": {" zz-col ": [" s2 ", "s1", "s1"], "bad col!": ["s1"], "empty-col": [], "aa-col": ["s0"]},
+                      "hideCrossSourceDuplicates": "yes",
+                      "sortMode": "smart",
+                      "densityMode": "compact",
+                      "sourceAffinity": {
+                          " src-Z ": {"score": 250.5, "openOriginalCount": -5, "focusCount": 3.7, "lastInteractedAt": 12345678901234},
+                          "src-Y": "not-an-object",
+                          "src-X": {"score": "high", "accumulatedDwellMs": 1e12},
+                      },
+                  }},
+                  "expected": {
+                      "focusSources": ["src-A", "src-c"],
+                      "columnOrders": {"zz-col": ["s2", "s1"], "aa-col": ["s0"]},
+                      "hideCrossSourceDuplicates": True,
+                      "sortMode": "personalized",
+                      "densityMode": "compact",
+                      "sourceAffinity": {
+                          "src-Z": {"score": 100, "openOriginalCount": 0, "openEventCount": 0, "openItemCount": 0,
+                                    "refreshCount": 0, "focusCount": 4, "accumulatedDwellMs": 0, "lastInteractedAt": 9999999999999},
+                          "src-X": {"score": 0, "openOriginalCount": 0, "openEventCount": 0, "openItemCount": 0,
+                                    "refreshCount": 0, "focusCount": 0, "accumulatedDwellMs": 31536000000, "lastInteractedAt": 0},
+                      },
+                  },
+              },
+              "/api/user-settings/ui/situation-monitor": {
+                  # 三段一次写入（monitors/layout/settings 各自 normalize 后
+                  # 落三个固定 key）；fixture 提供稳定 id/createdAt。
+                  "body": {
+                      "monitors": [
+                          {"id": "  mon-1  ", "name": "  Taiwan Strait  ", "keywords": [" ship , navy ", "ship", "MISSING", ""],
+                           "enabled": 0, "color": " FF00AA ", "location": {"name": " Taipei ", "lat": 25.03, "lng": 121.56},
+                           "createdAt": 1757000000000},
+                          {"name": "", "keywords": ["x"]},
+                          {"name": "Bad location", "keywords": ["y"], "location": {"name": "L", "lat": 999, "lng": 0}},
+                      ],
+                      "layout": {
+                          "layout": [{"i": " legacy-1 ", "x": -3.2, "y": 2.7, "w": 0.4, "h": 5.1, "minW": 0, "static": True}],
+                          "layouts": {"md": [{"i": " md-1 ", "x": "a", "y": 1.5, "w": 2.9, "minH": -2}]},
+                          "visibility": {" panel-1 ": True, "panel-2": "yes", "": False, "panel-3": False},
+                      },
+                      "settings": {"windowHours": 48, "scope": "everything", "autoRefresh": 0,
+                                   "resetLayoutOnPreset": True, "translateToZh": True},
+                  },
+                  "expected": {
+                      # monitors 第二条（Bad location）缺失 id/createdAt——
+                      # NestJS fallback 是 randomUUID()/Date.now()（非确定值）。
+                      # fixture 第一条提供稳定 id/createdAt；第二条用哨兵
+                      # 标记（"@exists:sm-"/"@exists:int"）断言 fallback 行为
+                      # 本身（id 以 sm- 开头、createdAt 是毫秒整数）——不是把
+                      # 随机字段加入 ignore 集。
+                      "monitors": [
+                          {"id": "mon-1", "name": "Taiwan Strait", "keywords": ["ship", "navy", "MISSING"],
+                           "enabled": True, "color": "#ff00aa", "location": {"name": "Taipei", "lat": 25.03, "lng": 121.56},
+                           "createdAt": 1757000000000},
+                          {"id": "@exists:sm-", "name": "Bad location", "keywords": ["y"],
+                           "enabled": True, "createdAt": "@exists:int"},
+                      ],
+                      "layout": {
+                          "layouts": {
+                              "lg": [{"i": "legacy-1", "x": 0, "y": 3, "w": 1, "h": 5, "minW": 1, "static": True}],
+                              "md": [{"i": "md-1", "x": 0, "y": 2, "w": 3, "h": 1, "minH": 1}],
+                          },
+                          "visibility": {"panel-1": True, "panel-3": False},
+                      },
+                      "settings": {"windowHours": 24, "scope": "all", "autoRefresh": True,
+                                   "resetLayoutOnPreset": True, "translateToZh": True},
+                  },
+              },
           }
 
+          def assert_value(got, want, context):
+              # 哨兵断言（@exists: 前缀）：只断言存在性与形态，不比较精确值
+              #（fallback 的 randomUUID/Date.now() 本身非确定——显式断言其
+              # 存在与形态，不静默 ignore）。
+              if isinstance(want, str) and want.startswith("@exists:"):
+                  assert got is not None, f"{context}: fallback value missing (want exists)"
+                  form = want[len("@exists:"):]
+                  if form == "int":
+                      assert isinstance(got, int) and got > 1_500_000_000_000, (
+                          f"{context}: createdAt = {got!r}, want 毫秒时间戳")
+                  elif form.startswith("sm-"):
+                      assert isinstance(got, str) and got.startswith("sm-"), (
+                          f"{context}: id = {got!r}, want sm- 前缀 fallback")
+                  return
+              assert got == want, (
+                  f"{context}\n  got:      {json.dumps(got, sort_keys=True)}\n"
+                  f"  expected: {json.dumps(want, sort_keys=True)}")
+
+          def assert_equal(actual, want, context):
+              if isinstance(want, dict):
+                  assert isinstance(actual, dict), f"{context}: got {type(actual).__name__}, want object"
+                  for key, value in want.items():
+                      assert_value(actual.get(key), value, f"{context}.{key}")
+              elif isinstance(want, list):
+                  assert isinstance(actual, list), f"{context}: got {type(actual).__name__}, want array"
+                  assert len(actual) == len(want), f"{context}: len {len(actual)} != {len(want)}"
+                  for i, item in enumerate(want):
+                      assert_equal(actual[i], item, f"{context}[{i}]")
+              else:
+                  assert_value(actual, want, context)
+
           for path, payload in PUTS.items():
-              # 请求体只含 settings——expected 是本脚本的断言期望值，
-              # 不得混入请求（forbidNonWhitelisted 会拒绝多余属性）。
               req = urllib.request.Request(
                   f"http://127.0.0.1:4020{path}",
-                  data=json.dumps({"settings": payload["settings"]}).encode(),
+                  data=json.dumps(payload["body"]).encode(),
                   method="PUT",
                   headers={
                       "authorization": f"Bearer {token}",
@@ -406,21 +551,25 @@ jobs:
                   with urllib.request.urlopen(req, timeout=15) as resp:
                       status, headers, body = resp.status, resp.headers, resp.read()
               except urllib.error.HTTPError as err:
-                  raise SystemExit(f"PUT {path} via api-go returned {err.code}: {err.read()[:500]!r}")
+                  raise SystemExit(f"PUT {path} via api-go returned {err.code}: {err.read()[:800]!r}")
               assert status == 200, (path, status)
               assert headers.get("x-trace-id") == TRACE, (path, dict(headers))
-              # PUT 响应体 = GET 形状（NestJS update 后回读）；按 normalized
-              # 期望值断言回显。
               doc = json.loads(body)
               assert doc.get("version") == 1, (path, doc)
-              assert doc.get("settings") == payload["expected"], (
-                  f"{path}: PUT echo mismatch\n  got:      {json.dumps(doc.get('settings'), sort_keys=True)}\n"
-                  f"  expected: {json.dumps(payload['expected'], sort_keys=True)}")
-              print(f"PUT {path} -> 200 (NestJS 响应回显 settings 一致, trace header ok)")
+              expected = dict(payload["expected"])
+              expected.pop("_partial", False)
+              # 响应形态判别：situation-monitor 是顶层三段（monitors/layout/
+              # settings 都是顶层段）；单 key 端点是 {settings: {...}} 包裹
+              # ——不能只看 "settings" in doc（situation-monitor 顶层也有
+              # settings 段），以 monitors 段判别。
+              actual = doc if "monitors" in doc else doc.get("settings")
+              for key, want in expected.items():
+                  assert_equal(actual.get(key), want, f"{path}: {key}")
+              print(f"PUT {path} -> 200 (NestJS 响应回显 normalized settings 一致, trace header ok)")
           PY
           python3 /tmp/smoke_put.py
 
-      - name: Smoke 3/10 — PUTs did not trigger shadow + similar paths miss the Go handler
+      - name: "Smoke 3/13 — Phase A: PUTs did not trigger shadow + similar paths miss the Go handler"
         run: |
           cat > /tmp/smoke_boundaries.py <<'PY'
           import json
@@ -458,7 +607,8 @@ jobs:
           # 相似路径不得误命中 Go handler（exact path 匹配）：这些路径回落
           # /api/ legacy 由 NestJS 处理——NestJS 未注册这些路由 → 404。
           for path in ("/api/user-settings/ui/onboarding-x",
-                       "/api/user-settings/ui/onboarding/other"):
+                       "/api/user-settings/ui/war-map-x",
+                       "/api/user-settings/ui/newsnow/other"):
               req = urllib.request.Request(
                   f"http://127.0.0.1:4020{path}",
                   headers={"authorization": f"Bearer {token}", "x-trace-id": TRACE})
@@ -473,118 +623,233 @@ jobs:
           PY
           python3 /tmp/smoke_boundaries.py
 
-      - name: Smoke 4/10 — settings really persisted in MySQL
+      - name: "Smoke 4/13 — Phase A: all 8 fixed keys really persisted in MySQL"
         run: |
           set -euo pipefail
           MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
           test -n "$MYSQL_CID"
-          for key in ui:onboarding:settings:v1 ui:rss-reader:settings:v1 ui:spacetime-timeline:settings:v1; do
+          for key in ui:onboarding:settings:v1 \
+                     ui:rss-reader:settings:v1 \
+                     ui:spacetime-timeline:settings:v1 \
+                     ui:war-map:settings:v1 \
+                     ui:newsnow:settings:v1 \
+                     ui:situation-monitor:monitors:v1 \
+                     ui:situation-monitor:layout:v1 \
+                     ui:situation-monitor:settings:v1; do
             count=$(docker exec "$MYSQL_CID" mysql -uroot -psecret -N -e \
               "SELECT COUNT(*) FROM app.UserSetting WHERE \`key\`='${key}'" 2>/dev/null)
             echo "UserSetting key=${key} rows=${count}"
             test "$count" = "1"
           done
-          echo "three settings rows persisted by NestJS (single-writer) in real MySQL"
+          echo "all 8 fixed setting rows persisted by NestJS (single-writer) in real MySQL"
 
-      - name: Smoke 5/10 — onboarding contract compare (Go handler vs NestJS) + other GETs
+      # ---- Phase B：六端点 Shadow 对比 ----
+
+      - name: "Smoke 5/13 — Phase B: six GETs via shadow (executed +6, diffs 0)"
         run: |
-          cat > /tmp/smoke_get.py <<'PY'
+          cat > /tmp/smoke_shadow_get.py <<'PY'
+          import json
+          import time
+          import urllib.error
+          import urllib.request
+
+          DROPPED_KEYS = ("request-too-large", "response-too-large", "streaming-skipped",
+                          "concurrency-limit", "rate-limit", "timeout")
+          TRACE = "5f1e2d3c4b5a69788697a5b4c3d2e1f0"
+          token = open("/tmp/smoke-jwt").read().strip()
+          baseline = json.load(open("/tmp/shadow-baseline.json"))
+
+          PATHS = [
+              "/api/user-settings/ui/onboarding",
+              "/api/user-settings/ui/rss-reader",
+              "/api/user-settings/ui/spacetime-timeline",
+              "/api/user-settings/ui/war-map",
+              "/api/user-settings/ui/newsnow",
+              "/api/user-settings/ui/situation-monitor",
+          ]
+
+          # 公开探针（healthz/live shadow 单元）先做一次——与六个端点一起
+          # 计入 executed 增量（+1）。
+          req = urllib.request.Request("http://127.0.0.1:4020/api/healthz/live",
+                                       headers={"x-trace-id": TRACE})
+          with urllib.request.urlopen(req, timeout=15) as resp:
+              assert resp.status == 200 and json.loads(resp.read()) == {"status": "ok"}
+
+          for path in PATHS:
+              req = urllib.request.Request(
+                  f"http://127.0.0.1:4020{path}",
+                  headers={"authorization": f"Bearer {token}", "x-trace-id": TRACE})
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as resp:
+                      status, headers, body = resp.status, resp.headers, resp.read()
+              except urllib.error.HTTPError as err:
+                  raise SystemExit(f"GET {path} (shadow) returned {err.code}: {err.read()[:500]!r}")
+              assert status == 200, (path, status)
+              assert "no-store" in (headers.get("cache-control") or "").lower(), (path, dict(headers))
+              assert headers.get("x-trace-id") == TRACE, (path, dict(headers))
+              doc = json.loads(body)
+              assert doc.get("version") == 1, (path, doc)
+              print(f"GET {path} -> 200 (shadow: NestJS 响应 + Go 旁路差分)")
+
+          # 等待异步差分完成：executed 精确 +7（healthz/live 1 + 六端点 6）。
+          def stats():
+              with urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10) as resp:
+                  return json.load(resp)["shadow"]
+
+          want_executed = baseline["executed"] + 7
+          deadline = time.time() + 30
+          now = stats()
+          while time.time() < deadline:
+              now = stats()
+              if now["executed"] >= want_executed and now["inflight"] == 0:
+                  break
+              time.sleep(1)
+
+          assert now["executed"] == want_executed, (
+              f"executed {baseline['executed']} -> {now['executed']}, want exactly +7 ({want_executed})")
+          assert now["diffs"] == baseline["diffs"], (
+              f"diffs {baseline['diffs']} -> {now['diffs']} (shadow diff detected!)")
+          assert now["inflight"] == 0, f"inflight {now['inflight']} != 0"
+          for key in DROPPED_KEYS:
+              assert now["dropped"][key] == baseline["dropped"][key], (
+                  f"dropped[{key}] {baseline['dropped'][key]} -> {now['dropped'][key]}")
+          print(f"Phase B shadow metrics: executed {baseline['executed']} -> {now['executed']} "
+                f"(+7: healthz/live + 6 user-settings GETs)")
+          print(f"diffs: {baseline['diffs']} -> {now['diffs']} (0 差异——Go 旁路与 NestJS 逐字段一致)")
+          print(f"inflight back to 0; all dropped categories unchanged")
+          # 保存 Phase B 后的 shadow 计数，供 Phase C 基线。
+          with open("/tmp/shadow-phase-b.json", "w") as f:
+              json.dump(now, f)
+          PY
+          python3 /tmp/smoke_shadow_get.py
+
+      # ---- Phase C：六端点 Go 接管 ----
+
+      - name: "Smoke 6/13 — Phase C: restart api-go with read mode=go"
+        run: |
+          set -euo pipefail
+          # 重启真实 api-go 容器为统一 go 模式（同一镜像、同一真实栈）。
+          docker rm -f api-go-smoke
+          docker run -d --name api-go-smoke \
+            --add-host=host.docker.internal:host-gateway \
+            --health-interval 5s \
+            --health-timeout 3s \
+            --health-retries 20 \
+            --health-start-period 5s \
+            -p 127.0.0.1:4020:4020 \
+            -e PORT=4020 \
+            -e LEGACY_API_URL=http://host.docker.internal:4000 \
+            -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+            -e API_GO_USER_SETTINGS_READ_MODE=go \
+            -e JWT_SECRET="$JWT_SECRET" \
+            -e JWT_ISSUER="$JWT_ISSUER" \
+            -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+            -e REDIS_HOST=host.docker.internal \
+            -e REDIS_PORT=6379 \
+            -e CANARY_PERCENT=0 \
+            -e SHADOW_DEBUG_BODY_LOG=false \
+            api-go-entry-smoke:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' api-go-smoke 2>/dev/null || echo starting)
+            echo "api-go container health: $status"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ]; then
+              docker logs api-go-smoke || true
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "api-go container failed to become healthy"
+          docker logs api-go-smoke || true
+          exit 1
+
+      - name: "Smoke 7/13 — Phase C: six GETs contract compare (Go handler vs NestJS direct)"
+        run: |
+          cat > /tmp/smoke_go_get.py <<'PY'
           import json
           import urllib.error
           import urllib.request
 
-          TRACE = "5f1e2d3c4b5a69788697a5b4c3d2e1f0"
+          TRACE = "6f1e2d3c4b5a69788697a5b4c3d2e1f0"
           token = open("/tmp/smoke-jwt").read().strip()
 
-          EXPECTED = {
-              "/api/user-settings/ui/onboarding": {
-                  "completed": True,
-                  "dismissed": True,
-                  "checklist": {"today": True, "events": True, "map": True, "finance": False},
-                  "completedTours": {"today": True},
-              },
-              "/api/user-settings/ui/rss-reader": {
-                  "selectedSourceIds": ["src-alpha", "src-beta"],
-                  "sourceLanguageFilters": ["EN", "ZH"],
-                  "translationEnabled": True,
-                  "translationProvider": "llm",
-                  "targetLanguage": "en-US",
-                  "showOriginalContent": True,
-              },
-              "/api/user-settings/ui/spacetime-timeline": {
-                  "authoritativeLock": False,
-                  "requireCorroborated": False,
-                  "sourceType": "mixed",
-                  "sortBy": "latest",
-                  "minHeatScore": 3.5,
-                  "minCredibilityScore": 72,
-                  "timelineGranularity": "week",
-                  "speed": 4,
-                  "syncStatusAutoRefresh": False,
-              },
-          }
+          PATHS = [
+              "/api/user-settings/ui/onboarding",
+              "/api/user-settings/ui/rss-reader",
+              "/api/user-settings/ui/spacetime-timeline",
+              "/api/user-settings/ui/war-map",
+              "/api/user-settings/ui/newsnow",
+              "/api/user-settings/ui/situation-monitor",
+          ]
 
-          def get(url, auth=True):
-              headers = {"x-trace-id": TRACE}
-              if auth:
-                  headers["authorization"] = f"Bearer {token}"
-              req = urllib.request.Request(url, headers=headers)
+          def get(url):
+              req = urllib.request.Request(url, headers={
+                  "authorization": f"Bearer {token}", "x-trace-id": TRACE})
               try:
                   with urllib.request.urlopen(req, timeout=15) as resp:
                       return resp.status, resp.headers, resp.read()
               except urllib.error.HTTPError as err:
                   raise SystemExit(f"GET {url} returned {err.code}: {err.read()[:500]!r}")
 
-          # GET 1：公开探针（无鉴权，shadow 单元——NestJS 响应 + Go 差分）。
-          status, headers, body = get("http://127.0.0.1:4020/api/healthz/live", auth=False)
-          assert status == 200, status
-          assert headers.get("x-trace-id") == TRACE, dict(headers)
-          assert json.loads(body) == {"status": "ok"}, body
-          print("GET /api/healthz/live -> 200 (shadow: NestJS 响应), body ok, trace header ok")
+          for path in PATHS:
+              # 同一 token 分别请求 NestJS 直连与 api-go（Go handler 全响应）。
+              # 二者必须逐字段一致（同一条 UserSetting 记录 → updatedAt 也
+              # 一致；非确定字段 traceId/timestamp 不在成功响应体里）。
+              s_nest, h_nest, b_nest = get(f"http://127.0.0.1:4000{path}")
+              s_go, h_go, b_go = get(f"http://127.0.0.1:4020{path}")
+              assert s_nest == s_go == 200, (path, s_nest, s_go)
+              assert "no-store" in (h_nest.get("cache-control") or "").lower(), (path, dict(h_nest))
+              assert "no-store" in (h_go.get("cache-control") or "").lower(), (path, dict(h_go))
+              assert (h_nest.get("content-type") or "").startswith("application/json"), (path, dict(h_nest))
+              assert (h_go.get("content-type") or "").startswith("application/json"), (path, dict(h_go))
+              assert h_go.get("x-trace-id") == TRACE, (path, dict(h_go))
+              doc_nest, doc_go = json.loads(b_nest), json.loads(b_go)
+              assert doc_nest == doc_go, (
+                  f"{path}: contract mismatch\n  nestjs: {json.dumps(doc_nest, sort_keys=True)[:2000]}\n"
+                  f"  go:     {json.dumps(doc_go, sort_keys=True)[:2000]}")
+              assert doc_go.get("version") == 1, (path, doc_go)
+              print(f"GET {path}: NestJS 直连 vs api-go(Go handler) 契约一致"
+                    "（status/cache-control/content-type/JSON 全等）")
 
-          # GET 2：onboarding 契约对比——同一 token 分别请求 NestJS 直连与
-          # api-go（Go handler 全响应）。二者必须逐字段一致（同一条
-          # UserSetting 记录 → updatedAt 也一致；仅 traceId/timestamp 属于
-          # 非确定字段，且此处根本不比较响应头之外的非确定字段）。
-          s_nest, h_nest, b_nest = get("http://127.0.0.1:4000/api/user-settings/ui/onboarding")
-          s_go, h_go, b_go = get("http://127.0.0.1:4020/api/user-settings/ui/onboarding")
-          assert s_nest == s_go == 200, (s_nest, s_go)
-          assert "no-store" in (h_nest.get("cache-control") or "").lower(), dict(h_nest)
-          assert "no-store" in (h_go.get("cache-control") or "").lower(), dict(h_go)
-          assert (h_nest.get("content-type") or "").startswith("application/json"), dict(h_nest)
-          assert (h_go.get("content-type") or "").startswith("application/json"), dict(h_go)
-          assert h_go.get("x-trace-id") == TRACE, dict(h_go)
-          doc_nest, doc_go = json.loads(b_nest), json.loads(b_go)
-          assert doc_nest == doc_go, (
-              f"onboarding contract mismatch\n  nestjs: {json.dumps(doc_nest, sort_keys=True)}\n"
-              f"  go:     {json.dumps(doc_go, sort_keys=True)}")
-          assert doc_go.get("version") == 1, doc_go
-          assert doc_go.get("settings") == EXPECTED["/api/user-settings/ui/onboarding"], doc_go
-          assert isinstance(doc_go.get("updatedAt", {}).get("settings"), str) and doc_go["updatedAt"]["settings"], doc_go
-          print("GET onboarding: NestJS 直连 vs api-go(Go handler) 契约一致"
-                "（status/cache-control/content-type/JSON 全等, settings 读回一致）")
-
-          # GET 3-4：rss-reader / spacetime-timeline（仍是 shadow：NestJS
-          # 响应 + Go 差分）——鉴权 + Cache-Control + 数据读回。
-          for path in ("/api/user-settings/ui/rss-reader", "/api/user-settings/ui/spacetime-timeline"):
-              status, headers, body = get(f"http://127.0.0.1:4020{path}")
-              assert status == 200, (path, status)
-              cache_control = (headers.get("cache-control") or "").lower()
-              assert "no-store" in cache_control, (path, dict(headers))
-              assert headers.get("x-trace-id") == TRACE, (path, dict(headers))
-              doc = json.loads(body)
-              assert doc.get("version") == 1, (path, doc)
-              assert doc.get("settings") == EXPECTED[path], (
-                  f"{path}: settings mismatch\n  got:      {json.dumps(doc.get('settings'), sort_keys=True)}\n"
-                  f"  expected: {json.dumps(EXPECTED[path], sort_keys=True)}")
-              assert isinstance(doc.get("updatedAt", {}).get("settings"), str) and doc["updatedAt"]["settings"], doc
-              print(f"GET {path} -> 200 (shadow: NestJS 响应), cache-control=no-store, settings match own key")
+          # situation-monitor 的三段 updatedAt 与三份数据对应正确（Phase A
+          # 写入了三段，全都在）+ 各端点读自己的 key（无跨 key 串读已由
+          # 逐字段对比覆盖——这里针对三段结构显式断言）。
+          s, h, b = get("http://127.0.0.1:4020/api/user-settings/ui/situation-monitor")
+          doc = json.loads(b)
+          for section in ("monitors", "layout", "settings"):
+              assert isinstance(doc.get(section), (dict, list)), (section, doc.get(section))
+              assert isinstance(doc.get("updatedAt", {}).get(section), str) and doc["updatedAt"][section], doc
+          print("situation-monitor: 三段 updatedAt 与三份数据对应正确")
           PY
-          python3 /tmp/smoke_get.py
+          python3 /tmp/smoke_go_get.py
+
+      - name: "Smoke 8/13 — Phase C: Go requests do not increase shadow.executed"
+        run: |
+          cat > /tmp/smoke_go_shadow.py <<'PY'
+          import json
+          import urllib.request
+
+          phaseB = json.load(open("/tmp/shadow-phase-b.json"))
+          with urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10) as resp:
+              doc = json.load(resp)
+          now = doc["shadow"]
+          assert doc.get("userSettingsRead", {}).get("mode") == "go", doc
+          assert doc.get("userSettingsRead", {}).get("database") == "configured", doc
+          # Phase C 的六个 GET 全部由 Go handler 响应——shadow 计数从 Phase B
+          # 结束值零增长（重启后计数清零，但 Phase B 的 7 次执行发生在旧
+          # 容器；新容器从 0 开始——断言当前为 0 且 mode=go）。
+          assert now["executed"] == 0, now
+          assert now["inflight"] == 0, now
+          assert now["diffs"] == 0, now
+          print(f"Phase C: read mode=go; shadow executed={now['executed']} (zero — Go handler 全响应，无差分)")
+          PY
+          python3 /tmp/smoke_go_shadow.py
 
       # ---- 以下步骤对真实数据库/Redis 做有状态验证，全部先备份、后恢复 ----
 
-      - name: Smoke 6/10 — no items.read in DB -> 403 on both sides (JWT claim ignored)
+      - name: "Smoke 9/13 — no items.read in DB -> 403 on both sides (JWT claim ignored)"
         run: |
           set -euo pipefail
           MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
@@ -676,7 +941,7 @@ jobs:
           fi
           docker exec "$REDIS_CID" redis-cli DEL "profile:${USER_ID}:${ORG_ID}" >/dev/null
 
-      - name: Smoke 7/10 — membership inactive -> 401 on both sides (real DB state)
+      - name: "Smoke 10/13 — membership inactive -> 401 on both sides (real DB state)"
         run: |
           set -euo pipefail
           MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
@@ -748,7 +1013,7 @@ jobs:
           PY
           python3 /tmp/smoke_restored.py
 
-      - name: Smoke 8/10 — tampered signature & alg=none -> Go 401
+      - name: "Smoke 11/13 — tampered signature & alg=none -> Go 401"
         run: |
           cat > /tmp/smoke_tamper.py <<'PY'
           import base64
@@ -791,7 +1056,7 @@ jobs:
           PY
           python3 /tmp/smoke_tamper.py
 
-      - name: Smoke 9/10 — real logout writes Redis blacklist -> Go 401 revoked
+      - name: "Smoke 12/13 — real logout writes Redis blacklist -> Go 401 revoked (Phase D preparation)"
         run: |
           set -euo pipefail
           REDIS_CID=$(docker ps -q -f ancestor=redis:7.2 | head -n1)
@@ -842,10 +1107,12 @@ jobs:
           test "$COUNT" = "1"
           echo "access-token:blacklist:<jti> exists in real Redis (jti not printed)"
 
-      - name: Smoke 10/10 — stop NestJS, onboarding GET still 200 from Go
+      # ---- Phase D：独立性证明（NestJS 停止后）----
+
+      - name: "Smoke 13/13 (Phase D) — re-login, then stop NestJS and prove independence"
         run: |
           set -euo pipefail
-          # 重新真实登录（旧 token 已撤销）——确认数据仍在，然后停止 NestJS。
+          # 重新真实登录（旧 token 已被 logout 撤销）——确认数据仍在，然后停止 NestJS。
           cat > /tmp/smoke_relogin.py <<'PY'
           import json
           import os
@@ -895,101 +1162,171 @@ jobs:
           import urllib.error
           import urllib.request
 
-          TRACE = "af1e2d3c4b5a69788697a5b4c3d2e1f0"
+          TRACE = "bf1e2d3c4b5a69788697a5b4c3d2e1f0"
           token = open("/tmp/smoke-jwt").read().strip()
-          EXPECTED_SETTINGS = {
-              "completed": True,
-              "dismissed": True,
-              "checklist": {"today": True, "events": True, "map": True, "finance": False},
-              "completedTours": {"today": True},
+
+          EXPECTED = {
+              "/api/user-settings/ui/onboarding": {"settings": {
+                  "completed": True,
+                  "dismissed": True,
+                  "checklist": {"today": True, "events": True, "map": True, "finance": False},
+                  "completedTours": {"today": True}}},
+              "/api/user-settings/ui/rss-reader": {"settings": {
+                  "selectedSourceIds": ["src-alpha", "src-beta"],
+                  "sourceLanguageFilters": ["EN", "ZH"],
+                  "translationEnabled": True,
+                  "translationProvider": "llm",
+                  "targetLanguage": "en-US",
+                  "showOriginalContent": True}},
+              "/api/user-settings/ui/spacetime-timeline": {"settings": {
+                  "authoritativeLock": False,
+                  "requireCorroborated": False,
+                  "sourceType": "mixed",
+                  "sortBy": "latest",
+                  "minHeatScore": 3.5,
+                  "minCredibilityScore": 72,
+                  "timelineGranularity": "week",
+                  "speed": 4,
+                  "syncStatusAutoRefresh": False}},
+              "/api/user-settings/ui/war-map": {"_partial": {
+                  "viewState": {"lat": 90, "lon": -180, "zoom": 18, "bearing": 0, "pitch": 0},
+                  "activePreset": "mena", "timeRangePreset": "7d",
+                  "flightMode": "all", "aisMode": "density", "aisHighlightCandidates": False}},
+              "/api/user-settings/ui/newsnow": {"settings": {
+                  "focusSources": ["src-A", "src-c"],
+                  "columnOrders": {"zz-col": ["s2", "s1"], "aa-col": ["s0"]},
+                  "hideCrossSourceDuplicates": True,
+                  "sortMode": "personalized",
+                  "densityMode": "compact"}},
+              "/api/user-settings/ui/situation-monitor": {
+                  "monitors": [
+                      {"id": "mon-1", "name": "Taiwan Strait", "keywords": ["ship", "navy", "MISSING"],
+                       "enabled": True, "color": "#ff00aa",
+                       "location": {"name": "Taipei", "lat": 25.03, "lng": 121.56},
+                       "createdAt": 1757000000000},
+                      # 第二条缺失 id/createdAt——fallback 是非确定值（同
+                      # Phase A 的哨兵语义：断言存在与形态，不比较精确值）。
+                      {"id": "@exists:sm-", "name": "Bad location", "keywords": ["y"], "enabled": True,
+                       "createdAt": "@exists:int"},
+                  ],
+                  "settings": {"windowHours": 24, "scope": "all", "autoRefresh": True,
+                               "resetLayoutOnPreset": True, "translateToZh": True}},
           }
 
-          # 本轮最重要的验收：NestJS 已停止，合法 onboarding GET 仍由 Go
-          # 返回此前真实持久化的数据——证明不是代理或 Shadow 假象。
+          # Phase D 核心验收：NestJS 已停止，六个 user-settings GET 仍全部
+          # 由 Go 返回此前真实持久化的数据（Phase A 的 PUT 写入）——证明
+          # 不是代理或 Shadow 假象。
+          def assert_value(got, want, context):
+              if isinstance(want, str) and want.startswith("@exists:"):
+                  assert got is not None, f"{context}: fallback value missing (want exists)"
+                  form = want[len("@exists:"):]
+                  if form == "int":
+                      assert isinstance(got, int) and got > 1_500_000_000_000, (
+                          f"{context}: createdAt = {got!r}, want 毫秒时间戳")
+                  elif form.startswith("sm-"):
+                      assert isinstance(got, str) and got.startswith("sm-"), (
+                          f"{context}: id = {got!r}, want sm- 前缀 fallback")
+                  return
+              assert got == want, (context, got, want)
+
+          def assert_equal(actual, want, context):
+              if isinstance(want, dict):
+                  assert isinstance(actual, dict), f"{context}: got {type(actual).__name__}, want object"
+                  for key, value in want.items():
+                      assert_equal(actual.get(key), value, f"{context}.{key}")
+              elif isinstance(want, list):
+                  assert isinstance(actual, list), f"{context}: got {type(actual).__name__}, want array"
+                  assert len(actual) == len(want), f"{context}: len {len(actual)} != {len(want)}"
+                  for i, item in enumerate(want):
+                      assert_equal(actual[i], item, f"{context}[{i}]")
+              else:
+                  assert_value(actual, want, context)
+
+          for path, want in EXPECTED.items():
+              req = urllib.request.Request(
+                  f"http://127.0.0.1:4020{path}",
+                  headers={"authorization": f"Bearer {token}", "x-trace-id": TRACE})
+              with urllib.request.urlopen(req, timeout=15) as resp:
+                  assert resp.status == 200, (path, resp.status)
+                  assert "no-store" in (resp.headers.get("cache-control") or "").lower(), (path, dict(resp.headers))
+                  assert (resp.headers.get("content-type") or "").startswith("application/json"), (path, dict(resp.headers))
+                  assert resp.headers.get("x-trace-id") == TRACE, (path, dict(resp.headers))
+                  doc = json.loads(resp.read())
+              assert doc.get("version") == 1, (path, doc)
+              if "_partial" in want:
+                  # war-map 的 viewState 等字段在 settings 段内——partial
+                  # 断言读 doc["settings"] 的字段。
+                  assert doc.get("settings") is not None, (path, doc)
+                  for key, value in want["_partial"].items():
+                      assert_equal(doc["settings"].get(key), value, (path, key))
+              else:
+                  for key, value in want.items():
+                      assert_equal(doc.get(key), value, (path, key))
+              assert isinstance(doc.get("updatedAt", {}).get("settings"), str) and doc["updatedAt"]["settings"], (path, doc)
+              print(f"NestJS 停止后：GET {path} via api-go -> 200（Go handler 独立响应, 数据一致）")
+
+          # situation-monitor 三段 updatedAt 全在（Phase A 写入三段）。
           req = urllib.request.Request(
-              "http://127.0.0.1:4020/api/user-settings/ui/onboarding",
+              "http://127.0.0.1:4020/api/user-settings/ui/situation-monitor",
               headers={"authorization": f"Bearer {token}", "x-trace-id": TRACE})
           with urllib.request.urlopen(req, timeout=15) as resp:
-              assert resp.status == 200, resp.status
-              assert "no-store" in (resp.headers.get("cache-control") or "").lower(), dict(resp.headers)
-              assert (resp.headers.get("content-type") or "").startswith("application/json"), dict(resp.headers)
-              assert resp.headers.get("x-trace-id") == TRACE, dict(resp.headers)
               doc = json.loads(resp.read())
-          assert doc.get("version") == 1, doc
-          assert doc.get("settings") == EXPECTED_SETTINGS, doc
-          assert isinstance(doc.get("updatedAt", {}).get("settings"), str) and doc["updatedAt"]["settings"], doc
-          print("NestJS 停止后：GET onboarding via api-go -> 200（Go handler 独立响应）")
-          print(f"  cache-control=no-store, content-type ok, trace header ok, settings 一致, updatedAt ok")
+          for section in ("monitors", "layout", "settings"):
+              assert doc["updatedAt"].get(section), doc
+          print("situation-monitor: 三段 updatedAt 均存在（NestJS 停止后仍由 Go 聚合返回）")
 
-          # 反证：未迁移端点（rss-reader，shadow → NestJS）必须因上游死亡
-          # 而失败——证明 onboarding 的成功不是 NestJS 仍在后台存活。
+          # 反证 1：代表性 PUT（war-map）必须代理失败——写路径没有偷偷迁入 Go。
           req = urllib.request.Request(
-              "http://127.0.0.1:4020/api/user-settings/ui/rss-reader",
+              "http://127.0.0.1:4020/api/user-settings/ui/war-map",
+              data=json.dumps({"settings": {"activePreset": "eu"}}).encode(),
+              method="PUT",
+              headers={"authorization": f"Bearer {token}", "content-type": "application/json",
+                       "x-trace-id": TRACE})
+          try:
+              with urllib.request.urlopen(req, timeout=15) as resp:
+                  raise SystemExit(f"PUT war-map unexpectedly succeeded ({resp.status}) — 写路径被迁入 Go？")
+          except urllib.error.HTTPError as err:
+              assert err.code == 502, (err.code, err.read()[:300])
+          print("NestJS 停止后：PUT war-map（NestJS 单写）-> 502（写路径未迁入 Go）")
+
+          # 反证 2：未迁移业务 GET（/api/items）必须代理失败——api-go 没有
+          # 伪装所有请求成功。
+          req = urllib.request.Request(
+              "http://127.0.0.1:4020/api/items",
               headers={"authorization": f"Bearer {token}", "x-trace-id": TRACE})
           try:
               with urllib.request.urlopen(req, timeout=15) as resp:
-                  raise SystemExit(f"rss-reader unexpectedly succeeded ({resp.status}) — NestJS 可能未停止")
+                  raise SystemExit(f"GET /api/items unexpectedly succeeded ({resp.status}) — api-go 伪装成功？")
           except urllib.error.HTTPError as err:
-              # 502 = api-go 代理层对上游不可达的契约错误（非 200 伪装成功）。
               assert err.code == 502, (err.code, err.read()[:300])
-          print("NestJS 停止后：GET rss-reader（shadow，未迁移）-> 502（上游不可达，未伪装成功）")
+          print("NestJS 停止后：GET /api/items（未迁移路由）-> 502（未伪装成功）")
           PY
           python3 /tmp/smoke_takeover.py
           # api-go 容器保持 healthy（Go 端点与探活不依赖 NestJS）。
           HEALTH=$(docker inspect --format '{{.State.Health.Status}}' api-go-smoke)
           test "$HEALTH" = "healthy"
           echo "api-go container still healthy after NestJS stopped"
-          # 最终 shadow 指标：onboarding 全程不产生 shadow 执行；RSS/
-          # Spacetime/healthz.live 各执行一次 = 基线 +3；diffs/dropped 零增量。
+          # 最终 shadow 指标：go 接管的六个 GET 全程零 shadow 执行；Phase C
+          # 容器重启后 shadow 从 0 开始且保持 0（本 smoke 中 Phase B 的
+          # executed 计数属于上一个容器实例）。
           cat > /tmp/smoke_final.py <<'PY'
           import json
-          import time
           import urllib.request
 
-          DROPPED_KEYS = ("request-too-large", "response-too-large", "streaming-skipped",
-                          "concurrency-limit", "rate-limit", "timeout")
-          baseline = json.load(open("/tmp/shadow-baseline.json"))
-          # 本 smoke 的 shadow 执行：healthz/live + rss-reader（NestJS 存活期）
-          # + spacetime-timeline = 3。onboarding 全部由 Go handler 响应——
-          # executed 不含 onboarding；NestJS 停止后的 rss-reader 502 不执行。
-          want_executed = baseline["executed"] + 3
-
-          def health():
-              with urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10) as resp:
-                  return json.load(resp)
-
-          # shadow 执行是异步的——轮询到目标值且 inflight 归零。
-          deadline = time.time() + 30
-          doc = health()
-          while time.time() < deadline:
-              now = doc["shadow"]
-              if now["executed"] >= want_executed and now["inflight"] == 0:
-                  break
-              time.sleep(1)
-              doc = health()
+          with urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10) as resp:
+              doc = json.load(resp)
           now = doc["shadow"]
-
-          assert now["executed"] == want_executed, (
-              f"executed {baseline['executed']} -> {now['executed']}, want exactly +3 ({want_executed})")
-          assert now["diffs"] == baseline["diffs"], (
-              f"diffs {baseline['diffs']} -> {now['diffs']} (shadow diff detected!)")
-          assert now["inflight"] == 0, f"inflight {now['inflight']} != 0"
-          for key in DROPPED_KEYS:
-              assert now["dropped"][key] == baseline["dropped"][key], (
-                  f"dropped[{key}] {baseline['dropped'][key]} -> {now['dropped'][key]}")
-          assert sum(now["dropped"].values()) == sum(baseline["dropped"].values()), now["dropped"]
-          assert doc.get("userSettingsShadow", {}).get("database") == "configured", doc
-          assert doc.get("onboarding", {}).get("mode") == "go", doc
-
-          print("=== api-go entry smoke (Go-批3A): FINAL SHADOW METRICS (before -> after) ===")
-          print(f"executed: {baseline['executed']} -> {now['executed']} "
-                f"(delta +{now['executed'] - baseline['executed']}, expect 3: live+rss+spacetime, onboarding excluded)")
-          print(f"diffs:    {baseline['diffs']} -> {now['diffs']} (delta 0)")
-          print(f"inflight: {baseline['inflight']} -> {now['inflight']} (back to 0)")
-          print(f"dropped:  {json.dumps(now['dropped'], sort_keys=True)} "
-                f"(all categories unchanged, total {sum(now['dropped'].values())})")
-          print("onboarding.mode: go (全响应，零 shadow 执行)")
-          print("userSettingsShadow.database: configured")
+          assert doc.get("userSettingsRead", {}).get("mode") == "go", doc
+          assert doc.get("userSettingsRead", {}).get("database") == "configured", doc
+          assert now["executed"] == 0, now
+          assert now["diffs"] == 0, now
+          assert now["inflight"] == 0, now
+          assert sum(now["dropped"].values()) == 0, now["dropped"]
+          print("=== api-go entry smoke (Go-批3B): FINAL METRICS ===")
+          print("executed: 0 (Phase C/D 六端点全部 Go handler 全响应，零 shadow 执行)")
+          print("diffs:    0 | inflight: 0 | dropped total: 0")
+          print("userSettingsRead.mode: go")
+          print("userSettingsRead.database: configured")
           print("api-go entry smoke: ALL ASSERTIONS PASSED")
           PY
           python3 /tmp/smoke_final.py

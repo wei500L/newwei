@@ -1,13 +1,13 @@
 # api-go 四态路由与首个迁移单元（shadow/canary 实现说明）
 
-> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补（exact+method 路由与 onboarding go 接管）
+> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补（exact+method 路由与 onboarding go 接管）· 2026-09-07 Go-批3B 增补（user-settings 六个只读 GET 统一接管，`API_GO_USER_SETTINGS_READ_MODE`）
 > 关联：docs/refactor/go-migration-adr.md §3/§4/§4.3、roadmap M2
 
 ---
 
 ## 1. 四态从「类型声明」到可运行实现
 
-`apps/api-go/internal/legacyproxy/proxy.go` 的路由表（`DefaultRules(onboardingMode)`）。**匹配语义（Go-批3A 起）**：迁移单元 = **exact path + method 白名单**——不匹配的方法（如 PUT）与相似路径（`onboarding-x`、`onboarding/other`）回落更短的通用规则（`/api/` legacy，由 NestJS 处理）；通用 fallback 规则 = 前缀匹配 + 任意方法（既有语义不变）：
+`apps/api-go/internal/legacyproxy/proxy.go` 的路由表（`DefaultRules(onboardingMode, readMode)`——批3B 起第二参数是 user-settings 六个只读 GET 的统一读模式）。**匹配语义（Go-批3A 起）**：迁移单元 = **exact path + method 白名单**——不匹配的方法（如 PUT）与相似路径（`onboarding-x`、`onboarding/other`）回落更短的通用规则（`/api/` legacy，由 NestJS 处理）；通用 fallback 规则 = 前缀匹配 + 任意方法（既有语义不变）：
 
 | 单元 | 匹配 | 模式 | 说明 |
 |---|---|---|---|
@@ -51,13 +51,15 @@
 - **迁移边界**：`GET /api/healthz`（AllowAuthenticated + 7 项真实依赖探针 + 5s 缓存）**未迁移**——需要数据库连接层，属后续单元；NestJS 实现保留为事实源。
 - **回滚**：路由表 `/api/healthz/live` 改回 `ModeLegacy`（单行配置）。
 
-### 2.1 首个业务端点 go 接管：`GET /api/user-settings/ui/onboarding`（Go-批3A）
+### 2.1 user-settings 只读域 go 接管（Go-批3A 首个端点 · Go-批3B 统一六端点）
 
-`API_GO_ONBOARDING_MODE=go`（compose `api-go-pilot` profile 注入；默认 `shadow`）时，该单元从 shadow 升级为 **ModeGo**——首个由 Go 独立鉴权、独立授权、独立查库、独立响应的业务端点。完整语义（鉴权链、错误契约、路由边界、远端验收）见 ADR §4.3 与 `apps/api-go/README.md`；要点：
+`API_GO_USER_SETTINGS_READ_MODE=go`（compose `api-go-pilot` profile 注入；默认未设置=兼容行为）时，**六个 user-settings 只读 GET** 全部从 shadow/legacy 升级为 **ModeGo**——由统一 handler（`internal/usersettingsread`）Go 独立鉴权、独立授权、独立查库、独立响应。批3A 曾以 `API_GO_ONBOARDING_MODE=go` 单独接管 onboarding（该变量保留为兼容：read mode 未设时仍生效）。完整语义（鉴权链、错误契约、路由边界、远端验收）见 ADR §4.3 与 `apps/api-go/README.md`；要点：
 
-- 鉴权链：Bearer 提取（拒绝 mtk_）→ HS256 验签（`internal/authn`，拒 alg=none/混淆，iss/aud/exp/nbf 按 jsonwebtoken 语义，jti 缺失按 NestJS 语义放行）→ 真实 Redis blacklist（同一 key，fail-closed）→ 真实 MySQL membership/RBAC 重推导（`internal/authz`，同序同文案 401）→ `items.read` 判定（JWT permissions claim 结构上不可达）→ `internal/onboarding` 全响应。
-- 路由边界：exact + GET——PUT 同路径与相似路径回落 `/api/` legacy（NestJS 单写/404）；RSS/Spacetime 仍是 shadow；`shadowUnits` 在 go 模式下移除 onboarding（`shadow.executed` 不再增长）。
-- 回滚：`API_GO_ONBOARDING_MODE=shadow`（配置变更，回到批2A/2B 行为）。
+- 鉴权链（六端点共享同一装配）：Bearer 提取（拒绝 mtk_）→ HS256 验签（`internal/authn`，拒 alg=none/混淆，iss/aud/exp/nbf 按 jsonwebtoken 语义，jti 缺失按 NestJS 语义放行）→ 真实 Redis blacklist（同一 key，fail-closed）→ 真实 MySQL membership/RBAC 重推导（`internal/authz`，同序同文案 401）→ `items.read` 判定（JWT permissions claim 结构上不可达）→ 固定 UserSetting 查询 + normalization + 全响应。
+- repository：五个单 key 端点共用同一条参数化查询（key 为编译期常量）；situation-monitor 一次聚合查询三个固定 key（对齐 NestJS findMany）。
+- 路由边界：exact + GET——六个 PUT 同路径与相似路径回落 `/api/` legacy（NestJS 单写/404）；`shadowUnits` 在 go 模式下按路由表 ModeGo 集合过滤（`shadow.executed` 不再增长）。
+- 读模式优先级：`API_GO_USER_SETTINGS_READ_MODE` 设置时覆盖 `API_GO_ONBOARDING_MODE`（onboarding 也归它管）；未设置时兼容旧行为（onboarding 由批3A 变量控制、rss/spacetime shadow、war-map/newsnow/situation-monitor legacy）。
+- 回滚：`API_GO_USER_SETTINGS_READ_MODE=shadow`（六端点全部回 shadow）或删除该变量（兼容行为）——配置变更。
 
 ## 3. 与鉴权矩阵/契约快照的关系
 
@@ -68,5 +70,5 @@
 
 - shadow 差分「真实流量 0 差异」验收未做——api-go 未接入生产入口（默认部署 Web → NestJS 直连）；`api-go-entry-smoke` 只覆盖远端真实栈的受控流量
 - canary **未激活**（无 ModeCanary 路由、AllowUnverifiedIdentity 默认关闭）；Go-批3A 落地的 onboarding 最小闭环 Go Auth 不改变这一点——canary router 仍消费未验签 claim，尚未改造为已验证身份分流
-- onboarding go 接管（Go-批3A）**已完成远端真实栈验证**（含 NestJS 停止后的独立接管证明），但**仅限 pilot 范围**——生产/预发布真实流量未切换；MFA/OIDC/refresh/机器令牌语义未迁移（迁移序 5 余项）
+- user-settings 只读域 go 接管（Go-批3A onboarding 起步、Go-批3B 扩展到六端点）**已完成远端真实栈验证**（含 NestJS 停止后的独立接管证明），但**仅限 pilot 范围**——生产/预发布真实流量未切换；MFA/OIDC/refresh/机器令牌语义未迁移（迁移序 5 余项）；六个 PUT 仍全部由 NestJS 单写
 - 本机按任务约束未运行 `go test`/`go vet`/`go build`；全部 Go 测试在远端 CI 执行

@@ -70,32 +70,50 @@ type Rule struct {
 
 // DefaultRules 是当前的路由表。onboardingMode 是 onboarding 单元的模式
 //（API_GO_ONBOARDING_MODE：ModeShadow=默认部署旧行为；ModeGo=Go-批3A
-// 真实接管——首个 Go 全响应业务端点）。
+// 真实接管）；readMode 是 user-settings 六个只读 GET 的统一模式
+//（Go-批3B：API_GO_USER_SETTINGS_READ_MODE——go=六个 GET 全部由统一
+// Go handler 接管；shadow=六个 GET 全部 shadow（NestJS 响应 + Go 差分）；
+// 空=兼容旧行为：onboarding 由 onboardingMode 控制，rss/spacetime 保持
+// shadow，war-map/newsnow/situation-monitor 保持 legacy）。
 //
 // 迁移单元：
 //   - 序 2：GET /api/healthz/live —— shadow（公开探针，首个单元）；
-//   - 序 3（Go-批2A/2B）：GET /api/user-settings/ui/{onboarding,rss-reader,
-//     spacetime-timeline} —— shadow（legacy-approved 身份 + Go 差分）；
-//   - 序 5（Go-批3A）：GET /api/user-settings/ui/onboarding —— 由
-//     onboardingMode 决定：shadow（默认）或 go（Go 独立鉴权 + 全响应，
-//     经 API_GO_ONBOARDING_MODE=go 显式启用）。
-//     迁移单元均为 exact path + method 白名单：PUT 等写方法与相似路径
+//   - 序 5（Go-批3A/3B）：GET /api/user-settings/ui/{六个端点} ——
+//     exact path + method 白名单：PUT 等写方法与相似路径
 //     （onboarding-x、onboarding/other）回落 /api/ legacy，由 NestJS
 //     处理——绝不进入 Go handler（写方法永远 NestJS 单写）。
 //
 // 注意三个无 /api 前缀的挂载点（契约清单 §0）：/graphql、/socket.io、
 // /admin/queues（Bull Board）。代理层必须与 REST 前缀分别声明。
-func DefaultRules(onboardingMode Mode) []Rule {
+func DefaultRules(onboardingMode Mode, readMode string) []Rule {
 	if onboardingMode != ModeGo {
 		onboardingMode = ModeShadow
 	}
 	getOnly := map[string]bool{http.MethodGet: true}
+
+	// 六个 user-settings 只读 GET 的模式（Go-批3B 统一读模式）。
+	settingsMode := func(defaultMode Mode) Mode {
+		switch readMode {
+		case string(ModeGo):
+			return ModeGo
+		case string(ModeShadow):
+			return ModeShadow
+		default:
+			return defaultMode
+		}
+	}
+
 	return []Rule{
 		{Prefix: "/api/", Mode: ModeLegacy},
 		{Prefix: "/api/healthz/live", Mode: ModeShadow, Exact: true, Methods: getOnly},
-		{Prefix: "/api/user-settings/ui/onboarding", Mode: onboardingMode, Exact: true, Methods: getOnly},
-		{Prefix: "/api/user-settings/ui/rss-reader", Mode: ModeShadow, Exact: true, Methods: getOnly},
-		{Prefix: "/api/user-settings/ui/spacetime-timeline", Mode: ModeShadow, Exact: true, Methods: getOnly},
+		// 兼容模式（readMode 空）：onboarding 由 onboardingMode 决定，
+		// rss/spacetime 保持 shadow，三个新端点保持 legacy。
+		{Prefix: "/api/user-settings/ui/onboarding", Mode: settingsMode(onboardingMode), Exact: true, Methods: getOnly},
+		{Prefix: "/api/user-settings/ui/rss-reader", Mode: settingsMode(ModeShadow), Exact: true, Methods: getOnly},
+		{Prefix: "/api/user-settings/ui/spacetime-timeline", Mode: settingsMode(ModeShadow), Exact: true, Methods: getOnly},
+		{Prefix: "/api/user-settings/ui/war-map", Mode: settingsMode(ModeLegacy), Exact: true, Methods: getOnly},
+		{Prefix: "/api/user-settings/ui/newsnow", Mode: settingsMode(ModeLegacy), Exact: true, Methods: getOnly},
+		{Prefix: "/api/user-settings/ui/situation-monitor", Mode: settingsMode(ModeLegacy), Exact: true, Methods: getOnly},
 		{Prefix: "/graphql", Mode: ModeLegacy},
 		{Prefix: "/socket.io/", Mode: ModeLegacy},
 		{Prefix: "/docs", Mode: ModeLegacy},
