@@ -104,6 +104,11 @@ env:
   API_BASE_URL: http://localhost:4000
   CRAWL4AI_BASE_URL: http://localhost:11235
   CORS_ORIGIN: http://localhost:3000
+  # 不要在 job env 写入空的 LITELLM_*：Nest zod 把空字符串当成非法 URL /
+  # 空模型名，API 起不来。冷路径只在 Go 容器和 Phase D 步骤里读取 secrets。
+  # LITELLM_API_BASE 或 LITELLM_API_KEY 缺失时，Phase D 跳过 brief 冷路径，
+  # 不把跳过记为通过，也不因此让 job 失败。凭据齐备时，真实请求失败、
+  # 未写回 briefV1 或盖掉其他 metadata 仍然失败。
   # 关闭可选外呼模块（ELASTICSEARCH/VECTOR/MODEL_SERVICE 默认即 false）；
   # AKSHARE_ENABLED=false 只停 HTTP 网关调用（catalog 同步走 MySQL+Redis，
   # 均已就绪）；SCHEDULE_ENABLED=false 关闭全部 @Cron 调度，降低噪音。
@@ -799,6 +804,11 @@ jobs:
       # ---- Phase C：六端点 Go 接管 ----
 
       - name: "Smoke 6/13 — Phase C: restart api-go with read mode=go"
+        env:
+          LITELLM_API_BASE: ${{ secrets.LITELLM_API_BASE }}
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          LITELLM_MODEL: ${{ secrets.LITELLM_MODEL }}
+          SYSTEM_SETTINGS_ENCRYPTION_KEY: ${{ secrets.SYSTEM_SETTINGS_ENCRYPTION_KEY }}
         run: |
           set -euo pipefail
           # 重启真实 api-go 容器为统一 go 模式（同一镜像、同一真实栈）。
@@ -824,6 +834,10 @@ jobs:
             -e CANARY_PERCENT=0 \
             -e SHADOW_DEBUG_BODY_LOG=false \
             -e CORS_ORIGIN="$CORS_ORIGIN" \
+            -e LITELLM_API_BASE \
+            -e LITELLM_API_KEY \
+            -e LITELLM_MODEL \
+            -e SYSTEM_SETTINGS_ENCRYPTION_KEY \
             api-go-entry-smoke:ci
           for i in $(seq 1 30); do
             status=$(docker inspect --format '{{.State.Health.Status}}' api-go-smoke 2>/dev/null || echo starting)
@@ -1590,12 +1604,14 @@ jobs:
           set -euo pipefail
           MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
           test -n "$MYSQL_CID"
+          export MYSQL_CID
           docker exec -i "$MYSQL_CID" mysql -uroot -psecret app <<'SQL'
-          DELETE FROM NewsEventItem WHERE id LIKE 'nei-portal-%';
-          DELETE FROM NewsEvent WHERE id LIKE 'evt-portal-%';
-          DELETE FROM ProcessedArticle WHERE id LIKE 'pa-portal-%';
-          DELETE FROM Article WHERE id LIKE 'art-portal-%';
-          DELETE FROM SystemSetting WHERE `key` IN ('public_portal_org_slug', 'news_event_source_policy:org-portal-pub');
+          DELETE FROM NewsEventTimelineEntry WHERE orgId IN ('org-portal-pub', 'org-portal-other');
+          DELETE FROM NewsEventItem WHERE orgId IN ('org-portal-pub', 'org-portal-other') OR id LIKE 'nei-portal-%';
+          DELETE FROM NewsEvent WHERE orgId IN ('org-portal-pub', 'org-portal-other') OR id LIKE 'evt-portal-%';
+          DELETE FROM ProcessedArticle WHERE orgId IN ('org-portal-pub', 'org-portal-other') OR id LIKE 'pa-portal-%';
+          DELETE FROM Article WHERE orgId IN ('org-portal-pub', 'org-portal-other') OR id LIKE 'art-portal-%';
+          DELETE FROM SystemSetting WHERE `key` IN ('public_portal_org_slug', 'news_event_source_policy:org-portal-pub', 'llm_gateway_profiles');
           DELETE FROM Org WHERE id IN ('org-portal-pub', 'org-portal-other');
 
           INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
@@ -1615,7 +1631,9 @@ jobs:
             ('art-portal-k1', 'org-portal-pub', 'https://www.portal-fixture.example/blank-a', 'Portal Fixture', UTC_TIMESTAMP(3), 'hash-portal-k1', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
             ('art-portal-k2', 'org-portal-pub', 'https://news.portal-fixture.example/blank-b', 'Portal Fixture', UTC_TIMESTAMP(3), 'hash-portal-k2', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
             ('art-portal-o1', 'org-portal-other', 'https://www.portal-fixture.example/other-a', 'Portal Fixture', UTC_TIMESTAMP(3), 'hash-portal-o1', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
-            ('art-portal-o2', 'org-portal-other', 'https://news.portal-fixture.example/other-b', 'Portal Fixture', UTC_TIMESTAMP(3), 'hash-portal-o2', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+            ('art-portal-o2', 'org-portal-other', 'https://news.portal-fixture.example/other-b', 'Portal Fixture', UTC_TIMESTAMP(3), 'hash-portal-o2', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+            ('art-portal-r1', 'org-portal-pub', 'https://www.portal-fixture.example/related-a', 'Portal Fixture', UTC_TIMESTAMP(3), 'hash-portal-r1', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+            ('art-portal-r2', 'org-portal-pub', 'https://news.portal-fixture.example/related-b', 'Portal Fixture', UTC_TIMESTAMP(3), 'hash-portal-r2', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 
           INSERT INTO ProcessedArticle (id, orgId, articleId, createdAt, processedAt, updatedAt) VALUES
             ('pa-portal-m1', 'org-portal-pub', 'art-portal-m1', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
@@ -1630,31 +1648,47 @@ jobs:
             ('pa-portal-k1', 'org-portal-pub', 'art-portal-k1', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
             ('pa-portal-k2', 'org-portal-pub', 'art-portal-k2', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
             ('pa-portal-o1', 'org-portal-other', 'art-portal-o1', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
-            ('pa-portal-o2', 'org-portal-other', 'art-portal-o2', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+            ('pa-portal-o2', 'org-portal-other', 'art-portal-o2', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+            ('pa-portal-r1', 'org-portal-pub', 'art-portal-r1', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+            ('pa-portal-r2', 'org-portal-pub', 'art-portal-r2', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 
           INSERT INTO NewsEvent (id, orgId, status, primaryTopic, title, summary, startAt, lastAt, createdAt, updatedAt) VALUES
-            ('evt-portal-markets', 'org-portal-pub', 'active', 'Markets', 'Portal Markets Brief', 'Markets summary for the public portal.', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+            ('cpubmarketsbrief000000001', 'org-portal-pub', 'active', 'Markets', 'Portal Markets Brief', 'Markets summary for the public portal.', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+            ('cpubmarketsrelat000000002', 'org-portal-pub', 'active', 'Markets', 'Portal Markets Related', 'Related markets summary for the public portal.', DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 3 HOUR), DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 3 HOUR), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
             ('evt-portal-energy', 'org-portal-pub', 'active', 'Energy', 'Portal Energy Brief', 'Energy summary for the public portal.', DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 2 HOUR), DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 2 HOUR), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
-            ('evt-portal-archived', 'org-portal-pub', 'archived', 'Markets', 'Portal Archived Leak', 'Archived summary must stay private.', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+            ('cpubarchivedstory0000001', 'org-portal-pub', 'archived', 'Markets', 'Portal Archived Leak', 'Archived summary must stay private.', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
             ('evt-portal-blog', 'org-portal-pub', 'active', 'Markets', 'Portal Blog Leak', 'Blog-only summary must stay private.', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
             ('evt-portal-thin', 'org-portal-pub', 'active', 'Markets', 'Portal Thin', 'Single-item summary must stay private.', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
             ('evt-portal-blank', 'org-portal-pub', 'active', 'Markets', '   ', 'Blank title must stay private.', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
-            ('evt-portal-other', 'org-portal-other', 'active', 'Markets', 'Portal Other Org Leak', 'Other org summary must stay private.', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+            ('cpubotherorgstory0000001', 'org-portal-other', 'active', 'Markets', 'Portal Other Org Leak', 'Other org summary must stay private.', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 
           INSERT INTO NewsEventItem (id, orgId, eventId, processedArticleId, createdAt) VALUES
-            ('nei-portal-m1', 'org-portal-pub', 'evt-portal-markets', 'pa-portal-m1', UTC_TIMESTAMP(3)),
-            ('nei-portal-m2', 'org-portal-pub', 'evt-portal-markets', 'pa-portal-m2', UTC_TIMESTAMP(3)),
+            ('nei-portal-m1', 'org-portal-pub', 'cpubmarketsbrief000000001', 'pa-portal-m1', UTC_TIMESTAMP(3)),
+            ('nei-portal-m2', 'org-portal-pub', 'cpubmarketsbrief000000001', 'pa-portal-m2', UTC_TIMESTAMP(3)),
+            ('nei-portal-r1', 'org-portal-pub', 'cpubmarketsrelat000000002', 'pa-portal-r1', UTC_TIMESTAMP(3)),
+            ('nei-portal-r2', 'org-portal-pub', 'cpubmarketsrelat000000002', 'pa-portal-r2', UTC_TIMESTAMP(3)),
             ('nei-portal-e1', 'org-portal-pub', 'evt-portal-energy', 'pa-portal-e1', UTC_TIMESTAMP(3)),
             ('nei-portal-e2', 'org-portal-pub', 'evt-portal-energy', 'pa-portal-e2', UTC_TIMESTAMP(3)),
-            ('nei-portal-a1', 'org-portal-pub', 'evt-portal-archived', 'pa-portal-a1', UTC_TIMESTAMP(3)),
-            ('nei-portal-a2', 'org-portal-pub', 'evt-portal-archived', 'pa-portal-a2', UTC_TIMESTAMP(3)),
+            ('nei-portal-a1', 'org-portal-pub', 'cpubarchivedstory0000001', 'pa-portal-a1', UTC_TIMESTAMP(3)),
+            ('nei-portal-a2', 'org-portal-pub', 'cpubarchivedstory0000001', 'pa-portal-a2', UTC_TIMESTAMP(3)),
             ('nei-portal-b1', 'org-portal-pub', 'evt-portal-blog', 'pa-portal-b1', UTC_TIMESTAMP(3)),
             ('nei-portal-b2', 'org-portal-pub', 'evt-portal-blog', 'pa-portal-b2', UTC_TIMESTAMP(3)),
             ('nei-portal-t1', 'org-portal-pub', 'evt-portal-thin', 'pa-portal-t1', UTC_TIMESTAMP(3)),
             ('nei-portal-k1', 'org-portal-pub', 'evt-portal-blank', 'pa-portal-k1', UTC_TIMESTAMP(3)),
             ('nei-portal-k2', 'org-portal-pub', 'evt-portal-blank', 'pa-portal-k2', UTC_TIMESTAMP(3)),
-            ('nei-portal-o1', 'org-portal-other', 'evt-portal-other', 'pa-portal-o1', UTC_TIMESTAMP(3)),
-            ('nei-portal-o2', 'org-portal-other', 'evt-portal-other', 'pa-portal-o2', UTC_TIMESTAMP(3));
+            ('nei-portal-o1', 'org-portal-other', 'cpubotherorgstory0000001', 'pa-portal-o1', UTC_TIMESTAMP(3)),
+            ('nei-portal-o2', 'org-portal-other', 'cpubotherorgstory0000001', 'pa-portal-o2', UTC_TIMESTAMP(3));
+
+          UPDATE ProcessedArticle
+            SET title = 'Markets A', summary = 'First markets report.', publishedAt = '2026-09-27 12:00:00.000', processedAt = '2026-09-27 12:00:00.000', keyPoints = CAST('["first report"]' AS JSON)
+            WHERE id = 'pa-portal-m1';
+          UPDATE ProcessedArticle
+            SET title = 'Markets B', summary = 'Second markets report.', publishedAt = '2026-09-27 12:05:00.000', processedAt = '2026-09-27 12:05:00.000', keyPoints = CAST('["second report"]' AS JSON)
+            WHERE id = 'pa-portal-m2';
+
+          INSERT INTO NewsEventTimelineEntry (id, orgId, eventId, bucketStart, title, summary, referencedArticleIds, createdAt, updatedAt) VALUES
+            ('tl-portal-now', 'org-portal-pub', 'cpubmarketsbrief000000001', UTC_TIMESTAMP(3), 'Now', 'Latest markets beat.', CAST('["art-portal-m1","art-portal-m2","art-portal-o1"]' AS JSON), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+            ('tl-portal-old', 'org-portal-pub', 'cpubmarketsbrief000000001', DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 40 DAY), 'Old', 'Outside the public window.', CAST('["art-portal-e1"]' AS JSON), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
 
           INSERT INTO SystemSetting (`key`, value, isPublic, createdAt, updatedAt) VALUES (
             'news_event_source_policy:org-portal-pub',
@@ -1694,17 +1728,22 @@ jobs:
               assert doc.get("message") == "Channel not found", doc
               assert doc.get("error") == "Not Found", doc
               assert doc.get("statusCode") == 404, doc
+              status, headers, doc = call(base, "/api/public-portal/stories/id/cpubmarketsbrief000000001")
+              assert status == 404, (base, status, doc)
+              assert doc.get("message") == "Story not found", doc
+              assert doc.get("error") == "Not Found", doc
+              assert headers.get("cache-control") == CACHE, (base, headers.get("cache-control"))
 
           assert_empty("http://127.0.0.1:4000")
           assert_empty("http://127.0.0.1:4020")
-          print("empty public_portal_org_slug: home org=null and channel 404 on NestJS and Go")
+          print("empty public_portal_org_slug: home org=null, channel 404, story 404 on NestJS and Go")
           PY
 
           docker exec "$MYSQL_CID" mysql -uroot -psecret app -e \
             "INSERT INTO SystemSetting (\`key\`, value, isPublic, createdAt, updatedAt) VALUES ('public_portal_org_slug', CAST('\"portal-public\"' AS JSON), 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));"
 
           python3 - <<'PY'
-          import json, urllib.request
+          import json, urllib.error, urllib.parse, urllib.request
           TRACE = "b22e2d3c4b5a69788697a5b4c3d2e1f0"
           CACHE = "public, max-age=60, s-maxage=60, stale-while-revalidate=300"
           BANNED = ("Archived Leak", "Other Org", "Blog Leak", "Portal Thin", "Blank")
@@ -1748,30 +1787,123 @@ jobs:
 
           home = check_pair("/api/public-portal/home", "home")
           assert home["org"]["slug"] == "portal-public", home["org"]
-          assert home["featuredStory"]["id"] == "evt-portal-markets", home["featuredStory"]
+          assert home["featuredStory"]["id"] == "cpubmarketsbrief000000001", home["featuredStory"]
+          assert "-" not in home["featuredStory"]["id"], home["featuredStory"]["id"]
           assert home["featuredStory"]["title"] == "Portal Markets Brief"
           assert home["featuredStory"]["sourceType"] == "authoritative"
           assert home["featuredStory"]["credibilityScore"] >= 60
           assert home["featuredStory"]["itemCount"] >= 2
-          assert [row["id"] for row in home["latestStories"]] == ["evt-portal-energy"], home["latestStories"]
+          assert [row["id"] for row in home["latestStories"]] == ["evt-portal-energy", "cpubmarketsrelat000000002"], home["latestStories"]
           assert [row["topicSlug"] for row in home["channels"]] == ["markets", "energy"], home["channels"]
 
           markets = check_pair("/api/public-portal/channels/markets", "channel")
           assert markets["topicSlug"] == "markets", markets
-          assert [row["id"] for row in markets["stories"]] == ["evt-portal-markets"], markets
+          assert [row["id"] for row in markets["stories"]] == ["cpubmarketsbrief000000001", "cpubmarketsrelat000000002"], markets
           energy = check_pair("/api/public-portal/channels/energy", "channel")
           assert [row["id"] for row in energy["stories"]] == ["evt-portal-energy"], energy
           empty = check_pair("/api/public-portal/channels/no-such-topic", "channel")
           assert empty["stories"] == [] and empty["storyCount"] == 0, empty
 
+          import hashlib, os, subprocess
+          story = home["featuredStory"]
+          slug = story["slug"]
+          assert slug.startswith(story["id"] + "-"), slug
+          fingerprint_body = {
+              "version": 1,
+              "language": "zh",
+              "lastAt": story["lastAt"],
+              "sources": [
+                  {"processedArticleId": "pa-portal-m2", "processedItemId": None, "url": "https://news.portal-fixture.example/markets-b"},
+                  {"processedArticleId": "pa-portal-m1", "processedItemId": None, "url": "https://www.portal-fixture.example/markets-a"},
+              ],
+          }
+          fingerprint = hashlib.sha256(json.dumps(fingerprint_body, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+          brief = {
+              "version": 1,
+              "language": "zh",
+              "fingerprint": fingerprint,
+              "generatedAt": "2026-09-27T12:00:00.000Z",
+              "sources": [
+                  {"index": 1, "url": "https://news.portal-fixture.example/markets-b", "sourceLabel": "Portal Fixture", "title": "Markets B", "publishedAt": "2026-09-27T12:05:00.000Z", "processedItemId": None, "processedArticleId": "pa-portal-m2"},
+                  {"index": 2, "url": "https://www.portal-fixture.example/markets-a", "sourceLabel": "Portal Fixture", "title": "Markets A", "publishedAt": "2026-09-27T12:00:00.000Z", "processedItemId": None, "processedArticleId": "pa-portal-m1"},
+              ],
+              "payload": {
+                  "detailed_summary": "Markets moved on two reports.",
+                  "tldr": "Two reports moved markets.",
+                  "key_points": [{"text": "Two outlets reported the move.", "citations": [1, 2]}],
+                  "why_it_matters": [],
+                  "what_to_watch": [],
+              },
+          }
+          metadata = json.dumps({"note": "keep", "briefV1": brief}, separators=(",", ":"), ensure_ascii=False)
+          sql = "UPDATE NewsEvent SET metadata = CAST('" + metadata.replace("'", "''") + "' AS JSON) WHERE id = '" + story["id"] + "' AND orgId = 'org-portal-pub'"
+          subprocess.check_call(["docker", "exec", "-i", os.environ["MYSQL_CID"], "mysql", "-uroot", "-psecret", "app", "-e", sql])
+
+          def call_status(base, path):
+              req = urllib.request.Request(base + path, headers={"x-trace-id": TRACE})
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      return resp.status, resp.headers, json.loads(resp.read().decode())
+              except urllib.error.HTTPError as err:
+                  body = err.read()
+                  return err.code, err.headers, json.loads(body.decode())
+
+          def detail_pair(path):
+              ns, nh, nd = call_status("http://127.0.0.1:4000", path)
+              gs, gh, gd = call_status("http://127.0.0.1:4020", path)
+              assert ns == 200 and gs == 200, (path, ns, gs, nd, gd)
+              assert nh.get("cache-control") == CACHE and gh.get("cache-control") == CACHE, (nh.get("cache-control"), gh.get("cache-control"))
+              assert nd.pop("generatedAt") and gd.pop("generatedAt")
+              for side in (nd["story"], gd["story"]):
+                  side.pop("heatScore")
+                  brief_doc = side.get("brief") or {}
+                  assert brief_doc.get("generatedAt") == "2026-09-27T12:00:00.000Z", brief_doc
+                  assert brief_doc.get("language") == "zh", brief_doc
+                  assert brief_doc.get("payload", {}).get("tldr") == "Two reports moved markets.", brief_doc
+              assert [row["id"] for row in nd["story"]["timeline"]] == [row["id"] for row in gd["story"]["timeline"]] == ["tl-portal-now"], (nd, gd)
+              assert nd["story"]["timeline"][0]["title"] == "Now"
+              assert "Old" not in json.dumps(gd["story"]["timeline"])
+              assert [row["id"] for row in nd["story"]["referencedArticles"]] == [row["id"] for row in gd["story"]["referencedArticles"]] == ["art-portal-m2", "art-portal-m1"], (nd, gd)
+              assert "art-portal-o1" not in json.dumps(gd["story"]["referencedArticles"])
+              assert [row["id"] for row in nd["relatedStories"]] == [row["id"] for row in gd["relatedStories"]] == ["cpubmarketsrelat000000002"], (nd, gd)
+              assert nd["story"]["id"] == gd["story"]["id"] == story["id"]
+              assert nd["story"]["slug"] == gd["story"]["slug"] == slug
+              assert nd["story"]["title"] == gd["story"]["title"]
+              assert nd["story"]["brief"]["sources"] == gd["story"]["brief"]["sources"]
+              return gd
+
+          by_id = detail_pair("/api/public-portal/stories/id/" + story["id"])
+          by_slug = detail_pair("/api/public-portal/stories/slug/" + urllib.parse.quote(slug))
+          assert by_id["story"]["id"] == by_slug["story"]["id"]
+          for missing in (
+              "/api/public-portal/stories/id/cpubarchivedstory0000001",
+              "/api/public-portal/stories/slug/cpubarchivedstory0000001-portal-archived-leak",
+              "/api/public-portal/stories/id/cpubotherorgstory0000001",
+              "/api/public-portal/stories/id/doesnotexist00000000001",
+          ):
+              ns, _, nd = call_status("http://127.0.0.1:4000", missing)
+              gs, gh, gd = call_status("http://127.0.0.1:4020", missing)
+              assert ns == 404 and gs == 404, (missing, ns, gs, nd, gd)
+              assert gd.get("message") == "Story not found" and gd.get("error") == "Not Found", gd
+              assert gh.get("cache-control") == CACHE
+          extra = "/api/public-portal/stories/id/" + story["id"] + "/extra"
+          ns, _, _ = call_status("http://127.0.0.1:4000", extra)
+          gs, _, _ = call_status("http://127.0.0.1:4020", extra)
+          assert ns == gs and gs != 200, (extra, ns, gs)
+          print("public portal story detail: NestJS matches Go on id and returned slug; archived/other org 404")
+
           expect = {
               "featuredId": home["featuredStory"]["id"],
+              "featuredSlug": slug,
               "latestIds": [row["id"] for row in home["latestStories"]],
               "marketIds": [row["id"] for row in markets["stories"]],
               "energyIds": [row["id"] for row in energy["stories"]],
               "featuredTitle": home["featuredStory"]["title"],
               "featuredSummary": home["featuredStory"]["summary"],
               "featuredCredibility": home["featuredStory"]["credibilityScore"],
+              "relatedId": "cpubmarketsrelat000000002",
+              "articleIds": ["art-portal-m2", "art-portal-m1"],
+              "briefTldr": "Two reports moved markets.",
           }
           with open("/tmp/portal-expect.json", "w") as fh:
               json.dump(expect, fh)
@@ -1781,8 +1913,16 @@ jobs:
       # ---- Phase D：独立性证明（NestJS 停止后）----
 
       - name: "Smoke 13/13 (Phase D) — re-login, then stop NestJS and prove independence"
+        env:
+          LITELLM_API_BASE: ${{ secrets.LITELLM_API_BASE }}
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          LITELLM_MODEL: ${{ secrets.LITELLM_MODEL }}
+          SYSTEM_SETTINGS_ENCRYPTION_KEY: ${{ secrets.SYSTEM_SETTINGS_ENCRYPTION_KEY }}
         run: |
           set -euo pipefail
+          MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
+          test -n "$MYSQL_CID"
+          export MYSQL_CID
           # 重新真实登录（旧 token 已被 logout 撤销）——确认数据仍在，然后停止 NestJS。
           cat > /tmp/smoke_relogin.py <<'PY'
           import json
@@ -1830,7 +1970,10 @@ jobs:
           fi
           cat > /tmp/smoke_takeover.py <<'PY'
           import json
+          import os
+          import subprocess
           import urllib.error
+          import urllib.parse
           import urllib.request
 
           TRACE = "bf1e2d3c4b5a69788697a5b4c3d2e1f0"
@@ -2031,8 +2174,9 @@ jobs:
               assert check(got), (path, got)
               print(f"NestJS 停止后：PUT+GET {path} -> 200（Go 独立写入并读回）")
 
-          # 公开首页/频道在 NestJS 停止后仍返回 Smoke 7b 写入的故事。
-          # 两个故事详情和多段 channel 路径仍是未迁移路由，必须 502。
+          # 公开首页、频道和已缓存的故事详情在 NestJS 停止后仍由 Go 返回。
+          # 频道/首页的额外路径仍是未接管路由，必须 502。
+          # brief 冷路径只有远端模型网关凭据齐备时才执行；缺失则跳过，不是通过。
           expect = json.load(open("/tmp/portal-expect.json"))
           def portal_get(path):
               req = urllib.request.Request(
@@ -2061,15 +2205,32 @@ jobs:
           assert [row["id"] for row in energy["stories"]] == expect["energyIds"], energy
           print("NestJS 停止后：public-portal home/channel 仍返回完整故事")
 
+          def story_ok(path):
+              status, headers, doc = portal_get(path)
+              assert status == 200, (path, status, doc)
+              assert headers.get("cache-control") == "public, max-age=60, s-maxage=60, stale-while-revalidate=300"
+              assert doc["story"]["id"] == expect["featuredId"], doc
+              assert doc["story"]["slug"] == expect["featuredSlug"], doc
+              assert doc["story"]["title"] == expect["featuredTitle"], doc
+              assert doc["story"]["summary"] == expect["featuredSummary"], doc
+              assert [row["id"] for row in doc["story"]["timeline"]] == ["tl-portal-now"], doc
+              assert [row["id"] for row in doc["story"]["referencedArticles"]] == expect["articleIds"], doc
+              assert [row["id"] for row in doc["relatedStories"]] == [expect["relatedId"]], doc
+              assert doc["story"]["brief"]["payload"]["tldr"] == expect["briefTldr"], doc
+              assert "Archived Leak" not in json.dumps(doc) and "Other Org" not in json.dumps(doc)
+              return doc
+
+          story_ok("/api/public-portal/stories/id/" + expect["featuredId"])
+          story_ok("/api/public-portal/stories/slug/" + urllib.parse.quote(expect["featuredSlug"]))
+          print("NestJS 停止后：故事详情仍返回时间线、引用文章、相关故事和已缓存 brief")
+
           for path in (
-              "/api/public-portal/stories/id/evt-portal-markets",
-              "/api/public-portal/stories/slug/evt-portal-markets-portal-markets-brief",
               "/api/public-portal/channels/markets/extra",
               "/api/public-portal/home/extra",
           ):
               status, headers, body = portal_get(path)
               assert status == 502, (path, status, body)
-          print("NestJS 停止后：故事详情与相似路径仍是 502（未接管）")
+          print("NestJS 停止后：频道/首页的额外路径仍是 502（未接管）")
 
           # 反证 2：未迁移业务 GET（/api/items）必须代理失败——api-go 没有
           # 伪装所有请求成功。
@@ -2082,6 +2243,63 @@ jobs:
           except urllib.error.HTTPError as err:
               assert err.code == 502, (err.code, err.read()[:300])
           print("NestJS 停止后：GET /api/items（未迁移路由）-> 502（未伪装成功）")
+
+          # 冷路径：清掉已缓存 brief，只请求 Go。NestJS 已停止，不能代为生成。
+          # 凭据缺失时跳过，不伪造模型响应，也不把跳过写成通过。
+          base = os.environ.get("LITELLM_API_BASE", "").strip()
+          key = os.environ.get("LITELLM_API_KEY", "").strip()
+          model = os.environ.get("LITELLM_MODEL", "").strip() or "openai/gpt-4o-mini"
+          if not base or not key:
+              print("brief 冷路径未执行：缺少远端模型网关凭据")
+              print("已完成的缓存详情、id/slug、公开组织边界，以及 NestJS 停止后的 Go 响应断言仍然有效。")
+              print("冷路径没有执行，不能记为通过。缓存缺失时的真实模型调用和 briefV1 写回尚未发生。")
+              open("/tmp/brief-cold-path.txt", "w").write("skipped\n")
+              raise SystemExit(0)
+          profile = {
+              "activeId": "smoke-brief",
+              "profiles": [{
+                  "id": "smoke-brief",
+                  "name": "smoke",
+                  "apiBase": base,
+                  "apiKey": key,
+                  "model": model,
+                  "enabled": True,
+                  "timeoutMs": 60000,
+                  "maxRetries": 1,
+                  "fallbackModels": [],
+                  "responseFormatMode": "json_schema",
+                  "apiSurface": "chat_completions",
+                  "sendMetadata": True,
+              }],
+          }
+          mysql = ["docker", "exec", "-i", os.environ["MYSQL_CID"], "mysql", "-uroot", "-psecret", "app", "-e"]
+          profile_sql = "INSERT INTO SystemSetting (`key`, value, isPublic, createdAt, updatedAt) VALUES ('llm_gateway_profiles', CAST('" + json.dumps(profile).replace("'", "''") + "' AS JSON), 0, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)) ON DUPLICATE KEY UPDATE value = VALUES(value), updatedAt = UTC_TIMESTAMP(3)"
+          subprocess.check_call(mysql + [profile_sql])
+          clear_sql = "UPDATE NewsEvent SET metadata = CAST('{\"note\":\"keep\"}' AS JSON) WHERE id = '" + expect["featuredId"] + "' AND orgId = 'org-portal-pub'"
+          subprocess.check_call(mysql + [clear_sql])
+          req = urllib.request.Request(
+              "http://127.0.0.1:4020/api/public-portal/stories/id/" + expect["featuredId"],
+              headers={"x-trace-id": TRACE})
+          try:
+              with urllib.request.urlopen(req, timeout=90) as resp:
+                  status, doc = resp.status, json.loads(resp.read().decode())
+          except urllib.error.HTTPError as err:
+              status, doc = err.code, err.read()[:500]
+          assert status == 200, (status, doc)
+          tldr = ((doc.get("story") or {}).get("brief") or {}).get("payload", {}).get("tldr")
+          assert isinstance(tldr, str) and tldr.strip() and tldr != expect["briefTldr"], doc
+          generated = doc["story"]["brief"]["generatedAt"]
+          assert generated != "2026-09-27T12:00:00.000Z", generated
+          read_sql = "SELECT JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.note')), JSON_EXTRACT(metadata, '$.briefV1.payload.tldr') FROM NewsEvent WHERE id = '" + expect["featuredId"] + "' AND orgId = 'org-portal-pub'"
+          raw = subprocess.check_output(["docker", "exec", os.environ["MYSQL_CID"], "mysql", "-uroot", "-psecret", "-N", "-e", read_sql], text=True)
+          note, _, tldr_json = raw.strip().partition("\t")
+          assert note == "keep", raw
+          assert tldr_json and tldr_json.upper() != "NULL", raw
+          status, headers, again = portal_get("/api/public-portal/stories/id/" + expect["featuredId"])
+          assert status == 200, (status, again)
+          assert again["story"]["brief"]["generatedAt"] == generated, (generated, again["story"]["brief"]["generatedAt"])
+          print("NestJS 停止后：brief 冷路径由 Go 调用已配置模型网关并写回 metadata.briefV1")
+          open("/tmp/brief-cold-path.txt", "w").write("executed\n")
           PY
           python3 /tmp/smoke_takeover.py
           # api-go 容器保持 healthy（Go 端点与探活不依赖 NestJS）。
@@ -2105,13 +2323,19 @@ jobs:
           assert now["diffs"] == 0, now
           assert now["inflight"] == 0, now
           assert sum(now["dropped"].values()) == 0, now["dropped"]
+          cold = open("/tmp/brief-cold-path.txt").read().strip()
+          assert cold in ("skipped", "executed"), cold
           print("=== api-go entry smoke (Go-批3B): FINAL METRICS ===")
           print("executed: 0 (Phase C/D 六端点全部 Go handler 全响应，零 shadow 执行)")
           print("diffs:    0 | inflight: 0 | dropped total: 0")
           print("userSettingsRead.mode: go")
           print("userSettingsWrite.mode: go")
           print("userSettingsRead.database: configured")
-          print("api-go entry smoke: ALL ASSERTIONS PASSED")
+          print("api-go entry smoke: assertions that ran passed")
+          if cold == "skipped":
+              print("brief 冷路径未执行：缺少远端模型网关凭据")
+          else:
+              print("brief 冷路径已执行，写回断言通过")
           PY
           python3 /tmp/smoke_final.py
 

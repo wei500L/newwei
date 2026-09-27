@@ -2,6 +2,7 @@ package publicportal
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/url"
@@ -12,8 +13,10 @@ import (
 )
 
 const (
-	cacheControl  = "public, max-age=60, s-maxage=60, stale-while-revalidate=300"
-	channelPrefix = "/api/public-portal/channels/"
+	cacheControl    = "public, max-age=60, s-maxage=60, stale-while-revalidate=300"
+	channelPrefix   = "/api/public-portal/channels/"
+	storyIDPrefix   = "/api/public-portal/stories/id/"
+	storySlugPrefix = "/api/public-portal/stories/slug/"
 )
 
 // Handler 只服务公开 GET。不进入 user-settings 的 JWT/RBAC 链。
@@ -21,8 +24,21 @@ type Handler struct {
 	svc *Service
 }
 
-func NewHandler(store Store) *Handler {
-	return &Handler{svc: NewService(store)}
+func NewHandler(store Store, opts ...HandlerOption) *Handler {
+	handler := &Handler{svc: NewService(store)}
+	for _, opt := range opts {
+		opt(handler)
+	}
+	return handler
+}
+
+// HandlerOption 只注入已有的模型网关环境，不增加路由开关。
+type HandlerOption func(*Handler)
+
+func WithGatewayEnv(env GatewayEnv) HandlerOption {
+	return func(handler *Handler) {
+		handler.svc.UseGateway(env)
+	}
 }
 
 func (h *Handler) ServeHome(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +76,53 @@ func channelTopic(path string) (string, bool) {
 		return "", false
 	}
 	rest := strings.TrimPrefix(path, channelPrefix)
+	if rest == "" || strings.Contains(rest, "/") {
+		return "", false
+	}
+	decoded, err := url.PathUnescape(rest)
+	if err != nil {
+		return rest, true
+	}
+	return decoded, true
+}
+
+func (h *Handler) ServeStoryByID(w http.ResponseWriter, r *http.Request) {
+	h.serveStory(w, r, storyIDPrefix)
+}
+
+func (h *Handler) ServeStoryBySlug(w http.ResponseWriter, r *http.Request) {
+	h.serveStory(w, r, storySlugPrefix)
+}
+
+func (h *Handler) serveStory(w http.ResponseWriter, r *http.Request, prefix string) {
+	raw, ok := oneSegment(r.URL.Path, prefix)
+	if !ok || strings.TrimSpace(raw) == "" {
+		writeError(w, r, http.StatusNotFound, "Story not found", "Not Found")
+		return
+	}
+	payload, err := h.svc.Story(r.Context(), raw)
+	if err != nil {
+		var status *StatusError
+		if errors.As(err, &status) {
+			writeError(w, r, status.Code, status.Message, status.Name)
+			return
+		}
+		log.Printf("public portal story query failed")
+		writeError(w, r, http.StatusInternalServerError, "Internal server error", "")
+		return
+	}
+	if payload == nil {
+		writeError(w, r, http.StatusNotFound, "Story not found", "Not Found")
+		return
+	}
+	writeJSON(w, http.StatusOK, payload)
+}
+
+func oneSegment(path, prefix string) (string, bool) {
+	if !strings.HasPrefix(path, prefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(path, prefix)
 	if rest == "" || strings.Contains(rest, "/") {
 		return "", false
 	}

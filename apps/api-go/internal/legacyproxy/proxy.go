@@ -149,10 +149,9 @@ func DefaultRulesWithWrite(onboardingMode Mode, readMode, writeMode string) []Ru
 	return rules
 }
 
-// WithPublicPortal 在 mode 为 go 时追加公开首页与频道规则。
-// 默认（空 / legacy）不追加：这两条 GET 继续回落 /api/ 由 NestJS 处理。
-// 频道规则只匹配一个路径段；stories/id、stories/slug 以及更长的
-// channels 路径不在此列。
+// WithPublicPortal 在 mode 为 go 时追加公开首页、频道和两个故事详情。
+// 默认（空 / legacy）不追加：这些 GET 继续回落 /api/ 由 NestJS 处理。
+// 频道与两条故事规则都只匹配一个路径段。更长的路径和非 GET 不在此列。
 func WithPublicPortal(rules []Rule, mode string) []Rule {
 	if mode != string(ModeGo) {
 		return rules
@@ -161,6 +160,8 @@ func WithPublicPortal(rules []Rule, mode string) []Rule {
 	return append(rules,
 		Rule{Prefix: "/api/public-portal/home", Mode: ModeGo, Exact: true, Methods: getOnly},
 		Rule{Prefix: "/api/public-portal/channels/", Mode: ModeGo, OneSegment: true, Methods: getOnly},
+		Rule{Prefix: "/api/public-portal/stories/id/", Mode: ModeGo, OneSegment: true, Methods: getOnly},
+		Rule{Prefix: "/api/public-portal/stories/slug/", Mode: ModeGo, OneSegment: true, Methods: getOnly},
 	)
 }
 

@@ -50,6 +50,21 @@ func buildStorySlug(id, title string) string {
 	return id + "-" + sanitizeSlugSegment(title)
 }
 
+// extractStoryID 对齐 PublicPortalService.extractStoryId。
+// NewsEvent.id 是 Prisma cuid()，本身不含连字符；slug 为「id-标题」。
+// 第一个连字符之前是 id。没有连字符时整段就是 id。
+func extractStoryID(slugOrID string) string {
+	normalized := strings.TrimSpace(slugOrID)
+	if normalized == "" {
+		return ""
+	}
+	separator := strings.Index(normalized, "-")
+	if separator > 0 {
+		return normalized[:separator]
+	}
+	return normalized
+}
+
 // channelTopicLabel 是频道没有故事时的展示名：trim 后把连字符换成空格；
 // 空白则回落 "Top stories"。与 topicSlug 的规范化分开。
 func channelTopicLabel(topic string) string {

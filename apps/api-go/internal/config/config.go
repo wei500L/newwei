@@ -69,16 +69,15 @@ const (
 	UserSettingsWriteModeGo UserSettingsWriteMode = "go"
 )
 
-// PublicPortalMode 是公开首页与频道的接管开关
-// （API_GO_PUBLIC_PORTAL_MODE——Go-批4A）。故事详情不在此开关内。
+// PublicPortalMode 是公开首页、频道和故事详情的接管开关
+// （API_GO_PUBLIC_PORTAL_MODE）。默认 legacy。
 type PublicPortalMode string
 
 const (
-	// PublicPortalModeLegacy：首页与频道继续代理 NestJS（默认，含未设置）。
+	// PublicPortalModeLegacy：公开 GET 继续代理 NestJS（默认，含未设置）。
 	PublicPortalModeLegacy PublicPortalMode = "legacy"
-	// PublicPortalModeGo：GET /api/public-portal/home 与
-	// GET /api/public-portal/channels/:topic 由 Go 查 MySQL 并完整响应。
-	// 不要求 JWT/Redis。故事详情仍走 NestJS。
+	// PublicPortalModeGo：首页、单段频道，以及 stories/id、stories/slug
+	// 各一个路径段的 GET 由 Go 查 MySQL 并完整响应。不要求 JWT/Redis。
 	PublicPortalModeGo PublicPortalMode = "go"
 )
 
@@ -112,6 +111,16 @@ type Config struct {
 	// PublicPortalMode 见 PublicPortalMode 常量。默认 legacy。
 	// go 只要求 DATABASE_URL（匿名读），不要求 JWT/Redis。
 	PublicPortalMode PublicPortalMode
+
+	// SettingsEncryptionKey 是 Nest 已有的 SYSTEM_SETTINGS_ENCRYPTION_KEY。
+	// 只用于解开 SystemSetting 里的模型网关凭据。不进入日志。
+	SettingsEncryptionKey string
+	// LiteLLMAPIBase / LiteLLMAPIKey / 超时与重试是 Nest 已有的 LITELLM_*。
+	// profile 缺字段时才回落。APIKey 不进入日志。
+	LiteLLMAPIBase    string
+	LiteLLMAPIKey     string
+	LiteLLMTimeoutMs  int
+	LiteLLMMaxRetries int
 
 	// CorsOrigin 是与 NestJS 相同的 CORS_ORIGIN 原文。空名单不放行任何
 	// 浏览器 Origin。只用于 Go 自己写出的 user-settings 响应。
@@ -246,6 +255,31 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.PublicPortalMode = PublicPortalModeGo
 	default:
 		errs = append(errs, "API_GO_PUBLIC_PORTAL_MODE must be one of legacy|go")
+	}
+	cfg.SettingsEncryptionKey = strings.TrimSpace(getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
+	cfg.LiteLLMAPIBase = strings.TrimSpace(getenv("LITELLM_API_URL"))
+	if cfg.LiteLLMAPIBase == "" {
+		cfg.LiteLLMAPIBase = strings.TrimSpace(getenv("LITELLM_API_BASE"))
+	}
+	if cfg.LiteLLMAPIBase == "" {
+		cfg.LiteLLMAPIBase = "http://localhost:4001"
+	}
+	cfg.LiteLLMAPIKey = strings.TrimSpace(getenv("LITELLM_API_KEY"))
+	cfg.LiteLLMTimeoutMs = 60_000
+	if raw := strings.TrimSpace(getenv("LITELLM_TIMEOUT_MS")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+			cfg.LiteLLMTimeoutMs = value
+		}
+	}
+	cfg.LiteLLMMaxRetries = 3
+	retryRaw := strings.TrimSpace(getenv("LITELLM_RETRY_ATTEMPTS"))
+	if retryRaw == "" {
+		retryRaw = strings.TrimSpace(getenv("LITELLM_MAX_RETRIES"))
+	}
+	if retryRaw != "" {
+		if value, err := strconv.Atoi(retryRaw); err == nil && value > 0 {
+			cfg.LiteLLMMaxRetries = value
+		}
 	}
 	cfg.CorsOrigin = getenv("CORS_ORIGIN")
 

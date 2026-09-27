@@ -2,6 +2,8 @@ package publicportal
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -137,12 +139,23 @@ func TestListDropsOtherOrgArchivedAndUnqualified(t *testing.T) {
 }
 
 type fakeStore struct {
-	org    *Org
-	rows   []EventRow
-	counts map[string]int
-	auth   []AuthorityItem
-	policy matcher
-	pages  int
+	org            *Org
+	rows           []EventRow
+	counts         map[string]int
+	auth           []AuthorityItem
+	policy         matcher
+	pages          int
+	event          *EventDetail
+	timeline       []TimelineEntry
+	items          []BriefItem
+	articles       []ArticleRow
+	loads          int
+	saved          []byte
+	articleOrg     string
+	articleEvent   string
+	articleIDs     []string
+	gatewayJSON    []byte
+	governanceJSON []byte
 }
 
 func (f *fakeStore) PublicOrg(context.Context) (*Org, error) { return f.org, nil }
@@ -173,4 +186,182 @@ func (f *fakeStore) AuthorityItems(context.Context, string, []string, time.Time)
 
 func (f *fakeStore) SourcePolicy(context.Context, string) (matcher, error) {
 	return f.policy, nil
+}
+
+func (f *fakeStore) LoadEvent(context.Context, string, string) (*EventDetail, error) {
+	f.loads++
+	return f.event, nil
+}
+
+func (f *fakeStore) Timeline(context.Context, string, string, time.Time) ([]TimelineEntry, error) {
+	return f.timeline, nil
+}
+
+func (f *fakeStore) BriefItems(context.Context, string, string, int) ([]BriefItem, error) {
+	return f.items, nil
+}
+
+func (f *fakeStore) ReferencedArticles(_ context.Context, orgID, eventID string, articleIDs []string, _ int) ([]ArticleRow, error) {
+	f.articleOrg = orgID
+	f.articleEvent = eventID
+	f.articleIDs = append([]string(nil), articleIDs...)
+	return f.articles, nil
+}
+
+func (f *fakeStore) TimelineWindowDays(context.Context, string) int { return 30 }
+
+func (f *fakeStore) SaveEventMetadata(_ context.Context, _, _ string, metadata []byte) error {
+	f.saved = append([]byte(nil), metadata...)
+	return nil
+}
+
+func (f *fakeStore) GatewaySettings(context.Context) ([]byte, []byte, error) {
+	return f.gatewayJSON, f.governanceJSON, nil
+}
+
+type completerFunc func(context.Context, completionRequest) (string, error)
+
+func (f completerFunc) Complete(ctx context.Context, req completionRequest) (string, error) {
+	return f(ctx, req)
+}
+
+func TestExtractStoryIDKeepsCuidIntact(t *testing.T) {
+	id := "cjld2cy6k0000qzrmn831i7rn"
+	if extractStoryID(id) != id {
+		t.Fatalf("id = %q", extractStoryID(id))
+	}
+	if got := extractStoryID(id + "-portal-markets-brief"); got != id {
+		t.Fatalf("slug id = %q", got)
+	}
+	if extractStoryID("  ") != "" {
+		t.Fatal("blank id")
+	}
+	if extractStoryID("evt-portal-markets") != "evt" {
+		t.Fatal("hyphenated fixture id is not a cuid")
+	}
+}
+
+func TestStoryDoesNotPublishWithoutPublicOrgOrQualification(t *testing.T) {
+	id := "cjld2cy6k0000qzrmn831i7rn"
+	store := &fakeStore{event: &EventDetail{EventRow: EventRow{
+		ID: id, OrgID: "org-other", Status: "active", Title: "Leak", Summary: "secret",
+	}}}
+	svc := NewService(store)
+	got, err := svc.Story(context.Background(), id)
+	if err != nil || got != nil || store.loads != 0 {
+		t.Fatalf("missing org got=%v err=%v loads=%d", got, err, store.loads)
+	}
+
+	store.org = &Org{ID: "org-portal-pub", Slug: "portal-public", Name: "Portal"}
+	store.event.Status = "archived"
+	store.event.OrgID = "org-portal-pub"
+	got, err = svc.Story(context.Background(), id+"-leak")
+	if err != nil || got != nil {
+		t.Fatalf("archived got=%v err=%v", got, err)
+	}
+
+	store.event.Status = "active"
+	store.event.OrgID = "org-other"
+	got, err = svc.Story(context.Background(), id)
+	if err != nil || got != nil {
+		t.Fatalf("other org got=%v err=%v", got, err)
+	}
+}
+
+func TestStoryBriefColdPathWritesCacheAndFailureIsNotSuccess(t *testing.T) {
+	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	id := "cjld2cy6k0000qzrmn831i7rn"
+	pub := "org-portal-pub"
+	calls := 0
+	store := qualifiedStoryStore(id, pub, now)
+	svc := NewService(store)
+	svc.now = func() time.Time { return now }
+	svc.complete = completerFunc(func(_ context.Context, req completionRequest) (string, error) {
+		calls++
+		if !strings.Contains(req.User, "https://www.reuters.com/markets-a") {
+			t.Fatalf("prompt = %s", req.User)
+		}
+		if req.Metadata["feature"] != "news_event_brief" {
+			t.Fatalf("metadata = %#v", req.Metadata)
+		}
+		return `{"detailed_summary":"Detail text.","tldr":"Short.","key_points":[{"text":"Fact","citations":[1]}]}`, nil
+	})
+
+	got, err := svc.Story(context.Background(), id+"-portal-markets-brief")
+	if err != nil || got == nil || got.Story.Brief == nil {
+		t.Fatalf("story err=%v body=%+v", err, got)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d", calls)
+	}
+	if got.Story.ID != id || got.Story.Brief.Payload["tldr"] != "Short." {
+		t.Fatalf("brief = %#v", got.Story.Brief)
+	}
+	if len(got.Story.Timeline) != 1 || len(got.Story.ReferencedArticles) != 1 {
+		t.Fatalf("timeline/articles = %+v %+v", got.Story.Timeline, got.Story.ReferencedArticles)
+	}
+	if store.articleOrg != pub || store.articleEvent != id || !strings.Contains(strings.Join(store.articleIDs, ","), "art-other") {
+		t.Fatalf("article query org=%s event=%s ids=%v", store.articleOrg, store.articleEvent, store.articleIDs)
+	}
+	var saved map[string]any
+	if err := json.Unmarshal(store.saved, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved["note"] != "keep" {
+		t.Fatalf("metadata lost note: %s", store.saved)
+	}
+	if saved["briefV1"] == nil {
+		t.Fatalf("brief not cached: %s", store.saved)
+	}
+
+	store.event.Metadata = append([]byte(nil), store.saved...)
+	if _, err := svc.Story(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("cache hit called the model again: %d", calls)
+	}
+
+	store.event.Metadata = []byte(`{"note":"keep"}`)
+	store.saved = nil
+	svc.complete = completerFunc(func(context.Context, completionRequest) (string, error) {
+		return "", errors.New("gateway down")
+	})
+	got, err = svc.Story(context.Background(), id)
+	if err == nil || got != nil || store.saved != nil {
+		t.Fatalf("failure got=%v err=%v saved=%s", got, err, store.saved)
+	}
+}
+
+func qualifiedStoryStore(id, pub string, now time.Time) *fakeStore {
+	return &fakeStore{
+		org:    &Org{ID: pub, Slug: "portal-public", Name: "Portal"},
+		policy: defaultMatcher(),
+		counts: map[string]int{id: 2},
+		auth: []AuthorityItem{
+			{EventID: id, URL: "https://www.reuters.com/markets-a"},
+			{EventID: id, URL: "https://apnews.com/markets-b"},
+		},
+		event: &EventDetail{
+			EventRow: EventRow{
+				ID: id, OrgID: pub, Status: "active",
+				Title: "Portal Markets Brief", Summary: "Markets summary.",
+				PrimaryTopic: "Markets", Language: "zh",
+				StartAt: now, LastAt: now,
+			},
+			Metadata: []byte(`{"note":"keep"}`),
+		},
+		items: []BriefItem{{
+			URL: "https://www.reuters.com/markets-a", SourceLabel: "Reuters",
+			ArticleID: "art-1", ProcessedArticleID: "pa-1", Title: "Markets A",
+			HasPublishedAt: true, PublishedAt: now, ProcessedAt: now,
+		}},
+		timeline: []TimelineEntry{{
+			ID: "tl-1", BucketStart: now, Title: "Now", Summary: "Latest",
+			ReferencedArticleIDs: []string{"art-1", "art-other"},
+		}},
+		articles: []ArticleRow{{
+			ID: "art-1", URL: "https://www.reuters.com/markets-a", Title: "Markets A", SourceLabel: "Reuters",
+		}},
+	}
 }
