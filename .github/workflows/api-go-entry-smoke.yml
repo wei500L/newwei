@@ -104,12 +104,8 @@ env:
   API_BASE_URL: http://localhost:4000
   CRAWL4AI_BASE_URL: http://localhost:11235
   CORS_ORIGIN: http://localhost:3000
-  # 故事详情冷路径使用与 Nest 相同的网关变量。密钥未配置时 smoke 会在
-  # 结构对比之后明确失败，而不是把缓存命中当成完整接管。
-  LITELLM_API_BASE: ${{ secrets.LITELLM_API_BASE }}
-  LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
-  LITELLM_MODEL: ${{ secrets.LITELLM_MODEL }}
-  SYSTEM_SETTINGS_ENCRYPTION_KEY: ${{ secrets.SYSTEM_SETTINGS_ENCRYPTION_KEY }}
+  # 不要在 job env 写入空的 LITELLM_*：Nest zod 把空字符串当成非法 URL /
+  # 空模型名，API 起不来。冷路径只在 Go 容器和 Phase D 步骤里读取 secrets。
   # 关闭可选外呼模块（ELASTICSEARCH/VECTOR/MODEL_SERVICE 默认即 false）；
   # AKSHARE_ENABLED=false 只停 HTTP 网关调用（catalog 同步走 MySQL+Redis，
   # 均已就绪）；SCHEDULE_ENABLED=false 关闭全部 @Cron 调度，降低噪音。
@@ -805,6 +801,11 @@ jobs:
       # ---- Phase C：六端点 Go 接管 ----
 
       - name: "Smoke 6/13 — Phase C: restart api-go with read mode=go"
+        env:
+          LITELLM_API_BASE: ${{ secrets.LITELLM_API_BASE }}
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          LITELLM_MODEL: ${{ secrets.LITELLM_MODEL }}
+          SYSTEM_SETTINGS_ENCRYPTION_KEY: ${{ secrets.SYSTEM_SETTINGS_ENCRYPTION_KEY }}
         run: |
           set -euo pipefail
           # 重启真实 api-go 容器为统一 go 模式（同一镜像、同一真实栈）。
@@ -1909,6 +1910,11 @@ jobs:
       # ---- Phase D：独立性证明（NestJS 停止后）----
 
       - name: "Smoke 13/13 (Phase D) — re-login, then stop NestJS and prove independence"
+        env:
+          LITELLM_API_BASE: ${{ secrets.LITELLM_API_BASE }}
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          LITELLM_MODEL: ${{ secrets.LITELLM_MODEL }}
+          SYSTEM_SETTINGS_ENCRYPTION_KEY: ${{ secrets.SYSTEM_SETTINGS_ENCRYPTION_KEY }}
         run: |
           set -euo pipefail
           MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
