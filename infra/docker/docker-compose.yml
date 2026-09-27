@@ -545,11 +545,12 @@ services:
   #   运行期），浏览器端以构建参数 NEXT_PUBLIC_API_BASE_URL 指向
   #   http://<host>:${API_GO_HOST_PORT:-4020}/api 重建 web 镜像。
   # 回滚（无数据迁移耦合，按序）：
-  #   1. API_GO_USER_SETTINGS_WRITE_MODE=legacy——六个 PUT 回到 NestJS；
-  #   2. API_GO_USER_SETTINGS_READ_MODE=shadow——六个 GET 回到 NestJS
+  #   1. API_GO_PUBLIC_PORTAL_MODE=legacy——首页与频道回到 NestJS；
+  #   2. API_GO_USER_SETTINGS_WRITE_MODE=legacy——六个 PUT 回到 NestJS；
+  #   3. API_GO_USER_SETTINGS_READ_MODE=shadow——六个 GET 回到 NestJS
   #      响应 + Go 差分；
-  #   3. API_BASE_URL 指回 http://api:4000（web 侧不再经 api-go）；
-  #   4. 停止 api-go pilot 服务。
+  #   4. API_BASE_URL 指回 http://api:4000（web 侧不再经 api-go）；
+  #   5. 停止 api-go pilot 服务。
   # Go-批3C：pilot 同时启用读模式 go 与写模式 go。六个 PUT 写入同一
   # UserSetting 表、同一八个 key。登录/refresh/logout/MFA/OIDC/机器令牌
   # 及其余路由仍由 NestJS 承载。CANARY_PERCENT 固定 0。
@@ -576,6 +577,9 @@ services:
       API_GO_USER_SETTINGS_READ_MODE: go
       # 六个 PUT 写接管（Go-批3C）。必须与读模式同为 go；改回 legacy 即回滚写路径。
       API_GO_USER_SETTINGS_WRITE_MODE: go
+      # 公开首页与频道（Go-批4A）。默认部署不启动本服务；未设置或 legacy
+      # 时这两条 GET 仍代理 NestJS。故事详情不在此开关内。回滚 = 改回 legacy。
+      API_GO_PUBLIC_PORTAL_MODE: go
       # Go-批3A 兼容变量：readMode 未设时仍控制 onboarding（pilot 固定
       # go，保持与批3A 部署等价；readMode=go 已覆盖全部六端点）。
       API_GO_ONBOARDING_MODE: go

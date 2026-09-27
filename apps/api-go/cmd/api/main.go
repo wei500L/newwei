@@ -16,8 +16,12 @@
 //	         MySQL RBAC + 独立响应，不依赖 NestJS 200。兼容：
 //	         API_GO_ONBOARDING_MODE=go（批3A，readMode 未设时）只接管
 //	         onboarding）
+//	         API_GO_PUBLIC_PORTAL_MODE=go 时另接管两个匿名 GET：
+//	         /api/public-portal/home 与 /api/public-portal/channels/:topic
+//	         （恰好一个路径段）。stories/id 与 stories/slug 仍代理 NestJS。
 //
-// 回滚：API_GO_USER_SETTINGS_READ_MODE=shadow（或未设——回到
+// 回滚：API_GO_PUBLIC_PORTAL_MODE=legacy 把首页和频道交回 NestJS；
+// API_GO_USER_SETTINGS_READ_MODE=shadow（或未设——回到
 // API_GO_ONBOARDING_MODE 控制；或路由表单条规则改回 legacy，或
 // CANARY_PERCENT=0）——无数据迁移耦合。
 //
@@ -56,6 +60,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
@@ -303,7 +308,7 @@ func userSettingsShadowUnits(repo usersettings.Repository) []shadowUnit {
 }
 
 // situationMonitorExecutant 是 situation-monitor GET 的 shadow 差分执行者
-//（三记录聚合形态——userSettingsExecutant 是单记录形态，不强行复用）。
+// （三记录聚合形态——userSettingsExecutant 是单记录形态，不强行复用）。
 type situationMonitorExecutant struct {
 	repo usersettings.Repository
 }
@@ -371,7 +376,14 @@ func run() error {
 	if cfg.UserSettingsWriteMode == config.UserSettingsWriteModeGo {
 		writeMode = string(legacyproxy.ModeGo)
 	}
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode))
+	portalMode := ""
+	if cfg.PublicPortalMode == config.PublicPortalModeGo {
+		portalMode = string(legacyproxy.ModeGo)
+	}
+	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.WithPublicPortal(
+		legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode),
+		portalMode,
+	))
 	if err != nil {
 		return err
 	}
@@ -396,8 +408,9 @@ func run() error {
 			//（错误不含 DSN 原文）。go 接管模式（两变量任一）下直接启动
 			// 失败——Go 接管端点不得带病启动。
 			if cfg.OnboardingMode == config.OnboardingModeGo ||
-				cfg.UserSettingsReadMode == config.UserSettingsReadModeGo {
-				return fmt.Errorf("api-go: user-settings go takeover requires a valid DATABASE_URL: %w", err)
+				cfg.UserSettingsReadMode == config.UserSettingsReadModeGo ||
+				cfg.PublicPortalMode == config.PublicPortalModeGo {
+				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
 			userSettingsDBStatus = "invalid"
@@ -470,6 +483,18 @@ func run() error {
 			cfg.JWTIssuer, cfg.UserSettingsReadMode, cfg.OnboardingMode)
 	}
 
+	// 公开首页与频道（Go-批4A）：匿名，不走 JWT/RBAC。只在显式 go 模式
+	// 注册。故事详情没有 handler，继续代理 NestJS。
+	if cfg.PublicPortalMode == config.PublicPortalModeGo {
+		if sharedDB == nil {
+			return fmt.Errorf("api-go: public portal go takeover requires mysql")
+		}
+		portal := publicportal.NewHandler(publicportal.NewMySQLStore(sharedDB))
+		gateway.RegisterGoHandler("/api/public-portal/home", portal.ServeHome)
+		gateway.RegisterGoHandler("/api/public-portal/channels/", portal.ServeChannel)
+		log.Printf("api-go: public portal home and channel under go takeover")
+	}
+
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
 	//（ModeGo 规则也不会进入 serveShadow——双重收口，保证 go 接管的
 	// GET 不再增加 shadow.executed）。readMode=go 时六个端点全部过滤；
@@ -525,8 +550,12 @@ func run() error {
 		routes := make([]map[string]string, 0, len(gateway.Rules()))
 		for _, rule := range gateway.Rules() {
 			entry := map[string]string{"prefix": rule.Prefix, "mode": string(rule.Mode)}
-			if rule.Exact {
-				entry["match"] = "exact"
+			if rule.Exact || rule.OneSegment {
+				if rule.OneSegment {
+					entry["match"] = "one-segment"
+				} else {
+					entry["match"] = "exact"
+				}
 				methods := make([]string, 0, len(rule.Methods))
 				for method := range rule.Methods {
 					methods = append(methods, method)
@@ -553,6 +582,12 @@ func run() error {
 			// 写模式只展示 legacy|go，不含 DSN/密钥。
 			"userSettingsWrite": map[string]any{
 				"mode": string(cfg.UserSettingsWriteMode),
+			},
+			// 公开首页/频道。legacy 时这两条 GET 仍代理 NestJS。
+			// 故事详情不在此开关内。
+			"publicPortal": map[string]any{
+				"mode":     string(cfg.PublicPortalMode),
+				"database": userSettingsDBStatus,
 			},
 		})
 	})

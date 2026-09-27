@@ -894,3 +894,58 @@ func TestUserSettingsWriteModeRouting(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicPortalRoutesStayLegacyUntilGoMode(t *testing.T) {
+	stub := newLegacyStub(t)
+	base := DefaultRulesWithWrite(ModeShadow, "", "")
+	legacyGateway, err := New(stub.server.URL, WithPublicPortal(base, ""))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	for _, rule := range legacyGateway.Rules() {
+		if strings.Contains(rule.Prefix, "public-portal") {
+			t.Fatalf("default rules include %s", rule.Prefix)
+		}
+	}
+	rec := httptest.NewRecorder()
+	legacyGateway.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://gateway/api/public-portal/home", nil))
+	if !strings.Contains(rec.Body.String(), "legacy") {
+		t.Fatalf("home without go mode = %s", rec.Body.String())
+	}
+
+	gateway, err := New(stub.server.URL, WithPublicPortal(base, string(ModeGo)))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	gateway.RegisterGoHandler("/api/public-portal/home", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"impl":"go-home"}`))
+	})
+	gateway.RegisterGoHandler("/api/public-portal/channels/", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"impl":"go-channel"}`))
+	})
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		want   string
+	}{
+		{"home", http.MethodGet, "/api/public-portal/home", "go-home"},
+		{"home post stays legacy", http.MethodPost, "/api/public-portal/home", "legacy"},
+		{"home extra stays legacy", http.MethodGet, "/api/public-portal/home/extra", "legacy"},
+		{"channel one segment", http.MethodGet, "/api/public-portal/channels/markets", "go-channel"},
+		{"channel extra segment stays legacy", http.MethodGet, "/api/public-portal/channels/markets/extra", "legacy"},
+		{"channel index stays legacy", http.MethodGet, "/api/public-portal/channels", "legacy"},
+		{"story id stays legacy", http.MethodGet, "/api/public-portal/stories/id/evt-1", "legacy"},
+		{"story slug stays legacy", http.MethodGet, "/api/public-portal/stories/slug/evt-1-title", "legacy"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := httptest.NewRecorder()
+			gateway.ServeHTTP(res, httptest.NewRequest(tc.method, "http://gateway"+tc.path, nil))
+			if !strings.Contains(res.Body.String(), tc.want) {
+				t.Fatalf("body = %s, want %s", res.Body.String(), tc.want)
+			}
+		})
+	}
+}

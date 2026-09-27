@@ -64,6 +64,8 @@ type Rule struct {
 	Mode   Mode
 	// Exact 要求路径与 Prefix 完全相等（迁移单元）。
 	Exact bool
+	// OneSegment 要求 Prefix 之后恰好一个非空路径段，且段内不再有 /。
+	OneSegment bool
 	// Methods 是允许的方法白名单（大写 HTTP method；nil/空 = 全部）。
 	Methods map[string]bool
 }
@@ -77,7 +79,7 @@ func DefaultRules(onboardingMode Mode, readMode string) []Rule {
 // DefaultRulesWithWrite 是当前的路由表。onboardingMode 是 onboarding
 // 单元的模式（API_GO_ONBOARDING_MODE）；readMode 是六个只读 GET 的统一
 // 模式（API_GO_USER_SETTINGS_READ_MODE）；writeMode 是六个 PUT 的写接管
-//（API_GO_USER_SETTINGS_WRITE_MODE——仅 "go" 为六个精确路径 PUT 增加
+// （API_GO_USER_SETTINGS_WRITE_MODE——仅 "go" 为六个精确路径 PUT 增加
 // ModeGo 规则；空/legacy 不增加，PUT 继续回落 /api/ 由 NestJS 处理）。
 //
 // 迁移单元：
@@ -145,6 +147,21 @@ func DefaultRulesWithWrite(onboardingMode Mode, readMode, writeMode string) []Ru
 		}
 	}
 	return rules
+}
+
+// WithPublicPortal 在 mode 为 go 时追加公开首页与频道规则。
+// 默认（空 / legacy）不追加：这两条 GET 继续回落 /api/ 由 NestJS 处理。
+// 频道规则只匹配一个路径段；stories/id、stories/slug 以及更长的
+// channels 路径不在此列。
+func WithPublicPortal(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	getOnly := map[string]bool{http.MethodGet: true}
+	return append(rules,
+		Rule{Prefix: "/api/public-portal/home", Mode: ModeGo, Exact: true, Methods: getOnly},
+		Rule{Prefix: "/api/public-portal/channels/", Mode: ModeGo, OneSegment: true, Methods: getOnly},
+	)
 }
 
 // GoHandler 是已迁移到 Go 的原生处理器（按前缀注册）。
@@ -492,11 +509,7 @@ func (g *Gateway) match(method, path string) Rule {
 		return len(sorted[i].Prefix) > len(sorted[j].Prefix)
 	})
 	for _, rule := range sorted {
-		if rule.Exact {
-			if path != rule.Prefix {
-				continue
-			}
-		} else if !strings.HasPrefix(path, rule.Prefix) {
+		if !rule.matchesPath(path) {
 			continue
 		}
 		if len(rule.Methods) > 0 && !rule.Methods[method] {
@@ -505,6 +518,20 @@ func (g *Gateway) match(method, path string) Rule {
 		return rule
 	}
 	return Rule{Prefix: path, Mode: ModeLegacy}
+}
+
+func (rule Rule) matchesPath(path string) bool {
+	if rule.OneSegment {
+		if !strings.HasPrefix(path, rule.Prefix) {
+			return false
+		}
+		rest := path[len(rule.Prefix):]
+		return rest != "" && !strings.Contains(rest, "/")
+	}
+	if rule.Exact {
+		return path == rule.Prefix
+	}
+	return strings.HasPrefix(path, rule.Prefix)
 }
 
 // Rules 导出当前路由表（供 /__go/healthz 展示与测试断言）。
