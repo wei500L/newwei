@@ -105,7 +105,7 @@ situation-monitor/war-map/spacetime-timeline/newsnow/rss-reader 各 GET+PUT（it
 
 GET /api/public-portal/home(:16) · channels/:topic(:23) · stories/id/:id(:34) · stories/slug/:slug(:45)
 
-Go-批4A：`API_GO_PUBLIC_PORTAL_MODE=go` 时，只有 `GET /api/public-portal/home`（exact）和 `GET /api/public-portal/channels/:topic`（恰好一个路径段）由 Go 查 MySQL 并完整响应。`stories/id/:id` 与 `stories/slug/:slug` 仍代理 NestJS。默认 `legacy`。公开组织只来自 `SystemSetting.public_portal_org_slug`。
+Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`（exact）、`GET /api/public-portal/channels/:topic`、`GET /api/public-portal/stories/id/:id` 与 `GET /api/public-portal/stories/slug/:slug`（后三个恰好一个路径段，且仅 GET）由 Go 查 MySQL 并完整响应。默认 `legacy`。公开组织只来自 `SystemSetting.public_portal_org_slug`。故事详情的 brief 冷路径使用 `llm_gateway_profiles`，不把请求转回 NestJS。
 
 ### 1.9 system-settings（98 个，26 个 controller）
 

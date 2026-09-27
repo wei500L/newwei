@@ -912,6 +912,11 @@ func TestPublicPortalRoutesStayLegacyUntilGoMode(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "legacy") {
 		t.Fatalf("home without go mode = %s", rec.Body.String())
 	}
+	story := httptest.NewRecorder()
+	legacyGateway.ServeHTTP(story, httptest.NewRequest(http.MethodGet, "http://gateway/api/public-portal/stories/id/cjld2cy6k0000qzrmn831i7rn", nil))
+	if !strings.Contains(story.Body.String(), "legacy") {
+		t.Fatalf("story without go mode = %s", story.Body.String())
+	}
 
 	gateway, err := New(stub.server.URL, WithPublicPortal(base, string(ModeGo)))
 	if err != nil {
@@ -922,6 +927,12 @@ func TestPublicPortalRoutesStayLegacyUntilGoMode(t *testing.T) {
 	})
 	gateway.RegisterGoHandler("/api/public-portal/channels/", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"impl":"go-channel"}`))
+	})
+	gateway.RegisterGoHandler("/api/public-portal/stories/id/", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"impl":"go-story-id"}`))
+	})
+	gateway.RegisterGoHandler("/api/public-portal/stories/slug/", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"impl":"go-story-slug"}`))
 	})
 
 	cases := []struct {
@@ -936,8 +947,12 @@ func TestPublicPortalRoutesStayLegacyUntilGoMode(t *testing.T) {
 		{"channel one segment", http.MethodGet, "/api/public-portal/channels/markets", "go-channel"},
 		{"channel extra segment stays legacy", http.MethodGet, "/api/public-portal/channels/markets/extra", "legacy"},
 		{"channel index stays legacy", http.MethodGet, "/api/public-portal/channels", "legacy"},
-		{"story id stays legacy", http.MethodGet, "/api/public-portal/stories/id/evt-1", "legacy"},
-		{"story slug stays legacy", http.MethodGet, "/api/public-portal/stories/slug/evt-1-title", "legacy"},
+		{"story id one segment", http.MethodGet, "/api/public-portal/stories/id/cjld2cy6k0000qzrmn831i7rn", "go-story-id"},
+		{"story slug one segment", http.MethodGet, "/api/public-portal/stories/slug/cjld2cy6k0000qzrmn831i7rn-portal-markets-brief", "go-story-slug"},
+		{"story id extra stays legacy", http.MethodGet, "/api/public-portal/stories/id/cjld2cy6k0000qzrmn831i7rn/extra", "legacy"},
+		{"story slug extra stays legacy", http.MethodGet, "/api/public-portal/stories/slug/cjld2cy6k0000qzrmn831i7rn/extra", "legacy"},
+		{"story id post stays legacy", http.MethodPost, "/api/public-portal/stories/id/cjld2cy6k0000qzrmn831i7rn", "legacy"},
+		{"story index stays legacy", http.MethodGet, "/api/public-portal/stories/id", "legacy"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

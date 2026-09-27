@@ -248,9 +248,44 @@ handler、同一鉴权链装配、同一连接池，不复制六份实现：
   `go` 只要求 `DATABASE_URL`，否则进程拒绝启动。
 - **回滚**：`API_GO_PUBLIC_PORTAL_MODE=legacy`（或删除该变量）。不新增表。
   故事详情本来就不在这个开关里。
-- **边界**：这不是整个 public-portal 已迁移。两个故事详情仍是 NestJS。
+- **边界**：这不是整个 public-portal 已迁移。批4A 当时两个故事详情仍是 NestJS。
   来源策略读的是已落库的 SystemSetting，不是 Nest 那份 60 秒 Redis 缓存副本。
   默认生产入口仍是 Web → NestJS。
+
+### 4.7 public-portal 故事详情 Go 接管（Go-批4B）
+
+同一开关 `API_GO_PUBLIC_PORTAL_MODE=go` 再接管两个匿名 GET。默认仍是
+`legacy`（未设置同义）。生产入口不因本批改变。
+
+- **接管单元**（仅 GET，前缀后恰好一个非空路径段）：
+  - `GET /api/public-portal/stories/id/:id`
+  - `GET /api/public-portal/stories/slug/:slug`
+- **不接管**：这两个路径上的 POST、空段、额外路径段，以及仍未迁移的其他
+  public-portal 路径。它们继续回落 `/api/`。
+- **数据**：与首页共用公开组织（`SystemSetting.public_portal_org_slug` 且
+  `Org.isActive`）。事件、条目、时间线、文章、相关故事都带该 `orgId`。
+  归档、其他组织、标题或摘要为空、条目不足、来源或可信度不合格的事件
+  返回 404 `Story not found`。`Cache-Control` 与首页相同。
+- **详情**：id 与 slug 共用一条实现。`NewsEvent.id` 是 Prisma `cuid()`，
+  不含连字符；slug 为 `id-标题`，按第一个 `-` 切出 id（与 Nest
+  `extractStoryId` 相同）。时间线最多 12 条，窗口为
+  `max(backfillDays, lookbackDays)`，缺省 30 天，按 `bucketStart` 升序。
+  引用文章先取时间线 `referencedArticleIds` 去重，没有时回退最近 24 条
+  事件条目；再只保留属于该组织且挂在该事件上的文章，按 `processedAt`
+  降序最多 12 条。相关故事复用首页列表，同频道、排除自身、最多 4 条。
+- **brief**：缓存命中读 `NewsEvent.metadata.briefV1`（版本、语言、指纹一致）。
+  缺失或指纹失效时，用同一套来源选择和提示词调用已配置的模型网关
+  （`SystemSetting.llm_gateway_profiles` 的活动 completion profile；
+  凭据为明文或 `SYSTEM_SETTINGS_ENCRYPTION_KEY` 解密的
+  `system-settings:v1`；治理开启且命中目标 profile 时改用 managed runtime
+  key，缺失则 503）。成功后把 `briefV1` 写回 metadata，保留其他键。
+  写缓存失败仍返回已生成的 brief。没有可用来源时 `brief` 为 null。
+  网关或校验失败返回 500，不返回缺 brief 的 200。
+- **回滚**：`API_GO_PUBLIC_PORTAL_MODE=legacy`（或删除该变量）。首页、频道
+  和两个故事详情一起回到 NestJS。不新增表，不删除 `briefV1` 或其他数据。
+- **边界**：这仍不是整个 public-portal，也不是登录或其他 API。默认部署
+  仍是 Web → NestJS。远端若没有真实模型网关凭据，缓存命中不能当成冷路径
+  已接管。
 
 ## 5. 队列/cron/outbox 边界（红线）
 

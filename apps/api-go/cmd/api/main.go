@@ -16,11 +16,12 @@
 //	         MySQL RBAC + 独立响应，不依赖 NestJS 200。兼容：
 //	         API_GO_ONBOARDING_MODE=go（批3A，readMode 未设时）只接管
 //	         onboarding）
-//	         API_GO_PUBLIC_PORTAL_MODE=go 时另接管两个匿名 GET：
-//	         /api/public-portal/home 与 /api/public-portal/channels/:topic
-//	         （恰好一个路径段）。stories/id 与 stories/slug 仍代理 NestJS。
+//	         API_GO_PUBLIC_PORTAL_MODE=go 时另接管四个匿名 GET：
+//	         /api/public-portal/home、/api/public-portal/channels/:topic、
+//	         /api/public-portal/stories/id/:id 与 stories/slug/:slug
+//	         （后三个都是恰好一个路径段）。
 //
-// 回滚：API_GO_PUBLIC_PORTAL_MODE=legacy 把首页和频道交回 NestJS；
+// 回滚：API_GO_PUBLIC_PORTAL_MODE=legacy 把公开页交回 NestJS；
 // API_GO_USER_SETTINGS_READ_MODE=shadow（或未设——回到
 // API_GO_ONBOARDING_MODE 控制；或路由表单条规则改回 legacy，或
 // CANARY_PERCENT=0）——无数据迁移耦合。
@@ -483,16 +484,24 @@ func run() error {
 			cfg.JWTIssuer, cfg.UserSettingsReadMode, cfg.OnboardingMode)
 	}
 
-	// 公开首页与频道（Go-批4A）：匿名，不走 JWT/RBAC。只在显式 go 模式
-	// 注册。故事详情没有 handler，继续代理 NestJS。
+	// 公开首页、频道和故事详情：匿名，不走 JWT/RBAC。只在显式 go 模式
+	// 注册。详情冷路径读取与 Nest 相同的 gateway profile 和加密凭据。
 	if cfg.PublicPortalMode == config.PublicPortalModeGo {
 		if sharedDB == nil {
 			return fmt.Errorf("api-go: public portal go takeover requires mysql")
 		}
-		portal := publicportal.NewHandler(publicportal.NewMySQLStore(sharedDB))
+		portal := publicportal.NewHandler(publicportal.NewMySQLStore(sharedDB), publicportal.WithGatewayEnv(publicportal.GatewayEnv{
+			EncryptionKey: cfg.SettingsEncryptionKey,
+			APIBase:       cfg.LiteLLMAPIBase,
+			APIKey:        cfg.LiteLLMAPIKey,
+			TimeoutMs:     cfg.LiteLLMTimeoutMs,
+			MaxRetries:    cfg.LiteLLMMaxRetries,
+		}))
 		gateway.RegisterGoHandler("/api/public-portal/home", portal.ServeHome)
 		gateway.RegisterGoHandler("/api/public-portal/channels/", portal.ServeChannel)
-		log.Printf("api-go: public portal home and channel under go takeover")
+		gateway.RegisterGoHandler("/api/public-portal/stories/id/", portal.ServeStoryByID)
+		gateway.RegisterGoHandler("/api/public-portal/stories/slug/", portal.ServeStoryBySlug)
+		log.Printf("api-go: public portal home, channel, and story detail under go takeover")
 	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
@@ -583,8 +592,7 @@ func run() error {
 			"userSettingsWrite": map[string]any{
 				"mode": string(cfg.UserSettingsWriteMode),
 			},
-			// 公开首页/频道。legacy 时这两条 GET 仍代理 NestJS。
-			// 故事详情不在此开关内。
+			// 公开首页、频道和两个故事详情。legacy 时这些 GET 仍代理 NestJS。
 			"publicPortal": map[string]any{
 				"mode":     string(cfg.PublicPortalMode),
 				"database": userSettingsDBStatus,

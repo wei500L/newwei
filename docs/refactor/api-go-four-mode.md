@@ -1,6 +1,6 @@
 # api-go 四态路由与首个迁移单元（shadow/canary 实现说明）
 
-> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补 · 2026-09-07 Go-批3B 增补 · 2026-09-26 Go-批3C 增补（六个 PUT，`API_GO_USER_SETTINGS_WRITE_MODE`，默认 legacy）· 2026-09-27 Go-批4A 增补（public-portal 首页与频道，`API_GO_PUBLIC_PORTAL_MODE`，默认 legacy；故事详情仍 NestJS）
+> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补 · 2026-09-07 Go-批3B 增补 · 2026-09-26 Go-批3C 增补（六个 PUT，`API_GO_USER_SETTINGS_WRITE_MODE`，默认 legacy）· 2026-09-27 Go-批4A 增补（public-portal 首页与频道）· 2026-09-27 Go-批4B 增补（故事详情两个 GET，仍是 `API_GO_PUBLIC_PORTAL_MODE`，默认 legacy）
 > 关联：docs/refactor/go-migration-adr.md §3/§4/§4.3、roadmap M2
 
 ---
@@ -71,5 +71,5 @@
 - shadow 差分「真实流量 0 差异」验收未做——api-go 未接入生产入口（默认部署 Web → NestJS 直连）；`api-go-entry-smoke` 只覆盖远端真实栈的受控流量
 - canary **未激活**（无 ModeCanary 路由、AllowUnverifiedIdentity 默认关闭）；Go-批3A 落地的 onboarding 最小闭环 Go Auth 不改变这一点——canary router 仍消费未验签 claim，尚未改造为已验证身份分流
 - user-settings 只读域 go 接管（Go-批3A onboarding 起步、Go-批3B 扩展到六端点）**已完成远端真实栈验证**（含 NestJS 停止后的独立接管证明），但**仅限 pilot 范围**——生产/预发布真实流量未切换；MFA/OIDC/refresh/机器令牌语义未迁移（迁移序 5 余项）；六个 PUT 在 `API_GO_USER_SETTINGS_WRITE_MODE=go` 时由 Go 写入（默认 legacy）
-- public-portal（Go-批4A）：pilot 内 `API_GO_PUBLIC_PORTAL_MODE=go` 时首页与单段频道由 Go 独立查 MySQL 响应；默认 legacy。`stories/id` 与 `stories/slug` 仍是 NestJS。整个 public-portal 未迁完
+- public-portal（Go-批4A/4B）：pilot 内 `API_GO_PUBLIC_PORTAL_MODE=go` 时首页、单段频道和两个故事详情 GET 由 Go 独立查 MySQL 响应；默认 legacy。brief 冷路径依赖已配置的模型网关。整个 public-portal 未迁完，登录与其他 API 未迁
 - 本机按任务约束未运行 `go test`/`go vet`/`go build`；全部 Go 测试在远端 CI 执行
