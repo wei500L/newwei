@@ -9,10 +9,10 @@ import (
 
 func TestBriefFingerprintMatchesNestStringify(t *testing.T) {
 	got := briefFingerprint("zh", "2026-09-27T12:00:00.000Z", []briefSource{{
-		URL:                "https://example.com/a",
+		URL:                "https://example.com/a?x=1&y=2",
 		ProcessedArticleID: "pa1",
 	}})
-	wantJSON := `{"version":1,"language":"zh","lastAt":"2026-09-27T12:00:00.000Z","sources":[{"processedArticleId":"pa1","processedItemId":null,"url":"https://example.com/a"}]}`
+	wantJSON := `{"version":1,"language":"zh","lastAt":"2026-09-27T12:00:00.000Z","sources":[{"processedArticleId":"pa1","processedItemId":null,"url":"https://example.com/a?x=1&y=2"}]}`
 	sum := sha256.Sum256([]byte(wantJSON))
 	if got != hex.EncodeToString(sum[:]) {
 		t.Fatalf("fingerprint = %s", got)

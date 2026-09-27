@@ -578,7 +578,8 @@ services:
       # 六个 PUT 写接管（Go-批3C）。必须与读模式同为 go；改回 legacy 即回滚写路径。
       API_GO_USER_SETTINGS_WRITE_MODE: go
       # 公开首页、频道和两个故事详情（Go-批4A/4B）。默认部署不启动本服务；
-      # 未设置或 legacy 时这些 GET 仍代理 NestJS。回滚 = 改回 legacy。
+      # 未设置或 legacy 时这些 GET 仍代理 NestJS。启用 go 前应确认模型网关
+      # 配置可用；缓存缺失时的真实模型调用尚未验证。回滚 = 改回 legacy。
       API_GO_PUBLIC_PORTAL_MODE: go
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。

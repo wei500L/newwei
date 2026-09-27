@@ -274,7 +274,8 @@ handler、同一鉴权链装配、同一连接池，不复制六份实现：
   事件条目；再只保留属于该组织且挂在该事件上的文章，按 `processedAt`
   降序最多 12 条。相关故事复用首页列表，同频道、排除自身、最多 4 条。
 - **brief**：缓存命中读 `NewsEvent.metadata.briefV1`（版本、语言、指纹一致）。
-  缺失或指纹失效时，用同一套来源选择和提示词调用已配置的模型网关
+  指纹与 Nest `JSON.stringify` 相同，不把来源 URL 里的 `&`、`<`、`>` 转成
+  `\uXXXX`。缺失或指纹失效时，用同一套来源选择和提示词调用已配置的模型网关
   （`SystemSetting.llm_gateway_profiles` 的活动 completion profile；
   凭据为明文或 `SYSTEM_SETTINGS_ENCRYPTION_KEY` 解密的
   `system-settings:v1`；治理开启且命中目标 profile 时改用 managed runtime
@@ -283,9 +284,12 @@ handler、同一鉴权链装配、同一连接池，不复制六份实现：
   网关或校验失败返回 500，不返回缺 brief 的 200。
 - **回滚**：`API_GO_PUBLIC_PORTAL_MODE=legacy`（或删除该变量）。首页、频道
   和两个故事详情一起回到 NestJS。不新增表，不删除 `briefV1` 或其他数据。
-- **边界**：这仍不是整个 public-portal，也不是登录或其他 API。默认部署
-  仍是 Web → NestJS。远端若没有真实模型网关凭据，缓存命中不能当成冷路径
-  已接管。
+- **验证**：已真实验证缓存命中详情、id/slug、公开组织边界，以及 NestJS
+  停止后 Go 独立返回完整缓存详情。缓存缺失或过期时访问真实模型网关、生成
+  并写回新 brief 已实现，尚未真实调用模型。普通 CI 通过不能代替这次冷路径。
+- **边界**：这仍不是整个 public-portal，也不是登录或其他 API。默认生产入口
+  与 public-portal 默认模式仍是 `legacy`，不能声称生产流量已经切换。将来
+  启用 `go` 前应确认模型网关配置可用。
 
 ## 5. 队列/cron/outbox 边界（红线）
 

@@ -1,6 +1,7 @@
 package publicportal
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -182,12 +183,24 @@ func briefFingerprint(language, lastAt string, sources []briefSource) string {
 			URL:                source.URL,
 		})
 	}
-	encoded, err := json.Marshal(body)
+	encoded, err := marshalJSON(body)
 	if err != nil {
 		return ""
 	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
+}
+
+// marshalJSON 对齐 Nest JSON.stringify：不把 &、<、> 写成 \uXXXX。
+// encoding/json 默认会转义它们，查询串里的 & 会让指纹和已缓存 brief 对不上。
+func marshalJSON(value any) ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 
 func nullableString(value string) *string {
