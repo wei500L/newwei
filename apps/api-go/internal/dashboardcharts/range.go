@@ -158,7 +158,9 @@ func parseJSDate(value string) (time.Time, bool) {
 		year, okY := atoiStrict(value[:4])
 		month, okM := atoiStrict(value[5:7])
 		day, okD := atoiStrict(value[8:])
-		if okY && okM && okD && validYMD(year, month, day) {
+		// JavaScript new Date("2026-02-31") 不会得到 Invalid Date，而是溢出到
+		// 2026-03-03。time.Date 的溢出规则与此相同。远端 NestJS 因此返回 200。
+		if okY && okM && okD && month >= 1 && month <= 12 && day >= 1 && day <= 31 {
 			return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), true
 		}
 		return time.Time{}, false
@@ -198,14 +200,6 @@ func insertOffsetColon(value string) string {
 		}
 	}
 	return value[:len(value)-5] + tail[:3] + ":" + tail[3:]
-}
-
-func validYMD(year, month, day int) bool {
-	if month < 1 || month > 12 || day < 1 {
-		return false
-	}
-	parsed := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
-	return parsed.Year() == year && int(parsed.Month()) == month && parsed.Day() == day
 }
 
 func atoiStrict(value string) (int, bool) {

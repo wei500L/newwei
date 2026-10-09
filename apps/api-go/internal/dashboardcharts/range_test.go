@@ -22,10 +22,11 @@ func TestDateContract(t *testing.T) {
 	}
 	query = parseDashboardQuery(httptest.NewRequest("GET", "/api/dashboard/sector-heatmap?start=2026-02-31", nil))
 	if validationMessage(query) != "" {
-		t.Fatal("calendar-invalid day still passes ISO validation")
+		t.Fatal("overflow day still passes ISO validation")
 	}
-	if _, _, message = resolveRange(query, now); message != "Invalid date range" {
-		t.Fatalf("feb 31 message = %q", message)
+	start, _, message = resolveRange(query, now)
+	if message != "" || toISO(start) != "2026-03-03T00:00:00.000Z" {
+		t.Fatalf("feb 31 overflow start=%s message=%q", toISO(start), message)
 	}
 
 	query = parseDashboardQuery(httptest.NewRequest("GET", "/api/dashboard/war-map/geojson?start=2026-03-20&end=2026-03-01", nil))

@@ -1204,8 +1204,10 @@ jobs:
           assert status == 400 and bad["message"] == "start must be a valid ISO 8601 date string", bad
           status, headers, order = same("/api/dashboard/financial-candlestick?start=2026-04-02&end=2026-04-01")
           assert status == 400 and order["message"] == "Start must be before end", order
-          status, headers, geo_bad = same("/api/dashboard/war-map/geojson?start=2026-02-31")
-          assert status == 400 and geo_bad["message"] == "Invalid date range", geo_bad
+          status, headers, geo_overflow = same("/api/dashboard/war-map/geojson?start=2026-02-31")
+          assert status == 200 and geo_overflow["name"] == "world", geo_overflow
+          status, headers, geo_bad = same("/api/dashboard/war-map/geojson?start=not-a-date")
+          assert status == 400 and geo_bad["message"] == "start must be a valid ISO 8601 date string", geo_bad
 
           status, headers, geo = same("/api/dashboard/war-map/geojson")
           assert status == 200, (status, list(geo)[:6])
