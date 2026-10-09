@@ -370,3 +370,59 @@ func TestDashboardStatsMode(t *testing.T) {
 		t.Fatalf("mode = %q, want go", cfg.DashboardStatsMode)
 	}
 }
+
+func TestDashboardChartsModeIsIndependentOfStats(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DashboardChartsMode != DashboardChartsModeLegacy {
+		t.Fatalf("mode = %q, want legacy", cfg.DashboardChartsMode)
+	}
+	secret := "charts-jwt-secret"
+	_, err = Load(func(key string) string {
+		switch key {
+		case "API_GO_DASHBOARD_CHARTS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return secret
+		default:
+			return ""
+		}
+	})
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("go mode without mysql/redis should fail without leaking the secret: %v", err)
+	}
+	_, err = Load(func(key string) string {
+		if key == "API_GO_DASHBOARD_CHARTS_MODE" {
+			return "pilot"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "API_GO_DASHBOARD_CHARTS_MODE") {
+		t.Fatalf("invalid mode = %v", err)
+	}
+	cfg, err = Load(func(key string) string {
+		switch key {
+		case "API_GO_DASHBOARD_CHARTS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "test-secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DashboardChartsMode != DashboardChartsModeGo {
+		t.Fatalf("mode = %q, want go", cfg.DashboardChartsMode)
+	}
+	if cfg.DashboardStatsMode != DashboardStatsModeLegacy {
+		t.Fatalf("stats mode = %q, want legacy", cfg.DashboardStatsMode)
+	}
+}

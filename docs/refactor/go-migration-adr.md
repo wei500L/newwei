@@ -317,6 +317,26 @@ pilot 注入 `go`。生产入口不因本批改变。
   缺失或 URI 无法解析则拒绝启动。错误与日志不包含连接串。
 - **回滚**：`API_GO_DASHBOARD_STATS_MODE=legacy`。不新增表，不复制数据。
 
+### 4.9 dashboard 三个只读图表（Go-批5B）
+
+只接管三条精确 GET。默认 `API_GO_DASHBOARD_CHARTS_MODE=legacy`（未设置同义）。
+pilot 注入 `go`。与 `API_GO_DASHBOARD_STATS_MODE` 互不影响。生产入口不因本批改变。
+
+- **接管单元**（exact + 仅 GET；同一路径的有效 OPTIONS 预检由 Go 按 `CORS_ORIGIN` 回答）：
+  - `GET /api/dashboard/sector-heatmap`
+  - `GET /api/dashboard/financial-candlestick`
+  - `GET /api/dashboard/war-map/geojson`
+- **不接管**：`GET /api/dashboard/stats`（仍只看批5A 开关）、`war-map/events`、`war-map/layers`、`war-map/news-markers`、`war-map/transport-detail`、spacetime 系列、`/api/dashboard/stream`，以及其他方法与更长路径。这些继续回落 `/api/`。
+- **身份**：复用 access token 验签、Redis 撤销名单、MySQL membership/RBAC。三条都要求 `dashboards.read`。GeoJSON 也不是匿名接口。不读 JWT `permissions`，不读 query 里的 `orgId`（多余 query 键按 ValidationPipe 返回 400）。
+- **日期**：三条都先执行与 `DashboardTimeRangeQueryDto` + `resolveRange` 相同的契约。`start`/`end` 做 ISO 8601 校验；缺省 end 为现在、start 为对齐前的 end 往前 30 天；再对齐到 UTC 日初与日末（23:59:59.999）。`2026-02-31` 这种超出当月的日期按 JavaScript `Date` 溢出（到 `2026-03-03`），不是 400。格式通过但 `Date` 无法解析时才是 `Invalid date range`。对齐后 start 晚于 end 是 `Start must be before end`。GeoJSON 不按日期过滤，但非法日期仍然 400。
+- **热力图**：MySQL `EconomicDataItem`（`isActive` 且类别 `economic-short`，按 `displayName` 最多 8 条）和范围内的 `EconomicDataPoint`。首选字段来自 `metadata.dataViz.heatmap.preferredSourceFields`，否则用内置列表；parser 的 field/label 参与映射；未命中时回退并给出 `SOURCE_FIELD_FALLBACK`。变化率用首末点，保留两位小数。没有序列的条目不占格。不返回固定演示数组。
+- **K 线**：MySQL 中 slug `sp500_index` 及其数据点。OHLC 别名优先用 `metadata.dataViz.candlestick.ohlc`，否则用内置中英别名；同一时刻低序号别名优先；缺任一 OHLC 的时刻跳过并计入 `skippedIncompleteCount`。范围内有点但没有任何 OHLC 字段匹配时返回 500 `DASHBOARD_CANDLESTICK_FIELD_MAPPING_MISMATCH`，不返回空图冒充成功。条目不存在时返回空 `points`，symbol 为 slug，interval 为 `daily`。
+- **GeoJSON**：构建时嵌入仓库里的 `world.geo.json`。响应为 `{name, geoJson, center:[0,20], zoom:1.1}`，`Cache-Control: no-store`。不是 FeatureCollection 时 500 `GEOJSON_LOAD_FAILED`。请求路径不调用 NestJS，也不访问外网。
+- **失败**：MySQL 查询失败 → 503，正文不包含连接信息，也不把故障写成空图成功。图表 500 的 `message` 与 Nest 生产过滤器一样是 `Internal server error`，`code`/`detail` 仍保留。
+- **契约差异**：Go 错误体的 `path` 与既有 Go 接管路由一样，只有路径、不含 query。NestJS `GlobalExceptionFilter` 使用的 `request.url` 含 query。成功响应没有 `path`。
+- **配置**：`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`。不要求 `MONGO_URI`。缺失则拒绝启动。错误与日志不包含连接串。
+- **回滚**：`API_GO_DASHBOARD_CHARTS_MODE=legacy`。不新增表，不复制经济数据，不新建抓取或调度。
+
 ## 5. 队列/cron/outbox 边界（红线）
 
 - 全部 BullMQ 队列、21 个 @Cron/@Interval、3 套 MongoOutbox 的**写入权在最终阶段前仅属 NestJS**——Go 侧提前双写会制造消息重复/顺序破坏

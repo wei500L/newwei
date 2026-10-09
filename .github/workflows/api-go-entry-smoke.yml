@@ -827,6 +827,7 @@ jobs:
             -e API_GO_USER_SETTINGS_WRITE_MODE=go \
             -e API_GO_PUBLIC_PORTAL_MODE=go \
             -e API_GO_DASHBOARD_STATS_MODE=go \
+            -e API_GO_DASHBOARD_CHARTS_MODE=go \
             -e MONGO_URI=mongodb://host.docker.internal:27017/app \
             -e JWT_SECRET="$JWT_SECRET" \
             -e JWT_ISSUER="$JWT_ISSUER" \
@@ -1049,6 +1050,185 @@ jobs:
           with open("/tmp/dashboard-expect.json", "w") as fh:
               json.dump(go, fh)
           print(f"dashboard stats: NestJS matches Go for org {org}; other org and query orgId ignored")
+          PY
+
+      - name: "Smoke 8a2 — dashboard charts Go vs NestJS on real MySQL"
+        run: |
+          set -euo pipefail
+          MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
+          test -n "$MYSQL_CID"
+          docker exec -i "$MYSQL_CID" mysql --default-character-set=utf8mb4 -uroot -psecret app <<'SQL'
+          INSERT INTO EconomicCategory (id, `key`, label, createdAt, updatedAt)
+          SELECT 'cat-go5b-short', 'economic-short', 'Economic short', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+          FROM DUAL
+          WHERE NOT EXISTS (SELECT 1 FROM EconomicCategory WHERE `key` = 'economic-short');
+          DELETE p FROM EconomicDataPoint p
+            INNER JOIN EconomicDataItem i ON i.id = p.itemId
+            WHERE i.id LIKE 'go5b-%' OR i.slug = 'sp500_index';
+          DELETE ic FROM EconomicDataItemCategory ic
+            INNER JOIN EconomicDataItem i ON i.id = ic.itemId
+            WHERE i.id LIKE 'go5b-%';
+          DELETE FROM EconomicDataItem WHERE id LIKE 'go5b-%';
+          UPDATE EconomicDataItem i
+            INNER JOIN EconomicDataItemCategory ic ON ic.itemId = i.id
+            INNER JOIN EconomicCategory c ON c.id = ic.categoryId AND c.`key` = 'economic-short'
+            SET i.isActive = 0;
+          INSERT INTO EconomicDataItem
+            (id, slug, displayName, sourceFunction, sourceEndpoint, valueType, defaultUnit, defaultFrequency, isActive, metadata, createdAt, updatedAt)
+          VALUES
+            ('go5b-alpha', 'go5b-alpha', 'Go5B Alpha', 'smoke', '/smoke', 'price', 'pts', 'daily', 1,
+             CAST('{"dataViz":{"heatmap":{"preferredSourceFields":["close"]}}}' AS JSON), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+            ('go5b-beta', 'go5b-beta', 'Go5B Beta', 'smoke', '/smoke', 'price', 'pts', 'daily', 1,
+             CAST('{"dataViz":{"heatmap":{"preferredSourceFields":["close"]}}}' AS JSON), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)),
+            ('go5b-empty', 'go5b-empty', 'Go5B Empty', 'smoke', '/smoke', 'price', NULL, 'daily', 1,
+             CAST('{}' AS JSON), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+          INSERT INTO EconomicDataItemCategory (id, itemId, categoryId, createdAt)
+          SELECT 'go5b-link-a', 'go5b-alpha', id, UTC_TIMESTAMP(3) FROM EconomicCategory WHERE `key` = 'economic-short';
+          INSERT INTO EconomicDataItemCategory (id, itemId, categoryId, createdAt)
+          SELECT 'go5b-link-b', 'go5b-beta', id, UTC_TIMESTAMP(3) FROM EconomicCategory WHERE `key` = 'economic-short';
+          INSERT INTO EconomicDataItemCategory (id, itemId, categoryId, createdAt)
+          SELECT 'go5b-link-e', 'go5b-empty', id, UTC_TIMESTAMP(3) FROM EconomicCategory WHERE `key` = 'economic-short';
+          INSERT INTO EconomicDataItem
+            (id, slug, displayName, sourceFunction, sourceEndpoint, valueType, defaultUnit, defaultFrequency, isActive, metadata, createdAt, updatedAt)
+          VALUES
+            ('go5b-sp500', 'sp500_index', '标普500指数', 'yfinance.history', '/v8/finance/chart', 'index', 'pts', 'daily', 1,
+             CAST('{"dataViz":{"candlestick":{"ohlc":{"close":["收盘价","close"]}}}}' AS JSON), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))
+          ON DUPLICATE KEY UPDATE
+            displayName = VALUES(displayName),
+            defaultUnit = VALUES(defaultUnit),
+            defaultFrequency = VALUES(defaultFrequency),
+            isActive = 1,
+            metadata = VALUES(metadata),
+            updatedAt = UTC_TIMESTAMP(3);
+          DELETE ic FROM EconomicDataItemCategory ic
+            INNER JOIN EconomicCategory c ON c.id = ic.categoryId
+            INNER JOIN EconomicDataItem i ON i.id = ic.itemId
+            WHERE i.slug = 'sp500_index' AND c.`key` = 'economic-short';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt) VALUES
+            ('go5b-a1', 'go5b-alpha', '2026-03-01 00:00:00.000', 'price', 100.000000000000, NULL, 'close', UTC_TIMESTAMP(3)),
+            ('go5b-a2', 'go5b-alpha', '2026-03-10 00:00:00.000', 'price', 110.500000000000, 'pts', 'close', UTC_TIMESTAMP(3)),
+            ('go5b-a3', 'go5b-alpha', '2026-03-10 00:00:00.000', 'price', 1.000000000000, 'pts', 'volume', UTC_TIMESTAMP(3)),
+            ('go5b-b1', 'go5b-beta', '2026-03-01 00:00:00.000', 'price', 50.000000000000, NULL, 'zzz_custom', UTC_TIMESTAMP(3)),
+            ('go5b-b2', 'go5b-beta', '2026-03-11 00:00:00.000', 'price', 40.000000000000, NULL, 'zzz_custom', UTC_TIMESTAMP(3));
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt)
+          SELECT 'go5b-c-open', id, '2026-03-01 00:00:00.000', 'index', 10.000000000000, 'pts', 'open', UTC_TIMESTAMP(3) FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt)
+          SELECT 'go5b-c-high', id, '2026-03-01 00:00:00.000', 'index', 12.000000000000, 'pts', 'high', UTC_TIMESTAMP(3) FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt)
+          SELECT 'go5b-c-low', id, '2026-03-01 00:00:00.000', 'index', 9.000000000000, 'pts', 'low', UTC_TIMESTAMP(3) FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt)
+          SELECT 'go5b-c-close', id, '2026-03-01 00:00:00.000', 'index', 99.000000000000, 'pts', 'close', UTC_TIMESTAMP(3) FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt)
+          SELECT 'go5b-c-cn', id, '2026-03-01 00:00:00.000', 'index', 11.000000000000, 'pts', '收盘价', UTC_TIMESTAMP(3) FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt)
+          SELECT 'go5b-c2-open', id, '2026-03-02 00:00:00.000', 'index', 11.000000000000, 'pts', 'open', UTC_TIMESTAMP(3) FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt)
+          SELECT 'go5b-c2-high', id, '2026-03-02 00:00:00.000', 'index', 13.000000000000, 'pts', 'high', UTC_TIMESTAMP(3) FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt)
+          SELECT 'go5b-c2-close', id, '2026-03-02 00:00:00.000', 'index', 12.000000000000, 'pts', 'close', UTC_TIMESTAMP(3) FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt)
+          SELECT 'go5b-old', id, '2020-01-02 00:00:00.000', 'index', 7.000000000000, 'pts', 'turnover', UTC_TIMESTAMP(3) FROM EconomicDataItem WHERE slug = 'sp500_index';
+          SQL
+          python3 - <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+
+          TRACE = "bb22cc33dd44ee55ff6677889900aa11"
+          token = open("/tmp/smoke-jwt").read().strip()
+
+          def call(base, path, auth=True):
+              headers = {"x-trace-id": TRACE}
+              if auth:
+                  headers["authorization"] = f"Bearer {token}"
+              req = urllib.request.Request(base + path, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return resp.status, resp.headers, resp.read()
+              except urllib.error.HTTPError as err:
+                  return err.code, err.headers, err.read()
+
+          def body(raw):
+              return json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+
+          def stripped(doc):
+              if not isinstance(doc, dict):
+                  return doc
+              copy = dict(doc)
+              copy.pop("traceId", None)
+              copy.pop("timestamp", None)
+              copy.pop("path", None)
+              return copy
+
+          def same(path):
+              status_n, headers_n, raw_n = call("http://127.0.0.1:4000", path)
+              status_g, headers_g, raw_g = call("http://127.0.0.1:4020", path)
+              assert status_n == status_g, (path, status_n, status_g, raw_n[:300], raw_g[:300])
+              doc_n, doc_g = body(raw_n), body(raw_g)
+              if status_n >= 400:
+                  assert stripped(doc_n) == stripped(doc_g), (path, stripped(doc_n), stripped(doc_g))
+              else:
+                  assert doc_n == doc_g, (path, doc_n, doc_g)
+              assert headers_g.get("x-trace-id") == TRACE, (path, dict(headers_g))
+              return status_g, headers_g, doc_g
+
+          status, headers, heat = same("/api/dashboard/sector-heatmap?start=2026-03-01&end=2026-03-15")
+          assert status == 200, heat
+          assert [cell["name"] for cell in heat["cells"]] == ["Go5B Alpha", "Go5B Beta"], heat
+          assert heat["cells"][0]["sourceField"] == "close", heat
+          assert heat["cells"][0]["value"] == 110.5, heat
+          assert heat["cells"][0]["change"] == 10.5, heat
+          assert heat["cells"][1]["sourceField"] == "zzz_custom", heat
+          assert heat["cells"][1]["change"] == -20, heat
+          assert heat["warnings"][0]["code"] == "SOURCE_FIELD_FALLBACK", heat
+          assert heat["warnings"][0]["selectedSourceField"] == "zzz_custom", heat
+          assert "Go5B Empty" not in json.dumps(heat)
+
+          status, headers, candle = same("/api/dashboard/financial-candlestick?start=2026-03-01&end=2026-03-15")
+          assert status == 200, candle
+          assert len(candle["points"]) == 1, candle
+          assert candle["points"][0]["close"] == 11, candle
+          assert candle["points"][0]["open"] == 10, candle
+          assert candle["skippedIncompleteCount"] == 1, candle
+          assert candle["sourceFields"]["close"] == "收盘价", candle
+          assert candle["latestObservedAt"] == "2026-03-02T00:00:00.000Z", candle
+          assert candle["updatedAt"] == "2026-03-01T00:00:00.000Z", candle
+
+          status, headers, mismatch = same("/api/dashboard/financial-candlestick?start=2020-01-01&end=2020-01-05")
+          assert status == 500, mismatch
+          assert mismatch["code"] == "DASHBOARD_CANDLESTICK_FIELD_MAPPING_MISMATCH", mismatch
+          assert mismatch["message"] == "Internal server error", mismatch
+          assert mismatch["availableSourceFields"] == ["turnover"], mismatch
+
+          status, headers, bad = same("/api/dashboard/sector-heatmap?start=not-a-date")
+          assert status == 400 and bad["message"] == "start must be a valid ISO 8601 date string", bad
+          status, headers, order = same("/api/dashboard/financial-candlestick?start=2026-04-02&end=2026-04-01")
+          assert status == 400 and order["message"] == "Start must be before end", order
+          status, headers, geo_overflow = same("/api/dashboard/war-map/geojson?start=2026-02-31")
+          assert status == 200 and geo_overflow["name"] == "world", geo_overflow
+          status, headers, geo_bad = same("/api/dashboard/war-map/geojson?start=not-a-date")
+          assert status == 400 and geo_bad["message"] == "start must be a valid ISO 8601 date string", geo_bad
+
+          status, headers, geo = same("/api/dashboard/war-map/geojson")
+          assert status == 200, (status, list(geo)[:6])
+          assert geo["name"] == "world" and geo["center"] == [0, 20] and geo["zoom"] == 1.1, geo.keys()
+          assert geo["geoJson"]["type"] == "FeatureCollection" and len(geo["geoJson"]["features"]) > 100
+          assert "no-store" in (headers.get("cache-control") or "").lower(), dict(headers)
+          anon_status, _, _ = call("http://127.0.0.1:4020", "/api/dashboard/war-map/geojson", auth=False)
+          assert anon_status == 401, anon_status
+
+          for path in (
+              "/api/dashboard/war-map/events?start=2026-03-01&end=2026-03-15",
+              "/api/dashboard/war-map/layers?start=2026-03-01&end=2026-03-15",
+          ):
+              status_n, _, _ = call("http://127.0.0.1:4000", path)
+              status_g, _, _ = call("http://127.0.0.1:4020", path)
+              assert status_n == status_g and status_g != 501, (path, status_n, status_g)
+
+          json.dump(heat, open("/tmp/charts-heatmap.json", "w"))
+          json.dump(candle, open("/tmp/charts-candle.json", "w"))
+          json.dump(geo, open("/tmp/charts-geo.json", "w"))
+          print("dashboard charts: NestJS matches Go for preferred field, fallback, incomplete OHLC, date errors, and geojson")
           PY
 
       - name: "Smoke 8b/13 — Phase C: Go PUT write takeover, cross-read, empty, concurrency, isolation"
@@ -2430,8 +2610,24 @@ jobs:
               assert resp.status == 200, resp.status
               got = json.loads(resp.read())
           assert got == expect, (got, expect)
+          for name, path in (
+              ("heatmap", "/api/dashboard/sector-heatmap?start=2026-03-01&end=2026-03-15"),
+              ("candle", "/api/dashboard/financial-candlestick?start=2026-03-01&end=2026-03-15"),
+              ("geo", "/api/dashboard/war-map/geojson"),
+          ):
+              saved = json.load(open(f"/tmp/charts-{name}.json"))
+              kept = urllib.request.Request(
+                  "http://127.0.0.1:4020" + path,
+                  headers={"authorization": f"Bearer {token}"},
+              )
+              with urllib.request.urlopen(kept, timeout=30) as resp:
+                  assert resp.status == 200, (name, resp.status)
+                  assert json.loads(resp.read()) == saved, name
           for path in (
-              "/api/dashboard/war-map/geojson",
+              "/api/dashboard/war-map/events",
+              "/api/dashboard/war-map/layers",
+              "/api/dashboard/war-map/news-markers",
+              "/api/dashboard/war-map/transport-detail",
               "/api/dashboard/stream",
               "/api/dashboard/stats/extra",
           ):
@@ -2445,7 +2641,7 @@ jobs:
                   assert err.code == 502, (path, err.code, err.read()[:180])
               else:
                   raise SystemExit(f"{path} succeeded after NestJS stopped")
-          print("NestJS stopped: dashboard stats still complete; other dashboard routes 502")
+          print("NestJS stopped: stats and three chart GETs still complete; other dashboard routes 502")
           PY
           # api-go 容器保持 healthy（Go 端点与探活不依赖 NestJS）。
           HEALTH=$(docker inspect --format '{{.State.Health.Status}}' api-go-smoke)
@@ -2465,6 +2661,7 @@ jobs:
           assert doc.get("userSettingsWrite", {}).get("mode") == "go", doc
           assert doc.get("userSettingsRead", {}).get("database") == "configured", doc
           assert doc.get("dashboardStats", {}).get("mode") == "go", doc
+          assert doc.get("dashboardCharts", {}).get("mode") == "go", doc
           assert now["executed"] == 0, now
           assert now["diffs"] == 0, now
           assert now["inflight"] == 0, now

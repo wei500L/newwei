@@ -93,6 +93,19 @@ const (
 	DashboardStatsModeGo DashboardStatsMode = "go"
 )
 
+// DashboardChartsMode 是三个只读图表 GET 的接管开关
+// （API_GO_DASHBOARD_CHARTS_MODE）。默认 legacy。与 stats 开关互不影响。
+type DashboardChartsMode string
+
+const (
+	// DashboardChartsModeLegacy：三个图表 GET 继续代理 NestJS。
+	DashboardChartsModeLegacy DashboardChartsMode = "legacy"
+	// DashboardChartsModeGo：sector-heatmap、financial-candlestick、
+	// war-map/geojson 这三个精确 GET 由 Go 鉴权并响应。
+	// 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST。不要求 MONGO_URI。
+	DashboardChartsModeGo DashboardChartsMode = "go"
+)
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -127,6 +140,9 @@ type Config struct {
 	// DashboardStatsMode 见 DashboardStatsMode 常量。默认 legacy。
 	// go 要求 JWT、MySQL、Redis 与 MONGO_URI。URI 不进入日志或错误文本。
 	DashboardStatsMode DashboardStatsMode
+	// DashboardChartsMode 见 DashboardChartsMode 常量。默认 legacy。
+	// go 要求 JWT、MySQL、Redis，不要求 Mongo。与 stats 开关独立。
+	DashboardChartsMode DashboardChartsMode
 	// MongoURI 是 NestJS 同名 MONGO_URI。仅 dashboard stats 的 go 模式读取。
 	MongoURI string
 
@@ -282,6 +298,15 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.DashboardStatsMode = DashboardStatsModeGo
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_STATS_MODE must be one of legacy|go")
+	}
+
+	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_CHARTS_MODE")) {
+	case "", string(DashboardChartsModeLegacy):
+		cfg.DashboardChartsMode = DashboardChartsModeLegacy
+	case string(DashboardChartsModeGo):
+		cfg.DashboardChartsMode = DashboardChartsModeGo
+	default:
+		errs = append(errs, "API_GO_DASHBOARD_CHARTS_MODE must be one of legacy|go")
 	}
 	cfg.MongoURI = strings.TrimSpace(getenv("MONGO_URI"))
 	cfg.SettingsEncryptionKey = strings.TrimSpace(getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
@@ -453,6 +478,17 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_DASHBOARD_STATS_MODE=go")
+		}
+	}
+	if cfg.DashboardChartsMode == DashboardChartsModeGo {
+		if cfg.JWTSecret == "" {
+			errs = append(errs, "JWT_SECRET is required when API_GO_DASHBOARD_CHARTS_MODE=go")
+		}
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_DASHBOARD_CHARTS_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_DASHBOARD_CHARTS_MODE=go")
 		}
 	}
 

@@ -1002,6 +1002,63 @@ func TestDashboardStatsRouteIsExactGetOnly(t *testing.T) {
 		{"extra path stays legacy", http.MethodGet, "/api/dashboard/stats/extra", "legacy"},
 		{"stream stays legacy", http.MethodGet, "/api/dashboard/stream", "legacy"},
 		{"war map stays legacy", http.MethodGet, "/api/dashboard/war-map/geojson", "legacy"},
+		{"heatmap stays legacy", http.MethodGet, "/api/dashboard/sector-heatmap", "legacy"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := httptest.NewRecorder()
+			gateway.ServeHTTP(res, httptest.NewRequest(tc.method, "http://gateway"+tc.path, nil))
+			if !strings.Contains(res.Body.String(), tc.want) {
+				t.Fatalf("body = %s, want %s", res.Body.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestDashboardChartsRouteIsExactGetOnly(t *testing.T) {
+	stub := newLegacyStub(t)
+	base := DefaultRulesWithWrite(ModeShadow, "", "")
+	legacyGateway, err := New(stub.server.URL, WithDashboardCharts(base, ""))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	for _, rule := range legacyGateway.Rules() {
+		if rule.Prefix == "/api/dashboard/sector-heatmap" || rule.Prefix == "/api/dashboard/financial-candlestick" || rule.Prefix == "/api/dashboard/war-map/geojson" {
+			t.Fatalf("default rules include dashboard charts: %s", rule.Prefix)
+		}
+	}
+
+	gateway, err := New(stub.server.URL, WithDashboardCharts(base, string(ModeGo)))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	for _, path := range []string{
+		"/api/dashboard/sector-heatmap",
+		"/api/dashboard/financial-candlestick",
+		"/api/dashboard/war-map/geojson",
+	} {
+		gateway.RegisterGoHandler(path, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"impl":"go-charts"}`))
+		})
+	}
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		want   string
+	}{
+		{"heatmap get", http.MethodGet, "/api/dashboard/sector-heatmap", "go-charts"},
+		{"candlestick get", http.MethodGet, "/api/dashboard/financial-candlestick", "go-charts"},
+		{"geojson get", http.MethodGet, "/api/dashboard/war-map/geojson", "go-charts"},
+		{"geojson options", http.MethodOptions, "/api/dashboard/war-map/geojson", "go-charts"},
+		{"heatmap post stays legacy", http.MethodPost, "/api/dashboard/sector-heatmap", "legacy"},
+		{"events stay legacy", http.MethodGet, "/api/dashboard/war-map/events", "legacy"},
+		{"layers stay legacy", http.MethodGet, "/api/dashboard/war-map/layers", "legacy"},
+		{"news markers stay legacy", http.MethodGet, "/api/dashboard/war-map/news-markers", "legacy"},
+		{"transport stays legacy", http.MethodGet, "/api/dashboard/war-map/transport-detail", "legacy"},
+		{"stream stays legacy", http.MethodGet, "/api/dashboard/stream", "legacy"},
+		{"stats stays legacy", http.MethodGet, "/api/dashboard/stats", "legacy"},
+		{"geojson extra stays legacy", http.MethodGet, "/api/dashboard/war-map/geojson/extra", "legacy"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
