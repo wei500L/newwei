@@ -20,8 +20,11 @@
 //	         /api/public-portal/home、/api/public-portal/channels/:topic、
 //	         /api/public-portal/stories/id/:id 与 stories/slug/:slug
 //	         （后三个都是恰好一个路径段）。
+//	         API_GO_DASHBOARD_STATS_MODE=go 时另接管精确路径
+//	         GET /api/dashboard/stats（MySQL + Mongo + Redis 只读）。
 //
-// 回滚：API_GO_PUBLIC_PORTAL_MODE=legacy 把公开页交回 NestJS；
+// 回滚：API_GO_DASHBOARD_STATS_MODE=legacy 把 stats 交回 NestJS；
+// API_GO_PUBLIC_PORTAL_MODE=legacy 把公开页交回 NestJS；
 // API_GO_USER_SETTINGS_READ_MODE=shadow（或未设——回到
 // API_GO_ONBOARDING_MODE 控制；或路由表单条规则改回 legacy，或
 // CANARY_PERCENT=0）——无数据迁移耦合。
@@ -58,6 +61,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/canary"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
@@ -381,9 +385,16 @@ func run() error {
 	if cfg.PublicPortalMode == config.PublicPortalModeGo {
 		portalMode = string(legacyproxy.ModeGo)
 	}
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.WithPublicPortal(
-		legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode),
-		portalMode,
+	dashboardMode := ""
+	if cfg.DashboardStatsMode == config.DashboardStatsModeGo {
+		dashboardMode = string(legacyproxy.ModeGo)
+	}
+	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.WithDashboardStats(
+		legacyproxy.WithPublicPortal(
+			legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode),
+			portalMode,
+		),
+		dashboardMode,
 	))
 	if err != nil {
 		return err
@@ -410,7 +421,8 @@ func run() error {
 			// 失败——Go 接管端点不得带病启动。
 			if cfg.OnboardingMode == config.OnboardingModeGo ||
 				cfg.UserSettingsReadMode == config.UserSettingsReadModeGo ||
-				cfg.PublicPortalMode == config.PublicPortalModeGo {
+				cfg.PublicPortalMode == config.PublicPortalModeGo ||
+				cfg.DashboardStatsMode == config.DashboardStatsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -440,8 +452,13 @@ func run() error {
 	// 两者都非 go 时完全不装配（零额外连接、旧行为不变）。
 	goTakeover := cfg.OnboardingMode == config.OnboardingModeGo ||
 		cfg.UserSettingsReadMode == config.UserSettingsReadModeGo
+	dashboardGo := cfg.DashboardStatsMode == config.DashboardStatsModeGo
+	// user-settings 与 dashboard stats 共用同一套 JWT/Redis/MySQL 鉴权栈。
+	// 只有 dashboard 为 go、读模式仍是 legacy 时也要装配，否则 stats 无法验签。
+	needsCredentialedGo := goTakeover || dashboardGo
 	var redisClient *redis.Client
-	if goTakeover {
+	var authenticator *authhttp.Authenticator
+	if needsCredentialedGo {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
 			Username: cfg.RedisUsername,
@@ -450,7 +467,9 @@ func run() error {
 		})
 		verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		blacklist := authn.NewRedisBlacklist(redisClient)
-		authenticator := authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
+		authenticator = authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
+	}
+	if goTakeover {
 		readHandler := usersettingsread.NewHandler(authenticator, userSettingsRepo)
 		var writeHandler *usersettingswrite.Handler
 		if cfg.UserSettingsWriteMode == config.UserSettingsWriteModeGo {
@@ -502,6 +521,31 @@ func run() error {
 		gateway.RegisterGoHandler("/api/public-portal/stories/id/", portal.ServeStoryByID)
 		gateway.RegisterGoHandler("/api/public-portal/stories/slug/", portal.ServeStoryBySlug)
 		log.Printf("api-go: public portal home, channel, and story detail under go takeover")
+	}
+
+	// GET /api/dashboard/stats。只读 MySQL/Mongo/Redis，不启动队列 worker。
+	var dashboardMongo *dashboardstats.Connection
+	if dashboardGo {
+		if sharedDB == nil || authenticator == nil || redisClient == nil {
+			return fmt.Errorf("api-go: dashboard stats go takeover requires mysql, jwt, and redis")
+		}
+		mongoConn, statsHandler, err := dashboardstats.Connect(authenticator, sharedDB, redisClient, cfg.MongoURI)
+		if err != nil {
+			return fmt.Errorf("api-go: API_GO_DASHBOARD_STATS_MODE=go requires a valid MONGO_URI")
+		}
+		dashboardMongo = mongoConn
+		statsCORS := cors.New(cfg.CorsOrigin)
+		gateway.RegisterGoHandler(dashboardstats.Path, func(w http.ResponseWriter, r *http.Request) {
+			if statsCORS.FinishOptions(w, r) {
+				return
+			}
+			if r.Method == http.MethodOptions {
+				gateway.ServeLegacy(w, r)
+				return
+			}
+			statsHandler.ServeHTTP(w, r)
+		})
+		log.Printf("api-go: GET /api/dashboard/stats under go takeover")
 	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
@@ -597,6 +641,10 @@ func run() error {
 				"mode":     string(cfg.PublicPortalMode),
 				"database": userSettingsDBStatus,
 			},
+			// dashboard stats。legacy 时该 GET 仍代理 NestJS。不含 Mongo URI。
+			"dashboardStats": map[string]any{
+				"mode": string(cfg.DashboardStatsMode),
+			},
 		})
 	})
 
@@ -642,6 +690,11 @@ func run() error {
 		if redisClient != nil {
 			if err := redisClient.Close(); err != nil {
 				log.Printf("api-go: redis client close: %v", err)
+			}
+		}
+		if dashboardMongo != nil {
+			if err := dashboardMongo.Disconnect(ctx); err != nil {
+				log.Printf("api-go: mongo client close failed")
 			}
 		}
 		return nil

@@ -2,6 +2,7 @@ package config
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -316,5 +317,56 @@ func TestPublicPortalMode(t *testing.T) {
 	}
 	if cfg.PublicPortalMode != PublicPortalModeGo {
 		t.Fatalf("mode = %q, want go", cfg.PublicPortalMode)
+	}
+}
+
+func TestDashboardStatsMode(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DashboardStatsMode != DashboardStatsModeLegacy {
+		t.Fatalf("mode = %q, want legacy", cfg.DashboardStatsMode)
+	}
+	secret := "s3cret-password"
+	err = func() error {
+		_, loadErr := Load(func(key string) string {
+			if key == "API_GO_DASHBOARD_STATS_MODE" {
+				return "go"
+			}
+			if key == "MONGO_URI" {
+				return "mongodb://user:" + secret + "@mongo:27017/app"
+			}
+			return ""
+		})
+		return loadErr
+	}()
+	if err == nil {
+		t.Fatal("go mode without jwt/mysql/redis should fail")
+	}
+	if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "mongo:27017") {
+		t.Fatalf("startup error leaked mongo target: %v", err)
+	}
+	cfg, err = Load(func(key string) string {
+		switch key {
+		case "API_GO_DASHBOARD_STATS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "test-secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://user:" + secret + "@mongo:27017/app"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DashboardStatsMode != DashboardStatsModeGo {
+		t.Fatalf("mode = %q, want go", cfg.DashboardStatsMode)
 	}
 }

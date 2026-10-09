@@ -6,6 +6,8 @@ Go-批3B 起，**user-settings 六个只读 GET** 在 pilot 中由统一 Go hand
 
 Go-批4A 起，**公开首页与频道**在 `API_GO_PUBLIC_PORTAL_MODE=go` 时由 Go 查 MySQL 并完整响应（匿名，不走 JWT/RBAC）。Go-批4B 起，同一开关再接管 `GET /api/public-portal/stories/id/:id` 与 `stories/slug/:slug`（各恰好一个路径段，仅 GET）。默认 `legacy`，生产入口仍是 Web → NestJS。缓存命中的故事详情已在真实栈验证；缓存缺失时调用真实模型网关并写回新 brief 已实现，尚未真实调用模型。启用 `go` 前应确认模型网关配置可用。回滚：`API_GO_PUBLIC_PORTAL_MODE=legacy`。public-portal 没有整模块迁完。
 
+Go-批5A 起，**`GET /api/dashboard/stats`** 在 `API_GO_DASHBOARD_STATS_MODE=go` 时由 Go 独立响应：验签后的 orgId 与 `items.read` 来自 MySQL 重推导，再读 `ItemMeta` 计数、Mongo `processeditems` / `tasklogs`，以及 Redis 里已有的组织队列计数。默认 `legacy`。不启动队列 worker，不写 Redis 计数。MySQL 或 Mongo 失败返回 5xx，不用 0 代替。Redis 计数读失败时 `queueCountsAvailable=false` 且五个计数为 0。回滚：`API_GO_DASHBOARD_STATS_MODE=legacy`。其他 dashboard 路径仍是 NestJS。
+
 ## 运行
 
 ```bash
@@ -73,6 +75,7 @@ Go-批4B 故事详情在同一真实栈里已验证缓存命中的 id/slug、公
 | `API_GO_USER_SETTINGS_READ_MODE` | （空） | user-settings 六个只读 GET 的统一读模式（Go-批3B）：`shadow`=六个 GET 全部 NestJS 响应 + Go 差分；`go`=六个 GET 全部由统一 Go handler 接管（独立鉴权 + 独立查库 + normalization + 全响应）。**设置时优先级高于 `API_GO_ONBOARDING_MODE`**（onboarding 也归它管）；**未设置（空）=兼容旧行为**：onboarding 由 `API_GO_ONBOARDING_MODE` 控制，rss/spacetime 保持 shadow，war-map/newsnow/situation-monitor 保持 legacy（批3B 之前的部署不变）。非法值启动失败；`go` 模式要求 `JWT_SECRET`/`DATABASE_URL`/`REDIS_HOST` 齐备（缺失启动失败）。compose pilot 固定注入 `go`。回滚 = 改回 `shadow` 或删除本变量 |
 | `API_GO_USER_SETTINGS_WRITE_MODE` | legacy | 六个 PUT（Go-批3C）。`legacy` 代理 NestJS；`go` 由 Go upsert 现有 `UserSetting` 并重读。`go` 要求读模式同为 `go`，否则启动失败。pilot 注入 `go`。回滚先改回 `legacy` |
 | `API_GO_PUBLIC_PORTAL_MODE` | legacy | 公开首页、频道和故事详情（Go-批4A/4B）。`legacy` 代理 NestJS；`go` 时 `GET /api/public-portal/home`、`channels/:topic`、`stories/id/:id`、`stories/slug/:slug`（后三个恰好一个路径段，且仅 GET）由 Go 查 MySQL 并完整响应。详情 brief 冷路径读取 `llm_gateway_profiles`，并用已有的 `SYSTEM_SETTINGS_ENCRYPTION_KEY` / `LITELLM_*` 作为凭据与缺省网关。启用 `go` 前应确认模型网关配置可用。`go` 要求 `DATABASE_URL`，不要求 JWT/Redis。pilot 注入 `go`。默认生产入口不切换。回滚改回 `legacy`，不删数据 |
+| `API_GO_DASHBOARD_STATS_MODE` | legacy | 只接管精确 `GET /api/dashboard/stats`（Go-批5A）。`go` 时 Go 验签、查 Redis 撤销名单、从 MySQL 重推导 orgId 与 `items.read`，再读 ItemMeta、Mongo processeditems/tasklogs 和 Redis 组织计数 hash。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`，缺失则拒绝启动，错误不含连接串。pilot 注入 `go`。其他方法、子路径、`dashboard/stream` 和图表接口仍代理 NestJS。回滚改回 `legacy` |
 | `CORS_ORIGIN` | （空） | 与 NestJS 相同的逗号分隔来源白名单。读写模式均为 `go` 时，六个精确路径的浏览器预检由 Go 204 回答，GET/PUT（含 401/400）回同一来源头。空名单不放行任何 Origin。pilot 注入与 api 服务相同的值 |
 | `API_GO_ONBOARDING_MODE` | shadow | onboarding GET 迁移单元模式（Go-批3A 兼容变量）：`shadow`（默认，批2A/2B 行为——NestJS 响应 + Go 差分）或 `go`（Go 独立鉴权 + 全响应）。仅在 `API_GO_USER_SETTINGS_READ_MODE` 未设置时生效。非法值启动失败；`go` 模式依赖同上；compose pilot 固定注入 `go`（批3A 部署等价） |
 | `JWT_SECRET` | （空） | NestJS access token 的 HMAC 验签 secret（与 api 服务同一值）。仅 `go` 模式必填。值不进入日志/healthz/错误文本 |

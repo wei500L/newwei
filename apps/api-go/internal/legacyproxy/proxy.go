@@ -165,6 +165,21 @@ func WithPublicPortal(rules []Rule, mode string) []Rule {
 	)
 }
 
+// WithDashboardStats 在 mode 为 go 时接管精确路径 GET /api/dashboard/stats。
+// 同一路径的 OPTIONS 也交给 Go，让浏览器预检不落到 NestJS。
+// 其他方法、/api/dashboard/stats 的子路径、dashboard/stream 和其他图表
+// 不在此列，继续回落 /api/。默认（空 / legacy）不追加规则。
+func WithDashboardStats(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	path := "/api/dashboard/stats"
+	return append(rules,
+		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodGet: true}},
+		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodOptions: true}},
+	)
+}
+
 // GoHandler 是已迁移到 Go 的原生处理器（按前缀注册）。
 type GoHandler func(w http.ResponseWriter, r *http.Request)
 
