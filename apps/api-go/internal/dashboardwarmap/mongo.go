@@ -66,7 +66,7 @@ func (s *mongoStore) Locations(ctx context.Context, orgID string, start, end tim
 		return nil, err
 	}
 	defer cursor.Close(ctx)
-	var docs []bson.M
+	var docs []processedItemDoc
 	if err := cursor.All(ctx, &docs); err != nil {
 		return nil, err
 	}
@@ -76,59 +76,51 @@ func (s *mongoStore) Locations(ctx context.Context, orgID string, start, end tim
 	urls := s.rawURLs(ctx, docs)
 	rows := make([]mongoRow, 0, len(docs))
 	for _, doc := range docs {
-		id := hexID(doc["_id"])
-		if id == "" {
+		if doc.ID.IsZero() {
 			continue
 		}
-		result, _ := doc["result"].(bson.M)
-		if result == nil {
-			if generic, ok := doc["result"].(map[string]any); ok {
-				result = bson.M(generic)
-			}
-		}
-		location := ""
-		title := ""
-		var entities any
-		var published *time.Time
-		if result != nil {
-			if text, ok := result["location"].(string); ok {
-				location = text
-			}
-			if text, ok := result["title"].(string); ok {
-				title = text
-			}
-			entities = normalizeBSON(result["entities"])
-			published = parseAnyTime(result["published_at"])
-		}
-		location = trim(location)
+		location := trim(doc.Result.Location)
 		if location == "" {
 			continue
 		}
-		rawID := hexID(doc["rawItemId"])
+		id := doc.ID.Hex()
 		var url *string
-		if rawID != "" {
-			if value, ok := urls[rawID]; ok && value != "" {
+		if !doc.RawItemID.IsZero() {
+			if value, ok := urls[doc.RawItemID.Hex()]; ok && value != "" {
 				copied := value
 				url = &copied
 			}
 		}
-		title = trim(title)
 		rows = append(rows, mongoRow{
 			ID:          id,
 			Location:    location,
-			Entities:    entities,
-			Title:       title,
+			Entities:    normalizeBSON(doc.Result.Entities),
+			Title:       trim(doc.Result.Title),
 			URL:         url,
-			SortAt:      parseAnyTime(doc["sortAt"]),
-			IngestedAt:  parseAnyTime(doc["ingestedAt"]),
-			CreatedAt:   parseAnyTime(doc["createdAt"]),
-			PublishedAt: published,
+			SortAt:      doc.SortAt,
+			IngestedAt:  doc.IngestedAt,
+			CreatedAt:   doc.CreatedAt,
+			PublishedAt: parseAnyTime(doc.Result.PublishedAt),
 		})
 	}
 	return rows, nil
 }
 
-func (s *mongoStore) rawURLs(ctx context.Context, docs []bson.M) map[string]string {
+type processedItemDoc struct {
+	ID         bson.ObjectID `bson:"_id"`
+	RawItemID  bson.ObjectID `bson:"rawItemId"`
+	SortAt     *time.Time    `bson:"sortAt"`
+	IngestedAt *time.Time    `bson:"ingestedAt"`
+	CreatedAt  *time.Time    `bson:"createdAt"`
+	Result     struct {
+		Location    string `bson:"location"`
+		Title       string `bson:"title"`
+		Entities    any    `bson:"entities"`
+		PublishedAt any    `bson:"published_at"`
+	} `bson:"result"`
+}
+
+func (s *mongoStore) rawURLs(ctx context.Context, docs []processedItemDoc) map[string]string {
 	out := map[string]string{}
 	if s.raws == nil {
 		return out
@@ -136,19 +128,15 @@ func (s *mongoStore) rawURLs(ctx context.Context, docs []bson.M) map[string]stri
 	ids := make([]bson.ObjectID, 0)
 	seen := map[string]struct{}{}
 	for _, doc := range docs {
-		hex := hexID(doc["rawItemId"])
-		if hex == "" {
+		if doc.RawItemID.IsZero() {
 			continue
 		}
+		hex := doc.RawItemID.Hex()
 		if _, ok := seen[hex]; ok {
 			continue
 		}
 		seen[hex] = struct{}{}
-		oid, err := bson.ObjectIDFromHex(hex)
-		if err != nil {
-			continue
-		}
-		ids = append(ids, oid)
+		ids = append(ids, doc.RawItemID)
 	}
 	if len(ids) == 0 {
 		return out

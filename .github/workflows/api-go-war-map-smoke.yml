@@ -290,9 +290,8 @@ jobs:
               assert nest["events"][0].get("alertCount", 0) == 0
           check(march + "&cluster=1&bbox=0,40,10,60&zoom=0.5", cluster_pred, "europe cluster")
           def april_pred(status, nest, go, label):
-              assert status == 200
-              assert any(m.get("title") == "Mongo fallback headline" for m in nest["markers"])
-              assert [m["id"] for m in nest["markers"]] == [m["id"] for m in go["markers"]]
+              if status != 200 or [m.get("id") for m in nest.get("markers", [])] != [m.get("id") for m in go.get("markers", [])] or not any(m.get("title") == "Mongo fallback headline" for m in nest.get("markers", [])):
+                  raise SystemExit(json.dumps({"nest": nest, "go": go}, ensure_ascii=False)[:4000])
               assert all(m.get("title") != "Other org mongo" for m in nest["markers"])
           check("/api/dashboard/war-map/news-markers?start=2026-04-01T00:00:00.000Z&end=2026-04-02T00:00:00.000Z", april_pred, "mongo fallback markers")
           def april_events(status, nest, go, label):
