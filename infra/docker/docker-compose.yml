@@ -545,7 +545,7 @@ services:
   #   运行期），浏览器端以构建参数 NEXT_PUBLIC_API_BASE_URL 指向
   #   http://<host>:${API_GO_HOST_PORT:-4020}/api 重建 web 镜像。
   # 回滚（无数据迁移耦合，按序）：
-  #   1. API_GO_PUBLIC_PORTAL_MODE=legacy——首页与频道回到 NestJS；
+  #   1. API_GO_PUBLIC_PORTAL_MODE=legacy——首页、频道和故事详情回到 NestJS；
   #   2. API_GO_USER_SETTINGS_WRITE_MODE=legacy——六个 PUT 回到 NestJS；
   #   3. API_GO_USER_SETTINGS_READ_MODE=shadow——六个 GET 回到 NestJS
   #      响应 + Go 差分；
@@ -577,9 +577,18 @@ services:
       API_GO_USER_SETTINGS_READ_MODE: go
       # 六个 PUT 写接管（Go-批3C）。必须与读模式同为 go；改回 legacy 即回滚写路径。
       API_GO_USER_SETTINGS_WRITE_MODE: go
-      # 公开首页与频道（Go-批4A）。默认部署不启动本服务；未设置或 legacy
-      # 时这两条 GET 仍代理 NestJS。故事详情不在此开关内。回滚 = 改回 legacy。
+      # 公开首页、频道和两个故事详情（Go-批4A/4B）。默认部署不启动本服务；
+      # 未设置或 legacy 时这些 GET 仍代理 NestJS。启用 go 前应确认模型网关
+      # 配置可用；缓存缺失时的真实模型调用尚未验证。回滚 = 改回 legacy。
       API_GO_PUBLIC_PORTAL_MODE: go
+      # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
+      # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。
+      SYSTEM_SETTINGS_ENCRYPTION_KEY: ${SYSTEM_SETTINGS_ENCRYPTION_KEY:-}
+      LITELLM_API_URL: ${LITELLM_API_URL:-}
+      LITELLM_API_BASE: ${LITELLM_API_BASE:-http://localhost:4001}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-}
+      LITELLM_TIMEOUT_MS: ${LITELLM_TIMEOUT_MS:-60000}
+      LITELLM_RETRY_ATTEMPTS: ${LITELLM_RETRY_ATTEMPTS:-3}
       # Go-批3A 兼容变量：readMode 未设时仍控制 onboarding（pilot 固定
       # go，保持与批3A 部署等价；readMode=go 已覆盖全部六端点）。
       API_GO_ONBOARDING_MODE: go

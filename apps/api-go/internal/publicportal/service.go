@@ -72,14 +72,33 @@ type ChannelResponse struct {
 	Stories     []Story `json:"stories"`
 }
 
-// Service 组装公开首页与频道。不读取请求里的租户参数。
+// Completer 调用已配置的模型网关。测试可替换；生产实现读取
+// SystemSetting 里的 gateway profile，不把请求转给 NestJS。
+type Completer interface {
+	Complete(ctx context.Context, req completionRequest) (string, error)
+}
+
+// Service 组装公开首页、频道和故事详情。不读取请求里的租户参数。
 type Service struct {
-	store Store
-	now   func() time.Time
+	store      Store
+	now        func() time.Time
+	complete   Completer
+	gatewayEnv GatewayEnv
 }
 
 func NewService(store Store) *Service {
 	return &Service{store: store, now: time.Now}
+}
+
+func (s *Service) UseGateway(env GatewayEnv) {
+	s.gatewayEnv = env
+}
+
+func (s *Service) completer() Completer {
+	if s.complete != nil {
+		return s.complete
+	}
+	return newGateway(s.store, s.gatewayEnv)
 }
 
 func (s *Service) Home(ctx context.Context) (HomeResponse, error) {
