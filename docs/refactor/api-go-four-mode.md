@@ -1,6 +1,6 @@
 # api-go 四态路由与首个迁移单元（shadow/canary 实现说明）
 
-> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补 · 2026-09-07 Go-批3B 增补 · 2026-09-26 Go-批3C 增补（六个 PUT，`API_GO_USER_SETTINGS_WRITE_MODE`，默认 legacy）· 2026-09-27 Go-批4A 增补（public-portal 首页与频道）· 2026-09-27 Go-批4B 增补（故事详情两个 GET，仍是 `API_GO_PUBLIC_PORTAL_MODE`，默认 legacy）
+> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补 · 2026-09-07 Go-批3B 增补 · 2026-09-26 Go-批3C 增补（六个 PUT，`API_GO_USER_SETTINGS_WRITE_MODE`，默认 legacy）· 2026-09-27 Go-批4A 增补（public-portal 首页与频道）· 2026-09-27 Go-批4B 增补（故事详情两个 GET，仍是 `API_GO_PUBLIC_PORTAL_MODE`，默认 legacy）· 2026-10-09 Go-批5A 增补（`GET /api/dashboard/stats`，`API_GO_DASHBOARD_STATS_MODE`，默认 legacy）
 > 关联：docs/refactor/go-migration-adr.md §3/§4/§4.3、roadmap M2
 
 ---

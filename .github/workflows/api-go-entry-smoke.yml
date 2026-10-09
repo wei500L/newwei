@@ -826,6 +826,8 @@ jobs:
             -e API_GO_USER_SETTINGS_READ_MODE=go \
             -e API_GO_USER_SETTINGS_WRITE_MODE=go \
             -e API_GO_PUBLIC_PORTAL_MODE=go \
+            -e API_GO_DASHBOARD_STATS_MODE=go \
+            -e MONGO_URI=mongodb://host.docker.internal:27017/app \
             -e JWT_SECRET="$JWT_SECRET" \
             -e JWT_ISSUER="$JWT_ISSUER" \
             -e JWT_AUDIENCE="$JWT_AUDIENCE" \
@@ -937,6 +939,117 @@ jobs:
           print(f"Phase C: read mode=go write mode=go; shadow executed={now['executed']} (zero — Go handler 全响应，无差分)")
           PY
           python3 /tmp/smoke_go_shadow.py
+
+      - name: "Smoke 8a — dashboard stats Go vs NestJS on real MySQL, Mongo, Redis"
+        run: |
+          set -euo pipefail
+          MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
+          REDIS_CID=$(docker ps -q -f ancestor=redis:7.2 | head -n1)
+          test -n "$MYSQL_CID" && test -n "$REDIS_CID"
+          ORG_ID=$(docker exec "$MYSQL_CID" mysql -uroot -psecret -N -e \
+            "SELECT id FROM app.Org WHERE slug='${SEED_ORG_SLUG}'" 2>/dev/null)
+          test -n "$ORG_ID"
+          export ORG_ID MYSQL_CID REDIS_CID
+          docker exec -i "$MYSQL_CID" mysql -uroot -psecret app <<SQL
+          DELETE FROM ItemMeta WHERE id LIKE 'item-dash-%';
+          DELETE FROM Org WHERE id = 'org-dash-other';
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('org-dash-other', 'Dash Other', 'dash-other', 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3));
+          INSERT INTO ItemMeta (id, orgId, externalId, name, mongoRef, updatedAt) VALUES
+            ('item-dash-a1', '${ORG_ID}', 'ext-dash-a1', 'A1', 'mongo-a1', UTC_TIMESTAMP(3)),
+            ('item-dash-a2', '${ORG_ID}', 'ext-dash-a2', 'A2', 'mongo-a2', UTC_TIMESTAMP(3)),
+            ('item-dash-a3', '${ORG_ID}', 'ext-dash-a3', 'A3', 'mongo-a3', UTC_TIMESTAMP(3)),
+            ('item-dash-a4', '${ORG_ID}', 'ext-dash-a4', 'A4', 'mongo-a4', UTC_TIMESTAMP(3)),
+            ('item-dash-b1', 'org-dash-other', 'ext-dash-b1', 'B1', 'mongo-b1', UTC_TIMESTAMP(3)),
+            ('item-dash-b2', 'org-dash-other', 'ext-dash-b2', 'B2', 'mongo-b2', UTC_TIMESTAMP(3)),
+            ('item-dash-b3', 'org-dash-other', 'ext-dash-b3', 'B3', 'mongo-b3', UTC_TIMESTAMP(3)),
+            ('item-dash-b4', 'org-dash-other', 'ext-dash-b4', 'B4', 'mongo-b4', UTC_TIMESTAMP(3)),
+            ('item-dash-b5', 'org-dash-other', 'ext-dash-b5', 'B5', 'mongo-b5', UTC_TIMESTAMP(3)),
+            ('item-dash-b6', 'org-dash-other', 'ext-dash-b6', 'B6', 'mongo-b6', UTC_TIMESTAMP(3)),
+            ('item-dash-b7', 'org-dash-other', 'ext-dash-b7', 'B7', 'mongo-b7', UTC_TIMESTAMP(3)),
+            ('item-dash-b8', 'org-dash-other', 'ext-dash-b8', 'B8', 'mongo-b8', UTC_TIMESTAMP(3)),
+            ('item-dash-b9', 'org-dash-other', 'ext-dash-b9', 'B9', 'mongo-b9', UTC_TIMESTAMP(3));
+          SQL
+          docker exec "$REDIS_CID" redis-cli DEL "queue:itemPipeline:org:${ORG_ID}:counts" "queue:itemPipeline:org:org-dash-other:counts" >/dev/null
+          docker exec "$REDIS_CID" redis-cli HSET "queue:itemPipeline:org:${ORG_ID}:counts" waiting 3 completed -2 failed nope delayed 1.5 >/dev/null
+          docker exec "$REDIS_CID" redis-cli HSET "queue:itemPipeline:org:org-dash-other:counts" waiting 50 >/dev/null
+          case "$ORG_ID" in
+            *[!A-Za-z0-9]*) echo "unexpected org id" >&2; exit 1 ;;
+          esac
+          docker run --rm --network host mongo:7.0 mongosh --quiet "mongodb://127.0.0.1:27017/app" --eval "
+            const org = '${ORG_ID}';
+            db.processeditems.deleteMany({orgId: {\$in: [org, 'org-dash-other']}});
+            db.tasklogs.deleteMany({orgId: {\$in: [org, 'org-dash-other']}});
+            db.processeditems.insertMany([{orgId: org}, {orgId: org}]);
+            db.processeditems.insertMany(Array.from({length: 7}, () => ({orgId: 'org-dash-other'})));
+            const logs = [];
+            for (let day = 1; day <= 11; day += 1) {
+              const createdAt = new Date(Date.UTC(2026, 0, day));
+              logs.push({orgId: org, queue: 'itemPipeline', jobId: 'job-' + String(day).padStart(2, '0'), stage: 'dedupe', status: 'completed', message: 'ok', createdAt});
+            }
+            logs.push({orgId: org, queue: 'otherQueue', jobId: 'job-other-queue', stage: 'dedupe', status: 'completed', message: 'nope', createdAt: new Date('2026-02-01T00:00:00.000Z')});
+            logs.push({orgId: 'org-dash-other', queue: 'itemPipeline', jobId: 'job-other-org', stage: 'dedupe', status: 'completed', message: 'leak', createdAt: new Date('2026-02-02T00:00:00.000Z')});
+            db.tasklogs.insertMany(logs);
+          "
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          TRACE = "aa11bb22cc33dd44ee55ff6677889900"
+          token = open("/tmp/smoke-jwt").read().strip()
+          org = os.environ["ORG_ID"]
+
+          def get(base, query=""):
+              req = urllib.request.Request(
+                  base + "/api/dashboard/stats" + query,
+                  headers={
+                      "authorization": f"Bearer {token}",
+                      "x-trace-id": TRACE,
+                      "Origin": "http://localhost:3000",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  return resp.status, resp.headers, json.loads(resp.read())
+
+          status_n, headers_n, nest = get("http://127.0.0.1:4000")
+          status_g, headers_g, go = get("http://127.0.0.1:4020")
+          assert status_n == status_g == 200, (status_n, status_g)
+          assert nest == go, (nest, go)
+          assert go["itemCount"] == 4, go
+          assert go["processedCount"] == 2, go
+          assert go["queue"] == {
+              "waiting": 3, "active": 0, "completed": 0, "failed": 0, "delayed": 1.5,
+          }, go["queue"]
+          assert go["queueCountsAvailable"] is True, go
+          logs = go["recentQueueLogs"]
+          assert len(logs) == 10, logs
+          assert [row["jobId"] for row in logs] == [f"job-{day:02d}" for day in range(11, 1, -1)], logs
+          assert logs[0]["createdAt"] == "2026-01-11T00:00:00.000Z", logs[0]
+          assert all(row.get("message") == "ok" for row in logs), logs
+          assert "job-01" not in {row["jobId"] for row in logs}
+          assert "job-other-org" not in {row["jobId"] for row in logs}
+          assert "job-other-queue" not in {row["jobId"] for row in logs}
+          _, _, aliased = get("http://127.0.0.1:4020", "?orgId=org-dash-other")
+          assert aliased == go, aliased
+          assert headers_g.get("x-trace-id") == TRACE, dict(headers_g)
+          assert (headers_g.get("content-type") or "").startswith("application/json"), dict(headers_g)
+          pre = urllib.request.Request(
+              "http://127.0.0.1:4020/api/dashboard/stats",
+              method="OPTIONS",
+              headers={
+                  "Origin": "http://localhost:3000",
+                  "Access-Control-Request-Method": "GET",
+                  "Access-Control-Request-Headers": "authorization",
+              },
+          )
+          with urllib.request.urlopen(pre, timeout=15) as resp:
+              assert resp.status == 204, resp.status
+              assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+          with open("/tmp/dashboard-expect.json", "w") as fh:
+              json.dump(go, fh)
+          print(f"dashboard stats: NestJS matches Go for org {org}; other org and query orgId ignored")
+          PY
 
       - name: "Smoke 8b/13 — Phase C: Go PUT write takeover, cross-read, empty, concurrency, isolation"
         run: |
@@ -2302,6 +2415,38 @@ jobs:
           open("/tmp/brief-cold-path.txt", "w").write("executed\n")
           PY
           python3 /tmp/smoke_takeover.py
+          python3 - <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+
+          token = open("/tmp/smoke-jwt").read().strip()
+          expect = json.load(open("/tmp/dashboard-expect.json"))
+          req = urllib.request.Request(
+              "http://127.0.0.1:4020/api/dashboard/stats",
+              headers={"authorization": f"Bearer {token}"},
+          )
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              assert resp.status == 200, resp.status
+              got = json.loads(resp.read())
+          assert got == expect, (got, expect)
+          for path in (
+              "/api/dashboard/war-map/geojson",
+              "/api/dashboard/stream",
+              "/api/dashboard/stats/extra",
+          ):
+              blocked = urllib.request.Request(
+                  "http://127.0.0.1:4020" + path,
+                  headers={"authorization": f"Bearer {token}"},
+              )
+              try:
+                  urllib.request.urlopen(blocked, timeout=10)
+              except urllib.error.HTTPError as err:
+                  assert err.code == 502, (path, err.code, err.read()[:180])
+              else:
+                  raise SystemExit(f"{path} succeeded after NestJS stopped")
+          print("NestJS stopped: dashboard stats still complete; other dashboard routes 502")
+          PY
           # api-go 容器保持 healthy（Go 端点与探活不依赖 NestJS）。
           HEALTH=$(docker inspect --format '{{.State.Health.Status}}' api-go-smoke)
           test "$HEALTH" = "healthy"
@@ -2319,6 +2464,7 @@ jobs:
           assert doc.get("userSettingsRead", {}).get("mode") == "go", doc
           assert doc.get("userSettingsWrite", {}).get("mode") == "go", doc
           assert doc.get("userSettingsRead", {}).get("database") == "configured", doc
+          assert doc.get("dashboardStats", {}).get("mode") == "go", doc
           assert now["executed"] == 0, now
           assert now["diffs"] == 0, now
           assert now["inflight"] == 0, now

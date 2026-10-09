@@ -107,6 +107,10 @@ GET /api/public-portal/home(:16) · channels/:topic(:23) · stories/id/:id(:34) 
 
 Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`（exact）、`GET /api/public-portal/channels/:topic`、`GET /api/public-portal/stories/id/:id` 与 `GET /api/public-portal/stories/slug/:slug`（后三个恰好一个路径段，且仅 GET）由 Go 查 MySQL 并完整响应。默认 `legacy`，生产入口未切换。公开组织只来自 `SystemSetting.public_portal_org_slug`。故事详情的 brief 冷路径使用 `llm_gateway_profiles`，不把请求转回 NestJS。缓存命中详情已在真实栈验证；缓存缺失时的真实模型调用与新 brief 写回尚未真实验证。启用 `go` 前应确认模型网关配置可用。回滚：`API_GO_PUBLIC_PORTAL_MODE=legacy`。
 
+### 1.8a dashboard stats（Go-批5A，仅 1 个 GET）
+
+`GET /api/dashboard/stats` 权限是 `items.read`（不是表内其余图表的 `dashboards.read`）。`API_GO_DASHBOARD_STATS_MODE=go` 时该精确 GET 由 Go 按服务端 orgId 读 MySQL `ItemMeta`、Mongo `processeditems`/`tasklogs` 和 Redis `queue:itemPipeline:org:<orgId>:counts`。默认 `legacy`。`dashboard/stream` 与图表 GET 不在这个开关里。回滚：`API_GO_DASHBOARD_STATS_MODE=legacy`。
+
 ### 1.9 system-settings（98 个，26 个 controller）
 
 内部端点（服务间 token，非用户 JWT）：
@@ -259,4 +263,4 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 3. GraphQL Subscription 进程内 PubSub vs Socket.IO 可选 Redis adapter——水平扩容语义不一致
 4. crawl4ai legacy 与 hot/normal 双轨队列并存
 5. itemPipeline DLQ 的非标准入队时机（worker failed 事件）
-6. `GET /api/metrics` 全局未按 org 过滤（SEC-03，bug-ledger 登记）
+6. `GET /api/metrics` 是平台级全量指标（SEC-03 已收紧）：人类须为平台管理员；机器令牌还须其 `createdById` 当前持有 `platform_admin`。普通组织的 `metrics.read` 或旧机器令牌不再够用。输出不过滤成组织子集。

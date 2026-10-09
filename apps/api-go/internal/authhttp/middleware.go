@@ -41,6 +41,16 @@ type Identity struct {
 	permissions map[string]bool
 }
 
+// NewIdentity 组装一份已完成重推导的身份，供接管端点的测试使用。
+// 生产路径只经过 Authenticate，不从请求参数填这个结构。
+func NewIdentity(userID, orgID string, permissions []string) *Identity {
+	set := make(map[string]bool, len(permissions))
+	for _, permission := range permissions {
+		set[permission] = true
+	}
+	return &Identity{UserID: userID, OrgID: orgID, permissions: set}
+}
+
 // HasPermission 按数据库推导的权限集判定。
 func (id *Identity) HasPermission(name string) bool {
 	return id.permissions[name]

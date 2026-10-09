@@ -9556,6 +9556,8 @@
           "metrics.read"
         ],
         "x-permissions-mode": "any",
+        "x-platform-admin": "handler-check",
+        "x-platform-admin-source": "handler-text-scan",
         "responses": {
           "200": {
             "description": "Success",

@@ -81,6 +81,18 @@ const (
 	PublicPortalModeGo PublicPortalMode = "go"
 )
 
+// DashboardStatsMode 是 GET /api/dashboard/stats 的接管开关
+// （API_GO_DASHBOARD_STATS_MODE）。默认 legacy。只这一条精确 GET。
+type DashboardStatsMode string
+
+const (
+	// DashboardStatsModeLegacy：GET /api/dashboard/stats 继续代理 NestJS。
+	DashboardStatsModeLegacy DashboardStatsMode = "legacy"
+	// DashboardStatsModeGo：该 GET 由 Go 独立鉴权并查询 MySQL、Mongo、Redis。
+	// 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI。
+	DashboardStatsModeGo DashboardStatsMode = "go"
+)
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -111,6 +123,12 @@ type Config struct {
 	// PublicPortalMode 见 PublicPortalMode 常量。默认 legacy。
 	// go 只要求 DATABASE_URL（匿名读），不要求 JWT/Redis。
 	PublicPortalMode PublicPortalMode
+
+	// DashboardStatsMode 见 DashboardStatsMode 常量。默认 legacy。
+	// go 要求 JWT、MySQL、Redis 与 MONGO_URI。URI 不进入日志或错误文本。
+	DashboardStatsMode DashboardStatsMode
+	// MongoURI 是 NestJS 同名 MONGO_URI。仅 dashboard stats 的 go 模式读取。
+	MongoURI string
 
 	// SettingsEncryptionKey 是 Nest 已有的 SYSTEM_SETTINGS_ENCRYPTION_KEY。
 	// 只用于解开 SystemSetting 里的模型网关凭据。不进入日志。
@@ -256,6 +274,16 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_PUBLIC_PORTAL_MODE must be one of legacy|go")
 	}
+
+	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_STATS_MODE")) {
+	case "", string(DashboardStatsModeLegacy):
+		cfg.DashboardStatsMode = DashboardStatsModeLegacy
+	case string(DashboardStatsModeGo):
+		cfg.DashboardStatsMode = DashboardStatsModeGo
+	default:
+		errs = append(errs, "API_GO_DASHBOARD_STATS_MODE must be one of legacy|go")
+	}
+	cfg.MongoURI = strings.TrimSpace(getenv("MONGO_URI"))
 	cfg.SettingsEncryptionKey = strings.TrimSpace(getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
 	cfg.LiteLLMAPIBase = strings.TrimSpace(getenv("LITELLM_API_URL"))
 	if cfg.LiteLLMAPIBase == "" {
@@ -412,6 +440,20 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.PublicPortalMode == PublicPortalModeGo && cfg.DatabaseURL == "" {
 		errs = append(errs, "DATABASE_URL is required when API_GO_PUBLIC_PORTAL_MODE=go")
+	}
+	if cfg.DashboardStatsMode == DashboardStatsModeGo {
+		if cfg.JWTSecret == "" {
+			errs = append(errs, "JWT_SECRET is required when API_GO_DASHBOARD_STATS_MODE=go")
+		}
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_DASHBOARD_STATS_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_DASHBOARD_STATS_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_DASHBOARD_STATS_MODE=go")
+		}
 	}
 
 	if len(errs) > 0 {

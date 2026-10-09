@@ -107,14 +107,19 @@ func WriteForbidden(w http.ResponseWriter, r *http.Request, requiredPermissions 
 	})
 }
 
-// WriteRedisFailure 写 Redis 查询失败的 fail-closed 500（NestJS：非
-// HttpException → 生产环境 {statusCode, message:"Internal server error"}，
-// 无 error 字段）。
-func WriteRedisFailure(w http.ResponseWriter, r *http.Request) {
+// WriteInternalFailure 写非 HttpException 的生产 500（NestJS：
+// {statusCode, message:"Internal server error"}，无 error 字段）。
+// Redis 查询失败与 Mongo 查询失败都是这个形状。
+func WriteInternalFailure(w http.ResponseWriter, r *http.Request) {
 	writeError(w, r, errorBody{
 		StatusCode: http.StatusInternalServerError,
 		Message:    "Internal server error",
 	})
+}
+
+// WriteRedisFailure 写 Redis 查询失败的 fail-closed 500。
+func WriteRedisFailure(w http.ResponseWriter, r *http.Request) {
+	WriteInternalFailure(w, r)
 }
 
 // WriteDatabaseFailure 写 MySQL 查询失败的 fail-closed 503（NestJS：

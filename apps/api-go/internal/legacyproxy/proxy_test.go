@@ -964,3 +964,52 @@ func TestPublicPortalRoutesStayLegacyUntilGoMode(t *testing.T) {
 		})
 	}
 }
+
+func TestDashboardStatsRouteIsExactGetOnly(t *testing.T) {
+	stub := newLegacyStub(t)
+	base := DefaultRulesWithWrite(ModeShadow, "", "")
+	legacyGateway, err := New(stub.server.URL, WithDashboardStats(base, ""))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	for _, rule := range legacyGateway.Rules() {
+		if rule.Prefix == "/api/dashboard/stats" {
+			t.Fatalf("default rules include dashboard stats")
+		}
+	}
+	rec := httptest.NewRecorder()
+	legacyGateway.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://gateway/api/dashboard/stats", nil))
+	if !strings.Contains(rec.Body.String(), "legacy") {
+		t.Fatalf("stats without go mode = %s", rec.Body.String())
+	}
+
+	gateway, err := New(stub.server.URL, WithDashboardStats(base, string(ModeGo)))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	gateway.RegisterGoHandler("/api/dashboard/stats", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"impl":"go-stats"}`))
+	})
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		want   string
+	}{
+		{"exact get", http.MethodGet, "/api/dashboard/stats", "go-stats"},
+		{"exact options", http.MethodOptions, "/api/dashboard/stats", "go-stats"},
+		{"post stays legacy", http.MethodPost, "/api/dashboard/stats", "legacy"},
+		{"extra path stays legacy", http.MethodGet, "/api/dashboard/stats/extra", "legacy"},
+		{"stream stays legacy", http.MethodGet, "/api/dashboard/stream", "legacy"},
+		{"war map stays legacy", http.MethodGet, "/api/dashboard/war-map/geojson", "legacy"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := httptest.NewRecorder()
+			gateway.ServeHTTP(res, httptest.NewRequest(tc.method, "http://gateway"+tc.path, nil))
+			if !strings.Contains(res.Body.String(), tc.want) {
+				t.Fatalf("body = %s, want %s", res.Body.String(), tc.want)
+			}
+		})
+	}
+}

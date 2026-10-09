@@ -10,6 +10,7 @@ import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 
 import type { AuthenticatedUser } from "./auth.service";
+import { PlatformAccessService } from "./platform-access.service";
 
 const MACHINE_TOKEN_PREFIX = "mtk_";
 const MACHINE_TOKEN_ALLOWED_PERMISSIONS = new Set([
@@ -48,7 +49,10 @@ function normalizePermissions(permissions: string[]): string[] {
 
 @Injectable()
 export class MachineTokenService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly platformAccess: PlatformAccessService,
+  ) {}
 
   isMachineToken(value: string | undefined): boolean {
     return typeof value === "string" && value.startsWith(MACHINE_TOKEN_PREFIX);
@@ -177,5 +181,47 @@ export class MachineTokenService {
       mfaRequired: false,
       mfaEnrollmentRequired: false,
     };
+  }
+
+  /**
+   * SEC-03：机器令牌能否读取平台级指标。
+   *
+   * 按 bearer 的 SHA-256 查 MachineAccessToken，不看 mtk_ 前缀，也不看
+   * JWT / permissions JSON 里有没有平台身份。查不到行 → absent（调用方走
+   * 人类平台管理员校验）。查到行时，只有 createdById 当前在
+   * GlobalRoleAssignment 里持有 platform_admin 才允许。普通组织管理员
+   * 创建的旧令牌、createdBy 已清空、已撤销、已过期或组织停用，一律拒绝。
+   * 轮换会复制原来的 createdById，所以授权跟着创建者的当前平台角色走，
+   * 不会因为组织管理员持有新密钥而升级。
+   */
+  async resolvePlatformMetricsAccess(
+    bearer: string | undefined,
+  ): Promise<"absent" | "machine-allowed" | "machine-denied"> {
+    if (!bearer) {
+      return "absent";
+    }
+    const record = await this.prisma.machineAccessToken.findUnique({
+      where: { tokenHash: hashToken(bearer) },
+      select: {
+        createdById: true,
+        revokedAt: true,
+        expiresAt: true,
+        org: { select: { isActive: true } },
+      },
+    });
+    if (!record) {
+      return "absent";
+    }
+    const now = new Date();
+    if (
+      record.revokedAt ||
+      (record.expiresAt && record.expiresAt <= now) ||
+      !record.org?.isActive ||
+      !record.createdById
+    ) {
+      return "machine-denied";
+    }
+    const allowed = await this.platformAccess.isPlatformAdmin(record.createdById);
+    return allowed ? "machine-allowed" : "machine-denied";
   }
 }

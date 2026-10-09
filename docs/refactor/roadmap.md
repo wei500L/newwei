@@ -38,6 +38,7 @@
 | user-settings 六个 PUT 的 Go 写接管（Go-批3C） | 🔶 pilot 内 `API_GO_USER_SETTINGS_WRITE_MODE=go`（且读模式必须同为 `go`）时，六个精确 PUT 由 Go 写入现有 `UserSetting` 并重读返回；默认 `legacy` 仍代理 NestJS。空对象不插行；Situation Monitor 三段独立 upsert、无事务。登录/refresh/MFA/OIDC/机器令牌仍 NestJS；canary 与生产入口未切换。远端 smoke 是本批验收。 |
 | public-portal 首页与频道（Go-批4A） | 🔶 pilot 内 `API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home` 与 `GET /api/public-portal/channels/:topic`（一个路径段）由 Go 查真实 MySQL 并完整响应；默认 `legacy` 仍代理 NestJS。公开组织只来自 `public_portal_org_slug`。故事详情见批4B。整个 public-portal 未迁完。 |
 | public-portal 故事详情（Go-批4B） | 🔶 同一 `API_GO_PUBLIC_PORTAL_MODE=go` 接管 `GET /api/public-portal/stories/id/:id` 与 `stories/slug/:slug`（各恰好一个路径段，仅 GET）。默认 `legacy`，生产入口仍是 Web → NestJS。已真实验证：缓存命中的 id/slug 详情、公开组织边界、NestJS 停止后 Go 独立返回完整缓存详情。已实现但未真实验证：缓存缺失或指纹失效时访问真实模型网关并写回新 `briefV1`。启用 `go` 前应确认模型网关配置可用。回滚：`API_GO_PUBLIC_PORTAL_MODE=legacy`。登录与其他 API 未迁。 |
+| dashboard stats（Go-批5A） | 🔶 `API_GO_DASHBOARD_STATS_MODE=go` 时只有精确 `GET /api/dashboard/stats` 由 Go 读 MySQL ItemMeta、Mongo processeditems/tasklogs 和 Redis 组织计数。默认 `legacy`。orgId 来自 membership 重推导。不启动队列 worker。其他 dashboard 接口仍是 NestJS。回滚改回 `legacy`。 |
 | api 单测基座（vitest） | ✅ 远端 CI 已验证（SEC-01 6/6 + API-01 4/4 + 扫描器语义/基线断言全绿） |
 
 余项（按序）：
@@ -50,7 +51,7 @@
 | 项 | 动作 | 回归验证 | 状态 |
 |---|---|---|---|
 | SEC-01（P0） | vector-service 设置 PUT/DELETE 注入 platformAccess.assertPlatformAdmin（复用 audit-log 模式） | 控制器单测：非平台管理员的 settings.manage 持有者 → 403；平台管理员 → 通过；GET 不受影响 | ✅ 单元级远端 CI 已验证（vitest 6/6）。**真实数据库登录态（登录→改配置→403）未验证**——CI 无 DB 栈。网络白名单只登记设计建议（见 bug-ledger §SEC-01） |
-| SEC-03 | /api/metrics 定位决策（平台级收紧 or org 过滤）+ 实施 | 鉴权矩阵对应行 | ⬜ |
+| SEC-03 | /api/metrics 定位为平台级全量指标。人类须 `assertPlatformAdmin`；机器令牌还要求 `createdById` 当前是 platform_admin（库内校验，不看令牌前缀）。不把输出滤成组织指标 | 鉴权矩阵 `/api/metrics` 行 + `metrics.controller.test.ts` | ✅ 控制器单测覆盖三类主体。真实登录态冒烟未做 |
 | API-01 运行时验证 | Docker 栈就绪后：登录→完成引导→刷新不重现 | 手工冒烟清单 | 🔶 静态闭环 + 契约测试远端 CI 已验证（4/4）；**真实用户完成引导并刷新不重现——未验证**（需数据库栈） |
 | BAPI-01 | **决策冻结**：Go 迁移前不动 schema；列入 GraphQL 迁移序（M5）的版本化演进 | — | — |
 

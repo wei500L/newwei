@@ -17,10 +17,10 @@
     "allowAuthenticated": 19,
     "permissionGated": 321,
     "permissionGatedDenyWithoutPermission": 321,
-    "platformAdminInHandler": 7,
+    "platformAdminInHandler": 8,
     "internalTokenGuarded": 4,
     "wrongOrgRuntimeRequired": 340,
-    "heuristicRows": 7
+    "heuristicRows": 8
   },
   "rows": [
     {
@@ -4793,16 +4793,17 @@
         "metrics.read"
       ],
       "permissionMode": "any",
-      "ordinaryOrgAdmin": "runtime-required",
-      "platformAdmin": "runtime-required",
-      "platformOnly": false,
-      "platformCheckSource": null,
+      "ordinaryOrgAdmin": "denied",
+      "platformAdmin": "allowed",
+      "platformOnly": true,
+      "platformCheckSource": "handler-text-scan",
       "runtimeVerificationRequired": [
-        "wrong-org-membership"
+        "wrong-org-membership",
+        "platform-admin-gate"
       ],
-      "confidence": "static",
+      "confidence": "static+heuristic",
       "source": "src/modules/observability/metrics.controller.ts",
-      "riskNotes": ""
+      "riskNotes": "platform-admin check in handler body (heuristic)"
     },
     {
       "method": "GET",

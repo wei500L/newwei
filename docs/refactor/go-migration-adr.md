@@ -291,6 +291,32 @@ handler、同一鉴权链装配、同一连接池，不复制六份实现：
   与 public-portal 默认模式仍是 `legacy`，不能声称生产流量已经切换。将来
   启用 `go` 前应确认模型网关配置可用。
 
+### 4.8 dashboard stats 只读接管（Go-批5A）
+
+只接管一条精确 GET。默认 `API_GO_DASHBOARD_STATS_MODE=legacy`（未设置同义）。
+pilot 注入 `go`。生产入口不因本批改变。
+
+- **接管单元**：`GET /api/dashboard/stats`（exact + 仅 GET）。同一路径的
+  有效 `OPTIONS` 预检由 Go 按 `CORS_ORIGIN` 回答。POST、子路径、
+  `GET /api/dashboard/stream` 以及其他图表 GET 继续回落 `/api/`。
+- **身份**：复用 access token 验签、Redis `access-token:blacklist`、MySQL
+  membership/RBAC。`orgId` 与 `items.read` 只来自这次重推导。不读 JWT
+  `permissions`，不读 query 里的 `orgId`，不调用 NestJS。
+- **数据**（与 `DashboardService.stats` 的 `Promise.all` 相同）：
+  - MySQL `ItemMeta` 按 orgId 计数；
+  - Mongo `processeditems` 按同一 orgId 计数；
+  - Mongo `tasklogs` 中 `queue=itemPipeline`，按 `createdAt` 降序最多 10 条，
+    投影 `createdAt/jobId/message/stage/status`，日期为 `Date.toISOString()`；
+  - Redis hash `queue:itemPipeline:org:<orgId>:counts` 的
+    waiting/active/completed/failed/delayed。缺失或无效为 0。命令失败时
+    五个计数为 0 且 `queueCountsAvailable=false`，其余字段仍返回。
+- **失败**：MySQL 失败 → 503；Mongo 计数或 TaskLog 失败 → 500。都不会把
+  故障写成 `itemCount/processedCount/recentQueueLogs` 的 0。不启动 Go
+  队列 worker，不写 Redis 计数，不复制 BullMQ。
+- **配置**：`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。
+  缺失或 URI 无法解析则拒绝启动。错误与日志不包含连接串。
+- **回滚**：`API_GO_DASHBOARD_STATS_MODE=legacy`。不新增表，不复制数据。
+
 ## 5. 队列/cron/outbox 边界（红线）
 
 - 全部 BullMQ 队列、21 个 @Cron/@Interval、3 套 MongoOutbox 的**写入权在最终阶段前仅属 NestJS**——Go 侧提前双写会制造消息重复/顺序破坏
