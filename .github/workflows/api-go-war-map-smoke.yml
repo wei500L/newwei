@@ -304,7 +304,11 @@ jobs:
               assert ns == gs == 400, (ns, gs, nb, gb)
               assert snippet in json.dumps(nb) and snippet in json.dumps(gb)
               print("bad", snippet, "ok")
-          bad("/api/dashboard/war-map/events?start=2026-02-31T12:00:00.000Z", "Invalid date range")
+          ns, nb, _ = call("http://127.0.0.1:4000", "/api/dashboard/war-map/events?start=2026-02-31T12:00:00.000Z")
+          gs, gb, _ = call("http://127.0.0.1:4020", "/api/dashboard/war-map/events?start=2026-02-31T12:00:00.000Z")
+          assert ns == gs == 200, (ns, gs)
+          assert {e["id"] for e in nb["events"]} == {e["id"] for e in gb["events"]}
+          print("datetime overflow both 200")
           bad("/api/dashboard/war-map/events?start=2026-03-15T23:00:00.000Z&end=2026-03-15T01:00:00.000Z", "Start must be before end")
           ns, nb, _ = call("http://127.0.0.1:4000", march + "&translate=zh-CN")
           gs, gb, _ = call("http://127.0.0.1:4020", march + "&translate=zh-CN")
