@@ -212,8 +212,14 @@ func TestUnalignedRangeAndDatetimeOverflow(t *testing.T) {
 	}
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, EventsPath+"?start=2026-02-31T12:00:00.000Z", nil))
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Invalid date range") {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("datetime overflow status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	articles.mu.Lock()
+	gotStart := articles.newsStart
+	articles.mu.Unlock()
+	if !gotStart.Equal(time.Date(2026, 3, 3, 12, 0, 0, 0, time.UTC)) {
+		t.Fatalf("datetime overflow start=%s", gotStart)
 	}
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, EventsPath+"?start=2026-02-31&end=2026-03-10T00:00:00.000Z", nil))
