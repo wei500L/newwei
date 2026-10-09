@@ -347,7 +347,7 @@ pilot 注入 `go`。与 stats、charts 开关互不影响。生产入口不因�
   - `GET /api/dashboard/war-map/news-markers`
 - **不接管**：`war-map/layers`、`war-map/transport-detail`、`war-map/geojson`（仍只看批5B）、stats、spacetime、`/api/dashboard/stream`，以及其他方法与更长路径。
 - **身份**：复用 access token 验签、Redis 撤销名单、MySQL membership/RBAC。两条都要求 `dashboards.read`。orgId 只来自重推导，并进入 MySQL、Mongo 和 `dashboard:query:*` 缓存键。JWT `permissions` 与 query `orgId` 都不作为授权或租户来源。
-- **日期**：`alignToUtcDay: false`。ISO 校验与批5B 相同，但起止时刻不拉到 UTC 日界。同一 UTC 日里 start 晚于 end 是 `Start must be before end`。仅日期 `2026-02-31` 仍按 JavaScript 溢出。带时间的 `2026-02-31T12:00:00.000Z` 在 Node 20+ 与 `time.Parse` 都是无效日期，返回 `Invalid date range`，解析器不改。
+- **日期**：`alignToUtcDay: false`。ISO 校验与批5B 相同，但起止时刻不拉到 UTC 日界。同一 UTC 日里 start 晚于 end 是 `Start must be before end`。仅日期 `2026-02-31` 与带时间的 `2026-02-31T12:00:00.000Z` 都按 JavaScript `Date` 溢出（后者到 `2026-03-03T12:00:00.000Z`）。这是 smoke 37942604941 对照出来的差异：Nest 返回 200，Go 的 `time.Parse` 原为 400。共用解析器已改成 `time.Date` 溢出，图表路径一并对齐。
 - **events**：该组织时间范围内的 `AlertEvent`（经 `AlertRule.orgId`，最多 1000，`triggeredAt` 降序）和 `hasLocation` 的 `ProcessedArticle`（最多 2500，`eventAt`/`articleId` 降序）。告警 context 提取国家代码；严重度、分数、新闻计数、`latestAt`、国家中心点来自同一份 `world.geo.json`。MySQL 新闻结果为空才查 Mongo `processeditems`。Mongo 失败只记日志并继续；MySQL 失败返回 500，不返回空数组。
 - **news-markers**：同一组织的 `ProcessedArticle` 联 `Article`，最多 500。标题、URL、时间按 Nest 的回退顺序。MySQL 为空才查 Mongo `processeditems` / `rawitems`。地点实体清洗、国家识别、地理候选、Redis `geo:geocode:v1` 缓存、最多 3 次 Nominatim、国家中心点回退、无效坐标剔除都在 Go 内完成。外部地理服务失败时继续最佳努力，不跳过这段逻辑。
 - **翻译**：`translate=zh-CN`（或 `zh`）走既有 DeepLX / fallback 配置（SystemSetting `situation_monitor_settings` 与 `SITUATION_MONITOR_TRANSLATION_*`）。失败或未配置时省略 `nameZh` / `titleZh` / `locationZh` / `displayNameZh`，不让整段请求失败。

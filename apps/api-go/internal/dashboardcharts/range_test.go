@@ -47,7 +47,8 @@ func TestDateContract(t *testing.T) {
 	if !ok || toISO(parsed) != "2026-03-01T04:00:00.000Z" {
 		t.Fatalf("offset parse = %s ok=%v", toISO(parsed), ok)
 	}
-	if _, ok := parseJSDate("2026-02-31T12:00:00.000Z"); ok {
-		t.Fatal("datetime overflow must stay invalid, matching Node Date.parse")
+	parsed, ok = parseJSDate("2026-02-31T12:00:00.000Z")
+	if !ok || toISO(parsed) != "2026-03-03T12:00:00.000Z" {
+		t.Fatalf("datetime overflow = %s ok=%v", toISO(parsed), ok)
 	}
 }
