@@ -183,7 +183,48 @@ func parseJSDate(value string) (time.Time, bool) {
 			return parsed, true
 		}
 	}
+	// time.Parse 拒绝 2026-02-31T12:00:00.000Z。远端 Nest（smoke 37942604941）
+	// 对这条返回 200，Date 把它溢出到 2026-03-03T12:00:00.000Z。这里改用
+	// time.Date 的溢出规则，和仅日期的 2026-02-31 同一类行为。
+	if parsed, ok := parseOverflowDateTime(normalized); ok {
+		return parsed, true
+	}
 	return time.Time{}, false
+}
+
+func parseOverflowDateTime(value string) (time.Time, bool) {
+	if len(value) < 11 || value[4] != '-' || value[7] != '-' || value[10] != 'T' {
+		return time.Time{}, false
+	}
+	year, okY := atoiStrict(value[0:4])
+	month, okM := atoiStrict(value[5:7])
+	day, okD := atoiStrict(value[8:10])
+	if !okY || !okM || !okD || month < 1 || month > 12 || day < 1 || day > 31 {
+		return time.Time{}, false
+	}
+	synthetic := value[:8] + "01" + value[10:]
+	var parsed time.Time
+	var err error
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05Z07:00", "2006-01-02T15:04Z07:00"} {
+		parsed, err = time.Parse(layout, synthetic)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return time.Time{}, false
+	}
+	return time.Date(year, time.Month(month), day, parsed.Hour(), parsed.Minute(), parsed.Second(), parsed.Nanosecond(), parsed.Location()), true
+}
+
+// ParseJSDate 导出给 War Map。图表路径仍用未导出的 parseJSDate。
+func ParseJSDate(value string) (time.Time, bool) {
+	return parseJSDate(value)
+}
+
+// ISO8601 与 class-validator 非 strict @IsISO8601 的格式层一致。
+func ISO8601(value string) bool {
+	return isISO8601(value)
 }
 
 func insertOffsetColon(value string) string {

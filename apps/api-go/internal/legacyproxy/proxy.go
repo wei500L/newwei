@@ -204,6 +204,28 @@ func WithDashboardCharts(rules []Rule, mode string) []Rule {
 	return rules
 }
 
+// WithDashboardWarMap 在 mode 为 go 时接管两个精确 GET：
+// war-map/events 与 war-map/news-markers。同一路径的 OPTIONS 交给 Go。
+// layers、transport-detail、spacetime、stream、stats 和三个图表不在此列。
+// 默认（空 / legacy）不追加规则。与 stats、charts 开关互相独立。
+func WithDashboardWarMap(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	getOnly := map[string]bool{http.MethodGet: true}
+	optionsOnly := map[string]bool{http.MethodOptions: true}
+	for _, path := range []string{
+		"/api/dashboard/war-map/events",
+		"/api/dashboard/war-map/news-markers",
+	} {
+		rules = append(rules,
+			Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: getOnly},
+			Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: optionsOnly},
+		)
+	}
+	return rules
+}
+
 // GoHandler 是已迁移到 Go 的原生处理器（按前缀注册）。
 type GoHandler func(w http.ResponseWriter, r *http.Request)
 

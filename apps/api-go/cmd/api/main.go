@@ -24,8 +24,11 @@
 //	         GET /api/dashboard/stats（MySQL + Mongo + Redis 只读）。
 //	         API_GO_DASHBOARD_CHARTS_MODE=go 时另接管三个精确 GET：
 //	         sector-heatmap、financial-candlestick、war-map/geojson。
+//	         API_GO_DASHBOARD_WAR_MAP_MODE=go 时另接管两个精确 GET：
+//	         war-map/events 与 war-map/news-markers。
 //
-// 回滚：API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
+// 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
+// API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
 // API_GO_DASHBOARD_STATS_MODE=legacy 把 stats 交回 NestJS；
 // API_GO_PUBLIC_PORTAL_MODE=legacy 把公开页交回 NestJS；
 // API_GO_USER_SETTINGS_READ_MODE=shadow（或未设——回到
@@ -66,6 +69,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardcharts"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
+	"github.com/wei500L/newwei/apps/api-go/internal/dashboardwarmap"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
@@ -397,7 +401,11 @@ func run() error {
 	if cfg.DashboardChartsMode == config.DashboardChartsModeGo {
 		chartsMode = string(legacyproxy.ModeGo)
 	}
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.WithDashboardCharts(
+	warMapMode := ""
+	if cfg.DashboardWarMapMode == config.DashboardWarMapModeGo {
+		warMapMode = string(legacyproxy.ModeGo)
+	}
+	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.WithDashboardWarMap(legacyproxy.WithDashboardCharts(
 		legacyproxy.WithDashboardStats(
 			legacyproxy.WithPublicPortal(
 				legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode),
@@ -406,7 +414,7 @@ func run() error {
 			dashboardMode,
 		),
 		chartsMode,
-	))
+	), warMapMode))
 	if err != nil {
 		return err
 	}
@@ -434,7 +442,8 @@ func run() error {
 				cfg.UserSettingsReadMode == config.UserSettingsReadModeGo ||
 				cfg.PublicPortalMode == config.PublicPortalModeGo ||
 				cfg.DashboardStatsMode == config.DashboardStatsModeGo ||
-				cfg.DashboardChartsMode == config.DashboardChartsModeGo {
+				cfg.DashboardChartsMode == config.DashboardChartsModeGo ||
+				cfg.DashboardWarMapMode == config.DashboardWarMapModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -466,9 +475,9 @@ func run() error {
 		cfg.UserSettingsReadMode == config.UserSettingsReadModeGo
 	dashboardGo := cfg.DashboardStatsMode == config.DashboardStatsModeGo
 	chartsGo := cfg.DashboardChartsMode == config.DashboardChartsModeGo
-	// user-settings、dashboard stats 和图表 GET 共用同一套 JWT/Redis/MySQL 鉴权栈。
-	// 只有图表或 stats 为 go、读模式仍是 legacy 时也要装配，否则无法验签。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo
+	warMapGo := cfg.DashboardWarMapMode == config.DashboardWarMapModeGo
+	// user-settings、dashboard stats、图表和 war map GET 共用同一套 JWT/Redis/MySQL 鉴权栈。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -537,6 +546,7 @@ func run() error {
 	}
 
 	// GET /api/dashboard/stats。只读 MySQL/Mongo/Redis，不启动队列 worker。
+	// War Map 与 stats 共用这一条 Mongo 连接。
 	var dashboardMongo *dashboardstats.Connection
 	if dashboardGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
@@ -582,6 +592,52 @@ func run() error {
 			})
 		}
 		log.Printf("api-go: dashboard chart GETs under go takeover")
+	}
+
+	// war-map events 与 news-markers。只在显式 go 模式注册。
+	// MySQL 新闻为空才查 Mongo。不代理 NestJS。
+	if warMapGo {
+		if sharedDB == nil || authenticator == nil || redisClient == nil {
+			return fmt.Errorf("api-go: dashboard war map go takeover requires mysql, jwt, and redis")
+		}
+		if dashboardMongo == nil {
+			conn, err := dashboardstats.Open(cfg.MongoURI)
+			if err != nil {
+				return fmt.Errorf("api-go: API_GO_DASHBOARD_WAR_MAP_MODE=go requires a valid MONGO_URI")
+			}
+			dashboardMongo = conn
+		}
+		warHandler := dashboardwarmap.NewHandler(authenticator, sharedDB, redisClient, dashboardMongo.Database(), dashboardwarmap.Runtime{
+			NominatimBaseURL:        cfg.NominatimBaseURL,
+			NominatimUserAgent:      cfg.NominatimUserAgent,
+			NominatimEmail:          cfg.NominatimEmail,
+			NominatimAcceptLanguage: cfg.NominatimAcceptLanguage,
+			GeocodeTimeout:          time.Duration(cfg.GeocodeTimeoutMs) * time.Millisecond,
+			GeocodeCacheTTL:         time.Duration(cfg.GeocodeCacheTTLSeconds) * time.Second,
+			GeocodeNegativeTTL:      time.Duration(cfg.GeocodeNegativeTTLSeconds) * time.Second,
+			GeocodeRatePerSecond:    cfg.GeocodeRatePerSecond,
+			TranslationEnabled:      cfg.TranslationAPIEnabled,
+			TranslationBaseURL:      cfg.TranslationAPIBaseURL,
+			TranslationTimeout:      time.Duration(cfg.TranslationTimeoutMs) * time.Millisecond,
+			TranslationMaxRetries:   cfg.TranslationMaxRetries,
+			TranslationFallback:     cfg.TranslationFallbackEnabled,
+			TranslationFallbackURL:  cfg.TranslationFallbackBaseURL,
+			SettingsEncryptionKey:   cfg.SettingsEncryptionKey,
+		})
+		warCORS := cors.New(cfg.CorsOrigin)
+		for _, path := range dashboardwarmap.Paths {
+			gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+				if warCORS.FinishOptions(w, r) {
+					return
+				}
+				if r.Method == http.MethodOptions {
+					gateway.ServeLegacy(w, r)
+					return
+				}
+				warHandler.ServeHTTP(w, r)
+			})
+		}
+		log.Printf("api-go: war map events and news-markers under go takeover")
 	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
@@ -684,6 +740,9 @@ func run() error {
 			// 三个图表 GET。legacy 时仍代理 NestJS。不含数据库地址。
 			"dashboardCharts": map[string]any{
 				"mode": string(cfg.DashboardChartsMode),
+			},
+			"dashboardWarMap": map[string]any{
+				"mode": string(cfg.DashboardWarMapMode),
 			},
 		})
 	})

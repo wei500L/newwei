@@ -545,14 +545,15 @@ services:
   #   运行期），浏览器端以构建参数 NEXT_PUBLIC_API_BASE_URL 指向
   #   http://<host>:${API_GO_HOST_PORT:-4020}/api 重建 web 镜像。
   # 回滚（无数据迁移耦合，按序）：
-  #   1. API_GO_DASHBOARD_CHARTS_MODE=legacy——三个图表 GET 回到 NestJS；
-  #   2. API_GO_DASHBOARD_STATS_MODE=legacy——GET /api/dashboard/stats 回到 NestJS；
-  #   3. API_GO_PUBLIC_PORTAL_MODE=legacy——首页、频道和故事详情回到 NestJS；
-  #   4. API_GO_USER_SETTINGS_WRITE_MODE=legacy——六个 PUT 回到 NestJS；
-  #   5. API_GO_USER_SETTINGS_READ_MODE=shadow——六个 GET 回到 NestJS
+  #   1. API_GO_DASHBOARD_WAR_MAP_MODE=legacy——events 与 news-markers 回到 NestJS；
+  #   2. API_GO_DASHBOARD_CHARTS_MODE=legacy——三个图表 GET 回到 NestJS；
+  #   3. API_GO_DASHBOARD_STATS_MODE=legacy——GET /api/dashboard/stats 回到 NestJS；
+  #   4. API_GO_PUBLIC_PORTAL_MODE=legacy——首页、频道和故事详情回到 NestJS；
+  #   5. API_GO_USER_SETTINGS_WRITE_MODE=legacy——六个 PUT 回到 NestJS；
+  #   6. API_GO_USER_SETTINGS_READ_MODE=shadow——六个 GET 回到 NestJS
   #      响应 + Go 差分；
-  #   6. API_BASE_URL 指回 http://api:4000（web 侧不再经 api-go）；
-  #   7. 停止 api-go pilot 服务。
+  #   7. API_BASE_URL 指回 http://api:4000（web 侧不再经 api-go）；
+  #   8. 停止 api-go pilot 服务。
   # Go-批3C：pilot 同时启用读模式 go 与写模式 go。六个 PUT 写入同一
   # UserSetting 表、同一八个 key。登录/refresh/logout/MFA/OIDC/机器令牌
   # 及其余路由仍由 NestJS 承载。CANARY_PERCENT 固定 0。
@@ -590,6 +591,9 @@ services:
       # 三个图表 GET（Go-批5B）。只这些精确 GET。不读 Mongo。
       # 改回 legacy 即交回 NestJS。不复制经济数据，不新建抓取任务。
       API_GO_DASHBOARD_CHARTS_MODE: go
+      # war-map events 与 news-markers（Go-批5C）。只这两条精确 GET。
+      # 改回 legacy 即交回 NestJS。不复制告警或新闻数据。
+      API_GO_DASHBOARD_WAR_MAP_MODE: go
       MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。

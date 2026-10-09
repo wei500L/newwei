@@ -9,6 +9,12 @@ import (
 //go:embed assets/world.geo.json
 var worldGeoJSON []byte
 
+// WorldGeoJSON 是编译进二进制的同一份 world.geo.json。
+// War Map 国家中心点读它，不再嵌第二份底图。
+func WorldGeoJSON() []byte {
+	return worldGeoJSON
+}
+
 type geoAsset struct {
 	body   []byte
 	detail string

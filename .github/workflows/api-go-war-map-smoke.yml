@@ -1,0 +1,372 @@
+# Go-批5C：War Map events 与 news-markers 的聚焦真实栈验收。
+# 不进普通 CI。PR 上加 label api-go-war-map-smoke，或在文件进入默认分支后 workflow_dispatch。
+name: api-go-war-map-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-war-map-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-smoke@example.com
+  SMTP_PASS: api-go-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://localhost:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-smoke-org
+  SEED_ORG_NAME: api-go Smoke Org
+  SEED_ADMIN_EMAIL: api-go-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoSmoke#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-war-map-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-war-map-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-war-map:ci .
+      - name: Start api-go
+        run: |
+          docker run -d --name api-go-war \
+            --add-host=host.docker.internal:host-gateway \
+            --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s \
+            -p 127.0.0.1:4020:4020 \
+            -e PORT=4020 \
+            -e LEGACY_API_URL=http://host.docker.internal:4000 \
+            -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+            -e MONGO_URI=mongodb://host.docker.internal:27017/app \
+            -e API_GO_DASHBOARD_WAR_MAP_MODE=go \
+            -e API_GO_DASHBOARD_CHARTS_MODE=legacy \
+            -e API_GO_DASHBOARD_STATS_MODE=legacy \
+            -e JWT_SECRET="$JWT_SECRET" \
+            -e JWT_ISSUER="$JWT_ISSUER" \
+            -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+            -e REDIS_HOST=host.docker.internal \
+            -e REDIS_PORT=6379 \
+            -e CANARY_PERCENT=0 \
+            -e CORS_ORIGIN="$CORS_ORIGIN" \
+            api-go-war-map:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' api-go-war 2>/dev/null || echo starting)
+            echo "health=$status"
+            if [ "$status" = "healthy" ]; then exit 0; fi
+            if [ "$status" = "unhealthy" ]; then docker logs api-go-war; exit 1; fi
+            sleep 2
+          done
+          docker logs api-go-war || true
+          exit 1
+      - name: Login and load fixtures
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, os, urllib.request
+          body = json.dumps({"email": os.environ["SEED_ADMIN_EMAIL"], "password": os.environ["SEED_ADMIN_PASSWORD"]}).encode()
+          req = urllib.request.Request("http://127.0.0.1:4020/api/auth/login", data=body, method="POST", headers={"content-type":"application/json"})
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              doc = json.load(resp)
+          open("/tmp/smoke-jwt","w").write(doc["accessToken"])
+          print("login ok")
+          PY
+          MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
+          REDIS_CID=$(docker ps -q -f ancestor=redis:7.2 | head -n1)
+          MONGO_CID=$(docker ps -q -f ancestor=mongo:7.0 | head -n1)
+          ORG=$(docker exec "$MYSQL_CID" mysql -uroot -psecret -N -e "SELECT id FROM app.Org WHERE slug='api-go-smoke-org'" 2>/dev/null)
+          test -n "$ORG"
+          echo "$ORG" > /tmp/org-a
+          docker exec "$MYSQL_CID" mysql -uroot -psecret app -e "
+            INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES ('org_war_b','Other','war-map-other',1,NOW(3),NOW(3));
+            INSERT INTO AlertRule (id, orgId, name, severity, status, metricProvider, metricSlug, operator, cooldownSeconds, checkIntervalSec, createdAt, updatedAt)
+              VALUES ('rule_a','$ORG','smoke','high','active','economic_data','war-map-smoke','gt',3600,300,NOW(3),NOW(3)),
+                     ('rule_b','org_war_b','other','high','active','economic_data','war-map-smoke','gt',3600,300,NOW(3),NOW(3));
+            INSERT INTO AlertEvent (id, ruleId, triggeredAt, metricValue, severity, status, context, createdAt)
+              VALUES ('evt_a','rule_a','2026-03-10 12:00:00.000',1,'high','pending',JSON_OBJECT('countryCode','USA'),NOW(3)),
+                     ('evt_b','rule_b','2026-03-10 12:00:00.000',1,'high','pending',JSON_OBJECT('countryCode','JPN'),NOW(3));
+            INSERT INTO Article (id, orgId, url, contentHash, crawlAt, createdAt, updatedAt) VALUES
+              ('art_be','$ORG','https://example.com/be','hash-be','2026-03-12 00:00:00.000',NOW(3),NOW(3)),
+              ('art_nl','$ORG','https://example.com/nl','hash-nl','2026-03-11 00:00:00.000',NOW(3),NOW(3)),
+              ('art_late','$ORG','https://example.com/late','hash-late','2026-03-20 00:00:00.000',NOW(3),NOW(3)),
+              ('art_b','org_war_b','https://example.com/jp','hash-jp','2026-03-12 00:00:00.000',NOW(3),NOW(3));
+            INSERT INTO ProcessedArticle (id, orgId, articleId, status, title, location, hasLocation, eventAt, processedAt, createdAt, updatedAt) VALUES
+              ('pa_be','$ORG','art_be','completed','Belgium desk','Belgium',1,'2026-03-12 09:00:00.000','2026-03-12 09:00:00.000',NOW(3),NOW(3)),
+              ('pa_nl','$ORG','art_nl','completed','Netherlands desk','Netherlands',1,'2026-03-11 09:00:00.000','2026-03-11 09:00:00.000',NOW(3),NOW(3)),
+              ('pa_late','$ORG','art_late','completed','Too late','Belgium',1,'2026-03-20 09:00:00.000','2026-03-20 09:00:00.000',NOW(3),NOW(3)),
+              ('pa_b','org_war_b','art_b','completed','Japan desk','Japan',1,'2026-03-12 09:00:00.000','2026-03-12 09:00:00.000',NOW(3),NOW(3));
+          "
+          python3 - << 'PY'
+          import hashlib, json, time, subprocess, os
+          def key(country, query):
+              digest = hashlib.sha256(query.encode()).hexdigest()
+              return f"geo:geocode:v1:{country}:{digest}"
+          now = int(time.time() * 1000)
+          belgium = json.dumps({"ok": True, "cachedAt": now, "result": {"lat": 50.64, "lng": 4.67, "displayName": "Cached Belgium", "provider": "nominatim", "query": "Belgium", "countryCodeAlpha2": "BE"}})
+          negative = json.dumps({"ok": False, "cachedAt": now})
+          pairs = [
+              (key("be", "Belgium"), belgium),
+              (key("nl", "Netherlands"), negative),
+              (key("fr", "France"), negative),
+          ]
+          redis = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=redis:7.2"], text=True).split()[0]
+          for k, v in pairs:
+              subprocess.check_call(["docker", "exec", redis, "redis-cli", "SET", k, v])
+          print("geocode cache seeded; live Nominatim not called by this fixture")
+          PY
+          MONGO_CID=$(docker ps -q -f ancestor=mongo:7.0 | head -n1)
+          docker exec "$MONGO_CID" mongosh --quiet app --eval '
+            const doc = db.processeditems.insertOne({
+              orgId: "'"$ORG"'",
+              rawItemId: new ObjectId(),
+              itemMetaId: "smoke-meta",
+              status: "completed",
+              hasLocation: true,
+              duplicateOf: null,
+              sortAt: ISODate("2026-04-01T08:00:00.000Z"),
+              ingestedAt: ISODate("2026-04-01T08:00:00.000Z"),
+              createdAt: ISODate("2026-04-01T08:00:00.000Z"),
+              result: { location: "France", title: "Mongo fallback headline", entities: [], published_at: "2026-04-01T08:00:00.000Z", cleaned_markdown: "x" }
+            });
+            db.processeditems.insertOne({
+              orgId: "org_war_b",
+              rawItemId: new ObjectId(),
+              itemMetaId: "smoke-meta-b",
+              status: "completed",
+              hasLocation: true,
+              duplicateOf: null,
+              sortAt: ISODate("2026-04-01T08:00:00.000Z"),
+              result: { location: "Japan", title: "Other org mongo", entities: [], cleaned_markdown: "x" }
+            });
+            print(doc.insertedId.toString());
+          ' > /tmp/mongo-id.txt
+          echo "fixtures ready"
+      - name: Compare NestJS and Go
+        run: |
+          python3 - << 'PY'
+          import json, urllib.request, urllib.error
+          token = open("/tmp/smoke-jwt").read().strip()
+          def call(base, path):
+              req = urllib.request.Request(base + path, headers={"authorization": "Bearer " + token})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return resp.status, json.load(resp), resp.headers.get("content-type") or ""
+              except urllib.error.HTTPError as err:
+                  body = err.read().decode("utf-8", "replace")
+                  try:
+                      parsed = json.loads(body)
+                  except Exception:
+                      parsed = {"raw": body}
+                  return err.code, parsed, err.headers.get("content-type") or ""
+          def near(a, b, tol=1e-4):
+              return abs(float(a) - float(b)) <= tol
+          def check(path, pred, label):
+              ns, nb, _ = call("http://127.0.0.1:4000", path)
+              gs, gb, _ = call("http://127.0.0.1:4020", path)
+              if ns != gs:
+                  raise SystemExit(f"{label} status nest={ns} go={gs} nest={nb} go={gb}")
+              pred(ns, nb, gb, label)
+              print(label, "ok", ns)
+          march = "/api/dashboard/war-map/events?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z"
+          def events_pred(status, nest, go, label):
+              assert status == 200, (nest, go)
+              nids = {e["id"]: e for e in nest["events"]}
+              gids = {e["id"]: e for e in go["events"]}
+              assert set(nids) == set(gids), (nids.keys(), gids.keys())
+              assert "usa" in nids and "bel" in nids and "nld" in nids and "jpn" not in nids and "fra" not in nids
+              assert nids["usa"]["severity"] == gids["usa"]["severity"] == "high"
+              assert nids["usa"]["alertCount"] == gids["usa"]["alertCount"] == 1
+              assert "Too late" not in json.dumps(nest) and "Japan desk" not in json.dumps(nest)
+              for code in ("usa", "bel", "nld"):
+                  assert near(nids[code]["lat"], gids[code]["lat"])
+                  assert near(nids[code]["lng"], gids[code]["lng"])
+                  assert nids[code]["newsCount"] == gids[code]["newsCount"]
+          check(march, events_pred, "march events")
+          def markers_pred(status, nest, go, label):
+              assert status == 200
+              assert [m["title"] for m in nest["markers"]] == [m["title"] for m in go["markers"]]
+              titles = [m["title"] for m in nest["markers"]]
+              assert "Belgium desk" in titles and "Netherlands desk" in titles
+              assert "Japan desk" not in titles and "Too late" not in titles
+              by_n = {m["title"]: m for m in nest["markers"]}
+              by_g = {m["title"]: m for m in go["markers"]}
+              assert by_n["Belgium desk"]["geoSource"] == by_g["Belgium desk"]["geoSource"] == "geocoded"
+              assert near(by_n["Belgium desk"]["lat"], 50.64, 1e-6)
+              assert by_n["Netherlands desk"]["geoSource"] == "fallback-country"
+              assert near(by_n["Netherlands desk"]["lat"], by_g["Netherlands desk"]["lat"])
+          check("/api/dashboard/war-map/news-markers?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z", markers_pred, "march markers")
+          def cluster_pred(status, nest, go, label):
+              assert status == 200 and nest["clustered"] is True and go["clustered"] is True
+              assert len(nest["events"]) == len(go["events"]) == 1
+              assert nest["events"][0]["isCluster"] is True and go["events"][0]["isCluster"] is True
+              assert nest["events"][0]["newsCount"] == go["events"][0]["newsCount"] == 2
+              assert nest["events"][0].get("alertCount", 0) == 0
+          check(march + "&cluster=1&bbox=0,40,10,60&zoom=0.5", cluster_pred, "europe cluster")
+          def april_pred(status, nest, go, label):
+              if status != 200 or [m.get("id") for m in nest.get("markers", [])] != [m.get("id") for m in go.get("markers", [])] or not any(m.get("title") == "Mongo fallback headline" for m in nest.get("markers", [])):
+                  raise SystemExit(json.dumps({"nest": nest, "go": go}, ensure_ascii=False)[:4000])
+              assert all(m.get("title") != "Other org mongo" for m in nest["markers"])
+          check("/api/dashboard/war-map/news-markers?start=2026-04-01T00:00:00.000Z&end=2026-04-02T00:00:00.000Z", april_pred, "mongo fallback markers")
+          def april_events(status, nest, go, label):
+              assert status == 200
+              assert {e["id"] for e in nest["events"]} == {e["id"] for e in go["events"]} == {"fra"}
+          check("/api/dashboard/war-map/events?start=2026-04-01T00:00:00.000Z&end=2026-04-02T00:00:00.000Z", april_events, "mongo fallback events")
+          def bad(path, snippet):
+              ns, nb, _ = call("http://127.0.0.1:4000", path)
+              gs, gb, _ = call("http://127.0.0.1:4020", path)
+              assert ns == gs == 400, (ns, gs, nb, gb)
+              assert snippet in json.dumps(nb) and snippet in json.dumps(gb)
+              print("bad", snippet, "ok")
+          ns, nb, _ = call("http://127.0.0.1:4000", "/api/dashboard/war-map/events?start=2026-02-31T12:00:00.000Z")
+          gs, gb, _ = call("http://127.0.0.1:4020", "/api/dashboard/war-map/events?start=2026-02-31T12:00:00.000Z")
+          assert ns == gs == 200, (ns, gs)
+          assert {e["id"] for e in nb["events"]} == {e["id"] for e in gb["events"]}
+          print("datetime overflow both 200")
+          bad("/api/dashboard/war-map/events?start=2026-03-15T23:00:00.000Z&end=2026-03-15T01:00:00.000Z", "Start must be before end")
+          ns, nb, _ = call("http://127.0.0.1:4000", march + "&translate=zh-CN")
+          gs, gb, _ = call("http://127.0.0.1:4020", march + "&translate=zh-CN")
+          assert ns == gs == 200
+          zh = any(e.get("nameZh") for e in gb.get("events", []))
+          print("translate zh-CN nameZh present:", zh)
+          print("TRANSLATION_LIVE_API: 未验证" if not zh else "TRANSLATION_LIVE_API: response included nameZh")
+          print("NOMINATIM_LIVE_API: 未验证 (Belgium used seeded Redis cache; Netherlands/France used negative cache and country centroid)")
+          req = urllib.request.Request(
+              "http://127.0.0.1:4020/api/dashboard/war-map/events",
+              method="OPTIONS",
+              headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"},
+          )
+          with urllib.request.urlopen(req, timeout=10) as resp:
+              assert resp.status == 204
+              assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+          print("cors preflight ok")
+          PY
+      - name: Stop NestJS and prove Go independence
+        run: |
+          kill "$(cat /tmp/api-nestjs.pid)" || true
+          pkill -f "apps/api/dist/main.js" || true
+          pkill -f "node dist/main.js" || true
+          for i in $(seq 1 20); do
+            if ! curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs stopped"
+              break
+            fi
+            sleep 1
+          done
+          if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+            echo "nestjs still listening"
+            ps aux | rg -n "node|main.js" || true
+            exit 1
+          fi
+          python3 - << 'PY'
+          import json, urllib.request, urllib.error
+          token = open("/tmp/smoke-jwt").read().strip()
+          def call(path):
+              req = urllib.request.Request("http://127.0.0.1:4020" + path, headers={"authorization": "Bearer " + token})
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      return resp.status, resp.read()[:200]
+              except urllib.error.HTTPError as err:
+                  return err.code, err.read()[:200]
+          for path in (
+              "/api/dashboard/war-map/events?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z",
+              "/api/dashboard/war-map/news-markers?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z",
+          ):
+              status, body = call(path)
+              assert status == 200, (path, status, body)
+              print("independent", path, status)
+          for path in (
+              "/api/dashboard/war-map/layers",
+              "/api/dashboard/war-map/transport-detail?kind=aircraft&objectKey=opensky:abc",
+              "/api/dashboard/stream",
+          ):
+              status, body = call(path)
+              assert status == 502, (path, status, body)
+              print("not taken over", path, status)
+          PY
