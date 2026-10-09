@@ -22,8 +22,11 @@
 //	         （后三个都是恰好一个路径段）。
 //	         API_GO_DASHBOARD_STATS_MODE=go 时另接管精确路径
 //	         GET /api/dashboard/stats（MySQL + Mongo + Redis 只读）。
+//	         API_GO_DASHBOARD_CHARTS_MODE=go 时另接管三个精确 GET：
+//	         sector-heatmap、financial-candlestick、war-map/geojson。
 //
-// 回滚：API_GO_DASHBOARD_STATS_MODE=legacy 把 stats 交回 NestJS；
+// 回滚：API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
+// API_GO_DASHBOARD_STATS_MODE=legacy 把 stats 交回 NestJS；
 // API_GO_PUBLIC_PORTAL_MODE=legacy 把公开页交回 NestJS；
 // API_GO_USER_SETTINGS_READ_MODE=shadow（或未设——回到
 // API_GO_ONBOARDING_MODE 控制；或路由表单条规则改回 legacy，或
@@ -61,6 +64,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/canary"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/dashboardcharts"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
@@ -389,12 +393,19 @@ func run() error {
 	if cfg.DashboardStatsMode == config.DashboardStatsModeGo {
 		dashboardMode = string(legacyproxy.ModeGo)
 	}
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.WithDashboardStats(
-		legacyproxy.WithPublicPortal(
-			legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode),
-			portalMode,
+	chartsMode := ""
+	if cfg.DashboardChartsMode == config.DashboardChartsModeGo {
+		chartsMode = string(legacyproxy.ModeGo)
+	}
+	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.WithDashboardCharts(
+		legacyproxy.WithDashboardStats(
+			legacyproxy.WithPublicPortal(
+				legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode),
+				portalMode,
+			),
+			dashboardMode,
 		),
-		dashboardMode,
+		chartsMode,
 	))
 	if err != nil {
 		return err
@@ -422,7 +433,8 @@ func run() error {
 			if cfg.OnboardingMode == config.OnboardingModeGo ||
 				cfg.UserSettingsReadMode == config.UserSettingsReadModeGo ||
 				cfg.PublicPortalMode == config.PublicPortalModeGo ||
-				cfg.DashboardStatsMode == config.DashboardStatsModeGo {
+				cfg.DashboardStatsMode == config.DashboardStatsModeGo ||
+				cfg.DashboardChartsMode == config.DashboardChartsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -453,9 +465,10 @@ func run() error {
 	goTakeover := cfg.OnboardingMode == config.OnboardingModeGo ||
 		cfg.UserSettingsReadMode == config.UserSettingsReadModeGo
 	dashboardGo := cfg.DashboardStatsMode == config.DashboardStatsModeGo
-	// user-settings 与 dashboard stats 共用同一套 JWT/Redis/MySQL 鉴权栈。
-	// 只有 dashboard 为 go、读模式仍是 legacy 时也要装配，否则 stats 无法验签。
-	needsCredentialedGo := goTakeover || dashboardGo
+	chartsGo := cfg.DashboardChartsMode == config.DashboardChartsModeGo
+	// user-settings、dashboard stats 和图表 GET 共用同一套 JWT/Redis/MySQL 鉴权栈。
+	// 只有图表或 stats 为 go、读模式仍是 legacy 时也要装配，否则无法验签。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -546,6 +559,29 @@ func run() error {
 			statsHandler.ServeHTTP(w, r)
 		})
 		log.Printf("api-go: GET /api/dashboard/stats under go takeover")
+	}
+
+	// 三个图表 GET。热力图和 K 线读 MySQL 经济序列；GeoJSON 用编译进
+	// 二进制的 world.geo.json。不读 Mongo，不调用 NestJS。
+	if chartsGo {
+		if sharedDB == nil || authenticator == nil {
+			return fmt.Errorf("api-go: dashboard charts go takeover requires mysql, jwt, and redis")
+		}
+		chartsHandler := dashboardcharts.NewHandler(authenticator, dashboardcharts.NewMySQLStore(sharedDB))
+		chartsCORS := cors.New(cfg.CorsOrigin)
+		for _, path := range dashboardcharts.Paths {
+			gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+				if chartsCORS.FinishOptions(w, r) {
+					return
+				}
+				if r.Method == http.MethodOptions {
+					gateway.ServeLegacy(w, r)
+					return
+				}
+				chartsHandler.ServeHTTP(w, r)
+			})
+		}
+		log.Printf("api-go: dashboard chart GETs under go takeover")
 	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
@@ -644,6 +680,10 @@ func run() error {
 			// dashboard stats。legacy 时该 GET 仍代理 NestJS。不含 Mongo URI。
 			"dashboardStats": map[string]any{
 				"mode": string(cfg.DashboardStatsMode),
+			},
+			// 三个图表 GET。legacy 时仍代理 NestJS。不含数据库地址。
+			"dashboardCharts": map[string]any{
+				"mode": string(cfg.DashboardChartsMode),
 			},
 		})
 	})

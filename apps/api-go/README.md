@@ -8,6 +8,8 @@ Go-批4A 起，**公开首页与频道**在 `API_GO_PUBLIC_PORTAL_MODE=go` 时�
 
 Go-批5A 起，**`GET /api/dashboard/stats`** 在 `API_GO_DASHBOARD_STATS_MODE=go` 时由 Go 独立响应：验签后的 orgId 与 `items.read` 来自 MySQL 重推导，再读 `ItemMeta` 计数、Mongo `processeditems` / `tasklogs`，以及 Redis 里已有的组织队列计数。默认 `legacy`。不启动队列 worker，不写 Redis 计数。MySQL 或 Mongo 失败返回 5xx，不用 0 代替。Redis 计数读失败时 `queueCountsAvailable=false` 且五个计数为 0。回滚：`API_GO_DASHBOARD_STATS_MODE=legacy`。其他 dashboard 路径仍是 NestJS。
 
+Go-批5B 起，**三个只读图表 GET** 在 `API_GO_DASHBOARD_CHARTS_MODE=go` 时由 Go 独立响应：`GET /api/dashboard/sector-heatmap`、`GET /api/dashboard/financial-candlestick`、`GET /api/dashboard/war-map/geojson`。三条都验签并重推导 `dashboards.read`，即使 GeoJSON 是静态文件也不能匿名访问。热力图和 K 线读真实 MySQL `EconomicDataItem` / `EconomicDataPoint`（`economic-short` 最多 8 格，K 线固定 `sp500_index`）。GeoJSON 使用编译进二进制的 `world.geo.json`，请求时不访问 NestJS 或外网。日期查询与 NestJS 相同：ISO 校验、缺省 30 天、UTC 日边界。默认 `legacy`。这个开关不改变 `GET /api/dashboard/stats`，也不接管 war-map 的 events/layers/news-markers/transport-detail、spacetime 或 `/api/dashboard/stream`。回滚：`API_GO_DASHBOARD_CHARTS_MODE=legacy`。
+
 ## 运行
 
 ```bash
@@ -76,6 +78,7 @@ Go-批4B 故事详情在同一真实栈里已验证缓存命中的 id/slug、公
 | `API_GO_USER_SETTINGS_WRITE_MODE` | legacy | 六个 PUT（Go-批3C）。`legacy` 代理 NestJS；`go` 由 Go upsert 现有 `UserSetting` 并重读。`go` 要求读模式同为 `go`，否则启动失败。pilot 注入 `go`。回滚先改回 `legacy` |
 | `API_GO_PUBLIC_PORTAL_MODE` | legacy | 公开首页、频道和故事详情（Go-批4A/4B）。`legacy` 代理 NestJS；`go` 时 `GET /api/public-portal/home`、`channels/:topic`、`stories/id/:id`、`stories/slug/:slug`（后三个恰好一个路径段，且仅 GET）由 Go 查 MySQL 并完整响应。详情 brief 冷路径读取 `llm_gateway_profiles`，并用已有的 `SYSTEM_SETTINGS_ENCRYPTION_KEY` / `LITELLM_*` 作为凭据与缺省网关。启用 `go` 前应确认模型网关配置可用。`go` 要求 `DATABASE_URL`，不要求 JWT/Redis。pilot 注入 `go`。默认生产入口不切换。回滚改回 `legacy`，不删数据 |
 | `API_GO_DASHBOARD_STATS_MODE` | legacy | 只接管精确 `GET /api/dashboard/stats`（Go-批5A）。`go` 时 Go 验签、查 Redis 撤销名单、从 MySQL 重推导 orgId 与 `items.read`，再读 ItemMeta、Mongo processeditems/tasklogs 和 Redis 组织计数 hash。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`，缺失则拒绝启动，错误不含连接串。pilot 注入 `go`。其他方法、子路径、`dashboard/stream` 和图表接口仍代理 NestJS。回滚改回 `legacy` |
+| `API_GO_DASHBOARD_CHARTS_MODE` | legacy | 只接管三个精确 GET（Go-批5B）：`/api/dashboard/sector-heatmap`、`/api/dashboard/financial-candlestick`、`/api/dashboard/war-map/geojson`。`go` 时验签、查撤销名单、从 MySQL 重推导 `dashboards.read`。热力图和 K 线读 EconomicDataItem/EconomicDataPoint；GeoJSON 来自构建时嵌入的 world.geo.json，并带 `Cache-Control: no-store`。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，不要求 `MONGO_URI`。与 stats 开关独立。pilot 注入 `go`。其他方法、war-map 其余路径、spacetime 和 stream 仍代理 NestJS。回滚改回 `legacy` |
 | `CORS_ORIGIN` | （空） | 与 NestJS 相同的逗号分隔来源白名单。读写模式均为 `go` 时，六个精确路径的浏览器预检由 Go 204 回答，GET/PUT（含 401/400）回同一来源头。空名单不放行任何 Origin。pilot 注入与 api 服务相同的值 |
 | `API_GO_ONBOARDING_MODE` | shadow | onboarding GET 迁移单元模式（Go-批3A 兼容变量）：`shadow`（默认，批2A/2B 行为——NestJS 响应 + Go 差分）或 `go`（Go 独立鉴权 + 全响应）。仅在 `API_GO_USER_SETTINGS_READ_MODE` 未设置时生效。非法值启动失败；`go` 模式依赖同上；compose pilot 固定注入 `go`（批3A 部署等价） |
 | `JWT_SECRET` | （空） | NestJS access token 的 HMAC 验签 secret（与 api 服务同一值）。仅 `go` 模式必填。值不进入日志/healthz/错误文本 |

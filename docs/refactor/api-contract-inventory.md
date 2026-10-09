@@ -111,6 +111,18 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 
 `GET /api/dashboard/stats` 权限是 `items.read`（不是表内其余图表的 `dashboards.read`）。`API_GO_DASHBOARD_STATS_MODE=go` 时该精确 GET 由 Go 按服务端 orgId 读 MySQL `ItemMeta`、Mongo `processeditems`/`tasklogs` 和 Redis `queue:itemPipeline:org:<orgId>:counts`。默认 `legacy`。`dashboard/stream` 与图表 GET 不在这个开关里。回滚：`API_GO_DASHBOARD_STATS_MODE=legacy`。
 
+### 1.8b dashboard 三个图表（Go-批5B）
+
+`API_GO_DASHBOARD_CHARTS_MODE=go` 时，下面三个精确 GET 由 Go 验签并重推导 `dashboards.read` 后响应。默认 `legacy`。与 stats 开关无关。
+
+| 路径 | 数据 | 备注 |
+|---|---|---|
+| `GET /api/dashboard/sector-heatmap` | MySQL `EconomicDataItem`（`economic-short`、启用、最多 8 条）和 `EconomicDataPoint` | `metadata.dataViz.heatmap.preferredSourceFields` 与 parser label；未命中则 `SOURCE_FIELD_FALLBACK` |
+| `GET /api/dashboard/financial-candlestick` | MySQL slug `sp500_index` 与其数据点 | OHLC 别名来自 `metadata.dataViz.candlestick.ohlc`，否则用内置别名。范围内有数据但没有 OHLC 字段时 500 `DASHBOARD_CANDLESTICK_FIELD_MAPPING_MISMATCH` |
+| `GET /api/dashboard/war-map/geojson` | 构建时嵌入的 `world.geo.json` | 仍先做日期校验。成功响应 `Cache-Control: no-store`。不是匿名接口 |
+
+三条都接受可选 `start`/`end`（ISO 8601，缺省 30 天，对齐 UTC 日边界）。错误体的 `path` 与其他 Go 路由一样不含 query。`war-map/events`、`layers`、`news-markers`、`transport-detail`、spacetime 和 `/api/dashboard/stream` 仍由 NestJS 处理。回滚：`API_GO_DASHBOARD_CHARTS_MODE=legacy`。
+
 ### 1.9 system-settings（98 个，26 个 controller）
 
 内部端点（服务间 token，非用户 JWT）：
