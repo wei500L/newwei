@@ -76,7 +76,8 @@ func TestRecentLogJSONMatchesLeanShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := string(body)
-	want := `{"createdAt":"2026-03-01T00:00:00.006Z","jobId":"job-1","stage":"dedupe","status":"completed"}`
+	// +03:00 的 00:00:00.006 必须收成 UTC，并且毫秒始终三位。
+	want := `{"createdAt":"2026-02-28T21:00:00.006Z","jobId":"job-1","stage":"dedupe","status":"completed"}`
 	if got != want {
 		t.Fatalf("json = %s", got)
 	}

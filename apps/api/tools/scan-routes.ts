@@ -403,13 +403,16 @@ function handlerHasPlatformAdminCheck(file: string, handlerName: string): boolea
 // 窗口截断到下一个方法签名（"async xxx(" / "  xxx("），避免相邻 handler 的
 // 平台校验调用污染当前 handler 的标注。
 function handlerBodyExtractor(file: string, handlerName: string): string | null {
-  const content = handlerBodyExtractorCache.get(file);
+  // 读入结果必须写回局部变量。若 set 之后仍用 get 之前的 undefined，
+  // 每个控制器的第一个 handler 都会被当成「没有平台校验」。
+  let content = handlerBodyExtractorCache.get(file);
   if (content === undefined) {
     if (!existsSync(file)) {
       handlerBodyExtractorCache.set(file, null);
       return null;
     }
-    handlerBodyExtractorCache.set(file, readFileSync(file, "utf8"));
+    content = readFileSync(file, "utf8");
+    handlerBodyExtractorCache.set(file, content);
   }
   if (!content) {
     return null;
