@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
-
 import { ForbiddenException } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AuthenticatedUser } from "../auth/auth.service";
