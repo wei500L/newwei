@@ -51,7 +51,7 @@
 | 项 | 动作 | 回归验证 | 状态 |
 |---|---|---|---|
 | SEC-01（P0） | vector-service 设置 PUT/DELETE 注入 platformAccess.assertPlatformAdmin（复用 audit-log 模式） | 控制器单测：非平台管理员的 settings.manage 持有者 → 403；平台管理员 → 通过；GET 不受影响 | ✅ 单元级远端 CI 已验证（vitest 6/6）。**真实数据库登录态（登录→改配置→403）未验证**——CI 无 DB 栈。网络白名单只登记设计建议（见 bug-ledger §SEC-01） |
-| SEC-03 | /api/metrics 定位决策（平台级收紧 or org 过滤）+ 实施 | 鉴权矩阵对应行 | ⬜ |
+| SEC-03 | /api/metrics 定位为平台级全量指标。人类须 `assertPlatformAdmin`；机器令牌还要求 `createdById` 当前是 platform_admin（库内校验，不看令牌前缀）。不把输出滤成组织指标 | 鉴权矩阵 `/api/metrics` 行 + `metrics.controller.test.ts` | ✅ 控制器单测覆盖三类主体。真实登录态冒烟未做 |
 | API-01 运行时验证 | Docker 栈就绪后：登录→完成引导→刷新不重现 | 手工冒烟清单 | 🔶 静态闭环 + 契约测试远端 CI 已验证（4/4）；**真实用户完成引导并刷新不重现——未验证**（需数据库栈） |
 | BAPI-01 | **决策冻结**：Go 迁移前不动 schema；列入 GraphQL 迁移序（M5）的版本化演进 | — | — |
 

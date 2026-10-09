@@ -263,4 +263,4 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 3. GraphQL Subscription 进程内 PubSub vs Socket.IO 可选 Redis adapter——水平扩容语义不一致
 4. crawl4ai legacy 与 hot/normal 双轨队列并存
 5. itemPipeline DLQ 的非标准入队时机（worker failed 事件）
-6. `GET /api/metrics` 全局未按 org 过滤（SEC-03，bug-ledger 登记）
+6. `GET /api/metrics` 是平台级全量指标（SEC-03 已收紧）：人类须为平台管理员；机器令牌还须其 `createdById` 当前持有 `platform_admin`。普通组织的 `metrics.read` 或旧机器令牌不再够用。输出不过滤成组织子集。

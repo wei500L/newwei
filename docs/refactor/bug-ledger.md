@@ -37,7 +37,7 @@
 | API-01 | P1 | onboarding 端点缺权限元数据，引导状态永不保存 | 🔧 | edf0c8cf |
 | SEC-01 | **P0** | 任意 org 管理员可改**全局** vector 服务配置（token 外泄链） | 🔧 单元级 CI 已验证；真实登录态未验证 | 本轮（见 §4） |
 | SEC-02 | P1 | vector 服务信任请求体 orgId（跨租户读写前提） | 👁 | — |
-| SEC-03 | P2 | /api/metrics 全局数据未按 org 过滤 | ⬜ | — |
+| SEC-03 | P2 | /api/metrics 全局数据未按 org 过滤 | ✅ | 本批（见 §4） |
 | SEC-04 | P2 | vector 内部 token 非常量时间比较 | ✅ | 见 §4 |
 | BAPI-01 | P2 | GraphQL 列表无分页（全量返回） | ⬜ | — |
 | FE-01 | P2 | alert-center 过滤器不入 URL（与全局模式不一致） | ✅ | PR #4（FE-批3，run 33849497917） |
@@ -216,11 +216,14 @@
 - **决策记录（2026-09-03）**：Go 试点（apps/vector-go）保持同构——orgId 仍来自请求体，因为该服务的定位是**内部信任边界后的纯执行器**（调用方仅 apps/api，orgId 由其服务端推导）。真正的修复点在 SEC-01（防止外部因素劫持调用链）。若未来出现第二调用方，需引入按调用方身份推导 orgId 的接口约定。
 - **注**：现实风险 = SEC-01 的后置条件；SEC-01 关闭后此项降级为架构约束记录。
 
-### SEC-03 /api/metrics 未按 org 过滤 — ⬜ P2【勘察报告】
+### SEC-03 /api/metrics 未按 org 过滤 — ✅ 已收紧为平台级读取
 
-- **流程**：F6。**用户影响**：持 metrics.read 的用户可看到全局（跨 org）队列/运行指标。
-- **证据**：`modules/observability/` metrics 端点（metrics.read）返回全局聚合。
-- **修复方向**：明确该端点定位（平台级 → 收紧权限；org 级 → 按 orgId 过滤）；迁移保护网中列入鉴权矩阵。
+- **流程**：F6。**用户影响**：持 metrics.read 的普通组织成员，以及普通组织管理员创建的机器令牌，原先可以读取进程级和跨组织聚合指标。
+- **证据**：`modules/observability/metrics.controller.ts` 的 `renderPrometheusMetrics()` 返回 prom-client 全局注册表（HTTP、后台任务、调度器，以及带 `org_id` 标签的 `pipeline_metric_value`）。没有独立的平台采集账号表。机器令牌行在 `MachineAccessToken`，必带 `orgId`，创建者是 `createdById`；唯一的平台身份是 `GlobalRoleAssignment.role = platform_admin`。
+- **定位**：保持端点为平台级全量指标，不把输出滤成残缺的组织指标。`metrics.read` 仍由 PermissionsGuard 要求，但不再充分。
+- **人类**：`platformAccess.assertPlatformAdmin(user.id)`，查的是 `GlobalRoleAssignment`，不看 JWT 里的 permissions 或 globalRoles。
+- **机器令牌**：用 bearer 的 SHA-256 再查 `MachineAccessToken`。不看 `mtk_` 前缀，也不看令牌上的权限 JSON 来判断平台身份。允许条件是 `createdById` 当前仍有 `platform_admin`。`createdById` 为空、令牌撤销/过期、组织停用，或创建者不是当前平台管理员，一律 403。普通组织管理员创建或轮换后仍指向该管理员的旧令牌因此不能读全局指标。种子管理员本身是平台管理员，其创建的令牌在其仍持有该角色时可以继续采集。要新增采集主体，由当前平台管理员再创建一枚机器令牌。轮换复制原来的 `createdById`，授权跟着创建者的当前角色，不跟着谁拿着新密钥。
+- **回归**：`metrics.controller.test.ts` 覆盖普通 metrics.read 用户、普通组织机器令牌（含创建者已清空）、以及创建者当前为平台管理员的机器令牌（密钥不必带 `mtk_` 前缀）。鉴权矩阵把该 GET 标成 handler 平台校验。
 
 ### SEC-04 vector 内部 token 非常量时间比较 — ✅ 已修复【已复核】
 
