@@ -1070,3 +1070,49 @@ func TestDashboardChartsRouteIsExactGetOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestDashboardWarMapRouteIsExactGetOnly(t *testing.T) {
+	stub := newLegacyStub(t)
+	base := DefaultRulesWithWrite(ModeShadow, "", "")
+	legacyGateway, err := New(stub.server.URL, WithDashboardWarMap(base, ""))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	for _, rule := range legacyGateway.Rules() {
+		if rule.Prefix == "/api/dashboard/war-map/events" || rule.Prefix == "/api/dashboard/war-map/news-markers" {
+			t.Fatalf("default rules include war map data routes: %s", rule.Prefix)
+		}
+	}
+	gateway, err := New(stub.server.URL, WithDashboardWarMap(base, string(ModeGo)))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	for _, path := range []string{"/api/dashboard/war-map/events", "/api/dashboard/war-map/news-markers"} {
+		gateway.RegisterGoHandler(path, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"impl":"go-war"}`))
+		})
+	}
+	cases := []struct {
+		name, method, path, want string
+	}{
+		{"events get", http.MethodGet, "/api/dashboard/war-map/events", "go-war"},
+		{"markers get", http.MethodGet, "/api/dashboard/war-map/news-markers", "go-war"},
+		{"events options", http.MethodOptions, "/api/dashboard/war-map/events", "go-war"},
+		{"events post stays legacy", http.MethodPost, "/api/dashboard/war-map/events", "legacy"},
+		{"layers stay legacy", http.MethodGet, "/api/dashboard/war-map/layers", "legacy"},
+		{"transport stays legacy", http.MethodGet, "/api/dashboard/war-map/transport-detail", "legacy"},
+		{"geojson stays legacy", http.MethodGet, "/api/dashboard/war-map/geojson", "legacy"},
+		{"stream stays legacy", http.MethodGet, "/api/dashboard/stream", "legacy"},
+		{"stats stays legacy", http.MethodGet, "/api/dashboard/stats", "legacy"},
+		{"events extra stays legacy", http.MethodGet, "/api/dashboard/war-map/events/extra", "legacy"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := httptest.NewRecorder()
+			gateway.ServeHTTP(res, httptest.NewRequest(tc.method, "http://gateway"+tc.path, nil))
+			if !strings.Contains(res.Body.String(), tc.want) {
+				t.Fatalf("body = %s, want %s", res.Body.String(), tc.want)
+			}
+		})
+	}
+}

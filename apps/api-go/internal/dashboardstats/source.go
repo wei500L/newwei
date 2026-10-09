@@ -38,8 +38,35 @@ type source interface {
 }
 
 // Connection 是 dashboard stats 持有的 Mongo 客户端，进程退出时关闭。
+// War Map 复用同一个客户端，不另开一套连接。
 type Connection struct {
 	client *mongo.Client
+	dbName string
+}
+
+// Database 是 URI 路径里的那个库。
+func (c *Connection) Database() *mongo.Database {
+	if c == nil || c.client == nil {
+		return nil
+	}
+	return c.client.Database(c.dbName)
+}
+
+// Open 只建立 Mongo 客户端。错误不含连接串。
+func Open(uri string) (*Connection, error) {
+	dbName, err := parseMongoDatabase(uri)
+	if err != nil {
+		return nil, err
+	}
+	client, err := mongo.Connect(
+		options.Client().
+			ApplyURI(uri).
+			SetServerSelectionTimeout(5 * time.Second),
+	)
+	if err != nil {
+		return nil, errors.New("MONGO_URI was rejected")
+	}
+	return &Connection{client: client, dbName: dbName}, nil
 }
 
 // Disconnect 关闭 Mongo 客户端。错误可能含服务器地址，调用方不要写进响应。
@@ -53,26 +80,18 @@ func (c *Connection) Disconnect(ctx context.Context) error {
 // Connect 打开 Mongo，并把它与已有的 MySQL、Redis 组成只读 source。
 // 返回的错误不含连接串。
 func Connect(auth *authhttp.Authenticator, db *sql.DB, cache *redis.Client, uri string) (*Connection, *Handler, error) {
-	dbName, err := parseMongoDatabase(uri)
+	conn, err := Open(uri)
 	if err != nil {
 		return nil, nil, err
 	}
-	client, err := mongo.Connect(
-		options.Client().
-			ApplyURI(uri).
-			SetServerSelectionTimeout(5 * time.Second),
-	)
-	if err != nil {
-		return nil, nil, errors.New("MONGO_URI was rejected")
-	}
-	database := client.Database(dbName)
+	database := conn.Database()
 	handler := NewHandler(auth, &liveSource{
 		db:         db,
 		redis:      cache,
 		mongoItems: database.Collection(processedItemsCollection),
 		mongoLogs:  database.Collection(taskLogsCollection),
 	})
-	return &Connection{client: client}, handler, nil
+	return conn, handler, nil
 }
 
 // parseMongoDatabase 只接受 mongodb / mongodb+srv，且 path 里恰好一个库名。

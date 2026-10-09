@@ -106,6 +106,18 @@ const (
 	DashboardChartsModeGo DashboardChartsMode = "go"
 )
 
+// DashboardWarMapMode 是 war-map events 与 news-markers 的接管开关
+// （API_GO_DASHBOARD_WAR_MAP_MODE）。默认 legacy。与 stats、charts 互不影响。
+type DashboardWarMapMode string
+
+const (
+	// DashboardWarMapModeLegacy：这两个 GET 继续代理 NestJS。
+	DashboardWarMapModeLegacy DashboardWarMapMode = "legacy"
+	// DashboardWarMapModeGo：这两个精确 GET 由 Go 查 MySQL，并在 MySQL
+	// 新闻为空时回退 Mongo。要求 JWT、MySQL、Redis、MONGO_URI。
+	DashboardWarMapModeGo DashboardWarMapMode = "go"
+)
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -143,8 +155,26 @@ type Config struct {
 	// DashboardChartsMode 见 DashboardChartsMode 常量。默认 legacy。
 	// go 要求 JWT、MySQL、Redis，不要求 Mongo。与 stats 开关独立。
 	DashboardChartsMode DashboardChartsMode
-	// MongoURI 是 NestJS 同名 MONGO_URI。仅 dashboard stats 的 go 模式读取。
+	// DashboardWarMapMode 见 DashboardWarMapMode 常量。默认 legacy。
+	// go 要求 JWT、MySQL、Redis、MONGO_URI。与 stats、charts 开关独立。
+	DashboardWarMapMode DashboardWarMapMode
+	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
+
+	NominatimBaseURL           string
+	NominatimUserAgent         string
+	NominatimEmail             string
+	NominatimAcceptLanguage    string
+	GeocodeTimeoutMs           int
+	GeocodeCacheTTLSeconds     int
+	GeocodeNegativeTTLSeconds  int
+	GeocodeRatePerSecond       int
+	TranslationAPIEnabled      bool
+	TranslationAPIBaseURL      string
+	TranslationTimeoutMs       int
+	TranslationMaxRetries      int
+	TranslationFallbackEnabled bool
+	TranslationFallbackBaseURL string
 
 	// SettingsEncryptionKey 是 Nest 已有的 SYSTEM_SETTINGS_ENCRYPTION_KEY。
 	// 只用于解开 SystemSetting 里的模型网关凭据。不进入日志。
@@ -308,6 +338,28 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_CHARTS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_WAR_MAP_MODE")) {
+	case "", string(DashboardWarMapModeLegacy):
+		cfg.DashboardWarMapMode = DashboardWarMapModeLegacy
+	case string(DashboardWarMapModeGo):
+		cfg.DashboardWarMapMode = DashboardWarMapModeGo
+	default:
+		errs = append(errs, "API_GO_DASHBOARD_WAR_MAP_MODE must be one of legacy|go")
+	}
+	cfg.NominatimBaseURL = stringDefault(getenv("GEO_NOMINATIM_BASE_URL"), "https://nominatim.openstreetmap.org")
+	cfg.NominatimUserAgent = stringDefault(getenv("GEO_NOMINATIM_USER_AGENT"), "modular-api")
+	cfg.NominatimEmail = strings.TrimSpace(getenv("GEO_NOMINATIM_EMAIL"))
+	cfg.NominatimAcceptLanguage = stringDefault(getenv("GEO_NOMINATIM_ACCEPT_LANGUAGE"), "zh-CN,zh;q=0.9,en;q=0.7")
+	cfg.GeocodeTimeoutMs = intDefault(getenv("GEO_GEOCODE_TIMEOUT_MS"), 3000)
+	cfg.GeocodeCacheTTLSeconds = intDefault(getenv("GEO_GEOCODE_CACHE_TTL_SECONDS"), 2592000)
+	cfg.GeocodeNegativeTTLSeconds = intDefault(getenv("GEO_GEOCODE_NEGATIVE_TTL_SECONDS"), 86400)
+	cfg.GeocodeRatePerSecond = intDefault(getenv("GEO_GEOCODE_RATE_LIMIT_PER_SECOND"), 1)
+	cfg.TranslationAPIEnabled = boolDefault(getenv("SITUATION_MONITOR_TRANSLATION_API_ENABLED"), true)
+	cfg.TranslationAPIBaseURL = strings.TrimRight(stringDefault(getenv("SITUATION_MONITOR_TRANSLATION_API_BASE_URL"), "https://api.deeplx.org"), "/")
+	cfg.TranslationTimeoutMs = intDefault(getenv("SITUATION_MONITOR_TRANSLATION_TIMEOUT_MS"), 15000)
+	cfg.TranslationMaxRetries = intDefault(getenv("SITUATION_MONITOR_TRANSLATION_MAX_RETRIES"), 2)
+	cfg.TranslationFallbackEnabled = boolDefault(getenv("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_ENABLED"), false)
+	cfg.TranslationFallbackBaseURL = strings.TrimRight(strings.TrimSpace(getenv("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL")), "/")
 	cfg.MongoURI = strings.TrimSpace(getenv("MONGO_URI"))
 	cfg.SettingsEncryptionKey = strings.TrimSpace(getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
 	cfg.LiteLLMAPIBase = strings.TrimSpace(getenv("LITELLM_API_URL"))
@@ -491,11 +543,56 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, "REDIS_HOST is required when API_GO_DASHBOARD_CHARTS_MODE=go")
 		}
 	}
+	if cfg.DashboardWarMapMode == DashboardWarMapModeGo {
+		if cfg.JWTSecret == "" {
+			errs = append(errs, "JWT_SECRET is required when API_GO_DASHBOARD_WAR_MAP_MODE=go")
+		}
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_DASHBOARD_WAR_MAP_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_DASHBOARD_WAR_MAP_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_DASHBOARD_WAR_MAP_MODE=go")
+		}
+	}
 
 	if len(errs) > 0 {
 		return Config{}, errors.New(strings.Join(errs, "; "))
 	}
 	return cfg, nil
+}
+
+func stringDefault(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func intDefault(value string, fallback int) int {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func boolDefault(value string, fallback bool) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes", "y", "on":
+		return true
+	case "false", "0", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 // LoadFromOS 是生产入口的便捷封装。

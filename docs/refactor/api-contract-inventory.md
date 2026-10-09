@@ -121,7 +121,18 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 | `GET /api/dashboard/financial-candlestick` | MySQL slug `sp500_index` 与其数据点 | OHLC 别名来自 `metadata.dataViz.candlestick.ohlc`，否则用内置别名。范围内有数据但没有 OHLC 字段时 500 `DASHBOARD_CANDLESTICK_FIELD_MAPPING_MISMATCH` |
 | `GET /api/dashboard/war-map/geojson` | 构建时嵌入的 `world.geo.json` | 仍先做日期校验。成功响应 `Cache-Control: no-store`。不是匿名接口 |
 
-三条都接受可选 `start`/`end`（ISO 8601，缺省 30 天，对齐 UTC 日边界）。错误体的 `path` 与其他 Go 路由一样不含 query。`war-map/events`、`layers`、`news-markers`、`transport-detail`、spacetime 和 `/api/dashboard/stream` 仍由 NestJS 处理。回滚：`API_GO_DASHBOARD_CHARTS_MODE=legacy`。
+三条都接受可选 `start`/`end`（ISO 8601，缺省 30 天，对齐 UTC 日边界）。错误体的 `path` 与其他 Go 路由一样不含 query。`layers`、`transport-detail`、spacetime 和 `/api/dashboard/stream` 仍由 NestJS 处理。`events` 与 `news-markers` 见批5C。回滚：`API_GO_DASHBOARD_CHARTS_MODE=legacy`。
+
+### 1.8c War Map 事件与新闻标记（Go-批5C）
+
+`API_GO_DASHBOARD_WAR_MAP_MODE=go` 时，下面两个精确 GET 由 Go 验签并重推导 `dashboards.read` 后响应。默认 `legacy`。orgId 只来自 membership 重推导。`start`/`end` 不按 UTC 整日对齐。
+
+| 路径 | 数据 |
+|---|---|
+| `GET /api/dashboard/war-map/events` | MySQL `AlertEvent`（经 `AlertRule.orgId`，最多 1000）与有位置的 `ProcessedArticle`（最多 2500）。MySQL 新闻为空才读 Mongo `processeditems` |
+| `GET /api/dashboard/war-map/news-markers` | MySQL `ProcessedArticle` 联 `Article`（最多 500）。为空才读 Mongo `processeditems` / `rawitems`。地理缓存、最多 3 次 Nominatim、国家中心点回退 |
+
+`translate=zh-CN` 使用既有翻译配置；未配置或调用失败时省略中文字段。回滚：`API_GO_DASHBOARD_WAR_MAP_MODE=legacy`。启用 `go` 需要 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。
 
 ### 1.9 system-settings（98 个，26 个 controller）
 

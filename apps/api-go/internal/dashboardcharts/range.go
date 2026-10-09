@@ -183,7 +183,21 @@ func parseJSDate(value string) (time.Time, bool) {
 			return parsed, true
 		}
 	}
+	// 带时间的溢出日（2026-02-31T12:00:00.000Z）在 time.Parse 失败。
+	// Node 20+ 的 Date.parse 对完整 ISO 日期时间同样返回 Invalid Date
+	//（只有没有时间的 YYYY-MM-DD 会溢出）。War Map 与图表共用这一结果，
+	// 不改解析器。
 	return time.Time{}, false
+}
+
+// ParseJSDate 导出给 War Map。图表路径仍用未导出的 parseJSDate。
+func ParseJSDate(value string) (time.Time, bool) {
+	return parseJSDate(value)
+}
+
+// ISO8601 与 class-validator 非 strict @IsISO8601 的格式层一致。
+func ISO8601(value string) bool {
+	return isISO8601(value)
 }
 
 func insertOffsetColon(value string) string {

@@ -326,7 +326,7 @@ pilot 注入 `go`。与 `API_GO_DASHBOARD_STATS_MODE` 互不影响。生产入�
   - `GET /api/dashboard/sector-heatmap`
   - `GET /api/dashboard/financial-candlestick`
   - `GET /api/dashboard/war-map/geojson`
-- **不接管**：`GET /api/dashboard/stats`（仍只看批5A 开关）、`war-map/events`、`war-map/layers`、`war-map/news-markers`、`war-map/transport-detail`、spacetime 系列、`/api/dashboard/stream`，以及其他方法与更长路径。这些继续回落 `/api/`。
+- **不接管**：`GET /api/dashboard/stats`（仍只看批5A 开关）、`war-map/layers`、`war-map/transport-detail`、spacetime 系列、`/api/dashboard/stream`，以及其他方法与更长路径。`war-map/events` 与 `war-map/news-markers` 不在本开关里，见批5C。这些继续回落 `/api/`，除非各自的开关显式为 `go`。
 - **身份**：复用 access token 验签、Redis 撤销名单、MySQL membership/RBAC。三条都要求 `dashboards.read`。GeoJSON 也不是匿名接口。不读 JWT `permissions`，不读 query 里的 `orgId`（多余 query 键按 ValidationPipe 返回 400）。
 - **日期**：三条都先执行与 `DashboardTimeRangeQueryDto` + `resolveRange` 相同的契约。`start`/`end` 做 ISO 8601 校验；缺省 end 为现在、start 为对齐前的 end 往前 30 天；再对齐到 UTC 日初与日末（23:59:59.999）。`2026-02-31` 这种超出当月的日期按 JavaScript `Date` 溢出（到 `2026-03-03`），不是 400。格式通过但 `Date` 无法解析时才是 `Invalid date range`。对齐后 start 晚于 end 是 `Start must be before end`。GeoJSON 不按日期过滤，但非法日期仍然 400。
 - **热力图**：MySQL `EconomicDataItem`（`isActive` 且类别 `economic-short`，按 `displayName` 最多 8 条）和范围内的 `EconomicDataPoint`。首选字段来自 `metadata.dataViz.heatmap.preferredSourceFields`，否则用内置列表；parser 的 field/label 参与映射；未命中时回退并给出 `SOURCE_FIELD_FALLBACK`。变化率用首末点，保留两位小数。没有序列的条目不占格。不返回固定演示数组。
@@ -336,6 +336,24 @@ pilot 注入 `go`。与 `API_GO_DASHBOARD_STATS_MODE` 互不影响。生产入�
 - **契约差异**：Go 错误体的 `path` 与既有 Go 接管路由一样，只有路径、不含 query。NestJS `GlobalExceptionFilter` 使用的 `request.url` 含 query。成功响应没有 `path`。
 - **配置**：`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`。不要求 `MONGO_URI`。缺失则拒绝启动。错误与日志不包含连接串。
 - **回滚**：`API_GO_DASHBOARD_CHARTS_MODE=legacy`。不新增表，不复制经济数据，不新建抓取或调度。
+
+### 4.10 War Map 事件与新闻标记（Go-批5C）
+
+只接管两条精确 GET。默认 `API_GO_DASHBOARD_WAR_MAP_MODE=legacy`（未设置同义）。
+pilot 注入 `go`。与 stats、charts 开关互不影响。生产入口不因本批改变。
+
+- **接管单元**（exact + 仅 GET；同一路径的有效 OPTIONS 预检由 Go 按 `CORS_ORIGIN` 回答）：
+  - `GET /api/dashboard/war-map/events`
+  - `GET /api/dashboard/war-map/news-markers`
+- **不接管**：`war-map/layers`、`war-map/transport-detail`、`war-map/geojson`（仍只看批5B）、stats、spacetime、`/api/dashboard/stream`，以及其他方法与更长路径。
+- **身份**：复用 access token 验签、Redis 撤销名单、MySQL membership/RBAC。两条都要求 `dashboards.read`。orgId 只来自重推导，并进入 MySQL、Mongo 和 `dashboard:query:*` 缓存键。JWT `permissions` 与 query `orgId` 都不作为授权或租户来源。
+- **日期**：`alignToUtcDay: false`。ISO 校验与批5B 相同，但起止时刻不拉到 UTC 日界。同一 UTC 日里 start 晚于 end 是 `Start must be before end`。仅日期 `2026-02-31` 仍按 JavaScript 溢出。带时间的 `2026-02-31T12:00:00.000Z` 在 Node 20+ 与 `time.Parse` 都是无效日期，返回 `Invalid date range`，解析器不改。
+- **events**：该组织时间范围内的 `AlertEvent`（经 `AlertRule.orgId`，最多 1000，`triggeredAt` 降序）和 `hasLocation` 的 `ProcessedArticle`（最多 2500，`eventAt`/`articleId` 降序）。告警 context 提取国家代码；严重度、分数、新闻计数、`latestAt`、国家中心点来自同一份 `world.geo.json`。MySQL 新闻结果为空才查 Mongo `processeditems`。Mongo 失败只记日志并继续；MySQL 失败返回 500，不返回空数组。
+- **news-markers**：同一组织的 `ProcessedArticle` 联 `Article`，最多 500。标题、URL、时间按 Nest 的回退顺序。MySQL 为空才查 Mongo `processeditems` / `rawitems`。地点实体清洗、国家识别、地理候选、Redis `geo:geocode:v1` 缓存、最多 3 次 Nominatim、国家中心点回退、无效坐标剔除都在 Go 内完成。外部地理服务失败时继续最佳努力，不跳过这段逻辑。
+- **翻译**：`translate=zh-CN`（或 `zh`）走既有 DeepLX / fallback 配置（SystemSetting `situation_monitor_settings` 与 `SITUATION_MONITOR_TRANSLATION_*`）。失败或未配置时省略 `nameZh` / `titleZh` / `locationZh` / `displayNameZh`，不让整段请求失败。
+- **缓存**：新闻查询缓存键 `dashboard:query:war-map-events|war-map-news-markers:<sha1>`，TTL 10 秒，payload 含 orgId 与未对齐的起止时刻。
+- **配置**：`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。Nominatim 与翻译沿用 Nest 的环境变量和 SystemSetting，不新建地理数据源。
+- **回滚**：`API_GO_DASHBOARD_WAR_MAP_MODE=legacy`。不新增表，不复制数据。
 
 ## 5. 队列/cron/outbox 边界（红线）
 
