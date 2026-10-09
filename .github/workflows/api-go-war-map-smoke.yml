@@ -330,7 +330,20 @@ jobs:
       - name: Stop NestJS and prove Go independence
         run: |
           kill "$(cat /tmp/api-nestjs.pid)" || true
-          sleep 2
+          pkill -f "apps/api/dist/main.js" || true
+          pkill -f "node dist/main.js" || true
+          for i in $(seq 1 20); do
+            if ! curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs stopped"
+              break
+            fi
+            sleep 1
+          done
+          if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+            echo "nestjs still listening"
+            ps aux | rg -n "node|main.js" || true
+            exit 1
+          fi
           python3 - << 'PY'
           import json, urllib.request, urllib.error
           token = open("/tmp/smoke-jwt").read().strip()
