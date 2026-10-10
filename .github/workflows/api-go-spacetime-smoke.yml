@@ -369,6 +369,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f /tmp/api-nestjs.pid ]; then kill "$(cat /tmp/api-nestjs.pid)" || true; fi
+          pkill -f "apps/api/dist/main.js" || true
+          pkill -f "node dist/main.js" || true
           for i in $(seq 1 30); do
             if ! curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
               break
