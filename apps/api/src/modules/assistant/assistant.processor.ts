@@ -25,6 +25,10 @@ export class AssistantProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
+    if (!this.env.bullmqWorkersEnabled) {
+      logger.warn("BullMQ workers disabled on this process");
+      return;
+    }
     this.worker = new Worker<AssistantJobPayload>(
       ASSISTANT_QUEUE_NAME,
       async (job) => {

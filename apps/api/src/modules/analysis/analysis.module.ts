@@ -1,9 +1,12 @@
 import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
+import type { PubSubEngine } from "graphql-subscriptions";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { BullmqConnectionService } from "../config/bullmq-connection.service";
+import { GraphqlSubscriptionBus } from "../graphql-subscriptions/graphql-subscription-bus";
+import { GraphqlSubscriptionBusModule } from "../graphql-subscriptions/graphql-subscription-bus.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 
@@ -16,7 +19,7 @@ import { ANALYSIS_PUBSUB, createAnalysisPubSub } from "./analysis.pubsub";
 import { AnalysisService } from "./analysis.service";
 
 @Module({
-  imports: [NewsPipelineModule, NotificationsModule],
+  imports: [GraphqlSubscriptionBusModule, NewsPipelineModule, NotificationsModule],
   providers: [
     AnalysisService,
     AnalysisPromptService,
@@ -58,7 +61,8 @@ import { AnalysisService } from "./analysis.service";
     },
     {
       provide: ANALYSIS_PUBSUB,
-      useFactory: () => createAnalysisPubSub()
+      inject: [GraphqlSubscriptionBus],
+      useFactory: (bus: GraphqlSubscriptionBus): PubSubEngine => bus.forDomain(createAnalysisPubSub)
     },
     {
       provide: getQueueToken(ANALYSIS_QUEUE_NAME),

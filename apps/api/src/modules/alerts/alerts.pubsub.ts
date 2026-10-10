@@ -21,4 +21,5 @@ export interface AlertEventPayload {
   };
 }
 
+/** In-process bus restored by GRAPHQL_SUBSCRIPTION_BUS=local. */
 export const createAlertsPubSub = () => new PubSub();

@@ -1,9 +1,12 @@
 import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
+import type { PubSubEngine } from "graphql-subscriptions";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { BullmqConnectionService } from "../config/bullmq-connection.service";
+import { GraphqlSubscriptionBus } from "../graphql-subscriptions/graphql-subscription-bus";
+import { GraphqlSubscriptionBusModule } from "../graphql-subscriptions/graphql-subscription-bus.module";
 import { ItemsModule } from "../items/items.module";
 import { ModelServiceModule } from "../model-service/model-service.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
@@ -18,7 +21,7 @@ import { AssistantService } from "./assistant.service";
 import type { AssistantJobPayload } from "./assistant.types";
 
 @Module({
-  imports: [NewsPipelineModule, ItemsModule, ModelServiceModule],
+  imports: [GraphqlSubscriptionBusModule, NewsPipelineModule, ItemsModule, ModelServiceModule],
   providers: [
     AssistantService,
     AssistantPromptService,
@@ -60,7 +63,8 @@ import type { AssistantJobPayload } from "./assistant.types";
     },
     {
       provide: ASSISTANT_PUBSUB,
-      useFactory: () => createAssistantPubSub()
+      inject: [GraphqlSubscriptionBus],
+      useFactory: (bus: GraphqlSubscriptionBus): PubSubEngine => bus.forDomain(createAssistantPubSub)
     },
     {
       provide: getQueueToken(ASSISTANT_QUEUE_NAME),

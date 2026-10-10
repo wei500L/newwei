@@ -7,6 +7,7 @@ import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { ASSISTANT_PUBSUB } from "../../modules/assistant/assistant.pubsub";
 import { AssistantService } from "../../modules/assistant/assistant.service";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { subscriptionPayloadMatchesOrg } from "../../modules/graphql-subscriptions/subscription-org";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { AssistantForecastInput, AssistantQueryInput, AssistantReportInput } from "../dto/assistant.input";
 import type { GqlRequest } from "../graphql.types";
@@ -225,7 +226,7 @@ export class AssistantResolver {
     }
     return withFilter(
       () => this.pubsub.asyncIterator("assistantEvents"),
-      (payload: { orgId: string }) => payload.orgId === requester.orgId
+      (payload: unknown) => subscriptionPayloadMatchesOrg(payload, requester.orgId)
     )();
   }
 
