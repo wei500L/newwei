@@ -15,6 +15,14 @@ import {
 } from "./graphql-subscription-codec";
 import { subscriptionPayloadMatchesOrg } from "./subscription-org";
 
+vi.mock("@modular/utils", () => ({
+  createLogger: () => ({
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+  }),
+}));
+
 class FakeRedis implements GraphqlSubscriptionRedisConnection {
   readonly channels = new Set<string>();
   subscribeCalls = 0;

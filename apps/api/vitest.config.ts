@@ -1,4 +1,9 @@
+import { fileURLToPath } from "node:url";
+
 import { defineConfig } from "vitest/config";
+
+const fromApiRoot = (relativePath: string): string =>
+  fileURLToPath(new URL(relativePath, import.meta.url));
 
 export default defineConfig({
   // 控制器加载测试（tools/scan-routes.test.ts）在 vitest 进程内 require TS
@@ -22,11 +27,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@modular/utils": "../../packages/utils/src/index.ts",
-      "@modular/config": "../../packages/config/src/index.ts",
-      "@modular/db": "../../packages/db/src/index.ts",
-      "@modular/mongo": "../../packages/mongo/src/index.ts",
-      "@modular/vector-client": "../../packages/vector-client/src/index.ts",
+      "@modular/utils": fromApiRoot("../../packages/utils/src/index.ts"),
+      "@modular/config": fromApiRoot("../../packages/config/src/index.ts"),
+      "@modular/db": fromApiRoot("../../packages/db/src/index.ts"),
+      "@modular/mongo": fromApiRoot("../../packages/mongo/src/index.ts"),
+      "@modular/vector-client": fromApiRoot("../../packages/vector-client/src/index.ts"),
     },
   },
 });

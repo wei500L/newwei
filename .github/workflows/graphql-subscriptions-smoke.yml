@@ -146,14 +146,9 @@ jobs:
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/smoke-logs"
           cd apps/api
-          NODE_ENV=production PORT=4000 NODE_PATH=./node_modules \
-            node dist/main.js > "$GITHUB_WORKSPACE/smoke-logs/api-a.log" 2>&1 &
-          echo $! > "$GITHUB_WORKSPACE/smoke-logs/api-a.pid"
-          BULLMQ_WORKERS_ENABLED=false NODE_ENV=production PORT=4010 NODE_PATH=./node_modules \
-            node dist/main.js > "$GITHUB_WORKSPACE/smoke-logs/api-b.log" 2>&1 &
-          echo $! > "$GITHUB_WORKSPACE/smoke-logs/api-b.pid"
-          for port in 4000 4010; do
-            ok=0
+          wait_healthy() {
+            local port="$1"
+            local ok=0
             for _ in $(seq 1 90); do
               if curl -fsS "http://127.0.0.1:${port}/api/healthz/live" >/dev/null 2>&1; then
                 echo "api ${port} healthy"
@@ -168,7 +163,17 @@ jobs:
               tail -n 120 "$GITHUB_WORKSPACE/smoke-logs/api-b.log" || true
               exit 1
             fi
-          done
+          }
+          # Akshare catalog sync writes on boot. Start B only after A is up so the two
+          # processes do not deadlock on the same Prisma transaction.
+          NODE_ENV=production PORT=4000 NODE_PATH=./node_modules \
+            node dist/main.js > "$GITHUB_WORKSPACE/smoke-logs/api-a.log" 2>&1 &
+          echo $! > "$GITHUB_WORKSPACE/smoke-logs/api-a.pid"
+          wait_healthy 4000
+          BULLMQ_WORKERS_ENABLED=false NODE_ENV=production PORT=4010 NODE_PATH=./node_modules \
+            node dist/main.js > "$GITHUB_WORKSPACE/smoke-logs/api-b.log" 2>&1 &
+          echo $! > "$GITHUB_WORKSPACE/smoke-logs/api-b.pid"
+          wait_healthy 4010
 
       - name: Cross-instance GraphQL websocket smoke
         env:
