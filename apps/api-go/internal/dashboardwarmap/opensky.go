@@ -789,14 +789,14 @@ func normalizeCraft(raw []any, now time.Time, staleSec int) (adsbCraft, bool, bo
 	}
 	if country := cleanString(vector["countryName"]); country != "" {
 		craft.CountryName = country
-		if code := resolveCountry(country); code != "" {
+		if code := openskyCountry(country); code != "" {
 			craft.CountryCode = code
 		}
 	}
 	return craft, true, false, false
 }
 
-func resolveCountry(name string) string {
+func openskyCountry(name string) string {
 	if code := countryAlpha2(extractCountryCodeFromText(name)); code != "" {
 		return code
 	}
