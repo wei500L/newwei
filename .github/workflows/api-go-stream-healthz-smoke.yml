@@ -186,7 +186,7 @@ jobs:
                   "(id, orgId, name, tokenHash, permissions, createdAt, updatedAt, expiresAt, revokedAt) VALUES ("
                   f"'{row_id}','{org}','{row_id}','{digest}', JSON_ARRAY('metrics.read'), NOW(3), NOW(3), {extra});"
               )
-              subprocess.check_call(["docker","exec","-i",cid,"mysql","-uroot","-psecret","app"], input=sql, text=True)
+              subprocess.run(["docker","exec","-i",cid,"mysql","-uroot","-psecret","app"], input=sql, text=True, check=True)
           insert("mtk_smoke_metrics_only", "mat_smoke_ok", "NULL, NULL")
           insert("mtk_smoke_revoked", "mat_smoke_revoked", "NULL, NOW(3)")
           print("machine tokens inserted")
@@ -324,7 +324,7 @@ jobs:
             ('edp_l','edi_smoke_sp','2026-03-11 00:00:00.000','price',4100.000000000000,'low','2026-03-11 00:00:00.000'),
             ('edp_c','edi_smoke_sp','2026-03-11 00:00:00.000','price',4242.000000000000,'close','2026-03-11 00:00:00.000');
           """
-          subprocess.check_call(["docker","exec","-i",cid,"mysql","-uroot","-psecret","app"], input=sql, text=True)
+          subprocess.run(["docker","exec","-i",cid,"mysql","-uroot","-psecret","app"], input=sql, text=True, check=True)
           deadline = time.time() + 8
           while time.time() < deadline and not any(name == "financial-candlestick" and "4242" in data for name, data in events):
               try:
