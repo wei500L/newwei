@@ -1,6 +1,7 @@
 package dashboardspacetime
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -142,6 +143,15 @@ func (h *Handler) servePropagationArticles(w http.ResponseWriter, r *http.Reques
 	limit := parsePositiveLimit(query.limit, propArticleDefault, propArticleLimit)
 	body, err := h.svc.PropagationArticles(r.Context(), identity.OrgID, query.eventID.value, query.source.value, query.cursorStart.value, query.cursorEnd.value, start, end, limit)
 	h.write(w, r, body, err)
+}
+
+// ReadHeatmap 读取与 GET geo-heatmap 相同的总览，不带 eventId，也不展开 buckets。
+func (h *Handler) ReadHeatmap(ctx context.Context, orgID string, start, end time.Time) ([]byte, error) {
+	body, err := h.svc.Heatmap(ctx, orgID, start, end, "", false)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(body)
 }
 
 func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Identity {

@@ -1210,3 +1210,49 @@ func TestSpacetimeSwitchesAreIndependent(t *testing.T) {
 	assertBody(propOnly, http.MethodGet, "/api/dashboard/stream", "legacy")
 	assertBody(propOnly, http.MethodGet, "/api/user-settings/ui/onboarding", "legacy")
 }
+
+func TestStreamAndHealthzSwitchesAreIndependent(t *testing.T) {
+	stub := newLegacyStub(t)
+	base := DefaultRulesWithWrite(ModeShadow, "", "")
+	for _, rule := range base {
+		if rule.Prefix == "/api/dashboard/stream" || rule.Prefix == "/api/healthz" {
+			t.Fatalf("default rules include %s", rule.Prefix)
+		}
+	}
+	streamOnly, err := New(stub.server.URL, WithDashboardStream(base, string(ModeGo)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthOnly, err := New(stub.server.URL, WithAuthenticatedHealth(append([]Rule{}, base...), string(ModeGo)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamOnly.RegisterGoHandler("/api/dashboard/stream", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"impl":"go-stream"}`))
+	})
+	healthOnly.RegisterGoHandler("/api/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"impl":"go-healthz"}`))
+	})
+	healthOnly.RegisterGoHandler("/api/healthz/live", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"impl":"go-live"}`))
+	})
+	assertBody := func(gateway *Gateway, method, path, want string) {
+		t.Helper()
+		res := httptest.NewRecorder()
+		gateway.ServeHTTP(res, httptest.NewRequest(method, "http://gateway"+path, nil))
+		if !strings.Contains(res.Body.String(), want) {
+			t.Fatalf("%s %s body=%s want %s", method, path, res.Body.String(), want)
+		}
+	}
+	assertBody(streamOnly, http.MethodGet, "/api/dashboard/stream", "go-stream")
+	assertBody(streamOnly, http.MethodOptions, "/api/dashboard/stream", "go-stream")
+	assertBody(streamOnly, http.MethodPost, "/api/dashboard/stream", "legacy")
+	assertBody(streamOnly, http.MethodGet, "/api/dashboard/stream/extra", "legacy")
+	assertBody(streamOnly, http.MethodGet, "/api/healthz", "legacy")
+	assertBody(streamOnly, http.MethodGet, "/api/healthz/live", "legacy")
+	assertBody(healthOnly, http.MethodGet, "/api/healthz", "go-healthz")
+	assertBody(healthOnly, http.MethodPost, "/api/healthz", "legacy")
+	assertBody(healthOnly, http.MethodOptions, "/api/healthz", "legacy")
+	assertBody(healthOnly, http.MethodGet, "/api/healthz/live", "legacy")
+	assertBody(healthOnly, http.MethodGet, "/api/dashboard/stream", "legacy")
+}

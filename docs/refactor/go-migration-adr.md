@@ -387,6 +387,15 @@ pilot 注入 `go`。与 stats、charts 开关互不影响。生产入口不因�
 - **配置**：任一 `go` 都要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。Nominatim 沿用现有环境变量和缓存，不新建地理数据源。
 - **回滚**：`API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy` 只交回热力图两条。`API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy` 只交回传播图两条。不新增表，不复制数据。
 
+### 4.13 Dashboard SSE 与认证版健康检查（Go-批6B）
+
+两条路由各自一个开关，默认都是 `legacy`。生产入口不因本批改变。
+
+- **SSE**：`API_GO_DASHBOARD_STREAM_MODE=go` 只接管精确 `GET /api/dashboard/stream`，以及同一路径带 `Origin` 和 `Access-Control-Request-Method` 的 OPTIONS。其他方法、更长路径，以及没有预检头的 OPTIONS，仍回 NestJS。连接建立时验签、查 Redis 撤销名单，并从 MySQL 重推导 `dashboards.read` 与 orgId。之后不再周期鉴权。`start`/`end` 走图表的 UTC 整日范围；`warMapStart`/`warMapEnd` 走 War Map 的非整日范围。事件、新闻和图层共用同一次查询。K 线和热力图复用已有服务，不经 HTTP 自调用。首轮发全量，之后按 sha1 指纹只发变化。事件名和帧格式与 `DASHBOARD_STREAM_EVENT_TYPES`、`use-dashboard-stream.ts` 一致。`DASHBOARD_STREAM_INTERVAL_MS` 默认开发 2000、其余 10000，夹在 1000 到 60000。`DASHBOARD_STREAM_PING_MS` 默认 25000，夹在 5000 到 120000。断开后停止定时器和查询。
+- **健康检查**：`API_GO_HEALTHZ_MODE=go` 只接管精确 `GET /api/healthz`。不接管 OPTIONS，也不接管 `GET /api/healthz/live`。人类令牌不要求业务权限。`Bearer mtk_` 用 SHA-256 查 `MachineAccessToken`，检查撤销、过期和组织启用，并尽力更新 `lastUsedAt`。机器令牌不进入其他端点的验签链，也不能凭 `metrics.read` 访问 dashboard 或 user-settings。七项探针只由该请求触发：MySQL `SELECT 1`（1500ms）、Redis ping 及配置允许时的写读（含 cluster 槽位）、Mongo ping、crawl4ai `GET /health`、经 `CRAWL4AI_SSRF_PROXY_URL` 的真实 `POST /crawl`、MySQL `llm_gateway_profiles` 就绪、工作目录磁盘阈值 0.95。整份响应缓存 5 秒。crawl4ai 两类探针另有自己的 TTL。成功 200、任一失败 503，正文保留 `status/info/error/details/version/now`。NestJS 失败响应会被全局异常过滤器改成通用 503，正文不必字节相同。数据库凭据和代理地址不进入响应或日志。
+- **配置**：stream 的 `go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。healthz 的 `go` 只要求前三项。`MONGO_URI`、crawl4ai、SSRF proxy 和 LLM 都不是 api-go 启动条件，也不是 `/api/healthz/live` 的条件。
+- **回滚**：`API_GO_DASHBOARD_STREAM_MODE=legacy` 只交回 SSE。`API_GO_HEALTHZ_MODE=legacy` 只交回认证版健康检查。不新增表，不复制数据。
+
 ## 5. 队列/cron/outbox 边界（红线）
 
 - 全部 BullMQ 队列、21 个 @Cron/@Interval、3 套 MongoOutbox 的**写入权在最终阶段前仅属 NestJS**——Go 侧提前双写会制造消息重复/顺序破坏

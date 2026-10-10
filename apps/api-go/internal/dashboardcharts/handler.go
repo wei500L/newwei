@@ -170,37 +170,11 @@ func (h *Handler) serveHeatmap(w http.ResponseWriter, r *http.Request, start, en
 }
 
 func (h *Handler) serveCandle(w http.ResponseWriter, r *http.Request, start, end time.Time) {
-	item, err := h.store.CandleItem(r.Context())
+	success, mismatch, err := h.loadCandle(r.Context(), start, end)
 	if err != nil {
 		h.failDB(w, r)
 		return
 	}
-	var matched []rawPoint
-	total := 0
-	var available []string
-	if item != nil {
-		aliases := flatOHLC(expandOHLC(decodeMetadata(item.Metadata)))
-		matched, err = h.store.CandlePoints(r.Context(), item.ID, aliases, start, end)
-		if err != nil {
-			h.failDB(w, r)
-			return
-		}
-		if len(matched) == 0 {
-			total, err = h.store.CandleCount(r.Context(), item.ID, start, end)
-			if err != nil {
-				h.failDB(w, r)
-				return
-			}
-			if total > 0 {
-				available, err = h.store.CandleFields(r.Context(), item.ID, start, end)
-				if err != nil {
-					h.failDB(w, r)
-					return
-				}
-			}
-		}
-	}
-	success, mismatch := buildCandle(item, matched, total, available)
 	if mismatch != nil {
 		writeCandleMismatch(w, r, *mismatch)
 		return
@@ -211,6 +185,63 @@ func (h *Handler) serveCandle(w http.ResponseWriter, r *http.Request, start, end
 		return
 	}
 	writeBytes(w, http.StatusOK, encoded)
+}
+
+// CodedFailure 是可以放进 SSE stream-error 的业务失败。
+type CodedFailure struct {
+	FailureCode   string
+	FailureDetail string
+}
+
+func (e *CodedFailure) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.FailureDetail
+}
+
+// ReadCandlestick 复用 K 线装配。字段映射不匹配时返回 CodedFailure，
+// 不把 HTTP 500 体直接写进流。
+func (h *Handler) ReadCandlestick(ctx context.Context, start, end time.Time) ([]byte, error) {
+	success, mismatch, err := h.loadCandle(ctx, start, end)
+	if err != nil {
+		return nil, err
+	}
+	if mismatch != nil {
+		return nil, &CodedFailure{FailureCode: candlestickCode, FailureDetail: candlestickDetail}
+	}
+	return encodeJSON(success)
+}
+
+func (h *Handler) loadCandle(ctx context.Context, start, end time.Time) (candleSuccess, *candleMismatch, error) {
+	item, err := h.store.CandleItem(ctx)
+	if err != nil {
+		return candleSuccess{}, nil, err
+	}
+	var matched []rawPoint
+	total := 0
+	var available []string
+	if item != nil {
+		aliases := flatOHLC(expandOHLC(decodeMetadata(item.Metadata)))
+		matched, err = h.store.CandlePoints(ctx, item.ID, aliases, start, end)
+		if err != nil {
+			return candleSuccess{}, nil, err
+		}
+		if len(matched) == 0 {
+			total, err = h.store.CandleCount(ctx, item.ID, start, end)
+			if err != nil {
+				return candleSuccess{}, nil, err
+			}
+			if total > 0 {
+				available, err = h.store.CandleFields(ctx, item.ID, start, end)
+				if err != nil {
+					return candleSuccess{}, nil, err
+				}
+			}
+		}
+	}
+	success, mismatch := buildCandle(item, matched, total, available)
+	return success, mismatch, nil
 }
 
 func (h *Handler) failDB(w http.ResponseWriter, r *http.Request) {

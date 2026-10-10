@@ -1,0 +1,621 @@
+# Go-批6B：Dashboard SSE 与认证版 GET /api/healthz 的真实栈对照。
+# 不进普通 CI。PR 上加 label api-go-stream-healthz-smoke，或 workflow_dispatch。
+name: api-go-stream-healthz-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-stream-healthz-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-smoke@example.com
+  SMTP_PASS: api-go-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-smoke-org
+  SEED_ORG_NAME: api-go Smoke Org
+  SEED_ADMIN_EMAIL: api-go-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoSmoke#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-stream-healthz-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-stream-healthz-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-stream:ci .
+      - name: Start api-go
+        run: |
+          docker rm -f api-go-stream >/dev/null 2>&1 || true
+          docker run -d --name api-go-stream \
+            --add-host=host.docker.internal:host-gateway \
+            --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s \
+            -p 127.0.0.1:4020:4020 \
+            -e PORT=4020 \
+            -e LEGACY_API_URL=http://host.docker.internal:4000 \
+            -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+            -e MONGO_URI=mongodb://host.docker.internal:27017/app \
+            -e API_GO_DASHBOARD_STREAM_MODE=go \
+            -e API_GO_HEALTHZ_MODE=go \
+            -e API_GO_DASHBOARD_STATS_MODE=legacy \
+            -e API_GO_DASHBOARD_CHARTS_MODE=legacy \
+            -e API_GO_DASHBOARD_WAR_MAP_MODE=legacy \
+            -e API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy \
+            -e API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy \
+            -e API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy \
+            -e API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy \
+            -e DASHBOARD_STREAM_INTERVAL_MS=1000 \
+            -e DASHBOARD_STREAM_PING_MS=5000 \
+            -e REALTIME_SIGNALS_ENABLED=false \
+            -e CRAWL4AI_BASE_URL=http://host.docker.internal:11235 \
+            -e JWT_SECRET="$JWT_SECRET" \
+            -e JWT_ISSUER="$JWT_ISSUER" \
+            -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+            -e REDIS_HOST=host.docker.internal \
+            -e REDIS_PORT=6379 \
+            -e CANARY_PERCENT=0 \
+            -e CORS_ORIGIN="$CORS_ORIGIN" \
+            api-go-stream:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' api-go-stream 2>/dev/null || echo starting)
+            echo "health=$status"
+            if [ "$status" = "healthy" ]; then exit 0; fi
+            if [ "$status" = "unhealthy" ]; then docker logs api-go-stream; exit 1; fi
+            sleep 2
+          done
+          docker logs api-go-stream || true
+          exit 1
+      - name: Exercise SSE, healthz, and independent rollback
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import hashlib, json, os, socket, subprocess, time, urllib.request, urllib.error
+          body = json.dumps({"email": os.environ["SEED_ADMIN_EMAIL"], "password": os.environ["SEED_ADMIN_PASSWORD"]}).encode()
+          req = urllib.request.Request("http://127.0.0.1:4020/api/auth/login", data=body, method="POST", headers={"content-type":"application/json"})
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              doc = json.load(resp)
+          token = doc["accessToken"]
+          open("/tmp/smoke-jwt","w").write(token)
+          print("login ok")
+          PY
+          MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
+          test -n "$MYSQL_CID"
+          ORG=$(docker exec "$MYSQL_CID" mysql -uroot -psecret -N -e "SELECT id FROM app.Org WHERE slug='api-go-smoke-org'" 2>/dev/null)
+          test -n "$ORG"
+          echo "$ORG" > /tmp/org-a
+          python3 - << 'PY'
+          import hashlib, os, subprocess
+          org = open("/tmp/org-a").read().strip()
+          cid = subprocess.check_output(["docker","ps","-q","-f","ancestor=mysql:8.4"], text=True).split()[0]
+          def insert(token, row_id, extra):
+              digest = hashlib.sha256(token.encode()).hexdigest()
+              sql = (
+                  "INSERT INTO MachineAccessToken "
+                  "(id, orgId, name, tokenHash, permissions, createdAt, updatedAt, expiresAt, revokedAt) VALUES ("
+                  f"'{row_id}','{org}','{row_id}','{digest}', JSON_ARRAY('metrics.read'), NOW(3), NOW(3), {extra});"
+              )
+              subprocess.run(["docker","exec","-i",cid,"mysql","-uroot","-psecret","app"], input=sql, text=True, check=True)
+          insert("mtk_smoke_metrics_only", "mat_smoke_ok", "NULL, NULL")
+          insert("mtk_smoke_revoked", "mat_smoke_revoked", "NULL, NOW(3)")
+          print("machine tokens inserted")
+          PY
+          python3 - << 'PY'
+          import hashlib, http.client, json, os, socket, subprocess, time, urllib.request, urllib.error
+
+          token = open("/tmp/smoke-jwt").read().strip()
+          org = open("/tmp/org-a").read().strip()
+          go = "http://127.0.0.1:4020"
+          nest = "http://127.0.0.1:4000"
+
+          def call(base, path, method="GET", headers=None, timeout=30):
+              req_headers = {}
+              if headers:
+                  req_headers.update(headers)
+              req = urllib.request.Request(base + path, method=method, headers=req_headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      raw = resp.read()
+                      return resp.status, raw, resp.headers
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read(), exc.headers
+
+          def json_body(raw):
+              try:
+                  return json.loads(raw) if raw else {}
+              except json.JSONDecodeError:
+                  return {"raw": raw.decode("utf-8", "replace")}
+
+          health = json.load(urllib.request.urlopen(go + "/__go/healthz", timeout=10))
+          routes = {(item["prefix"], item.get("mode"), item.get("match"), item.get("methods")) for item in health["routes"]}
+          if ("/api/dashboard/stream", "go", "exact", "GET") not in routes:
+              raise SystemExit("stream GET is not go: " + json.dumps(health["routes"]))
+          if ("/api/dashboard/stream", "go", "exact", "OPTIONS") not in routes:
+              raise SystemExit("stream OPTIONS is not go")
+          if ("/api/healthz", "go", "exact", "GET") not in routes:
+              raise SystemExit("healthz GET is not go")
+          if any(item["prefix"] == "/api/healthz/live" and item.get("mode") == "go" for item in health["routes"]):
+              raise SystemExit("live probe was taken over")
+          if health["dashboardStream"]["mode"] != "go" or health["healthz"]["mode"] != "go":
+              raise SystemExit(health)
+          for prefix in ("/api/dashboard/stats", "/api/dashboard/spacetime/geo-heatmap", "/api/dashboard/war-map/events"):
+              if any(item["prefix"] == prefix and item.get("mode") == "go" for item in health["routes"]):
+                  raise SystemExit(prefix + " unexpectedly go")
+
+          pre_status, _, pre_headers = call(go, "/api/dashboard/stream", "OPTIONS", {
+              "Origin": "http://localhost:3000",
+              "Access-Control-Request-Method": "GET",
+              "Access-Control-Request-Headers": "authorization,content-type",
+          })
+          allow = (pre_headers.get("access-control-allow-headers") or "").lower()
+          if pre_status != 204 or pre_headers.get("access-control-allow-origin") != "http://localhost:3000" or "authorization" not in allow:
+              raise SystemExit(f"preflight {pre_status} origin={pre_headers.get('access-control-allow-origin')} allow={allow}")
+
+          query = "/api/dashboard/stream?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z&warMapStart=2026-03-01T03:15:00.000Z&warMapEnd=2026-03-15T18:45:00.000Z&warMapFlightMode=military&warMapAisMode=military"
+          def open_stream(auth):
+              conn = http.client.HTTPConnection("127.0.0.1", 4020, timeout=30)
+              conn.request("GET", query, headers={
+                  "Authorization": auth,
+                  "Accept": "text/event-stream",
+                  "Origin": "http://localhost:3000",
+              })
+              resp = conn.getresponse()
+              return conn, resp
+
+          def take_frames(buf):
+              frames = []
+              while b"\n\n" in buf:
+                  frame, buf = buf.split(b"\n\n", 1)
+                  event, data = "message", ""
+                  for line in frame.split(b"\n"):
+                      if line.startswith(b"event:"):
+                          event = line[6:].decode().strip()
+                      elif line.startswith(b"data:"):
+                          data += line[5:].decode().strip()
+                  if event and event != "message":
+                      frames.append((event, data))
+              return frames, buf
+
+          def read_one_chunk(resp):
+              # http.client read(n) keeps pulling chunks until n bytes arrive.
+              # One byte returns as soon as the next SSE flush is available.
+              piece = resp.read(1)
+              if not piece:
+                  return b""
+              left = getattr(resp, "chunk_left", None) or 0
+              if left:
+                  piece += resp.read(left)
+              return piece
+
+          conn, resp = open_stream("Bearer " + token)
+          status_line = f"HTTP/1.1 {resp.status} {resp.reason}"
+          header_text = "".join(f"{key}: {value}\n" for key, value in resp.headers.items()).lower()
+          buf = b""
+          events = []
+          try:
+              while True:
+                  chunk = read_one_chunk(resp)
+                  if not chunk:
+                      break
+                  buf += chunk
+                  frames, buf = take_frames(buf)
+                  events.extend(frames)
+                  names = [name for name, _ in events]
+                  if "ping" in names and len([name for name in names if name != "ping"]) >= 5:
+                      break
+          except (socket.timeout, OSError) as exc:
+              print("stream read stopped", exc, [name for name, _ in events])
+          names = [name for name, _ in events]
+          print("first frames", names, flush=True)
+          if resp.status != 200:
+              conn.close()
+              raise SystemExit("stream status " + status_line + " " + header_text)
+          if "content-type: text/event-stream" not in header_text or "cache-control: no-cache" not in header_text:
+              conn.close()
+              raise SystemExit("stream headers " + header_text)
+          if "access-control-allow-origin: http://localhost:3000" not in header_text:
+              conn.close()
+              raise SystemExit("missing CORS on stream")
+          expected = ["war-map-events", "war-map-news-markers", "war-map-layers", "financial-candlestick"]
+          data_names = [name for name in names if name != "ping"]
+          if len(data_names) < 5 or data_names[:4] != expected or data_names[4] not in ("spacetime-geo-heatmap", "spacetime-geo-heatmap-unavailable"):
+              conn.close()
+              raise SystemExit("unexpected first events " + json.dumps(events)[:2000])
+          if any(name == "stream-error" for name in names):
+              conn.close()
+              raise SystemExit("stream-error on first round " + json.dumps(events)[:2000])
+          if names.count("war-map-events") != 1:
+              conn.close()
+              raise SystemExit("events republished while unchanged " + str(names))
+          if "ping" not in names:
+              conn.close()
+              raise SystemExit("missing ping " + str(names))
+          candle = next(data for name, data in events if name == "financial-candlestick")
+          if "4242" in candle:
+              conn.close()
+              raise SystemExit("fixture value already present")
+
+          cid = subprocess.check_output(["docker","ps","-q","-f","ancestor=mysql:8.4"], text=True).split()[0]
+          sql = """
+          DELETE p FROM EconomicDataPoint p
+          JOIN EconomicDataItem i ON i.id = p.itemId
+          WHERE i.slug = 'sp500_index'
+            AND p.recordedAt = '2026-03-11 00:00:00.000'
+            AND p.sourceField IN ('open', 'high', 'low', 'close');
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, sourceField, createdAt)
+          SELECT 'edp_smoke_open', id, '2026-03-11 00:00:00.000', 'index', 4200.000000000000, 'open', NOW(3)
+          FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, sourceField, createdAt)
+          SELECT 'edp_smoke_high', id, '2026-03-11 00:00:00.000', 'index', 4300.000000000000, 'high', NOW(3)
+          FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, sourceField, createdAt)
+          SELECT 'edp_smoke_low', id, '2026-03-11 00:00:00.000', 'index', 4100.000000000000, 'low', NOW(3)
+          FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, sourceField, createdAt)
+          SELECT 'edp_smoke_close', id, '2026-03-11 00:00:00.000', 'index', 4242.000000000000, 'close', NOW(3)
+          FROM EconomicDataItem WHERE slug = 'sp500_index';
+          """
+          subprocess.run(["docker","exec","-i",cid,"mysql","-uroot","-psecret","app"], input=sql, text=True, check=True)
+          try:
+              while not any(name == "financial-candlestick" and "4242" in data for name, data in events):
+                  chunk = read_one_chunk(resp)
+                  if not chunk:
+                      break
+                  buf += chunk
+                  frames, buf = take_frames(buf)
+                  events.extend(frames)
+          except (socket.timeout, OSError) as exc:
+              print("candle read stopped", exc)
+          if not any(name == "financial-candlestick" and "4242" in data for name, data in events):
+              conn.close()
+              raise SystemExit("candle update was not published " + json.dumps([name for name, _ in events]))
+          if sum(1 for name, _ in events if name == "war-map-events") != 1:
+              conn.close()
+              raise SystemExit("war-map-events changed without a war map write")
+          before = json.load(urllib.request.urlopen(go + "/__go/healthz", timeout=10))["dashboardStream"]
+          conn.close()
+          time.sleep(2)
+          mid = json.load(urllib.request.urlopen(go + "/__go/healthz", timeout=10))["dashboardStream"]
+          time.sleep(3)
+          after = json.load(urllib.request.urlopen(go + "/__go/healthz", timeout=10))["dashboardStream"]
+          print("stream stats", before, mid, after)
+          if after["active"] != 0 or mid["cycles"] != after["cycles"]:
+              raise SystemExit("queries continued after disconnect")
+
+          machine = "mtk_smoke_metrics_only"
+          ns, nest_raw, _ = call(nest, "/api/healthz", headers={"authorization": "Bearer " + token}, timeout=20)
+          gs, go_raw, _ = call(go, "/api/healthz", headers={"authorization": "Bearer " + token}, timeout=20)
+          nest_doc, go_doc = json_body(nest_raw), json_body(go_raw)
+          print("health nest", ns, str(nest_doc)[:500])
+          print("health go", gs, str(go_doc)[:800])
+          if ns != gs or ns not in (200, 503):
+              raise SystemExit(f"health status nest={ns} go={gs}")
+          for key in ("status", "info", "error", "details", "version", "now"):
+              if key not in go_doc:
+                  raise SystemExit("go health missing " + key)
+          if go_doc["version"] != "0.1.0" or go_doc["status"] not in ("ok", "error"):
+              raise SystemExit(go_doc)
+          details = go_doc["details"]
+          for name in ("mysql", "redis", "mongo", "crawl4ai", "crawl4aiSsrfProxy", "llmGateway", "disk"):
+              if name not in details or details[name].get("status") not in ("up", "down"):
+                  raise SystemExit("missing probe " + name + " " + str(details))
+          if details["crawl4ai"]["status"] != "down" or details["crawl4aiSsrfProxy"]["status"] != "down":
+              raise SystemExit("unconfigured crawl probes were reported up " + str(details))
+          if all(details[name]["status"] == "up" for name in details):
+              raise SystemExit("health was reported all green")
+          blob = go_raw.decode("utf-8", "replace")
+          if "mysql://" in blob or "mongodb://" in blob or "11235" in blob or "root:secret" in blob:
+              raise SystemExit("health response leaked a dependency address")
+          ms, _, _ = call(go, "/api/healthz", headers={"authorization": "Bearer " + machine})
+          if ms == 401:
+              raise SystemExit("valid machine token rejected")
+          if ms != gs:
+              raise SystemExit(f"machine health {ms} human {gs}")
+          bad, bad_raw, _ = call(go, "/api/healthz", headers={"authorization": "Bearer mtk_missing"})
+          if bad != 401 or b"Invalid machine token" not in bad_raw:
+              raise SystemExit(f"missing machine {bad} {bad_raw[:200]}")
+          revoked, revoked_raw, _ = call(go, "/api/healthz", headers={"authorization": "Bearer mtk_smoke_revoked"})
+          if revoked != 401 or b"Invalid machine token" not in revoked_raw:
+              raise SystemExit(f"revoked machine {revoked} {revoked_raw[:200]}")
+          stream_denied, _, _ = call(go, query, headers={"authorization": "Bearer " + machine, "accept": "text/event-stream"})
+          if stream_denied != 401:
+              raise SystemExit(f"machine token reached SSE {stream_denied}")
+          settings_status, _, _ = call(go, "/api/user-settings/ui/onboarding", headers={"authorization": "Bearer " + machine})
+          if settings_status == 200:
+              raise SystemExit("machine token gained user-settings")
+          used = subprocess.check_output(["docker","exec",cid,"mysql","-uroot","-psecret","-N","-e","SELECT lastUsedAt IS NOT NULL FROM app.MachineAccessToken WHERE id='mat_smoke_ok'"], text=True).strip()
+          if used != "1":
+              raise SystemExit("lastUsedAt was not updated: " + used)
+          print("sse and healthz closed loop ok")
+          PY
+      - name: Roll healthz back to NestJS without touching SSE
+        run: |
+          set -euo pipefail
+          docker rm -f api-go-stream
+          docker run -d --name api-go-stream \
+            --add-host=host.docker.internal:host-gateway \
+            --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s \
+            -p 127.0.0.1:4020:4020 \
+            -e PORT=4020 \
+            -e LEGACY_API_URL=http://host.docker.internal:4000 \
+            -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+            -e MONGO_URI=mongodb://host.docker.internal:27017/app \
+            -e API_GO_DASHBOARD_STREAM_MODE=go \
+            -e API_GO_HEALTHZ_MODE=legacy \
+            -e DASHBOARD_STREAM_INTERVAL_MS=1000 \
+            -e DASHBOARD_STREAM_PING_MS=5000 \
+            -e REALTIME_SIGNALS_ENABLED=false \
+            -e CRAWL4AI_BASE_URL=http://host.docker.internal:11235 \
+            -e JWT_SECRET="$JWT_SECRET" -e JWT_ISSUER="$JWT_ISSUER" -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+            -e REDIS_HOST=host.docker.internal -e REDIS_PORT=6379 -e CANARY_PERCENT=0 \
+            -e CORS_ORIGIN="$CORS_ORIGIN" \
+            api-go-stream:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' api-go-stream 2>/dev/null || echo starting)
+            if [ "$status" = "healthy" ]; then break; fi
+            if [ "$status" = "unhealthy" ]; then docker logs api-go-stream; exit 1; fi
+            sleep 2
+          done
+          python3 - << 'PY'
+          import json, urllib.request
+          health = json.load(urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10))
+          if health["healthz"]["mode"] != "legacy" or health["dashboardStream"]["mode"] != "go":
+              raise SystemExit(health)
+          if any(item["prefix"] == "/api/healthz" and item.get("mode") == "go" for item in health["routes"]):
+              raise SystemExit("healthz still go")
+          if not any(item["prefix"] == "/api/dashboard/stream" and item.get("mode") == "go" for item in health["routes"]):
+              raise SystemExit("stream lost during healthz rollback")
+          print("healthz legacy, stream still go")
+          PY
+      - name: Roll SSE back to NestJS without touching healthz
+        run: |
+          set -euo pipefail
+          docker rm -f api-go-stream
+          docker run -d --name api-go-stream \
+            --add-host=host.docker.internal:host-gateway \
+            --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s \
+            -p 127.0.0.1:4020:4020 \
+            -e PORT=4020 \
+            -e LEGACY_API_URL=http://host.docker.internal:4000 \
+            -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+            -e MONGO_URI=mongodb://host.docker.internal:27017/app \
+            -e API_GO_DASHBOARD_STREAM_MODE=legacy \
+            -e API_GO_HEALTHZ_MODE=go \
+            -e REALTIME_SIGNALS_ENABLED=false \
+            -e CRAWL4AI_BASE_URL=http://host.docker.internal:11235 \
+            -e JWT_SECRET="$JWT_SECRET" -e JWT_ISSUER="$JWT_ISSUER" -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+            -e REDIS_HOST=host.docker.internal -e REDIS_PORT=6379 -e CANARY_PERCENT=0 \
+            -e CORS_ORIGIN="$CORS_ORIGIN" \
+            api-go-stream:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' api-go-stream 2>/dev/null || echo starting)
+            if [ "$status" = "healthy" ]; then break; fi
+            if [ "$status" = "unhealthy" ]; then docker logs api-go-stream; exit 1; fi
+            sleep 2
+          done
+          python3 - << 'PY'
+          import json, urllib.request, urllib.error
+          health = json.load(urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10))
+          if health["dashboardStream"]["mode"] != "legacy" or health["healthz"]["mode"] != "go":
+              raise SystemExit(health)
+          if any(item["prefix"] == "/api/dashboard/stream" and item.get("mode") == "go" for item in health["routes"]):
+              raise SystemExit("stream still go")
+          if not any(item["prefix"] == "/api/healthz" and item.get("mode") == "go" for item in health["routes"]):
+              raise SystemExit("healthz lost during stream rollback")
+          before = health["dashboardStream"]["cycles"]
+          token = open("/tmp/smoke-jwt").read().strip()
+          req = urllib.request.Request(
+              "http://127.0.0.1:4020/api/dashboard/stream?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z",
+              headers={"authorization": "Bearer " + token, "accept": "text/event-stream"})
+          try:
+              with urllib.request.urlopen(req, timeout=8) as resp:
+                  chunk = resp.read(200)
+                  print("legacy stream", resp.status, resp.headers.get("content-type"), chunk[:80])
+          except urllib.error.HTTPError as exc:
+              raise SystemExit(f"legacy stream failed {exc.code} {exc.read()[:200]}")
+          after = json.load(urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10))["dashboardStream"]["cycles"]
+          if before != 0 or after != 0:
+              raise SystemExit(f"legacy stream still executed in Go {before} {after}")
+          print("stream legacy, healthz still go")
+          PY
+      - name: SSE still serves after NestJS stops
+        run: |
+          set -euo pipefail
+          docker rm -f api-go-stream
+          docker run -d --name api-go-stream \
+            --add-host=host.docker.internal:host-gateway \
+            --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s \
+            -p 127.0.0.1:4020:4020 \
+            -e PORT=4020 \
+            -e LEGACY_API_URL=http://host.docker.internal:4000 \
+            -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+            -e MONGO_URI=mongodb://host.docker.internal:27017/app \
+            -e API_GO_DASHBOARD_STREAM_MODE=go \
+            -e API_GO_HEALTHZ_MODE=go \
+            -e DASHBOARD_STREAM_INTERVAL_MS=1000 \
+            -e DASHBOARD_STREAM_PING_MS=5000 \
+            -e REALTIME_SIGNALS_ENABLED=false \
+            -e CRAWL4AI_BASE_URL=http://host.docker.internal:11235 \
+            -e JWT_SECRET="$JWT_SECRET" -e JWT_ISSUER="$JWT_ISSUER" -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+            -e REDIS_HOST=host.docker.internal -e REDIS_PORT=6379 -e CANARY_PERCENT=0 \
+            -e CORS_ORIGIN="$CORS_ORIGIN" \
+            api-go-stream:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' api-go-stream 2>/dev/null || echo starting)
+            if [ "$status" = "healthy" ]; then break; fi
+            if [ "$status" = "unhealthy" ]; then docker logs api-go-stream; exit 1; fi
+            sleep 2
+          done
+          if [ -f /tmp/api-nestjs.pid ]; then kill "$(cat /tmp/api-nestjs.pid)" || true; fi
+          pkill -f "apps/api/dist/main.js" || true
+          pkill -f "node dist/main.js" || true
+          for i in $(seq 1 30); do
+            if ! curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs stopped"
+              break
+            fi
+            sleep 1
+          done
+          if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+            echo "nestjs still up"; exit 1
+          fi
+          python3 - << 'PY'
+          import http.client, json, socket, time, urllib.request, urllib.error
+          token = open("/tmp/smoke-jwt").read().strip()
+          query = "/api/dashboard/stream?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z"
+          conn = http.client.HTTPConnection("127.0.0.1", 4020, timeout=30)
+          conn.request("GET", query, headers={"Authorization": "Bearer " + token, "Accept": "text/event-stream"})
+          resp = conn.getresponse()
+
+          def read_one_chunk(response):
+              piece = response.read(1)
+              if not piece:
+                  return b""
+              left = getattr(response, "chunk_left", None) or 0
+              if left:
+                  piece += response.read(left)
+              return piece
+
+          buf = b""
+          events = []
+          try:
+              while True:
+                  chunk = read_one_chunk(resp)
+                  if not chunk:
+                      break
+                  buf += chunk
+                  while b"\n\n" in buf:
+                      frame, buf = buf.split(b"\n\n", 1)
+                      event, data = "", ""
+                      for line in frame.split(b"\n"):
+                          if line.startswith(b"event:"):
+                              event = line[6:].decode().strip()
+                          elif line.startswith(b"data:"):
+                              data += line[5:].decode().strip()
+                      if event:
+                          events.append((event, data))
+                  names = [name for name, _ in events]
+                  candle = next((data for name, data in events if name == "financial-candlestick"), "")
+                  if all(name in names for name in ("war-map-events", "war-map-news-markers", "war-map-layers", "financial-candlestick")) and ("spacetime-geo-heatmap" in names or "spacetime-geo-heatmap-unavailable" in names) and "4242" in candle:
+                      break
+          except (socket.timeout, OSError) as exc:
+              print("stream without nest stopped", exc)
+          conn.close()
+          names = [name for name, _ in events]
+          print("without nest", names)
+          for name in ("war-map-events", "war-map-news-markers", "war-map-layers", "financial-candlestick"):
+              if name not in names:
+                  raise SystemExit("missing " + name)
+          if "spacetime-geo-heatmap" not in names and "spacetime-geo-heatmap-unavailable" not in names:
+              raise SystemExit("missing geo heatmap " + str(names))
+          candle = next(data for name, data in events if name == "financial-candlestick")
+          if "4242" not in candle:
+              raise SystemExit("candle payload lost after nest shutdown " + candle[:300])
+          time.sleep(2)
+          mid = json.load(urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10))["dashboardStream"]
+          time.sleep(3)
+          after = json.load(urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10))["dashboardStream"]
+          if after["active"] != 0 or mid["cycles"] != after["cycles"]:
+              raise SystemExit(f"still querying after close {mid} {after}")
+          req = urllib.request.Request("http://127.0.0.1:4020/api/healthz", headers={"authorization": "Bearer " + token})
+          try:
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  status, raw = resp.status, resp.read()
+          except urllib.error.HTTPError as exc:
+              status, raw = exc.code, exc.read()
+          doc = json.loads(raw)
+          if status not in (200, 503) or "details" not in doc or doc["details"]["mysql"]["status"] != "up":
+              raise SystemExit(f"health without nest {status} {raw[:400]}")
+          print("go survived nest shutdown")
+          PY

@@ -28,7 +28,11 @@
 //	         war-map/events 与 war-map/news-markers。
 //	         API_GO_DASHBOARD_SPACETIME_GEO_MODE=go 时接管热力图总览与下钻。
 //	         API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=go 时接管传播图总览与下钻。
-//	         这两个开关互不影响，也不接管 /api/dashboard/stream。
+//	         这两个开关互不影响。
+//	         API_GO_DASHBOARD_STREAM_MODE=go 时接管精确 GET /api/dashboard/stream
+//	         （SSE；复用 War Map、K 线和热力图服务，不请求 NestJS）。
+//	         API_GO_HEALTHZ_MODE=go 时接管精确 GET /api/healthz（认证探针）。
+//	         公开 GET /api/healthz/live 保持 shadow，不随该开关变化。
 //
 // 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
 // API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
@@ -72,6 +76,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardcharts"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardspacetime"
+	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstream"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardwarmap"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
@@ -425,6 +430,14 @@ func run() error {
 	if cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo {
 		spacetimePropagationMode = string(legacyproxy.ModeGo)
 	}
+	streamMode := ""
+	if cfg.DashboardStreamMode == config.DashboardStreamModeGo {
+		streamMode = string(legacyproxy.ModeGo)
+	}
+	healthzMode := ""
+	if cfg.HealthzMode == config.HealthzModeGo {
+		healthzMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -434,6 +447,8 @@ func run() error {
 	rules = legacyproxy.WithDashboardWarMapLayers(rules, layersMode)
 	rules = legacyproxy.WithDashboardSpacetimeGeo(rules, spacetimeGeoMode)
 	rules = legacyproxy.WithDashboardSpacetimePropagation(rules, spacetimePropagationMode)
+	rules = legacyproxy.WithDashboardStream(rules, streamMode)
+	rules = legacyproxy.WithAuthenticatedHealth(rules, healthzMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -467,7 +482,9 @@ func run() error {
 				cfg.DashboardWarMapTransportMode == config.DashboardWarMapTransportModeGo ||
 				cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo ||
 				cfg.DashboardSpacetimeGeoMode == config.DashboardSpacetimeGeoModeGo ||
-				cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo {
+				cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo ||
+				cfg.DashboardStreamMode == config.DashboardStreamModeGo ||
+				cfg.HealthzMode == config.HealthzModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -504,8 +521,11 @@ func run() error {
 	layersGo := cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo
 	spacetimeGeoGo := cfg.DashboardSpacetimeGeoMode == config.DashboardSpacetimeGeoModeGo
 	spacetimePropagationGo := cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo
-	// user-settings、dashboard stats、图表、war map 和 spacetime GET 共用同一套 JWT/Redis/MySQL 鉴权栈。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo
+	streamGo := cfg.DashboardStreamMode == config.DashboardStreamModeGo
+	healthzGo := cfg.HealthzMode == config.HealthzModeGo
+	// user-settings、dashboard、stream 和认证版 healthz 共用 JWT/Redis/MySQL 鉴权栈。
+	// healthz 不因此要求 Mongo。stream 的 Mongo 在下面按需打开，启动时不探测。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -601,41 +621,47 @@ func run() error {
 
 	// 三个图表 GET。热力图和 K 线读 MySQL 经济序列；GeoJSON 用编译进
 	// 二进制的 world.geo.json。不读 Mongo，不调用 NestJS。
-	if chartsGo {
+	// stream=go 时也构造同一 handler，供 SSE 直接读 K 线；图表路由仍只在 charts=go 时注册。
+	var chartsHandler *dashboardcharts.Handler
+	if chartsGo || streamGo {
 		if sharedDB == nil || authenticator == nil {
-			return fmt.Errorf("api-go: dashboard charts go takeover requires mysql, jwt, and redis")
+			return fmt.Errorf("api-go: dashboard charts or stream go takeover requires mysql, jwt, and redis")
 		}
-		chartsHandler := dashboardcharts.NewHandler(authenticator, dashboardcharts.NewMySQLStore(sharedDB))
-		chartsCORS := cors.New(cfg.CorsOrigin)
-		for _, path := range dashboardcharts.Paths {
-			gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
-				if chartsCORS.FinishOptions(w, r) {
-					return
-				}
-				if r.Method == http.MethodOptions {
-					gateway.ServeLegacy(w, r)
-					return
-				}
-				chartsHandler.ServeHTTP(w, r)
-			})
+		chartsHandler = dashboardcharts.NewHandler(authenticator, dashboardcharts.NewMySQLStore(sharedDB))
+		if chartsGo {
+			chartsCORS := cors.New(cfg.CorsOrigin)
+			for _, path := range dashboardcharts.Paths {
+				gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+					if chartsCORS.FinishOptions(w, r) {
+						return
+					}
+					if r.Method == http.MethodOptions {
+						gateway.ServeLegacy(w, r)
+						return
+					}
+					chartsHandler.ServeHTTP(w, r)
+				})
+			}
+			log.Printf("api-go: dashboard chart GETs under go takeover")
 		}
-		log.Printf("api-go: dashboard chart GETs under go takeover")
 	}
 
 	// events/news-markers、transport-detail、layers 各自注册。共用一个 handler，
 	// 但未打开的路径不会进入路由表，因此仍回 NestJS。
-	if warMapGo || transportGo || layersGo {
+	// stream=go 时复用这个 handler 的 ReadForStream，不因此打开那三条 HTTP。
+	var warHandler *dashboardwarmap.Handler
+	if warMapGo || transportGo || layersGo || streamGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
-			return fmt.Errorf("api-go: dashboard war map go takeover requires mysql, jwt, and redis")
+			return fmt.Errorf("api-go: dashboard war map or stream go takeover requires mysql, jwt, and redis")
 		}
 		if dashboardMongo == nil {
 			conn, err := dashboardstats.Open(cfg.MongoURI)
 			if err != nil {
-				return fmt.Errorf("api-go: war map go takeover requires a valid MONGO_URI")
+				return fmt.Errorf("api-go: war map or stream go takeover requires a valid MONGO_URI")
 			}
 			dashboardMongo = conn
 		}
-		warHandler := dashboardwarmap.NewHandler(authenticator, sharedDB, redisClient, dashboardMongo.Database(), dashboardwarmap.Runtime{
+		warHandler = dashboardwarmap.NewHandler(authenticator, sharedDB, redisClient, dashboardMongo.Database(), dashboardwarmap.Runtime{
 			NominatimBaseURL:        cfg.NominatimBaseURL,
 			NominatimUserAgent:      cfg.NominatimUserAgent,
 			NominatimEmail:          cfg.NominatimEmail,
@@ -696,18 +722,20 @@ func run() error {
 	}
 
 	// 热力图与传播图各自注册。未打开的那一组不会进入路由表，仍回 NestJS。
-	if spacetimeGeoGo || spacetimePropagationGo {
+	// stream=go 时复用热力图读取，不因此打开热力图或传播图的 HTTP。
+	var spacetimeHandler *dashboardspacetime.Handler
+	if spacetimeGeoGo || spacetimePropagationGo || streamGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
-			return fmt.Errorf("api-go: dashboard spacetime go takeover requires mysql, jwt, and redis")
+			return fmt.Errorf("api-go: dashboard spacetime or stream go takeover requires mysql, jwt, and redis")
 		}
 		if dashboardMongo == nil {
 			conn, err := dashboardstats.Open(cfg.MongoURI)
 			if err != nil {
-				return fmt.Errorf("api-go: spacetime go takeover requires a valid MONGO_URI")
+				return fmt.Errorf("api-go: spacetime or stream go takeover requires a valid MONGO_URI")
 			}
 			dashboardMongo = conn
 		}
-		spacetimeHandler := dashboardspacetime.NewHandler(authenticator, sharedDB, redisClient, dashboardMongo.Database(), dashboardwarmap.PlaceConfig{
+		spacetimeHandler = dashboardspacetime.NewHandler(authenticator, sharedDB, redisClient, dashboardMongo.Database(), dashboardwarmap.PlaceConfig{
 			BaseURL: cfg.NominatimBaseURL, UserAgent: cfg.NominatimUserAgent, Email: cfg.NominatimEmail,
 			AcceptLanguage: cfg.NominatimAcceptLanguage,
 			Timeout:        time.Duration(cfg.GeocodeTimeoutMs) * time.Millisecond,
@@ -740,6 +768,53 @@ func run() error {
 			}
 			log.Printf("api-go: spacetime propagation under go takeover")
 		}
+	}
+
+	// SSE 直接调用上面的服务。图表、War Map、热力图的 HTTP 开关保持原样。
+	var streamHandler *dashboardstream.Handler
+	if streamGo {
+		if warHandler == nil || chartsHandler == nil || spacetimeHandler == nil {
+			return fmt.Errorf("api-go: dashboard stream go takeover requires war map, charts, and spacetime services")
+		}
+		streamPolicy := cors.New(cfg.CorsOrigin)
+		streamHandler = dashboardstream.NewHandler(authenticator, warHandler, chartsHandler, spacetimeHandler, streamPolicy)
+		gateway.RegisterGoHandler(dashboardstream.Path, func(w http.ResponseWriter, r *http.Request) {
+			if streamPolicy.FinishOptions(w, r) {
+				return
+			}
+			if r.Method == http.MethodOptions {
+				gateway.ServeLegacy(w, r)
+				return
+			}
+			streamHandler.ServeHTTP(w, r)
+		})
+		log.Printf("api-go: GET /api/dashboard/stream under go takeover")
+	}
+
+	// 认证版健康检查。探针在请求里运行，不作为启动或 /api/healthz/live 的条件。
+	// 已有的 Mongo 连接可以复用；没有时第一次探针再连接，并在退出时关闭。
+	var readyHandler *health.ReadyHandler
+	if healthzGo {
+		if sharedDB == nil || authenticator == nil || redisClient == nil {
+			return fmt.Errorf("api-go: authenticated healthz go takeover requires mysql, jwt, and redis")
+		}
+		deps := health.Deps{
+			DB:           sharedDB,
+			Redis:        redisClient,
+			MongoURI:     cfg.MongoURI,
+			CrawlBase:    cfg.CrawlBaseURL,
+			CrawlKey:     cfg.CrawlAPIKey,
+			CrawlTimeout: time.Duration(cfg.CrawlTimeoutMs) * time.Millisecond,
+			CrawlTTL:     time.Duration(cfg.CrawlHealthTTLMs) * time.Millisecond,
+			ProxyURL:     cfg.CrawlSSRFProxyURL,
+			RerankNeed:   cfg.ItemsSearchRerankEnabled,
+		}
+		if dashboardMongo != nil {
+			deps.Mongo = dashboardMongo.Database()
+		}
+		readyHandler = health.NewReadyHandler(authenticator, deps)
+		gateway.RegisterGoHandler(health.ReadyPath, readyHandler.ServeHTTP)
+		log.Printf("api-go: GET /api/healthz under go takeover")
 	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
@@ -812,6 +887,10 @@ func run() error {
 			}
 			routes = append(routes, entry)
 		}
+		streamActive, streamCycles := int64(0), int64(0)
+		if streamHandler != nil {
+			streamActive, streamCycles = streamHandler.Stats()
+		}
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"ok":     true,
 			"routes": routes,
@@ -857,6 +936,14 @@ func run() error {
 			},
 			"dashboardSpacetimePropagation": map[string]any{
 				"mode": string(cfg.DashboardSpacetimePropagationMode),
+			},
+			"dashboardStream": map[string]any{
+				"mode":   string(cfg.DashboardStreamMode),
+				"active": streamActive,
+				"cycles": streamCycles,
+			},
+			"healthz": map[string]any{
+				"mode": string(cfg.HealthzMode),
 			},
 		})
 	})
@@ -909,6 +996,9 @@ func run() error {
 			if err := dashboardMongo.Disconnect(ctx); err != nil {
 				log.Printf("api-go: mongo client close failed")
 			}
+		}
+		if readyHandler != nil {
+			readyHandler.Close(ctx)
 		}
 		return nil
 	}
