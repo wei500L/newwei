@@ -43,6 +43,11 @@ env:
   LITELLM_DATABASE_URL: postgresql://litellm:litellm-pg-secret@litellm-postgres:5432/litellm
   MONGO_URI: mongodb://root:mongo-root-secret@mongo:27017/app?authSource=admin
   JWT_SECRET: vector-go-pilot-jwt-secret-not-used
+  # prisma:generate 只读这些变量，不连接数据库。与 ci.yml 的顶层 env 相同。
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
   MYSQL_DB: app
   MYSQL_PASSWORD: secret
 
