@@ -6,6 +6,7 @@
 //   - payload：{orgId, embeddingModel, processedItemId, itemMetaId, createdAtMs}
 //   - 检索过滤：must[0] 恒为 orgId match；lookbackMs>0 时追加 createdAtMs range gte
 //   - ensureCollection：GET 命中校验维度，404 创建（Cosine + on_disk_payload），
+//     409 后只对「集合已占名但分片尚未可读」的 500 做有界重读，
 //     并尽力建 orgId(keyword)/createdAtMs(integer) payload 索引（失败仅记日志）
 //   - 集合信息有进程内缓存（带维度校验）
 package qdrant
@@ -351,22 +352,18 @@ func (c *Client) ensureCollection(ctx context.Context, embeddingModel string, ve
 	}
 	var created qdrantResponse[json.RawMessage]
 	if err := c.doJSON(ctx, http.MethodPut, endpoint, createBody, &created); err != nil {
-		// 409 = 并发创建（另一实例/另一实现先建了同一集合）——集合已存在，
-		// 重新 GET 校验维度即可，不视为失败。两侧实现（TS/Go）共用同一
-		// 集合命名，并行部署时该竞态是常态而非异常。
+		// 409 = 并发创建（另一实例/另一实现先占了同一集合名）。Qdrant v1.10.1
+		// 在胜者 PUT 尚未返回时，立刻 GET 会 500「0 of 0 read operations failed」
+		// （集合名已注册、分片还不能服务读）。只重试这一条，读到 200 且维度
+		// 一致才算恢复；其他 500、404、维度不符都不当成成功。
 		var createStatusErr *httpStatusError
 		if errors.As(err, &createStatusErr) && createStatusErr.status == http.StatusConflict {
-			var existing qdrantResponse[qdrantCollectionInfo]
-			if recheckErr := c.doJSON(ctx, http.MethodGet, endpoint, nil, &existing); recheckErr == nil {
-				if existing.Result != nil && existing.Result.Config != nil && existing.Result.Config.Params != nil &&
-					existing.Result.Config.Params.Vectors != nil && existing.Result.Config.Params.Vectors.Size != nil &&
-					*existing.Result.Config.Params.Vectors.Size == vectorSize {
-					result := collectionInfo{name: name, vectorSize: vectorSize}
-					c.mu.Lock()
-					c.collections[name] = result
-					c.mu.Unlock()
-					return result, nil
-				}
+			recovered, recoverErr := c.readCollectionAfterCreateConflict(ctx, endpoint, name, vectorSize)
+			if recoverErr != nil {
+				return collectionInfo{}, recoverErr
+			}
+			if recovered != nil {
+				return *recovered, nil
 			}
 		}
 		return collectionInfo{}, fmt.Errorf("qdrant collection create failed: %w", err)
@@ -380,6 +377,66 @@ func (c *Client) ensureCollection(ctx context.Context, embeddingModel string, ve
 	c.collections[name] = result
 	c.mu.Unlock()
 	return result, nil
+}
+
+// Qdrant v1.10.1 并发建集合窗口：409 之后的 GET 若正文含此句，表示分片尚未可读。
+// 见 run 34034804518 的 Qdrant 日志 "0 of 0 read operations failed"。
+const (
+	collectionInitReadAttempts = 8
+	collectionInitReadDelay    = 25 * time.Millisecond
+	unreadyCollectionReadMark  = "0 of 0 read operations failed"
+)
+
+func (c *Client) readCollectionAfterCreateConflict(
+	ctx context.Context,
+	endpoint, name string,
+	vectorSize int,
+) (*collectionInfo, error) {
+	for attempt := 0; attempt < collectionInitReadAttempts; attempt++ {
+		if attempt > 0 {
+			timer := time.NewTimer(collectionInitReadDelay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		var existing qdrantResponse[qdrantCollectionInfo]
+		recheckErr := c.doJSON(ctx, http.MethodGet, endpoint, nil, &existing)
+		if recheckErr == nil {
+			var existingSize *int
+			if existing.Result != nil && existing.Result.Config != nil && existing.Result.Config.Params != nil &&
+				existing.Result.Config.Params.Vectors != nil {
+				existingSize = existing.Result.Config.Params.Vectors.Size
+			}
+			if existingSize == nil || *existingSize != vectorSize {
+				got := "nil"
+				if existingSize != nil {
+					got = fmt.Sprintf("%d", *existingSize)
+				}
+				return nil, fmt.Errorf(
+					"qdrant collection size mismatch for %s: expected %d, got %s", name, vectorSize, got)
+			}
+			result := collectionInfo{name: name, vectorSize: vectorSize}
+			c.mu.Lock()
+			c.collections[name] = result
+			c.mu.Unlock()
+			return &result, nil
+		}
+		if !isUnreadyCollectionRead(recheckErr) {
+			return nil, nil
+		}
+	}
+	return nil, nil
+}
+
+func isUnreadyCollectionRead(err error) bool {
+	var statusErr *httpStatusError
+	if !errors.As(err, &statusErr) || statusErr.status != http.StatusInternalServerError {
+		return false
+	}
+	return strings.Contains(statusErr.body, unreadyCollectionReadMark)
 }
 
 // ensurePayloadIndex 尽力创建 payload 索引：失败仅记日志（与 TS 行为一致）。
@@ -397,6 +454,7 @@ func (c *Client) ensurePayloadIndex(ctx context.Context, collection, fieldName, 
 
 type httpStatusError struct {
 	status int
+	body   string
 }
 
 func (e *httpStatusError) Error() string {
@@ -427,7 +485,11 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, body []byt
 
 	raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return &httpStatusError{status: response.StatusCode}
+		body := raw
+		if len(body) > 512 {
+			body = body[:512]
+		}
+		return &httpStatusError{status: response.StatusCode, body: string(body)}
 	}
 	if out != nil && len(raw) > 0 {
 		// 解析失败不返回错误：TS 侧 json().catch(() => null) 把坏响应当 null。

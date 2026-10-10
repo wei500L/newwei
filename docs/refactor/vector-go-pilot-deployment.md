@@ -7,12 +7,13 @@
 
 ## 1. 部署形态
 
-`infra/docker/docker-compose.yml` 新增 `vector-go` 服务（**独立 `go-pilot` profile**）：
+`infra/docker/docker-compose.yml` 的 `vector-go` 服务（**独立 `go-pilot` profile**）：
 
-- 镜像：`infra/docker/vector-go.Dockerfile`（多阶段：golang 构建静态二进制 → distroless nonroot 运行，`USER 65532`，无 shell 无包管理器）
-- 端口：宿主 `4011` → 容器 `4010`（与 NestJS vector 的 4010 并存，不冲突）
+- 镜像：`infra/docker/vector-go.Dockerfile`（多阶段：golang 构建静态二进制 → distroless nonroot 运行，`USER 65532:65532`，无 shell 无包管理器）
+- 端口：宿主 `127.0.0.1:4011` → 容器 `4010`（与 NestJS vector 的 4010 并存，不冲突）
 - 依赖：仅 `qdrant`（与 NestJS vector 共用同一 Qdrant、同一集合命名与 point ID 算法）
 - **默认部署不启动**：`docker compose up`（无 profile）只有 NestJS vector；启动试点需 `--profile go-pilot`
+- 试点补充：`infra/docker/vector-go-pilot.override.yml`。基础 compose 里 NestJS `vector` 没有传入 `QDRANT_API_KEY`，而 `vector-go` 在 `NODE_ENV=production` 时把 token 默认成 `dev-token`（进程会拒绝启动）。叠加该文件后，两侧都使用显式 `VECTOR_PILOT_INTERNAL_TOKEN` 和同一个 `QDRANT_API_KEY`。不要把 `dev-token` 填进这个变量。
 
 ## 2. 切换与回滚（无数据迁移耦合）
 
@@ -62,18 +63,61 @@ CI `vector-integration` job（`.github/workflows/ci.yml`）：
    vector-go 此前返回 200——已对齐为 201（调用方 packages/vector-client 的
    response.ok 检查两者皆可，但契约以 NestJS 为准）。契约清单 §1.2 相应更新。
 2. **并发集合创建的 409 竞态**：两侧共用同一 Qdrant 集合命名，首次 upsert 时
-   两个实现的 ensureCollection 并发创建同一 collection → 后到者收到 409 并
-   抛 500。这是 Strangler Fig 并行部署形态下的**常态**而非异常——两侧实现
-   （TS qdrant.service.ts + Go qdrant/client.go）均已补 409 → 重新 GET 校验
-   维度的处理。
+   两个实现的 ensureCollection 会同时 GET 404、再 PUT 建集合。后到者收到
+   **409**（`StorageError::AlreadyExists`）。run `34034804518` 的 Qdrant
+   访问日志显示：node 的 PUT 返回 409 之后 6ms，重新 GET 得到 **500**
+   `error processing request: 0 of 0 read operations failed`（集合名已经
+   注册，胜者的分片还不能服务读）；Go 的 PUT 在该 500 之后约 5ms 才返回 200。
+   当时的「409 后立刻 GET 一次」把这次 500 当成创建失败，NestJS 对调用方返回
+   500，测试期望 201。修复只重试这一条未就绪读（有界 8 次、间隔 25ms），
+   成功条件仍是 GET 200 且维度一致。其他 500、404、维度不符不会被当成成功。
 3. **非 JSON 请求体的 400 message 不逐字对齐**：NestJS 由 Express JSON 解析器
    直接 400（message 为解析器原文，Node 版本相关）；Go 返回稳定的
    'Invalid upsert request'。契约结论：两侧均 400 + 同形状（statusCode/
    message/error 三键）；message 文本差异登记为已知项（部署方不应依赖
    Express 解析器错误文案）。
 
-## 6. 尚未验证项（诚实登记）
+## 6. 容器验收与仍未完成的生产部署
 
-- 本机无 Docker：compose `go-pilot` profile 与 Dockerfile **未经本机构建/启动**
-- CI 首跑后仍有待验证项以最新 Actions run 为准（409/201 修复后的复跑）
-- distroless 镜像在目标部署环境的拉取可达性（`gcr.io/distroless/static-debian12`）——受限网络部署可用 `golang:1.27-alpine` 重打或走内部镜像仓库
+远端 workflow `.github/workflows/vector-go-pilot-smoke.yml`（label
+`vector-go-pilot-smoke`，或文件进入默认分支后的 `workflow_dispatch`）做的是
+**试点验收，不是生产切流**：
+
+1. 用现有 compose 核对：无 profile 时服务列表和实际启动都不包含 `vector-go`。
+   基础 compose 引用 `infra/docker/.env`，smoke 在 runner 上写一次性文件，不入库。
+   `--profile go-pilot` 才包含。叠加 override 后，宿主端口是
+   `127.0.0.1:4011→4010`，内部 token 与 Qdrant API key 显式传入 NestJS `vector`
+   与 `vector-go`。
+2. `docker compose --build` 构建 `vector-go.Dockerfile`，容器以
+   `USER 65532:65532`、入口 `/vector-go` 运行。无 API key 的 Qdrant 建集合被拒绝；
+   容器 `/healthz` 为 `{"ok":true}`；缺少 `x-internal-token` 的 upsert 为 401。
+3. NestJS vector 用与 `vector-integration` 相同的 `node apps/vector/dist/main.js`
+   连同一个带 API key 的 Qdrant（本 smoke 不构建整仓 `runtime.Dockerfile`）。
+   `packages/vector-client` 与直接 POST 分别打到 `:4010` 和 `:4011`，并行 upsert
+   同一点，核对 201、集合名、确定性 point ID、检索结果和跨组织空结果。
+4. 停掉 NestJS 进程后，调用方只指向 vector-go，仍能 upsert 与 search。
+
+切换与回滚（配置，无数据迁移）：
+
+```
+调用方 baseUrl = http://vector:4010       NestJS（默认，生产现状）
+调用方 baseUrl = http://vector-go:4010    Go 试点（仅在 go-pilot profile 已启动时）
+回滚：baseUrl 指回 http://vector:4010，然后可以停止 vector-go
+```
+
+宿主上的对应地址是 NestJS `127.0.0.1:4010`、vector-go `127.0.0.1:4011`。
+系统设置里的 vector baseUrl 仅平台管理员可写。
+
+**生产/预发布真实流量尚未切到 vector-go。** 上述 smoke 使用一次性 CI 栈。
+
+已完成的远端容器验收（run [38070025773](https://github.com/wei500L/newwei/actions/runs/38070025773)，SHA `9d6f288934708ade3a78291610182fd3124eed6a`）：
+
+- 镜像：`docker.io/library/vector-go-pilot-vector-go`，构建自 `infra/docker/vector-go.Dockerfile`
+  - builder `docker.io/library/golang:1.27@sha256:e432b43af23a9328d56a7c499be0476810aa344acbcf65fc7c455d4ff5a40602`
+  - 运行时 `gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab`
+- 容器用户 `65532:65532`，入口 `/vector-go`；无 profile 时只启动了 qdrant，没有 vector-go
+- Qdrant 无 API key 的建集合返回 401；vector-go `:4011/healthz` 为 `{"ok":true}`；缺内部 token 的 upsert 为 401
+- 并行 upsert：NestJS 与 vector-go 都是 201，集合 `pilot_processed_ccae6477a697cf0e`，确定性 point ID `fdd6573d-3cc6-4e89-9079-c45518dac22d`
+- 停掉 NestJS 后，调用方指向 vector-go 的 upsert 仍是 201，集合不变，新点 ID `ebbc2890-8dcd-434b-a963-a3e22615ca01`
+
+同一次验收没有构建整仓 `runtime.Dockerfile` 里的 NestJS vector 镜像；NestJS 侧是 `node apps/vector/dist/main.js`。目标部署网络若拉不到 distroless，仍需换内部镜像仓库，这次只证明 GitHub runner 能拉到。

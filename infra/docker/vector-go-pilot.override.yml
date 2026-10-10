@@ -1,0 +1,22 @@
+# vector 试点补充配置。只在显式叠加本文件时生效，不改基础 compose。
+#
+#   docker compose \
+#     -f infra/docker/docker-compose.yml \
+#     -f infra/docker/vector-go-pilot.override.yml \
+#     --profile go-pilot up -d qdrant vector vector-go
+#
+# 基础 compose 的两处缺口（本文件补上，避免和并行的 api-go 改动抢 docker-compose.yml）：
+#   - vector（NestJS）未传入 QDRANT_API_KEY，而 qdrant 服务强制要求该 key；
+#   - vector-go 在 NODE_ENV=production 下把 VECTOR_INTERNAL_TOKEN 默认成 dev-token，
+#     进程会按 fail-closed 直接退出。
+# 试点 token 必须显式设置，且不能是 dev-token（Go/Nest 生产校验会拒绝）。
+services:
+  vector:
+    environment:
+      NODE_ENV: production
+      QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
+      VECTOR_INTERNAL_TOKEN: ${VECTOR_PILOT_INTERNAL_TOKEN:?VECTOR_PILOT_INTERNAL_TOKEN is required}
+  vector-go:
+    environment:
+      QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
+      VECTOR_INTERNAL_TOKEN: ${VECTOR_PILOT_INTERNAL_TOKEN:?VECTOR_PILOT_INTERNAL_TOKEN is required}
