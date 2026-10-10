@@ -109,7 +109,15 @@ CI `vector-integration` job（`.github/workflows/ci.yml`）：
 系统设置里的 vector baseUrl 仅平台管理员可写。
 
 **生产/预发布真实流量尚未切到 vector-go。** 上述 smoke 使用一次性 CI 栈。
-成功 run 记在本节末尾；失败不记为通过。
 
-- 成功 run：（待本分支 smoke 完成后填写）
-- distroless 镜像在目标部署环境的拉取可达性（`gcr.io/distroless/static-debian12`）——受限网络部署可用内部镜像仓库。CI runner 能拉取才算本项通过。
+已完成的远端容器验收（run [38070025773](https://github.com/wei500L/newwei/actions/runs/38070025773)，SHA `9d6f288934708ade3a78291610182fd3124eed6a`）：
+
+- 镜像：`docker.io/library/vector-go-pilot-vector-go`，构建自 `infra/docker/vector-go.Dockerfile`
+  - builder `docker.io/library/golang:1.27@sha256:e432b43af23a9328d56a7c499be0476810aa344acbcf65fc7c455d4ff5a40602`
+  - 运行时 `gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab`
+- 容器用户 `65532:65532`，入口 `/vector-go`；无 profile 时只启动了 qdrant，没有 vector-go
+- Qdrant 无 API key 的建集合返回 401；vector-go `:4011/healthz` 为 `{"ok":true}`；缺内部 token 的 upsert 为 401
+- 并行 upsert：NestJS 与 vector-go 都是 201，集合 `pilot_processed_ccae6477a697cf0e`，确定性 point ID `fdd6573d-3cc6-4e89-9079-c45518dac22d`
+- 停掉 NestJS 后，调用方指向 vector-go 的 upsert 仍是 201，集合不变，新点 ID `ebbc2890-8dcd-434b-a963-a3e22615ca01`
+
+同一次验收没有构建整仓 `runtime.Dockerfile` 里的 NestJS vector 镜像；NestJS 侧是 `node apps/vector/dist/main.js`。目标部署网络若拉不到 distroless，仍需换内部镜像仓库，这次只证明 GitHub runner 能拉到。
