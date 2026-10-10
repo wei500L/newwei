@@ -413,16 +413,14 @@ func run() error {
 	if cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo {
 		layersMode = string(legacyproxy.ModeGo)
 	}
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.WithDashboardWarMapLayers(legacyproxy.WithDashboardWarMapTransport(legacyproxy.WithDashboardWarMap(legacyproxy.WithDashboardCharts(
-		legacyproxy.WithDashboardStats(
-			legacyproxy.WithPublicPortal(
-				legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode),
-				portalMode,
-			),
-			dashboardMode,
-		),
-		chartsMode,
-	), warMapMode), transportMode), layersMode)
+	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
+	rules = legacyproxy.WithPublicPortal(rules, portalMode)
+	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
+	rules = legacyproxy.WithDashboardCharts(rules, chartsMode)
+	rules = legacyproxy.WithDashboardWarMap(rules, warMapMode)
+	rules = legacyproxy.WithDashboardWarMapTransport(rules, transportMode)
+	rules = legacyproxy.WithDashboardWarMapLayers(rules, layersMode)
+	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
 	}
