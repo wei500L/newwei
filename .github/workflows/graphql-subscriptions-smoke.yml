@@ -26,6 +26,7 @@ on:
       - "apps/api/src/modules/assistant/assistant.pubsub.ts"
       - "apps/api/src/modules/queue/queue-event.publisher.ts"
       - "apps/api/src/modules/queue/queue.processor.ts"
+      - "apps/api/src/graphql/dto/alert.input.ts"
       - "apps/api/src/graphql/resolvers/alerts.resolver.ts"
       - "apps/api/src/graphql/resolvers/analysis.resolver.ts"
       - "apps/api/src/graphql/resolvers/assistant.resolver.ts"
