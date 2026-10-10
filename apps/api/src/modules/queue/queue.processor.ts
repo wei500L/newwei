@@ -86,6 +86,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
+    if (!this.env.bullmqWorkersEnabled) {
+      logger.warn("BullMQ workers disabled on this process");
+      return;
+    }
     const concurrency =
       this.env.newsPipelineEnv.processQueueConcurrency > 0
         ? this.env.newsPipelineEnv.processQueueConcurrency

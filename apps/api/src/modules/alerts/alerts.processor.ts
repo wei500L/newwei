@@ -26,6 +26,10 @@ export class AlertsProcessor implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     await this.alertsService.scheduleScanJob();
     await this.alertsService.ensureAllSchedules();
+    if (!this.env.bullmqWorkersEnabled) {
+      logger.warn("BullMQ workers disabled on this process");
+      return;
+    }
     this.worker = new Worker<AlertJobPayload>(
       ALERTS_QUEUE_NAME,
       async (job, token) => {

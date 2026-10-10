@@ -355,6 +355,10 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get bullmqWorkersEnabled(): boolean {
+    return this.get<boolean>("BULLMQ_WORKERS_ENABLED", { infer: true }) ?? true;
+  }
+
   get rateLimit() {
     return {
       login: this.get<number>("RATE_LIMIT_LOGIN", { infer: true }) ?? 5,
@@ -487,6 +491,10 @@ export class EnvService extends ConfigService<ApiEnv> {
           infer: true,
         }) ?? 30,
     };
+  }
+
+  get graphqlSubscriptionBus(): "redis" | "local" {
+    return this.get("GRAPHQL_SUBSCRIPTION_BUS", { infer: true }) ?? "redis";
   }
 
   get swaggerEnabled(): boolean {

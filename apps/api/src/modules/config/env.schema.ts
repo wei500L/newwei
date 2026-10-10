@@ -40,6 +40,7 @@ export const apiEnvSchema = baseEnvSchema
       .nonnegative()
       .default(3),
     BULLMQ_NAMESPACE: z.string().default("modular"),
+    BULLMQ_WORKERS_ENABLED: envBoolean.default(true),
     PRISMA_CONNECTION_LIMIT: z.coerce.number().int().positive().default(10),
     PRISMA_POOL_TIMEOUT_SECONDS: z.coerce
       .number()
@@ -157,6 +158,7 @@ export const apiEnvSchema = baseEnvSchema
     GRAPHQL_DEPTH_LIMIT: z.coerce.number().int().positive().default(8),
     GRAPHQL_COMPLEXITY_LIMIT: z.coerce.number().int().positive().default(2000),
     GRAPHQL_APQ_ENABLED: envBoolean.default(true),
+    GRAPHQL_SUBSCRIPTION_BUS: z.enum(["redis", "local"]).default("redis"),
     GRAPHQL_RESPONSE_CACHE_ENABLED: envBoolean.default(true),
     GRAPHQL_RESPONSE_CACHE_MAX_AGE_SECONDS: z.coerce
       .number()

@@ -37,6 +37,21 @@ interface QueueJobContextCacheEntry extends PipelineQueueJobContext {
   expiresAt: number;
 }
 
+/**
+ * Last hop for `queueEvents` is this process only.
+ *
+ * Every API instance already consumes the same BullMQ `QueueEvents` stream
+ * (XREAD from the shared Redis stream, not a competing consumer). The instance
+ * a subscriber is connected to resolves `orgId` from the job, its local cache,
+ * or the shared `queue:pipeline:jobctx:{jobId}` cache, then publishes on the
+ * in-process topic `queueEvents:{orgId}`. Republishing those events onto the
+ * GraphQL Redis bus would deliver each job once per instance.
+ *
+ * Terminal events stay reachable after `removeOnComplete: true` because an
+ * earlier `active`/`progress` observation writes the shared cache, and a cold
+ * instance reads it when `queue.getJob` no longer finds the job. Failed jobs
+ * kept by `removeOnFail` can still be read with `getJob`.
+ */
 @Injectable()
 export class QueueEventPublisher implements OnModuleDestroy {
   private readonly pubsub = new PubSub();

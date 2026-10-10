@@ -79,6 +79,8 @@ export class UpdateAlertChannelInput {
 @InputType()
 export class UpsertAlertRuleInput {
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
   id?: string;
 
   @Field()

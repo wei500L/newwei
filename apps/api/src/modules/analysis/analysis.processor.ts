@@ -25,6 +25,10 @@ export class AnalysisProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
+    if (!this.env.bullmqWorkersEnabled) {
+      logger.warn("BullMQ workers disabled on this process");
+      return;
+    }
     this.worker = new Worker<AnalysisJobPayload>(
       ANALYSIS_QUEUE_NAME,
       async (job) => {

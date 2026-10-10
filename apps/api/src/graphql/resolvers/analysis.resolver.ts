@@ -7,6 +7,7 @@ import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { ANALYSIS_PUBSUB } from "../../modules/analysis/analysis.pubsub";
 import { AnalysisService } from "../../modules/analysis/analysis.service";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { subscriptionPayloadMatchesOrg } from "../../modules/graphql-subscriptions/subscription-org";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import {
   AnomalyAnalysisInput,
@@ -153,7 +154,7 @@ export class AnalysisResolver {
     }
     return withFilter(
       () => this.pubsub.asyncIterator("analysisEvents"),
-      (payload: { orgId: string }) => payload.orgId === requester.orgId
+      (payload: unknown) => subscriptionPayloadMatchesOrg(payload, requester.orgId)
     )();
   }
 

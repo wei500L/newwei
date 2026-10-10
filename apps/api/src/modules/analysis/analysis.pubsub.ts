@@ -14,4 +14,5 @@ export interface AnalysisEventPayload {
   };
 }
 
+/** In-process bus restored by GRAPHQL_SUBSCRIPTION_BUS=local. */
 export const createAnalysisPubSub = () => new PubSub();
