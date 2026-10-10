@@ -20,7 +20,14 @@ curl -X POST localhost:4010/v1/search -H 'x-internal-token: dev-token' \
 
 ## 回滚开关
 
-与 NestJS 版可并行部署（不同端口）。上游 `apps/api` 经 vector 服务配置（`VECTOR_SERVICE_URL` / 系统设置）指向其一；**回滚 = baseUrl 指回 NestJS 版**。两侧共用同一 Qdrant 集合命名与 point ID 算法，切换无数据迁移。
+与 NestJS 版可并行部署（不同端口）。上游经 vector 服务配置（`VECTOR_SERVICE_BASE_URL` / 系统设置，后者仅平台管理员）指向其一。
+
+```
+默认 / 回滚 : http://vector:4010      （NestJS，宿主 127.0.0.1:4010）
+Go 试点     : http://vector-go:4010   （容器内 4010，宿主 127.0.0.1:4011）
+```
+
+两侧共用同一 Qdrant 集合命名与 point ID 算法，切换无数据迁移。生产流量尚未切到 Go。
 
 ## 验证
 
@@ -30,6 +37,6 @@ pnpm --filter @modular/vector-go lint    # go vet
 pnpm --filter @modular/vector-go build   # go build
 ```
 
-## 待办（见 roadmap M2 余项）
+## 容器
 
-Dockerfile + compose `go-pilot` profile 接线、与 NestJS 版的 shadow 差分联调（需 Docker 环境）。
+`infra/docker/vector-go.Dockerfile` 已接入 compose 的 `go-pilot` profile（默认 `docker compose up` 不启动）。试点 env 用 `infra/docker/vector-go-pilot.override.yml` 补上 Qdrant API key 和显式内部 token。远端验收是 `.github/workflows/vector-go-pilot-smoke.yml`（真实 Qdrant + 本镜像容器，不是 `go run`）。生产部署与流量切换尚未完成，步骤见 `docs/refactor/vector-go-pilot-deployment.md`。

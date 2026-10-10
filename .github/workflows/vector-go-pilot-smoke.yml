@@ -1,0 +1,307 @@
+# vector-go 真实容器试点 smoke（手动触发，不进普通 CI）。
+#
+# 构建 infra/docker/vector-go.Dockerfile，用现有 go-pilot compose 配置和
+# vector 专属 override 启动真实 Qdrant 与 vector-go 容器；NestJS vector
+# 以与 vector-integration 相同的 node 进程连同一 Qdrant。然后用
+# packages/vector-client 做同一批数据的 upsert/search/跨组织过滤，
+# 停止 NestJS 后再证明调用方指向 Go 时仍可写可查。
+#
+# 这不是生产流量切换。回滚仍是把调用方 baseUrl 指回 NestJS vector。
+#
+# 触发：
+#   1. workflow_dispatch：workflow 文件进入默认分支后可用。
+#   2. pull_request types:[labeled] + label `vector-go-pilot-smoke`：
+#      新 workflow 在合并前不能 workflow_dispatch。跑完移除 label。
+name: vector-go-pilot-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: vector-go-pilot-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  COMPOSE_PROJECT_NAME: vector-go-pilot
+  COMPOSE_PROFILES: ""
+  DOCKER_PUBLISH_HOST: 127.0.0.1
+  QDRANT_API_KEY: vector-go-pilot-qdrant-key
+  VECTOR_PILOT_INTERNAL_TOKEN: vector-go-pilot-internal-token
+  VECTOR_INTERNAL_TOKEN: vector-go-pilot-internal-token
+  VECTOR_COLLECTION_PREFIX: pilot_processed
+  # compose 全文件插值所需。本 job 只启动 qdrant 与 vector-go。
+  MONGO_ROOT_PASSWORD: mongo-root-secret
+  REDIS_PASSWORD: redis-secret
+  LITELLM_POSTGRES_PASSWORD: litellm-pg-secret
+  ELASTICSEARCH_PASSWORD: elastic-secret
+  MINIO_ROOT_USER: minio
+  MINIO_ROOT_PASSWORD: minio-secret-value
+  LITELLM_DATABASE_URL: postgresql://litellm:litellm-pg-secret@litellm-postgres:5432/litellm
+  MONGO_URI: mongodb://root:mongo-root-secret@mongo:27017/app?authSource=admin
+  JWT_SECRET: vector-go-pilot-jwt-secret-not-used
+  # prisma:generate 只读这些变量，不连接数据库。与 ci.yml 的顶层 env 相同。
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_DB: app
+  MYSQL_PASSWORD: secret
+
+jobs:
+  vector-go-pilot-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'vector-go-pilot-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: infra/docker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Compose profile and port wiring
+        run: |
+          set -euo pipefail
+          unset COMPOSE_PROFILES
+          # 基础 compose 的若干服务声明了 env_file: ./.env。文件缺失时
+          # `docker compose config` 直接失败，即使本 job 不启动那些服务。
+          # 这是一次性 CI 文件，不入库。
+          printf '%s\n' \
+            'QDRANT_API_KEY=vector-go-pilot-qdrant-key' \
+            'VECTOR_INTERNAL_TOKEN=vector-go-pilot-internal-token' \
+            'VECTOR_PILOT_INTERNAL_TOKEN=vector-go-pilot-internal-token' \
+            'VECTOR_COLLECTION_PREFIX=pilot_processed' \
+            > .env
+          base=(docker compose -f docker-compose.yml)
+          pilot=(docker compose -f docker-compose.yml -f vector-go-pilot.override.yml --profile go-pilot)
+          services="$("${base[@]}" config --services)"
+          if printf '%s\n' "$services" | grep -qx vector-go; then
+            echo "default profile includes vector-go"
+            exit 1
+          fi
+          pilot_services="$("${pilot[@]}" config --services)"
+          if ! printf '%s\n' "$pilot_services" | grep -qx vector-go; then
+            echo "go-pilot profile did not include vector-go"
+            exit 1
+          fi
+          "${pilot[@]}" config --format json > /tmp/pilot-compose.json
+          python3 - <<'PY'
+          import json
+          doc = json.load(open("/tmp/pilot-compose.json"))
+          vector = doc["services"]["vector"]
+          go = doc["services"]["vector-go"]
+          env = go.get("environment") or {}
+          vector_env = vector.get("environment") or {}
+          if isinstance(env, list):
+              env = dict(item.split("=", 1) for item in env)
+          if isinstance(vector_env, list):
+              vector_env = dict(item.split("=", 1) for item in vector_env)
+          ports = json.dumps(go.get("ports"))
+          if "4011" not in ports or "4010" not in ports:
+              raise SystemExit(f"vector-go ports missing 4011->4010: {ports}")
+          if "127.0.0.1" not in ports:
+              raise SystemExit(f"vector-go not bound to loopback: {ports}")
+          if env.get("VECTOR_INTERNAL_TOKEN") != "vector-go-pilot-internal-token":
+              raise SystemExit("vector-go token was not the explicit pilot token")
+          if env.get("QDRANT_API_KEY") != "vector-go-pilot-qdrant-key":
+              raise SystemExit("vector-go missing Qdrant API key")
+          if str(env.get("PORT")) != "4010":
+              raise SystemExit(f"vector-go PORT={env.get('PORT')}")
+          if vector_env.get("QDRANT_API_KEY") != "vector-go-pilot-qdrant-key":
+              raise SystemExit("nestjs vector override did not receive QDRANT_API_KEY")
+          if vector_env.get("VECTOR_INTERNAL_TOKEN") != "vector-go-pilot-internal-token":
+              raise SystemExit("nestjs vector override token mismatch")
+          print("compose wiring ok")
+          PY
+
+      - name: Default profile does not start vector-go
+        run: |
+          set -euo pipefail
+          unset COMPOSE_PROFILES
+          docker compose -f docker-compose.yml up -d qdrant
+          running="$(docker compose -f docker-compose.yml ps --services --status running || true)"
+          if printf '%s\n' "$running" | grep -qx vector-go; then
+            echo "default profile started vector-go"
+            docker compose -f docker-compose.yml ps
+            exit 1
+          fi
+          echo "qdrant started without vector-go"
+
+      - name: Build and start vector-go container
+        run: |
+          set -euo pipefail
+          unset COMPOSE_PROFILES
+          docker compose -f docker-compose.yml -f vector-go-pilot.override.yml --profile go-pilot up -d --build vector-go
+          cid="$(docker compose -f docker-compose.yml -f vector-go-pilot.override.yml --profile go-pilot ps -q vector-go)"
+          test -n "$cid"
+          user="$(docker inspect -f '{{.Config.User}}' "$cid")"
+          entry="$(docker inspect -f '{{json .Config.Entrypoint}}' "$cid")"
+          echo "user=$user entry=$entry"
+          if [ "$user" != "65532:65532" ]; then
+            echo "expected distroless nonroot user 65532:65532"
+            exit 1
+          fi
+          if [ "$entry" != '["/vector-go"]' ]; then
+            echo "container entrypoint is not the image binary"
+            exit 1
+          fi
+          python3 - "$cid" <<'PY'
+          import json, subprocess, sys
+          cid = sys.argv[1]
+          meta = json.loads(subprocess.check_output(["docker", "inspect", cid]))[0]
+          env = dict(item.split("=", 1) for item in meta["Config"]["Env"])
+          if env.get("QDRANT_API_KEY") != "vector-go-pilot-qdrant-key":
+              raise SystemExit("running container missing Qdrant API key")
+          if env.get("VECTOR_INTERNAL_TOKEN") != "vector-go-pilot-internal-token":
+              raise SystemExit("running container token mismatch")
+          if env.get("NODE_ENV") != "production":
+              raise SystemExit("running container NODE_ENV is not production")
+          print("container env ok")
+          PY
+
+      - name: Wait for Qdrant and vector-go health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:6333/healthz >/dev/null 2>&1; then
+              echo "qdrant healthy"
+              break
+            fi
+            if [ "$i" = 60 ]; then
+              echo "qdrant failed to become healthy"
+              docker compose -f docker-compose.yml logs qdrant || true
+              exit 1
+            fi
+            sleep 2
+          done
+          # API key 必须生效：无 key 的建集合不能成功。
+          code="$(curl -s -o /tmp/qdrant-no-key.json -w '%{http_code}' \
+            -X PUT http://127.0.0.1:6333/collections/pilot_auth_probe \
+            -H 'content-type: application/json' \
+            -d '{"vectors":{"size":2,"distance":"Cosine"}}')"
+          echo "qdrant create without api key: $code"
+          if [ "$code" != 401 ] && [ "$code" != 403 ]; then
+            echo "expected Qdrant to reject a keyless create"
+            cat /tmp/qdrant-no-key.json || true
+            exit 1
+          fi
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4011/healthz | grep -q '"ok":true'; then
+              echo "vector-go healthy on host port 4011"
+              break
+            fi
+            if [ "$i" = 60 ]; then
+              echo "vector-go health failed"
+              docker compose -f docker-compose.yml -f vector-go-pilot.override.yml --profile go-pilot logs vector-go || true
+              exit 1
+            fi
+            sleep 1
+          done
+          missing="$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST http://127.0.0.1:4011/v1/upsert \
+            -H 'content-type: application/json' \
+            -d '{"orgId":"o","embeddingModel":"m","points":[]}')"
+          echo "upsert without internal token: $missing"
+          if [ "$missing" != 401 ]; then
+            echo "expected 401 without x-internal-token"
+            exit 1
+          fi
+
+      - name: Install and build NestJS vector plus vector-client
+        working-directory: .
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm --filter db run prisma:generate
+          pnpm exec turbo run build --env-mode=loose --filter=@modular/vector --filter=@modular/vector-client --filter=@modular/utils
+
+      - name: Start NestJS vector against the same Qdrant
+        working-directory: .
+        run: |
+          set -euo pipefail
+          PORT=4010 \
+          NODE_ENV=production \
+          QDRANT_URL=http://127.0.0.1:6333 \
+          QDRANT_API_KEY="$QDRANT_API_KEY" \
+          VECTOR_INTERNAL_TOKEN="$VECTOR_INTERNAL_TOKEN" \
+          VECTOR_COLLECTION_PREFIX="$VECTOR_COLLECTION_PREFIX" \
+          node apps/vector/dist/main.js > /tmp/vector-nestjs.log 2>&1 &
+          echo $! > /tmp/vector-nestjs.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4010/healthz | grep -q '"ok":true'; then
+              echo "nestjs vector healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "nestjs vector failed to become healthy"
+          cat /tmp/vector-nestjs.log || true
+          exit 1
+
+      - name: Caller switch — NestJS and vector-go share one Qdrant collection
+        working-directory: .
+        run: |
+          set -euo pipefail
+          VECTOR_NEST_URL=http://127.0.0.1:4010 \
+          VECTOR_GO_URL=http://127.0.0.1:4011 \
+          QDRANT_URL=http://127.0.0.1:6333 \
+          node apps/vector-go/scripts/pilot-upstream-switch.cjs shared
+
+      - name: Stop NestJS vector and prove Go still serves the caller
+        working-directory: .
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/vector-nestjs.pid ]; then
+            kill "$(cat /tmp/vector-nestjs.pid)" 2>/dev/null || true
+            wait "$(cat /tmp/vector-nestjs.pid)" 2>/dev/null || true
+          fi
+          for i in $(seq 1 20); do
+            if ! curl -fsS http://127.0.0.1:4010/healthz >/dev/null 2>&1; then
+              echo "nestjs vector stopped"
+              break
+            fi
+            if [ "$i" = 20 ]; then
+              echo "nestjs vector still healthy after stop"
+              exit 1
+            fi
+            sleep 1
+          done
+          VECTOR_NEST_URL=http://127.0.0.1:4010 \
+          VECTOR_GO_URL=http://127.0.0.1:4011 \
+          QDRANT_URL=http://127.0.0.1:6333 \
+          node apps/vector-go/scripts/pilot-upstream-switch.cjs go-only
+
+      - name: Dump service logs on failure
+        if: failure()
+        working-directory: infra/docker
+        run: |
+          echo "=== nestjs log ==="
+          cat /tmp/vector-nestjs.log || true
+          echo "=== vector-go log ==="
+          docker compose -f docker-compose.yml -f vector-go-pilot.override.yml --profile go-pilot logs vector-go || true
+          echo "=== qdrant log ==="
+          docker compose -f docker-compose.yml logs qdrant || true
+
+      - name: Stop pilot containers
+        if: always()
+        working-directory: infra/docker
+        run: |
+          if [ -f /tmp/vector-nestjs.pid ]; then
+            kill "$(cat /tmp/vector-nestjs.pid)" 2>/dev/null || true
+          fi
+          docker compose -f docker-compose.yml -f vector-go-pilot.override.yml --profile go-pilot down --remove-orphans || true
