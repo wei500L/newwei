@@ -20,7 +20,7 @@ class FakeRedis implements GraphqlSubscriptionRedisConnection {
   subscribeCalls = 0;
   readonly quit = vi.fn(async () => "OK");
   readonly disconnect = vi.fn();
-  private readonly listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+  private readonly listeners = new Map<string, ((...args: unknown[]) => void)[]>();
 
   async publish(channel: string, message: string): Promise<number> {
     this.emit("message", channel, message);

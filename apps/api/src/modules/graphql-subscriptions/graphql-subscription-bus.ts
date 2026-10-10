@@ -258,7 +258,7 @@ export class GraphqlSubscriptionBus implements PubSubEngine, OnModuleDestroy {
 }
 
 class GraphqlSubscriptionAsyncIterator<T> implements AsyncIterator<T> {
-  private readonly pullQueue: Array<(result: IteratorResult<T>) => void> = [];
+  private readonly pullQueue: ((result: IteratorResult<T>) => void)[] = [];
   private readonly pushQueue: T[] = [];
   private subscriptionIds: number[] | undefined;
   private subscribeTask: Promise<void> | undefined;

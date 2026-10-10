@@ -494,10 +494,7 @@ export class EnvService extends ConfigService<ApiEnv> {
   }
 
   get graphqlSubscriptionBus(): "redis" | "local" {
-    return (
-      this.get<"redis" | "local">("GRAPHQL_SUBSCRIPTION_BUS", { infer: true }) ??
-      "redis"
-    );
+    return this.get("GRAPHQL_SUBSCRIPTION_BUS", { infer: true }) ?? "redis";
   }
 
   get swaggerEnabled(): boolean {
