@@ -1,0 +1,422 @@
+# Go-批6A：Spacetime 热力图与传播图四条只读 GET 的真实栈对照。
+# 不进普通 CI。PR 上加 label api-go-spacetime-smoke，或 workflow_dispatch。
+name: api-go-spacetime-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-spacetime-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-smoke@example.com
+  SMTP_PASS: api-go-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://localhost:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-smoke-org
+  SEED_ORG_NAME: api-go Smoke Org
+  SEED_ADMIN_EMAIL: api-go-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoSmoke#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-spacetime-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-spacetime-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-spacetime:ci .
+      - name: Start api-go
+        run: |
+          docker run -d --name api-go-spacetime \
+            --add-host=host.docker.internal:host-gateway \
+            --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s \
+            -p 127.0.0.1:4020:4020 \
+            -e PORT=4020 \
+            -e LEGACY_API_URL=http://host.docker.internal:4000 \
+            -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+            -e MONGO_URI=mongodb://host.docker.internal:27017/app \
+            -e API_GO_DASHBOARD_SPACETIME_GEO_MODE=go \
+            -e API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=go \
+            -e API_GO_DASHBOARD_STATS_MODE=legacy \
+            -e API_GO_DASHBOARD_CHARTS_MODE=legacy \
+            -e API_GO_DASHBOARD_WAR_MAP_MODE=legacy \
+            -e API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy \
+            -e API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy \
+            -e REALTIME_SIGNALS_ENABLED=false \
+            -e JWT_SECRET="$JWT_SECRET" \
+            -e JWT_ISSUER="$JWT_ISSUER" \
+            -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+            -e REDIS_HOST=host.docker.internal \
+            -e REDIS_PORT=6379 \
+            -e CANARY_PERCENT=0 \
+            -e CORS_ORIGIN="$CORS_ORIGIN" \
+            api-go-spacetime:ci
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' api-go-spacetime 2>/dev/null || echo starting)
+            echo "health=$status"
+            if [ "$status" = "healthy" ]; then exit 0; fi
+            if [ "$status" = "unhealthy" ]; then docker logs api-go-spacetime; exit 1; fi
+            sleep 2
+          done
+          docker logs api-go-spacetime || true
+          exit 1
+      - name: Load fixtures and compare NestJS with Go
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, os, urllib.request
+          body = json.dumps({"email": os.environ["SEED_ADMIN_EMAIL"], "password": os.environ["SEED_ADMIN_PASSWORD"]}).encode()
+          req = urllib.request.Request("http://127.0.0.1:4020/api/auth/login", data=body, method="POST", headers={"content-type":"application/json"})
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              doc = json.load(resp)
+          open("/tmp/smoke-jwt","w").write(doc["accessToken"])
+          print("login ok")
+          PY
+          MYSQL_CID=$(docker ps -q -f ancestor=mysql:8.4 | head -n1)
+          MONGO_CID=$(docker ps -q -f ancestor=mongo:7.0 | head -n1)
+          ORG=$(docker exec "$MYSQL_CID" mysql -uroot -psecret -N -e "SELECT id FROM app.Org WHERE slug='api-go-smoke-org'" 2>/dev/null)
+          test -n "$ORG"
+          echo "$ORG" > /tmp/org-a
+          docker exec -i "$MYSQL_CID" mysql -uroot -psecret app <<SQL
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('org_sp_b','Other','spacetime-other',1,'2026-03-01 00:00:00.000','2026-03-01 00:00:00.000');
+          INSERT INTO Article (id, orgId, url, sourceLabel, contentHash, crawlAt, createdAt, updatedAt) VALUES
+            ('art_sp_r','$ORG','https://www.reuters.com/spacetime','Reuters','hash-sp-r','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000'),
+            ('art_sp_a','$ORG','https://apnews.com/spacetime','Associated Press','hash-sp-a','2026-03-10 10:00:00.000','2026-03-10 10:00:00.000','2026-03-10 10:00:00.000'),
+            ('art_sp_b','$ORG','https://www.bbc.com/spacetime','BBC','hash-sp-b','2026-03-10 12:00:00.000','2026-03-10 12:00:00.000','2026-03-10 12:00:00.000'),
+            ('art_sp_late','$ORG','https://www.reuters.com/spacetime-late','Reuters','hash-sp-late','2026-03-20 08:00:00.000','2026-03-20 08:00:00.000','2026-03-20 08:00:00.000'),
+            ('art_sp_noloc','$ORG','https://www.reuters.com/spacetime-noloc','Reuters','hash-sp-noloc','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000'),
+            ('art_sp_bad','$ORG','https://www.reuters.com/spacetime-failed','Reuters','hash-sp-bad','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000'),
+            ('art_sp_evt','$ORG','https://www.reuters.com/spacetime-other-event','Reuters','hash-sp-evt','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000'),
+            ('art_sp_other','org_sp_b','https://www.reuters.com/spacetime-other-org','Other Wire','hash-sp-other','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000');
+          INSERT INTO ProcessedArticle (id, orgId, articleId, status, title, location, hasLocation, cleanedMarkdownRef, publishedAt, eventAt, processedAt, createdAt, updatedAt) VALUES
+            ('pa_sp_r','$ORG','art_sp_r','completed','Kyiv desk','Ukraine',1,'6565656565656565656565a1','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:01.000','2026-03-10 08:00:00.000'),
+            ('pa_sp_a','$ORG','art_sp_a','completed','Warsaw desk','Poland',1,'6565656565656565656565a2','2026-03-10 10:00:00.000','2026-03-10 10:00:00.000','2026-03-10 10:00:00.000','2026-03-10 10:00:01.000','2026-03-10 10:00:00.000'),
+            ('pa_sp_b','$ORG','art_sp_b','completed','BBC desk','Ukraine',1,'6565656565656565656565a3','2026-03-10 12:00:00.000','2026-03-10 12:00:00.000','2026-03-10 12:00:00.000','2026-03-10 12:00:01.000','2026-03-10 12:00:00.000'),
+            ('pa_sp_late','$ORG','art_sp_late','completed','Too late','Ukraine',1,NULL,'2026-03-20 08:00:00.000','2026-03-20 08:00:00.000','2026-03-20 08:00:00.000','2026-03-20 08:00:00.000','2026-03-20 08:00:00.000'),
+            ('pa_sp_noloc','$ORG','art_sp_noloc','completed','No place',NULL,0,NULL,'2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000'),
+            ('pa_sp_bad','$ORG','art_sp_bad','failed','Failed row','Poland',1,NULL,'2026-03-10 09:00:00.000','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000'),
+            ('pa_sp_evt','$ORG','art_sp_evt','completed','Other event','Poland',1,NULL,'2026-03-10 09:00:00.000','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000','2026-03-10 09:00:02.000','2026-03-10 09:00:00.000'),
+            ('pa_sp_other','org_sp_b','art_sp_other','completed','Other desk','Ukraine',1,'6565656565656565656565a4','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000');
+          INSERT INTO NewsEvent (id, orgId, status, title, startAt, lastAt, createdAt, updatedAt) VALUES
+            ('evt_sp_a','$ORG','active','Spacetime A','2026-03-10 08:00:00.000','2026-03-10 12:00:00.000','2026-03-10 08:00:00.000','2026-03-10 12:00:00.000'),
+            ('evt_sp_b','$ORG','active','Spacetime B','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000','2026-03-10 09:00:00.000'),
+            ('evt_sp_o','org_sp_b','active','Other','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000','2026-03-10 08:00:00.000');
+          INSERT INTO NewsEventItem (id, orgId, eventId, processedArticleId, processedItemId, createdAt) VALUES
+            ('nei_sp_r','$ORG','evt_sp_a','pa_sp_r','6565656565656565656565a1','2026-03-10 08:00:01.000'),
+            ('nei_sp_a','$ORG','evt_sp_a','pa_sp_a','6565656565656565656565a2','2026-03-10 10:00:01.000'),
+            ('nei_sp_b','$ORG','evt_sp_a','pa_sp_b','6565656565656565656565a3','2026-03-10 12:00:01.000'),
+            ('nei_sp_evt','$ORG','evt_sp_b','pa_sp_evt',NULL,'2026-03-10 09:00:02.000'),
+            ('nei_sp_o','org_sp_b','evt_sp_o','pa_sp_other','6565656565656565656565a4','2026-03-10 08:00:00.000');
+          SQL
+          docker exec "$MONGO_CID" mongosh --quiet app --eval '
+            const org = "'"$ORG"'";
+            db.processeditems.insertMany([
+              { _id: ObjectId("6565656565656565656565a1"), orgId: org, rawItemId: ObjectId("6565656565656565656565b1"), itemMetaId: "sp", status: "completed", result: { sentiment_label: "negative", cleaned_markdown: "kyiv", location: "Ukraine" } },
+              { _id: ObjectId("6565656565656565656565a2"), orgId: org, rawItemId: ObjectId("6565656565656565656565b2"), itemMetaId: "sp", status: "completed", duplicateOf: ObjectId("6565656565656565656565a1"), duplicateSimilarity: 0.82, result: { sentiment_label: "positive", cleaned_markdown: "warsaw", location: "Poland" } },
+              { _id: ObjectId("6565656565656565656565a3"), orgId: org, rawItemId: ObjectId("6565656565656565656565b3"), itemMetaId: "sp", status: "completed", result: { cleaned_markdown: "bbc", location: "Ukraine" } },
+              { _id: ObjectId("6565656565656565656565a4"), orgId: "org_sp_b", rawItemId: ObjectId("6565656565656565656565b4"), itemMetaId: "sp", status: "completed", result: { sentiment_label: "negative", cleaned_markdown: "other", location: "Ukraine" } }
+            ]);
+          '
+          python3 - << 'PY'
+          import json, urllib.request, urllib.error, subprocess
+          token = open("/tmp/smoke-jwt").read().strip()
+          org = open("/tmp/org-a").read().strip()
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+          q = "start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z&eventId=evt_sp_a"
+          geo = "/api/dashboard/spacetime/geo-heatmap?" + q + "&includeBuckets=1"
+          prop = "/api/dashboard/spacetime/propagation?" + q
+
+          def call(base, path, method="GET", headers=None):
+              req_headers = {"authorization": "Bearer " + token}
+              if headers:
+                  req_headers.update(headers)
+              req = urllib.request.Request(base + path, method=method, headers=req_headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      raw = resp.read()
+                      body = json.loads(raw) if raw else {}
+                      return resp.status, body, resp.headers
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read()
+                  try:
+                      body = json.loads(raw) if raw else {}
+                  except json.JSONDecodeError:
+                      body = {"raw": raw.decode("utf-8", "replace")}
+                  return exc.code, body, exc.headers
+
+          def near(a, b, tol=1e-4):
+              return abs(float(a) - float(b)) <= tol
+
+          def check_status(path, label):
+              ns, nb, _ = call(nest, path)
+              gs, gb, _ = call(go, path)
+              if ns != gs or nb.get("message") != gb.get("message"):
+                  raise SystemExit(f"{label} nest={ns} {nb} go={gs} {gb}")
+              print(label, ns, nb.get("message"))
+
+          health = json.load(urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=10))
+          go_prefixes = {item["prefix"] for item in health["routes"] if item.get("mode") == "go"}
+          for path in (
+              "/api/dashboard/spacetime/geo-heatmap",
+              "/api/dashboard/spacetime/geo-heatmap/articles",
+              "/api/dashboard/spacetime/propagation",
+              "/api/dashboard/spacetime/propagation/articles",
+          ):
+              if path not in go_prefixes:
+                  raise SystemExit(f"healthz missing {path}")
+          if "/api/dashboard/stream" in go_prefixes or "/api/dashboard/stats" in go_prefixes:
+              raise SystemExit("unrelated route marked go")
+
+          pre_status, _, pre_headers = call(go, "/api/dashboard/spacetime/geo-heatmap", "OPTIONS", {
+              "Origin": "http://localhost:3000",
+              "Access-Control-Request-Method": "GET",
+          })
+          if pre_status != 204 or pre_headers.get("access-control-allow-origin") != "http://localhost:3000":
+              raise SystemExit(f"preflight {pre_status} {pre_headers.get('access-control-allow-origin')}")
+
+          ns, nest_geo, _ = call(nest, geo)
+          gs, go_geo, _ = call(go, geo)
+          if ns != 200 or gs != 200:
+              raise SystemExit(f"geo status nest={ns} go={gs} {nest_geo} {go_geo}")
+          if nest_geo.get("snapshotId") != go_geo.get("snapshotId") or not nest_geo.get("snapshotId"):
+              raise SystemExit("snapshotId mismatch\nNEST " + json.dumps(nest_geo)[:2000] + "\nGO " + json.dumps(go_geo)[:2000])
+
+          def points(body):
+              return sorted(body["points"], key=lambda item: item["id"])
+          np, gp = points(nest_geo), points(go_geo)
+          if len(np) != len(gp) or len(np) != 2:
+              raise SystemExit(f"point count nest={len(np)} go={len(gp)}")
+          for left, right in zip(np, gp):
+              if left["id"] != right["id"] or left["name"] != right["name"] or left["total"] != right["total"] or left["sentiment"] != right["sentiment"]:
+                  raise SystemExit(f"point mismatch {left} {right}")
+              if not near(left["lat"], right["lat"]) or not near(left["lng"], right["lng"]) or not near(left["heat"], right["heat"]):
+                  raise SystemExit(f"point numbers {left} {right}")
+              if left.get("buckets") != right.get("buckets"):
+                  raise SystemExit(f"buckets {left.get('buckets')} {right.get('buckets')}")
+          if nest_geo.get("updatedAt") != go_geo.get("updatedAt"):
+              raise SystemExit(f"geo updatedAt {nest_geo.get('updatedAt')} {go_geo.get('updatedAt')}")
+          ukraine = next(point for point in np if point["sentiment"].get("negative") == 1 and point["total"] == 2)
+          if ukraine["sentiment"].get("unknown") != 1:
+              raise SystemExit(f"ukraine sentiment {ukraine['sentiment']}")
+          poland = next(point for point in np if point["sentiment"].get("positive") == 1 and point["total"] == 1)
+          titles = json.dumps(nest_geo) + json.dumps(go_geo)
+          if "Other desk" in titles:
+              raise SystemExit("other org leaked into heatmap")
+
+          def articles(base, path):
+              status, body, _ = call(base, path)
+              if status != 200:
+                  raise SystemExit(f"{base} {path} -> {status} {body}")
+              return body
+
+          snap = nest_geo["snapshotId"]
+          drill = f"/api/dashboard/spacetime/geo-heatmap/articles?{q}&pointId={ukraine['id']}&snapshotId={snap}"
+          direct = f"/api/dashboard/spacetime/geo-heatmap/articles?{q}&pointId={ukraine['id']}"
+          nest_snap = articles(nest, drill)
+          go_from_nest = articles(go, drill)
+          nest_from_go = articles(nest, f"/api/dashboard/spacetime/geo-heatmap/articles?{q}&pointId={ukraine['id']}&snapshotId={go_geo['snapshotId']}")
+          go_direct = articles(go, direct)
+          for body in (nest_snap, go_from_nest, nest_from_go, go_direct):
+              ids = [item["id"] for item in body["articles"]]
+              if sorted(ids) != ["pa_sp_b", "pa_sp_r"] or body.get("hasMore") or "Other desk" in json.dumps(body):
+                  raise SystemExit(f"geo articles {ids} {body}")
+          reuters = next(item for item in go_from_nest["articles"] if item["id"] == "pa_sp_r")
+          if reuters.get("sentiment") != "negative":
+              raise SystemExit(f"geo sentiment {reuters}")
+
+          ns, nest_prop, _ = call(nest, prop)
+          gs, go_prop, _ = call(go, prop)
+          if ns != 200 or gs != 200:
+              raise SystemExit(f"prop status {ns} {gs} {nest_prop} {go_prop}")
+
+          def edge_key(edge):
+              sim = edge.get("avgDuplicateSimilarity")
+              return (edge["kind"], edge["source"], edge["target"], edge["weight"], None if sim is None else round(float(sim), 6))
+          if sorted(edge_key(item) for item in nest_prop["edges"]) != sorted(edge_key(item) for item in go_prop["edges"]):
+              raise SystemExit(f"edges\n{nest_prop['edges']}\n{go_prop['edges']}")
+          if not any(item["kind"] == "duplicate" and item["source"] == "Reuters" and item["target"] == "Associated Press" for item in go_prop["edges"]):
+              raise SystemExit(f"duplicate edge missing {go_prop['edges']}")
+          if not any(item["kind"] == "time" for item in go_prop["edges"]):
+              raise SystemExit("time edge missing")
+          node_ids = sorted(item["id"] for item in go_prop["nodes"])
+          if node_ids != ["Associated Press", "BBC", "Reuters"] or "Other Wire" in node_ids:
+              raise SystemExit(f"nodes {node_ids}")
+          if [(item["id"], item["count"]) for item in sorted(nest_prop["nodes"], key=lambda item: item["id"])] != [(item["id"], item["count"]) for item in sorted(go_prop["nodes"], key=lambda item: item["id"])]:
+              raise SystemExit("node mismatch")
+
+          src = "/api/dashboard/spacetime/propagation/articles?" + q + "&source=Reuters"
+          nest_src = articles(nest, src)
+          go_src = articles(go, src)
+          if [item["id"] for item in nest_src["articles"]] != ["pa_sp_r"] or [item["id"] for item in go_src["articles"]] != ["pa_sp_r"]:
+              raise SystemExit(f"prop articles {nest_src} {go_src}")
+          if go_src["articles"][0].get("sentiment") != "negative":
+              raise SystemExit(f"prop sentiment {go_src['articles'][0]}")
+
+          check_status("/api/dashboard/spacetime/propagation?" + q.replace("&eventId=evt_sp_a", ""), "missing eventId")
+          check_status("/api/dashboard/spacetime/geo-heatmap/articles?" + q, "missing pointId")
+          check_status("/api/dashboard/spacetime/geo-heatmap?start=not-a-date&end=2026-03-15T00:00:00.000Z", "bad date")
+
+          redis = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=redis:7.2"], text=True).split()[0]
+          key_a = f"dashboard:spacetime:geo-heatmap:snapshot:{org}:{snap}"
+          key_b = f"dashboard:spacetime:geo-heatmap:snapshot:org_sp_b:{snap}"
+          raw = subprocess.check_output(["docker", "exec", redis, "redis-cli", "--raw", "GET", key_a])
+          if not raw:
+              raise SystemExit("snapshot key missing")
+          subprocess.check_call(["docker", "exec", redis, "redis-cli", "DEL", key_a])
+          subprocess.check_call(["docker", "exec", redis, "redis-cli", "SET", key_b, raw])
+          status, body, _ = call(go, drill)
+          if status != 400 or body.get("message") != "Invalid snapshotId":
+              raise SystemExit(f"cross-org snapshot {status} {body}")
+          subprocess.check_call(["docker", "exec", redis, "redis-cli", "SET", key_a, raw])
+          print("cross-runtime snapshot ok", snap)
+          print("poland point", poland["id"])
+          print("live-nominatim: not-verified")
+          PY
+      - name: Stop NestJS and confirm Go still serves the four GETs
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/api-nestjs.pid ]; then kill "$(cat /tmp/api-nestjs.pid)" || true; fi
+          for i in $(seq 1 30); do
+            if ! curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+            echo "nestjs still up"; exit 1
+          fi
+          python3 - << 'PY'
+          import json, urllib.request, urllib.error
+          token = open("/tmp/smoke-jwt").read().strip()
+          q = "start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z&eventId=evt_sp_a"
+          paths = {
+              "/api/dashboard/spacetime/geo-heatmap?" + q: lambda body: len(body.get("points") or []) == 2 and body.get("snapshotId"),
+              "/api/dashboard/spacetime/propagation?" + q: lambda body: len(body.get("nodes") or []) == 3 and len(body.get("edges") or []) >= 2,
+          }
+          for path, pred in paths.items():
+              req = urllib.request.Request("http://127.0.0.1:4020" + path, headers={"authorization": "Bearer " + token})
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  body = json.load(resp)
+              if resp.status != 200 or not pred(body):
+                  raise SystemExit(f"after nest stop {path} {body}")
+          geo = json.load(urllib.request.urlopen(urllib.request.Request(
+              "http://127.0.0.1:4020/api/dashboard/spacetime/geo-heatmap?" + q,
+              headers={"authorization": "Bearer " + token},
+          ), timeout=30))
+          point = next(item["id"] for item in geo["points"] if item["total"] == 2)
+          for path, pred in {
+              f"/api/dashboard/spacetime/geo-heatmap/articles?{q}&pointId={point}": lambda body: sorted(item["id"] for item in body["articles"]) == ["pa_sp_b", "pa_sp_r"],
+              f"/api/dashboard/spacetime/geo-heatmap/articles?{q}&pointId={point}&snapshotId={geo['snapshotId']}": lambda body: len(body["articles"]) == 2,
+              "/api/dashboard/spacetime/propagation/articles?" + q + "&source=Reuters": lambda body: [item["id"] for item in body["articles"]] == ["pa_sp_r"] and len(body.get("edges") or []) == 0,
+          }.items():
+              req = urllib.request.Request("http://127.0.0.1:4020" + path, headers={"authorization": "Bearer " + token})
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  body = json.load(resp)
+              if not pred(body):
+                  raise SystemExit(f"drill after stop {path} {body}")
+          req = urllib.request.Request("http://127.0.0.1:4020/api/dashboard/stream", headers={"authorization": "Bearer " + token})
+          try:
+              urllib.request.urlopen(req, timeout=5)
+              raise SystemExit("stream unexpectedly succeeded")
+          except urllib.error.HTTPError as exc:
+              if exc.code != 502:
+                  raise SystemExit(f"stream status {exc.code}")
+          logs = __import__("subprocess").check_output(["docker", "logs", "api-go-spacetime"], text=True, stderr=__import__("subprocess").STDOUT)
+          if "nominatim.openstreetmap.org" in logs:
+              raise SystemExit("live nominatim was contacted; do not treat cache as network verification")
+          print("nestjs stopped; four GETs still complete; stream 502")
+          print("live-nominatim: not-verified")
+          PY

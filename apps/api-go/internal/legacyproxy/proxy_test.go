@@ -1156,3 +1156,57 @@ func TestWarMapTransportAndLayersSwitchSeparately(t *testing.T) {
 	assertBody(layersOnly, http.MethodGet, "/api/dashboard/war-map/events", "legacy")
 	assertBody(layersOnly, http.MethodGet, "/api/dashboard/stream", "legacy")
 }
+
+func TestSpacetimeSwitchesAreIndependent(t *testing.T) {
+	stub := newLegacyStub(t)
+	base := DefaultRulesWithWrite(ModeShadow, "", "")
+	for _, rule := range base {
+		if strings.Contains(rule.Prefix, "/api/dashboard/spacetime/") {
+			t.Fatalf("default rules include spacetime: %s", rule.Prefix)
+		}
+	}
+	geoOnly, err := New(stub.server.URL, WithDashboardSpacetimeGeo(base, string(ModeGo)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	propOnly, err := New(stub.server.URL, WithDashboardSpacetimePropagation(base, string(ModeGo)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"/api/dashboard/spacetime/geo-heatmap",
+		"/api/dashboard/spacetime/geo-heatmap/articles",
+		"/api/dashboard/spacetime/propagation",
+		"/api/dashboard/spacetime/propagation/articles",
+	} {
+		geoOnly.RegisterGoHandler(path, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"impl":"go-geo"}`))
+		})
+		propOnly.RegisterGoHandler(path, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"impl":"go-prop"}`))
+		})
+	}
+	assertBody := func(gateway *Gateway, method, path, want string) {
+		t.Helper()
+		res := httptest.NewRecorder()
+		gateway.ServeHTTP(res, httptest.NewRequest(method, "http://gateway"+path, nil))
+		if !strings.Contains(res.Body.String(), want) {
+			t.Fatalf("%s %s body=%s want %s", method, path, res.Body.String(), want)
+		}
+	}
+	assertBody(geoOnly, http.MethodGet, "/api/dashboard/spacetime/geo-heatmap", "go-geo")
+	assertBody(geoOnly, http.MethodOptions, "/api/dashboard/spacetime/geo-heatmap/articles", "go-geo")
+	assertBody(geoOnly, http.MethodPost, "/api/dashboard/spacetime/geo-heatmap", "legacy")
+	assertBody(geoOnly, http.MethodGet, "/api/dashboard/spacetime/geo-heatmap/extra", "legacy")
+	assertBody(geoOnly, http.MethodGet, "/api/dashboard/spacetime/propagation", "legacy")
+	assertBody(geoOnly, http.MethodGet, "/api/dashboard/stream", "legacy")
+	assertBody(geoOnly, http.MethodGet, "/api/dashboard/stats", "legacy")
+	assertBody(geoOnly, http.MethodGet, "/api/dashboard/war-map/events", "legacy")
+	assertBody(propOnly, http.MethodGet, "/api/dashboard/spacetime/propagation", "go-prop")
+	assertBody(propOnly, http.MethodGet, "/api/dashboard/spacetime/propagation/articles", "go-prop")
+	assertBody(propOnly, http.MethodPost, "/api/dashboard/spacetime/propagation/articles", "legacy")
+	assertBody(propOnly, http.MethodGet, "/api/dashboard/spacetime/propagation/articles/extra", "legacy")
+	assertBody(propOnly, http.MethodGet, "/api/dashboard/spacetime/geo-heatmap", "legacy")
+	assertBody(propOnly, http.MethodGet, "/api/dashboard/stream", "legacy")
+	assertBody(propOnly, http.MethodGet, "/api/user-settings/ui/onboarding", "legacy")
+}

@@ -26,6 +26,9 @@
 //	         sector-heatmap、financial-candlestick、war-map/geojson。
 //	         API_GO_DASHBOARD_WAR_MAP_MODE=go 时另接管两个精确 GET：
 //	         war-map/events 与 war-map/news-markers。
+//	         API_GO_DASHBOARD_SPACETIME_GEO_MODE=go 时接管热力图总览与下钻。
+//	         API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=go 时接管传播图总览与下钻。
+//	         这两个开关互不影响，也不接管 /api/dashboard/stream。
 //
 // 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
 // API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
@@ -68,6 +71,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardcharts"
+	"github.com/wei500L/newwei/apps/api-go/internal/dashboardspacetime"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardwarmap"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
@@ -413,6 +417,14 @@ func run() error {
 	if cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo {
 		layersMode = string(legacyproxy.ModeGo)
 	}
+	spacetimeGeoMode := ""
+	if cfg.DashboardSpacetimeGeoMode == config.DashboardSpacetimeGeoModeGo {
+		spacetimeGeoMode = string(legacyproxy.ModeGo)
+	}
+	spacetimePropagationMode := ""
+	if cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo {
+		spacetimePropagationMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -420,6 +432,8 @@ func run() error {
 	rules = legacyproxy.WithDashboardWarMap(rules, warMapMode)
 	rules = legacyproxy.WithDashboardWarMapTransport(rules, transportMode)
 	rules = legacyproxy.WithDashboardWarMapLayers(rules, layersMode)
+	rules = legacyproxy.WithDashboardSpacetimeGeo(rules, spacetimeGeoMode)
+	rules = legacyproxy.WithDashboardSpacetimePropagation(rules, spacetimePropagationMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -451,7 +465,9 @@ func run() error {
 				cfg.DashboardChartsMode == config.DashboardChartsModeGo ||
 				cfg.DashboardWarMapMode == config.DashboardWarMapModeGo ||
 				cfg.DashboardWarMapTransportMode == config.DashboardWarMapTransportModeGo ||
-				cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo {
+				cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo ||
+				cfg.DashboardSpacetimeGeoMode == config.DashboardSpacetimeGeoModeGo ||
+				cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -486,8 +502,10 @@ func run() error {
 	warMapGo := cfg.DashboardWarMapMode == config.DashboardWarMapModeGo
 	transportGo := cfg.DashboardWarMapTransportMode == config.DashboardWarMapTransportModeGo
 	layersGo := cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo
-	// user-settings、dashboard stats、图表和 war map GET 共用同一套 JWT/Redis/MySQL 鉴权栈。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo
+	spacetimeGeoGo := cfg.DashboardSpacetimeGeoMode == config.DashboardSpacetimeGeoModeGo
+	spacetimePropagationGo := cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo
+	// user-settings、dashboard stats、图表、war map 和 spacetime GET 共用同一套 JWT/Redis/MySQL 鉴权栈。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -677,6 +695,53 @@ func run() error {
 		}
 	}
 
+	// 热力图与传播图各自注册。未打开的那一组不会进入路由表，仍回 NestJS。
+	if spacetimeGeoGo || spacetimePropagationGo {
+		if sharedDB == nil || authenticator == nil || redisClient == nil {
+			return fmt.Errorf("api-go: dashboard spacetime go takeover requires mysql, jwt, and redis")
+		}
+		if dashboardMongo == nil {
+			conn, err := dashboardstats.Open(cfg.MongoURI)
+			if err != nil {
+				return fmt.Errorf("api-go: spacetime go takeover requires a valid MONGO_URI")
+			}
+			dashboardMongo = conn
+		}
+		spacetimeHandler := dashboardspacetime.NewHandler(authenticator, sharedDB, redisClient, dashboardMongo.Database(), dashboardwarmap.PlaceConfig{
+			BaseURL: cfg.NominatimBaseURL, UserAgent: cfg.NominatimUserAgent, Email: cfg.NominatimEmail,
+			AcceptLanguage: cfg.NominatimAcceptLanguage,
+			Timeout:        time.Duration(cfg.GeocodeTimeoutMs) * time.Millisecond,
+			CacheTTL:       time.Duration(cfg.GeocodeCacheTTLSeconds) * time.Second,
+			NegativeTTL:    time.Duration(cfg.GeocodeNegativeTTLSeconds) * time.Second,
+			RatePerSecond:  cfg.GeocodeRatePerSecond,
+		})
+		spacetimeCORS := cors.New(cfg.CorsOrigin)
+		registerSpacetime := func(path string) {
+			gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+				if spacetimeCORS.FinishOptions(w, r) {
+					return
+				}
+				if r.Method == http.MethodOptions {
+					gateway.ServeLegacy(w, r)
+					return
+				}
+				spacetimeHandler.ServeHTTP(w, r)
+			})
+		}
+		if spacetimeGeoGo {
+			for _, path := range dashboardspacetime.GeoPaths {
+				registerSpacetime(path)
+			}
+			log.Printf("api-go: spacetime geo heatmap under go takeover")
+		}
+		if spacetimePropagationGo {
+			for _, path := range dashboardspacetime.PropagationPaths {
+				registerSpacetime(path)
+			}
+			log.Printf("api-go: spacetime propagation under go takeover")
+		}
+	}
+
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
 	//（ModeGo 规则也不会进入 serveShadow——双重收口，保证 go 接管的
 	// GET 不再增加 shadow.executed）。readMode=go 时六个端点全部过滤；
@@ -786,6 +851,12 @@ func run() error {
 			},
 			"dashboardWarMapLayers": map[string]any{
 				"mode": string(cfg.DashboardWarMapLayersMode),
+			},
+			"dashboardSpacetimeGeo": map[string]any{
+				"mode": string(cfg.DashboardSpacetimeGeoMode),
+			},
+			"dashboardSpacetimePropagation": map[string]any{
+				"mode": string(cfg.DashboardSpacetimePropagationMode),
 			},
 		})
 	})

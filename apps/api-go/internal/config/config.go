@@ -136,6 +136,24 @@ const (
 	DashboardWarMapLayersModeGo     DashboardWarMapLayersMode = "go"
 )
 
+// DashboardSpacetimeGeoMode 只控制热力图总览和下钻两条精确 GET。
+// 与传播图开关互不影响。默认 legacy。
+type DashboardSpacetimeGeoMode string
+
+const (
+	DashboardSpacetimeGeoModeLegacy DashboardSpacetimeGeoMode = "legacy"
+	DashboardSpacetimeGeoModeGo     DashboardSpacetimeGeoMode = "go"
+)
+
+// DashboardSpacetimePropagationMode 只控制传播图总览和下钻两条精确 GET。
+// 与热力图开关互不影响。默认 legacy。
+type DashboardSpacetimePropagationMode string
+
+const (
+	DashboardSpacetimePropagationModeLegacy DashboardSpacetimePropagationMode = "legacy"
+	DashboardSpacetimePropagationModeGo     DashboardSpacetimePropagationMode = "go"
+)
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -179,6 +197,9 @@ type Config struct {
 	// 下面两个开关各自只接管一条 War Map GET，默认 legacy。
 	DashboardWarMapTransportMode DashboardWarMapTransportMode
 	DashboardWarMapLayersMode    DashboardWarMapLayersMode
+	// 热力图与传播图各自一对 GET。默认 legacy，互不影响。
+	DashboardSpacetimeGeoMode         DashboardSpacetimeGeoMode
+	DashboardSpacetimePropagationMode DashboardSpacetimePropagationMode
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
 
@@ -399,6 +420,22 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.DashboardWarMapLayersMode = DashboardWarMapLayersModeGo
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_SPACETIME_GEO_MODE")) {
+	case "", string(DashboardSpacetimeGeoModeLegacy):
+		cfg.DashboardSpacetimeGeoMode = DashboardSpacetimeGeoModeLegacy
+	case string(DashboardSpacetimeGeoModeGo):
+		cfg.DashboardSpacetimeGeoMode = DashboardSpacetimeGeoModeGo
+	default:
+		errs = append(errs, "API_GO_DASHBOARD_SPACETIME_GEO_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE")) {
+	case "", string(DashboardSpacetimePropagationModeLegacy):
+		cfg.DashboardSpacetimePropagationMode = DashboardSpacetimePropagationModeLegacy
+	case string(DashboardSpacetimePropagationModeGo):
+		cfg.DashboardSpacetimePropagationMode = DashboardSpacetimePropagationModeGo
+	default:
+		errs = append(errs, "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE must be one of legacy|go")
 	}
 	cfg.RealtimeSignalsEnabled = boolDefault(getenv("REALTIME_SIGNALS_ENABLED"), true)
 	cfg.RealtimeSignalsTimeoutMs = intDefault(getenv("REALTIME_SIGNALS_REQUEST_TIMEOUT_MS"), 12000)
@@ -653,11 +690,32 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, "MONGO_URI is required when API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=go")
 		}
 	}
+	if cfg.DashboardSpacetimeGeoMode == DashboardSpacetimeGeoModeGo {
+		appendSpacetimeRequirements(&errs, "API_GO_DASHBOARD_SPACETIME_GEO_MODE", cfg)
+	}
+	if cfg.DashboardSpacetimePropagationMode == DashboardSpacetimePropagationModeGo {
+		appendSpacetimeRequirements(&errs, "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE", cfg)
+	}
 
 	if len(errs) > 0 {
 		return Config{}, errors.New(strings.Join(errs, "; "))
 	}
 	return cfg, nil
+}
+
+func appendSpacetimeRequirements(errs *[]string, name string, cfg Config) {
+	if cfg.JWTSecret == "" {
+		*errs = append(*errs, "JWT_SECRET is required when "+name+"=go")
+	}
+	if cfg.DatabaseURL == "" {
+		*errs = append(*errs, "DATABASE_URL is required when "+name+"=go")
+	}
+	if cfg.RedisHost == "" {
+		*errs = append(*errs, "REDIS_HOST is required when "+name+"=go")
+	}
+	if cfg.MongoURI == "" {
+		*errs = append(*errs, "MONGO_URI is required when "+name+"=go")
+	}
 }
 
 func stringDefault(value, fallback string) string {
