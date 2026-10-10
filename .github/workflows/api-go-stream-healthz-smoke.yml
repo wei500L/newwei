@@ -267,6 +267,17 @@ jobs:
                       frames.append((event, data))
               return frames, buf
 
+          def read_one_chunk(resp):
+              # http.client read(n) keeps pulling chunks until n bytes arrive.
+              # One byte returns as soon as the next SSE flush is available.
+              piece = resp.read(1)
+              if not piece:
+                  return b""
+              left = getattr(resp, "chunk_left", None) or 0
+              if left:
+                  piece += resp.read(left)
+              return piece
+
           conn, resp = open_stream("Bearer " + token)
           status_line = f"HTTP/1.1 {resp.status} {resp.reason}"
           header_text = "".join(f"{key}: {value}\n" for key, value in resp.headers.items()).lower()
@@ -274,7 +285,7 @@ jobs:
           events = []
           try:
               while True:
-                  chunk = resp.read(4096)
+                  chunk = read_one_chunk(resp)
                   if not chunk:
                       break
                   buf += chunk
@@ -286,7 +297,7 @@ jobs:
           except (socket.timeout, OSError) as exc:
               print("stream read stopped", exc, [name for name, _ in events])
           names = [name for name, _ in events]
-          print("first frames", names)
+          print("first frames", names, flush=True)
           if resp.status != 200:
               conn.close()
               raise SystemExit("stream status " + status_line + " " + header_text)
@@ -317,18 +328,28 @@ jobs:
 
           cid = subprocess.check_output(["docker","ps","-q","-f","ancestor=mysql:8.4"], text=True).split()[0]
           sql = """
-          INSERT INTO EconomicDataItem (id, slug, displayName, sourceFunction, sourceEndpoint, valueType, defaultFrequency, isActive, createdAt, updatedAt)
-          VALUES ('edi_smoke_sp','sp500_index','Smoke 500','smoke','smoke','price','daily',1,'2026-03-01 00:00:00.000','2026-03-01 00:00:00.000');
-          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, sourceField, createdAt) VALUES
-            ('edp_o','edi_smoke_sp','2026-03-11 00:00:00.000','price',4200.000000000000,'open','2026-03-11 00:00:00.000'),
-            ('edp_h','edi_smoke_sp','2026-03-11 00:00:00.000','price',4300.000000000000,'high','2026-03-11 00:00:00.000'),
-            ('edp_l','edi_smoke_sp','2026-03-11 00:00:00.000','price',4100.000000000000,'low','2026-03-11 00:00:00.000'),
-            ('edp_c','edi_smoke_sp','2026-03-11 00:00:00.000','price',4242.000000000000,'close','2026-03-11 00:00:00.000');
+          DELETE p FROM EconomicDataPoint p
+          JOIN EconomicDataItem i ON i.id = p.itemId
+          WHERE i.slug = 'sp500_index'
+            AND p.recordedAt = '2026-03-11 00:00:00.000'
+            AND p.sourceField IN ('open', 'high', 'low', 'close');
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, sourceField, createdAt)
+          SELECT 'edp_smoke_open', id, '2026-03-11 00:00:00.000', 'index', 4200.000000000000, 'open', NOW(3)
+          FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, sourceField, createdAt)
+          SELECT 'edp_smoke_high', id, '2026-03-11 00:00:00.000', 'index', 4300.000000000000, 'high', NOW(3)
+          FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, sourceField, createdAt)
+          SELECT 'edp_smoke_low', id, '2026-03-11 00:00:00.000', 'index', 4100.000000000000, 'low', NOW(3)
+          FROM EconomicDataItem WHERE slug = 'sp500_index';
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, sourceField, createdAt)
+          SELECT 'edp_smoke_close', id, '2026-03-11 00:00:00.000', 'index', 4242.000000000000, 'close', NOW(3)
+          FROM EconomicDataItem WHERE slug = 'sp500_index';
           """
           subprocess.run(["docker","exec","-i",cid,"mysql","-uroot","-psecret","app"], input=sql, text=True, check=True)
           try:
               while not any(name == "financial-candlestick" and "4242" in data for name, data in events):
-                  chunk = resp.read(4096)
+                  chunk = read_one_chunk(resp)
                   if not chunk:
                       break
                   buf += chunk
@@ -534,11 +555,21 @@ jobs:
           conn = http.client.HTTPConnection("127.0.0.1", 4020, timeout=30)
           conn.request("GET", query, headers={"Authorization": "Bearer " + token, "Accept": "text/event-stream"})
           resp = conn.getresponse()
+
+          def read_one_chunk(response):
+              piece = response.read(1)
+              if not piece:
+                  return b""
+              left = getattr(response, "chunk_left", None) or 0
+              if left:
+                  piece += response.read(left)
+              return piece
+
           buf = b""
           events = []
           try:
               while True:
-                  chunk = resp.read(4096)
+                  chunk = read_one_chunk(resp)
                   if not chunk:
                       break
                   buf += chunk
