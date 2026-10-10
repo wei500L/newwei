@@ -73,6 +73,15 @@ jobs:
         run: |
           set -euo pipefail
           unset COMPOSE_PROFILES
+          # 基础 compose 的若干服务声明了 env_file: ./.env。文件缺失时
+          # `docker compose config` 直接失败，即使本 job 不启动那些服务。
+          # 这是一次性 CI 文件，不入库。
+          printf '%s\n' \
+            'QDRANT_API_KEY=vector-go-pilot-qdrant-key' \
+            'VECTOR_INTERNAL_TOKEN=vector-go-pilot-internal-token' \
+            'VECTOR_PILOT_INTERNAL_TOKEN=vector-go-pilot-internal-token' \
+            'VECTOR_COLLECTION_PREFIX=pilot_processed' \
+            > .env
           base=(docker compose -f docker-compose.yml)
           pilot=(docker compose -f docker-compose.yml -f vector-go-pilot.override.yml --profile go-pilot)
           services="$("${base[@]}" config --services)"

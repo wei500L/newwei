@@ -83,7 +83,8 @@ CI `vector-integration` job（`.github/workflows/ci.yml`）：
 `vector-go-pilot-smoke`，或文件进入默认分支后的 `workflow_dispatch`）做的是
 **试点验收，不是生产切流**：
 
-1. 用现有 compose 核对：无 profile 时服务列表和实际启动都不包含 `vector-go`；
+1. 用现有 compose 核对：无 profile 时服务列表和实际启动都不包含 `vector-go`。
+   基础 compose 引用 `infra/docker/.env`，smoke 在 runner 上写一次性文件，不入库。
    `--profile go-pilot` 才包含。叠加 override 后，宿主端口是
    `127.0.0.1:4011→4010`，内部 token 与 Qdrant API key 显式传入 NestJS `vector`
    与 `vector-go`。
