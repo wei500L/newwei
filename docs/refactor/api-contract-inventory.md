@@ -143,7 +143,18 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 | `API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=go` | `GET /api/dashboard/war-map/transport-detail` | Mongo `MapTransportObjectState` / `MapTransportTrackPoint`。范围内轨迹优先，否则回退最近轨迹 |
 | `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=go` | `GET /api/dashboard/war-map/layers` | 静态图层 + 批5C events/news 动态图层 + Redis ADS-B/AIS。`flightMode=all` 使用 OpenSky viewport 和日预算 |
 
-回滚：把对应变量改回 `legacy`。`/api/dashboard/stream` 与 spacetime 系列仍由 NestJS 处理。
+回滚：把对应变量改回 `legacy`。`/api/dashboard/stream` 仍由 NestJS 处理。spacetime 见 §1.8e。
+
+### 1.8e Dashboard Spacetime 热力图与传播图（Go-批6A）
+
+两个开关默认 `legacy`，互不影响，也不改变 stats、图表、War Map 或 `/api/dashboard/stream`。
+
+| 开关 | 路径 | 数据 |
+|---|---|---|
+| `API_GO_DASHBOARD_SPACETIME_GEO_MODE=go` | `GET /api/dashboard/spacetime/geo-heatmap` 与 `.../articles` | MySQL 该组织、UTC 整日范围内已完成且有地点的 `ProcessedArticle`（最多 2000）。Mongo `processeditems` 只补充情感，查询失败则情感为 unknown 或省略。地点走已有地理缓存、最多 6 次外部解析和国家中心点。Redis snapshot 键含 orgId，TTL 1 小时，内容与 NestJS `JSON.stringify` 后的 SHA-256 对齐 |
+| `API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=go` | `GET /api/dashboard/spacetime/propagation` 与 `.../articles` | MySQL `NewsEventItem` 联 `ProcessedArticle` / `Article`。节点与 duplicate/time 边都返回。Mongo `duplicateOf` 失败时退回时间边 |
+
+四条都要求重推导后的 `dashboards.read`。orgId 只来自 membership。日期按 UTC 整日对齐。MySQL 失败返回 500，不返回空数组。回滚：`API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy` 只交回热力图两条；`API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy` 只交回传播图两条。外部地理解析的实网调用不在本批验收范围内。
 
 ### 1.9 system-settings（98 个，26 个 controller）
 

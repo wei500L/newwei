@@ -1,6 +1,6 @@
 # api-go 四态路由与首个迁移单元（shadow/canary 实现说明）
 
-> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补 · 2026-09-07 Go-批3B 增补 · 2026-09-26 Go-批3C 增补（六个 PUT，`API_GO_USER_SETTINGS_WRITE_MODE`，默认 legacy）· 2026-09-27 Go-批4A 增补（public-portal 首页与频道）· 2026-09-27 Go-批4B 增补（故事详情两个 GET，仍是 `API_GO_PUBLIC_PORTAL_MODE`，默认 legacy）· 2026-10-09 Go-批5A 增补（`GET /api/dashboard/stats`，`API_GO_DASHBOARD_STATS_MODE`，默认 legacy）· 2026-10-09 Go-批5B 增补（三个图表 GET，`API_GO_DASHBOARD_CHARTS_MODE`，默认 legacy）
+> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补 · 2026-09-07 Go-批3B 增补 · 2026-09-26 Go-批3C 增补（六个 PUT，`API_GO_USER_SETTINGS_WRITE_MODE`，默认 legacy）· 2026-09-27 Go-批4A 增补（public-portal 首页与频道）· 2026-09-27 Go-批4B 增补（故事详情两个 GET，仍是 `API_GO_PUBLIC_PORTAL_MODE`，默认 legacy）· 2026-10-09 Go-批5A 增补（`GET /api/dashboard/stats`，`API_GO_DASHBOARD_STATS_MODE`，默认 legacy）· 2026-10-09 Go-批5B 增补（三个图表 GET，`API_GO_DASHBOARD_CHARTS_MODE`，默认 legacy）· 2026-10-10 Go-批6A 增补（Spacetime 热力图与传播图各一对 GET，两个独立开关，默认 legacy）
 > 关联：docs/refactor/go-migration-adr.md §3/§4/§4.3、roadmap M2
 
 ---
@@ -74,5 +74,6 @@
 - public-portal（Go-批4A/4B）：pilot 内 `API_GO_PUBLIC_PORTAL_MODE=go` 时首页、单段频道和两个故事详情 GET 由 Go 独立查 MySQL 响应；默认 `legacy`，生产入口未切换。已真实验证缓存命中的故事详情（id/slug、公开组织边界、NestJS 停止后的 Go 响应）。缓存缺失时的真实模型网关调用和 `briefV1` 写回已实现，尚未真实调用模型。启用 `go` 前应确认模型网关配置可用。回滚：`API_GO_PUBLIC_PORTAL_MODE=legacy`。整个 public-portal 未迁完，登录与其他 API 未迁
 - dashboard 图表（Go-批5B）：`API_GO_DASHBOARD_CHARTS_MODE=go` 时只接管 `sector-heatmap`、`financial-candlestick`、`war-map/geojson` 三个精确 GET。默认 `legacy`。权限是 `dashboards.read`。热力图和 K 线读 MySQL；GeoJSON 在构建时嵌入。与 stats 开关独立。layers、transport-detail、spacetime 和 stream 仍回 NestJS。回滚：`API_GO_DASHBOARD_CHARTS_MODE=legacy`。远端真实栈 smoke run 37931065163 已对照 NestJS/Go，并在停止 NestJS 后确认这三条 GET 仍返回、未接管路由为 502。生产流量未切换。图表路径的浏览器预检没有单独打到真实栈
 - War Map 事件与新闻标记（Go-批5C）：`API_GO_DASHBOARD_WAR_MAP_MODE=go` 时只接管 `GET /api/dashboard/war-map/events` 与 `GET /api/dashboard/war-map/news-markers`。默认 `legacy`。读 MySQL，新闻为空才回退 Mongo。地理与翻译沿用现有 Redis 缓存和 SystemSetting。回滚：`API_GO_DASHBOARD_WAR_MAP_MODE=legacy`。生产流量未切换
-- War Map transport 与 layers（Go-批5D）：`API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE` 和 `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE` 分开控制，默认 `legacy`。打开后只接管对应的精确 GET。layers 的 `flightMode=all` 遵守 OpenSky 预算。stream 与 spacetime 仍是 NestJS。回滚是把对应变量改回 `legacy`。生产流量未切换
+- War Map transport 与 layers（Go-批5D）：`API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE` 和 `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE` 分开控制，默认 `legacy`。打开后只接管对应的精确 GET。layers 的 `flightMode=all` 遵守 OpenSky 预算。stream 仍是 NestJS。spacetime 见 Go-批6A。回滚是把对应变量改回 `legacy`。生产流量未切换
+- Dashboard Spacetime（Go-批6A）：`API_GO_DASHBOARD_SPACETIME_GEO_MODE` 与 `API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE` 分开控制，默认都是 `legacy`。打开后各接管一对精确 GET：热力图总览+文章下钻，或传播图总览+文章下钻。日期按 UTC 整日对齐。热力图 snapshot 与 NestJS 共用 Redis 格式。传播图包含 duplicate/time 边。`/api/dashboard/stream` 不在这两个开关里。回滚是把对应变量改回 `legacy`。生产流量未切换。外部地理解析没有实网验收
 - 本机按任务约束未运行 `go test`/`go vet`/`go build`；全部 Go 测试在远端 CI 执行

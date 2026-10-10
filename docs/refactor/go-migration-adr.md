@@ -362,13 +362,30 @@ pilot 注入 `go`。与 stats、charts 开关互不影响。生产入口不因�
 - **接管单元**（各自 exact + 仅 GET；同一路径的有效 OPTIONS 预检由 Go 按 `CORS_ORIGIN` 回答）：
   - `API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=go` → `GET /api/dashboard/war-map/transport-detail`
   - `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=go` → `GET /api/dashboard/war-map/layers`
-- **不接管**：另一条未打开的路径、events、news-markers、geojson、stats、spacetime、`/api/dashboard/stream`，以及其他方法与更长路径。
+- **不接管**：另一条未打开的路径、events、news-markers、geojson、stats、`/api/dashboard/stream`，以及其他方法与更长路径。spacetime 自批6A 起另有开关，不由本批的两个变量控制。
 - **身份**：复用 access token 验签、Redis 撤销名单、MySQL membership/RBAC。两条都要求 `dashboards.read`。orgId 只来自重推导。
 - **transport-detail**：`kind` 只能是 `aircraft` 或 `vessel`，否则 400 `INVALID_TRANSPORT_KIND`。空 `objectKey` 是 400 `Transport objectKey is required`。`limit` 默认 20，夹在 5 到 50。日期不按 UTC 整日对齐。读 Mongo `maptransportobjectstates` / `maptransporttrackpoints`。对象不存在返回 `{detail:null}`。优先范围内 `observedAt` 降序轨迹；范围内没有才回退该对象最近轨迹。
 - **layers**：静态热点、冲突区、咽喉、电缆、核设施和基地与 Nest `buildWarMapLayersResponse` 相同，并在 Go 内用批5C 的 events/news 生成动态 feature（最多合并 240）。不通过 HTTP 回调 NestJS。military 航班读 Redis `realtime-signals:opensky-latest:<orgId>`，处理缺失、过期、视口和数量上限。AIS 读 `realtime-signals:ais-latest:<orgId>` 与 `realtime-signals:source-state:<orgId>:ais`。`flightMode=all` 先看运行配置和 OpenSky 日预算，预算不足或未配置时按 Nest 的降级字段返回，不绕过预算直接请求外网。
 - **翻译**：`translate=zh-CN` 复用批5C 的翻译配置。失败或未配置时省略中文字段。
 - **配置**：任一 `go` 都要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。OpenSky 凭据沿用 `REALTIME_SIGNALS_OPENSKY_*` 和 SystemSetting `realtime_signals_settings`。不新增快照存储，不启动采集 worker。
 - **回滚**：`API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy` 只交回 transport-detail。`API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy` 只交回 layers。
+
+### 4.12 Dashboard Spacetime 热力图与传播图（Go-批6A）
+
+两组成对路由各自一个开关，默认都是 `legacy`。与 stats、图表、War Map 开关互不影响。生产入口不因本批改变。
+
+- **接管单元**（各自 exact + 仅 GET；同一路径的有效 OPTIONS 预检由 Go 按 `CORS_ORIGIN` 回答）：
+  - `API_GO_DASHBOARD_SPACETIME_GEO_MODE=go` → `GET /api/dashboard/spacetime/geo-heatmap` 与 `GET /api/dashboard/spacetime/geo-heatmap/articles`
+  - `API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=go` → `GET /api/dashboard/spacetime/propagation` 与 `GET /api/dashboard/spacetime/propagation/articles`
+- **不接管**：另一组未打开的路径、stats、三个图表、War Map、`/api/dashboard/stream`，以及其他方法与更长路径。
+- **身份**：复用 access token 验签、Redis 撤销名单、MySQL membership/RBAC。四条都要求 `dashboards.read`。orgId 只来自重推导，不读 query。
+- **日期**：`alignToUtcDay: true`。缺省 30 天，起止对齐到 UTC 日界。不沿用 War Map 的非整日范围。
+- **热力图**：MySQL `ProcessedArticle`（`orgId`、`completed`、`hasLocation`、`eventAt` 范围，可选 `NewsEventItem.eventId`，`eventAt`/`articleId` 降序，最多 2000）。Mongo `processeditems.result` 的情感是尽力补充，查询失败不让总览失败。地点归一化、候选排序、国家索引、已有 `geo:geocode:v1` 缓存、最多 6 次外部解析、国家中心点、7 天半衰期、0.5 度聚合和 UTC 日桶都在 Go 内完成。
+- **snapshot**：`snapshotId` 是 NestJS `JSON.stringify` 同一对象的 SHA-256。Redis 键 `dashboard:spacetime:geo-heatmap:snapshot:<orgId>:<snapshotId>`，值是这份 JSON，TTL 1 小时。只有写入成功才在响应里返回 `snapshotId`。下钻同时接受 NestJS 与 Go 写下的这份 JSON，并核对 orgId、eventId、日期范围和 pointId。没有 snapshotId 时按地点重新解析，不返回空列表冒充。
+- **传播图**：MySQL `NewsEventItem` 联本组织已完成的 `ProcessedArticle` 和 `Article`（`createdAt` 降序，最多 2000）。来源键依次是 `sourceLabel`、URL host、`unknown`。边包含 Mongo `duplicateOf` / `duplicateSimilarity`；这份查询失败时改走时间窗前驱。响应同时包含节点和边。articles 下钻使用同一来源键，并尽力补充情感。
+- **失败**：MySQL 查询失败返回 500，不用空 `points` / `nodes` 表示成功。Mongo 情感或 duplicate 失败保持 NestJS 的降级。
+- **配置**：任一 `go` 都要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。Nominatim 沿用现有环境变量和缓存，不新建地理数据源。
+- **回滚**：`API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy` 只交回热力图两条。`API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy` 只交回传播图两条。不新增表，不复制数据。
 
 ## 5. 队列/cron/outbox 边界（红线）
 

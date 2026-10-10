@@ -244,6 +244,26 @@ func WithDashboardWarMapLayers(rules []Rule, mode string) []Rule {
 	return appendExactGET(rules, "/api/dashboard/war-map/layers")
 }
 
+// WithDashboardSpacetimeGeo 只在 mode 为 go 时接管热力图总览和下钻的精确 GET，
+// 以及同一路径上符合 CORS 预检的 OPTIONS。传播图、stats、图表、War Map 和 stream 不变。
+func WithDashboardSpacetimeGeo(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	rules = appendExactGET(rules, "/api/dashboard/spacetime/geo-heatmap")
+	return appendExactGET(rules, "/api/dashboard/spacetime/geo-heatmap/articles")
+}
+
+// WithDashboardSpacetimePropagation 只在 mode 为 go 时接管传播图总览和下钻的精确 GET，
+// 以及同一路径上符合 CORS 预检的 OPTIONS。热力图不受这个开关影响。
+func WithDashboardSpacetimePropagation(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	rules = appendExactGET(rules, "/api/dashboard/spacetime/propagation")
+	return appendExactGET(rules, "/api/dashboard/spacetime/propagation/articles")
+}
+
 func appendExactGET(rules []Rule, path string) []Rule {
 	getOnly := map[string]bool{http.MethodGet: true}
 	optionsOnly := map[string]bool{http.MethodOptions: true}
