@@ -7,6 +7,7 @@ import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { ALERTS_PUBSUB, type AlertEventPayload } from "../../modules/alerts/alerts.pubsub";
 import { AlertsService } from "../../modules/alerts/alerts.service";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { subscriptionPayloadMatchesOrg } from "../../modules/graphql-subscriptions/subscription-org";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { AlertChannelInput, UpdateAlertChannelInput, UpdateAlertEventStatusInput, UpsertAlertRuleInput } from "../dto/alert.input";
 import type { GqlRequest } from "../graphql.types";
@@ -283,7 +284,7 @@ export class AlertsResolver {
     }
     return withFilter(
       () => this.pubsub.asyncIterator("alertEvents"),
-      (payload: { orgId: string }) => payload.orgId === requester.orgId
+      (payload: unknown) => subscriptionPayloadMatchesOrg(payload, requester.orgId)
     )();
   }
 }

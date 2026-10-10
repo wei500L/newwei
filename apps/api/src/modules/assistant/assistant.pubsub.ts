@@ -14,5 +14,6 @@ export interface AssistantEventPayload {
   };
 }
 
+/** In-process bus restored by GRAPHQL_SUBSCRIPTION_BUS=local. */
 export const createAssistantPubSub = () => new PubSub();
 

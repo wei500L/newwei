@@ -2,6 +2,7 @@ import { HttpModule } from "@nestjs/axios";
 import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
+import type { PubSubEngine } from "graphql-subscriptions";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { withKeepAliveAgents } from "../../common/http/http-agent";
@@ -10,6 +11,8 @@ import { BullmqConnectionService } from "../config/bullmq-connection.service";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
 import { EmailModule } from "../email/email.module";
+import { GraphqlSubscriptionBus } from "../graphql-subscriptions/graphql-subscription-bus";
+import { GraphqlSubscriptionBusModule } from "../graphql-subscriptions/graphql-subscription-bus.module";
 import { KnowledgeGraphModule } from "../knowledge-graph/knowledge-graph.module";
 import { ModelServiceModule } from "../model-service/model-service.module";
 import { NotificationsModule } from "../notifications/notifications.module";
@@ -41,6 +44,7 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
     ModelServiceModule,
     KnowledgeGraphModule,
     RealtimeSignalsModule,
+    GraphqlSubscriptionBusModule,
     HttpModule.registerAsync({
       inject: [EnvService],
       useFactory: (env: EnvService) =>
@@ -137,7 +141,8 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
     },
     {
       provide: ALERTS_PUBSUB,
-      useFactory: () => createAlertsPubSub()
+      inject: [GraphqlSubscriptionBus],
+      useFactory: (bus: GraphqlSubscriptionBus): PubSubEngine => bus.forDomain(createAlertsPubSub)
     },
     {
       provide: getQueueToken(ALERTS_QUEUE_NAME),

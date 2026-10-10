@@ -1,0 +1,217 @@
+# 两个真实 API 进程上的 GraphQL 订阅 smoke。
+#
+# 订阅者连进程 B，业务触发打到进程 A。B 关闭 BullMQ worker，但仍监听
+# QueueEvents。告警 / 分析 / 助手经 Redis 总线跨进程；queueEvents 仍由
+# B 自己的 QueueEventPublisher 投递，用来证明不能再广播到 Redis。
+#
+# workflow_dispatch 只有本文件进入默认分支后才能手动触发。PR 期间由
+# 下面的 paths 触发，不进 ci.yml。
+name: graphql-subscriptions-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/graphql-subscriptions-smoke.yml"
+      - "apps/api/scripts/graphql-subscription-multinode-smoke.cjs"
+      - "apps/api/src/modules/graphql-subscriptions/**"
+      - "apps/api/src/modules/alerts/alerts.module.ts"
+      - "apps/api/src/modules/alerts/alerts.processor.ts"
+      - "apps/api/src/modules/alerts/alerts.pubsub.ts"
+      - "apps/api/src/modules/analysis/analysis.module.ts"
+      - "apps/api/src/modules/analysis/analysis.processor.ts"
+      - "apps/api/src/modules/analysis/analysis.pubsub.ts"
+      - "apps/api/src/modules/assistant/assistant.module.ts"
+      - "apps/api/src/modules/assistant/assistant.processor.ts"
+      - "apps/api/src/modules/assistant/assistant.pubsub.ts"
+      - "apps/api/src/modules/queue/queue-event.publisher.ts"
+      - "apps/api/src/modules/queue/queue.processor.ts"
+      - "apps/api/src/graphql/resolvers/alerts.resolver.ts"
+      - "apps/api/src/graphql/resolvers/analysis.resolver.ts"
+      - "apps/api/src/graphql/resolvers/assistant.resolver.ts"
+      - "apps/api/src/modules/config/env.schema.ts"
+      - "apps/api/src/modules/config/config.service.ts"
+      - "docs/refactor/graphql-subscriptions-multinode.md"
+
+concurrency:
+  group: graphql-subscriptions-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: gql-sub-smoke@example.com
+  SMTP_PASS: gql-sub-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://127.0.0.1:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  LITELLM_API_BASE: http://127.0.0.1:9
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  GRAPHQL_SUBSCRIPTION_BUS: redis
+  BULLMQ_WORKERS_ENABLED: "true"
+  ANALYSIS_MAX_RETRIES: "1"
+  ASSISTANT_MAX_RETRIES: "1"
+  ANALYSIS_LLM_TIMEOUT_MS: "8000"
+  ASSISTANT_LLM_TIMEOUT_MS: "8000"
+  SEED_ORG_SLUG: gql-sub-smoke
+  SEED_ORG_NAME: GraphQL Subscription Smoke
+  SEED_ADMIN_EMAIL: gql-sub-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: GqlSubSmoke#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  graphql-subscriptions-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+
+      - name: Migrate and seed
+        run: |
+          pnpm --filter db run migrate
+          pnpm --filter db run seed
+
+      - name: Build NestJS api
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+
+      - name: Start API A and B
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/smoke-logs"
+          cd apps/api
+          NODE_ENV=production PORT=4000 NODE_PATH=./node_modules \
+            node dist/main.js > "$GITHUB_WORKSPACE/smoke-logs/api-a.log" 2>&1 &
+          echo $! > "$GITHUB_WORKSPACE/smoke-logs/api-a.pid"
+          BULLMQ_WORKERS_ENABLED=false NODE_ENV=production PORT=4010 NODE_PATH=./node_modules \
+            node dist/main.js > "$GITHUB_WORKSPACE/smoke-logs/api-b.log" 2>&1 &
+          echo $! > "$GITHUB_WORKSPACE/smoke-logs/api-b.pid"
+          for port in 4000 4010; do
+            ok=0
+            for _ in $(seq 1 90); do
+              if curl -fsS "http://127.0.0.1:${port}/api/healthz/live" >/dev/null 2>&1; then
+                echo "api ${port} healthy"
+                ok=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$ok" != "1" ]; then
+              echo "api ${port} failed to become healthy"
+              tail -n 120 "$GITHUB_WORKSPACE/smoke-logs/api-a.log" || true
+              tail -n 120 "$GITHUB_WORKSPACE/smoke-logs/api-b.log" || true
+              exit 1
+            fi
+          done
+
+      - name: Cross-instance GraphQL websocket smoke
+        env:
+          API_A_BASE: http://127.0.0.1:4000
+          API_B_BASE: http://127.0.0.1:4010
+          API_A_LOG: ${{ github.workspace }}/smoke-logs/api-a.log
+          API_B_LOG: ${{ github.workspace }}/smoke-logs/api-b.log
+        run: node apps/api/scripts/graphql-subscription-multinode-smoke.cjs
+
+      - name: Stop API processes
+        if: always()
+        run: |
+          set -euo pipefail
+          stop_pid() {
+            local pidfile="$1"
+            if [ ! -f "$pidfile" ]; then
+              return 0
+            fi
+            local pid
+            pid="$(cat "$pidfile")"
+            if ! kill -0 "$pid" 2>/dev/null; then
+              return 0
+            fi
+            kill -TERM "$pid" || true
+            for _ in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                return 0
+              fi
+              sleep 1
+            done
+            kill -KILL "$pid" || true
+          }
+          stop_pid "$GITHUB_WORKSPACE/smoke-logs/api-a.pid"
+          stop_pid "$GITHUB_WORKSPACE/smoke-logs/api-b.pid"
+
+      - name: Assert Redis subscription connections released
+        if: always()
+        run: node apps/api/scripts/graphql-subscription-multinode-smoke.cjs check-clients
+
+      - name: Upload API logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphql-subscription-smoke-logs
+          path: smoke-logs/
+          if-no-files-found: ignore
