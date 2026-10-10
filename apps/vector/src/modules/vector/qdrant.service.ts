@@ -28,6 +28,29 @@ interface QdrantResponse<T> {
 
 const logger = createLogger({ name: 'qdrant' });
 
+// Qdrant v1.10.1??? PUT ???????????? 409?AlreadyExists??
+// ???????????????????? GET ? 500????
+// "Service internal error: 0 of 0 read operations failed"?run 34034804518?
+// node PUT 409 ? 6ms ? GET 500?Go ? PUT ??? 5ms ? 200??
+// ????????????????????? GET 200 ??????
+const COLLECTION_INIT_READ_ATTEMPTS = 8;
+const COLLECTION_INIT_READ_DELAY_MS = 25;
+
+const sleep = async (ms: number): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+};
+
+const isUnreadyCollectionRead = (status: number, data: unknown): boolean => {
+  if (status !== 500 || data == null) {
+    return false;
+  }
+  try {
+    return JSON.stringify(data).includes('0 of 0 read operations failed');
+  } catch {
+    return false;
+  }
+};
+
 const stableUuidFromString = (value: string): string => {
   const hash = createHash('sha256').update(value).digest();
   const bytes = hash.subarray(0, 16);
@@ -245,18 +268,9 @@ export class QdrantService {
     );
     if (!created.ok) {
       if (created.status === 409) {
-        // Concurrent creation (another instance/implementation created the
-        // same collection first — TS and Go versions share collection naming
-        // and may run in parallel during the Strangler Fig pilot). The
-        // collection exists now: re-check its vector size instead of failing.
-        const recheck = await fetchJson<QdrantResponse<{
-          config?: { params?: { vectors?: { size?: unknown } } };
-        }>>(url, { method: 'GET', headers: this.qdrantHeaders() }, this.env.qdrantTimeoutMs);
-        const recheckSize = recheck.data?.result?.config?.params?.vectors?.size;
-        if (recheck.ok && typeof recheckSize === 'number' && recheckSize === vectorSize) {
-          const result: EnsureCollectionResult = { name, vectorSize };
-          this.collectionCache.set(name, result);
-          return result;
+        const recovered = await this.readCollectionAfterCreateConflict(url, name, vectorSize);
+        if (recovered) {
+          return recovered;
         }
       }
       throw new Error(`Qdrant collection create failed with status ${created.status}`);
@@ -270,6 +284,36 @@ export class QdrantService {
     const result: EnsureCollectionResult = { name, vectorSize };
     this.collectionCache.set(name, result);
     return result;
+  }
+
+  private async readCollectionAfterCreateConflict(
+    url: string,
+    name: string,
+    vectorSize: number,
+  ): Promise<EnsureCollectionResult | null> {
+    for (let attempt = 0; attempt < COLLECTION_INIT_READ_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) {
+        await sleep(COLLECTION_INIT_READ_DELAY_MS);
+      }
+      const recheck = await fetchJson<QdrantResponse<{
+        config?: { params?: { vectors?: { size?: unknown } } };
+      }>>(url, { method: 'GET', headers: this.qdrantHeaders() }, this.env.qdrantTimeoutMs);
+      const recheckSize = recheck.data?.result?.config?.params?.vectors?.size;
+      if (recheck.ok && typeof recheckSize === 'number') {
+        if (recheckSize !== vectorSize) {
+          throw new Error(
+            `Qdrant collection size mismatch for ${name}: expected ${vectorSize}, got ${recheckSize}`,
+          );
+        }
+        const result: EnsureCollectionResult = { name, vectorSize };
+        this.collectionCache.set(name, result);
+        return result;
+      }
+      if (!isUnreadyCollectionRead(recheck.status, recheck.data)) {
+        return null;
+      }
+    }
+    return null;
   }
 
   private async ensurePayloadIndex(collection: string, fieldName: string, fieldSchema: string) {

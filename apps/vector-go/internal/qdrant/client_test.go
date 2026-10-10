@@ -334,6 +334,123 @@ func TestStableUUIDDeterministicAndVersioned(t *testing.T) {
 	}
 }
 
+// 并发建集合：409 之后的 GET 若是「0 of 0 read operations failed」，有界重读到
+// 维度匹配的 200 再写入。其他 500 即使下一次 GET 会 200，也不当成成功。
+func TestUpsertRetriesUnreadyCollectionReadAfterConflict(t *testing.T) {
+	var gets int
+	rec, server := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/collections/") && !strings.Contains(r.URL.Path, "/points") {
+			gets++
+			switch gets {
+			case 1:
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "not found"})
+			case 2:
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"status": map[string]any{"error": "Service internal error: 0 of 0 read operations failed"},
+				})
+			default:
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"result": map[string]any{
+						"config": map[string]any{"params": map[string]any{"vectors": map[string]any{"size": 2}}},
+					},
+				})
+			}
+			return
+		}
+		if r.Method == http.MethodPut && !strings.Contains(r.URL.Path, "/points") && !strings.Contains(r.URL.Path, "/index") {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": map[string]any{"error": "Wrong input: Collection already exists!"},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "result": []any{}})
+	})
+	client := testClient(server.URL, "")
+	result, err := client.UpsertPoints(t.Context(), UpsertRequest{
+		OrgID:          "org-1",
+		EmbeddingModel: "text-embedding-3-small",
+		Points: []Point{{
+			ProcessedItemID: "p1",
+			ItemMetaID:      "m1",
+			CreatedAtMs:     42,
+			Vector:          []float64{0.1, 0.2},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("UpsertPoints() error = %v", err)
+	}
+	if result.Upserted != 1 {
+		t.Errorf("Upserted = %d, want 1", result.Upserted)
+	}
+	if gets != 3 {
+		t.Errorf("collection GETs = %d, want 3 (404, init 500, ready)", gets)
+	}
+	upsert := rec.find(http.MethodPut, "/points")
+	if upsert == nil || upsert.Query != "wait=true" {
+		t.Fatalf("expected PUT points?wait=true, got %#v", upsert)
+	}
+	var body struct {
+		Points []struct {
+			ID string `json:"id"`
+		} `json:"points"`
+	}
+	if err := json.Unmarshal([]byte(upsert.Body), &body); err != nil {
+		t.Fatalf("upsert body: %v", err)
+	}
+	if len(body.Points) != 1 || body.Points[0].ID != StableUUID("text-embedding-3-small:p1") {
+		t.Fatalf("point id = %#v, want deterministic id", body.Points)
+	}
+
+	gets = 0
+	_, other := newStub(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/collections/") && !strings.Contains(r.URL.Path, "/points") {
+			gets++
+			if gets == 1 {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			if gets >= 3 {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"result": map[string]any{
+						"config": map[string]any{"params": map[string]any{"vectors": map[string]any{"size": 2}}},
+					},
+				})
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": map[string]any{"error": "Service internal error: disk failure"},
+			})
+			return
+		}
+		if r.Method == http.MethodPut && !strings.Contains(r.URL.Path, "/points") && !strings.Contains(r.URL.Path, "/index") {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	})
+	otherClient := testClient(other.URL, "")
+	_, err = otherClient.UpsertPoints(t.Context(), UpsertRequest{
+		OrgID:          "org-1",
+		EmbeddingModel: "text-embedding-3-small",
+		Points: []Point{{
+			ProcessedItemID: "p2",
+			ItemMetaID:      "m2",
+			CreatedAtMs:     7,
+			Vector:          []float64{0.1, 0.2},
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "409") {
+		t.Fatalf("generic 500 after 409 must fail, got %v", err)
+	}
+	if gets != 2 {
+		t.Errorf("generic 500 collection GETs = %d, want 2 (no retry into a later 200)", gets)
+	}
+}
+
 // 集合命名：prefix + sha256(lower-trim(model))[:16]。
 func TestCollectionNameNormalizesModel(t *testing.T) {
 	client := testClient("http://qdrant.local", "")
