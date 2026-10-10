@@ -100,7 +100,7 @@ func (p *probeSet) one(ctx context.Context, name string) outcome {
 	case probeRedis:
 		return p.redisProbe(ctx)
 	case probeMongo:
-		return p.mongo(ctx)
+		return p.mongoProbe(ctx)
 	case probeCrawl:
 		return p.crawlHealth(ctx)
 	case probeSSRF:
@@ -271,7 +271,7 @@ func (p *probeSet) writeRead(ctx context.Context, key string, timeout time.Durat
 	return nil
 }
 
-func (p *probeSet) mongo(ctx context.Context) outcome {
+func (p *probeSet) mongoProbe(ctx context.Context) outcome {
 	database, err := p.mongoDB(ctx)
 	if err != nil || database == nil {
 		message := "MongoDB connection is not ready"
