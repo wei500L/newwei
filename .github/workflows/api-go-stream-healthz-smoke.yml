@@ -587,7 +587,7 @@ jobs:
                           events.append((event, data))
                   names = [name for name, _ in events]
                   candle = next((data for name, data in events if name == "financial-candlestick"), "")
-                  if all(name in names for name in ("war-map-events", "war-map-news-markers", "war-map-layers", "financial-candlestick")) and "4242" in candle:
+                  if all(name in names for name in ("war-map-events", "war-map-news-markers", "war-map-layers", "financial-candlestick")) and ("spacetime-geo-heatmap" in names or "spacetime-geo-heatmap-unavailable" in names) and "4242" in candle:
                       break
           except (socket.timeout, OSError) as exc:
               print("stream without nest stopped", exc)
@@ -597,6 +597,8 @@ jobs:
           for name in ("war-map-events", "war-map-news-markers", "war-map-layers", "financial-candlestick"):
               if name not in names:
                   raise SystemExit("missing " + name)
+          if "spacetime-geo-heatmap" not in names and "spacetime-geo-heatmap-unavailable" not in names:
+              raise SystemExit("missing geo heatmap " + str(names))
           candle = next(data for name, data in events if name == "financial-candlestick")
           if "4242" not in candle:
               raise SystemExit("candle payload lost after nest shutdown " + candle[:300])
