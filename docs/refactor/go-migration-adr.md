@@ -355,6 +355,21 @@ pilot 注入 `go`。与 stats、charts 开关互不影响。生产入口不因�
 - **配置**：`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。Nominatim 与翻译沿用 Nest 的环境变量和 SystemSetting，不新建地理数据源。
 - **回滚**：`API_GO_DASHBOARD_WAR_MAP_MODE=legacy`。不新增表，不复制数据。
 
+### 4.11 War Map transport-detail 与 layers（Go-批5D）
+
+两条路由各自一个开关，默认都是 `legacy`。与批5C 的 `API_GO_DASHBOARD_WAR_MAP_MODE` 互不影响。生产入口不因本批改变。
+
+- **接管单元**（各自 exact + 仅 GET；同一路径的有效 OPTIONS 预检由 Go 按 `CORS_ORIGIN` 回答）：
+  - `API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=go` → `GET /api/dashboard/war-map/transport-detail`
+  - `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=go` → `GET /api/dashboard/war-map/layers`
+- **不接管**：另一条未打开的路径、events、news-markers、geojson、stats、spacetime、`/api/dashboard/stream`，以及其他方法与更长路径。
+- **身份**：复用 access token 验签、Redis 撤销名单、MySQL membership/RBAC。两条都要求 `dashboards.read`。orgId 只来自重推导。
+- **transport-detail**：`kind` 只能是 `aircraft` 或 `vessel`，否则 400 `INVALID_TRANSPORT_KIND`。空 `objectKey` 是 400 `Transport objectKey is required`。`limit` 默认 20，夹在 5 到 50。日期不按 UTC 整日对齐。读 Mongo `maptransportobjectstates` / `maptransporttrackpoints`。对象不存在返回 `{detail:null}`。优先范围内 `observedAt` 降序轨迹；范围内没有才回退该对象最近轨迹。
+- **layers**：静态热点、冲突区、咽喉、电缆、核设施和基地与 Nest `buildWarMapLayersResponse` 相同，并在 Go 内用批5C 的 events/news 生成动态 feature（最多合并 240）。不通过 HTTP 回调 NestJS。military 航班读 Redis `realtime-signals:opensky-latest:<orgId>`，处理缺失、过期、视口和数量上限。AIS 读 `realtime-signals:ais-latest:<orgId>` 与 `realtime-signals:source-state:<orgId>:ais`。`flightMode=all` 先看运行配置和 OpenSky 日预算，预算不足或未配置时按 Nest 的降级字段返回，不绕过预算直接请求外网。
+- **翻译**：`translate=zh-CN` 复用批5C 的翻译配置。失败或未配置时省略中文字段。
+- **配置**：任一 `go` 都要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。OpenSky 凭据沿用 `REALTIME_SIGNALS_OPENSKY_*` 和 SystemSetting `realtime_signals_settings`。不新增快照存储，不启动采集 worker。
+- **回滚**：`API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy` 只交回 transport-detail。`API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy` 只交回 layers。
+
 ## 5. 队列/cron/outbox 边界（红线）
 
 - 全部 BullMQ 队列、21 个 @Cron/@Interval、3 套 MongoOutbox 的**写入权在最终阶段前仅属 NestJS**——Go 侧提前双写会制造消息重复/顺序破坏

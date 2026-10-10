@@ -143,6 +143,17 @@ func WriteBadRequest(w http.ResponseWriter, r *http.Request, message string) {
 	})
 }
 
+// WriteCodedBadRequest 写带安全 code 的 400。GlobalExceptionFilter 对
+// HttpException 对象体保留 ^[A-Z0-9_]+$ 的 code，error 名来自 HTTP 状态。
+func WriteCodedBadRequest(w http.ResponseWriter, r *http.Request, code, message string) {
+	writeError(w, r, errorBody{
+		StatusCode: http.StatusBadRequest,
+		Message:    message,
+		Error:      "Bad Request",
+		Code:       code,
+	})
+}
+
 // WritePayloadTooLarge 写超过 JSON 体上限的响应。
 //
 // body-parser 自己的错误是 413 "request entity too large"，但 Nest 的

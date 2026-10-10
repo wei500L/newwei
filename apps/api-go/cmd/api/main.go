@@ -405,16 +405,22 @@ func run() error {
 	if cfg.DashboardWarMapMode == config.DashboardWarMapModeGo {
 		warMapMode = string(legacyproxy.ModeGo)
 	}
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, legacyproxy.WithDashboardWarMap(legacyproxy.WithDashboardCharts(
-		legacyproxy.WithDashboardStats(
-			legacyproxy.WithPublicPortal(
-				legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode),
-				portalMode,
-			),
-			dashboardMode,
-		),
-		chartsMode,
-	), warMapMode))
+	transportMode := ""
+	if cfg.DashboardWarMapTransportMode == config.DashboardWarMapTransportModeGo {
+		transportMode = string(legacyproxy.ModeGo)
+	}
+	layersMode := ""
+	if cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo {
+		layersMode = string(legacyproxy.ModeGo)
+	}
+	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
+	rules = legacyproxy.WithPublicPortal(rules, portalMode)
+	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
+	rules = legacyproxy.WithDashboardCharts(rules, chartsMode)
+	rules = legacyproxy.WithDashboardWarMap(rules, warMapMode)
+	rules = legacyproxy.WithDashboardWarMapTransport(rules, transportMode)
+	rules = legacyproxy.WithDashboardWarMapLayers(rules, layersMode)
+	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
 	}
@@ -443,7 +449,9 @@ func run() error {
 				cfg.PublicPortalMode == config.PublicPortalModeGo ||
 				cfg.DashboardStatsMode == config.DashboardStatsModeGo ||
 				cfg.DashboardChartsMode == config.DashboardChartsModeGo ||
-				cfg.DashboardWarMapMode == config.DashboardWarMapModeGo {
+				cfg.DashboardWarMapMode == config.DashboardWarMapModeGo ||
+				cfg.DashboardWarMapTransportMode == config.DashboardWarMapTransportModeGo ||
+				cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -476,8 +484,10 @@ func run() error {
 	dashboardGo := cfg.DashboardStatsMode == config.DashboardStatsModeGo
 	chartsGo := cfg.DashboardChartsMode == config.DashboardChartsModeGo
 	warMapGo := cfg.DashboardWarMapMode == config.DashboardWarMapModeGo
+	transportGo := cfg.DashboardWarMapTransportMode == config.DashboardWarMapTransportModeGo
+	layersGo := cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo
 	// user-settings、dashboard stats、图表和 war map GET 共用同一套 JWT/Redis/MySQL 鉴权栈。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -594,16 +604,16 @@ func run() error {
 		log.Printf("api-go: dashboard chart GETs under go takeover")
 	}
 
-	// war-map events 与 news-markers。只在显式 go 模式注册。
-	// MySQL 新闻为空才查 Mongo。不代理 NestJS。
-	if warMapGo {
+	// events/news-markers、transport-detail、layers 各自注册。共用一个 handler，
+	// 但未打开的路径不会进入路由表，因此仍回 NestJS。
+	if warMapGo || transportGo || layersGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: dashboard war map go takeover requires mysql, jwt, and redis")
 		}
 		if dashboardMongo == nil {
 			conn, err := dashboardstats.Open(cfg.MongoURI)
 			if err != nil {
-				return fmt.Errorf("api-go: API_GO_DASHBOARD_WAR_MAP_MODE=go requires a valid MONGO_URI")
+				return fmt.Errorf("api-go: war map go takeover requires a valid MONGO_URI")
 			}
 			dashboardMongo = conn
 		}
@@ -623,9 +633,23 @@ func run() error {
 			TranslationFallback:     cfg.TranslationFallbackEnabled,
 			TranslationFallbackURL:  cfg.TranslationFallbackBaseURL,
 			SettingsEncryptionKey:   cfg.SettingsEncryptionKey,
+			SignalsEnabled:          cfg.RealtimeSignalsEnabled,
+			SignalsTimeoutMs:        cfg.RealtimeSignalsTimeoutMs,
+			OpenskyEnabled:          cfg.OpenskyEnabled,
+			OpenskyDailyBudget:      cfg.OpenskyDailyCreditBudget,
+			OpenskyDayIntervalSec:   cfg.OpenskyDayIntervalSec,
+			OpenskyNightIntervalSec: cfg.OpenskyNightIntervalSec,
+			OpenskyDayStartHour:     cfg.OpenskyDayStartHourHKT,
+			OpenskyNightStartHour:   cfg.OpenskyNightStartHourHKT,
+			OpenskyWarningPct:       cfg.OpenskyWarningRemainingPct,
+			OpenskyCriticalPct:      cfg.OpenskyCriticalRemainingPct,
+			OpenskyBaseURL:          cfg.OpenskyBaseURL,
+			OpenskyTokenURL:         cfg.OpenskyTokenURL,
+			OpenskyClientID:         cfg.OpenskyClientID,
+			OpenskyClientSecret:     cfg.OpenskyClientSecret,
 		})
 		warCORS := cors.New(cfg.CorsOrigin)
-		for _, path := range dashboardwarmap.Paths {
+		register := func(path string) {
 			gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
 				if warCORS.FinishOptions(w, r) {
 					return
@@ -637,7 +661,20 @@ func run() error {
 				warHandler.ServeHTTP(w, r)
 			})
 		}
-		log.Printf("api-go: war map events and news-markers under go takeover")
+		if warMapGo {
+			for _, path := range dashboardwarmap.Paths {
+				register(path)
+			}
+			log.Printf("api-go: war map events and news-markers under go takeover")
+		}
+		if transportGo {
+			register(dashboardwarmap.TransportPath)
+			log.Printf("api-go: war map transport-detail under go takeover")
+		}
+		if layersGo {
+			register(dashboardwarmap.LayersPath)
+			log.Printf("api-go: war map layers under go takeover")
+		}
 	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
@@ -743,6 +780,12 @@ func run() error {
 			},
 			"dashboardWarMap": map[string]any{
 				"mode": string(cfg.DashboardWarMapMode),
+			},
+			"dashboardWarMapTransport": map[string]any{
+				"mode": string(cfg.DashboardWarMapTransportMode),
+			},
+			"dashboardWarMapLayers": map[string]any{
+				"mode": string(cfg.DashboardWarMapLayersMode),
 			},
 		})
 	})

@@ -41,6 +41,7 @@
 | dashboard stats（Go-批5A） | 🔶 `API_GO_DASHBOARD_STATS_MODE=go` 时只有精确 `GET /api/dashboard/stats` 由 Go 读 MySQL ItemMeta、Mongo processeditems/tasklogs 和 Redis 组织计数。默认 `legacy`。orgId 来自 membership 重推导。不启动队列 worker。其他 dashboard 接口仍是 NestJS。回滚改回 `legacy`。 |
 | dashboard 三个图表（Go-批5B） | 🔶 `API_GO_DASHBOARD_CHARTS_MODE=go` 时只有 `sector-heatmap`、`financial-candlestick`、`war-map/geojson` 三个精确 GET 由 Go 响应。热力图和 K 线读 MySQL 经济序列；GeoJSON 来自构建时嵌入的 world.geo.json。权限是重推导的 `dashboards.read`。默认 `legacy`，与 stats 开关独立。layers、transport-detail、spacetime 和 stream 仍是 NestJS。events 与 news-markers 见批5C。回滚改回 `legacy`。远端真实栈已对照（smoke run 37931065163）。生产流量未切换。 |
 | War Map 事件与新闻标记（Go-批5C） | 🔶 `API_GO_DASHBOARD_WAR_MAP_MODE=go` 时只有 `GET /api/dashboard/war-map/events` 与 `GET /api/dashboard/war-map/news-markers` 由 Go 读该组织的 AlertEvent、ProcessedArticle，并在 MySQL 新闻为空时回退 Mongo。日期不按 UTC 整日对齐。新闻标记含地理缓存、最多 3 次 Nominatim 和国家中心点回退。`translate=zh-CN` 走既有翻译配置，失败则省略中文字段。默认 `legacy`。layers、transport-detail、stream 不在此开关。回滚：`API_GO_DASHBOARD_WAR_MAP_MODE=legacy`。生产流量未切换。 |
+| War Map transport 与 layers（Go-批5D） | 🔶 `API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE` 与 `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE` 各自默认 `legacy`，只接管对应的一个精确 GET。transport-detail 读 Mongo 轨迹；layers 含静态图层、批5C 事件/新闻动态图层、Redis ADS-B/AIS 快照，以及受预算约束的 OpenSky viewport。不回调 NestJS，不启动采集 worker，不改 stream 或 spacetime。回滚是把对应变量改回 `legacy`。生产流量未切换。 |
 | api 单测基座（vitest） | ✅ 远端 CI 已验证（SEC-01 6/6 + API-01 4/4 + 扫描器语义/基线断言全绿） |
 
 余项（按序）：

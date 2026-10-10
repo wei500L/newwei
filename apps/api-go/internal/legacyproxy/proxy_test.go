@@ -1116,3 +1116,43 @@ func TestDashboardWarMapRouteIsExactGetOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestWarMapTransportAndLayersSwitchSeparately(t *testing.T) {
+	stub := newLegacyStub(t)
+	base := DefaultRulesWithWrite(ModeShadow, "", "")
+	transportOnly, err := New(stub.server.URL, WithDashboardWarMapTransport(base, string(ModeGo)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	layersOnly, err := New(stub.server.URL, WithDashboardWarMapLayers(base, string(ModeGo)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/dashboard/war-map/transport-detail", "/api/dashboard/war-map/layers"} {
+		transportOnly.RegisterGoHandler(path, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"impl":"go-transport"}`))
+		})
+		layersOnly.RegisterGoHandler(path, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"impl":"go-layers"}`))
+		})
+	}
+	assertBody := func(gateway *Gateway, method, path, want string) {
+		t.Helper()
+		res := httptest.NewRecorder()
+		gateway.ServeHTTP(res, httptest.NewRequest(method, "http://gateway"+path, nil))
+		if !strings.Contains(res.Body.String(), want) {
+			t.Fatalf("%s %s body=%s want %s", method, path, res.Body.String(), want)
+		}
+	}
+	assertBody(transportOnly, http.MethodGet, "/api/dashboard/war-map/transport-detail", "go-transport")
+	assertBody(transportOnly, http.MethodOptions, "/api/dashboard/war-map/transport-detail", "go-transport")
+	assertBody(transportOnly, http.MethodPost, "/api/dashboard/war-map/transport-detail", "legacy")
+	assertBody(transportOnly, http.MethodGet, "/api/dashboard/war-map/transport-detail/extra", "legacy")
+	assertBody(transportOnly, http.MethodGet, "/api/dashboard/war-map/layers", "legacy")
+	assertBody(transportOnly, http.MethodGet, "/api/dashboard/war-map/events", "legacy")
+	assertBody(layersOnly, http.MethodGet, "/api/dashboard/war-map/layers", "go-layers")
+	assertBody(layersOnly, http.MethodGet, "/api/dashboard/war-map/layers/extra", "legacy")
+	assertBody(layersOnly, http.MethodGet, "/api/dashboard/war-map/transport-detail", "legacy")
+	assertBody(layersOnly, http.MethodGet, "/api/dashboard/war-map/events", "legacy")
+	assertBody(layersOnly, http.MethodGet, "/api/dashboard/stream", "legacy")
+}

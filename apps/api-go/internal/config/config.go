@@ -118,6 +118,24 @@ const (
 	DashboardWarMapModeGo DashboardWarMapMode = "go"
 )
 
+// DashboardWarMapTransportMode 只控制 GET /api/dashboard/war-map/transport-detail。
+// 与 events/news-markers、layers 开关互不影响。默认 legacy。
+type DashboardWarMapTransportMode string
+
+const (
+	DashboardWarMapTransportModeLegacy DashboardWarMapTransportMode = "legacy"
+	DashboardWarMapTransportModeGo     DashboardWarMapTransportMode = "go"
+)
+
+// DashboardWarMapLayersMode 只控制 GET /api/dashboard/war-map/layers。
+// 与 events/news-markers、transport-detail 开关互不影响。默认 legacy。
+type DashboardWarMapLayersMode string
+
+const (
+	DashboardWarMapLayersModeLegacy DashboardWarMapLayersMode = "legacy"
+	DashboardWarMapLayersModeGo     DashboardWarMapLayersMode = "go"
+)
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -158,8 +176,28 @@ type Config struct {
 	// DashboardWarMapMode 见 DashboardWarMapMode 常量。默认 legacy。
 	// go 要求 JWT、MySQL、Redis、MONGO_URI。与 stats、charts 开关独立。
 	DashboardWarMapMode DashboardWarMapMode
+	// 下面两个开关各自只接管一条 War Map GET，默认 legacy。
+	DashboardWarMapTransportMode DashboardWarMapTransportMode
+	DashboardWarMapLayersMode    DashboardWarMapLayersMode
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
+
+	// OpenSky 运行配置与 Nest env.schema 的默认值一致，供 layers 的
+	// flightMode=all 读取。不在这里启动采集。
+	RealtimeSignalsEnabled          bool
+	RealtimeSignalsTimeoutMs        int
+	OpenskyEnabled                  bool
+	OpenskyDailyCreditBudget        int
+	OpenskyDayIntervalSec           int
+	OpenskyNightIntervalSec         int
+	OpenskyDayStartHourHKT          int
+	OpenskyNightStartHourHKT        int
+	OpenskyWarningRemainingPct      int
+	OpenskyCriticalRemainingPct     int
+	OpenskyBaseURL                  string
+	OpenskyTokenURL                 string
+	OpenskyClientID                 string
+	OpenskyClientSecret             string
 
 	NominatimBaseURL           string
 	NominatimUserAgent         string
@@ -346,6 +384,36 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_WAR_MAP_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE")) {
+	case "", string(DashboardWarMapTransportModeLegacy):
+		cfg.DashboardWarMapTransportMode = DashboardWarMapTransportModeLegacy
+	case string(DashboardWarMapTransportModeGo):
+		cfg.DashboardWarMapTransportMode = DashboardWarMapTransportModeGo
+	default:
+		errs = append(errs, "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE")) {
+	case "", string(DashboardWarMapLayersModeLegacy):
+		cfg.DashboardWarMapLayersMode = DashboardWarMapLayersModeLegacy
+	case string(DashboardWarMapLayersModeGo):
+		cfg.DashboardWarMapLayersMode = DashboardWarMapLayersModeGo
+	default:
+		errs = append(errs, "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE must be one of legacy|go")
+	}
+	cfg.RealtimeSignalsEnabled = boolDefault(getenv("REALTIME_SIGNALS_ENABLED"), true)
+	cfg.RealtimeSignalsTimeoutMs = intDefault(getenv("REALTIME_SIGNALS_REQUEST_TIMEOUT_MS"), 12000)
+	cfg.OpenskyEnabled = boolDefault(getenv("REALTIME_SIGNALS_OPENSKY_ENABLED"), true)
+	cfg.OpenskyDailyCreditBudget = intDefault(getenv("REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET"), 4000)
+	cfg.OpenskyDayIntervalSec = intDefault(getenv("REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC"), 600)
+	cfg.OpenskyNightIntervalSec = intDefault(getenv("REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC"), 1800)
+	cfg.OpenskyDayStartHourHKT = intDefault(getenv("REALTIME_SIGNALS_OPENSKY_DAY_START_HKT"), 8)
+	cfg.OpenskyNightStartHourHKT = intDefault(getenv("REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT"), 22)
+	cfg.OpenskyWarningRemainingPct = intDefault(getenv("REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT"), 20)
+	cfg.OpenskyCriticalRemainingPct = intDefault(getenv("REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT"), 10)
+	cfg.OpenskyBaseURL = strings.TrimRight(stringDefault(getenv("REALTIME_SIGNALS_OPENSKY_BASE_URL"), "https://opensky-network.org/api"), "/")
+	cfg.OpenskyTokenURL = strings.TrimRight(stringDefault(getenv("REALTIME_SIGNALS_OPENSKY_TOKEN_URL"), "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"), "/")
+	cfg.OpenskyClientID = strings.TrimSpace(getenv("REALTIME_SIGNALS_OPENSKY_CLIENT_ID"))
+	cfg.OpenskyClientSecret = strings.TrimSpace(getenv("REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET"))
 	cfg.NominatimBaseURL = stringDefault(getenv("GEO_NOMINATIM_BASE_URL"), "https://nominatim.openstreetmap.org")
 	cfg.NominatimUserAgent = stringDefault(getenv("GEO_NOMINATIM_USER_AGENT"), "modular-api")
 	cfg.NominatimEmail = strings.TrimSpace(getenv("GEO_NOMINATIM_EMAIL"))
@@ -555,6 +623,34 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_DASHBOARD_WAR_MAP_MODE=go")
+		}
+	}
+	if cfg.DashboardWarMapTransportMode == DashboardWarMapTransportModeGo {
+		if cfg.JWTSecret == "" {
+			errs = append(errs, "JWT_SECRET is required when API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=go")
+		}
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=go")
+		}
+	}
+	if cfg.DashboardWarMapLayersMode == DashboardWarMapLayersModeGo {
+		if cfg.JWTSecret == "" {
+			errs = append(errs, "JWT_SECRET is required when API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=go")
+		}
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=go")
 		}
 	}
 
