@@ -260,7 +260,7 @@ jobs:
           VECTOR_NEST_URL=http://127.0.0.1:4010 \
           VECTOR_GO_URL=http://127.0.0.1:4011 \
           QDRANT_URL=http://127.0.0.1:6333 \
-          node apps/vector-go/scripts/pilot-upstream-switch.mjs shared
+          node apps/vector-go/scripts/pilot-upstream-switch.cjs shared
 
       - name: Stop NestJS vector and prove Go still serves the caller
         working-directory: .
@@ -284,7 +284,7 @@ jobs:
           VECTOR_NEST_URL=http://127.0.0.1:4010 \
           VECTOR_GO_URL=http://127.0.0.1:4011 \
           QDRANT_URL=http://127.0.0.1:6333 \
-          node apps/vector-go/scripts/pilot-upstream-switch.mjs go-only
+          node apps/vector-go/scripts/pilot-upstream-switch.cjs go-only
 
       - name: Dump service logs on failure
         if: failure()
