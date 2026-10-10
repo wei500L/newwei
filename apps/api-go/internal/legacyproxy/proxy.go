@@ -226,6 +226,33 @@ func WithDashboardWarMap(rules []Rule, mode string) []Rule {
 	return rules
 }
 
+// WithDashboardWarMapTransport 只在 mode 为 go 时接管 transport-detail 的精确 GET
+// 和同一路径的 OPTIONS。不改变 events、news-markers 或 layers。
+func WithDashboardWarMapTransport(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	return appendExactGET(rules, "/api/dashboard/war-map/transport-detail")
+}
+
+// WithDashboardWarMapLayers 只在 mode 为 go 时接管 layers 的精确 GET 和同一路径的 OPTIONS。
+// 不改变 events、news-markers 或 transport-detail。
+func WithDashboardWarMapLayers(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	return appendExactGET(rules, "/api/dashboard/war-map/layers")
+}
+
+func appendExactGET(rules []Rule, path string) []Rule {
+	getOnly := map[string]bool{http.MethodGet: true}
+	optionsOnly := map[string]bool{http.MethodOptions: true}
+	return append(rules,
+		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: getOnly},
+		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: optionsOnly},
+	)
+}
+
 // GoHandler 是已迁移到 Go 的原生处理器（按前缀注册）。
 type GoHandler func(w http.ResponseWriter, r *http.Request)
 

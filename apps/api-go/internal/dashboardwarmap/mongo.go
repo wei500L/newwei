@@ -17,8 +17,10 @@ const (
 )
 
 type mongoStore struct {
-	items *mongo.Collection
-	raws  *mongo.Collection
+	items            *mongo.Collection
+	raws             *mongo.Collection
+	transportStates  *mongo.Collection
+	transportTracks  *mongo.Collection
 }
 
 func newMongoStore(db *mongo.Database) *mongoStore {
@@ -26,8 +28,10 @@ func newMongoStore(db *mongo.Database) *mongoStore {
 		return &mongoStore{}
 	}
 	return &mongoStore{
-		items: db.Collection(processedItemsCollection),
-		raws:  db.Collection(rawItemsCollection),
+		items:           db.Collection(processedItemsCollection),
+		raws:            db.Collection(rawItemsCollection),
+		transportStates: db.Collection(transportStateCollection),
+		transportTracks: db.Collection(transportTrackCollection),
 	}
 }
 

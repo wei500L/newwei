@@ -1,4 +1,4 @@
-# Go-批5C：War Map events 与 news-markers 的聚焦真实栈验收。
+# Go-批5C/5D：War Map events、news-markers、transport-detail 与 layers 的聚焦真实栈验收。
 # 不进普通 CI。PR 上加 label api-go-war-map-smoke，或在文件进入默认分支后 workflow_dispatch。
 name: api-go-war-map-smoke
 
@@ -127,7 +127,10 @@ jobs:
             -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
             -e MONGO_URI=mongodb://host.docker.internal:27017/app \
             -e API_GO_DASHBOARD_WAR_MAP_MODE=go \
+            -e API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=go \
+            -e API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=go \
             -e API_GO_DASHBOARD_CHARTS_MODE=legacy \
+            -e REALTIME_SIGNALS_ENABLED=false \
             -e API_GO_DASHBOARD_STATS_MODE=legacy \
             -e JWT_SECRET="$JWT_SECRET" \
             -e JWT_ISSUER="$JWT_ISSUER" \
@@ -226,7 +229,76 @@ jobs:
               result: { location: "Japan", title: "Other org mongo", entities: [], cleaned_markdown: "x" }
             });
             print(doc.insertedId.toString());
+            const org = "'"$ORG"'";
+            db.maptransportobjectstates.insertOne({
+              _id: ObjectId("656565656565656565656510"),
+              orgId: org, entityKind: "aircraft", sourceType: "opensky", sourceScope: "military",
+              objectKey: "opensky:smoke", observedAt: ISODate("2026-03-12T12:00:00.000Z"),
+              sourceUpdatedAt: ISODate("2026-03-12T12:00:01.000Z"),
+              lat: 50.5, lng: 4.5, geoCell: "u150", icao24: "abc123", callsign: "RCH100",
+              displayCategory: "Military flight", role: "Military transport",
+              createdAt: ISODate("2026-03-12T12:00:00.000Z"), updatedAt: ISODate("2026-03-12T12:00:00.000Z")
+            });
+            db.maptransportobjectstates.insertOne({
+              orgId: "org_war_b", entityKind: "aircraft", sourceType: "opensky", sourceScope: "military",
+              objectKey: "opensky:smoke", observedAt: ISODate("2026-03-12T12:00:00.000Z"),
+              lat: 1, lng: 1, geoCell: "other", callsign: "OTHER"
+            });
+            db.maptransporttrackpoints.insertMany([
+              { _id: ObjectId("656565656565656565656501"), orgId: org, entityKind: "aircraft", sourceType: "opensky", sourceScope: "military", objectKey: "opensky:smoke", observedAt: ISODate("2026-03-10T00:00:00.000Z"), lat: 50.1, lng: 4.1, geoCell: "a", speed: 100, altitudeFt: 1000 },
+              { _id: ObjectId("656565656565656565656502"), orgId: org, entityKind: "aircraft", sourceType: "opensky", sourceScope: "military", objectKey: "opensky:smoke", observedAt: ISODate("2026-03-12T00:00:00.000Z"), lat: 50.2, lng: 4.2, geoCell: "b", speed: 200, altitudeFt: 2000 },
+              { _id: ObjectId("656565656565656565656503"), orgId: org, entityKind: "aircraft", sourceType: "opensky", sourceScope: "military", objectKey: "opensky:smoke", observedAt: ISODate("2026-04-01T00:00:00.000Z"), lat: 50.3, lng: 4.3, geoCell: "c", speed: 50, altitudeFt: 500 }
+            ]);
           ' > /tmp/mongo-id.txt
+          python3 - << 'PY'
+          import json, subprocess
+          from datetime import datetime, timezone
+          org = open("/tmp/org-a").read().strip()
+          now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+          adsb = {
+            "source": "opensky",
+            "sourceEndpoint": "redis://smoke-adsb",
+            "updatedAt": now,
+            "totalAircraft": 2,
+            "validPositionCount": 2,
+            "latestObservedAt": now,
+            "diagnostics": {
+              "latestObservedAt": now,
+              "staleThresholdSec": 600,
+              "droppedInvalidPositionCount": 0,
+              "droppedMissingIdentityCount": 0,
+              "droppedStalePositionCount": 0,
+              "deduplicatedCount": 0,
+              "retainedPreviousSnapshot": False,
+            },
+            "aircraft": [
+              {"id": "abc123", "icao24": "abc123", "callsign": "RCH100", "lat": 50.5, "lng": 4.5, "heading": 90, "altitudeFt": 10000, "observedAt": now, "source": "opensky"},
+              {"id": "zzz999", "icao24": "zzz999", "lat": 1, "lng": 100, "observedAt": now, "source": "opensky"},
+            ],
+          }
+          ais = {
+            "source": "relay",
+            "sourceEndpoint": "redis://smoke-ais",
+            "updatedAt": now,
+            "status": {"connected": True, "vessels": 2, "messages": 4, "clients": 1, "droppedMessages": 0},
+            "diagnostics": {"healthState": "ok", "positionReportsSeen": 4, "positionReportsProcessed": 4, "ignoredPositionReports": 0, "parseErrors": 0},
+            "disruptions": [{"id": "break-1", "name": "Gap", "type": "dark", "lat": 50.4, "lng": 4.6, "severity": "high"}],
+            "density": [{"id": "zone-1", "name": "Dense", "lat": 50.4, "lng": 4.6, "intensity": 3}],
+            "candidateReports": [
+              {"mmsi": "111", "name": "Guard", "lat": 50.6, "lng": 4.4, "observedAt": now},
+              {"mmsi": "222", "lat": 1, "lng": 1, "observedAt": now},
+            ],
+            "vessels": [],
+            "hasVesselSnapshot": False,
+          }
+          redis = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=redis:7.2"], text=True).split()[0]
+          for key, doc in (
+            (f"realtime-signals:opensky-latest:{org}", adsb),
+            (f"realtime-signals:ais-latest:{org}", ais),
+          ):
+            subprocess.run(["docker", "exec", "-i", redis, "redis-cli", "-x", "SET", key], input=json.dumps(doc).encode(), check=True)
+          print("transport and realtime snapshots seeded")
+          PY
           echo "fixtures ready"
       - name: Compare NestJS and Go
         run: |
@@ -326,6 +398,49 @@ jobs:
               assert resp.status == 204
               assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
           print("cors preflight ok")
+          def ids(detail):
+              return [point["id"] for point in detail["detail"]["trackPoints"]]
+          transport = "/api/dashboard/war-map/transport-detail?kind=aircraft&objectKey=opensky:smoke&start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z"
+          def transport_pred(status, nest, go, label):
+              assert status == 200 and nest["detail"]["title"] == go["detail"]["title"] == "RCH100"
+              assert nest["detail"]["subtitle"] == go["detail"]["subtitle"] == "Military flight · Military transport"
+              assert ids(nest) == ids(go) == ["656565656565656565656502", "656565656565656565656501"]
+              assert nest["detail"]["summary"]["pointCount"] == go["detail"]["summary"]["pointCount"] == 2
+          check(transport, transport_pred, "transport in range")
+          def fallback_pred(status, nest, go, label):
+              assert status == 200 and ids(nest) == ids(go)
+              assert ids(nest)[0] == "656565656565656565656503"
+              assert "656565656565656565656502" in ids(nest)
+          check("/api/dashboard/war-map/transport-detail?kind=aircraft&objectKey=opensky:smoke&start=2026-02-01T00:00:00.000Z&end=2026-02-02T00:00:00.000Z", fallback_pred, "transport fallback")
+          def missing_pred(status, nest, go, label):
+              assert status == 200 and nest["detail"] is None and go["detail"] is None
+          check("/api/dashboard/war-map/transport-detail?kind=vessel&objectKey=opensky:smoke&start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z", missing_pred, "transport missing")
+          bad("/api/dashboard/war-map/transport-detail?kind=car&objectKey=opensky:smoke", "INVALID_TRANSPORT_KIND")
+          layers = "/api/dashboard/war-map/layers?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z&bbox=0,40,10,60&zoom=3"
+          def feature_ids(body, layer):
+              return [item["id"] for item in body["layers"][layer]["features"]]
+          def layers_pred(status, nest, go, label):
+              assert status == 200
+              assert feature_ids(nest, "flights") == feature_ids(go, "flights") == ["abc123"]
+              assert "ais-vessel-111" in feature_ids(nest, "ais") and "ais-vessel-111" in feature_ids(go, "ais")
+              assert "ais-vessel-222" not in feature_ids(nest, "ais") and "zone-1" not in feature_ids(nest, "ais")
+              assert "break-1" in feature_ids(nest, "ais") and "break-1" in feature_ids(go, "ais")
+              assert any(item["id"] == "dc" for item in nest["hotspots"]) and any(item["id"] == "dc" for item in go["hotspots"])
+              assert "evt-" in json.dumps(nest["layers"]) and "evt-" in json.dumps(go["layers"])
+              assert nest["layers"]["flights"]["summary"]["freshness"] == go["layers"]["flights"]["summary"]["freshness"] == "fresh"
+              assert nest["layers"]["ais"]["summary"]["mode"] == go["layers"]["ais"]["summary"]["mode"] == "military"
+          check(layers, layers_pred, "layers adsb ais events")
+          def all_flights(status, nest, go, label):
+              assert status == 200
+              assert nest["layers"]["flights"]["summary"]["freshness"] == go["layers"]["flights"]["summary"]["freshness"] == "not_configured"
+              assert nest["layers"]["flights"]["features"] == go["layers"]["flights"]["features"] == []
+          check(layers + "&flightMode=all", all_flights, "layers opensky not configured")
+          print("OPENSKY_VIEWPORT: 该实网分支未验证")
+          ns, nb, _ = call("http://127.0.0.1:4000", layers + "&translate=zh-CN")
+          gs, gb, _ = call("http://127.0.0.1:4020", layers + "&translate=zh-CN")
+          assert ns == gs == 200
+          translated = "nameZh" in json.dumps(gb.get("hotspots", []))
+          print("LAYERS_TRANSLATION: response included nameZh" if translated else "LAYERS_TRANSLATION: 该实网分支未验证")
           PY
       - name: Stop NestJS and prove Go independence
         run: |
@@ -350,23 +465,26 @@ jobs:
           def call(path):
               req = urllib.request.Request("http://127.0.0.1:4020" + path, headers={"authorization": "Bearer " + token})
               try:
-                  with urllib.request.urlopen(req, timeout=20) as resp:
-                      return resp.status, resp.read()[:200]
+                  with urllib.request.urlopen(req, timeout=90) as resp:
+                      raw = resp.read()
+                      try:
+                          parsed = json.loads(raw)
+                      except Exception:
+                          parsed = raw[:200]
+                      return resp.status, parsed
               except urllib.error.HTTPError as err:
                   return err.code, err.read()[:200]
-          for path in (
-              "/api/dashboard/war-map/events?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z",
-              "/api/dashboard/war-map/news-markers?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z",
-          ):
+          checks = {
+              "/api/dashboard/war-map/events?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z": lambda body: any(item.get("id") == "usa" for item in body.get("events", [])),
+              "/api/dashboard/war-map/news-markers?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z": lambda body: any(item.get("title") == "Belgium desk" for item in body.get("markers", [])),
+              "/api/dashboard/war-map/transport-detail?kind=aircraft&objectKey=opensky:smoke&start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z": lambda body: body.get("detail", {}).get("title") == "RCH100" and len(body["detail"]["trackPoints"]) == 2,
+              "/api/dashboard/war-map/layers?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z&bbox=0,40,10,60&zoom=3": lambda body: any(item.get("id") == "abc123" for item in body["layers"]["flights"]["features"]) and any(item.get("id") == "ais-vessel-111" for item in body["layers"]["ais"]["features"]) and any(item.get("id") == "dc" for item in body["hotspots"]),
+          }
+          for path, pred in checks.items():
               status, body = call(path)
-              assert status == 200, (path, status, body)
+              assert status == 200 and pred(body), (path, status, str(body)[:500])
               print("independent", path, status)
-          for path in (
-              "/api/dashboard/war-map/layers",
-              "/api/dashboard/war-map/transport-detail?kind=aircraft&objectKey=opensky:abc",
-              "/api/dashboard/stream",
-          ):
-              status, body = call(path)
-              assert status == 502, (path, status, body)
-              print("not taken over", path, status)
+          status, body = call("/api/dashboard/stream")
+          assert status == 502, (status, body)
+          print("not taken over /api/dashboard/stream", status)
           PY

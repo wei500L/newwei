@@ -28,6 +28,9 @@ type Service struct {
 	geo      geocoder
 	words    translator
 	index    *geoIndex
+	tracks   transportReader
+	snaps    snapshotReader
+	sky      openskyViewport
 }
 
 func (s *Service) Events(ctx context.Context, orgID string, start, end time.Time, opt viewOptions) (eventsResponse, error) {

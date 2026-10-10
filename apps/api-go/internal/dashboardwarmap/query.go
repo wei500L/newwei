@@ -41,10 +41,12 @@ type warQuery struct {
 }
 
 type viewOptions struct {
-	Translate bool
-	BBox      *[4]float64
-	Zoom      *float64
-	Cluster   bool
+	Translate  bool
+	BBox       *[4]float64
+	Zoom       *float64
+	Cluster    bool
+	FlightMode string
+	AisMode    string
 }
 
 func parseWarQuery(r *http.Request) warQuery {

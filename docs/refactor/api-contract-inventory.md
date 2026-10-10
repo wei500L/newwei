@@ -134,6 +134,17 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 
 `translate=zh-CN` 使用既有翻译配置；未配置或调用失败时省略中文字段。回滚：`API_GO_DASHBOARD_WAR_MAP_MODE=legacy`。启用 `go` 需要 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。
 
+### 1.8d War Map transport-detail 与 layers（Go-批5D）
+
+两个开关默认 `legacy`，互不影响，也不改变批5C。
+
+| 开关 | 路径 | 数据 |
+|---|---|---|
+| `API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=go` | `GET /api/dashboard/war-map/transport-detail` | Mongo `MapTransportObjectState` / `MapTransportTrackPoint`。范围内轨迹优先，否则回退最近轨迹 |
+| `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=go` | `GET /api/dashboard/war-map/layers` | 静态图层 + 批5C events/news 动态图层 + Redis ADS-B/AIS。`flightMode=all` 使用 OpenSky viewport 和日预算 |
+
+回滚：把对应变量改回 `legacy`。`/api/dashboard/stream` 与 spacetime 系列仍由 NestJS 处理。
+
 ### 1.9 system-settings（98 个，26 个 controller）
 
 内部端点（服务间 token，非用户 JWT）：

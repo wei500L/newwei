@@ -471,4 +471,49 @@ func TestDashboardWarMapModeRequiresMongo(t *testing.T) {
 	if cfg.DashboardWarMapMode != DashboardWarMapModeGo || cfg.DashboardChartsMode != DashboardChartsModeLegacy {
 		t.Fatalf("war=%s charts=%s", cfg.DashboardWarMapMode, cfg.DashboardChartsMode)
 	}
+	if cfg.DashboardWarMapTransportMode != DashboardWarMapTransportModeLegacy || cfg.DashboardWarMapLayersMode != DashboardWarMapLayersModeLegacy {
+		t.Fatalf("transport=%s layers=%s", cfg.DashboardWarMapTransportMode, cfg.DashboardWarMapLayersMode)
+	}
+}
+
+func TestWarMapTransportAndLayersModesAreIndependent(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "MONGO_URI") || strings.Contains(err.Error(), "API_GO_DASHBOARD_WAR_MAP_MODE") {
+		t.Fatalf("transport mongo: %v", err)
+	}
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://mongo:27017/app"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DashboardWarMapLayersMode != DashboardWarMapLayersModeGo || cfg.DashboardWarMapMode != DashboardWarMapModeLegacy || cfg.DashboardWarMapTransportMode != DashboardWarMapTransportModeLegacy {
+		t.Fatalf("layers=%s war=%s transport=%s", cfg.DashboardWarMapLayersMode, cfg.DashboardWarMapMode, cfg.DashboardWarMapTransportMode)
+	}
 }
