@@ -144,6 +144,15 @@ func (h *Handler) servePropagationArticles(w http.ResponseWriter, r *http.Reques
 	h.write(w, r, body, err)
 }
 
+// ReadHeatmap 读取与 GET geo-heatmap 相同的总览，不带 eventId，也不展开 buckets。
+func (h *Handler) ReadHeatmap(ctx context.Context, orgID string, start, end time.Time) ([]byte, error) {
+	body, err := h.svc.Heatmap(ctx, orgID, start, end, "", false)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(body)
+}
+
 func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Identity {
 	if r.Method != http.MethodGet {
 		http.NotFound(w, r)

@@ -43,6 +43,7 @@
 | War Map 事件与新闻标记（Go-批5C） | 🔶 `API_GO_DASHBOARD_WAR_MAP_MODE=go` 时只有 `GET /api/dashboard/war-map/events` 与 `GET /api/dashboard/war-map/news-markers` 由 Go 读该组织的 AlertEvent、ProcessedArticle，并在 MySQL 新闻为空时回退 Mongo。日期不按 UTC 整日对齐。新闻标记含地理缓存、最多 3 次 Nominatim 和国家中心点回退。`translate=zh-CN` 走既有翻译配置，失败则省略中文字段。默认 `legacy`。layers、transport-detail、stream 不在此开关。回滚：`API_GO_DASHBOARD_WAR_MAP_MODE=legacy`。生产流量未切换。 |
 | War Map transport 与 layers（Go-批5D） | 🔶 `API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE` 与 `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE` 各自默认 `legacy`，只接管对应的一个精确 GET。transport-detail 读 Mongo 轨迹；layers 含静态图层、批5C 事件/新闻动态图层、Redis ADS-B/AIS 快照，以及受预算约束的 OpenSky viewport。不回调 NestJS，不启动采集 worker，不改 stream。spacetime 见批6A。回滚是把对应变量改回 `legacy`。生产流量未切换。 |
 | Dashboard Spacetime 热力图与传播图（Go-批6A） | 🔶 `API_GO_DASHBOARD_SPACETIME_GEO_MODE` 与 `API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE` 各自默认 `legacy`。打开后各接管一对精确 GET：热力图总览+下钻，或传播图总览+下钻。日期按 UTC 整日对齐。热力图 snapshot 与 NestJS 共用 Redis JSON。传播图返回节点和 duplicate/time 边。不接管 `/api/dashboard/stream`。回滚是把对应变量改回 `legacy`。外部地理解析未做实网验收。生产流量未切换。 |
+| Dashboard SSE 与认证版 healthz（Go-批6B） | 🔶 `API_GO_DASHBOARD_STREAM_MODE` 与 `API_GO_HEALTHZ_MODE` 各自默认 `legacy`。SSE 只接管精确 `GET /api/dashboard/stream`：连接时验签并重推导 `dashboards.read`，复用 War Map、K 线和热力图服务，按指纹发布变化。认证版 `GET /api/healthz` 接受人类 access token 和有效 `mtk_` 机器令牌，请求时执行七项探针。公开 `GET /api/healthz/live` 不变。未配置的 crawl4ai、SSRF proxy、LLM 如实失败。两个开关可分别改回 `legacy`。生产流量未切换。 |
 | api 单测基座（vitest） | ✅ 远端 CI 已验证（SEC-01 6/6 + API-01 4/4 + 扫描器语义/基线断言全绿） |
 
 余项（按序）：
