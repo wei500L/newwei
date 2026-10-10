@@ -156,6 +156,17 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 
 四条都要求重推导后的 `dashboards.read`。orgId 只来自 membership。日期按 UTC 整日对齐。MySQL 失败返回 500，不返回空数组。回滚：`API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy` 只交回热力图两条；`API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy` 只交回传播图两条。外部地理解析的实网调用不在本批验收范围内。
 
+### 1.8f Dashboard SSE 与认证版 healthz（Go-批6B）
+
+两个开关默认 `legacy`，互不影响。公开 `GET /api/healthz/live` 仍是 shadow。
+
+| 开关 | 路径 | 数据 |
+|---|---|---|
+| `API_GO_DASHBOARD_STREAM_MODE=go` | 精确 `GET /api/dashboard/stream`，以及合格 CORS 预检 | 连接时重推导 `dashboards.read` 和 orgId。War Map 事件、新闻、图层共用一次查询；K 线读 `EconomicDataItem`/`EconomicDataPoint`；热力图复用批6A 服务。首轮全量，之后按指纹只发变化 |
+| `API_GO_HEALTHZ_MODE=go` | 精确 `GET /api/healthz` | `@AllowAuthenticated()`：人类 access token，或有效 `mtk_` 机器令牌。请求时执行 MySQL、Redis、Mongo、crawl4ai、SSRF crawl、LLM 配置和磁盘七项探针。整份响应缓存 5 秒。失败为 HTTP 503，并保留 terminus 的 status/info/error/details 以及 version、now |
+
+机器令牌不因此获得 `dashboards.read` 或 user-settings。SEC-03 对 `/api/metrics` 的平台级限制不变。回滚：`API_GO_DASHBOARD_STREAM_MODE=legacy` 只交回 SSE；`API_GO_HEALTHZ_MODE=legacy` 只交回认证版健康检查。生产入口未切换。远端没有配置的 crawl4ai、SSRF proxy 或 LLM 应表现为失败，而不是七项全绿。
+
 ### 1.9 system-settings（98 个，26 个 controller）
 
 内部端点（服务间 token，非用户 JWT）：

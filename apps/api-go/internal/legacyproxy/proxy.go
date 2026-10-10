@@ -264,6 +264,29 @@ func WithDashboardSpacetimePropagation(rules []Rule, mode string) []Rule {
 	return appendExactGET(rules, "/api/dashboard/spacetime/propagation/articles")
 }
 
+// WithDashboardStream 只在 mode 为 go 时接管精确 GET /api/dashboard/stream，
+// 以及同一路径上符合 CORS 预检的 OPTIONS。其他方法和更长路径仍回 NestJS。
+func WithDashboardStream(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	return appendExactGET(rules, "/api/dashboard/stream")
+}
+
+// WithAuthenticatedHealth 只在 mode 为 go 时接管精确 GET /api/healthz。
+// 不接管 OPTIONS，也不接管 /api/healthz/live。
+func WithAuthenticatedHealth(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	return append(rules, Rule{
+		Prefix:  "/api/healthz",
+		Mode:    ModeGo,
+		Exact:   true,
+		Methods: map[string]bool{http.MethodGet: true},
+	})
+}
+
 func appendExactGET(rules []Rule, path string) []Rule {
 	getOnly := map[string]bool{http.MethodGet: true}
 	optionsOnly := map[string]bool{http.MethodOptions: true}

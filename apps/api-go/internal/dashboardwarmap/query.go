@@ -137,6 +137,18 @@ func (q warQuery) validation() string {
 	return strings.Join(parts, "; ")
 }
 
+// ResolveOpenRange 是 War Map 与 SSE 战争地图窗口，不按 UTC 整日对齐。
+func ResolveOpenRange(start, end string, startSet, endSet bool, now time.Time) (time.Time, time.Time, string) {
+	var query warQuery
+	if startSet {
+		query.start.add(start)
+	}
+	if endSet {
+		query.end.add(end)
+	}
+	return resolveInstant(query, now)
+}
+
 // resolveInstant 对齐 alignToUtcDay: false。缺省 end 是现在，缺省 start 是 end 往前 30 天。
 func resolveInstant(q warQuery, now time.Time) (time.Time, time.Time, string) {
 	var end time.Time
@@ -188,6 +200,16 @@ func parseTranslate(value string) bool {
 func parseCluster(value string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(value))
 	return normalized == "1" || normalized == "true" || normalized == "yes"
+}
+
+// ParseBBox 解析 minLng,minLat,maxLng,maxLat。非法范围返回 false，调用方省略该参数。
+func ParseBBox(value string) ([4]float64, bool) {
+	return parseBBox(value)
+}
+
+// ParseZoom 把缩放钳到 0.50–18.00，步长 0.01。
+func ParseZoom(value string) (float64, bool) {
+	return parseZoom(value)
 }
 
 func parseBBox(value string) ([4]float64, bool) {

@@ -98,6 +98,11 @@ func isISO8601(value string) bool {
 	return iso8601RE.MatchString(value)
 }
 
+// ResolveAlignedRange 是图表与 SSE 仪表盘窗口的 UTC 整日范围。
+func ResolveAlignedRange(start, end string, startSet, endSet bool, now time.Time) (time.Time, time.Time, string) {
+	return resolveRange(dashboardQuery{start: start, end: end, startSet: startSet, endSet: endSet}, now)
+}
+
 // resolveRange 对齐 DashboardChartsService.resolveRange，alignToUtcDay 默认为 true。
 // 缺省 end 是现在，缺省 start 是对齐前的 end 往前 30 天。
 // 返回的 message 非空时是 BadRequestException 的原文。

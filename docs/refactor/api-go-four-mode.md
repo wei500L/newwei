@@ -1,6 +1,6 @@
 # api-go 四态路由与首个迁移单元（shadow/canary 实现说明）
 
-> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补 · 2026-09-07 Go-批3B 增补 · 2026-09-26 Go-批3C 增补（六个 PUT，`API_GO_USER_SETTINGS_WRITE_MODE`，默认 legacy）· 2026-09-27 Go-批4A 增补（public-portal 首页与频道）· 2026-09-27 Go-批4B 增补（故事详情两个 GET，仍是 `API_GO_PUBLIC_PORTAL_MODE`，默认 legacy）· 2026-10-09 Go-批5A 增补（`GET /api/dashboard/stats`，`API_GO_DASHBOARD_STATS_MODE`，默认 legacy）· 2026-10-09 Go-批5B 增补（三个图表 GET，`API_GO_DASHBOARD_CHARTS_MODE`，默认 legacy）· 2026-10-10 Go-批6A 增补（Spacetime 热力图与传播图各一对 GET，两个独立开关，默认 legacy）
+> 2026-09-03 落地 · 2026-09-07 Go-批3A 增补 · 2026-09-07 Go-批3B 增补 · 2026-09-26 Go-批3C 增补（六个 PUT，`API_GO_USER_SETTINGS_WRITE_MODE`，默认 legacy）· 2026-09-27 Go-批4A 增补（public-portal 首页与频道）· 2026-09-27 Go-批4B 增补（故事详情两个 GET，仍是 `API_GO_PUBLIC_PORTAL_MODE`，默认 legacy）· 2026-10-09 Go-批5A 增补（`GET /api/dashboard/stats`，`API_GO_DASHBOARD_STATS_MODE`，默认 legacy）· 2026-10-09 Go-批5B 增补（三个图表 GET，`API_GO_DASHBOARD_CHARTS_MODE`，默认 legacy）· 2026-10-10 Go-批6A 增补（Spacetime 热力图与传播图各一对 GET，两个独立开关，默认 legacy）· 2026-10-10 Go-批6B 增补（`GET /api/dashboard/stream` 与认证版 `GET /api/healthz`，两个独立开关，默认 legacy）
 > 关联：docs/refactor/go-migration-adr.md §3/§4/§4.3、roadmap M2
 
 ---
@@ -48,7 +48,7 @@
 - **选择理由**（迁移序 2「低副作用只读端点」）：`@Public()`、无副作用、无依赖（不连 MySQL/Redis/Mongo）——NestJS 实现是纯常量返回（`health.controller.ts:75-84`，刻意不含版本/时间戳防泄露）。
 - **Go 实现**（`internal/health/handler.go`）：`{"status":"ok"}`、200、非 GET → 404（NestJS 只注册 GET）。shadow 差分执行者与 canary/go 模式 handler 是**同一实现**——差分通过即切换可信。
 - **不是 `/__go/healthz`**：那是网关自省端点，不属于业务迁移；本单元是真实业务端点 `/api/healthz/live` 的契约等价实现。
-- **迁移边界**：`GET /api/healthz`（AllowAuthenticated + 7 项真实依赖探针 + 5s 缓存）**未迁移**——需要数据库连接层，属后续单元；NestJS 实现保留为事实源。
+- **迁移边界**：认证版 `GET /api/healthz` 自 Go-批6B 起由 `API_GO_HEALTHZ_MODE` 单独控制，默认 `legacy`。`go` 时才由 Go 执行七项探针。公开 live 探针不随该开关变化。
 - **回滚**：路由表 `/api/healthz/live` 改回 `ModeLegacy`（单行配置）。
 
 ### 2.1 user-settings 只读域 go 接管（Go-批3A 首个端点 · Go-批3B 统一六端点）
@@ -76,4 +76,5 @@
 - War Map 事件与新闻标记（Go-批5C）：`API_GO_DASHBOARD_WAR_MAP_MODE=go` 时只接管 `GET /api/dashboard/war-map/events` 与 `GET /api/dashboard/war-map/news-markers`。默认 `legacy`。读 MySQL，新闻为空才回退 Mongo。地理与翻译沿用现有 Redis 缓存和 SystemSetting。回滚：`API_GO_DASHBOARD_WAR_MAP_MODE=legacy`。生产流量未切换
 - War Map transport 与 layers（Go-批5D）：`API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE` 和 `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE` 分开控制，默认 `legacy`。打开后只接管对应的精确 GET。layers 的 `flightMode=all` 遵守 OpenSky 预算。stream 仍是 NestJS。spacetime 见 Go-批6A。回滚是把对应变量改回 `legacy`。生产流量未切换
 - Dashboard Spacetime（Go-批6A）：`API_GO_DASHBOARD_SPACETIME_GEO_MODE` 与 `API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE` 分开控制，默认都是 `legacy`。打开后各接管一对精确 GET：热力图总览+文章下钻，或传播图总览+文章下钻。日期按 UTC 整日对齐。热力图 snapshot 与 NestJS 共用 Redis 格式。传播图包含 duplicate/time 边。`/api/dashboard/stream` 不在这两个开关里。回滚是把对应变量改回 `legacy`。生产流量未切换。外部地理解析没有实网验收
+- Dashboard SSE 与认证版 healthz（Go-批6B）：`API_GO_DASHBOARD_STREAM_MODE` 与 `API_GO_HEALTHZ_MODE` 分开控制，默认都是 `legacy`。SSE 是精确 GET 加合格预检，复用已有 War Map、K 线和热力图服务，按指纹增量发布。认证版 healthz 接受人类令牌和有效机器令牌，并在请求时跑七项探针。`/api/healthz/live` 仍是 shadow。任一开关改回 `legacy` 不影响另一条。生产流量未切换。未配置的 crawl4ai、SSRF proxy 和 LLM 如实失败
 - 本机按任务约束未运行 `go test`/`go vet`/`go build`；全部 Go 测试在远端 CI 执行

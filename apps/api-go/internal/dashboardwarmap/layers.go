@@ -13,19 +13,25 @@ import (
 var layersStamp = time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 
 func (s *Service) Layers(ctx context.Context, orgID string, start, end time.Time, opt viewOptions) (map[string]any, error) {
-	response := staticLayers()
-	if err := s.enrichFlights(ctx, response, orgID, opt); err != nil {
-		return nil, err
-	}
-	if err := s.enrichAIS(ctx, response, orgID, opt); err != nil {
-		return nil, err
-	}
 	events, err := s.Events(ctx, orgID, start, end, viewOptions{})
 	if err != nil {
 		return nil, err
 	}
 	markers, err := s.Markers(ctx, orgID, start, end, viewOptions{})
 	if err != nil {
+		return nil, err
+	}
+	return s.layersFrom(ctx, orgID, opt, events, markers)
+}
+
+// layersFrom 用已经取到的事件和新闻标记补动态图层。HTTP layers 仍先自己查询；
+// SSE 把同一次更新里的结果传进来，避免再查一遍。
+func (s *Service) layersFrom(ctx context.Context, orgID string, opt viewOptions, events eventsResponse, markers markersResponse) (map[string]any, error) {
+	response := staticLayers()
+	if err := s.enrichFlights(ctx, response, orgID, opt); err != nil {
+		return nil, err
+	}
+	if err := s.enrichAIS(ctx, response, orgID, opt); err != nil {
 		return nil, err
 	}
 	mergeRealtimeLayers(response, events.Events, markers.Markers)

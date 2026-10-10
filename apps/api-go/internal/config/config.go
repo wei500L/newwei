@@ -154,6 +154,25 @@ const (
 	DashboardSpacetimePropagationModeGo     DashboardSpacetimePropagationMode = "go"
 )
 
+// DashboardStreamMode 只控制 GET /api/dashboard/stream。默认 legacy。
+// 与图表、War Map、Spacetime 的 HTTP 开关互不影响；go 时复用那些服务，
+// 但不因此改写它们的路由。
+type DashboardStreamMode string
+
+const (
+	DashboardStreamModeLegacy DashboardStreamMode = "legacy"
+	DashboardStreamModeGo     DashboardStreamMode = "go"
+)
+
+// HealthzMode 只控制认证版 GET /api/healthz。默认 legacy。
+// 不改变公开 GET /api/healthz/live。
+type HealthzMode string
+
+const (
+	HealthzModeLegacy HealthzMode = "legacy"
+	HealthzModeGo     HealthzMode = "go"
+)
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -200,8 +219,24 @@ type Config struct {
 	// 热力图与传播图各自一对 GET。默认 legacy，互不影响。
 	DashboardSpacetimeGeoMode         DashboardSpacetimeGeoMode
 	DashboardSpacetimePropagationMode DashboardSpacetimePropagationMode
+	// DashboardStreamMode 见 DashboardStreamMode。默认 legacy。
+	// go 要求 JWT、MySQL、Redis、MONGO_URI。不要求 crawl4ai 或 LLM。
+	DashboardStreamMode DashboardStreamMode
+	// HealthzMode 见 HealthzMode。默认 legacy。
+	// go 只要求 JWT、MySQL、Redis，用来验签。Mongo、crawl4ai、SSRF 和 LLM
+	// 不是启动条件，只在认证请求到达时探测。
+	HealthzMode HealthzMode
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
+
+	// 认证版健康检查沿用 Nest 已有的 crawl / rerank 配置。空值表示未配置，
+	// 探针如实失败。URL 和密钥不进入日志或健康响应。
+	CrawlBaseURL             string
+	CrawlAPIKey              string
+	CrawlTimeoutMs           int
+	CrawlHealthTTLMs         int
+	CrawlSSRFProxyURL        string
+	ItemsSearchRerankEnabled bool
 
 	// OpenSky 运行配置与 Nest env.schema 的默认值一致，供 layers 的
 	// flightMode=all 读取。不在这里启动采集。
@@ -437,6 +472,28 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_STREAM_MODE")) {
+	case "", string(DashboardStreamModeLegacy):
+		cfg.DashboardStreamMode = DashboardStreamModeLegacy
+	case string(DashboardStreamModeGo):
+		cfg.DashboardStreamMode = DashboardStreamModeGo
+	default:
+		errs = append(errs, "API_GO_DASHBOARD_STREAM_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_HEALTHZ_MODE")) {
+	case "", string(HealthzModeLegacy):
+		cfg.HealthzMode = HealthzModeLegacy
+	case string(HealthzModeGo):
+		cfg.HealthzMode = HealthzModeGo
+	default:
+		errs = append(errs, "API_GO_HEALTHZ_MODE must be one of legacy|go")
+	}
+	cfg.CrawlBaseURL = strings.TrimRight(strings.TrimSpace(getenv("CRAWL4AI_BASE_URL")), "/")
+	cfg.CrawlAPIKey = strings.TrimSpace(getenv("CRAWL4AI_API_KEY"))
+	cfg.CrawlTimeoutMs = intDefault(getenv("CRAWL4AI_TIMEOUT_MS"), 120_000)
+	cfg.CrawlHealthTTLMs = intDefault(getenv("CRAWL4AI_HEALTH_CHECK_TTL_MS"), 60_000)
+	cfg.CrawlSSRFProxyURL = strings.TrimSpace(getenv("CRAWL4AI_SSRF_PROXY_URL"))
+	cfg.ItemsSearchRerankEnabled = boolDefault(getenv("ITEMS_SEARCH_RERANK_ENABLED"), true)
 	cfg.RealtimeSignalsEnabled = boolDefault(getenv("REALTIME_SIGNALS_ENABLED"), true)
 	cfg.RealtimeSignalsTimeoutMs = intDefault(getenv("REALTIME_SIGNALS_REQUEST_TIMEOUT_MS"), 12000)
 	cfg.OpenskyEnabled = boolDefault(getenv("REALTIME_SIGNALS_OPENSKY_ENABLED"), true)
@@ -695,6 +752,20 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.DashboardSpacetimePropagationMode == DashboardSpacetimePropagationModeGo {
 		appendSpacetimeRequirements(&errs, "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE", cfg)
+	}
+	if cfg.DashboardStreamMode == DashboardStreamModeGo {
+		appendSpacetimeRequirements(&errs, "API_GO_DASHBOARD_STREAM_MODE", cfg)
+	}
+	if cfg.HealthzMode == HealthzModeGo {
+		if cfg.JWTSecret == "" {
+			errs = append(errs, "JWT_SECRET is required when API_GO_HEALTHZ_MODE=go")
+		}
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_HEALTHZ_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_HEALTHZ_MODE=go")
+		}
 	}
 
 	if len(errs) > 0 {
