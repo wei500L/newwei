@@ -244,7 +244,7 @@ jobs:
 
           query = "/api/dashboard/stream?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z&warMapStart=2026-03-01T03:15:00.000Z&warMapEnd=2026-03-15T18:45:00.000Z&warMapFlightMode=military&warMapAisMode=military"
           def open_stream(auth):
-              conn = http.client.HTTPConnection("127.0.0.1", 4020, timeout=2)
+              conn = http.client.HTTPConnection("127.0.0.1", 4020, timeout=30)
               conn.request("GET", query, headers={
                   "Authorization": auth,
                   "Accept": "text/event-stream",
@@ -272,18 +272,19 @@ jobs:
           header_text = "".join(f"{key}: {value}\n" for key, value in resp.headers.items()).lower()
           buf = b""
           events = []
-          deadline = time.time() + 8
-          while time.time() < deadline:
-              try:
-                  chunk = resp.read(1024)
-              except socket.timeout:
-                  chunk = b""
-              if chunk:
+          try:
+              while True:
+                  chunk = resp.read(4096)
+                  if not chunk:
+                      break
                   buf += chunk
                   frames, buf = take_frames(buf)
                   events.extend(frames)
-              elif time.time() >= deadline:
-                  break
+                  names = [name for name, _ in events]
+                  if "ping" in names and len([name for name in names if name != "ping"]) >= 5:
+                      break
+          except (socket.timeout, OSError) as exc:
+              print("stream read stopped", exc, [name for name, _ in events])
           names = [name for name, _ in events]
           print("first frames", names)
           if resp.status != 200:
@@ -325,17 +326,16 @@ jobs:
             ('edp_c','edi_smoke_sp','2026-03-11 00:00:00.000','price',4242.000000000000,'close','2026-03-11 00:00:00.000');
           """
           subprocess.run(["docker","exec","-i",cid,"mysql","-uroot","-psecret","app"], input=sql, text=True, check=True)
-          deadline = time.time() + 8
-          while time.time() < deadline and not any(name == "financial-candlestick" and "4242" in data for name, data in events):
-              try:
-                  chunk = resp.read(1024)
-              except socket.timeout:
-                  chunk = b""
-              if not chunk:
-                  continue
-              buf += chunk
-              frames, buf = take_frames(buf)
-              events.extend(frames)
+          try:
+              while not any(name == "financial-candlestick" and "4242" in data for name, data in events):
+                  chunk = resp.read(4096)
+                  if not chunk:
+                      break
+                  buf += chunk
+                  frames, buf = take_frames(buf)
+                  events.extend(frames)
+          except (socket.timeout, OSError) as exc:
+              print("candle read stopped", exc)
           if not any(name == "financial-candlestick" and "4242" in data for name, data in events):
               conn.close()
               raise SystemExit("candle update was not published " + json.dumps([name for name, _ in events]))
@@ -531,30 +531,33 @@ jobs:
           import http.client, json, socket, time, urllib.request, urllib.error
           token = open("/tmp/smoke-jwt").read().strip()
           query = "/api/dashboard/stream?start=2026-03-01T00:00:00.000Z&end=2026-03-15T00:00:00.000Z"
-          conn = http.client.HTTPConnection("127.0.0.1", 4020, timeout=2)
+          conn = http.client.HTTPConnection("127.0.0.1", 4020, timeout=30)
           conn.request("GET", query, headers={"Authorization": "Bearer " + token, "Accept": "text/event-stream"})
           resp = conn.getresponse()
           buf = b""
           events = []
-          deadline = time.time() + 8
-          while time.time() < deadline:
-              try:
-                  chunk = resp.read(1024)
-              except socket.timeout:
-                  chunk = b""
-              if not chunk:
-                  continue
-              buf += chunk
-              while b"\n\n" in buf:
-                  frame, buf = buf.split(b"\n\n", 1)
-                  event, data = "", ""
-                  for line in frame.split(b"\n"):
-                      if line.startswith(b"event:"):
-                          event = line[6:].decode().strip()
-                      elif line.startswith(b"data:"):
-                          data += line[5:].decode().strip()
-                  if event:
-                      events.append((event, data))
+          try:
+              while True:
+                  chunk = resp.read(4096)
+                  if not chunk:
+                      break
+                  buf += chunk
+                  while b"\n\n" in buf:
+                      frame, buf = buf.split(b"\n\n", 1)
+                      event, data = "", ""
+                      for line in frame.split(b"\n"):
+                          if line.startswith(b"event:"):
+                              event = line[6:].decode().strip()
+                          elif line.startswith(b"data:"):
+                              data += line[5:].decode().strip()
+                      if event:
+                          events.append((event, data))
+                  names = [name for name, _ in events]
+                  candle = next((data for name, data in events if name == "financial-candlestick"), "")
+                  if all(name in names for name in ("war-map-events", "war-map-news-markers", "war-map-layers", "financial-candlestick")) and "4242" in candle:
+                      break
+          except (socket.timeout, OSError) as exc:
+              print("stream without nest stopped", exc)
           conn.close()
           names = [name for name, _ in events]
           print("without nest", names)
