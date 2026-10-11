@@ -396,6 +396,16 @@ pilot 注入 `go`。与 stats、charts 开关互不影响。生产入口不因�
 - **配置**：stream 的 `go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。healthz 的 `go` 只要求前三项。`MONGO_URI`、crawl4ai、SSRF proxy 和 LLM 都不是 api-go 启动条件，也不是 `/api/healthz/live` 的条件。
 - **回滚**：`API_GO_DASHBOARD_STREAM_MODE=legacy` 只交回 SSE。`API_GO_HEALTHZ_MODE=legacy` 只交回认证版健康检查。不新增表，不复制数据。
 
+### 4.14 新闻事件控制台 GraphQL 读（Go-批8）
+
+不新增开关。`API_GO_GRAPHQL_READ_MODE=go` 时，在已有精确 `/graphql` 执行器上再登记 6 个只读 root：`newsEvents`、`newsEvent`、`newsEventBrief`、`newsEventReferencedArticles`、`topicGroups`、`eventGroups`。默认仍是 `legacy`。选中的 query 里只要混入未登记 root 或未实现嵌套字段，整包回 NestJS。
+
+- **身份**：沿用 GraphQL 读试点的验签、Redis 撤销和 MySQL membership。`items.read` 从服务端重推导。组织隔离用这个 orgId。错组织的 `newsEvent` 返回 null。
+- **读路径**：列表、详情、引用文章和热度/权威统计读 MySQL。分组读 Mongo `processeditems`，并使用与 Nest 相同的 Redis 缓存键。热度和权威打分复用公开故事详情里已有的公式。
+- **简报**：只在 `metadata.briefV1` 的语言和指纹命中时返回。`forceRefresh` 或未命中不写空简报，按生产 Nest 的失败语义返回 internal error。本批不把真实模型调用当前置。
+- **留下**：`newsEventSourcePolicySyncStatus`、设置与来源策略、mutation、subscription、聚类、采集和邮件。
+- **回滚**：`API_GO_GRAPHQL_READ_MODE=legacy`。不改表，不改 Web URL 或 SDL。
+
 ## 5. 队列/cron/outbox 边界（红线）
 
 - 全部 BullMQ 队列、21 个 @Cron/@Interval、3 套 MongoOutbox 的**写入权在最终阶段前仅属 NestJS**——Go 侧提前双写会制造消息重复/顺序破坏

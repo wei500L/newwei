@@ -46,6 +46,7 @@
 | Dashboard SSE 与认证版 healthz（Go-批6B） | 🔶 `API_GO_DASHBOARD_STREAM_MODE` 与 `API_GO_HEALTHZ_MODE` 各自默认 `legacy`。SSE 只接管精确 `GET /api/dashboard/stream`：连接时验签并重推导 `dashboards.read`，复用 War Map、K 线和热力图服务，按指纹发布变化。认证版 `GET /api/healthz` 接受人类 access token 和有效 `mtk_` 机器令牌，请求时执行七项探针。公开 `GET /api/healthz/live` 不变。未配置的 crawl4ai、SSRF proxy、LLM 如实失败。两个开关可分别改回 `legacy`。生产流量未切换。 |
 | 个人内容订阅、行为画像与每日摘要（Go-批7） | 🔶 `API_GO_CONTENT_SUBSCRIPTIONS_MODE`、`API_GO_USER_NEWS_BEHAVIOR_MODE`、`API_GO_USER_DIGEST_MODE` 各自默认 `legacy`，只切换对应 HTTP。权限仍是 `items.read`。内部订阅、目录和画像调用不看另外两个 HTTP 开关。不启动邮件 Cron。生产流量未切换。说明见 `docs/refactor/go-personal-news-workspace.md`。 |
 | 分析工作台协作（Go） | 🔶 `API_GO_ANALYSIS_VIEWS_MODE`、`API_GO_ANALYSIS_BOARDS_MODE`、`API_GO_ANALYSIS_THREADS_MODE` 各自默认 `legacy`。23 条视图、看板/列/任务、笔记/评论由 Go 执行；`GET` 看板会创建默认看板。三条 `POST /api/analysis/exports/*`、GraphQL、worker 与邮件 Cron 仍是 NestJS。锁协议是 Org 行、看板行、视图行，Go 与 Nest 共用。生产流量未切换。说明见 `docs/refactor/go-analysis-collaboration.md`。 |
+| 新闻事件控制台 GraphQL 读（Go-批8） | 🔶 沿用 `API_GO_GRAPHQL_READ_MODE`，默认 `legacy`。`go` 时 `newsEvents`、`newsEvent`、`newsEventBrief`、`newsEventReferencedArticles`、`topicGroups`、`eventGroups` 并入已有整包归属。权限是重推导的 `items.read`。简报只迁缓存命中；未命中或 `forceRefresh` 返回 internal error，不返回空简报。来源策略同步、设置、mutation、订阅、聚类和采集仍在 NestJS。回滚只改 `API_GO_GRAPHQL_READ_MODE=legacy`。生产入口未切换。说明见 `docs/refactor/go-news-events-read.md`。 |
 | api 单测基座（vitest） | ✅ 远端 CI 已验证（SEC-01 6/6 + API-01 4/4 + 扫描器语义/基线断言全绿） |
 
 余项（按序）：

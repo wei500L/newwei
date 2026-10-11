@@ -226,7 +226,7 @@ archive-preparation · assistant-quota · assistant-safety(+diagnostics/metrics)
 | knowledge-graph | getSubgraph · articleEntityLinks · edgeEvidence | — | — | dashboards.read / items.read |
 | knowledge-graph-impact | getExecutiveChange/CommodityMove/PolicyEventImpact | — | — | dashboards.read |
 | knowledge-graph-review | evidenceReviewQueue | reviewEvidence | — | settings.manage **或** knowledgegraph.review |
-| news-events | sourcePolicySyncStatus/newsEvents/newsEvent/Brief/ReferencedArticles | — | — | items.read |
+| news-events | sourcePolicySyncStatus/newsEvents/newsEvent/Brief/ReferencedArticles。Go-批8：`API_GO_GRAPHQL_READ_MODE=go` 时后四项由 Go 读；sourcePolicySyncStatus 仍在 NestJS。简报只迁缓存命中 | — | — | items.read |
 | news-indicator | associations/:id | refresh | — | dashboards.read / settings.manage |
 | notification | notifications/unreadCount | markRead/markAllRead | — | @AllowAuthenticated |
 | org | myOrganizations | createOrg/updateOrg/setOrgActive | — | myOrganizations @AllowAuthenticated；其余 org.write |
@@ -234,7 +234,7 @@ archive-preparation · assistant-quota · assistant-safety(+diagnostics/metrics)
 | rbac | roles/permissions/memberships | createRole/assignRole/updateRole | — | roles/users 读写 |
 | sentiment | entitySentimentSeries/topicSentimentSeries | — | — | dashboards.read |
 | settings | 16 个设置读取 | 16 个对应 update | — | 绝大多数 settings.manage；entityImpactGraph/knowledgeGraph/newsEvent/newsIndicator 的 GET 为 dashboards.read |
-| topics | topicGroups/eventGroups | — | — | items.read |
+| topics | topicGroups/eventGroups。Go-批8：`API_GO_GRAPHQL_READ_MODE=go` 时这两个 root 由 Go 读 Mongo | — | — | items.read |
 | user | me(@AllowAuthenticated)/users/userLoginRecords | updateMembershipRoles/setUserActive | — | users.read/write |
 
 ## 3. WebSocket 契约（6 个 Socket.IO gateway）

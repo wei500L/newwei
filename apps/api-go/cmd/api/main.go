@@ -88,6 +88,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
@@ -1035,6 +1036,7 @@ func run() error {
 		alerts.Register(reg, sharedDB)
 		history.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
 		economic.Register(reg, sharedDB)
+		newsevents.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1055,7 +1057,7 @@ func run() error {
 		graphqlHandler = handler
 		gateway.RegisterGoHandler(graphqlread.Path, graphqlHandler.ServeHTTP)
 		gateway.RegisterGoHandler(graphqlread.StatsPath, graphqlHandler.ServeStats)
-		log.Printf("api-go: GraphQL read pilot under go (16 queries; mutations and other queries stay on NestJS)")
+		log.Printf("api-go: GraphQL read under go (16 pilot queries plus 6 news-event reads; mutations and other queries stay on NestJS)")
 	}
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
