@@ -1256,3 +1256,67 @@ func TestStreamAndHealthzSwitchesAreIndependent(t *testing.T) {
 	assertBody(healthOnly, http.MethodGet, "/api/healthz/live", "legacy")
 	assertBody(healthOnly, http.MethodGet, "/api/dashboard/stream", "legacy")
 }
+
+func TestPersonalNewsSwitchesAreIndependent(t *testing.T) {
+	stub := newLegacyStub(t)
+	base := DefaultRulesWithWrite(ModeShadow, "", "")
+	subscriptions, err := New(stub.server.URL, WithContentSubscriptions(append([]Rule{}, base...), string(ModeGo)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	behavior, err := New(stub.server.URL, WithUserNewsBehavior(append([]Rule{}, base...), string(ModeGo)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := New(stub.server.URL, WithUserDigest(append([]Rule{}, base...), string(ModeGo)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	register := func(gateway *Gateway, marker string, paths ...string) {
+		for _, path := range paths {
+			gateway.RegisterGoHandler(path, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(marker))
+			})
+		}
+	}
+	register(subscriptions, "go-subs",
+		"/api/user-content-subscriptions",
+		"/api/user-content-subscriptions/batch-upsert",
+		"/api/user-content-subscriptions/batch-delete",
+		"/api/user-content-subscriptions/catalog",
+		"/api/user-content-subscriptions/recommendations",
+		"/api/user-content-subscriptions/catalog/lookup",
+		"/api/user-content-subscriptions/related-topics",
+	)
+	register(behavior, "go-behavior", "/api/user-news-behavior", "/api/user-news-behavior/profile")
+	register(digest, "go-digest", "/api/user-digest", "/api/user-digest/preference", "/api/user-digest/delivery")
+	assertBody := func(gateway *Gateway, method, path, want string) {
+		t.Helper()
+		res := httptest.NewRecorder()
+		gateway.ServeHTTP(res, httptest.NewRequest(method, "http://gateway"+path, nil))
+		if !strings.Contains(res.Body.String(), want) {
+			t.Fatalf("%s %s body=%s want %s", method, path, res.Body.String(), want)
+		}
+	}
+	assertBody(subscriptions, http.MethodGet, "/api/user-content-subscriptions", "go-subs")
+	assertBody(subscriptions, http.MethodPost, "/api/user-content-subscriptions/batch-upsert", "go-subs")
+	assertBody(subscriptions, http.MethodPost, "/api/user-content-subscriptions/catalog/lookup", "go-subs")
+	assertBody(subscriptions, http.MethodGet, "/api/user-content-subscriptions/related-topics", "go-subs")
+	assertBody(subscriptions, http.MethodPut, "/api/user-content-subscriptions", "legacy")
+	assertBody(subscriptions, http.MethodGet, "/api/user-content-subscriptions/extra", "legacy")
+	assertBody(subscriptions, http.MethodGet, "/api/user-news-behavior/profile", "legacy")
+	assertBody(subscriptions, http.MethodGet, "/api/user-digest", "legacy")
+	assertBody(behavior, http.MethodPost, "/api/user-news-behavior", "go-behavior")
+	assertBody(behavior, http.MethodGet, "/api/user-news-behavior/profile", "go-behavior")
+	assertBody(behavior, http.MethodDelete, "/api/user-news-behavior/profile", "go-behavior")
+	assertBody(behavior, http.MethodPut, "/api/user-news-behavior/profile", "legacy")
+	assertBody(behavior, http.MethodGet, "/api/user-news-behavior", "legacy")
+	assertBody(behavior, http.MethodPost, "/api/user-content-subscriptions/batch-upsert", "legacy")
+	assertBody(digest, http.MethodGet, "/api/user-digest", "go-digest")
+	assertBody(digest, http.MethodPut, "/api/user-digest/preference", "go-digest")
+	assertBody(digest, http.MethodGet, "/api/user-digest/delivery", "go-digest")
+	assertBody(digest, http.MethodPost, "/api/user-digest", "legacy")
+	assertBody(digest, http.MethodGet, "/api/user-digest/preference/extra", "legacy")
+	assertBody(digest, http.MethodGet, "/api/user-news-behavior/profile", "legacy")
+	assertBody(digest, http.MethodGet, "/api/user-content-subscriptions/catalog", "legacy")
+}

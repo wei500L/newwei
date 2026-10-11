@@ -629,3 +629,61 @@ func TestStreamAndHealthzModesAreIndependent(t *testing.T) {
 		t.Fatalf("invalid healthz mode: %v", err)
 	}
 }
+
+func TestPersonalNewsModesAreIndependent(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ContentSubscriptionsMode != ContentSubscriptionsModeLegacy ||
+		cfg.UserNewsBehaviorMode != UserNewsBehaviorModeLegacy ||
+		cfg.UserDigestMode != UserDigestModeLegacy {
+		t.Fatalf("subs=%s behavior=%s digest=%s", cfg.ContentSubscriptionsMode, cfg.UserNewsBehaviorMode, cfg.UserDigestMode)
+	}
+	_, err = Load(func(key string) string {
+		if key == "API_GO_USER_NEWS_BEHAVIOR_MODE" {
+			return "go"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_USER_NEWS_BEHAVIOR_MODE=go") || strings.Contains(err.Error(), "MONGO_URI") {
+		t.Fatalf("behavior dependencies: %v", err)
+	}
+	_, err = Load(func(key string) string {
+		switch key {
+		case "API_GO_CONTENT_SUBSCRIPTIONS_MODE":
+			return "go"
+		case "JWT_SECRET", "DATABASE_URL", "REDIS_HOST":
+			return "set"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_CONTENT_SUBSCRIPTIONS_MODE=go") {
+		t.Fatalf("subscription dependencies: %v", err)
+	}
+	cfg, err = Load(func(key string) string {
+		switch key {
+		case "API_GO_USER_DIGEST_MODE":
+			return "go"
+		case "API_GO_CONTENT_SUBSCRIPTIONS_MODE", "API_GO_USER_NEWS_BEHAVIOR_MODE":
+			return "legacy"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://mongo:27017/app"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.UserDigestMode != UserDigestModeGo || cfg.ContentSubscriptionsMode != ContentSubscriptionsModeLegacy || cfg.UserNewsBehaviorMode != UserNewsBehaviorModeLegacy {
+		t.Fatalf("digest=%s subs=%s behavior=%s", cfg.UserDigestMode, cfg.ContentSubscriptionsMode, cfg.UserNewsBehaviorMode)
+	}
+}

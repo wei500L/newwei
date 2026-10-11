@@ -173,6 +173,33 @@ const (
 	HealthzModeGo     HealthzMode = "go"
 )
 
+// ContentSubscriptionsMode 只控制内容订阅 7 条精确 HTTP。默认 legacy。
+// 不决定摘要服务能否在进程内调用 Go 订阅查询。
+type ContentSubscriptionsMode string
+
+const (
+	ContentSubscriptionsModeLegacy ContentSubscriptionsMode = "legacy"
+	ContentSubscriptionsModeGo     ContentSubscriptionsMode = "go"
+)
+
+// UserNewsBehaviorMode 只控制行为记录、画像读取和清空 3 条精确 HTTP。
+// 默认 legacy。推荐在订阅 HTTP 为 go 时仍直接调用 Go 画像服务。
+type UserNewsBehaviorMode string
+
+const (
+	UserNewsBehaviorModeLegacy UserNewsBehaviorMode = "legacy"
+	UserNewsBehaviorModeGo     UserNewsBehaviorMode = "go"
+)
+
+// UserDigestMode 只控制摘要偏好、每日摘要和投递设置 5 条精确 HTTP。
+// 默认 legacy。不启动邮件调度。
+type UserDigestMode string
+
+const (
+	UserDigestModeLegacy UserDigestMode = "legacy"
+	UserDigestModeGo     UserDigestMode = "go"
+)
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -226,6 +253,12 @@ type Config struct {
 	// go 只要求 JWT、MySQL、Redis，用来验签。Mongo、crawl4ai、SSRF 和 LLM
 	// 不是启动条件，只在认证请求到达时探测。
 	HealthzMode HealthzMode
+	// 三个个人内容域的 HTTP 开关，彼此独立，默认都是 legacy。
+	// 订阅与摘要的 go 模式需要 Mongo（目录候选或相关内容回退）。
+	// 行为 go 模式不需要 Mongo。ES、embedding 凭据和 SMTP 都不是启动条件。
+	ContentSubscriptionsMode ContentSubscriptionsMode
+	UserNewsBehaviorMode     UserNewsBehaviorMode
+	UserDigestMode           UserDigestMode
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
 
@@ -240,20 +273,20 @@ type Config struct {
 
 	// OpenSky 运行配置与 Nest env.schema 的默认值一致，供 layers 的
 	// flightMode=all 读取。不在这里启动采集。
-	RealtimeSignalsEnabled          bool
-	RealtimeSignalsTimeoutMs        int
-	OpenskyEnabled                  bool
-	OpenskyDailyCreditBudget        int
-	OpenskyDayIntervalSec           int
-	OpenskyNightIntervalSec         int
-	OpenskyDayStartHourHKT          int
-	OpenskyNightStartHourHKT        int
-	OpenskyWarningRemainingPct      int
-	OpenskyCriticalRemainingPct     int
-	OpenskyBaseURL                  string
-	OpenskyTokenURL                 string
-	OpenskyClientID                 string
-	OpenskyClientSecret             string
+	RealtimeSignalsEnabled      bool
+	RealtimeSignalsTimeoutMs    int
+	OpenskyEnabled              bool
+	OpenskyDailyCreditBudget    int
+	OpenskyDayIntervalSec       int
+	OpenskyNightIntervalSec     int
+	OpenskyDayStartHourHKT      int
+	OpenskyNightStartHourHKT    int
+	OpenskyWarningRemainingPct  int
+	OpenskyCriticalRemainingPct int
+	OpenskyBaseURL              string
+	OpenskyTokenURL             string
+	OpenskyClientID             string
+	OpenskyClientSecret         string
 
 	NominatimBaseURL           string
 	NominatimUserAgent         string
@@ -487,6 +520,30 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.HealthzMode = HealthzModeGo
 	default:
 		errs = append(errs, "API_GO_HEALTHZ_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CONTENT_SUBSCRIPTIONS_MODE")) {
+	case "", string(ContentSubscriptionsModeLegacy):
+		cfg.ContentSubscriptionsMode = ContentSubscriptionsModeLegacy
+	case string(ContentSubscriptionsModeGo):
+		cfg.ContentSubscriptionsMode = ContentSubscriptionsModeGo
+	default:
+		errs = append(errs, "API_GO_CONTENT_SUBSCRIPTIONS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_USER_NEWS_BEHAVIOR_MODE")) {
+	case "", string(UserNewsBehaviorModeLegacy):
+		cfg.UserNewsBehaviorMode = UserNewsBehaviorModeLegacy
+	case string(UserNewsBehaviorModeGo):
+		cfg.UserNewsBehaviorMode = UserNewsBehaviorModeGo
+	default:
+		errs = append(errs, "API_GO_USER_NEWS_BEHAVIOR_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_USER_DIGEST_MODE")) {
+	case "", string(UserDigestModeLegacy):
+		cfg.UserDigestMode = UserDigestModeLegacy
+	case string(UserDigestModeGo):
+		cfg.UserDigestMode = UserDigestModeGo
+	default:
+		errs = append(errs, "API_GO_USER_DIGEST_MODE must be one of legacy|go")
 	}
 	cfg.CrawlBaseURL = strings.TrimRight(strings.TrimSpace(getenv("CRAWL4AI_BASE_URL")), "/")
 	cfg.CrawlAPIKey = strings.TrimSpace(getenv("CRAWL4AI_API_KEY"))
@@ -767,11 +824,38 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, "REDIS_HOST is required when API_GO_HEALTHZ_MODE=go")
 		}
 	}
+	if cfg.UserNewsBehaviorMode == UserNewsBehaviorModeGo {
+		appendAuthRequirements(&errs, "API_GO_USER_NEWS_BEHAVIOR_MODE", cfg)
+	}
+	if cfg.ContentSubscriptionsMode == ContentSubscriptionsModeGo {
+		appendAuthRequirements(&errs, "API_GO_CONTENT_SUBSCRIPTIONS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CONTENT_SUBSCRIPTIONS_MODE=go")
+		}
+	}
+	if cfg.UserDigestMode == UserDigestModeGo {
+		appendAuthRequirements(&errs, "API_GO_USER_DIGEST_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_USER_DIGEST_MODE=go")
+		}
+	}
 
 	if len(errs) > 0 {
 		return Config{}, errors.New(strings.Join(errs, "; "))
 	}
 	return cfg, nil
+}
+
+func appendAuthRequirements(errs *[]string, name string, cfg Config) {
+	if cfg.JWTSecret == "" {
+		*errs = append(*errs, "JWT_SECRET is required when "+name+"=go")
+	}
+	if cfg.DatabaseURL == "" {
+		*errs = append(*errs, "DATABASE_URL is required when "+name+"=go")
+	}
+	if cfg.RedisHost == "" {
+		*errs = append(*errs, "REDIS_HOST is required when "+name+"=go")
+	}
 }
 
 func appendSpacetimeRequirements(errs *[]string, name string, cfg Config) {

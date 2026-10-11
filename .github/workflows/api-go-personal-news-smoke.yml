@@ -1,0 +1,587 @@
+# Go-批7：个人订阅、行为画像、每日摘要与投递设置的真实栈验收。
+# 不进普通 CI。PR 上加 label api-go-personal-news-smoke，或 workflow_dispatch。
+# 不发送邮件，不调用实网 embedding/rerank，Elasticsearch 保持关闭。
+name: api-go-personal-news-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-personal-news-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-smoke@example.com
+  SMTP_PASS: api-go-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-smoke-org
+  SEED_ORG_NAME: api-go Smoke Org
+  SEED_ADMIN_EMAIL: api-go-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoSmoke#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-personal-news-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-personal-news-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-personal:ci .
+      - name: Start api-go
+        run: |
+          set -euo pipefail
+          start_go() {
+            local behavior_mode="$1"
+            docker rm -f api-go-personal >/dev/null 2>&1 || true
+            docker run -d --name api-go-personal \
+              --add-host=host.docker.internal:host-gateway \
+              --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s \
+              -p 127.0.0.1:4020:4020 \
+              -e PORT=4020 \
+              -e LEGACY_API_URL=http://host.docker.internal:4000 \
+              -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+              -e MONGO_URI=mongodb://host.docker.internal:27017/app \
+              -e API_GO_CONTENT_SUBSCRIPTIONS_MODE=go \
+              -e API_GO_USER_NEWS_BEHAVIOR_MODE="$behavior_mode" \
+              -e API_GO_USER_DIGEST_MODE=go \
+              -e API_GO_DASHBOARD_STATS_MODE=legacy \
+              -e API_GO_DASHBOARD_CHARTS_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy \
+              -e API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy \
+              -e API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy \
+              -e API_GO_DASHBOARD_STREAM_MODE=legacy \
+              -e API_GO_HEALTHZ_MODE=legacy \
+              -e REALTIME_SIGNALS_ENABLED=false \
+              -e ELASTICSEARCH_ENABLED=false \
+              -e CRAWL4AI_BASE_URL=http://host.docker.internal:11235 \
+              -e JWT_SECRET="$JWT_SECRET" \
+              -e JWT_ISSUER="$JWT_ISSUER" \
+              -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+              -e REDIS_HOST=host.docker.internal \
+              -e REDIS_PORT=6379 \
+              -e CANARY_PERCENT=0 \
+              -e CORS_ORIGIN="$CORS_ORIGIN" \
+              api-go-personal:ci
+            for i in $(seq 1 30); do
+              status=$(docker inspect --format '{{.State.Health.Status}}' api-go-personal 2>/dev/null || echo starting)
+              echo "health=$status behavior=$behavior_mode"
+              if [ "$status" = "healthy" ]; then return 0; fi
+              if [ "$status" = "unhealthy" ]; then docker logs api-go-personal; return 1; fi
+              sleep 2
+            done
+            docker logs api-go-personal || true
+            return 1
+          }
+          start_go go
+          declare -f start_go > /tmp/start-go.sh
+      - name: Seed two users, another org, and digest fixtures
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, subprocess
+          cid = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=mysql:8.4"], text=True).split()[0]
+          def sql(statement):
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "app"], input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  raise SystemExit(proc.stderr or proc.stdout)
+              return proc.stdout
+          def scalar(statement):
+              return sql(statement).strip().splitlines()[-1].strip()
+          org = scalar("SELECT id FROM Org WHERE slug='api-go-smoke-org'")
+          admin = scalar("SELECT id FROM User WHERE email='api-go-smoke-admin@example.com'")
+          role = scalar(f"SELECT roleId FROM Membership WHERE userId='{admin}' AND orgId='{org}'")
+          sql(f"""
+          UPDATE User SET emailVerified = NOW(3) WHERE id = '{admin}';
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, createdAt, updatedAt)
+          SELECT 'cbatch7userb0000000000001', 'batch7-b@example.com', passwordHash, 'Batch', 'Bee', 1, NOW(3), NOW(3)
+          FROM User WHERE id = '{admin}';
+          INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+          VALUES ('cbatch7membb0000000000001', 'cbatch7userb0000000000001', '{org}', '{role}', 1, NOW(3));
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt)
+          VALUES ('cbatch7orgother00000000001', 'Batch7 Other', 'batch7-other-org', 1, NOW(3), NOW(3));
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, createdAt, updatedAt)
+          SELECT 'cbatch7usero0000000000001', 'batch7-other@example.com', passwordHash, 'Other', 'Org', 1, NOW(3), NOW(3)
+          FROM User WHERE id = '{admin}';
+          INSERT INTO UserContentSubscription
+            (id, orgId, userId, kind, normalizedValue, displayValue, source, createdAt, updatedAt)
+          VALUES
+            ('cbatch7subother0000000001', 'cbatch7orgother00000000001', 'cbatch7usero0000000000001',
+             'topic', 'other-org-secret', 'other-org-secret', 'manual', NOW(3), NOW(3));
+          INSERT INTO UserSetting (id, orgId, userId, `key`, value, createdAt, updatedAt)
+          VALUES ('cbatch7setb00000000000001', '{org}', 'cbatch7userb0000000000001',
+                  'ai:digest:preference:v1',
+                  CAST('{{\"focusTopics\":[\"legacy-topic-b\"],\"focusEntities\":[]}}' AS JSON),
+                  NOW(3), NOW(3));
+          INSERT INTO UserNewsSimilaritySnapshot (id, orgId, userId, dirty, createdAt, updatedAt)
+          VALUES
+            ('cbatch7snapb0000000000001', '{org}', 'cbatch7userb0000000000001', 0, NOW(3), NOW(3)),
+            ('cbatch7snapo0000000000001', 'cbatch7orgother00000000001', 'cbatch7usero0000000000001', 0, NOW(3), NOW(3));
+          INSERT INTO NewsSource
+            (id, orgId, name, url, siteType, workflowBindingMode, frequencySeconds, priority, isActive, consecutiveFailures, createdAt, updatedAt)
+          VALUES
+            ('cbatch7src000000000000001', '{org}', 'Batch7 Source', 'https://batch7.example/feed',
+             'general', 'published', 3600, 0, 1, 0, NOW(3), NOW(3));
+          INSERT INTO Article (id, orgId, sourceId, url, crawlAt, contentHash, version, createdAt, updatedAt)
+          VALUES ('cbatch7art000000000000001', '{org}', 'cbatch7src000000000000001',
+                  'https://batch7.example/story', NOW(3), 'batch7-hash', 1, NOW(3), NOW(3));
+          INSERT INTO ProcessedArticle (id, orgId, articleId, status, title, createdAt, processedAt, updatedAt)
+          VALUES ('cbatch7pa0000000000000001', '{org}', 'cbatch7art000000000000001', 'completed',
+                  'Batch7 story', NOW(3), NOW(3), NOW(3));
+          INSERT INTO NewsEvent
+            (id, orgId, status, primaryTopic, title, summary, startAt, lastAt, representativeProcessedArticleId, createdAt, updatedAt)
+          VALUES ('cbatch7evt000000000000001', '{org}', 'active', 'batch7-sent-topic', 'Batch7 event',
+                  'source matched', NOW(3), NOW(3), 'cbatch7pa0000000000000001', NOW(3), NOW(3));
+          INSERT INTO NewsEventItem (id, orgId, eventId, processedArticleId, assignedBy, createdAt)
+          VALUES ('cbatch7nei000000000000001', '{org}', 'cbatch7evt000000000000001',
+                  'cbatch7pa0000000000000001', 'overlap', NOW(3));
+          INSERT INTO TopicSentimentSnapshot
+            (id, orgId, topic, bucketStart, totalDocs, negativeDocs, positiveDocs, neutralDocs, scoreSum, avgScore, negativeRatio, createdAt, updatedAt)
+          VALUES ('cbatch7sent00000000000001', '{org}', 'batch7-sent-topic', NOW(3), 4, 1, 2, 1, 3, 0.75, 0.25, NOW(3), NOW(3));
+          INSERT INTO EconomicDataItem
+            (id, slug, displayName, sourceFunction, sourceEndpoint, valueType, defaultFrequency, isActive, createdAt, updatedAt)
+          VALUES ('cbatch7econ00000000000001', 'batch7-smoke-indicator', 'Batch7 indicator',
+                  'smoke', '/smoke', 'price', 'daily', 1, NOW(3), NOW(3));
+          INSERT INTO NewsIndicatorAssociation
+            (id, orgId, scopeType, scopeKey, scopeKeyType, featureMetric, indicatorItemId, windowDays, lagDays,
+             correlation, sampleSize, analyzedStartAt, analyzedEndAt, lastEvaluatedAt, createdAt, updatedAt)
+          VALUES ('cbatch7assoc0000000000001', '{org}', 'topic', 'batch7-sent-topic', '', 'volume',
+                  'cbatch7econ00000000000001', 7, 0, 0.42, 12, NOW(3), NOW(3), NOW(3), NOW(3), NOW(3));
+          INSERT INTO NewsIndicatorAssociationBacktestRun
+            (id, orgId, associationId, status, windowStart, windowEnd, metrics, createdAt, updatedAt)
+          VALUES ('cbatch7bt0000000000000001', '{org}', 'cbatch7assoc0000000000001', 'completed',
+                  NOW(3), NOW(3), CAST('{{\"hitRate\":0.5}}' AS JSON), NOW(3), NOW(3));
+          """)
+          rows = []
+          for n in range(1, 50):
+              value = f"topic-cap-{n:02d}"
+              rows.append(
+                  "('cbatch7t{0:02d}000000000000000','{1}','{2}','topic','{3}','{3}','manual',NOW(3),NOW(3))".format(
+                      n, org, admin, value
+                  )
+              )
+          sql(
+              "INSERT INTO UserContentSubscription "
+              "(id, orgId, userId, kind, normalizedValue, displayValue, source, createdAt, updatedAt) VALUES "
+              + ",".join(rows) + ";"
+          )
+          open("/tmp/batch7-ids.json","w").write(json.dumps({"org": org, "admin": admin, "mysql": cid}))
+          print("fixtures ready", org, admin)
+          PY
+      - name: Exercise subscription, behavior, digest, and delivery
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, os, subprocess, urllib.error, urllib.parse, urllib.request
+          from concurrent.futures import ThreadPoolExecutor
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+
+          ids = json.load(open("/tmp/batch7-ids.json"))
+          org, admin, cid = ids["org"], ids["admin"], ids["mysql"]
+          go = "http://127.0.0.1:4020"
+          nest = "http://127.0.0.1:4000"
+
+          def sql(statement):
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"], input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  raise SystemExit(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def login(email):
+              body = json.dumps({"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]}).encode()
+              req = urllib.request.Request(go + "/api/auth/login", data=body, method="POST", headers={"content-type": "application/json"})
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  return json.load(resp)["accessToken"]
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=120):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read(), resp.headers
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read(), exc.headers
+
+          def body(raw):
+              if not raw:
+                  return None
+              return json.loads(raw)
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          admin_token = login(os.environ["SEED_ADMIN_EMAIL"])
+          user_b = login("batch7-b@example.com")
+          open("/tmp/smoke-jwt", "w").write(admin_token)
+          open("/tmp/smoke-jwt-b", "w").write(user_b)
+
+          def upsert(token, value):
+              status, raw, _ = call(go, "/api/user-content-subscriptions/batch-upsert", "POST", token, {
+                  "subscriptions": [{"kind": "topic", "value": value, "source": "manual"}]
+              })
+              return status, body(raw)
+
+          with ThreadPoolExecutor(max_workers=2) as pool:
+              results = list(pool.map(lambda value: upsert(admin_token, value), ["topic-cap-new-a", "topic-cap-new-b"]))
+          statuses = []
+          for status, doc in results:
+              if status != 201 or not doc:
+                  fail(f"concurrent upsert {status} {doc}")
+              statuses.append(doc["items"][0]["status"])
+          if sorted(statuses) != ["limit_reached", "subscribed"]:
+              fail(f"cap race statuses {statuses}")
+          topic_count = int(sql(f"SELECT COUNT(*) FROM UserContentSubscription WHERE orgId='{org}' AND userId='{admin}' AND kind='topic'"))
+          if topic_count != 50:
+              fail(f"topic count after race is {topic_count}")
+          print("cap race held at 50")
+
+          sql(f"""
+          INSERT INTO SituationMonitorMonitor
+            (id, orgId, userId, kind, name, enabled, rawKeywords, approvedTopics, approvedEntities, approvedLexicalTerms, createdAt, updatedAt)
+          VALUES ('cbatch7mon000000000000001', '{org}', '{admin}', 'manual', 'Batch7 monitor', 1,
+                  CAST('[]' AS JSON), CAST('[\"batch7-owned-topic\"]' AS JSON), CAST('[]' AS JSON), CAST('[]' AS JSON),
+                  NOW(3), NOW(3));
+          """)
+          status, raw, headers = call(go, "/api/user-content-subscriptions", "GET", admin_token)
+          listed = body(raw)
+          if status != 200 or not listed:
+              fail(f"list {status} {raw[:400]!r}")
+          owned = [item for item in listed["items"] if item.get("normalizedValue") == "batch7-owned-topic"]
+          if not owned or not owned[0].get("manualMonitorOwned") or not owned[0].get("ownerMonitorIds"):
+              fail(f"monitor ownership missing {owned}")
+          if "other-org-secret" in json.dumps(listed):
+              fail("other org subscription leaked into the list")
+          sync_count = int(sql(f"SELECT COUNT(*) FROM SituationMonitorMonitor WHERE orgId='{org}' AND userId='{admin}' AND kind='system_sync'"))
+          if sync_count < 1:
+              fail("system_sync monitor was not reconciled")
+          print("monitor reconciliation ok", "counts", listed["counts"])
+
+          status, raw, _ = call(go, "/api/user-content-subscriptions", "GET", user_b)
+          migrated = body(raw)
+          if status != 200:
+              fail(f"user b list {status} {raw[:400]!r}")
+          legacy = [item for item in migrated["items"] if item.get("normalizedValue") == "legacy-topic-b"]
+          if not legacy or legacy[0].get("source") != "legacy":
+              fail(f"legacy migration missing {legacy}")
+          marker = sql(f"SELECT COUNT(*) FROM UserSetting WHERE orgId='{org}' AND userId='cbatch7userb0000000000001' AND `key`='ai:content-subscription:migrated:v1'")
+          if marker != "1":
+              fail(f"migration marker {marker}")
+          print("legacy preference migrated")
+
+          status, raw, _ = call(go, "/api/user-content-subscriptions/batch-upsert", "POST", admin_token, {
+              "subscriptions": [{"kind": "source", "value": "cbatch7src000000000000001", "source": "manual"}]
+          })
+          source_doc = body(raw)
+          if status != 201 or source_doc["items"][0]["status"] != "subscribed":
+              fail(f"source subscribe {status} {source_doc}")
+          status, raw, _ = call(go, "/api/user-digest/preference", "PUT", admin_token, {"windowDays": 7, "maxEvents": 1})
+          pref = body(raw)
+          if status != 200 or pref.get("windowDays") != 7 or pref.get("maxEvents") != 1:
+              fail(f"preference {status} {pref}")
+          if "cbatch7src000000000000001" not in json.dumps(sql(f"SELECT normalizedValue FROM UserContentSubscription WHERE orgId='{org}' AND userId='{admin}' AND kind='source'")):
+              fail("partial preference update dropped the source subscription")
+          status, raw, digest_headers = call(go, "/api/user-digest", "GET", admin_token, timeout=180)
+          digest = body(raw)
+          if status != 200 or "no-store" not in digest_headers.get("Cache-Control", ""):
+              fail(f"digest headers {status} {digest_headers.get('Cache-Control')}")
+          events = digest.get("events") or []
+          matched = [event for event in events if event.get("eventId") == "cbatch7evt000000000000001"]
+          if not matched:
+              fail(f"source-filtered digest events {events}")
+          event = matched[0]
+          if event.get("representativeUrl") != "https://batch7.example/story":
+              fail(f"representative url {event.get('representativeUrl')}")
+          if not event.get("topicSentiment") or not event.get("indicatorAssociations"):
+              fail(f"sentiment or indicators missing {event}")
+          if event["indicatorAssociations"][0].get("latestBacktest") is None:
+              fail("latestBacktest missing")
+          print("digest source filter ok")
+
+          status, raw, _ = call(go, "/api/user-content-subscriptions/catalog?limit=5", "GET", admin_token, timeout=180)
+          if status != 200:
+              fail(f"catalog {status} {raw[:400]!r}")
+          status, raw, _ = call(go, "/api/user-content-subscriptions/recommendations?limit=5", "GET", admin_token, timeout=180)
+          if status != 200:
+              fail(f"recommendations {status} {raw[:400]!r}")
+          status, raw, _ = call(go, "/api/user-content-subscriptions/catalog/lookup", "POST", admin_token, {
+              "entries": [{"kind": "keyword", "value": "batch7-adhoc-keyword"}]
+          })
+          if status != 201:
+              fail(f"lookup {status} {raw[:400]!r}")
+          topic = urllib.parse.quote("batch7-owned-topic")
+          status, raw, _ = call(go, "/api/user-content-subscriptions/related-topics?topic=" + topic, "GET", admin_token)
+          if status != 200:
+              fail(f"related topics {status} {raw[:400]!r}")
+
+          status, raw, _ = call(go, "/api/user-news-behavior", "POST", admin_token, {
+              "type": "view", "topics": ["batch7-view-topic"], "itemId": "batch7-item"
+          })
+          if status != 201 or body(raw) != {"recorded": True}:
+              fail(f"record {status} {raw!r}")
+          status, raw, _ = call(go, "/api/user-news-behavior/profile", "GET", admin_token)
+          profile = body(raw)
+          if status != 200 or "batch7-view-topic" not in json.dumps(profile.get("positive", {}).get("topics")):
+              fail(f"profile {status} {profile}")
+          agg = sql(f"SELECT COUNT(*) FROM UserNewsBehaviorAggregate WHERE orgId='{org}' AND userId='{admin}' AND signalType='topic' AND signalKey='batch7-view-topic'")
+          if agg != "1":
+              fail(f"aggregate {agg}")
+          other_agg = sql("SELECT COUNT(*) FROM UserNewsBehaviorAggregate WHERE userId='cbatch7userb0000000000001' OR orgId='cbatch7orgother00000000001'")
+          if other_agg != "0":
+              fail(f"aggregate leaked {other_agg}")
+          milestone = {"type": "engaged_read", "itemId": "batch7-milestone", "topics": ["batch7-view-topic"]}
+          status, raw, _ = call(go, "/api/user-news-behavior", "POST", admin_token, milestone)
+          if status != 201 or body(raw) != {"recorded": True}:
+              fail(f"first milestone {status} {raw!r}")
+          status, raw, _ = call(go, "/api/user-news-behavior", "POST", admin_token, milestone)
+          if status != 201 or raw not in (b"", None):
+              fail(f"duplicate milestone {status} {raw!r}")
+          status, raw, _ = call(go, "/api/user-news-behavior", "POST", admin_token, {
+              "type": "not_interested", "topics": ["batch7-neg-topic"]
+          })
+          if status != 201:
+              fail(f"negative {status} {raw!r}")
+          status, raw, _ = call(go, "/api/user-news-behavior/profile", "GET", admin_token)
+          if "batch7-neg-topic" not in json.dumps(body(raw).get("negative", {}).get("topics")):
+              fail(f"negative profile {raw[:400]!r}")
+          status, raw, _ = call(go, "/api/user-news-behavior/profile", "DELETE", admin_token)
+          if status != 200 or body(raw) != {"cleared": True}:
+              fail(f"clear {status} {raw!r}")
+          if sql(f"SELECT COUNT(*) FROM UserNewsBehaviorAggregate WHERE orgId='{org}' AND userId='{admin}'") != "0":
+              fail("aggregate survived clear")
+          if sql("SELECT dirty FROM UserNewsSimilaritySnapshot WHERE id='cbatch7snapb0000000000001'") not in ("1",):
+              fail("same-org snapshot was not marked dirty")
+          if sql("SELECT dirty FROM UserNewsSimilaritySnapshot WHERE id='cbatch7snapo0000000000001'") not in ("0",):
+              fail("other-org snapshot was marked dirty")
+          print("behavior profile and clear ok")
+
+          status, raw, _ = call(go, "/api/user-digest/delivery", "PUT", admin_token, {
+              "enabled": True, "time": "08:15", "timezone": "Europe/Berlin"
+          })
+          delivery = body(raw)
+          if status != 200 or delivery.get("time") != "08:15" or delivery.get("timezone") != "Europe/Berlin":
+              fail(f"delivery {status} {delivery}")
+          if not delivery.get("emailVerified") or not delivery.get("nextRunAt"):
+              fail(f"delivery schedule {delivery}")
+          nxt = datetime.fromisoformat(delivery["nextRunAt"].replace("Z", "+00:00")).astimezone(ZoneInfo("Europe/Berlin"))
+          if (nxt.hour, nxt.minute) != (8, 15) or nxt <= datetime.now(timezone.utc):
+              fail(f"nextRunAt {delivery['nextRunAt']} local {nxt.isoformat()}")
+          status, raw, _ = call(go, "/api/user-digest/delivery", "GET", admin_token)
+          again = body(raw)
+          if again.get("time") != "08:15" or again.get("enabled") is not True:
+              fail(f"delivery reread {again}")
+          status, raw, _ = call(go, "/api/user-digest/delivery", "PUT", user_b, {
+              "enabled": True, "time": "08:15", "timezone": "Europe/Berlin"
+          })
+          if status != 400 or b"Verified email is required" not in raw:
+              fail(f"unverified delivery {status} {raw!r}")
+          print("delivery timezone ok")
+
+          def same_instant(left, right):
+              if left == right:
+                  return True
+              if not left or not right:
+                  return False
+              a = datetime.fromisoformat(left.replace("Z", "+00:00"))
+              b = datetime.fromisoformat(right.replace("Z", "+00:00"))
+              return abs((a - b).total_seconds()) < 1
+
+          for path in ("/api/user-content-subscriptions", "/api/user-digest/preference", "/api/user-digest/delivery"):
+              nest_status, nest_raw, _ = call(nest, path, "GET", admin_token)
+              go_status, go_raw, go_headers = call(go, path, "GET", admin_token)
+              if go_status != nest_status:
+                  fail(f"{path} status go={go_status} nest={nest_status} go={go_raw[:240]!r} nest={nest_raw[:240]!r}")
+              go_doc, nest_doc = body(go_raw), body(nest_raw)
+              if path.endswith("preference"):
+                  if go_doc.get("windowDays") != nest_doc.get("windowDays") or go_doc.get("maxEvents") != nest_doc.get("maxEvents"):
+                      fail(f"preference diverged {go_doc} {nest_doc}")
+              elif path.endswith("delivery"):
+                  if go_doc.get("time") != nest_doc.get("time") or go_doc.get("timezone") != nest_doc.get("timezone") or not same_instant(go_doc.get("nextRunAt"), nest_doc.get("nextRunAt")):
+                      fail(f"delivery diverged {go_doc} {nest_doc}")
+              else:
+                  if go_doc.get("counts") != nest_doc.get("counts"):
+                      fail(f"counts diverged {go_doc.get('counts')} {nest_doc.get('counts')}")
+              if path != "/api/user-content-subscriptions" and "no-store" not in (go_headers.get("Cache-Control") or ""):
+                  fail(f"go cache header {path}")
+          print("go and nest stable fields match")
+          PY
+      - name: Stop NestJS and confirm Go still serves enabled routes
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/api-nestjs.pid ]; then kill "$(cat /tmp/api-nestjs.pid)" || true; fi
+          for i in $(seq 1 20); do
+            if ! curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          python3 - << 'PY'
+          import json, urllib.error, urllib.request
+          token = open("/tmp/smoke-jwt").read().strip()
+          go = "http://127.0.0.1:4020"
+          def call(path, method="GET", payload=None):
+              headers = {"authorization": "Bearer " + token}
+              data = None
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(go + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+              except urllib.error.URLError as exc:
+                  return 0, str(exc.reason).encode()
+          status, raw = call("/api/user-content-subscriptions")
+          if status != 200:
+              raise SystemExit(f"go list after nest stop {status} {raw[:300]!r}")
+          status, raw = call("/api/user-news-behavior", "POST", {"type": "click", "topics": ["batch7-after-stop"]})
+          if status != 201:
+              raise SystemExit(f"go behavior after nest stop {status} {raw[:300]!r}")
+          status, raw = call("/api/dashboard/stats")
+          if status == 200:
+              raise SystemExit("unmigrated dashboard stats still succeeded after nest stop")
+          print("nest stopped; go routes live; legacy path failed", status)
+          PY
+      - name: Roll back only the behavior switch
+        run: |
+          set -euo pipefail
+          source /tmp/start-go.sh
+          start_go legacy
+          python3 - << 'PY'
+          import json, urllib.error, urllib.request
+          token = open("/tmp/smoke-jwt").read().strip()
+          go = "http://127.0.0.1:4020"
+          def call(path, method="GET", payload=None, timeout=120):
+              headers = {"authorization": "Bearer " + token}
+              data = None
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(go + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+              except urllib.error.URLError as exc:
+                  return 0, str(exc.reason).encode()
+          health = json.load(urllib.request.urlopen(go + "/__go/healthz", timeout=10))
+          behavior = [route for route in health["routes"] if route.get("prefix") == "/api/user-news-behavior"]
+          subs = [route for route in health["routes"] if route.get("prefix") == "/api/user-content-subscriptions" and "GET" in route.get("methods", "")]
+          digest = [route for route in health["routes"] if route.get("prefix") == "/api/user-digest" and route.get("methods") == "GET"]
+          if behavior:
+              raise SystemExit(f"behavior route still registered {behavior}")
+          if not subs or not digest:
+              raise SystemExit(f"other domains dropped subs={subs} digest={digest}")
+          status, raw = call("/api/user-news-behavior", "POST", {"type": "view", "topics": ["should-stay-legacy"]})
+          if status == 201:
+              raise SystemExit("behavior HTTP still served by Go after rollback")
+          status, raw = call("/api/user-content-subscriptions")
+          if status != 200:
+              raise SystemExit(f"subscriptions changed by behavior rollback {status} {raw[:200]!r}")
+          status, raw = call("/api/user-digest/preference")
+          if status != 200:
+              raise SystemExit(f"digest changed by behavior rollback {status}")
+          status, raw = call("/api/user-content-subscriptions/recommendations?limit=5", timeout=180)
+          if status != 200:
+              raise SystemExit(f"recommendations depend on the behavior HTTP switch {status} {raw[:300]!r}")
+          print("behavior rollback left subscriptions, digest, and internal recommendations on Go")
+          PY

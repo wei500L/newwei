@@ -301,25 +301,6 @@ export class UserContentSubscriptionsService {
       );
     }
 
-    const existingRows = await this.prisma.userContentSubscription.findMany({
-      where: {
-        orgId,
-        userId,
-        OR: normalized.map((entry) => ({
-          kind: entry.kind,
-          normalizedValue: entry.normalizedValue,
-        })),
-      },
-    });
-    const existingByKey = new Map(
-      existingRows.map((row) => [
-        this.subscriptionKey(row.kind, row.normalizedValue),
-        row,
-      ]),
-    );
-
-    const counts = await this.readSubscriptionCounts(orgId, userId);
-
     const resolutions = await this.resolveCatalogEntries(orgId, normalized);
     const resolutionByKey = new Map(
       resolutions.map((entry) => [
@@ -328,114 +309,151 @@ export class UserContentSubscriptionsService {
       ]),
     );
 
-    const results: ContentSubscriptionBatchResultItem[] = [];
-    const toCreate: Prisma.UserContentSubscriptionCreateManyInput[] = [];
-    for (const entry of normalized) {
-      const key = this.subscriptionKey(entry.kind, entry.normalizedValue);
-      const existing = existingByKey.get(key);
-      const resolution =
-        resolutionByKey.get(key) ??
-        this.toAdHocResolution(entry, taxonomy.settingsVersion);
-      if (existing) {
-        results.push(
-          this.toBatchResult(
-            "already_subscribed",
-            existing.kind,
-            existing.normalizedValue,
-            existing.displayValue,
-            existing.taxonomyPath,
-            taxonomy.byPath,
-          ),
-        );
-        continue;
-      }
-      if (counts[entry.kind] >= USER_CONTENT_SUBSCRIPTION_LIMIT_PER_KIND) {
-        results.push(
-          this.toBatchResult(
-            "limit_reached",
-            entry.kind,
-            entry.normalizedValue,
-            resolution.displayValue,
-            resolution.taxonomyPath,
-            taxonomy.byPath,
-          ),
-        );
-        continue;
-      }
-
-      toCreate.push({
-        orgId,
-        userId,
-        kind: entry.kind,
-        normalizedValue: entry.normalizedValue,
-        displayValue: resolution.displayValue,
-        taxonomyPath: resolution.taxonomyPath,
-        taxonomyVersion: resolution.taxonomyVersion,
-        source: entry.source ?? ContentSubscriptionSource.manual,
-        metadata: toPrismaJsonValue(resolution.metadata ?? {}),
-      });
-      counts[entry.kind] += 1;
-    }
-
-    if (toCreate.length > 0) {
-      try {
-        // Single batched insert with duplicate skipping: per-row creates were
-        // racy (concurrent requests could both pass the count check and one
-        // would hit the unique constraint with a 500) and left partial writes
-        // on failure.
-        await this.prisma.userContentSubscription.createMany({
-          data: toCreate,
-          skipDuplicates: true,
-        });
-      } catch (error) {
-        if (!this.isUniqueConstraintError(error)) {
-          throw error;
-        }
-      }
-
-      // Re-read the rows that actually landed (including ones a concurrent
-      // request inserted between our check and the batch insert) so each
-      // pending entry resolves to subscribed / already_subscribed accurately.
-      const pendingKinds = Array.from(
-        new Set(toCreate.map((row) => row.kind)),
-      );
-      const pendingValues = toCreate.map((row) => row.normalizedValue);
-      const createdRows =
-        await this.prisma.userContentSubscription.findMany({
+    // 计数与 createMany 必须在同一事务里。原先先 groupBy 再 createMany，
+    // 两个并发请求可以同时看到 49 条并各插入一条不同值，skipDuplicates
+    // 挡不住总数超过 50。REPEATABLE READ 下按 (orgId, userId) 前缀
+    // FOR UPDATE 会锁住该用户已有行以及其间的间隙，提交后才放行下一笔。
+    // 不删除已经超过上限的历史行，监控同步仍在锁外按原契约执行。
+    const results = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`
+          SELECT id FROM UserContentSubscription
+          WHERE orgId = ${orgId} AND userId = ${userId}
+          FOR UPDATE
+        `;
+        const existingRows = await tx.userContentSubscription.findMany({
           where: {
             orgId,
             userId,
-            kind: { in: pendingKinds },
-            normalizedValue: { in: pendingValues },
+            OR: normalized.map((entry) => ({
+              kind: entry.kind,
+              normalizedValue: entry.normalizedValue,
+            })),
           },
         });
-      const createdByKey = new Map(
-        createdRows.map((row) => [
-          this.subscriptionKey(row.kind, row.normalizedValue),
-          row,
-        ]),
-      );
-      for (const entry of normalized) {
-        const key = this.subscriptionKey(entry.kind, entry.normalizedValue);
-        if (existingByKey.has(key)) {
-          continue;
-        }
-        const row = createdByKey.get(key);
-        if (!row) {
-          continue;
-        }
-        results.push(
-          this.toBatchResult(
-            "subscribed",
-            row.kind,
-            row.normalizedValue,
-            row.displayValue,
-            row.taxonomyPath,
-            taxonomy.byPath,
-          ),
+        const existingByKey = new Map(
+          existingRows.map((row) => [
+            this.subscriptionKey(row.kind, row.normalizedValue),
+            row,
+          ]),
         );
-      }
-    }
+
+        const counts = await this.readSubscriptionCounts(orgId, userId, tx);
+
+        const batchResults: ContentSubscriptionBatchResultItem[] = [];
+        const toCreate: Prisma.UserContentSubscriptionCreateManyInput[] = [];
+        for (const entry of normalized) {
+          const key = this.subscriptionKey(entry.kind, entry.normalizedValue);
+          const existing = existingByKey.get(key);
+          const resolution =
+            resolutionByKey.get(key) ??
+            this.toAdHocResolution(entry, taxonomy.settingsVersion);
+          if (existing) {
+            batchResults.push(
+              this.toBatchResult(
+                "already_subscribed",
+                existing.kind,
+                existing.normalizedValue,
+                existing.displayValue,
+                existing.taxonomyPath,
+                taxonomy.byPath,
+              ),
+            );
+            continue;
+          }
+          if (counts[entry.kind] >= USER_CONTENT_SUBSCRIPTION_LIMIT_PER_KIND) {
+            batchResults.push(
+              this.toBatchResult(
+                "limit_reached",
+                entry.kind,
+                entry.normalizedValue,
+                resolution.displayValue,
+                resolution.taxonomyPath,
+                taxonomy.byPath,
+              ),
+            );
+            continue;
+          }
+
+          toCreate.push({
+            orgId,
+            userId,
+            kind: entry.kind,
+            normalizedValue: entry.normalizedValue,
+            displayValue: resolution.displayValue,
+            taxonomyPath: resolution.taxonomyPath,
+            taxonomyVersion: resolution.taxonomyVersion,
+            source: entry.source ?? ContentSubscriptionSource.manual,
+            metadata: toPrismaJsonValue(resolution.metadata ?? {}),
+          });
+          counts[entry.kind] += 1;
+        }
+
+        if (toCreate.length > 0) {
+          try {
+            // Single batched insert with duplicate skipping: per-row creates were
+            // racy (concurrent requests could both pass the count check and one
+            // would hit the unique constraint with a 500) and left partial writes
+            // on failure.
+            await tx.userContentSubscription.createMany({
+              data: toCreate,
+              skipDuplicates: true,
+            });
+          } catch (error) {
+            if (!this.isUniqueConstraintError(error)) {
+              throw error;
+            }
+          }
+
+          // Re-read the rows that actually landed (including ones a concurrent
+          // request inserted between our check and the batch insert) so each
+          // pending entry resolves to subscribed / already_subscribed accurately.
+          const pendingKinds = Array.from(
+            new Set(toCreate.map((row) => row.kind)),
+          );
+          const pendingValues = toCreate.map((row) => row.normalizedValue);
+          const createdRows = await tx.userContentSubscription.findMany({
+            where: {
+              orgId,
+              userId,
+              kind: { in: pendingKinds },
+              normalizedValue: { in: pendingValues },
+            },
+          });
+          const createdByKey = new Map(
+            createdRows.map((row) => [
+              this.subscriptionKey(row.kind, row.normalizedValue),
+              row,
+            ]),
+          );
+          for (const entry of normalized) {
+            const key = this.subscriptionKey(entry.kind, entry.normalizedValue);
+            if (existingByKey.has(key)) {
+              continue;
+            }
+            const row = createdByKey.get(key);
+            if (!row) {
+              continue;
+            }
+            batchResults.push(
+              this.toBatchResult(
+                "subscribed",
+                row.kind,
+                row.normalizedValue,
+                row.displayValue,
+                row.taxonomyPath,
+                taxonomy.byPath,
+              ),
+            );
+          }
+        }
+        return batchResults;
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        timeout: 15_000,
+      },
+    );
 
     await this.monitors.reconcileContentSubscriptionSync(orgId, userId);
     const refreshedCounts = await this.readSubscriptionCounts(orgId, userId);
@@ -2201,8 +2219,12 @@ export class UserContentSubscriptionsService {
     );
   }
 
-  private async readSubscriptionCounts(orgId: string, userId: string) {
-    const grouped = await this.prisma.userContentSubscription.groupBy({
+  private async readSubscriptionCounts(
+    orgId: string,
+    userId: string,
+    db: Pick<Prisma.TransactionClient, "userContentSubscription"> = this.prisma,
+  ) {
+    const grouped = await db.userContentSubscription.groupBy({
       by: ["kind"],
       where: { orgId, userId },
       _count: { _all: true },

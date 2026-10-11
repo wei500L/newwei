@@ -18,6 +18,8 @@ Go-批6A 起，**Spacetime 热力图**与**传播图**各有独立开关，默�
 
 Go-批6B 起，**Dashboard SSE** 与**认证版健康检查**各有独立开关，默认都是 `legacy`。`API_GO_DASHBOARD_STREAM_MODE=go` 只接管精确 `GET /api/dashboard/stream` 和同一路径的合格 CORS 预检。Go 在连接建立时验签、查 Redis 撤销名单，并从 MySQL 重推导 `dashboards.read` 与 orgId；之后按 NestJS 当前会话语义不再周期鉴权。首轮发布 war-map-events、war-map-news-markers、war-map-layers、financial-candlestick、spacetime-geo-heatmap；之后按各事件的稳定指纹只发布变化。geo-heatmap 单独失败发 `spacetime-geo-heatmap-unavailable`。其余更新失败发 `stream-error`，后续周期继续。数据来自已有的 War Map、K 线和 Spacetime 服务，同一次更新里的事件和新闻只查一次。不轮询 NestJS，也不请求 Go 自己的 HTTP。`API_GO_HEALTHZ_MODE=go` 只接管精确 `GET /api/healthz`。人类 access token 复用验签链且不要求业务权限；`mtk_` 机器令牌按 SHA-256 查 `MachineAccessToken`，有效即可访问，不会因此得到 `dashboards.read` 或 user-settings 权限。七项探针（MySQL、Redis、Mongo、crawl4ai、SSRF proxy crawl、LLM 配置、磁盘）只在这个认证请求里运行。整份响应缓存 5 秒；失败也返回 terminus 的 `status/info/error/details` 以及 `version` 和 `now`，HTTP 503。NestJS 的全局异常过滤器会把 503 收成通用错误体，两边的失败正文因此不同，状态码对齐。公开 `GET /api/healthz/live` 仍是 shadow。未配置的 crawl4ai、SSRF proxy 或 LLM 会如实失败，不会被写成全绿。生产入口仍是 Web → NestJS。回滚：`API_GO_DASHBOARD_STREAM_MODE=legacy` 只交回 SSE；`API_GO_HEALTHZ_MODE=legacy` 只交回认证版健康检查。
 
+Go-批7 把个人内容订阅、新闻行为画像、每日摘要和投递设置的 15 条 HTTP 迁入 Go。三个开关各自默认 `legacy`，只决定对应精确路由：`API_GO_CONTENT_SUBSCRIPTIONS_MODE`、`API_GO_USER_NEWS_BEHAVIOR_MODE`、`API_GO_USER_DIGEST_MODE`。权限仍是 `items.read`。摘要开启时直接调用 Go 订阅与目录，推荐开启时直接调用 Go 画像，不看另外两个 HTTP 开关。邮件 Cron 仍由 NestJS 消费 `UserDigestDeliverySchedule`。说明见 `docs/refactor/go-personal-news-workspace.md`。
+
 ## 运行
 
 ```bash
