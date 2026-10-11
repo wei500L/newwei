@@ -392,6 +392,7 @@ jobs:
           if status_go != 500:
               fail(f"null isDone update expected 500, got {status_go}")
           print("isDone missing/null/false matched")
+          detail = body(call(go, f"/api/analysis/boards/{board_id}", "GET", token_a)[1])
           ids = [column["id"] for column in detail["columns"]]
           swapped = [ids[1], ids[0]] + ids[2:]
           status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/columns/reorder", "POST", token_a, {"columnIds": swapped})
