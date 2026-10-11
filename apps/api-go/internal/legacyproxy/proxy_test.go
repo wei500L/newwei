@@ -1320,3 +1320,48 @@ func TestPersonalNewsSwitchesAreIndependent(t *testing.T) {
 	assertBody(digest, http.MethodGet, "/api/user-news-behavior/profile", "legacy")
 	assertBody(digest, http.MethodGet, "/api/user-content-subscriptions/catalog", "legacy")
 }
+
+func TestGraphQLReadLegacyStillProxies(t *testing.T) {
+	stub := newLegacyStub(t)
+	for _, mode := range []string{"", "legacy"} {
+		gateway, err := New(stub.server.URL, WithGraphQLRead(DefaultRules(ModeShadow, ""), mode))
+		if err != nil {
+			t.Fatal(err)
+		}
+		gateway.RegisterGoHandler("/graphql", func(w http.ResponseWriter, _ *http.Request) {
+			httpx.WriteJSON(w, http.StatusOK, map[string]string{"via": "go"})
+		})
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://gateway/graphql", strings.NewReader(`{"query":"{ alertChannels { id } }"}`))
+		req.Header.Set("content-type", "application/json")
+		gateway.ServeHTTP(rec, req)
+		if !strings.Contains(rec.Body.String(), "legacy") || strings.Contains(rec.Body.String(), `"via":"go"`) {
+			t.Fatalf("mode %q body = %s", mode, rec.Body.String())
+		}
+	}
+}
+
+func TestGraphQLReadGoRoutesExactMethodsOnly(t *testing.T) {
+	stub := newLegacyStub(t)
+	gateway, err := New(stub.server.URL, WithGraphQLRead(DefaultRules(ModeShadow, ""), "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway.RegisterGoHandler("/graphql", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"via": "go"})
+	})
+	assertVia := func(method, path, want string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, "http://gateway"+path, strings.NewReader(`{"query":"{ alertChannels { id } }"}`))
+		req.Header.Set("content-type", "application/json")
+		gateway.ServeHTTP(rec, req)
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("%s %s body = %s, want %s", method, path, rec.Body.String(), want)
+		}
+	}
+	assertVia(http.MethodPost, "/graphql", `"via":"go"`)
+	assertVia(http.MethodGet, "/graphql", `"via":"go"`)
+	assertVia(http.MethodPost, "/graphql/extra", "legacy")
+	assertVia(http.MethodPut, "/graphql", "legacy")
+}

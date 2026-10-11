@@ -1,0 +1,512 @@
+# GraphQL 读查询试点的真实栈验收。不进普通 CI。
+# PR 上加 label api-go-graphql-read-smoke，或 workflow_dispatch。
+# AKSHARE_ENABLED 与 MODEL_SERVICE_ENABLED 保持 false。不验证 AkShare、模型、Nominatim、crawl4ai。
+name: api-go-graphql-read-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-graphql-read-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-smoke@example.com
+  SMTP_PASS: api-go-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  GRAPHQL_RESPONSE_CACHE_ENABLED: "false"
+  RATE_LIMIT_LOGIN: "100"
+  SEED_ORG_SLUG: api-go-smoke-org
+  SEED_ORG_NAME: api-go Smoke Org
+  SEED_ADMIN_EMAIL: api-go-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoSmoke#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-graphql-read-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-graphql-read-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-graphql-read:ci .
+      - name: Start api-go
+        run: |
+          set -euo pipefail
+          start_go() {
+            local mode="$1"
+            docker rm -f api-go-graphql-read >/dev/null 2>&1 || true
+            docker run -d --name api-go-graphql-read \
+              --add-host=host.docker.internal:host-gateway \
+              --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s \
+              -p 127.0.0.1:4020:4020 \
+              -e PORT=4020 \
+              -e LEGACY_API_URL=http://host.docker.internal:4000 \
+              -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+              -e MONGO_URI=mongodb://host.docker.internal:27017/app \
+              -e API_GO_GRAPHQL_READ_MODE="$mode" \
+              -e API_GO_DASHBOARD_STATS_MODE=legacy \
+              -e API_GO_DASHBOARD_CHARTS_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy \
+              -e API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy \
+              -e API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy \
+              -e API_GO_DASHBOARD_STREAM_MODE=legacy \
+              -e API_GO_HEALTHZ_MODE=legacy \
+              -e GRAPHQL_RESPONSE_CACHE_ENABLED=false \
+              -e RATE_LIMIT_LOGIN=100 \
+              -e JWT_SECRET="$JWT_SECRET" \
+              -e JWT_ISSUER="$JWT_ISSUER" \
+              -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+              -e REDIS_HOST=host.docker.internal \
+              -e REDIS_PORT=6379 \
+              -e CANARY_PERCENT=0 \
+              -e CORS_ORIGIN="$CORS_ORIGIN" \
+              api-go-graphql-read:ci
+            for i in $(seq 1 30); do
+              status=$(docker inspect --format '{{.State.Health.Status}}' api-go-graphql-read 2>/dev/null || echo starting)
+              echo "health=$status mode=$mode"
+              if [ "$status" = "healthy" ]; then return 0; fi
+              if [ "$status" = "unhealthy" ]; then docker logs api-go-graphql-read; return 1; fi
+              sleep 2
+            done
+            docker logs api-go-graphql-read || true
+            return 1
+          }
+          start_go legacy
+          declare -f start_go > /tmp/start-go.sh
+      - name: Exercise GraphQL read pilot
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import base64, json, os, subprocess
+          import urllib.error, urllib.request
+
+          go = "http://127.0.0.1:4020"
+          nest = "http://127.0.0.1:4000"
+          forbidden = "take must be a non-negative integer"
+          cid = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=mysql:8.4"], text=True).split()[0]
+
+          def sql(statement):
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"], input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  raise SystemExit(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=30):
+              headers = {"content-type": "application/json"}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              return json.loads(raw)
+
+          def login(email):
+              status, raw = call(go, "/api/auth/login", "POST", payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:400]!r}")
+              return doc["accessToken"]
+
+          def claims(token):
+              segment = token.split(".")[1]
+              segment += "=" * (-len(segment) % 4)
+              return json.loads(base64.urlsafe_b64decode(segment))
+
+          def gql(base, token, query):
+              status, raw = call(base, "/graphql", "POST", token, {"query": query})
+              return status, body(raw), raw
+
+          def canon(value):
+              return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+          def normalize(doc):
+              if not isinstance(doc, dict):
+                  return doc
+              out = {}
+              if "data" in doc:
+                  out["data"] = doc["data"]
+              errors = []
+              for err in doc.get("errors") or []:
+                  if not isinstance(err, dict):
+                      errors.append(err)
+                      continue
+                  ext = dict(err.get("extensions") or {})
+                  ext.pop("traceId", None)
+                  errors.append({"message": err.get("message"), "path": err.get("path"), "extensions": ext})
+              if errors:
+                  out["errors"] = errors
+              return out
+
+          def same(label, left_status, left, right_status, right):
+              if left_status != right_status or canon(normalize(left)) != canon(normalize(right)):
+                  fail(f"{label} nest={left_status} {canon(normalize(left))[:800]} go={right_status} {canon(normalize(right))[:800]}")
+
+          def succeeded(label, status, doc):
+              if status != 200 or not isinstance(doc, dict) or doc.get("errors") or not isinstance(doc.get("data"), dict):
+                  fail(f"{label} {status} {doc}")
+              return doc["data"]
+
+          admin = sql(f"SELECT id FROM User WHERE email='{os.environ['SEED_ADMIN_EMAIL']}'")
+          alerts_read = sql("SELECT id FROM Permission WHERE name='alerts.read'")
+          econ_read = sql("SELECT id FROM Permission WHERE name='economicdata.read'")
+          econ_manage = sql("SELECT id FROM Permission WHERE name='economicdata.manage'")
+          org_read = sql("SELECT id FROM Permission WHERE name='org.read'")
+          if not all([admin, alerts_read, econ_read, econ_manage, org_read]):
+              fail("missing seed user or permissions")
+
+          sql(f"""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('gqlrdorga0000000000001', 'GraphQL Read A', 'gqlrd-org-a', 1, NOW(3), NOW(3)),
+            ('gqlrdorgb0000000000001', 'GraphQL Read B', 'gqlrd-org-b', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, orgId, name, description, isSystem) VALUES
+            ('gqlrdrolea000000000001', 'gqlrdorga0000000000001', 'gqlrd-a', 'a', 0),
+            ('gqlrdroleb000000000001', 'gqlrdorga0000000000001', 'gqlrd-b', 'b', 0),
+            ('gqlrdrolec000000000001', 'gqlrdorgb0000000000001', 'gqlrd-c', 'c', 0),
+            ('gqlrdrolen000000000001', 'gqlrdorga0000000000001', 'gqlrd-n', 'n', 0),
+            ('gqlrdroles000000000001', 'gqlrdorga0000000000001', 'gqlrd-s', 's', 0);
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('gqlrdrpa10000000000001', 'gqlrdrolea000000000001', '{alerts_read}'),
+            ('gqlrdrpa20000000000001', 'gqlrdrolea000000000001', '{econ_read}'),
+            ('gqlrdrpa30000000000001', 'gqlrdrolea000000000001', '{econ_manage}'),
+            ('gqlrdrpb10000000000001', 'gqlrdroleb000000000001', '{alerts_read}'),
+            ('gqlrdrpc10000000000001', 'gqlrdrolec000000000001', '{alerts_read}'),
+            ('gqlrdrpc20000000000001', 'gqlrdrolec000000000001', '{econ_read}'),
+            ('gqlrdrpn10000000000001', 'gqlrdrolen000000000001', '{org_read}'),
+            ('gqlrdrps10000000000001', 'gqlrdroles000000000001', '{econ_read}');
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'gqlrdusera000000000001', 'gqlrd-a@example.com', passwordHash, 'A', 'Smoke', 1, NOW(3), NOW(3), NOW(3) FROM User WHERE id = '{admin}';
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'gqlrduserb000000000001', 'gqlrd-b@example.com', passwordHash, 'B', 'Smoke', 1, NOW(3), NOW(3), NOW(3) FROM User WHERE id = '{admin}';
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'gqlrduserc000000000001', 'gqlrd-c@example.com', passwordHash, 'C', 'Smoke', 1, NOW(3), NOW(3), NOW(3) FROM User WHERE id = '{admin}';
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'gqlrdusern000000000001', 'gqlrd-n@example.com', passwordHash, 'N', 'Smoke', 1, NOW(3), NOW(3), NOW(3) FROM User WHERE id = '{admin}';
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'gqlrdusers000000000001', 'gqlrd-s@example.com', passwordHash, 'S', 'Smoke', 1, NOW(3), NOW(3), NOW(3) FROM User WHERE id = '{admin}';
+          INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt) VALUES
+            ('gqlrdmema0000000000001', 'gqlrdusera000000000001', 'gqlrdorga0000000000001', 'gqlrdrolea000000000001', 1, NOW(3)),
+            ('gqlrdmemb0000000000001', 'gqlrduserb000000000001', 'gqlrdorga0000000000001', 'gqlrdroleb000000000001', 1, NOW(3)),
+            ('gqlrdmemc0000000000001', 'gqlrduserc000000000001', 'gqlrdorgb0000000000001', 'gqlrdrolec000000000001', 1, NOW(3)),
+            ('gqlrdmemn0000000000001', 'gqlrdusern000000000001', 'gqlrdorga0000000000001', 'gqlrdrolen000000000001', 1, NOW(3)),
+            ('gqlrdmems0000000000001', 'gqlrdusers000000000001', 'gqlrdorga0000000000001', 'gqlrdroles000000000001', 1, NOW(3));
+          INSERT INTO AlertNotificationChannel (id, orgId, type, name, target, isActive, config, createdAt, updatedAt) VALUES
+            ('gqlrdchana000000000001', 'gqlrdorga0000000000001', 'email', 'Desk A', 'a@example.com', 1, NULL, '2026-06-01 00:00:00.000', '2026-06-01 00:00:00.000'),
+            ('gqlrdchanb000000000001', 'gqlrdorgb0000000000001', 'email', 'Desk B', 'b@example.com', 1, NULL, '2026-06-01 00:00:00.000', '2026-06-01 00:00:00.000');
+          INSERT INTO AlertRule (id, orgId, name, severity, status, metricProvider, metricSlug, operator, createdAt, updatedAt) VALUES
+            ('gqlrdrulea000000000001', 'gqlrdorga0000000000001', 'Rule A', 'medium', 'active', 'economic_data', 'gqlrd-smoke-series', 'gt', '2026-06-01 00:00:00.000', '2026-06-01 00:00:00.000'),
+            ('gqlrdruleb000000000001', 'gqlrdorgb0000000000001', 'Rule B', 'medium', 'active', 'economic_data', 'gqlrd-smoke-series', 'gt', '2026-06-01 00:00:00.000', '2026-06-01 00:00:00.000');
+          INSERT INTO AlertEvent (id, ruleId, triggeredAt, metricValue, severity, status, message, createdAt) VALUES
+            ('gqlrdevta0000000000001', 'gqlrdrulea000000000001', '2026-06-02 00:00:00.000', 12.5, 'medium', 'pending', 'event-a', '2026-06-02 00:00:00.000'),
+            ('gqlrdevtb0000000000001', 'gqlrdruleb000000000001', '2026-06-02 00:00:00.000', 9.5, 'medium', 'pending', 'event-b', '2026-06-02 00:00:00.000');
+          INSERT INTO Notification (id, orgId, userId, type, title, body, createdAt, updatedAt) VALUES
+            ('gqlrdnota0000000000001', 'gqlrdorga0000000000001', 'gqlrdusera000000000001', 'system', 'Note A', 'for-a', '2026-06-02 00:00:00.000', '2026-06-02 00:00:00.000'),
+            ('gqlrdnotb0000000000001', 'gqlrdorga0000000000001', 'gqlrduserb000000000001', 'system', 'Note B', 'for-b', '2026-06-02 00:00:01.000', '2026-06-02 00:00:01.000'),
+            ('gqlrdnotc0000000000001', 'gqlrdorgb0000000000001', 'gqlrduserc000000000001', 'system', 'Note C', 'for-c', '2026-06-02 00:00:02.000', '2026-06-02 00:00:02.000');
+          INSERT INTO EconomicCategory (id, `key`, label, createdAt, updatedAt) VALUES
+            ('gqlrdcat00000000000001', 'gqlrd-smoke', 'GraphQL read smoke', NOW(3), NOW(3));
+          INSERT INTO EconomicDataItem (id, slug, displayName, sourceFunction, sourceEndpoint, valueType, defaultFrequency, isActive, createdAt, updatedAt) VALUES
+            ('gqlrditem0000000000001', 'gqlrd-smoke-series', 'Smoke Series', 'noop', 'noop', 'price', 'daily', 1, NOW(3), NOW(3)),
+            ('gqlrditem0000000000002', 'gqlrd-preset-series', 'Preset Series', 'noop', 'noop', 'price', 'daily', 1, NOW(3), NOW(3));
+          INSERT INTO EconomicDataItemCategory (id, itemId, categoryId, createdAt) VALUES
+            ('gqlrdlink0000000000001', 'gqlrditem0000000000001', 'gqlrdcat00000000000001', NOW(3));
+          INSERT INTO EconomicDataPoint (id, itemId, recordedAt, dataType, value, unit, sourceField, createdAt) VALUES
+            ('gqlrdpt000000000000001', 'gqlrditem0000000000001', '2026-06-01 00:00:00.000', 'price', 11.5, 'USD', 'close', NOW(3)),
+            ('gqlrdpt000000000000002', 'gqlrditem0000000000001', '2026-06-02 00:00:00.000', 'price', 12.5, 'USD', 'close', NOW(3));
+          """)
+          category = sql("SELECT id FROM EconomicCategory WHERE `key`='key-monitor'")
+          if not category:
+              sql("""
+              INSERT INTO EconomicCategory (id, `key`, label, createdAt, updatedAt)
+              VALUES ('gqlrdcatkey00000000001', 'key-monitor', 'Key monitor', NOW(3), NOW(3));
+              """)
+              category = "gqlrdcatkey00000000001"
+          sql(f"""
+          INSERT INTO EconomicDataItemCategory (id, itemId, categoryId, createdAt)
+          VALUES ('gqlrdlink0000000000002', 'gqlrditem0000000000002', '{category}', NOW(3));
+          INSERT INTO EconomicDataFetchConfig (id, itemId, frequency, isEnabled, lastRunAt, lastStatus, lastError, createdAt, updatedAt)
+          VALUES ('gqlrdfetch00000000001', 'gqlrditem0000000000002', 'daily', 1, '2099-01-01 00:00:00.000', 'success', 'gqlrd-db-only', NOW(3), NOW(3));
+          """)
+
+          token_a = login("gqlrd-a@example.com")
+          token_b = login("gqlrd-b@example.com")
+          token_c = login("gqlrd-c@example.com")
+          token_n = login("gqlrd-n@example.com")
+          token_s = login("gqlrd-s@example.com")
+          open("/tmp/gqlrd-token-a", "w").write(token_a)
+          open("/tmp/gqlrd-token-b", "w").write(token_b)
+          open("/tmp/gqlrd-token-c", "w").write(token_c)
+          if "economicdata.read" not in (claims(token_s).get("permissions") or []):
+              fail(f"stale jwt missing economicdata.read claim {claims(token_s)}")
+
+          channels = "query { alertChannels { id name type target isActive } }"
+          events = "query { alertEvents { id message severity status ruleId metricSlug } }"
+          notes = "query { notifications { id type title } unreadNotificationCount }"
+          negative = "query { notifications(limit: -1) { id title } }"
+          economic = 'query { getEconomicData(category: "gqlrd-smoke", granularity: day, timeRange: { start: "2026-06-01T00:00:00.000Z", end: "2026-06-03T00:00:00.000Z" }) { value effectiveGranularity dataType item { slug } } }'
+          preset = "query { economicDataRefreshPresetStatus(preset: keyMonitor) { preset categoryKey totalItems enabledItems lastStatus lastError } }"
+          rules = "query { alertRules { id name } }"
+
+          def pair(token, query, label):
+              ns, nd, _ = gql(nest, token, query)
+              gs, gd, _ = gql(go, token, query)
+              same(label, ns, nd, gs, gd)
+              return nd
+
+          for label, query in (("channels", channels), ("events", events), ("notes", notes), ("economic", economic)):
+              pair(token_a, query, "legacy " + label)
+          print("legacy proxy matches nest")
+
+          subprocess.check_call(["bash", "-lc", "source /tmp/start-go.sh && start_go go"])
+
+          channel_doc = succeeded("go channels", *gql(go, token_a, channels)[:2])
+          event_doc = succeeded("go events", *gql(go, token_a, events)[:2])
+          note_doc = succeeded("go notes", *gql(go, token_a, notes)[:2])
+          econ_doc = succeeded("go economic", *gql(go, token_a, economic)[:2])
+          for label, query, token in (
+              ("channels", channels, token_a),
+              ("events", events, token_a),
+              ("notes", notes, token_a),
+              ("economic", economic, token_a),
+              ("preset", preset, token_a),
+          ):
+              pair(token, query, "go " + label)
+
+          if [row["id"] for row in channel_doc["alertChannels"]] != ["gqlrdchana000000000001"]:
+              fail(f"channels {channel_doc}")
+          if [row["id"] for row in event_doc["alertEvents"]] != ["gqlrdevta0000000000001"]:
+              fail(f"events {event_doc}")
+          other_events = succeeded("other org events", *gql(go, token_c, events)[:2])
+          if [row["id"] for row in other_events["alertEvents"]] != ["gqlrdevtb0000000000001"]:
+              fail(f"other org events {other_events}")
+          if [row["id"] for row in note_doc["notifications"]] != ["gqlrdnota0000000000001"] or note_doc["unreadNotificationCount"] != 1:
+              fail(f"notes {note_doc}")
+          other_user = succeeded("same org other user", *gql(go, token_b, notes)[:2])
+          if [row["id"] for row in other_user["notifications"]] != ["gqlrdnotb0000000000001"]:
+              fail(f"user b notes {other_user}")
+          other_org_notes = succeeded("other org notes", *gql(go, token_c, notes)[:2])
+          if [row["id"] for row in other_org_notes["notifications"]] != ["gqlrdnotc0000000000001"]:
+              fail(f"user c notes {other_org_notes}")
+          econ_b = succeeded("org b economic", *gql(go, token_c, economic)[:2])
+          if canon(econ_doc["getEconomicData"]) != canon(econ_b["getEconomicData"]):
+              fail(f"economic org filter leaked {econ_doc} {econ_b}")
+          if sorted(row["value"] for row in econ_doc["getEconomicData"]) != [11.5, 12.5]:
+              fail(f"economic values {econ_doc}")
+
+          denied_status, denied, _ = gql(go, token_n, economic)
+          if denied_status == 200 and isinstance(denied, dict) and not denied.get("errors"):
+              fail(f"missing permission succeeded {denied}")
+          nest_denied_status, nest_denied, _ = gql(nest, token_n, economic)
+          if nest_denied_status == 200 and isinstance(nest_denied, dict) and not nest_denied.get("errors"):
+              fail(f"nest missing permission succeeded {nest_denied}")
+
+          sql("DELETE FROM RolePermission WHERE id='gqlrdrps10000000000001'")
+          stale_status, stale, _ = gql(go, token_s, economic)
+          if stale_status == 200 and isinstance(stale, dict) and not stale.get("errors"):
+              fail(f"jwt permission without db permission succeeded {stale}")
+          nest_stale_status, nest_stale, _ = gql(nest, token_s, economic)
+          if nest_stale_status == 200 and isinstance(nest_stale, dict) and not nest_stale.get("errors"):
+              fail(f"nest jwt permission without db permission succeeded {nest_stale}")
+
+          rules_nest_status, rules_nest, _ = gql(nest, token_a, rules)
+          rules_go_status, rules_go, _ = gql(go, token_a, rules)
+          same("alertRules stays on nest", rules_nest_status, rules_nest, rules_go_status, rules_go)
+          if not succeeded("alertRules", rules_go_status, rules_go).get("alertRules"):
+              fail(f"alertRules empty {rules_go}")
+
+          neg_status, neg, raw_neg = gql(go, token_a, negative)
+          nest_neg_status, nest_neg, raw_nest_neg = gql(nest, token_a, negative)
+          if forbidden.encode() in raw_neg or forbidden.encode() in raw_nest_neg:
+              fail(f"negative limit invented 400 {raw_neg[:400]!r} {raw_nest_neg[:400]!r}")
+          same("negative notifications", nest_neg_status, nest_neg, neg_status, neg)
+
+          preset_doc = succeeded("preset", *gql(go, token_a, preset)[:2])
+          if preset_doc["economicDataRefreshPresetStatus"]["lastError"] != "gqlrd-db-only":
+              fail(f"preset did not read the inserted config {preset_doc}")
+
+          snapshot = {
+              "channels": succeeded("snap channels", *gql(go, token_a, channels)[:2]),
+              "events": succeeded("snap events", *gql(go, token_a, events)[:2]),
+              "notes": succeeded("snap notes", *gql(go, token_a, notes)[:2]),
+              "economic": succeeded("snap economic", *gql(go, token_a, economic)[:2]),
+              "preset": preset_doc,
+          }
+          open("/tmp/gqlrd-snapshot.json", "w").write(json.dumps(snapshot))
+          print("go mode matches nest")
+          print("akshare: not-verified")
+          print("model: not-verified")
+          print("nominatim: not-verified")
+          print("crawl4ai: not-verified")
+          PY
+      - name: Stop NestJS and confirm registered queries still succeed
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/api-nestjs.pid ]; then kill "$(cat /tmp/api-nestjs.pid)" || true; fi
+          pkill -f "apps/api/dist/main.js" || true
+          pkill -f "node dist/main.js" || true
+          for i in $(seq 1 30); do
+            if ! curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+            echo "nestjs still up"
+            exit 1
+          fi
+          python3 - << 'PY'
+          import json, urllib.request, urllib.error
+
+          token = open("/tmp/gqlrd-token-a").read().strip()
+          snap = json.load(open("/tmp/gqlrd-snapshot.json"))
+          queries = {
+              "channels": "query { alertChannels { id name type target isActive } }",
+              "events": "query { alertEvents { id message severity status ruleId metricSlug } }",
+              "notes": "query { notifications { id type title } unreadNotificationCount }",
+              "economic": 'query { getEconomicData(category: "gqlrd-smoke", granularity: day, timeRange: { start: "2026-06-01T00:00:00.000Z", end: "2026-06-03T00:00:00.000Z" }) { value effectiveGranularity dataType item { slug } } }',
+              "preset": "query { economicDataRefreshPresetStatus(preset: keyMonitor) { preset categoryKey totalItems enabledItems lastStatus lastError } }",
+          }
+
+          def post(path, payload, token_value=token):
+              data = json.dumps(payload).encode()
+              req = urllib.request.Request("http://127.0.0.1:4020" + path, data=data, method="POST", headers={
+                  "content-type": "application/json",
+                  "authorization": "Bearer " + token_value,
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return resp.status, json.load(resp)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read()
+                  parsed = None
+                  try:
+                      parsed = json.loads(raw)
+                  except json.JSONDecodeError:
+                      parsed = raw.decode("utf-8", "replace")
+                  return exc.code, parsed
+
+          def canon(value):
+              return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+          for name, query in queries.items():
+              status, doc = post("/graphql", {"query": query})
+              if status != 200 or not isinstance(doc, dict) or doc.get("errors") or canon(doc.get("data")) != canon(snap[name]):
+                  raise SystemExit(f"after nest stop {name} {status} {doc}")
+          status, doc = post("/graphql", {"query": "query { alertRules { id name } }"})
+          if status != 502:
+              raise SystemExit(f"alertRules after nest stop {status} {doc}")
+          if isinstance(doc, dict) and isinstance(doc.get("data"), dict) and doc["data"].get("alertRules") is not None:
+              raise SystemExit(f"alertRules disguised success {doc}")
+          status, doc = post("/graphql/extra", {"query": "query { alertChannels { id } }"})
+          if status != 502:
+              raise SystemExit(f"longer graphql path {status} {doc}")
+          status, doc = post("/graphql", [{"query": "query { alertChannels { id } }"}])
+          if status != 502:
+              raise SystemExit(f"batched graphql {status} {doc}")
+          print("nestjs stopped; registered queries still succeed; alertRules is 502")
+          PY

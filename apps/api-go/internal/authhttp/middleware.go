@@ -56,6 +56,74 @@ func (id *Identity) HasPermission(name string) bool {
 	return id.permissions[name]
 }
 
+// AuthFailure is an authentication failure that the caller maps into its own
+// response shape. Status is 401, 500 (Redis), or 503 (MySQL).
+type AuthFailure struct {
+	Status  int
+	Message string
+}
+
+func (f *AuthFailure) Error() string {
+	if f == nil {
+		return ""
+	}
+	return f.Message
+}
+
+// Identify runs the same chain as Authenticate without writing a response.
+// GraphQL uses it so errors stay in the GraphQL envelope.
+func (a *Authenticator) Identify(r *http.Request) (*Identity, *AuthFailure) {
+	raw := authn.ExtractBearerToken(r)
+	if raw == "" {
+		return nil, &AuthFailure{Status: http.StatusUnauthorized, Message: "Unauthorized"}
+	}
+	token, err := a.verifier.Verify(raw)
+	if err != nil {
+		log.Printf("authn: token rejected: %v", err)
+		return nil, &AuthFailure{Status: http.StatusUnauthorized, Message: "Unauthorized"}
+	}
+	if token.JTI != "" {
+		revoked, err := a.blacklist.Revoked(r.Context(), token.JTI)
+		if err != nil {
+			log.Printf("authn: blacklist query failed: %v", err)
+			return nil, &AuthFailure{Status: http.StatusInternalServerError, Message: "Internal server error"}
+		}
+		if revoked {
+			return nil, &AuthFailure{Status: http.StatusUnauthorized, Message: "Access token revoked"}
+		}
+	}
+	authorization, err := a.authz.Authorize(r.Context(), token.Subject, token.OrgID)
+	if err != nil {
+		var rejection *authz.Rejection
+		if errors.As(err, &rejection) {
+			log.Printf("authz: rejected: %s", rejection.Message)
+			return nil, &AuthFailure{Status: http.StatusUnauthorized, Message: rejection.Message}
+		}
+		log.Printf("authz: database error: %v", err)
+		return nil, &AuthFailure{Status: http.StatusServiceUnavailable, Message: "Internal server error"}
+	}
+	return &Identity{
+		UserID:      authorization.UserID,
+		OrgID:       authorization.OrgID,
+		permissions: authorization.Permissions,
+	}, nil
+}
+
+// PermissionSet copies the derived permission names. The map is safe for the
+// caller to keep; it is not the authenticator's internal map.
+func (id *Identity) PermissionSet() map[string]bool {
+	if id == nil {
+		return nil
+	}
+	out := make(map[string]bool, len(id.permissions))
+	for name, ok := range id.permissions {
+		if ok {
+			out[name] = true
+		}
+	}
+	return out
+}
+
 // Authenticate 执行完整鉴权链。
 //
 // 失败时写出契约等价错误并返回 nil（调用方必须立即 return）；成功时
