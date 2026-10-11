@@ -472,6 +472,10 @@ func run() error {
 	if cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo {
 		analysisThreadsMode = string(legacyproxy.ModeGo)
 	}
+	situationMonitorsMode := ""
+	if cfg.SituationMonitorsMode == config.SituationMonitorsModeGo {
+		situationMonitorsMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -490,6 +494,7 @@ func run() error {
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
 	rules = legacyproxy.WithGraphQLRead(rules, string(cfg.GraphQLReadMode))
+	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -532,7 +537,8 @@ func run() error {
 				cfg.AnalysisViewsMode == config.AnalysisViewsModeGo ||
 				cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo ||
 				cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo ||
-				cfg.GraphQLReadMode == "go" {
+				cfg.GraphQLReadMode == "go" ||
+				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -878,6 +884,9 @@ func run() error {
 		return err
 	}
 	if err := wireAnalysisCollaboration(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := wireSituationMonitors(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
 

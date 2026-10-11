@@ -86,6 +86,16 @@ func subscriptionLockName(orgID, userID string) string {
 	return "ucs:" + encoded[:60]
 }
 
+// UserLockName 是订阅批量与态势监控 HTTP 共用的 MySQL 用户锁名。
+func UserLockName(orgID, userID string) string {
+	return subscriptionLockName(orgID, userID)
+}
+
+// UserLockTimeoutSeconds 与订阅路径 GET_LOCK 的等待秒数相同。
+func UserLockTimeoutSeconds() int {
+	return lockTimeoutSeconds
+}
+
 func newRowID() (string, error) {
 	var buf [12]byte
 	if _, err := rand.Read(buf[:]); err != nil {
