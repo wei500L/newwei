@@ -300,7 +300,7 @@ jobs:
           status, raw, headers = call(go, f"/api/analysis/views/{view_id}", "GET", token_b)
           if status != 404:
               fail(f"b reads private {status}")
-          status, raw, _ = call(go, f"/api/analysis/views/{view_id}", "GET", token_a)
+          status, raw, headers = call(go, f"/api/analysis/views/{view_id}", "GET", token_a)
           if status != 200 or headers.get("Cache-Control") != "no-store":
               fail(f"owner get cache {status} {headers.get('Cache-Control')}")
           status, raw, _ = call(nest, f"/api/analysis/views/{view_id}", "GET", token_a)
