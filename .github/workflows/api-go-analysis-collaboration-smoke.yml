@@ -21,14 +21,18 @@ env:
   MYSQL_USER: root
   MYSQL_PASSWORD: secret
   MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
   REDIS_HOST: 127.0.0.1
   REDIS_PORT: "6379"
   JWT_ISSUER: modular-monolith
   JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-smoke@example.com
+  SMTP_PASS: api-go-smoke-smtp-not-connected
   JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
   NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
   NEXTAUTH_URL: http://localhost:3000
   API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
   CORS_ORIGIN: http://localhost:3000
   AKSHARE_ENABLED: "false"
   SCHEDULE_ENABLED: "false"
@@ -69,6 +73,15 @@ jobs:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
