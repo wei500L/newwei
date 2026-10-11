@@ -200,6 +200,32 @@ const (
 	UserDigestModeGo     UserDigestMode = "go"
 )
 
+// AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
+type AnalysisViewsMode string
+
+const (
+	AnalysisViewsModeLegacy AnalysisViewsMode = "legacy"
+	AnalysisViewsModeGo     AnalysisViewsMode = "go"
+)
+
+// AnalysisBoardsMode 只控制 13 条看板、列和任务 HTTP。默认 legacy。
+// 不决定讨论服务能否直接读任务或视图。
+type AnalysisBoardsMode string
+
+const (
+	AnalysisBoardsModeLegacy AnalysisBoardsMode = "legacy"
+	AnalysisBoardsModeGo     AnalysisBoardsMode = "go"
+)
+
+// AnalysisThreadsMode 只控制 5 条笔记和评论 HTTP。默认 legacy。
+// 不决定看板详情能否直接数评论，也不决定删除视图/任务时能否清理讨论。
+type AnalysisThreadsMode string
+
+const (
+	AnalysisThreadsModeLegacy AnalysisThreadsMode = "legacy"
+	AnalysisThreadsModeGo     AnalysisThreadsMode = "go"
+)
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -259,6 +285,12 @@ type Config struct {
 	ContentSubscriptionsMode ContentSubscriptionsMode
 	UserNewsBehaviorMode     UserNewsBehaviorMode
 	UserDigestMode           UserDigestMode
+	// 分析工作台三个 HTTP 开关，彼此独立，默认都是 legacy。
+	// 只决定对应精确路由。讨论检查、评论计数和删除清理不看另一个开关。
+	// go 要求 JWT、MySQL、Redis，不要求 Mongo。
+	AnalysisViewsMode   AnalysisViewsMode
+	AnalysisBoardsMode  AnalysisBoardsMode
+	AnalysisThreadsMode AnalysisThreadsMode
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
 
@@ -544,6 +576,30 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.UserDigestMode = UserDigestModeGo
 	default:
 		errs = append(errs, "API_GO_USER_DIGEST_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_VIEWS_MODE")) {
+	case "", string(AnalysisViewsModeLegacy):
+		cfg.AnalysisViewsMode = AnalysisViewsModeLegacy
+	case string(AnalysisViewsModeGo):
+		cfg.AnalysisViewsMode = AnalysisViewsModeGo
+	default:
+		errs = append(errs, "API_GO_ANALYSIS_VIEWS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_BOARDS_MODE")) {
+	case "", string(AnalysisBoardsModeLegacy):
+		cfg.AnalysisBoardsMode = AnalysisBoardsModeLegacy
+	case string(AnalysisBoardsModeGo):
+		cfg.AnalysisBoardsMode = AnalysisBoardsModeGo
+	default:
+		errs = append(errs, "API_GO_ANALYSIS_BOARDS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_THREADS_MODE")) {
+	case "", string(AnalysisThreadsModeLegacy):
+		cfg.AnalysisThreadsMode = AnalysisThreadsModeLegacy
+	case string(AnalysisThreadsModeGo):
+		cfg.AnalysisThreadsMode = AnalysisThreadsModeGo
+	default:
+		errs = append(errs, "API_GO_ANALYSIS_THREADS_MODE must be one of legacy|go")
 	}
 	cfg.CrawlBaseURL = strings.TrimRight(strings.TrimSpace(getenv("CRAWL4AI_BASE_URL")), "/")
 	cfg.CrawlAPIKey = strings.TrimSpace(getenv("CRAWL4AI_API_KEY"))
@@ -838,6 +894,15 @@ func Load(getenv func(string) string) (Config, error) {
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_USER_DIGEST_MODE=go")
 		}
+	}
+	if cfg.AnalysisViewsMode == AnalysisViewsModeGo {
+		appendAuthRequirements(&errs, "API_GO_ANALYSIS_VIEWS_MODE", cfg)
+	}
+	if cfg.AnalysisBoardsMode == AnalysisBoardsModeGo {
+		appendAuthRequirements(&errs, "API_GO_ANALYSIS_BOARDS_MODE", cfg)
+	}
+	if cfg.AnalysisThreadsMode == AnalysisThreadsModeGo {
+		appendAuthRequirements(&errs, "API_GO_ANALYSIS_THREADS_MODE", cfg)
 	}
 
 	if len(errs) > 0 {

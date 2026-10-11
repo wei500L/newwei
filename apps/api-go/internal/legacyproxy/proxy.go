@@ -66,6 +66,15 @@ type Rule struct {
 	Exact bool
 	// OneSegment 要求 Prefix 之后恰好一个非空路径段，且段内不再有 /。
 	OneSegment bool
+	// TwoSegments 要求 Prefix 之后恰好两个非空路径段。与 OneSegment 互斥。
+	TwoSegments bool
+	// Tail 是动态段之后必须精确接上的后缀，以 / 开头，例如 /columns/reorder。
+	// 空表示路径在动态段结束。更长的路径不匹配。
+	Tail string
+	// HandlerKey 是 RegisterGoHandler 的查找键。空则使用 Prefix。
+	// 动态路径的 Prefix 含尾部斜杠，键则用稳定的静态前缀，避免把任务路由
+	// 注册到看板处理器上。
+	HandlerKey string
 	// Methods 是允许的方法白名单（大写 HTTP method；nil/空 = 全部）。
 	Methods map[string]bool
 }
@@ -414,7 +423,11 @@ func (g *Gateway) ServeHTTPWithShadow(w http.ResponseWriter, r *http.Request, sh
 	rule := g.match(r.Method, r.URL.Path)
 	switch rule.Mode {
 	case ModeGo:
-		handler := g.matchGoHandler(rule.Prefix)
+		key := rule.Prefix
+		if rule.HandlerKey != "" {
+			key = rule.HandlerKey
+		}
+		handler := g.matchGoHandler(key)
 		if handler != nil {
 			handler(w, r)
 			return
@@ -432,7 +445,11 @@ func (g *Gateway) ServeHTTPWithShadow(w http.ResponseWriter, r *http.Request, sh
 		g.serveShadow(w, r, sh, g.shadowBudget)
 	case ModeCanary:
 		if sh != nil && sh.CanaryRoute(r) {
-			handler := g.matchGoHandler(rule.Prefix)
+			key := rule.Prefix
+			if rule.HandlerKey != "" {
+				key = rule.HandlerKey
+			}
+			handler := g.matchGoHandler(key)
 			if handler != nil {
 				handler(w, r)
 				return
@@ -694,12 +711,25 @@ func (g *Gateway) match(method, path string) Rule {
 }
 
 func (rule Rule) matchesPath(path string) bool {
-	if rule.OneSegment {
+	if rule.OneSegment || rule.TwoSegments {
 		if !strings.HasPrefix(path, rule.Prefix) {
 			return false
 		}
 		rest := path[len(rule.Prefix):]
-		return rest != "" && !strings.Contains(rest, "/")
+		if rule.Tail != "" {
+			if !strings.HasPrefix(rule.Tail, "/") || !strings.HasSuffix(rest, rule.Tail) {
+				return false
+			}
+			rest = rest[:len(rest)-len(rule.Tail)]
+		}
+		if rest == "" || strings.HasPrefix(rest, "/") || strings.HasSuffix(rest, "/") {
+			return false
+		}
+		parts := strings.Split(rest, "/")
+		if rule.OneSegment {
+			return len(parts) == 1 && parts[0] != ""
+		}
+		return len(parts) == 2 && parts[0] != "" && parts[1] != ""
 	}
 	if rule.Exact {
 		return path == rule.Prefix

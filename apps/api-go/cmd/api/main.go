@@ -454,6 +454,18 @@ func run() error {
 	if cfg.UserDigestMode == config.UserDigestModeGo {
 		userDigestMode = string(legacyproxy.ModeGo)
 	}
+	analysisViewsMode := ""
+	if cfg.AnalysisViewsMode == config.AnalysisViewsModeGo {
+		analysisViewsMode = string(legacyproxy.ModeGo)
+	}
+	analysisBoardsMode := ""
+	if cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo {
+		analysisBoardsMode = string(legacyproxy.ModeGo)
+	}
+	analysisThreadsMode := ""
+	if cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo {
+		analysisThreadsMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -468,6 +480,9 @@ func run() error {
 	rules = legacyproxy.WithContentSubscriptions(rules, contentSubscriptionsMode)
 	rules = legacyproxy.WithUserNewsBehavior(rules, userNewsBehaviorMode)
 	rules = legacyproxy.WithUserDigest(rules, userDigestMode)
+	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
+	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
+	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -506,7 +521,10 @@ func run() error {
 				cfg.HealthzMode == config.HealthzModeGo ||
 				cfg.ContentSubscriptionsMode == config.ContentSubscriptionsModeGo ||
 				cfg.UserNewsBehaviorMode == config.UserNewsBehaviorModeGo ||
-				cfg.UserDigestMode == config.UserDigestModeGo {
+				cfg.UserDigestMode == config.UserDigestModeGo ||
+				cfg.AnalysisViewsMode == config.AnalysisViewsModeGo ||
+				cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo ||
+				cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -548,9 +566,11 @@ func run() error {
 	personalNewsGo := cfg.ContentSubscriptionsMode == config.ContentSubscriptionsModeGo ||
 		cfg.UserNewsBehaviorMode == config.UserNewsBehaviorModeGo ||
 		cfg.UserDigestMode == config.UserDigestModeGo
-	// user-settings、dashboard、stream、认证版 healthz 和个人内容三域共用 JWT/Redis/MySQL 鉴权栈。
-	// healthz 不因此要求 Mongo。stream 的 Mongo 在下面按需打开，启动时不探测。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo
+	analysisGo := cfg.AnalysisViewsMode == config.AnalysisViewsModeGo ||
+		cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo ||
+		cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo
+	// user-settings、dashboard、stream、认证版 healthz、个人内容和分析工作台共用 JWT/Redis/MySQL 鉴权栈。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -846,6 +866,9 @@ func run() error {
 	}
 
 	if err := wirePersonalNews(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
+	}
+	if err := wireAnalysisCollaboration(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
 
