@@ -167,19 +167,69 @@ func (s *Service) hgetallMany(ctx context.Context, keys []string) ([][]hashField
 }
 
 func hashFieldsFromCmd(cmd *redis.Cmd) ([]hashField, error) {
-	values, err := cmd.StringSlice()
+	value, err := cmd.Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	if len(values)%2 != 0 {
-		return nil, fmt.Errorf("hgetall: odd field count")
+	switch typed := value.(type) {
+	case nil:
+		return nil, nil
+	case []interface{}:
+		if len(typed)%2 != 0 {
+			return nil, fmt.Errorf("hgetall: odd field count")
+		}
+		out := make([]hashField, 0, len(typed)/2)
+		for i := 0; i < len(typed); i += 2 {
+			field, err := redisScalar(typed[i])
+			if err != nil {
+				return nil, err
+			}
+			item, err := redisScalar(typed[i+1])
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, hashField{field: field, value: item})
+		}
+		return out, nil
+	case map[string]string:
+		return hashFieldsFromMap(typed), nil
+	case map[string]interface{}:
+		out := make([]hashField, 0, len(typed))
+		for field, item := range typed {
+			text, err := redisScalar(item)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, hashField{field: field, value: text})
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("hgetall: unexpected type %T", value)
 	}
-	out := make([]hashField, 0, len(values)/2)
-	for i := 0; i < len(values); i += 2 {
-		out = append(out, hashField{field: values[i], value: values[i+1]})
+}
+
+func hashFieldsFromMap(values map[string]string) []hashField {
+	out := make([]hashField, 0, len(values))
+	for field, value := range values {
+		out = append(out, hashField{field: field, value: value})
 	}
-	return out, nil
+	return out
+}
+
+func redisScalar(value any) (string, error) {
+	switch typed := value.(type) {
+	case string:
+		return typed, nil
+	case []byte:
+		return string(typed), nil
+	case int64:
+		return fmt.Sprintf("%d", typed), nil
+	case nil:
+		return "", nil
+	default:
+		return "", fmt.Errorf("hgetall: unexpected value %T", value)
+	}
 }

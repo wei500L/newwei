@@ -63,7 +63,7 @@ NestJS 定点修复在 `apps/api/src/modules/user-content-subscriptions/user-con
 ## 保留的既有语义
 
 - 重复的 `engaged_read` / `deep_read` / `completed_read` 返回 POST 默认 201 和空正文，不返回 `{"recorded":true}`。
-- 画像保留 positive、negative、net、时间分段和 meta，不只返回正向 topic。
+- 画像保留 positive、negative、net、时间分段和 meta，不只返回正向 topic。Go Redis 客户端固定 RESP2，这样 `HGETALL` 仍是扁平数组，同分排序和 ioredis 一致。go-redis v9 默认 RESP3 会把同一个命令收成 map，推荐读取画像时会失败。
 - 清空会删 legacy hash、窗口内日桶、profile cache，并在同一事务里删除该用户 aggregate/snapshot，再把同组织其他用户的 snapshot 标脏。
 - 摘要 `windowEnd` 是当天 UTC 00:00。`loadEvents` 只有 `lastAt >= windowStart`，没有上界。
 - 投递时区使用 Go 内置 `time/tzdata`。`nextRunAt` 按请求时区的当地钟点计算，不是固定加 24 小时。Nest dayjs 在 UTC 进程上会冻住参考时刻的偏移；Go 使用 `time.Date` 所在时区。非夏令时切换日两者一致，夏令时切换日可能差一小时。关闭投递时把 `nextRunAt` 和 `lastError` 写成 NULL，不覆盖 `lastStatus` / `lastSentAt`。

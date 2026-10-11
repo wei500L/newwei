@@ -559,6 +559,9 @@ func run() error {
 			Username: cfg.RedisUsername,
 			Password: cfg.RedisPassword,
 			DB:       cfg.RedisDB,
+			// go-redis v9 默认协商 RESP3。HGETALL 会变成 map，原始字段顺序丢失，
+			// 行为画像的同分排序就和 ioredis 对不上。固定 RESP2，和 NestJS 一致。
+			Protocol: 2,
 		})
 		verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		blacklist := authn.NewRedisBlacklist(redisClient)
