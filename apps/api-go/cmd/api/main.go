@@ -1036,7 +1036,10 @@ func run() error {
 		alerts.Register(reg, sharedDB)
 		history.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
 		economic.Register(reg, sharedDB)
-		newsevents.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+		newsEventsGo := cfg.GraphQLNewsEventsMode == "go"
+		if newsEventsGo {
+			newsevents.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1057,7 +1060,12 @@ func run() error {
 		graphqlHandler = handler
 		gateway.RegisterGoHandler(graphqlread.Path, graphqlHandler.ServeHTTP)
 		gateway.RegisterGoHandler(graphqlread.StatsPath, graphqlHandler.ServeStats)
-		log.Printf("api-go: GraphQL read under go (16 pilot queries plus 6 news-event reads; mutations and other queries stay on NestJS)")
+		log.Printf("api-go: GraphQL read pilot under go (16 queries; mutations and other queries stay on NestJS)")
+		if newsEventsGo {
+			log.Printf("api-go: GraphQL news-event reads registered (newsEvents, newsEvent, newsEventBrief, newsEventReferencedArticles, topicGroups, eventGroups)")
+		} else {
+			log.Printf("api-go: GraphQL news-event reads not registered (API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy)")
+		}
 	}
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

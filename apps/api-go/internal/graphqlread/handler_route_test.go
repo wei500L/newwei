@@ -10,6 +10,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 )
 
 func TestHandlerExecutesRegisteredAndForwardsUnregistered(t *testing.T) {
@@ -62,5 +63,46 @@ func TestHandlerExecutesRegisteredAndForwardsUnregistered(t *testing.T) {
 	}
 	if _, body := post(`{"query":"{ notifications(limit: -1) { id } }"}`); body == "forwarded" || strings.Contains(body, "take must be a non-negative integer") {
 		t.Fatalf("negative notification limit = %s", body)
+	}
+}
+
+func TestNewsEventsRegistrationChangesOnlyThoseDocuments(t *testing.T) {
+	reg := contract.NewRegistry()
+	alerts.Register(reg, nil)
+	history.Register(reg, nil, nil, nil)
+	economic.Register(reg, nil)
+	newsevents.Register(reg, nil, nil, nil)
+	var forwarded int
+	handler, err := NewHandler(Options{
+		Registry: reg,
+		Legacy: func(w http.ResponseWriter, _ *http.Request) {
+			forwarded++
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"upstream":"nest"}`))
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(body string) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "http://gateway/graphql", strings.NewReader(body))
+		req.Header.Set("content-type", "application/json")
+		rec := httptest.NewRecorder()
+		before := forwarded
+		handler.ServeHTTP(rec, req)
+		if forwarded != before {
+			return "forwarded"
+		}
+		return rec.Body.String()
+	}
+	if got := post(`{"query":"{ newsEvents { id } }"}`); got == "forwarded" {
+		t.Fatal("registered newsEvents was forwarded")
+	}
+	if got := post(`{"query":"{ alertChannels { id } }"}`); got == "forwarded" {
+		t.Fatal("alertChannels was forwarded")
+	}
+	if got := post(`{"query":"{ newsEvents { id } newsEventSourcePolicySyncStatus { degraded } }"}`); got != "forwarded" {
+		t.Fatalf("mixed source-policy document = %s", got)
 	}
 }

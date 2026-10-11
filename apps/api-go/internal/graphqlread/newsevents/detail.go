@@ -306,13 +306,11 @@ func (s *service) processedClasses(ctx context.Context, rows []categoryRow) map[
 }
 
 func classFromResult(value any) processedClass {
-	record, ok := value.(bson.M)
+	// Find 解到 bson.M 时，嵌套的 result 在 mongo-driver v2 里仍可能是 bson.D。
+	// 只认 bson.M 会丢掉 category_path，详情分类就和 Nest 对不上。
+	record, ok := asMap(value)
 	if !ok {
-		if generic, isMap := value.(map[string]any); isMap {
-			record = bson.M(generic)
-		} else {
-			return processedClass{}
-		}
+		return processedClass{}
 	}
 	legacy := ""
 	if text, ok := record["category"].(string); ok {

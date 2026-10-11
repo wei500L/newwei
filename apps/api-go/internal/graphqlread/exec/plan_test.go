@@ -10,6 +10,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/schema"
 )
 
@@ -107,6 +108,13 @@ func TestRegisteredRootsExecuteAndUnregisteredDocumentsStayLegacy(t *testing.T) 
 		}
 	}
 
+	// API_GO_GRAPHQL_READ_MODE=go 且 API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy：
+	// 不登记新闻事件 root。只含 newsEvents 的文档整包回 Nest，上面的 16 个 query 仍由 Go 执行。
+	newsOnly := engine.PlanDocument(`query { newsEvents { id } }`, nil, nil)
+	if newsOnly.Kind != KindLegacy {
+		t.Fatalf("news events legacy mode kind %s", newsOnly.Kind)
+	}
+
 	negative := engine.PlanDocument(`query { notifications(limit: -1) { id } }`, nil, nil)
 	if negative.Kind != KindExecute {
 		t.Fatalf("negative notifications kind %s", negative.Kind)
@@ -116,6 +124,39 @@ func TestRegisteredRootsExecuteAndUnregisteredDocumentsStayLegacy(t *testing.T) 
 	}, nil, false, 30, "schema", "")
 	if strings.Contains(string(result.Body), "take must be a non-negative integer") {
 		t.Fatalf("negative limit invented a 400: %s", result.Body)
+	}
+}
+
+func TestNewsEventsRootsExecuteOnlyWhenRegistered(t *testing.T) {
+	loaded, err := schema.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := contract.NewRegistry()
+	alerts.Register(reg, nil)
+	history.Register(reg, nil, nil, nil)
+	economic.Register(reg, nil)
+	newsevents.Register(reg, nil, nil, nil)
+	engine := New(loaded, reg, 8, 2000, nil)
+
+	const six = `query {
+		newsEvents { id }
+		newsEvent(id: "e") { id }
+		newsEventBrief(eventId: "e") { version }
+		newsEventReferencedArticles(eventId: "e", articleIds: ["a"]) { id }
+		topicGroups { topic }
+		eventGroups { eventId }
+	}`
+	if got := engine.PlanDocument(six, nil, nil); got.Kind != KindExecute {
+		t.Fatalf("both modes go kind %s body %s", got.Kind, got.Result.Body)
+	}
+	mixed := engine.PlanDocument(`query { newsEvents { id } newsEventSourcePolicySyncStatus { degraded } }`, nil, nil)
+	if mixed.Kind != KindLegacy {
+		t.Fatalf("source policy mix kind %s", mixed.Kind)
+	}
+	pilot := engine.PlanDocument(`query { alertChannels { id } }`, nil, nil)
+	if pilot.Kind != KindExecute {
+		t.Fatalf("pilot query kind %s", pilot.Kind)
 	}
 }
 

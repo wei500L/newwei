@@ -398,13 +398,14 @@ pilot 注入 `go`。与 stats、charts 开关互不影响。生产入口不因�
 
 ### 4.14 新闻事件控制台 GraphQL 读（Go-批8）
 
-不新增开关。`API_GO_GRAPHQL_READ_MODE=go` 时，在已有精确 `/graphql` 执行器上再登记 6 个只读 root：`newsEvents`、`newsEvent`、`newsEventBrief`、`newsEventReferencedArticles`、`topicGroups`、`eventGroups`。默认仍是 `legacy`。选中的 query 里只要混入未登记 root 或未实现嵌套字段，整包回 NestJS。
+新增 `API_GO_GRAPHQL_NEWS_EVENTS_MODE`，只接受 `legacy` 或 `go`，默认 `legacy`，非法值启动失败。`API_GO_GRAPHQL_READ_MODE` 默认仍是 `legacy`。只有两个都是 `go` 时，才在已有精确 `/graphql` 执行器上登记 6 个只读 root：`newsEvents`、`newsEvent`、`newsEventBrief`、`newsEventReferencedArticles`、`topicGroups`、`eventGroups`。读查询为 `legacy` 时不另挂入口。新闻事件为 `legacy` 时，含这六个 root 的文档整包回 NestJS，原来的 16 个 query 仍由 Go 执行。启动日志里的「16 queries」不计这六个 root。
 
-- **身份**：沿用 GraphQL 读试点的验签、Redis 撤销和 MySQL membership。`items.read` 从服务端重推导。组织隔离用这个 orgId。错组织的 `newsEvent` 返回 null。
-- **读路径**：列表、详情、引用文章和热度/权威统计读 MySQL。分组读 Mongo `processeditems`，并使用与 Nest 相同的 Redis 缓存键。热度和权威打分复用公开故事详情里已有的公式。
-- **简报**：只在 `metadata.briefV1` 的语言和指纹命中时返回。`forceRefresh` 或未命中不写空简报，按生产 Nest 的失败语义返回 internal error。本批不把真实模型调用当前置。
-- **留下**：`newsEventSourcePolicySyncStatus`、设置与来源策略、mutation、subscription、聚类、采集和邮件。
-- **回滚**：`API_GO_GRAPHQL_READ_MODE=legacy`。不改表，不改 Web URL 或 SDL。
+- **身份**：沿用 GraphQL 读试点的验签、Redis 撤销和 MySQL membership。`items.read` 从服务端重推导。组织隔离用这个 orgId。不采信 JWT 里的 orgId 或 permissions。`mtk_` 不能访问。错组织的 `newsEvent` 返回 null。
+- **依赖**：两个都是 `go` 时沿用读查询试点已经要求的 MySQL、JWT、Redis 和 `MONGO_URI`。Mongo 驱动保持 `go.mongodb.org/mongo-driver/v2 v2.9.2`。
+- **读路径**：列表、详情、引用文章和热度/权威统计读 MySQL。省略 `windowDays` 时列表窗 30 天、权威窗 45 天。分组读 Mongo `processeditems`，聚合带 orgId，缓存键和 TTL 与 Nest 相同。热度和权威打分复用公开故事详情里已有的公式，只增加导出包装。来源分类只看四张名单。
+- **简报**：只在 `metadata.briefV1` 的语言和指纹命中时返回。`forceRefresh` 或未命中不调用模型，不写 `briefV1`，不返回空简报，按生产 Nest 的失败语义返回 internal error。
+- **留下**：`newsEventSourcePolicySyncStatus`、设置与来源策略、mutation、subscription、聚类、采集和邮件。混入未登记 root 时整包回 NestJS。
+- **回滚**：只把 `API_GO_GRAPHQL_NEWS_EVENTS_MODE` 改回 `legacy`。不改表，不改 Web URL 或 SDL，不改 `API_GO_GRAPHQL_READ_MODE` 的默认值。
 
 ## 5. 队列/cron/outbox 边界（红线）
 

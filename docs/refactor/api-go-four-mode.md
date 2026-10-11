@@ -77,5 +77,5 @@
 - War Map transport 与 layers（Go-批5D）：`API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE` 和 `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE` 分开控制，默认 `legacy`。打开后只接管对应的精确 GET。layers 的 `flightMode=all` 遵守 OpenSky 预算。stream 仍是 NestJS。spacetime 见 Go-批6A。回滚是把对应变量改回 `legacy`。生产流量未切换
 - Dashboard Spacetime（Go-批6A）：`API_GO_DASHBOARD_SPACETIME_GEO_MODE` 与 `API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE` 分开控制，默认都是 `legacy`。打开后各接管一对精确 GET：热力图总览+文章下钻，或传播图总览+文章下钻。日期按 UTC 整日对齐。热力图 snapshot 与 NestJS 共用 Redis 格式。传播图包含 duplicate/time 边。`/api/dashboard/stream` 不在这两个开关里。回滚是把对应变量改回 `legacy`。生产流量未切换。外部地理解析没有实网验收
 - Dashboard SSE 与认证版 healthz（Go-批6B）：`API_GO_DASHBOARD_STREAM_MODE` 与 `API_GO_HEALTHZ_MODE` 分开控制，默认都是 `legacy`。SSE 是精确 GET 加合格预检，复用已有 War Map、K 线和热力图服务，按指纹增量发布。认证版 healthz 接受人类令牌和有效机器令牌，并在请求时跑七项探针。`/api/healthz/live` 仍是 shadow。任一开关改回 `legacy` 不影响另一条。生产流量未切换。未配置的 crawl4ai、SSRF proxy 和 LLM 如实失败
-- 新闻事件控制台 GraphQL 读（Go-批8）：不新增开关。`API_GO_GRAPHQL_READ_MODE=go` 时，`newsEvents`、`newsEvent`、`newsEventBrief`、`newsEventReferencedArticles`、`topicGroups`、`eventGroups` 由已有 Go GraphQL 执行器处理。默认 `legacy`。回滚只改回 `legacy`。简报缓存未命中不返回空成功。生产入口未切换
+- 新闻事件控制台 GraphQL 读（Go-批8）：新增 `API_GO_GRAPHQL_NEWS_EVENTS_MODE`，默认 `legacy`。与 `API_GO_GRAPHQL_READ_MODE` 同时为 `go` 时，六个 root 由已有执行器处理。回滚只改新闻事件开关。简报缓存未命中不调用模型。生产入口未切换
 - 本机按任务约束未运行 `go test`/`go vet`/`go build`；全部 Go 测试在远端 CI 执行

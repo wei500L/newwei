@@ -293,16 +293,20 @@ type Config struct {
 	AnalysisThreadsMode AnalysisThreadsMode
 	// GraphQLReadMode 控制精确 /graphql 的已迁移 query。默认 legacy。
 	// go 只执行本轮 16 个 query；mutation、subscription、未迁移 query 仍代理 NestJS。
-	GraphQLReadMode      string
-	GraphQLAPQEnabled    bool
-	GraphQLDepthLimit    int
-	GraphQLComplexity    int
-	GraphQLCacheEnabled  bool
-	GraphQLCacheTTL      int
-	TrustProxy           string
-	RateLimitFailOpen    bool
-	RateLimitLogin       int
-	RateLimitLoginWindow int
+	GraphQLReadMode string
+	// GraphQLNewsEventsMode 只决定六个新闻事件 root 是否登记。默认 legacy。
+	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
+	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
+	GraphQLNewsEventsMode string
+	GraphQLAPQEnabled     bool
+	GraphQLDepthLimit     int
+	GraphQLComplexity     int
+	GraphQLCacheEnabled   bool
+	GraphQLCacheTTL       int
+	TrustProxy            string
+	RateLimitFailOpen     bool
+	RateLimitLogin        int
+	RateLimitLoginWindow  int
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
 
@@ -620,6 +624,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.GraphQLReadMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_READ_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_EVENTS_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLNewsEventsMode = "legacy"
+	case "go":
+		cfg.GraphQLNewsEventsMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENTS_MODE must be one of legacy|go")
 	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
