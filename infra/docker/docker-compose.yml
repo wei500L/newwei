@@ -599,6 +599,13 @@ services:
       API_GO_CONTENT_SUBSCRIPTIONS_MODE: legacy
       API_GO_USER_NEWS_BEHAVIOR_MODE: legacy
       API_GO_USER_DIGEST_MODE: legacy
+      # 分析工作台保存视图、看板/列/任务、笔记/评论（Go 协作域）。
+      # pilot 与样例保持 legacy。三个变量各自改成 go 才切换对应 HTTP。
+      # 内部讨论检查、评论计数和删除清理不看另一个开关，也不回调 NestJS。
+      # 不接管 POST /api/analysis/exports/*。
+      API_GO_ANALYSIS_VIEWS_MODE: legacy
+      API_GO_ANALYSIS_BOARDS_MODE: legacy
+      API_GO_ANALYSIS_THREADS_MODE: legacy
       MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。

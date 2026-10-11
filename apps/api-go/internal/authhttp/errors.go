@@ -131,6 +131,35 @@ func WriteDatabaseFailure(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// WriteHTTPException 写 Nest HttpException 的生产形状：message 原样，
+// error 由状态码枚举名转成 "Bad Request" / "Not Found" / "Forbidden"。
+// 不带 code。权限不足仍用 WriteForbidden，那是另一套安全载荷。
+func WriteHTTPException(w http.ResponseWriter, r *http.Request, status int, message string) {
+	writeError(w, r, errorBody{
+		StatusCode: status,
+		Message:    message,
+		Error:      httpStatusErrorName(status),
+	})
+}
+
+func httpStatusErrorName(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "Bad Request"
+	case http.StatusUnauthorized:
+		return "Unauthorized"
+	case http.StatusForbidden:
+		return "Forbidden"
+	case http.StatusNotFound:
+		return "Not Found"
+	default:
+		if status >= 500 {
+			return "Internal Server Error"
+		}
+		return "Error"
+	}
+}
+
 // WriteBadRequest 写 ValidationPipe / body-parser 映射后的 400
 //（GlobalExceptionFilter 把 class-validator 的 message 数组用 "; " 拼成
 // 一个字符串；error 为 "Bad Request"）。非法 JSON 也走这个形状：Nest

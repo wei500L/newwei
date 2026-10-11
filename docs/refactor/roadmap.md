@@ -45,6 +45,7 @@
 | Dashboard Spacetime 热力图与传播图（Go-批6A） | 🔶 `API_GO_DASHBOARD_SPACETIME_GEO_MODE` 与 `API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE` 各自默认 `legacy`。打开后各接管一对精确 GET：热力图总览+下钻，或传播图总览+下钻。日期按 UTC 整日对齐。热力图 snapshot 与 NestJS 共用 Redis JSON。传播图返回节点和 duplicate/time 边。不接管 `/api/dashboard/stream`。回滚是把对应变量改回 `legacy`。外部地理解析未做实网验收。生产流量未切换。 |
 | Dashboard SSE 与认证版 healthz（Go-批6B） | 🔶 `API_GO_DASHBOARD_STREAM_MODE` 与 `API_GO_HEALTHZ_MODE` 各自默认 `legacy`。SSE 只接管精确 `GET /api/dashboard/stream`：连接时验签并重推导 `dashboards.read`，复用 War Map、K 线和热力图服务，按指纹发布变化。认证版 `GET /api/healthz` 接受人类 access token 和有效 `mtk_` 机器令牌，请求时执行七项探针。公开 `GET /api/healthz/live` 不变。未配置的 crawl4ai、SSRF proxy、LLM 如实失败。两个开关可分别改回 `legacy`。生产流量未切换。 |
 | 个人内容订阅、行为画像与每日摘要（Go-批7） | 🔶 `API_GO_CONTENT_SUBSCRIPTIONS_MODE`、`API_GO_USER_NEWS_BEHAVIOR_MODE`、`API_GO_USER_DIGEST_MODE` 各自默认 `legacy`，只切换对应 HTTP。权限仍是 `items.read`。内部订阅、目录和画像调用不看另外两个 HTTP 开关。不启动邮件 Cron。生产流量未切换。说明见 `docs/refactor/go-personal-news-workspace.md`。 |
+| 分析工作台协作（Go） | 🔶 `API_GO_ANALYSIS_VIEWS_MODE`、`API_GO_ANALYSIS_BOARDS_MODE`、`API_GO_ANALYSIS_THREADS_MODE` 各自默认 `legacy`。23 条视图、看板/列/任务、笔记/评论由 Go 执行；`GET` 看板会创建默认看板。三条 `POST /api/analysis/exports/*`、GraphQL、worker 与邮件 Cron 仍是 NestJS。锁协议是 Org 行、看板行、视图行，Go 与 Nest 共用。生产流量未切换。说明见 `docs/refactor/go-analysis-collaboration.md`。 |
 | api 单测基座（vitest） | ✅ 远端 CI 已验证（SEC-01 6/6 + API-01 4/4 + 扫描器语义/基线断言全绿） |
 
 余项（按序）：

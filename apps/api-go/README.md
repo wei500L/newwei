@@ -20,6 +20,8 @@ Go-批6B 起，**Dashboard SSE** 与**认证版健康检查**各有独立开关�
 
 Go-批7 把个人内容订阅、新闻行为画像、每日摘要和投递设置的 15 条 HTTP 迁入 Go。三个开关各自默认 `legacy`，只决定对应精确路由：`API_GO_CONTENT_SUBSCRIPTIONS_MODE`、`API_GO_USER_NEWS_BEHAVIOR_MODE`、`API_GO_USER_DIGEST_MODE`。权限仍是 `items.read`。摘要开启时直接调用 Go 订阅与目录，推荐开启时直接调用 Go 画像，不看另外两个 HTTP 开关。邮件 Cron 仍由 NestJS 消费 `UserDigestDeliverySchedule`。说明见 `docs/refactor/go-personal-news-workspace.md`。
 
+分析工作台的保存视图、看板/列/任务、笔记与评论共 23 条 HTTP 由三个默认 `legacy` 的开关分别接管：`API_GO_ANALYSIS_VIEWS_MODE`、`API_GO_ANALYSIS_BOARDS_MODE`、`API_GO_ANALYSIS_THREADS_MODE`。`GET /api/analysis/boards` 与看板详情会在组织没有未归档看板时创建默认看板，不是纯读。讨论检查、评论计数和删除清理直接查库，不看另一个 HTTP 开关，也不回调 NestJS。`POST /api/analysis/exports/{search,items,events}`、`/graphql`、Redis 订阅、分析/助手 worker、采集流水线和邮件 Cron 仍由 NestJS 承担。说明见 `docs/refactor/go-analysis-collaboration.md`。
+
 ## 运行
 
 ```bash

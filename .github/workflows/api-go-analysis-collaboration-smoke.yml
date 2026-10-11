@@ -1,0 +1,652 @@
+# 分析工作台 23 条 Go 路由的真实栈验收。不进普通 CI。
+# PR 上加 label api-go-analysis-collaboration-smoke，或 workflow_dispatch。
+# 不调用模型、向量或邮件。exports 与 /graphql 仍走 NestJS。
+name: api-go-analysis-collaboration-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-analysis-collaboration-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-smoke-org
+  SEED_ORG_NAME: api-go Smoke Org
+  SEED_ADMIN_EMAIL: api-go-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoSmoke#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-analysis-collaboration-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-analysis-collaboration-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-analysis:ci .
+      - name: Start api-go
+        run: |
+          set -euo pipefail
+          start_go() {
+            local views="$1" boards="$2" threads="$3"
+            docker rm -f api-go-analysis >/dev/null 2>&1 || true
+            docker run -d --name api-go-analysis \
+              --add-host=host.docker.internal:host-gateway \
+              --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s \
+              -p 127.0.0.1:4020:4020 \
+              -e PORT=4020 \
+              -e LEGACY_API_URL=http://host.docker.internal:4000 \
+              -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+              -e API_GO_ANALYSIS_VIEWS_MODE="$views" \
+              -e API_GO_ANALYSIS_BOARDS_MODE="$boards" \
+              -e API_GO_ANALYSIS_THREADS_MODE="$threads" \
+              -e API_GO_DASHBOARD_STATS_MODE=legacy \
+              -e API_GO_DASHBOARD_CHARTS_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy \
+              -e API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy \
+              -e API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy \
+              -e API_GO_DASHBOARD_STREAM_MODE=legacy \
+              -e API_GO_HEALTHZ_MODE=legacy \
+              -e API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy \
+              -e API_GO_USER_NEWS_BEHAVIOR_MODE=legacy \
+              -e API_GO_USER_DIGEST_MODE=legacy \
+              -e JWT_SECRET="$JWT_SECRET" \
+              -e JWT_ISSUER="$JWT_ISSUER" \
+              -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+              -e REDIS_HOST=host.docker.internal \
+              -e REDIS_PORT=6379 \
+              -e CANARY_PERCENT=0 \
+              -e CORS_ORIGIN="$CORS_ORIGIN" \
+              api-go-analysis:ci
+            for i in $(seq 1 30); do
+              status=$(docker inspect --format '{{.State.Health.Status}}' api-go-analysis 2>/dev/null || echo starting)
+              echo "health=$status views=$views boards=$boards threads=$threads"
+              if [ "$status" = "healthy" ]; then return 0; fi
+              if [ "$status" = "unhealthy" ]; then docker logs api-go-analysis; return 1; fi
+              sleep 2
+            done
+            docker logs api-go-analysis || true
+            return 1
+          }
+          start_go go go go
+          declare -f start_go > /tmp/start-go.sh
+      - name: Exercise analysis collaboration
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, os, subprocess
+          from concurrent.futures import ThreadPoolExecutor
+          import urllib.error, urllib.request
+
+          go = "http://127.0.0.1:4020"
+          nest = "http://127.0.0.1:4000"
+          cid = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=mysql:8.4"], text=True).split()[0]
+
+          def sql(statement):
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"], input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  raise SystemExit(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=30):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read(), resp.headers
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read(), exc.headers
+
+          def body(raw):
+              if not raw:
+                  return None
+              return json.loads(raw)
+
+          def login(email):
+              status, raw, _ = call(go, "/api/auth/login", "POST", payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:300]!r}")
+              return doc["accessToken"]
+
+          org = sql("SELECT id FROM Org WHERE slug='api-go-smoke-org'")
+          admin = sql("SELECT id FROM User WHERE email='api-go-smoke-admin@example.com'")
+          read_perm = sql("SELECT id FROM Permission WHERE name='analysis.read'")
+          write_perm = sql("SELECT id FROM Permission WHERE name='analysis.write'")
+          sql(f"""
+          UPDATE User SET emailVerified = NOW(3) WHERE id = '{admin}';
+          INSERT INTO Role (id, orgId, name, description, isSystem)
+          VALUES
+            ('cancooprolewriter000000001', '{org}', 'analysis-writer-smoke', 'writer', 0),
+            ('cancooprolereader000000001', '{org}', 'analysis-reader-smoke', 'reader', 0);
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('cancooprpw100000000000001', 'cancooprolewriter000000001', '{read_perm}'),
+            ('cancooprpw200000000000001', 'cancooprolewriter000000001', '{write_perm}'),
+            ('cancooprpw300000000000001', 'cancooprolereader000000001', '{read_perm}');
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'cancoopuserb0000000000001', 'analysis-b@example.com', passwordHash, 'Ana', 'Bee', 1, NOW(3), NOW(3), NOW(3)
+          FROM User WHERE id = '{admin}';
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'cancoopuserr0000000000001', 'analysis-read@example.com', passwordHash, 'Ana', 'Read', 1, NOW(3), NOW(3), NOW(3)
+          FROM User WHERE id = '{admin}';
+          INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt) VALUES
+            ('cancoopmemb00000000000001', 'cancoopuserb0000000000001', '{org}', 'cancooprolewriter000000001', 1, NOW(3)),
+            ('cancoopmemr00000000000001', 'cancoopuserr0000000000001', '{org}', 'cancooprolereader000000001', 1, NOW(3));
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt)
+          VALUES ('cancooporgc00000000000001', 'Analysis Other', 'analysis-other-org', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, orgId, name, description, isSystem)
+          VALUES ('cancooprolec0000000000001', 'cancooporgc00000000000001', 'analysis-other-smoke', 'other', 0);
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('cancooprpc100000000000001', 'cancooprolec0000000000001', '{read_perm}'),
+            ('cancooprpc200000000000001', 'cancooprolec0000000000001', '{write_perm}');
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'cancoopuserc0000000000001', 'analysis-c@example.com', passwordHash, 'Other', 'Org', 1, NOW(3), NOW(3), NOW(3)
+          FROM User WHERE id = '{admin}';
+          INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+          VALUES ('cancoopmemc00000000000001', 'cancoopuserc0000000000001', 'cancooporgc00000000000001', 'cancooprolec0000000000001', 1, NOW(3));
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt)
+          VALUES ('cancooporgempty0000000001', 'Analysis Empty', 'analysis-empty-org', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, orgId, name, description, isSystem)
+          VALUES ('cancooprolee0000000000001', 'cancooporgempty0000000001', 'analysis-empty-smoke', 'empty', 0);
+          INSERT INTO RolePermission (id, roleId, permissionId)
+          VALUES ('cancooprpe100000000000001', 'cancooprolee0000000000001', '{read_perm}');
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'cancoopusere0000000000001', 'analysis-empty@example.com', passwordHash, 'Empty', 'Org', 1, NOW(3), NOW(3), NOW(3)
+          FROM User WHERE id = '{admin}';
+          INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+          VALUES ('cancoopmeme00000000000001', 'cancoopusere0000000000001', 'cancooporgempty0000000001', 'cancooprolee0000000000001', 1, NOW(3));
+          INSERT INTO ItemMeta (id, orgId, externalId, name, mongoRef, status, version, sortAt, createdAt, updatedAt)
+          VALUES ('cancoopitem00000000000001', '{org}', 'analysis-smoke-item', 'Smoke item', 'analysis-smoke-mongo', 'draft', 1, NOW(3), NOW(3), NOW(3));
+          INSERT INTO NewsEvent (id, orgId, status, title, startAt, lastAt, createdAt, updatedAt)
+          VALUES ('cancoopevent0000000000001', '{org}', 'active', 'Smoke event', NOW(3), NOW(3), NOW(3), NOW(3));
+          """)
+
+          token_a = login(os.environ["SEED_ADMIN_EMAIL"])
+          token_b = login("analysis-b@example.com")
+          token_r = login("analysis-read@example.com")
+          token_c = login("analysis-c@example.com")
+          token_e = login("analysis-empty@example.com")
+
+          status, raw, _ = call(go, "/api/analysis/views", "GET")
+          if status != 401:
+              fail(f"anonymous views {status}")
+          status, raw, headers = call(go, "/api/analysis/views", "POST", token_r, {"title": "nope", "surface": "search", "routePath": "/search"})
+          if status != 403:
+              fail(f"reader create {status} {raw[:200]!r}")
+
+          status, raw, headers = call(go, "/api/analysis/views", "POST", token_a, {
+              "title": "  Private watch  ",
+              "description": "   ",
+              "surface": "search",
+              "routePath": "/search",
+              "queryString": "?savedView=1&q=a&page=2&q=b%20c&pageSize=10&topic=x",
+          })
+          view = body(raw)
+          if status != 201 or not view or view.get("visibility") != "private" or view.get("description") is not None:
+              fail(f"create view {status} {view}")
+          if view["queryState"]["queryString"] != "q=a&q=b+c&topic=x":
+              fail(f"queryString {view['queryState']}")
+          if headers.get("Cache-Control"):
+              fail("POST set cache control")
+          view_id = view["id"]
+          if not view.get("canEdit") or not view.get("createdBy") or not view.get("updatedBy"):
+              fail(f"view actors {view}")
+
+          status, raw, headers = call(go, f"/api/analysis/views/{view_id}", "GET", token_b)
+          if status != 404:
+              fail(f"b reads private {status}")
+          status, raw, _ = call(go, f"/api/analysis/views/{view_id}", "GET", token_a)
+          if status != 200 or headers.get("Cache-Control") != "no-store":
+              fail(f"owner get cache {status} {headers.get('Cache-Control')}")
+          status, raw, _ = call(nest, f"/api/analysis/views/{view_id}", "GET", token_a)
+          nest_view = body(raw)
+          if status != 200 or nest_view["title"] != "Private watch" or nest_view["queryState"]["queryString"] != view["queryState"]["queryString"]:
+              fail(f"nest read go view {status} {nest_view}")
+
+          status, raw, _ = call(go, f"/api/analysis/views/{view_id}", "PATCH", token_a, {"visibility": "org_shared", "description": None})
+          shared = body(raw)
+          if status != 200 or shared["visibility"] != "org_shared" or shared["description"] is not None or shared["title"] != "Private watch":
+              fail(f"patch view {status} {shared}")
+          status, raw, _ = call(go, f"/api/analysis/views/{view_id}", "PATCH", token_b, {"title": "stolen"})
+          if status != 403:
+              fail(f"b edits shared {status}")
+          status, raw, _ = call(go, f"/api/analysis/views/{view_id}", "GET", token_b)
+          if status != 200 or body(raw).get("canEdit") is not False:
+              fail(f"b canEdit {status} {body(raw)}")
+          status, raw, _ = call(go, "/api/analysis/views?scope=weird&surface=items", "GET", token_b)
+          if status != 200:
+              fail(f"unknown scope {status} {raw[:200]!r}")
+
+          status, raw, headers = call(go, "/api/analysis/boards", "GET", token_b)
+          boards = body(raw)
+          if status != 200 or headers.get("Cache-Control") != "no-store" or not boards:
+              fail(f"boards {status} {boards}")
+          if boards[0]["title"] != "Team board" or boards[0]["columnCount"] != 5:
+              fail(f"default board {boards[0]}")
+          board_id = boards[0]["id"]
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}", "GET", token_b)
+          detail = body(raw)
+          titles = [column["title"] for column in detail["columns"]]
+          if titles != ["Backlog", "Triage", "In progress", "Review", "Done"]:
+              fail(f"columns {titles}")
+          if detail["columns"][-1]["isDone"] is not True or detail["columns"][-1]["tasks"] != []:
+              fail("done column shape")
+          status, raw, _ = call(go, "/api/analysis/boards", "POST", token_a, {"title": "Second desk", "description": "shared"})
+          second = body(raw)
+          if status != 201 or second["title"] != "Second desk" or len(second["columns"]) != 5:
+              fail(f"second board {status} {second and second.get('title')}")
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}", "DELETE", token_a)
+          if status != 200 or body(raw) != {"ok": True}:
+              fail(f"archive when two exist {status} {raw[:200]!r}")
+          status, raw, _ = call(go, f"/api/analysis/boards/{second['id']}", "DELETE", token_a)
+          if status != 400 or "last analysis board" not in body(raw).get("message", ""):
+              fail(f"last board {status} {raw[:300]!r}")
+          active = int(sql(f"SELECT COUNT(*) FROM AnalysisBoard WHERE orgId='{org}' AND archivedAt IS NULL"))
+          if active != 1:
+              fail(f"active boards {active}")
+          board_id = second["id"]
+
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/columns", "POST", token_a, {"title": "Later", "color": "blue", "isDone": False})
+          detail = body(raw)
+          if status != 201 or detail["columns"][-1]["title"] != "Later":
+              fail(f"create column {status}")
+          ids = [column["id"] for column in detail["columns"]]
+          swapped = [ids[1], ids[0]] + ids[2:]
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/columns/reorder", "POST", token_a, {"columnIds": swapped})
+          if status != 201 or [column["id"] for column in body(raw)["columns"]] != swapped:
+              fail(f"reorder {status}")
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/columns/reorder", "POST", token_a, {"columnIds": swapped + [swapped[0]]})
+          if status != 400:
+              fail(f"duplicate reorder {status} {raw[:200]!r}")
+          target = swapped[0]
+          remove = swapped[-1]
+          status, raw, _ = call(go, f"/api/analysis/columns/{remove}", "DELETE", token_a, {"moveCardsToColumnId": target})
+          if status != 200 or any(column["id"] == remove for column in body(raw)["columns"]):
+              fail(f"delete column {status}")
+
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/tasks", "POST", token_b, {"title": "Corroborate", "priority": "high"})
+          task = body(raw)
+          if status != 201 or task["priority"] != "high" or task["commentCount"] != 0 or task["assignee"] is not None:
+              fail(f"create task {status} {task}")
+          task_id = task["id"]
+          status, raw, _ = call(nest, f"/api/analysis/boards/{board_id}", "GET", token_a)
+          nest_board = body(raw)
+          if status != 200 or not any(card["id"] == task_id for column in nest_board["columns"] for card in column["tasks"]):
+              fail("nest cannot see go task")
+          status, raw, _ = call(go, f"/api/analysis/tasks/{task_id}", "PATCH", token_b, {"assigneeId": "cancoopuserc0000000000001"})
+          if status != 400:
+              fail(f"cross org assignee {status} {raw[:200]!r}")
+          status, raw, _ = call(go, f"/api/analysis/tasks/{task_id}", "PATCH", token_a, {
+              "assigneeId": admin,
+              "bodyMarkdown": None,
+              "linkedSubjectType": "item",
+              "linkedSubjectId": "cancoopitem00000000000001",
+          })
+          patched = body(raw)
+          if status != 200 or patched["assigneeId"] != admin or patched["bodyMarkdown"] is not None or patched["linkedSubjectType"] != "item":
+              fail(f"patch task {status} {patched}")
+          status, raw, _ = call(go, f"/api/analysis/tasks/{task_id}", "PATCH", token_a, {"linkedSubjectType": "saved_view"})
+          if status != 400:
+              fail(f"half link {status}")
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/tasks", "POST", token_a, {"title": "Second card"})
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/tasks", "POST", token_a, {"title": "Third card"})
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/tasks", "POST", token_a, {"title": "Fourth card"})
+          detail = body(call(go, f"/api/analysis/boards/{board_id}", "GET", token_a)[1])
+          column = next(column for column in detail["columns"] if any(card["title"] == "Corroborate" for card in column["tasks"]))
+          names = [card["title"] for card in column["tasks"]]
+          if names[:4] != ["Corroborate", "Second card", "Third card", "Fourth card"]:
+              fail(f"task order {names}")
+          dragged = next(card["id"] for card in column["tasks"] if card["title"] == "Second card")
+          status, raw, _ = call(go, f"/api/analysis/tasks/{dragged}/move", "POST", token_a, {"targetColumnId": column["id"], "targetIndex": 3})
+          moved = body(raw)
+          if status != 201:
+              fail(f"move {status} {raw[:200]!r}")
+          moved_names = [card["title"] for card in next(col["tasks"] for col in moved["columns"] if col["id"] == column["id"]) if card["title"] in names[:4]]
+          if moved_names != ["Corroborate", "Third card", "Second card", "Fourth card"]:
+              fail(f"move order {moved_names}")
+
+          for subject_type, subject_id in (
+              ("saved_view", view_id),
+              ("item", "cancoopitem00000000000001"),
+              ("event", "cancoopevent0000000000001"),
+              ("analysis_task", task_id),
+          ):
+              status, raw, headers = call(go, f"/api/analysis/threads/{subject_type}/{subject_id}", "GET", token_b)
+              if status != 200 or raw != b"null" or headers.get("Cache-Control") != "no-store":
+                  fail(f"empty thread {subject_type} {status} {raw[:80]!r}")
+              status, raw, _ = call(go, f"/api/analysis/threads/{subject_type}/{subject_id}", "PUT", token_b, {"noteMarkdown": ""})
+              if status != 200 or raw != b"null":
+                  fail(f"empty note {subject_type} {status} {raw[:80]!r}")
+              status, raw, _ = call(go, f"/api/analysis/threads/{subject_type}/{subject_id}/comments", "POST", token_b, {"bodyMarkdown": f"note {subject_type}"})
+              if status != 201 or body(raw).get("createdBy", {}).get("id") != "cancoopuserb0000000000001":
+                  fail(f"comment {subject_type} {status} {raw[:200]!r}")
+          status, raw, _ = call(go, f"/api/analysis/threads/not_a_type/{view_id}", "GET", token_a)
+          if status != 400:
+              fail(f"bad subject {status}")
+          comment_id = body(call(go, f"/api/analysis/threads/analysis_task/{task_id}", "GET", token_a)[1])["comments"][0]["id"]
+          status, raw, _ = call(go, f"/api/analysis/comments/{comment_id}", "PATCH", token_a, {"bodyMarkdown": "admin edit"})
+          if status != 200 or body(raw)["bodyMarkdown"] != "admin edit":
+              fail(f"admin edit comment {status}")
+          status, raw, _ = call(go, f"/api/analysis/comments/{comment_id}", "DELETE", token_c)
+          if status != 404:
+              fail(f"other org delete comment {status}")
+          status, raw, _ = call(go, f"/api/analysis/views/{view_id}", "DELETE", token_b)
+          if status != 403:
+              fail(f"b delete shared view {status}")
+          status, raw, _ = call(go, f"/api/analysis/views/{view_id}", "DELETE", token_a)
+          if status != 200:
+              fail(f"admin delete view {status}")
+          leftover = sql(f"SELECT COUNT(*) FROM AnalysisThread WHERE orgId='{org}' AND subjectType='saved_view' AND subjectId='{view_id}'")
+          if leftover != "0":
+              fail(f"view thread leftover {leftover}")
+          status, raw, _ = call(go, f"/api/analysis/tasks/{task_id}", "DELETE", token_a)
+          if status != 200:
+              fail(f"delete task {status}")
+          leftover = sql(f"SELECT COUNT(*) FROM AnalysisThread WHERE orgId='{org}' AND subjectType='analysis_task' AND subjectId='{task_id}'")
+          if leftover != "0":
+              fail(f"task thread leftover {leftover}")
+
+          def first_boards():
+              return call(go, "/api/analysis/boards", "GET", token_e)
+          with ThreadPoolExecutor(max_workers=2) as pool:
+              races = list(pool.map(lambda _: first_boards(), (1, 2)))
+          if any(status != 200 for status, _, _ in races):
+              fail(f"default race http {races}")
+          empty_org = "cancooporgempty0000000001"
+          board_count = int(sql(f"SELECT COUNT(*) FROM AnalysisBoard WHERE orgId='{empty_org}'"))
+          column_count = int(sql(f"SELECT COUNT(*) FROM AnalysisBoardColumn WHERE orgId='{empty_org}'"))
+          if board_count != 1 or column_count != 5:
+              fail(f"default race boards={board_count} columns={column_count}")
+          print("default board race ok")
+
+          status, raw, _ = call(nest, "/api/analysis/boards", "POST", token_a, {"title": "Race right"})
+          right = body(raw)["id"]
+          with ThreadPoolExecutor(max_workers=2) as pool:
+              archived = list(pool.map(lambda item: call(item[0], f"/api/analysis/boards/{item[1]}", "DELETE", token_a), ((go, board_id), (nest, right))))
+          statuses = sorted(item[0] for item in archived)
+          if statuses != [200, 400]:
+              fail(f"archive race {statuses} {[item[1][:180] for item in archived]}")
+          active = int(sql(f"SELECT COUNT(*) FROM AnalysisBoard WHERE orgId='{org}' AND archivedAt IS NULL"))
+          if active != 1:
+              fail(f"archive race left {active} boards")
+          print("mixed archive race ok")
+
+          status, raw, _ = call(go, "/api/analysis/exports/search", "POST", token_a, {"queryString": "q=a"})
+          if status == 404:
+              fail("exports were captured by go")
+          print("exports still legacy", status)
+          print("collaboration smoke ok")
+          PY
+      - name: Switch modes and stop Nest
+        run: |
+          set -euo pipefail
+          source /tmp/start-go.sh
+          python3 - << 'PY'
+          import json, os, urllib.error, urllib.request
+          go = "http://127.0.0.1:4020"
+          nest = "http://127.0.0.1:4000"
+          def call(base, path, method="GET", token=None, payload=None):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+          def body(raw):
+              return json.loads(raw) if raw else None
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+          status, raw = call(go, "/api/auth/login", "POST", payload={"email": os.environ["SEED_ADMIN_EMAIL"], "password": os.environ["SEED_ADMIN_PASSWORD"]})
+          token = body(raw)["accessToken"]
+          open("/tmp/analysis-token","w").write(token)
+          print("token ready", status)
+          PY
+          start_go go go legacy
+          python3 - << 'PY'
+          import json, urllib.error, urllib.request, subprocess
+          go = "http://127.0.0.1:4020"
+          nest = "http://127.0.0.1:4000"
+          token = open("/tmp/analysis-token").read()
+          cid = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=mysql:8.4"], text=True).split()[0]
+          def call(base, path, method="GET", payload=None):
+              headers = {"authorization": "Bearer " + token}
+              data = None
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+          def body(raw):
+              return json.loads(raw) if raw else None
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+          def sql(statement):
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"], input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  raise SystemExit(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+          status, raw = call(go, "/api/analysis/boards", "GET")
+          boards = body(raw)
+          if status != 200 or not boards:
+              fail(f"boards while threads legacy {status}")
+          board_id = boards[0]["id"]
+          status, raw = call(go, f"/api/analysis/boards/{board_id}/tasks", "POST", {"title": "Count me"})
+          task = body(raw)
+          if status != 201:
+              fail(f"create task threads legacy {status} {raw[:200]!r}")
+          status, raw = call(nest, f"/api/analysis/threads/analysis_task/{task['id']}/comments", "POST", {"bodyMarkdown": "from nest"})
+          if status != 201:
+              fail(f"nest comment {status} {raw[:200]!r}")
+          status, raw = call(go, f"/api/analysis/boards/{board_id}", "GET")
+          detail = body(raw)
+          card = next(card for column in detail["columns"] for card in column["tasks"] if card["id"] == task["id"])
+          if card["commentCount"] != 1:
+              fail(f"comment count via go while threads legacy {card['commentCount']}")
+          status, raw = call(go, f"/api/analysis/tasks/{task['id']}", "DELETE")
+          if status != 200:
+              fail(f"go delete task {status}")
+          leftover = sql(f"SELECT COUNT(*) FROM AnalysisThread WHERE subjectType='analysis_task' AND subjectId='{task['id']}'")
+          if leftover != "0":
+              fail(f"go delete left thread {leftover}")
+          print("boards go / threads legacy ok")
+          PY
+          start_go legacy legacy go
+          python3 - << 'PY'
+          import json, urllib.error, urllib.request
+          go = "http://127.0.0.1:4020"
+          nest = "http://127.0.0.1:4000"
+          token = open("/tmp/analysis-token").read()
+          def call(base, path, method="GET", payload=None):
+              headers = {"authorization": "Bearer " + token}
+              data = None
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+          def body(raw):
+              return json.loads(raw) if raw else None
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+          status, raw = call(nest, "/api/analysis/boards", "GET")
+          board_id = body(raw)[0]["id"]
+          status, raw = call(nest, f"/api/analysis/boards/{board_id}/tasks", "POST", {"title": "Nest card"})
+          task = body(raw)
+          if status != 201:
+              fail(f"nest task {status} {raw[:200]!r}")
+          status, raw = call(go, f"/api/analysis/threads/analysis_task/{task['id']}", "PUT", {"noteMarkdown": "go note"})
+          if status != 200 or body(raw).get("noteMarkdown") != "go note":
+              fail(f"go thread on nest task {status} {raw[:200]!r}")
+          status, raw = call(nest, f"/api/analysis/threads/analysis_task/{task['id']}", "GET")
+          if status != 200 or body(raw).get("noteMarkdown") != "go note":
+              fail(f"nest read go note {status}")
+          print("threads go / boards legacy ok")
+          PY
+          start_go legacy legacy legacy
+          python3 - << 'PY'
+          import urllib.request, urllib.error
+          token = open("/tmp/analysis-token").read()
+          req = urllib.request.Request("http://127.0.0.1:4020/api/analysis/boards", headers={"authorization": "Bearer " + token})
+          try:
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  status = resp.status
+          except urllib.error.HTTPError as exc:
+              status = exc.code
+          if status != 200:
+              raise SystemExit(f"legacy rollback boards {status}")
+          print("all legacy still proxies boards")
+          PY
+          start_go go go go
+          kill "$(cat /tmp/api-nestjs.pid)" || true
+          for i in $(seq 1 30); do
+            if ! curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+            echo "nestjs still up"
+            exit 1
+          fi
+          python3 - << 'PY'
+          import json, urllib.error, urllib.request
+          token = open("/tmp/analysis-token").read()
+          def call(path, method="GET", payload=None):
+              headers = {"authorization": "Bearer " + token}
+              data = None
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request("http://127.0.0.1:4020" + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+          status, raw = call("/api/analysis/boards")
+          if status != 200:
+              fail(f"boards after nest stop {status}")
+          status, raw = call("/api/analysis/views", "POST", {"title": "After nest", "surface": "events", "routePath": "/events"})
+          if status != 201:
+              fail(f"create view after nest stop {status} {raw[:200]!r}")
+          status, raw = call("/api/analysis/exports/search", "POST", {"queryString": "q=a"})
+          if status < 500:
+              fail(f"exports survived nest stop {status}")
+          status, raw = call("/graphql", "POST", {"query": "{ __typename }"})
+          if status < 500:
+              fail(f"graphql survived nest stop {status}")
+          print("nest stopped; go analysis still serves; exports and graphql failed", status)
+          PY

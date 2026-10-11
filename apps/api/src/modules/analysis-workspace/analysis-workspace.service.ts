@@ -206,6 +206,70 @@ export class AnalysisWorkspaceService {
     return narrowUnknown<AnalysisWorkspacePrismaClient>(this.prisma);
   }
 
+  // 与 apps/api-go/internal/analysiscollab 使用同一条 InnoDB 行锁。
+  // 顺序固定为 Org，然后 AnalysisBoard，然后 SavedAnalysisView。
+  // 同一事务里的后续查询走这条连接，锁内必须重读 active、数量和归属。
+  private async lockOrgRow(
+    tx: Prisma.TransactionClient,
+    orgId: string,
+  ): Promise<void> {
+    await tx.$queryRawUnsafe(
+      "SELECT `id` FROM `Org` WHERE `id` = ? FOR UPDATE",
+      orgId,
+    );
+  }
+
+  private async lockBoardRow(
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    boardId: string,
+  ): Promise<void> {
+    await tx.$queryRawUnsafe(
+      "SELECT `id` FROM `AnalysisBoard` WHERE `id` = ? AND `orgId` = ? FOR UPDATE",
+      boardId,
+      orgId,
+    );
+  }
+
+  private async lockSavedViewRow(
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    viewId: string,
+  ): Promise<void> {
+    await tx.$queryRawUnsafe(
+      "SELECT `id` FROM `SavedAnalysisView` WHERE `id` = ? AND `orgId` = ? FOR UPDATE",
+      viewId,
+      orgId,
+    );
+  }
+
+  private async lockThreadSubject(
+    tx: AnalysisWorkspaceTransactionClient,
+    orgId: string,
+    userId: string,
+    subjectType: AnalysisSubjectType,
+    subjectId: string,
+  ): Promise<void> {
+    if (subjectType === AnalysisSubjectType.saved_view) {
+      await this.lockSavedViewRow(tx, orgId, subjectId);
+      await this.assertSubjectReadable(orgId, userId, subjectType, subjectId, tx);
+      return;
+    }
+    if (subjectType === AnalysisSubjectType.analysis_task) {
+      const task = await tx.analysisTaskCard.findFirst({
+        where: { orgId, id: subjectId },
+        select: { boardId: true },
+      });
+      if (!task) {
+        throw new NotFoundException("Analysis subject not found");
+      }
+      await this.lockBoardRow(tx, orgId, task.boardId);
+      await this.assertSubjectReadable(orgId, userId, subjectType, subjectId, tx);
+      return;
+    }
+    await this.assertSubjectReadable(orgId, userId, subjectType, subjectId, tx);
+  }
+
   async listViews(
     orgId: string,
     user: AnalysisActor,
@@ -363,17 +427,18 @@ export class AnalysisWorkspaceService {
   }
 
   async deleteView(orgId: string, user: AnalysisActor, id: string) {
-    const existing = await this.analysisPrisma.savedAnalysisView.findFirst({
-      where: { orgId, id },
-      select: { id: true, createdById: true },
-    });
-    if (!existing) {
-      throw new NotFoundException("Saved analysis view not found");
-    }
-    this.assertCanManageOwnedResource(user, existing.createdById);
-
     await this.prisma.$transaction(async (prismaTx) => {
       const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockSavedViewRow(tx, orgId, id);
+      const existing = await tx.savedAnalysisView.findFirst({
+        where: { orgId, id },
+        select: { id: true, createdById: true },
+      });
+      if (!existing) {
+        throw new NotFoundException("Saved analysis view not found");
+      }
+      this.assertCanManageOwnedResource(user, existing.createdById);
+
       const thread = await tx.analysisThread.findFirst({
         where: {
           orgId,
@@ -455,7 +520,6 @@ export class AnalysisWorkspaceService {
     boardId: string,
     input: { title?: string; description?: string },
   ) {
-    await this.assertBoardActive(orgId, boardId);
     const data: Record<string, unknown> = { updatedById: user.id };
     if (input.title !== undefined) {
       data.title = this.normalizeRequiredText(input.title, 120, "title");
@@ -467,18 +531,36 @@ export class AnalysisWorkspaceService {
         "description",
       );
     }
-    await this.analysisPrisma.analysisBoard.update({
-      where: { id: boardId },
-      data,
+    await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockBoardRow(tx, orgId, boardId);
+      const board = await tx.analysisBoard.findFirst({
+        where: { orgId, id: boardId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!board) {
+        throw new NotFoundException("Analysis board not found");
+      }
+      await tx.analysisBoard.update({
+        where: { id: boardId },
+        data,
+      });
     });
     return this.getBoard(orgId, user, boardId);
   }
 
   async archiveBoard(orgId: string, user: AnalysisActor, boardId: string) {
-    await this.assertBoardActive(orgId, boardId);
-    // Count + archive inside one transaction so two concurrent requests cannot
-    // both pass the "last active board" check and archive everything.
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockOrgRow(tx, orgId);
+      await this.lockBoardRow(tx, orgId, boardId);
+      const board = await tx.analysisBoard.findFirst({
+        where: { orgId, id: boardId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!board) {
+        throw new NotFoundException("Analysis board not found");
+      }
       const activeCount = await tx.analysisBoard.count({
         where: { orgId, archivedAt: null },
       });
@@ -502,27 +584,37 @@ export class AnalysisWorkspaceService {
     boardId: string,
     input: { title: string; color?: string; isDone?: boolean },
   ) {
-    await this.assertBoardActive(orgId, boardId);
     const title = this.normalizeRequiredText(input.title, 80, "title");
     const color = this.normalizeOptionalText(input.color, 32, "color");
-    const lastColumn = await this.analysisPrisma.analysisBoardColumn.findFirst({
-      where: { orgId, boardId },
-      orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
-      select: { sortOrder: true },
-    });
-    await this.analysisPrisma.analysisBoardColumn.create({
-      data: {
-        orgId,
-        boardId,
-        title,
-        color,
-        isDone: input.isDone ?? false,
-        sortOrder: (lastColumn?.sortOrder ?? 0) + SORT_STEP,
-      },
-    });
-    await this.analysisPrisma.analysisBoard.update({
-      where: { id: boardId },
-      data: { updatedById: user.id },
+    await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockBoardRow(tx, orgId, boardId);
+      const board = await tx.analysisBoard.findFirst({
+        where: { orgId, id: boardId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!board) {
+        throw new NotFoundException("Analysis board not found");
+      }
+      const lastColumn = await tx.analysisBoardColumn.findFirst({
+        where: { orgId, boardId },
+        orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
+        select: { sortOrder: true },
+      });
+      await tx.analysisBoardColumn.create({
+        data: {
+          orgId,
+          boardId,
+          title,
+          color,
+          isDone: input.isDone ?? false,
+          sortOrder: (lastColumn?.sortOrder ?? 0) + SORT_STEP,
+        },
+      });
+      await tx.analysisBoard.update({
+        where: { id: boardId },
+        data: { updatedById: user.id },
+      });
     });
     return this.getBoard(orgId, user, boardId);
   }
@@ -544,13 +636,24 @@ export class AnalysisWorkspaceService {
     if (input.isDone !== undefined) {
       data.isDone = input.isDone;
     }
-    await this.analysisPrisma.analysisBoardColumn.update({
-      where: { id: column.id },
-      data,
-    });
-    await this.analysisPrisma.analysisBoard.update({
-      where: { id: column.boardId },
-      data: { updatedById: user.id },
+    await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockBoardRow(tx, orgId, column.boardId);
+      const locked = await tx.analysisBoardColumn.findFirst({
+        where: { orgId, id: column.id, board: { archivedAt: null } },
+        select: { id: true, boardId: true },
+      });
+      if (!locked) {
+        throw new NotFoundException("Analysis board column not found");
+      }
+      await tx.analysisBoardColumn.update({
+        where: { id: locked.id },
+        data,
+      });
+      await tx.analysisBoard.update({
+        where: { id: locked.boardId },
+        data: { updatedById: user.id },
+      });
     });
     return this.getBoard(orgId, user, column.boardId);
   }
@@ -561,27 +664,40 @@ export class AnalysisWorkspaceService {
     columnId: string,
     moveCardsToColumnId: string,
   ) {
-    const column = await this.assertColumnActive(orgId, columnId);
     if (columnId === moveCardsToColumnId) {
       throw new BadRequestException("Target column must be different");
     }
-    const [columnCount, target] = await Promise.all([
-      this.analysisPrisma.analysisBoardColumn.count({
-        where: { orgId, boardId: column.boardId },
-      }),
-      this.analysisPrisma.analysisBoardColumn.findFirst({
-        where: { orgId, id: moveCardsToColumnId, boardId: column.boardId },
-        select: { id: true },
-      }),
-    ]);
-    if (columnCount <= 1) {
-      throw new BadRequestException("Cannot delete the last board column");
-    }
-    if (!target) {
-      throw new NotFoundException("Target analysis board column not found");
-    }
+    let boardId = "";
     await this.prisma.$transaction(async (prismaTx) => {
       const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      const column = await tx.analysisBoardColumn.findFirst({
+        where: { orgId, id: columnId, board: { archivedAt: null } },
+        select: { id: true, boardId: true },
+      });
+      if (!column) {
+        throw new NotFoundException("Analysis board column not found");
+      }
+      await this.lockBoardRow(tx, orgId, column.boardId);
+      const locked = await tx.analysisBoardColumn.findFirst({
+        where: { orgId, id: columnId, board: { archivedAt: null } },
+        select: { id: true, boardId: true },
+      });
+      if (!locked) {
+        throw new NotFoundException("Analysis board column not found");
+      }
+      const columnCount = await tx.analysisBoardColumn.count({
+        where: { orgId, boardId: locked.boardId },
+      });
+      const target = await tx.analysisBoardColumn.findFirst({
+        where: { orgId, id: moveCardsToColumnId, boardId: locked.boardId },
+        select: { id: true },
+      });
+      if (columnCount <= 1) {
+        throw new BadRequestException("Cannot delete the last board column");
+      }
+      if (!target) {
+        throw new NotFoundException("Target analysis board column not found");
+      }
       await tx.analysisTaskCard.updateMany({
         where: { orgId, columnId },
         data: { columnId: target.id, updatedById: user.id },
@@ -589,11 +705,12 @@ export class AnalysisWorkspaceService {
       await tx.analysisBoardColumn.delete({ where: { id: columnId } });
       await this.reindexColumnTasks(tx, orgId, target.id);
       await tx.analysisBoard.update({
-        where: { id: column.boardId },
+        where: { id: locked.boardId },
         data: { updatedById: user.id },
       });
+      boardId = locked.boardId;
     });
-    return this.getBoard(orgId, user, column.boardId);
+    return this.getBoard(orgId, user, boardId);
   }
 
   async reorderColumns(
@@ -602,37 +719,50 @@ export class AnalysisWorkspaceService {
     boardId: string,
     columnIds: string[],
   ) {
-    await this.assertBoardActive(orgId, boardId);
-    const uniqueIds = Array.from(new Set(columnIds));
-    const columns = await this.analysisPrisma.analysisBoardColumn.findMany({
-      where: { orgId, boardId },
-      select: { id: true },
-    });
-    const existingIds = columns
-      .map((column: { id: string }) => column.id)
-      .sort();
-    if (
-      uniqueIds.length !== existingIds.length ||
-      uniqueIds.sort().join("\0") !== existingIds.join("\0")
-    ) {
-      throw new BadRequestException("Column order must include every board column");
-    }
     await this.prisma.$transaction(async (prismaTx) => {
       const tx = prismaTx as AnalysisWorkspaceTransactionClient;
-      await Promise.all(
-        columnIds.map((id, index) =>
-          tx.analysisBoardColumn.update({
-            where: { id },
-            data: { sortOrder: (index + 1) * SORT_STEP },
-          }),
-        ),
-      );
+      await this.lockBoardRow(tx, orgId, boardId);
+      const board = await tx.analysisBoard.findFirst({
+        where: { orgId, id: boardId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!board) {
+        throw new NotFoundException("Analysis board not found");
+      }
+      const columns = await tx.analysisBoardColumn.findMany({
+        where: { orgId, boardId },
+        select: { id: true },
+      });
+      if (!this.isCompleteColumnOrder(columnIds, columns.map((column: { id: string }) => column.id))) {
+        throw new BadRequestException("Column order must include every board column");
+      }
+      for (let index = 0; index < columnIds.length; index += 1) {
+        await tx.analysisBoardColumn.update({
+          where: { id: columnIds[index] },
+          data: { sortOrder: (index + 1) * SORT_STEP },
+        });
+      }
       await tx.analysisBoard.update({
         where: { id: boardId },
         data: { updatedById: user.id },
       });
     });
     return this.getBoard(orgId, user, boardId);
+  }
+
+  private isCompleteColumnOrder(columnIds: string[], existingIds: string[]): boolean {
+    if (columnIds.length !== existingIds.length) {
+      return false;
+    }
+    const existing = new Set(existingIds);
+    const seen = new Set<string>();
+    for (const id of columnIds) {
+      if (seen.has(id) || !existing.has(id)) {
+        return false;
+      }
+      seen.add(id);
+    }
+    return seen.size === existing.size;
   }
 
   async createTask(
@@ -650,10 +780,13 @@ export class AnalysisWorkspaceService {
       dueAt?: string | null;
     },
   ) {
-    await this.assertBoardActive(orgId, boardId);
-    const column = input.columnId
-      ? await this.assertColumnActive(orgId, input.columnId, boardId)
-      : await this.getFirstBoardColumn(orgId, boardId);
+    const title = this.normalizeRequiredText(input.title, 160, "title");
+    const bodyMarkdown = this.normalizeOptionalText(
+      input.bodyMarkdown,
+      10000,
+      "bodyMarkdown",
+    );
+    const dueAt = this.normalizeOptionalDate(input.dueAt, "dueAt");
     const linkedSubject = await this.resolveLinkedSubject(
       orgId,
       user.id,
@@ -661,36 +794,64 @@ export class AnalysisWorkspaceService {
       input.linkedSubjectId,
     );
     const assigneeId = await this.resolveAssigneeId(orgId, input.assigneeId);
-    const lastTask = await this.analysisPrisma.analysisTaskCard.findFirst({
-      where: { orgId, columnId: column.id },
-      orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
-      select: { sortOrder: true },
-    });
-    const task = await this.analysisPrisma.analysisTaskCard.create({
-      data: {
-        orgId,
-        boardId,
-        columnId: column.id,
-        createdById: user.id,
-        updatedById: user.id,
-        title: this.normalizeRequiredText(input.title, 160, "title"),
-        bodyMarkdown: this.normalizeOptionalText(
-          input.bodyMarkdown,
-          10000,
-          "bodyMarkdown",
-        ),
-        priority: input.priority ?? AnalysisTaskPriority.normal,
-        assigneeId,
-        linkedSubjectType: linkedSubject?.type,
-        linkedSubjectId: linkedSubject?.id,
-        dueAt: this.normalizeOptionalDate(input.dueAt, "dueAt"),
-        sortOrder: (lastTask?.sortOrder ?? 0) + SORT_STEP,
-      },
-      include: TASK_INCLUDE,
-    });
-    await this.analysisPrisma.analysisBoard.update({
-      where: { id: boardId },
-      data: { updatedById: user.id },
+    const task = await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockBoardRow(tx, orgId, boardId);
+      const board = await tx.analysisBoard.findFirst({
+        where: { orgId, id: boardId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!board) {
+        throw new NotFoundException("Analysis board not found");
+      }
+      const column = input.columnId
+        ? await tx.analysisBoardColumn.findFirst({
+            where: {
+              orgId,
+              id: input.columnId,
+              boardId,
+              board: { archivedAt: null },
+            },
+            select: { id: true },
+          })
+        : await tx.analysisBoardColumn.findFirst({
+            where: { orgId, boardId, board: { archivedAt: null } },
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+            select: { id: true },
+          });
+      if (!column) {
+        throw input.columnId
+          ? new NotFoundException("Analysis board column not found")
+          : new BadRequestException("Analysis board has no columns");
+      }
+      const lastTask = await tx.analysisTaskCard.findFirst({
+        where: { orgId, columnId: column.id },
+        orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
+        select: { sortOrder: true },
+      });
+      const created = await tx.analysisTaskCard.create({
+        data: {
+          orgId,
+          boardId,
+          columnId: column.id,
+          createdById: user.id,
+          updatedById: user.id,
+          title,
+          bodyMarkdown,
+          priority: input.priority ?? AnalysisTaskPriority.normal,
+          assigneeId,
+          linkedSubjectType: linkedSubject?.type,
+          linkedSubjectId: linkedSubject?.id,
+          dueAt,
+          sortOrder: (lastTask?.sortOrder ?? 0) + SORT_STEP,
+        },
+        include: TASK_INCLUDE,
+      });
+      await tx.analysisBoard.update({
+        where: { id: boardId },
+        data: { updatedById: user.id },
+      });
+      return created;
     });
     return this.toTaskResponse(task, new Map<string, number>());
   }
@@ -743,23 +904,49 @@ export class AnalysisWorkspaceService {
     if (input.dueAt !== undefined) {
       data.dueAt = this.normalizeOptionalDate(input.dueAt, "dueAt");
     }
-    const task = await this.analysisPrisma.analysisTaskCard.update({
-      where: { id: existing.id },
-      data,
-      include: TASK_INCLUDE,
-    });
-    await this.analysisPrisma.analysisBoard.update({
-      where: { id: existing.boardId },
-      data: { updatedById: user.id },
+    const task = await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockBoardRow(tx, orgId, existing.boardId);
+      const locked = await tx.analysisTaskCard.findFirst({
+        where: { orgId, id: existing.id, board: { archivedAt: null } },
+        select: { id: true, boardId: true },
+      });
+      if (!locked) {
+        throw new NotFoundException("Analysis task not found");
+      }
+      const updated = await tx.analysisTaskCard.update({
+        where: { id: locked.id },
+        data,
+        include: TASK_INCLUDE,
+      });
+      await tx.analysisBoard.update({
+        where: { id: locked.boardId },
+        data: { updatedById: user.id },
+      });
+      return updated;
     });
     const commentCounts = await this.loadTaskCommentCounts(orgId, [task.id]);
     return this.toTaskResponse(task, commentCounts);
   }
 
   async deleteTask(orgId: string, user: AnalysisActor, taskId: string) {
-    const existing = await this.assertTaskActive(orgId, taskId);
     await this.prisma.$transaction(async (prismaTx) => {
       const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      const existing = await tx.analysisTaskCard.findFirst({
+        where: { orgId, id: taskId, board: { archivedAt: null } },
+        select: { id: true, boardId: true, columnId: true },
+      });
+      if (!existing) {
+        throw new NotFoundException("Analysis task not found");
+      }
+      await this.lockBoardRow(tx, orgId, existing.boardId);
+      const locked = await tx.analysisTaskCard.findFirst({
+        where: { orgId, id: taskId, board: { archivedAt: null } },
+        select: { id: true, boardId: true, columnId: true },
+      });
+      if (!locked) {
+        throw new NotFoundException("Analysis task not found");
+      }
       const thread = await tx.analysisThread.findFirst({
         where: {
           orgId,
@@ -774,10 +961,10 @@ export class AnalysisWorkspaceService {
         });
         await tx.analysisThread.delete({ where: { id: thread.id } });
       }
-      await tx.analysisTaskCard.delete({ where: { id: existing.id } });
-      await this.reindexColumnTasks(tx, orgId, existing.columnId);
+      await tx.analysisTaskCard.delete({ where: { id: locked.id } });
+      await this.reindexColumnTasks(tx, orgId, locked.columnId);
       await tx.analysisBoard.update({
-        where: { id: existing.boardId },
+        where: { id: locked.boardId },
         data: { updatedById: user.id },
       });
     });
@@ -791,13 +978,28 @@ export class AnalysisWorkspaceService {
     input: { targetColumnId: string; targetIndex: number },
   ) {
     const task = await this.assertTaskActive(orgId, taskId);
-    const targetColumn = await this.assertColumnActive(
-      orgId,
-      input.targetColumnId,
-      task.boardId,
-    );
     await this.prisma.$transaction(async (prismaTx) => {
       const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockBoardRow(tx, orgId, task.boardId);
+      const lockedTask = await tx.analysisTaskCard.findFirst({
+        where: { orgId, id: taskId, board: { archivedAt: null } },
+        select: { id: true, boardId: true, columnId: true },
+      });
+      if (!lockedTask) {
+        throw new NotFoundException("Analysis task not found");
+      }
+      const targetColumn = await tx.analysisBoardColumn.findFirst({
+        where: {
+          orgId,
+          id: input.targetColumnId,
+          boardId: lockedTask.boardId,
+          board: { archivedAt: null },
+        },
+        select: { id: true, boardId: true },
+      });
+      if (!targetColumn) {
+        throw new NotFoundException("Analysis board column not found");
+      }
       const targetTasks = await tx.analysisTaskCard.findMany({
         where: { orgId, columnId: targetColumn.id },
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -810,35 +1012,35 @@ export class AnalysisWorkspaceService {
       // of [A,C,B,D]). Shift the insertion index back by one when the target
       // sits after the dragged task's original position.
       const sourceIndex = targetTasks.findIndex(
-        (entry: { id: string }) => entry.id === task.id,
+        (entry: { id: string }) => entry.id === lockedTask.id,
       );
       const targetOrder = targetTasks
         .map((entry: { id: string }) => entry.id)
-        .filter((id: string) => id !== task.id);
+        .filter((id: string) => id !== lockedTask.id);
       let targetIndex = Math.max(
         0,
         Math.min(input.targetIndex, targetOrder.length),
       );
       if (
-        task.columnId === targetColumn.id &&
+        lockedTask.columnId === targetColumn.id &&
         input.targetIndex > sourceIndex
       ) {
         targetIndex = Math.max(0, targetIndex - 1);
       }
-      targetOrder.splice(targetIndex, 0, task.id);
+      targetOrder.splice(targetIndex, 0, lockedTask.id);
       await tx.analysisTaskCard.update({
-        where: { id: task.id },
+        where: { id: lockedTask.id },
         data: {
           columnId: targetColumn.id,
           updatedById: user.id,
         },
       });
       await this.reindexColumnTasks(tx, orgId, targetColumn.id, targetOrder);
-      if (task.columnId !== targetColumn.id) {
-        await this.reindexColumnTasks(tx, orgId, task.columnId);
+      if (lockedTask.columnId !== targetColumn.id) {
+        await this.reindexColumnTasks(tx, orgId, lockedTask.columnId);
       }
       await tx.analysisBoard.update({
-        where: { id: task.boardId },
+        where: { id: lockedTask.boardId },
         data: { updatedById: user.id },
       });
     });
@@ -866,58 +1068,60 @@ export class AnalysisWorkspaceService {
     subjectId: string,
     noteMarkdown?: string,
   ) {
-    await this.assertSubjectWritable(orgId, user.id, subjectType, subjectId);
     const normalizedNote = this.normalizeOptionalText(
       noteMarkdown,
       20000,
       "noteMarkdown",
     );
 
-    let existing = await this.analysisPrisma.analysisThread.findFirst({
-      where: { orgId, subjectType, subjectId },
-      include: this.threadInclude(),
-    });
+    const row = await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockThreadSubject(tx, orgId, user.id, subjectType, subjectId);
+      let existing = await tx.analysisThread.findFirst({
+        where: { orgId, subjectType, subjectId },
+        include: this.threadInclude(),
+      });
 
-    if (!existing) {
-      if (!normalizedNote) {
-        return null;
-      }
-      try {
-        existing = await this.analysisPrisma.analysisThread.create({
-          data: {
-            orgId,
-            createdById: user.id,
-            updatedById: user.id,
-            subjectType,
-            subjectId,
-            noteMarkdown: normalizedNote,
-          },
-          include: this.threadInclude(),
-        });
-        return this.toThreadResponse(existing);
-      } catch (error) {
-        if (!this.isUniqueConstraintViolation(error)) {
-          throw error;
+      if (!existing) {
+        if (!normalizedNote) {
+          return null;
         }
-        existing = await this.analysisPrisma.analysisThread.findFirst({
-          where: { orgId, subjectType, subjectId },
-          include: this.threadInclude(),
-        });
-        if (!existing) {
-          throw this.toUnexpectedThreadCreationError(error);
+        try {
+          return await tx.analysisThread.create({
+            data: {
+              orgId,
+              createdById: user.id,
+              updatedById: user.id,
+              subjectType,
+              subjectId,
+              noteMarkdown: normalizedNote,
+            },
+            include: this.threadInclude(),
+          });
+        } catch (error) {
+          if (!this.isUniqueConstraintViolation(error)) {
+            throw error;
+          }
+          existing = await tx.analysisThread.findFirst({
+            where: { orgId, subjectType, subjectId },
+            include: this.threadInclude(),
+          });
+          if (!existing) {
+            throw this.toUnexpectedThreadCreationError(error);
+          }
         }
       }
-    }
 
-    const row = await this.analysisPrisma.analysisThread.update({
-      where: { id: existing.id },
-      data: {
-        updatedById: user.id,
-        noteMarkdown: normalizedNote,
-      },
-      include: this.threadInclude(),
+      return tx.analysisThread.update({
+        where: { id: existing.id },
+        data: {
+          updatedById: user.id,
+          noteMarkdown: normalizedNote,
+        },
+        include: this.threadInclude(),
+      });
     });
-    return this.toThreadResponse(row);
+    return row ? this.toThreadResponse(row) : null;
   }
 
   async createComment(
@@ -927,67 +1131,69 @@ export class AnalysisWorkspaceService {
     subjectId: string,
     bodyMarkdown: string,
   ) {
-    await this.assertSubjectWritable(orgId, user.id, subjectType, subjectId);
     const body = this.normalizeRequiredText(bodyMarkdown, 5000, "bodyMarkdown");
-
-    let thread = await this.analysisPrisma.analysisThread.findFirst({
-      where: { orgId, subjectType, subjectId },
-      select: { id: true },
-    });
-    let createdThread = false;
-    if (!thread) {
-      try {
-        thread = await this.analysisPrisma.analysisThread.create({
-          data: {
-            orgId,
-            createdById: user.id,
-            updatedById: user.id,
-            subjectType,
-            subjectId,
-            noteMarkdown: null,
-          },
-          select: { id: true },
-        });
-        createdThread = true;
-      } catch (error) {
-        if (!this.isUniqueConstraintViolation(error)) {
-          throw error;
-        }
-        thread = await this.analysisPrisma.analysisThread.findFirst({
-          where: { orgId, subjectType, subjectId },
-          select: { id: true },
-        });
-        if (!thread) {
-          throw this.toUnexpectedThreadCreationError(error);
+    const comment = await this.prisma.$transaction(async (prismaTx) => {
+      const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockThreadSubject(tx, orgId, user.id, subjectType, subjectId);
+      let thread = await tx.analysisThread.findFirst({
+        where: { orgId, subjectType, subjectId },
+        select: { id: true },
+      });
+      let createdThread = false;
+      if (!thread) {
+        try {
+          thread = await tx.analysisThread.create({
+            data: {
+              orgId,
+              createdById: user.id,
+              updatedById: user.id,
+              subjectType,
+              subjectId,
+              noteMarkdown: null,
+            },
+            select: { id: true },
+          });
+          createdThread = true;
+        } catch (error) {
+          if (!this.isUniqueConstraintViolation(error)) {
+            throw error;
+          }
+          thread = await tx.analysisThread.findFirst({
+            where: { orgId, subjectType, subjectId },
+            select: { id: true },
+          });
+          if (!thread) {
+            throw this.toUnexpectedThreadCreationError(error);
+          }
         }
       }
-    }
 
-    if (!createdThread) {
-      await this.analysisPrisma.analysisThread.update({
-        where: { id: thread.id },
-        data: { updatedById: user.id },
-      });
-    }
+      if (!createdThread) {
+        await tx.analysisThread.update({
+          where: { id: thread.id },
+          data: { updatedById: user.id },
+        });
+      }
 
-    const comment = await this.analysisPrisma.analysisComment.create({
-      data: {
-        orgId,
-        threadId: thread.id,
-        createdById: user.id,
-        bodyMarkdown: body,
-      },
-      include: {
-        createdBy: {
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
-            avatarUrl: true,
+      return tx.analysisComment.create({
+        data: {
+          orgId,
+          threadId: thread.id,
+          createdById: user.id,
+          bodyMarkdown: body,
+        },
+        include: {
+          createdBy: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              avatarUrl: true,
+            },
           },
         },
-      },
+      });
     });
 
     return this.toCommentResponse(comment);
@@ -1172,6 +1378,7 @@ export class AnalysisWorkspaceService {
     }
     return this.prisma.$transaction(async (prismaTx) => {
       const tx = prismaTx as AnalysisWorkspaceTransactionClient;
+      await this.lockOrgRow(tx, orgId);
       const raceWinner = await tx.analysisBoard.findFirst({
         where: { orgId, archivedAt: null },
         orderBy: [{ createdAt: "asc" }],
@@ -1562,9 +1769,12 @@ export class AnalysisWorkspaceService {
     userId: string,
     subjectType: AnalysisSubjectType,
     subjectId: string,
+    db?: AnalysisWorkspaceTransactionClient,
   ) {
+    const analysis = db ?? this.analysisPrisma;
+    const root = db ?? this.prisma;
     if (subjectType === AnalysisSubjectType.saved_view) {
-      const view = await this.analysisPrisma.savedAnalysisView.findFirst({
+      const view = await analysis.savedAnalysisView.findFirst({
         where: { orgId, id: subjectId },
         select: { id: true, createdById: true, visibility: true },
       });
@@ -1575,7 +1785,7 @@ export class AnalysisWorkspaceService {
     }
 
     if (subjectType === AnalysisSubjectType.item) {
-      const item = await this.prisma.itemMeta.findFirst({
+      const item = await root.itemMeta.findFirst({
         where: { orgId, id: subjectId },
         select: { id: true },
       });
@@ -1586,7 +1796,7 @@ export class AnalysisWorkspaceService {
     }
 
     if (subjectType === AnalysisSubjectType.analysis_task) {
-      const task = await this.analysisPrisma.analysisTaskCard.findFirst({
+      const task = await analysis.analysisTaskCard.findFirst({
         where: { orgId, id: subjectId, board: { archivedAt: null } },
         select: { id: true },
       });
@@ -1596,7 +1806,7 @@ export class AnalysisWorkspaceService {
       return;
     }
 
-    const event = await this.prisma.newsEvent.findFirst({
+    const event = await root.newsEvent.findFirst({
       where: { orgId, id: subjectId },
       select: { id: true },
     });
