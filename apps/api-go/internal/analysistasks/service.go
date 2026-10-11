@@ -68,7 +68,7 @@ func (s *Service) CreateTask(ctx context.Context, orgID string, actor analysisco
 		if !lock.Active() {
 			return analysiscollab.NotFound(analysiscollab.MsgBoardNotFound)
 		}
-		columnID, err := input.column(ctx, tx, orgID, boardID)
+		columnID, err := lockColumnID(ctx, tx, orgID, boardID, input)
 		if err != nil {
 			return err
 		}
@@ -132,10 +132,14 @@ func (s *Service) UpdateTask(ctx context.Context, orgID string, actor analysisco
 	}
 	var row taskRow
 	err = s.store.WithTx(ctx, func(tx *sql.Tx) error {
-		if _, err := analysiscollab.LockBoard(ctx, tx, orgID, existing.boardID); err != nil {
+		board, err := analysiscollab.LockBoard(ctx, tx, orgID, existing.boardID)
+		if err != nil {
 			return err
 		}
-		locked, err := findActiveTask(ctx, tx, orgID, existing.id)
+		if !board.Active() {
+			return analysiscollab.NotFound(analysiscollab.MsgTaskNotFound)
+		}
+		locked, err := lockTaskCard(ctx, tx, orgID, existing.boardID, existing.id)
 		if err != nil {
 			return err
 		}
@@ -160,18 +164,23 @@ func (s *Service) UpdateTask(ctx context.Context, orgID string, actor analysisco
 }
 
 func (s *Service) DeleteTask(ctx context.Context, orgID string, actor analysiscollab.Actor, taskID string) error {
-	if _, err := s.db(); err != nil {
+	db, err := s.db()
+	if err != nil {
+		return err
+	}
+	existing, err := findActiveTask(ctx, db, orgID, taskID)
+	if err != nil {
 		return err
 	}
 	return s.store.WithTx(ctx, func(tx *sql.Tx) error {
-		existing, err := findActiveTask(ctx, tx, orgID, taskID)
+		board, err := analysiscollab.LockBoard(ctx, tx, orgID, existing.boardID)
 		if err != nil {
 			return err
 		}
-		if _, err := analysiscollab.LockBoard(ctx, tx, orgID, existing.boardID); err != nil {
-			return err
+		if !board.Active() {
+			return analysiscollab.NotFound(analysiscollab.MsgTaskNotFound)
 		}
-		locked, err := findActiveTask(ctx, tx, orgID, taskID)
+		locked, err := lockTaskCard(ctx, tx, orgID, existing.boardID, taskID)
 		if err != nil {
 			return err
 		}
@@ -205,14 +214,22 @@ func (s *Service) MoveTask(ctx context.Context, orgID string, actor analysiscoll
 	targetIndex := body.Int("targetIndex")
 	var boardID string
 	err = s.store.WithTx(ctx, func(tx *sql.Tx) error {
-		if _, err := analysiscollab.LockBoard(ctx, tx, orgID, existing.boardID); err != nil {
-			return err
-		}
-		locked, err := findActiveTask(ctx, tx, orgID, taskID)
+		board, err := analysiscollab.LockBoard(ctx, tx, orgID, existing.boardID)
 		if err != nil {
 			return err
 		}
-		targetID, err := findActiveColumn(ctx, tx, orgID, locked.boardID, targetColumnID)
+		if !board.Active() {
+			return analysiscollab.NotFound(analysiscollab.MsgTaskNotFound)
+		}
+		locked, err := lockTaskCard(ctx, tx, orgID, existing.boardID, taskID)
+		if err != nil {
+			return err
+		}
+		var targetID string
+		err = tx.QueryRowContext(ctx, "SELECT `id` FROM `AnalysisBoardColumn` WHERE `orgId` = ? AND `boardId` = ? AND `id` = ? FOR UPDATE", orgID, locked.boardID, targetColumnID).Scan(&targetID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return analysiscollab.NotFound(analysiscollab.MsgColumnNotFound)
+		}
 		if err != nil {
 			return err
 		}
@@ -243,6 +260,23 @@ func (s *Service) MoveTask(ctx context.Context, orgID string, actor analysiscoll
 		return analysiscollab.BoardDetail{}, err
 	}
 	return s.boards.GetBoard(ctx, orgID, actor, boardID)
+}
+
+func lockColumnID(ctx context.Context, tx *sql.Tx, orgID, boardID string, input createInput) (string, error) {
+	if input.useColumn {
+		var id string
+		err := tx.QueryRowContext(ctx, "SELECT `id` FROM `AnalysisBoardColumn` WHERE `orgId` = ? AND `boardId` = ? AND `id` = ? FOR UPDATE", orgID, boardID, input.columnID).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", analysiscollab.NotFound(analysiscollab.MsgColumnNotFound)
+		}
+		return id, err
+	}
+	var id string
+	err := tx.QueryRowContext(ctx, "SELECT `id` FROM `AnalysisBoardColumn` WHERE `orgId` = ? AND `boardId` = ? ORDER BY `sortOrder` ASC, `createdAt` ASC LIMIT 1 FOR UPDATE", orgID, boardID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", analysiscollab.BadRequest(analysiscollab.MsgNoColumns)
+	}
+	return id, err
 }
 
 func (input createInput) column(ctx context.Context, q analysiscollab.Querier, orgID, boardID string) (string, error) {

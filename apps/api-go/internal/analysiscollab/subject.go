@@ -45,9 +45,10 @@ func assertRow(ctx context.Context, q Querier, query, orgID, subjectID string) e
 }
 
 // LockSubjectForWrite 在写入讨论之前锁住会被删除的主体。
-// saved_view 锁视图行；analysis_task 锁看板行后复查任务仍在 active 看板。
-// item 和 event 只复查存在性，并发首建交给唯一约束。
-func LockSubjectForWrite(ctx context.Context, tx *sql.Tx, orgID, userID, subjectType, subjectID string) error {
+// 看板 id 先在事务外的连接上读取，避免这次普通 SELECT 把事务快照固定在加锁之前。
+// 加锁后的任务复查是 FOR UPDATE 当前读。
+// saved_view 锁视图行；analysis_task 先锁看板行。item 和 event 只复查存在性。
+func LockSubjectForWrite(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID, userID, subjectType, subjectID string) error {
 	switch subjectType {
 	case SubjectSavedView:
 		row, err := LockSavedView(ctx, tx, orgID, subjectID)
@@ -60,17 +61,26 @@ func LockSubjectForWrite(ctx context.Context, tx *sql.Tx, orgID, userID, subject
 		return nil
 	case SubjectAnalysisTask:
 		var boardID string
-		err := tx.QueryRowContext(ctx, "SELECT `boardId` FROM `AnalysisTaskCard` WHERE `orgId` = ? AND `id` = ?", orgID, subjectID).Scan(&boardID)
+		err := db.QueryRowContext(ctx, "SELECT `boardId` FROM `AnalysisTaskCard` WHERE `orgId` = ? AND `id` = ?", orgID, subjectID).Scan(&boardID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return NotFound(MsgSubjectNotFound)
 		}
 		if err != nil {
 			return err
 		}
-		if _, err := LockBoard(ctx, tx, orgID, boardID); err != nil {
+		board, err := LockBoard(ctx, tx, orgID, boardID)
+		if err != nil {
 			return err
 		}
-		return AssertSubjectReadable(ctx, tx, orgID, userID, subjectType, subjectID)
+		if !board.Active() {
+			return NotFound(MsgSubjectNotFound)
+		}
+		var taskID string
+		err = tx.QueryRowContext(ctx, "SELECT `id` FROM `AnalysisTaskCard` WHERE `orgId` = ? AND `boardId` = ? AND `id` = ? FOR UPDATE", orgID, boardID, subjectID).Scan(&taskID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFound(MsgSubjectNotFound)
+		}
+		return err
 	case SubjectItem, SubjectEvent:
 		return AssertSubjectReadable(ctx, tx, orgID, userID, subjectType, subjectID)
 	default:

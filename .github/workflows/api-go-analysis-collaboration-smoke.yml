@@ -340,8 +340,45 @@ jobs:
 
           status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/columns", "POST", token_a, {"title": "Later", "color": "blue", "isDone": False})
           detail = body(raw)
-          if status != 201 or detail["columns"][-1]["title"] != "Later":
-              fail(f"create column {status}")
+          if status != 201 or detail["columns"][-1]["title"] != "Later" or detail["columns"][-1]["isDone"] is not False:
+              fail(f"create column false {status}")
+          def column_named(base, title):
+              status, raw, _ = call(base, f"/api/analysis/boards/{board_id}", "GET", token_a)
+              detail = body(raw)
+              if status != 200 or not detail:
+                  fail(f"read board for {title} on {base} {status}")
+              for column in detail["columns"]:
+                  if column["title"] == title:
+                      return column
+              fail(f"missing column {title} on {base}")
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/columns", "POST", token_a, {"title": "Flag missing"})
+          if status != 201 or column_named(nest, "Flag missing")["isDone"] is not False:
+              fail(f"missing isDone {status} {raw[:180]!r}")
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/columns", "POST", token_a, {"title": "Flag null go", "isDone": None})
+          if status != 201 or column_named(nest, "Flag null go")["isDone"] is not False:
+              fail(f"go null isDone create {status} {raw[:180]!r}")
+          status, raw, _ = call(nest, f"/api/analysis/boards/{board_id}/columns", "POST", token_a, {"title": "Flag null nest", "isDone": None})
+          if status != 201 or column_named(go, "Flag null nest")["isDone"] is not False:
+              fail(f"nest null isDone create {status} {raw[:180]!r}")
+          flag = column_named(go, "Flag missing")
+          status, raw, _ = call(go, f"/api/analysis/columns/{flag['id']}", "PATCH", token_a, {"isDone": True})
+          if status != 200 or column_named(nest, "Flag missing")["isDone"] is not True:
+              fail(f"set isDone true {status}")
+          status, raw, _ = call(go, f"/api/analysis/columns/{flag['id']}", "PATCH", token_a, {"title": "Flag missing kept"})
+          if status != 200 or column_named(nest, "Flag missing kept")["isDone"] is not True:
+              fail(f"missing isDone on update cleared the flag {status} {raw[:180]!r}")
+          status, raw, _ = call(nest, f"/api/analysis/columns/{flag['id']}", "PATCH", token_a, {"isDone": False})
+          if status != 200 or column_named(go, "Flag missing kept")["isDone"] is not False:
+              fail(f"explicit false {status}")
+          status_go, raw_go, _ = call(go, f"/api/analysis/columns/{flag['id']}", "PATCH", token_a, {"isDone": None})
+          status_nest, raw_nest, _ = call(nest, f"/api/analysis/columns/{flag['id']}", "PATCH", token_a, {"isDone": None})
+          go_msg = (body(raw_go) or {}).get("message")
+          nest_msg = (body(raw_nest) or {}).get("message")
+          if status_go != status_nest or go_msg != nest_msg:
+              fail(f"null isDone update go={status_go} {go_msg!r} nest={status_nest} {nest_msg!r}")
+          if status_go != 500:
+              fail(f"null isDone update expected 500, got {status_go}")
+          print("isDone missing/null/false matched")
           ids = [column["id"] for column in detail["columns"]]
           swapped = [ids[1], ids[0]] + ids[2:]
           status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/columns/reorder", "POST", token_a, {"columnIds": swapped})
@@ -422,6 +459,22 @@ jobs:
           status, raw, _ = call(go, f"/api/analysis/comments/{comment_id}", "DELETE", token_c)
           if status != 404:
               fail(f"other org delete comment {status}")
+          status, raw, _ = call(go, f"/api/analysis/boards/{board_id}/tasks", "POST", token_a, {"title": "Race card"})
+          race = body(raw)
+          if status != 201:
+              fail(f"race card {status} {raw[:180]!r}")
+          race_id = race["id"]
+          with ThreadPoolExecutor(max_workers=2) as pool:
+              race_results = list(pool.map(lambda item: call(*item), (
+                  (go, f"/api/analysis/tasks/{race_id}", "DELETE", token_a),
+                  (nest, f"/api/analysis/threads/analysis_task/{race_id}/comments", "POST", token_a, {"bodyMarkdown": "while deleting"}),
+              )))
+          task_left = int(sql(f"SELECT COUNT(*) FROM AnalysisTaskCard WHERE id='{race_id}'"))
+          thread_left = int(sql(f"SELECT COUNT(*) FROM AnalysisThread WHERE orgId='{org}' AND subjectType='analysis_task' AND subjectId='{race_id}'"))
+          comment_left = int(sql(f"SELECT COUNT(*) FROM AnalysisComment c JOIN AnalysisThread t ON t.id=c.threadId WHERE t.subjectType='analysis_task' AND t.subjectId='{race_id}'"))
+          if task_left != 0 or thread_left != 0 or comment_left != 0:
+              fail(f"task/comment race left task={task_left} thread={thread_left} comment={comment_left} http={[(item[0], item[1][:120]) for item in race_results]}")
+          print("task delete vs comment race left no orphan")
           status, raw, _ = call(go, f"/api/analysis/views/{view_id}", "DELETE", token_b)
           if status != 403:
               fail(f"b delete shared view {status}")

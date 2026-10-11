@@ -34,6 +34,18 @@ type taskRow struct {
 	updatedByID string
 }
 
+func lockTaskCard(ctx context.Context, tx *sql.Tx, orgID, boardID, taskID string) (taskRef, error) {
+	var ref taskRef
+	err := tx.QueryRowContext(ctx, "SELECT `id`, `boardId`, `columnId` FROM `AnalysisTaskCard` WHERE `orgId` = ? AND `boardId` = ? AND `id` = ? FOR UPDATE", orgID, boardID, taskID).Scan(&ref.id, &ref.boardID, &ref.columnID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return taskRef{}, analysiscollab.NotFound(analysiscollab.MsgTaskNotFound)
+	}
+	if err != nil {
+		return taskRef{}, err
+	}
+	return ref, nil
+}
+
 func findActiveTask(ctx context.Context, q analysiscollab.Querier, orgID, taskID string) (taskRef, error) {
 	var ref taskRef
 	err := q.QueryRowContext(ctx, "SELECT t.`id`, t.`boardId`, t.`columnId` FROM `AnalysisTaskCard` t INNER JOIN `AnalysisBoard` b ON b.`id` = t.`boardId` AND b.`orgId` = t.`orgId` WHERE t.`orgId` = ? AND t.`id` = ? AND b.`archivedAt` IS NULL", orgID, taskID).Scan(&ref.id, &ref.boardID, &ref.columnID)

@@ -16,6 +16,10 @@ import (
 
 const maxJSONBodyBytes = 10 << 20
 
+// ErrNullConstraint 对齐 Prisma 拒绝把 null 写入非空布尔/枚举列。
+// Nest 生产环境把这类校验错误收成 500，没有 error 字段。
+var ErrNullConstraint = errors.New("analysis: null violates a required column")
+
 // ErrPayloadTooLarge 对齐超过 json limit 后 Nest 生产环境的 500。
 var ErrPayloadTooLarge = errors.New("payload too large")
 
@@ -128,6 +132,10 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	var status *StatusError
 	if errors.As(err, &status) {
 		authhttp.WriteHTTPException(w, r, status.Status, status.Message)
+		return
+	}
+	if errors.Is(err, ErrNullConstraint) {
+		authhttp.WriteInternalFailure(w, r)
 		return
 	}
 	if errors.Is(err, ErrPayloadTooLarge) {

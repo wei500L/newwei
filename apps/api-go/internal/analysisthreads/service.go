@@ -61,10 +61,10 @@ func (s *Service) UpsertThread(ctx context.Context, orgID string, actor analysis
 	}
 	var result *analysiscollab.Thread
 	err = s.store.WithTx(ctx, func(tx *sql.Tx) error {
-		if err := analysiscollab.LockSubjectForWrite(ctx, tx, orgID, actor.ID, subjectType, subjectID); err != nil {
+		if err := analysiscollab.LockSubjectForWrite(ctx, s.store.DB, tx, orgID, actor.ID, subjectType, subjectID); err != nil {
 			return err
 		}
-		existing, found, err := findThread(ctx, tx, orgID, subjectType, subjectID, false)
+		existing, found, err := findThread(ctx, tx, orgID, subjectType, subjectID, true)
 		if err != nil {
 			return err
 		}
@@ -131,10 +131,10 @@ func (s *Service) CreateComment(ctx context.Context, orgID string, actor analysi
 	}
 	var result analysiscollab.Comment
 	err = s.store.WithTx(ctx, func(tx *sql.Tx) error {
-		if err := analysiscollab.LockSubjectForWrite(ctx, tx, orgID, actor.ID, subjectType, subjectID); err != nil {
+		if err := analysiscollab.LockSubjectForWrite(ctx, s.store.DB, tx, orgID, actor.ID, subjectType, subjectID); err != nil {
 			return err
 		}
-		thread, found, err := findThread(ctx, tx, orgID, subjectType, subjectID, false)
+		thread, found, err := findThread(ctx, tx, orgID, subjectType, subjectID, true)
 		if err != nil {
 			return err
 		}
@@ -188,36 +188,43 @@ func (s *Service) UpdateComment(ctx context.Context, orgID string, actor analysi
 	if err := s.ready(); err != nil {
 		return analysiscollab.Comment{}, err
 	}
+	existing, found, err := findComment(ctx, s.store.DB, orgID, commentID)
+	if err != nil {
+		return analysiscollab.Comment{}, err
+	}
+	if !found {
+		return analysiscollab.Comment{}, analysiscollab.NotFound(analysiscollab.MsgCommentNotFound)
+	}
+	if !actor.CanManageOwned(existing.CreatedByID) {
+		return analysiscollab.Comment{}, analysiscollab.Forbidden(analysiscollab.MsgEditComment)
+	}
 	var result analysiscollab.Comment
-	err := s.store.WithTx(ctx, func(tx *sql.Tx) error {
-		existing, found, err := findComment(ctx, tx, orgID, commentID)
+	err = s.store.WithTx(ctx, func(tx *sql.Tx) error {
+		if err := analysiscollab.LockSubjectForWrite(ctx, s.store.DB, tx, orgID, actor.ID, existing.SubjectType, existing.SubjectID); err != nil {
+			return err
+		}
+		locked, stillThere, err := lockComment(ctx, tx, orgID, commentID)
 		if err != nil {
 			return err
 		}
-		if !found {
+		if !stillThere {
 			return analysiscollab.NotFound(analysiscollab.MsgCommentNotFound)
-		}
-		if !actor.CanManageOwned(existing.CreatedByID) {
-			return analysiscollab.Forbidden(analysiscollab.MsgEditComment)
-		}
-		if err := analysiscollab.LockSubjectForWrite(ctx, tx, orgID, actor.ID, existing.SubjectType, existing.SubjectID); err != nil {
-			return err
 		}
 		body, err := analysiscollab.NormalizeRequired(bodyMarkdown, bodyMaxLength, "bodyMarkdown")
 		if err != nil {
 			return err
 		}
 		now := analysiscollab.Now()
-		if err := updateCommentBody(ctx, tx, orgID, existing.ID, body, now); err != nil {
+		if err := updateCommentBody(ctx, tx, orgID, locked.ID, body, now); err != nil {
 			return err
 		}
-		existing.Body = body
-		existing.UpdatedAt = now
-		author, err := loadAuthor(ctx, tx, existing.CreatedByID)
+		locked.Body = body
+		locked.UpdatedAt = now
+		author, err := loadAuthor(ctx, tx, locked.CreatedByID)
 		if err != nil {
 			return err
 		}
-		result = commentResponse(existing, author)
+		result = commentResponse(locked, author)
 		return nil
 	})
 	if err != nil {
@@ -399,8 +406,20 @@ func insertComment(ctx context.Context, tx *sql.Tx, orgID, threadID, userID, bod
 }
 
 func findComment(ctx context.Context, q analysiscollab.Querier, orgID, commentID string) (commentRow, bool, error) {
+	return scanComment(ctx, q, orgID, commentID, false)
+}
+
+func lockComment(ctx context.Context, tx *sql.Tx, orgID, commentID string) (commentRow, bool, error) {
+	return scanComment(ctx, tx, orgID, commentID, true)
+}
+
+func scanComment(ctx context.Context, q analysiscollab.Querier, orgID, commentID string, forUpdate bool) (commentRow, bool, error) {
+	query := findCommentSQL
+	if forUpdate {
+		query += " FOR UPDATE"
+	}
 	var row commentRow
-	err := q.QueryRowContext(ctx, findCommentSQL, commentID, orgID).Scan(
+	err := q.QueryRowContext(ctx, query, commentID, orgID).Scan(
 		&row.ID,
 		&row.CreatedByID,
 		&row.Body,

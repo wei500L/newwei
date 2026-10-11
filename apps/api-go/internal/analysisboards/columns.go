@@ -67,16 +67,20 @@ func (s *Service) UpdateColumn(ctx context.Context, orgID string, actor analysis
 		return analysiscollab.BoardDetail{}, err
 	}
 	// 看板 id 在池上解析，事务的第一条语句才是 LockBoard。
-	// 锁前的普通读会冻住可重复读快照，锁内复查就看不到并发删除。
+	// 看板 id 在事务外解析。事务的第一条语句是 LockBoard，复查列用 FOR UPDATE。
 	existing, err := lookupActiveColumn(ctx, db, orgID, columnID)
 	if err != nil {
 		return analysiscollab.BoardDetail{}, err
 	}
 	err = s.store.WithTx(ctx, func(tx *sql.Tx) error {
-		if _, err := analysiscollab.LockBoard(ctx, tx, orgID, existing.boardID); err != nil {
+		board, err := analysiscollab.LockBoard(ctx, tx, orgID, existing.boardID)
+		if err != nil {
 			return err
 		}
-		locked, err := lookupActiveColumn(ctx, tx, orgID, columnID)
+		if !board.Active() {
+			return analysiscollab.NotFound(analysiscollab.MsgColumnNotFound)
+		}
+		locked, err := lockActiveColumn(ctx, tx, orgID, existing.boardID, columnID)
 		if err != nil {
 			return err
 		}
@@ -111,34 +115,36 @@ func (s *Service) DeleteColumn(ctx context.Context, orgID string, actor analysis
 	}
 	var boardID string
 	err = s.store.WithTx(ctx, func(tx *sql.Tx) error {
-		if _, err := analysiscollab.LockBoard(ctx, tx, orgID, existing.boardID); err != nil {
-			return err
-		}
-		locked, err := lookupActiveColumn(ctx, tx, orgID, columnID)
+		board, err := analysiscollab.LockBoard(ctx, tx, orgID, existing.boardID)
 		if err != nil {
 			return err
 		}
-		if locked.boardID != existing.boardID {
+		if !board.Active() {
 			return analysiscollab.NotFound(analysiscollab.MsgColumnNotFound)
 		}
-		var columnCount int
-		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM `AnalysisBoardColumn` WHERE `orgId` = ? AND `boardId` = ?", orgID, locked.boardID).Scan(&columnCount); err != nil {
+		locked, err := lockActiveColumn(ctx, tx, orgID, existing.boardID, columnID)
+		if err != nil {
 			return err
 		}
-		// 只剩一列时，同一看板上不存在另一列，所以先返回最后一列，而不是目标列不存在。
-		if columnCount <= 1 {
+		ids, err := lockBoardColumnIDs(ctx, tx, orgID, locked.boardID)
+		if err != nil {
+			return err
+		}
+		if len(ids) <= 1 {
 			return analysiscollab.BadRequest(analysiscollab.MsgLastColumn)
 		}
-		var targetID string
-		scanErr := tx.QueryRowContext(ctx, "SELECT `id` FROM `AnalysisBoardColumn` WHERE `orgId` = ? AND `boardId` = ? AND `id` = ?", orgID, locked.boardID, moveTo).Scan(&targetID)
-		if errors.Is(scanErr, sql.ErrNoRows) {
+		foundTarget := false
+		for _, id := range ids {
+			if id == moveTo {
+				foundTarget = true
+				break
+			}
+		}
+		if !foundTarget {
 			return analysiscollab.NotFound(analysiscollab.MsgTargetColumnNotFound)
 		}
-		if scanErr != nil {
-			return scanErr
-		}
 		now := analysiscollab.Now()
-		if _, err := tx.ExecContext(ctx, "UPDATE `AnalysisTaskCard` SET `columnId` = ?, `updatedById` = ?, `updatedAt` = ? WHERE `orgId` = ? AND `boardId` = ? AND `columnId` = ?", targetID, actor.ID, now, orgID, locked.boardID, locked.id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE `AnalysisTaskCard` SET `columnId` = ?, `updatedById` = ?, `updatedAt` = ? WHERE `orgId` = ? AND `boardId` = ? AND `columnId` = ?", moveTo, actor.ID, now, orgID, locked.boardID, locked.id); err != nil {
 			return err
 		}
 		// 外键是 ON DELETE CASCADE。先挪走卡片，再删列，否则卡片会被一起删掉。
@@ -153,7 +159,7 @@ func (s *Service) DeleteColumn(ctx context.Context, orgID string, actor analysis
 		if n != 1 {
 			return analysiscollab.NotFound(analysiscollab.MsgColumnNotFound)
 		}
-		if err := reindexColumnTasks(ctx, tx, orgID, locked.boardID, targetID, now); err != nil {
+		if err := reindexColumnTasks(ctx, tx, orgID, locked.boardID, moveTo, now); err != nil {
 			return err
 		}
 		if err := touchBoard(ctx, tx, orgID, locked.boardID, actor.ID, now); err != nil {
@@ -201,6 +207,38 @@ func (s *Service) ReorderColumns(ctx context.Context, orgID string, actor analys
 		return analysiscollab.BoardDetail{}, err
 	}
 	return s.GetBoard(ctx, orgID, actor, boardID)
+}
+
+func lockActiveColumn(ctx context.Context, tx *sql.Tx, orgID, boardID, columnID string) (columnRef, error) {
+	var ref columnRef
+	err := tx.QueryRowContext(ctx, "SELECT `id`, `boardId` FROM `AnalysisBoardColumn` WHERE `orgId` = ? AND `boardId` = ? AND `id` = ? FOR UPDATE", orgID, boardID, columnID).Scan(&ref.id, &ref.boardID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return columnRef{}, analysiscollab.NotFound(analysiscollab.MsgColumnNotFound)
+	}
+	if err != nil {
+		return columnRef{}, err
+	}
+	return ref, nil
+}
+
+func lockBoardColumnIDs(ctx context.Context, tx *sql.Tx, orgID, boardID string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT `id` FROM `AnalysisBoardColumn` WHERE `orgId` = ? AND `boardId` = ? FOR UPDATE", orgID, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 func lookupActiveColumn(ctx context.Context, q analysiscollab.Querier, orgID, columnID string) (columnRef, error) {
@@ -260,7 +298,7 @@ func normalizeColumnPatch(body analysiscollab.Body) (columnPatch, error) {
 	}
 	if body.Has("isDone") {
 		if body.Null("isDone") {
-			return columnPatch{}, analysiscollab.BadRequest("isDone must be a boolean value")
+			return columnPatch{}, analysiscollab.ErrNullConstraint
 		}
 		patch.isDone = body.Bool("isDone")
 		patch.setDone = true

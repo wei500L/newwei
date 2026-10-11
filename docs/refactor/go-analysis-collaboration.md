@@ -36,7 +36,7 @@ Go 与 Nest 使用同一条 InnoDB 行锁，顺序固定：
 2. `AnalysisBoard` 行：列和卡片的结构修改，以及 `analysis_task` 讨论写入。
 3. `SavedAnalysisView` 行：删除视图，以及 `saved_view` 讨论写入。
 
-归档先锁组织再锁看板。锁内重新检查未归档状态、数量和归属。事务里的查询走同一连接。item 与 event 的讨论首建只靠 `(orgId, subjectType, subjectId)` 唯一约束；只有 MySQL 1062 才重读胜者。
+归档先锁组织再锁看板。看板 id 若必须先知道，在事务外的另一条连接上读。事务里的第一条语句是 `SELECT ... FOR UPDATE`。锁后的复查也是当前读，不再用普通 `SELECT`：MySQL 默认可重复读会把第一次普通读的快照用到后面的普通读上，锁等待期间已经提交的删除仍然看不见。见 [Consistent Nonlocking Reads](https://dev.mysql.com/doc/refman/8.4/en/innodb-consistent-read.html)。item 与 event 的讨论首建只靠 `(orgId, subjectType, subjectId)` 唯一约束；只有 MySQL 1062 才重读胜者。
 
 这次收紧的缺陷：
 
