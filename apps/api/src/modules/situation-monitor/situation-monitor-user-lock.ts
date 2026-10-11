@@ -86,6 +86,12 @@ export async function withSituationMonitorUserLock<T>(
   }
 }
 
+function copyBuffer(value: Uint8Array): Buffer {
+  const out = Buffer.alloc(value.byteLength);
+  out.set(value);
+  return out;
+}
+
 function sqlString(value: string): string {
   return `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
@@ -156,7 +162,7 @@ class MysqlLockSession implements LockSession {
       throw new SituationMonitorLockError(mysqlError(greeting));
     }
     const parsed = parseGreeting(greeting);
-    this.scramble = parsed.scramble;
+    this.scramble = copyBuffer(parsed.scramble);
     const auth = authResponse(target.password, parsed.plugin, parsed.scramble);
     const response = buildHandshakeResponse(target, parsed.plugin, auth);
     await this.writePacket(response);
@@ -184,7 +190,7 @@ class MysqlLockSession implements LockSession {
     }
     if (packet[0] === 0xfe) {
       const switched = parseAuthSwitch(packet);
-      this.scramble = switched.scramble.length > 0 ? switched.scramble : this.scramble;
+      this.scramble = switched.scramble.length > 0 ? copyBuffer(switched.scramble) : this.scramble;
       await this.writePacket(authResponse(password, switched.plugin, this.scramble));
       await this.finishAuth(password, switched.plugin);
       return;
@@ -309,7 +315,7 @@ function parseGreeting(packet: Buffer): { plugin: string; scramble: Buffer } {
     offset += 1;
     offset += 10;
     const rest = Math.max(13, authLen - 8);
-    part2 = packet.subarray(offset, Math.min(packet.length, offset + rest));
+    part2 = copyBuffer(packet.subarray(offset, Math.min(packet.length, offset + rest)));
     offset += part2.length;
     if ((capability & CLIENT_PLUGIN_AUTH) !== 0) {
       const start = offset;
@@ -321,7 +327,7 @@ function parseGreeting(packet: Buffer): { plugin: string; scramble: Buffer } {
   }
   const scramble = Buffer.concat([part1, part2]);
   const nul = scramble.indexOf(0);
-  return { plugin, scramble: nul >= 0 ? scramble.subarray(0, nul) : scramble };
+  return { plugin, scramble: nul >= 0 ? copyBuffer(scramble.subarray(0, nul)) : scramble };
 }
 
 function parseAuthSwitch(packet: Buffer): { plugin: string; scramble: Buffer } {
@@ -334,7 +340,10 @@ function parseAuthSwitch(packet: Buffer): { plugin: string; scramble: Buffer } {
   offset += 1;
   const scramble = packet.subarray(offset);
   const nul = scramble.indexOf(0);
-  return { plugin, scramble: nul >= 0 ? scramble.subarray(0, nul) : scramble };
+  return {
+    plugin,
+    scramble: copyBuffer(nul >= 0 ? scramble.subarray(0, nul) : scramble),
+  };
 }
 
 function buildHandshakeResponse(target: MysqlTarget, plugin: string, auth: Buffer): Buffer {
