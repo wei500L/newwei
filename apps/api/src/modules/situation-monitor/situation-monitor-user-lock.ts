@@ -47,7 +47,7 @@ interface MysqlTarget {
 }
 
 interface LockSession {
-  query(sql: string): Promise<Array<Record<string, string | null>>>;
+  query(sql: string): Promise<Record<string, string | null>[]>;
   close(): Promise<void>;
 }
 
@@ -86,7 +86,7 @@ export async function withSituationMonitorUserLock<T>(
   }
 }
 
-function copyBuffer(value: Uint8Array): Buffer {
+function copyBuffer(value: Uint8Array) {
   const out = Buffer.alloc(value.byteLength);
   out.set(value);
   return out;
@@ -141,7 +141,7 @@ class MysqlLockSession implements LockSession {
   private buffer = Buffer.alloc(0);
   private seq = 0;
   private scramble = Buffer.alloc(0);
-  private waiters: Array<(chunk: Buffer) => void> = [];
+  private waiters: ((chunk: Buffer) => void)[] = [];
 
   constructor(socket: Socket) {
     this.socket = socket;
@@ -169,7 +169,7 @@ class MysqlLockSession implements LockSession {
     await this.finishAuth(target.password, parsed.plugin);
   }
 
-  async query(sql: string): Promise<Array<Record<string, string | null>>> {
+  async query(sql: string): Promise<Record<string, string | null>[]> {
     this.seq = 0;
     await this.writePacket(Buffer.concat([Buffer.from([0x03]), Buffer.from(sql, "utf8")]));
     return await this.readRows();
@@ -218,7 +218,7 @@ class MysqlLockSession implements LockSession {
     throw new SituationMonitorLockError(`unexpected mysql auth packet for ${plugin}`);
   }
 
-  private async readRows(): Promise<Array<Record<string, string | null>>> {
+  private async readRows(): Promise<Record<string, string | null>[]> {
     const first = await this.readPacket();
     if (first[0] === 0xff) {
       throw new SituationMonitorLockError(mysqlError(first));
@@ -235,7 +235,7 @@ class MysqlLockSession implements LockSession {
     if (headerEof[0] === 0xff) {
       throw new SituationMonitorLockError(mysqlError(headerEof));
     }
-    const rows: Array<Record<string, string | null>> = [];
+    const rows: Record<string, string | null>[] = [];
     for (;;) {
       const row = await this.readPacket();
       if (row[0] === 0xff) {
