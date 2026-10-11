@@ -341,6 +341,14 @@ jobs:
                   CAST('[]' AS JSON), CAST('[\"batch7-owned-topic\"]' AS JSON), CAST('[]' AS JSON), CAST('[]' AS JSON),
                   NOW(3), NOW(3));
           """)
+          # 列表本身不补订阅。对已有值再 upsert 会走 reconciliation：
+          # 手动监控拥有的 topic 被补回，并写出 system_sync 监控。
+          status, raw, _ = call(go, "/api/user-content-subscriptions/batch-upsert", "POST", admin_token, {
+              "subscriptions": [{"kind": "topic", "value": "topic-cap-01", "source": "manual"}]
+          })
+          touched = body(raw)
+          if status != 201 or not touched or touched["items"][0]["status"] != "already_subscribed":
+              fail(f"reconcile upsert {status} {touched}")
           status, raw, headers = call(go, "/api/user-content-subscriptions", "GET", admin_token)
           listed = body(raw)
           if status != 200 or not listed:
