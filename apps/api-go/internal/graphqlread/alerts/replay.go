@@ -1,0 +1,118 @@
+package alerts
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"time"
+)
+
+const replaySelect = "SELECT e.`id`, e.`triggeredAt`, e.`context`, r.`metricProvider`, r.`metricSlug` " +
+	"FROM `AlertEvent` AS e " +
+	"INNER JOIN `AlertRule` AS r ON r.`id` = e.`ruleId` " +
+	"WHERE e.`id` = ? AND r.`orgId` = ?"
+
+const replayPointSelect = "SELECT p.`recordedAt`, p.`value`, p.`unit` " +
+	"FROM `EconomicDataPoint` AS p " +
+	"INNER JOIN `EconomicDataItem` AS i ON i.`id` = p.`itemId` " +
+	"WHERE i.`slug` = ? AND p.`recordedAt` >= ? AND p.`recordedAt` <= ? " +
+	"ORDER BY p.`recordedAt` ASC"
+
+func replayEvent(ctx context.Context, db *sql.DB, orgID, eventID string, windowDays int) (any, error) {
+	if err := requireDB(db); err != nil {
+		return nil, err
+	}
+	var (
+		id         string
+		triggered  time.Time
+		rawContext []byte
+		provider   string
+		slug       string
+	)
+	err := db.QueryRowContext(ctx, replaySelect, eventID, orgID).Scan(&id, &triggered, &rawContext, &provider, &slug)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, queryErr("event replay", err)
+	}
+	if provider != providerEconomic && provider != providerAnomaly {
+		return nil, nil
+	}
+	metricSlug := normalizeMetricSlug(slug)
+	if metricSlug == "" {
+		return nil, nil
+	}
+	decoded, err := decodeJSON(rawContext)
+	if err != nil {
+		return nil, err
+	}
+	center, err := replayCenter(triggered, decoded)
+	if err != nil {
+		return nil, err
+	}
+	start, end := windowBounds(center, windowDays)
+	points, unit, err := loadReplayPoints(ctx, db, metricSlug, start, end)
+	if err != nil {
+		return nil, err
+	}
+	return AlertEventReplayModel{
+		EventID:        id,
+		MetricProvider: provider,
+		MetricSlug:     metricSlug,
+		Unit:           unit,
+		Points:         points,
+	}, nil
+}
+
+func replayCenter(triggered time.Time, contextValue any) (time.Time, error) {
+	fallback := truncateMillis(triggered)
+	record := asObject(contextValue)
+	if record == nil {
+		return fallback, nil
+	}
+	raw, ok := record["recordedAt"].(string)
+	if !ok || raw == "" {
+		return fallback, nil
+	}
+	parsed, ok := parseJSDate(raw)
+	if !ok {
+		return time.Time{}, errors.New("alerts: invalid replay center time")
+	}
+	return parsed, nil
+}
+
+func loadReplayPoints(ctx context.Context, db *sql.DB, slug string, start, end time.Time) ([]AlertEventReplayPointModel, *string, error) {
+	rows, err := db.QueryContext(ctx, replayPointSelect, slug, start, end)
+	if err != nil {
+		return nil, nil, queryErr("event replay points", err)
+	}
+	defer rows.Close()
+
+	points := make([]AlertEventReplayPointModel, 0)
+	var unit *string
+	for rows.Next() {
+		var (
+			recorded time.Time
+			value    sql.NullString
+			rawUnit  sql.NullString
+		)
+		if err := rows.Scan(&recorded, &value, &rawUnit); err != nil {
+			return nil, nil, queryErr("scan replay point", err)
+		}
+		if unit == nil && rawUnit.Valid && rawUnit.String != "" {
+			unit = stringPtr(rawUnit.String)
+		}
+		points = append(points, AlertEventReplayPointModel{
+			Timestamp: utcTime(recorded),
+			Value:     reqDecimal(value),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, queryErr("event replay points", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, queryErr("event replay points", err)
+	}
+	return points, unit, nil
+}

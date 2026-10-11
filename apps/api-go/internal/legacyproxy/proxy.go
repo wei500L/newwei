@@ -335,6 +335,36 @@ func WithAuthenticatedHealth(rules []Rule, mode string) []Rule {
 	})
 }
 
+// WithGraphQLRead inserts exact GET/POST/OPTIONS rules for /graphql ahead of
+// the legacy prefix so only those methods can reach the Go handler. Upgrade
+// requests are still delivered to that handler, which proxies them. Longer
+// paths keep the prefix legacy rule. An empty or legacy mode adds nothing.
+func WithGraphQLRead(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	getOnly := map[string]bool{http.MethodGet: true}
+	exact := []Rule{
+		{Prefix: "/graphql", Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodGet: true}},
+		{Prefix: "/graphql", Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodPost: true}},
+		{Prefix: "/graphql", Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodOptions: true}},
+		{Prefix: "/__go/graphql-read-stats", Mode: ModeGo, Exact: true, Methods: getOnly},
+	}
+	out := make([]Rule, 0, len(rules)+len(exact))
+	inserted := false
+	for _, rule := range rules {
+		if !inserted && rule.Prefix == "/graphql" && !rule.Exact {
+			out = append(out, exact...)
+			inserted = true
+		}
+		out = append(out, rule)
+	}
+	if !inserted {
+		out = append(out, exact...)
+	}
+	return out
+}
+
 func appendExactGET(rules []Rule, path string) []Rule {
 	return appendExactMethods(rules, http.MethodGet, path)
 }

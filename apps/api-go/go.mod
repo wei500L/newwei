@@ -9,6 +9,8 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.3
 	// Go-批3A：access-token blacklist 查询（与 NestJS 同一 Redis）。
 	github.com/redis/go-redis/v9 v9.7.3
+	// GraphQL read pilot：完整 SDL 的解析、校验与变量强制。v2.5.62 是 2026-10-08 的正式 tag。
+	github.com/vektah/gqlparser/v2 v2.5.62
 	// Go-批5A：dashboard stats 只读查询 ProcessedItem 与 TaskLog。
 	go.mongodb.org/mongo-driver/v2 v2.9.2
 	// Go-批4A：公开故事 slug 的 NFKD/NFC，对齐 JS String.normalize。
@@ -17,6 +19,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/klauspost/compress v1.19.2 // indirect

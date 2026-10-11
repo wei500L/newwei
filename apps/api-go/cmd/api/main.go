@@ -83,6 +83,12 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstream"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardwarmap"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/alerts"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
@@ -483,6 +489,7 @@ func run() error {
 	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
+	rules = legacyproxy.WithGraphQLRead(rules, string(cfg.GraphQLReadMode))
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -524,7 +531,8 @@ func run() error {
 				cfg.UserDigestMode == config.UserDigestModeGo ||
 				cfg.AnalysisViewsMode == config.AnalysisViewsModeGo ||
 				cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo ||
-				cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo {
+				cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo ||
+				cfg.GraphQLReadMode == "go" {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -570,7 +578,8 @@ func run() error {
 		cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo ||
 		cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo
 	// user-settings、dashboard、stream、认证版 healthz、个人内容和分析工作台共用 JWT/Redis/MySQL 鉴权栈。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo
+	graphqlReadGo := cfg.GraphQLReadMode == "go"
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1007,6 +1016,48 @@ func run() error {
 	// 是同一实现，保证差分通过即切换可信）。
 	gateway.RegisterGoHandler("/api/healthz/live", health.LiveHandler)
 
+	var graphqlHandler *graphqlread.Handler
+	var graphqlMongo *dashboardstats.Connection
+	if graphqlReadGo {
+		if sharedDB == nil || authenticator == nil || redisClient == nil {
+			return fmt.Errorf("api-go: API_GO_GRAPHQL_READ_MODE=go requires mysql, jwt, and redis")
+		}
+		mongoDatabase := dashboardMongo
+		if mongoDatabase == nil {
+			opened, openErr := dashboardstats.Open(cfg.MongoURI)
+			if openErr != nil {
+				return fmt.Errorf("api-go: API_GO_GRAPHQL_READ_MODE=go requires a valid MONGO_URI")
+			}
+			graphqlMongo = opened
+			mongoDatabase = opened
+		}
+		reg := contract.NewRegistry()
+		alerts.Register(reg, sharedDB)
+		history.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+		economic.Register(reg, sharedDB)
+		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
+			Registry:        reg,
+			Authenticator:   authenticator,
+			Limiter:         policy.NewLimiter(redisClient, cfg.RateLimitLogin, cfg.RateLimitLoginWindow, cfg.RateLimitFailOpen),
+			Cache:           policy.NewResponseCache(redisClient),
+			Legacy:          gateway.ServeLegacy,
+			CORS:            cors.New(cfg.CorsOrigin),
+			TrustProxy:      cfg.TrustProxy,
+			APQEnabled:      cfg.GraphQLAPQEnabled,
+			DepthLimit:      cfg.GraphQLDepthLimit,
+			ComplexityLimit: cfg.GraphQLComplexity,
+			CacheEnabled:    cfg.GraphQLCacheEnabled,
+			CacheTTL:        cfg.GraphQLCacheTTL,
+		})
+		if handlerErr != nil {
+			return handlerErr
+		}
+		graphqlHandler = handler
+		gateway.RegisterGoHandler(graphqlread.Path, graphqlHandler.ServeHTTP)
+		gateway.RegisterGoHandler(graphqlread.StatsPath, graphqlHandler.ServeStats)
+		log.Printf("api-go: GraphQL read pilot under go (16 queries; mutations and other queries stay on NestJS)")
+	}
+
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gateway.ServeHTTPWithShadow(w, r, disp)
 	}))
@@ -1051,6 +1102,14 @@ func run() error {
 			if err := dashboardMongo.Disconnect(ctx); err != nil {
 				log.Printf("api-go: mongo client close failed")
 			}
+		}
+		if graphqlMongo != nil {
+			if err := graphqlMongo.Disconnect(ctx); err != nil {
+				log.Printf("api-go: graphql mongo client close failed")
+			}
+		}
+		if graphqlHandler != nil {
+			graphqlHandler.Close()
 		}
 		if readyHandler != nil {
 			readyHandler.Close(ctx)

@@ -291,6 +291,18 @@ type Config struct {
 	AnalysisViewsMode   AnalysisViewsMode
 	AnalysisBoardsMode  AnalysisBoardsMode
 	AnalysisThreadsMode AnalysisThreadsMode
+	// GraphQLReadMode 控制精确 /graphql 的已迁移 query。默认 legacy。
+	// go 只执行本轮 16 个 query；mutation、subscription、未迁移 query 仍代理 NestJS。
+	GraphQLReadMode      string
+	GraphQLAPQEnabled    bool
+	GraphQLDepthLimit    int
+	GraphQLComplexity    int
+	GraphQLCacheEnabled  bool
+	GraphQLCacheTTL      int
+	TrustProxy           string
+	RateLimitFailOpen    bool
+	RateLimitLogin       int
+	RateLimitLoginWindow int
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
 
@@ -601,6 +613,32 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_THREADS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLReadMode = "legacy"
+	case "go":
+		cfg.GraphQLReadMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_READ_MODE must be one of legacy|go")
+	}
+	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
+	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
+	cfg.GraphQLComplexity = intDefault(getenv("GRAPHQL_COMPLEXITY_LIMIT"), 2000)
+	cfg.GraphQLCacheEnabled = boolDefault(getenv("GRAPHQL_RESPONSE_CACHE_ENABLED"), true)
+	cfg.GraphQLCacheTTL = intDefault(getenv("GRAPHQL_RESPONSE_CACHE_MAX_AGE_SECONDS"), 30)
+	if cfg.GraphQLDepthLimit <= 0 {
+		cfg.GraphQLDepthLimit = 8
+	}
+	if cfg.GraphQLComplexity <= 0 {
+		cfg.GraphQLComplexity = 2000
+	}
+	if cfg.GraphQLCacheTTL <= 0 {
+		cfg.GraphQLCacheTTL = 30
+	}
+	cfg.TrustProxy = strings.TrimSpace(getenv("TRUST_PROXY"))
+	cfg.RateLimitFailOpen = boolDefault(getenv("RATE_LIMIT_REDIS_FAIL_OPEN"), false)
+	cfg.RateLimitLogin = intDefault(getenv("RATE_LIMIT_LOGIN"), 5)
+	cfg.RateLimitLoginWindow = intDefault(getenv("RATE_LIMIT_LOGIN_WINDOW"), 60)
 	cfg.CrawlBaseURL = strings.TrimRight(strings.TrimSpace(getenv("CRAWL4AI_BASE_URL")), "/")
 	cfg.CrawlAPIKey = strings.TrimSpace(getenv("CRAWL4AI_API_KEY"))
 	cfg.CrawlTimeoutMs = intDefault(getenv("CRAWL4AI_TIMEOUT_MS"), 120_000)
@@ -903,6 +941,12 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.AnalysisThreadsMode == AnalysisThreadsModeGo {
 		appendAuthRequirements(&errs, "API_GO_ANALYSIS_THREADS_MODE", cfg)
+	}
+	if cfg.GraphQLReadMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go")
+		}
 	}
 
 	if len(errs) > 0 {
