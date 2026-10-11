@@ -273,6 +273,45 @@ func WithDashboardStream(rules []Rule, mode string) []Rule {
 	return appendExactGET(rules, "/api/dashboard/stream")
 }
 
+// WithContentSubscriptions 只在 mode 为 go 时接管内容订阅的 7 条精确路由。
+// 每种方法单独成组。更长路径、未列出的方法仍回落 /api/。OPTIONS 交给 Go 做预检。
+func WithContentSubscriptions(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions")
+	rules = appendExactMethods(rules, http.MethodPost, "/api/user-content-subscriptions/batch-upsert")
+	rules = appendExactMethods(rules, http.MethodPost, "/api/user-content-subscriptions/batch-delete")
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions/catalog")
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions/recommendations")
+	rules = appendExactMethods(rules, http.MethodPost, "/api/user-content-subscriptions/catalog/lookup")
+	return appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions/related-topics")
+}
+
+// WithUserNewsBehavior 只在 mode 为 go 时接管行为记录、画像读取和清空。
+// POST 根路径、GET/DELETE profile。其他方法仍回落 NestJS。
+func WithUserNewsBehavior(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	rules = appendExactMethods(rules, http.MethodPost, "/api/user-news-behavior")
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-news-behavior/profile")
+	return appendExactMethods(rules, http.MethodDelete, "/api/user-news-behavior/profile")
+}
+
+// WithUserDigest 只在 mode 为 go 时接管摘要偏好、投递设置和每日摘要。
+// GET /api/user-digest 是精确路径，不包含 /preference 或 /delivery。
+func WithUserDigest(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-digest/preference")
+	rules = appendExactMethods(rules, http.MethodPut, "/api/user-digest/preference")
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-digest/delivery")
+	rules = appendExactMethods(rules, http.MethodPut, "/api/user-digest/delivery")
+	return appendExactMethods(rules, http.MethodGet, "/api/user-digest")
+}
+
 // WithAuthenticatedHealth 只在 mode 为 go 时接管精确 GET /api/healthz。
 // 不接管 OPTIONS，也不接管 /api/healthz/live。
 func WithAuthenticatedHealth(rules []Rule, mode string) []Rule {
@@ -288,11 +327,13 @@ func WithAuthenticatedHealth(rules []Rule, mode string) []Rule {
 }
 
 func appendExactGET(rules []Rule, path string) []Rule {
-	getOnly := map[string]bool{http.MethodGet: true}
-	optionsOnly := map[string]bool{http.MethodOptions: true}
+	return appendExactMethods(rules, http.MethodGet, path)
+}
+
+func appendExactMethods(rules []Rule, method, path string) []Rule {
 	return append(rules,
-		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: getOnly},
-		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: optionsOnly},
+		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: map[string]bool{method: true}},
+		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodOptions: true}},
 	)
 }
 

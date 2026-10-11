@@ -594,6 +594,11 @@ services:
       # war-map events 与 news-markers（Go-批5C）。只这两条精确 GET。
       # 改回 legacy 即交回 NestJS。不复制告警或新闻数据。
       API_GO_DASHBOARD_WAR_MAP_MODE: go
+      # 个人内容订阅、行为画像、每日摘要（Go-批7）。pilot 默认仍交给 NestJS。
+      # 三个变量各自改成 go 才切换对应 HTTP。内部服务不看另外两个开关。
+      API_GO_CONTENT_SUBSCRIPTIONS_MODE: legacy
+      API_GO_USER_NEWS_BEHAVIOR_MODE: legacy
+      API_GO_USER_DIGEST_MODE: legacy
       MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。

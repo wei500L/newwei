@@ -33,6 +33,10 @@
 //	         （SSE；复用 War Map、K 线和热力图服务，不请求 NestJS）。
 //	         API_GO_HEALTHZ_MODE=go 时接管精确 GET /api/healthz（认证探针）。
 //	         公开 GET /api/healthz/live 保持 shadow，不随该开关变化。
+//	         Go-批7：API_GO_CONTENT_SUBSCRIPTIONS_MODE、
+//	         API_GO_USER_NEWS_BEHAVIOR_MODE、API_GO_USER_DIGEST_MODE
+//	         各自默认 legacy，只切换对应的精确 HTTP。内部订阅、目录和画像
+//	         调用不看另外两个 HTTP 开关。不启动邮件 Cron。
 //
 // 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
 // API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
@@ -76,8 +80,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardcharts"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardspacetime"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstream"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
+	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstream"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardwarmap"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
@@ -438,6 +442,18 @@ func run() error {
 	if cfg.HealthzMode == config.HealthzModeGo {
 		healthzMode = string(legacyproxy.ModeGo)
 	}
+	contentSubscriptionsMode := ""
+	if cfg.ContentSubscriptionsMode == config.ContentSubscriptionsModeGo {
+		contentSubscriptionsMode = string(legacyproxy.ModeGo)
+	}
+	userNewsBehaviorMode := ""
+	if cfg.UserNewsBehaviorMode == config.UserNewsBehaviorModeGo {
+		userNewsBehaviorMode = string(legacyproxy.ModeGo)
+	}
+	userDigestMode := ""
+	if cfg.UserDigestMode == config.UserDigestModeGo {
+		userDigestMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -449,6 +465,9 @@ func run() error {
 	rules = legacyproxy.WithDashboardSpacetimePropagation(rules, spacetimePropagationMode)
 	rules = legacyproxy.WithDashboardStream(rules, streamMode)
 	rules = legacyproxy.WithAuthenticatedHealth(rules, healthzMode)
+	rules = legacyproxy.WithContentSubscriptions(rules, contentSubscriptionsMode)
+	rules = legacyproxy.WithUserNewsBehavior(rules, userNewsBehaviorMode)
+	rules = legacyproxy.WithUserDigest(rules, userDigestMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -484,7 +503,10 @@ func run() error {
 				cfg.DashboardSpacetimeGeoMode == config.DashboardSpacetimeGeoModeGo ||
 				cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo ||
 				cfg.DashboardStreamMode == config.DashboardStreamModeGo ||
-				cfg.HealthzMode == config.HealthzModeGo {
+				cfg.HealthzMode == config.HealthzModeGo ||
+				cfg.ContentSubscriptionsMode == config.ContentSubscriptionsModeGo ||
+				cfg.UserNewsBehaviorMode == config.UserNewsBehaviorModeGo ||
+				cfg.UserDigestMode == config.UserDigestModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -523,9 +545,12 @@ func run() error {
 	spacetimePropagationGo := cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo
 	streamGo := cfg.DashboardStreamMode == config.DashboardStreamModeGo
 	healthzGo := cfg.HealthzMode == config.HealthzModeGo
-	// user-settings、dashboard、stream 和认证版 healthz 共用 JWT/Redis/MySQL 鉴权栈。
+	personalNewsGo := cfg.ContentSubscriptionsMode == config.ContentSubscriptionsModeGo ||
+		cfg.UserNewsBehaviorMode == config.UserNewsBehaviorModeGo ||
+		cfg.UserDigestMode == config.UserDigestModeGo
+	// user-settings、dashboard、stream、认证版 healthz 和个人内容三域共用 JWT/Redis/MySQL 鉴权栈。
 	// healthz 不因此要求 Mongo。stream 的 Mongo 在下面按需打开，启动时不探测。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -534,6 +559,9 @@ func run() error {
 			Username: cfg.RedisUsername,
 			Password: cfg.RedisPassword,
 			DB:       cfg.RedisDB,
+			// go-redis v9 默认协商 RESP3。HGETALL 会变成 map，原始字段顺序丢失，
+			// 行为画像的同分排序就和 ioredis 对不上。固定 RESP2，和 NestJS 一致。
+			Protocol: 2,
 		})
 		verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		blacklist := authn.NewRedisBlacklist(redisClient)
@@ -815,6 +843,10 @@ func run() error {
 		readyHandler = health.NewReadyHandler(authenticator, deps)
 		gateway.RegisterGoHandler(health.ReadyPath, readyHandler.ServeHTTP)
 		log.Printf("api-go: GET /api/healthz under go takeover")
+	}
+
+	if err := wirePersonalNews(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
 	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
