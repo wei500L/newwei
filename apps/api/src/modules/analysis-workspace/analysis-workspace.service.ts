@@ -257,7 +257,7 @@ export class AnalysisWorkspaceService {
     boardId: string,
     taskId: string,
   ): Promise<{ id: string; columnId: string } | null> {
-    const rows = await tx.$queryRaw<Array<{ id: string; columnId: string }>>`
+    const rows = await tx.$queryRaw<{ id: string; columnId: string }[]>`
       SELECT id, columnId FROM AnalysisTaskCard
       WHERE orgId = ${orgId} AND boardId = ${boardId} AND id = ${taskId}
       FOR UPDATE
@@ -275,7 +275,7 @@ export class AnalysisWorkspaceService {
     if (subjectType === AnalysisSubjectType.saved_view) {
       await this.lockSavedViewRow(tx, orgId, subjectId);
       const rows = await tx.$queryRaw<
-        Array<{ id: string; createdById: string; visibility: SavedAnalysisVisibility }>
+        { id: string; createdById: string; visibility: SavedAnalysisVisibility }[]
       >`
         SELECT id, createdById, visibility FROM SavedAnalysisView
         WHERE id = ${subjectId} AND orgId = ${orgId}
@@ -719,7 +719,7 @@ export class AnalysisWorkspaceService {
       if (!board || board.archivedAt) {
         throw new NotFoundException("Analysis board column not found");
       }
-      const lockedColumns = await tx.$queryRaw<Array<{ id: string }>>`
+      const lockedColumns = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM AnalysisBoardColumn
         WHERE orgId = ${orgId} AND boardId = ${preview.boardId}
         FOR UPDATE
@@ -982,7 +982,7 @@ export class AnalysisWorkspaceService {
       if (!locked) {
         throw new NotFoundException("Analysis task not found");
       }
-      const threads = await tx.$queryRaw<Array<{ id: string }>>`
+      const threads = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM AnalysisThread
         WHERE orgId = ${orgId}
           AND subjectType = ${AnalysisSubjectType.analysis_task}
@@ -1023,7 +1023,7 @@ export class AnalysisWorkspaceService {
       if (!lockedTask) {
         throw new NotFoundException("Analysis task not found");
       }
-      const targetRows = await tx.$queryRaw<Array<{ id: string }>>`
+      const targetRows = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM AnalysisBoardColumn
         WHERE orgId = ${orgId} AND boardId = ${task.boardId} AND id = ${input.targetColumnId}
         FOR UPDATE
