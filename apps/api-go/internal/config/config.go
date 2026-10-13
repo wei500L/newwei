@@ -173,6 +173,16 @@ const (
 	HealthzModeGo     HealthzMode = "go"
 )
 
+// SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
+// 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
+// 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
+type SituationMonitorsMode string
+
+const (
+	SituationMonitorsModeLegacy SituationMonitorsMode = "legacy"
+	SituationMonitorsModeGo     SituationMonitorsMode = "go"
+)
+
 // ContentSubscriptionsMode 只控制内容订阅 7 条精确 HTTP。默认 legacy。
 // 不决定摘要服务能否在进程内调用 Go 订阅查询。
 type ContentSubscriptionsMode string
@@ -293,16 +303,19 @@ type Config struct {
 	AnalysisThreadsMode AnalysisThreadsMode
 	// GraphQLReadMode 控制精确 /graphql 的已迁移 query。默认 legacy。
 	// go 只执行本轮 16 个 query；mutation、subscription、未迁移 query 仍代理 NestJS。
-	GraphQLReadMode      string
-	GraphQLAPQEnabled    bool
-	GraphQLDepthLimit    int
-	GraphQLComplexity    int
-	GraphQLCacheEnabled  bool
-	GraphQLCacheTTL      int
-	TrustProxy           string
-	RateLimitFailOpen    bool
-	RateLimitLogin       int
-	RateLimitLoginWindow int
+	GraphQLReadMode string
+	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
+	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
+	SituationMonitorsMode SituationMonitorsMode
+	GraphQLAPQEnabled     bool
+	GraphQLDepthLimit     int
+	GraphQLComplexity     int
+	GraphQLCacheEnabled   bool
+	GraphQLCacheTTL       int
+	TrustProxy            string
+	RateLimitFailOpen     bool
+	RateLimitLogin        int
+	RateLimitLoginWindow  int
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
 
@@ -612,6 +625,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AnalysisThreadsMode = AnalysisThreadsModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_THREADS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_MONITORS_MODE")) {
+	case "", string(SituationMonitorsModeLegacy):
+		cfg.SituationMonitorsMode = SituationMonitorsModeLegacy
+	case string(SituationMonitorsModeGo):
+		cfg.SituationMonitorsMode = SituationMonitorsModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_MONITORS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
@@ -941,6 +962,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.AnalysisThreadsMode == AnalysisThreadsModeGo {
 		appendAuthRequirements(&errs, "API_GO_ANALYSIS_THREADS_MODE", cfg)
+	}
+	if cfg.SituationMonitorsMode == SituationMonitorsModeGo {
+		appendAuthRequirements(&errs, "API_GO_SITUATION_MONITORS_MODE", cfg)
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)

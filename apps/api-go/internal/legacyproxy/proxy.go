@@ -282,6 +282,25 @@ func WithDashboardStream(rules []Rule, mode string) []Rule {
 	return appendExactGET(rules, "/api/dashboard/stream")
 }
 
+// SituationMonitorsKey 是态势监控自定义监控五条路由的处理器注册键。
+// POST /monitors/preview 是更长的精确路径，不能落到 monitors/:id。
+const SituationMonitorsKey = "/api/situation-monitor/monitors"
+
+// WithSituationMonitors 只在 mode 为 go 时接管自定义监控闭环的五条路由。
+// GET/POST 集合与 POST preview 是精确路径。PATCH/DELETE 恰好一个路径段。
+// insights、catalog、feedback、refresh、telegram、oref、HLS 不在此列。
+func WithSituationMonitors(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	rules = appendExactKeyed(rules, SituationMonitorsKey, "/api/situation-monitor/monitors",
+		http.MethodGet, http.MethodPost)
+	rules = appendExactKeyed(rules, SituationMonitorsKey, "/api/situation-monitor/monitors/preview",
+		http.MethodPost)
+	return appendSegmentRule(rules, SituationMonitorsKey, "/api/situation-monitor/monitors/", true, false, "",
+		http.MethodPatch, http.MethodDelete)
+}
+
 // WithContentSubscriptions 只在 mode 为 go 时接管内容订阅的 7 条精确路由。
 // 每种方法单独成组。更长路径、未列出的方法仍回落 /api/。OPTIONS 交给 Go 做预检。
 func WithContentSubscriptions(rules []Rule, mode string) []Rule {

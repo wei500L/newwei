@@ -16,6 +16,20 @@ type canonicalGeo struct {
 	CountryCodeAlpha2 string
 }
 
+// NormalizeCountryAlpha2 把国家名、alpha2 或 alpha3 收成 alpha2。无法识别时为空。
+func NormalizeCountryAlpha2(value string) string {
+	alpha3 := normalizeCountryCode(value)
+	if alpha3 == "" {
+		return ""
+	}
+	return countryAlpha2(alpha3)
+}
+
+// CountryEnglishName 返回国家英文名。无法识别时为空。
+func CountryEnglishName(code string) string {
+	return countryName(code)
+}
+
 func canonicalizeGeoValue(value string) canonicalGeo {
 	displayValue := normalizeDisplayValue(value)
 	if displayValue == "" {
