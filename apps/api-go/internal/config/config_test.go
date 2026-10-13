@@ -737,3 +737,60 @@ func TestGraphQLReadModeRejectsInvalid(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
+
+func TestGraphQLNewsEventsModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GraphQLNewsEventsMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+		t.Fatalf("news=%q read=%q", cfg.GraphQLNewsEventsMode, cfg.GraphQLReadMode)
+	}
+}
+
+func TestGraphQLNewsEventsModeRejectsInvalid(t *testing.T) {
+	_, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_NEWS_EVENTS_MODE" {
+			return "shadow"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_NEWS_EVENTS_MODE must be one of legacy|go") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestGraphQLNewsEventsModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_NEWS_EVENTS_MODE" {
+			return "go"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GraphQLReadMode != "legacy" || cfg.GraphQLNewsEventsMode != "go" {
+		t.Fatalf("read=%q news=%q", cfg.GraphQLReadMode, cfg.GraphQLNewsEventsMode)
+	}
+}
+
+func TestGraphQLBothGoStillRequireMongoFromReadMode(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_GRAPHQL_READ_MODE", "API_GO_GRAPHQL_NEWS_EVENTS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
