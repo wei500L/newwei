@@ -698,6 +698,34 @@ func TestGraphQLReadModeDefaultsToLegacy(t *testing.T) {
 	}
 }
 
+func TestSituationMonitorsModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SituationMonitorsMode != SituationMonitorsModeLegacy {
+		t.Fatalf("mode = %s", cfg.SituationMonitorsMode)
+	}
+	_, err = Load(func(key string) string {
+		if key == "API_GO_SITUATION_MONITORS_MODE" {
+			return "shadow"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "API_GO_SITUATION_MONITORS_MODE must be one of legacy|go") {
+		t.Fatalf("invalid mode: %v", err)
+	}
+	_, err = Load(func(key string) string {
+		if key == "API_GO_SITUATION_MONITORS_MODE" {
+			return "go"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_SITUATION_MONITORS_MODE=go") {
+		t.Fatalf("go dependencies: %v", err)
+	}
+}
+
 func TestGraphQLReadModeRejectsInvalid(t *testing.T) {
 	_, err := Load(func(key string) string {
 		if key == "API_GO_GRAPHQL_READ_MODE" {

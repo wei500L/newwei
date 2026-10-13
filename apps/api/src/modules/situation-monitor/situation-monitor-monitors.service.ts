@@ -43,6 +43,7 @@ import type {
   SituationTelegramFeedResponse,
   TelegramSignalItem,
 } from "./signals/situation-monitor-signals.types";
+import { withSituationMonitorUserLock } from "./situation-monitor-user-lock";
 import type { SituationMonitorInsightsResponse } from "./situation-monitor.service";
 import type {
   SituationMonitorMatchGeoStatus,
@@ -205,8 +206,10 @@ export class SituationMonitorMonitorsService {
     orgId: string,
     userId: string,
   ): Promise<StoredMonitorDto[]> {
-    const rows = await this.loadMonitorRows(orgId, userId);
-    return rows.map((row) => this.mapRow(row));
+    return await this.withUserLock(orgId, userId, async () => {
+      const rows = await this.loadMonitorRows(orgId, userId);
+      return rows.map((row) => this.mapRow(row));
+    });
   }
 
   async previewMonitor(
@@ -410,6 +413,16 @@ export class SituationMonitorMonitorsService {
     userId: string,
     input: CreateSituationMonitorDto,
   ): Promise<StoredMonitorDto> {
+    return await this.withUserLock(orgId, userId, async () =>
+      this.createMonitorLocked(orgId, userId, input),
+    );
+  }
+
+  private async createMonitorLocked(
+    orgId: string,
+    userId: string,
+    input: CreateSituationMonitorDto,
+  ): Promise<StoredMonitorDto> {
     await this.ensureLegacyMigration(orgId, userId);
     const existingManualCount = await this.prisma.situationMonitorMonitor.count(
       {
@@ -438,6 +451,17 @@ export class SituationMonitorMonitorsService {
   }
 
   async updateMonitor(
+    orgId: string,
+    userId: string,
+    id: string,
+    patch: UpdateSituationMonitorDto,
+  ): Promise<StoredMonitorDto> {
+    return await this.withUserLock(orgId, userId, async () =>
+      this.updateMonitorLocked(orgId, userId, id, patch),
+    );
+  }
+
+  private async updateMonitorLocked(
     orgId: string,
     userId: string,
     id: string,
@@ -505,18 +529,37 @@ export class SituationMonitorMonitorsService {
         : "manual",
     );
 
-    const updated = await this.prisma.situationMonitorMonitor.update({
-      where: { id: existing.id },
+    const updatedCount = await this.prisma.situationMonitorMonitor.updateMany({
+      where: { id: existing.id, orgId, userId },
       data: {
         ...payload,
         enabled: patch.enabled ?? payload.enabled,
       },
     });
+    if (updatedCount.count === 0) {
+      throw new NotFoundException("Monitor not found");
+    }
+    const updated = await this.prisma.situationMonitorMonitor.findFirst({
+      where: { id: existing.id, orgId, userId },
+    });
+    if (!updated) {
+      throw new NotFoundException("Monitor not found");
+    }
     await this.reconcileContentSubscriptionSync(orgId, userId);
     return this.mapRow(updated);
   }
 
   async deleteMonitor(
+    orgId: string,
+    userId: string,
+    id: string,
+  ): Promise<void> {
+    await this.withUserLock(orgId, userId, async () => {
+      await this.deleteMonitorLocked(orgId, userId, id);
+    });
+  }
+
+  private async deleteMonitorLocked(
     orgId: string,
     userId: string,
     id: string,
@@ -531,8 +574,25 @@ export class SituationMonitorMonitorsService {
     if (existing.kind === SituationMonitorMonitorKind.system_sync) {
       throw new BadRequestException("System sync monitor cannot be deleted");
     }
-    await this.prisma.situationMonitorMonitor.delete({ where: { id } });
+    await this.prisma.situationMonitorMonitor.deleteMany({
+      where: { id, orgId, userId },
+    });
     await this.reconcileContentSubscriptionSync(orgId, userId);
+  }
+
+  // 订阅批量收尾仍直接调用 reconcileContentSubscriptionSync，不经过这把锁。
+  // 因此两条都走 Nest 时，那次同步和监控 GET 仍可能交错。
+  private async withUserLock<T>(
+    orgId: string,
+    userId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return await withSituationMonitorUserLock(
+      process.env.DATABASE_URL ?? "",
+      orgId,
+      userId,
+      fn,
+    );
   }
 
   async augmentInsights(

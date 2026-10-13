@@ -173,6 +173,16 @@ const (
 	HealthzModeGo     HealthzMode = "go"
 )
 
+// SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
+// 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
+// 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
+type SituationMonitorsMode string
+
+const (
+	SituationMonitorsModeLegacy SituationMonitorsMode = "legacy"
+	SituationMonitorsModeGo     SituationMonitorsMode = "go"
+)
+
 // ContentSubscriptionsMode 只控制内容订阅 7 条精确 HTTP。默认 legacy。
 // 不决定摘要服务能否在进程内调用 Go 订阅查询。
 type ContentSubscriptionsMode string
@@ -298,6 +308,9 @@ type Config struct {
 	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
 	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
 	GraphQLNewsEventsMode string
+	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
+	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
+	SituationMonitorsMode SituationMonitorsMode
 	GraphQLAPQEnabled     bool
 	GraphQLDepthLimit     int
 	GraphQLComplexity     int
@@ -616,6 +629,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AnalysisThreadsMode = AnalysisThreadsModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_THREADS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_MONITORS_MODE")) {
+	case "", string(SituationMonitorsModeLegacy):
+		cfg.SituationMonitorsMode = SituationMonitorsModeLegacy
+	case string(SituationMonitorsModeGo):
+		cfg.SituationMonitorsMode = SituationMonitorsModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_MONITORS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
@@ -953,6 +974,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.AnalysisThreadsMode == AnalysisThreadsModeGo {
 		appendAuthRequirements(&errs, "API_GO_ANALYSIS_THREADS_MODE", cfg)
+	}
+	if cfg.SituationMonitorsMode == SituationMonitorsModeGo {
+		appendAuthRequirements(&errs, "API_GO_SITUATION_MONITORS_MODE", cfg)
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
