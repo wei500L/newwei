@@ -369,16 +369,17 @@ jobs:
           if call(go, f"{templates}/{tid}", "PATCH", reader, {"name": "stolen"})[0] != 403:
               fail("reader patch was not 403")
 
-          # 步骤 7：另一组织的 id 做 PATCH/DELETE → 404 Crawl template not found；该行还在原组织。
-          other_id = "cwttemplateother0000000001"
-          status, raw = call(go, f"{templates}/{other_id}", "PATCH", outsider, {"name": "theirs"})
+          # 步骤 7：另一组织（other）的用户对 org A 的 id 做 PATCH/DELETE → 404；该行还在 org A 且未被改。
+          status, raw = call(go, f"{templates}/{tid}", "PATCH", outsider, {"name": "theirs"})
           if status != 404 or message(raw) != "Crawl template not found":
               fail(f"legacy cross org patch {status} {raw[:300]!r}")
-          status, raw = call(go, f"{templates}/{other_id}", "DELETE", outsider)
+          status, raw = call(go, f"{templates}/{tid}", "DELETE", outsider)
           if status != 404 or message(raw) != "Crawl template not found":
               fail(f"legacy cross org delete {status} {raw[:300]!r}")
-          if scalar(f"SELECT COUNT(*) FROM CrawlTemplate WHERE id='{other_id}' AND orgId='{other}'") != "1":
-              fail("cross org delete removed the other org row")
+          if scalar(f"SELECT COUNT(*) FROM CrawlTemplate WHERE id='{tid}' AND orgId='{org}'") != "1":
+              fail("cross org delete removed the org A row")
+          if scalar(f"SELECT name FROM CrawlTemplate WHERE id='{tid}'") != "Tpl Smoke":
+              fail("cross org patch changed the org A row")
 
           # 步骤 8：DELETE 成功 200 {ok:true}；再 GET 列表里没有它。
           status, raw = call(go, f"{templates}/{tid}", "DELETE", writer)
