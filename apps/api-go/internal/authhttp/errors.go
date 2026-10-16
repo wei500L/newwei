@@ -154,6 +154,8 @@ func httpStatusErrorName(status int) string {
 		return "Not Found"
 	case http.StatusConflict:
 		return "Conflict"
+	case http.StatusTooManyRequests:
+		return "Too Many Requests"
 	default:
 		if status >= 500 {
 			return "Internal Server Error"
@@ -163,7 +165,7 @@ func httpStatusErrorName(status int) string {
 }
 
 // WriteBadRequest 写 ValidationPipe / body-parser 映射后的 400
-//（GlobalExceptionFilter 把 class-validator 的 message 数组用 "; " 拼成
+// （GlobalExceptionFilter 把 class-validator 的 message 数组用 "; " 拼成
 // 一个字符串；error 为 "Bad Request"）。非法 JSON 也走这个形状：Nest
 // 的 RoutesResolver.mapExternalException 把它收成 BadRequestException。
 func WriteBadRequest(w http.ResponseWriter, r *http.Request, message string) {
