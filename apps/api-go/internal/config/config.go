@@ -173,6 +173,15 @@ const (
 	HealthzModeGo     HealthzMode = "go"
 )
 
+// NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 legacy。
+// 不接管 GET /api/admin/news-sources/:id/preview，也不启动采集。
+type NewsSourcesMode string
+
+const (
+	NewsSourcesModeLegacy NewsSourcesMode = "legacy"
+	NewsSourcesModeGo     NewsSourcesMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -311,6 +320,9 @@ type Config struct {
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
+	// NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 legacy。
+	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
+	NewsSourcesMode NewsSourcesMode
 	GraphQLAPQEnabled     bool
 	GraphQLDepthLimit     int
 	GraphQLComplexity     int
@@ -637,6 +649,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.SituationMonitorsMode = SituationMonitorsModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_MONITORS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCES_MODE")) {
+	case "", string(NewsSourcesModeLegacy):
+		cfg.NewsSourcesMode = NewsSourcesModeLegacy
+	case string(NewsSourcesModeGo):
+		cfg.NewsSourcesMode = NewsSourcesModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_SOURCES_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
@@ -977,6 +997,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.SituationMonitorsMode == SituationMonitorsModeGo {
 		appendAuthRequirements(&errs, "API_GO_SITUATION_MONITORS_MODE", cfg)
+	}
+	if cfg.NewsSourcesMode == NewsSourcesModeGo {
+		appendAuthRequirements(&errs, "API_GO_NEWS_SOURCES_MODE", cfg)
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)

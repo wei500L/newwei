@@ -93,6 +93,7 @@ Go-批4B 故事详情在同一真实栈里已验证缓存命中的 id/slug、公
 | `API_GO_DASHBOARD_CHARTS_MODE` | legacy | 只接管三个精确 GET（Go-批5B）：`/api/dashboard/sector-heatmap`、`/api/dashboard/financial-candlestick`、`/api/dashboard/war-map/geojson`。`go` 时验签、查撤销名单、从 MySQL 重推导 `dashboards.read`。热力图和 K 线读 EconomicDataItem/EconomicDataPoint；GeoJSON 来自构建时嵌入的 world.geo.json，并带 `Cache-Control: no-store`。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，不要求 `MONGO_URI`。与 stats 开关独立。pilot 注入 `go`。其他方法、war-map 其余路径、spacetime 和 stream 仍代理 NestJS。回滚改回 `legacy` |
 | `CORS_ORIGIN` | （空） | 与 NestJS 相同的逗号分隔来源白名单。读写模式均为 `go` 时，六个精确路径的浏览器预检由 Go 204 回答，GET/PUT（含 401/400）回同一来源头。空名单不放行任何 Origin。pilot 注入与 api 服务相同的值 |
 | `API_GO_ONBOARDING_MODE` | shadow | onboarding GET 迁移单元模式（Go-批3A 兼容变量）：`shadow`（默认，批2A/2B 行为——NestJS 响应 + Go 差分）或 `go`（Go 独立鉴权 + 全响应）。仅在 `API_GO_USER_SETTINGS_READ_MODE` 未设置时生效。非法值启动失败；`go` 模式依赖同上；compose pilot 固定注入 `go`（批3A 部署等价） |
+| `API_GO_NEWS_SOURCES_MODE` | legacy | 新闻源管理台十五条 HTTP。`legacy` 代理 NestJS；`go` 时列表、options、groups、opml-presets、创建、批量频率、OPML preview/import、批量分组/启停/删除、更新、删除、run、schedule 由 Go 读写 `NewsSource`。读要 `crawl.read`，写要 `crawl.write`。`GET /:id/preview` 仍回 NestJS。run 与 schedule 不入队。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`。pilot 保持 `legacy`。回滚改回 `legacy` |
 | `JWT_SECRET` | （空） | NestJS access token 的 HMAC 验签 secret（与 api 服务同一值）。仅 `go` 模式必填。值不进入日志/healthz/错误文本 |
 | `JWT_ISSUER` | modular-monolith | 与 NestJS env schema 同默认值；`go` 模式下用于验签 |
 | `JWT_AUDIENCE` | modular-monolith-clients | 同上 |

@@ -610,6 +610,10 @@ services:
       # 改成 go 才由 Go 验签并写 SituationMonitorMonitor。
       # 回滚只把该变量改回 legacy。insights、refresh 和其他采集接口不在这个开关里。
       API_GO_SITUATION_MONITORS_MODE: legacy
+      # 新闻源管理台十五条 HTTP。pilot 与样例保持 legacy。
+      # 改成 go 才由 Go 验签并读写 NewsSource。GET :id/preview 仍回 NestJS。
+      # 回滚只把该变量改回 legacy。不入队，不启动采集 worker。
+      API_GO_NEWS_SOURCES_MODE: legacy
       MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。

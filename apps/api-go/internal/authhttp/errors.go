@@ -152,6 +152,8 @@ func httpStatusErrorName(status int) string {
 		return "Forbidden"
 	case http.StatusNotFound:
 		return "Not Found"
+	case http.StatusConflict:
+		return "Conflict"
 	default:
 		if status >= 500 {
 			return "Internal Server Error"

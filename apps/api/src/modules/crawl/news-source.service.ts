@@ -433,12 +433,14 @@ export class NewsSourceService {
   }
 
   async updateSource(orgId: string, id: string, input: UpdateNewsSourceDto) {
-    const existing = await this.prisma.newsSource.findUnique({ where: { id } });
-    if (!existing || existing.orgId !== orgId) {
+    const existing = await this.prisma.newsSource.findFirst({
+      where: { id, orgId },
+    });
+    if (!existing) {
       throw new NotFoundException("News source not found");
     }
 
-    const data: Prisma.NewsSourceUpdateInput = {};
+    const data: Prisma.NewsSourceUpdateManyMutationInput = {};
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (!name) {
@@ -467,18 +469,14 @@ export class NewsSourceService {
       if (crawlTemplateId) {
         await this.assertTemplateInOrg(orgId, crawlTemplateId);
       }
-      data.crawlTemplate = crawlTemplateId
-        ? { connect: { id: crawlTemplateId } }
-        : { disconnect: true };
+      data.crawlTemplateId = crawlTemplateId ?? null;
     }
     if (input.workflowId !== undefined) {
       const workflowId = this.normalizeOptionalNullableString(input.workflowId);
       if (workflowId) {
         await this.assertWorkflowInOrg(orgId, workflowId);
       }
-      data.workflow = workflowId
-        ? { connect: { id: workflowId } }
-        : { disconnect: true };
+      data.workflowId = workflowId ?? null;
     }
     if (input.workflowVersionId !== undefined) {
       const workflowVersionId = this.normalizeOptionalNullableString(
@@ -487,9 +485,7 @@ export class NewsSourceService {
       if (workflowVersionId) {
         await this.assertWorkflowVersionInOrg(orgId, workflowVersionId);
       }
-      data.workflowVersion = workflowVersionId
-        ? { connect: { id: workflowVersionId } }
-        : { disconnect: true };
+      data.workflowVersionId = workflowVersionId ?? null;
     }
     if (input.workflowBindingMode !== undefined) {
       data.workflowBindingMode = input.workflowBindingMode;
@@ -530,7 +526,7 @@ export class NewsSourceService {
     }
 
     try {
-      return await this.prisma.newsSource.update({ where: { id }, data });
+      return await this.writeSourceWhereOrg(orgId, id, data);
     } catch (error) {
       const conflictMessage = this.resolveUniqueConflictMessage(error);
       if (conflictMessage) {
@@ -541,26 +537,20 @@ export class NewsSourceService {
   }
 
   async deleteSource(orgId: string, id: string) {
-    const existing = await this.prisma.newsSource.findUnique({ where: { id } });
-    if (!existing || existing.orgId !== orgId) {
+    const deleted = await this.prisma.newsSource.deleteMany({
+      where: { id, orgId },
+    });
+    if (deleted.count !== 1) {
       throw new NotFoundException("News source not found");
     }
-    await this.prisma.newsSource.delete({ where: { id } });
     return { ok: true };
   }
 
   async runNow(orgId: string, id: string) {
-    const existing = await this.prisma.newsSource.findUnique({ where: { id } });
-    if (!existing || existing.orgId !== orgId) {
-      throw new NotFoundException("News source not found");
-    }
-    return this.prisma.newsSource.update({
-      where: { id },
-      data: {
-        isActive: true,
-        nextRunAt: new Date(),
-        circuitOpenUntil: null,
-      },
+    return this.writeSourceWhereOrg(orgId, id, {
+      isActive: true,
+      nextRunAt: new Date(),
+      circuitOpenUntil: null,
     });
   }
 
@@ -593,8 +583,10 @@ export class NewsSourceService {
   }
 
   async schedule(orgId: string, id: string, input: ScheduleNewsSourceDto) {
-    const existing = await this.prisma.newsSource.findUnique({ where: { id } });
-    if (!existing || existing.orgId !== orgId) {
+    const existing = await this.prisma.newsSource.findFirst({
+      where: { id, orgId },
+    });
+    if (!existing) {
       throw new NotFoundException("News source not found");
     }
 
@@ -605,14 +597,35 @@ export class NewsSourceService {
       );
     }
 
-    return this.prisma.newsSource.update({
-      where: { id },
-      data: {
-        isActive: true,
-        nextRunAt,
-        circuitOpenUntil: null,
-      },
+    return this.writeSourceWhereOrg(orgId, id, {
+      isActive: true,
+      nextRunAt,
+      circuitOpenUntil: null,
     });
+  }
+
+  // 更新、删除、立即运行和排程的写入条件同时包含主键与 orgId。
+  // 核对与写入不再分成「先按 id 读出再按 id 写」。别的组织或不存在都是 0 行，
+  // 对外仍是 404。批量 updateMany / deleteMany 本来就带 orgId，不经过这里。
+  private async writeSourceWhereOrg(
+    orgId: string,
+    id: string,
+    data: Prisma.NewsSourceUpdateManyMutationInput,
+  ) {
+    const updated = await this.prisma.newsSource.updateMany({
+      where: { id, orgId },
+      data,
+    });
+    if (updated.count !== 1) {
+      throw new NotFoundException("News source not found");
+    }
+    const row = await this.prisma.newsSource.findFirst({
+      where: { id, orgId },
+    });
+    if (!row) {
+      throw new NotFoundException("News source not found");
+    }
+    return row;
   }
 
   async preview(orgId: string, id: string) {

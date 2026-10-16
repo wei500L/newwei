@@ -37,6 +37,9 @@
 //	         API_GO_USER_NEWS_BEHAVIOR_MODE、API_GO_USER_DIGEST_MODE
 //	         各自默认 legacy，只切换对应的精确 HTTP。内部订阅、目录和画像
 //	         调用不看另外两个 HTTP 开关。不启动邮件 Cron。
+//	         API_GO_NEWS_SOURCES_MODE=go 时接管新闻源管理台十五条读写路由。
+//	         GET /api/admin/news-sources/:id/preview 仍回 NestJS。
+//	         回滚只把 API_GO_NEWS_SOURCES_MODE 改回 legacy。不入队，不启动采集。
 //
 // 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
 // API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
@@ -477,6 +480,10 @@ func run() error {
 	if cfg.SituationMonitorsMode == config.SituationMonitorsModeGo {
 		situationMonitorsMode = string(legacyproxy.ModeGo)
 	}
+	newsSourcesMode := ""
+	if cfg.NewsSourcesMode == config.NewsSourcesModeGo {
+		newsSourcesMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -496,6 +503,7 @@ func run() error {
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
 	rules = legacyproxy.WithGraphQLRead(rules, string(cfg.GraphQLReadMode))
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
+	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -539,7 +547,8 @@ func run() error {
 				cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo ||
 				cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo ||
 				cfg.GraphQLReadMode == "go" ||
-				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo {
+				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
+				cfg.NewsSourcesMode == config.NewsSourcesModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -587,7 +596,8 @@ func run() error {
 	// user-settings、dashboard、stream、认证版 healthz、个人内容和分析工作台共用 JWT/Redis/MySQL 鉴权栈。
 	graphqlReadGo := cfg.GraphQLReadMode == "go"
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo
+	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -889,6 +899,9 @@ func run() error {
 		return err
 	}
 	if err := wireSituationMonitors(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := wireNewsSources(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
 

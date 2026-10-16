@@ -79,4 +79,5 @@
 - Dashboard SSE 与认证版 healthz（Go-批6B）：`API_GO_DASHBOARD_STREAM_MODE` 与 `API_GO_HEALTHZ_MODE` 分开控制，默认都是 `legacy`。SSE 是精确 GET 加合格预检，复用已有 War Map、K 线和热力图服务，按指纹增量发布。认证版 healthz 接受人类令牌和有效机器令牌，并在请求时跑七项探针。`/api/healthz/live` 仍是 shadow。任一开关改回 `legacy` 不影响另一条。生产流量未切换。未配置的 crawl4ai、SSRF proxy 和 LLM 如实失败
 - 新闻事件控制台 GraphQL 读（Go-批8）：新增 `API_GO_GRAPHQL_NEWS_EVENTS_MODE`，默认 `legacy`。与 `API_GO_GRAPHQL_READ_MODE` 同时为 `go` 时，六个 root 由已有执行器处理。回滚只改新闻事件开关。简报缓存未命中不调用模型。生产入口未切换
 - 态势监控自定义监控：`API_GO_SITUATION_MONITORS_MODE` 默认 `legacy`。`go` 时只接管列表、预览、创建、更新、删除这五条。回滚只把该变量改回 `legacy`。insights、refresh、telegram、oref、HLS 仍回 NestJS。`/api/user-settings/ui/situation-monitor` 不在这个开关里。生产入口仍是 Web → NestJS。canary 保持关闭
+- 新闻源管理台：`API_GO_NEWS_SOURCES_MODE` 默认 `legacy`。`go` 时接管十五条读写路由。`GET /api/admin/news-sources/:id/preview` 仍回 NestJS。回滚只把该变量改回 `legacy`。run 与 schedule 不入队。生产入口仍是 Web → NestJS。canary 保持关闭。预览里按模板 id 读取 crawlOptions 未带 orgId，这批不改。SEC-01 的真实登录态未在本批验证
 - 本机按任务约束未运行 `go test`/`go vet`/`go build`；全部 Go 测试在远端 CI 执行

@@ -171,6 +171,10 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 
 `API_GO_SITUATION_MONITORS_MODE` 默认 `legacy`，只接受 `legacy` 或 `go`。`go` 时只接管五条：`GET/POST /api/situation-monitor/monitors`、精确 `POST /api/situation-monitor/monitors/preview`、恰好一段的 `PATCH/DELETE /api/situation-monitor/monitors/:id`。权限是重推导后的 `items.read`。`POST` 成功是 201。删除缺失仍是 `{ok:true}`。insights、catalog、feedback、refresh、refresh-runs、telegram-feed、oref-alerts、oref-history、live-hls-proxy-config 仍回 NestJS。已迁的 `/api/user-settings/ui/situation-monitor` 不在这个开关里。回滚：`API_GO_SITUATION_MONITORS_MODE=legacy`。不打开 canary，不改生产入口。模型与 Nominatim 未做实网验收。
 
+### 1.8h 新闻源管理台
+
+`API_GO_NEWS_SOURCES_MODE` 默认 `legacy`，只接受 `legacy` 或 `go`。`go` 时接管十五条：`GET/POST /api/admin/news-sources`，`GET /options`、`/groups`、`/opml-presets`，`POST /batch/frequency`、`/opml/preview`、`/opml/import`，`PATCH /batch/group`、`/batch/active`，`DELETE /batch`，以及恰好一段的 `PATCH/DELETE /:id` 和 `POST /:id/run`、`POST /:id/schedule`。读要 `crawl.read`，写要 `crawl.write`。人类身份来自验签、Redis 撤销名单和 membership 重推导。有效机器令牌使用令牌行里的 permissions 和 orgId。`POST` 成功是 201。删除成功是 `{ok:true}`。更新、删除、run、schedule 的写入条件同时包含 `id` 和 `orgId`。run 与 schedule 只改 `NewsSource` 行，不入队。`GET /api/admin/news-sources/:id/preview` 仍回 NestJS；该预览按模板 id 读取 `crawlOptions` 时仍没有带 `orgId`，这批不改。回滚：`API_GO_NEWS_SOURCES_MODE=legacy`。不打开 canary，不改生产入口。不把 RSS、crawl4ai、模型、AkShare 或 Nominatim 记为已通过。SEC-01 的真实登录态未在本批验证。
+
 ### 1.9 system-settings（98 个，26 个 controller）
 
 内部端点（服务间 token，非用户 JWT）：
