@@ -71,6 +71,10 @@ type Rule struct {
 	// Tail 是动态段之后必须精确接上的后缀，以 / 开头，例如 /columns/reorder。
 	// 空表示路径在动态段结束。更长的路径不匹配。
 	Tail string
+	// TailSegment 要求动态段与 Tail 之间恰好一个动态段、Tail 之后再接
+	// 恰好一个动态段（形如 /…/:id/rollback/:version）。与 OneSegment 联用，
+	// Tail 是中间固定段（以 / 开头）。仅 crawl-profiles 的回滚路由使用。
+	TailSegment bool
 	// HandlerKey 是 RegisterGoHandler 的查找键。空则使用 Prefix。
 	// 动态路径的 Prefix 含尾部斜杠，键则用稳定的静态前缀，避免把任务路由
 	// 注册到看板处理器上。
@@ -792,10 +796,28 @@ func (rule Rule) matchesPath(path string) bool {
 		}
 		rest := path[len(rule.Prefix):]
 		if rule.Tail != "" {
-			if !strings.HasPrefix(rule.Tail, "/") || !strings.HasSuffix(rest, rule.Tail) {
+			if !strings.HasPrefix(rule.Tail, "/") {
 				return false
 			}
-			rest = rest[:len(rest)-len(rule.Tail)]
+			if rule.TailSegment {
+				// 中间固定段 + 末尾动态段：<动态>/<Tail>/<动态>。取最后
+				// 一个 <Tail>/ 出现位置，保证动态段本身不含 Tail 时也正确。
+				marker := rule.Tail + "/"
+				idx := strings.LastIndex(rest, marker)
+				if idx <= 0 {
+					return false
+				}
+				tailSegment := rest[idx+len(marker):]
+				if tailSegment == "" || strings.Contains(tailSegment, "/") {
+					return false
+				}
+				rest = rest[:idx]
+			} else {
+				if !strings.HasSuffix(rest, rule.Tail) {
+					return false
+				}
+				rest = rest[:len(rest)-len(rule.Tail)]
+			}
 		}
 		if rest == "" || strings.HasPrefix(rest, "/") || strings.HasSuffix(rest, "/") {
 			return false

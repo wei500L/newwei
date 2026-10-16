@@ -619,6 +619,11 @@ services:
       # trial-run、replay、workflow-runs、profiles 列表/创建/预览/回滚、
       # runs、nodes 仍回 NestJS。回滚只把该变量改回 legacy。不入队。
       API_GO_CRAWL_WORKFLOWS_MODE: legacy
+      # 采集站点画像编辑接口。pilot 与样例保持 legacy。
+      # 改成 go 才由 Go 验签并读写 CrawlSiteProfile(-Version)。
+      # runs、nodes、workflows 与 workflow-bridge 仍回 NestJS。
+      # 回滚只把该变量改回 legacy。不入队。
+      API_GO_CRAWL_PROFILES_MODE: legacy
       MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。
