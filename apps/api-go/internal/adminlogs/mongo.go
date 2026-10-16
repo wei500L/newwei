@@ -36,7 +36,6 @@ type taskLogFilters struct {
 // 解析，非法日期忽略该条件）。
 type exceptionFilters struct {
 	kind            string
-	hasKind         bool
 	operationName   string
 	messageContains string
 	start           *time.Time
@@ -109,9 +108,9 @@ func dateRange(start, end *time.Time) bson.D {
 // buildExceptionFilter 对齐 exception-events.service.ts 的 buildFilter：
 // orgId 恒在；kind 精确；operationName trim 后精确；messageContains trim 后
 // escapeRegex + 不区分大小写正则；timestamp 落在 [start, end]。
-func buildExceptionFilter(orgID, kind string, hasKind bool, operationName, messageContains string, start, end *time.Time) bson.D {
+func buildExceptionFilter(orgID, kind, operationName, messageContains string, start, end *time.Time) bson.D {
 	filter := bson.D{{Key: "orgId", Value: orgID}}
-	if hasKind && kind != "" {
+	if kind != "" {
 		filter = append(filter, bson.E{Key: "kind", Value: kind})
 	}
 	if operationName != "" {
@@ -346,7 +345,7 @@ func (s *Service) queryExceptionEvents(ctx context.Context, filter bson.D, limit
 func (s *Service) ListExceptionEvents(ctx context.Context, orgID string, filters exceptionFilters, page, pageSize int) (paginatedExceptionEvents, error) {
 	normalizedPage, normalizedPageSize := normalizePagination(page, pageSize)
 	offset := (normalizedPage - 1) * normalizedPageSize
-	filter := buildExceptionFilter(orgID, filters.kind, filters.hasKind,
+	filter := buildExceptionFilter(orgID, filters.kind,
 		filters.operationName, filters.messageContains, filters.start, filters.end)
 	total, items, err := s.queryExceptionEvents(ctx, filter, clampLimit(float64(normalizedPageSize)), clampOffset(float64(offset)))
 	if err != nil {
@@ -365,7 +364,7 @@ func (s *Service) ListExceptionEvents(ctx context.Context, orgID string, filters
 func (s *Service) ListExceptionEventsLenient(ctx context.Context, orgID string, filters exceptionFilters, limit, offset int) (exceptionEventList, error) {
 	start := parseDateIgnoringError(filters.startRaw)
 	end := parseDateIgnoringError(filters.endRaw)
-	filter := buildExceptionFilter(orgID, filters.kind, filters.hasKind,
+	filter := buildExceptionFilter(orgID, filters.kind,
 		filters.operationName, filters.messageContains, start, end)
 	total, items, err := s.queryExceptionEvents(ctx, filter, limit, offset)
 	if err != nil {
@@ -376,7 +375,7 @@ func (s *Service) ListExceptionEventsLenient(ctx context.Context, orgID string, 
 
 // ExceptionStats 对齐 stats（logs/errors/summary）。
 func (s *Service) ExceptionStats(ctx context.Context, orgID string, filters exceptionFilters) (exceptionStats, error) {
-	filter := buildExceptionFilter(orgID, filters.kind, filters.hasKind,
+	filter := buildExceptionFilter(orgID, filters.kind,
 		filters.operationName, filters.messageContains, filters.start, filters.end)
 	return s.exceptionStats(ctx, filter)
 }
@@ -385,7 +384,7 @@ func (s *Service) ExceptionStats(ctx context.Context, orgID string, filters exce
 func (s *Service) ExceptionStatsLenient(ctx context.Context, orgID string, filters exceptionFilters) (exceptionStats, error) {
 	start := parseDateIgnoringError(filters.startRaw)
 	end := parseDateIgnoringError(filters.endRaw)
-	filter := buildExceptionFilter(orgID, filters.kind, filters.hasKind,
+	filter := buildExceptionFilter(orgID, filters.kind,
 		filters.operationName, filters.messageContains, start, end)
 	return s.exceptionStats(ctx, filter)
 }

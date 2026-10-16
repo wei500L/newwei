@@ -311,10 +311,9 @@ func (h *Handler) serveAdminErrors(w http.ResponseWriter, r *http.Request) {
 	if parsed, present := parseLimit(querySingle(query, "offset")); present {
 		offset = parsed
 	}
-	kind, hasKind := lenientExceptionEventKind(querySingle(query, "kind"))
+	kind := lenientExceptionEventKind(querySingle(query, "kind"))
 	filters := exceptionFilters{
 		kind:            kind,
-		hasKind:         hasKind,
 		operationName:   normalizeText(querySingle(query, "operationName")),
 		messageContains: normalizeText(querySingle(query, "messageContains")),
 	}
@@ -337,10 +336,9 @@ func (h *Handler) serveAdminErrorsStats(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	query := r.URL.Query()
-	kind, hasKind := lenientExceptionEventKind(querySingle(query, "kind"))
+	kind := lenientExceptionEventKind(querySingle(query, "kind"))
 	filters := exceptionFilters{
 		kind:            kind,
-		hasKind:         hasKind,
 		operationName:   normalizeText(querySingle(query, "operationName")),
 		messageContains: normalizeText(querySingle(query, "messageContains")),
 		startRaw:        querySingle(query, "start"),

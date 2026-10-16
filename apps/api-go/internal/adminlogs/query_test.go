@@ -77,14 +77,14 @@ func TestKindRulesDifferBetweenControllers(t *testing.T) {
 		t.Fatalf("blank kind = %q, %v", kind, err)
 	}
 	// /api/admin/errors：lenient → undefined，不报错（也不 trim）。
-	if kind, ok := lenientExceptionEventKind("bad"); ok || kind != "" {
-		t.Fatalf("lenient kind=bad = %q, %v", kind, ok)
+	if kind := lenientExceptionEventKind("bad"); kind != "" {
+		t.Fatalf("lenient kind=bad = %q", kind)
 	}
-	if kind, ok := lenientExceptionEventKind(" graphql "); ok || kind != "" {
-		t.Fatalf("lenient kind is not trimmed: %q, %v", kind, ok)
+	if kind := lenientExceptionEventKind(" graphql "); kind != "" {
+		t.Fatalf("lenient kind is not trimmed: %q", kind)
 	}
-	if kind, ok := lenientExceptionEventKind("unknown"); !ok || kind != "unknown" {
-		t.Fatalf("lenient kind=unknown = %q, %v", kind, ok)
+	if kind := lenientExceptionEventKind("unknown"); kind != "unknown" {
+		t.Fatalf("lenient kind=unknown = %q", kind)
 	}
 }
 

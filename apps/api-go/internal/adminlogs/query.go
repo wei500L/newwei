@@ -224,13 +224,13 @@ func normalizeExceptionEventKind(raw string) (string, error) {
 }
 
 // lenientExceptionEventKind 对齐 admin-errors.controller.ts：不做 trim，
-// 不在三个枚举内一律当 undefined，不报错。
-func lenientExceptionEventKind(raw string) (string, bool) {
+// 不在三个枚举内一律当 undefined（返回空串），不报错。
+func lenientExceptionEventKind(raw string) string {
 	switch raw {
 	case "http", "graphql", "unknown":
-		return raw, true
+		return raw
 	}
-	return "", false
+	return ""
 }
 
 // normalizeText 对齐 normalizeText：trim 后空 → undefined。
