@@ -51,6 +51,14 @@
 //	         runs、nodes、workflows 与 workflow-bridge 仍回 NestJS。
 //	         回滚只把 API_GO_CRAWL_PROFILES_MODE 改回 legacy。不启用
 //	         shadow，不入队，不启动采集 worker。
+//	         API_GO_LLM_LOGS_MODE=go 时接管 LLM 请求日志的三条精确 GET：
+//	         GET /api/llm-logs（列表）、GET /api/llm-logs/export（CSV）、
+//	         GET /api/llm-logs/summary（用量汇总）。三条都要求
+//	         settings.manage，orgId 由 membership/机器令牌重推导。导出保留
+//	         90 天窗口、50000 行上限、公式注入防护与 MySQL 导出审计。
+//	         /api/system-settings/llm-request-logs 会改 Mongo TTL 索引，不在
+//	         这个开关里，仍回 NestJS。回滚只把 API_GO_LLM_LOGS_MODE 改回
+//	         legacy。不启用 shadow，不调用模型服务，不启动 worker。
 //
 // 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
 // API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
@@ -511,6 +519,10 @@ func run() error {
 	if cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo {
 		crawlTemplatesMode = string(legacyproxy.ModeGo)
 	}
+	llmLogsMode := ""
+	if cfg.LlmLogsMode == config.LlmLogsModeGo {
+		llmLogsMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -535,6 +547,7 @@ func run() error {
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
 	rules = legacyproxy.WithRbac(rules, rbacMode)
 	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
+	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -583,7 +596,8 @@ func run() error {
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
 				cfg.CrawlProfilesMode == config.CrawlProfilesModeGo ||
 				cfg.RbacMode == config.RbacModeGo ||
-				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo {
+				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
+				cfg.LlmLogsMode == config.LlmLogsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -636,7 +650,8 @@ func run() error {
 	crawlProfilesGo := cfg.CrawlProfilesMode == config.CrawlProfilesModeGo
 	rbacGo := cfg.RbacMode == config.RbacModeGo
 	crawlTemplatesGo := cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo
+	llmLogsGo := cfg.LlmLogsMode == config.LlmLogsModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || llmLogsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -953,6 +968,9 @@ func run() error {
 		return err
 	}
 	if err := wireCrawlTemplates(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := wireLlmLogs(gateway, cfg, sharedDB, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
 
