@@ -507,6 +507,10 @@ func run() error {
 	if cfg.RbacMode == config.RbacModeGo {
 		rbacMode = string(legacyproxy.ModeGo)
 	}
+	crawlTemplatesMode := ""
+	if cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo {
+		crawlTemplatesMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -530,6 +534,7 @@ func run() error {
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
 	rules = legacyproxy.WithRbac(rules, rbacMode)
+	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -577,7 +582,8 @@ func run() error {
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
 				cfg.CrawlProfilesMode == config.CrawlProfilesModeGo ||
-				cfg.RbacMode == config.RbacModeGo {
+				cfg.RbacMode == config.RbacModeGo ||
+				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -629,7 +635,8 @@ func run() error {
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
 	crawlProfilesGo := cfg.CrawlProfilesMode == config.CrawlProfilesModeGo
 	rbacGo := cfg.RbacMode == config.RbacModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo
+	crawlTemplatesGo := cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -943,6 +950,9 @@ func run() error {
 		return err
 	}
 	if err := wireRbac(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	if err := wireCrawlTemplates(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
 

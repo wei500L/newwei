@@ -214,6 +214,17 @@ const (
 	RbacModeGo     RbacMode = "go"
 )
 
+// CrawlTemplatesMode 只控制采集模板（admin/crawl-templates）的 4 条编辑
+// 接口。默认 legacy。go 只接管列表、创建、更新、删除这 4 条；
+// crawl-tasks、crawl4ai 队列与 metadata 仍回 NestJS。不启用 shadow，
+// 不启动采集，不入队。
+type CrawlTemplatesMode string
+
+const (
+	CrawlTemplatesModeLegacy CrawlTemplatesMode = "legacy"
+	CrawlTemplatesModeGo     CrawlTemplatesMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -363,7 +374,10 @@ type Config struct {
 	CrawlProfilesMode CrawlProfilesMode
 	// RbacMode 只控制组织访问控制六条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动任何 worker。
-	RbacMode             RbacMode
+	RbacMode RbacMode
+	// CrawlTemplatesMode 只控制采集模板编辑接口。默认 legacy。
+	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
+	CrawlTemplatesMode   CrawlTemplatesMode
 	GraphQLAPQEnabled    bool
 	GraphQLDepthLimit    int
 	GraphQLComplexity    int
@@ -723,6 +737,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_RBAC_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_TEMPLATES_MODE")) {
+	case "", string(CrawlTemplatesModeLegacy):
+		cfg.CrawlTemplatesMode = CrawlTemplatesModeLegacy
+	case string(CrawlTemplatesModeGo):
+		cfg.CrawlTemplatesMode = CrawlTemplatesModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_TEMPLATES_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLReadMode = "legacy"
@@ -1074,6 +1096,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.RbacMode == RbacModeGo {
 		appendAuthRequirements(&errs, "API_GO_RBAC_MODE", cfg)
+	}
+	if cfg.CrawlTemplatesMode == CrawlTemplatesModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_TEMPLATES_MODE", cfg)
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
