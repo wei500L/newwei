@@ -48,8 +48,8 @@
 
 修复（两侧同修）：创建和更新时，`workflowId` 非空必须存在且 `CrawlStrategyWorkflow.orgId` 等于当前 orgId；`workflowVersionId` 非空必须存在且 `CrawlStrategyWorkflowVersion.orgId` 等于当前 orgId；否则 400，message 分别为 `Invalid workflowId` / `Invalid workflowVersionId`（与 `news-source.service.ts` 的 `assertWorkflowInOrg`/`assertWorkflowVersionInOrg` 文案一致）。清空（null）仍允许。不改工作流表。
 
-- Nest：`crawl-site-profile.service.ts` 创建断言第 239-246 行、更新断言第 329-343 行、断言方法第 616-636 行。
-- Go：`crawlprofile/store.go` 创建断言第 139-150 行、更新断言第 268-285 行、断言方法第 580-602 行。
+- Nest：`crawl-site-profile.service.ts` 创建断言第 239-245 行、更新断言第 328-343 行、断言方法第 616-636 行。
+- Go：`crawlprofile/store.go` 创建断言第 140-150 行、更新断言第 269-285 行、断言方法第 580-601 行。
 
 **缺陷 2：更新/回滚只按主键写、版本快照不在同一事务**。修复前：`updateProfile` 先按 id 查出再比较 orgId（原 277-281 行）、UPDATE 的 where 只有 id（原 328-330 行）；`rollbackProfile` 的 where 也只有 id（原 379-380 行）；`createVersion` 在 update 成功之后单独插入（原 333-347 行）——中间失败会留下已加 version、但没有快照的画像。
 
@@ -65,8 +65,8 @@ COMMIT;
 
 创建也把画像插入与第一条版本快照放进同一事务。不删除历史版本；`@@unique([profileId, version])` 冲突不变成新的业务文案（Nest 侧 Prisma P2002 与 Go 侧 MySQL 1062 都是 500 Internal server error）。有了行锁之后，同一画像的并发更新各自得到不同 version。
 
-- Nest：`crawl-site-profile.service.ts` `updateProfile` 第 280-386 行、`createProfile` 第 247-278 行、`rollbackProfile` 第 395-460 行、`createVersion`（接收事务客户端）第 570-604 行。
-- Go：`crawlprofile/store.go` `CreateProfile` 第 113-190 行、`UpdateProfile` 第 197-336 行、`RollbackProfile` 第 377-434 行。
+- Nest：`crawl-site-profile.service.ts` `createProfile` 第 233-280 行、`updateProfile` 第 282-381 行、`rollbackProfile` 第 397-458 行、`createVersion`（接收事务客户端）第 522-557 行。
+- Go：`crawlprofile/store.go` `CreateProfile` 第 113-190 行、`UpdateProfile` 第 197-337 行、`RollbackProfile` 第 377-436 行。
 
 **回滚 version 的解析**：两侧按 `Number.parseInt(version, 10)`；`"10abc"` 得到 10；`"abc"` 得到 NaN。Nest 侧增加 `Number.isInteger` 判定后按 404 `Crawl site profile version not found` 处理（原实现会把 NaN 交给 Prisma 抛校验错误）；Go 侧同一语义。
 
