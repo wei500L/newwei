@@ -467,9 +467,12 @@ jobs:
               "AND action='export_csv' AND JSON_EXTRACT(metadata,'$.outcome')='success'" % org))
           if audit_success < 1:
               fail("export audit success row missing (%d)" % audit_success)
+          # 审计 metadata 里不带 runId/nodeId（与服务一致），但 rowCount 必须反映
+          # 「按 runId 过滤后只剩 1 条」——这正是导出过滤生效后的审计证据。
           if int(scalar("SELECT COUNT(*) FROM AuditLog WHERE orgId='%s' AND resource='llm_request_logs' "
-                        "AND action='export_csv' AND metadata LIKE '%%model-alpha%%'" % org)) < 1:
-              fail("export audit metadata missing filters")
+                        "AND action='export_csv' AND JSON_EXTRACT(metadata,'$.outcome')='success' "
+                        "AND JSON_EXTRACT(metadata,'$.rowCount')=1" % org)) < 1:
+              fail("export audit rowCount for the runId-filtered export missing")
 
           # 步骤 4：91 天窗口 → 400。
           long_query = "?start=2026-01-01T00:00:00Z&end=2026-04-02T00:00:00Z"
@@ -481,6 +484,10 @@ jobs:
           status, _, raw = call_full(go, logs + "/export?start=2026-10-01T00:00:00Z&end=2026-12-30T00:00:00Z", "GET", writer)
           if status != 200:
               fail("90-day boundary %s %r" % (status, raw[:300]))
+          # 失败路径同样写审计（outcome=failure）。
+          if int(scalar("SELECT COUNT(*) FROM AuditLog WHERE orgId='%s' AND resource='llm_request_logs' "
+                        "AND action='export_csv' AND JSON_EXTRACT(metadata,'$.outcome')='failure'" % org)) < 1:
+              fail("export audit failure row missing")
 
           # 步骤 5：feature 非法 → 400（Nest 与 Go）。
           for path in (logs, logs + "/export", logs + "/summary"):
