@@ -82,9 +82,88 @@ func isJSONNull(raw json.RawMessage) bool {
 	return strings.TrimSpace(string(raw)) == "null"
 }
 
+type createInput struct {
+	Name            string
+	Description     *string
+	DraftDefinition json.RawMessage
+}
+
+type updateDraftInput struct {
+	NamePresent bool
+	// NameIsNull 为 true 时镜像 NestJS `input.name !== undefined` 分支上的
+	// `null.trim()` TypeError → 500（不是 400）。
+	NameIsNull      bool
+	Name            string
+	DescriptionSet  bool
+	Description     *string
+	DraftDefinition json.RawMessage
+}
+
 type compareInput struct {
 	LeftVersionID  string
 	RightVersionID string
+}
+
+// validateCreateWorkflow 对齐 CreateCrawlStrategyWorkflowDto。
+func validateCreateWorkflow(fields []orderedField) (createInput, error) {
+	messages := unknownFieldMessages(fields, map[string]bool{
+		"name": true, "description": true, "draftDefinition": true,
+	})
+	input := createInput{}
+	if name, ok := checkCreateName(fields, &messages); ok {
+		input.Name = name
+	}
+	description, _, descOK := checkDescription(fields, &messages)
+	if descOK {
+		input.Description = description
+	}
+	input.DraftDefinition = checkOptionalDefinition(fields, &messages)
+	if len(messages) > 0 {
+		return createInput{}, &inputError{Message: strings.Join(messages, "; ")}
+	}
+	return input, nil
+}
+
+// validateUpdateDraft 对齐 UpdateCrawlStrategyWorkflowDraftDto。
+func validateUpdateDraft(fields []orderedField) (updateDraftInput, error) {
+	messages := unknownFieldMessages(fields, map[string]bool{
+		"name": true, "description": true, "draftDefinition": true,
+	})
+	input := updateDraftInput{}
+	if raw, present := fieldValue(fields, "name"); present {
+		input.NamePresent = true
+		if isJSONNull(raw) {
+			// IsOptional 放行 null；service 层的 null.trim() 会抛 TypeError。
+			input.NameIsNull = true
+		} else if text, ok := jsString(raw); !ok {
+			messages = append(messages,
+				"name must be shorter than or equal to 200 characters",
+				"name must be a string")
+		} else if jsMaxLengthLen(text) > 200 {
+			messages = append(messages, "name must be shorter than or equal to 200 characters")
+		} else if text == "" {
+			messages = append(messages, "name should not be empty")
+		} else {
+			input.Name = text
+		}
+	}
+	description, set, descOK := checkDescription(fields, &messages)
+	if descOK {
+		input.DescriptionSet = set
+		input.Description = description
+	}
+	// draftDefinition 必填（@IsObject() 无 IsOptional）：缺省、null、
+	// 非对象都是同一条消息。
+	raw, present := fieldValue(fields, "draftDefinition")
+	if !present || !jsonIsObjectRaw(raw) {
+		messages = append(messages, "draftDefinition must be an object")
+	} else {
+		input.DraftDefinition = raw
+	}
+	if len(messages) > 0 {
+		return updateDraftInput{}, &inputError{Message: strings.Join(messages, "; ")}
+	}
+	return input, nil
 }
 
 // validateCompare 对齐 CompareCrawlStrategyWorkflowVersionsDto。
@@ -178,6 +257,76 @@ func unknownFieldMessages(fields []orderedField, allowed map[string]bool) []stri
 		}
 	}
 	return messages
+}
+
+// checkCreateName：@IsString @IsNotEmpty @MaxLength(200)。
+func checkCreateName(fields []orderedField, messages *[]string) (string, bool) {
+	raw, present := fieldValue(fields, "name")
+	if !present || isJSONNull(raw) {
+		*messages = append(*messages,
+			"name must be shorter than or equal to 200 characters",
+			"name should not be empty",
+			"name must be a string")
+		return "", false
+	}
+	text, ok := jsString(raw)
+	if !ok {
+		*messages = append(*messages,
+			"name must be shorter than or equal to 200 characters",
+			"name must be a string")
+		return "", false
+	}
+	if jsMaxLengthLen(text) > 200 {
+		*messages = append(*messages, "name must be shorter than or equal to 200 characters")
+		return "", false
+	}
+	if text == "" {
+		*messages = append(*messages, "name should not be empty")
+		return "", false
+	}
+	return text, true
+}
+
+// checkDescription：@IsOptional @IsString @MaxLength(500)。
+// 返回的 set 表示 description 是否出现（出现，含 null，才覆盖旧值；
+// null/空白字符串按 normalizeOptionalString 语义写入 null）。
+func checkDescription(fields []orderedField, messages *[]string) (*string, bool, bool) {
+	raw, present := fieldValue(fields, "description")
+	if !present {
+		return nil, false, true
+	}
+	if isJSONNull(raw) {
+		return nil, true, true
+	}
+	text, ok := jsString(raw)
+	if !ok {
+		*messages = append(*messages,
+			"description must be shorter than or equal to 500 characters",
+			"description must be a string")
+		return nil, false, false
+	}
+	if jsMaxLengthLen(text) > 500 {
+		*messages = append(*messages, "description must be shorter than or equal to 500 characters")
+		return nil, false, false
+	}
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil, true, true
+	}
+	return &trimmed, true, true
+}
+
+// checkOptionalDefinition：@IsOptional @IsObject()。
+func checkOptionalDefinition(fields []orderedField, messages *[]string) json.RawMessage {
+	raw, present := fieldValue(fields, "draftDefinition")
+	if !present || isJSONNull(raw) {
+		return nil
+	}
+	if !jsonIsObjectRaw(raw) {
+		*messages = append(*messages, "draftDefinition must be an object")
+		return nil
+	}
+	return raw
 }
 
 // checkVersionID：@IsString @IsNotEmpty @MaxLength(191)。

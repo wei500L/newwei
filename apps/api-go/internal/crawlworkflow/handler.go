@@ -42,6 +42,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveNodeSchemas(w, r)
 	case path == workflowsPath && r.Method == http.MethodGet:
 		h.serveList(w, r)
+	case path == workflowsPath && r.Method == http.MethodPost:
+		h.serveCreate(w, r)
 	case path == workflowsPath+"/compare" && r.Method == http.MethodPost:
 		h.serveCompare(w, r)
 	default:
@@ -49,6 +51,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case action == "" && r.Method == http.MethodGet:
 				h.serveDetail(w, r, id)
+			case action == "draft" && r.Method == http.MethodPatch:
+				h.serveUpdateDraft(w, r, id)
 			case action == "versions" && r.Method == http.MethodGet:
 				h.serveVersions(w, r, id)
 			default:
@@ -203,6 +207,60 @@ func (h *Handler) serveCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload, err := h.svc.CompareVersions(r.Context(), identity.OrgID, input)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, payload)
+}
+
+func (h *Handler) serveCreate(w http.ResponseWriter, r *http.Request) {
+	body, ok := readJSON(w, r)
+	if !ok {
+		return
+	}
+	identity := h.authorize(w, r, permWrite)
+	if identity == nil {
+		return
+	}
+	fields, err := parseObjectBody(body)
+	if err != nil {
+		writeInputError(w, r, err)
+		return
+	}
+	input, err := validateCreateWorkflow(fields)
+	if err != nil {
+		writeInputError(w, r, err)
+		return
+	}
+	payload, err := h.svc.CreateWorkflow(r.Context(), identity.OrgID, identity.UserID, input)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, payload)
+}
+
+func (h *Handler) serveUpdateDraft(w http.ResponseWriter, r *http.Request, id string) {
+	body, ok := readJSON(w, r)
+	if !ok {
+		return
+	}
+	identity := h.authorize(w, r, permWrite)
+	if identity == nil {
+		return
+	}
+	fields, err := parseObjectBody(body)
+	if err != nil {
+		writeInputError(w, r, err)
+		return
+	}
+	input, err := validateUpdateDraft(fields)
+	if err != nil {
+		writeInputError(w, r, err)
+		return
+	}
+	payload, err := h.svc.UpdateDraft(r.Context(), identity.OrgID, identity.UserID, id, input)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return

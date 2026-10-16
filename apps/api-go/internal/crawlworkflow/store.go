@@ -158,6 +158,105 @@ func (s *Service) GetWorkflow(ctx context.Context, orgID, id string) (workflowDo
 	return s.loadWorkflowDocument(ctx, s.db, row)
 }
 
+// CreateWorkflow 对齐 createWorkflow（含缺陷 2 的服务端 trim 检查）。
+func (s *Service) CreateWorkflow(ctx context.Context, orgID, actorID string, input createInput) (workflowDocument, error) {
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		return workflowDocument{}, &inputError{Message: "name is required"}
+	}
+	definition := normalizeDefinition(input.DraftDefinition)
+	if err := assertSupportedWorkflowDefinition(definition, "draftDefinition"); err != nil {
+		return workflowDocument{}, err
+	}
+	definitionJSON, err := json.Marshal(definition)
+	if err != nil {
+		return workflowDocument{}, err
+	}
+	id, err := newRowID()
+	if err != nil {
+		return workflowDocument{}, err
+	}
+	now := nowMillis()
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO CrawlStrategyWorkflow (id, orgId, name, description, draftDefinition, createdById, updatedById, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, orgID, name, nullableString(input.Description), []byte(definitionJSON), actorID, actorID, now, now)
+	if err != nil {
+		return workflowDocument{}, err
+	}
+	row := workflowRow{
+		ID:              id,
+		OrgID:           orgID,
+		Name:            name,
+		Description:     sqlNullString(input.Description),
+		DraftDefinition: definitionJSON,
+		CreatedByID:     actorID,
+		UpdatedByID:     sqlNullString(&actorID),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	return mapWorkflow(row, nil, nil), nil
+}
+
+// UpdateDraft 对齐 updateDraft + 缺陷 2 修复：
+//   - name 出现但 trim 后为空 → 400 name is required，不执行 UPDATE；
+//   - name 省略不改原名；
+//   - name 为 null 时镜像 NestJS 的 null.trim() TypeError（500）；
+//   - WHERE 同时包含 id 与 orgId。
+func (s *Service) UpdateDraft(ctx context.Context, orgID, actorID, id string, input updateDraftInput) (workflowDocument, error) {
+	row, err := s.loadWorkflow(ctx, s.db, id)
+	if err != nil {
+		return workflowDocument{}, err
+	}
+	if row.OrgID != orgID {
+		return workflowDocument{}, errWorkflowMissing
+	}
+	definition := normalizeDefinition(input.DraftDefinition)
+	if err := assertSupportedWorkflowDefinition(definition, "draftDefinition"); err != nil {
+		return workflowDocument{}, err
+	}
+	if input.NameIsNull {
+		return workflowDocument{}, errMirroredServerError
+	}
+	definitionJSON, err := json.Marshal(definition)
+	if err != nil {
+		return workflowDocument{}, err
+	}
+	now := nowMillis()
+	sets := []string{"draftDefinition = ?", "updatedById = ?", "updatedAt = ?"}
+	args := []any{[]byte(definitionJSON), actorID, now}
+	if input.NamePresent {
+		name := strings.TrimSpace(input.Name)
+		if name == "" {
+			return workflowDocument{}, &inputError{Message: "name is required"}
+		}
+		sets = append(sets, "name = ?")
+		args = append(args, name)
+	}
+	if input.DescriptionSet {
+		sets = append(sets, "description = ?")
+		args = append(args, nullableString(input.Description))
+	}
+	query := "UPDATE CrawlStrategyWorkflow SET " + strings.Join(sets, ", ") + " WHERE id = ? AND orgId = ?"
+	args = append(args, id, orgID)
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return workflowDocument{}, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return workflowDocument{}, err
+	}
+	if affected != 1 {
+		return workflowDocument{}, errWorkflowMissing
+	}
+	updated, err := s.loadWorkflow(ctx, s.db, id)
+	if err != nil {
+		return workflowDocument{}, err
+	}
+	return s.loadWorkflowDocument(ctx, s.db, updated)
+}
+
 // ListVersions 对齐 listVersions：工作流必须属于该 org；
 // 返回全部版本（不只 10 条），version desc、createdAt desc。
 func (s *Service) ListVersions(ctx context.Context, orgID, workflowID string) ([]versionDocument, error) {

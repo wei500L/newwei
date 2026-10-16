@@ -139,10 +139,17 @@ export class CrawlStrategyWorkflowService {
     const existing = await this.ensureWorkflow(orgId, id);
     const definition = this.normalizeWorkflowDefinition(input.draftDefinition);
     assertSupportedWorkflowDefinition(definition, 'draftDefinition');
+    // 缺陷 2：name 出现时先 trim；trim 后为空返回 400 name is required，
+    // 不执行 UPDATE。省略 name 时保留原名。DTO 的 IsNotEmpty 拦不住
+    // "   "，所以服务端 trim 后必须再判一次（Go 侧同一语义）。
+    const name = input.name !== undefined ? input.name.trim() : undefined;
+    if (name !== undefined && name.length === 0) {
+      throw new BadRequestException('name is required');
+    }
     const updated = await this.prisma.crawlStrategyWorkflow.update({
-      where: { id: existing.id },
+      where: { id: existing.id, orgId },
       data: {
-        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+        ...(name !== undefined ? { name } : {}),
         ...(input.description !== undefined
           ? { description: this.normalizeOptionalString(input.description) }
           : {}),
