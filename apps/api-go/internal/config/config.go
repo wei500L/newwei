@@ -225,6 +225,18 @@ const (
 	CrawlTemplatesModeGo     CrawlTemplatesMode = "go"
 )
 
+// LlmLogsMode 只控制 LLM 请求日志的列表、CSV 导出与用量汇总这 3 条只读
+// GET（/api/llm-logs、/api/llm-logs/export、/api/llm-logs/summary）。
+// 默认 legacy。go 只接管这三条精确 GET；其他方法与更长路径仍回 NestJS。
+// /api/system-settings/llm-request-logs 始终留在 NestJS（它会改 Mongo TTL
+// 索引）。不启用 shadow，不调用模型服务，不启动 worker。
+type LlmLogsMode string
+
+const (
+	LlmLogsModeLegacy LlmLogsMode = "legacy"
+	LlmLogsModeGo     LlmLogsMode = "go"
+)
+
 // AdminLogsMode 只控制管理端日志与异常读取的 7 条 GET。默认 legacy。
 // go 只接管下面这 7 条精确路径，且只匹配 GET；其他方法、更长路径、
 // /api/admin/quality/、/api/observability/ 与 /api/metrics 仍回 NestJS。
@@ -389,6 +401,10 @@ type Config struct {
 	// CrawlTemplatesMode 只控制采集模板编辑接口。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	CrawlTemplatesMode CrawlTemplatesMode
+	// LlmLogsMode 只控制 LLM 请求日志的列表、CSV 导出与用量汇总。默认
+	// legacy。go 要求 JWT、MySQL、Redis 与 Mongo（读 llmrequestlogs）。
+	// 不启动 worker，不调用模型服务。
+	LlmLogsMode LlmLogsMode
 	// AdminLogsMode 只控制管理端日志与异常读取的 7 条 GET。默认 legacy。
 	// go 要求 JWT、MySQL、Redis、Mongo（tasklogs 与 exceptionevents 都在
 	// Mongo，审计日志在 MySQL）。不启用 shadow，不启动任何 worker。
@@ -760,6 +776,15 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_CRAWL_TEMPLATES_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_LLM_LOGS_MODE")) {
+	case "", string(LlmLogsModeLegacy):
+		cfg.LlmLogsMode = LlmLogsModeLegacy
+	case string(LlmLogsModeGo):
+		cfg.LlmLogsMode = LlmLogsModeGo
+	default:
+		errs = append(errs, "API_GO_LLM_LOGS_MODE must be one of legacy|go")
+	}
+
 	switch strings.TrimSpace(getenv("API_GO_ADMIN_LOGS_MODE")) {
 	case "", string(AdminLogsModeLegacy):
 		cfg.AdminLogsMode = AdminLogsModeLegacy
@@ -1123,6 +1148,13 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.CrawlTemplatesMode == CrawlTemplatesModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_TEMPLATES_MODE", cfg)
 	}
+	if cfg.LlmLogsMode == LlmLogsModeGo {
+		appendAuthRequirements(&errs, "API_GO_LLM_LOGS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_LLM_LOGS_MODE=go")
+		}
+	}
+
 	if cfg.AdminLogsMode == AdminLogsModeGo {
 		appendAuthRequirements(&errs, "API_GO_ADMIN_LOGS_MODE", cfg)
 		if cfg.MongoURI == "" {

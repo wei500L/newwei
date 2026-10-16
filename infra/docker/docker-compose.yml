@@ -629,6 +629,13 @@ services:
       # crawl-tasks、metadata、crawl4ai 队列仍回 NestJS。
       # 回滚只把该变量改回 legacy。不入队。
       API_GO_CRAWL_TEMPLATES_MODE: legacy
+      # LLM 请求日志的列表、CSV 导出与用量汇总（三条精确 GET）。
+      # pilot 与样例保持 legacy。改成 go 才由 Go 验签并只读 Mongo
+      # llmrequestlogs；导出仍保留 90 天窗口、50000 行上限、公式注入
+      # 防护与导出审计。日志设置接口会改 Mongo TTL 索引，仍回 NestJS。
+      # 回滚只把该变量改回 legacy。不调用模型服务。
+      API_GO_LLM_LOGS_MODE: legacy
+
       # 管理端日志与异常读取 7 条 GET。pilot 与样例保持 legacy。
       # 改成 go 才由 Go 验签并读 Mongo 的 tasklogs/exceptionevents 与
       # MySQL 的 AuditLog。admin/quality、observability、metrics 与
