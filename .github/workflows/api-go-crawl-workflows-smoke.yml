@@ -1,0 +1,619 @@
+# 采集策略工作流编辑接口的真实栈验收。不进普通 CI。
+# PR 上加 label api-go-crawl-workflows-smoke，或 workflow_dispatch。
+# SCHEDULE_ENABLED 保持 false。不请求 crawl4ai；不把试跑、模型、
+# AkShare 或 Nominatim 当通过。
+name: api-go-crawl-workflows-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-crawl-workflows-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-crawl-wf-smoke@example.com
+  SMTP_PASS: api-go-crawl-wf-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-crawl-wf-smoke-org
+  SEED_ORG_NAME: api-go Crawl Workflows Smoke Org
+  SEED_ADMIN_EMAIL: api-go-crawl-wf-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoCrawlWf#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-crawl-workflows-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-crawl-workflows-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-crawl-wf:ci .
+      - name: Exercise crawl workflow routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import hashlib, json, os, signal, subprocess, threading, time, urllib.error, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+          org = "cwforgsmoke0000000000001"
+          other = "cwforgother0000000000001"
+          disabled = "cwforgdisabled0000000001"
+
+          base = "/api/admin/crawl-frontier"
+          workflows = base + "/workflows"
+          versions_path = base + "/workflow-versions"
+          profiles = base + "/profiles"
+          news_sources = base + "/news-sources"
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def sql(statement):
+              cid = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=mysql:8.4"], text=True).split()[0]
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"], input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          def redis_jobs():
+              cid = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=redis:7.2"], text=True).split()[0]
+              proc = subprocess.run(["docker", "exec", cid, "redis-cli", "--scan", "--pattern", "bull:crawl4ai*"], text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return len([line for line in proc.stdout.splitlines() if line.strip()])
+
+          def start_go(mode):
+              subprocess.run(["docker", "rm", "-f", "api-go-crawl-wf"], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  f"API_GO_CRAWL_WORKFLOWS_MODE={mode}",
+                  "API_GO_NEWS_SOURCES_MODE=legacy",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  f"JWT_SECRET={os.environ['JWT_SECRET']}",
+                  f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
+                  f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
+              ]
+              cmd = ["docker", "run", "-d", "--name", "api-go-crawl-wf",
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append("api-go-crawl-wf:ci")
+              subprocess.check_call(cmd)
+              for _ in range(30):
+                  status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}", "api-go-crawl-wf"], text=True).strip()
+                  print("health", status, "mode", mode)
+                  if status == "healthy":
+                      return
+                  if status == "unhealthy":
+                      fail(subprocess.check_output(["docker", "logs", "api-go-crawl-wf"], text=True)[-4000:])
+                  time.sleep(2)
+              fail(subprocess.check_output(["docker", "logs", "api-go-crawl-wf"], text=True)[-4000:])
+
+          def call(base_url, path, method="GET", token=None, payload=None, timeout=30):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              return json.loads(text)
+
+          def core(value):
+              if isinstance(value, dict):
+                  return {key: core(item) for key, item in value.items() if key not in ("traceId", "timestamp")}
+              if isinstance(value, list):
+                  return [core(item) for item in value]
+              return value
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+          def login(email):
+              status, raw = call(nest, "/api/auth/login", "POST", payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:400]!r}")
+              return doc["accessToken"]
+
+          def same(path, method="GET", token=None, payload=None):
+              left_status, left_raw = call(nest, path, method, token, payload)
+              right_status, right_raw = call(go, path, method, token, payload)
+              if left_status != right_status or core(body(left_raw)) != core(body(right_raw)):
+                  fail(f"parity {method} {path} nest={left_status} {left_raw[:500]!r} go={right_status} {right_raw[:500]!r}")
+              return left_status, body(left_raw)
+
+          def definition(max_depth):
+              return {
+                  "settings": {"executionMode": "layered", "maxDepth": max_depth, "maxPages": 30},
+                  "nodes": [
+                      {"id": "seed", "type": "seed-discovery", "label": "Seed", "position": {"x": 1, "y": 2}, "config": {"mode": "sitemap"}},
+                      {"id": "filter", "type": "url-filter", "label": "Filter", "position": {"x": 3, "y": 4}, "config": {"includePatterns": ["/news/"]}},
+                  ],
+                  "edges": [{"id": "e1", "source": "seed", "target": "filter"}],
+              }
+
+          admin = scalar("SELECT id FROM User WHERE email='api-go-crawl-wf-smoke-admin@example.com'")
+          baseline_jobs = redis_jobs()
+          read_perm = scalar("SELECT id FROM Permission WHERE name='crawl.read'")
+          write_perm = scalar("SELECT id FROM Permission WHERE name='crawl.write'")
+          sql(f"""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('{org}', 'Crawl Workflows Smoke', 'crawl-workflows-smoke', 1, NOW(3), NOW(3)),
+            ('{other}', 'Crawl Workflows Other', 'crawl-workflows-other', 1, NOW(3), NOW(3)),
+            ('{disabled}', 'Crawl Workflows Disabled', 'crawl-workflows-disabled', 0, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, isSystem, orgId) VALUES
+            ('cwfrolewriter00000000001', 'cwf-writer', 0, '{org}'),
+            ('cwfrolereader00000000001', 'cwf-reader', 0, '{org}'),
+            ('cwfrolenone0000000000001', 'cwf-none', 0, '{org}'),
+            ('cwfrolestale000000000001', 'cwf-stale', 0, '{org}'),
+            ('cwfroleother000000000001', 'cwf-other', 0, '{other}');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('cwfpermwriterread0000001', 'cwfrolewriter00000000001', '{read_perm}'),
+            ('cwfpermwriterwrite000001', 'cwfrolewriter00000000001', '{write_perm}'),
+            ('cwfpermreaderread0000001', 'cwfrolereader00000000001', '{read_perm}'),
+            ('cwfpermstaleread00000001', 'cwfrolestale000000000001', '{read_perm}'),
+            ('cwfpermstalewrite000001', 'cwfrolestale000000000001', '{write_perm}'),
+            ('cwfpermotherread00000001', 'cwfroleother000000000001', '{read_perm}');
+          INSERT INTO CrawlSiteProfile (id, orgId, name, description, matchHost, isActive, executionMode, workflowBindingMode, version, config, createdById, createdAt, updatedAt) VALUES
+            ('cwfprofileok00000000001', '{org}', 'Smoke Profile', 'bridge smoke', 'example.com', 1, 'layered', 'published', 1,
+             CAST('{{"keywords":["alpha"," beta "],"urlPatterns":{{"article":["/news/"],"exclude":["/tag/"]}},"hostScope":"strict_hosts","seedDiscovery":{{"mode":"common_paths","maxSeedUrls":25}},"freshnessRules":{{"recentHours":12,"weekHours":120,"monthHours":600}},"layeredOptions":{{"maxDepth":5,"maxPages":80,"scoreThreshold":0.25}},"crawlOptions":{{"check_robots_txt":false}}}}' AS JSON), '{admin}', NOW(3), NOW(3)),
+            ('cwfprofilebad0000000001', '{org}', 'Bad Profile', NULL, 'bad.example.com', 1, 'layered', 'published', 1,
+             CAST('{{"crawlOptions":{{"proxyUrl":"http://127.0.0.1:9/"}}}}' AS JSON), '{admin}', NOW(3), NOW(3));
+          INSERT INTO CrawlTemplate (id, orgId, name, isActive, crawlOptions, createdAt, updatedAt) VALUES
+            ('cwftemplateok0000000001', '{org}', 'Smoke Template', 1, CAST('{{"check_robots_txt":true,"maxDepth":2}}' AS JSON), NOW(3), NOW(3)),
+            ('cwftemplateother0000001', '{other}', 'Other Template', 1, CAST('{{"check_robots_txt":false}}' AS JSON), NOW(3), NOW(3));
+          INSERT INTO NewsSource (id, orgId, name, url, crawlTemplateId, workflowBindingMode, config, createdAt, updatedAt) VALUES
+            ('cwfsourceok000000000001', '{org}', 'Smoke Source', 'https://example.com/smoke', 'cwftemplateok0000000001', 'published',
+             CAST('{{"seed":{{"enabled":true,"mode":"list","domain":"example.com","pattern":"/news/","maxUrls":25,"listMaxPages":3,"listPageConcurrency":1,"followPagination":false}},"keywords":["alpha"," beta ",7]}}' AS JSON), NOW(3), NOW(3)),
+            ('cwfsourcecross000000001', '{org}', 'Cross Template Source', 'https://example.com/cross', 'cwftemplateother0000001', 'published',
+             CAST('{{"seed":{{"enabled":true,"mode":"rss","feedUrl":"https://example.com/feed.xml","maxUrls":10}}}}' AS JSON), NOW(3), NOW(3)),
+            ('cwfsourcenone000000001', '{org}', 'No Template Source', 'https://example.com/plain', NULL, 'published',
+             CAST('{{"seed":{{"enabled":false}}}}' AS JSON), NOW(3), NOW(3));
+          """)
+          users = [
+              ("cwfuserwriter0000000001", "cwf-writer@example.com", org, "cwfrolewriter00000000001"),
+              ("cwfuserreader0000000001", "cwf-reader@example.com", org, "cwfrolereader00000000001"),
+              ("cwfusernone000000000001", "cwf-none@example.com", org, "cwfrolenone0000000000001"),
+              ("cwfuserstale00000000001", "cwf-stale@example.com", org, "cwfrolestale000000000001"),
+              ("cwfuserother00000000001", "cwf-other@example.com", other, "cwfroleother000000000001"),
+          ]
+          for user_id, email, user_org, role_id in users:
+              sql(f"""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '{admin}';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('m{user_id[1:]}', '{user_id}', '{user_org}', '{role_id}', 1, NOW(3));
+              """)
+
+          def token_row(token_id, token, permissions, org_id, extra=""):
+              digest = hashlib.sha256(token.encode()).hexdigest()
+              column = ""
+              value = ""
+              if extra:
+                  name, raw = extra.split("=", 1)
+                  column = ", " + name
+                  value = ", " + raw
+              sql(
+                  "INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, createdAt, updatedAt"
+                  + column
+                  + ") VALUES ("
+                  + f"'{token_id}', '{org_id}', 'smoke', '{digest}', CAST('{permissions}' AS JSON), NOW(3), NOW(3)"
+                  + value
+                  + ");"
+              )
+
+          machine_ok = "mtk_crawl_wf_smoke_writer_token_0001"
+          machine_weak = "mtk_crawl_wf_smoke_weak_token_000001"
+          machine_revoked = "mtk_crawl_wf_smoke_revoked_token_01"
+          machine_expired = "mtk_crawl_wf_smoke_expired_token_01"
+          machine_disabled = "mtk_crawl_wf_smoke_disabled_org_001"
+          machine_other = "mtk_crawl_wf_smoke_other_org_0001"
+          token_row("cwfmachineok000000000001", machine_ok, '["crawl.read","crawl.write"]', org)
+          token_row("cwfmachineweak00000000001", machine_weak, '["items.read"]', org)
+          token_row("cwfmachinerevoked00000001", machine_revoked, '["crawl.read","crawl.write"]', org, "revokedAt=NOW(3)")
+          token_row("cwfmachineexpired00000001", machine_expired, '["crawl.read","crawl.write"]', org, "expiresAt='2000-01-01 00:00:00.000'")
+          token_row("cwfmachinedisabled0000001", machine_disabled, '["crawl.read","crawl.write"]', disabled)
+          token_row("cwfmachineother000000001", machine_other, '["crawl.read"]', other)
+
+          # ---- 阶段 1：开关还是 legacy，全部经 Go 代理，Nest 是唯一执行者 ----
+          start_go("legacy")
+          tokens = {email: login(email) for _, email, _, _ in users}
+          writer = tokens["cwf-writer@example.com"]
+
+          status, raw = call(go, workflows, "POST", writer, {"name": "Smoke Workflow", "description": " smoke ", "draftDefinition": definition(3)})
+          created = body(raw)
+          if status != 201 or not created or not created.get("id"):
+              fail(f"legacy proxy create {status} {raw[:300]!r}")
+          wfid = created["id"]
+          nest_read = body(call(nest, f"{workflows}/{wfid}", "GET", writer)[1])
+          go_read = body(call(go, f"{workflows}/{wfid}", "GET", writer)[1])
+          if core(nest_read) != core(go_read):
+              fail(f"legacy read mismatch nest={nest_read} go={go_read}")
+          if core(nest_read) != core(created):
+              fail(f"create response != direct read {core(nest_read)}")
+          if nest_read.get("description") != "smoke" or nest_read.get("orgId") != org:
+              fail(f"create fields {nest_read}")
+
+          patch_blank = {"name": "   ", "draftDefinition": definition(3)}
+          status, raw = call(go, f"{workflows}/{wfid}/draft", "PATCH", writer, patch_blank)
+          if status != 400 or message(raw) != "name is required":
+              fail(f"legacy blank name {status} {raw[:300]!r}")
+          if body(call(nest, f"{workflows}/{wfid}", "GET", writer)[1]).get("name") != "Smoke Workflow":
+              fail("blank name changed the database name")
+
+          before_draft = scalar(f"SELECT draftDefinition FROM CrawlStrategyWorkflow WHERE id='{wfid}'")
+          reader_patch = call(go, f"{workflows}/{wfid}/draft", "PATCH", tokens["cwf-reader@example.com"], {"name": "stolen", "draftDefinition": definition(9)})
+          if reader_patch[0] != 403:
+              fail(f"legacy reader patch {reader_patch[0]} {reader_patch[1][:300]!r}")
+          if scalar(f"SELECT draftDefinition FROM CrawlStrategyWorkflow WHERE id='{wfid}'") != before_draft:
+              fail("reader patch changed the draft")
+
+          cross_org = call(go, f"{workflows}/{wfid}", "GET", tokens["cwf-other@example.com"])
+          if cross_org[0] != 404 or message(cross_org[1]) != "Workflow not found":
+              fail(f"legacy cross org {cross_org[0]} {cross_org[1][:300]!r}")
+          print("legacy proxy ok")
+
+          # ---- 阶段 2：开关 go（Nest 仍在运行）----
+          start_go("go")
+
+          status, schemas = same(f"{workflows}/node-schemas", "GET", writer)
+          if status != 200 or not isinstance(schemas, list) or len(schemas) != 12 or schemas[0].get("type") != "seed-discovery":
+              fail(f"node schemas {status} {schemas}")
+          status, listed = same(f"{workflows}?search=Smoke", "GET", writer)
+          if status != 200 or not isinstance(listed, list) or not any(item.get("id") == wfid for item in listed):
+              fail(f"list {status} {listed}")
+          status, detail = same(f"{workflows}/{wfid}", "GET", writer)
+          if status != 200 or detail.get("name") != "Smoke Workflow":
+              fail(f"detail {status} {detail}")
+          status, version_list = same(f"{workflows}/{wfid}/versions", "GET", writer)
+          if status != 200 or version_list != []:
+              fail(f"versions before publish {status} {version_list}")
+          status, bridge = same(f"{profiles}/cwfprofileok00000000001/workflow-bridge?seedUrl=https://example.com/seed", "GET", writer)
+          if status != 200 or bridge.get("metadata", {}).get("template") != "legacy_profile":
+              fail(f"profile bridge {status} {bridge}")
+          if bridge.get("settings", {}).get("maxDepth") != 5 or bridge.get("settings", {}).get("domainScope") != "strict_hosts":
+              fail(f"profile bridge settings {bridge.get('settings')}")
+          status, _ = same(f"{profiles}/cwfprofilebad0000000001/workflow-bridge", "GET", writer)
+          if status != 400:
+              fail(f"bad profile bridge {status}")
+          status, ns_bridge = same(f"{news_sources}/cwfsourceok000000000001/workflow-bridge", "GET", writer)
+          if status != 200 or ns_bridge.get("metadata", {}).get("template") != "legacy_news_source":
+              fail(f"news source bridge {status} {ns_bridge}")
+          seed_node = next((node for node in ns_bridge.get("nodes", []) if node.get("id") == "seed-discovery"), None)
+          if not seed_node or seed_node.get("type") != "list-discovery":
+              fail(f"news source bridge seed node {seed_node}")
+          if seed_node.get("config", {}).get("crawlOptions", {}).get("maxDepth") != 2:
+              fail(f"news source bridge crawlOptions {seed_node.get('config')}")
+          status, _ = same(f"{news_sources}/cwfsourcecross000000001/workflow-bridge", "GET", writer)
+          if status != 200:
+              fail(f"cross template bridge {status}")
+          status, _ = same(f"{news_sources}/cwfsourcenone000000001/workflow-bridge", "GET", writer)
+          if status != 200:
+              fail(f"no template bridge {status}")
+          # 未知 query 参数：Nest 与 Go 都是 400（错误体的 path 字段 Nest 含 query、
+          # Go 不含——只比较状态码与 message）。
+          nest_q, nest_q_raw = call(nest, f"{workflows}?orgId={other}", "GET", writer)
+          go_q, go_q_raw = call(go, f"{workflows}?orgId={other}", "GET", writer)
+          if nest_q != 400 or go_q != 400 or message(nest_q_raw) != message(go_q_raw):
+              fail(f"query orgId {nest_q} {nest_q_raw[:200]!r} {go_q} {go_q_raw[:200]!r}")
+
+          if call(go, workflows, "GET", tokens["cwf-reader@example.com"])[0] != 200:
+              fail("reader list failed")
+          if call(go, workflows, "POST", tokens["cwf-reader@example.com"], {"name": "Nope", "draftDefinition": definition(3)})[0] != 403:
+              fail("reader create was not 403")
+          if call(go, workflows, "GET", tokens["cwf-none@example.com"])[0] != 403:
+              fail("missing read permission was not 403")
+          if call(go, f"{workflows}/{wfid}/draft", "PATCH", tokens["cwf-none@example.com"], {"draftDefinition": definition(3)})[0] != 403:
+              fail("missing write permission was not 403")
+          if call(go, workflows, "GET", None)[0] != 401 or call(go, workflows, "GET", "not-a-jwt")[0] != 401:
+              fail("missing/bad token was not 401")
+          if call(go, workflows, "GET", machine_ok)[0] != 200 or call(go, f"{workflows}/{wfid}/draft", "PATCH", machine_ok, {"name": "Machine Rename", "draftDefinition": definition(3)})[0] != 200:
+              fail("machine token rejected")
+          if call(go, workflows, "GET", machine_weak)[0] != 403 or call(go, f"{workflows}/{wfid}/draft", "PATCH", machine_weak, {"draftDefinition": definition(3)})[0] != 403:
+              fail("weak machine token was accepted")
+          for token in (machine_revoked, machine_expired, machine_disabled):
+              status, raw = call(go, workflows, "GET", token)
+              if status != 401 or message(raw) != "Invalid machine token":
+                  fail(f"machine token should fail {token} {status} {raw[:200]!r}")
+          status, raw = call(go, f"{workflows}/{wfid}", "GET", machine_other)
+          if status != 404 or message(raw) != "Workflow not found":
+              fail(f"machine other org {status} {raw[:200]!r}")
+          sql("DELETE FROM RolePermission WHERE id='cwfpermstalewrite000001'")
+          stale_patch = call(go, f"{workflows}/{wfid}/draft", "PATCH", tokens["cwf-stale@example.com"], {"draftDefinition": definition(3)})
+          if stale_patch[0] != 403:
+              fail(f"stale jwt permission was trusted {stale_patch}")
+
+          status, raw = call(go, workflows, "POST", writer, {"name": "Go Created", "draftDefinition": definition(5)})
+          go_created = body(raw)
+          if status != 201 or not go_created or not go_created.get("id"):
+              fail(f"go create {status} {raw[:300]!r}")
+          gid = go_created["id"]
+          writer_id = scalar("SELECT id FROM User WHERE email='cwf-writer@example.com'")
+          row_owner = scalar(f"SELECT CONCAT(createdById, ',', updatedById) FROM CrawlStrategyWorkflow WHERE id='{gid}'")
+          if row_owner != f"{writer_id},{writer_id}":
+              fail(f"go create owner {row_owner}")
+          status, detail = same(f"{workflows}/{gid}", "GET", writer)
+          if status != 200 or detail.get("name") != "Go Created":
+              fail(f"go created detail {status} {detail}")
+
+          status, raw = call(go, f"{workflows}/{gid}/draft", "PATCH", writer, {"name": "   ", "draftDefinition": definition(5)})
+          if status != 400 or message(raw) != "name is required":
+              fail(f"go blank name {status} {raw[:300]!r}")
+          if scalar(f"SELECT name FROM CrawlStrategyWorkflow WHERE id='{gid}'") != "Go Created":
+              fail("go blank name changed the database name")
+          status, raw = call(go, f"{workflows}/{gid}/draft", "PATCH", writer, {"name": " Renamed ", "draftDefinition": definition(6)})
+          if status != 200 or body(raw).get("name") != "Renamed":
+              fail(f"go rename {status} {raw[:300]!r}")
+          if scalar(f"SELECT updatedById FROM CrawlStrategyWorkflow WHERE id='{gid}'") != writer_id:
+              fail("go rename updatedById")
+          status, _ = same(f"{workflows}/{gid}/draft", "PATCH", writer, {"draftDefinition": {"nodes": [{"type": "seed-discovery", "config": {"crawlOptions": {"proxyUrl": "http://127.0.0.1:9/"}}}]}})
+          if status != 400:
+              fail(f"unsupported definition accepted {status}")
+          # 写请求的两次响应 updatedAt 必然不同（两次写入），只比较状态码与
+          # 除 updatedAt 外的结构。
+          nest_patch = call(nest, f"{workflows}/{gid}/draft", "PATCH", writer, {"draftDefinition": definition(6)})
+          go_patch = call(go, f"{workflows}/{gid}/draft", "PATCH", writer, {"draftDefinition": definition(6)})
+          if nest_patch[0] != 200 or go_patch[0] != 200:
+              fail(f"parity patch {nest_patch[0]} {go_patch[0]} {nest_patch[1][:200]!r} {go_patch[1][:200]!r}")
+          left_patch, right_patch = core(body(nest_patch[1])), core(body(go_patch[1]))
+          left_patch.pop("updatedAt", None)
+          right_patch.pop("updatedAt", None)
+          if left_patch != right_patch:
+              fail(f"parity patch body nest={left_patch} go={right_patch}")
+          status, raw = call(go, f"{workflows}/{gid}", "GET", tokens["cwf-other@example.com"])
+          if status != 404 or message(raw) != "Workflow not found":
+              fail(f"go cross org {status} {raw[:300]!r}")
+
+          # 跨进程并发发布：一个请求走 Go handler，一个直连 Nest，两进程共用同一把行锁。
+          status, raw = call(go, workflows, "POST", writer, {"name": "Concurrent Workflow", "draftDefinition": definition(3)})
+          cid = body(raw)["id"]
+          results = {}
+
+          def publish(base_url, tag):
+              try:
+                  results[tag] = call(base_url, f"{workflows}/{cid}/publish", "POST", writer, {})
+              except Exception as exc:  # noqa: BLE001
+                  results[tag] = (0, repr(exc).encode())
+
+          threads = [threading.Thread(target=publish, args=(go, "go")), threading.Thread(target=publish, args=(nest, "nest"))]
+          for thread in threads:
+              thread.start()
+          for thread in threads:
+              thread.join()
+          for tag in ("go", "nest"):
+              if results[tag][0] != 201:
+                  fail(f"cross publish {tag} {results[tag][0]} {results[tag][1][:300]!r}")
+          first_versions = sorted(body(results[tag][1])["version"]["version"] for tag in ("go", "nest"))
+          if first_versions != [1, 2]:
+              fail(f"cross publish versions {first_versions}")
+          first_pair = {body(results[tag][1])["version"]["version"]: body(results[tag][1])["version"] for tag in ("go", "nest")}
+          after_cross = body(call(nest, f"{workflows}/{cid}", "GET", writer)[1])
+          if after_cross.get("publishedVersionId") != first_pair[2]["id"]:
+              fail(f"cross publish publishedVersionId {after_cross.get('publishedVersionId')} want {first_pair[2]['id']}")
+
+          # 再只对 Go 做一次并发发布（草稿先改动，供 compare 用）。
+          status, raw = call(go, f"{workflows}/{cid}/draft", "PATCH", writer, {"draftDefinition": definition(7)})
+          if status != 200:
+              fail(f"pre publish draft {status} {raw[:300]!r}")
+          second = {}
+          threads = [threading.Thread(target=publish, args=(go, "a")), threading.Thread(target=publish, args=(go, "b"))]
+          for thread in threads:
+              thread.start()
+          for thread in threads:
+              thread.join()
+          for tag in ("a", "b"):
+              if results[tag][0] != 201:
+                  fail(f"go publish {tag} {results[tag][0]} {results[tag][1][:300]!r}")
+          second_versions = sorted(body(results[tag][1])["version"]["version"] for tag in ("a", "b"))
+          if second_versions != [3, 4]:
+              fail(f"go publish versions {second_versions}")
+          second_pair = {body(results[tag][1])["version"]["version"]: body(results[tag][1])["version"] for tag in ("a", "b")}
+          after_go = body(call(go, f"{workflows}/{cid}", "GET", writer)[1])
+          if after_go.get("publishedVersionId") != second_pair[4]["id"]:
+              fail(f"go publish publishedVersionId {after_go.get('publishedVersionId')}")
+          if scalar(f"SELECT publishedVersionId FROM CrawlStrategyWorkflow WHERE id='{cid}'") != second_pair[4]["id"]:
+              fail("go publish publishedVersionId in database")
+
+          status, compared = same(f"{workflows}/compare", "POST", writer, {"leftVersionId": first_pair[1]["id"], "rightVersionId": second_pair[3]["id"]})
+          if status != 201 or compared.get("summary", {}).get("changedSettingsCount", 0) < 1:
+              fail(f"compare {status} {compared}")
+          if not compared.get("definitionDiff", {}).get("settings"):
+              fail(f"compare settings diff {compared.get('definitionDiff')}")
+          status, version_detail = same(f"{versions_path}/{first_pair[1]['id']}", "GET", writer)
+          if status != 200 or version_detail.get("version") != 1:
+              fail(f"version detail {status} {version_detail}")
+          status, full_versions = same(f"{workflows}/{cid}/versions", "GET", writer)
+          if status != 200 or [item.get("version") for item in full_versions] != [4, 3, 2, 1]:
+              fail(f"full versions {status} {full_versions}")
+          if redis_jobs() != baseline_jobs:
+              fail("smoke enqueued crawl4ai jobs")
+          print("go switch ok")
+
+          # ---- 阶段 3：停止 Nest，Go 仍可创建/改草稿/发布；未接管路由 502 ----
+          if os.path.exists("/tmp/api-nestjs.pid"):
+              os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+          subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+          subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+          stopped = False
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  stopped = True
+                  break
+              time.sleep(1)
+          if not stopped:
+              fail("nestjs did not stop")
+
+          alive = writer
+          status, raw = call(go, workflows, "POST", alive, {"name": "After Nest", "draftDefinition": definition(4)})
+          after_create = body(raw)
+          if status != 201 or not after_create or not after_create.get("id"):
+              fail(f"create after nest stop {status} {raw[:300]!r}")
+          status, raw = call(go, f"{workflows}/{after_create['id']}/draft", "PATCH", alive, {"name": "After Nest 2", "draftDefinition": definition(5)})
+          if status != 200 or body(raw).get("name") != "After Nest 2":
+              fail(f"draft after nest stop {status} {raw[:300]!r}")
+          status, raw = call(go, f"{workflows}/{after_create['id']}/publish", "POST", alive, {})
+          published = body(raw)
+          if status != 201 or not published or published.get("version", {}).get("version") != 1:
+              fail(f"publish after nest stop {status} {raw[:300]!r}")
+          if published.get("workflow", {}).get("publishedVersionId") != published.get("version", {}).get("id"):
+              fail(f"publish after nest stop publishedVersionId {published}")
+          status, raw = call(go, f"{workflows}/{after_create['id']}/trial-run", "POST", alive, {})
+          if status != 502 or (body(raw) or {}).get("statusCode") != 502:
+              fail(f"trial-run after nest stop {status} {raw[:300]!r}")
+          status, raw = call(go, f"{base}/workflow-runs/missing-run", "GET", alive)
+          if status != 502:
+              fail(f"workflow-runs after nest stop {status} {raw[:300]!r}")
+          status, raw = call(go, profiles, "GET", alive)
+          if status != 502:
+              fail(f"profiles list after nest stop {status} {raw[:300]!r}")
+          print("nest stopped; crawl workflows still succeed; trial-run stays on Nest")
+          PY
