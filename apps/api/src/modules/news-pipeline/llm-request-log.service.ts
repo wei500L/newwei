@@ -505,6 +505,8 @@ export class LlmRequestLogService {
           : undefined,
       feature: this.normalizeFeatureToken(filter.feature),
       profileId: this.normalizeProfileId(filter.profileId) ?? undefined,
+      runId: this.normalizeProfileId(filter.runId) ?? undefined,
+      nodeId: this.normalizeProfileId(filter.nodeId) ?? undefined,
       requestType: filter.requestType,
       status: filter.status,
       start: filter.start,
