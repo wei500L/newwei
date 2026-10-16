@@ -236,34 +236,45 @@ export class CrawlSiteProfileService {
     input: CreateCrawlSiteProfileDto,
   ) {
     const payload = this.normalizeInput(input);
-    const created = await this.prisma.crawlSiteProfile.create({
-      data: {
-        orgId,
-        name: payload.name,
-        description: payload.description,
-        matchHost: payload.matchHost,
-        isActive: payload.isActive,
-        executionMode: payload.executionMode,
-        workflowId: payload.workflowId,
-        workflowVersionId: payload.workflowVersionId,
-        workflowBindingMode: payload.workflowBindingMode,
-        config: toPrismaJsonValue(payload.config),
-        createdById: actorId,
-        updatedById: actorId,
-        publishedAt: new Date(),
-      },
-    });
-    await this.createVersion(created.id, orgId, actorId, {
-      version: created.version,
-      name: created.name,
-      description: created.description,
-      matchHost: created.matchHost,
-      isActive: created.isActive,
-      executionMode: created.executionMode,
-      workflowId: created.workflowId,
-      workflowVersionId: created.workflowVersionId,
-      workflowBindingMode: created.workflowBindingMode,
-      config: payload.config,
+    // 缺陷 1：非空的工作流绑定必须存在且属于本组织（清空 null 仍允许）。
+    if (payload.workflowId) {
+      await this.assertWorkflowInOrg(orgId, payload.workflowId);
+    }
+    if (payload.workflowVersionId) {
+      await this.assertWorkflowVersionInOrg(orgId, payload.workflowVersionId);
+    }
+    // 缺陷 2：画像插入与第一条版本快照在同一事务。
+    const created = await this.prisma.$transaction(async (tx) => {
+      const profile = await tx.crawlSiteProfile.create({
+        data: {
+          orgId,
+          name: payload.name,
+          description: payload.description,
+          matchHost: payload.matchHost,
+          isActive: payload.isActive,
+          executionMode: payload.executionMode,
+          workflowId: payload.workflowId,
+          workflowVersionId: payload.workflowVersionId,
+          workflowBindingMode: payload.workflowBindingMode,
+          config: toPrismaJsonValue(payload.config),
+          createdById: actorId,
+          updatedById: actorId,
+          publishedAt: new Date(),
+        },
+      });
+      await this.createVersion(tx, profile.id, orgId, actorId, {
+        version: profile.version,
+        name: profile.name,
+        description: profile.description,
+        matchHost: profile.matchHost,
+        isActive: profile.isActive,
+        executionMode: profile.executionMode,
+        workflowId: profile.workflowId,
+        workflowVersionId: profile.workflowVersionId,
+        workflowBindingMode: profile.workflowBindingMode,
+        config: payload.config,
+      });
+      return profile;
     });
     return this.mapProfile(created);
   }
@@ -274,79 +285,99 @@ export class CrawlSiteProfileService {
     id: string,
     input: UpdateCrawlSiteProfileDto,
   ) {
-    const existing = await this.prisma.crawlSiteProfile.findUnique({
-      where: { id },
-    });
-    if (!existing || existing.orgId !== orgId) {
-      throw new NotFoundException("Crawl site profile not found");
-    }
-
-    const existingConfig = normalizeCrawlSiteProfileConfig(existing.config);
-    const data: Prisma.CrawlSiteProfileUpdateInput = {};
-
-    if (input.name !== undefined) {
-      const name = input.name.trim();
-      if (!name) {
-        throw new BadRequestException("name is required");
+    // 缺陷 2：单事务 + 行锁。第一条是 SELECT id ... FOR UPDATE；没有行
+    // 就 404（跨组织与不存在一致）。UPDATE 的 WHERE 同时包含 id 与 orgId，
+    // 版本快照与画像更新在同一事务内完成。
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM CrawlSiteProfile WHERE id = ${id} AND orgId = ${orgId} FOR UPDATE
+      `;
+      if (locked.length === 0) {
+        throw new NotFoundException("Crawl site profile not found");
       }
-      data.name = name;
-    }
-    if (input.description !== undefined) {
-      data.description = this.normalizeOptionalString(input.description);
-    }
-    if (input.matchHost !== undefined) {
-      data.matchHost = this.normalizeMatchHost(input.matchHost);
-    }
-    if (input.isActive !== undefined) {
-      data.isActive = input.isActive;
-    }
-    if (input.executionMode !== undefined) {
-      data.executionMode = input.executionMode;
-    }
-    if (input.workflowId !== undefined) {
-      data.workflow = input.workflowId
-        ? { connect: { id: input.workflowId.trim() } }
-        : { disconnect: true };
-    }
-    if (input.workflowVersionId !== undefined) {
-      data.workflowVersion = input.workflowVersionId
-        ? { connect: { id: input.workflowVersionId.trim() } }
-        : { disconnect: true };
-    }
-    if (input.workflowBindingMode !== undefined) {
-      data.workflowBindingMode = input.workflowBindingMode;
-    }
-    if (input.config !== undefined) {
-      const config = normalizeCrawlSiteProfileConfig(input.config);
-      data.config = toPrismaJsonValue(config);
-    }
 
-    data.version = { increment: 1 };
-    data.updatedById = actorId;
-    data.publishedAt = new Date();
+      const existingRow = await tx.crawlSiteProfile.findUnique({
+        where: { id },
+        select: { config: true },
+      });
+      const existingConfig = normalizeCrawlSiteProfileConfig(
+        existingRow?.config ?? {},
+      );
+      const data: Prisma.CrawlSiteProfileUpdateInput = {};
 
-    const updated = await this.prisma.crawlSiteProfile.update({
-      where: { id },
-      data,
+      if (input.name !== undefined) {
+        const name = input.name.trim();
+        if (!name) {
+          throw new BadRequestException("name is required");
+        }
+        data.name = name;
+      }
+      if (input.description !== undefined) {
+        data.description = this.normalizeOptionalString(input.description);
+      }
+      if (input.matchHost !== undefined) {
+        data.matchHost = this.normalizeMatchHost(input.matchHost);
+      }
+      if (input.isActive !== undefined) {
+        data.isActive = input.isActive;
+      }
+      if (input.executionMode !== undefined) {
+        data.executionMode = input.executionMode;
+      }
+      if (input.workflowId !== undefined) {
+        // 缺陷 1：非空值必须存在且属于本组织；null（含 trim 后空白）清空。
+        const workflowId = input.workflowId?.trim() || null;
+        if (workflowId) {
+          await this.assertWorkflowInOrg(orgId, workflowId);
+        }
+        data.workflow = workflowId
+          ? { connect: { id: workflowId } }
+          : { disconnect: true };
+      }
+      if (input.workflowVersionId !== undefined) {
+        const workflowVersionId = input.workflowVersionId?.trim() || null;
+        if (workflowVersionId) {
+          await this.assertWorkflowVersionInOrg(orgId, workflowVersionId);
+        }
+        data.workflowVersion = workflowVersionId
+          ? { connect: { id: workflowVersionId } }
+          : { disconnect: true };
+      }
+      if (input.workflowBindingMode !== undefined) {
+        data.workflowBindingMode = input.workflowBindingMode;
+      }
+      if (input.config !== undefined) {
+        const config = normalizeCrawlSiteProfileConfig(input.config);
+        data.config = toPrismaJsonValue(config);
+      }
+
+      data.version = { increment: 1 };
+      data.updatedById = actorId;
+      data.publishedAt = new Date();
+
+      const updated = await tx.crawlSiteProfile.update({
+        where: { id, orgId },
+        data,
+      });
+
+      await this.createVersion(tx, updated.id, orgId, actorId, {
+        version: updated.version,
+        name: updated.name,
+        description: updated.description,
+        matchHost: updated.matchHost,
+        isActive: updated.isActive,
+        executionMode: updated.executionMode,
+        workflowId: updated.workflowId,
+        workflowVersionId: updated.workflowVersionId,
+        workflowBindingMode: updated.workflowBindingMode,
+        config:
+          input.config !== undefined
+            ? normalizeCrawlSiteProfileConfig(input.config)
+            : existingConfig,
+      });
+
+      return this.mapProfile(updated);
     });
-
-    await this.createVersion(updated.id, orgId, actorId, {
-      version: updated.version,
-      name: updated.name,
-      description: updated.description,
-      matchHost: updated.matchHost,
-      isActive: updated.isActive,
-      executionMode: updated.executionMode,
-      workflowId: updated.workflowId,
-      workflowVersionId: updated.workflowVersionId,
-      workflowBindingMode: updated.workflowBindingMode,
-      config:
-        input.config !== undefined
-          ? normalizeCrawlSiteProfileConfig(input.config)
-          : existingConfig,
-    });
-
-    return this.mapProfile(updated);
   }
 
   async listVersions(orgId: string, profileId: string) {
@@ -369,45 +400,61 @@ export class CrawlSiteProfileService {
     profileId: string,
     version: number,
   ) {
-    const snapshot = await this.prisma.crawlSiteProfileVersion.findFirst({
-      where: { orgId, profileId, version },
-    });
-    if (!snapshot) {
-      throw new NotFoundException("Crawl site profile version not found");
-    }
+    // 缺陷 2：单事务 + 行锁。第一条是 SELECT id ... FOR UPDATE；没有行
+    // 就 404（跨组织与不存在一致）。快照写回与版本插入在同一事务。
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM CrawlSiteProfile WHERE id = ${profileId} AND orgId = ${orgId} FOR UPDATE
+      `;
+      if (locked.length === 0) {
+        throw new NotFoundException("Crawl site profile not found");
+      }
+      // 控制器传入 Number.parseInt(version, 10)：NaN（如 "abc"）找不到版本。
+      if (!Number.isInteger(version)) {
+        throw new NotFoundException("Crawl site profile version not found");
+      }
 
-    const updated = await this.prisma.crawlSiteProfile.update({
-      where: { id: profileId },
-      data: {
-        name: snapshot.name,
-        description: snapshot.description,
-        matchHost: snapshot.matchHost,
-        isActive: snapshot.isActive,
-        executionMode: snapshot.executionMode,
-        workflowId: snapshot.workflowId,
-        workflowVersionId: snapshot.workflowVersionId,
-        workflowBindingMode: snapshot.workflowBindingMode,
-        config: toPrismaJsonValue(normalizeCrawlSiteProfileConfig(snapshot.config)),
-        version: { increment: 1 },
-        updatedById: actorId,
-        publishedAt: new Date(),
-      },
-    });
+      const snapshot = await tx.crawlSiteProfileVersion.findFirst({
+        where: { orgId, profileId, version },
+      });
+      if (!snapshot) {
+        throw new NotFoundException("Crawl site profile version not found");
+      }
+      const config = normalizeCrawlSiteProfileConfig(snapshot.config);
 
-    await this.createVersion(updated.id, orgId, actorId, {
-      version: updated.version,
-      name: updated.name,
-      description: updated.description,
-      matchHost: updated.matchHost,
-      isActive: updated.isActive,
-      executionMode: updated.executionMode,
-      workflowId: updated.workflowId,
-      workflowVersionId: updated.workflowVersionId,
-      workflowBindingMode: updated.workflowBindingMode,
-      config: normalizeCrawlSiteProfileConfig(snapshot.config),
-    });
+      const updated = await tx.crawlSiteProfile.update({
+        where: { id: profileId, orgId },
+        data: {
+          name: snapshot.name,
+          description: snapshot.description,
+          matchHost: snapshot.matchHost,
+          isActive: snapshot.isActive,
+          executionMode: snapshot.executionMode,
+          workflowId: snapshot.workflowId,
+          workflowVersionId: snapshot.workflowVersionId,
+          workflowBindingMode: snapshot.workflowBindingMode,
+          config: toPrismaJsonValue(config),
+          version: { increment: 1 },
+          updatedById: actorId,
+          publishedAt: new Date(),
+        },
+      });
 
-    return this.mapProfile(updated);
+      await this.createVersion(tx, updated.id, orgId, actorId, {
+        version: updated.version,
+        name: updated.name,
+        description: updated.description,
+        matchHost: updated.matchHost,
+        isActive: updated.isActive,
+        executionMode: updated.executionMode,
+        workflowId: updated.workflowId,
+        workflowVersionId: updated.workflowVersionId,
+        workflowBindingMode: updated.workflowBindingMode,
+        config,
+      });
+
+      return this.mapProfile(updated);
+    });
   }
 
   async matchProfileForUrl(orgId: string, url: string) {
@@ -473,6 +520,7 @@ export class CrawlSiteProfileService {
   }
 
   private async createVersion(
+    client: Prisma.TransactionClient,
     profileId: string,
     orgId: string,
     actorId: string,
@@ -489,7 +537,7 @@ export class CrawlSiteProfileService {
       config: CrawlSiteProfileConfig;
     },
   ) {
-    await this.prisma.crawlSiteProfileVersion.create({
+    await client.crawlSiteProfileVersion.create({
       data: {
         profileId,
         orgId,
@@ -562,6 +610,31 @@ export class CrawlSiteProfileService {
       throw new BadRequestException("matchHost is required");
     }
     return trimmed;
+  }
+
+  // 缺陷 1：跨组织工作流绑定。文案与 news-source.service.ts 的
+  // assertWorkflowInOrg / assertWorkflowVersionInOrg 一致。
+  private async assertWorkflowInOrg(orgId: string, workflowId: string) {
+    const workflow = await this.prisma.crawlStrategyWorkflow.findUnique({
+      where: { id: workflowId },
+      select: { orgId: true },
+    });
+    if (!workflow || workflow.orgId !== orgId) {
+      throw new BadRequestException("Invalid workflowId");
+    }
+  }
+
+  private async assertWorkflowVersionInOrg(
+    orgId: string,
+    workflowVersionId: string,
+  ) {
+    const version = await this.prisma.crawlStrategyWorkflowVersion.findUnique({
+      where: { id: workflowVersionId },
+      select: { orgId: true },
+    });
+    if (!version || version.orgId !== orgId) {
+      throw new BadRequestException("Invalid workflowVersionId");
+    }
   }
 
   private parseUrl(value: string) {
