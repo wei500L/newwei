@@ -495,9 +495,17 @@ jobs:
           status, _ = same(f"{workflows}/{gid}/draft", "PATCH", writer, {"draftDefinition": {"nodes": [{"type": "seed-discovery", "config": {"crawlOptions": {"proxyUrl": "http://127.0.0.1:9/"}}}]}})
           if status != 400:
               fail(f"unsupported definition accepted {status}")
-          status, _ = same(f"{workflows}/{gid}/draft", "PATCH", writer, {"draftDefinition": definition(6)})
-          if status != 200:
-              fail(f"parity patch {status}")
+          # 写请求的两次响应 updatedAt 必然不同（两次写入），只比较状态码与
+          # 除 updatedAt 外的结构。
+          nest_patch = call(nest, f"{workflows}/{gid}/draft", "PATCH", writer, {"draftDefinition": definition(6)})
+          go_patch = call(go, f"{workflows}/{gid}/draft", "PATCH", writer, {"draftDefinition": definition(6)})
+          if nest_patch[0] != 200 or go_patch[0] != 200:
+              fail(f"parity patch {nest_patch[0]} {go_patch[0]} {nest_patch[1][:200]!r} {go_patch[1][:200]!r}")
+          left_patch, right_patch = core(body(nest_patch[1])), core(body(go_patch[1]))
+          left_patch.pop("updatedAt", None)
+          right_patch.pop("updatedAt", None)
+          if left_patch != right_patch:
+              fail(f"parity patch body nest={left_patch} go={right_patch}")
           status, raw = call(go, f"{workflows}/{gid}", "GET", tokens["cwf-other@example.com"])
           if status != 404 or message(raw) != "Workflow not found":
               fail(f"go cross org {status} {raw[:300]!r}")
