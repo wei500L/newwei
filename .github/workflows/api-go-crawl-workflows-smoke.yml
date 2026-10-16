@@ -298,7 +298,8 @@ jobs:
             ('cwfpermwriterwrite000001', 'cwfrolewriter00000000001', '{write_perm}'),
             ('cwfpermreaderread0000001', 'cwfrolereader00000000001', '{read_perm}'),
             ('cwfpermstaleread00000001', 'cwfrolestale000000000001', '{read_perm}'),
-            ('cwfpermstalewrite000001', 'cwfrolestale000000000001', '{write_perm}');
+            ('cwfpermstalewrite000001', 'cwfrolestale000000000001', '{write_perm}'),
+            ('cwfpermotherread00000001', 'cwfroleother000000000001', '{read_perm}');
           INSERT INTO CrawlSiteProfile (id, orgId, name, description, matchHost, isActive, executionMode, workflowBindingMode, version, config, createdById, createdAt, updatedAt) VALUES
             ('cwfprofileok00000000001', '{org}', 'Smoke Profile', 'bridge smoke', 'example.com', 1, 'layered', 'published', 1,
              CAST('{{"keywords":["alpha"," beta "],"urlPatterns":{{"article":["/news/"],"exclude":["/tag/"]}},"hostScope":"strict_hosts","seedDiscovery":{{"mode":"common_paths","maxSeedUrls":25}},"freshnessRules":{{"recentHours":12,"weekHours":120,"monthHours":600}},"layeredOptions":{{"maxDepth":5,"maxPages":80,"scoreThreshold":0.25}},"crawlOptions":{{"check_robots_txt":false}}}}' AS JSON), '{admin}', NOW(3), NOW(3)),
