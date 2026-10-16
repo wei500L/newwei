@@ -20,7 +20,7 @@
 |---|---|
 | `GET /api/admin/crawl-frontier/workflows/node-schemas` | 直接返回 `CRAWL_STRATEGY_NODE_SCHEMAS`（不按 org 过滤；处理函数本来就没有 user） |
 | `GET /api/admin/crawl-frontier/workflows` | 只查本 org；`search` trim 后非空时 name/description contains（数据库默认排序规则，不做大小写敏感）；`updatedAt desc, createdAt desc`；每条带 `publishedVersion` 与最近 10 个版本（version desc）；响应是数组 |
-| `POST /api/admin/crawl-frontier/workflows/compare` | `leftVersionId`/`rightVersionId` 各按 `getVersion` 规则取；diff 结构按 `buildSettingsDiff`/`buildNodeDiff`/`buildEdgeDiff` 翻译；`bindingImpact` 只统计本 org |
+| `POST /api/admin/crawl-frontier/workflows/compare` | `leftVersionId`/`rightVersionId` 各按 `getVersion` 规则取；diff 结构按 `buildSettingsDiff`/`buildNodeDiff`/`buildEdgeDiff` 翻译；`bindingImpact` 只统计本 org。成功码是 NestJS 的 POST 默认 201（控制器没有 `@HttpCode` 覆盖） |
 | `GET /api/admin/crawl-frontier/workflows/:id` | id 恰好一段；先按主键查再看 orgId，两者不符都是 404 `Workflow not found` |
 | `GET /api/admin/crawl-frontier/workflows/:id/versions` | 工作流属于本 org；返回全部版本（不是 10 条），`version desc, createdAt desc` |
 | `GET /api/admin/crawl-frontier/workflow-versions/:versionId` | versionId 恰好一段；跨 org 或不存在：404 `Workflow version not found` |

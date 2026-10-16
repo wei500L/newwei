@@ -213,7 +213,8 @@ func (h *Handler) serveCompare(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	// NestJS 的 POST 默认成功码是 201（compare 没有 @HttpCode 覆盖）。
+	writeJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveCreate(w http.ResponseWriter, r *http.Request) {

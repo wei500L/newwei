@@ -562,7 +562,7 @@ jobs:
               fail("go publish publishedVersionId in database")
 
           status, compared = same(f"{workflows}/compare", "POST", writer, {"leftVersionId": first_pair[1]["id"], "rightVersionId": second_pair[3]["id"]})
-          if status != 200 or compared.get("summary", {}).get("changedSettingsCount", 0) < 1:
+          if status != 201 or compared.get("summary", {}).get("changedSettingsCount", 0) < 1:
               fail(f"compare {status} {compared}")
           if not compared.get("definitionDiff", {}).get("settings"):
               fail(f"compare settings diff {compared.get('definitionDiff')}")
