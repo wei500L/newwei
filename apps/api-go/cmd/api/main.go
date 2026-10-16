@@ -40,6 +40,12 @@
 //	         API_GO_NEWS_SOURCES_MODE=go 时接管新闻源管理台十五条读写路由。
 //	         GET /api/admin/news-sources/:id/preview 仍回 NestJS。
 //	         回滚只把 API_GO_NEWS_SOURCES_MODE 改回 legacy。不入队，不启动采集。
+//	         API_GO_CRAWL_WORKFLOWS_MODE=go 时接管采集策略工作流编辑接口
+//	         （node-schemas、列表、详情、创建、草稿、发布、版本、对比与
+//	         两条 bridge）。trial-run、replay、workflow-runs、profiles
+//	         列表/创建/预览/回滚、runs、nodes 仍回 NestJS。
+//	         回滚只把 API_GO_CRAWL_WORKFLOWS_MODE 改回 legacy。不入队，
+//	         不启动采集 worker。
 //
 // 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
 // API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
@@ -484,6 +490,10 @@ func run() error {
 	if cfg.NewsSourcesMode == config.NewsSourcesModeGo {
 		newsSourcesMode = string(legacyproxy.ModeGo)
 	}
+	crawlWorkflowsMode := ""
+	if cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo {
+		crawlWorkflowsMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -504,6 +514,7 @@ func run() error {
 	rules = legacyproxy.WithGraphQLRead(rules, string(cfg.GraphQLReadMode))
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
+	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -548,7 +559,8 @@ func run() error {
 				cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo ||
 				cfg.GraphQLReadMode == "go" ||
 				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
-				cfg.NewsSourcesMode == config.NewsSourcesModeGo {
+				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
+				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -597,7 +609,8 @@ func run() error {
 	graphqlReadGo := cfg.GraphQLReadMode == "go"
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo
+	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -902,6 +915,9 @@ func run() error {
 		return err
 	}
 	if err := wireNewsSources(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := wireCrawlWorkflows(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
 
