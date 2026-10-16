@@ -46,6 +46,11 @@
 //	         列表/创建/预览/回滚、runs、nodes 仍回 NestJS。
 //	         回滚只把 API_GO_CRAWL_WORKFLOWS_MODE 改回 legacy。不入队，
 //	         不启动采集 worker。
+//	         API_GO_CRAWL_PROFILES_MODE=go 时接管采集站点画像的 8 条编辑
+//	         接口（列表、匹配、预览、创建、详情、更新、版本、回滚）。
+//	         runs、nodes、workflows 与 workflow-bridge 仍回 NestJS。
+//	         回滚只把 API_GO_CRAWL_PROFILES_MODE 改回 legacy。不启用
+//	         shadow，不入队，不启动采集 worker。
 //
 // 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
 // API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
@@ -494,6 +499,10 @@ func run() error {
 	if cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo {
 		crawlWorkflowsMode = string(legacyproxy.ModeGo)
 	}
+	crawlProfilesMode := ""
+	if cfg.CrawlProfilesMode == config.CrawlProfilesModeGo {
+		crawlProfilesMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -515,6 +524,7 @@ func run() error {
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
+	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -560,7 +570,8 @@ func run() error {
 				cfg.GraphQLReadMode == "go" ||
 				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
-				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo {
+				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
+				cfg.CrawlProfilesMode == config.CrawlProfilesModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -610,7 +621,8 @@ func run() error {
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo
+	crawlProfilesGo := cfg.CrawlProfilesMode == config.CrawlProfilesModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -918,6 +930,9 @@ func run() error {
 		return err
 	}
 	if err := wireCrawlWorkflows(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := wireCrawlProfiles(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
 
