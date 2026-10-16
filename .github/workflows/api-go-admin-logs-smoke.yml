@@ -1,0 +1,540 @@
+# 管理端日志与异常读取 7 条 GET 的真实栈验收。不进普通 CI。
+# PR 上加 label api-go-admin-logs-smoke，或 workflow_dispatch。
+# SCHEDULE_ENABLED 保持 false。不请求 crawl4ai；不把抓取、模型、
+# AkShare 或 Nominatim 当通过。
+name: api-go-admin-logs-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-admin-logs-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-admin-logs-smoke@example.com
+  SMTP_PASS: api-go-admin-logs-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-admin-logs-smoke-org
+  SEED_ORG_NAME: api-go Admin Logs Smoke Org
+  SEED_ADMIN_EMAIL: api-go-admin-logs-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoAdminLogs#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-admin-logs-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-admin-logs-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-admin-logs:ci .
+      - name: Exercise admin logs routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import hashlib, json, os, signal, subprocess, time, urllib.error, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+
+          org_a = "adm-logs-org-a-0001"
+          org_b = "adm-logs-org-b-0001"
+          user_a = "adm-logs-user-a-0001"
+          user_b = "adm-logs-user-b-0001"
+          user_denied = "adm-logs-user-denied-0001"
+          machine_token = "mtk_admin_logs_smoke_0000000000000001"
+
+          task_path = "/api/admin/logs/task"
+          task_summary_path = "/api/admin/logs/task/summary"
+          errors_path = "/api/admin/logs/errors"
+          errors_summary_path = "/api/admin/logs/errors/summary"
+          audit_path = "/api/admin/logs/audit"
+          admin_errors_path = "/api/admin/errors"
+          admin_errors_stats_path = "/api/admin/errors/stats"
+          all_paths = [task_path, task_summary_path, errors_path, errors_summary_path,
+                       audit_path, admin_errors_path, admin_errors_stats_path]
+          # 跨组织标记：另一组织的数据不得出现在本组织的任一响应里。
+          foreign_markers = ["smoke-beta", "beta-job-1", "beta-evt-1", "smoke-beta-audit"]
+          org_a_markers = ["smoke-alpha", "alpha-job-1", "alpha-evt-1"]
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def container_id(ancestor):
+              return subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor], text=True).split()[0]
+
+          def sql(statement):
+              cid = container_id("mysql:8.4")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"],
+                                    input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          def mongo_seed(script):
+              cid = container_id("mongo:7.0")
+              with open("/tmp/admin-logs-seed.js", "w") as handle:
+                  handle.write(script)
+              subprocess.check_call(["docker", "cp", "/tmp/admin-logs-seed.js", cid + ":/tmp/seed.js"])
+              proc = subprocess.run(["docker", "exec", cid, "mongosh", "--quiet", "app", "--file", "/tmp/seed.js"],
+                                    text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout
+
+          def start_go(mode):
+              subprocess.run(["docker", "rm", "-f", "api-go-admin-logs"], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  f"API_GO_ADMIN_LOGS_MODE={mode}",
+                  "API_GO_CRAWL_PROFILES_MODE=legacy",
+                  "API_GO_CRAWL_TEMPLATES_MODE=legacy",
+                  "API_GO_CRAWL_WORKFLOWS_MODE=legacy",
+                  "API_GO_NEWS_SOURCES_MODE=legacy",
+                  "API_GO_RBAC_MODE=legacy",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  f"JWT_SECRET={os.environ['JWT_SECRET']}",
+                  f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
+                  f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
+              ]
+              cmd = ["docker", "run", "-d", "--name", "api-go-admin-logs",
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append("api-go-admin-logs:ci")
+              subprocess.check_call(cmd)
+              for _ in range(30):
+                  status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}",
+                                                    "api-go-admin-logs"], text=True).strip()
+                  print("health", status, "mode", mode)
+                  if status == "healthy":
+                      return
+                  if status == "unhealthy":
+                      fail(subprocess.check_output(["docker", "logs", "api-go-admin-logs"], text=True)[-4000:])
+                  time.sleep(2)
+              fail(subprocess.check_output(["docker", "logs", "api-go-admin-logs"], text=True)[-4000:])
+
+          def call(base_url, path, method="GET", token=None, payload=None, timeout=30):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              return json.loads(text)
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+          def login(email):
+              status, raw = call(nest, "/api/auth/login", "POST",
+                                 payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:400]!r}")
+              return doc["accessToken"]
+
+          def ok(path, token=None):
+              status, raw = call(go, path, "GET", token)
+              if status != 200:
+                  fail(f"GET {path} {status} {raw[:400]!r}")
+              return body(raw)
+
+          def same(path, token):
+              left_status, left_raw = call(nest, path, "GET", token)
+              right_status, right_raw = call(go, path, "GET", token)
+              if left_status != right_status:
+                  fail(f"parity status {path} nest={left_status} go={right_status}")
+              if left_status >= 400:
+                  if (body(left_raw) or {}).get("statusCode") != (body(right_raw) or {}).get("statusCode") \
+                          or message(left_raw) != message(right_raw):
+                      fail(f"parity error {path} nest={left_raw[:400]!r} go={right_raw[:400]!r}")
+              elif body(left_raw) != body(right_raw):
+                  fail(f"parity body {path} nest={left_raw[:600]!r} go={right_raw[:600]!r}")
+              return body(left_raw)
+
+          def assert_no_foreign(label, payload):
+              text = json.dumps(payload, ensure_ascii=False)
+              for marker in foreign_markers:
+                  if marker in text:
+                      fail(f"{label} leaked another org: {marker} in {text[:400]!r}")
+
+          def assert_redacted(label, payload):
+              text = json.dumps(payload, ensure_ascii=False)
+              if "Bearer [REDACTED]" not in text or "password=[REDACTED]" not in text:
+                  fail(f"{label} is not redacted: {text[:600]!r}")
+              for secret in ["secret.jwt.token", "plain123"]:
+                  if secret in text:
+                      fail(f"{label} leaked {secret}: {text[:600]!r}")
+
+          # ---- 准备数据：本组织 + 另一组织的 MySQL / Mongo 测试数据 ----
+          admin = scalar("SELECT id FROM User WHERE email='api-go-admin-logs-smoke-admin@example.com'")
+          settings_perm = scalar("SELECT id FROM Permission WHERE name='settings.manage'")
+          other_perm = scalar("SELECT id FROM Permission WHERE name='crawl.read'")
+          if not admin or not settings_perm or not other_perm:
+              fail(f"missing seed rows admin={admin} settings={settings_perm} other={other_perm}")
+          machine_hash = hashlib.sha256(machine_token.encode()).hexdigest()
+
+          sql(f"""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('{org_a}', 'Admin Logs Org A', 'admin-logs-org-a', 1, NOW(3), NOW(3)),
+            ('{org_b}', 'Admin Logs Org B', 'admin-logs-org-b', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, isSystem, orgId) VALUES
+            ('adm-logs-role-a-0001', 'adm-logs-a', 0, '{org_a}'),
+            ('adm-logs-role-b-0001', 'adm-logs-b', 0, '{org_b}'),
+            ('adm-logs-role-d-0001', 'adm-logs-d', 0, '{org_a}');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('adm-logs-rp-a-0001', 'adm-logs-role-a-0001', '{settings_perm}'),
+            ('adm-logs-rp-b-0001', 'adm-logs-role-b-0001', '{settings_perm}'),
+            ('adm-logs-rp-d-0001', 'adm-logs-role-d-0001', '{other_perm}');
+          """)
+          users = [
+              (user_a, "adm-logs-a@example.com", org_a, "adm-logs-role-a-0001"),
+              (user_b, "adm-logs-b@example.com", org_b, "adm-logs-role-b-0001"),
+              (user_denied, "adm-logs-denied@example.com", org_a, "adm-logs-role-d-0001"),
+          ]
+          for user_id, email, user_org, role_id in users:
+              sql(f"""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '{admin}';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('m{user_id}', '{user_id}', '{user_org}', '{role_id}', 1, NOW(3));
+              """)
+          sql(f"""
+          INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, lastUsedAt, expiresAt, revokedAt, createdAt, updatedAt)
+          VALUES ('adm-logs-mtok-0001', '{org_a}', 'smoke', '{machine_hash}', '["settings.manage"]', NULL, NULL, NULL, NOW(3), NOW(3));
+          INSERT INTO AuditLog (id, orgId, actorId, resource, action, metadata, ipAddress, createdAt) VALUES
+            ('adm-logs-audit-a-0001', '{org_a}', '{user_a}', 'smoke-alpha-audit', 'alpha.update', '{{"k":"alpha"}}', '10.0.0.1', '2026-10-10 00:00:03.000'),
+            ('adm-logs-audit-a-0002', '{org_a}', NULL, 'smoke-alpha-audit-2', 'alpha.read', NULL, NULL, '2026-10-10 00:00:02.000'),
+            ('adm-logs-audit-b-0001', '{org_b}', '{user_b}', 'smoke-beta-audit', 'beta.update', NULL, NULL, '2026-10-10 00:00:01.000');
+          """)
+
+          mongo_seed("""
+          db.tasklogs.insertMany([
+            { _id: "adm-logs-alpha-task-1", queue: "smoke-alpha", jobId: "alpha-job-1", orgId: "adm-logs-org-a-0001",
+              stage: "fetch", status: "failed", message: "alpha fail Bearer secret.jwt.token password=plain123",
+              data: { authorization: "Bearer raw.jwt.token", nested: { api_key: "plain-key", safe: "ok" } },
+              error: { name: "AlphaError", message: "alpha error password=plain123" },
+              createdAt: new Date("2026-10-10T00:00:03.000Z"), updatedAt: new Date("2026-10-10T00:00:03.000Z") },
+            { _id: "adm-logs-alpha-task-2", queue: "smoke-alpha", jobId: "alpha-job-2", orgId: "adm-logs-org-a-0001",
+              stage: "fetch", status: "completed", message: "alpha ok",
+              data: { nested: { api_key: "completed-key" } },
+              createdAt: new Date("2026-10-10T00:00:02.000Z"), updatedAt: new Date("2026-10-10T00:00:02.000Z") },
+            { _id: "adm-logs-beta-task-1", queue: "smoke-beta", jobId: "beta-job-1", orgId: "adm-logs-org-b-0001",
+              stage: "parse", status: "failed", message: "beta fail",
+              createdAt: new Date("2026-10-10T00:00:01.000Z"), updatedAt: new Date("2026-10-10T00:00:01.000Z") }
+          ]);
+          db.exceptionevents.insertMany([
+            { id: "alpha-evt-1", orgId: "adm-logs-org-a-0001", kind: "http", traceId: "alpha-trace",
+              timestamp: new Date("2026-10-10T00:00:03.000Z"), statusCode: 500,
+              message: "alpha exception Bearer secret.jwt.token password=plain123",
+              stack: "Error: boom password=plain123", path: "/api/alpha", method: "GET", operationName: "alphaOp",
+              createdAt: new Date("2026-10-10T00:00:03.000Z"), updatedAt: new Date("2026-10-10T00:00:03.000Z") },
+            { id: "alpha-evt-2", orgId: "adm-logs-org-a-0001", kind: "graphql", traceId: "alpha-trace-2",
+              timestamp: new Date("2026-10-10T00:00:02.000Z"), message: "alpha graphql boom", operationName: "alphaQuery",
+              createdAt: new Date("2026-10-10T00:00:02.000Z"), updatedAt: new Date("2026-10-10T00:00:02.000Z") },
+            { id: "alpha-evt-3", orgId: "adm-logs-org-a-0001", kind: "http", traceId: "alpha-trace-3",
+              timestamp: new Date("2026-10-10T00:00:01.500Z"), message: "alpha second http boom", operationName: "alphaOp",
+              createdAt: new Date("2026-10-10T00:00:01.500Z"), updatedAt: new Date("2026-10-10T00:00:01.500Z") },
+            { id: "beta-evt-1", orgId: "adm-logs-org-b-0001", kind: "http", traceId: "beta-trace",
+              timestamp: new Date("2026-10-10T00:00:01.000Z"), message: "beta boom",
+              createdAt: new Date("2026-10-10T00:00:01.000Z"), updatedAt: new Date("2026-10-10T00:00:01.000Z") }
+          ]);
+          """)
+
+          tokens = {email: login(email) for _, email, _, _ in users}
+          token_a = tokens["adm-logs-a@example.com"]
+          token_b = tokens["adm-logs-b@example.com"]
+          token_denied = tokens["adm-logs-denied@example.com"]
+
+          # ---- 阶段 1：开关 legacy，7 条经 Go 代理与 Nest 直连逐字节一致 ----
+          start_go("legacy")
+          parity_paths = [
+              task_path,
+              f"{task_path}?status=failed&queue=smoke-alpha",
+              f"{task_path}?status=completed",
+              task_summary_path,
+              errors_path,
+              f"{errors_path}?kind=http",
+              errors_summary_path,
+              audit_path,
+              f"{audit_path}?search=alpha",
+              admin_errors_path,
+              f"{admin_errors_path}?kind=graphql",
+              admin_errors_stats_path,
+          ]
+          for path in parity_paths:
+              payload = same(path, token_a)
+              assert_no_foreign("legacy " + path, payload)
+          nested = same(f"{errors_path}?kind=http", token_a)
+          assert_redacted("legacy errors", nested)
+          legacy_nest_only = call(nest, errors_path, "GET", token_a)[1]
+          assert_redacted("legacy nest errors", body(legacy_nest_only))
+
+          # ---- 阶段 2：开关 go（Nest 仍在运行）----
+          start_go("go")
+
+          # 7 条都 200，且与本组织数据一致。
+          for path in parity_paths:
+              payload = same(path, token_a)
+              assert_no_foreign("go " + path, payload)
+
+          # 2. 异常列表与 Nest 都脱敏（message 与 stack）。
+          go_errors = ok(f"{errors_path}?kind=http", token_a)
+          assert_redacted("go errors", go_errors)
+          nest_errors = body(call(nest, f"{errors_path}?kind=http", "GET", token_a)[1])
+          assert_redacted("nest errors", nest_errors)
+          if go_errors != nest_errors:
+              fail(f"redacted errors differ: go={go_errors} nest={nest_errors}")
+          go_admin_errors = ok(admin_errors_path, token_a)
+          assert_redacted("go admin/errors", go_admin_errors)
+
+          # 3. 任务日志的 data.authorization / data.nested.api_key 已脱敏；
+          #    status=completed 时 topErrors 是空数组。
+          go_task = ok(task_path, token_a)
+          rows = {item.get("jobId"): item for item in go_task.get("items", [])}
+          failed_row = rows.get("alpha-job-1")
+          if not failed_row:
+              fail(f"alpha-job-1 missing from task list: {go_task}")
+          if failed_row.get("data", {}).get("authorization") != "[REDACTED]":
+              fail(f"data.authorization = {failed_row.get('data')}")
+          if failed_row.get("data", {}).get("nested", {}).get("api_key") != "[REDACTED]":
+              fail(f"data.nested.api_key = {failed_row.get('data')}")
+          if failed_row.get("message") != "alpha fail Bearer [REDACTED] password=[REDACTED]":
+              fail(f"task message = {failed_row.get('message')}")
+          if go_task.get("summary", {}).get("totals", {}).get("total") != 2:
+              fail(f"totals = {go_task.get('summary', {}).get('totals')}")
+          if go_task.get("summary", {}).get("topErrors") == []:
+              fail("failed status should aggregate topErrors")
+          completed = ok(f"{task_path}?status=completed", token_a)
+          if completed.get("summary", {}).get("topErrors") != []:
+              fail(f"topErrors should be empty for completed: {completed.get('summary')}")
+          if completed.get("summary", {}).get("totals", {}).get("completed") != 1:
+              fail(f"completed totals = {completed.get('summary', {}).get('totals')}")
+
+          # 4. logs/errors 的非法 kind 是 400。
+          status, raw = call(go, f"{errors_path}?kind=bad", "GET", token_a)
+          if status != 400 or message(raw) != "kind must be one of http, graphql, unknown":
+              fail(f"logs/errors kind=bad {status} {raw[:300]!r}")
+
+          # 5. admin/errors 的非法 kind 是 200。
+          status, raw = call(go, f"{admin_errors_path}?kind=bad", "GET", token_a)
+          if status != 200:
+              fail(f"admin/errors kind=bad {status} {raw[:300]!r}")
+
+          # 6. logs/task 的 start > end 是 400。
+          status, raw = call(go, f"{task_path}?start=2026-10-10T00:00:00Z&end=2026-10-09T00:00:00Z", "GET", token_a)
+          if status != 400 or message(raw) != "start must be earlier than or equal to end":
+              fail(f"logs/task start>end {status} {raw[:300]!r}")
+          # admin/errors 的 start > end 仍是 200（0 条）。
+          status, raw = call(go, f"{admin_errors_path}?start=2026-10-10T00:00:00Z&end=2026-10-09T00:00:00Z", "GET", token_a)
+          if status != 200 or body(raw).get("total") != 0:
+              fail(f"admin/errors start>end {status} {raw[:300]!r}")
+          # admin/errors 的非法日期忽略该条件（仍是 200）。
+          status, raw = call(go, f"{admin_errors_path}?start=not-a-date", "GET", token_a)
+          if status != 200:
+              fail(f"admin/errors bad date {status} {raw[:300]!r}")
+
+          # 7. 另一组织的用户在 7 条上只看到自己的数据；本组织看不到它的。
+          #    注意：NestJS 登录会写一条 resource="auth" 的审计日志，抛出的
+          #    4xx/5xx 也会记一条异常事件——所以**不能**按插入行数断言总数，
+          #    这里断言「自己的数据可见、别人的数据不可见」。
+          for path in all_paths:
+              text = json.dumps(ok(path, token_b), ensure_ascii=False)
+              for marker in org_a_markers:
+                  if marker in text:
+                      fail(f"org B leaked org A rows: {path} {marker} {text[:400]!r}")
+          for path, marker in (
+              (task_path, "beta-job-1"),
+              (errors_path, "beta-evt-1"),
+              (admin_errors_path, "beta-evt-1"),
+              (audit_path, "smoke-beta-audit"),
+          ):
+              text = json.dumps(ok(path, token_b), ensure_ascii=False)
+              if marker not in text:
+                  fail(f"org B cannot see its own data via {path}: {text[:400]!r}")
+
+          # 8. 没有 settings.manage 的用户在 7 条上都是 403；有效机器令牌是 200。
+          for path in all_paths:
+              status, _ = call(go, path, "GET", token_denied)
+              if status != 403:
+                  fail(f"{path} without settings.manage = {status}, want 403")
+              status, raw = call(go, path, "GET", machine_token)
+              if status != 200:
+                  fail(f"{path} machine token = {status} {raw[:300]!r}")
+          status, _ = call(go, task_path, "GET", None)
+          if status != 401:
+              fail(f"missing token = {status}, want 401")
+
+          # ---- 阶段 3：停止 Nest；7 条仍 200，未迁路径是 502 ----
+          alive = token_a
+          if os.path.exists("/tmp/api-nestjs.pid"):
+              os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+          subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+          subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+          stopped = False
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  stopped = True
+                  break
+              time.sleep(1)
+          if not stopped:
+              fail("nestjs did not stop")
+
+          for path in all_paths:
+              status, raw = call(go, path, "GET", alive)
+              if status != 200:
+                  fail(f"after nest stop {path} {status} {raw[:300]!r}")
+          status, raw = call(go, "/api/admin/quality/task-logs", "GET", alive)
+          if status != 502 or (body(raw) or {}).get("statusCode") != 502:
+              fail(f"quality/task-logs after nest stop {status} {raw[:300]!r}")
+          print("admin logs takeover verified: legacy parity, redaction, 400/200 rules, org isolation, machine token, nest stop")
+          PY
