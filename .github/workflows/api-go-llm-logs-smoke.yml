@@ -1,0 +1,612 @@
+# LLM 请求日志三条只读 GET（列表 / CSV 导出 / 用量汇总）的真实栈验收。
+# 不进普通 CI。PR 上加 label api-go-llm-logs-smoke，或 workflow_dispatch。
+# SCHEDULE_ENABLED 保持 false。只往 Mongo llmrequestlogs 写入隔离组织的数据，
+# 不调用模型服务；不把抓取、AkShare 或 Nominatim 当通过。
+name: api-go-llm-logs-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-llm-logs-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-llm-logs-smoke@example.com
+  SMTP_PASS: api-go-llm-logs-smoke-smtp-not-connected
+  JWT_SECRET: a7c1e5b93d2f48016e9a3c7d5b1f80426d3e9b7a1c5f280e4d6b9a3f7c1e5d28
+  NEXTAUTH_SECRET: f4b8d2a61e5c93074b1f6e8a2d5c90314e7a2b6d8c4f10593a8e2d6b4c7f1a05
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-llm-logs-smoke-org
+  SEED_ORG_NAME: api-go LLM Logs Smoke Org
+  SEED_ADMIN_EMAIL: api-go-llm-logs-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoLlmLogs#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-llm-logs-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-llm-logs-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-llm-logs:ci .
+      - name: Exercise LLM request log routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import hashlib, json, os, signal, subprocess, time, urllib.error, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4021"
+          org = "llmorgsmoke000000000001"
+          other = "llmorgother000000000001"
+          logs = "/api/llm-logs"
+          collection = "llmrequestlogs"
+          machine_token = "mtk_llm-logs-smoke-machine-token-0123456789"
+          bad_token = "mtk_llm-logs-smoke-revoked-0123456789abcdef"
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def mysql_container():
+              return subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=mysql:8.4"], text=True).split()[0]
+
+          def mongo_container():
+              return subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=mongo:7.0"], text=True).split()[0]
+
+          def sql(statement):
+              proc = subprocess.run(
+                  ["docker", "exec", "-i", mysql_container(), "mysql", "-uroot", "-psecret", "-N", "app"],
+                  input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          def mongo(js):
+              proc = subprocess.run(
+                  ["docker", "exec", "-i", mongo_container(), "mongosh", "--quiet", "app", "--eval", js],
+                  text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def mongo_count(org_id):
+              value = mongo('db.%s.countDocuments({orgId:"%s"})' % (collection, org_id))
+              lines = [line.strip() for line in value.splitlines() if line.strip()]
+              return int(lines[-1]) if lines else 0
+
+          def start_go(logs_mode):
+              subprocess.run(["docker", "rm", "-f", "api-go-llm-logs"], check=False, capture_output=True)
+              env = [
+                  "PORT=4021",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  "API_GO_LLM_LOGS_MODE=%s" % logs_mode,
+                  "API_GO_CRAWL_TEMPLATES_MODE=legacy",
+                  "API_GO_CRAWL_PROFILES_MODE=legacy",
+                  "API_GO_CRAWL_WORKFLOWS_MODE=legacy",
+                  "API_GO_RBAC_MODE=legacy",
+                  "API_GO_NEWS_SOURCES_MODE=legacy",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  "JWT_SECRET=%s" % os.environ["JWT_SECRET"],
+                  "JWT_ISSUER=%s" % os.environ["JWT_ISSUER"],
+                  "JWT_AUDIENCE=%s" % os.environ["JWT_AUDIENCE"],
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  "CORS_ORIGIN=%s" % os.environ["CORS_ORIGIN"],
+              ]
+              cmd = ["docker", "run", "-d", "--name", "api-go-llm-logs",
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4021:4021"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append("api-go-llm-logs:ci")
+              subprocess.check_call(cmd)
+              for _ in range(30):
+                  status = subprocess.check_output(
+                      ["docker", "inspect", "--format", "{{.State.Health.Status}}", "api-go-llm-logs"],
+                      text=True).strip()
+                  print("health", status, "logsMode", logs_mode)
+                  if status == "healthy":
+                      return
+                  if status == "unhealthy":
+                      fail(subprocess.check_output(["docker", "logs", "api-go-llm-logs"], text=True)[-4000:])
+                  time.sleep(2)
+              fail(subprocess.check_output(["docker", "logs", "api-go-llm-logs"], text=True)[-4000:])
+
+          def call_full(base_url, path, method="GET", token=None, payload=None, timeout=30):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, {key.lower(): value for key, value in resp.headers.items()}, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, {key.lower(): value for key, value in exc.headers.items()}, exc.read()
+
+          def call(base_url, path, method="GET", token=None, payload=None, timeout=30):
+              status, _, raw = call_full(base_url, path, method, token, payload, timeout)
+              return status, raw
+
+          def body(raw):
+              # 非 JSON（例如 CSV 导出）返回 None，交给调用方按字节比较。
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text or text[0] not in "{[":
+                  return None
+              try:
+                  return json.loads(text)
+              except ValueError:
+                  return None
+
+          def core(value):
+              if isinstance(value, dict):
+                  return {key: core(item) for key, item in value.items() if key not in ("traceId", "timestamp")}
+              if isinstance(value, list):
+                  return [core(item) for item in value]
+              return value
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+          def login(email):
+              status, raw = call(nest, "/api/auth/login", "POST",
+                                 payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail("login %s %s %r" % (email, status, raw[:400]))
+              return doc["accessToken"]
+
+          def same(path, method="GET", token=None, payload=None):
+              left_status, left_raw = call(nest, path, method, token, payload)
+              right_status, right_raw = call(go, path, method, token, payload)
+              if left_status != right_status:
+                  fail("parity status %s %s nest=%s go=%s" % (method, path, left_status, right_status))
+              left_doc, right_doc = body(left_raw), body(right_raw)
+              if left_doc is None or right_doc is None:
+                  if left_raw != right_raw:
+                      fail("parity bytes %s %s nest=%r go=%r" % (method, path, left_raw[:400], right_raw[:400]))
+                  return left_status, left_raw
+              if core(left_doc) != core(right_doc):
+                  fail("parity body %s %s nest=%r go=%r" % (method, path, left_raw[:500], right_raw[:500]))
+              return left_status, left_raw
+
+          def csv_rows(raw):
+              text = raw.decode("utf-8", "replace")
+              lines = [line for line in text.split("\n") if line != ""]
+              return lines
+
+          def csv_data_rows(raw):
+              return csv_rows(raw)[1:]
+
+          def export(base_url, token, query=""):
+              status, headers, raw = call_full(base_url, logs + "/export" + query, "GET", token)
+              return status, headers, raw
+
+          def expect_export_single(base_url, token, marker):
+              status, headers, raw = export(base_url, token, "?runId=runA")
+              if status != 200:
+                  fail("runId export %s %s %r" % (base_url, status, raw[:300]))
+              rows = csv_data_rows(raw)
+              if len(rows) != 1:
+                  fail("runId export rows=%d %r" % (len(rows), rows))
+              if marker not in rows[0]:
+                  fail("runId export missing %s: %r" % (marker, rows[0]))
+              if "model-beta" in raw.decode("utf-8", "replace") or "model-other" in raw.decode("utf-8", "replace"):
+                  fail("runId export leaked other rows: %r" % rows)
+              return headers
+
+          admin = scalar("SELECT id FROM User WHERE email='api-go-llm-logs-smoke-admin@example.com'")
+          manage_perm = scalar("SELECT id FROM Permission WHERE name='settings.manage'")
+          if not admin or not manage_perm:
+              fail("seed produced no admin or settings.manage permission")
+
+          sql("""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('{org}', 'LLM Logs Smoke', 'llm-logs-smoke', 1, NOW(3), NOW(3)),
+            ('{other}', 'LLM Logs Other', 'llm-logs-other', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, isSystem, orgId) VALUES
+            ('llmrolewriter000000000001', 'llm-writer', 0, '{org}'),
+            ('llmrolereader000000000001', 'llm-reader', 0, '{org}'),
+            ('llmroleother0000000000001', 'llm-other', 0, '{other}');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('llmpermwriter000000000001', 'llmrolewriter000000000001', '{manage_perm}'),
+            ('llmpermother0000000000001', 'llmroleother0000000000001', '{manage_perm}');
+          INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, createdById, createdAt, updatedAt) VALUES
+            ('llmtokenactive00000000001', '{org}', 'llm-active', '{active_hash}', '["settings.manage"]', NULL, NOW(3), NOW(3)),
+            ('llmtokenrevoked0000000001', '{org}', 'llm-revoked', '{revoked_hash}', '["settings.manage"]', NULL, NOW(3), NOW(3));
+          UPDATE MachineAccessToken SET revokedAt = NOW(3) WHERE id = 'llmtokenrevoked0000000001';
+          """.format(org=org, other=other, manage_perm=manage_perm,
+                     active_hash=hashlib.sha256(machine_token.encode()).hexdigest(),
+                     revoked_hash=hashlib.sha256(bad_token.encode()).hexdigest()))
+
+          users = [
+              ("llmuserwriter000000000001", "llm-writer@example.com", org, "llmrolewriter000000000001"),
+              ("llmuserreader000000000001", "llm-reader@example.com", org, "llmrolereader000000000001"),
+              ("llmuserother0000000000001", "llm-other@example.com", other, "llmroleother0000000000001"),
+          ]
+          for user_id, email, user_org, role_id in users:
+              sql("""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '{admin}';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('m{user_id}', '{user_id}', '{user_org}', '{role_id}', 1, NOW(3));
+              """.format(user_id=user_id, email=email, user_org=user_org, role_id=role_id, admin=admin))
+
+          # 本组织两条（不同 runid，其中一条 error 是公式注入载荷）+ 另一组织一条。
+          mongo('''
+          db.{collection}.insertMany([
+            {{"orgId":"{org}","requestType":"completion","model":"model-alpha","status":"error",
+             "promptTokens":100,"completionTokens":50,"totalTokens":150,"costUsd":0.125,
+             "feature":"smoke","latencyMs":250,"error":"=cmd|' /C calc'!A0",
+             "metadata":{{"runid":"runA","nodeid":"nodeA"}},
+             "createdAt":new Date("2026-10-11T00:00:00Z"),"updatedAt":new Date("2026-10-11T00:00:00Z")}},
+            {{"orgId":"{org}","requestType":"embedding","model":"model-beta","status":"success",
+             "promptTokens":10,"completionTokens":null,"totalTokens":10,"costUsd":0.5,
+             "feature":"smoke","latencyMs":150,"error":null,"metadata":{{"runid":"runB","nodeid":"nodeB"}},
+             "createdAt":new Date("2026-10-10T00:00:00Z"),"updatedAt":new Date("2026-10-10T00:00:00Z")}},
+            {{"orgId":"{other}","requestType":"completion","model":"model-other","status":"success",
+             "promptTokens":7,"completionTokens":3,"totalTokens":10,"costUsd":0.25,
+             "feature":"smoke","latencyMs":50,"error":null,"metadata":{{"runid":"runOther"}},
+             "createdAt":new Date("2026-10-10T00:00:00Z"),"updatedAt":new Date("2026-10-10T00:00:00Z")}}
+          ])
+          '''.format(collection=collection, org=org, other=other))
+          if mongo_count(org) != 2 or mongo_count(other) != 1:
+              fail("mongo seed counts %d/%d" % (mongo_count(org), mongo_count(other)))
+
+          # ---- 阶段 1：开关还是 legacy，全部经 Go 代理，Nest 是唯一执行者 ----
+          start_go("legacy")
+          tokens = {email: login(email) for _, email, _, _ in users}
+          writer = tokens["llm-writer@example.com"]
+          reader = tokens["llm-reader@example.com"]
+          outsider = tokens["llm-other@example.com"]
+
+          # 步骤 1：列表、汇总、导出经 Go 代理与 Nest 直连一致。
+          status, raw = same(logs, "GET", writer)
+          if status != 200:
+              fail("legacy list %s %r" % (status, raw[:300]))
+          listing = body(raw)
+          if listing.get("total") != 2 or len(listing.get("items", [])) != 2:
+              fail("legacy list shape %r" % listing)
+          if listing.get("page") != 1 or listing.get("pageSize") != 20:
+              fail("legacy list paging %r" % listing)
+          if [item.get("model") for item in listing["items"]] != ["model-alpha", "model-beta"]:
+              fail("legacy list order %r" % listing["items"])
+          policy = listing.get("metadataPolicy") or {}
+          if policy.get("source") != "default" or not policy.get("allowedTopLevelKeys"):
+              fail("legacy metadataPolicy %r" % policy)
+          for key in ("runid", "nodeid", "profileid", "frontierrunid", "frontiernodeid", "crawlsiteprofileid"):
+              if key not in policy["allowedTopLevelKeys"]:
+                  fail("metadataPolicy missing required key %s" % key)
+          if listing["items"][0].get("metadata") != {"runid": "runA", "nodeid": "nodeA"}:
+              fail("legacy item metadata %r" % listing["items"][0].get("metadata"))
+
+          status, raw = same(logs + "/summary", "GET", writer)
+          if status != 200:
+              fail("legacy summary %s %r" % (status, raw[:300]))
+          summary = body(raw)
+          if summary["totals"]["requestCount"] != 2 or summary["statusBreakdown"]["error"] != 1:
+              fail("legacy summary counts %r" % summary)
+          if summary["byModel"][0]["model"] != "model-alpha":
+              fail("legacy summary byModel %r" % summary["byModel"])
+          if summary["latency"]["p95Ms"] != 250:
+              fail("legacy summary p95 %r" % summary["latency"])
+          if [row["message"] for row in summary["topErrors"]] != ["=cmd|' /C calc'!A0"]:
+              fail("legacy summary topErrors %r" % summary["topErrors"])
+
+          status, raw = same(logs + "/export", "GET", writer)
+          if status != 200:
+              fail("legacy export %s %r" % (status, raw[:300]))
+          lines = csv_rows(raw)
+          if lines[0] != "timestamp,model,requestType,status,durationMs,inputTokens,outputTokens,totalTokens,error":
+              fail("legacy export header %r" % lines[0])
+          if len(lines) != 3:
+              fail("legacy export rows %r" % lines)
+          if not lines[1].startswith("2026-10-11T00:00:00.000Z,model-alpha,completion,error,250,100,50,150,"):
+              fail("legacy export row 1 %r" % lines[1])
+          if not lines[1].endswith(",'=cmd|' /C calc'!A0"):
+              fail("legacy export formula cell %r" % lines[1])
+          if not lines[2].startswith("2026-10-10T00:00:00.000Z,model-beta,embedding,success,150,10,,10,"):
+              fail("legacy export row 2 %r" % lines[2])
+          print("legacy parity ok")
+
+          # 步骤 2：带 runId 的导出只含该 runId 的一条（Nest 与 Go 都验证）。
+          for base in (nest, go):
+              headers = expect_export_single(base, writer, "model-alpha")
+              if headers.get("content-disposition") != 'attachment; filename="llm-logs-export.csv"':
+                  fail("runId export disposition %r" % headers)
+              if not headers.get("content-type", "").startswith("text/csv; charset=utf-8"):
+                  fail("runId export content-type %r" % headers)
+          # nodeId 过滤同样生效。
+          for base in (nest, go):
+              status, headers, raw = call_full(base, logs + "/export?nodeId=nodeB", "GET", writer)
+              if status != 200 or len(csv_data_rows(raw)) != 1 or "model-beta" not in raw.decode("utf-8", "replace"):
+                  fail("nodeId export %s %s %r" % (base, status, raw[:300]))
+          # 列表与汇总的 runId 过滤也一致。
+          status, raw = same(logs + "?runId=runA", "GET", writer)
+          if status != 200 or body(raw).get("total") != 1:
+              fail("legacy list runId %s %r" % (status, raw[:300]))
+          status, raw = same(logs + "/summary?runId=runA", "GET", writer)
+          if status != 200 or body(raw)["totals"]["requestCount"] != 1:
+              fail("legacy summary runId %s %r" % (status, raw[:300]))
+          print("legacy runId/nodeId ok")
+
+          # 步骤 3：导出写 MySQL 审计（成功），公式载荷被转义。
+          audit_success = int(scalar(
+              "SELECT COUNT(*) FROM AuditLog WHERE orgId='%s' AND resource='llm_request_logs' "
+              "AND action='export_csv' AND JSON_EXTRACT(metadata,'$.outcome')='success'" % org))
+          if audit_success < 1:
+              fail("export audit success row missing (%d)" % audit_success)
+          if int(scalar("SELECT COUNT(*) FROM AuditLog WHERE orgId='%s' AND resource='llm_request_logs' "
+                        "AND action='export_csv' AND metadata LIKE '%%model-alpha%%'" % org)) < 1:
+              fail("export audit metadata missing filters")
+
+          # 步骤 4：91 天窗口 → 400。
+          long_query = "?start=2026-01-01T00:00:00Z&end=2026-04-02T00:00:00Z"
+          for base in (nest, go):
+              status, _, raw = call_full(base, logs + "/export" + long_query, "GET", writer)
+              if status != 400 or message(raw) != "export date range cannot exceed 90 days":
+                  fail("90-day window %s %s %r" % (base, status, raw[:300]))
+          # 90 天整允许（这里只验证校验通过、进入正常导出）。
+          status, _, raw = call_full(go, logs + "/export?start=2026-10-01T00:00:00Z&end=2026-12-30T00:00:00Z", "GET", writer)
+          if status != 200:
+              fail("90-day boundary %s %r" % (status, raw[:300]))
+
+          # 步骤 5：feature 非法 → 400（Nest 与 Go）。
+          for path in (logs, logs + "/export", logs + "/summary"):
+              for base in (nest, go):
+                  status, raw = call(base, path + "?feature=Bad%20Upper", "GET", writer)
+                  if status != 400 or message(raw) != "feature must be a lowercase token with [a-z0-9_:. -], max 64 chars":
+                      fail("feature validation %s %s %s %r" % (base, path, status, raw[:300]))
+          for base in (nest, go):
+              status, raw = call(base, logs + "/export?requestType=chat", "GET", writer)
+              if status != 400 or message(raw) != "requestType must be one of completion, embedding, rerank, stream, responses":
+                  fail("requestType validation %s %s %r" % (base, status, raw[:300]))
+              status, raw = call(base, logs + "?start=2026-10-02T00:00:00Z&end=2026-10-01T00:00:00Z", "GET", writer)
+              if status != 400 or message(raw) != "start must be earlier than or equal to end":
+                  fail("date range validation %s %s %r" % (base, status, raw[:300]))
+              status, raw = call(base, logs + "?page=0", "GET", writer)
+              if status != 400 or message(raw) != "page must be a positive number":
+                  fail("paging validation %s %s %r" % (base, status, raw[:300]))
+
+          # 步骤 6：跨组织隔离——另一组织的日志不出现在列表、导出、汇总里。
+          status, raw = same(logs, "GET", outsider)
+          if status != 200 or body(raw)["total"] != 1 or body(raw)["items"][0]["model"] != "model-other":
+              fail("cross org list %s %r" % (status, raw[:300]))
+          status, raw = call(nest, logs, "GET", writer)
+          if "model-other" in raw.decode("utf-8", "replace"):
+              fail("org A list leaked org B rows")
+          status, raw = call(go, logs + "/export", "GET", outsider)
+          if status != 200 or "model-alpha" in raw.decode("utf-8", "replace") or "model-beta" in raw.decode("utf-8", "replace"):
+              fail("cross org export %s %r" % (status, raw[:300]))
+          status, raw = call(go, logs + "/summary", "GET", outsider)
+          if status != 200 or body(raw)["totals"]["requestCount"] != 1:
+              fail("cross org summary %s %r" % (status, raw[:300]))
+          status, raw = call(go, logs + "/summary", "GET", writer)
+          if status != 200 or body(raw)["totals"]["requestCount"] != 2:
+              fail("org A summary counts org B %s %r" % (status, raw[:300]))
+
+          # 步骤 7：权限——无 settings.manage → 403；机器令牌有效 → 200；撤销/坏令牌 → 401。
+          for path in (logs, logs + "/export", logs + "/summary"):
+              status, raw = call(go, path, "GET", reader)
+              if status != 403:
+                  fail("reader %s expected 403 got %s %r" % (path, status, raw[:300]))
+          if call(go, logs, "GET", None)[0] != 401:
+              fail("missing token was not 401")
+          if call(go, logs, "GET", "not-a-jwt")[0] != 401:
+              fail("bad token was not 401")
+          for path in (logs, logs + "/summary"):
+              status, raw = call(go, path, "GET", machine_token)
+              if status != 200:
+                  fail("machine token %s %s %r" % (path, status, raw[:300]))
+          status, headers, raw = export(go, machine_token)
+          if status != 200 or len(csv_data_rows(raw)) != 2:
+              fail("machine token export %s %r" % (status, raw[:300]))
+          status, raw = call(go, logs, "GET", bad_token)
+          if status != 401 or message(raw) != "Invalid machine token":
+              fail("revoked machine token %s %r" % (status, raw[:300]))
+          print("legacy auth and isolation ok")
+
+          # ---- 阶段 2：开关 go（Nest 仍在运行）----
+          start_go("go")
+
+          status, raw = same(logs, "GET", writer)
+          if status != 200 or body(raw)["total"] != 2:
+              fail("go list parity %s %r" % (status, raw[:300]))
+          status, raw = same(logs + "/summary", "GET", writer)
+          if status != 200 or body(raw)["totals"]["requestCount"] != 2:
+              fail("go summary parity %s %r" % (status, raw[:300]))
+          status, raw = same(logs + "/export", "GET", writer)
+          if status != 200 or len(csv_rows(raw)) != 3:
+              fail("go export parity %s %r" % (status, raw[:300]))
+
+          # go 侧重验：导出只按该 orgId；runId/nodeId 过滤；错误码；跨组织；权限。
+          headers = expect_export_single(go, writer, "model-alpha")
+          if headers.get("content-disposition") != 'attachment; filename="llm-logs-export.csv"':
+              fail("go export disposition %r" % headers)
+          status, _, raw = call_full(go, logs + "/export" + long_query, "GET", writer)
+          if status != 400 or message(raw) != "export date range cannot exceed 90 days":
+              fail("go 90-day window %s %r" % (status, raw[:300]))
+          status, raw = call(go, logs + "?feature=Bad%20Upper", "GET", writer)
+          if status != 400 or message(raw) != "feature must be a lowercase token with [a-z0-9_:. -], max 64 chars":
+              fail("go feature validation %s %r" % (status, raw[:300]))
+          status, raw = call(go, logs, "GET", outsider)
+          if status != 200 or body(raw)["total"] != 1 or body(raw)["items"][0]["model"] != "model-other":
+              fail("go cross org list %s %r" % (status, raw[:300]))
+          if call(go, logs, "GET", reader)[0] != 403:
+              fail("go reader was not 403")
+          if call(go, logs, "GET", machine_token)[0] != 200:
+              fail("go machine token was not 200")
+          audit_before = int(scalar("SELECT COUNT(*) FROM AuditLog WHERE orgId='%s' AND resource='llm_request_logs' "
+                                   "AND action='export_csv'" % org))
+          status, headers, raw = export(go, writer)
+          if status != 200:
+              fail("go export %s %r" % (status, raw[:300]))
+          audit_after = int(scalar("SELECT COUNT(*) FROM AuditLog WHERE orgId='%s' AND resource='llm_request_logs' "
+                                   "AND action='export_csv'" % org))
+          if audit_after != audit_before + 1:
+              fail("go export audit delta %d -> %d" % (audit_before, audit_after))
+          if mongo_count(org) != 2 or mongo_count(other) != 1:
+              fail("go mode changed mongo state")
+          print("go switch ok")
+
+          # ---- 阶段 3：停止 Nest，三条 GET 仍由 Go 响应；日志设置接口未迁 → 502 ----
+          if os.path.exists("/tmp/api-nestjs.pid"):
+              os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+          subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+          subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+          stopped = False
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  stopped = True
+                  break
+              time.sleep(1)
+          if not stopped:
+              fail("nestjs did not stop")
+
+          status, raw = call(go, logs, "GET", writer)
+          if status != 200 or body(raw)["total"] != 2:
+              fail("list after nest stop %s %r" % (status, raw[:300]))
+          status, raw = call(go, logs + "/summary", "GET", writer)
+          if status != 200 or body(raw)["totals"]["requestCount"] != 2:
+              fail("summary after nest stop %s %r" % (status, raw[:300]))
+          status, headers, raw = export(go, writer)
+          if status != 200 or len(csv_rows(raw)) != 3:
+              fail("export after nest stop %s %r" % (status, raw[:300]))
+          status, raw = call(go, "/api/system-settings/llm-request-logs", "GET", writer)
+          if status != 502 or (body(raw) or {}).get("statusCode") != 502:
+              fail("llm settings after nest stop %s %r" % (status, raw[:300]))
+          print("nest stopped; llm logs GETs still succeed; llm-request-logs stays on Nest")
+          PY
