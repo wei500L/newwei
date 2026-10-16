@@ -204,6 +204,16 @@ const (
 	CrawlProfilesModeGo     CrawlProfilesMode = "go"
 )
 
+// RbacMode 只控制组织访问控制的六条 HTTP（/api/rbac/*）。默认 legacy。
+// go 时只接管 permissions、roles（GET/POST）、assign、members、audit-logs；
+// 其他方法与更长路径仍回 NestJS，也不新增 updateRole 的 HTTP。
+type RbacMode string
+
+const (
+	RbacModeLegacy RbacMode = "legacy"
+	RbacModeGo     RbacMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -350,7 +360,10 @@ type Config struct {
 	CrawlWorkflowsMode CrawlWorkflowsMode
 	// CrawlProfilesMode 只控制采集站点画像编辑接口。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
-	CrawlProfilesMode    CrawlProfilesMode
+	CrawlProfilesMode CrawlProfilesMode
+	// RbacMode 只控制组织访问控制六条 HTTP。默认 legacy。
+	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动任何 worker。
+	RbacMode             RbacMode
 	GraphQLAPQEnabled    bool
 	GraphQLDepthLimit    int
 	GraphQLComplexity    int
@@ -702,6 +715,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_CRAWL_PROFILES_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_RBAC_MODE")) {
+	case "", string(RbacModeLegacy):
+		cfg.RbacMode = RbacModeLegacy
+	case string(RbacModeGo):
+		cfg.RbacMode = RbacModeGo
+	default:
+		errs = append(errs, "API_GO_RBAC_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLReadMode = "legacy"
@@ -1050,6 +1071,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.CrawlProfilesMode == CrawlProfilesModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_PROFILES_MODE", cfg)
+	}
+	if cfg.RbacMode == RbacModeGo {
+		appendAuthRequirements(&errs, "API_GO_RBAC_MODE", cfg)
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
