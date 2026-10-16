@@ -26,7 +26,10 @@ func TestParsePositiveIntQueryMirrorsController(t *testing.T) {
 		{name: "pageSize", raw: "", fallback: 20, want: 20},
 		{name: "page", raw: "0", fallback: 1, wantErr: true},
 		{name: "page", raw: "-1", fallback: 1, wantErr: true},
-		{name: "page", raw: "0.4", fallback: 1, wantErr: true},
+		// 0 < value < 1：控制器只检查 Number(value) > 0，不检查 trunc 后的值，
+		// 所以 0.4 与 0.999 都返回 0（由服务层再收口到 >= 1），不是 400。
+		{name: "page", raw: "0.4", fallback: 1, want: 0},
+		{name: "page", raw: "0.999", fallback: 1, want: 0},
 		{name: "page", raw: "abc", fallback: 1, wantErr: true},
 		{name: "page", raw: "1,5", fallback: 1, wantErr: true},
 		{name: "page", raw: "Infinity", fallback: 1, wantErr: true},
