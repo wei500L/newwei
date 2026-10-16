@@ -503,6 +503,10 @@ func run() error {
 	if cfg.CrawlProfilesMode == config.CrawlProfilesModeGo {
 		crawlProfilesMode = string(legacyproxy.ModeGo)
 	}
+	crawlTemplatesMode := ""
+	if cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo {
+		crawlTemplatesMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -525,6 +529,7 @@ func run() error {
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
+	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -571,7 +576,8 @@ func run() error {
 				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
-				cfg.CrawlProfilesMode == config.CrawlProfilesModeGo {
+				cfg.CrawlProfilesMode == config.CrawlProfilesModeGo ||
+				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -622,7 +628,8 @@ func run() error {
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
 	crawlProfilesGo := cfg.CrawlProfilesMode == config.CrawlProfilesModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo
+	crawlTemplatesGo := cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlTemplatesGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -933,6 +940,9 @@ func run() error {
 		return err
 	}
 	if err := wireCrawlProfiles(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := wireCrawlTemplates(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
 
