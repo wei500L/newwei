@@ -103,6 +103,16 @@
 - JWT 验签/MFA/OIDC/refresh 轮换/机器令牌逐项语义对齐；鉴权矩阵全量驱动
 - canary 期任一会话语义差分失败自动回切 legacy
 
+### M7 子批：组织访问控制 RBAC 六条 HTTP（PR 待合并）
+
+`API_GO_RBAC_MODE` 默认 `legacy`；`go` 时接管 `GET /api/rbac/permissions`、
+`GET/POST /api/rbac/roles`、`POST /api/rbac/assign`、`GET /api/rbac/members`、
+`GET /api/rbac/audit-logs` 六条精确路由（其他方法与更长路径仍回 NestJS）。
+创建角色、分配角色仍要求组织管理员、权限范围与写限流；成员行锁修复并发
+分配留下空角色的缺陷（Nest 与 Go 共用同一把 `SELECT ... FOR UPDATE` 行锁
+语义）。回滚只改 `API_GO_RBAC_MODE`。生产 Web 仍指向 NestJS，canary 关闭。
+细节见 `docs/refactor/go-rbac.md`。
+
 ## M8 终局：编排、队列、调度、realtime
 
 - crawl 编排/news-pipeline/scheduler 迁移；BullMQ 行为对齐清单（job name/重试/DLQ 时机/repeat）逐项验收
