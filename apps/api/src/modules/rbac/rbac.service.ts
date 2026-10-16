@@ -249,7 +249,7 @@ export class RbacService {
       // 先锁住该成员行（当前读）：同一成员的并发分配在此串行化，否则两条
       // 请求可以都通过前置检查，再互相删掉对方刚插入的角色，成员最后没有
       // 角色。
-      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM Membership WHERE userId = ${dto.userId} AND orgId = ${orgId} FOR UPDATE
       `;
       let membershipId: string | undefined = locked[0]?.id;
@@ -272,7 +272,7 @@ export class RbacService {
             roleId: dto.roleId,
           },
         });
-        const createdLocked = await tx.$queryRaw<Array<{ id: string }>>`
+        const createdLocked = await tx.$queryRaw<{ id: string }[]>`
           SELECT id FROM Membership WHERE userId = ${dto.userId} AND orgId = ${orgId} FOR UPDATE
         `;
         membershipId = createdLocked[0]?.id;
