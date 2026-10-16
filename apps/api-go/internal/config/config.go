@@ -225,6 +225,18 @@ const (
 	CrawlTemplatesModeGo     CrawlTemplatesMode = "go"
 )
 
+// LlmLogsMode 只控制 LLM 请求日志的列表、CSV 导出与用量汇总这 3 条只读
+// GET（/api/llm-logs、/api/llm-logs/export、/api/llm-logs/summary）。
+// 默认 legacy。go 只接管这三条精确 GET；其他方法与更长路径仍回 NestJS。
+// /api/system-settings/llm-request-logs 始终留在 NestJS（它会改 Mongo TTL
+// 索引）。不启用 shadow，不调用模型服务，不启动 worker。
+type LlmLogsMode string
+
+const (
+	LlmLogsModeLegacy LlmLogsMode = "legacy"
+	LlmLogsModeGo     LlmLogsMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -377,7 +389,11 @@ type Config struct {
 	RbacMode RbacMode
 	// CrawlTemplatesMode 只控制采集模板编辑接口。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
-	CrawlTemplatesMode   CrawlTemplatesMode
+	CrawlTemplatesMode CrawlTemplatesMode
+	// LlmLogsMode 只控制 LLM 请求日志的列表、CSV 导出与用量汇总。默认
+	// legacy。go 要求 JWT、MySQL、Redis 与 Mongo（读 llmrequestlogs）。
+	// 不启动 worker，不调用模型服务。
+	LlmLogsMode          LlmLogsMode
 	GraphQLAPQEnabled    bool
 	GraphQLDepthLimit    int
 	GraphQLComplexity    int
@@ -745,6 +761,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_CRAWL_TEMPLATES_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_LLM_LOGS_MODE")) {
+	case "", string(LlmLogsModeLegacy):
+		cfg.LlmLogsMode = LlmLogsModeLegacy
+	case string(LlmLogsModeGo):
+		cfg.LlmLogsMode = LlmLogsModeGo
+	default:
+		errs = append(errs, "API_GO_LLM_LOGS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLReadMode = "legacy"
@@ -1099,6 +1123,12 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.CrawlTemplatesMode == CrawlTemplatesModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_TEMPLATES_MODE", cfg)
+	}
+	if cfg.LlmLogsMode == LlmLogsModeGo {
+		appendAuthRequirements(&errs, "API_GO_LLM_LOGS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_LLM_LOGS_MODE=go")
+		}
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
