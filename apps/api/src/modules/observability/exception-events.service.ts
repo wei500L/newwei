@@ -1,4 +1,5 @@
 import { ExceptionEventModel } from "@modular/mongo";
+import { redactSensitiveFields } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { randomUUID } from "crypto";
 
@@ -149,13 +150,13 @@ export class ExceptionEventsService {
         traceId: item.traceId ?? "",
         timestamp: item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString(),
         statusCode: item.statusCode ?? undefined,
-        message: item.message ?? "Unknown error",
+        message: redactSensitiveFields(item.message ?? "Unknown error"),
         path: item.path ?? undefined,
         method: item.method ?? undefined,
         operation: item.operation ?? undefined,
         operationName: item.operationName ?? undefined,
         errorName: item.errorName ?? undefined,
-        stack: item.stack ?? undefined
+        stack: item.stack ? redactSensitiveFields(item.stack) : undefined
       }))
     };
   }
