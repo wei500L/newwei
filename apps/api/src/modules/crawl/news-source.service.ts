@@ -440,7 +440,7 @@ export class NewsSourceService {
       throw new NotFoundException("News source not found");
     }
 
-    const data: Prisma.NewsSourceUpdateManyMutationInput = {};
+    const data: Prisma.NewsSourceUncheckedUpdateManyInput = {};
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (!name) {
@@ -610,7 +610,7 @@ export class NewsSourceService {
   private async writeSourceWhereOrg(
     orgId: string,
     id: string,
-    data: Prisma.NewsSourceUpdateManyMutationInput,
+    data: Prisma.NewsSourceUncheckedUpdateManyInput,
   ) {
     const updated = await this.prisma.newsSource.updateMany({
       where: { id, orgId },
