@@ -53,6 +53,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				h.serveDetail(w, r, id)
 			case action == "draft" && r.Method == http.MethodPatch:
 				h.serveUpdateDraft(w, r, id)
+			case action == "publish" && r.Method == http.MethodPost:
+				h.servePublish(w, r, id)
 			case action == "versions" && r.Method == http.MethodGet:
 				h.serveVersions(w, r, id)
 			default:
@@ -266,6 +268,33 @@ func (h *Handler) serveUpdateDraft(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 	writeJSON(w, http.StatusOK, payload)
+}
+
+func (h *Handler) servePublish(w http.ResponseWriter, r *http.Request, id string) {
+	body, ok := readJSON(w, r)
+	if !ok {
+		return
+	}
+	identity := h.authorize(w, r, permWrite)
+	if identity == nil {
+		return
+	}
+	fields, err := parseObjectBody(body)
+	if err != nil {
+		writeInputError(w, r, err)
+		return
+	}
+	input, err := validatePublish(fields)
+	if err != nil {
+		writeInputError(w, r, err)
+		return
+	}
+	payload, err := h.svc.PublishWorkflow(r.Context(), identity.OrgID, identity.UserID, id, input)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveProfileBridge(w http.ResponseWriter, r *http.Request, id string) {

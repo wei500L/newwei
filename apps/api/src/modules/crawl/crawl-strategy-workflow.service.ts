@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { toPrismaJsonValue } from '../../common/prisma-json';
 import { PrismaService } from '../config/prisma.service';
@@ -174,11 +174,6 @@ export class CrawlStrategyWorkflowService {
     input?: PublishCrawlStrategyWorkflowDto,
   ) {
     const workflow = await this.ensureWorkflow(orgId, id);
-    const currentMaxVersion =
-      workflow.versions.length > 0
-        ? Math.max(...workflow.versions.map((entry) => entry.version))
-        : 0;
-    const nextVersion = currentMaxVersion + 1;
     const versionName =
       input?.versionName?.trim().length
         ? input.versionName.trim()
@@ -190,34 +185,67 @@ export class CrawlStrategyWorkflowService {
     const definition = this.normalizeWorkflowDefinition(workflow.draftDefinition);
     assertSupportedWorkflowDefinition(definition, 'draftDefinition');
 
+    // 缺陷 1：版本号必须在事务内、持工作流行锁后按当前读计算。
+    // 原先在事务外用 ensureWorkflow 带回的 versions 算 nextVersion，
+    // 两个并发发布会得到同一个版本号，后一个请求撞
+    // @@unique([workflowId, version])。锁协议与 Go 侧一致：
+    // 同一条 SQL、同一把行锁（两个进程会同时发布，不能用应用层 mutex）。
     const published = await this.prisma.$transaction(async (tx) => {
-      const version = await tx.crawlStrategyWorkflowVersion.create({
-        data: {
-          workflowId: workflow.id,
-          orgId,
-          version: nextVersion,
-          name: versionName,
-          description,
-          definition: toPrismaJsonValue(definition),
-          createdById: actorId,
-        },
-      });
-      const updatedWorkflow = await tx.crawlStrategyWorkflow.update({
-        where: { id: workflow.id },
-        data: {
-          description,
-          publishedVersionId: version.id,
-          updatedById: actorId,
-        },
-        include: {
-          publishedVersion: true,
-          versions: {
-            orderBy: [{ version: 'desc' }],
-            take: 10,
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM CrawlStrategyWorkflow WHERE id = ${workflow.id} AND orgId = ${orgId} FOR UPDATE
+      `;
+      if (locked.length === 0) {
+        throw new NotFoundException('Workflow not found');
+      }
+
+      const insertVersion = async () => {
+        // MySQL 默认可重复读：锁等待之后的普通 SELECT 可能仍看见旧快照，
+        // 所以 MAX 这条也必须是 FOR UPDATE（当前读），不能用普通 SELECT。
+        const maxRows = await tx.$queryRaw<
+          Array<{ maxVersion: number | bigint | null }>
+        >`
+          SELECT COALESCE(MAX(version), 0) AS maxVersion FROM CrawlStrategyWorkflowVersion WHERE workflowId = ${workflow.id} FOR UPDATE
+        `;
+        const nextVersion = Number(maxRows[0]?.maxVersion ?? 0) + 1;
+        const createdVersion = await tx.crawlStrategyWorkflowVersion.create({
+          data: {
+            workflowId: workflow.id,
+            orgId,
+            version: nextVersion,
+            name: versionName,
+            description,
+            definition: toPrismaJsonValue(definition),
+            createdById: actorId,
           },
-        },
-      });
-      return { version, workflow: updatedWorkflow };
+        });
+        const updatedWorkflow = await tx.crawlStrategyWorkflow.update({
+          where: { id: workflow.id, orgId },
+          data: {
+            description,
+            publishedVersionId: createdVersion.id,
+            updatedById: actorId,
+          },
+          include: {
+            publishedVersion: true,
+            versions: {
+              orderBy: [{ version: 'desc' }],
+              take: 10,
+            },
+          },
+        });
+        return { version: createdVersion, workflow: updatedWorkflow };
+      };
+
+      try {
+        return await insertVersion();
+      } catch (error) {
+        if (isUniqueConflict(error)) {
+          // 唯一冲突没有在锁协议下消失时：同一事务内重取 MAX 再插一次，
+          // 不把 P2002 返回成 500。
+          return await insertVersion();
+        }
+        throw error;
+      }
     });
 
     return {
@@ -1100,4 +1128,13 @@ export class CrawlStrategyWorkflowService {
       },
     };
   }
+}
+
+// 版本号唯一冲突（@@unique([workflowId, version])）判定：发布路径在
+// 持锁后仍遇到时，同一事务内重取 MAX 再插一次，不把 P2002 返回成 500。
+function isUniqueConflict(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
+  );
 }

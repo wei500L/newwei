@@ -99,6 +99,12 @@ type updateDraftInput struct {
 	DraftDefinition json.RawMessage
 }
 
+type publishInput struct {
+	VersionName    *string
+	DescriptionSet bool
+	Description    *string
+}
+
 type compareInput struct {
 	LeftVersionID  string
 	RightVersionID string
@@ -162,6 +168,36 @@ func validateUpdateDraft(fields []orderedField) (updateDraftInput, error) {
 	}
 	if len(messages) > 0 {
 		return updateDraftInput{}, &inputError{Message: strings.Join(messages, "; ")}
+	}
+	return input, nil
+}
+
+// validatePublish 对齐 PublishCrawlStrategyWorkflowDto。
+func validatePublish(fields []orderedField) (publishInput, error) {
+	messages := unknownFieldMessages(fields, map[string]bool{
+		"versionName": true, "description": true,
+	})
+	input := publishInput{}
+	if raw, present := fieldValue(fields, "versionName"); present && !isJSONNull(raw) {
+		if text, ok := jsString(raw); !ok {
+			messages = append(messages,
+				"versionName must be shorter than or equal to 200 characters",
+				"versionName must be a string")
+		} else if jsMaxLengthLen(text) > 200 {
+			messages = append(messages, "versionName must be shorter than or equal to 200 characters")
+		} else if text == "" {
+			messages = append(messages, "versionName should not be empty")
+		} else {
+			input.VersionName = &text
+		}
+	}
+	description, set, descOK := checkDescription(fields, &messages)
+	if descOK {
+		input.DescriptionSet = set
+		input.Description = description
+	}
+	if len(messages) > 0 {
+		return publishInput{}, &inputError{Message: strings.Join(messages, "; ")}
 	}
 	return input, nil
 }
