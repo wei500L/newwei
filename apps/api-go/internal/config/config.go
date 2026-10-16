@@ -182,6 +182,17 @@ const (
 	NewsSourcesModeGo     NewsSourcesMode = "go"
 )
 
+// CrawlWorkflowsMode 只控制采集策略工作流的编辑接口。默认 legacy。
+// go 只接管列表、详情、创建、草稿、发布、版本、对比、节点 schema 和两条
+// bridge；trial-run、replay、workflow-runs、profiles 列表/创建/预览/回滚，
+// 以及 runs 与 nodes 仍回 NestJS。不启动采集，不入队。
+type CrawlWorkflowsMode string
+
+const (
+	CrawlWorkflowsModeLegacy CrawlWorkflowsMode = "legacy"
+	CrawlWorkflowsModeGo     CrawlWorkflowsMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -323,6 +334,9 @@ type Config struct {
 	// NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	NewsSourcesMode NewsSourcesMode
+	// CrawlWorkflowsMode 只控制采集策略工作流编辑接口。默认 legacy。
+	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
+	CrawlWorkflowsMode CrawlWorkflowsMode
 	GraphQLAPQEnabled     bool
 	GraphQLDepthLimit     int
 	GraphQLComplexity     int
@@ -657,6 +671,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.NewsSourcesMode = NewsSourcesModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_SOURCES_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_WORKFLOWS_MODE")) {
+	case "", string(CrawlWorkflowsModeLegacy):
+		cfg.CrawlWorkflowsMode = CrawlWorkflowsModeLegacy
+	case string(CrawlWorkflowsModeGo):
+		cfg.CrawlWorkflowsMode = CrawlWorkflowsModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_WORKFLOWS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
@@ -1000,6 +1022,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.NewsSourcesMode == NewsSourcesModeGo {
 		appendAuthRequirements(&errs, "API_GO_NEWS_SOURCES_MODE", cfg)
+	}
+	if cfg.CrawlWorkflowsMode == CrawlWorkflowsModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_WORKFLOWS_MODE", cfg)
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
