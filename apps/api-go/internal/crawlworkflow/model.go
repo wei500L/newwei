@@ -19,11 +19,8 @@ func (t *nestTime) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Time(*t).UTC().Format("2006-01-02T15:04:05.000Z"))
 }
 
-func nestFromNull(value sql.NullTime) *nestTime {
-	if !value.Valid {
-		return nil
-	}
-	out := nestTime(value.Time)
+func nestFromTime(value time.Time) *nestTime {
+	out := nestTime(value)
 	return &out
 }
 
