@@ -191,7 +191,7 @@ export class CrawlStrategyWorkflowService {
     // @@unique([workflowId, version])。锁协议与 Go 侧一致：
     // 同一条 SQL、同一把行锁（两个进程会同时发布，不能用应用层 mutex）。
     const published = await this.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM CrawlStrategyWorkflow WHERE id = ${workflow.id} AND orgId = ${orgId} FOR UPDATE
       `;
       if (locked.length === 0) {
@@ -202,7 +202,7 @@ export class CrawlStrategyWorkflowService {
         // MySQL 默认可重复读：锁等待之后的普通 SELECT 可能仍看见旧快照，
         // 所以 MAX 这条也必须是 FOR UPDATE（当前读），不能用普通 SELECT。
         const maxRows = await tx.$queryRaw<
-          Array<{ maxVersion: number | bigint | null }>
+          { maxVersion: number | bigint | null }[]
         >`
           SELECT COALESCE(MAX(version), 0) AS maxVersion FROM CrawlStrategyWorkflowVersion WHERE workflowId = ${workflow.id} FOR UPDATE
         `;
