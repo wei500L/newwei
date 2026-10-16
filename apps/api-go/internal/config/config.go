@@ -204,6 +204,16 @@ const (
 	CrawlProfilesModeGo     CrawlProfilesMode = "go"
 )
 
+// RbacMode 只控制组织访问控制的六条 HTTP（/api/rbac/*）。默认 legacy。
+// go 时只接管 permissions、roles（GET/POST）、assign、members、audit-logs；
+// 其他方法与更长路径仍回 NestJS，也不新增 updateRole 的 HTTP。
+type RbacMode string
+
+const (
+	RbacModeLegacy RbacMode = "legacy"
+	RbacModeGo     RbacMode = "go"
+)
+
 // CrawlTemplatesMode 只控制采集模板（admin/crawl-templates）的 4 条编辑
 // 接口。默认 legacy。go 只接管列表、创建、更新、删除这 4 条；
 // crawl-tasks、crawl4ai 队列与 metadata 仍回 NestJS。不启用 shadow，
@@ -362,6 +372,9 @@ type Config struct {
 	// CrawlProfilesMode 只控制采集站点画像编辑接口。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	CrawlProfilesMode CrawlProfilesMode
+	// RbacMode 只控制组织访问控制六条 HTTP。默认 legacy。
+	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动任何 worker。
+	RbacMode RbacMode
 	// CrawlTemplatesMode 只控制采集模板编辑接口。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	CrawlTemplatesMode   CrawlTemplatesMode
@@ -715,6 +728,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.CrawlProfilesMode = CrawlProfilesModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_PROFILES_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_RBAC_MODE")) {
+	case "", string(RbacModeLegacy):
+		cfg.RbacMode = RbacModeLegacy
+	case string(RbacModeGo):
+		cfg.RbacMode = RbacModeGo
+	default:
+		errs = append(errs, "API_GO_RBAC_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_TEMPLATES_MODE")) {
 	case "", string(CrawlTemplatesModeLegacy):
@@ -1072,6 +1093,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.CrawlProfilesMode == CrawlProfilesModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_PROFILES_MODE", cfg)
+	}
+	if cfg.RbacMode == RbacModeGo {
+		appendAuthRequirements(&errs, "API_GO_RBAC_MODE", cfg)
 	}
 	if cfg.CrawlTemplatesMode == CrawlTemplatesModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_TEMPLATES_MODE", cfg)

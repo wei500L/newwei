@@ -246,30 +246,60 @@ export class RbacService {
     );
 
     const membership = await this.prisma.$transaction(async (tx) => {
-      const updatedMembership = await tx.membership.upsert({
-        where: {
-          userId_orgId: {
+      // 先锁住该成员行（当前读）：同一成员的并发分配在此串行化，否则两条
+      // 请求可以都通过前置检查，再互相删掉对方刚插入的角色，成员最后没有
+      // 角色。
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM Membership WHERE userId = ${dto.userId} AND orgId = ${orgId} FOR UPDATE
+      `;
+      let membershipId: string | undefined = locked[0]?.id;
+      if (!membershipId) {
+        // 目标还不是本组织成员：保持现有 upsert 创建行为，创建后在同一
+        // 事务里再次锁住新行，再替换 membershipRole。
+        await tx.membership.upsert({
+          where: {
+            userId_orgId: {
+              userId: dto.userId,
+              orgId,
+            },
+          },
+          create: {
             userId: dto.userId,
             orgId,
+            roleId: dto.roleId,
           },
-        },
-        create: {
-          userId: dto.userId,
-          orgId,
-          roleId: dto.roleId,
-        },
-        update: {
-          roleId: dto.roleId,
-        },
-      });
+          update: {
+            roleId: dto.roleId,
+          },
+        });
+        const createdLocked = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM Membership WHERE userId = ${dto.userId} AND orgId = ${orgId} FOR UPDATE
+        `;
+        membershipId = createdLocked[0]?.id;
+        if (!membershipId) {
+          throw new Error("Membership lock failed");
+        }
+      } else {
+        await tx.membership.update({
+          where: {
+            userId_orgId: {
+              userId: dto.userId,
+              orgId,
+            },
+          },
+          data: {
+            roleId: dto.roleId,
+          },
+        });
+      }
 
       await tx.membershipRole.deleteMany({
-        where: { membershipId: updatedMembership.id },
+        where: { membershipId },
       });
       await tx.membershipRole.createMany({
         data: [
           {
-            membershipId: updatedMembership.id,
+            membershipId,
             roleId: dto.roleId,
             orgId,
           },
@@ -277,7 +307,7 @@ export class RbacService {
       });
 
       return tx.membership.findUniqueOrThrow({
-        where: { id: updatedMembership.id },
+        where: { id: membershipId },
         include: {
           user: true,
           role: {
