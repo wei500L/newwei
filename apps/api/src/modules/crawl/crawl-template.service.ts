@@ -73,7 +73,7 @@ export class CrawlTemplateService {
       }
     }
 
-    return this.prisma.crawlTemplate.update({ where: { id }, data });
+    return this.prisma.crawlTemplate.update({ where: { id, orgId }, data });
   }
 
   async deleteTemplate(orgId: string, id: string) {
@@ -81,7 +81,7 @@ export class CrawlTemplateService {
     if (!existing || existing.orgId !== orgId) {
       throw new NotFoundException("Crawl template not found");
     }
-    await this.prisma.crawlTemplate.delete({ where: { id } });
+    await this.prisma.crawlTemplate.delete({ where: { id, orgId } });
     return { ok: true };
   }
 
