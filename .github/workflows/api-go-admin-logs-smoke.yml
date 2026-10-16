@@ -145,6 +145,7 @@ jobs:
                        audit_path, admin_errors_path, admin_errors_stats_path]
           # 跨组织标记：另一组织的数据不得出现在本组织的任一响应里。
           foreign_markers = ["smoke-beta", "beta-job-1", "beta-evt-1", "smoke-beta-audit"]
+          org_a_markers = ["smoke-alpha", "alpha-job-1", "alpha-evt-1"]
 
           def fail(message):
               print("FAIL", message)
@@ -481,15 +482,23 @@ jobs:
               fail(f"admin/errors bad date {status} {raw[:300]!r}")
 
           # 7. 另一组织的用户在 7 条上只看到自己的数据；本组织看不到它的。
+          #    注意：NestJS 登录会写一条 resource="auth" 的审计日志，抛出的
+          #    4xx/5xx 也会记一条异常事件——所以**不能**按插入行数断言总数，
+          #    这里断言「自己的数据可见、别人的数据不可见」。
           for path in all_paths:
-              payload = ok(path, token_b)
-              text = json.dumps(payload, ensure_ascii=False)
-              if "smoke-alpha" in text or "alpha-evt-1" in text:
-                  fail(f"org B leaked org A rows: {path} {text[:400]!r}")
-          if ok(audit_path, token_b).get("total") != 1:
-              fail("org B audit total")
-          if ok(admin_errors_stats_path, token_b).get("total") != 1:
-              fail("org B stats total")
+              text = json.dumps(ok(path, token_b), ensure_ascii=False)
+              for marker in org_a_markers:
+                  if marker in text:
+                      fail(f"org B leaked org A rows: {path} {marker} {text[:400]!r}")
+          for path, marker in (
+              (task_path, "beta-job-1"),
+              (errors_path, "beta-evt-1"),
+              (admin_errors_path, "beta-evt-1"),
+              (audit_path, "smoke-beta-audit"),
+          ):
+              text = json.dumps(ok(path, token_b), ensure_ascii=False)
+              if marker not in text:
+                  fail(f"org B cannot see its own data via {path}: {text[:400]!r}")
 
           # 8. 没有 settings.manage 的用户在 7 条上都是 403；有效机器令牌是 200。
           for path in all_paths:
