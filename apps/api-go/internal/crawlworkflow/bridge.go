@@ -179,8 +179,8 @@ func normalizeProfileConfig(raw []byte) (*profileBridgeConfig, error) {
 		resolved.ScoreThreshold = &scoreThreshold
 		config.LayeredOptions = resolved
 	}
-	if optionsRaw, ok := decodeRawObject(value["crawlOptions"]); ok {
-		if err := assertNoCrawl4aiLlmOptions(optionsRaw, "crawlSiteProfile.config.crawlOptions"); err != nil {
+	if _, ok := decodeRawObject(value["crawlOptions"]); ok {
+		if err := assertNoCrawl4aiLlmOptions(value["crawlOptions"], "crawlSiteProfile.config.crawlOptions"); err != nil {
 			return nil, err
 		}
 		config.CrawlOptions = cloneRaw(value["crawlOptions"])

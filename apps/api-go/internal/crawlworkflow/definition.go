@@ -237,14 +237,14 @@ func normalizeNode(entry map[string]json.RawMessage, index int, base WorkflowDef
 		idPrefix = baseNode.Type
 	}
 	id := ""
-	if trimmed, ok := jsTrimmed(entry["id"]); ok {
+	if trimmed := jsTrimmed(entry["id"]); trimmed != nil {
 		id = *trimmed
 	} else {
 		id = idPrefix + "-" + strconv.Itoa(index+1)
 	}
 
 	label := ""
-	if trimmed, ok := jsTrimmed(entry["label"]); ok {
+	if trimmed := jsTrimmed(entry["label"]); trimmed != nil {
 		label = *trimmed
 	} else if hasSchema {
 		label = schema.DefaultLabel
@@ -281,17 +281,17 @@ func normalizeNode(entry map[string]json.RawMessage, index int, base WorkflowDef
 
 func normalizeEdge(entry map[string]json.RawMessage, index int) WorkflowEdge {
 	id := ""
-	if trimmed, ok := jsTrimmed(entry["id"]); ok {
+	if trimmed := jsTrimmed(entry["id"]); trimmed != nil {
 		id = *trimmed
 	} else {
 		id = "edge-" + strconv.Itoa(index+1)
 	}
 	source := ""
-	if trimmed, ok := jsTrimmed(entry["source"]); ok {
+	if trimmed := jsTrimmed(entry["source"]); trimmed != nil {
 		source = *trimmed
 	}
 	target := ""
-	if trimmed, ok := jsTrimmed(entry["target"]); ok {
+	if trimmed := jsTrimmed(entry["target"]); trimmed != nil {
 		target = *trimmed
 	}
 	edge := WorkflowEdge{
@@ -325,11 +325,11 @@ func normalizeSettings(settings map[string]json.RawMessage, base WorkflowSetting
 	out.TimeoutMs = jsNumberOr(settings["timeoutMs"], base.TimeoutMs)
 	out.Concurrency = jsNumberOr(settings["concurrency"], base.Concurrency)
 	out.RobotsPolicy = "respect"
-	if robots, ok := jsTrimmed(settings["robotsPolicy"]); ok && *robots == "ignore" {
+	if robots := jsTrimmed(settings["robotsPolicy"]); robots != nil && *robots == "ignore" {
 		out.RobotsPolicy = "ignore"
 	}
 	out.DomainScope = "registrable_domain"
-	if scope, ok := jsTrimmed(settings["domainScope"]); ok {
+	if scope := jsTrimmed(settings["domainScope"]); scope != nil {
 		switch *scope {
 		case "strict_hosts":
 			out.DomainScope = "strict_hosts"
