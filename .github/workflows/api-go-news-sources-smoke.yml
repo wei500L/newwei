@@ -1,0 +1,498 @@
+# 新闻源管理台十五条 HTTP 的真实栈验收。不进普通 CI。
+# PR 上加 label api-go-news-sources-smoke，或 workflow_dispatch。
+# SCHEDULE_ENABLED 保持 false。不把 crawl4ai、RSS 实网、模型、AkShare 或 Nominatim 当通过。
+name: api-go-news-sources-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-news-sources-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-smoke@example.com
+  SMTP_PASS: api-go-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-smoke-org
+  SEED_ORG_NAME: api-go Smoke Org
+  SEED_ADMIN_EMAIL: api-go-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoSmoke#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-news-sources-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-news-sources-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-news:ci .
+      - name: Exercise news source routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import hashlib, json, os, signal, subprocess, time, urllib.error, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+          org = "cnsorgsmoke0000000000001"
+          other = "cnsorgother0000000000001"
+          disabled = "cnsorgdisabled0000000001"
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def sql(statement):
+              cid = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=mysql:8.4"], text=True).split()[0]
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"], input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          def redis_jobs():
+              cid = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=redis:7.2"], text=True).split()[0]
+              proc = subprocess.run(["docker", "exec", cid, "redis-cli", "--scan", "--pattern", "bull:crawl4ai*"], text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return len([line for line in proc.stdout.splitlines() if line.strip()])
+
+          def start_go(mode):
+              subprocess.run(["docker", "rm", "-f", "api-go-news"], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  f"API_GO_NEWS_SOURCES_MODE={mode}",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  f"JWT_SECRET={os.environ['JWT_SECRET']}",
+                  f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
+                  f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
+              ]
+              cmd = ["docker", "run", "-d", "--name", "api-go-news",
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append("api-go-news:ci")
+              subprocess.check_call(cmd)
+              for _ in range(30):
+                  status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}", "api-go-news"], text=True).strip()
+                  print("health", status, "mode", mode)
+                  if status == "healthy":
+                      return
+                  if status == "unhealthy":
+                      fail(subprocess.check_output(["docker", "logs", "api-go-news"], text=True)[-4000:])
+                  time.sleep(2)
+              fail(subprocess.check_output(["docker", "logs", "api-go-news"], text=True)[-4000:])
+
+          def call(base, path, method="GET", token=None, payload=None):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              return json.loads(raw)
+
+          def core(value):
+              if isinstance(value, dict):
+                  return {key: core(item) for key, item in value.items() if key not in ("traceId", "timestamp")}
+              if isinstance(value, list):
+                  return [core(item) for item in value]
+              return value
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+          def login(email):
+              status, raw = call(nest, "/api/auth/login", "POST", payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:400]!r}")
+              return doc["accessToken"]
+
+          def same(path, method="GET", token=None, payload=None):
+              left_status, left_raw = call(nest, path, method, token, payload)
+              right_status, right_raw = call(go, path, method, token, payload)
+              if left_status != right_status or core(body(left_raw)) != core(body(right_raw)):
+                  fail(f"parity {method} {path} nest={left_status} {left_raw[:500]!r} go={right_status} {right_raw[:500]!r}")
+              return left_status, body(left_raw)
+
+          admin = scalar("SELECT id FROM User WHERE email='api-go-smoke-admin@example.com'")
+          read_perm = scalar("SELECT id FROM Permission WHERE name='crawl.read'")
+          write_perm = scalar("SELECT id FROM Permission WHERE name='crawl.write'")
+          sql(f"""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('{org}', 'News Sources Smoke', 'news-sources-smoke', 1, NOW(3), NOW(3)),
+            ('{other}', 'News Sources Other', 'news-sources-other', 1, NOW(3), NOW(3)),
+            ('{disabled}', 'News Sources Disabled', 'news-sources-disabled', 0, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, isSystem, orgId) VALUES
+            ('cnsrolewriter000000000001', 'ns-writer', 0, '{org}'),
+            ('cnstrolereader00000000001', 'ns-reader', 0, '{org}'),
+            ('cnsrolenone00000000000001', 'ns-none', 0, '{org}'),
+            ('cnsrolestale0000000000001', 'ns-stale', 0, '{org}'),
+            ('cnsroleother0000000000001', 'ns-other', 0, '{other}');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('cnspermwriterread00000001', 'cnsrolewriter000000000001', '{read_perm}'),
+            ('cnspermwriterwrite0000001', 'cnsrolewriter000000000001', '{write_perm}'),
+            ('cnspermreaderread00000001', 'cnstrolereader00000000001', '{read_perm}'),
+            ('cnspermstaleread000000001', 'cnsrolestale0000000000001', '{read_perm}'),
+            ('cnspermstalewrite00000001', 'cnsrolestale0000000000001', '{write_perm}');
+          INSERT INTO NewsSource (id, orgId, name, url, createdAt, updatedAt)
+          VALUES ('cnsothersource00000000001', '{other}', 'Other', 'https://example.com/other-org-only', NOW(3), NOW(3));
+          """)
+          users = [
+              ("cnsuserwriter000000000001", "ns-writer@example.com", org, "cnsrolewriter000000000001"),
+              ("cnsuserreader000000000001", "ns-reader@example.com", org, "cnstrolereader00000000001"),
+              ("cnsusernone00000000000001", "ns-none@example.com", org, "cnsrolenone00000000000001"),
+              ("cnsuserstale0000000000001", "ns-stale@example.com", org, "cnsrolestale0000000000001"),
+              ("cnsuserother0000000000001", "ns-other@example.com", other, "cnsroleother0000000000001"),
+          ]
+          for user_id, email, user_org, role_id in users:
+              sql(f"""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '{admin}';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('m{user_id[1:]}', '{user_id}', '{user_org}', '{role_id}', 1, NOW(3));
+              """)
+
+          def token_row(token_id, token, permissions, org_id, extra=""):
+              digest = hashlib.sha256(token.encode()).hexdigest()
+              column = ""
+              value = ""
+              if extra:
+                  name, raw = extra.split("=", 1)
+                  column = ", " + name
+                  value = ", " + raw
+              sql(
+                  "INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, createdAt, updatedAt"
+                  + column
+                  + ") VALUES ("
+                  + f"'{token_id}', '{org_id}', 'smoke', '{digest}', CAST('{permissions}' AS JSON), NOW(3), NOW(3)"
+                  + value
+                  + ");"
+              )
+
+          machine_ok = "mtk_news_sources_smoke_writer_token_0001"
+          machine_weak = "mtk_news_sources_smoke_weak_token_000001"
+          machine_revoked = "mtk_news_sources_smoke_revoked_token_0001"
+          machine_expired = "mtk_news_sources_smoke_expired_token_0001"
+          machine_disabled = "mtk_news_sources_smoke_disabled_org_00001"
+          token_row("cnsmachineok0000000000001", machine_ok, '["crawl.read","crawl.write"]', org)
+          token_row("cnsmachineweak00000000001", machine_weak, '["items.read"]', org)
+          token_row("cnsmachinerevoked000000001", machine_revoked, '["crawl.read","crawl.write"]', org, "revokedAt=NOW(3)")
+          token_row("cnsmachineexpired000000001", machine_expired, '["crawl.read","crawl.write"]', org, "expiresAt='2000-01-01 00:00:00.000'")
+          token_row("cnsmachinedisabled00000001", machine_disabled, '["crawl.read","crawl.write"]', disabled)
+
+          start_go("legacy")
+          tokens = {email: login(email) for _, email, _, _ in users}
+          open("/tmp/smoke-jwt-writer", "w").write(tokens["ns-writer@example.com"])
+          writer = tokens["ns-writer@example.com"]
+
+          status, presets = same("/api/admin/news-sources/opml-presets", "GET", writer)
+          if status != 200 or not any(item.get("id") == "hn_popular_blogs_2025" for item in presets):
+              fail(f"presets {status} {presets}")
+          status, options = same("/api/admin/news-sources/options", "GET", writer)
+          if status != 200 or any(item.get("url") == "https://example.com/other-org-only" for item in options):
+              fail(f"options leaked {options}")
+          status, groups = same("/api/admin/news-sources/groups", "GET", writer)
+          if status != 200 or groups != []:
+              fail(f"groups {groups}")
+
+          def create(base, name, url):
+              return call(base, "/api/admin/news-sources", "POST", writer, {"name": name, "url": url})
+
+          nest_status, nest_raw = create(nest, "Nest Direct", "https://example.com/legacy-nest")
+          go_status, go_raw = create(go, "Go Proxy", "https://example.com/legacy-proxy")
+          nest_doc, go_doc = body(nest_raw), body(go_raw)
+          if nest_status != 201 or go_status != 201 or not nest_doc.get("id") or not go_doc.get("id"):
+              fail(f"legacy create {nest_status} {nest_raw[:300]!r} {go_status} {go_raw[:300]!r}")
+          if nest_doc.get("url") != "https://example.com/legacy-nest" or go_doc.get("url") != "https://example.com/legacy-proxy":
+              fail(f"legacy create url {nest_doc} {go_doc}")
+          nest_conflict = create(nest, "Nest Direct 2", "https://example.com/legacy-nest")
+          go_conflict = create(go, "Go Proxy 2", "https://example.com/legacy-proxy")
+          if nest_conflict[0] != 409 or go_conflict[0] != 409:
+              fail(f"legacy conflict status {nest_conflict[0]} {go_conflict[0]} {nest_conflict[1][:300]!r} {go_conflict[1][:300]!r}")
+          if message(nest_conflict[1]) != "News source URL already exists" or message(nest_conflict[1]) != message(go_conflict[1]):
+              fail(f"legacy conflict message {message(nest_conflict[1])} {message(go_conflict[1])}")
+          nest_delete = call(nest, f"/api/admin/news-sources/{nest_doc['id']}", "DELETE", writer)
+          go_delete = call(go, f"/api/admin/news-sources/{go_doc['id']}", "DELETE", writer)
+          if nest_delete[0] != 200 or go_delete[0] != 200 or body(nest_delete[1]) != {"ok": True} or body(go_delete[1]) != {"ok": True}:
+              fail(f"legacy delete {nest_delete} {go_delete}")
+          status, missing = same("/api/admin/news-sources/missing-news-source", "DELETE", writer)
+          if status != 404 or (missing or {}).get("message") != "News source not found":
+              fail(f"legacy 404 {status} {missing}")
+          unsafe_payloads = [
+              {"name": "Loopback", "url": "http://127.0.0.1/"},
+              {"name": "Metadata IP", "url": "http://169.254.169.254/"},
+              {"name": "Metadata Host", "url": "http://metadata.google.internal/computeMetadata/v1/"},
+          ]
+          unsafe_messages = []
+          for payload in unsafe_payloads:
+              status, doc = same("/api/admin/news-sources", "POST", writer, payload)
+              if status != 400 or not doc or not doc.get("message"):
+                  fail(f"legacy unsafe {payload['url']} {status} {doc}")
+              unsafe_messages.append(doc["message"])
+              if scalar(f"SELECT COUNT(*) FROM NewsSource WHERE url='{payload['url']}'") != "0":
+                  fail(f"legacy unsafe stored {payload['url']}")
+          print("legacy parity ok")
+
+          start_go("go")
+          if call(go, "/api/admin/news-sources", "GET", tokens["ns-reader@example.com"])[0] != 200:
+              fail("reader list failed")
+          reader_create = call(go, "/api/admin/news-sources", "POST", tokens["ns-reader@example.com"], {"name": "Nope", "url": "https://example.com/reader"})
+          if reader_create[0] != 403:
+              fail(f"reader create {reader_create}")
+          if call(go, "/api/admin/news-sources", "GET", tokens["ns-none@example.com"])[0] != 403:
+              fail("missing permission was not 403")
+          if call(go, "/api/admin/news-sources", "POST", tokens["ns-none@example.com"], {"name": "Nope", "url": "https://example.com/none"})[0] != 403:
+              fail("missing write permission was not 403")
+          listed = body(call(go, "/api/admin/news-sources", "GET", writer)[1])
+          if any(item.get("url") == "https://example.com/other-org-only" for item in listed.get("sources", [])):
+              fail("cross org source listed")
+          for method, path, payload in (
+              ("PATCH", "/api/admin/news-sources/cnsothersource00000000001", {"name": "stolen"}),
+              ("DELETE", "/api/admin/news-sources/cnsothersource00000000001", None),
+              ("POST", "/api/admin/news-sources/cnsothersource00000000001/run", None),
+              ("POST", "/api/admin/news-sources/cnsothersource00000000001/schedule", {"nextRunAt": "2026-12-01T00:00:00.000Z"}),
+          ):
+              status, raw = call(go, path, method, writer, payload)
+              if status != 404 or message(raw) != "News source not found":
+                  fail(f"cross org {method} {status} {raw[:300]!r}")
+          if scalar("SELECT COUNT(*) FROM NewsSource WHERE id='cnsothersource00000000001' AND orgId='" + other + "'") != "1":
+              fail("cross org row changed")
+          machine_list = call(go, "/api/admin/news-sources", "GET", machine_ok)
+          machine_create = call(go, "/api/admin/news-sources", "POST", machine_ok, {"name": "Machine", "url": "https://example.com/machine"})
+          if machine_list[0] != 200 or machine_create[0] != 201:
+              fail(f"machine token {machine_list[0]} {machine_create[0]} {machine_create[1][:300]!r}")
+          if call(go, "/api/admin/news-sources", "GET", machine_weak)[0] != 403 or call(go, "/api/admin/news-sources", "POST", machine_weak, {"name": "Weak", "url": "https://example.com/weak"})[0] != 403:
+              fail("weak machine token was accepted")
+          for token in (machine_revoked, machine_expired, machine_disabled):
+              if call(go, "/api/admin/news-sources", "GET", token)[0] != 401:
+                  fail(f"machine token should fail {token}")
+          stale = tokens["ns-stale@example.com"]
+          sql(f"DELETE FROM RolePermission WHERE id='cnspermstalewrite00000001'")
+          stale_create = call(go, "/api/admin/news-sources", "POST", stale, {"name": "Stale", "url": "https://example.com/stale"})
+          if stale_create[0] != 403:
+              fail(f"stale jwt permission was trusted {stale_create}")
+          for payload, expected in zip(unsafe_payloads, unsafe_messages):
+              status, raw = call(go, "/api/admin/news-sources", "POST", writer, payload)
+              if status != 400 or message(raw) != expected:
+                  fail(f"go unsafe {payload['url']} {status} {message(raw)!r} want {expected!r}")
+              if scalar(f"SELECT COUNT(*) FROM NewsSource WHERE url='{payload['url']}'") != "0":
+                  fail(f"go unsafe stored {payload['url']}")
+          before_tasks = scalar("SELECT COUNT(*) FROM CrawlTask")
+          before_jobs = scalar("SELECT COUNT(*) FROM PipelineJob")
+          before_queue = redis_jobs()
+          created = call(go, "/api/admin/news-sources", "POST", writer, {"name": "Public", "url": "https://example.com"})
+          created_doc = body(created[1])
+          if created[0] != 201 or not created_doc or created_doc.get("url") != "https://example.com" or created_doc.get("orgId") != org:
+              fail(f"go create {created[0]} {created[1][:400]!r}")
+          source_id = created_doc["id"]
+          ran = call(go, f"/api/admin/news-sources/{source_id}/run", "POST", writer)
+          if ran[0] != 201:
+              fail(f"run {ran[0]} {ran[1][:300]!r}")
+          flags = scalar(f"SELECT CONCAT(isActive, ',', IF(nextRunAt IS NULL, 'null', 'set'), ',', IF(circuitOpenUntil IS NULL, 'null', 'open')) FROM NewsSource WHERE id='{source_id}' AND orgId='{org}'")
+          if flags != "1,set,null":
+              fail(f"run flags {flags}")
+          if scalar("SELECT COUNT(*) FROM CrawlTask") != before_tasks or scalar("SELECT COUNT(*) FROM PipelineJob") != before_jobs or redis_jobs() != before_queue:
+              fail(f"run enqueued tasks={scalar('SELECT COUNT(*) FROM CrawlTask')} jobs={scalar('SELECT COUNT(*) FROM PipelineJob')} redis={redis_jobs()}")
+          scheduled = call(go, f"/api/admin/news-sources/{source_id}/schedule", "POST", writer, {"nextRunAt": "2026-12-01T00:00:00.000Z"})
+          if scheduled[0] != 201:
+              fail(f"schedule {scheduled}")
+          stored_next = scalar(f"SELECT DATE_FORMAT(nextRunAt, '%Y-%m-%dT%H:%i:%s.000Z') FROM NewsSource WHERE id='{source_id}'")
+          if stored_next != "2026-12-01T00:00:00.000Z":
+              fail(f"schedule nextRunAt {stored_next}")
+          if scalar("SELECT COUNT(*) FROM CrawlTask") != before_tasks or redis_jobs() != before_queue:
+              fail("schedule enqueued work")
+          opml_entry = {
+              "name": "OPML Example",
+              "url": "https://example.com/opml-site",
+              "feedUrl": "https://example.com/opml-site/rss.xml",
+          }
+          imported = call(go, "/api/admin/news-sources/opml/import", "POST", writer, {"entries": [opml_entry], "conflictPolicy": "skip", "runtimeProfile": "steady"})
+          imported_doc = body(imported[1])
+          if imported[0] != 201 or imported_doc.get("summary", {}).get("created") != 1:
+              fail(f"opml import {imported[0]} {imported[1][:400]!r}")
+          again = body(call(go, "/api/admin/news-sources/opml/import", "POST", writer, {"entries": [opml_entry]})[1])
+          if again.get("summary", {}).get("created") != 0 or again.get("skipped") != [{"name": "OPML Example", "url": "https://example.com/opml-site", "reason": "duplicate"}]:
+              fail(f"opml duplicate {again}")
+          if scalar("SELECT COUNT(*) FROM NewsSource WHERE orgId='" + org + "' AND url='https://example.com/opml-site'") != "1":
+              fail("opml duplicate inserted another row")
+          options = body(call(go, "/api/admin/news-sources/options", "GET", writer)[1])
+          if not any(item.get("id") == source_id for item in options):
+              fail(f"options missing source {options}")
+          if call(go, "/api/admin/news-sources?orgId=" + other, "GET", writer)[0] != 400:
+              fail("query orgId was accepted")
+          print("go switch ok")
+
+          if os.path.exists("/tmp/api-nestjs.pid"):
+              os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+          subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+          subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+          stopped = False
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  stopped = True
+                  break
+              time.sleep(1)
+          if not stopped:
+              fail("nestjs did not stop")
+          alive = open("/tmp/smoke-jwt-writer").read()
+          created = call(go, "/api/admin/news-sources", "POST", alive, {"name": "After Nest", "url": "https://example.com/after-nest"})
+          created_doc = body(created[1])
+          if created[0] != 201 or not created_doc.get("id"):
+              fail(f"create after nest stop {created[0]} {created[1][:300]!r}")
+          listed = call(go, "/api/admin/news-sources", "GET", alive)
+          if listed[0] != 200 or created_doc["id"] not in listed[1].decode():
+              fail(f"list after nest stop {listed[0]} {listed[1][:300]!r}")
+          removed = call(go, f"/api/admin/news-sources/{created_doc['id']}", "DELETE", alive)
+          if removed[0] != 200 or body(removed[1]) != {"ok": True}:
+              fail(f"delete after nest stop {removed}")
+          preview = call(go, f"/api/admin/news-sources/{created_doc['id']}/preview", "GET", alive)
+          if preview[0] != 502:
+              fail(f"preview after nest stop {preview[0]} {preview[1][:300]!r}")
+          print("nest stopped; news sources still succeed; preview stays on Nest")
+          PY

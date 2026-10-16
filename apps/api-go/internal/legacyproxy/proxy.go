@@ -282,6 +282,32 @@ func WithDashboardStream(rules []Rule, mode string) []Rule {
 	return appendExactGET(rules, "/api/dashboard/stream")
 }
 
+// NewsSourcesKey 是新闻源管理台十五条路由的处理器注册键。
+// 静态段（options、groups、opml、batch）是更长的精确路径，不能落到 :id。
+const NewsSourcesKey = "/api/admin/news-sources"
+
+// WithNewsSources 只在 mode 为 go 时接管新闻源管理台的十五条读写路由。
+// GET :id/preview、更长路径和其他方法仍回 NestJS。
+func WithNewsSources(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	base := "/api/admin/news-sources"
+	rules = appendExactKeyed(rules, NewsSourcesKey, base, http.MethodGet, http.MethodPost)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/options", http.MethodGet)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/groups", http.MethodGet)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/opml-presets", http.MethodGet)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch/frequency", http.MethodPost)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/opml/preview", http.MethodPost)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/opml/import", http.MethodPost)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch/group", http.MethodPatch)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch/active", http.MethodPatch)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch", http.MethodDelete)
+	rules = appendSegmentRule(rules, NewsSourcesKey, base+"/", true, false, "", http.MethodPatch, http.MethodDelete)
+	rules = appendSegmentRule(rules, NewsSourcesKey, base+"/", true, false, "/run", http.MethodPost)
+	return appendSegmentRule(rules, NewsSourcesKey, base+"/", true, false, "/schedule", http.MethodPost)
+}
+
 // SituationMonitorsKey 是态势监控自定义监控五条路由的处理器注册键。
 // POST /monitors/preview 是更长的精确路径，不能落到 monitors/:id。
 const SituationMonitorsKey = "/api/situation-monitor/monitors"
