@@ -1,0 +1,507 @@
+# 组织访问控制六条 Go 路由的真实栈验收。不进普通 CI。
+# PR 上加 label api-go-rbac-smoke，或 workflow_dispatch。
+# 使用隔离组织；不调用模型、向量或邮件。生产 Web 与 canary 不介入。
+name: api-go-rbac-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-rbac-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-rbac-smoke@example.com
+  SMTP_PASS: api-go-rbac-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  # 让限流桶足够大，避免验收脚本自身触碰 20/600s 上限（Nest 与 Go 读同一 env）。
+  RATE_LIMIT_RBAC_WRITE: "1000"
+  SEED_ORG_SLUG: api-go-rbac-smoke-org
+  SEED_ORG_NAME: api-go RBAC Smoke Org
+  SEED_ADMIN_EMAIL: api-go-rbac-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoRbac#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-rbac-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-rbac-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-rbac:ci .
+      - name: Exercise RBAC routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, os, signal, subprocess, threading, time, urllib.error, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+          org = "rbacorgsmoke00000000001"
+          other = "rbacorgother00000000001"
+
+          admin_role = "rbacroleadmin000000000001"
+          role_reader = "rbacrolereader000000000001"
+          role_nosettings = "rbacrolenosettings00000001"
+          role_a = "rbacrolerolea00000000001"
+          role_b = "rbacroleroleb00000000001"
+          role_other = "rbacroleother00000000001"
+
+          operator_id = "rbacuseroperator00000001"
+          member2_id = "rbacusermember20000000001"
+          reader_id = "rbacuserreader00000000001"
+          nosettings_id = "rbacusernosettings0000001"
+
+          op_mem = "rbacmemoperator00000001"
+          member2_mem = "rbacmemmember20000000001"
+          reader_mem = "rbacmemreader00000000001"
+          nosettings_mem = "rbacmemnosettings00000001"
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def sql(statement):
+              cid = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=mysql:8.4"], text=True).split()[0]
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"], input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=30):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              return json.loads(text)
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+          def login(email):
+              status, raw = call(nest, "/api/auth/login", "POST", payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:400]!r}")
+              return doc["accessToken"]
+
+          def role_perms(role):
+              if not role:
+                  return None
+              return sorted((item.get("permission") or {}).get("name") for item in role.get("permissions") or [])
+
+          def find_role(roles, role_id):
+              for role in roles or []:
+                  if role.get("id") == role_id:
+                      return role
+              return None
+
+          def normalized_roles(roles):
+              return sorted(
+                  (role.get("id"), role.get("name"), role.get("isSystem"), role.get("description"), tuple(role_perms(role) or []))
+                  for role in roles or []
+              )
+
+          def start_go(rbac_mode):
+              subprocess.run(["docker", "rm", "-f", "api-go-rbac-smoke"], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  f"API_GO_RBAC_MODE={rbac_mode}",
+                  "API_GO_CRAWL_PROFILES_MODE=legacy",
+                  "API_GO_CRAWL_WORKFLOWS_MODE=legacy",
+                  "API_GO_NEWS_SOURCES_MODE=legacy",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "RATE_LIMIT_RBAC_WRITE=1000",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  f"JWT_SECRET={os.environ['JWT_SECRET']}",
+                  f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
+                  f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
+              ]
+              cmd = ["docker", "run", "-d", "--name", "api-go-rbac-smoke",
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append("api-go-rbac:ci")
+              subprocess.check_call(cmd)
+              for _ in range(30):
+                  status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}", "api-go-rbac-smoke"], text=True).strip()
+                  print("health", status, "rbacMode", rbac_mode)
+                  if status == "healthy":
+                      return
+                  if status == "unhealthy":
+                      fail(subprocess.check_output(["docker", "logs", "api-go-rbac-smoke"], text=True)[-4000:])
+                  time.sleep(2)
+              fail(subprocess.check_output(["docker", "logs", "api-go-rbac-smoke"], text=True)[-4000:])
+
+          def expect(base, path, method, token, payload, status, text, label):
+              got_status, raw = call(base, path, method, token, payload)
+              if got_status != status or message(raw) != text:
+                  fail(f"{label}: {method} {path} -> {got_status} {raw[:300]!r}, want {status} {text!r}")
+              return raw
+
+          def assign(target, member, role):
+              return call(target, "/api/rbac/assign", "POST", operator, {"userId": member, "roleId": role})
+
+          def concurrent_assign(target, tag):
+              results = {}
+
+              def worker(name, role):
+                  try:
+                      results[name] = call(target, "/api/rbac/assign", "POST", operator, {"userId": member2_id, "roleId": role})
+                  except Exception as exc:  # noqa: BLE001
+                      results[name] = (0, repr(exc).encode())
+
+              threads = [threading.Thread(target=worker, args=("a", role_a)), threading.Thread(target=worker, args=("b", role_b))]
+              for thread in threads:
+                  thread.start()
+              for thread in threads:
+                  thread.join()
+              for name in ("a", "b"):
+                  if results[name][0] != 201:
+                      fail(f"{tag} concurrent assign {name}: {results[name][0]} {results[name][1][:300]!r}")
+              count = scalar(f"SELECT COUNT(*) FROM MembershipRole WHERE membershipId='{member2_mem}'")
+              role_id = scalar(f"SELECT roleId FROM MembershipRole WHERE membershipId='{member2_mem}'")
+              if count != "1" or role_id not in (role_a, role_b):
+                  fail(f"{tag} concurrent assign left {count} rows roleId={role_id}")
+
+          # ---- 数据准备：隔离组织 + 系统管理员角色 + 操作者/成员/只读用户 ----
+          admin = scalar("SELECT id FROM User WHERE email='api-go-rbac-smoke-admin@example.com'")
+          sql(f"""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('{org}', 'RBAC Smoke', 'rbac-smoke', 1, NOW(3), NOW(3)),
+            ('{other}', 'RBAC Other', 'rbac-other', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, description, isSystem, orgId) VALUES
+            ('{admin_role}', 'admin', NULL, 1, '{org}'),
+            ('{role_reader}', 'rbac-reader', NULL, 0, '{org}'),
+            ('{role_nosettings}', 'rbac-no-settings', NULL, 0, '{org}'),
+            ('{role_a}', 'rbac-role-a', NULL, 0, '{org}'),
+            ('{role_b}', 'rbac-role-b', NULL, 0, '{org}'),
+            ('{role_other}', 'rbac-other', NULL, 0, '{other}');
+          INSERT INTO RolePermission (id, roleId, permissionId)
+            SELECT CONCAT('rpadmin-', id), '{admin_role}', id FROM Permission
+            WHERE name IN ('permissions.read','roles.read','roles.write','users.read','settings.manage');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('rpreader000001', '{role_reader}', (SELECT id FROM Permission WHERE name='roles.read')),
+            ('rpnosettings1', '{role_nosettings}', (SELECT id FROM Permission WHERE name='roles.read')),
+            ('rpnosettings2', '{role_nosettings}', (SELECT id FROM Permission WHERE name='users.read')),
+            ('rpnosettings3', '{role_nosettings}', (SELECT id FROM Permission WHERE name='permissions.read')),
+            ('rprolea000001', '{role_a}', (SELECT id FROM Permission WHERE name='roles.read')),
+            ('rproleb000001', '{role_b}', (SELECT id FROM Permission WHERE name='roles.read')),
+            ('rproleother01', '{role_other}', (SELECT id FROM Permission WHERE name='roles.read'));
+          """)
+          users = [
+              (operator_id, "rbac-operator@example.com", org, admin_role, op_mem),
+              (member2_id, "rbac-member2@example.com", org, role_reader, member2_mem),
+              (reader_id, "rbac-reader@example.com", org, role_reader, reader_mem),
+              (nosettings_id, "rbac-no-settings@example.com", org, role_nosettings, nosettings_mem),
+          ]
+          for user_id, email, user_org, role_id, membership_id in users:
+              sql(f"""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '{admin}';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('{membership_id}', '{user_id}', '{user_org}', '{role_id}', 1, NOW(3));
+              """)
+          # 操作者同时持有系统管理员角色（roles 走 membershipRole）。
+          sql(f"""
+          INSERT INTO MembershipRole (membershipId, orgId, roleId, createdAt)
+          VALUES ('{op_mem}', '{org}', '{admin_role}', NOW(3));
+          """)
+
+          # ---- 阶段 1：开关 legacy，六条经 Go 代理，Nest 是唯一执行者 ----
+          start_go("legacy")
+          operator = login("rbac-operator@example.com")
+          member2 = login("rbac-member2@example.com")
+          reader = login("rbac-reader@example.com")
+          nosettings = login("rbac-no-settings@example.com")
+
+          # 1. legacy 下创建角色 201；Nest 直连读到的 permissions 与 Go 代理一致。
+          create_payload = {"name": "Rbac Smoke Role", "description": " smoke ", "permissions": ["roles.read", "users.read"]}
+          status, raw = call(go, "/api/rbac/roles", "POST", operator, create_payload)
+          created = body(raw)
+          if status != 201 or not created or not created.get("id"):
+              fail(f"legacy create {status} {raw[:300]!r}")
+          role_id = created["id"]
+          if role_perms(created) != ["roles.read", "users.read"]:
+              fail(f"legacy create permissions {created}")
+          nest_roles = body(call(nest, "/api/rbac/roles", "GET", operator)[1])
+          go_roles = body(call(go, "/api/rbac/roles", "GET", operator)[1])
+          if role_perms(find_role(nest_roles, role_id)) != role_perms(find_role(go_roles, role_id)):
+              fail("legacy Nest vs Go permissions mismatch")
+          if scalar(f"SELECT COUNT(*) FROM Role WHERE id='{role_id}' AND orgId='{org}' AND isSystem=0") != "1":
+              fail("created role row wrong")
+
+          # 2. 同名再创建 409。
+          expect(nest, "/api/rbac/roles", "POST", operator, create_payload, 409, "Role name already exists", "legacy dup nest")
+          expect(go, "/api/rbac/roles", "POST", operator, create_payload, 409, "Role name already exists", "legacy dup go")
+
+          # 3/4/5. 空白名 400、保留名 400、超范围 403。
+          expect(go, "/api/rbac/roles", "POST", operator, {"name": "   ", "permissions": ["roles.read"]}, 400, "Role name is required", "legacy blank")
+          expect(go, "/api/rbac/roles", "POST", operator, {"name": "Admin", "permissions": ["roles.read"]}, 400, "System administrator role name is reserved", "legacy reserved")
+          expect(go, "/api/rbac/roles", "POST", operator, {"name": "Rbac Scope Fail", "permissions": ["crawl.write"]}, 403, "Insufficient permission scope for RBAC change", "legacy scope")
+          if scalar(f"SELECT COUNT(*) FROM Role WHERE orgId='{org}' AND name='Rbac Scope Fail'") != "0":
+              fail("scope-fail role was persisted")
+
+          # 6. includeSystem 字面量规则。
+          roles_false = body(call(go, "/api/rbac/roles?includeSystem=false", "GET", operator)[1])
+          if any(role.get("isSystem") for role in roles_false) or find_role(roles_false, admin_role) is not None:
+              fail(f"includeSystem=false leaked a system role: {roles_false}")
+          roles_one = body(call(go, "/api/rbac/roles?includeSystem=1", "GET", operator)[1])
+          if find_role(roles_one, admin_role) is not None:
+              fail("includeSystem=1 leaked a system role")
+          roles_default = body(call(go, "/api/rbac/roles", "GET", operator)[1])
+          if find_role(roles_default, admin_role) is None:
+              fail("default list missing the system role")
+
+          # 7. 分配给非管理员成员：members 里该用户只有这一个角色。
+          status, _ = assign(nest, member2_id, role_a)
+          if status != 201:
+              fail(f"legacy assign member2 {status}")
+          if scalar(f"SELECT COUNT(*) FROM MembershipRole WHERE membershipId='{member2_mem}'") != "1":
+              fail("assign did not leave exactly one membershipRole")
+          members = body(call(nest, "/api/rbac/members", "GET", operator)[1])
+          assigned = next((item for item in members if item.get("userId") == member2_id), None)
+          if not assigned or len(assigned.get("roles") or []) != 1 or (assigned.get("roles") or [{}])[0].get("roleId") != role_a:
+              fail(f"members did not show the single assigned role: {assigned}")
+
+          # 8. Nest 并发两次分配：结束后恰好 1 条（不是 0 条）。
+          concurrent_assign(nest, "nest")
+
+          # 9/10. 分配给自己 403；另一组织 roleId 404。
+          expect(go, "/api/rbac/assign", "POST", operator, {"userId": operator_id, "roleId": role_a}, 403, "System administrators cannot be managed", "legacy self")
+          expect(go, "/api/rbac/assign", "POST", operator, {"userId": member2_id, "roleId": role_other}, 404, "Role not found", "legacy cross-org")
+
+          # 11. 只有 roles.read 不能创建；无 settings.manage 读审计 403。
+          if call(go, "/api/rbac/roles", "POST", reader, {"name": "Rbac Nope", "permissions": ["roles.read"]})[0] != 403:
+              fail("reader create was not 403")
+          if call(go, "/api/rbac/audit-logs", "GET", nosettings)[0] != 403:
+              fail("audit-logs without settings.manage was not 403")
+          if call(go, "/api/rbac/permissions", "GET", operator)[0] != 200:
+              fail("permissions catalog was not 200")
+          print("legacy proxy ok")
+
+          # ---- 阶段 2：开关 go（Nest 仍在运行）----
+          start_go("go")
+
+          # 四个 GET 的契约对照。
+          nest_perms = body(call(nest, "/api/rbac/permissions", "GET", operator)[1])
+          go_perms = body(call(go, "/api/rbac/permissions", "GET", operator)[1])
+          if nest_perms != go_perms:
+              fail("permissions parity mismatch")
+          nest_roles = body(call(nest, "/api/rbac/roles", "GET", operator)[1])
+          go_roles = body(call(go, "/api/rbac/roles", "GET", operator)[1])
+          if normalized_roles(nest_roles) != normalized_roles(go_roles):
+              fail("roles parity mismatch")
+          nest_members = body(call(nest, "/api/rbac/members", "GET", operator)[1])
+          go_members = body(call(go, "/api/rbac/members", "GET", operator)[1])
+          if sorted(item.get("userId") for item in nest_members) != sorted(item.get("userId") for item in go_members):
+              fail("members parity mismatch")
+          status, audit = call(go, "/api/rbac/audit-logs", "GET", operator)
+          if status != 200 or not isinstance(body(audit), list):
+              fail(f"go audit-logs {status} {audit[:200]!r}")
+          if not any(item.get("resource") == "roles" and item.get("action") == "create" for item in body(audit)):
+              fail("go audit-logs missing the role-create record")
+          status, limited = call(go, "/api/rbac/audit-logs?limit=1", "GET", operator)
+          if status != 200 or len(body(limited)) > 1:
+              fail(f"audit-logs limit=1 {status} {limited[:200]!r}")
+          if call(go, "/api/rbac/audit-logs?limit=0", "GET", operator)[0] != 200:
+              fail("audit-logs limit=0 was not 200")
+
+          # go 下创建/重复/保留/范围。
+          go_create = {"name": "Rbac Go Role", "description": None, "permissions": ["roles.read"]}
+          status, raw = call(go, "/api/rbac/roles", "POST", operator, go_create)
+          go_role = body(raw)
+          if status != 201 or not go_role or not go_role.get("id") or role_perms(go_role) != ["roles.read"]:
+              fail(f"go create {status} {raw[:300]!r}")
+          expect(go, "/api/rbac/roles", "POST", operator, create_payload, 409, "Role name already exists", "go dup")
+          expect(go, "/api/rbac/roles", "POST", operator, {"name": "Admin", "permissions": ["roles.read"]}, 400, "System administrator role name is reserved", "go reserved")
+          expect(go, "/api/rbac/roles", "POST", operator, {"name": "Rbac Scope Fail 2", "permissions": ["crawl.write"]}, 403, "Insufficient permission scope for RBAC change", "go scope")
+
+          # go 下 includeSystem 与分配/并发。
+          go_false = body(call(go, "/api/rbac/roles?includeSystem=false", "GET", operator)[1])
+          if any(role.get("isSystem") for role in go_false) or find_role(go_false, admin_role) is not None:
+              fail("go includeSystem=false leaked a system role")
+          if find_role(body(call(go, "/api/rbac/roles", "GET", operator)[1]), admin_role) is None:
+              fail("go default list missing the system role")
+          status, _ = assign(go, member2_id, role_a)
+          if status != 201:
+              fail(f"go assign member2 {status}")
+          concurrent_assign(go, "go")
+          expect(go, "/api/rbac/assign", "POST", operator, {"userId": operator_id, "roleId": role_a}, 403, "System administrators cannot be managed", "go self")
+          expect(go, "/api/rbac/assign", "POST", operator, {"userId": member2_id, "roleId": role_other}, 404, "Role not found", "go cross-org")
+          if call(go, "/api/rbac/roles", "POST", reader, {"name": "Rbac Nope 2", "permissions": ["roles.read"]})[0] != 403:
+              fail("go reader create was not 403")
+          if call(go, "/api/rbac/audit-logs", "GET", nosettings)[0] != 403:
+              fail("go audit-logs without settings.manage was not 403")
+          print("go switch ok")
+
+          # ---- 阶段 3：停止 Nest；GET /roles 仍成功；未迁路径仍 502 ----
+          if os.path.exists("/tmp/api-nestjs.pid"):
+              os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+          subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+          subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+          stopped = False
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  stopped = True
+                  break
+              time.sleep(1)
+          if not stopped:
+              fail("nestjs did not stop")
+
+          status, raw = call(go, "/api/rbac/roles", "GET", operator)
+          if status != 200 or not isinstance(body(raw), list):
+              fail(f"GET /api/rbac/roles after nest stop {status} {raw[:300]!r}")
+          status, raw = call(go, "/api/auth/login", "POST", payload={"email": "rbac-operator@example.com", "password": os.environ["SEED_ADMIN_PASSWORD"]})
+          if status != 502 or (body(raw) or {}).get("statusCode") != 502:
+              fail(f"unmigrated POST /api/auth/login after nest stop {status} {raw[:300]!r}")
+          print("nest stopped; GET /api/rbac/roles still serves; POST /api/auth/login stays on Nest (502)")
+          PY
