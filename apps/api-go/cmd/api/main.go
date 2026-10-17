@@ -574,6 +574,10 @@ func run() error {
 	if cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo {
 		runtimeSettingsMode = string(legacyproxy.ModeGo)
 	}
+	modelAccessSettingsMode := ""
+	if cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo {
+		modelAccessSettingsMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -606,6 +610,7 @@ func run() error {
 	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
 	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
 	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
+	rules = legacyproxy.WithModelAccessSettings(rules, modelAccessSettingsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -660,6 +665,7 @@ func run() error {
 				cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo ||
 				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
+				cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
@@ -1066,6 +1072,10 @@ func run() error {
 		return err
 	}
 	if err := wireRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+
+	if err := wireModelAccessSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 

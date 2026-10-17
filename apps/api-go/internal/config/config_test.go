@@ -2009,3 +2009,147 @@ func TestRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
 		t.Fatalf("mode = %s", cfg.RuntimeSettingsMode)
 	}
 }
+
+// modelAccessEnv builds a getenv function that answers from a map.
+func modelAccessEnv(values map[string]string) func(string) string {
+	return func(key string) string { return values[key] }
+}
+
+// TestModelAccessSettingsModeVocabulary pins the switch's accepted values and the
+// exact error text, mirroring the other migration switches.
+func TestModelAccessSettingsModeVocabulary(t *testing.T) {
+	cases := []struct {
+		name    string
+		value   string
+		want    ModelAccessSettingsMode
+		wantErr bool
+	}{
+		{name: "unset defaults to legacy", value: "", want: ModelAccessSettingsModeLegacy},
+		{name: "explicit legacy", value: "legacy", want: ModelAccessSettingsModeLegacy},
+		{name: "go", value: "go", want: ModelAccessSettingsModeGo},
+		{name: "whitespace tolerated", value: "  go  ", want: ModelAccessSettingsModeGo},
+		{name: "shadow is rejected", value: "shadow", wantErr: true},
+		{name: "canary is rejected", value: "canary", wantErr: true},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, err := Load(modelAccessEnv(map[string]string{"API_GO_MODEL_ACCESS_SETTINGS_MODE": testCase.value}))
+			if testCase.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error")
+				}
+				if !strings.Contains(err.Error(), "API_GO_MODEL_ACCESS_SETTINGS_MODE must be one of legacy|go") {
+					t.Fatalf("error = %q", err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.ModelAccessSettingsMode != testCase.want {
+				t.Fatalf("mode = %q, want %q", cfg.ModelAccessSettingsMode, testCase.want)
+			}
+		})
+	}
+}
+
+// TestModelAccessSettingsGoRequiresAuthStack proves the startup requirements.
+func TestModelAccessSettingsGoRequiresAuthStack(t *testing.T) {
+	_, err := Load(modelAccessEnv(map[string]string{"API_GO_MODEL_ACCESS_SETTINGS_MODE": "go"}))
+	if err == nil {
+		t.Fatalf("go mode without the auth stack must fail startup")
+	}
+	for _, want := range []string{
+		"JWT_SECRET is required when API_GO_MODEL_ACCESS_SETTINGS_MODE=go",
+		"DATABASE_URL is required when API_GO_MODEL_ACCESS_SETTINGS_MODE=go",
+		"REDIS_HOST is required when API_GO_MODEL_ACCESS_SETTINGS_MODE=go",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q is missing %q", err.Error(), want)
+		}
+	}
+	if strings.Contains(err.Error(), "MONGO_URI is required when API_GO_MODEL_ACCESS_SETTINGS_MODE=go") {
+		t.Fatalf("this batch reads no Mongo collection: %q", err.Error())
+	}
+	// The encryption key and the internal token are never startup requirements.
+	if strings.Contains(err.Error(), "SYSTEM_SETTINGS_ENCRYPTION_KEY") || strings.Contains(err.Error(), "LITELLM_CONFIG_INTERNAL_TOKEN") {
+		t.Fatalf("runtime-only secrets must not block startup: %q", err.Error())
+	}
+}
+
+// TestModelAccessSettingsGoAcceptsTheAuthStack proves go mode starts with the auth
+// stack and without either runtime secret.
+func TestModelAccessSettingsGoAcceptsTheAuthStack(t *testing.T) {
+	cfg, err := Load(modelAccessEnv(map[string]string{
+		"API_GO_MODEL_ACCESS_SETTINGS_MODE": "go",
+		"JWT_SECRET":                        "secret",
+		"DATABASE_URL":                      "mysql://root:secret@127.0.0.1:3306/app",
+		"REDIS_HOST":                        "127.0.0.1",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeGo {
+		t.Fatalf("mode = %q", cfg.ModelAccessSettingsMode)
+	}
+}
+
+// TestModelAccessSettingsRawEnvIsCapturedUntrimmed proves the raw reads.
+func TestModelAccessSettingsRawEnvIsCapturedUntrimmed(t *testing.T) {
+	cfg, err := Load(modelAccessEnv(map[string]string{
+		"MODEL_SERVICE_ENABLED":          " yes ",
+		"MODEL_SERVICE_BASE_URL":         " http://model-service:8090 ",
+		"MODEL_SERVICE_INTERNAL_TOKEN":   " tok ",
+		"MODEL_SERVICE_TIMEOUT_MS":       "12000",
+		"MODEL_SERVICE_MAX_RETRIES":      "3",
+		"LITELLM_CONFIG_INTERNAL_TOKEN":  " litellm-token ",
+		"SYSTEM_SETTINGS_ENCRYPTION_KEY": " key ",
+		"NODE_ENV":                       "production",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModelServiceEnabledRaw != " yes " {
+		t.Fatalf("ModelServiceEnabledRaw = %q", cfg.ModelServiceEnabledRaw)
+	}
+	if cfg.ModelServiceBaseURLRaw != " http://model-service:8090 " {
+		t.Fatalf("ModelServiceBaseURLRaw = %q", cfg.ModelServiceBaseURLRaw)
+	}
+	if cfg.ModelServiceInternalTokenRaw != " tok " {
+		t.Fatalf("ModelServiceInternalTokenRaw = %q", cfg.ModelServiceInternalTokenRaw)
+	}
+	if cfg.ModelServiceTimeoutMsRaw != "12000" || cfg.ModelServiceMaxRetriesRaw != "3" {
+		t.Fatalf("numeric raw values = %q / %q", cfg.ModelServiceTimeoutMsRaw, cfg.ModelServiceMaxRetriesRaw)
+	}
+	if cfg.LiteLLMConfigInternalTokenRaw != " litellm-token " {
+		t.Fatalf("LiteLLMConfigInternalTokenRaw = %q", cfg.LiteLLMConfigInternalTokenRaw)
+	}
+	if cfg.NodeEnvRaw != "production" {
+		t.Fatalf("NodeEnvRaw = %q", cfg.NodeEnvRaw)
+	}
+	// The pre-existing trimmed field keeps its own semantics.
+	if cfg.SettingsEncryptionKey != "key" {
+		t.Fatalf("SettingsEncryptionKey = %q, want the trimmed value", cfg.SettingsEncryptionKey)
+	}
+	if cfg.SystemSettingsEncryptionKeyRaw != " key " {
+		t.Fatalf("SystemSettingsEncryptionKeyRaw = %q, want the raw value", cfg.SystemSettingsEncryptionKeyRaw)
+	}
+}
+
+// TestLegacyModeIgnoresInvalidModelAccessValues proves a legacy deployment is
+// unaffected by the new environment handling.
+func TestLegacyModeIgnoresInvalidModelAccessValues(t *testing.T) {
+	for _, mode := range []string{"", "legacy"} {
+		cfg, err := Load(modelAccessEnv(map[string]string{
+			"API_GO_MODEL_ACCESS_SETTINGS_MODE": mode,
+			"MODEL_SERVICE_ENABLED":             "maybe",
+			"MODEL_SERVICE_TIMEOUT_MS":          "abc",
+		}))
+		if err != nil {
+			t.Fatalf("legacy mode must not validate the new values: %v", err)
+		}
+		if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeLegacy {
+			t.Fatalf("mode = %q", cfg.ModelAccessSettingsMode)
+		}
+	}
+}
