@@ -166,6 +166,7 @@ jobs:
           svg_body = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>'
           png_hex = ("89504E470D0A1A0A0000000D4948445200000001000000010806000000"
                      "1F15C4890000000A49444154789C6360000002000154A24F5F0000000049454E44AE426082")
+          png_bytes = len(png_hex) // 2
           svg_hex = svg_body.encode().hex().upper()
 
           def fail(message):
@@ -357,11 +358,13 @@ jobs:
                   fail(f"fresh parity body {path} nest={nest_raw[:700]!r} go={go_raw[:700]!r}")
               return body(go_raw)
 
+          # media_paths indexes the media assets of every hydrated result by
+          # content type (attachResultContent attaches mediaAssets per result).
           def media_paths(detail):
-              assets = (detail.get("task") or {}).get("mediaAssets") or []
               by_type = {}
-              for asset in assets:
-                  by_type[asset.get("contentType")] = asset
+              for result in (detail.get("task") or {}).get("results") or []:
+                  for asset in result.get("mediaAssets") or []:
+                      by_type[asset.get("contentType")] = asset
               return by_type
 
           # ---- 准备数据：本组织 + 另一组织的 MySQL / Mongo 测试数据 ----
@@ -404,14 +407,14 @@ jobs:
             ('{result_a2}', '{task_a}', '{org_a}', 'https://alpha.example.com/2', DATE_SUB(NOW(3), INTERVAL 24 MINUTE), 'mongo://a2', 'hash-a2', NULL, NOW(3)),
             ('{result_b1}', '{task_b}', '{org_b}', 'https://beta.example.com/1', DATE_SUB(NOW(3), INTERVAL 23 MINUTE), 'mongo://b1', 'hash-b1', NULL, NOW(3));
           INSERT INTO CrawlMediaBlob (id, orgId, sha256, bytes, contentType, blobData, refCount, createdAt, updatedAt) VALUES
-            ('{blob_png}', '{org_a}', REPEAT('a', 64), 67, 'image/png', UNHEX('{png_hex}'), 1, NOW(3), NOW(3)),
+            ('{blob_png}', '{org_a}', REPEAT('a', 64), {png_bytes}, 'image/png', UNHEX('{png_hex}'), 1, NOW(3), NOW(3)),
             ('{blob_svg}', '{org_a}', REPEAT('b', 64), {len(svg_body)}, 'image/svg+xml', UNHEX('{svg_hex}'), 1, NOW(3), NOW(3)),
-            ('{blob_b}', '{org_b}', REPEAT('c', 64), 67, 'image/png', UNHEX('{png_hex}'), 1, NOW(3), NOW(3));
+            ('{blob_b}', '{org_b}', REPEAT('c', 64), {png_bytes}, 'image/png', UNHEX('{png_hex}'), 1, NOW(3), NOW(3));
           INSERT INTO CrawlMediaAsset (id, resultId, orgId, taskId, blobId, provider, kind, sourceUrl, bytes, contentType, blobData, width, height, alt, title, format, metadata, createdAt, updatedAt) VALUES
-            ('{asset_png}', '{result_a1}', '{org_a}', '{task_a}', '{blob_png}', 'mysql', 'image', 'https://alpha.example.com/p.png', 67, 'image/png', NULL, 1, 1, 'alpha png', 'alpha png title', 'png', '{{"smoke":true}}', NOW(3), NOW(3)),
+            ('{asset_png}', '{result_a1}', '{org_a}', '{task_a}', '{blob_png}', 'mysql', 'image', 'https://alpha.example.com/p.png', {png_bytes}, 'image/png', NULL, 1, 1, 'alpha png', 'alpha png title', 'png', '{{"smoke":true}}', NOW(3), NOW(3)),
             ('{asset_svg}', '{result_a1}', '{org_a}', '{task_a}', '{blob_svg}', 'mysql', 'image', 'https://alpha.example.com/p.svg', {len(svg_body)}, 'image/svg+xml', NULL, NULL, NULL, NULL, NULL, 'svg', NULL, DATE_ADD(NOW(3), INTERVAL 1 SECOND), DATE_ADD(NOW(3), INTERVAL 1 SECOND)),
-            ('{asset_b}', '{result_b1}', '{org_b}', '{task_b}', '{blob_b}', 'mysql', 'image', 'https://beta.example.com/p.png', 67, 'image/png', NULL, NULL, NULL, NULL, NULL, 'png', NULL, NOW(3), NOW(3)),
-            ('{asset_stale}', '{result_a1}', '{org_b}', '{task_b}', NULL, 'mysql', 'image', 'https://stale.example.com/p.png', 67, 'image/png', UNHEX('{png_hex}'), NULL, NULL, NULL, NULL, 'png', NULL, NOW(3), NOW(3));
+            ('{asset_b}', '{result_b1}', '{org_b}', '{task_b}', '{blob_b}', 'mysql', 'image', 'https://beta.example.com/p.png', {png_bytes}, 'image/png', NULL, NULL, NULL, NULL, NULL, 'png', NULL, NOW(3), NOW(3)),
+            ('{asset_stale}', '{result_a1}', '{org_b}', '{task_b}', NULL, 'mysql', 'image', 'https://stale.example.com/p.png', {png_bytes}, 'image/png', UNHEX('{png_hex}'), NULL, NULL, NULL, NULL, 'png', NULL, NOW(3), NOW(3));
           INSERT INTO ItemMeta (id, orgId, externalId, name, status, mongoRef, version, sortAt, createdAt, updatedAt) VALUES
             ('crawl-smoke-item-a1', '{org_a}', 'crawlResult:{result_a1}', 'alpha item', 'published', 'mongo://item-a1', 1, NOW(3), NOW(3), NOW(3));
           INSERT INTO AlertRule (id, orgId, name, status, metricProvider, metricSlug, operator, thresholdValue, cooldownSeconds, checkIntervalSec, createdAt, updatedAt) VALUES
@@ -520,10 +523,16 @@ jobs:
               fail("go detail leaked another org's content document")
           if own_markdown not in json.dumps(fresh_detail, ensure_ascii=False):
               fail("go detail missing its own markdown body")
-          # itemId/itemStatus come from the ItemMeta join.
-          first_result = (fresh_detail.get("task") or {}).get("results", [])[0]
-          if first_result.get("itemId") != "crawl-smoke-item-a1" or first_result.get("itemStatus") != "published":
-              fail(f"go detail ItemMeta mapping: {first_result!r}")
+          # itemId/itemStatus come from the ItemMeta join; the anchored result is
+          # result_a1 (result_a2 is newer and therefore comes first).
+          anchored = None
+          for result in (fresh_detail.get("task") or {}).get("results", []):
+              if result.get("id") == result_a1:
+                  anchored = result
+          if anchored is None:
+              fail(f"go detail missing result {result_a1}: {fresh_detail!r}")
+          if anchored.get("itemId") != "crawl-smoke-item-a1" or anchored.get("itemStatus") != "published":
+              fail(f"go detail ItemMeta mapping: {anchored!r}")
           memory = (fresh_detail.get("task") or {}).get("memoryStats")
           summary = (fresh_detail.get("task") or {}).get("lastRunSummary")
           if not memory or memory.get("serverMemoryMb") != 512.5:
@@ -531,7 +540,10 @@ jobs:
           if not summary or summary.get("inserted") != 3 or summary.get("reusedResultId") != "reuse-1":
               fail(f"go detail lastRunSummary: {summary!r}")
           # 脏数据资产（orgId=org B、resultId=org A 的结果）不得出现在 org A 的资产里。
-          asset_ids = [asset.get("id") for asset in ((fresh_detail.get("task") or {}).get("mediaAssets") or [])]
+          asset_ids = []
+          for result in (fresh_detail.get("task") or {}).get("results", []):
+              for asset in result.get("mediaAssets") or []:
+                  asset_ids.append(asset.get("id"))
           if asset_stale in asset_ids:
               fail("go detail signed a cross-tenant media asset")
 
