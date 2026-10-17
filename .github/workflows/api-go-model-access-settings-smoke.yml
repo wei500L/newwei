@@ -603,7 +603,10 @@ jobs:
                               "timeoutMs must be an integer number; maxRetries must not be greater than 10; "
                               "maxRetries must not be less than 0; maxRetries must be an integer number"):
               fail(f"model DTO message: {message(raw)!r}")
-          status, raw = call(go, model_path, "PUT", admin_a_token, {"enabled": True})
+          # A syntactically valid DTO for a non-platform caller: the DTO passes, so
+          # the platform gate answers 403 before the enabled/baseUrl business check.
+          status, raw = call(go, model_path, "PUT", admin_a_token,
+                             {"enabled": True, "timeoutMs": 1000, "maxRetries": 1})
           if status != 403 or message(raw) != platform_admin_message:
               fail(f"platform gate after a valid DTO: {status} {raw[:300]!r}")
           print("validation order ok: DTO 400 before the platform 403")
@@ -642,7 +645,7 @@ jobs:
           redis("SET", keys_cache, json.dumps({"exists": True, "value": {"openaiApiKeys": [
               {"fingerprint": sha256_hex("sk-a"), "value": "sk-a"}]}}), "EX", "30")
           status, raw = call(go, keys_path, "POST", platform_token, {"keys": ["sk-c"]})
-          if status != 200 or (body(raw) or {}).get("keysCount") != 3:
+          if status != 201 or (body(raw) or {}).get("keysCount") != 3:
               fail(f"MA2 append with a stale cache: {status} {raw[:300]!r}")
           if internal_keys() != ["sk-a", "sk-b", "sk-c"]:
               fail(f"MA2 append lost a key: {internal_keys()!r}")
@@ -729,7 +732,7 @@ jobs:
           print("lock protocol ok: 10s timeout -> 503 without a write, and the lock is reacquirable")
 
           # ---- 真实跨进程并发：并发追加取并集，并发删除都生效，删 A 与加 C ----
-          def concurrent_pair(first, second, verify, label):
+          def concurrent_pair(first, second, verify, label, expected=(200, 200)):
               results = {}
               barrier = threading.Barrier(2)
 
@@ -747,8 +750,9 @@ jobs:
               for thread in threads:
                   thread.join()
               statuses = sorted(status for status, _ in results.values())
-              if statuses != [200, 200]:
-                  fail(f"{label}: statuses {statuses} {[raw[:200] for _, raw in results.values()]}")
+              if statuses != sorted(expected):
+                  fail(f"{label}: statuses {statuses} {[raw[:200] for _, raw in results.values()]}, "
+                       f"want {sorted(expected)}")
               verify()
               print("concurrency ok:", label)
 
@@ -759,7 +763,7 @@ jobs:
           reset_keys_two()
           concurrent_pair(lambda: call(go, keys_path, "POST", platform_token, {"keys": ["sk-c"]}),
                           lambda: call(go, keys_path, "POST", platform_token, {"keys": ["sk-d"]}),
-                          lambda: None, "POST+POST (go)")
+                          lambda: None, "POST+POST (go)", expected=(201, 201))
           if sorted(internal_keys() or []) != ["sk-a", "sk-b", "sk-c", "sk-d"]:
               fail(f"concurrent appends lost a key: {internal_keys()!r}")
           print("concurrency ok: two appends produce the union")
@@ -775,7 +779,7 @@ jobs:
           reset_keys_two()
           concurrent_pair(lambda: call(go, keys_path + "/key/" + sha256_hex("sk-a"), "DELETE", platform_token),
                           lambda: call(go, keys_path, "POST", platform_token, {"keys": ["sk-c"]}),
-                          lambda: None, "DELETE+POST (go)")
+                          lambda: None, "DELETE+POST (go)", expected=(200, 201))
           if sorted(internal_keys() or []) != ["sk-b", "sk-c"]:
               fail(f"delete A with a concurrent append C: {internal_keys()!r}")
           print("concurrency ok: delete A + append C -> original minus A plus C")
@@ -784,7 +788,7 @@ jobs:
           reset_keys_two()
           concurrent_pair(lambda: call(nest, keys_path, "POST", platform_token, {"keys": ["sk-c"]}),
                           lambda: call(go, keys_path, "POST", platform_token, {"keys": ["sk-d"]}),
-                          lambda: None, "POST (nest) + POST (go)")
+                          lambda: None, "POST (nest) + POST (go)", expected=(201, 201))
           if sorted(internal_keys() or []) != ["sk-a", "sk-b", "sk-c", "sk-d"]:
               fail(f"cross-process appends lost a key: {internal_keys()!r}")
           print("concurrency ok: Nest + Go appends produce the union")
@@ -793,7 +797,7 @@ jobs:
           delete_setting(keys_key)
           concurrent_pair(lambda: call(go, keys_path, "POST", platform_token, {"keys": ["sk-first"]}),
                           lambda: call(nest, keys_path, "POST", platform_token, {"keys": ["sk-second"]}),
-                          lambda: None, "POST on an empty row (nest) + (go)")
+                          lambda: None, "POST on an empty row (nest) + (go)", expected=(201, 201))
           if sorted(internal_keys() or []) != ["sk-first", "sk-second"]:
               fail(f"concurrent first creation: {internal_keys()!r}")
 
