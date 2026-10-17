@@ -97,7 +97,7 @@ func TestWithUserLockBusyAndPropagation(t *testing.T) {
 // TestWithUserLockWithoutDatabase locks the fail-closed path.
 func TestWithUserLockWithoutDatabase(t *testing.T) {
 	service := &Service{}
-	if err := service.withUserLock(testContext(), "user-1", func(contextContext) error {
+	if err := service.withUserLock(testContext(), "user-1", func(context.Context) error {
 		return nil
 	}); !errors.Is(err, errNoDatabase) {
 		t.Fatalf("error = %v", err)

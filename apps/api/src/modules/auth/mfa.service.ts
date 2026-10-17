@@ -393,13 +393,16 @@ export class MfaService {
     if (!challenge.userId) {
       throw new UnauthorizedException(invalidChallengeMessage);
     }
+    // Capture the narrowed id: TypeScript drops property narrowing inside the
+    // transaction callback below.
+    const challengeUserId = challenge.userId;
 
     try {
       // The public login challenge keeps its original single-use guarantee: the
       // recovery-code claim and the lastUsedAt refresh commit together, and the
       // challenge is only consumed after the credential verified.
       await this.prisma.$transaction(async (tx) => {
-        await this.verifyFactorOrRecoveryCode(tx, challenge.userId, code);
+        await this.verifyFactorOrRecoveryCode(tx, challengeUserId, code);
       });
     } catch (error) {
       return this.recordChallengeFailure(
