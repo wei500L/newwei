@@ -135,9 +135,11 @@ jobs:
       - name: Build api-go image
         run: docker build -f infra/docker/api-go.Dockerfile -t api-go-model-access-settings:ci .
       - name: Exercise model access settings routes
+        env:
+          PYTHONUNBUFFERED: "1"
         run: |
           set -euo pipefail
-          python3 - << 'PY'
+          python3 -u - << 'PY'
           import base64, datetime, hashlib, json, os, signal, subprocess, threading, time, urllib.error, urllib.request
 
           nest = "http://127.0.0.1:4000"
@@ -194,9 +196,10 @@ jobs:
           def sql(statement):
               cid = container_id("mysql:8.4")
               proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"],
-                                    input=statement, text=True, capture_output=True)
+                                    input=statement.rstrip("\n") + "\n", text=True, capture_output=True)
               if proc.returncode != 0:
-                  fail(proc.stderr or proc.stdout)
+                  fail(f"mysql failed rc={proc.returncode} statement={statement[:200]!r} "
+                       f"stderr={proc.stderr!r} stdout={proc.stdout!r}")
               return proc.stdout.strip()
 
           def scalar(statement):
@@ -208,7 +211,8 @@ jobs:
               proc = subprocess.run(["docker", "exec", "-i", cid, "redis-cli", "--raw", *args],
                                     text=True, capture_output=True)
               if proc.returncode != 0:
-                  fail(proc.stderr or proc.stdout)
+                  fail(f"redis-cli failed rc={proc.returncode} args={args!r} "
+                       f"stderr={proc.stderr!r} stdout={proc.stdout!r}")
               return proc.stdout.strip()
 
           def set_setting(key, raw_json):
@@ -373,21 +377,30 @@ jobs:
                   env.extend(extra_env)
               cmd = ["docker", "run", "-d", "--name", name,
                      "--add-host=host.docker.internal:host-gateway",
-                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
+                     "--health-interval", "3s", "--health-timeout", "3s", "--health-retries", "5", "--health-start-period", "2s",
                      "-p", "127.0.0.1:4020:4020"]
               for item in env:
                   cmd.extend(["-e", item])
               cmd.append("api-go-model-access-settings:ci")
               subprocess.check_call(cmd, stdout=subprocess.DEVNULL)
-              for _ in range(30):
-                  status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}", name],
-                                                   text=True).strip()
-                  if status == "healthy":
+              for attempt in range(45):
+                  inspect = subprocess.run(["docker", "inspect", "--format",
+                                            "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}",
+                                            name], text=True, capture_output=True)
+                  status = inspect.stdout.strip()
+                  if status.endswith("|healthy"):
+                      print(f"api-go healthy mode={mode} state={status}", flush=True)
                       return
-                  if status == "unhealthy":
-                      fail(subprocess.check_output(["docker", "logs", name], text=True)[-4000:])
+                  if attempt % 5 == 0:
+                      print(f"api-go health attempt={attempt} state={status!r} mode={mode}", flush=True)
+                  if status.endswith("|unhealthy"):
+                      logs = subprocess.run(["docker", "logs", name], text=True, capture_output=True)
+                      fail(f"api-go container unhealthy mode={mode} inspect={status!r} "
+                           f"logs={(logs.stdout or '')[-4000:]!r} logerr={(logs.stderr or '')[-1000:]!r}")
                   time.sleep(2)
-              fail(subprocess.check_output(["docker", "logs", name], text=True)[-4000:])
+              logs = subprocess.run(["docker", "logs", name], text=True, capture_output=True)
+              fail(f"api-go container never became healthy mode={mode} inspect={status!r} "
+                   f"logs={(logs.stdout or '')[-4000:]!r}")
 
           # ---- 数据准备：两个组织、平台管理员、两个组织管理员、普通用户、
           # ---- 只有平台角色没有 settings.manage 的用户、两个机器令牌 ----
@@ -527,7 +540,9 @@ jobs:
           print("parity ok: POST /internal/litellm/openai-keys/applied")
 
           # ---- 阶段 2：DTO / 认证 / 平台门禁 / 并发 / 缓存 / 锁 逐项验收 ----
+          print("phase 2: restarting api-go in go mode", flush=True)
           start_go("go")
+          print("phase 2: go mode healthy; checking the read routes", flush=True)
           for token, tag in ((admin_a_token, "org A admin"), (platform_token, "platform admin")):
               status, raw = call(go, model_path, "GET", token)
               if status != 200:
