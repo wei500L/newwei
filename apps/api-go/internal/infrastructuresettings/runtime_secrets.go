@@ -105,19 +105,19 @@ func (s *Service) updateRuntimeSecrets(ctx context.Context, orgID, actorID strin
 			return err
 		}
 
-		order := make([]string, 0)
+		// The merge is a map keyed by "sourceId::key": removes delete and
+		// upserts re-insert, so a key that is both removed and upserted ends up
+		// with exactly one entry. The stored document order is then fixed by the
+		// localeCompare sort below, which is total because the composite keys are
+		// unique - so no separate insertion-order list is needed (tracking one
+		// duplicated the entry when a removed key was re-upserted).
 		byKey := make(map[string]runtimeStoredEntry)
 		for _, entry := range currentEntries(current) {
-			composite := runtimeCompositeKey(entry.SourceID, entry.Key)
-			if _, seen := byKey[composite]; !seen {
-				order = append(order, composite)
-			}
-			byKey[composite] = entry
+			byKey[runtimeCompositeKey(entry.SourceID, entry.Key)] = entry
 		}
 
 		for _, item := range removes {
-			composite := runtimeCompositeKey(item.SourceID, item.Key)
-			delete(byKey, composite)
+			delete(byKey, runtimeCompositeKey(item.SourceID, item.Key))
 		}
 
 		updatedAt := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
@@ -133,11 +133,7 @@ func (s *Service) updateRuntimeSecrets(ctx context.Context, orgID, actorID strin
 			if err != nil {
 				return err
 			}
-			composite := runtimeCompositeKey(item.SourceID, item.Key)
-			if _, seen := byKey[composite]; !seen {
-				order = append(order, composite)
-			}
-			byKey[composite] = runtimeStoredEntry{
+			byKey[runtimeCompositeKey(item.SourceID, item.Key)] = runtimeStoredEntry{
 				SourceID:    item.SourceID,
 				Key:         item.Key,
 				Value:       rawValue,
@@ -154,11 +150,7 @@ func (s *Service) updateRuntimeSecrets(ctx context.Context, orgID, actorID strin
 		}
 
 		entries := make([]runtimeStoredEntry, 0, len(byKey))
-		for _, composite := range order {
-			entry, ok := byKey[composite]
-			if !ok {
-				continue
-			}
+		for _, entry := range byKey {
 			entries = append(entries, entry)
 		}
 		sortRuntimeEntries(entries)

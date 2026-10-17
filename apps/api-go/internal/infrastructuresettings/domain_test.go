@@ -656,13 +656,11 @@ func TestRuntimeSecretsUpdateMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := false
-	for _, entry := range result.Entries {
-		if entry.SourceID == "beta" && entry.Fingerprint == fingerprintSecretValue("survivor") {
-			found = true
-		}
+	if len(result.Entries) != 1 {
+		t.Fatalf("a removed and re-upserted key must appear exactly once: %+v", result.Entries)
 	}
-	if !found {
+	if result.Entries[0].SourceID != "beta" ||
+		result.Entries[0].Fingerprint != fingerprintSecretValue("survivor") {
 		t.Fatalf("the upsert must win over the remove: %+v", result.Entries)
 	}
 
