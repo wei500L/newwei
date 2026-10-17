@@ -482,7 +482,8 @@ jobs:
               ("asmachineotheraaaaaaaaaa4", org_c, "other", '["settings.manage"]', None, "NULL", "NULL"),
               (token_history, org_a, "history", '["settings.manage"]', None, "NULL", "NULL"),
               (token_unsupported, org_a, "unsupported", '["crawl.write"]', user_m, "NULL", "NULL"),
-              (token_concurrent, org_a, "concurrent", '["settings.manage"]', user_m, "NULL", "NULL"),
+              # 并发轮换需要一个「可轮换」的令牌：新建白名单必须至少保留一项。
+              (token_concurrent, org_a, "concurrent", '["metrics.read", "settings.manage"]', user_m, "NULL", "NULL"),
               (token_force_fail, org_a, "__force_insert_failure__", '["metrics.read"]', None, "NULL", "NULL"),
           ]
           statements = []
@@ -727,7 +728,7 @@ jobs:
               thread.join()
           winners = [name for name, result in conc_results.items() if result[0] == 201]
           if len(winners) != 1:
-              fail(f"concurrent rotate winners {[(name, result[0]) for name, result in conc_results.items()]}")
+              fail(f"concurrent rotate winners {[(name, result[0], result[1][:160]) for name, result in conc_results.items()]}")
           losers = [result for name, result in conc_results.items() if result[0] != 201]
           for status, raw in losers:
               if status != 400 or message(raw) != "Machine token not found or already revoked":
