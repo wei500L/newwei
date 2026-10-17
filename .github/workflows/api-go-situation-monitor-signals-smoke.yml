@@ -809,7 +809,15 @@ jobs:
           status, raw = call(go, "/api/situation-monitor/feedback", "POST", MTK_WRITE_RAW, machine_body)
           if status != 201 or body(raw) != {"ok": True}:
               fail(f"read write machine token {status} {raw[:200]!r}")
-          tampered = tokens["u1"][:-1] + ("a" if tokens["u1"][-1] != "a" else "b")
+          # Flip a character in the MIDDLE of the signature. The final base64url
+          # character of a 32-byte HMAC carries only four significant bits, so
+          # changing it often decodes to the very same signature bytes and the
+          # token stays valid; a middle character always changes the decoded
+          # signature.
+          header_part, payload_part, signature_part = tokens["u1"].split(".")
+          middle = len(signature_part) // 2
+          replacement = "a" if signature_part[middle] != "a" else "b"
+          tampered = header_part + "." + payload_part + "." + signature_part[:middle] + replacement + signature_part[middle + 1:]
           if call(go, "/api/situation-monitor/catalog", "GET", tampered)[0] != 401:
               fail("tampered JWT was accepted")
           print("stage1 auth failures ok")
