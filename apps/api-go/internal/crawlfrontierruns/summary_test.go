@@ -118,6 +118,22 @@ func TestBuildRunTraceStatuses(t *testing.T) {
 			wantTags:   []string{"pending:2"},
 		},
 		{
+			name:       "llm judge prefers the raw json number",
+			key:        "llm_judge",
+			metadata:   `{"llmPendingJudgeJobs":2,"pendingLlmJudgeJobs":3.6}`,
+			wantStatus: TraceStepStatusActive,
+			wantDetail: "2 pending",
+			wantTags:   []string{"pending:2"},
+		},
+		{
+			name:       "llm judge falls back to pendingLlmJudgeJobs",
+			key:        "llm_judge",
+			metadata:   `{"llmPendingJudgeJobs":"2","pendingLlmJudgeJobs":3.6}`,
+			wantStatus: TraceStepStatusActive,
+			wantDetail: "4 pending",
+			wantTags:   []string{"pending:4"},
+		},
+		{
 			name:       "llm judge warning",
 			key:        "llm_judge",
 			metadata:   `{"warningFlags":["llm_judge_failed"]}`,

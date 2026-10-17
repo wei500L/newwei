@@ -557,7 +557,14 @@ func buildRunTrace(metadata *runMetadataView, warningFlags []string) []traceStep
 	if metadata.judge.Count.OK {
 		judgeCount = metadata.judge.Count.Value
 	}
-	pending := resolvePendingLlmJudgeJobs(metadata)
+	// NestJS prefers the raw JSON number in llmPendingJudgeJobs and only falls
+	// back to pendingLlmJudgeJobs through Number()/Math.round.
+	pending := 0.0
+	if metadata.LLMPendingJudgeJobs != nil && metadata.LLMPendingJudgeJobs.IsNumber {
+		pending = metadata.LLMPendingJudgeJobs.Value
+	} else {
+		pending = resolvePendingLlmJudgeJobs(metadata)
+	}
 	nativeStrategyType := ""
 	if root.NativeStrategyType != nil && root.NativeStrategyType.Valid {
 		nativeStrategyType = root.NativeStrategyType.Value()
