@@ -639,8 +639,25 @@ jobs:
           nest_status, nest_raw = call(nest, annotations, "POST", token_a, annotations_for(body(nest_raw)))
           if nest_status != 201:
               fail(f"nest annotations {nest_status} {nest_raw[:300]!r}")
-          compare("go annotations", go_raw, go_status, "nest annotations", nest_raw, nest_status,
-                  drop=("sampleId", "createdAt"))
+          # The confusion-matrix order depends on the (randomized) sample item order,
+          # so order the rows before comparing the metrics field by field.
+          def annotation_metrics(raw):
+              doc = body(raw) or {}
+              matrix = sorted(doc.get("confusionMatrix") or [],
+                              key=lambda entry: (entry.get("predictedPath") or "", entry.get("actualPath") or ""))
+              pairs = sorted(doc.get("problemPathPairs") or [],
+                             key=lambda entry: (entry.get("predictedPath") or "", entry.get("actualPath") or ""))
+              return {
+                  "updated": doc.get("updated"),
+                  "total": doc.get("total"),
+                  "correct": doc.get("correct"),
+                  "accuracy": doc.get("accuracy"),
+                  "confusionMatrix": matrix,
+                  "problemPathPairs": pairs,
+              }
+
+          if annotation_metrics(go_raw) != annotation_metrics(nest_raw):
+              fail(f"annotation metrics differ: go={go_raw[:600]!r} nest={nest_raw[:600]!r}")
           if go_metrics.get("total") != 3 or go_metrics.get("correct") != 2:
               fail(f"annotations metrics = {go_metrics!r}")
           if go_metrics.get("accuracy") != 0.6667:
