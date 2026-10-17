@@ -6,7 +6,7 @@
 
 代码在独立包 `apps/api-go/internal/graphqlread/kgimpact`。
 
-真实栈工作流：`.github/workflows/api-go-kg-impact-read-smoke.yml`（label `api-go-kg-impact-read-smoke` 或 `workflow_dispatch`）。验收链接在该 run 出现后回填。
+真实栈工作流：`.github/workflows/api-go-kg-impact-read-smoke.yml`（label `api-go-kg-impact-read-smoke` 或 `workflow_dispatch`）。验收 run：https://github.com/wei500L/newwei/actions/runs/39026570864 （success；head `7f627e55`）。普通 CI：https://github.com/wei500L/newwei/actions/runs/39025791231 （success）。
 
 ## 迁入的 root
 
