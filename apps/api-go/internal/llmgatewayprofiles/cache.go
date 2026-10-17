@@ -34,9 +34,9 @@ func (s *Service) loadSecuritySettings(ctx context.Context) (securitySettingsPro
 	if s != nil && s.securityFn != nil {
 		return s.securityFn(ctx)
 	}
-	if cached, err := s.cacheGetJSON(ctx, SecurityCacheKey); err != nil {
+	if cached, found, err := s.cacheGetJSON(ctx, SecurityCacheKey); err != nil {
 		logCacheFailure("read", SecurityCacheKey, err)
-	} else if cached != nil {
+	} else if found {
 		var envelope cachedSecurityEnvelope
 		if decodeErr := json.Unmarshal(cached, &envelope); decodeErr != nil {
 			logCacheFailure("decode", SecurityCacheKey, decodeErr)
@@ -85,9 +85,9 @@ func (s *Service) loadGovernanceSettings(ctx context.Context) (governanceProject
 	if s != nil && s.governanceFn != nil {
 		return s.governanceFn(ctx)
 	}
-	if cached, err := s.cacheGetJSON(ctx, GovernanceCacheKey); err != nil {
+	if cached, found, err := s.cacheGetJSON(ctx, GovernanceCacheKey); err != nil {
 		logCacheFailure("read", GovernanceCacheKey, err)
-	} else if cached != nil {
+	} else if found {
 		var envelope cachedGovernanceEnvelope
 		if decodeErr := json.Unmarshal(cached, &envelope); decodeErr != nil {
 			logCacheFailure("decode", GovernanceCacheKey, decodeErr)
@@ -115,9 +115,9 @@ func (s *Service) loadGovernanceSettings(ctx context.Context) (governanceProject
 // loadSettingsCached is the best-effort GET path: the 60 second Redis entry is
 // consulted first, then MySQL, and the normalized document warms the cache.
 func (s *Service) loadSettingsCached(ctx context.Context) (StoredSettings, error) {
-	if cached, err := s.cacheGetJSON(ctx, CacheKey); err != nil {
+	if cached, found, err := s.cacheGetJSON(ctx, CacheKey); err != nil {
 		logCacheFailure("read", CacheKey, err)
-	} else if cached != nil {
+	} else if found {
 		return NormalizeSettings(cached, s.cfg.Env), nil
 	}
 

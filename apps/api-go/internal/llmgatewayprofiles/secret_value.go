@@ -57,7 +57,7 @@ func (s *Service) encodeSecretForStorage(ctx context.Context, plain string) (*Se
 		return nil, err
 	}
 	status := s.resolveKeyStatus()
-	configured := strictBoolPointer(stored.secretEncryptionEnabled)
+	configured := strictBoolPointer(stored.SecretEncryptionEnabled)
 
 	if configured != nil && *configured && status.present && !status.valid {
 		details := ""
