@@ -690,6 +690,17 @@ services:
       # Mongo，不启动 worker）。/api/system-settings/security 与其余
       # /api/system-settings/* 仍回 NestJS。回滚只把该变量改回 legacy。
       API_GO_RUNTIME_SETTINGS_MODE: legacy
+      # 基础设施连接与采集运行凭据 7 条精确 HTTP：
+      # GET/PUT/DELETE /api/system-settings/vector-service、
+      # GET/PATCH /api/admin/settings/storage、
+      # GET/PUT /api/system-settings/news-source-runtime-secrets。
+      # pilot 与样例保持 legacy。改成 go 才由 Go 独立验签并读写 MySQL
+      # SystemSetting 与 Redis 配置缓存（vector_service:settings、
+      # storage:settings）；四条写另需平台管理员。go 要求 JWT_SECRET、
+      # DATABASE_URL、REDIS_HOST，不要求 Mongo，不建 S3/vector 客户端，
+      # 不做启动网络探测。diagnostics 与 storage/test 仍回 NestJS。
+      # 回滚只把该变量改回 legacy。
+      API_GO_INFRASTRUCTURE_SETTINGS_MODE: ${API_GO_INFRASTRUCTURE_SETTINGS_MODE:-legacy}
       # 模型接入设置 10 条 HTTP（/api/system-settings/model-service、
       # /api/system-settings/openai-keys(+ /key/:fingerprint)、
       # /api/internal/litellm/openai-keys(+ /applied)）。pilot 与样例保持
@@ -719,6 +730,23 @@ services:
       # 且本变量=go 才登记；本变量为 legacy 时含这 20 个 root 的文档整包回
       # NestJS。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE: legacy
+      # 基础设施设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认
+      # 值）。S3_* 与 VECTOR_* 都不进入日志；不在这里新增第二套网关配置。
+      NODE_ENV: production
+      VECTOR_SERVICE_ENABLED: ${VECTOR_SERVICE_ENABLED:-false}
+      VECTOR_SERVICE_FALLBACK_TO_MONGO: ${VECTOR_SERVICE_FALLBACK_TO_MONGO:-true}
+      VECTOR_SERVICE_BASE_URL: ${VECTOR_SERVICE_BASE_URL:-}
+      VECTOR_INTERNAL_TOKEN: ${VECTOR_INTERNAL_TOKEN:-}
+      VECTOR_SERVICE_TIMEOUT_MS: ${VECTOR_SERVICE_TIMEOUT_MS:-5000}
+      VECTOR_SERVICE_MAX_RETRIES: ${VECTOR_SERVICE_MAX_RETRIES:-2}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      S3_PRESIGNED_URL_TTL_SECONDS: ${S3_PRESIGNED_URL_TTL_SECONDS:-300}
       MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。
@@ -733,8 +761,8 @@ services:
       # 两条内部接口（取钥/上报已应用指纹）的 bearer token，与 api 服务同一份
       # 配置。缺失是接口契约（403），不是启动条件；值不进日志。
       LITELLM_CONFIG_INTERNAL_TOKEN: ${LITELLM_CONFIG_INTERNAL_TOKEN:-}
-      # 生产加密策略判断（精确等于 production）。与 api 服务一致。
-      NODE_ENV: production
+      # NODE_ENV=production 已在上方（基础设施设置批次）声明一次，此处不再重复；
+      # 本批的生产加密策略判断复用同一项。
       LITELLM_API_URL: ${LITELLM_API_URL:-}
       LITELLM_API_BASE: ${LITELLM_API_BASE:-http://localhost:4001}
       LITELLM_API_KEY: ${LITELLM_API_KEY:-}

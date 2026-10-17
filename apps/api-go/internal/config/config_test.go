@@ -2010,6 +2010,154 @@ func TestRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
+func TestInfrastructureSettingsModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.InfrastructureSettingsMode != InfrastructureSettingsModeLegacy {
+		t.Fatalf("mode = %s", cfg.InfrastructureSettingsMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_INFRASTRUCTURE_SETTINGS_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.InfrastructureSettingsMode != InfrastructureSettingsModeLegacy {
+		t.Fatalf("mode = %s", cfg.InfrastructureSettingsMode)
+	}
+}
+
+func TestInfrastructureSettingsModeRejectsInvalid(t *testing.T) {
+	// shadow and canary are explicitly not accepted: this unit is
+	// legacy-or-go only, so a typo in the switch fails startup.
+	for _, invalid := range []string{"shadow", "canary", "Go"} {
+		_, err := Load(func(key string) string {
+			if key == "API_GO_INFRASTRUCTURE_SETTINGS_MODE" {
+				return invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go") {
+			t.Fatalf("invalid mode %q: %v", invalid, err)
+		}
+	}
+}
+
+func TestInfrastructureSettingsModeGoRequiresCredentials(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_INFRASTRUCTURE_SETTINGS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_INFRASTRUCTURE_SETTINGS_MODE=go") {
+		t.Fatalf("missing redis: %v", err)
+	}
+
+	// Mongo, the encryption key and the vector/S3 upstreams are not startup
+	// requirements of this unit: an encryption key that is missing or invalid
+	// is handled per read/write by the documented fallback and 400 contracts.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_INFRASTRUCTURE_SETTINGS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("go mode must not require Mongo or an encryption key: %v", err)
+	}
+	if cfg.InfrastructureSettingsMode != InfrastructureSettingsModeGo {
+		t.Fatalf("mode = %s", cfg.InfrastructureSettingsMode)
+	}
+}
+
+func TestInfrastructureSettingsEnvDefaults(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.VectorServiceEnabled || !cfg.VectorServiceFallbackToMongo {
+		t.Fatalf("vector booleans = %v %v", cfg.VectorServiceEnabled, cfg.VectorServiceFallbackToMongo)
+	}
+	if cfg.VectorServiceBaseURL != "" || cfg.VectorInternalToken != "" {
+		t.Fatalf("vector url/token = %q %q", cfg.VectorServiceBaseURL, cfg.VectorInternalToken)
+	}
+	if cfg.VectorServiceTimeoutMs != 5000 || cfg.VectorServiceMaxRetries != 2 {
+		t.Fatalf("vector timings = %d %d", cfg.VectorServiceTimeoutMs, cfg.VectorServiceMaxRetries)
+	}
+	if cfg.S3AccessKeyID != "" || cfg.S3SecretAccessKey != "" || cfg.S3Bucket != "" || cfg.S3Endpoint != "" {
+		t.Fatalf("s3 defaults = %+v", cfg)
+	}
+	if cfg.S3Region != "us-east-1" || cfg.S3ForcePathStyle || cfg.S3PresignedURLTTLSeconds != 300 {
+		t.Fatalf("s3 scalars = %q %v %d", cfg.S3Region, cfg.S3ForcePathStyle, cfg.S3PresignedURLTTLSeconds)
+	}
+	if cfg.SettingsEncryptionKeyPresent || cfg.SettingsEncryptionKeyRaw != "" {
+		t.Fatalf("encryption key presence = %v %q", cfg.SettingsEncryptionKeyPresent, cfg.SettingsEncryptionKeyRaw)
+	}
+
+	cfg, err = Load(func(key string) string {
+		switch key {
+		case "VECTOR_SERVICE_ENABLED":
+			return " Yes "
+		case "VECTOR_SERVICE_FALLBACK_TO_MONGO":
+			return "off"
+		case "VECTOR_SERVICE_TIMEOUT_MS":
+			return "9000"
+		case "VECTOR_SERVICE_MAX_RETRIES":
+			return "0"
+		case "S3_FORCE_PATH_STYLE":
+			return "true"
+		case "S3_PRESIGNED_URL_TTL_SECONDS":
+			return "600"
+		case "SYSTEM_SETTINGS_ENCRYPTION_KEY":
+			return "not-a-real-key"
+		case "NODE_ENV":
+			return "production"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.VectorServiceEnabled || cfg.VectorServiceFallbackToMongo {
+		t.Fatalf("vector booleans = %v %v", cfg.VectorServiceEnabled, cfg.VectorServiceFallbackToMongo)
+	}
+	if cfg.VectorServiceTimeoutMs != 9000 || cfg.VectorServiceMaxRetries != 0 {
+		t.Fatalf("vector timings = %d %d", cfg.VectorServiceTimeoutMs, cfg.VectorServiceMaxRetries)
+	}
+	if !cfg.S3ForcePathStyle || cfg.S3PresignedURLTTLSeconds != 600 {
+		t.Fatalf("s3 scalars = %v %d", cfg.S3ForcePathStyle, cfg.S3PresignedURLTTLSeconds)
+	}
+	// The raw (untrimmed) value decides presence, mirroring the NestJS
+	// `if (!raw)` test performed before the key is decoded.
+	if !cfg.SettingsEncryptionKeyPresent || cfg.SettingsEncryptionKeyRaw != "not-a-real-key" {
+		t.Fatalf("encryption key presence = %v %q", cfg.SettingsEncryptionKeyPresent, cfg.SettingsEncryptionKeyRaw)
+	}
+	if cfg.NodeEnv != "production" {
+		t.Fatalf("node env = %q", cfg.NodeEnv)
+	}
+}
+
 // modelAccessEnv builds a getenv function that answers from a map.
 func modelAccessEnv(values map[string]string) func(string) string {
 	return func(key string) string { return values[key] }
