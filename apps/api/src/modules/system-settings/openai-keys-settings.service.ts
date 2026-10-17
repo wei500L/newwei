@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { PlatformAccessService } from "../auth/platform-access.service";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
@@ -13,6 +14,10 @@ import {
   resolveSettingsKey
 } from "../storage/storage-settings.crypto";
 
+import {
+  OPENAI_KEYS_SETTINGS_LOCK_NAME,
+  withModelAccessSettingsLock
+} from "./model-access-settings.lock";
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export type OpenAiKeysSettingsSource = "none" | "db";
@@ -81,14 +86,27 @@ export class OpenAiKeysSettingsService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly env: EnvService,
-    private readonly securitySettings: SystemSecuritySettingsService
+    private readonly securitySettings: SystemSecuritySettingsService,
+    private readonly platformAccess: PlatformAccessService
   ) {}
 
   async getPublicSettings(): Promise<OpenAiKeysSettingsPublic> {
     const stored = await this.loadStoredSettings();
+    const appliedStatus = await this.loadAppliedStatus();
+    return this.buildPublicSettings(stored, appliedStatus);
+  }
+
+  /**
+   * Projects one stored snapshot and one applied-status snapshot onto the public
+   * response contract. The cached GET path and every write path (which project
+   * the just-committed rows instead of the pre-write cache) share it.
+   */
+  private buildPublicSettings(
+    stored: StoredOpenAiKeysSettings | null,
+    appliedStatus: StoredOpenAiKeysAppliedStatus | null
+  ): OpenAiKeysSettingsPublic {
     const keysCount = this.countStoredKeys(stored?.openaiApiKeys);
     const keyFingerprints = this.listKeyFingerprints(stored?.openaiApiKeys);
-    const appliedStatus = await this.loadAppliedStatus();
     const appliedAt = typeof appliedStatus?.appliedAt === "string" ? appliedStatus.appliedAt : null;
     const appliedKeyFingerprints = this.normalizeFingerprints(appliedStatus?.keyFingerprints);
     const appliedSource = this.normalizeAppliedSource(appliedStatus?.source);
@@ -128,13 +146,98 @@ export class OpenAiKeysSettingsService {
     actorId: string,
     input: { keys: string[] }
   ): Promise<OpenAiKeysSettingsPublic> {
-    const normalized = this.normalizeKeys(input.keys);
-    if (normalized.length > MAX_KEYS) {
+    // MA1: openai_keys is a GLOBAL singleton (no org dimension) that feeds the
+    // LiteLLM upstream pool for every tenant, so only platform admins may write
+    // it. The gate runs before the lock and before any read/encode/write/audit.
+    await this.platformAccess.assertPlatformAdmin(actorId);
+
+    // MA2: all four key writes share one global MySQL session lock and merge
+    // inside it, so a cached (stale) collection can never overwrite a newer one.
+    return await withModelAccessSettingsLock(OPENAI_KEYS_SETTINGS_LOCK_NAME, async () => {
+      return await this.persistKeysLocked(orgId, actorId, this.normalizeKeys(input.keys));
+    });
+  }
+
+  async appendKeys(orgId: string, actorId: string, input: { keys: string[] }): Promise<OpenAiKeysSettingsPublic> {
+    // MA1: same global-singleton boundary as PUT.
+    await this.platformAccess.assertPlatformAdmin(actorId);
+
+    // MA2: the merge baseline is the authoritative row read inside the lock, and
+    // persistence goes through the private in-lock helper (never the public
+    // updateSettings, which would try to take the lock again).
+    return await withModelAccessSettingsLock(OPENAI_KEYS_SETTINGS_LOCK_NAME, async () => {
+      const stored = await this.readStoredSettingsFromDatabase();
+      const existing = this.resolveKeys(stored.settings?.openaiApiKeys);
+      const merged = Array.from(new Set([...existing, ...this.normalizeKeys(input.keys)]));
+      return await this.persistKeysLocked(orgId, actorId, merged);
+    });
+  }
+
+  async removeKeyByFingerprint(orgId: string, actorId: string, fingerprint: string): Promise<OpenAiKeysSettingsPublic> {
+    // MA1: same global-singleton boundary as PUT.
+    await this.platformAccess.assertPlatformAdmin(actorId);
+
+    // MA2: same lock and the same in-lock authoritative baseline as appendKeys.
+    return await withModelAccessSettingsLock(OPENAI_KEYS_SETTINGS_LOCK_NAME, async () => {
+      const stored = await this.readStoredSettingsFromDatabase();
+      const existing = this.resolveKeys(stored.settings?.openaiApiKeys);
+      const remaining = existing.filter((key) => this.fingerprintKey(key) !== fingerprint);
+      return await this.persistKeysLocked(orgId, actorId, remaining);
+    });
+  }
+
+  async reset(orgId: string, actorId: string): Promise<OpenAiKeysSettingsPublic> {
+    // MA1: same global-singleton boundary as PUT.
+    await this.platformAccess.assertPlatformAdmin(actorId);
+
+    // MA2: reset shares the key lock so it cannot interleave with append/remove.
+    // litellm_openai_keys_applied and its cache are deliberately untouched, so
+    // the response may still report restartRequired=true (existing semantics).
+    return await withModelAccessSettingsLock(OPENAI_KEYS_SETTINGS_LOCK_NAME, async () => {
+      await this.prisma.systemSetting.deleteMany({ where: { key: SETTINGS_KEY } });
+
+      await writeAuditLogBestEffort(
+        this.prisma,
+        {
+          data: {
+            orgId,
+            actorId,
+            resource: "system_settings",
+            action: "openai_keys_reset",
+            metadata: this.toPrismaJson({ ok: true } satisfies Prisma.InputJsonObject)
+          }
+        },
+        { orgId, actorId, resource: "system_settings", action: "openai_keys_reset" }
+      );
+
+      await this.invalidateCache();
+      const applied = await this.readAppliedStatusFromDatabase();
+      return this.buildPublicSettings(null, applied.status);
+    });
+  }
+
+  /**
+   * Persists one already-normalized key list and returns the public projection of
+   * the committed snapshot.
+   *
+   * Callers MUST hold OPENAI_KEYS_SETTINGS_LOCK_NAME: this helper never acquires
+   * the lock and never calls a public locking method, so append/remove cannot
+   * deadlock against themselves. Encoding happens for the whole list before the
+   * upsert so a mid-list encryption failure leaves the stored configuration
+   * untouched (no half-written list). The lock is released only after the upsert,
+   * the audit handling and the cache invalidation.
+   */
+  private async persistKeysLocked(
+    orgId: string,
+    actorId: string,
+    keys: string[]
+  ): Promise<OpenAiKeysSettingsPublic> {
+    if (keys.length > MAX_KEYS) {
       throw new BadRequestException(`Too many OpenAI API keys (max ${MAX_KEYS})`);
     }
 
     const encoded: StoredOpenAiKeyEntryV1[] = [];
-    for (const key of normalized) {
+    for (const key of keys) {
       try {
         const storedValue = await this.securitySettings.encodeSecretForStorage(key);
         encoded.push({ fingerprint: this.fingerprintKey(key), value: storedValue });
@@ -174,7 +277,7 @@ export class OpenAiKeysSettingsService {
           resource: "system_settings",
           action: "openai_keys_update",
           metadata: this.toPrismaJson({
-            keysCount: normalized.length
+            keysCount: keys.length
           } satisfies Prisma.InputJsonObject)
         }
       },
@@ -182,45 +285,10 @@ export class OpenAiKeysSettingsService {
     );
 
     await this.invalidateCache();
-    return this.getPublicSettings();
-  }
-
-  async appendKeys(orgId: string, actorId: string, input: { keys: string[] }): Promise<OpenAiKeysSettingsPublic> {
-    const stored = await this.loadStoredSettings();
-    const existing = this.resolveKeys(stored?.openaiApiKeys);
-    const merged = Array.from(new Set([...existing, ...this.normalizeKeys(input.keys)]));
-    if (merged.length > MAX_KEYS) {
-      throw new BadRequestException(`Too many OpenAI API keys (max ${MAX_KEYS})`);
-    }
-    return this.updateSettings(orgId, actorId, { keys: merged });
-  }
-
-  async removeKeyByFingerprint(orgId: string, actorId: string, fingerprint: string): Promise<OpenAiKeysSettingsPublic> {
-    const stored = await this.loadStoredSettings();
-    const existing = this.resolveKeys(stored?.openaiApiKeys);
-    const remaining = existing.filter((key) => this.fingerprintKey(key) !== fingerprint);
-    return this.updateSettings(orgId, actorId, { keys: remaining });
-  }
-
-  async reset(orgId: string, actorId: string): Promise<OpenAiKeysSettingsPublic> {
-    await this.prisma.systemSetting.deleteMany({ where: { key: SETTINGS_KEY } });
-
-    await writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId,
-          actorId,
-          resource: "system_settings",
-          action: "openai_keys_reset",
-          metadata: this.toPrismaJson({ ok: true } satisfies Prisma.InputJsonObject)
-        }
-      },
-      { orgId, actorId, resource: "system_settings", action: "openai_keys_reset" }
-    );
-
-    await this.invalidateCache();
-    return this.getPublicSettings();
+    // The applied-status projection is read back from MySQL, not from the
+    // pre-write Redis envelope, so the response describes the committed state.
+    const applied = await this.readAppliedStatusFromDatabase();
+    return this.buildPublicSettings(stored, applied.status);
   }
 
   async reportAppliedKeyFingerprints(input: { source: "db" | "env" | "none"; keyFingerprints: string[] }) {
@@ -437,16 +505,12 @@ export class OpenAiKeysSettingsService {
       return cached.exists ? cached.value ?? null : null;
     }
 
-    const record = await this.prisma.systemSetting.findUnique({
-      where: { key: APPLIED_STATUS_KEY }
-    });
-    const raw = record?.value as unknown;
-    const status = raw && typeof raw === "object" ? (raw as StoredOpenAiKeysAppliedStatus) : null;
+    const { exists, status } = await this.readAppliedStatusFromDatabase();
 
     try {
       await this.cache.set(
         APPLIED_CACHE_KEY,
-        { exists: Boolean(record), value: status ?? undefined } satisfies CachedOpenAiKeysAppliedStatus,
+        { exists, value: status ?? undefined } satisfies CachedOpenAiKeysAppliedStatus,
         APPLIED_CACHE_TTL_SECONDS
       );
     } catch (error) {
@@ -456,11 +520,36 @@ export class OpenAiKeysSettingsService {
     return status;
   }
 
-  private normalizeAppliedSource(raw: unknown): "db" | "env" | "none" | null {
-    if (raw === "db" || raw === "env" || raw === "none") {
-      return raw;
-    }
-    return null;
+  /**
+   * Reads SystemSetting.key=litellm_openai_keys_applied straight from MySQL. The
+   * write paths project this authoritative value; the GET path keeps its 30s
+   * best-effort cache.
+   */
+  private async readAppliedStatusFromDatabase(): Promise<{
+    exists: boolean;
+    status: StoredOpenAiKeysAppliedStatus | null;
+  }> {
+    const record = await this.prisma.systemSetting.findUnique({
+      where: { key: APPLIED_STATUS_KEY }
+    });
+    const raw = record?.value as unknown;
+    const status = raw && typeof raw === "object" ? (raw as StoredOpenAiKeysAppliedStatus) : null;
+    return { exists: Boolean(record), status };
+  }
+
+  /**
+   * Reads SystemSetting.key=openai_keys straight from MySQL. The write paths must
+   * use this instead of the cached reader so a stale 30s envelope can never be
+   * used as a read-modify-write baseline.
+   */
+  private async readStoredSettingsFromDatabase(): Promise<{
+    exists: boolean;
+    settings: StoredOpenAiKeysSettings | null;
+  }> {
+    const record = await this.prisma.systemSetting.findUnique({ where: { key: SETTINGS_KEY } });
+    const raw = record?.value as unknown;
+    const settings = raw && typeof raw === "object" ? (raw as StoredOpenAiKeysSettings) : null;
+    return { exists: Boolean(record), settings };
   }
 
   private async loadStoredSettings(): Promise<StoredOpenAiKeysSettings | null> {
@@ -475,14 +564,12 @@ export class OpenAiKeysSettingsService {
       return cached.exists ? cached.value ?? null : null;
     }
 
-    const record = await this.prisma.systemSetting.findUnique({ where: { key: SETTINGS_KEY } });
-    const raw = record?.value as unknown;
-    const settings = raw && typeof raw === "object" ? (raw as StoredOpenAiKeysSettings) : null;
+    const { exists, settings } = await this.readStoredSettingsFromDatabase();
 
     try {
       await this.cache.set(
         CACHE_KEY,
-        { exists: Boolean(record), value: settings ?? undefined } satisfies CachedOpenAiKeysSettings,
+        { exists, value: settings ?? undefined } satisfies CachedOpenAiKeysSettings,
         CACHE_TTL_SECONDS
       );
     } catch (error) {
@@ -490,6 +577,13 @@ export class OpenAiKeysSettingsService {
     }
 
     return settings;
+  }
+
+  private normalizeAppliedSource(raw: unknown): "db" | "env" | "none" | null {
+    if (raw === "db" || raw === "env" || raw === "none") {
+      return raw;
+    }
+    return null;
   }
 
   private async invalidateCache() {
