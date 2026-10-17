@@ -260,7 +260,7 @@ func TestWorkspaceRootsExecuteOnlyWhenRegistered(t *testing.T) {
 		`mutation { deleteDashboard(id: "x") }`,
 		`mutation { setUserActive(input: { userId: "u", isActive: true }) { id } }`,
 		`query { me { id } alertRules { id } }`,
-		`query { queueEvents { event } }`,
+		`query { newsEvents { id } }`,
 	} {
 		if got := goEngine.PlanDocument(query, nil, nil); got.Kind != KindLegacy {
 			t.Fatalf("%s kind %s body %s", query, got.Kind, got.Result.Body)
