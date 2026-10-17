@@ -44,8 +44,15 @@ func TestBuildTickerAliases(t *testing.T) {
 
 func TestBuildCompanyAliasCandidates(t *testing.T) {
 	got := buildCompanyAliasCandidates("贵州茅台股份有限公司")
-	if len(got) != 2 || got[0] != "贵州茅台股份有限公司" || got[1] != "贵州茅台" {
+	// 既命中「股份有限公司」也命中「有限公司」，与 Nest 的多后缀拼接一致。
+	want := []string{"贵州茅台股份有限公司", "贵州茅台", "贵州茅台股份"}
+	if len(got) != len(want) {
 		t.Fatalf("aliases = %v", got)
+	}
+	for index, alias := range want {
+		if got[index] != alias {
+			t.Fatalf("aliases[%d] = %q, want %q", index, got[index], alias)
+		}
 	}
 	withBrackets := buildCompanyAliasCandidates("贵州茅台（集团）股份有限公司")
 	hasCollapsed := false
@@ -142,8 +149,8 @@ func TestBuildGraphDataTrimsByValue(t *testing.T) {
 	if !names["E"] || !names["F"] {
 		t.Fatalf("trim kept %v", names)
 	}
-	if len(data.Links) != 0 {
-		t.Fatalf("links should be filtered after trim: %+v", data.Links)
+	if len(data.Links) != 1 || data.Links[0].Source != "E" || data.Links[0].Target != "F" {
+		t.Fatalf("kept-node link = %+v", data.Links)
 	}
 }
 

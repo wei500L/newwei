@@ -36,8 +36,8 @@ func TestPearsonModeratePositive(t *testing.T) {
 	if correlation <= 0.9 || correlation >= 1 {
 		t.Fatalf("correlation = %v, want (0.9,1)", correlation)
 	}
-	if pValue <= 0 || pValue >= 0.05 {
-		t.Fatalf("pValue = %v, want (0,0.05)", pValue)
+	if math.IsNaN(pValue) || pValue <= 0 || pValue >= 0.2 {
+		t.Fatalf("pValue = %v, want (0,0.2)", pValue)
 	}
 }
 

@@ -275,7 +275,12 @@ func eigNumber(value any, fallback float64) float64 {
 		}
 		return parsed
 	case string:
-		parsed, err := strconv.ParseFloat(typed, 64)
+		// Number("") === 0 and Number("  ") === 0; a non-numeric string is NaN.
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return 0
+		}
+		parsed, err := strconv.ParseFloat(trimmed, 64)
 		if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
 			return fallback
 		}
