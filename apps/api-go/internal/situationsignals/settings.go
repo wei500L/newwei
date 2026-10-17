@@ -504,7 +504,13 @@ func normalizeHostEntry(value string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	if parsed.Host != normalized || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+	// WHATWG's URL keeps the port out of `hostname`, so a value carrying a port
+	// (`example.test:8080`) or user info never equals its own hostname and is
+	// rejected, exactly like normalizeHostEntry in the NestJS settings service.
+	if parsed.Hostname() != normalized || parsed.Port() != "" {
+		return "", false
+	}
+	if parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", false
 	}
 	return normalized, true

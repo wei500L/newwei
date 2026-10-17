@@ -270,11 +270,19 @@ func TestMatchGeoTasksAreHardExclusions(t *testing.T) {
 func TestMatchConditionalKeysAndOrdering(t *testing.T) {
 	fake := &fakeEmbeddings{}
 	service := &Service{embed: fake}
-	monitors := []monitorRecord{monitor("m1", "One", func(record *monitorRecord) {
-		record.RawKeywords = []string{"alpha"}
-		record.Color = "#123456"
-	})}
+	// Two monitors so the coloured and uncoloured conditional key can be
+	// observed on different results.
+	monitors := []monitorRecord{
+		monitor("m-colour", "Colour", func(record *monitorRecord) {
+			record.RawKeywords = []string{"alpha"}
+			record.Color = "#123456"
+		}),
+		monitor("m-plain", "Plain", func(record *monitorRecord) {
+			record.ApprovedTopics = []string{"war"}
+		}),
+	}
 
+	// Everything a match result can carry, produced by the coloured monitor.
 	populated := candidate("c1", "alpha", func(item *monitorCandidate) {
 		item.Timestamp = 5000
 		item.ItemMetaID = "meta-1"
@@ -283,15 +291,23 @@ func TestMatchConditionalKeysAndOrdering(t *testing.T) {
 		item.SummaryZh = "summary-zh"
 		item.TitleZh = "title-zh"
 	})
-	empty := candidate("c2", "alpha", func(item *monitorCandidate) {
-		item.Link = ""
-		item.Title = ""
+	// A falsy title/link/summary/category produced by the plain monitor through
+	// a topic match, so it is still included.
+	empty := candidate("c2", "", func(item *monitorCandidate) {
+		item.Timestamp = 1000
 		item.Summary = ""
+		item.Link = ""
 		item.Category = ""
-		item.Timestamp = 5000
+		// The source is part of the lexical haystack, so it must not contain the
+		// coloured monitor's keyword or this candidate would match it too.
+		item.Source = "Bravo"
+		item.Topics = []string{"war"}
 	})
 	results := service.matchCandidatesWithPreparedData(context.Background(), "org-1", monitors,
 		[]monitorCandidate{populated, empty}, map[string][]float64{})
+	if len(results) != 2 {
+		t.Fatalf("results = %+v", results)
+	}
 
 	encoded, err := json.Marshal(results)
 	if err != nil {
@@ -322,8 +338,11 @@ func TestMatchConditionalKeysAndOrdering(t *testing.T) {
 		t.Fatalf("link/title = %s %s", emptyKeys["link"], emptyKeys["title"])
 	}
 	// Timestamp descending puts the later candidate first.
-	if results[0].ItemKey != "c2" {
+	if results[0].ItemKey != "c1" || results[1].ItemKey != "c2" {
 		t.Fatalf("order = %v", results)
+	}
+	if results[0].MonitorID != "m-colour" || results[1].MonitorID != "m-plain" {
+		t.Fatalf("monitors = %s %s", results[0].MonitorID, results[1].MonitorID)
 	}
 }
 

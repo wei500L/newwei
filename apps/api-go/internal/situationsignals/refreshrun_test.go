@@ -33,13 +33,33 @@ func TestGetRefreshRunMissingAndCrossTenant(t *testing.T) {
 }
 
 func TestGetRefreshRunInvalidTaskWindowIsNotFound(t *testing.T) {
-	for _, window := range []string{`"not-a-timestamp"`, `""`, `null`, `{}`} {
+	for _, window := range []string{`"not-a-timestamp"`, `""`, `{}`, `"2026-13-45"`} {
 		store, ops := newMemoryCache()
 		store.values[refreshRunPrefix+"run-1"] = []byte(refreshRecordJSON(t, `"taskWindowStart":`+window+`,"activeSourceIds":[],"warnings":[]}`))
 		service := &Service{cache: ops}
 		if _, err := service.getRefreshRun(t.Context(), "org-1", "run-1"); !errors.Is(err, errRefreshRunMissing) {
 			t.Fatalf("window %s err = %v", window, err)
 		}
+	}
+}
+
+func TestGetRefreshRunNullTaskWindowIsTheEpoch(t *testing.T) {
+	// `new Date(null)` is 1970-01-01T00:00:00Z, a VALID date, so a null task
+	// window is not "unusable": the record is served with a 1970 window.
+	store, ops := newMemoryCache()
+	store.values[refreshRunPrefix+"run-1"] = []byte(refreshRecordJSON(t, `"taskWindowStart":null,"activeSourceIds":[],"warnings":[],"terminal":false}`))
+	service := &Service{cache: ops}
+	response, err := service.getRefreshRun(t.Context(), "org-1", "run-1")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if response.Status != refreshStatusCompleted {
+		t.Fatalf("status = %s", response.Status)
+	}
+	// The raw value is echoed verbatim by the response, exactly like NestJS.
+	encoded := string(mustEncode(t, response))
+	if !strings.Contains(encoded, `"taskWindowStart":null`) {
+		t.Fatalf("taskWindowStart = %s", encoded)
 	}
 }
 
@@ -137,21 +157,27 @@ func TestGetRefreshRunStateMachine(t *testing.T) {
 			name:     "no tasks, no warnings completes",
 			warnings: `[]`,
 			crawl:    `{"attempted":true,"permitted":true,"activeSourceCount":1,"schedulerTriggered":true,"crawlTaskCount":0,"analysisTaskCount":0}`,
-			terminal: true,
+			// Every terminal OR term is false (sources configured, permitted,
+			// attempted, no tasks, scheduler triggered), so the run continues.
+			terminal: false,
 			status:   refreshStatusCompleted,
 		},
 		{
 			name:     "warning severity makes it partial",
 			warnings: `[{"severity":"warning","message":"m"}]`,
 			crawl:    `{"attempted":true,"permitted":true,"activeSourceCount":1,"schedulerTriggered":true,"crawlTaskCount":0,"analysisTaskCount":0}`,
-			terminal: true,
+			// Every terminal OR term is false (sources configured, permitted,
+			// attempted, no tasks, scheduler triggered), so the run continues.
+			terminal: false,
 			status:   refreshStatusPartial,
 		},
 		{
 			name:     "error severity makes it failed",
 			warnings: `[{"severity":"error"}]`,
 			crawl:    `{"attempted":true,"permitted":true,"activeSourceCount":1,"schedulerTriggered":true,"crawlTaskCount":0,"analysisTaskCount":0}`,
-			terminal: true,
+			// Every terminal OR term is false (sources configured, permitted,
+			// attempted, no tasks, scheduler triggered), so the run continues.
+			terminal: false,
 			status:   refreshStatusFailed,
 		},
 		{
