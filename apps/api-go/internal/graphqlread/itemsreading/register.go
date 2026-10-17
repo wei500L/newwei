@@ -382,7 +382,7 @@ func (r *resolver) buildReadModelProcessedPreviewGraph(
 		Topics:              nonNil(extracted.Topics, doc.Topics),
 		Entities:            nonNil(extracted.Entities, doc.Entities),
 		Source:              firstOptional(optionalString(extracted.Source), doc.SourceName),
-		Title:               firstOptional(optionalString(extracted.Title), doc.Title),
+		Title:               firstOptional(optionalString(extracted.Title), optionalString(doc.Title)),
 		Language:            firstOptional(optionalString(extracted.Language), doc.Language),
 		Sentiment:           firstOptional(optionalString(extracted.Sentiment), doc.Sentiment),
 		ContentType:         firstOptional(optionalString(extracted.ContentType), doc.ContentType),
