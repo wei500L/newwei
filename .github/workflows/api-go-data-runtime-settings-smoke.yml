@@ -391,6 +391,34 @@ jobs:
               return value
 
 
+          def describe_body_diff(nest_value, go_value, path="$"):
+              """返回两侧 JSON 的逐键差异（只列出不同处），用于精确诊断 parity 失败。"""
+              if isinstance(nest_value, dict) and isinstance(go_value, dict):
+                  parts = []
+                  for key in sorted(set(nest_value) | set(go_value)):
+                      if key not in nest_value:
+                          parts.append(f"{path}.{key}: missing in nest (go={go_value[key]!r})")
+                      elif key not in go_value:
+                          parts.append(f"{path}.{key}: missing in go (nest={nest_value[key]!r})")
+                      else:
+                          sub = describe_body_diff(nest_value[key], go_value[key], f"{path}.{key}")
+                          if sub:
+                              parts.append(sub)
+                  return "; ".join(parts)
+              if isinstance(nest_value, list) and isinstance(go_value, list):
+                  if len(nest_value) != len(go_value):
+                      return f"{path}: length nest={len(nest_value)} go={len(go_value)}"
+                  parts = []
+                  for index, (left, right) in enumerate(zip(nest_value, go_value)):
+                      sub = describe_body_diff(left, right, f"{path}[{index}]")
+                      if sub:
+                          parts.append(sub)
+                  return "; ".join(parts)
+              if nest_value != go_value:
+                  return f"{path}: nest={nest_value!r} go={go_value!r}"
+              return ""
+
+
           def login(email):
               status, raw = call(NEST_URL, "/api/auth/login", "POST", None,
                                  {"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
@@ -602,8 +630,11 @@ jobs:
               if nest_status != expected or go_status != expected:
                   fail(f"parity {label}: status nest={nest_status} go={go_status}, want {expected}; "
                        f"nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
-              if canon(body(nest_raw)) != canon(body(go_raw)):
-                  fail(f"parity {label}: body mismatch nest={nest_raw[:800]!r} go={go_raw[:800]!r}")
+              nest_doc, go_doc = body(nest_raw), body(go_raw)
+              if canon(nest_doc) != canon(go_doc):
+                  print("NESTBODY", nest_raw.decode("utf-8", "replace"), flush=True)
+                  print("GOBODY", go_raw.decode("utf-8", "replace"), flush=True)
+                  fail(f"parity {label}: body mismatch {describe_body_diff(canon(nest_doc), canon(go_doc))}")
               if expected_message is not None:
                   for side, raw in (("nest", nest_raw), ("go", go_raw)):
                       if message_of(raw) != expected_message:

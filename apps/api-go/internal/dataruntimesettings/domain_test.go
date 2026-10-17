@@ -263,9 +263,9 @@ func TestNullishCoalescingAliases(t *testing.T) {
 	if got.value != "a" {
 		t.Fatalf("value ?? value = %q", got.value)
 	}
-	got = coalesceNumber(optionalNumber{state: presenceNull}, optionalNumber{state: presenceValue, value: 7})
-	if got.value != 7 {
-		t.Fatalf("null ?? 7 = %v", got.value)
+	gotNumber := coalesceNumber(optionalNumber{state: presenceNull}, optionalNumber{state: presenceValue, value: 7})
+	if gotNumber.value != 7 {
+		t.Fatalf("null ?? 7 = %v", gotNumber.value)
 	}
 	gotBool := coalesceBool(optionalBool{state: presenceValue, value: false}, optionalBool{state: presenceValue, value: true})
 	if gotBool.value {
