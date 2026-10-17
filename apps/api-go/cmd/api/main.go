@@ -657,6 +657,7 @@ func run() error {
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
 				cfg.CrawlProfilesMode == config.CrawlProfilesModeGo ||
+				cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo ||
 				cfg.RbacMode == config.RbacModeGo ||
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
@@ -717,6 +718,7 @@ func run() error {
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
 	crawlProfilesGo := cfg.CrawlProfilesMode == config.CrawlProfilesModeGo
+	crawlFrontierRunsGo := cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo
 	rbacGo := cfg.RbacMode == config.RbacModeGo
 	crawlTemplatesGo := cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo
 	llmLogsGo := cfg.LlmLogsMode == config.LlmLogsModeGo
@@ -727,7 +729,7 @@ func run() error {
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || crawlReadTelemetryGo || classificationRssOpsGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || crawlReadTelemetryGo || classificationRssOpsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
