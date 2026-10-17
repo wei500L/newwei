@@ -460,7 +460,9 @@ export class StorageSettingsService {
   private buildAuditMetadata(input: NormalizedStorageSettingsUpdate): Prisma.InputJsonObject {
     // Values are written in the same order the previous Object.entries loop
     // produced, so the JSON column content is byte-compatible.
-    const metadata: { [key: string]: Prisma.InputJsonValue | null } = {};
+    // Record<> rather than an index signature: the repo's eslint config
+    // enforces @typescript-eslint/consistent-indexed-object-style.
+    const metadata: Record<string, Prisma.InputJsonValue | null> = {};
 
     if (input.crawlImageStorage !== undefined) {
       metadata.crawlImageStorage = input.crawlImageStorage;
