@@ -403,9 +403,10 @@ jobs:
               for index, (wf_id, status, error) in enumerate(wf_rows):
                   error_sql = s(error)
                   finished = "'2020-01-01 00:00:00.000'" if status in ("completed", "canceled") else "NULL"
+                  wf_org = other if wf_id == "frwfrunother00000000001" else org
                   sql(f"""
                   INSERT INTO CrawlStrategyWorkflowRun (id, orgId, workflowId, workflowVersionId, workflowOrigin, status, runKind, input, output, graphSnapshot, parameterSources, error, stepCount, candidateCount, selectedCount, createdById, startedAt, finishedAt, createdAt, updatedAt)
-                  VALUES ('{wf_id}', '{org}', 'frrunworkflowa0000000001', 'frrunwfversiona0000000001', 'bound', '{status}', 'frontier',
+                  VALUES ('{wf_id}', '{wf_org}', 'frrunworkflowa0000000001', 'frrunwfversiona0000000001', 'bound', '{status}', 'frontier',
                           {j({"seedUrl": "https://frrun.example.com/start"})}, {j({"selectedCount": 1})}, {j({"nodes": []})}, {j([{"key": "seed", "source": "profile"}])}, {error_sql}, 2, 2, 1, '{admin}', '2026-01-01 00:00:00.000', {finished}, DATE_SUB(NOW(3), INTERVAL {200 - index} SECOND), NOW(3));
                   """)
               sql(f"""
