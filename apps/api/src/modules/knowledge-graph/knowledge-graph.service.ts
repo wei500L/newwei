@@ -497,7 +497,7 @@ export class KnowledgeGraphService {
       const missing = Array.from(neighborIds).filter((id) => !nodesById.has(id));
       if (missing.length > 0) {
         const loaded = await this.prisma.knowledgeEntity.findMany({
-          where: { id: { in: missing } }
+          where: { orgId: input.orgId, id: { in: missing } }
         });
         for (const node of loaded) {
           nodesById.set(node.id, node);

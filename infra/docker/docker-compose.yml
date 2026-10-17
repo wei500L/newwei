@@ -648,6 +648,11 @@ services:
       # reflection mutation 与设置读写仍回 NestJS。回滚只把该变量改回 legacy。
       # 不调用 AkShare，不启动调度 worker。
       API_GO_NEWS_INDICATORS_MODE: legacy
+      # 管理端质量面板 5 条 GET。pilot 与样例保持 legacy。改成 go 才由
+      # Go 验签并读写 MySQL ObservabilitySnapshot（与 Nest 共享 60 秒
+      # 快照）与 Mongo 的 processeditems/tasklogs。classification 与
+      # pipeline-recovery 仍回 NestJS。回滚只把该变量改回 legacy。
+      API_GO_QUALITY_OVERVIEW_MODE: legacy
       MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。

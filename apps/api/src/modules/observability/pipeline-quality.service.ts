@@ -1,4 +1,5 @@
 import { ProcessedItemModel, TaskLogModel } from "@modular/mongo";
+import { redactSensitiveFields } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import {
   MongoOutboxStatus,
@@ -336,7 +337,9 @@ export class PipelineQualityService {
 
     const failureTypes = failureAgg.map((entry) => ({
       stage: String(entry._id?.stage ?? "unknown"),
-      errorName: String(entry._id?.errorName ?? "unknown"),
+      errorName: redactSensitiveFields(
+        String(entry._id?.errorName ?? "unknown"),
+      ),
       count: Number(entry.count ?? 0),
     }));
 

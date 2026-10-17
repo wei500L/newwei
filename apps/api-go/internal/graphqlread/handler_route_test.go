@@ -10,6 +10,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 )
@@ -64,6 +65,53 @@ func TestHandlerExecutesRegisteredAndForwardsUnregistered(t *testing.T) {
 	}
 	if _, body := post(`{"query":"{ notifications(limit: -1) { id } }"}`); body == "forwarded" || strings.Contains(body, "take must be a non-negative integer") {
 		t.Fatalf("negative notification limit = %s", body)
+	}
+}
+
+func TestKnowledgeGraphRegistrationChangesOnlyThoseDocuments(t *testing.T) {
+	reg := contract.NewRegistry()
+	alerts.Register(reg, nil)
+	history.Register(reg, nil, nil, nil)
+	economic.Register(reg, nil)
+	var forwarded int
+	handler, err := NewHandler(Options{
+		Registry: reg,
+		Legacy: func(w http.ResponseWriter, _ *http.Request) {
+			forwarded++
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"upstream":"nest"}`))
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(body string) (bool, string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "http://gateway/graphql", strings.NewReader(body))
+		req.Header.Set("content-type", "application/json")
+		rec := httptest.NewRecorder()
+		before := forwarded
+		handler.ServeHTTP(rec, req)
+		return forwarded != before, rec.Body.String()
+	}
+
+	legacyDocument := `{"query":"{ getKnowledgeGraphSubgraph(input: { seedName: \"600519\" }) { seed { id } } }"}`
+	if wasForwarded, _ := post(legacyDocument); !wasForwarded {
+		t.Fatal("knowledge graph legacy mode did not forward")
+	}
+
+	knowledgegraph.Register(reg, nil, nil)
+	if wasForwarded, _ := post(legacyDocument); wasForwarded {
+		t.Fatal("knowledge graph go mode was forwarded")
+	}
+	if wasForwarded, body := post(`{"query":"{ getKnowledgeGraphSubgraph(input: { seedName: \"600519\" }) { seed { id } } getEntityImpactGraph { nodes { id } } }"}`); !wasForwarded {
+		t.Fatalf("mixed impact document was executed by Go: %s", body)
+	}
+	if wasForwarded, _ := post(`{"query":"{ entityIntelligenceCard(input: { entityId: \"x\" }) { entity { id } } knowledgeGraphEvidenceReviewQueue { id } }"}`); !wasForwarded {
+		t.Fatal("review queue mix was executed by Go")
+	}
+	if wasForwarded, _ := post(`{"query":"{ alertChannels { id } }"}`); wasForwarded {
+		t.Fatal("alertChannels was forwarded")
 	}
 }
 

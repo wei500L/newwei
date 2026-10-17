@@ -67,6 +67,16 @@
 //	         与异常上报 POST 仍回 NestJS。回滚只把 API_GO_ADMIN_LOGS_MODE
 //	         改回 legacy。不启用 shadow，不改前端，不改 canary。
 //
+//	         API_GO_QUALITY_OVERVIEW_MODE=go 时接管管理端质量面板的 5 条
+//	         精确 GET：admin/quality 的 news-sources、pipeline、overview、
+//	         task-logs 与 task-logs/summary。新闻源质量与流水线质量复用
+//	         MySQL ObservabilitySnapshot 表与 Redis 分布式锁键（与 Nest 共享
+//	         60 秒快照）；流水线 quality 与任务日志的 failureTypes.errorName
+//	         一样做敏感信息脱敏。admin/quality/classification/* 与
+//	         admin/quality/pipeline/runs|replay|rollback 仍回 NestJS。回滚只把
+//	         API_GO_QUALITY_OVERVIEW_MODE 改回 legacy。不启用 shadow，
+//	         不改前端，不改 canary。
+//
 // 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
 // API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
 // API_GO_DASHBOARD_STATS_MODE=legacy 把 stats 交回 NestJS；
@@ -117,6 +127,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
@@ -540,6 +551,10 @@ func run() error {
 	if cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
 		newsIndicatorsMode = string(legacyproxy.ModeGo)
 	}
+	qualityOverviewMode := ""
+	if cfg.QualityOverviewMode == config.QualityOverviewModeGo {
+		qualityOverviewMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -567,6 +582,7 @@ func run() error {
 	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
 	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
 	rules = legacyproxy.WithNewsIndicators(rules, newsIndicatorsMode)
+	rules = legacyproxy.WithQualityOverview(rules, qualityOverviewMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -617,6 +633,7 @@ func run() error {
 				cfg.RbacMode == config.RbacModeGo ||
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
+				cfg.QualityOverviewMode == config.QualityOverviewModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
@@ -674,7 +691,8 @@ func run() error {
 	llmLogsGo := cfg.LlmLogsMode == config.LlmLogsModeGo
 	adminLogsGo := cfg.AdminLogsMode == config.AdminLogsModeGo
 	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo
+	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1004,6 +1022,9 @@ func run() error {
 	if err := wireNewsIndicators(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
+	if err := wireQualityOverview(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
+	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
 	//（ModeGo 规则也不会进入 serveShadow——双重收口，保证 go 接管的
@@ -1167,6 +1188,10 @@ func run() error {
 		if newsIndicatorsRead {
 			newsindicators.Register(reg, sharedDB)
 		}
+		knowledgeGraphGo := cfg.GraphQLKnowledgeGraphMode == "go"
+		if knowledgeGraphGo {
+			knowledgegraph.Register(reg, sharedDB, redisClient)
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1197,6 +1222,11 @@ func run() error {
 			log.Printf("api-go: GraphQL news-indicator reads registered (newsIndicatorAssociations, newsIndicatorAssociation)")
 		} else {
 			log.Printf("api-go: GraphQL news-indicator reads not registered (API_GO_NEWS_INDICATORS_MODE=legacy)")
+		}
+		if knowledgeGraphGo {
+			log.Printf("api-go: GraphQL knowledge-graph reads registered (getKnowledgeGraphSubgraph, articleEntityLinks, knowledgeGraphEdgeEvidence, entityIntelligenceCard, entityIntelligenceEvidence, knowledgeEntityByName)")
+		} else {
+			log.Printf("api-go: GraphQL knowledge-graph reads not registered (API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy)")
 		}
 	}
 
