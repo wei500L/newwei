@@ -462,7 +462,35 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 
 未迁：10 个 Mutation（`createOrg`/`updateOrg`/`setOrgActive`/`updateMembershipRoles`/`setUserActive`/`createRole`/`assignRole`/`updateRole`/`upsertDashboard`/`deleteDashboard`）与 `queueEvents` Subscription。同批修 4 个缺陷：非法/跨组织游标返回空页（Nest + Go）、删除 `(doc.llm as any)` 并强类型归一化 `llm`（Nest + Go）、`entityName`/`topic` trim（Nest + Go）、`recentLogs.message` 脱敏（Nest + Go）。回滚只把 `API_GO_GRAPHQL_WORKSPACE_READ_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
 
-## 12. 平台治理设置 16 条 HTTP（Go）
+## 12. 分类质量工作台与 RSS 诊断/翻译指标（Go）
+
+新增开关 `API_GO_CLASSIFICATION_RSS_OPS_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。`go` 时只接管 13 条精确路由规则（10 条静态 + 3 条“恰好一段”动态路径，另加同路径 `OPTIONS` 预检），全部要求 `settings.manage`（人类身份来自 JWT 验签、Redis 撤销名单与 membership 重推导，忽略 JWT claims 里的 `permissions`；`mtk_` 机器令牌走 `MachineAccessToken` 的 SHA-256 查 `tokenHash`、校验 `Org.isActive`/未撤销/未过期、更新 `lastUsedAt`，身份为 `machine:<tokenId>`）：
+
+| 方法 | 精确路径 | 成功码 |
+| --- | --- | --- |
+| GET | `/api/admin/quality/classification/summary` | 200 |
+| GET | `/api/admin/quality/classification/sources/:sourceId/items` | 200 |
+| GET | `/api/admin/quality/classification/reviews/queue` | 200 |
+| POST | `/api/admin/quality/classification/reviews/:reviewId/decision` | 201 |
+| POST | `/api/admin/quality/classification/reviews/batch` | 201 |
+| POST | `/api/admin/quality/classification/sampling/query` | 201 |
+| POST | `/api/admin/quality/classification/sampling/annotations` | 201 |
+| GET | `/api/admin/quality/classification/reports/:jobId` | 200 |
+| GET | `/api/system-settings/rss-diagnostics/overview` | 200 |
+| GET | `/api/system-settings/rss-diagnostics/chain` | 200 |
+| GET | `/api/system-settings/rss-diagnostics/sources` | 200 |
+| POST | `/api/system-settings/rss-diagnostics/backfill-source-id` | 201 |
+| GET | `/api/system-settings/rss-translation/metrics` | 200 |
+
+- **不迁移**：`POST /api/admin/quality/classification/reports` 会向 BullMQ `CLASSIFICATION_QUALITY_QUEUE` 投递异步任务，遵守队列红线整条留在 NestJS；其余未列出的方法与更长路径（如 `reports/:jobId/results`、`reviews/queue/detail`）也继续回落 NestJS，Go 不返回自己的 404。
+- **分类质量**：`summary` 先读 Redis `classificationQuality:settings:<orgId>`，未命中读 MySQL `SystemSetting` 的 `classification_quality_settings:<orgId>`，再回退默认值（`lowConfidenceThreshold` 0.4 等 9 项）；`window` 只接受 `1h`/`24h`/`7d`（默认 `24h`，非法 400 `window must be one of the following values: 1h, 24h, 7d`），桶宽 5/60/360 分钟；响应含 10 桶 `confidenceHistogram`、按桶对齐的 `confidenceTrend`、前 10 `lowConfidenceSources`、`tasklogs`（`queue=news_pipeline&stage=classify&status=completed` 最多 20000 条）的 P50/P95/P99、`news_events/category_gate` 的 reject/penalized/accepted 与比率、前 30 `sourceCategoryBreakdown`（组织级 `news_event_source_policy:<orgId>` 判定 `authoritative`/`blog`/`unknown`）与阈值告警；告警以 Redis NX 键 `quality:classification:alert:notify:<orgId>:<window>:<signature>`（TTL 900 秒）节流，向本组织持有 `settings.manage` 的活跃成员写 `Notification`。`sampling/query` 按 `confidenceBand|method` 分层（`<0.4` low、`<0.75` medium、其余 high）随机取样并落库 `classificationsamples`（180 天 `expiresAt`）；`sampling/annotations` 只对样本内条目 upsert `classificationannotations`（365 天）并实时返回混淆矩阵与 `problemPathPairs`；`reports/:jobId` 不存在或 `jobId` 非法一律 200 `null`。
+- **RSS 链路诊断**：`windowDays` 收口 1..30（默认 7）、`lookbackHours` 收口 1..720（默认 24）；`ObservabilitySnapshot` 的 `scope=rss_diagnostics`、`variantKey=windowDays:<n>:lookbackHours:<n>`、TTL 60 秒、共享锁键 `observability-snapshot:<orgId>:rss_diagnostics:<variantKey>`；筛选 `config.seed.mode === "rss"` 的 `NewsSource`，结合 Mongo `processeditems` 与 MySQL `Article`/`PipelineJob`/`CrawlTask`(`displayName LIKE 'NewsSource:%'`)/`CrawlResult` 计算可见性、缺失率、问题标签与 `recommendations`。`backfill-source-id` 的 `dryRun` 默认 `true`（仅显式 `false` 写库）、`limit` 收口 1..5000（默认 500），按 `PipelineJob.sourceId` → `RawItem.payload.metadata.sourceId` → `...pipelineJobId` → `...crawlResultId` → `ItemMeta.externalId`（`crawlResult:`/`crawl:` 前缀反查 `CrawlTask.config`）多跳解析，只回填属于本组织 `NewsSource` 的值，写库后失效 `rss_diagnostics` 快照。
+- **RSS 翻译指标**：`provider` 非空时只允许 `deeplx`/`llm`（否则 400 `provider must be one of: deeplx, llm`）；`from`/`to` 为 `YYYY-MM-DD`（非法 400 `Invalid date '<raw>', expected YYYY-MM-DD`，`from > to` 400 `'from' must be earlier than or equal to 'to'`，跨度 > 180 天 400 `Date range exceeds 180 days`），默认最近 14 天，返回 `{ from, to, rows, summary }`。
+- **同批修复的 4 个缺陷（Nest 与 Go 两侧一致）**：① 非 24 位十六进制 ObjectId 直接进 Mongoose `_id` 查询触发 CastError（500）——`submitReviewDecision` 返回 404 `Review item not found`、`batchReviewDecision` 过滤无效 id、`submitAnnotations` 返回 404 `Sample not found`、`getReportJob` 返回 `null`；② `status=corrected` 传 `"///"` 经 `normalizePath` 归一化为空后落库成 `correctedCategoryPath: null`——改为 400 `correctedCategoryPath is required when status=corrected`；③ `getAlertRecipientUserIds` 的 `membership.findMany` 漏判 `Membership.isActive`，已停用成员仍收到阈值告警——补 `isActive: true`；④ `mtk_` 机器令牌执行复核裁决时把 `"machine:<id>"` 写入 `AuditLog.actorId`（User 外键）——写审计时归一化为 `null`，Mongo `reviewerId` 仍保留原 `actorId`。
+- **强类型与注释**：Go 侧 `apps/api-go/internal/classificationrssops` 全部请求 DTO、响应模型、8 个 Mongo 集合文档、MySQL 行扫描、快照载荷与审计/通知载荷均为具名 `struct`（精确 `bson`/`json` tag），枚举为具名字符串类型（`QualityWindow`、`ReviewDecisionStatus`、`ConfidenceBand`、`ClassifiedSourceType`、`RssSourceVisibility`）；`any`/`interface{}`/`map[string]any`/`[]any` 为零（MySQL 语句固定 arity，id 列表用 `JSON_CONTAINS` 匹配）；新增与修改的 `.go`/`.ts` 注释全部为英文。
+- 回滚只把 `API_GO_CLASSIFICATION_RSS_OPS_MODE` 改回 `legacy`：legacy 不注册 handler、不追加任何路由规则、不额外打开 Mongo 连接。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不启用 shadow，不改前端，不改其他 `API_GO_*` 默认值。细节与验收清单见 `docs/refactor/go-classification-rss-ops.md`。SEC-01 的真实登录态未在本批验证。
+
+## 13. 平台治理设置 16 条 HTTP（Go）
 
 新增开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串/`legacy`/`go`，默认
 `legacy`，非法值启动失败，错误文本 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be

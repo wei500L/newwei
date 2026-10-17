@@ -284,6 +284,40 @@ const (
 	QualityOverviewModeGo     QualityOverviewMode = "go"
 )
 
+// ClassificationRssOpsMode controls the classification quality workbench (7
+// HTTP endpoints), the RSS chain diagnostics (4 endpoints) and the RSS
+// translation daily metrics (1 endpoint). The default is legacy.
+//
+// When the mode is go, Go owns exactly these 13 route rules and nothing else:
+//
+//	GET  /api/admin/quality/classification/summary
+//	GET  /api/admin/quality/classification/sources/:sourceId/items
+//	GET  /api/admin/quality/classification/reviews/queue
+//	POST /api/admin/quality/classification/reviews/:reviewId/decision
+//	POST /api/admin/quality/classification/reviews/batch
+//	POST /api/admin/quality/classification/sampling/query
+//	POST /api/admin/quality/classification/sampling/annotations
+//	GET  /api/admin/quality/classification/reports/:jobId
+//	GET  /api/system-settings/rss-diagnostics/overview
+//	GET  /api/system-settings/rss-diagnostics/chain
+//	GET  /api/system-settings/rss-diagnostics/sources
+//	POST /api/system-settings/rss-diagnostics/backfill-source-id
+//	GET  /api/system-settings/rss-translation/metrics
+//
+// POST /api/admin/quality/classification/reports stays on NestJS: it enqueues a
+// BullMQ job, so the queue red line keeps it out of Go. The mode requires
+// JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI (processeditems, tasklogs
+// and every classification* collection live in Mongo). Shadow is never enabled
+// and canary stays untouched.
+type ClassificationRssOpsMode string
+
+const (
+	// ClassificationRssOpsModeLegacy proxies every route to NestJS.
+	ClassificationRssOpsModeLegacy ClassificationRssOpsMode = "legacy"
+	// ClassificationRssOpsModeGo serves the migrated routes from Go.
+	ClassificationRssOpsModeGo ClassificationRssOpsMode = "go"
+)
+
 // NewsnowClusteringOpsMode controls the nine NewsNow local-computation and
 // news-event clustering failure HTTP endpoints. It defaults to legacy. In go
 // mode it takes over exactly these nine routes and nothing else:
@@ -572,6 +606,12 @@ type Config struct {
 	// Mongo；新闻源/流水线快照与 outbox 在 MySQL）。不启用 shadow，不启动
 	// 任何 worker。
 	QualityOverviewMode QualityOverviewMode
+	// ClassificationRssOpsMode controls the classification quality workbench,
+	// the RSS chain diagnostics and the RSS translation daily metrics. Default
+	// legacy. go requires JWT, MySQL, Redis and Mongo (processeditems, tasklogs
+	// and the five classification* collections are stored in Mongo). Shadow is
+	// never enabled and no worker is started.
+	ClassificationRssOpsMode ClassificationRssOpsMode
 	// NewsnowClusteringOpsMode controls the nine NewsNow local-computation and
 	// news-event clustering failure endpoints. Defaults to legacy. go requires
 	// JWT, MySQL, Redis and Mongo: NewsNow metadata/resolve/ordering read Redis
@@ -585,7 +625,6 @@ type Config struct {
 	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
 	// live in Mongo; crawl tasks, media assets and quality snapshots live in
 	// MySQL). No shadow, no canary and no worker.
-	// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry
 	// endpoints migrated by this unit. It defaults to legacy. go mode
 	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
 	// live in Mongo; crawl tasks, media assets and quality snapshots live in
@@ -1049,6 +1088,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.QualityOverviewMode = QualityOverviewModeGo
 	default:
 		errs = append(errs, "API_GO_QUALITY_OVERVIEW_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_RSS_OPS_MODE")) {
+	case "", string(ClassificationRssOpsModeLegacy):
+		cfg.ClassificationRssOpsMode = ClassificationRssOpsModeLegacy
+	case string(ClassificationRssOpsModeGo):
+		cfg.ClassificationRssOpsMode = ClassificationRssOpsModeGo
+	default:
+		errs = append(errs, "API_GO_CLASSIFICATION_RSS_OPS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_CLUSTERING_OPS_MODE")) {
 	case "", string(NewsnowClusteringOpsModeLegacy):
@@ -1516,6 +1563,13 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, "MONGO_URI is required when API_GO_QUALITY_OVERVIEW_MODE=go")
 		}
 	}
+	if cfg.ClassificationRssOpsMode == ClassificationRssOpsModeGo {
+		appendAuthRequirements(&errs, "API_GO_CLASSIFICATION_RSS_OPS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CLASSIFICATION_RSS_OPS_MODE=go")
+		}
+	}
+
 	if cfg.NewsnowClusteringOpsMode == NewsnowClusteringOpsModeGo {
 		appendAuthRequirements(&errs, "API_GO_NEWSNOW_CLUSTERING_OPS_MODE", cfg)
 		if cfg.MongoURI == "" {
