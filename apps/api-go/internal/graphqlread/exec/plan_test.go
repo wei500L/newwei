@@ -10,6 +10,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/schema"
 )
@@ -157,6 +158,50 @@ func TestNewsEventsRootsExecuteOnlyWhenRegistered(t *testing.T) {
 	pilot := engine.PlanDocument(`query { alertChannels { id } }`, nil, nil)
 	if pilot.Kind != KindExecute {
 		t.Fatalf("pilot query kind %s", pilot.Kind)
+	}
+}
+
+func TestKnowledgeGraphRootsExecuteOnlyWhenRegistered(t *testing.T) {
+	loaded, err := schema.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := contract.NewRegistry()
+	alerts.Register(reg, nil)
+	history.Register(reg, nil, nil, nil)
+	economic.Register(reg, nil)
+
+	const six = `query {
+		getKnowledgeGraphSubgraph(input: { seedName: "600519" }) { seed { id } }
+		articleEntityLinks(articleId: "a") { articleId }
+		knowledgeGraphEdgeEvidence(edgeId: "e") { id }
+		entityIntelligenceCard(input: { entityId: "x" }) { entity { id } }
+		entityIntelligenceEvidence(input: { entityId: "x" }) { restricted }
+		knowledgeEntityByName(name: "600519") { id }
+	}`
+
+	legacyEngine := New(loaded, reg, 8, 2000, nil)
+	if got := legacyEngine.PlanDocument(six, nil, nil); got.Kind != KindLegacy {
+		t.Fatalf("knowledge graph legacy mode kind %s body %s", got.Kind, got.Result.Body)
+	}
+
+	knowledgegraph.Register(reg, nil, nil)
+	goEngine := New(loaded, reg, 8, 2000, nil)
+	if got := goEngine.PlanDocument(six, nil, nil); got.Kind != KindExecute {
+		t.Fatalf("knowledge graph go mode kind %s body %s", got.Kind, got.Result.Body)
+	}
+
+	for _, query := range []string{
+		`query { getKnowledgeGraphSubgraph(input: { seedName: "x" }) { seed { id } } getEntityImpactGraph { nodes { id } } }`,
+		`query { entityIntelligenceCard(input: { entityId: "x" }) { entity { id } } knowledgeGraphEvidenceReviewQueue { id } }`,
+		`query { getExecutiveChangeImpact(input: { seed: { name: "x", type: "company" } }) { scenario } }`,
+		`query { getCommodityMoveImpact(input: { commodityName: "gold" }) { scenario } }`,
+		`query { getPolicyEventImpact(input: { policyName: "rate" }) { scenario } }`,
+		`query { knowledgeGraphSettings { enabled } }`,
+	} {
+		if got := goEngine.PlanDocument(query, nil, nil); got.Kind != KindLegacy {
+			t.Fatalf("%s kind %s body %s", query, got.Kind, got.Result.Body)
+		}
 	}
 }
 
