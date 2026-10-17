@@ -750,6 +750,17 @@ services:
       # 且本变量=go 才登记；本变量为 legacy 时含这 20 个 root 的文档整包回
       # NestJS。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE: legacy
+      # 账户资料、会话退出与机器令牌管理的 8 条 HTTP（GET /api/auth/me、
+      # PATCH /api/auth/profile、POST /api/auth/change-password、
+      # POST /api/auth/logout、GET/POST /api/auth/machine-tokens、
+      # DELETE /api/auth/machine-tokens/:tokenId、
+      # POST /api/auth/machine-tokens/:tokenId/rotate）。默认 legacy，只接受
+      # 空串/legacy/go，非法值启动失败。go 需要 JWT_SECRET、DATABASE_URL、
+      # REDIS_HOST，不需要 Mongo。登录、refresh、邮箱验证码、密码找回、
+      # MFA、OIDC、邀请与注册审核、头像上传签名、个人数据导出仍回 NestJS。
+      # 生产 Web 入口仍指向 NestJS，canary 与 shadow 关闭。回滚只把该变量
+      # 改回 legacy。
+      API_GO_ACCOUNT_SECURITY_MODE: legacy
       # 基础设施设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认
       # 值）。S3_* 与 VECTOR_* 都不进入日志；不在这里新增第二套网关配置。
       NODE_ENV: production
