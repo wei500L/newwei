@@ -24,9 +24,12 @@ const emptyRefreshCrawl = `{"activeSourceCount":0,"permitted":false,"attempted":
 // (900 second TTL) can outlive the deployment that wrote it and a partial record
 // used to make every read fail.
 type refreshRunCacheRecord struct {
-	RefreshID       trimmedString `json:"refreshId"`
+	// refreshId, requestedAt and taskWindowStart are echoed verbatim, so they
+	// stay rawJSON: a null stays null and an absent key stays absent, exactly
+	// like the NestJS response spreads the cached object.
+	RefreshID       rawJSON       `json:"refreshId"`
 	OrgID           trimmedString `json:"orgId"`
-	RequestedAt     trimmedString `json:"requestedAt"`
+	RequestedAt     rawJSON       `json:"requestedAt"`
 	TaskWindowStart rawJSON       `json:"taskWindowStart"`
 	ActiveSourceIDs jsStringList  `json:"activeSourceIds"`
 	Crawl           rawJSON       `json:"crawl"`
@@ -92,9 +95,9 @@ type refreshRunProgress struct {
 
 // refreshRunResponse is the GET /refresh-runs/:refreshId body.
 type refreshRunResponse struct {
-	RefreshID       string                 `json:"refreshId"`
-	RequestedAt     string                 `json:"requestedAt"`
-	TaskWindowStart string                 `json:"taskWindowStart"`
+	RefreshID       *rawJSON               `json:"refreshId,omitempty"`
+	RequestedAt     *rawJSON               `json:"requestedAt,omitempty"`
+	TaskWindowStart *rawJSON               `json:"taskWindowStart,omitempty"`
 	Status          refreshLifecycleStatus `json:"status"`
 	Crawl           rawJSON                `json:"crawl"`
 	Progress        refreshRunProgress     `json:"progress"`
@@ -209,14 +212,10 @@ func (s *Service) getRefreshRun(ctx context.Context, orgID, refreshID string) (r
 		}
 	}
 
-	requestedAt, _ := record.RequestedAt.Value()
-	windowText, _ := record.TaskWindowStart.asString()
-	refreshIDValue, _ := record.RefreshID.Value()
-
 	response := refreshRunResponse{
-		RefreshID:       refreshIDValue,
-		RequestedAt:     requestedAt,
-		TaskWindowStart: windowText,
+		RefreshID:       passThroughField(record.RefreshID),
+		RequestedAt:     passThroughField(record.RequestedAt),
+		TaskWindowStart: passThroughField(record.TaskWindowStart),
 		Status:          status,
 		Crawl:           crawlRaw,
 		Progress: refreshRunProgress{
@@ -252,6 +251,17 @@ func (s *Service) getRefreshRun(ctx context.Context, orgID, refreshID string) (r
 		response.Warnings = []rawJSON{}
 	}
 	return response, nil
+}
+
+// passThroughField returns a pointer to a cached value, or nil when the key was
+// absent (JavaScript undefined). The response therefore omits an absent field
+// and echoes a null verbatim, which is what spreading the cached object does.
+func passThroughField(value rawJSON) *rawJSON {
+	if len(value.raw) == 0 {
+		return nil
+	}
+	copied := value
+	return &copied
 }
 
 // persistRefreshRunTerminal patches only the `terminal` field of the cached JSON
