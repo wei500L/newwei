@@ -6,6 +6,7 @@ import {
   Int,
   ObjectType,
 } from "@nestjs/graphql";
+import { Allow } from "class-validator";
 
 import {
   KnowledgeGraphEdgeModel,
@@ -16,27 +17,39 @@ import { EntitySentimentSnapshotModel } from "./sentiment.model";
 
 @InputType()
 export class EntityIntelligenceCardInput {
+  // Allow() only marks the property for the global ValidationPipe
+  // (whitelist + forbidUnknownValues). It adds no constraint and does not
+  // change the SDL.
+  @Allow()
   @Field(() => String)
   entityId!: string;
 
+  @Allow()
   @Field(() => Int, { nullable: true })
   windowDays?: number;
 
+  @Allow()
   @Field(() => Int, { nullable: true })
   relatedLimit?: number;
 }
 
 @InputType()
 export class EntityIntelligenceEvidenceInput {
+  // See EntityIntelligenceCardInput: Allow() registers validation metadata so
+  // forbidUnknownValues does not reject the whole input as an unknown value.
+  @Allow()
   @Field(() => String)
   entityId!: string;
 
+  @Allow()
   @Field(() => Int, { nullable: true })
   windowDays?: number;
 
+  @Allow()
   @Field(() => Int, { nullable: true })
   eventsLimit?: number;
 
+  @Allow()
   @Field(() => Int, { nullable: true })
   evidenceLimit?: number;
 }
