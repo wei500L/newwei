@@ -1,0 +1,1744 @@
+# 基础设施连接与采集运行凭据（向量服务配置 / 存储配置 / 新闻源运行凭据 7 条
+# 精确 HTTP）的 Go 真实栈验收。不进普通 CI：PR 上加 label
+# api-go-infrastructure-settings-smoke，或 workflow_dispatch 手动触发。
+# 覆盖 legacy 代理对照与 go 接管两侧逐条契约比对（状态码 + 完整 JSON 正文 +
+# MySQL 行状态）、机器令牌、平台管理员门禁、IS1–IS4 回归（JSON null 清空语义、
+# DB 权威合并基准、向量 token 四态、加密策略与缓存降级矩阵、真实并发）、
+# 停 NestJS 后的接管与 502 边界，以及回滚到 legacy。
+name: api-go-infrastructure-settings-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-infrastructure-settings-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-infrastructure-settings-smoke@example.com
+  SMTP_PASS: api-go-infrastructure-settings-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  # 阶段 4/5 必须在 NestJS 停止后继续使用阶段 0 签发的真实 JWT；默认 15m
+  # 在完整 smoke（多次容器重启）里会过期，因此 CI 显式放宽有效期。
+  JWT_ACCESS_EXPIRES_IN: 6h
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  # 让限流桶足够大，避免验收脚本自身触碰上限（Nest 与 Go 读同一组 env）。
+  RATE_LIMIT_LOGIN: "1000"
+  RATE_LIMIT_LOGIN_WINDOW: "600"
+  RATE_LIMIT_CRAWL_TASK_CREATE: "1000"
+  RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW: "600"
+  RATE_LIMIT_RBAC_WRITE: "1000"
+  RATE_LIMIT_RBAC_WRITE_WINDOW: "600"
+  RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS: "60"
+  AUTH_PROFILE_CACHE_TTL_SECONDS: "600"
+  AUTH_PROFILE_CACHE_LOCK_TTL_MS: "5000"
+  AUTH_PROFILE_CACHE_MAX_WAIT_MS: "5000"
+  AUTH_PROFILE_CACHE_RETRY_DELAY_MS: "50"
+  AUDIT_LOG_RETENTION_DAYS: "90"
+  # 基础设施设置的 env 缺省。api-go 容器在 Python 的 start_go() 里再显式注入
+  # 一份同样的值（连同 API_GO_INFRASTRUCTURE_SETTINGS_MODE）。
+  #
+  # 这里故意【不】定义 VECTOR_SERVICE_BASE_URL 与 S3_ENDPOINT：@nestjs/config 的
+  # ConfigService.get() 在 validate 结果缺少该键时仍会回落到 process.env，因此
+  # “已设置但为空串”会让 NestJS 的 vector GET 返回 "baseUrl": ""、storage GET
+  # 返回 "endpoint": ""，而 Go 把空的环境缺省视为“未配置”（baseUrl: null /
+  # 省略 endpoint）。未定义时两侧一致，也正是 IS4 回归要求的“endpoint 依 env
+  # 决定有值或省略”。Go 容器仍按契约显式拿到 VECTOR_SERVICE_BASE_URL= 与
+  # S3_ENDPOINT=。
+  # NODE_ENV=production 也只在启动 NestJS 的步骤与 api-go 容器里注入：工作流级
+  # NODE_ENV=production 会让 pnpm install 跳过 devDependencies，构建随即失败。
+  SYSTEM_SETTINGS_ENCRYPTION_KEY: 3f8c1d5a9b2e7046c1a8f3d6e9b0c4a75d2f8e1b6c3a9d0e4f7b2c5a8d1e6f30
+  VECTOR_SERVICE_FALLBACK_TO_MONGO: "true"
+  VECTOR_INTERNAL_TOKEN: ""
+  VECTOR_SERVICE_TIMEOUT_MS: "5000"
+  VECTOR_SERVICE_MAX_RETRIES: "2"
+  S3_ACCESS_KEY_ID: ""
+  S3_SECRET_ACCESS_KEY: ""
+  S3_REGION: us-east-1
+  S3_BUCKET: ""
+  S3_PUBLIC_BASE_URL: ""
+  S3_FORCE_PATH_STYLE: "false"
+  S3_PRESIGNED_URL_TTL_SECONDS: "300"
+  API_GO_INFRASTRUCTURE_SETTINGS_MODE: legacy
+  SEED_ORG_SLUG: api-go-infrastructure-settings-smoke-org
+  SEED_ORG_NAME: api-go Infrastructure Settings Smoke Org
+  SEED_ADMIN_EMAIL: api-go-infrastructure-settings-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: "ApiGoInfraSettings#2026-Ci"
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-infrastructure-settings-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-infrastructure-settings-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-infrastructure-settings:ci .
+      - name: Exercise infrastructure settings routes
+        run: |
+          set -euo pipefail
+          python3 -u - << 'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import signal
+          import subprocess
+          import threading
+          import time
+          import traceback
+          import urllib.error
+          import urllib.request
+
+
+          def _on_sigterm(signum, frame):
+              """Prints where the step was when the runner asked it to stop."""
+              print("SIGTERM received at:", flush=True)
+              traceback.print_stack(frame)
+              os._exit(143)
+
+
+          signal.signal(signal.SIGTERM, _on_sigterm)
+
+          NEST_URL = "http://127.0.0.1:4000"
+          GO_URL = "http://127.0.0.1:4020"
+          GO_CONTAINER = "api-go-infrastructure-settings-smoke"
+          GO_IMAGE = "api-go-infrastructure-settings:ci"
+
+          VALID_KEY = os.environ["SYSTEM_SETTINGS_ENCRYPTION_KEY"].strip()
+          INVALID_KEY = "not-a-valid-key"
+          PLATFORM_MESSAGE = "Platform admin access required"
+          PERMISSION_CODE = "INSUFFICIENT_PERMISSIONS"
+          PERMISSION_MESSAGE = "Insufficient permissions"
+          PERMISSION_DETAIL = "Requires any permission: settings.manage"
+
+          VECTOR_PATH = "/api/system-settings/vector-service"
+          STORAGE_PATH = "/api/admin/settings/storage"
+          SECRETS_PATH = "/api/system-settings/news-source-runtime-secrets"
+          VECTOR_DIAGNOSTICS_PATH = VECTOR_PATH + "/diagnostics"
+          STORAGE_TEST_PATH = STORAGE_PATH + "/test"
+          VECTOR_KEY = "vector_service"
+          SECRETS_KEY = "news_source_runtime_secrets"
+          SECURITY_KEY = "system_security"
+
+          SETTING_KEYS = [
+              VECTOR_KEY,
+              "crawl_image_storage",
+              "storage_s3_access_key_id",
+              "storage_s3_secret_access_key",
+              "storage_s3_region",
+              "storage_s3_bucket",
+              "storage_s3_endpoint",
+              "storage_s3_public_base_url",
+              "storage_s3_force_path_style",
+              "storage_s3_presigned_url_ttl_seconds",
+              SECRETS_KEY,
+              SECURITY_KEY,
+          ]
+          CACHE_KEYS = ["vector_service:settings", "storage:settings", "system_security:settings"]
+          CLEARED_STORAGE_KEYS = [
+              "storage_s3_endpoint",
+              "storage_s3_force_path_style",
+              "storage_s3_presigned_url_ttl_seconds",
+          ]
+
+          org_a = "is-smoke-org-a"
+          org_b = "is-smoke-org-b"
+          role_a = "is-smoke-role-a"
+          role_b = "is-smoke-role-b"
+          role_no = "is-smoke-role-no"
+          platform_user = "is-smoke-platform-user"
+          admin_a = "is-smoke-admin-a"
+          admin_b = "is-smoke-admin-b"
+          no_manage_user = "is-smoke-no-manage-user"
+          platform_email = "is-smoke-platform@example.com"
+          admin_a_email = "is-smoke-admin-a@example.com"
+          admin_b_email = "is-smoke-admin-b@example.com"
+          no_manage_email = "is-smoke-no-manage@example.com"
+          allow_token = "mtk_is_smoke_allow_000000000001"
+          deny_token = "mtk_is_smoke_deny_0000000000001"
+
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+
+          def require(label, got, want):
+              if got != want:
+                  fail(f"{label}: got {got!r}, want {want!r}")
+
+
+          if len(VALID_KEY) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in VALID_KEY):
+              fail("SYSTEM_SETTINGS_ENCRYPTION_KEY must be a 64 hex character key for this smoke")
+
+
+          def container_id(ancestor):
+              found = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor], text=True).split()
+              if not found:
+                  fail("no running container for " + ancestor)
+              return found[0]
+
+
+          def sql(statement):
+              cid = container_id("mysql:8.4")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "-B", "app"],
+                                    input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("mysql: " + (proc.stderr or proc.stdout))
+              return proc.stdout.strip()
+
+
+          def sql_rows(statement):
+              return [line.split("\t") for line in sql(statement).splitlines() if line != ""]
+
+
+          def scalar(statement):
+              rows = sql_rows(statement)
+              return rows[-1][0] if rows else ""
+
+
+          def redis(*args):
+              cid = container_id("redis:7.2")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "redis-cli", "--raw", *args],
+                                    text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("redis: " + (proc.stderr or proc.stdout))
+              return proc.stdout.strip()
+
+
+          def sql_escape(text):
+              return text.replace("\\", "\\\\").replace("'", "''")
+
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=60):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              try:
+                  return json.loads(text)
+              except ValueError:
+                  return None
+
+
+          def parse_json_text(text):
+              if text is None or text == "":
+                  return None
+              try:
+                  return json.loads(text)
+              except ValueError:
+                  return text
+
+
+          def message_of(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+
+          def canon(value):
+              if isinstance(value, dict):
+                  if value.get("__enc") == "system-settings:v1":
+                      return "<encrypted>"
+                  out = {}
+                  for key, item in value.items():
+                      if key in ("traceId", "timestamp", "updatedAt"):
+                          out[key] = "<ts>"
+                      else:
+                          out[key] = canon(item)
+                  return out
+              if isinstance(value, list):
+                  return [canon(item) for item in value]
+              return value
+
+
+          def keys_sql():
+              return ", ".join("'" + key + "'" for key in SETTING_KEYS)
+
+
+          def setting_state():
+              rows = sql_rows(
+                  "SELECT `key`, CAST(`value` AS CHAR), JSON_TYPE(`value`), (`value` IS NULL), "
+                  "isPublic, IFNULL(description, '<null>'), IFNULL(updatedById, '<null>') "
+                  "FROM SystemSetting WHERE `key` IN (" + keys_sql() + ") ORDER BY `key`")
+              return [(row[0], canon(parse_json_text(row[1])), row[2], row[3], row[4], row[5], row[6])
+                      for row in rows]
+
+
+          def state_for(key):
+              found = [row for row in setting_state() if row[0] == key]
+              return found[0] if found else None
+
+
+          def reset_all():
+              sql("DELETE FROM SystemSetting WHERE `key` IN (" + keys_sql() + ")")
+              redis("DEL", *CACHE_KEYS)
+
+
+          def set_setting(key, value_text, is_public=0, description=None):
+              desc = "NULL" if description is None else "'" + sql_escape(description) + "'"
+              sql("REPLACE INTO SystemSetting (`key`, value, isPublic, description, createdAt, updatedAt, updatedById) "
+                  "VALUES ('" + key + "', _utf8mb4'" + sql_escape(value_text) + "', " + str(is_public) + ", " + desc +
+                  ", NOW(3), NOW(3), NULL)")
+
+
+          def set_system_security(doc_text):
+              redis("DEL", "system_security:settings")
+              if doc_text is None:
+                  sql("DELETE FROM SystemSetting WHERE `key` = '" + SECURITY_KEY + "'")
+              else:
+                  set_setting(SECURITY_KEY, doc_text, 0, None)
+
+
+          def cache_snapshot():
+              return tuple(redis("GET", key) for key in CACHE_KEYS)
+
+
+          def audit_count(action):
+              return int(scalar("SELECT COUNT(*) FROM AuditLog WHERE action='" + action + "'"))
+
+
+          def audit_total():
+              return int(scalar("SELECT COUNT(*) FROM AuditLog"))
+
+
+          def newest_audit(action):
+              rows = sql_rows("SELECT CAST(metadata AS CHAR) FROM AuditLog WHERE action='" + action + "' "
+                              "ORDER BY createdAt DESC, id DESC LIMIT 1")
+              return parse_json_text(rows[-1][0]) if rows else None
+
+
+          def newest_audit_raw(action):
+              rows = sql_rows("SELECT CAST(metadata AS CHAR) FROM AuditLog WHERE action='" + action + "' "
+                              "ORDER BY createdAt DESC, id DESC LIMIT 1")
+              return rows[-1][0] if rows else ""
+
+
+          def parity(label, method, path, token, payload=None, expected=200, setup=None, expected_message=None):
+              if setup is not None:
+                  setup()
+              nest_status, nest_raw = call(NEST_URL, path, method, token, payload)
+              nest_state = setting_state()
+              if setup is not None:
+                  setup()
+              go_status, go_raw = call(GO_URL, path, method, token, payload)
+              go_state = setting_state()
+              if nest_status != expected or go_status != expected:
+                  fail(f"parity {label}: status nest={nest_status} go={go_status}, want {expected}; "
+                       f"nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
+              if canon(body(nest_raw)) != canon(body(go_raw)):
+                  fail(f"parity {label}: body mismatch nest={nest_raw[:800]!r} go={go_raw[:800]!r}")
+              if nest_state != go_state:
+                  fail(f"parity {label}: DB state mismatch nest={nest_state} go={go_state}")
+              if expected_message is not None:
+                  for side, raw in (("nest", nest_raw), ("go", go_raw)):
+                      got = message_of(raw)
+                      if got != expected_message:
+                          fail(f"parity {label}: {side} message {got!r} want {expected_message!r} raw={raw[:400]!r}")
+              print("parity ok:", label)
+              return body(nest_raw), body(go_raw)
+
+
+          def request_json(label, base, method, path, token, payload=None, expected=200, expected_message=None):
+              status, raw = call(base, path, method, token, payload)
+              if status != expected:
+                  fail(f"{label}: {method} {path} -> {status} {raw[:400]!r}, want {expected}")
+              if expected_message is not None and message_of(raw) != expected_message:
+                  fail(f"{label}: message {message_of(raw)!r} want {expected_message!r} raw={raw[:400]!r}")
+              return body(raw)
+
+
+          def parity_write(label, method, path, token, payload, expected=200, setup=None, expected_message=None):
+              return parity(label, method, path, token, payload, expected, setup, expected_message)
+
+
+          def login(email):
+              status, raw = call(NEST_URL, "/api/auth/login", "POST", None,
+                                 {"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw) or {}
+              if status not in (200, 201) or not doc.get("accessToken"):
+                  fail(f"login {email} -> {status} {raw[:300]!r}")
+              return doc["accessToken"]
+
+
+          def jwt_jti(token):
+              payload = token.split(".")[1]
+              payload += "=" * (-len(payload) % 4)
+              claims = json.loads(base64.urlsafe_b64decode(payload))
+              return claims.get("jti")
+
+
+          def docker_logs():
+              proc = subprocess.run(["docker", "logs", GO_CONTAINER], text=True, capture_output=True)
+              return (proc.stdout + proc.stderr)[-4000:]
+
+
+          def log_tail(path, lines=60):
+              try:
+                  with open(path, "r", errors="replace") as handle:
+                      return "".join(handle.readlines()[-lines:])
+              except OSError:
+                  return ""
+
+
+          def stop_nest():
+              # SIGTERM the recorded pid only. killpg must NOT be used here: the initial
+              # NestJS background process is started by the workflow step shell, whose
+              # process group is the Actions worker's own group - killing that group would
+              # SIGTERM this very step (observed as "The operation was canceled.").
+              pid_path = "/tmp/api-nestjs.pid"
+              if os.path.exists(pid_path):
+                  raw = open(pid_path).read().strip()
+                  if raw.isdigit():
+                      try:
+                          os.kill(int(raw), signal.SIGTERM)
+                      except Exception:
+                          pass
+              subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False, capture_output=True)
+              subprocess.run(["pkill", "-f", "node dist/main.js"], check=False, capture_output=True)
+
+
+          def start_nest(encryption_key=VALID_KEY):
+              stop_nest()
+              for _ in range(30):
+                  try:
+                      urllib.request.urlopen(NEST_URL + "/api/healthz/live", timeout=2).read()
+                  except Exception:
+                      break
+                  time.sleep(1)
+              env = dict(os.environ)
+              env["NODE_ENV"] = "production"
+              env["PORT"] = "4000"
+              if encryption_key is None:
+                  env.pop("SYSTEM_SETTINGS_ENCRYPTION_KEY", None)
+              else:
+                  env["SYSTEM_SETTINGS_ENCRYPTION_KEY"] = encryption_key
+              log = open("/tmp/api-nestjs.log", "w")
+              proc = subprocess.Popen(["pnpm", "--filter", "@modular/api", "run", "start"],
+                                      env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+              with open("/tmp/api-nestjs.pid", "w") as handle:
+                  handle.write(str(proc.pid))
+              for _ in range(90):
+                  try:
+                      status, _ = call(NEST_URL, "/api/healthz/live", timeout=3)
+                      if status == 200:
+                          print("nestjs up (encryptionKey=%s)" % ("valid" if encryption_key == VALID_KEY
+                                                                  else ("absent" if encryption_key is None else "invalid")))
+                          return
+                  except Exception:
+                      pass
+                  time.sleep(2)
+              fail("nestjs did not become healthy after restart:\n" + log_tail("/tmp/api-nestjs.log"))
+
+
+          def start_go(mode, encryption_key=VALID_KEY):
+              subprocess.run(["docker", "rm", "-f", GO_CONTAINER], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  f"API_GO_INFRASTRUCTURE_SETTINGS_MODE={mode}",
+                  "API_GO_RUNTIME_SETTINGS_MODE=legacy",
+                  "API_GO_RBAC_MODE=legacy",
+                  "API_GO_CRAWL_PROFILES_MODE=legacy",
+                  "API_GO_CRAWL_TEMPLATES_MODE=legacy",
+                  "API_GO_CRAWL_WORKFLOWS_MODE=legacy",
+                  "API_GO_NEWS_SOURCES_MODE=legacy",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy",
+                  "API_GO_GRAPHQL_KG_IMPACT_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "API_GO_ADMIN_LOGS_MODE=legacy",
+                  "API_GO_LLM_LOGS_MODE=legacy",
+                  "API_GO_NEWS_INDICATORS_MODE=legacy",
+                  "API_GO_QUALITY_OVERVIEW_MODE=legacy",
+                  "NODE_ENV=production",
+                  "VECTOR_SERVICE_ENABLED=false",
+                  "VECTOR_SERVICE_FALLBACK_TO_MONGO=true",
+                  "VECTOR_SERVICE_BASE_URL=",
+                  "VECTOR_INTERNAL_TOKEN=",
+                  "VECTOR_SERVICE_TIMEOUT_MS=5000",
+                  "VECTOR_SERVICE_MAX_RETRIES=2",
+                  "S3_ACCESS_KEY_ID=",
+                  "S3_SECRET_ACCESS_KEY=",
+                  "S3_REGION=us-east-1",
+                  "S3_BUCKET=",
+                  "S3_ENDPOINT=",
+                  "S3_PUBLIC_BASE_URL=",
+                  "S3_FORCE_PATH_STYLE=false",
+                  "S3_PRESIGNED_URL_TTL_SECONDS=300",
+                  "RATE_LIMIT_LOGIN=1000",
+                  "RATE_LIMIT_LOGIN_WINDOW=600",
+                  "RATE_LIMIT_CRAWL_TASK_CREATE=1000",
+                  "RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW=600",
+                  "RATE_LIMIT_RBAC_WRITE=1000",
+                  "RATE_LIMIT_RBAC_WRITE_WINDOW=600",
+                  "RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS=60",
+                  "AUTH_PROFILE_CACHE_TTL_SECONDS=600",
+                  "AUTH_PROFILE_CACHE_LOCK_TTL_MS=5000",
+                  "AUTH_PROFILE_CACHE_MAX_WAIT_MS=5000",
+                  "AUTH_PROFILE_CACHE_RETRY_DELAY_MS=50",
+                  "AUDIT_LOG_RETENTION_DAYS=90",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  f"JWT_SECRET={os.environ['JWT_SECRET']}",
+                  f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
+                  f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
+              ]
+              if encryption_key is not None:
+                  env.append("SYSTEM_SETTINGS_ENCRYPTION_KEY=" + encryption_key)
+              cmd = ["docker", "run", "-d", "--name", GO_CONTAINER,
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20",
+                     "--health-start-period", "5s", "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append(GO_IMAGE)
+              subprocess.check_call(cmd, stdout=subprocess.DEVNULL)
+              for _ in range(30):
+                  status = subprocess.check_output(
+                      ["docker", "inspect", "--format", "{{.State.Health.Status}}", GO_CONTAINER], text=True).strip()
+                  if status == "healthy":
+                      print("api-go up infrastructureSettingsMode=%s encryptionKey=%s"
+                            % (mode, "valid" if encryption_key == VALID_KEY else ("absent" if encryption_key is None else "invalid")))
+                      return
+                  if status == "unhealthy":
+                      fail(docker_logs())
+                  time.sleep(2)
+              fail(docker_logs())
+
+
+          def seed_identities():
+              admin = scalar("SELECT id FROM User WHERE email='" + os.environ["SEED_ADMIN_EMAIL"] + "'")
+              settings_perm = scalar("SELECT id FROM Permission WHERE name='settings.manage'")
+              if not admin or not settings_perm:
+                  fail("missing seed rows admin=%r settings=%r" % (admin, settings_perm))
+              sql(f"""
+              INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+                ('{org_a}', 'Infra Settings Smoke Org A', 'is-smoke-org-a', 1, NOW(3), NOW(3)),
+                ('{org_b}', 'Infra Settings Smoke Org B', 'is-smoke-org-b', 1, NOW(3), NOW(3));
+              INSERT INTO Role (id, name, description, isSystem, orgId) VALUES
+                ('{role_a}', 'is-smoke-settings-a', NULL, 0, '{org_a}'),
+                ('{role_b}', 'is-smoke-settings-b', NULL, 0, '{org_b}'),
+                ('{role_no}', 'is-smoke-no-perm', NULL, 0, '{org_a}');
+              INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+                ('{role_a}-rp', '{role_a}', '{settings_perm}'),
+                ('{role_b}-rp', '{role_b}', '{settings_perm}');
+              """)
+              for user_id, email, org_id, role_id in (
+                  (platform_user, platform_email, org_a, role_a),
+                  (admin_a, admin_a_email, org_a, role_a),
+                  (admin_b, admin_b_email, org_b, role_b),
+                  (no_manage_user, no_manage_email, org_a, role_no),
+              ):
+                  sql(f"""
+                  INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+                  SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+                  FROM User WHERE id = '{admin}';
+                  INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+                  VALUES ('{user_id}-mem', '{user_id}', '{org_id}', '{role_id}', 1, NOW(3));
+                  """)
+              sql(f"""
+              INSERT INTO GlobalRoleAssignment (id, userId, role, createdAt)
+              VALUES ('{platform_user}-gra', '{platform_user}', 'platform_admin', NOW(3));
+              """)
+              allow_hash = hashlib.sha256(allow_token.encode()).hexdigest()
+              deny_hash = hashlib.sha256(deny_token.encode()).hexdigest()
+              sql(f"""
+              INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, lastUsedAt, expiresAt, revokedAt, createdAt, updatedAt)
+              VALUES
+                ('{allow_token}-row', '{org_a}', 'allow', '{allow_hash}', '["settings.manage"]', NULL, NULL, NULL, NOW(3), NOW(3)),
+                ('{deny_token}-row', '{org_a}', 'deny', '{deny_hash}', '["org.read"]', NULL, NULL, NULL, NOW(3), NOW(3));
+              """)
+              print("fixtures ok: org A/B, platform admin P, non-platform admins, no-permission user, two machine tokens")
+
+
+          VECTOR_ENV_BODY = {
+              "source": "env", "enabled": False, "fallbackToMongo": True, "baseUrl": None,
+              "timeoutMs": 5000, "maxRetries": 2, "hasToken": False, "tokenSource": "none",
+          }
+          VECTOR_PUT_BASE = {"enabled": False, "fallbackToMongo": True, "timeoutMs": 5000, "maxRetries": 2}
+          VECTOR_DB_BODY = {
+              "source": "db", "enabled": False, "fallbackToMongo": True, "baseUrl": None,
+              "timeoutMs": 5000, "maxRetries": 2, "hasToken": False, "tokenSource": "none",
+          }
+
+
+          def db_doc(key):
+              return parse_json_text(scalar("SELECT CAST(`value` AS CHAR) FROM SystemSetting WHERE `key`='" + key + "'"))
+
+
+          def vector_group(tag, token):
+              label = tag + " /vector-service"
+
+              nest_doc, go_doc = parity(label + " GET env defaults", "GET", VECTOR_PATH, token, None, 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " GET env defaults " + side, canon(doc), VECTOR_ENV_BODY)
+
+              stored = {"enabled": True, "fallbackToMongo": False, "baseUrl": "http://vector.example:9000",
+                        "token": "stored-token", "timeoutMs": 7000, "maxRetries": 3}
+
+              def setup_row():
+                  reset_all()
+                  set_setting(VECTOR_KEY, json.dumps(stored), 0, None)
+
+              expected_row = {"source": "db", "enabled": True, "fallbackToMongo": False,
+                              "baseUrl": "http://vector.example:9000", "timeoutMs": 7000, "maxRetries": 3,
+                              "hasToken": True, "tokenSource": "stored"}
+              nest_doc, go_doc = parity(label + " GET db row", "GET", VECTOR_PATH, token, None, 200, setup_row)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " GET db row " + side, canon(doc), expected_row)
+
+              weird = {"enabled": "yes", "fallbackToMongo": 0, "baseUrl": "   ", "token": 123,
+                       "timeoutMs": "7000", "maxRetries": -1}
+
+              def setup_weird():
+                  reset_all()
+                  set_setting(VECTOR_KEY, json.dumps(weird), 0, None)
+
+              expected_weird = {"source": "db", "enabled": False, "fallbackToMongo": True, "baseUrl": None,
+                                "timeoutMs": 7000, "maxRetries": 2, "hasToken": False, "tokenSource": "none"}
+              nest_doc, go_doc = parity(label + " GET stored type drift", "GET", VECTOR_PATH, token, None, 200, setup_weird)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " GET stored type drift " + side, canon(doc), expected_weird)
+
+              absent = dict(VECTOR_PUT_BASE)
+              nest_doc, go_doc = parity(label + " PUT token absent", "PUT", VECTOR_PATH, token, absent, 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " PUT token absent " + side, canon(doc), VECTOR_DB_BODY)
+              require(label + " PUT token absent row", db_doc(VECTOR_KEY).get("token"), None)
+
+              null_token = dict(VECTOR_PUT_BASE)
+              null_token["token"] = None
+              nest_doc, go_doc = parity(label + " PUT token null", "PUT", VECTOR_PATH, token, null_token, 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " PUT token null " + side, canon(doc), VECTOR_DB_BODY)
+              require(label + " PUT token null row", db_doc(VECTOR_KEY).get("token"), None)
+
+              blank_token = dict(VECTOR_PUT_BASE)
+              blank_token["token"] = "   "
+              nest_doc, go_doc = parity(label + " PUT token blank", "PUT", VECTOR_PATH, token, blank_token, 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " PUT token blank " + side, canon(doc), VECTOR_DB_BODY)
+              require(label + " PUT token blank row", db_doc(VECTOR_KEY).get("token"), None)
+
+              valid_token = dict(VECTOR_PUT_BASE)
+              valid_token["token"] = "valid-token"
+              expected_valid = dict(VECTOR_DB_BODY)
+              expected_valid.update({"hasToken": True, "tokenSource": "stored"})
+              nest_doc, go_doc = parity(label + " PUT token valid", "PUT", VECTOR_PATH, token, valid_token, 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " PUT token valid " + side, canon(doc), expected_valid)
+              envelope = db_doc(VECTOR_KEY).get("token")
+              if not isinstance(envelope, dict) or envelope.get("__enc") != "system-settings:v1":
+                  fail(label + " PUT token valid: stored token is not a v1 envelope: " + repr(envelope))
+              metadata = newest_audit("vector_service_update") or {}
+              if "token" in metadata or "valid-token" in newest_audit_raw("vector_service_update"):
+                  fail(label + " PUT token valid: audit metadata leaked the token: " + repr(metadata))
+              require(label + " PUT token valid audit keys",
+                      sorted(metadata.keys()),
+                      ["baseUrl", "enabled", "fallbackToMongo", "maxRetries", "timeoutMs", "tokenConfigured", "tokenUpdated"])
+
+              enabled_no_base = {"enabled": True, "fallbackToMongo": True, "timeoutMs": 5000, "maxRetries": 2}
+              parity(label + " PUT enabled without baseUrl", "PUT", VECTOR_PATH, token, enabled_no_base, 400, reset_all,
+                     "baseUrl is required when vector service is enabled")
+
+              enabled_with_base = dict(enabled_no_base)
+              enabled_with_base["baseUrl"] = "http://vector.example:9000"
+              parity(label + " PUT enabled without token", "PUT", VECTOR_PATH, token, enabled_with_base, 400, reset_all,
+                     "token is required when vector service is enabled")
+
+              for bad in ("not-a-url", "ftp://x.example", "http://host:70000", "vector.example:9000"):
+                  payload = dict(VECTOR_PUT_BASE)
+                  payload["baseUrl"] = bad
+                  parity(label + " PUT baseUrl " + bad, "PUT", VECTOR_PATH, token, payload, 400, reset_all,
+                         "baseUrl must be a valid http(s) URL")
+
+              normalized = dict(VECTOR_PUT_BASE)
+              normalized["baseUrl"] = "HTTP://Vector.Example:80/Path/"
+              parity(label + " PUT baseUrl normalization", "PUT", VECTOR_PATH, token, normalized, 200, reset_all)
+              require(label + " PUT baseUrl normalization row",
+                      db_doc(VECTOR_KEY).get("baseUrl"), "http://vector.example/Path")
+
+              dto_cases = [
+                  ("absent body", None,
+                   "enabled must be a boolean value; fallbackToMongo must be a boolean value; timeoutMs must not be less "
+                   "than 100; timeoutMs must be an integer number; maxRetries must not be greater than 10; maxRetries must "
+                   "not be less than 0; maxRetries must be an integer number"),
+                  ("empty body", {},
+                   "enabled must be a boolean value; fallbackToMongo must be a boolean value; timeoutMs must not be less "
+                   "than 100; timeoutMs must be an integer number; maxRetries must not be greater than 10; maxRetries must "
+                   "not be less than 0; maxRetries must be an integer number"),
+                  ("enabled string", {"enabled": "true", "fallbackToMongo": True, "timeoutMs": 5000, "maxRetries": 2},
+                   "enabled must be a boolean value"),
+                  ("timeoutMs string", {"enabled": True, "fallbackToMongo": True, "timeoutMs": "5000", "maxRetries": 2},
+                   "timeoutMs must not be less than 100; timeoutMs must be an integer number"),
+                  ("maxRetries bool", {"enabled": True, "fallbackToMongo": True, "timeoutMs": 5000, "maxRetries": True},
+                   "maxRetries must not be greater than 10; maxRetries must not be less than 0; maxRetries must be an "
+                   "integer number"),
+                  ("string members", {"enabled": True, "fallbackToMongo": True, "baseUrl": 5, "token": 7,
+                                      "timeoutMs": 5000, "maxRetries": 2},
+                   "baseUrl must be a string; token must be a string"),
+                  ("unknown property", {"enabled": True, "fallbackToMongo": True, "timeoutMs": 5000, "maxRetries": 2,
+                                        "extra": 1},
+                   "property extra should not exist"),
+              ]
+              for case_label, payload, expected_message in dto_cases:
+                  parity(label + " PUT dto " + case_label, "PUT", VECTOR_PATH, token, payload, 400, reset_all, expected_message)
+
+              nest_doc, go_doc = parity(label + " DELETE reset", "DELETE", VECTOR_PATH, token, None, 200, setup_row)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " DELETE reset " + side, canon(doc), VECTOR_ENV_BODY)
+              require(label + " DELETE reset row", state_for(VECTOR_KEY), None)
+              print(label + " ok")
+
+
+          STORAGE_DEFAULT_BODY = {
+              "crawlImageStorage": "mysql", "region": "us-east-1", "bucket": "", "publicBaseUrl": "",
+              "forcePathStyle": False, "presignedUrlTtlSeconds": 300, "accessKeyId": "",
+              "hasSecretAccessKey": False, "secretDecryptionFailed": False,
+          }
+          STORAGE_FULL_PATCH = {
+              "crawlImageStorage": "s3", "accessKeyId": "AKIA12345678", "secretAccessKey": "top-secret-value",
+              "region": "ap-south-1", "bucket": "smoke-bucket", "endpoint": "http://127.0.0.1:9000",
+              "publicBaseUrl": "https://cdn.example.com", "forcePathStyle": True, "presignedUrlTtlSeconds": 1234,
+          }
+          STORAGE_FULL_BODY = {
+              "crawlImageStorage": "s3", "region": "ap-south-1", "bucket": "smoke-bucket",
+              "endpoint": "http://127.0.0.1:9000", "publicBaseUrl": "https://cdn.example.com",
+              "forcePathStyle": True, "presignedUrlTtlSeconds": 1234, "accessKeyId": "AKIA12345678",
+              "hasSecretAccessKey": True, "secretDecryptionFailed": False,
+          }
+
+
+          def cleared_setup():
+              reset_all()
+              set_setting("storage_s3_endpoint", json.dumps("http://127.0.0.1:9000"), 1, None)
+              set_setting("storage_s3_force_path_style", "true", 1, None)
+              set_setting("storage_s3_presigned_url_ttl_seconds", "600", 1, None)
+
+
+          def storage_group(tag, token):
+              label = tag + " /admin/settings/storage"
+
+              nest_doc, go_doc = parity(label + " GET env defaults", "GET", STORAGE_PATH, token, None, 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " GET env defaults " + side, canon(doc), STORAGE_DEFAULT_BODY)
+
+              def setup_full():
+                  reset_all()
+                  set_setting("storage_s3_region", json.dumps("eu-west-1"), 1, None)
+
+              nest_doc, go_doc = parity(label + " PATCH single field", "PATCH", STORAGE_PATH, token,
+                                        {"region": "eu-west-1"}, 200, setup_full)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  expected = dict(STORAGE_DEFAULT_BODY)
+                  expected["region"] = "eu-west-1"
+                  require(label + " PATCH single field " + side, canon(doc), expected)
+
+              nest_doc, go_doc = parity(label + " PATCH mixed fields", "PATCH", STORAGE_PATH, token,
+                                        STORAGE_FULL_PATCH, 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " PATCH mixed fields " + side, canon(doc), STORAGE_FULL_BODY)
+
+              stored_secret = db_doc("storage_s3_secret_access_key")
+              if not isinstance(stored_secret, dict) or stored_secret.get("__enc") != "system-settings:v1":
+                  fail(label + " PATCH mixed fields: stored secret is not a v1 envelope: " + repr(stored_secret))
+              require(label + " PATCH mixed fields key", scalar(
+                  "SELECT CAST(`value` AS CHAR) FROM SystemSetting WHERE `key`='storage_s3_access_key_id'"), '"AKIA12345678"')
+              for key, want_public in (("crawl_image_storage", "1"), ("storage_s3_region", "1"),
+                                       ("storage_s3_access_key_id", "0"), ("storage_s3_secret_access_key", "0"),
+                                       ("storage_s3_force_path_style", "1")):
+                  require(label + " isPublic " + key, scalar(
+                      "SELECT isPublic FROM SystemSetting WHERE `key`='" + key + "'"), want_public)
+
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  reset_all()
+                  request_json(label + " mixed patch " + side, base, "PATCH", STORAGE_PATH, token, STORAGE_FULL_PATCH, 200)
+                  doc = request_json(label + " GET after mixed patch " + side, base, "GET", STORAGE_PATH, token, None, 200)
+                  require(label + " GET after mixed patch " + side, canon(doc), STORAGE_FULL_BODY)
+
+              for base, side_label in ((NEST_URL, label + " nest"), (GO_URL, label + " go")):
+                  reset_all()
+                  before_audit = audit_count("storage_settings_update")
+                  doc = request_json(side_label + " audit patch", base, "PATCH", STORAGE_PATH, token, STORAGE_FULL_PATCH, 200)
+                  require(side_label + " audit patch body", canon(doc), STORAGE_FULL_BODY)
+                  if audit_count("storage_settings_update") != before_audit + 1:
+                      fail(side_label + " audit patch: expected exactly one new audit row")
+                  metadata = newest_audit("storage_settings_update") or {}
+                  raw_metadata = newest_audit_raw("storage_settings_update")
+                  require(side_label + " fingerprint", metadata.get("accessKeyIdFingerprint"), "AKIA***")
+                  require(side_label + " secret mask", metadata.get("secretAccessKey"), "***")
+                  if "top-secret-value" in raw_metadata:
+                      fail(side_label + " audit patch: audit metadata leaked the secret")
+                  if "AKIA12345678" in raw_metadata:
+                      fail(side_label + " audit patch: audit metadata leaked the full access key id")
+              print(label + " audit fingerprint ok")
+
+              def setup_blank():
+                  reset_all()
+                  set_setting("storage_s3_region", json.dumps("eu-west-1"), 1, None)
+
+              nest_doc, go_doc = parity(label + " PATCH empty body", "PATCH", STORAGE_PATH, token, {}, 200, setup_blank)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  expected = dict(STORAGE_DEFAULT_BODY)
+                  expected["region"] = "eu-west-1"
+                  require(label + " PATCH empty body " + side, canon(doc), expected)
+              nest_doc, go_doc = parity(label + " PATCH blank strings ignored", "PATCH", STORAGE_PATH, token,
+                                        {"region": "   ", "bucket": "", "accessKeyId": " "}, 200, setup_blank)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  expected = dict(STORAGE_DEFAULT_BODY)
+                  expected["region"] = "eu-west-1"
+                  require(label + " PATCH blank strings ignored " + side, canon(doc), expected)
+              parity(label + " PATCH blank strings row", "PATCH", STORAGE_PATH, token, {"region": "   "}, 200, setup_blank)
+              require(label + " PATCH blank strings db", db_doc("storage_s3_region"), "eu-west-1")
+
+              nest_doc, go_doc = parity(label + " PATCH forcePathStyle false", "PATCH", STORAGE_PATH, token,
+                                        {"forcePathStyle": False}, 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " PATCH forcePathStyle false " + side, canon(doc), STORAGE_DEFAULT_BODY)
+              row = state_for("storage_s3_force_path_style")
+              if row is None or row[2] != "BOOLEAN" or row[1] is not False:
+                  fail(label + " PATCH forcePathStyle false: row not persisted as JSON false: " + repr(row))
+
+              for base, side_label in ((NEST_URL, label + " nest"), (GO_URL, label + " go")):
+                  cleared_setup()
+                  doc = request_json(side_label + " null clears", base, "PATCH", STORAGE_PATH, token,
+                                     {"endpoint": None, "forcePathStyle": None, "presignedUrlTtlSeconds": None}, 200)
+                  for key in CLEARED_STORAGE_KEYS:
+                      row = state_for(key)
+                      if row is None:
+                          fail(side_label + " null clears: missing row " + key)
+                      require(side_label + " null clears JSON_TYPE " + key, row[2], "NULL")
+                      require(side_label + " null clears SQL NULL " + key, row[3], "0")
+                  endpoint_row = state_for("storage_s3_endpoint")
+                  if endpoint_row is None or endpoint_row[1] is not None:
+                      fail(side_label + " null clears: endpoint is not the JSON literal null: " + repr(endpoint_row))
+                  doc = request_json(side_label + " null clears GET fallback", base, "GET", STORAGE_PATH, token, None, 200)
+                  require(side_label + " null clears GET fallback", canon(doc), STORAGE_DEFAULT_BODY)
+              print(label + " null clearing ok")
+
+              url_cases = [
+                  ("http://127.0.0.1:9000", 200, None),
+                  ("http://localhost:9000", 400, "endpoint must be a URL address"),
+                  ("ftp://x.example", 200, None),
+                  ("x.example:9000", 400, "endpoint must be a URL address"),
+                  ("http://host:70000", 400, "endpoint must be a URL address"),
+              ]
+              for value, expected_status, expected_message in url_cases:
+                  parity(label + " PATCH endpoint " + value, "PATCH", STORAGE_PATH, token, {"endpoint": value},
+                         expected_status, reset_all, expected_message)
+              for value, expected_status, expected_message in url_cases:
+                  message = None if expected_message is None else expected_message.replace("endpoint", "publicBaseUrl")
+                  parity(label + " PATCH publicBaseUrl " + value, "PATCH", STORAGE_PATH, token, {"publicBaseUrl": value},
+                         expected_status, reset_all, message)
+              parity(label + " PATCH endpoint empty", "PATCH", STORAGE_PATH, token, {"endpoint": ""}, 400, reset_all,
+                     "endpoint must be a URL address")
+
+              storage_dto_cases = [
+                  ({"presignedUrlTtlSeconds": "300"},
+                   "presignedUrlTtlSeconds must not be greater than 3600; presignedUrlTtlSeconds must not be less than 30; "
+                   "presignedUrlTtlSeconds must be an integer number"),
+                  ({"forcePathStyle": "yes"}, "forcePathStyle must be a boolean value"),
+                  ({"crawlImageStorage": "gcs"},
+                   "crawlImageStorage must be one of the following values: mysql, s3"),
+                  ({"accessKeyId": 5}, "accessKeyId must be a string"),
+                  ({"nope": 1}, "property nope should not exist"),
+              ]
+              for payload, expected_message in storage_dto_cases:
+                  parity(label + " PATCH dto " + json.dumps(payload), "PATCH", STORAGE_PATH, token, payload, 400,
+                         reset_all, expected_message)
+              print(label + " ok")
+
+
+
+          def fingerprint(value):
+              return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+          def runtime_entry(source_id, key, value, updated_at="2024-05-06T07:08:09.000Z"):
+              return {"sourceId": source_id, "key": key, "value": value,
+                      "fingerprint": fingerprint(value), "updatedAt": updated_at}
+
+
+          def seed_runtime_doc(entries, version=1):
+              set_setting(SECRETS_KEY, json.dumps({"version": version, "entries": entries}), 0, None)
+
+
+          def runtime_entries_from_db():
+              doc = db_doc(SECRETS_KEY)
+              if not isinstance(doc, dict):
+                  return None
+              return doc.get("entries")
+
+
+          def runtime_map_from_db():
+              entries = runtime_entries_from_db()
+              if entries is None:
+                  return None
+              return {(item["sourceId"], item["key"]): item for item in entries}
+
+
+          NO_ENTRIES_BODY = {"source": "none", "entries": []}
+          WRITE_ROUTES = [
+              ("PUT", VECTOR_PATH, dict(VECTOR_PUT_BASE)),
+              ("DELETE", VECTOR_PATH, None),
+              ("PATCH", STORAGE_PATH, {"region": "us-east-1"}),
+              ("PUT", SECRETS_PATH, {"upserts": [{"sourceId": "gate", "key": "k", "value": "v"}]}),
+          ]
+          READ_ROUTES = [("GET", VECTOR_PATH), ("GET", STORAGE_PATH), ("GET", SECRETS_PATH)]
+
+
+          def secrets_group(tag, token):
+              label = tag + " /news-source-runtime-secrets"
+
+              nest_doc, go_doc = parity(label + " GET empty", "GET", SECRETS_PATH, token, None, 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " GET empty " + side, canon(doc), NO_ENTRIES_BODY)
+
+              def setup_normalized():
+                  reset_all()
+                  seed_runtime_doc([runtime_entry("weibo", "Cookie", "secret-one")])
+
+              payload = {"upserts": [{"sourceId": "WeiBo", "key": "Cookie", "value": "secret-one"}]}
+              nest_doc, go_doc = parity(label + " PUT normalization", "PUT", SECRETS_PATH, token, payload, 200, reset_all)
+              expected = {"source": "db", "entries": [{"sourceId": "weibo", "key": "Cookie", "hasValue": True,
+                                                       "fingerprint": fingerprint("secret-one"), "updatedAt": "<ts>"}]}
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " PUT normalization " + side, canon(doc), expected)
+              row = db_doc(SECRETS_KEY) or {}
+              require(label + " PUT normalization version", row.get("version"), 1)
+              require(label + " PUT normalization stored", [row["entries"][0]["sourceId"], row["entries"][0]["key"]],
+                      ["weibo", "Cookie"])
+              nest_doc, go_doc = parity(label + " GET after PUT", "GET", SECRETS_PATH, token, None, 200, setup_normalized)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " GET after PUT " + side, canon(doc), expected)
+
+              payload = {"upserts": [{"sourceId": "dup", "key": "k", "value": "first"},
+                                     {"sourceId": "dup", "key": "k", "value": "last"}]}
+              nest_doc, go_doc = parity(label + " PUT duplicate last wins", "PUT", SECRETS_PATH, token, payload, 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " PUT duplicate last wins " + side, doc["entries"][0]["fingerprint"], fingerprint("last"))
+              require(label + " PUT duplicate last wins db",
+                      runtime_map_from_db()[("dup", "k")]["fingerprint"], fingerprint("last"))
+
+              def setup_upsert_vs_remove():
+                  reset_all()
+                  seed_runtime_doc([runtime_entry("a", "k", "v1")])
+
+              for order_label, payload in (
+                  ("removes first", {"removes": [{"sourceId": "a", "key": "k"}],
+                                     "upserts": [{"sourceId": "a", "key": "k", "value": "v2"}]}),
+                  ("upserts first", {"upserts": [{"sourceId": "a", "key": "k", "value": "v2"}],
+                                     "removes": [{"sourceId": "a", "key": "k"}]}),
+              ):
+                  nest_doc, go_doc = parity(label + " PUT upsert beats remove " + order_label, "PUT", SECRETS_PATH, token,
+                                            payload, 200, setup_upsert_vs_remove)
+                  for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                      require(label + " PUT upsert beats remove " + order_label + " " + side,
+                              doc["entries"][0]["fingerprint"], fingerprint("v2"))
+
+              def setup_untouched():
+                  reset_all()
+                  seed_runtime_doc([runtime_entry("keep", "alpha", "v1", "2020-01-02T03:04:05.000Z"),
+                                    runtime_entry("keep", "zulu", "v0", "2020-01-02T03:04:05.000Z")])
+
+              payload = {"upserts": [{"sourceId": "keep", "key": "zulu", "value": "v2"}]}
+              nest_doc, go_doc = parity(label + " PUT untouched keeps updatedAt", "PUT", SECRETS_PATH, token, payload, 200,
+                                        setup_untouched)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  entries = {item["key"]: item for item in doc["entries"]}
+                  require(label + " PUT untouched keeps updatedAt " + side, entries["alpha"]["updatedAt"],
+                          "2020-01-02T03:04:05.000Z")
+                  if entries["zulu"]["updatedAt"] == "2020-01-02T03:04:05.000Z":
+                      fail(label + " PUT upserted entry kept a stale updatedAt: " + repr(entries["zulu"]))
+              require(label + " PUT untouched keeps updatedAt db",
+                      runtime_map_from_db()[("keep", "alpha")]["updatedAt"], "2020-01-02T03:04:05.000Z")
+
+              def setup_single():
+                  reset_all()
+                  seed_runtime_doc([runtime_entry("only", "k", "v")])
+
+              payload = {"removes": [{"sourceId": "only", "key": "k"}]}
+              nest_doc, go_doc = parity(label + " PUT removes last entry", "PUT", SECRETS_PATH, token, payload, 200, setup_single)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " PUT removes last entry " + side, canon(doc), NO_ENTRIES_BODY)
+              require(label + " PUT removes last entry row", state_for(SECRETS_KEY), None)
+
+              for base, side_label in ((NEST_URL, label + " nest"), (GO_URL, label + " go")):
+                  reset_all()
+                  seed_runtime_doc([runtime_entry("noop", "k", "v")])
+                  before_audit = audit_count("news_source_runtime_secrets_update")
+                  request_json(side_label + " noop empty arrays", base, "PUT", SECRETS_PATH, token,
+                               {"upserts": [], "removes": []}, 200)
+                  if audit_count("news_source_runtime_secrets_update") != before_audit:
+                      fail(side_label + " noop empty arrays wrote an audit row")
+                  request_json(side_label + " noop absent body", base, "PUT", SECRETS_PATH, token, {}, 200)
+                  if audit_count("news_source_runtime_secrets_update") != before_audit:
+                      fail(side_label + " noop absent body wrote an audit row")
+              reset_all()
+              for base, side_label in ((NEST_URL, label + " nest"), (GO_URL, label + " go")):
+                  doc = request_json(side_label + " noop empty table", base, "PUT", SECRETS_PATH, token,
+                                     {"upserts": [], "removes": []}, 200)
+                  require(side_label + " noop empty table body", canon(doc), NO_ENTRIES_BODY)
+              print(label + " noop PUT leaves no audit row ok")
+
+              payload = {"upserts": [{"sourceId": "blank", "key": "k", "value": "   "}]}
+              parity(label + " PUT blank value", "PUT", SECRETS_PATH, token, payload, 400, reset_all, "value is required")
+
+              def bulk(count):
+                  return {"upserts": [{"sourceId": "bulk", "key": "k%04d" % index, "value": "v%04d" % index}
+                                      for index in range(count)]}
+
+              parity(label + " PUT 501 upserts", "PUT", SECRETS_PATH, token, bulk(501), 400, reset_all,
+                     "upserts must contain no more than 500 elements")
+              nest_doc, go_doc = parity(label + " PUT 500 upserts", "PUT", SECRETS_PATH, token, bulk(500), 200, reset_all)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " PUT 500 upserts " + side + " count", len(doc["entries"]), 500)
+                  require(label + " PUT 500 upserts " + side + " source", doc["source"], "db")
+              require(label + " PUT 500 upserts db count", len(runtime_entries_from_db()), 500)
+              print(label + " 500/501 upsert boundary ok")
+
+              corrupt_cases = [
+                  (json.dumps("oops"), "Expected object with entries array."),
+                  ("[]", "entries must be an array."),
+                  ('{"entries":[5]}', "entries contains invalid object."),
+                  ('{"entries":[{"sourceId":"a","key":"k","value":123}]}', "Invalid value type for a.k."),
+                  ('{"version":2,"entries":[]}', "Unsupported version for runtime secrets settings."),
+              ]
+              for raw_value, detail in corrupt_cases:
+                  def setup_corrupt(raw_value=raw_value):
+                      reset_all()
+                      set_setting(SECRETS_KEY, raw_value, 0, None)
+
+                  nest_doc, go_doc = parity(label + " GET corrupt " + detail, "GET", SECRETS_PATH, token, None, 409,
+                                            setup_corrupt)
+                  for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                      require(label + " GET corrupt " + detail + " " + side + " status", doc.get("statusCode"), 409)
+                      require(label + " GET corrupt " + detail + " " + side + " code", doc.get("code"),
+                              "NEWS_SOURCE_RUNTIME_SECRETS_INVALID")
+                      require(label + " GET corrupt " + detail + " " + side + " message", doc.get("message"),
+                              "Stored news source runtime secrets are invalid.")
+                      require(label + " GET corrupt " + detail + " " + side + " detail", doc.get("detail"), detail)
+                  for base, side_label in ((NEST_URL, label + " nest"), (GO_URL, label + " go")):
+                      setup_corrupt()
+                      before_state = setting_state()
+                      request_json(side_label + " PUT over corrupt " + detail, base, "PUT", SECRETS_PATH, token,
+                                   {"upserts": [{"sourceId": "new", "key": "k", "value": "v"}]}, 409)
+                      if setting_state() != before_state:
+                          fail(side_label + " PUT over corrupt " + detail + " changed the corrupt row")
+              print(label + " corrupt row 409 details ok")
+
+              mixed_cases = [
+                  ('{"entries":[{"sourceId":"BAD ID","key":"k","value":"v"}]}',
+                   "sourceId must match /^[a-z0-9_-]+$/i"),
+                  ('{"entries":[{"sourceId":"a","key":"bad key","value":"v"}]}',
+                   "key must match /^[a-zA-Z0-9._:-]+$/ and be <= 128 chars"),
+              ]
+              for raw_value, expected_message in mixed_cases:
+                  def setup_mixed(raw_value=raw_value):
+                      reset_all()
+                      set_setting(SECRETS_KEY, raw_value, 0, None)
+
+                  parity(label + " GET mixed 400", "GET", SECRETS_PATH, token, None, 400, setup_mixed, expected_message)
+                  for base, side_label in ((NEST_URL, label + " nest"), (GO_URL, label + " go")):
+                      setup_mixed()
+                      before_state = setting_state()
+                      request_json(side_label + " PUT over mixed", base, "PUT", SECRETS_PATH, token,
+                                   {"upserts": [{"sourceId": "new", "key": "k", "value": "v"}]}, 400, expected_message)
+                      if setting_state() != before_state:
+                          fail(side_label + " PUT over mixed changed the corrupt row")
+              print(label + " mixed 400 branch ok")
+              print(label + " ok")
+
+
+          def auth_group(tag, platform, admin_a_token, admin_b_token, no_manage_token):
+              label = tag + " auth"
+
+              for who, token in (("orgA", admin_a_token), ("orgB", admin_b_token), ("machine", allow_token)):
+                  for method, path, payload in WRITE_ROUTES:
+                      for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                          reset_all()
+                          before_state = setting_state()
+                          before_audit = audit_total()
+                          before_cache = cache_snapshot()
+                          status, raw = call(base, path, method, token, payload)
+                          if status != 403 or message_of(raw) != PLATFORM_MESSAGE:
+                              fail(f"{label} {who} {side} {method} {path}: {status} {raw[:300]!r}, "
+                                   f"want 403 {PLATFORM_MESSAGE!r}")
+                          if setting_state() != before_state:
+                              fail(f"{label} {who} {side} {method} {path}: rejected write changed SystemSetting")
+                          if audit_total() != before_audit:
+                              fail(f"{label} {who} {side} {method} {path}: rejected write changed AuditLog")
+                          if cache_snapshot() != before_cache:
+                              fail(f"{label} {who} {side} {method} {path}: rejected write changed the settings cache")
+              print(label + " platform gate 403 for orgA/orgB/machine on all four writes ok")
+
+              for method, path, payload in WRITE_ROUTES:
+                  parity(label + " platform " + method + " " + path, method, path, platform, payload, 200, reset_all)
+              print(label + " platform admin P four writes 200 ok")
+
+              for method, path in READ_ROUTES:
+                  parity(label + " machine read " + path, method, path, allow_token, None, 200, reset_all)
+              print(label + " settings.manage machine token three GETs 200 ok")
+
+              denied_routes = [(method, path, payload) for method, path, payload in WRITE_ROUTES] + \
+                              [(method, path, None) for method, path in READ_ROUTES]
+              for method, path, payload in denied_routes:
+                  for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                      reset_all()
+                      status, raw = call(base, path, method, no_manage_token, payload)
+                      doc = body(raw) or {}
+                      if status != 403:
+                          fail(f"{label} no-permission {side} {method} {path}: {status} {raw[:300]!r}, want 403")
+                      require(label + " no-permission code", doc.get("code"), PERMISSION_CODE)
+                      require(label + " no-permission message", doc.get("message"), PERMISSION_MESSAGE)
+                      require(label + " no-permission error", doc.get("error"), "Forbidden")
+                      require(label + " no-permission detail", doc.get("detail"), PERMISSION_DETAIL)
+                      require(label + " no-permission requiredPermissions", doc.get("requiredPermissions"),
+                              ["settings.manage"])
+                      require(label + " no-permission permissionsMode", doc.get("permissionsMode"), "any")
+                      if "missingPermissions" in doc:
+                          fail(f"{label} no-permission {side} {method} {path}: missingPermissions must be absent")
+              print(label + " no settings.manage -> INSUFFICIENT_PERMISSIONS contract on all seven routes ok")
+
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  reset_all()
+                  status, raw = call(base, STORAGE_PATH, "GET", deny_token)
+                  doc = body(raw) or {}
+                  if status != 403 or doc.get("code") != PERMISSION_CODE or doc.get("detail") != PERMISSION_DETAIL:
+                      fail(f"{label} org.read machine token {side}: {status} {raw[:300]!r}")
+
+              order_cases = [
+                  (admin_a_token, "PUT", VECTOR_PATH,
+                   {"enabled": "true", "fallbackToMongo": True, "timeoutMs": 5000, "maxRetries": 2},
+                   "enabled must be a boolean value"),
+                  (admin_b_token, "PATCH", STORAGE_PATH, {"endpoint": ""}, "endpoint must be a URL address"),
+                  (admin_a_token, "PUT", SECRETS_PATH, {"upserts": [{"sourceId": "bad id", "key": "k", "value": "v"}]},
+                   "upserts.0.sourceId must match /^[a-z0-9_-]+$/i regular expression"),
+              ]
+              for token, method, path, payload, expected_message in order_cases:
+                  parity(label + " dto before platform gate " + method + " " + path, method, path, token, payload, 400,
+                         reset_all, expected_message)
+              parity(label + " DELETE without platform role", "DELETE", VECTOR_PATH, admin_a_token, None, 403, reset_all,
+                     PLATFORM_MESSAGE)
+              print(label + " invalid DTO 400 precedes the platform 403 ok")
+
+
+          def decrypt_v1(envelope):
+              """Decrypts one system-settings v1 envelope with the CI key via node:crypto."""
+              if not isinstance(envelope, dict) or envelope.get("__enc") != "system-settings:v1":
+                  fail("expected a v1 envelope, got " + json.dumps(envelope)[:200])
+              script = (
+                  "const c=require('node:crypto');"
+                  "const [iv,tag,data,key]=process.argv.slice(1);"
+                  "const d=c.createDecipheriv('aes-256-gcm',Buffer.from(key,'hex'),Buffer.from(iv,'base64'));"
+                  "d.setAuthTag(Buffer.from(tag,'base64'));"
+                  "process.stdout.write(Buffer.concat([d.update(Buffer.from(data,'base64')),d.final()]).toString('utf8'));"
+              )
+              proc = subprocess.run(["node", "-e", script, envelope["iv"], envelope["tag"], envelope["data"], VALID_KEY],
+                                    capture_output=True, text=True)
+              if proc.returncode != 0:
+                  fail("v1 decryption failed: " + proc.stderr[-300:])
+              return proc.stdout
+
+
+          VECTOR_LOCK_NAME = "infra-settings:vector-service:v1"
+          SECRETS_LOCK_NAME = "infra-settings:news-source-runtime-secrets:v1"
+
+
+          def hold_mysql_lock(lock_name, seconds=25):
+              """Holds one GET_LOCK on an independent MySQL session (docker exec)."""
+              cid = container_id("mysql:8.4")
+              return subprocess.Popen(
+                  ["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app", "-e",
+                   "SELECT GET_LOCK('%s', 5); SELECT SLEEP(%d);" % (lock_name, seconds)],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+          def release_mysql_lock(holder, lock_name, cid_ready=None):
+              """Stops the holder and waits until the lock is observably free again.
+
+              Terminating the docker exec client does not necessarily end the in-container
+              mysql session immediately, so the lock is probed from a fresh session
+              instead of assuming it is free.
+              """
+              holder.terminate()
+              try:
+                  holder.wait(timeout=30)
+              except Exception:
+                  holder.kill()
+              deadline = time.time() + 60
+              while time.time() < deadline:
+                  probe = scalar("SELECT GET_LOCK('%s', 0); SELECT RELEASE_LOCK('%s');" % (lock_name, lock_name))
+                  if probe == "1":
+                      return
+                  time.sleep(1)
+              fail("lock " + lock_name + " was not released after the holder stopped")
+
+
+          def lock_protocol_group(tag, token):
+              """Both sides must wait for the same global lock and fail 503 without writing."""
+              label = tag + " lock"
+              reset_all()
+              request_json(label + " baseline write", GO_URL, "PUT", VECTOR_PATH, token, VECTOR_PUT_BASE, 200)
+
+              holder = hold_mysql_lock(VECTOR_LOCK_NAME)
+              try:
+                  time.sleep(2.0)
+                  before = json.dumps(db_doc(VECTOR_KEY), sort_keys=True)
+                  for base, side in ((GO_URL, "go"), (NEST_URL, "nest")):
+                      payload = dict(VECTOR_PUT_BASE)
+                      payload["maxRetries"] = 7
+                      started = time.monotonic()
+                      status, raw = call(base, VECTOR_PATH, "PUT", token, payload, timeout=90)
+                      elapsed = time.monotonic() - started
+                      doc = body(raw) or {}
+                      if status != 503 or doc.get("message") != "Internal server error":
+                          fail("%s %s: status=%s body=%s, want 503" % (label, side, status, raw[:300]))
+                      if doc.get("error") != "Service Unavailable":
+                          fail("%s %s: error=%r, want 'Service Unavailable'" % (label, side, doc.get("error")))
+                      if elapsed < 9 or elapsed > 35:
+                          fail("%s %s: request returned after %.1fs, want the 10s lock timeout" % (label, side, elapsed))
+                      if json.dumps(db_doc(VECTOR_KEY), sort_keys=True) != before:
+                          fail("%s %s: a lock-blocked write changed the configuration row" % (label, side))
+                  print("lock ok: Go and NestJS both waited for " + VECTOR_LOCK_NAME + " and wrote nothing")
+              finally:
+                  release_mysql_lock(holder, VECTOR_LOCK_NAME)
+
+              # The secret lock is the same protocol on the second lock name.
+              reset_all()
+              request_json(label + " secrets baseline", GO_URL, "PUT", SECRETS_PATH, token,
+                           {"upserts": [{"sourceId": "lock", "key": "k", "value": "v"}]}, 200)
+              holder = hold_mysql_lock(SECRETS_LOCK_NAME)
+              try:
+                  time.sleep(2.0)
+                  status, raw = call(GO_URL, SECRETS_PATH, "PUT", token,
+                                     {"upserts": [{"sourceId": "lock", "key": "k2", "value": "v2"}]}, timeout=90)
+                  if status != 503:
+                      fail("%s secrets: status=%s, want 503 while the lock is held" % (label, status))
+                  # runtime_map_from_db() is keyed by (sourceId, key) tuples.
+                  keys = sorted(key for _, key in runtime_map_from_db().keys())
+                  if keys != ["k"]:
+                      fail("%s secrets: lock-blocked write changed entries: %s" % (label, keys))
+                  print("lock ok: " + SECRETS_LOCK_NAME + " blocks the Go write without side effects")
+              finally:
+                  release_mysql_lock(holder, SECRETS_LOCK_NAME)
+
+              payload = dict(VECTOR_PUT_BASE)
+              payload["maxRetries"] = 7
+              request_json(label + " write after release", GO_URL, "PUT", VECTOR_PATH, token, payload, 200)
+              print(label + " ok")
+
+
+          def is3_group(tag, token):
+              label = tag + " IS3"
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  reset_all()
+                  payload = dict(VECTOR_PUT_BASE)
+                  payload["token"] = "TOKEN-A"
+                  request_json(label + " store A", base, "PUT", VECTOR_PATH, token, payload, 200)
+                  envelope_a = json.dumps(db_doc(VECTOR_KEY)["token"], sort_keys=True)
+                  payload["token"] = "TOKEN-B"
+                  request_json(label + " store B", base, "PUT", VECTOR_PATH, token, payload, 200)
+                  document_b = db_doc(VECTOR_KEY)
+                  envelope_b = json.dumps(document_b["token"], sort_keys=True)
+                  if envelope_a == envelope_b:
+                      fail(label + " " + side + ": rotated token envelope equals the old one")
+
+                  stale = json.loads(json.dumps(document_b))
+                  stale["token"] = json.loads(envelope_a)
+                  stale["enabled"] = True
+                  stale["baseUrl"] = "http://stale.example:9000"
+                  redis("SET", "vector_service:settings", json.dumps({"exists": True, "value": stale}))
+                  observed = request_json(label + " stale cache GET", base, "GET", VECTOR_PATH, token, None, 200)
+                  if observed.get("enabled") is not True or observed.get("baseUrl") != "http://stale.example:9000":
+                      fail(label + " " + side + ": planted stale cache envelope was not observed: " + json.dumps(observed))
+
+                  omitted = dict(VECTOR_PUT_BASE)
+                  request_json(label + " update without token", base, "PUT", VECTOR_PATH, token, omitted, 200)
+                  envelope_final = json.dumps(db_doc(VECTOR_KEY)["token"], sort_keys=True)
+                  if envelope_final == envelope_a:
+                      fail(label + " " + side + ": the stale cached token A was written back")
+                  if envelope_final != envelope_b:
+                      fail(label + " " + side + ": the retained token is not the rotated token B envelope")
+                  plaintext = decrypt_v1(db_doc(VECTOR_KEY)["token"])
+                  if plaintext != "TOKEN-B":
+                      fail(label + " " + side + ": decrypted retained token is %r, want %r" % (plaintext, "TOKEN-B"))
+                  print("IS3 ok:", side + " (decrypted retained token = TOKEN-B)")
+              print(label + " ok")
+
+
+          CONCURRENCY_CASES = [
+              ("add different entries", None,
+               {"upserts": [{"sourceId": "c", "key": "x", "value": "vx"}]},
+               {"upserts": [{"sourceId": "c", "key": "y", "value": "vy"}]},
+               ["x", "y"]),
+              ("remove different entries", [("c", "a", "va"), ("c", "b", "vb"), ("c", "p", "vp"), ("c", "q", "vq")],
+               {"removes": [{"sourceId": "c", "key": "p"}]},
+               {"removes": [{"sourceId": "c", "key": "q"}]},
+               ["a", "b"]),
+              ("remove A while adding C", [("c", "a", "va"), ("c", "b", "vb")],
+               {"removes": [{"sourceId": "c", "key": "a"}]},
+               {"upserts": [{"sourceId": "c", "key": "c", "value": "vc"}]},
+               ["b", "c"]),
+          ]
+
+
+          def concurrent_case(label, seed, payload_a, payload_b, expected_keys, base_a, base_b, token):
+              reset_all()
+              if seed is not None:
+                  seed_runtime_doc([runtime_entry(source, key, value) for source, key, value in seed])
+              results = {}
+              barrier = threading.Barrier(2)
+
+              def worker(index, base, payload):
+                  try:
+                      barrier.wait(timeout=30)
+                      results[index] = call(base, SECRETS_PATH, "PUT", token, payload)
+                  except Exception as exc:
+                      results[index] = (0, repr(exc).encode())
+
+              threads = [threading.Thread(target=worker, args=(0, base_a, payload_a)),
+                         threading.Thread(target=worker, args=(1, base_b, payload_b))]
+              for thread in threads:
+                  thread.start()
+              for thread in threads:
+                  thread.join()
+              for index in (0, 1):
+                  status, raw = results.get(index, (0, b""))
+                  if status != 200:
+                      fail(f"{label}: concurrent PUT {index} -> {status} {raw[:300]!r}")
+              entries = runtime_entries_from_db() or []
+              got = sorted(item["key"] for item in entries)
+              if got != sorted(expected_keys):
+                  fail(f"{label}: final DB keys {got}, want {sorted(expected_keys)}")
+              doc = request_json(label + " verify GET", base_a, "GET", SECRETS_PATH, token, None, 200)
+              got_get = sorted(item["key"] for item in doc["entries"])
+              if got_get != sorted(expected_keys):
+                  fail(f"{label}: GET keys {got_get}, want {sorted(expected_keys)}")
+              print("concurrency ok:", label)
+
+
+          def is2_group(tag, token):
+              label = tag + " IS2"
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  reset_all()
+                  seed_runtime_doc([runtime_entry("fresh", "k", "v1")])
+                  first = request_json(label + " fresh GET 1", base, "GET", SECRETS_PATH, token, None, 200)
+                  require(label + " fresh GET 1 " + side, first["entries"][0]["fingerprint"], fingerprint("v1"))
+                  seed_runtime_doc([runtime_entry("fresh", "k", "v2")])
+                  second = request_json(label + " fresh GET 2", base, "GET", SECRETS_PATH, token, None, 200)
+                  require(label + " fresh GET 2 " + side + " (DB authoritative)",
+                          second["entries"][0]["fingerprint"], fingerprint("v2"))
+
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  reset_all()
+                  seed_runtime_doc([runtime_entry("s", "a", "va")])
+                  request_json(label + " merge warm", base, "GET", SECRETS_PATH, token, None, 200)
+                  seed_runtime_doc([runtime_entry("s", "a", "va"), runtime_entry("s", "b", "vb")])
+                  doc = request_json(label + " merge PUT", base, "PUT", SECRETS_PATH, token,
+                                     {"upserts": [{"sourceId": "s", "key": "c", "value": "vc"}]}, 200)
+                  keys = sorted(item["key"] for item in doc["entries"])
+                  require(label + " merge PUT " + side, keys, ["a", "b", "c"])
+              print(label + " admin GET freshness and lock-scoped merge base ok")
+
+              for case_label, seed, payload_a, payload_b, expected in CONCURRENCY_CASES:
+                  for pair_label, base_a, base_b in (("Nest/Nest", NEST_URL, NEST_URL),
+                                                     ("Go/Go", GO_URL, GO_URL),
+                                                     ("Nest/Go", NEST_URL, GO_URL)):
+                      concurrent_case(f"{label} {case_label} {pair_label}", seed, payload_a, payload_b, expected,
+                                      base_a, base_b, token)
+              print(label + " ok")
+
+
+          def stored_entry_value_type():
+              return scalar("SELECT JSON_TYPE(JSON_EXTRACT(value, '$.entries[0].value')) FROM SystemSetting "
+                            "WHERE `key`='news_source_runtime_secrets'")
+
+
+          def stored_entry_enc_tag():
+              return scalar("SELECT JSON_UNQUOTE(JSON_EXTRACT(value, '$.entries[0].value.__enc')) FROM SystemSetting "
+                            "WHERE `key`='news_source_runtime_secrets'")
+
+
+          def crypto_switch_matrix(tag, token):
+              label = tag + " crypto switch"
+              # 三态：行不存在 / 该字段不是 boolean（都按“未配置”处理 → 有 key 即加密）；
+              # 显式 secretEncryptionEnabled=false → 明文。第三态是 Go 侧曾经的缺陷：
+              # 把非 boolean 折叠成 false 会静默把加密降到明文。
+              for security_doc, want_type, want_tag, side_label in (
+                  (None, "OBJECT", "system-settings:v1", "system_security absent"),
+                  ('{"mfaPolicy":"off"}', "OBJECT", "system-settings:v1", "flag missing"),
+                  ('{"secretEncryptionEnabled":"yes","mfaPolicy":"off"}', "OBJECT", "system-settings:v1", "flag non-boolean"),
+                  ('{"secretEncryptionEnabled":false,"mfaPolicy":"off"}', "STRING", "", "flag false"),
+              ):
+                  for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                      reset_all()
+                      set_system_security(security_doc)
+                      request_json(label + " " + side_label + " " + side, base, "PUT", SECRETS_PATH, token,
+                                   {"upserts": [{"sourceId": "crypto", "key": "k", "value": "secret-value"}]}, 200)
+                      require(label + " " + side_label + " " + side + " stored type", stored_entry_value_type(), want_type)
+                      if want_tag:
+                          require(label + " " + side_label + " " + side + " envelope", stored_entry_enc_tag(), want_tag)
+
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  reset_all()
+                  set_system_security('{"secretEncryptionEnabled":false,"mfaPolicy":"off"}')
+                  payload = dict(VECTOR_PUT_BASE)
+                  payload["token"] = "plain-token"
+                  request_json(label + " vector plaintext " + side, base, "PUT", VECTOR_PATH, token, payload, 200)
+                  require(label + " vector plaintext " + side + " stored", db_doc(VECTOR_KEY)["token"], "plain-token")
+
+                  reset_all()
+                  set_system_security(None)
+                  request_json(label + " vector encrypted " + side, base, "PUT", VECTOR_PATH, token, payload, 200)
+                  stored = db_doc(VECTOR_KEY)["token"]
+                  if not isinstance(stored, dict) or stored.get("__enc") != "system-settings:v1":
+                      fail(label + " vector encrypted " + side + ": stored token is not an envelope: " + repr(stored))
+              print(label + " ok")
+
+
+          def no_key_matrix(tag, token):
+              label = tag + " no key"
+              production_message = "SYSTEM_SETTINGS_ENCRYPTION_KEY is required to store secrets in production"
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  reset_all()
+                  set_system_security(None)
+                  before_state = setting_state()
+                  request_json(label + " runtime secrets " + side, base, "PUT", SECRETS_PATH, token,
+                               {"upserts": [{"sourceId": "nk", "key": "k", "value": "v"}]}, 400, production_message)
+                  payload = dict(VECTOR_PUT_BASE)
+                  payload["token"] = "tok"
+                  request_json(label + " vector " + side, base, "PUT", VECTOR_PATH, token, payload, 400,
+                               production_message)
+                  request_json(label + " storage " + side, base, "PATCH", STORAGE_PATH, token,
+                               {"secretAccessKey": "v"}, 400, production_message)
+                  if setting_state() != before_state:
+                      fail(label + " " + side + ": a rejected production write changed SystemSetting")
+
+                  set_system_security('{"secretEncryptionEnabled":true,"mfaPolicy":"off"}')
+                  request_json(label + " enabled without key " + side, base, "PUT", SECRETS_PATH, token,
+                               {"upserts": [{"sourceId": "nk", "key": "k", "value": "v"}]}, 400,
+                               "Secret encryption is enabled but SYSTEM_SETTINGS_ENCRYPTION_KEY is not configured")
+              print(label + " ok")
+
+
+          def invalid_key_matrix(tag, token):
+              label = tag + " invalid key"
+              detail = "SYSTEM_SETTINGS_ENCRYPTION_KEY must be 32 bytes (base64) or 64 hex chars"
+              expected = "Secret encryption is enabled but SYSTEM_SETTINGS_ENCRYPTION_KEY is missing or invalid (" + detail + ")"
+              production_message = "SYSTEM_SETTINGS_ENCRYPTION_KEY is required to store secrets in production"
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  reset_all()
+                  set_system_security('{"secretEncryptionEnabled":true,"mfaPolicy":"off"}')
+                  request_json(label + " enabled invalid key " + side, base, "PUT", SECRETS_PATH, token,
+                               {"upserts": [{"sourceId": "ik", "key": "k", "value": "v"}]}, 400, expected)
+                  set_system_security('{"secretEncryptionEnabled":false,"mfaPolicy":"off"}')
+                  request_json(label + " disabled invalid key " + side, base, "PUT", SECRETS_PATH, token,
+                               {"upserts": [{"sourceId": "ik", "key": "k", "value": "v"}]}, 400, production_message)
+              print(label + " ok")
+
+
+          def corrupt_cache_matrix(tag, token):
+              label = tag + " corrupt cache"
+              vector_doc = {"enabled": False, "fallbackToMongo": True, "baseUrl": "http://db-vector.example:9000",
+                            "token": "db-token", "timeoutMs": 5000, "maxRetries": 2}
+
+              def setup_vector_cache():
+                  reset_all()
+                  set_setting(VECTOR_KEY, json.dumps(vector_doc), 0, None)
+                  redis("SET", "vector_service:settings", "not-json{")
+
+              expected_vector = {"source": "db", "enabled": False, "fallbackToMongo": True,
+                                 "baseUrl": "http://db-vector.example:9000", "timeoutMs": 5000, "maxRetries": 2,
+                                 "hasToken": True, "tokenSource": "stored"}
+              nest_doc, go_doc = parity(label + " vector envelope", "GET", VECTOR_PATH, token, None, 200,
+                                        setup_vector_cache)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " vector envelope " + side, canon(doc), expected_vector)
+
+              def setup_storage_cache():
+                  reset_all()
+                  set_setting("storage_s3_region", json.dumps("eu-central-1"), 1, None)
+                  redis("SET", "storage:settings", "{not-json")
+
+              expected_storage = dict(STORAGE_DEFAULT_BODY)
+              expected_storage["region"] = "eu-central-1"
+              nest_doc, go_doc = parity(label + " storage object", "GET", STORAGE_PATH, token, None, 200,
+                                        setup_storage_cache)
+              for side, doc in (("nest", nest_doc), ("go", go_doc)):
+                  require(label + " storage object " + side, canon(doc), expected_storage)
+              print(label + " ok")
+
+
+          def audit_mask_matrix(tag, token):
+              label = tag + " audit mask"
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  reset_all()
+                  request_json(label + " storage " + side, base, "PATCH", STORAGE_PATH, token,
+                               {"accessKeyId": "AKIA9999XY", "secretAccessKey": "mask-me"}, 200)
+                  metadata = newest_audit("storage_settings_update") or {}
+                  raw = newest_audit_raw("storage_settings_update")
+                  require(label + " storage fingerprint " + side, metadata.get("accessKeyIdFingerprint"), "AKIA***")
+                  require(label + " storage secret mask " + side, metadata.get("secretAccessKey"), "***")
+                  if "mask-me" in raw or "AKIA9999XY" in raw:
+                      fail(label + " storage " + side + ": audit metadata leaked credential material")
+
+                  reset_all()
+                  payload = dict(VECTOR_PUT_BASE)
+                  payload["token"] = "audit-token-value"
+                  request_json(label + " vector " + side, base, "PUT", VECTOR_PATH, token, payload, 200)
+                  if "audit-token-value" in newest_audit_raw("vector_service_update"):
+                      fail(label + " vector " + side + ": audit metadata leaked the token")
+
+                  reset_all()
+                  request_json(label + " secrets " + side, base, "PUT", SECRETS_PATH, token,
+                               {"upserts": [{"sourceId": "aud", "key": "k", "value": "audit-secret"}]}, 200)
+                  metadata = newest_audit("news_source_runtime_secrets_update") or {}
+                  require(label + " secrets keys " + side, sorted(metadata.keys()), ["entriesAfter", "removes", "upserts"])
+                  if "audit-secret" in newest_audit_raw("news_source_runtime_secrets_update"):
+                      fail(label + " secrets " + side + ": audit metadata leaked the value")
+              print(label + " ok")
+
+
+          def exercise(tag, platform, admin_a_token, admin_b_token, no_manage_token):
+              print("==== " + tag + ": seven routes, NestJS direct vs Go ====")
+              vector_group(tag, platform)
+              storage_group(tag, platform)
+              secrets_group(tag, platform)
+              auth_group(tag, platform, admin_a_token, admin_b_token, no_manage_token)
+              is3_group(tag, platform)
+              is2_group(tag, platform)
+              lock_protocol_group(tag, platform)
+              print("==== " + tag + " complete ====")
+
+
+          ALL_ROUTES = [(method, path, payload) for method, path, payload in WRITE_ROUTES] + \
+                       [(method, path, None) for method, path in READ_ROUTES]
+
+          # ---- phase 0: identity fixtures and real NestJS logins ----
+          seed_identities()
+          platform_token = login(platform_email)
+          admin_a_token = login(admin_a_email)
+          admin_b_token = login(admin_b_email)
+          no_manage_token = login(no_manage_email)
+          print("phase 0 ok: four real /api/auth/login tokens (platform admin P, org A admin, org B admin, no-manage user)")
+
+          # ---- phase 1: legacy switch, Go proxies every route to NestJS ----
+          start_go("legacy")
+          exercise("phase 1 (legacy proxy)", platform_token, admin_a_token, admin_b_token, no_manage_token)
+          print("phase 1 ok")
+
+          # ---- phase 2: go switch, NestJS still up, Go serves the seven routes ----
+          start_go("go")
+          exercise("phase 2 (go takeover)", platform_token, admin_a_token, admin_b_token, no_manage_token)
+          print("phase 2 ok")
+
+          # ---- phase 3: crypto / cache failure matrix ----
+          print("==== phase 3: crypto and cache failure matrix ====")
+          crypto_switch_matrix("phase 3", platform_token)
+          start_nest(encryption_key=None)
+          start_go("go", encryption_key=None)
+          no_key_matrix("phase 3", platform_token)
+          start_nest(encryption_key=INVALID_KEY)
+          start_go("go", encryption_key=INVALID_KEY)
+          invalid_key_matrix("phase 3", platform_token)
+          start_nest(encryption_key=VALID_KEY)
+          start_go("go", encryption_key=VALID_KEY)
+          corrupt_cache_matrix("phase 3", platform_token)
+          audit_mask_matrix("phase 3", platform_token)
+          print("phase 3 ok")
+
+          # ---- phase 4: NestJS stopped, Go keeps serving the seven routes ----
+          print("==== phase 4: NestJS stopped ====")
+          revoked_token = login(platform_email)
+          stop_nest()
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(NEST_URL + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  break
+              time.sleep(1)
+
+          for method, path, payload in WRITE_ROUTES:
+              request_json("phase 4 go write " + method + " " + path, GO_URL, method, path, platform_token, payload, 200)
+          for method, path in READ_ROUTES:
+              request_json("phase 4 go read " + method + " " + path, GO_URL, method, path, platform_token, None, 200)
+          print("phase 4 ok: seven routes still served by Go with the JWT minted while NestJS was alive")
+
+          for method, path in READ_ROUTES:
+              request_json("phase 4 machine read " + path, GO_URL, method, path, allow_token, None, 200)
+          for method, path, payload in WRITE_ROUTES:
+              status, raw = call(GO_URL, path, method, allow_token, payload)
+              if status != 403 or message_of(raw) != PLATFORM_MESSAGE:
+                  fail(f"phase 4 machine write {method} {path}: {status} {raw[:300]!r}, want 403 {PLATFORM_MESSAGE!r}")
+          print("phase 4 ok: machine token GET 200 / write 403")
+
+          for method, path in (("GET", VECTOR_DIAGNOSTICS_PATH), ("POST", STORAGE_TEST_PATH)):
+              status, raw = call(GO_URL, path, method, platform_token, None)
+              doc = body(raw) or {}
+              if status != 502 or doc.get("statusCode") != 502:
+                  fail(f"phase 4 nest-only route {method} {path}: {status} {raw[:300]!r}, want 502")
+          print("phase 4 ok: vector diagnostics and storage test stay on NestJS (502)")
+
+          jti = jwt_jti(revoked_token)
+          if not jti:
+              fail("phase 4 revoked JWT: token has no jti")
+          redis("SET", "access-token:blacklist:" + jti, "true", "EX", "600")
+          status, raw = call(GO_URL, VECTOR_PATH, "GET", revoked_token)
+          if status != 401 or message_of(raw) != "Access token revoked":
+              fail(f"phase 4 revoked JWT: {status} {raw[:300]!r}, want 401 Access token revoked")
+          print("phase 4 ok: revoked JWT -> 401 Access token revoked")
+
+          # ---- phase 5: rollback to legacy ----
+          print("==== phase 5: rollback ====")
+          start_go("legacy")
+          for method, path, payload in ALL_ROUTES:
+              status, raw = call(GO_URL, path, method, platform_token, payload)
+              if status != 502:
+                  fail(f"phase 5 rollback {method} {path}: {status} {raw[:300]!r}, want 502 with NestJS down")
+          print("phase 5 ok: legacy switch registers nothing, so the seven routes are no longer served by Go")
+
+          start_nest(encryption_key=VALID_KEY)
+          for method, path, payload in WRITE_ROUTES:
+              parity("phase 5 " + method + " " + path, method, path, platform_token, payload, 200, reset_all)
+          for method, path in READ_ROUTES:
+              parity("phase 5 " + method + " " + path, method, path, platform_token, None, 200, reset_all)
+          print("phase 5 ok: seven routes proxy to NestJS again")
+
+          print("ALL INFRASTRUCTURE SETTINGS SMOKE CHECKS PASSED")
+          PY
