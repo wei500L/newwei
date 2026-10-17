@@ -1269,13 +1269,34 @@ jobs:
           SECRETS_LOCK_NAME = "infra-settings:news-source-runtime-secrets:v1"
 
 
-          def hold_mysql_lock(lock_name, seconds=45):
+          def hold_mysql_lock(lock_name, seconds=25):
               """Holds one GET_LOCK on an independent MySQL session (docker exec)."""
               cid = container_id("mysql:8.4")
               return subprocess.Popen(
                   ["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app", "-e",
                    "SELECT GET_LOCK('%s', 5); SELECT SLEEP(%d);" % (lock_name, seconds)],
                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+          def release_mysql_lock(holder, lock_name, cid_ready=None):
+              """Stops the holder and waits until the lock is observably free again.
+
+              Terminating the docker exec client does not necessarily end the in-container
+              mysql session immediately, so the lock is probed from a fresh session
+              instead of assuming it is free.
+              """
+              holder.terminate()
+              try:
+                  holder.wait(timeout=30)
+              except Exception:
+                  holder.kill()
+              deadline = time.time() + 60
+              while time.time() < deadline:
+                  probe = scalar("SELECT GET_LOCK('%s', 0); SELECT RELEASE_LOCK('%s');" % (lock_name, lock_name))
+                  if probe == "1":
+                      return
+                  time.sleep(1)
+              fail("lock " + lock_name + " was not released after the holder stopped")
 
 
           def lock_protocol_group(tag, token):
@@ -1305,11 +1326,7 @@ jobs:
                           fail("%s %s: a lock-blocked write changed the configuration row" % (label, side))
                   print("lock ok: Go and NestJS both waited for " + VECTOR_LOCK_NAME + " and wrote nothing")
               finally:
-                  holder.terminate()
-                  try:
-                      holder.wait(timeout=30)
-                  except Exception:
-                      holder.kill()
+                  release_mysql_lock(holder, VECTOR_LOCK_NAME)
 
               # The secret lock is the same protocol on the second lock name.
               reset_all()
@@ -1328,11 +1345,7 @@ jobs:
                       fail("%s secrets: lock-blocked write changed entries: %s" % (label, keys))
                   print("lock ok: " + SECRETS_LOCK_NAME + " blocks the Go write without side effects")
               finally:
-                  holder.terminate()
-                  try:
-                      holder.wait(timeout=30)
-                  except Exception:
-                      holder.kill()
+                  release_mysql_lock(holder, SECRETS_LOCK_NAME)
 
               payload = dict(VECTOR_PUT_BASE)
               payload["maxRetries"] = 7
