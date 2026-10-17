@@ -58,9 +58,13 @@ func writeAuditLogBestEffort[T any](ctx context.Context, db *sql.DB, orgID, acto
 	}
 
 	// Outbox 回落：payload 与 NestJS createOutboxPayload 的字段一致。
+	var actorPtr *string
+	if actorID != "" {
+		actorPtr = &actorID
+	}
 	payload := auditOutboxPayload[T]{
 		OrgID:     orgID,
-		ActorID:   nullableString(actorID),
+		ActorID:   actorPtr,
 		Resource:  resource,
 		Action:    action,
 		Metadata:  metadata,
