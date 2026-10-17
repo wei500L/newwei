@@ -225,6 +225,39 @@ const (
 	CrawlTemplatesModeGo     CrawlTemplatesMode = "go"
 )
 
+// CrawlFrontierRunsMode controls the eleven crawl frontier run monitoring and
+// cancellation HTTP routes under /api/admin/crawl-frontier
+// (API_GO_CRAWL_FRONTIER_RUNS_MODE). It defaults to legacy and accepts only
+// "", "legacy" and "go".
+//
+// Go mode takes over exactly these routes:
+//
+//	GET  /api/admin/crawl-frontier/runs
+//	GET  /api/admin/crawl-frontier/runs/cancel   (matched as runs/:id)
+//	GET  /api/admin/crawl-frontier/runs/:id
+//	GET  /api/admin/crawl-frontier/runs/:id/workflow-run
+//	GET  /api/admin/crawl-frontier/runs/:id/workflow-candidates
+//	GET  /api/admin/crawl-frontier/runs/:id/workflow-candidates/:candidateId
+//	POST /api/admin/crawl-frontier/runs/cancel
+//	POST /api/admin/crawl-frontier/runs/:id/cancel
+//	GET  /api/admin/crawl-frontier/nodes/:id
+//	GET  /api/admin/crawl-frontier/workflow-runs/:runId
+//	GET  /api/admin/crawl-frontier/workflow-runs/:runId/candidates
+//	GET  /api/admin/crawl-frontier/workflow-runs/:runId/candidates/:candidateId/explanation
+//
+// Every other method, trailing slash and longer path falls back to NestJS.
+// The write queue routes (create run, retry, replay, trial-run) are never
+// registered here. Go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
+// Mongo is not a startup dependency. No shadow, no canary, no worker and no
+// crawler process is started, and rolling back only means setting this
+// variable back to legacy.
+type CrawlFrontierRunsMode string
+
+const (
+	CrawlFrontierRunsModeLegacy CrawlFrontierRunsMode = "legacy"
+	CrawlFrontierRunsModeGo     CrawlFrontierRunsMode = "go"
+)
+
 // LlmLogsMode 只控制 LLM 请求日志的列表、CSV 导出与用量汇总这 3 条只读
 // GET（/api/llm-logs、/api/llm-logs/export、/api/llm-logs/summary）。
 // 默认 legacy。go 只接管这三条精确 GET；其他方法与更长路径仍回 NestJS。
@@ -561,6 +594,11 @@ type Config struct {
 	// CrawlProfilesMode 只控制采集站点画像编辑接口。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	CrawlProfilesMode CrawlProfilesMode
+	// CrawlFrontierRunsMode controls the eleven crawl frontier run
+	// monitoring and cancellation HTTP routes. It defaults to legacy. Go
+	// requires JWT, MySQL and Redis, does not require Mongo, and never
+	// starts a crawl worker or enqueues a job.
+	CrawlFrontierRunsMode CrawlFrontierRunsMode
 	// RbacMode 只控制组织访问控制六条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动任何 worker。
 	RbacMode RbacMode
@@ -973,6 +1011,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.CrawlProfilesMode = CrawlProfilesModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_PROFILES_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_FRONTIER_RUNS_MODE")) {
+	case "", string(CrawlFrontierRunsModeLegacy):
+		cfg.CrawlFrontierRunsMode = CrawlFrontierRunsModeLegacy
+	case string(CrawlFrontierRunsModeGo):
+		cfg.CrawlFrontierRunsMode = CrawlFrontierRunsModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_FRONTIER_RUNS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_RBAC_MODE")) {
 	case "", string(RbacModeLegacy):
@@ -1440,6 +1486,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.CrawlProfilesMode == CrawlProfilesModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_PROFILES_MODE", cfg)
+	}
+	if cfg.CrawlFrontierRunsMode == CrawlFrontierRunsModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_FRONTIER_RUNS_MODE", cfg)
 	}
 	if cfg.RbacMode == RbacModeGo {
 		appendAuthRequirements(&errs, "API_GO_RBAC_MODE", cfg)

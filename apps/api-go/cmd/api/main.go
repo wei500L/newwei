@@ -532,6 +532,10 @@ func run() error {
 	if cfg.CrawlProfilesMode == config.CrawlProfilesModeGo {
 		crawlProfilesMode = string(legacyproxy.ModeGo)
 	}
+	crawlFrontierRunsMode := ""
+	if cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo {
+		crawlFrontierRunsMode = string(legacyproxy.ModeGo)
+	}
 	rbacMode := ""
 	if cfg.RbacMode == config.RbacModeGo {
 		rbacMode = string(legacyproxy.ModeGo)
@@ -595,6 +599,7 @@ func run() error {
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
+	rules = legacyproxy.WithCrawlFrontierRuns(rules, crawlFrontierRunsMode)
 	rules = legacyproxy.WithRbac(rules, rbacMode)
 	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
 	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
@@ -1033,6 +1038,9 @@ func run() error {
 		return err
 	}
 	if err := wireCrawlProfiles(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := wireCrawlFrontierRuns(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 	if err := wireRbac(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {

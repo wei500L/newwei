@@ -73,8 +73,14 @@ type Rule struct {
 	Tail string
 	// TailSegment 要求动态段与 Tail 之间恰好一个动态段、Tail 之后再接
 	// 恰好一个动态段（形如 /…/:id/rollback/:version）。与 OneSegment 联用，
-	// Tail 是中间固定段（以 / 开头）。仅 crawl-profiles 的回滚路由使用。
+	// Tail 是中间固定段（以 / 开头）。crawl-profiles 的回滚路由与
+	// crawl-frontier runs 的候选解释路由使用。
 	TailSegment bool
+	// TailSuffix is an optional fixed suffix appended to the last dynamic
+	// segment of a TailSegment rule (for example /explanation in
+	// /runs/:id/workflow-candidates/:candidateId/explanation). It is empty
+	// for every rule that ends on the dynamic segment.
+	TailSuffix string
 	// HandlerKey 是 RegisterGoHandler 的查找键。空则使用 Prefix。
 	// 动态路径的 Prefix 含尾部斜杠，键则用稳定的静态前缀，避免把任务路由
 	// 注册到看板处理器上。
@@ -808,6 +814,15 @@ func (rule Rule) matchesPath(path string) bool {
 					return false
 				}
 				tailSegment := rest[idx+len(marker):]
+				// An optional fixed suffix makes the rule end on
+				// <dynamic>/<Tail>/<dynamic><TailSuffix> instead of the
+				// dynamic segment itself.
+				if rule.TailSuffix != "" {
+					if !strings.HasSuffix(tailSegment, rule.TailSuffix) {
+						return false
+					}
+					tailSegment = strings.TrimSuffix(tailSegment, rule.TailSuffix)
+				}
 				if tailSegment == "" || strings.Contains(tailSegment, "/") {
 					return false
 				}
