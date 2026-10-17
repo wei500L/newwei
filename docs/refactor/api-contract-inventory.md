@@ -359,3 +359,12 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 4. crawl4ai legacy 与 hot/normal 双轨队列并存
 5. itemPipeline DLQ 的非标准入队时机（worker failed 事件）
 6. `GET /api/metrics` 是平台级全量指标（SEC-03 已收紧）：人类须为平台管理员；机器令牌还须其 `createdById` 当前持有 `platform_admin`。普通组织的 `metrics.read` 或旧机器令牌不再够用。输出不过滤成组织子集。
+
+## 9. 知识图谱冲击传导与实体共现/相关图 GraphQL 读（Go）
+
+新增开关 `API_GO_GRAPHQL_KG_IMPACT_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `go` 时，才在既有精确 `/graphql` 执行器登记 4 个只读 root：`getExecutiveChangeImpact`、`getCommodityMoveImpact`、`getPolicyEventImpact`、`getEntityImpactGraph`。与第 2 节表格中 `entity-impact-graph` / `knowledge-graph-impact` 两行是同一个权限（重推导的 `dashboards.read`），`mtk_` 机器令牌按读执行器规则拒绝。
+
+- 三个冲击传导 root 读组织级知识图谱设置（Redis `knowledgeGraph:settings:<orgId>` -> MySQL `SystemSetting` `knowledge_graph_settings:<orgId>`），按 Nest 的评分公式、候选合并、链条顺序与 Redis 缓存键（`knowledgeGraph:impact:<orgId>:...`）输出。`includeLprSnapshot` 不发实网 AkShare。
+- `getEntityImpactGraph` 读 Mongo `processeditems` 共现/提及序列与 MySQL `EconomicDataPoint` 金融序列，皮尔逊相关、节点裁剪与 ECharts 符号大小对齐 Nest，缓存键 `entityImpactGraph:data:<orgId>:...`。
+- 同批修掉两处缺陷：`knowledge-graph-impact.service.ts` 第 158/275/386/545/575 行 5 处 `knowledgeEntity.findMany` 补 `orgId`；`entity-impact-graph.service.ts` 第 564 行 `$dateToString` 补 `timezone: "UTC"`。两侧同修。
+- 回滚只把 `API_GO_GRAPHQL_KG_IMPACT_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
