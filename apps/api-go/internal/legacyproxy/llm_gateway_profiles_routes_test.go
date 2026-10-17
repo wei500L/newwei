@@ -3,6 +3,7 @@ package legacyproxy
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
@@ -89,10 +90,21 @@ func TestLLMGatewayProfilesGoOwnsRoutes(t *testing.T) {
 		}
 	}
 
-	// The three activation paths and the collection are exact rules; the
-	// activation paths must win over the dynamic rule they prefix.
+	// The collection is an exact rule for GET/POST, and the three activation
+	// paths are exact rules for PUT that must win over the dynamic rule they
+	// prefix. PUT on the collection itself is not a route at all.
+	collectionRule := gateway.match(http.MethodGet, llmGatewayProfilesBase)
+	if !collectionRule.Exact || collectionRule.OneSegment {
+		t.Fatalf("GET collection rule=%+v, want exact", collectionRule)
+	}
+	postRule := gateway.match(http.MethodPost, llmGatewayProfilesBase)
+	if !postRule.Exact || postRule.OneSegment {
+		t.Fatalf("POST collection rule=%+v, want exact", postRule)
+	}
+	if putRule := gateway.match(http.MethodPut, llmGatewayProfilesBase); putRule.Mode != ModeLegacy {
+		t.Fatalf("PUT collection mode=%s, want legacy", putRule.Mode)
+	}
 	for _, path := range []string{
-		llmGatewayProfilesBase,
 		llmGatewayProfilesBase + "/active",
 		llmGatewayProfilesBase + "/embedding-active",
 		llmGatewayProfilesBase + "/rerank-active",
@@ -179,7 +191,7 @@ func TestLLMGatewayProfilesUnmigratedStaticPathsReachLegacyStub(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s %s status=%d, want the legacy stub's 200 (a Go 404 means the static path was treated as a profile id)", tc.method, tc.path, rec.Code)
 		}
-		if got := rec.Body.String(); got != `{"upstream":"legacy"}` {
+		if got := strings.TrimSpace(rec.Body.String()); got != `{"upstream":"legacy"}` {
 			t.Fatalf("%s %s body=%s, want the legacy stub payload", tc.method, tc.path, got)
 		}
 	}
@@ -233,7 +245,8 @@ func TestLLMGatewayProfilesOwnedRequestsReachGo(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s %s status=%d, want 200", tc.method, tc.path, rec.Code)
 		}
-		if got := rec.Body.String(); got != `{"upstream":"go"}` {
+		// httpx.WriteJSON appends a newline, so compare the trimmed body.
+		if got := strings.TrimSpace(rec.Body.String()); got != `{"upstream":"go"}` {
 			t.Fatalf("%s %s body=%s, want the go payload", tc.method, tc.path, got)
 		}
 	}

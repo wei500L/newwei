@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 )
@@ -125,6 +126,19 @@ func parseJSNumberString(value string) jsNumber {
 	case "nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity":
 		return jsNumber{kind: jsNumberNaN}
 	}
+	// JavaScript accepts the 0x/0b/0o integer prefixes but rejects the sign,
+	// digit separators and hexadecimal float exponents that Go's ParseFloat
+	// would otherwise take.
+	if len(trimmed) > 1 && trimmed[0] == '0' {
+		switch trimmed[1] {
+		case 'x', 'X':
+			return parseJSRadixNumber(trimmed[2:], 16)
+		case 'b', 'B':
+			return parseJSRadixNumber(trimmed[2:], 2)
+		case 'o', 'O':
+			return parseJSRadixNumber(trimmed[2:], 8)
+		}
+	}
 	if strings.ContainsAny(trimmed, "_xXpP") {
 		return jsNumber{kind: jsNumberNaN}
 	}
@@ -136,6 +150,23 @@ func parseJSNumberString(value string) jsNumber {
 		return jsNumber{kind: jsNumberNaN}
 	}
 	return numberJSNumber(parsed)
+}
+
+// parseJSRadixNumber converts the digits of a 0x/0b/0o prefixed string the way
+// Number() does: the whole remainder must be valid digits, and values beyond
+// 64 bits fall back to the nearest float64 like JavaScript's own conversion.
+func parseJSRadixNumber(digits string, base int) jsNumber {
+	if digits == "" || strings.ContainsRune(digits, '_') {
+		return jsNumber{kind: jsNumberNaN}
+	}
+	if value, err := strconv.ParseUint(digits, base, 64); err == nil {
+		return numberJSNumber(float64(value))
+	}
+	if integer, ok := new(big.Int).SetString(digits, base); ok {
+		value, _ := new(big.Float).SetInt(integer).Float64()
+		return numberJSNumber(value)
+	}
+	return jsNumber{kind: jsNumberNaN}
 }
 
 // isRangeError reports whether a strconv.ParseFloat failure was a range error

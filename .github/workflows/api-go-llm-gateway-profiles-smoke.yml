@@ -1018,6 +1018,8 @@ jobs:
                   {"id": "no-model", "name": "no-model", "apiBase": DEFAULT_API_BASE},
                   {"id": "  ", "name": "blank-id", "model": "m", "apiBase": DEFAULT_API_BASE},
               ])
+              seed_settings(legacy_doc)
+              stored_before_get = read_settings_text()
               ndoc, gdoc = pair(tag + " S1-02 list filters legacy profiles without id or model", "GET", BASE, a,
                                 seed=lambda: seed_settings(legacy_doc))
               for side, doc in (("nest", ndoc), ("go", gdoc)):
@@ -1034,8 +1036,10 @@ jobs:
               check(tag + " S1-03 cache is the normalized document",
                     ids_of(cached) == ["keep-1"] and cached.get("activeId") is None,
                     "cache content=" + json.dumps(cached)[:200])
+              # The stored row legitimately keeps the filtered-out legacy entries,
+              # so "no write" means the row is byte-identical to the seed.
               check(tag + " S1-03 GET must not write MySQL",
-                    ids_of(json.loads(read_settings_text())) == ["keep-1"], "the stored row changed")
+                    read_settings_text() == stored_before_get, "the stored row changed")
 
               # ---- 4-6. create：默认、全字段、disabled ----
               base_doc = document([profile("s1-a", "seed-a"), profile("s1-b", "seed-b")], active="s1-a")

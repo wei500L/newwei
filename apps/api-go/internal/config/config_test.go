@@ -2416,7 +2416,10 @@ func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
 	if cfg.LLMGatewayModel != "openai/gpt-4o" {
 		t.Fatalf("model = %q", cfg.LLMGatewayModel)
 	}
-	if strings.Join(cfg.LLMGatewayFallbackModels, ",") != "a,b" {
+	// The env projection keeps the literal comma split (trim + drop empty, no
+	// de-duplication); de-duplication only happens when a profile list is
+	// normalized.
+	if strings.Join(cfg.LLMGatewayFallbackModels, ",") != "a,b,a" {
 		t.Fatalf("fallbackModels = %v", cfg.LLMGatewayFallbackModels)
 	}
 	if !cfg.NodeEnvProduction {

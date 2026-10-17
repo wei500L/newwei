@@ -262,9 +262,17 @@ func TestBuildCreateProfileFallbacks(t *testing.T) {
 	ctx := context.Background()
 	identity := profileIdentity{ID: "id-1", CreatedAt: "2026-01-01T00:00:00.000Z", UpdatedAt: "2026-01-01T00:00:00.000Z"}
 
-	input, err := parseProfileInput(json.RawMessage(`{"name":" g ","apiBase":" http://localhost:4001 ","model":" m "}`), true)
+	// A whitespace-padded apiBase never reaches the service: validator.js isURL
+	// rejects any whitespace, so the DTO answers 400 first (asserted below).
+	// The service-level trim is observable through name and model.
+	input, err := parseProfileInput(json.RawMessage(`{"name":" g ","apiBase":"http://localhost:4001","model":" m "}`), true)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := parseProfileInput(json.RawMessage(`{"name":"g","apiBase":" http://localhost:4001 ","model":"m"}`), true); err == nil {
+		t.Fatal("a padded apiBase must be rejected by the URL constraint")
+	} else if got := messageOf(t, err); got != "apiBase must be a URL address" {
+		t.Fatalf("padded apiBase message = %q", got)
 	}
 	profile, err := service.buildProfileFromInput(ctx, nil, identity, profileDefaultsFor(env), input)
 	if err != nil {

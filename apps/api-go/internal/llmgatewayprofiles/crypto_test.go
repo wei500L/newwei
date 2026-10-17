@@ -162,13 +162,20 @@ func TestDecodeSecretValueKinds(t *testing.T) {
 	if secret.Kind() != SecretEncrypted {
 		t.Fatalf("envelope secret = %v", secret.Kind())
 	}
-	// An opaque value is preserved byte-for-byte on rewrite.
+	// An opaque value keeps its JSON meaning on rewrite. encoding/json compacts
+	// the marshalled bytes, so only the parsed value is byte-comparable.
 	opaque := decodeSecretValue(json.RawMessage(`{"legacy":  [1,2]}`))
 	rewritten, err := json.Marshal(opaque)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(rewritten) != `{"legacy":  [1,2]}` {
+	var rewrittenValue struct {
+		Legacy []int `json:"legacy"`
+	}
+	if err := json.Unmarshal(rewritten, &rewrittenValue); err != nil {
+		t.Fatalf("opaque rewrite is not the original value: %s err=%v", rewritten, err)
+	}
+	if len(rewrittenValue.Legacy) != 2 || rewrittenValue.Legacy[0] != 1 || rewrittenValue.Legacy[1] != 2 {
 		t.Fatalf("opaque rewrite = %s", rewritten)
 	}
 }
