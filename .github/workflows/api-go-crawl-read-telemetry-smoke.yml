@@ -1,0 +1,754 @@
+# 采集只读（列表/详情）、媒体资产签名下发、Crawl4AI 质量快照与检索遥测 7 条
+# HTTP 的真实栈验收。不进普通 CI。
+# PR 上加 label api-go-crawl-read-telemetry-smoke，或 workflow_dispatch。
+# SCHEDULE_ENABLED 保持 false。不请求 crawl4ai；不把抓取、模型、AkShare 或
+# Nominatim 当通过。
+name: api-go-crawl-read-telemetry-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-crawl-read-telemetry-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-crawl-read-telemetry-smoke@example.com
+  SMTP_PASS: api-go-crawl-read-telemetry-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-crawl-read-telemetry-smoke-org
+  SEED_ORG_NAME: api-go Crawl Read Telemetry Smoke Org
+  SEED_ADMIN_EMAIL: api-go-crawl-read-telemetry-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoCrawlRead#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-crawl-read-telemetry-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-crawl-read-telemetry-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-crawl-read:ci .
+      - name: Exercise crawl read / media / telemetry routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import hashlib, json, os, re, signal, subprocess, time, urllib.error, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+
+          org_a = "crawl-smoke-org-a-0001"
+          org_b = "crawl-smoke-org-b-0001"
+          user_a = "crawl-smoke-user-a-0001"
+          user_b = "crawl-smoke-user-b-0001"
+          user_manage = "crawl-smoke-user-manage-0001"
+          user_denied = "crawl-smoke-user-denied-0001"
+          machine_token = "mtk_crawl_smoke_0000000000000001"
+
+          task_a = "crawl-smoke-task-a-1"
+          task_a2 = "crawl-smoke-task-a-2"
+          task_b = "crawl-smoke-task-b-1"
+          result_a1 = "crawl-smoke-result-a-1"
+          result_a2 = "crawl-smoke-result-a-2"
+          result_b1 = "crawl-smoke-result-b-1"
+          blob_png = "crawl-smoke-blob-png"
+          blob_svg = "crawl-smoke-blob-svg"
+          blob_b = "crawl-smoke-blob-b"
+          asset_png = "crawl-smoke-asset-png"
+          asset_svg = "crawl-smoke-asset-svg"
+          asset_b = "crawl-smoke-asset-b"
+          # Dirty cross-tenant row: it points at an org A result but belongs to
+          # org B. The orgId predicate added by this batch must keep it out of
+          # org A's detail payload and out of any org A signature.
+          asset_stale = "crawl-smoke-asset-stale"
+          source_a = "crawl-smoke-source-a"
+
+          list_path = "/api/crawl-tasks"
+          detail_a = f"/api/crawl-tasks/{task_a}"
+          quality_path = "/api/admin/crawl4ai/quality"
+          quality_source = f"/api/admin/crawl4ai/quality/sources/{source_a}"
+          telemetry_path = "/api/search-telemetry"
+          summary_path = "/api/admin/search-telemetry/summary"
+
+          foreign_marker = "CROSS-TENANT-CONTENT-MARKER"
+          own_markdown = "alpha own markdown body"
+          svg_body = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>'
+          png_hex = ("89504E470D0A1A0A0000000D4948445200000001000000010806000000"
+                     "1F15C4890000000A49444154789C6360000002000154A24F5F0000000049454E44AE426082")
+          svg_hex = svg_body.encode().hex().upper()
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def container_id(ancestor):
+              return subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor], text=True).split()[0]
+
+          def sql(statement):
+              cid = container_id("mysql:8.4")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"],
+                                    input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          def redis(*args):
+              cid = container_id("redis:7.2")
+              return subprocess.run(["docker", "exec", cid, "redis-cli", *args],
+                                    text=True, capture_output=True).stdout.strip()
+
+          def mongo_seed(script):
+              cid = container_id("mongo:7.0")
+              with open("/tmp/crawl-read-seed.js", "w") as handle:
+                  handle.write(script)
+              subprocess.check_call(["docker", "cp", "/tmp/crawl-read-seed.js", cid + ":/tmp/seed.js"])
+              proc = subprocess.run(["docker", "exec", cid, "mongosh", "--quiet", "app", "--file", "/tmp/seed.js"],
+                                    text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout
+
+          def start_go(mode):
+              subprocess.run(["docker", "rm", "-f", "api-go-crawl-read"], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  f"API_GO_CRAWL_READ_TELEMETRY_MODE={mode}",
+                  "API_GO_QUALITY_OVERVIEW_MODE=legacy",
+                  "API_GO_ADMIN_LOGS_MODE=legacy",
+                  "API_GO_LLM_LOGS_MODE=legacy",
+                  "API_GO_CRAWL_PROFILES_MODE=legacy",
+                  "API_GO_CRAWL_TEMPLATES_MODE=legacy",
+                  "API_GO_CRAWL_WORKFLOWS_MODE=legacy",
+                  "API_GO_NEWS_SOURCES_MODE=legacy",
+                  "API_GO_NEWS_INDICATORS_MODE=legacy",
+                  "API_GO_RBAC_MODE=legacy",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_GRAPHQL_KG_IMPACT_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  f"JWT_SECRET={os.environ['JWT_SECRET']}",
+                  f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
+                  f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
+              ]
+              cmd = ["docker", "run", "-d", "--name", "api-go-crawl-read",
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append("api-go-crawl-read:ci")
+              subprocess.check_call(cmd)
+              for _ in range(30):
+                  status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}",
+                                                    "api-go-crawl-read"], text=True).strip()
+                  print("health", status, "mode", mode)
+                  if status == "healthy":
+                      return
+                  if status == "unhealthy":
+                      fail(subprocess.check_output(["docker", "logs", "api-go-crawl-read"], text=True)[-4000:])
+                  time.sleep(2)
+              fail(subprocess.check_output(["docker", "logs", "api-go-crawl-read"], text=True)[-4000:])
+
+          def call(base_url, path, method="GET", token=None, payload=None, timeout=30):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, dict(resp.headers), resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, dict(exc.headers), exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              try:
+                  return json.loads(text)
+              except json.JSONDecodeError:
+                  return None
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+          def login(email, password):
+              status, _, raw = call(nest, "/api/auth/login", "POST",
+                                    payload={"email": email, "password": password})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:400]!r}")
+              return doc["accessToken"]
+
+          # normalize_exp rewrites the dynamic exp query parameter of every
+          # signed media URL so Nest and Go payloads can be compared.
+          def normalize_exp(value):
+              text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+              text = re.sub(r"exp=\d+", "exp=0", text)
+              return text
+
+          # normalize_snapshot_window drops the millisecond-level from/to of the
+          # quality snapshot, which is computed independently on both sides.
+          def normalize_quality(value):
+              if isinstance(value, dict):
+                  value = {k: v for k, v in value.items() if k not in ("from", "to")}
+              return normalize_exp(value)
+
+          def compare(path, token, kind="json"):
+              left_status, _, left_raw = call(nest, path, "GET", token)
+              right_status, _, right_raw = call(go, path, "GET", token)
+              if left_status != right_status:
+                  fail(f"parity status {path} nest={left_status} go={right_status}")
+              if kind == "quality":
+                  left, right = normalize_quality(body(left_raw)), normalize_quality(body(right_raw))
+              else:
+                  left, right = normalize_exp(body(left_raw)), normalize_exp(body(right_raw))
+              if left != right:
+                  fail(f"parity body {path} nest={left_raw[:700]!r} go={right_raw[:700]!r}")
+              return body(right_raw)
+
+          def flush_quality():
+              sql(f"DELETE FROM ObservabilitySnapshot WHERE orgId IN ('{org_a}', '{org_b}')")
+
+          def compare_fresh(path, token):
+              flush_quality()
+              go_status, _, go_raw = call(go, path, "GET", token)
+              flush_quality()
+              nest_status, _, nest_raw = call(nest, path, "GET", token)
+              if go_status != 200 or nest_status != 200:
+                  fail(f"fresh parity status {path} go={go_status} nest={nest_status} {go_raw[:400]!r} {nest_raw[:400]!r}")
+              left, right = normalize_quality(body(nest_raw)), normalize_quality(body(go_raw))
+              if left != right:
+                  fail(f"fresh parity body {path} nest={nest_raw[:700]!r} go={go_raw[:700]!r}")
+              return body(go_raw)
+
+          def media_paths(detail):
+              assets = (detail.get("task") or {}).get("mediaAssets") or []
+              by_type = {}
+              for asset in assets:
+                  by_type[asset.get("contentType")] = asset
+              return by_type
+
+          # ---- 准备数据：本组织 + 另一组织的 MySQL / Mongo 测试数据 ----
+          admin = scalar("SELECT id FROM User WHERE email='api-go-crawl-read-telemetry-smoke-admin@example.com'")
+          crawl_perm = scalar("SELECT id FROM Permission WHERE name='crawl.read'")
+          items_perm = scalar("SELECT id FROM Permission WHERE name='items.read'")
+          manage_perm = scalar("SELECT id FROM Permission WHERE name='settings.manage'")
+          if not admin or not crawl_perm or not items_perm or not manage_perm:
+              fail(f"missing seed rows admin={admin} crawl={crawl_perm} items={items_perm} manage={manage_perm}")
+          machine_hash = hashlib.sha256(machine_token.encode()).hexdigest()
+
+          sql(f"""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('{org_a}', 'Crawl Read Org A', 'crawl-smoke-org-a', 1, NOW(3), NOW(3)),
+            ('{org_b}', 'Crawl Read Org B', 'crawl-smoke-org-b', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, isSystem, orgId) VALUES
+            ('crawl-role-a-0001', 'crawl-a', 0, '{org_a}'),
+            ('crawl-role-b-0001', 'crawl-b', 0, '{org_b}'),
+            ('crawl-role-m-0001', 'crawl-m', 0, '{org_a}'),
+            ('crawl-role-d-0001', 'crawl-d', 0, '{org_a}');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('crawl-rp-a-1', 'crawl-role-a-0001', '{crawl_perm}'),
+            ('crawl-rp-a-2', 'crawl-role-a-0001', '{items_perm}'),
+            ('crawl-rp-b-1', 'crawl-role-b-0001', '{crawl_perm}'),
+            ('crawl-rp-b-2', 'crawl-role-b-0001', '{items_perm}'),
+            ('crawl-rp-m-1', 'crawl-role-m-0001', '{crawl_perm}'),
+            ('crawl-rp-m-2', 'crawl-role-m-0001', '{items_perm}'),
+            ('crawl-rp-m-3', 'crawl-role-m-0001', '{manage_perm}');
+          INSERT INTO NewsSource (id, orgId, name, url, siteType, frequencySeconds, priority, isActive, consecutiveFailures, createdAt, updatedAt) VALUES
+            ('{source_a}', '{org_a}', 'crawl-smoke-source-a', 'https://smoke.example.com/rss', 'general', 3600, 0, 1, 0, NOW(3), NOW(3));
+          INSERT INTO CrawlTask (id, orgId, createdById, newsSourceId, targetUrl, displayName, status, config, keywords, concurrency, runCount, createdAt, updatedAt) VALUES
+            ('{task_a}', '{org_a}', '{admin}', '{source_a}', 'https://alpha.example.com/list', 'NewsSource:{source_a}:smoke', 'completed',
+             '{{"notes":"alpha"}}', '["alpha"]', 1, 2, DATE_SUB(NOW(3), INTERVAL 30 MINUTE), DATE_SUB(NOW(3), INTERVAL 20 MINUTE)),
+            ('{task_a2}', '{org_a}', '{admin}', NULL, 'https://alpha.example.com/other', 'alpha second task', 'pending',
+             NULL, '[]', 1, 0, DATE_SUB(NOW(3), INTERVAL 20 MINUTE), DATE_SUB(NOW(3), INTERVAL 10 MINUTE)),
+            ('{task_b}', '{org_b}', '{admin}', NULL, 'https://beta.example.com/list', 'beta task', 'completed',
+             NULL, '[]', 1, 1, DATE_SUB(NOW(3), INTERVAL 25 MINUTE), DATE_SUB(NOW(3), INTERVAL 15 MINUTE));
+          INSERT INTO CrawlResult (id, taskId, orgId, sourceUrl, fetchedAt, markdownRef, contentHash, metadata, createdAt) VALUES
+            ('{result_a1}', '{task_a}', '{org_a}', 'https://alpha.example.com/1', DATE_SUB(NOW(3), INTERVAL 25 MINUTE), 'mongo://a1', 'hash-a1', '{{"smoke":"a1"}}', NOW(3)),
+            ('{result_a2}', '{task_a}', '{org_a}', 'https://alpha.example.com/2', DATE_SUB(NOW(3), INTERVAL 24 MINUTE), 'mongo://a2', 'hash-a2', NULL, NOW(3)),
+            ('{result_b1}', '{task_b}', '{org_b}', 'https://beta.example.com/1', DATE_SUB(NOW(3), INTERVAL 23 MINUTE), 'mongo://b1', 'hash-b1', NULL, NOW(3));
+          INSERT INTO CrawlMediaBlob (id, orgId, sha256, bytes, contentType, blobData, refCount, createdAt, updatedAt) VALUES
+            ('{blob_png}', '{org_a}', REPEAT('a', 64), 67, 'image/png', UNHEX('{png_hex}'), 1, NOW(3), NOW(3)),
+            ('{blob_svg}', '{org_a}', REPEAT('b', 64), {len(svg_body)}, 'image/svg+xml', UNHEX('{svg_hex}'), 1, NOW(3), NOW(3)),
+            ('{blob_b}', '{org_b}', REPEAT('c', 64), 67, 'image/png', UNHEX('{png_hex}'), 1, NOW(3), NOW(3));
+          INSERT INTO CrawlMediaAsset (id, resultId, orgId, taskId, blobId, provider, kind, sourceUrl, bytes, contentType, blobData, width, height, alt, title, format, metadata, createdAt, updatedAt) VALUES
+            ('{asset_png}', '{result_a1}', '{org_a}', '{task_a}', '{blob_png}', 'mysql', 'image', 'https://alpha.example.com/p.png', 67, 'image/png', NULL, 1, 1, 'alpha png', 'alpha png title', 'png', '{{"smoke":true}}', NOW(3), NOW(3)),
+            ('{asset_svg}', '{result_a1}', '{org_a}', '{task_a}', '{blob_svg}', 'mysql', 'image', 'https://alpha.example.com/p.svg', {len(svg_body)}, 'image/svg+xml', NULL, NULL, NULL, NULL, NULL, 'svg', NULL, NOW(3), NOW(3)),
+            ('{asset_b}', '{result_b1}', '{org_b}', '{task_b}', '{blob_b}', 'mysql', 'image', 'https://beta.example.com/p.png', 67, 'image/png', NULL, NULL, NULL, NULL, NULL, 'png', NULL, NOW(3), NOW(3)),
+            ('{asset_stale}', '{result_a1}', '{org_b}', '{task_b}', NULL, 'mysql', 'image', 'https://stale.example.com/p.png', 67, 'image/png', UNHEX('{png_hex}'), NULL, NULL, NULL, NULL, 'png', NULL, NOW(3), NOW(3));
+          INSERT INTO ItemMeta (id, orgId, externalId, name, status, mongoRef, version, sortAt, createdAt, updatedAt) VALUES
+            ('crawl-smoke-item-a1', '{org_a}', 'crawlResult:{result_a1}', 'alpha item', 'published', 'mongo://item-a1', 1, NOW(3), NOW(3), NOW(3));
+          INSERT INTO AlertRule (id, orgId, name, status, metricProvider, metricSlug, operator, thresholdValue, cooldownSeconds, checkIntervalSec, createdAt, updatedAt) VALUES
+            ('crawl-smoke-rule-a1', '{org_a}', 'preflight failure rate', 'active', 'crawl_task', 'crawl_quality.preflight_failure_rate', 'gte', 0.25, 3600, 300, NOW(3), NOW(3));
+          INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, lastUsedAt, expiresAt, revokedAt, createdAt, updatedAt)
+          VALUES ('crawl-mtok-0001', '{org_a}', 'smoke', '{machine_hash}', '["crawl.read","items.read","settings.manage"]', NULL, NULL, NULL, NOW(3), NOW(3));
+          """)
+          users = [
+              (user_a, "crawl-a@example.com", org_a, "crawl-role-a-0001"),
+              (user_b, "crawl-b@example.com", org_b, "crawl-role-b-0001"),
+              (user_manage, "crawl-manage@example.com", org_a, "crawl-role-m-0001"),
+              (user_denied, "crawl-denied@example.com", org_a, "crawl-role-d-0001"),
+          ]
+          for user_id, email, user_org, role_id in users:
+              sql(f"""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '{admin}';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('m{user_id}', '{user_id}', '{user_org}', '{role_id}', 1, NOW(3));
+              """)
+          # The denied role intentionally has no crawl/items/settings permission.
+          sql("DELETE FROM RolePermission WHERE roleId='crawl-role-d-0001'")
+
+          mongo_seed(f"""
+          db.crawlresultcontents.insertMany([
+            {{ taskId: "{task_a}", resultId: "{result_a1}", orgId: "{org_a}", markdown: "{own_markdown}",
+              markdownWithCitations: "alpha citations", referencesMarkdown: "alpha refs", fitMarkdown: "alpha fit",
+              metadata: {{ scope: "alpha" }},
+              linkAnalysis: {{ stats: {{ totalLinks: 2, internalLinks: 1, externalLinks: 1 }},
+                buckets: [ {{ kind: "internal", links: [ {{ href: "https://alpha.example.com/a" }} ] }} ],
+                topLinks: [ {{ href: "https://alpha.example.com/a", text: "a" }} ], lowQualityLinks: [] }},
+              media: {{ images: [ {{ src: "https://alpha.example.com/p.png", alt: "alpha png", width: 1, height: 1 }} ] }},
+              tables: [ {{ id: "t1", headers: ["h"], rows: [["v"]], rowCount: 1, columnCount: 1,
+                dataFrame: {{ columns: ["h"], rows: [{{ h: "v" }}] }} }} ],
+              createdAt: new Date(), updatedAt: new Date() }},
+            {{ taskId: "{task_a}", resultId: "{result_a2}", orgId: "{org_a}", markdown: "",
+              createdAt: new Date(), updatedAt: new Date() }},
+            {{ taskId: "{task_b}", resultId: "{result_b1}", orgId: "{org_b}", markdown: "beta markdown",
+              createdAt: new Date(), updatedAt: new Date() }},
+            {{ taskId: "{task_a}", resultId: "{result_a1}", orgId: "{org_b}", markdown: "{foreign_marker}",
+              createdAt: new Date(Date.now() + 1000), updatedAt: new Date() }}
+          ]);
+          db.tasklogs.insertMany([
+            {{ queue: "crawl4ai", jobId: "{task_a}", orgId: "{org_a}", stage: "complete", status: "completed",
+              data: {{ inserted: 3, skipped: 1, itemsQueued: 2, itemsQueueFailed: 0,
+                lastFetchedAt: new Date(Date.now() - 60000),
+                memory: {{ serverMemoryMb: 512.5, peakMemoryMb: 1024, efficiencyPercent: 50 }},
+                retryableFailures: 0, reusedResultId: "reuse-1", runId: "run-1" }},
+              message: "alpha complete", createdAt: new Date(), updatedAt: new Date() }},
+            {{ queue: "crawl4ai", jobId: "{task_b}", orgId: "{org_b}", stage: "complete", status: "completed",
+              data: {{ inserted: 9, skipped: 9 }}, createdAt: new Date(), updatedAt: new Date() }},
+            {{ queue: "crawl4ai", jobId: "{task_a}", orgId: "{org_a}", stage: "expansion", status: "completed",
+              data: {{ improvedSuccesses: 2, lowSignalResults: 1,
+                candidateRejects: {{ includePatternRejected: 1, excludePatternRejected: 2, publishConfidenceRejected: 3 }},
+                publishConfidenceBuckets: {{ lt04: 1, from04To06: 2, from06To08: 3, gte08: 4 }},
+                detailExpansion: {{ preferFitMarkdownForQuality: true }},
+                headSignalEnrichment: {{ attempted: 5, succeeded: 3, truncatedResponses: 1, softFailureCount: 0,
+                  softFailures: {{ noPublishSignal: 1, httpStatus: 0, nonHtml: 0, emptyHtml: 0, networkOrTimeout: 0 }} }} }},
+              createdAt: new Date(), updatedAt: new Date() }},
+            {{ queue: "crawl4ai", jobId: "{task_a}", orgId: "{org_a}", stage: "preflight", status: "completed",
+              data: {{ status: 304 }}, createdAt: new Date(), updatedAt: new Date() }},
+            {{ queue: "crawl4ai", jobId: "{task_a}", orgId: "{org_a}", stage: "preflight", status: "completed",
+              data: {{ status: 200 }}, createdAt: new Date(), updatedAt: new Date() }},
+            {{ queue: "crawl4ai", jobId: "{task_a}", orgId: "{org_a}", stage: "dedupe", status: "completed",
+              data: {{ evaluatedCount: 4, orgReuseCount: 2 }}, createdAt: new Date(), updatedAt: new Date() }},
+            {{ queue: "crawl4ai", jobId: "{task_a}", orgId: "{org_b}", stage: "expansion", status: "completed",
+              data: {{ improvedSuccesses: 99, lowSignalResults: 99 }}, createdAt: new Date(), updatedAt: new Date() }}
+          ]);
+          """)
+
+          tokens = {email: login(email, os.environ["SEED_ADMIN_PASSWORD"]) for _, email, _, _ in users}
+          token_a = tokens["crawl-a@example.com"]
+          token_b = tokens["crawl-b@example.com"]
+          token_manage = tokens["crawl-manage@example.com"]
+          token_denied = tokens["crawl-denied@example.com"]
+
+          # ---- 阶段 1：开关 legacy，7 条经 Go 代理与 Nest 直连一致 ----
+          start_go("legacy")
+          legacy_list = compare(list_path, token_a)
+          legacy_list_page = compare(f"{list_path}?page=1&pageSize=1&status=completed&search=alpha", token_a)
+          if legacy_list.get("total") != 2 or len(legacy_list.get("tasks") or []) != 2:
+              fail(f"legacy list payload: {legacy_list!r}")
+          legacy_detail = compare(detail_a, token_a)
+          compare(f"{detail_a}?resultLimit=1&resultSearch=1", token_a)
+          by_type = media_paths(legacy_detail)
+          if "image/png" not in by_type or "image/svg+xml" not in by_type:
+              fail(f"legacy detail media assets: {legacy_detail!r}")
+          if "previewUrl" in by_type["image/svg+xml"]:
+              fail("legacy svg asset must not carry a previewUrl")
+          if foreign_marker in json.dumps(legacy_detail, ensure_ascii=False):
+              fail("legacy detail leaked another org's content document")
+          quality_legacy = compare(quality_path, token_a, kind="quality")
+          compare(quality_source, token_a, kind="quality")
+          # 无效 lookbackHours 宽松回退（与 Nest 一样不抛 400）。
+          compare(f"{quality_path}?lookbackHours=bad", token_a, kind="quality")
+          print("legacy proxy ok")
+
+          # ---- 阶段 2：开关 go（Nest 仍在运行）----
+          start_go("go")
+          fresh_list = compare(list_path, token_a)
+          compare(f"{list_path}?page=1&pageSize=1&status=completed&search=alpha", token_a)
+          fresh_detail = compare(detail_a, token_a)
+          compare(f"{detail_a}?resultLimit=1&resultSearch=1", token_a)
+          if foreign_marker in json.dumps(fresh_detail, ensure_ascii=False):
+              fail("go detail leaked another org's content document")
+          if own_markdown not in json.dumps(fresh_detail, ensure_ascii=False):
+              fail("go detail missing its own markdown body")
+          # itemId/itemStatus come from the ItemMeta join.
+          first_result = (fresh_detail.get("task") or {}).get("results", [])[0]
+          if first_result.get("itemId") != "crawl-smoke-item-a1" or first_result.get("itemStatus") != "published":
+              fail(f"go detail ItemMeta mapping: {first_result!r}")
+          memory = (fresh_detail.get("task") or {}).get("memoryStats")
+          summary = (fresh_detail.get("task") or {}).get("lastRunSummary")
+          if not memory or memory.get("serverMemoryMb") != 512.5:
+              fail(f"go detail memoryStats: {memory!r}")
+          if not summary or summary.get("inserted") != 3 or summary.get("reusedResultId") != "reuse-1":
+              fail(f"go detail lastRunSummary: {summary!r}")
+          # 脏数据资产（orgId=org B、resultId=org A 的结果）不得出现在 org A 的资产里。
+          asset_ids = [asset.get("id") for asset in ((fresh_detail.get("task") or {}).get("mediaAssets") or [])]
+          if asset_stale in asset_ids:
+              fail("go detail signed a cross-tenant media asset")
+
+          go_assets = media_paths(fresh_detail)
+          png = go_assets["image/png"]
+          svg = go_assets["image/svg+xml"]
+
+          # PNG preview：200 二进制 + inline + CSP。
+          status, headers, raw = call(go, png["previewUrl"], "GET", None)
+          if status != 200 or raw.hex().upper() != png_hex:
+              fail(f"png preview {status} {raw[:120]!r}")
+          if headers.get("Content-Disposition") != 'inline; filename="image-crawl-smoke-asset-png.png"':
+              fail(f"png preview disposition: {headers.get('Content-Disposition')!r}")
+          if headers.get("Content-Security-Policy") != "default-src 'none'; sandbox":
+              fail(f"png preview CSP: {headers.get('Content-Security-Policy')!r}")
+          if headers.get("X-Content-Type-Options") != "nosniff" or headers.get("Cache-Control") != "private, max-age=300":
+              fail(f"png preview headers: {headers!r}")
+
+          # SVG 没有 previewUrl；downloadUrl 必须 attachment。
+          if svg.get("previewUrl") is not None:
+              fail("go svg asset must not carry a previewUrl")
+          status, headers, raw = call(go, svg["downloadUrl"], "GET", None)
+          if status != 200 or raw.decode() != svg_body:
+              fail(f"svg download {status} {raw[:120]!r}")
+          if not str(headers.get("Content-Disposition", "")).startswith("attachment;"):
+              fail(f"svg download disposition: {headers.get('Content-Disposition')!r}")
+          if "Content-Security-Policy" in headers:
+              fail(f"svg download must not carry the inline CSP: {headers!r}")
+
+          # 篡改 sig / org 一律 400，且文案与 Nest 一致。
+          for tampered in (
+              re.sub(r"sig=[^&]+", "sig=AAAA", png["downloadUrl"]),
+              re.sub(r"org=[^&]+", "org=" + org_b, png["downloadUrl"]),
+          ):
+              status, _, raw = call(go, tampered, "GET", None)
+              if status != 400 or message(raw) != "Invalid signature":
+                  fail(f"tampered media access {status} {raw[:200]!r}")
+          no_sig = re.sub(r"&sig=[^&]+", "", png["downloadUrl"])
+          status, _, raw = call(go, no_sig, "GET", None)
+          if status != 400 or message(raw) != "Missing signature":
+              fail(f"missing signature {status} {raw[:200]!r}")
+          # 公开路由：无 Authorization 也能取到二进制。
+          status, _, _ = call(go, png["downloadUrl"], "GET", None)
+          if status != 200:
+              fail(f"public media route without token = {status}")
+          # 不存在的 asset / 模式。
+          status, _, raw = call(go, f"/api/crawl-media-assets/{asset_png}/unknown?exp=1&org={org_a}&user=x&sig=y", "GET", None)
+          if status != 404 or message(raw) != "Unsupported crawl media access mode":
+              fail(f"unsupported mode {status} {raw[:200]!r}")
+          # SVG 只拿 downloadUrl，preview 模式同样必须是 attachment。
+          svg_preview = svg["downloadUrl"].replace("/download?", "/preview?")
+          status, headers, _ = call(go, svg_preview, "GET", None)
+          if status != 200 or not str(headers.get("Content-Disposition", "")).startswith("attachment;"):
+              fail(f"svg preview mode {status} {headers.get('Content-Disposition')!r}")
+
+          # 质量快照：与 Nest 一致 + 滚动写入 + ObservabilitySnapshot 缓存。
+          flush_quality()
+          go_quality = compare_fresh(quality_path, token_a)
+          source_quality = compare_fresh(quality_source, token_a)
+          if source_quality.get("sourceId") != source_a:
+              fail(f"quality source payload: {source_quality!r}")
+          if go_quality.get("taskCount") != 1:
+              fail(f"quality aggregate: {go_quality!r}")
+          thresholds = go_quality.get("alertThresholds") or {}
+          if thresholds.get("preflightFailureRateHigh") != 0.25 or thresholds.get("http304HitRateLow") != 0.05:
+              fail(f"quality alert thresholds: {thresholds!r}")
+          if go_quality.get("http304HitRate") != 0.5 or go_quality.get("preflightFailureRate") != 0:
+              fail(f"quality preflight rates: {go_quality!r}")
+          samples = go_quality.get("sampleCounts") or {}
+          if samples.get("preflightRunCount") != 2 or samples.get("dedupeEvaluatedCount") != 4 or samples.get("markdownCount") != 2:
+              fail(f"quality sample counts: {samples!r}")
+          rolled = scalar(f"SELECT COUNT(*) FROM CrawlQualityTaskSnapshot WHERE taskId='{task_a}' AND orgId='{org_a}'")
+          if rolled != "1":
+              fail(f"CrawlQualityTaskSnapshot row for {task_a} = {rolled!r}")
+          cached = scalar(
+              f"SELECT COUNT(*) FROM ObservabilitySnapshot WHERE orgId='{org_a}' "
+              f"AND scope='crawl_quality_metrics' AND variantKey='lookbackHours:24' AND expiresAt > NOW(3)")
+          if cached != "1":
+              fail(f"ObservabilitySnapshot crawl_quality_metrics row = {cached!r}")
+          snapshot_ttl = redis("TTL", f"observability-snapshot:{org_a}:crawl_quality_metrics:lookbackHours:24")
+          if snapshot_ttl not in ("-2", "-1") and int(snapshot_ttl) > 60:
+              fail(f"snapshot TTL too large: {snapshot_ttl!r}")
+
+          # 遥测闭环：上报 -> 汇总精确递增。
+          day = time.strftime("%Y-%m-%d", time.gmtime())
+          redis("DEL", f"search-telemetry:{org_a}:{day}")
+          event = {"eventType": "archive_load_more_click", "surface": "search_page", "vertical": "EAST_SEA", "queryLength": 12}
+          for label, base in (("go", go), ("nest", nest)):
+              status, _, raw = call(base, telemetry_path, "POST", token_a, payload=event)
+              if status != 201 or body(raw) != {"recorded": True}:
+                  fail(f"{label} telemetry record {status} {raw[:200]!r}")
+          summary_query = f"{summary_path}?from={day}&to={day}"
+          summary_go = compare(summary_query, token_manage)
+          totals = summary_go.get("totals") or {}
+          if totals.get("totalEvents") != 2:
+              fail(f"telemetry totals: {summary_go!r}")
+          if (totals.get("eventCounts") or {}).get("archive_load_more_click") != 2:
+              fail(f"telemetry eventCounts: {summary_go!r}")
+          if (totals.get("surfaceCounts") or {}).get("search_page") != 2:
+              fail(f"telemetry surfaceCounts: {summary_go!r}")
+          if (totals.get("loadMoreVerticalCounts") or {}).get("EAST_SEA") != 2:
+              fail(f"telemetry loadMoreVerticalCounts: {summary_go!r}")
+          if (totals.get("queryLengthBuckets") or {}).get("len_08_15") != 2:
+              fail(f"telemetry queryLengthBuckets: {summary_go!r}")
+          ttl = redis("TTL", f"search-telemetry:{org_a}:{day}")
+          if ttl == "-1" or (ttl != "-2" and int(ttl) < 2500000):
+              fail(f"telemetry TTL = {ttl!r}")
+          # surface 过滤不支持 + 31 天跨度上限。
+          status, _, raw = call(go, f"{summary_path}?from={day}&to={day}&surface=search_page", "GET", token_manage)
+          if status != 400 or message(raw) != "surface filtering is not supported by the stored telemetry counters":
+              fail(f"surface filter {status} {raw[:200]!r}")
+          status, _, raw = call(nest, f"{summary_path}?from={day}&to={day}&surface=search_page", "GET", token_manage)
+          if status != 400 or message(raw) != "surface filtering is not supported by the stored telemetry counters":
+              fail(f"nest surface filter {status} {raw[:200]!r}")
+          far = time.strftime("%Y-%m-%d", time.gmtime(time.time() + 32 * 86400))
+          status, _, raw = call(go, f"{summary_path}?from={day}&to={far}", "GET", token_manage)
+          if status != 400 or message(raw) != "date range cannot exceed 31 days":
+              fail(f"range span {status} {raw[:200]!r}")
+          status, _, raw = call(go, f"{summary_path}?from=2026-02-30&to=2026-02-30", "GET", token_manage)
+          if status != 400 or message(raw) != "invalid date":
+              fail(f"invalid calendar day {status} {raw[:200]!r}")
+          # 重复上报保持非阻塞：Redis 键被删后仍 201。
+          redis("DEL", f"search-telemetry:{org_a}:{day}")
+          status, _, raw = call(go, telemetry_path, "POST", token_a, payload=event)
+          if status != 201 or body(raw) != {"recorded": True}:
+              fail(f"telemetry no-blocking {status} {raw[:200]!r}")
+          print("telemetry closed loop ok")
+
+          # ---- 权限与跨组织隔离 ----
+          protected = [list_path, detail_a, quality_path, quality_source]
+          for path in protected:
+              status, _, raw = call(go, path, "GET", token_denied)
+              if status != 403:
+                  fail(f"{path} without crawl.read = {status} {raw[:200]!r}")
+              status, _, raw = call(go, path, "GET", machine_token)
+              if status != 200:
+                  fail(f"{path} machine token = {status} {raw[:200]!r}")
+          status, _, raw = call(go, list_path, "GET", None)
+          if status != 401:
+              fail(f"missing token = {status} {raw[:200]!r}")
+          status, _, raw = call(go, summary_path + f"?from={day}&to={day}", "GET", token_a)
+          if status != 403:
+              fail(f"summary without settings.manage = {status} {raw[:200]!r}")
+          status, _, raw = call(go, telemetry_path, "POST", token_denied, payload=event)
+          if status != 403:
+              fail(f"telemetry without items.read = {status} {raw[:200]!r}")
+          status, _, raw = call(go, telemetry_path, "POST", machine_token, payload=event)
+          if status != 201:
+              fail(f"telemetry machine token = {status} {raw[:200]!r}")
+
+          # 另一组织读本组织任务 -> 404；本组织读另一组织任务 -> 404。
+          for path in (f"/api/crawl-tasks/{task_a}", f"/api/crawl-tasks/{task_b}"):
+              token = token_b if task_a in path else token_a
+              status, _, raw = call(go, path, "GET", token)
+              if status != 404 or message(raw) != "crawl task not found":
+                  fail(f"cross-org {path} = {status} {raw[:200]!r}")
+          # 另一组织的列表/详情不得泄漏本组织标记。
+          beta_detail_raw = call(go, f"/api/crawl-tasks/{task_b}", "GET", token_b)[2]
+          if own_markdown in beta_detail_raw.decode("utf-8", "replace"):
+              fail("org B detail leaked org A markdown")
+          beta_list = body(call(go, list_path, "GET", token_b)[2])
+          if (beta_list.get("total") or 0) != 1:
+              fail(f"org B list total: {beta_list!r}")
+
+          # 未迁移的写队列与 crawl4ai queue 永远回落 Nest（Nest 仍在时不是 501）。
+          for method, path in (
+              ("POST", list_path),
+              ("POST", "/api/crawl-tasks/metadata"),
+              ("DELETE", f"/api/crawl-tasks/{task_a}"),
+              ("GET", "/api/admin/crawl4ai/queue"),
+          ):
+              status, _, raw = call(go, path, method, token_a, payload={} if method == "POST" else None)
+              if status == 501:
+                  fail(f"unmigrated {method} {path} answered 501 instead of proxying")
+              if body(raw) is not None and (body(raw) or {}).get("message") == "go route has no handler":
+                  fail(f"unmigrated {method} {path} hit a Go route with no handler")
+          print("go switch ok")
+
+          # ---- 阶段 3：停止 Nest；7 条仍服务，未迁路径是 502 ----
+          alive_assets = media_paths(body(call(go, detail_a, "GET", token_a)[2]))
+          alive_png = alive_assets["image/png"]["downloadUrl"]
+          if os.path.exists("/tmp/api-nestjs.pid"):
+              os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+          subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+          subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+          stopped = False
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  stopped = True
+                  break
+              time.sleep(1)
+          if not stopped:
+              fail("nestjs did not stop")
+
+          for path in (
+              list_path,
+              detail_a,
+              quality_path,
+              quality_source,
+              f"{summary_path}?from={day}&to={day}",
+          ):
+              token = token_manage if path.startswith(summary_path) else token_a
+              status, _, raw = call(go, path, "GET", token)
+              if status != 200:
+                  fail(f"after nest stop {path} {status} {raw[:300]!r}")
+          status, _, raw = call(go, alive_png, "GET", None)
+          if status != 200 or raw.hex().upper() != png_hex:
+              fail(f"after nest stop media {status} {raw[:120]!r}")
+          status, _, raw = call(go, telemetry_path, "POST", token_a, payload=event)
+          if status != 201:
+              fail(f"after nest stop telemetry {status} {raw[:200]!r}")
+          for method, path in (
+              ("POST", list_path),
+              ("GET", "/api/admin/crawl4ai/queue"),
+          ):
+              status, _, raw = call(go, path, method, token_a, payload={} if method == "POST" else None)
+              if status != 502 or (body(raw) or {}).get("statusCode") != 502:
+                  fail(f"{path} after nest stop {status} {raw[:300]!r}")
+          print("crawl read telemetry takeover verified: legacy parity, HMAC media delivery, quality snapshot reuse, telemetry loop, org isolation, machine token, nest stop")
+          PY
