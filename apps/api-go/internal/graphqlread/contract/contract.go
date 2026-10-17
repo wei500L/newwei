@@ -55,7 +55,7 @@ type Context struct {
 // were selected. Returning (nil, nil) for a nullable root is a GraphQL null.
 type Resolver func(ctx Context) (any, error)
 
-// Root is one migrated Query field.
+// Root is one migrated Query or Mutation field.
 //
 // Permission is required unless AllowAuthenticated or AnyPermissions is set.
 // None of the three means the executor fails closed with
@@ -108,11 +108,16 @@ func (f *Failure) Error() string {
 }
 
 // Registry stores root resolvers and the Go types used to project objects.
+//
+// Query and Mutation roots are registered and looked up separately so a name
+// that exists on both root types (or on neither) can never be resolved by the
+// wrong operation type.
 type Registry struct {
-	mu     sync.RWMutex
-	roots  map[string]Root
-	types  map[string]reflect.Type
-	fields map[string]map[string]struct{}
+	mu        sync.RWMutex
+	roots     map[string]Root
+	mutations map[string]Root
+	types     map[string]reflect.Type
+	fields    map[string]map[string]struct{}
 	// fieldPermissions maps a GraphQL object type and field to the single
 	// permission required to select that field. The executor rejects a
 	// selection of a protected field with the same FORBIDDEN failure the
@@ -125,6 +130,7 @@ type Registry struct {
 func NewRegistry() *Registry {
 	return &Registry{
 		roots:            map[string]Root{},
+		mutations:        map[string]Root{},
 		types:            map[string]reflect.Type{},
 		fields:           map[string]map[string]struct{}{},
 		fieldPermissions: map[string]map[string]string{},
@@ -133,15 +139,25 @@ func NewRegistry() *Registry {
 
 // RegisterRoot adds a Query field. A second registration of the same name panics.
 func (r *Registry) RegisterRoot(root Root) {
+	r.register(r.roots, "root", root)
+}
+
+// RegisterMutation adds a Mutation field. A second registration of the same
+// name panics.
+func (r *Registry) RegisterMutation(root Root) {
+	r.register(r.mutations, "mutation", root)
+}
+
+func (r *Registry) register(target map[string]Root, kind string, root Root) {
 	if root.Name == "" || root.Resolve == nil {
-		panic("graphqlread: root resolver requires a name and function")
+		panic("graphqlread: " + kind + " resolver requires a name and function")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.roots[root.Name]; ok {
-		panic("graphqlread: duplicate root " + root.Name)
+	if _, ok := target[root.Name]; ok {
+		panic("graphqlread: duplicate " + kind + " " + root.Name)
 	}
-	r.roots[root.Name] = root
+	target[root.Name] = root
 }
 
 // RegisterType records an object type's projected fields. sample may be a
@@ -201,11 +217,24 @@ func (r *Registry) FieldPermission(typeName, fieldName string) (string, bool) {
 	return permission, ok
 }
 
-// Root returns a registered root and whether it exists.
+// Root returns a registered Query root and whether it exists.
 func (r *Registry) Root(name string) (Root, bool) {
+	return r.Query(name)
+}
+
+// Query returns a registered Query root and whether it exists.
+func (r *Registry) Query(name string) (Root, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	root, ok := r.roots[name]
+	return root, ok
+}
+
+// Mutation returns a registered Mutation root and whether it exists.
+func (r *Registry) Mutation(name string) (Root, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	root, ok := r.mutations[name]
 	return root, ok
 }
 

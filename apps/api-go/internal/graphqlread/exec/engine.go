@@ -101,9 +101,9 @@ func (e *Engine) PlanDocument(query string, operationName *string, rawVariables 
 	plan.Doc = doc
 	op, selectionErr := selectOperation(doc, operationName)
 	validation := validator.Validate(e.schema, doc)
-	supported := op != nil && op.Operation == ast.Query && e.operationSupported(doc, op)
+	supported := op != nil && e.rootDefinition(op) != nil && e.operationSupported(doc, op)
 	if len(validation) > 0 {
-		if selectionErr == nil && op != nil && (op.Operation != ast.Query || !supported) {
+		if selectionErr == nil && op != nil && !supported {
 			plan.Kind = KindLegacy
 			plan.Op = op
 			return plan
@@ -119,7 +119,7 @@ func (e *Engine) PlanDocument(query string, operationName *string, rawVariables 
 		plan.Result = operationResolution(selectionMessage(operationName, doc))
 		return plan
 	}
-	if op.Operation != ast.Query {
+	if e.rootDefinition(op) == nil {
 		plan.Kind = KindLegacy
 		plan.RegisterDocument = true
 		plan.Validated = true
@@ -158,6 +158,27 @@ func (e *Engine) PlanDocument(query string, operationName *string, rawVariables 
 	return plan
 }
 
+// IsMutation reports whether the selected operation is a mutation.
+func IsMutation(plan Plan) bool {
+	return plan.Op != nil && plan.Op.Operation == ast.Mutation
+}
+
+// MutationOverGET is the rejection Apollo Server returns when a GET request
+// selects a mutation: 405 with the BAD_REQUEST code and an Allow: POST header.
+// GET requests never reach a mutation resolver, so no write can happen.
+func MutationOverGET(plan Plan) *Result {
+	if !IsMutation(plan) {
+		return nil
+	}
+	header := http.Header{}
+	header.Set("Allow", http.MethodPost)
+	result := protocolResult(http.StatusMethodNotAllowed, header, graphError{
+		Message:    "GET requests only support query operations, not mutation operations",
+		Extensions: map[string]any{"code": codeBadRequest},
+	})
+	return &result
+}
+
 // CheckComplexity implements the Nest estimator order. A failure is returned
 // before resolvers and before APQ registration.
 func (e *Engine) CheckComplexity(plan Plan) *Result {
@@ -174,6 +195,10 @@ func (e *Engine) CheckComplexity(plan Plan) *Result {
 
 // Execute runs a KindExecute plan. Prepare runs once per collected business
 // root field, after skip/include and field merging, and before resolvers.
+//
+// Query fields are prepared together and then resolved; Mutation fields are
+// authenticated, resolved, and projected one at a time in document order, and
+// a non-null top-level failure stops the remaining fields with data: null.
 func (e *Engine) Execute(ctx context.Context, plan Plan, prepare PrepareRoot, cache Cache, cacheAllowed bool, cacheTTL int, schemaVersion, traceID string) Result {
 	if ctx.Err() != nil {
 		return protocolResult(http.StatusInternalServerError, nil, graphError{
@@ -181,7 +206,11 @@ func (e *Engine) Execute(ctx context.Context, plan Plan, prepare PrepareRoot, ca
 			Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR"},
 		})
 	}
-	fields := collectFields(e.schema, e.schema.Query, plan.Op.SelectionSet, plan.Doc, plan.Variables, map[string]bool{})
+	if IsMutation(plan) {
+		return e.executeMutation(ctx, plan, prepare, traceID)
+	}
+	rootDef := e.schema.Query
+	fields := collectFields(e.schema, rootDef, plan.Op.SelectionSet, plan.Doc, plan.Variables, map[string]bool{})
 	type ready struct {
 		field    collectedField
 		identity contract.Identity
@@ -196,7 +225,7 @@ func (e *Engine) Execute(ctx context.Context, plan Plan, prepare PrepareRoot, ca
 			result[field.Key] = "Query"
 			continue
 		}
-		root, ok := e.reg.Root(field.Name)
+		root, ok := e.reg.Query(field.Name)
 		fieldPath := []any{field.Key}
 		if !ok {
 			errors = append(errors, internalField("Field is not implemented", fieldPath, traceID))
@@ -254,7 +283,7 @@ func (e *Engine) Execute(ctx context.Context, plan Plan, prepare PrepareRoot, ca
 			}
 			continue
 		}
-		fieldDef := e.schema.Query.Fields.ForName(item.field.Name)
+		fieldDef := rootDef.Fields.ForName(item.field.Name)
 		projected, isNull, projectErrors := e.project(fieldDef.Type, reflect.ValueOf(value), item.field.Selections, plan.Doc, plan.Variables, fieldPath, item.identity)
 		for i := range projectErrors {
 			if projectErrors[i].Extensions == nil {
@@ -287,6 +316,100 @@ func (e *Engine) Execute(ctx context.Context, plan Plan, prepare PrepareRoot, ca
 		if cacheAllowed && cache != nil && cacheTTL > 0 && len(readyFields) > 0 {
 			cache.Set(ctx, cacheKey(schemaVersion, readyFields[0].identity, plan), encoded, cacheTTL)
 		}
+	}
+	return dataResult(statusFromErrors(errors, http.StatusOK), encoded, false, true, errors, header)
+}
+
+// executeMutation runs a mutation plan. Every top-level field is completed in
+// document order: prepare (rate limit and authentication), permission check,
+// resolver call, and projection. A non-null field failure yields data: null
+// and stops the remaining fields; already committed fields are never rolled
+// back. Mutations never read or write the response cache.
+func (e *Engine) executeMutation(ctx context.Context, plan Plan, prepare PrepareRoot, traceID string) Result {
+	rootDef := e.schema.Mutation
+	header := http.Header{}
+	header.Set("Cache-Control", "no-store")
+	if rootDef == nil {
+		return dataResult(http.StatusInternalServerError, nil, true, true, []graphError{internalField("Internal server error", nil, traceID)}, header)
+	}
+	fields := collectFields(e.schema, rootDef, plan.Op.SelectionSet, plan.Doc, plan.Variables, map[string]bool{})
+	result := map[string]any{}
+	var errors []graphError
+	nullData := false
+	for _, field := range fields {
+		if ctx.Err() != nil {
+			errors = append(errors, internalField("Internal server error", []any{field.Key}, traceID))
+			nullData = true
+			break
+		}
+		if field.Name == "__typename" {
+			result[field.Key] = "Mutation"
+			continue
+		}
+		fieldPath := []any{field.Key}
+		root, ok := e.reg.Mutation(field.Name)
+		if !ok {
+			errors = append(errors, internalField("Field is not implemented", fieldPath, traceID))
+			nullData = true
+			break
+		}
+		identity, err := prepare(ctx, field.Key, field.Name)
+		if err != nil {
+			errors = append(errors, fieldFailure(err, field, traceID))
+			if fieldNonNull(field.Field) {
+				nullData = true
+				break
+			}
+			result[field.Key] = nil
+			continue
+		}
+		if permErr := authorizeRoot(root, identity); permErr != nil {
+			errors = append(errors, fieldFailure(permErr, field, traceID))
+			if fieldNonNull(field.Field) {
+				nullData = true
+				break
+			}
+			result[field.Key] = nil
+			continue
+		}
+		e.resolverCalls.Add(1)
+		args := map[string]any{}
+		if field.Field != nil && field.Field.Definition != nil {
+			args = field.Field.ArgumentMap(plan.Variables)
+		}
+		value, err := root.Resolve(contract.Context{Ctx: ctx, Identity: identity, Args: args})
+		if err != nil {
+			errors = append(errors, fieldFailure(err, field, traceID))
+			if fieldNonNull(field.Field) {
+				nullData = true
+				break
+			}
+			result[field.Key] = nil
+			continue
+		}
+		fieldDef := rootDef.Fields.ForName(field.Name)
+		projected, isNull, projectErrors := e.project(fieldDef.Type, reflect.ValueOf(value), field.Selections, plan.Doc, plan.Variables, fieldPath, identity)
+		for i := range projectErrors {
+			if projectErrors[i].Extensions == nil {
+				projectErrors[i].Extensions = map[string]any{}
+			}
+			if traceID != "" {
+				projectErrors[i].Extensions["traceId"] = traceID
+			}
+		}
+		errors = append(errors, projectErrors...)
+		if isNull && fieldDef.Type.NonNull {
+			nullData = true
+			break
+		}
+		result[field.Key] = projected
+	}
+	if nullData {
+		return dataResult(statusFromErrors(errors, http.StatusOK), nil, true, true, errors, header)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return dataResult(http.StatusInternalServerError, nil, true, true, []graphError{internalField("Internal server error", nil, traceID)}, header)
 	}
 	return dataResult(statusFromErrors(errors, http.StatusOK), encoded, false, true, errors, header)
 }
@@ -332,9 +455,14 @@ func executedRootNames(plan Plan) []string {
 }
 
 // ResponseCacheable reports whether Nest would read and write the private
-// response cache for this request. forceRefresh skips both.
+// response cache for this request. forceRefresh skips both. Only query
+// operations are ever cacheable: a mutation must not read or write the cached
+// response, regardless of its operation name or root fields.
 func ResponseCacheable(plan Plan, maxAge int) bool {
 	if maxAge <= 0 {
+		return false
+	}
+	if plan.Op == nil || plan.Op.Operation != ast.Query {
 		return false
 	}
 	if plan.RawVariables != nil && plan.RawVariables["forceRefresh"] == true {
@@ -507,6 +635,8 @@ func graphqlCode(status int) string {
 		return "FORBIDDEN"
 	case http.StatusNotFound:
 		return "NOT_FOUND"
+	case http.StatusConflict:
+		return "CONFLICT"
 	case http.StatusTooManyRequests:
 		return "TOO_MANY_REQUESTS"
 	case http.StatusServiceUnavailable:
