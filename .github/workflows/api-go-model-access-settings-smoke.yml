@@ -460,6 +460,18 @@ jobs:
           def sha256_hex(value):
               return hashlib.sha256(value.encode()).hexdigest()
 
+          def internal_keys():
+              """Reads the authoritative plaintext list through the internal route."""
+              status, raw = call(go, internal_keys_path, "GET",
+                                 headers={"authorization": "Bearer " + internal_token})
+              if status != 200:
+                  fail(f"internal keys read: {status} {raw[:300]!r}")
+              return (body(raw) or {}).get("openaiApiKeys")
+
+          def stored_token_value():
+              """Reads the raw stored model token (a plain string or a v1 envelope)."""
+              return json.loads(setting_value(model_key))["internalToken"]
+
           # ---- 阶段 1：legacy 开关下 10 条全部经 Go 代理并与 Nest 直连一致 ----
           start_go("legacy")
           platform_token = login(email_platform)
@@ -614,21 +626,16 @@ jobs:
           status, raw = call(go, keys_path, "POST", platform_token, {"keys": ["sk-c"]})
           if status != 200 or (body(raw) or {}).get("keysCount") != 3:
               fail(f"MA2 append with a stale cache: {status} {raw[:300]!r}")
-          stored = json.loads(setting_value(keys_key))
-          if [entry["value"] for entry in stored["openaiApiKeys"]] != ["sk-a", "sk-b", "sk-c"]:
-              fail(f"MA2 append lost a key: {stored}")
-          status, raw = call(go, internal_keys_path, "GET", headers={"authorization": "Bearer " + internal_token})
-          if body(raw) != {"openaiApiKeys": ["sk-a", "sk-b", "sk-c"]}:
-              fail(f"MA2 internal list: {raw[:300]!r}")
+          if internal_keys() != ["sk-a", "sk-b", "sk-c"]:
+              fail(f"MA2 append lost a key: {internal_keys()!r}")
           keys_seed_two()
           redis("SET", keys_cache, json.dumps({"exists": True, "value": {"openaiApiKeys": [
               {"fingerprint": sha256_hex("sk-a"), "value": "sk-a"}]}}), "EX", "30")
           status, raw = call(go, keys_path + "/key/" + sha256_hex("sk-a"), "DELETE", platform_token)
           if status != 200 or (body(raw) or {}).get("keysCount") != 1:
               fail(f"MA2 delete with a stale cache: {status} {raw[:300]!r}")
-          stored = json.loads(setting_value(keys_key))
-          if [entry["value"] for entry in stored["openaiApiKeys"]] != ["sk-b"]:
-              fail(f"MA2 delete kept the wrong key: {stored}")
+          if internal_keys() != ["sk-b"]:
+              fail(f"MA2 delete kept the wrong key: {internal_keys()!r}")
           print("MA2 stale-cache read-modify-write ok (append and delete)")
 
           # MA3：DB token B 与旧缓存 token A。
@@ -642,9 +649,8 @@ jobs:
                              {"enabled": False, "timeoutMs": 1000, "maxRetries": 1})
           if status != 200:
               fail(f"MA3 PUT: {status} {raw[:300]!r}")
-          stored = json.loads(setting_value(model_key))
-          if stored["internalToken"] != "token-b":
-              fail(f"MA3 restored the stale token: {stored}")
+          if stored_token_value() != "token-b":
+              fail(f"MA3 restored the stale token: {stored_token_value()!r}")
           if (body(raw) or {}).get("hasToken") is not True or (body(raw) or {}).get("tokenSource") != "stored":
               fail(f"MA3 public projection: {raw[:300]!r}")
           print("MA3 token retention from the authoritative row ok")
@@ -736,27 +742,24 @@ jobs:
           concurrent_pair(lambda: call(go, keys_path, "POST", platform_token, {"keys": ["sk-c"]}),
                           lambda: call(go, keys_path, "POST", platform_token, {"keys": ["sk-d"]}),
                           lambda: None, "POST+POST (go)")
-          stored = json.loads(setting_value(keys_key))
-          if sorted(entry["value"] for entry in stored["openaiApiKeys"]) != ["sk-a", "sk-b", "sk-c", "sk-d"]:
-              fail(f"concurrent appends lost a key: {stored}")
+          if sorted(internal_keys() or []) != ["sk-a", "sk-b", "sk-c", "sk-d"]:
+              fail(f"concurrent appends lost a key: {internal_keys()!r}")
           print("concurrency ok: two appends produce the union")
 
           reset_keys_two()
           concurrent_pair(lambda: call(go, keys_path + "/key/" + sha256_hex("sk-a"), "DELETE", platform_token),
                           lambda: call(go, keys_path + "/key/" + sha256_hex("sk-b"), "DELETE", platform_token),
                           lambda: None, "DELETE+DELETE (go)")
-          stored = json.loads(setting_value(keys_key))
-          if [entry["value"] for entry in stored["openaiApiKeys"]] != []:
-              fail(f"concurrent deletes kept a key: {stored}")
+          if internal_keys() != []:
+              fail(f"concurrent deletes kept a key: {internal_keys()!r}")
           print("concurrency ok: two fingerprint deletes both apply")
 
           reset_keys_two()
           concurrent_pair(lambda: call(go, keys_path + "/key/" + sha256_hex("sk-a"), "DELETE", platform_token),
                           lambda: call(go, keys_path, "POST", platform_token, {"keys": ["sk-c"]}),
                           lambda: None, "DELETE+POST (go)")
-          stored = json.loads(setting_value(keys_key))
-          if sorted(entry["value"] for entry in stored["openaiApiKeys"]) != ["sk-b", "sk-c"]:
-              fail(f"delete A with a concurrent append C: {stored}")
+          if sorted(internal_keys() or []) != ["sk-b", "sk-c"]:
+              fail(f"delete A with a concurrent append C: {internal_keys()!r}")
           print("concurrency ok: delete A + append C -> original minus A plus C")
 
           # Nest 直连与 Go 交叉并发。
@@ -764,9 +767,8 @@ jobs:
           concurrent_pair(lambda: call(nest, keys_path, "POST", platform_token, {"keys": ["sk-c"]}),
                           lambda: call(go, keys_path, "POST", platform_token, {"keys": ["sk-d"]}),
                           lambda: None, "POST (nest) + POST (go)")
-          stored = json.loads(setting_value(keys_key))
-          if sorted(entry["value"] for entry in stored["openaiApiKeys"]) != ["sk-a", "sk-b", "sk-c", "sk-d"]:
-              fail(f"cross-process appends lost a key: {stored}")
+          if sorted(internal_keys() or []) != ["sk-a", "sk-b", "sk-c", "sk-d"]:
+              fail(f"cross-process appends lost a key: {internal_keys()!r}")
           print("concurrency ok: Nest + Go appends produce the union")
 
           # 空配置首次创建的并发。
@@ -774,9 +776,8 @@ jobs:
           concurrent_pair(lambda: call(go, keys_path, "POST", platform_token, {"keys": ["sk-first"]}),
                           lambda: call(nest, keys_path, "POST", platform_token, {"keys": ["sk-second"]}),
                           lambda: None, "POST on an empty row (nest) + (go)")
-          stored = json.loads(setting_value(keys_key))
-          if sorted(entry["value"] for entry in stored["openaiApiKeys"]) != ["sk-first", "sk-second"]:
-              fail(f"concurrent first creation: {stored}")
+          if sorted(internal_keys() or []) != ["sk-first", "sk-second"]:
+              fail(f"concurrent first creation: {internal_keys()!r}")
 
           # MA3 并发：新 token 与省略 token。
           delete_setting(model_key)
@@ -787,9 +788,8 @@ jobs:
                           lambda: call(nest, model_path, "PUT", platform_token,
                                        {"enabled": False, "timeoutMs": 1000, "maxRetries": 1}),
                           lambda: None, "PUT without token (go) + (nest)")
-          stored = json.loads(setting_value(model_key))
-          if stored["internalToken"] != "token-b":
-              fail(f"a concurrent token-preserving PUT restored a stale value: {stored}")
+          if stored_token_value() != "token-b":
+              fail(f"a concurrent token-preserving PUT restored a stale value: {stored_token_value()!r}")
           print("MA3 concurrency ok: both writers keep the authoritative token")
 
           # ---- restartRequired 全分支（写入已应用状态后逐项对照） ----
@@ -871,14 +871,14 @@ jobs:
           status, raw = call(nest, model_path, "GET", admin_a_token)
           if (body(raw) or {}).get("hasToken") is not True or (body(raw) or {}).get("tokenSource") != "stored":
               fail(f"nest cannot read the go-written token: {raw[:300]!r}")
+          go_written_token = stored_token_value()
           status, raw = call(nest, model_path, "PUT", platform_token,
                              {"enabled": False, "baseUrl": "http://model-z:9000",
                               "timeoutMs": 1000, "maxRetries": 1})
           if status != 200:
               fail(f"nest must preserve the go-written token: {status} {raw[:300]!r}")
-          stored = json.loads(setting_value(model_key))
-          if stored["internalToken"] != "go-written-token":
-              fail(f"nest overwrote the go-written token: {stored}")
+          if stored_token_value() != go_written_token:
+              fail(f"nest overwrote the go-written token: {stored_token_value()!r}")
           # Nest 写入密钥，Go 内部取钥；再反过来。
           delete_setting(keys_key)
           status, raw = call(nest, keys_path, "PUT", platform_token, {"keys": ["sk-nest-1", "sk-nest-2"]})
@@ -929,10 +929,6 @@ jobs:
           print("legacy stored key shapes ok: plain, encrypted, wrapped, corrupted")
 
           # ---- 阶段 3：加密失败矩阵（分开的真实进程，必要时重启） ----
-          def read_stored_token():
-              stored = json.loads(setting_value(model_key))
-              return stored.get("internalToken")
-
           def token_write(base, token, value):
               return call(base, model_path, "PUT", token,
                           {"enabled": False, "baseUrl": "http://model-enc:9000", "internalToken": value,
@@ -944,8 +940,8 @@ jobs:
           redis("SET", security_cache, json.dumps({"exists": True, "value": {"secretEncryptionEnabled": False}}), "EX", "60")
           start_go("go")
           status, raw = token_write(go, platform_token, "plaintext-by-toggle")
-          if status != 200 or read_stored_token() != "plaintext-by-toggle":
-              fail(f"configured=false plaintext path: {status} {raw[:300]!r} {read_stored_token()!r}")
+          if status != 200 or stored_token_value() != "plaintext-by-toggle":
+              fail(f"configured=false plaintext path: {status} {raw[:300]!r} {stored_token_value()!r}")
           print("encryption matrix ok: valid key + configured=false stores plaintext")
 
           # (b) valid key + no toggle -> encrypted
@@ -953,7 +949,7 @@ jobs:
           delete_setting(model_key)
           start_go("go")
           status, raw = token_write(go, platform_token, "encrypted-by-default")
-          stored_token = read_stored_token()
+          stored_token = stored_token_value()
           if status != 200 or not isinstance(stored_token, dict) or stored_token.get("__enc") != "system-settings:v1":
               fail(f"valid key encryption path: {status} {raw[:300]!r} {stored_token!r}")
           print("encryption matrix ok: valid key + unset toggle encrypts")
@@ -998,8 +994,8 @@ jobs:
           delete_setting(model_key)
           start_go("go", extra_env=["SYSTEM_SETTINGS_ENCRYPTION_KEY=", "NODE_ENV=development"])
           status, raw = token_write(go, platform_token, "plaintext-dev")
-          if status != 200 or read_stored_token() != "plaintext-dev":
-              fail(f"non-production plaintext fallback: {status} {raw[:300]!r} {read_stored_token()!r}")
+          if status != 200 or stored_token_value() != "plaintext-dev":
+              fail(f"non-production plaintext fallback: {status} {raw[:300]!r} {stored_token_value()!r}")
           print("encryption matrix ok: non-production without a key falls back to plaintext")
 
           # Nest 侧同一策略的三个代表场景（需要重启 Nest 才能改变进程环境）。
@@ -1061,8 +1057,8 @@ jobs:
           backend_token = login(email_platform)
           delete_setting(model_key)
           status, raw = token_write(nest, backend_token, "nest-plaintext")
-          if status != 200 or read_stored_token() != "nest-plaintext":
-              fail(f"nest non-production plaintext: {status} {raw[:300]!r} {read_stored_token()!r}")
+          if status != 200 or stored_token_value() != "nest-plaintext":
+              fail(f"nest non-production plaintext: {status} {raw[:300]!r} {stored_token_value()!r}")
           print("nest encryption policy ok: non-production plaintext fallback")
 
           # 恢复生产 Nest 与带 key 的 Go，供后续阶段使用。
