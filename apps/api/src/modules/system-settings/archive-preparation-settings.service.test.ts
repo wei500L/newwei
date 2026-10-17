@@ -1,16 +1,16 @@
 import { ForbiddenException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../audit/audit-log.writer", () => ({
-  writeAuditLogBestEffort: vi.fn(async () => undefined),
-}));
-
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PlatformAccessService } from "../auth/platform-access.service";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { ArchivePreparationSettingsService } from "./archive-preparation-settings.service";
+
+vi.mock("../audit/audit-log.writer", () => ({
+  writeAuditLogBestEffort: vi.fn(async () => undefined),
+}));
 
 const SETTINGS_KEY = "archive_preparation_settings";
 const CACHE_KEY = "archive_preparation:settings";
@@ -20,8 +20,6 @@ const SETTINGS_DESCRIPTION =
 const auditWriter = vi.mocked(writeAuditLogBestEffort);
 
 type Mock = ReturnType<typeof vi.fn>;
-
-type RawInput = Record<string, unknown>;
 
 const build = (
   options: {
@@ -51,29 +49,6 @@ const build = (
     }
     return undefined;
   });
-
-  const service = new ArchivePreparationSettingsService(
-    { systemSetting: { findUnique, upsert, deleteMany } } as unknown as PrismaService,
-    { del: cacheDel, wrap: cacheWrap } as unknown as CacheService,
-    { assertPlatformAdmin } as unknown as PlatformAccessService,
-  );
-
-  if (options.auditRejects) {
-    auditWriter.mockRejectedValue(new Error("audit down"));
-  } else {
-    auditWriter.mockImplementation(async () => undefined);
-  }
-
-  return {
-    service,
-    findUnique,
-    upsert,
-    deleteMany,
-    cacheDel,
-    cacheWrap,
-    assertPlatformAdmin,
-  };
-};
 
 const writtenSettings = (
   upsert: Mock,

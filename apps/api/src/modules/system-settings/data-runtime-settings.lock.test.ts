@@ -5,6 +5,17 @@ import {
 } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  SituationMonitorLockError,
+  withMysqlSessionLock,
+} from "../situation-monitor/situation-monitor-user-lock";
+
+import {
+  DATA_RUNTIME_SETTINGS_NOMINATIM_LOCK,
+  DATA_RUNTIME_SETTINGS_REALTIME_LOCK,
+  withDataRuntimeSettingsLock,
+} from "./data-runtime-settings.lock";
+
 vi.mock("../situation-monitor/situation-monitor-user-lock", () => {
   class SituationMonitorLockError extends Error {
     constructor(message: string) {
@@ -17,17 +28,6 @@ vi.mock("../situation-monitor/situation-monitor-user-lock", () => {
     withMysqlSessionLock: vi.fn(),
   };
 });
-
-import {
-  SituationMonitorLockError,
-  withMysqlSessionLock,
-} from "../situation-monitor/situation-monitor-user-lock";
-
-import {
-  DATA_RUNTIME_SETTINGS_NOMINATIM_LOCK,
-  DATA_RUNTIME_SETTINGS_REALTIME_LOCK,
-  withDataRuntimeSettingsLock,
-} from "./data-runtime-settings.lock";
 
 const sessionLock = vi.mocked(withMysqlSessionLock);
 

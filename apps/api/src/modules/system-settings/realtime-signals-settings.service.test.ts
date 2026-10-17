@@ -1,6 +1,16 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { PlatformAccessService } from "../auth/platform-access.service";
+import { CacheService } from "../cache/cache.service";
+import { EnvService, type RealtimeSignalsEnvConfig } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
+import { withMysqlSessionLock } from "../situation-monitor/situation-monitor-user-lock";
+
+import { RealtimeSignalsSettingsService } from "./realtime-signals-settings.service";
+import { SystemSecuritySettingsService } from "./system-security-settings.service";
+
 vi.mock("../situation-monitor/situation-monitor-user-lock", () => {
   class SituationMonitorLockError extends Error {
     constructor(message: string) {
@@ -17,18 +27,6 @@ vi.mock("../situation-monitor/situation-monitor-user-lock", () => {
 vi.mock("../audit/audit-log.writer", () => ({
   writeAuditLogBestEffort: vi.fn(async () => undefined),
 }));
-
-import { withMysqlSessionLock } from "../situation-monitor/situation-monitor-user-lock";
-
-import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
-import { PlatformAccessService } from "../auth/platform-access.service";
-import { CacheService } from "../cache/cache.service";
-import type { RealtimeSignalsEnvConfig } from "../config/config.service";
-import { EnvService } from "../config/config.service";
-import { PrismaService } from "../config/prisma.service";
-import { SystemSecuritySettingsService } from "./system-security-settings.service";
-
-import { RealtimeSignalsSettingsService } from "./realtime-signals-settings.service";
 
 const SETTINGS_KEY = "realtime_signals_settings";
 const ACLED_AUTH_KEY = "realtime_signals_acled_auth_state";
@@ -76,13 +74,6 @@ const envConfig = (): RealtimeSignalsEnvConfig => ({
   polymarket: {},
 });
 
-type Mock = ReturnType<typeof vi.fn>;
-
-type UpdateInput = Parameters<
-  RealtimeSignalsSettingsService["updateSettings"]
->[2];
-
-/** Builds a request body the way a DTO instance would reach the service. */
 const input = (raw: Record<string, unknown>): UpdateInput =>
   raw as unknown as UpdateInput;
 

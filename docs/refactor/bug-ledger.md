@@ -590,3 +590,72 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
   GET 按 env 回退（endpoint 依 env 决定有值或省略）；混合 PATCH 事务原子；空字符串
   endpoint 仍 DTO 400。
 - **状态**：✅ 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 JSON null 断言组覆盖（`JSON_TYPE=NULL` 且 `value IS NULL=0`）。
+
+### DS1 三个全局设置域缺少平台管理员写入门禁 — ✅ 已修复【P0】
+
+- **用户影响**：任何持有 `settings.manage` 的组织管理员都能改写所有租户的运行参数、
+  全局凭证、Nominatim 身份与归档并发（`SystemSetting.key` 无 org 维度）。
+- **证据（57d1d4ba）**：`system-settings/realtime-signals-settings.service.ts` 的
+  `updateSettings`/`resetToEnv`、`system-settings/archive-preparation-settings.service.ts`
+  的 `updateSettings`/`resetToDefaults`、`system-settings/geo-nominatim-settings.service.ts`
+  的 `updateSettings` 均无平台检查；三组 controller 只要求 `settings.manage`。
+- **修复（Nest）**：五个 service 公开写方法首行
+  `PlatformAccessService.assertPlatformAdmin`（live `GlobalRoleAssignment`，不信任 JWT
+  `globalRoles`/profile 缓存），controller/DTO 未改；写 User 外键与审计 actor 前统一经
+  `normalizeAuditActorId`。**修复（Go）**：DTO 校验之后同一门禁，机器身份直接 403。
+- **远端回归断言**：四条 GET 不新增门禁；五条写对 org A/B 管理员与机器令牌 403 且
+  DB/cache/audit 无副作用；无 `settings.manage` 先 403 `INSUFFICIENT_PERMISSIONS`；
+  非法 DTO 先 400；动态授予/撤销平台角色即时生效。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-data-runtime-settings-smoke` 的
+  DS1 断言组覆盖。
+
+### DS2 实时信号与 Nominatim 的部分更新跨实例丢失 — ✅ 已修复【P1】
+
+- **用户影响**：两个不同字段的并发 PUT 互相覆盖；实时设置还会用旧 Redis 基准把另一
+  实例刚写的字段回滚。
+- **证据（57d1d4ba）**：`realtime-signals-settings.service.ts` 从
+  `loadStoredSettings()`（缓存优先）取合并基准后整体 upsert；
+  `geo-nominatim-settings.service.ts` 读 `current` 后整体 upsert，两侧都没有跨实例锁。
+- **修复（Nest）**：新增 `data-runtime-settings.lock.ts`（只包装既有
+  `withMysqlSessionLock`）；实时 update/reset 共用
+  `data-runtime-settings:realtime:v1`，geo update 用
+  `data-runtime-settings:nominatim:v1`；合并基准改为锁内
+  `loadStoredSettingsFromDB()`/`loadOverridesFromDB()`；锁未取得 409、连接类故障 503、
+  业务 HttpException 原样上抛。**修复（Go）**：同名锁、`*sql.Conn` 专用连接、
+  `context.WithoutCancel` 释放、同样从 DB 取基准。
+- **远端回归断言**：预热一侧缓存后直接改 DB，再做另一侧单字段 PUT → DB 值不被回滚
+  （双向）；Nest 写 A + Go 写 B 两者都保留；geo 分别改 userAgent/email 不丢；真实
+  MySQL 会话持锁时两侧均等待并 409（文案一致）、无写入，释放后恢复。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-data-runtime-settings-smoke` 的
+  DS2 断言组覆盖。
+
+### DS3 归档状态公开错误缺少脱敏 — ✅ 已修复【P1】
+
+- **用户影响**：worker 的原始 `error.message`（可能含 Bearer/Basic 凭据或
+  `password=`/`token=`/`api_key=`/`secret=` 片段）直接出现在管理端响应里。
+- **证据（57d1d4ba）**：`archive/archive-preparation.processor.ts` 把 `error.message`
+  传给 `markFailed`；`archive/archive-preparation-queue.service.ts` 的 `getStatus` 与
+  `toPublicStatusRecord` 原样输出 `errorMessage`。
+- **修复**：仅公开读取输出调用既有脱敏实现（Nest `@modular/utils`
+  `redactSensitiveFields`，Go `adminlogs.RedactSensitiveFields`），覆盖两个公开映射；
+  不改 worker、不改 Redis 原文、不删诊断字段，缺失/`null`/空串语义保留。
+- **远端回归断言**：Nest 与 Go 的替换结果一致；Redis 中原始记录保持不变；其他租户
+  状态不可见；普通错误文本不变。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-data-runtime-settings-smoke` 的
+  DS3/DS4 断言组覆盖。
+
+### DS4 归档状态列表与计数来自两次读取 — ✅ 已修复【P1】
+
+- **用户影响**：一个响应内部的 `counts` 与 `recentStatuses` 可互相矛盾。
+- **证据（57d1d4ba）**：`archive-preparation-queue.service.ts` 的
+  `getOperationalStatus` 先 `getRecentStatuses` 再 `getScopedCounts`，两者各自重新
+  ZRANGE/MGET。
+- **修复**：`getOperationalStatus` 只取一份 org-scoped 记录快照并同时派生
+  counts 与 recentStatuses（保持排序、最多 10 条、计数映射与 pending 公式）；Go 侧
+  同样单次读取。不宣称 ZRANGE/MGET 是整索引原子事务，不加 Lua 锁、不锁 worker、
+  不改写入协议。
+- **远端回归断言**：直接由 Redis 快照推导期望 counts/recent 并与响应比对（含 >10 条、
+  同 score 字典序、旧无 orgId 回退、过期成员跳过、org 隔离）；Redis 故障不伪装成
+  全零健康状态（Go 侧错误传播）。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-data-runtime-settings-smoke` 的
+  DS4 断言组覆盖。

@@ -1,6 +1,14 @@
 import { ForbiddenException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { PlatformAccessService } from "../auth/platform-access.service";
+import { EnvService } from "../config/config.service";
+import { PrismaService } from "../config/prisma.service";
+import { withMysqlSessionLock } from "../situation-monitor/situation-monitor-user-lock";
+
+import { GeoNominatimSettingsService } from "./geo-nominatim-settings.service";
+
 vi.mock("../situation-monitor/situation-monitor-user-lock", () => {
   class SituationMonitorLockError extends Error {
     constructor(message: string) {
@@ -18,19 +26,8 @@ vi.mock("../audit/audit-log.writer", () => ({
   writeAuditLogBestEffort: vi.fn(async () => undefined),
 }));
 
-import { withMysqlSessionLock } from "../situation-monitor/situation-monitor-user-lock";
-
-import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
-import { PlatformAccessService } from "../auth/platform-access.service";
-import { EnvService } from "../config/config.service";
-import { PrismaService } from "../config/prisma.service";
-
-import { GeoNominatimSettingsService } from "./geo-nominatim-settings.service";
-
 const SETTINGS_KEY = "geo_nominatim_identity";
 const NOMINATIM_LOCK = "data-runtime-settings:nominatim:v1";
-const BUSY_MESSAGE =
-  "Nominatim identity settings are being updated by another request; retry later";
 
 const sessionLock = vi.mocked(withMysqlSessionLock);
 const auditWriter = vi.mocked(writeAuditLogBestEffort);
@@ -50,31 +47,6 @@ const build = (
     const next = rows.length > 1 ? rows.shift() : rows[0];
     return next === undefined ? null : next;
   });
-  const upsert = vi.fn(async () => undefined);
-  const assertPlatformAdmin = vi.fn(async () => {
-    if (options.isPlatformAdmin === false) {
-      throw new ForbiddenException("Platform admin access required");
-    }
-    return undefined;
-  });
-  const envGet = vi.fn((key: string) => {
-    if (key === "GEO_NOMINATIM_USER_AGENT") {
-      return options.userAgent ?? "modular-api";
-    }
-    if (key === "GEO_NOMINATIM_EMAIL") {
-      return options.email ?? "ops@example.com";
-    }
-    return undefined;
-  });
-
-  const service = new GeoNominatimSettingsService(
-    { systemSetting: { findUnique, upsert } } as unknown as PrismaService,
-    { get: envGet } as unknown as EnvService,
-    { assertPlatformAdmin } as unknown as PlatformAccessService,
-  );
-
-  return { service, findUnique, upsert, assertPlatformAdmin };
-};
 
 const writtenOverrides = (
   upsert: Mock,

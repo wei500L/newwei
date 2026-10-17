@@ -1,0 +1,1399 @@
+﻿# 数据运行设置与归档状态（实时信号设置 / 归档准备设置 / 归档准备状态 /
+# Nominatim 身份设置，共 9 条精确 HTTP）的 Go 真实栈验收。不进普通 CI：
+# PR 上加 label api-go-data-runtime-settings-smoke，或 workflow_dispatch 手动触发。
+#
+# 覆盖：开关四态与非法值启动失败、9 条 exact 路由接管与相邻未迁路径回落、
+# DTO 逐字段消息（未知字段/布尔/范围/小数/URL/数字字符串差异）、实时设置四个
+# 跨字段约束、canonical/legacy 别名与 null 语义、source default/env/db、
+# audit updatedFields 精确数组、DS1 平台写入门禁（含动态授予/撤销与机器令牌）、
+# DS2 两把全局锁与 DB 权威合并基准（含真实 MySQL 持锁 409 与释放恢复）、
+# DS3 归档错误脱敏（Redis 原文不变）、DS4 单快照自洽（含 >10 条与同 score）、
+# 加密策略矩阵（Nest↔Go 密文互通、未修改密文原样、清空回退、生产无 key 400、
+# 显式 false 逃生、错 key 降级）、停 NestJS 后 9 条独立服务与未迁路径 502。
+name: api-go-data-runtime-settings-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-data-runtime-settings-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  JWT_ACCESS_EXPIRES_IN: 6h
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  SMTP_USER: api-go-data-runtime-settings-smoke@example.com
+  SMTP_PASS: api-go-data-runtime-settings-smoke-smtp-not-connected
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  RATE_LIMIT_LOGIN: "1000"
+  RATE_LIMIT_LOGIN_WINDOW: "600"
+  RATE_LIMIT_CRAWL_TASK_CREATE: "1000"
+  RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW: "600"
+  RATE_LIMIT_RBAC_WRITE: "1000"
+  RATE_LIMIT_RBAC_WRITE_WINDOW: "600"
+  RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS: "60"
+  AUTH_PROFILE_CACHE_TTL_SECONDS: "600"
+  AUTH_PROFILE_CACHE_LOCK_TTL_MS: "5000"
+  AUTH_PROFILE_CACHE_MAX_WAIT_MS: "5000"
+  AUTH_PROFILE_CACHE_RETRY_DELAY_MS: "50"
+  AUDIT_LOG_RETENTION_DAYS: "90"
+  # 32 字节 key 的 64 位 hex 形式，Nest 与 Go 共用。
+  SYSTEM_SETTINGS_ENCRYPTION_KEY: 0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0
+  SEED_ORG_SLUG: api-go-data-runtime-settings-smoke-org
+  SEED_ORG_NAME: api-go Data Runtime Settings Smoke Org
+  SEED_ADMIN_EMAIL: api-go-data-runtime-settings-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: "ApiGoDataRuntime#2026-Ci"
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-data-runtime-settings-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-data-runtime-settings-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-data-runtime-settings:ci .
+      - name: Exercise data runtime settings routes
+        run: |
+          set -euo pipefail
+          python3 -u - << 'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import signal
+          import subprocess
+          import sys
+          import time
+          import traceback
+          import urllib.error
+          import urllib.request
+
+          NEST_URL = "http://127.0.0.1:4000"
+          GO_URL = "http://127.0.0.1:4020"
+          GO_CONTAINER = "api-go-data-runtime-settings-smoke"
+          GO_IMAGE = "api-go-data-runtime-settings:ci"
+
+          REALTIME_PATH = "/api/system-settings/realtime-signals"
+          ARCHIVE_SETTINGS_PATH = "/api/system-settings/archive-preparation"
+          ARCHIVE_STATUS_PATH = "/api/admin/archive-preparation/status"
+          NOMINATIM_PATH = "/api/system-settings/geo/nominatim"
+
+          REALTIME_KEY = "realtime_signals_settings"
+          REALTIME_ACLED_KEY = "realtime_signals_acled_auth_state"
+          ARCHIVE_KEY = "archive_preparation_settings"
+          NOMINATIM_KEY = "geo_nominatim_identity"
+          REALTIME_CACHE = "realtime-signals:settings"
+          REALTIME_ACLED_CACHE = "realtime-signals:acled-auth-state"
+          ARCHIVE_CACHE = "archive_preparation:settings"
+          STATUS_INDEX = "archive:preparation:status:index"
+          STATUS_KEY_PREFIX = "archive:preparation:status:"
+
+          REALTIME_LOCK = "data-runtime-settings:realtime:v1"
+          NOMINATIM_LOCK = "data-runtime-settings:nominatim:v1"
+          REALTIME_BUSY = "Realtime signals settings are being updated by another request; retry later"
+          NOMINATIM_BUSY = "Nominatim identity settings are being updated by another request; retry later"
+
+          VALID_KEY = os.environ["SYSTEM_SETTINGS_ENCRYPTION_KEY"]
+          WRONG_KEY = "ff" * 32
+
+          ORG_A = "drs-smoke-org-a"
+          ORG_B = "drs-smoke-org-b"
+          ROLE_A = "drs-smoke-role-a"
+          ROLE_B = "drs-smoke-role-b"
+          ROLE_NO = "drs-smoke-role-no"
+          PLATFORM_USER = "drs-smoke-platform-user"
+          PLATFORM_EMAIL = "drs-smoke-platform@example.com"
+          ADMIN_A = "drs-smoke-admin-a"
+          ADMIN_A_EMAIL = "drs-smoke-admin-a@example.com"
+          ADMIN_B = "drs-smoke-admin-b"
+          ADMIN_B_EMAIL = "drs-smoke-admin-b@example.com"
+          NO_MANAGE_USER = "drs-smoke-no-manage"
+          NO_MANAGE_EMAIL = "drs-smoke-no-manage@example.com"
+          MACHINE_ALLOW = "mtk_drs_smoke_allow_0000000000001"
+          MACHINE_DENY = "mtk_drs_smoke_deny_00000000000001"
+
+          # 实时 DTO 的 47 个字段，顺序取自编译后 class 字段声明顺序；因为 target
+          # ES2022 + useDefineForClassFields=true 让每个声明都成为实例自有属性，
+          # Object.keys(input) 恒为该数组，与请求体无关。
+          REALTIME_UPDATED_FIELDS = [
+              "enabled", "requestTimeoutMs", "maxRetries", "openskyEnabled", "adsbEnabled",
+              "openskyIntervalSec", "openskyDailyCreditBudget", "openskyDayIntervalSec",
+              "openskyNightIntervalSec", "openskyDayStartHourHkt", "openskyNightStartHourHkt",
+              "openskyWarningRemainingPct", "openskyCriticalRemainingPct", "adsbIntervalSec",
+              "aisEnabled", "aisIntervalSec", "unrestEnabled", "unrestIntervalSec",
+              "outagesEnabled", "outagesIntervalSec", "keywordSpikeEnabled",
+              "keywordSpikeIntervalSec", "pizzintEnabled", "pizzintIntervalSec",
+              "gdeltTensionEnabled", "gdeltTensionIntervalSec", "polymarketLeadsEnabled",
+              "polymarketLeadsIntervalSec", "keywordSpikeMinCount", "keywordSpikeMultiplier",
+              "predictionShiftThreshold", "predictionNewsActivityThreshold", "openskyBaseUrl",
+              "adsbBaseUrl", "openskyTokenUrl", "aisRelayBaseUrl", "relayBaseUrl",
+              "openskyClientId", "openskyClientSecret", "aisRelaySharedSecret",
+              "relaySharedSecret", "acledOauthUsername", "acledOauthPassword",
+              "acledOauthClientId", "cloudflareApiToken", "wingbitsApiKey",
+              "polymarketProxyUrl",
+          ]
+
+          REALTIME_ENV_BODY = {
+              "source": "env",
+              # 真实验收栈要求 REALTIME_SIGNALS_ENABLED=false（避免采集器访问外网），
+              # 所以 env 缺省下的 enabled 是 false。
+              "enabled": False,
+              "requestTimeoutMs": 12000,
+              "maxRetries": 2,
+              "acledApiEnabled": False,
+              "acledApiDisabledReason": "Open myACLED does not include API access.",
+              "openskyEnabled": True,
+              "openskyIntervalSec": 900,
+              "openskyDailyCreditBudget": 4000,
+              "openskyDayIntervalSec": 600,
+              "openskyNightIntervalSec": 1800,
+              "openskyDayStartHourHkt": 8,
+              "openskyNightStartHourHkt": 22,
+              "openskyWarningRemainingPct": 20,
+              "openskyCriticalRemainingPct": 10,
+              "aisEnabled": True,
+              "aisIntervalSec": 600,
+              "unrestEnabled": True,
+              "unrestIntervalSec": 600,
+              "outagesEnabled": True,
+              "outagesIntervalSec": 600,
+              "keywordSpikeEnabled": True,
+              "keywordSpikeIntervalSec": 600,
+              "pizzintEnabled": True,
+              "pizzintIntervalSec": 600,
+              "gdeltTensionEnabled": True,
+              "gdeltTensionIntervalSec": 600,
+              "polymarketLeadsEnabled": True,
+              "polymarketLeadsIntervalSec": 600,
+              "keywordSpikeMinCount": 5,
+              "keywordSpikeMultiplier": 3,
+              "predictionShiftThreshold": 5,
+              "predictionNewsActivityThreshold": 3,
+              "openskyBaseUrl": "https://opensky-network.org/api",
+              "openskyTokenUrl": "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+              "openskyClientIdSource": "none",
+              "hasAisRelaySharedSecret": False,
+              "aisRelaySharedSecretSource": "none",
+              "hasOpenskyClientSecret": False,
+              "openskyClientSecretSource": "none",
+              "hasAcledAccessToken": False,
+              "acledAccessTokenSource": "none",
+              "acledAccessTokenStatus": "missing",
+              "acledOauthUsernameSource": "none",
+              "hasAcledOauthPassword": False,
+              "acledOauthPasswordSource": "none",
+              "acledOauthClientId": "acled",
+              "acledOauthClientIdSource": "none",
+              "hasCloudflareApiToken": False,
+              "cloudflareApiTokenSource": "none",
+              "hasWingbitsApiKey": False,
+              "wingbitsApiKeySource": "none",
+          }
+
+
+          def _on_sigterm(signum, frame):
+              print("SIGTERM received at:", flush=True)
+              traceback.print_stack(frame)
+              os._exit(143)
+
+
+          signal.signal(signal.SIGTERM, _on_sigterm)
+
+
+          def fail(message):
+              print("FAIL", message, flush=True)
+              raise SystemExit(1)
+
+
+          def require(label, got, want):
+              if got != want:
+                  fail(f"{label}: got {got!r}, want {want!r}")
+
+
+          def container_id(ancestor):
+              found = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor], text=True).split()
+              if not found:
+                  fail("no running container for " + ancestor)
+              return found[0]
+
+
+          def sql(statement):
+              cid = container_id("mysql:8.4")
+              proc = subprocess.run(
+                  ["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "-B", "app"],
+                  input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("mysql: " + (proc.stderr or proc.stdout))
+              return proc.stdout.strip()
+
+
+          def sql_rows(statement):
+              return [line.split("\t") for line in sql(statement).splitlines() if line != ""]
+
+
+          def scalar(statement):
+              rows = sql_rows(statement)
+              return rows[-1][0] if rows else ""
+
+
+          def redis(*args):
+              cid = container_id("redis:7.2")
+              proc = subprocess.run(
+                  ["docker", "exec", "-i", cid, "redis-cli", "--raw", *args],
+                  text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("redis: " + (proc.stderr or proc.stdout))
+              return proc.stdout.strip()
+
+
+          def sql_escape(text):
+              return text.replace("\\", "\\\\").replace("'", "''")
+
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=60):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              try:
+                  return json.loads(text)
+              except ValueError:
+                  return None
+
+
+          def message_of(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+
+          def canon(value):
+              if isinstance(value, dict):
+                  if value.get("__enc") == "system-settings:v1":
+                      return "<encrypted>"
+                  out = {}
+                  for key, item in value.items():
+                      if key in ("traceId", "timestamp", "updatedAt"):
+                          out[key] = "<ts>"
+                      else:
+                          out[key] = canon(item)
+                  return out
+              if isinstance(value, list):
+                  return [canon(item) for item in value]
+              return value
+
+
+          def login(email):
+              status, raw = call(NEST_URL, "/api/auth/login", "POST", None,
+                                 {"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw) or {}
+              if status not in (200, 201) or not doc.get("accessToken"):
+                  fail(f"login {email} -> {status} {raw[:300]!r}")
+              return doc["accessToken"]
+
+
+          def jwt_jti(token):
+              payload = token.split(".")[1]
+              payload += "=" * (-len(payload) % 4)
+              return json.loads(base64.urlsafe_b64decode(payload))["jti"]
+
+
+          def docker_logs():
+              proc = subprocess.run(["docker", "logs", "--tail", "200", GO_CONTAINER],
+                                    text=True, capture_output=True)
+              return (proc.stdout or "") + (proc.stderr or "")
+
+
+          def log_tail(path, lines=80):
+              if not os.path.exists(path):
+                  return "<no log>"
+              return "".join(open(path, errors="replace").readlines()[-lines:])
+
+
+          def wait_http(url, attempts=90, delay=2):
+              for _ in range(attempts):
+                  try:
+                      urllib.request.urlopen(url, timeout=3).read()
+                      return True
+                  except Exception:
+                      time.sleep(delay)
+              return False
+
+
+          def stop_nest():
+              # 只 SIGTERM 记录的 pid。不能用 killpg：Nest 后台进程由 workflow
+              # 步骤 shell 启动，其进程组就是 Actions worker 自身所在的组，
+              # 杀组会把当前步骤一起 SIGTERM。
+              pid_path = "/tmp/api-nestjs.pid"
+              if os.path.exists(pid_path):
+                  raw = open(pid_path).read().strip()
+                  if raw.isdigit():
+                      try:
+                          os.kill(int(raw), signal.SIGTERM)
+                      except Exception:
+                          pass
+              subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False, capture_output=True)
+              subprocess.run(["pkill", "-f", "node dist/main.js"], check=False, capture_output=True)
+
+
+          def start_nest(encryption_key=VALID_KEY):
+              stop_nest()
+              time.sleep(2)
+              env = dict(os.environ)
+              env["NODE_ENV"] = "production"
+              env["PORT"] = "4000"
+              env.pop("SYSTEM_SETTINGS_ENCRYPTION_KEY", None)
+              if encryption_key is not None:
+                  env["SYSTEM_SETTINGS_ENCRYPTION_KEY"] = encryption_key
+              proc = subprocess.Popen(
+                  ["pnpm", "--filter", "@modular/api", "run", "start"],
+                  env=env, stdout=open("/tmp/api-nestjs.log", "w"), stderr=subprocess.STDOUT,
+                  start_new_session=True)
+              open("/tmp/api-nestjs.pid", "w").write(str(proc.pid))
+              if not wait_http(NEST_URL + "/api/healthz/live"):
+                  fail("nestjs restart failed: " + log_tail("/tmp/api-nestjs.log"))
+
+
+          def start_go(mode="legacy", encryption_key=VALID_KEY, node_env="production"):
+              subprocess.run(["docker", "rm", "-f", GO_CONTAINER], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  f"API_GO_DATA_RUNTIME_SETTINGS_MODE={mode}",
+                  "API_GO_RBAC_MODE=legacy",
+                  "API_GO_RUNTIME_SETTINGS_MODE=legacy",
+                  "API_GO_INFRASTRUCTURE_SETTINGS_MODE=legacy",
+                  "RATE_LIMIT_LOGIN=1000",
+                  "RATE_LIMIT_LOGIN_WINDOW=600",
+                  "RATE_LIMIT_CRAWL_TASK_CREATE=1000",
+                  "RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW=600",
+                  "RATE_LIMIT_RBAC_WRITE=1000",
+                  "RATE_LIMIT_RBAC_WRITE_WINDOW=600",
+                  "RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS=60",
+                  "AUTH_PROFILE_CACHE_TTL_SECONDS=600",
+                  "AUTH_PROFILE_CACHE_LOCK_TTL_MS=5000",
+                  "AUTH_PROFILE_CACHE_MAX_WAIT_MS=5000",
+                  "AUTH_PROFILE_CACHE_RETRY_DELAY_MS=50",
+                  "AUDIT_LOG_RETENTION_DAYS=90",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  f"JWT_SECRET={os.environ['JWT_SECRET']}",
+                  f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
+                  f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
+              ]
+              if node_env is not None:
+                  env.append("NODE_ENV=" + node_env)
+              if encryption_key is not None:
+                  env.append("SYSTEM_SETTINGS_ENCRYPTION_KEY=" + encryption_key)
+              cmd = ["docker", "run", "-d", "--name", GO_CONTAINER,
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s",
+                     "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append(GO_IMAGE)
+              subprocess.check_call(cmd, stdout=subprocess.DEVNULL)
+              for _ in range(30):
+                  status = subprocess.check_output(
+                      ["docker", "inspect", "--format", "{{.State.Health.Status}}", GO_CONTAINER],
+                      text=True).strip()
+                  if status == "healthy":
+                      print(f"api-go up dataRuntimeSettingsMode={mode} encryptionKey={'yes' if encryption_key else 'no'}")
+                      return
+                  if status == "unhealthy":
+                      fail(docker_logs())
+                  time.sleep(2)
+              fail(docker_logs())
+
+
+          def start_go_expect_failure(mode):
+              """Starts a container with an invalid mode and returns its exit error text."""
+              subprocess.run(["docker", "rm", "-f", GO_CONTAINER + "-bad"], check=False, capture_output=True)
+              proc = subprocess.run(
+                  ["docker", "run", "--name", GO_CONTAINER + "-bad",
+                   "--add-host=host.docker.internal:host-gateway",
+                   "-e", f"API_GO_DATA_RUNTIME_SETTINGS_MODE={mode}",
+                   "-e", "JWT_SECRET=" + os.environ["JWT_SECRET"],
+                   "-e", "REDIS_HOST=host.docker.internal",
+                   "-e", "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                   GO_IMAGE],
+                  text=True, capture_output=True, timeout=120)
+              subprocess.run(["docker", "rm", "-f", GO_CONTAINER + "-bad"], check=False, capture_output=True)
+              return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+
+          def setting_state(*keys):
+              rows = sql_rows(
+                  "SELECT `key`, CAST(`value` AS CHAR), JSON_TYPE(`value`), (`value` IS NULL), "
+                  "IFNULL(description, '<null>'), IFNULL(updatedById, '<null>') "
+                  "FROM SystemSetting WHERE `key` IN (" +
+                  ", ".join("'" + key + "'" for key in keys) + ") ORDER BY `key`")
+              return [(row[0], canon(json.loads(row[1])) if row[1] else None, row[2], row[3], row[4], row[5])
+                      for row in rows]
+
+
+          def raw_setting(key):
+              return sql(f"SELECT CAST(`value` AS CHAR) FROM SystemSetting WHERE `key`='{key}'")
+
+
+          def reset_settings():
+              sql("DELETE FROM SystemSetting WHERE `key` IN "
+                  f"('{REALTIME_KEY}','{REALTIME_ACLED_KEY}','{ARCHIVE_KEY}','{NOMINATIM_KEY}')")
+              redis("DEL", REALTIME_CACHE, REALTIME_ACLED_CACHE, ARCHIVE_CACHE)
+              redis("DEL", STATUS_INDEX)
+
+
+          def set_setting(key, value_text, description=None, is_public=0):
+              desc = "NULL" if description is None else "'" + sql_escape(description) + "'"
+              sql("REPLACE INTO SystemSetting (`key`, value, isPublic, description, createdAt, updatedAt, updatedById) "
+                  f"VALUES ('{key}', _utf8mb4'{sql_escape(value_text)}', {is_public}, {desc}, NOW(3), NOW(3), NULL)")
+
+
+          def audit_rows(action):
+              return sql_rows(
+                  "SELECT IFNULL(CAST(metadata AS CHAR),'null'), IFNULL(actorId,'<null>') FROM AuditLog "
+                  f"WHERE action='{action}' ORDER BY createdAt DESC, id DESC LIMIT 5")
+
+
+          def newest_audit_raw(action):
+              rows = audit_rows(action)
+              if not rows:
+                  return None, None
+              return json.loads(rows[0][0]), rows[0][1]
+
+
+          def newest_audit(action, timeout=10):
+              deadline = time.time() + timeout
+              while True:
+                  metadata, actor = newest_audit_raw(action)
+                  if metadata is not None or time.time() > deadline:
+                      return metadata, actor
+                  time.sleep(0.3)
+
+
+          def cache_value(key):
+              return redis("GET", key)
+
+
+          def parity(label, method, path, token, payload=None, expected=200, setup=None, expected_message=None):
+              if setup is not None:
+                  setup()
+              nest_status, nest_raw = call(NEST_URL, path, method, token, payload)
+              if setup is not None:
+                  setup()
+              go_status, go_raw = call(GO_URL, path, method, token, payload)
+              if nest_status != expected or go_status != expected:
+                  fail(f"parity {label}: status nest={nest_status} go={go_status}, want {expected}; "
+                       f"nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
+              if canon(body(nest_raw)) != canon(body(go_raw)):
+                  fail(f"parity {label}: body mismatch nest={nest_raw[:800]!r} go={go_raw[:800]!r}")
+              if expected_message is not None:
+                  for side, raw in (("nest", nest_raw), ("go", go_raw)):
+                      if message_of(raw) != expected_message:
+                          fail(f"parity {label}: {side} message {message_of(raw)!r} want {expected_message!r} raw={raw[:400]!r}")
+              print("parity ok:", label)
+              return body(nest_raw), body(go_raw)
+
+
+          def request_json(label, base, method, path, token, payload=None, expected=200, expected_message=None):
+              status, raw = call(base, path, method, token, payload)
+              if status != expected:
+                  fail(f"{label}: {method} {path} -> {status} {raw[:400]!r}, want {expected}")
+              if expected_message is not None and message_of(raw) != expected_message:
+                  fail(f"{label}: message {message_of(raw)!r} want {expected_message!r} raw={raw[:400]!r}")
+              return body(raw)
+
+
+          def warm_geo_caches(token):
+              """两侧各读一次同一份 DB，使随后的比较都是各自进程缓存命中。
+
+              geo 的 30 秒进程缓存是刻意保留的行为：若不预热，两侧 TTL 先后到期
+              会制造出与业务无关的瞬时差异，属于比较测试误判。
+              """
+              call(NEST_URL, NOMINATIM_PATH, "GET", token)
+              call(GO_URL, NOMINATIM_PATH, "GET", token)
+
+
+          def side_effect_snapshot():
+              return (
+                  setting_state(REALTIME_KEY, ARCHIVE_KEY, NOMINATIM_KEY),
+                  (cache_value(REALTIME_CACHE), cache_value(ARCHIVE_CACHE)),
+                  sql("SELECT COUNT(*) FROM AuditLog"),
+              )
+
+
+          # ===================== phase 0: fixtures =====================
+
+          def seed_identities():
+              admin = scalar("SELECT id FROM User WHERE email='" + os.environ["SEED_ADMIN_EMAIL"] + "'")
+              settings_perm = scalar("SELECT id FROM Permission WHERE name='settings.manage'")
+              if not admin or not settings_perm:
+                  fail(f"missing seed rows admin={admin} settings={settings_perm}")
+              sql(f"""
+              INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+                ('{ORG_A}', 'Data Runtime Smoke Org A', 'drs-smoke-org-a', 1, NOW(3), NOW(3)),
+                ('{ORG_B}', 'Data Runtime Smoke Org B', 'drs-smoke-org-b', 1, NOW(3), NOW(3));
+              INSERT INTO Role (id, name, description, isSystem, orgId) VALUES
+                ('{ROLE_A}', 'drs-smoke-settings-a', NULL, 0, '{ORG_A}'),
+                ('{ROLE_B}', 'drs-smoke-settings-b', NULL, 0, '{ORG_B}'),
+                ('{ROLE_NO}', 'drs-smoke-no-perm', NULL, 0, '{ORG_A}');
+              INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+                ('{ROLE_A}-rp', '{ROLE_A}', '{settings_perm}'),
+                ('{ROLE_B}-rp', '{ROLE_B}', '{settings_perm}');
+              """)
+              for user_id, email, org_id, role_id in (
+                  (PLATFORM_USER, PLATFORM_EMAIL, ORG_A, ROLE_A),
+                  (ADMIN_A, ADMIN_A_EMAIL, ORG_A, ROLE_A),
+                  (ADMIN_B, ADMIN_B_EMAIL, ORG_B, ROLE_B),
+                  (NO_MANAGE_USER, NO_MANAGE_EMAIL, ORG_A, ROLE_NO),
+              ):
+                  sql(f"""
+                  INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+                  SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+                  FROM User WHERE id = '{admin}';
+                  INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+                  VALUES ('{user_id}-mem', '{user_id}', '{org_id}', '{role_id}', 1, NOW(3));
+                  """)
+              sql(f"""
+              INSERT INTO GlobalRoleAssignment (id, userId, role, createdAt)
+              VALUES ('{PLATFORM_USER}-gra', '{PLATFORM_USER}', 'platform_admin', NOW(3));
+              """)
+              sql(f"""
+              INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, lastUsedAt, expiresAt, revokedAt, createdAt, updatedAt)
+              VALUES
+                ('drs-mtok-allow-row', '{ORG_A}', 'allow', '{hashlib.sha256(MACHINE_ALLOW.encode()).hexdigest()}', '["settings.manage"]', NULL, NULL, NULL, NOW(3), NOW(3)),
+                ('drs-mtok-deny-row', '{ORG_A}', 'deny', '{hashlib.sha256(MACHINE_DENY.encode()).hexdigest()}', '["org.read"]', NULL, NULL, NULL, NOW(3), NOW(3));
+              """)
+              print("fixtures ok: org A/B, platform admin P, non-platform admins, no-permission user, two machine tokens")
+
+
+          def status_key(scope, org, value):
+              return f"{STATUS_KEY_PREFIX}{scope}:{org}:{value}"
+
+
+          def seed_archive_status():
+              # 12 条 org A 记录（>10）+ 1 条 org B + 1 条同 score + 1 条旧无 orgId
+              # + 1 条索引残留（值已过期）。
+              redis("DEL", STATUS_INDEX)
+              members = []
+              score = 1000
+              states = ["QUEUED", "PROCESSING", "PARTIAL", "READY", "FAILED", "IDLE"]
+              for index in range(12):
+                  key = status_key("digest", ORG_A, f"2026-01-{index + 1:02d}")
+                  message = "S3 upload timed out after 30s"
+                  if index == 11:
+                      # 最新的那条带敏感模式，保证它出现在 recentStatuses（最多10条）里。
+                      message = "call failed: Bearer tok.abc-1 password=pw token=t1 api_key=k1 secret=s1"
+                  redis("SET", key, json.dumps({
+                      "orgId": ORG_A, "scope": "digest", "scopeValue": f"2026-01-{index + 1:02d}",
+                      "state": states[index % len(states)], "updatedAt": "2026-01-01T00:00:00.000Z",
+                      "errorMessage": message,
+                  }), "EX", "3600")
+                  members.append((score + index, key))
+              foreign = status_key("calendar", ORG_B, "2026-02")
+              redis("SET", foreign, json.dumps({
+                  "orgId": ORG_B, "scope": "calendar", "scopeValue": "2026-02",
+                  "state": "READY", "updatedAt": "2026-01-02T00:00:00.000Z",
+              }), "EX", "3600")
+              members.append((score + 50, foreign))
+              # 同 score：Redis 按成员字典序返回，读取端必须保持该顺序。
+              tie_a = status_key("digest", ORG_A, "zzz-tie")
+              tie_b = status_key("digest", ORG_A, "aaa-tie")
+              for key in (tie_a, tie_b):
+                  redis("SET", key, json.dumps({
+                      "orgId": ORG_A, "scope": "digest", "scopeValue": key.rsplit(":", 1)[1],
+                      "state": "READY", "updatedAt": "2026-01-03T00:00:00.000Z",
+                  }), "EX", "3600")
+                  members.append((score + 80, key))
+              # 旧无 orgId 记录：从 key 第 5 段回退。
+              legacy = status_key("digest", ORG_A, "legacy-no-org")
+              redis("SET", legacy, json.dumps({
+                  "scope": "digest", "scopeValue": "legacy-no-org", "state": "READY",
+                  "updatedAt": "2026-01-04T00:00:00.000Z",
+              }), "EX", "3600")
+              members.append((score + 90, legacy))
+              # 索引残留：成员仍在索引里，但值已过期。
+              expired = status_key("digest", ORG_A, "expired")
+              members.append((score + 95, expired))
+              for member_score, member in members:
+                  redis("ZADD", STATUS_INDEX, str(member_score), member)
+              print(f"archive status fixtures ok: {scalar('SELECT 1')} zset members seeded")
+
+
+          def expected_status_snapshot(org):
+              """从 Redis 直接推导期望的 org 快照，用于校验 counts/recent。"""
+              members = redis("ZRANGE", STATUS_INDEX, "0", "-1").splitlines()
+              records = []
+              for member in members:
+                  if not member:
+                      continue
+                  raw = redis("GET", member)
+                  if not raw:
+                      continue
+                  try:
+                      record = json.loads(raw)
+                  except ValueError:
+                      continue
+                  if not isinstance(record, dict):
+                      continue
+                  record_org = record.get("orgId")
+                  if not isinstance(record_org, str) or not record_org:
+                      parts = member.split(":")
+                      record_org = parts[4] if len(parts) >= 6 else ""
+                  if record_org != org:
+                      continue
+                  records.append(record)
+              records.reverse()
+              counts = {"waiting": 0, "active": 0, "completed": 0, "failed": 0, "delayed": 0}
+              for record in records:
+                  state = record.get("state")
+                  if state == "QUEUED":
+                      counts["waiting"] += 1
+                  elif state in ("PROCESSING", "PARTIAL"):
+                      counts["active"] += 1
+                  elif state == "READY":
+                      counts["completed"] += 1
+                  elif state == "FAILED":
+                      counts["failed"] += 1
+              counts["pending"] = counts["waiting"] + counts["active"] + counts["delayed"]
+              recent = records[:10]
+              return counts, recent
+
+
+          seed_identities()
+          seed_archive_status()
+          reset_settings()
+
+          platform_token = login(PLATFORM_EMAIL)
+          admin_a_token = login(ADMIN_A_EMAIL)
+          admin_b_token = login(ADMIN_B_EMAIL)
+          no_manage_token = login(NO_MANAGE_EMAIL)
+          print("phase 0 ok: four real logins")
+
+          # ===================== phase 1: mode switch =====================
+
+          print("==== phase 1: mode switch ====")
+          for invalid in ("shadow", "canary", "Go"):
+              code, output = start_go_expect_failure(invalid)
+              if code == 0 or "API_GO_DATA_RUNTIME_SETTINGS_MODE must be one of legacy|go" not in output:
+                  fail(f"invalid mode {invalid!r}: exit={code} output={output[-500:]!r}")
+          print("phase 1a ok: invalid mode fails startup with the exact message")
+
+          start_go("legacy")
+          ALL_ROUTES = [
+              ("GET", REALTIME_PATH, None),
+              ("PUT", REALTIME_PATH, {"maxRetries": 3}),
+              ("DELETE", REALTIME_PATH, None),
+              ("GET", ARCHIVE_SETTINGS_PATH, None),
+              ("PUT", ARCHIVE_SETTINGS_PATH, {"jobBatchSize": 30, "embeddingBatchSize": 30,
+                                              "embeddingMaxConcurrency": 2, "rerankMaxConcurrency": 2}),
+              ("DELETE", ARCHIVE_SETTINGS_PATH, None),
+              ("GET", ARCHIVE_STATUS_PATH, None),
+              ("GET", NOMINATIM_PATH, None),
+              ("PUT", NOMINATIM_PATH, {"userAgent": "drs-smoke/1.0"}),
+          ]
+          UNMIGRATED = [
+              ("GET", "/api/system-settings/security", None),
+              ("GET", "/api/system-settings/vector-service", None),
+              ("GET", "/api/system-settings/situation-monitor", None),
+              ("GET", "/api/system-settings/rss-diagnostics/overview", None),
+          ]
+          # legacy(默认)与空串都全部回落 NestJS；此处用 legacy 容器验证代理等价。
+          for method, path, payload in ALL_ROUTES:
+              reset_settings()
+              if path == NOMINATIM_PATH:
+                  warm_geo_caches(platform_token)
+              parity(f"legacy {method} {path}", method, path, platform_token, payload)
+          print("phase 1b ok: nine routes proxied to NestJS in legacy mode")
+
+          # ===================== phase 2: go takeover with Nest up =====================
+
+          print("==== phase 2: go takeover ====")
+          start_go("go")
+          for method, path, payload in ALL_ROUTES:
+              reset_settings()
+              if path == NOMINATIM_PATH:
+                  warm_geo_caches(platform_token)
+              parity(f"go {method} {path}", method, path, platform_token, payload)
+          print("phase 2a ok: nine routes served by Go and identical to NestJS")
+
+          for method, path, payload in UNMIGRATED:
+              reset_settings()
+              nest_status, nest_raw = call(NEST_URL, path, method, platform_token, payload)
+              go_status, go_raw = call(GO_URL, path, method, platform_token, payload)
+              if nest_status != go_status:
+                  fail(f"unmigrated {method} {path}: nest={nest_status} go={go_status}")
+              if canon(body(nest_raw)) != canon(body(go_raw)):
+                  fail(f"unmigrated {method} {path}: body mismatch nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
+          print("phase 2b ok: neighbouring unmigrated routes still come from NestJS")
+
+          # ---- DS1 gate ----
+          for method, path, payload in (
+              ("PUT", REALTIME_PATH, {"maxRetries": 4}),
+              ("DELETE", REALTIME_PATH, None),
+              ("PUT", ARCHIVE_SETTINGS_PATH, {"jobBatchSize": 50, "embeddingBatchSize": 50,
+                                              "embeddingMaxConcurrency": 4, "rerankMaxConcurrency": 4}),
+              ("DELETE", ARCHIVE_SETTINGS_PATH, None),
+              ("PUT", NOMINATIM_PATH, {"userAgent": "attacker/1.0"}),
+          ):
+              reset_settings()
+              before = side_effect_snapshot()
+              parity(f"DS1 org admin {method} {path}", method, path, admin_a_token, payload, 403,
+                     expected_message="Platform admin access required")
+              after = side_effect_snapshot()
+              if before != after:
+                  fail(f"DS1 rejected {method} {path} changed DB/cache/audit: {before} -> {after}")
+              parity(f"DS1 machine {method} {path}", method, path, MACHINE_ALLOW, payload, 403,
+                     expected_message="Platform admin access required")
+          print("phase 2c ok: five writes 403 for org admin and machine token, no side effects")
+
+          # 四条 GET 不加平台门禁：普通管理员与机器令牌均可读。
+          for method, path in (("GET", REALTIME_PATH), ("GET", ARCHIVE_SETTINGS_PATH),
+                               ("GET", ARCHIVE_STATUS_PATH), ("GET", NOMINATIM_PATH)):
+              reset_settings()
+              if path == NOMINATIM_PATH:
+                  warm_geo_caches(admin_a_token)
+              parity(f"DS1 GET org admin {path}", method, path, admin_a_token)
+              if path == NOMINATIM_PATH:
+                  warm_geo_caches(MACHINE_ALLOW)
+              parity(f"DS1 GET machine {path}", method, path, MACHINE_ALLOW)
+          print("phase 2d ok: four GETs stay readable by org admin and machine token")
+
+          # 无 settings.manage：权限 403 先于平台门禁。
+          status, raw = call(GO_URL, REALTIME_PATH, "PUT", no_manage_token, {"maxRetries": 1})
+          if status != 403 or (body(raw) or {}).get("code") != "INSUFFICIENT_PERMISSIONS":
+              fail(f"no-permission PUT: {status} {raw[:300]!r}")
+          print("phase 2e ok: missing settings.manage yields INSUFFICIENT_PERMISSIONS")
+
+          # 非法 DTO 先 400，再谈平台门禁（普通管理员）。
+          for label, path, payload, expected_message in (
+              ("realtime numeric string", REALTIME_PATH, {"requestTimeoutMs": "5000"},
+               "requestTimeoutMs must not be greater than 120000; requestTimeoutMs must not be less than 1000; "
+               "requestTimeoutMs must be an integer number"),
+              ("realtime boolean", REALTIME_PATH, {"enabled": "true"}, "enabled must be a boolean value"),
+              ("realtime unknown", REALTIME_PATH, {"maxRetries": 1, "extra": 1},
+               "property extra should not exist"),
+              ("realtime url", REALTIME_PATH, {"openskyBaseUrl": "ftp://x.example"},
+               "openskyBaseUrl must be a valid http(s) URL"),
+              ("archive numeric string ok", ARCHIVE_SETTINGS_PATH,
+               {"jobBatchSize": "50", "embeddingBatchSize": 20, "embeddingMaxConcurrency": 1,
+                "rerankMaxConcurrency": 1}, None),
+              ("archive null", ARCHIVE_SETTINGS_PATH,
+               {"jobBatchSize": None, "embeddingBatchSize": 20, "embeddingMaxConcurrency": 1,
+                "rerankMaxConcurrency": 1},
+               "jobBatchSize must not be greater than 100; jobBatchSize must not be less than 1; "
+               "jobBatchSize must be an integer number"),
+              ("nominatim empty userAgent", NOMINATIM_PATH, {"userAgent": ""},
+               "userAgent must be longer than or equal to 1 characters"),
+              ("nominatim invalid email", NOMINATIM_PATH, {"email": "not-an-email"},
+               "email must be an email"),
+          ):
+              reset_settings()
+              expected = 200 if expected_message is None else 400
+              parity(f"DTO {label}", "PUT", path, platform_token, payload, expected,
+                     expected_message=expected_message)
+          # 非法 DTO 对普通管理员也是先 400。
+          reset_settings()
+          parity("DTO before gate", "PUT", REALTIME_PATH, admin_a_token, {"requestTimeoutMs": "5000"}, 400,
+                 expected_message="requestTimeoutMs must not be greater than 120000; "
+                                  "requestTimeoutMs must not be less than 1000; "
+                                  "requestTimeoutMs must be an integer number")
+          print("phase 2f ok: DTO messages identical, invalid DTO beats the platform gate")
+
+          # 四个跨字段约束与错误原句。
+          for label, payload, expected_message in (
+              ("budget", {"openskyDailyCreditBudget": 0},
+               "openskyDailyCreditBudget must be greater than 0"),
+              ("day start", {"openskyDayStartHourHkt": 22, "openskyNightStartHourHkt": 8},
+               "openskyDayStartHourHkt must be earlier than openskyNightStartHourHkt"),
+              ("critical", {"openskyCriticalRemainingPct": 20},
+               "openskyCriticalRemainingPct must be lower than openskyWarningRemainingPct"),
+              ("day interval", {"openskyDayIntervalSec": 1800, "openskyNightIntervalSec": 600},
+               "openskyDayIntervalSec must be less than or equal to openskyNightIntervalSec"),
+          ):
+              reset_settings()
+              parity(f"cross-field {label}", "PUT", REALTIME_PATH, platform_token, payload, 400,
+                     expected_message=expected_message)
+          print("phase 2g ok: four cross-field constraints return the exact messages")
+
+          # ---- aliases / null semantics / source ----
+          reset_settings()
+          set_setting(REALTIME_KEY, json.dumps({"openskyBaseUrl": "https://db.example/base",
+                                               "openskyEnabled": False, "maxRetries": 2}))
+          redis("DEL", REALTIME_CACHE)
+          # canonical null + 未传 alias：`null ?? undefined` 为 undefined → 保留原值。
+          nest_doc, go_doc = parity("alias preserve", "PUT", REALTIME_PATH, platform_token,
+                                    {"openskyBaseUrl": None})
+          if nest_doc.get("openskyBaseUrl") != "https://db.example/base":
+              fail(f"alias preserve nest: {nest_doc.get('openskyBaseUrl')!r}")
+          # canonical null + alias null：`null ?? null` 为 null → 清空。
+          reset_settings()
+          set_setting(REALTIME_KEY, json.dumps({"openskyBaseUrl": "https://db.example/base"}))
+          redis("DEL", REALTIME_CACHE)
+          nest_doc, go_doc = parity("alias clear", "PUT", REALTIME_PATH, platform_token,
+                                    {"openskyBaseUrl": None, "adsbBaseUrl": None})
+          if nest_doc.get("openskyBaseUrl") != "https://opensky-network.org/api":
+              fail(f"alias clear nest: {nest_doc.get('openskyBaseUrl')!r}")
+          # 数值 null → Number(null)=0 → 下限。
+          reset_settings()
+          nest_doc, go_doc = parity("numeric null", "PUT", REALTIME_PATH, platform_token,
+                                    {"requestTimeoutMs": None})
+          require("numeric null requestTimeoutMs", nest_doc.get("requestTimeoutMs"), 1000)
+          # source default/env/db。
+          reset_settings()
+          nest_doc, go_doc = parity("source default", "GET", REALTIME_PATH, platform_token)
+          require("source default", nest_doc.get("source"), "env")
+          require("source default body", canon(nest_doc), canon(REALTIME_ENV_BODY))
+          set_setting(REALTIME_KEY, json.dumps({"maxRetries": 4}))
+          redis("DEL", REALTIME_CACHE)
+          nest_doc, go_doc = parity("source db", "GET", REALTIME_PATH, platform_token)
+          require("source db", nest_doc.get("source"), "db")
+          require("source db maxRetries", nest_doc.get("maxRetries"), 4)
+          set_setting(ARCHIVE_KEY, json.dumps({"jobBatchSize": 40}))
+          redis("DEL", ARCHIVE_CACHE)
+          nest_doc, go_doc = parity("archive source db", "GET", ARCHIVE_SETTINGS_PATH, platform_token)
+          require("archive source db", nest_doc.get("source"), "db")
+          # 存 0（falsy）→ source 仍是 default，不是 db。
+          set_setting(ARCHIVE_KEY, "0")
+          redis("DEL", ARCHIVE_CACHE)
+          nest_doc, go_doc = parity("archive source falsy", "GET", ARCHIVE_SETTINGS_PATH, platform_token)
+          require("archive source falsy", nest_doc.get("source"), "default")
+          reset_settings()
+          print("phase 2h ok: aliases, null semantics and source all match")
+
+          # ---- audit updatedFields ----
+          reset_settings()
+          sql("DELETE FROM AuditLog WHERE action IN ('realtime_signals_update','realtime_signals_reset')")
+          request_json("audit nest", NEST_URL, "PUT", REALTIME_PATH, platform_token, {"maxRetries": 4})
+          nest_meta, nest_actor = newest_audit("realtime_signals_update")
+          if nest_meta is None:
+              fail("audit nest: no realtime_signals_update row")
+          require("audit nest updatedFields", nest_meta.get("updatedFields"), REALTIME_UPDATED_FIELDS)
+          require("audit nest ok", nest_meta.get("ok"), True)
+          require("audit nest secretsUpdated", nest_meta.get("secretsUpdated"), {
+              "aisRelaySharedSecret": False, "openskyClientSecret": False,
+              "acledOauthPassword": False, "cloudflareApiToken": False, "wingbitsApiKey": False})
+          if "s3cret" in json.dumps(nest_meta):
+              fail("audit nest leaks a secret")
+          reset_settings()
+          sql("DELETE FROM AuditLog WHERE action IN ('realtime_signals_update','realtime_signals_reset')")
+          request_json("audit go", GO_URL, "PUT", REALTIME_PATH, platform_token,
+                       {"maxRetries": 4, "openskyClientSecret": None})
+          go_meta, go_actor = newest_audit("realtime_signals_update")
+          require("audit go updatedFields", go_meta.get("updatedFields"), REALTIME_UPDATED_FIELDS)
+          require("audit go secretsUpdated", go_meta.get("secretsUpdated"), {
+              "aisRelaySharedSecret": False, "openskyClientSecret": True,
+              "acledOauthPassword": False, "cloudflareApiToken": False, "wingbitsApiKey": False})
+          require("audit actor", go_actor, PLATFORM_USER)
+          print("phase 2i ok: audit metadata records the exact 47-field array and secret flags only")
+
+          # 重置审计。
+          reset_settings()
+          sql("DELETE FROM AuditLog WHERE action IN ('realtime_signals_update','realtime_signals_reset')")
+          request_json("reset audit go", GO_URL, "DELETE", REALTIME_PATH, platform_token)
+          reset_meta, _ = newest_audit("realtime_signals_reset")
+          require("reset audit metadata", reset_meta, {"ok": True})
+          print("phase 2j ok: reset audit is {ok:true}")
+
+          # ---- 动态授予 / 撤销平台角色 ----
+          sql(f"DELETE FROM GlobalRoleAssignment WHERE userId='{ADMIN_A}';")
+          reset_settings()
+          parity("dynamic grant PUT", "PUT", REALTIME_PATH, admin_a_token, {"maxRetries": 5}, 403,
+                 expected_message="Platform admin access required")
+          sql(f"INSERT INTO GlobalRoleAssignment (id, userId, role, createdAt) "
+              f"VALUES ('{ADMIN_A}-gra', '{ADMIN_A}', 'platform_admin', NOW(3));")
+          reset_settings()
+          parity("dynamic grant PUT ok", "PUT", REALTIME_PATH, admin_a_token, {"maxRetries": 5})
+          sql(f"DELETE FROM GlobalRoleAssignment WHERE userId='{ADMIN_A}';")
+          reset_settings()
+          parity("dynamic revoke PUT", "PUT", REALTIME_PATH, admin_a_token, {"maxRetries": 6}, 403,
+                 expected_message="Platform admin access required")
+          print("phase 2k ok: platform role grant/revoke takes effect immediately")
+
+          # ---- DS2: DB 权威合并基准 ----
+          # 预热 Go 的实时设置缓存（旧值），随后直接改 DB，再做一次只改一个字段的
+          # Go PUT：DB 中的另一字段不得被缓存旧值回滚。
+          reset_settings()
+          set_setting(REALTIME_KEY, json.dumps({"maxRetries": 1, "requestTimeoutMs": 30000}))
+          redis("DEL", REALTIME_CACHE)
+          request_json("DS2 warm go cache", GO_URL, "GET", REALTIME_PATH, platform_token)
+          set_setting(REALTIME_KEY, json.dumps({"maxRetries": 1, "requestTimeoutMs": 45000}))
+          request_json("DS2 go partial", GO_URL, "PUT", REALTIME_PATH, platform_token, {"maxRetries": 5})
+          stored = json.loads(raw_setting(REALTIME_KEY))
+          require("DS2 go keeps fresh DB field", stored.get("requestTimeoutMs"), 45000)
+          require("DS2 go applies its own field", stored.get("maxRetries"), 5)
+          # 反向：预热 Nest 缓存后直接改 DB，再做 Nest PUT。
+          redis("DEL", REALTIME_CACHE)
+          request_json("DS2 warm nest cache", NEST_URL, "GET", REALTIME_PATH, platform_token)
+          set_setting(REALTIME_KEY, json.dumps({"maxRetries": 5, "requestTimeoutMs": 50000}))
+          request_json("DS2 nest partial", NEST_URL, "PUT", REALTIME_PATH, platform_token,
+                       {"adsbEnabled": False})
+          stored = json.loads(raw_setting(REALTIME_KEY))
+          require("DS2 nest keeps fresh DB field", stored.get("requestTimeoutMs"), 50000)
+          # 交叉：Nest 写 A、Go 写 B，两者都保留。
+          reset_settings()
+          request_json("DS2 nest writes A", NEST_URL, "PUT", REALTIME_PATH, platform_token,
+                       {"requestTimeoutMs": 40000})
+          request_json("DS2 go writes B", GO_URL, "PUT", REALTIME_PATH, platform_token,
+                       {"maxRetries": 6})
+          stored = json.loads(raw_setting(REALTIME_KEY))
+          require("DS2 cross keeps A", stored.get("requestTimeoutMs"), 40000)
+          require("DS2 cross keeps B", stored.get("maxRetries"), 6)
+          # Nominatim：Go 改 userAgent、Nest 改 email，互不覆盖。
+          reset_settings()
+          request_json("DS2 nominatim go ua", GO_URL, "PUT", NOMINATIM_PATH, platform_token,
+                       {"userAgent": "drs-go/1.0"})
+          request_json("DS2 nominatim nest email", NEST_URL, "PUT", NOMINATIM_PATH, platform_token,
+                       {"email": "geo@example.com"})
+          overrides = json.loads(raw_setting(NOMINATIM_KEY))
+          require("DS2 nominatim keeps ua", overrides.get("userAgent"), "drs-go/1.0")
+          require("DS2 nominatim keeps email", overrides.get("email"), "geo@example.com")
+          print("phase 2l ok: DB-authoritative merges keep both fields (DS2)")
+
+          # ---- DS2: 真实 MySQL 持锁 → 409，释放后恢复 ----
+          def hold_mysql_lock(lock_name, seconds=25):
+              cid = container_id("mysql:8.4")
+              return subprocess.Popen(
+                  ["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app", "-e",
+                   f"SELECT GET_LOCK('{lock_name}', 5); SELECT SLEEP({seconds});"],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+          reset_settings()
+          set_setting(REALTIME_KEY, json.dumps({"maxRetries": 2}))
+          redis("DEL", REALTIME_CACHE)
+          holder = hold_mysql_lock(REALTIME_LOCK)
+          try:
+              time.sleep(2)
+              for side, base in (("nest", NEST_URL), ("go", GO_URL)):
+                  started = time.time()
+                  status, raw = call(base, REALTIME_PATH, "PUT", platform_token, {"maxRetries": 4})
+                  elapsed = time.time() - started
+                  if status != 409 or message_of(raw) != REALTIME_BUSY:
+                      fail(f"DS2 lock {side}: {status} {message_of(raw)!r} want 409 {REALTIME_BUSY!r}")
+                  if elapsed < 9 or elapsed > 35:
+                      fail(f"DS2 lock {side}: elapsed={elapsed:.1f}s outside the GET_LOCK window")
+              stored = json.loads(raw_setting(REALTIME_KEY))
+              require("DS2 lock kept the row", stored.get("maxRetries"), 2)
+              print("phase 2m ok: both sides wait for the same lock and return the 409 contract")
+          finally:
+              holder.wait()
+              time.sleep(1)
+          reset_settings()
+          parity("DS2 lock released", "PUT", REALTIME_PATH, platform_token, {"maxRetries": 4})
+
+          reset_settings()
+          set_setting(NOMINATIM_KEY, json.dumps({"userAgent": "lock-probe"}))
+          holder = hold_mysql_lock(NOMINATIM_LOCK)
+          try:
+              time.sleep(2)
+              for side, base in (("nest", NEST_URL), ("go", GO_URL)):
+                  status, raw = call(base, NOMINATIM_PATH, "PUT", platform_token,
+                                     {"userAgent": "blocked"})
+                  if status != 409 or message_of(raw) != NOMINATIM_BUSY:
+                      fail(f"DS2 nominatim lock {side}: {status} {message_of(raw)!r}")
+              print("phase 2n ok: nominatim writes share one lock and the 409 contract")
+          finally:
+              holder.wait()
+              time.sleep(1)
+          reset_settings()
+          parity("DS2 nominatim lock released", "PUT", NOMINATIM_PATH, platform_token,
+                 {"userAgent": "after-lock"})
+
+          # ---- DS3/DS4: 归档状态 ----
+          seed_archive_status()
+          counts, recent = expected_status_snapshot(ORG_A)
+          nest_doc, go_doc = parity("DS4 status", "GET", ARCHIVE_STATUS_PATH, platform_token)
+          require("DS4 counts", nest_doc.get("counts"), {k: v for k, v in counts.items() if k != "pending"})
+          require("DS4 pending", nest_doc.get("pending"), counts["pending"])
+          require("DS4 recent length", len(nest_doc.get("recentStatuses", [])), 10)
+          if len(nest_doc["recentStatuses"]) != len(recent):
+              fail("DS4 recent length mismatch against the Redis snapshot")
+          for index, record in enumerate(recent):
+              public = nest_doc["recentStatuses"][index]
+              require(f"DS4 order {index}", public.get("scopeValue"), record.get("scopeValue"))
+          if json.dumps(nest_doc).find(ORG_B) != -1:
+              fail("DS4 response leaked the foreign organisation")
+          for key in ("orgId", STATUS_KEY_PREFIX, "traceId"):
+              if key in json.dumps(nest_doc):
+                  fail(f"DS4 response leaked {key}")
+          # 同 score 时 Redis 按成员字典序升序返回，读取端 reverse 后 zzz-tie 在前。
+          tie_positions = {record["scopeValue"]: index for index, record in enumerate(nest_doc["recentStatuses"])}
+          if "aaa-tie" not in tie_positions or "zzz-tie" not in tie_positions:
+              fail(f"DS4 equal-score members missing: {tie_positions}")
+          if tie_positions["zzz-tie"] >= tie_positions["aaa-tie"]:
+              fail(f"DS4 equal-score order not preserved after reverse: {tie_positions}")
+          # 旧无 orgId 记录按 key 第 5 段回退后归属 org A。
+          legacy_record = next((r for r in expected_status_snapshot(ORG_A)[1]
+                                if r.get("scopeValue") == "legacy-no-org"), None)
+          if legacy_record is None:
+              fail("DS4 legacy fixture missing from the expected snapshot")
+          # 12+ 条时 counts 全量、recent 只取 10。
+          if counts["completed"] + counts["active"] + counts["failed"] + counts["waiting"] < 12:
+              fail(f"DS4 counts do not cover the whole snapshot: {counts}")
+          # DS3 脱敏：Go 与 Nest 的脱敏结果一致且不含凭据。
+          raw_redis = redis("GET", status_key("digest", ORG_A, "2026-01-12"))
+          if "tok.abc-1" not in raw_redis:
+              fail("DS3 Redis original must keep the unredacted text")
+          redacted = [r for r in nest_doc["recentStatuses"] if r.get("errorMessage")]
+          sensitive = [r["errorMessage"] for r in redacted if "Bearer" in (r["errorMessage"] or "")]
+          if not sensitive:
+              fail(f"DS3 fixture with a Bearer token was not visible: {redacted}")
+          for text in sensitive:
+              if "tok.abc-1" in text or "password=pw" in text or "secret=s1" in text:
+                  fail(f"DS3 public message not redacted: {text!r}")
+              if "[REDACTED]" not in text:
+                  fail(f"DS3 public message missing the redaction marker: {text!r}")
+          print("phase 2o ok: archive status counts/order/org isolation/redaction (DS3, DS4)")
+
+          # 空索引 → 空状态（不伪装成有数据）。
+          redis("DEL", STATUS_INDEX)
+          nest_doc, go_doc = parity("DS4 empty index", "GET", ARCHIVE_STATUS_PATH, platform_token)
+          require("DS4 empty counts", nest_doc.get("counts"),
+                  {"waiting": 0, "active": 0, "completed": 0, "failed": 0, "delayed": 0})
+          require("DS4 empty recent", nest_doc.get("recentStatuses"), [])
+          seed_archive_status()
+
+          # ---- 加密策略矩阵 ----
+          print("phase 2p: encryption policy matrix")
+          reset_settings()
+          # Nest 写密文 → Go 读取与来源一致。
+          request_json("crypto nest write", NEST_URL, "PUT", REALTIME_PATH, platform_token,
+                       {"openskyClientSecret": "nest-secret"})
+          raw = raw_setting(REALTIME_KEY)
+          if '"__enc":"system-settings:v1"' not in raw.replace(" ", ""):
+              fail(f"crypto nest write did not store an envelope: {raw[:200]!r}")
+          nest_doc, go_doc = parity("crypto nest->go source", "GET", REALTIME_PATH, platform_token)
+          require("crypto nest->go has", nest_doc.get("hasOpenskyClientSecret"), True)
+          require("crypto nest->go source", nest_doc.get("openskyClientSecretSource"), "stored")
+          # Go 写密文 → Nest 读取与来源一致。
+          reset_settings()
+          request_json("crypto go write", GO_URL, "PUT", REALTIME_PATH, platform_token,
+                       {"openskyClientSecret": "go-secret"})
+          raw = raw_setting(REALTIME_KEY)
+          if '"__enc":"system-settings:v1"' not in raw.replace(" ", ""):
+              fail(f"crypto go write did not store an envelope: {raw[:200]!r}")
+          nest_doc, go_doc = parity("crypto go->nest source", "GET", REALTIME_PATH, platform_token)
+          require("crypto go->nest has", nest_doc.get("hasOpenskyClientSecret"), True)
+          require("crypto go->nest source", nest_doc.get("openskyClientSecretSource"), "stored")
+          envelope_before = json.loads(raw_setting(REALTIME_KEY))["openskyClientSecret"]
+          # 未提供 secret 的更新必须保持密文原字节不变。
+          request_json("crypto nest untouched", NEST_URL, "PUT", REALTIME_PATH, platform_token,
+                       {"maxRetries": 3})
+          require("crypto nest untouched bytes", json.loads(raw_setting(REALTIME_KEY))["openskyClientSecret"],
+                  envelope_before)
+          request_json("crypto go untouched", GO_URL, "PUT", REALTIME_PATH, platform_token,
+                       {"maxRetries": 4})
+          require("crypto go untouched bytes", json.loads(raw_setting(REALTIME_KEY))["openskyClientSecret"],
+                  envelope_before)
+          print("phase 2p ok: Nest<->Go ciphertext interop and untouched ciphertext preservation")
+
+          # ---- 加密策略：生产无 key / 显式 false / 错 key ----
+          print("phase 2q: production key policy")
+          reset_settings()
+          start_go("go", encryption_key=None)
+          status, raw = call(GO_URL, REALTIME_PATH, "PUT", platform_token,
+                             {"openskyClientSecret": "blocked"})
+          if status != 400 or message_of(raw) != ("SYSTEM_SETTINGS_ENCRYPTION_KEY is required to "
+                                                  "store secrets in production"):
+              fail(f"go production no key: {status} {message_of(raw)!r}")
+          # 显式 false 是逃生舱：即使有 key 也存明文。
+          set_setting("system_security", json.dumps({"secretEncryptionEnabled": False}))
+          redis("DEL", "system_security:settings")
+          request_json("go explicit false", GO_URL, "PUT", REALTIME_PATH, platform_token,
+                       {"openskyClientSecret": "plain-escape"})
+          raw = raw_setting(REALTIME_KEY)
+          if "plain-escape" not in raw:
+              fail(f"go explicit false must store plaintext: {raw[:200]!r}")
+          start_go("go", encryption_key=VALID_KEY)
+          sql("DELETE FROM SystemSetting WHERE `key`='system_security';")
+          redis("DEL", "system_security:settings")
+          # 错 key：读取降级为无可用 stored secret，绝不 500。
+          reset_settings()
+          request_json("crypto write with valid key", GO_URL, "PUT", REALTIME_PATH, platform_token,
+                       {"openskyClientSecret": "rotated"})
+          start_go("go", encryption_key=WRONG_KEY)
+          status, raw = call(GO_URL, REALTIME_PATH, "GET", platform_token)
+          if status != 200:
+              fail(f"wrong key GET must not fail: {status} {raw[:200]!r}")
+          doc = body(raw)
+          require("wrong key has", doc.get("hasOpenskyClientSecret"), False)
+          require("wrong key source", doc.get("openskyClientSecretSource"), "none")
+          start_go("go", encryption_key=VALID_KEY)
+          # Nest 侧生产无 key。
+          reset_settings()
+          start_nest(encryption_key=None)
+          status, raw = call(NEST_URL, REALTIME_PATH, "PUT", platform_token,
+                             {"openskyClientSecret": "blocked"})
+          if status != 400 or message_of(raw) != ("SYSTEM_SETTINGS_ENCRYPTION_KEY is required to "
+                                                  "store secrets in production"):
+              fail(f"nest production no key: {status} {message_of(raw)!r}")
+          start_nest(encryption_key=VALID_KEY)
+          print("phase 2q ok: production failures, explicit-false escape hatch and wrong-key fallback")
+
+          # ---- geo 进程缓存差异（刻意保留，未改成 Redis 全局缓存） ----
+          print("phase 2r: geo process cache")
+          reset_settings()
+          request_json("geo seed nest cache", NEST_URL, "GET", NOMINATIM_PATH, platform_token)
+          # Go 改写 DB 后，Nest 的进程缓存最多 30 秒仍返回旧值：这是刻意保留的行为，
+          # 不是缺陷，也不在比较测试中误判为差异。
+          request_json("geo go write", GO_URL, "PUT", NOMINATIM_PATH, platform_token,
+                       {"userAgent": "go-fresh"})
+          stored = json.loads(raw_setting(NOMINATIM_KEY))
+          require("geo DB after go write", stored.get("userAgent"), "go-fresh")
+          status, raw = call(NEST_URL, NOMINATIM_PATH, "GET", platform_token)
+          if status != 200:
+              fail(f"geo nest cached GET: {status} {raw[:200]!r}")
+          if (body(raw) or {}).get("userAgent") is not None:
+              fail("geo nest process cache must still serve the pre-write value for up to 30s")
+          # 写入方自己的缓存立即刷新。
+          go_doc = request_json("geo go immediate", GO_URL, "GET", NOMINATIM_PATH, platform_token)
+          require("geo go immediate visible", go_doc.get("userAgent"), "go-fresh")
+          # 等 TTL 过期后两侧可比较（跨实例 GET 需等 31 秒或重启）。
+          time.sleep(31)
+          nest_doc, go_doc = parity("geo after ttl", "GET", NOMINATIM_PATH, platform_token)
+          require("geo after ttl", nest_doc.get("userAgent"), "go-fresh")
+          # 异步（fire-and-forget）审计：有界轮询等待，不改成 awaited。
+          sql("DELETE FROM AuditLog WHERE action='geo_nominatim_settings_update'")
+          request_json("geo audit write", GO_URL, "PUT", NOMINATIM_PATH, platform_token,
+                       {"userAgent": "audit-probe"})
+          geo_meta, geo_actor = newest_audit("geo_nominatim_settings_update", timeout=15)
+          if geo_meta is None:
+              fail("geo fire-and-forget audit did not appear within 15s")
+          require("geo audit metadata", geo_meta, {"userAgent": "audit-probe", "email": None})
+          require("geo audit actor", geo_actor, PLATFORM_USER)
+          print("phase 2r ok: the 30s process cache is retained，异步审计在有界轮询内落库")
+
+          print("ALL PHASE 1-2 CHECKS PASSED")
+
+          # ===================== phase 3: nested rewrite / rollback =====================
+
+          print("==== phase 3: nest stopped ====")
+          # 停 Nest 前重新登录，令牌寿命覆盖后续阶段。
+          alive = login(PLATFORM_EMAIL)
+          stop_nest()
+          stopped = False
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(NEST_URL + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  stopped = True
+                  break
+              time.sleep(1)
+          if not stopped:
+              fail("nestjs did not stop")
+
+          # 以全新进程接管（清空进程内缓存），确认 Go 直接读 MySQL/Redis 的非空 fixture，
+          # 而不是复用停机前的缓存。
+          start_go("go")
+          reset_settings()
+          set_setting(REALTIME_KEY, json.dumps({"maxRetries": 6}))
+          set_setting(ARCHIVE_KEY, json.dumps({"jobBatchSize": 35, "embeddingBatchSize": 25,
+                                              "embeddingMaxConcurrency": 3, "rerankMaxConcurrency": 2}))
+          set_setting(NOMINATIM_KEY, json.dumps({"userAgent": "nestjs-down/1.0"}))
+          seed_archive_status()
+          redis("DEL", REALTIME_CACHE, ARCHIVE_CACHE)
+
+          def takeover(label, method, path, token, payload=None, expected=200):
+              status, raw = call(GO_URL, path, method, token, payload)
+              if status != expected:
+                  fail(f"after nest stop {label}: {status} {raw[:400]!r}, want {expected}")
+              return body(raw)
+
+          realtime_doc = takeover("realtime GET", "GET", REALTIME_PATH, alive)
+          require("realtime non-empty fixture", realtime_doc.get("maxRetries"), 6)
+          archive_doc = takeover("archive GET", "GET", ARCHIVE_SETTINGS_PATH, alive)
+          require("archive non-empty fixture", archive_doc.get("jobBatchSize"), 35)
+          status_doc = takeover("status GET", "GET", ARCHIVE_STATUS_PATH, alive)
+          if not status_doc.get("recentStatuses"):
+              fail("archive status must be non-empty after nest stop")
+          expected_counts, _ = expected_status_snapshot(ORG_A)
+          require("status counts", status_doc.get("counts"),
+                  {k: v for k, v in expected_counts.items() if k != "pending"})
+          nom_doc = takeover("nominatim GET", "GET", NOMINATIM_PATH, alive)
+          require("nominatim non-empty fixture", nom_doc.get("userAgent"), "nestjs-down/1.0")
+
+          # 五条写仍受平台门禁。
+          for method, path, payload in (
+              ("PUT", REALTIME_PATH, {"maxRetries": 1}),
+              ("DELETE", REALTIME_PATH, None),
+              ("PUT", ARCHIVE_SETTINGS_PATH, {"jobBatchSize": 10, "embeddingBatchSize": 10,
+                                              "embeddingMaxConcurrency": 1, "rerankMaxConcurrency": 1}),
+              ("DELETE", ARCHIVE_SETTINGS_PATH, None),
+              ("PUT", NOMINATIM_PATH, {"userAgent": "blocked"}),
+          ):
+              by_admin = call(GO_URL, path, method, admin_a_token, payload)
+              if by_admin[0] != 403:
+                  fail(f"after nest stop {method} {path} org admin: {by_admin[0]} {by_admin[1][:200]!r}")
+              by_machine = call(GO_URL, path, method, MACHINE_ALLOW, payload)
+              if by_machine[0] != 403:
+                  fail(f"after nest stop {method} {path} machine: {by_machine[0]} {by_machine[1][:200]!r}")
+
+          # 配置更新、reset、缓存失效与审计真实发生。
+          before_audit = int(scalar("SELECT COUNT(*) FROM AuditLog"))
+          takeover("realtime PUT", "PUT", REALTIME_PATH, alive, {"maxRetries": 1})
+          require("realtime PUT persisted", json.loads(raw_setting(REALTIME_KEY)).get("maxRetries"), 1)
+          takeover("nominatim PUT", "PUT", NOMINATIM_PATH, alive, {"email": "down@example.com"})
+          require("nominatim PUT persisted",
+                  json.loads(raw_setting(NOMINATIM_KEY)).get("email"), "down@example.com")
+          takeover("archive PUT", "PUT", ARCHIVE_SETTINGS_PATH, alive,
+                   {"jobBatchSize": 12, "embeddingBatchSize": 12,
+                    "embeddingMaxConcurrency": 2, "rerankMaxConcurrency": 2})
+          require("archive PUT persisted", json.loads(raw_setting(ARCHIVE_KEY)).get("jobBatchSize"), 12)
+          takeover("archive DELETE", "DELETE", ARCHIVE_SETTINGS_PATH, alive)
+          require("archive DELETE removed the row", raw_setting(ARCHIVE_KEY), "")
+          takeover("realtime DELETE", "DELETE", REALTIME_PATH, alive)
+          require("realtime DELETE removed the row", raw_setting(REALTIME_KEY), "")
+          after_audit = int(scalar("SELECT COUNT(*) FROM AuditLog"))
+          if after_audit <= before_audit:
+              fail(f"audit rows did not grow: {before_audit} -> {after_audit}")
+          # 撤回令牌 → 401。
+          revoked = login(PLATFORM_EMAIL)
+          redis("SET", "access-token:blacklist:" + jwt_jti(revoked), "true", "EX", "600")
+          status, raw = call(GO_URL, REALTIME_PATH, "GET", revoked)
+          if status != 401 or message_of(raw) != "Access token revoked":
+              fail(f"revoked token: {status} {message_of(raw)!r}")
+          # 未迁路径在 Nest 停机后 502。
+          for method, path in (("POST", "/api/system-settings/geo/nominatim/test"),
+                               ("POST", "/api/geo/geocode"),
+                               ("GET", "/api/system-settings/situation-monitor"),
+                               ("POST", "/api/system-settings/situation-monitor/external-snapshot/refresh")):
+              status, raw = call(GO_URL, path, method, alive, {} if method == "POST" else None)
+              if status != 502 or (body(raw) or {}).get("statusCode") != 502:
+                  fail(f"unmigrated {method} {path} after nest stop: {status} {raw[:300]!r}")
+          print("phase 3 ok: nine routes独立服务、五条写仍受门禁、未迁路径 502")
+
+          # ===================== phase 4: rollback =====================
+
+          print("==== phase 4: rollback ====")
+          start_go("legacy")
+          for method, path, payload in ALL_ROUTES:
+              status, raw = call(GO_URL, path, method, alive, payload)
+              if status != 502:
+                  fail(f"rollback {method} {path}: {status} {raw[:300]!r}, want 502 with NestJS down")
+          print("phase 4 ok: legacy rollback proxies to the stopped NestJS (502)")
+
+          start_nest(encryption_key=VALID_KEY)
+          token = login(PLATFORM_EMAIL)
+          reset_settings()
+          for method, path, payload in ALL_ROUTES:
+              reset_settings()
+              parity(f"rollback parity {method} {path}", method, path, token, payload)
+          print("ALL DATA RUNTIME SETTINGS CHECKS PASSED")
+          PY
