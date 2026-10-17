@@ -216,10 +216,10 @@ func (s *Service) resolveQuotaEffectiveFromValues(value quotaStoredValue, presen
 	return effective
 }
 
-// coerceLimit mirrors AssistantQuotaSettingsService.coerceLimit: a non-finite
-// coerced value falls back to the environment default, everything else is
-// truncated and clamped into [0, max].
-func coerceLimit(value, fallback, max int64) int64 {
+// coerceLimit mirrors AssistantQuotaSettingsService.coerceLimit: the already
+// Number()-coerced value falls back to the environment default when it is not
+// finite, otherwise it is truncated and clamped into [0, max].
+func coerceLimit(value float64, fallback, max int64) int64 {
 	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return fallback
 	}

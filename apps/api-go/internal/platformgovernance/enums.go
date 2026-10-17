@@ -8,14 +8,14 @@ package platformgovernance
 type SettingsSource string
 
 const (
-	// SourceDefault is returned when no SystemSetting row exists and the
+	// SettingsSourceDefault is returned when no SystemSetting row exists and the
 	// fallback is a compiled-in default (task logs, llm request logs).
-	SourceDefault SettingsSource = "default"
-	// SourceEnv is returned when no SystemSetting row exists and the fallback
-	// is an environment-derived value (assistant quota, assistant safety).
-	SourceEnv SettingsSource = "env"
-	// SourceDB is returned when a SystemSetting row exists and was used.
-	SourceDB SettingsSource = "db"
+	SettingsSourceDefault SettingsSource = "default"
+	// SettingsSourceEnv is returned when no SystemSetting row exists and the
+	// fallback is an environment-derived value (assistant quota, safety).
+	SettingsSourceEnv SettingsSource = "env"
+	// SettingsSourceDB is returned when a SystemSetting row exists and was used.
+	SettingsSourceDB SettingsSource = "db"
 )
 
 // MfaPolicy is the platform-wide MFA policy stored in the system_security row.
