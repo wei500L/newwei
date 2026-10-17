@@ -426,6 +426,69 @@ verify success）——CI-01 本轮未复现，无重跑。
 - **API-01 / SEC 系列真实登录态验证**：SEC-01 单元级与 API-01 契约级测试已由远端 CI 验证（run 33748591315）；**真实数据库登录态冒烟**（登录→PUT vector 配置→403 / 完成引导→刷新不重现）仍需 Docker 数据库栈——CI 无 DB，列为部署环境可用后的第一优先验证项。
 - 基线环境缺口（AISSTREAM_API_KEY 空、infra/docker/.env 缺失）不属代码缺陷，不入本台账。
 
+### F1：Frontier 取消改写终态运行、无事务无行锁、并发重复记事件 — 🟡 已修，待远端验证
+
+- **现象**：对 `completed`/`canceled` 的 run 调 `POST /runs/:id/cancel` 会把它改写成
+  `canceled` 并覆盖 `finishedAt`；批量取消把已完成的 run 计入 `canceledIds`；同一
+  run 的并发取消会追加两条 `frontier_run_canceled` 事件。
+- **证据（以 origin/main@39ad5b55 为准）**：
+  - `apps/api/src/modules/crawl/crawl-frontier.service.ts:830-888` `cancelRunRecords`
+    对传入 id 无条件 `status='canceled', finishedAt=now`（原 :844-855），不排除
+    `completed`/`canceled`；`crawlFrontierRun.updateMany` 与 `crawlFrontierNode.updateMany`
+    用 `Promise.all` 并行，没有事务与行锁。
+  - 同函数原 :868-887 对 workflow run 无条件 `markRunStatus('canceled')` 并把
+    `error` 清成 `null`（recorder `crawl-strategy-run-recorder.service.ts:407-424`）。
+  - `crawl-frontier.service.ts:752-775` 原 `cancelRuns` 的 `canceledIds` 来自只按
+    `orgId` 过滤的 `findMany`，会把已完成的 run 计为「已取消」。
+  - 前端 `apps/web/app/(app)/admin/ops/crawl-frontier/crawl-frontier-console.tsx:1444`
+    与 `:1694` 已把 `completed`/`canceled` 视为不可取消，`:1186-1191` 按
+    `ids.length - canceledCount` 显示 skipped；后端没有执行这个约束。
+- **修法（Nest 与 Go 两侧一致）**：
+  1. 开事务；第一条语句按 `orgId` + id 集合 + `status NOT IN ('completed','canceled')`
+     且 `ORDER BY id ASC FOR UPDATE` 锁定，升序加锁避免两个批量取消交叉死锁。
+  2. 没有行时提交并返回空列表。
+  3. `finishedAt` 取当前时间（毫秒）；两条 UPDATE 的 WHERE 都带 `orgId`。
+  4. 提交后按 id 升序对锁定行串行 `appendEvent` 与 `markRunStatus`（`error` 清空）。
+  - Nest：`crawl-frontier.service.ts` `cancelRun`、`cancelRuns`、`cancelRunRecords`
+    改为 `this.prisma.$transaction` + `tx.$queryRaw(Prisma.sql\`… FOR UPDATE\`)`。
+  - Go：`apps/api-go/internal/crawlfrontierruns/cancel.go` 同一协议（id 集合用
+    `JSON_CONTAINS` 固定 arity，保持 `ORDER BY id ASC FOR UPDATE`）。
+  - `cancelRun` 保留存在性检查与 404，无论是否发生状态转换都返回完整详情（201）；
+    终态取消是幂等无操作。`failed` 仍可取消（与前端
+    `status !== "completed" && status !== "canceled"` 一致）。
+- **回归方式**：`api-go-crawl-frontier-runs-smoke` 阶段 2 断言：
+  - `completed run cancel keeps completed`：201；DB 中 status 仍 `completed`、
+    `finishedAt` 不变、workflow run 仍 `completed` 且 `error='keep-me'`、事件数不变。
+  - `running run cancel transitions once`：201；run/节点/workflow run 变 `canceled`；
+    恰好新增 1 条 `frontier_run_canceled`，sequence = 原数量 + 1。
+  - `bulk cancel skips terminal and cross-tenant`：`canceledIds` 升序、count 正确。
+  - `concurrent cancel appends one event`：同一 run 并发 10 次（Go/Nest 各半），
+    最终恰好 1 条取消事件、`finishedAt` 只写一次。
+  - `opposite-order bulk cancels do not deadlock`：两个 id 顺序相反的批量取消并发 5 轮
+    无 500/死锁。
+- **状态**：待远端验证（Nest 与 Go 两侧已同修；本机按约束未运行构建与测试）。
+
+### F1-FOLLOWUP-01：recorder appendEvent 的 count+1 sequence 与 worker 并发可能重复 — ⬜ 只登记，不修
+
+- **现象**：`crawl-strategy-run-recorder.service.ts:206-209` 用
+  `COUNT(*) + 1` 计算 `sequence`；与 worker 并发写同一 run 的事件时可能产生重复
+  sequence（表上只有 `@@index([runId, sequence])`，没有唯一约束）。
+- **不修原因**：该路径属于 worker 共用代码，本批只迁移 HTTP；Go 侧按同一语义复刻
+  （`cancel.go` 的 `appendCancelEvent` 同样用 `COUNT(*) + 1`）。
+- **后续方向**：为 `CrawlStrategyWorkflowRunEvent` 增加 `(runId, sequence)` 唯一约束，
+  或在事务内 `SELECT … FOR UPDATE` 计数后写入；需要与 worker 写入方一起评估。
+- **状态**：只登记。
+
+### F1-FOLLOWUP-02：POST workflow-runs/:runId/replay 只要求 crawl.read — ⬜ 只登记，不修
+
+- **现象**：`apps/api/src/modules/crawl/crawl-strategy.controller.ts:155-163` 的
+  `POST /api/admin/crawl-frontier/workflow-runs/:runId/replay` 是写操作，却只声明
+  `@Permissions('crawl.read')`。
+- **不修原因**：该路由不在本批 11 条迁移范围内，且控制器受
+  「不改 `apps/api/src/**/*.controller.ts`」约束（避免 auth-matrix 与 OpenAPI 漂移）。
+- **后续方向**：单独一批把权限改为 `crawl.write`，并同步 auth-matrix 快照。
+- **状态**：只登记。
+
 ## 7. 基础设施连接与采集运行凭据批次（IS1–IS4）
 
 本批次把「基础设施连接与采集运行凭据配置」7 条 HTTP 用 Strangler Fig 方式迁入
