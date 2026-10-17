@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
+import { PlatformAccessService } from "../auth/platform-access.service";
 
 import { AssistantSafetyDiagnosticsService } from "./assistant-safety-diagnostics.service";
 import { AssistantSafetyMetricsService } from "./assistant-safety-metrics.service";
@@ -17,7 +18,8 @@ export class AssistantSafetySettingsController {
   constructor(
     private readonly settings: AssistantSafetySettingsService,
     private readonly diagnostics: AssistantSafetyDiagnosticsService,
-    private readonly metrics: AssistantSafetyMetricsService
+    private readonly metrics: AssistantSafetyMetricsService,
+    private readonly platformAccess: PlatformAccessService
   ) {}
 
   @Get()
@@ -29,6 +31,10 @@ export class AssistantSafetySettingsController {
   @Put()
   @Permissions("settings.manage")
   async updateSettings(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateAssistantSafetySettingsDto) {
+    // SEC-05: `assistant_safety` is a GLOBAL singleton (single key, no org
+    // dimension). An ordinary org admin could otherwise switch off the
+    // platform-wide LiteLLM content-moderation guardrails for every tenant.
+    await this.platformAccess.assertPlatformAdmin(user.id);
     return this.settings.updateSettings(user.orgId, user.id, body);
   }
 
@@ -52,6 +58,9 @@ export class AssistantSafetySettingsController {
   @Delete()
   @Permissions("settings.manage")
   async reset(@CurrentUser() user: AuthenticatedUser) {
+    // Same SEC-05 boundary as PUT: reset re-enables the environment-default
+    // guardrails for every tenant.
+    await this.platformAccess.assertPlatformAdmin(user.id);
     return this.settings.resetToEnv(user.orgId, user.id);
   }
 }

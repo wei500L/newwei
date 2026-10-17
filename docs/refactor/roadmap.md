@@ -199,4 +199,5 @@ AS2（改密按原 hash 做 CAS）、AS3（profile null 与机器身份不再触
 **canary 契约提醒**：路由表没有任何 ModeCanary 条目；CANARY_PERCENT 是预留配置。把业务路由切到 ModeCanary 之前必须先落地可信身份来源——`cmd/api/main_test.go` 的 TestDefaultRulesHaveNoCanaryRoutes 会在有人提前切换时失败。
 
 - 采集 Frontier 运行监控与取消 11 条 HTTP 迁入 Go（`API_GO_CRAWL_FRONTIER_RUNS_MODE`，默认 `legacy`，回滚只改该变量）；同批修掉取消改写终态运行、无事务无行锁与并发重复记事件的 F1 缺陷（Nest 与 Go 两侧一致），细节见 `docs/refactor/go-crawl-frontier-runs.md`。
+- ✅ Go-批10：平台治理设置 16 条 HTTP（security / assistant-quota / assistant-safety(+metrics) / task-logs / llm-request-logs(+metadata-policy/reset)）迁入 `apps/api-go`，开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串|legacy|go，默认 legacy）；同批修 SEC-05（全局写接口补平台管理员门禁）、TTL-01（tasklogs NamespaceNotFound）、CONC-01（llm-request-logs MySQL 会话锁 + 以 DB 为新合并基准）。回滚只改该变量。细节见 `docs/refactor/go-platform-governance-settings.md`。
 - 账户资料、会话退出与机器令牌 8 条 HTTP 迁入 Go（`API_GO_ACCOUNT_SECURITY_MODE`，默认 `legacy`，回滚只改该变量）；同批修 AS1–AS4（Nest 与 Go 两侧一致），细节见 `docs/refactor/go-account-security.md`。
