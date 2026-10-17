@@ -37,6 +37,8 @@ const SYSTEM_ADMIN_ROLE_NAME = 'admin';
 const LOGIN_ACTION_TO_METHOD: Record<string, string> = {
   login: 'password',
   login_with_code: 'email_code',
+  login_with_mfa: 'mfa_totp',
+  login_with_oidc: 'oidc',
 };
 
 @Injectable()
@@ -147,6 +149,27 @@ export class UserAdminService {
     const take = Math.max(1, Math.min(options?.first ?? 100, 200));
     const after = options?.after?.trim();
     const search = options?.search?.trim();
+
+    // A cursor that does not resolve to a member of this organization must
+    // return an empty page. Passing an unknown, deleted, or cross-organization
+    // id straight to Prisma raises an uncaught P2025 (500) for the whole
+    // `users` query.
+    if (after) {
+      const cursorUser = await this.prisma.user.findFirst({
+        where: {
+          id: after,
+          memberships: {
+            some: {
+              orgId,
+            },
+          },
+        },
+        select: { id: true },
+      });
+      if (!cursorUser) {
+        return [];
+      }
+    }
 
     return this.prisma.user.findMany({
       where: {
