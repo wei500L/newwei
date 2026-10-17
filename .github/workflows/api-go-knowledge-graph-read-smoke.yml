@@ -265,9 +265,9 @@ jobs:
             ('kgentb000000000000000001', 'kgorgb000000000000000001', 'company', '其它组织公司', '其它组织公司', NULL, NOW(3), NOW(3));
           INSERT INTO KnowledgeEntityAlias (id, orgId, entityId, alias, normalizedAlias, source, createdAt)
           VALUES
-            ('kgalias00000000000000001', '{org}', 'kgenta000000000000000001', '贵州茅台酒股份有限公司', '贵州茅台酒股份有限公司', 'seed', NOW(3)),
-            ('kgalias00000000000000002', '{org}', 'kgenta000000000000000001', '贵州茅台酒', '贵州茅台酒', 'seed', NOW(3)),
-            ('kgalias00000000000000003', '{org}', 'kgenta000000000000000001', '贵州茅台酒股份', '贵州茅台酒股份', 'derived', NOW(3)),
+            ('kgalias00000000000000001', '{org}', 'kgenta000000000000000001', '贵州茅台酒股份有限公司', '贵州茅台酒股份有限公司', 'seed', NOW(3) - INTERVAL 3 MINUTE),
+            ('kgalias00000000000000002', '{org}', 'kgenta000000000000000001', '贵州茅台酒', '贵州茅台酒', 'seed', NOW(3) - INTERVAL 2 MINUTE),
+            ('kgalias00000000000000003', '{org}', 'kgenta000000000000000001', '贵州茅台酒股份', '贵州茅台酒股份', 'derived', NOW(3) - INTERVAL 1 MINUTE),
             ('kgalias00000000000000004', '{org}', 'kgenta000000000000000002', '600519', '600519', 'seed', NOW(3)),
             ('kgalias00000000000000005', '{org}', 'kgenta000000000000000002', '600519.SH', '600519.sh', 'seed', NOW(3)),
             ('kgalias00000000000000006', '{org}', 'kgenta000000000000000002', 'SH600519', 'sh600519', 'seed', NOW(3)),
