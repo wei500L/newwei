@@ -40,17 +40,19 @@ func TestParseUpdateSecurityMessages(t *testing.T) {
 
 func TestParseUpdateQuotaMessages(t *testing.T) {
 	_, err := parseUpdateQuota([]byte(`{}`))
+	// Properties stay in declaration order; within one property the constraints
+	// report in reverse decorator order (Max, Min, IsInt).
 	want := strings.Join([]string{
 		"enabled must be a boolean value",
-		"submitLimitPerHour must be an integer number",
-		"submitLimitPerHour must not be less than 0",
 		"submitLimitPerHour must not be greater than 10000",
-		"maxInFlightPerOrg must be an integer number",
-		"maxInFlightPerOrg must not be less than 0",
+		"submitLimitPerHour must not be less than 0",
+		"submitLimitPerHour must be an integer number",
 		"maxInFlightPerOrg must not be greater than 100",
-		"monthlyTokenBudget must be an integer number",
-		"monthlyTokenBudget must not be less than 0",
+		"maxInFlightPerOrg must not be less than 0",
+		"maxInFlightPerOrg must be an integer number",
 		"monthlyTokenBudget must not be greater than 1000000000000",
+		"monthlyTokenBudget must not be less than 0",
+		"monthlyTokenBudget must be an integer number",
 	}, "; ")
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v\nwant %q", err, want)
@@ -107,7 +109,7 @@ func TestParseUpdateTaskLogRejectsNumericString(t *testing.T) {
 	// The task-log DTO has no @Type, so a quoted number is a 400 with all three
 	// class-validator messages.
 	_, err := parseUpdateTaskLog([]byte(`{"retentionDays":"30"}`))
-	want := "retentionDays must be an integer number; retentionDays must not be less than 1; retentionDays must not be greater than 3650"
+	want := "retentionDays must not be greater than 3650; retentionDays must not be less than 1; retentionDays must be an integer number"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %q", err, want)
 	}
@@ -128,13 +130,13 @@ func TestParseUpdateLlmLogOptionalFields(t *testing.T) {
 	}
 
 	_, err := parseUpdateLlmLog([]byte(`{"retentionDays":"30"}`))
-	want := "retentionDays must be an integer number; retentionDays must not be less than 1; retentionDays must not be greater than 3650"
+	want := "retentionDays must not be greater than 3650; retentionDays must not be less than 1; retentionDays must be an integer number"
 	if err == nil || err.Error() != want {
 		t.Fatalf("quoted retentionDays err = %v, want %q", err, want)
 	}
 
 	_, err = parseUpdateLlmLog([]byte(`{"metadataAllowedTopLevelKeys":5}`))
-	want = "metadataAllowedTopLevelKeys must be an array; metadataAllowedTopLevelKeys must contain not more than 100 elements; each value in metadataAllowedTopLevelKeys must be a string"
+	want = "each value in metadataAllowedTopLevelKeys must be a string; metadataAllowedTopLevelKeys must contain not more than 100 elements; metadataAllowedTopLevelKeys must be an array"
 	if err == nil || err.Error() != want {
 		t.Fatalf("non-array keys err = %v, want %q", err, want)
 	}
@@ -154,7 +156,7 @@ func TestParseUpdateLlmLogOptionalFields(t *testing.T) {
 	}
 
 	_, err = parseUpdateLlmLog([]byte(`{"briefConsecutiveDaysThreshold":"7"}`))
-	want = "briefConsecutiveDaysThreshold must be an integer number; briefConsecutiveDaysThreshold must not be less than 1; briefConsecutiveDaysThreshold must not be greater than 30"
+	want = "briefConsecutiveDaysThreshold must not be greater than 30; briefConsecutiveDaysThreshold must not be less than 1; briefConsecutiveDaysThreshold must be an integer number"
 	if err == nil || err.Error() != want {
 		t.Fatalf("consecutive days err = %v, want %q", err, want)
 	}

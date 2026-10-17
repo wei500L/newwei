@@ -533,3 +533,28 @@ verify success）——CI-01 本轮未复现，无重跑。
   `retentionDays` 仍为 45、prefixes 为 `["x_"]`；随后同时向 Go 与 Nest 各发一条
   只改不同字段的 PUT，重复 5 轮，断言最终 DB 同时包含两边修改、无 500、审计条数正确。
 - **状态**：待远端验证。
+
+### 观察（非本批缺陷）：class-validator 同一属性的消息顺序是「装饰器逆序」
+
+本批 smoke 阶段 1 的 400 对照在真实 NestJS 上量到：对
+
+```ts
+@IsInt()
+@Min(1)
+@Max(3650)
+retentionDays!: number;
+```
+
+传字符串 `"30"` 时，ValidationPipe 的 message 是
+
+```
+retentionDays must not be greater than 3650; retentionDays must not be less than 1; retentionDays must be an integer number
+```
+
+即**同一属性内按装饰器自下而上**（Max、Min、IsInt）报告，属性之间仍是声明顺序。
+`internal/platformgovernance/dto.go` 按此顺序实现，并由 smoke 逐字节比对。
+
+已合入的 `internal/runtimesettings/dto.go` 的 `integerConstraint` / `floatField` 按
+自上而下（IsInt、Min、Max）拼消息。两者的差异只在**同一属性有多条约束同时失败**时
+可见（例如把整数字段传成字符串）；单条约束失败时顺序无区别。本批不修改该已合入包，
+登记为观察项，供后续统一核对。

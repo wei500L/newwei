@@ -15,7 +15,10 @@ import (
 // Every DTO field is decoded as json.RawMessage so that one wrong type never
 // aborts the whole decode: the per-field validators below reproduce the exact
 // class-validator default messages and the order in which NestJS's
-// ValidationPipe collects them (declaration order, top-down, joined with "; ").
+// ValidationPipe collects them: properties in declaration order, and within one
+// property the constraints in REVERSE decorator order (class-validator applies
+// them bottom-up). The joined message string is verified byte for byte against
+// NestJS by the real-stack smoke workflow.
 //
 // The validators never use untyped containers: each helper takes a concrete
 // json.RawMessage and returns a concrete Go type.
@@ -180,27 +183,36 @@ func requiredEnumField(v *validationErrors, raw json.RawMessage, field string, a
 
 // addIntegerMessages appends the three messages an integer property produces
 // when its value is absent, null or not a number.
+//
+// class-validator registers one validation metadata per decorator and applies
+// them bottom-up, so a property declared as
+//
+//	@IsInt() @Min(min) @Max(max)
+//
+// reports its failures in the order Max, Min, IsInt. That order is observable
+// through the ValidationPipe message string and is verified byte for byte by
+// the real-stack smoke workflow.
 func addIntegerMessages(v *validationErrors, field string, min, max int64) {
-	v.add(field + " must be an integer number")
-	v.add(fmt.Sprintf("%s must not be less than %d", field, min))
 	v.add(fmt.Sprintf("%s must not be greater than %d", field, max))
+	v.add(fmt.Sprintf("%s must not be less than %d", field, min))
+	v.add(field + " must be an integer number")
 }
 
 // integerMessages evaluates @IsInt/@Min/@Max independently, exactly like
 // class-validator does, on an already coerced numeric value.
 func integerMessages(v *validationErrors, value float64, field string, min, max int64) (int64, bool) {
 	isNumber := !math.IsNaN(value)
-	integerOK := jsIsInteger(value)
-	if !integerOK {
-		v.add(field + " must be an integer number")
+	maxOK := isNumber && value <= float64(max)
+	if !maxOK {
+		v.add(fmt.Sprintf("%s must not be greater than %d", field, max))
 	}
 	minOK := isNumber && value >= float64(min)
 	if !minOK {
 		v.add(fmt.Sprintf("%s must not be less than %d", field, min))
 	}
-	maxOK := isNumber && value <= float64(max)
-	if !maxOK {
-		v.add(fmt.Sprintf("%s must not be greater than %d", field, max))
+	integerOK := jsIsInteger(value)
+	if !integerOK {
+		v.add(field + " must be an integer number")
 	}
 	if !integerOK || !minOK || !maxOK {
 		return 0, false
@@ -242,16 +254,16 @@ func plainIntegerField(v *validationErrors, raw json.RawMessage, field string, m
 func plainNumberField(v *validationErrors, raw json.RawMessage, field string, min, max float64, maxDecimals int) (float64, bool) {
 	value := jsonNumberTokenValue(raw)
 	numberOK := !math.IsNaN(value) && !math.IsInf(value, 0) && hasAtMostDecimals(value, maxDecimals)
-	if !numberOK {
-		v.add(field + " must be a number conforming to the specified constraints")
+	maxOK := !math.IsNaN(value) && value <= max
+	if !maxOK {
+		v.add(fmt.Sprintf("%s must not be greater than %d", field, int64(max)))
 	}
 	minOK := !math.IsNaN(value) && value >= min
 	if !minOK {
 		v.add(fmt.Sprintf("%s must not be less than %d", field, int64(min)))
 	}
-	maxOK := !math.IsNaN(value) && value <= max
-	if !maxOK {
-		v.add(fmt.Sprintf("%s must not be greater than %d", field, int64(max)))
+	if !numberOK {
+		v.add(field + " must be a number conforming to the specified constraints")
 	}
 	if !numberOK || !minOK || !maxOK {
 		return 0, false
@@ -291,11 +303,12 @@ func hasAtMostDecimals(value float64, maxDecimals int) bool {
 func stringArrayField(v *validationErrors, raw json.RawMessage, field string, maxItems int) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '[' {
-		v.add(field + " must be an array")
-		v.add(fmt.Sprintf("%s must contain not more than %d elements", field, maxItems))
 		if !isJSONStringToken(trimmed) {
+			// @IsString({ each: true }) validates a non-array value itself.
 			v.add("each value in " + field + " must be a string")
 		}
+		v.add(fmt.Sprintf("%s must contain not more than %d elements", field, maxItems))
+		v.add(field + " must be an array")
 		return
 	}
 	var items []json.RawMessage
@@ -303,14 +316,14 @@ func stringArrayField(v *validationErrors, raw json.RawMessage, field string, ma
 		v.add(field + " must be an array")
 		return
 	}
-	if len(items) > maxItems {
-		v.add(fmt.Sprintf("%s must contain not more than %d elements", field, maxItems))
-	}
 	for _, item := range items {
 		if !isJSONStringToken(bytes.TrimSpace(item)) {
 			// class-validator emits one message per failing element.
 			v.add("each value in " + field + " must be a string")
 		}
+	}
+	if len(items) > maxItems {
+		v.add(fmt.Sprintf("%s must contain not more than %d elements", field, maxItems))
 	}
 }
 
