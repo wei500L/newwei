@@ -338,6 +338,23 @@ func AsInt(value any) (int, bool) {
 	}
 }
 
+// AsString coerces a string-shaped GraphQL value. Besides a plain string it
+// accepts any named string type, so an enum model can declare its own string
+// type with constants and still project the SDL enum member name.
+func AsString(value any) (string, bool) {
+	if text, ok := value.(string); ok {
+		return text, true
+	}
+	if value == nil {
+		return "", false
+	}
+	reflected := reflect.ValueOf(value)
+	if reflected.Kind() != reflect.String {
+		return "", false
+	}
+	return reflected.String(), true
+}
+
 // AsFloat coerces a GraphQL Float.
 func AsFloat(value any) (float64, bool) {
 	switch typed := value.(type) {
