@@ -690,6 +690,26 @@ services:
       # Mongo，不启动 worker）。/api/system-settings/security 与其余
       # /api/system-settings/* 仍回 NestJS。回滚只把该变量改回 legacy。
       API_GO_RUNTIME_SETTINGS_MODE: legacy
+      # 平台治理设置 16 条 HTTP（/api/system-settings 下的 security、
+      # assistant-quota、assistant-safety(+metrics)、task-logs、
+      # llm-request-logs(+metadata-policy/reset)）。pilot 与样例保持 legacy。
+      # 只接受空串/legacy/go，非法值启动失败；改成 go 才由 Go 验签、执行
+      # 平台管理员门禁并读写 SystemSetting 与 Redis 缓存，同时按调用者 orgId
+      # 查询 Mongo 的 assistantruns/llmrequestlogs 并对账 TTL 索引。go 要求
+      # JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI。/assistant-safety/
+      # diagnostics、email、archive-preparation、realtime-signals、
+      # situation-monitor、vector-service 与其余 /api/system-settings/*
+      # 仍回 NestJS。回滚只把该变量改回 legacy。
+      API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE: ${API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE:-legacy}
+      # 与 api 服务同源的 6 个平台治理缺省值（api 经 env_file 读取，api-go
+      # 没有 env_file，所以在此显式透传，取值与 Nest env schema 一致）。
+      # 只有上面的开关为 go 时才会被校验与使用；legacy 下取值不影响行为。
+      ASSISTANT_GUARDRAILS_ENABLED: ${ASSISTANT_GUARDRAILS_ENABLED:-true}
+      ASSISTANT_GUARDRAILS: ${ASSISTANT_GUARDRAILS:-openai-moderation-pre}
+      ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR: ${ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR:-30}
+      ASSISTANT_ORG_MAX_IN_FLIGHT: ${ASSISTANT_ORG_MAX_IN_FLIGHT:-2}
+      ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET: ${ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET:-2000000}
+      TASK_LOG_RETENTION_DAYS: ${TASK_LOG_RETENTION_DAYS:-14}
       # 基础设施连接与采集运行凭据 7 条精确 HTTP：
       # GET/PUT/DELETE /api/system-settings/vector-service、
       # GET/PATCH /api/admin/settings/storage、

@@ -660,3 +660,37 @@ Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`artic
 模型预测/异常检测/embedding/rerank/moderation 等实际推理。回滚只把
 `API_GO_MODEL_ACCESS_SETTINGS_MODE` 改回 `legacy`；不改表、不改 controller/DTO、
 不改 Web 入口与其他开关默认值。
+
+## 17. 平台治理设置 16 条 HTTP（Go）
+
+新增开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串/`legacy`/`go`，默认
+`legacy`，非法值启动失败，错误文本 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be
+one of legacy|go`）。`go` 时要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、
+`MONGO_URI`，并注册 16 条精确路由（handler 键
+`/api/system-settings#platform-governance`，与运行时的 `/api/system-settings` 不同键）：
+
+- `GET|PUT /api/system-settings/security`
+- `GET|PUT|DELETE /api/system-settings/assistant-quota`
+- `GET|PUT|DELETE /api/system-settings/assistant-safety`
+- `GET /api/system-settings/assistant-safety/metrics`
+- `GET|PUT|DELETE /api/system-settings/task-logs`
+- `GET|PUT|DELETE /api/system-settings/llm-request-logs`
+- `POST /api/system-settings/llm-request-logs/metadata-policy/reset`（201）
+
+全部要求重推导的 `settings.manage`；其中 9 条写路由另外要求 handler 内平台管理员
+（机器令牌永不满足）。orgId 一律取自令牌/会话，`assistant-quota` 的用量聚合与
+`assistant-safety/metrics` 的 `$match` 都带 `orgId`，防止跨租户读出。
+
+**仍留在 NestJS 的路径**（两条开关都为 `go` 时也回落 `/api/` 代理）：
+
+- `GET /api/system-settings/assistant-safety/diagnostics`（实际请求 LiteLLM）
+- `GET /api/system-settings/email`
+- `GET /api/system-settings/archive-preparation`
+- `GET /api/system-settings/realtime-signals`
+- `GET /api/system-settings/situation-monitor`
+- `GET /api/system-settings/vector-service`
+- 上述 16 条路径的未列出方法（如 `POST /api/system-settings/security`）
+- 带尾斜杠或多一段的路径（如 `/api/system-settings/task-logs/x`）
+
+回滚只把 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE` 改回 `legacy`。说明与 smoke 证据
+见 `docs/refactor/go-platform-governance-settings.md`。

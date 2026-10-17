@@ -7,8 +7,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -451,6 +453,30 @@ const (
 	RuntimeSettingsModeGo RuntimeSettingsMode = "go"
 )
 
+// PlatformGovernanceSettingsMode controls the sixteen platform governance
+// settings HTTP routes migrated by this unit
+// (API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE). The accepted values are exactly
+// "", "legacy" and "go"; any other value fails startup with the fixed text
+// "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be one of legacy|go" instead
+// of silently degrading. The default is legacy.
+type PlatformGovernanceSettingsMode string
+
+const (
+	// PlatformGovernanceSettingsModeLegacy proxies all sixteen routes to NestJS
+	// (default, including the empty value). Rollback only changes this variable
+	// back to legacy.
+	PlatformGovernanceSettingsModeLegacy PlatformGovernanceSettingsMode = "legacy"
+	// PlatformGovernanceSettingsModeGo serves all sixteen routes from Go with
+	// the same authentication chain as NestJS (JWT verification, Redis
+	// blacklist, MySQL membership re-derivation) plus mtk_ machine tokens. It
+	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI at startup
+	// because the assistant-quota usage query and the assistant-safety metrics
+	// aggregation read Mongo and the task-log / llm-request-log retention
+	// settings reconcile Mongo TTL indexes. It never enables shadow or canary
+	// traffic.
+	PlatformGovernanceSettingsModeGo PlatformGovernanceSettingsMode = "go"
+)
+
 // ModelAccessSettingsMode controls the ten model service configuration and OpenAI
 // key distribution HTTP routes (API_GO_MODEL_ACCESS_SETTINGS_MODE).
 //
@@ -732,6 +758,47 @@ type Config struct {
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
 	// does not start any worker or scheduled job.
 	RuntimeSettingsMode RuntimeSettingsMode
+	// PlatformGovernanceSettingsMode controls the sixteen platform governance
+	// settings routes (see PlatformGovernanceSettingsMode). Default legacy.
+	// Mode go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI; it
+	// starts no worker or scheduled job.
+	PlatformGovernanceSettingsMode PlatformGovernanceSettingsMode
+	// The platform governance environment defaults below mirror the NestJS zod
+	// schema (apps/api/src/modules/config/env.schema.ts,
+	// packages/utils/src/env.ts) exactly, including the .default() values and
+	// Number() coercion. They are parsed unconditionally but only validated
+	// (and therefore only able to fail startup) when
+	// PlatformGovernanceSettingsMode is go, so a legacy deployment behaves
+	// exactly like main even if these variables are set to garbage.
+	//
+	// AssistantGuardrailsEnabled is ASSISTANT_GUARDRAILS_ENABLED
+	// (envBoolean, default true).
+	PlatformGovernanceAssistantGuardrailsEnabled bool
+	// PlatformGovernanceAssistantGuardrailsRaw is the raw ASSISTANT_GUARDRAILS
+	// string; unset or whitespace-only becomes "openai-moderation-pre". The
+	// comma split / trim / drop-empty step happens in the serving package,
+	// matching EnvService.assistantConfig.
+	PlatformGovernanceAssistantGuardrailsRaw string
+	// PlatformGovernanceAssistantOrgSubmitLimitPerHour is
+	// ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR (int, 0..10000, default 30).
+	PlatformGovernanceAssistantOrgSubmitLimitPerHour int
+	// PlatformGovernanceAssistantOrgMaxInFlight is ASSISTANT_ORG_MAX_IN_FLIGHT
+	// (int, 0..100, default 2).
+	PlatformGovernanceAssistantOrgMaxInFlight int
+	// PlatformGovernanceAssistantOrgMonthlyTokenBudget is
+	// ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET (int, 0..1e12, default 2000000).
+	PlatformGovernanceAssistantOrgMonthlyTokenBudget int64
+	// PlatformGovernanceTaskLogRetentionDays is TASK_LOG_RETENTION_DAYS
+	// (positive int, default 14). The 1..3650 clamp is applied where the value
+	// is used, matching TaskLogSettingsService.normalizeRetentionDays.
+	PlatformGovernanceTaskLogRetentionDays int
+	// PlatformGovernanceEncryptionKeyRaw is SYSTEM_SETTINGS_ENCRYPTION_KEY kept
+	// verbatim (NOT trimmed): the serving package must distinguish "unset or
+	// empty" (present=false) from "whitespace only" (present=true, then
+	// "SYSTEM_SETTINGS_ENCRYPTION_KEY is empty"). The existing
+	// SettingsEncryptionKey field is trimmed and is used by other domains.
+	PlatformGovernanceEncryptionKeyRaw string
+
 	// InfrastructureSettingsMode controls the seven infrastructure connection
 	// and crawl-credential settings routes (see InfrastructureSettingsMode).
 	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
@@ -1244,6 +1311,24 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go")
 	}
+	// The platform governance switch accepts exactly "", "legacy" and "go"; any
+	// other value must fail startup with this exact text.
+	switch strings.TrimSpace(getenv("API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE")) {
+	case "", string(PlatformGovernanceSettingsModeLegacy):
+		cfg.PlatformGovernanceSettingsMode = PlatformGovernanceSettingsModeLegacy
+	case string(PlatformGovernanceSettingsModeGo):
+		cfg.PlatformGovernanceSettingsMode = PlatformGovernanceSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be one of legacy|go")
+	}
+	// The seven environment defaults the sixteen platform governance settings
+	// routes expose. They are parsed unconditionally so that a legacy
+	// deployment is untouched, but their parse failures are only promoted to
+	// startup errors when the switch is go (see validate()).
+	governanceErrs := parsePlatformGovernanceDefaults(&cfg, getenv)
+	if cfg.PlatformGovernanceSettingsMode == PlatformGovernanceSettingsModeGo {
+		errs = append(errs, governanceErrs...)
+	}
 	// Model access settings accepts the empty string, legacy and go. An empty
 	// value behaves exactly like legacy so an unset deployment keeps the NestJS
 	// path.
@@ -1730,6 +1815,16 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.NewsIndicatorsMode == NewsIndicatorsModeGo {
 		appendAuthRequirements(&errs, "API_GO_NEWS_INDICATORS_MODE", cfg)
 	}
+	// The platform governance settings takeover reads Mongo (assistant quota
+	// usage, assistant safety metrics) and reconciles Mongo TTL indexes (task
+	// logs, llm request logs), so it needs the standard JWT + MySQL + Redis
+	// requirements plus MONGO_URI.
+	if cfg.PlatformGovernanceSettingsMode == PlatformGovernanceSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE=go")
+		}
+	}
 	if cfg.QualityOverviewMode == QualityOverviewModeGo {
 		appendAuthRequirements(&errs, "API_GO_QUALITY_OVERVIEW_MODE", cfg)
 		if cfg.MongoURI == "" {
@@ -1823,6 +1918,205 @@ func appendSpacetimeRequirements(errs *[]string, name string, cfg Config) {
 	if cfg.MongoURI == "" {
 		*errs = append(*errs, "MONGO_URI is required when "+name+"=go")
 	}
+}
+
+// maxEnvRetentionDays is the largest TASK_LOG_RETENTION_DAYS value accepted at
+// startup. The zod schema only requires a positive integer, but the value is
+// clamped to 1..3650 where it is served, so any larger input produces the same
+// observable behaviour while keeping the int conversion in range.
+const maxEnvRetentionDays = int64(1)<<31 - 1
+
+// parsePlatformGovernanceDefaults resolves the seven environment variables the
+// sixteen platform governance settings routes expose, mirroring the NestJS zod
+// schema (apps/api/src/modules/config/env.schema.ts plus
+// packages/utils/src/env.ts) one for one, including the .default() values and
+// the Number()/envBoolean coercion.
+//
+// The returned strings are startup errors. Load only promotes them when
+// PlatformGovernanceSettingsMode is go, so a legacy deployment behaves exactly
+// like main even when these variables hold garbage.
+func parsePlatformGovernanceDefaults(cfg *Config, getenv func(string) string) []string {
+	var errs []string
+
+	// ASSISTANT_GUARDRAILS_ENABLED: envBoolean.default(true) — an unset or
+	// empty value takes the default, a recognised word is accepted, and
+	// anything else fails z.boolean() exactly like Nest startup does.
+	switch strings.ToLower(strings.TrimSpace(getenv("ASSISTANT_GUARDRAILS_ENABLED"))) {
+	case "", "true", "1", "yes", "y", "on":
+		cfg.PlatformGovernanceAssistantGuardrailsEnabled = true
+	case "false", "0", "no", "n", "off":
+		cfg.PlatformGovernanceAssistantGuardrailsEnabled = false
+	default:
+		// Keep the field usable even though the value is invalid: the error is
+		// only promoted to a startup failure in go mode, and a zero value here
+		// would otherwise leak a bogus default into a go deployment that was
+		// started before the mistake was noticed.
+		cfg.PlatformGovernanceAssistantGuardrailsEnabled = true
+		errs = append(errs, "ASSISTANT_GUARDRAILS_ENABLED must be a boolean")
+	}
+
+	// ASSISTANT_GUARDRAILS: z.preprocess(trim()=="" -> undefined,
+	// z.string().default("openai-moderation-pre")). The comma split / trim /
+	// drop-empty step lives in EnvService.assistantConfig and is applied by the
+	// serving package, so only the default substitution happens here.
+	if raw := getenv("ASSISTANT_GUARDRAILS"); strings.TrimSpace(raw) == "" {
+		cfg.PlatformGovernanceAssistantGuardrailsRaw = "openai-moderation-pre"
+	} else {
+		cfg.PlatformGovernanceAssistantGuardrailsRaw = raw
+	}
+
+	// ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR:
+	// z.coerce.number().int().min(0).max(10000).default(30).
+	if value, ok := platformGovernanceEnvInt(getenv("ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR"), 30, 0, 10000); ok {
+		cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour = int(value)
+	} else {
+		cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour = 30
+		errs = append(errs, "ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR must be an integer between 0 and 10000")
+	}
+
+	// ASSISTANT_ORG_MAX_IN_FLIGHT:
+	// z.coerce.number().int().min(0).max(100).default(2).
+	if value, ok := platformGovernanceEnvInt(getenv("ASSISTANT_ORG_MAX_IN_FLIGHT"), 2, 0, 100); ok {
+		cfg.PlatformGovernanceAssistantOrgMaxInFlight = int(value)
+	} else {
+		cfg.PlatformGovernanceAssistantOrgMaxInFlight = 2
+		errs = append(errs, "ASSISTANT_ORG_MAX_IN_FLIGHT must be an integer between 0 and 100")
+	}
+
+	// ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET:
+	// z.coerce.number().int().min(0).max(1_000_000_000_000).default(2_000_000).
+	if value, ok := platformGovernanceEnvInt(getenv("ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET"), 2_000_000, 0, 1_000_000_000_000); ok {
+		cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget = value
+	} else {
+		cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget = 2_000_000
+		errs = append(errs, "ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET must be an integer between 0 and 1000000000000")
+	}
+
+	// TASK_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(14).
+	// There is no upper bound in the schema; the 1..3650 clamp happens where the
+	// value is served, exactly like TaskLogSettingsService.normalizeRetentionDays.
+	if value, ok := platformGovernanceEnvInt(getenv("TASK_LOG_RETENTION_DAYS"), 14, 1, maxEnvRetentionDays); ok {
+		cfg.PlatformGovernanceTaskLogRetentionDays = int(value)
+	} else {
+		cfg.PlatformGovernanceTaskLogRetentionDays = 14
+		errs = append(errs, "TASK_LOG_RETENTION_DAYS must be a positive integer")
+	}
+
+	// SYSTEM_SETTINGS_ENCRYPTION_KEY: z.string().optional(), kept verbatim
+	// (never trimmed) so the serving package can tell "unset or empty"
+	// (present=false) from "whitespace only" (present=true, then the decoder
+	// reports "SYSTEM_SETTINGS_ENCRYPTION_KEY is empty").
+	cfg.PlatformGovernanceEncryptionKeyRaw = getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY")
+
+	return errs
+}
+
+// platformGovernanceEnvInt mirrors z.coerce.number().int().min(min).max(max)
+// plus .default(fallback) for one environment variable. An unset (or empty)
+// variable yields the fallback; a set variable is coerced with JavaScript
+// Number() semantics and must then be a finite integer inside [min, max].
+func platformGovernanceEnvInt(raw string, fallback, min, max int64) (int64, bool) {
+	if raw == "" {
+		return fallback, true
+	}
+	value := jsEnvNumber(raw)
+	if math.IsNaN(value) || math.IsInf(value, 0) || value != math.Trunc(value) {
+		return 0, false
+	}
+	if value < float64(min) || value > float64(max) {
+		return 0, false
+	}
+	return int64(value), true
+}
+
+// jsDecimalEnvPattern is the ECMAScript StrDecimalLiteral grammar (without the
+// Infinity alternative, which is handled separately). It is deliberately
+// narrower than Go's number syntax: Number("inf"), Number("nan"),
+// Number("0x1p3") and Number("1_000") are all NaN.
+var jsDecimalEnvPattern = regexp.MustCompile(`^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$`)
+
+// jsEnvNumber mirrors JavaScript's Number(string) for environment values.
+//
+// It validates against the ECMAScript grammar instead of calling
+// strconv.ParseFloat directly, because ParseFloat also accepts "inf", "nan",
+// hexadecimal floats and digit separators that Number() rejects.
+func jsEnvNumber(raw string) float64 {
+	trimmed := jsTrimEnvSpace(raw)
+	if trimmed == "" {
+		return 0
+	}
+	switch strings.ToLower(trimmed) {
+	case "infinity", "+infinity":
+		return math.Inf(1)
+	case "-infinity":
+		return math.Inf(-1)
+	}
+	if len(trimmed) > 2 && trimmed[0] == '0' {
+		switch trimmed[1] {
+		case 'x', 'X':
+			return jsRadixInteger(trimmed[2:], 16)
+		case 'o', 'O':
+			return jsRadixInteger(trimmed[2:], 8)
+		case 'b', 'B':
+			return jsRadixInteger(trimmed[2:], 2)
+		}
+	}
+	if !jsDecimalEnvPattern.MatchString(trimmed) {
+		return math.NaN()
+	}
+	value, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil {
+		var numErr *strconv.NumError
+		if errors.As(err, &numErr) && numErr.Err == strconv.ErrRange {
+			// Number("1e999") is Infinity, not an error.
+			return value
+		}
+		return math.NaN()
+	}
+	return value
+}
+
+// jsRadixInteger mirrors Number() for the 0x/0o/0b integer literal forms. An
+// empty or malformed literal is NaN; a literal too large for uint64 saturates to
+// a large finite double (Number() returns the nearest double, never Infinity,
+// and every caller compares against a far smaller window).
+func jsRadixInteger(digits string, base int) float64 {
+	if digits == "" {
+		return math.NaN()
+	}
+	for _, r := range digits {
+		if envDigitValue(r) >= base {
+			return math.NaN()
+		}
+	}
+	value, err := strconv.ParseUint(digits, base, 64)
+	if err != nil {
+		return float64(^uint64(0))
+	}
+	return float64(value)
+}
+
+// envDigitValue returns the digit value of one ASCII character, or 16 for a
+// character that is not a digit in any supported base.
+func envDigitValue(r rune) int {
+	switch {
+	case r >= '0' && r <= '9':
+		return int(r - '0')
+	case r >= 'a' && r <= 'f':
+		return int(r-'a') + 10
+	case r >= 'A' && r <= 'F':
+		return int(r-'A') + 10
+	default:
+		return 16
+	}
+}
+
+// jsTrimEnvSpace mirrors JavaScript's String.prototype.trim, which also strips
+// the U+FEFF byte order mark that unicode.IsSpace does not classify as space.
+func jsTrimEnvSpace(raw string) string {
+	return strings.TrimFunc(raw, func(r rune) bool {
+		return r == '\uFEFF' || strings.ContainsRune(" \t\n\v\f\r\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000", r)
+	})
 }
 
 func stringDefault(value, fallback string) string {
