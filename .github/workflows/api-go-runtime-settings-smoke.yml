@@ -1,0 +1,778 @@
+# 平台运行时与治理设置的 18 条 Go 路由真实栈验收。不进普通 CI。
+# PR 上加 label api-go-runtime-settings-smoke，或 workflow_dispatch。
+# 覆盖 legacy 代理对照、机器令牌、描述清空、并发创建、非法存量值、
+# Redis 缓存失效、指标聚合、平台管理员门禁，以及停 NestJS 后的接管。
+name: api-go-runtime-settings-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-runtime-settings-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-runtime-settings-smoke@example.com
+  SMTP_PASS: api-go-runtime-settings-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  # 让限流桶足够大，避免验收脚本自身触碰上限（Nest 与 Go 读同一组 env）。
+  RATE_LIMIT_LOGIN: "1000"
+  RATE_LIMIT_LOGIN_WINDOW: "600"
+  RATE_LIMIT_CRAWL_TASK_CREATE: "1000"
+  RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW: "600"
+  RATE_LIMIT_RBAC_WRITE: "1000"
+  RATE_LIMIT_RBAC_WRITE_WINDOW: "600"
+  RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS: "60"
+  AUTH_PROFILE_CACHE_TTL_SECONDS: "600"
+  AUTH_PROFILE_CACHE_LOCK_TTL_MS: "5000"
+  AUTH_PROFILE_CACHE_MAX_WAIT_MS: "5000"
+  AUTH_PROFILE_CACHE_RETRY_DELAY_MS: "50"
+  AUDIT_LOG_RETENTION_DAYS: "90"
+  SEED_ORG_SLUG: api-go-runtime-settings-smoke-org
+  SEED_ORG_NAME: api-go Runtime Settings Smoke Org
+  SEED_ADMIN_EMAIL: api-go-runtime-settings-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: "ApiGoRuntimeSettings#2026-Ci"
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-runtime-settings-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-runtime-settings-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-runtime-settings:ci .
+      - name: Exercise runtime settings routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import datetime, hashlib, json, os, signal, subprocess, threading, time, urllib.error, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+
+          org = "rtst-org-0001"
+          role = "rtst-role-0001"
+          platform_user = "rtst-platform-user-0001"
+          org_admin = "rtst-org-admin-0001"
+          platform_membership = "rtst-mem-platform-0001"
+          org_admin_membership = "rtst-mem-admin-0001"
+          platform_email = "rtst-platform@example.com"
+          org_admin_email = "rtst-org-admin@example.com"
+          machine_token = "mtk_runtime_settings_smoke_allow_0001"
+          denied_machine_token = "mtk_runtime_settings_smoke_deny_0001"
+
+          policy_path = "/api/system-settings/rate-limit-policies"
+          rate_limits_path = "/api/system-settings/rate-limits"
+          auth_cache_path = "/api/system-settings/auth-cache"
+          audit_log_path = "/api/system-settings/audit-log"
+          multi_tenant_path = "/api/system-settings/multi-tenant-schedulers"
+          news_source_path = "/api/system-settings/news-source-scheduler"
+          newsnow_path = "/api/system-settings/newsnow-personalization"
+          newsnow_metrics_path = newsnow_path + "/metrics"
+
+          multi_tenant_key = "multi_tenant_scheduler_runtime_settings"
+          multi_tenant_code = "MULTI_TENANT_SCHEDULER_SETTINGS_INVALID"
+          multi_tenant_message = "Stored multi-tenant scheduler runtime settings are invalid."
+          multi_tenant_detail = "Multi-tenant scheduler concurrency settings must be integers between 1 and 16."
+          news_source_cross_field = "rssAdaptiveWarmHitRatePercent must be less than or equal to rssAdaptiveHotHitRatePercent"
+          platform_admin_message = "Platform admin access required"
+          rss_smoke_key = "news-source:rss:smoke-test"
+
+          setting_keys = (
+              "rate_limit_login",
+              "rate_limit_crawl_create",
+              "rate_limit_rbac_write",
+              "auth_profile_cache_settings",
+              "multi_tenant_scheduler_runtime_settings",
+              "news_source_scheduler_settings",
+              "newsnow_personalization_settings",
+          )
+
+          today_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+          metrics_key = "newsnow:personalization:metrics:v1:" + today_utc
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def container_id(ancestor):
+              return subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor], text=True).split()[0]
+
+          def sql(statement):
+              cid = container_id("mysql:8.4")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"],
+                                    input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          def redis(*args):
+              cid = container_id("redis:7.2")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "redis-cli", "--raw", *args],
+                                    text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=30):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              return json.loads(text)
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+          def login(email):
+              status, raw = call(nest, "/api/auth/login", "POST",
+                                 payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:400]!r}")
+              return doc["accessToken"]
+
+          def rate_limits_body():
+              return {
+                  "login": {"limit": 900, "windowSeconds": 600},
+                  "crawlCreate": {"limit": 900, "windowSeconds": 600},
+                  "rbacWrite": {"limit": 900, "windowSeconds": 600},
+              }
+
+          def auth_cache_body():
+              return {
+                  "profileTtlSeconds": 600,
+                  "lockTtlMs": 5000,
+                  "maxWaitMs": 5000,
+                  "retryDelayMs": 50,
+              }
+
+          def multi_tenant_body():
+              return {
+                  "realtimeSignalsOrgConcurrency": 4,
+                  "newsEventsTimelineOrgConcurrency": 2,
+                  "newsEventsIngestionOrgConcurrency": 4,
+                  "knowledgeGraphIngestionOrgConcurrency": 4,
+                  "sentimentSnapshotOrgConcurrency": 2,
+                  "newsnowHottestAnalysisOrgConcurrency": 6,
+                  "classificationQualityAlertOrgConcurrency": 4,
+                  "newsIndicatorAssociationOrgConcurrency": 2,
+                  "crawlQualityTaskSnapshotOrgConcurrency": 2,
+                  "situationMonitorOrefDefaultRuleOrgConcurrency": 16,
+                  "userDigestDeliveryOrgConcurrency": 4,
+              }
+
+          def news_source_body(warm=25, hot=60):
+              return {
+                  "seedFreshnessWindowDays": 365,
+                  "seedCacheTtlSecondsSitemapRss": 60,
+                  "seedCacheTtlSecondsListDeep": 180,
+                  "seedCacheTtlForceGlobal": False,
+                  "seedUrlQueryParamAllowlist": [
+                      "id", "story", "article", "post", "item", "p",
+                      "page", "v", "ver", "lang", "locale", "hl",
+                  ],
+                  "rssAdaptiveHotHitRatePercent": hot,
+                  "rssAdaptiveWarmHitRatePercent": warm,
+                  "rssAdaptiveColdConsecutiveNoHitRuns": 4,
+                  "rssAdaptiveHotIntervalSeconds": 30,
+                  "rssAdaptiveWarmIntervalDivisor": 2,
+                  "rssAdaptiveWarmMinIntervalSeconds": 30,
+                  "rssAdaptiveColdIntervalMultiplier": 2,
+                  "rssAdaptiveColdMaxIntervalSeconds": 3600,
+                  "rssAdaptiveHotDiscoveryCacheTtlCapSeconds": 30,
+                  "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": 60,
+              }
+
+          def newsnow_body():
+              return {
+                  "cacheTtlMs": 20000,
+                  "maxCacheEntries": 2000,
+                  "throttleWindowMs": 10000,
+                  "maxRequestsPerWindowPerUser": 40,
+                  "affinitySourceWeight": 0.42,
+                  "behaviorSourceWeight": 0.58,
+                  "focusSourceBonus": 0.35,
+                  "staleTtlStrategy": "multiplier",
+                  "staleTtlMultiplier": 3,
+                  "staleTtlFixedMs": 60000,
+              }
+
+          time_fields = {"createdAt", "updatedAt"}
+
+          def canon(value):
+              if isinstance(value, dict):
+                  return {key: canon(item) for key, item in sorted(value.items()) if key not in time_fields}
+              if isinstance(value, list):
+                  items = [canon(item) for item in value]
+                  if items and all(isinstance(item, dict) and "feature" in item for item in items):
+                      items.sort(key=lambda item: item["feature"])
+                  return items
+              return value
+
+          def parity(label, method, path, token, payload=None, expected=200):
+              nest_status, nest_raw = call(nest, path, method, token, payload)
+              go_status, go_raw = call(go, path, method, token, payload)
+              if nest_status != expected or go_status != expected:
+                  fail(f"legacy parity {label}: status nest={nest_status} go={go_status}, want {expected}; "
+                       f"nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
+              if canon(body(nest_raw)) != canon(body(go_raw)):
+                  fail(f"legacy parity {label}: body mismatch nest={nest_raw[:600]!r} go={go_raw[:600]!r}")
+              print("legacy parity ok:", label)
+
+          def parity_write(label, method, path, token, payload, expected=200):
+              nest_status, nest_raw = call(nest, path, method, token, payload)
+              go_status, go_raw = call(go, path, method, token, payload)
+              if nest_status != expected or go_status != expected:
+                  fail(f"legacy parity {label}: status nest={nest_status} go={go_status}, want {expected}; "
+                       f"nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
+              if canon(body(nest_raw)) != canon(body(go_raw)):
+                  fail(f"legacy parity {label}: body mismatch nest={nest_raw[:600]!r} go={go_raw[:600]!r}")
+              print("legacy parity ok:", label)
+
+          def delete_policy(feature):
+              sql(f"DELETE FROM RateLimitPolicy WHERE feature='{feature}'")
+              redis("DEL", "rate_limit_policy:" + feature)
+
+          def seed_policy(feature, description="seed"):
+              delete_policy(feature)
+              sql(f"INSERT INTO RateLimitPolicy "
+                  f"(feature, userLimit, ipLimit, windowSeconds, enabled, description, createdAt, updatedAt, updatedById) "
+                  f"VALUES ('{feature}', 10, 20, 60, 1, '{description}', NOW(3), NOW(3), NULL)")
+
+          def setting_keys_sql():
+              return ", ".join("'" + key + "'" for key in setting_keys)
+
+          def start_go(runtime_mode):
+              subprocess.run(["docker", "rm", "-f", "api-go-runtime-settings-smoke"], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  f"API_GO_RUNTIME_SETTINGS_MODE={runtime_mode}",
+                  "API_GO_RBAC_MODE=legacy",
+                  "API_GO_CRAWL_PROFILES_MODE=legacy",
+                  "API_GO_CRAWL_TEMPLATES_MODE=legacy",
+                  "API_GO_CRAWL_WORKFLOWS_MODE=legacy",
+                  "API_GO_NEWS_SOURCES_MODE=legacy",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy",
+                  "API_GO_GRAPHQL_KG_IMPACT_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "API_GO_ADMIN_LOGS_MODE=legacy",
+                  "API_GO_LLM_LOGS_MODE=legacy",
+                  "API_GO_NEWS_INDICATORS_MODE=legacy",
+                  "API_GO_QUALITY_OVERVIEW_MODE=legacy",
+                  "RATE_LIMIT_LOGIN=1000",
+                  "RATE_LIMIT_LOGIN_WINDOW=600",
+                  "RATE_LIMIT_CRAWL_TASK_CREATE=1000",
+                  "RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW=600",
+                  "RATE_LIMIT_RBAC_WRITE=1000",
+                  "RATE_LIMIT_RBAC_WRITE_WINDOW=600",
+                  "RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS=60",
+                  "AUTH_PROFILE_CACHE_TTL_SECONDS=600",
+                  "AUTH_PROFILE_CACHE_LOCK_TTL_MS=5000",
+                  "AUTH_PROFILE_CACHE_MAX_WAIT_MS=5000",
+                  "AUTH_PROFILE_CACHE_RETRY_DELAY_MS=50",
+                  "AUDIT_LOG_RETENTION_DAYS=90",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  f"JWT_SECRET={os.environ['JWT_SECRET']}",
+                  f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
+                  f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
+              ]
+              cmd = ["docker", "run", "-d", "--name", "api-go-runtime-settings-smoke",
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append("api-go-runtime-settings:ci")
+              subprocess.check_call(cmd)
+              for _ in range(30):
+                  status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}",
+                                                    "api-go-runtime-settings-smoke"], text=True).strip()
+                  print("health", status, "runtimeSettingsMode", runtime_mode)
+                  if status == "healthy":
+                      return
+                  if status == "unhealthy":
+                      fail(subprocess.check_output(["docker", "logs", "api-go-runtime-settings-smoke"], text=True)[-4000:])
+                  time.sleep(2)
+              fail(subprocess.check_output(["docker", "logs", "api-go-runtime-settings-smoke"], text=True)[-4000:])
+
+          def machine_write_checks(base, suffix, token, tag):
+              feature = "smoke.machine." + suffix
+              delete_policy(feature)
+              steps = [
+                  ("POST", policy_path,
+                   {"feature": feature, "userLimit": 10, "ipLimit": 20, "windowSeconds": 60,
+                    "enabled": True, "description": "machine"}, 201, "create policy"),
+                  ("PUT", rate_limits_path, rate_limits_body(), 200, "rate-limits"),
+                  ("PUT", auth_cache_path, auth_cache_body(), 200, "auth-cache"),
+                  ("PUT", multi_tenant_path, multi_tenant_body(), 200, "multi-tenant-schedulers"),
+                  ("PUT", news_source_path, news_source_body(), 200, "news-source-scheduler"),
+                  ("PUT", newsnow_path, newsnow_body(), 200, "newsnow-personalization"),
+              ]
+              for method, path, payload, expected, label in steps:
+                  status, raw = call(base, path, method, token, payload)
+                  if status != expected:
+                      fail(f"{tag} machine {label}: {method} {path} -> {status} {raw[:400]!r}, want {expected}")
+              keys = setting_keys_sql()
+              if scalar(f"SELECT COUNT(*) FROM SystemSetting WHERE `key` IN ({keys})") != "7":
+                  fail(f"{tag}: machine writes did not create all 7 SystemSetting rows")
+              if scalar(f"SELECT COUNT(*) FROM SystemSetting WHERE `key` IN ({keys}) AND updatedById IS NULL") != "7":
+                  fail(f"{tag}: machine writes persisted a non-null SystemSetting.updatedById")
+              if scalar(f"SELECT COUNT(*) FROM RateLimitPolicy WHERE feature='{feature}' AND updatedById IS NULL") != "1":
+                  fail(f"{tag}: machine create persisted a non-null RateLimitPolicy.updatedById")
+              if call(base, policy_path, "GET", denied_machine_token)[0] != 403:
+                  fail(f"{tag}: machine token without settings.manage was not 403")
+              print("machine token writes ok:", tag)
+
+          def description_checks(base, suffix, token, tag):
+              feature = "smoke.desc." + suffix
+              delete_policy(feature)
+              create_payload = {"feature": feature, "userLimit": 10, "ipLimit": 20, "windowSeconds": 60,
+                                "enabled": True, "description": "initial"}
+              status, raw = call(base, policy_path, "POST", token, create_payload)
+              if status != 201 or (body(raw) or {}).get("description") != "initial":
+                  fail(f"{tag} description create: {status} {raw[:400]!r}")
+              status, raw = call(base, policy_path + "/" + feature, "PUT", token, {"description": "   "})
+              if status != 200:
+                  fail(f"{tag} description clear PUT: {status} {raw[:400]!r}")
+              status, raw = call(base, policy_path + "/" + feature, "GET", token)
+              doc = body(raw) or {}
+              if status != 200:
+                  fail(f"{tag} description clear GET: {status} {raw[:400]!r}")
+              if "description" in doc:
+                  fail(f"{tag} description clear: response still has description key: {doc}")
+              if scalar(f"SELECT COUNT(*) FROM RateLimitPolicy WHERE feature='{feature}' AND description IS NULL") != "1":
+                  fail(f"{tag} description clear: DB description is not NULL")
+              print("description clearing ok:", tag)
+
+          def concurrent_checks(base, suffix, token, tag):
+              feature = "smoke.concurrent." + suffix
+              delete_policy(feature)
+              payload = {"feature": feature, "userLimit": 10, "ipLimit": 20, "windowSeconds": 60,
+                         "enabled": True, "description": "concurrent"}
+              results = {}
+              barrier = threading.Barrier(2)
+
+              def worker(index):
+                  try:
+                      barrier.wait(timeout=15)
+                      results[index] = call(base, policy_path, "POST", token, payload)
+                  except Exception as exc:  # noqa: BLE001
+                      results[index] = (0, repr(exc).encode())
+
+              threads = [threading.Thread(target=worker, args=(0,)), threading.Thread(target=worker, args=(1,))]
+              for thread in threads:
+                  thread.start()
+              for thread in threads:
+                  thread.join()
+              statuses = sorted(status for status, _ in results.values())
+              if statuses != [201, 409]:
+                  fail(f"{tag} concurrent create: statuses {statuses} {[raw[:200] for _, raw in results.values()]}, want [201, 409]")
+              conflict_raw = [raw for status, raw in results.values() if status == 409][0]
+              expected = f"Rate limit policy already exists for {feature}"
+              if message(conflict_raw) != expected:
+                  fail(f"{tag} concurrent create: 409 message {message(conflict_raw)!r}, want {expected!r}")
+              if scalar(f"SELECT COUNT(*) FROM RateLimitPolicy WHERE feature='{feature}'") != "1":
+                  fail(f"{tag} concurrent create: expected exactly one row")
+              print("concurrent create ok:", tag)
+
+          def multi_tenant_invalid_checks(base, token, tag):
+              invalid_value = '{"newsEventsIngestionOrgConcurrency": 99}'
+              sql(f"REPLACE INTO SystemSetting (`key`, value, isPublic, createdAt, updatedAt, updatedById) "
+                  f"VALUES ('{multi_tenant_key}', '{invalid_value}', 0, NOW(3), NOW(3), NULL)")
+              status, raw = call(base, multi_tenant_path, "GET", token)
+              doc = body(raw) or {}
+              if status != 409 or doc.get("code") != multi_tenant_code or doc.get("message") != multi_tenant_message \
+                      or doc.get("detail") != multi_tenant_detail:
+                  fail(f"{tag} invalid multi-tenant row: {status} {raw[:600]!r}")
+              valid_value = '{"newsEventsIngestionOrgConcurrency": 4}'
+              sql(f"REPLACE INTO SystemSetting (`key`, value, isPublic, createdAt, updatedAt, updatedById) "
+                  f"VALUES ('{multi_tenant_key}', '{valid_value}', 0, NOW(3), NOW(3), NULL)")
+              status, raw = call(base, multi_tenant_path, "GET", token)
+              doc = body(raw) or {}
+              if status != 200 or doc.get("source") != "db" or doc.get("newsEventsIngestionOrgConcurrency") != 4:
+                  fail(f"{tag} restored multi-tenant row: {status} {raw[:400]!r}")
+              print("multi-tenant invalid/restore ok:", tag)
+
+          def news_source_checks(base, token, tag):
+              redis("DEL", rss_smoke_key)
+              status, raw = call(base, news_source_path, "PUT", token, news_source_body(warm=80, hot=60))
+              if status != 400 or message(raw) != news_source_cross_field:
+                  fail(f"{tag} news-source cross-field: {status} {raw[:500]!r}")
+              redis("SET", rss_smoke_key, "1")
+              if redis("EXISTS", rss_smoke_key) != "1":
+                  fail(f"{tag} news-source: failed to seed Redis test key")
+              status, raw = call(base, news_source_path, "PUT", token, news_source_body())
+              if status != 200:
+                  fail(f"{tag} news-source valid PUT: {status} {raw[:400]!r}")
+              if redis("EXISTS", rss_smoke_key) != "0":
+                  fail(f"{tag} news-source valid PUT did not delete news-source:rss: keys")
+              print("news-source cross-field + redis invalidation ok:", tag)
+
+          def metrics_checks(base, token, tag):
+              current_day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+              status, raw = call(base, newsnow_metrics_path + "?days=7", "GET", token)
+              doc = body(raw) or {}
+              if status != 200:
+                  fail(f"{tag} metrics: {status} {raw[:400]!r}")
+              if doc.get("windowDays") != 7:
+                  fail(f"{tag} metrics windowDays: {doc.get('windowDays')!r}")
+              rows = doc.get("rows") or []
+              if len(rows) != 7 or rows[-1].get("date") != current_day:
+                  fail(f"{tag} metrics rows: count={len(rows)} last={rows[-1] if rows else None}, today={current_day}")
+              totals = doc.get("totals") or {}
+              if totals.get("requestCount") != 10:
+                  fail(f"{tag} metrics requestCount: {totals.get('requestCount')!r}")
+              if totals.get("cacheHitTotalCount") != 8:
+                  fail(f"{tag} metrics cacheHitTotalCount: {totals.get('cacheHitTotalCount')!r}")
+              if totals.get("cacheHitFreshCount") != 6 or totals.get("cacheHitStaleCount") != 2:
+                  fail(f"{tag} metrics fresh/stale: {totals!r}")
+              if totals.get("throttleLimitedCount") != 1:
+                  fail(f"{tag} metrics throttleLimitedCount: {totals.get('throttleLimitedCount')!r}")
+              hit_rate = totals.get("cacheHitRate")
+              throttle_rate = totals.get("throttleRate")
+              if hit_rate is None or abs(float(hit_rate) - 0.8) > 1e-9:
+                  fail(f"{tag} metrics cacheHitRate: {hit_rate!r}")
+              if throttle_rate is None or abs(float(throttle_rate) - 0.1) > 1e-9:
+                  fail(f"{tag} metrics throttleRate: {throttle_rate!r}")
+              print("newsnow metrics ok:", tag)
+
+          def platform_gate_checks(base, token, tag):
+              sql(f"DELETE FROM GlobalRoleAssignment WHERE userId='{org_admin}'")
+              status, raw = call(base, audit_log_path, "PUT", token, {"retentionDays": 30})
+              if status != 403 or message(raw) != platform_admin_message:
+                  fail(f"{tag} audit-log without platform admin: {status} {raw[:400]!r}")
+              sql(f"INSERT INTO GlobalRoleAssignment (id, userId, role, createdAt) "
+                  f"VALUES ('rtst-gra-normal-0001', '{org_admin}', 'platform_admin', NOW(3))")
+              status, raw = call(base, audit_log_path, "PUT", token, {"retentionDays": 30})
+              doc = body(raw) or {}
+              if status != 200 or doc.get("retentionDays") != 30:
+                  fail(f"{tag} audit-log with platform admin: {status} {raw[:400]!r}")
+              print("audit-log platform admin gate ok:", tag)
+
+          # ---- 数据准备：隔离组织、平台管理员、普通组织管理员、两个机器令牌 ----
+          admin = scalar(f"SELECT id FROM User WHERE email='{os.environ['SEED_ADMIN_EMAIL']}'")
+          settings_perm = scalar("SELECT id FROM Permission WHERE name='settings.manage'")
+          if not admin or not settings_perm:
+              fail(f"missing seed rows admin={admin} settings={settings_perm}")
+
+          sql(f"""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('{org}', 'Runtime Settings Smoke Org', 'rtst-smoke-org', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, description, isSystem, orgId) VALUES
+            ('{role}', 'runtime-settings-smoke', NULL, 0, '{org}');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('rtst-rp-settings-0001', '{role}', '{settings_perm}');
+          """)
+          for user_id, email, membership_id in (
+              (platform_user, platform_email, platform_membership),
+              (org_admin, org_admin_email, org_admin_membership),
+          ):
+              sql(f"""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '{admin}';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('{membership_id}', '{user_id}', '{org}', '{role}', 1, NOW(3));
+              """)
+          sql(f"""
+          INSERT INTO GlobalRoleAssignment (id, userId, role, createdAt)
+          VALUES ('rtst-gra-platform-0001', '{platform_user}', 'platform_admin', NOW(3));
+          """)
+          allow_hash = hashlib.sha256(machine_token.encode()).hexdigest()
+          deny_hash = hashlib.sha256(denied_machine_token.encode()).hexdigest()
+          sql(f"""
+          INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, lastUsedAt, expiresAt, revokedAt, createdAt, updatedAt)
+          VALUES
+            ('rtst-mtok-allow-0001', '{org}', 'allow', '{allow_hash}', '["settings.manage"]', NULL, NULL, NULL, NOW(3), NOW(3)),
+            ('rtst-mtok-deny-0001', '{org}', 'deny', '{deny_hash}', '["org.read"]', NULL, NULL, NULL, NOW(3), NOW(3));
+          """)
+          redis("DEL", metrics_key)
+          redis("HSET", metrics_key,
+                "requestCount", "10",
+                "cacheHitFreshCount", "6",
+                "cacheHitStaleCount", "2",
+                "throttleLimitedCount", "1")
+
+          # ---- 阶段 1：开关 legacy，18 条全部经 Go 代理并与 Nest 直连逐项一致 ----
+          start_go("legacy")
+          platform_token = login(platform_email)
+          org_admin_token = login(org_admin_email)
+
+          seed_policy("smoke.parity.item", "seed")
+
+          # 1/2. 集合与单条 GET。
+          parity("GET /rate-limit-policies", "GET", policy_path, org_admin_token)
+          parity("GET /rate-limit-policies/:feature", "GET", policy_path + "/smoke.parity.item", org_admin_token)
+
+          # 3. POST 同 payload：Nest 先建，SQL 清理后再让 Go 代理建，比较响应体。
+          create_feature = "smoke.parity.create"
+          create_payload = {"feature": create_feature, "userLimit": 12, "ipLimit": 34,
+                            "windowSeconds": 120, "enabled": True, "description": " created "}
+          delete_policy(create_feature)
+          nest_status, nest_raw = call(nest, policy_path, "POST", org_admin_token, create_payload)
+          if nest_status != 201:
+              fail(f"legacy parity POST create nest: {nest_status} {nest_raw[:400]!r}")
+          delete_policy(create_feature)
+          go_status, go_raw = call(go, policy_path, "POST", org_admin_token, create_payload)
+          if go_status != 201:
+              fail(f"legacy parity POST create go: {go_status} {go_raw[:400]!r}")
+          if canon(body(nest_raw)) != canon(body(go_raw)):
+              fail(f"legacy parity POST create body mismatch nest={nest_raw[:600]!r} go={go_raw[:600]!r}")
+          print("legacy parity ok: POST /rate-limit-policies")
+
+          # 4. PUT 同 payload。
+          update_feature = "smoke.parity.update"
+          seed_policy(update_feature, "before")
+          parity_write("PUT /rate-limit-policies/:feature", "PUT", policy_path + "/" + update_feature,
+                       org_admin_token, {"description": " after ", "userLimit": 11, "enabled": False})
+
+          # 5. DELETE 同 payload：Nest 删完补回同一行，再让 Go 代理删，比较响应体。
+          delete_feature = "smoke.parity.delete"
+          seed_policy(delete_feature, "before")
+          nest_status, nest_raw = call(nest, policy_path + "/" + delete_feature, "DELETE", org_admin_token)
+          if nest_status != 200:
+              fail(f"legacy parity DELETE nest: {nest_status} {nest_raw[:400]!r}")
+          seed_policy(delete_feature, "before")
+          go_status, go_raw = call(go, policy_path + "/" + delete_feature, "DELETE", org_admin_token)
+          if go_status != 200:
+              fail(f"legacy parity DELETE go: {go_status} {go_raw[:400]!r}")
+          if canon(body(nest_raw)) != canon(body(go_raw)):
+              fail(f"legacy parity DELETE body mismatch nest={nest_raw[:600]!r} go={go_raw[:600]!r}")
+          print("legacy parity ok: DELETE /rate-limit-policies/:feature")
+
+          # 6-18. 其余 13 条（含 metrics）逐条对照。
+          parity("GET /rate-limits", "GET", rate_limits_path, org_admin_token)
+          parity_write("PUT /rate-limits", "PUT", rate_limits_path, org_admin_token, rate_limits_body())
+          parity("GET /auth-cache", "GET", auth_cache_path, org_admin_token)
+          parity_write("PUT /auth-cache", "PUT", auth_cache_path, org_admin_token, auth_cache_body())
+          parity("GET /audit-log", "GET", audit_log_path, platform_token)
+          parity_write("PUT /audit-log", "PUT", audit_log_path, platform_token, {"retentionDays": 30})
+          parity("GET /multi-tenant-schedulers", "GET", multi_tenant_path, org_admin_token)
+          parity_write("PUT /multi-tenant-schedulers", "PUT", multi_tenant_path, org_admin_token, multi_tenant_body())
+          parity("GET /news-source-scheduler", "GET", news_source_path, org_admin_token)
+          parity_write("PUT /news-source-scheduler", "PUT", news_source_path, org_admin_token, news_source_body())
+          parity("GET /newsnow-personalization", "GET", newsnow_path, org_admin_token)
+          parity("GET /newsnow-personalization/metrics", "GET", newsnow_metrics_path + "?days=7", org_admin_token)
+          parity_write("PUT /newsnow-personalization", "PUT", newsnow_path, org_admin_token, newsnow_body())
+
+          # ---- 阶段 1 的 9 项覆盖：Nest 直连与 legacy Go 代理各跑一遍 ----
+          machine_write_checks(nest, "p1.nest", machine_token, "legacy nest")
+          machine_write_checks(go, "p1.go", machine_token, "legacy go proxy")
+          for base, suffix, tag in ((nest, "p1.nest", "legacy nest"), (go, "p1.go", "legacy go proxy")):
+              description_checks(base, suffix, org_admin_token, tag)
+              concurrent_checks(base, suffix, org_admin_token, tag)
+              multi_tenant_invalid_checks(base, org_admin_token, tag)
+              news_source_checks(base, org_admin_token, tag)
+              metrics_checks(base, org_admin_token, tag)
+              platform_gate_checks(base, org_admin_token, tag)
+          print("legacy phase ok")
+
+          # ---- 阶段 2：先取平台管理员 JWT（Nest 仍在运行），再切 go 模式 ----
+          alive = login(platform_email)
+          start_go("go")
+          machine_write_checks(nest, "p2.nest", machine_token, "go-mode nest")
+          machine_write_checks(go, "p2.go", machine_token, "go-mode go")
+          for base, suffix, tag in ((nest, "p2.nest", "go-mode nest"), (go, "p2.go", "go-mode go")):
+              description_checks(base, suffix, org_admin_token, tag)
+              concurrent_checks(base, suffix, org_admin_token, tag)
+              multi_tenant_invalid_checks(base, org_admin_token, tag)
+              news_source_checks(base, org_admin_token, tag)
+              metrics_checks(base, org_admin_token, tag)
+              platform_gate_checks(base, org_admin_token, tag)
+          print("go takeover phase ok")
+
+          # ---- 阶段 3：停 NestJS；18 条仍由 Go 服务，未迁路径 502（JWT 已在阶段 2 取得）----
+          seed_policy("smoke.takeover.item", "takeover")
+          delete_policy("smoke.takeover.write")
+
+          if os.path.exists("/tmp/api-nestjs.pid"):
+              os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+          subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+          subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+          stopped = False
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  stopped = True
+                  break
+              time.sleep(1)
+          if not stopped:
+              fail("nestjs did not stop")
+
+          def takeover(method, path, token, payload=None, expected=200):
+              status, raw = call(go, path, method, token, payload)
+              if status != expected:
+                  fail(f"after nest stop {method} {path}: {status} {raw[:400]!r}, want {expected}")
+              return body(raw)
+
+          takeover("GET", policy_path, alive)
+          takeover("GET", policy_path + "/smoke.takeover.item", alive)
+          takeover("POST", policy_path, alive,
+                   {"feature": "smoke.takeover.write", "userLimit": 10, "ipLimit": 20,
+                    "windowSeconds": 60, "enabled": True, "description": "takeover"}, 201)
+          takeover("PUT", policy_path + "/smoke.takeover.write", alive, {"description": "takeover"})
+          takeover("DELETE", policy_path + "/smoke.takeover.write", alive)
+          takeover("GET", rate_limits_path, alive)
+          takeover("PUT", rate_limits_path, machine_token, rate_limits_body())
+          takeover("GET", auth_cache_path, alive)
+          takeover("PUT", auth_cache_path, machine_token, auth_cache_body())
+          takeover("GET", audit_log_path, alive)
+          takeover("PUT", audit_log_path, alive, {"retentionDays": 45})
+          takeover("GET", multi_tenant_path, alive)
+          takeover("PUT", multi_tenant_path, machine_token, multi_tenant_body())
+          takeover("GET", news_source_path, machine_token)
+          takeover("PUT", news_source_path, machine_token, news_source_body())
+          takeover("GET", newsnow_path, machine_token)
+          takeover("GET", newsnow_metrics_path + "?days=7", machine_token)
+          takeover("PUT", newsnow_path, machine_token, newsnow_body())
+
+          status, raw = call(go, "/api/system-settings/security", "GET", alive)
+          if status != 502 or (body(raw) or {}).get("statusCode") != 502:
+              fail(f"unmigrated /api/system-settings/security after nest stop: {status} {raw[:400]!r}")
+          print("nest stopped; 18 runtime settings routes still served; /api/system-settings/security stays on Nest (502)")
+          PY
