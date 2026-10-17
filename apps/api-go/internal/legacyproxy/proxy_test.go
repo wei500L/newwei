@@ -1366,6 +1366,37 @@ func TestGraphQLReadGoRoutesExactMethodsOnly(t *testing.T) {
 	assertVia(http.MethodPut, "/graphql", "legacy")
 }
 
+// TestNewsnowClusteringOpsServesGoAndFallsBackToLegacy is the end-to-end
+// companion of the pure route-table tests: with the takeover on and a handler
+// registered under NewsnowClusteringOpsKey, the nine migrated routes are served
+// by Go while the source-fetching NewsNow routes, llm-backfill and every
+// unmatched method or path still reach the NestJS upstream.
+func TestNewsnowClusteringOpsServesGoAndFallsBackToLegacy(t *testing.T) {
+	stub := newLegacyStub(t)
+	gateway, err := New(stub.server.URL, WithNewsnowClusteringOps(DefaultRules(ModeShadow, ""), "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway.RegisterGoHandler(NewsnowClusteringOpsKey, func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"via": "go"})
+	})
+	assertVia := func(method, path, want string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, "http://gateway"+path, nil)
+		gateway.ServeHTTP(rec, req)
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("%s %s body = %s, want %s", method, path, rec.Body.String(), want)
+		}
+	}
+	for _, tc := range newsnowClusteringOpsRoutes() {
+		assertVia(tc.method, tc.path, `"via":"go"`)
+	}
+	for _, tc := range newsnowClusteringOpsNestRoutes() {
+		assertVia(tc.method, tc.path, "legacy")
+	}
+}
+
 // TestCrawlReadTelemetryRoutingAtGateway exercises the real gateway dispatch:
 // in go mode the seven migrated routes must be served natively while the crawl
 // write queue, metadata extraction and crawl4ai queue admin keep proxying to

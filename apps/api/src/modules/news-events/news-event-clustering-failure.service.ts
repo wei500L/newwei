@@ -525,13 +525,53 @@ export class NewsEventClusteringFailureService {
 
     const startedAt = new Date();
     const nextAttemptCount = Math.max(0, Number(row.attemptCount ?? 0)) + 1;
+
+    // Atomically claim the group before touching any NewsEvent. The
+    // { status: "pending" } predicate is the lock: two concurrent
+    // POST …/vector-backfill calls both pass the status check above, but only
+    // one wins this compare-and-set, so the same batch of articles can never be
+    // assigned twice. Without it the loser would also reach the loop and create
+    // duplicate events for every item.
+    const claimed = await NewsEventClusteringFailureModel.findOneAndUpdate(
+      {
+        orgId,
+        groupId,
+        status: "pending",
+      },
+      {
+        $set: {
+          status: "processing",
+          lastAttemptAt: startedAt,
+          attemptCount: nextAttemptCount,
+        },
+      },
+      { new: true },
+    )
+      .lean()
+      .exec()
+
+    if (!claimed) {
+      // Lost the race: classify the current state so the caller gets the exact
+      // NestJS status/message pair instead of a generic conflict.
+      const current = await this.getFailureGroupOrThrow(orgId, groupId);
+      if (current.status === "processing") {
+        throw new BadRequestException("Failure group is already processing");
+      }
+      if (current.status === "resolved" || current.status === "ignored") {
+        throw new BadRequestException(
+          "Failure group can no longer be recovered",
+        );
+      }
+      throw new BadRequestException("Failure group is already processing");
+    }
+
     try {
       const settings = await this.settings.getSettings(orgId);
       const resolvedEventIds = new Set<string>();
       let assignedCount = 0;
       let skippedCount = 0;
 
-      const items = Array.isArray(row.items) ? row.items : [];
+      const items = Array.isArray(claimed.items) ? claimed.items : [];
       for (const item of items) {
         const signal = this.toSignal(item);
         const result = await this.events.assignNewsSignalToEvent(
@@ -550,18 +590,18 @@ export class NewsEventClusteringFailureService {
       }
 
       const resolvedAt = new Date();
+      // attemptCount and lastAttemptAt were already advanced by the claim, so
+      // the completion update only records the outcome.
       await NewsEventClusteringFailureModel.updateOne(
         { orgId, groupId },
         {
           $set: {
             status: "resolved",
-            attemptCount: nextAttemptCount,
-            lastAttemptAt: startedAt,
             lastError: null,
             activeJobId: null,
             progressProcessedCount: items.length,
             progressTotalCount: items.length,
-            lastRecoveryModel: row.lastRecoveryModel ?? null,
+            lastRecoveryModel: claimed.lastRecoveryModel ?? null,
             resolvedAt,
             resolvedById: actorId,
             resolutionMode: "vector_backfill",
@@ -594,13 +634,13 @@ export class NewsEventClusteringFailureService {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Vector backfill failed";
+      // Release the claim back to pending (the attempt counter stays advanced)
+      // so an operator can retry the group.
       await NewsEventClusteringFailureModel.updateOne(
         { orgId, groupId },
         {
           $set: {
             status: "pending",
-            attemptCount: nextAttemptCount,
-            lastAttemptAt: startedAt,
             lastError: message,
             activeJobId: null,
           },

@@ -35,7 +35,14 @@ export const columns = {
 } as const
 
 export const fixedColumnIds = ["focus", "hottest", "realtime"] as const satisfies Partial<ColumnID>[]
-export const hiddenColumns = Object.keys(columns).filter(id => !fixedColumnIds.includes(id as any)) as HiddenColumnID[]
+
+// Fixed column ids are the only columns the console always renders, so they are
+// exactly the ones hiddenColumns must exclude. Both sets are strings, which lets
+// the filter narrow `string` to HiddenColumnID without an `any` cast.
+const fixedColumnIdSet: ReadonlySet<string> = new Set<string>(fixedColumnIds)
+const isHiddenColumnID = (id: string): id is HiddenColumnID => !fixedColumnIdSet.has(id)
+
+export const hiddenColumns = Object.keys(columns).filter(isHiddenColumnID)
 
 export function genMetadata(sources: Record<SourceID, Source>): Metadata {
   return typeSafeObjectFromEntries(typeSafeObjectEntries(columns).map(([k, v]) => {
