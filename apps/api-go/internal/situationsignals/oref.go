@@ -62,7 +62,7 @@ func (s *Service) loadCachedOrefState(ctx context.Context) orefCachedState {
 		var document orefAlertsDocument
 		if err := json.Unmarshal([]byte(alertsRaw), &document); err == nil {
 			if values, ok := document.Alerts.asArray(); ok {
-				state.Alerts = values
+				state.Alerts = wrapRawJSON(values)
 			}
 			// Date.parse(timestamp) || 0: an unparseable timestamp is 0, which the
 			// response then renders as "now".
@@ -79,7 +79,7 @@ func (s *Service) loadCachedOrefState(ctx context.Context) orefCachedState {
 		var document orefHistoryDocument
 		if err := json.Unmarshal([]byte(historyRaw), &document); err == nil {
 			if values, ok := document.History.asArray(); ok {
-				state.History = values
+				state.History = wrapRawJSON(values)
 				state.HistoryCount24h = numberOrZero(document.HistoryCount24h)
 				state.TotalHistoryCount = numberOrZero(document.TotalHistoryCount)
 			}
@@ -163,7 +163,7 @@ func (s *Service) getOrefHistory(ctx context.Context, orgID, userID string) (ore
 			continue
 		}
 		for _, alert := range alerts {
-			candidates = append(candidates, orefHistoryCandidate(alert, entry))
+			candidates = append(candidates, orefHistoryCandidate(rawJSON{raw: alert}, entry))
 		}
 	}
 	matches, err := s.matchCandidates(ctx, orgID, userID, candidates)

@@ -124,9 +124,11 @@ func orefCandidateAreas(fields orefAlertFields) []string {
 	}
 	out := make([]string, 0, len(values))
 	for _, value := range values {
-		if text, ok := value.asString(); ok {
-			out = append(out, text)
+		text, ok := (rawJSON{raw: value}).asString()
+		if !ok {
+			continue
 		}
+		out = append(out, text)
 	}
 	return out
 }

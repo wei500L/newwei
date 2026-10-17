@@ -115,6 +115,17 @@ func (r rawJSON) asString() (string, bool) {
 	return text, true
 }
 
+// wrapRawJSON converts a decoded JSON array into the named pass-through type.
+// encoding/json decodes arrays as []json.RawMessage, while this package models
+// every opaque value as rawJSON so no field ever holds an unnamed element type.
+func wrapRawJSON(values []json.RawMessage) []rawJSON {
+	out := make([]rawJSON, 0, len(values))
+	for _, value := range values {
+		out = append(out, rawJSON{raw: value})
+	}
+	return out
+}
+
 // jsonObjectFields keeps the top-level keys of a JSON object in the order they
 // appeared, mirroring Node's Object.keys insertion order. The order matters for
 // the class-validator message sequence the feedback DTO reproduces.
@@ -225,6 +236,15 @@ func (n jsNumberish) Number() (float64, bool) {
 
 // IsSet reports whether the key existed at all.
 func (n jsNumberish) IsSet() bool { return n.present }
+
+// isJSONNumberZero reports whether the value is the JSON number 0 (a strict
+// `value === 0`, which the string "0" and an absent key do not satisfy).
+func (n jsNumberish) isJSONNumberZero() bool {
+	if !n.present {
+		return false
+	}
+	return (rawJSON{raw: n.raw}).isJSONNumberZero()
+}
 
 // jsStringList decodes a JSON array of strings. Non-array values decode to an
 // empty (nil) slice, mirroring `Array.isArray(value) ? ... : []`.

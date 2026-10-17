@@ -141,7 +141,7 @@ func (s *Service) getRefreshRun(ctx context.Context, orgID, refreshID string) (r
 		return refreshRunResponse{}, errRefreshRunMissing
 	}
 
-	sourceIDs, _ := record.ActiveSourceIDs.Values()
+	sourceIDs := record.ActiveSourceIDs.Values()
 	crawlRaw := record.Crawl
 	crawl := refreshCrawlSummary{}
 	crawlPresent := false
