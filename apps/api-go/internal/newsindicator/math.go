@@ -6,6 +6,7 @@ package newsindicator
 
 import (
 	"math"
+	"sort"
 	"time"
 )
 
@@ -16,19 +17,19 @@ type DailySeries = map[int64]float64
 
 // CorrelationResult 与 TS 的 CorrelationResult 一致。
 type CorrelationResult struct {
-	LagDays     int
-	Correlation float64
-	PValue      float64
-	SampleSize  int
+	LagDays     int     `json:"lagDays"`
+	Correlation float64 `json:"correlation"`
+	PValue      float64 `json:"pValue"`
+	SampleSize  int     `json:"sampleSize"`
 }
 
 // BacktestConfig 与 TS 的 BacktestConfig 一致。
 type BacktestConfig struct {
-	TriggerZScore              float64
-	BaselineDays               int
-	HoldoutDays                int
-	EvaluationTargetStartDayMs int64
-	EvaluationTargetEndDayMs   int64
+	TriggerZScore              float64 `json:"triggerZScore"`
+	BaselineDays               int     `json:"baselineDays"`
+	HoldoutDays                int     `json:"holdoutDays"`
+	EvaluationTargetStartDayMs int64   `json:"evaluationTargetStartDayMs"`
+	EvaluationTargetEndDayMs   int64   `json:"evaluationTargetEndDayMs"`
 }
 
 // BacktestMetrics 与 TS 的 BacktestMetrics 一致。字段名保持 TS 拼写，供
@@ -288,7 +289,7 @@ func RunBacktest(
 	keys := sortedKeys(feature)
 	triggerZScore := clampFloat(config.TriggerZScore, 0, 10)
 	baselineDays := clampIntTrunc(config.BaselineDays, 5, 365)
-	direction := sign(config.Correlation)
+	direction := sign(association.Correlation)
 	evaluationStartDayMs := config.EvaluationTargetStartDayMs
 	evaluationEndDayMs := config.EvaluationTargetEndDayMs
 
@@ -381,16 +382,7 @@ func sortedKeys(series DailySeries) []int64 {
 	for key := range series {
 		keys = append(keys, key)
 	}
-	// 小规模序列（<= 50000 点/指标），插入排序足够且无排序依赖。
-	for i := 1; i < len(keys); i++ {
-		current := keys[i]
-		j := i - 1
-		for j >= 0 && keys[j] > current {
-			keys[j+1] = keys[j]
-			j--
-		}
-		keys[j+1] = current
-	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	return keys
 }
 
