@@ -91,8 +91,16 @@ func stringArrayFromJSON(raw []byte) []string {
 	}
 	out := make([]string, 0, len(entries))
 	for _, entry := range entries {
+		trimmedEntry := bytes.TrimSpace(entry)
+		// json.Unmarshal accepts a JSON null into a string without an error, so
+		// the quoted-string shape is checked first: only entries that are
+		// actually JSON strings survive, exactly like the TypeScript
+		// `typeof entry === "string"` filter.
+		if len(trimmedEntry) == 0 || trimmedEntry[0] != '"' {
+			continue
+		}
 		var text string
-		if err := json.Unmarshal(entry, &text); err == nil {
+		if err := json.Unmarshal(trimmedEntry, &text); err == nil {
 			out = append(out, text)
 		}
 	}
