@@ -38,11 +38,12 @@ func newRowID() (string, error) {
 	return "c" + hex.EncodeToString(buf[:]), nil
 }
 
-// rawPresent reports whether a BSON value is actually stored. The zero
-// bson.RawValue (Type 0) means "the field is absent", which NestJS sees as
-// undefined; BSON null is a stored null.
-func rawPresent(value bson.RawValue) bool {
-	return value.Type != 0 && value.Type != bson.TypeNull && value.Type != bson.TypeUndefined
+// rawStored reports whether a BSON field exists in the document at all. The zero
+// bson.RawValue (Type 0) and BSON undefined mean the key is absent, which NestJS
+// sees as undefined and JSON.stringify drops; an explicit BSON null is stored and
+// must serialize as null.
+func rawStored(value bson.RawValue) bool {
+	return value.Type != 0 && value.Type != bson.TypeUndefined
 }
 
 // rawString mirrors the NestJS readString helper: only a stored string yields a

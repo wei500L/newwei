@@ -17,7 +17,7 @@ type optionalString struct {
 
 // newOptionalString decodes a BSON string field.
 func newOptionalString(value bson.RawValue) optionalString {
-	return optionalString{present: rawPresent(value), value: rawString(value)}
+	return optionalString{present: rawStored(value), value: rawString(value)}
 }
 
 // IsZero reports whether the field is absent; json's omitzero option uses it.
@@ -39,7 +39,7 @@ type optionalNumber struct {
 
 // newOptionalNumber decodes a BSON numeric field.
 func newOptionalNumber(value bson.RawValue) optionalNumber {
-	return optionalNumber{present: rawPresent(value), value: rawNumber(value)}
+	return optionalNumber{present: rawStored(value), value: rawNumber(value)}
 }
 
 // newOptionalNumberFromValue wraps an already computed number as present.
@@ -67,7 +67,7 @@ type optionalTime struct {
 
 // newOptionalTime decodes a BSON date/time-like field.
 func newOptionalTime(value bson.RawValue) optionalTime {
-	return optionalTime{present: rawPresent(value), value: rawTime(value)}
+	return optionalTime{present: rawStored(value), value: rawTime(value)}
 }
 
 // IsZero reports whether the field is absent; json's omitzero option uses it.
