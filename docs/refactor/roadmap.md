@@ -163,3 +163,4 @@
 **canary 契约提醒**：路由表没有任何 ModeCanary 条目；CANARY_PERCENT 是预留配置。把业务路由切到 ModeCanary 之前必须先落地可信身份来源——`cmd/api/main_test.go` 的 TestDefaultRulesHaveNoCanaryRoutes 会在有人提前切换时失败。
 
 - 采集 Frontier 运行监控与取消 11 条 HTTP 迁入 Go（`API_GO_CRAWL_FRONTIER_RUNS_MODE`，默认 `legacy`，回滚只改该变量）；同批修掉取消改写终态运行、无事务无行锁与并发重复记事件的 F1 缺陷（Nest 与 Go 两侧一致），细节见 `docs/refactor/go-crawl-frontier-runs.md`。
+- LLM 网关配置与三路激活 7 条 HTTP 迁入 Go（`API_GO_LLM_GATEWAY_PROFILES_MODE`，默认 `legacy`，回滚只改该变量）：`GET/POST /api/system-settings/llm-gateways`、`PUT active/embedding-active/rerank-active`、`PUT/DELETE :id`；六条写要求平台管理员（GP1），锁名 `llm-gateway:profiles:write:v1` 串行化全部写（GP2），`enabled` 严格 boolean 归一化（GP3）；未迁移的 proxy-governance / proxy-load-balancing / test-config / models-config 在认证/body/CORS 之前回 legacy，Nest 停时是 502 而非 Go 404；不改表、不改 Web 入口、canary 关闭、未启用 shadow。细节见 `docs/refactor/go-llm-gateway-profiles.md`。
