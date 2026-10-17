@@ -198,3 +198,24 @@ nbf/exp 校验与旧 token 兼容语义全部不变，也不使用未验签 deco
   的必填 + `MinLength(8)` 先返回 class-validator 消息。
 - go 模式下的 profile 缓存失效与黑名单写入依赖 Redis；Redis 不可用时按既有语义
   fail-closed（500），不伪造成功。
+
+## 12. 远端验证证据
+
+PR #60（Ready，未合并，auto-merge 关闭），最终 head
+`c6eb4e068d25feaff77e15d06cab2b4064c86531`：
+
+- 普通 CI：run
+  [39079671944](https://github.com/wei500L/newwei/actions/runs/39079671944) success
+  （Go 模块漂移门禁、Go tests api-go/vector-go、lint/typecheck、web/vector/api 单测、
+  OpenAPI 快照与鉴权矩阵漂移检查、两个真实栈 integration job 全绿）。
+- 真实栈 smoke：run
+  [39079675913](https://github.com/wei500L/newwei/actions/runs/39079675913) success，
+  末行输出 `api-go account security smoke: ALL OK`，阶段依次为：
+
+| 阶段 | 覆盖 |
+|---|---|
+| A | 非法 `shadow`/`canary` 启动失败（错误文本一致）；legacy 下 8 条经 Go 代理与 Nest 全等；未迁方法/路径仍回落 |
+| B/C | go 接管后 GET me 字段/`accessTokenId`/`accessTokenExpiresAt`/MFA flag；`PATCH profile` 有意无 JWT 元数据；Go↔Nest 资料互见；头像地址只做配置校验；A/B 缓存失效而 V 保留且缓存不含 jti/exp/passwordHash；机器令牌双向创建/验证/撤销；历史 `settings.manage` 令牌可管理且 list 保留原始 permissions；跨组织令牌只看本组织；AS4 空白名称/NULL 创建者/creator 继承 |
+| D | logout 201 + Redis `true` 值与 TTL、Nest/Go 双侧黑名单、其他会话不受影响、跨用户 refresh 不被动、logoutAll 只撤销本用户 refresh、审计 resource/action/orgId 正确且无凭证 |
+| E | AS1（并发轮换唯一 201、触发器 INSERT 失败回滚旧行）、AS2（Nest↔Go 并发改密唯一胜者 + refresh 全撤销）、AS3（null/空白 400 无部分写入、机器身份 401）、AS4 |
+| F | 停止 Nest 后清空 profile 缓存仍能读出非空 profile；8 条全部由 Go 执行；未迁路径（login/refresh/mfa/data-export/avatar 签名）502；Go 容器保持 healthy；重启 Nest 后用 Go 设置的新密码真实登录成功、旧密码失败 |

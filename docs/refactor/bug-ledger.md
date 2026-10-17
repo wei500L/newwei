@@ -60,10 +60,10 @@
 | SEC-05 | **P0** | 4 组全局治理设置写接口只要求 `settings.manage`：任一租户管理员可改全平台 MFA 策略/助手配额/内容审核护栏/LLM 日志保留期 | 🔧 待远端验证（本轮，见 §7） |
 | TTL-01 | P1 | `tasklogs` 集合不存在时 PUT/DELETE `/task-logs` 返回 500（NamespaceNotFound 26 未按空索引列表处理） | 🔧 待远端验证（本轮，见 §7） |
 | CONC-01 | P1 | `llm-request-logs` 部分 PUT 以进程内 30 秒旧缓存为合并基准且无互斥，会悄悄回滚他人写入 | 🔧 待远端验证（本轮，见 §7） |
-| AS1 | **P0** | 机器令牌轮换先撤销后创建、无原子事务：创建失败旧凭证已被撤销，并发轮换可留下多个有效 successor | 🔧 Nest 与 Go 两侧已修复；真实栈回归由 `api-go-account-security-smoke` 覆盖（见 §8） | 本轮 |
-| AS2 | **P0** | 并发修改密码可覆盖另一个已成功提交的密码修改（事务内仅按 id 更新） | 🔧 Nest 与 Go 两侧已修复；真实栈回归由 `api-go-account-security-smoke` 覆盖（见 §8） | 本轮 |
-| AS3 | P1 | profile 字段显式 null 穿过 `@IsOptional` 后触发 `.trim()` 500；机器身份更新不存在 User 也 500 | 🔧 Nest 与 Go 两侧已修复；真实栈回归由 `api-go-account-security-smoke` 覆盖（见 §8） | 本轮 |
-| AS4 | P1 | 机器令牌 `createdById` 直接写入 `machine:<id>` 触发 User 外键 1452；DTO `MinLength(1)` 在 trim 前判断，空白名称可入库 | 🔧 Nest 与 Go 两侧已修复；真实栈回归由 `api-go-account-security-smoke` 覆盖（见 §8） | 本轮 |
+| AS1 | **P0** | 机器令牌轮换先撤销后创建、无原子事务：创建失败旧凭证已被撤销，并发轮换可留下多个有效 successor | ✅ Nest 与 Go 两侧已修复；普通 CI 与真实栈 smoke 均已远端验证（见 §8） | 本轮（见 §8） |
+| AS2 | **P0** | 并发修改密码可覆盖另一个已成功提交的密码修改（事务内仅按 id 更新） | ✅ Nest 与 Go 两侧已修复；普通 CI 与真实栈 smoke 均已远端验证（见 §8） | 本轮（见 §8） |
+| AS3 | P1 | profile 字段显式 null 穿过 `@IsOptional` 后触发 `.trim()` 500；机器身份更新不存在 User 也 500 | ✅ Nest 与 Go 两侧已修复；普通 CI 与真实栈 smoke 均已远端验证（见 §8） | 本轮（见 §8） |
+| AS4 | P1 | 机器令牌 `createdById` 直接写入 `machine:<id>` 触发 User 外键 1452；DTO `MinLength(1)` 在 trim 前判断，空白名称可入库 | ✅ Nest 与 Go 两侧已修复；普通 CI 与真实栈 smoke 均已远端验证（见 §8） | 本轮（见 §8） |
 
 ## 3. 已修复条目（详细）
 
@@ -605,7 +605,11 @@ apps/api-go（独立开关 `API_GO_ACCOUNT_SECURITY_MODE`，默认 legacy），�
 Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
 （origin/main，普通 CI run 39064805065 success）为准。
 
-### AS1 机器令牌轮换不是原子操作 — 🔧 已修复【P0】
+远端验收：`api-go-account-security-smoke` 阶段 A–F 全部通过（PR #60，head
+`c6eb4e06`：普通 CI run 39079671944 success、smoke run 39079675913 success，
+末行输出 `api-go account security smoke: ALL OK`）。
+
+### AS1 机器令牌轮换不是原子操作 — ✅ 已修复（远端验证）【P0】
 
 - **用户影响**：轮换可能先撤销旧凭证、再因创建失败（例如存储权限归一化后为空、
   数据库错误）留下不可恢复的空档；并发轮换同一令牌可产生多个有效 successor，
@@ -628,8 +632,12 @@ Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
   其余 400 同一错误；最终仅一个 successor；token 明文不出现在 DB/Redis/audit/日志。
 - **状态**：✅ Nest 与 Go 两侧已修复（纯单测覆盖事务客户端归属、零行撤销、INSERT
   失败回滚）；真实栈回归由 `api-go-account-security-smoke` 的 AS1 断言组覆盖。
+  远端证据（PR #60，head `c6eb4e06`）：普通 CI run
+  [39079671944](https://github.com/wei500L/newwei/actions/runs/39079671944) success、
+  smoke run [39079675913](https://github.com/wei500L/newwei/actions/runs/39079675913)
+  success（`api-go account security smoke: ALL OK`）。
 
-### AS2 并发修改密码可覆盖已完成修改 — 🔧 已修复【P0】
+### AS2 并发修改密码可覆盖已完成修改 — ✅ 已修复（远端验证）【P0】
 
 - **用户影响**：两个请求都用同一旧密码通过校验时，后提交的请求会覆盖先成功的新
   密码——用户拿到「改密成功」但实际密码是另一个请求写入的，属于账户接管面。
@@ -651,9 +659,10 @@ Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
   通过真实 Nest 登录；失败请求不覆盖密码；获胜事务撤销全部应撤销 refresh 行；
   纯单测确定性覆盖 CAS=0。
 - **状态**：✅ 两侧已修复（单测覆盖 CAS=0、CAS 条件、cost=10、72 字节适配）；真实栈
-  回归由 `api-go-account-security-smoke` 的 AS2 断言组覆盖。
+  回归由 `api-go-account-security-smoke` 的 AS2 断言组覆盖（Nest↔Go 同旧密码并发，
+  恰好一个 200、最终只有获胜密码可登录、refresh 行全部撤销）。远端证据同 §8 AS1。
 
-### AS3 profile 显式 null 与不存在 User 触发 500 — 🔧 已修复【P1】
+### AS3 profile 显式 null 与不存在 User 触发 500 — ✅ 已修复（远端验证）【P1】
 
 - **用户影响**：`PATCH /api/auth/profile` 传 `{"firstName": null}` 时
   class-validator 的 `@IsOptional()` 跳过后续校验，service 仍按 `!== undefined`
@@ -676,9 +685,9 @@ Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
   字段失败时不发生部分更新；空 body 不更新 `updatedAt`；历史 `settings.manage`
   机器令牌调用 profile 不再 500；其他账户/组织的 User 不受影响。
 - **状态**：✅ 两侧已修复（vitest + Go 单测覆盖 null/空白/机器身份/空 body 不写）；
-  真实栈回归由 `api-go-account-security-smoke` 的 AS3 断言组覆盖。
+  真实栈回归由 `api-go-account-security-smoke` 的 AS3 断言组覆盖。远端证据同 §8 AS1。
 
-### AS4 机器令牌 createdById 外键与空白名称 — 🔧 已修复【P1】
+### AS4 机器令牌 createdById 外键与空白名称 — ✅ 已修复（远端验证）【P1】
 
 - **用户影响**：历史带 `settings.manage` 的机器身份创建机器令牌时，
   `createdById` 写入 `machine:<id>`（不是 User 行）触发 MySQL 外键 1452 → 500；
@@ -702,7 +711,7 @@ Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
   轮换后 successor 的 `createdById` 不变；新建权限白名单仍只有 `metrics.read`。
 - **状态**：✅ 两侧已修复（vitest + Go 单测覆盖 NULL 归一化、空白名称、creator
   继承、list 保留历史 permissions 输出）；真实栈回归由
-  `api-go-account-security-smoke` 的 AS4 断言组覆盖。
+  `api-go-account-security-smoke` 的 AS4 断言组覆盖。远端证据同 §8 AS1。
 
 ## 9. Go-批 M9 模型接入设置与 OpenAI 密钥分发（MA1–MA3）
 
