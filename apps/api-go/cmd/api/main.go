@@ -640,6 +640,7 @@ func run() error {
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
 				cfg.QualityOverviewMode == config.QualityOverviewModeGo ||
+				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
