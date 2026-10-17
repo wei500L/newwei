@@ -227,6 +227,21 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 
 任务日志的列表/汇总/窗口聚合与深层脱敏直接调用 `internal/adminlogs`（同一实现，不维护第二套正则）。仍回 NestJS：`/api/admin/quality/classification/*`（`classification-quality.controller.ts`）与 `/api/admin/quality/pipeline/runs|replay|rollback`（`pipeline-recovery.controller.ts`），以及这 5 条的非 `GET` 方法与更长路径（Go 精确匹配，不返回自己的 404）。回滚：`API_GO_QUALITY_OVERVIEW_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。细节见 `docs/refactor/go-quality-overview.md`。SEC-01 的真实登录态未在本批验证。
 
+### 1.8q 采集只读、媒体下发与检索遥测
+
+`API_GO_CRAWL_READ_TELEMETRY_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本含变量名；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`）。`go` 时只接管 7 条精确路由（规则见 `apps/api-go/internal/legacyproxy/crawl_read_telemetry_routes.go`）：
+
+- `GET /api/crawl-tasks`（`crawl.read`）：`page` ≥1（缺省 1）、`pageSize` 1..50（缺省 10）、`status` 六枚举、`search` 对 `targetUrl`/`displayName` contains；`createdAt desc` 分页，返回 `{tasks, total, page, pageSize}`，`resultCount` 取 `_count.results`，`config` 原样输出。
+- `GET /api/crawl-tasks/:id`（`crawl.read`，恰好一段）：`resultLimit` 1..100（缺省 20，`clampResultLimit(limit, fallback=20)`）、`resultSearch` 对 `sourceUrl` contains；任务不存在或跨组织 404 `crawl task not found`。结果关联 Mongo `crawlresultcontents` 的 `markdown`/`markdownWithCitations`/`referencesMarkdown`/`fitMarkdown`/`linkAnalysis`/`media`/`tables`，MySQL `CrawlMediaAsset` 生成 HMAC 签名的 `previewUrl`（仅 inline 安全类型）/`downloadUrl`，`ItemMeta` 按 `externalId = CONCAT('crawlResult:', r.id)` 填 `itemId`/`itemStatus`，Mongo `tasklogs`（`queue='crawl4ai'`、`stage='complete'`）产出 `memoryStats`/`lastRunSummary`。
+- `GET /api/crawl-media-assets/:assetId/:mode`（`@Public` + HMAC，恰好两段）：`:mode` 只允许 `preview`/`download`；验签顺序与文案为 `Missing signature` / `Missing access scope` / `Invalid expires timestamp` / `Signature expired` / `Signature window too large` / `Invalid signature`；签名 payload `<assetId>:<mode>:<expiresAtMs>:<orgId>:<userId>`、密钥 `JWT_SECRET`、`base64url`。Content-Type 别名净化后只放行 `image/*`/`video/*`/`audio/*`，其余降级 `application/octet-stream`；仅 `preview` 且属 inline 白名单（SVG 不在内）时 `inline` 并加 `default-src 'none'; sandbox`，否则 `attachment`。
+- `GET /api/admin/crawl4ai/quality` 与 `/quality/sources/:sourceId`（`crawl.read`）：`lookbackHours` 缺省 24、收口 1..336；复用 `ObservabilitySnapshot`（`scope=crawl_quality_metrics`、`variantKey=lookbackHours:<n>`、TTL 60s、同一 Redis 锁键），滚动聚合 MySQL `CrawlQualityTaskSnapshot` 与 Mongo `tasklogs`/`crawlresultcontents`，阈值来自 `AlertRule`（0.15/0.05/0.3）。
+- `POST /api/search-telemetry`（`items.read`，201 `{"recorded":true}`）：Redis 日桶 `search-telemetry:<orgId>:<YYYY-MM-DD>`（UTC）`HINCRBY` + `EXPIRE 2592000`；`queryLength` 分桶 `len_00_01`/`len_02_03`/`len_04_07`/`len_08_15`/`len_16_31`/`len_32_plus`；Redis 失败被吞掉。
+- `GET /api/admin/search-telemetry/summary`（`settings.manage`）：`surface` 传入即 400 `surface filtering is not supported by the stored telemetry counters`；`from`/`to` 必须 `YYYY-MM-DD`，非法日历日 400 `invalid date`，`from > to` 与跨度 >31 天各有固定文案；逐日 `HGETALL` 汇总为 `{from, to, surface:"all", totals, daily}`。
+
+**同批缺陷修复（两侧同修）**：① `crawl-media-asset.service.ts` 第 264–268 行资产查询补 `orgId`（否则会为跨租户资产签发当前组织的 HMAC）；② `crawl-result.service.ts` 第 754 行 Mongo 内容查询在存在 `accessScope.orgId` 时补 `$or: [{orgId}, {orgId: {$exists:false}}]`；③ `crawl-quality-task-snapshot.service.ts` 的 `aggregateMarkdownRows` 增加 `orgId` 参数并补同样的 `$or`（此前只有 `taskId`）。
+
+仍回 NestJS：`POST /api/crawl-tasks`、`DELETE /api/crawl-tasks/:id`、`POST /api/crawl-tasks/:id/retry`、`POST /api/crawl-tasks/metadata`、`/api/admin/crawl4ai/queue*`、上述 7 条的非注册方法、更长路径与父路径（Go 不返回自己的 404）。回滚：`API_GO_CRAWL_READ_TELEMETRY_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。已知偏差与细节见 `docs/refactor/go-crawl-read-telemetry.md`。SEC-01 的真实登录态未在本批验证。
+
 ### 1.9 system-settings（98 个，26 个 controller）
 
 内部端点（服务间 token，非用户 JWT）：
