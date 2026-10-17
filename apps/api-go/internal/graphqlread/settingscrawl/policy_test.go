@@ -252,8 +252,13 @@ func TestNormalizeCategoryPrefixAndUnitClamps(t *testing.T) {
 	if prefix := normalizeCategoryPrefix(json.RawMessage(`42`)); prefix != nil {
 		t.Fatalf("non-string prefix should be nil, got %v", *prefix)
 	}
-	if got := clampUnit(json.RawMessage(`1.23456`), 0); got != 1.2346 {
-		t.Fatalf("clampUnit = %v", got)
+	// clampUnit rounds to four decimals and THEN clamps to [0, 1], so a value
+	// above 1 collapses to 1 while a fraction keeps the rounded precision.
+	if got := clampUnit(json.RawMessage(`1.23456`), 0); got != 1 {
+		t.Fatalf("clampUnit above 1 = %v", got)
+	}
+	if got := clampUnit(json.RawMessage(`0.123456`), 0); got != 0.1235 {
+		t.Fatalf("clampUnit fraction = %v", got)
 	}
 	if got := clampUnit(json.RawMessage(`"0.5"`), 0.25); got != 0.25 {
 		t.Fatalf("string must not be parsed, got %v", got)
