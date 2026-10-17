@@ -11140,6 +11140,8 @@
           "settings.manage"
         ],
         "x-permissions-mode": "any",
+        "x-platform-admin": "handler-check",
+        "x-platform-admin-source": "handler-text-scan",
         "responses": {
           "200": {
             "description": "Success",
@@ -11200,6 +11202,8 @@
           "settings.manage"
         ],
         "x-permissions-mode": "any",
+        "x-platform-admin": "handler-check",
+        "x-platform-admin-source": "handler-text-scan",
         "requestBody": {
           "required": true,
           "content": {
@@ -11243,6 +11247,8 @@
           "settings.manage"
         ],
         "x-permissions-mode": "any",
+        "x-platform-admin": "handler-check",
+        "x-platform-admin-source": "handler-text-scan",
         "responses": {
           "200": {
             "description": "Success",
@@ -11303,6 +11309,8 @@
           "settings.manage"
         ],
         "x-permissions-mode": "any",
+        "x-platform-admin": "handler-check",
+        "x-platform-admin-source": "handler-text-scan",
         "requestBody": {
           "required": true,
           "content": {
@@ -12762,6 +12770,8 @@
           "settings.manage"
         ],
         "x-permissions-mode": "any",
+        "x-platform-admin": "handler-check",
+        "x-platform-admin-source": "handler-text-scan",
         "responses": {
           "200": {
             "description": "Success",
@@ -12822,6 +12832,8 @@
           "settings.manage"
         ],
         "x-permissions-mode": "any",
+        "x-platform-admin": "handler-check",
+        "x-platform-admin-source": "handler-text-scan",
         "requestBody": {
           "required": true,
           "content": {
@@ -12865,6 +12877,8 @@
           "settings.manage"
         ],
         "x-permissions-mode": "any",
+        "x-platform-admin": "handler-check",
+        "x-platform-admin-source": "handler-text-scan",
         "responses": {
           "201": {
             "description": "Success",
@@ -14519,6 +14533,8 @@
           "settings.manage"
         ],
         "x-permissions-mode": "any",
+        "x-platform-admin": "handler-check",
+        "x-platform-admin-source": "handler-text-scan",
         "requestBody": {
           "required": true,
           "content": {
