@@ -146,6 +146,7 @@ jobs:
           org_a = "mast-org-a-0001"
           org_b = "mast-org-b-0001"
           role_settings = "mast-role-settings-0001"
+          role_settings_b = "mast-role-settings-b-0001"
           role_none = "mast-role-none-0001"
           user_platform = "mast-platform-0001"
           user_admin_a = "mast-admin-a-0001"
@@ -401,14 +402,16 @@ jobs:
             ('{org_b}', 'Model Access Smoke Org B', 'mast-smoke-org-b', 1, NOW(3), NOW(3));
           INSERT INTO Role (id, name, description, isSystem, orgId) VALUES
             ('{role_settings}', 'model-access-smoke-settings', NULL, 0, '{org_a}'),
+            ('{role_settings_b}', 'model-access-smoke-settings-b', NULL, 0, '{org_b}'),
             ('{role_none}', 'model-access-smoke-none', NULL, 0, '{org_a}');
           INSERT INTO RolePermission (id, roleId, permissionId) VALUES
-            ('mast-rp-settings-0001', '{role_settings}', '{settings_perm}');
+            ('mast-rp-settings-0001', '{role_settings}', '{settings_perm}'),
+            ('mast-rp-settings-b-0001', '{role_settings_b}', '{settings_perm}');
           """)
           for user_id, email, membership_id, org_id, role_id in (
               (user_platform, email_platform, mem_platform, org_a, role_settings),
               (user_admin_a, email_admin_a, mem_admin_a, org_a, role_settings),
-              (user_admin_b, email_admin_b, mem_admin_b, org_b, role_settings),
+              (user_admin_b, email_admin_b, mem_admin_b, org_b, role_settings_b),
               (user_reader, email_reader, mem_reader, org_a, role_none),
               (user_platform_only, email_platform_only, mem_platform_only, org_a, role_none),
           ):
