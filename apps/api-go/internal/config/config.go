@@ -282,6 +282,40 @@ const (
 	QualityOverviewModeGo     QualityOverviewMode = "go"
 )
 
+// ClassificationRssOpsMode controls the classification quality workbench (7
+// HTTP endpoints), the RSS chain diagnostics (4 endpoints) and the RSS
+// translation daily metrics (1 endpoint). The default is legacy.
+//
+// When the mode is go, Go owns exactly these 13 route rules and nothing else:
+//
+//	GET  /api/admin/quality/classification/summary
+//	GET  /api/admin/quality/classification/sources/:sourceId/items
+//	GET  /api/admin/quality/classification/reviews/queue
+//	POST /api/admin/quality/classification/reviews/:reviewId/decision
+//	POST /api/admin/quality/classification/reviews/batch
+//	POST /api/admin/quality/classification/sampling/query
+//	POST /api/admin/quality/classification/sampling/annotations
+//	GET  /api/admin/quality/classification/reports/:jobId
+//	GET  /api/system-settings/rss-diagnostics/overview
+//	GET  /api/system-settings/rss-diagnostics/chain
+//	GET  /api/system-settings/rss-diagnostics/sources
+//	POST /api/system-settings/rss-diagnostics/backfill-source-id
+//	GET  /api/system-settings/rss-translation/metrics
+//
+// POST /api/admin/quality/classification/reports stays on NestJS: it enqueues a
+// BullMQ job, so the queue red line keeps it out of Go. The mode requires
+// JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI (processeditems, tasklogs
+// and every classification* collection live in Mongo). Shadow is never enabled
+// and canary stays untouched.
+type ClassificationRssOpsMode string
+
+const (
+	// ClassificationRssOpsModeLegacy proxies every route to NestJS.
+	ClassificationRssOpsModeLegacy ClassificationRssOpsMode = "legacy"
+	// ClassificationRssOpsModeGo serves the migrated routes from Go.
+	ClassificationRssOpsModeGo ClassificationRssOpsMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -461,16 +495,22 @@ type Config struct {
 	// go 要求 JWT、MySQL、Redis、Mongo（processeditems 与 tasklogs 都在
 	// Mongo；新闻源/流水线快照与 outbox 在 MySQL）。不启用 shadow，不启动
 	// 任何 worker。
-	QualityOverviewMode  QualityOverviewMode
-	GraphQLAPQEnabled    bool
-	GraphQLDepthLimit    int
-	GraphQLComplexity    int
-	GraphQLCacheEnabled  bool
-	GraphQLCacheTTL      int
-	TrustProxy           string
-	RateLimitFailOpen    bool
-	RateLimitLogin       int
-	RateLimitLoginWindow int
+	QualityOverviewMode QualityOverviewMode
+	// ClassificationRssOpsMode controls the classification quality workbench,
+	// the RSS chain diagnostics and the RSS translation daily metrics. Default
+	// legacy. go requires JWT, MySQL, Redis and Mongo (processeditems, tasklogs
+	// and the five classification* collections are stored in Mongo). Shadow is
+	// never enabled and no worker is started.
+	ClassificationRssOpsMode ClassificationRssOpsMode
+	GraphQLAPQEnabled        bool
+	GraphQLDepthLimit        int
+	GraphQLComplexity        int
+	GraphQLCacheEnabled      bool
+	GraphQLCacheTTL          int
+	TrustProxy               string
+	RateLimitFailOpen        bool
+	RateLimitLogin           int
+	RateLimitLoginWindow     int
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
 
@@ -861,6 +901,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.QualityOverviewMode = QualityOverviewModeGo
 	default:
 		errs = append(errs, "API_GO_QUALITY_OVERVIEW_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_RSS_OPS_MODE")) {
+	case "", string(ClassificationRssOpsModeLegacy):
+		cfg.ClassificationRssOpsMode = ClassificationRssOpsModeLegacy
+	case string(ClassificationRssOpsModeGo):
+		cfg.ClassificationRssOpsMode = ClassificationRssOpsModeGo
+	default:
+		errs = append(errs, "API_GO_CLASSIFICATION_RSS_OPS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
@@ -1253,6 +1301,12 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_QUALITY_OVERVIEW_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_QUALITY_OVERVIEW_MODE=go")
+		}
+	}
+	if cfg.ClassificationRssOpsMode == ClassificationRssOpsModeGo {
+		appendAuthRequirements(&errs, "API_GO_CLASSIFICATION_RSS_OPS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CLASSIFICATION_RSS_OPS_MODE=go")
 		}
 	}
 	if cfg.GraphQLReadMode == "go" {
