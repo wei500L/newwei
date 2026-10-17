@@ -22,7 +22,6 @@ vi.mock("../situation-monitor/situation-monitor-user-lock", () => {
   };
 });
 
-const SETTINGS_KEY = "geo_nominatim_identity";
 const NOMINATIM_LOCK = "data-runtime-settings:nominatim:v1";
 
 const sessionLock = vi.mocked(withMysqlSessionLock);
@@ -33,7 +32,7 @@ type Mock = ReturnType<typeof vi.fn>;
 const build = (
   options: {
     isPlatformAdmin?: boolean;
-    rows?: Array<unknown>;
+    rows?: unknown[];
     userAgent?: string;
     email?: string;
   } = {},
