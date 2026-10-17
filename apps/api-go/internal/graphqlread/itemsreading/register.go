@@ -1,6 +1,7 @@
 package itemsreading
 
 import (
+	"log"
 	"net/http"
 	"reflect"
 	"strings"
@@ -507,6 +508,10 @@ func internalFailure(err error) error {
 			AppCode: "VECTOR_SEARCH_UNAVAILABLE",
 		}
 	}
+	// Server-side diagnostics only: the GraphQL response keeps the generic
+	// message, exactly like NestJS, but the operator can see the cause in the
+	// container log.
+	log.Printf("api-go: itemsreading graphql failure: %v", err)
 	return &contract.Failure{Message: "Internal server error", Status: http.StatusInternalServerError}
 }
 

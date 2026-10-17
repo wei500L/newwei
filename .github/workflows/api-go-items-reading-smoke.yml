@@ -132,6 +132,14 @@ jobs:
 
           def fail(message):
               print("FAIL", message)
+              try:
+                  logs = subprocess.run(["docker", "logs", "--tail", "120", "api-go-items-reading"],
+                                        text=True, capture_output=True)
+                  print("--- api-go logs (tail) ---")
+                  print((logs.stdout or "")[-6000:])
+                  print((logs.stderr or "")[-6000:])
+              except Exception:
+                  pass
               raise SystemExit(1)
 
           def phase(title):
