@@ -72,3 +72,4 @@ GraphQL 返回结构与 HTTP 不同，不混用：映射到 `NewsIndicatorAssoci
 - **未发生**：不调用 AkShare、不调用模型、不外网拉数；不打开 canary；不改前端/prisma schema/GraphQL SDL；不启动调度 worker；生产流量未切换。
 - **未验证**：SEC-01 的真实登录态未在本批验证。
 - 本机按任务约束未运行 `pnpm install`、`go test`、`go build`、`npm`、`docker`，未启动 API；验证全部在 GitHub Actions。
+- 本批远端验证记录（运行链接见 PR 正文）：普通 CI（`ci.yml` 的 verify / api-go-user-settings-integration / vector-integration）与真实栈 smoke（`api-go-news-indicators-smoke.yml`，workflow_dispatch 或 PR label `api-go-news-indicators-smoke`）。
