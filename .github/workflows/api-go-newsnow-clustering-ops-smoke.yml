@@ -1,0 +1,1260 @@
+# NewsNow 本地计算 + 新闻事件聚类失败管理 9 条 HTTP 的真实栈验收。
+# 不进普通 CI。PR 上加 label api-go-newsnow-clustering-ops-smoke，或
+# workflow_dispatch。
+#
+# 覆盖：
+#   1. legacy 开关下 9 条路由经 Go 网关与 NestJS 直连一致；
+#   2. go 开关下 metadata / resolve / sources/order / domestic-opinion-index
+#      与 NestJS 逐字段一致（忽略 generatedAt / computedAt）；
+#   3. 缺陷 2：rawitems.itemMetaId 无对应 ItemMeta 时 resolve 返回
+#      {"matched":false}；合法链路上返回正确 itemId + 本组织 eventId，
+#      且另一组织同一 URL 拿不到本组织 eventId；
+#   4. 缺陷 3：vector-backfill 的原子抢占（两个并发请求恰好一个 201，
+#      另一个 400，条目只被分配一次）；ignore 后不可再恢复；
+#   5. 租户隔离与权限（跨组织 404、缺 items.read / settings.manage 403、
+#      mtk_ 机器令牌放行）；
+#   6. NestJS 停止后 9 条仍 200/201，未迁移路由由网关返回 502。
+#
+# 不请求 crawl4ai、不调用模型、不启动调度。SCHEDULE_ENABLED 保持 false。
+name: api-go-newsnow-clustering-ops-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-go-newsnow-clustering-ops-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-newsnow-clustering-ops-smoke@example.com
+  SMTP_PASS: api-go-newsnow-clustering-ops-smoke-smtp-not-connected
+  JWT_SECRET: 9d3f7b1c5e2a8460f1d9c7b3e5a2846f0c1d9b7e3a5f2846c0d1b9e7f3a5c2846
+  NEXTAUTH_SECRET: 4a8c2e6f0b3d9517c4a8e2f6b0d39517e4a8c2f6b0d39517c4a8e2f6b0d39517
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-newsnow-clustering-ops-smoke-org
+  SEED_ORG_NAME: api-go NewsNow Clustering Ops Smoke Org
+  SEED_ADMIN_EMAIL: api-go-newsnow-clustering-ops-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoNewsnow#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-newsnow-clustering-ops-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-newsnow-clustering-ops-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-newsnow:ci .
+      - name: Exercise NewsNow + clustering ops routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import concurrent.futures
+          import hashlib
+          import json
+          import os
+          import random
+          import re
+          import signal
+          import string
+          import subprocess
+          import sys
+          import time
+          import traceback
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          NEST = "http://127.0.0.1:4000"
+          GO = "http://127.0.0.1:4020"
+          GO_CONTAINER = "api-go-newsnow-clustering"
+          GO_IMAGE = "api-go-newsnow:ci"
+
+          NEWSNOW = "/api/news-aggregator"
+          CLUSTER = "/api/system-settings/news-events/clustering"
+          META = NEWSNOW + "/metadata"
+          RESOLVE = NEWSNOW + "/resolve"
+          ORDER = NEWSNOW + "/sources/order"
+          OPINION = NEWSNOW + "/domestic-opinion-index"
+          READINESS = CLUSTER + "/readiness"
+          OVERVIEW = CLUSTER + "/overview"
+          FAILURES = CLUSTER + "/failures"
+
+          PENDING_MSG = "Failure group is already processing"
+          UNRECOVERABLE_MSG = "Failure group can no longer be recovered"
+          NOT_FOUND_MSG = "News event clustering failure not found"
+          FAILURE_MESSAGE = "Smoke forced failure"
+
+          RUN_ID = re.sub(r"[^a-z0-9]", "", (
+              os.environ.get("GITHUB_RUN_ID", "") +
+              os.environ.get("GITHUB_RUN_ATTEMPT", "")
+          ).lower()) or "0"
+          RANDOM = "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6))
+          SUFFIX = RUN_ID + RANDOM
+
+          ORG_A = "newsnow-smoke-a-" + SUFFIX
+          ORG_B = "newsnow-smoke-b-" + SUFFIX
+          SLUG_A = "newsnow-smoke-a-" + SUFFIX
+          SLUG_B = "newsnow-smoke-b-" + SUFFIX
+
+          ROLE_FULL_A = "role-full-a-" + SUFFIX
+          ROLE_FULL_B = "role-full-b-" + SUFFIX
+          ROLE_ITEMS_A = "role-items-a-" + SUFFIX
+          ROLE_SETTINGS_A = "role-settings-a-" + SUFFIX
+
+          USER_FULL_A = "user-full-a-" + SUFFIX
+          USER_FULL_B = "user-full-b-" + SUFFIX
+          USER_ITEMS_A = "user-items-a-" + SUFFIX
+          USER_SETTINGS_A = "user-settings-a-" + SUFFIX
+
+          EMAIL_FULL_A = "newsnow-smoke-a-" + SUFFIX + "@example.com"
+          EMAIL_FULL_B = "newsnow-smoke-b-" + SUFFIX + "@example.com"
+          EMAIL_ITEMS_A = "newsnow-smoke-items-" + SUFFIX + "@example.com"
+          EMAIL_SETTINGS_A = "newsnow-smoke-settings-" + SUFFIX + "@example.com"
+
+          MACHINE_TOKEN = "mtk_newsnow_smoke_" + SUFFIX
+
+          ITEM_A = "smoke-itemmeta-a-" + SUFFIX
+          ITEM_B = "smoke-itemmeta-b-" + SUFFIX
+          ITEM_MISSING = "smoke-itemmeta-missing-" + SUFFIX
+
+          HOST = "newsnow-" + SUFFIX + ".example.com"
+          URL_A = "https://" + HOST + "/story/a1?utm=1"
+          URL_MISSING = "https://" + HOST + "/story/missing"
+
+          EVENT_A = "event-resolve-a-" + SUFFIX
+          EVENT_B = "event-resolve-b-" + SUFFIX
+          P_A = hashlib.sha256(("processed-a:" + SUFFIX).encode()).hexdigest()[:24]
+          P_POISON = hashlib.sha256(("processed-poison:" + SUFFIX).encode()).hexdigest()[:24]
+          P_B = hashlib.sha256(("processed-b:" + SUFFIX).encode()).hexdigest()[:24]
+
+          ZERO_GROUP = "0" * 24
+
+          token_a = ""
+          token_b = ""
+          token_items_a = ""
+          token_settings_a = ""
+
+          results = []
+
+
+          class SmokeFailure(Exception):
+              pass
+
+
+          def record(label, ok, detail=""):
+              results.append((label, ok, detail))
+              suffix = (" :: " + str(detail)) if (detail and not ok) else ""
+              print(("PASS " if ok else "FAIL ") + label + suffix)
+
+
+          def require(label, condition, detail=""):
+              if condition:
+                  record(label, True)
+                  return
+              record(label, False, detail)
+              raise SmokeFailure(label + ": " + str(detail))
+
+
+          # ---------- generic helpers ----------
+          def call(base, path, method="GET", token=None, payload=None, timeout=60):
+              headers = {"accept": "application/json"}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              try:
+                  return json.loads(text)
+              except json.JSONDecodeError:
+                  return text
+
+
+          def message(raw):
+              doc = body(raw)
+              if not isinstance(doc, dict):
+                  return None
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+
+          def strip_keys(value, keys):
+              if isinstance(value, dict):
+                  return {k: strip_keys(v, keys) for k, v in value.items() if k not in keys}
+              if isinstance(value, list):
+                  return [strip_keys(item, keys) for item in value]
+              return value
+
+
+          def normalized(value, ignore=(), length_keys=()):
+              out = strip_keys(value, set(ignore))
+              if isinstance(out, dict):
+                  for key in length_keys:
+                      if isinstance(out.get(key), list):
+                          out[key] = len(out[key])
+              return out
+
+
+          def quote(value):
+              return urllib.parse.quote(value, safe="")
+
+
+          def resolve_path(url_value):
+              return RESOLVE + "?url=" + quote(url_value)
+
+
+          def backfill_path(group_id):
+              return CLUSTER + "/failures/" + group_id + "/vector-backfill"
+
+
+          def ignore_path(group_id):
+              return CLUSTER + "/failures/" + group_id + "/ignore"
+
+
+          def llm_backfill_path(group_id):
+              return CLUSTER + "/failures/" + group_id + "/llm-backfill"
+
+
+          # ---------- docker / service helpers ----------
+          def container_id(ancestor):
+              return subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor], text=True).split()[0]
+
+
+          def sql(statement):
+              cid = container_id("mysql:8.4")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"],
+                                    input=statement, text=True, capture_output=True, timeout=120)
+              if proc.returncode != 0:
+                  raise SmokeFailure((proc.stderr or proc.stdout).strip()[:2000])
+              return proc.stdout.strip()
+
+
+          def sql_quiet(statement):
+              try:
+                  cid = container_id("mysql:8.4")
+                  subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"],
+                                 input=statement, text=True, capture_output=True, timeout=120)
+              except Exception as exc:
+                  print("cleanup mysql skipped:", exc)
+
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+
+          def mysql_int(statement):
+              value = scalar(statement)
+              return int(value) if value else 0
+
+
+          def mongo_seed(script):
+              cid = container_id("mongo:7.0")
+              path = "/tmp/newsnow-clustering-smoke-seed.js"
+              with open(path, "w") as handle:
+                  handle.write(script)
+              subprocess.check_call(["docker", "cp", path, cid + ":/tmp/seed.js"], stdout=subprocess.DEVNULL)
+              proc = subprocess.run(["docker", "exec", cid, "mongosh", "--quiet", "app", "--file", "/tmp/seed.js"],
+                                    text=True, capture_output=True, timeout=120)
+              if proc.returncode != 0:
+                  raise SmokeFailure((proc.stderr or proc.stdout).strip()[:2000])
+              return proc.stdout
+
+
+          def mongo_eval(expression):
+              cid = container_id("mongo:7.0")
+              proc = subprocess.run(["docker", "exec", cid, "mongosh", "--quiet", "app", "--eval", expression],
+                                    text=True, capture_output=True, timeout=120)
+              if proc.returncode != 0:
+                  raise SmokeFailure((proc.stderr or proc.stdout).strip()[:2000])
+              return proc.stdout.strip()
+
+
+          def flush_cache_pattern(pattern):
+              cid = container_id("redis:7.2")
+              subprocess.run(
+                  ["docker", "exec", cid, "sh", "-c",
+                   "redis-cli --scan --pattern " + json.dumps(pattern) + " | xargs -r redis-cli del"],
+                  text=True, capture_output=True, timeout=120)
+
+
+          def flush_newsnow_caches():
+              # Nest 与 Go 的 resolve / personalization 缓存键互不相同，按前缀一起清掉，
+              # 保证两次比对都是现算结果。
+              flush_cache_pattern("*resolve*")
+              flush_cache_pattern("*personalization*")
+
+
+          def js_literal(value):
+              if isinstance(value, dict):
+                  return "{" + ",".join(json.dumps(str(k)) + ":" + js_literal(v) for k, v in value.items()) + "}"
+              if isinstance(value, list):
+                  return "[" + ",".join(js_literal(item) for item in value) + "]"
+              if isinstance(value, tuple):
+                  kind, payload = value
+                  if kind == "date":
+                      return "new Date(" + str(int(payload)) + ")"
+                  if kind == "oid":
+                      return 'ObjectId("' + str(payload) + '")'
+              if value is None:
+                  return "null"
+              if isinstance(value, bool):
+                  return "true" if value else "false"
+              if isinstance(value, (int, float)):
+                  return json.dumps(value)
+              return json.dumps(str(value))
+
+
+          def comparable_variants(url_value):
+              parts = urllib.parse.urlsplit(url_value)
+              netloc = parts.netloc.lower()
+              full = urllib.parse.urlunsplit((parts.scheme.lower(), netloc, parts.path, parts.query, ""))
+              base = urllib.parse.urlunsplit((parts.scheme.lower(), netloc, parts.path, "", ""))
+              return full, base, hashlib.sha256(full.encode()).hexdigest()
+
+
+          def start_go(mode):
+              subprocess.run(["docker", "rm", "-f", GO_CONTAINER], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  "API_GO_NEWSNOW_CLUSTERING_OPS_MODE=" + mode,
+                  "API_GO_QUALITY_OVERVIEW_MODE=legacy",
+                  "API_GO_ADMIN_LOGS_MODE=legacy",
+                  "API_GO_LLM_LOGS_MODE=legacy",
+                  "API_GO_CRAWL_PROFILES_MODE=legacy",
+                  "API_GO_CRAWL_TEMPLATES_MODE=legacy",
+                  "API_GO_CRAWL_WORKFLOWS_MODE=legacy",
+                  "API_GO_NEWS_SOURCES_MODE=legacy",
+                  "API_GO_RBAC_MODE=legacy",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  "JWT_SECRET=" + os.environ["JWT_SECRET"],
+                  "JWT_ISSUER=" + os.environ["JWT_ISSUER"],
+                  "JWT_AUDIENCE=" + os.environ["JWT_AUDIENCE"],
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  "CORS_ORIGIN=" + os.environ["CORS_ORIGIN"],
+              ]
+              cmd = ["docker", "run", "-d", "--name", GO_CONTAINER,
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s",
+                     "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append(GO_IMAGE)
+              proc = subprocess.run(cmd, capture_output=True, text=True)
+              if proc.returncode != 0:
+                  raise SmokeFailure("docker run " + mode + " failed: " + (proc.stderr or proc.stdout)[-2000:])
+              for _ in range(60):
+                  status = subprocess.check_output(
+                      ["docker", "inspect", "--format", "{{.State.Health.Status}}", GO_CONTAINER],
+                      text=True).strip()
+                  print("api-go health", status, "mode", mode)
+                  if status == "healthy":
+                      record("api-go gateway healthy (" + mode + " mode)", True)
+                      return
+                  if status == "unhealthy":
+                      raise SmokeFailure("api-go unhealthy in " + mode + " mode: " +
+                                         subprocess.run(["docker", "logs", GO_CONTAINER],
+                                                        capture_output=True, text=True).stdout[-4000:])
+                  time.sleep(2)
+              raise SmokeFailure("api-go did not become healthy in " + mode + " mode: " +
+                                 subprocess.run(["docker", "logs", GO_CONTAINER],
+                                                capture_output=True, text=True).stdout[-4000:])
+
+
+          def stop_nest():
+              if os.path.exists("/tmp/api-nestjs.pid"):
+                  try:
+                      os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+                  except Exception:
+                      pass
+              subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+              subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+              for _ in range(30):
+                  try:
+                      urllib.request.urlopen(NEST + "/api/healthz/live", timeout=2).read()
+                  except Exception:
+                      return
+                  time.sleep(1)
+              raise SmokeFailure("nestjs did not stop")
+
+
+          def dump_logs():
+              print("=== nestjs log tail ===")
+              try:
+                  with open("/tmp/api-nestjs.log", "r", errors="replace") as handle:
+                      print(handle.read()[-8000:])
+              except Exception as exc:
+                  print("no nestjs log:", exc)
+              print("=== api-go log tail ===")
+              try:
+                  proc = subprocess.run(["docker", "logs", GO_CONTAINER], capture_output=True, text=True)
+                  print((proc.stdout + proc.stderr)[-8000:])
+              except Exception as exc:
+                  print("no api-go log:", exc)
+
+
+          def write_summary(passed, detail=""):
+              lines = ["## api-go-newsnow-clustering-ops-smoke: " + ("PASS" if passed else "FAIL"), ""]
+              if detail:
+                  lines.extend(["`" + str(detail)[:800] + "`", ""])
+              lines.append("| # | assertion | result |")
+              lines.append("| --- | --- | --- |")
+              for index, (label, ok, _) in enumerate(results, 1):
+                  lines.append("| " + str(index) + " | " + label.replace("|", "/") + " | " +
+                               ("PASS" if ok else "FAIL") + " |")
+              text = "\n".join(lines) + "\n"
+              print(text)
+              path = os.environ.get("GITHUB_STEP_SUMMARY")
+              if path:
+                  try:
+                      with open(path, "a") as handle:
+                          handle.write(text)
+                  except Exception as exc:
+                      print("could not write job summary:", exc)
+
+
+          # ---------- API helpers ----------
+          def login(email):
+              status, raw = call(NEST, "/api/auth/login", "POST",
+                                 payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not isinstance(doc, dict) or not doc.get("accessToken"):
+                  raise SmokeFailure("login " + email + " " + str(status) + " " + repr(raw[:400]))
+              return doc["accessToken"]
+
+
+          def get_ok(label, path, token=None, base=GO, expect=200):
+              status, raw = call(base, path, "GET", token)
+              require(label + " status", status == expect,
+                      "got " + str(status) + " want " + str(expect) + " body=" + repr(raw[:500]))
+              return body(raw)
+
+
+          def post_ok(label, path, token=None, payload=None, base=GO, expect=201):
+              status, raw = call(base, path, "POST", token, payload)
+              require(label + " status", status == expect,
+                      "got " + str(status) + " want " + str(expect) + " body=" + repr(raw[:500]))
+              return body(raw)
+
+
+          def compare_direct(label, path, token=None, ignore=(), method="GET", payload=None):
+              nst, nraw = call(NEST, path, method, token, payload)
+              gst, graw = call(GO, path, method, token, payload)
+              require(label + " status", nst == gst and nst in (200, 201),
+                      "nest=" + str(nst) + " go=" + str(gst) + " nest_body=" + repr(nraw[:400]) +
+                      " go_body=" + repr(graw[:400]))
+              nbody, gbody = body(nraw), body(graw)
+              require(label + " body", normalized(nbody, ignore) == normalized(gbody, ignore),
+                      "nest=" + repr(nraw[:800]) + " go=" + repr(graw[:800]))
+              return nbody
+
+
+          def compare_resolve(label, url_value, token=None):
+              flush_newsnow_caches()
+              gst, graw = call(GO, resolve_path(url_value), "GET", token)
+              flush_newsnow_caches()
+              nst, nraw = call(NEST, resolve_path(url_value), "GET", token)
+              require(label + " status", st_pair_ok(nst, gst), "nest=" + str(nst) + " go=" + str(gst))
+              require(label + " body", body(nraw) == body(graw),
+                      "nest=" + repr(nraw[:800]) + " go=" + repr(graw[:800]))
+              return body(graw)
+
+
+          def st_pair_ok(nest_status, go_status):
+              return nest_status == go_status and nest_status == 200
+
+
+          def mongo_failure_doc(group_id, org=ORG_A):
+              expression = ("JSON.stringify(db.newseventclusteringfailures.findOne({orgId:" +
+                            json.dumps(org) + ",groupId:" + json.dumps(group_id) +
+                            "},{status:1,attemptCount:1,resolvedEventIds:1}))")
+              text = mongo_eval(expression)
+              return json.loads(text) if text and text != "null" else None
+
+
+          # ---------- seed data ----------
+          def seed_static_data():
+              admin = scalar("SELECT id FROM User WHERE email='" + os.environ["SEED_ADMIN_EMAIL"] + "'")
+              perm_items = scalar("SELECT id FROM Permission WHERE name='items.read'")
+              perm_settings = scalar("SELECT id FROM Permission WHERE name='settings.manage'")
+              require("seed rows present", bool(admin and perm_items and perm_settings),
+                      "admin=" + repr(admin) + " items=" + repr(perm_items) + " settings=" + repr(perm_settings))
+              machine_hash = hashlib.sha256(MACHINE_TOKEN.encode()).hexdigest()
+              role_permissions = json.dumps(["settings.manage"])
+
+              sql("""
+              INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+                ('%s', 'NewsNow Smoke Org A', '%s', 1, NOW(3), NOW(3)),
+                ('%s', 'NewsNow Smoke Org B', '%s', 1, NOW(3), NOW(3));
+              INSERT INTO Role (id, name, isSystem, orgId) VALUES
+                ('%s', 'newsnow-smoke-full-a', 0, '%s'),
+                ('%s', 'newsnow-smoke-full-b', 0, '%s'),
+                ('%s', 'newsnow-smoke-items-a', 0, '%s'),
+                ('%s', 'newsnow-smoke-settings-a', 0, '%s');
+              INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+                ('%s', '%s', '%s'),
+                ('%s', '%s', '%s'),
+                ('%s', '%s', '%s'),
+                ('%s', '%s', '%s'),
+                ('%s', '%s', '%s'),
+                ('%s', '%s', '%s');
+              """ % (
+                  ORG_A, SLUG_A, ORG_B, SLUG_B,
+                  ROLE_FULL_A, ORG_A, ROLE_FULL_B, ORG_B, ROLE_ITEMS_A, ORG_A, ROLE_SETTINGS_A, ORG_A,
+                  "rp-full-a-items-" + SUFFIX, ROLE_FULL_A, perm_items,
+                  "rp-full-a-settings-" + SUFFIX, ROLE_FULL_A, perm_settings,
+                  "rp-full-b-items-" + SUFFIX, ROLE_FULL_B, perm_items,
+                  "rp-full-b-settings-" + SUFFIX, ROLE_FULL_B, perm_settings,
+                  "rp-items-a-" + SUFFIX, ROLE_ITEMS_A, perm_items,
+                  "rp-settings-a-" + SUFFIX, ROLE_SETTINGS_A, perm_settings,
+              ))
+
+              sql("""
+              INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, lastUsedAt, expiresAt, revokedAt, createdAt, updatedAt)
+              VALUES ('%s', '%s', 'smoke', '%s', '%s', NULL, NULL, NULL, NOW(3), NOW(3));
+              """ % ("mtok-newsnow-" + SUFFIX, ORG_A, machine_hash, role_permissions))
+
+              users = [
+                  (USER_FULL_A, EMAIL_FULL_A, ORG_A, ROLE_FULL_A),
+                  (USER_FULL_B, EMAIL_FULL_B, ORG_B, ROLE_FULL_B),
+                  (USER_ITEMS_A, EMAIL_ITEMS_A, ORG_A, ROLE_ITEMS_A),
+                  (USER_SETTINGS_A, EMAIL_SETTINGS_A, ORG_A, ROLE_SETTINGS_A),
+              ]
+              for user_id, email, user_org, role_id in users:
+                  sql("""
+                  INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+                  SELECT '%s', '%s', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+                  FROM User WHERE id = '%s';
+                  INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+                  VALUES ('m%s', '%s', '%s', '%s', 1, NOW(3));
+                  """ % (user_id, email, admin, user_id, user_id, user_org, role_id))
+
+              # 缺陷 2 的事实源：ItemMeta + rawitems + processeditems + NewsEvent/NewsEventItem。
+              sql("""
+              INSERT INTO ItemMeta (id, orgId, externalId, name, status, mongoRef, version, sortAt, createdAt, updatedAt) VALUES
+                ('%s', '%s', 'resolve-a', 'Smoke Resolve A', 'published', 'smoke-raw-ref-a', 1, NOW(3), NOW(3), NOW(3)),
+                ('%s', '%s', 'resolve-b', 'Smoke Resolve B', 'published', 'smoke-raw-ref-b', 1, NOW(3), NOW(3), NOW(3));
+              INSERT INTO Article (id, orgId, url, language, titleGuess, crawlAt, contentHash, version, createdAt, updatedAt) VALUES
+                ('%s', '%s', '%s', 'en', 'Smoke resolve A', NOW(3), '%s', 1, NOW(3), NOW(3)),
+                ('%s', '%s', '%s', 'en', 'Smoke resolve B poison', NOW(3), '%s', 1, NOW(3), NOW(3)),
+                ('%s', '%s', '%s', 'en', 'Smoke resolve B legit', NOW(3), '%s', 1, NOW(3), NOW(3));
+              INSERT INTO ProcessedArticle (id, orgId, articleId, status, title, summary, language, qualityScore, eventAt, createdAt, processedAt, updatedAt) VALUES
+                ('%s', '%s', '%s', 'completed', 'Smoke resolve A', 'Smoke resolve A summary', 'en', 0.5, NULL, NOW(3), NOW(3), NOW(3)),
+                ('%s', '%s', '%s', 'completed', 'Smoke resolve B poison', 'Smoke resolve B poison summary', 'en', 0.5, NULL, NOW(3), NOW(3), NOW(3)),
+                ('%s', '%s', '%s', 'completed', 'Smoke resolve B legit', 'Smoke resolve B legit summary', 'en', 0.5, NULL, NOW(3), NOW(3), NOW(3));
+              INSERT INTO NewsEvent (id, orgId, status, language, primaryTopic, title, summary, startAt, lastAt, createdAt, updatedAt) VALUES
+                ('%s', '%s', 'active', 'en', 'newsnow-smoke-topic-resolve-a', 'Smoke resolve event A', 'Smoke resolve event A summary', DATE_SUB(NOW(3), INTERVAL 5 MINUTE), DATE_SUB(NOW(3), INTERVAL 5 MINUTE), NOW(3), NOW(3)),
+                ('%s', '%s', 'active', 'en', 'newsnow-smoke-topic-resolve-b', 'Smoke resolve event B', 'Smoke resolve event B summary', DATE_SUB(NOW(3), INTERVAL 5 MINUTE), DATE_SUB(NOW(3), INTERVAL 5 MINUTE), NOW(3), NOW(3));
+              INSERT INTO NewsEventItem (id, orgId, eventId, processedArticleId, processedItemId, similarity, assignedBy, createdAt) VALUES
+                ('%s', '%s', '%s', '%s', '%s', NULL, 'overlap', DATE_SUB(NOW(3), INTERVAL 90 SECOND)),
+                ('%s', '%s', '%s', '%s', '%s', NULL, 'overlap', DATE_SUB(NOW(3), INTERVAL 30 SECOND)),
+                ('%s', '%s', '%s', '%s', '%s', NULL, 'overlap', DATE_SUB(NOW(3), INTERVAL 120 SECOND));
+              """ % (
+                  ITEM_A, ORG_A, ITEM_B, ORG_B,
+                  "art-resolve-a-" + SUFFIX, ORG_A, "https://" + HOST + "/resolve/a",
+                  hashlib.sha256(("resolve-a" + SUFFIX).encode()).hexdigest(),
+                  "art-resolve-b-poison-" + SUFFIX, ORG_B, "https://" + HOST + "/resolve/b-poison",
+                  hashlib.sha256(("resolve-b-poison" + SUFFIX).encode()).hexdigest(),
+                  "art-resolve-b-legit-" + SUFFIX, ORG_B, "https://" + HOST + "/resolve/b-legit",
+                  hashlib.sha256(("resolve-b-legit" + SUFFIX).encode()).hexdigest(),
+                  "pa-resolve-a-" + SUFFIX, ORG_A, "art-resolve-a-" + SUFFIX,
+                  "pa-resolve-b-poison-" + SUFFIX, ORG_B, "art-resolve-b-poison-" + SUFFIX,
+                  "pa-resolve-b-legit-" + SUFFIX, ORG_B, "art-resolve-b-legit-" + SUFFIX,
+                  EVENT_A, ORG_A, EVENT_B, ORG_B,
+                  "nei-resolve-a-" + SUFFIX, ORG_A, EVENT_A, "pa-resolve-a-" + SUFFIX, P_A,
+                  "nei-resolve-b-poison-" + SUFFIX, ORG_B, EVENT_B, "pa-resolve-b-poison-" + SUFFIX, P_POISON,
+                  "nei-resolve-b-legit-" + SUFFIX, ORG_B, EVENT_B, "pa-resolve-b-legit-" + SUFFIX, P_B,
+              ))
+
+              keyword_summary = json.dumps([{"keyword": "smoke-index", "weight": 2}])
+              sql("""
+              INSERT INTO NewsnowDomesticOpinionIndexSnapshot
+                (id, orgId, bucketStart, indexValue, attentionScore, breadthScore, freshnessScore, sentimentPressure, candidateCount, keywordSummary, createdAt, updatedAt)
+              VALUES ('%s', '%s', DATE_FORMAT(UTC_TIMESTAMP(3) - INTERVAL 1 HOUR, '%%Y-%%m-%%d %%H:00:00'), 0.5, 0.4, 0.3, 0.6, 0.2, 3, '%s', NOW(3), NOW(3));
+              """ % ("snap-domestic-" + SUFFIX, ORG_A, keyword_summary))
+
+              raw_full_a, raw_base_a, raw_hash_a = comparable_variants(URL_A)
+              raw_full_missing, raw_base_missing, raw_hash_missing = comparable_variants(URL_MISSING)
+              now_ms = int(time.time() * 1000)
+
+              mongo_seed("\n".join([
+                  "db.rawitems.insertOne(" + js_literal({
+                      "itemMetaId": ITEM_A,
+                      "payload": {"url": URL_A, "language": "en"},
+                      "source": "smoke",
+                      "urlComparableFull": raw_full_a,
+                      "urlComparableFullHash": raw_hash_a,
+                      "urlComparableBase": raw_base_a,
+                      "createdAt": ("date", now_ms - 120000),
+                      "updatedAt": ("date", now_ms - 120000),
+                  }) + ");",
+                  "db.rawitems.insertOne(" + js_literal({
+                      "itemMetaId": ITEM_MISSING,
+                      "payload": {"url": URL_MISSING, "language": "en"},
+                      "source": "smoke",
+                      "urlComparableFull": raw_full_missing,
+                      "urlComparableFullHash": raw_hash_missing,
+                      "urlComparableBase": raw_base_missing,
+                      "createdAt": ("date", now_ms - 110000),
+                      "updatedAt": ("date", now_ms - 110000),
+                  }) + ");",
+                  "db.processeditems.insertOne(" + js_literal({
+                      "_id": ("oid", P_A),
+                      "orgId": ORG_A,
+                      "itemMetaId": ITEM_A,
+                      "status": "completed",
+                      "result": {"sentiment_label": "neutral"},
+                      "createdAt": ("date", now_ms - 90000),
+                      "updatedAt": ("date", now_ms - 90000),
+                  }) + ");",
+                  "db.processeditems.insertOne(" + js_literal({
+                      "_id": ("oid", P_POISON),
+                      "orgId": ORG_B,
+                      "itemMetaId": ITEM_A,
+                      "status": "completed",
+                      "result": {"sentiment_label": "negative"},
+                      "createdAt": ("date", now_ms - 60000),
+                      "updatedAt": ("date", now_ms - 60000),
+                  }) + ");",
+                  "db.processeditems.insertOne(" + js_literal({
+                      "_id": ("oid", P_B),
+                      "orgId": ORG_B,
+                      "itemMetaId": ITEM_B,
+                      "status": "completed",
+                      "result": {"sentiment_label": "positive"},
+                      "createdAt": ("date", now_ms - 120000),
+                      "updatedAt": ("date", now_ms - 120000),
+                  }) + ");",
+              ]))
+              record("seeded orgs, users, permissions, resolve chain, domestic snapshot", True)
+
+
+          def create_failure_group(name, offset_ms):
+              group_id = hashlib.sha1((SUFFIX + ":" + name).encode()).hexdigest()[:24]
+              article_id = "smoke-art-" + group_id
+              processed_article_id = "smoke-pa-" + group_id
+              title = "Smoke clustering article " + group_id
+              topic = "smoke-topic-" + group_id
+              url_value = "https://" + HOST + "/clustering/" + group_id
+              content_hash = hashlib.sha256(("clustering:" + group_id).encode()).hexdigest()
+              created_ms = int(time.time() * 1000) - offset_ms
+
+              sql("""
+              INSERT INTO Article (id, orgId, url, language, titleGuess, crawlAt, contentHash, version, createdAt, updatedAt)
+              VALUES ('%s', '%s', '%s', 'en', '%s', NOW(3), '%s', 1, NOW(3), NOW(3));
+              INSERT INTO ProcessedArticle (id, orgId, articleId, status, title, summary, language, qualityScore, eventAt, createdAt, processedAt, updatedAt)
+              VALUES ('%s', '%s', '%s', 'completed', '%s', 'Smoke clustering summary', 'en', 0.5, NULL, NOW(3), NOW(3), NOW(3));
+              """ % (article_id, ORG_A, url_value, title, content_hash,
+                     processed_article_id, ORG_A, article_id, title))
+
+              mongo_seed("db.newseventclusteringfailures.insertOne(" + js_literal({
+                  "orgId": ORG_A,
+                  "groupId": group_id,
+                  "status": "pending",
+                  "clusteringMode": "bertopic_primary",
+                  "failureReason": "smoke_forced_failure",
+                  "failureMessage": FAILURE_MESSAGE,
+                  "requestId": None,
+                  "language": "en",
+                  "embeddingModel": None,
+                  "itemCount": 1,
+                  "sampleTitles": [title],
+                  "items": [{
+                      "processedArticleId": processed_article_id,
+                      "processedItemId": None,
+                      "articleId": article_id,
+                      "title": title,
+                      "summary": "Smoke clustering summary",
+                      "language": "en",
+                      "category": None,
+                      "categoryPath": None,
+                      "categoryConfidence": None,
+                      "topics": [topic],
+                      "entities": [],
+                      "qualityScore": 0.5,
+                      "publishedAt": ("date", created_ms - 7000),
+                      "processedAt": ("date", created_ms - 6000),
+                      "crawlAt": ("date", created_ms - 8000),
+                  }],
+                  "attemptCount": 0,
+                  "lastAttemptAt": None,
+                  "lastError": FAILURE_MESSAGE,
+                  "activeJobId": None,
+                  "progressProcessedCount": 0,
+                  "progressTotalCount": 1,
+                  "lastRecoveryModel": None,
+                  "resolvedAt": None,
+                  "resolvedById": None,
+                  "resolutionMode": None,
+                  "resolvedEventIds": [],
+                  "createdAt": ("date", created_ms),
+                  "updatedAt": ("date", created_ms),
+              }) + ");")
+              return {
+                  "groupId": group_id,
+                  "processedArticleId": processed_article_id,
+                  "articleId": article_id,
+                  "topic": topic,
+              }
+
+
+          def reset_group(group, event_ids):
+              sql("DELETE FROM NewsEventItem WHERE orgId='%s' AND processedArticleId='%s'" %
+                  (ORG_A, group["processedArticleId"]))
+              if event_ids:
+                  quoted = ",".join("'" + str(item) + "'" for item in event_ids if item)
+                  if quoted:
+                      sql("DELETE FROM NewsEvent WHERE orgId='%s' AND id IN (%s)" % (ORG_A, quoted))
+              mongo_seed("db.newseventclusteringfailures.updateOne(%s,{$set:%s});" % (
+                  js_literal({"orgId": ORG_A, "groupId": group["groupId"]}),
+                  js_literal({
+                      "status": "pending",
+                      "attemptCount": 0,
+                      "lastAttemptAt": None,
+                      "activeJobId": None,
+                      "lastError": FAILURE_MESSAGE,
+                      "progressProcessedCount": 0,
+                      "progressTotalCount": 1,
+                      "lastRecoveryModel": None,
+                      "resolvedAt": None,
+                      "resolvedById": None,
+                      "resolutionMode": None,
+                      "resolvedEventIds": [],
+                      "updatedAt": ("date", int(time.time() * 1000)),
+                  }),
+              ))
+
+
+          # ---------- assertions ----------
+          def assert_pending_state(label, expected_groups):
+              overview = get_ok(label + " overview", OVERVIEW, token_a)
+              require(label + " overview pendingCount",
+                      isinstance(overview, dict) and overview.get("pendingCount") == len(expected_groups),
+                      repr(overview))
+              rows = get_ok(label + " failures?status=pending", FAILURES + "?status=pending&limit=50", token_a)
+              require(label + " failures list is an array", isinstance(rows, list), repr(rows))
+              require(label + " pending group ids",
+                      {row.get("groupId") for row in rows} == set(expected_groups) and
+                      all(row.get("status") == "pending" for row in rows),
+                      repr(rows)[:800])
+              return overview, rows
+
+
+          def run_race(label, base, group, token):
+              path = backfill_path(group["groupId"])
+              with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                  futures = [pool.submit(call, base, path, "POST", token) for _ in range(2)]
+                  outcomes = [future.result() for future in futures]
+              statuses = sorted(status for status, _ in outcomes)
+              require(label + " concurrent statuses", statuses == [201, 400],
+                      "statuses=" + repr(statuses) + " bodies=" + repr([raw[:400] for _, raw in outcomes]))
+              wins = [(status, raw) for status, raw in outcomes if status == 201]
+              losses = [(status, raw) for status, raw in outcomes if status == 400]
+              win = body(wins[0][1]) or {}
+              require(label + " single winner", len(wins) == 1 and len(losses) == 1, repr(statuses))
+              require(label + " winner groupId", win.get("groupId") == group["groupId"], repr(win))
+              require(label + " winner assignedCount", win.get("assignedCount") == 1, repr(win))
+              require(label + " winner skippedCount", win.get("skippedCount") == 0, repr(win))
+              require(label + " winner resolvedEventIds",
+                      isinstance(win.get("resolvedEventIds"), list) and len(win["resolvedEventIds"]) == 1,
+                      repr(win))
+              require(label + " winner resolvedAt",
+                      isinstance(win.get("resolvedAt"), str) and win["resolvedAt"].endswith("Z"), repr(win))
+              loser_message = message(losses[0][1])
+              require(label + " loser 400 message", loser_message in (PENDING_MSG, UNRECOVERABLE_MSG),
+                      repr(loser_message) + " body=" + repr(losses[0][1][:400]))
+
+              item_rows = mysql_int("SELECT COUNT(*) FROM NewsEventItem WHERE orgId='%s' AND processedArticleId='%s'" %
+                                    (ORG_A, group["processedArticleId"]))
+              require(label + " item assigned exactly once", item_rows == 1, "rows=" + str(item_rows))
+              event_rows = mysql_int("SELECT COUNT(*) FROM NewsEvent WHERE orgId='%s' AND primaryTopic='%s'" %
+                                     (ORG_A, group["topic"]))
+              require(label + " exactly one event created", event_rows == 1, "rows=" + str(event_rows))
+              doc = mongo_failure_doc(group["groupId"]) or {}
+              require(label + " group resolved", doc.get("status") == "resolved", repr(doc))
+              require(label + " attemptCount advanced once", doc.get("attemptCount") == 1, repr(doc))
+              return win
+
+
+          def run_ignore_then_backfill(label, base, group, token):
+              ignored = post_ok(label + " ignore", ignore_path(group["groupId"]), token, base=base)
+              require(label + " ignore status", isinstance(ignored, dict) and ignored.get("status") == "ignored",
+                      repr(ignored))
+              require(label + " ignore resolutionMode",
+                      isinstance(ignored, dict) and ignored.get("resolutionMode") == "ignored", repr(ignored))
+              status, raw = call(base, backfill_path(group["groupId"]), "POST", token)
+              require(label + " backfill after ignore",
+                      status == 400 and message(raw) == UNRECOVERABLE_MSG,
+                      "status=" + str(status) + " message=" + repr(message(raw)))
+
+
+          # ---------- phases ----------
+          def run():
+              global token_a, token_b, token_items_a, token_settings_a
+              seed_static_data()
+              token_a = login(EMAIL_FULL_A)
+              token_b = login(EMAIL_FULL_B)
+              token_items_a = login(EMAIL_ITEMS_A)
+              token_settings_a = login(EMAIL_SETTINGS_A)
+              record("four human JWTs obtained before NestJS is stopped", True)
+
+              legacy_backfill = create_failure_group("legacy-backfill", 3000)
+              legacy_ignore = create_failure_group("legacy-ignore", 2000)
+
+              # ---- 阶段 1：legacy 开关，9 条路由经网关与 Nest 直连一致 ----
+              start_go("legacy")
+              negative_routes = [
+                  ("GET", NEWSNOW + "/source?id=%21%21%21", None),
+                  ("POST", NEWSNOW + "/sources/batch", {}),
+                  ("GET", NEWSNOW + "/hottest-analysis", None),
+                  ("GET", NEWSNOW + "/recommended", None),
+                  ("POST", llm_backfill_path(ZERO_GROUP), None),
+                  ("GET", NEWSNOW + "/sources", None),
+                  ("POST", META, None),
+              ]
+              legacy_negative = {}
+              for method, path, payload in negative_routes:
+                  status, raw = call(GO, path, method, None, payload)
+                  legacy_negative[(method, path)] = (status, raw)
+
+              metadata = compare_direct("legacy parity: GET /api/news-aggregator/metadata", META, token_a)
+              column_sources = metadata["columns"]["china"]["sources"][:3]
+              require("china column has sources for sources/order", len(column_sources) > 0, repr(metadata)[:400])
+              order_body = {"column": "china", "sources": column_sources}
+
+              compare_resolve("legacy parity: GET /api/news-aggregator/resolve", URL_A, token_a)
+              compare_direct("legacy parity: POST /api/news-aggregator/sources/order", ORDER, token_a,
+                             ignore=("computedAt",), method="POST", payload=order_body)
+              compare_direct("legacy parity: GET /api/news-aggregator/domestic-opinion-index?hours=24",
+                             OPINION + "?hours=24", token_a, ignore=("generatedAt",))
+              compare_direct("legacy parity: GET .../clustering/readiness", READINESS, token_a)
+              compare_direct("legacy parity: GET .../clustering/overview", OVERVIEW, token_a)
+              compare_direct("legacy parity: GET .../clustering/failures",
+                             FAILURES + "?status=pending&limit=50", token_a)
+
+              nest_backfill = post_ok("legacy parity: vector-backfill (NestJS)",
+                                      backfill_path(legacy_backfill["groupId"]), token_a, base=NEST)
+              reset_group(legacy_backfill, nest_backfill.get("resolvedEventIds") or [])
+              proxy_backfill = post_ok("legacy parity: vector-backfill (gateway)",
+                                       backfill_path(legacy_backfill["groupId"]), token_a)
+              require("legacy parity: vector-backfill body",
+                      normalized(nest_backfill, ("resolvedAt",), ("resolvedEventIds",)) ==
+                      normalized(proxy_backfill, ("resolvedAt",), ("resolvedEventIds",)),
+                      "nest=" + repr(nest_backfill) + " gateway=" + repr(proxy_backfill))
+
+              nest_ignore = post_ok("legacy parity: ignore (NestJS)",
+                                    ignore_path(legacy_ignore["groupId"]), token_a, base=NEST)
+              reset_group(legacy_ignore, [])
+              proxy_ignore = post_ok("legacy parity: ignore (gateway)",
+                                     ignore_path(legacy_ignore["groupId"]), token_a)
+              require("legacy parity: ignore body",
+                      normalized(nest_ignore, ("resolvedAt", "updatedAt")) ==
+                      normalized(proxy_ignore, ("resolvedAt", "updatedAt")),
+                      "nest=" + repr(nest_ignore) + " gateway=" + repr(proxy_ignore))
+
+              # ---- 阶段 2：go 开关，Nest 仍在运行 ----
+              start_go("go")
+
+              compare_direct("go parity: GET /api/news-aggregator/metadata", META, token_a)
+
+              flush_newsnow_caches()
+              gst, graw = call(GO, resolve_path(URL_A), "GET", token_a)
+              flush_newsnow_caches()
+              nst, nraw = call(NEST, resolve_path(URL_A), "GET", token_a)
+              require("go parity: GET /api/news-aggregator/resolve status", st_pair_ok(nst, gst),
+                      "nest=" + str(nst) + " go=" + str(gst) + " go_body=" + repr(graw[:400]))
+              require("go parity: GET /api/news-aggregator/resolve body", body(nraw) == body(graw),
+                      "nest=" + repr(nraw[:800]) + " go=" + repr(graw[:800]))
+
+              flush_newsnow_caches()
+              gst, graw = call(GO, ORDER, "POST", token_a, order_body)
+              flush_newsnow_caches()
+              nst, nraw = call(NEST, ORDER, "POST", token_a, order_body)
+              require("go parity: POST /api/news-aggregator/sources/order status", nst == 201 and gst == 201,
+                      "nest=" + str(nst) + " go=" + str(gst) + " body=" + repr(graw[:400]))
+              require("go parity: POST /api/news-aggregator/sources/order body",
+                      normalized(body(nraw), ("computedAt",)) == normalized(body(graw), ("computedAt",)),
+                      "nest=" + repr(nraw[:800]) + " go=" + repr(graw[:800]))
+
+              compare_direct("go parity: GET /api/news-aggregator/domestic-opinion-index?hours=24",
+                             OPINION + "?hours=24", token_a, ignore=("generatedAt",))
+
+              # ---- 阶段 3：缺陷 2（URL 反查的租户绑定）----
+              missing = compare_resolve("defect 2: missing ItemMeta returns matched=false", URL_MISSING, None)
+              require("defect 2: missing ItemMeta body", missing == {"matched": False}, repr(missing))
+
+              resolved_a = compare_resolve("defect 2: org A item resolves to org A event", URL_A, None)
+              require("defect 2: org A itemId", resolved_a.get("itemId") == ITEM_A, repr(resolved_a))
+              require("defect 2: org A eventId", resolved_a.get("eventId") == EVENT_A, repr(resolved_a))
+              require("defect 2: org A confidence", resolved_a.get("confidence") == 1, repr(resolved_a))
+              require("defect 2: poisoned org B item never leaks", resolved_a.get("eventId") != EVENT_B,
+                      repr(resolved_a))
+
+              # 同一 URL 上，org B 自己的最新 rawitems 行只能解析出 org B 的条目与事件。
+              raw_full_b, raw_base_b, raw_hash_b = comparable_variants(URL_A)
+              mongo_seed("db.rawitems.insertOne(" + js_literal({
+                  "itemMetaId": ITEM_B,
+                  "payload": {"url": URL_A, "language": "en"},
+                  "source": "smoke",
+                  "urlComparableFull": raw_full_b,
+                  "urlComparableFullHash": raw_hash_b,
+                  "urlComparableBase": raw_base_b,
+                  "createdAt": ("date", int(time.time() * 1000) - 5000),
+                  "updatedAt": ("date", int(time.time() * 1000) - 5000),
+              }) + ");")
+              resolved_b = compare_resolve("defect 2: org B resolves only org B event", URL_A, None)
+              require("defect 2: org B itemId", resolved_b.get("itemId") == ITEM_B, repr(resolved_b))
+              require("defect 2: org B eventId", resolved_b.get("eventId") == EVENT_B, repr(resolved_b))
+              require("defect 2: org B never obtains org A eventId", resolved_b.get("eventId") != EVENT_A,
+                      repr(resolved_b))
+
+              # ---- 阶段 4：缺陷 3（vector-backfill 原子抢占）----
+              nest_race = create_failure_group("nest-race", 1500)
+              nest_ignore_group = create_failure_group("nest-ignore", 1000)
+              expected_pending = [nest_race["groupId"], nest_ignore_group["groupId"]]
+              assert_pending_state("defect 3 (nest)", expected_pending)
+              compare_direct("defect 3 (nest): overview parity", OVERVIEW, token_a)
+              compare_direct("defect 3 (nest): pending failures parity",
+                             FAILURES + "?status=pending&limit=50", token_a)
+              run_race("defect 3 (nest)", NEST, nest_race, token_a)
+              run_ignore_then_backfill("defect 3 (nest)", NEST, nest_ignore_group, token_a)
+
+              go_race = create_failure_group("go-race", 1500)
+              go_ignore_group = create_failure_group("go-ignore", 1000)
+              expected_pending = [go_race["groupId"], go_ignore_group["groupId"]]
+              assert_pending_state("defect 3 (go)", expected_pending)
+              compare_direct("defect 3 (go): overview parity", OVERVIEW, token_a)
+              compare_direct("defect 3 (go): pending failures parity",
+                             FAILURES + "?status=pending&limit=50", token_a)
+              run_race("defect 3 (go)", GO, go_race, token_a)
+              run_ignore_then_backfill("defect 3 (go)", GO, go_ignore_group, token_a)
+
+              # ---- 阶段 5：租户隔离与权限 ----
+              beta_overview = get_ok("tenant: org B overview", OVERVIEW, token_b)
+              require("tenant: org B owns no groups",
+                      isinstance(beta_overview, dict) and
+                      beta_overview.get("pendingCount") == 0 and
+                      beta_overview.get("processingCount") == 0 and
+                      beta_overview.get("resolvedCount") == 0 and
+                      beta_overview.get("ignoredCount") == 0 and
+                      beta_overview.get("latestFailureAt") is None,
+                      repr(beta_overview))
+              beta_rows = get_ok("tenant: org B failures", FAILURES + "?limit=50", token_b)
+              require("tenant: org B sees only its own groups",
+                      beta_rows == [] and all(row.get("groupId") not in expected_pending + [nest_race["groupId"]]
+                                              for row in beta_rows),
+                      repr(beta_rows))
+
+              status, raw = call(GO, backfill_path(go_race["groupId"]), "POST", token_b)
+              require("tenant: org B vector-backfill on org A group",
+                      status == 404 and message(raw) == NOT_FOUND_MSG,
+                      "status=" + str(status) + " message=" + repr(message(raw)))
+              status, raw = call(GO, ignore_path(go_ignore_group["groupId"]), "POST", token_b)
+              require("tenant: org B ignore on org A group",
+                      status == 404 and message(raw) == NOT_FOUND_MSG,
+                      "status=" + str(status) + " message=" + repr(message(raw)))
+
+              for path in (READINESS, OVERVIEW, FAILURES):
+                  status, raw = call(GO, path, "GET", token_items_a)
+                  require("permission: missing settings.manage 403 " + path, status == 403,
+                          "status=" + str(status) + " body=" + repr(raw[:300]))
+              for path in (ignore_path(go_ignore_group["groupId"]), backfill_path(go_race["groupId"])):
+                  status, raw = call(GO, path, "POST", token_items_a)
+                  require("permission: missing settings.manage 403 POST " + path, status == 403,
+                          "status=" + str(status) + " body=" + repr(raw[:300]))
+
+              for path in (OPINION, ORDER):
+                  status, raw = call(GO, path, "GET" if path == OPINION else "POST",
+                                     token_settings_a, None if path == OPINION else order_body)
+                  require("permission: missing items.read 403 " + path, status == 403,
+                          "status=" + str(status) + " body=" + repr(raw[:300]))
+
+              get_ok("permission: machine token with settings.manage", OVERVIEW, MACHINE_TOKEN)
+              get_ok("permission: machine token failures", FAILURES, MACHINE_TOKEN)
+
+              for path in (OVERVIEW, FAILURES):
+                  status, raw = call(GO, path, "GET", None)
+                  require("permission: unauthenticated 401 " + path, status == 401,
+                          "status=" + str(status) + " body=" + repr(raw[:300]))
+              status, raw = call(GO, backfill_path(ZERO_GROUP), "POST", None)
+              require("permission: unauthenticated 401 vector-backfill", status == 401,
+                      "status=" + str(status) + " body=" + repr(raw[:300]))
+              get_ok("permission: public metadata without token", META, None)
+              status, raw = call(GO, resolve_path(URL_A), "GET", None)
+              require("permission: public resolve without token", status == 200,
+                      "status=" + str(status) + " body=" + repr(raw[:300]))
+
+              # ---- 阶段 6：未迁移路由仍回 NestJS（legacy 与 go 响应一致）----
+              # NestJS error envelopes embed a per-request traceId and
+              # timestamp, so the proxied response can only be compared after
+              # dropping those two volatile keys.
+              volatile = {"traceId", "timestamp"}
+              for method, path, payload in negative_routes:
+                  legacy_status, legacy_raw = legacy_negative[(method, path)]
+                  status, raw = call(GO, path, method, None, payload)
+                  require("route table: proxied " + method + " " + path,
+                          status == legacy_status and
+                          strip_keys(body(raw), volatile) == strip_keys(body(legacy_raw), volatile),
+                          "legacy=" + str(legacy_status) + " go=" + str(status) +
+                          " legacy_body=" + repr(legacy_raw[:400]) + " go_body=" + repr(raw[:400]))
+              for method, path, payload in negative_routes[:5]:
+                  status, _ = call(GO, path, method, None, payload)
+                  require("route table: not answered by Go " + method + " " + path,
+                          status not in (404, 501), "status=" + str(status))
+
+              # ---- 阶段 7：Nest 停止后 9 条仍 200/201，未迁移路由 502 ----
+              off_backfill = create_failure_group("off-backfill", 800)
+              off_ignore = create_failure_group("off-ignore", 600)
+              stop_nest()
+              # 所有 JWT 都在 Nest 停止前取得；此处开始网关不得再依赖 NestJS。
+              require("nest stop: still reachable through go gateway",
+                      call(GO, META, "GET", token_a)[0] == 200, "metadata after stop")
+
+              get_ok("nest-off: GET metadata", META, token_a)
+              status, raw = call(GO, resolve_path(URL_A), "GET", token_a)
+              require("nest-off: GET resolve", status == 200,
+                      "status=" + str(status) + " body=" + repr(raw[:300]))
+              post_ok("nest-off: POST sources/order", ORDER, token_a, order_body)
+              get_ok("nest-off: GET domestic-opinion-index", OPINION + "?hours=24", token_a)
+              get_ok("nest-off: GET clustering/readiness", READINESS, token_a)
+              off_overview = get_ok("nest-off: GET clustering/overview", OVERVIEW, token_a)
+              require("nest-off: overview pendingCount",
+                      off_overview.get("pendingCount") == 2, repr(off_overview))
+              off_rows = get_ok("nest-off: GET clustering/failures", FAILURES + "?status=pending&limit=50", token_a)
+              require("nest-off: pending failures list",
+                      isinstance(off_rows, list) and
+                      {row.get("groupId") for row in off_rows} == {off_backfill["groupId"], off_ignore["groupId"]},
+                      repr(off_rows)[:600])
+              off_win = post_ok("nest-off: POST vector-backfill",
+                                backfill_path(off_backfill["groupId"]), token_a)
+              require("nest-off: vector-backfill semantics",
+                      off_win.get("groupId") == off_backfill["groupId"] and
+                      off_win.get("assignedCount") == 1 and off_win.get("skippedCount") == 0 and
+                      len(off_win.get("resolvedEventIds") or []) == 1,
+                      repr(off_win))
+              off_ignore_body = post_ok("nest-off: POST ignore", ignore_path(off_ignore["groupId"]), token_a)
+              require("nest-off: ignore status", off_ignore_body.get("status") == "ignored",
+                      repr(off_ignore_body))
+
+              for label, method, path in (
+                  ("nest-off: GET hottest-analysis stays on NestJS", "GET", NEWSNOW + "/hottest-analysis"),
+                  ("nest-off: POST llm-backfill stays on NestJS", "POST", llm_backfill_path(ZERO_GROUP)),
+              ):
+                  status, raw = call(GO, path, method, token_a)
+                  payload = body(raw) or {}
+                  require(label, status == 502 and isinstance(payload, dict) and payload.get("statusCode") == 502,
+                          "status=" + str(status) + " body=" + repr(raw[:400]))
+
+
+          def cleanup():
+              print("cleanup: removing smoke rows")
+              statements = [
+                  "DELETE FROM NewsEventItem WHERE orgId IN ('%s', '%s')" % (ORG_A, ORG_B),
+                  "DELETE FROM NewsEvent WHERE orgId IN ('%s', '%s')" % (ORG_A, ORG_B),
+                  "DELETE FROM ProcessedArticle WHERE orgId IN ('%s', '%s')" % (ORG_A, ORG_B),
+                  "DELETE FROM Article WHERE orgId IN ('%s', '%s')" % (ORG_A, ORG_B),
+                  "DELETE FROM NewsnowDomesticOpinionIndexSnapshot WHERE orgId IN ('%s', '%s')" % (ORG_A, ORG_B),
+                  "DELETE FROM MachineAccessToken WHERE orgId IN ('%s', '%s')" % (ORG_A, ORG_B),
+                  "DELETE FROM RolePermission WHERE roleId IN ('%s', '%s', '%s', '%s')" %
+                  (ROLE_FULL_A, ROLE_FULL_B, ROLE_ITEMS_A, ROLE_SETTINGS_A),
+                  "DELETE FROM Membership WHERE orgId IN ('%s', '%s')" % (ORG_A, ORG_B),
+                  "DELETE FROM Role WHERE orgId IN ('%s', '%s')" % (ORG_A, ORG_B),
+                  "DELETE FROM RefreshToken WHERE userId IN ('%s', '%s', '%s', '%s')" %
+                  (USER_FULL_A, USER_FULL_B, USER_ITEMS_A, USER_SETTINGS_A),
+                  "DELETE FROM AuditLog WHERE orgId IN ('%s', '%s')" % (ORG_A, ORG_B),
+                  "DELETE FROM AuditLogOutbox WHERE orgId IN ('%s', '%s')" % (ORG_A, ORG_B),
+                  "DELETE FROM User WHERE id IN ('%s', '%s', '%s', '%s')" %
+                  (USER_FULL_A, USER_FULL_B, USER_ITEMS_A, USER_SETTINGS_A),
+                  "DELETE FROM Org WHERE id IN ('%s', '%s')" % (ORG_A, ORG_B),
+              ]
+              for statement in statements:
+                  sql_quiet(statement)
+              try:
+                  mongo_seed("\n".join([
+                      "db.newseventclusteringfailures.deleteMany(" +
+                      js_literal({"orgId": {"$in": [ORG_A, ORG_B]}}) + ");",
+                      "db.rawitems.deleteMany(" +
+                      js_literal({"itemMetaId": {"$in": [ITEM_A, ITEM_B, ITEM_MISSING]}}) + ");",
+                      "db.processeditems.deleteMany(" +
+                      js_literal({"$or": [
+                          {"orgId": {"$in": [ORG_A, ORG_B]}},
+                          {"_id": {"$in": [("oid", P_A), ("oid", P_POISON), ("oid", P_B)]}},
+                      ]}) + ");",
+                      "db.tasklogs.deleteMany(" +
+                      js_literal({"orgId": {"$in": [ORG_A, ORG_B]}}) + ");",
+                  ]))
+              except Exception as exc:
+                  print("cleanup mongo skipped:", exc)
+              print("cleanup: done")
+
+
+          def main():
+              try:
+                  run()
+              except SmokeFailure as exc:
+                  print("FAIL", exc)
+                  write_summary(False, str(exc))
+                  dump_logs()
+                  sys.exit(1)
+              except Exception as exc:
+                  traceback.print_exc()
+                  write_summary(False, "unexpected error: " + str(exc))
+                  dump_logs()
+                  sys.exit(1)
+              else:
+                  print("PASS api-go newsnow clustering ops: legacy parity, go parity, "
+                        "url reverse-lookup tenant binding, atomic vector-backfill claim, "
+                        "tenant isolation, permissions, nest-off survival")
+                  write_summary(True)
+              finally:
+                  cleanup()
+
+
+          if __name__ == "__main__":
+              main()
+          PY
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          echo "=== docker ps -a ==="
+          docker ps -a || true
+          echo "=== NestJS log (tail) ==="
+          tail -200 /tmp/api-nestjs.log || true
+          echo "=== api-go log (tail) ==="
+          docker logs api-go-newsnow-clustering 2>&1 | tail -200 || true

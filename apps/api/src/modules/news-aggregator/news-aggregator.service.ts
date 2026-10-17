@@ -675,9 +675,22 @@ export class NewsAggregatorService {
       return { matched: false }
     }
 
+    // Bind the hit to its real owning organization before reading anything
+    // else. A deleted ItemMeta must resolve to a miss rather than keep serving
+    // a stale eventId, and every downstream query is scoped to this orgId so a
+    // dirty or colliding reference can never leak another tenant's event.
+    const itemMeta = await this.prisma.itemMeta.findUnique({
+      where: { id: itemMetaId },
+      select: { id: true, orgId: true },
+    })
+    if (!itemMeta) {
+      return { matched: false }
+    }
+
     const processedRows = await ProcessedItemModel.find(
       {
         itemMetaId,
+        orgId: itemMeta.orgId,
         status: "completed",
       },
       { _id: 1 },
@@ -693,6 +706,7 @@ export class NewsAggregatorService {
     const linkedEvent = processedItemIds.length
       ? await this.prisma.newsEventItem.findFirst({
           where: {
+            orgId: itemMeta.orgId,
             processedItemId: { in: processedItemIds },
           },
           orderBy: { createdAt: "desc" },

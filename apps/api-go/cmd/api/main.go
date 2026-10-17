@@ -557,6 +557,10 @@ func run() error {
 	if cfg.QualityOverviewMode == config.QualityOverviewModeGo {
 		qualityOverviewMode = string(legacyproxy.ModeGo)
 	}
+	newsnowClusteringOpsMode := ""
+	if cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo {
+		newsnowClusteringOpsMode = string(legacyproxy.ModeGo)
+	}
 	crawlReadTelemetryMode := ""
 	if cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo {
 		crawlReadTelemetryMode = string(legacyproxy.ModeGo)
@@ -593,6 +597,7 @@ func run() error {
 	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
 	rules = legacyproxy.WithNewsIndicators(rules, newsIndicatorsMode)
 	rules = legacyproxy.WithQualityOverview(rules, qualityOverviewMode)
+	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
 	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
 	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
@@ -646,6 +651,7 @@ func run() error {
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
 				cfg.QualityOverviewMode == config.QualityOverviewModeGo ||
+				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
@@ -706,9 +712,10 @@ func run() error {
 	adminLogsGo := cfg.AdminLogsMode == config.AdminLogsModeGo
 	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
 	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
+	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || crawlReadTelemetryGo || runtimeSettingsGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || crawlReadTelemetryGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1041,6 +1048,9 @@ func run() error {
 	if err := wireQualityOverview(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
+	if err := wireNewsnowClusteringOps(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
+	}
 	if err := wireCrawlReadTelemetry(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
@@ -1175,6 +1185,11 @@ func run() error {
 			},
 			"healthz": map[string]any{
 				"mode": string(cfg.HealthzMode),
+			},
+			// NewsNow 本地计算与聚类失败管理的 9 条 HTTP。legacy 时全部
+			// 回落 NestJS；不含连接串与密钥。
+			"newsnowClusteringOps": map[string]any{
+				"mode": string(cfg.NewsnowClusteringOpsMode),
 			},
 		})
 	})

@@ -282,6 +282,38 @@ const (
 	QualityOverviewModeGo     QualityOverviewMode = "go"
 )
 
+// NewsnowClusteringOpsMode controls the nine NewsNow local-computation and
+// news-event clustering failure HTTP endpoints. It defaults to legacy. In go
+// mode it takes over exactly these nine routes and nothing else:
+//
+//	GET  /api/news-aggregator/metadata                       (public)
+//	GET  /api/news-aggregator/resolve                        (public)
+//	POST /api/news-aggregator/sources/order                  (items.read)
+//	GET  /api/news-aggregator/domestic-opinion-index         (items.read)
+//	GET  /api/system-settings/news-events/clustering/readiness
+//	GET  /api/system-settings/news-events/clustering/overview
+//	GET  /api/system-settings/news-events/clustering/failures
+//	POST /api/system-settings/news-events/clustering/failures/:groupId/vector-backfill
+//	POST /api/system-settings/news-events/clustering/failures/:groupId/ignore
+//
+// The four NewsNow endpoints that fetch external sources are deliberately left
+// on NestJS: GET /api/news-aggregator/source,
+// POST /api/news-aggregator/sources/batch,
+// GET /api/news-aggregator/hottest-analysis and
+// GET /api/news-aggregator/recommended. So is
+// POST /api/system-settings/news-events/clustering/failures/:groupId/llm-backfill,
+// which enqueues a BullMQ job. shadow and canary are not enabled by this switch.
+type NewsnowClusteringOpsMode string
+
+const (
+	// NewsnowClusteringOpsModeLegacy keeps all nine routes on NestJS and is the
+	// default, including when the environment variable is unset or empty.
+	NewsnowClusteringOpsModeLegacy NewsnowClusteringOpsMode = "legacy"
+	// NewsnowClusteringOpsModeGo moves the nine routes to Go. It requires
+	// JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI.
+	NewsnowClusteringOpsModeGo NewsnowClusteringOpsMode = "go"
+)
+
 // CrawlReadTelemetryMode controls the seven crawl read/media/telemetry HTTP
 // endpoints migrated by this unit. It defaults to legacy.
 //
@@ -514,6 +546,14 @@ type Config struct {
 	// Mongo；新闻源/流水线快照与 outbox 在 MySQL）。不启用 shadow，不启动
 	// 任何 worker。
 	QualityOverviewMode QualityOverviewMode
+	// NewsnowClusteringOpsMode controls the nine NewsNow local-computation and
+	// news-event clustering failure endpoints. Defaults to legacy. go requires
+	// JWT, MySQL, Redis and Mongo: NewsNow metadata/resolve/ordering read Redis
+	// and Mongo, the domestic opinion index reads MySQL and Mongo, and the
+	// clustering failure endpoints read and write the Mongo
+	// newseventclusteringfailures collection. No external source fetch, no LLM
+	// call and no queue delivery happens in this mode, and no worker is started.
+	NewsnowClusteringOpsMode NewsnowClusteringOpsMode
 	// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry
 	// endpoints migrated by this unit. It defaults to legacy. go mode
 	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
@@ -944,6 +984,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_QUALITY_OVERVIEW_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_CLUSTERING_OPS_MODE")) {
+	case "", string(NewsnowClusteringOpsModeLegacy):
+		cfg.NewsnowClusteringOpsMode = NewsnowClusteringOpsModeLegacy
+	case string(NewsnowClusteringOpsModeGo):
+		cfg.NewsnowClusteringOpsMode = NewsnowClusteringOpsModeGo
+	default:
+		errs = append(errs, "API_GO_NEWSNOW_CLUSTERING_OPS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_READ_TELEMETRY_MODE")) {
 	case "", string(CrawlReadTelemetryModeLegacy):
 		cfg.CrawlReadTelemetryMode = CrawlReadTelemetryModeLegacy
@@ -1372,6 +1420,12 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_QUALITY_OVERVIEW_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_QUALITY_OVERVIEW_MODE=go")
+		}
+	}
+	if cfg.NewsnowClusteringOpsMode == NewsnowClusteringOpsModeGo {
+		appendAuthRequirements(&errs, "API_GO_NEWSNOW_CLUSTERING_OPS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_NEWSNOW_CLUSTERING_OPS_MODE=go")
 		}
 	}
 	// Crawl read/telemetry takeover reads crawlresultcontents and tasklogs from
