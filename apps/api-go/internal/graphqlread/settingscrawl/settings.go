@@ -681,8 +681,25 @@ func defaultNewsClassificationSettings() NewsClassificationSettingsModel {
 		RerankTopN:      6,
 		CacheTTLSeconds: 60,
 		TaxonomyVersion: "news-taxonomy-v1",
-		Taxonomy:        defaultTaxonomy(),
+		Taxonomy:        fallbackTaxonomySorted(),
 	}
+}
+
+// fallbackTaxonomySorted returns the built-in taxonomy in the order NestJS
+// reports once its settings cache is warm.
+//
+// NewsClassificationSettingsService.getSettings returns the declaration-order
+// fallback on a cache miss and writes it to Redis; every later call re-runs
+// normalizeSettings over the cached object, and normalizeTaxonomy re-sorts a
+// value that IS an array. The steady state is therefore the path-sorted list,
+// which is what this reader returns for a missing or unreadable row.
+func fallbackTaxonomySorted() []NewsClassificationTaxonomyNodeModel {
+	fallback := defaultTaxonomy()
+	encoded, err := json.Marshal(fallback)
+	if err != nil {
+		return fallback
+	}
+	return normalizeNewsClassificationTaxonomy(encoded, fallback)
 }
 
 // newsClassificationSettings implements the newsClassificationSettings Query
