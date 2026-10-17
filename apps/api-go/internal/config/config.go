@@ -1677,6 +1677,11 @@ func parsePlatformGovernanceDefaults(cfg *Config, getenv func(string) string) []
 	case "false", "0", "no", "n", "off":
 		cfg.PlatformGovernanceAssistantGuardrailsEnabled = false
 	default:
+		// Keep the field usable even though the value is invalid: the error is
+		// only promoted to a startup failure in go mode, and a zero value here
+		// would otherwise leak a bogus default into a go deployment that was
+		// started before the mistake was noticed.
+		cfg.PlatformGovernanceAssistantGuardrailsEnabled = true
 		errs = append(errs, "ASSISTANT_GUARDRAILS_ENABLED must be a boolean")
 	}
 
@@ -1695,6 +1700,7 @@ func parsePlatformGovernanceDefaults(cfg *Config, getenv func(string) string) []
 	if value, ok := platformGovernanceEnvInt(getenv("ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR"), 30, 0, 10000); ok {
 		cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour = int(value)
 	} else {
+		cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour = 30
 		errs = append(errs, "ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR must be an integer between 0 and 10000")
 	}
 
@@ -1703,6 +1709,7 @@ func parsePlatformGovernanceDefaults(cfg *Config, getenv func(string) string) []
 	if value, ok := platformGovernanceEnvInt(getenv("ASSISTANT_ORG_MAX_IN_FLIGHT"), 2, 0, 100); ok {
 		cfg.PlatformGovernanceAssistantOrgMaxInFlight = int(value)
 	} else {
+		cfg.PlatformGovernanceAssistantOrgMaxInFlight = 2
 		errs = append(errs, "ASSISTANT_ORG_MAX_IN_FLIGHT must be an integer between 0 and 100")
 	}
 
@@ -1711,6 +1718,7 @@ func parsePlatformGovernanceDefaults(cfg *Config, getenv func(string) string) []
 	if value, ok := platformGovernanceEnvInt(getenv("ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET"), 2_000_000, 0, 1_000_000_000_000); ok {
 		cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget = value
 	} else {
+		cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget = 2_000_000
 		errs = append(errs, "ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET must be an integer between 0 and 1000000000000")
 	}
 
@@ -1720,6 +1728,7 @@ func parsePlatformGovernanceDefaults(cfg *Config, getenv func(string) string) []
 	if value, ok := platformGovernanceEnvInt(getenv("TASK_LOG_RETENTION_DAYS"), 14, 1, maxEnvRetentionDays); ok {
 		cfg.PlatformGovernanceTaskLogRetentionDays = int(value)
 	} else {
+		cfg.PlatformGovernanceTaskLogRetentionDays = 14
 		errs = append(errs, "TASK_LOG_RETENTION_DAYS must be a positive integer")
 	}
 
