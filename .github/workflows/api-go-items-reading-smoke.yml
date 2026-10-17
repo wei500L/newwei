@@ -123,5 +123,1121 @@ jobs:
         run: |
           set -euo pipefail
           python3 - << 'PY'
-          # __PY_BODY__
+          import datetime, json, os, signal, subprocess, time, urllib.error, urllib.parse, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+          container = "api-go-items-reading"
+          image = "api-go-items-reading:ci"
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def phase(title):
+              print("=== PHASE", title, "===")
+
+          def oid(ch, suffix):
+              return (ch * 24)[: 24 - len(suffix)] + suffix
+
+          def now_utc():
+              return datetime.datetime.now(datetime.timezone.utc)
+
+          BASE_DAY = now_utc()
+
+          def mts(offset_days):
+              return (BASE_DAY + datetime.timedelta(days=offset_days)).strftime("%Y-%m-%d %H:%M:%S.000")
+
+          def its(offset_days):
+              return (BASE_DAY + datetime.timedelta(days=offset_days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+          # ---------- host process helpers ----------
+
+          def docker_ps(ancestor):
+              out = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor], text=True).split()
+              if not out:
+                  fail("no container for " + ancestor)
+              return out[0]
+
+          def mysql_container():
+              return docker_ps("mysql:8.4")
+
+          def mongo_container():
+              return docker_ps("mongo:7.0")
+
+          def redis_container():
+              return docker_ps("redis:7.2")
+
+          def sql(statement):
+              proc = subprocess.run(
+                  ["docker", "exec", "-i", mysql_container(), "mysql", "-uroot", "-psecret", "-N", "app"],
+                  input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("mysql: " + (proc.stderr or proc.stdout))
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          class Oid:
+              def __init__(self, value):
+                  self.value = value
+
+          class JsDate:
+              def __init__(self, value):
+                  self.value = value
+
+          def js(value):
+              if isinstance(value, Oid):
+                  return "ObjectId(" + json.dumps(value.value) + ")"
+              if isinstance(value, JsDate):
+                  return "new Date(" + json.dumps(value.value) + ")"
+              if isinstance(value, dict):
+                  return "{" + ",".join(json.dumps(str(k)) + ":" + js(v) for k, v in value.items()) + "}"
+              if isinstance(value, list):
+                  return "[" + ",".join(js(v) for v in value) + "]"
+              if isinstance(value, bool):
+                  return "true" if value else "false"
+              if value is None:
+                  return "null"
+              if isinstance(value, (int, float)):
+                  return repr(value)
+              return json.dumps(value)
+
+          def mongo(script):
+              proc = subprocess.run(
+                  ["docker", "exec", "-i", mongo_container(), "mongosh", "app", "--quiet", "--eval", script],
+                  text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("mongosh: " + (proc.stderr or proc.stdout))
+              return proc.stdout.strip()
+
+          def mongo_insert(collection, docs):
+              if docs:
+                  mongo("db.getCollection(" + json.dumps(collection) + ").insertMany(" + js(docs) + ");")
+
+          def redis(*args):
+              proc = subprocess.run(
+                  ["docker", "exec", redis_container(), "redis-cli", "--raw"] + list(args),
+                  text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("redis: " + (proc.stderr or proc.stdout))
+              return proc.stdout.strip()
+
+          def redis_keys(pattern):
+              return [line for line in redis("KEYS", pattern).splitlines() if line.strip()]
+
+          def redis_del_pattern(pattern):
+              keys = redis_keys(pattern)
+              if keys:
+                  redis("DEL", *keys)
+
+          # ---------- HTTP helpers (urllib only; no curl) ----------
+
+          def call(base_url, path, method="GET", token=None, payload=None, timeout=60):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              return json.loads(text)
+
+          def core(value):
+              if isinstance(value, dict):
+                  return {key: core(item) for key, item in value.items() if key not in ("traceId", "timestamp", "locations", "path")}
+              if isinstance(value, list):
+                  return [core(item) for item in value]
+              return value
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+          def login(email, password=None):
+              status, raw = call(nest, "/api/auth/login", "POST", payload={
+                  "email": email,
+                  "password": password or os.environ["SEED_ADMIN_PASSWORD"],
+              })
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail("login " + email + " " + str(status) + " " + repr(raw[:400]))
+              return doc["accessToken"]
+
+          def same(path, method="GET", token=None, payload=None):
+              left_status, left_raw = call(nest, path, method, token, payload)
+              right_status, right_raw = call(go, path, method, token, payload)
+              if left_status != right_status or core(body(left_raw)) != core(body(right_raw)):
+                  fail("rest parity " + method + " " + path + " nest=" + str(left_status) + " " + repr(left_raw[:500]) +
+                       " go=" + str(right_status) + " " + repr(right_raw[:500]))
+              return left_status, body(left_raw)
+
+          def detail_projection(doc):
+              if not isinstance(doc, dict):
+                  return doc
+              meta = doc.get("itemMeta") or {}
+              raw = doc.get("rawItem")
+              processed = doc.get("processed")
+              out = {"itemMeta": {key: meta.get(key) for key in ("id", "orgId", "externalId", "name", "status", "mongoRef")}}
+              if isinstance(raw, dict):
+                  out["rawItem"] = {key: raw.get(key) for key in ("_id", "itemMetaId", "payload", "source")}
+              else:
+                  out["rawItem"] = raw
+              if isinstance(processed, dict):
+                  out["processed"] = {key: processed.get(key) for key in ("_id", "itemMetaId", "status", "tags", "createdAt")}
+                  out["processedResult"] = processed.get("result")
+              else:
+                  out["processed"] = processed
+                  out["processedResult"] = None
+              return out
+
+          def detail_same(path, token):
+              left_status, left_raw = call(nest, path, "GET", token)
+              right_status, right_raw = call(go, path, "GET", token)
+              if left_status != right_status or detail_projection(body(left_raw)) != detail_projection(body(right_raw)):
+                  fail("detail parity " + path + " nest=" + str(left_status) + " " + repr(left_raw[:600]) +
+                       " go=" + str(right_status) + " " + repr(right_raw[:600]))
+              return right_status, body(right_raw)
+
+          def gql(base_url, token, query, variables=None):
+              payload = {"query": query}
+              if variables is not None:
+                  payload["variables"] = variables
+              return call(base_url, "/graphql", "POST", token, payload)
+
+          def gql_doc(base_url, token, query, variables=None):
+              status, raw = gql(base_url, token, query, variables)
+              return status, body(raw)
+
+          def gql_same(token, query, variables=None, label=""):
+              ls, lr = gql(nest, token, query, variables)
+              rs, rr = gql(go, token, query, variables)
+              if ls != rs or core(body(lr)) != core(body(rr)):
+                  fail("graphql parity " + label + " nest=" + str(ls) + " " + repr(lr[:700]) +
+                       " go=" + str(rs) + " " + repr(rr[:700]))
+              return body(lr)
+
+          def stats(base_url=go):
+              status, raw = call(base_url, "/__go/graphql-read-stats")
+              doc = body(raw) or {}
+              if status != 200:
+                  fail("graphql-read-stats " + str(status) + " " + repr(raw[:200]))
+              return doc.get("resolverCalls") or 0
+
+          # ---------- docker run / health ----------
+
+          LEGACY_SWITCHES = [
+              "API_GO_GRAPHQL_NEWS_EVENTS_MODE",
+              "API_GO_CRAWL_TEMPLATES_MODE",
+              "API_GO_CRAWL_PROFILES_MODE",
+              "API_GO_CRAWL_WORKFLOWS_MODE",
+              "API_GO_CRAWL_FRONTIER_RUNS_MODE",
+              "API_GO_NEWS_SOURCES_MODE",
+              "API_GO_SITUATION_MONITORS_MODE",
+              "API_GO_CONTENT_SUBSCRIPTIONS_MODE",
+              "API_GO_USER_NEWS_BEHAVIOR_MODE",
+              "API_GO_USER_DIGEST_MODE",
+              "API_GO_DASHBOARD_STATS_MODE",
+              "API_GO_DASHBOARD_CHARTS_MODE",
+              "API_GO_DASHBOARD_WAR_MAP_MODE",
+              "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE",
+              "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE",
+              "API_GO_DASHBOARD_SPACETIME_GEO_MODE",
+              "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE",
+              "API_GO_DASHBOARD_STREAM_MODE",
+              "API_GO_HEALTHZ_MODE",
+              "API_GO_PUBLIC_PORTAL_MODE",
+              "API_GO_ANALYSIS_VIEWS_MODE",
+              "API_GO_ANALYSIS_BOARDS_MODE",
+              "API_GO_ANALYSIS_THREADS_MODE",
+              "API_GO_RBAC_MODE",
+              "API_GO_GRAPHQL_WORKSPACE_READ_MODE",
+              "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE",
+              "API_GO_NEWS_INDICATORS_MODE",
+              "API_GO_QUALITY_OVERVIEW_MODE",
+              "API_GO_CLASSIFICATION_RSS_OPS_MODE",
+              "API_GO_NEWSNOW_CLUSTERING_OPS_MODE",
+              "API_GO_CRAWL_READ_TELEMETRY_MODE",
+              "API_GO_RUNTIME_SETTINGS_MODE",
+              "API_GO_ADMIN_LOGS_MODE",
+              "API_GO_LLM_LOGS_MODE",
+              "API_GO_MODEL_ACCESS_SETTINGS_MODE",
+              "API_GO_INFRASTRUCTURE_SETTINGS_MODE",
+              "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE",
+              "API_GO_SITUATION_MONITOR_SIGNALS_MODE",
+              "API_GO_GRAPHQL_KG_IMPACT_MODE",
+              "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE",
+              "API_GO_USER_SETTINGS_WRITE_MODE",
+          ]
+
+          SWITCH_OVERRIDES = {
+              "API_GO_ONBOARDING_MODE": "shadow",
+              "API_GO_USER_SETTINGS_READ_MODE": "go",
+          }
+
+          def docker_run_args(items_mode, graphql_mode, read_model, vector_hard_fail):
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  "API_GO_ITEMS_READING_MODE=" + items_mode,
+                  "API_GO_GRAPHQL_READ_MODE=" + graphql_mode,
+                  "ITEMS_READ_MODEL_ENABLED=" + ("true" if read_model else "false"),
+                  "ITEMS_VECTOR_HARD_FAIL_ENABLED=" + ("true" if vector_hard_fail else "false"),
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "VECTOR_SERVICE_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  "CANARY_PERCENT=0",
+                  "JWT_SECRET=" + os.environ["JWT_SECRET"],
+                  "JWT_ISSUER=" + os.environ["JWT_ISSUER"],
+                  "JWT_AUDIENCE=" + os.environ["JWT_AUDIENCE"],
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CORS_ORIGIN=" + os.environ["CORS_ORIGIN"],
+              ]
+              for name in LEGACY_SWITCHES:
+                  env.append(name + "=legacy")
+              for name, value in SWITCH_OVERRIDES.items():
+                  env.append(name + "=" + value)
+              cmd = ["docker", "run", "-d", "--name", container,
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s",
+                     "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for entry in env:
+                  cmd.extend(["-e", entry])
+              cmd.append(image)
+              return cmd
+
+          def go_logs():
+              proc = subprocess.run(["docker", "logs", container], text=True, capture_output=True)
+              return (proc.stdout or "") + (proc.stderr or "")
+
+          def inspect_state():
+              proc = subprocess.run(
+                  ["docker", "inspect", "--format",
+                   "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.State.ExitCode}}",
+                   container], text=True, capture_output=True)
+              if proc.returncode != 0:
+                  return None
+              return proc.stdout.strip()
+
+          def restart_go(items_mode, graphql_mode, read_model, vector_hard_fail):
+              subprocess.run(["docker", "rm", "-f", container], check=False, capture_output=True)
+              subprocess.check_call(docker_run_args(items_mode, graphql_mode, read_model, vector_hard_fail))
+              for _ in range(40):
+                  state = inspect_state()
+                  print("health", state, "itemsMode", repr(items_mode), "graphqlRead", repr(graphql_mode),
+                        "readModel", read_model, "vectorHardFail", vector_hard_fail)
+                  if state is None:
+                      fail("container disappeared during startup\n" + go_logs()[-4000:])
+                  status, health, _ = state.split("|")
+                  if health == "healthy":
+                      return
+                  if health == "unhealthy":
+                      fail(go_logs()[-4000:])
+                  if status == "exited":
+                      fail(go_logs()[-4000:])
+                  time.sleep(2)
+              fail(go_logs()[-4000:])
+
+          def restart_go_expect_failure(items_mode):
+              subprocess.run(["docker", "rm", "-f", container], check=False, capture_output=True)
+              proc = subprocess.run(docker_run_args(items_mode, "legacy", False, False), text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("docker run rejected: " + (proc.stderr or proc.stdout))
+              for _ in range(40):
+                  state = inspect_state()
+                  if state is None:
+                      return
+                  status, health, _ = state.split("|")
+                  if health == "unhealthy" or status == "exited":
+                      return
+                  time.sleep(1)
+              fail("invalid API_GO_ITEMS_READING_MODE did not fail the container; state=" + str(state))
+
+          # ---------- identities / fixture ids ----------
+
+          ORG_A = "ir-org-a-00000000000001"
+          ORG_B = "ir-org-b-00000000000001"
+          ORG_C = "ir-org-c-00000000000001"
+
+          RAW_NORMAL = oid("a", "01")
+          RAW_DUP = oid("a", "02")
+          RAW_NULLPAYLOAD = oid("a", "03")
+          RAW_LATE = oid("a", "04")
+          RAW_RM = oid("a", "11")
+          RAW_X1 = oid("c", "01")
+          RAW_X2 = oid("c", "02")
+          RAW_B_LEAK = oid("b", "01")
+          RAW_B_NORMAL = oid("b", "02")
+          RAW_B_IR3 = oid("b", "03")
+
+          ITEM_NORMAL = "ir-item-a-normal-0000000001"
+          ITEM_DUP = "ir-item-a-dup-000000000002"
+          ITEM_CROSS1 = "ir-item-a-cross-0000000003"
+          ITEM_CROSS2 = "ir-item-a-cross2-000000004"
+          ITEM_BADREF = "ir-item-a-badref-0000000009"
+          ITEM_NULLPAYLOAD = "ir-item-a-nullpayload-0010"
+          ITEM_ORDER_LOW = "ir-item-a-order-0000000005"
+          ITEM_ORDER_HIGH = "ir-item-a-order-0000000006"
+          ITEM_CROSSED_C = "ir-item-a-crossed-00000007"
+          ITEM_CROSSED_S = "ir-item-a-crossed-00000008"
+          ITEM_NORAW = "ir-item-a-noraw-00000000012"
+          ITEM_LATE = "ir-item-a-late-00000000011"
+          ITEM_IR3 = "ir-item-a-ir3-000000000013"
+          ITEM_IR3_DUP = "ir-item-a-ir3dup-0000000014"
+          ITEM_PROC = "ir-item-a-processed-000015"
+          ITEM_EVENT = "ir-item-a-event-00000000016"
+          ITEM_EVENT_FB = "ir-item-a-eventfb-0000000017"
+          ITEM_RM = "ir-item-a-readmodel-0000019"
+          ITEM_B_NORMAL = "ir-item-b-normal-0000000001"
+          ITEM_B_IR3 = "ir-item-b-ir3-000000000002"
+          ITEM_MISSING = "ir-item-a-missing-000000018"
+
+          PI_NORMAL = oid("d", "01")
+          PI_DUP = oid("d", "02")
+          PI_B_LATEST = oid("e", "01")
+          PI_B_LEAK = oid("e", "02")
+          PI_PROC_COMPLETED = oid("d", "03")
+          PI_PROC_FAILED = oid("d", "04")
+          PI_PROC_PROCESSING = oid("d", "05")
+          PI_RESULT_OBJECT = oid("d", "06")
+          PI_RESULT_STRING = oid("d", "07")
+          PI_RESULT_NESTED = oid("d", "08")
+          PI_RESULT_BLANK = oid("d", "09")
+          PI_RESULT_INVALID = oid("d", "0a")
+          PI_DUP_OF_A = oid("d", "0b")
+          PI_DUP_OF_B = oid("d", "0c")
+          PI_IR3 = oid("d", "0d")
+          PI_IR3_DUP = oid("d", "0e")
+          PI_IR3_BAD_REGION = oid("d", "0f")
+          PI_EVENT_DIRECT = oid("d", "10")
+          PI_EVENT_FB = oid("d", "11")
+          PI_RM = oid("d", "12")
+          PI_B_IR3 = oid("e", "03")
+          PI_LATE = oid("d", "13")
+
+          SRC_A_IR3 = "ir-src-a-ir3-000000000001"
+          SRC_A_ARTICLES = "ir-src-a-articles-00000001"
+          SRC_A_PROCESSED = "ir-src-a-processed-000001"
+          SRC_A_BOTH = "ir-src-a-both-000000000002"
+          SRC_A_ZERO = "ir-src-a-zero-000000000003"
+          SRC_A_NONRSS = "ir-src-a-nonrss-0000000004"
+          SRC_A_NORMAL = "ir-src-a-normal-0000000005"
+
+          ARTICLE_IR3 = "ir-art-a-ir3-0000000000001"
+          ARTICLE_IR3_DUP = "ir-art-a-ir3dup-0000000002"
+          PA_IR3 = "ir-pa-a-ir3-00000000000001"
+          PA_IR3_DUP = "ir-pa-a-ir3dup-00000000002"
+          ARTICLE_EVENT_FB = "ir-art-a-eventfb-000000001"
+          PA_EVENT_FB = "ir-pa-a-eventfb-00000000001"
+          ARTICLE_SRC_ARTICLES = "ir-art-a-srcart-0000000001"
+          ARTICLE_SRC_BOTH = "ir-art-a-srcboth-0000000001"
+          NEWS_EVENT_A = "ir-event-a-0000000000001"
+
+          ACCOUNTS = [
+              ("ir-user-a-admin-0000000001", "ir-admin-a@example.com", ORG_A, "read", 1),
+              ("ir-user-a-noread-00000000002", "ir-noread-a@example.com", ORG_A, "noread", 1),
+              ("ir-user-a-disabled-00000003", "ir-disabled-a@example.com", ORG_A, "read", 0),
+              ("ir-user-b-admin-0000000001", "ir-admin-b@example.com", ORG_B, "read", 1),
+              ("ir-user-c-admin-0000000001", "ir-admin-c@example.com", ORG_C, "read", 1),
+          ]
+
+          ROLE_READ = {
+              ORG_A: "ir-role-a-read-000000000001",
+              ORG_B: "ir-role-b-read-000000000001",
+              ORG_C: "ir-role-c-read-000000000001",
+          }
+          ROLE_NOREAD = {ORG_A: "ir-role-a-noread-00000000001"}
+
+          seed_admin = scalar("SELECT id FROM User WHERE email='" + os.environ["SEED_ADMIN_EMAIL"] + "'")
+          read_perm = scalar("SELECT id FROM Permission WHERE name='items.read'")
+          if not seed_admin or not read_perm:
+              fail("seeded admin user or items.read permission missing")
+
+          sql("""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('%s', 'Items Reading Org A', 'ir-org-a', 1, NOW(3), NOW(3)),
+            ('%s', 'Items Reading Org B', 'ir-org-b', 1, NOW(3), NOW(3)),
+            ('%s', 'Items Reading Org C', 'ir-org-c', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, isSystem, orgId) VALUES
+            ('%s', 'ir-reader-a', 0, '%s'),
+            ('%s', 'ir-noread-a', 0, '%s'),
+            ('%s', 'ir-reader-b', 0, '%s'),
+            ('%s', 'ir-reader-c', 0, '%s');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('ir-rp-a-read-0000000000001', '%s', '%s'),
+            ('ir-rp-b-read-0000000000001', '%s', '%s'),
+            ('ir-rp-c-read-0000000000001', '%s', '%s');
+          """ % (ORG_A, ORG_B, ORG_C,
+                 ROLE_READ[ORG_A], ORG_A, ROLE_NOREAD[ORG_A], ORG_A,
+                 ROLE_READ[ORG_B], ORG_B, ROLE_READ[ORG_C], ORG_C,
+                 ROLE_READ[ORG_A], read_perm, ROLE_READ[ORG_B], read_perm, ROLE_READ[ORG_C], read_perm))
+
+          for user_id, email, user_org, role_kind, active in ACCOUNTS:
+              role_id = ROLE_READ[user_org] if role_kind == "read" else ROLE_NOREAD[user_org]
+              sql("""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '%s', '%s', passwordHash, 'Smoke', 'Reader', %d, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '%s';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('m%s', '%s', '%s', '%s', 1, NOW(3));
+              """ % (user_id, email, active, seed_admin, user_id[1:], user_id, user_org, role_id))
+
+          item_metas = [
+              (ITEM_NORMAL, ORG_A, RAW_NORMAL, "active", 10, 10),
+              (ITEM_DUP, ORG_A, RAW_DUP, "duplicate", 6, 6),
+              (ITEM_CROSS1, ORG_A, RAW_X1, "active", 7, 7),
+              (ITEM_CROSS2, ORG_A, RAW_X2, "active", 8, 8),
+              (ITEM_BADREF, ORG_A, "not-an-objectid", "active", 4, 4),
+              (ITEM_NULLPAYLOAD, ORG_A, RAW_NULLPAYLOAD, "active", 9, 9),
+              (ITEM_ORDER_LOW, ORG_A, oid("a", "05"), "active", 5, 5),
+              (ITEM_ORDER_HIGH, ORG_A, oid("a", "06"), "active", 5, 5),
+              (ITEM_CROSSED_C, ORG_A, oid("a", "07"), "active", 20, 1),
+              (ITEM_CROSSED_S, ORG_A, oid("a", "08"), "active", 1, 20),
+              (ITEM_NORAW, ORG_A, oid("a", "0b"), "active", 3, 3),
+              (ITEM_LATE, ORG_A, RAW_LATE, "active", 2, 2),
+              (ITEM_IR3, ORG_A, oid("a", "0c"), "active", 12, 12),
+              (ITEM_IR3_DUP, ORG_A, oid("a", "0d"), "active", 11, 11),
+              (ITEM_PROC, ORG_A, oid("a", "0e"), "active", 13, 13),
+              (ITEM_EVENT, ORG_A, oid("a", "0f"), "active", 14, 14),
+              (ITEM_EVENT_FB, ORG_A, oid("a", "10"), "active", 15, 15),
+              (ITEM_RM, ORG_A, RAW_RM, "active", 18, 18),
+              (ITEM_B_NORMAL, ORG_B, RAW_B_NORMAL, "active", 16, 16),
+              (ITEM_B_IR3, ORG_B, RAW_B_IR3, "active", 17, 17),
+          ]
+          meta_rows = []
+          for item_id, item_org, ref, status, created, sort in item_metas:
+              meta_rows.append("('%s', '%s', 'ext-%s', 'Name %s', '%s', '%s', 1, NULL, '%s', '%s', '%s')" % (
+                  item_id, item_org, item_id, item_id, status, ref, mts(sort), mts(created), mts(created)))
+          sql("INSERT INTO ItemMeta (id, orgId, externalId, name, status, mongoRef, version, publishedAt, sortAt, createdAt, updatedAt) VALUES "
+              + ",".join(meta_rows) + ";")
+
+          news_sources = [
+              (SRC_A_ARTICLES, "IR Articles Only", "https://ir.example.com/feed-articles", "rss", None),
+              (SRC_A_PROCESSED, "IR Processed Only", "https://ir.example.com/feed-processed", "rss", None),
+              (SRC_A_BOTH, "IR Both Sides", "https://ir.example.com/feed-both", "rss", None),
+              (SRC_A_ZERO, "IR Zero Window", "https://ir.example.com/feed-zero", "rss", None),
+              (SRC_A_NONRSS, "IR Non RSS", "https://ir.example.com/site", "web", None),
+          ]
+          source_rows = []
+          for source_id, name, url, mode, _ in news_sources:
+              config = json.dumps({"seed": {"mode": mode, "feedUrl": url}})
+              source_rows.append("('%s', '%s', '%s', 'https://ir.example.com/%s', 'general', 'en', 3600, 0, 1, '%s', NOW(3), NOW(3))" % (
+                  source_id, ORG_A, name, source_id, config))
+          sql("INSERT INTO NewsSource (id, orgId, name, url, siteType, language, frequencySeconds, priority, isActive, config, createdAt, updatedAt) VALUES "
+              + ",".join(source_rows) + ";")
+
+          sql("""
+          INSERT INTO Article (id, orgId, sourceId, url, urlFingerprint, sourceLabel, language, titleGuess, crawlAt, contentHash, markdownRef, version, metadata, createdAt, updatedAt) VALUES
+            ('%s', '%s', '%s', 'https://ir.example.com/ir3', 'fp-ir3', 'IR Articles Only', 'en', 'IR3 Article', '%s', 'hash-ir3', '%s', 1, NULL, NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'https://ir.example.com/ir3dup', 'fp-ir3dup', 'IR Articles Only', 'en', 'IR3 Dup Article', '%s', 'hash-ir3dup', '%s', 1, NULL, NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'https://ir.example.com/eventfb', 'fp-eventfb', 'IR Articles Only', 'en', 'IR Event Fallback', '%s', 'hash-eventfb', '%s', 1, NULL, NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'https://ir.example.com/srcart', 'fp-srcart', 'IR Articles Only', 'en', 'IR Source Article', '%s', 'hash-srcart', NULL, 1, NULL, NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'https://ir.example.com/srcboth', 'fp-srcboth', 'IR Both Sides', 'en', 'IR Source Both', '%s', 'hash-srcboth', NULL, 1, NULL, NOW(3), NOW(3));
+          INSERT INTO ProcessedArticle (id, orgId, articleId, status, title, summary, cleanedMarkdownRef, createdAt, processedAt, updatedAt) VALUES
+            ('%s', '%s', '%s', 'completed', 'IR3 Article', 'IR3 summary', '%s', NOW(3), NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'completed', 'IR3 Dup Article', 'IR3 dup summary', '%s', NOW(3), NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'completed', 'IR Event Fallback', 'IR event fallback summary', '%s', NOW(3), NOW(3), NOW(3));
+          INSERT INTO NewsEvent (id, orgId, status, language, primaryTopic, primaryEntity, title, summary, startAt, lastAt, createdAt, updatedAt) VALUES
+            ('%s', '%s', 'active', 'en', 'ir-smoke', 'IR Entity', 'IR Smoke Event', 'IR smoke event summary', '%s', '%s', NOW(3), NOW(3));
+          INSERT INTO NewsEventItem (id, orgId, eventId, processedArticleId, processedItemId, similarity, assignedBy, createdAt) VALUES
+            ('ir-nei-a-direct-00000000001', '%s', '%s', '%s', '%s', 0.91, 'overlap', NOW(3)),
+            ('ir-nei-a-fallback-000000001', '%s', '%s', '%s', NULL, 0.73, 'overlap', NOW(3));
+          """ % (
+              ARTICLE_IR3, ORG_A, SRC_A_IR3, mts(13), PI_IR3,
+              ARTICLE_IR3_DUP, ORG_A, SRC_A_IR3, mts(11), PI_IR3_DUP,
+              ARTICLE_EVENT_FB, ORG_A, SRC_A_ARTICLES, mts(15), PI_EVENT_FB,
+              ARTICLE_SRC_ARTICLES, ORG_A, SRC_A_ARTICLES, mts(0.6),
+              ARTICLE_SRC_BOTH, ORG_A, SRC_A_BOTH, mts(2.5),
+              PA_IR3, ORG_A, ARTICLE_IR3, PI_IR3,
+              PA_IR3_DUP, ORG_A, ARTICLE_IR3_DUP, PI_IR3_DUP,
+              PA_EVENT_FB, ORG_A, ARTICLE_EVENT_FB, PI_EVENT_FB,
+              NEWS_EVENT_A, ORG_A, mts(14), mts(15),
+              ORG_A, NEWS_EVENT_A, PA_IR3, PI_EVENT_DIRECT,
+              ORG_A, NEWS_EVENT_A, PA_EVENT_FB,
+          ))
+
+          # ---------- Mongo fixtures ----------
+
+          payload_normal = {
+              "url": "https://ir.example.com/normal",
+              "language": "en",
+              "sourceName": "IR Raw Source",
+              "keywords": ["alpha", "beta"],
+              "tags": ["smoke"],
+              "summaryHints": ["hint-one"],
+              "region": "GLOBAL",
+              "summary": "top-level summary",
+              "sentiment": "neutral",
+              "location": "EU-West",
+              "ticker": "IRSM",
+              "price": 12.5,
+              "changePercent": -1.25,
+              "history": [
+                  {"timestamp": "2026-01-02T00:00:00.000Z", "value": 1.5},
+                  {"timestamp": "2026-01-03T00:00:00.000Z", "value": 2.25},
+              ],
+              "metadata": {
+                  "sourceId": SRC_A_NORMAL,
+                  "region": "EU",
+                  "summary": "metadata summary wins",
+                  "thumbnail": "https://ir.example.com/thumb.png",
+                  "customKey": "custom-value",
+              },
+          }
+          payload_null = {
+              "url": "https://ir.example.com/null-payload",
+              "sourceName": None,
+              "summary": None,
+              "tags": [],
+              "metadata": {"nullable": None},
+          }
+          payload_rm = {
+              "url": "https://ir.example.com/readmodel",
+              "sourceName": "IR Read Model Source",
+              "region": "EU",
+              "summary": "read model raw summary",
+              "metadata": {"sourceId": SRC_A_NORMAL, "region": "EU"},
+          }
+          payload_b_leak = {
+              "url": "https://ir.example.com/b-leak",
+              "sourceName": "IR B LEAK SOURCE",
+              "summary": "B LEAK PAYLOAD",
+              "metadata": {"leak": "IR1-B-LEAK"},
+          }
+
+          def raw_doc(hex_id, item_id, payload, source, created):
+              return {
+                  "_id": Oid(hex_id),
+                  "itemMetaId": item_id,
+                  "payload": payload,
+                  "source": source,
+                  "urlComparableFull": payload.get("url"),
+                  "urlComparableFullHash": None,
+                  "urlComparableBase": payload.get("url"),
+                  "createdAt": JsDate(its(created)),
+                  "updatedAt": JsDate(its(created)),
+              }
+
+          raw_docs = [
+              raw_doc(RAW_NORMAL, ITEM_NORMAL, payload_normal, "rss", 10),
+              raw_doc(RAW_NULLPAYLOAD, ITEM_NULLPAYLOAD, payload_null, "rss", 9),
+              raw_doc(RAW_RM, ITEM_RM, payload_rm, "rss", 18),
+              raw_doc(RAW_B_LEAK, ITEM_CROSS1, payload_b_leak, "rss", 21),
+              raw_doc(RAW_B_NORMAL, ITEM_B_NORMAL, payload_b_leak, "rss", 16),
+              raw_doc(RAW_B_IR3, ITEM_B_IR3, payload_b_leak, "rss", 17),
+          ]
+          mongo_insert("rawitems", raw_docs)
+
+          def processed_doc(hex_id, item_id, item_org, status, created, result=None, result_marker=None,
+                            source=None, duplicate=None, tags=None, raw_ref=None, extra=None):
+              doc = {
+                  "_id": Oid(hex_id),
+                  "rawItemId": Oid(raw_ref or RAW_NORMAL),
+                  "itemMetaId": item_id,
+                  "orgId": item_org,
+                  "status": status,
+                  "tags": tags or [],
+                  "sourceId": source,
+                  "duplicateOf": Oid(duplicate) if duplicate else None,
+                  "duplicateSimilarity": 0.5 if duplicate else None,
+                  "createdAt": JsDate(its(created)),
+                  "updatedAt": JsDate(its(created)),
+              }
+              if result_marker == "string":
+                  doc["result"] = result
+              elif result_marker == "invalid":
+                  doc["result"] = result
+              elif result_marker == "blank":
+                  doc["result"] = ""
+              elif result is not None:
+                  doc["result"] = result
+              if extra:
+                  doc.update(extra)
+              return doc
+
+          processed_docs = [
+              processed_doc(PI_NORMAL, ITEM_NORMAL, ORG_A, "completed", 10, result={
+                  "title": "IR Normal", "summary": "IR normal summary", "sentiment": "positive",
+                  "content_type": "news_fact", "location": "EU", "topics": ["alpha", "beta"],
+                  "entities": [{"name": "IR Entity", "type": "company", "confidence": 0.9}],
+              }, tags=["positive"], source=SRC_A_NORMAL),
+              processed_doc(PI_B_LATEST, ITEM_NORMAL, ORG_B, "completed", 22, result={
+                  "title": "B LEAK PROCESSED", "summary": "B LEAK PROCESSED", "location": "NA",
+              }, tags=["b-leak"], source=SRC_A_NORMAL),
+              processed_doc(PI_B_LEAK, ITEM_CROSS1, ORG_B, "completed", 21, result={
+                  "title": "B LEAK CROSS", "summary": "B LEAK CROSS", "location": "NA",
+              }, tags=["b-leak"], source=SRC_A_NORMAL),
+              processed_doc(PI_PROC_COMPLETED, ITEM_PROC, ORG_A, "completed", 13, result={
+                  "title": "IR Processed Completed", "summary": "completed wins", "location": "EU",
+                  "topics": ["proc-completed"],
+              }, tags=["done"]),
+              processed_doc(PI_PROC_FAILED, ITEM_PROC, ORG_A, "failed", 14, result={
+                  "title": "IR Processed Failed", "summary": "failed newer", "location": "EU",
+              }, tags=["failed"]),
+              processed_doc(PI_PROC_PROCESSING, ITEM_PROC, ORG_A, "processing", 15, result={
+                  "title": "IR Processed Processing", "summary": "processing newest", "location": "EU",
+              }, tags=["processing"]),
+              processed_doc(PI_RESULT_OBJECT, ITEM_RM, ORG_A, "completed", 21, result={
+                  "title": "IR Result Object", "summary": "result object", "location": "EU",
+                  "topics": ["result-object"], "nested": {"inner": "nested-value"},
+              }),
+              processed_doc(PI_RESULT_STRING, ITEM_CROSSED_S, ORG_A, "completed", 20,
+                            result=json.dumps({"title": "IR Result String", "summary": "result string", "location": "EU"}),
+                            result_marker="string"),
+              processed_doc(PI_RESULT_BLANK, ITEM_NULLPAYLOAD, ORG_A, "completed", 9, result="",
+                            result_marker="blank"),
+              processed_doc(PI_RESULT_INVALID, ITEM_BADREF, ORG_A, "completed", 4, result="{not valid json",
+                            result_marker="invalid"),
+              processed_doc(PI_DUP_OF_A, ITEM_DUP, ORG_A, "processing", 6, result={
+                  "title": "IR Duplicate", "summary": "duplicate of normal", "location": "EU",
+              }, duplicate=PI_NORMAL),
+              processed_doc(PI_DUP_OF_B, ITEM_CROSS2, ORG_A, "processing", 8, result={
+                  "title": "IR Duplicate Cross", "summary": "duplicate of B doc", "location": "EU",
+              }, duplicate=PI_B_LATEST),
+              processed_doc(PI_IR3, ITEM_IR3, ORG_A, "completed", 12, result={
+                  "title": "IR3 Item", "summary": "IR3 source fallback", "location": "EU",
+                  "topics": ["ir3-topic"],
+              }, source=None, tags=["ir3"]),
+              processed_doc(PI_IR3_DUP, ITEM_IR3_DUP, ORG_A, "completed", 11, result={
+                  "title": "IR3 Duplicate", "summary": "IR3 duplicate", "location": "EU",
+                  "topics": ["ir3-topic", "ir3-dup-topic"],
+              }, source=None, duplicate=PI_IR3, tags=["ir3"]),
+              processed_doc(PI_IR3_BAD_REGION, ITEM_IR3, ORG_A, "completed", 10, result={
+                  "title": "IR3 Bad Region", "summary": "IR3 NA region", "location": "NA",
+              }, source=None, tags=["ir3-na"]),
+              processed_doc(PI_EVENT_DIRECT, ITEM_EVENT, ORG_A, "completed", 14, result={
+                  "title": "IR Event Direct", "summary": "event direct", "location": "EU",
+              }),
+              processed_doc(PI_EVENT_FB, ITEM_EVENT_FB, ORG_A, "completed", 15, result={
+                  "title": "IR Event Fallback", "summary": "event fallback", "location": "EU",
+              }),
+              processed_doc(PI_RM, ITEM_RM, ORG_A, "completed", 18, result={
+                  "title": "IR Read Model Original", "summary": "read model original", "location": "EU",
+                  "topics": ["rm-topic"],
+              }, source=SRC_A_NORMAL, tags=["rm"]),
+              processed_doc(PI_B_IR3, ITEM_B_IR3, ORG_B, "completed", 17, result={
+                  "title": "IR B IR3", "summary": "B ir3", "location": "EU",
+              }),
+              processed_doc(PI_LATE, ITEM_LATE, ORG_A, "completed", 2, result={
+                  "title": "IR Late", "summary": "late snapshot", "location": "EU",
+              }),
+              # RSS window fixtures: processed-only and both-side sources.
+              processed_doc(oid("d", "20"), ITEM_PROC, ORG_A, "completed", 0.4, result={
+                  "title": "IR Src Processed", "summary": "processed source", "location": "EU",
+              }, source=SRC_A_PROCESSED),
+              processed_doc(oid("d", "21"), ITEM_PROC, ORG_A, "completed", 2.0, result={
+                  "title": "IR Src Both", "summary": "both source", "location": "EU",
+              }, source=SRC_A_BOTH),
+          ]
+          mongo_insert("processeditems", processed_docs)
+
+          def read_model_doc(item_id, item_org, title, sort_day, payload, processed, duplicate=None, region="EU"):
+              return {
+                  "orgId": item_org,
+                  "itemMetaId": item_id,
+                  "meta": {
+                      "id": item_id, "externalId": "ext-" + item_id, "name": title, "status": "active",
+                      "mongoRef": RAW_RM, "version": 1, "publishedAt": None,
+                      "sortAt": JsDate(its(sort_day)), "createdAt": JsDate(its(sort_day)),
+                      "updatedAt": JsDate(its(sort_day)),
+                  },
+                  "raw": {
+                      "id": RAW_RM, "itemMetaId": item_id, "source": "rss", "payload": payload,
+                      "createdAt": JsDate(its(sort_day)), "updatedAt": JsDate(its(sort_day)),
+                  },
+                  "processed": processed,
+                  "externalId": "ext-" + item_id,
+                  "externalIdLower": ("ext-" + item_id).lower(),
+                  "title": title,
+                  "titleLower": title.lower(),
+                  "status": "active",
+                  "ingestedAt": JsDate(its(sort_day)),
+                  "createdAt": JsDate(its(sort_day)),
+                  "updatedAt": JsDate(its(sort_day)),
+                  "publishedAt": None,
+                  "sortAt": JsDate(its(sort_day)),
+                  "sourceId": SRC_A_NORMAL,
+                  "sourceName": "IR Read Model Source",
+                  "sourceNameLower": "ir read model source",
+                  "url": payload.get("url"),
+                  "thumbnail": None,
+                  "domain": "ir.example.com",
+                  "language": "en",
+                  "summary": "IR Read Model Snapshot Summary",
+                  "topics": ["rm-topic"],
+                  "topicKeys": ["rm-topic"],
+                  "entities": ["IR Entity"],
+                  "entityKeys": ["ir entity"],
+                  "region": region,
+                  "regionKey": region.lower(),
+                  "location": region,
+                  "locationKey": region.lower(),
+                  "sentiment": "positive",
+                  "contentType": "news_fact",
+                  "qualityScore": 0.8,
+                  "duplicateOf": duplicate,
+                  "duplicateSimilarity": None,
+                  "tags": ["rm"],
+                  "hasVector": False,
+                  "embeddingModel": None,
+                  "searchText": title.lower(),
+                  "projectionUpdatedAt": JsDate(its(sort_day)),
+              }
+
+          rm_processed = {
+              "id": PI_RM, "itemMetaId": ITEM_RM, "rawItemId": RAW_RM, "pipelineJobId": None,
+              "sourceId": SRC_A_NORMAL, "status": "completed", "error": None, "tags": ["rm"],
+              "result": {"title": "IR Read Model Snapshot", "summary": "snapshot summary", "location": "EU",
+                         "topics": ["rm-topic"]},
+              "duplicateOf": None, "duplicateSimilarity": None, "summaryEmbeddingModel": None,
+              "summaryEmbeddingDimensions": None, "llm": None,
+              "createdAt": JsDate(its(18)), "updatedAt": JsDate(its(18)),
+          }
+          leak_processed = {
+              "id": PI_B_LEAK, "itemMetaId": ITEM_CROSS1, "rawItemId": RAW_B_LEAK, "pipelineJobId": None,
+              "sourceId": SRC_A_NORMAL, "status": "completed", "error": None, "tags": ["b-leak"],
+              "result": {"title": "B LEAK READ MODEL", "summary": "B LEAK READ MODEL", "location": "NA"},
+              "duplicateOf": None, "duplicateSimilarity": None, "summaryEmbeddingModel": None,
+              "summaryEmbeddingDimensions": None, "llm": None,
+              "createdAt": JsDate(its(21)), "updatedAt": JsDate(its(21)),
+          }
+          read_model_docs = [
+              read_model_doc(ITEM_RM, ORG_A, "IR Read Model Snapshot", 18, payload_rm, rm_processed),
+              read_model_doc(ITEM_CROSS1, ORG_B, "IR B LEAK READ MODEL", 21, payload_b_leak, leak_processed, region="NA"),
+          ]
+          mongo_insert("itemreadmodels", read_model_docs)
+
+          redis("FLUSHALL")
+          print("fixtures inserted")
+          # ================= GraphQL documents =================
+
+          ITEM_QUERY = """
+          query IrItemDetail($id: String!) {
+            item(id: $id) {
+              id title status ingestedAt publishedAt createdAt updatedAt orgId
+              meta { id externalId name status mongoRef createdAt updatedAt }
+              raw { id itemMetaId payload source createdAt updatedAt }
+              processed { id itemMetaId status tags result resultJson duplicateOf eventId createdAt }
+              rawPreview { url sourceName thumbnail summary sentiment region location ticker price changePercent history { timestamp value } }
+              processedPreview { id itemMetaId status tags duplicateOf source title language publishedAt summary sentiment contentType topics entities qualityScore location createdAt eventId }
+            }
+          }
+          """
+          FACETS_QUERY = """
+          query IrFacets($search: String, $filters: ItemsFiltersInput) {
+            itemFacets(search: $search, filters: $filters) {
+              regions { value count }
+              topics { value count }
+              sentiments { value count }
+              contentTypes { value count }
+            }
+          }
+          """
+          RSS_SOURCES_QUERY = """
+          query IrRssSources($windowDays: Int, $onlyWithItems: Boolean) {
+            rssSources(windowDays: $windowDays, onlyWithItems: $onlyWithItems) {
+              id name language siteUrl feedUrl latestItemAt itemCountWindow
+            }
+          }
+          """
+          RSS_TRANSLATION_QUERY = """
+          query IrRssTranslationStatus($targetLanguage: String) {
+            rssTranslationStatus(targetLanguage: $targetLanguage) {
+              provider available message targetLanguageSupported
+            }
+          }
+          """
+          SEARCH_SUGGESTIONS_QUERY = """
+          query IrSearchSuggestions($prefix: String!, $limit: Float) {
+            searchSuggestions(prefix: $prefix, limit: $limit) { type value origin }
+          }
+          """
+          EMPTY_QUERY = """
+          query IrEmpty { itemFacets { regions { value } topics { value } sentiments { value } contentTypes { value } } }
+          """
+          ALIAS_QUERY = """
+          query IrAlias($id: String!) {
+            primary: item(id: $id) { identifier: id label: title ... on ItemModel { state: status } }
+            secondary: item(id: $id) { ...ItemCore }
+          }
+          fragment ItemCore on ItemModel { id title status }
+          """
+          INLINE_FRAGMENT_QUERY = """
+          query IrInline($id: String!) {
+            item(id: $id) { ... on ItemModel { id title } ... { status } }
+          }
+          """
+          CONDITIONAL_QUERY = """
+          query IrConditional($id: String!, $withRaw: Boolean!, $skipProcessed: Boolean!) {
+            item(id: $id) {
+              id
+              raw @include(if: $withRaw) { payload }
+              processed @skip(if: $skipProcessed) { status }
+            }
+          }
+          """
+          MIXED_QUERY = """
+          query IrMixed($id: String!) {
+            item(id: $id) { id }
+            items(page: 1, pageSize: 1) { totalCount }
+          }
+          """
+          ITEMS_ROOT_QUERY = """
+          query IrItemsRoot { items(page: 1, pageSize: 1) { totalCount edges { node { id } } } }
+          """
+          CREATE_ITEM_MUTATION = """
+          mutation IrCreateItem($input: CreateItemInput!) { createItem(input: $input) { id title } }
+          """
+
+          FIVE = [
+              ("item", ITEM_QUERY, {"id": ITEM_NORMAL}),
+              ("itemFacets", FACETS_QUERY, {}),
+              ("rssSources", RSS_SOURCES_QUERY, {}),
+              ("rssTranslationStatus", RSS_TRANSLATION_QUERY, {}),
+              ("searchSuggestions", SEARCH_SUGGESTIONS_QUERY, {"prefix": "ir"}),
+          ]
+
+          def expect_status(base_url, path, expected, token, label, method="GET", payload=None):
+              status, raw = call(base_url, path, method, token, payload)
+              if status != expected:
+                  fail(label + " expected " + str(expected) + " got " + str(status) + " " + repr(raw[:400]))
+              return status, body(raw)
+
+          # ================= Phase A: switch matrix =================
+
+          phase("A1 invalid API_GO_ITEMS_READING_MODE")
+          restart_go_expect_failure("bogus")
+          state = inspect_state() or "removed|none|0"
+          logs = go_logs()
+          status_text, health_text, exit_text = state.split("|")
+          if health_text != "unhealthy" and status_text != "exited":
+              fail("invalid switch did not fail the container: " + state)
+          if status_text == "exited" and exit_text == "0":
+              fail("invalid switch exited with code 0")
+          if "API_GO_ITEMS_READING_MODE" not in logs:
+              fail("invalid-switch logs are missing the variable name: " + logs[-2000:])
+          if "bogus" not in logs:
+              fail("invalid-switch logs are missing the illegal value: " + logs[-2000:])
+          print("invalid switch rejected:", state)
+
+          phase("A1 empty string behaves exactly like legacy")
+          restart_go("", "legacy", False, False)
+          tokens = {}
+          for _, email, _, _, active in ACCOUNTS:
+              if active == 1:
+                  tokens[email] = login(email)
+          a_admin = tokens["ir-admin-a@example.com"]
+          a_noread = tokens["ir-noread-a@example.com"]
+          b_admin = tokens["ir-admin-b@example.com"]
+          c_admin = tokens["ir-admin-c@example.com"]
+          status, raw = call(nest, "/api/auth/login", "POST", payload={
+              "email": "ir-disabled-a@example.com", "password": os.environ["SEED_ADMIN_PASSWORD"]})
+          if status not in (401, 403):
+              fail("disabled user login was not rejected: " + str(status) + " " + repr(raw[:200]))
+          same("/api/items?pageSize=50", "GET", a_admin)
+          print("empty string resolves to legacy")
+
+          phase("A2 legacy+legacy proxy parity")
+          restart_go("legacy", "legacy", False, False)
+          same("/api/items", "GET", a_admin)
+          same("/api/items?pageSize=50", "GET", a_admin)
+          same("/api/items?page=2&pageSize=1", "GET", a_admin)
+          same("/api/items?orderBy=PUBLISHED_DESC", "GET", a_admin)
+          detail_same("/api/items/" + ITEM_NORMAL, a_admin)
+          detail_same("/api/items/" + ITEM_NULLPAYLOAD, a_admin)
+          before = stats()
+          for label, query, variables in FIVE:
+              gql_same(a_admin, query, variables, "A2-" + label)
+          if stats() != before:
+              fail("legacy+legacy moved the Go resolver counter")
+          print("legacy+legacy proxy parity ok")
+
+          phase("A3 items=go graphql=legacy")
+          restart_go("go", "legacy", False, False)
+          same("/api/items?pageSize=50", "GET", a_admin)
+          detail_same("/api/items/" + ITEM_NORMAL, a_admin)
+          before = stats()
+          for label, query, variables in FIVE:
+              ls, lr = gql(nest, a_admin, query, variables)
+              rs, rr = gql(go, a_admin, query, variables)
+              if ls != rs or core(body(lr)) != core(body(rr)):
+                  fail("A3 graphql parity " + label + " nest=" + str(ls) + " go=" + str(rs))
+          if stats() != before:
+              fail("A3: the five GraphQL roots must stay on Nest while the resolver counter moved")
+          print("items=go + graphql=legacy: REST on Go, five GraphQL roots on Nest")
+
+          phase("A4 go+go")
+          restart_go("go", "go", False, False)
+          before = stats()
+          for label, query, variables in FIVE:
+              gql_same(a_admin, query, variables, "A4-" + label)
+          moved = stats() - before
+          if moved != 5:
+              fail("A4: expected exactly five Go resolver executions, moved " + str(moved))
+          before = stats()
+          gql_same(a_admin, MIXED_QUERY, {"id": ITEM_NORMAL}, "A4-mixed")
+          if stats() != before:
+              fail("A4: a mixed migrated+unsupported operation must forward to Nest as a whole")
+          print("go+go: seven entrypoints served by Go")
+
+          # ================= Phase B: REST contract =================
+
+          phase("B REST list normalisation")
+          status, doc = expect_status(go, "/api/items", 200, a_admin, "default list")
+          if doc.get("page") != 1 or doc.get("pageSize") != 10:
+              fail("default page/pageSize " + repr(doc))
+          if len(doc.get("items") or []) > 10:
+              fail("default page returned more than 10 rows")
+          status, doc = expect_status(go, "/api/items?pageSize=50", 200, a_admin, "pageSize=50")
+          if doc.get("pageSize") != 50:
+              fail("pageSize=50 " + repr(doc.get("pageSize")))
+          status, doc = expect_status(go, "/api/items?page=2&pageSize=1", 200, a_admin, "page=2")
+          if doc.get("page") != 2 or doc.get("pageSize") != 1 or len(doc["items"]) != 1:
+              fail("page=2&pageSize=1 " + repr(doc))
+          page2_id = doc["items"][0]["id"]
+          status, first = expect_status(go, "/api/items?page=1&pageSize=1", 200, a_admin, "page=1")
+          if first["items"][0]["id"] == page2_id:
+              fail("page 1 and page 2 returned the same row")
+          status, empty = expect_status(go, "/api/items", 200, c_admin, "fresh org list")
+          if empty.get("items") != [] or empty.get("total") != 0:
+              fail("fresh org list is not empty: " + repr(empty))
+
+          phase("B REST ordering and id tiebreak")
+          active = [(row[0], row[3], row[4]) for row in item_metas if row[1] == ORG_A and row[3] != "duplicate"]
+          by_id_desc = sorted(active, key=lambda row: row[0], reverse=True)
+          expected_created = [row[0] for row in sorted(by_id_desc, key=lambda row: -row[2])]
+          expected_published = [row[0] for row in sorted(by_id_desc, key=lambda row: -row[1])]
+          status, doc = expect_status(go, "/api/items?pageSize=50&orderBy=CREATED_DESC", 200, a_admin, "CREATED_DESC")
+          got_created = [row["id"] for row in doc["items"]]
+          if got_created != expected_created:
+              fail("CREATED_DESC order mismatch\nGOT  " + repr(got_created) + "\nWANT " + repr(expected_created))
+          status, doc = expect_status(go, "/api/items?pageSize=50&orderBy=PUBLISHED_DESC", 200, a_admin, "PUBLISHED_DESC")
+          got_published = [row["id"] for row in doc["items"]]
+          if got_published != expected_published:
+              fail("PUBLISHED_DESC order mismatch\nGOT  " + repr(got_published) + "\nWANT " + repr(expected_published))
+          if expected_created.index(ITEM_ORDER_HIGH) > expected_created.index(ITEM_ORDER_LOW):
+              fail("equal createdAt/sortAt pair must tiebreak by id DESC")
+          if expected_created.index(ITEM_CROSSED_C) > expected_created.index(ITEM_CROSSED_S):
+              fail("crossed timestamps were not ordered by createdAt")
+          if expected_published.index(ITEM_CROSSED_S) > expected_published.index(ITEM_CROSSED_C):
+              fail("crossed timestamps were not ordered by sortAt")
+          print("ordering and id tiebreak ok")
+
+          phase("B REST DTO validation")
+          status, doc = expect_status(go, "/api/items?pagee=1", 400, a_admin, "unknown param")
+          messages = doc.get("message") if isinstance(doc, dict) else None
+          joined = "; ".join(messages) if isinstance(messages, list) else str(messages)
+          if "property pagee should not exist" not in joined:
+              fail("unknown param message " + repr(joined))
+          expect_status(go, "/api/items?orderBy=NOPE", 400, a_admin, "bad orderBy")
+          expect_status(go, "/api/items?page=abc", 400, a_admin, "page=abc")
+          status, doc = expect_status(go, "/api/items?page=1.5&pageSize=5", 200, a_admin, "page=1.5")
+          if doc.get("page") != 1:
+              fail("page=1.5 must floor to page 1: " + repr(doc.get("page")))
+          status, doc = expect_status(go, "/api/items?pageSize=0", 200, a_admin, "pageSize=0")
+          if doc.get("pageSize") != 1:
+              fail("pageSize=0 must clamp to 1: " + repr(doc.get("pageSize")))
+
+          phase("B IR2 pagination offset bound")
+          status, doc = expect_status(go, "/api/items?page=2147483647&pageSize=50", 400, a_admin, "IR2 huge page")
+          if doc.get("message") != "Pagination offset is too large":
+              fail("IR2 message " + repr(doc.get("message")))
+          status, doc = call(go, "/api/items?page=42949674&pageSize=50", "GET", a_admin)
+          if status != 400:
+              fail("IR2 boundary request status " + str(status) + " " + repr(doc[:300] if isinstance(doc, bytes) else doc))
+          if status == 500:
+              fail("IR2 boundary request produced a 500")
+          status, raw = call(go, "/api/items?page=2147483647&pageSize=50", "GET", a_admin)
+          if status == 500:
+              fail("IR2 produced a 500")
+          print("IR2 bound ok")
+
+          phase("B REST detail")
+          status, doc = expect_status(go, "/api/items/" + ITEM_NORMAL, 200, a_admin, "normal detail")
+          if doc["itemMeta"]["id"] != ITEM_NORMAL or doc["rawItem"] is None or doc["processed"] is None:
+              fail("normal detail shape " + repr(doc)[:400])
+          if doc["rawItem"]["payload"]["metadata"]["summary"] != "metadata summary wins":
+              fail("raw payload metadata did not win: " + repr(doc["rawItem"]["payload"])[:400])
+          if doc["processed"]["_id"] != PI_NORMAL or doc["processed"]["orgId"] != ORG_A:
+              fail("normal processed is not org A's own row: " + repr(doc["processed"])[:400])
+          status, doc = call(go, "/api/items/" + ITEM_NORMAL, "GET", b_admin)
+          expect_doc = body(doc)
+          if status != 404 or (expect_doc or {}).get("message") != "Item not found":
+              fail("cross-org detail " + str(status) + " " + repr(doc[:300]))
+          status, doc = expect_status(go, "/api/items/" + ITEM_MISSING, 404, a_admin, "missing detail")
+          if doc.get("message") != "Item not found":
+              fail("missing detail message " + repr(doc))
+          status, doc = expect_status(go, "/api/items/not-an-object-id", 404, a_admin, "non-ObjectId id")
+          if doc.get("message") != "Item not found":
+              fail("non-ObjectId detail message " + repr(doc))
+
+          phase("B IR1 tenant binding (REST, read model off)")
+          status, doc = expect_status(go, "/api/items/" + ITEM_CROSS1, 200, a_admin, "cross-org raw v1")
+          if doc.get("rawItem") is not None:
+              fail("IR1: A read B's raw document: " + repr(doc.get("rawItem"))[:300])
+          status, doc = expect_status(go, "/api/items/" + ITEM_CROSS2, 200, a_admin, "cross-org raw v2")
+          if doc.get("rawItem") is not None:
+              fail("IR1: raw id matched but itemMetaId binding failed to reject")
+          status, doc = expect_status(go, "/api/items/" + ITEM_CROSS1, 200, a_admin, "cross-org processed")
+          if doc.get("processed") is not None:
+              fail("IR1: A read B's processed row: " + repr(doc.get("processed"))[:300])
+          status, doc = expect_status(go, "/api/items/" + ITEM_NORMAL, 200, a_admin, "processed own row")
+          if doc["processed"]["_id"] != PI_NORMAL:
+              fail("IR1: newest-by-itemMetaId leaked B's processed: " + repr(doc["processed"])[:300])
+          status, doc = expect_status(go, "/api/items/" + ITEM_BADREF, 200, a_admin, "non-ObjectId mongoRef")
+          if doc.get("rawItem") is not None:
+              fail("IR1: non-ObjectId mongoRef returned raw data")
+          status, doc = expect_status(go, "/api/items/" + ITEM_NULLPAYLOAD, 200, a_admin, "null payload field")
+          if doc["rawItem"]["payload"].get("summary") is not None:
+              fail("explicit null payload field was not preserved: " + repr(doc["rawItem"]["payload"]))
+          print("IR1 REST binding ok")
+
+          phase("B IR3 source fallback via REST search payload")
+
+          def filters_path(filters, q=""):
+              encoded = urllib.parse.quote(json.dumps({"q": q, "filters": filters}, separators=(",", ":")), safe="")
+              return "/api/items?pageSize=50&search=" + urllib.parse.quote("__items_filters__:" + encoded, safe="")
+
+          status, doc = expect_status(go, filters_path({"sourceIds": [SRC_A_IR3]}), 200, a_admin, "IR3 source only")
+          ids = [row["id"] for row in doc["items"]]
+          if ITEM_IR3 not in ids:
+              fail("IR3(a): source fallback did not return the item: " + repr(ids))
+          status, doc = expect_status(go, filters_path({"sourceIds": [SRC_A_IR3], "regions": ["ZZ"]}), 200, a_admin, "IR3 bad region")
+          if doc["items"] != []:
+              fail("IR3(b): non-matching region returned rows: " + repr(doc["items"])[:300])
+          status, doc = expect_status(go, filters_path({"sourceIds": [SRC_A_IR3], "regions": ["EU"]}), 200, a_admin, "IR3 matching region")
+          ids = [row["id"] for row in doc["items"]]
+          if ITEM_IR3 not in ids:
+              fail("IR3(c): matching region dropped the item: " + repr(ids))
+          status, doc = expect_status(go, filters_path({"sourceIds": [SRC_A_IR3], "regions": ["EU"], "excludeDuplicates": True}),
+                                      200, a_admin, "IR3 exclude duplicates")
+          ids = [row["id"] for row in doc["items"]]
+          if ITEM_IR3 not in ids or ITEM_IR3_DUP in ids:
+              fail("IR3(d): excludeDuplicates did not drop the duplicate: " + repr(ids))
+          print("IR3 REST source fallback ok")
+          # __PY_BODY3__
           PY

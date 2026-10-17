@@ -405,6 +405,33 @@ const (
 	CrawlReadTelemetryModeGo     CrawlReadTelemetryMode = "go"
 )
 
+// InfrastructureSettingsMode controls the seven infrastructure connection and
+// crawl-credential settings HTTP routes migrated by this unit
+// (API_GO_INFRASTRUCTURE_SETTINGS_MODE): the three vector-service routes, the
+// two storage settings routes and the two news-source runtime secret routes.
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. go mode requires JWT_SECRET,
+// DATABASE_URL and REDIS_HOST; it never requires MONGO_URI (this unit reads and
+// writes MySQL and Redis only), never enables shadow or canary traffic and
+// never starts a worker. The settings-encryption key is deliberately optional
+// at startup: a missing or invalid key is handled per read/write by the
+// documented fallback and 400 contracts rather than blocking boot.
+type InfrastructureSettingsMode string
+
+const (
+	// InfrastructureSettingsModeLegacy proxies all seven routes to NestJS
+	// (default, including the empty value). Rolling back only means setting
+	// API_GO_INFRASTRUCTURE_SETTINGS_MODE back to legacy.
+	InfrastructureSettingsModeLegacy InfrastructureSettingsMode = "legacy"
+	// InfrastructureSettingsModeGo serves all seven routes from Go with the
+	// same authentication chain as NestJS (JWT verification, Redis blacklist,
+	// MySQL membership re-derivation) plus mtk_ machine tokens, and the same
+	// platform-admin gate on the four write routes.
+	InfrastructureSettingsModeGo InfrastructureSettingsMode = "go"
+)
+
 // RuntimeSettingsMode controls the eighteen platform runtime and governance
 // settings HTTP routes under /api/system-settings (API_GO_RUNTIME_SETTINGS_MODE).
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
@@ -680,7 +707,45 @@ type Config struct {
 	// routes (see RuntimeSettingsMode). Default legacy. Mode go requires
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
 	// does not start any worker or scheduled job.
-	RuntimeSettingsMode  RuntimeSettingsMode
+	RuntimeSettingsMode RuntimeSettingsMode
+	// InfrastructureSettingsMode controls the seven infrastructure connection
+	// and crawl-credential settings routes (see InfrastructureSettingsMode).
+	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
+	// it does not require Mongo and does not start any worker or scheduled job.
+	InfrastructureSettingsMode InfrastructureSettingsMode
+
+	// The VECTOR_* / S3_* values below are the environment defaults the
+	// infrastructure settings routes fall back to when a SystemSetting row is
+	// absent. Names and defaults mirror the NestJS EnvService getters exactly.
+	// VectorInternalToken and SettingsEncryptionKeyRaw keep the raw environment
+	// value (no trim) because the NestJS contracts distinguish "missing" from
+	// "present but blank/invalid".
+	VectorServiceEnabled         bool
+	VectorServiceFallbackToMongo bool
+	VectorServiceBaseURL         string
+	VectorInternalToken          string
+	VectorServiceTimeoutMs       int
+	VectorServiceMaxRetries      int
+
+	S3AccessKeyID            string
+	S3SecretAccessKey        string
+	S3Region                 string
+	S3Bucket                 string
+	S3Endpoint               string
+	S3PublicBaseURL          string
+	S3ForcePathStyle         bool
+	S3PresignedURLTTLSeconds int
+
+	// SettingsEncryptionKeyRaw is the untrimmed SYSTEM_SETTINGS_ENCRYPTION_KEY.
+	// SettingsEncryptionKeyPresent mirrors the NestJS `if (!raw)` presence test
+	// performed before decoding. SettingsEncryptionKey (declared further down)
+	// keeps its historical trimmed value and is left unchanged.
+	SettingsEncryptionKeyRaw     string
+	SettingsEncryptionKeyPresent bool
+	// NodeEnv is the raw NODE_ENV the secret-encoding policy compares against
+	// the exact string "production".
+	NodeEnv string
+
 	GraphQLAPQEnabled    bool
 	GraphQLDepthLimit    int
 	GraphQLComplexity    int
@@ -1143,6 +1208,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_INFRASTRUCTURE_SETTINGS_MODE")) {
+	case "", string(InfrastructureSettingsModeLegacy):
+		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeLegacy
+	case string(InfrastructureSettingsModeGo):
+		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLReadMode = "legacy"
@@ -1236,6 +1309,27 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.AuthProfileCacheMaxWaitMs = intDefault(getenv("AUTH_PROFILE_CACHE_MAX_WAIT_MS"), 5000)
 	cfg.AuthProfileCacheRetryDelayMs = intDefault(getenv("AUTH_PROFILE_CACHE_RETRY_DELAY_MS"), 50)
 	cfg.AuditLogRetentionDays = intDefault(getenv("AUDIT_LOG_RETENTION_DAYS"), 90)
+	// Infrastructure connection defaults (vector service + S3 storage). The
+	// vector token and the settings-encryption key keep their raw environment
+	// value: the NestJS contracts distinguish a missing variable from one that
+	// is present but blank or undecodable.
+	cfg.VectorServiceEnabled = boolDefault(getenv("VECTOR_SERVICE_ENABLED"), false)
+	cfg.VectorServiceFallbackToMongo = boolDefault(getenv("VECTOR_SERVICE_FALLBACK_TO_MONGO"), true)
+	cfg.VectorServiceBaseURL = strings.TrimSpace(getenv("VECTOR_SERVICE_BASE_URL"))
+	cfg.VectorInternalToken = getenv("VECTOR_INTERNAL_TOKEN")
+	cfg.VectorServiceTimeoutMs = intDefault(getenv("VECTOR_SERVICE_TIMEOUT_MS"), 5000)
+	cfg.VectorServiceMaxRetries = intDefault(getenv("VECTOR_SERVICE_MAX_RETRIES"), 2)
+	cfg.S3AccessKeyID = getenv("S3_ACCESS_KEY_ID")
+	cfg.S3SecretAccessKey = getenv("S3_SECRET_ACCESS_KEY")
+	cfg.S3Region = stringDefault(getenv("S3_REGION"), "us-east-1")
+	cfg.S3Bucket = getenv("S3_BUCKET")
+	cfg.S3Endpoint = strings.TrimSpace(getenv("S3_ENDPOINT"))
+	cfg.S3PublicBaseURL = strings.TrimSpace(getenv("S3_PUBLIC_BASE_URL"))
+	cfg.S3ForcePathStyle = boolDefault(getenv("S3_FORCE_PATH_STYLE"), false)
+	cfg.S3PresignedURLTTLSeconds = intDefault(getenv("S3_PRESIGNED_URL_TTL_SECONDS"), 300)
+	cfg.SettingsEncryptionKeyRaw = getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY")
+	cfg.SettingsEncryptionKeyPresent = cfg.SettingsEncryptionKeyRaw != ""
+	cfg.NodeEnv = getenv("NODE_ENV")
 	cfg.CrawlBaseURL = strings.TrimRight(strings.TrimSpace(getenv("CRAWL4AI_BASE_URL")), "/")
 	cfg.CrawlAPIKey = strings.TrimSpace(getenv("CRAWL4AI_API_KEY"))
 	cfg.CrawlTimeoutMs = intDefault(getenv("CRAWL4AI_TIMEOUT_MS"), 120_000)
@@ -1619,6 +1713,14 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	// The infrastructure settings takeover needs JWT verification, MySQL and
+	// Redis only. It reads no Mongo collection, starts no worker and does not
+	// treat the settings-encryption key as a startup requirement: a missing or
+	// invalid key is handled per read/write by the documented fallback and 400
+	// contracts.
+	if cfg.InfrastructureSettingsMode == InfrastructureSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE", cfg)
+	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
 		if cfg.MongoURI == "" {

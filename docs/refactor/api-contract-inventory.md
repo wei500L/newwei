@@ -556,6 +556,42 @@ Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`artic
 - **强类型与注释**：`apps/api-go/internal/crawlfrontierruns` 的请求 DTO、响应模型、MySQL 行扫描、事件 details 均为具名 `struct`（精确 `json` tag），无 schema 的 JSON 列用本包具名 `RawJSON` 透传并提供 `IsObject()/IsArray()`；`any`/`interface{}`/`map[string]any`/`map[string]interface{}`/`[]any` 为零（id 集合用 `JSON_CONTAINS` 保持固定 arity）；新增与修改的 `.go`/`.ts` 注释全部为英文。`crawlprofile` 只新增 `export.go`（`NormalizeConfigJSON`），画像配置规范化仍是唯一实现。
 - 回滚只把 `API_GO_CRAWL_FRONTIER_RUNS_MODE` 改回 `legacy`。细节与验收清单见 `docs/refactor/go-crawl-frontier-runs.md`；F1 与两条只登记项见 `docs/refactor/bug-ledger.md`。
 
+## 15. 基础设施连接与采集运行凭据（Go）
+
+新增开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`（空串/`legacy`/`go`，默认
+`legacy`，非法值启动失败）。`go` 时只接管 7 条精确 METHOD+path（Go 包
+`internal/infrastructuresettings`，路由键
+`/api/system-settings#infrastructure`）：
+
+- 向量服务配置：`GET`/`PUT`/`DELETE /api/system-settings/vector-service`
+  （`settings.manage`；PUT/DELETE 另需平台管理员）。读写全局 `SystemSetting`
+  key `vector_service`（`isPublic=false`）与 Redis `vector_service:settings`
+  （30 秒 `{exists,value}` 信封）。`source=env|db`、`tokenSource=stored|env|none`；
+  不返回 token/密文/指纹。token 四态：absent 保留锁内 DB 现值、`null`/空串/空白
+  存 null 并允许 env 回退、非空 trim 后加密。baseUrl 按 Node WHATWG URL 规范化
+  （http/https，端口 [0,65535]，最后删一个尾部 `/`）。
+- 存储配置：`GET`/`PATCH /api/admin/settings/storage`（`settings.manage`；PATCH
+  另需平台管理员）。九个全局 key `crawl_image_storage`（isPublic=true）、
+  `storage_s3_access_key_id`（false）、`storage_s3_secret_access_key`（false）、
+  `storage_s3_region`/`storage_s3_bucket`/`storage_s3_endpoint`/
+  `storage_s3_public_base_url`/`storage_s3_force_path_style`/
+  `storage_s3_presigned_url_ttl_seconds`（均 true）；Redis `storage:settings`
+  （60 秒直接对象，缺失键省略、JSON null 保留）。同一 PATCH 全部有效字段同事务；
+  `endpoint`/`forcePathStyle`/`presignedUrlTtlSeconds` 的清空写 JSON 字面量 null
+  （`JSON_TYPE(value)="NULL"` 且 `value IS NULL` 为 false）。GET 的 `accessKeyId`
+  保持完整展示，`hasSecretAccessKey`/`secretDecryptionFailed` 两个标志按既有语义。
+- 新闻源运行凭据：`GET`/`PUT /api/system-settings/news-source-runtime-secrets`
+  （`settings.manage`；PUT 另需平台管理员）。全局 key
+  `news_source_runtime_secrets`（`isPublic=false`），无 Redis 配置缓存。
+  条目指纹是 SHA-256(UTF-8) hex 前 16 位；strict 解析保留 409
+  `NEWS_SOURCE_RUNTIME_SECRETS_INVALID` 与分支 detail，损坏 sourceId/key 仍走
+  业务 400。
+
+未迁：`GET /api/system-settings/vector-service/diagnostics`（Nest 进程内向量
+计数）与 `POST /api/admin/settings/storage/test`（真实 S3 调用），以及全部向量
+检索/回填、S3 对象操作、新闻源实际抓取消费链路。机器令牌三条 GET 可读、四条写
+403。两把全局锁名 `infra-settings:vector-service:v1`、
+`infra-settings:news-source-runtime-secrets:v1`。回滚只把本变量改回 `legacy`。
 ## 15. 条目阅读与 RSS 检索辅助（Go）
 
 新增开关 `API_GO_ITEMS_READING_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名：
