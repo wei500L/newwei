@@ -2161,13 +2161,28 @@ jobs:
                   fail("ENC-10 nest " + label + ": status=" + str(status) + " body=" + short(raw))
               if read_settings_text() != before:
                   fail("ENC-10 nest " + label + " overwrote the stored configuration")
+          print("OK ENC-10 NestJS no-key branches match api-go")
+          PY
+          # 再以非法密钥重启一次 Nest，使 invalid-key 分支与 api-go 的 ENC-08
+          # 逐字节一致（stage 5 会停掉 Nest，stage 6 用有效密钥重启）。
+          start_nest short-key
+          python3 - << 'PY'
+          import sys
+          sys.path.insert(0, "/tmp")
+          from lgp_lib import *
+
+          enabled = document([normalized_profile("enc-legacy", "legacy")])
           seed_security(True)
           seed_settings(enabled)
+          before = read_settings_text()
           status, raw = call(NEST, BASE + "/enc-legacy", "PUT", token("p"), {"apiKey": API_KEY_PLAIN})
-          want = ("Secret encryption is enabled but SYSTEM_SETTINGS_ENCRYPTION_KEY is missing or invalid")
-          if status != 400 or not (message(raw) or "").startswith(want):
+          want = ("Secret encryption is enabled but SYSTEM_SETTINGS_ENCRYPTION_KEY is missing or invalid "
+                  "(SYSTEM_SETTINGS_ENCRYPTION_KEY must be 32 bytes (base64) or 64 hex chars)")
+          if status != 400 or message(raw) != want:
               fail("ENC-10 nest invalid-key branch: status=" + str(status) + " body=" + short(raw))
-          print("OK ENC-10 NestJS policy branches (missing/invalid key) match Go")
+          if read_settings_text() != before:
+              fail("ENC-10 nest invalid-key branch overwrote the stored configuration")
+          print("OK ENC-10 NestJS invalid-key branch matches api-go exactly")
           PY
       - name: "Stage 5 NestJS stopped, Go takeover and unmigrated-path 502"
         run: |
