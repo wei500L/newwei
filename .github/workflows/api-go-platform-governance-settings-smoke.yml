@@ -622,9 +622,16 @@ jobs:
               status, raw = call(base, task_logs_path, "PUT", org_admin_token, {"retentionDays": "30"})
               if status != 400:
                   fail(f"{tag} org admin invalid body: {status} {raw[:300]!r}, want 400")
+              # The llm DTO has no required property, so an empty body passes it
+              # and the platform gate answers 403 ("at least one of ..." is a
+              # SERVICE error, which runs after the gate). A DTO-invalid body on
+              # the same route still proves validation runs first.
               status, raw = call(base, llm_logs_path, "PUT", org_admin_token, {})
+              if status != 403:
+                  fail(f"{tag} org admin empty llm body: {status} {raw[:300]!r}, want 403")
+              status, raw = call(base, llm_logs_path, "PUT", org_admin_token, {"retentionDays": "30"})
               if status != 400:
-                  fail(f"{tag} org admin empty llm body: {status} {raw[:300]!r}, want 400")
+                  fail(f"{tag} org admin llm DTO-invalid body: {status} {raw[:300]!r}, want 400")
               print(f"ok: {tag} platform gate 403 / reads 200 / DTO 400 ordering")
           sql(f"INSERT INTO GlobalRoleAssignment (id, userId, role, createdAt) "
               f"VALUES ('pgs-gra-temp-0001', '{org_admin}', 'platform_admin', NOW(3))")
