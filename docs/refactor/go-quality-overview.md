@@ -67,7 +67,7 @@
 
 修复：
 
-- Nest：`pipeline-quality.service.ts` 导入 `redactSensitiveFields`（`@modular/utils`），映射 `failureTypes` 时对 `String(entry._id?.errorName ?? "unknown")` 调用它（第 337–343 行）。
+- Nest：`pipeline-quality.service.ts` 导入 `redactSensitiveFields`（`@modular/utils`），映射 `failureTypes` 时对 `String(entry._id?.errorName ?? "unknown")` 调用它（修复后第 338–343 行）。
 - Go：`internal/qualityoverview/service.go` 的 `buildPipelineSummary` 用 `adminlogs.RedactSensitiveFields` 处理 `failureTypes.errorName`（与任务日志同一函数、同一套 9 条正则，不维护第二套）。
 
 只改读取输出，不动库内已存文档；快照缓存被重建后也会写入脱敏结果。
