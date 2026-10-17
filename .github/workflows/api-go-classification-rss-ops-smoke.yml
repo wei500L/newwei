@@ -146,6 +146,10 @@ jobs:
           raw_a_backfill = "64b7f0c2a1d3e5f7091b2c21"
 
           source_a = "cls-smoke-source-a-0001"
+          # A second RSS source that only becomes visible after the backfill: the
+          # seeded item missing a sourceId resolves to it through
+          # RawItem.payload.metadata.sourceId.
+          source_a2 = "cls-smoke-source-a-0002"
           source_b = "cls-smoke-source-b-0001"
 
           summary = "/api/admin/quality/classification/summary"
@@ -384,6 +388,7 @@ jobs:
             ('cls-rp-d-0001', 'cls-role-d-0001', '{other_perm}');
           INSERT INTO NewsSource (id, orgId, name, url, siteType, frequencySeconds, priority, isActive, config, consecutiveFailures, circuitOpenUntil, lastFailureAt, nextRunAt, createdAt, updatedAt) VALUES
             ('{source_a}', '{org_a}', 'cls-alpha-source', 'https://www.reuters.com/rss', 'general', 3600, 0, 1, '{{"seed":{{"enabled":true,"mode":"rss","feedUrl":"https://www.reuters.com/rss"}}}}', 0, NULL, NULL, NULL, NOW(3), NOW(3)),
+            ('{source_a2}', '{org_a}', 'cls-alpha-secondary', 'https://secondary.example.com/rss', 'general', 3600, 0, 1, '{{"seed":{{"enabled":true,"mode":"rss"}}}}', 0, NULL, NULL, NULL, NOW(3), NOW(3)),
             ('{source_b}', '{org_b}', 'cls-beta-source', 'https://beta.example.com/rss', 'general', 3600, 0, 1, '{{"seed":{{"enabled":true,"mode":"rss","feedUrl":"https://beta.example.com/rss"}}}}', 0, NULL, NULL, NULL, NOW(3), NOW(3));
           INSERT INTO Article (id, orgId, sourceId, url, crawlAt, contentHash, markdownRef, version, createdAt, updatedAt) VALUES
             ('cls-article-a-0001', '{org_a}', '{source_a}', 'https://www.reuters.com/a/1', DATE_SUB(NOW(3), INTERVAL 30 MINUTE), 'cls-hash-a-1', 'cls-md-a-1', 1, NOW(3), NOW(3)),
@@ -434,7 +439,7 @@ jobs:
                result: {{ title: "cls-alpha-marker two", summary: "alpha summary two", source: "cls-alpha-source",
                           category_path: "sports/football", category_confidence: 0.9, category_method: "rule_based" }} }},
             {{ _id: ObjectId("{item_a_backfill}"), orgId: "{org_a}", status: "completed", sourceId: "", itemMetaId: "cls-meta-a-3",
-               rawItemId: ObjectId("{raw_a_backfill}"), pipelineJobId: "cls-job-a-1",
+               rawItemId: ObjectId("{raw_a_backfill}"), pipelineJobId: null,
                createdAt: new Date(Date.now() - 120000), updatedAt: new Date(),
                result: {{ title: "cls-alpha-marker backfill", summary: "backfill summary", source: "cls-alpha-source",
                           category_path: "finance/markets", category_confidence: 0.35, category_method: "fallback_rule" }} }},
@@ -443,7 +448,7 @@ jobs:
                result: {{ title: "cls-beta-marker", summary: "beta summary", source: "cls-beta-source",
                           category_path: "tech/ai", category_confidence: 0.3, category_method: "llm_embedding_rerank" }} }}
           ]);
-          db.rawitems.insertOne({{ _id: ObjectId("{raw_a_backfill}"), payload: {{ url: "https://www.reuters.com/3", metadata: {{ sourceId: "{source_a}" }} }} }});
+          db.rawitems.insertOne({{ _id: ObjectId("{raw_a_backfill}"), payload: {{ url: "https://secondary.example.com/3", metadata: {{ sourceId: "{source_a2}" }} }} }});
           db.tasklogs.insertMany([
             {{ _id: ObjectId("64b7f0c2a1d3e5f7091b2c31"), orgId: "{org_a}", queue: "news_pipeline", jobId: "cls-classify-1", stage: "classify", status: "completed",
                data: {{ llmLatencyMs: 1200, embeddingLatencyMs: 300, rerankLatencyMs: 150 }}, createdAt: new Date(Date.now() - 60000), updatedAt: new Date() }},
@@ -545,7 +550,11 @@ jobs:
 
           fresh_pair(diag_overview, drop=("generatedAt",))
           fresh_pair(diag_chain, drop=("generatedAt",))
-          fresh_pair(diag_sources, drop=("generatedAt",))
+          diag_rows_before = {row.get("sourceId"): row for row in fresh_pair(diag_sources, drop=("generatedAt",))}
+          if (diag_rows_before.get(source_a2) or {}).get("visibility") != "none":
+              fail(f"source_a2 must be hidden before the backfill: {diag_rows_before.get(source_a2)!r}")
+          if (diag_rows_before.get(source_a) or {}).get("visibility") != "processed":
+              fail(f"source_a must be processed: {diag_rows_before.get(source_a)!r}")
           fresh_pair(f"{diag_overview}?windowDays=3&lookbackHours=6", drop=("generatedAt",))
           fresh_pair(translation, drop=())
           deeplx_rows = fresh_pair(f"{translation}?provider=deeplx", drop=())
@@ -694,7 +703,7 @@ jobs:
           if written.get("updated", 0) < 1:
               fail(f"backfill updated = {written!r}")
           after = mongo_eval(f'db.processeditems.findOne({{_id:ObjectId("{item_a_backfill}")}}).sourceId')
-          if source_a not in after:
+          if source_a2 not in after:
               fail(f"backfill did not write sourceId: {after!r}")
 
           # The write invalidates the rss_diagnostics snapshot; the rebuilt overview
@@ -706,8 +715,8 @@ jobs:
               fail(f"go overview after backfill {go_status} {go_raw[:300]!r}")
           rebuilt = body(go_raw)
           rows = {row.get("sourceId"): row for row in rebuilt.get("sources") or []}
-          if (rows.get(source_a) or {}).get("visibility") != "processed":
-              fail(f"source visibility after backfill = {rows.get(source_a)!r}")
+          if (rows.get(source_a2) or {}).get("visibility") != "processed":
+              fail(f"source visibility after backfill = {rows.get(source_a2)!r}")
           snapshot_rows = scalar(f"SELECT COUNT(*) FROM ObservabilitySnapshot WHERE orgId='{org_a}' AND scope='rss_diagnostics' AND expiresAt > NOW(3)")
           if snapshot_rows != "1":
               fail(f"rss_diagnostics snapshot rows = {snapshot_rows!r}")
