@@ -1918,3 +1918,164 @@ func TestCrawlFrontierRunsIndependentFromProfilesAndWorkflows(t *testing.T) {
 	assertKey(t, gateway, http.MethodGet, workflowPath, CrawlWorkflowsKey)
 	assertKey(t, gateway, http.MethodGet, bridgePath, CrawlWorkflowsKey)
 }
+
+// situationSignalsRoutes 是态势监控信号读取与反馈的 7 条路由。
+func situationSignalsRoutes() []struct{ method, path string } {
+	return []struct{ method, path string }{
+		{http.MethodGet, "/api/situation-monitor/catalog"},
+		{http.MethodPost, "/api/situation-monitor/feedback"},
+		{http.MethodGet, "/api/situation-monitor/refresh-runs/run-1"},
+		{http.MethodGet, "/api/situation-monitor/telegram-feed"},
+		{http.MethodGet, "/api/situation-monitor/oref-alerts"},
+		{http.MethodGet, "/api/situation-monitor/oref-history"},
+		{http.MethodGet, "/api/situation-monitor/live-hls-proxy-config"},
+	}
+}
+
+// situationSignalsNestRoutes 是必须继续回落 NestJS 的路径：重分析域、
+// 自定义监控（另一个开关）、POST refresh、ADSB/AIS 深水区，以及 7 条
+// 路径的其他方法、尾斜杠、多一段与相似前缀。
+func situationSignalsNestRoutes() []struct{ method, path string } {
+	routes := []struct{ method, path string }{
+		{http.MethodGet, "/api/situation-monitor/insights"},
+		{http.MethodGet, "/api/situation-monitor/monitors"},
+		{http.MethodPost, "/api/situation-monitor/monitors"},
+		{http.MethodPost, "/api/situation-monitor/monitors/preview"},
+		{http.MethodPatch, "/api/situation-monitor/monitors/monitor-1"},
+		{http.MethodDelete, "/api/situation-monitor/monitors/monitor-1"},
+		{http.MethodPost, "/api/situation-monitor/refresh"},
+		{http.MethodGet, "/api/system-settings/realtime-signals/runtime"},
+		{http.MethodPost, "/api/situation-monitor/catalog"},
+		{http.MethodGet, "/api/situation-monitor/feedback"},
+		{http.MethodGet, "/api/situation-monitor/catalog/"},
+		{http.MethodGet, "/api/situation-monitor/feedback/"},
+		{http.MethodGet, "/api/situation-monitor/telegram-feed/"},
+		{http.MethodGet, "/api/situation-monitor/oref-alerts/"},
+		{http.MethodGet, "/api/situation-monitor/oref-history/"},
+		{http.MethodGet, "/api/situation-monitor/live-hls-proxy-config/"},
+		{http.MethodGet, "/api/situation-monitor/catalog/extra"},
+		{http.MethodGet, "/api/situation-monitor/telegram-feed/extra"},
+		{http.MethodGet, "/api/situation-monitor/oref-alerts/extra"},
+		{http.MethodGet, "/api/situation-monitor/oref-history/extra"},
+		{http.MethodGet, "/api/situation-monitor/live-hls-proxy-config/extra"},
+		{http.MethodGet, "/api/situation-monitor/refresh-runs"},
+		{http.MethodGet, "/api/situation-monitor/refresh-runs/"},
+		{http.MethodGet, "/api/situation-monitor/refresh-runs/run-1/extra"},
+		{http.MethodPost, "/api/situation-monitor/refresh-runs/run-1"},
+		{http.MethodPost, "/api/situation-monitor/feedback/extra"},
+	}
+	return routes
+}
+
+func TestSituationSignalsStayLegacyByDefault(t *testing.T) {
+	for _, mode := range []string{"", "legacy"} {
+		rules := DefaultRules(ModeShadow, "")
+		rules = WithSituationSignals(rules, mode)
+		gateway, err := New("http://legacy:4000", rules)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range situationSignalsRoutes() {
+			if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+				t.Fatalf("mode %q: %s %s mode=%s, want legacy", mode, tc.method, tc.path, got.Mode)
+			}
+		}
+	}
+}
+
+func TestSituationSignalsGoOwnsExactlySevenRoutes(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithSituationSignals(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range situationSignalsRoutes() {
+		got := gateway.match(tc.method, tc.path)
+		if got.Mode != ModeGo {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		}
+		key := got.Prefix
+		if got.HandlerKey != "" {
+			key = got.HandlerKey
+		}
+		if key != SituationSignalsKey {
+			t.Fatalf("%s %s key=%s, want %s", tc.method, tc.path, key, SituationSignalsKey)
+		}
+		if SituationSignalsKey == SituationMonitorsKey {
+			t.Fatal("situation signals and situation monitors share one handler key")
+		}
+	}
+	// OPTIONS on a taken-over path is answered by Go so browser preflight does
+	// not reach NestJS.
+	for _, tc := range situationSignalsRoutes() {
+		got := gateway.match(http.MethodOptions, tc.path)
+		if got.Mode != ModeGo {
+			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Mode)
+		}
+	}
+}
+
+func TestSituationSignalsUnmigratedRoutesStayNest(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithSituationSignals(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range situationSignalsNestRoutes() {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+}
+
+// 两个开关同时为 go 时互不抢占：monitors** 归 SituationMonitorsKey，
+// 7 条信号路由归 SituationSignalsKey。
+func TestSituationSignalsAndMonitorsDoNotStealEachOther(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithSituationMonitors(rules, string(ModeGo))
+	rules = WithSituationSignals(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	monitorRoutes := []struct{ method, path string }{
+		{http.MethodGet, "/api/situation-monitor/monitors"},
+		{http.MethodPost, "/api/situation-monitor/monitors"},
+		{http.MethodPost, "/api/situation-monitor/monitors/preview"},
+		{http.MethodPatch, "/api/situation-monitor/monitors/monitor-1"},
+		{http.MethodDelete, "/api/situation-monitor/monitors/monitor-1"},
+	}
+	for _, tc := range monitorRoutes {
+		got := gateway.match(tc.method, tc.path)
+		key := got.Prefix
+		if got.HandlerKey != "" {
+			key = got.HandlerKey
+		}
+		if got.Mode != ModeGo || key != SituationMonitorsKey {
+			t.Fatalf("%s %s mode=%s key=%s, want go/%s", tc.method, tc.path, got.Mode, key, SituationMonitorsKey)
+		}
+	}
+	for _, tc := range situationSignalsRoutes() {
+		got := gateway.match(tc.method, tc.path)
+		key := got.Prefix
+		if got.HandlerKey != "" {
+			key = got.HandlerKey
+		}
+		if got.Mode != ModeGo || key != SituationSignalsKey {
+			t.Fatalf("%s %s mode=%s key=%s, want go/%s", tc.method, tc.path, got.Mode, key, SituationSignalsKey)
+		}
+	}
+	// 只在 signals 开关打开时，monitors 仍回 NestJS。
+	signalsOnly := DefaultRules(ModeShadow, "")
+	signalsOnly = WithSituationMonitors(signalsOnly, "")
+	signalsOnly = WithSituationSignals(signalsOnly, string(ModeGo))
+	signalsGateway, err := New("http://legacy:4000", signalsOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := signalsGateway.match(http.MethodGet, "/api/situation-monitor/monitors"); got.Mode != ModeLegacy {
+		t.Fatalf("monitors mode=%s with only the signals switch on, want legacy", got.Mode)
+	}
+}

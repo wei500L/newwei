@@ -2083,3 +2083,138 @@ func TestCrawlFrontierRunsModeGoRequiresCredentials(t *testing.T) {
 		t.Fatalf("mode = %s", cfg.CrawlFrontierRunsMode)
 	}
 }
+func TestSituationSignalsModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SituationSignalsMode != SituationSignalsModeLegacy {
+		t.Fatalf("mode = %s", cfg.SituationSignalsMode)
+	}
+	// The empty string is explicitly legacy, not "unset but different".
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_SITUATION_MONITOR_SIGNALS_MODE" {
+			return ""
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SituationSignalsMode != SituationSignalsModeLegacy {
+		t.Fatalf("mode = %s", cfg.SituationSignalsMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_SITUATION_MONITOR_SIGNALS_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SituationSignalsMode != SituationSignalsModeLegacy {
+		t.Fatalf("mode = %s", cfg.SituationSignalsMode)
+	}
+}
+
+func TestSituationSignalsModeRejectsInvalid(t *testing.T) {
+	// shadow and canary are explicitly not accepted: this unit is
+	// legacy-or-go only, so a typo in the switch fails startup.
+	for _, invalid := range []string{"shadow", "canary", "Go", "true", "go\tshadow"} {
+		_, err := Load(func(key string) string {
+			if key == "API_GO_SITUATION_MONITOR_SIGNALS_MODE" {
+				return invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "API_GO_SITUATION_MONITOR_SIGNALS_MODE must be one of legacy|go") {
+			t.Fatalf("invalid mode %q: %v", invalid, err)
+		}
+	}
+}
+
+func TestSituationSignalsModeGoRequiresCredentials(t *testing.T) {
+	full := map[string]string{
+		"API_GO_SITUATION_MONITOR_SIGNALS_MODE": "go",
+		"JWT_SECRET":                            "secret",
+		"DATABASE_URL":                          "mysql://user:pass@127.0.0.1:3306/app",
+		"REDIS_HOST":                            "redis",
+		"MONGO_URI":                             "mongodb://127.0.0.1:27017/app",
+	}
+	for missing, expected := range map[string]string{
+		"JWT_SECRET":   "JWT_SECRET is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go",
+		"DATABASE_URL": "DATABASE_URL is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go",
+		"REDIS_HOST":   "REDIS_HOST is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go",
+		"MONGO_URI":    "MONGO_URI is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go",
+	} {
+		_, err := Load(func(key string) string {
+			if key == missing {
+				return ""
+			}
+			return full[key]
+		})
+		if err == nil || !strings.Contains(err.Error(), expected) {
+			t.Fatalf("missing %s: %v", missing, err)
+		}
+	}
+
+	cfg, err := Load(func(key string) string { return full[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SituationSignalsMode != SituationSignalsModeGo {
+		t.Fatalf("mode = %s", cfg.SituationSignalsMode)
+	}
+}
+
+func TestSituationSignalsModeIsIndependentOfSituationMonitorsMode(t *testing.T) {
+	// The monitors switch owns the five /monitors** routes; the signals switch
+	// owns seven different paths. Neither one may turn the other on.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_SITUATION_MONITOR_SIGNALS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://127.0.0.1:27017/app"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SituationMonitorsMode != SituationMonitorsModeLegacy {
+		t.Fatalf("monitors mode = %s", cfg.SituationMonitorsMode)
+	}
+	if cfg.SituationSignalsMode != SituationSignalsModeGo {
+		t.Fatalf("signals mode = %s", cfg.SituationSignalsMode)
+	}
+
+	cfg, err = Load(func(key string) string {
+		switch key {
+		case "API_GO_SITUATION_MONITORS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SituationSignalsMode != SituationSignalsModeLegacy {
+		t.Fatalf("signals mode = %s", cfg.SituationSignalsMode)
+	}
+}

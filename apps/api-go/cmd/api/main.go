@@ -521,6 +521,10 @@ func run() error {
 	if cfg.SituationMonitorsMode == config.SituationMonitorsModeGo {
 		situationMonitorsMode = string(legacyproxy.ModeGo)
 	}
+	situationSignalsMode := ""
+	if cfg.SituationSignalsMode == config.SituationSignalsModeGo {
+		situationSignalsMode = string(legacyproxy.ModeGo)
+	}
 	newsSourcesMode := ""
 	if cfg.NewsSourcesMode == config.NewsSourcesModeGo {
 		newsSourcesMode = string(legacyproxy.ModeGo)
@@ -597,6 +601,7 @@ func run() error {
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
 	rules = legacyproxy.WithGraphQLRead(rules, string(cfg.GraphQLReadMode))
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
+	rules = legacyproxy.WithSituationSignals(rules, situationSignalsMode)
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
@@ -730,7 +735,14 @@ func run() error {
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
+	// The situation monitor signals takeover needs the same credentialed stack
+	// (JWT verification, Redis revocation list, MySQL membership re-derivation)
+	// as the other migrated domains, so it participates in the shared assembly.
+	situationSignalsGo := cfg.SituationSignalsMode == config.SituationSignalsModeGo
 	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || crawlReadTelemetryGo || classificationRssOpsGo
+	// The situation monitor signals takeover appends to the shared decision
+	// instead of rewriting the other domains' expression.
+	needsCredentialedGo = needsCredentialedGo || situationSignalsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1076,6 +1088,10 @@ func run() error {
 		return err
 	}
 	if err := wireRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+
+	if err := wireSituationSignals(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
 		return err
 	}
 

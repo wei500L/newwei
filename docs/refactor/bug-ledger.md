@@ -410,6 +410,63 @@ verify success）——CI-01 本轮未复现，无重跑。
   涉及用户可见文案语义取舍（warning vs error），单独决策。
 - **状态**：开放。FE-批5B 以 characterization 锁定现状（测试内注明缺陷），未修改。
 
+### SMSIG-01（S1，P1）：空白 `signalId` 的反馈请求返回 500 而不是 400 — 待远端验证【Go-态势监控信号批】
+
+- **证据（基线 `39ad5b55`，开工复核行号）**：
+  - `apps/api/src/modules/situation-monitor/dto/situation-monitor.dto.ts:45-46`：
+    `signalId` 只有 `@IsString()`——`" "` / `"\t"` 通过校验（`@IsString` 不 trim）。
+  - `apps/api/src/modules/situation-monitor/situation-monitor-feedback.service.ts:95`：
+    `throw new Error("signalId is required")`。裸 `Error` 不是 `HttpException`，
+    `apps/api/src/common/filters/global-exception.filter.ts` 在生产环境把它映射成
+    `500 {"statusCode":500,"message":"Internal server error"}`。调用方输入错误
+    却是服务端错误，前端无法区分「参数非法」与「后端故障」。
+- **修法**：
+  - Nest（不改 DTO、不改控制器）：
+    `apps/api/src/modules/situation-monitor/situation-monitor-feedback.service.ts`
+    把裸 `Error` 换成 `BadRequestException("signalId is required")`（400，
+    `error: "Bad Request"`，message 一字不差）。
+  - Go：`apps/api-go/internal/situationsignals/feedback.go` 在同一位置写出
+    400，message 同为 `signalId is required`。
+- **影响面**：仅空白 `signalId`。非空 `signalId`（含首尾空白的合法值）行为不变
+  （trim 后仍写入 Mongo）；DTO 校验顺序 401 → 403 → 400 不变。
+- **回归方式**：`api-go-situation-monitor-signals-smoke` 阶段 2——
+  `POST /api/situation-monitor/feedback` body
+  `{"signalType":"narrative","signalId":" ","label":"false_positive"}`，
+  Nest 直连与 Go 两侧都断言 400 且 `message == "signalId is required"`，
+  并断言 Mongo `situationsignalfeedbacks` 无新增行。
+- **状态**：待远端验证（本批 Nest + Go 双侧修复，等待 smoke 阶段 2 结果）。
+
+### SMSIG-02（S2，P1）：refresh-run 缓存记录缺字段或时间非法时读取 500 — 待远端验证【Go-态势监控信号批】
+
+- **证据（基线 `39ad5b55`，开工复核行号）**：
+  - `apps/api/src/modules/situation-monitor/situation-monitor-refresh.service.ts:319-321`：
+    `new Date(record.taskWindowStart)` 对非法串得到 Invalid Date，随后作为
+    Prisma `createdAt: { gte: <Invalid Date> }` 抛错；`record.activeSourceIds.length`
+    在旧记录缺该键时直接 TypeError。
+  - `:378`：`record.warnings.some(...)`——`warnings` 缺失 → TypeError。
+  - `:386-395`：`record.crawl.activeSourceCount` 等链式访问——`crawl` 缺失 → TypeError。
+- **根因**：Redis 键 `situation-monitor:refresh-run:<refreshId>` TTL 900s，记录在
+  两个版本之间存活；旧版本/部分形状记录缺少后来追加的字段，读路径假定形状完整。
+  任何一条这样的残留记录都会让该 refreshId 的所有 GET 持续 500。
+- **修法**：
+  - Nest（新增读路径防御，正常记录行为不变）：
+    `activeSourceIds` 非数组 → `[]` 且剔除非 string 元素；`warnings` 非数组 → `[]`；
+    `crawl` 缺失/非对象 → 六字段零值对象
+    `{activeSourceCount:0, permitted:false, attempted:false, schedulerTriggered:false,
+    crawlTaskCount:0, analysisTaskCount:0}`；`taskWindowStart` 解析为 Invalid Date →
+    返回 null → 控制器 404 `Situation Monitor refresh run not found.`。
+    记录不存在或 `record.orgId !== orgId` 仍是同一 404（跨租户与不存在不可区分）。
+  - Go：`apps/api-go/internal/situationsignals/refreshrun.go` 把缓存 JSON 解码到
+    宽松具名 struct（缺失字段取同一套默认值），`taskWindowStart` 解析失败返回
+    同一 404。终态回写只把 `terminal` 字段写回原 JSON（键与 TTL 不变）。
+- **影响面**：计数语义也一并冻结——`activeSourceIds` 为空时每个计数**直接返回 0**
+  （不是忽略 sourceId 过滤的全量计数）。
+- **回归方式**：`api-go-situation-monitor-signals-smoke` 阶段 2——向 Redis 写入
+  缺 `activeSourceIds`/`warnings`/`crawl` 的原始 JSON，断言两条实现都 200 且计数
+  全 0、状态机按零值运行；再把 `taskWindowStart` 换成
+  `"not-a-timestamp"`，断言两侧都 404。绝不 500。
+- **状态**：待远端验证（本批 Nest + Go 双侧修复，等待 smoke 阶段 2 结果）。
+
 ## 5. 观察项（非缺陷，迁移决策输入）
 
 1. GraphQL Subscription 进程内 PubSub vs WS Redis adapter（水平扩容语义不一致）
