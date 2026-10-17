@@ -601,11 +601,13 @@ func (s *mongoStore) VectorCandidates(
 	return out, nil
 }
 
-// SourceCount is one source-count snapshot entry.
+// SourceCount is one source-count snapshot entry. The JSON tags are the wire
+// contract of the `__items_source_suggestions__:<org>:v1` cache entry, which is
+// shared with NestJS; they must stay lowercase.
 type SourceCount struct {
-	Source           string
-	NormalizedSource string
-	Count            int
+	Source           string `json:"source"`
+	NormalizedSource string `json:"normalizedSource"`
+	Count            int    `json:"count"`
 }
 
 // SourceCounts scans the newest completed processed documents and counts the
