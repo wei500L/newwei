@@ -12,6 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 )
 
 func TestHandlerExecutesRegisteredAndForwardsUnregistered(t *testing.T) {
@@ -152,5 +153,49 @@ func TestNewsEventsRegistrationChangesOnlyThoseDocuments(t *testing.T) {
 	}
 	if got := post(`{"query":"{ newsEvents { id } newsEventSourcePolicySyncStatus { degraded } }"}`); got != "forwarded" {
 		t.Fatalf("mixed source-policy document = %s", got)
+	}
+}
+
+func TestNewsIndicatorRegistrationChangesOnlyThoseDocuments(t *testing.T) {
+	reg := contract.NewRegistry()
+	alerts.Register(reg, nil)
+	history.Register(reg, nil, nil, nil)
+	economic.Register(reg, nil)
+	newsindicators.Register(reg, nil)
+	var forwarded int
+	handler, err := NewHandler(Options{
+		Registry: reg,
+		Legacy: func(w http.ResponseWriter, _ *http.Request) {
+			forwarded++
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"upstream":"nest"}`))
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(body string) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "http://gateway/graphql", strings.NewReader(body))
+		req.Header.Set("content-type", "application/json")
+		rec := httptest.NewRecorder()
+		before := forwarded
+		handler.ServeHTTP(rec, req)
+		if forwarded != before {
+			return "forwarded"
+		}
+		return rec.Body.String()
+	}
+	if got := post(`{"query":"{ newsIndicatorAssociations { id } }"}`); got == "forwarded" {
+		t.Fatal("registered newsIndicatorAssociations was forwarded")
+	}
+	if got := post(`{"query":"{ newsIndicatorAssociation(id: \"assoc-1\") { id } }"}`); got == "forwarded" {
+		t.Fatal("registered newsIndicatorAssociation was forwarded")
+	}
+	if got := post(`{"query":"{ newsIndicatorSettings { enabled } }"}`); got != "forwarded" {
+		t.Fatalf("unregistered newsIndicatorSettings = %s", got)
+	}
+	if got := post(`{"query":"{ newsIndicatorAssociations { id } newsIndicatorSettings { enabled } }"}`); got != "forwarded" {
+		t.Fatalf("mixed settings document = %s", got)
 	}
 }

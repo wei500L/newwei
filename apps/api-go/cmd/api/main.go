@@ -130,6 +130,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/kgimpact"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
@@ -547,6 +548,10 @@ func run() error {
 	if cfg.AdminLogsMode == config.AdminLogsModeGo {
 		adminLogsMode = string(legacyproxy.ModeGo)
 	}
+	newsIndicatorsMode := ""
+	if cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
+		newsIndicatorsMode = string(legacyproxy.ModeGo)
+	}
 	qualityOverviewMode := ""
 	if cfg.QualityOverviewMode == config.QualityOverviewModeGo {
 		qualityOverviewMode = string(legacyproxy.ModeGo)
@@ -577,6 +582,7 @@ func run() error {
 	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
 	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
 	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
+	rules = legacyproxy.WithNewsIndicators(rules, newsIndicatorsMode)
 	rules = legacyproxy.WithQualityOverview(rules, qualityOverviewMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
@@ -629,7 +635,8 @@ func run() error {
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
 				cfg.QualityOverviewMode == config.QualityOverviewModeGo ||
-				cfg.LlmLogsMode == config.LlmLogsModeGo {
+				cfg.LlmLogsMode == config.LlmLogsModeGo ||
+				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -684,8 +691,9 @@ func run() error {
 	crawlTemplatesGo := cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo
 	llmLogsGo := cfg.LlmLogsMode == config.LlmLogsModeGo
 	adminLogsGo := cfg.AdminLogsMode == config.AdminLogsModeGo
+	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
 	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || qualityOverviewGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1012,6 +1020,9 @@ func run() error {
 		return err
 	}
 
+	if err := wireNewsIndicators(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
 	if err := wireQualityOverview(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
@@ -1174,6 +1185,10 @@ func run() error {
 		if newsEventsGo {
 			newsevents.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
 		}
+		newsIndicatorsRead := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
+		if newsIndicatorsRead {
+			newsindicators.Register(reg, sharedDB)
+		}
 		kgImpactGo := cfg.GraphQLKgImpactMode == "go"
 		if kgImpactGo {
 			kgimpact.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
@@ -1207,6 +1222,11 @@ func run() error {
 			log.Printf("api-go: GraphQL news-event reads registered (newsEvents, newsEvent, newsEventBrief, newsEventReferencedArticles, topicGroups, eventGroups)")
 		} else {
 			log.Printf("api-go: GraphQL news-event reads not registered (API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy)")
+		}
+		if newsIndicatorsRead {
+			log.Printf("api-go: GraphQL news-indicator reads registered (newsIndicatorAssociations, newsIndicatorAssociation)")
+		} else {
+			log.Printf("api-go: GraphQL news-indicator reads not registered (API_GO_NEWS_INDICATORS_MODE=legacy)")
 		}
 		if kgImpactGo {
 			log.Printf("api-go: GraphQL knowledge-graph impact reads registered (getExecutiveChangeImpact, getCommodityMoveImpact, getPolicyEventImpact, getEntityImpactGraph)")

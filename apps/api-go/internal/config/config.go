@@ -248,6 +248,25 @@ const (
 	AdminLogsModeGo     AdminLogsMode = "go"
 )
 
+// NewsIndicatorsMode 只控制新闻指标关联分析的 3 条 HTTP 与 2 个 GraphQL 只读
+// query。默认 legacy。go 时接管
+//
+//	GET  /api/news-indicator/associations
+//	GET  /api/news-indicator/associations/:id
+//	POST /api/news-indicator/refresh
+//
+// 且当 API_GO_GRAPHQL_READ_MODE=go 时为读执行器登记
+// newsIndicatorAssociations 与 newsIndicatorAssociation 两个只读 query。
+// GraphQL mutation refreshNewsIndicatorAssociations 与设置读写仍回 NestJS。
+// 不启用 shadow，不调用 AkShare，不在 refresh 里外网拉经济数据，不启动
+// 调度 worker。
+type NewsIndicatorsMode string
+
+const (
+	NewsIndicatorsModeLegacy NewsIndicatorsMode = "legacy"
+	NewsIndicatorsModeGo     NewsIndicatorsMode = "go"
+)
+
 // QualityOverviewMode 只控制管理端质量面板的 5 条 GET。默认 legacy。
 // go 只接管下面这 5 条精确路径，且只匹配 GET：
 // admin/quality 的 news-sources、pipeline、overview、task-logs、
@@ -398,6 +417,10 @@ type Config struct {
 	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
 	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
 	GraphQLNewsEventsMode string
+	// NewsIndicatorsMode 只控制新闻指标关联分析的 3 条 HTTP 与 2 个 GraphQL
+	// 只读 query。默认 legacy。go 要求 JWT、MySQL、Redis。不要求 Mongo，
+	// 不调用 AkShare，也不启动调度。
+	NewsIndicatorsMode NewsIndicatorsMode
 	// GraphQLKgImpactMode 只决定知识图谱冲击传导与实体共现/相关图这 4 个
 	// 只读 root 是否登记。默认 legacy。读查询为 legacy 时不另挂 /graphql。
 	// 两个都是 go 才登记；本开关为 legacy 时，含这 4 个 root 的文档整包回
@@ -823,6 +846,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_ADMIN_LOGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_NEWS_INDICATORS_MODE")) {
+	case "", string(NewsIndicatorsModeLegacy):
+		cfg.NewsIndicatorsMode = NewsIndicatorsModeLegacy
+	case string(NewsIndicatorsModeGo):
+		cfg.NewsIndicatorsMode = NewsIndicatorsModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_INDICATORS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_QUALITY_OVERVIEW_MODE")) {
 	case "", string(QualityOverviewModeLegacy):
 		cfg.QualityOverviewMode = QualityOverviewModeLegacy
@@ -1214,6 +1245,9 @@ func Load(getenv func(string) string) (Config, error) {
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_ADMIN_LOGS_MODE=go")
 		}
+	}
+	if cfg.NewsIndicatorsMode == NewsIndicatorsModeGo {
+		appendAuthRequirements(&errs, "API_GO_NEWS_INDICATORS_MODE", cfg)
 	}
 	if cfg.QualityOverviewMode == QualityOverviewModeGo {
 		appendAuthRequirements(&errs, "API_GO_QUALITY_OVERVIEW_MODE", cfg)

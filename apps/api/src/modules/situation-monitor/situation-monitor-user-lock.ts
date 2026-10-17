@@ -57,15 +57,25 @@ export async function withSituationMonitorUserLock<T>(
   userId: string,
   fn: () => Promise<T>,
 ): Promise<T> {
+  return await withMysqlSessionLock(databaseURL, situationMonitorUserLockName(orgId, userId), fn);
+}
+
+// withMysqlSessionLock 在一条专用 MySQL 连接上持有 GET_LOCK(name, 10)，
+// 回调完成后 RELEASE_LOCK。名字必须是已算好的会话锁名（≤64 字符）。
+// 调用方负责保证不同逻辑互不串名；这把锁不放进 Prisma 事务。
+export async function withMysqlSessionLock<T>(
+  databaseURL: string,
+  lockName: string,
+  fn: () => Promise<T>,
+): Promise<T> {
   if (!databaseURL.trim()) {
     throw new SituationMonitorLockError("content subscription lock not acquired");
   }
   const session = await openMysqlLockSession(databaseURL);
-  const name = situationMonitorUserLockName(orgId, userId);
   let held = false;
   try {
     const rows = await session.query(
-      `SELECT GET_LOCK(${sqlString(name)}, ${LOCK_TIMEOUT_SECONDS}) AS acquired`,
+      `SELECT GET_LOCK(${sqlString(lockName)}, ${LOCK_TIMEOUT_SECONDS}) AS acquired`,
     );
     const acquired = rows[0]?.acquired;
     held = acquired === "1";
@@ -76,7 +86,7 @@ export async function withSituationMonitorUserLock<T>(
       return await fn();
     } finally {
       try {
-        await session.query(`SELECT RELEASE_LOCK(${sqlString(name)})`);
+        await session.query(`SELECT RELEASE_LOCK(${sqlString(lockName)})`);
       } catch {
         // 连接关闭时 MySQL 会释放这把会话锁。
       }

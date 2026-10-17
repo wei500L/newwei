@@ -21,6 +21,7 @@ import {
   type DailySeries,
   type NumericSeriesPoint
 } from "./news-indicator-math";
+import { withNewsIndicatorOrgLock } from "./news-indicator-org-lock";
 import { NewsIndicatorSettingsService } from "./news-indicator-settings.service";
 
 const logger = createLogger({ name: "news-indicator-association" });
@@ -123,7 +124,14 @@ export class NewsIndicatorAssociationService {
     });
   }
 
+  // refreshOrg 在按组织的 MySQL 会话锁（ni:<orgId>）内完成整轮刷新，
+  // 串行化同一组织的并发刷新与后台定时任务。锁在专用连接上持有，不放进
+  // Prisma 事务（见 news-indicator-org-lock.ts）。
   async refreshOrg(orgId: string) {
+    return await withNewsIndicatorOrgLock(orgId, async () => this.refreshOrgInner(orgId));
+  }
+
+  private async refreshOrgInner(orgId: string) {
     const settings = await this.settingsService.getSettings(orgId);
     if (!settings.enabled) {
       return { indicators: 0, associationsUpserted: 0, backtestsCreated: 0 };
@@ -347,31 +355,41 @@ export class NewsIndicatorAssociationService {
     }
 
     for (const chunk of chunkArray(pendingWrites, ASSOCIATION_WRITE_CHUNK_SIZE)) {
-      const associations = await this.prisma.$transaction(
-        chunk.map((write) => this.prisma.newsIndicatorAssociation.upsert(write.upsertArgs))
-      );
+      // 每个 chunk 的 upsert、过期回测清理与新回测插入在同一个事务里原子落库。
+      const associations = await this.prisma.$transaction(async (tx) => {
+        const upserted = await Promise.all(
+          chunk.map((write) => tx.newsIndicatorAssociation.upsert(write.upsertArgs))
+        );
+        if (upserted.length === 0) {
+          return upserted;
+        }
+
+        // Keep only the most recent backtest runs per association: this refresh
+        // runs on a schedule, so without retention the table grows without
+        // bound (topEntities × metrics × indicators × runs per day).
+        // where 必须同时含 orgId（跨组织清理缺陷修复）。
+        const retentionCutoff = new Date(Date.now() - BACKTEST_RETENTION_DAYS * DAY_MS);
+        const associationIds = upserted.map((association) => association.id);
+        await tx.newsIndicatorAssociationBacktestRun.deleteMany({
+          where: {
+            orgId,
+            associationId: { in: associationIds },
+            createdAt: { lt: retentionCutoff }
+          }
+        });
+        await tx.newsIndicatorAssociationBacktestRun.createMany({
+          data: upserted.map((association, index) => ({
+            associationId: association.id,
+            ...chunk[index]!.backtestData
+          }))
+        });
+        return upserted;
+      });
       if (associations.length === 0) {
         continue;
       }
 
       associationsUpserted += associations.length;
-      // Keep only the most recent backtest runs per association: this refresh
-      // runs on a schedule, so without retention the table grows without
-      // bound (topEntities × metrics × indicators × runs per day).
-      const retentionCutoff = new Date(Date.now() - BACKTEST_RETENTION_DAYS * DAY_MS);
-      const associationIds = associations.map((association) => association.id);
-      await this.prisma.newsIndicatorAssociationBacktestRun.deleteMany({
-        where: {
-          associationId: { in: associationIds },
-          createdAt: { lt: retentionCutoff },
-        },
-      });
-      await this.prisma.newsIndicatorAssociationBacktestRun.createMany({
-        data: associations.map((association, index) => ({
-          associationId: association.id,
-          ...chunk[index]!.backtestData
-        }))
-      });
       backtestsCreated += associations.length;
     }
 
