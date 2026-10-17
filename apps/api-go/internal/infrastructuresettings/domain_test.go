@@ -878,10 +878,48 @@ func TestSystemSecurityConfiguredFallbacks(t *testing.T) {
 		t.Fatalf("false row = %v %v", configured, ok)
 	}
 
+	// A row whose flag is not a boolean is "not configured" (NestJS's null), not
+	// an explicit false: treating it as false would downgrade an enabled policy
+	// to plaintext.
 	store = newFakeMySQL(map[string]string{settingKeySystemSecurity: `{"secretEncryptionEnabled":"yes"}`})
 	service = NewService(store.db(), nil, Config{})
-	if configured, ok := service.systemSecurityConfigured(context.Background()); !ok || configured {
-		t.Fatalf("non-boolean row = %v %v", configured, ok)
+	if configured, ok := service.systemSecurityConfigured(context.Background()); ok || configured {
+		t.Fatalf("non-boolean row must be not-configured: %v %v", configured, ok)
+	}
+
+	store = newFakeMySQL(map[string]string{settingKeySystemSecurity: `{"mfaPolicy":"off"}`})
+	service = NewService(store.db(), nil, Config{})
+	if configured, ok := service.systemSecurityConfigured(context.Background()); ok || configured {
+		t.Fatalf("missing flag must be not-configured: %v %v", configured, ok)
+	}
+
+	store = newFakeMySQL(map[string]string{settingKeySystemSecurity: `"x"`})
+	service = NewService(store.db(), nil, Config{})
+	if configured, ok := service.systemSecurityConfigured(context.Background()); ok || configured {
+		t.Fatalf("non-object row must be not-configured: %v %v", configured, ok)
+	}
+}
+
+// TestNonBooleanEncryptionFlagStillEncrypts locks the regression above at the
+// encoding-policy level: with a valid key and a flag that is not a boolean, the
+// secret is encrypted rather than stored in plaintext.
+func TestNonBooleanEncryptionFlagStillEncrypts(t *testing.T) {
+	key := make([]byte, systemSettingsKeyBytes)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	store := newFakeMySQL(map[string]string{settingKeySystemSecurity: `{"secretEncryptionEnabled":"yes"}`})
+	config := testVectorConfig()
+	config.EncryptionKeyRaw = hex.EncodeToString(key)
+	config.EncryptionKeyPresent = true
+	service := NewService(store.db(), nil, config)
+
+	resolved, err := service.encodeSecretForStorage(context.Background(), "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.encrypted == nil {
+		t.Fatal("a non-boolean flag must not disable encryption")
 	}
 }
 

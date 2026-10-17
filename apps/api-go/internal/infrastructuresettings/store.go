@@ -158,7 +158,7 @@ func (s *Service) systemSecurityConfigured(ctx context.Context) (bool, bool) {
 			if !cached.Exists {
 				return false, false
 			}
-			return configuredFromRaw(cached.Value), true
+			return configuredFromRaw(cached.Value)
 		}
 		logBackground("system security settings cache entry is not a settings document", nil)
 	}
@@ -171,21 +171,21 @@ func (s *Service) systemSecurityConfigured(ctx context.Context) (bool, bool) {
 	if !found {
 		return false, false
 	}
-	return configuredFromRaw(raw), true
+	return configuredFromRaw(raw)
 }
 
-// configuredFromRaw extracts secretEncryptionEnabled when the stored value is
-// an object carrying a boolean. Arrays and primitives count as "not an object"
-// exactly like the NestJS typeof check.
-func configuredFromRaw(raw json.RawMessage) bool {
+// configuredFromRaw extracts the secretEncryptionEnabled tri-state. The second
+// return value is false whenever the stored value is not an object or the member
+// is not a boolean, which is exactly the NestJS
+// `typeof value === "boolean" ? value : null` rule: a non-boolean member means
+// "not configured", never an explicit false. Treating it as false would silently
+// downgrade an enabled encryption policy to plaintext storage.
+func configuredFromRaw(raw json.RawMessage) (bool, bool) {
 	settings := parseSystemSecuritySettings(raw)
-	if settings == nil {
-		return false
+	if settings == nil || settings.SecretEncryptionEnabled == nil {
+		return false, false
 	}
-	if settings.SecretEncryptionEnabled == nil {
-		return false
-	}
-	return *settings.SecretEncryptionEnabled
+	return *settings.SecretEncryptionEnabled, true
 }
 
 // cachedSystemSecuritySettings is the `system_security:settings` envelope.
