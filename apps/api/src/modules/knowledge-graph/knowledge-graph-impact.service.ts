@@ -155,7 +155,7 @@ export class KnowledgeGraphImpactService {
       }
 
       const companies = await this.prisma.knowledgeEntity.findMany({
-        where: { id: { in: Array.from(companyIds) } }
+        where: { orgId: input.orgId, id: { in: Array.from(companyIds) } }
       });
 
       const companiesById = new Map(companies.map((company) => [company.id, company]));
@@ -272,7 +272,7 @@ export class KnowledgeGraphImpactService {
       }
 
       const companies = await this.prisma.knowledgeEntity.findMany({
-        where: { id: { in: Array.from(companyIds) } }
+        where: { orgId: input.orgId, id: { in: Array.from(companyIds) } }
       });
       const companiesById = new Map(companies.map((company) => [company.id, company]));
 
@@ -383,7 +383,7 @@ export class KnowledgeGraphImpactService {
       }
 
       const companies = await this.prisma.knowledgeEntity.findMany({
-        where: { id: { in: Array.from(companyIds) } }
+        where: { orgId: input.orgId, id: { in: Array.from(companyIds) } }
       });
       const companiesById = new Map(companies.map((company) => [company.id, company]));
 
@@ -542,7 +542,7 @@ export class KnowledgeGraphImpactService {
     }
 
     const entities = await this.prisma.knowledgeEntity.findMany({
-      where: { id: { in: Array.from(candidateIds) } }
+      where: { orgId, id: { in: Array.from(candidateIds) } }
     });
 
     const companies = entities.filter((entity) => entity.type === KnowledgeEntityType.company);
@@ -572,7 +572,7 @@ export class KnowledgeGraphImpactService {
     }
 
     const nodes = await this.prisma.knowledgeEntity.findMany({
-      where: { id: { in: Array.from(ids) } }
+      where: { orgId: input.orgId, id: { in: Array.from(ids) } }
     });
 
     return { edges, nodesById: new Map(nodes.map((node) => [node.id, node])) };
