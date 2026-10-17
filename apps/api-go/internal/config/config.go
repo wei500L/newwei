@@ -451,6 +451,24 @@ const (
 	RuntimeSettingsModeGo RuntimeSettingsMode = "go"
 )
 
+// LLMGatewayProfilesMode controls the seven LLM gateway profile
+// configuration-control routes under /api/system-settings/llm-gateways
+// (API_GO_LLM_GATEWAY_PROFILES_MODE). Accepted values are exactly "", "legacy"
+// and "go"; any other value fails startup instead of silently degrading. The
+// default is legacy. Mode go reuses the shared auth requirements (JWT_SECRET,
+// DATABASE_URL, REDIS_HOST) and never requires Mongo or a live model upstream.
+type LLMGatewayProfilesMode string
+
+const (
+	// LLMGatewayProfilesModeLegacy proxies all seven routes to NestJS
+	// (default, including the empty value).
+	LLMGatewayProfilesModeLegacy LLMGatewayProfilesMode = "legacy"
+	// LLMGatewayProfilesModeGo serves the seven routes from Go with the same
+	// authentication chain as NestJS plus the platform-admin gate. It never
+	// enables shadow or canary traffic.
+	LLMGatewayProfilesModeGo LLMGatewayProfilesMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -798,6 +816,27 @@ type Config struct {
 	LiteLLMAPIKey     string
 	LiteLLMTimeoutMs  int
 	LiteLLMMaxRetries int
+
+	// LLMGatewayProfilesMode 控制 LLM 网关 profile 的七条配置/激活路由。默认
+	// legacy；go 复用 appendAuthRequirements，不要求 Mongo 或真实模型上游。
+	LLMGatewayProfilesMode LLMGatewayProfilesMode
+	// LLMGateway* 是本批 profile 默认值所需的 LITELLM_* 投影。它们镜像
+	// NestJS env schema 的默认值：LITELLM_MAX_TOKENS 与 LITELLM_RETRY_ATTEMPTS
+	// 因为有 schema 默认值，永远优先于 LITELLM_MAX_OUTPUT_TOKENS /
+	// LITELLM_MAX_RETRIES。LITELLM_EMBEDDING_MODEL 与 LITELLM_API_KEY 不会
+	// 变成新 profile 的字段。
+	LLMGatewayModel           string
+	LLMGatewayTemperature     float64
+	LLMGatewayTopP            float64
+	LLMGatewayMaxOutputTokens int
+	LLMGatewayMaxRetries      int
+	LLMGatewayFallbackModels  []string
+	// LLMGatewaySettingsEncryptionKey 是 SYSTEM_SETTINGS_ENCRYPTION_KEY 的原文
+	// （不 trim：NestJS 的存在性判断是原始字符串 truthiness）。不进入日志。
+	LLMGatewaySettingsEncryptionKey string
+	// NodeEnvProduction 是 NODE_ENV === "production"，决定无密钥时是否允许
+	// 明文回落。
+	NodeEnvProduction bool
 
 	// CorsOrigin 是与 NestJS 相同的 CORS_ORIGIN 原文。空名单不放行任何
 	// 浏览器 Origin。只用于 Go 自己写出的 user-settings 响应。
@@ -1176,6 +1215,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_LLM_GATEWAY_PROFILES_MODE")) {
+	case "", string(LLMGatewayProfilesModeLegacy):
+		cfg.LLMGatewayProfilesMode = LLMGatewayProfilesModeLegacy
+	case string(LLMGatewayProfilesModeGo):
+		cfg.LLMGatewayProfilesMode = LLMGatewayProfilesModeGo
+	default:
+		errs = append(errs, "API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_INFRASTRUCTURE_SETTINGS_MODE")) {
 	case "", string(InfrastructureSettingsModeLegacy):
 		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeLegacy
@@ -1347,6 +1394,24 @@ func Load(getenv func(string) string) (Config, error) {
 			cfg.LiteLLMMaxRetries = value
 		}
 	}
+	// 本批 profile 默认值的 LITELLM_* 投影（镜像 NestJS env schema）。
+	cfg.LLMGatewayModel = stringDefault(getenv("LITELLM_MODEL"), "openai/gpt-4o-mini")
+	cfg.LLMGatewayTemperature = floatDefault(getenv("LITELLM_TEMPERATURE"), 0.2)
+	cfg.LLMGatewayTopP = floatDefault(getenv("LITELLM_TOP_P"), 0.9)
+	// LITELLM_MAX_TOKENS 在 env schema 里有默认值 2048，所以
+	// LITELLM_MAX_OUTPUT_TOKENS 永远不会生效；Go 侧同样优先 MAX_TOKENS 本身。
+	cfg.LLMGatewayMaxOutputTokens = 2048
+	if value := positiveInt(getenv("LITELLM_MAX_TOKENS")); value > 0 {
+		cfg.LLMGatewayMaxOutputTokens = value
+	}
+	// LITELLM_RETRY_ATTEMPTS 同理（schema 默认 3）。
+	cfg.LLMGatewayMaxRetries = 3
+	if value := positiveInt(getenv("LITELLM_RETRY_ATTEMPTS")); value > 0 {
+		cfg.LLMGatewayMaxRetries = value
+	}
+	cfg.LLMGatewayFallbackModels = splitCommaList(getenv("LITELLM_FALLBACK_MODELS"))
+	cfg.LLMGatewaySettingsEncryptionKey = getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY")
+	cfg.NodeEnvProduction = strings.TrimSpace(getenv("NODE_ENV")) == "production"
 	cfg.CorsOrigin = getenv("CORS_ORIGIN")
 
 	// JWT 验签配置（issuer/audience 默认值与 NestJS env schema 一致——
@@ -1659,6 +1724,9 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.RuntimeSettingsMode == RuntimeSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_RUNTIME_SETTINGS_MODE", cfg)
 	}
+	if cfg.LLMGatewayProfilesMode == LLMGatewayProfilesModeGo {
+		appendAuthRequirements(&errs, "API_GO_LLM_GATEWAY_PROFILES_MODE", cfg)
+	}
 	// The infrastructure settings takeover needs JWT verification, MySQL and
 	// Redis only. It reads no Mongo collection, starts no worker and does not
 	// treat the settings-encryption key as a startup requirement: a missing or
@@ -1678,6 +1746,49 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, errors.New(strings.Join(errs, "; "))
 	}
 	return cfg, nil
+}
+
+// floatDefault parses a decimal environment value, falling back when it is
+// absent or not a float.
+func floatDefault(value string, fallback float64) float64 {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+// positiveInt parses a decimal environment value and returns 0 when it is absent
+// or not a positive integer.
+func positiveInt(value string) int {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+	return parsed
+}
+
+// splitCommaList mirrors the NestJS LITELLM_FALLBACK_MODELS handling: split on
+// commas, trim and drop empty entries.
+func splitCommaList(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func appendAuthRequirements(errs *[]string, name string, cfg Config) {
