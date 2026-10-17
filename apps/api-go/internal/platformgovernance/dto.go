@@ -222,12 +222,13 @@ func integerMessages(v *validationErrors, value float64, field string, min, max 
 
 // coercedIntegerField validates @Type(() => Number) + @IsInt/@Min/@Max.
 //
-// The @Type decorator runs Number() on the plain value before validation, so
-// null becomes 0, "" becomes 0, true becomes 1 and an absent key stays
-// undefined. An array is mapped element-wise and therefore remains an array,
-// which fails all three constraints.
+// class-transformer coerces a present scalar through Number() before validation,
+// so "50" becomes 50, "" becomes 0 and true becomes 1. It does NOT coerce null
+// (measured against the real ValidationPipe): the property stays null, so all
+// three constraints fail. An array is mapped element-wise and therefore remains
+// an array, which fails all three constraints as well.
 func coercedIntegerField(v *validationErrors, raw json.RawMessage, field string, min, max int64) (int64, bool) {
-	if !hasValue(raw) {
+	if !hasValue(raw) || isNullValue(raw) {
 		addIntegerMessages(v, field, min, max)
 		return 0, false
 	}

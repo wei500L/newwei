@@ -60,13 +60,21 @@ func TestParseUpdateQuotaMessages(t *testing.T) {
 }
 
 func TestParseUpdateQuotaNumberCoercion(t *testing.T) {
-	// @Type(() => Number): "50" -> 50, null -> 0, "" -> 0, true -> 1.
-	input, err := parseUpdateQuota([]byte(`{"enabled":true,"submitLimitPerHour":"50","maxInFlightPerOrg":null,"monthlyTokenBudget":""}`))
+	// @Type(() => Number): "50" -> 50, "" -> 0.
+	input, err := parseUpdateQuota([]byte(`{"enabled":true,"submitLimitPerHour":"50","maxInFlightPerOrg":"","monthlyTokenBudget":""}`))
 	if err != nil {
 		t.Fatalf("coercion err = %v", err)
 	}
 	if !input.Enabled || input.SubmitLimitPerHour != 50 || input.MaxInFlightPerOrg != 0 || input.MonthlyTokenBudget != 0 {
 		t.Fatalf("input = %+v", input)
+	}
+
+	// null is NOT coerced: the real ValidationPipe reports all three constraints
+	// for that property (verified by the real-stack smoke workflow).
+	_, err = parseUpdateQuota([]byte(`{"enabled":true,"submitLimitPerHour":50,"maxInFlightPerOrg":null,"monthlyTokenBudget":0}`))
+	want := "maxInFlightPerOrg must not be greater than 100; maxInFlightPerOrg must not be less than 0; maxInFlightPerOrg must be an integer number"
+	if err == nil || err.Error() != want {
+		t.Fatalf("null err = %v, want %q", err, want)
 	}
 
 	// A non-numeric string, an object and an array each fail every constraint.

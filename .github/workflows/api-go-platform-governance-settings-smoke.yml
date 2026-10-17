@@ -544,9 +544,14 @@ jobs:
                        {"secretEncryptionEnabled": True, "mfaPolicy": "off", "bogus": 1}, "system_security", expected=400)
           parity_write("400 wrong type", "PUT", task_logs_path, platform_token,
                        {"retentionDays": "30"}, "task_log_settings", expected=400)
-          parity_write("quota numeric string / null / empty coercion", "PUT", quota_path, platform_token,
-                       {"enabled": True, "submitLimitPerHour": "50", "maxInFlightPerOrg": None, "monthlyTokenBudget": ""},
+          # @Type(() => Number) coerces strings and "" but leaves null alone, so
+          # the null form is a 400 whose message lists all three constraints.
+          parity_write("quota numeric string / empty coercion", "PUT", quota_path, platform_token,
+                       {"enabled": True, "submitLimitPerHour": "50", "maxInFlightPerOrg": "", "monthlyTokenBudget": ""},
                        "assistant_quota", expected=200)
+          parity_write("400 quota null is not coerced", "PUT", quota_path, platform_token,
+                       {"enabled": True, "submitLimitPerHour": "50", "maxInFlightPerOrg": None, "monthlyTokenBudget": ""},
+                       "assistant_quota", expected=400)
           parity_write("400 quota non-numeric string", "PUT", quota_path, platform_token,
                        {"enabled": True, "submitLimitPerHour": "abc", "maxInFlightPerOrg": 2, "monthlyTokenBudget": 2000000},
                        "assistant_quota", expected=400)
