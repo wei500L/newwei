@@ -260,6 +260,12 @@ func extractRawPreviewMongo(payload OpenJSON) RawPreview {
 	return preview
 }
 
+// ExtractRawPreviewReadModel exposes the read-model rawPreview projection to
+// the GraphQL adapter package.
+func ExtractRawPreviewReadModel(payload OpenJSON) RawPreview {
+	return extractRawPreviewReadModel(payload)
+}
+
 // extractRawPreviewReadModel ports extractRawPayloadFields (the read-model
 // variant: the ISO-normalized history rule and no alias-set differences for the
 // string fields).

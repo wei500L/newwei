@@ -281,7 +281,7 @@ func (r *resolver) buildReadModelProcessedGraph(
 		Error:                      convertError(processed.Error),
 		ID:                         processed.ID,
 		ItemMetaID:                 processed.ItemMetaID,
-		Llm:                        processed.Llm,
+		LLM:                        convertLlm(processed.Llm),
 		Result:                     itemsdomain.ResultStringToken(processed.Result),
 		ResultJSON:                 itemsdomain.ResultJSONPointer(processed.Result),
 		Status:                     processed.Status,
@@ -316,7 +316,7 @@ func (r *resolver) buildMongoProcessedGraph(
 		Error:                      convertError(processed.Error),
 		ID:                         processed.HexID(),
 		ItemMetaID:                 processed.ItemMetaID,
-		Llm:                        processed.Llm,
+		LLM:                        convertLlm(processed.Llm),
 		Result:                     itemsdomain.ResultStringToken(processed.Result),
 		ResultJSON:                 itemsdomain.ResultJSONPointer(processed.Result),
 		Status:                     processed.Status,
@@ -337,6 +337,22 @@ func (r *resolver) buildMongoProcessedGraph(
 	}
 	graph.EventID = eventID
 	return graph, nil
+}
+
+// convertLlm maps the stored llm document onto the reused workspace model.
+func convertLlm(source *itemsdomain.ProcessedItemLlmDoc) *workspace.ProcessedItemLlmModel {
+	if source == nil {
+		return nil
+	}
+	return &workspace.ProcessedItemLlmModel{
+		CompletionTokens: source.CompletionTokens,
+		CostUSD:          source.CostUSD,
+		LatencyMs:        source.LatencyMs,
+		Model:            source.Model,
+		PromptTokens:     source.PromptTokens,
+		PromptVersion:    source.PromptVersion,
+		TotalTokens:      source.TotalTokens,
+	}
 }
 
 // convertError maps the stored error document onto the GraphQL object.
@@ -360,18 +376,18 @@ func (r *resolver) buildReadModelProcessedPreviewGraph(
 		DuplicateSimilarity: processed.DuplicateSimilarity,
 		ID:                  processed.ID,
 		ItemMetaID:          processed.ItemMetaID,
-		Llm:                 processed.Llm,
+		Llm:                 convertLlm(processed.Llm),
 		Status:              processed.Status,
 		Tags:                processed.Tags,
 		Topics:              nonNil(extracted.Topics, doc.Topics),
 		Entities:            nonNil(extracted.Entities, doc.Entities),
-		Source:              firstOptional(extracted.Source, doc.SourceName),
-		Title:               firstOptional(extracted.Title, doc.Title),
-		Language:            firstOptional(extracted.Language, doc.Language),
-		Sentiment:           firstOptional(extracted.Sentiment, doc.Sentiment),
-		ContentType:         firstOptional(extracted.ContentType, doc.ContentType),
+		Source:              firstOptional(optionalString(extracted.Source), doc.SourceName),
+		Title:               firstOptional(optionalString(extracted.Title), doc.Title),
+		Language:            firstOptional(optionalString(extracted.Language), doc.Language),
+		Sentiment:           firstOptional(optionalString(extracted.Sentiment), doc.Sentiment),
+		ContentType:         firstOptional(optionalString(extracted.ContentType), doc.ContentType),
 		QualityScore:        firstOptionalFloat(extracted.QualityScore, doc.QualityScore),
-		Location:            firstOptional(extracted.Location, extracted.Region, doc.Location, doc.Region),
+		Location:            firstOptional(optionalString(extracted.Location), optionalString(extracted.Region), doc.Location, doc.Region),
 	}
 	if extracted.PublishedAt != nil {
 		graph.PublishedAt = extracted.PublishedAt
@@ -400,7 +416,7 @@ func (r *resolver) buildMongoProcessedPreviewGraph(
 		DuplicateSimilarity: processed.DuplicateSimilarity,
 		ID:                  processed.HexID(),
 		ItemMetaID:          processed.ItemMetaID,
-		Llm:                 processed.Llm,
+		Llm:                 convertLlm(processed.Llm),
 		Status:              processed.Status,
 		Tags:                processed.Tags,
 		Topics:              nonNil(extracted.Topics, nil),
