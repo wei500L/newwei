@@ -113,10 +113,7 @@ func (s *service) getKnowledgeGraphSubgraph(ctx contract.Context) (any, error) {
 	callCtx := s.call(ctx.Ctx)
 
 	if ttl > 0 && s.redis != nil {
-		if raw, err := s.redis.Get(callCtx, cacheKey).Bytes(); err == nil && len(raw) > 0 {
-			if string(raw) == "null" {
-				return nil, nil
-			}
+		if raw, err := s.redis.Get(callCtx, cacheKey).Bytes(); err == nil && len(raw) > 0 && string(raw) != "null" {
 			var cached cacheSubgraph
 			if json.Unmarshal(raw, &cached) == nil && cached.Seed.ID != "" {
 				return cached.model(), nil
@@ -342,7 +339,7 @@ func (s *service) loadSubgraph(ctx context.Context, orgID, seedName string, seed
 		Metadata: cacheMetadata{
 			TotalNodes:  len(nodes),
 			TotalEdges:  len(edges),
-			GeneratedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+			GeneratedAt: s.clock().UTC().Format("2006-01-02T15:04:05.000Z"),
 		},
 	}, nil
 }
