@@ -251,6 +251,16 @@ jobs:
                   fail(f"login {email} {status} {raw[:400]!r}")
               return doc["accessToken"]
 
+          def comparable(raw):
+              """Success bodies must match byte for byte. Error envelopes also
+              carry a per-request traceId and timestamp, which legitimately
+              differ between the NestJS call and the Go call, so those two keys
+              are dropped before the comparison."""
+              doc = body(raw)
+              if isinstance(doc, dict) and "traceId" in doc:
+                  doc = {key: value for key, value in doc.items() if key not in ("traceId", "timestamp")}
+              return doc
+
           def canon(value):
               if isinstance(value, dict):
                   return {key: canon(item) for key, item in sorted(value.items())}
@@ -386,7 +396,7 @@ jobs:
               if nest_status != expected or go_status != expected:
                   fail(f"parity {label}: status nest={nest_status} go={go_status}, want {expected}; "
                        f"nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
-              if body(nest_raw) != body(go_raw):
+              if comparable(nest_raw) != comparable(go_raw):
                   fail(f"parity {label}: body mismatch\nnest={nest_raw[:600]!r}\ngo  ={go_raw[:600]!r}")
               print("parity ok:", label)
 
@@ -399,7 +409,7 @@ jobs:
               go_status, go_raw = call(go, path, method, token, payload)
               if go_status != expected:
                   fail(f"parity {label}: go status {go_status} {go_raw[:400]!r}, want {expected}")
-              if body(nest_raw) != body(go_raw):
+              if comparable(nest_raw) != comparable(go_raw):
                   fail(f"parity {label}: body mismatch\nnest={nest_raw[:600]!r}\ngo  ={go_raw[:600]!r}")
               print("parity ok:", label)
 
