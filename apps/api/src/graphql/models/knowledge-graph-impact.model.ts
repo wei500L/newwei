@@ -1,4 +1,5 @@
 import { Field, Float, GraphQLISODateTime, InputType, Int, ObjectType } from "@nestjs/graphql";
+import { Allow } from "class-validator";
 import GraphQLJSONScalar from "graphql-type-json";
 
 import { KnowledgeGraphEdgeModel, KnowledgeGraphNodeModel } from "./knowledge-graph.model";
@@ -50,30 +51,37 @@ export class KnowledgeGraphImpactAnalysisModel {
 
 @InputType()
 export class ExecutiveChangeImpactInput {
+  @Allow()
   @Field(() => String)
   companyName!: string;
 
+  @Allow()
   @Field(() => Int, { nullable: true })
   maxCandidates?: number;
 }
 
 @InputType()
 export class CommodityMoveImpactInput {
+  @Allow()
   @Field(() => String)
   commodityName!: string;
 
+  @Allow()
   @Field(() => Int, { nullable: true })
   maxCandidates?: number;
 }
 
 @InputType()
 export class PolicyEventImpactInput {
+  @Allow()
   @Field(() => String)
   policyName!: string;
 
+  @Allow()
   @Field(() => Int, { nullable: true })
   maxCandidates?: number;
 
+  @Allow()
   @Field(() => Boolean, { nullable: true })
   includeLprSnapshot?: boolean;
 }
