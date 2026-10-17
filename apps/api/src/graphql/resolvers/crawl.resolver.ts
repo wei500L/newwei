@@ -88,6 +88,30 @@ export class CrawlResolver {
       ];
     }
 
+    // A cursor must be resolved against the same org-scoped filter before it is
+    // handed to Prisma. A cursor id that no longer exists for this organization
+    // (deleted task, forged cursor or another tenant's id) otherwise raises
+    // Prisma P2025 inside the findMany below, which surfaces as an unhandled
+    // 500. A stale cursor is not an error: it ends the pagination with an empty
+    // page while totalCount still reports the full org-scoped result size.
+    if (cursorId) {
+      const cursorTask = await this.prisma.crawlTask.findFirst({
+        where: { id: cursorId, orgId: requester.orgId },
+        select: { id: true }
+      });
+      if (!cursorTask) {
+        const totalCount = await this.prisma.crawlTask.count({ where });
+        return {
+          edges: [],
+          pageInfo: {
+            hasNextPage: false,
+            endCursor: null
+          },
+          totalCount
+        };
+      }
+    }
+
     const tasks = await this.prisma.crawlTask.findMany({
       where,
       // Add a deterministic tie-breaker to keep cursor pagination stable when

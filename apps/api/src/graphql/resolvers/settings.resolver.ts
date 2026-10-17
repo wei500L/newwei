@@ -866,9 +866,20 @@ export class SettingsResolver {
     if (!Array.isArray(user.roleIds) || user.roleIds.length === 0) {
       throw new ForbiddenException("Unauthenticated");
     }
+    // The admin gate must only accept the caller's own organization's built-in
+    // system role. Matching on the display name alone let an org-scoped custom
+    // role called "admin" (isSystem: false) satisfy the gate, and a role id
+    // borrowed from another organization matched as well because roleIds were
+    // never constrained to user.orgId. UserAdminService.isSystemAdminRole
+    // requires both isSystem and a case-insensitive "admin" name, so the query
+    // is scoped the same way here. The case-insensitive name comparison comes
+    // from the Role table collation (utf8mb4_unicode_ci), which is the same
+    // semantics as the LOWER(name) = 'admin' predicate used by the Go reader.
     const adminRole = await this.prisma.role.findFirst({
       where: {
         id: { in: user.roleIds },
+        orgId: user.orgId,
+        isSystem: true,
         name: "admin",
       },
       select: { id: true },

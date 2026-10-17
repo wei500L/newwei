@@ -57,11 +57,19 @@ type Resolver func(ctx Context) (any, error)
 
 // Root is one migrated Query field.
 //
-// Permission is required unless AllowAuthenticated is set. Neither means the
-// executor fails closed with PERMISSION_METADATA_MISSING.
+// Permission is required unless AllowAuthenticated or AnyPermissions is set.
+// None of the three means the executor fails closed with
+// PERMISSION_METADATA_MISSING.
+//
+// AnyPermissions mirrors the NestJS @Permissions("a", "b") decorator with
+// mode "any": holding at least one listed permission authorizes the field, and
+// missing all of them produces the same FORBIDDEN failure the NestJS
+// GqlPermissionsGuard raises. Permission and AnyPermissions are mutually
+// exclusive; AnyPermissions wins when both are set.
 type Root struct {
 	Name               string
 	Permission         string
+	AnyPermissions     []string
 	AllowAuthenticated bool
 	Resolve            Resolver
 }
@@ -328,6 +336,23 @@ func AsInt(value any) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// AsString coerces a string-shaped GraphQL value. Besides a plain string it
+// accepts any named string type, so an enum model can declare its own string
+// type with constants and still project the SDL enum member name.
+func AsString(value any) (string, bool) {
+	if text, ok := value.(string); ok {
+		return text, true
+	}
+	if value == nil {
+		return "", false
+	}
+	reflected := reflect.ValueOf(value)
+	if reflected.Kind() != reflect.String {
+		return "", false
+	}
+	return reflected.String(), true
 }
 
 // AsFloat coerces a GraphQL Float.
