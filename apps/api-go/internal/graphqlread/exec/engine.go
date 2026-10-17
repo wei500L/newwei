@@ -505,6 +505,8 @@ func graphqlCode(status int) string {
 		return "UNAUTHORIZED"
 	case http.StatusForbidden:
 		return "FORBIDDEN"
+	case http.StatusNotFound:
+		return "NOT_FOUND"
 	case http.StatusTooManyRequests:
 		return "TOO_MANY_REQUESTS"
 	case http.StatusServiceUnavailable:
