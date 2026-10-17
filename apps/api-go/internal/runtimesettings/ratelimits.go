@@ -115,13 +115,54 @@ func normalizeBucket(raw json.RawMessage, fallback rateLimitBucketConfig) rateLi
 	}
 }
 
-// normalizeRateLimitSettings mirrors normalizeSettings.
-func normalizeRateLimitSettings(input rateLimitSettings, fallback rateLimitSettings) rateLimitSettings {
+// cachedRateLimitSettings is the typed view of the Redis payload. Pointer
+// buckets keep "key absent" distinguishable from a zero-valued bucket, which
+// matters because an absent bucket must keep the raw environment fallback.
+type cachedRateLimitSettings struct {
+	Login       *rateLimitBucketConfig `json:"login"`
+	CrawlCreate *rateLimitBucketConfig `json:"crawlCreate"`
+	RbacWrite   *rateLimitBucketConfig `json:"rbacWrite"`
+}
+
+// normalizeRequestSettings mirrors normalizeSettings for a PUT body: an absent
+// bucket keeps the raw (unclamped) environment fallback, exactly like
+// normalizeBucket(undefined, fallback).
+func normalizeRequestSettings(dto rateLimitSettingsRequest, fallback rateLimitSettings) rateLimitSettings {
 	return rateLimitSettings{
-		Login:       normalizeBucketObject(input.Login, fallback.Login),
-		CrawlCreate: normalizeBucketObject(input.CrawlCreate, fallback.CrawlCreate),
-		RbacWrite:   normalizeBucketObject(input.RbacWrite, fallback.RbacWrite),
+		Login:       normalizeRequestBucket(dto.Login, fallback.Login),
+		CrawlCreate: normalizeRequestBucket(dto.CrawlCreate, fallback.CrawlCreate),
+		RbacWrite:   normalizeRequestBucket(dto.RbacWrite, fallback.RbacWrite),
 	}
+}
+
+// normalizeRequestBucket normalizes one submitted bucket.
+func normalizeRequestBucket(bucket *rateLimitBucketRequest, fallback rateLimitBucketConfig) rateLimitBucketConfig {
+	if bucket == nil {
+		return fallback
+	}
+	value, ok := bucketToRequestValue(bucket)
+	if !ok {
+		return fallback
+	}
+	return normalizeBucketObject(value, fallback)
+}
+
+// normalizeCachedSettings mirrors normalizeSettings for a cache hit.
+func normalizeCachedSettings(cached cachedRateLimitSettings, fallback rateLimitSettings) rateLimitSettings {
+	return rateLimitSettings{
+		Login:       normalizeCachedBucket(cached.Login, fallback.Login),
+		CrawlCreate: normalizeCachedBucket(cached.CrawlCreate, fallback.CrawlCreate),
+		RbacWrite:   normalizeCachedBucket(cached.RbacWrite, fallback.RbacWrite),
+	}
+}
+
+// normalizeCachedBucket normalizes one cached bucket; a missing key keeps the
+// raw environment fallback.
+func normalizeCachedBucket(bucket *rateLimitBucketConfig, fallback rateLimitBucketConfig) rateLimitBucketConfig {
+	if bucket == nil {
+		return fallback
+	}
+	return normalizeBucketObject(*bucket, fallback)
 }
 
 // normalizeBucketObject normalizes an already-decoded bucket (the cache-hit and
@@ -214,9 +255,9 @@ func (s *Service) getRateLimitSettings(ctx context.Context) (rateLimitSettings, 
 	if raw, found, cacheErr := s.cacheGet(ctx, rateLimitSettingsCacheKey); cacheErr != nil {
 		logCacheFailure("rate limit settings", rateLimitSettingsCacheKey, cacheErr)
 	} else if found {
-		var cached rateLimitSettings
+		var cached cachedRateLimitSettings
 		if err := json.Unmarshal(raw, &cached); err == nil {
-			return normalizeRateLimitSettings(cached, s.fallbackRateLimitSettings()), nil
+			return normalizeCachedSettings(cached, s.fallbackRateLimitSettings()), nil
 		}
 		logCacheFailure("rate limit settings", rateLimitSettingsCacheKey, errors.New("cache entry is not a settings document"))
 	}
@@ -240,17 +281,7 @@ func (s *Service) updateRateLimitSettings(ctx context.Context, orgID, actorID st
 		return rateLimitSettings{}, errNoDatabase
 	}
 	fallback := s.fallbackRateLimitSettings()
-	input := rateLimitSettings{}
-	if value, ok := bucketToRequestValue(dto.Login); ok {
-		input.Login = value
-	}
-	if value, ok := bucketToRequestValue(dto.CrawlCreate); ok {
-		input.CrawlCreate = value
-	}
-	if value, ok := bucketToRequestValue(dto.RbacWrite); ok {
-		input.RbacWrite = value
-	}
-	normalized := normalizeRateLimitSettings(input, fallback)
+	normalized := normalizeRequestSettings(dto, fallback)
 
 	updatedByID := nullableActorID(actorID)
 	tx, err := s.db.BeginTx(ctx, nil)
