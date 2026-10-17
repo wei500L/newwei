@@ -13,6 +13,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/schema"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
 )
 
 func TestPlanRoutesWholeOperation(t *testing.T) {
@@ -214,4 +215,102 @@ type alertChannel struct {
 	Config    any       `graphql:"config"`
 	CreatedAt time.Time `graphql:"createdAt"`
 	UpdatedAt time.Time `graphql:"updatedAt"`
+}
+
+// TestWorkspaceRootsExecuteOnlyWhenRegistered covers the switch combination:
+// the twelve workspace roots stay legacy until workspace.Register runs, and
+// mutations plus unmigrated roots keep the whole document on NestJS.
+func TestWorkspaceRootsExecuteOnlyWhenRegistered(t *testing.T) {
+	loaded, err := schema.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := contract.NewRegistry()
+	alerts.Register(reg, nil)
+	history.Register(reg, nil, nil, nil)
+	economic.Register(reg, nil)
+
+	const twelve = `query {
+		me { id email }
+		myOrganizations { id }
+		users { id }
+		userLoginRecords(userId: "u") { id }
+		roles { id }
+		permissions { id }
+		memberships { id }
+		dashboards { id }
+		queueStats { itemCount }
+		entitySentimentSeries(entityName: "x") { entityName }
+		topicSentimentSeries(topic: "x") { topic }
+		processedItemById(id: "64c0000000000000000000a1") { id }
+	}`
+
+	legacyEngine := New(loaded, reg, 8, 2000, nil)
+	if got := legacyEngine.PlanDocument(twelve, nil, nil); got.Kind != KindLegacy {
+		t.Fatalf("workspace legacy mode kind %s body %s", got.Kind, got.Result.Body)
+	}
+
+	workspace.Register(reg, nil, nil, nil)
+	goEngine := New(loaded, reg, 8, 2000, nil)
+	if got := goEngine.PlanDocument(twelve, nil, nil); got.Kind != KindExecute {
+		t.Fatalf("workspace go mode kind %s body %s", got.Kind, got.Result.Body)
+	}
+
+	for _, query := range []string{
+		`mutation { deleteDashboard(id: "x") }`,
+		`mutation { setUserActive(input: { userId: "u", isActive: true }) { id } }`,
+		`query { me { id } alertRules { id } }`,
+		`query { queueEvents { event } }`,
+	} {
+		if got := goEngine.PlanDocument(query, nil, nil); got.Kind != KindLegacy {
+			t.Fatalf("%s kind %s body %s", query, got.Kind, got.Result.Body)
+		}
+	}
+}
+
+// TestFieldPermissionFailsClosed verifies that a guarded nested field is
+// rejected with FORBIDDEN when the caller lacks the permission and still
+// projects when the permission is present.
+func TestFieldPermissionFailsClosed(t *testing.T) {
+	loaded, err := schema.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := contract.NewRegistry()
+	reg.RegisterType("UserModel", guardedUserModel{})
+	reg.RegisterFieldPermission("UserModel", "roleIds", "users.read")
+	reg.RegisterRoot(contract.Root{
+		Name:               "me",
+		AllowAuthenticated: true,
+		Resolve: func(contract.Context) (any, error) {
+			return guardedUserModel{ID: "u1", RoleIDs: []string{"r1"}}, nil
+		},
+	})
+	engine := New(loaded, reg, 8, 2000, nil)
+	identity := contract.Identity{UserID: "u1", OrgID: "o1"}
+
+	guarded := engine.PlanDocument(`query { me { id roleIds } }`, nil, nil)
+	if guarded.Kind != KindExecute {
+		t.Fatalf("guarded plan kind %s", guarded.Kind)
+	}
+	result := engine.Execute(context.Background(), guarded, func(context.Context, string, string) (contract.Identity, error) {
+		return identity, nil
+	}, nil, false, 30, "schema", "")
+	if result.Status != 403 || !strings.Contains(string(result.Body), "FORBIDDEN") {
+		t.Fatalf("guarded field status %d body %s", result.Status, result.Body)
+	}
+
+	allowed := engine.PlanDocument(`query { me { id roleIds } }`, nil, nil)
+	withPermission := contract.Identity{UserID: "u1", OrgID: "o1", Permissions: map[string]bool{"users.read": true}}
+	result = engine.Execute(context.Background(), allowed, func(context.Context, string, string) (contract.Identity, error) {
+		return withPermission, nil
+	}, nil, false, 30, "schema", "")
+	if result.Status != 200 || !strings.Contains(string(result.Body), `"roleIds"`) || strings.Contains(string(result.Body), "errors") {
+		t.Fatalf("granted field status %d body %s", result.Status, result.Body)
+	}
+}
+
+type guardedUserModel struct {
+	ID      string   `graphql:"id"`
+	RoleIDs []string `graphql:"roleIds"`
 }

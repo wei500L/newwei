@@ -660,6 +660,11 @@ services:
       # 是重推导的 dashboards.read，mtk_ 机器令牌沿用读执行器规则拒绝。
       # 回滚只把该变量改回 legacy。不改表，不改 Web 入口。
       API_GO_GRAPHQL_KG_IMPACT_MODE: legacy
+      # 身份/组织/RBAC/仪表盘/队列统计/情感时间序列/已处理条目详情 12 个
+      # GraphQL 只读 root。pilot 与样例保持 legacy。只有
+      # API_GO_GRAPHQL_READ_MODE=go 且本变量=go 才登记；本变量为 legacy 时
+      # 含这 12 个 root 的文档整包回 NestJS。回滚只把该变量改回 legacy。
+      API_GO_GRAPHQL_WORKSPACE_READ_MODE: legacy
       MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。
