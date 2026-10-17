@@ -690,7 +690,7 @@ func (s *mongoStore) SemanticFieldsForItems(
 			{Key: "createdAt", Value: 1},
 		}).
 		SetSort(bson.D{{Key: "createdAt", Value: -1}}).
-		SetLimit(len(itemMetaIDs) * 3)
+		SetLimit(int64(len(itemMetaIDs) * 3))
 	cursor, err := s.processedItems().Find(ctx, bson.D{
 		{Key: "orgId", Value: orgID},
 		{Key: "status", Value: string(PipelineStageCompleted)},

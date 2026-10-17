@@ -316,8 +316,8 @@ func ExtractProcessedResultFieldsResolver(result OpenJSON) ProcessedResultFields
 		PublishedAt: resolvePublishedAtFromProcessedResult(result),
 		Summary:     pickResultString(projection, []string{"summary", "abstract"}),
 		Sentiment:   pickResultString(projection, []string{"sentiment_label", "sentimentLabel", "sentiment"}),
-		Topics:      stringListFromJSON(projection.Topics),
-		Entities:    entityNamesFromJSON(projection.Entities),
+		Topics:      stringListFromJSON(projection.Topics.Bytes()),
+		Entities:    entityNamesFromJSON(projection.Entities.Bytes()),
 		Location:    pickResultString(projection, []string{"location"}),
 		Region:      pickResultString(projection, []string{"region"}),
 	}
@@ -341,8 +341,8 @@ func ExtractProcessedResultFieldsReadModel(result OpenJSON) ProcessedResultField
 		PublishedAt: resolvePublishedAtFromProcessedResult(result),
 		Summary:     pickResultString(projection, []string{"summary", "abstract", "subtitle"}),
 		Sentiment:   pickResultString(projection, []string{"sentiment_label", "sentimentLabel", "sentiment"}),
-		Topics:      stringListFromJSON(projection.Topics),
-		Entities:    entityNamesFromJSON(projection.Entities),
+		Topics:      stringListFromJSON(projection.Topics.Bytes()),
+		Entities:    entityNamesFromJSON(projection.Entities.Bytes()),
 		Location:    pickResultString(projection, []string{"location"}),
 		Region:      pickResultString(projection, []string{"region"}),
 	}

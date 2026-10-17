@@ -144,6 +144,16 @@ func ResultJSONToken(result OpenJSON) json.RawMessage {
 	return normalized.Bytes()
 }
 
+// ResultJSONPointer returns the resultJson token as a pointer for the reused
+// workspace model: nil when the normalized value is not a JSON object.
+func ResultJSONPointer(result OpenJSON) *json.RawMessage {
+	token := ResultJSONToken(result)
+	if len(token) == 0 || string(token) == "null" {
+		return nil
+	}
+	return &token
+}
+
 // ResultStringToken returns the JSON string the GraphQL result field projects
 // (JSON.stringify of the normalized value), or null when normalization failed.
 func ResultStringToken(result OpenJSON) *string {
@@ -541,8 +551,8 @@ func resolvePublishedAtFromRawPayload(payload OpenJSON) *string {
 func collectSuggestionValues(tags []string, result OpenJSON) SuggestionFields {
 	projection, _ := decodeResultRecord(result)
 	topicSet := make([]string, 0, 16)
-	topicSet = append(topicSet, stringListFromJSON(projection.Topics)...)
-	topicSet = append(topicSet, entityNamesFromJSON(projection.Entities)...)
+	topicSet = append(topicSet, stringListFromJSON(projection.Topics.Bytes())...)
+	topicSet = append(topicSet, entityNamesFromJSON(projection.Entities.Bytes())...)
 	for _, tag := range tags {
 		if trimmed := strings.TrimSpace(tag); trimmed != "" {
 			topicSet = append(topicSet, trimmed)

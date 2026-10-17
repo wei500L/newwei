@@ -443,7 +443,7 @@ jobs:
                   return None
               return proc.stdout.strip()
 
-          def restart_go(items_mode, graphql_mode, read_model, vector_hard_fail):
+          def start_go(items_mode, graphql_mode, read_model, vector_hard_fail):
               subprocess.run(["docker", "rm", "-f", container], check=False, capture_output=True)
               subprocess.check_call(docker_run_args(items_mode, graphql_mode, read_model, vector_hard_fail))
               for _ in range(40):
@@ -462,7 +462,7 @@ jobs:
                   time.sleep(2)
               fail(go_logs()[-4000:])
 
-          def restart_go_expect_failure(items_mode):
+          def start_go_expect_failure(items_mode):
               subprocess.run(["docker", "rm", "-f", container], check=False, capture_output=True)
               proc = subprocess.run(docker_run_args(items_mode, "legacy", False, False), text=True, capture_output=True)
               if proc.returncode != 0:
@@ -976,9 +976,6 @@ jobs:
             searchSuggestions(prefix: $prefix, limit: $limit) { type value origin }
           }
           """
-          EMPTY_QUERY = """
-          query IrEmpty { itemFacets { regions { value } topics { value } sentiments { value } contentTypes { value } } }
-          """
           ALIAS_QUERY = """
           query IrAlias($id: String!) {
             primary: item(id: $id) { identifier: id label: title ... on ItemModel { state: status } }
@@ -988,7 +985,7 @@ jobs:
           """
           INLINE_FRAGMENT_QUERY = """
           query IrInline($id: String!) {
-            item(id: $id) { ... on ItemModel { id title } ... { status } }
+            item(id: $id) { ... on ItemModel { id title } status }
           }
           """
           CONDITIONAL_QUERY = """
@@ -1030,7 +1027,7 @@ jobs:
           # ================= Phase A: switch matrix =================
 
           phase("A1 invalid API_GO_ITEMS_READING_MODE")
-          restart_go_expect_failure("bogus")
+          start_go_expect_failure("bogus")
           state = inspect_state() or "removed|none|0"
           logs = go_logs()
           status_text, health_text, exit_text = state.split("|")
@@ -1045,7 +1042,7 @@ jobs:
           print("invalid switch rejected:", state)
 
           phase("A1 empty string behaves exactly like legacy")
-          restart_go("", "legacy", False, False)
+          start_go("", "legacy", False, False)
           tokens = {}
           for _, email, _, _, active in ACCOUNTS:
               if active == 1:
@@ -1062,7 +1059,7 @@ jobs:
           print("empty string resolves to legacy")
 
           phase("A2 legacy+legacy proxy parity")
-          restart_go("legacy", "legacy", False, False)
+          start_go("legacy", "legacy", False, False)
           same("/api/items", "GET", a_admin)
           same("/api/items?pageSize=50", "GET", a_admin)
           same("/api/items?page=2&pageSize=1", "GET", a_admin)
@@ -1077,7 +1074,7 @@ jobs:
           print("legacy+legacy proxy parity ok")
 
           phase("A3 items=go graphql=legacy")
-          restart_go("go", "legacy", False, False)
+          start_go("go", "legacy", False, False)
           same("/api/items?pageSize=50", "GET", a_admin)
           detail_same("/api/items/" + ITEM_NORMAL, a_admin)
           before = stats()
@@ -1091,7 +1088,7 @@ jobs:
           print("items=go + graphql=legacy: REST on Go, five GraphQL roots on Nest")
 
           phase("A4 go+go")
-          restart_go("go", "go", False, False)
+          start_go("go", "go", False, False)
           before = stats()
           for label, query, variables in FIVE:
               gql_same(a_admin, query, variables, "A4-" + label)
@@ -1604,7 +1601,26 @@ jobs:
               }
 
           mongo("db.getCollection('itemreadmodels').deleteMany({orgId:" + json.dumps(ORG_A) + ",itemMetaId:" + json.dumps(ITEM_LATE) + "});")
-          restart_go("go", "go", True, False)
+          start_go("go", "go", True, False)
+          if rm_doc_count(ITEM_LATE) != 0:
+              fail("late item already has a read-model document")
+          status, first = expect_status(go, "/api/items/" + ITEM_LATE, 200, a_admin, "RM late first read")
+          if first.get("rawItem") is not None:
+              fail("late item unexpectedly had a raw snapshot")
+          if rm_doc_count(ITEM_LATE) != 1:
+              fail("first read-model detail read did not hydrate a snapshot")
+          status, second = expect_status(go, "/api/items/" + ITEM_LATE, 200, a_admin, "RM late second read")
+          if second.get("rawItem") != first.get("rawItem") or second.get("processed", {}).get("status") != first.get("processed", {}).get("status"):
+              fail("second read-model read was not stable")
+          mongo_insert("rawitems", [raw_doc(RAW_LATE, ITEM_LATE, payload_normal, "rss", 2)])
+          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_LATE})
+          late_raw = (doc.get("data", {}).get("item") or {}).get("raw")
+          if not late_raw or not late_raw.get("payload"):
+              fail("late raw snapshot was not visible on the next GraphQL read: " + repr(doc)[:400])
+          mongo("db.getCollection('itemreadmodels').deleteOne({orgId:" + json.dumps(ORG_A) + ",itemMetaId:" + json.dumps(ITEM_LATE) + "});")
+          status, doc = expect_status(go, "/api/items/" + ITEM_LATE, 200, a_admin, "RM late rehydrate")
+          if doc["rawItem"] is None:
+              fail("re-hydration did not pick up the late raw document")
           same("/api/items?pageSize=50", "GET", a_admin)
           status, doc = expect_status(go, "/api/items?pageSize=50", 200, a_admin, "RM list")
           names = [row["name"] for row in doc["items"]]
@@ -1627,26 +1643,6 @@ jobs:
           if rm_doc_count(ITEM_CROSS1, ORG_B) != 1:
               fail("org B read-model fixture disappeared")
 
-          if rm_doc_count(ITEM_LATE) != 0:
-              fail("late item already has a read-model document")
-          status, first = expect_status(go, "/api/items/" + ITEM_LATE, 200, a_admin, "RM late first read")
-          if first.get("rawItem") is not None:
-              fail("late item unexpectedly had a raw snapshot")
-          if rm_doc_count(ITEM_LATE) != 1:
-              fail("first read-model detail read did not hydrate a snapshot")
-          status, second = expect_status(go, "/api/items/" + ITEM_LATE, 200, a_admin, "RM late second read")
-          if second.get("rawItem") != first.get("rawItem") or second.get("processed", {}).get("status") != first.get("processed", {}).get("status"):
-              fail("second read-model read was not stable")
-          mongo_insert("rawitems", [raw_doc(RAW_LATE, ITEM_LATE, payload_normal, "rss", 2)])
-          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_LATE})
-          late_raw = (doc.get("data", {}).get("item") or {}).get("raw")
-          if not late_raw or not late_raw.get("payload"):
-              fail("late raw snapshot was not visible on the next GraphQL read: " + repr(doc)[:400])
-          mongo("db.getCollection('itemreadmodels').deleteOne({orgId:" + json.dumps(ORG_A) + ",itemMetaId:" + json.dumps(ITEM_LATE) + "});")
-          status, doc = expect_status(go, "/api/items/" + ITEM_LATE, 200, a_admin, "RM late rehydrate")
-          if doc["rawItem"] is None:
-              fail("re-hydration did not pick up the late raw document")
-
           status, doc = expect_status(go, "/api/items/" + ITEM_NORMAL, 200, a_admin, "RM processed own row")
           if doc["processed"]["id"] != PI_NORMAL or doc["processed"]["itemMetaId"] != ITEM_NORMAL:
               fail("read-model processed binding leaked: " + repr(doc["processed"])[:400])
@@ -1659,7 +1655,7 @@ jobs:
           # ================= Phase E: stop Nest =================
 
           phase("E legacy gateway after Nest stops")
-          restart_go("go", "go", False, False)
+          start_go("go", "go", False, False)
           if os.path.exists("/tmp/api-nestjs.pid"):
               os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
           subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
