@@ -282,6 +282,30 @@ const (
 	QualityOverviewModeGo     QualityOverviewMode = "go"
 )
 
+// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry HTTP
+// endpoints migrated by this unit. It defaults to legacy.
+//
+//	go mode takes over exactly these seven routes:
+//	  GET  /api/crawl-tasks
+//	  GET  /api/crawl-tasks/:id
+//	  GET  /api/crawl-media-assets/:assetId/:mode
+//	  GET  /api/admin/crawl4ai/quality
+//	  GET  /api/admin/crawl4ai/quality/sources/:sourceId
+//	  POST /api/search-telemetry
+//	  GET  /api/admin/search-telemetry/summary
+//
+// Every write queue / live crawler route keeps falling back to NestJS:
+// POST /api/crawl-tasks, DELETE /api/crawl-tasks/:id,
+// POST /api/crawl-tasks/:id/retry, POST /api/crawl-tasks/metadata and
+// /api/admin/crawl4ai/queue*. go mode requires JWT_SECRET, DATABASE_URL,
+// REDIS_HOST and MONGO_URI. No shadow, no canary and no worker is started.
+type CrawlReadTelemetryMode string
+
+const (
+	CrawlReadTelemetryModeLegacy CrawlReadTelemetryMode = "legacy"
+	CrawlReadTelemetryModeGo     CrawlReadTelemetryMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -461,16 +485,22 @@ type Config struct {
 	// go 要求 JWT、MySQL、Redis、Mongo（processeditems 与 tasklogs 都在
 	// Mongo；新闻源/流水线快照与 outbox 在 MySQL）。不启用 shadow，不启动
 	// 任何 worker。
-	QualityOverviewMode  QualityOverviewMode
-	GraphQLAPQEnabled    bool
-	GraphQLDepthLimit    int
-	GraphQLComplexity    int
-	GraphQLCacheEnabled  bool
-	GraphQLCacheTTL      int
-	TrustProxy           string
-	RateLimitFailOpen    bool
-	RateLimitLogin       int
-	RateLimitLoginWindow int
+	QualityOverviewMode QualityOverviewMode
+	// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry
+	// endpoints migrated by this unit. It defaults to legacy. go mode
+	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
+	// live in Mongo; crawl tasks, media assets and quality snapshots live in
+	// MySQL). No shadow, no canary and no worker.
+	CrawlReadTelemetryMode CrawlReadTelemetryMode
+	GraphQLAPQEnabled      bool
+	GraphQLDepthLimit      int
+	GraphQLComplexity      int
+	GraphQLCacheEnabled    bool
+	GraphQLCacheTTL        int
+	TrustProxy             string
+	RateLimitFailOpen      bool
+	RateLimitLogin         int
+	RateLimitLoginWindow   int
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
 
@@ -861,6 +891,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.QualityOverviewMode = QualityOverviewModeGo
 	default:
 		errs = append(errs, "API_GO_QUALITY_OVERVIEW_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_READ_TELEMETRY_MODE")) {
+	case "", string(CrawlReadTelemetryModeLegacy):
+		cfg.CrawlReadTelemetryMode = CrawlReadTelemetryModeLegacy
+	case string(CrawlReadTelemetryModeGo):
+		cfg.CrawlReadTelemetryMode = CrawlReadTelemetryModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_READ_TELEMETRY_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
@@ -1253,6 +1291,14 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_QUALITY_OVERVIEW_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_QUALITY_OVERVIEW_MODE=go")
+		}
+	}
+	// Crawl read/telemetry takeover reads crawlresultcontents and tasklogs from
+	// Mongo in addition to the standard JWT + MySQL + Redis requirements.
+	if cfg.CrawlReadTelemetryMode == CrawlReadTelemetryModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_READ_TELEMETRY_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go")
 		}
 	}
 	if cfg.GraphQLReadMode == "go" {
