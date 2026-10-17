@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 // suggestionEntry is one merged suggestion with its score bookkeeping.

@@ -633,7 +633,7 @@ func (s *mongoStore) SourceCounts(ctx context.Context, orgID string) ([]SourceCo
 			return nil, err
 		}
 		fields := decodeResultProjection(record.Result)
-		source := firstNonEmpty(fields.Source, fields.SourceName, fields.SourceSnake, fields.Publisher)
+		source := pickResultString(fields, []string{"source", "sourceName", "source_name", "publisher"})
 		if source == "" {
 			continue
 		}

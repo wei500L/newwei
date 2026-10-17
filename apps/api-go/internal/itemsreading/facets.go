@@ -153,10 +153,10 @@ func (s *Service) Facets(
 				incrementFacetCount(regionCounts, regionValue)
 			}
 			topicSet := make(map[string]struct{}, 8)
-			for _, topic := range entityNamesFromJSON(projection.Topics) {
+			for _, topic := range entityNamesFromJSON(projection.Topics.Bytes()) {
 				topicSet[topic] = struct{}{}
 			}
-			for _, entity := range entityNamesFromJSON(projection.Entities) {
+			for _, entity := range entityNamesFromJSON(projection.Entities.Bytes()) {
 				topicSet[entity] = struct{}{}
 			}
 			for _, tag := range snapshot.Tags {
