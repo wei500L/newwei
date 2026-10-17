@@ -46,7 +46,6 @@ func WithCrawlFrontierRuns(rules []Rule, mode string) []Rule {
 	runsPrefix := runsPath + "/"
 	workflowRunsPath := base + "/workflow-runs"
 	workflowRunsPrefix := workflowRunsPath + "/"
-	getOnly := map[string]bool{http.MethodGet: true}
 	// CORS preflight is answered by Go on the same paths, exactly like the
 	// helper-built rules below (appendSegmentRule adds OPTIONS).
 	getOptions := map[string]bool{http.MethodGet: true, http.MethodOptions: true}
