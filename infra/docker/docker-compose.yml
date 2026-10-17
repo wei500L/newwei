@@ -701,6 +701,18 @@ services:
       # 不做启动网络探测。diagnostics 与 storage/test 仍回 NestJS。
       # 回滚只把该变量改回 legacy。
       API_GO_INFRASTRUCTURE_SETTINGS_MODE: ${API_GO_INFRASTRUCTURE_SETTINGS_MODE:-legacy}
+      # 模型接入设置 10 条 HTTP（/api/system-settings/model-service、
+      # /api/system-settings/openai-keys(+ /key/:fingerprint)、
+      # /api/internal/litellm/openai-keys(+ /applied)）。pilot 与样例保持
+      # legacy。改成 go 才由 Go 验签并读写 MySQL 的 SystemSetting
+      # （model_service、openai_keys、litellm_openai_keys_applied）与 Redis
+      # 缓存；六条管理写额外要求平台管理员；两条内部接口只用
+      # LITELLM_CONFIG_INTERNAL_TOKEN。go 要求 JWT_SECRET、DATABASE_URL、
+      # REDIS_HOST（不要求 Mongo，不启动 worker，不调用模型服务）。
+      # /api/internal/litellm/proxy-load-balancing 与
+      # /api/system-settings/llm-gateways 等仍回 NestJS。
+      # 回滚只把该变量改回 legacy。
+      API_GO_MODEL_ACCESS_SETTINGS_MODE: ${API_GO_MODEL_ACCESS_SETTINGS_MODE:-legacy}
       # 知识图谱冲击传导与实体共现/价格相关图 4 个 GraphQL 只读 root
       # （getExecutiveChangeImpact / getCommodityMoveImpact /
       # getPolicyEventImpact / getEntityImpactGraph）。pilot 与样例保持
@@ -739,6 +751,18 @@ services:
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。
       SYSTEM_SETTINGS_ENCRYPTION_KEY: ${SYSTEM_SETTINGS_ENCRYPTION_KEY:-}
+      # 与 api 服务完全相同的模型服务缺省值（默认值必须一致，否则 Go 的 env
+      # 回退与 Nest 不同）。MODEL_SERVICE_ENABLED 为 false 的部署形态照此覆盖。
+      MODEL_SERVICE_ENABLED: ${MODEL_SERVICE_ENABLED:-true}
+      MODEL_SERVICE_BASE_URL: ${MODEL_SERVICE_BASE_URL:-http://model-service:8090}
+      MODEL_SERVICE_INTERNAL_TOKEN: ${MODEL_SERVICE_INTERNAL_TOKEN:-dev-model-token}
+      MODEL_SERVICE_TIMEOUT_MS: ${MODEL_SERVICE_TIMEOUT_MS:-15000}
+      MODEL_SERVICE_MAX_RETRIES: ${MODEL_SERVICE_MAX_RETRIES:-2}
+      # 两条内部接口（取钥/上报已应用指纹）的 bearer token，与 api 服务同一份
+      # 配置。缺失是接口契约（403），不是启动条件；值不进日志。
+      LITELLM_CONFIG_INTERNAL_TOKEN: ${LITELLM_CONFIG_INTERNAL_TOKEN:-}
+      # NODE_ENV=production 已在上方（基础设施设置批次）声明一次，此处不再重复；
+      # 本批的生产加密策略判断复用同一项。
       LITELLM_API_URL: ${LITELLM_API_URL:-}
       LITELLM_API_BASE: ${LITELLM_API_BASE:-http://localhost:4001}
       LITELLM_API_KEY: ${LITELLM_API_KEY:-}

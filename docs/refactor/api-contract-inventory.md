@@ -592,3 +592,56 @@ Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`artic
 检索/回填、S3 对象操作、新闻源实际抓取消费链路。机器令牌三条 GET 可读、四条写
 403。两把全局锁名 `infra-settings:vector-service:v1`、
 `infra-settings:news-source-runtime-secrets:v1`。回滚只把本变量改回 `legacy`。
+
+## 16. 模型接入设置与 OpenAI 密钥分发（Go · 10 条）
+
+开关 `API_GO_MODEL_ACCESS_SETTINGS_MODE`（空串/`legacy`/`go`，默认 `legacy`，
+非法值启动失败）。`go` 时由 `internal/modelaccesssettings` 独立验签并接管 10 条
+**精确路径**：
+
+| 方法 | 路径 | 认证 | 权限 | 平台门禁 | 成功码 |
+|---|---|---|---|---|---|
+| GET | `/api/system-settings/model-service` | JWT/`mtk_` | `settings.manage` | 否 | 200 |
+| PUT | `/api/system-settings/model-service` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/model-service` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| GET | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 否 | 200 |
+| PUT | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| POST | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 是 | 201 |
+| DELETE | `/api/system-settings/openai-keys/key/:fingerprint` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| GET | `/api/internal/litellm/openai-keys` | `LITELLM_CONFIG_INTERNAL_TOKEN` | 不用 JWT/RBAC | 否 | 200 |
+| POST | `/api/internal/litellm/openai-keys/applied` | `LITELLM_CONFIG_INTERNAL_TOKEN` | 不用 JWT/RBAC | 否 | 201 |
+
+契约要点：
+
+- 失败顺序：认证 → `settings.manage` → DTO（有 body 时）→ 平台门禁（service 内，
+  仅六条管理写）→ 业务校验/写库。平台管理员仍必须有 `settings.manage`。
+- 权限载荷复用既有安全形状：`code=INSUFFICIENT_PERMISSIONS`、
+  `detail="Requires any permission: settings.manage"`、`permissionsMode="any"`、
+  不带 `missingPermissions`；平台门禁为 403 `Platform admin access required`。
+- 内部端点失败顺序：未配置 403 `LITELLM_CONFIG_INTERNAL_TOKEN is not configured`
+  → 无可提取 bearer 401 `Missing bearer token` → 不匹配 401 `Invalid bearer token`
+  （常量时间比较；header 解析严格对齐 `extractBearerToken`）。内部 token 缺失
+  不阻止启动。
+- 公共响应字段全集：模型 `source/enabled/baseUrl/timeoutMs/maxRetries/hasToken/
+  tokenSource`；密钥 `source/keysCount/hasKeys/keyFingerprints/
+  internalTokenConfigured/appliedAt/appliedSource/appliedKeyFingerprints/
+  restartRequired`；`keyFingerprints` 与 `appliedKeyFingerprints` 空值序列化为
+  `[]`，`appliedAt`/`appliedSource` 空值序列化为 `null`。
+- 不返回任何完整/部分明文 key、加密包或 token 指纹（模型）。
+- SystemSetting key：`model_service`、`openai_keys`、`litellm_openai_keys_applied`
+  （+ 只读 `system_security`）；Redis：`model_service:settings`、
+  `openai_keys:settings`、`openai_keys:applied_status`（30 秒）与只读
+  `system_security:settings`（60 秒）。
+- 两把全局 MySQL 会话锁：`model-access:model-service:v1`、
+  `model-access:openai-keys:v1`（Nest 与 Go 同名字面量）；锁内重读权威行，
+  锁失败 503（`message=Internal server error`、`error=Service Unavailable`）。
+- 同批修 3 个缺陷（Nest 与 Go 两侧）：全局模型/密钥写缺平台管理员门禁（MA1）、
+  密钥追加与按指纹删除的缓存读改写与缺互斥（MA2）、模型 PUT 省略 token 时写回
+  旧缓存 token（MA3）。
+
+未迁：`/api/internal/litellm/proxy-load-balancing`、
+`/api/system-settings/llm-gateways`、`/api/system-settings/*` 其余全部路径，以及
+模型预测/异常检测/embedding/rerank/moderation 等实际推理。回滚只把
+`API_GO_MODEL_ACCESS_SETTINGS_MODE` 改回 `legacy`；不改表、不改 controller/DTO、
+不改 Web 入口与其他开关默认值。
