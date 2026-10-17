@@ -635,8 +635,8 @@ jobs:
                   error_sql = "'keep-me'" if status == "completed" else "NULL"
                   finished = "'2020-01-01 00:00:00.000'" if status == "completed" else "NULL"
                   sql(f"""
-                  INSERT INTO CrawlStrategyWorkflowRun (id, orgId, workflowOrigin, status, runKind, createdById, startedAt, finishedAt, createdAt, updatedAt)
-                  VALUES ('{ids[wf_key]}', '{org}', 'bound', '{status}', 'frontier', '{admin}', '2026-01-01 00:00:00.000', {finished}, NOW(3), NOW(3));
+                  INSERT INTO CrawlStrategyWorkflowRun (id, orgId, workflowOrigin, status, runKind, error, createdById, startedAt, finishedAt, createdAt, updatedAt)
+                  VALUES ('{ids[wf_key]}', '{org}', 'bound', '{status}', 'frontier', {error_sql}, '{admin}', '2026-01-01 00:00:00.000', {finished}, NOW(3), NOW(3));
                   INSERT INTO CrawlFrontierRun (id, orgId, profileId, workflowRunId, seedUrl, crawlTaskId, executionMode, status, maxDepth, maxPages, createdById, finishedAt, createdAt, updatedAt)
                   VALUES ('{ids[key]}', '{org}', 'frrunprofilea00000000001', '{ids[wf_key]}', 'https://frrun.example.com/{side}/{key}', 'frruntaska000000000000001', 'layered', '{status}', 3, 60, '{admin}', {finished}, NOW(3), NOW(3));
                   """)
