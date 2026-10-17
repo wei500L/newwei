@@ -182,7 +182,7 @@ jobs:
           def _on_sigterm(signum, frame):
               """Prints where the step was when the runner asked it to stop."""
               print("SIGTERM received at:", flush=True)
-              traceback.print_stack(frame, flush=True)
+              traceback.print_stack(frame)
               os._exit(143)
 
 
@@ -490,18 +490,18 @@ jobs:
 
 
           def stop_nest():
+              # SIGTERM the recorded pid only. killpg must NOT be used here: the initial
+              # NestJS background process is started by the workflow step shell, whose
+              # process group is the Actions worker's own group - killing that group would
+              # SIGTERM this very step (observed as "The operation was canceled.").
               pid_path = "/tmp/api-nestjs.pid"
               if os.path.exists(pid_path):
                   raw = open(pid_path).read().strip()
                   if raw.isdigit():
-                      pid = int(raw)
                       try:
-                          os.killpg(os.getpgid(pid), signal.SIGTERM)
+                          os.kill(int(raw), signal.SIGTERM)
                       except Exception:
-                          try:
-                              os.kill(pid, signal.SIGTERM)
-                          except Exception:
-                              pass
+                          pass
               subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False, capture_output=True)
               subprocess.run(["pkill", "-f", "node dist/main.js"], check=False, capture_output=True)
 
