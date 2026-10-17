@@ -2,7 +2,7 @@
 
 基线是 GraphQL 新闻事件读查询合并后的 `e8ae45b5e27213481e9db56c6c16bcb701b86fc8`（PR #42）。`API_GO_GRAPHQL_READ_MODE` 默认 `legacy`，启动日志里的 16 个 query 只计既有试点。知识图谱的六个 root 另看 `API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE`，默认 `legacy`，非法值启动失败。两个都是 `go` 才登记；读查询为 `legacy` 时不另挂 `/graphql`。知识图谱为 `legacy` 时，含这六个 root 的文档整包回 NestJS。生产 Web 仍指向 NestJS，canary 关闭。回滚只把 `API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE` 改回 `legacy`。
 
-真实栈工作流：`.github/workflows/api-go-knowledge-graph-read-smoke.yml`（label `api-go-knowledge-graph-read-smoke`）。验收链接在该 run 出现后回填到本文。
+真实栈工作流：`.github/workflows/api-go-knowledge-graph-read-smoke.yml`（label `api-go-knowledge-graph-read-smoke`，也用 `workflow_dispatch` 跑过）。在 commit `f51907b1` 上：普通 CI run `39025210725` success；smoke run `39025670484`（label 触发）success。
 
 ## 迁入的 root
 
