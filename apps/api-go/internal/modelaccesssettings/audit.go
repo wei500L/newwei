@@ -63,7 +63,7 @@ func (s *Service) writeAuditLogBestEffort(
 		ActorID:   actor,
 		Action:    action,
 		Metadata:  metadata,
-		CreatedAt: now.Format("2006-01-02T15:04:05.000Z"),
+		CreatedAt: now,
 	}); err != nil {
 		return s.enqueueAuditOutbox(ctx, orgID, actor, action, metadata, now, err)
 	}
@@ -99,16 +99,15 @@ func (s *Service) enqueueAuditOutbox(
 		log.Printf("modelaccesssettings: failed to allocate audit outbox id for %s: %v", action, outboxIDErr)
 		return auditErr
 	}
-	createdAt := now.Format("2006-01-02T15:04:05.000Z")
 	if err := s.audit.InsertAuditOutbox(ctx, auditOutboxEntry{
 		ID:          outboxID,
 		OrgID:       orgID,
 		Payload:     payload,
 		Status:      "pending",
 		Attempts:    0,
-		AvailableAt: createdAt,
-		CreatedAt:   createdAt,
-		UpdatedAt:   createdAt,
+		AvailableAt: now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}); err != nil {
 		log.Printf("modelaccesssettings: failed to enqueue audit outbox for %s: %v", action, err)
 		return auditErr

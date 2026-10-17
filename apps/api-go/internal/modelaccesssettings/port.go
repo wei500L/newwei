@@ -3,6 +3,7 @@ package modelaccesssettings
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 // This file declares the narrow infrastructure ports the service depends on.
@@ -30,13 +31,18 @@ type cacheStore interface {
 }
 
 // auditLogEntry is one AuditLog row to insert.
+//
+// CreatedAt is a time.Time (not a formatted string): AuditLog.createdAt is a
+// DATETIME(3) column and the driver sends time.Time as a real DATETIME, while an
+// ISO-8601 string is rejected with MySQL 1292. The ISO form only belongs inside
+// the outbox JSON payload, which mirrors Node's toISOString().
 type auditLogEntry struct {
 	ID        string
 	OrgID     string
 	ActorID   *string
 	Action    string
 	Metadata  json.RawMessage
-	CreatedAt string
+	CreatedAt time.Time
 }
 
 // auditOutboxEntry is one AuditLogOutbox row to insert.
@@ -46,9 +52,9 @@ type auditOutboxEntry struct {
 	Payload     json.RawMessage
 	Status      string
 	Attempts    int
-	AvailableAt string
-	CreatedAt   string
-	UpdatedAt   string
+	AvailableAt time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // auditor writes the audit trail with the outbox fallback.

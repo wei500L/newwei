@@ -307,6 +307,9 @@ func TestAuditMetadataIsRedacted(t *testing.T) {
 	if entry.Action != actionModelServiceUpdate {
 		t.Fatalf("action = %q", entry.Action)
 	}
+	if entry.CreatedAt.IsZero() {
+		t.Fatalf("the AuditLog row must carry a real timestamp")
+	}
 	want := `{"enabled":true,"baseUrl":"http://model-service","timeoutMs":1000,"maxRetries":3,"tokenUpdated":true,"tokenConfigured":true}`
 	if string(entry.Metadata) != want {
 		t.Fatalf("metadata = %s, want %s", entry.Metadata, want)
@@ -344,8 +347,16 @@ func TestAuditOutboxFallbackAndFailure(t *testing.T) {
 	if _, err := harness.service.updateModelServiceSettings(context.Background(), "org-1", platformUser, modelServicePUT()); err != nil {
 		t.Fatalf("an outbox-enqueued audit must not fail the request: %v", err)
 	}
+	if len(harness.audit.logs) != 0 {
+		t.Fatalf("the direct insert must have failed")
+	}
 	if len(harness.audit.outbox) != 1 {
 		t.Fatalf("expected one outbox row, got %d", len(harness.audit.outbox))
+	}
+	// DATETIME(3) columns need a real time.Time: a formatted ISO string is
+	// rejected by MySQL with 1292, and a zero value would insert 0000-00-00.
+	if harness.audit.outbox[0].AvailableAt.IsZero() || harness.audit.outbox[0].CreatedAt.IsZero() || harness.audit.outbox[0].UpdatedAt.IsZero() {
+		t.Fatalf("the outbox row must carry real timestamps: %+v", harness.audit.outbox[0])
 	}
 	payload := string(harness.audit.outbox[0].Payload)
 	for _, want := range []string{`"orgId":"org-1"`, `"actorId":"` + platformUser + `"`, `"resource":"system_settings"`, `"action":"model_service_update"`, `"metadata":`} {
