@@ -154,17 +154,29 @@ func (s *Service) runTaskLogAggregate(ctx context.Context, input taskLogAggregat
 	}
 
 	if input.includeItems {
-		items := mongo.Pipeline{
-			bson.D{{Key: "$sort", Value: bson.D{{Key: "createdAt", Value: -1}}}},
+		items := mongo.Pipeline{}
+		// itemsMatch 对齐 getQualityTaskLogsOverview 的 `itemsMatch`：先按
+		// 额外条件过滤，再排序、截断（质量面板只取 status=failed 的前 N 条）。
+		if len(input.itemsMatch) > 0 {
+			items = append(items, bson.D{{Key: "$match", Value: input.itemsMatch}})
 		}
-		skip := (input.page - 1) * input.pageSize
-		if skip < 0 {
-			skip = 0
+		items = append(items, bson.D{{Key: "$sort", Value: bson.D{{Key: "createdAt", Value: -1}}}})
+		if input.itemLimit > 0 {
+			limit := input.itemLimit
+			if limit < 1 {
+				limit = 1
+			}
+			items = append(items, bson.D{{Key: "$limit", Value: limit}})
+		} else {
+			skip := (input.page - 1) * input.pageSize
+			if skip < 0 {
+				skip = 0
+			}
+			items = append(items,
+				bson.D{{Key: "$skip", Value: skip}},
+				bson.D{{Key: "$limit", Value: input.pageSize}},
+			)
 		}
-		items = append(items,
-			bson.D{{Key: "$skip", Value: skip}},
-			bson.D{{Key: "$limit", Value: input.pageSize}},
-		)
 		facets = append(facets, bson.E{Key: "items", Value: items})
 	}
 
@@ -215,9 +227,13 @@ func (s *Service) runTaskLogAggregate(ctx context.Context, input taskLogAggregat
 }
 
 type taskLogAggregateInput struct {
-	where            bson.D
-	page             int
-	pageSize         int
+	where    bson.D
+	page     int
+	pageSize int
+	// itemsMatch 是 items 管线的额外 $match（对齐 getQualityTaskLogsOverview）。
+	itemsMatch bson.D
+	// itemLimit > 0 时 items 只取前 N 条（对齐 itemsMatch + itemLimit）。
+	itemLimit        int
 	includeItems     bool
 	includeTotal     bool
 	includeTopErrors bool
