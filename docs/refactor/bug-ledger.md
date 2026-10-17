@@ -488,3 +488,111 @@ verify success）——CI-01 本轮未复现，无重跑。
   「不改 `apps/api/src/**/*.controller.ts`」约束（避免 auth-matrix 与 OpenAPI 漂移）。
 - **后续方向**：单独一批把权限改为 `crawl.write`，并同步 auth-matrix 快照。
 - **状态**：只登记。
+
+## 7. LLM 网关配置与三路激活（本批，基线 origin/main@2672b62e）
+
+> 行号以基线 `2672b62e35ed7235604c65939bcd335c81bf7d27` 的工作区文件为准，开工时逐条复核。
+> 三条缺陷都要求 Nest 与 Go 两侧同一规则修复；Go 侧为全新实现，不含历史包袱。
+
+### GP1：全局 LLM 网关配置写入缺平台管理员门禁（P0） — 🟡 已修，待远端验证
+
+- **现象**：任意持有 `settings.manage` 的普通组织管理员（含跨组织的 org admin）都能
+  创建/更新/删除全局 LLM 网关 profile，并把三路激活切到任意 profile；机器令牌同样可以。
+  该配置是全局单例（`SystemSetting.key = llm_gateway_profiles`，无 orgId 维度），
+  写入会影响所有租户的出站模型流量与 apiKey 选择。
+- **证据**：
+  - `apps/api/src/modules/system-settings/llm-gateway-settings.controller.ts:57-64`（create）、
+    `:66-77`（PUT active）、`:79-91`（embedding-active）、`:93-105`（rerank-active）、
+    `:165-173`（PUT :id）、`:175-183`（DELETE :id）只声明 `@Permissions("settings.manage")`。
+  - `apps/api/src/modules/system-settings/llm-gateway-settings.service.ts:130-141` 构造函数
+    未注入 `PlatformAccessService`；`:155-357` 的六个公开写方法没有任何平台角色判断。
+  - 全局配置的既有对照写法：`apps/api/src/modules/system-settings/vector-service-settings.controller.ts:47`
+    与 `:56` 在写操作前调用 `platformAccess.assertPlatformAdmin(user.id)`
+    （`apps/api/src/modules/auth/platform-access.service.ts:31-35` 抛
+    `ForbiddenException("Platform admin access required")`）。
+- **修法**：
+  - Nest：`llm-gateway-settings.service.ts` 注入既有 `PlatformAccessService`，
+    六个公开写方法（`createProfile` / `updateProfile` / `deleteProfile` /
+    `setActiveProfile` / `setEmbeddingActiveProfile` / `setRerankActiveProfile`）
+    首行 `await this.platformAccess.assertPlatformAdmin(actorId)`；`list()` 仍只要求
+    `settings.manage`。门禁在读配置、加锁、编码、写 DB、审计、删缓存之前返回，
+    因此被拒绝的请求不产生任何配置/审计/缓存副作用。
+  - Go：`llmgatewayprofiles.Authenticator.assertPlatformAdmin` 查
+    `GlobalRoleAssignment.userId = 真实 User.id AND role='platform_admin'`；
+    `machine:` 前缀 actor 直接 403（`GlobalRoleAssignment.userId` 是指向 `User(id)` 的
+    外键，机器令牌不是用户行），避免机器令牌写出 `machine:<id>` 外键 500。
+  - 不改 controller / DTO / module 注册。
+- **回归方式**：`api-go-llm-gateway-profiles-smoke` 阶段 2（GP1 权限回归）：
+  普通 org 管理员 A/B 六条写 403；`settings.manage` 机器令牌六条写 403（且无外键 500）；
+  同身份 GET 列表 200；平台管理员 P 六条写成功；有平台角色但无 `settings.manage` 仍是
+  权限 403；非平台但有 `settings.manage` 时非法 DTO 先 400、合法 DTO 才 403。
+- **状态**：待远端验证（Nest 与 Go 两侧已同修；本机按约束未运行构建与测试）。
+
+### GP2：缓存整体读改写无跨实例互斥，丢失更新与旧 apiKey 恢复（P1） — 🟡 已修，待远端验证
+
+- **现象**：六条写都是「读 60 秒缓存 → 在内存整体改写 → 整体 upsert」。
+  并发创建会丢 profile；更新不同 profile 会互相覆盖；三路激活各自持有旧快照，
+  后写者会把另一路刚写入的选择恢复成旧值；省略 apiKey 的更新会把旧缓存里的旧
+  secret 写回（覆盖已经轮换的新 secret）；删除后另一个旧快照可以把 profile 复活。
+- **证据**：
+  - `llm-gateway-settings.service.ts:160`（create 的 `loadSettings()` → `:178` `saveSettings`）、
+    `:203`（update → `:233`）、
+    `:253`（delete → `:270`）、
+    `:278`（setActive → `:290`）、
+    `:303`（embedding-active → `:321`）、
+    `:334`（rerank-active → `:352`）。
+  - `:620-646` `loadSettings()` 优先返回 Redis 缓存（`:631-633`），只有 miss 才读 MySQL。
+  - `:648-673` `saveSettings()` 是无条件整行 upsert，没有锁、没有版本条件。
+- **修法**：
+  - Nest：新增 `apps/api/src/modules/system-settings/llm-gateway-profiles.lock.ts`，
+    包装既有 `withMysqlSessionLock`（`apps/api/src/modules/situation-monitor/situation-monitor-user-lock.ts:66`），
+    固定锁名 `llm-gateway:profiles:write:v1`（专用连接 `GET_LOCK(name,10)`，返回 1 才继续，
+    持锁到 DB 提交、审计、缓存失效全部完成）。
+  - 六个写方法改为「平台门禁 → 进入全局锁 → `loadSettingsAuthoritative()` 直读 MySQL
+    并 normalize → 业务校验 → 保存 + 审计 + 删缓存 → 从本次结果投影响应」。
+    合并基准不再来自 Redis；写响应不再调用 `list()` 读旧缓存。
+  - 响应投影：`persistedView()` 用 Prisma JSON 往返 + `normalizeSettings` 复刻「刚写入的行
+    再被读一次」的结果，保证 immediate response 与随后的 GET 语义一致（含空串 activeId 归 null）。
+  - `GET /api/settings...` 列表仍沿用 60 秒 best-effort 缓存；本批不宣称 GET 具备
+    全局强一致。
+  - Go：`llmgatewayprofiles` 用专用 `*sql.Conn` 持同一锁名的 `GET_LOCK(?,10)`；
+    锁内 `SELECT` SystemSetting 权威 JSON；释放用独立短超时 context，请求取消后仍尝试
+    `RELEASE_LOCK`，释放失败直接关闭物理连接（不把可能持锁的连接放回池）。
+  - 锁获取失败两侧都是 503 `{message:"Internal server error", error:"Service Unavailable"}`；
+    持锁超时 10 秒，超时后不写入任何数据。
+- **回归方式**：`api-go-llm-gateway-profiles-smoke` 阶段 3：
+  确定性旧缓存（cache 只含 A、DB 含 A/B，create C 后 DB=A/B/C；DB 已轮换 B 的 apiKey
+  而 cache 仍旧值，省略 apiKey 的 update 解密结果必须是 B；DB 新 embedding/rerank 选择
+  不被 completion 写的旧快照恢复；删除后旧 cache 不能复活 profile；Nest 与 Go 分别执行）；
+  真实并发 Nest/Nest、Go/Go、Nest/Go；独立 MySQL 连接持锁逐条证明六条写等待；
+  持锁 >10 秒 503 且无写入；取消后锁可再次取得。
+- **状态**：待远端验证（Nest 与 Go 两侧已同修；本机按约束未运行构建与测试）。
+
+### GP3：存量非 boolean `enabled` 被 truthiness 当作启用（P1） — 🟡 已修，待远端验证
+
+- **现象**：存量 `llm_gateway_profiles` 文档里 `enabled` 可能是字符串/数字/对象/数组
+  （早期写路径未做类型约束）。`normalizeProfile` 原样保留该值，公共模型声明
+  `enabled: boolean` 却会输出 `"false"`、`1`、`{}`；随后所有 truthiness 判断
+  （`activeProfile.enabled`、`resolveDefaultProfile`、`resolveRuntimeProfile`）
+  都会把 `"false"`、`1`、`{}`、`[]` 当成启用，导致被禁用的 profile 仍被选中服务流量。
+- **证据**：
+  - `llm-gateway-settings.service.ts:790` `enabled: record.enabled ?? true`（只判 null/undefined，
+    其余类型原样透传）。
+  - `:718` `activeProfile && activeProfile.enabled`、`:724`、`:731` 三处 active ID 归一
+    用 truthiness；`:549` `resolveDefaultProfile`、`:573/:588/:607` `resolveRuntimeProfile`
+    同样用 truthiness。
+  - 公共模型 `LlmGatewayProfilePublic.enabled: boolean`（`:57`）。
+- **修法**：
+  - Nest：新增 `normalizeEnabled(value)` —— boolean 原样保留；`undefined`/`null`
+    保持历史默认 `true`；其他任何类型一律 `false`（不解析 `"true"`/`"false"` 字符串，
+    不把数字 truthiness 当启用）。`normalizeProfile` 改用它，因此公共 `enabled`
+    始终是 JSON boolean，三路 active ID 对不可用 profile 归 null。
+  - Go：`NormalizeEnabled` 同一规则；存量读取路径不做别的类型扩张。
+  - 明确不扩大修复范围：`sendMetadata` / `assistantWebSearchEnabled` 的显式 `null`
+    历史差异（service 写 null、下次 GET 归 false/true）保持不变。
+  - GET 只读，不把修复写回 DB。
+- **回归方式**：`api-go-llm-gateway-profiles-smoke` 阶段 4：
+  seed `enabled` = `"false"` / `"true"` / `1` / `0` / `{}` / `[]`，两侧列表
+  `enabled === false`（JSON boolean），关联的三类 active ID 清 null；
+  `enabled=true/false` 原行为不变；缺字段/null 仍 `true`；GET 后 DB 行内容不变。
+- **状态**：待远端验证（Nest 与 Go 两侧已同修；本机按约束未运行构建与测试）。
