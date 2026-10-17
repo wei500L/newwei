@@ -17,8 +17,8 @@ import { PrismaService } from "../../modules/config/prisma.service";
 
 import type { ProcessedItemPreviewDoc } from "./processed-item-preview.loader";
 import type { ProcessedItemDoc } from "./processed-item.loader";
-import type { RawItemDoc } from "./raw-item.loader";
 import type { RawItemPreviewDoc } from "./raw-item-preview.loader";
+import type { RawItemDoc } from "./raw-item.loader";
 
 /**
  * Request-scoped, organization-bound reader for the nested fields of the
