@@ -25,12 +25,13 @@ const (
 // unmigratedStaticPaths lists the /llm-gateways sub-paths that must keep flowing
 // to NestJS through the legacy proxy.
 //
-// Only proxy-governance and proxy-load-balancing can actually be reached by this
-// batch's routing table, because they are the only unmigrated paths shaped like
-// one dynamic segment under PUT/DELETE/OPTIONS. The remaining entries are listed
-// for completeness: their longer paths or non-PUT/DELETE methods are never
-// matched by the rules added here, so they already fall through to the /api/
-// legacy prefix and need no exception.
+// Four of these paths are actually reachable by this batch's routing table:
+// PUT/DELETE/OPTIONS on /proxy-governance, /proxy-load-balancing, /test-config
+// and /models-config are all shaped like one dynamic segment, so the wiring check
+// is what keeps them on NestJS. The remaining entries are listed for
+// completeness: their longer paths or non-PUT/DELETE methods are never matched by
+// the rules added here, so they already fall through to the /api/ legacy prefix
+// and need no exception.
 var unmigratedStaticPaths = map[string]bool{
 	BasePath + "/proxy-governance":            true,
 	BasePath + "/proxy-governance/preflight":  true,

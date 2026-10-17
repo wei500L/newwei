@@ -35,8 +35,10 @@ const (
 	SecuritySettingsKey = "system_security"
 	// SecurityCacheKey is the Redis key of the security envelope.
 	SecurityCacheKey = "system_security:settings"
-	// SecurityCacheTTLSeconds is the security cache lifetime.
-	SecurityCacheTTLSeconds = 30
+	// SecurityCacheTTLSeconds is the security cache lifetime NestJS uses when it
+	// writes the shared envelope (system-security-settings.service.ts:39). This
+	// package only reads that cache, so the constant is documentation only.
+	SecurityCacheTTLSeconds = 60
 	// machineActorPrefix is the user-id prefix produced by the machine token path.
 	machineActorPrefix = "machine:"
 )
