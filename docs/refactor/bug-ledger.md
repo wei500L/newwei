@@ -590,3 +590,109 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
   GET 按 env 回退（endpoint 依 env 决定有值或省略）；混合 PATCH 事务原子；空字符串
   endpoint 仍 DTO 400。
 - **状态**：✅ 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 JSON null 断言组覆盖（`JSON_TYPE=NULL` 且 `value IS NULL=0`）。
+
+## 8. 认证要素批次（AF1–AF5）
+
+分支 `refactor/go-auth-factors`；开关 `API_GO_AUTH_FACTORS_MODE`；7 条精确 HTTP
+（`GET /api/auth/mfa`、`POST /api/auth/mfa/enroll`、`POST /api/auth/mfa/verify-enroll`、
+`POST /api/auth/mfa/disable`、`POST /api/auth/mfa/recovery/rotate`、
+`GET/PUT /api/auth/admin/oidc-config`）。以下行号均为**修复前**原始行号，基线
+`57d1d4ba`。细节见 `docs/refactor/go-auth-factors.md`。
+
+### AF1 重复完成已完成的注册会替换恢复码 — ✅ 已修复（本批修复）【P1】
+
+- **用户影响**：一个已经处于 active 状态的因子（`verifiedAt` 有值且 `disabledAt` 为空）
+  可被再次「完成」注册，服务端重新生成整组恢复码——用户手里刚拿到的一套恢复码当场失效。
+- **根因证据（原始行号，基线 57d1d4ba）**：`apps/api/src/modules/auth/mfa.service.ts:115-157`
+  （`verifyEnrollment` 只检查 factor 行是否存在，随后总是取
+  `pendingSecret ?? secret`；active 且无 pending 时仍会走完 update + 删旧码 + 建新码）。
+- **修复（Nest）**：`mfa.service.ts` 的 `verifyEnrollment` 在锁内重读因子，新增
+  `active && !pendingSecret` → 400 `MFA enrollment is not initialized`；因子的读取、
+  校验与提升都在每用户锁内，并发 verify 只能完成一次。
+- **修复（Go）**：`apps/api-go/internal/authfactors/mfa.go` 的 `VerifyEnrollment` 同规则
+  同文案，因子在锁内重读。
+- **回归断言**：对 active 且无 pending 的因子再次 verify-enroll → 400，且旧恢复码集合
+  字节不变；active 因子再 enroll 只写 `pendingSecret`；pending 确认时提升并替换码集；
+  并发完成同一注册只有一个成功、只生成一套恢复码。
+- **状态**：本批修复（Nest 与 Go 两侧）；真实栈回归由
+  `api-go-auth-factors-smoke` 阶段 B/D 覆盖。
+
+### AF2 恢复码消费与管理变更分处两个事务 — ✅ 已修复（本批修复）【P1】
+
+- **用户影响**：后续写失败会留下「恢复码已被消费但管理动作未生效」；两个并发管理动作
+  可以各自用同一旧码集合授权，然后互相覆盖结果。
+- **根因证据（原始行号，基线 57d1d4ba）**：`mfa.service.ts:167`（`disable` 调用
+  `verifyFactorOrRecoveryCode`）与 `mfa.service.ts:183`（`rotateRecoveryCodes` 调用同一
+  helper），而 helper 在 `mfa.service.ts:414-463` 用自己的 `$transaction` 提交
+  `usedAt` 声明，之后 disable/rotate 才打开第二个事务。
+- **修复（Nest）**：`verifyFactorOrRecoveryCode` 改收显式
+  `Prisma.TransactionClient`；disable 与 rotate 的凭据校验 + `lastUsedAt` 刷新 + 状态
+  变更在**一个事务**内提交；声明仍是条件 `UPDATE ... WHERE usedAt IS NULL` 且要求
+  **恰好影响 1 行**；公开登录挑战路径保持原有单次使用语义。
+- **修复（Go）**：`internal/authfactors/mfa.go` 的 `Disable` / `RotateRecoveryCodes`
+  与 `store.go` 的 `claimRecoveryCode` 在同一事务客户端上执行同样的边界与
+  affected-row=1 断言。
+- **回归断言**：只在测试库注入写失败，证明恢复码消费与管理变更同事务回滚；同一恢复码
+  并发最多一个成功；两个不同旧码并发 rotate 不会各自授权后互相覆盖；公开登录挑战的
+  单次使用与尝试锁定行为不变。
+- **状态**：本批修复（Nest 与 Go 两侧）；真实栈回归由
+  `api-go-auth-factors-smoke` 阶段 D 覆盖。
+
+### AF3 MFA 写后 profile 缓存不失效 — ✅ 已修复（本批修复）【P1】
+
+- **用户影响**：`mfaEnabled` 最长可陈旧到 profile 缓存默认 600 秒 TTL，用户完成或关闭
+  MFA 后前端仍显示旧状态。
+- **根因证据（原始行号，基线 57d1d4ba）**：`apps/api/src/modules/auth/auth.service.ts:262-272`
+  （`invalidateProfileCache` 删除 `profile:<userId>:default` 与全部 membership org）、
+  `auth.service.ts:1445-1499`（`getUserProfile` 缓存 `buildAuthenticatedUser`）、
+  `auth.service.ts:404-407`（`buildAuthenticatedUser` 读 `mfaService.getStatus`）；而
+  `MfaService.verifyEnrollment`/`disable` 从不调用该失效。
+- **修复（Nest）**：`MfaService` 注入 `CacheService`，新增专用
+  `invalidateProfileCache(userId)`，在提交后、每用户锁内删除该用户 `default` 条目与每个
+  membership 组织条目。
+- **修复（Go）**：`internal/authfactors/cache.go` 的 `invalidateProfileCache` 删
+  `profile:<userId>:default` + `membershipOrgIDs` 的每个组织条目，提交后执行。
+- **回归断言**：预热用户在 org A/B 的 profile，verify/disable 后两组织的
+  `GET /api/auth/me` 立刻反映 `mfaEnabled`；Nest 写/Go 读与 Go 写/Nest 读都成立；其他
+  用户缓存不被删除；缓存里不含 secret 或恢复码。
+- **状态**：本批修复（Nest 与 Go 两侧）；真实栈回归由
+  `api-go-auth-factors-smoke` 阶段 E 覆盖。
+
+### AF4 OIDC 更新回写预读的旧 client secret — ✅ 已修复（本批修复）【P1】
+
+- **用户影响**：不带 secret 的更新会把先前读到的旧密文写回，静默回退并发轮换产生的新
+  secret，导致登录链使用已失效的 client secret。
+- **根因证据（原始行号，基线 57d1d4ba）**：`apps/api/src/modules/auth/oidc-auth.service.ts:116-121`
+  （预读 `existing` 并以 `existing?.clientSecret` 回落），`:134-136`（把该值写入 upsert，
+  即使请求没有携带新 secret）。
+- **修复（Nest）**：`oidc-auth.service.ts` 的 `updateConfig` 在无有效 secret 时把
+  `clientSecret` 字段整体从 `update` payload 省略（create 分支写 SQL NULL），由数据库
+  在写入期原子保留。
+- **修复（Go）**：`internal/authfactors/store.go` 增加
+  `upsertOidcConfigKeepSecretSQL`（列清单与更新赋值都省略 `clientSecret`），
+  `oidc.go` 的 `UpdateOidcConfig` 在 `ClientSecret == nil` 时走该语句。
+- **回归断言**：secret 缺失/null/空白保留；首次无 secret 写 SQL NULL；并发 Go/Nest
+  不带 secret 不覆盖刚写入的 secret；响应与日志无 secret。
+- **状态**：本批修复（Nest 与 Go 两侧）；真实栈回归由
+  `api-go-auth-factors-smoke` 阶段 F 覆盖。
+
+### AF5 机器身份写 MFA 触发 User(id) 外键 500 — ✅ 已修复（本批修复）【P1】
+
+- **用户影响**：机器令牌调用 MFA 写接口时写入 `machine:<id>` 作为
+  `UserTotpFactor.userId`，违反 `User(id)` 外键，接口泛化成 500（非契约化错误）。
+- **根因证据（原始行号，基线 57d1d4ba）**：`apps/api/src/common/guards/jwt-auth.guard.ts:36-41`
+  放行 `mtk_` 令牌，`apps/api/src/modules/auth/machine-token.service.ts:164` 生成身份
+  `machine:${record.id}`，MFA 路由是 `@AllowAuthenticated()`
+  （`apps/api/src/modules/auth/auth.controller.ts:243-274`），
+  `apps/api/src/modules/auth/mfa.service.ts:64-113`（`beginEnrollment`）随即把该 id 写入
+  `UserTotpFactor.userId`。
+- **修复（Nest）**：四条 MFA 写路由先经 `assertHumanMfaActor` 要求真实人类 `User`
+  （`machine:` 前缀或查不到 User → 403 `MFA management requires a human user`）；
+  `GET /api/auth/mfa` 对机器身份仍返回空状态；OIDC 保持租户机器令牌边界；不施加到其他
+  `/auth` 路由。
+- **修复（Go）**：`internal/authfactors/mfa.go` 的 `requireHumanActor`（`actorIsMachine`
+  或 `loadUserEmail` 未命中 → 403）在四条写路径最先执行，`GetStatus` 不做该检查。
+- **回归断言**：机器令牌四条写 403 且无副作用；`GET /api/auth/mfa` 机器身份空状态；
+  无权限人类仍 403；OIDC 机器令牌按自身存储权限读写本组织配置。
+- **状态**：本批修复（Nest 与 Go 两侧）；真实栈回归由
+  `api-go-auth-factors-smoke` 阶段 B/F 覆盖。

@@ -592,3 +592,45 @@ Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`artic
 检索/回填、S3 对象操作、新闻源实际抓取消费链路。机器令牌三条 GET 可读、四条写
 403。两把全局锁名 `infra-settings:vector-service:v1`、
 `infra-settings:news-source-runtime-secrets:v1`。回滚只把本变量改回 `legacy`。
+
+## 16. 认证要素：MFA 管理与组织 OIDC 配置（Go）
+
+新增开关 `API_GO_AUTH_FACTORS_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值
+启动失败，错误文本 `API_GO_AUTH_FACTORS_MODE must be one of legacy|go`）。`go`
+要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`（`appendAuthRequirements`），
+**不要求 `MONGO_URI`**，不启用 shadow，不启动 worker。`go` 时只接管 7 条精确
+方法规则（Go 包 `internal/authfactors`，处理器注册键 `/api/auth#factors`）：
+
+| 方法 | 路径 | 权限 | 成功码 |
+| --- | --- | --- | --- |
+| GET | `/api/auth/mfa` | `AllowAuthenticated` | 200 |
+| POST | `/api/auth/mfa/enroll` | `AllowAuthenticated` | 201 |
+| POST | `/api/auth/mfa/verify-enroll` | `AllowAuthenticated` | 201 |
+| POST | `/api/auth/mfa/disable` | `AllowAuthenticated` | 201 |
+| POST | `/api/auth/mfa/recovery/rotate` | `AllowAuthenticated` | 201 |
+| GET | `/api/auth/admin/oidc-config` | `settings.manage` | 200 |
+| PUT | `/api/auth/admin/oidc-config` | `settings.manage` | 200 |
+
+- **不迁移**：login、refresh、logout、profile、change-password、machine-tokens；
+  公开 MFA 登录挑战 `POST /api/auth/mfa/verify-login` 与强制注册挑战
+  `POST /api/auth/mfa/enrollment/start`、`POST /api/auth/mfa/enrollment/complete`；
+  整条 OIDC 登录链 `GET /api/auth/sso/oidc/start`、
+  `GET /api/auth/oidc/callback`、`POST /api/auth/sso/handoff/exchange`。上表路径的
+  其他方法、尾斜杠与更长路径也回落 NestJS，Go 不返回自己的 404。
+- **认证与身份**：人类走 JWT 验签 + Redis 撤销名单 + MySQL membership/permission
+  重推导（不信任 JWT claims）；`mtk_` 机器令牌走 SHA-256 查 `MachineAccessToken` +
+  `revokedAt`/`expiresAt`/`Org.isActive`。`GET /api/auth/mfa` 对机器身份返回空状态；
+  四条 MFA 写要求真实人类 `User`，否则 403 `MFA management requires a human user`；
+  OIDC 是租户设置（只要求本组织 `settings.manage`，无全局 `platform_admin` 门禁）。
+  四条 MFA 写共用每用户 MySQL 会话锁 `mfa:<sha256(userId) hex 前 60 字符>`
+  （恰好 64 字符，Nest 与 Go 同名互通），锁被占用 409、锁会话失败 503。
+- **同批修复 AF1–AF5（Nest 与 Go 两侧）**：AF1 重复完成已完成的注册会重发恢复码
+  （`active && !pendingSecret` → 400 `MFA enrollment is not initialized`）；AF2
+  恢复码消费与管理变更分处两个事务（改收显式事务客户端，校验 + 状态变更同事务，
+  声明保持条件 `usedAt IS NULL` 且恰好 1 行）；AF3 MFA 写后 profile 缓存不失效
+  （提交后删 `profile:<userId>:default` 与全部 membership 组织）；AF4 OIDC 更新把
+  预读旧 client secret 写回（无新 secret 时整列从写入省略，写入期原子保留）；AF5
+  机器身份写 MFA 触发 `User(id)` 外键 500（四条写先要求真实人类）。细节见
+  `docs/refactor/go-auth-factors.md` 与 `docs/refactor/bug-ledger.md`。
+- 回滚只把 `API_GO_AUTH_FACTORS_MODE` 改回 `legacy`。本批从不访问身份提供方、从不
+  签发 access/refresh token，不改 GraphQL/SDL/controller/DTO/schema。

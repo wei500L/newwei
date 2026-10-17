@@ -77,6 +77,21 @@
 //	         API_GO_QUALITY_OVERVIEW_MODE 改回 legacy。不启用 shadow，
 //	         不改前端，不改 canary。
 //
+//	         API_GO_AUTH_FACTORS_MODE=go 时接管已认证 MFA 管理与组织 OIDC
+//	         配置的 7 条精确路由：GET /api/auth/mfa、
+//	         POST /api/auth/mfa/enroll|verify-enroll|disable|recovery/rotate、
+//	         GET/PUT /api/auth/admin/oidc-config。人类走 JWT 验签 + Redis
+//	         blacklist + MySQL membership/权限重推导，机器令牌沿用 mtk_ 查库
+//	         路径。四条 MFA 写要求真实人类 User（机器身份 403），GET mfa 对
+//	         机器身份仍返回空状态；OIDC 是租户设置，按 settings.manage 判定，
+//	         不套全局平台管理员门禁。四条 MFA 写共用每用户 MySQL 会话锁
+//	         （Nest/Go 同名互通）。go 要求 JWT_SECRET、DATABASE_URL、
+//	         REDIS_HOST，不要求 Mongo。login/refresh/logout/me/
+//	         change-password/machine-tokens、公开 MFA 登录与强制 enrollment
+//	         挑战，以及 OIDC start/callback/handoff 仍回 NestJS。回滚只把
+//	         API_GO_AUTH_FACTORS_MODE 改回 legacy。不访问身份提供方、不签发
+//	         token、不启用 shadow、不改 canary。
+//
 // 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
 // API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
 // API_GO_DASHBOARD_STATS_MODE=legacy 把 stats 交回 NestJS；
@@ -582,6 +597,10 @@ func run() error {
 	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
 		infrastructureSettingsMode = string(legacyproxy.ModeGo)
 	}
+	authFactorsMode := ""
+	if cfg.AuthFactorsMode == config.AuthFactorsModeGo {
+		authFactorsMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -616,6 +635,7 @@ func run() error {
 	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
 	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
 	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
+	rules = legacyproxy.WithAuthFactors(rules, authFactorsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -672,6 +692,7 @@ func run() error {
 				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
 				cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo ||
+				cfg.AuthFactorsMode == config.AuthFactorsModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
@@ -736,8 +757,9 @@ func run() error {
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	infrastructureSettingsGo := cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo
+	authFactorsGo := cfg.AuthFactorsMode == config.AuthFactorsModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || crawlReadTelemetryGo || classificationRssOpsGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || authFactorsGo || crawlReadTelemetryGo || classificationRssOpsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1086,6 +1108,9 @@ func run() error {
 		return err
 	}
 	if err := wireInfrastructureSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	if err := wireAuthFactors(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 

@@ -113,12 +113,15 @@ export class OidcAuthService {
     buttonLabel?: string;
     requireEmailVerified?: boolean;
   }) {
-    const existing = await this.prisma.orgOidcConfig.findUnique({
-      where: { orgId: params.orgId },
-    });
+    // AF4: a missing/blank clientSecret is "keep the current column", never
+    // "write back whatever was read earlier". Pre-reading the row and copying
+    // its ciphertext into the upsert would let a concurrent writer's freshly
+    // rotated secret be silently reverted by a later update that did not carry
+    // a secret. The column is therefore omitted from the update payload, which
+    // makes the database itself preserve it atomically.
     const nextSecret = params.clientSecret?.trim()
       ? await this.authSecurity.encodeSecret(params.clientSecret.trim())
-      : (existing?.clientSecret ?? null);
+      : null;
     const nextScopes = (params.scopes ?? []).filter(
       (scope): scope is string =>
         typeof scope === "string" && scope.trim().length > 0,
@@ -131,9 +134,9 @@ export class OidcAuthService {
         issuerUrl: params.issuerUrl.trim(),
         discoveryUrl: params.discoveryUrl?.trim() || null,
         clientId: params.clientId.trim(),
-        clientSecret: nextSecret
-          ? (nextSecret as Prisma.InputJsonValue)
-          : Prisma.DbNull,
+        ...(nextSecret !== null
+          ? { clientSecret: nextSecret as Prisma.InputJsonValue }
+          : {}),
         scopes:
           nextScopes.length > 0
             ? toPrismaJsonValue(nextScopes)
@@ -147,9 +150,10 @@ export class OidcAuthService {
         issuerUrl: params.issuerUrl.trim(),
         discoveryUrl: params.discoveryUrl?.trim() || null,
         clientId: params.clientId.trim(),
-        clientSecret: nextSecret
-          ? (nextSecret as Prisma.InputJsonValue)
-          : Prisma.DbNull,
+        clientSecret:
+          nextSecret !== null
+            ? (nextSecret as Prisma.InputJsonValue)
+            : Prisma.DbNull,
         scopes:
           nextScopes.length > 0
             ? toPrismaJsonValue(nextScopes)

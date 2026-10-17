@@ -2231,3 +2231,87 @@ func TestCrawlFrontierRunsModeGoRequiresCredentials(t *testing.T) {
 		t.Fatalf("mode = %s", cfg.CrawlFrontierRunsMode)
 	}
 }
+
+func TestAuthFactorsModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthFactorsMode != AuthFactorsModeLegacy {
+		t.Fatalf("mode = %s", cfg.AuthFactorsMode)
+	}
+	// The empty string is explicitly accepted and behaves like legacy.
+	for _, accepted := range []string{"", "legacy", "  legacy  "} {
+		cfg, err = Load(func(key string) string {
+			if key == "API_GO_AUTH_FACTORS_MODE" {
+				return accepted
+			}
+			return ""
+		})
+		if err != nil {
+			t.Fatalf("accepted %q: %v", accepted, err)
+		}
+		if cfg.AuthFactorsMode != AuthFactorsModeLegacy {
+			t.Fatalf("accepted %q mode = %s", accepted, cfg.AuthFactorsMode)
+		}
+	}
+}
+
+func TestAuthFactorsModeRejectsInvalid(t *testing.T) {
+	// shadow and canary are explicitly not accepted: this unit is
+	// legacy-or-go only, so a typo in the switch fails startup instead of
+	// silently degrading to the NestJS proxy.
+	for _, invalid := range []string{"shadow", "canary", "Go", "true", "1"} {
+		_, err := Load(func(key string) string {
+			if key == "API_GO_AUTH_FACTORS_MODE" {
+				return invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "API_GO_AUTH_FACTORS_MODE must be one of legacy|go") {
+			t.Fatalf("invalid mode %q: %v", invalid, err)
+		}
+	}
+}
+
+func TestAuthFactorsModeGoRequiresCredentials(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_AUTH_FACTORS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_AUTH_FACTORS_MODE=go") {
+		t.Fatalf("missing redis: %v", err)
+	}
+
+	// Mongo is not a startup dependency of this unit: it reads and writes MySQL
+	// and Redis only. The settings-encryption key stays optional too, because a
+	// missing or invalid key is handled per write by the documented policy.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_AUTH_FACTORS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("go mode must not require Mongo or an encryption key: %v", err)
+	}
+	if cfg.AuthFactorsMode != AuthFactorsModeGo {
+		t.Fatalf("mode = %s", cfg.AuthFactorsMode)
+	}
+}
