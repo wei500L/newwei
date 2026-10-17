@@ -197,3 +197,4 @@ OAuth 刷新、地理编码调用、归档分类/embedding/rerank、BullMQ produ
 迁移 `archiveDigest`/`archiveCalendar`/`archiveDetail`。ACLED API 在源码中固定关闭的
 政策保持。回滚只改 `API_GO_DATA_RUNTIME_SETTINGS_MODE`。生产 Web 仍指向 NestJS，
 canary 关闭。细节见 `docs/refactor/go-data-runtime-settings.md`。
+- ✅ Go-批10：平台治理设置 16 条 HTTP（security / assistant-quota / assistant-safety(+metrics) / task-logs / llm-request-logs(+metadata-policy/reset)）迁入 `apps/api-go`，开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串|legacy|go，默认 legacy）；同批修 SEC-05（全局写接口补平台管理员门禁）、TTL-01（tasklogs NamespaceNotFound）、CONC-01（llm-request-logs MySQL 会话锁 + 以 DB 为新合并基准）。回滚只改该变量。细节见 `docs/refactor/go-platform-governance-settings.md`。

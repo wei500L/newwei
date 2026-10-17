@@ -6,12 +6,17 @@ import {
   MIN_LLM_REQUEST_LOG_RETENTION_DAYS,
 } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
-import { BadRequestException, Injectable, type OnModuleInit } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, type OnModuleInit } from "@nestjs/common";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
+import { normalizeAuditActorId } from "../audit/audit-actor";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
+import {
+  SituationMonitorLockError,
+  withMysqlSessionLock,
+} from "../situation-monitor/situation-monitor-user-lock";
 
 export type LlmRequestLogSettingsSource = "default" | "db";
 
@@ -121,6 +126,12 @@ const DEFAULT_BRIEF_INVALID_JSON_RATIO_THRESHOLD = 0.3;
 const DEFAULT_BRIEF_CONSECUTIVE_DAYS_THRESHOLD = 3;
 const MIN_BRIEF_CONSECUTIVE_DAYS_THRESHOLD = 1;
 const MAX_BRIEF_CONSECUTIVE_DAYS_THRESHOLD = 30;
+// CONC-01: every partial write merges against a freshly read DB row inside one
+// MySQL session lock. The lock name is fixed (single global settings row) and
+// the 10 second GET_LOCK wait lives in withMysqlSessionLock.
+const SETTINGS_LOCK_NAME = "sys:llm_request_log_settings";
+const SETTINGS_LOCK_CONFLICT_MESSAGE =
+  "LLM request log settings are being updated by another request; retry later";
 
 export function mergeRequiredLlmRequestLogMetadataAllowedTopLevelKeys(
   keys: readonly string[],
@@ -194,7 +205,47 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
     };
   }
 
+  /**
+   * CONC-01: writes are serialised on a MySQL session lock and merge against a
+   * freshly read DB row, so a partial PUT can never silently roll back a field
+   * another writer just changed (nor leave the Mongo TTL index out of sync with
+   * the stored retentionDays). The lock is acquired exactly once per request —
+   * withMysqlSessionLock opens a dedicated connection, so a nested acquisition
+   * would deadlock against itself until the wait times out.
+   */
+  private async withSettingsLock<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await withMysqlSessionLock(
+        process.env.DATABASE_URL ?? "",
+        SETTINGS_LOCK_NAME,
+        fn,
+      );
+    } catch (error) {
+      if (error instanceof SituationMonitorLockError) {
+        throw new ConflictException(SETTINGS_LOCK_CONFLICT_MESSAGE);
+      }
+      throw error;
+    }
+  }
+
   async updateSettings(
+    orgId: string,
+    actorId: string,
+    input: {
+      retentionDays?: number;
+      metadataAllowedTopLevelKeys?: string[];
+      metadataAllowedTopLevelPrefixes?: string[];
+      briefErrorRateThreshold?: number;
+      briefInvalidJsonRatioThreshold?: number;
+      briefConsecutiveDaysThreshold?: number;
+    },
+  ): Promise<LlmRequestLogSettingsPublic> {
+    return this.withSettingsLock(() =>
+      this.updateSettingsUnlocked(orgId, actorId, input),
+    );
+  }
+
+  private async updateSettingsUnlocked(
     orgId: string,
     actorId: string,
     input: {
@@ -220,7 +271,9 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       );
     }
 
-    const current = await this.getSettings();
+    // CONC-01: merge base is the DB row read inside the lock, never the
+    // process-local settings cache (which can be up to 30 seconds stale).
+    const current = await this.loadSettingsFromDb();
 
     const retentionDays =
       input.retentionDays === undefined
@@ -303,18 +356,22 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       briefConsecutiveDaysThreshold,
     };
 
+    // Defence in depth (PR #47): updatedById is a nullable FK into User(id), so
+    // a machine actor id must be written as NULL instead of "machine:<id>".
+    const actorUserId = normalizeAuditActorId(actorId);
+
     await this.prisma.systemSetting.upsert({
       where: { key: SETTINGS_KEY },
       update: {
         value: toPrismaJsonValue(value),
-        updatedById: actorId,
+        updatedById: actorUserId,
         description: SETTINGS_DESCRIPTION,
         isPublic: false,
       },
       create: {
         key: SETTINGS_KEY,
         value: toPrismaJsonValue(value),
-        updatedById: actorId,
+        updatedById: actorUserId,
         description: SETTINGS_DESCRIPTION,
         isPublic: false,
       },
@@ -325,7 +382,7 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       {
         data: {
           orgId,
-          actorId,
+          actorId: actorUserId,
           resource: "system_settings",
           action: "llm_request_log_settings_update",
           metadata: toPrismaJsonValue({
@@ -366,6 +423,14 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
     orgId: string,
     actorId: string,
   ): Promise<LlmRequestLogSettingsPublic> {
+    // CONC-01: the full reset also takes the settings lock exactly once.
+    return this.withSettingsLock(() => this.resetToDefaultUnlocked(orgId, actorId));
+  }
+
+  private async resetToDefaultUnlocked(
+    orgId: string,
+    actorId: string,
+  ): Promise<LlmRequestLogSettingsPublic> {
     const defaults = this.buildDefaultSettings();
     await this.applyRetentionTtlIndex(defaults.retentionDays);
 
@@ -373,12 +438,16 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       where: { key: SETTINGS_KEY },
     });
 
+    // Defence in depth (PR #47): AuditLog.actorId is a nullable FK into
+    // User(id); a machine actor id must be written as NULL.
+    const actorUserId = normalizeAuditActorId(actorId);
+
     await writeAuditLogBestEffort(
       this.prisma,
       {
         data: {
           orgId,
-          actorId,
+          actorId: actorUserId,
           resource: "system_settings",
           action: "llm_request_log_settings_reset",
           metadata: toPrismaJsonValue({
@@ -410,14 +479,19 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
     orgId: string,
     actorId: string,
   ): Promise<LlmRequestLogSettingsPublic> {
-    return this.updateSettings(orgId, actorId, {
-      metadataAllowedTopLevelKeys: [
-        ...DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
-      ],
-      metadataAllowedTopLevelPrefixes: [
-        ...DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
-      ],
-    });
+    // CONC-01: acquire the lock here and call the UNLOCKED merge, never
+    // updateSettings — withMysqlSessionLock opens a dedicated connection, so a
+    // nested acquisition would wait on itself until GET_LOCK times out.
+    return this.withSettingsLock(() =>
+      this.updateSettingsUnlocked(orgId, actorId, {
+        metadataAllowedTopLevelKeys: [
+          ...DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
+        ],
+        metadataAllowedTopLevelPrefixes: [
+          ...DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
+        ],
+      }),
+    );
   }
 
   private async applyRetentionTtlIndex(retentionDays: number): Promise<void> {
