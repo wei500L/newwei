@@ -337,7 +337,7 @@ func TestReadJSONBodyClassification(t *testing.T) {
 
 	request = httptest.NewRequest(http.MethodPost, feedbackPath, bytes.NewBufferString(`{oops`))
 	request.Header.Set("Content-Type", "application/json")
-	body, kind := readJSONBody(request)
+	body, kind = readJSONBody(request)
 	if kind != bodyInvalidJSON {
 		t.Fatalf("invalid body kind = %v", kind)
 	}
