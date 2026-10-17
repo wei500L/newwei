@@ -110,6 +110,10 @@ func NormalizeProcessedResult(result OpenJSON) OpenJSON {
 	if len(raw) == 0 {
 		return OpenJSON{}
 	}
+	if string(raw) == "null" {
+		// An explicit null is "no result", exactly like the NestJS helper.
+		return OpenJSON{}
+	}
 	if raw[0] != '"' {
 		return result
 	}

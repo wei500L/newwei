@@ -238,8 +238,23 @@ func (o *OpenJSON) UnmarshalBSONValue(typ byte, data []byte) error {
 		}
 		*o = NewOpenJSON(converted)
 		return nil
-	default: // null, scalars, and anything else has no open representation
+	case 0x06, 0x0A: // undefined, null: absent, not a JSON null token
 		*o = OpenJSON{}
+		return nil
+	default:
+		// A genuinely open field can also be stored as a scalar (a JSON string,
+		// a number, a boolean or a date). Converting the value keeps the leaf
+		// lossless instead of dropping it.
+		if len(data) == 0 {
+			*o = OpenJSON{}
+			return nil
+		}
+		converted, _, ok := appendBSONValue(make([]byte, 0, 64), data, 0, typ)
+		if !ok || len(converted) == 0 {
+			*o = OpenJSON{}
+			return nil
+		}
+		*o = NewOpenJSON(converted)
 		return nil
 	}
 }
