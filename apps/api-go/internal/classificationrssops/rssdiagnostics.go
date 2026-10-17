@@ -206,8 +206,16 @@ func (s *Service) buildRSSDiagnosticsOverview(ctx context.Context, orgID string,
 	visibility := computeRSSVisibility(sources, processedStats, articleStats)
 	pipelineCounts := pipelineCountsFromStatusTotals(statusTotals)
 	crawlTaskCounts := crawlTaskCountsFromRows(crawlTaskRows)
-	processedMissingRate := ratio4(float64(processedMissingSourceID), float64(processedCompletedTotal), 0)
-	articleMissingRate := ratio4(float64(articleMissingSourceID), float64(articleTotal), 0)
+	// The RSS diagnostics service divides directly (no more toFixed rounding than
+	// the classification service applies), so these rates keep full precision.
+	processedMissingRate := 0.0
+	if processedCompletedTotal > 0 {
+		processedMissingRate = float64(processedMissingSourceID) / float64(processedCompletedTotal)
+	}
+	articleMissingRate := 0.0
+	if articleTotal > 0 {
+		articleMissingRate = float64(articleMissingSourceID) / float64(articleTotal)
+	}
 
 	recommendations := make([]string, 0, 5)
 	if !schedulerEnabled {
