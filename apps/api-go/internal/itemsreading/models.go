@@ -241,7 +241,14 @@ type echoField struct {
 	value json.RawMessage
 }
 
-// UnmarshalBSONValue implements bson.ValueUnmarshaler.
+// UnmarshalBSON implements bson.Unmarshaler. The driver only calls
+// UnmarshalBSONValue for individual values inside a document, so a whole
+// document target (FindOne().Decode) must implement UnmarshalBSON.
+func (e *DocumentEcho) UnmarshalBSON(data []byte) error {
+	return e.UnmarshalBSONValue(0x03, data)
+}
+
+// UnmarshalBSONValue implements bson.ValueUnmarshaler for the nested-value case.
 func (e *DocumentEcho) UnmarshalBSONValue(typ byte, data []byte) error {
 	if typ != 0x03 {
 		e.fields = nil
