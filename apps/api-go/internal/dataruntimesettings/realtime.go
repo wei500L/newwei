@@ -571,13 +571,17 @@ func (s *Service) resolveEffectiveSettings(stored *storedRealtimeSettings) (*eff
 	effective.CloudflareAPIToken = firstNonEmpty(storedCloudflare, cfg.RealtimeCloudflareAPIToken)
 	effective.WingbitsAPIKey = firstNonEmpty(storedWingbits, cfg.RealtimeWingbitsAPIKey)
 
-	// Presence sources mirror resolveSecretPresence(stored, effective).
+	// Presence sources mirror resolveSecretPresence(stored, env). Note the ACLED
+	// client id: NestJS computes its source from the ENVIRONMENT value, not from
+	// the effective value, so the built-in "acled" default never becomes an
+	// "env" source. Reporting the default as env would make the public response
+	// claim the environment supplied a credential it never supplied.
 	effective.OpenskyClientIDPresent, effective.OpenskyClientIDSource = secretPresence(storedOpenskyClientID, effective.OpenskyClientID)
 	effective.OpenskyClientSecretPresent, effective.OpenskyClientSecretSource = secretPresence(storedOpenskyClientSecret, effective.OpenskyClientSecret)
 	effective.AisRelaySecretPresent, effective.AisRelaySecretSource = secretPresence(presenceAisRelayRaw, effective.AisRelaySharedSecret)
 	effective.AcledOauthUsernamePresent, effective.AcledOauthUsernameSource = secretPresence(storedAcledUsername, effective.AcledOauthUsername)
 	effective.AcledOauthPasswordPresent, effective.AcledOauthPasswordSource = secretPresence(storedAcledPassword, effective.AcledOauthPassword)
-	effective.AcledOauthClientIDPresent, effective.AcledOauthClientIDSource = secretPresence(storedAcledClientID, effective.AcledOauthClientID)
+	effective.AcledOauthClientIDPresent, effective.AcledOauthClientIDSource = secretPresence(storedAcledClientID, cfg.RealtimeAcledOauthClientID)
 	effective.CloudflareAPITokenPresent, effective.CloudflareAPITokenSource = secretPresence(storedCloudflare, effective.CloudflareAPIToken)
 	effective.WingbitsAPIKeyPresent, effective.WingbitsAPIKeySource = secretPresence(storedWingbits, effective.WingbitsAPIKey)
 

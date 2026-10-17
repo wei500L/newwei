@@ -826,3 +826,83 @@ func strconvQuote(value string) string {
 func base64Of(value []byte) string {
 	return base64.StdEncoding.EncodeToString(value)
 }
+
+func TestRealtimePublicSettingsEnvCase(t *testing.T) {
+	cfg := realtimeBaseConfig()
+	cfg.RealtimeEnabled = false
+	service := testService(cfg)
+	settings, err := service.getRealtimePublicSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require(t, "source", settings.Source, SettingSourceEnv)
+	require(t, "enabled", settings.Enabled, false)
+	require(t, "requestTimeoutMs", settings.RequestTimeoutMs, 12_000)
+	require(t, "maxRetries", settings.MaxRetries, 2)
+	require(t, "openskyIntervalSec", settings.OpenskyIntervalSec, 900)
+	require(t, "openskyDailyCreditBudget", settings.OpenskyDailyCreditBudget, 4000)
+	require(t, "openskyDayIntervalSec", settings.OpenskyDayIntervalSec, 600)
+	require(t, "openskyNightIntervalSec", settings.OpenskyNightIntervalSec, 1800)
+	require(t, "keywordSpikeMinCount", settings.KeywordSpikeMinCount, 5)
+	require(t, "keywordSpikeMultiplier", settings.KeywordSpikeMultiplier, 3.0)
+	require(t, "predictionShiftThreshold", settings.PredictionShiftThreshold, 5.0)
+	require(t, "predictionNewsActivityThreshold", settings.PredictionNewsActivityThreshold, 3)
+	require(t, "openskyBaseUrl", settings.OpenskyBaseURL, defaultOpenskyBaseURL)
+	require(t, "openskyTokenUrl", settings.OpenskyTokenURL, defaultOpenskyTokenURL)
+
+	// ACLED is hard-disabled, and no credential source may claim the environment
+	// supplied something it did not.
+	require(t, "acledApiEnabled", settings.AcledAPIEnabled, false)
+	require(t, "acledApiDisabledReason", settings.AcledAPIDisabledReason, AcledAPIDisabledReason)
+	require(t, "hasAcledAccessToken", settings.HasAcledAccessToken, false)
+	require(t, "acledAccessTokenSource", settings.AcledAccessTokenSource, SecretSourceNone)
+	require(t, "acledAccessTokenStatus", settings.AcledAccessTokenStatus, AcledTokenMissing)
+	require(t, "hasAcledOauthPassword", settings.HasAcledOauthPassword, false)
+	require(t, "acledOauthPasswordSource", settings.AcledOauthPasswordSource, SecretSourceNone)
+	require(t, "hasCloudflareApiToken", settings.HasCloudflareAPIToken, false)
+	require(t, "cloudflareApiTokenSource", settings.CloudflareAPITokenSource, SecretSourceNone)
+	require(t, "hasWingbitsApiKey", settings.HasWingbitsAPIKey, false)
+	require(t, "wingbitsApiKeySource", settings.WingbitsAPIKeySource, SecretSourceNone)
+	require(t, "hasOpenskyClientSecret", settings.HasOpenskyClientSecret, false)
+	require(t, "openskyClientSecretSource", settings.OpenskyClientSecretSource, SecretSourceNone)
+	require(t, "hasAisRelaySharedSecret", settings.HasAisRelaySharedSecret, false)
+	require(t, "aisRelaySharedSecretSource", settings.AisRelaySharedSecretSource, SecretSourceNone)
+	require(t, "openskyClientIdSource", settings.OpenskyClientIDSource, SecretSourceNone)
+	require(t, "acledOauthUsernameSource", settings.AcledOauthUsernameSource, SecretSourceNone)
+
+	// The ACLED client id has a built-in default ("acled"), but its source is
+	// computed from the ENVIRONMENT value, so the default reports "none".
+	// Reporting "env" here would make the response claim a credential the
+	// environment never supplied (caught by the real-stack parity check).
+	require(t, "acledOauthClientId", settings.AcledOauthClientID, defaultAcledClientID)
+	require(t, "acledOauthClientIdSource default", settings.AcledOauthClientIDSource, SecretSourceNone)
+
+	// A real environment value does move the source to env.
+	cfg = realtimeBaseConfig()
+	cfg.RealtimeAcledOauthClientID = "custom-client"
+	service = testService(cfg)
+	settings, err = service.getRealtimePublicSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	require(t, "acledOauthClientId env", settings.AcledOauthClientID, "custom-client")
+	require(t, "acledOauthClientIdSource env", settings.AcledOauthClientIDSource, SecretSourceEnv)
+
+	// A stored value wins over the environment and reports "stored".
+	stored := parseStoredRealtimeSettings(json.RawMessage(`{"acledOauthClientId":"stored-client"}`))
+	effective, err := service.resolveEffectiveSettings(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	require(t, "acledOauthClientId stored", effective.AcledOauthClientID, "stored-client")
+	require(t, "acledOauthClientIdSource stored", effective.AcledOauthClientIDSource, SecretSourceStored)
+}
+
+// require is a tiny generic assertion helper for the golden checks above.
+func require[T comparable](t *testing.T, label string, got, want T) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("%s: got %v, want %v", label, got, want)
+	}
+}
