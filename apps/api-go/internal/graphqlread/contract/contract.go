@@ -66,6 +66,19 @@ type Root struct {
 	Resolve            Resolver
 }
 
+// Bind adapts a strongly typed resolver function to the untyped Resolver
+// boundary the executor invokes. Packages keep their resolver signatures
+// strongly typed and call Bind only at registration, so their GraphQL models
+// never need an untyped map or value.
+func Bind[T any](fn func(Context) (T, error)) Resolver {
+	if fn == nil {
+		panic("graphqlread: Bind requires a resolver function")
+	}
+	return func(ctx Context) (any, error) {
+		return fn(ctx)
+	}
+}
+
 // Failure is a field error whose HTTP status and extensions follow the Nest
 // GraphQL exception filter. Status 0 means 500.
 type Failure struct {

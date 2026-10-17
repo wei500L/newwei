@@ -57,18 +57,18 @@ func Register(reg *contract.Registry, db *sql.DB, mongoDB *mongo.Database, redis
 	registerFieldPermissions(reg)
 
 	svc := &service{db: db, mongo: mongoDB, redis: redisClient}
-	reg.RegisterRoot(contract.Root{Name: "me", AllowAuthenticated: true, Resolve: svc.me})
-	reg.RegisterRoot(contract.Root{Name: "myOrganizations", AllowAuthenticated: true, Resolve: svc.myOrganizations})
-	reg.RegisterRoot(contract.Root{Name: "users", Permission: "users.read", Resolve: svc.users})
-	reg.RegisterRoot(contract.Root{Name: "userLoginRecords", Permission: "users.read", Resolve: svc.userLoginRecords})
-	reg.RegisterRoot(contract.Root{Name: "roles", Permission: "roles.read", Resolve: svc.roles})
-	reg.RegisterRoot(contract.Root{Name: "permissions", Permission: "permissions.read", Resolve: svc.permissions})
-	reg.RegisterRoot(contract.Root{Name: "memberships", Permission: "users.read", Resolve: svc.memberships})
-	reg.RegisterRoot(contract.Root{Name: "dashboards", Permission: "dashboards.read", Resolve: svc.dashboards})
-	reg.RegisterRoot(contract.Root{Name: "queueStats", Permission: "queue.manage", Resolve: svc.queueStats})
-	reg.RegisterRoot(contract.Root{Name: "entitySentimentSeries", Permission: "dashboards.read", Resolve: svc.entitySentimentSeries})
-	reg.RegisterRoot(contract.Root{Name: "topicSentimentSeries", Permission: "dashboards.read", Resolve: svc.topicSentimentSeries})
-	reg.RegisterRoot(contract.Root{Name: "processedItemById", Permission: "items.read", Resolve: svc.processedItemByID})
+	reg.RegisterRoot(contract.Root{Name: "me", AllowAuthenticated: true, Resolve: contract.Bind(svc.me)})
+	reg.RegisterRoot(contract.Root{Name: "myOrganizations", AllowAuthenticated: true, Resolve: contract.Bind(svc.myOrganizations)})
+	reg.RegisterRoot(contract.Root{Name: "users", Permission: "users.read", Resolve: contract.Bind(svc.users)})
+	reg.RegisterRoot(contract.Root{Name: "userLoginRecords", Permission: "users.read", Resolve: contract.Bind(svc.userLoginRecords)})
+	reg.RegisterRoot(contract.Root{Name: "roles", Permission: "roles.read", Resolve: contract.Bind(svc.roles)})
+	reg.RegisterRoot(contract.Root{Name: "permissions", Permission: "permissions.read", Resolve: contract.Bind(svc.permissions)})
+	reg.RegisterRoot(contract.Root{Name: "memberships", Permission: "users.read", Resolve: contract.Bind(svc.memberships)})
+	reg.RegisterRoot(contract.Root{Name: "dashboards", Permission: "dashboards.read", Resolve: contract.Bind(svc.dashboards)})
+	reg.RegisterRoot(contract.Root{Name: "queueStats", Permission: "queue.manage", Resolve: contract.Bind(svc.queueStats)})
+	reg.RegisterRoot(contract.Root{Name: "entitySentimentSeries", Permission: "dashboards.read", Resolve: contract.Bind(svc.entitySentimentSeries)})
+	reg.RegisterRoot(contract.Root{Name: "topicSentimentSeries", Permission: "dashboards.read", Resolve: contract.Bind(svc.topicSentimentSeries)})
+	reg.RegisterRoot(contract.Root{Name: "processedItemById", Permission: "items.read", Resolve: contract.Bind(svc.processedItemByID)})
 }
 
 // registerFieldPermissions declares the nested @HasPermission guards. The
