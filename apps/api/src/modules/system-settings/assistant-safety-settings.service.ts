@@ -2,6 +2,7 @@ import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 
+import { normalizeAuditActorId } from "../audit/audit-actor";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
@@ -78,18 +79,22 @@ export class AssistantSafetySettingsService {
 
     const effective = this.resolveEffectiveConfig(nextStored);
 
+    // Defence in depth (PR #47): updatedById is a nullable FK into User(id), so
+    // a machine actor id must be written as NULL instead of "machine:<id>".
+    const actorUserId = normalizeAuditActorId(actorId);
+
     await this.prisma.systemSetting.upsert({
       where: { key: SETTINGS_KEY },
       update: {
         value: this.toPrismaJson(nextStored),
-        updatedById: actorId,
+        updatedById: actorUserId,
         description: SETTINGS_DESCRIPTION,
         isPublic: false
       },
       create: {
         key: SETTINGS_KEY,
         value: this.toPrismaJson(nextStored),
-        updatedById: actorId,
+        updatedById: actorUserId,
         description: SETTINGS_DESCRIPTION,
         isPublic: false
       }
@@ -100,7 +105,7 @@ export class AssistantSafetySettingsService {
       {
         data: {
           orgId,
-          actorId,
+          actorId: actorUserId,
           resource: "system_settings",
           action: "assistant_safety_update",
           metadata: this.toPrismaJson({
@@ -120,12 +125,16 @@ export class AssistantSafetySettingsService {
   async resetToEnv(orgId: string, actorId: string): Promise<AssistantSafetySettingsPublic> {
     await this.prisma.systemSetting.deleteMany({ where: { key: SETTINGS_KEY } });
 
+    // Defence in depth (PR #47): AuditLog.actorId is a nullable FK into
+    // User(id); a machine actor id must be written as NULL.
+    const actorUserId = normalizeAuditActorId(actorId);
+
     await writeAuditLogBestEffort(
       this.prisma,
       {
         data: {
           orgId,
-          actorId,
+          actorId: actorUserId,
           resource: "system_settings",
           action: "assistant_safety_reset",
           metadata: this.toPrismaJson({ ok: true } satisfies Prisma.InputJsonObject)
