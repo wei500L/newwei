@@ -655,7 +655,10 @@ jobs:
           flush_quality()
           go_quality = compare_fresh(quality_path, token_a)
           source_quality = compare_fresh(quality_source, token_a)
-          if source_quality.get("sourceId") != source_a:
+          # The source projection has no top-level sourceId (matching Nest): the
+          # single matching entry is the evidence.
+          source_entries = source_quality.get("groupedBySource") or []
+          if source_quality.get("taskCount") != 1 or len(source_entries) != 1 or source_entries[0].get("sourceId") != source_a:
               fail(f"quality source payload: {source_quality!r}")
           if go_quality.get("taskCount") != 2:
               fail(f"quality aggregate: {go_quality!r}")
