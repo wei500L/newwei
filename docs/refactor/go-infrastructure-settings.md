@@ -196,5 +196,31 @@ api-go：七条恢复经 Go 网关代理到 NestJS。无数据迁移耦合——
   公共 GET 不解密）刻意保留，未统一。
 - Go 侧 baseUrl 规范化覆盖 common-case http/https URL；反例（非 ASCII IDN host）
   未逐一比对 Node WHATWG 解析器的 IDNA 行为。
-- 真实栈证据（`api-go-infrastructure-settings-smoke` 与普通 CI）见 PR 描述与
-  Actions 运行记录；本地未执行任何构建、测试或服务启动。
+## 12. 远端验证
+
+- **普通 CI**（`.github/workflows/ci.yml`）：lint、typecheck、web 覆盖率、vector
+  单测、API Vitest、OpenAPI 漂移、auth-matrix 漂移、SDL 漂移、api-go `go test`、
+  compose 镜像 pin、Build 全部 success。
+- **真实栈 smoke**（`.github/workflows/api-go-infrastructure-settings-smoke.yml`，
+  label `api-go-infrastructure-settings-smoke` 或 workflow_dispatch）：真实
+  MySQL+Mongo+Redis+真实 NestJS 构建与登录，阶段 0–5 全部通过——
+  - 阶段 0：四个真实 `/api/auth/login` 身份（平台管理员 P、org A/B 普通管理员、
+    无 `settings.manage` 用户）+ 两枚机器令牌；
+  - 阶段 1（legacy）：七条经 Go 代理与 Nest 直连逐条比对（状态码 + 完整 JSON
+    正文 + MySQL 行状态），四条写的平台门禁 403、三个 GET 的机器令牌 200、
+    无权限用户 `INSUFFICIENT_PERMISSIONS` 契约、非法 DTO 400 先于平台 403、
+    拒绝请求无配置/审计/缓存副作用；
+  - 阶段 2（go，Nest 仍在）：七条由 Go 独立接管并与 Nest 逐条对照；IS1–IS4
+    回归（token 四态含「省略 token 保留 DB 中的 B」并用 node 解密核对、
+    JSON null 清空语义 `JSON_TYPE=NULL` 且 `value IS NULL=0`、DB 权威合并基准、
+    Nest/Nest + Go/Go + Nest/Go 真实并发新增/删除/删 A 加 C）；两把全局锁由独立
+    MySQL 会话持有，Go 与 Nest 的写请求均等待 10 秒后 503 且无写入，释放后写入成功；
+  - 阶段 3：加密策略矩阵（无 system_security 行 / 字段非 boolean / 显式 false、
+    production 无 key、`configured=true` 无 key 与非法 key 的 400 原文）、
+    损坏的向量/存储缓存回退 DB、审计掩码（accessKeyId 前 4 位 + `***`、secret `***`）；
+  - 阶段 4：停止 NestJS 后七条仍由 Go 服务（阶段 0 的真实 JWT），机器令牌 GET 200 /
+    写 403，撤销 JWT 401 `Access token revoked`，
+    `vector-service/diagnostics` 与 `storage/test` 仍 502；
+  - 阶段 5：改回 legacy 后七条重新代理到 NestJS，无数据迁移。
+- 运行 URL、head SHA 与 conclusion 记录在本 PR 的描述与 Actions 页面；本文件不
+  复制它们，避免文档与最终 head 漂移。本地未执行任何构建、测试或服务启动。

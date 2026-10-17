@@ -496,7 +496,7 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
 修复 Nest 侧 IS1–IS4。行号以基线 `b89c35a85998512392e32566ccd96b2766f65441`
 （origin/main，普通 CI run 39051652549 success）为准。
 
-### IS1 全局存储和采集凭据写入缺平台管理员门禁 — 🔧 已修复，⏳ 待远端验证【P0】
+### IS1 全局存储和采集凭据写入缺平台管理员门禁 — ✅ 已修复【P0】
 
 - **用户影响**：跨租户存储与采集凭据劫持。九个 `storage_*` SystemSetting 与
   `news_source_runtime_secrets` 都是**全局单例**（无 orgId 维度），任何持有
@@ -526,9 +526,9 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
 - **远端回归断言**：org A/B 普通管理员与 `settings.manage` 机器令牌四条写均 403 且无
   配置/审计/缓存副作用；平台管理员 P 四条写 200；三个 GET 对有权限机器令牌 200；
   有平台角色但无 `settings.manage` 仍 403；非平台用户的非法 DTO 先 400、合法 DTO 才 403。
-- **状态**：🔧 Nest 与 Go 两侧已修复，⏳ 待远端 smoke 验证（`api-go-infrastructure-settings-smoke`）。
+- **状态**：✅ Nest 与 Go 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 IS1 断言组覆盖（见 PR #55）。
 
-### IS2 运行凭据的进程缓存与无锁整体写导致丢失更新 — 🔧 已修复，⏳ 待远端验证【P1】
+### IS2 运行凭据的进程缓存与无锁整体写导致丢失更新 — ✅ 已修复【P1】
 
 - **用户影响**：管理端读到旧值；并发 PUT 互相覆盖未触及条目（例如并入新增 C 时丢掉
   另一进程刚写入的 B）。
@@ -549,9 +549,9 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
   暖 A、DB 改 [A,B]、再 PUT 新增 C → 最终 [A,B,C]；Nest/Nest、Go/Go、Nest/Go 真实并发
   （新增不同条目 / 删除不同条目 / 删 A 加 C）集合正确；首次无记录并发创建；strict
   损坏记录仍按 400/409 拒绝且不被覆盖清空。
-- **状态**：🔧 两侧已修复，⏳ 待远端 smoke 验证。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 IS2/IS3 断言组覆盖（见 PR #55）。
 
-### IS3 向量 PUT 省略 token 时旧 Redis 值覆盖已轮换 token — 🔧 已修复，⏳ 待远端验证【P1】
+### IS3 向量 PUT 省略 token 时旧 Redis 值覆盖已轮换 token — ✅ 已修复【P1】
 
 - **用户影响**：已轮换的 vector 内部 token 被旧缓存值写回，向量调用携带失效 token。
 - **证据（b89c35a8）**：`vector-service-settings.service.ts:98`（更新基准取自
@@ -564,9 +564,9 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
 - **修复（Go）**：同一锁名；同样从 DB 权威读 base；四态语义逐字对齐。
 - **远端回归断言**：DB token=B、Redis 信封 token=A、PUT 省略 token 后解密核对仍为 B
   （Nest 与 Go 各一遍，只断言 hasToken 不算通过）；PUT 与 DELETE 均等待同一固定锁。
-- **状态**：🔧 两侧已修复，⏳ 待远端 smoke 验证。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 IS2/IS3 断言组覆盖（见 PR #55）。
 
-### IS4 存储清空字段直接向必填 JSON 列传 JS null — 🔧 已修复，⏳ 待远端验证【P1】
+### IS4 存储清空字段直接向必填 JSON 列传 JS null — ✅ 已修复【P1】
 
 - **用户影响**：`endpoint: null` / `forcePathStyle: null` / `presignedUrlTtlSeconds: null`
   的「清空」语义无法持久化（必填 Json 列拒绝 SQL NULL，写入报错或语义错乱）。
@@ -589,4 +589,4 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
   `presignedUrlTtlSeconds:null` 均 200；`JSON_TYPE(value)="NULL"` 且 `value IS NULL` 为 false；
   GET 按 env 回退（endpoint 依 env 决定有值或省略）；混合 PATCH 事务原子；空字符串
   endpoint 仍 DTO 400。
-- **状态**：🔧 两侧已修复，⏳ 待远端 smoke 验证（修复前复现证据由 smoke 的 negative 步骤留下）。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 JSON null 断言组覆盖（`JSON_TYPE=NULL` 且 `value IS NULL=0`）。
