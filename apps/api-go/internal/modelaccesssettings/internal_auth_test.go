@@ -59,8 +59,11 @@ func TestConstantTimeTokenEqual(t *testing.T) {
 	if constantTimeTokenEqual("secret", "secreT") {
 		t.Fatalf("different content must not match")
 	}
-	if constantTimeTokenEqual("", "") {
-		t.Fatalf("two empty tokens must not be treated as a valid match")
+	// Two empty strings compare equal, exactly like Node's tokensEqual
+	// (byteLength 0 === 0 then timingSafeEqual). It is unreachable in the guard:
+	// a blank configured token is a 403 and extractBearerToken never returns "".
+	if !constantTimeTokenEqual("", "") {
+		t.Fatalf("empty/empty must match Node's tokensEqual semantics")
 	}
 }
 

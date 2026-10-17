@@ -89,9 +89,10 @@ func TestModelServiceDTOOrderAndMessages(t *testing.T) {
 			name: "constraints run independently",
 			body: `{"enabled":false,"timeoutMs":50,"maxRetries":50}`,
 			want: []string{
+				// Only the violated constraints report: maxRetries=50 is a
+				// non-negative integer, so Min and IsInt pass.
 				"timeoutMs must not be less than 100",
 				"maxRetries must not be greater than 10",
-				"maxRetries must be an integer number",
 			},
 		},
 		{
@@ -179,21 +180,21 @@ func TestModelServiceDTOAcceptsBoundaries(t *testing.T) {
 
 // TestModelServiceDTOPresenceStates distinguishes absent, null and empty values.
 func TestModelServiceDTOPresenceStates(t *testing.T) {
-	absent, err := parseUpdateModelServiceSettingsRequest([]byte(`{"enabled":false,"timeoutMs":1,"maxRetries":2}`))
+	absent, err := parseUpdateModelServiceSettingsRequest([]byte(`{"enabled":false,"timeoutMs":100,"maxRetries":2}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if absent.InternalToken.Kind != optionalStringAbsent {
 		t.Fatalf("absent internalToken kind = %v", absent.InternalToken.Kind)
 	}
-	null, err := parseUpdateModelServiceSettingsRequest([]byte(`{"enabled":false,"internalToken":null,"timeoutMs":1,"maxRetries":2}`))
+	null, err := parseUpdateModelServiceSettingsRequest([]byte(`{"enabled":false,"internalToken":null,"timeoutMs":100,"maxRetries":2}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if null.InternalToken.Kind != optionalStringNull {
 		t.Fatalf("null internalToken kind = %v", null.InternalToken.Kind)
 	}
-	blank, err := parseUpdateModelServiceSettingsRequest([]byte(`{"enabled":false,"internalToken":"   ","timeoutMs":1,"maxRetries":2}`))
+	blank, err := parseUpdateModelServiceSettingsRequest([]byte(`{"enabled":false,"internalToken":"   ","timeoutMs":100,"maxRetries":2}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

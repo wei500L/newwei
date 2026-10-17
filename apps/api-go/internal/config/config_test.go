@@ -2033,7 +2033,15 @@ func TestModelAccessSettingsModeVocabulary(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			cfg, err := Load(modelAccessEnv(map[string]string{"API_GO_MODEL_ACCESS_SETTINGS_MODE": testCase.value}))
+			env := map[string]string{
+				"API_GO_MODEL_ACCESS_SETTINGS_MODE": testCase.value,
+				// go mode requires the auth stack, which is not what this test is
+				// about; supplying it keeps the mode the only variable.
+				"JWT_SECRET":   "secret",
+				"DATABASE_URL": "mysql://root:secret@127.0.0.1:3306/app",
+				"REDIS_HOST":   "127.0.0.1",
+			}
+			cfg, err := Load(modelAccessEnv(env))
 			if testCase.wantErr {
 				if err == nil {
 					t.Fatalf("expected an error")

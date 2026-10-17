@@ -94,7 +94,9 @@ func TestEffectiveConfigFallsBackToEnv(t *testing.T) {
 	})
 
 	empty := harness.service.resolveEffectiveConfig(modelServiceRecord{present: true})
-	if !empty.enabled || empty.baseURL != "http://env.example.com" || empty.internalToken != "env-token" || empty.timeoutMs != 15_000 || empty.maxRetries != 2 {
+	// The env value is only JS-trimmed, never URL-normalized, so the trailing
+	// slash survives exactly like `envDefaults.baseUrl?.trim()` in NestJS.
+	if !empty.enabled || empty.baseURL != "http://env.example.com/" || empty.internalToken != "env-token" || empty.timeoutMs != 15_000 || empty.maxRetries != 2 {
 		t.Fatalf("env defaults not applied: %+v", empty)
 	}
 
@@ -139,7 +141,7 @@ func TestEffectiveConfigFallsBackToEnv(t *testing.T) {
 	if public.Source != settingsSourceDB {
 		t.Fatalf("source = %q, want db", public.Source)
 	}
-	if !public.Enabled || public.BaseURL == nil || *public.BaseURL != "http://env.example.com" {
+	if !public.Enabled || public.BaseURL == nil || *public.BaseURL != "http://env.example.com/" {
 		t.Fatalf("array row must fall back to env: %+v", public)
 	}
 }
