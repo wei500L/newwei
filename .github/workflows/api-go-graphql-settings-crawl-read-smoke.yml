@@ -203,11 +203,49 @@ jobs:
                   return abs(float(left) - float(right)) < 0.0001
               return left == right
 
+          def first_diff(left, right, path="$"):
+              # 只报告第一个不同的 JSON 路径与两侧取值，避免整包截断掩盖真正的差异点。
+              if isinstance(left, dict) and isinstance(right, dict):
+                  for key in sorted(set(left) | set(right)):
+                      if key not in left:
+                          return path + "." + key, "<absent>", right[key]
+                      if key not in right:
+                          return path + "." + key, left[key], "<absent>"
+                      found = first_diff(left[key], right[key], path + "." + key)
+                      if found:
+                          return found
+                  return None
+              if isinstance(left, list) and isinstance(right, list):
+                  if len(left) != len(right):
+                      return path + ".length", len(left), len(right)
+                  for index, (item_left, item_right) in enumerate(zip(left, right)):
+                      found = first_diff(item_left, item_right, path + "[" + str(index) + "]")
+                      if found:
+                          return found
+                  return None
+              if left != right:
+                  return path, left, right
+              return None
+
+          def describe(value):
+              text = json.dumps(value)
+              return text if len(text) <= 300 else text[:300] + "..."
+
           def compare(label, query, variables, token, base_nest=NEST, base_go=GO):
+              # 先各打一次：设置类读路径首次读会回填 Redis 缓存（来源策略预设的
+              # 默认名单在冷路径不归一化、热路径归一化），同步状态又会比较缓存
+              # 与 DB 的时间戳，只有稳态响应才代表两侧契约。
+              gql(base_nest, token, query, variables)
+              gql(base_go, token, query, variables)
               ns, nd = gql(base_nest, token, query, variables)
               gs, gd = gql(base_go, token, query, variables)
               if ns != gs or not same(canon(scrub(nd)), canon(scrub(gd))):
-                  fail(label + " nest/gateway " + str(ns) + "/" + str(gs) + "\nNEST " + json.dumps(scrub(nd))[:2500] + "\nGO " + json.dumps(scrub(gd))[:2500])
+                  diff = first_diff(canon(scrub(nd)), canon(scrub(gd)))
+                  if diff:
+                      detail = "\nDIFF " + diff[0] + "\nNEST " + describe(diff[1]) + "\nGO   " + describe(diff[2])
+                  else:
+                      detail = "\nbody differs only by compared-value tolerance"
+                  fail(label + " nest/gateway " + str(ns) + "/" + str(gs) + detail)
               return scrub(gd)
 
           def first_error(doc):
@@ -383,6 +421,8 @@ jobs:
             ('wscrawltaskother000001', 'wsorgother00000000001', '{admin}', 'https://example.com/other-task', 'Other Org Task', 'completed', 1, CAST('[]' AS JSON), 0, '{t30}', '{t30}');
           INSERT INTO CrawlResult (id, taskId, orgId, sourceUrl, fetchedAt, markdownRef, contentHash, metadata, createdAt) VALUES
             ('wscrawlresult00000001', 'wscrawltask0000000001', '{org}', 'https://example.com/smoke-a', '{t60}', 'smoke-md-a', 'smoke-content-a', NULL, '{t60}');
+          INSERT INTO SystemSetting (`key`, value, isPublic, description, createdAt, updatedAt)
+          VALUES ('news_event_source_policy_preset:{org}', CAST('{{"authoritativeDomains":["reuters.com"],"authoritativeLabels":["reuters"],"blogDomains":["substack.com"],"blogLabels":["substack"]}}' AS JSON), 0, 'settings/crawl smoke preset', NOW(3), NOW(3));
           """)
 
           # 夹具自检：证明被测的两个「假 admin」场景真的成立，避免断言
