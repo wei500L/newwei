@@ -1397,6 +1397,62 @@ func TestNewsnowClusteringOpsServesGoAndFallsBackToLegacy(t *testing.T) {
 	}
 }
 
+// TestCrawlReadTelemetryRoutingAtGateway exercises the real gateway dispatch:
+// in go mode the seven migrated routes must be served natively while the crawl
+// write queue, metadata extraction and crawl4ai queue admin keep proxying to
+// NestJS. In legacy mode every route proxies through.
+func TestCrawlReadTelemetryRoutingAtGateway(t *testing.T) {
+	migrated := crawlReadTelemetryRoutes()
+	unmigrated := crawlReadTelemetryNestRoutes()
+
+	build := func(mode string) (*Gateway, *legacyStub) {
+		stub := newLegacyStub(t)
+		rules := DefaultRules(ModeShadow, "")
+		rules = WithCrawlReadTelemetry(rules, mode)
+		gateway, err := New(stub.server.URL, rules)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gateway.RegisterGoHandler(CrawlReadTelemetryKey, func(w http.ResponseWriter, _ *http.Request) {
+			httpx.WriteJSON(w, http.StatusOK, map[string]string{"via": "go"})
+		})
+		return gateway, stub
+	}
+
+	// Default/legacy: none of the seven routes reach Go.
+	legacyGateway, _ := build("")
+	for _, tc := range migrated {
+		rec := httptest.NewRecorder()
+		legacyGateway.ServeHTTP(rec, httptest.NewRequest(tc.method, "http://gateway"+tc.path, nil))
+		if strings.Contains(rec.Body.String(), `"via":"go"`) {
+			t.Fatalf("legacy %s %s must not reach the Go handler", tc.method, tc.path)
+		}
+	}
+
+	// go: exactly the seven migrated routes are served natively.
+	goGateway, stub := build(string(ModeGo))
+	for _, tc := range migrated {
+		rec := httptest.NewRecorder()
+		goGateway.ServeHTTP(rec, httptest.NewRequest(tc.method, "http://gateway"+tc.path, nil))
+		if !strings.Contains(rec.Body.String(), `"via":"go"`) {
+			t.Fatalf("go %s %s body = %s, want go handler", tc.method, tc.path, rec.Body.String())
+		}
+	}
+
+	// go: the write queue, metadata and crawl4ai queue paths still proxy.
+	before := len(stub.requests)
+	for _, tc := range unmigrated {
+		rec := httptest.NewRecorder()
+		goGateway.ServeHTTP(rec, httptest.NewRequest(tc.method, "http://gateway"+tc.path, nil))
+		if strings.Contains(rec.Body.String(), `"via":"go"`) {
+			t.Fatalf("go %s %s must keep proxying to NestJS", tc.method, tc.path)
+		}
+	}
+	if diff := len(stub.requests) - before; diff != len(unmigrated) {
+		t.Fatalf("upstream requests = %d, want %d", diff, len(unmigrated))
+	}
+}
+
 // runtimeSettingsGoRoutes are the eighteen paths and methods the runtime
 // settings switch takes over when API_GO_RUNTIME_SETTINGS_MODE=go.
 func runtimeSettingsGoRoutes() []struct{ method, path string } {

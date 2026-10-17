@@ -347,7 +347,7 @@ export class CrawlQualityTaskSnapshotService {
         this.aggregateExpansionRows(orgId, existingTaskIds),
         this.aggregatePreflightRows(orgId, existingTaskIds),
         this.aggregateDedupeRows(orgId, existingTaskIds),
-        this.aggregateMarkdownRows(existingTaskIds),
+        this.aggregateMarkdownRows(orgId, existingTaskIds),
       ]);
 
     const rows = buildCrawlQualityTaskSnapshotRows(
@@ -649,12 +649,17 @@ export class CrawlQualityTaskSnapshotService {
   }
 
   private async aggregateMarkdownRows(
+    orgId: string,
     taskIds: string[],
   ): Promise<CrawlQualityTaskMarkdownSummary[]> {
     return CrawlResultContentModel.aggregate<CrawlQualityTaskMarkdownSummary>([
       {
         $match: {
           taskId: { $in: taskIds },
+          // Cross-tenant isolation: the markdown aggregation must be scoped to
+          // the caller's organisation. Documents predating the orgId field stay
+          // readable, while documents owned by another orgId are excluded.
+          $or: [{ orgId }, { orgId: { $exists: false } }],
         },
       },
       {
