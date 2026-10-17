@@ -97,8 +97,10 @@ Go 执行器原先明确限制为 `ast.Query`。本批完成最小必要的 Muta
 
 1. `/graphql` 的 Mutation 一进 Go（`API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE=go`）就不再经过 NestJS 的 GraphQL 限流守卫；人类身份、撤销名单与权限仍由 Go 独立重推导（读批次建立的同一条链）。
 2. RBAC 写限流的 Redis 键沿用既有 Go 实现的 `rbac:write:<orgId>:<actorId>`。Nest 的 `RateLimiterService` 会在逻辑键前加 `rate:`，因此**这一项在既有 rbac REST 接管批次里就已经与 Nest 分桶**；本批不改动共享键，保持与 Go 侧 REST 写同桶、与任务给定的键一致。
-3. `updateOrg` 额外失效 `org:active:list:v1`（Nest 原本不失效）。
+3. `updateOrg` 额外失效 `org:active:list:v1`（Nest 原本不失效）。该 `DEL` 是 best-effort：缓存只存 org id，且 Nest 在这里根本不失效，因此不能让一次 Redis 抖动把**已经提交**的更新报成失败。`createOrg` / `setOrgActive` 的失效仍然沿用 Nest 的语义（Redis 异常会向上冒泡）。
 4. 名称 / 描述 / roleIds 的 trim 语义：复用路径沿用 `rbacapi` 既有的 `strings.TrimSpace`，本批新增路径用与 JS `trim()` 对齐的空白集合。两者只在 U+0085 / U+00A0 等极少数码点上不同。
+5. 审计 writer 在 `AuditLog` 与 `AuditLogOutbox` **都失败**时只记日志：Nest 此时会重抛，而 `createOrg` 的审计写在事务内，重抛会连组织创建一起回滚。Go 侧沿用既有 `rbacapi` 的 best-effort 契约，已提交的组织写入不回滚（这是有意的取舍，不是遗漏）。
+6. `invalidateProfileCache`（`updateMembershipRoles` / `setUserActive`）与既有 `invalidateUsersWithRole` 一样忽略 Redis 错误；Nest 会向上冒泡。
 
 ## 验证
 

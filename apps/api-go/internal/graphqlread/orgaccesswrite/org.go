@@ -234,9 +234,10 @@ func (s *service) updateOrg(ctx contract.Context, input updateOrgInput) (workspa
 		return workspace.OrgModel{}, err
 	}
 	writeAuditLogBestEffort(callCtx, s.db, orgID, ctx.Identity.UserID, "org", "update", metadata)
-	if err := s.invalidateActiveOrgs(callCtx); err != nil {
-		return workspace.OrgModel{}, err
-	}
+	// The active organization list only stores ids and NestJS does not
+	// invalidate it on update, so a Redis failure here must not turn the already
+	// committed update into a GraphQL error: the drop is best effort.
+	_ = s.invalidateActiveOrgs(callCtx)
 	return org, nil
 }
 
