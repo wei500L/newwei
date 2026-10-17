@@ -135,7 +135,7 @@ func (s *Service) ListAuditLogs(ctx context.Context, orgID string, filters audit
 	listArgs := append(append([]any{}, args...), normalizedPageSize, skip)
 	rows, err := s.db.QueryContext(ctx,
 		"SELECT id, orgId, actorId, resource, action, metadata, ipAddress, createdAt FROM AuditLog WHERE "+
-			where+" ORDER BY createdAt DESC LIMIT ? OFFSET ?", listArgs...)
+			where+" ORDER BY createdAt DESC, id DESC LIMIT ? OFFSET ?", listArgs...)
 	if err != nil {
 		return paginatedAuditLogs{}, err
 	}

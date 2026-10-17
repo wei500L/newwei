@@ -73,13 +73,26 @@
 
 - `GET /api/admin/quality/task-logs`（`getQualityTaskLogsOverview` 不迁移）与 `/api/admin/quality/*`。
 - `/api/observability/*`、`/api/metrics`。
-- 异常上报 `POST /api/internal/observability/exception-events`。
 - 上述 7 条路径的非 `GET` 方法与更长路径。
+- 异常上报 `POST /api/observability/exception-events/client` 与 `POST /api/internal/observability/exception-events` 由独立开关 `API_GO_EXCEPTION_INGEST_MODE` 接管（见 `docs/refactor/go-exception-ingest.md`），与本开关互不影响。
 
-## 8. 验收与未验证项（诚实登记）
+## 8. 查询算法优化（本批，Nest 与 Go 两侧同步）
+
+只改既有 7 条读取 GET 的查询算法，接管路径、权限、响应字段、过滤条件、分页上限与两组接口的参数校验差异均不变。
+
+1. **异常统计一次聚合**：`stats`（`logs/errors/summary` 与 `admin/errors/stats`）原先对同一过滤条件分别执行 `CountDocuments`、按 `kind` 的聚合、按 UTC 日期的聚合（三个查询）。现在改为一次聚合：最前面 `$match` 保持 `orgId`、`kind`、`operationName`、字面量 `messageContains`、`timestamp` 区间的现有条件；先按「UTC 日期（`$dateToString`，`timezone: "UTC"`，`%Y-%m-%d`）+ 原 `kind`」`$group` 出每天各类的数量；再在压缩后的分组结果上汇总 `total`（所有计数之和）、`byKind`（按 `kind` 合并）、`byDay`（按 UTC 日期合并）。响应结构仍是 `{total, byKind, byDay}`；`byKind` 排序 `count DESC, kind ASC`；`byDay` 排序 `date DESC`，最多 30 个有数据的日期。`total` 与 `byKind` 覆盖全部匹配记录，`byDay` 的 30 条上限不截断它们；未传 `start`/`end` 时不自行添加「最近 30 天」过滤；不把原始文档全部读进内存再统计。无数据时 `total=0`、两个列表均为 `[]`。
+2. **确定性的列表排序**：异常列表 `timestamp DESC, _id DESC`；任务日志列表 `createdAt DESC, _id DESC`；MySQL 审计列表 `createdAt DESC, id DESC`。分页仍是数据库 `skip`/`limit`（或 `LIMIT`/`OFFSET`），保持现有 page/offset 协议、`total` 与结果数量；不改为新游标 API，不增加分页 token，也不是并发写入期间的冻结分页快照。
+3. **Top Errors 展示最近样本**：分组键仍是 `queue + stage + errorName`；只统计 `failed`；`count` 覆盖该组全部匹配记录；最多 25 组。`sampleMessage` 从无排序的 `$first` 改为该组 `createdAt DESC, _id DESC` 的最近一条失败记录了；消息仍优先 `error.message`，否则 `message`；空值与脱敏规则不变。Mongo 7.0 使用有序分组聚合 `$top`（分组前 `$project` 保留 `createdAt` 与 `_id`），不把每组完整文档累计进数组再在应用层排序。错误组最终排序 `count DESC`，再按 `queue`、`stage`、`errorName` ASC；`byStage` 最多 50 组，`count DESC`，并列 `stage ASC`。质量面板复用同一任务日志聚合，自然获得相同优化，未另写一套质量面板专用算法。
+
+算法改动位置：
+
+- Nest：`apps/api/src/modules/observability/exception-events.service.ts`（`list` 排序、`stats` 单聚合）、`admin-logs.service.ts`（任务日志 items 排序、`byStage` 并列排序、`topErrors` 的 `$top` 与最终排序、审计 `orderBy`）。
+- Go：`apps/api-go/internal/adminlogs/mongo.go`（`queryExceptionEvents` 排序、items `$sort`、`stageAgg` 排序、`errorAgg` 的 `$top` 与最终排序、`exceptionStats` 单聚合）、`service.go`（审计 `ORDER BY createdAt DESC, id DESC`）。
+
+## 9. 验收与未验证项（诚实登记）
 
 - 普通 CI：`go test ./...`（编译 + 既有 Go 测试 + 本批新增的脱敏/敏感键/参数规则/items 映射单测与 7 条路由规则测试：开关缺省与 `legacy` 时这 7 条不在 Go 规则里；开关 `go` 时在且都是 Exact + 仅 GET；`/api/admin/logs/task/extra`、`/api/admin/logs/`、`/api/admin/logs`、`/api/admin/errors/extra`、`quality`、`observability`、`metrics`、异常上报 POST 与父路径都不在 Go 规则里）。`api-go-admin-logs-smoke.yml` **不进普通 CI**。
 - 真实栈 smoke：`api-go-admin-logs-smoke.yml`（`workflow_dispatch` 或 PR 加 label `api-go-admin-logs-smoke`，`SCHEDULE_ENABLED` 保持 false），只用隔离的 smoke 用户与 smoke 组织；向 Mongo 的 `tasklogs`、`exceptionevents` 与 MySQL 的 `AuditLog` 插入本组织与另一组织的测试数据（其中一条任务日志与一条异常事件的 `message`、`stack` 含 `Bearer secret.jwt.token` 与 `password=plain123`）。断言见下节与 workflow。
-- **未迁**：`admin/quality/*`（含 `quality/task-logs`）、`observability/*`、`metrics`、异常上报 POST。
+- **未迁**：`admin/quality/*`（含 `quality/task-logs`）、`observability/*`、`metrics`。异常上报 POST 由独立开关 `API_GO_EXCEPTION_INGEST_MODE` 接管（见 `docs/refactor/go-exception-ingest.md`）。
 - **未验证/未发生**：生产流量未切换；canary 保持关闭；不启用 shadow；未改前端；未改 Web 的 API 地址；SEC-01 的真实登录态不在本批验证。
 - 本机按任务约束未运行 `pnpm install`、`go test`、`go build`、`npm`、`docker`，未启动 API；验证全部在 GitHub Actions。
