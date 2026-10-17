@@ -139,6 +139,24 @@
 回滚只改 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE`。细节见
 `docs/refactor/go-graphql-settings-crawl-read.md`。
 
+## M9：模型接入设置与 OpenAI 密钥分发（Go）
+
+新增开关 `API_GO_MODEL_ACCESS_SETTINGS_MODE`（空串/`legacy`/`go`，默认
+`legacy`，非法值启动失败）。`go` 时接管 10 条精确路由：
+`GET/PUT/DELETE /api/system-settings/model-service`、
+`GET/PUT/POST/DELETE /api/system-settings/openai-keys`、
+`DELETE /api/system-settings/openai-keys/key/:fingerprint`、
+`GET /api/internal/litellm/openai-keys`、
+`POST /api/internal/litellm/openai-keys/applied`。六条管理写在 service 内要求
+平台管理员（GlobalRoleAssignment role=platform_admin），两条内部接口只用
+`LITELLM_CONFIG_INTERNAL_TOKEN`。同批修 3 个缺陷（Nest 与 Go 两侧）：
+全局模型/密钥写缺平台门禁（MA1）、密钥追加与按指纹删除用缓存读改写且无跨实例
+互斥（MA2）、模型 PUT 省略 token 时写回旧缓存 token（MA3）；两把全局 MySQL
+会话锁 `model-access:model-service:v1` / `model-access:openai-keys:v1`。
+`/api/internal/litellm/proxy-load-balancing` 与 `/api/system-settings/*` 其余
+路径仍回 NestJS。回滚只改 `API_GO_MODEL_ACCESS_SETTINGS_MODE`。细节见
+`docs/refactor/go-model-access-settings.md`。
+
 ## M8 终局：编排、队列、调度、realtime
 
 - crawl 编排/news-pipeline/scheduler 迁移；BullMQ 行为对齐清单（job name/重试/DLQ 时机/repeat）逐项验收
