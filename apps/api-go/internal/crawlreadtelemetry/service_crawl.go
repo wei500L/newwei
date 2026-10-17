@@ -468,7 +468,14 @@ WHERE t.id = ? AND t.orgId = ?`, taskID, orgID,
 
 // listCrawlResults loads the crawl results of one task, newest first.
 func (s *Service) listCrawlResults(ctx context.Context, taskID string, filters crawlTaskDetailFilters) ([]crawlResultRow, error) {
-	searchArg := nullableString(filters.ResultSearch)
+	// Prisma `contains` compiles to LIKE '%value%', so the wildcards are part
+	// of the bound parameter.
+	var searchPattern *string
+	if filters.ResultSearch != nil {
+		pattern := "%" + *filters.ResultSearch + "%"
+		searchPattern = &pattern
+	}
+	searchArg := nullableString(searchPattern)
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, sourceUrl, fetchedAt, metadata
 FROM CrawlResult
