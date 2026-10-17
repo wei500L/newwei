@@ -296,7 +296,6 @@ func (s *Service) buildSummary(ctx context.Context, request summaryRequest) (cla
 	lowConfidenceSources := make([]lowConfidenceSource, 0, len(lowSourceOrder))
 	for _, sourceID := range lowSourceOrder {
 		entry := lowBySource[sourceID]
-		info := sourceMap[sourceID]
 		item := lowConfidenceSource{
 			SourceID:           sourceID,
 			SourceName:         sourceID,
@@ -304,7 +303,7 @@ func (s *Service) buildSummary(ctx context.Context, request summaryRequest) (cla
 			LowConfidenceCount: entry.low,
 			LowConfidenceRate:  ratio4(float64(entry.low), float64(entry.total), 0),
 		}
-		if name, ok := info; ok {
+		if name, ok := sourceMap[sourceID]; ok {
 			item.SourceName = name.Name
 			item.SourceURL = name.URL
 		}
@@ -457,7 +456,7 @@ func sourceTypeKey(sourceType ClassifiedSourceType, categoryPath *string) string
 func splitSourceCategoryKey(key string) (ClassifiedSourceType, string) {
 	index := strings.Index(key, "|")
 	if index < 0 {
-		return ClassifiedSourceUnknown, sourcePolicyDomainNone
+		return ClassifiedSourceUnknown, categoryPrefixUnknown
 	}
 	sourceType := ClassifiedSourceType(key[:index])
 	if sourceType == "" {
@@ -465,7 +464,7 @@ func splitSourceCategoryKey(key string) (ClassifiedSourceType, string) {
 	}
 	prefix := key[index+1:]
 	if prefix == "" {
-		prefix = sourcePolicyDomainNone
+		prefix = categoryPrefixUnknown
 	}
 	return sourceType, prefix
 }

@@ -156,7 +156,7 @@ func (s *Service) sourcePolicyFor(ctx context.Context, orgID string) newsEventSo
 	}
 
 	if s.redis != nil {
-		if payload, err := json.Marshal(newsEventSourcePolicyPayload(policy)); err == nil {
+		if payload, err := json.Marshal(toNewsEventSourcePolicyPayload(policy)); err == nil {
 			s.store.writeCache(ctx, cacheKey, payload, sourcePolicyCacheSeconds)
 		}
 	}
@@ -171,8 +171,8 @@ type newsEventSourcePolicyPayload struct {
 	BlogLabels           []string `json:"blogLabels"`
 }
 
-// newsEventSourcePolicyPayload converts the internal policy for caching.
-func newsEventSourcePolicyPayload(policy newsEventSourcePolicy) newsEventSourcePolicyPayload {
+// toNewsEventSourcePolicyPayload converts the internal policy for caching.
+func toNewsEventSourcePolicyPayload(policy newsEventSourcePolicy) newsEventSourcePolicyPayload {
 	return newsEventSourcePolicyPayload{
 		AuthoritativeDomains: policy.AuthoritativeDomains,
 		AuthoritativeLabels:  policy.AuthoritativeLabels,
