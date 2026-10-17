@@ -489,7 +489,9 @@ func scoreCandidate(candidate newsEventCandidate, signal newsSignal, primaryTopi
 func applyLanguagePenalty(score float64, signalLanguage, eventLanguage *string, settings newsEventSettings) float64 {
 	signalValue := normalizeOptionalString(signalLanguage)
 	eventValue := normalizeOptionalString(eventLanguage)
-	if signalValue == "" || eventValue == "" || signalValue == eventValue {
+	// A missing language on either side, or an exact (case-sensitive) match,
+	// leaves the score untouched.
+	if signalValue == nil || eventValue == nil || *signalValue == *eventValue {
 		return score
 	}
 	penalty := clampRange(settings.CrossLanguagePenalty, 0, 1)
@@ -524,7 +526,7 @@ func applyCategoryGate(score float64, signal newsSignal, eventMetadataJSON []byt
 		return adjusted, true
 	}
 
-	signalPath := normalizeCategoryPath(signal.CategoryPath)
+	signalPath := normalizeCategoryPathOptional(signal.CategoryPath)
 	eventPath := normalizeCategoryPath(eventClassification.CategoryPath)
 	if signalPath == "" || eventPath == "" || signalPath == eventPath {
 		return score, true
@@ -583,7 +585,7 @@ func buildClassificationMetadata(signal newsSignal) []byte {
 		return nil
 	}
 	envelope := classificationEnvelope{Classification: classificationMetadata{LegacyCategory: legacyCategory}}
-	if categoryPath := normalizeCategoryPath(signal.CategoryPath); categoryPath != "" {
+	if categoryPath := normalizeCategoryPathOptional(signal.CategoryPath); categoryPath != "" {
 		envelope.Classification.CategoryPath = categoryPath
 	}
 	envelope.Classification.Confidence = clampConfidence(signal.CategoryConfidence)
@@ -629,14 +631,20 @@ func normalizeLegacyCategoryRaw(raw json.RawMessage) string {
 	return normalizeLegacyCategory(&value)
 }
 
-// normalizeCategoryPath mirrors normalizeCategoryPath: trim, lowercase,
-// backslashes to slashes, whitespace runs to "-", collapse slashes, then strip
-// leading and trailing slashes.
-func normalizeCategoryPath(value *string) string {
+// normalizeCategoryPathOptional applies normalizeCategoryPath to a nullable
+// value, mapping nil to the empty string.
+func normalizeCategoryPathOptional(value *string) string {
 	if value == nil {
 		return ""
 	}
-	normalized := strings.TrimSpace(*value)
+	return normalizeCategoryPath(*value)
+}
+
+// normalizeCategoryPath mirrors normalizeCategoryPath: trim, lowercase,
+// backslashes to slashes, whitespace runs to "-", collapse slashes, then strip
+// leading and trailing slashes.
+func normalizeCategoryPath(value string) string {
+	normalized := strings.TrimSpace(value)
 	normalized = strings.ToLower(normalized)
 	normalized = strings.ReplaceAll(normalized, "\\", "/")
 	normalized = collapseWhitespaceToDash(normalized)
@@ -654,7 +662,7 @@ func normalizeCategoryPathRaw(raw json.RawMessage) string {
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return ""
 	}
-	return normalizeCategoryPath(&value)
+	return normalizeCategoryPath(value)
 }
 
 // clampConfidence clamps a category confidence to 0..1, returning nil when the

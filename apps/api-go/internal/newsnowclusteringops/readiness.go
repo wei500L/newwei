@@ -110,9 +110,7 @@ func (s *Service) modelServiceReadiness(ctx context.Context) (ModelServiceReadin
 	if found && len(raw) > 0 {
 		var stored storedModelServiceSettings
 		if err := json.Unmarshal(raw, &stored); err == nil {
-			if parsed, ok := boolRaw(stored.Enabled, enabled); ok {
-				enabled = parsed
-			}
+			enabled = boolRaw(stored.Enabled, enabled)
 			if parsed := rawString(stored.BaseURL); parsed != "" {
 				baseURL = parsed
 			}
@@ -323,10 +321,7 @@ func normalizeLLMProfiles(raw []storedLLMGatewayProfile) []resolvedLLMProfile {
 		if name == "" {
 			name = id
 		}
-		enabled := true
-		if parsed, ok := boolRaw(profile.Enabled, true); ok {
-			enabled = parsed
-		}
+		enabled := boolRaw(profile.Enabled, true)
 		surface := rawString(profile.APISurface)
 		surface = normalizeLLMAPISurface(surface)
 		out = append(out, resolvedLLMProfile{
