@@ -533,24 +533,27 @@ profiles 锁内做任何治理文档的写操作。
 
 ## CI / smoke 证据
 
-> 本节占位符必须在真实 CI / smoke 跑完后回填；在此之前**不得**填入任何 URL、
-> run id 或结论。
-
 - 基线：`origin/main` 基线 SHA
   `2672b62e35ed7235604c65939bcd335c81bf7d27`；基线 CI run
-  `https://github.com/wei500L/newwei/actions/runs/39061326703`（规划时状态
-  success）。
-- 普通 CI（lint / typecheck / `api-go` 单测）：run URL `TODO(普通 CI run URL)`；
-  head `TODO(普通 CI head SHA)`；结论 `TODO(普通 CI conclusion)`。
+  `https://github.com/wei500L/newwei/actions/runs/39061326703`（success）。开工
+  后 PR #55（基础设施设置批次）先合入 `origin/main`，本分支以
+  `git merge origin/main` 同步并保留双方追加内容。
+- 普通 CI（lint / typecheck / `api-go` 单测 / 契约漂移等）：
+  `https://github.com/wei500L/newwei/actions/runs/39073721070`，head
+  `8d998ac5`，结论 **success**（`verify` 与 `api-go-user-settings-integration`
+  均通过）。
 - 新增真实栈 smoke `.github/workflows/api-go-llm-gateway-profiles-smoke.yml`
   （`name` 与 PR label 同为 `api-go-llm-gateway-profiles-smoke`；
   `workflow_dispatch` + `pull_request[labeled]`；mysql:8.4 + redis:7.2 +
   mongo:7.0 + 真实 NestJS + api-go 容器；`timeout-minutes: 60`；无
-  `continue-on-error`）：run URL `TODO(smoke run URL)`；head
-  `TODO(smoke head SHA)`；结论 `TODO(smoke conclusion)`。规划时该 workflow 尚不
-  存在，因此**无法引用任何既有 run**，只能留占位符。
-- 其他 smoke 复跑（如 `api-go-runtime-settings-smoke` / `api-go-entry-smoke`
-  等相邻批次回归）：`TODO(其他 smoke run URL / head / conclusion)`。
+  `continue-on-error`）：`https://github.com/wei500L/newwei/actions/runs/39073741508`，
+  head `8d998ac5`，结论 **success**。阶段 1a（legacy/unset 代理对照）、1b
+  （go 模式逐接口对照）、2（GP1 权限回归）、3（GP2 陈旧缓存 + 真实并发 + 锁
+  证据）、4a/4b/4c（GP3、密钥互通、策略分支、脱敏）、5（停 NestJS 后接管 +
+  未迁移路径 502）、6（单变量回滚无数据迁移）全部 success。
+- 未执行的既有 smoke 未在本批触发（只在本批最终 head 上跑本批 smoke 与普通
+  CI）；相邻批次回归（`api-go-runtime-settings-smoke` 等）本批**未复跑**，不
+  声称通过。
 
 本批工作区内已落地、可被普通 CI 执行的**纯单测**（不连 MySQL / Redis / NestJS）：
 
