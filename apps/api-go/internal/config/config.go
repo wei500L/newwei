@@ -431,6 +431,15 @@ type Config struct {
 	// go 才登记；知识图谱为 legacy 时，含这六个 root 的文档整包回 NestJS。
 	// 回滚只改这个变量。
 	GraphQLKnowledgeGraphMode string
+	// GraphQLWorkspaceReadMode only decides whether the twelve identity,
+	// organization, RBAC, dashboard, queue, sentiment and processed-item
+	// read roots are registered into the Go GraphQL executor. It defaults to
+	// legacy. The roots are registered only when both
+	// API_GO_GRAPHQL_READ_MODE and this switch are go; while this switch is
+	// legacy, any document that selects one of those roots falls back to
+	// NestJS as a whole. Rolling back only means setting this variable back
+	// to legacy.
+	GraphQLWorkspaceReadMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -893,6 +902,17 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.GraphQLKnowledgeGraphMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE must be one of legacy|go")
+	}
+	// The workspace switch accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy so an unset deployment keeps the
+	// NestJS path.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_WORKSPACE_READ_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLWorkspaceReadMode = "legacy"
+	case "go":
+		cfg.GraphQLWorkspaceReadMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_WORKSPACE_READ_MODE must be one of legacy|go")
 	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
