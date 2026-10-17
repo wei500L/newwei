@@ -2632,3 +2632,190 @@ func TestCrawlFrontierRunsModeGoRequiresCredentials(t *testing.T) {
 		t.Fatalf("mode = %s", cfg.CrawlFrontierRunsMode)
 	}
 }
+
+func TestDataRuntimeSettingsModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DataRuntimeSettingsMode != DataRuntimeSettingsModeLegacy {
+		t.Fatalf("mode = %s", cfg.DataRuntimeSettingsMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_DATA_RUNTIME_SETTINGS_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DataRuntimeSettingsMode != DataRuntimeSettingsModeLegacy {
+		t.Fatalf("mode = %s", cfg.DataRuntimeSettingsMode)
+	}
+}
+
+func TestDataRuntimeSettingsModeRejectsInvalid(t *testing.T) {
+	// shadow and canary are explicitly not accepted: this unit is legacy-or-go
+	// only, so a typo in the switch fails startup.
+	for _, invalid := range []string{"shadow", "canary", "Go"} {
+		_, err := Load(func(key string) string {
+			if key == "API_GO_DATA_RUNTIME_SETTINGS_MODE" {
+				return invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "API_GO_DATA_RUNTIME_SETTINGS_MODE must be one of legacy|go") {
+			t.Fatalf("invalid mode %q: %v", invalid, err)
+		}
+	}
+}
+
+func TestDataRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_DATA_RUNTIME_SETTINGS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_DATA_RUNTIME_SETTINGS_MODE=go") {
+		t.Fatalf("missing redis: %v", err)
+	}
+
+	// Mongo and the encryption key are not startup requirements of this unit: a
+	// missing or invalid key is handled per read and write by the documented
+	// fallback and 400 contracts.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_DATA_RUNTIME_SETTINGS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("go mode must not require Mongo or an encryption key: %v", err)
+	}
+	if cfg.DataRuntimeSettingsMode != DataRuntimeSettingsModeGo {
+		t.Fatalf("mode = %s", cfg.DataRuntimeSettingsMode)
+	}
+}
+
+func TestDataRuntimeSettingsEnvDefaults(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := cfg.DataRuntimeSettings
+	if !env.RealtimeEnabled || env.RealtimeRequestTimeoutMs != 12_000 || env.RealtimeMaxRetries != 2 {
+		t.Fatalf("realtime scalars = %+v", env)
+	}
+	if !env.RealtimeOpenskyEnabled || env.RealtimeOpenskyIntervalSec != 900 ||
+		env.RealtimeOpenskyDailyCreditBudget != 4000 || env.RealtimeOpenskyDayIntervalSec != 600 ||
+		env.RealtimeOpenskyNightIntervalSec != 1800 || env.RealtimeOpenskyDayStartHourHKT != 8 ||
+		env.RealtimeOpenskyNightStartHourHKT != 22 || env.RealtimeOpenskyWarningRemaining != 20 ||
+		env.RealtimeOpenskyCriticalRemaining != 10 {
+		t.Fatalf("opensky defaults = %+v", env)
+	}
+	if env.RealtimeOpenskyBaseURL != "https://opensky-network.org/api" {
+		t.Fatalf("opensky base url = %q", env.RealtimeOpenskyBaseURL)
+	}
+	if env.RealtimeAisIntervalSec != 600 || env.RealtimeUnrestIntervalSec != 600 ||
+		env.RealtimeOutagesIntervalSec != 600 || env.RealtimeKeywordSpikeIntervalSec != 600 ||
+		env.RealtimePizzintIntervalSec != 600 || env.RealtimeGdeltTensionIntervalSec != 600 ||
+		env.RealtimePolymarketIntervalSec != 600 {
+		t.Fatalf("interval defaults = %+v", env)
+	}
+	if env.RealtimeKeywordSpikeMinCount != 5 || env.RealtimeKeywordSpikeMultiplier != 3 ||
+		env.RealtimePredictionShiftThreshold != 5 || env.RealtimePredictionNewsThreshold != 3 {
+		t.Fatalf("threshold defaults = %+v", env)
+	}
+	if env.RealtimeOpenskyClientID != "" || env.RealtimeOpenskyClientSecret != "" ||
+		env.RealtimeAisBaseURL != "" || env.RealtimeAisSharedSecret != "" ||
+		env.RealtimeAcledOauthUsername != "" || env.RealtimeAcledOauthPassword != "" ||
+		env.RealtimeAcledOauthClientID != "" || env.RealtimeCloudflareAPIToken != "" ||
+		env.RealtimeWingbitsAPIKey != "" || env.RealtimePolymarketProxyURL != "" {
+		t.Fatalf("optional strings must default to empty: %+v", env)
+	}
+	if env.NominatimUserAgentDefault != "modular-api" || env.NominatimEmailDefault != "" {
+		t.Fatalf("nominatim defaults = %+v", env)
+	}
+}
+
+func TestDataRuntimeSettingsEnvPassThrough(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "REALTIME_SIGNALS_ENABLED":
+			return " off "
+		case "REALTIME_SIGNALS_REQUEST_TIMEOUT_MS":
+			return "9000"
+		case "REALTIME_SIGNALS_MAX_RETRIES":
+			return "0"
+		// The OpenSky schema defaults win, so the ADSB aliases never apply.
+		case "REALTIME_SIGNALS_OPENSKY_ENABLED":
+			return ""
+		case "REALTIME_SIGNALS_ADSB_ENABLED":
+			return "false"
+		case "REALTIME_SIGNALS_ADSB_INTERVAL_SEC":
+			return "45"
+		case "REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC":
+			return "120"
+		case "REALTIME_SIGNALS_AIS_BASE_URL":
+			return ""
+		case "REALTIME_SIGNALS_RELAY_BASE_URL":
+			return "https://relay.example"
+		case "REALTIME_SIGNALS_AIS_SHARED_SECRET":
+			return ""
+		case "AIS_RELAY_SHARED_SECRET":
+			return "relay-secret"
+		case "REALTIME_SIGNALS_KEYWORD_SPIKE_MULTIPLIER":
+			return "2.5"
+		case "REALTIME_SIGNALS_PREDICTION_SHIFT_THRESHOLD":
+			return "4.5"
+		case "REALTIME_SIGNALS_POLYMARKET_PROXY_URL":
+			return "https://proxy.example"
+		case "GEO_NOMINATIM_USER_AGENT":
+			return "custom-agent"
+		case "GEO_NOMINATIM_EMAIL":
+			return "geocoder@example.com"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := cfg.DataRuntimeSettings
+	if env.RealtimeEnabled || env.RealtimeRequestTimeoutMs != 9000 || env.RealtimeMaxRetries != 0 {
+		t.Fatalf("realtime scalars = %+v", env)
+	}
+	// ADSB_ENABLED=false and ADSB_INTERVAL_SEC=45 are unreachable because the
+	// OpenSky names keep their schema defaults.
+	if !env.RealtimeOpenskyEnabled || env.RealtimeOpenskyIntervalSec != 120 {
+		t.Fatalf("opensky precedence = %+v", env)
+	}
+	if env.RealtimeAisBaseURL != "https://relay.example" || env.RealtimeAisSharedSecret != "relay-secret" {
+		t.Fatalf("ais fallbacks = %+v", env)
+	}
+	if env.RealtimeKeywordSpikeMultiplier != 2.5 || env.RealtimePredictionShiftThreshold != 4.5 {
+		t.Fatalf("float thresholds = %+v", env)
+	}
+	if env.RealtimePolymarketProxyURL != "https://proxy.example" {
+		t.Fatalf("proxy url = %q", env.RealtimePolymarketProxyURL)
+	}
+	if env.NominatimUserAgentDefault != "custom-agent" || env.NominatimEmailDefault != "geocoder@example.com" {
+		t.Fatalf("nominatim = %+v", env)
+	}
+}
