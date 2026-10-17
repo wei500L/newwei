@@ -1515,6 +1515,70 @@ func TestGraphQLKgImpactModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *test
 	}
 }
 
+func TestGraphQLWorkspaceReadModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GraphQLWorkspaceReadMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+		t.Fatalf("workspace=%q read=%q", cfg.GraphQLWorkspaceReadMode, cfg.GraphQLReadMode)
+	}
+}
+
+func TestGraphQLWorkspaceReadModeAcceptsExplicitLegacyAndGo(t *testing.T) {
+	legacy, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.GraphQLWorkspaceReadMode != "legacy" {
+		t.Fatalf("explicit legacy = %q", legacy.GraphQLWorkspaceReadMode)
+	}
+	goMode, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
+			return "go"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if goMode.GraphQLWorkspaceReadMode != "go" {
+		t.Fatalf("go = %q", goMode.GraphQLWorkspaceReadMode)
+	}
+}
+
+func TestGraphQLWorkspaceReadModeRejectsInvalid(t *testing.T) {
+	_, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
+			return "shadow"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_WORKSPACE_READ_MODE must be one of legacy|go") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestGraphQLWorkspaceReadModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
+			return "go"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GraphQLReadMode != "legacy" || cfg.GraphQLWorkspaceReadMode != "go" {
+		t.Fatalf("read=%q workspace=%q", cfg.GraphQLReadMode, cfg.GraphQLWorkspaceReadMode)
+	}
+}
+
 func TestRuntimeSettingsModeDefaultsToLegacy(t *testing.T) {
 	cfg, err := Load(func(string) string { return "" })
 	if err != nil {
