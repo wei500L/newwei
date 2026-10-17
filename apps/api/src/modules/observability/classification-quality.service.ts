@@ -23,6 +23,7 @@ import {
 } from "@nestjs/common";
 import { NotificationType } from "@prisma/client";
 import { Queue } from "bullmq";
+import { Types } from "mongoose";
 
 import { BULLMQ_FAILED_JOB_RETENTION } from "../../common/bullmq-retention";
 import { writeAuditLogBestEffort } from "../../modules/audit/audit-log.writer";
@@ -425,6 +426,26 @@ export class ClassificationQualityService {
       throw new BadRequestException("reviewId is required");
     }
 
+    // A corrected verdict must carry a usable category path. The controller only
+    // rejects a falsy path, so "///" used to reach this point and normalize into
+    // null; normalizing first keeps a corrected review from being stored without
+    // a correction.
+    const normalizedCorrectedPath =
+      input.status === "corrected"
+        ? this.normalizePath(input.correctedCategoryPath)
+        : null;
+    if (input.status === "corrected" && !normalizedCorrectedPath) {
+      throw new BadRequestException(
+        "correctedCategoryPath is required when status=corrected",
+      );
+    }
+
+    // Reject a non-ObjectId before querying Mongo: Mongoose would otherwise
+    // raise an uncaught CastError and answer 500 instead of 404.
+    if (!Types.ObjectId.isValid(reviewId)) {
+      throw new NotFoundException("Review item not found");
+    }
+
     const row = await ClassificationReviewModel.findOne({
       _id: reviewId,
       orgId: input.orgId,
@@ -440,10 +461,7 @@ export class ClassificationQualityService {
       {
         $set: {
           status: input.status,
-          correctedCategoryPath:
-            input.status === "corrected"
-              ? this.normalizePath(input.correctedCategoryPath)
-              : null,
+          correctedCategoryPath: normalizedCorrectedPath,
           note: this.normalizeText(input.note, 500),
           quickTags: this.normalizeQuickTags(input.quickTags),
           reviewerId: input.actorId,
@@ -457,7 +475,7 @@ export class ClassificationQualityService {
       {
         data: {
           orgId: input.orgId,
-          actorId: input.actorId,
+          actorId: this.resolveAuditActorId(input.actorId),
           resource: "classification_review",
           action: "classification_review_decision",
           metadata: {
@@ -499,22 +517,40 @@ export class ClassificationQualityService {
       ),
     ).slice(0, 500);
 
+    // Same corrected-path contract as the single decision: a path that
+    // normalizes to nothing is rejected instead of being stored as null.
+    const normalizedCorrectedPath =
+      input.status === "corrected"
+        ? this.normalizePath(input.correctedCategoryPath)
+        : null;
+    if (input.status === "corrected" && !normalizedCorrectedPath) {
+      throw new BadRequestException(
+        "correctedCategoryPath is required when status=corrected",
+      );
+    }
+
     if (reviewIds.length === 0) {
+      return { matched: 0, modified: 0 };
+    }
+
+    // Drop malformed ids: a single non-ObjectId inside the $in filter would make
+    // Mongoose throw a CastError for the whole batch.
+    const validReviewIds = reviewIds.filter((reviewId) =>
+      Types.ObjectId.isValid(reviewId),
+    );
+    if (validReviewIds.length === 0) {
       return { matched: 0, modified: 0 };
     }
 
     const result = await ClassificationReviewModel.updateMany(
       {
         orgId: input.orgId,
-        _id: { $in: reviewIds },
+        _id: { $in: validReviewIds },
       },
       {
         $set: {
           status: input.status,
-          correctedCategoryPath:
-            input.status === "corrected"
-              ? this.normalizePath(input.correctedCategoryPath)
-              : null,
+          correctedCategoryPath: normalizedCorrectedPath,
           note: this.normalizeText(input.note, 500),
           quickTags: this.normalizeQuickTags(input.quickTags),
           reviewerId: input.actorId,
@@ -528,7 +564,7 @@ export class ClassificationQualityService {
       {
         data: {
           orgId: input.orgId,
-          actorId: input.actorId,
+          actorId: this.resolveAuditActorId(input.actorId),
           resource: "classification_review",
           action: "classification_review_batch_decision",
           metadata: {
@@ -754,6 +790,11 @@ export class ClassificationQualityService {
     if (!sampleId) {
       throw new BadRequestException("sampleId is required");
     }
+    // Guard the ObjectId before the query so a malformed sample id is a 404
+    // rather than an uncaught Mongoose CastError (500).
+    if (!Types.ObjectId.isValid(sampleId)) {
+      throw new NotFoundException("Sample not found");
+    }
     const sample = await ClassificationSampleModel.findOne({
       _id: sampleId,
       orgId: input.orgId,
@@ -937,6 +978,11 @@ export class ClassificationQualityService {
   }
 
   async getReportJob(input: { orgId: string; jobId: string }) {
+    // A malformed jobId is reported as "no report" (HTTP 200 with null) instead
+    // of letting Mongoose raise a CastError that would surface as a 500.
+    if (!Types.ObjectId.isValid(input.jobId)) {
+      return null;
+    }
     const job = await ClassificationReportJobModel.findOne({
       _id: input.jobId,
       orgId: input.orgId,
@@ -1766,6 +1812,16 @@ export class ClassificationQualityService {
     }
   }
 
+  /**
+   * Resolves the actor id written into the MySQL AuditLog for a review decision.
+   * Machine tokens authenticate as "machine:<tokenId>", which is a valid Mongo
+   * reviewerId but not a User row, so the audit foreign key receives null and the
+   * decision is still recorded as an automated actor.
+   */
+  private resolveAuditActorId(actorId: string): string | null {
+    return actorId.startsWith("machine:") ? null : actorId;
+  }
+
   private async getAlertRecipientUserIds(orgId: string) {
     const cacheKey = `${ALERT_RECIPIENTS_CACHE_PREFIX}${orgId}`;
     try {
@@ -1783,6 +1839,10 @@ export class ClassificationQualityService {
     const rows = await this.prisma.membership.findMany({
       where: {
         orgId,
+        // Both the user and the membership must be active: without this filter a
+        // member deactivated inside the organization still received threshold
+        // alerts.
+        isActive: true,
         user: { isActive: true },
         OR: [
           {
