@@ -32,13 +32,13 @@ type archiveVerticalDefinition struct {
 // archive-taxonomy.ts. Only the scoring-relevant fields are ported.
 var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 	ArchiveVerticalEastSea: {
-		Countries: {
+		Countries: []string{
 			"JPN",
 			"KOR",
 			"PRK",
 			"TWN",
 		},
-		StrongKeywords: {
+		StrongKeywords: []string{
 			"东海",
 			"朝鲜半岛",
 			"日本海",
@@ -56,7 +56,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"naval patrol",
 			"regional deterrence",
 		},
-		WeakKeywords: {
+		WeakKeywords: []string{
 			"日本",
 			"韩国",
 			"朝鲜",
@@ -68,7 +68,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"air defense",
 			"alliance exercise",
 		},
-		ExcludedKeywords: {
+		ExcludedKeywords: []string{
 			"南海",
 			"黄岩岛",
 			"仁爱礁",
@@ -77,7 +77,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"spratly",
 			"scarborough",
 		},
-		ConflictKeywords: {
+		ConflictKeywords: []string{
 			"黄岩岛",
 			"仁爱礁",
 			"spratly",
@@ -88,7 +88,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 		},
 	},
 	ArchiveVerticalSouthSea: {
-		Countries: {
+		Countries: []string{
 			"BRN",
 			"IDN",
 			"KHM",
@@ -100,7 +100,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"THA",
 			"VNM",
 		},
-		StrongKeywords: {
+		StrongKeywords: []string{
 			"南海",
 			"黄岩岛",
 			"仁爱礁",
@@ -117,7 +117,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"maritime claims",
 			"freedom of navigation",
 		},
-		WeakKeywords: {
+		WeakKeywords: []string{
 			"菲律宾",
 			"越南",
 			"马来西亚",
@@ -129,7 +129,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"shipping lane",
 			"maritime confrontation",
 		},
-		ExcludedKeywords: {
+		ExcludedKeywords: []string{
 			"东海",
 			"朝鲜半岛",
 			"台海",
@@ -137,7 +137,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"阿富汗",
 			"korean peninsula",
 		},
-		ConflictKeywords: {
+		ConflictKeywords: []string{
 			"东海",
 			"钓鱼岛",
 			"台海",
@@ -147,7 +147,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 		},
 	},
 	ArchiveVerticalWestFront: {
-		Countries: {
+		Countries: []string{
 			"AFG",
 			"IND",
 			"IRN",
@@ -158,7 +158,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"TKM",
 			"UZB",
 		},
-		StrongKeywords: {
+		StrongKeywords: []string{
 			"西面",
 			"阿富汗",
 			"中亚",
@@ -175,7 +175,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"border clash",
 			"militant activity",
 		},
-		WeakKeywords: {
+		WeakKeywords: []string{
 			"巴基斯坦",
 			"塔吉克",
 			"乌兹别克",
@@ -186,7 +186,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"cross-border",
 			"counterterrorism",
 		},
-		ExcludedKeywords: {
+		ExcludedKeywords: []string{
 			"南海",
 			"东海",
 			"海警",
@@ -194,7 +194,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"制裁",
 			"国内政策",
 		},
-		ConflictKeywords: {
+		ConflictKeywords: []string{
 			"海警",
 			"南沙",
 			"东海",
@@ -204,8 +204,8 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 		},
 	},
 	ArchiveVerticalForeignAffairs: {
-		Countries: nil,
-		StrongKeywords: {
+		Countries: []string{},
+		StrongKeywords: []string{
 			"外交",
 			"制裁",
 			"反制",
@@ -228,7 +228,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"foreign ministry",
 			"export control",
 		},
-		WeakKeywords: {
+		WeakKeywords: []string{
 			"国际关系",
 			"国际合作",
 			"伙伴关系",
@@ -240,7 +240,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"foreign affairs",
 			"united nations",
 		},
-		ExcludedKeywords: {
+		ExcludedKeywords: []string{
 			"国内政策",
 			"地方政府",
 			"基建",
@@ -252,7 +252,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"财政预算",
 			"监管整治",
 		},
-		ConflictKeywords: {
+		ConflictKeywords: []string{
 			"地方政府",
 			"五年规划",
 			"能源保供",
@@ -263,8 +263,8 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 		},
 	},
 	ArchiveVerticalDomesticAffairs: {
-		Countries: nil,
-		StrongKeywords: {
+		Countries: []string{},
+		StrongKeywords: []string{
 			"内务",
 			"国内",
 			"政策调整",
@@ -286,7 +286,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"social governance",
 			"infrastructure",
 		},
-		WeakKeywords: {
+		WeakKeywords: []string{
 			"国务院",
 			"发改委",
 			"央行",
@@ -298,7 +298,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"regulation",
 			"fiscal stimulus",
 		},
-		ExcludedKeywords: {
+		ExcludedKeywords: []string{
 			"外交",
 			"制裁",
 			"使馆",
@@ -308,7 +308,7 @@ var archiveVerticalTaxonomy = map[ArchiveVertical]archiveVerticalDefinition{
 			"海警对峙",
 			"外交照会",
 		},
-		ConflictKeywords: {
+		ConflictKeywords: []string{
 			"制裁",
 			"峰会",
 			"使馆",
@@ -830,15 +830,15 @@ var newsnowSourceRegistry = []newsnowRegistryEntry{
 			Type:   "hottest",
 			Column: "china",
 			Home:   "https://weibo.com",
-			RuntimeSecrets: &newsnowRuntimeSecrets{Description: "Required runtime cookie for Weibo hot search fetching.", RequiredAnyOfKeys: {
+			RuntimeSecrets: &newsnowRuntimeSecrets{Description: "Required runtime cookie for Weibo hot search fetching.", RequiredAnyOfKeys: []string{
 				"cookie",
 				"weibo.cookie",
 				"weibo_cookie",
-			}, SuggestedKeys: {
+			}, SuggestedKeys: []string{
 				"cookie",
 				"weibo.cookie",
 				"weibo_cookie",
-			}, EnvFallbackKeys: {
+			}, EnvFallbackKeys: []string{
 				"WEIBO_COOKIE",
 			}},
 			Color:    "red",
@@ -1538,17 +1538,17 @@ var newsnowSourceRegistry = []newsnowRegistryEntry{
 			Type:   "hottest",
 			Column: "tech",
 			Home:   "https://www.producthunt.com/",
-			RuntimeSecrets: &newsnowRuntimeSecrets{Description: "Product Hunt API token for GraphQL hot posts fetching.", RequiredAnyOfKeys: {
+			RuntimeSecrets: &newsnowRuntimeSecrets{Description: "Product Hunt API token for GraphQL hot posts fetching.", RequiredAnyOfKeys: []string{
 				"token",
 				"api_token",
 				"producthunt.api_token",
 				"producthunt.token",
-			}, SuggestedKeys: {
+			}, SuggestedKeys: []string{
 				"token",
 				"api_token",
 				"producthunt.api_token",
 				"producthunt.token",
-			}, EnvFallbackKeys: {
+			}, EnvFallbackKeys: []string{
 				"PRODUCTHUNT_API_TOKEN",
 			}},
 			Color:    "red",
@@ -2126,7 +2126,7 @@ var newsnowColumnRegistry = []newsnowColumnDefinition{
 	{
 		ID:   "china",
 		Name: "国内",
-		Sources: {
+		Sources: []string{
 			"zhihu",
 			"weibo",
 			"douyin",
@@ -2153,7 +2153,7 @@ var newsnowColumnRegistry = []newsnowColumnDefinition{
 	{
 		ID:   "world",
 		Name: "国际",
-		Sources: {
+		Sources: []string{
 			"zaobao",
 			"sputniknewscn",
 			"cankaoxiaoxi",
@@ -2164,7 +2164,7 @@ var newsnowColumnRegistry = []newsnowColumnDefinition{
 	{
 		ID:   "tech",
 		Name: "科技",
-		Sources: {
+		Sources: []string{
 			"v2ex-share",
 			"coolapk",
 			"36kr-quick",
@@ -2182,7 +2182,7 @@ var newsnowColumnRegistry = []newsnowColumnDefinition{
 	{
 		ID:   "finance",
 		Name: "财经",
-		Sources: {
+		Sources: []string{
 			"mktnews-flash",
 			"wallstreetcn-quick",
 			"wallstreetcn-news",
@@ -2200,12 +2200,12 @@ var newsnowColumnRegistry = []newsnowColumnDefinition{
 	{
 		ID:      "focus",
 		Name:    "关注",
-		Sources: nil,
+		Sources: []string{},
 	},
 	{
 		ID:   "realtime",
 		Name: "实时",
-		Sources: {
+		Sources: []string{
 			"zaobao",
 			"wallstreetcn-quick",
 			"36kr-quick",
@@ -2220,7 +2220,7 @@ var newsnowColumnRegistry = []newsnowColumnDefinition{
 	{
 		ID:   "hottest",
 		Name: "最热",
-		Sources: {
+		Sources: []string{
 			"zhihu",
 			"weibo",
 			"coolapk",
