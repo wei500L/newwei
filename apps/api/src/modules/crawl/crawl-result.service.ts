@@ -751,7 +751,21 @@ export class CrawlResultService {
 
     const ids = results.map((result) => result.id);
     const mediaAssetService = this.resolveCrawlMediaAssetService();
-    const docs = await CrawlResultContentModel.find({ resultId: { $in: ids } })
+    // Cross-tenant isolation: when an access scope is present, only read
+    // content documents that explicitly belong to the caller's organisation.
+    // Documents predating the orgId field (orgId missing) stay readable, while
+    // documents owned by another orgId are excluded.
+    const docs = await CrawlResultContentModel.find({
+      resultId: { $in: ids },
+      ...(accessScope?.orgId
+        ? {
+            $or: [
+              { orgId: accessScope.orgId },
+              { orgId: { $exists: false } }
+            ]
+          }
+        : {})
+    })
       .lean()
       .exec();
     const docMap = new Map(docs.map((doc) => [doc.resultId as string, doc]));
