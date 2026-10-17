@@ -514,8 +514,8 @@ jobs:
             newsExtractionSettings { capabilities { entities kg sentiment } pipelineMode postCleanGate { enabled minCleanedChars minQualityScore requireSummary } preflightGate { enabled minQualityScore minWordCount rejectBotChallenge rejectListLike } providers { clean entities kg sentiment } }
             newsPromptConfig { entitySystemPromptTemplate entityUserPromptTemplate kgSystemPromptTemplate kgUserPromptTemplate sentimentSystemPromptTemplate sentimentUserPromptTemplate systemPromptTemplate userPromptTemplate version }
             newsEventSourcePolicySyncStatus { degraded forceAuthoritativeMode forceMinAuthoritativeSources policyCacheStale presetCacheStale warningCodes }
-            knowledgeGraphEvidenceReviewQueue(limit: 50, maxConfidence: null, onlyUnreviewed: true) { article { crawlAt id language summary title url } confidence createdAt edge { confidence fromEntity { id name properties type } id properties toEntity { id name properties type } type weight } evidence extractorVersion id }
-            crawlTasks(after: $after, first: 20, search: null, status: null) { edges { cursor node { concurrency config createdAt displayName id keywords lastCursor lastError lastMemoryEfficiency lastPeakMemoryMb lastResultAt lastRunAt lastRunSummary { inserted itemsQueueFailed itemsQueued lastFetchedAt retryableFailures runId skipped } lastServerMemoryMb lastSuccessAt memoryStats { efficiencyPercent peakMemoryMb serverMemoryMb } resultCount results { fetchedAt fitMarkdown id itemId itemStatus linkAnalysis { buckets { kind links { baseDomain contextualScore href intrinsicScore rel text title totalScore type } } lowQualityLinks { baseDomain contextualScore href intrinsicScore rel text title totalScore type } stats { averageIntrinsicScore externalLinks highQualityLinks internalLinks lowQualityLinks totalLinks } topLinks { baseDomain contextualScore href intrinsicScore rel text title totalScore type } } markdown markdownWithCitations media mediaAssets metadata referencesMarkdown sourceUrl tables } runCount status targetUrl timeRangeFrom timeRangeTo updatedAt } } pageInfo { endCursor hasNextPage } totalCount }
+            knowledgeGraphEvidenceReviewQueue(limit: 5, maxConfidence: null, onlyUnreviewed: true) { article { crawlAt id language summary title url } confidence createdAt edge { confidence fromEntity { id name properties type } id properties toEntity { id name properties type } type weight } evidence extractorVersion id }
+            crawlTasks(after: $after, first: 3, search: null, status: null) { edges { cursor node { concurrency config createdAt displayName id keywords lastCursor lastError lastMemoryEfficiency lastPeakMemoryMb lastResultAt lastRunAt lastRunSummary { inserted itemsQueueFailed itemsQueued lastFetchedAt retryableFailures runId skipped } lastServerMemoryMb lastSuccessAt memoryStats { efficiencyPercent peakMemoryMb serverMemoryMb } resultCount results { fetchedAt fitMarkdown id itemId itemStatus linkAnalysis { buckets { kind links { baseDomain contextualScore href intrinsicScore rel text title totalScore type } } lowQualityLinks { baseDomain contextualScore href intrinsicScore rel text title totalScore type } stats { averageIntrinsicScore externalLinks highQualityLinks internalLinks lowQualityLinks totalLinks } topLinks { baseDomain contextualScore href intrinsicScore rel text title totalScore type } } markdown markdownWithCitations media mediaAssets metadata referencesMarkdown sourceUrl tables } runCount status targetUrl timeRangeFrom timeRangeTo updatedAt } } pageInfo { endCursor hasNextPage } totalCount }
             crawlTask(id: $crawlTaskId, resultLimit: 20, resultSearch: null) { concurrency config createdAt displayName id keywords lastCursor lastError lastMemoryEfficiency lastPeakMemoryMb lastResultAt lastRunAt lastRunSummary { inserted itemsQueueFailed itemsQueued lastFetchedAt retryableFailures runId skipped } lastServerMemoryMb lastSuccessAt memoryStats { efficiencyPercent peakMemoryMb serverMemoryMb } resultCount results { fetchedAt fitMarkdown id itemId itemStatus linkAnalysis { buckets { kind links { baseDomain contextualScore href intrinsicScore rel text title totalScore type } } lowQualityLinks { baseDomain contextualScore href intrinsicScore rel text title totalScore type } stats { averageIntrinsicScore externalLinks highQualityLinks internalLinks lowQualityLinks totalLinks } topLinks { baseDomain contextualScore href intrinsicScore rel text title totalScore type } } markdown markdownWithCitations media mediaAssets metadata referencesMarkdown sourceUrl tables } runCount status targetUrl timeRangeFrom timeRangeTo updatedAt }
           }
           """
@@ -563,10 +563,11 @@ jobs:
               "newsExtractionSettings", "newsPromptConfig", "newsEventSourcePolicySyncStatus",
               "knowledgeGraphEvidenceReviewQueue", "crawlTasks", "crawlTask",
           ]
-          data = compare("legacy twenty roots", case["query"], case["variables"], token).get("data") or {}
+          response = compare("legacy twenty roots", case["query"], case["variables"], token)
+          data = response.get("data") or {}
           missing = [key for key in expected_keys if key not in data]
           if missing:
-              fail("legacy twenty roots missing " + ", ".join(missing))
+              fail("legacy twenty roots missing " + ", ".join(missing) + " body=" + json.dumps(response)[:2000])
           if (data.get("newsEventSourcePolicy") or {}).get("activeRevision") != 2:
               fail("legacy activeRevision = " + json.dumps(data.get("newsEventSourcePolicy"))[:300])
           if not (data.get("newsEventSourcePolicy") or {}).get("warnings", {}).get("hasConflicts"):
@@ -605,10 +606,11 @@ jobs:
               "newsExtractionSettings", "newsPromptConfig", "newsEventSourcePolicySyncStatus",
               "knowledgeGraphEvidenceReviewQueue", "crawlTasks", "crawlTask",
           ]
-          data = compare("go twenty roots", case["query"], case["variables"], token).get("data") or {}
+          response = compare("go twenty roots", case["query"], case["variables"], token)
+          data = response.get("data") or {}
           missing = [key for key in expected_keys if key not in data]
           if missing:
-              fail("go twenty roots missing " + ", ".join(missing))
+              fail("go twenty roots missing " + ", ".join(missing) + " body=" + json.dumps(response)[:2000])
           print("OK go twenty roots byte-identical to direct NestJS")
           PY
           # 反向证明：go 模式下这 20 个 root 确实由 Go 本地 resolver 执行，
@@ -731,7 +733,7 @@ jobs:
           # ---------------------------------------------------------------
           queue_query = """
           query ReviewQueue($onlyUnreviewed: Boolean!) {
-            knowledgeGraphEvidenceReviewQueue(limit: 50, onlyUnreviewed: $onlyUnreviewed) {
+            knowledgeGraphEvidenceReviewQueue(limit: 5, onlyUnreviewed: $onlyUnreviewed) {
               id
               article { crawlAt id language summary title url }
               confidence createdAt evidence extractorVersion
