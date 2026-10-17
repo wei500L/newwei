@@ -1,6 +1,6 @@
 import { createLogger } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { ForbiddenException, Injectable } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
@@ -19,7 +19,30 @@ import {
   type CrawlImageStorageProvider
 } from "./storage.constants";
 
+/**
+ * PATCH payload as it arrives from the controller. Every field is optional and
+ * the DTO's `@IsOptional()` lets an explicit `null` through, so the nullable
+ * input is modelled in the type instead of being hidden behind `Object.entries`.
+ */
 export interface StorageSettingsInput {
+  crawlImageStorage?: CrawlImageStorageProvider | null;
+  accessKeyId?: string | null;
+  secretAccessKey?: string | null;
+  region?: string | null;
+  bucket?: string | null;
+  endpoint?: string | null;
+  publicBaseUrl?: string | null;
+  forcePathStyle?: boolean | null;
+  presignedUrlTtlSeconds?: number | null;
+}
+
+/**
+ * Normalized update set. `undefined` means "leave the setting untouched"; an
+ * explicit `null` means "clear the value to the JSON literal null" and is only
+ * reachable for `endpoint`, `forcePathStyle` and `presignedUrlTtlSeconds` (the
+ * fields the original service lets through as a clearing branch).
+ */
+interface NormalizedStorageSettingsUpdate {
   crawlImageStorage?: CrawlImageStorageProvider;
   accessKeyId?: string;
   secretAccessKey?: string;
@@ -27,9 +50,18 @@ export interface StorageSettingsInput {
   bucket?: string;
   endpoint?: string | null;
   publicBaseUrl?: string;
-  forcePathStyle?: boolean;
-  presignedUrlTtlSeconds?: number;
+  forcePathStyle?: boolean | null;
+  presignedUrlTtlSeconds?: number | null;
 }
+
+/**
+ * Value shape accepted by the `SystemSetting.value` Json column. `Prisma.JsonNull`
+ * writes the JSON literal null; `Prisma.DbNull` would write SQL NULL and is
+ * rejected by the column's NOT NULL constraint.
+ */
+type StorageJsonWrite = Prisma.InputJsonValue | Prisma.JsonNullValueInput;
+
+const PLATFORM_ADMIN_ROLE = "platform_admin";
 
 export interface StorageSettingsResponse {
   crawlImageStorage: CrawlImageStorageProvider;
@@ -74,6 +106,23 @@ const PUBLIC_SETTING_KEYS = new Set<string>([
 ]);
 
 const SETTINGS_CACHE_TTL_SECONDS = 60;
+
+/**
+ * Converts one normalized update into the value written to the
+ * `SystemSetting.value` Json column.
+ *
+ * IS4: an explicitly cleared field (`endpoint`, `forcePathStyle`,
+ * `presignedUrlTtlSeconds`) must persist the JSON literal null. `Prisma.JsonNull`
+ * produces exactly that; passing a plain JS `null` (or `Prisma.DbNull`) would
+ * either fail the required-Json type or try to write SQL NULL into a NOT NULL
+ * column. The row itself is never deleted to represent a cleared value.
+ */
+function toStorageJsonValue(value: unknown): StorageJsonWrite {
+  if (value === null) {
+    return Prisma.JsonNull;
+  }
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
 
 @Injectable()
 export class StorageSettingsService {
@@ -172,35 +221,18 @@ export class StorageSettingsService {
     actorId: string,
     input: StorageSettingsInput
   ): Promise<StorageSettingsResponse> {
+    // IS1: the nine keys below are GLOBAL singletons (no orgId dimension) that
+    // decide where every tenant's uploaded media is written and which S3
+    // credentials are used. A plain org admin holding settings.manage could
+    // repoint all tenants at a bucket they control, so only platform admins may
+    // write them. AuthModule already depends on StorageModule, so importing
+    // PlatformAccessService here would create a module cycle; the identical
+    // predicate and 403 message are therefore evaluated against
+    // GlobalRoleAssignment through the already-injected PrismaService.
+    await this.assertPlatformAdmin(actorId);
+
     const updates = this.normalizeUpdates(input);
-
-    const operations: Prisma.PrismaPromise<unknown>[] = [];
-    for (const [key, value] of Object.entries(updates)) {
-      const settingKey = STORAGE_SETTING_KEYS[key as keyof StorageSettingsInput];
-      const isPublic = PUBLIC_SETTING_KEYS.has(settingKey);
-      const recordValue =
-        settingKey === STORAGE_SETTING_KEYS.secretAccessKey && value
-          ? await this.securitySettings.encodeSecretForStorage(String(value))
-          : value;
-
-      operations.push(
-        this.prisma.systemSetting.upsert({
-          where: { key: settingKey },
-          update: {
-            value: recordValue,
-            isPublic,
-            updatedById: actorId
-          },
-          create: {
-            key: settingKey,
-            value: recordValue,
-            isPublic,
-            updatedById: actorId,
-            description: "Storage configuration"
-          }
-        })
-      );
-    }
+    const operations = await this.buildOperations(updates, actorId);
 
     if (operations.length > 0) {
       await this.prisma.$transaction(operations);
@@ -225,6 +257,122 @@ export class StorageSettingsService {
       this.logger.warn({ err: error }, "Failed to invalidate storage settings cache");
     }
     return this.getAdminSettings();
+  }
+
+  /**
+   * Mirrors PlatformAccessService.assertPlatformAdmin. A machine identity
+   * (`machine:<tokenId>`) is never a User row, so it can never hold a
+   * GlobalRoleAssignment and is rejected without a query.
+   */
+  private async assertPlatformAdmin(actorId: string): Promise<void> {
+    if (typeof actorId !== "string" || !actorId || actorId.startsWith("machine:")) {
+      throw new ForbiddenException("Platform admin access required");
+    }
+    const assignment = await this.prisma.globalRoleAssignment.findFirst({
+      where: { userId: actorId, role: PLATFORM_ADMIN_ROLE },
+      select: { id: true }
+    });
+    if (!assignment) {
+      throw new ForbiddenException("Platform admin access required");
+    }
+  }
+
+  /**
+   * Builds the upserts for one PATCH. Every effective field lands in the same
+   * transaction, so a mixed payload either commits completely or not at all and
+   * concurrent updates to disjoint fields never overwrite each other.
+   */
+  private async buildOperations(
+    updates: NormalizedStorageSettingsUpdate,
+    actorId: string
+  ): Promise<Prisma.PrismaPromise<unknown>[]> {
+    const operations: Prisma.PrismaPromise<unknown>[] = [];
+    const add = (settingKey: string, isPublic: boolean, value: StorageJsonWrite) => {
+      operations.push(
+        this.prisma.systemSetting.upsert({
+          where: { key: settingKey },
+          update: {
+            value,
+            isPublic,
+            updatedById: actorId
+          },
+          create: {
+            key: settingKey,
+            value,
+            isPublic,
+            updatedById: actorId,
+            description: "Storage configuration"
+          }
+        })
+      );
+    };
+
+    if (updates.crawlImageStorage !== undefined) {
+      add(
+        STORAGE_SETTING_KEYS.crawlImageStorage,
+        PUBLIC_SETTING_KEYS.has(STORAGE_SETTING_KEYS.crawlImageStorage),
+        updates.crawlImageStorage
+      );
+    }
+    if (updates.accessKeyId !== undefined) {
+      add(
+        STORAGE_SETTING_KEYS.accessKeyId,
+        PUBLIC_SETTING_KEYS.has(STORAGE_SETTING_KEYS.accessKeyId),
+        updates.accessKeyId
+      );
+    }
+    if (updates.secretAccessKey !== undefined) {
+      const encoded = await this.securitySettings.encodeSecretForStorage(updates.secretAccessKey);
+      add(
+        STORAGE_SETTING_KEYS.secretAccessKey,
+        PUBLIC_SETTING_KEYS.has(STORAGE_SETTING_KEYS.secretAccessKey),
+        toStorageJsonValue(encoded)
+      );
+    }
+    if (updates.region !== undefined) {
+      add(
+        STORAGE_SETTING_KEYS.region,
+        PUBLIC_SETTING_KEYS.has(STORAGE_SETTING_KEYS.region),
+        updates.region
+      );
+    }
+    if (updates.bucket !== undefined) {
+      add(
+        STORAGE_SETTING_KEYS.bucket,
+        PUBLIC_SETTING_KEYS.has(STORAGE_SETTING_KEYS.bucket),
+        updates.bucket
+      );
+    }
+    if (updates.endpoint !== undefined) {
+      add(
+        STORAGE_SETTING_KEYS.endpoint,
+        PUBLIC_SETTING_KEYS.has(STORAGE_SETTING_KEYS.endpoint),
+        toStorageJsonValue(updates.endpoint)
+      );
+    }
+    if (updates.publicBaseUrl !== undefined) {
+      add(
+        STORAGE_SETTING_KEYS.publicBaseUrl,
+        PUBLIC_SETTING_KEYS.has(STORAGE_SETTING_KEYS.publicBaseUrl),
+        updates.publicBaseUrl
+      );
+    }
+    if (updates.forcePathStyle !== undefined) {
+      add(
+        STORAGE_SETTING_KEYS.forcePathStyle,
+        PUBLIC_SETTING_KEYS.has(STORAGE_SETTING_KEYS.forcePathStyle),
+        toStorageJsonValue(updates.forcePathStyle)
+      );
+    }
+    if (updates.presignedUrlTtlSeconds !== undefined) {
+      add(
+        STORAGE_SETTING_KEYS.presignedUrlTtlSeconds,
+        PUBLIC_SETTING_KEYS.has(STORAGE_SETTING_KEYS.presignedUrlTtlSeconds),
+        toStorageJsonValue(updates.presignedUrlTtlSeconds)
+      );
+    }
+
+    return operations;
   }
 
   private async loadSettings(): Promise<Map<string, unknown>> {
@@ -257,8 +405,8 @@ export class StorageSettingsService {
     return recordMap;
   }
 
-  private normalizeUpdates(input: StorageSettingsInput): StorageSettingsInput {
-    const updates: StorageSettingsInput = {};
+  private normalizeUpdates(input: StorageSettingsInput): NormalizedStorageSettingsUpdate {
+    const updates: NormalizedStorageSettingsUpdate = {};
     if (input.crawlImageStorage !== undefined) {
       const normalized = this.asProvider(input.crawlImageStorage);
       if (normalized) {
@@ -299,6 +447,8 @@ export class StorageSettingsService {
       }
     }
     if (input.forcePathStyle !== undefined) {
+      // `false` is a real value and must be persisted; `null` is the clearing
+      // branch the original service already expressed.
       updates.forcePathStyle = input.forcePathStyle;
     }
     if (input.presignedUrlTtlSeconds !== undefined) {
@@ -307,29 +457,46 @@ export class StorageSettingsService {
     return updates;
   }
 
-  private buildAuditMetadata(input: StorageSettingsInput): Prisma.InputJsonObject {
-    const metadata: Record<string, Prisma.InputJsonValue> = {};
+  private buildAuditMetadata(input: NormalizedStorageSettingsUpdate): Prisma.InputJsonObject {
+    // Values are written in the same order the previous Object.entries loop
+    // produced, so the JSON column content is byte-compatible.
+    const metadata: { [key: string]: Prisma.InputJsonValue | null } = {};
 
-    Object.entries(input).forEach(([key, value]) => {
-      if (value === undefined) {
-        return;
-      }
-
+    if (input.crawlImageStorage !== undefined) {
+      metadata.crawlImageStorage = input.crawlImageStorage;
+    }
+    if (input.accessKeyId !== undefined) {
       // Never persist credential material in audit logs: mask the secret
-      // entirely and keep only a fingerprint (first 4 chars) of the access
-      // key id so operators can still tell WHICH key was changed.
-      if (key === "secretAccessKey" && value) {
-        metadata[key] = "***";
-        return;
-      }
-      if (key === "accessKeyId" && typeof value === "string" && value.trim()) {
-        const normalized = value.trim();
-        metadata.accessKeyIdFingerprint = `${normalized.slice(0, 4)}***`;
-        return;
-      }
-
-      metadata[key] = value;
-    });
+      // entirely and keep only a fingerprint (first 4 characters) of the access
+      // key id so operators can still tell WHICH key was changed. String.slice
+      // counts UTF-16 code units, which is the fingerprint contract the Go
+      // takeover reproduces.
+      metadata.accessKeyIdFingerprint = `${input.accessKeyId.slice(0, 4)}***`;
+    }
+    if (input.secretAccessKey !== undefined && input.secretAccessKey) {
+      metadata.secretAccessKey = "***";
+    }
+    if (input.region !== undefined) {
+      metadata.region = input.region;
+    }
+    if (input.bucket !== undefined) {
+      metadata.bucket = input.bucket;
+    }
+    if (input.endpoint !== undefined) {
+      // A cleared endpoint is the JSON literal null, which is a perfectly valid
+      // audit value. Only the Prisma *write* sentinel (Prisma.JsonNull) must
+      // never be serialized.
+      metadata.endpoint = input.endpoint;
+    }
+    if (input.publicBaseUrl !== undefined) {
+      metadata.publicBaseUrl = input.publicBaseUrl;
+    }
+    if (input.forcePathStyle !== undefined) {
+      metadata.forcePathStyle = input.forcePathStyle;
+    }
+    if (input.presignedUrlTtlSeconds !== undefined) {
+      metadata.presignedUrlTtlSeconds = input.presignedUrlTtlSeconds;
+    }
 
     return metadata;
   }
