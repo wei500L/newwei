@@ -63,12 +63,46 @@ interface SituationMonitorRefreshProgressCounts {
   delayed?: number;
 }
 
+/**
+ * Defensive projection of the cached crawl summary.
+ *
+ * S2: the Redis refresh-run record lives 900 seconds and can therefore outlive
+ * the deployment that wrote it. A record produced by an older revision may be
+ * missing `crawl` entirely (or hold something that is not an object). The
+ * placeholder below carries only the six fields the terminal state machine and
+ * the response actually read, so the endpoint never invents the fields an old
+ * writer did not persist.
+ */
+export interface SituationMonitorRefreshCrawlProgress {
+  activeSourceCount: number;
+  permitted: boolean;
+  attempted: boolean;
+  schedulerTriggered: boolean;
+  crawlTaskCount: number;
+  analysisTaskCount: number;
+}
+
+/**
+ * The placeholder used when the cached record has no usable `crawl` object.
+ * Deliberately narrower than SituationMonitorRefreshRunRecord["crawl"]: the
+ * remaining fields (`scheduledSourceCount`, `message`) stay absent instead of
+ * being fabricated.
+ */
+const EMPTY_REFRESH_CRAWL: SituationMonitorRefreshCrawlProgress = {
+  activeSourceCount: 0,
+  permitted: false,
+  attempted: false,
+  schedulerTriggered: false,
+  crawlTaskCount: 0,
+  analysisTaskCount: 0,
+};
+
 export interface SituationMonitorRefreshRunResponse {
   refreshId: string;
   requestedAt: string;
   taskWindowStart: string;
   status: SituationMonitorRefreshLifecycleStatus;
-  crawl: SituationMonitorRefreshResponse["crawl"];
+  crawl: SituationMonitorRefreshCrawlProgress;
   progress: {
     crawlTasks: SituationMonitorRefreshProgressCounts;
     analysisTasks: SituationMonitorRefreshProgressCounts;
@@ -316,9 +350,29 @@ export class SituationMonitorRefreshService {
       return null;
     }
 
+    // S2 defensive normalization. Every field below was a live TypeError /
+    // Prisma crash before this fix: `record.activeSourceIds.length` on a record
+    // without the key, `record.warnings.some(...)`, and the chained
+    // `record.crawl.*` reads. A record whose task window cannot be parsed is
+    // treated as unusable (404) exactly like a missing record, so cross-tenant
+    // and corrupt records stay indistinguishable.
+    const activeSourceIds = Array.isArray(record.activeSourceIds)
+      ? record.activeSourceIds.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
+      : [];
+    const warnings = Array.isArray(record.warnings) ? record.warnings : [];
+    const crawl =
+      record.crawl && typeof record.crawl === "object" && !Array.isArray(record.crawl)
+        ? (record.crawl as SituationMonitorRefreshCrawlProgress)
+        : EMPTY_REFRESH_CRAWL;
+
     const taskWindowStart = new Date(record.taskWindowStart);
+    if (Number.isNaN(taskWindowStart.getTime())) {
+      return null;
+    }
     const sourceFilter =
-      record.activeSourceIds.length > 0 ? { in: record.activeSourceIds } : null;
+      activeSourceIds.length > 0 ? { in: activeSourceIds } : null;
 
     const [
       crawlPending,
@@ -375,13 +429,13 @@ export class SituationMonitorRefreshService {
       analysisDelayed;
 
     const hasErrors =
-      record.warnings.some((warning) => warning.severity === "error") ||
+      warnings.some((warning) => warning.severity === "error") ||
       crawlFailed > 0 ||
       analysisFailed > 0;
-    const hasWarnings = record.warnings.length > 0;
+    const hasWarnings = warnings.length > 0;
     const hasAnyTasks =
-      record.crawl.crawlTaskCount > 0 ||
-      record.crawl.analysisTaskCount > 0 ||
+      crawl.crawlTaskCount > 0 ||
+      crawl.analysisTaskCount > 0 ||
       crawlCompleted > 0 ||
       crawlFailed > 0 ||
       crawlPaused > 0 ||
@@ -390,11 +444,11 @@ export class SituationMonitorRefreshService {
       analysisDelayed > 0;
     const terminal =
       activeTaskCount === 0 &&
-      (record.crawl.activeSourceCount === 0 ||
-        !record.crawl.permitted ||
-        !record.crawl.attempted ||
+      (crawl.activeSourceCount === 0 ||
+        !crawl.permitted ||
+        !crawl.attempted ||
         hasAnyTasks ||
-        !record.crawl.schedulerTriggered);
+        !crawl.schedulerTriggered);
 
     let status: SituationMonitorRefreshLifecycleStatus;
     if (activeTaskCount > 0) {
@@ -417,14 +471,14 @@ export class SituationMonitorRefreshService {
       requestedAt: record.requestedAt,
       taskWindowStart: record.taskWindowStart,
       status,
-      crawl: record.crawl,
+      crawl,
       progress: {
         crawlTasks,
         analysisTasks,
       },
       signals: record.signals,
       cache: record.cache,
-      warnings: record.warnings,
+      warnings,
       terminal,
     };
   }
