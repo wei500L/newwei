@@ -39,6 +39,7 @@
 
 1. `apps/api/src/modules/knowledge-graph/knowledge-graph-impact.service.ts` 有 5 处 `knowledgeEntity.findMany` 只按主键 `id` 查询，漏掉 `orgId`：第 158、275、386、545、575 行。`KnowledgeEdge` 外键只约束 `KnowledgeEntity(id)`，一旦存在指向其他组织实体 id 的脏边，就会把其他组织实体拉进候选链并写缓存。现全部改为 `{ orgId, id: { in: ... } }`。Go 侧 `loadEntityList` 同样按 `orgId` 过滤。
 2. `apps/api/src/modules/dashboard/entity-impact-graph.service.ts` 第 564 行 `$dateToString` 显式补 `timezone: "UTC"`，与第 644 行金融序列的 UTC 日对齐。Go 侧同一聚合显式带 `timezone: "UTC"`。
+3. `apps/api/src/graphql/models/knowledge-graph-impact.model.ts`：`ExecutiveChangeImpactInput` / `CommodityMoveImpactInput` / `PolicyEventImpactInput` 没有任何 class-validator 装饰器，全局 `ValidationPipe` 的 `forbidUnknownValues` 会把它们当未知对象直接 400（`an unknown value was passed to the validate function`），三个查询根本到不了 resolver。补 `@IsString` / `@IsOptional()+@IsInt` / `@IsOptional()+@IsBoolean`，只注册校验元数据，不新增字段、不改 GraphQL SDL。此缺陷由 smoke 的 legacy 对照发现。
 
 ## 留下
 
