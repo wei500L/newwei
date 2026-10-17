@@ -276,11 +276,36 @@ jobs:
                   fail(f"login {email} {status} {raw[:400]!r}")
               return doc["accessToken"]
 
+          def first_diff(left, right, path=""):
+              if type(left) is not type(right):
+                  return f"{path}: type {type(left).__name__} != {type(right).__name__} ({left!r} vs {right!r})"
+              if isinstance(left, dict):
+                  for key in sorted(set(left) | set(right)):
+                      if key not in left:
+                          return f"{path}.{key}: missing in nest"
+                      if key not in right:
+                          return f"{path}.{key}: missing in go"
+                      found = first_diff(left[key], right[key], f"{path}.{key}")
+                      if found:
+                          return found
+                  return ""
+              if isinstance(left, list):
+                  if len(left) != len(right):
+                      return f"{path}: length {len(left)} != {len(right)}"
+                  for index, (first, second) in enumerate(zip(left, right)):
+                      found = first_diff(first, second, f"{path}[{index}]")
+                      if found:
+                          return found
+                  return ""
+              if left != right:
+                  return f"{path}: {left!r} != {right!r}"
+              return ""
+
           def same(path, method="GET", token=None, payload=None):
               left_status, left_raw = call(nest, path, method, token, payload)
               right_status, right_raw = call(go, path, method, token, payload)
               if left_status != right_status or core(body(left_raw)) != core(body(right_raw)):
-                  fail(f"parity {method} {path} nest={left_status} {left_raw[:700]!r} go={right_status} {right_raw[:700]!r}")
+                  fail(f"parity {method} {path} nest={left_status} go={right_status} diff={first_diff(core(body(left_raw)), core(body(right_raw)))}")
               return left_status, body(left_raw)
 
           def same_error(path, method="POST", token=None, payload=None):
