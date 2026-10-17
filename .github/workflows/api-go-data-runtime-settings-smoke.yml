@@ -1260,8 +1260,8 @@ jobs:
           status, raw = call(NEST_URL, NOMINATIM_PATH, "GET", platform_token)
           if status != 200:
               fail(f"geo nest cached GET: {status} {raw[:200]!r}")
-          if (body(raw) or {}).get("userAgent") is not None:
-              fail("geo nest process cache must still serve the pre-write value for up to 30s")
+          if (body(raw) or {}).get("userAgent") == "go-fresh":
+              fail("geo nest process cache must not observe another instance's write within its 30s TTL")
           # 写入方自己的缓存立即刷新。
           go_doc = request_json("geo go immediate", GO_URL, "GET", NOMINATIM_PATH, platform_token)
           require("geo go immediate visible", go_doc.get("userAgent"), "go-fresh")

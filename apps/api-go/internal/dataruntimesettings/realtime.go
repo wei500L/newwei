@@ -536,7 +536,7 @@ func (s *Service) resolveEffectiveSettings(stored *storedRealtimeSettings) (*eff
 		KeywordSpikeMinCount:            asBoundedIntRawOptional(rawMember(stored, func(v *storedRealtimeSettings) json.RawMessage { return v.KeywordSpikeMinCount }), cfg.RealtimeKeywordSpikeMinCount, 1, 500),
 		KeywordSpikeMultiplier:          asBoundedNumberRawOptional(rawMember(stored, func(v *storedRealtimeSettings) json.RawMessage { return v.KeywordSpikeMultiplier }), cfg.RealtimeKeywordSpikeMultiplier, 1, 100),
 		PredictionShiftThreshold:        asBoundedNumberRawOptional(rawMember(stored, func(v *storedRealtimeSettings) json.RawMessage { return v.PredictionShiftThreshold }), cfg.RealtimePredictionShiftThreshold, 1, 100),
-		PredictionNewsActivityThreshold: asBoundedIntRawOptional(rawMember(stored, func(v *storedRealtimeSettings) json.RawMessage { return v.PredictionNewsThreshold }), cfg.RealtimePredictionNewsThreshold, 0, 1_000),
+		PredictionNewsActivityThreshold: asBoundedIntRawOptional(rawMember(stored, func(v *storedRealtimeSettings) json.RawMessage { return v.PredictionNewsActivityThreshold }), cfg.RealtimePredictionNewsThreshold, 0, 1_000),
 	}
 
 	// URLs. `normalizeUrl(stored.x ?? stored.adsbX) ?? normalizeUrl(env.x) ?? default`
