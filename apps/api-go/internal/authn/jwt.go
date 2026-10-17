@@ -26,9 +26,11 @@
 package authn
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -58,18 +60,24 @@ func ExtractBearerToken(r *http.Request) string {
 }
 
 // Token 是已验签 access token 的身份材料（最小字段集——本批端点只需要
-// sub/orgId/jti；permissions 刻意不存在）。
+// sub/orgId/jti/exp；permissions 刻意不存在）。
 type Token struct {
 	Subject string // sub → userId
 	OrgID   string // orgId → 待验证的组织上下文（须再经 authz 重推导）
 	JTI     string // jti（可为空——空时按 NestJS 语义跳过 blacklist）
+	// ExpiresAt is the verified exp claim as a UTC instant. NestJS-issued
+	// tokens always carry exp; when it is missing the field stays at its zero
+	// value so callers omit the JWT metadata instead of fabricating 0. The
+	// value comes exclusively from the verified claims and is never derived
+	// from an unsigned jwt decode, so it is safe for blacklist TTLs.
+	ExpiresAt time.Time
 }
 
 // Verifier 用与 NestJS 相同的 HMAC secret 验证 access token。
 type Verifier struct {
-	secret    []byte
-	issuer    string
-	audience  string
+	secret   []byte
+	issuer   string
+	audience string
 }
 
 // NewVerifier 构造验签器。secret/issuer/audience 来自与 NestJS api 服务
@@ -82,7 +90,7 @@ func NewVerifier(secret, issuer, audience string) *Verifier {
 //
 // 只接受 HS256（WithValidMethods 同时拒绝 alg=none 与 HS384/HS512/RS256
 // 等算法混淆）；issuer 严格相等；audience 包含匹配；exp/nbf 存在即校验
-//（leeway 0——与 jsonwebtoken 默认一致，不自行扩大时钟容忍）；iat 不
+// （leeway 0——与 jsonwebtoken 默认一致，不自行扩大时钟容忍）；iat 不
 // 校验（jsonwebtoken 亦不校验）。sub/orgId 必须是非空字符串（NestJS
 // 签发的 token 恒有两者；缺失说明不是合法签发形态）。jti 原样返回，
 // 是否查询 blacklist 由调用方按 NestJS 语义决定。
@@ -108,5 +116,20 @@ func (v *Verifier) Verify(rawToken string) (Token, error) {
 	if strings.TrimSpace(sub) == "" || strings.TrimSpace(orgID) == "" {
 		return Token{}, ErrInvalidToken
 	}
-	return Token{Subject: sub, OrgID: orgID, JTI: strings.TrimSpace(jti)}, nil
+	// exp is already validated by the jwt library during verification (when
+	// present it must not be expired). Convert it to a UTC instant here; a
+	// missing or non-positive value keeps the zero time so callers omit the
+	// metadata.
+	expiresAt := time.Time{}
+	switch rawExp := claims["exp"].(type) {
+	case float64:
+		if rawExp > 0 {
+			expiresAt = time.Unix(int64(rawExp), 0).UTC()
+		}
+	case json.Number:
+		if value, convErr := rawExp.Int64(); convErr == nil && value > 0 {
+			expiresAt = time.Unix(value, 0).UTC()
+		}
+	}
+	return Token{Subject: sub, OrgID: orgID, JTI: strings.TrimSpace(jti), ExpiresAt: expiresAt}, nil
 }

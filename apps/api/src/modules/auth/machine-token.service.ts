@@ -7,6 +7,7 @@ import { Prisma } from "@prisma/client";
 import crypto from "node:crypto";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
+import { normalizeAuditActorId } from "../audit/audit-actor";
 import { PrismaService } from "../config/prisma.service";
 
 import type { AuthenticatedUser } from "./auth.service";
@@ -47,6 +48,18 @@ function normalizePermissions(permissions: string[]): string[] {
   );
 }
 
+/**
+ * Normalized create/rotate input. `createdById` is already passed through
+ * `normalizeAuditActorId`, so a machine or empty actor is stored as SQL NULL.
+ */
+interface NormalizedMachineTokenInput {
+  orgId: string;
+  name: string;
+  permissions: string[];
+  createdById: string | null;
+  expiresAt: Date | null;
+}
+
 @Injectable()
 export class MachineTokenService {
   constructor(
@@ -64,15 +77,49 @@ export class MachineTokenService {
       throw new BadRequestException("At least one supported permission is required");
     }
 
+    // AS4: the DTO's @MinLength(1) runs before the service trims, so a
+    // whitespace-only name passes validation. Reject the normalized empty name
+    // here (after the permission checks, matching the original error order) and
+    // never persist a blank name.
+    const name = input.name.trim();
+    if (!name) {
+      throw new BadRequestException("Machine token name cannot be empty");
+    }
+
+    return this.createRecord(this.prisma, {
+      orgId: input.orgId,
+      name,
+      permissions,
+      // AS4: `MachineAccessToken.createdById` is a foreign key into User. A
+      // machine identity (`machine:<tokenId>`) or an empty actor is not a User
+      // row, so it must be written as SQL NULL; human ids are kept unchanged.
+      createdById: normalizeAuditActorId(input.actorId),
+      expiresAt: input.expiresAt ?? null,
+    });
+  }
+
+  /**
+   * AS1: the single INSERT path shared by `create` and `rotate`.
+   *
+   * It takes a Prisma transaction client on purpose. Rotate must be able to
+   * create its successor inside the same transaction as the conditional revoke;
+   * calling the public `create` from inside the transaction would execute the
+   * INSERT on `this.prisma` and escape the transaction, so a failed INSERT
+   * could not roll the revoke back.
+   */
+  private async createRecord(
+    client: Prisma.TransactionClient,
+    input: NormalizedMachineTokenInput,
+  ): Promise<CreateMachineTokenResult> {
     const token = `${MACHINE_TOKEN_PREFIX}${crypto.randomBytes(32).toString("base64url")}`;
-    const created = await this.prisma.machineAccessToken.create({
+    const created = await client.machineAccessToken.create({
       data: {
         orgId: input.orgId,
-        name: input.name.trim(),
+        name: input.name,
         tokenHash: hashToken(token),
-        permissions: toPrismaJsonValue(permissions),
-        createdById: input.actorId,
-        expiresAt: input.expiresAt ?? null,
+        permissions: toPrismaJsonValue(input.permissions),
+        createdById: input.createdById,
+        expiresAt: input.expiresAt,
       },
     });
 
@@ -80,7 +127,7 @@ export class MachineTokenService {
       id: created.id,
       name: created.name,
       token,
-      permissions,
+      permissions: input.permissions,
       expiresAt: created.expiresAt?.toISOString() ?? null,
     };
   }
@@ -113,27 +160,65 @@ export class MachineTokenService {
   }
 
   async rotate(orgId: string, tokenId: string): Promise<CreateMachineTokenResult> {
-    const record = await this.prisma.machineAccessToken.findFirst({
-      where: { id: tokenId, orgId, revokedAt: null },
-    });
-    if (!record) {
-      throw new BadRequestException("Machine token not found or already revoked");
-    }
-    const rawPermissions = record.permissions as Prisma.JsonValue;
-    const permissions = Array.isArray(rawPermissions)
-      ? rawPermissions.filter((entry): entry is string => typeof entry === "string")
-      : [];
-    await this.revoke(orgId, tokenId);
-    return this.create({
-      orgId,
-      actorId: record.createdById ?? undefined,
-      name: record.name,
-      permissions,
-      expiresAt: record.expiresAt,
+    // AS1: the conditional revoke and the successor INSERT share one
+    // interactive transaction. Any failure (normalization, zero affected rows,
+    // INSERT error) rolls the revoke back, so a failed rotate never leaves the
+    // old credential revoked without a replacement.
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.machineAccessToken.findFirst({
+        where: { id: tokenId, orgId, revokedAt: null },
+      });
+      if (!record) {
+        throw new BadRequestException(
+          "Machine token not found or already revoked",
+        );
+      }
+      const rawPermissions = record.permissions as Prisma.JsonValue;
+      const storedPermissions = Array.isArray(rawPermissions)
+        ? rawPermissions.filter((entry): entry is string => typeof entry === "string")
+        : [];
+
+      // AS1: normalize (and reject unsupported-only tokens) before revoking so
+      // the failure path leaves the old row's revokedAt as null.
+      const permissions = normalizePermissions(storedPermissions);
+      if (permissions.length === 0) {
+        throw new BadRequestException(
+          "At least one supported permission is required",
+        );
+      }
+      const name = record.name.trim();
+      if (!name) {
+        throw new BadRequestException("Machine token name cannot be empty");
+      }
+
+      // AS1: conditional revoke. MySQL's locking read serializes concurrent
+      // rotates of the same token: the loser observes revokedAt set and affects
+      // zero rows, so at most one successor can ever be created.
+      const revoked = await tx.machineAccessToken.updateMany({
+        where: { id: tokenId, orgId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (revoked.count !== 1) {
+        throw new BadRequestException(
+          "Machine token not found or already revoked",
+        );
+      }
+
+      return this.createRecord(tx, {
+        orgId,
+        name,
+        permissions,
+        // createdById is inherited, never replaced by the current operator:
+        // resolvePlatformMetricsAccess authorizes platform metrics access
+        // against the original creator's current platform_admin role.
+        createdById: normalizeAuditActorId(record.createdById),
+        expiresAt: record.expiresAt,
+      });
     });
   }
 
-  async validate(token: string): Promise<AuthenticatedUser> {    const tokenHash = hashToken(token);
+  async validate(token: string): Promise<AuthenticatedUser> {
+    const tokenHash = hashToken(token);
     const record = await this.prisma.machineAccessToken.findUnique({
       where: { tokenHash },
       include: { org: true },
