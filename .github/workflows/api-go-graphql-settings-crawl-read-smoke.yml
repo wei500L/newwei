@@ -385,6 +385,20 @@ jobs:
             ('wscrawlresult00000001', 'wscrawltask0000000001', '{org}', 'https://example.com/smoke-a', '{t60}', 'smoke-md-a', 'smoke-content-a', NULL, '{t60}');
           """)
 
+          # 夹具自检：证明被测的两个「假 admin」场景真的成立，避免断言
+          # 因夹具缺失而假通过。
+          custom_role = sql("SELECT name, isSystem FROM Role WHERE id='wsrolecustomadmin001'").split("\t")
+          if custom_role[:2] != ["admin", "0"]:
+              fail("custom admin role fixture " + repr(custom_role))
+          borrowed_role = sql("SELECT orgId, isSystem, LOWER(name) FROM Role WHERE id='wsrolebadmin0000000001'").split("\t")
+          if borrowed_role != ["wsorgother00000000001", "1", "admin"]:
+              fail("borrowed admin role fixture " + repr(borrowed_role))
+          borrowed_links = sql("SELECT COUNT(*) FROM MembershipRole WHERE membershipId='wsmemforeign0000000001' AND roleId='wsrolebadmin0000000001'")
+          if borrowed_links != "1":
+              fail("borrowed membership role fixture " + repr(borrowed_links))
+          if sql("SELECT orgId FROM Role WHERE id='wsrolecustomadmin001'") != "wsorgcustom0000000001":
+              fail("custom admin role must live in the custom admin org")
+
           link = {
               "href": "https://example.com/link-1",
               "text": "Link 1",
@@ -463,7 +477,8 @@ jobs:
               if status != 200 or doc.get("errors") or updated.get("activeRevision") != want_revision or not (updated.get("warnings") or {}).get("hasConflicts"):
                   fail("policy update revision " + str(want_revision) + " " + str(status) + " " + json.dumps(doc)[:500])
 
-          # 20 个 root 的完整选择集（递归覆盖全部标量字段）。
+          # 20 个 root 的完整选择集：字段逐条抄录自 apps/api/schema.gql，
+          # 递归覆盖每个 root 返回类型的全部标量字段。
           roots_query = """
           query SettingsCrawlRoots($crawlTaskId: ID!, $after: String, $baseRevision: Int!, $targetRevision: Int!) {
             rateLimitSettings {
@@ -499,7 +514,7 @@ jobs:
             newsExtractionSettings { capabilities { entities kg sentiment } pipelineMode postCleanGate { enabled minCleanedChars minQualityScore requireSummary } preflightGate { enabled minQualityScore minWordCount rejectBotChallenge rejectListLike } providers { clean entities kg sentiment } }
             newsPromptConfig { entitySystemPromptTemplate entityUserPromptTemplate kgSystemPromptTemplate kgUserPromptTemplate sentimentSystemPromptTemplate sentimentUserPromptTemplate systemPromptTemplate userPromptTemplate version }
             newsEventSourcePolicySyncStatus { degraded forceAuthoritativeMode forceMinAuthoritativeSources policyCacheStale presetCacheStale warningCodes }
-            knowledgeGraphEvidenceReviewQueue(limit: 50, maxConfidence: null, onlyUnreviewed: true) { article { crawlAt id language summary title url } confidence createdAt edge { confidence fromEntity { id name properties type } id properties toEntity { id properties type } type weight } evidence extractorVersion id }
+            knowledgeGraphEvidenceReviewQueue(limit: 50, maxConfidence: null, onlyUnreviewed: true) { article { crawlAt id language summary title url } confidence createdAt edge { confidence fromEntity { id name properties type } id properties toEntity { id name properties type } type weight } evidence extractorVersion id }
             crawlTasks(after: $after, first: 20, search: null, status: null) { edges { cursor node { concurrency config createdAt displayName id keywords lastCursor lastError lastMemoryEfficiency lastPeakMemoryMb lastResultAt lastRunAt lastRunSummary { inserted itemsQueueFailed itemsQueued lastFetchedAt retryableFailures runId skipped } lastServerMemoryMb lastSuccessAt memoryStats { efficiencyPercent peakMemoryMb serverMemoryMb } resultCount results { fetchedAt fitMarkdown id itemId itemStatus linkAnalysis { buckets { kind links { baseDomain contextualScore href intrinsicScore rel text title totalScore type } } lowQualityLinks { baseDomain contextualScore href intrinsicScore rel text title totalScore type } stats { averageIntrinsicScore externalLinks highQualityLinks internalLinks lowQualityLinks totalLinks } topLinks { baseDomain contextualScore href intrinsicScore rel text title totalScore type } } markdown markdownWithCitations media mediaAssets metadata referencesMarkdown sourceUrl tables } runCount status targetUrl timeRangeFrom timeRangeTo updatedAt } } pageInfo { endCursor hasNextPage } totalCount }
             crawlTask(id: $crawlTaskId, resultLimit: 20, resultSearch: null) { concurrency config createdAt displayName id keywords lastCursor lastError lastMemoryEfficiency lastPeakMemoryMb lastResultAt lastRunAt lastRunSummary { inserted itemsQueueFailed itemsQueued lastFetchedAt retryableFailures runId skipped } lastServerMemoryMb lastSuccessAt memoryStats { efficiencyPercent peakMemoryMb serverMemoryMb } resultCount results { fetchedAt fitMarkdown id itemId itemStatus linkAnalysis { buckets { kind links { baseDomain contextualScore href intrinsicScore rel text title totalScore type } } lowQualityLinks { baseDomain contextualScore href intrinsicScore rel text title totalScore type } stats { averageIntrinsicScore externalLinks highQualityLinks internalLinks lowQualityLinks totalLinks } topLinks { baseDomain contextualScore href intrinsicScore rel text title totalScore type } } markdown markdownWithCitations media mediaAssets metadata referencesMarkdown sourceUrl tables } runCount status targetUrl timeRangeFrom timeRangeTo updatedAt }
           }
@@ -596,6 +611,17 @@ jobs:
               fail("go twenty roots missing " + ", ".join(missing))
           print("OK go twenty roots byte-identical to direct NestJS")
           PY
+          # 反向证明：go 模式下这 20 个 root 确实由 Go 本地 resolver 执行，
+          # 而不是被整体回退代理给 NestJS。
+          before=$(curl -fsS http://127.0.0.1:4020/__go/graphql-read-stats | python3 -c 'import json,sys; print(json.load(sys.stdin)["resolverCalls"])')
+          curl -fsS -X POST -H 'content-type: application/json' -H "authorization: Bearer $(cat /tmp/sc-token-admin)" \
+            -d @/tmp/sc-roots.json http://127.0.0.1:4020/graphql > /dev/null
+          after=$(curl -fsS http://127.0.0.1:4020/__go/graphql-read-stats | python3 -c 'import json,sys; print(json.load(sys.stdin)["resolverCalls"])')
+          if [ "$before" = "$after" ]; then
+            echo "settings/crawl roots were not executed by the Go resolvers in go mode"
+            exit 1
+          fi
+          echo "OK go mode executes the twenty roots locally"
       - name: Assert admin gate, source policy revisions, stale cursors and review queue
         run: |
           set -euo pipefail
@@ -626,6 +652,12 @@ jobs:
               ("newsEventSettings", "query { newsEventSettings { enabled } }"),
               ("newsIndicatorSettings", "query { newsIndicatorSettings { enabled } }"),
           ]
+          # 正向对照：真正的系统 admin 对三个门禁 root 必须成功，防止「一律 403」
+          # 的实现把第 3 组混过去。
+          for name, query in gated:
+              status, doc = gql(NEST, token("admin"), query)
+              if status != 200 or doc.get("errors") or not (doc.get("data") or {}).get(name):
+                  fail("real admin " + name + " " + str(status) + " " + json.dumps(doc)[:400])
           for user in ("custom-admin", "foreign-admin"):
               user_token = token(user)
               for name, query in gated:
@@ -703,7 +735,7 @@ jobs:
               id
               article { crawlAt id language summary title url }
               confidence createdAt evidence extractorVersion
-              edge { confidence fromEntity { id name properties type } id properties toEntity { id properties type } type weight }
+              edge { confidence fromEntity { id name properties type } id properties toEntity { id name properties type } type weight }
             }
           }"""
           good = open("/tmp/sc-evidence-good").read()
