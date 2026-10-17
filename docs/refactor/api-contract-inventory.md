@@ -489,6 +489,7 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 - **同批修复的 4 个缺陷（Nest 与 Go 两侧一致）**：① 非 24 位十六进制 ObjectId 直接进 Mongoose `_id` 查询触发 CastError（500）——`submitReviewDecision` 返回 404 `Review item not found`、`batchReviewDecision` 过滤无效 id、`submitAnnotations` 返回 404 `Sample not found`、`getReportJob` 返回 `null`；② `status=corrected` 传 `"///"` 经 `normalizePath` 归一化为空后落库成 `correctedCategoryPath: null`——改为 400 `correctedCategoryPath is required when status=corrected`；③ `getAlertRecipientUserIds` 的 `membership.findMany` 漏判 `Membership.isActive`，已停用成员仍收到阈值告警——补 `isActive: true`；④ `mtk_` 机器令牌执行复核裁决时把 `"machine:<id>"` 写入 `AuditLog.actorId`（User 外键）——写审计时归一化为 `null`，Mongo `reviewerId` 仍保留原 `actorId`。
 - **强类型与注释**：Go 侧 `apps/api-go/internal/classificationrssops` 全部请求 DTO、响应模型、8 个 Mongo 集合文档、MySQL 行扫描、快照载荷与审计/通知载荷均为具名 `struct`（精确 `bson`/`json` tag），枚举为具名字符串类型（`QualityWindow`、`ReviewDecisionStatus`、`ConfidenceBand`、`ClassifiedSourceType`、`RssSourceVisibility`）；`any`/`interface{}`/`map[string]any`/`[]any` 为零（MySQL 语句固定 arity，id 列表用 `JSON_CONTAINS` 匹配）；新增与修改的 `.go`/`.ts` 注释全部为英文。
 - 回滚只把 `API_GO_CLASSIFICATION_RSS_OPS_MODE` 改回 `legacy`：legacy 不注册 handler、不追加任何路由规则、不额外打开 Mongo 连接。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不启用 shadow，不改前端，不改其他 `API_GO_*` 默认值。细节与验收清单见 `docs/refactor/go-classification-rss-ops.md`。SEC-01 的真实登录态未在本批验证。
+
 ## 13. 设置中心与来源策略 / 证据复核队列 / 采集任务 GraphQL 读（Go）
 
 新增开关 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE`（空串/`legacy`/`go`，默认
@@ -531,7 +532,31 @@ Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`artic
 关联补 `orgId` 约束。回滚只把 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` 改回
 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
 
-## 14. 模型接入设置与 OpenAI 密钥分发（Go · 10 条）
+## 14. 采集 Frontier 运行监控与取消（Go）
+
+新增开关 `API_GO_CRAWL_FRONTIER_RUNS_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`（`appendAuthRequirements`），**不要求 `MONGO_URI`**，不启用 shadow，不启动采集 worker，不入队，不请求 crawl4ai。`go` 时只接管 11 条精确方法规则：
+
+| 方法 | 路径 | 权限 | 成功码 |
+| --- | --- | --- | --- |
+| GET | `/api/admin/crawl-frontier/runs` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/runs/:id` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/runs/:id/workflow-run` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/runs/:id/workflow-candidates` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/runs/:id/workflow-candidates/:candidateId` | `crawl.read` | 200 |
+| POST | `/api/admin/crawl-frontier/runs/cancel` | `crawl.write` | 201 |
+| POST | `/api/admin/crawl-frontier/runs/:id/cancel` | `crawl.write` | 201 |
+| GET | `/api/admin/crawl-frontier/nodes/:id` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/workflow-runs/:runId` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/workflow-runs/:runId/candidates` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/workflow-runs/:runId/candidates/:candidateId/explanation` | `crawl.read` | 200 |
+
+- **不迁移**：`POST /runs`（createRun 入队并调用 crawl4ai）、`POST /nodes/retry`、`POST /nodes/:id/retry`（BullMQ）、`POST /workflow-runs/:runId/replay`、`POST /workflows/:id/trial-run`，以及 `/profiles/**`、`/workflows/**`、`/workflow-versions/**`、`/news-sources/**`（属于各自的开关）；上表路径的其他方法、带尾斜杠与更长路径也回落 NestJS，Go 不返回自己的 404。`GET /runs/cancel` 按 `runs/:id` 处理（`id="cancel"`）返回与 Nest 相同的 404。
+- **契约**：人类身份走 JWT 验签 + Redis 撤销名单 + membership 重推导；`mtk_` 机器令牌走 `MachineAccessToken` SHA-256 查表并更新 `lastUsedAt`。失败顺序 401 → 403 → 400 → service。响应按 Prisma 列顺序输出，时间字段为毫秒 UTC ISO 或 `null`；`metadata` 只在是 JSON 对象时透传；`summary`/`repairSummary`/`trace` 逐行移植，数值走 JS `Number()` 语义，计数对象保持键的首次出现顺序；`undefined` 键（`metrics`、候选可空字段、trace 可空字段、`llmLogFilters.repair`）省略而 `0`/`""`/`false` 保留。
+- **同批修复的缺陷 F1（Nest 与 Go 两侧一致）**：原 `cancelRunRecords` 无条件把终态运行改写为 `canceled` 并覆盖 `finishedAt`，两条 `updateMany` 并行无事务无行锁，并发取消会重复追加 `frontier_run_canceled`，批量取消还会把已完成运行计入 `canceledIds`。修复后：单事务第一条语句 `SELECT … WHERE orgId=? AND id IN (…) AND status NOT IN ('completed','canceled') ORDER BY id ASC FOR UPDATE`，随后更新 run 与 pending/queued/running 节点，提交后按 id 升序追加事件并 `markRunStatus`；终态取消是幂等无操作，`POST /runs/:id/cancel` 无论是否转换都返回完整详情 201，`POST /runs/cancel` 只返回实际转换的 id（升序）。`failed` 仍可取消。
+- **强类型与注释**：`apps/api-go/internal/crawlfrontierruns` 的请求 DTO、响应模型、MySQL 行扫描、事件 details 均为具名 `struct`（精确 `json` tag），无 schema 的 JSON 列用本包具名 `RawJSON` 透传并提供 `IsObject()/IsArray()`；`any`/`interface{}`/`map[string]any`/`map[string]interface{}`/`[]any` 为零（id 集合用 `JSON_CONTAINS` 保持固定 arity）；新增与修改的 `.go`/`.ts` 注释全部为英文。`crawlprofile` 只新增 `export.go`（`NormalizeConfigJSON`），画像配置规范化仍是唯一实现。
+- 回滚只把 `API_GO_CRAWL_FRONTIER_RUNS_MODE` 改回 `legacy`。细节与验收清单见 `docs/refactor/go-crawl-frontier-runs.md`；F1 与两条只登记项见 `docs/refactor/bug-ledger.md`。
+
+## 15. 模型接入设置与 OpenAI 密钥分发（Go · 10 条）
 
 开关 `API_GO_MODEL_ACCESS_SETTINGS_MODE`（空串/`legacy`/`go`，默认 `legacy`，
 非法值启动失败）。`go` 时由 `internal/modelaccesssettings` 独立验签并接管 10 条
