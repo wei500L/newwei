@@ -643,11 +643,14 @@ jobs:
               return proc.stdout.strip()
 
           def hold_lock(seconds):
+              # 阻塞式 GET_LOCK：释放是异步的（kill docker exec 客户端后，
+              # 服务端 SLEEP 仍可能跑完剩下的秒数并继续持有锁），阻塞获取
+              # 可以容忍上一个持有者的尾巴。
               proc = subprocess.Popen(
                   ["docker", "exec", "-i", container("mysql:8.4"), "mysql", "-uroot", "-psecret", "-N", "app", "-e",
-                   "SELECT GET_LOCK(" + lit(LOCK_NAME) + ", 0); SELECT SLEEP(" + str(seconds) + ")"],
+                   "SELECT GET_LOCK(" + lit(LOCK_NAME) + ", 20); SELECT SLEEP(" + str(seconds) + ")"],
                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
-              deadline = time.time() + 15
+              deadline = time.time() + 30
               while time.time() < deadline:
                   if probe_lock(0) == "0":
                       return proc
@@ -656,8 +659,16 @@ jobs:
               fail("could not hold " + LOCK_NAME + " from an independent MySQL connection")
 
           def release_lock(proc):
+              # 同步释放：kill 客户端后等到锁真的空闲（probe 用 GET_LOCK(name,1)
+              # 徒手取一次，取到即证明空闲，CLI 退出时会立刻释放）。
               proc.kill()
               proc.wait(timeout=15)
+              deadline = time.time() + 15
+              while time.time() < deadline:
+                  if probe_lock(1) == "1":
+                      return
+                  time.sleep(0.5)
+              fail("the lock stayed held after release")
 
           def timed_call(base, path, method, token_value, payload, timeout):
               box = {}
