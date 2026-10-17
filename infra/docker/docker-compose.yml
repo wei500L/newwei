@@ -641,6 +641,13 @@ services:
       # MySQL 的 AuditLog。admin/quality、observability、metrics 与
       # 异常上报 POST 仍回 NestJS。回滚只把该变量改回 legacy。
       API_GO_ADMIN_LOGS_MODE: legacy
+      # 新闻指标关联分析的 3 条 HTTP 与 2 个 GraphQL 只读 query。pilot 与样例
+      # 保持 legacy。改成 go 才由 Go 验签并读 MySQL 的 NewsIndicatorAssociation
+      # 与 EconomicData(Point/Item)；GraphQL 两个 query 另需
+      # API_GO_GRAPHQL_READ_MODE=go。refresh 在按组织会话锁内单事务写入。
+      # reflection mutation 与设置读写仍回 NestJS。回滚只把该变量改回 legacy。
+      # 不调用 AkShare，不启动调度 worker。
+      API_GO_NEWS_INDICATORS_MODE: legacy
       MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。
