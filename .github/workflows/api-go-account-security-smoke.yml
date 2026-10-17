@@ -161,6 +161,7 @@ jobs:
           user_m = "asusermmmmmmmmmmmmmmmm04"
           user_p = "asuserppppppppppppppppp05"
           user_l = "asuserlllllllllllllllll06"
+          user_e = "asusereeeeeeeeeeeeeee07"
           mem_u_a = "asmemuorga00000000000001"
           mem_u_b = "asmemuorgb00000000000002"
           mem_v_c = "asmemvorgc00000000000003"
@@ -168,6 +169,7 @@ jobs:
           mem_m_a = "asmemmorga00000000000005"
           mem_p_a = "asmemporga00000000000006"
           mem_l_a = "asmemlorgan00000000000007"
+          mem_e_a = "asmemorgane00000000000008"
           token_history = "asmachinetokenhistory0001"
           token_unsupported = "asmachinetokenunsupport01"
           token_concurrent = "asmachinetokenconcurren01"
@@ -445,6 +447,7 @@ jobs:
               (user_m, "as-m@example.com", mem_m_a, org_a, role_a_admin),
               (user_p, "as-p@example.com", mem_p_a, org_a, role_a_admin),
               (user_l, "as-l@example.com", mem_l_a, org_a, role_a_admin),
+              (user_e, "as-e@example.com", mem_e_a, org_a, role_a_plain),
           ]:
               sql(f"""
               INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
@@ -454,6 +457,9 @@ jobs:
               VALUES ('{membership_id}', '{user_id}', '{org_id}', '{role_id}', 1, NOW(3));
               """)
           # U 同时属于 B；U 在 A 走 MembershipRole 双角色，B 走 primary role 回退。
+          # MFA：U 无因子（mfaEnabled=false）；V 有已禁用因子（false）；E 先登录，
+          # 之后才插入已启用因子，用于观察 mfaEnabled=true 的 profile（已启用 MFA 的
+          # 用户无法再走普通登录，所以必须先登录再开启）。
           sql(f"""
           INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
           VALUES ('{mem_u_b}', '{user_u}', '{org_b}', '{role_b_admin}', 1, NOW(3));
@@ -462,8 +468,6 @@ jobs:
             ('{mem_u_a}', '{org_a}', '{role_a_plain}', NOW(3));
           INSERT INTO GlobalRoleAssignment (id, userId, role, createdAt)
           VALUES ('asgrauuuuuuuuuuuuuuuu01', '{user_u}', 'platform_admin', NOW(3));
-          INSERT INTO UserTotpFactor (id, userId, secret, enrolledAt, verifiedAt, disabledAt, createdAt, updatedAt)
-          VALUES ('astotpuuuuuuuuuuuuuuu01', '{user_u}', JSON_OBJECT('v', 1), NOW(3), NOW(3), NULL, NOW(3), NOW(3));
           INSERT INTO UserTotpFactor (id, userId, secret, enrolledAt, verifiedAt, disabledAt, createdAt, updatedAt)
           VALUES ('astotpvvvvvvvvvvvvvvv02', '{user_v}', JSON_OBJECT('v', 1), NOW(3), NOW(3), NOW(3), NOW(3), NOW(3));
           """)
@@ -516,6 +520,8 @@ jobs:
           v_refresh = v_doc["refreshToken"]
           w_token = login("as-w@example.com", org=org_a)["accessToken"]
           m_token = login("as-m@example.com", org=org_a)["accessToken"]
+          # E 的 MFA 因子在登录之后才启用（见下方阶段 B），所以这里能普通登录。
+          e_token = login("as-e@example.com", org=org_a)["accessToken"]
 
           # legacy：8 条经 Go 代理，Nest 是唯一执行者；DTO/权限错误形状与 Nest 全等。
           me_nest = parity("legacy me", "GET", "/api/auth/me", u_token)
@@ -560,7 +566,7 @@ jobs:
               fail("accessTokenId is not the verified jti")
           if go_me["accessTokenExpiresAt"] != jwt_claim(u_token, "exp") * 1000:
               fail(f"accessTokenExpiresAt {go_me['accessTokenExpiresAt']} != exp*1000")
-          if go_me["mfaEnabled"] is not True or go_me["mfaRequired"] is not False or go_me["mfaEnrollmentRequired"] is not False:
+          if go_me["mfaEnabled"] is not False or go_me["mfaRequired"] is not False or go_me["mfaEnrollmentRequired"] is not False:
               fail(f"MFA flags wrong: {go_me}")
           if go_me["globalRoles"] != ["platform_admin"]:
               fail(f"globalRoles {go_me['globalRoles']}")
@@ -570,6 +576,15 @@ jobs:
               fail(f"emailVerified not ISO ms: {go_me['emailVerified']}")
           if "passwordHash" in json.dumps(go_me):
               fail("profile leaked passwordHash")
+          # MFA 启用分支：E 登录后才插入已启用因子（verifiedAt 有值、disabledAt 为空）。
+          sql(f"""
+          INSERT INTO UserTotpFactor (id, userId, secret, enrolledAt, verifiedAt, disabledAt, createdAt, updatedAt)
+          VALUES ('astotpeeeeeeeeeeeeee03', '{user_e}', JSON_OBJECT('v', 1), NOW(3), NOW(3), NULL, NOW(3), NOW(3));
+          """)
+          redis("DEL", f"profile:{user_e}:{org_a}")
+          e_me = parity("go me mfa enabled", "GET", "/api/auth/me", e_token)
+          if e_me.get("mfaEnabled") is not True or e_me.get("mfaRequired") is not False:
+              fail(f"MFA enabled profile {e_me.get('mfaEnabled')} {e_me.get('mfaRequired')}")
 
           patched = parity("go profile patch", "PATCH", "/api/auth/profile", u_token, {"firstName": "  Ada  ", "lastName": "Lovelace"})
           if patched.get("firstName") != "Ada" or "accessTokenId" in patched:
