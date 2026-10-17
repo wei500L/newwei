@@ -114,6 +114,11 @@ func permissionList(raw []byte) []string {
 	}
 	out := make([]string, 0, len(entries))
 	for _, entry := range entries {
+		// json.Unmarshal accepts a JSON null into a string without an error, so
+		// the quoted-string shape is checked first: only actual strings survive.
+		if !rawIsString(entry) {
+			continue
+		}
 		var text string
 		if json.Unmarshal(entry, &text) == nil {
 			out = append(out, text)
