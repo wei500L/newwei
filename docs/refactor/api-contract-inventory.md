@@ -200,11 +200,29 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 
 缺陷修复（两侧同修）：`ExceptionEventsService.list` 原先直接返回 Mongo 里的 `message` 与 `stack`，没有脱敏，异常消息或堆栈里带 `Bearer xxx`、`password=xxx`、`api_key=xxx` 时会原样返回前端。现在 Nest 与 Go 都在读取输出时对 `message` 与 `stack` 调用 `redactSensitiveFields`（9 条正则按 `packages/utils/src/error-sanitizer.ts` 原样翻译到 Go；`password`/`token`/`apiKey`/`api_key`/`secret`/`credential`/`auth` 保留键名与分隔符后替换成 `[REDACTED]`，`Bearer` 变 `Bearer [REDACTED]`，`Basic` 变 `Basic [REDACTED]`），库内已存文档不动。
 
-仍回 NestJS：`/api/admin/quality/task-logs`（`getQualityTaskLogsOverview` 不迁移）、`/api/admin/quality/*`、`/api/observability/*`、`/api/metrics`、异常上报 `POST /api/internal/observability/exception-events`（以及 `admin/logs/*` 与 `admin/errors(+stats)` 的非 GET 方法）。回滚：`API_GO_ADMIN_LOGS_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。SEC-01 的真实登录态未在本批验证。
+仍回 NestJS：`/api/admin/quality/task-logs`（`getQualityTaskLogsOverview` 不迁移）、`/api/admin/quality/*`、`/api/observability/*`、`/api/metrics`、异常上报 `POST /api/internal/observability/exception-events`（以及 `admin/logs/*` 与 `admin/errors(+stats)` 的非 GET 方法）。`/api/admin/quality/*` 后来由独立开关 `API_GO_QUALITY_OVERVIEW_MODE` 接管（见 §1.8o），与 `API_GO_ADMIN_LOGS_MODE` 互不影响。回滚：`API_GO_ADMIN_LOGS_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。SEC-01 的真实登录态未在本批验证。
 
 ### 1.8n LLM 请求日志列表 / CSV 导出 / 用量汇总
 
 `API_GO_LLM_LOGS_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本含变量名）。`go` 时只接管三条精确 GET：`GET /api/llm-logs`（`application/json`：`{page, pageSize, total, items, metadataPolicy}`，按 `createdAt` 降序分页）、`GET /api/llm-logs/export`（`text/csv; charset=utf-8`，`Content-Disposition: attachment; filename="llm-logs-export.csv"`）、`GET /api/llm-logs/summary`（`{totals, statusBreakdown, governanceBreakdown, latency, topErrors, byModel, byDay}`）。三条都要求 `settings.manage`，`orgId` 由 membership 重推导或机器令牌行推导，全部查询按该 `orgId` 过滤；其他方法（如 `POST /api/llm-logs`）与更长路径（如 `/api/llm-logs/export/extra`）仍回 NestJS（Go 不返回自己的 404）。`summary` 的参数只有 `feature`、`profileId`、`runId`、`nodeId`、`start`、`end`（控制器不接收 `model`/`requestType`/`status`）。列表 `items` 字段与 `toListItem` 一致，并附 `metadataPolicy`（`source` 为 `default`/`db`、`allowedTopLevelKeys`、`allowedTopLevelPrefixes`、`keyCount`、`prefixCount`；从 MySQL `SystemSetting` 的 `llm_request_log_settings` 读出，没有行或解析失败时落默认列表，`REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS` 始终合并）。参数校验与控制器逐字一致：非法日期 400 `<name> must be a valid date`、`start > end` 400 `start must be earlier than or equal to end`、非正数分页 400 `<name> must be a positive number`（正小数 `Math.trunc`，`pageSize` 收口 1..100）、`requestType`/`status` 枚举 400、`feature` 非小写 token 400 `feature must be a lowercase token with [a-z0-9_:. -], max 64 chars`、超长 `profileId`/`runId`/`nodeId` 400 `<name> must be 128 characters or fewer`。`buildWhere` 与 Nest 一致（`orgId` 为空落 `_unknown_`；`feature`/`profileId`/`runId`/`nodeId` 各是 `$or` 条件收进 `$and`；`start`/`end` 是 `createdAt` 的 `$gte`/`$lte`）。导出保留 90 天窗口（400 `export date range cannot exceed 90 days`）、50000 行上限（400 `export row count exceeds 50000; narrow filters or date range`）、固定表头 `timestamp,model,requestType,status,durationMs,inputTokens,outputTokens,totalTokens,error`、`createdAt` 降序、公式注入防护（字符串去前导空白后以 `=`/`+`/`-`/`@` 开头且非纯数字才加前导单引号）与 MySQL `AuditLog`（`resource=llm_request_logs`、`action=export_csv`，成功失败都写，机器令牌 `actorId` 为 `null`，审计失败不阻断响应）。**缺陷修复**：`normalizeFilterForExport` 此前漏掉 `runId` 与 `nodeId`（控制器第 279-288 行已解析并传入），导致导出 CSV 丢掉这两个条件而导出全组织数据；Nest（`llm-request-log.service.ts` 第 508-509 行）与 Go（`internal/llmlogs/where.go`）两侧同修后，导出与列表共用同一套条件。机器令牌（`mtk_`）走 `MachineAccessToken` 行（含 `Org.isActive`），人类令牌走验签 + Redis 撤销名单 + membership 重推导。`/api/system-settings/llm-request-logs`（含 `metadata-policy`、`reset`）整组不迁移——它会修改 Mongo TTL 索引，留在 NestJS。回滚：`API_GO_LLM_LOGS_MODE=legacy`。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。不打开 canary，不改生产入口，不改 Web 的 API 地址，不启用 shadow，不调用模型服务，不启动 worker。细节见 `docs/refactor/go-llm-logs.md`。SEC-01 的真实登录态未在本批验证。
+
+### 1.8o 管理端质量面板（新闻源 / 流水线 / 总览 / 任务日志）
+
+`API_GO_QUALITY_OVERVIEW_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本含变量名；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`）。`go` 时只接管 5 条精确 `GET`，全部要求 `settings.manage`（人类身份来自验签、Redis 撤销名单与 membership 重推导；机器令牌走 `MachineAccessToken` 行含 `Org.isActive`，SHA-256 查 `tokenHash`、更新 `lastUsedAt`，权限与 `orgId` 来自令牌行）：
+
+- `GET /api/admin/quality/news-sources` → `{windowHours, totals, topFailingSources}`；`windowHours` 空串/非有限数缺省 24，否则 `Math.max(1, Math.min(336, Math.floor(v)))`。`totals` 是 `total`/`active`（`isActive`）/`failing`（`consecutiveFailures > 0`）/`circuitOpen`（`isActive` 且 `circuitOpenUntil > now`）；`topFailingSources` 查 `PipelineJob`（`status='failed'`、`sourceId IS NOT NULL`、`createdAt >= since`）按 `sourceId` 分组 `COUNT(id)` 降序前 10，再回查本组织 `NewsSource`。
+- `GET /api/admin/quality/pipeline` → `{windowMinutes, totals, successRate, averageLatencyMs, ingestionLatencyMs, failureTypes, llmModels, outbox}`；`windowMinutes` 空串/非有限数缺省 60，否则 `Math.max(5, Math.min(20160, Math.floor(v)))`。数据来自 Mongo `processeditems`（state 分组、`completed` 的 `llm.latencyMs` 平均、`llm.model` 分组前 10、最近 5000 条 `ingestedAt` 分位数）、Mongo `tasklogs`（`queue='itemPipeline'`、`status='failed'` 按 `{stage, errorName}` 前 20）与 MySQL `MongoOutbox`（`type='processed_item'` 的状态计数、`staleProcessing`、最早未完成 `oldestCreatedAt`/`oldestAgeMinutes`）。
+- `GET /api/admin/quality/overview` → `{generatedAt, pipeline, newsSources, taskLogs}`；pipeline 用请求的 `windowMinutes`，newsSources 固定 `windowHours=24`，taskLogs 固定 `sinceMinutes=60`、`limit=10`（`getQualityTaskLogsOverview`：Mongo `tasklogs` 窗口内全部状态进 `summary`/`topErrors`，`items` 只取 `status='failed'` 前 10）。
+- `GET /api/admin/quality/task-logs` → `items` JSON 数组（不是 `{page, pageSize, total, items}`）；`limit` 空串/非有限数缺省 50，否则 `min(max(floor(v),1),200)`。
+- `GET /api/admin/quality/task-logs/summary` → `{totals, byStage, topErrors}`；不接收 `jobId`。
+
+5 条**全部宽松回退、不抛 400**（与 `/api/admin/logs/task` 不同）：非法 `windowHours`/`windowMinutes` 走缺省，`status` 不在四枚举当 `undefined`，`limit`/`sinceMinutes` 非有限数走缺省，`sinceMinutes <= 0` 忽略时间下界。
+
+快照复用：`news-sources` 与 `pipeline` 沿用 `ObservabilitySnapshotService.getOrCreate`——MySQL `ObservabilitySnapshot`（`scope` 为 `quality_news_sources`/`quality_pipeline`，`variantKey` 为 `windowHours:<n>`/`windowMinutes:<n>`，`expiresAt > now` 直接返回；否则抢 Redis 锁 `lock:observability-snapshot:<orgId>:<scope>:<variantKey>`（TTL 15s，抢不到每 100ms 轮询数据库最多 20s，仍无则无锁重建），重建后按唯一键 `orgId+scope+variantKey` upsert、TTL 60s），与 Nest 共享 60 秒快照与同一把锁。质量总览任务日志走 Redis 缓存 `quality:task-logs:overview:<orgId>:60:10`（TTL 15s，锁 `lock:` 前缀，lockTtl 2000ms / retryDelay 50ms / maxWait 3000ms）。
+
+**缺陷修复（两侧同修）**：`PipelineQualityService.buildSummary`（`pipeline-quality.service.ts` 第 337–341 行）此前直接输出 `error.name` 原文，而同一 `tasklogs` 集合在 `AdminLogsService` 已做 `redactSensitiveFields`；失败任务的 `error.name` 含 `Bearer xxx`/`token=xxx`/`api_key=xxx` 时 `/api/admin/quality/pipeline` 与 `/api/admin/quality/overview` 会泄漏原文。两侧映射 `failureTypes.errorName` 时都调用 `redactSensitiveFields`（Go 复用 `internal/adminlogs` 的同一函数），只改读取输出，不动库内文档。
+
+任务日志的列表/汇总/窗口聚合与深层脱敏直接调用 `internal/adminlogs`（同一实现，不维护第二套正则）。仍回 NestJS：`/api/admin/quality/classification/*`（`classification-quality.controller.ts`）与 `/api/admin/quality/pipeline/runs|replay|rollback`（`pipeline-recovery.controller.ts`），以及这 5 条的非 `GET` 方法与更长路径（Go 精确匹配，不返回自己的 404）。回滚：`API_GO_QUALITY_OVERVIEW_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。细节见 `docs/refactor/go-quality-overview.md`。SEC-01 的真实登录态未在本批验证。
 
 ### 1.9 system-settings（98 个，26 个 controller）
 
@@ -360,11 +378,20 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 5. itemPipeline DLQ 的非标准入队时机（worker failed 事件）
 6. `GET /api/metrics` 是平台级全量指标（SEC-03 已收紧）：人类须为平台管理员；机器令牌还须其 `createdById` 当前持有 `platform_admin`。普通组织的 `metrics.read` 或旧机器令牌不再够用。输出不过滤成组织子集。
 
-## 9. 知识图谱冲击传导与实体共现/相关图 GraphQL 读（Go）
+## 9. Go-批9 知识图谱与实体 360 情报 GraphQL 读（增量）
+
+- 开关：`API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE`（`legacy`|`go`，默认 `legacy`）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `=go` 时，六个 root 才登记进 Go 执行器。
+- 迁入 root：`getKnowledgeGraphSubgraph`、`articleEntityLinks`、`knowledgeGraphEdgeEvidence`、`entityIntelligenceCard`、`entityIntelligenceEvidence`、`knowledgeEntityByName`。orgId 与权限仍是服务端 membership 重推导；`entityIntelligenceEvidence` 顶层 `dashboards.read`，无 `items.read` 时返回 `restricted: true` 空列表。
+- 未迁：`knowledgeGraphEvidenceReviewQueue`、`reviewKnowledgeGraphEvidence`、`knowledgeGraphSettings` / `updateKnowledgeGraphSettings`；`getExecutiveChangeImpact` / `getCommodityMoveImpact` / `getPolicyEventImpact` / `getEntityImpactGraph` 由第 10 节另一个开关迁入。选中任一未迁 root 时整文档回落 NestJS。
+- 缺陷 1：`getSubgraph` 邻居实体查询两侧同补 `orgId`（`apps/api/src/modules/knowledge-graph/knowledge-graph.service.ts:499-501`、`apps/api-go/internal/graphqlread/knowledgegraph/subgraph.go`），防止脏边跨租户带出实体。
+- 缺陷 2：全局 `ValidationPipe{forbidUnknownValues:true}` 会 400 掉无 class-validator 元数据的 InputType；给 `KnowledgeGraphSubgraphInput`、`EntityIntelligenceCardInput`、`EntityIntelligenceEvidenceInput` 的字段加 `@Allow()`（不加约束、不改 SDL）。
+- 说明见 `docs/refactor/go-knowledge-graph-read.md`。
+
+## 10. 知识图谱冲击传导与实体共现/相关图 GraphQL 读（Go）
 
 新增开关 `API_GO_GRAPHQL_KG_IMPACT_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `go` 时，才在既有精确 `/graphql` 执行器登记 4 个只读 root：`getExecutiveChangeImpact`、`getCommodityMoveImpact`、`getPolicyEventImpact`、`getEntityImpactGraph`。与第 2 节表格中 `entity-impact-graph` / `knowledge-graph-impact` 两行是同一个权限（重推导的 `dashboards.read`），`mtk_` 机器令牌按读执行器规则拒绝。
 
 - 三个冲击传导 root 读组织级知识图谱设置（Redis `knowledgeGraph:settings:<orgId>` -> MySQL `SystemSetting` `knowledge_graph_settings:<orgId>`），按 Nest 的评分公式、候选合并、链条顺序与 Redis 缓存键（`knowledgeGraph:impact:<orgId>:...`）输出。`includeLprSnapshot` 不发实网 AkShare。
 - `getEntityImpactGraph` 读 Mongo `processeditems` 共现/提及序列与 MySQL `EconomicDataPoint` 金融序列，皮尔逊相关、节点裁剪与 ECharts 符号大小对齐 Nest，缓存键 `entityImpactGraph:data:<orgId>:...`。
-- 同批修掉三处缺陷：`knowledge-graph-impact.service.ts` 第 158/275/386/545/575 行 5 处 `knowledgeEntity.findMany` 补 `orgId`；`entity-impact-graph.service.ts` 第 564 行 `$dateToString` 补 `timezone: "UTC"`；`knowledge-graph-impact.model.ts` 三个冲击传导输入补 class-validator 装饰器（否则全局 `ValidationPipe` 的 `forbidUnknownValues` 直接 400，查询到不了 resolver）。两侧同修。
+- 同批修掉三处缺陷：`knowledge-graph-impact.service.ts` 第 158/275/386/545/575 行 5 处 `knowledgeEntity.findMany` 补 `orgId`；`entity-impact-graph.service.ts` 第 564 行 `$dateToString` 补 `timezone: "UTC"`；`knowledge-graph-impact.model.ts` 三个冲击传导输入补 `@Allow()`（与第 9 节同一误杀，否则全局 `ValidationPipe` 的 `forbidUnknownValues` 直接 400，查询到不了 resolver）。两侧同修。
 - 回滚只把 `API_GO_GRAPHQL_KG_IMPACT_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。

@@ -248,6 +248,21 @@ const (
 	AdminLogsModeGo     AdminLogsMode = "go"
 )
 
+// QualityOverviewMode 只控制管理端质量面板的 5 条 GET。默认 legacy。
+// go 只接管下面这 5 条精确路径，且只匹配 GET：
+// admin/quality 的 news-sources、pipeline、overview、task-logs、
+// task-logs/summary。新闻源质量与流水线质量复用 MySQL
+// ObservabilitySnapshot 表与 Redis 分布式锁键，与 Nest 共享 60 秒快照。
+// /api/admin/quality/classification/* 与
+// /api/admin/quality/pipeline/runs|replay|rollback 仍回 NestJS。
+// 不启用 shadow，不改前端，不改 canary。
+type QualityOverviewMode string
+
+const (
+	QualityOverviewModeLegacy QualityOverviewMode = "legacy"
+	QualityOverviewModeGo     QualityOverviewMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -388,6 +403,11 @@ type Config struct {
 	// 两个都是 go 才登记；本开关为 legacy 时，含这 4 个 root 的文档整包回
 	// NestJS。回滚只改这个变量。
 	GraphQLKgImpactMode string
+	// GraphQLKnowledgeGraphMode 只决定知识图谱与实体 360 情报的六个 root
+	// 是否登记。默认 legacy。读查询为 legacy 时不另挂 /graphql。两个都是
+	// go 才登记；知识图谱为 legacy 时，含这六个 root 的文档整包回 NestJS。
+	// 回滚只改这个变量。
+	GraphQLKnowledgeGraphMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -413,7 +433,12 @@ type Config struct {
 	// AdminLogsMode 只控制管理端日志与异常读取的 7 条 GET。默认 legacy。
 	// go 要求 JWT、MySQL、Redis、Mongo（tasklogs 与 exceptionevents 都在
 	// Mongo，审计日志在 MySQL）。不启用 shadow，不启动任何 worker。
-	AdminLogsMode        AdminLogsMode
+	AdminLogsMode AdminLogsMode
+	// QualityOverviewMode 只控制管理端质量面板的 5 条 GET。默认 legacy。
+	// go 要求 JWT、MySQL、Redis、Mongo（processeditems 与 tasklogs 都在
+	// Mongo；新闻源/流水线快照与 outbox 在 MySQL）。不启用 shadow，不启动
+	// 任何 worker。
+	QualityOverviewMode  QualityOverviewMode
 	GraphQLAPQEnabled    bool
 	GraphQLDepthLimit    int
 	GraphQLComplexity    int
@@ -798,6 +823,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_ADMIN_LOGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_QUALITY_OVERVIEW_MODE")) {
+	case "", string(QualityOverviewModeLegacy):
+		cfg.QualityOverviewMode = QualityOverviewModeLegacy
+	case string(QualityOverviewModeGo):
+		cfg.QualityOverviewMode = QualityOverviewModeGo
+	default:
+		errs = append(errs, "API_GO_QUALITY_OVERVIEW_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLReadMode = "legacy"
@@ -821,6 +854,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.GraphQLKgImpactMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_KG_IMPACT_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLKnowledgeGraphMode = "legacy"
+	case "go":
+		cfg.GraphQLKnowledgeGraphMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE must be one of legacy|go")
 	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
@@ -1172,6 +1213,12 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_ADMIN_LOGS_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_ADMIN_LOGS_MODE=go")
+		}
+	}
+	if cfg.QualityOverviewMode == QualityOverviewModeGo {
+		appendAuthRequirements(&errs, "API_GO_QUALITY_OVERVIEW_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_QUALITY_OVERVIEW_MODE=go")
 		}
 	}
 	if cfg.GraphQLReadMode == "go" {
