@@ -1520,7 +1520,11 @@ jobs:
               seeded_gov = lambda: (seed_settings(gov_doc), seed_governance(True, "s1-gov"))
               pair_error(tag + " S1-35 governance target cannot be disabled", "PUT", BASE + "/s1-gov", p,
                          {"enabled": False}, expected=400, message_want=GOV_DISABLE_MESSAGE, seed=seeded_gov)
-              # 缓存未命中时 Nest 会把治理文档按 30 秒 TTL 回填进 envelope 缓存。
+              # governance 缓存信封由 NestJS 独占写入：缓存未命中时 Nest 会把完整
+              # 治理文档按 30 秒 TTL 回填。api-go 只读该缓存、绝不写入（它只有两个
+              # 字段的强类型投影，写进去会覆盖完整治理配置），所以这里先经 Nest 读
+              # 一次再断言 TTL。
+              call(NEST, BASE + "/s1-gov", "PUT", p, {"enabled": False})
               gov_ttl = int(redis("TTL", GOVERNANCE_CACHE_KEY) or "-1")
               check(tag + " S1-35 governance cache envelope TTL 30", 25 <= gov_ttl <= 30,
                     "TTL=" + str(gov_ttl))
