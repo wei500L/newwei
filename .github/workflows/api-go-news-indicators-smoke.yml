@@ -431,6 +431,10 @@ jobs:
           per_assoc = scalar(f"SELECT COUNT(*) FROM NewsIndicatorAssociationBacktestRun b JOIN NewsIndicatorAssociation a ON a.id=b.associationId WHERE a.orgId='{org}'")
           if per_assoc not in ("1", "2"):
               fail(f"concurrent refresh backtests per association = {per_assoc}")
+          current = body(call(go, list_path, "GET", writer)[1])
+          if not isinstance(current, list) or not current:
+              fail(f"list after concurrent refresh {current}")
+          assoc_id = current[0]["id"]
           print("go switch ok")
 
           # ---- 阶段 3：跨组织隔离与权限 ----
@@ -477,8 +481,9 @@ jobs:
 
           if call(go, list_path, "GET", writer)[0] != 200:
               fail("list after nest stop was not 200")
-          if call(go, list_path + "/" + assoc_id, "GET", writer)[0] != 200:
-              fail("detail after nest stop was not 200")
+          status, raw = call(go, list_path + "/" + assoc_id, "GET", writer)
+          if status != 200 or (body(raw) or {}).get("id") != assoc_id:
+              fail(f"detail after nest stop {status} {raw[:200]!r}")
           if call(go, refresh, "POST", writer)[0] != 201:
               fail("refresh after nest stop was not 201")
           gql_list = body(gql(go, writer, list_query)[1])
