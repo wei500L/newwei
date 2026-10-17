@@ -424,7 +424,7 @@ func (s *Service) getSignedURLTTLSeconds(ctx context.Context) int {
 	}
 	var raw []byte
 	err := s.db.QueryRowContext(ctx,
-		"SELECT value FROM SystemSetting WHERE key = ?", storagePresignedTTLSettingKey,
+		"SELECT `value` FROM SystemSetting WHERE `key` = ?", storagePresignedTTLSettingKey,
 	).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fallback
@@ -470,12 +470,14 @@ func (s *Service) getAssetDeliveryPayload(
 		storageKey             sql.NullString
 		legacyBlob, joinedBlob []byte
 	)
-	err := s.db.QueryRowContext(ctx, `
-SELECT a.id, a.provider, a.kind, a.contentType, a.format, a.bytes, a.storageKey,
-       a.blobData AS legacyBlobData, b.blobData AS joinedBlobData
-FROM CrawlMediaAsset a
-LEFT JOIN CrawlMediaBlob b ON b.id = a.blobId
-WHERE a.id = ? AND a.orgId = ?`, assetID, orgID,
+	// Identifiers are quoted because `desc` is a MySQL reserved word and the
+	// column names must survive unquoted keyword lookups.
+	err := s.db.QueryRowContext(ctx,
+		"SELECT a.`id`, a.`provider`, a.`kind`, a.`contentType`, a.`format`, a.`bytes`, a.`storageKey`, "+
+			"a.`blobData` AS legacyBlobData, b.`blobData` AS joinedBlobData "+
+			"FROM CrawlMediaAsset a "+
+			"LEFT JOIN CrawlMediaBlob b ON b.`id` = a.`blobId` "+
+			"WHERE a.`id` = ? AND a.`orgId` = ?", assetID, orgID,
 	).Scan(&id, &provider, &kind, &contentType, &format, &bytes, &storageKey, &legacyBlob, &joinedBlob)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -538,12 +540,12 @@ func (s *Service) listAssetsForTask(
 		requested[resultID] = true
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-SELECT id, resultId, provider, kind, sourceUrl, bytes, contentType, storageKey,
-       width, height, alt, title, desc, poster, format, metadata
-FROM CrawlMediaAsset
-WHERE orgId = ? AND taskId = ?
-ORDER BY createdAt ASC`, orgID, taskID)
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT `id`, `resultId`, `provider`, `kind`, `sourceUrl`, `bytes`, `contentType`, `storageKey`, "+
+			"`width`, `height`, `alt`, `title`, `desc`, `poster`, `format`, `metadata` "+
+			"FROM CrawlMediaAsset "+
+			"WHERE `orgId` = ? AND `taskId` = ? "+
+			"ORDER BY `createdAt` ASC", orgID, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errDatabase, err)
 	}
