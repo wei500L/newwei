@@ -134,13 +134,16 @@ func TestLegacyKeyShapes(t *testing.T) {
 	wantFingerprints := []string{
 		sha256Hex("sk-legacy-plain"),
 		sha256Hex("sk-encrypted"),
+		sha256Hex("sk-wrapped"),
+		// The wrapped entry with an empty value still exposes its stored
+		// fingerprint, and the entry without a "value" key exposes nothing.
 		"stored-fp",
 	}
 	assertStrings(t, "listKeyFingerprints", fingerprints, wantFingerprints)
 
-	// countStoredKeys counts by structure: the two empty/false wrapped values and
-	// the unrecognized objects do not count, and neither do the falsy entries.
-	if got, want := countStoredKeys(entries), 4; got != want {
+	// countStoredKeys counts by structure: the falsy entries, the empty wrapped
+	// value and the unrecognized objects do not count.
+	if got, want := countStoredKeys(entries), 3; got != want {
 		t.Fatalf("countStoredKeys = %d, want %d", got, want)
 	}
 }
