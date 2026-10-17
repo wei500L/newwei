@@ -74,6 +74,13 @@ const envConfig = (): RealtimeSignalsEnvConfig => ({
   polymarket: {},
 });
 
+type Mock = ReturnType<typeof vi.fn>;
+
+type UpdateInput = Parameters<
+  RealtimeSignalsSettingsService["updateSettings"]
+>[2];
+
+/** Builds a request body the way a DTO instance would reach the service. */
 const input = (raw: Record<string, unknown>): UpdateInput =>
   raw as unknown as UpdateInput;
 
@@ -329,7 +336,7 @@ describe("RealtimeSignalsSettingsService", () => {
   });
 
   describe("cross-field constraints", () => {
-    const cases: Array<[Record<string, unknown>, string]> = [
+    const cases: [Record<string, unknown>, string][] = [
       [
         { openskyDailyCreditBudget: 0 },
         "openskyDailyCreditBudget must be greater than 0",

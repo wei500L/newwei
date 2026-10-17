@@ -13,14 +13,14 @@ const statusKey = (scope: string, orgId: string, scopeValue: string): string =>
 
 const updatedAt = "2026-01-02T03:04:05.000Z";
 
-type StoredValue = {
+interface StoredValue {
   orgId?: string;
   scope: string;
   scopeValue: string;
   state: string;
   updatedAt: string;
   errorMessage?: string;
-};
+}
 
 interface Entry {
   key: string;

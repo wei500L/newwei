@@ -22,10 +22,6 @@ vi.mock("../situation-monitor/situation-monitor-user-lock", () => {
   };
 });
 
-vi.mock("../audit/audit-log.writer", () => ({
-  writeAuditLogBestEffort: vi.fn(async () => undefined),
-}));
-
 const SETTINGS_KEY = "geo_nominatim_identity";
 const NOMINATIM_LOCK = "data-runtime-settings:nominatim:v1";
 
@@ -47,6 +43,31 @@ const build = (
     const next = rows.length > 1 ? rows.shift() : rows[0];
     return next === undefined ? null : next;
   });
+  const upsert = vi.fn(async () => undefined);
+  const assertPlatformAdmin = vi.fn(async () => {
+    if (options.isPlatformAdmin === false) {
+      throw new ForbiddenException("Platform admin access required");
+    }
+    return undefined;
+  });
+  const envGet = vi.fn((key: string) => {
+    if (key === "GEO_NOMINATIM_USER_AGENT") {
+      return options.userAgent ?? "modular-api";
+    }
+    if (key === "GEO_NOMINATIM_EMAIL") {
+      return options.email ?? "ops@example.com";
+    }
+    return undefined;
+  });
+
+  const service = new GeoNominatimSettingsService(
+    { systemSetting: { findUnique, upsert } } as unknown as PrismaService,
+    { get: envGet } as unknown as EnvService,
+    { assertPlatformAdmin } as unknown as PlatformAccessService,
+  );
+
+  return { service, findUnique, upsert, assertPlatformAdmin };
+};
 
 const writtenOverrides = (
   upsert: Mock,

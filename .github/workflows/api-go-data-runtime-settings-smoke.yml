@@ -652,14 +652,17 @@ jobs:
               return body(raw)
 
 
-          def warm_geo_caches(token):
-              """两侧各读一次同一份 DB，使随后的比较都是各自进程缓存命中。
+          def parity_geo(label, token):
+              """比较 Nominatim GET：先清 DB，再等两侧 30 秒进程缓存都过期。
 
-              geo 的 30 秒进程缓存是刻意保留的行为：若不预热，两侧 TTL 先后到期
-              会制造出与业务无关的瞬时差异，属于比较测试误判。
+              geo 的进程内缓存是刻意保留的行为（一个实例写入后，另一实例最多
+              30 秒仍返回旧值），且无法从远端失效。若不复位就做差分，两侧 TTL
+              的先后到期会制造与业务无关的瞬时差异，属于比较测试误判。等待
+              期间没有写入，两侧随后都会读到同一份（此处为空的）DB 状态。
               """
-              call(NEST_URL, NOMINATIM_PATH, "GET", token)
-              call(GO_URL, NOMINATIM_PATH, "GET", token)
+              reset_settings()
+              time.sleep(31)
+              parity(label, "GET", NOMINATIM_PATH, token)
 
 
           def side_effect_snapshot():
@@ -848,9 +851,10 @@ jobs:
           ]
           # legacy(默认)与空串都全部回落 NestJS；此处用 legacy 容器验证代理等价。
           for method, path, payload in ALL_ROUTES:
+              if method == "GET" and path == NOMINATIM_PATH:
+                  parity_geo(f"legacy {method} {path}", platform_token)
+                  continue
               reset_settings()
-              if path == NOMINATIM_PATH:
-                  warm_geo_caches(platform_token)
               parity(f"legacy {method} {path}", method, path, platform_token, payload)
           print("phase 1b ok: nine routes proxied to NestJS in legacy mode")
 
@@ -859,9 +863,10 @@ jobs:
           print("==== phase 2: go takeover ====")
           start_go("go")
           for method, path, payload in ALL_ROUTES:
+              if method == "GET" and path == NOMINATIM_PATH:
+                  parity_geo(f"go {method} {path}", platform_token)
+                  continue
               reset_settings()
-              if path == NOMINATIM_PATH:
-                  warm_geo_caches(platform_token)
               parity(f"go {method} {path}", method, path, platform_token, payload)
           print("phase 2a ok: nine routes served by Go and identical to NestJS")
 
@@ -898,12 +903,12 @@ jobs:
           # 四条 GET 不加平台门禁：普通管理员与机器令牌均可读。
           for method, path in (("GET", REALTIME_PATH), ("GET", ARCHIVE_SETTINGS_PATH),
                                ("GET", ARCHIVE_STATUS_PATH), ("GET", NOMINATIM_PATH)):
+              if path == NOMINATIM_PATH:
+                  parity_geo(f"DS1 GET org admin {path}", admin_a_token)
+                  parity_geo(f"DS1 GET machine {path}", MACHINE_ALLOW)
+                  continue
               reset_settings()
-              if path == NOMINATIM_PATH:
-                  warm_geo_caches(admin_a_token)
               parity(f"DS1 GET org admin {path}", method, path, admin_a_token)
-              if path == NOMINATIM_PATH:
-                  warm_geo_caches(MACHINE_ALLOW)
               parity(f"DS1 GET machine {path}", method, path, MACHINE_ALLOW)
           print("phase 2d ok: four GETs stay readable by org admin and machine token")
 

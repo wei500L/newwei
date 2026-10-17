@@ -50,6 +50,29 @@ const build = (
     return undefined;
   });
 
+  const service = new ArchivePreparationSettingsService(
+    { systemSetting: { findUnique, upsert, deleteMany } } as unknown as PrismaService,
+    { del: cacheDel, wrap: cacheWrap } as unknown as CacheService,
+    { assertPlatformAdmin } as unknown as PlatformAccessService,
+  );
+
+  if (options.auditRejects) {
+    auditWriter.mockRejectedValue(new Error("audit down"));
+  } else {
+    auditWriter.mockImplementation(async () => undefined);
+  }
+
+  return {
+    service,
+    findUnique,
+    upsert,
+    deleteMany,
+    cacheDel,
+    cacheWrap,
+    assertPlatformAdmin,
+  };
+};
+
 const writtenSettings = (
   upsert: Mock,
   index = 0,
