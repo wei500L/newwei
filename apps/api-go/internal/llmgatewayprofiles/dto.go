@@ -339,8 +339,13 @@ func validateStringArrayField(problems *validationErrors, raw json.RawMessage, f
 // validateIntField mirrors @IsInt + @Min + @Max and preserves the constraint
 // order class-validator uses: max, min, isInt.
 func validateIntField(problems *validationErrors, raw json.RawMessage, field string, min, max int) (jsNumber, bool) {
-	if !present(raw) || isJSONNull(raw) {
-		return jsNumber{kind: jsNumberAbsent}, present(raw)
+	if !present(raw) {
+		return jsNumber{kind: jsNumberAbsent}, false
+	}
+	if isJSONNull(raw) {
+		// Number(null) === 0: the service layer receives a real zero, which
+		// asPositiveInt then maps back to the per-operation fallback.
+		return numberJSNumber(0), true
 	}
 	number := parseJSNumber(raw)
 	isNumber := isJSONNumberToken(raw)
@@ -366,8 +371,13 @@ func validateIntField(problems *validationErrors, raw json.RawMessage, field str
 // validateNumberField mirrors @Min + @Max without @IsInt, preserving the
 // constraint order max then min.
 func validateNumberField(problems *validationErrors, raw json.RawMessage, field string, min, max float64) (jsNumber, bool) {
-	if !present(raw) || isJSONNull(raw) {
-		return jsNumber{kind: jsNumberAbsent}, present(raw)
+	if !present(raw) {
+		return jsNumber{kind: jsNumberAbsent}, false
+	}
+	if isJSONNull(raw) {
+		// Number(null) === 0 and temperature/topP are clamped, not treated as
+		// absent: an explicit null therefore stores 0, exactly like NestJS.
+		return numberJSNumber(0), true
 	}
 	number := parseJSNumber(raw)
 	isNumber := isJSONNumberToken(raw)
