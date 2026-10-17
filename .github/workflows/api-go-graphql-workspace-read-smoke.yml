@@ -432,11 +432,11 @@ jobs:
               fail(f"legacy queue log redaction {logs}")
 
           # Padded sentiment names must hit the stored canonical snapshots.
-          padded = gql(go, token_admin, 'query { entitySentimentSeries(entityName: "  Apple  ") { entityName } topicSentimentSeries(topic: "  AI  ") { topic } }')
+          padded = gql(go, token_admin, 'query { entitySentimentSeries(entityName: "  Apple  ", entityType: "  COMPANY  ") { entityName } topicSentimentSeries(topic: "  AI  ") { topic } }')
           padded_data = (padded[1].get("data") or {})
           if padded[0] != 200 or not padded_data.get("entitySentimentSeries") or not padded_data.get("topicSentimentSeries"):
               fail(f"legacy padded sentiment {padded}")
-          nest_padded = gql(nest, token_admin, 'query { entitySentimentSeries(entityName: "  Apple  ") { entityName } topicSentimentSeries(topic: "  AI  ") { topic } }')
+          nest_padded = gql(nest, token_admin, 'query { entitySentimentSeries(entityName: "  Apple  ", entityType: "  COMPANY  ") { entityName } topicSentimentSeries(topic: "  AI  ") { topic } }')
           if nest_padded[0] != 200 or nest_padded[1] != padded[1]:
               fail(f"legacy padded sentiment nest/go mismatch {nest_padded} {padded}")
 
@@ -559,7 +559,7 @@ jobs:
               fail("go queue log redaction")
 
           # Padded names hit the canonical snapshots on Go too.
-          status, doc = gql(go, token_admin, 'query { entitySentimentSeries(entityName: "  Apple  ") { entityName entityType } topicSentimentSeries(topic: "  AI  ") { topic } }')
+          status, doc = gql(go, token_admin, 'query { entitySentimentSeries(entityName: "  Apple  ", entityType: "  COMPANY  ") { entityName entityType } topicSentimentSeries(topic: "  AI  ") { topic } }')
           if status != 200 or not (doc.get("data") or {}).get("entitySentimentSeries") or not (doc.get("data") or {}).get("topicSentimentSeries"):
               fail(f"go padded sentiment {status} {doc}")
 
