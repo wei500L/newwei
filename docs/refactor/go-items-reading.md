@@ -13,8 +13,8 @@
 ## 1. 开关与回滚
 
 - 变量：`API_GO_ITEMS_READING_MODE`。只接受空字符串、`legacy`、`go`；**空串与未设置都解析为 `legacy`**。
-  其他值让进程启动失败，错误文本含变量名与非法值：
-  `API_GO_ITEMS_READING_MODE must be one of legacy|go`（`apps/api-go/internal/config/config.go`）。
+  其他值让进程启动失败，错误文本含变量名与非法值（回显被拒绝的取值）：
+  `API_GO_ITEMS_READING_MODE must be one of legacy|go, got "bogus"`（`apps/api-go/internal/config/config.go`）。
 - `go` 时要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`（本批要读 MySQL + Mongo + Redis）。
 - **五个 GraphQL root 只在 `API_GO_GRAPHQL_READ_MODE=go` 且 `API_GO_ITEMS_READING_MODE=go` 时登记**。
   GraphQL 总开关仍是 `legacy` 时，即使本批开关是 `go`，五个 Query 也整包回 NestJS。

@@ -1273,13 +1273,16 @@ func Load(getenv func(string) string) (Config, error) {
 	// The item reading switch accepts the empty string, legacy and go. An empty
 	// value behaves exactly like legacy so an unset deployment keeps serving
 	// both REST routes and all five GraphQL roots through NestJS.
-	switch strings.TrimSpace(getenv("API_GO_ITEMS_READING_MODE")) {
+	itemsReadingRaw := strings.TrimSpace(getenv("API_GO_ITEMS_READING_MODE"))
+	switch itemsReadingRaw {
 	case "", string(ItemsReadingModeLegacy):
 		cfg.ItemsReadingMode = ItemsReadingModeLegacy
 	case string(ItemsReadingModeGo):
 		cfg.ItemsReadingMode = ItemsReadingModeGo
 	default:
-		errs = append(errs, "API_GO_ITEMS_READING_MODE must be one of legacy|go")
+		// The failure names the variable and echoes the rejected value so an
+		// operator can see which deployment value was refused.
+		errs = append(errs, "API_GO_ITEMS_READING_MODE must be one of legacy|go, got "+strconv.Quote(itemsReadingRaw))
 	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)

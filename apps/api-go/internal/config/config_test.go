@@ -2303,6 +2303,11 @@ func TestItemsReadingModeRejectsInvalid(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "API_GO_ITEMS_READING_MODE must be one of legacy|go") {
 		t.Fatalf("Load() error = %v", err)
 	}
+	// The failure must echo the rejected value so the operator can see which
+	// deployment value was refused.
+	if !strings.Contains(err.Error(), `got "shadow"`) {
+		t.Fatalf("Load() error must include the illegal value: %v", err)
+	}
 }
 
 func TestItemsReadingModeGoRequiresMongo(t *testing.T) {
