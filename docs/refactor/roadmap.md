@@ -162,3 +162,5 @@
 4. canary 激活的前置件（迁移序 5 的 Go JWT 验签 + membership 重推导——在它完成前 canary 保持不激活）
 
 **canary 契约提醒**：路由表没有任何 ModeCanary 条目；CANARY_PERCENT 是预留配置。把业务路由切到 ModeCanary 之前必须先落地可信身份来源——`cmd/api/main_test.go` 的 TestDefaultRulesHaveNoCanaryRoutes 会在有人提前切换时失败。
+
+- 采集 Frontier 运行监控与取消 11 条 HTTP 迁入 Go（`API_GO_CRAWL_FRONTIER_RUNS_MODE`，默认 `legacy`，回滚只改该变量）；同批修掉取消改写终态运行、无事务无行锁与并发重复记事件的 F1 缺陷（Nest 与 Go 两侧一致），细节见 `docs/refactor/go-crawl-frontier-runs.md`。

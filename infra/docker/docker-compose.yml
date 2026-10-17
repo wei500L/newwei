@@ -636,6 +636,11 @@ services:
       # crawl-tasks、metadata、crawl4ai 队列仍回 NestJS。
       # 回滚只把该变量改回 legacy。不入队。
       API_GO_CRAWL_TEMPLATES_MODE: legacy
+      # 采集 Frontier 运行监控与取消的 11 条 HTTP。pilot 与样例保持 legacy。
+      # 改成 go 才由 Go 验签并读写 CrawlFrontierRun/Node 与 workflow run。
+      # POST /runs、retry、replay、trial-run 仍回 NestJS（入队或调用 crawl4ai）。
+      # 回滚只把该变量改回 legacy。不入队，不启动采集 worker。
+      API_GO_CRAWL_FRONTIER_RUNS_MODE: ${API_GO_CRAWL_FRONTIER_RUNS_MODE:-legacy}
       # LLM 请求日志的列表、CSV 导出与用量汇总（三条精确 GET）。
       # pilot 与样例保持 legacy。改成 go 才由 Go 验签并只读 Mongo
       # llmrequestlogs；导出仍保留 90 天窗口、50000 行上限、公式注入
