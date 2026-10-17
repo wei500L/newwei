@@ -35,6 +35,12 @@ orgId 和权限都来自服务端 membership 重推导，不读 JWT 的 orgId �
 
 第 510~515 行与第 523~525 行原本就会剔除不在 `nodesById` 内的边端点，因此跨组织脏端点被安全剔除。
 
+## 同步修复的第二个缺陷
+
+`apps/api` 的全局 `ValidationPipe` 带 `forbidUnknownValues: true`（`main.ts:68-75`）。没有 class-validator 元数据的 GraphQL InputType 会被整包判为 “an unknown value was passed to the validate function”，返回 400。`KnowledgeGraphSubgraphInput`、`EntityIntelligenceCardInput`、`EntityIntelligenceEvidenceInput` 正是这种未装饰输入，所以这三个 input root 在迁移前就恒返回 400。
+
+修复方式：只给这三个 InputType 的字段加 `@Allow()`（`class-validator`），注册元数据但**不加任何约束**，不改 SDL、不改字段白名单。修复后 Nest 返回正常数据，Go 与 Nest 才能逐字段对照。
+
 ## 留在 NestJS
 
 `knowledgeGraphEvidenceReviewQueue`、`reviewKnowledgeGraphEvidence`、`getExecutiveChangeImpact`、`getCommodityMoveImpact`、`getPolicyEventImpact`、`getEntityImpactGraph` 以及 `knowledgeGraphSettings` / `updateKnowledgeGraphSettings` 不迁。选中任一未迁 root 时整个文档回 NestJS。
