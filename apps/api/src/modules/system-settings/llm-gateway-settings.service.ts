@@ -787,7 +787,12 @@ export class LlmGatewaySettingsService {
         DEFAULT_RESPONSE_FORMAT_MODE
       ),
       apiSurface: this.normalizeApiSurface(record.apiSurface, DEFAULT_API_SURFACE),
-      enabled: record.enabled ?? true,
+      // GP3: a legacy row may hold a non-boolean enabled value (string, number,
+      // object, array). Boolean values are preserved, absent/null keeps the
+      // historical default true, and every other type degrades to false instead
+      // of being enabled by JavaScript truthiness. The public model therefore
+      // always emits a real JSON boolean.
+      enabled: this.normalizeEnabled(record.enabled),
       createdAt: this.normalizeString(record.createdAt) ?? new Date().toISOString(),
       updatedAt: this.normalizeString(record.updatedAt) ?? new Date().toISOString()
     };
@@ -999,6 +1004,21 @@ export class LlmGatewaySettingsService {
       return value;
     }
     return fallback;
+  }
+
+  /**
+   * GP3: strict `enabled` normalisation. Unlike normalizeBoolean, a non-boolean
+   * stored value is not allowed to fall back to the enabled default — the row
+   * is treated as disabled. Only absent/null keep the historical default.
+   */
+  private normalizeEnabled(value: unknown): boolean {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (value === undefined || value === null) {
+      return true;
+    }
+    return false;
   }
 
   private normalizeResponseFormatMode(
