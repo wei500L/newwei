@@ -490,7 +490,49 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 - **强类型与注释**：Go 侧 `apps/api-go/internal/classificationrssops` 全部请求 DTO、响应模型、8 个 Mongo 集合文档、MySQL 行扫描、快照载荷与审计/通知载荷均为具名 `struct`（精确 `bson`/`json` tag），枚举为具名字符串类型（`QualityWindow`、`ReviewDecisionStatus`、`ConfidenceBand`、`ClassifiedSourceType`、`RssSourceVisibility`）；`any`/`interface{}`/`map[string]any`/`[]any` 为零（MySQL 语句固定 arity，id 列表用 `JSON_CONTAINS` 匹配）；新增与修改的 `.go`/`.ts` 注释全部为英文。
 - 回滚只把 `API_GO_CLASSIFICATION_RSS_OPS_MODE` 改回 `legacy`：legacy 不注册 handler、不追加任何路由规则、不额外打开 Mongo 连接。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不启用 shadow，不改前端，不改其他 `API_GO_*` 默认值。细节与验收清单见 `docs/refactor/go-classification-rss-ops.md`。SEC-01 的真实登录态未在本批验证。
 
-## 13. 态势监控信号读取与反馈 7 条 HTTP（Go）
+## 13. 设置中心与来源策略 / 证据复核队列 / 采集任务 GraphQL 读（Go）
+
+新增开关 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE`（空串/`legacy`/`go`，默认
+`legacy`，非法值启动失败）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `go`
+时才登记下列 20 个只读 root（Go 包 `internal/graphqlread/settingscrawl`）：
+
+- 设置与来源策略 16 个：`rateLimitSettings`（`settings.manage` + 系统管理员；
+  `rate_limit_login`/`rate_limit_crawl_create`/`rate_limit_rbac_write`）、
+  `entityImpactGraphSettings`（`dashboards.read`）、`knowledgeGraphSettings`
+  （`dashboards.read`；缺记录时 upsert `enabled: true, ingestionEnabled: true`
+  引导值）、`newsEventSettings`（`dashboards.read`）、`newsEventSourcePolicy`
+  （`settings.manage` + 系统管理员；有效名单 + `categoryAuthority` +
+  `activeRevision` + `overrides` + 冲突 `warnings` + 最新 30 条 `revisions`）、
+  `newsEventSourcePolicyPresets`（`settings.manage` + 系统管理员）、
+  `newsEventSourcePolicyRevisionDiff(baseRevision, targetRevision)`
+  （`settings.manage` + 系统管理员；找不到 revision 抛 400
+  `Revision <N> not found`，无 `appCode`）、`newsClassificationSettings`、
+  `classificationQualitySettings`、`newsDedupeSettings`、
+  `newsIndicatorSettings`（`dashboards.read`）、`authCacheSettings`、
+  `crawlClientSettings`（`requestTimeoutMs` 镜像 `requestTimeoutNormalMs`）、
+  `auditLogRetention`、`newsExtractionSettings`、`newsPromptConfig`
+  （缺省用 `DEFAULT_NEWS_PROMPT_CONFIG`）。
+- 来源策略同步状态：`newsEventSourcePolicySyncStatus`（`items.read`；比较 DB 与
+  Redis 的 `updatedAt`，返回 `degraded` / `policyCacheStale` / `presetCacheStale` /
+  `warningCodes`（字典序）/ `forceAuthoritativeMode` / `forceMinAuthoritativeSources`）。
+- 知识图谱证据复核队列：`knowledgeGraphEvidenceReviewQueue(limit, maxConfidence,
+  onlyUnreviewed)`（`settings.manage` **或** `knowledgegraph.review`，`any` 模式；
+  设置 `enabled = false` 返回 `[]`；`take = min(500, max(50, clamp(limit,1,200)*4))`；
+  内存过滤并在 `limit` 处 break）。
+- 采集任务：`crawlTasks(first, after, search, status)`（`crawl.read`；
+  `take = min(first,50)`，`createdAt desc, id desc` 游标分页）与
+  `crawlTask(id, resultLimit, resultSearch)`（`crawl.read`；找不到抛 404
+  `crawl task not found`）。复用 `internal/crawlreadtelemetry` 的结果组装、Mongo
+  内容关联、媒体签名 URL 与运行摘要读取逻辑。
+
+未迁：`crawlMetadata`（抓外网）、`alertRules`（可能投递 BullMQ 任务）与全部
+GraphQL mutation。同批修 3 个缺陷（Nest 与 Go 两侧）：`assertAdmin` 补
+`orgId` 与 `isSystem`；`crawlTasks` 失效/跨组织 `after` 游标返回空页而不是
+Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`article`
+关联补 `orgId` 约束。回滚只把 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` 改回
+`legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
+
+## 14. 态势监控信号读取与反馈 7 条 HTTP（Go）
 
 新增开关 `API_GO_SITUATION_MONITOR_SIGNALS_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`（feedback 写 Mongo，refresh-runs 读 MySQL，信号状态读 Redis，settings 读 SystemSetting + Redis 信封）。`go` 时只接管 7 条路由规则（6 条精确 + 1 条「恰好一段」动态路径，另加同路径 `OPTIONS`），处理器注册键 `SituationSignalsKey = "/api/situation-monitor#signals"`，与自定义监控的 `SituationMonitorsKey` 不同：
 
@@ -512,3 +554,4 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 - **同批修复的 2 个缺陷（Nest 与 Go 两侧一致）**：① 空白 `signalId` 的 `POST /feedback` 原本抛裸 `Error` → 500，现为 400 `signalId is required`（DTO 不改，控制器不改）；② refresh-run 缓存记录缺 `activeSourceIds`/`warnings`/`crawl` 或 `taskWindowStart` 非法时读取 500，现为数组归一化 → `[]`、`crawl` → 六字段零值对象、非法时间 → 404，正常记录行为不变。`activeSourceIds` 为空时 12 个计数直接为 0（不做无过滤全量计数）。
 - **强类型与注释**：`apps/api-go/internal/situationsignals` 的请求 DTO、响应模型、Redis 缓存文档、Mongo 文档、匹配结果与候选均为具名 `struct`（`json`/`bson` tag），无 schema 的透传 JSON 用具名 `rawJSON`（`IsObject`/`IsArray`），宽松字段用具名 `jsNumberish`/`trimmedString`/`jsStringList`，枚举为具名字符串类型；`any`/`interface{}`/`map[string]any`/`[]any` 为零（MySQL 不构造变长参数列表）。新增/修改的 `.go`/`.ts` 注释全部为英文。
 - 回滚只把 `API_GO_SITUATION_MONITOR_SIGNALS_MODE` 改回 `legacy`。生产入口仍是 Web → NestJS；canary 保持关闭；不启用 shadow，不改前端，不改控制器，不改其他 `API_GO_*` 默认值。语义 / rerank 命中路径在 CI 未验证（无 LiteLLM，两侧同环境降级）。细节与验收清单见 `docs/refactor/go-situation-monitor-signals.md`。
+

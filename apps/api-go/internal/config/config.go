@@ -570,6 +570,16 @@ type Config struct {
 	// NestJS as a whole. Rolling back only means setting this variable back
 	// to legacy.
 	GraphQLWorkspaceReadMode string
+	// GraphQLSettingsCrawlReadMode decides whether the twenty settings center,
+	// source policy, source policy sync status, knowledge-graph evidence review
+	// queue and crawl task read roots are registered into the Go GraphQL
+	// executor. The accepted values are exactly "", "legacy" and "go"; the empty
+	// value behaves like legacy. The roots are registered only when both
+	// API_GO_GRAPHQL_READ_MODE and this switch are go; while this switch is
+	// legacy, any document selecting one of those roots falls back to NestJS as
+	// a whole, so the production web entry keeps serving through NestJS.
+	// Rolling back only means setting this variable back to legacy.
+	GraphQLSettingsCrawlReadMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -1134,6 +1144,17 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.GraphQLWorkspaceReadMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_WORKSPACE_READ_MODE must be one of legacy|go")
+	}
+	// The settings/crawl switch accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy, so an unset deployment keeps
+	// serving all twenty roots through NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLSettingsCrawlReadMode = "legacy"
+	case "go":
+		cfg.GraphQLSettingsCrawlReadMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE must be one of legacy|go")
 	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
