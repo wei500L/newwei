@@ -451,6 +451,42 @@ const (
 	RuntimeSettingsModeGo RuntimeSettingsMode = "go"
 )
 
+// ModelAccessSettingsMode controls the ten model service configuration and OpenAI
+// key distribution HTTP routes (API_GO_MODEL_ACCESS_SETTINGS_MODE).
+//
+//	go mode takes over exactly these ten routes:
+//	  GET    /api/system-settings/model-service
+//	  PUT    /api/system-settings/model-service
+//	  DELETE /api/system-settings/model-service
+//	  GET    /api/system-settings/openai-keys
+//	  PUT    /api/system-settings/openai-keys
+//	  POST   /api/system-settings/openai-keys
+//	  DELETE /api/system-settings/openai-keys/key/:fingerprint
+//	  DELETE /api/system-settings/openai-keys
+//	  GET    /api/internal/litellm/openai-keys
+//	  POST   /api/internal/litellm/openai-keys/applied
+//
+// /api/internal/litellm/proxy-load-balancing, /api/system-settings/llm-gateways and
+// every other /api/system-settings route keep falling back to NestJS. go mode
+// requires JWT_SECRET, DATABASE_URL and REDIS_HOST only: it reads no Mongo
+// collection, calls no model upstream and starts no worker. The accepted values
+// are exactly "", "legacy" and "go"; any other value fails startup instead of
+// silently degrading. The default is legacy.
+type ModelAccessSettingsMode string
+
+const (
+	// ModelAccessSettingsModeLegacy proxies all ten routes to NestJS (default,
+	// including the empty value). Rollback only changes this variable back to
+	// legacy.
+	ModelAccessSettingsModeLegacy ModelAccessSettingsMode = "legacy"
+	// ModelAccessSettingsModeGo serves all ten routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens, the platform admin gate
+	// on the six management writes, and the LITELLM_CONFIG_INTERNAL_TOKEN guard
+	// on the two internal routes. It never enables shadow or canary traffic.
+	ModelAccessSettingsModeGo ModelAccessSettingsMode = "go"
+)
+
 // ItemsReadingMode controls the two item reading REST routes and the five item
 // reading GraphQL roots (API_GO_ITEMS_READING_MODE). Default legacy.
 type ItemsReadingMode string
@@ -870,6 +906,26 @@ type Config struct {
 
 	// canary 分流：
 	CanaryPercent int // 0=legacy 等价；100=go 等价；中间按 orgId 稳定哈希分流
+
+	// ModelAccessSettingsMode controls the ten model access settings routes (see
+	// ModelAccessSettingsMode). Default legacy. Mode go requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST; it does not require Mongo and starts no worker
+	// or scheduled job. LITELLM_CONFIG_INTERNAL_TOKEN and
+	// SYSTEM_SETTINGS_ENCRYPTION_KEY keep their runtime semantics and are never
+	// startup requirements.
+	ModelAccessSettingsMode ModelAccessSettingsMode
+	// 模型接入设置本批消费的原始环境值：config 只做读取与保存，
+	// envBoolean / Number 的 JavaScript 语义解析放在
+	// internal/modelaccesssettings（NewConfigFromEnv）里，且只在 go 模式求值，
+	// legacy 模式的启动行为不变。
+	ModelServiceEnabledRaw         string
+	ModelServiceBaseURLRaw         string
+	ModelServiceInternalTokenRaw   string
+	ModelServiceTimeoutMsRaw       string
+	ModelServiceMaxRetriesRaw      string
+	LiteLLMConfigInternalTokenRaw  string
+	SystemSettingsEncryptionKeyRaw string
+	NodeEnvRaw                     string
 }
 
 // Load 从 getenv 读取并校验配置。
@@ -1208,6 +1264,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go")
 	}
+	// Model access settings accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy so an unset deployment keeps the NestJS
+	// path.
+	switch strings.TrimSpace(getenv("API_GO_MODEL_ACCESS_SETTINGS_MODE")) {
+	case "", string(ModelAccessSettingsModeLegacy):
+		cfg.ModelAccessSettingsMode = ModelAccessSettingsModeLegacy
+	case string(ModelAccessSettingsModeGo):
+		cfg.ModelAccessSettingsMode = ModelAccessSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_MODEL_ACCESS_SETTINGS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_INFRASTRUCTURE_SETTINGS_MODE")) {
 	case "", string(InfrastructureSettingsModeLegacy):
 		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeLegacy
@@ -1371,6 +1438,19 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.TranslationFallbackBaseURL = strings.TrimRight(strings.TrimSpace(getenv("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL")), "/")
 	cfg.MongoURI = strings.TrimSpace(getenv("MONGO_URI"))
 	cfg.SettingsEncryptionKey = strings.TrimSpace(getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
+	// 模型接入设置（本批）的原始环境值。这里保留未 trim 的原文：
+	// NestJS 的 env schema 只在「整串为空白」时视为未设置，接受值本身不做
+	// trim；SYSTEM_SETTINGS_ENCRYPTION_KEY 也没有 preprocess。解析与 go 模式
+	// 的启动校验在 internal/modelaccesssettings.NewConfigFromEnv 内完成，
+	// legacy 模式完全不受影响。
+	cfg.SystemSettingsEncryptionKeyRaw = getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY")
+	cfg.ModelServiceEnabledRaw = getenv("MODEL_SERVICE_ENABLED")
+	cfg.ModelServiceBaseURLRaw = getenv("MODEL_SERVICE_BASE_URL")
+	cfg.ModelServiceInternalTokenRaw = getenv("MODEL_SERVICE_INTERNAL_TOKEN")
+	cfg.ModelServiceTimeoutMsRaw = getenv("MODEL_SERVICE_TIMEOUT_MS")
+	cfg.ModelServiceMaxRetriesRaw = getenv("MODEL_SERVICE_MAX_RETRIES")
+	cfg.LiteLLMConfigInternalTokenRaw = getenv("LITELLM_CONFIG_INTERNAL_TOKEN")
+	cfg.NodeEnvRaw = getenv("NODE_ENV")
 	cfg.LiteLLMAPIBase = strings.TrimSpace(getenv("LITELLM_API_URL"))
 	if cfg.LiteLLMAPIBase == "" {
 		cfg.LiteLLMAPIBase = strings.TrimSpace(getenv("LITELLM_API_BASE"))
@@ -1706,6 +1786,15 @@ func Load(getenv func(string) string) (Config, error) {
 	// and Redis only; it reads no Mongo collection and starts no worker.
 	if cfg.RuntimeSettingsMode == RuntimeSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_RUNTIME_SETTINGS_MODE", cfg)
+	}
+	// The model access settings takeover needs JWT verification, MySQL and Redis
+	// only (the model_service and openai_keys rows live in MySQL, the 30 second
+	// cache envelopes live in Redis). It reads no Mongo collection, calls no model
+	// upstream and starts no worker. Neither the encryption key nor the LiteLLM
+	// internal token is a startup requirement: their absence has runtime semantics
+	// (a fail-closed 400 at write time and a 403 on the internal endpoints).
+	if cfg.ModelAccessSettingsMode == ModelAccessSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_MODEL_ACCESS_SETTINGS_MODE", cfg)
 	}
 	// The item reading takeover reads MySQL, Mongo and Redis, and needs JWT
 	// verification for both the REST routes and the GraphQL roots.
