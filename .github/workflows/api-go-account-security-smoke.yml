@@ -783,14 +783,15 @@ jobs:
           loser_status = [result[0] for name, result in results.items() if name != winner_names[0]][0]
           if loser_status not in (401, 409):
               fail(f"password loser status {loser_status}")
+          # 验证性登录会新建 refresh 行，所以撤销断言必须放在登录之前。
+          if scalar(f"SELECT COUNT(*) FROM RefreshToken WHERE userId='{user_p}' AND revokedAt IS NULL") != "0":
+              fail("winning password change did not revoke the user's refresh tokens")
           winning_password = nest_new if winner_names[0] == "nest" else go_new
           losing_password = go_new if winner_names[0] == "nest" else nest_new
           if call(nest, "/api/auth/login", "POST", payload={"email": "as-p@example.com", "password": winning_password, "orgId": org_a})[0] != 200:
               fail("winner password cannot log in")
           if call(nest, "/api/auth/login", "POST", payload={"email": "as-p@example.com", "password": losing_password, "orgId": org_a})[0] == 200:
               fail("loser password also logs in")
-          if scalar(f"SELECT COUNT(*) FROM RefreshToken WHERE userId='{user_p}' AND revokedAt IS NULL") != "0":
-              fail("winning password change did not revoke the user's refresh tokens")
 
           # 长密码与多字节 bcrypt 互通（Go 改密 → Nest 登录；Nest 改密 → Go 接受）。
           long_password = "A" * 80 + "€" + "tail-" + "B" * 20
