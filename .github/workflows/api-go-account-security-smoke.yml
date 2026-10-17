@@ -637,9 +637,15 @@ jobs:
               fail(f"Nest machine identity {machine_me}")
           if call(go, "/api/auth/me", "GET", "mtk_not-a-real-token")[0] != 401:
               fail("invalid machine token was not 401")
-          for token_id in ("asmachineexpiredaaaaaaaa2", "asmachinerevokedaaaaaaaa3", "asmachineotheraaaaaaaaaa4"):
+          for token_id in ("asmachineexpiredaaaaaaaa2", "asmachinerevokedaaaaaaaa3"):
               if call(go, "/api/auth/machine-tokens", "GET", "mtk_" + token_id)[0] != 401:
                   fail(f"invalid machine token {token_id} was accepted")
+          # 跨组织令牌本身有效，但只能看到自己组织（org C）的令牌。
+          cross_list = body(call(go, "/api/auth/machine-tokens", "GET", "mtk_asmachineotheraaaaaaaaaa4")[1])
+          if not isinstance(cross_list, list) or not cross_list:
+              fail(f"cross-org machine token list {cross_list}")
+          if any(item.get("id") == token_history for item in cross_list):
+              fail(f"cross-org machine token saw another org's tokens: {cross_list}")
 
           nest_created_status, nest_created_raw = call(nest, "/api/auth/machine-tokens", "POST", m_token,
                                                       {"name": "nest-created", "permissions": ["metrics.read"]})
