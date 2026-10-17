@@ -163,3 +163,9 @@
 **canary 契约提醒**：路由表没有任何 ModeCanary 条目；CANARY_PERCENT 是预留配置。把业务路由切到 ModeCanary 之前必须先落地可信身份来源——`cmd/api/main_test.go` 的 TestDefaultRulesHaveNoCanaryRoutes 会在有人提前切换时失败。
 
 - 采集 Frontier 运行监控与取消 11 条 HTTP 迁入 Go（`API_GO_CRAWL_FRONTIER_RUNS_MODE`，默认 `legacy`，回滚只改该变量）；同批修掉取消改写终态运行、无事务无行锁与并发重复记事件的 F1 缺陷（Nest 与 Go 两侧一致），细节见 `docs/refactor/go-crawl-frontier-runs.md`。
+
+- 条目阅读与 RSS 检索辅助 7 个入口迁入 Go（`API_GO_ITEMS_READING_MODE`，默认 `legacy`，回滚只改该变量）：
+  两条 REST（`GET /api/items`、`GET /api/items/:id`）+ 五个 GraphQL 只读 root（`item`、`itemFacets`、
+  `rssSources`、`rssTranslationStatus`、`searchSuggestions`）。五个 root 需 `API_GO_GRAPHQL_READ_MODE=go`
+  与本开关同时为 `go` 才登记。同批修 IR1（Mongo 关联读取与回填的租户绑定缺口）、IR2（分页偏移安全边界）、
+  IR3（来源 fallback 绕过其他筛选）。细节见 `docs/refactor/go-items-reading.md`。

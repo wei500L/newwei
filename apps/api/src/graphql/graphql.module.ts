@@ -475,6 +475,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
     OrgResolver,
     UserLoader,
     RoleLoader,
+    ScopedItemsReadingLoader,
     ItemReadModelLoader,
     ItemReadModelRawLoader,
     ItemReadModelRawPreviewLoader,

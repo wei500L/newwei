@@ -11,9 +11,7 @@ import {
   Resolver,
   Int,
 } from "@nestjs/graphql";
-import type DataLoader from "dataloader";
 import type { GraphQLResolveInfo } from "graphql";
-import { Loader } from "nestjs-dataloader";
 
 import { PermissionsAll } from "../../common/decorators/permissions.decorator";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
@@ -40,22 +38,7 @@ import {
   TranslateRssItemsInput
 } from "../dto/item.input";
 import type { GqlRequest } from "../graphql.types";
-import { ItemMetaLoader } from "../loaders/item-meta.loader";
-import {
-  ItemReadModelLoader,
-  ItemReadModelProcessedLoader,
-  ItemReadModelProcessedPreviewLoader,
-  ItemReadModelRawLoader,
-  ItemReadModelRawPreviewLoader,
-} from "../loaders/item-read-model.loader";
-import type { ProcessedItemPreviewDoc } from "../loaders/processed-item-preview.loader";
-import { ProcessedItemPreviewLoader } from "../loaders/processed-item-preview.loader";
-import type { ProcessedItemDoc } from "../loaders/processed-item.loader";
-import { ProcessedItemLoader, ProcessedItemScalarLoader } from "../loaders/processed-item.loader";
-import type { RawItemPreviewDoc } from "../loaders/raw-item-preview.loader";
-import { RawItemPreviewLoader } from "../loaders/raw-item-preview.loader";
-import type { RawItemDoc } from "../loaders/raw-item.loader";
-import { RawItemLoader } from "../loaders/raw-item.loader";
+import { ScopedItemsReadingLoader } from "../loaders/scoped-items-reading.loader";
 import {
   ItemModel,
   ItemConnection,
@@ -177,6 +160,20 @@ function normalizeNonEmptyString(value: unknown): string | null {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Derives the tenant binding for the nested `ItemModel` fields from the
+ * server-side authenticated request only. Request parameters, headers, and a
+ * parent object's `orgId` are never trusted for authorization.
+ */
+function requireRequestOrgId(req: GqlRequest): string {
+  const requester = req?.user as AuthenticatedUser | undefined;
+  const orgId = typeof requester?.orgId === "string" ? requester.orgId.trim() : "";
+  if (!orgId) {
+    throw new BadRequestException("Unauthenticated");
+  }
+  return orgId;
 }
 
 function pickFirstNonEmptyString(obj: Record<string, unknown>, keys: string[]): string | null {
@@ -345,6 +342,7 @@ function normalizeSeriesPoints(
 export class ItemsResolver {
   constructor(
     private readonly itemsService: ItemsService,
+    private readonly scopedItemsReading: ScopedItemsReadingLoader,
     @Optional() private readonly rssTranslationService?: ItemsRssTranslationService
   ) {}
 
@@ -659,16 +657,16 @@ export class ItemsResolver {
   }
 
   @ResolveField(() => ItemMetaModel)
-  async meta(
-    @Parent() item: ItemModel,
-    @Loader(ItemReadModelLoader) itemReadModelLoader: DataLoader<string, any>,
-    @Loader(ItemMetaLoader) itemMetaLoader: DataLoader<string, ItemMetaModel | null>
-  ) {
-    const readModel = await itemReadModelLoader.load(item.metaId);
+  async meta(@Parent() item: ItemModel, @Context("req") req: GqlRequest) {
+    // Tenant binding (IR1): both lookups are scoped to the authenticated
+    // request's organization, so a foreign `itemMetaId` can never resolve to
+    // another organization's metadata row.
+    const orgId = requireRequestOrgId(req);
+    const readModel = await this.scopedItemsReading.readModelMeta(orgId).load(item.metaId);
     if (readModel) {
       return itemReadModelToMetaGraph(readModel);
     }
-    const meta = await itemMetaLoader.load(item.metaId);
+    const meta = await this.scopedItemsReading.itemMeta(orgId).load(item.metaId);
     if (!meta) {
       throw new BadRequestException("Item metadata not found");
     }
@@ -686,18 +684,15 @@ export class ItemsResolver {
   @ResolveField(() => String, { nullable: true })
   async publishedAt(
     @Parent() item: ItemModel,
-    @Loader(ItemReadModelLoader)
-    itemReadModelLoader: DataLoader<string, any>,
-    @Loader(ProcessedItemPreviewLoader)
-    processedLoader: DataLoader<string, ProcessedItemPreviewDoc | null>,
-    @Loader(RawItemPreviewLoader) rawLoader: DataLoader<string, RawItemPreviewDoc | null>
+    @Context("req") req: GqlRequest
   ): Promise<string | null> {
+    const orgId = requireRequestOrgId(req);
     const fromMeta = normalizeNonEmptyString(item.publishedAt);
     if (fromMeta) {
       return fromMeta;
     }
 
-    const readModel = await itemReadModelLoader.load(item.metaId);
+    const readModel = await this.scopedItemsReading.readModelMeta(orgId).load(item.metaId);
     if (readModel) {
       const fromReadModel = itemReadModelPublishedAt(readModel);
       if (fromReadModel) {
@@ -705,7 +700,7 @@ export class ItemsResolver {
       }
     }
 
-    const processed = await processedLoader.load(item.metaId);
+    const processed = await this.scopedItemsReading.processedItemPreview(orgId).load(item.metaId);
     const publishedFromProcessed = processed
       ? resolvePublishedAtFromProcessedResult(processed.result)
       : null;
@@ -713,17 +708,17 @@ export class ItemsResolver {
       return publishedFromProcessed;
     }
 
-    const raw = await rawLoader.load(item.metaId);
+    const raw = await this.scopedItemsReading.rawItemPreview(orgId).load(item.metaId);
     return raw ? resolvePublishedAtFromRawPayload(raw.payload) : null;
   }
 
   @ResolveField(() => RawItemPreviewModelGraph, { nullable: true })
   async rawPreview(
     @Parent() item: ItemModel,
-    @Loader(ItemReadModelRawPreviewLoader) itemReadModelLoader: DataLoader<string, any>,
-    @Loader(RawItemPreviewLoader) rawLoader: DataLoader<string, RawItemPreviewDoc | null>
+    @Context("req") req: GqlRequest
   ): Promise<RawItemPreviewModelGraph | null> {
-    const readModel = await itemReadModelLoader.load(item.metaId);
+    const orgId = requireRequestOrgId(req);
+    const readModel = await this.scopedItemsReading.readModelRawPreview(orgId).load(item.metaId);
     if (readModel) {
       // The read-model document may exist without a raw snapshot (hydration
       // runs before the pipeline produces one). Fall back to the Mongo loader
@@ -733,7 +728,7 @@ export class ItemsResolver {
         return fromReadModel;
       }
     }
-    const raw = await rawLoader.load(item.metaId);
+    const raw = await this.scopedItemsReading.rawItemPreview(orgId).load(item.metaId);
     if (!raw) {
       return null;
     }
@@ -781,12 +776,12 @@ export class ItemsResolver {
   @ResolveField(() => ProcessedItemPreviewModelGraph, { nullable: true })
   async processedPreview(
     @Parent() item: ItemModel,
-    @Loader(ItemReadModelProcessedPreviewLoader)
-    itemReadModelLoader: DataLoader<string, any>,
-    @Loader(ProcessedItemPreviewLoader)
-    processedLoader: DataLoader<string, ProcessedItemPreviewDoc | null>
+    @Context("req") req: GqlRequest
   ): Promise<ProcessedItemPreviewModelGraph | null> {
-    const readModel = await itemReadModelLoader.load(item.metaId);
+    const orgId = requireRequestOrgId(req);
+    const readModel = await this.scopedItemsReading
+      .readModelProcessedPreview(orgId)
+      .load(item.metaId);
     if (readModel) {
       // Fall back to the Mongo loader when the read model exists but has no
       // processed snapshot (see rawPreview for the same rationale).
@@ -795,7 +790,7 @@ export class ItemsResolver {
         return fromReadModel;
       }
     }
-    const processed = await processedLoader.load(item.metaId);
+    const processed = await this.scopedItemsReading.processedItemPreview(orgId).load(item.metaId);
     if (!processed) {
       return null;
     }
@@ -850,17 +845,17 @@ export class ItemsResolver {
   @ResolveField(() => RawItemModelGraph, { nullable: true })
   async raw(
     @Parent() item: ItemModel,
-    @Loader(ItemReadModelRawLoader) itemReadModelLoader: DataLoader<string, any>,
-    @Loader(RawItemLoader) rawLoader: DataLoader<string, RawItemDoc | null>
+    @Context("req") req: GqlRequest
   ): Promise<RawItemModelGraph | null> {
-    const readModel = await itemReadModelLoader.load(item.metaId);
+    const orgId = requireRequestOrgId(req);
+    const readModel = await this.scopedItemsReading.readModelRaw(orgId).load(item.metaId);
     if (readModel) {
       const fromReadModel = itemReadModelToRawGraph(readModel);
       if (fromReadModel) {
         return fromReadModel;
       }
     }
-    const raw = await rawLoader.load(item.metaId);
+    const raw = await this.scopedItemsReading.rawItem(orgId).load(item.metaId);
     if (!raw) {
       return null;
     }
@@ -873,25 +868,23 @@ export class ItemsResolver {
   @ResolveField(() => ProcessedItemModelGraph, { nullable: true })
   async processed(
     @Parent() item: ItemModel,
-    @Info() info: GraphQLResolveInfo,
-    @Loader(ItemReadModelProcessedLoader) fullItemReadModelLoader: DataLoader<string, any>,
-    @Loader(ItemReadModelProcessedPreviewLoader)
-    scalarItemReadModelLoader: DataLoader<string, any>,
-    @Loader(ProcessedItemLoader) fullProcessedLoader: DataLoader<string, ProcessedItemDoc | null>,
-    @Loader(ProcessedItemScalarLoader)
-    scalarProcessedLoader: DataLoader<string, ProcessedItemDoc | null>
+    @Context("req") req: GqlRequest,
+    @Info() info: GraphQLResolveInfo
   ): Promise<ProcessedItemModelGraph | null> {
+    const orgId = requireRequestOrgId(req);
     const includeResult = queryRequestsProcessedResult(info);
-    const itemReadModelLoader = includeResult ? fullItemReadModelLoader : scalarItemReadModelLoader;
-    const readModel = await itemReadModelLoader.load(item.metaId);
+    const readModel = includeResult
+      ? await this.scopedItemsReading.readModelProcessed(orgId).load(item.metaId)
+      : await this.scopedItemsReading.readModelProcessedPreview(orgId).load(item.metaId);
     if (readModel) {
       const fromReadModel = itemReadModelToProcessedGraph(readModel);
       if (fromReadModel) {
         return fromReadModel;
       }
     }
-    const processedLoader = includeResult ? fullProcessedLoader : scalarProcessedLoader;
-    const processed = await processedLoader.load(item.metaId);
+    const processed = includeResult
+      ? await this.scopedItemsReading.processedItemFull(orgId).load(item.metaId)
+      : await this.scopedItemsReading.processedItemScalar(orgId).load(item.metaId);
     if (!processed) {
       return null;
     }

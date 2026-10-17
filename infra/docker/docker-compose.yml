@@ -707,6 +707,9 @@ services:
       # 且本变量=go 才登记；本变量为 legacy 时含这 20 个 root 的文档整包回
       # NestJS。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE: legacy
+      API_GO_ITEMS_READING_MODE: legacy
+      ITEMS_READ_MODEL_ENABLED: "false"
+      ITEMS_VECTOR_HARD_FAIL_ENABLED: "false"
       MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
       # 与 api 服务相同的模型网关缺省和设置解密密钥。profile 在 MySQL。
       # 密钥不进日志。空值表示沿用进程内缺省，不单独发明一套网关配置。

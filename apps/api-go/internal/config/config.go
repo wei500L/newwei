@@ -424,6 +424,20 @@ const (
 	RuntimeSettingsModeGo RuntimeSettingsMode = "go"
 )
 
+// ItemsReadingMode controls the two item reading REST routes and the five item
+// reading GraphQL roots (API_GO_ITEMS_READING_MODE). Default legacy.
+type ItemsReadingMode string
+
+const (
+	// ItemsReadingModeLegacy serves both REST routes and all five GraphQL
+	// roots through NestJS (default, including an unset value).
+	ItemsReadingModeLegacy ItemsReadingMode = "legacy"
+	// ItemsReadingModeGo serves both REST routes from Go against MySQL, Mongo
+	// and Redis, and (together with API_GO_GRAPHQL_READ_MODE) registers the
+	// five item reading GraphQL roots.
+	ItemsReadingModeGo ItemsReadingMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -592,6 +606,16 @@ type Config struct {
 	// a whole, so the production web entry keeps serving through NestJS.
 	// Rolling back only means setting this variable back to legacy.
 	GraphQLSettingsCrawlReadMode string
+	// ItemsReadingMode decides whether the two item reading REST routes and the
+	// five item reading GraphQL roots are served by Go. The accepted values are
+	// exactly "", "legacy" and "go"; the empty value behaves like legacy, so an
+	// unset deployment keeps serving through NestJS. Go requires JWT, MySQL,
+	// Redis and Mongo (the read model and the processed/raw collections live in
+	// Mongo). The five GraphQL roots are registered only when both
+	// API_GO_GRAPHQL_READ_MODE and this switch are go; the two REST routes are
+	// controlled by this switch alone. Rolling back only means setting this
+	// variable back to legacy.
+	ItemsReadingMode ItemsReadingMode
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -691,6 +715,14 @@ type Config struct {
 	CrawlHealthTTLMs         int
 	CrawlSSRFProxyURL        string
 	ItemsSearchRerankEnabled bool
+	// ItemsReadModelEnabled mirrors the NestJS ITEMS_READ_MODEL_ENABLED switch
+	// (default false). It is a read-model switch, not a migration switch: the
+	// migrated endpoints honour it in both modes.
+	ItemsReadModelEnabled bool
+	// ItemsVectorHardFailEnabled mirrors ITEMS_VECTOR_HARD_FAIL_ENABLED
+	// (default false). When true an unavailable vector service fails the search
+	// instead of degrading.
+	ItemsVectorHardFailEnabled bool
 
 	// OpenSky 运行配置与 Nest env.schema 的默认值一致，供 layers 的
 	// flightMode=all 读取。不在这里启动采集。
@@ -1165,6 +1197,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE must be one of legacy|go")
 	}
+	// The item reading switch accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy so an unset deployment keeps serving
+	// both REST routes and all five GraphQL roots through NestJS.
+	switch strings.TrimSpace(getenv("API_GO_ITEMS_READING_MODE")) {
+	case "", string(ItemsReadingModeLegacy):
+		cfg.ItemsReadingMode = ItemsReadingModeLegacy
+	case string(ItemsReadingModeGo):
+		cfg.ItemsReadingMode = ItemsReadingModeGo
+	default:
+		errs = append(errs, "API_GO_ITEMS_READING_MODE must be one of legacy|go")
+	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
 	cfg.GraphQLComplexity = intDefault(getenv("GRAPHQL_COMPLEXITY_LIMIT"), 2000)
@@ -1199,6 +1242,8 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.CrawlHealthTTLMs = intDefault(getenv("CRAWL4AI_HEALTH_CHECK_TTL_MS"), 60_000)
 	cfg.CrawlSSRFProxyURL = strings.TrimSpace(getenv("CRAWL4AI_SSRF_PROXY_URL"))
 	cfg.ItemsSearchRerankEnabled = boolDefault(getenv("ITEMS_SEARCH_RERANK_ENABLED"), true)
+	cfg.ItemsReadModelEnabled = boolDefault(getenv("ITEMS_READ_MODEL_ENABLED"), false)
+	cfg.ItemsVectorHardFailEnabled = boolDefault(getenv("ITEMS_VECTOR_HARD_FAIL_ENABLED"), false)
 	cfg.RealtimeSignalsEnabled = boolDefault(getenv("REALTIME_SIGNALS_ENABLED"), true)
 	cfg.RealtimeSignalsTimeoutMs = intDefault(getenv("REALTIME_SIGNALS_REQUEST_TIMEOUT_MS"), 12000)
 	cfg.OpenskyEnabled = boolDefault(getenv("REALTIME_SIGNALS_OPENSKY_ENABLED"), true)
@@ -1565,6 +1610,15 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.RuntimeSettingsMode == RuntimeSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_RUNTIME_SETTINGS_MODE", cfg)
 	}
+	// The item reading takeover reads MySQL, Mongo and Redis, and needs JWT
+	// verification for both the REST routes and the GraphQL roots.
+	if cfg.ItemsReadingMode == ItemsReadingModeGo {
+		appendAuthRequirements(&errs, "API_GO_ITEMS_READING_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ITEMS_READING_MODE=go")
+		}
+	}
+
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
 		if cfg.MongoURI == "" {

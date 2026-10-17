@@ -5,7 +5,7 @@ import {
   type ItemReadModel,
   type MongoConnection,
 } from "@modular/mongo";
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
 import { PipelineStageStatus } from "../../common/pipeline-status";
@@ -39,6 +39,33 @@ import {
   type PersonalizedCandidateRow,
   type RankedItem,
 } from "./items.shared";
+
+/**
+ * Upper bound for a database pagination offset. Prisma/MySQL accept a 32-bit
+ * signed integer offset; anything larger must be rejected before any search,
+ * cache-loader, or database pagination call instead of wrapping, producing a
+ * negative skip, or surfacing as a 500.
+ */
+const MAX_PAGINATION_OFFSET = 2_147_483_647;
+
+class PaginationOffsetTooLargeError extends BadRequestException {
+  constructor() {
+    super("Pagination offset is too large");
+  }
+}
+
+/**
+ * Computes `(page - 1) * pageSize` with the bounded arithmetic policy from
+ * IR2. Both inputs are already normalized to non-negative safe integers, so
+ * the only remaining failure mode is a product outside the supported range.
+ */
+function resolvePaginationOffset(page: number, pageSize: number): number {
+  const offset = (page - 1) * pageSize;
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > MAX_PAGINATION_OFFSET) {
+    throw new PaginationOffsetTooLargeError();
+  }
+  return offset;
+}
 
 @Injectable()
 export class ItemsListService {
@@ -76,7 +103,9 @@ export class ItemsListService {
     const take = Math.min(Math.max(normalizedPageSize, 1), cap);
     const normalizedPage = Number.isFinite(page) ? Math.floor(page) : 1;
     const safePage = Math.max(normalizedPage, 1);
-    const skip = (safePage - 1) * take;
+    // IR2: fail closed on an out-of-range offset before touching the search
+    // index, cache loaders, or the database.
+    const skip = resolvePaginationOffset(safePage, take);
     const { search: normalizedSearch, filters: legacyFilters } = parseSearchPayload(search);
     const effectiveFilters = filters ?? legacyFilters;
     const scopedIds = await this.search.resolveScopedIds(orgId, normalizedSearch, effectiveFilters);
