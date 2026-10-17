@@ -169,8 +169,19 @@ jobs:
           png_bytes = len(png_hex) // 2
           svg_hex = svg_body.encode().hex().upper()
 
+          def go_logs():
+              try:
+                  proc = subprocess.run(["docker", "logs", "--tail", "60", "api-go-crawl-read"],
+                                        text=True, capture_output=True)
+                  return (proc.stdout + proc.stderr)[-3000:]
+              except Exception:  # noqa: BLE001 - diagnostics only
+                  return ""
+
           def fail(message):
               print("FAIL", message)
+              logs = go_logs()
+              if logs:
+                  print("GO-LOGS:", logs)
               raise SystemExit(1)
 
           def container_id(ancestor):
