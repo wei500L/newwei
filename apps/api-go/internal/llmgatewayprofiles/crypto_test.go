@@ -305,14 +305,10 @@ func TestNormalizeAPIKeyInputAbsentKeepsStoredOpaqueValue(t *testing.T) {
 	if kept == nil || kept.Kind() != SecretOpaque {
 		t.Fatalf("kept = %+v, want the stored opaque value", kept)
 	}
-	if _, err := service.normalizeAPIKeyInput(ctx, profileInput{APIKeySet: false}, nil); err != nil {
-		t.Fatal(err)
-	} else {
-		// A create without a key stores no apiKey at all.
-		created, err := service.normalizeAPIKeyInput(ctx, profileInput{APIKeySet: false}, nil)
-		if err != nil || created != nil {
-			t.Fatalf("created = %+v err=%v, want absent", created, err)
-		}
+	// A create without a key stores no apiKey at all.
+	created, err := service.normalizeAPIKeyInput(ctx, profileInput{APIKeySet: false}, nil)
+	if err != nil || created != nil {
+		t.Fatalf("created = %+v err=%v, want absent", created, err)
 	}
 	cleared, err := service.normalizeAPIKeyInput(ctx, profileInput{APIKeySet: true, APIKey: nil}, base)
 	if err != nil {

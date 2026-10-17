@@ -54,7 +54,11 @@ func TestNormalizeEnabledGP3(t *testing.T) {
 		{raw: ``, want: true},
 	}
 	for _, tc := range cases {
-		profile, ok := NormalizeProfile(json.RawMessage(`{"id":"p1","model":"m","enabled":`+tc.raw+`}`), testEnv())
+		document := `{"id":"p1","model":"m"}`
+		if tc.raw != "" {
+			document = `{"id":"p1","model":"m","enabled":` + tc.raw + `}`
+		}
+		profile, ok := NormalizeProfile(json.RawMessage(document), testEnv())
 		if !ok {
 			t.Fatalf("enabled=%s profile was filtered", tc.raw)
 		}
@@ -95,11 +99,10 @@ func TestNormalizeSettingsClearsUnusableActiveIDs(t *testing.T) {
 	if settings.ActiveID != nil {
 		t.Fatalf("activeId = %v, want null", *settings.ActiveID)
 	}
-	if settings.EmbeddingActiveID == nil || *settings.EmbeddingActiveID != "with-embedding" {
-		// The stored id no longer exists, so it must be cleared.
-		if settings.EmbeddingActiveID != nil {
-			t.Fatalf("embeddingActiveId = %v, want null", *settings.EmbeddingActiveID)
-		}
+	// The stored embedding selection points at a profile without an embedding
+	// model, so it must be cleared.
+	if settings.EmbeddingActiveID != nil {
+		t.Fatalf("embeddingActiveId = %v, want null", *settings.EmbeddingActiveID)
 	}
 	if settings.RerankActiveID != nil {
 		t.Fatalf("rerankActiveId = %v, want null", *settings.RerankActiveID)
@@ -371,8 +374,10 @@ func TestBuildUpdateProfileInheritanceAndClearing(t *testing.T) {
 	}
 	identity := profileIdentity{ID: "p1", CreatedAt: base.CreatedAt, UpdatedAt: "2026-01-01T00:00:00.000Z"}
 
-	// Null and blank values inherit the existing scalars.
-	input, err := parseProfileInput(json.RawMessage(`{"name":null,"apiBase":"   ","model":null}`), false)
+	// Null values inherit the existing scalars. A blank apiBase cannot reach the
+	// service because @IsUrl rejects it at the DTO layer (a blank name/model
+	// does pass @IsString and also inherits).
+	input, err := parseProfileInput(json.RawMessage(`{"name":null,"apiBase":null,"model":null}`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,6 +441,9 @@ func TestBuildUpdateProfileInheritanceAndClearing(t *testing.T) {
 	kept, err := service.buildProfileFromInput(ctx, &base, identity, updateDefaultsFor(base), untouched)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if kept.APIBase != base.APIBase || kept.Name != base.Name || kept.Model != base.Model {
+		t.Fatalf("an empty update must inherit every scalar: %+v", kept)
 	}
 	if kept.APIKey == nil || kept.APIKey.Kind() != SecretPlaintext {
 		t.Fatalf("apiKey = %+v, want the existing plaintext", kept.APIKey)
