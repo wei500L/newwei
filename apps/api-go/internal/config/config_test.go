@@ -1605,3 +1605,145 @@ func TestGraphQLKgImpactModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *test
 		t.Fatalf("read=%q kg=%q", cfg.GraphQLReadMode, cfg.GraphQLKgImpactMode)
 	}
 }
+
+func TestGraphQLWorkspaceReadModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GraphQLWorkspaceReadMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+		t.Fatalf("workspace=%q read=%q", cfg.GraphQLWorkspaceReadMode, cfg.GraphQLReadMode)
+	}
+}
+
+func TestGraphQLWorkspaceReadModeAcceptsExplicitLegacyAndGo(t *testing.T) {
+	legacy, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.GraphQLWorkspaceReadMode != "legacy" {
+		t.Fatalf("explicit legacy = %q", legacy.GraphQLWorkspaceReadMode)
+	}
+	goMode, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
+			return "go"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if goMode.GraphQLWorkspaceReadMode != "go" {
+		t.Fatalf("go = %q", goMode.GraphQLWorkspaceReadMode)
+	}
+}
+
+func TestGraphQLWorkspaceReadModeRejectsInvalid(t *testing.T) {
+	_, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
+			return "shadow"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_WORKSPACE_READ_MODE must be one of legacy|go") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestGraphQLWorkspaceReadModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
+			return "go"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GraphQLReadMode != "legacy" || cfg.GraphQLWorkspaceReadMode != "go" {
+		t.Fatalf("read=%q workspace=%q", cfg.GraphQLReadMode, cfg.GraphQLWorkspaceReadMode)
+	}
+}
+
+func TestRuntimeSettingsModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RuntimeSettingsMode != RuntimeSettingsModeLegacy {
+		t.Fatalf("mode = %s", cfg.RuntimeSettingsMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_RUNTIME_SETTINGS_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RuntimeSettingsMode != RuntimeSettingsModeLegacy {
+		t.Fatalf("mode = %s", cfg.RuntimeSettingsMode)
+	}
+}
+
+func TestRuntimeSettingsModeRejectsInvalid(t *testing.T) {
+	// shadow and canary are explicitly not accepted: this unit is
+	// legacy-or-go only, so a typo in the switch fails startup.
+	for _, invalid := range []string{"shadow", "canary", "Go"} {
+		_, err := Load(func(key string) string {
+			if key == "API_GO_RUNTIME_SETTINGS_MODE" {
+				return invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go") {
+			t.Fatalf("invalid mode %q: %v", invalid, err)
+		}
+	}
+}
+
+func TestRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_RUNTIME_SETTINGS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_RUNTIME_SETTINGS_MODE=go") {
+		t.Fatalf("missing redis: %v", err)
+	}
+
+	// Mongo is not a startup dependency of this unit.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_RUNTIME_SETTINGS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RuntimeSettingsMode != RuntimeSettingsModeGo {
+		t.Fatalf("mode = %s", cfg.RuntimeSettingsMode)
+	}
+}

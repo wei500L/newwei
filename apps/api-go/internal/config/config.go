@@ -306,6 +306,25 @@ const (
 	CrawlReadTelemetryModeGo     CrawlReadTelemetryMode = "go"
 )
 
+// RuntimeSettingsMode controls the eighteen platform runtime and governance
+// settings HTTP routes under /api/system-settings (API_GO_RUNTIME_SETTINGS_MODE).
+// The accepted values are exactly "", "legacy" and "go"; any other value fails
+// startup instead of silently degrading. The default is legacy.
+type RuntimeSettingsMode string
+
+const (
+	// RuntimeSettingsModeLegacy proxies all eighteen routes to NestJS
+	// (default, including the empty value). Rollback only changes this
+	// variable back to legacy.
+	RuntimeSettingsModeLegacy RuntimeSettingsMode = "legacy"
+	// RuntimeSettingsModeGo serves all eighteen routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens. It requires
+	// JWT_SECRET, DATABASE_URL and REDIS_HOST at startup. It never enables
+	// shadow or canary traffic.
+	RuntimeSettingsModeGo RuntimeSettingsMode = "go"
+)
+
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
@@ -455,6 +474,15 @@ type Config struct {
 	// go 才登记；知识图谱为 legacy 时，含这六个 root 的文档整包回 NestJS。
 	// 回滚只改这个变量。
 	GraphQLKnowledgeGraphMode string
+	// GraphQLWorkspaceReadMode only decides whether the twelve identity,
+	// organization, RBAC, dashboard, queue, sentiment and processed-item
+	// read roots are registered into the Go GraphQL executor. It defaults to
+	// legacy. The roots are registered only when both
+	// API_GO_GRAPHQL_READ_MODE and this switch are go; while this switch is
+	// legacy, any document that selects one of those roots falls back to
+	// NestJS as a whole. Rolling back only means setting this variable back
+	// to legacy.
+	GraphQLWorkspaceReadMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -491,16 +519,40 @@ type Config struct {
 	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
 	// live in Mongo; crawl tasks, media assets and quality snapshots live in
 	// MySQL). No shadow, no canary and no worker.
+	// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry
+	// endpoints migrated by this unit. It defaults to legacy. go mode
+	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
+	// live in Mongo; crawl tasks, media assets and quality snapshots live in
+	// MySQL). No shadow, no canary and no worker.
 	CrawlReadTelemetryMode CrawlReadTelemetryMode
-	GraphQLAPQEnabled      bool
-	GraphQLDepthLimit      int
-	GraphQLComplexity      int
-	GraphQLCacheEnabled    bool
-	GraphQLCacheTTL        int
-	TrustProxy             string
-	RateLimitFailOpen      bool
-	RateLimitLogin         int
-	RateLimitLoginWindow   int
+	// RuntimeSettingsMode controls the eighteen runtime/governance settings
+	// routes (see RuntimeSettingsMode). Default legacy. Mode go requires
+	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
+	// does not start any worker or scheduled job.
+	RuntimeSettingsMode  RuntimeSettingsMode
+	GraphQLAPQEnabled    bool
+	GraphQLDepthLimit    int
+	GraphQLComplexity    int
+	GraphQLCacheEnabled  bool
+	GraphQLCacheTTL      int
+	TrustProxy           string
+	RateLimitFailOpen    bool
+	RateLimitLogin       int
+	RateLimitLoginWindow int
+	// The remaining rate limit buckets and the auth profile cache values are
+	// the environment defaults the sixteen runtime/governance settings routes
+	// return when no SystemSetting row exists. Names and defaults mirror the
+	// NestJS EnvService getters exactly.
+	RateLimitCrawlTaskCreate         int
+	RateLimitCrawlTaskCreateWindow   int
+	RateLimitRbacWrite               int
+	RateLimitRbacWriteWindow         int
+	RateLimitSettingsCacheTTLSeconds int
+	AuthProfileCacheTTLSeconds       int
+	AuthProfileCacheLockTTLMs        int
+	AuthProfileCacheMaxWaitMs        int
+	AuthProfileCacheRetryDelayMs     int
+	AuditLogRetentionDays            int
 	// MongoURI 是 NestJS 同名 MONGO_URI。dashboard stats 与 war map 的 go 模式读取。
 	MongoURI string
 
@@ -900,6 +952,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_CRAWL_READ_TELEMETRY_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_RUNTIME_SETTINGS_MODE")) {
+	case "", string(RuntimeSettingsModeLegacy):
+		cfg.RuntimeSettingsMode = RuntimeSettingsModeLegacy
+	case string(RuntimeSettingsModeGo):
+		cfg.RuntimeSettingsMode = RuntimeSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLReadMode = "legacy"
@@ -932,6 +992,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE must be one of legacy|go")
 	}
+	// The workspace switch accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy so an unset deployment keeps the
+	// NestJS path.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_WORKSPACE_READ_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLWorkspaceReadMode = "legacy"
+	case "go":
+		cfg.GraphQLWorkspaceReadMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_WORKSPACE_READ_MODE must be one of legacy|go")
+	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
 	cfg.GraphQLComplexity = intDefault(getenv("GRAPHQL_COMPLEXITY_LIMIT"), 2000)
@@ -950,6 +1021,16 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.RateLimitFailOpen = boolDefault(getenv("RATE_LIMIT_REDIS_FAIL_OPEN"), false)
 	cfg.RateLimitLogin = intDefault(getenv("RATE_LIMIT_LOGIN"), 5)
 	cfg.RateLimitLoginWindow = intDefault(getenv("RATE_LIMIT_LOGIN_WINDOW"), 60)
+	cfg.RateLimitCrawlTaskCreate = intDefault(getenv("RATE_LIMIT_CRAWL_TASK_CREATE"), 10)
+	cfg.RateLimitCrawlTaskCreateWindow = intDefault(getenv("RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW"), 300)
+	cfg.RateLimitRbacWrite = intDefault(getenv("RATE_LIMIT_RBAC_WRITE"), 20)
+	cfg.RateLimitRbacWriteWindow = intDefault(getenv("RATE_LIMIT_RBAC_WRITE_WINDOW"), 600)
+	cfg.RateLimitSettingsCacheTTLSeconds = intDefault(getenv("RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS"), 60)
+	cfg.AuthProfileCacheTTLSeconds = intDefault(getenv("AUTH_PROFILE_CACHE_TTL_SECONDS"), 600)
+	cfg.AuthProfileCacheLockTTLMs = intDefault(getenv("AUTH_PROFILE_CACHE_LOCK_TTL_MS"), 5000)
+	cfg.AuthProfileCacheMaxWaitMs = intDefault(getenv("AUTH_PROFILE_CACHE_MAX_WAIT_MS"), 5000)
+	cfg.AuthProfileCacheRetryDelayMs = intDefault(getenv("AUTH_PROFILE_CACHE_RETRY_DELAY_MS"), 50)
+	cfg.AuditLogRetentionDays = intDefault(getenv("AUDIT_LOG_RETENTION_DAYS"), 90)
 	cfg.CrawlBaseURL = strings.TrimRight(strings.TrimSpace(getenv("CRAWL4AI_BASE_URL")), "/")
 	cfg.CrawlAPIKey = strings.TrimSpace(getenv("CRAWL4AI_API_KEY"))
 	cfg.CrawlTimeoutMs = intDefault(getenv("CRAWL4AI_TIMEOUT_MS"), 120_000)
@@ -1300,6 +1381,11 @@ func Load(getenv func(string) string) (Config, error) {
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go")
 		}
+	}
+	// The runtime/governance settings takeover needs JWT verification, MySQL
+	// and Redis only; it reads no Mongo collection and starts no worker.
+	if cfg.RuntimeSettingsMode == RuntimeSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_RUNTIME_SETTINGS_MODE", cfg)
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)

@@ -9,9 +9,38 @@ import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import type { GqlRequest } from "../graphql.types";
-import { ProcessedItemModelGraph } from "../models/item.model";
+import { ProcessedItemModelGraph, ProcessedItemLlmModel } from "../models/item.model";
 import { normalizeProcessedResult } from "../utils/normalize-processed-result";
 import { selectionContainsField } from "../utils/selection-contains-field";
+
+function normalizeNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function normalizeFiniteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Normalizes the stored `llm` subdocument into the strongly typed GraphQL
+ * shape. A non-object value becomes null, and a non-finite number becomes
+ * null so GraphQL Float serialization can never throw a 500.
+ */
+function normalizeProcessedItemLlm(raw: unknown): ProcessedItemLlmModel | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  return {
+    model: normalizeNullableString(record.model),
+    promptVersion: normalizeNullableString(record.promptVersion),
+    promptTokens: normalizeFiniteNumber(record.promptTokens),
+    completionTokens: normalizeFiniteNumber(record.completionTokens),
+    totalTokens: normalizeFiniteNumber(record.totalTokens),
+    costUsd: normalizeFiniteNumber(record.costUsd),
+    latencyMs: normalizeFiniteNumber(record.latencyMs)
+  };
+}
 
 interface LeanProcessedItem {
   _id: { toString(): string };
@@ -132,7 +161,7 @@ export class ProcessedItemResolver {
       resultJson,
       duplicateOf,
       duplicateSimilarity,
-      llm: (doc.llm as any) ?? null,
+      llm: normalizeProcessedItemLlm(doc.llm),
       summaryEmbeddingModel,
       summaryEmbeddingDimensions,
       createdAt: doc.createdAt

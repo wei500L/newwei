@@ -2,6 +2,7 @@ import { createLogger } from "@modular/utils";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type RateLimitPolicy as RateLimitPolicyModel } from "@prisma/client";
 
+import { normalizeAuditActorId } from "../audit/audit-actor";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
@@ -36,6 +37,43 @@ const FEATURE_PATTERN = /^[a-z][a-z0-9_.]*$/;
 interface RateLimitPolicyCacheEntry {
   policy: RateLimitPolicy | null;
 }
+
+/**
+ * Normalizes an explicitly submitted description.
+ *
+ * `null`, an empty string and a whitespace-only string all mean "clear the
+ * column", so they become `null`; a non-blank value is trimmed. The returned
+ * value is only used when the request actually carried the description key.
+ */
+const normalizeSubmittedDescription = (value: string | null | undefined): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+/**
+ * Reports whether the error is a Prisma P2002 unique constraint violation or
+ * the equivalent raw MySQL 1062 duplicate entry error.
+ */
+const isUniqueConstraintError = (error: unknown): boolean => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    return true;
+  }
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "string" && code === "1062") {
+    return true;
+  }
+  return error instanceof Error && error.message.includes("1062");
+};
+
+/**
+ * Reports whether a Prisma update/delete matched no row (P2025), which is what
+ * a concurrent delete produces.
+ */
+const isMissingRecordError = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025";
 
 @Injectable()
 export class RateLimitPolicyService {
@@ -122,24 +160,14 @@ export class RateLimitPolicyService {
     }
 
     const normalized = this.normalizePolicy(input);
-    const created = await this.prisma.rateLimitPolicy.create({
-      data: {
-        feature: normalizedFeature,
-        userLimit: normalized.userLimit,
-        ipLimit: normalized.ipLimit,
-        windowSeconds: normalized.windowSeconds,
-        enabled: normalized.enabled,
-        description: normalized.description ?? undefined,
-        updatedById: actorId
-      }
-    });
+    const created = await this.createOrConflict(normalizedFeature, normalized, actorId);
 
     void writeAuditLogBestEffort(
       this.prisma,
       {
         data: {
           orgId,
-          actorId,
+          actorId: normalizeAuditActorId(actorId),
           resource: "system_settings",
           action: "rate_limit_policy_create",
           metadata: {
@@ -177,6 +205,11 @@ export class RateLimitPolicyService {
       throw new NotFoundException(`Rate limit policy not found for ${normalizedFeature}`);
     }
 
+    // Distinguish "the description key is absent" (keep the stored value) from
+    // "the description key is present" (a null, empty or whitespace-only value
+    // must clear the column). Prisma treats `undefined` as "leave this column
+    // untouched", so an explicit clear has to be written as `null`.
+    const descriptionProvided = Object.prototype.hasOwnProperty.call(input, "description");
     const merged: RateLimitPolicyInput = {
       userLimit: input.userLimit ?? existing.userLimit,
       ipLimit: input.ipLimit ?? existing.ipLimit,
@@ -186,24 +219,20 @@ export class RateLimitPolicyService {
     };
     const normalized = this.normalizePolicy(merged);
 
-    const updated = await this.prisma.rateLimitPolicy.update({
-      where: { feature: normalizedFeature },
-      data: {
-        userLimit: normalized.userLimit,
-        ipLimit: normalized.ipLimit,
-        windowSeconds: normalized.windowSeconds,
-        enabled: normalized.enabled,
-        description: normalized.description ?? undefined,
-        updatedById: actorId
-      }
-    });
+    const updated = await this.updateOrNotFound(
+      normalizedFeature,
+      normalized,
+      // undefined keeps the stored description; null clears it.
+      descriptionProvided ? normalizeSubmittedDescription(input.description) : undefined,
+      actorId
+    );
 
     void writeAuditLogBestEffort(
       this.prisma,
       {
         data: {
           orgId,
-          actorId,
+          actorId: normalizeAuditActorId(actorId),
           resource: "system_settings",
           action: "rate_limit_policy_update",
           metadata: {
@@ -236,16 +265,14 @@ export class RateLimitPolicyService {
       throw new NotFoundException(`Rate limit policy not found for ${normalizedFeature}`);
     }
 
-    await this.prisma.rateLimitPolicy.delete({
-      where: { feature: normalizedFeature }
-    });
+    await this.deleteOrNotFound(normalizedFeature);
 
     void writeAuditLogBestEffort(
       this.prisma,
       {
         data: {
           orgId,
-          actorId,
+          actorId: normalizeAuditActorId(actorId),
           resource: "system_settings",
           action: "rate_limit_policy_delete",
           metadata: {
@@ -280,6 +307,89 @@ export class RateLimitPolicyService {
       return;
     }
     // Best-effort: rely on TTL for bulk invalidation to avoid blocking.
+  }
+
+  /**
+   * Creates the policy row and translates a concurrent unique-key conflict into
+   * the documented 409.
+   *
+   * The preceding existence check cannot close the race: two simultaneous
+   * creates of the same feature both pass it, and the loser then hits Prisma
+   * P2002 (raw MySQL 1062) instead of a ConflictException.
+   */
+  private async createOrConflict(
+    normalizedFeature: string,
+    normalized: RateLimitPolicyInput,
+    actorId: string
+  ): Promise<RateLimitPolicyModel> {
+    try {
+      return await this.prisma.rateLimitPolicy.create({
+        data: {
+          feature: normalizedFeature,
+          userLimit: normalized.userLimit,
+          ipLimit: normalized.ipLimit,
+          windowSeconds: normalized.windowSeconds,
+          enabled: normalized.enabled,
+          description: normalized.description ?? undefined,
+          updatedById: normalizeAuditActorId(actorId)
+        }
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        throw new ConflictException(`Rate limit policy already exists for ${normalizedFeature}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Updates the policy row and translates a missing row into the documented
+   * 404 (Prisma P2025), which is what a concurrent delete produces.
+   *
+   * `description` is a tri-state: `undefined` leaves the stored value alone,
+   * `null` clears the column, and a string replaces it.
+   */
+  private async updateOrNotFound(
+    normalizedFeature: string,
+    normalized: RateLimitPolicyInput,
+    description: string | null | undefined,
+    actorId: string
+  ): Promise<RateLimitPolicyModel> {
+    try {
+      return await this.prisma.rateLimitPolicy.update({
+        where: { feature: normalizedFeature },
+        data: {
+          userLimit: normalized.userLimit,
+          ipLimit: normalized.ipLimit,
+          windowSeconds: normalized.windowSeconds,
+          enabled: normalized.enabled,
+          description,
+          updatedById: normalizeAuditActorId(actorId)
+        }
+      });
+    } catch (error) {
+      if (isMissingRecordError(error)) {
+        throw new NotFoundException(`Rate limit policy not found for ${normalizedFeature}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Deletes the policy row and translates a missing row into the documented 404
+   * (Prisma P2025), which is what a concurrent delete produces.
+   */
+  private async deleteOrNotFound(normalizedFeature: string): Promise<void> {
+    try {
+      await this.prisma.rateLimitPolicy.delete({
+        where: { feature: normalizedFeature }
+      });
+    } catch (error) {
+      if (isMissingRecordError(error)) {
+        throw new NotFoundException(`Rate limit policy not found for ${normalizedFeature}`);
+      }
+      throw error;
+    }
   }
 
   private cacheKey(feature: string) {

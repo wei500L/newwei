@@ -132,6 +132,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
@@ -560,6 +561,10 @@ func run() error {
 	if cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo {
 		crawlReadTelemetryMode = string(legacyproxy.ModeGo)
 	}
+	runtimeSettingsMode := ""
+	if cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo {
+		runtimeSettingsMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -589,6 +594,7 @@ func run() error {
 	rules = legacyproxy.WithNewsIndicators(rules, newsIndicatorsMode)
 	rules = legacyproxy.WithQualityOverview(rules, qualityOverviewMode)
 	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
+	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -640,6 +646,7 @@ func run() error {
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
 				cfg.QualityOverviewMode == config.QualityOverviewModeGo ||
+				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
@@ -700,7 +707,8 @@ func run() error {
 	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
 	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || crawlReadTelemetryGo
+	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || crawlReadTelemetryGo || runtimeSettingsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1036,6 +1044,9 @@ func run() error {
 	if err := wireCrawlReadTelemetry(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
+	if err := wireRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
 	//（ModeGo 规则也不会进入 serveShadow——双重收口，保证 go 接管的
@@ -1207,6 +1218,13 @@ func run() error {
 		if knowledgeGraphGo {
 			knowledgegraph.Register(reg, sharedDB, redisClient)
 		}
+		// The workspace identity/organization/RBAC/dashboard/queue/sentiment/
+		// processed-item roots are opt-in through their own switch; when it is
+		// legacy, any document selecting one of them stays on NestJS.
+		workspaceGo := cfg.GraphQLWorkspaceReadMode == "go"
+		if workspaceGo {
+			workspace.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1247,6 +1265,11 @@ func run() error {
 			log.Printf("api-go: GraphQL knowledge-graph reads registered (getKnowledgeGraphSubgraph, articleEntityLinks, knowledgeGraphEdgeEvidence, entityIntelligenceCard, entityIntelligenceEvidence, knowledgeEntityByName)")
 		} else {
 			log.Printf("api-go: GraphQL knowledge-graph reads not registered (API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy)")
+		}
+		if workspaceGo {
+			log.Printf("api-go: GraphQL workspace reads registered (me, myOrganizations, users, userLoginRecords, roles, permissions, memberships, dashboards, queueStats, entitySentimentSeries, topicSentimentSeries, processedItemById)")
+		} else {
+			log.Printf("api-go: GraphQL workspace reads not registered (API_GO_GRAPHQL_WORKSPACE_READ_MODE=legacy)")
 		}
 	}
 

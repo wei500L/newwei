@@ -227,7 +227,7 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 
 任务日志的列表/汇总/窗口聚合与深层脱敏直接调用 `internal/adminlogs`（同一实现，不维护第二套正则）。仍回 NestJS：`/api/admin/quality/classification/*`（`classification-quality.controller.ts`）与 `/api/admin/quality/pipeline/runs|replay|rollback`（`pipeline-recovery.controller.ts`），以及这 5 条的非 `GET` 方法与更长路径（Go 精确匹配，不返回自己的 404）。回滚：`API_GO_QUALITY_OVERVIEW_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。细节见 `docs/refactor/go-quality-overview.md`。SEC-01 的真实登录态未在本批验证。
 
-### 1.8q 采集只读、媒体下发与检索遥测
+### 1.8r 采集只读、媒体下发与检索遥测
 
 `API_GO_CRAWL_READ_TELEMETRY_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本含变量名；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`）。`go` 时只接管 7 条精确路由（规则见 `apps/api-go/internal/legacyproxy/crawl_read_telemetry_routes.go`）：
 
@@ -241,6 +241,21 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 **同批缺陷修复（两侧同修）**：① `crawl-media-asset.service.ts` 第 264–268 行资产查询补 `orgId`（否则会为跨租户资产签发当前组织的 HMAC）；② `crawl-result.service.ts` 第 754 行 Mongo 内容查询在存在 `accessScope.orgId` 时补 `$or: [{orgId}, {orgId: {$exists:false}}]`；③ `crawl-quality-task-snapshot.service.ts` 的 `aggregateMarkdownRows` 增加 `orgId` 参数并补同样的 `$or`（此前只有 `taskId`）。
 
 仍回 NestJS：`POST /api/crawl-tasks`、`DELETE /api/crawl-tasks/:id`、`POST /api/crawl-tasks/:id/retry`、`POST /api/crawl-tasks/metadata`、`/api/admin/crawl4ai/queue*`、上述 7 条的非注册方法、更长路径与父路径（Go 不返回自己的 404）。回滚：`API_GO_CRAWL_READ_TELEMETRY_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。已知偏差与细节见 `docs/refactor/go-crawl-read-telemetry.md`。SEC-01 的真实登录态未在本批验证。
+### 1.8q 运行时与治理设置（rate-limit / auth-cache / audit-log / scheduler / newsnow）
+
+`API_GO_RUNTIME_SETTINGS_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本是 `API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go`；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，不要求 `MONGO_URI`）。`go` 时只接管 18 条精确规则，统一要求 `settings.manage`（人类身份来自验签、Redis 撤销名单与 membership 重推导；机器令牌走 `MachineAccessToken` 行含 `Org.isActive`，权限与 `orgId` 来自令牌行），其中 `PUT /api/system-settings/audit-log` 另外要求平台管理员（否则 403 `Platform admin access required`；机器令牌永不满足）：
+
+- 限流策略（201 仅创建）：`GET /api/system-settings/rate-limit-policies`（200，按 `feature asc`，空结果是 `[]`）、`POST /api/system-settings/rate-limit-policies`（201）、`GET /api/system-settings/rate-limit-policies/:feature`（200，恰好一段）、`PUT /api/system-settings/rate-limit-policies/:feature`（200）、`DELETE /api/system-settings/rate-limit-policies/:feature`（200 `{ok:true}`）。
+- 全局限流桶：`GET /api/system-settings/rate-limits`（200）、`PUT /api/system-settings/rate-limits`（200，三桶同事务 upsert）。
+- 鉴权缓存：`GET /api/system-settings/auth-cache`（200）、`PUT /api/system-settings/auth-cache`（200）。
+- 审计保留：`GET /api/system-settings/audit-log`（200 `{retentionDays}`，30 秒进程内缓存）、`PUT /api/system-settings/audit-log`（200，`retentionDays` 收口 [1,3650]）。
+- 多租户调度：`GET/PUT /api/system-settings/multi-tenant-schedulers`（200，`source` + 11 个并发值；PUT 是整条替换）。
+- 新闻源调度：`GET/PUT /api/system-settings/news-source-scheduler`（200，`source` + 15 个值，30 秒进程内缓存）。
+- NewsNow 个性化：`GET/PUT /api/system-settings/newsnow-personalization`（200）、`GET /api/system-settings/newsnow-personalization/metrics`（200；`days` 缺省 7、收口 [1,90]；每 UTC 日一个 Redis hash，单日读失败输出全零行）。
+
+`feature` 归一化为 `trim().toLowerCase()` 且须匹配 `^[a-z][a-z0-9_.]*$`（否则 400 `Invalid rate limit feature name`）。Redis 键与 TTL：`rate_limit_policy:<feature>` 固定 60 秒；`rate_limit:settings` 取 `RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS`（缺省/≤0 时 60 秒）；`auth_cache:settings` 固定 60 秒；`newsnow:personalization:metrics:v1:<YYYY-MM-DD>` 由聚合器写入、Go 只读。新闻源调度写成功后 best-effort 删 `news-source:sitemap:` / `news-source:rss:` / `news-source:list:` / `news-source:deep:` 四个前缀。SystemSetting 主键：`rate_limit_login`、`rate_limit_crawl_create`、`rate_limit_rbac_write`、`auth_profile_cache_settings`、`audit_log_retention_days`、`multi_tenant_scheduler_runtime_settings`、`news_source_scheduler_settings`、`newsnow_personalization_settings`。
+
+错误契约：新闻源调度三条交叉规则返回 400 `rssAdaptiveWarmHitRatePercent must be less than or equal to rssAdaptiveHotHitRatePercent` / `rssAdaptiveColdMaxIntervalSeconds must be greater than or equal to rssAdaptiveWarmMinIntervalSeconds` / `rssAdaptiveWarmDiscoveryCacheTtlCapSeconds must be greater than or equal to rssAdaptiveHotDiscoveryCacheTtlCapSeconds`；三处存储值非法返回 409 且带 code——`MULTI_TENANT_SCHEDULER_SETTINGS_INVALID`（`Stored multi-tenant scheduler runtime settings are invalid.`，detail `Multi-tenant scheduler concurrency settings must be integers between 1 and 16.`）、`NEWS_SOURCE_SCHEDULER_SETTINGS_INVALID`（`Stored news source scheduler settings are invalid.`）、`NEWSNOW_PERSONALIZATION_SETTINGS_INVALID`（`Stored NewsNow personalization settings are invalid.`）；重复创建策略 409 `Rate limit policy already exists for <feature>`；update/delete 行不存在 404 `Rate limit policy not found for <feature>`；DTO 校验复刻 class-validator 措辞并用 `"; "` 拼接，未知字段 400 `property <name> should not exist`。**缺陷修复（Nest 与 Go 两侧同修）**：`SystemSetting.updatedById`、`RateLimitPolicy.updatedById` 与 `AuditLog.actorId` 是指向 `User(id)` 的外键，机器令牌 `machine:<id>` 必须写 SQL NULL（否则 MySQL 1452 → 500）；`description` 改为三态（键缺失=保留，`""`/空白/`null`=清成 NULL）；并发创建 1062（P2002）→ 409、并发删除 P2025 → 404。`GET /api/system-settings/security` 与其余全部 `/api/system-settings/*` 仍回 NestJS（Go 不返回自己的 404）。回滚：`API_GO_RUNTIME_SETTINGS_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。细节见 `docs/refactor/go-runtime-settings.md`。SEC-01 的真实登录态未在本批验证。
 
 ### 1.9 system-settings（98 个，26 个 controller）
 
@@ -413,3 +428,19 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 - `getEntityImpactGraph` 读 Mongo `processeditems` 共现/提及序列与 MySQL `EconomicDataPoint` 金融序列，皮尔逊相关、节点裁剪与 ECharts 符号大小对齐 Nest，缓存键 `entityImpactGraph:data:<orgId>:...`。
 - 同批修掉三处缺陷：`knowledge-graph-impact.service.ts` 第 158/275/386/545/575 行 5 处 `knowledgeEntity.findMany` 补 `orgId`；`entity-impact-graph.service.ts` 第 564 行 `$dateToString` 补 `timezone: "UTC"`；`knowledge-graph-impact.model.ts` 三个冲击传导输入补 `@Allow()`（与第 9 节同一误杀，否则全局 `ValidationPipe` 的 `forbidUnknownValues` 直接 400，查询到不了 resolver）。两侧同修。
 - 回滚只把 `API_GO_GRAPHQL_KG_IMPACT_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
+
+## 11. 身份/组织/RBAC/仪表盘/队列/情感/已处理条目 GraphQL 读（Go）
+
+新增开关 `API_GO_GRAPHQL_WORKSPACE_READ_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `go` 时，才在既有精确 `/graphql` 执行器登记 12 个只读 root：
+
+- `me`（`AllowAuthenticated`；`UserModel` 的 `primaryRoleId`/`isActive`/`emailVerified`/`lastLoginAt`/`roleIds` 为字段级 `users.read`）
+- `myOrganizations`（`AllowAuthenticated`；按 `createdAt asc` 去重，`isActive = org.isActive && (membership.isActive ?? true)`）
+- `users(first, after, search)`、`userLoginRecords(userId, limit)`（`users.read` + 系统 `admin` 角色门禁）
+- `roles(includeSystem)`（`roles.read`，`name asc`）、`permissions`（`permissions.read`，`name asc`）
+- `memberships`（`users.read`；`RoleModel.permissions` 为字段级 `roles.read`）
+- `dashboards`（`dashboards.read`；`createdAt asc`，widgets `sortOrder asc`）
+- `queueStats`（`queue.manage`；MySQL `ItemMeta` + Mongo `processeditems` + Redis `queue:itemPipeline:org:<orgId>:counts` + 最近 10 条 `tasklogs`，`message` 经 `adminlogs.RedactSensitiveFields`）
+- `entitySentimentSeries` / `topicSentimentSeries`（`dashboards.read`；`days` 默认 30、clamp 1..365，名称 trim）
+- `processedItemById(id)`（`items.read`；非法 ObjectId 400，`duplicateOf` -> 目标 `ItemMeta.id`，`eventId` 两步回退）
+
+未迁：10 个 Mutation（`createOrg`/`updateOrg`/`setOrgActive`/`updateMembershipRoles`/`setUserActive`/`createRole`/`assignRole`/`updateRole`/`upsertDashboard`/`deleteDashboard`）与 `queueEvents` Subscription。同批修 4 个缺陷：非法/跨组织游标返回空页（Nest + Go）、删除 `(doc.llm as any)` 并强类型归一化 `llm`（Nest + Go）、`entityName`/`topic` trim（Nest + Go）、`recentLogs.message` 脱敏（Nest + Go）。回滚只把 `API_GO_GRAPHQL_WORKSPACE_READ_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
