@@ -254,7 +254,7 @@ func (e *Engine) Execute(ctx context.Context, plan Plan, prepare PrepareRoot, ca
 			continue
 		}
 		fieldDef := e.schema.Query.Fields.ForName(item.field.Name)
-		projected, isNull, projectErrors := e.project(fieldDef.Type, reflect.ValueOf(value), item.field.Selections, plan.Doc, plan.Variables, fieldPath)
+		projected, isNull, projectErrors := e.project(fieldDef.Type, reflect.ValueOf(value), item.field.Selections, plan.Doc, plan.Variables, fieldPath, item.identity)
 		for i := range projectErrors {
 			if projectErrors[i].Extensions == nil {
 				projectErrors[i].Extensions = map[string]any{}
@@ -393,6 +393,25 @@ func authorizeRoot(root contract.Root, id contract.Identity) error {
 		Detail:              "Requires any permission: " + root.Permission,
 		RequiredPermissions: []string{root.Permission},
 		PermissionsMode:     "any",
+	}
+}
+
+// fieldPermissionError builds the GraphQL error raised when the caller
+// selects a field guarded by @HasPermission without holding that permission.
+// The message, extensions, and HTTP status match the root permission failure
+// and the NestJS GqlPermissionsGuard.
+func fieldPermissionError(permission string, path []any) graphError {
+	return graphError{
+		Message: "Insufficient permissions",
+		Path:    path,
+		Extensions: map[string]any{
+			"code":                "FORBIDDEN",
+			"http":                map[string]any{"status": http.StatusForbidden},
+			"appCode":             "INSUFFICIENT_PERMISSIONS",
+			"detail":              "Requires any permission: " + permission,
+			"requiredPermissions": []string{permission},
+			"permissionsMode":     "any",
+		},
 	}
 }
 

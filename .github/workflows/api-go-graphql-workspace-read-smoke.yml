@@ -1,0 +1,651 @@
+# Go：身份/组织/RBAC/仪表盘/队列/情感/已处理条目 12 个 GraphQL 只读 root 的真实栈对照。
+# 不进普通 CI。PR 上加 label api-go-graphql-workspace-read-smoke，或 workflow_dispatch。
+# 不调用模型或外部服务；不启动采集 worker。
+name: api-go-graphql-workspace-read-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-graphql-workspace-read-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-smoke@example.com
+  SMTP_PASS: api-go-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  LITELLM_TIMEOUT_MS: "800"
+  LITELLM_RETRY_ATTEMPTS: "1"
+  SEED_ORG_SLUG: api-go-smoke-org
+  SEED_ORG_NAME: api-go Smoke Org
+  SEED_ADMIN_EMAIL: api-go-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoSmoke#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-graphql-workspace-read-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-graphql-workspace-read-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-workspace:ci .
+      - name: Seed fixtures and exercise legacy mode
+        run: |
+          set -euo pipefail
+          start_go() {
+            local read_mode="$1"
+            local workspace_mode="$2"
+            docker rm -f api-go-workspace >/dev/null 2>&1 || true
+            docker run -d --name api-go-workspace \
+              --add-host=host.docker.internal:host-gateway \
+              --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s \
+              -p 127.0.0.1:4020:4020 \
+              -e PORT=4020 \
+              -e LEGACY_API_URL=http://host.docker.internal:4000 \
+              -e DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app \
+              -e MONGO_URI=mongodb://host.docker.internal:27017/app \
+              -e API_GO_GRAPHQL_READ_MODE="$read_mode" \
+              -e API_GO_GRAPHQL_WORKSPACE_READ_MODE="$workspace_mode" \
+              -e GRAPHQL_RESPONSE_CACHE_ENABLED=false \
+              -e RATE_LIMIT_LOGIN=1000 \
+              -e API_GO_DASHBOARD_STATS_MODE=legacy \
+              -e API_GO_DASHBOARD_CHARTS_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy \
+              -e API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy \
+              -e API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy \
+              -e API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy \
+              -e API_GO_DASHBOARD_STREAM_MODE=legacy \
+              -e API_GO_HEALTHZ_MODE=legacy \
+              -e API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy \
+              -e API_GO_USER_NEWS_BEHAVIOR_MODE=legacy \
+              -e API_GO_USER_DIGEST_MODE=legacy \
+              -e API_GO_ANALYSIS_VIEWS_MODE=legacy \
+              -e API_GO_ANALYSIS_BOARDS_MODE=legacy \
+              -e API_GO_ANALYSIS_THREADS_MODE=legacy \
+              -e API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy \
+              -e API_GO_GRAPHQL_KG_IMPACT_MODE=legacy \
+              -e API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy \
+              -e API_GO_NEWS_INDICATORS_MODE=legacy \
+              -e JWT_SECRET="$JWT_SECRET" \
+              -e JWT_ISSUER="$JWT_ISSUER" \
+              -e JWT_AUDIENCE="$JWT_AUDIENCE" \
+              -e REDIS_HOST=host.docker.internal \
+              -e REDIS_PORT=6379 \
+              -e CANARY_PERCENT=0 \
+              -e CORS_ORIGIN="$CORS_ORIGIN" \
+              api-go-workspace:ci
+            for i in $(seq 1 30); do
+              status=$(docker inspect --format '{{.State.Health.Status}}' api-go-workspace 2>/dev/null || echo starting)
+              echo "health=$status read=$read_mode workspace=$workspace_mode"
+              if [ "$status" = "healthy" ]; then return 0; fi
+              if [ "$status" = "unhealthy" ]; then docker logs api-go-workspace; return 1; fi
+              sleep 2
+            done
+            docker logs api-go-workspace || true
+            return 1
+          }
+          start_go go legacy
+          declare -f start_go > /tmp/start-go.sh
+          python3 - << 'PY'
+          import base64, datetime, json, os, subprocess, urllib.error, urllib.request
+
+          go = "http://127.0.0.1:4020"
+          nest = "http://127.0.0.1:4000"
+
+          def cid(ancestor):
+              return subprocess.check_output(["docker", "ps", "-q", "-f", f"ancestor={ancestor}"], text=True).split()[0]
+
+          mysql = cid("mysql:8.4")
+          mongo = cid("mongo:7.0")
+          redis = cid("redis:7.2")
+
+          def sql(statement):
+              proc = subprocess.run(["docker", "exec", "-i", mysql, "mysql", "-uroot", "-psecret", "-N", "app"], input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  raise SystemExit(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=60):
+              headers = {"content-type": "application/json"}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read(), resp.headers
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read(), exc.headers
+
+          def body(raw):
+              return json.loads(raw) if raw else None
+
+          def login(email):
+              status, raw, _ = call(go, "/api/auth/login", "POST", payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:300]!r}")
+              return doc["accessToken"]
+
+          org = sql("SELECT id FROM Org WHERE slug='api-go-smoke-org'")
+          admin = sql("SELECT id FROM User WHERE email='api-go-smoke-admin@example.com'")
+          if not org or not admin:
+              fail("seed org/admin missing")
+          sql(f"UPDATE User SET emailVerified = NOW(3) WHERE id = '{admin}'")
+
+          permissions = {}
+          for name in ["items.read", "users.read", "roles.read", "dashboards.read", "queue.manage", "permissions.read"]:
+              value = sql(f"SELECT id FROM Permission WHERE name='{name}'")
+              if not value:
+                  fail(f"permission {name} missing")
+              permissions[name] = value
+
+          now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+          iso = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+          yesterday = (now - datetime.timedelta(days=1))
+          y_iso = yesterday.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+          y_sql = yesterday.strftime("%Y-%m-%d %H:%M:%S")
+          item_a = "64c0000000000000000000a1"
+          item_b = "64c0000000000000000000b1"
+
+          sql(f"""
+          INSERT INTO Role (id, orgId, name, description, isSystem)
+          VALUES
+            ('wsroleplain000000000001', '{org}', 'ws-plain', 'items.read only', 0),
+            ('wsrolereader00000000001', '{org}', 'ws-reader', 'users.read only', 0),
+            ('wsroleother0000000000001', '{org}', 'ws-sorted-a', 'sort probe', 0),
+            ('wsroleother0000000000002', '{org}', 'ws-sorted-b', 'sort probe', 0);
+          INSERT INTO RolePermission (id, roleId, permissionId)
+          VALUES
+            ('wsrpplain00000000000001', 'wsroleplain000000000001', '{permissions["items.read"]}'),
+            ('wsrpreader0000000000001', 'wsrolereader00000000001', '{permissions["users.read"]}');
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'wsuserplain000000000001', 'ws-plain@example.com', passwordHash, 'Plain', 'User', 1, NOW(3), NOW(3), NOW(3) FROM User WHERE id = '{admin}';
+          INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+          SELECT 'wsuserreader00000000001', 'ws-reader@example.com', passwordHash, 'Reader', 'User', 1, NOW(3), NOW(3), NOW(3) FROM User WHERE id = '{admin}';
+          INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+          VALUES
+            ('wsmemplain000000000001', 'wsuserplain000000000001', '{org}', 'wsroleplain000000000001', 1, NOW(3)),
+            ('wsmemreader00000000001', 'wsuserreader00000000001', '{org}', 'wsrolereader00000000001', 1, NOW(3));
+          INSERT INTO Dashboard (id, orgId, name, slug, description, theme, config, version, createdAt, updatedAt)
+          VALUES ('wsdash0000000000000001', '{org}', 'WS Smoke', 'ws-smoke', 'smoke dash', 'dark', CAST('{{"k":"v"}}' AS JSON), 1, NOW(3), NOW(3));
+          INSERT INTO DashboardWidget (id, dashboardId, title, type, dataSource, dataConfig, layoutX, layoutY, layoutW, layoutH, sortOrder, options, createdAt, updatedAt)
+          VALUES
+            ('wswidget00000000000002', 'wsdash0000000000000001', 'Second', 'line', 'items', CAST('{{"metric":"b"}}' AS JSON), 2, 0, 6, 4, 2, CAST('{{"color":"blue"}}' AS JSON), NOW(3), NOW(3)),
+            ('wswidget00000000000001', 'wsdash0000000000000001', 'First', 'bar', 'items', CAST('{{"metric":"a"}}' AS JSON), 0, 0, 6, 4, 1, NULL, NOW(3), NOW(3));
+          INSERT INTO EntitySentimentSnapshot (id, orgId, entityName, entityType, bucketStart, totalDocs, negativeDocs, positiveDocs, neutralDocs, scoreSum, avgScore, negativeRatio, evidenceProcessedItemIds, createdAt, updatedAt)
+          VALUES ('wsentity000000000001', '{org}', 'Apple', 'company', '{y_sql}', 3, 1, 1, 1, 1, 0.3333333, 0.3333333, CAST('["64c0000000000000000000e1"]' AS JSON), NOW(3), NOW(3));
+          INSERT INTO TopicSentimentSnapshot (id, orgId, topic, bucketStart, totalDocs, negativeDocs, positiveDocs, neutralDocs, scoreSum, avgScore, negativeRatio, evidenceProcessedItemIds, createdAt, updatedAt)
+          VALUES ('wstopic0000000000001', '{org}', 'AI', '{y_sql}', 2, 0, 2, 0, 2, 1, 0, NULL, NOW(3), NOW(3));
+          INSERT INTO Article (id, orgId, url, crawlAt, contentHash, createdAt, updatedAt)
+          VALUES ('wsarticle00000000001', '{org}', 'https://example.com/ws-a', NOW(3), 'ws-hash-a', NOW(3), NOW(3));
+          INSERT INTO ProcessedArticle (id, orgId, articleId, title, cleanedMarkdownRef, createdAt, processedAt, updatedAt)
+          VALUES ('wspa0000000000000001', '{org}', 'wsarticle00000000001', 'WS Article', 'wsitem-marker', NOW(3), NOW(3), NOW(3));
+          INSERT INTO NewsEvent (id, orgId, status, primaryTopic, title, startAt, lastAt, createdAt, updatedAt)
+          VALUES ('wsevent0000000000001', '{org}', 'active', 'smoke', 'WS Event', NOW(3), NOW(3), NOW(3), NOW(3));
+          INSERT INTO NewsEventItem (id, orgId, eventId, processedArticleId, processedItemId, createdAt)
+          VALUES ('wseventitem000000001', '{org}', 'wsevent0000000000001', 'wspa0000000000000001', '{item_a}', NOW(3));
+          """)
+          # The item meta id inside the event membership must be the processed
+          # item ObjectId hex used below.
+
+          mongo_docs = (
+              "db.processeditems.insertMany(["
+              "{_id: ObjectId('%s'), orgId: '%s', itemMetaId: 'meta-b', status: 'completed', tags: [], createdAt: new Date('%s'), result: {title: 'B'}, llm: {model: 'gpt-4o', promptTokens: 12, costUsd: 0.5, latencyMs: 100}},"
+              "{_id: ObjectId('%s'), orgId: '%s', itemMetaId: 'meta-a', status: 'completed', tags: ['x'], duplicateOf: ObjectId('%s'), duplicateSimilarity: 0.9, createdAt: new Date('%s'), result: {title: 'A', topics: ['AI']}, llm: {model: 'gpt-4o', promptTokens: NaN, costUsd: 0.25, latencyMs: 50}}"
+              "]);"
+              "db.tasklogs.insertOne({orgId: '%s', queue: 'itemPipeline', jobId: 'job-1', stage: 'fetch', status: 'failed', message: 'upstream rejected Bearer secret.token.123', createdAt: new Date('%s'), updatedAt: new Date('%s')});"
+          ) % (item_b, org, iso, item_a, org, item_b, iso, org, iso, iso)
+          proc = subprocess.run(["docker", "exec", "-i", mongo, "mongosh", "app", "--quiet", "--eval", mongo_docs], text=True, capture_output=True)
+          if proc.returncode != 0:
+              fail(proc.stderr or proc.stdout)
+
+          # The processed-item result must also seed a second item whose
+          # result column is a JSON string, exercising normalizeProcessedResult.
+          string_result = subprocess.run(
+              ["docker", "exec", "-i", mongo, "mongosh", "app", "--quiet", "--eval",
+               f"db.processeditems.updateOne({{_id: ObjectId('{item_b}')}}, {{$set: {{result: '{{\"title\":\"B\"}}'}}}})"],
+              text=True, capture_output=True)
+          if string_result.returncode != 0:
+              fail(string_result.stderr or string_result.stdout)
+
+          subprocess.check_call(["docker", "exec", redis, "redis-cli", "HSET",
+                                 f"queue:itemPipeline:org:{org}:counts", "waiting", "2", "active", "1",
+                                 "completed", "5", "failed", "1", "delayed", "0"])
+
+          token_admin = login(os.environ["SEED_ADMIN_EMAIL"])
+          token_plain = login("ws-plain@example.com")
+          token_reader = login("ws-reader@example.com")
+          open("/tmp/ws-org", "w").write(org)
+          open("/tmp/ws-admin", "w").write(admin)
+          open("/tmp/ws-token-admin", "w").write(token_admin)
+          open("/tmp/ws-token-plain", "w").write(token_plain)
+          open("/tmp/ws-token-reader", "w").write(token_reader)
+          open("/tmp/ws-item-a", "w").write(item_a)
+          print("seeded fixtures")
+          PY
+      - name: Exercise legacy mode
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import base64, json, subprocess, urllib.error, urllib.request
+
+          go = "http://127.0.0.1:4020"
+          nest = "http://127.0.0.1:4000"
+          token_admin = open("/tmp/ws-token-admin").read()
+          token_plain = open("/tmp/ws-token-plain").read()
+          token_reader = open("/tmp/ws-token-reader").read()
+          admin = open("/tmp/ws-admin").read()
+          item_a = open("/tmp/ws-item-a").read()
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def call(base, path, token, payload=None, method="POST"):
+              headers = {"content-type": "application/json"}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as resp:
+                      return resp.status, json.loads(resp.read() or b"null")
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read()
+                  try:
+                      doc = json.loads(raw)
+                  except Exception:
+                      doc = {"raw": raw[:400].decode("utf-8", "replace")}
+                  return exc.code, doc
+
+          def gql(base, token, query, variables=None):
+              return call(base, "/graphql", token, {"query": query, "variables": variables or {}})
+
+          def scrub(value):
+              if isinstance(value, dict):
+                  return {k: scrub(v) for k, v in value.items() if k not in ("traceId", "locations", "stack", "originalError")}
+              if isinstance(value, list):
+                  return [scrub(v) for v in value]
+              return value
+
+          def canon(value, key=None):
+              if isinstance(value, dict):
+                  return {k: canon(v, k) for k, v in value.items()}
+              if isinstance(value, list):
+                  items = [canon(v, key) for v in value]
+                  if key in ("memberships", "roles", "permissions", "widgets") and items and all(isinstance(v, dict) and "id" in v for v in items):
+                      return sorted(items, key=lambda v: v["id"])
+                  return items
+              return value
+
+          def same(left, right):
+              if isinstance(left, dict) and isinstance(right, dict):
+                  if left.keys() != right.keys():
+                      return False
+                  return all(same(left[k], right[k]) for k in left)
+              if isinstance(left, list) and isinstance(right, list):
+                  return len(left) == len(right) and all(same(a, b) for a, b in zip(left, right))
+              if isinstance(left, (int, float)) and isinstance(right, (int, float)) and not isinstance(left, bool) and not isinstance(right, bool):
+                  return abs(float(left) - float(right)) < 0.0001
+              return left == right
+
+          workspace_query = """
+          query Workspace($after: String, $itemId: ID!) {
+            me { id email firstName lastName avatarUrl planTier subscriptionStatus orgId primaryRoleId isActive emailVerified lastLoginAt roleIds permissions }
+            myOrganizations { id name slug description isActive createdAt updatedAt }
+            users(first: 5, after: $after) { id email firstName lastName avatarUrl planTier subscriptionStatus orgId primaryRoleId isActive emailVerified lastLoginAt roleIds permissions }
+            userLoginRecords(userId: "%s", limit: 5) { id createdAt ipAddress userAgent method }
+            roles(includeSystem: true) { id name description isSystem permissions { id name description } }
+            permissions { id name description }
+            memberships { id orgId role { id name description isSystem } roles { id name } user { id email orgId primaryRoleId isActive roleIds permissions } }
+            dashboards { id version name slug description theme config createdAt updatedAt widgets { id title type dataSource dataConfig layoutX layoutY layoutW layoutH sortOrder options } }
+            queueStats { counts { waiting active completed failed delayed } countsAvailable processedCount itemCount recentLogs { event jobId data timestamp } }
+            entitySentimentSeries(entityName: "Apple", entityType: "company", days: 30) { entityName entityType bucketStart totalDocs negativeDocs positiveDocs neutralDocs scoreSum avgScore negativeRatio evidenceProcessedItemIds }
+            topicSentimentSeries(topic: "AI", days: 30) { topic bucketStart totalDocs negativeDocs positiveDocs neutralDocs scoreSum avgScore negativeRatio evidenceProcessedItemIds }
+            processedItemById(id: $itemId) { id itemMetaId status error { message name } tags result resultJson duplicateOf duplicateSimilarity llm { model promptVersion promptTokens completionTokens totalTokens costUsd latencyMs } summaryEmbeddingModel summaryEmbeddingDimensions createdAt eventId }
+          }""" % "wsuserreader00000000001"
+          variables = {"after": None, "itemId": item_a}
+          open("/tmp/ws-query.json", "w").write(json.dumps({"query": workspace_query, "variables": variables}))
+
+          def compare(label):
+              ns, nd = gql(nest, token_admin, workspace_query, variables)
+              gs, gd = gql(go, token_admin, workspace_query, variables)
+              if ns != gs or not same(canon(scrub(nd)), canon(scrub(gd))):
+                  fail(f"{label} nest/gateway {ns}/{gs}\nNEST {json.dumps(scrub(nd))[:2000]}\nGO {json.dumps(scrub(gd))[:2000]}")
+              print("OK legacy", label)
+              return scrub(gd)
+
+          result = compare("legacy")
+          data = result.get("data") or {}
+          if data["processedItemById"]["duplicateOf"] != "meta-b":
+              fail(f"legacy duplicateOf = {data['processedItemById']['duplicateOf']}")
+          if data["processedItemById"]["eventId"] != "wsevent0000000000001":
+              fail(f"legacy eventId = {data['processedItemById']['eventId']}")
+          if data["processedItemById"]["llm"]["promptTokens"] is not None:
+              fail("legacy NaN promptTokens must be null")
+          if len(data["dashboards"]) != 1 or [w["sortOrder"] for w in data["dashboards"][0]["widgets"]] != [1, 2]:
+              fail("legacy dashboard widgets order")
+          if data["queueStats"]["counts"]["waiting"] != 2:
+              fail("legacy redis counts")
+          logs = data["queueStats"]["recentLogs"]
+          if not logs or "Bearer [REDACTED]" not in (logs[0]["data"] or "") or "secret.token.123" in (logs[0]["data"] or ""):
+              fail(f"legacy queue log redaction {logs}")
+
+          # Padded sentiment names must hit the stored canonical snapshots.
+          padded = gql(go, token_admin, 'query { entitySentimentSeries(entityName: "  Apple  ", entityType: "  COMPANY  ") { entityName } topicSentimentSeries(topic: "  AI  ") { topic } }')
+          padded_data = (padded[1].get("data") or {})
+          if padded[0] != 200 or not padded_data.get("entitySentimentSeries") or not padded_data.get("topicSentimentSeries"):
+              fail(f"legacy padded sentiment {padded}")
+          nest_padded = gql(nest, token_admin, 'query { entitySentimentSeries(entityName: "  Apple  ", entityType: "  COMPANY  ") { entityName } topicSentimentSeries(topic: "  AI  ") { topic } }')
+          if nest_padded[0] != 200 or nest_padded[1] != padded[1]:
+              fail(f"legacy padded sentiment nest/go mismatch {nest_padded} {padded}")
+
+          # Non-admin members with users.read must be rejected by the internal
+          # organization-admin gate on both sides.
+          for base, label in ((nest, "nest"), (go, "gateway")):
+              status, doc = gql(base, token_reader, 'query { users { id } }')
+              if status != 403 or "Admin access required" not in json.dumps(doc):
+                  fail(f"{label} users admin gate {status} {doc}")
+              status, doc = gql(base, token_reader, 'query { userLoginRecords(userId: "wsuserplain000000000001") { id } }')
+              if status != 403 or "Admin access required" not in json.dumps(doc):
+                  fail(f"{label} login-records admin gate {status} {doc}")
+
+          # A cursor that does not resolve to a member of the organization must
+          # be an empty page, never a P2025/500.
+          bad_cursor = base64.b64encode(b"does-not-exist-000000000000").decode()
+          bad_query = 'query Users($after: String) { users(first: 5, after: $after) { id } }'
+          for base, label in ((nest, "nest"), (go, "gateway")):
+              status, doc = gql(base, token_admin, bad_query, {"after": bad_cursor})
+              if status != 200 or (doc.get("data") or {}).get("users") != [] or doc.get("errors"):
+                  fail(f"{label} bad cursor {status} {doc}")
+          print("OK legacy admin gate, bad cursor, trim, redaction")
+          PY
+          docker logs api-go-workspace 2>&1 | grep -F "GraphQL workspace reads not registered (API_GO_GRAPHQL_WORKSPACE_READ_MODE=legacy)"
+          before=$(curl -fsS http://127.0.0.1:4020/__go/graphql-read-stats | python3 -c 'import json,sys; print(json.load(sys.stdin)["resolverCalls"])')
+          curl -fsS -X POST -H 'content-type: application/json' -H "authorization: Bearer $(cat /tmp/ws-token-admin)" \
+            -d @/tmp/ws-query.json http://127.0.0.1:4020/graphql > /dev/null
+          after=$(curl -fsS http://127.0.0.1:4020/__go/graphql-read-stats | python3 -c 'import json,sys; print(json.load(sys.stdin)["resolverCalls"])')
+          if [ "$before" != "$after" ]; then
+            echo "workspace roots executed while the workspace switch is legacy"
+            exit 1
+          fi
+          echo "OK legacy forwards the twelve roots"
+      - name: Exercise go mode
+        run: |
+          set -euo pipefail
+          source /tmp/start-go.sh
+          start_go go go
+          docker logs api-go-workspace 2>&1 | grep -F "GraphQL workspace reads registered (me, myOrganizations, users, userLoginRecords, roles, permissions, memberships, dashboards, queueStats, entitySentimentSeries, topicSentimentSeries, processedItemById)"
+          python3 - << 'PY'
+          import base64, json, subprocess, urllib.error, urllib.request
+
+          go = "http://127.0.0.1:4020"
+          nest = "http://127.0.0.1:4000"
+          token_admin = open("/tmp/ws-token-admin").read()
+          token_plain = open("/tmp/ws-token-plain").read()
+          token_reader = open("/tmp/ws-token-reader").read()
+          case = json.load(open("/tmp/ws-query.json"))
+          workspace_query = case["query"]
+          variables = case["variables"]
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def call(base, path, token, payload=None):
+              headers = {"content-type": "application/json"}
+              data = json.dumps(payload).encode() if payload is not None else None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              req = urllib.request.Request(base + path, data=data, method="POST", headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as resp:
+                      return resp.status, json.loads(resp.read() or b"null")
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read()
+                  try:
+                      doc = json.loads(raw)
+                  except Exception:
+                      doc = {"raw": raw[:400].decode("utf-8", "replace")}
+                  return exc.code, doc
+
+          def gql(base, token, query, variables_=None):
+              return call(base, "/graphql", token, {"query": query, "variables": variables_ or {}})
+
+          def scrub(value):
+              if isinstance(value, dict):
+                  return {k: scrub(v) for k, v in value.items() if k not in ("traceId", "locations", "stack", "originalError")}
+              if isinstance(value, list):
+                  return [scrub(v) for v in value]
+              return value
+
+          def canon(value, key=None):
+              if isinstance(value, dict):
+                  return {k: canon(v, k) for k, v in value.items()}
+              if isinstance(value, list):
+                  items = [canon(v, key) for v in value]
+                  if key in ("memberships", "roles", "permissions", "widgets") and items and all(isinstance(v, dict) and "id" in v for v in items):
+                      return sorted(items, key=lambda v: v["id"])
+                  return items
+              return value
+
+          def same(left, right):
+              if isinstance(left, dict) and isinstance(right, dict):
+                  if left.keys() != right.keys():
+                      return False
+                  return all(same(left[k], right[k]) for k in left)
+              if isinstance(left, list) and isinstance(right, list):
+                  return len(left) == len(right) and all(same(a, b) for a, b in zip(left, right))
+              if isinstance(left, (int, float)) and isinstance(right, (int, float)) and not isinstance(left, bool) and not isinstance(right, bool):
+                  return abs(float(left) - float(right)) < 0.0001
+              return left == right
+
+          ns, nd = gql(nest, token_admin, workspace_query, variables)
+          gs, gd = gql(go, token_admin, workspace_query, variables)
+          if ns != gs or not same(canon(scrub(nd)), canon(scrub(gd))):
+              fail(f"go nest/gateway {ns}/{gs}\nNEST {json.dumps(scrub(nd))[:2200]}\nGO {json.dumps(scrub(gd))[:2200]}")
+          print("OK go twelve roots")
+
+          data = scrub(gd).get("data") or {}
+          if data["processedItemById"]["duplicateOf"] != "meta-b":
+              fail(f"go duplicateOf = {data['processedItemById']['duplicateOf']}")
+          if data["processedItemById"]["eventId"] != "wsevent0000000000001":
+              fail(f"go eventId = {data['processedItemById']['eventId']}")
+          if data["processedItemById"]["llm"]["promptTokens"] is not None:
+              fail("go NaN promptTokens must be null")
+          if not data["processedItemById"]["resultJson"] or data["processedItemById"]["result"] is None:
+              fail(f"go result fields {data['processedItemById']}")
+          if "Bearer [REDACTED]" not in (data["queueStats"]["recentLogs"][0]["data"] or ""):
+              fail("go queue log redaction")
+
+          # Padded names hit the canonical snapshots on Go too.
+          status, doc = gql(go, token_admin, 'query { entitySentimentSeries(entityName: "  Apple  ", entityType: "  COMPANY  ") { entityName entityType } topicSentimentSeries(topic: "  AI  ") { topic } }')
+          if status != 200 or not (doc.get("data") or {}).get("entitySentimentSeries") or not (doc.get("data") or {}).get("topicSentimentSeries"):
+              fail(f"go padded sentiment {status} {doc}")
+
+          # Bad ObjectId is a 400 on both sides.
+          for base, label in ((nest, "nest"), (go, "gateway")):
+              status, doc = gql(base, token_admin, 'query { processedItemById(id: "bad-id") { id } }')
+              if status != 400 or "Invalid processed item id" not in json.dumps(doc):
+                  fail(f"{label} bad object id {status} {doc}")
+
+          # Field-level permission: a normal member without users.read can read
+          # the public fields but not the guarded UserModel fields.
+          status, doc = gql(go, token_plain, 'query { me { id email permissions } }')
+          if status != 200 or (doc.get("data") or {}).get("me") is None:
+              fail(f"go plain me public {status} {doc}")
+          status, doc = gql(go, token_plain, 'query { me { id roleIds } }')
+          if status != 403 or "FORBIDDEN" not in json.dumps(doc):
+              fail(f"go plain me roleIds {status} {doc}")
+
+          # memberships needs users.read; roles.read guards RoleModel.permissions.
+          status, doc = gql(go, token_reader, 'query { memberships { id role { id name } } }')
+          if status != 200 or not (doc.get("data") or {}).get("memberships"):
+              fail(f"go reader memberships {status} {doc}")
+          status, doc = gql(go, token_reader, 'query { memberships { id role { permissions { name } } } }')
+          if status != 403 or "FORBIDDEN" not in json.dumps(doc):
+              fail(f"go reader role permissions {status} {doc}")
+
+          # The organization-admin gate still fails closed on Go.
+          for query in ('query { users { id } }', 'query { userLoginRecords(userId: "wsuserplain000000000001") { id } }'):
+              status, doc = gql(go, token_reader, query)
+              if status != 403 or "Admin access required" not in json.dumps(doc):
+                  fail(f"go admin gate {status} {doc}")
+
+          bad_cursor = base64.b64encode(b"does-not-exist-000000000000").decode()
+          status, doc = gql(go, token_admin, 'query Users($after: String) { users(first: 5, after: $after) { id } }', {"after": bad_cursor})
+          if status != 200 or (doc.get("data") or {}).get("users") != [] or doc.get("errors"):
+              fail(f"go bad cursor {status} {doc}")
+          print("OK go processed item, field permissions, admin gate, trim")
+          PY
+      - name: Nest down availability and mutation fallback
+        run: |
+          set -euo pipefail
+          # JWT tokens were captured while NestJS was healthy in /tmp before
+          # the process is stopped here.
+          kill "$(cat /tmp/api-nestjs.pid)" 2>/dev/null || true
+          pkill -f '@modular/api' 2>/dev/null || true
+          pkill -f 'node .*dist/main' 2>/dev/null || true
+          if command -v fuser >/dev/null 2>&1; then fuser -k 4000/tcp 2>/dev/null || true; fi
+          for i in $(seq 1 30); do
+            if ! curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+            echo "NestJS is still healthy after stop attempts"
+            exit 1
+          fi
+          python3 - << 'PY'
+          import json, urllib.error, urllib.request
+
+          go = "http://127.0.0.1:4020"
+          token = open("/tmp/ws-token-admin").read()
+          case = json.load(open("/tmp/ws-query.json"))
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def call(path, payload):
+              req = urllib.request.Request(go + path, data=json.dumps(payload).encode(), method="POST",
+                                           headers={"content-type": "application/json", "authorization": "Bearer " + token})
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as resp:
+                      return resp.status, json.loads(resp.read() or b"null")
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read()
+                  try:
+                      return exc.code, json.loads(raw)
+                  except Exception:
+                      return exc.code, {"raw": raw[:200].decode("utf-8", "replace")}
+
+          status, doc = call("/graphql", {"query": case["query"], "variables": case["variables"]})
+          if status != 200 or doc.get("errors") or not (doc.get("data") or {}).get("processedItemById"):
+              fail(f"nest-down twelve roots {status} {doc}")
+          print("OK nest-down twelve roots 200")
+
+          status, doc = call("/graphql", {"query": 'mutation { deleteDashboard(id: "x") }'})
+          if status != 502:
+              fail(f"nest-down mutation status {status} {doc}")
+          print("OK nest-down deleteDashboard 502")
+          PY

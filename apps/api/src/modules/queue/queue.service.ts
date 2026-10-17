@@ -1,5 +1,5 @@
 import { ProcessedItemModel, TaskLogModel } from "@modular/mongo";
-import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
+import { createLogger, ensureTraceId, getCurrentTraceId, redactSensitiveFields } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
 import { Queue, JobsOptions, type Job } from "bullmq";
 import { Types } from "mongoose";
@@ -240,7 +240,19 @@ export class QueueService {
         delayed: jobCounts?.delayed ?? 0,
       },
       countsAvailable: jobCounts !== null,
-      recentLogs: logs,
+      // Failure messages can embed bearer tokens or credentials. Redact the
+      // message here so DashboardResolver.queueStats never stringifies a raw
+      // secret into recentLogs.data.
+      recentLogs: logs.map((log) => ({
+        createdAt: log.createdAt,
+        jobId: log.jobId,
+        message:
+          typeof log.message === "string" && log.message.length > 0
+            ? redactSensitiveFields(log.message)
+            : log.message,
+        stage: log.stage,
+        status: log.status,
+      })),
     };
   }
 }
