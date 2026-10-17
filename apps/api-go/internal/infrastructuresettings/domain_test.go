@@ -231,7 +231,13 @@ func TestVectorPutTokenStates(t *testing.T) {
 // a rejected update writes nothing.
 func TestVectorPutValidation(t *testing.T) {
 	store := newFakeMySQL(nil)
-	service := NewService(store.db(), nil, testVectorConfig())
+	// No environment baseUrl or token: the effective configuration then depends
+	// entirely on the stored row, which is what makes the cross-field checks
+	// reachable.
+	bare := testVectorConfig()
+	bare.VectorBaseURL = ""
+	bare.VectorToken = ""
+	service := NewService(store.db(), nil, bare)
 
 	dto, err := parseVectorSettingsRequest([]byte(
 		`{"enabled":true,"fallbackToMongo":true,"timeoutMs":5000,"maxRetries":2}`))
@@ -249,9 +255,6 @@ func TestVectorPutValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	noToken := testVectorConfig()
-	noToken.VectorToken = ""
-	service = NewService(store.db(), nil, noToken)
 	_, err = service.updateVectorSettings(context.Background(), "org-1", "user-1", dto)
 	requireMessage(t, err, "token is required when vector service is enabled")
 	if _, written := store.setting(settingKeyVectorService); written {
@@ -607,8 +610,11 @@ func TestRuntimeSecretsUpdateMerge(t *testing.T) {
 	store := newFakeMySQL(map[string]string{settingKeyRuntimeSecrets: seed})
 	service := NewService(store.db(), nil, testVectorConfig())
 
+	// The DTO patterns reject whitespace, so the trim/lowercase normalisation is
+	// exercised with values that already pass validation (uppercase sourceId,
+	// untrimmed value).
 	dto, err := parseRuntimeSecretsRequest([]byte(
-		`{"upserts":[{"sourceId":" Gamma ","key":" k3 ","value":" v3 "},` +
+		`{"upserts":[{"sourceId":"GAMMA","key":"k3","value":" v3 "},` +
 			`{"sourceId":"alpha","key":"k1","value":"updated"}],` +
 			`"removes":[{"sourceId":"beta","key":"k2"}]}`))
 	if err != nil {
@@ -943,8 +949,11 @@ func TestHandlerFailsClosed(t *testing.T) {
 			t.Fatalf("%s status = %d, want 503", path, recorder.Code)
 		}
 	}
+	// With a wired handler the dispatch table answers 404 for anything it does
+	// not own, so the routing table stays the only thing that decides ownership.
+	wired := NewHandler(&Authenticator{}, NewService(nil, nil, Config{}))
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, pathVectorService+"/diagnostics", nil))
+	wired.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, pathVectorService+"/diagnostics", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("unrouted status = %d, want 404", recorder.Code)
 	}
