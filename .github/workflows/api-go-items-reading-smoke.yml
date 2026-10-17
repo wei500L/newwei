@@ -338,7 +338,12 @@ jobs:
               return body(lr)
 
           def stats(base_url=go):
+              # The stats endpoint is registered by the GraphQL read handler, so
+              # with API_GO_GRAPHQL_READ_MODE=legacy it is not mounted and the
+              # resolver counter is simply zero.
               status, raw = call(base_url, "/__go/graphql-read-stats")
+              if status == 404:
+                  return 0
               doc = body(raw) or {}
               if status != 200:
                   fail("graphql-read-stats " + str(status) + " " + repr(raw[:200]))
