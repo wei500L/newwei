@@ -660,6 +660,15 @@ services:
       # settings.manage；POST /api/admin/quality/classification/reports 会投递
       # BullMQ 任务，不迁移，继续回落 NestJS。回滚只把该变量改回 legacy。
       API_GO_CLASSIFICATION_RSS_OPS_MODE: legacy
+      # 运行时与治理设置 18 条 HTTP（/api/system-settings 下的
+      # rate-limit-policies、rate-limits、auth-cache、audit-log、
+      # multi-tenant-schedulers、news-source-scheduler、
+      # newsnow-personalization(+metrics)）。pilot 与样例保持 legacy。
+      # 改成 go 才由 Go 验签并读写 MySQL SystemSetting/RateLimitPolicy 与
+      # Redis 缓存；go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST（不要求
+      # Mongo，不启动 worker）。/api/system-settings/security 与其余
+      # /api/system-settings/* 仍回 NestJS。回滚只把该变量改回 legacy。
+      API_GO_RUNTIME_SETTINGS_MODE: legacy
       # 知识图谱冲击传导与实体共现/价格相关图 4 个 GraphQL 只读 root
       # （getExecutiveChangeImpact / getCommodityMoveImpact /
       # getPolicyEventImpact / getEntityImpactGraph）。pilot 与样例保持

@@ -2,6 +2,7 @@ import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 
+import { normalizeAuditActorId } from "../audit/audit-actor";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
@@ -104,12 +105,12 @@ export class RateLimitConfigService {
           where: { key: RATE_LIMIT_SETTING_KEYS[bucket] },
           update: {
             value: this.toPrismaJson(normalized[bucket]),
-            updatedById: actorId
+            updatedById: normalizeAuditActorId(actorId)
           },
           create: {
             key: RATE_LIMIT_SETTING_KEYS[bucket],
             value: this.toPrismaJson(normalized[bucket]),
-            updatedById: actorId,
+            updatedById: normalizeAuditActorId(actorId),
             description: `${bucket} rate limit`
           }
         })
@@ -120,7 +121,7 @@ export class RateLimitConfigService {
       {
         data: {
           orgId,
-          actorId,
+          actorId: normalizeAuditActorId(actorId),
           resource: "system_settings",
           action: "rate_limit_update",
           metadata: auditMetadata

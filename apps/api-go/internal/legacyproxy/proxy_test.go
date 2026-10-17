@@ -1366,6 +1366,126 @@ func TestGraphQLReadGoRoutesExactMethodsOnly(t *testing.T) {
 	assertVia(http.MethodPut, "/graphql", "legacy")
 }
 
+// runtimeSettingsGoRoutes are the eighteen paths and methods the runtime
+// settings switch takes over when API_GO_RUNTIME_SETTINGS_MODE=go.
+func runtimeSettingsGoRoutes() []struct{ method, path string } {
+	return []struct{ method, path string }{
+		{http.MethodGet, "/api/system-settings/rate-limit-policies"},
+		{http.MethodPost, "/api/system-settings/rate-limit-policies"},
+		{http.MethodGet, "/api/system-settings/rate-limit-policies/rss_fetch"},
+		{http.MethodPut, "/api/system-settings/rate-limit-policies/rss_fetch"},
+		{http.MethodDelete, "/api/system-settings/rate-limit-policies/rss_fetch"},
+		{http.MethodGet, "/api/system-settings/rate-limits"},
+		{http.MethodPut, "/api/system-settings/rate-limits"},
+		{http.MethodGet, "/api/system-settings/auth-cache"},
+		{http.MethodPut, "/api/system-settings/auth-cache"},
+		{http.MethodGet, "/api/system-settings/audit-log"},
+		{http.MethodPut, "/api/system-settings/audit-log"},
+		{http.MethodGet, "/api/system-settings/multi-tenant-schedulers"},
+		{http.MethodPut, "/api/system-settings/multi-tenant-schedulers"},
+		{http.MethodGet, "/api/system-settings/news-source-scheduler"},
+		{http.MethodPut, "/api/system-settings/news-source-scheduler"},
+		{http.MethodGet, "/api/system-settings/newsnow-personalization"},
+		{http.MethodPut, "/api/system-settings/newsnow-personalization"},
+		{http.MethodGet, "/api/system-settings/newsnow-personalization/metrics"},
+	}
+}
+
+// runtimeSettingsNestRoutes are the /api/system-settings routes that must keep
+// falling back to the legacy proxy whenever the switch is set.
+func runtimeSettingsNestRoutes() []struct{ method, path string } {
+	return []struct{ method, path string }{
+		{http.MethodGet, "/api/system-settings/security"},
+		{http.MethodPut, "/api/system-settings/security"},
+		{http.MethodGet, "/api/system-settings/email"},
+		{http.MethodGet, "/api/system-settings/task-logs"},
+		{http.MethodGet, "/api/system-settings/llm-gateways"},
+		{http.MethodGet, "/api/system-settings/vector-service"},
+		{http.MethodGet, "/api/system-settings/archive-preparation"},
+		{http.MethodGet, "/api/system-settings/assistant-quota"},
+		{http.MethodGet, "/api/system-settings/assistant-safety"},
+		// Not-listed methods on taken-over paths stay on NestJS.
+		{http.MethodPatch, "/api/system-settings/rate-limit-policies"},
+		{http.MethodDelete, "/api/system-settings/rate-limits"},
+		{http.MethodPost, "/api/system-settings/auth-cache"},
+		{http.MethodPost, "/api/system-settings/audit-log"},
+		{http.MethodDelete, "/api/system-settings/multi-tenant-schedulers"},
+		{http.MethodPost, "/api/system-settings/news-source-scheduler"},
+		{http.MethodPost, "/api/system-settings/newsnow-personalization"},
+		// Longer paths never fall into the one-segment :feature rule.
+		{http.MethodGet, "/api/system-settings/rate-limit-policies/rss_fetch/extra"},
+		{http.MethodGet, "/api/system-settings/newsnow-personalization/metrics/extra"},
+	}
+}
+
+func TestRuntimeSettingsStayLegacyByDefault(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithRuntimeSettings(rules, "")
+	rules = WithRuntimeSettings(rules, "legacy")
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range append(runtimeSettingsGoRoutes(), runtimeSettingsNestRoutes()...) {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+}
+
+func TestRuntimeSettingsGoOwnsRoutes(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithRuntimeSettings(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range runtimeSettingsGoRoutes() {
+		got := gateway.match(tc.method, tc.path)
+		if got.Mode != ModeGo {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		}
+		key := got.Prefix
+		if got.HandlerKey != "" {
+			key = got.HandlerKey
+		}
+		if key != RuntimeSettingsKey {
+			t.Fatalf("%s %s key=%s", tc.method, tc.path, key)
+		}
+	}
+	// The metrics route is a longer exact path than the settings route it
+	// extends, so it must never be shadowed by it.
+	metrics := gateway.match(http.MethodGet, "/api/system-settings/newsnow-personalization/metrics")
+	if !metrics.Exact || metrics.Prefix != "/api/system-settings/newsnow-personalization/metrics" {
+		t.Fatalf("metrics rule=%+v", metrics)
+	}
+	// :feature is exactly one segment.
+	item := gateway.match(http.MethodPut, "/api/system-settings/rate-limit-policies/rss_fetch")
+	if !item.OneSegment || item.Exact || item.Tail != "" {
+		t.Fatalf("feature rule=%+v", item)
+	}
+	// CORS preflight on the taken-over paths is answered by the Go handler.
+	for _, tc := range runtimeSettingsGoRoutes() {
+		if got := gateway.match(http.MethodOptions, tc.path); got.Mode != ModeGo {
+			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Mode)
+		}
+	}
+}
+
+func TestRuntimeSettingsUnmigratedRoutesStayNest(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithRuntimeSettings(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range runtimeSettingsNestRoutes() {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+}
+
 // classificationRssOpsRoutes lists the 13 exact route rules owned by the
 // classification/RSS ops switch when it is go.
 func classificationRssOpsRoutes() []struct{ method, path string } {
