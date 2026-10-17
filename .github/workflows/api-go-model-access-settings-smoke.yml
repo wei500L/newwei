@@ -398,11 +398,11 @@ jobs:
               merged = {}
               order = []
               for item in env + list(extra_env or []):
-                  name = item.split("=", 1)[0]
-                  if name not in merged:
-                      order.append(name)
-                  merged[name] = item
-              env = [merged[name] for name in order]
+                  env_name = item.split("=", 1)[0]
+                  if env_name not in merged:
+                      order.append(env_name)
+                  merged[env_name] = item
+              env = [merged[env_name] for env_name in order]
               cmd = ["docker", "run", "-d", "--name", name,
                      "--add-host=host.docker.internal:host-gateway",
                      "--health-interval", "3s", "--health-timeout", "3s", "--health-retries", "5", "--health-start-period", "2s",
