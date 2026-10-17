@@ -561,7 +561,7 @@ export class EntityImpactGraphService {
       {
         $project: {
           dateKey: {
-            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: "UTC" }
           },
           name: "$result.entities.name",
           type: "$result.entities.type"

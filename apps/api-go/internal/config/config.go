@@ -421,6 +421,11 @@ type Config struct {
 	// 只读 query。默认 legacy。go 要求 JWT、MySQL、Redis。不要求 Mongo，
 	// 不调用 AkShare，也不启动调度。
 	NewsIndicatorsMode NewsIndicatorsMode
+	// GraphQLKgImpactMode 只决定知识图谱冲击传导与实体共现/相关图这 4 个
+	// 只读 root 是否登记。默认 legacy。读查询为 legacy 时不另挂 /graphql。
+	// 两个都是 go 才登记；本开关为 legacy 时，含这 4 个 root 的文档整包回
+	// NestJS。回滚只改这个变量。
+	GraphQLKgImpactMode string
 	// GraphQLKnowledgeGraphMode 只决定知识图谱与实体 360 情报的六个 root
 	// 是否登记。默认 legacy。读查询为 legacy 时不另挂 /graphql。两个都是
 	// go 才登记；知识图谱为 legacy 时，含这六个 root 的文档整包回 NestJS。
@@ -872,6 +877,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.GraphQLNewsEventsMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENTS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KG_IMPACT_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLKgImpactMode = "legacy"
+	case "go":
+		cfg.GraphQLKgImpactMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_KG_IMPACT_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE")) {
 	case "", "legacy":

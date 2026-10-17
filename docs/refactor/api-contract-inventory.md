@@ -385,7 +385,16 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 
 - 开关：`API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE`（`legacy`|`go`，默认 `legacy`）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `=go` 时，六个 root 才登记进 Go 执行器。
 - 迁入 root：`getKnowledgeGraphSubgraph`、`articleEntityLinks`、`knowledgeGraphEdgeEvidence`、`entityIntelligenceCard`、`entityIntelligenceEvidence`、`knowledgeEntityByName`。orgId 与权限仍是服务端 membership 重推导；`entityIntelligenceEvidence` 顶层 `dashboards.read`，无 `items.read` 时返回 `restricted: true` 空列表。
-- 未迁：`knowledgeGraphEvidenceReviewQueue`、`reviewKnowledgeGraphEvidence`、`getExecutiveChangeImpact`、`getCommodityMoveImpact`、`getPolicyEventImpact`、`getEntityImpactGraph`、`knowledgeGraphSettings` / `updateKnowledgeGraphSettings`。选中任一未迁 root 时整文档回落 NestJS。
+- 未迁：`knowledgeGraphEvidenceReviewQueue`、`reviewKnowledgeGraphEvidence`、`knowledgeGraphSettings` / `updateKnowledgeGraphSettings`；`getExecutiveChangeImpact` / `getCommodityMoveImpact` / `getPolicyEventImpact` / `getEntityImpactGraph` 由第 10 节另一个开关迁入。选中任一未迁 root 时整文档回落 NestJS。
 - 缺陷 1：`getSubgraph` 邻居实体查询两侧同补 `orgId`（`apps/api/src/modules/knowledge-graph/knowledge-graph.service.ts:499-501`、`apps/api-go/internal/graphqlread/knowledgegraph/subgraph.go`），防止脏边跨租户带出实体。
 - 缺陷 2：全局 `ValidationPipe{forbidUnknownValues:true}` 会 400 掉无 class-validator 元数据的 InputType；给 `KnowledgeGraphSubgraphInput`、`EntityIntelligenceCardInput`、`EntityIntelligenceEvidenceInput` 的字段加 `@Allow()`（不加约束、不改 SDL）。
 - 说明见 `docs/refactor/go-knowledge-graph-read.md`。
+
+## 10. 知识图谱冲击传导与实体共现/相关图 GraphQL 读（Go）
+
+新增开关 `API_GO_GRAPHQL_KG_IMPACT_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `go` 时，才在既有精确 `/graphql` 执行器登记 4 个只读 root：`getExecutiveChangeImpact`、`getCommodityMoveImpact`、`getPolicyEventImpact`、`getEntityImpactGraph`。与第 2 节表格中 `entity-impact-graph` / `knowledge-graph-impact` 两行是同一个权限（重推导的 `dashboards.read`），`mtk_` 机器令牌按读执行器规则拒绝。
+
+- 三个冲击传导 root 读组织级知识图谱设置（Redis `knowledgeGraph:settings:<orgId>` -> MySQL `SystemSetting` `knowledge_graph_settings:<orgId>`），按 Nest 的评分公式、候选合并、链条顺序与 Redis 缓存键（`knowledgeGraph:impact:<orgId>:...`）输出。`includeLprSnapshot` 不发实网 AkShare。
+- `getEntityImpactGraph` 读 Mongo `processeditems` 共现/提及序列与 MySQL `EconomicDataPoint` 金融序列，皮尔逊相关、节点裁剪与 ECharts 符号大小对齐 Nest，缓存键 `entityImpactGraph:data:<orgId>:...`。
+- 同批修掉三处缺陷：`knowledge-graph-impact.service.ts` 第 158/275/386/545/575 行 5 处 `knowledgeEntity.findMany` 补 `orgId`；`entity-impact-graph.service.ts` 第 564 行 `$dateToString` 补 `timezone: "UTC"`；`knowledge-graph-impact.model.ts` 三个冲击传导输入补 `@Allow()`（与第 9 节同一误杀，否则全局 `ValidationPipe` 的 `forbidUnknownValues` 直接 400，查询到不了 resolver）。两侧同修。
+- 回滚只把 `API_GO_GRAPHQL_KG_IMPACT_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。

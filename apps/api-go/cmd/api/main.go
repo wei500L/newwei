@@ -127,6 +127,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/kgimpact"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
@@ -1188,6 +1189,10 @@ func run() error {
 		if newsIndicatorsRead {
 			newsindicators.Register(reg, sharedDB)
 		}
+		kgImpactGo := cfg.GraphQLKgImpactMode == "go"
+		if kgImpactGo {
+			kgimpact.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+		}
 		knowledgeGraphGo := cfg.GraphQLKnowledgeGraphMode == "go"
 		if knowledgeGraphGo {
 			knowledgegraph.Register(reg, sharedDB, redisClient)
@@ -1222,6 +1227,11 @@ func run() error {
 			log.Printf("api-go: GraphQL news-indicator reads registered (newsIndicatorAssociations, newsIndicatorAssociation)")
 		} else {
 			log.Printf("api-go: GraphQL news-indicator reads not registered (API_GO_NEWS_INDICATORS_MODE=legacy)")
+		}
+		if kgImpactGo {
+			log.Printf("api-go: GraphQL knowledge-graph impact reads registered (getExecutiveChangeImpact, getCommodityMoveImpact, getPolicyEventImpact, getEntityImpactGraph)")
+		} else {
+			log.Printf("api-go: GraphQL knowledge-graph impact reads not registered (API_GO_GRAPHQL_KG_IMPACT_MODE=legacy)")
 		}
 		if knowledgeGraphGo {
 			log.Printf("api-go: GraphQL knowledge-graph reads registered (getKnowledgeGraphSubgraph, articleEntityLinks, knowledgeGraphEdgeEvidence, entityIntelligenceCard, entityIntelligenceEvidence, knowledgeEntityByName)")
