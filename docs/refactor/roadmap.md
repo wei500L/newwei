@@ -124,6 +124,19 @@
 语义）。回滚只改 `API_GO_RBAC_MODE`。生产 Web 仍指向 NestJS，canary 关闭。
 细节见 `docs/refactor/go-rbac.md`。
 
+## M7：设置中心与来源策略 / 证据复核队列 / 采集任务 GraphQL 读（Go）
+
+新增开关 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE`（空串/`legacy`/`go`，默认
+`legacy`，非法值启动失败）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `go`
+时，才在既有精确 `/graphql` 执行器登记 20 个只读 root：设置中心与来源策略 16 个、
+`newsEventSourcePolicySyncStatus`、`knowledgeGraphEvidenceReviewQueue`、
+`crawlTasks`、`crawlTask`。多权限 root 走新增的 `contract.Root.AnyPermissions`。
+同批修 3 个缺陷（Nest 与 Go 两侧）：`assertAdmin` 补 `orgId` 与 `isSystem`、
+`crawlTasks` 失效/跨组织游标防 500、证据复核队列关联表补 `orgId`。未迁
+`crawlMetadata`（抓外网）、`alertRules`（可能投递 BullMQ）与全部 mutation。
+回滚只改 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE`。细节见
+`docs/refactor/go-graphql-settings-crawl-read.md`。
+
 ## M8 终局：编排、队列、调度、realtime
 
 - crawl 编排/news-pipeline/scheduler 迁移；BullMQ 行为对齐清单（job name/重试/DLQ 时机/repeat）逐项验收
