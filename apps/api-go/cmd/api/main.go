@@ -557,6 +557,10 @@ func run() error {
 	if cfg.QualityOverviewMode == config.QualityOverviewModeGo {
 		qualityOverviewMode = string(legacyproxy.ModeGo)
 	}
+	runtimeSettingsMode := ""
+	if cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo {
+		runtimeSettingsMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -585,6 +589,7 @@ func run() error {
 	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
 	rules = legacyproxy.WithNewsIndicators(rules, newsIndicatorsMode)
 	rules = legacyproxy.WithQualityOverview(rules, qualityOverviewMode)
+	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -636,6 +641,7 @@ func run() error {
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
 				cfg.QualityOverviewMode == config.QualityOverviewModeGo ||
+				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
@@ -694,7 +700,8 @@ func run() error {
 	adminLogsGo := cfg.AdminLogsMode == config.AdminLogsModeGo
 	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
 	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo
+	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || runtimeSettingsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1025,6 +1032,9 @@ func run() error {
 		return err
 	}
 	if err := wireQualityOverview(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
+	}
+	if err := wireRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 

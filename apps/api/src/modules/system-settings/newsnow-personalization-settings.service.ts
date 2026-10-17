@@ -2,6 +2,7 @@ import { createLogger } from '@modular/utils';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 
 import { toPrismaJsonValue } from '../../common/prisma-json';
+import { normalizeAuditActorId } from '../audit/audit-actor';
 import { writeAuditLogBestEffort } from '../audit/audit-log.writer';
 import { CacheService } from '../cache/cache.service';
 import { PrismaService } from '../config/prisma.service';
@@ -205,13 +206,13 @@ export class NewsnowPersonalizationSettingsService {
         where: { key: SETTINGS_KEY },
         update: {
           value: toPrismaJsonValue(normalized),
-          updatedById: actorId,
+          updatedById: normalizeAuditActorId(actorId),
           description: SETTINGS_DESCRIPTION,
         },
         create: {
           key: SETTINGS_KEY,
           value: toPrismaJsonValue(normalized),
-          updatedById: actorId,
+          updatedById: normalizeAuditActorId(actorId),
           description: SETTINGS_DESCRIPTION,
         },
       });
@@ -234,7 +235,7 @@ export class NewsnowPersonalizationSettingsService {
       {
         data: {
           orgId,
-          actorId,
+          actorId: normalizeAuditActorId(actorId),
           resource: 'system_settings',
           action: 'newsnow_personalization_settings_update',
           metadata: toPrismaJsonValue(normalized),

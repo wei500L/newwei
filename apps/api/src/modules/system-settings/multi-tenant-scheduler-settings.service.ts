@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
+import { normalizeAuditActorId } from "../audit/audit-actor";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { PrismaService } from "../config/prisma.service";
 
@@ -157,13 +158,13 @@ export class MultiTenantSchedulerSettingsService {
         where: { key: SETTINGS_KEY },
         update: {
           value: toPrismaJsonValue(normalized),
-          updatedById: actorId,
+          updatedById: normalizeAuditActorId(actorId),
           description: SETTINGS_DESCRIPTION,
         },
         create: {
           key: SETTINGS_KEY,
           value: toPrismaJsonValue(normalized),
-          updatedById: actorId,
+          updatedById: normalizeAuditActorId(actorId),
           description: SETTINGS_DESCRIPTION,
         },
       });
@@ -186,7 +187,7 @@ export class MultiTenantSchedulerSettingsService {
       {
         data: {
           orgId,
-          actorId,
+          actorId: normalizeAuditActorId(actorId),
           resource: "system_settings",
           action: "multi_tenant_scheduler_settings_update",
           metadata: toPrismaJsonValue(normalized),
