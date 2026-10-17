@@ -13,6 +13,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/schema"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingscrawl"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
 )
 
@@ -313,4 +314,70 @@ func TestFieldPermissionFailsClosed(t *testing.T) {
 type guardedUserModel struct {
 	ID      string   `graphql:"id"`
 	RoleIDs []string `graphql:"roleIds"`
+}
+
+// TestSettingsCrawlRootsPlanToExecute pins the ownership decision for the
+// twenty settings center, source policy, sync status, review queue and crawl
+// task roots: every one of them must be planned as an executable Go query when
+// only this package is registered. crawlMetadata stays unowned because it
+// fetches the public internet, and every mutation stays on NestJS.
+func TestSettingsCrawlRootsPlanToExecute(t *testing.T) {
+	loaded, err := schema.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := contract.NewRegistry()
+	settingscrawl.Register(reg, nil, settingscrawl.Options{})
+	engine := New(loaded, reg, 8, 2000, nil)
+
+	owned := []string{
+		`query { rateLimitSettings { login { limit windowSeconds } crawlCreate { limit } rbacWrite { windowSeconds } } }`,
+		`query { entityImpactGraphSettings { enabled categories cacheTtlSeconds } }`,
+		`query { knowledgeGraphSettings { enabled ingestionEnabled minEdgeConfidence } }`,
+		`query { newsEventSettings { enabled clusteringMode forceMinAuthoritativeSources } }`,
+		`query { newsEventSourcePolicy { activeRevision authoritativeDomains overrides { blogDomainsAdd } warnings { hasConflicts domainConflicts } revisions { revision operation delta { blogLabelsAdd } } syncWarnings updatedAt } }`,
+		`query { newsEventSourcePolicyPresets { authoritativeLabels blogLabels categoryAuthority { categoryPrefix domainBoosts { domain delta } } updatedAt syncWarnings } }`,
+		`query { newsEventSourcePolicyRevisionDiff(baseRevision: 1, targetRevision: 2) { baseRevision targetRevision blogDomainsAdd blogDomainsRemove } }`,
+		`query { newsClassificationSettings { enabled taxonomyVersion taxonomy { path displayName keywords synonyms } llmModel } }`,
+		`query { classificationQualitySettings { lowConfidenceThreshold reportMinPairCount cacheTtlSeconds } }`,
+		`query { newsDedupeSettings { defaultThreshold scopedThresholds { sourceId language categoryPath threshold } llmJudgeModel } }`,
+		`query { newsIndicatorSettings { enabled indicatorSlugs windowDays backtestHoldoutDays } }`,
+		`query { authCacheSettings { profileTtlSeconds lockTtlMs maxWaitMs retryDelayMs } }`,
+		`query { crawlClientSettings { requestTimeoutMs requestTimeoutNormalMs adaptiveConcurrencyEnabled } }`,
+		`query { auditLogRetention { retentionDays } }`,
+		`query { newsExtractionSettings { pipelineMode preflightGate { enabled minWordCount } postCleanGate { requireSummary } capabilities { kg } providers { clean entities sentiment kg } } }`,
+		`query { newsPromptConfig { version systemPromptTemplate userPromptTemplate kgUserPromptTemplate } }`,
+		`query { newsEventSourcePolicySyncStatus { degraded policyCacheStale presetCacheStale warningCodes forceAuthoritativeMode forceMinAuthoritativeSources } }`,
+		`query { knowledgeGraphEvidenceReviewQueue(limit: 5, maxConfidence: 0.9, onlyUnreviewed: true) { id confidence createdAt extractorVersion evidence edge { id type confidence weight properties fromEntity { id name type properties } toEntity { id name } } article { id url title summary language crawlAt } } }`,
+		`query { crawlTasks(first: 5, status: completed) { totalCount pageInfo { hasNextPage endCursor } edges { cursor node { id status targetUrl keywords memoryStats { peakMemoryMb } lastRunSummary { inserted } results { id sourceUrl tables linkAnalysis { stats { totalLinks } buckets { kind links { href } } topLinks { href } lowQualityLinks { href } } } } } } }`,
+		`query { crawlTask(id: "task-1", resultLimit: 5) { id status config results { id metadata media mediaAssets } } }`,
+	}
+	for _, query := range owned {
+		plan := engine.PlanDocument(query, nil, nil)
+		if plan.Kind != KindExecute {
+			t.Fatalf("query %s planned as %s", query, plan.Kind)
+		}
+	}
+
+	legacy := []string{
+		// crawlMetadata fetches crawl4ai over the network and is not migrated.
+		`query { crawlMetadata(input: { url: "https://example.com" }) { url } }`,
+		// alertRules can enqueue a BullMQ job when a default rule is missing.
+		`query { alertRules { id } }`,
+		// Any mutation stays on NestJS.
+		`mutation { updateRateLimitSettings(input: { login: { limit: 5, windowSeconds: 60 }, crawlCreate: { limit: 5, windowSeconds: 60 }, rbacWrite: { limit: 5, windowSeconds: 60 } }) { login { limit } } }`,
+	}
+	for _, query := range legacy {
+		plan := engine.PlanDocument(query, nil, nil)
+		if plan.Kind != KindLegacy {
+			t.Fatalf("query %s planned as %s", query, plan.Kind)
+		}
+	}
+
+	// A document mixing a migrated root with an unregistered one must fall back
+	// as a whole, so a partial ownership never runs.
+	mixed := engine.PlanDocument(`query { rateLimitSettings { login { limit } } crawlMetadata(input: { url: "https://example.com" }) { url } }`, nil, nil)
+	if mixed.Kind != KindLegacy {
+		t.Fatalf("mixed document planned as %s", mixed.Kind)
+	}
 }
