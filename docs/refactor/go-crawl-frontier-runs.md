@@ -167,6 +167,11 @@ COMMIT;
   阶段 0 seed、阶段 1 Go/Nest 逐条 JSON 深度比对、阶段 2 F1 回归（终态跳过、单次转换、
   批量升序、并发取消、反向顺序批量取消、DTO 文案）、阶段 3 停 Nest 后 11 条仍由 Go
   服务且写队列路径为 502。无 `continue-on-error`。
+- **远端证据**：`api-go-crawl-frontier-runs-smoke` run 39053132830 全绿，日志中阶段 0–3
+  的每条断言都有 `ok` 行（`stage 1 nine GET endpoints match Nest`、`stage 2 go/nest
+  completed run cancel keeps completed history`、`stage 2 … concurrent cancels append
+  exactly one event`、`stage 3 eleven routes are still served by Go after Nest stops`、
+  `ALL STAGES PASSED`）；普通 CI 在 Go 源码最后一次变更的 head 上 verify 全绿。
 - **未迁**：`createRun`、`retry`、`replay`、`trial-run`；BullMQ、crawl4ai 与任何外网
   调用都不在本批路径内。
 - **未验证**：生产流量未切换；canary 保持关闭；SEC-01 真实登录态不在本批验证；本机
