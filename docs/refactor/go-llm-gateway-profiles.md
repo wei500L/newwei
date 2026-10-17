@@ -454,7 +454,7 @@ strip 再按上表编码。
 
 ## 缺陷修复（GP1 / GP2 / GP3，Nest 与 Go 两侧同修）
 
-三条缺陷的完整证据见 `docs/refactor/bug-ledger.md` §7（行号以基线
+三条缺陷的完整证据见 `docs/refactor/bug-ledger.md` §8（行号以基线
 `2672b62e` 工作区为准；本节引用台账原文行号）。
 
 **GP1：全局 LLM 网关配置写入缺平台管理员门禁（P0）**。根因：六条写方法只声明
@@ -466,7 +466,7 @@ service 构造函数未注入 `PlatformAccessService`
 `await this.platformAccess.assertPlatformAdmin(actorId)`（门禁在读配置、加锁、
 编码、写 DB、审计、删缓存之前返回）；Go 侧 `assertPlatformAdmin` 查
 `GlobalRoleAssignment.userId = 真实 User.id AND role='platform_admin'`，且
-`machine:` actor 直接 403。覆盖（bug-ledger §7 中**计划**的 smoke 阶段，
+`machine:` actor 直接 403。覆盖（bug-ledger §8 中**计划**的 smoke 阶段，
 workflow 尚未落地）：smoke 阶段 2（GP1 权限回归）。
 
 **GP2：缓存整体读改写无跨实例互斥，丢失更新与旧 apiKey 恢复（P1）**。根因：
@@ -542,13 +542,13 @@ profiles 锁内做任何治理文档的写操作。
   success）。
 - 普通 CI（lint / typecheck / `api-go` 单测）：run URL `TODO(普通 CI run URL)`；
   head `TODO(普通 CI head SHA)`；结论 `TODO(普通 CI conclusion)`。
-- 新增真实栈 smoke `api-go-llm-gateway-profiles-smoke`：run URL
-  `TODO(smoke run URL)`；head `TODO(smoke head SHA)`；结论
-  `TODO(smoke conclusion)`。**该 workflow 在本批提交的工作区里尚不存在**
-  （`.github/workflows/` 只有 `api-go-llm-logs-smoke.yml` 等，没有
-  `api-go-llm-gateway-profiles-smoke.yml`；全仓对该名字的引用只在
-  `bug-ledger.md` §7 的“回归方式”里），因此**无法引用任何既有 run**，只能留
-  占位符。
+- 新增真实栈 smoke `.github/workflows/api-go-llm-gateway-profiles-smoke.yml`
+  （`name` 与 PR label 同为 `api-go-llm-gateway-profiles-smoke`；
+  `workflow_dispatch` + `pull_request[labeled]`；mysql:8.4 + redis:7.2 +
+  mongo:7.0 + 真实 NestJS + api-go 容器；`timeout-minutes: 60`；无
+  `continue-on-error`）：run URL `TODO(smoke run URL)`；head
+  `TODO(smoke head SHA)`；结论 `TODO(smoke conclusion)`。规划时该 workflow 尚不
+  存在，因此**无法引用任何既有 run**，只能留占位符。
 - 其他 smoke 复跑（如 `api-go-runtime-settings-smoke` / `api-go-entry-smoke`
   等相邻批次回归）：`TODO(其他 smoke run URL / head / conclusion)`。
 
