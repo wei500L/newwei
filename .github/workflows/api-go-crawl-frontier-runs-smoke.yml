@@ -366,6 +366,37 @@ jobs:
               VALUES ('frrunwfversiona0000000001', 'frrunworkflowa0000000001', '{org}', 1, 'v1', NULL, {j(definition)}, '{admin}', NOW(3));
               """)
 
+              # Workflow runs for the main runs, with steps/candidates/traces/events.
+              wf_rows = [
+                  ("frwfrunrunning0000000001", "running", None),
+                  ("frwfrunqueued00000000001", "queued", None),
+                  ("frwfrunfailed00000000001", "failed", "boom"),
+                  ("frwfruncompleted000000001", "completed", "keep-me"),
+                  ("frwfruncanceled0000000001", "canceled", None),
+                  ("frwfrunother00000000001", "running", None),
+              ]
+              for index, (wf_id, status, error) in enumerate(wf_rows):
+                  error_sql = s(error)
+                  finished = "'2020-01-01 00:00:00.000'" if status in ("completed", "canceled") else "NULL"
+                  sql(f"""
+                  INSERT INTO CrawlStrategyWorkflowRun (id, orgId, workflowId, workflowVersionId, workflowOrigin, status, runKind, input, output, graphSnapshot, parameterSources, error, stepCount, candidateCount, selectedCount, createdById, startedAt, finishedAt, createdAt, updatedAt)
+                  VALUES ('{wf_id}', '{org}', 'frrunworkflowa0000000001', 'frrunwfversiona0000000001', 'bound', '{status}', 'frontier',
+                          {j({"seedUrl": "https://frrun.example.com/start"})}, {j({"selectedCount": 1})}, {j({"nodes": []})}, {j([{"key": "seed", "source": "profile"}])}, {error_sql}, 2, 2, 1, '{admin}', '2026-01-01 00:00:00.000', {finished}, DATE_SUB(NOW(3), INTERVAL {200 - index} SECOND), NOW(3));
+                  """)
+              sql(f"""
+              INSERT INTO CrawlStrategyWorkflowRunStep (id, runId, stepKey, sequence, workflowNodeId, nodeType, label, status, startedAt, finishedAt, durationMs, inputCount, outputCount, rejectedCount, sampleUrls, metrics, error, createdAt, updatedAt) VALUES
+                ('frrunstep1running000000001', 'frwfrunrunning0000000001', 'seed', 1, 'seed', 'seed', 'Seed', 'completed', '2026-01-01 00:00:00.000', '2026-01-01 00:00:01.000', 1000, 1, 2, 0, {j(["https://frrun.example.com/a"])}, {j({"attempts": 1})}, NULL, NOW(3), NOW(3)),
+                ('frrunstep2running000000001', 'frwfrunrunning0000000001', 'frontier', 2, NULL, 'frontier', 'Frontier', 'running', NULL, NULL, NULL, 2, 1, 1, NULL, NULL, 'still running', NOW(3), NOW(3));
+              INSERT INTO CrawlStrategyWorkflowRunCandidate (id, runId, candidateKey, externalId, sourceNodeId, sourceNodeType, url, title, description, author, pageType, relevanceScore, score, freshnessScore, qualityScore, publishedAt, crawledAt, effectiveAt, status, rejectedByNodeId, rejectedReason, metadata, traceCount, createdAt, updatedAt) VALUES
+                ('frruncandidateext00000001', 'frwfrunrunning0000000001', 'cand-ext', 'cand-ext', 'frrunnode1running000000001', 'legacy.frontier_node', 'https://frrun.example.com/cand-ext', 'Candidate', NULL, NULL, 'article', 0.7, 1.2, NULL, NULL, '2026-01-01 00:00:00.000', NULL, '2026-01-01 00:00:00.000', 'accepted', NULL, NULL, {j({"source": "frontier"})}, 2, DATE_SUB(NOW(3), INTERVAL 10 SECOND), DATE_SUB(NOW(3), INTERVAL 5 SECOND)),
+                ('frruncandidateplain00000001', 'frwfrunrunning0000000001', 'cand-plain', NULL, NULL, NULL, 'https://frrun.example.com/cand-plain', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'rejected', 'frrunnode2running000000001', 'low_score', NULL, 0, DATE_SUB(NOW(3), INTERVAL 20 SECOND), DATE_SUB(NOW(3), INTERVAL 10 SECOND));
+              INSERT INTO CrawlStrategyWorkflowRunCandidateTrace (id, candidateId, sequence, timestamp, nodeId, nodeType, action, message, accepted, scoreDelta, freshnessDelta, ruleHits, beforeSnapshot, afterSnapshot, details) VALUES
+                ('frruntrace1ext000000000001', 'frruncandidateext00000001', 1, '2026-01-01 00:00:00.000', 'frrunnode1running000000001', 'legacy.frontier_node', 'scored', 'Candidate scored', NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+                ('frruntrace2ext000000000001', 'frruncandidateext00000001', 2, '2026-01-01 00:00:01.000', 'frrunnode1running000000001', 'legacy.frontier_node', 'accepted', 'Candidate accepted', 1, 1.5, 0.5, {j(["rule-1"])}, {j({"score": 1})}, {j({"score": 2})}, {j({"rejectedReason": "low_score"})});
+              INSERT INTO CrawlStrategyWorkflowRunEvent (id, runId, sequence, level, eventType, nodeId, nodeType, message, triggerReason, beforeCount, afterCount, rescuedCount, details, createdAt) VALUES
+                ('frrunevent1running00000001', 'frwfrunrunning0000000001', 1, 'info', 'frontier_run_started', NULL, 'legacy.frontier_run', 'Frontier run started', NULL, NULL, NULL, NULL, {j({"frontierRunId": "frrunrunrunning0000000001"})}, '2026-01-01 00:00:00.000'),
+                ('frrunevent2running00000001', 'frwfrunrunning0000000001', 2, 'info', 'frontier_node_discovered', 'frrunnode1running000000001', 'legacy.frontier_node', 'Node discovered', 'discovery', 0, 1, 0, {j({"queueClass": "hot"})}, '2026-01-01 00:00:01.000');
+              """)
               # Five main runs: running, queued, failed, completed, canceled.
               main_runs = [
                   ("frrunrunrunning0000000001", "frwfrunrunning0000000001", "running", None),
@@ -441,37 +472,6 @@ jobs:
                 ('frrunnodecanceled000000001', 'frrunruncanceled0000000001', '{org}', 'https://frrun.example.com/x', 'home', 0, 'hot', 'canceled', '2026-01-01 00:00:07.000', NOW(3), NOW(3));
               """)
 
-              # Workflow runs for the main runs, with steps/candidates/traces/events.
-              wf_rows = [
-                  ("frwfrunrunning0000000001", "running", None),
-                  ("frwfrunqueued00000000001", "queued", None),
-                  ("frwfrunfailed00000000001", "failed", "boom"),
-                  ("frwfruncompleted000000001", "completed", "keep-me"),
-                  ("frwfruncanceled0000000001", "canceled", None),
-                  ("frwfrunother00000000001", "running", None),
-              ]
-              for index, (wf_id, status, error) in enumerate(wf_rows):
-                  error_sql = s(error)
-                  finished = "'2020-01-01 00:00:00.000'" if status in ("completed", "canceled") else "NULL"
-                  sql(f"""
-                  INSERT INTO CrawlStrategyWorkflowRun (id, orgId, workflowId, workflowVersionId, workflowOrigin, status, runKind, input, output, graphSnapshot, parameterSources, error, stepCount, candidateCount, selectedCount, createdById, startedAt, finishedAt, createdAt, updatedAt)
-                  VALUES ('{wf_id}', '{org}', 'frrunworkflowa0000000001', 'frrunwfversiona0000000001', 'bound', '{status}', 'frontier',
-                          {j({"seedUrl": "https://frrun.example.com/start"})}, {j({"selectedCount": 1})}, {j({"nodes": []})}, {j([{"key": "seed", "source": "profile"}])}, {error_sql}, 2, 2, 1, '{admin}', '2026-01-01 00:00:00.000', {finished}, DATE_SUB(NOW(3), INTERVAL {200 - index} SECOND), NOW(3));
-                  """)
-              sql(f"""
-              INSERT INTO CrawlStrategyWorkflowRunStep (id, runId, stepKey, sequence, workflowNodeId, nodeType, label, status, startedAt, finishedAt, durationMs, inputCount, outputCount, rejectedCount, sampleUrls, metrics, error, createdAt, updatedAt) VALUES
-                ('frrunstep1running000000001', 'frwfrunrunning0000000001', 'seed', 1, 'seed', 'seed', 'Seed', 'completed', '2026-01-01 00:00:00.000', '2026-01-01 00:00:01.000', 1000, 1, 2, 0, {j(["https://frrun.example.com/a"])}, {j({"attempts": 1})}, NULL, NOW(3), NOW(3)),
-                ('frrunstep2running000000001', 'frwfrunrunning0000000001', 'frontier', 2, NULL, 'frontier', 'Frontier', 'running', NULL, NULL, NULL, 2, 1, 1, NULL, NULL, 'still running', NOW(3), NOW(3));
-              INSERT INTO CrawlStrategyWorkflowRunCandidate (id, runId, candidateKey, externalId, sourceNodeId, sourceNodeType, url, title, description, author, pageType, relevanceScore, score, freshnessScore, qualityScore, publishedAt, crawledAt, effectiveAt, status, rejectedByNodeId, rejectedReason, metadata, traceCount, createdAt, updatedAt) VALUES
-                ('frruncandidateext00000001', 'frwfrunrunning0000000001', 'cand-ext', 'cand-ext', 'frrunnode1running000000001', 'legacy.frontier_node', 'https://frrun.example.com/cand-ext', 'Candidate', NULL, NULL, 'article', 0.7, 1.2, NULL, NULL, '2026-01-01 00:00:00.000', NULL, '2026-01-01 00:00:00.000', 'accepted', NULL, NULL, {j({"source": "frontier"})}, 2, DATE_SUB(NOW(3), INTERVAL 10 SECOND), DATE_SUB(NOW(3), INTERVAL 5 SECOND)),
-                ('frruncandidateplain00000001', 'frwfrunrunning0000000001', 'cand-plain', NULL, NULL, NULL, 'https://frrun.example.com/cand-plain', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'rejected', 'frrunnode2running000000001', 'low_score', NULL, 0, DATE_SUB(NOW(3), INTERVAL 20 SECOND), DATE_SUB(NOW(3), INTERVAL 10 SECOND));
-              INSERT INTO CrawlStrategyWorkflowRunCandidateTrace (id, candidateId, sequence, timestamp, nodeId, nodeType, action, message, accepted, scoreDelta, freshnessDelta, ruleHits, beforeSnapshot, afterSnapshot, details) VALUES
-                ('frruntrace1ext000000000001', 'frruncandidateext00000001', 1, '2026-01-01 00:00:00.000', 'frrunnode1running000000001', 'legacy.frontier_node', 'scored', 'Candidate scored', NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-                ('frruntrace2ext000000000001', 'frruncandidateext00000001', 2, '2026-01-01 00:00:01.000', 'frrunnode1running000000001', 'legacy.frontier_node', 'accepted', 'Candidate accepted', 1, 1.5, 0.5, {j(["rule-1"])}, {j({"score": 1})}, {j({"score": 2})}, {j({"rejectedReason": "low_score"})});
-              INSERT INTO CrawlStrategyWorkflowRunEvent (id, runId, sequence, level, eventType, nodeId, nodeType, message, triggerReason, beforeCount, afterCount, rescuedCount, details, createdAt) VALUES
-                ('frrunevent1running00000001', 'frwfrunrunning0000000001', 1, 'info', 'frontier_run_started', NULL, 'legacy.frontier_run', 'Frontier run started', NULL, NULL, NULL, NULL, {j({"frontierRunId": "frrunrunrunning0000000001"})}, '2026-01-01 00:00:00.000'),
-                ('frrunevent2running00000001', 'frwfrunrunning0000000001', 2, 'info', 'frontier_node_discovered', 'frrunnode1running000000001', 'legacy.frontier_node', 'Node discovered', 'discovery', 0, 1, 0, {j({"queueClass": "hot"})}, '2026-01-01 00:00:01.000');
-              """)
               ok("stage 0 seed complete")
 
           seed_stage0()
