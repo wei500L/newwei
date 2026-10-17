@@ -259,12 +259,15 @@ jobs:
               return raw
 
           def normalize_body(doc):
-              # The profile permission/role/global-role collections are sets:
-              # Nest and Go derive them from different SQL orderings, so compare
-              # them order-insensitively (and only those fields).
+              # The error envelope carries a per-request traceId/timestamp, and
+              # the profile permission/role/global-role collections are sets:
+              # Nest and Go derive them from different SQL orderings. Compare the
+              # contract payload, not those volatile/ordering artefacts.
               if not isinstance(doc, dict):
                   return doc
               out = dict(doc)
+              out.pop("traceId", None)
+              out.pop("timestamp", None)
               for key in ("permissions", "roleIds", "globalRoles"):
                   if isinstance(out.get(key), list):
                       out[key] = sorted(out[key])

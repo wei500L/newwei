@@ -81,10 +81,11 @@ func TestNodeBcryptPasswordCrossLanguageCompat(t *testing.T) {
 	if err := bcrypt.CompareHashAndPassword(hash, nodeBcryptPassword(strings.Repeat("q", 72))); err == nil {
 		t.Fatalf("different prefix verified")
 	}
-	// Feeding the untruncated 78-byte password straight to Go bcrypt is exactly
-	// the failure mode the adapter exists to prevent.
-	if err := bcrypt.CompareHashAndPassword(hash, []byte(base+"SUFFIX-ONE")); !errors.Is(err, bcrypt.ErrPasswordTooLong) {
-		t.Fatalf("expected ErrPasswordTooLong, got %v", err)
+	// GenerateFromPassword is where Go rejects input beyond 72 bytes; the
+	// service adapter exists because its hashing path must never see the raw
+	// value.
+	if _, err := bcrypt.GenerateFromPassword([]byte(base+"SUFFIX-ONE"), bcryptCost); !errors.Is(err, bcrypt.ErrPasswordTooLong) {
+		t.Fatalf("expected ErrPasswordTooLong from GenerateFromPassword, got %v", err)
 	}
 }
 
