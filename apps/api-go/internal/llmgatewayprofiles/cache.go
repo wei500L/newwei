@@ -31,6 +31,9 @@ type cachedSecurityEnvelope struct {
 // loadSecuritySettings reads system_security with the shared cache envelope,
 // falling back to MySQL on a miss or a decode failure.
 func (s *Service) loadSecuritySettings(ctx context.Context) (securitySettingsProjection, error) {
+	if s != nil && s.securityFn != nil {
+		return s.securityFn(ctx)
+	}
 	if cached, err := s.cacheGetJSON(ctx, SecurityCacheKey); err != nil {
 		logCacheFailure("read", SecurityCacheKey, err)
 	} else if cached != nil {
@@ -79,6 +82,9 @@ type cachedGovernanceEnvelope struct {
 // envelope, falling back to MySQL on a miss or a decode failure. It never writes
 // the cache.
 func (s *Service) loadGovernanceSettings(ctx context.Context) (governanceProjection, error) {
+	if s != nil && s.governanceFn != nil {
+		return s.governanceFn(ctx)
+	}
 	if cached, err := s.cacheGetJSON(ctx, GovernanceCacheKey); err != nil {
 		logCacheFailure("read", GovernanceCacheKey, err)
 	} else if cached != nil {

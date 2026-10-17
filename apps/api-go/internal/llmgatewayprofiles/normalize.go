@@ -44,7 +44,9 @@ type EnvDefaults struct {
 	// 3; LITELLM_MAX_RETRIES cannot win for the same reason).
 	MaxRetries float64
 	// FallbackModels is LITELLM_FALLBACK_MODELS split on commas with empty
-	// entries dropped.
+	// entries dropped. Like Model it is recorded for parity but never seeds a
+	// profile: both the create path and normalizeProfile start the fallback
+	// model list from an empty array.
 	FallbackModels []string
 }
 

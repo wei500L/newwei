@@ -35,6 +35,11 @@ type Service struct {
 	// lockFn replaces the MySQL session lock in unit tests. Production code
 	// leaves it nil so withProfilesLock always uses GET_LOCK.
 	lockFn func(ctx context.Context, fn func(context.Context) error) error
+	// securityFn and governanceFn replace the read-only projections of the
+	// system_security and litellm_proxy_governance documents in unit tests.
+	// Production code leaves them nil so both read the shared cache/MySQL.
+	securityFn   func(ctx context.Context) (securitySettingsProjection, error)
+	governanceFn func(ctx context.Context) (governanceProjection, error)
 }
 
 // NewService wires the data access. lockDB must be a pool that never retains

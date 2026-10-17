@@ -2083,3 +2083,213 @@ func TestCrawlFrontierRunsModeGoRequiresCredentials(t *testing.T) {
 		t.Fatalf("mode = %s", cfg.CrawlFrontierRunsMode)
 	}
 }
+
+func TestLLMGatewayProfilesModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeLegacy {
+		t.Fatalf("mode = %s", cfg.LLMGatewayProfilesMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_LLM_GATEWAY_PROFILES_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeLegacy {
+		t.Fatalf("mode = %s", cfg.LLMGatewayProfilesMode)
+	}
+}
+
+func TestLLMGatewayProfilesModeRejectsInvalid(t *testing.T) {
+	// shadow and canary are explicitly not accepted: this unit is
+	// legacy-or-go only, so a typo in the switch fails startup.
+	for _, invalid := range []string{"shadow", "canary", "Go"} {
+		_, err := Load(func(key string) string {
+			if key == "API_GO_LLM_GATEWAY_PROFILES_MODE" {
+				return invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go") {
+			t.Fatalf("invalid mode %q: %v", invalid, err)
+		}
+	}
+}
+
+func TestLLMGatewayProfilesModeGoRequiresCredentialsButNotMongo(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_LLM_GATEWAY_PROFILES_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_LLM_GATEWAY_PROFILES_MODE=go") {
+		t.Fatalf("missing redis: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_LLM_GATEWAY_PROFILES_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeGo {
+		t.Fatalf("mode = %s", cfg.LLMGatewayProfilesMode)
+	}
+	// Mongo and a model upstream are not startup dependencies of this unit.
+	if cfg.MongoURI != "" {
+		t.Fatalf("mongo uri = %q", cfg.MongoURI)
+	}
+}
+
+func TestLLMGatewayProfileEnvProjectionDefaults(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayModel != "openai/gpt-4o-mini" {
+		t.Fatalf("model = %q", cfg.LLMGatewayModel)
+	}
+	if cfg.LiteLLMAPIBase != "http://localhost:4001" {
+		t.Fatalf("apiBase = %q", cfg.LiteLLMAPIBase)
+	}
+	if cfg.LiteLLMTimeoutMs != 60_000 {
+		t.Fatalf("timeoutMs = %d", cfg.LiteLLMTimeoutMs)
+	}
+	if cfg.LLMGatewayTemperature != 0.2 {
+		t.Fatalf("temperature = %v", cfg.LLMGatewayTemperature)
+	}
+	if cfg.LLMGatewayTopP != 0.9 {
+		t.Fatalf("topP = %v", cfg.LLMGatewayTopP)
+	}
+	if cfg.LLMGatewayMaxOutputTokens != 2048 {
+		t.Fatalf("maxOutputTokens = %d", cfg.LLMGatewayMaxOutputTokens)
+	}
+	if cfg.LLMGatewayMaxRetries != 3 {
+		t.Fatalf("maxRetries = %d", cfg.LLMGatewayMaxRetries)
+	}
+	if len(cfg.LLMGatewayFallbackModels) != 0 {
+		t.Fatalf("fallbackModels = %v", cfg.LLMGatewayFallbackModels)
+	}
+	if cfg.NodeEnvProduction {
+		t.Fatal("NODE_ENV unset must not be production")
+	}
+}
+
+func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
+	// LITELLM_MAX_TOKENS has a schema default in NestJS, so setting only
+	// LITELLM_MAX_OUTPUT_TOKENS can never win. The Go projection must agree.
+	cfg, err := Load(func(key string) string {
+		if key == "LITELLM_MAX_OUTPUT_TOKENS" {
+			return "777"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayMaxOutputTokens != 2048 {
+		t.Fatalf("maxOutputTokens = %d, want the MAX_TOKENS schema default", cfg.LLMGatewayMaxOutputTokens)
+	}
+
+	// The same rule applies to LITELLM_MAX_RETRIES.
+	cfg, err = Load(func(key string) string {
+		if key == "LITELLM_MAX_RETRIES" {
+			return "9"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayMaxRetries != 3 {
+		t.Fatalf("maxRetries = %d, want the RETRY_ATTEMPTS schema default", cfg.LLMGatewayMaxRetries)
+	}
+
+	cfg, err = Load(func(key string) string {
+		switch key {
+		case "LITELLM_API_URL":
+			return "http://primary:1"
+		case "LITELLM_API_BASE":
+			return "http://secondary:2"
+		case "LITELLM_MAX_TOKENS":
+			return "4096"
+		case "LITELLM_RETRY_ATTEMPTS":
+			return "5"
+		case "LITELLM_TEMPERATURE":
+			return "1.25"
+		case "LITELLM_TOP_P":
+			return "0.25"
+		case "LITELLM_MODEL":
+			return "openai/gpt-4o"
+		case "LITELLM_FALLBACK_MODELS":
+			return " a , ,b, a "
+		case "NODE_ENV":
+			return "production"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LiteLLMAPIBase != "http://primary:1" {
+		t.Fatalf("apiBase = %q, want LITELLM_API_URL to win", cfg.LiteLLMAPIBase)
+	}
+	if cfg.LLMGatewayMaxOutputTokens != 4096 || cfg.LLMGatewayMaxRetries != 5 {
+		t.Fatalf("maxima = %d/%d", cfg.LLMGatewayMaxOutputTokens, cfg.LLMGatewayMaxRetries)
+	}
+	if cfg.LLMGatewayTemperature != 1.25 || cfg.LLMGatewayTopP != 0.25 {
+		t.Fatalf("sampling = %v/%v", cfg.LLMGatewayTemperature, cfg.LLMGatewayTopP)
+	}
+	if cfg.LLMGatewayModel != "openai/gpt-4o" {
+		t.Fatalf("model = %q", cfg.LLMGatewayModel)
+	}
+	if strings.Join(cfg.LLMGatewayFallbackModels, ",") != "a,b" {
+		t.Fatalf("fallbackModels = %v", cfg.LLMGatewayFallbackModels)
+	}
+	if !cfg.NodeEnvProduction {
+		t.Fatal("NODE_ENV=production must be reported")
+	}
+}
+
+func TestLLMGatewaySettingsEncryptionKeyKeepsRawValue(t *testing.T) {
+	// The NestJS presence check is a JavaScript truthiness test on the raw
+	// value, so a whitespace-only key must count as present-but-invalid and the
+	// raw value must survive the config load.
+	cfg, err := Load(func(key string) string {
+		if key == "SYSTEM_SETTINGS_ENCRYPTION_KEY" {
+			return "   "
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewaySettingsEncryptionKey != "   " {
+		t.Fatalf("key = %q, want the raw value", cfg.LLMGatewaySettingsEncryptionKey)
+	}
+}

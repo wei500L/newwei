@@ -248,6 +248,19 @@ func nullableBoolFromPointer(value *bool) NullableBool {
 	return boolNullable(*value)
 }
 
+// removeProfilesByID removes EVERY profile with the given id, preserving the
+// order of the remaining entries. The NestJS delete uses filter(), so duplicate
+// ids are all removed while update only replaces the first match.
+func removeProfilesByID(profiles []StoredProfile, id string) []StoredProfile {
+	next := make([]StoredProfile, 0, len(profiles))
+	for _, profile := range profiles {
+		if profile.ID != id {
+			next = append(next, profile)
+		}
+	}
+	return next
+}
+
 // normalizeStringValues is normalizeStringList for an already-decoded string
 // slice: trim, drop empties, stable de-duplicate.
 func normalizeStringValues(values []string, fallback []string) []string {
@@ -386,12 +399,7 @@ func (s *Service) DeleteProfile(ctx context.Context, orgID, actorID, id string) 
 			return err
 		}
 
-		next := make([]StoredProfile, 0, len(settings.Profiles))
-		for _, profile := range settings.Profiles {
-			if profile.ID != id {
-				next = append(next, profile)
-			}
-		}
+		next := removeProfilesByID(settings.Profiles, id)
 		if len(next) == len(settings.Profiles) {
 			return notFound("LLM gateway profile not found")
 		}
