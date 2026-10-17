@@ -556,6 +556,10 @@ func run() error {
 	if cfg.QualityOverviewMode == config.QualityOverviewModeGo {
 		qualityOverviewMode = string(legacyproxy.ModeGo)
 	}
+	newsnowClusteringOpsMode := ""
+	if cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo {
+		newsnowClusteringOpsMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -584,6 +588,7 @@ func run() error {
 	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
 	rules = legacyproxy.WithNewsIndicators(rules, newsIndicatorsMode)
 	rules = legacyproxy.WithQualityOverview(rules, qualityOverviewMode)
+	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -635,6 +640,7 @@ func run() error {
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
 				cfg.QualityOverviewMode == config.QualityOverviewModeGo ||
+				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
@@ -693,7 +699,8 @@ func run() error {
 	adminLogsGo := cfg.AdminLogsMode == config.AdminLogsModeGo
 	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
 	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo
+	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1026,6 +1033,9 @@ func run() error {
 	if err := wireQualityOverview(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
+	if err := wireNewsnowClusteringOps(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
+	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
 	//（ModeGo 规则也不会进入 serveShadow——双重收口，保证 go 接管的
@@ -1154,6 +1164,11 @@ func run() error {
 			},
 			"healthz": map[string]any{
 				"mode": string(cfg.HealthzMode),
+			},
+			// NewsNow 本地计算与聚类失败管理的 9 条 HTTP。legacy 时全部
+			// 回落 NestJS；不含连接串与密钥。
+			"newsnowClusteringOps": map[string]any{
+				"mode": string(cfg.NewsnowClusteringOpsMode),
 			},
 		})
 	})
