@@ -97,8 +97,8 @@ func TestComputeBestLagCorrelation(t *testing.T) {
 	if best.LagDays != 1 {
 		t.Fatalf("best lag = %d, want 1", best.LagDays)
 	}
-	if !almostEqual(best.Correlation, 1) {
-		t.Fatalf("best correlation = %v, want 1", best.Correlation)
+	if !almostEqual(best.Correlation, 0.999999) {
+		t.Fatalf("best correlation = %v, want clamped 0.999999", best.Correlation)
 	}
 	if best.SampleSize != 5 {
 		t.Fatalf("best sampleSize = %d, want 5", best.SampleSize)
