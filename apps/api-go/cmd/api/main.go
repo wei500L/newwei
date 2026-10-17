@@ -118,6 +118,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
@@ -1162,6 +1163,10 @@ func run() error {
 		if newsEventsGo {
 			newsevents.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
 		}
+		newsIndicatorsRead := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
+		if newsIndicatorsRead {
+			newsindicators.Register(reg, sharedDB)
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1187,6 +1192,11 @@ func run() error {
 			log.Printf("api-go: GraphQL news-event reads registered (newsEvents, newsEvent, newsEventBrief, newsEventReferencedArticles, topicGroups, eventGroups)")
 		} else {
 			log.Printf("api-go: GraphQL news-event reads not registered (API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy)")
+		}
+		if newsIndicatorsRead {
+			log.Printf("api-go: GraphQL news-indicator reads registered (newsIndicatorAssociations, newsIndicatorAssociation)")
+		} else {
+			log.Printf("api-go: GraphQL news-indicator reads not registered (API_GO_NEWS_INDICATORS_MODE=legacy)")
 		}
 	}
 
