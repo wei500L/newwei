@@ -1402,9 +1402,15 @@ jobs:
               pair(tag + " S1-32 completion clear with an empty string", "PUT", ACTIVE, p, {"activeId": ""},
                    expected=200, seed=lambda: seed_settings(document(active_doc["profiles"], active="s1-on")))
               check(tag + " S1-32 completion clear with an empty string",
-                    LAST["nest"].get("activeId") is None
-                    and json.loads(LAST["go_db"]).get("activeId") is None,
-                    "empty string must normalize to null")
+                    LAST["nest"].get("activeId") is None and LAST["go"].get("activeId") is None,
+                    "empty string must normalize to null in the response: "
+                    + json.dumps(LAST["nest"])[:80] + " / " + json.dumps(LAST["go"])[:80])
+              # The raw empty string is what gets persisted; only the response
+              # (and the next read) normalizes it back to null.
+              for side in ("nest", "go"):
+                  check(tag + " S1-32 completion clear with an empty string is persisted verbatim",
+                        json.loads(LAST[side + "_db"]).get("activeId") == "",
+                        side + " stored activeId=" + json.dumps(json.loads(LAST[side + "_db"]).get("activeId")))
               pair_error(tag + " S1-32 completion activate a disabled profile", "PUT", ACTIVE, p,
                          {"activeId": "s1-off"}, expected=400, message_want=DISABLED_MESSAGE, seed=seeded_active)
               pair_error(tag + " S1-32 completion activate a missing profile", "PUT", ACTIVE, p,
