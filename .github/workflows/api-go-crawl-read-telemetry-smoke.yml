@@ -354,17 +354,39 @@ jobs:
                   value = {k: v for k, v in value.items() if k not in ("from", "to")}
               return normalize_exp(value)
 
+          # deep_diff prints the first differing JSON paths so a parity failure
+          # is actionable without dumping multi-kilobyte bodies.
+          def deep_diff(left, right, path="", out=None):
+              if out is None:
+                  out = []
+              if isinstance(left, dict) and isinstance(right, dict):
+                  for key in sorted(set(left) | set(right)):
+                      deep_diff(left.get(key), right.get(key), f"{path}.{key}", out)
+              elif isinstance(left, list) and isinstance(right, list):
+                  if len(left) != len(right):
+                      out.append(f"{path} length {len(left)} != {len(right)}")
+                  for index in range(min(len(left), len(right))):
+                      deep_diff(left[index], right[index], f"{path}[{index}]", out)
+              elif left != right:
+                  out.append(f"{path}: nest={left!r} go={right!r}")
+              return out
+
+          def report_diff(label, left, right):
+              diffs = deep_diff(left, right)
+              print("DIFF", label, "|", " ;; ".join(diffs[:12]))
+
           def compare(path, token, kind="json"):
               left_status, _, left_raw = call(nest, path, "GET", token)
               right_status, _, right_raw = call(go, path, "GET", token)
               if left_status != right_status:
-                  fail(f"parity status {path} nest={left_status} go={right_status}")
+                  fail(f"parity status {path} nest={left_status} go={right_status} {right_raw[:300]!r}")
               if kind == "quality":
                   left, right = normalize_quality(body(left_raw)), normalize_quality(body(right_raw))
               else:
                   left, right = normalize_exp(body(left_raw)), normalize_exp(body(right_raw))
               if left != right:
-                  fail(f"parity body {path} nest={left_raw[:700]!r} go={right_raw[:700]!r}")
+                  report_diff(path, left, right)
+                  fail(f"parity body {path}")
               return body(right_raw)
 
           def flush_quality():
@@ -379,7 +401,8 @@ jobs:
                   fail(f"fresh parity status {path} go={go_status} nest={nest_status} {go_raw[:400]!r} {nest_raw[:400]!r}")
               left, right = normalize_quality(body(nest_raw)), normalize_quality(body(go_raw))
               if left != right:
-                  fail(f"fresh parity body {path} nest={nest_raw[:700]!r} go={go_raw[:700]!r}")
+                  report_diff("fresh " + path, left, right)
+                  fail(f"fresh parity body {path}")
               return body(go_raw)
 
           # media_paths indexes the media assets of every hydrated result by
