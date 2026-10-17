@@ -1812,7 +1812,14 @@ jobs:
               request_json(label + " trimmed code", base, "POST", VERIFY_ENROLL_PATH, token,
                            {"code": "  " + totp_now(secret) + "  "}, 201)
               # 形态：TOTP 分支只接受 trim 后恰好六位数字。
-              for bad in ("1234567", "12345", "12a456", "12345 ", " 12345"):
+              # 5 字符先被 DTO 的 @MinLength(6) 拦下（Nest 的管道与 Go 的
+              # DTO 解析都早于 service 的 TOTP 分支），其余 6 字符及以上的
+              # 畸形码才进入 service 并被拒绝。
+              reseed(secret)
+              request_json(label + " malformed short code", base, "POST", VERIFY_ENROLL_PATH,
+                           token, {"code": "12345"}, 400,
+                           "code must be longer than or equal to 6 characters")
+              for bad in ("1234567", "12a456", "12345 ", " 12345"):
                   reseed(secret)
                   request_json(label + " malformed " + repr(bad), base, "POST", VERIFY_ENROLL_PATH,
                                token, {"code": bad}, 400, INVALID_CODE)
