@@ -2,13 +2,10 @@ package newsnowclusteringops
 
 import (
 	"context"
-	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -247,12 +244,6 @@ func buildComparableURLVariants(value string) (comparableURLVariants, bool) {
 	return comparableURLVariants{Full: full, Base: base, FullHash: hex.EncodeToString(sum[:])}, true
 }
 
-// hashComparableURL mirrors hashComparableUrl.
-func hashComparableURL(value string) string {
-	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:])
-}
-
 // normalizeComparableHTTPURL mirrors normalizeComparableHttpUrl: it drops the
 // fragment, lowercases the host, optionally drops the query string, strips
 // trailing slashes from a non-root path, and finally strips the trailing slash
@@ -418,10 +409,6 @@ func firstNonNil(rows ...*resolveRawRow) *resolveRawRow {
 	return nil
 }
 
-// errResolveCacheDecode reports a cache entry that is not a valid resolve
-// response.
-var errResolveCacheDecode = errors.New("newsnowclusteringops: invalid cached resolve response")
-
 // encodeResolveResponse serializes a resolve response for the Redis cache.
 func encodeResolveResponse(value ResolveResponse) ([]byte, error) {
 	return json.Marshal(value)
@@ -435,18 +422,4 @@ func decodeResolveResponse(raw []byte) (ResolveResponse, bool) {
 		return ResolveResponse{}, false
 	}
 	return out, true
-}
-
-// resolveCacheKeyToken returns the sha1 token NestJS derives from the full and
-// base variants. It is kept for diagnostics and for parity tests.
-func resolveCacheKeyToken(comparable comparableURLVariants) string {
-	sum := sha1.Sum([]byte(comparable.Full + "|" + comparable.Base))
-	return hex.EncodeToString(sum[:])
-}
-
-// regexCachePattern is the compiled form of the fifth-level Mongo pattern. It
-// is exported through the store interface as a string, so this helper exists
-// only for tests.
-func regexCachePattern(base string) *regexp.Regexp {
-	return regexp.MustCompile("(?i)^" + escapeRegex(base) + "(?:/)?(?:[?#].*)?$")
 }

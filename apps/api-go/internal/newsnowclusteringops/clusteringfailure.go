@@ -13,12 +13,12 @@ import (
 )
 
 const (
-	// errFailureGroupNotFound is the 404 message of the clustering endpoints.
-	errFailureGroupNotFound = "News event clustering failure not found"
-	// errFailureGroupProcessing is returned when another recovery owns the group.
-	errFailureGroupProcessing = "Failure group is already processing"
-	// errFailureGroupUnrecoverable is returned for resolved and ignored groups.
-	errFailureGroupUnrecoverable = "Failure group can no longer be recovered"
+	// msgFailureGroupNotFound is the 404 message of the clustering endpoints.
+	msgFailureGroupNotFound = "News event clustering failure not found"
+	// msgFailureGroupProcessing is the message reported when another recovery owns the group.
+	msgFailureGroupProcessing = "Failure group is already processing"
+	// msgFailureGroupUnrecoverable is returned for resolved and ignored groups.
+	msgFailureGroupUnrecoverable = "Failure group can no longer be recovered"
 )
 
 // httpError is a typed failure carrying the HTTP status and message the handler
@@ -71,15 +71,6 @@ type assignResult struct {
 	EventID string
 	Created bool
 }
-
-// categoryGateLogEntry is retained for parity with the decision names the
-// NestJS implementation records; the Go takeover only needs the accept/reject
-// outcome, so the names are documented rather than logged.
-const (
-	categoryGateAccepted  = "accepted"
-	categoryGateReject    = "reject"
-	categoryGatePenalized = "penalized"
-)
 
 // clusteringOverview assembles the failure-group counters of one organization.
 func (s *Service) clusteringOverview(ctx context.Context, orgID string) (ClusteringFailureOverview, error) {
@@ -148,7 +139,7 @@ func (s *Service) ignoreClusteringFailure(ctx context.Context, orgID, actorID, g
 		return ClusteringFailureSummary{}, err
 	}
 	if doc == nil {
-		return ClusteringFailureSummary{}, newHTTPError(404, errFailureGroupNotFound)
+		return ClusteringFailureSummary{}, newHTTPError(404, msgFailureGroupNotFound)
 	}
 	return toClusteringFailureSummary(doc), nil
 }
@@ -166,13 +157,13 @@ func (s *Service) vectorBackfillClusteringFailure(ctx context.Context, orgID, ac
 		return VectorBackfillResult{}, err
 	}
 	if existing == nil {
-		return VectorBackfillResult{}, newHTTPError(404, errFailureGroupNotFound)
+		return VectorBackfillResult{}, newHTTPError(404, msgFailureGroupNotFound)
 	}
 	if existing.Status == ClusteringFailureStatusProcessing {
-		return VectorBackfillResult{}, newHTTPError(400, errFailureGroupProcessing)
+		return VectorBackfillResult{}, newHTTPError(400, msgFailureGroupProcessing)
 	}
 	if existing.Status == ClusteringFailureStatusResolved || existing.Status == ClusteringFailureStatusIgnored {
-		return VectorBackfillResult{}, newHTTPError(400, errFailureGroupUnrecoverable)
+		return VectorBackfillResult{}, newHTTPError(400, msgFailureGroupUnrecoverable)
 	}
 
 	startedAt := time.Now().UTC().Truncate(time.Millisecond)
@@ -193,13 +184,13 @@ func (s *Service) vectorBackfillClusteringFailure(ctx context.Context, orgID, ac
 			return VectorBackfillResult{}, err
 		}
 		if current == nil {
-			return VectorBackfillResult{}, newHTTPError(404, errFailureGroupNotFound)
+			return VectorBackfillResult{}, newHTTPError(404, msgFailureGroupNotFound)
 		}
 		switch current.Status {
 		case ClusteringFailureStatusResolved, ClusteringFailureStatusIgnored:
-			return VectorBackfillResult{}, newHTTPError(400, errFailureGroupUnrecoverable)
+			return VectorBackfillResult{}, newHTTPError(400, msgFailureGroupUnrecoverable)
 		default:
-			return VectorBackfillResult{}, newHTTPError(400, errFailureGroupProcessing)
+			return VectorBackfillResult{}, newHTTPError(400, msgFailureGroupProcessing)
 		}
 	}
 
@@ -773,11 +764,6 @@ func maxTime(a, b time.Time) time.Time {
 		return a
 	}
 	return b
-}
-
-// isZeroTime reports whether a timestamp is the zero value.
-func isZeroTime(value time.Time) bool {
-	return value.IsZero()
 }
 
 // isDuplicateEntry reports a MySQL unique constraint violation.

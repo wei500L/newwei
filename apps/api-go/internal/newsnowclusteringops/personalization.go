@@ -198,7 +198,7 @@ func (s *SourceOrderingService) RecordPersonalizationMetrics(ctx context.Context
 // personalizationSourceMetaIndex maps a source id to its metadata entry. It is
 // built once at package init from the generated registry.
 //
-// The index is deliberately separate from metadata.go's newsnowSourceMetaIndex:
+// The index is deliberately separate from metadata.go's newsnowAvailableSourceIDs:
 // that map carries only name and home (the metadata endpoint does not expose
 // titles), while behavior-alias resolution also needs sourceMeta.title.
 var personalizationSourceMetaIndex = func() map[string]*newsnowMetadataSource {

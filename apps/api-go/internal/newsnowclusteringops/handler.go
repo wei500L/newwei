@@ -179,7 +179,7 @@ func (h *Handler) serveSourcesOrder(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
 
-	columnKey, err := validateColumnKey(derefString(body.Column))
+	columnKey, err := validateColumnKey(stringValue(body.Column))
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
@@ -544,12 +544,4 @@ func queryOption(values url.Values, key string) *string {
 	}
 	value := entries[0]
 	return &value
-}
-
-// derefString returns the empty string for a nil pointer.
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
 }
