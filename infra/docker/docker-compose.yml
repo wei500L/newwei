@@ -653,6 +653,21 @@ services:
       # 快照）与 Mongo 的 processeditems/tasklogs。classification 与
       # pipeline-recovery 仍回 NestJS。回滚只把该变量改回 legacy。
       API_GO_QUALITY_OVERVIEW_MODE: legacy
+      # 分类质量工作台 7 条 + RSS 链路诊断 4 条 + RSS 翻译每日指标 1 条（13 条
+      # 精确路由规则）。pilot 与样例保持 legacy。改成 go 才由 Go 验签并读写
+      # Mongo 的 classification* 集合与 processeditems/tasklogs，RSS 诊断读
+      # MySQL 与 ObservabilitySnapshot(scope=rss_diagnostics)。权限统一
+      # settings.manage；POST /api/admin/quality/classification/reports 会投递
+      # BullMQ 任务，不迁移，继续回落 NestJS。回滚只把该变量改回 legacy。
+      API_GO_CLASSIFICATION_RSS_OPS_MODE: legacy
+      # NewsNow 本地计算与聚类失败管理的 9 条 HTTP。pilot 与样例保持
+      # legacy。改成 go 才由 Go 独立鉴权并读 Redis/Mongo 的
+      # rawitems、processeditems 与 newseventclusteringfailures，以及
+      # MySQL 的 NewsnowDomesticOpinionIndexSnapshot、ProcessedArticle
+      # 与 NewsEvent/NewsEventItem。抓外网源的 source、sources/batch、
+      # hottest-analysis、recommended 与投递 BullMQ 的 llm-backfill 仍回
+      # NestJS。回滚只把该变量改回 legacy。
+      API_GO_NEWSNOW_CLUSTERING_OPS_MODE: legacy
       # 采集只读与媒体/遥测 7 条 HTTP（crawl-tasks 列表/详情、媒体资产
       # 签名下发、crawl4ai quality 两条、search-telemetry 上报/汇总）。
       # pilot 与样例保持 legacy。改成 go 才由 Go 验签并读 MySQL 的

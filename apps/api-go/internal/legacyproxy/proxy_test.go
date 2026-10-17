@@ -1366,6 +1366,37 @@ func TestGraphQLReadGoRoutesExactMethodsOnly(t *testing.T) {
 	assertVia(http.MethodPut, "/graphql", "legacy")
 }
 
+// TestNewsnowClusteringOpsServesGoAndFallsBackToLegacy is the end-to-end
+// companion of the pure route-table tests: with the takeover on and a handler
+// registered under NewsnowClusteringOpsKey, the nine migrated routes are served
+// by Go while the source-fetching NewsNow routes, llm-backfill and every
+// unmatched method or path still reach the NestJS upstream.
+func TestNewsnowClusteringOpsServesGoAndFallsBackToLegacy(t *testing.T) {
+	stub := newLegacyStub(t)
+	gateway, err := New(stub.server.URL, WithNewsnowClusteringOps(DefaultRules(ModeShadow, ""), "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway.RegisterGoHandler(NewsnowClusteringOpsKey, func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"via": "go"})
+	})
+	assertVia := func(method, path, want string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, "http://gateway"+path, nil)
+		gateway.ServeHTTP(rec, req)
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("%s %s body = %s, want %s", method, path, rec.Body.String(), want)
+		}
+	}
+	for _, tc := range newsnowClusteringOpsRoutes() {
+		assertVia(tc.method, tc.path, `"via":"go"`)
+	}
+	for _, tc := range newsnowClusteringOpsNestRoutes() {
+		assertVia(tc.method, tc.path, "legacy")
+	}
+}
+
 // TestCrawlReadTelemetryRoutingAtGateway exercises the real gateway dispatch:
 // in go mode the seven migrated routes must be served natively while the crawl
 // write queue, metadata extraction and crawl4ai queue admin keep proxying to
@@ -1539,5 +1570,121 @@ func TestRuntimeSettingsUnmigratedRoutesStayNest(t *testing.T) {
 		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
 			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
 		}
+	}
+}
+
+// classificationRssOpsRoutes lists the 13 exact route rules owned by the
+// classification/RSS ops switch when it is go.
+func classificationRssOpsRoutes() []struct{ method, path string } {
+	return []struct{ method, path string }{
+		{http.MethodGet, "/api/admin/quality/classification/summary"},
+		{http.MethodGet, "/api/admin/quality/classification/sources/source-1/items"},
+		{http.MethodGet, "/api/admin/quality/classification/reviews/queue"},
+		{http.MethodPost, "/api/admin/quality/classification/reviews/review-1/decision"},
+		{http.MethodPost, "/api/admin/quality/classification/reviews/batch"},
+		{http.MethodPost, "/api/admin/quality/classification/sampling/query"},
+		{http.MethodPost, "/api/admin/quality/classification/sampling/annotations"},
+		{http.MethodGet, "/api/admin/quality/classification/reports/job-1"},
+		{http.MethodGet, "/api/system-settings/rss-diagnostics/overview"},
+		{http.MethodGet, "/api/system-settings/rss-diagnostics/chain"},
+		{http.MethodGet, "/api/system-settings/rss-diagnostics/sources"},
+		{http.MethodPost, "/api/system-settings/rss-diagnostics/backfill-source-id"},
+		{http.MethodGet, "/api/system-settings/rss-translation/metrics"},
+	}
+}
+
+// classificationRssOpsNestRoutes lists method/path pairs that must keep falling
+// back to NestJS even when the switch is go.
+func classificationRssOpsNestRoutes() []struct{ method, path string } {
+	return []struct{ method, path string }{
+		// The report enqueue endpoint stays on NestJS (BullMQ red line).
+		{http.MethodPost, "/api/admin/quality/classification/reports"},
+		// Wrong methods and longer, dynamic-segment or truncated paths.
+		{http.MethodPost, "/api/admin/quality/classification/summary"},
+		{http.MethodGet, "/api/admin/quality/classification/reviews/queue/detail"},
+		{http.MethodGet, "/api/admin/quality/classification/sources/source-1"},
+		{http.MethodGet, "/api/admin/quality/classification/sources/a/b/items"},
+		{http.MethodGet, "/api/admin/quality/classification/sources//items"},
+		{http.MethodGet, "/api/admin/quality/classification/reviews/r1/decision/extra"},
+		{http.MethodGet, "/api/admin/quality/classification/reports/job-1/results"},
+		{http.MethodGet, "/api/admin/quality/classification/reports/"},
+		{http.MethodGet, "/api/admin/quality/classification/sampling/query"},
+		{http.MethodPost, "/api/system-settings/rss-diagnostics/overview"},
+		{http.MethodGet, "/api/system-settings/rss-diagnostics/backfill-source-id"},
+		{http.MethodPost, "/api/system-settings/rss-translation/metrics"},
+		{http.MethodGet, "/api/system-settings/rss-translation/metrics/extra"},
+		// Other switches keep their own routes.
+		{http.MethodGet, "/api/admin/quality/overview"},
+	}
+}
+
+func TestClassificationRssOpsStaysLegacyByDefault(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithClassificationRssOps(rules, "")
+	rules = WithClassificationRssOps(rules, string(ModeLegacy))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range append(classificationRssOpsRoutes(), classificationRssOpsNestRoutes()...) {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+}
+
+func TestClassificationRssOpsOwnsThirteenRules(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithClassificationRssOps(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range classificationRssOpsRoutes() {
+		got := gateway.match(tc.method, tc.path)
+		if got.Mode != ModeGo {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		}
+		if got.HandlerKey != ClassificationRssOpsKey {
+			t.Fatalf("%s %s key=%s, want %s", tc.method, tc.path, got.HandlerKey, ClassificationRssOpsKey)
+		}
+		if !got.Exact && !got.OneSegment {
+			t.Fatalf("%s %s is neither exact nor one-segment: %+v", tc.method, tc.path, got)
+		}
+	}
+	// The Go handler answers CORS preflight for every migrated path.
+	for _, tc := range classificationRssOpsRoutes() {
+		if got := gateway.match(http.MethodOptions, tc.path); got.Mode != ModeGo {
+			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Mode)
+		}
+	}
+	// Counting the rules keeps this list honest if a path is added or dropped.
+	owned := 0
+	for _, rule := range gateway.Rules() {
+		if rule.HandlerKey == ClassificationRssOpsKey {
+			owned++
+		}
+	}
+	if owned != len(classificationRssOpsRoutes()) {
+		t.Fatalf("owned rules = %d, want %d", owned, len(classificationRssOpsRoutes()))
+	}
+}
+
+func TestClassificationRssOpsUnmigratedRoutesStayNest(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithClassificationRssOps(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range classificationRssOpsNestRoutes() {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+	// POST /api/admin/quality/classification/reports must proxy to NestJS: it
+	// enqueues a BullMQ job and is intentionally not part of the Go route table.
+	if got := gateway.match(http.MethodPost, "/api/admin/quality/classification/reports"); got.Prefix != "/api/" {
+		t.Fatalf("reports POST matched %+v, want the /api/ legacy fallback", got)
 	}
 }
