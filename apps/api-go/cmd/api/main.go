@@ -132,6 +132,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
@@ -1216,6 +1217,13 @@ func run() error {
 		if knowledgeGraphGo {
 			knowledgegraph.Register(reg, sharedDB, redisClient)
 		}
+		// The workspace identity/organization/RBAC/dashboard/queue/sentiment/
+		// processed-item roots are opt-in through their own switch; when it is
+		// legacy, any document selecting one of them stays on NestJS.
+		workspaceGo := cfg.GraphQLWorkspaceReadMode == "go"
+		if workspaceGo {
+			workspace.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1256,6 +1264,11 @@ func run() error {
 			log.Printf("api-go: GraphQL knowledge-graph reads registered (getKnowledgeGraphSubgraph, articleEntityLinks, knowledgeGraphEdgeEvidence, entityIntelligenceCard, entityIntelligenceEvidence, knowledgeEntityByName)")
 		} else {
 			log.Printf("api-go: GraphQL knowledge-graph reads not registered (API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy)")
+		}
+		if workspaceGo {
+			log.Printf("api-go: GraphQL workspace reads registered (me, myOrganizations, users, userLoginRecords, roles, permissions, memberships, dashboards, queueStats, entitySentimentSeries, topicSentimentSeries, processedItemById)")
+		} else {
+			log.Printf("api-go: GraphQL workspace reads not registered (API_GO_GRAPHQL_WORKSPACE_READ_MODE=legacy)")
 		}
 	}
 

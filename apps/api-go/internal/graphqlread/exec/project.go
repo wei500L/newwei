@@ -11,13 +11,13 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 )
 
-func (e *Engine) project(typ *ast.Type, value reflect.Value, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any, path []any) (any, bool, []graphError) {
+func (e *Engine) project(typ *ast.Type, value reflect.Value, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any, path []any, identity contract.Identity) (any, bool, []graphError) {
 	if typ == nil {
 		return nil, true, []graphError{{Message: "Internal server error", Path: append([]any{}, path...)}}
 	}
 	value = derefInterface(value)
 	if typ.Elem != nil {
-		return e.projectList(typ, value, set, doc, vars, path)
+		return e.projectList(typ, value, set, doc, vars, path, identity)
 	}
 	if !value.IsValid() {
 		if typ.NonNull {
@@ -37,11 +37,11 @@ func (e *Engine) project(typ *ast.Type, value reflect.Value, set ast.SelectionSe
 	case ast.Scalar, ast.Enum:
 		return e.projectLeaf(named, typ.NonNull, value, path)
 	default:
-		return e.projectObject(named, typ.NonNull, value, set, doc, vars, path)
+		return e.projectObject(named, typ.NonNull, value, set, doc, vars, path, identity)
 	}
 }
 
-func (e *Engine) projectList(typ *ast.Type, value reflect.Value, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any, path []any) (any, bool, []graphError) {
+func (e *Engine) projectList(typ *ast.Type, value reflect.Value, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any, path []any, identity contract.Identity) (any, bool, []graphError) {
 	value = derefInterface(value)
 	if !value.IsValid() || (value.Kind() == reflect.Pointer && value.IsNil()) || (value.Kind() == reflect.Slice && value.IsNil()) {
 		if typ.NonNull {
@@ -76,7 +76,7 @@ func (e *Engine) projectList(typ *ast.Type, value reflect.Value, set ast.Selecti
 	var errors []graphError
 	for i := 0; i < value.Len(); i++ {
 		itemPath := append(append([]any{}, path...), i)
-		item, isNull, itemErrors := e.project(typ.Elem, value.Index(i), set, doc, vars, itemPath)
+		item, isNull, itemErrors := e.project(typ.Elem, value.Index(i), set, doc, vars, itemPath, identity)
 		errors = append(errors, itemErrors...)
 		if isNull && typ.Elem.NonNull {
 			return nil, true, errors
@@ -86,7 +86,7 @@ func (e *Engine) projectList(typ *ast.Type, value reflect.Value, set ast.Selecti
 	return out, false, errors
 }
 
-func (e *Engine) projectObject(def *ast.Definition, nonNull bool, value reflect.Value, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any, path []any) (any, bool, []graphError) {
+func (e *Engine) projectObject(def *ast.Definition, nonNull bool, value reflect.Value, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any, path []any, identity contract.Identity) (any, bool, []graphError) {
 	value = concrete(value)
 	if !value.IsValid() {
 		if nonNull {
@@ -118,6 +118,18 @@ func (e *Engine) projectObject(def *ast.Definition, nonNull bool, value reflect.
 			nullObject = true
 			continue
 		}
+		// Field-level @HasPermission is enforced here, before the value is
+		// read, so a protected field never reaches projection. The failure
+		// shape matches the root check and the NestJS permissions guard.
+		if required, guarded := e.reg.FieldPermission(def.Name, field.Name); guarded && !identity.Has(required) {
+			errors = append(errors, fieldPermissionError(required, fieldPath))
+			if fieldDef.Type.NonNull {
+				nullObject = true
+			} else {
+				result[field.Key] = nil
+			}
+			continue
+		}
 		child, ok := fieldValue(value, field.Name)
 		if !ok {
 			errors = append(errors, graphError{
@@ -132,7 +144,7 @@ func (e *Engine) projectObject(def *ast.Definition, nonNull bool, value reflect.
 			}
 			continue
 		}
-		projected, isNull, fieldErrors := e.project(fieldDef.Type, child, field.Selections, doc, vars, fieldPath)
+		projected, isNull, fieldErrors := e.project(fieldDef.Type, child, field.Selections, doc, vars, fieldPath, identity)
 		errors = append(errors, fieldErrors...)
 		if isNull && fieldDef.Type.NonNull {
 			nullObject = true

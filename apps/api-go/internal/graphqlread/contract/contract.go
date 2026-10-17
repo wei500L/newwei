@@ -66,6 +66,19 @@ type Root struct {
 	Resolve            Resolver
 }
 
+// Bind adapts a strongly typed resolver function to the untyped Resolver
+// boundary the executor invokes. Packages keep their resolver signatures
+// strongly typed and call Bind only at registration, so their GraphQL models
+// never need an untyped map or value.
+func Bind[T any](fn func(Context) (T, error)) Resolver {
+	if fn == nil {
+		panic("graphqlread: Bind requires a resolver function")
+	}
+	return func(ctx Context) (any, error) {
+		return fn(ctx)
+	}
+}
+
 // Failure is a field error whose HTTP status and extensions follow the Nest
 // GraphQL exception filter. Status 0 means 500.
 type Failure struct {
@@ -92,14 +105,21 @@ type Registry struct {
 	roots  map[string]Root
 	types  map[string]reflect.Type
 	fields map[string]map[string]struct{}
+	// fieldPermissions maps a GraphQL object type and field to the single
+	// permission required to select that field. The executor rejects a
+	// selection of a protected field with the same FORBIDDEN failure the
+	// root permission check uses, mirroring the NestJS field-level
+	// @HasPermission directive.
+	fieldPermissions map[string]map[string]string
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		roots:  map[string]Root{},
-		types:  map[string]reflect.Type{},
-		fields: map[string]map[string]struct{}{},
+		roots:            map[string]Root{},
+		types:            map[string]reflect.Type{},
+		fields:           map[string]map[string]struct{}{},
+		fieldPermissions: map[string]map[string]string{},
 	}
 }
 
@@ -136,6 +156,41 @@ func (r *Registry) RegisterType(graphqlName string, sample any) {
 	defer r.mu.Unlock()
 	r.types[graphqlName] = typ
 	r.fields[graphqlName] = fields
+}
+
+// RegisterFieldPermission declares that selecting fieldName on the GraphQL
+// object typeName requires permission. The executor fails such a selection
+// with the same FORBIDDEN GraphQL error the root check produces, which
+// mirrors NestJS's field-level @HasPermission guard. Registering the same
+// field twice panics so a typo cannot silently lose the guard.
+func (r *Registry) RegisterFieldPermission(typeName, fieldName, permission string) {
+	if typeName == "" || fieldName == "" || permission == "" {
+		panic("graphqlread: field permission requires a type, field, and permission")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fields := r.fieldPermissions[typeName]
+	if fields == nil {
+		fields = map[string]string{}
+		r.fieldPermissions[typeName] = fields
+	}
+	if existing, ok := fields[fieldName]; ok {
+		panic("graphqlread: duplicate field permission " + typeName + "." + fieldName + " (" + existing + ")")
+	}
+	fields[fieldName] = permission
+}
+
+// FieldPermission returns the permission required to select fieldName on
+// typeName and whether such a guard was registered.
+func (r *Registry) FieldPermission(typeName, fieldName string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	fields := r.fieldPermissions[typeName]
+	if fields == nil {
+		return "", false
+	}
+	permission, ok := fields[fieldName]
+	return permission, ok
 }
 
 // Root returns a registered root and whether it exists.

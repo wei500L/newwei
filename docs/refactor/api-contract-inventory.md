@@ -415,7 +415,23 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 - 同批修掉三处缺陷：`knowledge-graph-impact.service.ts` 第 158/275/386/545/575 行 5 处 `knowledgeEntity.findMany` 补 `orgId`；`entity-impact-graph.service.ts` 第 564 行 `$dateToString` 补 `timezone: "UTC"`；`knowledge-graph-impact.model.ts` 三个冲击传导输入补 `@Allow()`（与第 9 节同一误杀，否则全局 `ValidationPipe` 的 `forbidUnknownValues` 直接 400，查询到不了 resolver）。两侧同修。
 - 回滚只把 `API_GO_GRAPHQL_KG_IMPACT_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
 
-## 11. 分类质量工作台与 RSS 诊断/翻译指标（Go）
+## 11. 身份/组织/RBAC/仪表盘/队列/情感/已处理条目 GraphQL 读（Go）
+
+新增开关 `API_GO_GRAPHQL_WORKSPACE_READ_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `go` 时，才在既有精确 `/graphql` 执行器登记 12 个只读 root：
+
+- `me`（`AllowAuthenticated`；`UserModel` 的 `primaryRoleId`/`isActive`/`emailVerified`/`lastLoginAt`/`roleIds` 为字段级 `users.read`）
+- `myOrganizations`（`AllowAuthenticated`；按 `createdAt asc` 去重，`isActive = org.isActive && (membership.isActive ?? true)`）
+- `users(first, after, search)`、`userLoginRecords(userId, limit)`（`users.read` + 系统 `admin` 角色门禁）
+- `roles(includeSystem)`（`roles.read`，`name asc`）、`permissions`（`permissions.read`，`name asc`）
+- `memberships`（`users.read`；`RoleModel.permissions` 为字段级 `roles.read`）
+- `dashboards`（`dashboards.read`；`createdAt asc`，widgets `sortOrder asc`）
+- `queueStats`（`queue.manage`；MySQL `ItemMeta` + Mongo `processeditems` + Redis `queue:itemPipeline:org:<orgId>:counts` + 最近 10 条 `tasklogs`，`message` 经 `adminlogs.RedactSensitiveFields`）
+- `entitySentimentSeries` / `topicSentimentSeries`（`dashboards.read`；`days` 默认 30、clamp 1..365，名称 trim）
+- `processedItemById(id)`（`items.read`；非法 ObjectId 400，`duplicateOf` -> 目标 `ItemMeta.id`，`eventId` 两步回退）
+
+未迁：10 个 Mutation（`createOrg`/`updateOrg`/`setOrgActive`/`updateMembershipRoles`/`setUserActive`/`createRole`/`assignRole`/`updateRole`/`upsertDashboard`/`deleteDashboard`）与 `queueEvents` Subscription。同批修 4 个缺陷：非法/跨组织游标返回空页（Nest + Go）、删除 `(doc.llm as any)` 并强类型归一化 `llm`（Nest + Go）、`entityName`/`topic` trim（Nest + Go）、`recentLogs.message` 脱敏（Nest + Go）。回滚只把 `API_GO_GRAPHQL_WORKSPACE_READ_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
+
+## 12. 分类质量工作台与 RSS 诊断/翻译指标（Go）
 
 新增开关 `API_GO_CLASSIFICATION_RSS_OPS_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。`go` 时只接管 13 条精确路由规则（10 条静态 + 3 条“恰好一段”动态路径，另加同路径 `OPTIONS` 预检），全部要求 `settings.manage`（人类身份来自 JWT 验签、Redis 撤销名单与 membership 重推导，忽略 JWT claims 里的 `permissions`；`mtk_` 机器令牌走 `MachineAccessToken` 的 SHA-256 查 `tokenHash`、校验 `Org.isActive`/未撤销/未过期、更新 `lastUsedAt`，身份为 `machine:<tokenId>`）：
 
