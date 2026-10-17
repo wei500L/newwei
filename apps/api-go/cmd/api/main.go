@@ -1076,7 +1076,7 @@ func run() error {
 	if err := wireRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
-	if err := wirePlatformGovernanceSettings(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+	if err := wirePlatformGovernanceSettings(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
 		return err
 	}
 
