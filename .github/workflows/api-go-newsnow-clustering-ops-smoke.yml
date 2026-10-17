@@ -1121,11 +1121,16 @@ jobs:
                       "status=" + str(status) + " body=" + repr(raw[:300]))
 
               # ---- 阶段 6：未迁移路由仍回 NestJS（legacy 与 go 响应一致）----
+              # NestJS error envelopes embed a per-request traceId and
+              # timestamp, so the proxied response can only be compared after
+              # dropping those two volatile keys.
+              volatile = {"traceId", "timestamp"}
               for method, path, payload in negative_routes:
                   legacy_status, legacy_raw = legacy_negative[(method, path)]
                   status, raw = call(GO, path, method, None, payload)
                   require("route table: proxied " + method + " " + path,
-                          status == legacy_status and body(raw) == body(legacy_raw),
+                          status == legacy_status and
+                          strip_keys(body(raw), volatile) == strip_keys(body(legacy_raw), volatile),
                           "legacy=" + str(legacy_status) + " go=" + str(status) +
                           " legacy_body=" + repr(legacy_raw[:400]) + " go_body=" + repr(raw[:400]))
               for method, path, payload in negative_routes[:5]:
