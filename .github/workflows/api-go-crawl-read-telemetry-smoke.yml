@@ -256,22 +256,35 @@ jobs:
               ]
               cmd = ["docker", "run", "-d", "--name", "api-go-crawl-read",
                      "--add-host=host.docker.internal:host-gateway",
-                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
                      "-p", "127.0.0.1:4020:4020"]
               for item in env:
                   cmd.extend(["-e", item])
               cmd.append("api-go-crawl-read:ci")
               subprocess.check_call(cmd)
-              for _ in range(30):
-                  status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}",
-                                                    "api-go-crawl-read"], text=True).strip()
-                  print("health", status, "mode", mode)
-                  if status == "healthy":
-                      return
-                  if status == "unhealthy":
-                      fail(subprocess.check_output(["docker", "logs", "api-go-crawl-read"], text=True)[-4000:])
-                  time.sleep(2)
-              fail(subprocess.check_output(["docker", "logs", "api-go-crawl-read"], text=True)[-4000:])
+              # Probe /__go/healthz directly so a startup failure reports the
+              # container state and its logs instead of a bare health status.
+              deadline = time.time() + 120
+              last = "no attempt"
+              while time.time() < deadline:
+                  state = subprocess.check_output(
+                      ["docker", "inspect", "--format", "{{.State.Status}}/{{.State.ExitCode}}",
+                       "api-go-crawl-read"], text=True).strip()
+                  if state.startswith("exited"):
+                      logs = subprocess.run(["docker", "logs", "api-go-crawl-read"],
+                                            text=True, capture_output=True)
+                      fail(f"api-go exited mode={mode} state={state} logs={(logs.stdout + logs.stderr)[-4000:]}")
+                  try:
+                      with urllib.request.urlopen("http://127.0.0.1:4020/__go/healthz", timeout=3) as resp:
+                          if 200 <= resp.status < 300:
+                              print("health healthy mode", mode, "state", state)
+                              return
+                          last = f"{resp.status} {resp.read()[:400]!r}"
+                  except Exception as exc:  # noqa: BLE001 - probe diagnostics
+                      last = repr(exc)
+                  print("health waiting mode", mode, "state", state, "last", last)
+                  time.sleep(3)
+              logs = subprocess.run(["docker", "logs", "api-go-crawl-read"], text=True, capture_output=True)
+              fail(f"api-go unhealthy mode={mode} last={last} logs={(logs.stdout + logs.stderr)[-4000:]}")
 
           def call(base_url, path, method="GET", token=None, payload=None, timeout=30):
               headers = {}
