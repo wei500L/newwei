@@ -7,27 +7,62 @@ import (
 )
 
 func (e *Engine) operationSupported(doc *ast.QueryDocument, op *ast.OperationDefinition) bool {
-	if op == nil || op.Operation != ast.Query {
+	root := e.rootDefinition(op)
+	if root == nil {
 		return false
 	}
-	return e.selectionSupported(e.schema.Query, op.SelectionSet, doc, map[string]bool{})
+	return e.selectionSupported(root, op.SelectionSet, doc, map[string]bool{})
+}
+
+// rootDefinition returns the SDL root object type for an operation, or nil for
+// operation kinds the Go executor never runs (subscriptions).
+func (e *Engine) rootDefinition(op *ast.OperationDefinition) *ast.Definition {
+	if op == nil || e.schema == nil {
+		return nil
+	}
+	switch op.Operation {
+	case ast.Query:
+		return e.schema.Query
+	case ast.Mutation:
+		return e.schema.Mutation
+	default:
+		return nil
+	}
+}
+
+// rootResolver returns the registered resolver lookup for a root object type.
+// A non-root definition has no lookup.
+func (e *Engine) rootResolver(parent *ast.Definition) func(string) (contract.Root, bool) {
+	switch {
+	case parent == nil, e.schema != nil && parent == e.schema.Query:
+		return e.reg.Query
+	case e.schema != nil && e.schema.Mutation != nil && parent == e.schema.Mutation:
+		return e.reg.Mutation
+	default:
+		return nil
+	}
 }
 
 func (e *Engine) selectionSupported(parent *ast.Definition, set ast.SelectionSet, doc *ast.QueryDocument, stack map[string]bool) bool {
+	lookup := e.rootResolver(parent)
+	rootDef := parent
+	if rootDef == nil {
+		rootDef = e.schema.Query
+	}
 	for _, selection := range set {
 		switch node := selection.(type) {
 		case *ast.Field:
 			if node.Name == "__typename" {
 				continue
 			}
-			if parent == nil || parent == e.schema.Query {
-				if e.schema.Query.Fields.ForName(node.Name) == nil {
+			if lookup != nil {
+				if rootDef == nil || rootDef.Fields.ForName(node.Name) == nil {
 					continue
 				}
-				if _, ok := e.reg.Root(node.Name); !ok {
+				if _, ok := lookup(node.Name); !ok {
 					return false
 				}
-				fieldDef := e.schema.Query.Fields.ForName(node.Name)
+				fieldDef := rootDef.Fields.ForName(node.Name)
 				if !e.typeSupported(fieldDef.Type, node.SelectionSet, doc, stack) {
 					return false
 				}
@@ -82,7 +117,7 @@ func (e *Engine) compositeRegistered(def *ast.Definition) bool {
 	if def.Kind != ast.Object && def.Kind != ast.Interface && def.Kind != ast.Union {
 		return true
 	}
-	if def == e.schema.Query || def.Name == "Query" {
+	if def == e.schema.Query || def == e.schema.Mutation || def.Name == "Query" || def.Name == "Mutation" {
 		return true
 	}
 	return e.reg.HasType(def.Name)
@@ -280,10 +315,11 @@ func positionLocations(pos *ast.Position) []location {
 }
 
 func (e *Engine) complexityOf(op *ast.OperationDefinition, doc *ast.QueryDocument, vars map[string]any) int {
-	if op == nil {
+	root := e.rootDefinition(op)
+	if root == nil {
 		return 0
 	}
-	return e.selectionComplexity(e.schema.Query, op.SelectionSet, doc, vars, map[string]bool{})
+	return e.selectionComplexity(root, op.SelectionSet, doc, vars, map[string]bool{})
 }
 
 func (e *Engine) selectionComplexity(parent *ast.Definition, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any, stack map[string]bool) int {

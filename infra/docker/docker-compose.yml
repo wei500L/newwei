@@ -718,6 +718,13 @@ services:
       # 且本变量=go 才登记；本变量为 legacy 时含这 20 个 root 的文档整包回
       # NestJS。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE: legacy
+      # 组织、角色与成员管理 8 个 GraphQL mutation（createOrg / updateOrg /
+      # setOrgActive / createRole / updateRole / assignRole /
+      # updateMembershipRoles / setUserActive）。pilot 与样例保持 legacy，与
+      # API_GO_GRAPHQL_READ_MODE 解耦：只开本变量时 query 仍走 NestJS，只有这
+      # 8 个 mutation 由 Go 执行。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动
+      # worker。回滚只把该变量改回 legacy。
+      API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE: legacy
       # 基础设施设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认
       # 值）。S3_* 与 VECTOR_* 都不进入日志；不在这里新增第二套网关配置。
       NODE_ENV: production

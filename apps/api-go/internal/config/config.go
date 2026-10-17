@@ -619,6 +619,18 @@ type Config struct {
 	// a whole, so the production web entry keeps serving through NestJS.
 	// Rolling back only means setting this variable back to legacy.
 	GraphQLSettingsCrawlReadMode string
+	// GraphQLOrgAccessWriteMode only decides whether the eight organization,
+	// role and membership mutations (createOrg, updateOrg, setOrgActive,
+	// createRole, updateRole, assignRole, updateMembershipRoles,
+	// setUserActive) are registered into the Go GraphQL executor. It is
+	// independent of API_GO_GRAPHQL_READ_MODE: with the read switch legacy only
+	// these mutations are taken over, and queries keep serving through NestJS.
+	// The accepted values are exactly "", "legacy" and "go"; the empty value
+	// behaves like legacy. While this switch is legacy, any document that
+	// selects one of those mutations falls back to NestJS as a whole, so the
+	// production web entry keeps serving through NestJS. Rolling back only
+	// means setting this variable back to legacy.
+	GraphQLOrgAccessWriteMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -1238,6 +1250,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE must be one of legacy|go")
 	}
+	// The organization access write switch accepts the empty string, legacy and
+	// go. An empty value behaves exactly like legacy, so an unset deployment
+	// keeps every mutation on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLOrgAccessWriteMode = "legacy"
+	case "go":
+		cfg.GraphQLOrgAccessWriteMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE must be one of legacy|go")
+	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
 	cfg.GraphQLComplexity = intDefault(getenv("GRAPHQL_COMPLEXITY_LIMIT"), 2000)
@@ -1672,6 +1695,12 @@ func Load(getenv func(string) string) (Config, error) {
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go")
 		}
+	}
+	// The organization access write takeover needs JWT verification, MySQL and
+	// Redis only. It reads no Mongo collection and starts no worker, so it does
+	// not require MONGO_URI.
+	if cfg.GraphQLOrgAccessWriteMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE", cfg)
 	}
 
 	if len(errs) > 0 {

@@ -7,11 +7,39 @@ import (
 	"log"
 )
 
+// roleCreateAudit is the AuditLog metadata written by createRole. Field names
+// match the NestJS object literal.
+type roleCreateAudit struct {
+	RoleID      string   `json:"roleId"`
+	Name        string   `json:"name"`
+	Permissions []string `json:"permissions"`
+}
+
+// roleAssignAudit is the AuditLog metadata written by assignRole.
+type roleAssignAudit struct {
+	TargetUserID string `json:"targetUserId"`
+	RoleID       string `json:"roleId"`
+}
+
+// auditOutboxPayload mirrors createOutboxPayload in audit-log.writer.ts.
+type auditOutboxPayload[T any] struct {
+	OrgID     string  `json:"orgId"`
+	ActorID   *string `json:"actorId"`
+	Resource  string  `json:"resource"`
+	Action    string  `json:"action"`
+	Metadata  T       `json:"metadata"`
+	IPAddress *string `json:"ipAddress"`
+	CreatedAt string  `json:"createdAt"`
+}
+
 // writeAuditLogBestEffort 对齐 apps/api/src/modules/audit/audit-log.writer.ts 的
 // writeAuditLogBestEffort：先写 AuditLog；失败则把等价 payload 入
 // AuditLogOutbox 重试。两步都失败只记日志——绝不把已经创建的角色/分配
 // 回滚成 500。
-func writeAuditLogBestEffort(ctx context.Context, db *sql.DB, orgID, actorID, resource, action string, metadata map[string]any) {
+//
+// metadata 由具名 struct 承载；泛型类型参数只是序列化边界，不使用
+// map[string]any 搬运业务字段。
+func writeAuditLogBestEffort[T any](ctx context.Context, db *sql.DB, orgID, actorID, resource, action string, metadata T) {
 	if db == nil {
 		return
 	}
@@ -30,14 +58,14 @@ func writeAuditLogBestEffort(ctx context.Context, db *sql.DB, orgID, actorID, re
 	}
 
 	// Outbox 回落：payload 与 NestJS createOutboxPayload 的字段一致。
-	payload := map[string]any{
-		"orgId":     orgID,
-		"actorId":   nullableString(actorID),
-		"resource":  resource,
-		"action":    action,
-		"metadata":  metadata,
-		"ipAddress": nil,
-		"createdAt": now.UTC().Format("2006-01-02T15:04:05.000Z"),
+	payload := auditOutboxPayload[T]{
+		OrgID:     orgID,
+		ActorID:   nullableString(actorID),
+		Resource:  resource,
+		Action:    action,
+		Metadata:  metadata,
+		IPAddress: nil,
+		CreatedAt: now.UTC().Format("2006-01-02T15:04:05.000Z"),
 	}
 	payloadRaw, payloadErr := json.Marshal(payload)
 	outboxID, outboxIDErr := newRowID()
