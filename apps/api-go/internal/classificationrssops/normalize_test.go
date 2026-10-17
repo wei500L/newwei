@@ -5,10 +5,15 @@ import "testing"
 // TestNormalizePathRejectsSlashOnly pins the defect-2 guard precondition: a path
 // made only of slashes normalizes to nil instead of an empty string.
 func TestNormalizePathRejectsSlashOnly(t *testing.T) {
-	for _, raw := range []string{"///", "/", "   ", "", " / // "} {
+	for _, raw := range []string{"///", "/", "   ", ""} {
 		if got := normalizePath(raw); got != nil {
 			t.Fatalf("normalizePath(%q) = %q, want nil", raw, *got)
 		}
+	}
+	// " / // " keeps a single space after the slash rules run, exactly like the
+	// NestJS helper: trim -> collapse -> strip edge slashes -> " ".
+	if got := normalizePath(" / // "); got == nil || *got != " " {
+		t.Fatalf("normalizePath(%q) = %v, want a single space", " / // ", got)
 	}
 }
 

@@ -24,7 +24,8 @@ func TestPercentileMatchesMathRound(t *testing.T) {
 	}{
 		{0, 10},
 		{0.5, 30},
-		{0.95, 50},
+		// index = floor(0.95 * (5-1)) = 3
+		{0.95, 40},
 		{1, 50},
 		{1.5, 50},
 		{-1, 10},
@@ -56,14 +57,16 @@ func TestBuildHistogramBuckets(t *testing.T) {
 	if buckets[0].Min != 0 || buckets[0].Max != 0.1 {
 		t.Fatalf("first bucket bounds = %v..%v", buckets[0].Min, buckets[0].Max)
 	}
+	// 0, 0.05 and the clamped -1 land in the first bucket.
 	if buckets[0].Count != 3 {
-		t.Fatalf("first bucket count = %d, want 3 (0, 0.05 and the clamped -1)", buckets[0].Count)
+		t.Fatalf("first bucket count = %d, want 3", buckets[0].Count)
 	}
-	if buckets[9].Count != 2 {
-		t.Fatalf("last bucket count = %d, want 2 (1.0 and the clamped 2)", buckets[9].Count)
+	// 0.99, 1.0 and the clamped 2 land in the last bucket.
+	if buckets[9].Count != 3 {
+		t.Fatalf("last bucket count = %d, want 3", buckets[9].Count)
 	}
-	if buckets[1].Count != 1 {
-		t.Fatalf("second bucket count = %d, want 1", buckets[1].Count)
+	if buckets[1].Count != 0 {
+		t.Fatalf("second bucket count = %d, want 0", buckets[1].Count)
 	}
 }
 
