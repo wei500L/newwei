@@ -173,7 +173,9 @@ jobs:
                   ["docker", "exec", "-i", mysql_container(), "mysql", "-uroot", "-psecret", "-N", "app"],
                   input=statement, text=True, capture_output=True)
               if proc.returncode != 0:
-                  fail("mysql: " + (proc.stderr or proc.stdout))
+                  details = (proc.stderr or "") + (proc.stdout or "")
+                  fail("mysql: " + details + "\n--- statement head ---\n" + statement[:1200]
+                       + "\n--- statement tail ---\n" + statement[-600:])
               return proc.stdout.strip()
 
           def scalar(statement):
