@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -148,7 +149,11 @@ func (s *Service) runTaskLogAggregate(ctx context.Context, input taskLogAggregat
 				{Key: "_id", Value: "$stage"},
 				{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
 			}}},
-			bson.D{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}}}},
+			// count DESC with stage ASC as the deterministic tiebreaker.
+			bson.D{{Key: "$sort", Value: bson.D{
+				{Key: "count", Value: -1},
+				{Key: "_id", Value: 1},
+			}}},
 			bson.D{{Key: "$limit", Value: 50}},
 		}},
 	}
@@ -160,7 +165,10 @@ func (s *Service) runTaskLogAggregate(ctx context.Context, input taskLogAggregat
 		if len(input.itemsMatch) > 0 {
 			items = append(items, bson.D{{Key: "$match", Value: input.itemsMatch}})
 		}
-		items = append(items, bson.D{{Key: "$sort", Value: bson.D{{Key: "createdAt", Value: -1}}}})
+		items = append(items, bson.D{{Key: "$sort", Value: bson.D{
+			{Key: "createdAt", Value: -1},
+			{Key: "_id", Value: -1},
+		}}})
 		if input.itemLimit > 0 {
 			limit := input.itemLimit
 			if limit < 1 {
@@ -192,6 +200,10 @@ func (s *Service) runTaskLogAggregate(ctx context.Context, input taskLogAggregat
 			bson.D{{Key: "$project", Value: bson.D{
 				{Key: "queue", Value: 1},
 				{Key: "stage", Value: 1},
+				// createdAt and _id must survive the projection so the ordered
+				// $top below can pick the most recent sample.
+				{Key: "createdAt", Value: 1},
+				{Key: "_id", Value: 1},
 				{Key: "errorName", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$error.name", "unknown"}}}},
 				{Key: "errorMessage", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$error.message", "$message"}}}},
 			}}},
@@ -202,9 +214,24 @@ func (s *Service) runTaskLogAggregate(ctx context.Context, input taskLogAggregat
 					{Key: "errorName", Value: "$errorName"},
 				}},
 				{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
-				{Key: "sampleMessage", Value: bson.D{{Key: "$first", Value: "$errorMessage"}}},
+				// sampleMessage is the message of the group's most recent
+				// failed record (createdAt DESC, _id DESC), not an arbitrary
+				// $first in collection order.
+				{Key: "sampleMessage", Value: bson.D{{Key: "$top", Value: bson.D{
+					{Key: "sortBy", Value: bson.D{
+						{Key: "createdAt", Value: -1},
+						{Key: "_id", Value: -1},
+					}},
+					{Key: "output", Value: "$errorMessage"},
+				}}}},
 			}}},
-			bson.D{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}}}},
+			// count DESC, then queue / stage / errorName ASC.
+			bson.D{{Key: "$sort", Value: bson.D{
+				{Key: "count", Value: -1},
+				{Key: "_id.queue", Value: 1},
+				{Key: "_id.stage", Value: 1},
+				{Key: "_id.errorName", Value: 1},
+			}}},
 			bson.D{{Key: "$limit", Value: 25}},
 		}})
 	}
@@ -340,7 +367,12 @@ func (s *Service) queryExceptionEvents(ctx context.Context, filter bson.D, limit
 		return 0, nil, err
 	}
 	cursor, err := s.events.Find(ctx, filter, options.Find().
-		SetSort(bson.D{{Key: "timestamp", Value: -1}}).
+		SetSort(bson.D{
+			{Key: "timestamp", Value: -1},
+			// _id DESC makes equal timestamps deterministic without changing
+			// the page/offset protocol.
+			{Key: "_id", Value: -1},
+		}).
 		SetSkip(int64(offset)).
 		SetLimit(int64(limit)))
 	if err != nil {
@@ -405,64 +437,121 @@ func (s *Service) ExceptionStatsLenient(ctx context.Context, orgID string, filte
 	return s.exceptionStats(ctx, filter)
 }
 
-// exceptionStats 对齐 ExceptionEventsService.stats：total + byKind（count
-// desc）+ byDay（UTC %Y-%m-%d，日期降序，最多 30 条）。
+// exceptionStatsGroup is the single-aggregate result: one compressed row per
+// (UTC day, kind) bucket is folded into total plus two pushed arrays.
+type exceptionStatsGroup struct {
+	Total  int64                      `bson:"total"`
+	ByKind []exceptionStatsKindBucket `bson:"byKind"`
+	ByDay  []exceptionStatsDayBucket  `bson:"byDay"`
+}
+
+type exceptionStatsKindBucket struct {
+	Kind  *string `bson:"kind"`
+	Count int64   `bson:"count"`
+}
+
+type exceptionStatsDayBucket struct {
+	Date  *string `bson:"date"`
+	Count int64   `bson:"count"`
+}
+
+// exceptionStats aligns ExceptionEventsService.stats with the optimized
+// single-aggregate pipeline: one $match, one $group by (UTC day, kind), then a
+// second $group that sums total and pushes the compressed buckets. total and
+// byKind cover every matching document; only byDay is capped at 30 days after
+// the merge, and no "last 30 days" filter is added when start/end are absent.
 func (s *Service) exceptionStats(ctx context.Context, filter bson.D) (exceptionStats, error) {
 	if s.events == nil {
 		return exceptionStats{}, errors.New("mongo is not configured")
 	}
-	total, err := s.events.CountDocuments(ctx, filter)
-	if err != nil {
-		return exceptionStats{}, err
-	}
-	kindCursor, err := s.events.Aggregate(ctx, mongo.Pipeline{
+	cursor, err := s.events.Aggregate(ctx, mongo.Pipeline{
 		bson.D{{Key: "$match", Value: filter}},
 		bson.D{{Key: "$group", Value: bson.D{
-			{Key: "_id", Value: "$kind"},
+			{Key: "_id", Value: bson.D{
+				{Key: "day", Value: bson.D{{Key: "$dateToString", Value: bson.D{
+					{Key: "date", Value: "$timestamp"},
+					{Key: "format", Value: "%Y-%m-%d"},
+					{Key: "timezone", Value: "UTC"},
+				}}}},
+				{Key: "kind", Value: "$kind"},
+			}},
 			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
 		}}},
-		bson.D{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}}}},
-	})
-	if err != nil {
-		return exceptionStats{}, err
-	}
-	var kindBuckets []statusBucket
-	if err := kindCursor.All(ctx, &kindBuckets); err != nil {
-		return exceptionStats{}, err
-	}
-	dayCursor, err := s.events.Aggregate(ctx, mongo.Pipeline{
-		bson.D{{Key: "$match", Value: filter}},
 		bson.D{{Key: "$group", Value: bson.D{
-			{Key: "_id", Value: bson.D{{Key: "$dateToString", Value: bson.D{
-				{Key: "date", Value: "$timestamp"},
-				{Key: "format", Value: "%Y-%m-%d"},
-				{Key: "timezone", Value: "UTC"},
+			{Key: "_id", Value: nil},
+			{Key: "total", Value: bson.D{{Key: "$sum", Value: "$count"}}},
+			{Key: "byKind", Value: bson.D{{Key: "$push", Value: bson.D{
+				{Key: "kind", Value: "$_id.kind"},
+				{Key: "count", Value: "$count"},
 			}}}},
-			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+			{Key: "byDay", Value: bson.D{{Key: "$push", Value: bson.D{
+				{Key: "date", Value: "$_id.day"},
+				{Key: "count", Value: "$count"},
+			}}}},
 		}}},
-		bson.D{{Key: "$sort", Value: bson.D{{Key: "_id", Value: -1}}}},
-		bson.D{{Key: "$limit", Value: 30}},
 	})
 	if err != nil {
 		return exceptionStats{}, err
 	}
-	var dayBuckets []statusBucket
-	if err := dayCursor.All(ctx, &dayBuckets); err != nil {
+	var groups []exceptionStatsGroup
+	if err := cursor.All(ctx, &groups); err != nil {
 		return exceptionStats{}, err
+	}
+	if len(groups) == 0 {
+		return exceptionStats{Total: 0, ByKind: []kindCount{}, ByDay: []dayCount{}}, nil
+	}
+	group := groups[0]
+
+	kindTotals := map[string]int{}
+	kindOrder := []string{}
+	for _, bucket := range group.ByKind {
+		kind := "unknown"
+		if bucket.Kind != nil {
+			kind = *bucket.Kind
+		}
+		if _, seen := kindTotals[kind]; !seen {
+			kindOrder = append(kindOrder, kind)
+		}
+		kindTotals[kind] += int(bucket.Count)
+	}
+	// count DESC, kind ASC.
+	sort.SliceStable(kindOrder, func(i, j int) bool {
+		left, right := kindOrder[i], kindOrder[j]
+		if kindTotals[left] != kindTotals[right] {
+			return kindTotals[left] > kindTotals[right]
+		}
+		return left < right
+	})
+	byKind := make([]kindCount, 0, len(kindOrder))
+	for _, kind := range kindOrder {
+		byKind = append(byKind, kindCount{Kind: kind, Count: kindTotals[kind]})
 	}
 
-	byKind := make([]kindCount, 0, len(kindBuckets))
-	for _, bucket := range kindBuckets {
-		byKind = append(byKind, kindCount{
-			Kind:  stringOrUnknown(bucket.ID),
-			Count: int(bucket.Count),
-		})
+	dayTotals := map[string]int{}
+	dayOrder := []*string{}
+	for _, bucket := range group.ByDay {
+		if bucket.Date == nil {
+			continue
+		}
+		if _, seen := dayTotals[*bucket.Date]; !seen {
+			dayOrder = append(dayOrder, bucket.Date)
+		}
+		dayTotals[*bucket.Date] += int(bucket.Count)
 	}
-	byDay := make([]dayCount, 0, len(dayBuckets))
-	for _, bucket := range dayBuckets {
-		byDay = append(byDay, dayCount{Date: bucket.ID, Count: int(bucket.Count)})
+	// date DESC, at most 30 dates that actually have data.
+	sort.SliceStable(dayOrder, func(i, j int) bool {
+		return *dayOrder[i] > *dayOrder[j]
+	})
+	limit := len(dayOrder)
+	if limit > 30 {
+		limit = 30
 	}
-	return exceptionStats{Total: int(total), ByKind: byKind, ByDay: byDay}, nil
+	byDay := make([]dayCount, 0, limit)
+	for _, date := range dayOrder[:limit] {
+		byDay = append(byDay, dayCount{Date: *date, Count: dayTotals[*date]})
+	}
+
+	return exceptionStats{Total: int(group.Total), ByKind: byKind, ByDay: byDay}, nil
 }
 
 // parseDateIgnoringError 对齐 exception-events.service.ts 的 parseDate：

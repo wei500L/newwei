@@ -283,6 +283,25 @@ const (
 	AdminLogsModeGo     AdminLogsMode = "go"
 )
 
+// ExceptionIngestMode controls only the two exception-report POST endpoints that
+// this batch migrates:
+//
+//	POST /api/observability/exception-events/client
+//	POST /api/internal/observability/exception-events
+//
+// Default legacy. go takes over exactly those two paths; the seven admin log
+// and error read GETs stay on their own API_GO_ADMIN_LOGS_MODE switch. Similar
+// paths, other methods and every /api/observability/ read route keep falling
+// through to NestJS. Shadow is never enabled, no worker is started and the
+// missing LITELLM_CONFIG_INTERNAL_TOKEN stays an endpoint-level 403 instead of
+// a startup failure.
+type ExceptionIngestMode string
+
+const (
+	ExceptionIngestModeLegacy ExceptionIngestMode = "legacy"
+	ExceptionIngestModeGo     ExceptionIngestMode = "go"
+)
+
 // NewsIndicatorsMode 只控制新闻指标关联分析的 3 条 HTTP 与 2 个 GraphQL 只读
 // query。默认 legacy。go 时接管
 //
@@ -712,6 +731,12 @@ type Config struct {
 	// go 要求 JWT、MySQL、Redis、Mongo（tasklogs 与 exceptionevents 都在
 	// Mongo，审计日志在 MySQL）。不启用 shadow，不启动任何 worker。
 	AdminLogsMode AdminLogsMode
+	// ExceptionIngestMode controls only the two migrated exception-report POST
+	// endpoints (client JWT ingest and LiteLLM-internal ingest). Default
+	// legacy. go requires JWT, MySQL, Redis and Mongo (the reports are written
+	// into the existing exceptionevents collection). Shadow is never enabled
+	// and no worker is started.
+	ExceptionIngestMode ExceptionIngestMode
 	// QualityOverviewMode 只控制管理端质量面板的 5 条 GET。默认 legacy。
 	// go 要求 JWT、MySQL、Redis、Mongo（processeditems 与 tasklogs 都在
 	// Mongo；新闻源/流水线快照与 outbox 在 MySQL）。不启用 shadow，不启动
@@ -834,6 +859,12 @@ type Config struct {
 	RateLimitFailOpen    bool
 	RateLimitLogin       int
 	RateLimitLoginWindow int
+	// Observability client exception ingest buckets. They mirror the NestJS
+	// EnvService observabilityClientExceptionRateLimit getter (defaults
+	// 30 / 120 / 60) and are consumed by API_GO_EXCEPTION_INGEST_MODE=go.
+	ObservabilityClientExceptionUserRateLimit int
+	ObservabilityClientExceptionIPRateLimit   int
+	ObservabilityClientExceptionWindowSeconds int
 	// The remaining rate limit buckets and the auth profile cache values are
 	// the environment defaults the sixteen runtime/governance settings routes
 	// return when no SystemSetting row exists. Names and defaults mirror the
@@ -1251,6 +1282,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_ADMIN_LOGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_EXCEPTION_INGEST_MODE")) {
+	case "", string(ExceptionIngestModeLegacy):
+		cfg.ExceptionIngestMode = ExceptionIngestModeLegacy
+	case string(ExceptionIngestModeGo):
+		cfg.ExceptionIngestMode = ExceptionIngestModeGo
+	default:
+		errs = append(errs, "API_GO_EXCEPTION_INGEST_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_NEWS_INDICATORS_MODE")) {
 	case "", string(NewsIndicatorsModeLegacy):
 		cfg.NewsIndicatorsMode = NewsIndicatorsModeLegacy
@@ -1408,6 +1447,11 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.RateLimitFailOpen = boolDefault(getenv("RATE_LIMIT_REDIS_FAIL_OPEN"), false)
 	cfg.RateLimitLogin = intDefault(getenv("RATE_LIMIT_LOGIN"), 5)
 	cfg.RateLimitLoginWindow = intDefault(getenv("RATE_LIMIT_LOGIN_WINDOW"), 60)
+	// Client exception ingest buckets (mirrors EnvService
+	// observabilityClientExceptionRateLimit; defaults 30 / 120 / 60).
+	cfg.ObservabilityClientExceptionUserRateLimit = intDefault(getenv("OBSERVABILITY_CLIENT_EXCEPTION_USER_RATE_LIMIT"), 30)
+	cfg.ObservabilityClientExceptionIPRateLimit = intDefault(getenv("OBSERVABILITY_CLIENT_EXCEPTION_IP_RATE_LIMIT"), 120)
+	cfg.ObservabilityClientExceptionWindowSeconds = intDefault(getenv("OBSERVABILITY_CLIENT_EXCEPTION_RATE_LIMIT_WINDOW_SECONDS"), 60)
 	cfg.RateLimitCrawlTaskCreate = intDefault(getenv("RATE_LIMIT_CRAWL_TASK_CREATE"), 10)
 	cfg.RateLimitCrawlTaskCreateWindow = intDefault(getenv("RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW"), 300)
 	cfg.RateLimitRbacWrite = intDefault(getenv("RATE_LIMIT_RBAC_WRITE"), 20)
@@ -1787,6 +1831,16 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_ADMIN_LOGS_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_ADMIN_LOGS_MODE=go")
+		}
+	}
+	// The exception ingest takeover writes into the existing exceptionevents
+	// Mongo collection, so it needs Mongo on top of the JWT/MySQL/Redis
+	// requirements. A missing LITELLM_CONFIG_INTERNAL_TOKEN is an endpoint
+	// contract (403) and must not fail startup.
+	if cfg.ExceptionIngestMode == ExceptionIngestModeGo {
+		appendAuthRequirements(&errs, "API_GO_EXCEPTION_INGEST_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_EXCEPTION_INGEST_MODE=go")
 		}
 	}
 	if cfg.NewsIndicatorsMode == NewsIndicatorsModeGo {
