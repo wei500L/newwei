@@ -848,3 +848,52 @@ retentionDays must not be greater than 3650; retentionDays must not be less than
 自上而下（IsInt、Min、Max）拼消息。两者的差异只在**同一属性有多条约束同时失败**时
 可见（例如把整数字段传成字符串）；单条约束失败时顺序无区别。本批不修改该已合入包，
 登记为观察项，供后续统一核对。
+### IR1：Mongo 关联读取与回填没有完整绑定租户 — ✅ 本批同修（Nest + Go）
+
+- **现象**：App 侧按 `itemMetaId` 读取 Mongo（read model / processed / raw）时缺少组织维度，raw 也没有
+  `_id = mongoRef` 的配对校验，跨组织文档可被读成 A 组织条目的 raw/processed/read-model 内容；回填聚合
+  `buildLatestItemSnapshotPipeline` 只按 `itemMetaId` 匹配，可能把外部组织的 processed 写进 A 的快照；
+  `ProcessedArticle.cleanedMarkdownRef → ProcessedItem` 反查也没有 `orgId`。
+- **证据**：`apps/api/src/modules/items/items.service.ts:221-227`、
+  `apps/api/src/graphql/loaders/item-read-model.loader.ts:118-136`、
+  `apps/api/src/graphql/loaders/processed-item.loader.ts:127-152`、
+  `apps/api/src/modules/items/items-read-model.service.ts:313-339` 与 `:377-386`、
+  `apps/api/src/modules/items/items-search-query.service.ts:892-898`。
+- **修复**：Nest 侧 `items.service.ts` 的 processed 查询补 `orgId`、raw 要求 `_id = mongoRef` 且
+  `itemMetaId` 配对；新增 request-scoped `apps/api/src/graphql/loaders/scoped-items-reading.loader.ts`
+  （cache key 含 `orgId`，raw 通过“可信 org-scoped ItemMeta + `mongoRef`/`itemMetaId` 配对”绑定，
+  `mongoRef` 为空或非法时返回 null 而不是“按 itemMetaId 取最新 raw”）；`items-read-model.service.ts` 的
+  快照聚合补 `orgId` 并删除 empty-mongoRef 的宽松回退；`items-search-query.service.ts` 的反查补
+  `orgId` + `status=completed`；`items.resolver.ts` 的 Item 嵌套字段改用 scoped loader 并把
+  `DataLoader<string, any>` 换成明确类型。Go 侧 `apps/api-go/internal/itemsreading` 全部按
+  `itemMetaId` 的 Mongo 读取都带 `orgId`，raw 同样按 `mongoRef`/`itemMetaId` 配对绑定。
+- **回归方式**：`api-go-items-reading-smoke` 构造 A/B 两组织的污染数据（A 的 `mongoRef` 指向 B 的 raw、
+  B 的 processed 伪装 A 的 `itemMetaId`、B 的 read-model 携带 A 的 `itemMetaId`），断言 A 的 REST 详情、
+  GraphQL `item`、批量嵌套读取与回填都读不到 B 的数据，且两组织各自的正常数据仍可见。
+- **状态**：待远端验证。
+
+### IR2：分页偏移缺少安全边界 — ✅ 本批同修（Nest + Go）
+
+- **现象**：`items-list.service.ts:76-79` 的 `skip = (safePage - 1) * take` 没有整数与数据库边界检查，
+  极大的 `page` 会溢出到超出 MySQL/Prisma 可接受范围（500）或被静默截断。
+- **修复**：Nest 在 `ItemsListService.list` 用 `resolvePaginationOffset` 校验（非负安全整数且
+  `<= 2_147_483_647`），越界抛 `BadRequestException("Pagination offset is too large")`，且在任何搜索、
+  缓存 loader 或数据库分页调用之前失败；Go 在 `apps/api-go/internal/itemsreading` 的
+  `NormalizePagination` 先做范围验证再转整数。CSV 批量导出的 `maxPageSize`（50000）不受影响。
+- **回归方式**：smoke 断言 `page=2147483647&pageSize=50` 与 `page=42949674&pageSize=50` 都是 400 +
+  精确 message，且不产生 500。
+- **状态**：待远端验证。
+
+### IR3：来源 fallback 绕过其他筛选 — ✅ 本批同修（Nest + Go）
+
+- **现象**：`items-search-query.service.ts:462-470` 的来源 fallback 只接收 `sourceIds`/`dateRange`，
+  与 primary 结果直接并集，因此 `sourceIds` 与 region/topic/sentiment/contentType/excludeDuplicates
+  组合时 fallback 会把不符合其他条件的条目加回来。
+- **修复**：把内容筛选条件抽成共用构造（Nest `buildProcessedContentFilters`、Go
+  `processedContentFilters`），fallback 候选还要在同组织最新 completed 快照上满足这些条件
+  （Nest `applyContentFiltersToLatestSnapshots`、Go `ApplyContentFilters`）；保留 `Article.sourceId`/
+  `crawlAt` 的来源与日期判断，保留 read-model 分支口径，不禁用 fallback。
+- **回归方式**：smoke 覆盖 source-only 正常返回、source+region 排除错误地区、source+topic/contentType/
+  sentiment 排除不匹配记录、source+excludeDuplicates 排除重复条目、source+dateRange 保留现有边界，
+  并同时覆盖 REST 历史 encoded filters 与 `itemFacets`。
+- **状态**：待远端验证。

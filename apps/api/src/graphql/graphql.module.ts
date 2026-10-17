@@ -83,6 +83,7 @@ import {
 import { RawItemPreviewLoader } from "./loaders/raw-item-preview.loader";
 import { RawItemLoader } from "./loaders/raw-item.loader";
 import { RoleLoader } from "./loaders/role.loader";
+import { ScopedItemsReadingLoader } from "./loaders/scoped-items-reading.loader";
 import { UserLoader } from "./loaders/user.loader";
 import { AlertsResolver } from "./resolvers/alerts.resolver";
 import { AnalysisResolver } from "./resolvers/analysis.resolver";
@@ -475,6 +476,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({
     OrgResolver,
     UserLoader,
     RoleLoader,
+    ScopedItemsReadingLoader,
     ItemReadModelLoader,
     ItemReadModelRawLoader,
     ItemReadModelRawPreviewLoader,

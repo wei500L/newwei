@@ -218,11 +218,24 @@ export class ItemsService {
       throw new NotFoundException("Item not found");
     }
 
+    // Tenant binding (IR1): `RawItem` has no `orgId` column, so the reference
+    // is only trusted when the document id equals the organization-scoped
+    // ItemMeta.mongoRef AND the document's own itemMetaId points back at that
+    // same ItemMeta. A raw document that merely claims a foreign itemMetaId is
+    // rejected with `null` instead of leaking another organization's payload.
     const rawItem =
       itemMeta.mongoRef && Types.ObjectId.isValid(itemMeta.mongoRef)
-        ? await RawItemModel.findById(itemMeta.mongoRef).lean()
+        ? await RawItemModel.findOne({
+            _id: itemMeta.mongoRef,
+            itemMetaId: itemMeta.id
+          }).lean()
         : null;
-    const processed = await ProcessedItemModel.findOne({ itemMetaId: itemMeta.id })
+    // Tenant binding (IR1): ProcessedItem carries `orgId`; the query is scoped
+    // to the request's organization in addition to the itemMetaId.
+    const processed = await ProcessedItemModel.findOne({
+      orgId,
+      itemMetaId: itemMeta.id
+    })
       .sort({ createdAt: -1 })
       .lean();
 

@@ -679,3 +679,38 @@ one of legacy|go`）。`go` 时要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOS
 
 回滚只把 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE` 改回 `legacy`。说明与 smoke 证据
 见 `docs/refactor/go-platform-governance-settings.md`。
+## 15. 条目阅读与 RSS 检索辅助（Go）
+
+新增开关 `API_GO_ITEMS_READING_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名：
+`API_GO_ITEMS_READING_MODE must be one of legacy|go`）。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`
+与 `MONGO_URI`，不启用 shadow，不启动采集/摄取/队列 worker，不重建索引。`go` 时接管 2 条精确 REST 路由
+与 5 个只读 GraphQL root：
+
+| # | 入口 | 权限 | 成功 | 缺失语义 |
+| --- | --- | --- | --- | --- |
+| 1 | `GET /api/items`（精确） | `items.read` | 200 `{items,total,page,pageSize}` | 空列表 `items=[]`、`total=0` |
+| 2 | `GET /api/items/:id`（恰好一段） | `items.read` | 200 `{itemMeta,rawItem,processed}` | 404 `Item not found` |
+| 3 | GraphQL `item(id: String!)` | `items.read` | nullable `ItemModel` | `data.item = null`（不抛错） |
+| 4 | GraphQL `itemFacets(search, filters)` | `items.read` | 四组非空列表 | 四组 `[]` |
+| 5 | GraphQL `rssSources(windowDays, onlyWithItems)` | `items.read` | 列表 | `[]` |
+| 6 | GraphQL `rssTranslationStatus(targetLanguage)` | `items.read` | 固定顺序 `deeplx`、`llm` | `available=false` + 固定 message |
+| 7 | GraphQL `searchSuggestions(prefix, limit: Float)` | `items.read` | `{type,value,origin}` | 空前缀 `[]` |
+
+- **五个 GraphQL root 只在 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `go` 时才在既有精确 `/graphql`
+  执行器登记**；`API_GO_GRAPHQL_READ_MODE=legacy` 时即使本开关为 `go`，含这五个 root 的文档整包回 NestJS。
+  两条 REST 路由只由本开关控制。
+- **未迁**：GraphQL `items` root、`createItem`/`createItemFromCrawlResult`/`updateItem`/`translateRssItems`
+  mutation、`POST /api/items`、CSV 导出、archive、索引重建、摄取与队列 worker。未列出的方法与更长路径
+  回落 NestJS（Go 不返回自己的 405）。
+- **同批修 3 个缺陷（Nest 与 Go 两侧一致）**：IR1 Mongo 关联读取与回填补租户绑定（REST processed 补
+  `orgId`；REST raw 要求 `_id = mongoRef` 且 `itemMetaId` 配对；新增 request-scoped
+  `scoped-items-reading.loader.ts`；回填聚合补 `orgId`；`ProcessedArticle.cleanedMarkdownRef` 反查补
+  `orgId`）；IR2 分页偏移补安全边界（offset 必须是非负安全整数且 `<= 2147483647`，越界 400
+  `Pagination offset is too large`，在搜索/缓存/分页调用前失败）；IR3 来源 fallback 不再绕过其他筛选
+  （fallback 候选还要满足 regions/topics/sentiments/contentTypes/excludeDuplicates，内容筛选用同组织
+  最新 completed 快照）。
+- **读模型**：`ITEMS_READ_MODEL_ENABLED` 默认 false，与迁移开关解耦；开启时详情读取可能触发
+  `itemreadmodels` 回填（现有派生数据写入，不扩展到摄取/排队/重建索引）；快照缺失仍 `$unset` 而不是写显式 null。
+- **限流/APQ/深度/复杂度/响应缓存/字段权限沿用既有机制**；身份与 orgId 一律取自服务端认证与 MySQL 权限。
+- 回滚只把 `API_GO_ITEMS_READING_MODE` 改回 `legacy`。细节与验收清单见
+  `docs/refactor/go-items-reading.md`。

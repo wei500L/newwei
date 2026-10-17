@@ -391,60 +391,11 @@ export class ItemsSearchQueryService {
         sourceId: { $in: filters.sourceIds },
       });
     }
-    if (filters.regions?.length) {
-      matchFilters.push({
-        $or: [
-          { "result.location": { $in: filters.regions } },
-          { "result.region": { $in: filters.regions } },
-        ],
-      });
-    }
-    if (filters.topics?.length) {
-      matchFilters.push({
-        $or: [
-          { "result.topics": { $in: filters.topics } },
-          { tags: { $in: filters.topics } },
-          { "result.entities.name": { $in: filters.topics } },
-        ],
-      });
-    }
-    if (filters.sentiments?.length) {
-      const sentimentMatchers = filters.sentiments.map(
-        (value) => new RegExp(`^${escapeRegex(value)}$`, "i"),
-      );
-      matchFilters.push({
-        $or: [
-          { "result.sentiment": { $in: sentimentMatchers } },
-          { "result.sentiment_label": { $in: sentimentMatchers } },
-          { tags: { $in: sentimentMatchers } },
-        ],
-      });
-    }
-    if (filters.contentTypes?.length) {
-      const contentTypeMatchers = filters.contentTypes.map(
-        (value) => new RegExp(`^${escapeRegex(value)}$`, "i"),
-      );
-      matchFilters.push({
-        $or: [
-          { "result.content_type": { $in: contentTypeMatchers } },
-          { "result.contentType": { $in: contentTypeMatchers } },
-        ],
-      });
-    }
-    if (filters.excludeDuplicates) {
-      matchFilters.push({
-        $or: [{ duplicateOf: null }, { duplicateOf: { $exists: false } }],
-      });
-    }
-    if (filters.dateRange?.start || filters.dateRange?.end) {
-      const dateMatch: Record<string, Date> = {};
-      if (filters.dateRange.start) {
-        dateMatch.$gte = filters.dateRange.start;
-      }
-      if (filters.dateRange.end) {
-        dateMatch.$lte = filters.dateRange.end;
-      }
-      matchFilters.push({ sortAt: dateMatch });
+    const contentFilters = this.buildProcessedContentFilters(filters);
+    matchFilters.push(...contentFilters);
+    const dateFilter = this.buildProcessedDateFilter(filters);
+    if (dateFilter) {
+      matchFilters.push(dateFilter);
     }
     if (matchFilters.length > 0) {
       pipeline.push({ $match: { $and: matchFilters } });
@@ -467,7 +418,144 @@ export class ItemsSearchQueryService {
     if (fallbackIds.length === 0) {
       return primaryIds;
     }
-    return dedupeItemMetaIds([...primaryIds, ...fallbackIds]);
+    // IR3 fix: the fallback used to be unioned in verbatim, so combining
+    // sourceIds with regions/topics/sentiments/contentTypes/excludeDuplicates
+    // could re-admit rows those filters had excluded. The fallback candidates
+    // must satisfy the same shared content predicates, evaluated against the
+    // organization's latest completed snapshot per item.
+    const acceptedFallbackIds = await this.applyContentFiltersToLatestSnapshots(
+      orgId,
+      fallbackIds,
+      contentFilters,
+    );
+    if (acceptedFallbackIds.length === 0) {
+      return primaryIds;
+    }
+    return dedupeItemMetaIds([...primaryIds, ...acceptedFallbackIds]);
+  }
+
+  /**
+   * Builds the shared `ProcessedItem` content predicates (regions, topics,
+   * sentiments, contentTypes, duplicate exclusion). The primary filter
+   * aggregation and the source fallback both use this so the two condition
+   * sets can never drift apart.
+   */
+  private buildProcessedContentFilters(filters: ItemFilters): Record<string, unknown>[] {
+    const contentFilters: Record<string, unknown>[] = [];
+    if (filters.regions?.length) {
+      contentFilters.push({
+        $or: [
+          { "result.location": { $in: filters.regions } },
+          { "result.region": { $in: filters.regions } },
+        ],
+      });
+    }
+    if (filters.topics?.length) {
+      contentFilters.push({
+        $or: [
+          { "result.topics": { $in: filters.topics } },
+          { tags: { $in: filters.topics } },
+          { "result.entities.name": { $in: filters.topics } },
+        ],
+      });
+    }
+    if (filters.sentiments?.length) {
+      const sentimentMatchers = filters.sentiments.map(
+        (value) => new RegExp(`^${escapeRegex(value)}$`, "i"),
+      );
+      contentFilters.push({
+        $or: [
+          { "result.sentiment": { $in: sentimentMatchers } },
+          { "result.sentiment_label": { $in: sentimentMatchers } },
+          { tags: { $in: sentimentMatchers } },
+        ],
+      });
+    }
+    if (filters.contentTypes?.length) {
+      const contentTypeMatchers = filters.contentTypes.map(
+        (value) => new RegExp(`^${escapeRegex(value)}$`, "i"),
+      );
+      contentFilters.push({
+        $or: [
+          { "result.content_type": { $in: contentTypeMatchers } },
+          { "result.contentType": { $in: contentTypeMatchers } },
+        ],
+      });
+    }
+    if (filters.excludeDuplicates) {
+      contentFilters.push({
+        $or: [{ duplicateOf: null }, { duplicateOf: { $exists: false } }],
+      });
+    }
+    return contentFilters;
+  }
+
+  /**
+   * Builds the `sortAt` date-range predicate used by the primary filter
+   * aggregation. The source fallback evaluates its date boundary through
+   * `Article.crawlAt` instead, which keeps the pre-existing boundary.
+   */
+  private buildProcessedDateFilter(filters: ItemFilters): Record<string, unknown> | null {
+    if (!filters.dateRange?.start && !filters.dateRange?.end) {
+      return null;
+    }
+    const dateMatch: Record<string, Date> = {};
+    if (filters.dateRange.start) {
+      dateMatch.$gte = filters.dateRange.start;
+    }
+    if (filters.dateRange.end) {
+      dateMatch.$lte = filters.dateRange.end;
+    }
+    return { sortAt: dateMatch };
+  }
+
+  /**
+   * Re-applies the shared content predicates to candidate itemMetaIds using
+   * each item's latest completed `ProcessedItem` snapshot in this
+   * organization, so a stale snapshot that happens to match can never admit a
+   * row the content filters would have excluded.
+   */
+  private async applyContentFiltersToLatestSnapshots(
+    orgId: string,
+    itemMetaIds: string[],
+    contentFilters: Record<string, unknown>[],
+  ): Promise<string[]> {
+    if (itemMetaIds.length === 0) {
+      return [];
+    }
+    if (contentFilters.length === 0) {
+      return dedupeItemMetaIds(itemMetaIds);
+    }
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          orgId,
+          status: PipelineStageStatus.Completed,
+          itemMetaId: { $in: itemMetaIds },
+        },
+      },
+      {
+        $addFields: {
+          normalizedSortAt: buildProcessedSortAtExpression(),
+        },
+      },
+      { $sort: { itemMetaId: 1, createdAt: -1, _id: -1 } },
+      {
+        $group: {
+          _id: "$itemMetaId",
+          itemMetaId: { $first: "$itemMetaId" },
+          tags: { $first: "$tags" },
+          result: { $first: "$result" },
+          sourceId: { $first: "$sourceId" },
+          duplicateOf: { $first: "$duplicateOf" },
+          sortAt: { $first: "$normalizedSortAt" },
+        },
+      },
+      { $match: { $and: contentFilters } },
+      { $project: { _id: 0, itemMetaId: 1 } },
+    ];
+    const records = await ProcessedItemModel.aggregate<{ itemMetaId: string }>(pipeline);
+    return dedupeItemMetaIds(records.map((record) => record.itemMetaId));
   }
 
   /**
@@ -890,7 +978,10 @@ export class ItemsSearchQueryService {
     }
 
     const records = await ProcessedItemModel.find(
-      { _id: { $in: objectIds } },
+      // Tenant binding (IR1): the SQL side already constrained the articles to
+      // this organization, but the Mongo reference is resolved with `orgId`
+      // too so a foreign document cannot be linked in through its `_id`.
+      { _id: { $in: objectIds }, orgId, status: PipelineStageStatus.Completed },
       { itemMetaId: 1 }
     )
       .sort({ createdAt: -1, _id: -1 })
