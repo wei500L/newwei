@@ -132,7 +132,11 @@ func validateUpsertsNested(problems *validationErrors, raw json.RawMessage) []ru
 	if trimmed[0] != '[' {
 		arrayPropertyMessages(problems, nestedUpsertsField, trimmed)
 		if trimmed[0] == '{' {
-			if element, ok := validateUpsertElement(problems, trimmed, nestedUpsertsField+"."); ok {
+			// A nested property that is an object rather than an array is
+			// validated in place: its field errors are children of the property
+			// error, so the prefix is the property name for both roles.
+			if element, ok := validateUpsertElement(problems, trimmed,
+				nestedUpsertsField+".", nestedUpsertsField+"."); ok {
 				return []runtimeSecretUpsertInput{element}
 			}
 		}
@@ -147,8 +151,8 @@ func validateUpsertsNested(problems *validationErrors, raw json.RawMessage) []ru
 	}
 	out := make([]runtimeSecretUpsertInput, 0, len(elements))
 	for index, element := range elements {
-		prefix := fmt.Sprintf("%s.%d.", nestedUpsertsField, index)
-		if parsed, ok := validateUpsertElement(problems, element, prefix); ok {
+		elementPrefix := fmt.Sprintf("%s.%d.", nestedUpsertsField, index)
+		if parsed, ok := validateUpsertElement(problems, element, nestedUpsertsField+".", elementPrefix); ok {
 			out = append(out, parsed)
 		}
 	}
@@ -165,7 +169,8 @@ func validateRemovesNested(problems *validationErrors, raw json.RawMessage) []ru
 	if trimmed[0] != '[' {
 		arrayPropertyMessages(problems, nestedRemovesField, trimmed)
 		if trimmed[0] == '{' {
-			if element, ok := validateRemoveElement(problems, trimmed, nestedRemovesField+"."); ok {
+			if element, ok := validateRemoveElement(problems, trimmed,
+				nestedRemovesField+".", nestedRemovesField+"."); ok {
 				return []runtimeSecretRemoveInput{element}
 			}
 		}
@@ -180,8 +185,8 @@ func validateRemovesNested(problems *validationErrors, raw json.RawMessage) []ru
 	}
 	out := make([]runtimeSecretRemoveInput, 0, len(elements))
 	for index, element := range elements {
-		prefix := fmt.Sprintf("%s.%d.", nestedRemovesField, index)
-		if parsed, ok := validateRemoveElement(problems, element, prefix); ok {
+		elementPrefix := fmt.Sprintf("%s.%d.", nestedRemovesField, index)
+		if parsed, ok := validateRemoveElement(problems, element, nestedRemovesField+".", elementPrefix); ok {
 			out = append(out, parsed)
 		}
 	}
@@ -199,26 +204,30 @@ func arrayPropertyMessages(problems *validationErrors, field string, trimmed jso
 	}
 }
 
-// validateUpsertElement validates one nested upsert. A non-object element
-// produces the @ValidateNested({each:true}) message with the index prefix.
-func validateUpsertElement(problems *validationErrors, raw json.RawMessage, prefix string) (runtimeSecretUpsertInput, bool) {
+// validateUpsertElement validates one nested upsert.
+//
+// fieldPrefix is the parent property path used for the @ValidateNested message
+// (NestJS attaches that constraint to the element error and prefixes it with the
+// array property name, not the index). elementPrefix is the per-element path
+// used for the element's own field errors.
+func validateUpsertElement(problems *validationErrors, raw json.RawMessage, fieldPrefix, elementPrefix string) (runtimeSecretUpsertInput, bool) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
-		problems.add(prefix + "each value in nested property " + nestedUpsertsField + " must be either object or array")
+		problems.add(fieldPrefix + "each value in nested property " + nestedUpsertsField + " must be either object or array")
 		return runtimeSecretUpsertInput{}, false
 	}
 	element := runtimeSecretUpsertRequest{}
 	unknown, err := decodeStrictObject(trimmed, &element)
 	if err != nil {
-		problems.add(prefix + "each value in nested property " + nestedUpsertsField + " must be either object or array")
+		problems.add(fieldPrefix + "each value in nested property " + nestedUpsertsField + " must be either object or array")
 		return runtimeSecretUpsertInput{}, false
 	}
 	for _, name := range unknown {
-		problems.add(prefix + unknownPropertyMessage(name))
+		problems.add(elementPrefix + unknownPropertyMessage(name))
 	}
-	sourceID, sourceIDOK := sourceIDConstraint(problems, element.sourceIDRaw, prefix)
-	key, keyOK := secretKeyConstraint(problems, element.keyRaw, prefix)
-	value, valueOK := secretValueConstraint(problems, element.valueRaw, prefix)
+	sourceID, sourceIDOK := sourceIDConstraint(problems, element.sourceIDRaw, elementPrefix)
+	key, keyOK := secretKeyConstraint(problems, element.keyRaw, elementPrefix)
+	value, valueOK := secretValueConstraint(problems, element.valueRaw, elementPrefix)
 	if !sourceIDOK || !keyOK || !valueOK {
 		return runtimeSecretUpsertInput{}, false
 	}
@@ -226,23 +235,23 @@ func validateUpsertElement(problems *validationErrors, raw json.RawMessage, pref
 }
 
 // validateRemoveElement validates one nested remove.
-func validateRemoveElement(problems *validationErrors, raw json.RawMessage, prefix string) (runtimeSecretRemoveInput, bool) {
+func validateRemoveElement(problems *validationErrors, raw json.RawMessage, fieldPrefix, elementPrefix string) (runtimeSecretRemoveInput, bool) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
-		problems.add(prefix + "each value in nested property " + nestedRemovesField + " must be either object or array")
+		problems.add(fieldPrefix + "each value in nested property " + nestedRemovesField + " must be either object or array")
 		return runtimeSecretRemoveInput{}, false
 	}
 	element := runtimeSecretRemoveRequest{}
 	unknown, err := decodeStrictObject(trimmed, &element)
 	if err != nil {
-		problems.add(prefix + "each value in nested property " + nestedRemovesField + " must be either object or array")
+		problems.add(fieldPrefix + "each value in nested property " + nestedRemovesField + " must be either object or array")
 		return runtimeSecretRemoveInput{}, false
 	}
 	for _, name := range unknown {
-		problems.add(prefix + unknownPropertyMessage(name))
+		problems.add(elementPrefix + unknownPropertyMessage(name))
 	}
-	sourceID, sourceIDOK := sourceIDConstraint(problems, element.sourceIDRaw, prefix)
-	key, keyOK := secretKeyConstraint(problems, element.keyRaw, prefix)
+	sourceID, sourceIDOK := sourceIDConstraint(problems, element.sourceIDRaw, elementPrefix)
+	key, keyOK := secretKeyConstraint(problems, element.keyRaw, elementPrefix)
 	if !sourceIDOK || !keyOK {
 		return runtimeSecretRemoveInput{}, false
 	}
