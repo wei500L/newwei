@@ -425,3 +425,105 @@ verify success）——CI-01 本轮未复现，无重跑。
 - **BL-04 的 Node 版本前提**：`process.getBuiltinModule` 需 Node ≥20.16。CI 当前 Node 20（latest tag，实际 ≥20.16）已验证通过；若未来 CI 固定到 <20.16 需回退方案。
 - **API-01 / SEC 系列真实登录态验证**：SEC-01 单元级与 API-01 契约级测试已由远端 CI 验证（run 33748591315）；**真实数据库登录态冒烟**（登录→PUT vector 配置→403 / 完成引导→刷新不重现）仍需 Docker 数据库栈——CI 无 DB，列为部署环境可用后的第一优先验证项。
 - 基线环境缺口（AISSTREAM_API_KEY 空、infra/docker/.env 缺失）不属代码缺陷，不入本台账。
+
+## 7. 基础设施连接与采集运行凭据批次（IS1–IS4）
+
+本批次把「基础设施连接与采集运行凭据配置」7 条 HTTP 用 Strangler Fig 方式迁入
+apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy），并同步
+修复 Nest 侧 IS1–IS4。行号以基线 `b89c35a85998512392e32566ccd96b2766f65441`
+（origin/main，普通 CI run 39051652549 success）为准。
+
+### IS1 全局存储和采集凭据写入缺平台管理员门禁 — 🔧 已修复，⏳ 待远端验证【P0】
+
+- **用户影响**：跨租户存储与采集凭据劫持。九个 `storage_*` SystemSetting 与
+  `news_source_runtime_secrets` 都是**全局单例**（无 orgId 维度），任何持有
+  `settings.manage` 的普通组织管理员即可改写所有租户的 S3 目标与新闻源 cookie/token。
+- **证据（b89c35a8）**：
+  - `apps/api/src/modules/storage/storage-settings.controller.ts:27-33`：PATCH 只有
+    `@Permissions("settings.manage")`，直接进 service；
+  - `apps/api/src/modules/storage/storage-settings.service.ts:170-206`：`updateStorageSettings`
+    更新 9 个无 orgId 维度的全局 key；
+  - `apps/api/src/modules/system-settings/news-source-runtime-secrets.controller.ts:23-29`：
+    PUT 只有 `settings.manage`；
+  - `apps/api/src/modules/system-settings/news-source-runtime-secrets.service.ts:111-201`（基线
+    `:158-173` 为写入段）：写全局 `news_source_runtime_secrets`；
+  - 对照：`apps/api/src/modules/system-settings/vector-service-settings.controller.ts:47,56`
+    相同全局配置已要求平台管理员。
+- **修复（Nest）**：
+  - `storage-settings.service.ts`：`updateStorageSettings` 首行 `assertPlatformAdmin(actorId)`，
+    直查 `GlobalRoleAssignment`（`userId` + `role='platform_admin'`）抛
+    `ForbiddenException("Platform admin access required")`。AuthModule 已依赖
+    StorageModule，注入 PlatformAccessService 会新增循环依赖，故按同一谓词内联。
+  - `news-source-runtime-secrets.service.ts`：`updateSettings` 首行复用已注入的
+    `PlatformAccessService.assertPlatformAdmin(actorId)`。
+  - 空白 body / 空数组 / 无实际变更同样先授权；controller、DTO、module 注册均未改；
+    三个 GET 保持 `settings.manage` 可读。
+- **修复（Go）**：写路径在 DTO 校验之后执行同一平台门禁；机器令牌（`machine:<id>`）
+  不是 User 行，永不满足门禁。
+- **远端回归断言**：org A/B 普通管理员与 `settings.manage` 机器令牌四条写均 403 且无
+  配置/审计/缓存副作用；平台管理员 P 四条写 200；三个 GET 对有权限机器令牌 200；
+  有平台角色但无 `settings.manage` 仍 403；非平台用户的非法 DTO 先 400、合法 DTO 才 403。
+- **状态**：🔧 Nest 与 Go 两侧已修复，⏳ 待远端 smoke 验证（`api-go-infrastructure-settings-smoke`）。
+
+### IS2 运行凭据的进程缓存与无锁整体写导致丢失更新 — 🔧 已修复，⏳ 待远端验证【P1】
+
+- **用户影响**：管理端读到旧值；并发 PUT 互相覆盖未触及条目（例如并入新增 C 时丢掉
+  另一进程刚写入的 B）。
+- **证据（b89c35a8）**：
+  - `news-source-runtime-secrets.service.ts:123-173`：`getPublicSettings`/`updateSettings`
+    都从 `loadStoredSettingsStrict()` 读后合并，再整体 upsert `news_source_runtime_secrets`；
+  - `:334-347`：`loadStoredSettingsStrict` 命中 30,000ms 进程缓存即返回，跨进程更新
+    （Nest worker / Go 接管）不会使其失效；
+  - `:199`、`:432-434`：写后只清当前实例缓存。
+- **修复（Nest）**：管理 GET 改走新增的 `loadStoredSettingsStrictFromDb()`（DB 权威
+  strict parse）；PUT 的合并基准同样来自锁内 DB；整段读-改-写在
+  `infra-settings:news-source-runtime-secrets:v1` 全局 MySQL 会话锁内完成；响应使用
+  本次写入快照（删空时 source 为 `none`）。`getSecretsForSource` 等消费者保留原有
+  30 秒进程缓存与降级语义，`invalidateCache()` 仍在写后调用。
+- **修复（Go）**：管理 GET 无进程缓存；PUT 在同一锁名内做 DB 权威读改写；不新增
+  Redis 版本键。
+- **远端回归断言**：Nest 先 GET 暖缓存 → 另一连接改 DB → 管理 GET 立即返回新值；
+  暖 A、DB 改 [A,B]、再 PUT 新增 C → 最终 [A,B,C]；Nest/Nest、Go/Go、Nest/Go 真实并发
+  （新增不同条目 / 删除不同条目 / 删 A 加 C）集合正确；首次无记录并发创建；strict
+  损坏记录仍按 400/409 拒绝且不被覆盖清空。
+- **状态**：🔧 两侧已修复，⏳ 待远端 smoke 验证。
+
+### IS3 向量 PUT 省略 token 时旧 Redis 值覆盖已轮换 token — 🔧 已修复，⏳ 待远端验证【P1】
+
+- **用户影响**：已轮换的 vector 内部 token 被旧缓存值写回，向量调用携带失效 token。
+- **证据（b89c35a8）**：`vector-service-settings.service.ts:98`（更新基准取自
+  `loadStoredSettings()`）、`:188` 起（缓存优先，命中 `vector_service:settings` 即用
+  Redis 旧值）、`:103` + `resolveNextToken`（absent token 保留该旧基准的 token）、
+  `:124-139`（随后整体覆盖 DB）。
+- **修复（Nest）**：PUT 与 DELETE 共用 `infra-settings:vector-service:v1` 全局锁；
+  token 保留基准改为锁内 `loadStoredSettingsFromDb()`；absent/null/空白/非空四态
+  语义不变；写后清共享 Redis 缓存。controller 门禁、vector-client、diagnostics 未改。
+- **修复（Go）**：同一锁名；同样从 DB 权威读 base；四态语义逐字对齐。
+- **远端回归断言**：DB token=B、Redis 信封 token=A、PUT 省略 token 后解密核对仍为 B
+  （Nest 与 Go 各一遍，只断言 hasToken 不算通过）；PUT 与 DELETE 均等待同一固定锁。
+- **状态**：🔧 两侧已修复，⏳ 待远端 smoke 验证。
+
+### IS4 存储清空字段直接向必填 JSON 列传 JS null — 🔧 已修复，⏳ 待远端验证【P1】
+
+- **用户影响**：`endpoint: null` / `forcePathStyle: null` / `presignedUrlTtlSeconds: null`
+  的「清空」语义无法持久化（必填 Json 列拒绝 SQL NULL，写入报错或语义错乱）。
+- **静态证据（b89c35a8）**：
+  - `apps/api/src/modules/storage/dto/storage-settings.dto.ts`：`endpoint` 及其他可选字段
+    `@IsOptional()` 允许显式 null；
+  - `storage-settings.service.ts:260-308`（`normalizeUpdates`）：`endpoint` 显式 null 被保留；
+    `forcePathStyle`、`presignedUrlTtlSeconds` 仅判 `undefined`，null 也会保留；
+  - `:178-202`（`Object.entries` 循环）：`recordValue` 原样作为 Prisma JSON 列 `value`，
+    没有 `JsonNull` 转换；
+  - `packages/db/prisma/schema.prisma:758-767`：`SystemSetting.value` 为必填 `Json`；
+    生成的 `SystemSettingCreate/UpdateInput.value` 类型是 `JsonNullValueInput | InputJsonValue`
+    （`node_modules/.prisma/client/index.d.ts:121960-121973`），SQL NULL（`Prisma.DbNull`）
+    与 JSON null（`Prisma.JsonNull`）不可混用。
+- **修复（Nest）**：新增具名 `NormalizedStorageSettingsUpdate`（可空输入显式建模）与
+  `toStorageJsonValue()`；顶层业务 null 转 `Prisma.JsonNull`；不再用 `Object.entries` 的
+  any 掩盖类型；审计 metadata 内的 null 仍是普通 JSON null。DTO、schema 未改，行未删除。
+- **修复（Go）**：向 JSON 列写字面量 `null`，不传 SQL NULL。
+- **远端回归断言（须先留修复前复现证据）**：`endpoint:null`、`forcePathStyle:null`、
+  `presignedUrlTtlSeconds:null` 均 200；`JSON_TYPE(value)="NULL"` 且 `value IS NULL` 为 false；
+  GET 按 env 回退（endpoint 依 env 决定有值或省略）；混合 PATCH 事务原子；空字符串
+  endpoint 仍 DTO 400。
+- **状态**：🔧 两侧已修复，⏳ 待远端 smoke 验证（修复前复现证据由 smoke 的 negative 步骤留下）。
