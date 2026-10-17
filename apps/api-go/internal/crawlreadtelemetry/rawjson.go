@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -29,10 +30,25 @@ func (r *RawJSON) UnmarshalBSONValue(valueType byte, data []byte) error {
 		*r = nil
 		return nil
 	}
-	encoded, err := bson.MarshalExtJSON(bson.RawValue{Type: bson.Type(valueType), Value: data}, false, false)
+	// The extended-JSON writer can only emit a scalar while it is positioned on
+	// a document element, so the raw value is wrapped in a one-field document
+	// and the wrapper is stripped afterwards. Marshaling the bare RawValue
+	// would fail with "WriteString can only write while positioned on a
+	// Element or Value".
+	wrapped, err := bson.MarshalExtJSON(
+		bson.D{{Key: "v", Value: bson.RawValue{Type: bson.Type(valueType), Value: data}}},
+		false, false,
+	)
 	if err != nil {
 		return err
 	}
+	colon := bytes.IndexByte(wrapped, ':')
+	if colon < 0 || len(wrapped) < colon+2 || wrapped[len(wrapped)-1] != '}' {
+		return fmt.Errorf("crawl read telemetry: unexpected extended JSON value %q", wrapped)
+	}
+	inner := bytes.TrimSpace(wrapped[colon+1 : len(wrapped)-1])
+	encoded := make([]byte, len(inner))
+	copy(encoded, inner)
 	*r = encoded
 	return nil
 }

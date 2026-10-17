@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // testJWTSecret is the HMAC key used by the media access tests.
@@ -279,4 +281,77 @@ func containsAll(value string, needles ...string) bool {
 		}
 	}
 	return true
+}
+
+// TestRawJSONDecodesScalarsAndDocuments pins the BSON -> relaxed JSON contract
+// of RawJSON: scalars, arrays and documents all survive the wrapper (the
+// extended-JSON writer needs a document context to emit a scalar).
+func TestRawJSONDecodesScalarsAndDocuments(t *testing.T) {
+	document, err := bson.Marshal(bson.D{
+		{Key: "text", Value: "hello"},
+		{Key: "count", Value: int32(7)},
+		{Key: "flag", Value: true},
+		{Key: "ratio", Value: 1.5},
+		{Key: "list", Value: []string{"a", "b"}},
+		{Key: "nested", Value: bson.D{{Key: "k", Value: "v"}}},
+		{Key: "nothing", Value: nil},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Text    RawJSON `bson:"text"`
+		Count   RawJSON `bson:"count"`
+		Flag    RawJSON `bson:"flag"`
+		Ratio   RawJSON `bson:"ratio"`
+		List    RawJSON `bson:"list"`
+		Nested  RawJSON `bson:"nested"`
+		Nothing RawJSON `bson:"nothing"`
+	}
+	if err := bson.Unmarshal(document, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]struct {
+		value RawJSON
+		want  string
+	}{
+		"text":   {decoded.Text, `"hello"`},
+		"count":  {decoded.Count, "7"},
+		"flag":   {decoded.Flag, "true"},
+		"ratio":  {decoded.Ratio, "1.5"},
+		"list":   {decoded.List, `["a","b"]`},
+		"nested": {decoded.Nested, `{"k":"v"}`},
+		"null":   {decoded.Nothing, "null"},
+	}
+	for name, tc := range cases {
+		encoded, err := json.Marshal(tc.value)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if string(encoded) != tc.want {
+			t.Fatalf("%s = %s, want %s", name, encoded, tc.want)
+		}
+	}
+}
+
+// TestCrawlTableCellDecodesScalars pins the table-cell wrapper used by the
+// crawlresultcontents tables Mixed field.
+func TestCrawlTableCellDecodesScalars(t *testing.T) {
+	document, err := bson.Marshal(bson.D{{Key: "cell", Value: "v"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Cell CrawlTableCell `bson:"cell"`
+	}
+	if err := bson.Unmarshal(document, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(decoded.Cell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != `"v"` {
+		t.Fatalf("cell = %s, want \"v\"", encoded)
+	}
 }
