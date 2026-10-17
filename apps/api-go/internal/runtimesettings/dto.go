@@ -19,9 +19,6 @@ import (
 // The validators never use any / interface{}: each helper takes a concrete
 // json.RawMessage and returns a concrete Go type.
 
-// maxJSONBodyBytes mirrors apps/api/src/main.ts json({limit:"10mb"}).
-const maxJSONBodyBytes = 10 << 20
-
 // validationErrors accumulates class-validator style messages.
 type validationErrors struct {
 	messages []string

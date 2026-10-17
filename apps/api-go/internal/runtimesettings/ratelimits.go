@@ -183,9 +183,9 @@ func parseUpdateRateLimitSettings(body []byte) (rateLimitSettingsRequest, error)
 		return rateLimitSettingsRequest{}, err
 	}
 	problems := validationErrors{}
-	validateRateLimitBucket(&problems, dto.Login, "login")
-	validateRateLimitBucket(&problems, dto.CrawlCreate, "crawlCreate")
-	validateRateLimitBucket(&problems, dto.RbacWrite, "rbacWrite")
+	validateRateLimitBucket(&problems, dto.Login)
+	validateRateLimitBucket(&problems, dto.CrawlCreate)
+	validateRateLimitBucket(&problems, dto.RbacWrite)
 	if err := problems.err(); err != nil {
 		return rateLimitSettingsRequest{}, err
 	}
@@ -193,8 +193,10 @@ func parseUpdateRateLimitSettings(body []byte) (rateLimitSettingsRequest, error)
 }
 
 // validateRateLimitBucket validates one nested RateLimitBucketDto. Absent or
-// null buckets are skipped, exactly like @ValidateNested().
-func validateRateLimitBucket(problems *validationErrors, bucket *rateLimitBucketRequest, field string) {
+// null buckets are skipped, exactly like @ValidateNested(). The emitted
+// messages use the nested property names ("limit", "windowSeconds"), which is
+// what class-validator's default messages resolve to for nested objects.
+func validateRateLimitBucket(problems *validationErrors, bucket *rateLimitBucketRequest) {
 	if bucket == nil {
 		return
 	}
@@ -203,7 +205,7 @@ func validateRateLimitBucket(problems *validationErrors, bucket *rateLimitBucket
 }
 
 // bucketToRequestValue converts a validated request bucket into the typed
-// config used by normalizeRateLimitSettings.
+// config used by normalizeRequestBucket.
 func bucketToRequestValue(bucket *rateLimitBucketRequest) (rateLimitBucketConfig, bool) {
 	if bucket == nil {
 		return rateLimitBucketConfig{}, false

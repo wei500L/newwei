@@ -507,3 +507,49 @@ func assertHTTPError(t *testing.T, err error, status int, message string) {
 		t.Fatalf("err=%v want %d %q", err, status, message)
 	}
 }
+
+// TestRateLimitBucketFallback locks the fallback semantics fixed in 502d5b74:
+// an omitted bucket (or a cache payload without the key) keeps the raw,
+// unclamped environment default, while a present bucket is coerced and clamped.
+func TestRateLimitBucketFallback(t *testing.T) {
+	service := &Service{cfg: Config{
+		RateLimitLogin:                 5000,
+		RateLimitLoginWindow:           60,
+		RateLimitCrawlTaskCreate:       10,
+		RateLimitCrawlTaskCreateWindow: 300,
+		RateLimitRbacWrite:             20,
+		RateLimitRbacWriteWindow:       600,
+	}}
+	fallback := service.fallbackRateLimitSettings()
+
+	normalized := normalizeRequestSettings(rateLimitSettingsRequest{}, fallback)
+	if normalized.Login.Limit != 5000 || normalized.Login.WindowSeconds != 60 {
+		t.Fatalf("omitted bucket = %+v", normalized.Login)
+	}
+
+	present := &rateLimitBucketRequest{
+		Limit:         json.RawMessage(`5000`),
+		WindowSeconds: json.RawMessage(`999999`),
+	}
+	normalized = normalizeRequestSettings(rateLimitSettingsRequest{Login: present}, fallback)
+	if normalized.Login.Limit != rateLimitMaxLimit || normalized.Login.WindowSeconds != rateLimitMaxWindowSeconds {
+		t.Fatalf("present bucket = %+v", normalized.Login)
+	}
+
+	cached := cachedRateLimitSettings{Login: &rateLimitBucketConfig{Limit: 5000, WindowSeconds: 999999}}
+	normalized = normalizeCachedSettings(cached, fallback)
+	if normalized.Login.Limit != rateLimitMaxLimit || normalized.Login.WindowSeconds != rateLimitMaxWindowSeconds {
+		t.Fatalf("cached bucket = %+v", normalized.Login)
+	}
+	if normalized.CrawlCreate.Limit != 10 || normalized.CrawlCreate.WindowSeconds != 300 {
+		t.Fatalf("missing cached bucket = %+v", normalized.CrawlCreate)
+	}
+
+	if ttl := service.rateLimitSettingsCacheTTL(); ttl != 60 {
+		t.Fatalf("default cache ttl = %d", ttl)
+	}
+	service.cfg.RateLimitSettingsCacheTTLSeconds = 120
+	if ttl := service.rateLimitSettingsCacheTTL(); ttl != 120 {
+		t.Fatalf("configured cache ttl = %d", ttl)
+	}
+}
