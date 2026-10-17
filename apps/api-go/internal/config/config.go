@@ -383,6 +383,11 @@ type Config struct {
 	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
 	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
 	GraphQLNewsEventsMode string
+	// GraphQLKnowledgeGraphMode 只决定知识图谱与实体 360 情报的六个 root
+	// 是否登记。默认 legacy。读查询为 legacy 时不另挂 /graphql。两个都是
+	// go 才登记；知识图谱为 legacy 时，含这六个 root 的文档整包回 NestJS。
+	// 回滚只改这个变量。
+	GraphQLKnowledgeGraphMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -808,6 +813,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.GraphQLNewsEventsMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENTS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLKnowledgeGraphMode = "legacy"
+	case "go":
+		cfg.GraphQLKnowledgeGraphMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE must be one of legacy|go")
 	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
