@@ -227,7 +227,23 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 
 任务日志的列表/汇总/窗口聚合与深层脱敏直接调用 `internal/adminlogs`（同一实现，不维护第二套正则）。仍回 NestJS：`/api/admin/quality/classification/*`（`classification-quality.controller.ts`）与 `/api/admin/quality/pipeline/runs|replay|rollback`（`pipeline-recovery.controller.ts`），以及这 5 条的非 `GET` 方法与更长路径（Go 精确匹配，不返回自己的 404）。回滚：`API_GO_QUALITY_OVERVIEW_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。细节见 `docs/refactor/go-quality-overview.md`。SEC-01 的真实登录态未在本批验证。
 
-### 1.8q NewsNow 本地计算与新闻事件聚类失败管理（Go）
+### 1.8q 运行时与治理设置（rate-limit / auth-cache / audit-log / scheduler / newsnow）
+
+`API_GO_RUNTIME_SETTINGS_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本是 `API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go`；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，不要求 `MONGO_URI`）。`go` 时只接管 18 条精确规则，统一要求 `settings.manage`（人类身份来自验签、Redis 撤销名单与 membership 重推导；机器令牌走 `MachineAccessToken` 行含 `Org.isActive`，权限与 `orgId` 来自令牌行），其中 `PUT /api/system-settings/audit-log` 另外要求平台管理员（否则 403 `Platform admin access required`；机器令牌永不满足）：
+
+- 限流策略（201 仅创建）：`GET /api/system-settings/rate-limit-policies`（200，按 `feature asc`，空结果是 `[]`）、`POST /api/system-settings/rate-limit-policies`（201）、`GET /api/system-settings/rate-limit-policies/:feature`（200，恰好一段）、`PUT /api/system-settings/rate-limit-policies/:feature`（200）、`DELETE /api/system-settings/rate-limit-policies/:feature`（200 `{ok:true}`）。
+- 全局限流桶：`GET /api/system-settings/rate-limits`（200）、`PUT /api/system-settings/rate-limits`（200，三桶同事务 upsert）。
+- 鉴权缓存：`GET /api/system-settings/auth-cache`（200）、`PUT /api/system-settings/auth-cache`（200）。
+- 审计保留：`GET /api/system-settings/audit-log`（200 `{retentionDays}`，30 秒进程内缓存）、`PUT /api/system-settings/audit-log`（200，`retentionDays` 收口 [1,3650]）。
+- 多租户调度：`GET/PUT /api/system-settings/multi-tenant-schedulers`（200，`source` + 11 个并发值；PUT 是整条替换）。
+- 新闻源调度：`GET/PUT /api/system-settings/news-source-scheduler`（200，`source` + 15 个值，30 秒进程内缓存）。
+- NewsNow 个性化：`GET/PUT /api/system-settings/newsnow-personalization`（200）、`GET /api/system-settings/newsnow-personalization/metrics`（200；`days` 缺省 7、收口 [1,90]；每 UTC 日一个 Redis hash，单日读失败输出全零行）。
+
+`feature` 归一化为 `trim().toLowerCase()` 且须匹配 `^[a-z][a-z0-9_.]*$`（否则 400 `Invalid rate limit feature name`）。Redis 键与 TTL：`rate_limit_policy:<feature>` 固定 60 秒；`rate_limit:settings` 取 `RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS`（缺省/≤0 时 60 秒）；`auth_cache:settings` 固定 60 秒；`newsnow:personalization:metrics:v1:<YYYY-MM-DD>` 由聚合器写入、Go 只读。新闻源调度写成功后 best-effort 删 `news-source:sitemap:` / `news-source:rss:` / `news-source:list:` / `news-source:deep:` 四个前缀。SystemSetting 主键：`rate_limit_login`、`rate_limit_crawl_create`、`rate_limit_rbac_write`、`auth_profile_cache_settings`、`audit_log_retention_days`、`multi_tenant_scheduler_runtime_settings`、`news_source_scheduler_settings`、`newsnow_personalization_settings`。
+
+错误契约：新闻源调度三条交叉规则返回 400 `rssAdaptiveWarmHitRatePercent must be less than or equal to rssAdaptiveHotHitRatePercent` / `rssAdaptiveColdMaxIntervalSeconds must be greater than or equal to rssAdaptiveWarmMinIntervalSeconds` / `rssAdaptiveWarmDiscoveryCacheTtlCapSeconds must be greater than or equal to rssAdaptiveHotDiscoveryCacheTtlCapSeconds`；三处存储值非法返回 409 且带 code——`MULTI_TENANT_SCHEDULER_SETTINGS_INVALID`（`Stored multi-tenant scheduler runtime settings are invalid.`，detail `Multi-tenant scheduler concurrency settings must be integers between 1 and 16.`）、`NEWS_SOURCE_SCHEDULER_SETTINGS_INVALID`（`Stored news source scheduler settings are invalid.`）、`NEWSNOW_PERSONALIZATION_SETTINGS_INVALID`（`Stored NewsNow personalization settings are invalid.`）；重复创建策略 409 `Rate limit policy already exists for <feature>`；update/delete 行不存在 404 `Rate limit policy not found for <feature>`；DTO 校验复刻 class-validator 措辞并用 `"; "` 拼接，未知字段 400 `property <name> should not exist`。**缺陷修复（Nest 与 Go 两侧同修）**：`SystemSetting.updatedById`、`RateLimitPolicy.updatedById` 与 `AuditLog.actorId` 是指向 `User(id)` 的外键，机器令牌 `machine:<id>` 必须写 SQL NULL（否则 MySQL 1452 → 500）；`description` 改为三态（键缺失=保留，`""`/空白/`null`=清成 NULL）；并发创建 1062（P2002）→ 409、并发删除 P2025 → 404。`GET /api/system-settings/security` 与其余全部 `/api/system-settings/*` 仍回 NestJS（Go 不返回自己的 404）。回滚：`API_GO_RUNTIME_SETTINGS_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。细节见 `docs/refactor/go-runtime-settings.md`。SEC-01 的真实登录态未在本批验证。
+
+### 1.8r NewsNow 本地计算与新闻事件聚类失败管理（Go）
 
 `API_GO_NEWSNOW_CLUSTERING_OPS_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本含变量名；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`）。`go` 时只接管 9 条精确路由，规则在 `apps/api-go/internal/legacyproxy/newsnow_clustering_ops_routes.go`：
 
@@ -244,7 +260,6 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 后 7 条同时接受人类 JWT（验签 + Redis 撤销名单 + MySQL membership 权限重推导）与 `mtk_` 机器令牌（`MachineAccessToken` SHA-256 + `Org.isActive`，权限与 `orgId` 只取令牌行）。聚类失败组一律按 `{orgId, groupId}` 过滤：跨组织访问返回 404，不返回 403 之外的任何本组织信息。
 
 仍回 NestJS：`GET /api/news-aggregator/source`、`POST /api/news-aggregator/sources/batch`、`GET /api/news-aggregator/hottest-analysis`、`GET /api/news-aggregator/recommended`（抓外网源）与 `POST /api/system-settings/news-events/clustering/failures/:groupId/llm-backfill`（BullMQ + LLM 网关），以及这 9 条的非白名单方法与更长路径。回滚：`API_GO_NEWSNOW_CLUSTERING_OPS_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不启用 shadow，不改前端。细节见 `docs/refactor/go-newsnow-clustering-ops.md`。SEC-01 的真实登录态未在本批验证。
-
 ### 1.9 system-settings（98 个，26 个 controller）
 
 内部端点（服务间 token，非用户 JWT）：

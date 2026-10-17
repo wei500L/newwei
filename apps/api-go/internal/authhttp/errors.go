@@ -187,6 +187,47 @@ func WriteCodedBadRequest(w http.ResponseWriter, r *http.Request, code, message 
 	})
 }
 
+// WriteCodedConflict writes a 409 whose payload carries a safe error code and a
+// detail string, mirroring ConflictException({ code, message, detail }) after
+// GlobalExceptionFilter spread it (statusCode, message, error, code, detail).
+// The code must match ^[A-Z0-9_]+$; a code outside that whitelist would be
+// dropped by the filter, so it is dropped here as well.
+func WriteCodedConflict(w http.ResponseWriter, r *http.Request, code, message, detail string) {
+	if !isSafeErrorCode(code) {
+		WriteHTTPException(w, r, http.StatusConflict, message)
+		return
+	}
+	body := errorBody{
+		StatusCode: http.StatusConflict,
+		Message:    message,
+		Error:      "Conflict",
+		Code:       code,
+	}
+	if strings.TrimSpace(detail) != "" {
+		body.Detail = detail
+	}
+	writeError(w, r, body)
+}
+
+// isSafeErrorCode mirrors GlobalExceptionFilter.isSafeErrorCode: a non-empty
+// trimmed value consisting only of A-Z, 0-9 and underscore.
+func isSafeErrorCode(code string) bool {
+	trimmed := strings.TrimSpace(code)
+	if trimmed == "" {
+		return false
+	}
+	for _, r := range trimmed {
+		switch {
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // WritePayloadTooLarge 写超过 JSON 体上限的响应。
 //
 // body-parser 自己的错误是 413 "request entity too large"，但 Nest 的
