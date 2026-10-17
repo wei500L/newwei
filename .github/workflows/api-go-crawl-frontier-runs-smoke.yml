@@ -354,7 +354,7 @@ jobs:
                 ('frrunarticlea000000000001', '{org}', 'https://frrun.example.com/article-a', 'Smoke', 'en', 'Title A', '2026-01-01 00:00:00.000', 'hash-a',
                  {j({"llmRepair": {"applied": True, "source": "llm", "model": "m1", "error": None, "missingFields": ["title"], "repairedFields": ["author"], "promptTokens": "12", "completionTokens": 34, "totalTokens": 46, "costUsd": "0.001", "latencyMs": 120}})}, NOW(3), NOW(3));
               INSERT INTO ProcessedArticle (id, orgId, articleId, status, title, subtitle, author, source, publishedAt, category, qualityScore, llmModel, llmPromptVersion, language, location, processedAt, removedNoiseTypes, topics, keyPoints, entities, kgRelations, createdAt, updatedAt) VALUES
-                ('frrunprocesseda0000000001', '{org}', 'frrunarticlea000000001', 'completed', 'Title A', NULL, 'Author A', 'Source A', '2026-01-01 00:00:00.000', NULL, 0.9, 'm1', 'v1', 'en', NULL, '2026-01-01 00:00:00.000', {j(["noise"])}, {j(["topic"])}, {j(["point"])}, {j(["entity"])}, {j(["kg"])}, NOW(3), NOW(3));
+                ('frrunprocesseda0000000001', '{org}', 'frrunarticlea000000000001', 'completed', 'Title A', NULL, 'Author A', 'Source A', '2026-01-01 00:00:00.000', NULL, 0.9, 'm1', 'v1', 'en', NULL, '2026-01-01 00:00:00.000', {j(["noise"])}, {j(["topic"])}, {j(["point"])}, {j(["entity"])}, {j(["kg"])}, NOW(3), NOW(3));
               """)
 
               # Workflow definition used by the workflow-run detail endpoints.
