@@ -1,0 +1,759 @@
+# 平台治理设置 16 条 Go 路由真实栈验收。不进普通 CI。
+# PR 上加 label api-go-platform-governance-settings-smoke，或 workflow_dispatch。
+# 覆盖：legacy/空白对照、go 接管后与 Nest 逐字节对照、DTO 400 对照、
+# 平台管理员门禁（Nest 与 Go 两侧）、TTL 索引 NamespaceNotFound 回归、
+# 过期进程内缓存回滚回归、并发部分写、跨租户隔离、停 NestJS 后的接管与 502。
+name: api-go-platform-governance-settings-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-platform-governance-settings-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-platform-governance-settings-smoke@example.com
+  SMTP_PASS: api-go-platform-governance-settings-smoke-smtp-not-connected
+  JWT_SECRET: d3a7c1f9b5e2806a4c8f2d7b9e1a3c5f7082b4d6e8a0c2f4b6d8e0a2c4f6b8d0
+  NEXTAUTH_SECRET: f4b6d8e0a2c4f6b8d0e2a4c6f8b0d2e4a6c8f0b2d4e6a8c0f2b4d6e8a0c2f4b6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  # Nest 与 Go 必须读同一组平台治理缺省值，否则 GET 的 default 分支无法逐字节对照。
+  ASSISTANT_GUARDRAILS_ENABLED: "true"
+  ASSISTANT_GUARDRAILS: openai-moderation-pre,openai-moderation-post
+  ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR: "30"
+  ASSISTANT_ORG_MAX_IN_FLIGHT: "2"
+  ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET: "2000000"
+  TASK_LOG_RETENTION_DAYS: "14"
+  # 故意配一个"存在但非法"的密钥：GET 报 present=true/valid=false 与具体错误，
+  # PUT 启用加密时返回 400 并带 " (<error>)" 后缀。两侧必须逐字节一致。
+  SYSTEM_SETTINGS_ENCRYPTION_KEY: " "
+  RATE_LIMIT_LOGIN: "1000"
+  RATE_LIMIT_LOGIN_WINDOW: "600"
+  RATE_LIMIT_CRAWL_TASK_CREATE: "1000"
+  RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW: "600"
+  RATE_LIMIT_RBAC_WRITE: "1000"
+  RATE_LIMIT_RBAC_WRITE_WINDOW: "600"
+  AUTH_PROFILE_CACHE_TTL_SECONDS: "600"
+  AUTH_PROFILE_CACHE_LOCK_TTL_MS: "5000"
+  AUTH_PROFILE_CACHE_MAX_WAIT_MS: "5000"
+  AUTH_PROFILE_CACHE_RETRY_DELAY_MS: "50"
+  AUDIT_LOG_RETENTION_DAYS: "90"
+  SEED_ORG_SLUG: api-go-platform-governance-smoke-org
+  SEED_ORG_NAME: api-go Platform Governance Smoke Org
+  SEED_ADMIN_EMAIL: api-go-platform-governance-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: "ApiGoPlatformGovernance#2026-Ci"
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-platform-governance-settings-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-platform-governance-settings-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-platform-governance:ci .
+      - name: Exercise platform governance settings routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import datetime, hashlib, json, os, signal, subprocess, threading, time, urllib.error, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+
+          org = "pgs-org-0001"
+          org_b = "pgs-org-0002"
+          role = "pgs-role-0001"
+          role_b = "pgs-role-0002"
+          platform_user = "pgs-platform-user-0001"
+          org_admin = "pgs-org-admin-0001"
+          platform_membership = "pgs-mem-platform-0001"
+          org_admin_membership = "pgs-mem-admin-0001"
+          platform_email = "pgs-platform@example.com"
+          org_admin_email = "pgs-org-admin@example.com"
+          machine_token = "mtk_platform_governance_smoke_allow_0001"
+          denied_machine_token = "mtk_platform_governance_smoke_deny_0001"
+
+          security_path = "/api/system-settings/security"
+          quota_path = "/api/system-settings/assistant-quota"
+          safety_path = "/api/system-settings/assistant-safety"
+          metrics_path = safety_path + "/metrics"
+          task_logs_path = "/api/system-settings/task-logs"
+          llm_logs_path = "/api/system-settings/llm-request-logs"
+          llm_reset_path = llm_logs_path + "/metadata-policy/reset"
+
+          platform_admin_message = "Platform admin access required"
+          at_least_one_message = ("At least one of retentionDays, metadataAllowedTopLevelKeys, "
+                                  "metadataAllowedTopLevelPrefixes, briefErrorRateThreshold, "
+                                  "briefInvalidJsonRatioThreshold, briefConsecutiveDaysThreshold is required")
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def ok(message):
+              print("ok:", message)
+
+          def container_id(ancestor):
+              return subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor], text=True).split()[0]
+
+          def sql(statement):
+              cid = container_id("mysql:8.4")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"],
+                                    input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          def redis(*args):
+              cid = container_id("redis:7.2")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "redis-cli", "--raw", *args],
+                                    text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def mongo(script):
+              cid = container_id("mongo:7.0")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mongosh", "--quiet", "app", "--eval", script],
+                                    text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=30):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              return json.loads(text)
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+          def login(email):
+              status, raw = call(nest, "/api/auth/login", "POST",
+                                 payload={"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]})
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:400]!r}")
+              return doc["accessToken"]
+
+          def canon(value):
+              if isinstance(value, dict):
+                  return {key: canon(item) for key, item in sorted(value.items())}
+              if isinstance(value, list):
+                  return [canon(item) for item in value]
+              return value
+
+          def multiset(entries, key):
+              return sorted((entry.get(key), entry.get("count")) for entry in entries or [])
+
+          def canon_metrics(rows):
+              out = []
+              for row in rows or []:
+                  item = canon(row)
+                  item["guardrails"] = multiset(row.get("guardrails"), "name")
+                  item["codes"] = multiset(row.get("codes"), "code")
+                  out.append(item)
+              return out
+
+          def start_go(mode):
+              subprocess.run(["docker", "rm", "-f", "api-go-platform-governance-smoke"], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  f"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE={mode}",
+                  "API_GO_RUNTIME_SETTINGS_MODE=legacy",
+                  "API_GO_RBAC_MODE=legacy",
+                  "API_GO_CRAWL_PROFILES_MODE=legacy",
+                  "API_GO_CRAWL_TEMPLATES_MODE=legacy",
+                  "API_GO_CRAWL_WORKFLOWS_MODE=legacy",
+                  "API_GO_NEWS_SOURCES_MODE=legacy",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy",
+                  "API_GO_GRAPHQL_KG_IMPACT_MODE=legacy",
+                  "API_GO_GRAPHQL_WORKSPACE_READ_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "API_GO_ADMIN_LOGS_MODE=legacy",
+                  "API_GO_LLM_LOGS_MODE=legacy",
+                  "API_GO_NEWS_INDICATORS_MODE=legacy",
+                  "API_GO_QUALITY_OVERVIEW_MODE=legacy",
+                  "API_GO_CRAWL_READ_TELEMETRY_MODE=legacy",
+                  "API_GO_ONBOARDING_MODE=legacy",
+                  "RATE_LIMIT_LOGIN=1000",
+                  "RATE_LIMIT_LOGIN_WINDOW=600",
+                  "RATE_LIMIT_CRAWL_TASK_CREATE=1000",
+                  "RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW=600",
+                  "RATE_LIMIT_RBAC_WRITE=1000",
+                  "RATE_LIMIT_RBAC_WRITE_WINDOW=600",
+                  "AUTH_PROFILE_CACHE_TTL_SECONDS=600",
+                  "AUTH_PROFILE_CACHE_LOCK_TTL_MS=5000",
+                  "AUTH_PROFILE_CACHE_MAX_WAIT_MS=5000",
+                  "AUTH_PROFILE_CACHE_RETRY_DELAY_MS=50",
+                  "AUDIT_LOG_RETENTION_DAYS=90",
+                  f"ASSISTANT_GUARDRAILS_ENABLED={os.environ['ASSISTANT_GUARDRAILS_ENABLED']}",
+                  f"ASSISTANT_GUARDRAILS={os.environ['ASSISTANT_GUARDRAILS']}",
+                  f"ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR={os.environ['ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR']}",
+                  f"ASSISTANT_ORG_MAX_IN_FLIGHT={os.environ['ASSISTANT_ORG_MAX_IN_FLIGHT']}",
+                  f"ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET={os.environ['ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET']}",
+                  f"TASK_LOG_RETENTION_DAYS={os.environ['TASK_LOG_RETENTION_DAYS']}",
+                  f"SYSTEM_SETTINGS_ENCRYPTION_KEY={os.environ['SYSTEM_SETTINGS_ENCRYPTION_KEY']}",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  f"JWT_SECRET={os.environ['JWT_SECRET']}",
+                  f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
+                  f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CANARY_PERCENT=0",
+                  f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
+              ]
+              cmd = ["docker", "run", "-d", "--name", "api-go-platform-governance-smoke",
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append("api-go-platform-governance:ci")
+              subprocess.check_call(cmd)
+              for _ in range(30):
+                  status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}",
+                                                    "api-go-platform-governance-smoke"], text=True).strip()
+                  print("health", status, "platformGovernanceMode", mode)
+                  if status == "healthy":
+                      return
+                  if status == "unhealthy":
+                      fail(subprocess.check_output(["docker", "logs", "api-go-platform-governance-smoke"], text=True)[-4000:])
+                  time.sleep(2)
+              fail(subprocess.check_output(["docker", "logs", "api-go-platform-governance-smoke"], text=True)[-4000:])
+
+          def reset_setting(key):
+              sql(f"DELETE FROM SystemSetting WHERE `key`='{key}'")
+              sql(f"DELETE FROM AuditLog WHERE resource='system_settings' AND action LIKE '{key}%'")
+              if key == "system_security":
+                  redis("DEL", "system_security:settings")
+                  redis("DEL", "auth:system-security")
+              elif key == "assistant_quota":
+                  redis("DEL", "assistant_quota:settings")
+              elif key == "assistant_safety":
+                  redis("DEL", "assistant_safety:settings")
+              elif key == "task_log_settings":
+                  mongo("db.tasklogs.drop()")
+              elif key == "llm_request_log_settings":
+                  mongo("try { db.llmrequestlogs.dropIndex('llm_request_log_created_at_ttl') } catch (e) {}")
+
+          def setting_value(key):
+              return scalar(f"SELECT value FROM SystemSetting WHERE `key`='{key}'")
+
+          def parity(label, method, path, token, payload=None, expected=200, token_go=None):
+              nest_status, nest_raw = call(nest, path, method, token, payload)
+              go_status, go_raw = call(go, path, method, token_go or token, payload)
+              if nest_status != expected or go_status != expected:
+                  fail(f"parity {label}: status nest={nest_status} go={go_status}, want {expected}; "
+                       f"nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
+              if body(nest_raw) != body(go_raw):
+                  fail(f"parity {label}: body mismatch\nnest={nest_raw[:600]!r}\ngo  ={go_raw[:600]!r}")
+              print("parity ok:", label)
+
+          def parity_write(label, method, path, token, payload, key, expected=200):
+              reset_setting(key)
+              nest_status, nest_raw = call(nest, path, method, token, payload)
+              if nest_status != expected:
+                  fail(f"parity {label}: nest status {nest_status} {nest_raw[:400]!r}, want {expected}")
+              reset_setting(key)
+              go_status, go_raw = call(go, path, method, token, payload)
+              if go_status != expected:
+                  fail(f"parity {label}: go status {go_status} {go_raw[:400]!r}, want {expected}")
+              if body(nest_raw) != body(go_raw):
+                  fail(f"parity {label}: body mismatch\nnest={nest_raw[:600]!r}\ngo  ={go_raw[:600]!r}")
+              print("parity ok:", label)
+
+          def parity_metrics(label, token, days):
+              """Nested guardrails/codes come out of $group in an undefined order,
+              so those two arrays are compared as multisets."""
+              nest_status, nest_raw = call(nest, f"{metrics_path}?days={days}", "GET", token)
+              go_status, go_raw = call(go, f"{metrics_path}?days={days}", "GET", token)
+              if nest_status != 200 or go_status != 200:
+                  fail(f"parity {label}: status nest={nest_status} go={go_status} {go_raw[:300]!r}")
+              if canon_metrics(body(nest_raw)) != canon_metrics(body(go_raw)):
+                  fail(f"parity {label}: body mismatch\nnest={nest_raw[:600]!r}\ngo  ={go_raw[:600]!r}")
+              print("parity ok:", label)
+
+          # ---- 阶段 0：Nest 基线（开关 legacy）+ 数据准备 ----
+          admin = scalar(f"SELECT id FROM User WHERE email='{os.environ['SEED_ADMIN_EMAIL']}'")
+          settings_perm = scalar("SELECT id FROM Permission WHERE name='settings.manage'")
+          if not admin or not settings_perm:
+              fail(f"missing seed rows admin={admin} settings={settings_perm}")
+
+          sql(f"""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('{org}', 'Platform Governance Smoke Org', 'pgs-smoke-org', 1, NOW(3), NOW(3)),
+            ('{org_b}', 'Platform Governance Smoke Org B', 'pgs-smoke-org-b', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, description, isSystem, orgId) VALUES
+            ('{role}', 'platform-governance-smoke', NULL, 0, '{org}'),
+            ('{role_b}', 'platform-governance-smoke-b', NULL, 0, '{org_b}');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('pgs-rp-settings-0001', '{role}', '{settings_perm}'),
+            ('pgs-rp-settings-b-0001', '{role_b}', '{settings_perm}');
+          """)
+          for user_id, email, membership_id, user_org, user_role in (
+              (platform_user, platform_email, platform_membership, org, role),
+              (org_admin, org_admin_email, org_admin_membership, org_b, role_b),
+          ):
+              sql(f"""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '{admin}';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('{membership_id}', '{user_id}', '{user_org}', '{user_role}', 1, NOW(3));
+              """)
+          sql(f"""
+          INSERT INTO GlobalRoleAssignment (id, userId, role, createdAt)
+          VALUES ('pgs-gra-platform-0001', '{platform_user}', 'platform_admin', NOW(3));
+          """)
+          allow_hash = hashlib.sha256(machine_token.encode()).hexdigest()
+          deny_hash = hashlib.sha256(denied_machine_token.encode()).hexdigest()
+          sql(f"""
+          INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, lastUsedAt, expiresAt, revokedAt, createdAt, updatedAt)
+          VALUES
+            ('pgs-mtok-allow-0001', '{org}', 'allow', '{allow_hash}', '["settings.manage"]', NULL, NULL, NULL, NOW(3), NOW(3)),
+            ('pgs-mtok-deny-0001', '{org}', 'deny', '{deny_hash}', '["org.read"]', NULL, NULL, NULL, NOW(3), NOW(3));
+          """)
+          mongo("db.assistantruns.deleteMany({orgId: {$in: ['" + org + "', '" + org_b + "']}})")
+          mongo("db.llmrequestlogs.deleteMany({orgId: {$in: ['" + org + "', '" + org_b + "']}})")
+          mongo("""
+          db.assistantruns.insertMany([
+            {orgId: '%s', type: 'query', status: 'completed', createdAt: new Date(), output: {blocked: true, appliedGuardrails: ['openai-moderation-pre'], code: 'PRE_BLOCK'}},
+            {orgId: '%s', type: 'report', status: 'running', createdAt: new Date(), output: {blocked: false}},
+            {orgId: '%s', type: 'query', status: 'completed', createdAt: new Date(), output: {blocked: true, appliedGuardrails: ['openai-moderation-pre', 'openai-moderation-post'], code: 'POST_BLOCK'}},
+            {orgId: '%s', type: 'forecast', status: 'pending', createdAt: new Date(), output: {blocked: false}}
+          ])
+          db.llmrequestlogs.insertMany([
+            {orgId: '%s', feature: 'assistant:query', totalTokens: 100, createdAt: new Date(), metadata: {source: 'assistant:query'}},
+            {orgId: '%s', feature: 'crawl:fetch', totalTokens: 9999, createdAt: new Date(), metadata: {source: 'crawl:fetch'}},
+            {orgId: '%s', feature: 'assistant:report', totalTokens: 7, createdAt: new Date(), metadata: {source: 'assistant:report'}}
+          ])
+          """ % (org, org, org_b, org_b, org, org, org_b))
+          ok("seeded 2 orgs, platform admin, org admin, machine tokens, mongo samples")
+
+          start_go("legacy")
+          platform_token = login(platform_email)
+          org_admin_token = login(org_admin_email)
+
+          # 开关为 legacy：16 条全部经 Go 代理，与 Nest 直连逐字节一致。
+          for label, method, path, token, payload in (
+              ("GET /security", "GET", security_path, platform_token, None),
+              ("GET /assistant-quota", "GET", quota_path, platform_token, None),
+              ("GET /assistant-safety", "GET", safety_path, platform_token, None),
+              ("GET /task-logs", "GET", task_logs_path, platform_token, None),
+              ("GET /llm-request-logs", "GET", llm_logs_path, platform_token, None),
+          ):
+              parity("legacy " + label, method, path, token, payload)
+          parity_metrics("legacy GET /assistant-safety/metrics", platform_token, 3)
+          status, raw = call(go, "/api/system-settings/assistant-safety/diagnostics", "GET", platform_token)
+          if status == 502:
+              fail("legacy phase: diagnostics should reach NestJS, got 502")
+          ok("phase 0: legacy mode proxies all sampled routes to NestJS")
+
+          # ---- 阶段 1：切 go，Nest 仍在；16 条逐条对照 ----
+          start_go("go")
+
+          # 1/2 security
+          parity("GET /security", "GET", security_path, platform_token)
+          parity_write("PUT /security", "PUT", security_path, platform_token,
+                       {"secretEncryptionEnabled": False, "mfaPolicy": "admins_only"}, "system_security")
+          # 3/4/5 assistant-quota
+          parity("GET /assistant-quota", "GET", quota_path, platform_token)
+          parity_write("PUT /assistant-quota", "PUT", quota_path, platform_token,
+                       {"enabled": True, "submitLimitPerHour": 12, "maxInFlightPerOrg": 3, "monthlyTokenBudget": 123456},
+                       "assistant_quota")
+          parity_write("DELETE /assistant-quota", "DELETE", quota_path, platform_token, None, "assistant_quota")
+          # 6/7/8/9 assistant-safety
+          parity("GET /assistant-safety", "GET", safety_path, platform_token)
+          parity_write("PUT /assistant-safety", "PUT", safety_path, platform_token,
+                       {"enabled": True, "outputModerationEnabled": False}, "assistant_safety")
+          parity_write("DELETE /assistant-safety", "DELETE", safety_path, platform_token, None, "assistant_safety")
+          parity_metrics("GET /assistant-safety/metrics?days=3", platform_token, 3)
+          # 10/11/12 task-logs
+          parity("GET /task-logs", "GET", task_logs_path, platform_token)
+          parity_write("PUT /task-logs", "PUT", task_logs_path, platform_token, {"retentionDays": 21}, "task_log_settings")
+          parity_write("DELETE /task-logs", "DELETE", task_logs_path, platform_token, None, "task_log_settings")
+          # 13/14/15/16 llm-request-logs
+          parity("GET /llm-request-logs", "GET", llm_logs_path, platform_token)
+          parity_write("PUT /llm-request-logs", "PUT", llm_logs_path, platform_token,
+                       {"retentionDays": 45, "metadataAllowedTopLevelKeys": ["runid", "feature"],
+                        "briefErrorRateThreshold": 0.25},
+                       "llm_request_log_settings")
+          parity_write("POST /llm-request-logs/metadata-policy/reset", "POST", llm_reset_path, platform_token, None,
+                       "llm_request_log_settings", expected=201)
+          parity_write("DELETE /llm-request-logs", "DELETE", llm_logs_path, platform_token, None,
+                       "llm_request_log_settings")
+          ok("phase 1: 16 routes byte-identical to NestJS")
+
+          # 阶段 1 的 400 对照：未知字段、类型错误、quota 字符串/ null、
+          # llm 空 body、llm 阈值为 null、security 密钥无效时启用加密。
+          parity_write("400 unknown field", "PUT", security_path, platform_token,
+                       {"secretEncryptionEnabled": True, "mfaPolicy": "off", "bogus": 1}, "system_security", expected=400)
+          parity_write("400 wrong type", "PUT", task_logs_path, platform_token,
+                       {"retentionDays": "30"}, "task_log_settings", expected=400)
+          parity_write("quota numeric string / null / empty coercion", "PUT", quota_path, platform_token,
+                       {"enabled": True, "submitLimitPerHour": "50", "maxInFlightPerOrg": None, "monthlyTokenBudget": ""},
+                       "assistant_quota", expected=200)
+          parity_write("400 quota non-numeric string", "PUT", quota_path, platform_token,
+                       {"enabled": True, "submitLimitPerHour": "abc", "maxInFlightPerOrg": 2, "monthlyTokenBudget": 2000000},
+                       "assistant_quota", expected=400)
+          for base, tag in ((nest, "nest"), (go, "go")):
+              status, raw = call(base, llm_logs_path, "PUT", platform_token, {})
+              if status != 400 or message(raw) != at_least_one_message:
+                  fail(f"{tag} llm empty body: {status} {message(raw)!r}, want {at_least_one_message!r}")
+          print("ok: llm empty body 400 ->", at_least_one_message)
+          parity_write("400 llm retentionDays null", "PUT", llm_logs_path, platform_token, {"retentionDays": None},
+                       "llm_request_log_settings", expected=400)
+          parity_write("llm briefErrorRateThreshold null", "PUT", llm_logs_path, platform_token,
+                       {"briefErrorRateThreshold": None}, "llm_request_log_settings", expected=200)
+          parity_write("llm briefConsecutiveDaysThreshold null", "PUT", llm_logs_path, platform_token,
+                       {"briefConsecutiveDaysThreshold": None}, "llm_request_log_settings", expected=400)
+          parity_write("400 llm metadata keys null", "PUT", llm_logs_path, platform_token,
+                       {"metadataAllowedTopLevelKeys": None}, "llm_request_log_settings", expected=400)
+
+          status, raw = call(nest, security_path, "GET", platform_token)
+          key_error = (body(raw) or {}).get("encryptionKeyError")
+          key_present = (body(raw) or {}).get("encryptionKeyPresent")
+          expected_message = "SYSTEM_SETTINGS_ENCRYPTION_KEY is required to enable secret encryption"
+          if key_present and key_error:
+              expected_message += f" ({key_error})"
+          parity_write("400 security enable without a valid key", "PUT", security_path, platform_token,
+                       {"secretEncryptionEnabled": True, "mfaPolicy": "off"}, "system_security", expected=400)
+          for base, tag in ((nest, "nest"), (go, "go")):
+              status, raw = call(base, security_path, "PUT", platform_token,
+                                 {"secretEncryptionEnabled": True, "mfaPolicy": "off"})
+              if status != 400 or message(raw) != expected_message:
+                  fail(f"{tag} security invalid key message: {status} {message(raw)!r}, want {expected_message!r}")
+          print("ok: security invalid-key 400 message byte-identical ->", expected_message)
+          ok("phase 1: six 400 families byte-identical to NestJS")
+
+          # ---- 阶段 2：缺陷回归（Nest 与 Go 都要断言）----
+          # 缺陷 1（SEC-05）：平台管理员门禁。
+          gated_writes = (
+              ("PUT", security_path, {"secretEncryptionEnabled": False, "mfaPolicy": "off"}),
+              ("PUT", quota_path, {"enabled": True, "submitLimitPerHour": 30, "maxInFlightPerOrg": 2, "monthlyTokenBudget": 2000000}),
+              ("DELETE", quota_path, None),
+              ("PUT", safety_path, {"enabled": True, "outputModerationEnabled": True}),
+              ("DELETE", safety_path, None),
+              ("PUT", task_logs_path, {"retentionDays": 30}),
+              ("DELETE", task_logs_path, None),
+              ("PUT", llm_logs_path, {"retentionDays": 45}),
+              ("DELETE", llm_logs_path, None),
+              ("POST", llm_reset_path, None),
+          )
+          sql(f"DELETE FROM GlobalRoleAssignment WHERE userId='{org_admin}'")
+          for base, tag in ((nest, "nest"), (go, "go")):
+              for method, path, payload in gated_writes:
+                  status, raw = call(base, path, method, org_admin_token, payload)
+                  if status != 403 or message(raw) != platform_admin_message:
+                      fail(f"{tag} platform gate {method} {path}: {status} {raw[:400]!r}")
+              for read_path in (security_path, quota_path, safety_path, task_logs_path, llm_logs_path):
+                  status, raw = call(base, read_path, "GET", org_admin_token)
+                  if status != 200:
+                      fail(f"{tag} org admin GET {read_path}: {status} {raw[:300]!r}")
+              parity_metrics(f"{tag} org admin metrics", org_admin_token, 3)
+              for read_path in (security_path, quota_path, safety_path, task_logs_path, llm_logs_path):
+                  status, raw = call(base, read_path, "GET", machine_token)
+                  if status != 200:
+                      fail(f"{tag} machine token GET {read_path}: {status} {raw[:300]!r}")
+              for method, path, payload in gated_writes:
+                  status, raw = call(base, path, method, machine_token, payload)
+                  if status != 403 or message(raw) != platform_admin_message:
+                      fail(f"{tag} machine token write {method} {path}: {status} {raw[:400]!r}")
+              # A 的非法 body 先得到 400（DTO 在平台门禁之前）。
+              status, raw = call(base, task_logs_path, "PUT", org_admin_token, {"retentionDays": "30"})
+              if status != 400:
+                  fail(f"{tag} org admin invalid body: {status} {raw[:300]!r}, want 400")
+              status, raw = call(base, llm_logs_path, "PUT", org_admin_token, {})
+              if status != 400:
+                  fail(f"{tag} org admin empty llm body: {status} {raw[:300]!r}, want 400")
+              print(f"ok: {tag} platform gate 403 / reads 200 / DTO 400 ordering")
+          sql(f"INSERT INTO GlobalRoleAssignment (id, userId, role, createdAt) "
+              f"VALUES ('pgs-gra-temp-0001', '{org_admin}', 'platform_admin', NOW(3))")
+          for base, tag in ((nest, "nest"), (go, "go")):
+              status, raw = call(base, task_logs_path, "PUT", org_admin_token, {"retentionDays": 30})
+              if status != 200:
+                  fail(f"{tag} granted platform admin PUT task-logs: {status} {raw[:300]!r}")
+          sql(f"DELETE FROM GlobalRoleAssignment WHERE id='pgs-gra-temp-0001'")
+          for base, tag in ((nest, "nest"), (go, "go")):
+              status, raw = call(base, task_logs_path, "PUT", org_admin_token, {"retentionDays": 31})
+              if status != 403:
+                  fail(f"{tag} revoked platform admin: {status} {raw[:300]!r}, want 403")
+          ok("defect 1: platform admin gate verified on both implementations")
+
+          # 缺陷 2（TTL-01）：tasklogs 集合不存在时 PUT 必须 200 并建出 TTL 索引。
+          def ttl_seconds(collection, index_name):
+              raw = mongo(f"JSON.stringify((db.{collection}.getIndexes().find(i => i.name === '{index_name}') || {{}}).expireAfterSeconds)")
+              return raw.strip().strip('"')
+
+          mongo("db.tasklogs.drop()")
+          status, raw = call(nest, task_logs_path, "PUT", platform_token, {"retentionDays": 21})
+          if status != 200:
+              fail(f"nest task-logs after drop: {status} {raw[:400]!r}")
+          if ttl_seconds("tasklogs", "task_log_created_at_ttl") != str(21 * 86400):
+              fail(f"nest tasklogs TTL = {ttl_seconds('tasklogs', 'task_log_created_at_ttl')!r}, want {21 * 86400}")
+          mongo("db.tasklogs.drop()")
+          status, raw = call(go, task_logs_path, "PUT", platform_token, {"retentionDays": 22})
+          if status != 200:
+              fail(f"go task-logs after drop: {status} {raw[:400]!r}")
+          if ttl_seconds("tasklogs", "task_log_created_at_ttl") != str(22 * 86400):
+              fail(f"go tasklogs TTL = {ttl_seconds('tasklogs', 'task_log_created_at_ttl')!r}, want {22 * 86400}")
+          ok("defect 2: NamespaceNotFound PUT returns 200 and recreates the TTL index on both")
+
+          # 缺陷 3（CONC-01）：过期进程内缓存不再回滚他人写入。
+          reset_setting("llm_request_log_settings")
+          call(nest, llm_logs_path, "GET", platform_token)   # 预热 Nest 30 秒进程内缓存
+          status, raw = call(go, llm_logs_path, "PUT", platform_token, {"retentionDays": 45})
+          if status != 200:
+              fail(f"go retentionDays=45: {status} {raw[:400]!r}")
+          status, raw = call(nest, llm_logs_path, "PUT", platform_token,
+                             {"metadataAllowedTopLevelPrefixes": ["x_"]})
+          if status != 200:
+              fail(f"nest partial PUT within the cache window: {status} {raw[:400]!r}")
+          stored = json.loads(setting_value("llm_request_log_settings"))
+          if stored.get("retentionDays") != 45:
+              fail(f"stale cache rollback: retentionDays={stored.get('retentionDays')!r}, want 45")
+          if stored.get("metadataAllowedTopLevelPrefixes") != ["x_"]:
+              fail(f"stale cache rollback: prefixes={stored.get('metadataAllowedTopLevelPrefixes')!r}")
+          if ttl_seconds("llmrequestlogs", "llm_request_log_created_at_ttl") != str(45 * 86400):
+              fail("stale cache rollback: TTL index does not match retentionDays=45")
+          ok("defect 3: Nest partial PUT merged over the fresh DB row (retentionDays stayed 45)")
+
+          # 缺陷 3 续：并发部分写不互相覆盖、不 500、审计条数正确。
+          reset_setting("llm_request_log_settings")
+          sql("DELETE FROM AuditLog WHERE resource='system_settings' AND action='llm_request_log_settings_update'")
+          for round_index in range(5):
+              results = {}
+              barrier = threading.Barrier(2)
+
+              def worker(index, base, payload):
+                  try:
+                      barrier.wait(timeout=20)
+                      results[index] = call(base, llm_logs_path, "PUT", platform_token, payload, timeout=40)
+                  except Exception as exc:  # noqa: BLE001
+                      results[index] = (0, repr(exc).encode())
+
+              threads = [
+                  threading.Thread(target=worker, args=(0, go, {"briefErrorRateThreshold": 0.2})),
+                  threading.Thread(target=worker, args=(1, nest, {"briefInvalidJsonRatioThreshold": 0.4})),
+              ]
+              for thread in threads:
+                  thread.start()
+              for thread in threads:
+                  thread.join()
+              statuses = sorted(status for status, _ in results.values())
+              if statuses != [200, 200]:
+                  fail(f"round {round_index}: concurrent partial PUT statuses {statuses} "
+                       f"{[raw[:300] for _, raw in results.values()]}")
+          stored = json.loads(setting_value("llm_request_log_settings"))
+          if stored.get("briefErrorRateThreshold") != 0.2 or stored.get("briefInvalidJsonRatioThreshold") != 0.4:
+              fail(f"concurrent partial PUTs lost a field: {stored}")
+          audit_count = scalar("SELECT COUNT(*) FROM AuditLog WHERE resource='system_settings' "
+                               "AND action='llm_request_log_settings_update'")
+          if audit_count != "10":
+              fail(f"concurrent partial PUT audit rows = {audit_count}, want 10")
+          ok("defect 3: 5 concurrent Go/Nest partial writes kept both fields and wrote 10 audit rows")
+
+          # 跨租户：A 所在 org 的 quota usage 与 metrics 只包含自己 org 的样本。
+          status, raw = call(go, quota_path, "GET", org_admin_token)
+          usage = (body(raw) or {}).get("usage") or {}
+          if usage.get("totalTokens") != 7 or usage.get("inFlight") != 1:
+              fail(f"cross-tenant quota usage for org B: {usage!r}, want totalTokens=7 inFlight=1")
+          status, raw = call(go, f"{metrics_path}?days=1", "GET", org_admin_token)
+          rows = body(raw) or []
+          if len(rows) != 1 or rows[0].get("totalRuns") != 2 or rows[0].get("blockedRuns") != 1:
+              fail(f"cross-tenant metrics for org B: {rows!r}")
+          status, raw = call(go, quota_path, "GET", platform_token)
+          usage = (body(raw) or {}).get("usage") or {}
+          if usage.get("totalTokens") != 100:
+              fail(f"platform org quota usage: {usage!r}, want totalTokens=100")
+          ok("cross-tenant: quota usage and metrics stay inside the caller's org")
+
+          # ---- 阶段 3：停 NestJS；16 条仍由 Go 服务，未迁路径 502 ----
+          alive = login(platform_email)
+          if os.path.exists("/tmp/api-nestjs.pid"):
+              os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+          subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+          subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+          stopped = False
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  stopped = True
+                  break
+              time.sleep(1)
+          if not stopped:
+              fail("nestjs did not stop")
+
+          def takeover(method, path, token, payload=None, expected=200):
+              status, raw = call(go, path, method, token, payload)
+              if status != expected:
+                  fail(f"after nest stop {method} {path}: {status} {raw[:400]!r}, want {expected}")
+              return body(raw)
+
+          takeover("GET", security_path, alive)
+          takeover("PUT", security_path, alive, {"secretEncryptionEnabled": False, "mfaPolicy": "all_users"})
+          takeover("GET", quota_path, alive)
+          takeover("GET", safety_path, alive)
+          takeover("PUT", safety_path, alive, {"enabled": True, "outputModerationEnabled": False})
+          takeover("DELETE", safety_path, alive)
+          takeover("GET", metrics_path + "?days=3", alive)
+          takeover("GET", task_logs_path, alive)
+          takeover("PUT", task_logs_path, alive, {"retentionDays": 25})
+          takeover("GET", llm_logs_path, alive)
+          takeover("PUT", llm_logs_path, alive, {"retentionDays": 40})
+          takeover("POST", llm_reset_path, alive, None, expected=201)
+          takeover("PUT", quota_path, alive, {"enabled": True, "submitLimitPerHour": 20, "maxInFlightPerOrg": 4, "monthlyTokenBudget": 500000})
+          takeover("DELETE", quota_path, alive)
+          takeover("DELETE", task_logs_path, alive)
+          takeover("DELETE", llm_logs_path, alive)
+
+          for unmigrated in ("/api/system-settings/assistant-safety/diagnostics", "/api/system-settings/email"):
+              status, raw = call(go, unmigrated, "GET", alive)
+              if status != 502 or (body(raw) or {}).get("statusCode") != 502:
+                  fail(f"unmigrated {unmigrated} after nest stop: {status} {raw[:300]!r}, want 502")
+              print("ok: unmigrated", unmigrated, "-> 502")
+          ok("phase 3: 16 routes still served by Go; unmigrated paths return 502")
+          print("ALL PLATFORM GOVERNANCE SETTINGS SMOKE ASSERTIONS PASSED")
+          PY

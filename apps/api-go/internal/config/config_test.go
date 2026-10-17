@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -1844,5 +1845,253 @@ func TestRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
 	}
 	if cfg.RuntimeSettingsMode != RuntimeSettingsModeGo {
 		t.Fatalf("mode = %s", cfg.RuntimeSettingsMode)
+	}
+}
+
+// platformGovernanceEnvEntry is one environment override for the
+// platformGovernanceEnv getenv seam.
+type platformGovernanceEnvEntry struct {
+	key   string
+	value string
+}
+
+// platformGovernanceEnv returns a getenv seam that serves the four credentials
+// the go-mode startup validation always requires, plus the caller's platform
+// governance overrides.
+func platformGovernanceEnv(overrides ...platformGovernanceEnvEntry) func(string) string {
+	return func(key string) string {
+		for _, entry := range overrides {
+			if entry.key == key {
+				return entry.value
+			}
+		}
+		switch key {
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://127.0.0.1:27017/app"
+		default:
+			return ""
+		}
+	}
+}
+
+func TestPlatformGovernanceSettingsModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.PlatformGovernanceSettingsMode != PlatformGovernanceSettingsModeLegacy {
+		t.Fatalf("mode = %q, want legacy", cfg.PlatformGovernanceSettingsMode)
+	}
+}
+
+func TestPlatformGovernanceSettingsModeAcceptsExplicitValues(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want PlatformGovernanceSettingsMode
+	}{
+		{"", PlatformGovernanceSettingsModeLegacy},
+		{"legacy", PlatformGovernanceSettingsModeLegacy},
+		{"go", PlatformGovernanceSettingsModeGo},
+	} {
+		env := platformGovernanceEnv(platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", tc.raw})
+		cfg, err := Load(env)
+		if err != nil {
+			t.Fatalf("Load(%q) error = %v", tc.raw, err)
+		}
+		if cfg.PlatformGovernanceSettingsMode != tc.want {
+			t.Fatalf("mode for %q = %q, want %q", tc.raw, cfg.PlatformGovernanceSettingsMode, tc.want)
+		}
+	}
+}
+
+func TestPlatformGovernanceSettingsModeRejectsInvalid(t *testing.T) {
+	for _, raw := range []string{"GO", "shadow", "canary", "true"} {
+		_, err := Load(platformGovernanceEnv(platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", raw}))
+		if err == nil {
+			t.Fatalf("Load() should reject mode %q", raw)
+		}
+		want := "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be one of legacy|go"
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	}
+}
+
+func TestPlatformGovernanceSettingsModeGoRequiresMongo(t *testing.T) {
+	env := platformGovernanceEnv(
+		platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", "go"},
+		platformGovernanceEnvEntry{"MONGO_URI", ""},
+	)
+	_, err := Load(env)
+	if err == nil {
+		t.Fatal("Load() should require MONGO_URI in go mode")
+	}
+	if !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE=go") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestPlatformGovernanceDefaultsMatchNestSchema(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.PlatformGovernanceAssistantGuardrailsEnabled {
+		t.Error("ASSISTANT_GUARDRAILS_ENABLED default = false, want true")
+	}
+	if cfg.PlatformGovernanceAssistantGuardrailsRaw != "openai-moderation-pre" {
+		t.Errorf("ASSISTANT_GUARDRAILS default = %q", cfg.PlatformGovernanceAssistantGuardrailsRaw)
+	}
+	if cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour != 30 {
+		t.Errorf("ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR default = %d, want 30", cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour)
+	}
+	if cfg.PlatformGovernanceAssistantOrgMaxInFlight != 2 {
+		t.Errorf("ASSISTANT_ORG_MAX_IN_FLIGHT default = %d, want 2", cfg.PlatformGovernanceAssistantOrgMaxInFlight)
+	}
+	if cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget != 2_000_000 {
+		t.Errorf("ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET default = %d, want 2000000", cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget)
+	}
+	if cfg.PlatformGovernanceTaskLogRetentionDays != 14 {
+		t.Errorf("TASK_LOG_RETENTION_DAYS default = %d, want 14", cfg.PlatformGovernanceTaskLogRetentionDays)
+	}
+	if cfg.PlatformGovernanceEncryptionKeyRaw != "" {
+		t.Errorf("SYSTEM_SETTINGS_ENCRYPTION_KEY default = %q, want empty", cfg.PlatformGovernanceEncryptionKeyRaw)
+	}
+}
+
+func TestPlatformGovernanceDefaultsAcceptValidValues(t *testing.T) {
+	cfg, err := Load(platformGovernanceEnv(
+		platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", "go"},
+		platformGovernanceEnvEntry{"ASSISTANT_GUARDRAILS_ENABLED", "off"},
+		platformGovernanceEnvEntry{"ASSISTANT_GUARDRAILS", " openai-moderation-pre , custom "},
+		platformGovernanceEnvEntry{"ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR", " 100 "},
+		platformGovernanceEnvEntry{"ASSISTANT_ORG_MAX_IN_FLIGHT", "0x64"},
+		platformGovernanceEnvEntry{"ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET", "1e6"},
+		platformGovernanceEnvEntry{"TASK_LOG_RETENTION_DAYS", "30"},
+		platformGovernanceEnvEntry{"SYSTEM_SETTINGS_ENCRYPTION_KEY", "  "},
+	))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.PlatformGovernanceAssistantGuardrailsEnabled {
+		t.Error("ASSISTANT_GUARDRAILS_ENABLED=off should be false")
+	}
+	if cfg.PlatformGovernanceAssistantGuardrailsRaw != " openai-moderation-pre , custom " {
+		t.Errorf("ASSISTANT_GUARDRAILS raw = %q", cfg.PlatformGovernanceAssistantGuardrailsRaw)
+	}
+	if cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour != 100 {
+		t.Errorf("submit limit = %d, want 100", cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour)
+	}
+	// Number("0x64") === 100.
+	if cfg.PlatformGovernanceAssistantOrgMaxInFlight != 100 {
+		t.Errorf("max in flight = %d, want 100", cfg.PlatformGovernanceAssistantOrgMaxInFlight)
+	}
+	if cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget != 1_000_000 {
+		t.Errorf("monthly budget = %d, want 1000000", cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget)
+	}
+	if cfg.PlatformGovernanceTaskLogRetentionDays != 30 {
+		t.Errorf("retention days = %d, want 30", cfg.PlatformGovernanceTaskLogRetentionDays)
+	}
+	// The key keeps its whitespace: present-but-empty must stay distinguishable.
+	if cfg.PlatformGovernanceEncryptionKeyRaw != "  " {
+		t.Errorf("encryption key raw = %q, want two spaces", cfg.PlatformGovernanceEncryptionKeyRaw)
+	}
+}
+
+func TestPlatformGovernanceDefaultsRejectInvalidValuesInGoMode(t *testing.T) {
+	for _, tc := range []struct {
+		key   string
+		value string
+	}{
+		{"ASSISTANT_GUARDRAILS_ENABLED", "maybe"},
+		{"ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR", "abc"},
+		{"ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR", "1.5"},
+		{"ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR", "10001"},
+		{"ASSISTANT_ORG_MAX_IN_FLIGHT", "-1"},
+		{"ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET", "1000000000001"},
+		{"TASK_LOG_RETENTION_DAYS", "0"},
+		{"TASK_LOG_RETENTION_DAYS", "nan"},
+	} {
+		env := platformGovernanceEnv(
+			platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", "go"},
+			platformGovernanceEnvEntry{tc.key, tc.value},
+		)
+		if _, err := Load(env); err == nil {
+			t.Fatalf("Load() should reject %s=%q in go mode", tc.key, tc.value)
+		}
+	}
+}
+
+func TestPlatformGovernanceDefaultsIgnoredInLegacyMode(t *testing.T) {
+	// Invalid values must not break a legacy deployment: behaviour stays
+	// identical to main until the switch is flipped to go.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "TASK_LOG_RETENTION_DAYS":
+			return "not-a-number"
+		case "ASSISTANT_GUARDRAILS_ENABLED":
+			return "maybe"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.PlatformGovernanceSettingsMode != PlatformGovernanceSettingsModeLegacy {
+		t.Fatalf("mode = %q", cfg.PlatformGovernanceSettingsMode)
+	}
+	if cfg.PlatformGovernanceTaskLogRetentionDays != 14 {
+		t.Errorf("retention days = %d, want the 14 fallback", cfg.PlatformGovernanceTaskLogRetentionDays)
+	}
+	if !cfg.PlatformGovernanceAssistantGuardrailsEnabled {
+		t.Error("invalid boolean should fall back to true in legacy mode")
+	}
+}
+
+func TestJSEnvNumberSemantics(t *testing.T) {
+	nanValues := []string{"nan", "inf", "1_000", "0x1p3", "0x", "1,5", "  12 3 ", "0x1g"}
+	for _, raw := range nanValues {
+		if got := jsEnvNumber(raw); !math.IsNaN(got) {
+			t.Errorf("jsEnvNumber(%q) = %v, want NaN", raw, got)
+		}
+	}
+	if got := jsEnvNumber("Infinity"); !math.IsInf(got, 1) {
+		t.Errorf("jsEnvNumber(Infinity) = %v, want +Inf", got)
+	}
+	if got := jsEnvNumber("INFINITY"); !math.IsInf(got, 1) {
+		t.Errorf("jsEnvNumber(INFINITY) = %v, want +Inf", got)
+	}
+	if got := jsEnvNumber("-Infinity"); !math.IsInf(got, -1) {
+		t.Errorf("jsEnvNumber(-Infinity) = %v, want -Inf", got)
+	}
+	for _, tc := range []struct {
+		raw  string
+		want float64
+	}{
+		{"", 0},
+		{"   ", 0},
+		{"30", 30},
+		{" 30 ", 30},
+		{"+30", 30},
+		{"-30", -30},
+		{".5", 0.5},
+		{"5.", 5},
+		{"1e3", 1000},
+		{"1E+3", 1000},
+		{"0x1f", 31},
+		{"0X1F", 31},
+		{"0o17", 15},
+		{"0b101", 5},
+	} {
+		if got := jsEnvNumber(tc.raw); got != tc.want {
+			t.Errorf("jsEnvNumber(%q) = %v, want %v", tc.raw, got, tc.want)
+		}
 	}
 }

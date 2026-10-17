@@ -147,3 +147,5 @@
 4. canary 激活的前置件（迁移序 5 的 Go JWT 验签 + membership 重推导——在它完成前 canary 保持不激活）
 
 **canary 契约提醒**：路由表没有任何 ModeCanary 条目；CANARY_PERCENT 是预留配置。把业务路由切到 ModeCanary 之前必须先落地可信身份来源——`cmd/api/main_test.go` 的 TestDefaultRulesHaveNoCanaryRoutes 会在有人提前切换时失败。
+
+- ✅ Go-批10：平台治理设置 16 条 HTTP（security / assistant-quota / assistant-safety(+metrics) / task-logs / llm-request-logs(+metadata-policy/reset)）迁入 `apps/api-go`，开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串|legacy|go，默认 legacy）；同批修 SEC-05（全局写接口补平台管理员门禁）、TTL-01（tasklogs NamespaceNotFound）、CONC-01（llm-request-logs MySQL 会话锁 + 以 DB 为新合并基准）。回滚只改该变量。细节见 `docs/refactor/go-platform-governance-settings.md`。
