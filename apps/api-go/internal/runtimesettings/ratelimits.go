@@ -135,16 +135,26 @@ func normalizeRequestSettings(dto rateLimitSettingsRequest, fallback rateLimitSe
 	}
 }
 
-// normalizeRequestBucket normalizes one submitted bucket.
+// normalizeRequestBucket normalizes one submitted bucket with the same
+// Number() -> Math.floor -> clamp pipeline the NestJS service uses.
 func normalizeRequestBucket(bucket *rateLimitBucketRequest, fallback rateLimitBucketConfig) rateLimitBucketConfig {
 	if bucket == nil {
 		return fallback
 	}
-	value, ok := bucketToRequestValue(bucket)
-	if !ok {
-		return fallback
+	return rateLimitBucketConfig{
+		Limit:         jsClamp(math.Floor(bucketCoerce(bucket.Limit)), rateLimitMinLimit, rateLimitMaxLimit),
+		WindowSeconds: jsClamp(math.Floor(bucketCoerce(bucket.WindowSeconds)), rateLimitMinWindowSeconds, rateLimitMaxWindowSeconds),
 	}
-	return normalizeBucketObject(value, fallback)
+}
+
+// bucketCoerce mirrors Number(value) for one raw bucket field. An absent key
+// yields NaN, which the clamp maps to the minimum (the JavaScript contract).
+func bucketCoerce(raw json.RawMessage) float64 {
+	value, ok := jsNumberFromJSON(raw)
+	if !ok {
+		return math.NaN()
+	}
+	return value
 }
 
 // normalizeCachedSettings mirrors normalizeSettings for a cache hit.
@@ -156,24 +166,16 @@ func normalizeCachedSettings(cached cachedRateLimitSettings, fallback rateLimitS
 	}
 }
 
-// normalizeCachedBucket normalizes one cached bucket; a missing key keeps the
-// raw environment fallback.
+// normalizeCachedBucket clamps one cached bucket; a missing key keeps the raw
+// environment fallback.
 func normalizeCachedBucket(bucket *rateLimitBucketConfig, fallback rateLimitBucketConfig) rateLimitBucketConfig {
 	if bucket == nil {
 		return fallback
 	}
-	return normalizeBucketObject(*bucket, fallback)
-}
-
-// normalizeBucketObject normalizes an already-decoded bucket (the cache-hit and
-// write paths) by re-encoding it as JSON. It is the counterpart of
-// normalizeBucket for typed input.
-func normalizeBucketObject(bucket rateLimitBucketConfig, fallback rateLimitBucketConfig) rateLimitBucketConfig {
-	encoded, err := json.Marshal(bucket)
-	if err != nil {
-		return fallback
+	return rateLimitBucketConfig{
+		Limit:         jsClamp(float64(bucket.Limit), rateLimitMinLimit, rateLimitMaxLimit),
+		WindowSeconds: jsClamp(float64(bucket.WindowSeconds), rateLimitMinWindowSeconds, rateLimitMaxWindowSeconds),
 	}
-	return normalizeBucket(encoded, fallback)
 }
 
 // parseUpdateRateLimitSettings validates the PUT body.
@@ -202,17 +204,6 @@ func validateRateLimitBucket(problems *validationErrors, bucket *rateLimitBucket
 	}
 	numberField(problems, bucket.Limit, "limit", true, rateLimitMinLimit, rateLimitMaxLimit)
 	numberField(problems, bucket.WindowSeconds, "windowSeconds", true, rateLimitMinWindowSeconds, rateLimitMaxWindowSeconds)
-}
-
-// bucketToRequestValue converts a validated request bucket into the typed
-// config used by normalizeRequestBucket.
-func bucketToRequestValue(bucket *rateLimitBucketRequest) (rateLimitBucketConfig, bool) {
-	if bucket == nil {
-		return rateLimitBucketConfig{}, false
-	}
-	limit, _ := numberField(&validationErrors{}, bucket.Limit, "limit", true, rateLimitMinLimit, rateLimitMaxLimit)
-	window, _ := numberField(&validationErrors{}, bucket.WindowSeconds, "windowSeconds", true, rateLimitMinWindowSeconds, rateLimitMaxWindowSeconds)
-	return rateLimitBucketConfig{Limit: limit, WindowSeconds: window}, true
 }
 
 // loadRateLimitSettings mirrors loadSettings: read the three rows in one query
