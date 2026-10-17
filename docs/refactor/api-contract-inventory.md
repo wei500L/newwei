@@ -365,5 +365,5 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 - 开关：`API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE`（`legacy`|`go`，默认 `legacy`）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `=go` 时，六个 root 才登记进 Go 执行器。
 - 迁入 root：`getKnowledgeGraphSubgraph`、`articleEntityLinks`、`knowledgeGraphEdgeEvidence`、`entityIntelligenceCard`、`entityIntelligenceEvidence`、`knowledgeEntityByName`。orgId 与权限仍是服务端 membership 重推导；`entityIntelligenceEvidence` 顶层 `dashboards.read`，无 `items.read` 时返回 `restricted: true` 空列表。
 - 未迁：`knowledgeGraphEvidenceReviewQueue`、`reviewKnowledgeGraphEvidence`、`getExecutiveChangeImpact`、`getCommodityMoveImpact`、`getPolicyEventImpact`、`getEntityImpactGraph`、`knowledgeGraphSettings` / `updateKnowledgeGraphSettings`。选中任一未迁 root 时整文档回落 NestJS。
-- 缺陷：`getSubgraph` 邻居实体查询两侧同补 `orgId`（`apps/api/src/modules/knowledge-graph/knowledge-graph.service.ts:500`、`apps/api-go/internal/graphqlread/knowledgegraph/subgraph.go`），防止脏边跨租户带出实体。
+- 缺陷：`getSubgraph` 邻居实体查询两侧同补 `orgId`（`apps/api/src/modules/knowledge-graph/knowledge-graph.service.ts:499-501`、`apps/api-go/internal/graphqlread/knowledgegraph/subgraph.go`），防止脏边跨租户带出实体。
 - 说明见 `docs/refactor/go-knowledge-graph-read.md`。

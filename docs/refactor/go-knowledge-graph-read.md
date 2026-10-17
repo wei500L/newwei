@@ -30,7 +30,7 @@ orgId 和权限都来自服务端 membership 重推导，不读 JWT 的 orgId �
 
 `KnowledgeGraphService.getSubgraph` 加载邻居实体时漏了 `orgId`，历史脏边可能把其他组织的 `KnowledgeEntity` 拉进子图并写进 Redis 缓存。Nest 与 Go 两侧同修，`where` 同时包含 `orgId: input.orgId` 与 `id: { in: missing }`：
 
-- Nest：`apps/api/src/modules/knowledge-graph/knowledge-graph.service.ts:500`
+- Nest：`apps/api/src/modules/knowledge-graph/knowledge-graph.service.ts:499-501`（`where` 在第 500 行）
 - Go：`apps/api-go/internal/graphqlread/knowledgegraph/subgraph.go`（`loadSubgraph` 的 `missing` 邻居查询）
 
 第 510~515 行与第 523~525 行原本就会剔除不在 `nodesById` 内的边端点，因此跨组织脏端点被安全剔除。
