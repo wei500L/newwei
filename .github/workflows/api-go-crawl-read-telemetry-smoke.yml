@@ -123,7 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - << 'PY'
-          import hashlib, json, os, re, signal, subprocess, time, urllib.error, urllib.request
+          import base64, hashlib, hmac, json, os, re, signal, subprocess, time, urllib.error, urllib.request
 
           nest = "http://127.0.0.1:4000"
           go = "http://127.0.0.1:4020"
@@ -313,11 +313,13 @@ jobs:
                   fail(f"login {email} {status} {raw[:400]!r}")
               return doc["accessToken"]
 
-          # normalize_exp rewrites the dynamic exp query parameter of every
-          # signed media URL so Nest and Go payloads can be compared.
+          # normalize_exp rewrites the dynamic exp query parameter and the HMAC
+          # signature (which is derived from exp) of every signed media URL so
+          # Nest and Go payloads can be compared.
           def normalize_exp(value):
               text = json.dumps(value, ensure_ascii=False, sort_keys=True)
               text = re.sub(r"exp=\d+", "exp=0", text)
+              text = re.sub(r"sig=[A-Za-z0-9_-]+", "sig=0", text)
               return text
 
           # normalize_snapshot_window drops the millisecond-level from/to of the
@@ -407,7 +409,7 @@ jobs:
             ('{blob_b}', '{org_b}', REPEAT('c', 64), 67, 'image/png', UNHEX('{png_hex}'), 1, NOW(3), NOW(3));
           INSERT INTO CrawlMediaAsset (id, resultId, orgId, taskId, blobId, provider, kind, sourceUrl, bytes, contentType, blobData, width, height, alt, title, format, metadata, createdAt, updatedAt) VALUES
             ('{asset_png}', '{result_a1}', '{org_a}', '{task_a}', '{blob_png}', 'mysql', 'image', 'https://alpha.example.com/p.png', 67, 'image/png', NULL, 1, 1, 'alpha png', 'alpha png title', 'png', '{{"smoke":true}}', NOW(3), NOW(3)),
-            ('{asset_svg}', '{result_a1}', '{org_a}', '{task_a}', '{blob_svg}', 'mysql', 'image', 'https://alpha.example.com/p.svg', {len(svg_body)}, 'image/svg+xml', NULL, NULL, NULL, NULL, NULL, 'svg', NULL, NOW(3), NOW(3)),
+            ('{asset_svg}', '{result_a1}', '{org_a}', '{task_a}', '{blob_svg}', 'mysql', 'image', 'https://alpha.example.com/p.svg', {len(svg_body)}, 'image/svg+xml', NULL, NULL, NULL, NULL, NULL, 'svg', NULL, DATE_ADD(NOW(3), INTERVAL 1 SECOND), DATE_ADD(NOW(3), INTERVAL 1 SECOND)),
             ('{asset_b}', '{result_b1}', '{org_b}', '{task_b}', '{blob_b}', 'mysql', 'image', 'https://beta.example.com/p.png', 67, 'image/png', NULL, NULL, NULL, NULL, NULL, 'png', NULL, NOW(3), NOW(3)),
             ('{asset_stale}', '{result_a1}', '{org_b}', '{task_b}', NULL, 'mysql', 'image', 'https://stale.example.com/p.png', 67, 'image/png', UNHEX('{png_hex}'), NULL, NULL, NULL, NULL, 'png', NULL, NOW(3), NOW(3));
           INSERT INTO ItemMeta (id, orgId, externalId, name, status, mongoRef, version, sortAt, createdAt, updatedAt) VALUES
@@ -579,8 +581,13 @@ jobs:
           status, _, raw = call(go, f"/api/crawl-media-assets/{asset_png}/unknown?exp=1&org={org_a}&user=x&sig=y", "GET", None)
           if status != 404 or message(raw) != "Unsupported crawl media access mode":
               fail(f"unsupported mode {status} {raw[:200]!r}")
-          # SVG 只拿 downloadUrl，preview 模式同样必须是 attachment。
-          svg_preview = svg["downloadUrl"].replace("/download?", "/preview?")
+          # SVG preview mode has no generated previewUrl (SVG is never inline),
+          # so the URL is signed independently to exercise the HMAC contract.
+          svg_exp = int(time.time() * 1000) + 300000
+          svg_payload = f"{asset_svg}:preview:{svg_exp}:{org_a}:{user_a}".encode()
+          svg_sig = base64.urlsafe_b64encode(hmac.new(os.environ["JWT_SECRET"].encode(), svg_payload, hashlib.sha256).digest()).decode().rstrip("=")
+          svg_preview = (f"/api/crawl-media-assets/{asset_svg}/preview?exp={svg_exp}"
+                         f"&org={org_a}&user={user_a}&sig={svg_sig}")
           status, headers, _ = call(go, svg_preview, "GET", None)
           if status != 200 or not str(headers.get("Content-Disposition", "")).startswith("attachment;"):
               fail(f"svg preview mode {status} {headers.get('Content-Disposition')!r}")
@@ -591,7 +598,7 @@ jobs:
           source_quality = compare_fresh(quality_source, token_a)
           if source_quality.get("sourceId") != source_a:
               fail(f"quality source payload: {source_quality!r}")
-          if go_quality.get("taskCount") != 1:
+          if go_quality.get("taskCount") != 2:
               fail(f"quality aggregate: {go_quality!r}")
           thresholds = go_quality.get("alertThresholds") or {}
           if thresholds.get("preflightFailureRateHigh") != 0.25 or thresholds.get("http304HitRateLow") != 0.05:
