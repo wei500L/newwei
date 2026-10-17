@@ -1,7 +1,10 @@
 package itemsreading
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -130,6 +133,35 @@ func FormatISOTime(value time.Time) string {
 // MarshalJSON implements json.Marshaler.
 func (t ISOTime) MarshalJSON() ([]byte, error) {
 	return json.Marshal(FormatISOTime(t.Time))
+}
+
+// UnmarshalBSONValue implements bson.ValueUnmarshaler so a stored BSON date
+// decodes into the wrapper (a plain struct target cannot receive a date value).
+func (t *ISOTime) UnmarshalBSONValue(typ byte, data []byte) error {
+	if typ == 0x0A || len(data) == 0 {
+		*t = ISOTime{}
+		return nil
+	}
+	if typ != 0x09 {
+		return fmt.Errorf("itemsreading: cannot decode BSON type %d into ISOTime", typ)
+	}
+	if len(data) < 8 {
+		return errors.New("itemsreading: truncated BSON datetime")
+	}
+	millis := int64(binary.LittleEndian.Uint64(data[:8]))
+	*t = NewISOTime(time.UnixMilli(millis).UTC())
+	return nil
+}
+
+// MarshalBSONValue implements bson.ValueMarshaler so a read-model upsert writes
+// a real BSON date instead of an empty document.
+func (t ISOTime) MarshalBSONValue() (byte, []byte, error) {
+	if t.Time.IsZero() {
+		return 0x0A, nil, nil
+	}
+	buffer := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buffer, uint64(t.Time.UTC().UnixMilli()))
+	return 0x09, buffer, nil
 }
 
 // IsZero reports whether the timestamp is the zero value.
