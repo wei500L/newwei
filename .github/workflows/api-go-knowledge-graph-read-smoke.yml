@@ -428,6 +428,8 @@ jobs:
               gs, gd = gql(go, token, query, variables)
               if ns != gs or not same(scrub(nd), scrub(gd)):
                   fail(f"legacy {name} nest/gateway {ns}/{gs}\nNEST {json.dumps(scrub(nd), ensure_ascii=False)[:1600]}\nGATEWAY {json.dumps(scrub(gd), ensure_ascii=False)[:1600]}")
+              if isinstance(gd, dict) and gd.get("errors"):
+                  print("NOTE legacy", name, "errors", json.dumps(gd["errors"], ensure_ascii=False)[:600])
               print("OK legacy", name)
               return scrub(gd)
 
@@ -435,20 +437,29 @@ jobs:
               match(name)
 
           ticker = match("name_ticker")
-          if (ticker["data"]["knowledgeEntityByName"] or {}).get("id") != "kgenta000000000000000002":
+          ticker_entity = ((ticker or {}).get("data") or {}).get("knowledgeEntityByName")
+          if ticker_entity is None or ticker_entity.get("id") != "kgenta000000000000000002":
               fail(f"600519 did not resolve to the instrument {ticker}")
-          if (ticker["data"]["knowledgeEntityByName"] or {}).get("type") != "instrument":
+          if ticker_entity.get("type") != "instrument":
               fail(f"600519 type {ticker}")
           company = match("name_company")
-          if (company["data"]["knowledgeEntityByName"] or {}).get("id") != "kgenta000000000000000001":
+          company_entity = ((company or {}).get("data") or {}).get("knowledgeEntityByName")
+          if company_entity is None or company_entity.get("id") != "kgenta000000000000000001":
               fail(f"贵州茅台酒 did not resolve to the company via suffix stripping {company}")
           print("OK suffix stripping and ticker expansion")
 
+          for label, base in (("nest", nest), ("go", go)):
+              hs, hraw, _ = call(base, "/graphql", "POST", token_a, {"query": queries["card_homonym"][0], "variables": queries["card_homonym"][1]})
+              print("DEBUG homonym", label, hs, hraw[:1200])
           homonym = match("card_homonym")
-          if homonym["data"]["entityIntelligenceCard"]["sentimentSeries"] != []:
+          homonym_card = ((homonym or {}).get("data") or {}).get("entityIntelligenceCard")
+          if homonym_card is None:
+              fail(f"homonym card is null {json.dumps(homonym, ensure_ascii=False)[:1600]}")
+          if homonym_card.get("sentimentSeries") != []:
               fail(f"homonym sentiment leaked {homonym}")
           company_card = match("card_company")
-          if len(company_card["data"]["entityIntelligenceCard"]["sentimentSeries"]) != 1:
+          company_card_doc = ((company_card or {}).get("data") or {}).get("entityIntelligenceCard")
+          if company_card_doc is None or len(company_card_doc.get("sentimentSeries") or []) != 1:
               fail(f"company sentiment series {company_card}")
           print("OK homonym sentiment snapshots do not leak")
 
@@ -466,16 +477,16 @@ jobs:
               return status, doc
 
           status, cross = hidden("card_company", variables={"input": {"entityId": "kgentb000000000000000001"}})
-          if status != 200 or (cross["data"].get("entityIntelligenceCard") is not None):
+          if status != 200 or (((cross or {}).get("data") or {}).get("entityIntelligenceCard") is not None):
               fail(f"cross-org entity card {status} {cross}")
           status, cross = gql(go, token_a, links_query, {"articleId": "kgartb000000000000000001"})
-          if status != 200 or cross["data"]["articleEntityLinks"] != []:
+          if status != 200 or (((cross or {}).get("data") or {}).get("articleEntityLinks") != []):
               fail(f"cross-org article links {status} {cross}")
           status, cross = gql(go, token_a, evidence_query, {"edgeId": "kgedgeb00000000000000001"})
-          if status != 200 or cross["data"]["knowledgeGraphEdgeEvidence"] != []:
+          if status != 200 or (((cross or {}).get("data") or {}).get("knowledgeGraphEdgeEvidence") != []):
               fail(f"cross-org edge evidence {status} {cross}")
           status, cross = gql(go, token_a, name_query, {"name": "其它组织公司"})
-          if status != 200 or cross["data"].get("knowledgeEntityByName") is not None:
+          if status != 200 or (((cross or {}).get("data") or {}).get("knowledgeEntityByName") is not None):
               fail(f"cross-org entity name {status} {cross}")
           print("OK other-org ids return no data")
           PY
@@ -560,6 +571,8 @@ jobs:
               gs, gd = gql(go, token, query, variables)
               if ns != gs or not same(scrub(nd), scrub(gd)):
                   fail(f"go {name} nest/go {ns}/{gs}\nNEST {json.dumps(scrub(nd), ensure_ascii=False)[:1600]}\nGO {json.dumps(scrub(gd), ensure_ascii=False)[:1600]}")
+              if isinstance(gd, dict) and gd.get("errors"):
+                  print("NOTE go", name, "errors", json.dumps(gd["errors"], ensure_ascii=False)[:600])
               print("OK go", name)
               return scrub(gd)
 
@@ -589,7 +602,7 @@ jobs:
           print("OK restricted double-permission behavior")
 
           status, cross = gql(go, token_a, queries["card_company"][0], {"input": {"entityId": "kgentb000000000000000001"}})
-          if status != 200 or cross["data"].get("entityIntelligenceCard") is not None:
+          if status != 200 or (((cross or {}).get("data") or {}).get("entityIntelligenceCard") is not None):
               fail(f"cross-org entity card {status} {cross}")
           print("OK other-org entity card is null")
           PY
