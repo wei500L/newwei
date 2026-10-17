@@ -57,6 +57,9 @@
 | FE-RT-01 | P1 | realtime-signals 初始 GET 失败后以 EMPTY_SETTINGS 填充表单并允许保存——默认值可覆盖未知持久化配置 | ✅ | FE-批6A（见 §3） |
 | FE-RT-02 | P2 | realtime-signals Save/Reset 无 handler 层互斥：表单 submit 路径可重复 PUT，PUT 与 DELETE 可并发 | ✅ | FE-批6A（见 §3） |
 | FE-RT-03 | P2 | realtime-signals diagnostics 加载失败污染 settings 域：错误横幅挂在整个页面，与设置加载失败无法区分 | ✅ | FE-批6A（见 §3） |
+| SEC-05 | **P0** | 4 组全局治理设置写接口只要求 `settings.manage`：任一租户管理员可改全平台 MFA 策略/助手配额/内容审核护栏/LLM 日志保留期 | 🔧 待远端验证（本轮，见 §7） |
+| TTL-01 | P1 | `tasklogs` 集合不存在时 PUT/DELETE `/task-logs` 返回 500（NamespaceNotFound 26 未按空索引列表处理） | 🔧 待远端验证（本轮，见 §7） |
+| CONC-01 | P1 | `llm-request-logs` 部分 PUT 以进程内 30 秒旧缓存为合并基准且无互斥，会悄悄回滚他人写入 | 🔧 待远端验证（本轮，见 §7） |
 
 ## 3. 已修复条目（详细）
 
@@ -715,6 +718,136 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
    （`machine-token.service.ts:16-18`），因此「持有 settings.manage 的机器令牌」
    只能由 seed/SQL 直接写入 `MachineAccessToken.permissions` 构造——smoke 按此
    准备数据，不通过 API 创建。
+
+## 9. Go-批10（平台治理设置 16 条迁移）同批缺陷
+
+本节记录随「平台治理设置 16 条迁入 Go」同批修复的三个缺陷。三处都在 NestJS 与 Go
+两侧同修；证据行号以 `origin/main@0dbfc0d0` 为准，开工时已逐条复核。
+
+### SEC-05（P0）：全局治理设置写接口只要求组织级权限 — 🔧 待远端验证
+
+- **现象**：持有 `settings.manage` 的任意组织管理员（无 `GlobalRoleAssignment`
+  的 `platform_admin`）即可改写全平台共享的治理设置。
+- **根因证据**（`0dbfc0d0`）：
+  - `apps/api/src/modules/system-settings/system-security-settings.controller.ts:23-30`
+    —— PUT 只有 `@Permissions("settings.manage")`；service
+    `system-security-settings.service.ts:36` 的存储键 `system_security` 无 org 维度，
+    `:88-103` 直接 upsert 该全局行，其中 `mfaPolicy` 是全平台 MFA 策略。
+  - `apps/api/src/modules/system-settings/assistant-quota-settings.controller.ts:23-36`
+    —— PUT/DELETE 同样只有 `settings.manage`；service
+    `assistant-quota-settings.service.ts:48`（键 `assistant_quota`）、`:148-163`
+    （全局 upsert）、`:188`（全局 deleteMany）。
+  - `apps/api/src/modules/system-settings/assistant-safety-settings.controller.ts:29-33,52-56`
+    —— 可关闭全平台内容审核护栏；service
+    `assistant-safety-settings.service.ts:35`（键 `assistant_safety`）、`:81-96`
+    （全局 upsert）、`:120-121`（全局 deleteMany）。
+  - `apps/api/src/modules/system-settings/llm-request-log-settings.controller.ts:23-42`
+    —— 可把全平台 LLM 日志保留期改成 1 天；service
+    `llm-request-log-settings.service.ts:291-295` 随即对 Mongo TTL 索引对账，
+    所有租户的 `llmrequestlogs` 都会被删除。
+  - 对照组（同目录已用平台门禁）：`task-log-settings.controller.ts:33-34,41`、
+    `vector-service-settings.controller.ts:47,56`。
+- **修法**：
+  - Nest：4 个控制器构造函数注入 `PlatformAccessService`，在 PUT/DELETE/POST 共
+    8 个 handler 首行加 `await this.platformAccess.assertPlatformAdmin(user.id);`
+    （与 task-log/vector 完全同构，不另造第二套判断）。GET 不加。
+  - Nest：4 个 service 写 `updatedById` 与 `AuditLog.actorId` 处统一改用
+    `normalizeAuditActorId(actorId)`（纵深防御，与 PR #47 一致）。
+  - Go：新增的 `internal/platformgovernance` 对表中 9 条标「是」的路由执行平台门禁；
+    机器身份直接 403（与 Nest 查不到行的结果一致）。
+  - 新增 4 个控制器 vitest（`system-security-` / `assistant-quota-` /
+    `assistant-safety-` / `llm-request-log-settings.controller.test.ts`），
+    只做行为断言：非平台管理员写 403 且 service 未被调用、平台管理员通过、
+    GET 不调用 `assertPlatformAdmin`。
+- **不在本批范围**：rate-limits、auth-cache、multi-tenant-schedulers、
+  news-source-scheduler、newsnow-personalization、email、archive-preparation、
+  realtime-signals 的同类全局写接口。原因：避免扩大范围、避免改动 PR #47
+  已上线的鉴权契约；登记为后续跟进项（见 §4 同类条目）。
+- **回归方式**：远端 `CI`（4 个新 vitest + auth-matrix 漂移门禁）与
+  `api-go-platform-governance-settings-smoke` 阶段 2 `platform gate` 断言：
+  普通组织管理员 A 对 10 条写路由（8 条新增 + task-logs 2 条）在 Nest 与 Go
+  两侧都返回 403 `Platform admin access required`；A 的 GET 返回 200；机器令牌
+  GET 返回 200、写返回 403；临时授予 `platform_admin` 后写成功，随后撤销。
+- **状态**：待远端验证。
+
+### TTL-01（P1）：`tasklogs` 集合不存在时 PUT/DELETE `/task-logs` 返回 500 — 🔧 待远端验证
+
+- **现象**：全新部署或集合被清空后，平台管理员更新/重置任务日志保留期会 500，
+  设置写不进去。
+- **根因证据**（`0dbfc0d0`）：`apps/api/src/modules/system-settings/task-log-settings.service.ts:413-415`
+  的 `loadIndexesSafe` 直接调用 `TaskLogModel.collection.indexes()`；集合不存在时
+  MongoDB 返回 `NamespaceNotFound`(26)。`:498-515` 的 `isRetryableIndexError`
+  可重试列表（85/86/91/112/12586）不含 26，于是 `:307-321` 走「不可重试」分支
+  抛出原始错误，最终 500。对照组：
+  `llm-request-log-settings.service.ts:937-948` 已经把 26 视为空列表。
+- **修法**：
+  - Nest：`task-log-settings.service.ts` 增加 `isNamespaceNotFound`（code 26 或
+    codeName `NamespaceNotFound`），`loadIndexesSafe` 遇此返回 `[]`，写法与
+    llm 版逐行一致。之后 `createIndex` 会自动建出集合。
+  - Go：`internal/platformgovernance/ttlindex.go` 的 listIndexes 步骤对两套对账
+    统一按「26/codeName NamespaceNotFound → 空列表」处理。
+- **回归方式**：smoke 阶段 2 `namespace not found` 断言：`mongosh` 执行
+  `db.tasklogs.drop()` 后，平台管理员对 Nest 直连 PUT `/task-logs`（值与当前不同）
+  返回 200，且 `tasklogs` 上存在 `task_log_created_at_ttl` 且 `expireAfterSeconds`
+  等于 `N·86400`；再 drop 一次对 Go 做同样断言。
+- **状态**：待远端验证。
+
+### CONC-01（P1）：`llm-request-logs` 部分 PUT 以过期缓存为基准且无互斥 — 🔧 待远端验证
+
+- **现象**：实例 A 刚把 `retentionDays` 改成 45，30 秒内实例 B 收到只改 keys 的
+  部分 PUT，会把旧的 `retentionDays` 写回 DB，但 Mongo TTL 索引仍是 45 天——
+  DB 与索引不一致；两条部分 PUT 并发也会互相覆盖。
+- **根因证据**（`0dbfc0d0`）：
+  `llm-request-log-settings.service.ts:223` 的 `const current = await this.getSettings();`
+  读的是进程内缓存，`:113` 的 `SETTINGS_CACHE_TTL_MS = 30_000`、`:169-175` 的
+  `getSettings` 命中缓存即返回；`:225-289` 未提交字段沿用 `current`；
+  `:291-295` 只有 `input.retentionDays` 有值时才做 TTL 对账。Go 接管写入后
+  Nest 侧必然出现这个问题。
+- **修法**：
+  - 锁名固定为 `sys:llm_request_log_settings`，MySQL `GET_LOCK` 等待 10 秒。
+  - Nest：把 `updateSettings` 主体抽成 `private async updateSettingsUnlocked(...)`，
+    其中 `current` 改为 `await this.loadSettingsFromDb()`；
+    `updateSettings` / `resetMetadataPolicy` / `resetToDefault` 各自只获取一次锁
+    （`withMysqlSessionLock(process.env.DATABASE_URL ?? "", "sys:llm_request_log_settings", fn)`）。
+    禁止嵌套获取锁（每次调用新开连接，嵌套等于自己等自己直到超时），所以
+    `resetMetadataPolicy` 调用 `unlocked` 版本。捕获 `SituationMonitorLockError`
+    转 `ConflictException("LLM request log settings are being updated by another request; retry later")`
+    返回 409；其他错误原样抛出。写入成功后照旧 `setCachedSettings`。
+  - Go：`db.Conn` 上 `SELECT GET_LOCK('sys:llm_request_log_settings', 10)`，结果不是
+    1 时返回 409 同文案；锁内依次读 DB、合并、对账 TTL、upsert、写审计，
+    `defer RELEASE_LOCK` 用独立的 2 秒 context（写法同 contentsubscriptions）。
+  - task-logs、quota、safety、security 都是整体替换写，不加锁；不扩大加锁范围。
+- **回归方式**：smoke 阶段 2 `stale cache rollback` 与 `concurrent partial update`
+  断言：先用 Nest GET 预热其 30 秒缓存，再对 Go PUT `{"retentionDays":45}`，
+  10 秒内对 Nest 直连 PUT `{"metadataAllowedTopLevelPrefixes":["x_"]}`，断言 DB 中
+  `retentionDays` 仍为 45、prefixes 为 `["x_"]`；随后同时向 Go 与 Nest 各发一条
+  只改不同字段的 PUT，重复 5 轮，断言最终 DB 同时包含两边修改、无 500、审计条数正确。
+- **状态**：待远端验证。
+
+### 观察（非本批缺陷）：class-validator 同一属性的消息顺序是「装饰器逆序」
+
+本批 smoke 阶段 1 的 400 对照在真实 NestJS 上量到：对
+
+```ts
+@IsInt()
+@Min(1)
+@Max(3650)
+retentionDays!: number;
+```
+
+传字符串 `"30"` 时，ValidationPipe 的 message 是
+
+```
+retentionDays must not be greater than 3650; retentionDays must not be less than 1; retentionDays must be an integer number
+```
+
+即**同一属性内按装饰器自下而上**（Max、Min、IsInt）报告，属性之间仍是声明顺序。
+`internal/platformgovernance/dto.go` 按此顺序实现，并由 smoke 逐字节比对。
+
+已合入的 `internal/runtimesettings/dto.go` 的 `integerConstraint` / `floatField` 按
+自上而下（IsInt、Min、Max）拼消息。两者的差异只在**同一属性有多条约束同时失败**时
+可见（例如把整数字段传成字符串）；单条约束失败时顺序无区别。本批不修改该已合入包，
+登记为观察项，供后续统一核对。
 ### IR1：Mongo 关联读取与回填没有完整绑定租户 — ✅ 本批同修（Nest + Go）
 
 - **现象**：App 侧按 `itemMetaId` 读取 Mongo（read model / processed / raw）时缺少组织维度，raw 也没有

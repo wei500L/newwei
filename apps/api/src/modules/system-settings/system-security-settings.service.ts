@@ -2,6 +2,7 @@ import { createLogger } from "@modular/utils";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 
+import { normalizeAuditActorId } from "../audit/audit-actor";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { AuthSecurityService } from "../auth/auth-security.service";
 import { CacheService } from "../cache/cache.service";
@@ -85,18 +86,22 @@ export class SystemSecuritySettingsService {
       mfaPolicy: input.mfaPolicy,
     };
 
+    // Defence in depth (PR #47): updatedById is a nullable FK into User(id), so
+    // a machine actor id must be written as NULL instead of "machine:<id>".
+    const actorUserId = normalizeAuditActorId(actorId);
+
     await this.prisma.systemSetting.upsert({
       where: { key: SETTINGS_KEY },
       update: {
         value: this.toPrismaJson(nextStored),
-        updatedById: actorId,
+        updatedById: actorUserId,
         description: SETTINGS_DESCRIPTION,
         isPublic: false
       },
       create: {
         key: SETTINGS_KEY,
         value: this.toPrismaJson(nextStored),
-        updatedById: actorId,
+        updatedById: actorUserId,
         description: SETTINGS_DESCRIPTION,
         isPublic: false
       }
@@ -107,7 +112,7 @@ export class SystemSecuritySettingsService {
       {
         data: {
           orgId,
-          actorId,
+          actorId: actorUserId,
           resource: "system_settings",
           action: "system_security_update",
           metadata: this.toPrismaJson({

@@ -9,7 +9,7 @@
 **handler 平台校验是启发式**（platformCheckSource=handler-text-scan）：提示运行时行为，
 不是静态保障——运行时强制力由 handler 内 assertPlatformAdmin 提供并以控制器单测锚定。
 
-总计：71 controller / 370 endpoint · 公开 30 · 仅认证 19 · 权限门控 321（无权限必 403：321）· handler 平台校验（启发式）8 · wrongOrg 需运行时验证 340
+总计：71 controller / 370 endpoint · 公开 30 · 仅认证 19 · 权限门控 321（无权限必 403：321）· handler 平台校验（启发式）16 · wrongOrg 需运行时验证 340
 
 | Method | Route | Handler | Anon | No-perm JWT | With-perm JWT | Wrong-org | Permission | Platform-only | OrgAdmin | PlatformAdmin | CheckSrc | Runtime-needed | Conf | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -53,12 +53,12 @@
 | DELETE | `/api/system-settings/archive-preparation` | resetSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 | GET | `/api/system-settings/archive-preparation` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 | PUT | `/api/system-settings/archive-preparation` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
-| DELETE | `/api/system-settings/assistant-quota` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/assistant-quota` | reset | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
 | GET | `/api/system-settings/assistant-quota` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
-| PUT | `/api/system-settings/assistant-quota` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
-| DELETE | `/api/system-settings/assistant-safety` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/assistant-quota` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
+| DELETE | `/api/system-settings/assistant-safety` | reset | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
 | GET | `/api/system-settings/assistant-safety` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
-| PUT | `/api/system-settings/assistant-safety` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/assistant-safety` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
 | GET | `/api/system-settings/assistant-safety/diagnostics` | runDiagnostics | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 | GET | `/api/system-settings/assistant-safety/metrics` | getMetrics | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 | GET | `/api/system-settings/audit-log` | getRetention | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
@@ -223,10 +223,10 @@
 | GET | `/api/llm-logs` | list | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 | GET | `/api/llm-logs/export` | export | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 | GET | `/api/llm-logs/summary` | summary | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
-| DELETE | `/api/system-settings/llm-request-logs` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| DELETE | `/api/system-settings/llm-request-logs` | reset | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
 | GET | `/api/system-settings/llm-request-logs` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
-| PUT | `/api/system-settings/llm-request-logs` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
-| POST | `/api/system-settings/llm-request-logs/metadata-policy/reset` | resetMetadataPolicy | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/llm-request-logs` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
+| POST | `/api/system-settings/llm-request-logs/metadata-policy/reset` | resetMetadataPolicy | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
 | GET | `/api/metrics` | scrape | denied | denied | allowed | runtime-required | metrics.read | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
 | DELETE | `/api/system-settings/model-service` | reset | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 | GET | `/api/system-settings/model-service` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
@@ -346,7 +346,7 @@
 | PATCH | `/api/admin/settings/storage` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 | POST | `/api/admin/settings/storage/test` | testConnection | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 | GET | `/api/system-settings/security` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
-| PUT | `/api/system-settings/security` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
+| PUT | `/api/system-settings/security` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
 | DELETE | `/api/system-settings/task-logs` | reset | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
 | GET | `/api/system-settings/task-logs` | getSettings | denied | denied | allowed | runtime-required | settings.manage | — | runtime-required | runtime-required | — | wrong-org-membership | static | — |
 | PUT | `/api/system-settings/task-logs` | updateSettings | denied | denied | allowed | runtime-required | settings.manage | yes | denied | allowed | handler-text-scan | wrong-org-membership,platform-admin-gate | static+heuristic | platform-admin check in handler body (heuristic) |
