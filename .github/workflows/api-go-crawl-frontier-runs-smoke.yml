@@ -653,8 +653,8 @@ jobs:
                   for slot in ("a", "b"):
                       run_id = f"frrunlock{suffix}{round_index}{slot}0000000001"
                       sql(f"""
-                      INSERT INTO CrawlFrontierRun (id, orgId, executionMode, status, maxDepth, maxPages, createdById, createdAt, updatedAt)
-                      VALUES ('{run_id}', '{org}', 'layered', 'queued', 3, 60, '{admin}', NOW(3), NOW(3));
+                      INSERT INTO CrawlFrontierRun (id, orgId, seedUrl, executionMode, status, maxDepth, maxPages, createdById, createdAt, updatedAt)
+                      VALUES ('{run_id}', '{org}', 'https://frrun.example.com/lock/{round_index}/{slot}', 'layered', 'queued', 3, 60, '{admin}', NOW(3), NOW(3));
                       """)
               ok(f"stage 2 seed complete ({side})")
 
