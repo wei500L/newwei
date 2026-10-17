@@ -378,9 +378,13 @@ jobs:
                   "MODEL_SERVICE_ENABLED=false",
                   "VECTOR_SERVICE_ENABLED=false",
                   "SCHEDULE_ENABLED=false",
-                  f"MODEL_SERVICE_TIMEOUT_MS=15000",
-                  f"MODEL_SERVICE_MAX_RETRIES=2",
+                  "MODEL_SERVICE_TIMEOUT_MS=15000",
+                  "MODEL_SERVICE_MAX_RETRIES=2",
                   f"LITELLM_CONFIG_INTERNAL_TOKEN={internal_token}",
+                  # 与 Nest 进程同一把加密 key、同一 NODE_ENV：否则 Go 写明文、
+                  # Nest 写密文，两侧互相读不到（这正是本批要验证的互通点）。
+                  f"SYSTEM_SETTINGS_ENCRYPTION_KEY={os.environ['SYSTEM_SETTINGS_ENCRYPTION_KEY']}",
+                  "NODE_ENV=production",
                   f"JWT_SECRET={os.environ['JWT_SECRET']}",
                   f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
                   f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
@@ -389,8 +393,16 @@ jobs:
                   "CANARY_PERCENT=0",
                   f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
               ]
-              if extra_env:
-                  env.extend(extra_env)
+              # extra_env 覆盖同名基线条目（docker -e 的重复键语义依赖实现，
+              # 这里显式按 key 覆盖，保证阶段 3 的 NODE_ENV/key 组合确定）。
+              merged = {}
+              order = []
+              for item in env + list(extra_env or []):
+                  name = item.split("=", 1)[0]
+                  if name not in merged:
+                      order.append(name)
+                  merged[name] = item
+              env = [merged[name] for name in order]
               cmd = ["docker", "run", "-d", "--name", name,
                      "--add-host=host.docker.internal:host-gateway",
                      "--health-interval", "3s", "--health-timeout", "3s", "--health-retries", "5", "--health-start-period", "2s",
