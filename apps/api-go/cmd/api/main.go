@@ -533,6 +533,10 @@ func run() error {
 	if cfg.CrawlProfilesMode == config.CrawlProfilesModeGo {
 		crawlProfilesMode = string(legacyproxy.ModeGo)
 	}
+	crawlFrontierRunsMode := ""
+	if cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo {
+		crawlFrontierRunsMode = string(legacyproxy.ModeGo)
+	}
 	rbacMode := ""
 	if cfg.RbacMode == config.RbacModeGo {
 		rbacMode = string(legacyproxy.ModeGo)
@@ -596,6 +600,7 @@ func run() error {
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
+	rules = legacyproxy.WithCrawlFrontierRuns(rules, crawlFrontierRunsMode)
 	rules = legacyproxy.WithRbac(rules, rbacMode)
 	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
 	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
@@ -653,6 +658,7 @@ func run() error {
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
 				cfg.CrawlProfilesMode == config.CrawlProfilesModeGo ||
+				cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo ||
 				cfg.RbacMode == config.RbacModeGo ||
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
@@ -713,6 +719,7 @@ func run() error {
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
 	crawlProfilesGo := cfg.CrawlProfilesMode == config.CrawlProfilesModeGo
+	crawlFrontierRunsGo := cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo
 	rbacGo := cfg.RbacMode == config.RbacModeGo
 	crawlTemplatesGo := cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo
 	llmLogsGo := cfg.LlmLogsMode == config.LlmLogsModeGo
@@ -723,7 +730,7 @@ func run() error {
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || crawlReadTelemetryGo || classificationRssOpsGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || crawlReadTelemetryGo || classificationRssOpsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1034,6 +1041,9 @@ func run() error {
 		return err
 	}
 	if err := wireCrawlProfiles(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := wireCrawlFrontierRuns(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 	if err := wireRbac(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
