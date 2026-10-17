@@ -578,6 +578,10 @@ func run() error {
 	if cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo {
 		runtimeSettingsMode = string(legacyproxy.ModeGo)
 	}
+	modelAccessSettingsMode := ""
+	if cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo {
+		modelAccessSettingsMode = string(legacyproxy.ModeGo)
+	}
 	infrastructureSettingsMode := ""
 	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
 		infrastructureSettingsMode = string(legacyproxy.ModeGo)
@@ -619,6 +623,7 @@ func run() error {
 	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
 	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
 	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
+	rules = legacyproxy.WithModelAccessSettings(rules, modelAccessSettingsMode)
 	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
 	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
@@ -676,6 +681,7 @@ func run() error {
 				cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo ||
 				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
+				cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo ||
 				cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo ||
 				cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
@@ -744,7 +750,10 @@ func run() error {
 	infrastructureSettingsGo := cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo
 	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || crawlReadTelemetryGo || classificationRssOpsGo
+	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
+	// 平行批次追加的模式全部保留（#53 frontier、#55 infrastructure、#56 model
+	// access、本批 data runtime）。任一变量改成本批所需值都不影响其他批次接线。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || crawlReadTelemetryGo || classificationRssOpsGo || modelAccessSettingsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1096,6 +1105,10 @@ func run() error {
 		return err
 	}
 	if err := wireDataRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+
+	if err := wireModelAccessSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 
