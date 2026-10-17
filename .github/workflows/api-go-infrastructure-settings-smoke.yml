@@ -33,6 +33,9 @@ env:
   SMTP_USER: api-go-infrastructure-settings-smoke@example.com
   SMTP_PASS: api-go-infrastructure-settings-smoke-smtp-not-connected
   JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  # 阶段 4/5 必须在 NestJS 停止后继续使用阶段 0 签发的真实 JWT；默认 15m
+  # 在完整 smoke（多次容器重启）里会过期，因此 CI 显式放宽有效期。
+  JWT_ACCESS_EXPIRES_IN: 6h
   NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
   NEXTAUTH_URL: http://localhost:3000
   API_BASE_URL: http://localhost:4000
