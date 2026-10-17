@@ -311,11 +311,11 @@ jobs:
           })
           economic_rows = []
           for i in range(45):
-              economic_rows.append(f"('ni-econ-{i:04d}', '{item_id}', '{day(44 - i)} 00:00:00.000', 'price', {100 + 5 * i}, 'close', NOW(3))")
+              economic_rows.append(f"('ni-econ-{i:04d}', '{item_id}', '{day(44 - i)} 00:00:00.000', 'price', {100 + 5 * i}, NULL, 'close', NULL, NOW(3))")
           entity_rows = []
           for i in range(35):
               docs = 10 + i
-              entity_rows.append(f"('ni-ent-{i:04d}', '{org}', 'SMOKE_ENTITY', 'company', '{day(34 - i)} 00:00:00.000', {docs}, 0, 0, {docs}, 0, 0, 0, NOW(3), NOW(3))")
+              entity_rows.append(f"('ni-ent-{i:04d}', '{org}', 'SMOKE_ENTITY', 'company', '{day(34 - i)} 00:00:00.000', {docs}, 0, 0, {docs}, 0, 0, 0, NULL, NOW(3), NOW(3))")
           sql(f"""
           INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
             ('{org}', 'News Indicators Smoke', 'news-indicators-smoke', 1, NOW(3), NOW(3)),
