@@ -656,12 +656,20 @@ func TestRuntimeSecretsUpdateMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Entries) != 1 {
-		t.Fatalf("a removed and re-upserted key must appear exactly once: %+v", result.Entries)
+	// The seed also holds alpha/k1, so the merged set is {alpha/k1, beta/k2} and
+	// beta/k2 must appear exactly once (with the upserted value).
+	matches := 0
+	for _, entry := range result.Entries {
+		if entry.SourceID != "beta" || entry.Key != "k2" {
+			continue
+		}
+		matches++
+		if entry.Fingerprint != fingerprintSecretValue("survivor") {
+			t.Fatalf("the upsert must win over the remove: %+v", entry)
+		}
 	}
-	if result.Entries[0].SourceID != "beta" ||
-		result.Entries[0].Fingerprint != fingerprintSecretValue("survivor") {
-		t.Fatalf("the upsert must win over the remove: %+v", result.Entries)
+	if matches != 1 {
+		t.Fatalf("a removed and re-upserted key must appear exactly once, got %d: %+v", matches, result.Entries)
 	}
 
 	// A no-op PUT must not write or audit.
