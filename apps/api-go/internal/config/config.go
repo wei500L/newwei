@@ -316,6 +316,30 @@ const (
 	ClassificationRssOpsModeGo ClassificationRssOpsMode = "go"
 )
 
+// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry HTTP
+// endpoints migrated by this unit. It defaults to legacy.
+//
+//	go mode takes over exactly these seven routes:
+//	  GET  /api/crawl-tasks
+//	  GET  /api/crawl-tasks/:id
+//	  GET  /api/crawl-media-assets/:assetId/:mode
+//	  GET  /api/admin/crawl4ai/quality
+//	  GET  /api/admin/crawl4ai/quality/sources/:sourceId
+//	  POST /api/search-telemetry
+//	  GET  /api/admin/search-telemetry/summary
+//
+// Every write queue / live crawler route keeps falling back to NestJS:
+// POST /api/crawl-tasks, DELETE /api/crawl-tasks/:id,
+// POST /api/crawl-tasks/:id/retry, POST /api/crawl-tasks/metadata and
+// /api/admin/crawl4ai/queue*. go mode requires JWT_SECRET, DATABASE_URL,
+// REDIS_HOST and MONGO_URI. No shadow, no canary and no worker is started.
+type CrawlReadTelemetryMode string
+
+const (
+	CrawlReadTelemetryModeLegacy CrawlReadTelemetryMode = "legacy"
+	CrawlReadTelemetryModeGo     CrawlReadTelemetryMode = "go"
+)
+
 // RuntimeSettingsMode controls the eighteen platform runtime and governance
 // settings HTTP routes under /api/system-settings (API_GO_RUNTIME_SETTINGS_MODE).
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
@@ -530,6 +554,16 @@ type Config struct {
 	// and the five classification* collections are stored in Mongo). Shadow is
 	// never enabled and no worker is started.
 	ClassificationRssOpsMode ClassificationRssOpsMode
+	// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry
+	// endpoints migrated by this unit. It defaults to legacy. go mode
+	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
+	// live in Mongo; crawl tasks, media assets and quality snapshots live in
+	// MySQL). No shadow, no canary and no worker.
+	// endpoints migrated by this unit. It defaults to legacy. go mode
+	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
+	// live in Mongo; crawl tasks, media assets and quality snapshots live in
+	// MySQL). No shadow, no canary and no worker.
+	CrawlReadTelemetryMode CrawlReadTelemetryMode
 	// RuntimeSettingsMode controls the eighteen runtime/governance settings
 	// routes (see RuntimeSettingsMode). Default legacy. Mode go requires
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
@@ -956,6 +990,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.ClassificationRssOpsMode = ClassificationRssOpsModeGo
 	default:
 		errs = append(errs, "API_GO_CLASSIFICATION_RSS_OPS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_READ_TELEMETRY_MODE")) {
+	case "", string(CrawlReadTelemetryModeLegacy):
+		cfg.CrawlReadTelemetryMode = CrawlReadTelemetryModeLegacy
+	case string(CrawlReadTelemetryModeGo):
+		cfg.CrawlReadTelemetryMode = CrawlReadTelemetryModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_READ_TELEMETRY_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_RUNTIME_SETTINGS_MODE")) {
 	case "", string(RuntimeSettingsModeLegacy):
@@ -1386,6 +1428,14 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	// Crawl read/telemetry takeover reads crawlresultcontents and tasklogs from
+	// Mongo in addition to the standard JWT + MySQL + Redis requirements.
+	if cfg.CrawlReadTelemetryMode == CrawlReadTelemetryModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_READ_TELEMETRY_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go")
+		}
+	}
 	// The runtime/governance settings takeover needs JWT verification, MySQL
 	// and Redis only; it reads no Mongo collection and starts no worker.
 	if cfg.RuntimeSettingsMode == RuntimeSettingsModeGo {

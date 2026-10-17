@@ -261,8 +261,12 @@ export class CrawlMediaAssetService {
       return new Map();
     }
 
+    // Cross-tenant isolation: the asset query must be scoped to the caller's
+    // organisation. Without the orgId predicate a stale or cross-tenant
+    // CrawlMediaAsset row would receive an HMAC signature issued for
+    // accessScope.orgId.
     const records = await this.prisma.crawlMediaAsset.findMany({
-      where: { resultId: { in: resultIds } },
+      where: { orgId: accessScope.orgId, resultId: { in: resultIds } },
       orderBy: { createdAt: "asc" },
       select: CRAWL_MEDIA_ASSET_LIST_SELECT
     });
