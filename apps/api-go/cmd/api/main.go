@@ -132,6 +132,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingscrawl"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
@@ -1261,6 +1262,18 @@ func run() error {
 		if workspaceGo {
 			workspace.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
 		}
+		// The settings center, source policy, sync status, knowledge-graph
+		// evidence review queue and crawl task roots are opt-in through their
+		// own switch; when it is legacy, any document selecting one of them
+		// stays on NestJS.
+		settingsCrawlGo := cfg.GraphQLSettingsCrawlReadMode == "go"
+		if settingsCrawlGo {
+			settingscrawl.Register(reg, sharedDB, settingscrawl.Options{
+				JWTSecret: cfg.JWTSecret,
+				Mongo:     mongoDatabase.Database(),
+				Redis:     redisClient,
+			})
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1306,6 +1319,11 @@ func run() error {
 			log.Printf("api-go: GraphQL workspace reads registered (me, myOrganizations, users, userLoginRecords, roles, permissions, memberships, dashboards, queueStats, entitySentimentSeries, topicSentimentSeries, processedItemById)")
 		} else {
 			log.Printf("api-go: GraphQL workspace reads not registered (API_GO_GRAPHQL_WORKSPACE_READ_MODE=legacy)")
+		}
+		if settingsCrawlGo {
+			log.Printf("api-go: GraphQL settings/crawl reads registered (rateLimitSettings, entityImpactGraphSettings, knowledgeGraphSettings, newsEventSettings, newsEventSourcePolicy, newsEventSourcePolicyPresets, newsEventSourcePolicyRevisionDiff, newsClassificationSettings, classificationQualitySettings, newsDedupeSettings, newsIndicatorSettings, authCacheSettings, crawlClientSettings, auditLogRetention, newsExtractionSettings, newsPromptConfig, newsEventSourcePolicySyncStatus, knowledgeGraphEvidenceReviewQueue, crawlTasks, crawlTask)")
+		} else {
+			log.Printf("api-go: GraphQL settings/crawl reads not registered (API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE=legacy)")
 		}
 	}
 

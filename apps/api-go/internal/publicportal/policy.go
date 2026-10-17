@@ -48,6 +48,31 @@ func defaultMatcher() matcher {
 	return matcherFromLists(defaultLists)
 }
 
+// DefaultSourcePolicyLists returns copies of the classifier's normalized default
+// source-policy lists (news-event-source-classifier.ts DEFAULT_POLICY, after
+// normalizeDomain / normalizeLabel and Set dedupe). The GraphQL settings and
+// crawl read package consumes them so the HTTP classifier and the GraphQL
+// source-policy reader share one copy of the 153/135/42/26 defaults instead of
+// duplicating the literals.
+func DefaultSourcePolicyLists() (authoritativeDomains, authoritativeLabels, blogDomains, blogLabels []string) {
+	return append([]string{}, defaultLists.authoritativeDomains...),
+		append([]string{}, defaultLists.authoritativeLabels...),
+		append([]string{}, defaultLists.blogDomains...),
+		append([]string{}, defaultLists.blogLabels...)
+}
+
+// NormalizeSourcePolicyDomain and NormalizeSourcePolicyLabel expose the
+// classifier's normalizers so the GraphQL reader applies byte-identical
+// normalization to stored source-policy values.
+func NormalizeSourcePolicyDomain(value string) string {
+	return normalizeDomain(value)
+}
+
+// NormalizeSourcePolicyLabel is the exported counterpart of normalizeLabel.
+func NormalizeSourcePolicyLabel(value string) string {
+	return normalizeLabel(value)
+}
+
 func matcherFromLists(lists policyLists) matcher {
 	return matcher{
 		authoritativeDomains: setOf(lists.authoritativeDomains),

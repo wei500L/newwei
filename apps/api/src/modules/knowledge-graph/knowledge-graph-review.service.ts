@@ -36,7 +36,19 @@ export class KnowledgeGraphReviewService {
         orgId: input.orgId,
         ...(typeof input.maxEvidenceConfidence === "number"
           ? { confidence: { lte: input.maxEvidenceConfidence } }
-          : {})
+          : {}),
+        // Foreign keys only bind primary keys, so a historical dirty row can
+        // reference an edge, entity or article owned by another organization.
+        // The include below would then return that tenant's entity names, edge
+        // properties and article titles/URLs to this organization. Every joined
+        // relation is therefore constrained to the requester's organization;
+        // the Go reader mirrors this with INNER JOIN ... AND x.orgId = ?.
+        edge: {
+          orgId: input.orgId,
+          fromEntity: { orgId: input.orgId },
+          toEntity: { orgId: input.orgId }
+        },
+        article: { orgId: input.orgId }
       },
       orderBy: { createdAt: "desc" },
       take,

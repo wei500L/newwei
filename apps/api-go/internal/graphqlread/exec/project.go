@@ -191,14 +191,17 @@ func (e *Engine) projectLeaf(def *ast.Definition, nonNull bool, value reflect.Va
 		}
 		return number, false, nil
 	case "String", "ID":
-		switch typed := value.Interface().(type) {
-		case string:
-			return typed, false, nil
-		case []byte:
-			return string(typed), false, nil
-		default:
+		// A raw []byte keeps the pre-existing behavior for a byte-backed
+		// string; every other string-shaped value (a plain string or a named
+		// string type) is coerced through contract.AsString.
+		if raw, ok := value.Interface().([]byte); ok {
+			return string(raw), false, nil
+		}
+		text, ok := contract.AsString(value.Interface())
+		if !ok {
 			return nil, true, []graphError{{Message: "String cannot represent value", Path: append([]any{}, path...)}}
 		}
+		return text, false, nil
 	case "Boolean":
 		typed, ok := value.Interface().(bool)
 		if !ok {
@@ -223,7 +226,7 @@ func (e *Engine) projectLeaf(def *ast.Definition, nonNull bool, value reflect.Va
 		return json.RawMessage(encoded), false, nil
 	default:
 		if def.Kind == ast.Enum {
-			text, ok := value.Interface().(string)
+			text, ok := contract.AsString(value.Interface())
 			if !ok {
 				return nil, true, []graphError{{Message: "Enum cannot represent value", Path: append([]any{}, path...)}}
 			}

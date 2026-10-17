@@ -489,8 +489,49 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 - **同批修复的 4 个缺陷（Nest 与 Go 两侧一致）**：① 非 24 位十六进制 ObjectId 直接进 Mongoose `_id` 查询触发 CastError（500）——`submitReviewDecision` 返回 404 `Review item not found`、`batchReviewDecision` 过滤无效 id、`submitAnnotations` 返回 404 `Sample not found`、`getReportJob` 返回 `null`；② `status=corrected` 传 `"///"` 经 `normalizePath` 归一化为空后落库成 `correctedCategoryPath: null`——改为 400 `correctedCategoryPath is required when status=corrected`；③ `getAlertRecipientUserIds` 的 `membership.findMany` 漏判 `Membership.isActive`，已停用成员仍收到阈值告警——补 `isActive: true`；④ `mtk_` 机器令牌执行复核裁决时把 `"machine:<id>"` 写入 `AuditLog.actorId`（User 外键）——写审计时归一化为 `null`，Mongo `reviewerId` 仍保留原 `actorId`。
 - **强类型与注释**：Go 侧 `apps/api-go/internal/classificationrssops` 全部请求 DTO、响应模型、8 个 Mongo 集合文档、MySQL 行扫描、快照载荷与审计/通知载荷均为具名 `struct`（精确 `bson`/`json` tag），枚举为具名字符串类型（`QualityWindow`、`ReviewDecisionStatus`、`ConfidenceBand`、`ClassifiedSourceType`、`RssSourceVisibility`）；`any`/`interface{}`/`map[string]any`/`[]any` 为零（MySQL 语句固定 arity，id 列表用 `JSON_CONTAINS` 匹配）；新增与修改的 `.go`/`.ts` 注释全部为英文。
 - 回滚只把 `API_GO_CLASSIFICATION_RSS_OPS_MODE` 改回 `legacy`：legacy 不注册 handler、不追加任何路由规则、不额外打开 Mongo 连接。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不启用 shadow，不改前端，不改其他 `API_GO_*` 默认值。细节与验收清单见 `docs/refactor/go-classification-rss-ops.md`。SEC-01 的真实登录态未在本批验证。
+## 13. 设置中心与来源策略 / 证据复核队列 / 采集任务 GraphQL 读（Go）
 
-## 13. 平台治理设置 16 条 HTTP（Go）
+新增开关 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE`（空串/`legacy`/`go`，默认
+`legacy`，非法值启动失败）。只有 `API_GO_GRAPHQL_READ_MODE=go` 且本开关 `go`
+时才登记下列 20 个只读 root（Go 包 `internal/graphqlread/settingscrawl`）：
+
+- 设置与来源策略 16 个：`rateLimitSettings`（`settings.manage` + 系统管理员；
+  `rate_limit_login`/`rate_limit_crawl_create`/`rate_limit_rbac_write`）、
+  `entityImpactGraphSettings`（`dashboards.read`）、`knowledgeGraphSettings`
+  （`dashboards.read`；缺记录时 upsert `enabled: true, ingestionEnabled: true`
+  引导值）、`newsEventSettings`（`dashboards.read`）、`newsEventSourcePolicy`
+  （`settings.manage` + 系统管理员；有效名单 + `categoryAuthority` +
+  `activeRevision` + `overrides` + 冲突 `warnings` + 最新 30 条 `revisions`）、
+  `newsEventSourcePolicyPresets`（`settings.manage` + 系统管理员）、
+  `newsEventSourcePolicyRevisionDiff(baseRevision, targetRevision)`
+  （`settings.manage` + 系统管理员；找不到 revision 抛 400
+  `Revision <N> not found`，无 `appCode`）、`newsClassificationSettings`、
+  `classificationQualitySettings`、`newsDedupeSettings`、
+  `newsIndicatorSettings`（`dashboards.read`）、`authCacheSettings`、
+  `crawlClientSettings`（`requestTimeoutMs` 镜像 `requestTimeoutNormalMs`）、
+  `auditLogRetention`、`newsExtractionSettings`、`newsPromptConfig`
+  （缺省用 `DEFAULT_NEWS_PROMPT_CONFIG`）。
+- 来源策略同步状态：`newsEventSourcePolicySyncStatus`（`items.read`；比较 DB 与
+  Redis 的 `updatedAt`，返回 `degraded` / `policyCacheStale` / `presetCacheStale` /
+  `warningCodes`（字典序）/ `forceAuthoritativeMode` / `forceMinAuthoritativeSources`）。
+- 知识图谱证据复核队列：`knowledgeGraphEvidenceReviewQueue(limit, maxConfidence,
+  onlyUnreviewed)`（`settings.manage` **或** `knowledgegraph.review`，`any` 模式；
+  设置 `enabled = false` 返回 `[]`；`take = min(500, max(50, clamp(limit,1,200)*4))`；
+  内存过滤并在 `limit` 处 break）。
+- 采集任务：`crawlTasks(first, after, search, status)`（`crawl.read`；
+  `take = min(first,50)`，`createdAt desc, id desc` 游标分页）与
+  `crawlTask(id, resultLimit, resultSearch)`（`crawl.read`；找不到抛 404
+  `crawl task not found`）。复用 `internal/crawlreadtelemetry` 的结果组装、Mongo
+  内容关联、媒体签名 URL 与运行摘要读取逻辑。
+
+未迁：`crawlMetadata`（抓外网）、`alertRules`（可能投递 BullMQ 任务）与全部
+GraphQL mutation。同批修 3 个缺陷（Nest 与 Go 两侧）：`assertAdmin` 补
+`orgId` 与 `isSystem`；`crawlTasks` 失效/跨组织 `after` 游标返回空页而不是
+Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`article`
+关联补 `orgId` 约束。回滚只把 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` 改回
+`legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
+
+## 14. 平台治理设置 16 条 HTTP（Go）
 
 新增开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串/`legacy`/`go`，默认
 `legacy`，非法值启动失败，错误文本 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be
