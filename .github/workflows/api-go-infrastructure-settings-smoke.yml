@@ -1319,7 +1319,8 @@ jobs:
                                      {"upserts": [{"sourceId": "lock", "key": "k2", "value": "v2"}]}, timeout=90)
                   if status != 503:
                       fail("%s secrets: status=%s, want 503 while the lock is held" % (label, status))
-                  keys = sorted(runtime_map_from_db().keys())
+                  # runtime_map_from_db() is keyed by (sourceId, key) tuples.
+                  keys = sorted(key for _, key in runtime_map_from_db().keys())
                   if keys != ["k"]:
                       fail("%s secrets: lock-blocked write changed entries: %s" % (label, keys))
                   print("lock ok: " + SECRETS_LOCK_NAME + " blocks the Go write without side effects")
