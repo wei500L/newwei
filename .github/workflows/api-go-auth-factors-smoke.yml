@@ -1217,10 +1217,14 @@ jobs:
 
 
           def require_not_go(prefix):
-              for entry_prefix, mode, _ in go_health().get("routes") or []:
-                  if mode == "go" and (entry_prefix == prefix or entry_prefix.startswith(prefix)):
-                      fail("route " + entry_prefix + " is in go mode, want legacy: "
-                           + repr(go_health().get("routes")))
+              # go_health()["routes"] 的每个元素是 {prefix, mode, ...} 字典，
+              # 不是 (prefix, mode, methods) 三元组。
+              routes = go_health().get("routes") or []
+              for entry in routes:
+                  entry_prefix = entry.get("prefix") or ""
+                  if entry.get("mode") == "go" and (entry_prefix == prefix
+                                                    or entry_prefix.startswith(prefix)):
+                      fail("route " + entry_prefix + " is in go mode, want legacy: " + repr(routes))
 
 
           # ---- fixtures ----

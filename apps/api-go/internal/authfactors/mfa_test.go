@@ -201,8 +201,13 @@ func TestBeginEnrollmentFirstTimeAndVerifyEnrollment(t *testing.T) {
 	if strings.Contains(string(factor.secret), response.RecoveryCodes[0]) {
 		t.Fatal("plaintext recovery codes must never be stored")
 	}
-	if factor.verifiedAt == nil || factor.disabledAt != nil {
-		t.Fatalf("promoted factor = %+v", factor)
+	// The promotion replaces the row, so the map entry must be re-read.
+	promoted := store.factors["user-1"]
+	if promoted.verifiedAt == nil || promoted.disabledAt != nil {
+		t.Fatalf("promoted factor = %+v", promoted)
+	}
+	if !promoted.enrolledAt.Equal(factor.enrolledAt) {
+		t.Fatalf("a first completion must keep enrolledAt: %v -> %v", factor.enrolledAt, promoted.enrolledAt)
 	}
 }
 
