@@ -10,6 +10,7 @@ import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { PlatformAccessService } from "../auth/platform-access.service";
 import { CacheService } from "../cache/cache.service";
 import { EnvService, type LiteLlmEnvConfig } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
@@ -136,6 +137,7 @@ export class LlmGatewaySettingsService {
     private readonly cache: CacheService,
     private readonly env: EnvService,
     private readonly securitySettings: SystemSecuritySettingsService,
+    private readonly platformAccess: PlatformAccessService,
     @Inject(forwardRef(() => LiteLlmProxyGovernanceService))
     private readonly proxyGovernance: LiteLlmProxyGovernanceService
   ) {}
@@ -157,6 +159,10 @@ export class LlmGatewaySettingsService {
     actorId: string,
     input: LlmGatewayProfileInput
   ): Promise<LlmGatewayProfilePublic> {
+    // GP1: the profile document is a single global SystemSetting row with no
+    // orgId dimension, so only platform admins may change it. The gate runs
+    // before any read, lock, encoding, write, audit or cache eviction.
+    await this.platformAccess.assertPlatformAdmin(actorId);
     const settings = await this.loadSettings();
     const fallback = this.env.liteLlmConfig;
     const now = new Date().toISOString();
@@ -200,6 +206,7 @@ export class LlmGatewaySettingsService {
     id: string,
     input: LlmGatewayProfileInput
   ): Promise<LlmGatewayProfilePublic> {
+    await this.platformAccess.assertPlatformAdmin(actorId);
     const settings = await this.loadSettings();
     const index = settings.profiles.findIndex((profile) => profile.id === id);
     if (index === -1) {
@@ -250,6 +257,7 @@ export class LlmGatewaySettingsService {
   }
 
   async deleteProfile(orgId: string, actorId: string, id: string) {
+    await this.platformAccess.assertPlatformAdmin(actorId);
     const settings = await this.loadSettings();
     await this.proxyGovernance.assertProfileDeletionAllowed(id);
     const nextProfiles = settings.profiles.filter((profile) => profile.id !== id);
@@ -275,6 +283,7 @@ export class LlmGatewaySettingsService {
     actorId: string,
     activeId: string | null
   ): Promise<LlmGatewaySettingsPublic> {
+    await this.platformAccess.assertPlatformAdmin(actorId);
     const settings = await this.loadSettings();
     if (activeId) {
       const found = settings.profiles.find((profile) => profile.id === activeId);
@@ -300,6 +309,7 @@ export class LlmGatewaySettingsService {
     activeId: string | null,
     mode?: LlmGatewayEmbeddingMode
   ): Promise<LlmGatewaySettingsPublic> {
+    await this.platformAccess.assertPlatformAdmin(actorId);
     const settings = await this.loadSettings();
     if (activeId) {
       const found = settings.profiles.find((profile) => profile.id === activeId);
@@ -331,6 +341,7 @@ export class LlmGatewaySettingsService {
     activeId: string | null,
     mode?: LlmGatewayRerankMode
   ): Promise<LlmGatewaySettingsPublic> {
+    await this.platformAccess.assertPlatformAdmin(actorId);
     const settings = await this.loadSettings();
     if (activeId) {
       const found = settings.profiles.find((profile) => profile.id === activeId);
