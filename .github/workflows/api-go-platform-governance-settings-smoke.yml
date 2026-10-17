@@ -485,9 +485,12 @@ jobs:
           ):
               parity("legacy " + label, method, path, token, payload)
           parity_metrics("legacy GET /assistant-safety/metrics", platform_token, 3)
-          status, raw = call(go, "/api/system-settings/assistant-safety/diagnostics", "GET", platform_token)
-          if status == 502:
-              fail("legacy phase: diagnostics should reach NestJS, got 502")
+          # An unmigrated route must still reach NestJS in legacy mode. /email is
+          # used rather than /assistant-safety/diagnostics: diagnostics calls
+          # LiteLLM, which CI does not provide.
+          status, raw = call(go, "/api/system-settings/email", "GET", platform_token)
+          if status != 200:
+              fail(f"legacy phase: /api/system-settings/email via Go = {status} {raw[:300]!r}, want 200")
           ok("phase 0: legacy mode proxies all sampled routes to NestJS")
 
           # ---- 阶段 1：切 go，Nest 仍在；16 条逐条对照 ----
