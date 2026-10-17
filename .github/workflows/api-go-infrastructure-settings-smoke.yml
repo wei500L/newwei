@@ -165,7 +165,7 @@ jobs:
       - name: Exercise infrastructure settings routes
         run: |
           set -euo pipefail
-          python3 - << 'PY'
+          python3 -u - << 'PY'
           import base64
           import hashlib
           import json
@@ -174,8 +174,19 @@ jobs:
           import subprocess
           import threading
           import time
+          import traceback
           import urllib.error
           import urllib.request
+
+
+          def _on_sigterm(signum, frame):
+              """Prints where the step was when the runner asked it to stop."""
+              print("SIGTERM received at:", flush=True)
+              traceback.print_stack(frame, flush=True)
+              os._exit(143)
+
+
+          signal.signal(signal.SIGTERM, _on_sigterm)
 
           NEST_URL = "http://127.0.0.1:4000"
           GO_URL = "http://127.0.0.1:4020"
