@@ -186,8 +186,24 @@ jobs:
           applied_cache = "openai_keys:applied_status"
           security_cache = "system_security:settings"
 
+          def go_logs(name="api-go-model-access-settings-smoke", tail="120"):
+              proc = subprocess.run(["docker", "logs", "--tail", tail, name],
+                                    text=True, capture_output=True)
+              if proc.returncode != 0:
+                  return f"<no container logs: {(proc.stderr or '').strip()}>"
+              return ((proc.stdout or "") + (proc.stderr or ""))[-4000:]
+
+          def nest_logs(tail="60"):
+              proc = subprocess.run(["tail", "-" + tail, "/tmp/api-nestjs.log"], text=True, capture_output=True)
+              return (proc.stdout or "")[-2000:]
+
           def fail(message):
-              print("FAIL", message)
+              print("FAIL", message, flush=True)
+              # 真实栈失败时把两侧日志带出来：否则只剩一个 500 无法定位。
+              print("--- api-go logs ---", flush=True)
+              print(go_logs(), flush=True)
+              print("--- nestjs logs ---", flush=True)
+              print(nest_logs(), flush=True)
               raise SystemExit(1)
 
           def container_id(ancestor):
