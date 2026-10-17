@@ -1839,3 +1839,233 @@ func TestClassificationRssOpsUnmigratedRoutesStayNest(t *testing.T) {
 		t.Fatalf("reports POST matched %+v, want the /api/ legacy fallback", got)
 	}
 }
+
+// crawlFrontierRunsRoutes are the eleven routes the crawl frontier runs switch
+// takes over when API_GO_CRAWL_FRONTIER_RUNS_MODE=go.
+func crawlFrontierRunsRoutes() []struct{ method, path string } {
+	return []struct{ method, path string }{
+		{http.MethodGet, "/api/admin/crawl-frontier/runs"},
+		{http.MethodGet, "/api/admin/crawl-frontier/runs/run-1"},
+		{http.MethodGet, "/api/admin/crawl-frontier/runs/run-1/workflow-run"},
+		{http.MethodGet, "/api/admin/crawl-frontier/runs/run-1/workflow-candidates"},
+		{http.MethodGet, "/api/admin/crawl-frontier/runs/run-1/workflow-candidates/cand-1"},
+		{http.MethodPost, "/api/admin/crawl-frontier/runs/cancel"},
+		{http.MethodPost, "/api/admin/crawl-frontier/runs/run-1/cancel"},
+		{http.MethodGet, "/api/admin/crawl-frontier/nodes/node-1"},
+		{http.MethodGet, "/api/admin/crawl-frontier/workflow-runs/wrun-1"},
+		{http.MethodGet, "/api/admin/crawl-frontier/workflow-runs/wrun-1/candidates"},
+		{http.MethodGet, "/api/admin/crawl-frontier/workflow-runs/wrun-1/candidates/cand-1/explanation"},
+	}
+}
+
+// crawlFrontierRunsNestRoutes are the paths that must keep proxying to NestJS
+// even while the switch is go: the write queue routes, the other switches'
+// subtrees, unlisted methods, trailing slashes and longer paths.
+func crawlFrontierRunsNestRoutes() []struct{ method, path string } {
+	return []struct{ method, path string }{
+		// Write queue routes: createRun, retry, replay and trial-run.
+		{http.MethodPost, "/api/admin/crawl-frontier/runs"},
+		{http.MethodPost, "/api/admin/crawl-frontier/nodes/retry"},
+		{http.MethodPost, "/api/admin/crawl-frontier/nodes/node-1/retry"},
+		{http.MethodPost, "/api/admin/crawl-frontier/workflow-runs/wrun-1/replay"},
+		{http.MethodPost, "/api/admin/crawl-frontier/workflows/wf-1/trial-run"},
+		// Other switches own these subtrees.
+		{http.MethodGet, "/api/admin/crawl-frontier/profiles"},
+		{http.MethodPost, "/api/admin/crawl-frontier/profiles"},
+		{http.MethodGet, "/api/admin/crawl-frontier/profiles/profile-1/workflow-bridge"},
+		{http.MethodGet, "/api/admin/crawl-frontier/workflows"},
+		{http.MethodGet, "/api/admin/crawl-frontier/workflow-versions/version-1"},
+		{http.MethodGet, "/api/admin/crawl-frontier/news-sources"},
+		// Unlisted methods on migrated paths.
+		{http.MethodDelete, "/api/admin/crawl-frontier/runs/run-1"},
+		{http.MethodPut, "/api/admin/crawl-frontier/runs"},
+		{http.MethodPost, "/api/admin/crawl-frontier/runs/run-1"},
+		{http.MethodPost, "/api/admin/crawl-frontier/nodes/node-1"},
+		{http.MethodPatch, "/api/admin/crawl-frontier/workflow-runs/wrun-1"},
+		{http.MethodGet, "/api/admin/crawl-frontier/runs/cancel/extra"},
+		// Trailing slashes and longer paths.
+		{http.MethodGet, "/api/admin/crawl-frontier/runs/"},
+		{http.MethodGet, "/api/admin/crawl-frontier/runs/run-1/"},
+		{http.MethodPost, "/api/admin/crawl-frontier/runs/cancel/"},
+		{http.MethodGet, "/api/admin/crawl-frontier/runs/run-1/workflow-candidates/cand-1/extra"},
+		{http.MethodGet, "/api/admin/crawl-frontier/runs/a/b"},
+		{http.MethodGet, "/api/admin/crawl-frontier/nodes/node-1/retry"},
+		{http.MethodGet, "/api/admin/crawl-frontier/workflow-runs/wrun-1/candidates/cand-1"},
+		{http.MethodGet, "/api/admin/crawl-frontier/workflow-runs/wrun-1/candidates/cand-1/explanation/extra"},
+		{http.MethodGet, "/api/admin/crawl-frontier/workflow-runs/a/b"},
+	}
+}
+
+func TestCrawlFrontierRunsStayLegacyByDefault(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithCrawlFrontierRuns(rules, "")
+	rules = WithCrawlFrontierRuns(rules, "legacy")
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range append(crawlFrontierRunsRoutes(), crawlFrontierRunsNestRoutes()...) {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+}
+
+func TestCrawlFrontierRunsGoOwnsRoutes(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithCrawlFrontierRuns(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range crawlFrontierRunsRoutes() {
+		got := gateway.match(tc.method, tc.path)
+		if got.Mode != ModeGo || got.HandlerKey != CrawlFrontierRunsKey {
+			t.Fatalf("%s %s rule=%+v, want go key %s", tc.method, tc.path, got, CrawlFrontierRunsKey)
+		}
+	}
+	// CORS preflight is answered by Go on every migrated path.
+	for _, tc := range crawlFrontierRunsRoutes() {
+		if got := gateway.match(http.MethodOptions, tc.path); got.Mode != ModeGo || got.HandlerKey != CrawlFrontierRunsKey {
+			t.Fatalf("OPTIONS %s rule=%+v, want go", tc.path, got)
+		}
+	}
+	// GET /runs/cancel is matched as runs/:id with id="cancel", exactly like
+	// the NestJS @Get("runs/:id") route.
+	cancelRead := gateway.match(http.MethodGet, "/api/admin/crawl-frontier/runs/cancel")
+	if cancelRead.Mode != ModeGo || cancelRead.HandlerKey != CrawlFrontierRunsKey {
+		t.Fatalf("GET runs/cancel rule=%+v, want the runs/:id takeover", cancelRead)
+	}
+	// The candidate explanation shape is a two-segment tail rule.
+	candidate := gateway.match(http.MethodGet, "/api/admin/crawl-frontier/runs/run-1/workflow-candidates/cand-1")
+	if !candidate.OneSegment || !candidate.TailSegment || candidate.Tail != "/workflow-candidates" {
+		t.Fatalf("candidate rule=%+v", candidate)
+	}
+	// The workflow candidate explanation carries the trailing /explanation.
+	explanation := gateway.match(http.MethodGet, "/api/admin/crawl-frontier/workflow-runs/wrun-1/candidates/cand-1/explanation")
+	if !explanation.OneSegment || !explanation.TailSegment || explanation.TailSuffix != "/explanation" {
+		t.Fatalf("explanation rule=%+v", explanation)
+	}
+}
+
+func TestCrawlFrontierRunsUnmigratedRoutesStayNest(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithCrawlFrontierRuns(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range crawlFrontierRunsNestRoutes() {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+}
+
+// TestCrawlFrontierRunsGatewayServesGoAndFallsBackToLegacy exercises the real
+// gateway dispatch: the eleven routes reach the Go handler while every
+// unmigrated route still reaches the NestJS upstream.
+func TestCrawlFrontierRunsGatewayServesGoAndFallsBackToLegacy(t *testing.T) {
+	stub := newLegacyStub(t)
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithCrawlFrontierRuns(rules, string(ModeGo))
+	gateway, err := New(stub.server.URL, rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway.RegisterGoHandler(CrawlFrontierRunsKey, func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"via": "go"})
+	})
+	assertVia := func(method, path, want string) {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		gateway.ServeHTTP(recorder, httptest.NewRequest(method, "http://gateway"+path, nil))
+		if !strings.Contains(recorder.Body.String(), want) {
+			t.Fatalf("%s %s body = %s, want %s", method, path, recorder.Body.String(), want)
+		}
+	}
+	for _, tc := range crawlFrontierRunsRoutes() {
+		assertVia(tc.method, tc.path, `"via":"go"`)
+	}
+	assertVia(http.MethodGet, "/api/admin/crawl-frontier/runs/cancel", `"via":"go"`)
+	before := len(stub.requests)
+	for _, tc := range crawlFrontierRunsNestRoutes() {
+		assertVia(tc.method, tc.path, "legacy")
+	}
+	if diff := len(stub.requests) - before; diff != len(crawlFrontierRunsNestRoutes()) {
+		t.Fatalf("upstream requests = %d, want %d", diff, len(crawlFrontierRunsNestRoutes()))
+	}
+}
+
+// TestCrawlFrontierRunsIndependentFromProfilesAndWorkflows checks that the
+// three crawl-frontier switches never steal each other's routes in every
+// combination.
+func TestCrawlFrontierRunsIndependentFromProfilesAndWorkflows(t *testing.T) {
+	assertKey := func(t *testing.T, gateway *Gateway, method, path, key string) {
+		t.Helper()
+		got := gateway.match(method, path)
+		if got.Mode != ModeGo || got.HandlerKey != key {
+			t.Fatalf("%s %s rule=%+v, want go key %s", method, path, got, key)
+		}
+	}
+	profilePath := "/api/admin/crawl-frontier/profiles/profile-1"
+	workflowPath := "/api/admin/crawl-frontier/workflows/wf-1"
+	bridgePath := "/api/admin/crawl-frontier/profiles/profile-1/workflow-bridge"
+
+	// All three switches go: every route keeps its own key.
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithCrawlWorkflows(rules, string(ModeGo))
+	rules = WithCrawlProfiles(rules, string(ModeGo))
+	rules = WithCrawlFrontierRuns(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range crawlFrontierRunsRoutes() {
+		assertKey(t, gateway, tc.method, tc.path, CrawlFrontierRunsKey)
+	}
+	assertKey(t, gateway, http.MethodGet, profilePath, CrawlProfilesKey)
+	assertKey(t, gateway, http.MethodGet, workflowPath, CrawlWorkflowsKey)
+	assertKey(t, gateway, http.MethodGet, bridgePath, CrawlWorkflowsKey)
+
+	// Only the frontier runs switch is go: the other two subtrees stay legacy.
+	rules = DefaultRules(ModeShadow, "")
+	rules = WithCrawlWorkflows(rules, "legacy")
+	rules = WithCrawlProfiles(rules, "legacy")
+	rules = WithCrawlFrontierRuns(rules, string(ModeGo))
+	gateway, err = New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range crawlFrontierRunsRoutes() {
+		assertKey(t, gateway, tc.method, tc.path, CrawlFrontierRunsKey)
+	}
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, profilePath},
+		{http.MethodGet, workflowPath},
+		{http.MethodGet, bridgePath},
+	} {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+
+	// The frontier runs switch is legacy while the other two are go: the runs
+	// routes fall back and the other keys are unchanged.
+	rules = DefaultRules(ModeShadow, "")
+	rules = WithCrawlWorkflows(rules, string(ModeGo))
+	rules = WithCrawlProfiles(rules, string(ModeGo))
+	rules = WithCrawlFrontierRuns(rules, "legacy")
+	gateway, err = New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range crawlFrontierRunsRoutes() {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+	assertKey(t, gateway, http.MethodGet, profilePath, CrawlProfilesKey)
+	assertKey(t, gateway, http.MethodGet, workflowPath, CrawlWorkflowsKey)
+	assertKey(t, gateway, http.MethodGet, bridgePath, CrawlWorkflowsKey)
+}

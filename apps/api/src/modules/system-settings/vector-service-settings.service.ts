@@ -12,6 +12,10 @@ import {
   resolveSettingsKey
 } from "../storage/storage-settings.crypto";
 
+import {
+  INFRASTRUCTURE_SETTINGS_VECTOR_LOCK,
+  withInfrastructureSettingsLock
+} from "./infrastructure-settings.lock";
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export type VectorServiceSettingsSource = "env" | "db";
@@ -95,93 +99,108 @@ export class VectorServiceSettingsService {
       maxRetries: number;
     }
   ): Promise<VectorServiceSettingsPublic> {
-    const stored = await this.loadStoredSettings();
-    const baseUrl =
-      typeof input.baseUrl === "string" ? input.baseUrl.trim() : input.baseUrl ?? null;
-    const normalizedBaseUrl = baseUrl ? this.validateUrl(baseUrl) : null;
+    // IS3: the stored row is the merge base whenever `token` is omitted, so a
+    // rotated token must never be overwritten by a stale copy. loadStoredSettings
+    // is cache-first (Redis, 30 s TTL) and would happily return that stale copy;
+    // the whole read-modify-write therefore runs under the global vector lock and
+    // reads the row from MySQL directly. DELETE takes the same lock, so a reset
+    // and an update can never interleave.
+    await withInfrastructureSettingsLock(INFRASTRUCTURE_SETTINGS_VECTOR_LOCK, async () => {
+      const stored = await this.loadStoredSettingsFromDb();
+      const baseUrl =
+        typeof input.baseUrl === "string" ? input.baseUrl.trim() : input.baseUrl ?? null;
+      const normalizedBaseUrl = baseUrl ? this.validateUrl(baseUrl) : null;
 
-    const nextTokenRaw = await this.resolveNextToken(stored, input.token);
+      const nextTokenRaw = await this.resolveNextToken(stored, input.token);
 
-    const nextStored: StoredVectorServiceSettings = {
-      enabled: input.enabled,
-      fallbackToMongo: input.fallbackToMongo,
-      baseUrl: normalizedBaseUrl,
-      token: nextTokenRaw,
-      timeoutMs: input.timeoutMs,
-      maxRetries: input.maxRetries
-    };
+      const nextStored: StoredVectorServiceSettings = {
+        enabled: input.enabled,
+        fallbackToMongo: input.fallbackToMongo,
+        baseUrl: normalizedBaseUrl,
+        token: nextTokenRaw,
+        timeoutMs: input.timeoutMs,
+        maxRetries: input.maxRetries
+      };
 
-    const effective = this.resolveEffectiveConfig(nextStored);
-    if (effective.enabled) {
-      if (!effective.baseUrl) {
-        throw new BadRequestException("baseUrl is required when vector service is enabled");
+      const effective = this.resolveEffectiveConfig(nextStored);
+      if (effective.enabled) {
+        if (!effective.baseUrl) {
+          throw new BadRequestException("baseUrl is required when vector service is enabled");
+        }
+        if (!effective.token) {
+          throw new BadRequestException("token is required when vector service is enabled");
+        }
       }
-      if (!effective.token) {
-        throw new BadRequestException("token is required when vector service is enabled");
-      }
-    }
 
-    await this.prisma.systemSetting.upsert({
-      where: { key: SETTINGS_KEY },
-      update: {
-        value: this.toPrismaJson(nextStored),
-        updatedById: actorId,
-        description: SETTINGS_DESCRIPTION,
-        isPublic: false
-      },
-      create: {
-        key: SETTINGS_KEY,
-        value: this.toPrismaJson(nextStored),
-        updatedById: actorId,
-        description: SETTINGS_DESCRIPTION,
-        isPublic: false
-      }
+      await this.prisma.systemSetting.upsert({
+        where: { key: SETTINGS_KEY },
+        update: {
+          value: this.toPrismaJson(nextStored),
+          updatedById: actorId,
+          description: SETTINGS_DESCRIPTION,
+          isPublic: false
+        },
+        create: {
+          key: SETTINGS_KEY,
+          value: this.toPrismaJson(nextStored),
+          updatedById: actorId,
+          description: SETTINGS_DESCRIPTION,
+          isPublic: false
+        }
+      });
+
+      await writeAuditLogBestEffort(
+        this.prisma,
+        {
+          data: {
+            orgId,
+            actorId,
+            resource: "system_settings",
+            action: "vector_service_update",
+            metadata: this.toPrismaJson({
+              enabled: input.enabled,
+              fallbackToMongo: input.fallbackToMongo,
+              baseUrl: normalizedBaseUrl,
+              timeoutMs: input.timeoutMs,
+              maxRetries: input.maxRetries,
+              tokenUpdated: input.token !== undefined,
+              tokenConfigured: Boolean(effective.token)
+            } satisfies Prisma.InputJsonObject)
+          }
+        },
+        { orgId, actorId, resource: "system_settings", action: "vector_service_update" }
+      );
+
+      await this.invalidateCache();
     });
 
-    await writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId,
-          actorId,
-          resource: "system_settings",
-          action: "vector_service_update",
-          metadata: this.toPrismaJson({
-            enabled: input.enabled,
-            fallbackToMongo: input.fallbackToMongo,
-            baseUrl: normalizedBaseUrl,
-            timeoutMs: input.timeoutMs,
-            maxRetries: input.maxRetries,
-            tokenUpdated: input.token !== undefined,
-            tokenConfigured: Boolean(effective.token)
-          } satisfies Prisma.InputJsonObject)
-        }
-      },
-      { orgId, actorId, resource: "system_settings", action: "vector_service_update" }
-    );
-
-    await this.invalidateCache();
     return this.getPublicSettings();
   }
 
   async resetToEnv(orgId: string, actorId: string): Promise<VectorServiceSettingsPublic> {
-    await this.prisma.systemSetting.deleteMany({ where: { key: SETTINGS_KEY } });
+    // DELETE shares the vector lock with PUT: without it a concurrent PUT could
+    // re-create the row right after this delete (or merge from the row this
+    // delete is about to remove).
+    await withInfrastructureSettingsLock(INFRASTRUCTURE_SETTINGS_VECTOR_LOCK, async () => {
+      await this.prisma.systemSetting.deleteMany({ where: { key: SETTINGS_KEY } });
 
-    await writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId,
-          actorId,
-          resource: "system_settings",
-          action: "vector_service_reset",
-          metadata: this.toPrismaJson({ ok: true } satisfies Prisma.InputJsonObject)
-        }
-      },
-      { orgId, actorId, resource: "system_settings", action: "vector_service_reset" }
-    );
+      await writeAuditLogBestEffort(
+        this.prisma,
+        {
+          data: {
+            orgId,
+            actorId,
+            resource: "system_settings",
+            action: "vector_service_reset",
+            metadata: this.toPrismaJson({ ok: true } satisfies Prisma.InputJsonObject)
+          }
+        },
+        { orgId, actorId, resource: "system_settings", action: "vector_service_reset" }
+      );
 
-    await this.invalidateCache();
+      await this.invalidateCache();
+    });
+
     return this.getPublicSettings();
   }
 
@@ -197,16 +216,12 @@ export class VectorServiceSettingsService {
       return cached.exists ? cached.value ?? null : null;
     }
 
-    const record = await this.prisma.systemSetting.findUnique({
-      where: { key: SETTINGS_KEY }
-    });
-    const raw = record?.value as unknown;
-    const settings = raw && typeof raw === "object" ? (raw as StoredVectorServiceSettings) : null;
+    const { exists, settings } = await this.readStoredRow();
 
     try {
       await this.cache.set(
         CACHE_KEY,
-        { exists: Boolean(record), value: settings ?? undefined } satisfies CachedVectorServiceSettings,
+        { exists, value: settings ?? undefined } satisfies CachedVectorServiceSettings,
         CACHE_TTL_SECONDS
       );
     } catch (error) {
@@ -214,6 +229,28 @@ export class VectorServiceSettingsService {
     }
 
     return settings;
+  }
+
+  /**
+   * Reads the settings row straight from MySQL, bypassing the Redis envelope.
+   * This is the authoritative merge base for PUT/DELETE; the cache-first
+   * {@link loadStoredSettings} stays in place for the plain GET read path.
+   */
+  private async loadStoredSettingsFromDb(): Promise<StoredVectorServiceSettings | null> {
+    const { settings } = await this.readStoredRow();
+    return settings;
+  }
+
+  private async readStoredRow(): Promise<{
+    exists: boolean;
+    settings: StoredVectorServiceSettings | null;
+  }> {
+    const record = await this.prisma.systemSetting.findUnique({
+      where: { key: SETTINGS_KEY }
+    });
+    const raw = record?.value as unknown;
+    const settings = raw && typeof raw === "object" ? (raw as StoredVectorServiceSettings) : null;
+    return { exists: Boolean(record), settings };
   }
 
   private resolveEffectiveConfig(stored: StoredVectorServiceSettings | null): VectorServiceConfig {

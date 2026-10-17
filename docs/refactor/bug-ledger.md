@@ -429,7 +429,297 @@ verify success）——CI-01 本轮未复现，无重跑。
 - **API-01 / SEC 系列真实登录态验证**：SEC-01 单元级与 API-01 契约级测试已由远端 CI 验证（run 33748591315）；**真实数据库登录态冒烟**（登录→PUT vector 配置→403 / 完成引导→刷新不重现）仍需 Docker 数据库栈——CI 无 DB，列为部署环境可用后的第一优先验证项。
 - 基线环境缺口（AISSTREAM_API_KEY 空、infra/docker/.env 缺失）不属代码缺陷，不入本台账。
 
-## 7. Go-批10（平台治理设置 16 条迁移）同批缺陷
+### F1：Frontier 取消改写终态运行、无事务无行锁、并发重复记事件 — 🟡 已修，待远端验证
+
+- **现象**：对 `completed`/`canceled` 的 run 调 `POST /runs/:id/cancel` 会把它改写成
+  `canceled` 并覆盖 `finishedAt`；批量取消把已完成的 run 计入 `canceledIds`；同一
+  run 的并发取消会追加两条 `frontier_run_canceled` 事件。
+- **证据（以 origin/main@39ad5b55 为准）**：
+  - `apps/api/src/modules/crawl/crawl-frontier.service.ts:830-888` `cancelRunRecords`
+    对传入 id 无条件 `status='canceled', finishedAt=now`（原 :844-855），不排除
+    `completed`/`canceled`；`crawlFrontierRun.updateMany` 与 `crawlFrontierNode.updateMany`
+    用 `Promise.all` 并行，没有事务与行锁。
+  - 同函数原 :868-887 对 workflow run 无条件 `markRunStatus('canceled')` 并把
+    `error` 清成 `null`（recorder `crawl-strategy-run-recorder.service.ts:407-424`）。
+  - `crawl-frontier.service.ts:752-775` 原 `cancelRuns` 的 `canceledIds` 来自只按
+    `orgId` 过滤的 `findMany`，会把已完成的 run 计为「已取消」。
+  - 前端 `apps/web/app/(app)/admin/ops/crawl-frontier/crawl-frontier-console.tsx:1444`
+    与 `:1694` 已把 `completed`/`canceled` 视为不可取消，`:1186-1191` 按
+    `ids.length - canceledCount` 显示 skipped；后端没有执行这个约束。
+- **修法（Nest 与 Go 两侧一致）**：
+  1. 开事务；第一条语句按 `orgId` + id 集合 + `status NOT IN ('completed','canceled')`
+     且 `ORDER BY id ASC FOR UPDATE` 锁定，升序加锁避免两个批量取消交叉死锁。
+  2. 没有行时提交并返回空列表。
+  3. `finishedAt` 取当前时间（毫秒）；两条 UPDATE 的 WHERE 都带 `orgId`。
+  4. 提交后按 id 升序对锁定行串行 `appendEvent` 与 `markRunStatus`（`error` 清空）。
+  - Nest：`crawl-frontier.service.ts` `cancelRun`、`cancelRuns`、`cancelRunRecords`
+    改为 `this.prisma.$transaction` + `tx.$queryRaw(Prisma.sql\`… FOR UPDATE\`)`。
+  - Go：`apps/api-go/internal/crawlfrontierruns/cancel.go` 同一协议（id 集合用
+    `JSON_CONTAINS` 固定 arity，保持 `ORDER BY id ASC FOR UPDATE`）。
+  - `cancelRun` 保留存在性检查与 404，无论是否发生状态转换都返回完整详情（201）；
+    终态取消是幂等无操作。`failed` 仍可取消（与前端
+    `status !== "completed" && status !== "canceled"` 一致）。
+- **回归方式**：`api-go-crawl-frontier-runs-smoke` 阶段 2 断言：
+  - `completed run cancel keeps completed`：201；DB 中 status 仍 `completed`、
+    `finishedAt` 不变、workflow run 仍 `completed` 且 `error='keep-me'`、事件数不变。
+  - `running run cancel transitions once`：201；run/节点/workflow run 变 `canceled`；
+    恰好新增 1 条 `frontier_run_canceled`，sequence = 原数量 + 1。
+  - `bulk cancel skips terminal and cross-tenant`：`canceledIds` 升序、count 正确。
+  - `concurrent cancel appends one event`：同一 run 并发 10 次（Go/Nest 各半），
+    最终恰好 1 条取消事件、`finishedAt` 只写一次。
+  - `opposite-order bulk cancels do not deadlock`：两个 id 顺序相反的批量取消并发 5 轮
+    无 500/死锁。
+- **状态**：待远端验证（Nest 与 Go 两侧已同修；本机按约束未运行构建与测试）。
+
+### F1-FOLLOWUP-01：recorder appendEvent 的 count+1 sequence 与 worker 并发可能重复 — ⬜ 只登记，不修
+
+- **现象**：`crawl-strategy-run-recorder.service.ts:206-209` 用
+  `COUNT(*) + 1` 计算 `sequence`；与 worker 并发写同一 run 的事件时可能产生重复
+  sequence（表上只有 `@@index([runId, sequence])`，没有唯一约束）。
+- **不修原因**：该路径属于 worker 共用代码，本批只迁移 HTTP；Go 侧按同一语义复刻
+  （`cancel.go` 的 `appendCancelEvent` 同样用 `COUNT(*) + 1`）。
+- **后续方向**：为 `CrawlStrategyWorkflowRunEvent` 增加 `(runId, sequence)` 唯一约束，
+  或在事务内 `SELECT … FOR UPDATE` 计数后写入；需要与 worker 写入方一起评估。
+- **状态**：只登记。
+
+### F1-FOLLOWUP-02：POST workflow-runs/:runId/replay 只要求 crawl.read — ⬜ 只登记，不修
+
+- **现象**：`apps/api/src/modules/crawl/crawl-strategy.controller.ts:155-163` 的
+  `POST /api/admin/crawl-frontier/workflow-runs/:runId/replay` 是写操作，却只声明
+  `@Permissions('crawl.read')`。
+- **不修原因**：该路由不在本批 11 条迁移范围内，且控制器受
+  「不改 `apps/api/src/**/*.controller.ts`」约束（避免 auth-matrix 与 OpenAPI 漂移）。
+- **后续方向**：单独一批把权限改为 `crawl.write`，并同步 auth-matrix 快照。
+- **状态**：只登记。
+
+## 7. 基础设施连接与采集运行凭据批次（IS1–IS4）
+
+本批次把「基础设施连接与采集运行凭据配置」7 条 HTTP 用 Strangler Fig 方式迁入
+apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy），并同步
+修复 Nest 侧 IS1–IS4。行号以基线 `b89c35a85998512392e32566ccd96b2766f65441`
+（origin/main，普通 CI run 39051652549 success）为准。
+
+### IS1 全局存储和采集凭据写入缺平台管理员门禁 — ✅ 已修复【P0】
+
+- **用户影响**：跨租户存储与采集凭据劫持。九个 `storage_*` SystemSetting 与
+  `news_source_runtime_secrets` 都是**全局单例**（无 orgId 维度），任何持有
+  `settings.manage` 的普通组织管理员即可改写所有租户的 S3 目标与新闻源 cookie/token。
+- **证据（b89c35a8）**：
+  - `apps/api/src/modules/storage/storage-settings.controller.ts:27-33`：PATCH 只有
+    `@Permissions("settings.manage")`，直接进 service；
+  - `apps/api/src/modules/storage/storage-settings.service.ts:170-206`：`updateStorageSettings`
+    更新 9 个无 orgId 维度的全局 key；
+  - `apps/api/src/modules/system-settings/news-source-runtime-secrets.controller.ts:23-29`：
+    PUT 只有 `settings.manage`；
+  - `apps/api/src/modules/system-settings/news-source-runtime-secrets.service.ts:111-201`（基线
+    `:158-173` 为写入段）：写全局 `news_source_runtime_secrets`；
+  - 对照：`apps/api/src/modules/system-settings/vector-service-settings.controller.ts:47,56`
+    相同全局配置已要求平台管理员。
+- **修复（Nest）**：
+  - `storage-settings.service.ts`：`updateStorageSettings` 首行 `assertPlatformAdmin(actorId)`，
+    直查 `GlobalRoleAssignment`（`userId` + `role='platform_admin'`）抛
+    `ForbiddenException("Platform admin access required")`。AuthModule 已依赖
+    StorageModule，注入 PlatformAccessService 会新增循环依赖，故按同一谓词内联。
+  - `news-source-runtime-secrets.service.ts`：`updateSettings` 首行复用已注入的
+    `PlatformAccessService.assertPlatformAdmin(actorId)`。
+  - 空白 body / 空数组 / 无实际变更同样先授权；controller、DTO、module 注册均未改；
+    三个 GET 保持 `settings.manage` 可读。
+- **修复（Go）**：写路径在 DTO 校验之后执行同一平台门禁；机器令牌（`machine:<id>`）
+  不是 User 行，永不满足门禁。
+- **远端回归断言**：org A/B 普通管理员与 `settings.manage` 机器令牌四条写均 403 且无
+  配置/审计/缓存副作用；平台管理员 P 四条写 200；三个 GET 对有权限机器令牌 200；
+  有平台角色但无 `settings.manage` 仍 403；非平台用户的非法 DTO 先 400、合法 DTO 才 403。
+- **状态**：✅ Nest 与 Go 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 IS1 断言组覆盖（见 PR #55）。
+
+### IS2 运行凭据的进程缓存与无锁整体写导致丢失更新 — ✅ 已修复【P1】
+
+- **用户影响**：管理端读到旧值；并发 PUT 互相覆盖未触及条目（例如并入新增 C 时丢掉
+  另一进程刚写入的 B）。
+- **证据（b89c35a8）**：
+  - `news-source-runtime-secrets.service.ts:123-173`：`getPublicSettings`/`updateSettings`
+    都从 `loadStoredSettingsStrict()` 读后合并，再整体 upsert `news_source_runtime_secrets`；
+  - `:334-347`：`loadStoredSettingsStrict` 命中 30,000ms 进程缓存即返回，跨进程更新
+    （Nest worker / Go 接管）不会使其失效；
+  - `:199`、`:432-434`：写后只清当前实例缓存。
+- **修复（Nest）**：管理 GET 改走新增的 `loadStoredSettingsStrictFromDb()`（DB 权威
+  strict parse）；PUT 的合并基准同样来自锁内 DB；整段读-改-写在
+  `infra-settings:news-source-runtime-secrets:v1` 全局 MySQL 会话锁内完成；响应使用
+  本次写入快照（删空时 source 为 `none`）。`getSecretsForSource` 等消费者保留原有
+  30 秒进程缓存与降级语义，`invalidateCache()` 仍在写后调用。
+- **修复（Go）**：管理 GET 无进程缓存；PUT 在同一锁名内做 DB 权威读改写；不新增
+  Redis 版本键。
+- **远端回归断言**：Nest 先 GET 暖缓存 → 另一连接改 DB → 管理 GET 立即返回新值；
+  暖 A、DB 改 [A,B]、再 PUT 新增 C → 最终 [A,B,C]；Nest/Nest、Go/Go、Nest/Go 真实并发
+  （新增不同条目 / 删除不同条目 / 删 A 加 C）集合正确；首次无记录并发创建；strict
+  损坏记录仍按 400/409 拒绝且不被覆盖清空。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 IS2/IS3 断言组覆盖（见 PR #55）。
+
+### IS3 向量 PUT 省略 token 时旧 Redis 值覆盖已轮换 token — ✅ 已修复【P1】
+
+- **用户影响**：已轮换的 vector 内部 token 被旧缓存值写回，向量调用携带失效 token。
+- **证据（b89c35a8）**：`vector-service-settings.service.ts:98`（更新基准取自
+  `loadStoredSettings()`）、`:188` 起（缓存优先，命中 `vector_service:settings` 即用
+  Redis 旧值）、`:103` + `resolveNextToken`（absent token 保留该旧基准的 token）、
+  `:124-139`（随后整体覆盖 DB）。
+- **修复（Nest）**：PUT 与 DELETE 共用 `infra-settings:vector-service:v1` 全局锁；
+  token 保留基准改为锁内 `loadStoredSettingsFromDb()`；absent/null/空白/非空四态
+  语义不变；写后清共享 Redis 缓存。controller 门禁、vector-client、diagnostics 未改。
+- **修复（Go）**：同一锁名；同样从 DB 权威读 base；四态语义逐字对齐。
+- **远端回归断言**：DB token=B、Redis 信封 token=A、PUT 省略 token 后解密核对仍为 B
+  （Nest 与 Go 各一遍，只断言 hasToken 不算通过）；PUT 与 DELETE 均等待同一固定锁。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 IS2/IS3 断言组覆盖（见 PR #55）。
+
+### IS4 存储清空字段直接向必填 JSON 列传 JS null — ✅ 已修复【P1】
+
+- **用户影响**：`endpoint: null` / `forcePathStyle: null` / `presignedUrlTtlSeconds: null`
+  的「清空」语义无法持久化（必填 Json 列拒绝 SQL NULL，写入报错或语义错乱）。
+- **静态证据（b89c35a8）**：
+  - `apps/api/src/modules/storage/dto/storage-settings.dto.ts`：`endpoint` 及其他可选字段
+    `@IsOptional()` 允许显式 null；
+  - `storage-settings.service.ts:260-308`（`normalizeUpdates`）：`endpoint` 显式 null 被保留；
+    `forcePathStyle`、`presignedUrlTtlSeconds` 仅判 `undefined`，null 也会保留；
+  - `:178-202`（`Object.entries` 循环）：`recordValue` 原样作为 Prisma JSON 列 `value`，
+    没有 `JsonNull` 转换；
+  - `packages/db/prisma/schema.prisma:758-767`：`SystemSetting.value` 为必填 `Json`；
+    生成的 `SystemSettingCreate/UpdateInput.value` 类型是 `JsonNullValueInput | InputJsonValue`
+    （`node_modules/.prisma/client/index.d.ts:121960-121973`），SQL NULL（`Prisma.DbNull`）
+    与 JSON null（`Prisma.JsonNull`）不可混用。
+- **修复（Nest）**：新增具名 `NormalizedStorageSettingsUpdate`（可空输入显式建模）与
+  `toStorageJsonValue()`；顶层业务 null 转 `Prisma.JsonNull`；不再用 `Object.entries` 的
+  any 掩盖类型；审计 metadata 内的 null 仍是普通 JSON null。DTO、schema 未改，行未删除。
+- **修复（Go）**：向 JSON 列写字面量 `null`，不传 SQL NULL。
+- **远端回归断言（须先留修复前复现证据）**：`endpoint:null`、`forcePathStyle:null`、
+  `presignedUrlTtlSeconds:null` 均 200；`JSON_TYPE(value)="NULL"` 且 `value IS NULL` 为 false；
+  GET 按 env 回退（endpoint 依 env 决定有值或省略）；混合 PATCH 事务原子；空字符串
+  endpoint 仍 DTO 400。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 JSON null 断言组覆盖（`JSON_TYPE=NULL` 且 `value IS NULL=0`）。
+
+## 8. Go-批 M9 模型接入设置与 OpenAI 密钥分发（MA1–MA3）
+
+> 基线 `b89c35a8`（origin/main，普通 CI run 39051652549 success）· 分支
+> `refactor/go-model-access-settings` · 开关 `API_GO_MODEL_ACCESS_SETTINGS_MODE`
+> 全部行号在开工时按该基线逐行复核（与规划提示词的差异见每条「行号复核」）。
+> 三条均为本批明确要求改变的行为（MA1/MA2/MA3），不得以「兼容旧行为」保留。
+> **状态：✅ 已修复并远端验证**（2026-10-17）。
+> - 普通 CI：run [39066013527](https://github.com/wei500L/newwei/actions/runs/39066013527)
+>   head `1e0b139e` conclusion success（lint/typecheck/web 覆盖率/vector/API
+>   Vitest/OpenAPI 漂移/auth-matrix 漂移/api-go 测试全绿）。
+> - 真实栈 smoke：run [39066023475](https://github.com/wei500L/newwei/actions/runs/39066023475)
+>   head `1e0b139e` conclusion success。关键断言（日志原文）：
+>   `parity ok: PUT /openai-keys` 等 13 条 legacy 逐接口对照、
+>   `MA1 platform gate ok: six writes 403 for org admin and machine token, no side effects`、
+>   `validation order ok: DTO 400 before the platform 403`、
+>   `MA2 stale-cache read-modify-write ok (append and delete)`、
+>   `MA3 token retention from the authoritative row ok`、
+>   `lock protocol ok: 10s timeout -> 503 without a write, and the lock is reacquirable`、
+>   `concurrency ok: Nest + Go appends produce the union`、
+>   `cross-implementation crypto interop ok (model token + keys, both directions)`、
+>   `takeover ok: ten routes served by Go, unmigrated paths stay on Nest (502)`、
+>   `rollback ok: legacy mode proxies to NestJS and NestJS reads the same configuration`。
+> - 既有 smoke 兼容：`api-go-runtime-settings-smoke`
+>   [39063276096](https://github.com/wei500L/newwei/actions/runs/39063276096) 与
+>   `api-go-graphql-settings-crawl-read-smoke`
+>   [39063276148](https://github.com/wei500L/newwei/actions/runs/39063276148) success
+>   （head `185740d3`，合并 #53 之后）。
+
+### MA1：全局模型配置与 OpenAI 密钥写接口缺平台管理员门禁（P0）
+
+- **证据（基线 b89c35a8 实际行号）**
+  - `apps/api/src/modules/system-settings/model-service-settings.controller.ts:23-30`
+    （PUT）与 `:32-36`（DELETE）：只有 `@Permissions("settings.manage")`，直接
+    调用 service。
+  - `model-service-settings.service.ts:120-135`（`prisma.systemSetting.upsert`
+    key=`model_service`）与 `:162-163`（`resetToEnv` 的 `deleteMany`）：
+    SystemSetting.key 是全局主键、没有 orgId 维度。
+  - `openai-keys-settings.controller.ts:23-48`：PUT/POST/DELETE key/DELETE 四条写
+    接口同样只有 `settings.manage`。
+  - `openai-keys-settings.service.ts:151-166`（upsert key=`openai_keys`）与
+    `:205-206`（`reset` 的 `deleteMany`）。
+  - 对照既有同类全局配置：
+    `vector-service-settings.controller.ts:47` 与 `:56`
+    （`await this.platformAccess.assertPlatformAdmin(user.id);`，SEC-01）。
+- **结果**：任意租户中持有 `settings.manage` 的组织管理员都能改写**全平台**
+  模型接入端点/内部 token 或全平台 OpenAI keys；机器令牌
+  （`MachineTokenService.validate` 返回 `machine:<tokenId>`）还可能把
+  `machine:<id>` 写进 `SystemSetting.updatedById`（外键 → `User(id)`）得到 500。
+- **修法**：两个 service 注入既有 `PlatformAccessService`；六个公开管理写方法
+  （`ModelServiceSettingsService.updateSettings/resetToEnv`、
+  `OpenAiKeysSettingsService.updateSettings/appendKeys/removeKeyByFingerprint/reset`）
+  第一步 `assertPlatformAdmin(actorId)`，先于读取配置、加锁、编码、写库、审计与
+  cache invalidation。控制器/DTO/模块注册均不改；只读 GET 不加门禁；内部取钥与
+  上报保留自己的 LITELLM_CONFIG_INTERNAL_TOKEN 机制。
+- **远端回归断言**（smoke `platform gate` 组）：普通 org 管理员与
+  `settings.manage` 机器令牌在六条管理写上均 403 `Platform admin access required`；
+  相同身份的两个 GET 仍 200；平台管理员 + `settings.manage` 六条写成功；
+  有平台角色但无 `settings.manage` 走权限层 403
+  （`INSUFFICIENT_PERMISSIONS`）；被拒请求后 SystemSetting/Redis/AuditLog 无变更；
+  非平台用户 + 错 body 先得到 DTO 400（验证 service gate 在 DTO 之后）。
+- **状态**：✅ 已修复并远端验证（smoke 断言名 `MA1 platform gate ok` /
+  `validation order ok`）。
+
+### MA2：密钥追加/按指纹删除使用缓存读改写且没有跨实例互斥（P1）
+
+- **证据（基线 b89c35a8 实际行号）**
+  - `openai-keys-settings.service.ts:189-195`（`appendKeys`：`loadStoredSettings`
+    → 合并 → `return this.updateSettings(...)`）与 `:199-202`
+    （`removeKeyByFingerprint`：同一「缓存读 → 合并 → 公开 updateSettings」）。
+  - `:466-493`（`loadStoredSettings` 先读 30 秒 Redis 缓存
+    `openai_keys:settings`，命中即返回，绝不回 DB）。
+  - `:151-166`（最终整体 upsert，无行锁/版本条件/无跨进程互斥）。
+  - 行号复核：规划提示词写 `:188-202` / `:466-486` / `:151-166`，
+    实际合并基准代码在 `:189-195`、缓存读取函数体在 `:466-493`。
+- **结果**：两个并发追加可能只保留其中一份；删除与追加交错可恢复已删除 key 或
+  丢掉新 key；即使串行 HTTP，只要缓存旧于 DB，就会用旧集合整体覆盖当前集合。
+- **修法**：PUT、POST、按指纹 DELETE、集合 DELETE 四条写共同遵守同一把全局
+  MySQL 会话锁 `model-access:openai-keys:v1`；锁内重新 SELECT SystemSetting 权威
+  值作为合并基准（不再用缓存）；append/remove 走私有锁内持久化函数，不递归进入
+  公开加锁方法；锁保持到配置提交、审计与 cache invalidation 完成；响应由本次写入
+  快照按原公共模型组装。读接口保留原有 30 秒 best-effort 缓存契约。
+- **远端回归断言**：确定性旧缓存（DB=[A,B]、Redis 旧信封=[A]）下 POST 追加 C
+  最终为 [A,B,C]；DELETE 指纹 A 最终保留 B；Nest 直连与 Go 两侧分别验证；
+  真实跨进程并发（Nest/Nest、Go/Go、Nest/Go）两次追加不同 key 最终为并集、
+  两次删除不同指纹两者均删除、删除 A 与追加 C 并发最终为「原集合去 A 加 C」。
+- **状态**：✅ 已修复并远端验证（smoke 断言名 `MA2 stale-cache read-modify-write ok`
+  / `concurrency ok: ...`）。
+
+### MA3：模型 PUT 省略 internalToken 时可将旧缓存 token 写回（P1）
+
+- **证据（基线 b89c35a8 实际行号）**
+  - `model-service-settings.service.ts:94`（PUT 的 `const stored =
+    await this.loadStoredSettings();`）。
+  - `:183-212`（`loadStoredSettings` 30 秒缓存优先，命中即返回）。
+  - `:100`（`resolveNextToken(stored, input.internalToken)`）与 `:235-249`
+    （`internalToken` 为 absent 时 `return stored?.internalToken ?? null`）。
+  - `:120-135`（随后整体 upsert 覆盖 DB）。
+  - 行号复核：规划提示词写 `:94` / `:183-205` / `:100` / `:235-240` / `:120-134`；
+    实际缓存读取函数体到 `:212`，`resolveNextToken` 到 `:249`，upsert 到 `:135`。
+- **结果**：DB 已轮换为 token B 而缓存仍是 token A 时，一次不带 internalToken 的
+  配置 PUT 会把 token 恢复成 A；并发 reset/PUT 也缺少统一序列化。
+- **修法**：模型 PUT 与 DELETE 共用另一把全局会话锁
+  `model-access:model-service:v1`；PUT 的 token 保留基准只来自锁内数据库当前记录；
+  reset 用同一把锁；不改变 baseUrl 的省略语义，也不把整体 PUT 改成 PATCH；响应
+  由本次权威写入快照构造。
+- **远端回归断言**：DB token=B、Redis 旧信封 token=A 时，不带 internalToken 的
+  合法 PUT 后 DB 与可解密 token 仍为 B（Nest 与 Go 两侧各一次）；持锁期间 PUT 与
+  DELETE 都等待（不是只保护其中一个方法）；新 token 与省略 token 并发最终不得
+  恢复旧 cache token。
+- **状态**：✅ 已修复并远端验证（smoke 断言名 `MA3 token retention from the
+  authoritative row ok` / `MA3 concurrency ok`）。
+
+### 同批登记：源码与规划描述不一致（按源码保留既有契约）
+
+1. `SystemSecuritySettingsService` 的 Redis 缓存 TTL 为 **60 秒**
+   （`system-security-settings.service.ts:39` `CACHE_TTL_SECONDS = 60`），
+   规划提示词表格写 30 秒。本批只读该缓存，按源码 60 秒理解，不修改它。
+2. `openai_keys` 缓存读取路径中，`listKeyFingerprints` 对**明文 string 旧项**
+   不丢弃 stripBearer 后为空的项（`:403-406` 无条件 push），而 `resolveKeys`
+   会丢弃（`:358-363`）。两个算法刻意不合并——本批与单测/smoke 都保留该差异。
+3. `MachineTokenService.MACHINE_TOKEN_ALLOWED_PERMISSIONS` 只允许 `metrics.read`
+   （`machine-token.service.ts:16-18`），因此「持有 settings.manage 的机器令牌」
+   只能由 seed/SQL 直接写入 `MachineAccessToken.permissions` 构造——smoke 按此
+   准备数据，不通过 API 创建。
+
+## 9. Go-批10（平台治理设置 16 条迁移）同批缺陷
 
 本节记录随「平台治理设置 16 条迁入 Go」同批修复的三个缺陷。三处都在 NestJS 与 Go
 两侧同修；证据行号以 `origin/main@0dbfc0d0` 为准，开工时已逐条复核。

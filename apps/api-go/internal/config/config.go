@@ -227,6 +227,39 @@ const (
 	CrawlTemplatesModeGo     CrawlTemplatesMode = "go"
 )
 
+// CrawlFrontierRunsMode controls the eleven crawl frontier run monitoring and
+// cancellation HTTP routes under /api/admin/crawl-frontier
+// (API_GO_CRAWL_FRONTIER_RUNS_MODE). It defaults to legacy and accepts only
+// "", "legacy" and "go".
+//
+// Go mode takes over exactly these routes:
+//
+//	GET  /api/admin/crawl-frontier/runs
+//	GET  /api/admin/crawl-frontier/runs/cancel   (matched as runs/:id)
+//	GET  /api/admin/crawl-frontier/runs/:id
+//	GET  /api/admin/crawl-frontier/runs/:id/workflow-run
+//	GET  /api/admin/crawl-frontier/runs/:id/workflow-candidates
+//	GET  /api/admin/crawl-frontier/runs/:id/workflow-candidates/:candidateId
+//	POST /api/admin/crawl-frontier/runs/cancel
+//	POST /api/admin/crawl-frontier/runs/:id/cancel
+//	GET  /api/admin/crawl-frontier/nodes/:id
+//	GET  /api/admin/crawl-frontier/workflow-runs/:runId
+//	GET  /api/admin/crawl-frontier/workflow-runs/:runId/candidates
+//	GET  /api/admin/crawl-frontier/workflow-runs/:runId/candidates/:candidateId/explanation
+//
+// Every other method, trailing slash and longer path falls back to NestJS.
+// The write queue routes (create run, retry, replay, trial-run) are never
+// registered here. Go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
+// Mongo is not a startup dependency. No shadow, no canary, no worker and no
+// crawler process is started, and rolling back only means setting this
+// variable back to legacy.
+type CrawlFrontierRunsMode string
+
+const (
+	CrawlFrontierRunsModeLegacy CrawlFrontierRunsMode = "legacy"
+	CrawlFrontierRunsModeGo     CrawlFrontierRunsMode = "go"
+)
+
 // LlmLogsMode 只控制 LLM 请求日志的列表、CSV 导出与用量汇总这 3 条只读
 // GET（/api/llm-logs、/api/llm-logs/export、/api/llm-logs/summary）。
 // 默认 legacy。go 只接管这三条精确 GET；其他方法与更长路径仍回 NestJS。
@@ -374,6 +407,33 @@ const (
 	CrawlReadTelemetryModeGo     CrawlReadTelemetryMode = "go"
 )
 
+// InfrastructureSettingsMode controls the seven infrastructure connection and
+// crawl-credential settings HTTP routes migrated by this unit
+// (API_GO_INFRASTRUCTURE_SETTINGS_MODE): the three vector-service routes, the
+// two storage settings routes and the two news-source runtime secret routes.
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. go mode requires JWT_SECRET,
+// DATABASE_URL and REDIS_HOST; it never requires MONGO_URI (this unit reads and
+// writes MySQL and Redis only), never enables shadow or canary traffic and
+// never starts a worker. The settings-encryption key is deliberately optional
+// at startup: a missing or invalid key is handled per read/write by the
+// documented fallback and 400 contracts rather than blocking boot.
+type InfrastructureSettingsMode string
+
+const (
+	// InfrastructureSettingsModeLegacy proxies all seven routes to NestJS
+	// (default, including the empty value). Rolling back only means setting
+	// API_GO_INFRASTRUCTURE_SETTINGS_MODE back to legacy.
+	InfrastructureSettingsModeLegacy InfrastructureSettingsMode = "legacy"
+	// InfrastructureSettingsModeGo serves all seven routes from Go with the
+	// same authentication chain as NestJS (JWT verification, Redis blacklist,
+	// MySQL membership re-derivation) plus mtk_ machine tokens, and the same
+	// platform-admin gate on the four write routes.
+	InfrastructureSettingsModeGo InfrastructureSettingsMode = "go"
+)
+
 // RuntimeSettingsMode controls the eighteen platform runtime and governance
 // settings HTTP routes under /api/system-settings (API_GO_RUNTIME_SETTINGS_MODE).
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
@@ -415,6 +475,42 @@ const (
 	// settings reconcile Mongo TTL indexes. It never enables shadow or canary
 	// traffic.
 	PlatformGovernanceSettingsModeGo PlatformGovernanceSettingsMode = "go"
+)
+
+// ModelAccessSettingsMode controls the ten model service configuration and OpenAI
+// key distribution HTTP routes (API_GO_MODEL_ACCESS_SETTINGS_MODE).
+//
+//	go mode takes over exactly these ten routes:
+//	  GET    /api/system-settings/model-service
+//	  PUT    /api/system-settings/model-service
+//	  DELETE /api/system-settings/model-service
+//	  GET    /api/system-settings/openai-keys
+//	  PUT    /api/system-settings/openai-keys
+//	  POST   /api/system-settings/openai-keys
+//	  DELETE /api/system-settings/openai-keys/key/:fingerprint
+//	  DELETE /api/system-settings/openai-keys
+//	  GET    /api/internal/litellm/openai-keys
+//	  POST   /api/internal/litellm/openai-keys/applied
+//
+// /api/internal/litellm/proxy-load-balancing, /api/system-settings/llm-gateways and
+// every other /api/system-settings route keep falling back to NestJS. go mode
+// requires JWT_SECRET, DATABASE_URL and REDIS_HOST only: it reads no Mongo
+// collection, calls no model upstream and starts no worker. The accepted values
+// are exactly "", "legacy" and "go"; any other value fails startup instead of
+// silently degrading. The default is legacy.
+type ModelAccessSettingsMode string
+
+const (
+	// ModelAccessSettingsModeLegacy proxies all ten routes to NestJS (default,
+	// including the empty value). Rollback only changes this variable back to
+	// legacy.
+	ModelAccessSettingsModeLegacy ModelAccessSettingsMode = "legacy"
+	// ModelAccessSettingsModeGo serves all ten routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens, the platform admin gate
+	// on the six management writes, and the LITELLM_CONFIG_INTERNAL_TOKEN guard
+	// on the two internal routes. It never enables shadow or canary traffic.
+	ModelAccessSettingsModeGo ModelAccessSettingsMode = "go"
 )
 
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
@@ -597,6 +693,11 @@ type Config struct {
 	// CrawlProfilesMode 只控制采集站点画像编辑接口。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	CrawlProfilesMode CrawlProfilesMode
+	// CrawlFrontierRunsMode controls the eleven crawl frontier run
+	// monitoring and cancellation HTTP routes. It defaults to legacy. Go
+	// requires JWT, MySQL and Redis, does not require Mongo, and never
+	// starts a crawl worker or enqueues a job.
+	CrawlFrontierRunsMode CrawlFrontierRunsMode
 	// RbacMode 只控制组织访问控制六条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动任何 worker。
 	RbacMode RbacMode
@@ -685,15 +786,54 @@ type Config struct {
 	// "SYSTEM_SETTINGS_ENCRYPTION_KEY is empty"). The existing
 	// SettingsEncryptionKey field is trimmed and is used by other domains.
 	PlatformGovernanceEncryptionKeyRaw string
-	GraphQLAPQEnabled                  bool
-	GraphQLDepthLimit                  int
-	GraphQLComplexity                  int
-	GraphQLCacheEnabled                bool
-	GraphQLCacheTTL                    int
-	TrustProxy                         string
-	RateLimitFailOpen                  bool
-	RateLimitLogin                     int
-	RateLimitLoginWindow               int
+
+	// InfrastructureSettingsMode controls the seven infrastructure connection
+	// and crawl-credential settings routes (see InfrastructureSettingsMode).
+	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
+	// it does not require Mongo and does not start any worker or scheduled job.
+	InfrastructureSettingsMode InfrastructureSettingsMode
+
+	// The VECTOR_* / S3_* values below are the environment defaults the
+	// infrastructure settings routes fall back to when a SystemSetting row is
+	// absent. Names and defaults mirror the NestJS EnvService getters exactly.
+	// VectorInternalToken and SettingsEncryptionKeyRaw keep the raw environment
+	// value (no trim) because the NestJS contracts distinguish "missing" from
+	// "present but blank/invalid".
+	VectorServiceEnabled         bool
+	VectorServiceFallbackToMongo bool
+	VectorServiceBaseURL         string
+	VectorInternalToken          string
+	VectorServiceTimeoutMs       int
+	VectorServiceMaxRetries      int
+
+	S3AccessKeyID            string
+	S3SecretAccessKey        string
+	S3Region                 string
+	S3Bucket                 string
+	S3Endpoint               string
+	S3PublicBaseURL          string
+	S3ForcePathStyle         bool
+	S3PresignedURLTTLSeconds int
+
+	// SettingsEncryptionKeyRaw is the untrimmed SYSTEM_SETTINGS_ENCRYPTION_KEY.
+	// SettingsEncryptionKeyPresent mirrors the NestJS `if (!raw)` presence test
+	// performed before decoding. SettingsEncryptionKey (declared further down)
+	// keeps its historical trimmed value and is left unchanged.
+	SettingsEncryptionKeyRaw     string
+	SettingsEncryptionKeyPresent bool
+	// NodeEnv is the raw NODE_ENV the secret-encoding policy compares against
+	// the exact string "production".
+	NodeEnv string
+
+	GraphQLAPQEnabled    bool
+	GraphQLDepthLimit    int
+	GraphQLComplexity    int
+	GraphQLCacheEnabled  bool
+	GraphQLCacheTTL      int
+	TrustProxy           string
+	RateLimitFailOpen    bool
+	RateLimitLogin       int
+	RateLimitLoginWindow int
 	// The remaining rate limit buckets and the auth profile cache values are
 	// the environment defaults the sixteen runtime/governance settings routes
 	// return when no SystemSetting row exists. Names and defaults mirror the
@@ -801,6 +941,26 @@ type Config struct {
 
 	// canary 分流：
 	CanaryPercent int // 0=legacy 等价；100=go 等价；中间按 orgId 稳定哈希分流
+
+	// ModelAccessSettingsMode controls the ten model access settings routes (see
+	// ModelAccessSettingsMode). Default legacy. Mode go requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST; it does not require Mongo and starts no worker
+	// or scheduled job. LITELLM_CONFIG_INTERNAL_TOKEN and
+	// SYSTEM_SETTINGS_ENCRYPTION_KEY keep their runtime semantics and are never
+	// startup requirements.
+	ModelAccessSettingsMode ModelAccessSettingsMode
+	// 模型接入设置本批消费的原始环境值：config 只做读取与保存，
+	// envBoolean / Number 的 JavaScript 语义解析放在
+	// internal/modelaccesssettings（NewConfigFromEnv）里，且只在 go 模式求值，
+	// legacy 模式的启动行为不变。
+	ModelServiceEnabledRaw         string
+	ModelServiceBaseURLRaw         string
+	ModelServiceInternalTokenRaw   string
+	ModelServiceTimeoutMsRaw       string
+	ModelServiceMaxRetriesRaw      string
+	LiteLLMConfigInternalTokenRaw  string
+	SystemSettingsEncryptionKeyRaw string
+	NodeEnvRaw                     string
 }
 
 // Load 从 getenv 读取并校验配置。
@@ -1050,6 +1210,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_CRAWL_PROFILES_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_FRONTIER_RUNS_MODE")) {
+	case "", string(CrawlFrontierRunsModeLegacy):
+		cfg.CrawlFrontierRunsMode = CrawlFrontierRunsModeLegacy
+	case string(CrawlFrontierRunsModeGo):
+		cfg.CrawlFrontierRunsMode = CrawlFrontierRunsModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_FRONTIER_RUNS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_RBAC_MODE")) {
 	case "", string(RbacModeLegacy):
 		cfg.RbacMode = RbacModeLegacy
@@ -1149,6 +1317,25 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.PlatformGovernanceSettingsMode == PlatformGovernanceSettingsModeGo {
 		errs = append(errs, governanceErrs...)
 	}
+	// Model access settings accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy so an unset deployment keeps the NestJS
+	// path.
+	switch strings.TrimSpace(getenv("API_GO_MODEL_ACCESS_SETTINGS_MODE")) {
+	case "", string(ModelAccessSettingsModeLegacy):
+		cfg.ModelAccessSettingsMode = ModelAccessSettingsModeLegacy
+	case string(ModelAccessSettingsModeGo):
+		cfg.ModelAccessSettingsMode = ModelAccessSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_MODEL_ACCESS_SETTINGS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_INFRASTRUCTURE_SETTINGS_MODE")) {
+	case "", string(InfrastructureSettingsModeLegacy):
+		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeLegacy
+	case string(InfrastructureSettingsModeGo):
+		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLReadMode = "legacy"
@@ -1231,6 +1418,27 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.AuthProfileCacheMaxWaitMs = intDefault(getenv("AUTH_PROFILE_CACHE_MAX_WAIT_MS"), 5000)
 	cfg.AuthProfileCacheRetryDelayMs = intDefault(getenv("AUTH_PROFILE_CACHE_RETRY_DELAY_MS"), 50)
 	cfg.AuditLogRetentionDays = intDefault(getenv("AUDIT_LOG_RETENTION_DAYS"), 90)
+	// Infrastructure connection defaults (vector service + S3 storage). The
+	// vector token and the settings-encryption key keep their raw environment
+	// value: the NestJS contracts distinguish a missing variable from one that
+	// is present but blank or undecodable.
+	cfg.VectorServiceEnabled = boolDefault(getenv("VECTOR_SERVICE_ENABLED"), false)
+	cfg.VectorServiceFallbackToMongo = boolDefault(getenv("VECTOR_SERVICE_FALLBACK_TO_MONGO"), true)
+	cfg.VectorServiceBaseURL = strings.TrimSpace(getenv("VECTOR_SERVICE_BASE_URL"))
+	cfg.VectorInternalToken = getenv("VECTOR_INTERNAL_TOKEN")
+	cfg.VectorServiceTimeoutMs = intDefault(getenv("VECTOR_SERVICE_TIMEOUT_MS"), 5000)
+	cfg.VectorServiceMaxRetries = intDefault(getenv("VECTOR_SERVICE_MAX_RETRIES"), 2)
+	cfg.S3AccessKeyID = getenv("S3_ACCESS_KEY_ID")
+	cfg.S3SecretAccessKey = getenv("S3_SECRET_ACCESS_KEY")
+	cfg.S3Region = stringDefault(getenv("S3_REGION"), "us-east-1")
+	cfg.S3Bucket = getenv("S3_BUCKET")
+	cfg.S3Endpoint = strings.TrimSpace(getenv("S3_ENDPOINT"))
+	cfg.S3PublicBaseURL = strings.TrimSpace(getenv("S3_PUBLIC_BASE_URL"))
+	cfg.S3ForcePathStyle = boolDefault(getenv("S3_FORCE_PATH_STYLE"), false)
+	cfg.S3PresignedURLTTLSeconds = intDefault(getenv("S3_PRESIGNED_URL_TTL_SECONDS"), 300)
+	cfg.SettingsEncryptionKeyRaw = getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY")
+	cfg.SettingsEncryptionKeyPresent = cfg.SettingsEncryptionKeyRaw != ""
+	cfg.NodeEnv = getenv("NODE_ENV")
 	cfg.CrawlBaseURL = strings.TrimRight(strings.TrimSpace(getenv("CRAWL4AI_BASE_URL")), "/")
 	cfg.CrawlAPIKey = strings.TrimSpace(getenv("CRAWL4AI_API_KEY"))
 	cfg.CrawlTimeoutMs = intDefault(getenv("CRAWL4AI_TIMEOUT_MS"), 120_000)
@@ -1267,6 +1475,19 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.TranslationFallbackBaseURL = strings.TrimRight(strings.TrimSpace(getenv("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL")), "/")
 	cfg.MongoURI = strings.TrimSpace(getenv("MONGO_URI"))
 	cfg.SettingsEncryptionKey = strings.TrimSpace(getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
+	// 模型接入设置（本批）的原始环境值。这里保留未 trim 的原文：
+	// NestJS 的 env schema 只在「整串为空白」时视为未设置，接受值本身不做
+	// trim；SYSTEM_SETTINGS_ENCRYPTION_KEY 也没有 preprocess。解析与 go 模式
+	// 的启动校验在 internal/modelaccesssettings.NewConfigFromEnv 内完成，
+	// legacy 模式完全不受影响。
+	cfg.SystemSettingsEncryptionKeyRaw = getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY")
+	cfg.ModelServiceEnabledRaw = getenv("MODEL_SERVICE_ENABLED")
+	cfg.ModelServiceBaseURLRaw = getenv("MODEL_SERVICE_BASE_URL")
+	cfg.ModelServiceInternalTokenRaw = getenv("MODEL_SERVICE_INTERNAL_TOKEN")
+	cfg.ModelServiceTimeoutMsRaw = getenv("MODEL_SERVICE_TIMEOUT_MS")
+	cfg.ModelServiceMaxRetriesRaw = getenv("MODEL_SERVICE_MAX_RETRIES")
+	cfg.LiteLLMConfigInternalTokenRaw = getenv("LITELLM_CONFIG_INTERNAL_TOKEN")
+	cfg.NodeEnvRaw = getenv("NODE_ENV")
 	cfg.LiteLLMAPIBase = strings.TrimSpace(getenv("LITELLM_API_URL"))
 	if cfg.LiteLLMAPIBase == "" {
 		cfg.LiteLLMAPIBase = strings.TrimSpace(getenv("LITELLM_API_BASE"))
@@ -1546,6 +1767,9 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.CrawlProfilesMode == CrawlProfilesModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_PROFILES_MODE", cfg)
 	}
+	if cfg.CrawlFrontierRunsMode == CrawlFrontierRunsModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_FRONTIER_RUNS_MODE", cfg)
+	}
 	if cfg.RbacMode == RbacModeGo {
 		appendAuthRequirements(&errs, "API_GO_RBAC_MODE", cfg)
 	}
@@ -1609,6 +1833,23 @@ func Load(getenv func(string) string) (Config, error) {
 	// and Redis only; it reads no Mongo collection and starts no worker.
 	if cfg.RuntimeSettingsMode == RuntimeSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_RUNTIME_SETTINGS_MODE", cfg)
+	}
+	// The model access settings takeover needs JWT verification, MySQL and Redis
+	// only (the model_service and openai_keys rows live in MySQL, the 30 second
+	// cache envelopes live in Redis). It reads no Mongo collection, calls no model
+	// upstream and starts no worker. Neither the encryption key nor the LiteLLM
+	// internal token is a startup requirement: their absence has runtime semantics
+	// (a fail-closed 400 at write time and a 403 on the internal endpoints).
+	if cfg.ModelAccessSettingsMode == ModelAccessSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_MODEL_ACCESS_SETTINGS_MODE", cfg)
+	}
+	// The infrastructure settings takeover needs JWT verification, MySQL and
+	// Redis only. It reads no Mongo collection, starts no worker and does not
+	// treat the settings-encryption key as a startup requirement: a missing or
+	// invalid key is handled per read/write by the documented fallback and 400
+	// contracts.
+	if cfg.InfrastructureSettingsMode == InfrastructureSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE", cfg)
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)

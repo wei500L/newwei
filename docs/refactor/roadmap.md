@@ -62,6 +62,7 @@
 | 身份/组织/RBAC/仪表盘/队列/情感/已处理条目 GraphQL 读（Go） | 🔶 `API_GO_GRAPHQL_READ_MODE` 与 `API_GO_GRAPHQL_WORKSPACE_READ_MODE` 默认都是 `legacy`。两个都是 `go` 时，`me`、`myOrganizations`、`users`、`userLoginRecords`、`roles`、`permissions`、`memberships`、`dashboards`、`queueStats`、`entitySentimentSeries`、`topicSentimentSeries`、`processedItemById` 由已有执行器处理。`users`/`userLoginRecords` 另做系统 `admin` 角色门禁；`UserModel` 的 `primaryRoleId`/`isActive`/`emailVerified`/`lastLoginAt`/`roleIds` 与 `RoleModel.permissions` 走新增的字段级权限；`duplicateOf` 解析到目标的 `ItemMeta.id`，`eventId` 走 `NewsEventItem.processedItemId` → `ProcessedArticle.cleanedMarkdownRef` → `NewsEventItem.processedArticleId` 两步回退。同批修 4 个缺陷：`users` 的非法/跨组织游标不再抛 Prisma P2025（返回 `[]`）；`processed-item.resolver.ts` 删除 `(doc.llm as any)` 并强类型归一化 `llm`；`SentimentService` 对 `entityName`/`topic` trim；`QueueService.stats` 的 `recentLogs.message` 脱敏。Mutation 与 `queueEvents` 订阅仍回 NestJS。回滚只改 `API_GO_GRAPHQL_WORKSPACE_READ_MODE=legacy`。生产入口仍是 Web → NestJS；canary 保持关闭。说明见 `docs/refactor/go-graphql-workspace-read.md`。 |
 | 运行时与治理设置（Go） | 🔶 `API_GO_RUNTIME_SETTINGS_MODE` 默认 `legacy`。`go` 时只接管 `/api/system-settings` 下 7 个子域的 18 条精确路由（`rate-limit-policies` 列表/创建/详情/更新/删除、`rate-limits`、`auth-cache`、`audit-log`、`multi-tenant-schedulers`、`news-source-scheduler`、`newsnow-personalization` 与 `/metrics`）；权限统一 `settings.manage`，`audit-log` 的 PUT 另外要求平台管理员。策略缓存键 `rate_limit_policy:<feature>`（60s）、`rate_limit:settings`（`RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS`，缺省 60s）、`auth_cache:settings`（60s）。新闻源调度三条交叉规则 400，三处存储值非法 409 带 code（`MULTI_TENANT_SCHEDULER_SETTINGS_INVALID` / `NEWS_SOURCE_SCHEDULER_SETTINGS_INVALID` / `NEWSNOW_PERSONALIZATION_SETTINGS_INVALID`）。同批修掉三处缺陷（机器令牌 actor 写 SQL NULL，避免 `User(id)` 外键 1452 → 500；`description` 三态清空；并发创建 1062 → 409、并发删除 P2025 → 404）。`GET /api/system-settings/security` 与其余 `/api/system-settings/*` 仍回 NestJS。回滚只把该变量改回 `legacy`。生产入口仍是 Web → NestJS；canary 保持关闭；不启用 shadow，不改前端。说明见 `docs/refactor/go-runtime-settings.md`。 |
 | 分类质量工作台与 RSS 诊断/翻译指标（Go） | 🔶 `API_GO_CLASSIFICATION_RSS_OPS_MODE` 默认 `legacy`。`go` 时按 13 条精确路由规则接管分类质量 8 条路径（`summary`、`sources/:sourceId/items`、`reviews/queue`、`reviews/:reviewId/decision`、`reviews/batch`、`sampling/query`、`sampling/annotations`、`reports/:jobId`）、RSS 链路诊断 4 条（`overview`、`chain`、`sources`、`backfill-source-id`）与 RSS 翻译每日指标 1 条（`rss-translation/metrics`），权限统一 `settings.manage`；RSS 诊断复用 MySQL `ObservabilitySnapshot`（scope `rss_diagnostics`，variantKey `windowDays:<n>:lookbackHours:<n>`，60 秒 TTL）与共享 Redis 锁，分类质量摘要复用 Redis 缓存键 `quality:classification:summary:<orgId>:<window>:<sourceId|all>:<categoryPrefix|all>`。`POST /api/admin/quality/classification/reports` 会投递 BullMQ 任务，遵守队列红线不迁移，继续回落 NestJS。同批修 4 个缺陷：非 24 位十六进制 ObjectId 触发 Mongoose CastError（决策/标注/报告查询，Nest 与 Go 两侧同修）；`status=corrected` 传 `"///"` 归一化为空后落库成 `null`（改为 400 `correctedCategoryPath is required when status=corrected`）；告警接收人漏判 `Membership.isActive`（停用成员仍收到通知）；`mtk_` 机器令牌的 `AuditLog.actorId` 写入 `"machine:<id>"`（改为 `null`，Mongo `reviewerId` 保留原值）。回滚只把该变量改回 `legacy`。生产入口仍是 Web → NestJS；canary 保持关闭；不启用 shadow，不改前端。说明见 `docs/refactor/go-classification-rss-ops.md`。 |
+| 基础设施连接与采集运行凭据（Go） | 🔶 `API_GO_INFRASTRUCTURE_SETTINGS_MODE` 默认 `legacy`。`go` 时只接管 7 条精确路由：向量服务配置 `GET/PUT/DELETE /api/system-settings/vector-service`、存储配置 `GET/PATCH /api/admin/settings/storage`、新闻源运行凭据 `GET/PUT /api/system-settings/news-source-runtime-secrets`。四条写要求真实平台管理员；机器令牌读写分离（三个 GET 可读、四条写 403，且 `updatedById`/`actorId` 写 NULL）。三个域各自保留既有缓存语义：向量 30s `exists/value` 信封、存储 60s 直接对象、运行凭据无 Redis（消费者仍有最长 30s 进程缓存）。两把全局 MySQL 会话锁 `infra-settings:vector-service:v1` 与 `infra-settings:news-source-runtime-secrets:v1`。同批修 IS1（存储与运行凭据写缺平台门禁）、IS2（运行凭据进程缓存+无锁整体写丢更新）、IS3（向量省略 token 被旧 Redis 值覆盖）、IS4（存储清空字段未写 JSON null）。`vector-service/diagnostics` 与 `storage/test` 仍回 NestJS。回滚只改本变量。说明见 `docs/refactor/go-infrastructure-settings.md`。 |
 | api 单测基座（vitest） | ✅ 远端 CI 已验证（SEC-01 6/6 + API-01 4/4 + 扫描器语义/基线断言全绿） |
 
 余项（按序）：
@@ -139,6 +140,24 @@
 回滚只改 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE`。细节见
 `docs/refactor/go-graphql-settings-crawl-read.md`。
 
+## M9：模型接入设置与 OpenAI 密钥分发（Go）
+
+新增开关 `API_GO_MODEL_ACCESS_SETTINGS_MODE`（空串/`legacy`/`go`，默认
+`legacy`，非法值启动失败）。`go` 时接管 10 条精确路由：
+`GET/PUT/DELETE /api/system-settings/model-service`、
+`GET/PUT/POST/DELETE /api/system-settings/openai-keys`、
+`DELETE /api/system-settings/openai-keys/key/:fingerprint`、
+`GET /api/internal/litellm/openai-keys`、
+`POST /api/internal/litellm/openai-keys/applied`。六条管理写在 service 内要求
+平台管理员（GlobalRoleAssignment role=platform_admin），两条内部接口只用
+`LITELLM_CONFIG_INTERNAL_TOKEN`。同批修 3 个缺陷（Nest 与 Go 两侧）：
+全局模型/密钥写缺平台门禁（MA1）、密钥追加与按指纹删除用缓存读改写且无跨实例
+互斥（MA2）、模型 PUT 省略 token 时写回旧缓存 token（MA3）；两把全局 MySQL
+会话锁 `model-access:model-service:v1` / `model-access:openai-keys:v1`。
+`/api/internal/litellm/proxy-load-balancing` 与 `/api/system-settings/*` 其余
+路径仍回 NestJS。回滚只改 `API_GO_MODEL_ACCESS_SETTINGS_MODE`。细节见
+`docs/refactor/go-model-access-settings.md`。
+
 ## M8 终局：编排、队列、调度、realtime
 
 - crawl 编排/news-pipeline/scheduler 迁移；BullMQ 行为对齐清单（job name/重试/DLQ 时机/repeat）逐项验收
@@ -162,4 +181,5 @@
 
 **canary 契约提醒**：路由表没有任何 ModeCanary 条目；CANARY_PERCENT 是预留配置。把业务路由切到 ModeCanary 之前必须先落地可信身份来源——`cmd/api/main_test.go` 的 TestDefaultRulesHaveNoCanaryRoutes 会在有人提前切换时失败。
 
+- 采集 Frontier 运行监控与取消 11 条 HTTP 迁入 Go（`API_GO_CRAWL_FRONTIER_RUNS_MODE`，默认 `legacy`，回滚只改该变量）；同批修掉取消改写终态运行、无事务无行锁与并发重复记事件的 F1 缺陷（Nest 与 Go 两侧一致），细节见 `docs/refactor/go-crawl-frontier-runs.md`。
 - ✅ Go-批10：平台治理设置 16 条 HTTP（security / assistant-quota / assistant-safety(+metrics) / task-logs / llm-request-logs(+metadata-policy/reset)）迁入 `apps/api-go`，开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串|legacy|go，默认 legacy）；同批修 SEC-05（全局写接口补平台管理员门禁）、TTL-01（tasklogs NamespaceNotFound）、CONC-01（llm-request-logs MySQL 会话锁 + 以 DB 为新合并基准）。回滚只改该变量。细节见 `docs/refactor/go-platform-governance-settings.md`。

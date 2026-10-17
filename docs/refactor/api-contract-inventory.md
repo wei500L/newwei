@@ -489,6 +489,7 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 - **同批修复的 4 个缺陷（Nest 与 Go 两侧一致）**：① 非 24 位十六进制 ObjectId 直接进 Mongoose `_id` 查询触发 CastError（500）——`submitReviewDecision` 返回 404 `Review item not found`、`batchReviewDecision` 过滤无效 id、`submitAnnotations` 返回 404 `Sample not found`、`getReportJob` 返回 `null`；② `status=corrected` 传 `"///"` 经 `normalizePath` 归一化为空后落库成 `correctedCategoryPath: null`——改为 400 `correctedCategoryPath is required when status=corrected`；③ `getAlertRecipientUserIds` 的 `membership.findMany` 漏判 `Membership.isActive`，已停用成员仍收到阈值告警——补 `isActive: true`；④ `mtk_` 机器令牌执行复核裁决时把 `"machine:<id>"` 写入 `AuditLog.actorId`（User 外键）——写审计时归一化为 `null`，Mongo `reviewerId` 仍保留原 `actorId`。
 - **强类型与注释**：Go 侧 `apps/api-go/internal/classificationrssops` 全部请求 DTO、响应模型、8 个 Mongo 集合文档、MySQL 行扫描、快照载荷与审计/通知载荷均为具名 `struct`（精确 `bson`/`json` tag），枚举为具名字符串类型（`QualityWindow`、`ReviewDecisionStatus`、`ConfidenceBand`、`ClassifiedSourceType`、`RssSourceVisibility`）；`any`/`interface{}`/`map[string]any`/`[]any` 为零（MySQL 语句固定 arity，id 列表用 `JSON_CONTAINS` 匹配）；新增与修改的 `.go`/`.ts` 注释全部为英文。
 - 回滚只把 `API_GO_CLASSIFICATION_RSS_OPS_MODE` 改回 `legacy`：legacy 不注册 handler、不追加任何路由规则、不额外打开 Mongo 连接。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不启用 shadow，不改前端，不改其他 `API_GO_*` 默认值。细节与验收清单见 `docs/refactor/go-classification-rss-ops.md`。SEC-01 的真实登录态未在本批验证。
+
 ## 13. 设置中心与来源策略 / 证据复核队列 / 采集任务 GraphQL 读（Go）
 
 新增开关 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE`（空串/`legacy`/`go`，默认
@@ -531,7 +532,121 @@ Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`artic
 关联补 `orgId` 约束。回滚只把 `API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` 改回
 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
 
-## 14. 平台治理设置 16 条 HTTP（Go）
+## 14. 采集 Frontier 运行监控与取消（Go）
+
+新增开关 `API_GO_CRAWL_FRONTIER_RUNS_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`（`appendAuthRequirements`），**不要求 `MONGO_URI`**，不启用 shadow，不启动采集 worker，不入队，不请求 crawl4ai。`go` 时只接管 11 条精确方法规则：
+
+| 方法 | 路径 | 权限 | 成功码 |
+| --- | --- | --- | --- |
+| GET | `/api/admin/crawl-frontier/runs` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/runs/:id` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/runs/:id/workflow-run` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/runs/:id/workflow-candidates` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/runs/:id/workflow-candidates/:candidateId` | `crawl.read` | 200 |
+| POST | `/api/admin/crawl-frontier/runs/cancel` | `crawl.write` | 201 |
+| POST | `/api/admin/crawl-frontier/runs/:id/cancel` | `crawl.write` | 201 |
+| GET | `/api/admin/crawl-frontier/nodes/:id` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/workflow-runs/:runId` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/workflow-runs/:runId/candidates` | `crawl.read` | 200 |
+| GET | `/api/admin/crawl-frontier/workflow-runs/:runId/candidates/:candidateId/explanation` | `crawl.read` | 200 |
+
+- **不迁移**：`POST /runs`（createRun 入队并调用 crawl4ai）、`POST /nodes/retry`、`POST /nodes/:id/retry`（BullMQ）、`POST /workflow-runs/:runId/replay`、`POST /workflows/:id/trial-run`，以及 `/profiles/**`、`/workflows/**`、`/workflow-versions/**`、`/news-sources/**`（属于各自的开关）；上表路径的其他方法、带尾斜杠与更长路径也回落 NestJS，Go 不返回自己的 404。`GET /runs/cancel` 按 `runs/:id` 处理（`id="cancel"`）返回与 Nest 相同的 404。
+- **契约**：人类身份走 JWT 验签 + Redis 撤销名单 + membership 重推导；`mtk_` 机器令牌走 `MachineAccessToken` SHA-256 查表并更新 `lastUsedAt`。失败顺序 401 → 403 → 400 → service。响应按 Prisma 列顺序输出，时间字段为毫秒 UTC ISO 或 `null`；`metadata` 只在是 JSON 对象时透传；`summary`/`repairSummary`/`trace` 逐行移植，数值走 JS `Number()` 语义，计数对象保持键的首次出现顺序；`undefined` 键（`metrics`、候选可空字段、trace 可空字段、`llmLogFilters.repair`）省略而 `0`/`""`/`false` 保留。
+- **同批修复的缺陷 F1（Nest 与 Go 两侧一致）**：原 `cancelRunRecords` 无条件把终态运行改写为 `canceled` 并覆盖 `finishedAt`，两条 `updateMany` 并行无事务无行锁，并发取消会重复追加 `frontier_run_canceled`，批量取消还会把已完成运行计入 `canceledIds`。修复后：单事务第一条语句 `SELECT … WHERE orgId=? AND id IN (…) AND status NOT IN ('completed','canceled') ORDER BY id ASC FOR UPDATE`，随后更新 run 与 pending/queued/running 节点，提交后按 id 升序追加事件并 `markRunStatus`；终态取消是幂等无操作，`POST /runs/:id/cancel` 无论是否转换都返回完整详情 201，`POST /runs/cancel` 只返回实际转换的 id（升序）。`failed` 仍可取消。
+- **强类型与注释**：`apps/api-go/internal/crawlfrontierruns` 的请求 DTO、响应模型、MySQL 行扫描、事件 details 均为具名 `struct`（精确 `json` tag），无 schema 的 JSON 列用本包具名 `RawJSON` 透传并提供 `IsObject()/IsArray()`；`any`/`interface{}`/`map[string]any`/`map[string]interface{}`/`[]any` 为零（id 集合用 `JSON_CONTAINS` 保持固定 arity）；新增与修改的 `.go`/`.ts` 注释全部为英文。`crawlprofile` 只新增 `export.go`（`NormalizeConfigJSON`），画像配置规范化仍是唯一实现。
+- 回滚只把 `API_GO_CRAWL_FRONTIER_RUNS_MODE` 改回 `legacy`。细节与验收清单见 `docs/refactor/go-crawl-frontier-runs.md`；F1 与两条只登记项见 `docs/refactor/bug-ledger.md`。
+
+## 15. 基础设施连接与采集运行凭据（Go）
+
+新增开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`（空串/`legacy`/`go`，默认
+`legacy`，非法值启动失败）。`go` 时只接管 7 条精确 METHOD+path（Go 包
+`internal/infrastructuresettings`，路由键
+`/api/system-settings#infrastructure`）：
+
+- 向量服务配置：`GET`/`PUT`/`DELETE /api/system-settings/vector-service`
+  （`settings.manage`；PUT/DELETE 另需平台管理员）。读写全局 `SystemSetting`
+  key `vector_service`（`isPublic=false`）与 Redis `vector_service:settings`
+  （30 秒 `{exists,value}` 信封）。`source=env|db`、`tokenSource=stored|env|none`；
+  不返回 token/密文/指纹。token 四态：absent 保留锁内 DB 现值、`null`/空串/空白
+  存 null 并允许 env 回退、非空 trim 后加密。baseUrl 按 Node WHATWG URL 规范化
+  （http/https，端口 [0,65535]，最后删一个尾部 `/`）。
+- 存储配置：`GET`/`PATCH /api/admin/settings/storage`（`settings.manage`；PATCH
+  另需平台管理员）。九个全局 key `crawl_image_storage`（isPublic=true）、
+  `storage_s3_access_key_id`（false）、`storage_s3_secret_access_key`（false）、
+  `storage_s3_region`/`storage_s3_bucket`/`storage_s3_endpoint`/
+  `storage_s3_public_base_url`/`storage_s3_force_path_style`/
+  `storage_s3_presigned_url_ttl_seconds`（均 true）；Redis `storage:settings`
+  （60 秒直接对象，缺失键省略、JSON null 保留）。同一 PATCH 全部有效字段同事务；
+  `endpoint`/`forcePathStyle`/`presignedUrlTtlSeconds` 的清空写 JSON 字面量 null
+  （`JSON_TYPE(value)="NULL"` 且 `value IS NULL` 为 false）。GET 的 `accessKeyId`
+  保持完整展示，`hasSecretAccessKey`/`secretDecryptionFailed` 两个标志按既有语义。
+- 新闻源运行凭据：`GET`/`PUT /api/system-settings/news-source-runtime-secrets`
+  （`settings.manage`；PUT 另需平台管理员）。全局 key
+  `news_source_runtime_secrets`（`isPublic=false`），无 Redis 配置缓存。
+  条目指纹是 SHA-256(UTF-8) hex 前 16 位；strict 解析保留 409
+  `NEWS_SOURCE_RUNTIME_SECRETS_INVALID` 与分支 detail，损坏 sourceId/key 仍走
+  业务 400。
+
+未迁：`GET /api/system-settings/vector-service/diagnostics`（Nest 进程内向量
+计数）与 `POST /api/admin/settings/storage/test`（真实 S3 调用），以及全部向量
+检索/回填、S3 对象操作、新闻源实际抓取消费链路。机器令牌三条 GET 可读、四条写
+403。两把全局锁名 `infra-settings:vector-service:v1`、
+`infra-settings:news-source-runtime-secrets:v1`。回滚只把本变量改回 `legacy`。
+
+## 16. 模型接入设置与 OpenAI 密钥分发（Go · 10 条）
+
+开关 `API_GO_MODEL_ACCESS_SETTINGS_MODE`（空串/`legacy`/`go`，默认 `legacy`，
+非法值启动失败）。`go` 时由 `internal/modelaccesssettings` 独立验签并接管 10 条
+**精确路径**：
+
+| 方法 | 路径 | 认证 | 权限 | 平台门禁 | 成功码 |
+|---|---|---|---|---|---|
+| GET | `/api/system-settings/model-service` | JWT/`mtk_` | `settings.manage` | 否 | 200 |
+| PUT | `/api/system-settings/model-service` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/model-service` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| GET | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 否 | 200 |
+| PUT | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| POST | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 是 | 201 |
+| DELETE | `/api/system-settings/openai-keys/key/:fingerprint` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| GET | `/api/internal/litellm/openai-keys` | `LITELLM_CONFIG_INTERNAL_TOKEN` | 不用 JWT/RBAC | 否 | 200 |
+| POST | `/api/internal/litellm/openai-keys/applied` | `LITELLM_CONFIG_INTERNAL_TOKEN` | 不用 JWT/RBAC | 否 | 201 |
+
+契约要点：
+
+- 失败顺序：认证 → `settings.manage` → DTO（有 body 时）→ 平台门禁（service 内，
+  仅六条管理写）→ 业务校验/写库。平台管理员仍必须有 `settings.manage`。
+- 权限载荷复用既有安全形状：`code=INSUFFICIENT_PERMISSIONS`、
+  `detail="Requires any permission: settings.manage"`、`permissionsMode="any"`、
+  不带 `missingPermissions`；平台门禁为 403 `Platform admin access required`。
+- 内部端点失败顺序：未配置 403 `LITELLM_CONFIG_INTERNAL_TOKEN is not configured`
+  → 无可提取 bearer 401 `Missing bearer token` → 不匹配 401 `Invalid bearer token`
+  （常量时间比较；header 解析严格对齐 `extractBearerToken`）。内部 token 缺失
+  不阻止启动。
+- 公共响应字段全集：模型 `source/enabled/baseUrl/timeoutMs/maxRetries/hasToken/
+  tokenSource`；密钥 `source/keysCount/hasKeys/keyFingerprints/
+  internalTokenConfigured/appliedAt/appliedSource/appliedKeyFingerprints/
+  restartRequired`；`keyFingerprints` 与 `appliedKeyFingerprints` 空值序列化为
+  `[]`，`appliedAt`/`appliedSource` 空值序列化为 `null`。
+- 不返回任何完整/部分明文 key、加密包或 token 指纹（模型）。
+- SystemSetting key：`model_service`、`openai_keys`、`litellm_openai_keys_applied`
+  （+ 只读 `system_security`）；Redis：`model_service:settings`、
+  `openai_keys:settings`、`openai_keys:applied_status`（30 秒）与只读
+  `system_security:settings`（60 秒）。
+- 两把全局 MySQL 会话锁：`model-access:model-service:v1`、
+  `model-access:openai-keys:v1`（Nest 与 Go 同名字面量）；锁内重读权威行，
+  锁失败 503（`message=Internal server error`、`error=Service Unavailable`）。
+- 同批修 3 个缺陷（Nest 与 Go 两侧）：全局模型/密钥写缺平台管理员门禁（MA1）、
+  密钥追加与按指纹删除的缓存读改写与缺互斥（MA2）、模型 PUT 省略 token 时写回
+  旧缓存 token（MA3）。
+
+未迁：`/api/internal/litellm/proxy-load-balancing`、
+`/api/system-settings/llm-gateways`、`/api/system-settings/*` 其余全部路径，以及
+模型预测/异常检测/embedding/rerank/moderation 等实际推理。回滚只把
+`API_GO_MODEL_ACCESS_SETTINGS_MODE` 改回 `legacy`；不改表、不改 controller/DTO、
+不改 Web 入口与其他开关默认值。
+
+## 17. 平台治理设置 16 条 HTTP（Go）
 
 新增开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串/`legacy`/`go`，默认
 `legacy`，非法值启动失败，错误文本 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be

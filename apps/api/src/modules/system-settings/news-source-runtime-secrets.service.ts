@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { PlatformAccessService } from "../auth/platform-access.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import {
@@ -15,6 +16,10 @@ import {
   resolveSettingsKey
 } from "../storage/storage-settings.crypto";
 
+import {
+  INFRASTRUCTURE_SETTINGS_NEWS_SOURCE_SECRETS_LOCK,
+  withInfrastructureSettingsLock
+} from "./infrastructure-settings.lock";
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export interface NewsSourceRuntimeSecretsPublicEntry {
@@ -82,11 +87,21 @@ export class NewsSourceRuntimeSecretsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
-    private readonly securitySettings: SystemSecuritySettingsService
+    private readonly securitySettings: SystemSecuritySettingsService,
+    private readonly platformAccess: PlatformAccessService
   ) {}
 
   async getPublicSettings(): Promise<NewsSourceRuntimeSecretsPublic> {
-    const settings = await this.loadStoredSettingsStrict();
+    // IS2: the admin GET is the authoritative view. It must not serve the
+    // 30 second process cache, otherwise an edit performed by another process
+    // (Nest worker or the Go takeover) stays invisible until the cache expires.
+    const settings = await this.loadStoredSettingsStrictFromDb();
+    return this.toPublicSettings(settings);
+  }
+
+  private toPublicSettings(
+    settings: StoredNewsSourceRuntimeSecrets | null
+  ): NewsSourceRuntimeSecretsPublic {
     if (!settings) {
       return {
         source: "none",
@@ -113,6 +128,13 @@ export class NewsSourceRuntimeSecretsService {
     actorId: string,
     input: NewsSourceRuntimeSecretsUpdateInput
   ): Promise<NewsSourceRuntimeSecretsPublic> {
+    // IS1: `news_source_runtime_secrets` is a global singleton with no org
+    // dimension, so a plain org admin holding settings.manage could plant a
+    // cookie/token used by every tenant's news fetchers. Only platform admins
+    // may write it. The SystemSettingsModule already imports AuthModule, so the
+    // existing PlatformAccessService gate is reused (no new module dependency).
+    await this.platformAccess.assertPlatformAdmin(actorId);
+
     const normalizedUpserts = this.normalizeUpserts(input.upserts ?? []);
     const normalizedRemoves = this.normalizeRemoves(input.removes ?? []);
 
@@ -120,84 +142,101 @@ export class NewsSourceRuntimeSecretsService {
       return this.getPublicSettings();
     }
 
-    const currentSettings = await this.loadStoredSettingsStrict();
-    const map = new Map<string, StoredNewsSourceRuntimeSecretEntry>();
-    for (const entry of currentSettings?.entries ?? []) {
-      map.set(this.makeCompositeKey(entry.sourceId, entry.key), entry);
-    }
-
-    for (const item of normalizedRemoves) {
-      map.delete(this.makeCompositeKey(item.sourceId, item.key));
-    }
-
-    const updatedAt = new Date().toISOString();
-    for (const item of normalizedUpserts) {
-      const storedValue = await this.securitySettings.encodeSecretForStorage(item.value);
-      map.set(this.makeCompositeKey(item.sourceId, item.key), {
-        sourceId: item.sourceId,
-        key: item.key,
-        value: storedValue,
-        fingerprint: this.fingerprintSecret(item.value),
-        updatedAt
-      });
-    }
-
-    if (map.size > MAX_ENTRIES) {
-      throw new BadRequestException(`Too many runtime secrets entries (max ${MAX_ENTRIES})`);
-    }
-
-    const nextEntries = [...map.values()].sort((a, b) => this.sortEntries(a, b));
-
-    if (nextEntries.length === 0) {
-      await this.prisma.systemSetting.deleteMany({ where: { key: SETTINGS_KEY } });
-    } else {
-      const nextValue: StoredNewsSourceRuntimeSecrets = {
-        version: 1,
-        entries: nextEntries
-      };
-      await this.prisma.systemSetting.upsert({
-        where: { key: SETTINGS_KEY },
-        update: {
-          value: toPrismaJsonValue(nextValue),
-          updatedById: actorId,
-          description: SETTINGS_DESCRIPTION,
-          isPublic: false
-        },
-        create: {
-          key: SETTINGS_KEY,
-          value: toPrismaJsonValue(nextValue),
-          updatedById: actorId,
-          description: SETTINGS_DESCRIPTION,
-          isPublic: false
+    // IS2: the merge base must come from MySQL inside the global lock. The
+    // previous implementation merged from the cache-first reader and then
+    // rewrote the whole document, so two concurrent writers (or one stale
+    // reader) silently dropped each other's untouched entries.
+    return await withInfrastructureSettingsLock(
+      INFRASTRUCTURE_SETTINGS_NEWS_SOURCE_SECRETS_LOCK,
+      async () => {
+        const currentSettings = await this.loadStoredSettingsStrictFromDb();
+        const map = new Map<string, StoredNewsSourceRuntimeSecretEntry>();
+        for (const entry of currentSettings?.entries ?? []) {
+          map.set(this.makeCompositeKey(entry.sourceId, entry.key), entry);
         }
-      });
-    }
 
-    await writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId,
-          actorId,
-          resource: "system_settings",
-          action: "news_source_runtime_secrets_update",
-          metadata: toPrismaJsonValue({
-            upserts: normalizedUpserts.length,
-            removes: normalizedRemoves.length,
-            entriesAfter: nextEntries.length
-          } satisfies Prisma.InputJsonObject)
+        for (const item of normalizedRemoves) {
+          map.delete(this.makeCompositeKey(item.sourceId, item.key));
         }
-      },
-      {
-        orgId,
-        actorId,
-        resource: "system_settings",
-        action: "news_source_runtime_secrets_update"
+
+        const updatedAt = new Date().toISOString();
+        for (const item of normalizedUpserts) {
+          const storedValue = await this.securitySettings.encodeSecretForStorage(item.value);
+          map.set(this.makeCompositeKey(item.sourceId, item.key), {
+            sourceId: item.sourceId,
+            key: item.key,
+            value: storedValue,
+            fingerprint: this.fingerprintSecret(item.value),
+            updatedAt
+          });
+        }
+
+        if (map.size > MAX_ENTRIES) {
+          throw new BadRequestException(`Too many runtime secrets entries (max ${MAX_ENTRIES})`);
+        }
+
+        const nextEntries = [...map.values()].sort((a, b) => this.sortEntries(a, b));
+
+        if (nextEntries.length === 0) {
+          await this.prisma.systemSetting.deleteMany({ where: { key: SETTINGS_KEY } });
+        } else {
+          const nextValue: StoredNewsSourceRuntimeSecrets = {
+            version: 1,
+            entries: nextEntries
+          };
+          await this.prisma.systemSetting.upsert({
+            where: { key: SETTINGS_KEY },
+            update: {
+              value: toPrismaJsonValue(nextValue),
+              updatedById: actorId,
+              description: SETTINGS_DESCRIPTION,
+              isPublic: false
+            },
+            create: {
+              key: SETTINGS_KEY,
+              value: toPrismaJsonValue(nextValue),
+              updatedById: actorId,
+              description: SETTINGS_DESCRIPTION,
+              isPublic: false
+            }
+          });
+        }
+
+        await writeAuditLogBestEffort(
+          this.prisma,
+          {
+            data: {
+              orgId,
+              actorId,
+              resource: "system_settings",
+              action: "news_source_runtime_secrets_update",
+              metadata: toPrismaJsonValue({
+                upserts: normalizedUpserts.length,
+                removes: normalizedRemoves.length,
+                entriesAfter: nextEntries.length
+              } satisfies Prisma.InputJsonObject)
+            }
+          },
+          {
+            orgId,
+            actorId,
+            resource: "system_settings",
+            action: "news_source_runtime_secrets_update"
+          }
+        );
+
+        // In-process consumers (getSecretsForSource and friends) keep their
+        // 30 second cache; only this instance's copy is dropped, which is the
+        // pre-existing best-effort behaviour. The response below is built from
+        // this write's snapshot instead of re-reading the cache-first reader.
+        // Removing the final entry deletes the row, so the snapshot reports
+        // source "none" exactly like a subsequent authoritative GET would.
+        this.invalidateCache();
+        return this.toPublicSettings(
+          nextEntries.length === 0 ? null : { version: 1, entries: nextEntries }
+        );
       }
     );
-
-    this.invalidateCache();
-    return this.getPublicSettings();
   }
 
   async getSecretsForSource(sourceId: string, overrideSourceId?: string): Promise<Record<string, string>> {
@@ -336,15 +375,27 @@ export class NewsSourceRuntimeSecretsService {
       return this.cachedSettings;
     }
 
+    const parsed = await this.loadStoredSettingsStrictFromDb();
+    this.cachedSettings = parsed;
+    this.cachedAt = Date.now();
+    return parsed;
+  }
+
+  /**
+   * Strictly parses the settings row straight from MySQL.
+   *
+   * The admin GET and the PUT merge base both use this reader, so they can
+   * never observe the process-local 30 second copy. `loadStoredSettingsStrict`
+   * keeps that cache for the runtime consumers (`getSecretsForSource`), whose
+   * bounded staleness is part of the existing contract.
+   */
+  private async loadStoredSettingsStrictFromDb(): Promise<StoredNewsSourceRuntimeSecrets | null> {
     const record = await this.prisma.systemSetting.findUnique({
       where: { key: SETTINGS_KEY },
       select: { value: true }
     });
 
-    const parsed = this.parseStoredSettingsStrict(record?.value ?? null);
-    this.cachedSettings = parsed;
-    this.cachedAt = Date.now();
-    return parsed;
+    return this.parseStoredSettingsStrict(record?.value ?? null);
   }
 
   private parseStoredSettingsStrict(raw: unknown): StoredNewsSourceRuntimeSecrets | null {

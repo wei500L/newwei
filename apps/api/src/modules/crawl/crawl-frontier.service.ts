@@ -5,7 +5,7 @@ import {
   NotFoundException,
   Optional,
 } from "@nestjs/common";
-import type { CrawlTask, Prisma } from "@prisma/client";
+import { Prisma, type CrawlTask } from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
@@ -745,7 +745,7 @@ export class CrawlFrontierService {
     if (!run || run.orgId !== orgId) {
       throw new NotFoundException("Crawl frontier run not found");
     }
-    await this.cancelRunRecords([id]);
+    await this.cancelRunRecords(orgId, [id]);
     return this.getRun(orgId, id);
   }
 
@@ -754,21 +754,7 @@ export class CrawlFrontierService {
     if (uniqueIds.length === 0) {
       throw new BadRequestException("ids must contain at least one run id");
     }
-    const runs = await this.prisma.crawlFrontierRun.findMany({
-      where: {
-        orgId,
-        id: {
-          in: uniqueIds,
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
-    const canceledIds = runs.map((run) => run.id);
-    if (canceledIds.length > 0) {
-      await this.cancelRunRecords(canceledIds);
-    }
+    const canceledIds = await this.cancelRunRecords(orgId, uniqueIds);
     return {
       canceledIds,
       canceledCount: canceledIds.length,
@@ -827,64 +813,93 @@ export class CrawlFrontierService {
     };
   }
 
-  private async cancelRunRecords(runIds: string[]): Promise<void> {
+  /**
+   * Cancel the given runs with the fixed protocol:
+   *
+   * 1. A transaction whose first statement locks the non-terminal rows of the
+   *    caller's organization in ascending id order. Terminal runs are excluded,
+   *    so completed/canceled history is never rewritten, and two overlapping
+   *    bulk cancellations acquire locks in the same order and cannot deadlock.
+   * 2. The locked runs and their pending/queued/running nodes are updated.
+   * 3. After the commit, one frontier_run_canceled event is appended per locked
+   *    run with a workflow run, in ascending id order, and that workflow run is
+   *    marked canceled with a cleared error.
+   *
+   * Returns the ids that actually transitioned.
+   */
+  private async cancelRunRecords(
+    orgId: string,
+    runIds: string[],
+  ): Promise<string[]> {
     const finishedAt = new Date();
-    const runs = await this.prisma.crawlFrontierRun.findMany({
-      where: {
-        id: {
-          in: runIds,
-        },
-      },
-      select: {
-        id: true,
-        workflowRunId: true,
-      },
-    });
-    await Promise.all([
-      this.prisma.crawlFrontierRun.updateMany({
-        where: {
-          id: {
-            in: runIds,
-          },
-        },
-        data: {
-          status: "canceled",
-          finishedAt,
-        },
-      }),
-      this.prisma.crawlFrontierNode.updateMany({
-        where: {
-          runId: {
-            in: runIds,
-          },
-          status: { in: ["pending", "queued", "running"] },
-        },
-        data: {
-          status: "canceled",
-          updatedAt: finishedAt,
-        },
-      }),
-    ]);
-    await Promise.all(
-      runs
-        .filter((run) => typeof run.workflowRunId === "string" && run.workflowRunId.length > 0)
-        .map(async (run) => {
-          await this.strategyRecorder.appendEvent(run.workflowRunId!, {
-            level: "warn",
-            eventType: "frontier_run_canceled",
-            nodeType: "legacy.frontier_run",
-            message: "Frontier run was canceled",
-            details: {
-              frontierRunId: run.id,
+    const lockedRuns = await this.prisma.$transaction(
+      async (tx): Promise<{ id: string; workflowRunId: string | null }[]> => {
+        const locked = await tx.$queryRaw<
+          { id: string; workflowRunId: string | null }[]
+        >(Prisma.sql`
+          SELECT id, workflowRunId
+          FROM CrawlFrontierRun
+          WHERE orgId = ${orgId}
+            AND id IN (${Prisma.join(runIds)})
+            AND status NOT IN ('completed', 'canceled')
+          ORDER BY id ASC
+          FOR UPDATE
+        `);
+        if (locked.length === 0) {
+          return [];
+        }
+        const lockedIds = locked.map((run) => run.id);
+        await tx.crawlFrontierRun.updateMany({
+          where: {
+            orgId,
+            id: {
+              in: lockedIds,
             },
-            timestamp: finishedAt.toISOString(),
-          });
-          await this.strategyRecorder.markRunStatus(run.workflowRunId!, {
+          },
+          data: {
             status: "canceled",
             finishedAt,
-          });
-        }),
+          },
+        });
+        await tx.crawlFrontierNode.updateMany({
+          where: {
+            orgId,
+            runId: {
+              in: lockedIds,
+            },
+            status: { in: ["pending", "queued", "running"] },
+          },
+          data: {
+            status: "canceled",
+            updatedAt: finishedAt,
+          },
+        });
+        return locked;
+      },
     );
+
+    // Events are appended after the commit, in ascending id order, so a slow
+    // event write never holds the run row locks.
+    for (const run of lockedRuns) {
+      if (typeof run.workflowRunId !== "string" || run.workflowRunId.length === 0) {
+        continue;
+      }
+      await this.strategyRecorder.appendEvent(run.workflowRunId, {
+        level: "warn",
+        eventType: "frontier_run_canceled",
+        nodeType: "legacy.frontier_run",
+        message: "Frontier run was canceled",
+        details: {
+          frontierRunId: run.id,
+        },
+        timestamp: finishedAt.toISOString(),
+      });
+      await this.strategyRecorder.markRunStatus(run.workflowRunId, {
+        status: "canceled",
+        finishedAt,
+      });
+    }
+    return lockedRuns.map((run) => run.id);
   }
 
   async processQueuedNode(
