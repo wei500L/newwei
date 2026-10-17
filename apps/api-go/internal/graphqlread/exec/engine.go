@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 	"sync/atomic"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -370,6 +371,26 @@ var cacheableRootFields = map[string]bool{
 }
 
 func authorizeRoot(root contract.Root, id contract.Identity) error {
+	// A multi-permission root mirrors the NestJS @Permissions decorator with
+	// mode "any": the caller only needs to hold one of the listed permissions.
+	// The failure shape is byte-for-byte the GqlPermissionsGuard output, which
+	// is why the detail string joins the permissions with ", " in declaration
+	// order and reports the full list as requiredPermissions.
+	if len(root.AnyPermissions) > 0 {
+		for _, permission := range root.AnyPermissions {
+			if id.Has(permission) {
+				return nil
+			}
+		}
+		return &contract.Failure{
+			Message:             "Insufficient permissions",
+			Status:              http.StatusForbidden,
+			AppCode:             "INSUFFICIENT_PERMISSIONS",
+			Detail:              "Requires any permission: " + strings.Join(root.AnyPermissions, ", "),
+			RequiredPermissions: root.AnyPermissions,
+			PermissionsMode:     "any",
+		}
+	}
 	if root.Permission == "" {
 		if root.AllowAuthenticated {
 			if id.UserID == "" || id.OrgID == "" {

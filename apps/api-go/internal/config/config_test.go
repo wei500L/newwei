@@ -1670,6 +1670,70 @@ func TestGraphQLWorkspaceReadModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t 
 	}
 }
 
+func TestGraphQLSettingsCrawlReadModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GraphQLSettingsCrawlReadMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+		t.Fatalf("settingsCrawl=%q read=%q", cfg.GraphQLSettingsCrawlReadMode, cfg.GraphQLReadMode)
+	}
+}
+
+func TestGraphQLSettingsCrawlReadModeAcceptsExplicitLegacyAndGo(t *testing.T) {
+	legacy, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.GraphQLSettingsCrawlReadMode != "legacy" {
+		t.Fatalf("explicit legacy = %q", legacy.GraphQLSettingsCrawlReadMode)
+	}
+	goMode, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
+			return "go"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if goMode.GraphQLSettingsCrawlReadMode != "go" {
+		t.Fatalf("go = %q", goMode.GraphQLSettingsCrawlReadMode)
+	}
+}
+
+func TestGraphQLSettingsCrawlReadModeRejectsInvalid(t *testing.T) {
+	_, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
+			return "shadow"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE must be one of legacy|go") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestGraphQLSettingsCrawlReadModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
+			return "go"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GraphQLReadMode != "legacy" || cfg.GraphQLSettingsCrawlReadMode != "go" {
+		t.Fatalf("read=%q settingsCrawl=%q", cfg.GraphQLReadMode, cfg.GraphQLSettingsCrawlReadMode)
+	}
+}
+
 func TestRuntimeSettingsModeDefaultsToLegacy(t *testing.T) {
 	cfg, err := Load(func(string) string { return "" })
 	if err != nil {

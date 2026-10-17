@@ -57,11 +57,19 @@ type Resolver func(ctx Context) (any, error)
 
 // Root is one migrated Query field.
 //
-// Permission is required unless AllowAuthenticated is set. Neither means the
-// executor fails closed with PERMISSION_METADATA_MISSING.
+// Permission is required unless AllowAuthenticated or AnyPermissions is set.
+// None of the three means the executor fails closed with
+// PERMISSION_METADATA_MISSING.
+//
+// AnyPermissions mirrors the NestJS @Permissions("a", "b") decorator with
+// mode "any": holding at least one listed permission authorizes the field, and
+// missing all of them produces the same FORBIDDEN failure the NestJS
+// GqlPermissionsGuard raises. Permission and AnyPermissions are mutually
+// exclusive; AnyPermissions wins when both are set.
 type Root struct {
 	Name               string
 	Permission         string
+	AnyPermissions     []string
 	AllowAuthenticated bool
 	Resolve            Resolver
 }
