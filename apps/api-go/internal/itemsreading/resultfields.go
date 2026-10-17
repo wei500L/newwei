@@ -73,23 +73,22 @@ type resultProjection struct {
 }
 
 // decodeResultProjection decodes the open result leaf into the typed
-// projection. A missing or invalid value yields the zero projection.
+// projection. A missing or invalid value yields the zero projection. The value
+// is normalized first, exactly like NestJS normalizeResultRecord, so a result
+// stored as a JSON string (or a nested string) contributes its fields.
 func decodeResultProjection(result OpenJSON) resultProjection {
-	var projection resultProjection
-	if !result.Valid() {
-		return projection
-	}
-	_ = json.Unmarshal(result.Bytes(), &projection)
+	projection, _ := decodeResultRecord(result)
 	return projection
 }
 
-// decodeResultRecord is the same decode but also reports whether the leaf held
-// a JSON object.
+// decodeResultRecord is the same decode but also reports whether the normalized
+// leaf held a JSON object.
 func decodeResultRecord(result OpenJSON) (resultProjection, bool) {
-	if !result.Valid() {
+	normalized := NormalizeProcessedResult(result)
+	if !normalized.Valid() {
 		return resultProjection{}, false
 	}
-	raw := bytes.TrimSpace(result.Bytes())
+	raw := bytes.TrimSpace(normalized.Bytes())
 	if len(raw) == 0 || raw[0] != '{' {
 		return resultProjection{}, false
 	}
