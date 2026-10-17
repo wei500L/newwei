@@ -535,6 +535,10 @@ func run() error {
 	if cfg.AdminLogsMode == config.AdminLogsModeGo {
 		adminLogsMode = string(legacyproxy.ModeGo)
 	}
+	newsIndicatorsMode := ""
+	if cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
+		newsIndicatorsMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -561,6 +565,7 @@ func run() error {
 	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
 	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
 	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
+	rules = legacyproxy.WithNewsIndicators(rules, newsIndicatorsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -611,7 +616,8 @@ func run() error {
 				cfg.RbacMode == config.RbacModeGo ||
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
-				cfg.LlmLogsMode == config.LlmLogsModeGo {
+				cfg.LlmLogsMode == config.LlmLogsModeGo ||
+				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -666,7 +672,8 @@ func run() error {
 	crawlTemplatesGo := cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo
 	llmLogsGo := cfg.LlmLogsMode == config.LlmLogsModeGo
 	adminLogsGo := cfg.AdminLogsMode == config.AdminLogsModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo
+	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -990,6 +997,10 @@ func run() error {
 	}
 
 	if err := wireAdminLogs(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
+	}
+
+	if err := wireNewsIndicators(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 
