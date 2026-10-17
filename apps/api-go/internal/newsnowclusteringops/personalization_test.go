@@ -40,7 +40,7 @@ func TestAffinityElapsedDaysClamp(t *testing.T) {
 	assertClose(t, "elapsed(now)", affinityElapsedDays(int(nowMillis), nowMillis), 0)
 	assertClose(t, "elapsed(14d)", affinityElapsedDays(0, 14*dayMs), 14)
 	assertClose(t, "elapsed(28d)", affinityElapsedDays(0, 28*dayMs), 14)
-	assertClose(t, "elapsed(future)", affinityElapsedDays(50*dayMs, 10*dayMs), 0)
+	assertClose(t, "elapsed(future)", affinityElapsedDays(int(50*dayMs), 10*dayMs), 0)
 	assertClose(t, "elapsed(1d)", affinityElapsedDays(0, dayMs), 1)
 
 	// A missing affinity entry uses the 14 day default, which lands on the
