@@ -295,7 +295,19 @@ jobs:
           if role and not sql(f"SELECT id FROM RolePermission WHERE roleId='{role}' AND permissionId='{perm}' LIMIT 1"):
               sql(f"INSERT INTO RolePermission (id, roleId, permissionId) VALUES ('kgrp000000000000000001', '{role}', '{perm}')")
 
-          docs = []
+          def js_doc(doc_id, org_id, created_iso, entities):
+              parts = ", ".join(
+                  "{name: '%s', type: '%s', confidence: %s}" % (entity["name"], entity["type"], entity["confidence"])
+                  for entity in entities
+              )
+              return "{_id: ObjectId('%s'), orgId: '%s', status: 'completed', createdAt: new Date('%s'), result: {entities: [%s]}}" % (
+                  doc_id,
+                  org_id,
+                  created_iso,
+                  parts,
+              )
+
+          doc_js = []
           doc_index = 0
           for index, count in enumerate(counts):
               for _ in range(count):
@@ -303,21 +315,19 @@ jobs:
                   entities = [{"name": "Acme Corp", "type": "company", "confidence": 0.9}]
                   if index == 0:
                       entities.append({"name": "Gold", "type": "commodity", "confidence": 0.9})
-                  docs.append({
-                      "_id": {"$oid": f"64c0000000000000000000{doc_index:02d}"},
-                      "orgId": org,
-                      "status": "completed",
-                      "createdAt": {"$date": day_times[index].strftime("%Y-%m-%dT%H:%M:%S.000Z")},
-                      "result": {"entities": entities},
-                  })
-          docs.append({
-              "_id": {"$oid": "64c0000000000000000000e1"},
-              "orgId": "kgotherorg0000000000000001",
-              "status": "completed",
-              "createdAt": {"$date": day_times[0].strftime("%Y-%m-%dT%H:%M:%S.000Z")},
-              "result": {"entities": [{"name": "OtherOrg", "type": "company", "confidence": 0.9}, {"name": "Gold", "type": "commodity", "confidence": 0.9}]},
-          })
-          insert_js = "db.processeditems.insertMany(" + json.dumps(docs) + ")"
+                  doc_js.append(js_doc(
+                      "64c0000000000000000000%02d" % doc_index,
+                      org,
+                      day_times[index].strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                      entities,
+                  ))
+          doc_js.append(js_doc(
+              "64c0000000000000000000e1",
+              "kgotherorg0000000000000001",
+              day_times[0].strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+              [{"name": "OtherOrg", "type": "company", "confidence": 0.9}, {"name": "Gold", "type": "commodity", "confidence": 0.9}],
+          ))
+          insert_js = "db.processeditems.insertMany([" + ", ".join(doc_js) + "])"
           proc = subprocess.run(["docker", "exec", "-i", mongo, "mongosh", "app", "--quiet", "--eval", insert_js], text=True, capture_output=True)
           if proc.returncode != 0:
               fail(proc.stderr or proc.stdout)
