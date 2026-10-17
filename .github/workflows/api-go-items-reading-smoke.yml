@@ -638,6 +638,8 @@ jobs:
               + ",".join(meta_rows) + ";")
 
           news_sources = [
+              (SRC_A_IR3, "IR IR3 Source", "https://ir.example.com/feed-ir3", "rss", None),
+              (SRC_A_NORMAL, "IR Normal Source", "https://ir.example.com/feed-normal", "rss", None),
               (SRC_A_ARTICLES, "IR Articles Only", "https://ir.example.com/feed-articles", "rss", None),
               (SRC_A_PROCESSED, "IR Processed Only", "https://ir.example.com/feed-processed", "rss", None),
               (SRC_A_BOTH, "IR Both Sides", "https://ir.example.com/feed-both", "rss", None),
