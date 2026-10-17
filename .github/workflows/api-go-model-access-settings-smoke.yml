@@ -378,7 +378,7 @@ jobs:
               for item in env:
                   cmd.extend(["-e", item])
               cmd.append("api-go-model-access-settings:ci")
-              subprocess.check_call(cmd)
+              subprocess.check_call(cmd, stdout=subprocess.DEVNULL)
               for _ in range(30):
                   status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}", name],
                                                    text=True).strip()
@@ -498,7 +498,7 @@ jobs:
           parity("PUT /openai-keys", "PUT", keys_path, platform_token,
                  {"keys": ["Bearer sk-one", "sk-two", "sk-one", ""]}, seed=keys_seed_empty)
           parity("POST /openai-keys", "POST", keys_path, platform_token,
-                 {"keys": ["sk-c"]}, seed=keys_seed_two)
+                 {"keys": ["sk-c"]}, expected=201, seed=keys_seed_two)
           parity("DELETE /openai-keys/key/:fingerprint", "DELETE",
                  keys_path + "/key/" + sha256_hex("sk-a"), platform_token, seed=keys_seed_two)
           parity("DELETE /openai-keys", "DELETE", keys_path, platform_token, seed=keys_seed_two)
