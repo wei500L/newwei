@@ -701,7 +701,13 @@ func boolRaw(raw json.RawMessage, fallback bool) bool {
 // rawNumber accepts a finite JSON number or a non-empty numeric string, exactly
 // like the NestJS toNumber helper.
 func rawNumber(raw json.RawMessage) (float64, bool) {
+	trimmedNull := strings.TrimSpace(string(raw))
 	if len(raw) == 0 {
+		return 0, false
+	}
+	// JavaScript's toNumber rejects null; Go's json.Unmarshal would treat it as
+	// a no-op and hand back 0, which would override the caller's fallback.
+	if trimmedNull == "null" {
 		return 0, false
 	}
 	var number float64

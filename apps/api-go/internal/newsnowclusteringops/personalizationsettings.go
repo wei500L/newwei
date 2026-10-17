@@ -226,6 +226,13 @@ func toNumber(raw json.RawMessage) (float64, bool) {
 	if len(trimmed) == 0 {
 		return 0, false
 	}
+	// JSON null must be rejected explicitly. JavaScript's toNumber sees
+	// typeof null !== "number" and returns null, but Go's json.Unmarshal treats
+	// a null literal as a no-op with a nil error, which would silently turn a
+	// stored null into 0 and accept it as a valid value.
+	if bytes.Equal(trimmed, []byte("null")) {
+		return 0, false
+	}
 
 	var number float64
 	if err := json.Unmarshal(trimmed, &number); err == nil {
