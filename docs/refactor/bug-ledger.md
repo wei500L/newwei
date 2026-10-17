@@ -597,8 +597,27 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
 > `refactor/go-model-access-settings` · 开关 `API_GO_MODEL_ACCESS_SETTINGS_MODE`
 > 全部行号在开工时按该基线逐行复核（与规划提示词的差异见每条「行号复核」）。
 > 三条均为本批明确要求改变的行为（MA1/MA2/MA3），不得以「兼容旧行为」保留。
-> **状态：待远端验证**（Nest 侧单测不可用——本仓库禁用本地运行，全部由新
-> smoke `api-go-model-access-settings-smoke` 与普通 CI 判定）。
+> **状态：✅ 已修复并远端验证**（2026-10-17）。
+> - 普通 CI：run [39066013527](https://github.com/wei500L/newwei/actions/runs/39066013527)
+>   head `1e0b139e` conclusion success（lint/typecheck/web 覆盖率/vector/API
+>   Vitest/OpenAPI 漂移/auth-matrix 漂移/api-go 测试全绿）。
+> - 真实栈 smoke：run [39066023475](https://github.com/wei500L/newwei/actions/runs/39066023475)
+>   head `1e0b139e` conclusion success。关键断言（日志原文）：
+>   `parity ok: PUT /openai-keys` 等 13 条 legacy 逐接口对照、
+>   `MA1 platform gate ok: six writes 403 for org admin and machine token, no side effects`、
+>   `validation order ok: DTO 400 before the platform 403`、
+>   `MA2 stale-cache read-modify-write ok (append and delete)`、
+>   `MA3 token retention from the authoritative row ok`、
+>   `lock protocol ok: 10s timeout -> 503 without a write, and the lock is reacquirable`、
+>   `concurrency ok: Nest + Go appends produce the union`、
+>   `cross-implementation crypto interop ok (model token + keys, both directions)`、
+>   `takeover ok: ten routes served by Go, unmigrated paths stay on Nest (502)`、
+>   `rollback ok: legacy mode proxies to NestJS and NestJS reads the same configuration`。
+> - 既有 smoke 兼容：`api-go-runtime-settings-smoke`
+>   [39063276096](https://github.com/wei500L/newwei/actions/runs/39063276096) 与
+>   `api-go-graphql-settings-crawl-read-smoke`
+>   [39063276148](https://github.com/wei500L/newwei/actions/runs/39063276148) success
+>   （head `185740d3`，合并 #53 之后）。
 
 ### MA1：全局模型配置与 OpenAI 密钥写接口缺平台管理员门禁（P0）
 
@@ -632,7 +651,8 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
   有平台角色但无 `settings.manage` 走权限层 403
   （`INSUFFICIENT_PERMISSIONS`）；被拒请求后 SystemSetting/Redis/AuditLog 无变更；
   非平台用户 + 错 body 先得到 DTO 400（验证 service gate 在 DTO 之后）。
-- **状态**：待远端验证。
+- **状态**：✅ 已修复并远端验证（smoke 断言名 `MA1 platform gate ok` /
+  `validation order ok`）。
 
 ### MA2：密钥追加/按指纹删除使用缓存读改写且没有跨实例互斥（P1）
 
@@ -656,7 +676,8 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
   最终为 [A,B,C]；DELETE 指纹 A 最终保留 B；Nest 直连与 Go 两侧分别验证；
   真实跨进程并发（Nest/Nest、Go/Go、Nest/Go）两次追加不同 key 最终为并集、
   两次删除不同指纹两者均删除、删除 A 与追加 C 并发最终为「原集合去 A 加 C」。
-- **状态**：待远端验证。
+- **状态**：✅ 已修复并远端验证（smoke 断言名 `MA2 stale-cache read-modify-write ok`
+  / `concurrency ok: ...`）。
 
 ### MA3：模型 PUT 省略 internalToken 时可将旧缓存 token 写回（P1）
 
@@ -679,7 +700,8 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
   合法 PUT 后 DB 与可解密 token 仍为 B（Nest 与 Go 两侧各一次）；持锁期间 PUT 与
   DELETE 都等待（不是只保护其中一个方法）；新 token 与省略 token 并发最终不得
   恢复旧 cache token。
-- **状态**：待远端验证。
+- **状态**：✅ 已修复并远端验证（smoke 断言名 `MA3 token retention from the
+  authoritative row ok` / `MA3 concurrency ok`）。
 
 ### 同批登记：源码与规划描述不一致（按源码保留既有契约）
 

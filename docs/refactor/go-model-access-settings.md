@@ -259,7 +259,64 @@ api-go：10 条路由恢复纯代理，NestJS 读写同一份 `SystemSetting` �
 缓存，无需迁移数据或改格式。compose 的 api-go 默认即 legacy；生产 Web 入口
 （`API_BASE_URL`）未改，canary 未启用。
 
-## 8. 验证与未验证边界
+## 8. 远端验证结果（最终 head）
+
+| 验证 | run | head | 结论 |
+|---|---|---|---|
+| 普通 CI（lint/typecheck/web 覆盖率/vector/API Vitest/OpenAPI 漂移/auth-matrix 漂移/api-go 测试） | [39066013527](https://github.com/wei500L/newwei/actions/runs/39066013527) | `1e0b139e` | success |
+| 真实栈 `api-go-model-access-settings-smoke` | [39066023475](https://github.com/wei500L/newwei/actions/runs/39066023475) | `1e0b139e` | success |
+
+真实栈 smoke 的实际断言（均为日志原文，不含任何测试凭据）：
+
+```
+parity ok: GET /model-service (no row) / (db row) / PUT / PUT without internalToken / DELETE
+parity ok: GET /openai-keys (no row) / (db row) / PUT / POST / DELETE /key/:fingerprint / DELETE
+parity ok: GET /internal/litellm/openai-keys / POST /internal/litellm/openai-keys/applied
+MA1 platform gate ok: six writes 403 for org admin and machine token, no side effects
+validation order ok: DTO 400 before the platform 403
+keys business ceiling ok: 99 + 2 -> 400 and the stored list is unchanged
+MA2 stale-cache read-modify-write ok (append and delete)
+MA3 token retention from the authoritative row ok
+lock protocol ok: the write is waiting while the external session holds the lock
+lock protocol ok: release resumes the writer and the row is committed
+lock protocol ok: 10s timeout -> 503 without a write, and the lock is reacquirable
+concurrency ok: POST+POST (go) / two appends produce the union
+concurrency ok: DELETE+DELETE (go) / two fingerprint deletes both apply
+concurrency ok: delete A + append C -> original minus A plus C
+concurrency ok: Nest + Go appends produce the union
+concurrency ok: POST on an empty row (nest) + (go)
+MA3 concurrency ok: both writers keep the authoritative token
+restartRequired branches ok
+internal token boundary ok
+cross-implementation crypto interop ok (model token + keys, both directions)
+legacy stored key shapes ok: plain, encrypted, wrapped, corrupted
+encryption matrix ok: valid key + configured=false stores plaintext / valid key + unset toggle encrypts
+encryption matrix ok: production without a key -> 400 and no write
+encryption matrix ok: production + toggle false without a key still fails closed
+encryption matrix ok: configured=true without a key -> 400 not-configured
+encryption matrix ok: configured=true with an invalid key -> 400 with the decode detail
+encryption matrix ok: non-production without a key falls back to plaintext
+nest encryption policy ok: production without a key -> 400 / + configured=false / non-production plaintext
+takeover ok: ten routes served by Go, unmigrated paths stay on Nest (502)
+rollback ok: legacy mode proxies to NestJS and NestJS reads the same configuration
+```
+
+既有 smoke 接管兼容（合并 #53 之后的 head `185740d3`）：
+`api-go-runtime-settings-smoke` [39063276096](https://github.com/wei500L/newwei/actions/runs/39063276096)
+与 `api-go-graphql-settings-crawl-read-smoke`
+[39063276148](https://github.com/wei500L/newwei/actions/runs/39063276148) 均 success。
+
+真实栈抓到的两个实现缺陷（已修，见提交历史）：
+
+1. `needsCredentialedGo` 未包含本批开关 → go 模式启动即失败
+   （容器日志 `requires mysql, redis, and jwt`）。
+2. `AuditLog.createdAt` / `AuditLogOutbox.{availableAt,createdAt,updatedAt}` 是
+   `DATETIME(3)` 列，我按 Node 的 `toISOString` 形状传了字符串 →
+   `Error 1292 Incorrect datetime value`，审计直插与 outbox 都失败后按本批
+   helper 的抛错语义返回 500。改为 `time.Time`（ISO 字符串只留在 outbox 的
+   JSON payload）。
+
+## 9. 验证与未验证边界
 
 * 真实栈：`.github/workflows/api-go-model-access-settings-smoke.yml`
   （label `api-go-model-access-settings-smoke`）。阶段：legacy 逐条对照 →
