@@ -2403,6 +2403,3 @@ jobs:
           fresh("S6-11 apps/web is untouched by this batch", git_status == "", git_status[:200])
           print("OK stage 6 rollback: seven routes proxy again and no data migration was needed")
           PY
-
-
-
