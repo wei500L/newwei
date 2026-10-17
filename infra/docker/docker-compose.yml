@@ -690,6 +690,15 @@ services:
       # Mongo，不启动 worker）。/api/system-settings/security 与其余
       # /api/system-settings/* 仍回 NestJS。回滚只把该变量改回 legacy。
       API_GO_RUNTIME_SETTINGS_MODE: legacy
+      # LLM 网关 profile 七条配置/激活 HTTP
+      # （GET/POST /api/system-settings/llm-gateways、PUT active /
+      # embedding-active / rerank-active、PUT/DELETE :id）。pilot 与样例
+      # 保持 legacy。改成 go 才由 Go 验签、平台管理员门禁并读写 MySQL
+      # SystemSetting；proxy-governance、proxy-load-balancing、
+      # test-config、models-config 与 :id/... 仍回 NestJS。go 要求
+      # JWT_SECRET、DATABASE_URL、REDIS_HOST（不要求 Mongo，不调用模型
+      # 上游）。回滚只把该变量改回 legacy。
+      API_GO_LLM_GATEWAY_PROFILES_MODE: ${API_GO_LLM_GATEWAY_PROFILES_MODE:-legacy}
       # 知识图谱冲击传导与实体共现/价格相关图 4 个 GraphQL 只读 root
       # （getExecutiveChangeImpact / getCommodityMoveImpact /
       # getPolicyEventImpact / getEntityImpactGraph）。pilot 与样例保持
@@ -716,6 +725,15 @@ services:
       LITELLM_API_KEY: ${LITELLM_API_KEY:-}
       LITELLM_TIMEOUT_MS: ${LITELLM_TIMEOUT_MS:-60000}
       LITELLM_RETRY_ATTEMPTS: ${LITELLM_RETRY_ATTEMPTS:-3}
+      # 本批 profile 默认值还需要这几个 LITELLM_* 与 NODE_ENV，与 api
+      # 服务同源同名；上面已有的键不重复声明。LITELLM_MAX_TOKENS 在 Nest
+      # env schema 里有默认值，优先于 LITELLM_MAX_OUTPUT_TOKENS（Go 侧同序）。
+      NODE_ENV: ${NODE_ENV:-production}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4o-mini}
+      LITELLM_TEMPERATURE: ${LITELLM_TEMPERATURE:-0.2}
+      LITELLM_TOP_P: ${LITELLM_TOP_P:-0.9}
+      LITELLM_MAX_TOKENS: ${LITELLM_MAX_TOKENS:-2048}
+      LITELLM_FALLBACK_MODELS: ${LITELLM_FALLBACK_MODELS:-}
       # Go-批3A 兼容变量：readMode 未设时仍控制 onboarding（pilot 固定
       # go，保持与批3A 部署等价；readMode=go 已覆盖全部六端点）。
       API_GO_ONBOARDING_MODE: go
