@@ -761,7 +761,8 @@ jobs:
           if status != 200 or len(body(raw) or []) != 1 or (body(raw) or [{}])[0].get("id") != review_b:
               fail(f"org B review queue = {status} {raw[:300]!r}")
           status, raw = call(go, diag_sources, "GET", token_b)
-          assert_no_foreign("org B rss sources", body(raw))
+          # Org B legitimately sees its own beta markers; only org A's data is foreign.
+          assert_no_markers("org B rss sources", body(raw), org_a_markers)
           if "cls-beta-source" not in json.dumps(body(raw), ensure_ascii=False):
               fail(f"org B cannot see its own source: {raw[:400]!r}")
           status, raw = call(go, translation, "GET", token_b)
