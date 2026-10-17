@@ -6,7 +6,7 @@
 
 代码在独立包 `apps/api-go/internal/graphqlread/kgimpact`。
 
-真实栈工作流：`.github/workflows/api-go-kg-impact-read-smoke.yml`（label `api-go-kg-impact-read-smoke` 或 `workflow_dispatch`）。验收 run：https://github.com/wei500L/newwei/actions/runs/39026570864 （success；head `7f627e55`）。普通 CI：https://github.com/wei500L/newwei/actions/runs/39025791231 （success）。
+真实栈工作流：`.github/workflows/api-go-kg-impact-read-smoke.yml`（label `api-go-kg-impact-read-smoke` 或 `workflow_dispatch`）。验收 run：https://github.com/wei500L/newwei/actions/runs/39027888099 （success）。普通 CI：https://github.com/wei500L/newwei/actions/runs/39027232491 （success）。两者都对代码/合并 SHA `d1ea1cdf`（origin/main `8271f265` 之上的 merge）；其后只有文档回填提交。
 
 ## 迁入的 root
 
