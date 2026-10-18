@@ -196,6 +196,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-24 · crawl/items / 任务写入与内容导入
 
+- 2026-10-18按main90765633深入后，仅RSS翻译子链已reserved至[RSS-TRANSLATION-001](tasks/RSS-TRANSLATION-001.md)，[提示词](tasks/RSS-TRANSLATION-001.prompt.md)随#85发出；不再重复派发translateRssItems。同步DeepLX主备/LLM、四字段分块、双缓存、指标/日志齐备才算本链；无BullMQ/Cron或原文写回。确认GAP-RSS-001共享完整profile缓存被状态投影覆盖，一并具体修复；Mongo选最新记录改数据库侧分组。其他任务生命周期、创建/更新/导入仍未认领。
+
 - **范围/缺口**：crawl create/retry/delete 的 HTTP 与 createCrawlTask/retryCrawlTask/deleteCrawlTask、updateCrawlTaskIngestToItems/ingestCrawlTaskResultsToItems；POST /api/items、createItem/updateItem/createItemFromCrawlResult/translateRssItems（GAP-LEGACY-001 / GAP-ASYNC-001）。重复 HTTP/root 共用业务，不重复计工作。
 - **基础/依据**：G/{crawlreadtelemetry,itemsreading}、已有 DB/模型；N/CrawlService/ItemsService/ItemsRssTranslationService、RawItemOutbox/QueueProcessor。任务状态/去重/关联媒体、原文 Mongo 与 MySQL outbox、翻译缓存/真实模型均为必要步骤。
 - **文件/前置/冲突**：新 task/item 写包、数据层与 queue adapter/main；**先拆任务生命周期+消费者、条目写/导入、RSS翻译三段完整任务**，不能一个窗口领取全部。与 BL-03/05/20/25 有共享文件/表，先确定顺序；尚未核全事务/回滚与已处理条目失效链。

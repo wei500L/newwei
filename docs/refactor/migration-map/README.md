@@ -2,6 +2,8 @@
 
 先读本页 → [PLANNING](PLANNING.md) → [当前任务](tasks/README.md) + [缺口摘要](GAPS.md#当前摘要) → [候选队列](BACKLOG.md) → 候选域与源码。[实现核对深度](AUDIT.md)、[开关/执行所有权/复用入口](DEPENDENCIES.md)、[证据](EVIDENCE.md)按需展开。Nest 暂时保留。
 
+最新RSS选批增量（2026-10-18）：再次fetch main仍90765633，开放业务#81–#84未变；知识复核目录已见业务开发，摘要投递目录已创建但尚未见改动，均继续占用。新增[RSS-TRANSLATION-001](tasks/RSS-TRANSLATION-001.md) reserved，[完整提示词](tasks/RSS-TRANSLATION-001.prompt.md)随[规划PR #85](https://github.com/wei500L/newwei/pull/85)发布：单Mutation的双provider/四字段/正文分块/两层缓存/日志指标完整链，同时修复GAP-RSS-001状态投影覆盖共享完整网关缓存。仅深入RSS调用链，不重迁条目列表或导出，不启动业务，历史统计不提前增加。
+
 最新digest选批增量（2026-10-18）：fetch后main为`90765633ac6ba2b1d97a89d0ec33be90cb69bcb7`，普通CI39149114456 success；#69/#70已merged，#70–#76经#77合入，#79身份申请/邀请也已合入。开放业务Ready #81网关、#82来源策略、#83 OIDC、#84分析导出继续占用；开放规划[#80](https://github.com/wei500L/newwei/pull/80)的知识复核认领同样保留，不能以main尚无task文件重复派发。新增[DIGEST-DELIVERY-001](tasks/DIGEST-DELIVERY-001.md) reserved：[完整提示词](tasks/DIGEST-DELIVERY-001.prompt.md)，只补每日摘要Cron→到期认领→真实SMTP→状态/通知完整链，原五HTTP不重迁；包含摘要专用Nest通知桥及明确切换所有权。本次只深读该链、维护规划，未实施、未创建业务目录，历史全域统计/审查日期不更新为新验收。
 
 最新规划增量（2026-10-18）：main已到c39f282f11952b487c3ef6fefb14882db265ed9e，#70–#76经[#77](https://github.com/wei500L/newwei/pull/77)合入，普通CI成功，当前无开放PR。新增[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md)的14条申请/审批/邀请入组完整链，[提示词](tasks/IDENTITY-ONBOARDING-001.prompt.md)已发出。本次只深读identity候选并更新必要认领，不重建全仓地图；下面3cedce9a/9d0462e1日期和注册统计是历史快照，不能当作c39f282f现值，六批合并/新占用看任务索引。生产启用与外部验证不由merge/CI推断。

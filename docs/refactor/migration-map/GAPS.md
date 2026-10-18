@@ -6,6 +6,7 @@
 
 | ID | 性质 / 所属域 | 影响范围 | 状态 / 归属 |
 |---|---|---|---|
+| GAP-RSS-001 | 部分实现/共享缓存；items | rssTranslationStatus在LLM profile缓存miss后覆盖完整缓存字段 | RSS-TRANSLATION-001 reserved，main缺口开放；只修本链写回 |
 | GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | 未分配；SETTINGS-WRITE-001 主体仍 merged；与 WORKSPACE-WRITE-001 共享接线冲突 |
 | GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | NEWS-BRIEF-001 pr_open（候选实现，未合 main）；缺口仍开放 |
 | GAP-CRAWL-001 | 部分实现；crawl | 媒体下发及已有REST/GraphQL详情的 S3 URL分支 | STORAGE-MEDIA-001 pr_open（候选实现，未合 main）；缺口仍开放 |
@@ -13,6 +14,14 @@
 | GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | digest投递子链由DIGEST-DELIVERY-001 reserved；其余按链路拆分，不关闭整个缺口 |
 
 “未迁移”是范围事实，不表示 Nest 有 bug；“缺少外部运行证据”不单独计为源码缺陷。当前没有因本轮文档维护而关闭的业务缺口。
+
+## GAP-RSS-001 · RSS状态读取用窄投影覆盖完整网关缓存
+
+- 核对main90765633（2026-10-18），入口Query rssTranslationStatus，items.read，原READ+ITEMS_READING；触发llm_gateway:profiles miss而MySQL有完整llm_gateway_profiles设置。
+- `apps/api-go/internal/itemsreading/translation.go`：llmGatewayProfile只含ID/Model/Enabled，llmGatewaySettings只含ActiveID/Profiles；loadLLMGatewaySettings从DB解码此投影、normalize后Marshal并Set同key60秒，导致apiBase/apiKey/模型协议/embedding/rerank等字段不在缓存内。
+- Nest `LlmGatewaySettingsService.loadSettings`（modules/system-settings/llm-gateway-settings.service.ts）在同key读写完整normalized settings，真实completion会消费它。状态读取不应改变实际网关配置；未运行证明生产已触发，不把静态根因推成已发生外网故障。
+- [RSS-TRANSLATION-001](tasks/RSS-TRANSLATION-001.md)仅修此status写回：保留canonical缓存读取，miss从DB投影返回但不回填窄结构，不重做profile CRUD或盲目删缓存。业务translation新root另属GAP-LEGACY-001，不与此具体缺口混计。
+- 核心文件translation.go；与#84 csvexport无文件交集，与#81 profiles/llmlogs核心隔离。状态reserved、main未修、关闭证据无；需实际merge中无损缓存行为及对应CI，真实部署独立核实。
 
 <a id="gap-gql-001"></a>
 
