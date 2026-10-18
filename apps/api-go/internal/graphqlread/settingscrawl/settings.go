@@ -1099,8 +1099,9 @@ func normalizeNewsDedupeSettings(raw []byte, fallback NewsDedupeSettingsModel) N
 //
 // Entries are keyed by the normalized (sourceId, language, categoryPath) triple
 // so a later duplicate overwrites an earlier one; legacy entries are inserted
-// only while the key is absent. Both loops cap the map at 100. The result is
-// sorted by the NUL-joined triple.
+// only while the key is absent. Both loops cap the map at 100. Every scope key
+// is computed once per entry, every sort key is computed once after
+// deduplication, and the result is sorted by the NUL-joined triple.
 func normalizeNewsDedupeScopedThresholds(document newsDedupeSettingsDocument, defaultThreshold float64) []NewsDedupeScopedThresholdModel {
 	byKey := make(map[string]NewsDedupeScopedThresholdModel)
 
@@ -1162,13 +1163,21 @@ func normalizeNewsDedupeScopedThresholds(document newsDedupeSettingsDocument, de
 		}
 	}
 
-	out := make([]NewsDedupeScopedThresholdModel, 0, len(byKey))
-	for _, value := range byKey {
-		out = append(out, value)
+	// Each surviving entry computes its sort key exactly once; the comparator
+	// only reads the precomputed keys.
+	type scopedEntry struct {
+		value   NewsDedupeScopedThresholdModel
+		sortKey string
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return dedupeScopeSortKey(out[i]) < dedupeScopeSortKey(out[j])
-	})
+	entries := make([]scopedEntry, 0, len(byKey))
+	for _, value := range byKey {
+		entries = append(entries, scopedEntry{value: value, sortKey: dedupeScopeSortKey(value)})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].sortKey < entries[j].sortKey })
+	out := make([]NewsDedupeScopedThresholdModel, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.value)
+	}
 	return out
 }
 

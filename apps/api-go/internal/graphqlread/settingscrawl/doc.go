@@ -16,9 +16,16 @@
 // document that selects one of these roots falls back to NestJS as a whole, so
 // the production web entry keeps serving through NestJS.
 //
-// Any document that also selects crawlMetadata, alertRules or a mutation stays
-// on NestJS: the first fetches the public internet, the second can enqueue a
-// BullMQ job, and every mutation is outside this read-only unit.
+// Any document that also selects crawlMetadata, alertRules or an unmigrated
+// mutation stays on NestJS: the first fetches the public internet, the second
+// can enqueue a BullMQ job, and the settings write mutations are owned by the
+// separate settingswrite package.
+//
+// This package also exposes the reuse surface the settings write package calls
+// (writesupport.go): the settings center models, their defaults, the shared
+// normalizers and the SettingsResolver.assertAdmin gate. RegisterSettingsModel-
+// Types registers those models without registering any root, so a write-only
+// deployment still projects the mutation results.
 //
 // orgId and permissions always come from the server-derived membership; the
 // executor rejects mtk_ machine tokens for GraphQL reads. Every returned type

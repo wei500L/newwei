@@ -68,6 +68,25 @@ func Register(reg *contract.Registry, db *sql.DB, options Options) {
 // unregistered nested type makes the whole operation fall back to NestJS, so
 // the list must stay complete.
 func registerTypes(reg *contract.Registry) {
+	registerSettingsModelTypes(reg)
+	registerPolicyAndCrawlTypes(reg)
+}
+
+// RegisterSettingsModelTypes records only the settings center object types, and
+// registers no root. The settings write package returns these same models, so a
+// deployment that runs the write mutations with the read executor still must
+// register them exactly once. RegisterType is idempotent, but the write path
+// calls this only when the settings/crawl read roots did not already register
+// the models.
+func RegisterSettingsModelTypes(reg *contract.Registry) {
+	if reg == nil {
+		panic("graphqlread: settingscrawl.RegisterSettingsModelTypes requires a registry")
+	}
+	registerSettingsModelTypes(reg)
+}
+
+// registerSettingsModelTypes records the twenty settings center object types.
+func registerSettingsModelTypes(reg *contract.Registry) {
 	reg.RegisterType("RateLimitBucketModel", RateLimitBucketModel{})
 	reg.RegisterType("RateLimitSettingsModel", RateLimitSettingsModel{})
 	reg.RegisterType("EntityImpactGraphSettingsModel", EntityImpactGraphSettingsModel{})
@@ -88,7 +107,12 @@ func registerTypes(reg *contract.Registry) {
 	reg.RegisterType("NewsExtractionProvidersSettingsModel", NewsExtractionProvidersSettingsModel{})
 	reg.RegisterType("NewsExtractionSettingsModel", NewsExtractionSettingsModel{})
 	reg.RegisterType("NewsPromptConfigModel", NewsPromptConfigModel{})
+}
 
+// registerPolicyAndCrawlTypes records the source policy, knowledge-graph
+// evidence review and crawl task object types, which only the read roots
+// project.
+func registerPolicyAndCrawlTypes(reg *contract.Registry) {
 	reg.RegisterType("NewsEventSourcePolicyDeltaModel", NewsEventSourcePolicyDeltaModel{})
 	reg.RegisterType("NewsEventSourcePolicyConflictModel", NewsEventSourcePolicyConflictModel{})
 	reg.RegisterType("NewsEventSourceCategoryAuthorityDomainBoostModel", NewsEventSourceCategoryAuthorityDomainBoostModel{})

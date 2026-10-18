@@ -246,8 +246,11 @@ export class NewsClassificationSettingsService {
     input: NewsClassificationSettingsInput,
   ): Promise<NewsClassificationSettings> {
     const current = await this.getSettings(orgId);
-    this.validateUpdateInput(input, current);
-    const normalized = this.normalizeSettings(input, current);
+    // validateUpdateInput validates the submitted taxonomy and returns the
+    // already-normalized nodes in one pass; normalizeSettings reuses them, so a
+    // path, keyword or synonym is never normalized twice in one update.
+    const validatedTaxonomy = this.validateUpdateInput(input, current);
+    const normalized = this.normalizeSettings(input, current, validatedTaxonomy);
     const key = this.systemSettingKey(orgId);
 
     await this.prisma.systemSetting.upsert({
@@ -339,6 +342,7 @@ export class NewsClassificationSettingsService {
   private normalizeSettings(
     value: Partial<NewsClassificationSettingsInput>,
     fallback?: NewsClassificationSettings,
+    validatedTaxonomy?: NewsClassificationTaxonomyNode[],
   ): NewsClassificationSettings {
     const defaults = fallback ?? this.getFallbackSettings();
 
@@ -365,7 +369,8 @@ export class NewsClassificationSettingsService {
       ),
       taxonomyVersion:
         this.cleanString(value.taxonomyVersion, 64) ?? defaults.taxonomyVersion,
-      taxonomy: this.normalizeTaxonomy(value.taxonomy, defaults.taxonomy),
+      taxonomy:
+        validatedTaxonomy ?? this.normalizeTaxonomy(value.taxonomy, defaults.taxonomy),
     };
   }
 
@@ -420,7 +425,7 @@ export class NewsClassificationSettingsService {
   private validateUpdateInput(
     value: NewsClassificationSettingsInput,
     fallback: NewsClassificationSettings,
-  ) {
+  ): NewsClassificationTaxonomyNode[] | undefined {
     const enabled = this.asBoolean(value.enabled, fallback.enabled);
     const enableLlm = this.asBoolean(value.enableLlm, fallback.enableLlm);
     const enableEmbedding = this.asBoolean(
@@ -435,7 +440,7 @@ export class NewsClassificationSettingsService {
     }
 
     if (value.taxonomy === undefined) {
-      return;
+      return undefined;
     }
 
     if (!Array.isArray(value.taxonomy)) {
@@ -452,7 +457,7 @@ export class NewsClassificationSettingsService {
       );
     }
 
-    const dedup = new Set<string>();
+    const dedup = new Map<string, NewsClassificationTaxonomyNode>();
     for (let index = 0; index < value.taxonomy.length; index += 1) {
       const node = value.taxonomy[index];
       if (!node || typeof node !== "object" || Array.isArray(node)) {
@@ -483,15 +488,14 @@ export class NewsClassificationSettingsService {
           `taxonomy node #${index + 1} path duplicates an earlier node`,
         );
       }
-      dedup.add(normalizedPath);
 
-      this.assertRequiredString(
+      const displayName = this.assertRequiredString(
         node.displayName,
         MAX_TAXONOMY_TEXT_LENGTH,
         "displayName",
         index,
       );
-      this.assertRequiredString(
+      const description = this.assertRequiredString(
         node.description,
         MAX_TAXONOMY_TEXT_LENGTH,
         "description",
@@ -510,9 +514,98 @@ export class NewsClassificationSettingsService {
         );
       }
 
-      this.assertStringList(node.keywords, "keywords", index);
-      this.assertStringList(node.synonyms, "synonyms", index);
+      // The list validation and normalization run once; the entries below are
+      // the final stored keywords and synonyms.
+      const keywords = this.validateStringList(node.keywords, "keywords", index);
+      const synonyms = this.validateStringList(node.synonyms, "synonyms", index);
+
+      dedup.set(normalizedPath, {
+        path: normalizedPath,
+        displayName,
+        description,
+        legacyCategory: legacyCategoryRaw as NewsLegacyCategory,
+        keywords,
+        synonyms,
+      });
+
+      if (dedup.size >= MAX_TAXONOMY_NODES) {
+        break;
+      }
     }
+
+    // normalizeTaxonomy would return the fallback for an empty result; the
+    // submitted taxonomy already has at least one valid node here, so the sort
+    // happens exactly once.
+    return Array.from(dedup.values()).sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  private assertRequiredString(
+    value: unknown,
+    maxLength: number,
+    field: string,
+    index: number,
+  ): string {
+    if (typeof value !== "string") {
+      throw new BadRequestException(
+        `taxonomy node #${index + 1} ${field} must be a string`,
+      );
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new BadRequestException(
+        `taxonomy node #${index + 1} ${field} is required`,
+      );
+    }
+    if (trimmed.length > maxLength) {
+      throw new BadRequestException(
+        `taxonomy node #${index + 1} ${field} exceeds ${maxLength} characters`,
+      );
+    }
+    return trimmed;
+  }
+
+  private validateStringList(
+    value: unknown,
+    field: string,
+    index: number,
+  ): string[] {
+    if (value === undefined || value === null) {
+      return [];
+    }
+    if (!Array.isArray(value)) {
+      throw new BadRequestException(
+        `taxonomy node #${index + 1} ${field} must be an array`,
+      );
+    }
+    if (value.length > MAX_LIST_SIZE) {
+      throw new BadRequestException(
+        `taxonomy node #${index + 1} ${field} must contain at most ${MAX_LIST_SIZE} entries`,
+      );
+    }
+    const dedup = new Set<string>();
+    for (const entry of value) {
+      if (typeof entry !== "string") {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} ${field} must contain only strings`,
+        );
+      }
+      const trimmed = entry.trim();
+      if (!trimmed) {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} ${field} must not contain empty strings`,
+        );
+      }
+      if (trimmed.length > MAX_LIST_ITEM_LENGTH) {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} ${field} entries exceed ${MAX_LIST_ITEM_LENGTH} characters`,
+        );
+      }
+      dedup.add(trimmed);
+      if (dedup.size >= MAX_LIST_SIZE) {
+        break;
+      }
+    }
+    return Array.from(dedup);
   }
 
   private normalizePath(value: unknown): string | null {
@@ -543,65 +636,6 @@ export class NewsClassificationSettingsService {
       return null;
     }
     return normalized as NewsLegacyCategory;
-  }
-
-  private assertRequiredString(
-    value: unknown,
-    maxLength: number,
-    field: string,
-    index: number,
-  ): string {
-    if (typeof value !== "string") {
-      throw new BadRequestException(
-        `taxonomy node #${index + 1} ${field} must be a string`,
-      );
-    }
-    const trimmed = value.trim();
-    if (!trimmed) {
-      throw new BadRequestException(
-        `taxonomy node #${index + 1} ${field} is required`,
-      );
-    }
-    if (trimmed.length > maxLength) {
-      throw new BadRequestException(
-        `taxonomy node #${index + 1} ${field} exceeds ${maxLength} characters`,
-      );
-    }
-    return trimmed;
-  }
-
-  private assertStringList(value: unknown, field: string, index: number) {
-    if (value === undefined || value === null) {
-      return;
-    }
-    if (!Array.isArray(value)) {
-      throw new BadRequestException(
-        `taxonomy node #${index + 1} ${field} must be an array`,
-      );
-    }
-    if (value.length > MAX_LIST_SIZE) {
-      throw new BadRequestException(
-        `taxonomy node #${index + 1} ${field} must contain at most ${MAX_LIST_SIZE} entries`,
-      );
-    }
-    for (const entry of value) {
-      if (typeof entry !== "string") {
-        throw new BadRequestException(
-          `taxonomy node #${index + 1} ${field} must contain only strings`,
-        );
-      }
-      const trimmed = entry.trim();
-      if (!trimmed) {
-        throw new BadRequestException(
-          `taxonomy node #${index + 1} ${field} must not contain empty strings`,
-        );
-      }
-      if (trimmed.length > MAX_LIST_ITEM_LENGTH) {
-        throw new BadRequestException(
-          `taxonomy node #${index + 1} ${field} entries exceed ${MAX_LIST_ITEM_LENGTH} characters`,
-        );
-      }
-    }
   }
 
   private normalizeStringList(value: unknown): string[] {

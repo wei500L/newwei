@@ -48,8 +48,6 @@ type Service struct {
 	db    *sql.DB
 	redis *redis.Client
 	cfg   Config
-	// retention mirrors the audit-log service's process-local 30 second cache.
-	retention retentionCache
 	// newsSourceCache mirrors the news-source scheduler service's process-local
 	// 30 second cache.
 	newsSourceCache newsSourceSchedulerCache
