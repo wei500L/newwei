@@ -2,7 +2,38 @@
 
 [返回入口](README.md)。此页保存核对方法与精确证据；当前事实先看本节，历史快照保留作追踪，不替代各域源码。
 
-## 本轮完整性复核（当前事实）
+## NEWS-BRIEF-001（2026-10-18，候选实现）
+
+- git fetch origin main 后 `origin/main = 9d0462e16d88d146b8afbf67cdd58d8b7419ff29`；开放 PR 为 #70（业务，head adb765d0）与 #71（规划文档）；`git worktree list` 中 briefing 目录原先不存在，本窗口创建唯一编码 worktree `/Users/oo/project/newwei-go-news-event-brief` 与分支 `refactor/go-news-event-brief`（从 9d0462e1）。规划记录未进 main，本分支从 docs/plan-news-event-brief 带入 [NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md) 与提示词。
+- 本批新增/修改：newsevents brief.go/brief_generate.go/brief_log.go/register.go/service.go、publicportal brief_completion.go/gateway.go/story.go、llmlogs completion.go、config.go、cmd/api/main.go（仅 newsevents.Register 参数与日志）、`.env.sample`、`docker-compose.yml`、api-go README 与同域测试。
+- 交付：Ready [PR #72](https://github.com/wei500L/newwei/pull/72)，精确 head `517a73f98b495c1664c45fdfaf2bd2692a3b2210`。首个 head b9c4d4f3 的 [run 39132364703](https://github.com/wei500L/newwei/actions/runs/39132364703) 在 Lint 失败（既有 service_test.go 仍按旧 map metadata 取值），已正常追加修复提交、未 amend/rebase/force-push。
+- 本批 head 普通 CI：[run 39132616859](https://github.com/wei500L/newwei/actions/runs/39132616859) — verify success（Lint、Typecheck、Go tests (api-go gateway + vector-go pilot)、Build 均通过）、api-go-user-settings-integration success、vector-integration success。PR 触发的 smoke/regen 全部 skipped，不计通过；不用 main 旧 CI 充当本批验证。
+- 文档回填提交 `4ada70fc`（仅 migration-map 文档，无源码差异）的 [run 39133422346](https://github.com/wei500L/newwei/actions/runs/39133422346) 同样 verify/vector-integration success。功能验证以上一条源码 head 为准；本文件所在提交亦仅文档，最终 head 与其 CI 记录在 PR #72 描述。
+- 静态边界：未在本机安装依赖、未运行 go build/go test/Docker/服务，未做模型实网、MySQL/Mongo 或部署切流验证；gofmt、`git diff --check` 与只读源码核对已完成。
+- 关闭边界：GAP-NEWS-001 仍开放；PR 只记候选实现，实际 merge SHA 落地后才复核关闭。
+
+## STORAGE-MEDIA-001 交付证据（2026-10-18，业务 PR #73）
+
+- 业务分支 `refactor/go-storage-media`，worktree `/Users/oo/project/newwei-go-storage-media`，由 `origin/main 9d0462e16d88d146b8afbf67cdd58d8b7419ff29` 创建；提交 `a7cba649`（存储诊断 + 媒体/REST/GraphQL 的 S3 交付 + 测试 + 开关/Compose/示例/任务记录）。
+- [Ready PR #73](https://github.com/wei500L/newwei/pull/73)（未合 main）。依赖变更按既有 `go-modules-regen` label 通道远端 `go mod tidy`/`go build`；生成后需 fetch+merge 机器人提交、移除 label，再以最终 head 的普通 CI 为准。
+- 本机未安装依赖、未运行 build/test/Docker/服务；无实桶/MinIO 签名下载、无部署、无生产流量。因此 GAP-CRAWL-001 与 storage/test 均不因本 PR 关闭，BL-03 / BL-15.storage/test 指向本任务而不计 main 迁移数。
+- 交付后的精确 head 与普通 CI run 见 [STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md) 的交付记录；本页不提前登记 main 覆盖数。
+
+## NEWS-BRIEF-001 规划刷新（2026-10-18，历史快照；任务状态已被上方交付记录更新）
+
+第三批用户要求“不要防御性编程、写好英文注释”已补PLANNING。再次fetch/main五次CI/开放PR/worktree刷新，main仍9d0462e1，#70 adb765d0仍开放、#71仅规划文档。只深入BL-05并认领ITEMS-LIST-001；两端排序/分页/画像/选择投影与外部边界见task。brief worktree已见业务差异，状态in_progress；storage worktree已创建且当时干净，保留reserved。规划窗口未安装/运行测试/服务或实施迁移，未创建第三批编码目录。
+
+随后用户要求第二个并行提示词，再fetch main仍9d0462e16d88d146b8afbf67cdd58d8b7419ff29；开放仅#70业务与#71规划文档，heads仍adb765d0/3a33ad6e。新增STORAGE-MEDIA-001 reserved，只续核S3媒体/存储诊断及必要源码。#71此旧head的verify仍进行中、两集成job成功，不当新记录或业务CI通过；新记录追加后另查最新head。官方AWS Go v2示例确认有S3 presign/对象操作能力（https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/go_s3_code_examples.html），本仓库go.mod未引入，规划指定现有ci.yml远端go-modules-regen流程。未安装/构建/测试/调用S3，未创建编码worktree。
+
+第二批发出前再核，用户的简报窗口已创建/Users/oo/project/newwei-go-news-event-brief，HEAD9d0462e1且当时无业务差异；保留NEWS-BRIEF-001占用，不推断执行器活动/退出。STORAGE-MEDIA-001编码目录仍未创建，规划窗口未启动实施。
+
+- git fetch origin main后：9d0462e16d88d146b8afbf67cdd58d8b7419ff29。#69实际mergeCommit与此相等，已merged；从3cedce9a到此仅地图/导航文档，没有apps/api、apps/api-go、apps/vector-go业务改动，原注册数不变。
+- main最近5次普通CI分别对应9d0462e1/3cedce9a/7fc17faa/9da8e75e/3c9ce2f5，均success；最新[run 39127631691](https://github.com/wei500L/newwei/actions/runs/39127631691)，完整head即上条SHA。
+- #70仍OPEN/Ready，head adb765d0180e8b34910181e8c6fde8be400a2dff；实际文件清单和main/config diff已读，仍缺settingsWrite顶层route/无效DSN并集，needsCredentialedGo已补settingsWrite。其[普通CI 39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) verify/user-settings/vector成功，smoke/regen skipped不当通过。工作台8写仍不计main。
+- git worktree list及所有列出worktree HEAD/status只读刷新；工作台写干净，其他历史目录未发现新业务修改，目录存在/干净不代表执行器活动。新建独立规划worktree只用于文档，不创建编码worktree。
+- 本次仅brief候选两端源码深读、认领、提示词和相关记录维护；无全仓审计、业务实现、本机构建/测试/安装/服务、模型实网或部署切换。规划PR发布记录见NEWS-BRIEF-001，不当作业务CI证据。
+
+## 本轮完整性复核（历史快照）
 
 2026-10-18 14:37 开始，14:49 再 fetch，`origin/main = 3cedce9aa3200436aba3596f63b559de5490cec8` 未变。#69 OPEN / Ready / autoMergeRequest=null，原 worktree 干净后在原文档分支追加；未 amend/rebase/force-push。apps/api、apps/api-go、apps/vector-go 相对该 main 无差异。本轮只改 migration-map 文档；原 PR 已有 AGENTS/roadmap 导航，本轮没有扩展业务/配置/测试/schema/workflow。
 
@@ -28,8 +59,20 @@
 | 本轮前地图#69 | `7526429123cfc17cdabc971a7fa0ba01d27e323d` | [39122969782](https://github.com/wei500L/newwei/actions/runs/39122969782) success，14:54读取 | 不继承给本轮新提交；两个smoke skipped |
 | 工作台PR #70 前一业务head | `200ab9440bc2c4d217f429999468c90b81a968e0` | [39124393842](https://github.com/wei500L/newwei/actions/runs/39124393842) success，14:56读取 | 普通CI成功；regen与两个smoke skipped，不记额外通过 |
 | 工作台PR #70 当前文档追加head | `adb765d0180e8b34910181e8c6fde8be400a2dff` | [39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) success，15:10读取 | verify、user-settings/vector integration成功；regen与smoke skipped；不等于8写逐字段/部署验证 |
+| 条目列表PR #74 业务head | `c45f1afe3754fab3cdd31e6fb8ba5b9eb37bd9eb` | [39136842080](https://github.com/wei500L/newwei/actions/runs/39136842080) success（17:46 MSK复核） | verify 全步骤（lint/typecheck/Web覆盖率/Vector+API 测试/契约与 SDL 漂移/Go tests/build/SBOM/Compose pin）+ user-settings/vector integration 成功；两个 smoke 与两个 regen skipped；不代替 ES/vector/rerank 实网、部署与流量验证 |
 
 main job直接证据：[verify](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821601)、[MySQL/Redis](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821431)、[Qdrant差分](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821605)。verify含lint/typecheck、Web覆盖率、Vector/API测试、契约漂移、Go tests和build，范围由 `.github/workflows/ci.yml` 与run步骤核对；并非每个业务/外部服务的端到端验收。未复验历史专用smoke精确head，不能引用报告当本轮运行证据。
+
+### 17:22–17:46 MSK 增量：ITEMS-LIST-001（Query items）
+
+- 分支 `refactor/go-graphql-items-list`，Ready [PR #74](https://github.com/wei500L/newwei/pull/74)；从 main `9d0462e1` 创建，未合 main，main 覆盖数/注册数不提前增加。
+- 普通 CI 修复链（同一 PR，正常追加提交，不 amend/rebase/force-push）：
+  1. head `3a8b73d1` [39134685779](https://github.com/wei500L/newwei/actions/runs/39134685779) failure：verify 的 Lint（`go vet`）报 `internal/itemsreading/relevance.go: undefined: pickResultStringArray`。
+  2. head `0c8f645d` [39135069657](https://github.com/wei500L/newwei/actions/runs/39135069657) failure：verify 的 Go tests 报新增选择元数据测试失败——测试未先 `validator.Validate`（`@skip/@include` 的 `Directive.Definition` 只在校验后填充），且 executor 用 Query 作父类型、传字段自身 selection set 构建 root 选择元数据，导致 resolver 收到的元数据恒为空。
+  3. head `de7256b5` [39136040616](https://github.com/wei500L/newwei/actions/runs/39136040616) failure：Go tests 报测试查询里对象字段 `raw` 缺子选择集（GraphQL 校验规则）。
+  4. head `c45f1afe` [39136842080](https://github.com/wei500L/newwei/actions/runs/39136842080) success（见上表）。
+- 已实现：page/after 双分支、复合 (time,id) 游标、CREATED/PUBLISHED/PERSONALIZED 排序、RELEVANCE 两阶段排名（rerank 失败 503 不降级）、个性化增量候选窗口、显式 filters presence、双 read-model 分支、本页批量嵌套投影、独立子开关与父依赖校验、具名 rerank options/观测与隔离请求日志。
+- 未验证：Elasticsearch、vector 服务、embedding/rerank 真实模型、真实 MySQL/Mongo/Redis 并发、部署/流量/回滚演练；`llmrequestlogs` 只做只读源码核对。合入前不得关闭整个 GAP-LEGACY-001。
 
 本轮文档提交后的普通CI以 [#69 Checks](https://github.com/wei500L/newwei/pull/69/checks) **当前head**为准，最终交付/PR描述记录其精确head和run结果；本文件不预先宣称尚未产生的提交已通过，也不为了嵌入自身SHA而不断追加文档提交。实际部署/生产流量、SMTP/模型/S3/crawl4ai/地理/Telegram/Oref/AkShare实网仍未核实。
 

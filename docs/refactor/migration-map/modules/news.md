@@ -1,10 +1,10 @@
 # news · 新闻事件、指标、聚类与内容流水线
 
-最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
+最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。NEWS-BRIEF-001 编码窗口在 main 9d0462e1 基础上实现候选（Ready [PR #72](https://github.com/wei500L/newwei/pull/72)，head 517a73f9，verify/integration 通过），尚未合 main，见[任务](../tasks/NEWS-BRIEF-001.md)。
 
 ## 范围与实施状态
 
-事件六读与指标两读已有 Go 注册，指标 HTTP、NewsNow 本地计算/聚类失败管理已有 Go。**newsEventBrief 仅缓存命中路径已实现，冷生成与 forceRefresh 是真实业务缺口**。聚类管理 LLM backfill 与新闻源真实抓取未被本地管理接口替代。LLM 日志归运维文档；分类/去重/抽取设置 root 归设置中心。
+事件六读与指标两读已有 Go 注册，指标 HTTP、NewsNow 本地计算/聚类失败管理已有 Go。**newsEventBrief 的缓存命中路径原先已实现；冷生成与 forceRefresh 由 NEWS-BRIEF-001 补为候选实现（Go 选源→模型→校验→写回 briefV1，独立 BRIEF 子开关默认 legacy），尚未合 main，GAP-NEWS-001 仍开放**。聚类管理 LLM backfill 与新闻源真实抓取未被本地管理接口替代。LLM 日志归运维文档；分类/去重/抽取设置 root 归设置中心。
 
 关键数据与副作用：MySQL NewsEvent*/NewsIndicator*/Article/ProcessedArticle、Mongo 内容、Redis 缓存与聚类恢复队列、LLM/向量模型。采集→清洗→抽取/分类/去重→索引/outbox 仍有 Nest 消费者。
 
@@ -16,7 +16,7 @@
 
 Nest 功能目录：[news-events](../../../../apps/api/src/modules/news-events)、[news-indicator](../../../../apps/api/src/modules/news-indicator)、[news-pipeline](../../../../apps/api/src/modules/news-pipeline)、[news-aggregator](../../../../apps/api/src/modules/news-aggregator)、[news-signals](../../../../apps/api/src/modules/news-signals)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：[NEWS-BRIEF-001](../tasks/NEWS-BRIEF-001.md) pr_open，只补 newsEventBrief 完整冷生成/强刷、独立子开关与必要日志/缓存写回；候选未合 main，缺口未关闭。规划期以 main 9d0462e1 续核本 root，全域历史日期不变。旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
 
 ## HTTP 开关、实现与生产接线
 
@@ -62,7 +62,7 @@ Nest 功能目录：[news-events](../../../../apps/api/src/modules/news-events)�
 | Mutation `refreshNewsIndicatorAssociations` | settings.manage | [news-indicator.resolver.ts](../../../../apps/api/src/graphql/resolvers/news-indicator.resolver.ts) · `refreshNewsIndicatorAssociations` | Nest；未注册 |
 | Query `eventGroups` | items.read | [topics.resolver.ts](../../../../apps/api/src/graphql/resolvers/topics.resolver.ts) · `eventGroups` | [newsevents.Register](../../../../apps/api-go/internal/graphqlread/newsevents/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_NEWS_EVENTS_MODE` |
 | Query `newsEvent` | items.read | [news-events.resolver.ts](../../../../apps/api/src/graphql/resolvers/news-events.resolver.ts) · `newsEvent` | [newsevents.Register](../../../../apps/api-go/internal/graphqlread/newsevents/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_NEWS_EVENTS_MODE` |
-| Query `newsEventBrief` | items.read | [news-events.resolver.ts](../../../../apps/api/src/graphql/resolvers/news-events.resolver.ts) · `newsEventBrief` | [newsevents.Register](../../../../apps/api-go/internal/graphqlread/newsevents/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_NEWS_EVENTS_MODE`  **部分：冷生成/forceRefresh 未实现** |
+| Query `newsEventBrief` | items.read | [news-events.resolver.ts](../../../../apps/api/src/graphql/resolvers/news-events.resolver.ts) · `newsEventBrief` | [newsevents.Register](../../../../apps/api-go/internal/graphqlread/newsevents/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_NEWS_EVENTS_MODE + API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE`（候选，未合 main）：只有 BRIEF=go 才登记本 root 并走冷生成/强刷；BRIEF=legacy 时只登记其余五个 root，含本 root 的文档整包回 NestJS |
 | Query `newsEventReferencedArticles` | items.read | [news-events.resolver.ts](../../../../apps/api/src/graphql/resolvers/news-events.resolver.ts) · `newsEventReferencedArticles` | [newsevents.Register](../../../../apps/api-go/internal/graphqlread/newsevents/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_NEWS_EVENTS_MODE` |
 | Query `newsEventSourcePolicySyncStatus` | items.read | [news-events.resolver.ts](../../../../apps/api/src/graphql/resolvers/news-events.resolver.ts) · `newsEventSourcePolicySyncStatus` | [settingscrawl.Register](../../../../apps/api-go/internal/graphqlread/settingscrawl/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` |
 | Query `newsEvents` | items.read | [news-events.resolver.ts](../../../../apps/api/src/graphql/resolvers/news-events.resolver.ts) · `newsEvents` | [newsevents.Register](../../../../apps/api-go/internal/graphqlread/newsevents/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_NEWS_EVENTS_MODE` |

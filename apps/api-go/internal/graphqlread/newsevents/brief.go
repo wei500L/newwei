@@ -2,9 +2,12 @@ package newsevents
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -13,8 +16,16 @@ import (
 	"unicode/utf16"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
+	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 )
 
+// newsEventBrief serves the news-event detail brief. A matching briefV1 cache
+// hit is returned as is; a miss, an explicit forceRefresh, a language change or
+// a source-fingerprint change generates synchronously through the model
+// gateway. No event, an event of another tenant, or no usable source URL is a
+// legal null. Generation failure is never a legal null: a missing key or a
+// broken payload is the field internal error Nest produces, and the governance
+// 503 keeps its status.
 func (s *service) newsEventBrief(ctx contract.Context) (any, error) {
 	if s == nil || s.db == nil {
 		return nil, &contract.Failure{Status: http.StatusInternalServerError, Message: "Internal server error"}
@@ -30,11 +41,12 @@ func (s *service) newsEventBrief(ctx contract.Context) (any, error) {
 	if value, ok := boolArg(ctx.Args, "forceRefresh"); ok {
 		force = value
 	}
-	row, err := s.loadEvent(s.call(ctx), ctx.Identity.OrgID, eventID)
+	callCtx := s.call(ctx)
+	row, err := s.loadEvent(callCtx, ctx.Identity.OrgID, eventID)
 	if err != nil || row == nil {
 		return nil, err
 	}
-	items, err := s.loadItems(s.call(ctx), row.ID, 200)
+	items, err := s.loadItems(callCtx, row.ID, 200)
 	if err != nil {
 		return nil, err
 	}
@@ -48,10 +60,30 @@ func (s *service) newsEventBrief(ctx contract.Context) (any, error) {
 			return cached.model(), nil
 		}
 	}
-	// Nest calls the model here and writes briefV1. A failed call is a thrown
-	// Error, which production GraphQL renders as Internal server error.
-	// Returning null would look like "no event / no sources".
-	return nil, &contract.Failure{Status: http.StatusInternalServerError, Message: "Internal server error"}
+	if s.brief == nil {
+		return nil, &contract.Failure{Status: http.StatusInternalServerError, Message: "Internal server error"}
+	}
+	// Nest takes generatedAt before the model call and returns it even when
+	// the cache write-back fails afterwards.
+	generatedAt := s.clock().UTC()
+	payload, err := s.generateBrief(callCtx, ctx.Identity.OrgID, row, sources, language)
+	if err != nil {
+		log.Printf("api-go: news event brief generation failed: %v", err)
+		var status *publicportal.StatusError
+		if errors.As(err, &status) && status != nil && status.Code == http.StatusServiceUnavailable {
+			// Keep the 503 contract; fieldFailure masks the upstream message
+			// and only the safe log above carries the original reason.
+			return nil, &contract.Failure{Status: http.StatusServiceUnavailable, Message: status.Message}
+		}
+		return nil, &contract.Failure{Status: http.StatusInternalServerError, Message: "Internal server error"}
+	}
+	sanitized := sanitizePayload(payload, len(sources))
+	if err := s.saveBriefV1(callCtx, ctx.Identity.OrgID, row.ID, language, fingerprint, generatedAt, sources, sanitized); err != nil {
+		// A cache write failure must not hide a generated brief; the previous
+		// cache entry is left untouched.
+		log.Printf("api-go: news event brief cache write failed: %v", err)
+	}
+	return briefModel(generatedAt, language, sanitized, sources), nil
 }
 
 type briefSource struct {
@@ -59,6 +91,8 @@ type briefSource struct {
 	URL                string
 	SourceLabel        *string
 	Title              *string
+	Summary            *string
+	KeyPoints          []string
 	PublishedAt        *time.Time
 	ProcessedItemID    *string
 	ProcessedArticleID *string
@@ -97,6 +131,8 @@ func selectBriefSources(items []itemRow, maxSources int) []briefSource {
 			URL:                rawURL,
 			SourceLabel:        cleanString(label),
 			Title:              cleanString(item.Title),
+			Summary:            cleanString(item.Summary),
+			KeyPoints:          normalizeKeyPoints(item.KeyPoints),
 			PublishedAt:        published,
 			ProcessedItemID:    cleanString(item.ProcessedItemID),
 			ProcessedArticleID: cleanString(&item.ProcessedArticleID),
@@ -147,6 +183,39 @@ func selectBriefSources(items []itemRow, maxSources int) []briefSource {
 	for i, item := range picked {
 		item.Index = i + 1
 		out[i] = item.briefSource
+	}
+	return out
+}
+
+// normalizeKeyPoints mirrors Nest normalizeStringList for ProcessedArticle
+// keyPoints: trimmed unique non-empty strings, capped at 20.
+func normalizeKeyPoints(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var values []any
+	if json.Unmarshal(raw, &values) != nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			continue
+		}
+		trimmed := strings.TrimSpace(text)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+		if len(out) >= 20 {
+			break
+		}
 	}
 	return out
 }
@@ -233,15 +302,18 @@ type cachedBrief struct {
 	Sources     []NewsEventBriefSourceModel
 }
 
+// briefPayload is the model payload and the cached payload. The nullable
+// leaves are omitted when nil, matching Nest dropping undefined keys from the
+// stored briefV1 document; the point lists always serialize as [].
 type briefPayload struct {
 	DetailedSummary string           `json:"detailed_summary"`
 	Tldr            string           `json:"tldr"`
 	KeyPoints       []briefPoint     `json:"key_points"`
 	WhyItMatters    []briefPoint     `json:"why_it_matters"`
-	LatestUpdate    *briefPoint      `json:"latest_update"`
+	LatestUpdate    *briefPoint      `json:"latest_update,omitempty"`
 	WhatToWatch     []briefPoint     `json:"what_to_watch"`
-	Comparison      *briefComparison `json:"comparison"`
-	Limitations     *string          `json:"limitations"`
+	Comparison      *briefComparison `json:"comparison,omitempty"`
+	Limitations     *string          `json:"limitations,omitempty"`
 }
 
 type briefPoint struct {
@@ -284,7 +356,10 @@ func readCachedBrief(metadata json.RawMessage) *cachedBrief {
 		return nil
 	}
 	var payload briefPayload
-	if json.Unmarshal(doc.Payload, &payload) != nil || strings.TrimSpace(payload.DetailedSummary) == "" || strings.TrimSpace(payload.Tldr) == "" || len(payload.KeyPoints) == 0 {
+	if json.Unmarshal(doc.Payload, &payload) != nil {
+		return nil
+	}
+	if strings.TrimSpace(payload.DetailedSummary) == "" || strings.TrimSpace(payload.Tldr) == "" {
 		return nil
 	}
 	var sources []cachedSource
@@ -305,7 +380,9 @@ func readCachedBrief(metadata json.RawMessage) *cachedBrief {
 	if err != nil {
 		generatedAt = time.Now().UTC()
 	}
-	payload = sanitizePayload(payload, len(sources))
+	// Nest sanitizes against the count of the sources that survived the cache
+	// schema, not the raw array length.
+	payload = sanitizePayload(payload, len(parsedSources))
 	return &cachedBrief{
 		Language:    language,
 		Fingerprint: fingerprint,
@@ -360,6 +437,103 @@ func (cached *cachedBrief) model() NewsEventBriefModel {
 	}
 }
 
+// briefDocument is the NewsEvent.metadata.briefV1 leaf written after a
+// successful generation.
+type briefDocument struct {
+	Version     int            `json:"version"`
+	Language    string         `json:"language"`
+	Fingerprint string         `json:"fingerprint"`
+	GeneratedAt string         `json:"generatedAt"`
+	Sources     []cachedSource `json:"sources"`
+	Payload     briefPayload   `json:"payload"`
+}
+
+// saveBriefV1 writes only the briefV1 leaf with MySQL JSON_SET so the latest
+// metadata siblings (timeline and other generators) survive. A non-object or
+// null metadata column is treated as an empty object, exactly like Nest's
+// mergeMetadata. The UPDATE is scoped to id plus orgId and runs after the
+// model call, so no transaction or row lock is held during the network call.
+func (s *service) saveBriefV1(ctx context.Context, orgID, eventID, language, fingerprint string, generatedAt time.Time, sources []briefSource, payload briefPayload) error {
+	document := briefDocument{
+		Version:     1,
+		Language:    language,
+		Fingerprint: fingerprint,
+		GeneratedAt: contract.FormatDateTime(generatedAt),
+		Sources:     cacheSources(sources),
+		Payload:     payload,
+	}
+	raw, err := json.Marshal(document)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+UPDATE NewsEvent
+SET metadata = JSON_SET(
+      CASE WHEN JSON_TYPE(metadata) = 'OBJECT' THEN metadata ELSE JSON_OBJECT() END,
+      '$.briefV1', CAST(? AS JSON)),
+    updatedAt = ?
+WHERE id = ? AND orgId = ?`,
+		string(raw), s.clock().UTC().Truncate(time.Millisecond), eventID, orgID)
+	return err
+}
+
+func cacheSources(sources []briefSource) []cachedSource {
+	out := make([]cachedSource, 0, len(sources))
+	for _, source := range sources {
+		var published *string
+		if source.PublishedAt != nil {
+			text := contract.FormatDateTime(*source.PublishedAt)
+			published = &text
+		}
+		out = append(out, cachedSource{
+			Index:              source.Index,
+			URL:                source.URL,
+			SourceLabel:        source.SourceLabel,
+			Title:              source.Title,
+			PublishedAt:        published,
+			ProcessedItemID:    source.ProcessedItemID,
+			ProcessedArticleID: source.ProcessedArticleID,
+		})
+	}
+	return out
+}
+
+func briefModel(generatedAt time.Time, language string, payload briefPayload, sources []briefSource) NewsEventBriefModel {
+	return NewsEventBriefModel{
+		Version:         1,
+		GeneratedAt:     generatedAt,
+		Language:        language,
+		DetailedSummary: strings.TrimSpace(payload.DetailedSummary),
+		Tldr:            strings.TrimSpace(payload.Tldr),
+		KeyPoints:       mapPoints(payload.KeyPoints),
+		WhyItMatters:    mapPoints(payload.WhyItMatters),
+		LatestUpdate:    mapPointPtr(payload.LatestUpdate),
+		WhatToWatch:     mapPoints(payload.WhatToWatch),
+		Comparison:      mapComparison(payload.Comparison),
+		Limitations:     payload.Limitations,
+		Sources:         sourceModels(sources),
+	}
+}
+
+func sourceModels(sources []briefSource) []NewsEventBriefSourceModel {
+	out := make([]NewsEventBriefSourceModel, 0, len(sources))
+	for _, source := range sources {
+		out = append(out, NewsEventBriefSourceModel{
+			Index:              source.Index,
+			URL:                source.URL,
+			SourceLabel:        source.SourceLabel,
+			Title:              source.Title,
+			PublishedAt:        source.PublishedAt,
+			ProcessedItemID:    source.ProcessedItemID,
+			ProcessedArticleID: source.ProcessedArticleID,
+		})
+	}
+	return out
+}
+
+// sanitizePayload mirrors Nest sanitizePayload: trim the text leaves, drop
+// empty list points, sanitize citations, and keep latest_update as a trimmed
+// point even when the trimmed text is empty.
 func sanitizePayload(payload briefPayload, maxSources int) briefPayload {
 	payload.DetailedSummary = strings.TrimSpace(payload.DetailedSummary)
 	payload.Tldr = strings.TrimSpace(payload.Tldr)
@@ -367,16 +541,14 @@ func sanitizePayload(payload briefPayload, maxSources int) briefPayload {
 	payload.WhyItMatters = sanitizePoints(payload.WhyItMatters, maxSources)
 	if payload.LatestUpdate != nil {
 		point := sanitizePoint(*payload.LatestUpdate, maxSources)
-		if point.Text == "" {
-			payload.LatestUpdate = nil
-		} else {
-			payload.LatestUpdate = &point
-		}
+		payload.LatestUpdate = &point
 	}
 	payload.WhatToWatch = sanitizePoints(payload.WhatToWatch, maxSources)
 	if payload.Comparison != nil {
-		payload.Comparison.Consensus = sanitizePoints(payload.Comparison.Consensus, maxSources)
-		payload.Comparison.Divergence = sanitizePoints(payload.Comparison.Divergence, maxSources)
+		payload.Comparison = &briefComparison{
+			Consensus:  sanitizePoints(payload.Comparison.Consensus, maxSources),
+			Divergence: sanitizePoints(payload.Comparison.Divergence, maxSources),
+		}
 	}
 	return payload
 }
@@ -393,21 +565,27 @@ func sanitizePoints(points []briefPoint, maxSources int) []briefPoint {
 	return out
 }
 
+// sanitizePoint mirrors Nest sanitizeCitations order: filter the valid
+// indexes, take the first 12, then dedupe and sort ascending.
 func sanitizePoint(point briefPoint, maxSources int) briefPoint {
-	seen := map[int]struct{}{}
-	citations := make([]int, 0, len(point.Citations))
+	filtered := make([]int, 0, len(point.Citations))
 	for _, value := range point.Citations {
 		if value < 1 || value > maxSources {
 			continue
 		}
+		if len(filtered) >= 12 {
+			break
+		}
+		filtered = append(filtered, value)
+	}
+	seen := make(map[int]struct{}, len(filtered))
+	citations := make([]int, 0, len(filtered))
+	for _, value := range filtered {
 		if _, ok := seen[value]; ok {
 			continue
 		}
 		seen[value] = struct{}{}
 		citations = append(citations, value)
-		if len(citations) >= 12 {
-			break
-		}
 	}
 	sort.Ints(citations)
 	return briefPoint{Text: strings.TrimSpace(point.Text), Citations: citations}
@@ -425,8 +603,10 @@ func mapPoints(points []briefPoint) []NewsEventBriefPointModel {
 	return out
 }
 
+// mapPointPtr keeps a non-nil latest_update even when the trimmed text is
+// empty: Nest does not turn a blank trimmed point into null.
 func mapPointPtr(point *briefPoint) *NewsEventBriefPointModel {
-	if point == nil || strings.TrimSpace(point.Text) == "" {
+	if point == nil {
 		return nil
 	}
 	mapped := mapPoints([]briefPoint{*point})

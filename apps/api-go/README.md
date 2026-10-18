@@ -95,7 +95,10 @@ Go-批4B 故事详情在同一真实栈里已验证缓存命中的 id/slug、公
 | `API_GO_ONBOARDING_MODE` | shadow | onboarding GET 迁移单元模式（Go-批3A 兼容变量）：`shadow`（默认，批2A/2B 行为——NestJS 响应 + Go 差分）或 `go`（Go 独立鉴权 + 全响应）。仅在 `API_GO_USER_SETTINGS_READ_MODE` 未设置时生效。非法值启动失败；`go` 模式依赖同上；compose pilot 固定注入 `go`（批3A 部署等价） |
 | `API_GO_NEWS_SOURCES_MODE` | legacy | 新闻源管理台十五条 HTTP。`legacy` 代理 NestJS；`go` 时列表、options、groups、opml-presets、创建、批量频率、OPML preview/import、批量分组/启停/删除、更新、删除、run、schedule 由 Go 读写 `NewsSource`。读要 `crawl.read`，写要 `crawl.write`。`GET /:id/preview` 仍回 NestJS。run 与 schedule 不入队。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`。pilot 保持 `legacy`。回滚改回 `legacy` |
 | `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` | legacy | 组织、角色与成员管理 8 个 GraphQL mutation（`createOrg`/`updateOrg`/`setOrgActive`/`createRole`/`updateRole`/`assignRole`/`updateMembershipRoles`/`setUserActive`）。只接受空串/`legacy`/`go`，非法值启动失败。与 `API_GO_GRAPHQL_READ_MODE` 解耦：只开本变量时 query 仍走 NestJS，只有这 8 个 mutation 由 Go 执行；含这 8 个之外的 mutation 的文档整包回 NestJS。GET 上的 mutation 一律 405（`Allow: POST`），不执行任何写入。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**，不启动 worker。pilot 与样例保持 `legacy`。回滚改回 `legacy` |
+| `API_GO_GRAPHQL_WORKSPACE_WRITE_MODE` | legacy | 工作台交互写入 8 个 GraphQL mutation（`markNotificationRead`/`markAllNotificationsRead`/`upsertDashboard`/`deleteDashboard`/`createAlertChannel`/`updateAlertChannel`/`deleteAlertChannel`/`updateAlertEventStatus`）。只接受空串/`legacy`/`go`，非法值启动失败。与 `API_GO_GRAPHQL_READ_MODE` 解耦：只开本变量时 query 仍走 NestJS，只有这 8 个 mutation 由 Go 执行；含未接管 root 的文档在任何写入前整包回 NestJS。通知两个 root 只要登录（不新增权限），看板要 `dashboards.write`，渠道与告警状态要 `alerts.manage`。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**，不启动 worker，不发送邮件或 webhook。pilot 与样例保持 `legacy`。回滚改回 `legacy` |
 | `API_GO_GRAPHQL_SETTINGS_WRITE_MODE` | legacy | 设置中心 13 个 GraphQL mutation（`updateRateLimitSettings`/`updateAuthCacheSettings`/`updateCrawlClientSettings`/`updateAuditLogRetention`/`updateEntityImpactGraphSettings`/`updateKnowledgeGraphSettings`/`updateNewsEventSettings`/`updateNewsIndicatorSettings`/`updateNewsClassificationSettings`/`updateClassificationQualitySettings`/`updateNewsDedupeSettings`/`updateNewsExtractionSettings`/`updateNewsPromptConfig`）。只接受空串/`legacy`/`go`，非法值启动失败。与全部读开关解耦：只开本变量时只登记这 13 个 mutation，20 个设置读 query 仍走 NestJS；含未迁移 mutation 的文档整包回 NestJS。除根权限 `settings.manage` 外仍执行 NestJS 的 `assertAdmin` 组织系统管理员门禁。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**，不启动 worker，不调用模型或采集上游。回滚改回 `legacy` |
+| `API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE` | legacy | `newsEventBrief` 单 root 的独立子开关。只接受空串/`legacy`/`go`，非法值启动失败。只有 `API_GO_GRAPHQL_READ_MODE=go` 且 `API_GO_GRAPHQL_NEWS_EVENTS_MODE=go` 时才允许为 `go`，否则启动失败（不静默打开父开关）。`go` 时该 root 由 Go 完成选源→调用模型→校验清洗→写回 `NewsEvent.metadata.briefV1`；缓存命中或合法 null 不调用模型，生成失败是该字段 internal error（治理 503 保留状态）。`legacy`（含空串）时只登记其余五个新闻事件 root，含 `newsEventBrief` 的文档整包回 NestJS。模型配置复用 `llm_gateway_profiles` 与 `litellm_proxy_governance`，日志 best effort 写 `llmrequestlogs`，不要求 `PUBLIC_PORTAL_MODE`/`LLM_LOGS_MODE`/写模式。回滚改回 `legacy`，旧缓存兼容 |
+| `API_GO_AUTH_LOGIN_MODE` | legacy | 登录、会话签发与账户验证 11 条精确 HTTP POST：`/api/auth/login`、`/refresh`、`/send-login-code`、`/login-with-code`、`/mfa/verify-login`、`/mfa/enrollment/start`、`/mfa/enrollment/complete`、`/password/forgot`、`/password/reset`、`/send-verification`、`/verify-email`。只接受空串/`legacy`/`go`，非法值启动失败。`go` 时 Go 复用既有 JWT 验签与 MySQL membership/role/permission 重推导，自行签发 access token（HS256 + UUID `jti`）与 refresh token（`tokenId.orgId.secret`，bcrypt cost 10），并与 NestJS 共用 `auth:refresh:*` grace 缓存、`lock:*` 共享锁、`refresh-token:blacklist:*`、`auth:email-code:*`、`auth:system-security`、`rate:login*` 滑窗与 `AuthChallenge` 表；两张已认证邮箱路由走既有鉴权链取 userId/orgId。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST` 及 `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`（真实 SMTP 发信），**不要求 `MONGO_URI`**，不启动 worker/cron，不访问 IdP。与 `API_GO_ACCOUNT_SECURITY_MODE`/`API_GO_AUTH_FACTORS_MODE` 相互独立且路径不重叠；logout、`/me`、profile、change-password、machine-tokens、已认证 MFA 管理与 OIDC 配置以及 OIDC start/callback/handoff 仍回 NestJS。回滚改回 `legacy` |
 | `JWT_SECRET` | （空） | NestJS access token 的 HMAC 验签 secret（与 api 服务同一值）。仅 `go` 模式必填。值不进入日志/healthz/错误文本 |
 | `JWT_ISSUER` | modular-monolith | 与 NestJS env schema 同默认值；`go` 模式下用于验签 |
 | `JWT_AUDIENCE` | modular-monolith-clients | 同上 |
@@ -226,10 +229,12 @@ cd apps/api-go && go test -tags=integration -count=1 \
 
 ## 约束
 
-- 标准库 + 三个第三方依赖：`github.com/go-sql-driver/mysql`（MySQL 查询）、
-  `github.com/golang-jwt/jwt/v5`（access token 验签——不手写密码学）、
-  `github.com/redis/go-redis/v9`（blacklist 查询）；不引入 Web 框架/ORM/DI
-  容器
+- 不引入 Web 框架/ORM/DI 容器；对象存储只用官方 AWS SDK for Go v2 的
+  `service/s3`、`credentials` 与 `smithy-go`（本批新增，经 `go-modules-regen`
+  远端固定），不引入上传 manager 或其他 AWS 服务，也不启用默认凭据链/
+  IMDS 探测；既有第三方依赖为 `go-sql-driver/mysql`、`golang-jwt/jwt/v5`、
+  `redis/go-redis/v9`、`vektah/gqlparser/v2`、`mongo-driver/v2`、
+  `golang.org/x/crypto`、`golang.org/x/text`
 - `migrations/` 在 Phase 1 禁止 schema 变更（见该目录 README）
 - 契约以 `docs/refactor/api-contract-inventory.md` 为冻结基线；鉴权矩阵（`apps/api/tests/contract/auth-matrix.json`）驱动逐端点语义对齐
 - shadow 只对 GET/HEAD/OPTIONS 差分——写请求禁止双发（双层强制：legacyproxy + shadow runner；user-settings shadow 单元进一步收窄为仅 GET）

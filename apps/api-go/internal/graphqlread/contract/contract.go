@@ -49,6 +49,82 @@ type Context struct {
 	Ctx      context.Context
 	Identity Identity
 	Args     map[string]any
+	// Selection is the resolved selection set of this root field, keyed by
+	// canonical field name. The executor builds it from the parsed document
+	// after fragment expansion and @skip/@include evaluation, so a resolver can
+	// load only the nested data the caller asked for without walking the AST
+	// again. It is never nil for a root the executor runs.
+	Selection *FieldSet
+}
+
+// FieldSet is the read-only selection metadata for one object. Keys are the
+// canonical GraphQL field names, never aliases, and a leaf field maps to an
+// empty set. A nil *FieldSet has no selected fields.
+type FieldSet struct {
+	fields map[string]*FieldSet
+}
+
+// NewFieldSet returns an empty selection set.
+func NewFieldSet() *FieldSet {
+	return &FieldSet{fields: map[string]*FieldSet{}}
+}
+
+// Add records a selected child field and returns its sub-selection so a caller
+// can describe a nested requirement in one expression.
+func (s *FieldSet) Add(name string) *FieldSet {
+	if s == nil {
+		return NewFieldSet()
+	}
+	if s.fields == nil {
+		s.fields = map[string]*FieldSet{}
+	}
+	child, ok := s.fields[name]
+	if !ok {
+		child = NewFieldSet()
+		s.fields[name] = child
+	}
+	return child
+}
+
+// Set records a selected child field together with its own sub-selection.
+func (s *FieldSet) Set(name string, child *FieldSet) {
+	if s == nil {
+		return
+	}
+	if s.fields == nil {
+		s.fields = map[string]*FieldSet{}
+	}
+	if child == nil {
+		child = NewFieldSet()
+	}
+	s.fields[name] = child
+}
+
+// Has reports whether name was selected.
+func (s *FieldSet) Has(name string) bool {
+	if s == nil || s.fields == nil {
+		return false
+	}
+	_, ok := s.fields[name]
+	return ok
+}
+
+// Child returns the sub-selection of name, or nil when it was not selected.
+func (s *FieldSet) Child(name string) *FieldSet {
+	if s == nil || s.fields == nil {
+		return nil
+	}
+	return s.fields[name]
+}
+
+// Any reports whether any of names was selected.
+func (s *FieldSet) Any(names ...string) bool {
+	for _, name := range names {
+		if s.Has(name) {
+			return true
+		}
+	}
+	return false
 }
 
 // Resolver loads one root field. It must not depend on which sibling fields

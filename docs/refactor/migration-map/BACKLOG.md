@@ -1,6 +1,8 @@
-# 未认领候选队列
+# 候选队列与已派发去向
 
 [入口](README.md) · [规划](PLANNING.md) · [占用](tasks/README.md) · [缺口](GAPS.md) · [复用/所有权](DEPENDENCIES.md)。核对基线 `3cedce9aa3200436aba3596f63b559de5490cec8`，2026-10-18 本轮静态复核。候选不等于任务，不创建分支/worktree/对话，不自动发业务提示词；选择一项后才核对最新源码并写 task。
+
+当前已派发BL-02、BL-03及BL-15.storage/test、BL-05，分别见各自task；保留去向供恢复，其余候选不因本轮批量认领，历史核对基线/深度不统一刷新。
 
 ## 顺序与隔离
 
@@ -18,19 +20,28 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 - **基础/工作量依据**：settingswrite、settingscrawl.RegisterSettingsModelTypes、workspace.RegisterModels 已存在；需要核对 RouteMode、无效 DSN、needsCredentialedGo、handler 四处条件以及三写模式组合。无新队列/外部调用。
 - **文件/前置/冲突**：`apps/api-go/cmd/api/main.go`，必要时 config/模型注册；#70 正在共享接线，先确认其最终 merge/head。**当前不适合第二独立编码窗口**；不得按 PR 描述假设修复，先读实际提交。
 
-### BL-02 · news / newsEventBrief 生成
+### BL-02 · news / newsEventBrief 生成（已派发）
+
+- 2026-10-18 按 main 9d0462e1 深读后派发至 [NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)，提示词见同目录任务附件；不再属于未认领队列。GAP-NEWS-001 仍未关闭。本批不领取 BL-17 或其他候选。
+- 补查事实：生成 sources 须携带 Summary/KeyPoints（Go SQL 已有，briefSource 原先未带）；Nest completion 还产生 Mongo LLM 请求日志，Go gateway 原先没有 writer，本批补 best-effort 具名 writer 与 metadata policy。news_event_brief 不在自动 moderation 集合，运行上下文不是租约。共享 main 只改新闻事件 Register 参数，不扩顶层资源/路由 OR；新增独立 BRIEF 子开关默认 legacy，父读开关依赖由 Load 明确校验。
+- 交付：Ready [PR #72](https://github.com/wei500L/newwei/pull/72)（pr_open，未合 main），head 517a73f9 普通 CI verify/integration 通过。
 
 - **范围/缺口**：Query newsEventBrief 的 cache miss、forceRefresh、模型结果清洗与 metadata 写回（GAP-NEWS-001）；保留合法 null 与缓存命中。
 - **基础/依据**：G/graphqlread/newsevents 有选源/指纹/模型；G/publicportal 的完整冷路径和 gatewayClient 是私有，可提取具名共享能力。工作量来自两种调用语义/参数/配置/错误/写回，而非新增一个 root。
-- **文件/边界/次序**：`apps/api-go/internal/graphqlread/newsevents/{brief.go,store.go}`（以实际文件布局为准）、publicportal/{story,brief,gateway}.go；MySQL+外部模型，无 BullMQ 前置。**可独立窗口**，与 BL-17 修改 gateway 辅助函数要串行；准入再核模型配置与所有 metadata 叶子保留策略。
+- **文件/边界/次序**：`apps/api-go/internal/graphqlread/newsevents/{brief.go,store.go}`（以实际文件布局为准）、publicportal/{story,brief,gateway}.go；MySQL+外部模型，无 BullMQ 前置。**已由 NEWS-BRIEF-001 占用**，与 BL-17 修改 gateway 辅助函数串行；准入再核模型配置与所有 metadata 叶子保留策略。
 
 ### BL-03 · crawl / S3 媒体下发
+
+- 2026-10-18按main9d0462e1续读后已reserved至[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md)，不再属于未认领队列；范围补充同因缺失的REST详情/Query crawlTask媒体URL，与BL-15仅storage/test构成完整链。其余候选不认领。
 
 - **范围/缺口**：GET /api/crawl-media-assets/:assetId/:mode，补 S3 签名重定向（GAP-CRAWL-001），不扩大为全部采集写/存储上传。
 - **基础/依据**：G/crawlreadtelemetry 已做 HMAC、orgId 资产查询与 MySQL blob；infrastructuresettings 只有配置管理。必须补 S3 对象 URL 行为与 config 解密/TTL/disposition/path-style，不是改一个 nil 返回。
 - **文件/前置/冲突**：service_media.go、构造/wire 与必要存储辅助；外部 S3，独立于 crawl worker。**可独立窗口**；先确认是否抽共享存储客户端，避开 BL-15 同文件；实桶验证范围另外登记。
+- 2026-10-18 交付：已由 [STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md) 实施于 `refactor/go-storage-media`（[Ready PR #73](https://github.com/wei500L/newwei/pull/73)），新增窄包 `objectstorage`、`StorageRuntimeConfig` 与 REST/GraphQL 两处注入；PR 未合 main，GAP-CRAWL-001 仍开放，实桶验证未执行。BL-03 不再作为未认领候选。
 
 ### BL-04 · identity / 登录与会话签发主链
+
+- 2026-10-18按main9d0462e1深入核实后已reserved至[AUTH-LOGIN-001](tasks/AUTH-LOGIN-001.md)，[完整提示词](tasks/AUTH-LOGIN-001.prompt.md)已发出；本11路不再是未认领候选。登录/refresh/challenge/真实SMTP/重置事务整体迁移，业务不依赖#70或前三批；BL-06会话协议后续按此批先后处理。编码窗口只交付业务与PR说明，共享地图由规划窗口维护。
 
 - **范围/缺口**：POST /api/auth/login、refresh、send-login-code、login-with-code、mfa/verify-login、mfa/enrollment/start、mfa/enrollment/complete、password/forgot、password/reset、send-verification、verify-email（GAP-LEGACY-001）；不重复已迁已认证 MFA/status 管理。
 - **基础/工作量**：G/{authn,authz,authhttp}、accountsecurity/authfactors 的密码/会话/密钥基础；N/modules/auth 的 AuthService/PasswordResetService/MfaService，DTO 见 auth.controller.ts。需签发/刷新 token、session/Redis 撤销、MFA challenge、验证码/SMTP、限流与审计；这些步骤均须保持实际可用。
@@ -38,6 +49,7 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-05 · items / 完整 GraphQL 列表
 
+- 2026-10-18 已由 [ITEMS-LIST-001](tasks/ITEMS-LIST-001.md) 认领并实现（分支 `refactor/go-graphql-items-list`，pr_open，未合 main），不再属于未认领队列。完整分页/三排序/相关性 rerank/用户正负画像与批量投影，不包装 REST 后冒充完成；原第三方调用/错误/日志边界见任务。前两批核心业务包不重叠，只读 selection 元数据由本任务最小扩展。
 - **范围/缺口**：Query `items`（GAP-LEGACY-001）；完整 connection/page/after/first、排序/过滤、PERSONALIZED 与 RELEVANCE，保留互斥分页校验。
 - **基础/依据**：G/itemsreading.Service.List及同包搜索/facets/read-model、workspace 模型；N/graphql/resolvers/items.resolver.ts 的 items 与 ItemsListService。REST List 只做 RECENCY，不可直接包装后称全量完成；还需 cursor、选择字段、个性化/召回排序和返回 connection 注册。
 - **文件/前置/冲突**：G/itemsreading 与 graphqlread/itemsreading、main/config 最小接线；DB/Mongo/Redis，ES/vector/embedding 外部边界。**可独立窗口**；先明确是否共享 List 核心，BL-08/24 避开搜索核心文件；未核所有 cursor 编码与 totalCount 成本。
@@ -83,6 +95,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-23 · crawl / 元数据主动发现
 
+- 2026-10-18以main9d0462e1深入两入口实际调用链后，urls/sitemap网页元数据链已reserved至[CRAWL-METADATA-001](tasks/CRAWL-METADATA-001.md)，[提示词](tasks/CRAWL-METADATA-001.prompt.md)已发出；不再属于未认领候选。extract仅调用urls/sitemap/robots/HTML，不调用同服务RSS/list/deep/crawl4ai；后者不纳入本两入口。新业务包/adapter与S3及items包隔离，GraphQL在现有READ内独立注册，不改settingscrawl或引擎。
+
 - **范围/缺口**：Query crawlMetadata 与 POST /api/crawl-tasks/metadata（GAP-LEGACY-001），同业务双入口；不捆绑完整 task worker。
 - **基础/依据**：G/crawlreadtelemetry DTO/配置读、crawlworkflow/profile 的 normalize 基础；N/CrawlMetadataService.extract/discoverSitemap*/discoverRss*/discoverList*/discoverDeep*。实际是 robots/sitemap/XML/HTML、并发发现、HTTP 缓存/重定向/SSRF 与 crawl4ai 的完整网络链，不是 DB Query。
 - **文件/前置/冲突**：独立 Go metadata 包、graphql/HTTP adapters/main；N/modules/crawl/crawl-metadata.service.ts 为事实源。**可独立窗口先做深读**；需核 feature 开关与各发现模式、私网/域名解析语义，避免与 BL-24/25 重写共享配置；真实站点验证另记。
@@ -127,9 +141,12 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-15 · infrastructure / 连接诊断与邮件设置
 
+- storage/test子范围已由[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md)认领，与BL-03共享runtime配置/客户端；不再并行派发该路及存储helper。Nominatim/vector/email/safety诊断仍未认领。新诊断独立开关不强开设置CRUD或媒体读取开关。
+
 - **范围/缺口**：POST admin/settings/storage/test、POST system-settings/geo/nominatim/test、GET system-settings/vector-service/diagnostics；settings/email GET、PUT auth-code、POST test；GET assistant-safety/diagnostics（GAP-LEGACY-001）。
 - **基础/依据**：G/infrastructuresettings、dataruntimesettings、platformgovernance 的配置读/解密；N 对应 Controller/Test/Email/Safety service。每种诊断需真实客户端/超时/权限/返回，不是固定 ok；存储、邮件、安全诊断可分别完整交付。
 - **文件/前置/冲突**：各域独立诊断包/main；S3、vector、Nominatim、SMTP/安全外部依赖。**可单个服务窗口**，不同时改 BL-03 存储 helper；与 BL-04 邮件客户端需明确共享；当前未逐方法深读，选批前核请求/失败语义。
+- 2026-10-18 交付：storage/test 子范围由 [STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md) 实施（独立开关 `API_GO_STORAGE_DIAGNOSTICS_MODE`，默认 legacy；[Ready PR #73](https://github.com/wei500L/newwei/pull/73)），与 BL-03 共用 `runtime 配置/客户端`，不并行为同一 helper 开启第二个窗口。Nominatim/vector/email/safety 诊断仍未认领，PR 未合 main。
 
 ### BL-16 · knowledge / 证据复核与 ingestion
 

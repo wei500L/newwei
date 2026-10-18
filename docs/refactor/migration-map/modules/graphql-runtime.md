@@ -26,6 +26,7 @@ Nest `ApiGraphqlModule` 挂载 `/graphql`，没有 `/api` 前缀；配置和 Res
 | [workspace.Register](../../../../apps/api-go/internal/graphqlread/workspace/register.go) | 12 | 0 | `API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_WORKSPACE_READ_MODE` | RegisterModels + 字段权限；orgaccesswrite 共享 |
 | [settingscrawl.Register](../../../../apps/api-go/internal/graphqlread/settingscrawl/register.go) | 20 | 0 | `API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` | 设置/来源策略/采集/复核模型；含 OR 根权限 |
 | [itemsreading.Register](../../../../apps/api-go/internal/graphqlread/itemsreading/register.go) | 5 | 0 | `API_GO_GRAPHQL_READ_MODE + API_GO_ITEMS_READING_MODE` | workspace 未开时补三个 processed-item 模型，保持类型投影可用 |
+| [itemsreading.RegisterList](../../../../apps/api-go/internal/graphqlread/itemsreading/list.go)（本批候选，PR 未合） | 1 | 0 | 再叠加 `API_GO_GRAPHQL_ITEMS_LIST_MODE` | 注册 `ItemConnection`/`ItemEdge`，`PageInfo` 复用已注册类型；本页批量嵌套投影 |
 | [orgaccesswrite.Register](../../../../apps/api-go/internal/graphqlread/orgaccesswrite/register.go) | 0 | 8 | `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE（独立）` | 只开写时不需总读/Mongo；workspace.RegisterModels 单独复用 |
 | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go) | 0 | 13 | `SETTINGS_WRITE=go`，当前还需 `READ=go OR ORG_ACCESS_WRITE=go` | settingscrawl.RegisterSettingsModelTypes 复用；独立路由/资源初始化缺口见设置域 |
 

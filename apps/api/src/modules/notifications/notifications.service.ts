@@ -55,14 +55,16 @@ export class NotificationsService {
   }
 
   async markRead(orgId: string, userId: string, id: string) {
-    const updated = await this.prisma.notification.updateMany({
-      where: { id, orgId, userId },
+    // Only the first read writes readAt: the `readAt: null` predicate keeps the
+    // original timestamp and leaves updatedAt untouched when the notification
+    // was already read. The row is therefore re-read by id + orgId + userId
+    // instead of trusting the update count, so an already-read notification
+    // still returns its model while another tenant or user never matches.
+    await this.prisma.notification.updateMany({
+      where: { id, orgId, userId, readAt: null },
       data: { readAt: new Date() }
     });
-    if (updated.count === 0) {
-      return null;
-    }
-    const record = await this.prisma.notification.findUnique({ where: { id } });
+    const record = await this.prisma.notification.findFirst({ where: { id, orgId, userId } });
     return record ? this.toEvent(record) : null;
   }
 

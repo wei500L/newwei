@@ -426,6 +426,28 @@ const (
 	CrawlReadTelemetryModeGo     CrawlReadTelemetryMode = "go"
 )
 
+// CrawlMetadataMode controls the single HTTP entry of the web page metadata
+// preview chain (API_GO_CRAWL_METADATA_MODE):
+//
+//	POST /api/crawl-tasks/metadata
+//
+// The accepted values are exactly "", "legacy" and "go"; the empty value and
+// "legacy" both keep the route on the NestJS proxy, and any other value fails
+// startup instead of silently degrading. go mode takes over exactly this POST
+// plus its CORS preflight and answers 201 {orgId,total,results}; every other
+// method and the neighbouring crawl task routes keep falling back to NestJS.
+//
+// The entry performs real robots/sitemap discovery and page fetching, so go
+// mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST. It does not require
+// Mongo, S3, crawl4ai or STORAGE_MODE. No shadow, no canary, no enqueue, no
+// worker and no business database write is started.
+type CrawlMetadataMode string
+
+const (
+	CrawlMetadataModeLegacy CrawlMetadataMode = "legacy"
+	CrawlMetadataModeGo     CrawlMetadataMode = "go"
+)
+
 // SearchReindexMode controls the two search index rebuild HTTP routes migrated by
 // this unit (API_GO_SEARCH_REINDEX_MODE):
 //
@@ -480,6 +502,36 @@ const (
 	// MySQL membership re-derivation) plus mtk_ machine tokens, and the same
 	// platform-admin gate on the four write routes.
 	InfrastructureSettingsModeGo InfrastructureSettingsMode = "go"
+)
+
+// StorageDiagnosticsMode controls the single storage connection test route
+// migrated by this unit (API_GO_STORAGE_DIAGNOSTICS_MODE):
+//
+//	POST /api/admin/settings/storage/test
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep the route on the NestJS proxy, and any other value fails
+// startup instead of silently degrading.
+//
+// The switch is deliberately independent of API_GO_INFRASTRUCTURE_SETTINGS_MODE
+// and of API_GO_CRAWL_READ_TELEMETRY_MODE: the seven configuration routes keep
+// their own switch, and enabling the diagnostics alone takes over only this one
+// exact route (plus its CORS preflight). go mode requires JWT_SECRET,
+// DATABASE_URL and REDIS_HOST; it never requires MONGO_URI and never requires
+// the settings/crawl or GraphQL switches. No S3 client is built at startup and
+// no probe runs before a request: the route answers 201 in both modes and
+// reports per-step failures inside the response body. Rollback only means
+// setting the variable back to legacy.
+type StorageDiagnosticsMode string
+
+const (
+	// StorageDiagnosticsModeLegacy proxies the route to NestJS (default,
+	// including the empty value).
+	StorageDiagnosticsModeLegacy StorageDiagnosticsMode = "legacy"
+	// StorageDiagnosticsModeGo serves the route from Go with the ordinary
+	// settings.manage permission (no platform-admin second gate, matching the
+	// NestJS controller) and the shared settings cache and secret decryption.
+	StorageDiagnosticsModeGo StorageDiagnosticsMode = "go"
 )
 
 // AccountSecurityMode controls the eight authenticated account, session and
@@ -872,6 +924,75 @@ const (
 	AuthFactorsModeGo AuthFactorsMode = "go"
 )
 
+// AuthLoginMode controls the eleven POST /api/auth routes migrated by this unit
+// (API_GO_AUTH_LOGIN_MODE): password login, session refresh, passwordless email
+// code login, the two public MFA challenges (verify-login and the forced
+// enrollment start/complete pair), password recovery (forgot/reset) and the
+// authenticated email-change chain (send-verification/verify-email).
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every one of the eleven requests on the NestJS proxy, and
+// any other value fails startup instead of silently degrading. The default is
+// always legacy.
+//
+// go mode takes over exactly these eleven routes:
+//
+//	POST /api/auth/login
+//	POST /api/auth/refresh
+//	POST /api/auth/send-login-code
+//	POST /api/auth/login-with-code
+//	POST /api/auth/mfa/verify-login
+//	POST /api/auth/mfa/enrollment/start
+//	POST /api/auth/mfa/enrollment/complete
+//	POST /api/auth/password/forgot
+//	POST /api/auth/password/reset
+//	POST /api/auth/send-verification
+//	POST /api/auth/verify-email
+//
+// Nothing else under /api/auth is registered, so logout, /me, profile,
+// change-password, machine tokens, the seven authenticated MFA management /
+// OIDC configuration routes and the whole OIDC start/callback/handoff chain keep
+// falling back to NestJS regardless of this switch.
+//
+// go mode requires JWT_SECRET (with issuer/audience) plus a valid DATABASE_URL
+// and REDIS_HOST, because every route re-derives the user, membership, role and
+// permission state from MySQL and shares the refresh, blacklist and email-code
+// state in Redis. It additionally requires the SMTP_* transport: four routes
+// send real mail as a synchronous side effect. It never requires MONGO_URI — no
+// Mongo collection is read, no worker or scheduled job is started and no
+// identity provider is contacted. Rolling back only means setting this variable
+// back to legacy; every session, refresh token, challenge and email code it
+// wrote stays readable by NestJS because each key and column format is shared.
+type AuthLoginMode string
+
+const (
+	// AuthLoginModeLegacy proxies all eleven routes to NestJS (default,
+	// including the empty value).
+	AuthLoginModeLegacy AuthLoginMode = "legacy"
+	// AuthLoginModeGo serves all eleven routes from Go with the same session,
+	// challenge, email-code, rate-limit and audit protocols NestJS uses.
+	AuthLoginModeGo AuthLoginMode = "go"
+)
+
+// SMTPConfig is the real SMTP transport configuration (the Env.smtpConfig
+// equivalent). It is only read when API_GO_AUTH_LOGIN_MODE=go: this unit sends
+// login codes, email-change codes and password-reset links synchronously inside
+// the request, so a missing transport is a startup error rather than a
+// per-request failure.
+type SMTPConfig struct {
+	Host                  string
+	Port                  int
+	Secure                bool
+	User                  string
+	Pass                  string
+	From                  string
+	Pool                  bool
+	ConnectionTimeoutMs   int
+	GreetingTimeoutMs     int
+	SocketTimeoutMs       int
+	TLSRejectUnauthorized bool
+}
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -944,6 +1065,13 @@ type Config struct {
 	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
 	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
 	GraphQLNewsEventsMode string
+	// GraphQLNewsEventBriefMode 是 newsEventBrief 单 root 的子开关，默认
+	// legacy。只有 API_GO_GRAPHQL_READ_MODE 与
+	// API_GO_GRAPHQL_NEWS_EVENTS_MODE 都为 go 时才允许为 go：此时该 root 走
+	// Go 的选源→模型→校验→写回 briefV1 全链路。为 legacy 时只登记其余五个
+	// 新闻事件 root，含 newsEventBrief 的文档整包回 NestJS（不再由不完整的
+	// Go 单 root 默认接管）。回滚只改这个变量；旧 briefV1 缓存保持兼容。
+	GraphQLNewsEventBriefMode string
 	// NewsIndicatorsMode 只控制新闻指标关联分析的 3 条 HTTP 与 2 个 GraphQL
 	// 只读 query。默认 legacy。go 要求 JWT、MySQL、Redis。不要求 Mongo，
 	// 不调用 AkShare，也不启动调度。
@@ -977,6 +1105,16 @@ type Config struct {
 	// a whole, so the production web entry keeps serving through NestJS.
 	// Rolling back only means setting this variable back to legacy.
 	GraphQLSettingsCrawlReadMode string
+	// GraphQLCrawlMetadataMode only decides whether the crawlMetadata root is
+	// registered into the Go GraphQL executor. The accepted values are exactly
+	// "", "legacy" and "go"; the empty value behaves like legacy. The root is
+	// registered only when both API_GO_GRAPHQL_READ_MODE and this switch are go;
+	// while this switch is legacy, any document that selects crawlMetadata
+	// falls back to NestJS as a whole. Go requires
+	// API_GO_GRAPHQL_READ_MODE=go (which already requires Mongo) and otherwise
+	// fails startup. Rolling back only means setting this variable back to
+	// legacy.
+	GraphQLCrawlMetadataMode string
 	// ItemsReadingMode decides whether the two item reading REST routes and the
 	// five item reading GraphQL roots are served by Go. The accepted values are
 	// exactly "", "legacy" and "go"; the empty value behaves like legacy, so an
@@ -987,6 +1125,17 @@ type Config struct {
 	// controlled by this switch alone. Rolling back only means setting this
 	// variable back to legacy.
 	ItemsReadingMode ItemsReadingMode
+	// GraphQLItemsListMode only decides whether the items connection root
+	// (items(after, filters, first, orderBy, page, rankingMode, search)) is
+	// registered into the Go GraphQL executor. It defaults to legacy. The
+	// accepted values are exactly "", "legacy" and "go"; an empty value behaves
+	// like legacy. Go requires API_GO_GRAPHQL_READ_MODE=go and
+	// API_GO_ITEMS_READING_MODE=go, because the root reuses the item reading
+	// service and the shared GraphQL executor; Load fails when the dependency
+	// is missing instead of silently enabling a parent switch. While this switch
+	// is legacy, any document selecting items falls back to NestJS as a whole.
+	// Rolling back only means setting this variable back to legacy.
+	GraphQLItemsListMode string
 	// GraphQLOrgAccessWriteMode only decides whether the eight organization,
 	// role and membership mutations (createOrg, updateOrg, setOrgActive,
 	// createRole, updateRole, assignRole, updateMembershipRoles,
@@ -999,6 +1148,21 @@ type Config struct {
 	// production web entry keeps serving through NestJS. Rolling back only
 	// means setting this variable back to legacy.
 	GraphQLOrgAccessWriteMode string
+	// GraphQLWorkspaceWriteMode only decides whether the eight workspace
+	// mutations (markNotificationRead, markAllNotificationsRead,
+	// upsertDashboard, deleteDashboard, createAlertChannel,
+	// updateAlertChannel, deleteAlertChannel, updateAlertEventStatus) are
+	// registered into the Go GraphQL executor. It is independent of
+	// API_GO_GRAPHQL_READ_MODE: with the read switch legacy only these
+	// mutations are taken over, and queries keep serving through NestJS. The
+	// accepted values are exactly "", "legacy" and "go"; the empty value
+	// behaves like legacy. While this switch is legacy, any document that
+	// selects one of those mutations falls back to NestJS as a whole, so the
+	// production web entry keeps serving through NestJS. The takeover needs
+	// JWT verification, MySQL and Redis only: it reads no Mongo collection,
+	// starts no worker and requires no queue. Rolling back only means setting
+	// this variable back to legacy.
+	GraphQLWorkspaceWriteMode string
 	// GraphQLSettingsWriteMode decides whether the thirteen settings center
 	// mutations (updateRateLimitSettings, updateAuthCacheSettings,
 	// updateCrawlClientSettings, updateAuditLogRetention,
@@ -1086,6 +1250,11 @@ type Config struct {
 	// live in Mongo; crawl tasks, media assets and quality snapshots live in
 	// MySQL). No shadow, no canary and no worker.
 	CrawlReadTelemetryMode CrawlReadTelemetryMode
+	// CrawlMetadataMode controls POST /api/crawl-tasks/metadata (see
+	// CrawlMetadataMode). Default legacy. go requires JWT_SECRET, DATABASE_URL
+	// and REDIS_HOST; it does not require Mongo, S3, crawl4ai or STORAGE_MODE,
+	// and it starts no worker, queue or business database write.
+	CrawlMetadataMode CrawlMetadataMode
 	// SearchReindexMode controls the two search index rebuild routes (see
 	// SearchReindexMode). Default legacy. go requires JWT_SECRET, DATABASE_URL,
 	// REDIS_HOST and MONGO_URI; Elasticsearch stays optional at startup.
@@ -1141,6 +1310,11 @@ type Config struct {
 	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
 	// it does not require Mongo and does not start any worker or scheduled job.
 	InfrastructureSettingsMode InfrastructureSettingsMode
+	// StorageDiagnosticsMode controls the single storage connection test route
+	// (see StorageDiagnosticsMode). Default legacy. Mode go requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST; it does not require Mongo, does not require
+	// any other takeover switch and performs no startup probe.
+	StorageDiagnosticsMode StorageDiagnosticsMode
 	// DataRuntimeSettingsMode controls the nine data runtime settings and
 	// archive status routes (see DataRuntimeSettingsMode). Default legacy. Mode
 	// go requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
@@ -1159,6 +1333,26 @@ type Config struct {
 	// requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
 	// Mongo and does not start any worker or scheduled job.
 	AccountSecurityMode AccountSecurityMode
+	// AuthLoginMode controls the eleven POST /api/auth login, session, email-code
+	// and password-recovery routes (see AuthLoginMode). Default legacy. Mode go
+	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and the SMTP_* transport; it
+	// does not require Mongo and does not start any worker or scheduled job.
+	AuthLoginMode AuthLoginMode
+	// AuthEmailCode* model the AuthEmailCodeSettingsService environment fallback
+	// (defaults 300 / 90 / 3) and are clamped to the documented ranges.
+	AuthEmailCodeTTLSeconds      int
+	AuthEmailCodeCooldownSeconds int
+	AuthEmailCodeMaxAttempts     int
+	// AuthRefreshGraceSeconds is the refresh rotation grace window (default 10).
+	AuthRefreshGraceSeconds int
+	// AuthMfaChallengeMaxAttempts is the challenge attempt budget (default 5).
+	AuthMfaChallengeMaxAttempts int
+	// NextAuthURL builds the password-reset link; the NestJS controller falls back
+	// to http://localhost:3000.
+	NextAuthURL string
+	// SMTP is the real transport (Env.smtpConfig) the login, email-change and
+	// password-reset messages use. It is only validated when AuthLoginMode is go.
+	SMTP SMTPConfig
 
 	// The VECTOR_* / S3_* values below are the environment defaults the
 	// infrastructure settings routes fall back to when a SystemSetting row is
@@ -1315,6 +1509,12 @@ type Config struct {
 	JWTSecret   string
 	JWTIssuer   string
 	JWTAudience string
+	// JWTAccessExpiresIn / JWTRefreshExpiresIn keep the raw timespan text
+	// (defaults 15m / 7d). AuthLoginMode=go parses them per signing call, exactly
+	// like the NestJS EnvService jwtConfig getter, so a malformed value surfaces
+	// as the same request-time 400.
+	JWTAccessExpiresIn  string
+	JWTRefreshExpiresIn string
 
 	// Redis 是 access-token blacklist 所用 Redis（与 NestJS api 服务同一
 	// 实例——Go 不建第二套撤销名单）。OnboardingMode=go 时 Host 必填；
@@ -1708,6 +1908,16 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_CRAWL_READ_TELEMETRY_MODE must be one of legacy|go")
 	}
+	// The metadata preview switch accepts exactly "", "legacy" and "go"; any
+	// other value must fail startup with this exact text.
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_METADATA_MODE")) {
+	case "", string(CrawlMetadataModeLegacy):
+		cfg.CrawlMetadataMode = CrawlMetadataModeLegacy
+	case string(CrawlMetadataModeGo):
+		cfg.CrawlMetadataMode = CrawlMetadataModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_METADATA_MODE must be one of legacy|go")
+	}
 	// The search reindex switch accepts exactly "", "legacy" and "go"; any other
 	// value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_SEARCH_REINDEX_MODE")) {
@@ -1790,6 +2000,18 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go")
 	}
+	// The storage connection test switch is parsed independently of the
+	// infrastructure settings switch: the diagnostics route can be taken over
+	// while the seven configuration routes stay on NestJS, and the other way
+	// around. An empty value behaves exactly like legacy.
+	switch strings.TrimSpace(getenv("API_GO_STORAGE_DIAGNOSTICS_MODE")) {
+	case "", string(StorageDiagnosticsModeLegacy):
+		cfg.StorageDiagnosticsMode = StorageDiagnosticsModeLegacy
+	case string(StorageDiagnosticsModeGo):
+		cfg.StorageDiagnosticsMode = StorageDiagnosticsModeGo
+	default:
+		errs = append(errs, "API_GO_STORAGE_DIAGNOSTICS_MODE must be one of legacy|go")
+	}
 	// The authenticated MFA management and organization OIDC configuration
 	// switch accepts the empty string, legacy and go. An empty value behaves
 	// exactly like legacy, so an unset deployment keeps serving all seven
@@ -1809,6 +2031,17 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AccountSecurityMode = AccountSecurityModeGo
 	default:
 		errs = append(errs, "API_GO_ACCOUNT_SECURITY_MODE must be one of legacy|go")
+	}
+	// The login/session/email-code switch accepts the empty string, legacy and
+	// go. An empty value behaves exactly like legacy, so an unset deployment
+	// keeps serving all eleven routes through NestJS.
+	switch strings.TrimSpace(getenv("API_GO_AUTH_LOGIN_MODE")) {
+	case "", string(AuthLoginModeLegacy):
+		cfg.AuthLoginMode = AuthLoginModeLegacy
+	case string(AuthLoginModeGo):
+		cfg.AuthLoginMode = AuthLoginModeGo
+	default:
+		errs = append(errs, "API_GO_AUTH_LOGIN_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
@@ -1836,6 +2069,22 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.GraphQLNewsEventsMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENTS_MODE must be one of legacy|go")
+	}
+	// The news-event brief sub-switch accepts the empty string, legacy and go.
+	// An empty value behaves exactly like legacy, so an unset deployment keeps
+	// the whole newsEventBrief operation on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLNewsEventBriefMode = "legacy"
+	case "go":
+		cfg.GraphQLNewsEventBriefMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE must be one of legacy|go")
+	}
+	// The brief sub-switch cannot silently enable its parents: it needs both
+	// the GraphQL read takeover and the news-event read registration.
+	if cfg.GraphQLNewsEventBriefMode == "go" && (cfg.GraphQLReadMode != "go" || cfg.GraphQLNewsEventsMode != "go") {
+		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE=go requires API_GO_GRAPHQL_READ_MODE=go and API_GO_GRAPHQL_NEWS_EVENTS_MODE=go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KG_IMPACT_MODE")) {
 	case "", "legacy":
@@ -1875,6 +2124,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE must be one of legacy|go")
 	}
+	// The metadata GraphQL switch accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy so an unset deployment keeps
+	// serving crawlMetadata through NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_CRAWL_METADATA_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLCrawlMetadataMode = "legacy"
+	case "go":
+		cfg.GraphQLCrawlMetadataMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_CRAWL_METADATA_MODE must be one of legacy|go")
+	}
 	// The item reading switch accepts the empty string, legacy and go. An empty
 	// value behaves exactly like legacy so an unset deployment keeps serving
 	// both REST routes and all five GraphQL roots through NestJS.
@@ -1889,6 +2149,17 @@ func Load(getenv func(string) string) (Config, error) {
 		// operator can see which deployment value was refused.
 		errs = append(errs, "API_GO_ITEMS_READING_MODE must be one of legacy|go, got "+strconv.Quote(itemsReadingRaw))
 	}
+	// The items list switch accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy, so an unset deployment keeps the items
+	// connection root on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_ITEMS_LIST_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLItemsListMode = "legacy"
+	case "go":
+		cfg.GraphQLItemsListMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_ITEMS_LIST_MODE must be one of legacy|go")
+	}
 	// The organization access write switch accepts the empty string, legacy and
 	// go. An empty value behaves exactly like legacy, so an unset deployment
 	// keeps every mutation on NestJS.
@@ -1899,6 +2170,17 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.GraphQLOrgAccessWriteMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE must be one of legacy|go")
+	}
+	// The workspace write switch accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy, so an unset deployment keeps
+	// these eight mutations on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_WORKSPACE_WRITE_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLWorkspaceWriteMode = "legacy"
+	case "go":
+		cfg.GraphQLWorkspaceWriteMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE must be one of legacy|go")
 	}
 	// The settings write switch accepts the empty string, legacy and go. An
 	// empty value behaves exactly like legacy, so an unset deployment keeps
@@ -1944,6 +2226,38 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.AuthProfileCacheMaxWaitMs = intDefault(getenv("AUTH_PROFILE_CACHE_MAX_WAIT_MS"), 5000)
 	cfg.AuthProfileCacheRetryDelayMs = intDefault(getenv("AUTH_PROFILE_CACHE_RETRY_DELAY_MS"), 50)
 	cfg.AuditLogRetentionDays = intDefault(getenv("AUDIT_LOG_RETENTION_DAYS"), 90)
+	// Login chain defaults. AUTH_EMAIL_CODE_* mirror the EnvService
+	// authEmailCodeConfig getter, AUTH_REFRESH_GRACE_SECONDS and
+	// AUTH_MFA_CHALLENGE_MAX_ATTEMPTS mirror their getters, and NEXTAUTH_URL
+	// builds the password-reset link with the controller's localhost fallback.
+	cfg.AuthEmailCodeTTLSeconds = intDefault(getenv("AUTH_EMAIL_CODE_TTL_SECONDS"), 300)
+	cfg.AuthEmailCodeCooldownSeconds = intDefault(getenv("AUTH_EMAIL_CODE_COOLDOWN_SECONDS"), 90)
+	cfg.AuthEmailCodeMaxAttempts = intDefault(getenv("AUTH_EMAIL_CODE_MAX_ATTEMPTS"), 3)
+	cfg.AuthRefreshGraceSeconds = intDefault(getenv("AUTH_REFRESH_GRACE_SECONDS"), 10)
+	cfg.AuthMfaChallengeMaxAttempts = intDefault(getenv("AUTH_MFA_CHALLENGE_MAX_ATTEMPTS"), 5)
+	cfg.NextAuthURL = strings.TrimSpace(getenv("NEXTAUTH_URL"))
+	if cfg.NextAuthURL == "" {
+		cfg.NextAuthURL = "http://localhost:3000"
+	}
+	// SMTP transport. The host/port/user/pass quartet is required by the NestJS
+	// EnvService smtpConfig getter (getOrThrow); the remaining values keep the
+	// documented defaults, with SMTP_FROM falling back to the authenticated user.
+	cfg.SMTP = SMTPConfig{
+		Host:                  strings.TrimSpace(getenv("SMTP_HOST")),
+		Port:                  intDefault(getenv("SMTP_PORT"), 0),
+		Secure:                boolDefault(getenv("SMTP_SECURE"), true),
+		User:                  getenv("SMTP_USER"),
+		Pass:                  getenv("SMTP_PASS"),
+		From:                  strings.TrimSpace(getenv("SMTP_FROM")),
+		Pool:                  boolDefault(getenv("SMTP_POOL"), false),
+		ConnectionTimeoutMs:   intDefault(getenv("SMTP_CONNECTION_TIMEOUT_MS"), 10_000),
+		GreetingTimeoutMs:     intDefault(getenv("SMTP_GREETING_TIMEOUT_MS"), 10_000),
+		SocketTimeoutMs:       intDefault(getenv("SMTP_SOCKET_TIMEOUT_MS"), 30_000),
+		TLSRejectUnauthorized: boolDefault(getenv("SMTP_TLS_REJECT_UNAUTHORIZED"), true),
+	}
+	if cfg.SMTP.From == "" {
+		cfg.SMTP.From = cfg.SMTP.User
+	}
 	// Infrastructure connection defaults (vector service + S3 storage). The
 	// vector token and the settings-encryption key keep their raw environment
 	// value: the NestJS contracts distinguish a missing variable from one that
@@ -2074,6 +2388,14 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.JWTAudience = strings.TrimSpace(getenv("JWT_AUDIENCE"))
 	if cfg.JWTAudience == "" {
 		cfg.JWTAudience = defaultJWTAudience
+	}
+	cfg.JWTAccessExpiresIn = strings.TrimSpace(getenv("JWT_ACCESS_EXPIRES_IN"))
+	if cfg.JWTAccessExpiresIn == "" {
+		cfg.JWTAccessExpiresIn = "15m"
+	}
+	cfg.JWTRefreshExpiresIn = strings.TrimSpace(getenv("JWT_REFRESH_EXPIRES_IN"))
+	if cfg.JWTRefreshExpiresIn == "" {
+		cfg.JWTRefreshExpiresIn = "7d"
 	}
 
 	// Redis（blacklist）配置。Port/DB 有默认值；Username/Password 可空
@@ -2389,6 +2711,20 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, "MONGO_URI is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go")
 		}
 	}
+	// The metadata preview takeover needs the credentialed auth stack plus
+	// Redis (the shared discovery conditional HTTP state) and outbound HTTP/DNS.
+	// It reads no Mongo collection, so MONGO_URI is not required and the entry
+	// can run while every other crawl mode is legacy.
+	if cfg.CrawlMetadataMode == CrawlMetadataModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_METADATA_MODE", cfg)
+	}
+	// The metadata GraphQL root is a child switch of the GraphQL read pilot:
+	// without API_GO_GRAPHQL_READ_MODE=go there is no executor to register into,
+	// so startup must fail instead of silently ignoring the switch. Mongo comes
+	// from the parent read requirement.
+	if cfg.GraphQLCrawlMetadataMode == "go" && cfg.GraphQLReadMode != "go" {
+		errs = append(errs, "API_GO_GRAPHQL_CRAWL_METADATA_MODE=go requires API_GO_GRAPHQL_READ_MODE=go")
+	}
 	// The search reindex takeover reads the item read model from Mongo, so
 	// MONGO_URI is required in addition to the standard JWT + MySQL + Redis
 	// requirements. Elasticsearch is optional at startup: the disabled branch
@@ -2421,6 +2757,18 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, "MONGO_URI is required when API_GO_ITEMS_READING_MODE=go")
 		}
 	}
+	// The items connection root reuses the item reading service and the shared
+	// GraphQL executor, so it has hard parent dependencies instead of silently
+	// enabling a parent switch. The Mongo requirement is already implied by the
+	// two parents.
+	if cfg.GraphQLItemsListMode == "go" {
+		if cfg.GraphQLReadMode != "go" {
+			errs = append(errs, "API_GO_GRAPHQL_ITEMS_LIST_MODE=go requires API_GO_GRAPHQL_READ_MODE=go")
+		}
+		if cfg.ItemsReadingMode != ItemsReadingModeGo {
+			errs = append(errs, "API_GO_GRAPHQL_ITEMS_LIST_MODE=go requires API_GO_ITEMS_READING_MODE=go")
+		}
+	}
 
 	if cfg.LLMGatewayProfilesMode == LLMGatewayProfilesModeGo {
 		appendAuthRequirements(&errs, "API_GO_LLM_GATEWAY_PROFILES_MODE", cfg)
@@ -2441,6 +2789,14 @@ func Load(getenv func(string) string) (Config, error) {
 	// contracts.
 	if cfg.InfrastructureSettingsMode == InfrastructureSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE", cfg)
+	}
+	// The storage connection test takeover needs JWT verification, MySQL (the
+	// real SELECT 1 and the settings read) and Redis (the storage settings
+	// cache) only. It reads no Mongo collection, requires no other takeover
+	// switch, builds no S3 client at startup and performs no startup probe: the
+	// diagnostics run inside the request and report failures per step.
+	if cfg.StorageDiagnosticsMode == StorageDiagnosticsModeGo {
+		appendAuthRequirements(&errs, "API_GO_STORAGE_DIAGNOSTICS_MODE", cfg)
 	}
 	// The data runtime settings takeover needs JWT verification, MySQL and Redis
 	// only. It reads no Mongo collection, starts no worker, performs no startup
@@ -2465,6 +2821,26 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.AccountSecurityMode == AccountSecurityModeGo {
 		appendAuthRequirements(&errs, "API_GO_ACCOUNT_SECURITY_MODE", cfg)
 	}
+	// The login/session/email-code takeover needs JWT verification, MySQL, Redis
+	// and a real SMTP transport: four of its routes send mail synchronously
+	// inside the request. It reads no Mongo collection, starts no worker and
+	// keeps the settings-encryption key optional at startup, deferring the
+	// existing per-write policy to the reused MFA factor service.
+	if cfg.AuthLoginMode == AuthLoginModeGo {
+		appendAuthRequirements(&errs, "API_GO_AUTH_LOGIN_MODE", cfg)
+		if cfg.SMTP.Host == "" {
+			errs = append(errs, "SMTP_HOST is required when API_GO_AUTH_LOGIN_MODE=go")
+		}
+		if cfg.SMTP.Port == 0 {
+			errs = append(errs, "SMTP_PORT is required when API_GO_AUTH_LOGIN_MODE=go")
+		}
+		if cfg.SMTP.User == "" {
+			errs = append(errs, "SMTP_USER is required when API_GO_AUTH_LOGIN_MODE=go")
+		}
+		if cfg.SMTP.Pass == "" {
+			errs = append(errs, "SMTP_PASS is required when API_GO_AUTH_LOGIN_MODE=go")
+		}
+	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
 		if cfg.MongoURI == "" {
@@ -2476,6 +2852,12 @@ func Load(getenv func(string) string) (Config, error) {
 	// not require MONGO_URI.
 	if cfg.GraphQLOrgAccessWriteMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE", cfg)
+	}
+	// The workspace write takeover needs JWT verification, MySQL and Redis
+	// only. Reusing the workspace, alert and history models does not make
+	// MONGO_URI, the model gateway or the queue a startup condition.
+	if cfg.GraphQLWorkspaceWriteMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE", cfg)
 	}
 	// The settings write takeover needs JWT verification, MySQL and Redis only.
 	// It reads no Mongo collection, starts no worker and calls no upstream

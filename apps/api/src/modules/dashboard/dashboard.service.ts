@@ -8,6 +8,94 @@ import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
 import { QueueService } from "../queue/queue.service";
 
+/** One stored DashboardWidget row used by the save diff. */
+interface DashboardWidgetRecord {
+  id: string;
+  title: string | null;
+  type: DashboardWidgetType;
+  dataSource: string;
+  dataConfig: Prisma.JsonValue;
+  layoutX: number;
+  layoutY: number;
+  layoutW: number;
+  layoutH: number;
+  sortOrder: number;
+  options: Prisma.JsonValue;
+}
+
+/** The normalized field set one existing widget update writes. */
+interface DashboardWidgetUpdateFields {
+  title?: string | null;
+  type: DashboardWidgetType;
+  dataSource: string;
+  dataConfig: Prisma.InputJsonValue;
+  layoutX: number;
+  layoutY: number;
+  layoutW: number;
+  layoutH: number;
+  sortOrder: number;
+  options: Prisma.InputJsonValue;
+}
+
+const isJsonRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === "object" && !Array.isArray(value));
+
+/**
+ * Compares two JSON values the way MySQL stores JSON: object key order is
+ * ignored, array order is significant, and everything else compares by value.
+ */
+const jsonValuesEqual = (left: unknown, right: unknown): boolean => {
+  if (left === right) {
+    return true;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+      return false;
+    }
+    return left.every((item, index) => jsonValuesEqual(item, right[index]));
+  }
+  if (isJsonRecord(left) && isJsonRecord(right)) {
+    const leftKeys = Object.keys(left);
+    if (leftKeys.length !== Object.keys(right).length) {
+      return false;
+    }
+    return leftKeys.every(
+      (key) => Object.prototype.hasOwnProperty.call(right, key) && jsonValuesEqual(left[key], right[key])
+    );
+  }
+  return false;
+};
+
+/**
+ * Reports whether the normalized widget update would change the stored row. An
+ * omitted title is not part of the update, so it can never mark the row
+ * changed; the JSON columns always carry the `?? {}` value that would be
+ * written.
+ */
+const dashboardWidgetChanged = (
+  existing: DashboardWidgetRecord,
+  update: DashboardWidgetUpdateFields
+): boolean => {
+  if (update.title !== undefined && update.title !== existing.title) {
+    return true;
+  }
+  if (update.type !== existing.type || update.dataSource !== existing.dataSource) {
+    return true;
+  }
+  if (
+    update.layoutX !== existing.layoutX ||
+    update.layoutY !== existing.layoutY ||
+    update.layoutW !== existing.layoutW ||
+    update.layoutH !== existing.layoutH ||
+    update.sortOrder !== existing.sortOrder
+  ) {
+    return true;
+  }
+  return (
+    !jsonValuesEqual(update.dataConfig, existing.dataConfig) ||
+    !jsonValuesEqual(update.options, existing.options)
+  );
+};
 
 @Injectable()
 export class DashboardService {
@@ -59,7 +147,7 @@ export class DashboardService {
   ) {
     const dashboard = await this.prisma.$transaction(async (tx) => {
       let current;
-      let existingWidgets: { id: string }[] = [];
+      let existingWidgets: DashboardWidgetRecord[] = [];
 
       if (input.id) {
         const existing = await tx.dashboard.findUnique({
@@ -108,36 +196,42 @@ export class DashboardService {
 
       const widgets = input.widgets ?? [];
       const widgetsToCreate: Prisma.DashboardWidgetCreateManyInput[] = [];
-      const widgetUpdatePromises: Promise<unknown>[] = [];
-      const existingWidgetIds = new Set(existingWidgets.map((widget) => widget.id));
+      const widgetUpdates: { id: string; data: Prisma.DashboardWidgetUpdateInput }[] = [];
+      const existingWidgetById = new Map<string, DashboardWidgetRecord>(
+        existingWidgets.map((widget) => [widget.id, widget] as const)
+      );
       const incomingWidgetIds = new Set<string>();
 
       widgets.forEach((widget, index) => {
         const sortOrder = widget.sortOrder ?? index;
         if (widget.id) {
-          if (!existingWidgetIds.has(widget.id)) {
+          const existingWidget = existingWidgetById.get(widget.id);
+          if (!existingWidget) {
             throw new BadRequestException("Widget not found on dashboard");
           }
           incomingWidgetIds.add(widget.id);
-	          widgetUpdatePromises.push(
-	            tx.dashboardWidget.update({
-	              where: { id: widget.id },
-	              data: {
-	                title: widget.title,
-	                type: widget.type,
-	                dataSource: widget.dataSource,
-	                dataConfig: toPrismaJsonValue(widget.dataConfig ?? {}),
-	                layoutX: widget.layoutX,
-	                layoutY: widget.layoutY,
-	                layoutW: widget.layoutW,
-	                layoutH: widget.layoutH,
-	                sortOrder,
-	                options: toPrismaJsonValue(widget.options ?? {})
-	              }
-	            })
-	          );
-	          return;
-	        }
+          const data: DashboardWidgetUpdateFields = {
+            type: widget.type,
+            dataSource: widget.dataSource,
+            dataConfig: toPrismaJsonValue(widget.dataConfig ?? {}),
+            layoutX: widget.layoutX,
+            layoutY: widget.layoutY,
+            layoutW: widget.layoutW,
+            layoutH: widget.layoutH,
+            sortOrder,
+            options: toPrismaJsonValue(widget.options ?? {})
+          };
+          // title keeps the Prisma three-state semantics: omitted leaves the
+          // column, null clears it, a string sets it. An omitted title can
+          // therefore never make the row "changed".
+          if (widget.title !== undefined) {
+            data.title = widget.title;
+          }
+          if (dashboardWidgetChanged(existingWidget, data)) {
+            widgetUpdates.push({ id: widget.id, data });
+          }
+          return;
+        }
 
 	        widgetsToCreate.push({
 	          dashboardId: current.id,
@@ -164,8 +258,14 @@ export class DashboardService {
         });
       }
 
-      if (widgetUpdatePromises.length) {
-        await Promise.all(widgetUpdatePromises);
+      if (widgetUpdates.length) {
+        // Only the widgets whose normalized target fields differ from the
+        // stored row are written, so an unchanged widget keeps its updatedAt.
+        await Promise.all(
+          widgetUpdates.map((update) =>
+            tx.dashboardWidget.update({ where: { id: update.id }, data: update.data })
+          )
+        );
       }
 
       if (widgetsToCreate.length) {

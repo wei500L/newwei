@@ -25,6 +25,10 @@ type Options struct {
 	// VectorHardFailEnabled mirrors ITEMS_VECTOR_HARD_FAIL_ENABLED (default
 	// false).
 	VectorHardFailEnabled bool
+	// Personalization is the behavior-profile provider the PERSONALIZED
+	// ordering reads. It may be nil, in which case the ordering degrades to the
+	// recency-only formula like the NestJS service with an empty profile.
+	Personalization PersonalizationProvider
 }
 
 // service is the strongly typed read core of the migrated endpoints.
@@ -36,6 +40,14 @@ type Service struct {
 	readModel        *readModelService
 	vector           *vectorRecall
 	readModelEnabled bool
+	// embedder is shared with the vector recall and also drives the relevance
+	// rerank call.
+	embedder *llmembed.Client
+	// ranking is the relevance-ranking configuration read from the process
+	// environment at construction time.
+	ranking itemsSearchRankingConfig
+	// personalization is the optional behavior-profile provider.
+	personalization PersonalizationProvider
 }
 
 // NewService builds the read core.
@@ -45,11 +57,12 @@ func NewService(opts Options) *Service {
 	cache := newRedisCache(opts.Redis)
 	elastic := newElasticsearchFromEnv()
 	searcher := newVectorSearcherFromEnv()
+	embedder := llmembed.NewClient(opts.DB)
 	vector := newVectorRecall(
 		searcher,
 		mongoStore,
 		cache,
-		llmembed.NewClient(opts.DB),
+		embedder,
 		opts.VectorHardFailEnabled,
 		opts.DB,
 		opts.Redis,
@@ -63,6 +76,9 @@ func NewService(opts Options) *Service {
 		readModel:        readModel,
 		vector:           vector,
 		readModelEnabled: opts.ReadModelEnabled,
+		embedder:         embedder,
+		ranking:          loadRankingConfigFromEnv(),
+		personalization:  opts.Personalization,
 	}
 }
 

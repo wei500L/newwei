@@ -6,10 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/alerts"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/orgaccesswrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/schema"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspacewrite"
 )
 
 // TestMutationRootsPlanToExecuteOnlyWhenRegistered pins the ownership decision
@@ -48,6 +51,63 @@ func TestMutationRootsPlanToExecuteOnlyWhenRegistered(t *testing.T) {
 	} {
 		if got := engine.PlanDocument(doc, nil, nil); got.Kind != KindLegacy {
 			t.Fatalf("%s kind %s body %s", doc, got.Kind, got.Result.Body)
+		}
+	}
+}
+
+// TestWorkspaceWriteRootsPlanToExecuteOnlyWhenRegistered pins the workspace
+// write batch wiring: the eight mutations execute only after they are
+// registered with exactly the model sets the write-only path registers
+// (workspace, alert and history models without any read root), a document
+// mixing them with an unregistered mutation stays on NestJS, and registering
+// the models takes over no query.
+func TestWorkspaceWriteRootsPlanToExecuteOnlyWhenRegistered(t *testing.T) {
+	loaded, err := schema.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := contract.NewRegistry()
+	engine := New(loaded, reg, 8, 2000, nil)
+
+	documents := []string{
+		`mutation { markNotificationRead(id: "n") { id } }`,
+		`mutation { markAllNotificationsRead }`,
+		`mutation { deleteDashboard(id: "d") }`,
+		`mutation { upsertDashboard(input: { name: "n", slug: "s", widgets: [] }) { id version widgets { id } } }`,
+		`mutation { createAlertChannel(input: { type: email, name: "n", target: "a@example.com" }) { id config } }`,
+		`mutation { updateAlertChannel(input: { id: "c", name: "n" }) { id target } }`,
+		`mutation { deleteAlertChannel(channelId: "c") }`,
+		`mutation { updateAlertEventStatus(input: { eventId: "e", status: confirmed }) { id deliveries { id channelName } } }`,
+	}
+	for _, doc := range documents {
+		if got := engine.PlanDocument(doc, nil, nil); got.Kind != KindLegacy {
+			t.Fatalf("unregistered %s kind %s body %s", doc, got.Kind, got.Result.Body)
+		}
+	}
+
+	// This is exactly the write-only wiring: the shared models are registered
+	// without any read registration, so no read root is taken over.
+	workspace.RegisterModels(reg)
+	alerts.RegisterModels(reg)
+	history.RegisterModels(reg)
+	workspacewrite.Register(reg, nil)
+	engine = New(loaded, reg, 8, 2000, nil)
+
+	for _, doc := range documents {
+		if got := engine.PlanDocument(doc, nil, nil); got.Kind != KindExecute {
+			t.Fatalf("registered %s kind %s body %s", doc, got.Kind, got.Result.Body)
+		}
+	}
+	for _, doc := range []string{
+		`mutation { markAllNotificationsRead deleteAssistantRun(runId: "r") }`,
+		`mutation { deleteDashboard(id: "d") triggerAlertRule(ruleId: "r") }`,
+		`query { notifications { id } }`,
+		`query { dashboards { id } }`,
+		`query { alertChannels { id } }`,
+		`query { alertEvents { id } }`,
+	} {
+		if got := engine.PlanDocument(doc, nil, nil); got.Kind != KindLegacy {
+			t.Fatalf("mixed or read-only %s kind %s body %s", doc, got.Kind, got.Result.Body)
 		}
 	}
 }

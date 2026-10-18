@@ -28,6 +28,13 @@ type service struct {
 	mongo *mongo.Database
 	redis *redis.Client
 	now   func() time.Time
+	// brief is the exported publicportal completion surface. It is only used
+	// by the newsEventBrief cold path (cache miss or forceRefresh).
+	brief publicportal.BriefCompleter
+	// briefObserver receives one record per real model attempt so the GraphQL
+	// root can persist the LLM request log. It is nil when logging is not
+	// wired, in which case the completed request is simply not logged.
+	briefObserver publicportal.BriefCompletionObserver
 }
 
 func (s *service) clock() time.Time {

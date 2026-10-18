@@ -534,7 +534,7 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 
 回滚只把 `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。说明见 `docs/refactor/go-graphql-org-access-write.md`。
 
-## 11.2 设置中心 13 个 GraphQL Mutation 写（Go）
+### 11.2 设置中心 13 个 GraphQL Mutation 写（Go）
 
 新增开关 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。与 `API_GO_GRAPHQL_READ_MODE`、`API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE`、`API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 及全部 REST 开关解耦。`go` 只要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**，只登记 20 个设置模型类型与 13 个 Mutation（通过 `settingscrawl.RegisterSettingsModelTypes` 不登记任何 Query）。
 
@@ -554,6 +554,23 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 同批优化：crawl client 与审计保留期的进程内缓存改为 Nest/Go 共享 Redis（`crawl_client:settings`、`audit_log:retention_days`，各 30s），Go REST 的审计保留期 GET/PUT 同步改造；taxonomy 与 scopedThresholds 的重复归一化收敛为单次（Nest 与 Go 同结果，校验顺序与文案不变）。
 
 只开本开关时 20 个设置读 query 与全部组织管理 Mutation 仍回 NestJS；含未迁移 root 的文档整包回 NestJS，不存在部分 Go 写入后再转发。回滚只把 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。说明见 `docs/refactor/go-graphql-settings-write.md`。
+
+### 11.3 工作台交互 GraphQL 写（Go）
+
+新增开关 `API_GO_GRAPHQL_WORKSPACE_WRITE_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。与 `API_GO_GRAPHQL_READ_MODE` 完全解耦；`go` 只要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**，不启动 worker，不写队列，不发送邮件或 webhook。
+
+`go` 时在既有精确 `/graphql` 执行器登记 8 个 Mutation（含未接管 root 的文档仍整包回 NestJS）：
+
+- `markNotificationRead(id)` / `markAllNotificationsRead`：`AllowAuthenticated`，不新增权限。更新与读回都限定 `id` + `orgId` + `userId`；只更新 `readAt IS NULL` 的行，因此重复标记已读保留首次 `readAt`（且不刷新 `updatedAt`），已读记录仍返回模型；他组织、同组织其他用户与 `userId` 为 NULL 的广播记录都不匹配。`markAllNotificationsRead` 单语句扫未读行，有行从未读变已读才返回 `true`。
+- `upsertDashboard(input)` / `deleteDashboard(id)`：`dashboards.write`。看板与组件写入在一个 MySQL 事务内；乐观版本检查 （404 `Dashboard not found`、400 `Dashboard version is required for update`、409 冲突）在任何组件写入之前完成，版本不匹配时不写组件；组件按「新增 / 变化 / 删除」三组计划写入，已变化的已有组件才 UPDATE（未变化组件保留 `updatedAt`），新增批量创建、删除按集合删除；`title` 的三态与 `config`/`dataConfig`/`options` 的 `?? {}` 规则不变。删除只按 `id` + `orgId`，组件走 Cascade。
+- `createAlertChannel(input)` / `updateAlertChannel(input)` / `deleteAlertChannel(channelId)`：`alerts.manage`。`target` 先 trim：email 走 `EMAIL_EXTRACT_REGEX` + isEmail 过滤 + 首见去重 + `", "` 连接（无有效地址 400 `Invalid email target`），webhook 依次走 DTO 层 SSRF 校验与服务层校验（保存阶段 DNS 失败按 `allowUnresolved` 默认放行），in_app 只 trim。更新用数据库已有 `type` 规范化，`undefined` 不写、显式 null 照写。删除在同一事务内把 pending/sending 投递改为 failed + `error = "channel deleted"`、全部投递 `channelId` 置空、删渠道，`AlertRuleChannel` 由外键 Cascade；历史投递与 `targetSnapshot` 保留。
+- `updateAlertEventStatus(input)`：`alerts.manage`。只允许 `confirmed` / `ignored`；`AlertEvent` 无 `orgId`，通过 `AlertRule.orgId` 判归属并用 `INNER JOIN` 限定更新；`context.feedback` 用具名结构 + 不透明 JSON 叶子合并，保留未知字段、显式 null note 与指标快照，写 `status`/`updatedAt`（UTC ISO）与有操作人时的 `updatedById`；返回值复用告警读取的同一套 `AlertEventModel` 序列化。
+
+同批修两个功能问题（Nest 与 Go 两侧一致）：通知重复标记已读保留首次 `readAt`；看板保存只更新实际变化的已有组件（同一套 JSON 比较：忽略对象键顺序、保留数组顺序）。模型注册：`alerts`/`history` 拆出 `RegisterModels`，与 `workspace.RegisterModels` 组合保证每个类型与字段级权限只登记一次，且不为注册返回类型打开任何 Query；旧弱类型 `history.NotificationModel.Data`、`alerts.AlertChannelModel.Config`、`alerts.AlertEventModel.Context` 与投递 `targetSnapshot` 改为 `json.RawMessage`/具名叶子。
+
+未迁：`upsertAlertRule`、`deleteAlertRule`、`triggerAlertRule`、`alertRules` Query、`deleteAssistantRun`、Assistant/Analysis 请求任务、通知创建与投递 dispatcher、WebSocket/Subscription、告警扫描评估发送 worker、`queueEvents` Subscription。
+
+回滚只把 `API_GO_GRAPHQL_WORKSPACE_WRITE_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。说明见 `docs/refactor/go-graphql-workspace-write.md`。
 
 ## 12. 分类质量工作台与 RSS 诊断/翻译指标（Go）
 
@@ -907,6 +924,30 @@ one of legacy|go`）。`go` 时要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOS
 - **限流/APQ/深度/复杂度/响应缓存/字段权限沿用既有机制**；身份与 orgId 一律取自服务端认证与 MySQL 权限。
 - 回滚只把 `API_GO_ITEMS_READING_MODE` 改回 `legacy`。细节与验收清单见
   `docs/refactor/go-items-reading.md`。
+
+### 20.1 Query `items` 完整列表（本批候选，PR 未合 main）
+
+- 新增接管 Query `items(after, filters, first, orderBy, page, rankingMode, search): ItemConnection!`，
+  根权限 `items.read`，`orgId`/个性化 `userId` 只取服务端身份。
+- 新增独立子开关 `API_GO_GRAPHQL_ITEMS_LIST_MODE`（空串|`legacy`|`go`，默认 `legacy`，非法值
+  `Load` 失败）。`go` 明确要求 `API_GO_GRAPHQL_READ_MODE=go` 且 `API_GO_ITEMS_READING_MODE=go`，
+  不静默打开父开关；本开关 `legacy` 时不登记该 root，含它的 operation 整份回 NestJS。
+- 实现：`first` 默认 10、交互上限 50；`after`/`page` 互斥 400；page 分支 `checkedOffset`（IR2 上限）
+  与 `page*pageSize < total`；时间游标 `base64(JSON)` 复合 `(time,id)` 边界 + `take+1`；
+  `RELEVANCE`/`PERSONALIZED` 游标 `{id,offset}` 重定位顺序不同且不合并；显式 `filters`（含 `{}`）
+  优先于历史 payload；`rankingMode` 缺省由原始 `search.trim()` 决定。
+- RELEVANCE：recall 120 / rerank 40 / timeout 300 / halfLife 48；预排 `lexical*0.7+recency*0.3` 取
+  rerank 集合，final `0.55/0.25/0.15/0.05` 混合并钳制；未进 rerank 的候选保留 lexical；rerank 启用而
+  失败时 503 `RERANK_UNAVAILABLE`（安全 detail），不静默降级；ES highlight 失败按原行为可缺省。
+- PERSONALIZED：复用 `newsbehavior` 画像（不重建行为 API、读取不记点击），候选 MIN 180 / MAX 1600 /
+  ×8 增量扩大；`recency=1/(1+age/36)`、六维权重 1.15/1/0.9/1.45/1.2/0.75、
+  `behavior=log1p(max(0,pos))-log1p(max(0,neg*1.15))`、`final=0.78*behavior+0.22*recency`；阈值
+  0.0001 后 `sortAt DESC, id ASC`。
+- 批量投影：`contract`/`exec` 新增最小只读选择元数据（alias/fragment/`@skip`/`@include`），
+  `RegisterList` 注册 `ItemConnection`/`ItemEdge`；本页一次性读五个 read-model 投影或
+  `FindRawItemsBound`+`ProcessedByKeys`，并批量解析 `eventId`/`duplicateOf`，不再逐 edge 调 `item()`。
+- 回滚只把 `API_GO_GRAPHQL_ITEMS_LIST_MODE` 改回 `legacy`；Mutation、订阅与 items 域其余入口仍回
+  NestJS。细节见 `docs/refactor/go-graphql-items-list.md`。
 
 
 ## 21. LLM 网关配置与三路激活（Go）

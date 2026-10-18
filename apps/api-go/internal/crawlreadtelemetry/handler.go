@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 )
 
 // Exact request paths served by the unit.
@@ -52,12 +53,20 @@ type Service struct {
 	taskLogs *mongo.Collection
 	// jwtSecret is JWT_SECRET, used as the HMAC key for media asset URLs.
 	jwtSecret string
+	// storageConfig resolves the storage configuration snapshot that signs S3
+	// media URLs. It is the same shared settings reader the infrastructure
+	// routes use (storage:settings cache + database fallback). A nil reader
+	// degrades to the documented branches: no S3 URL in the detail projection
+	// and a 400 on the public media route when the configuration cannot be read.
+	storageConfig objectstorage.ConfigReader
 }
 
 // NewService assembles the read-only sources. database may be nil, in which
 // case Mongo-backed lookups fail closed instead of degrading to empty results.
-func NewService(db *sql.DB, redisClient *redis.Client, database *mongo.Database, jwtSecret string) *Service {
-	service := &Service{db: db, redis: redisClient, jwtSecret: jwtSecret}
+// storageConfig may be nil in tests; production wiring always injects the
+// shared infrastructure settings reader.
+func NewService(db *sql.DB, redisClient *redis.Client, database *mongo.Database, jwtSecret string, storageConfig objectstorage.ConfigReader) *Service {
+	service := &Service{db: db, redis: redisClient, jwtSecret: jwtSecret, storageConfig: storageConfig}
 	if database != nil {
 		service.crawlResultContents = database.Collection(crawlResultContentsCollection)
 		service.taskLogs = database.Collection(taskLogsCollection)

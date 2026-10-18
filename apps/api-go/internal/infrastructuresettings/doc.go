@@ -13,6 +13,21 @@
 // default (legacy, including the empty value) keeps every request on the
 // NestJS proxy, so rollback is a single environment-variable change.
 //
+// The package also backs two things that are not part of those seven routes:
+//
+//   - StorageRuntimeConfig, the named runtime storage configuration snapshot
+//     consumed by the crawl media signing paths and by the diagnostics handler.
+//     It reuses the same nine SystemSetting rows, the same `storage:settings`
+//     Redis entry (60 second TTL, database fallback) and the same secret
+//     decryption; the masked admin display model is never used as business
+//     configuration;
+//   - POST /api/admin/settings/storage/test, the real storage connection test,
+//     which has its own independent API_GO_STORAGE_DIAGNOSTICS_MODE switch
+//     (legacy by default) and requires only settings.manage — no platform-admin
+//     second gate. mode=mysql runs SELECT 1; mode=s3 runs HeadBucket, PutObject
+//     and DeleteObject with one unique probe key per run and reports every step
+//     in the response body (HTTP 201 with ok:false when a step fails).
+//
 // The implementation mirrors the NestJS contract one-for-one:
 //
 //   - authentication is the shared authhttp chain (JWT verification, Redis
@@ -34,9 +49,9 @@
 // map[string]any.
 //
 // What deliberately stays on NestJS: GET /api/system-settings/vector-service/
-// diagnostics (it reports the NestJS process's vector client counters),
-// POST /api/admin/settings/storage/test (it performs real S3 calls), every
-// vector search/upsert/dedupe/backfill path, every S3 object operation, the
-// actual news-source fetch chain that consumes getSecretsForSource, and all
-// GraphQL, BullMQ and scheduler work.
+// diagnostics (it reports the NestJS process's vector client counters), every
+// vector search/upsert/dedupe/backfill path, every other S3 object operation
+// (avatar uploads, crawl media writes and deletes, cleanup), the actual
+// news-source fetch chain that consumes getSecretsForSource, and all GraphQL,
+// BullMQ and scheduler work.
 package infrastructuresettings

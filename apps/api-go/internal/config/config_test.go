@@ -3571,3 +3571,188 @@ func TestLLMGatewaySettingsEncryptionKeyKeepsRawValue(t *testing.T) {
 		t.Fatalf("key = %q, want the raw value", cfg.LLMGatewaySettingsEncryptionKey)
 	}
 }
+
+// itemsListEnv is the minimal credentialed environment of the two parent
+// switches (GraphQL read + items reading), including the Mongo requirement the
+// items reading switch already implies.
+func itemsListEnv(extra map[string]string) func(string) string {
+	return func(key string) string {
+		if value, ok := extra[key]; ok {
+			return value
+		}
+		switch key {
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://127.0.0.1:27017/app"
+		default:
+			return ""
+		}
+	}
+}
+
+// TestGraphQLItemsListModeSwitch pins the independent sub-switch: empty and
+// legacy keep the root on NestJS, an invalid value fails Load, and go requires
+// both parent switches instead of silently enabling them.
+func TestGraphQLItemsListModeSwitch(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GraphQLItemsListMode != "legacy" {
+		t.Fatalf("default items list mode = %q", cfg.GraphQLItemsListMode)
+	}
+
+	for _, raw := range []string{"", "legacy"} {
+		cfg, err = Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": raw}))
+		if err != nil {
+			t.Fatalf("Load(%q) error = %v", raw, err)
+		}
+		if cfg.GraphQLItemsListMode != "legacy" {
+			t.Fatalf("mode for %q = %q", raw, cfg.GraphQLItemsListMode)
+		}
+	}
+
+	if _, err := Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": "shadow"})); err == nil {
+		t.Fatal("Load() must reject an invalid API_GO_GRAPHQL_ITEMS_LIST_MODE")
+	}
+
+	_, err = Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": "go"}))
+	if err == nil || !strings.Contains(err.Error(), "requires API_GO_GRAPHQL_READ_MODE=go") {
+		t.Fatalf("missing read parent error = %v", err)
+	}
+
+	_, err = Load(itemsListEnv(map[string]string{
+		"API_GO_GRAPHQL_ITEMS_LIST_MODE": "go",
+		"API_GO_GRAPHQL_READ_MODE":       "go",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "requires API_GO_ITEMS_READING_MODE=go") {
+		t.Fatalf("missing items-reading parent error = %v", err)
+	}
+
+	cfg, err = Load(itemsListEnv(map[string]string{
+		"API_GO_GRAPHQL_ITEMS_LIST_MODE": "go",
+		"API_GO_GRAPHQL_READ_MODE":       "go",
+		"API_GO_ITEMS_READING_MODE":      "go",
+	}))
+	if err != nil {
+		t.Fatalf("Load() with both parents error = %v", err)
+	}
+	if cfg.GraphQLItemsListMode != "go" {
+		t.Fatalf("items list mode = %q", cfg.GraphQLItemsListMode)
+	}
+}
+
+func TestStorageDiagnosticsModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.StorageDiagnosticsMode != StorageDiagnosticsModeLegacy {
+		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_STORAGE_DIAGNOSTICS_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.StorageDiagnosticsMode != StorageDiagnosticsModeLegacy {
+		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
+	}
+}
+
+func TestStorageDiagnosticsModeRejectsInvalid(t *testing.T) {
+	// shadow and canary are not accepted: the switch is legacy-or-go only, so a
+	// typo fails startup instead of silently degrading.
+	for _, invalid := range []string{"shadow", "canary", "Go", "test"} {
+		_, err := Load(func(key string) string {
+			if key == "API_GO_STORAGE_DIAGNOSTICS_MODE" {
+				return invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "API_GO_STORAGE_DIAGNOSTICS_MODE must be one of legacy|go") {
+			t.Fatalf("invalid mode %q: %v", invalid, err)
+		}
+	}
+}
+
+func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
+	// Redis is required.
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_STORAGE_DIAGNOSTICS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_STORAGE_DIAGNOSTICS_MODE=go") {
+		t.Fatalf("missing redis: %v", err)
+	}
+
+	// Mongo and every other takeover switch are not startup requirements, and
+	// the switches stay independent of each other.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_STORAGE_DIAGNOSTICS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("go mode must not require Mongo or another switch: %v", err)
+	}
+	if cfg.StorageDiagnosticsMode != StorageDiagnosticsModeGo {
+		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
+	}
+	if cfg.InfrastructureSettingsMode != InfrastructureSettingsModeLegacy ||
+		cfg.CrawlReadTelemetryMode != CrawlReadTelemetryModeLegacy {
+		t.Fatalf("storage diagnostics must not enable other takeovers: infra=%s crawl=%s",
+			cfg.InfrastructureSettingsMode, cfg.CrawlReadTelemetryMode)
+	}
+
+	// The reverse: the diagnostics switch stays legacy when only the other
+	// switches are go.
+	cfg, err = Load(func(key string) string {
+		switch key {
+		case "API_GO_INFRASTRUCTURE_SETTINGS_MODE", "API_GO_CRAWL_READ_TELEMETRY_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://127.0.0.1:27017/app"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.StorageDiagnosticsMode != StorageDiagnosticsModeLegacy {
+		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
+	}
+}

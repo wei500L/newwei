@@ -32,27 +32,7 @@ func wireInfrastructureSettings(gateway *legacyproxy.Gateway, cfg config.Config,
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: infrastructure settings go takeover requires mysql, redis, and jwt")
 	}
-	service := infrastructuresettings.NewService(db, redisClient, infrastructuresettings.Config{
-		VectorEnabled:         cfg.VectorServiceEnabled,
-		VectorFallbackToMongo: cfg.VectorServiceFallbackToMongo,
-		VectorBaseURL:         cfg.VectorServiceBaseURL,
-		VectorToken:           cfg.VectorInternalToken,
-		VectorTimeoutMs:       cfg.VectorServiceTimeoutMs,
-		VectorMaxRetries:      cfg.VectorServiceMaxRetries,
-
-		S3AccessKeyID:            cfg.S3AccessKeyID,
-		S3SecretAccessKey:        cfg.S3SecretAccessKey,
-		S3Region:                 cfg.S3Region,
-		S3Bucket:                 cfg.S3Bucket,
-		S3Endpoint:               cfg.S3Endpoint,
-		S3PublicBaseURL:          cfg.S3PublicBaseURL,
-		S3ForcePathStyle:         cfg.S3ForcePathStyle,
-		S3PresignedURLTTLSeconds: cfg.S3PresignedURLTTLSeconds,
-
-		EncryptionKeyRaw:     cfg.SettingsEncryptionKeyRaw,
-		EncryptionKeyPresent: cfg.SettingsEncryptionKeyPresent,
-		NodeEnv:              cfg.NodeEnv,
-	})
+	service := newInfrastructureSettingsService(cfg, db, redisClient)
 	handler := infrastructuresettings.NewHandler(infrastructuresettings.NewAuthenticator(authenticator, db), service)
 	policy := cors.New(cfg.CorsOrigin)
 	gateway.RegisterGoHandler(legacyproxy.InfrastructureSettingsKey, func(w http.ResponseWriter, r *http.Request) {

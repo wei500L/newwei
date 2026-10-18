@@ -36,11 +36,7 @@ func listChannels(ctx context.Context, db *sql.DB, orgID string) ([]AlertChannel
 		); err != nil {
 			return nil, queryErr("scan channel", err)
 		}
-		decoded, err := decodeJSON(config)
-		if err != nil {
-			return nil, err
-		}
-		channel.Config = decoded
+		channel.Config = jsonScalar(config)
 		channel.CreatedAt = utcTime(channel.CreatedAt)
 		channel.UpdatedAt = utcTime(channel.UpdatedAt)
 		channels = append(channels, channel)

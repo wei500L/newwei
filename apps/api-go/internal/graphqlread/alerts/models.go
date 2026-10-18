@@ -1,21 +1,25 @@
 package alerts
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // GraphQL object types for the migrated alert read queries.
-// Pointer fields are nullable. time.Time is DateTime. any is JSON.
+// Pointer fields are nullable. time.Time is DateTime. JSON scalars carry
+// json.RawMessage so no untyped map ever holds database content.
 // Enum fields are SDL names.
 
 // AlertChannelModel is one notification channel.
 type AlertChannelModel struct {
-	ID        string    `graphql:"id"`
-	Name      string    `graphql:"name"`
-	Type      string    `graphql:"type"`
-	Target    string    `graphql:"target"`
-	IsActive  bool      `graphql:"isActive"`
-	Config    any       `graphql:"config"`
-	CreatedAt time.Time `graphql:"createdAt"`
-	UpdatedAt time.Time `graphql:"updatedAt"`
+	ID        string           `graphql:"id"`
+	Name      string           `graphql:"name"`
+	Type      string           `graphql:"type"`
+	Target    string           `graphql:"target"`
+	IsActive  bool             `graphql:"isActive"`
+	Config    *json.RawMessage `graphql:"config"`
+	CreatedAt time.Time        `graphql:"createdAt"`
+	UpdatedAt time.Time        `graphql:"updatedAt"`
 }
 
 // AlertDeliveryModel is one delivery attempt on an alert event.
@@ -62,7 +66,7 @@ type AlertEventModel struct {
 	ThresholdLower  *float64             `graphql:"thresholdLower"`
 	ThresholdUpper  *float64             `graphql:"thresholdUpper"`
 	ChangeWindowMin *float64             `graphql:"changeWindowMin"`
-	Context         any                  `graphql:"context"`
+	Context         *json.RawMessage     `graphql:"context"`
 	Deliveries      []AlertDeliveryModel `graphql:"deliveries"`
 }
 
