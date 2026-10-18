@@ -1,0 +1,2914 @@
+# 认证要素（MFA 管理 + 组织 OIDC 配置，7 条精确 HTTP）的 Go 真实栈验收。
+#
+# 新开关：API_GO_AUTH_FACTORS_MODE，合法值恰好 ""（空）/ "legacy" / "go"；
+# 空 == legacy，缺省 legacy，其它任何值必须让 api-go 启动失败，日志里必须
+# 含 "API_GO_AUTH_FACTORS_MODE must be one of legacy|go"。go 模式经既有
+# appendAuthRequirements 要求 JWT_SECRET / DATABASE_URL / REDIS_HOST，但
+# 【不】要求 MONGO_URI。
+#
+# 迁移到 Go 的 7 条路由（handler key /api/auth#factors）：
+#   GET  /api/auth/mfa                    AllowAuthenticated  200
+#   POST /api/auth/mfa/enroll             AllowAuthenticated  201
+#   POST /api/auth/mfa/verify-enroll      AllowAuthenticated  201
+#   POST /api/auth/mfa/disable            AllowAuthenticated  201
+#   POST /api/auth/mfa/recovery/rotate    AllowAuthenticated  201
+#   GET  /api/auth/admin/oidc-config      settings.manage     200
+#   PUT  /api/auth/admin/oidc-config      settings.manage     200
+#
+# 永远留在 NestJS（任何模式下都不迁移，绝不在验收里声称已迁移）：
+#   POST /api/auth/mfa/verify-login、POST /api/auth/mfa/enrollment/start、
+#   POST /api/auth/mfa/enrollment/complete、GET /api/auth/sso/oidc/start、
+#   GET /api/auth/oidc/callback、POST /api/auth/sso/handoff/exchange，以及
+#   login / refresh / logout / me / change-password / machine-tokens。
+#   停 NestJS 后这些端点必须 502（Go 不注册它们）。
+#
+# 覆盖范围（按阶段，全部 fail(...) 硬失败，无 continue-on-error）：
+#   A 开关与路由：unset / 空串 / legacy / go 四态；非法值启动失败；
+#     go 模式 7 条由 Go 承接（停 Nest 仍 200）；未列出的方法、尾斜杠、
+#     多余路径不被接管（停 Nest 后 502）；公开挑战端点仍回 NestJS；
+#     回滚只翻转这一个开关。
+#   B MFA 闭环：首次 enroll 的 32 字符 Base32 secret 与逐字节 otpauth URI、
+#     密文落库无明文、错误 TOTP 400、无 factor 400、正确 verify 201 + 8 个
+#     恢复码、AF1 重复完成 400 且旧码集字节不变、活跃 factor 再 enroll 只写
+#     pendingSecret、pending 确认提升并替换恢复码、disable 删除恢复码但不删
+#     factor 行、rotate 的 TOTP 与恢复码两条路径、已用/旧码 401、请求体不能
+#     注入 userId；加密策略矩阵（错 key → 500、缺 key + 生产 → 500、
+#     secretEncryptionEnabled=false 的明文逃生门可用）。
+#   C 跨实现互操作：Go enroll → Nest verify；Nest enroll → Go verify；
+#     Go 生成的恢复码被 Nest 消费；Nest 生成的被 Go 消费；Go 写入的密文由
+#     真实 Nest 登录挑战 + 公开 verify-login 用真实 TOTP 完成；Nest 写入的
+#     密文由 Go 解密（disable）。
+#   D 并发/回滚：Nest 与 Go 并发完成同一 enrollment 只有一个成功、只生成
+#     一套恢复码；同一恢复码并发最多一个成功；两个不同旧码并发 rotate 不
+#     会各自授权后互相覆盖；只在测试库里注入写失败，证明恢复码消费与
+#     管理变更同事务回滚；公开登录的恢复码单次使用与尝试锁定行为不变；
+#     同一用户在 org A/B 共用一把锁；锁竞争 → 409
+#     "MFA settings are being updated by another request; retry later"，
+#     释放后恢复。
+#   E profile 缓存：预热 U 在 A/B 两组织的 profile，verify/disable 后两组织
+#     的 Nest GET /api/auth/me 立刻反映 mfaEnabled；Nest 写/Go 读与 Go 写/
+#     Nest 读都成立；V 的缓存不被删除；缓存里没有 secret 或恢复码。
+#   F OIDC 配置：8 字段默认值、双组织隔离、trim、可选 null、布尔校验、
+#     混合 scopes 过滤保留空白与重复、secret 缺失/null/空白保留（AF4 写入期
+#     原子保留）、首次无 secret 写 SQL NULL、并发 Go/Nest 不带 secret 不覆盖
+#     刚写入的 secret、响应与日志无 secret、保存端点不发任何网络请求、
+#     Nest 登录路径的 HTTPS/SSRF 拒绝仍生效（确定性本地用例，不联系真实 IdP）。
+#   G 停 NestJS：沿用阶段 0 的真实 JWT；确认 Nest 已停且端口不可达；清
+#     profile/auth 策略缓存让 Go 重读真实 DB；7 条仍由 Go 承接并跑完整
+#     enroll/verify/rotate/disable；OIDC 读写可用；公开挑战与 OIDC
+#     start/callback/handoff 回落到 legacy 并 502；api-go 健康检查正常；
+#     重启 NestJS 后能消费 Go 写入的 factor 与恢复码。
+#   H 回滚：API_GO_AUTH_FACTORS_MODE=legacy 把 7 条全部交回 NestJS。
+#
+# 真实性约束：真实 mysql:8.4 / mongo:7.0 / redis:7.2 service、真实 migrate +
+# seed、真实 NestJS 构建与真实 /api/auth/login 签发的 JWT（绝不手工签 JWT、
+# 绝不 mock 鉴权）、真实 infra/docker/api-go.Dockerfile 构建的 api-go 容器。
+# TOTP 只用 Python 标准库 hmac/hashlib/base64 做本地协议计算（不是外部身份
+# 验证）。断言严格：状态码 + 完整 JSON 正文形状 + MySQL 行状态。
+#
+# 触发方式：workflow_dispatch，或 PR 上加 label
+# api-go-auth-factors-smoke。重型真实栈，不进普通 CI。
+name: api-go-auth-factors-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-auth-factors-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-auth-factors-smoke@example.com
+  SMTP_PASS: api-go-auth-factors-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  # 阶段 G 必须在 NestJS 停止后继续使用阶段 0 签发的真实 JWT；默认 15m 在
+  # 多次容器重启的完整 smoke 里会过期，因此 CI 显式放宽有效期。
+  JWT_ACCESS_EXPIRES_IN: 6h
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  # 让限流桶足够大，避免验收脚本自身触碰上限（Nest 与 Go 读同一组 env）。
+  RATE_LIMIT_LOGIN: "1000"
+  RATE_LIMIT_LOGIN_WINDOW: "600"
+  RATE_LIMIT_CRAWL_TASK_CREATE: "1000"
+  RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW: "600"
+  RATE_LIMIT_RBAC_WRITE: "1000"
+  RATE_LIMIT_RBAC_WRITE_WINDOW: "600"
+  RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS: "60"
+  AUTH_PROFILE_CACHE_TTL_SECONDS: "600"
+  AUTH_PROFILE_CACHE_LOCK_TTL_MS: "5000"
+  AUTH_PROFILE_CACHE_MAX_WAIT_MS: "5000"
+  AUTH_PROFILE_CACHE_RETRY_DELAY_MS: "50"
+  # 公开登录挑战的尝试上限显式固定，D 阶段的锁定断言才是确定性的。
+  AUTH_MFA_CHALLENGE_MAX_ATTEMPTS: "5"
+  AUDIT_LOG_RETENTION_DAYS: "90"
+  # 合法的 64 位十六进制 SYSTEM_SETTINGS_ENCRYPTION_KEY。api-go 容器在
+  # Python 的 start_go() 里再显式注入一份同样的值（连同
+  # API_GO_AUTH_FACTORS_MODE）；NODE_ENV=production 也只在启动 NestJS 的
+  # 步骤与 api-go 容器里注入——工作流级 NODE_ENV=production 会让
+  # pnpm install 跳过 devDependencies，构建随即失败。
+  SYSTEM_SETTINGS_ENCRYPTION_KEY: 3f8c1d5a9b2e7046c1a8f3d6e9b0c4a75d2f8e1b6c3a9d0e4f7b2c5a8d1e6f30
+  API_GO_AUTH_FACTORS_MODE: legacy
+  SEED_ORG_SLUG: api-go-auth-factors-smoke-org
+  SEED_ORG_NAME: api-go Auth Factors Smoke Org
+  SEED_ADMIN_EMAIL: api-go-auth-factors-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: "ApiGoAuthFactors#2026-Ci"
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-auth-factors-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-auth-factors-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-auth-factors:ci .
+      - name: Exercise auth factors routes
+        run: |
+          set -euo pipefail
+          python3 -u - << 'PY'
+          import base64
+          import hashlib
+          import hmac
+          import json
+          import os
+          import re
+          import signal
+          import struct
+          import subprocess
+          import threading
+          import time
+          import traceback
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+
+          def _on_sigterm(signum, frame):
+              """Prints where the step was when the runner asked it to stop."""
+              print("SIGTERM received at:", flush=True)
+              traceback.print_stack(frame)
+              os._exit(143)
+
+
+          signal.signal(signal.SIGTERM, _on_sigterm)
+
+          NEST_URL = "http://127.0.0.1:4000"
+          GO_URL = "http://127.0.0.1:4020"
+          GO_CONTAINER = "api-go-auth-factors-smoke"
+          GO_IMAGE = "api-go-auth-factors:ci"
+
+          VALID_KEY = os.environ["SYSTEM_SETTINGS_ENCRYPTION_KEY"].strip()
+          # 另一把合法的 64 位十六进制 key：用它解密必然 GCM tag 校验失败，
+          # 于是 decodeSecret 抛错（不是"没有 secret"）。
+          WRONG_KEY = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+
+          MODE_ERROR = "API_GO_AUTH_FACTORS_MODE must be one of legacy|go"
+          ENROLL_NOT_INITIALIZED = "MFA enrollment is not initialized"
+          INVALID_CODE = "Invalid MFA verification code"
+          CHALLENGE_LOCKED = "Too many MFA verification attempts. Please sign in again."
+          CHALLENGE_INVALID = "MFA challenge is invalid or expired"
+          ENROLL_CHALLENGE_INVALID = "MFA enrollment challenge is invalid or expired"
+          HANDOFF_INVALID = "SSO handoff token is invalid or expired"
+          OIDC_NOT_CONFIGURED = "OIDC is not configured for this organization"
+          LOCK_BUSY = "MFA settings are being updated by another request; retry later"
+          HUMAN_REQUIRED = "MFA management requires a human user"
+          INTERNAL_MESSAGE = "Internal server error"
+          PERMISSION_CODE = "INSUFFICIENT_PERMISSIONS"
+          PERMISSION_MESSAGE = "Insufficient permissions"
+          PERMISSION_DETAIL = "Requires any permission: settings.manage"
+          OIDC_HTTPS_MESSAGE = "OIDC discovery URL must use HTTPS"
+          OIDC_SSRF_MESSAGE = "OIDC discovery URL is not allowed"
+          SYSTEM_SECURITY_KEY = "system_security"
+          SYSTEM_SECURITY_CACHE = "auth:system-security"
+          PROFILE_PREFIX = "profile:"
+
+          ISO_MS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+          BASE32_RE = re.compile(r"^[A-Z2-7]{32}$")
+          RECOVERY_RE = re.compile(r"^[0-9A-F]{10}$")
+          BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+
+          MFA_STATUS_KEYS = ["enabled", "enrolledAt", "verifiedAt", "lastUsedAt",
+                             "recoveryCodesRemaining"]
+          MFA_RECOVERY_KEYS = ["recoveryCodes"] + MFA_STATUS_KEYS
+          OIDC_KEYS = ["enabled", "issuerUrl", "discoveryUrl", "clientId", "hasClientSecret",
+                       "scopes", "buttonLabel", "requireEmailVerified"]
+          OIDC_DEFAULT_SCOPES = ["openid", "email", "profile"]
+          OIDC_DEFAULTS = {
+              "enabled": False, "issuerUrl": "", "discoveryUrl": "", "clientId": "",
+              "hasClientSecret": False, "scopes": OIDC_DEFAULT_SCOPES, "buttonLabel": "",
+              "requireEmailVerified": True,
+          }
+
+          MFA_PATH = "/api/auth/mfa"
+          ENROLL_PATH = "/api/auth/mfa/enroll"
+          VERIFY_ENROLL_PATH = "/api/auth/mfa/verify-enroll"
+          DISABLE_PATH = "/api/auth/mfa/disable"
+          ROTATE_PATH = "/api/auth/mfa/recovery/rotate"
+          OIDC_PATH = "/api/auth/admin/oidc-config"
+          VERIFY_LOGIN_PATH = "/api/auth/mfa/verify-login"
+          ENROLL_START_PATH = "/api/auth/mfa/enrollment/start"
+          ENROLL_COMPLETE_PATH = "/api/auth/mfa/enrollment/complete"
+          OIDC_START_PATH = "/api/auth/sso/oidc/start"
+          OIDC_CALLBACK_PATH = "/api/auth/oidc/callback"
+          HANDOFF_PATH = "/api/auth/sso/handoff/exchange"
+          LOGIN_PATH = "/api/auth/login"
+          ME_PATH = "/api/auth/me"
+
+          GO_ROUTES = [
+              ("GET", MFA_PATH),
+              ("POST", ENROLL_PATH),
+              ("POST", VERIFY_ENROLL_PATH),
+              ("POST", DISABLE_PATH),
+              ("POST", ROTATE_PATH),
+              ("GET", OIDC_PATH),
+              ("PUT", OIDC_PATH),
+          ]
+
+          # 任何模式下都必须留在 NestJS 的端点：停 Nest 后经 api-go 必须 502。
+          NEST_ONLY_ROUTES = [
+              ("POST", VERIFY_LOGIN_PATH),
+              ("POST", ENROLL_START_PATH),
+              ("POST", ENROLL_COMPLETE_PATH),
+              ("GET", OIDC_START_PATH),
+              ("GET", OIDC_CALLBACK_PATH),
+              ("POST", HANDOFF_PATH),
+              ("POST", LOGIN_PATH),
+              ("POST", "/api/auth/refresh"),
+              ("POST", "/api/auth/logout"),
+              ("GET", ME_PATH),
+              ("POST", "/api/auth/change-password"),
+              ("GET", "/api/auth/machine-tokens"),
+          ]
+
+          # 公开挑战端点 + OIDC 登录链的"仍到达 NestJS"探针（无副作用，状态码
+          # 与文案固定）。OIDC start 用未配置的 org C → 400。
+          PUBLIC_PROBES = [
+              ("POST", VERIFY_LOGIN_PATH, {"challengeId": "af-smoke-missing", "code": "000000"},
+               401, CHALLENGE_INVALID),
+              ("POST", ENROLL_START_PATH, {"challengeId": "af-smoke-missing"},
+               401, ENROLL_CHALLENGE_INVALID),
+              ("POST", ENROLL_COMPLETE_PATH, {"challengeId": "af-smoke-missing", "code": "000000"},
+               401, ENROLL_CHALLENGE_INVALID),
+              ("GET", OIDC_START_PATH + "?org=af-smoke-org-c", None, 400, OIDC_NOT_CONFIGURED),
+              ("POST", HANDOFF_PATH, {"handoffToken": "af-smoke-missing"}, 401, HANDOFF_INVALID),
+          ]
+
+          # 除本批次开关外，其它迁移开关一律 legacy，确保只有 auth factors
+          # 被接管。API_GO_ONBOARDING_MODE / API_GO_USER_SETTINGS_READ_MODE
+          # 不接受 legacy，故意不注入（走既有缺省）。
+          OTHER_MODES = [
+              "API_GO_USER_SETTINGS_WRITE_MODE",
+              "API_GO_PUBLIC_PORTAL_MODE",
+              "API_GO_DASHBOARD_STATS_MODE",
+              "API_GO_DASHBOARD_CHARTS_MODE",
+              "API_GO_DASHBOARD_WAR_MAP_MODE",
+              "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE",
+              "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE",
+              "API_GO_DASHBOARD_SPACETIME_GEO_MODE",
+              "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE",
+              "API_GO_DASHBOARD_STREAM_MODE",
+              "API_GO_HEALTHZ_MODE",
+              "API_GO_CONTENT_SUBSCRIPTIONS_MODE",
+              "API_GO_USER_NEWS_BEHAVIOR_MODE",
+              "API_GO_USER_DIGEST_MODE",
+              "API_GO_ANALYSIS_VIEWS_MODE",
+              "API_GO_ANALYSIS_BOARDS_MODE",
+              "API_GO_ANALYSIS_THREADS_MODE",
+              "API_GO_SITUATION_MONITORS_MODE",
+              "API_GO_NEWS_SOURCES_MODE",
+              "API_GO_CRAWL_WORKFLOWS_MODE",
+              "API_GO_CRAWL_PROFILES_MODE",
+              "API_GO_CRAWL_FRONTIER_RUNS_MODE",
+              "API_GO_RBAC_MODE",
+              "API_GO_CRAWL_TEMPLATES_MODE",
+              "API_GO_LLM_LOGS_MODE",
+              "API_GO_ADMIN_LOGS_MODE",
+              "API_GO_NEWS_INDICATORS_MODE",
+              "API_GO_QUALITY_OVERVIEW_MODE",
+              "API_GO_CLASSIFICATION_RSS_OPS_MODE",
+              "API_GO_NEWSNOW_CLUSTERING_OPS_MODE",
+              "API_GO_CRAWL_READ_TELEMETRY_MODE",
+              "API_GO_RUNTIME_SETTINGS_MODE",
+              "API_GO_INFRASTRUCTURE_SETTINGS_MODE",
+              "API_GO_GRAPHQL_READ_MODE",
+              "API_GO_GRAPHQL_NEWS_EVENTS_MODE",
+              "API_GO_GRAPHQL_KG_IMPACT_MODE",
+              "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE",
+              "API_GO_GRAPHQL_WORKSPACE_READ_MODE",
+              "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE",
+          ]
+
+          # ---- fixtures ----
+          org_a = "af-smoke-org-a"
+          org_b = "af-smoke-org-b"
+          org_c = "af-smoke-org-c"
+          role_settings_a = "af-smoke-role-settings-a"
+          role_plain_a = "af-smoke-role-plain-a"
+          role_settings_b = "af-smoke-role-settings-b"
+          role_plain_b = "af-smoke-role-plain-b"
+          role_plain_c = "af-smoke-role-plain-c"
+
+          user_u = "af-smoke-user-u"
+          user_v = "af-smoke-user-v"
+          user_w = "af-smoke-user-w"
+          user_n = "af-smoke-user-n"
+
+          p_closed_nest = "af-smoke-p1"
+          p_closed_go = "af-smoke-p2"
+          p_interop_go_enroll = "af-smoke-p3"
+          p_interop_nest_enroll = "af-smoke-p4"
+          p_interop_login = "af-smoke-p5"
+          p_interop_go_codes = "af-smoke-p6"
+          p_interop_nest_codes = "af-smoke-p7"
+          p_concurrent_enroll = "af-smoke-p8"
+          p_concurrent_code = "af-smoke-p9"
+          p_concurrent_rotate = "af-smoke-p10"
+          p_af2_rotate = "af-smoke-p11"
+          p_af2_disable = "af-smoke-p12"
+          p_lock = "af-smoke-p13"
+          p_wrong_key = "af-smoke-p14"
+          p_missing_key = "af-smoke-p15"
+          p_plain_key = "af-smoke-p16"
+          p_nest_down = "af-smoke-p17"
+          p_rollback = "af-smoke-p18"
+          p_recovery_disable = "af-smoke-p19"
+          p_recovery_disable_go = "af-smoke-p20"
+          p_recovery_states_nest = "af-smoke-p21"
+          p_recovery_states_go = "af-smoke-p22"
+          p_public_login = "af-smoke-p23"
+
+          POOL_USERS = [
+              p_closed_nest, p_closed_go, p_interop_go_enroll, p_interop_nest_enroll,
+              p_interop_login, p_interop_go_codes, p_interop_nest_codes, p_concurrent_enroll,
+              p_concurrent_code, p_concurrent_rotate, p_af2_rotate, p_af2_disable,
+              p_lock, p_wrong_key, p_missing_key, p_plain_key, p_nest_down, p_rollback,
+              p_recovery_disable, p_recovery_disable_go, p_recovery_states_nest,
+              p_recovery_states_go, p_public_login,
+          ]
+
+          mtk_allow = "mtk_af_smoke_allow_000000000001"
+          mtk_deny = "mtk_af_smoke_deny_0000000000001"
+          mtk_expired = "mtk_af_smoke_expired_0000000001"
+          mtk_revoked = "mtk_af_smoke_revoked_0000000001"
+
+
+          def email_of(user_id):
+              return user_id + "@example.com"
+
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+
+          def require(label, got, want):
+              if got != want:
+                  fail(f"{label}: got {got!r}, want {want!r}")
+
+
+          def require_keys(label, doc, keys):
+              if not isinstance(doc, dict):
+                  fail(f"{label}: body is not a JSON object: {doc!r}")
+              if sorted(doc.keys()) != sorted(keys):
+                  fail(f"{label}: keys {sorted(doc.keys())!r}, want {sorted(keys)!r}")
+
+
+          def require_iso_ms(label, value):
+              if not isinstance(value, str) or not ISO_MS.match(value):
+                  fail(f"{label}: {value!r} is not a millisecond precision UTC ISO string")
+              return value
+
+
+          def require_recent_iso(label, value, seconds=600):
+              require_iso_ms(label, value)
+              parsed = time.mktime(time.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ"))
+              delta = abs(time.time() - parsed)
+              if delta > seconds:
+                  fail(f"{label}: {value!r} is {delta:.0f}s away from now, want <= {seconds}s")
+              return value
+
+
+          def db_time_to_iso(value):
+              return value.replace(" ", "T") + "Z"
+
+
+          def js_encode_uri_component(value):
+              # encodeURIComponent 的未转义集合是
+              # A-Za-z0-9 - _ . ! ~ * ' ( )；'@' 会变成 %40，'+' 会变成 %2B。
+              return urllib.parse.quote(value, safe="!*'()")
+
+
+          if js_encode_uri_component("a+b@example.com") != "a%2Bb%40example.com":
+              fail("local encodeURIComponent mirror is wrong: " + js_encode_uri_component("a+b@example.com"))
+
+
+          def expected_otpauth(account_name, secret):
+              issuer = js_encode_uri_component("Modular")
+              account = js_encode_uri_component(account_name)
+              return ("otpauth://totp/" + issuer + ":" + account + "?secret=" + secret +
+                      "&issuer=" + issuer + "&algorithm=SHA1&digits=6&period=30")
+
+
+          # ---- TOTP (RFC 6238, 本地协议计算) ----
+          def base32_decode(secret):
+              normalized = secret.strip().upper().rstrip("=")
+              bits = 0
+              value = 0
+              out = bytearray()
+              for char in normalized:
+                  index = BASE32_ALPHABET.find(char)
+                  if index < 0:
+                      fail("invalid base32 character in secret: " + char)
+                  value = (value << 5) | index
+                  bits += 5
+                  if bits >= 8:
+                      out.append((value >> (bits - 8)) & 0xFF)
+                      bits -= 8
+              return bytes(out)
+
+
+          def base32_encode(data):
+              bits = 0
+              value = 0
+              out = ""
+              for byte in data:
+                  value = (value << 8) | byte
+                  bits += 8
+                  while bits >= 5:
+                      out += BASE32_ALPHABET[(value >> (bits - 5)) & 31]
+                      bits -= 5
+              if bits > 0:
+                  out += BASE32_ALPHABET[(value << (5 - bits)) & 31]
+              return out
+
+
+          def random_secret():
+              return base32_encode(os.urandom(20))
+
+
+          def totp_at(secret, counter):
+              digest = hmac.new(base32_decode(secret), struct.pack(">Q", counter), hashlib.sha1).digest()
+              offset = digest[len(digest) - 1] & 0x0F
+              binary = (((digest[offset] & 0x7F) << 24) | (digest[offset + 1] << 16) |
+                        (digest[offset + 2] << 8) | digest[offset + 3])
+              return str(binary % 1000000).zfill(6)
+
+
+          def totp_now(secret, offset=0):
+              return totp_at(secret, int(time.time() // 30) + offset)
+
+
+          def wrong_totp(secret):
+              valid = {totp_now(secret, -1), totp_now(secret), totp_now(secret, 1)}
+              for candidate in ("000000", "111111", "123456", "654321", "999999"):
+                  if candidate not in valid:
+                      return candidate
+              fail("could not build a wrong TOTP code")
+
+
+          # ---- docker / mysql / redis helpers（沿用参考工作流） ----
+          def container_id(ancestor):
+              found = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor],
+                                              text=True).split()
+              if not found:
+                  fail("no running container for " + ancestor)
+              return found[0]
+
+
+          def sql(statement):
+              cid = container_id("mysql:8.4")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "-B", "app"],
+                                    input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("mysql: " + (proc.stderr or proc.stdout) + "\nstatement: " + statement[:400])
+              return proc.stdout.strip()
+
+
+          def sql_rows(statement):
+              return [line.split("\t") for line in sql(statement).splitlines() if line != ""]
+
+
+          def scalar(statement):
+              rows = sql_rows(statement)
+              return rows[-1][0] if rows else ""
+
+
+          def redis(*args):
+              cid = container_id("redis:7.2")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "redis-cli", "--raw", *args],
+                                    text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("redis: " + (proc.stderr or proc.stdout))
+              return proc.stdout.strip()
+
+
+          def redis_scan(pattern):
+              cid = container_id("redis:7.2")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "redis-cli", "--raw", "--scan",
+                                     "--pattern", pattern], text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("redis scan: " + (proc.stderr or proc.stdout))
+              return [line for line in proc.stdout.splitlines() if line != ""]
+
+
+          def redis_get(key):
+              # 不检查退出码：非 string 类型只返回空，不当作失败。
+              cid = container_id("redis:7.2")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "redis-cli", "--raw", "GET", key],
+                                    text=True, capture_output=True)
+              return proc.stdout
+
+
+          def redis_del_pattern(pattern):
+              keys = redis_scan(pattern)
+              if keys:
+                  redis("DEL", *keys)
+              return len(keys)
+
+
+          def sql_escape(text):
+              return text.replace("\\", "\\\\").replace("'", "''")
+
+
+          # ---- HTTP helpers ----
+          class _NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+
+          NO_REDIRECT = urllib.request.build_opener(_NoRedirect)
+
+
+          def call_headers(base, path, method="GET", token=None, payload=None, timeout=60, follow=True):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              opener = urllib.request.urlopen if follow else NO_REDIRECT.open
+              try:
+                  with opener(req, timeout=timeout) as resp:
+                      return resp.status, resp.read(), dict(resp.headers)
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read(), dict(exc.headers)
+
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=60):
+              status, raw, _ = call_headers(base, path, method, token, payload, timeout)
+              return status, raw
+
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              try:
+                  return json.loads(text)
+              except ValueError:
+                  return None
+
+
+          def parse_json_text(text):
+              if text is None or text == "":
+                  return None
+              try:
+                  return json.loads(text)
+              except ValueError:
+                  return text
+
+
+          def message_of(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+
+          def canon(value):
+              if isinstance(value, dict):
+                  if value.get("__enc") == "system-settings:v1":
+                      return "<encrypted>"
+                  out = {}
+                  for key, item in value.items():
+                      if key in ("traceId", "timestamp", "path", "updatedAt"):
+                          out[key] = "<ts>"
+                      else:
+                          out[key] = canon(item)
+                  return out
+              if isinstance(value, list):
+                  return [canon(item) for item in value]
+              return value
+
+
+          def request_json(label, base, method, path, token=None, payload=None, expected=200,
+                           expected_message=None, timeout=60):
+              status, raw = call(base, path, method, token, payload, timeout)
+              if status != expected:
+                  fail(f"{label}: {method} {path} -> {status} {raw[:400]!r}, want {expected}")
+              if expected_message is not None:
+                  got = message_of(raw)
+                  if got != expected_message:
+                      fail(f"{label}: message {got!r} want {expected_message!r} raw={raw[:400]!r}")
+              return body(raw)
+
+
+          def request_status(label, base, method, path, token=None, payload=None, expected=200,
+                             timeout=60):
+              status, raw = call(base, path, method, token, payload, timeout)
+              if status != expected:
+                  fail(f"{label}: {method} {path} -> {status} {raw[:400]!r}, want {expected}")
+              return raw
+
+
+          def require_error_body(label, raw, status, message, error_name=None):
+              doc = body(raw)
+              if not isinstance(doc, dict):
+                  fail(f"{label}: error body is not a JSON object: {raw[:300]!r}")
+              require(label + " statusCode", doc.get("statusCode"), status)
+              require(label + " message", doc.get("message"), message)
+              if error_name is not None:
+                  require(label + " error", doc.get("error"), error_name)
+
+
+          def docker_logs():
+              proc = subprocess.run(["docker", "logs", GO_CONTAINER], text=True, capture_output=True)
+              return (proc.stdout + proc.stderr)[-6000:]
+
+
+          def log_tail(path, lines=60):
+              try:
+                  with open(path, "r", errors="replace") as handle:
+                      return "".join(handle.readlines()[-lines:])
+              except OSError:
+                  return ""
+
+
+          def nest_log_contains(needle):
+              return needle in log_tail("/tmp/api-nestjs.log", 4000)
+
+
+          # ---- NestJS 生命周期 ----
+          def stop_nest():
+              # SIGTERM 只发给记录下来的 pid。这里绝不能 killpg：NestJS 的
+              # 初始后台进程属于 workflow step shell 的进程组，杀那个组会
+              # 把本步骤自己 SIGTERM 掉（现象是 "The operation was canceled."）。
+              pid_path = "/tmp/api-nestjs.pid"
+              if os.path.exists(pid_path):
+                  raw = open(pid_path).read().strip()
+                  if raw.isdigit():
+                      try:
+                          os.kill(int(raw), signal.SIGTERM)
+                      except Exception:
+                          pass
+              subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False, capture_output=True)
+              subprocess.run(["pkill", "-f", "node dist/main.js"], check=False, capture_output=True)
+              for _ in range(30):
+                  try:
+                      urllib.request.urlopen(NEST_URL + "/api/healthz/live", timeout=2).read()
+                  except Exception:
+                      return
+                  time.sleep(1)
+              fail("nestjs did not stop")
+
+
+          def nest_reachable():
+              try:
+                  urllib.request.urlopen(NEST_URL + "/api/healthz/live", timeout=3).read()
+                  return True
+              except Exception:
+                  return False
+
+
+          def start_nest(encryption_key=VALID_KEY):
+              stop_nest()
+              env = dict(os.environ)
+              env["NODE_ENV"] = "production"
+              env["PORT"] = "4000"
+              if encryption_key is None:
+                  env.pop("SYSTEM_SETTINGS_ENCRYPTION_KEY", None)
+              else:
+                  env["SYSTEM_SETTINGS_ENCRYPTION_KEY"] = encryption_key
+              log = open("/tmp/api-nestjs.log", "w")
+              proc = subprocess.Popen(["pnpm", "--filter", "@modular/api", "run", "start"],
+                                      env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+              with open("/tmp/api-nestjs.pid", "w") as handle:
+                  handle.write(str(proc.pid))
+              for _ in range(90):
+                  try:
+                      status, _ = call(NEST_URL, "/api/healthz/live", timeout=3)
+                      if status == 200:
+                          print("nestjs up (encryptionKey=%s)" % (
+                              "valid" if encryption_key == VALID_KEY
+                              else ("absent" if encryption_key is None else "wrong")))
+                          return
+                  except Exception:
+                      pass
+                  time.sleep(2)
+              fail("nestjs did not become healthy after restart:\n" + log_tail("/tmp/api-nestjs.log"))
+
+
+          # ---- api-go 生命周期 ----
+          def go_env(mode, encryption_key=VALID_KEY, overrides=None, omit=()):
+              env = {
+                  "PORT": "4020",
+                  "LEGACY_API_URL": "http://host.docker.internal:4000",
+                  "DATABASE_URL": "mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI": "mongodb://host.docker.internal:27017/app",
+                  "API_GO_AUTH_FACTORS_MODE": mode,
+                  "NODE_ENV": "production",
+                  "VECTOR_SERVICE_ENABLED": "false",
+                  "VECTOR_SERVICE_FALLBACK_TO_MONGO": "true",
+                  "VECTOR_SERVICE_BASE_URL": "",
+                  "VECTOR_INTERNAL_TOKEN": "",
+                  "VECTOR_SERVICE_TIMEOUT_MS": "5000",
+                  "VECTOR_SERVICE_MAX_RETRIES": "2",
+                  "S3_ACCESS_KEY_ID": "",
+                  "S3_SECRET_ACCESS_KEY": "",
+                  "S3_REGION": "us-east-1",
+                  "S3_BUCKET": "",
+                  "S3_ENDPOINT": "",
+                  "S3_PUBLIC_BASE_URL": "",
+                  "S3_FORCE_PATH_STYLE": "false",
+                  "S3_PRESIGNED_URL_TTL_SECONDS": "300",
+                  "RATE_LIMIT_LOGIN": "1000",
+                  "RATE_LIMIT_LOGIN_WINDOW": "600",
+                  "RATE_LIMIT_CRAWL_TASK_CREATE": "1000",
+                  "RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW": "600",
+                  "RATE_LIMIT_RBAC_WRITE": "1000",
+                  "RATE_LIMIT_RBAC_WRITE_WINDOW": "600",
+                  "RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS": "60",
+                  "AUTH_PROFILE_CACHE_TTL_SECONDS": "600",
+                  "AUTH_PROFILE_CACHE_LOCK_TTL_MS": "5000",
+                  "AUTH_PROFILE_CACHE_MAX_WAIT_MS": "5000",
+                  "AUTH_PROFILE_CACHE_RETRY_DELAY_MS": "50",
+                  "AUTH_MFA_CHALLENGE_MAX_ATTEMPTS": "5",
+                  "AUDIT_LOG_RETENTION_DAYS": "90",
+                  "REALTIME_SIGNALS_ENABLED": "false",
+                  "ELASTICSEARCH_ENABLED": "false",
+                  "MODEL_SERVICE_ENABLED": "false",
+                  "SCHEDULE_ENABLED": "false",
+                  "JWT_SECRET": os.environ["JWT_SECRET"],
+                  "JWT_ISSUER": os.environ["JWT_ISSUER"],
+                  "JWT_AUDIENCE": os.environ["JWT_AUDIENCE"],
+                  "REDIS_HOST": "host.docker.internal",
+                  "REDIS_PORT": "6379",
+                  "CANARY_PERCENT": "0",
+                  "CORS_ORIGIN": os.environ["CORS_ORIGIN"],
+              }
+              for name in OTHER_MODES:
+                  env[name] = "legacy"
+              if encryption_key is not None:
+                  env["SYSTEM_SETTINGS_ENCRYPTION_KEY"] = encryption_key
+              if overrides:
+                  env.update(overrides)
+              for name in omit:
+                  env.pop(name, None)
+              return [key + "=" + value for key, value in env.items()]
+
+
+          def go_run(mode, encryption_key=VALID_KEY, overrides=None, omit=()):
+              subprocess.run(["docker", "rm", "-f", GO_CONTAINER], check=False, capture_output=True)
+              cmd = ["docker", "run", "-d", "--name", GO_CONTAINER,
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20",
+                     "--health-start-period", "5s", "-p", "127.0.0.1:4020:4020"]
+              for item in go_env(mode, encryption_key, overrides, omit):
+                  cmd.extend(["-e", item])
+              cmd.append(GO_IMAGE)
+              subprocess.check_call(cmd, stdout=subprocess.DEVNULL)
+              return GO_CONTAINER
+
+
+          def start_go(mode, encryption_key=VALID_KEY, overrides=None, omit=()):
+              go_run(mode, encryption_key, overrides, omit)
+              for _ in range(45):
+                  status = subprocess.check_output(
+                      ["docker", "inspect", "--format", "{{.State.Health.Status}}", GO_CONTAINER],
+                      text=True).strip()
+                  if status == "healthy":
+                      print("api-go up authFactorsMode=%r encryptionKey=%s" % (
+                          mode, "valid" if encryption_key == VALID_KEY
+                          else ("absent" if encryption_key is None else "wrong")))
+                      return
+                  if status == "unhealthy":
+                      fail(docker_logs())
+                  time.sleep(2)
+              fail("api-go never became healthy:\n" + docker_logs())
+
+
+          def start_go_expect_failure(label, expected_message, mode="go", overrides=None, omit=()):
+              go_run(mode, VALID_KEY, overrides, omit)
+              running = "true"
+              deadline = time.time() + 90
+              while time.time() < deadline:
+                  running = subprocess.check_output(
+                      ["docker", "inspect", "--format", "{{.State.Running}}", GO_CONTAINER],
+                      text=True).strip()
+                  if running == "false":
+                      break
+                  time.sleep(1)
+              if running != "false":
+                  fail(label + ": api-go stayed running (mode=%r omit=%r); logs=%s"
+                       % (mode, list(omit), docker_logs()[-1500:]))
+              exit_code = subprocess.check_output(
+                  ["docker", "inspect", "--format", "{{.State.ExitCode}}", GO_CONTAINER], text=True).strip()
+              if exit_code == "0":
+                  fail(label + ": api-go exited 0, want a non-zero exit; logs=" + docker_logs()[-1500:])
+              logs = docker_logs()
+              if expected_message not in logs:
+                  fail(label + ": log does not contain " + repr(expected_message) + "; logs=" + logs[-2000:])
+              print(label + " ok (exit " + exit_code + ", log contains " + repr(expected_message) + ")")
+
+
+          def go_health():
+              status, raw = call(GO_URL, "/__go/healthz", "GET", None, None, 20)
+              if status != 200:
+                  fail("api-go healthz -> %s %r" % (status, raw[:300]))
+              doc = body(raw)
+              if not isinstance(doc, dict) or doc.get("ok") is not True:
+                  fail("api-go healthz body is not ok: " + repr(doc))
+              return doc
+
+
+          def go_auth_route_modes():
+              """api-go 自省路由表里 /api/auth 下的 (prefix, mode, methods) 集合。"""
+              found = []
+              for entry in go_health().get("routes") or []:
+                  prefix = entry.get("prefix") or ""
+                  if prefix.startswith("/api/auth"):
+                      found.append((prefix, entry.get("mode"), entry.get("methods")))
+              return found
+
+
+          def require_go_owns(route_prefix, method):
+              for prefix, mode, methods in go_auth_route_modes():
+                  if mode != "go":
+                      continue
+                  if route_prefix == prefix or route_prefix.startswith(prefix):
+                      if methods is None or method in methods.split(","):
+                          return
+              fail("route table does not show %s %s owned by go: %r"
+                   % (method, route_prefix, go_auth_route_modes()))
+
+
+          def require_go_owns_nothing():
+              for prefix, mode, _ in go_auth_route_modes():
+                  if mode == "go":
+                      fail("rollback left a /api/auth route in go mode: " + repr(go_auth_route_modes()))
+
+
+          # ---- 身份 / 真实登录 ----
+          def login_doc(email, org_id=None):
+              payload = {"email": email, "password": os.environ["SEED_ADMIN_PASSWORD"]}
+              if org_id:
+                  payload["orgId"] = org_id
+              status, raw = call(NEST_URL, LOGIN_PATH, "POST", None, payload)
+              if status not in (200, 201):
+                  fail(f"login {email} org={org_id} -> {status} {raw[:300]!r}")
+              doc = body(raw)
+              if not isinstance(doc, dict):
+                  fail(f"login {email} org={org_id}: body is not an object: {raw[:300]!r}")
+              return doc
+
+
+          def login(email, org_id=None):
+              doc = login_doc(email, org_id)
+              token = doc.get("accessToken")
+              if not token:
+                  fail(f"login {email} org={org_id} did not return an accessToken: {doc!r}")
+              return token
+
+
+          def jwt_claims(token):
+              payload = token.split(".")[1]
+              payload += "=" * (-len(payload) % 4)
+              return json.loads(base64.urlsafe_b64decode(payload))
+
+
+          def jwt_jti(token):
+              return jwt_claims(token).get("jti")
+
+
+          # ---- 加密信封（与 NestJS storage-settings.crypto v1 同格式） ----
+          def encrypt_v1(plain, key=None):
+              script = (
+                  "const c=require('node:crypto');"
+                  "const [plain,key]=process.argv.slice(1);"
+                  "const iv=c.randomBytes(12);"
+                  "const ci=c.createCipheriv('aes-256-gcm',Buffer.from(key,'hex'),iv);"
+                  "const data=Buffer.concat([ci.update(Buffer.from(plain,'utf8')),ci.final()]);"
+                  "process.stdout.write(JSON.stringify({__enc:'system-settings:v1',alg:'aes-256-gcm',"
+                  "iv:iv.toString('base64'),tag:ci.getAuthTag().toString('base64'),"
+                  "data:data.toString('base64')}));"
+              )
+              proc = subprocess.run(["node", "-e", script, plain, key or VALID_KEY],
+                                    capture_output=True, text=True)
+              if proc.returncode != 0:
+                  fail("v1 encryption failed: " + proc.stderr[-300:])
+              return json.loads(proc.stdout)
+
+
+          def decrypt_v1(envelope, key=None):
+              if not isinstance(envelope, dict) or envelope.get("__enc") != "system-settings:v1":
+                  fail("expected a v1 envelope, got " + json.dumps(envelope)[:200])
+              script = (
+                  "const c=require('node:crypto');"
+                  "const [iv,tag,data,key]=process.argv.slice(1);"
+                  "const d=c.createDecipheriv('aes-256-gcm',Buffer.from(key,'hex'),Buffer.from(iv,'base64'));"
+                  "d.setAuthTag(Buffer.from(tag,'base64'));"
+                  "process.stdout.write(Buffer.concat([d.update(Buffer.from(data,'base64')),d.final()]).toString('utf8'));"
+              )
+              proc = subprocess.run(["node", "-e", script, envelope["iv"], envelope["tag"], envelope["data"],
+                                     key or VALID_KEY], capture_output=True, text=True)
+              if proc.returncode != 0:
+                  fail("v1 decryption failed: " + proc.stderr[-300:])
+              return proc.stdout
+
+
+          # ---- MySQL 行状态 ----
+          def factor_state(user_id):
+              rows = sql_rows(
+                  "SELECT IFNULL(CAST(secret AS CHAR),'<null>'), "
+                  "IFNULL(CAST(pendingSecret AS CHAR),'<null>'), "
+                  "IFNULL(label,'<null>'), IFNULL(pendingLabel,'<null>'), "
+                  "IFNULL(CAST(pendingStartedAt AS CHAR),'<null>'), "
+                  "IFNULL(CAST(verifiedAt AS CHAR),'<null>'), "
+                  "IFNULL(CAST(disabledAt AS CHAR),'<null>'), "
+                  "IFNULL(CAST(lastUsedAt AS CHAR),'<null>'), "
+                  "IFNULL(CAST(enrolledAt AS CHAR),'<null>') "
+                  "FROM UserTotpFactor WHERE userId='" + user_id + "'")
+              return tuple(rows[0]) if rows else None
+
+
+          def recovery_rows(user_id):
+              return sql_rows("SELECT codeHash, IFNULL(CAST(usedAt AS CHAR),'<null>') "
+                              "FROM UserRecoveryCode WHERE userId='" + user_id + "' ORDER BY codeHash")
+
+
+          def recovery_hashes(user_id):
+              return sorted(row[0] for row in recovery_rows(user_id))
+
+
+          def unused_recovery_count(user_id):
+              return int(scalar("SELECT COUNT(*) FROM UserRecoveryCode WHERE userId='" + user_id
+                                + "' AND usedAt IS NULL"))
+
+
+          def hash_code(code):
+              return hashlib.sha256(code.encode()).hexdigest()
+
+
+          def assert_no_plaintext_in_db(label, needles):
+              """扫描所有可能落库的文本列，确认明文 secret / 恢复码没有入库。"""
+              union = ("SELECT CAST(secret AS CHAR) AS t FROM UserTotpFactor "
+                       "UNION ALL SELECT CAST(pendingSecret AS CHAR) FROM UserTotpFactor "
+                       "UNION ALL SELECT codeHash FROM UserRecoveryCode "
+                       "UNION ALL SELECT CAST(metadata AS CHAR) FROM AuditLog "
+                       "UNION ALL SELECT CAST(payload AS CHAR) FROM AuthChallenge "
+                       "UNION ALL SELECT CAST(value AS CHAR) FROM SystemSetting "
+                       "UNION ALL SELECT CAST(clientSecret AS CHAR) FROM OrgOidcConfig "
+                       "UNION ALL SELECT CAST(scopes AS CHAR) FROM OrgOidcConfig")
+              for needle in needles:
+                  if not needle:
+                      continue
+                  escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                  found = int(scalar("SELECT COUNT(*) FROM (" + union + ") x WHERE t LIKE '%"
+                                     + escaped + "%'"))
+                  if found != 0:
+                      fail(f"{label}: plaintext {needle!r} appears in {found} database column(s)")
+
+
+          def reset_factor(user_id):
+              sql("DELETE FROM UserRecoveryCode WHERE userId='" + user_id + "'")
+              sql("DELETE FROM UserTotpFactor WHERE userId='" + user_id + "'")
+              redis_del_pattern(PROFILE_PREFIX + user_id + ":*")
+
+
+          def seed_factor(user_id, secret, verified=False, disabled=False, pending=None,
+                          label=None, encrypted=True):
+              reset_factor(user_id)
+              account = label if label is not None else email_of(user_id)
+              stored = json.dumps(encrypt_v1(secret)) if encrypted else json.dumps(secret)
+              pending_sql = "NULL"
+              pending_label_sql = "NULL"
+              pending_started_sql = "NULL"
+              if pending is not None:
+                  pending_stored = (json.dumps(encrypt_v1(pending)) if encrypted
+                                    else json.dumps(pending))
+                  pending_sql = "_utf8mb4'" + sql_escape(pending_stored) + "'"
+                  pending_label_sql = "'" + sql_escape(account) + "'"
+                  pending_started_sql = "NOW(3)"
+              sql("INSERT INTO UserTotpFactor (id, userId, secret, pendingSecret, label, pendingLabel, "
+                  "pendingStartedAt, enrolledAt, verifiedAt, disabledAt, lastUsedAt, createdAt, updatedAt) "
+                  "VALUES ('" + user_id + "-factor', '" + user_id + "', _utf8mb4'"
+                  + sql_escape(stored) + "', " + pending_sql + ", '" + sql_escape(account) + "', "
+                  + pending_label_sql + ", " + pending_started_sql + ", NOW(3), "
+                  + ("NOW(3)" if verified else "NULL") + ", "
+                  + ("NOW(3)" if disabled else "NULL") + ", NULL, NOW(3), NOW(3))")
+
+
+          def fixture_code(user_id, index):
+              digest = hashlib.sha256((user_id + ":" + str(index)).encode()).hexdigest()
+              return digest[:10].upper()
+
+
+          def seed_recovery_codes(user_id, codes, used_indexes=()):
+              for index, code in enumerate(codes):
+                  used = "NOW(3)" if index in used_indexes else "NULL"
+                  sql("INSERT INTO UserRecoveryCode (id, userId, codeHash, usedAt, createdAt) VALUES ('"
+                      + user_id + "-rc-" + str(index) + "', '" + user_id + "', '" + hash_code(code)
+                      + "', " + used + ", NOW(3))")
+
+
+          def expected_status(user_id):
+              state = factor_state(user_id)
+              remaining = unused_recovery_count(user_id)
+              if state is None:
+                  return {"enabled": False, "enrolledAt": None, "verifiedAt": None,
+                          "lastUsedAt": None, "recoveryCodesRemaining": remaining}
+              return {
+                  "enabled": state[5] != "<null>" and state[6] == "<null>",
+                  "enrolledAt": db_time_to_iso(state[8]),
+                  "verifiedAt": None if state[5] == "<null>" else db_time_to_iso(state[5]),
+                  "lastUsedAt": None if state[7] == "<null>" else db_time_to_iso(state[7]),
+                  "recoveryCodesRemaining": remaining,
+              }
+
+
+          def require_codes_match_db(label, user_id, codes):
+              if not isinstance(codes, list) or len(codes) != 8:
+                  fail(f"{label}: recoveryCodes is not a list of 8: {codes!r}")
+              for code in codes:
+                  if not isinstance(code, str) or not RECOVERY_RE.match(code):
+                      fail(f"{label}: recovery code {code!r} is not 10 uppercase hex characters")
+              require(label + " hashes", recovery_hashes(user_id), sorted(hash_code(c) for c in codes))
+
+
+          def enable_mfa(base, label, user_id, token, secret=None):
+              if secret is None:
+                  doc = request_json(label + " enroll", base, "POST", ENROLL_PATH, token, None, 201)
+                  require_keys(label + " enroll", doc, ["secret", "otpauthUri"])
+                  secret = doc["secret"]
+              doc = request_json(label + " verify", base, "POST", VERIFY_ENROLL_PATH, token,
+                                 {"code": totp_now(secret)}, 201)
+              return secret, doc
+
+
+          def race(targets, timeout=120):
+              """Barrier 同步的并发调用；targets 为 (base, method, path, token, payload)。"""
+              results = [None] * len(targets)
+              barrier = threading.Barrier(len(targets))
+
+              def worker(index, base, method, path, token, payload):
+                  try:
+                      barrier.wait(timeout=60)
+                      results[index] = call(base, path, method, token, payload, timeout)
+                  except Exception as exc:
+                      results[index] = (0, repr(exc).encode())
+
+              threads = [threading.Thread(target=worker, args=(index,) + target)
+                         for index, target in enumerate(targets)]
+              for thread in threads:
+                  thread.start()
+              for thread in threads:
+                  thread.join()
+              return results
+
+
+          def hold_mysql_lock(lock_name, seconds=25):
+              cid = container_id("mysql:8.4")
+              return subprocess.Popen(
+                  ["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app", "-e",
+                   "SELECT GET_LOCK('%s', 5); SELECT SLEEP(%d);" % (lock_name, seconds)],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+          def release_mysql_lock(holder, lock_name):
+              holder.terminate()
+              try:
+                  holder.wait(timeout=30)
+              except Exception:
+                  holder.kill()
+              deadline = time.time() + 60
+              while time.time() < deadline:
+                  probe = scalar("SELECT GET_LOCK('%s', 0); SELECT RELEASE_LOCK('%s');"
+                                 % (lock_name, lock_name))
+                  if probe == "1":
+                      return
+                  time.sleep(1)
+              fail("lock " + lock_name + " was not released after the holder stopped")
+
+
+          def mfa_lock_name(user_id):
+              # 与 auth-factors.lock.ts 的 mfaUserLockName / Go 的 mfaUserLockName
+              # 完全一致：'mfa:' + sha256(userId) 的前 60 个十六进制字符。
+              return "mfa:" + hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:60]
+
+
+          def parity(label, method, path, token=None, payload=None, expected=200, expected_message=None):
+              nest_status, nest_raw = call(NEST_URL, path, method, token, payload)
+              go_status, go_raw = call(GO_URL, path, method, token, payload)
+              if nest_status != expected or go_status != expected:
+                  fail(f"parity {label}: status nest={nest_status} go={go_status}, want {expected}; "
+                       f"nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
+              if canon(body(nest_raw)) != canon(body(go_raw)):
+                  fail(f"parity {label}: body mismatch nest={nest_raw[:600]!r} go={go_raw[:600]!r}")
+              if expected_message is not None:
+                  for side, raw in (("nest", nest_raw), ("go", go_raw)):
+                      got = message_of(raw)
+                      if got != expected_message:
+                          fail(f"parity {label}: {side} message {got!r} want {expected_message!r} "
+                               f"raw={raw[:400]!r}")
+              print("parity ok:", label)
+              return body(nest_raw), body(go_raw)
+
+
+          def require_not_go(prefix):
+              # go_health()["routes"] 的每个元素是 {prefix, mode, ...} 字典，
+              # 不是 (prefix, mode, methods) 三元组。
+              routes = go_health().get("routes") or []
+              for entry in routes:
+                  entry_prefix = entry.get("prefix") or ""
+                  if entry.get("mode") == "go" and (entry_prefix == prefix
+                                                    or entry_prefix.startswith(prefix)):
+                      fail("route " + entry_prefix + " is in go mode, want legacy: " + repr(routes))
+
+
+          # ---- fixtures ----
+          def seed_identities():
+              global ADMIN_ID, SETTINGS_PERM
+              ADMIN_ID = scalar("SELECT id FROM User WHERE email='"
+                                + os.environ["SEED_ADMIN_EMAIL"] + "'")
+              settings_perm = scalar("SELECT id FROM Permission WHERE name='settings.manage'")
+              SETTINGS_PERM = settings_perm
+              if not ADMIN_ID or not settings_perm:
+                  fail("missing seed rows admin=%r settings=%r" % (ADMIN_ID, settings_perm))
+              sql(f"""
+              INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+                ('{org_a}', 'Auth Factors Smoke Org A', 'af-smoke-org-a', 1, NOW(3), NOW(3)),
+                ('{org_b}', 'Auth Factors Smoke Org B', 'af-smoke-org-b', 1, NOW(3), NOW(3)),
+                ('{org_c}', 'Auth Factors Smoke Org C', 'af-smoke-org-c', 1, NOW(3), NOW(3));
+              INSERT INTO Role (id, name, description, isSystem, orgId) VALUES
+                ('{role_settings_a}', 'af-smoke-settings-a', NULL, 0, '{org_a}'),
+                ('{role_plain_a}', 'af-smoke-plain-a', NULL, 0, '{org_a}'),
+                ('{role_settings_b}', 'af-smoke-settings-b', NULL, 0, '{org_b}'),
+                ('{role_plain_b}', 'af-smoke-plain-b', NULL, 0, '{org_b}'),
+                ('{role_plain_c}', 'af-smoke-plain-c', NULL, 0, '{org_c}');
+              INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+                ('{role_settings_a}-rp', '{role_settings_a}', '{settings_perm}'),
+                ('{role_settings_b}-rp', '{role_settings_b}', '{settings_perm}');
+              """)
+              fixtures = [
+                  (user_u, [(org_a, role_plain_a), (org_b, role_plain_b)]),
+                  (user_v, [(org_c, role_plain_c)]),
+                  (user_w, [(org_a, role_settings_a), (org_b, role_settings_b)]),
+                  (user_n, [(org_a, role_plain_a)]),
+              ]
+              for pool_user in POOL_USERS:
+                  fixtures.append((pool_user, [(org_a, role_plain_a)]))
+              for user_id, pairs in fixtures:
+                  sql("INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, "
+                      "emailVerified, createdAt, updatedAt) SELECT '" + user_id + "', '"
+                      + email_of(user_id) + "', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3) "
+                      "FROM User WHERE id = '" + ADMIN_ID + "'")
+                  for index, (org_id, role_id) in enumerate(pairs):
+                      sql("INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt) VALUES ('"
+                          + user_id + "-mem-" + str(index) + "', '" + user_id + "', '" + org_id + "', '"
+                          + role_id + "', 1, NOW(3))")
+
+              def token_hash(raw):
+                  return hashlib.sha256(raw.encode()).hexdigest()
+
+              sql(f"""
+              INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, lastUsedAt,
+                                              expiresAt, revokedAt, createdAt, updatedAt) VALUES
+                ('{mtk_allow}-row', '{org_a}', 'allow', '{token_hash(mtk_allow)}',
+                 '["settings.manage"]', NULL, NULL, NULL, NOW(3), NOW(3)),
+                ('{mtk_deny}-row', '{org_a}', 'deny', '{token_hash(mtk_deny)}',
+                 '["org.read"]', NULL, NULL, NULL, NOW(3), NOW(3)),
+                ('{mtk_expired}-row', '{org_a}', 'expired', '{token_hash(mtk_expired)}',
+                 '["settings.manage"]', NULL, DATE_SUB(NOW(3), INTERVAL 1 DAY), NULL, NOW(3), NOW(3)),
+                ('{mtk_revoked}-row', '{org_a}', 'revoked', '{token_hash(mtk_revoked)}',
+                 '["settings.manage"]', NULL, NULL, NOW(3), NOW(3), NOW(3));
+              """)
+              print("fixtures ok: org A/B/C, users U/V/W/N + %d pool users, four machine tokens"
+                    % len(POOL_USERS))
+
+
+          # ---- phase 0 ----
+          def phase_0_fixtures():
+              print("==== phase 0: fixtures and real NestJS logins ====")
+              seed_identities()
+              global TOKENS, u_a_token, u_b_token, v_token, w_a_token, w_b_token, n_a_token
+              TOKENS = {}
+              for pool_user in POOL_USERS:
+                  TOKENS[pool_user] = login(email_of(pool_user), org_a)
+              u_a_token = login(email_of(user_u), org_a)
+              u_b_token = login(email_of(user_u), org_b)
+              v_token = login(email_of(user_v), org_c)
+              w_a_token = login(email_of(user_w), org_a)
+              w_b_token = login(email_of(user_w), org_b)
+              n_a_token = login(email_of(user_n), org_a)
+              for label, token, org_id in (("u_a", u_a_token, org_a), ("u_b", u_b_token, org_b),
+                                           ("v", v_token, org_c), ("w_a", w_a_token, org_a),
+                                           ("w_b", w_b_token, org_b), ("n_a", n_a_token, org_a)):
+                  if len(token.split(".")) != 3:
+                      fail("login token is not a JWT: " + label)
+                  claims = jwt_claims(token)
+                  if not claims.get("jti") or not claims.get("sub"):
+                      fail("login token lacks jti/sub: " + label)
+                  require("phase 0 " + label + " orgId claim", claims.get("orgId"), org_id)
+              require("phase 0 u_a permissions", jwt_claims(u_a_token).get("permissions"), [])
+              if "settings.manage" not in (jwt_claims(w_a_token).get("permissions") or []):
+                  fail("phase 0 w_a JWT does not carry settings.manage: "
+                       + repr(jwt_claims(w_a_token).get("permissions")))
+              if "settings.manage" in (jwt_claims(n_a_token).get("permissions") or []):
+                  fail("phase 0 n_a JWT unexpectedly carries settings.manage")
+              print("phase 0 ok: %d real NestJS /api/auth/login JWTs with jti/sub/orgId claims"
+                    % (len(POOL_USERS) + 6))
+
+
+          # ---- phase A ----
+          def probe_go_routes_no_token(label):
+              for method, path in GO_ROUTES:
+                  status, raw = call(GO_URL, path, method, None, None)
+                  if status != 401:
+                      fail(f"{label} {method} {path} without a token -> {status} {raw[:300]!r}, want 401")
+                  require_error_body(label + " " + method + " " + path, raw, 401, "Unauthorized",
+                                     "Unauthorized")
+
+
+          def probe_public_routes(label):
+              for method, path, payload, expected, expected_message in PUBLIC_PROBES:
+                  parity(label + " " + method + " " + path, method, path, None, payload, expected,
+                         expected_message)
+              # GET /api/auth/oidc/callback 永远在 NestJS：无 state/code 时它会
+              # 302 回 NEXTAUTH_URL 并把错误文案放进查询串（Go 只做代理）。
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  status, raw, headers = call_headers(base, OIDC_CALLBACK_PATH, "GET", None, None,
+                                                      follow=False)
+                  location = headers.get("Location") or headers.get("location") or ""
+                  if status != 302:
+                      fail("%s oidc callback %s -> %s %r, want a 302 redirect to NEXTAUTH_URL"
+                           % (label, side, status, raw[:300]))
+                  if "error=OIDC+callback+is+invalid" not in location:
+                      fail("%s oidc callback %s location %r does not carry the NestJS error"
+                           % (label, side, location))
+
+
+          def probe_dto_contract(label, mfa_token, oidc_token):
+              # MFA 写路由只要 AllowAuthenticated；OIDC 配置路由要 settings.manage，
+              # 而权限守卫在 ValidationPipe 之前（Nest 的 guard 早于 pipe，Go 的
+              # authorize 也早于 body 解析），所以 OIDC 的 DTO 用例必须用带权限的
+              # 令牌，否则看到的是 403 而不是 400。
+              dto_cases = [
+                  ("verify-enroll absent body", VERIFY_ENROLL_PATH, mfa_token, None,
+                   "code must be longer than or equal to 6 characters; code must be a string"),
+                  ("verify-enroll empty body", VERIFY_ENROLL_PATH, mfa_token, {},
+                   "code must be longer than or equal to 6 characters; code must be a string"),
+                  ("verify-enroll short code", VERIFY_ENROLL_PATH, mfa_token, {"code": "12345"},
+                   "code must be longer than or equal to 6 characters"),
+                  ("verify-enroll numeric code", VERIFY_ENROLL_PATH, mfa_token, {"code": 123456},
+                   "code must be longer than or equal to 6 characters; code must be a string"),
+                  ("verify-enroll injected userId", VERIFY_ENROLL_PATH, mfa_token,
+                   {"code": "123456", "userId": "af-smoke-other-user"},
+                   "property userId should not exist"),
+                  ("disable absent body", DISABLE_PATH, mfa_token, None,
+                   "code must be longer than or equal to 6 characters; code must be a string"),
+                  ("rotate absent body", ROTATE_PATH, mfa_token, None,
+                   "code must be longer than or equal to 6 characters; code must be a string"),
+                  ("oidc-config absent body", OIDC_PATH, oidc_token, None,
+                   "enabled must be a boolean value; issuerUrl must be a string; clientId must be a string"),
+                  ("oidc-config empty body", OIDC_PATH, oidc_token, {},
+                   "enabled must be a boolean value; issuerUrl must be a string; clientId must be a string"),
+                  ("oidc-config numeric enabled", OIDC_PATH, oidc_token,
+                   {"enabled": 1, "issuerUrl": "", "clientId": ""},
+                   "enabled must be a boolean value"),
+                  ("oidc-config string enabled", OIDC_PATH, oidc_token,
+                   {"enabled": "true", "issuerUrl": "", "clientId": ""},
+                   "enabled must be a boolean value"),
+                  ("oidc-config null issuerUrl", OIDC_PATH, oidc_token,
+                   {"enabled": True, "issuerUrl": None, "clientId": ""},
+                   "issuerUrl must be a string"),
+                  ("oidc-config non-array scopes", OIDC_PATH, oidc_token,
+                   {"enabled": True, "issuerUrl": "", "clientId": "", "scopes": "openid"},
+                   "scopes must be an array"),
+                  ("oidc-config string requireEmailVerified", OIDC_PATH, oidc_token,
+                   {"enabled": True, "issuerUrl": "", "clientId": "", "requireEmailVerified": "true"},
+                   "requireEmailVerified must be a boolean value"),
+                  ("oidc-config numeric discoveryUrl", OIDC_PATH, oidc_token,
+                   {"enabled": True, "issuerUrl": "", "clientId": "", "discoveryUrl": 5},
+                   "discoveryUrl must be a string"),
+                  ("oidc-config numeric clientSecret", OIDC_PATH, oidc_token,
+                   {"enabled": True, "issuerUrl": "", "clientId": "", "clientSecret": 5},
+                   "clientSecret must be a string"),
+                  ("oidc-config unknown property", OIDC_PATH, oidc_token,
+                   {"enabled": True, "issuerUrl": "", "clientId": "", "extra": 1},
+                   "property extra should not exist"),
+              ]
+              for case_label, path, token, payload, expected_message in dto_cases:
+                  method = "PUT" if path == OIDC_PATH else "POST"
+                  parity(label + " dto " + case_label, method, path, token, payload, 400,
+                         expected_message)
+              # 无权限时 OIDC 的 403 早于 DTO 400（守卫先于 pipe）——两侧一致。
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  status, raw = call(base, OIDC_PATH, "PUT", mfa_token, {"enabled": 1})
+                  if status != 403:
+                      fail("dto-order %s oidc no-permission invalid body -> %s %r, want 403"
+                           % (side, status, raw[:300]))
+                  require_error_body("dto-order " + side, raw, 403, PERMISSION_MESSAGE, "Forbidden")
+
+
+          def phase_a_switch():
+              print("==== phase A: switch and routing ====")
+              # A1 legacy：7 条经 Go 代理回 NestJS；公开端点仍是 NestJS 行为。
+              start_go("legacy")
+              require_go_owns_nothing()
+              probe_go_routes_no_token("A1 legacy no token")
+              probe_public_routes("A1 legacy public")
+              probe_dto_contract("A1 legacy", u_a_token, w_a_token)
+              parity("A1 legacy GET mfa", "GET", MFA_PATH, u_a_token, None, 200)
+              parity("A1 legacy GET oidc", "GET", OIDC_PATH, w_a_token, None, 200)
+              print("A1 ok: legacy proxies all seven routes to NestJS (no /api/auth route owned by go)")
+
+              # A2 空串：语义必须与 legacy 完全一致（路由表里没有 go）。
+              start_go("")
+              require_go_owns_nothing()
+              probe_go_routes_no_token("A2 empty no token")
+              probe_public_routes("A2 empty public")
+              parity("A2 empty GET mfa", "GET", MFA_PATH, u_a_token, None, 200)
+              parity("A2 empty GET oidc", "GET", OIDC_PATH, w_a_token, None, 200)
+              print("A2 ok: empty string behaves exactly like legacy")
+
+              # A2b 完全不设置该环境变量：缺省同样是 legacy。
+              start_go("legacy", omit=("API_GO_AUTH_FACTORS_MODE",))
+              require_go_owns_nothing()
+              probe_go_routes_no_token("A2b unset no token")
+              parity("A2b unset GET mfa", "GET", MFA_PATH, u_a_token, None, 200)
+              parity("A2b unset GET oidc", "GET", OIDC_PATH, w_a_token, None, 200)
+              print("A2b ok: an unset switch defaults to legacy")
+
+              # A3 go：路由表接管 7 条；停 NestJS 后仍由 Go 承接，未列出的
+              # 方法/尾斜杠/多余路径与 Nest-only 端点 502；再把模式切回空串
+              # 证明"空串不是 go"。
+              start_go("go")
+              for method, path in GO_ROUTES:
+                  require_go_owns(path, method)
+              probe_go_routes_no_token("A3 go no token")
+              probe_public_routes("A3 go public")
+              probe_dto_contract("A3 go", u_a_token, w_a_token)
+
+              stop_nest()
+              if nest_reachable():
+                  fail("phase A: NestJS is still reachable after stop_nest()")
+              for method, path in GO_ROUTES:
+                  status, raw = call(GO_URL, path, method, None, None)
+                  if status != 401:
+                      fail(f"A3 nest down {method} {path} -> {status} {raw[:300]!r}, want 401 from Go")
+              for method, path in NEST_ONLY_ROUTES:
+                  status, raw = call(GO_URL, path, method, u_a_token, None)
+                  if status != 502:
+                      fail(f"A3 nest down nest-only {method} {path} -> {status} {raw[:300]!r}, want 502")
+              not_owned = [
+                  ("GET", MFA_PATH + "/"),
+                  ("GET", MFA_PATH + "/extra"),
+                  ("DELETE", MFA_PATH),
+                  ("POST", MFA_PATH),
+                  ("PATCH", ENROLL_PATH),
+                  ("PUT", MFA_PATH),
+                  ("GET", ENROLL_PATH),
+                  ("DELETE", OIDC_PATH),
+                  ("POST", OIDC_PATH),
+                  ("GET", OIDC_PATH + "/"),
+                  ("GET", OIDC_PATH + "/extra"),
+                  ("PATCH", ROTATE_PATH),
+              ]
+              for method, path in not_owned:
+                  status, raw = call(GO_URL, path, method, u_a_token, None)
+                  if status != 502:
+                      fail(f"A3 nest down unlisted {method} {path} -> {status} {raw[:300]!r}, want 502")
+              print("A3 ok: go owns exactly the seven routes; nest-only and unlisted paths 502 while Nest is down")
+
+              start_go("")
+              for method, path in GO_ROUTES:
+                  status, raw = call(GO_URL, path, method, u_a_token, None)
+                  if status != 502:
+                      fail(f"A3 empty while nest down {method} {path} -> {status} {raw[:300]!r}, want 502 "
+                           "(empty must not take over)")
+              print("A3 ok: empty string does not register the seven routes (502 while Nest is down)")
+
+              start_nest()
+              start_go("go")
+
+              # A4 非法值 / 缺依赖：容器必须启动失败，日志含精确文案。
+              for bad_mode in ("golang", "true", "1", "LEGACY", "Go", "yes"):
+                  start_go_expect_failure("A4 illegal mode " + bad_mode, MODE_ERROR, mode=bad_mode)
+              start_go_expect_failure("A4 missing JWT_SECRET",
+                                      "JWT_SECRET is required when API_GO_AUTH_FACTORS_MODE=go",
+                                      omit=("JWT_SECRET",))
+              start_go_expect_failure("A4 missing DATABASE_URL",
+                                      "DATABASE_URL is required when API_GO_AUTH_FACTORS_MODE=go",
+                                      omit=("DATABASE_URL",))
+              start_go_expect_failure("A4 missing REDIS_HOST",
+                                      "REDIS_HOST is required when API_GO_AUTH_FACTORS_MODE=go",
+                                      omit=("REDIS_HOST",))
+              # go 模式不要求 MONGO_URI：省略它仍然健康。
+              start_go("go", omit=("MONGO_URI",))
+              go_health()
+              print("A4 ok: illegal modes fail startup with the exact message; go needs JWT_SECRET/"
+                    "DATABASE_URL/REDIS_HOST but not MONGO_URI")
+
+              # A5 回滚只翻转这一个开关。
+              start_go("legacy")
+              require_go_owns_nothing()
+              require_not_go("/api/system-settings")
+              require_not_go("/api/rbac")
+              require_not_go("/api/admin")
+              probe_go_routes_no_token("A5 legacy no token")
+              parity("A5 legacy GET mfa", "GET", MFA_PATH, u_a_token, None, 200)
+              parity("A5 legacy GET oidc", "GET", OIDC_PATH, w_a_token, None, 200)
+              start_go("go")
+              print("A5 ok: flipping API_GO_AUTH_FACTORS_MODE back to legacy only releases the seven routes")
+
+              # ---- phase B ----
+          def mfa_closed_loop(base, label, user_id, token):
+              print("---- " + label + " MFA closed loop ----")
+              account = email_of(user_id)
+              other_user = user_v
+              reset_factor(user_id)
+
+              doc = request_json(label + " GET no factor", base, "GET", MFA_PATH, token, None, 200)
+              require_keys(label + " GET no factor", doc, MFA_STATUS_KEYS)
+              require(label + " GET no factor body", canon(doc), expected_status(user_id))
+              require(label + " GET no factor row", factor_state(user_id), None)
+
+              # enroll 没有请求体 DTO：absent / 空对象 / 未知字段都必须成功，
+              # 且请求体里的 userId 不得改变目标用户。
+              for body_label, payload in (("absent", None), ("empty", {}),
+                                          ("unknown", {"userId": other_user, "extra": 1})):
+                  doc = request_json(label + " enroll " + body_label, base, "POST", ENROLL_PATH,
+                                     token, payload, 201)
+                  require_keys(label + " enroll " + body_label, doc, ["secret", "otpauthUri"])
+                  secret = doc["secret"]
+                  if not BASE32_RE.match(secret):
+                      fail(f"{label} enroll {body_label}: secret {secret!r} is not 32 Base32 chars")
+                  require(label + " enroll " + body_label + " uri", doc["otpauthUri"],
+                          expected_otpauth(account, secret))
+                  state = factor_state(user_id)
+                  if state is None:
+                      fail(label + " enroll " + body_label + ": no factor row was created")
+                  require(label + " enroll " + body_label + " pendingSecret", state[1], "<null>")
+                  require(label + " enroll " + body_label + " label", state[2], account)
+                  require(label + " enroll " + body_label + " pendingLabel", state[3], "<null>")
+                  require(label + " enroll " + body_label + " pendingStartedAt", state[4], "<null>")
+                  require(label + " enroll " + body_label + " verifiedAt", state[5], "<null>")
+                  require(label + " enroll " + body_label + " disabledAt", state[6], "<null>")
+                  require(label + " enroll " + body_label + " lastUsedAt", state[7], "<null>")
+                  envelope = parse_json_text(state[0])
+                  if not isinstance(envelope, dict) or envelope.get("__enc") != "system-settings:v1":
+                      fail(label + " enroll " + body_label + ": stored secret is not a v1 envelope: "
+                           + repr(state[0])[:200])
+                  require(label + " enroll " + body_label + " decrypt", decrypt_v1(envelope), secret)
+                  assert_no_plaintext_in_db(label + " enroll " + body_label, [secret])
+                  require(label + " enroll " + body_label + " other user untouched",
+                          factor_state(other_user), None)
+                  doc = request_json(label + " GET after enroll " + body_label, base, "GET", MFA_PATH,
+                                     token, None, 200)
+                  require(label + " GET after enroll " + body_label, canon(doc), expected_status(user_id))
+              print(label + " enroll: no body DTO, exact Base32 secret and byte-exact otpauth URI ok")
+
+              request_json(label + " verify wrong code", base, "POST", VERIFY_ENROLL_PATH, token,
+                           {"code": wrong_totp(secret)}, 400, INVALID_CODE)
+
+              before_verify = factor_state(user_id)
+              doc = request_json(label + " verify", base, "POST", VERIFY_ENROLL_PATH, token,
+                                 {"code": totp_now(secret)}, 201)
+              require_keys(label + " verify", doc, MFA_RECOVERY_KEYS)
+              codes = doc["recoveryCodes"]
+              require_codes_match_db(label + " verify", user_id, codes)
+              require(label + " verify body", canon(doc),
+                      {"recoveryCodes": codes, **expected_status(user_id)})
+              require(label + " verify rows", len(recovery_rows(user_id)), 8)
+              for row in recovery_rows(user_id):
+                  require(label + " verify usedAt", row[1], "<null>")
+              assert_no_plaintext_in_db(label + " verify", codes)
+              state = factor_state(user_id)
+              require(label + " verify disabledAt", state[6], "<null>")
+              require(label + " verify pendingSecret", state[1], "<null>")
+              require(label + " verify pendingLabel", state[3], "<null>")
+              require(label + " verify pendingStartedAt", state[4], "<null>")
+              require(label + " verify label", state[2], account)
+              if state[5] == "<null>" or state[7] == "<null>":
+                  fail(label + " verify: verifiedAt/lastUsedAt were not set")
+              require(label + " verify enrolledAt kept", db_time_to_iso(state[8]),
+                      db_time_to_iso(before_verify[8]))
+              require_recent_iso(label + " verify verifiedAt", doc["verifiedAt"], 900)
+              print(label + " verify: 201 with 8 hashed-only recovery codes and kept enrolledAt ok")
+
+              # AF1：已完成（活跃且无 pending）的 enrollment 不能再完成一次。
+              before_codes = recovery_rows(user_id)
+              before_state = factor_state(user_id)
+              request_json(label + " AF1 repeat verify", base, "POST", VERIFY_ENROLL_PATH, token,
+                           {"code": totp_now(secret)}, 400, ENROLL_NOT_INITIALIZED)
+              require(label + " AF1 codes unchanged", recovery_rows(user_id), before_codes)
+              require(label + " AF1 factor unchanged", factor_state(user_id), before_state)
+              print(label + " AF1: a completed enrollment cannot be completed again (codes byte-identical) ok")
+
+              # 活跃 factor 再 enroll：只写 pendingSecret，活跃 secret 与恢复码不变。
+              doc = request_json(label + " re-enroll", base, "POST", ENROLL_PATH, token, None, 201)
+              secret2 = doc["secret"]
+              require(label + " re-enroll uri", doc["otpauthUri"], expected_otpauth(account, secret2))
+              if secret2 == secret:
+                  fail(label + " re-enroll: the pending secret equals the active one")
+              state = factor_state(user_id)
+              require(label + " re-enroll secret unchanged", state[0], before_state[0])
+              require(label + " re-enroll label unchanged", state[2], before_state[2])
+              require(label + " re-enroll verifiedAt unchanged", state[5], before_state[5])
+              require(label + " re-enroll disabledAt unchanged", state[6], before_state[6])
+              require(label + " re-enroll lastUsedAt unchanged", state[7], before_state[7])
+              if state[1] == "<null>":
+                  fail(label + " re-enroll: pendingSecret was not written")
+              require(label + " re-enroll pending decrypt", decrypt_v1(parse_json_text(state[1])), secret2)
+              require(label + " re-enroll pendingLabel", state[3], account)
+              if state[4] == "<null>":
+                  fail(label + " re-enroll: pendingStartedAt was not written")
+              require(label + " re-enroll codes unchanged", recovery_rows(user_id), before_codes)
+              request_json(label + " re-enroll old secret rejected", base, "POST", VERIFY_ENROLL_PATH,
+                           token, {"code": totp_now(secret)}, 400, INVALID_CODE)
+              print(label + " re-enroll: active factor keeps its secret, pending replacement recorded ok")
+
+              # pending 期间活跃 factor 仍然有效：rotate/disable 校验的是
+              # factor.secret（活跃 secret），只有 verify-enroll 校验
+              # pendingSecret ?? secret。用【旧活跃 secret】的 TOTP 授权一次
+              # rotate 必须成功，且 pendingSecret 不被清掉。
+              doc = request_json(label + " rotate while pending", base, "POST", ROTATE_PATH, token,
+                                 {"code": totp_now(secret)}, 201)
+              require_codes_match_db(label + " rotate while pending", user_id, doc["recoveryCodes"])
+              require(label + " rotate while pending secret untouched", factor_state(user_id)[0],
+                      before_state[0])
+              if factor_state(user_id)[1] == "<null>":
+                  fail(label + " rotate while pending: the pending replacement was dropped")
+              print(label + " re-enroll: the active factor still authorizes rotate while pending ok")
+
+              # pending 确认：提升新 secret、替换恢复码、重写 enrolledAt。
+              doc = request_json(label + " promote pending", base, "POST", VERIFY_ENROLL_PATH, token,
+                                 {"code": totp_now(secret2)}, 201)
+              require_keys(label + " promote pending", doc, MFA_RECOVERY_KEYS)
+              codes2 = doc["recoveryCodes"]
+              require_codes_match_db(label + " promote pending", user_id, codes2)
+              require(label + " promote pending body", canon(doc),
+                      {"recoveryCodes": codes2, **expected_status(user_id)})
+              state = factor_state(user_id)
+              require(label + " promote secret", decrypt_v1(parse_json_text(state[0])), secret2)
+              require(label + " promote pendingSecret", state[1], "<null>")
+              require(label + " promote label", state[2], account)
+              require(label + " promote pendingLabel", state[3], "<null>")
+              require(label + " promote pendingStartedAt", state[4], "<null>")
+              require(label + " promote disabledAt", state[6], "<null>")
+              if state[5] == "<null>" or state[7] == "<null>":
+                  fail(label + " promote: verifiedAt/lastUsedAt were not set")
+              if db_time_to_iso(state[8]) == db_time_to_iso(before_state[8]):
+                  fail(label + " promote: enrolledAt was not rewritten for a promoted pending replacement")
+              require_recent_iso(label + " promote enrolledAt", doc["enrolledAt"], 900)
+              if set(recovery_hashes(user_id)) & set(row[0] for row in before_codes):
+                  fail(label + " promote: an old recovery code survived the replacement")
+              assert_no_plaintext_in_db(label + " promote", codes2)
+              print(label + " promote: pending factor promoted, recovery codes replaced, enrolledAt rewritten ok")
+
+              # rotate：TOTP 路径 + 恢复码路径（含 trim/大写归一化）+ 旧码/已用码失效。
+              before_rotate = factor_state(user_id)
+              doc = request_json(label + " rotate totp", base, "POST", ROTATE_PATH, token,
+                                 {"code": totp_now(secret2)}, 201)
+              require_keys(label + " rotate totp", doc, MFA_RECOVERY_KEYS)
+              codes3 = doc["recoveryCodes"]
+              require_codes_match_db(label + " rotate totp", user_id, codes3)
+              require(label + " rotate totp body", canon(doc),
+                      {"recoveryCodes": codes3, **expected_status(user_id)})
+              require(label + " rotate totp secret untouched", factor_state(user_id)[0], before_rotate[0])
+              require(label + " rotate totp verifiedAt untouched", factor_state(user_id)[5],
+                      before_rotate[5])
+              if set(recovery_hashes(user_id)) & set(hash_code(c) for c in codes2):
+                  fail(label + " rotate totp: an old recovery code survived")
+              doc = request_json(label + " rotate recovery code", base, "POST", ROTATE_PATH, token,
+                                 {"code": "  " + codes3[0].lower() + "  "}, 201)
+              codes4 = doc["recoveryCodes"]
+              require_codes_match_db(label + " rotate recovery code", user_id, codes4)
+              require(label + " rotate recovery code body", canon(doc),
+                      {"recoveryCodes": codes4, **expected_status(user_id)})
+              require(label + " rotate secret still untouched", factor_state(user_id)[0], before_rotate[0])
+              require(label + " rotate no enrollment started", factor_state(user_id)[1], "<null>")
+              request_json(label + " rotate old code invalid", base, "POST", ROTATE_PATH, token,
+                           {"code": codes3[1]}, 401, INVALID_CODE)
+              request_json(label + " rotate used code invalid", base, "POST", ROTATE_PATH, token,
+                           {"code": codes3[0]}, 401, INVALID_CODE)
+              request_json(label + " rotate used code lowercase invalid", base, "POST", ROTATE_PATH,
+                           token, {"code": codes3[0].lower()}, 401, INVALID_CODE)
+              print(label + " rotate: TOTP and recovery-code paths, normalization, old codes 401 ok")
+
+              # disable：TOTP 分支；factor 行保留，secret 不清空，恢复码删除。
+              before_disable = factor_state(user_id)
+              doc = request_json(label + " disable totp", base, "POST", DISABLE_PATH, token,
+                                 {"code": totp_now(secret2)}, 201)
+              require_keys(label + " disable totp", doc, MFA_STATUS_KEYS)
+              state = factor_state(user_id)
+              if state is None:
+                  fail(label + " disable totp: the UserTotpFactor row was deleted")
+              require(label + " disable totp body", canon(doc), expected_status(user_id))
+              require(label + " disable totp enabled", doc["enabled"], False)
+              require(label + " disable totp remaining", doc["recoveryCodesRemaining"], 0)
+              if state[6] == "<null>":
+                  fail(label + " disable totp: disabledAt was not set")
+              require(label + " disable totp secret preserved", state[0], before_disable[0])
+              require(label + " disable totp pendingSecret preserved", state[1], before_disable[1])
+              require(label + " disable totp verifiedAt preserved", state[5], before_disable[5])
+              require(label + " disable totp enrolledAt preserved", state[8], before_disable[8])
+              require(label + " disable totp codes deleted", recovery_rows(user_id), [])
+              if state[7] == "<null>" or state[7] == before_disable[7]:
+                  fail(label + " disable totp: lastUsedAt was not refreshed: " + repr(state[7]))
+              request_json(label + " rotate after disable", base, "POST", ROTATE_PATH, token,
+                           {"code": totp_now(secret2)}, 401, INVALID_CODE)
+              request_json(label + " disable after disable", base, "POST", DISABLE_PATH, token,
+                           {"code": totp_now(secret2)}, 401, INVALID_CODE)
+              print(label + " disable: 201 disabled status, factor row kept, recovery codes deleted ok")
+
+              # 停用态再 enroll：直接替换 secret，不写 pending。
+              doc = request_json(label + " enroll after disable", base, "POST", ENROLL_PATH, token,
+                                 None, 201)
+              secret3 = doc["secret"]
+              state = factor_state(user_id)
+              require(label + " enroll after disable secret", decrypt_v1(parse_json_text(state[0])), secret3)
+              require(label + " enroll after disable pendingSecret", state[1], "<null>")
+              require(label + " enroll after disable pendingLabel", state[3], "<null>")
+              require(label + " enroll after disable pendingStartedAt", state[4], "<null>")
+              require(label + " enroll after disable verifiedAt", state[5], "<null>")
+              require(label + " enroll after disable disabledAt", state[6], "<null>")
+              require(label + " enroll after disable lastUsedAt", state[7], "<null>")
+
+              reset_factor(user_id)
+              request_json(label + " verify without factor", base, "POST", VERIFY_ENROLL_PATH, token,
+                           {"code": "123456"}, 400, ENROLL_NOT_INITIALIZED)
+              request_json(label + " disable without factor", base, "POST", DISABLE_PATH, token,
+                           {"code": "123456"}, 401, INVALID_CODE)
+              request_json(label + " rotate without factor", base, "POST", ROTATE_PATH, token,
+                           {"code": "123456"}, 401, INVALID_CODE)
+              print(label + " ok: no factor -> 400/401 contracts, disabled re-enroll replaces the secret")
+
+
+          def mfa_disable_with_recovery_code(base, label, user_id, token):
+              reset_factor(user_id)
+              secret, doc = enable_mfa(base, label, user_id, token)
+              codes = doc["recoveryCodes"]
+              require_codes_match_db(label + " enable", user_id, codes)
+              doc = request_json(label + " disable with recovery code", base, "POST", DISABLE_PATH, token,
+                                 {"code": codes[3].lower()}, 201)
+              require_keys(label + " disable with recovery code", doc, MFA_STATUS_KEYS)
+              require(label + " disable with recovery code body", canon(doc), expected_status(user_id))
+              require(label + " disable with recovery code enabled", doc["enabled"], False)
+              state = factor_state(user_id)
+              if state is None or state[6] == "<null>":
+                  fail(label + " disable with recovery code: disabledAt was not set")
+              require(label + " disable with recovery code deleted", recovery_rows(user_id), [])
+              request_json(label + " reused consumed code", base, "POST", ROTATE_PATH, token,
+                           {"code": codes[3]}, 401, INVALID_CODE)
+              print(label + " ok: disable accepts an unused recovery code (trim+uppercase) and deletes the set")
+
+
+          def mfa_recovery_code_states(base, label, user_id, token):
+              secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+              reset_factor(user_id)
+              seed_factor(user_id, secret, verified=True)
+              codes = [fixture_code(user_id, index) for index in range(8)]
+              seed_recovery_codes(user_id, codes, used_indexes=(0, 1, 2))
+              doc = request_json(label + " GET status with used codes", base, "GET", MFA_PATH, token,
+                                 None, 200)
+              require(label + " GET status with used codes", canon(doc), expected_status(user_id))
+              require(label + " GET status remaining", doc["recoveryCodesRemaining"], 5)
+              require(label + " GET status enabled", doc["enabled"], True)
+              request_json(label + " used code rejected", base, "POST", ROTATE_PATH, token,
+                           {"code": codes[0]}, 401, INVALID_CODE)
+              doc = request_json(label + " unused code accepted", base, "POST", ROTATE_PATH, token,
+                                 {"code": codes[3]}, 201)
+              require_codes_match_db(label + " unused code accepted", user_id, doc["recoveryCodes"])
+              require(label + " unused code accepted remaining", doc["recoveryCodesRemaining"], 8)
+              reset_factor(user_id)
+              print(label + " ok: multiple used/unused recovery codes (count excludes used, used -> 401)")
+
+
+          def totp_window_matrix(base, label, user_id, token):
+              print("---- " + label + " TOTP window / trim / leading zero ----")
+              secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+
+              def reseed(candidate):
+                  reset_factor(user_id)
+                  seed_factor(user_id, candidate, verified=False)
+
+              # counter-1 / counter / counter+1 都必须被接受。
+              for offset in (-1, 0, 1):
+                  reseed(secret)
+                  doc = request_json(label + " window %+d" % offset, base, "POST", VERIFY_ENROLL_PATH,
+                                     token, {"code": totp_now(secret, offset)}, 201)
+                  require_codes_match_db(label + " window %+d" % offset, user_id, doc["recoveryCodes"])
+              # counter-2 / counter+2 必须被拒绝。
+              for offset in (-2, 2):
+                  reseed(secret)
+                  request_json(label + " outside window %+d" % offset, base, "POST",
+                               VERIFY_ENROLL_PATH, token, {"code": totp_now(secret, offset)}, 400,
+                               INVALID_CODE)
+              # trim：前后空白仍然接受。
+              reseed(secret)
+              request_json(label + " trimmed code", base, "POST", VERIFY_ENROLL_PATH, token,
+                           {"code": "  " + totp_now(secret) + "  "}, 201)
+              # 形态：TOTP 分支只接受 trim 后恰好六位数字。
+              # 5 字符先被 DTO 的 @MinLength(6) 拦下（Nest 的管道与 Go 的
+              # DTO 解析都早于 service 的 TOTP 分支），其余 6 字符及以上的
+              # 畸形码才进入 service 并被拒绝。
+              reseed(secret)
+              request_json(label + " malformed short code", base, "POST", VERIFY_ENROLL_PATH,
+                           token, {"code": "12345"}, 400,
+                           "code must be longer than or equal to 6 characters")
+              for bad in ("1234567", "12a456", "12345 ", " 12345"):
+                  reseed(secret)
+                  request_json(label + " malformed " + repr(bad), base, "POST", VERIFY_ENROLL_PATH,
+                               token, {"code": bad}, 400, INVALID_CODE)
+              # 前导零：找一个当前窗口代码以 '0' 开头的 secret，服务端必须保留补零。
+              # 代码只在找到候选的那一刻计算一次并原样发送：服务端接受
+              # counter-1/0/+1，所以即便请求跨过 30 秒窗口边界仍然成立；重新
+              # 计算会引入跨窗口抖动（曾观察到 235488 这类非零前缀）。
+              leading = None
+              code = None
+              for _ in range(400):
+                  candidate = random_secret()
+                  candidate_code = totp_now(candidate)
+                  if candidate_code.startswith("0"):
+                      leading = candidate
+                      code = candidate_code
+                      break
+              if leading is None or code is None:
+                  fail(label + " leading zero: no secret with a zero-prefixed current code found")
+              if len(code) != 6:
+                  fail(label + " leading zero: local code is not six digits: " + code)
+              reseed(leading)
+              doc = request_json(label + " leading zero code " + code, base, "POST", VERIFY_ENROLL_PATH,
+                                 token, {"code": code}, 201)
+              require_codes_match_db(label + " leading zero code", user_id, doc["recoveryCodes"])
+              reset_factor(user_id)
+              print(label + " ok: TOTP accepts counter-1/0/+1, rejects +/-2, trims, keeps leading zeros")
+
+
+          def machine_actor_matrix():
+              print("---- machine identities ----")
+              allow_actor = "machine:" + mtk_allow + "-row"
+              deny_actor = "machine:" + mtk_deny + "-row"
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  for token, expected, label in ((mtk_allow, 200, "allow"),
+                                                 (mtk_deny, 200, "deny")):
+                      doc = request_json("B machine GET mfa " + label + " " + side, base, "GET", MFA_PATH,
+                                         token, None, expected)
+                      require_keys("B machine GET mfa " + label + " " + side, doc, MFA_STATUS_KEYS)
+                      require("B machine GET mfa " + label + " " + side, canon(doc),
+                              {"enabled": False, "enrolledAt": None, "verifiedAt": None,
+                               "lastUsedAt": None, "recoveryCodesRemaining": 0})
+                  # settings.manage 门禁：带权限 200 / 不带权限 403（claim 不参与）。
+                  doc = request_json("B machine oidc allow " + side, base, "GET", OIDC_PATH, mtk_allow,
+                                     None, 200)
+                  require_keys("B machine oidc allow " + side, doc, OIDC_KEYS)
+                  status, raw = call(base, OIDC_PATH, "GET", mtk_deny, None)
+                  if status != 403:
+                      fail("B machine oidc deny %s -> %s %r, want 403" % (side, status, raw[:300]))
+                  require_error_body("B machine oidc deny " + side, raw, 403, PERMISSION_MESSAGE,
+                                     "Forbidden")
+                  require("B machine oidc deny code " + side, (body(raw) or {}).get("code"),
+                          PERMISSION_CODE)
+                  # 过期 / 撤销的机器令牌：401 Invalid machine token。
+                  for token, label in ((mtk_expired, "expired"), (mtk_revoked, "revoked")):
+                      status, raw = call(base, MFA_PATH, "GET", token, None)
+                      if status != 401 or message_of(raw) != "Invalid machine token":
+                          fail("B machine GET mfa %s %s -> %s %r, want 401 Invalid machine token"
+                               % (label, side, status, raw[:300]))
+                  # 4 个写路由对机器身份 403，且绝不创建 factor 行。
+                  for method, path, payload in (("POST", ENROLL_PATH, None),
+                                                ("POST", VERIFY_ENROLL_PATH, {"code": "123456"}),
+                                                ("POST", DISABLE_PATH, {"code": "123456"}),
+                                                ("POST", ROTATE_PATH, {"code": "123456"})):
+                      status, raw = call(base, path, method, mtk_allow, payload)
+                      if status != 403:
+                          fail("B machine write %s %s %s -> %s %r, want 403"
+                               % (side, method, path, status, raw[:300]))
+                      require_error_body("B machine write " + side + " " + method + " " + path, raw,
+                                         403, HUMAN_REQUIRED, "Forbidden")
+                  require("B machine factor row allow", factor_state(allow_actor), None)
+                  require("B machine factor row deny", factor_state(deny_actor), None)
+              print("machine ok: GET empty state, OIDC settings.manage gate, writes 403, no factor rows")
+
+
+          def set_system_security(doc_text):
+              redis("DEL", SYSTEM_SECURITY_CACHE)
+              if doc_text is None:
+                  sql("DELETE FROM SystemSetting WHERE `key`='" + SYSTEM_SECURITY_KEY + "'")
+              else:
+                  sql("REPLACE INTO SystemSetting (`key`, value, isPublic, description, createdAt, "
+                      "updatedAt, updatedById) VALUES ('" + SYSTEM_SECURITY_KEY + "', _utf8mb4'"
+                      + sql_escape(doc_text) + "', 0, NULL, NOW(3), NOW(3), NULL)")
+
+
+          def crypto_key_matrix():
+              print("---- crypto policy matrix (wrong key / missing key / plaintext escape hatch) ----")
+              secret_a = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+              secret_b = "KRSXG5CTMVRXEZLUKRSXG5CTMVRXEZLU"
+              reset_factor(p_wrong_key)
+              seed_factor(p_wrong_key, secret_a, verified=False)
+              reset_factor(p_plain_key)
+              seed_factor(p_plain_key, secret_b, verified=True)
+              codes_b = [fixture_code(p_plain_key, index) for index in range(8)]
+              seed_recovery_codes(p_plain_key, codes_b)
+              reset_oidc(org_a)
+              sql("INSERT INTO OrgOidcConfig (id, orgId, enabled, issuerUrl, discoveryUrl, clientId, "
+                  "clientSecret, scopes, buttonLabel, requireEmailVerified, createdAt, updatedAt) VALUES ("
+                  "'af-smoke-oidc-wrong', '" + org_a + "', 1, 'https://idp.example', NULL, 'client-x', "
+                  "_utf8mb4'" + sql_escape(json.dumps(encrypt_v1("oidc-secret-value")))
+                  + "', _utf8mb4'[\"openid\"]', NULL, 1, NOW(3), NOW(3))")
+              before_state = factor_state(p_plain_key)
+              before_codes = recovery_rows(p_plain_key)
+
+              start_nest(encryption_key=WRONG_KEY)
+              start_go("go", encryption_key=WRONG_KEY)
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  doc = request_json("B wrong key GET mfa " + side, base, "GET", MFA_PATH,
+                                     TOKENS[p_wrong_key], None, 200)
+                  require("B wrong key GET mfa " + side, canon(doc), expected_status(p_wrong_key))
+                  doc = request_json("B wrong key GET mfa active " + side, base, "GET", MFA_PATH,
+                                     TOKENS[p_plain_key], None, 200)
+                  require("B wrong key GET mfa active " + side, canon(doc), expected_status(p_plain_key))
+                  doc = request_json("B wrong key oidc " + side, base, "GET", OIDC_PATH, w_a_token,
+                                     None, 200)
+                  require("B wrong key oidc hasClientSecret " + side, doc.get("hasClientSecret"), True)
+                  if "oidc-secret-value" in json.dumps(doc):
+                      fail("B wrong key oidc " + side + ": the response leaked the stored secret")
+                  # 非活跃 factor → verify-enroll 真的去解密 → 生产 500。
+                  status, raw = call(base, VERIFY_ENROLL_PATH, "POST", TOKENS[p_wrong_key],
+                                     {"code": totp_now(secret_a)})
+                  if status != 500:
+                      fail("B wrong key verify-enroll %s -> %s %r, want 500" % (side, status, raw[:300]))
+                  require_error_body("B wrong key verify-enroll " + side, raw, 500, INTERNAL_MESSAGE)
+                  # disable/rotate 无论 TOTP 还是恢复码分支都先解密 → 500。
+                  for method, path, payload in (("POST", DISABLE_PATH, {"code": totp_now(secret_b)}),
+                                                ("POST", ROTATE_PATH, {"code": totp_now(secret_b)}),
+                                                ("POST", ROTATE_PATH, {"code": codes_b[0]})):
+                      status, raw = call(base, path, method, TOKENS[p_plain_key], payload)
+                      if status != 500:
+                          fail("B wrong key %s %s %s -> %s %r, want 500"
+                               % (side, method, path, status, raw[:300]))
+                      require_error_body("B wrong key " + side + " " + method + " " + path, raw, 500,
+                                         INTERNAL_MESSAGE)
+                  require("B wrong key factor untouched " + side, factor_state(p_plain_key), before_state)
+                  require("B wrong key codes untouched " + side, recovery_rows(p_plain_key), before_codes)
+              print("wrong key ok: 200 reads, 500 on every decrypting write, no state change")
+
+              start_nest(encryption_key=None)
+              start_go("go", encryption_key=None)
+              # 生产环境缺 key：无论 secretEncryptionEnabled 是缺省、true 还是
+              # false，都必须失败关闭（500）且不写 factor 行——绝不静默降级为明文。
+              for security_doc, case_label in ((None, "absent"),
+                                               ('{"secretEncryptionEnabled":true}', "enabled"),
+                                               ('{"secretEncryptionEnabled":false}', "disabled")):
+                  set_system_security(security_doc)
+                  for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                      reset_factor(p_missing_key)
+                      status, raw = call(base, ENROLL_PATH, "POST", TOKENS[p_missing_key], None)
+                      if status != 500:
+                          fail("B missing key (%s) enroll %s -> %s %r, want 500"
+                               % (case_label, side, status, raw[:300]))
+                      require_error_body("B missing key " + case_label + " " + side, raw, 500,
+                                         INTERNAL_MESSAGE)
+                      require("B missing key " + case_label + " " + side + " no factor",
+                              factor_state(p_missing_key), None)
+              print("missing key ok: production fails closed with 500 and never writes a factor row")
+              set_system_security(None)
+              start_nest()
+              start_go("go")
+
+              # 明文逃生门：有效 key + secretEncryptionEnabled=false → 明文 JSON
+              # 字符串入库，且 TOTP 仍可用（decodeSecret 直接返回字符串）。
+              set_system_security('{"secretEncryptionEnabled":false}')
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  reset_factor(p_plain_key)
+                  doc = request_json("B plaintext enroll " + side, base, "POST", ENROLL_PATH,
+                                     TOKENS[p_plain_key], None, 201)
+                  secret = doc["secret"]
+                  state = factor_state(p_plain_key)
+                  require("B plaintext stored " + side, parse_json_text(state[0]), secret)
+                  if state[0].startswith("{"):
+                      fail("B plaintext stored " + side + ": the secret was encrypted despite the "
+                           "explicit plaintext policy: " + state[0][:120])
+                  doc = request_json("B plaintext verify " + side, base, "POST", VERIFY_ENROLL_PATH,
+                                     TOKENS[p_plain_key], {"code": totp_now(secret)}, 201)
+                  require_codes_match_db("B plaintext verify " + side, p_plain_key,
+                                         doc["recoveryCodes"])
+                  doc = request_json("B plaintext disable " + side, base, "POST", DISABLE_PATH,
+                                     TOKENS[p_plain_key], {"code": totp_now(secret)}, 201)
+                  require("B plaintext disable " + side, doc.get("enabled"), False)
+              print("plaintext policy ok: an explicit false stores the secret as a JSON string and TOTP still verifies")
+              set_system_security(None)
+              reset_factor(p_missing_key)
+              reset_factor(p_plain_key)
+              reset_oidc(org_a)
+
+
+          def phase_b_mfa():
+              print("==== phase B: MFA closed loop on NestJS and Go ====")
+              mfa_closed_loop(NEST_URL, "B nest", p_closed_nest, TOKENS[p_closed_nest])
+              mfa_closed_loop(GO_URL, "B go", p_closed_go, TOKENS[p_closed_go])
+              mfa_disable_with_recovery_code(NEST_URL, "B nest recovery disable",
+                                             p_recovery_disable, TOKENS[p_recovery_disable])
+              mfa_disable_with_recovery_code(GO_URL, "B go recovery disable",
+                                             p_recovery_disable_go, TOKENS[p_recovery_disable_go])
+              mfa_recovery_code_states(NEST_URL, "B nest recovery states",
+                                       p_recovery_states_nest, TOKENS[p_recovery_states_nest])
+              mfa_recovery_code_states(GO_URL, "B go recovery states",
+                                       p_recovery_states_go, TOKENS[p_recovery_states_go])
+              totp_window_matrix(NEST_URL, "B nest totp window", p_recovery_states_nest,
+                                 TOKENS[p_recovery_states_nest])
+              totp_window_matrix(GO_URL, "B go totp window", p_recovery_states_go,
+                                 TOKENS[p_recovery_states_go])
+              machine_actor_matrix()
+              crypto_key_matrix()
+              print("phase B ok")
+
+
+          # ---- phase C ----
+          def phase_c_interop():
+              print("==== phase C: cross implementation interop ====")
+              # C1 Go enroll → Nest verify（Nest 能解密 Go 写入的密文）
+              user = p_interop_go_enroll
+              reset_factor(user)
+              doc = request_json("C1 go enroll", GO_URL, "POST", ENROLL_PATH, TOKENS[user], None, 201)
+              secret = doc["secret"]
+              doc = request_json("C1 nest verify", NEST_URL, "POST", VERIFY_ENROLL_PATH, TOKENS[user],
+                                 {"code": totp_now(secret)}, 201)
+              require_codes_match_db("C1 nest verify", user, doc["recoveryCodes"])
+              require("C1 nest verify enabled", doc["enabled"], True)
+              assert_no_plaintext_in_db("C1 go enroll", [secret])
+
+              # C2 Nest enroll → Go verify（Go 能解密 Nest 写入的密文）
+              user = p_interop_nest_enroll
+              reset_factor(user)
+              doc = request_json("C2 nest enroll", NEST_URL, "POST", ENROLL_PATH, TOKENS[user], None, 201)
+              secret = doc["secret"]
+              doc = request_json("C2 go verify", GO_URL, "POST", VERIFY_ENROLL_PATH, TOKENS[user],
+                                 {"code": totp_now(secret)}, 201)
+              require_codes_match_db("C2 go verify", user, doc["recoveryCodes"])
+
+              # C3 Go 生成的恢复码被 Nest 消费
+              user = p_interop_go_codes
+              reset_factor(user)
+              secret, doc = enable_mfa(GO_URL, "C3 go enable", user, TOKENS[user])
+              go_codes = doc["recoveryCodes"]
+              doc = request_json("C3 nest rotate with go code", NEST_URL, "POST", ROTATE_PATH,
+                                 TOKENS[user], {"code": go_codes[2]}, 201)
+              require_codes_match_db("C3 nest rotate with go code", user, doc["recoveryCodes"])
+              if set(hash_code(c) for c in doc["recoveryCodes"]) & set(hash_code(c) for c in go_codes):
+                  fail("C3: the Nest rotation did not replace the Go written recovery codes")
+
+              # C4 Nest 生成的恢复码被 Go 消费
+              user = p_interop_nest_codes
+              reset_factor(user)
+              secret, doc = enable_mfa(NEST_URL, "C4 nest enable", user, TOKENS[user])
+              nest_codes = doc["recoveryCodes"]
+              doc = request_json("C4 go rotate with nest code", GO_URL, "POST", ROTATE_PATH,
+                                 TOKENS[user], {"code": nest_codes[5]}, 201)
+              require_codes_match_db("C4 go rotate with nest code", user, doc["recoveryCodes"])
+
+              # C5 Nest 写入的密文被 Go 解密（Go disable 用 TOTP）
+              user = p_interop_login
+              reset_factor(user)
+              secret, doc = enable_mfa(NEST_URL, "C5 nest enable", user, TOKENS[user])
+              doc = request_json("C5 go disable nest ciphertext", GO_URL, "POST", DISABLE_PATH,
+                                 TOKENS[user], {"code": totp_now(secret)}, 201)
+              require("C5 go disable enabled", doc.get("enabled"), False)
+              require("C5 go disable disabledAt", factor_state(user)[6] != "<null>", True)
+
+              # C6 Go 写入的密文由真实 NestJS 登录挑战 + 公开 verify-login 完成
+              user = p_interop_go_enroll
+              reset_factor(user)
+              secret, doc = enable_mfa(GO_URL, "C6 go enable", user, TOKENS[user])
+              challenge = login_doc(email_of(user), org_a)
+              if challenge.get("mfaRequired") is not True or not challenge.get("authChallengeId"):
+                  fail("C6: the real NestJS login did not return an MFA challenge: " + repr(challenge))
+              if challenge.get("accessToken"):
+                  fail("C6: the real NestJS login returned an access token before the challenge was solved")
+              doc = request_json("C6 nest verify-login", NEST_URL, "POST", VERIFY_LOGIN_PATH, None,
+                                 {"challengeId": challenge["authChallengeId"],
+                                  "code": totp_now(secret)}, 200)
+              if not doc.get("accessToken") or not doc.get("refreshToken"):
+                  fail("C6: verify-login did not return real tokens: " + repr(doc))
+              # 同一公开端点经 api-go 入口仍由 NestJS 应答（go 模式下是代理）。
+              challenge2 = login_doc(email_of(user), org_a)
+              doc = request_json("C6 proxied verify-login", GO_URL, "POST", VERIFY_LOGIN_PATH, None,
+                                 {"challengeId": challenge2["authChallengeId"],
+                                  "code": totp_now(secret)}, 200)
+              if not doc.get("accessToken"):
+                  fail("C6: the proxied verify-login did not return an access token")
+              print("C6 ok: the public MFA login endpoint is never migrated; it stays on NestJS in every mode")
+              print("phase C ok")
+
+
+          # ---- phase D ----
+          def reset_oidc(org_id):
+              sql("DELETE FROM OrgOidcConfig WHERE orgId='" + org_id + "'")
+
+
+          def oidc_row(org_id):
+              rows = sql_rows(
+                  "SELECT enabled, issuerUrl, IFNULL(discoveryUrl,'<null>'), clientId, "
+                  "IFNULL(CAST(clientSecret AS CHAR),'<null>'), IFNULL(CAST(scopes AS CHAR),'<null>'), "
+                  "IFNULL(buttonLabel,'<null>'), requireEmailVerified "
+                  "FROM OrgOidcConfig WHERE orgId='" + org_id + "'")
+              return tuple(rows[0]) if rows else None
+
+
+          def assert_cache_has_no_plaintext(label, needles):
+              """一次 EVAL 扫全库：任何 string 键的值里出现明文 secret / 恢复码即失败。"""
+              args = [needle for needle in needles if needle]
+              script = (
+                  "local needles=ARGV; local cur='0'; local scanned=0; "
+                  "repeat local r=redis.call('SCAN',cur,'COUNT',500); cur=r[1]; "
+                  "for _,k in ipairs(r[2]) do scanned=scanned+1; "
+                  "local t=redis.call('TYPE',k)['ok']; "
+                  "if t=='string' then local v=redis.call('GET',k); "
+                  "for _,needle in ipairs(needles) do "
+                  "if string.find(v,needle,1,true) then return {k,needle} end end end end "
+                  "until cur=='0'; return {tostring(scanned),''}"
+              )
+              cid = container_id("redis:7.2")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "redis-cli", "--raw", "EVAL", script, "0"]
+                                    + args, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("redis eval: " + (proc.stderr or proc.stdout))
+              lines = [line for line in proc.stdout.splitlines() if line != ""]
+              if len(lines) >= 2:
+                  fail(f"{label}: redis key {lines[0]!r} contains plaintext {lines[1]!r}")
+              print("%s ok: scanned %s redis keys, no secret or recovery code present"
+                    % (label, lines[0] if lines else "?"))
+
+
+          def recovery_guard_ddl():
+              rows = sql_rows("SELECT COLUMN_TYPE, CHARACTER_SET_NAME, COLLATION_NAME "
+                              "FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='app' "
+                              "AND TABLE_NAME='UserRecoveryCode' AND COLUMN_NAME='id'")
+              if not rows:
+                  fail("cannot inspect UserRecoveryCode.id")
+              column_type, charset, collation = rows[0][0], rows[0][1], rows[0][2]
+              return ("CREATE TABLE _af_recovery_guard (codeId " + column_type + " CHARACTER SET "
+                      + charset + " COLLATE " + collation + " NOT NULL PRIMARY KEY, "
+                      "CONSTRAINT fk_af_recovery_guard FOREIGN KEY (codeId) "
+                      "REFERENCES UserRecoveryCode(id) ON DELETE RESTRICT)")
+
+
+          def install_recovery_guard(user_id):
+              """只在本次测试库里加一个 FK RESTRICT 子行，让恢复码删除必然失败。
+
+              这是真实的数据库写入失败（不是生产后门）：表只在本 smoke 的
+              ephemeral 库里存在，结束前一定会 DROP。
+              """
+              sql("DROP TABLE IF EXISTS _af_recovery_guard")
+              sql(recovery_guard_ddl())
+              code_id = scalar("SELECT id FROM UserRecoveryCode WHERE userId='" + user_id
+                               + "' ORDER BY id LIMIT 1")
+              if not code_id:
+                  fail("install_recovery_guard: no recovery code row for " + user_id)
+              sql("INSERT INTO _af_recovery_guard (codeId) VALUES ('" + code_id + "')")
+
+
+          def drop_recovery_guard():
+              sql("DROP TABLE IF EXISTS _af_recovery_guard")
+
+
+          def require_no_recovery_guard(label):
+              require(label + " guard table dropped",
+                      scalar("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='app' "
+                             "AND TABLE_NAME='_af_recovery_guard'"), "0")
+
+
+          def af2_fault_matrix():
+              print("---- AF2 transaction rollback with a database write failure ----")
+              user = p_af2_rotate
+              reset_factor(user)
+              secret, doc = enable_mfa(GO_URL, "D4 rotate enable", user, TOKENS[user])
+              codes = doc["recoveryCodes"]
+              before_state = factor_state(user)
+              before_codes = recovery_rows(user)
+              for base, side in ((GO_URL, "go"), (NEST_URL, "nest")):
+                  install_recovery_guard(user)
+                  status, raw = call(base, ROTATE_PATH, "POST", TOKENS[user], {"code": codes[1]})
+                  if status != 500:
+                      drop_recovery_guard()
+                      fail("D4 rotate fault %s -> %s %r, want 500" % (side, status, raw[:300]))
+                  require_error_body("D4 rotate fault " + side, raw, 500, INTERNAL_MESSAGE)
+                  require("D4 rotate fault " + side + " factor rolled back", factor_state(user),
+                          before_state)
+                  require("D4 rotate fault " + side + " codes rolled back", recovery_rows(user),
+                          before_codes)
+                  require("D4 rotate fault " + side + " unused count", unused_recovery_count(user), 8)
+                  drop_recovery_guard()
+              doc = request_json("D4 rotate after fault removal", GO_URL, "POST", ROTATE_PATH,
+                                 TOKENS[user], {"code": codes[1]}, 201)
+              require_codes_match_db("D4 rotate after fault removal", user, doc["recoveryCodes"])
+              print("AF2 ok: a failed rotate rolls the recovery-code consumption and the replacement back together")
+
+              user = p_af2_disable
+              reset_factor(user)
+              secret, doc = enable_mfa(NEST_URL, "D4 disable enable", user, TOKENS[user])
+              codes = doc["recoveryCodes"]
+              before_state = factor_state(user)
+              before_codes = recovery_rows(user)
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  install_recovery_guard(user)
+                  status, raw = call(base, DISABLE_PATH, "POST", TOKENS[user], {"code": codes[4]})
+                  if status != 500:
+                      drop_recovery_guard()
+                      fail("D4 disable fault %s -> %s %r, want 500" % (side, status, raw[:300]))
+                  require_error_body("D4 disable fault " + side, raw, 500, INTERNAL_MESSAGE)
+                  require("D4 disable fault " + side + " factor rolled back", factor_state(user),
+                          before_state)
+                  require("D4 disable fault " + side + " codes rolled back", recovery_rows(user),
+                          before_codes)
+                  require("D4 disable fault " + side + " unused count", unused_recovery_count(user), 8)
+                  drop_recovery_guard()
+              doc = request_json("D4 disable after fault removal", NEST_URL, "POST", DISABLE_PATH,
+                                 TOKENS[user], {"code": codes[4]}, 201)
+              require("D4 disable after fault removal enabled", doc["enabled"], False)
+              require("D4 disable after fault removal codes", recovery_rows(user), [])
+              require_no_recovery_guard("D4")
+              print("AF2 ok: a failed disable rolls the consumed code, lastUsedAt, disabledAt and deletion back together")
+
+
+          def public_login_behaviour():
+              print("---- public MFA login challenge (unchanged, stays on NestJS) ----")
+              user = p_public_login
+              reset_factor(user)
+              secret, doc = enable_mfa(GO_URL, "D5 enable", user, TOKENS[user])
+              codes = doc["recoveryCodes"]
+              first = login_doc(email_of(user), org_a)
+              if first.get("mfaRequired") is not True or not first.get("authChallengeId"):
+                  fail("D5: no MFA challenge from the real login: " + repr(first))
+              doc = request_json("D5 verify-login recovery code", NEST_URL, "POST", VERIFY_LOGIN_PATH,
+                                 None, {"challengeId": first["authChallengeId"], "code": codes[0]}, 200)
+              if not doc.get("accessToken"):
+                  fail("D5: verify-login with a recovery code returned no access token: " + repr(doc))
+              second = login_doc(email_of(user), org_a)
+              request_json("D5 reused recovery code", NEST_URL, "POST", VERIFY_LOGIN_PATH, None,
+                           {"challengeId": second["authChallengeId"], "code": codes[0]}, 401,
+                           INVALID_CODE)
+              # 公开登录挑战保持原有语义：恢复码分支只标记 usedAt（单次消费），
+              # 不删除行——行的生命周期由 verify-enroll / disable / rotate 管理。
+              consumed = [row for row in recovery_rows(user) if row[0] == hash_code(codes[0])]
+              if not consumed:
+                  fail("D5: the consumed recovery code row disappeared; the public login path "
+                       "must only mark usedAt")
+              if consumed[0][1] == "<null>":
+                  fail("D5: the consumed recovery code was not marked as used")
+              require("D5 unused codes after one login", unused_recovery_count(user), 7)
+              third = login_doc(email_of(user), org_a)
+              for attempt in range(1, 5):
+                  request_json("D5 wrong attempt %d" % attempt, NEST_URL, "POST", VERIFY_LOGIN_PATH,
+                               None, {"challengeId": third["authChallengeId"], "code": "000000"}, 401,
+                               INVALID_CODE)
+              request_json("D5 fifth attempt locks the challenge", NEST_URL, "POST", VERIFY_LOGIN_PATH,
+                           None, {"challengeId": third["authChallengeId"], "code": "000000"}, 429,
+                           CHALLENGE_LOCKED)
+              request_json("D5 locked challenge rejects a valid code", NEST_URL, "POST",
+                           VERIFY_LOGIN_PATH, None,
+                           {"challengeId": third["authChallengeId"], "code": totp_now(secret)}, 429,
+                           CHALLENGE_LOCKED)
+              print("public login ok: recovery-code single use and the 5-attempt lock are unchanged")
+
+
+          def lock_behaviour():
+              print("---- per-user MySQL session lock ----")
+              user = user_u
+              reset_factor(user)
+              lock_name = mfa_lock_name(user)
+              holder = hold_mysql_lock(lock_name, seconds=45)
+              try:
+                  time.sleep(2.0)
+                  started = time.monotonic()
+                  status, raw = call(GO_URL, ENROLL_PATH, "POST", u_a_token, None, timeout=90)
+                  elapsed = time.monotonic() - started
+                  if status != 409:
+                      fail("D6 go enroll under lock -> %s %r, want 409" % (status, raw[:300]))
+                  require_error_body("D6 go enroll under lock", raw, 409, LOCK_BUSY, "Conflict")
+                  if elapsed < 8 or elapsed > 40:
+                      fail("D6 go enroll under lock returned after %.1fs, want the 10s GET_LOCK timeout"
+                           % elapsed)
+                  require("D6 no factor written", factor_state(user), None)
+                  # 同一用户在 org B 的请求共用同一把锁（锁名只由 userId 决定）。
+                  status, raw = call(NEST_URL, ENROLL_PATH, "POST", u_b_token, None, timeout=90)
+                  if status != 409:
+                      fail("D6 nest enroll (org B) under lock -> %s %r, want 409" % (status, raw[:300]))
+                  require_error_body("D6 nest enroll (org B) under lock", raw, 409, LOCK_BUSY, "Conflict")
+                  require("D6 no factor written for org B", factor_state(user), None)
+                  # 另一个用户的请求不受影响。
+                  doc = request_json("D6 other user unaffected", GO_URL, "POST", ENROLL_PATH,
+                                     TOKENS[p_lock], None, 201)
+                  require("D6 other user factor created", factor_state(p_lock) is not None, True)
+              finally:
+                  release_mysql_lock(holder, lock_name)
+              request_json("D6 enroll after release", GO_URL, "POST", ENROLL_PATH, u_a_token, None, 201)
+              reset_factor(user)
+              reset_factor(p_lock)
+              print("lock ok: 409 with the shared message, org A/B share one lock, recovery after release")
+
+
+          def phase_d_concurrency():
+              print("==== phase D: concurrency, rollback and locks ====")
+              user = p_concurrent_enroll
+              reset_factor(user)
+              doc = request_json("D1 enroll", GO_URL, "POST", ENROLL_PATH, TOKENS[user], None, 201)
+              secret = doc["secret"]
+              code = totp_now(secret)
+              results = race([(NEST_URL, "POST", VERIFY_ENROLL_PATH, TOKENS[user], {"code": code}),
+                              (GO_URL, "POST", VERIFY_ENROLL_PATH, TOKENS[user], {"code": code})])
+              statuses = sorted(result[0] for result in results)
+              require("D1 concurrent verify statuses", statuses, [201, 400])
+              loser = [result for result in results if result[0] == 400][0]
+              require("D1 loser message", message_of(loser[1]), ENROLL_NOT_INITIALIZED)
+              winner = [result for result in results if result[0] == 201][0]
+              require_codes_match_db("D1 winner", user, (body(winner[1]) or {}).get("recoveryCodes"))
+              require("D1 rows", len(recovery_rows(user)), 8)
+              require("D1 unused", unused_recovery_count(user), 8)
+              require("D1 pendingSecret", factor_state(user)[1], "<null>")
+              print("D1 ok: Nest and Go racing on one enrollment produce exactly one recovery-code set")
+
+              user = p_concurrent_code
+              reset_factor(user)
+              secret, doc = enable_mfa(GO_URL, "D2 enable", user, TOKENS[user])
+              codes = doc["recoveryCodes"]
+              results = race([(GO_URL, "POST", ROTATE_PATH, TOKENS[user], {"code": codes[0]}),
+                              (NEST_URL, "POST", ROTATE_PATH, TOKENS[user], {"code": codes[0]})])
+              statuses = sorted(result[0] for result in results)
+              require("D2 statuses", statuses, [201, 401])
+              loser = [result for result in results if result[0] == 401][0]
+              require("D2 loser message", message_of(loser[1]), INVALID_CODE)
+              winner = [result for result in results if result[0] == 201][0]
+              require_codes_match_db("D2 winner", user, (body(winner[1]) or {}).get("recoveryCodes"))
+              require("D2 unused", unused_recovery_count(user), 8)
+              print("D2 ok: one recovery code authorizes at most one concurrent success")
+
+              user = p_concurrent_rotate
+              reset_factor(user)
+              secret, doc = enable_mfa(GO_URL, "D3 enable", user, TOKENS[user])
+              codes = doc["recoveryCodes"]
+              results = race([(GO_URL, "POST", ROTATE_PATH, TOKENS[user], {"code": codes[0]}),
+                              (NEST_URL, "POST", ROTATE_PATH, TOKENS[user], {"code": codes[1]})])
+              statuses = sorted(result[0] for result in results)
+              require("D3 statuses", statuses, [201, 401])
+              winner = [result for result in results if result[0] == 201][0]
+              require_codes_match_db("D3 winner", user, (body(winner[1]) or {}).get("recoveryCodes"))
+              require("D3 rows", len(recovery_rows(user)), 8)
+              require("D3 unused", unused_recovery_count(user), 8)
+              if set(hash_code(c) for c in codes) & set(recovery_hashes(user)):
+                  fail("D3: an old recovery code survived the concurrent rotation")
+              print("D3 ok: two different old codes cannot both authorize and overwrite each other")
+
+              af2_fault_matrix()
+              public_login_behaviour()
+              lock_behaviour()
+              print("phase D ok")
+
+
+          # ---- phase E ----
+          def phase_e_profile_cache():
+              print("==== phase E: profile cache invalidation ====")
+              user = user_u
+              reset_factor(user)
+              redis_del_pattern(PROFILE_PREFIX + user + ":*")
+              redis_del_pattern(PROFILE_PREFIX + user_v + ":*")
+              doc = request_json("E prewarm u/a", NEST_URL, "GET", ME_PATH, u_a_token, None, 200)
+              require("E prewarm u/a mfaEnabled", doc.get("mfaEnabled"), False)
+              doc = request_json("E prewarm u/b", NEST_URL, "GET", ME_PATH, u_b_token, None, 200)
+              require("E prewarm u/b mfaEnabled", doc.get("mfaEnabled"), False)
+              doc = request_json("E prewarm v", NEST_URL, "GET", ME_PATH, v_token, None, 200)
+              require("E prewarm v mfaEnabled", doc.get("mfaEnabled"), False)
+              for key in (PROFILE_PREFIX + user + ":" + org_a, PROFILE_PREFIX + user + ":" + org_b,
+                          PROFILE_PREFIX + user_v + ":" + org_c):
+                  if redis_get(key) == "":
+                      fail("E: profile cache key was not warmed: " + key)
+              v_cache = redis_get(PROFILE_PREFIX + user_v + ":" + org_c)
+
+              secret, doc = enable_mfa(GO_URL, "E go enable", user, u_a_token)
+              codes = doc["recoveryCodes"]
+              assert_cache_has_no_plaintext("E cache after go verify", [secret] + codes)
+              for label, token in (("u/a", u_a_token), ("u/b", u_b_token)):
+                  doc = request_json("E me after go verify " + label, NEST_URL, "GET", ME_PATH, token,
+                                     None, 200)
+                  require("E me after go verify " + label + " mfaEnabled", doc.get("mfaEnabled"), True)
+              doc = request_json("E go read mfa", GO_URL, "GET", MFA_PATH, u_a_token, None, 200)
+              require("E go read mfa enabled", doc.get("enabled"), True)
+              require("E v cache untouched", redis_get(PROFILE_PREFIX + user_v + ":" + org_c), v_cache)
+
+              doc = request_json("E nest disable", NEST_URL, "POST", DISABLE_PATH, u_a_token,
+                                 {"code": totp_now(secret)}, 201)
+              require("E nest disable enabled", doc.get("enabled"), False)
+              for label, token in (("u/a", u_a_token), ("u/b", u_b_token)):
+                  doc = request_json("E me after nest disable " + label, NEST_URL, "GET", ME_PATH, token,
+                                     None, 200)
+                  require("E me after nest disable " + label + " mfaEnabled", doc.get("mfaEnabled"), False)
+              require("E v cache untouched after disable",
+                      redis_get(PROFILE_PREFIX + user_v + ":" + org_c), v_cache)
+
+              secret2, doc = enable_mfa(NEST_URL, "E nest enable", user, u_a_token)
+              codes2 = doc["recoveryCodes"]
+              doc = request_json("E go read after nest write", GO_URL, "GET", MFA_PATH, u_a_token, None,
+                                 200)
+              require("E go read after nest write enabled", doc.get("enabled"), True)
+              assert_cache_has_no_plaintext("E cache final", [secret, secret2] + codes + codes2)
+              reset_factor(user)
+              print("phase E ok")
+
+
+          # ---- phase F ----
+          def oidc_column_is_null(org_id, column):
+              return scalar("SELECT " + column + " IS NULL FROM OrgOidcConfig WHERE orgId='"
+                            + org_id + "'")
+
+
+          def oidc_scopes_elements(org_id):
+              """按元素读回 scopes（不依赖 MySQL 的 JSON 文本格式）。"""
+              length = int(scalar("SELECT IFNULL(JSON_LENGTH(scopes), -1) FROM OrgOidcConfig "
+                                  "WHERE orgId='" + org_id + "'"))
+              if length < 0:
+                  return None
+              return [scalar("SELECT JSON_UNQUOTE(JSON_EXTRACT(scopes, '$[" + str(index) + "]')) "
+                             "FROM OrgOidcConfig WHERE orgId='" + org_id + "'")
+                      for index in range(length)]
+
+
+          def reset_a():
+              reset_oidc(org_a)
+
+
+          def oidc_parity(label, payload, expected=200, expected_message=None, setup=None,
+                          org_id=None, token=None):
+              """PUT 在 Nest 与 Go 两侧各自从同一初始行出发，比较状态码/正文/行状态。"""
+              org = org_id if org_id is not None else org_a
+              tok = token if token is not None else w_a_token
+              if setup is not None:
+                  setup()
+              nest_status, nest_raw = call(NEST_URL, OIDC_PATH, "PUT", tok, payload)
+              nest_row = oidc_row(org)
+              if setup is not None:
+                  setup()
+              go_status, go_raw = call(GO_URL, OIDC_PATH, "PUT", tok, payload)
+              go_row = oidc_row(org)
+              if nest_status != expected or go_status != expected:
+                  fail(f"oidc parity {label}: status nest={nest_status} go={go_status}, want {expected}; "
+                       f"nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
+              if canon(body(nest_raw)) != canon(body(go_raw)):
+                  fail(f"oidc parity {label}: body mismatch nest={nest_raw[:600]!r} go={go_raw[:600]!r}")
+              # 带新 clientSecret 的请求在两侧各自用新的随机 IV 加密，密文必然
+              # 不同：只比较确定性列与 secret 的有无。不带新 secret 时（AF4 保留
+              # 语义）要求整行逐字节一致，包括 clientSecret 列。
+              carries_secret = (isinstance(payload, dict)
+                                and isinstance(payload.get("clientSecret"), str)
+                                and payload["clientSecret"].strip() != "")
+              if carries_secret:
+                  if nest_row[:4] + nest_row[5:] != go_row[:4] + go_row[5:]:
+                      fail(f"oidc parity {label}: deterministic columns differ "
+                           f"nest={nest_row} go={go_row}")
+                  if (nest_row[4] == "<null>") != (go_row[4] == "<null>"):
+                      fail(f"oidc parity {label}: clientSecret presence differs "
+                           f"nest={nest_row[4]!r} go={go_row[4]!r}")
+              elif nest_row != go_row:
+                  fail(f"oidc parity {label}: DB row mismatch nest={nest_row} go={go_row}")
+              if expected_message is not None:
+                  for side, raw in (("nest", nest_raw), ("go", go_raw)):
+                      got = message_of(raw)
+                      if got != expected_message:
+                          fail(f"oidc parity {label}: {side} message {got!r} want {expected_message!r} "
+                               f"raw={raw[:400]!r}")
+              return body(nest_raw), nest_row
+
+
+          def seed_oidc_row(secret_sql, scopes_sql):
+              reset_oidc(org_a)
+              sql("INSERT INTO OrgOidcConfig (id, orgId, enabled, issuerUrl, discoveryUrl, clientId, "
+                  "clientSecret, scopes, buttonLabel, requireEmailVerified, createdAt, updatedAt) VALUES ("
+                  "'af-smoke-oidc-seed', '" + org_a + "', 0, 'https://idp.example', NULL, 'client-x', "
+                  + secret_sql + ", " + scopes_sql + ", NULL, 1, NOW(3), NOW(3))")
+
+
+          def phase_f_oidc():
+              print("==== phase F: OIDC configuration ====")
+              reset_oidc(org_a)
+              reset_oidc(org_b)
+
+              # 无行默认值 + 双组织隔离
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  doc = request_json("F defaults a " + side, base, "GET", OIDC_PATH, w_a_token, None, 200)
+                  require_keys("F defaults a " + side, doc, OIDC_KEYS)
+                  require("F defaults a " + side, canon(doc), OIDC_DEFAULTS)
+                  doc = request_json("F defaults b " + side, base, "GET", OIDC_PATH, w_b_token, None, 200)
+                  require("F defaults b " + side, canon(doc), OIDC_DEFAULTS)
+
+              # 权限门禁（settings.manage，没有平台管理员门禁）
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  for method, payload in (("GET", None),
+                                          ("PUT", {"enabled": False, "issuerUrl": "", "clientId": ""})):
+                      status, raw = call(base, OIDC_PATH, method, n_a_token, payload)
+                      if status != 403:
+                          fail("F no-permission %s %s -> %s %r, want 403"
+                               % (side, method, status, raw[:300]))
+                      require_error_body("F no-permission " + side + " " + method, raw, 403,
+                                         PERMISSION_MESSAGE, "Forbidden")
+                      doc = body(raw) or {}
+                      require("F no-permission code " + side + " " + method, doc.get("code"),
+                              PERMISSION_CODE)
+                      require("F no-permission detail " + side + " " + method, doc.get("detail"),
+                              PERMISSION_DETAIL)
+                      require("F no-permission required " + side + " " + method,
+                              doc.get("requiredPermissions"), ["settings.manage"])
+                      require("F no-permission mode " + side + " " + method,
+                              doc.get("permissionsMode"), "any")
+                      if "missingPermissions" in doc:
+                          fail("F no-permission " + side + ": missingPermissions must be absent")
+
+              # 权限来自 MySQL 而不是 JWT claim
+              sql("DELETE FROM RolePermission WHERE roleId='" + role_settings_a + "'")
+              redis("DEL", PROFILE_PREFIX + user_w + ":" + org_a)
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  status, raw = call(base, OIDC_PATH, "GET", w_a_token, None)
+                  if status != 403:
+                      fail("F claim-vs-db %s -> %s %r, want 403" % (side, status, raw[:300]))
+                  require_error_body("F claim-vs-db " + side, raw, 403, PERMISSION_MESSAGE, "Forbidden")
+              sql("INSERT INTO RolePermission (id, roleId, permissionId) VALUES ('" + role_settings_a
+                  + "-rp', '" + role_settings_a + "', '" + SETTINGS_PERM + "')")
+              redis("DEL", PROFILE_PREFIX + user_w + ":" + org_a)
+              doc = request_json("F permission restored", GO_URL, "GET", OIDC_PATH, w_a_token, None, 200)
+              require_keys("F permission restored", doc, OIDC_KEYS)
+              print("F ok: 8-field defaults, no platform-admin gate, permission re-derived from MySQL")
+
+              # 双组织隔离
+              doc, row = oidc_parity("F write org A",
+                                     {"enabled": True, "issuerUrl": "  https://idp-a.example  ",
+                                      "clientId": "  client-a  ", "scopes": ["openid"],
+                                      "buttonLabel": "  Login with A  "}, 200, setup=reset_a)
+              require("F write org A body", canon(doc),
+                      {"enabled": True, "issuerUrl": "https://idp-a.example", "discoveryUrl": "",
+                       "clientId": "client-a", "hasClientSecret": False, "scopes": ["openid"],
+                       "buttonLabel": "Login with A", "requireEmailVerified": True})
+              require("F write org A row",
+                      (row[0], row[1], row[2], row[3], row[4], row[6], row[7]),
+                      ("1", "https://idp-a.example", "<null>", "client-a", "<null>", "Login with A",
+                       "1"))
+              require("F write org A row scopes", oidc_scopes_elements(org_a), ["openid"])
+              doc = request_json("F org B isolated", NEST_URL, "GET", OIDC_PATH, w_b_token, None, 200)
+              require("F org B isolated", canon(doc), OIDC_DEFAULTS)
+              doc, row = oidc_parity("F write org B",
+                                     {"enabled": False, "issuerUrl": "https://idp-b.example",
+                                      "clientId": "client-b", "scopes": ["email"],
+                                      "requireEmailVerified": False}, 200, setup=lambda: reset_oidc(org_b),
+                                     org_id=org_b, token=w_b_token)
+              doc = request_json("F org A untouched", GO_URL, "GET", OIDC_PATH, w_a_token, None, 200)
+              require("F org A untouched", doc["clientId"], "client-a")
+              require("F org A untouched scopes", doc["scopes"], ["openid"])
+              doc = request_json("F org B written", GO_URL, "GET", OIDC_PATH, w_b_token, None, 200)
+              require("F org B written", doc["clientId"], "client-b")
+              require("F org B written requireEmailVerified", doc["requireEmailVerified"], False)
+              reset_oidc(org_b)
+              print("F ok: two organizations keep independent rows")
+
+              # trim / 可选 null / scopes 过滤
+              doc, row = oidc_parity("F discoveryUrl blank",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "discoveryUrl": "   "}, 200, setup=reset_a)
+              require("F discoveryUrl blank response", doc["discoveryUrl"], "")
+              require("F discoveryUrl blank SQL NULL", oidc_column_is_null(org_a, "discoveryUrl"), "1")
+              doc, row = oidc_parity("F discoveryUrl trimmed",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "discoveryUrl": "  https://x.example/d  "}, 200, setup=reset_a)
+              require("F discoveryUrl trimmed response", doc["discoveryUrl"], "https://x.example/d")
+              doc, row = oidc_parity("F discoveryUrl null",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "discoveryUrl": None}, 200, setup=reset_a)
+              require("F discoveryUrl null response", doc["discoveryUrl"], "")
+              require("F discoveryUrl null SQL NULL", oidc_column_is_null(org_a, "discoveryUrl"), "1")
+              doc, row = oidc_parity("F buttonLabel blank",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "buttonLabel": "   "}, 200, setup=reset_a)
+              require("F buttonLabel blank response", doc["buttonLabel"], "")
+              require("F buttonLabel blank SQL NULL", oidc_column_is_null(org_a, "buttonLabel"), "1")
+              doc, row = oidc_parity("F buttonLabel trimmed",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "buttonLabel": "  Btn  "}, 200, setup=reset_a)
+              require("F buttonLabel trimmed response", doc["buttonLabel"], "Btn")
+              doc, row = oidc_parity("F empty required strings",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "   "}, 200,
+                                     setup=reset_a)
+              require("F empty required strings response", [doc["issuerUrl"], doc["clientId"]], ["", ""])
+              require("F empty required strings row", row[1:4], ("", "<null>", ""))
+              doc, row = oidc_parity("F scopes verbatim",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "scopes": ["  openid  ", "email", "email"]}, 200, setup=reset_a)
+              require("F scopes verbatim response", doc["scopes"], ["  openid  ", "email", "email"])
+              # scalar() 会 strip 每一行输出，按元素读回时看不到首尾空白；改用带
+              # 引号的原始 JSON 元素断言存储值逐字节保留原字符串。
+              require("F scopes verbatim raw element",
+                      scalar("SELECT JSON_EXTRACT(scopes, '$[0]') FROM OrgOidcConfig "
+                             "WHERE orgId='" + org_a + "'"), '"  openid  "')
+              require("F scopes verbatim row", oidc_scopes_elements(org_a),
+                      ["openid", "email", "email"])
+              require("F scopes verbatim is array",
+                      scalar("SELECT JSON_TYPE(scopes) FROM OrgOidcConfig WHERE orgId='" + org_a + "'"),
+                      "ARRAY")
+              doc, row = oidc_parity("F scopes filtered empty",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "scopes": ["", "   "]}, 200, setup=reset_a)
+              require("F scopes filtered empty response", doc["scopes"], OIDC_DEFAULT_SCOPES)
+              require("F scopes filtered empty SQL NULL", oidc_column_is_null(org_a, "scopes"), "1")
+              doc, row = oidc_parity("F scopes non-string filtered",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "scopes": ["openid", 5, "  ", "email"]}, 200, setup=reset_a)
+              require("F scopes non-string filtered response", doc["scopes"], ["openid", "email"])
+              require("F scopes non-string filtered row", oidc_scopes_elements(org_a), ["openid", "email"])
+              doc, row = oidc_parity("F scopes null",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "scopes": None}, 200, setup=reset_a)
+              require("F scopes null response", doc["scopes"], OIDC_DEFAULT_SCOPES)
+              require("F scopes null SQL NULL", oidc_column_is_null(org_a, "scopes"), "1")
+              doc, row = oidc_parity("F requireEmailVerified absent",
+                                     {"enabled": False, "issuerUrl": "", "clientId": ""}, 200,
+                                     setup=reset_a)
+              require("F requireEmailVerified absent", doc["requireEmailVerified"], True)
+              doc, row = oidc_parity("F requireEmailVerified false",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "requireEmailVerified": False}, 200, setup=reset_a)
+              require("F requireEmailVerified false", doc["requireEmailVerified"], False)
+              require("F requireEmailVerified false row", row[7], "0")
+              doc, row = oidc_parity("F requireEmailVerified null",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "",
+                                      "requireEmailVerified": None}, 200, setup=reset_a)
+              require("F requireEmailVerified null", doc["requireEmailVerified"], True)
+              print("F ok: trimming, optional null and the scopes filter match on both sides")
+
+              # scopes 读取规则（直接 SQL 造行）
+              for label, raw_sql, expected in (
+                  ("not an array", "'\"openid\"'", OIDC_DEFAULT_SCOPES),
+                  ("object", "'{}'", OIDC_DEFAULT_SCOPES),
+                  ("blank members", "'[\"\", \"  \"]'", OIDC_DEFAULT_SCOPES),
+                  ("sql null", "NULL", OIDC_DEFAULT_SCOPES),
+                  ("whitespace kept", "'[\"  openid  \", \"email\"]'", ["  openid  ", "email"]),
+                  ("duplicates kept", "'[\"email\", \"email\"]'", ["email", "email"]),
+                  ("mixed types", "'[\"openid\", 5, null]'", ["openid"]),
+              ):
+                  seed_oidc_row("NULL", raw_sql)
+                  for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                      doc = request_json("F scopes seed %s %s" % (label, side), base, "GET", OIDC_PATH,
+                                         w_a_token, None, 200)
+                      require_keys("F scopes seed %s %s" % (label, side), doc, OIDC_KEYS)
+                      require("F scopes seed %s %s" % (label, side), doc["scopes"], expected)
+              print("F ok: scopes read rule (non-array/blank -> default, originals kept verbatim)")
+
+              # hasClientSecret 是 Boolean(存储值)，不是"能否解密"
+              for label, secret_sql, expected in (
+                  ("sql null", "NULL", False),
+                  ("plain string", "'\"legacy-plaintext\"'", True),
+                  ("empty string", "'\"\"'", False),
+                  ("number zero", "'0'", False),
+                  ("envelope", "_utf8mb4'" + sql_escape(json.dumps(encrypt_v1("has-secret-value")))
+                   + "'", True),
+              ):
+                  seed_oidc_row(secret_sql, "NULL")
+                  for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                      doc = request_json("F hasClientSecret %s %s" % (label, side), base, "GET",
+                                         OIDC_PATH, w_a_token, None, 200)
+                      require_keys("F hasClientSecret %s %s" % (label, side), doc, OIDC_KEYS)
+                      require("F hasClientSecret %s %s" % (label, side), doc["hasClientSecret"], expected)
+                      if "has-secret-value" in json.dumps(doc) or "legacy-plaintext" in json.dumps(doc):
+                          fail("F hasClientSecret " + label + ": the response leaked the stored value")
+              print("F ok: hasClientSecret is Boolean(stored value), the secret is never returned or decrypted")
+
+              # 没有 Redis 缓存：直接改行后 GET 立刻反映
+              seed_oidc_row("NULL", "NULL")
+              redis_del_pattern("oidc:*")
+              doc = request_json("F cache probe 1", NEST_URL, "GET", OIDC_PATH, w_a_token, None, 200)
+              require("F cache probe 1", doc["clientId"], "client-x")
+              sql("UPDATE OrgOidcConfig SET clientId='client-changed' WHERE orgId='" + org_a + "'")
+              doc = request_json("F cache probe 2", GO_URL, "GET", OIDC_PATH, w_a_token, None, 200)
+              require("F cache probe 2", doc["clientId"], "client-changed")
+              require("F no oidc cache keys", redis_scan("oidc:*"), [])
+              print("F ok: there is no Redis cache for the OIDC configuration")
+
+              # 保存端点不发任何网络请求；Nest 登录路径的 HTTPS/SSRF 拒绝仍生效
+              reset_oidc(org_a)
+              keys_before = sorted(redis_scan("oidc:*"))
+              started = time.monotonic()
+              doc = request_json("F unfetchable issuer", GO_URL, "PUT", OIDC_PATH, w_a_token,
+                                 {"enabled": True, "issuerUrl": "https://127.0.0.1:9/oidc",
+                                  "clientId": "client-x"}, 200)
+              elapsed = time.monotonic() - started
+              if elapsed > 10:
+                  fail("F unfetchable issuer: the save took %.1fs, it must not contact the IdP" % elapsed)
+              require("F unfetchable issuer stored", doc["issuerUrl"], "https://127.0.0.1:9/oidc")
+              require("F unfetchable issuer no discovery cache", sorted(redis_scan("oidc:*")), keys_before)
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  status, raw = call(base, OIDC_START_PATH + "?org=" + org_a, "GET", None, None)
+                  if status != 400 or message_of(raw) != OIDC_SSRF_MESSAGE:
+                      fail("F ssrf %s -> %s %r, want 400 %r"
+                           % (side, status, raw[:300], OIDC_SSRF_MESSAGE))
+              reset_oidc(org_a)
+              doc = request_json("F http issuer", GO_URL, "PUT", OIDC_PATH, w_a_token,
+                                 {"enabled": True, "issuerUrl": "http://127.0.0.1:9/oidc",
+                                  "clientId": "client-x"}, 200)
+              for base, side in ((NEST_URL, "nest"), (GO_URL, "go")):
+                  status, raw = call(base, OIDC_START_PATH + "?org=" + org_a, "GET", None, None)
+                  if status != 400 or message_of(raw) != OIDC_HTTPS_MESSAGE:
+                      fail("F https %s -> %s %r, want 400 %r"
+                           % (side, status, raw[:300], OIDC_HTTPS_MESSAGE))
+              print("F ok: the save endpoint performs no network request; HTTPS/SSRF rejection still applies")
+
+              # 没有 AuditLog 行
+              before_audit = int(scalar("SELECT COUNT(*) FROM AuditLog"))
+              doc, row = oidc_parity("F no audit row",
+                                     {"enabled": False, "issuerUrl": "", "clientId": ""}, 200,
+                                     setup=reset_a)
+              require("F no audit rows", int(scalar("SELECT COUNT(*) FROM AuditLog")), before_audit)
+              print("F ok: the OIDC save writes no AuditLog row")
+
+              # clientSecret 保留语义（AF4 写入期原子保留）
+              reset_oidc(org_a)
+              doc, row = oidc_parity("F secret set S1",
+                                     {"enabled": True, "issuerUrl": "", "clientId": "",
+                                      "clientSecret": "  S1-secret  "}, 200, setup=reset_a)
+              require("F secret set S1 has", doc["hasClientSecret"], True)
+              require("F secret set S1 decrypt", decrypt_v1(parse_json_text(row[4])), "S1-secret")
+              if "S1-secret" in row[4]:
+                  fail("F: the clientSecret column contains the plaintext secret")
+              # 两侧各自用新的随机 IV 加密同一个 secret，oidc_parity 之后库里是
+              # Go 那一份；后续「保留」语义以当前实际存储字节为基准。
+              envelope1 = oidc_row(org_a)[4]
+              for label, payload in (
+                  ("absent", {"enabled": True, "issuerUrl": "", "clientId": ""}),
+                  ("null", {"enabled": True, "issuerUrl": "", "clientId": "", "clientSecret": None}),
+                  ("empty", {"enabled": True, "issuerUrl": "", "clientId": "", "clientSecret": ""}),
+                  ("blank", {"enabled": True, "issuerUrl": "", "clientId": "", "clientSecret": "   "}),
+              ):
+                  doc, row = oidc_parity("F secret keep " + label, payload, 200)
+                  require("F secret keep " + label + " bytes", row[4], envelope1)
+                  require("F secret keep " + label + " has", doc["hasClientSecret"], True)
+              doc, row = oidc_parity("F secret rotate S2",
+                                     {"enabled": True, "issuerUrl": "", "clientId": "",
+                                      "clientSecret": "S2-secret"}, 200)
+              if row[4] == envelope1:
+                  fail("F secret rotate S2: the stored envelope did not change")
+              require("F secret rotate S2 decrypt", decrypt_v1(parse_json_text(row[4])), "S2-secret")
+              reset_oidc(org_a)
+              doc, row = oidc_parity("F create without secret",
+                                     {"enabled": False, "issuerUrl": "", "clientId": "client-y"}, 200,
+                                     setup=reset_a)
+              require("F create without secret has", doc["hasClientSecret"], False)
+              require("F create without secret SQL NULL", oidc_column_is_null(org_a, "clientSecret"), "1")
+              print("F ok: keep/rotate clientSecret semantics, first insert without a secret is SQL NULL")
+
+              # AF4：并发写新 secret 与不带 secret 的更新不得回滚
+              for round_index in range(6):
+                  reset_oidc(org_a)
+                  oidc_parity("F af4 seed %d" % round_index,
+                              {"enabled": True, "issuerUrl": "", "clientId": "",
+                               "clientSecret": "AF4-seed-%d" % round_index}, 200, setup=reset_a)
+                  new_secret = "AF4-new-%d" % round_index
+                  results = race([
+                      (NEST_URL, "PUT", OIDC_PATH, w_a_token,
+                       {"enabled": True, "issuerUrl": "", "clientId": "", "clientSecret": new_secret}),
+                      (GO_URL, "PUT", OIDC_PATH, w_a_token,
+                       {"enabled": True, "issuerUrl": "", "clientId": ""}),
+                  ])
+                  for index, (status, raw) in enumerate(results):
+                      if status != 200:
+                          fail("F af4 round %d call %d -> %s %r"
+                               % (round_index, index, status, raw[:300]))
+                  stored = oidc_row(org_a)[4]
+                  if stored == "<null>":
+                      fail("F af4 round %d: the concurrent update cleared the client secret" % round_index)
+                  require("F af4 round %d kept the new secret" % round_index,
+                          decrypt_v1(parse_json_text(stored)), new_secret)
+              print("F ok: AF4 keep-secret is atomic at write time (no read-modify-write rollback)")
+
+              # 响应与日志里没有 secret
+              reset_oidc(org_a)
+              marker = "AF-SMOKE-LOG-MARKER-SECRET"
+              doc, row = oidc_parity("F log marker",
+                                     {"enabled": True, "issuerUrl": "", "clientId": "",
+                                      "clientSecret": marker}, 200, setup=reset_a)
+              if marker in json.dumps(doc):
+                  fail("F log marker: the response contains the plaintext client secret")
+              if marker in row[4]:
+                  fail("F log marker: the stored column contains the plaintext client secret")
+              if nest_log_contains(marker):
+                  fail("F log marker: the NestJS log contains the plaintext client secret")
+              if marker in docker_logs():
+                  fail("F log marker: the api-go log contains the plaintext client secret")
+              reset_oidc(org_a)
+              print("phase F ok")
+
+
+          # ---- phase G ----
+          def phase_g_nest_down():
+              print("==== phase G: NestJS stopped ====")
+              start_go("go")
+              stop_nest()
+              if nest_reachable():
+                  fail("phase G: NestJS is still reachable after stop_nest()")
+              # 清掉 profile / 鉴权策略 / discovery 缓存，强制 Go 重读真实 DB。
+              redis_del_pattern(PROFILE_PREFIX + "*")
+              redis("DEL", SYSTEM_SECURITY_CACHE)
+              redis_del_pattern("oidc:discovery:*")
+              redis_del_pattern("oidc:jwks:*")
+
+              user = p_nest_down
+              reset_factor(user)
+              secret, doc = enable_mfa(GO_URL, "G go enable", user, TOKENS[user])
+              codes = doc["recoveryCodes"]
+              require_codes_match_db("G go verify", user, codes)
+              doc = request_json("G go rotate totp", GO_URL, "POST", ROTATE_PATH, TOKENS[user],
+                                 {"code": totp_now(secret)}, 201)
+              codes2 = doc["recoveryCodes"]
+              require_codes_match_db("G go rotate totp", user, codes2)
+              doc = request_json("G go rotate recovery code", GO_URL, "POST", ROTATE_PATH, TOKENS[user],
+                                 {"code": codes2[0]}, 201)
+              codes3 = doc["recoveryCodes"]
+              require_codes_match_db("G go rotate recovery code", user, codes3)
+              doc = request_json("G go disable", GO_URL, "POST", DISABLE_PATH, TOKENS[user],
+                                 {"code": totp_now(secret)}, 201)
+              require("G go disable enabled", doc["enabled"], False)
+              require("G go disable codes", recovery_rows(user), [])
+
+              reset_oidc(org_a)
+              doc = request_json("G go oidc write", GO_URL, "PUT", OIDC_PATH, w_a_token,
+                                 {"enabled": True, "issuerUrl": "https://idp-g.example",
+                                  "clientId": "client-g", "scopes": ["openid", "profile"]}, 200)
+              require("G go oidc write", doc["clientId"], "client-g")
+              doc = request_json("G go oidc read", GO_URL, "GET", OIDC_PATH, w_a_token, None, 200)
+              require_keys("G go oidc read", doc, OIDC_KEYS)
+              require("G go oidc read scopes", doc["scopes"], ["openid", "profile"])
+              doc = request_json("G go oidc defaults", GO_URL, "GET", OIDC_PATH, w_b_token, None, 200)
+              require("G go oidc defaults", canon(doc), OIDC_DEFAULTS)
+
+              for method, path in NEST_ONLY_ROUTES:
+                  status, raw = call(GO_URL, path, method, u_a_token, None)
+                  if status != 502:
+                      fail("G nest-only %s %s -> %s %r, want 502" % (method, path, status, raw[:300]))
+              status, raw = call(GO_URL, VERIFY_LOGIN_PATH, "POST", None,
+                                 {"challengeId": "af-smoke-missing", "code": "123456"})
+              if status != 502:
+                  fail("G verify-login with a body -> %s %r, want 502 (never migrated)"
+                       % (status, raw[:300]))
+              go_health()
+              print("G ok: seven routes, a full MFA flow and OIDC config run on Go alone; "
+                    "public challenges and the OIDC login chain are 502")
+
+              start_nest()
+              user = p_nest_down
+              reset_factor(user)
+              secret, doc = enable_mfa(GO_URL, "G2 go enable", user, TOKENS[user])
+              codes = doc["recoveryCodes"]
+              doc = request_json("G2 nest GET mfa", NEST_URL, "GET", MFA_PATH, TOKENS[user], None, 200)
+              require("G2 nest GET mfa", canon(doc), expected_status(user))
+              doc = request_json("G2 nest rotate with go code", NEST_URL, "POST", ROTATE_PATH,
+                                 TOKENS[user], {"code": codes[6]}, 201)
+              require_codes_match_db("G2 nest rotate with go code", user, doc["recoveryCodes"])
+              doc = request_json("G2 nest disable go ciphertext", NEST_URL, "POST", DISABLE_PATH,
+                                 TOKENS[user], {"code": totp_now(secret)}, 201)
+              require("G2 nest disable enabled", doc["enabled"], False)
+              reset_factor(user)
+              reset_oidc(org_a)
+              print("G ok: restarted NestJS consumes the factor and recovery codes written by Go")
+              print("phase G ok")
+
+
+          # ---- phase H ----
+          def phase_h_rollback():
+              print("==== phase H: rollback to legacy ====")
+              start_go("legacy")
+              require_go_owns_nothing()
+              probe_go_routes_no_token("H legacy no token")
+              probe_public_routes("H legacy public")
+              parity("H legacy GET mfa", "GET", MFA_PATH, u_a_token, None, 200)
+              parity("H legacy GET oidc", "GET", OIDC_PATH, w_a_token, None, 200)
+              stop_nest()
+              for method, path in GO_ROUTES:
+                  status, raw = call(GO_URL, path, method, u_a_token, None)
+                  if status != 502:
+                      fail("H rollback %s %s -> %s %r, want 502 with NestJS down"
+                           % (method, path, status, raw[:300]))
+              start_nest()
+              parity("H legacy GET mfa after restart", "GET", MFA_PATH, u_a_token, None, 200)
+              print("phase H ok: API_GO_AUTH_FACTORS_MODE=legacy returns all seven routes to NestJS")
+
+
+          # ---- main ----
+          print("==== api-go auth factors smoke ====")
+          phase_0_fixtures()
+          phase_a_switch()
+          phase_b_mfa()
+          phase_c_interop()
+          phase_d_concurrency()
+          phase_e_profile_cache()
+          phase_f_oidc()
+          phase_g_nest_down()
+          phase_h_rollback()
+
+          print("ALL API-GO AUTH FACTORS SMOKE CHECKS PASSED")
+          PY

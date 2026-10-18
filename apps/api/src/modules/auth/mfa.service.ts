@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   Injectable,
   UnauthorizedException,
@@ -7,9 +8,11 @@ import {
 import { Prisma } from "@prisma/client";
 
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
+import { isMachineActorId, withMfaUserLock } from "./auth-factors.lock";
 import {
   buildOtpAuthUri,
   generateRecoveryCodes,
@@ -32,6 +35,11 @@ const MFA_ISSUER = "Modular";
 const MFA_CODE_FAILURE_MESSAGE = "Invalid MFA verification code";
 const MFA_CHALLENGE_LOCKED_MESSAGE =
   "Too many MFA verification attempts. Please sign in again.";
+// AF5: the four authenticated MFA *write* routes must never materialize a
+// UserTotpFactor for a machine identity. `MachineTokenService.validate`
+// produces `machine:<tokenId>`, which is not a User row, so an upsert would
+// fail the UserTotpFactor.userId foreign key and surface as a 500.
+const MFA_HUMAN_REQUIRED_MESSAGE = "MFA management requires a human user";
 
 @Injectable()
 export class MfaService {
@@ -39,6 +47,7 @@ export class MfaService {
     private readonly prisma: PrismaService,
     private readonly authSecurity: AuthSecurityService,
     private readonly env: EnvService,
+    private readonly cache: CacheService,
   ) {}
 
   async getStatus(userId: string) {
@@ -62,99 +71,130 @@ export class MfaService {
   }
 
   async beginEnrollment(userId: string, accountName: string) {
-    const secret = generateTotpSecret();
-    const storedSecret = await this.authSecurity.encodeSecret(secret);
-    const existingFactor = await this.prisma.userTotpFactor.findUnique({
-      where: { userId },
-      select: {
-        verifiedAt: true,
-        disabledAt: true,
-      },
-    });
+    // AF5: reject machine identities before any factor row is written.
+    await this.assertHumanMfaActor(userId);
 
-    if (existingFactor?.verifiedAt && !existingFactor.disabledAt) {
-      await this.prisma.userTotpFactor.update({
+    return withMfaUserLock(userId, async () => {
+      const secret = generateTotpSecret();
+      const storedSecret = await this.authSecurity.encodeSecret(secret);
+      const existingFactor = await this.prisma.userTotpFactor.findUnique({
         where: { userId },
-        data: {
-          pendingSecret: storedSecret as Prisma.InputJsonValue,
-          pendingLabel: accountName,
-          pendingStartedAt: new Date(),
+        select: {
+          verifiedAt: true,
+          disabledAt: true,
         },
       });
-    } else {
-      await this.prisma.userTotpFactor.upsert({
-        where: { userId },
-        update: {
-          secret: storedSecret as Prisma.InputJsonValue,
-          pendingSecret: Prisma.DbNull,
-          label: accountName,
-          pendingLabel: null,
-          pendingStartedAt: null,
-          verifiedAt: null,
-          disabledAt: null,
-          lastUsedAt: null,
-        },
-        create: {
-          userId,
-          secret: storedSecret as Prisma.InputJsonValue,
-          label: accountName,
-        },
-      });
-    }
 
-    return {
-      secret,
-      otpauthUri: buildOtpAuthUri({
-        issuer: MFA_ISSUER,
-        accountName,
+      if (existingFactor?.verifiedAt && !existingFactor.disabledAt) {
+        // An active factor keeps its verified secret and recovery codes; the
+        // replacement only becomes effective once verify-enroll promotes it.
+        await this.prisma.userTotpFactor.update({
+          where: { userId },
+          data: {
+            pendingSecret: storedSecret as Prisma.InputJsonValue,
+            pendingLabel: accountName,
+            pendingStartedAt: new Date(),
+          },
+        });
+      } else {
+        await this.prisma.userTotpFactor.upsert({
+          where: { userId },
+          update: {
+            secret: storedSecret as Prisma.InputJsonValue,
+            pendingSecret: Prisma.DbNull,
+            label: accountName,
+            pendingLabel: null,
+            pendingStartedAt: null,
+            verifiedAt: null,
+            disabledAt: null,
+            lastUsedAt: null,
+          },
+          create: {
+            userId,
+            secret: storedSecret as Prisma.InputJsonValue,
+            label: accountName,
+          },
+        });
+      }
+
+      return {
         secret,
-      }),
-    };
+        otpauthUri: buildOtpAuthUri({
+          issuer: MFA_ISSUER,
+          accountName,
+          secret,
+        }),
+      };
+    });
   }
 
   async verifyEnrollment(userId: string, code: string) {
-    const factor = await this.prisma.userTotpFactor.findUnique({
-      where: { userId },
-    });
-    if (!factor) {
-      throw new BadRequestException("MFA enrollment is not initialized");
-    }
-
-    const enrollmentSecretValue = factor.pendingSecret ?? factor.secret;
-    const secret = await this.authSecurity.decodeSecret(enrollmentSecretValue);
-    if (!secret || !verifyTotpCode(secret, code)) {
-      throw new BadRequestException("Invalid MFA verification code");
-    }
+    await this.assertHumanMfaActor(userId);
 
     const recoveryCodes = generateRecoveryCodes();
-    const verifiedAt = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      await tx.userTotpFactor.update({
-        where: { userId },
-        data: {
-          secret: enrollmentSecretValue as Prisma.InputJsonValue,
-          label: factor.pendingLabel ?? factor.label,
-          pendingSecret: Prisma.DbNull,
-          pendingLabel: null,
-          pendingStartedAt: null,
-          enrolledAt:
-            factor.pendingSecret && factor.verifiedAt && !factor.disabledAt
-              ? verifiedAt
-              : factor.enrolledAt,
-          verifiedAt,
-          disabledAt: null,
-          lastUsedAt: verifiedAt,
-        },
-      });
-      await tx.userRecoveryCode.deleteMany({
+    await withMfaUserLock(userId, async () => {
+      // The factor is re-read inside the lock so a concurrent begin/verify/
+      // disable cannot promote a stale snapshot.
+      const factor = await this.prisma.userTotpFactor.findUnique({
         where: { userId },
       });
-      await tx.userRecoveryCode.createMany({
-        data: recoveryCodes.map((rawCode) => ({
-          userId,
-          codeHash: hashOpaqueToken(rawCode),
-        })),
+      if (!factor) {
+        throw new BadRequestException("MFA enrollment is not initialized");
+      }
+
+      // AF1: a factor that is already active with no pending replacement has
+      // already completed its enrollment. Completing it again would rotate the
+      // recovery codes out from under the previous response, so it is refused
+      // with the same message as "no enrollment in progress".
+      const active = Boolean(factor.verifiedAt && !factor.disabledAt);
+      if (active && !factor.pendingSecret) {
+        throw new BadRequestException("MFA enrollment is not initialized");
+      }
+
+      const enrollmentSecretValue = factor.pendingSecret ?? factor.secret;
+      const secret = await this.authSecurity.decodeSecret(enrollmentSecretValue);
+      if (!secret || !verifyTotpCode(secret, code)) {
+        throw new BadRequestException("Invalid MFA verification code");
+      }
+
+      const verifiedAt = new Date();
+      // The factor promotion and the recovery-code replacement commit together
+      // or not at all: a partial commit would leave the user with codes that do
+      // not match the stored factor.
+      await this.prisma.$transaction(async (tx) => {
+        await tx.userTotpFactor.update({
+          where: { userId },
+          data: {
+            secret: enrollmentSecretValue as Prisma.InputJsonValue,
+            label: factor.pendingLabel ?? factor.label,
+            pendingSecret: Prisma.DbNull,
+            pendingLabel: null,
+            pendingStartedAt: null,
+            enrolledAt:
+              factor.pendingSecret && factor.verifiedAt && !factor.disabledAt
+                ? verifiedAt
+                : factor.enrolledAt,
+            verifiedAt,
+            disabledAt: null,
+            lastUsedAt: verifiedAt,
+          },
+        });
+        await tx.userRecoveryCode.deleteMany({
+          where: { userId },
+        });
+        await tx.userRecoveryCode.createMany({
+          data: recoveryCodes.map((rawCode) => ({
+            userId,
+            codeHash: hashOpaqueToken(rawCode),
+          })),
+        });
       });
+
+      // AF3: the committed change must be visible on the next profile read in
+      // every organization the user belongs to. This runs after the commit,
+      // still inside the per-user lock, and never replays the transaction, so a
+      // cache failure cannot regenerate the recovery codes.
+      await this.invalidateProfileCache(userId);
     });
 
     return {
@@ -164,33 +204,55 @@ export class MfaService {
   }
 
   async disable(userId: string, code: string) {
-    await this.verifyFactorOrRecoveryCode(userId, code);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.userTotpFactor.updateMany({
-        where: { userId },
-        data: {
-          disabledAt: new Date(),
-        },
+    await this.assertHumanMfaActor(userId);
+
+    await withMfaUserLock(userId, async () => {
+      // AF2: recovery-code consumption, the lastUsedAt refresh, the disable
+      // write and the recovery-code deletion share one transaction. A failure
+      // anywhere rolls the whole management action back, so a consumed code can
+      // never authorize an action that did not commit.
+      await this.prisma.$transaction(async (tx) => {
+        await this.verifyFactorOrRecoveryCode(tx, userId, code);
+        await tx.userTotpFactor.updateMany({
+          where: { userId },
+          data: {
+            disabledAt: new Date(),
+          },
+        });
+        await tx.userRecoveryCode.deleteMany({
+          where: { userId },
+        });
       });
-      await tx.userRecoveryCode.deleteMany({
-        where: { userId },
-      });
+
+      await this.invalidateProfileCache(userId);
     });
+
     return this.getStatus(userId);
   }
 
   async rotateRecoveryCodes(userId: string, code: string) {
-    await this.verifyFactorOrRecoveryCode(userId, code);
+    await this.assertHumanMfaActor(userId);
+
+    // Generated once, before the transaction: the response must always carry
+    // the exact set this call commits, and the set must never be regenerated by
+    // a retry.
     const recoveryCodes = generateRecoveryCodes();
-    await this.prisma.$transaction(async (tx) => {
-      await tx.userRecoveryCode.deleteMany({
-        where: { userId },
-      });
-      await tx.userRecoveryCode.createMany({
-        data: recoveryCodes.map((rawCode) => ({
-          userId,
-          codeHash: hashOpaqueToken(rawCode),
-        })),
+    await withMfaUserLock(userId, async () => {
+      // AF2: the authorization (TOTP window check or single-use recovery-code
+      // claim) and the whole replacement are one transaction, so two concurrent
+      // rotations cannot each be authorized against the old set and then
+      // overwrite each other.
+      await this.prisma.$transaction(async (tx) => {
+        await this.verifyFactorOrRecoveryCode(tx, userId, code);
+        await tx.userRecoveryCode.deleteMany({
+          where: { userId },
+        });
+        await tx.userRecoveryCode.createMany({
+          data: recoveryCodes.map((rawCode) => ({
+            userId,
+            codeHash: hashOpaqueToken(rawCode),
+          })),
+        });
       });
     });
 
@@ -331,9 +393,17 @@ export class MfaService {
     if (!challenge.userId) {
       throw new UnauthorizedException(invalidChallengeMessage);
     }
+    // Capture the narrowed id: TypeScript drops property narrowing inside the
+    // transaction callback below.
+    const challengeUserId = challenge.userId;
 
     try {
-      await this.verifyFactorOrRecoveryCode(challenge.userId, code);
+      // The public login challenge keeps its original single-use guarantee: the
+      // recovery-code claim and the lastUsedAt refresh commit together, and the
+      // challenge is only consumed after the credential verified.
+      await this.prisma.$transaction(async (tx) => {
+        await this.verifyFactorOrRecoveryCode(tx, challengeUserId, code);
+      });
     } catch (error) {
       return this.recordChallengeFailure(
         challenge.id,
@@ -411,8 +481,22 @@ export class MfaService {
     };
   }
 
-  private async verifyFactorOrRecoveryCode(userId: string, code: string) {
-    const factor = await this.prisma.userTotpFactor.findUnique({
+  /**
+   * Verifies either the current TOTP code or one unused recovery code against
+   * an explicit Prisma client.
+   *
+   * The client is always supplied by the caller so the credential check and the
+   * caller's own state change share one transaction (AF2). Passing
+   * `PrismaService` keeps the public login path on its original semantics;
+   * passing a `Prisma.TransactionClient` never opens a second, nested
+   * transaction.
+   */
+  private async verifyFactorOrRecoveryCode(
+    client: Prisma.TransactionClient,
+    userId: string,
+    code: string,
+  ): Promise<"totp" | "recovery_code"> {
+    const factor = await client.userTotpFactor.findUnique({
       where: { userId },
     });
     const secret = factor
@@ -425,7 +509,7 @@ export class MfaService {
       secret &&
       verifyTotpCode(secret, code)
     ) {
-      await this.prisma.userTotpFactor.update({
+      await client.userTotpFactor.update({
         where: { userId },
         data: {
           lastUsedAt: new Date(),
@@ -434,7 +518,7 @@ export class MfaService {
       return "totp";
     }
 
-    const recoveryCode = await this.prisma.userRecoveryCode.findFirst({
+    const recoveryCode = await client.userRecoveryCode.findFirst({
       where: {
         userId,
         codeHash: hashOpaqueToken(code.trim().toUpperCase()),
@@ -444,22 +528,68 @@ export class MfaService {
     if (!recoveryCode) {
       throw new UnauthorizedException("Invalid MFA verification code");
     }
-    await this.prisma.$transaction(async (tx) => {
-      // Atomic single-use claim: two concurrent logins must not both consume
-      // the same recovery code (findFirst above is racy on its own).
-      const claimed = await tx.userRecoveryCode.updateMany({
-        where: { id: recoveryCode.id, usedAt: null },
-        data: { usedAt: new Date() },
-      });
-      if (claimed.count !== 1) {
-        throw new UnauthorizedException("Invalid MFA verification code");
-      }
-      await tx.userTotpFactor.updateMany({
-        where: { userId },
-        data: { lastUsedAt: new Date() },
-      });
+    // Atomic single-use claim: two concurrent operations must not both consume
+    // the same recovery code (the findFirst above is racy on its own). The
+    // conditional update and the affected-row check stay exactly as they were;
+    // only the client changed, so the claim now participates in the caller's
+    // transaction.
+    const claimed = await client.userRecoveryCode.updateMany({
+      where: { id: recoveryCode.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    if (claimed.count !== 1) {
+      throw new UnauthorizedException("Invalid MFA verification code");
+    }
+    await client.userTotpFactor.updateMany({
+      where: { userId },
+      data: { lastUsedAt: new Date() },
     });
     return "recovery_code";
+  }
+
+  /**
+   * AF5: every authenticated MFA write route requires a real human `User`.
+   *
+   * Machine access tokens authenticate through `JwtAuthGuard` as
+   * `machine:<tokenId>`, which is not a `User` row. Rejecting them here keeps
+   * the request away from the `UserTotpFactor.userId` foreign key (which would
+   * otherwise fail as a generic 500) and is deliberately scoped to these four
+   * routes: `GET /auth/mfa` keeps returning the empty factor state for machine
+   * identities, and the OIDC tenant settings keep their machine-token boundary.
+   */
+  private async assertHumanMfaActor(userId: string): Promise<void> {
+    if (isMachineActorId(userId)) {
+      throw new ForbiddenException(MFA_HUMAN_REQUIRED_MESSAGE);
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) {
+      throw new ForbiddenException(MFA_HUMAN_REQUIRED_MESSAGE);
+    }
+  }
+
+  /**
+   * AF3: drops the cached authenticated profile for this user in every
+   * organization they belong to.
+   *
+   * `mfaEnabled` is part of the cached profile (`AuthService.getUserProfile` →
+   * `buildAuthenticatedUser` → `MfaService.getStatus`), and the MFA factor is a
+   * global user state, so leaving the other organizations' entries in place
+   * would keep showing a stale `mfaEnabled` until the TTL expires. Only this
+   * user's keys are touched.
+   */
+  private async invalidateProfileCache(userId: string): Promise<void> {
+    await this.cache.del(`profile:${userId}:default`);
+
+    const memberships = await this.prisma.membership.findMany({
+      where: { userId },
+      select: { orgId: true },
+    });
+    for (const membership of memberships) {
+      await this.cache.del(`profile:${userId}:${membership.orgId}`);
+    }
   }
 
   private get maxChallengeAttempts() {

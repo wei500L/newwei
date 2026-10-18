@@ -806,6 +806,20 @@ services:
       REALTIME_SIGNALS_POLYMARKET_PROXY_URL: ${REALTIME_SIGNALS_POLYMARKET_PROXY_URL:-}
       GEO_NOMINATIM_USER_AGENT: ${GEO_NOMINATIM_USER_AGENT:-modular-api}
       GEO_NOMINATIM_EMAIL: ${GEO_NOMINATIM_EMAIL:-}
+      # 已认证 MFA 管理与组织 OIDC 配置 7 条精确 HTTP：
+      # GET /api/auth/mfa、POST /api/auth/mfa/enroll|verify-enroll|disable|
+      # recovery/rotate、GET/PUT /api/auth/admin/oidc-config。
+      # pilot 与样例保持 legacy。改成 go 才由 Go 独立验签（人类 JWT + Redis
+      # blacklist + MySQL membership/权限重推导；机器令牌沿用 mtk_ 查库路径）
+      # 并读写 MySQL UserTotpFactor/UserRecoveryCode/OrgOidcConfig。四条 MFA
+      # 写要求真实人类 User（机器身份 403）；OIDC 是租户设置，按
+      # settings.manage 判定，不套全局平台管理员门禁。go 要求 JWT_SECRET、
+      # DATABASE_URL、REDIS_HOST，不要求 Mongo，不访问身份提供方、不签发
+      # token、不启动 worker。login/refresh/logout/me/change-password/
+      # machine-tokens、公开 MFA 登录与强制 enrollment 挑战，以及 OIDC
+      # start/callback/handoff 仍回 NestJS。回滚只把该变量改回 legacy。
+      API_GO_AUTH_FACTORS_MODE: ${API_GO_AUTH_FACTORS_MODE:-legacy}
+
       # 模型接入设置 10 条 HTTP（/api/system-settings/model-service、
       # /api/system-settings/openai-keys(+ /key/:fingerprint)、
       # /api/internal/litellm/openai-keys(+ /applied)）。pilot 与样例保持

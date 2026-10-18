@@ -772,6 +772,44 @@ const (
 	AnalysisThreadsModeGo     AnalysisThreadsMode = "go"
 )
 
+// AuthFactorsMode controls the seven authenticated MFA management and
+// organization OIDC configuration HTTP routes migrated by this unit
+// (API_GO_AUTH_FACTORS_MODE).
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. The default is always legacy.
+//
+// go mode takes over exactly these seven routes:
+//
+//	GET  /api/auth/mfa
+//	POST /api/auth/mfa/enroll
+//	POST /api/auth/mfa/verify-enroll
+//	POST /api/auth/mfa/disable
+//	POST /api/auth/mfa/recovery/rotate
+//	GET  /api/auth/admin/oidc-config
+//	PUT  /api/auth/admin/oidc-config
+//
+// Everything else under /api/auth keeps falling back to NestJS: login, refresh,
+// logout, profile, change-password, machine-token management, the public MFA
+// login and forced-enrollment challenges, and the OIDC start/callback/handoff
+// login chain. go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it
+// never requires MONGO_URI (this unit reads and writes MySQL and Redis only),
+// never enables shadow or canary traffic, never starts a worker, and never
+// contacts an identity provider. Rolling back only means setting this variable
+// back to legacy.
+type AuthFactorsMode string
+
+const (
+	// AuthFactorsModeLegacy proxies all seven routes to NestJS (default,
+	// including the empty value).
+	AuthFactorsModeLegacy AuthFactorsMode = "legacy"
+	// AuthFactorsModeGo serves all seven routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens.
+	AuthFactorsModeGo AuthFactorsMode = "go"
+)
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -1017,6 +1055,11 @@ type Config struct {
 	// DataRuntimeSettings holds the environment defaults of that unit. It is
 	// independent of the RealtimeSignals*/Nominatim* fields below.
 	DataRuntimeSettings DataRuntimeSettingsEnv
+	// AuthFactorsMode controls the seven authenticated MFA management and
+	// organization OIDC configuration routes (see AuthFactorsMode). Default
+	// legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does
+	// not require Mongo and does not start any worker or scheduled job.
+	AuthFactorsMode AuthFactorsMode
 	// AccountSecurityMode controls the eight authenticated account, session and
 	// machine-token routes (see AccountSecurityMode). Default legacy. Mode go
 	// requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
@@ -1625,6 +1668,18 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go")
 	}
+	// The authenticated MFA management and organization OIDC configuration
+	// switch accepts the empty string, legacy and go. An empty value behaves
+	// exactly like legacy, so an unset deployment keeps serving all seven
+	// routes through NestJS.
+	switch strings.TrimSpace(getenv("API_GO_AUTH_FACTORS_MODE")) {
+	case "", string(AuthFactorsModeLegacy):
+		cfg.AuthFactorsMode = AuthFactorsModeLegacy
+	case string(AuthFactorsModeGo):
+		cfg.AuthFactorsMode = AuthFactorsModeGo
+	default:
+		errs = append(errs, "API_GO_AUTH_FACTORS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_ACCOUNT_SECURITY_MODE")) {
 	case "", string(AccountSecurityModeLegacy):
 		cfg.AccountSecurityMode = AccountSecurityModeLegacy
@@ -2230,6 +2285,15 @@ func Load(getenv func(string) string) (Config, error) {
 	// requirement.
 	if cfg.DataRuntimeSettingsMode == DataRuntimeSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_DATA_RUNTIME_SETTINGS_MODE", cfg)
+	}
+	// The authenticated MFA management / OIDC configuration takeover needs JWT
+	// verification, MySQL and Redis only. It reads no Mongo collection, starts
+	// no worker and never contacts an identity provider. The
+	// settings-encryption key stays optional at startup: a missing or invalid
+	// key is handled per write by the documented fallback and production-500
+	// contracts rather than blocking boot.
+	if cfg.AuthFactorsMode == AuthFactorsModeGo {
+		appendAuthRequirements(&errs, "API_GO_AUTH_FACTORS_MODE", cfg)
 	}
 	// The account/session/machine-token takeover needs JWT verification, MySQL
 	// and Redis only. It reads no Mongo collection, starts no worker and does
