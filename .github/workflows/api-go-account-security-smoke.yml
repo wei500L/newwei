@@ -1,0 +1,951 @@
+# 账户资料、会话退出与机器令牌 8 条 Go 路由的真实栈验收。不进普通 CI。
+# PR 上加 label api-go-account-security-smoke，或 workflow_dispatch。
+# 真实 MySQL 8.4 + Mongo 7 + Redis 7 + 真实 Nest 登录签发 JWT/refresh；
+# 不使用鉴权 mock，不访问 S3/外部模型/SMTP。生产 Web 与 canary 不介入。
+name: api-go-account-security-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: api-go-account-security-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  # 6h 访问令牌：阶段 F 停止 Nest 后仍需用阶段 0 保留的 JWT 做独立断言。
+  JWT_ACCESS_EXPIRES_IN: 6h
+  SMTP_USER: api-go-account-security-smoke@example.com
+  SMTP_PASS: api-go-account-security-smoke-smtp-not-connected
+  JWT_SECRET: c1f4a9e8d2b3706f5a1c8e9d4b2a7f6038e5d1c9a7b6f4e2d3c8a1b5f9e0d7c2
+  NEXTAUTH_SECRET: e2b5c1f8a9d3b47e60d4a1f8c3b5e79d02c1f4a9e8d2b3706f5a1c8e9d4b2a7f6
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  # 头像测试只 seed 有效存储配置并校验地址，绝不访问 S3。
+  S3_ACCESS_KEY_ID: api-go-account-security-smoke-access-key
+  S3_SECRET_ACCESS_KEY: api-go-account-security-smoke-secret-key
+  S3_REGION: us-east-1
+  S3_BUCKET: api-go-account-security-smoke-avatars
+  S3_PUBLIC_BASE_URL: https://cdn.api-go-account-security-smoke.test/
+  S3_FORCE_PATH_STYLE: "false"
+  S3_PRESIGNED_URL_TTL_SECONDS: "300"
+  SYSTEM_SETTINGS_ENCRYPTION_KEY: 3f8c1d5a9b2e7046c1a8f3d6e9b0c4a75d2f8e1b6c3a9d0e4f7b2c5a8d1e6f30
+  # 让限流桶足够大，避免验收脚本自身触碰上限（Nest 与 Go 读同一组 env）。
+  RATE_LIMIT_LOGIN: "1000"
+  RATE_LIMIT_LOGIN_WINDOW: "600"
+  AUTH_PROFILE_CACHE_TTL_SECONDS: "600"
+  AUTH_PROFILE_CACHE_LOCK_TTL_MS: "5000"
+  AUTH_PROFILE_CACHE_MAX_WAIT_MS: "5000"
+  AUTH_PROFILE_CACHE_RETRY_DELAY_MS: "50"
+  SEED_ORG_SLUG: api-go-account-security-smoke-org
+  SEED_ORG_NAME: api-go Account Security Smoke Org
+  SEED_ADMIN_EMAIL: api-go-account-security-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoAccountSecurity#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-account-security-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-account-security-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-account-security:ci .
+      - name: Exercise account security routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import base64, hashlib, json, os, re, signal, subprocess, threading, time, urllib.error, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+          go_container = "api-go-account-security-smoke"
+          go_image = "api-go-account-security:ci"
+
+          admin_password = os.environ["SEED_ADMIN_PASSWORD"]
+          org_a = "asorgaaaaaaaaaaaaaaaaaaa1"
+          org_b = "asorgbbbbbbbbbbbbbbbbbbb2"
+          org_c = "asorgccccccccccccccccccc3"
+          role_a_admin = "asroleaadmin000000000001"
+          role_a_plain = "asroleaplain000000000001"
+          role_b_admin = "asrolebadmin000000000001"
+          role_c_admin = "asrolecadmin000000000001"
+          user_u = "asuseruuuuuuuuuuuuuuuuu01"
+          user_v = "asuservvvvvvvvvvvvvvvvv02"
+          user_w = "asuservwwwwwwwwwwwwwwww03"
+          user_m = "asusermmmmmmmmmmmmmmmm04"
+          user_p = "asuserppppppppppppppppp05"
+          user_l = "asuserlllllllllllllllll06"
+          user_e = "asusereeeeeeeeeeeeeee07"
+          mem_u_a = "asmemuorga00000000000001"
+          mem_u_b = "asmemuorgb00000000000002"
+          mem_v_c = "asmemvorgc00000000000003"
+          mem_w_a = "asmemworga00000000000004"
+          mem_m_a = "asmemmorga00000000000005"
+          mem_p_a = "asmemporga00000000000006"
+          mem_l_a = "asmemlorgan00000000000007"
+          mem_e_a = "asmemorgane00000000000008"
+          token_history = "asmachinetokenhistory0001"
+          token_unsupported = "asmachinetokenunsupport01"
+          token_concurrent = "asmachinetokenconcurren01"
+          token_force_fail = "asmachinetokenforcefail01"
+
+          storage_base = os.environ["S3_PUBLIC_BASE_URL"].rstrip("/")
+
+          def fail(message):
+              print("FAIL", message)
+              raise SystemExit(1)
+
+          def container_id(ancestor):
+              return subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor], text=True).split()[0]
+
+          def sql(statement):
+              cid = container_id("mysql:8.4")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "mysql", "-uroot", "-psecret", "-N", "app"],
+                                    input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          def redis(*args):
+              cid = container_id("redis:7.2")
+              proc = subprocess.run(["docker", "exec", "-i", cid, "redis-cli", "--raw", *args],
+                                    text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail(proc.stderr or proc.stdout)
+              return proc.stdout.strip()
+
+          def call(base, path, method="GET", token=None, payload=None, timeout=30):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              try:
+                  return json.loads(text)
+              except json.JSONDecodeError:
+                  return None
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text or ""
+
+          def jwt_claim(token, name):
+              part = token.split(".")[1]
+              padded = part + "=" * (-len(part) % 4)
+              return json.loads(base64.urlsafe_b64decode(padded))[name]
+
+          def login(email, password=None, base=None, org=None):
+              payload = {"email": email, "password": password or admin_password}
+              if org:
+                  payload["orgId"] = org
+              status, raw = call(base or nest, "/api/auth/login", "POST", payload=payload)
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail(f"login {email} {status} {raw[:400]!r}")
+              return doc
+
+          def expect_status(base, path, method, token, payload, status, label):
+              got, raw = call(base, path, method, token, payload)
+              if got != status:
+                  fail(f"{label}: {method} {path} -> {got} {raw[:300]!r}, want {status}")
+              return raw
+
+          def normalize_body(doc):
+              # The error envelope carries a per-request traceId/timestamp, and
+              # the profile permission/role/global-role collections are sets:
+              # Nest and Go derive them from different SQL orderings. Compare the
+              # contract payload, not those volatile/ordering artefacts.
+              if not isinstance(doc, dict):
+                  return doc
+              out = dict(doc)
+              out.pop("traceId", None)
+              out.pop("timestamp", None)
+              for key in ("permissions", "roleIds", "globalRoles"):
+                  if isinstance(out.get(key), list):
+                      out[key] = sorted(out[key])
+              return out
+
+          def parity(label, method, path, token, payload=None, status=200):
+              ns, nraw = call(nest, path, method, token, payload)
+              gs, graw = call(go, path, method, token, payload)
+              if ns != gs:
+                  fail(f"{label}: status nest={ns} go={gs} ({nraw[:200]!r} / {graw[:200]!r})")
+              if status is not None and ns != status:
+                  fail(f"{label}: status {ns} want {status} {nraw[:200]!r}")
+              if normalize_body(body(nraw)) != normalize_body(body(graw)):
+                  fail(f"{label}: body mismatch nest={nraw[:300]!r} go={graw[:300]!r}")
+              return body(nraw)
+
+          def start_go(mode):
+              subprocess.run(["docker", "rm", "-f", go_container], check=False, capture_output=True)
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  f"API_GO_ACCOUNT_SECURITY_MODE={mode}",
+                  "API_GO_RUNTIME_SETTINGS_MODE=legacy",
+                  "API_GO_INFRASTRUCTURE_SETTINGS_MODE=legacy",
+                  "API_GO_RBAC_MODE=legacy",
+                  "API_GO_CRAWL_PROFILES_MODE=legacy",
+                  "API_GO_CRAWL_WORKFLOWS_MODE=legacy",
+                  "API_GO_NEWS_SOURCES_MODE=legacy",
+                  "API_GO_SITUATION_MONITORS_MODE=legacy",
+                  "API_GO_CONTENT_SUBSCRIPTIONS_MODE=legacy",
+                  "API_GO_USER_NEWS_BEHAVIOR_MODE=legacy",
+                  "API_GO_USER_DIGEST_MODE=legacy",
+                  "API_GO_DASHBOARD_STATS_MODE=legacy",
+                  "API_GO_DASHBOARD_CHARTS_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE=legacy",
+                  "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_GEO_MODE=legacy",
+                  "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=legacy",
+                  "API_GO_DASHBOARD_STREAM_MODE=legacy",
+                  "API_GO_HEALTHZ_MODE=legacy",
+                  "API_GO_PUBLIC_PORTAL_MODE=legacy",
+                  "API_GO_ANALYSIS_VIEWS_MODE=legacy",
+                  "API_GO_ANALYSIS_BOARDS_MODE=legacy",
+                  "API_GO_ANALYSIS_THREADS_MODE=legacy",
+                  "API_GO_GRAPHQL_READ_MODE=legacy",
+                  "API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy",
+                  "API_GO_GRAPHQL_KG_IMPACT_MODE=legacy",
+                  "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy",
+                  "API_GO_USER_SETTINGS_WRITE_MODE=legacy",
+                  "NODE_ENV=production",
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  f"JWT_SECRET={os.environ['JWT_SECRET']}",
+                  f"JWT_ISSUER={os.environ['JWT_ISSUER']}",
+                  f"JWT_AUDIENCE={os.environ['JWT_AUDIENCE']}",
+                  "PORT=4020",
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "REDIS_DB=0",
+                  "CANARY_PERCENT=0",
+                  f"CORS_ORIGIN={os.environ['CORS_ORIGIN']}",
+                  f"S3_ACCESS_KEY_ID={os.environ['S3_ACCESS_KEY_ID']}",
+                  f"S3_SECRET_ACCESS_KEY={os.environ['S3_SECRET_ACCESS_KEY']}",
+                  f"S3_REGION={os.environ['S3_REGION']}",
+                  f"S3_BUCKET={os.environ['S3_BUCKET']}",
+                  f"S3_PUBLIC_BASE_URL={os.environ['S3_PUBLIC_BASE_URL']}",
+                  "S3_FORCE_PATH_STYLE=false",
+                  "S3_PRESIGNED_URL_TTL_SECONDS=300",
+                  f"SYSTEM_SETTINGS_ENCRYPTION_KEY={os.environ['SYSTEM_SETTINGS_ENCRYPTION_KEY']}",
+                  "AUTH_PROFILE_CACHE_TTL_SECONDS=600",
+                  "AUTH_PROFILE_CACHE_LOCK_TTL_MS=5000",
+                  "AUTH_PROFILE_CACHE_MAX_WAIT_MS=5000",
+                  "AUTH_PROFILE_CACHE_RETRY_DELAY_MS=50",
+              ]
+              cmd = ["docker", "run", "-d", "--name", go_container,
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s", "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for item in env:
+                  cmd.extend(["-e", item])
+              cmd.append(go_image)
+              subprocess.check_call(cmd, stdout=subprocess.DEVNULL)
+              for _ in range(30):
+                  status = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}", go_container], text=True).strip()
+                  print("health", status, "accountSecurityMode", mode)
+                  if status == "healthy":
+                      return
+                  if status == "unhealthy":
+                      fail(docker_logs())
+                  time.sleep(2)
+              fail(docker_logs())
+
+          def docker_logs():
+              return subprocess.check_output(["docker", "logs", go_container], text=True)[-4000:]
+
+          def expect_startup_failure(mode):
+              name = "api-go-account-security-badmode"
+              subprocess.run(["docker", "rm", "-f", name], check=False, capture_output=True)
+              cmd = ["docker", "run", "--rm", "--name", name,
+                     "-e", "LEGACY_API_URL=http://host.docker.internal:4000",
+                     "-e", "PORT=4020",
+                     "-e", f"API_GO_ACCOUNT_SECURITY_MODE={mode}",
+                     go_image]
+              proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+              logs = proc.stdout + proc.stderr
+              if proc.returncode == 0:
+                  fail(f"illegal mode {mode!r} started successfully")
+              if "API_GO_ACCOUNT_SECURITY_MODE must be one of legacy|go" not in logs:
+                  fail(f"illegal mode {mode!r} did not print the contract error: {logs[-600:]!r}")
+              print("illegal mode rejected:", mode)
+
+          def start_nest():
+              log = open("/tmp/api-nestjs-restart.log", "w")
+              env = dict(os.environ)
+              env["NODE_ENV"] = "production"
+              env["PORT"] = "4000"
+              proc = subprocess.Popen(["pnpm", "--filter", "@modular/api", "run", "start"],
+                                      stdout=log, stderr=subprocess.STDOUT, env=env)
+              open("/tmp/api-nestjs.pid", "w").write(str(proc.pid))
+              for _ in range(60):
+                  try:
+                      urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+                      print("nestjs restarted")
+                      return
+                  except Exception:
+                      time.sleep(2)
+              fail("nestjs did not restart: " + open("/tmp/api-nestjs-restart.log").read()[-1500:])
+
+          def stop_nest():
+              if os.path.exists("/tmp/api-nestjs.pid"):
+                  try:
+                      os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+                  except ProcessLookupError:
+                      pass
+              subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+              subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+              for _ in range(30):
+                  try:
+                      urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+                  except Exception:
+                      print("nestjs stopped")
+                      return
+                  time.sleep(1)
+              fail("nestjs did not stop")
+
+          def new_machine_token():
+              raw = base64.urlsafe_b64encode(os.urandom(32)).rstrip(b"=").decode()
+              return "mtk_" + raw
+
+          def token_hash(token):
+              return hashlib.sha256(token.encode()).hexdigest()
+
+          # ---- 数据准备：org A/B/C、U（A+B）、V（C）、无 settings.manage 的 W、机器管理员 M、改密用户 P/L ----
+          admin = scalar("SELECT id FROM User WHERE email='api-go-account-security-smoke-admin@example.com'")
+          sql(f"""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('{org_a}', 'AS Org A', 'api-go-as-a', 1, NOW(3), NOW(3)),
+            ('{org_b}', 'AS Org B', 'api-go-as-b', 1, NOW(3), NOW(3)),
+            ('{org_c}', 'AS Org C', 'api-go-as-c', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, description, isSystem, orgId) VALUES
+            ('{role_a_admin}', 'as-a-admin', NULL, 0, '{org_a}'),
+            ('{role_a_plain}', 'as-a-plain', NULL, 0, '{org_a}'),
+            ('{role_b_admin}', 'as-b-admin', NULL, 0, '{org_b}'),
+            ('{role_c_admin}', 'as-c-admin', NULL, 0, '{org_c}');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('asrpaadmin01', '{role_a_admin}', (SELECT id FROM Permission WHERE name='settings.manage')),
+            ('asrpaplain01', '{role_a_plain}', (SELECT id FROM Permission WHERE name='items.read')),
+            ('asrpbadmin01', '{role_b_admin}', (SELECT id FROM Permission WHERE name='settings.manage')),
+            ('asrpcadmin01', '{role_c_admin}', (SELECT id FROM Permission WHERE name='settings.manage'));
+          """)
+          for user_id, email, membership_id, org_id, role_id in [
+              (user_u, "as-u@example.com", mem_u_a, org_a, role_a_admin),
+              (user_v, "as-v@example.com", mem_v_c, org_c, role_c_admin),
+              (user_w, "as-w@example.com", mem_w_a, org_a, role_a_plain),
+              (user_m, "as-m@example.com", mem_m_a, org_a, role_a_admin),
+              (user_p, "as-p@example.com", mem_p_a, org_a, role_a_admin),
+              (user_l, "as-l@example.com", mem_l_a, org_a, role_a_admin),
+              (user_e, "as-e@example.com", mem_e_a, org_a, role_a_plain),
+          ]:
+              sql(f"""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '{user_id}', '{email}', passwordHash, 'Smoke', 'User', 1, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '{admin}';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('{membership_id}', '{user_id}', '{org_id}', '{role_id}', 1, NOW(3));
+              """)
+          # U 同时属于 B；U 在 A 走 MembershipRole 双角色，B 走 primary role 回退。
+          # MFA：U 无因子（mfaEnabled=false）；V 有已禁用因子（false）；E 先登录，
+          # 之后才插入已启用因子，用于观察 mfaEnabled=true 的 profile（已启用 MFA 的
+          # 用户无法再走普通登录，所以必须先登录再开启）。
+          sql(f"""
+          INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+          VALUES ('{mem_u_b}', '{user_u}', '{org_b}', '{role_b_admin}', 1, NOW(3));
+          INSERT INTO MembershipRole (membershipId, orgId, roleId, createdAt) VALUES
+            ('{mem_u_a}', '{org_a}', '{role_a_admin}', NOW(3)),
+            ('{mem_u_a}', '{org_a}', '{role_a_plain}', NOW(3));
+          INSERT INTO GlobalRoleAssignment (id, userId, role, createdAt)
+          VALUES ('asgrauuuuuuuuuuuuuuuu01', '{user_u}', 'platform_admin', NOW(3));
+          INSERT INTO UserTotpFactor (id, userId, secret, enrolledAt, verifiedAt, disabledAt, createdAt, updatedAt)
+          VALUES ('astotpvvvvvvvvvvvvvvv02', '{user_v}', JSON_OBJECT('v', 1), NOW(3), NOW(3), NOW(3), NOW(3), NOW(3));
+          """)
+          # 机器令牌 fixture：正常 / 过期 / 已撤销 / 跨组织 / 历史 settings.manage / 不支持权限 / 并发 / 触发器回滚。
+          fixtures = [
+              ("asmachinenormalaaaaaaaaa1", org_a, "normal", '["settings.manage"]', user_m, "NULL", "NULL"),
+              ("asmachineexpiredaaaaaaaa2", org_a, "expired", '["settings.manage"]', user_m, "DATE_SUB(NOW(3), INTERVAL 1 DAY)", "NULL"),
+              ("asmachinerevokedaaaaaaaa3", org_a, "revoked", '["settings.manage"]', user_m, "NULL", "NOW(3)"),
+              ("asmachineotheraaaaaaaaaa4", org_c, "other", '["settings.manage"]', None, "NULL", "NULL"),
+              (token_history, org_a, "history", '["settings.manage"]', None, "NULL", "NULL"),
+              (token_unsupported, org_a, "unsupported", '["crawl.write"]', user_m, "NULL", "NULL"),
+              # 并发轮换需要一个「可轮换」的令牌：新建白名单必须至少保留一项。
+              (token_concurrent, org_a, "concurrent", '["metrics.read", "settings.manage"]', user_m, "NULL", "NULL"),
+              (token_force_fail, org_a, "__force_insert_failure__", '["metrics.read"]', None, "NULL", "NULL"),
+          ]
+          statements = []
+          for token_id, org_id, name, permissions, created_by, expires, revoked in fixtures:
+              token_plain = "mtk_" + token_id
+              creator = "NULL" if created_by is None else f"'{created_by}'"
+              statements.append(
+                  "INSERT INTO MachineAccessToken (id, orgId, name, tokenHash, permissions, createdById, expiresAt, lastUsedAt, revokedAt, createdAt, updatedAt) "
+                  f"VALUES ('{token_id}', '{org_id}', '{name}', '{token_hash(token_plain)}', '{permissions}', {creator}, {expires}, NULL, {revoked}, NOW(3), NOW(3));")
+          statements.append(
+              "INSERT INTO RefreshToken (id, userId, tokenHash, expiresAt, createdAt, revokedAt, ipAddress, userAgent) "
+              f"VALUES ('asrefreshstale0000000001', '{user_u}', 'stale-hash', DATE_ADD(NOW(3), INTERVAL 1 DAY), NOW(3), NULL, NULL, NULL);")
+          sql("\n".join(statements))
+          # 触发器：让指定 name 的 INSERT 失败，用于证明轮换事务回滚（仅测试库，不新增生产后门）。
+          sql("""
+          DELIMITER //
+          CREATE TRIGGER as_machine_insert_guard BEFORE INSERT ON MachineAccessToken
+          FOR EACH ROW
+          BEGIN
+            IF NEW.name = '__force_insert_failure__' THEN
+              SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'forced insert failure';
+            END IF;
+          END//
+          DELIMITER ;
+          """)
+          print("fixtures ready")
+
+          # ---- 阶段 A：开关与路由 ----
+          expect_startup_failure("shadow")
+          expect_startup_failure("canary")
+
+          start_go("legacy")
+          u_doc = login("as-u@example.com", org=org_a)
+          u_token = u_doc["accessToken"]
+          u_refresh = u_doc["refreshToken"]
+          v_doc = login("as-v@example.com", org=org_c)
+          v_token = v_doc["accessToken"]
+          v_refresh = v_doc["refreshToken"]
+          w_token = login("as-w@example.com", org=org_a)["accessToken"]
+          m_token = login("as-m@example.com", org=org_a)["accessToken"]
+          # E 的 MFA 因子在登录之后才启用（见下方阶段 B），所以这里能普通登录。
+          e_token = login("as-e@example.com", org=org_a)["accessToken"]
+
+          # legacy：8 条经 Go 代理，Nest 是唯一执行者；DTO/权限错误形状与 Nest 全等。
+          me_nest = parity("legacy me", "GET", "/api/auth/me", u_token)
+          if me_nest.get("orgId") != org_a:
+              fail(f"legacy me orgId {me_nest.get('orgId')}")
+          parity("legacy profile empty", "PATCH", "/api/auth/profile", u_token, {})
+          parity("legacy profile null", "PATCH", "/api/auth/profile", u_token, {"firstName": None}, status=400)
+          parity("legacy profile unknown field", "PATCH", "/api/auth/profile", u_token, {"email": "x@example.com"}, status=400)
+          parity("legacy change-password identical", "POST", "/api/auth/change-password", u_token,
+                 {"currentPassword": admin_password, "newPassword": admin_password}, status=400)
+          parity("legacy logout bad boolean", "POST", "/api/auth/logout", u_token, {"logoutAll": "true"}, status=400)
+          parity("legacy machine list", "GET", "/api/auth/machine-tokens", m_token)
+          parity("legacy machine list forbidden", "GET", "/api/auth/machine-tokens", w_token, status=403)
+          # 未迁方法/路径仍回 Nest（legacy 下必然是代理，先记录基线）。
+          for method, path, token, payload in [
+              ("POST", "/api/auth/me", u_token, None),
+              ("PUT", "/api/auth/profile", u_token, {}),
+              ("GET", "/api/auth/login", None, None),
+              ("GET", "/api/auth/data-export", u_token, None),
+          ]:
+              ns, nraw = call(nest, path, method, token, payload)
+              gs, graw = call(go, path, method, token, payload)
+              if ns != gs:
+                  fail(f"legacy fallback {method} {path}: nest={ns} go={gs}")
+          # 未迁移接口经 Go 仍是 Nest 应答（登录/refresh/导出/头像签名）。
+          if call(go, "/api/auth/mfa", "GET", u_token)[0] != 200:
+              fail("legacy GET /api/auth/mfa was not 200 through Go proxy")
+          print("phase A legacy proxy ok")
+
+          # ---- 阶段 B/C：go 接管后的契约与双向互通 ----
+          start_go("go")
+
+          # GET me 与 PATCH profile 的 JWT 元数据差异。
+          go_me = parity("go me", "GET", "/api/auth/me", u_token)
+          for field in ("id", "email", "emailVerified", "lastLoginAt", "pendingEmail", "firstName",
+                        "lastName", "avatarUrl", "isActive", "orgId", "primaryRoleId", "roleIds",
+                        "permissions", "planTier", "subscriptionStatus", "globalRoles", "mfaEnabled",
+                        "mfaRequired", "mfaEnrollmentRequired", "accessTokenId", "accessTokenExpiresAt"):
+              if field not in go_me:
+                  fail(f"GET me missing {field}: {go_me}")
+          if go_me["accessTokenId"] != jwt_claim(u_token, "jti"):
+              fail("accessTokenId is not the verified jti")
+          if go_me["accessTokenExpiresAt"] != jwt_claim(u_token, "exp") * 1000:
+              fail(f"accessTokenExpiresAt {go_me['accessTokenExpiresAt']} != exp*1000")
+          if go_me["mfaEnabled"] is not False or go_me["mfaRequired"] is not False or go_me["mfaEnrollmentRequired"] is not False:
+              fail(f"MFA flags wrong: {go_me}")
+          if go_me["globalRoles"] != ["platform_admin"]:
+              fail(f"globalRoles {go_me['globalRoles']}")
+          if sorted(go_me["roleIds"]) != sorted([role_a_admin, role_a_plain]):
+              fail(f"roleIds {go_me['roleIds']}")
+          if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", go_me["emailVerified"] or ""):
+              fail(f"emailVerified not ISO ms: {go_me['emailVerified']}")
+          if "passwordHash" in json.dumps(go_me):
+              fail("profile leaked passwordHash")
+          # MFA 启用分支：E 登录后才插入已启用因子（verifiedAt 有值、disabledAt 为空）。
+          sql(f"""
+          INSERT INTO UserTotpFactor (id, userId, secret, enrolledAt, verifiedAt, disabledAt, createdAt, updatedAt)
+          VALUES ('astotpeeeeeeeeeeeeee03', '{user_e}', JSON_OBJECT('v', 1), NOW(3), NOW(3), NULL, NOW(3), NOW(3));
+          """)
+          redis("DEL", f"profile:{user_e}:{org_a}")
+          e_me = parity("go me mfa enabled", "GET", "/api/auth/me", e_token)
+          if e_me.get("mfaEnabled") is not True or e_me.get("mfaRequired") is not False:
+              fail(f"MFA enabled profile {e_me.get('mfaEnabled')} {e_me.get('mfaRequired')}")
+
+          patched = parity("go profile patch", "PATCH", "/api/auth/profile", u_token, {"firstName": "  Ada  ", "lastName": "Lovelace"})
+          if patched.get("firstName") != "Ada" or "accessTokenId" in patched:
+              fail(f"PATCH profile shape {patched}")
+          nest_after = body(call(nest, "/api/auth/me", "GET", u_token)[1])
+          if nest_after.get("firstName") != "Ada":
+              fail("Nest did not see the Go profile update")
+          parity("nest profile patch", "PATCH", "/api/auth/profile", u_token, {"lastName": "Nest"})
+          go_after = body(call(go, "/api/auth/me", "GET", u_token)[1])
+          if go_after.get("lastName") != "Nest":
+              fail("Go did not see the Nest profile update")
+          # 头像地址只做配置与 URL 校验（不访问 S3）。
+          parity("go avatar ok", "PATCH", "/api/auth/profile", u_token, {"avatarUrl": storage_base + "/avatars/u.png"})
+          parity("go avatar outside base", "PATCH", "/api/auth/profile", u_token,
+                 {"avatarUrl": "https://evil.example.com/a.png"}, status=400)
+          # A/B 两个组织缓存都失效，V 的缓存保留。
+          redis("SET", f"profile:{user_v}:{org_c}", json.dumps({"id": user_v, "orgId": org_c, "marker": "v"}), "EX", "600")
+          redis("SET", f"profile:{user_u}:{org_a}", json.dumps({"id": user_u, "marker": "stale"}), "EX", "600")
+          redis("SET", f"profile:{user_u}:{org_b}", json.dumps({"id": user_u, "marker": "stale"}), "EX", "600")
+          call(go, "/api/auth/profile", "PATCH", u_token, {"firstName": "Ada"})
+          cache_a = redis("GET", f"profile:{user_u}:{org_a}")
+          cache_b = redis("GET", f"profile:{user_u}:{org_b}")
+          cache_v = redis("GET", f"profile:{user_v}:{org_c}")
+          if "stale" in cache_a or "stale" in cache_b:
+              fail(f"org A/B profile cache was not invalidated: {cache_a[:120]!r} {cache_b[:120]!r}")
+          if "marker" not in cache_v:
+              fail("V profile cache was removed")
+          if cache_a not in ("", "(nil)"):
+              cached_profile = json.loads(cache_a)
+              for leaked in ("accessTokenId", "accessTokenExpiresAt", "passwordHash"):
+                  if leaked in cached_profile:
+                      fail(f"profile cache leaked {leaked}")
+          print("phase C profile/cache ok")
+
+          # 机器令牌：Go 创建 → Nest GET me 验证；Nest 创建 → Go GET me 验证；双向撤销。
+          status, raw = call(go, "/api/auth/machine-tokens", "POST", m_token,
+                             {"name": "go-created", "permissions": ["metrics.read", " settings.manage "]})
+          created = body(raw)
+          if status != 201 or not created or set(created) != {"id", "name", "token", "permissions", "expiresAt"}:
+              fail(f"go create machine token {status} {raw[:300]!r}")
+          if created["permissions"] != ["metrics.read"] or not created["token"].startswith("mtk_"):
+              fail(f"go create normalization {created}")
+          if scalar(f"SELECT COUNT(*) FROM MachineAccessToken WHERE id='{created['id']}' AND tokenHash='{token_hash(created['token'])}'") != "1":
+              fail("machine token hash not stored")
+          machine_me = body(call(nest, "/api/auth/me", "GET", created["token"])[1])
+          if machine_me.get("id") != "machine:" + created["id"] or machine_me.get("email") != "go-created@machine.local":
+              fail(f"Nest machine identity {machine_me}")
+          if call(go, "/api/auth/me", "GET", "mtk_not-a-real-token")[0] != 401:
+              fail("invalid machine token was not 401")
+          for token_id in ("asmachineexpiredaaaaaaaa2", "asmachinerevokedaaaaaaaa3"):
+              if call(go, "/api/auth/machine-tokens", "GET", "mtk_" + token_id)[0] != 401:
+                  fail(f"invalid machine token {token_id} was accepted")
+          # 跨组织令牌本身有效，但只能看到自己组织（org C）的令牌。
+          cross_list = body(call(go, "/api/auth/machine-tokens", "GET", "mtk_asmachineotheraaaaaaaaaa4")[1])
+          if not isinstance(cross_list, list) or not cross_list:
+              fail(f"cross-org machine token list {cross_list}")
+          if any(item.get("id") == token_history for item in cross_list):
+              fail(f"cross-org machine token saw another org's tokens: {cross_list}")
+
+          nest_created_status, nest_created_raw = call(nest, "/api/auth/machine-tokens", "POST", m_token,
+                                                      {"name": "nest-created", "permissions": ["metrics.read"]})
+          nest_created = body(nest_created_raw)
+          if nest_created_status != 201 or not nest_created:
+              fail(f"nest create machine token {nest_created_status} {nest_created_raw[:300]!r}")
+          go_machine_me = body(call(go, "/api/auth/me", "GET", nest_created["token"])[1])
+          if go_machine_me.get("id") != "machine:" + nest_created["id"]:
+              fail(f"Go machine identity {go_machine_me}")
+
+          # 历史 settings.manage 机器令牌：必须以存储权限通过（不能被新建白名单裁剪）。
+          history_list = body(call(go, "/api/auth/machine-tokens", "GET", "mtk_" + token_history)[1])
+          if not isinstance(history_list, list):
+              fail(f"historical settings.manage machine token rejected: {history_list}")
+          # list 保留历史 permissions 存储输出（不过滤）。
+          listed = body(call(go, "/api/auth/machine-tokens", "GET", m_token)[1])
+          history_row = next((item for item in listed if item["id"] == token_history), None)
+          if not history_row or history_row.get("permissions") != ["settings.manage"]:
+              fail(f"list did not keep historical permissions: {history_row}")
+          for forbidden in ("token", "tokenHash", "createdById", "updatedAt"):
+              if forbidden in history_row:
+                  fail(f"list leaked {forbidden}")
+          # 仅含不支持权限的历史令牌轮换失败，旧行 revokedAt 保持 NULL。
+          status, raw = call(go, "/api/auth/machine-tokens/" + token_unsupported + "/rotate", "POST", m_token)
+          if status != 400:
+              fail(f"unsupported-only rotate {status} {raw[:200]!r}")
+          if scalar(f"SELECT IFNULL(revokedAt,'NULL') FROM MachineAccessToken WHERE id='{token_unsupported}'") != "NULL":
+              fail("failed rotate revoked the old row")
+          # AS4：历史机器管理员创建令牌 → createdById NULL；空白名称 400。
+          status, raw = call(go, "/api/auth/machine-tokens", "POST", "mtk_" + token_history,
+                             {"name": "by-history-machine", "permissions": ["metrics.read"]})
+          history_created = body(raw)
+          if status != 201:
+              fail(f"historical machine create {status} {raw[:200]!r}")
+          if scalar(f"SELECT IFNULL(createdById,'NULL') FROM MachineAccessToken WHERE id='{history_created['id']}'") != "NULL":
+              fail("machine actor was written into createdById")
+          before = scalar(f"SELECT COUNT(*) FROM MachineAccessToken WHERE orgId='{org_a}'")
+          expect_status(go, "/api/auth/machine-tokens", "POST", m_token,
+                        {"name": "   ", "permissions": ["metrics.read"]}, 400, "go blank name")
+          if scalar(f"SELECT COUNT(*) FROM MachineAccessToken WHERE orgId='{org_a}'") != before:
+              fail("blank name created a row")
+          if scalar(f"SELECT IFNULL(createdById,'NULL') FROM MachineAccessToken WHERE id='{created['id']}'") != user_m:
+              fail("human creator was not preserved")
+          # rotate 继承 createdById 与 expiresAt，不改成当前操作者。
+          status, raw = call(go, "/api/auth/machine-tokens/" + created["id"] + "/rotate", "POST", m_token)
+          rotated = body(raw)
+          if status != 201:
+              fail(f"rotate {status} {raw[:200]!r}")
+          if scalar(f"SELECT createdById FROM MachineAccessToken WHERE id='{rotated['id']}'") != user_m:
+              fail("rotate did not inherit the creator")
+          if call(nest, "/api/auth/me", "GET", created["token"])[0] != 401:
+              fail("old token still valid after rotate")
+          if call(go, "/api/auth/me", "GET", rotated["token"])[0] != 200:
+              fail("rotated token is not valid")
+          # 双向撤销。
+          if call(go, "/api/auth/machine-tokens/" + nest_created["id"], "DELETE", m_token)[0] != 200:
+              fail("Go revoke failed")
+          if call(nest, "/api/auth/me", "GET", nest_created["token"])[0] != 401:
+              fail("Nest still accepts the Go-revoked token")
+          delete_status, _ = call(nest, "/api/auth/machine-tokens/" + rotated["id"], "DELETE", m_token)
+          if delete_status != 200:
+              fail(f"Nest revoke {delete_status}")
+          if call(go, "/api/auth/me", "GET", rotated["token"])[0] != 401:
+              fail("Go still accepts the Nest-revoked token")
+
+          # AS1：Nest/Go 并发轮换同一旧令牌，最多一个 201，最终只有一个 successor。
+          conc_results = {}
+
+          def rotate_worker(name, base):
+              try:
+                  conc_results[name] = call(base, "/api/auth/machine-tokens/" + token_concurrent + "/rotate", "POST", m_token)
+              except Exception as exc:  # noqa: BLE001
+                  conc_results[name] = (0, repr(exc).encode())
+
+          threads = [threading.Thread(target=rotate_worker, args=("go", go)), threading.Thread(target=rotate_worker, args=("nest", nest))]
+          for thread in threads:
+              thread.start()
+          for thread in threads:
+              thread.join()
+          winners = [name for name, result in conc_results.items() if result[0] == 201]
+          if len(winners) != 1:
+              fail(f"concurrent rotate winners {[(name, result[0], result[1][:160]) for name, result in conc_results.items()]}")
+          losers = [result for name, result in conc_results.items() if result[0] != 201]
+          for status, raw in losers:
+              if status != 400 or message(raw) != "Machine token not found or already revoked":
+                  fail(f"concurrent rotate loser {status} {raw[:200]!r}")
+          if scalar(f"SELECT COUNT(*) FROM MachineAccessToken WHERE orgId='{org_a}' AND name='concurrent' AND revokedAt IS NULL") != "1":
+              fail("concurrent rotate left more than one successor")
+          # AS1：INSERT 失败必须回滚旧行撤销。
+          status, raw = call(go, "/api/auth/machine-tokens/" + token_force_fail + "/rotate", "POST", m_token)
+          if status == 201:
+              fail("forced INSERT failure still returned 201")
+          if scalar(f"SELECT IFNULL(revokedAt,'NULL') FROM MachineAccessToken WHERE id='{token_force_fail}'") != "NULL":
+              fail("INSERT failure left the old row revoked (no rollback)")
+
+          # AS3：null/空白 400 且无部分写入；机器身份 401。
+          before_profile = scalar(f"SELECT CONCAT(IFNULL(firstName,''), '|', IFNULL(lastName,''), '|', DATE_FORMAT(updatedAt, '%Y-%m-%dT%H:%i:%s.%f')) FROM User WHERE id='{user_u}'")
+          for payload in ({"firstName": None}, {"lastName": "   "}, {"avatarUrl": None},
+                          {"firstName": "   ", "lastName": "ok", "avatarUrl": storage_base + "/a.png"}):
+              parity("as3 invalid profile", "PATCH", "/api/auth/profile", u_token, payload, status=400)
+          after_profile = scalar(f"SELECT CONCAT(IFNULL(firstName,''), '|', IFNULL(lastName,''), '|', DATE_FORMAT(updatedAt, '%Y-%m-%dT%H:%i:%s.%f')) FROM User WHERE id='{user_u}'")
+          if before_profile != after_profile:
+              fail("invalid profile request performed a partial write")
+          status, raw = call(go, "/api/auth/profile", "PATCH", "mtk_" + token_history, {})
+          if status != 401 or message(raw) != "Invalid access token":
+              fail(f"machine identity profile {status} {raw[:200]!r}")
+
+          # AS2：Nest↔Go 同旧密码并发，不同新密码；最多一个成功，最终只有获胜密码可用。
+          original = admin_password
+          results = {}
+          p_doc = login("as-p@example.com", org=org_a)
+          p_token = p_doc["accessToken"]
+
+          def password_worker(name, base, new_password):
+              try:
+                  results[name] = call(base, "/api/auth/change-password", "POST", p_token,
+                                       {"currentPassword": original, "newPassword": new_password})
+              except Exception as exc:  # noqa: BLE001
+                  results[name] = (0, repr(exc).encode())
+
+          nest_new = "NestWon#Password-2026"
+          go_new = "GoWon#Password-2026"
+          threads = [
+              threading.Thread(target=password_worker, args=("nest", nest, nest_new)),
+              threading.Thread(target=password_worker, args=("go", go, go_new)),
+          ]
+          for thread in threads:
+              thread.start()
+          for thread in threads:
+              thread.join()
+          winner_names = [name for name, result in results.items() if result[0] == 200]
+          if len(winner_names) != 1:
+              fail(f"concurrent password results {[(name, result[0]) for name, result in results.items()]}")
+          loser_status = [result[0] for name, result in results.items() if name != winner_names[0]][0]
+          if loser_status not in (401, 409):
+              fail(f"password loser status {loser_status}")
+          # 验证性登录会新建 refresh 行，所以撤销断言必须放在登录之前。
+          if scalar(f"SELECT COUNT(*) FROM RefreshToken WHERE userId='{user_p}' AND revokedAt IS NULL") != "0":
+              fail("winning password change did not revoke the user's refresh tokens")
+          winning_password = nest_new if winner_names[0] == "nest" else go_new
+          losing_password = go_new if winner_names[0] == "nest" else nest_new
+          if call(nest, "/api/auth/login", "POST", payload={"email": "as-p@example.com", "password": winning_password, "orgId": org_a})[0] != 200:
+              fail("winner password cannot log in")
+          if call(nest, "/api/auth/login", "POST", payload={"email": "as-p@example.com", "password": losing_password, "orgId": org_a})[0] == 200:
+              fail("loser password also logs in")
+
+          # 长密码与多字节 bcrypt 互通（Go 改密 → Nest 登录；Nest 改密 → Go 接受）。
+          long_password = "A" * 80 + "€" + "tail-" + "B" * 20
+          l_doc = login("as-l@example.com", org=org_a)
+          l_token = l_doc["accessToken"]
+          status, raw = call(go, "/api/auth/change-password", "POST", l_token,
+                             {"currentPassword": admin_password, "newPassword": long_password})
+          if status != 200:
+              fail(f"Go long password change {status} {raw[:200]!r}")
+          if call(nest, "/api/auth/login", "POST", payload={"email": "as-l@example.com", "password": long_password, "orgId": org_a})[0] != 200:
+              fail("Nest cannot log in with the Go-set long password")
+          l2_token = login("as-l@example.com", long_password, org=org_a)["accessToken"]
+          back = "Back#Password-2026"
+          if call(nest, "/api/auth/change-password", "POST", l2_token, {"currentPassword": long_password, "newPassword": back})[0] != 200:
+              fail("Nest cannot change back from the long password")
+          l3_token = login("as-l@example.com", back, org=org_a)["accessToken"]
+          if call(go, "/api/auth/me", "GET", l3_token)[0] != 200:
+              fail("Go cannot serve the identity issued after the Nest change")
+          # Go 用 Nest 设置的长密码作为 currentPassword（跨语言 $2a/$2b 兼容）。
+          l4_doc = login("as-l@example.com", back, org=org_a)
+          if call(go, "/api/auth/change-password", "POST", l4_doc["accessToken"],
+                   {"currentPassword": back, "newPassword": long_password})[0] != 200:
+              fail("Go cannot verify the Nest-set hash")
+          print("phase B/C contract ok")
+
+          # ---- 阶段 D：退出 ----
+          sessions = [login("as-u@example.com", org=org_a) for _ in range(3)]
+          victim = sessions[0]
+          other_session = sessions[1]
+          victim_jti = jwt_claim(victim["accessToken"], "jti")
+          refresh_id = victim["refreshToken"].split(".")[0]
+          status, raw = call(go, "/api/auth/logout", "POST", victim["accessToken"], {"refreshToken": victim["refreshToken"]})
+          if status != 201 or body(raw) != {"ok": True}:
+              fail(f"logout {status} {raw[:200]!r}")
+          if redis("GET", "access-token:blacklist:" + victim_jti) != "true":
+              fail("access blacklist value is not the JSON literal true")
+          if redis("GET", "refresh-token:blacklist:" + refresh_id) != "true":
+              fail("refresh blacklist value is not the JSON literal true")
+          ttl = int(redis("TTL", "access-token:blacklist:" + victim_jti))
+          expected = jwt_claim(victim["accessToken"], "exp") - int(time.time())
+          if ttl <= 0 or ttl > expected + 5:
+              fail(f"access blacklist TTL {ttl} vs remaining {expected}")
+          if call(nest, "/api/auth/me", "GET", victim["accessToken"])[0] != 401:
+              fail("Nest still accepts the blacklisted access token")
+          if call(go, "/api/auth/me", "GET", victim["accessToken"])[0] != 401:
+              fail("Go still accepts the blacklisted access token")
+          if call(nest, "/api/auth/refresh", "POST", payload={"refreshToken": victim["refreshToken"]})[0] == 200:
+              fail("revoked refresh token could still refresh")
+          if call(go, "/api/auth/me", "GET", other_session["accessToken"])[0] != 200:
+              fail("logout revoked another session")
+          # 用 V 的 refresh token 给 U 退出：V 的行与黑名单不变。
+          v_rows_before = scalar(f"SELECT COUNT(*) FROM RefreshToken WHERE userId='{user_v}' AND revokedAt IS NULL")
+          call(go, "/api/auth/logout", "POST", u_token, {"refreshToken": v_refresh})
+          if scalar(f"SELECT COUNT(*) FROM RefreshToken WHERE userId='{user_v}' AND revokedAt IS NULL") != v_rows_before:
+              fail("cross-user logout revoked the other user's refresh token")
+          if redis("GET", "refresh-token:blacklist:" + v_refresh.split(".")[0]) not in ("", "(nil)"):
+              fail("cross-user logout wrote the other user's blacklist")
+          # logoutAll：U 全部 refresh 撤销，V 不变。
+          v_before = scalar(f"SELECT COUNT(*) FROM RefreshToken WHERE userId='{user_v}' AND revokedAt IS NULL")
+          status, raw = call(go, "/api/auth/logout", "POST", other_session["accessToken"], {"logoutAll": True})
+          if status != 201:
+              fail(f"logoutAll {status}")
+          if scalar(f"SELECT COUNT(*) FROM RefreshToken WHERE userId='{user_u}' AND revokedAt IS NULL") != "0":
+              fail("logoutAll did not revoke every refresh token of the user")
+          if scalar(f"SELECT COUNT(*) FROM RefreshToken WHERE userId='{user_v}' AND revokedAt IS NULL") != v_before:
+              fail("logoutAll revoked another user's tokens")
+          audit = scalar(f"SELECT CONCAT(resource, '|', action, '|', orgId, '|', IFNULL(actorId,'NULL')) FROM AuditLog WHERE actorId='{user_u}' AND action='logout' ORDER BY createdAt DESC LIMIT 1")
+          if audit != f"auth|logout|{org_a}|{user_u}":
+              fail(f"logout audit row {audit!r}")
+          if "token" in scalar(f"SELECT IFNULL(metadata,'') FROM AuditLog WHERE action='logout' ORDER BY createdAt DESC LIMIT 1").lower():
+              fail("logout audit metadata carries credentials")
+          print("phase D logout ok")
+
+          # ---- 阶段 E：AS1–AS4 汇总（此前的断言已覆盖），补冻结的 AS2 单测已在普通 CI ----
+
+          # ---- 阶段 F：停止 Nest 后独立接管 ----
+          # 预先保留多个真实 JWT：logout/改密之后仍可用于独立断言。
+          reserved = {
+              "u": login("as-u@example.com", org=org_a),
+              "m": login("as-m@example.com", org=org_a),
+              "w_sessions": [login("as-w@example.com", org=org_a) for _ in range(2)],
+              "history_machine": "mtk_" + token_history,
+          }
+          stop_nest()
+          # 清空 profile 缓存后重新读取非空 profile，证明不是缓存掩盖。
+          redis("DEL", f"profile:{user_u}:{org_a}")
+          status, raw = call(go, "/api/auth/me", "GET", reserved["u"]["accessToken"])
+          if status != 200 or (body(raw) or {}).get("orgId") != org_a:
+              fail(f"GET me after cache clear {status} {raw[:200]!r}")
+          status, raw = call(go, "/api/auth/me", "GET", reserved["m"]["accessToken"])
+          if status != 200:
+              fail(f"GET me machine after nest stop {status}")
+          # 8 条路由全部由 Go 执行。
+          status, raw = call(go, "/api/auth/profile", "PATCH", reserved["u"]["accessToken"], {"firstName": "AfterNest"})
+          if status != 200 or (body(raw) or {}).get("firstName") != "AfterNest":
+              fail(f"PATCH profile after nest stop {status} {raw[:200]!r}")
+          status, raw = call(go, "/api/auth/machine-tokens", "POST", reserved["m"]["accessToken"],
+                             {"name": "after-nest", "permissions": ["metrics.read"]})
+          after_token = body(raw)
+          if status != 201:
+              fail(f"create machine token after nest stop {status} {raw[:200]!r}")
+          if call(go, "/api/auth/me", "GET", after_token["token"])[0] != 200:
+              fail("machine identity not served after nest stop")
+          status, raw = call(go, "/api/auth/machine-tokens/" + after_token["id"] + "/rotate", "POST", reserved["m"]["accessToken"])
+          if status != 201:
+              fail(f"rotate after nest stop {status} {raw[:200]!r}")
+          successor = body(raw)
+          if call(go, "/api/auth/me", "GET", successor["token"])[0] != 200:
+              fail("rotated machine identity not served after nest stop")
+          if call(go, "/api/auth/machine-tokens", "GET", reserved["m"]["accessToken"])[0] != 200:
+              fail("machine list after nest stop")
+          if call(go, "/api/auth/machine-tokens/" + successor["id"], "DELETE", reserved["m"]["accessToken"])[0] != 200:
+              fail("revoke after nest stop")
+          if call(go, "/api/auth/me", "GET", successor["token"])[0] != 401:
+              fail("revoked machine token still accepted after nest stop")
+          # logout 用保留会话检查黑名单效果，另一会话仍在。
+          logout_status, _ = call(go, "/api/auth/logout", "POST", reserved["w_sessions"][0]["accessToken"], {})
+          if logout_status != 201:
+              fail(f"logout after nest stop {logout_status}")
+          if call(go, "/api/auth/me", "GET", reserved["w_sessions"][0]["accessToken"])[0] != 401:
+              fail("logout blacklist not effective after nest stop")
+          if call(go, "/api/auth/me", "GET", reserved["w_sessions"][1]["accessToken"])[0] != 200:
+              fail("logout after nest stop revoked another session")
+          # 改密（Go）→ DB bcrypt 与 refresh 行；重启 Nest 后验证真实登录。
+          final_password = "PostNest#Password-2026"
+          status, raw = call(go, "/api/auth/change-password", "POST", reserved["w_sessions"][1]["accessToken"],
+                             {"currentPassword": admin_password, "newPassword": final_password})
+          if status != 200:
+              fail(f"change-password after nest stop {status} {raw[:200]!r}")
+          if scalar(f"SELECT COUNT(*) FROM RefreshToken WHERE userId='{user_w}' AND revokedAt IS NULL") != "0":
+              fail("change-password after nest stop did not revoke refresh rows")
+          stored_hash = scalar(f"SELECT passwordHash FROM User WHERE id='{user_w}'")
+          if not stored_hash.startswith("$2"):
+              fail(f"stored hash is not bcrypt: {stored_hash[:10]!r}")
+          # 未迁移路由仍落 legacy 且返回 502（Nest 已停）。
+          for method, path, payload in [
+              ("POST", "/api/auth/login", {"email": "as-w@example.com", "password": final_password}),
+              ("POST", "/api/auth/refresh", {"refreshToken": "x" * 40}),
+              ("GET", "/api/auth/mfa", None),
+              ("GET", "/api/auth/data-export", None),
+              ("POST", "/api/auth/avatar/presigned-url", {"contentType": "image/png", "contentLength": 100}),
+          ]:
+              status, raw = call(go, path, method, reserved["w_sessions"][1]["accessToken"], payload)
+              if status != 502:
+                  fail(f"unmigrated {method} {path} after nest stop {status} {raw[:200]!r}")
+          # Go 容器保持健康（未因 Nest 停止而退出）。
+          health = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Health.Status}}", go_container], text=True).strip()
+          if health != "healthy":
+              fail(f"go container health after nest stop: {health}")
+          start_nest()
+          if call(nest, "/api/auth/login", "POST", payload={"email": "as-w@example.com", "password": final_password})[0] != 200:
+              fail("real Nest login with the Go-set password failed after restart")
+          if call(nest, "/api/auth/login", "POST", payload={"email": "as-w@example.com", "password": admin_password})[0] == 200:
+              fail("old password still logs in after the Go password change")
+          print("phase F independent takeover ok")
+          print("api-go account security smoke: ALL OK")
+          PY
