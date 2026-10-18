@@ -84,6 +84,7 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-08 · analysis / 三个 CSV 导出
 
+- 2026-10-18按main90765633深入后，将items/events两路完整CSV认领至[ANALYSIS-EXPORT-001](tasks/ANALYSIS-EXPORT-001.md) reserved，[提示词](tasks/ANALYSIS-EXPORT-001.prompt.md)在#80发布。已核完整参数/5000选择、Go交互50条限制与私有复用、事件聚合/强制权威/先过滤排序后去重、CSV字节与公式语义；新增保持贪心结果的token索引优化。search整路仍未认领并保留Nest，不能因items模式共用业务计整路完成；归档准备与采集生命周期未认领。
 - **范围/缺口**：POST /api/analysis/exports/search、items、events（GAP-LEGACY-001）。search 还含 mode=headlines 归档路径，不只导出当前页面。
 - **基础/依据**：G/analysiscollab.NormalizeQueryString、itemsreading、newsevents；N/AnalysisWorkspaceService.export*CsvStream→buildItemsExportRows/buildArchiveSearchRows/buildEventsExportRows/buildCsvStream。需全量批读取/上限、日期排序、权限/组织过滤、CSV 转义、响应头与审计，避免套 REST 默认50条截断。
 - **文件/前置/冲突**：独立 Go export 包/main；N/modules/analysis-workspace/analysis-workspace.service.ts 为事实源；DB/Mongo/ES/归档搜索边界。**可先独立交付items/events两路**，BL-05搜索核心先约文件；search的mode=headlines已确认经getDigest触发ensureDigestCoverage，完整第三路依赖BL-09准备链边界，不能静默代理Nest后把整路记Go完成。

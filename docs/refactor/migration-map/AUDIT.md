@@ -60,6 +60,8 @@
 
 ## analysis
 
+2026-10-18导出候选增量（main90765633）：只深入items/events Controller/DTO、全部两路row构造/参数/排序/去重/CSV助手、ItemsService→ItemsListService页分支/rerank错误、NewsEvents heat/authority与source-policy读取；对照Go itemsreading完整列表/画像/rerank日志/投影store、newsevents私有聚合/排序去重、analysiscollab规范化/校验及JWT与机器认证差异。明确成功201、analysis.write、5000候选上限、50交互上限不可复用、无直接导出审计、公式/换行字节契约，见ANALYSIS-EXPORT-001。search/headlines准备、真实外部/生产大导出未验证，不把协作CRUD/worker未审范围统一标完成。
+
 - **协作 23 HTTP / 部分分支静态核对，整体尚未深入核对**：[cmd/api/analysis.go](../../../apps/api-go/cmd/api/analysis.go) 三独立模式与 handler；[analysisboards/service.go](../../../apps/api-go/internal/analysisboards/service.go) List/Get→ensureDefaultBoard→组织锁事务内二次检查/创建默认列，确认读可能写。其余列/任务移动重排、评论归属/计数、删除关联清理及版本并发尚未逐路径验完。
 - **analysisResults / Go 实现已静态核对（读取）**：history/register.go→runs.go findRuns，按 orgId/createdAt/limit 查询 Mongo analysisresults，映射 input/output/status；更新这些记录的 submit/process/worker 仍由 Nest 执行。三个 CSV 导出与三个 request root 未迁。
 
