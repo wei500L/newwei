@@ -271,7 +271,9 @@ describe("ArchivePreparationSettingsService", () => {
         rerankMaxConcurrency: 4,
       });
 
-      const args = auditWriter.mock.calls[0]?.[0] as {
+      // writeAuditLogBestEffort(prisma, args, context): the audit args are the
+      // SECOND argument, the first one is the Prisma client.
+      const args = auditWriter.mock.calls[0]?.[1] as {
         data: {
           orgId: string;
           actorId: string | null;
@@ -305,7 +307,9 @@ describe("ArchivePreparationSettingsService", () => {
       expect(harness.deleteMany).toHaveBeenCalledWith({
         where: { key: SETTINGS_KEY },
       });
-      const args = auditWriter.mock.calls[0]?.[0] as {
+      // writeAuditLogBestEffort(prisma, args, context): the audit args are the
+      // SECOND argument, the first one is the Prisma client.
+      const args = auditWriter.mock.calls[0]?.[1] as {
         data: { action: string; metadata: Record<string, unknown> };
       };
       expect(args.data.action).toBe("archive_preparation_reset");

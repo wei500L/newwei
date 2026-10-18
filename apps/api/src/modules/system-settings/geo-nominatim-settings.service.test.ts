@@ -22,6 +22,10 @@ vi.mock("../situation-monitor/situation-monitor-user-lock", () => {
   };
 });
 
+vi.mock("../audit/audit-log.writer", () => ({
+  writeAuditLogBestEffort: vi.fn(async () => undefined),
+}));
+
 const NOMINATIM_LOCK = "data-runtime-settings:nominatim:v1";
 
 const sessionLock = vi.mocked(withMysqlSessionLock);
@@ -266,7 +270,9 @@ describe("GeoNominatimSettingsService", () => {
 
       await harness.service.updateSettings("org-a", "p", { userAgent: null });
 
-      const args = auditWriter.mock.calls[0]?.[0] as {
+      // writeAuditLogBestEffort(prisma, args, context): the audit args are the
+      // SECOND argument, the first one is the Prisma client.
+      const args = auditWriter.mock.calls[0]?.[1] as {
         data: { action: string; actorId: string | null; metadata: unknown };
       };
       expect(args.data.action).toBe("geo_nominatim_settings_update");

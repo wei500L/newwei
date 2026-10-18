@@ -336,11 +336,11 @@ describe("RealtimeSignalsSettingsService", () => {
   });
 
   describe("cross-field constraints", () => {
+    // `openskyDailyCreditBudget` has no entry here: the DTO's @Min(1) rejects 0
+    // before the service runs, and the service clamps a stored 0 up to 1, so the
+    // "must be greater than 0" branch is unreachable through HTTP. It is covered
+    // directly in TestCrossFieldRelationsUseExactMessages.
     const cases: [Record<string, unknown>, string][] = [
-      [
-        { openskyDailyCreditBudget: 0 },
-        "openskyDailyCreditBudget must be greater than 0",
-      ],
       [
         { openskyDayStartHourHkt: 22, openskyNightStartHourHkt: 8 },
         "openskyDayStartHourHkt must be earlier than openskyNightStartHourHkt",
@@ -482,7 +482,9 @@ describe("RealtimeSignalsSettingsService", () => {
       await harness.service.updateSettings("org-a", "platform-user", body);
 
       expect(auditWriter).toHaveBeenCalledTimes(1);
-      const args = auditWriter.mock.calls[0]?.[0] as {
+      // writeAuditLogBestEffort(prisma, args, context): the audit args are the
+      // SECOND argument, the first one is the Prisma client.
+      const args = auditWriter.mock.calls[0]?.[1] as {
         data: {
           orgId: string;
           actorId: string | null;
@@ -514,7 +516,9 @@ describe("RealtimeSignalsSettingsService", () => {
       // directly through the reset path with a human id and check the shape.
       await harness.service.resetToEnv("org-a", "platform-user");
 
-      const args = auditWriter.mock.calls[0]?.[0] as {
+      // writeAuditLogBestEffort(prisma, args, context): the audit args are the
+      // SECOND argument, the first one is the Prisma client.
+      const args = auditWriter.mock.calls[0]?.[1] as {
         data: { action: string; metadata: Record<string, unknown> };
       };
       expect(args.data.action).toBe("realtime_signals_reset");

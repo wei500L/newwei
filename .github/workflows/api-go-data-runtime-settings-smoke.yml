@@ -963,8 +963,11 @@ jobs:
 
           # 四个跨字段约束与错误原句。
           for label, payload, expected_message in (
+              # openskyDailyCreditBudget=0 先被 DTO 的 @Min(1) 拒绝：服务层
+              # "must be greater than 0" 经 HTTP 不可达（DTO 拒绝 0，存储值也会
+              # 被 clamp 到 1）。
               ("budget", {"openskyDailyCreditBudget": 0},
-               "openskyDailyCreditBudget must be greater than 0"),
+               "openskyDailyCreditBudget must not be less than 1"),
               ("day start", {"openskyDayStartHourHkt": 22, "openskyNightStartHourHkt": 8},
                "openskyDayStartHourHkt must be earlier than openskyNightStartHourHkt"),
               ("critical", {"openskyCriticalRemainingPct": 20},
