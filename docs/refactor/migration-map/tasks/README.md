@@ -13,6 +13,9 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 | [NEWS-BRIEF-001](NEWS-BRIEF-001.md) | in_progress | Query newsEventBrief冷生成/forceRefresh、模型日志与briefV1叶子写回 | [提示词](NEWS-BRIEF-001.prompt.md)已发出；第三批规划见newsevents/publicportal/llmlogs本地开发差异，尚无业务PR |
 | [STORAGE-MEDIA-001](STORAGE-MEDIA-001.md) | reserved | storage/test新接管 + 已有媒体下发/REST与GraphQL详情的S3剩余分支 | [提示词](STORAGE-MEDIA-001.prompt.md)已发出；worktree已创建于9d0462e1，当时尚无差异，保留占用 |
 | [ITEMS-LIST-001](ITEMS-LIST-001.md) | reserved | Query items完整分页/相关性/个性化/批量投影 | [提示词](ITEMS-LIST-001.prompt.md)本次第三批发出；编码目录未创建，规划记录复用PR #71 |
+| [AUTH-LOGIN-001](AUTH-LOGIN-001.md) | reserved | 登录/refresh/验证码/MFA挑战/找回密码/邮箱变更11条HTTP | [提示词](AUTH-LOGIN-001.prompt.md)本次第四批发出；编码目录未创建，规划记录复用PR #71；编码窗口不改共享地图 |
+
+第四批发出前只读增量核对：main仍9d0462e1，#70仍OPEN/Ready head adb765d0，#71为规划文档PR；ITEMS-LIST-001目录已创建于9d0462e1，因此继续保留占用，不据目录存在宣称已完成。前三批认领与正在运行的编码对话不变。AUTH-LOGIN-001与其核心业务文件隔离；共享接线仅本批条件增量，地图回填由规划窗口集中维护。
 
 两个历史任务的原始认领/发出时间未提供。状态定义见 [PLANNING](../PLANNING.md)。地图首版通过 [PR #69](https://github.com/wei500L/newwei/pull/69) 发布并合并。本规划窗口先后发布NEWS-BRIEF-001、STORAGE-MEDIA-001、ITEMS-LIST-001三批提示词，只维护文档；用户编码窗口的开发证据按表独立记录，不把规划PR当业务交付。记录复用Ready PR #71，见[证据](../EVIDENCE.md)。
 

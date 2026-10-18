@@ -39,6 +39,8 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-04 · identity / 登录与会话签发主链
 
+- 2026-10-18按main9d0462e1深入核实后已reserved至[AUTH-LOGIN-001](tasks/AUTH-LOGIN-001.md)，[完整提示词](tasks/AUTH-LOGIN-001.prompt.md)已发出；本11路不再是未认领候选。登录/refresh/challenge/真实SMTP/重置事务整体迁移，业务不依赖#70或前三批；BL-06会话协议后续按此批先后处理。编码窗口只交付业务与PR说明，共享地图由规划窗口维护。
+
 - **范围/缺口**：POST /api/auth/login、refresh、send-login-code、login-with-code、mfa/verify-login、mfa/enrollment/start、mfa/enrollment/complete、password/forgot、password/reset、send-verification、verify-email（GAP-LEGACY-001）；不重复已迁已认证 MFA/status 管理。
 - **基础/工作量**：G/{authn,authz,authhttp}、accountsecurity/authfactors 的密码/会话/密钥基础；N/modules/auth 的 AuthService/PasswordResetService/MfaService，DTO 见 auth.controller.ts。需签发/刷新 token、session/Redis 撤销、MFA challenge、验证码/SMTP、限流与审计；这些步骤均须保持实际可用。
 - **文件/前置/冲突**：新 Go 登录业务包、main/config；阅读 `apps/api/src/modules/auth/{auth.service,password-reset.service,mfa.service}.ts`；MySQL/Redis+SMTP。**适合单独主窗口，不与 BL-06 并行改会话协议**。先核 refresh rotation/验证码存储/SMTP helper 可复用性，不能从 verifier 存在推断 signer 已有。

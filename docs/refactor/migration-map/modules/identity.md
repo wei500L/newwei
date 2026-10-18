@@ -14,7 +14,7 @@
 
 Nest 功能目录：[auth](../../../../apps/api/src/modules/auth)、[org](../../../../apps/api/src/modules/org)、[rbac](../../../../apps/api/src/modules/rbac)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：2026-10-18以main9d0462e1限定深读后，[AUTH-LOGIN-001](../tasks/AUTH-LOGIN-001.md)已reserved，覆盖登录/refresh/验证码/MFA挑战/找回密码/邮箱变更11路；[提示词](../tasks/AUTH-LOGIN-001.prompt.md)已发出，尚无业务PR，不改变下表main注册覆盖。旧worktree不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
 
 ## HTTP 开关、实现与生产接线
 
