@@ -554,6 +554,12 @@ func run() error {
 	if cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo {
 		analysisThreadsMode = string(legacyproxy.ModeGo)
 	}
+	// The CSV export switch only ever adds the two exact POST export rules; it
+	// shares no path with the collaboration units above.
+	analysisExportMode := ""
+	if cfg.AnalysisExportMode == config.AnalysisExportModeGo {
+		analysisExportMode = string(legacyproxy.ModeGo)
+	}
 	situationMonitorsMode := ""
 	if cfg.SituationMonitorsMode == config.SituationMonitorsModeGo {
 		situationMonitorsMode = string(legacyproxy.ModeGo)
@@ -698,6 +704,7 @@ func run() error {
 	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
+	rules = legacyproxy.WithAnalysisExport(rules, analysisExportMode)
 	// /graphql is routed to the Go handler when the read switch or either write
 	// switch is go. The registered roots and their own switches decide which
 	// documents actually execute in Go; everything else is still proxied to
@@ -829,6 +836,7 @@ func run() error {
 				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
 				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
 				cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo ||
+				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
@@ -901,6 +909,10 @@ func run() error {
 	// registered when the read executor itself is assembled.
 	graphqlCrawlMetadataGo := graphqlReadGo && cfg.GraphQLCrawlMetadataMode == "go"
 	itemsReadingGo := cfg.ItemsReadingMode == config.ItemsReadingModeGo
+	// The analysis CSV export unit is independent of the item reading switch:
+	// it builds its own item and news-event readers and only owns the two exact
+	// POST export routes.
+	analysisExportGo := cfg.AnalysisExportMode == config.AnalysisExportModeGo
 	searchReindexGo := cfg.SearchReindexMode == config.SearchReindexModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	llmGatewayProfilesGo := cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo
@@ -944,7 +956,7 @@ func run() error {
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || cfg.GraphQLSettingsWriteMode == "go" ||
 		identityOnboardingGo ||
-		searchReindexGo || proxyLoadBalancingGo
+		searchReindexGo || proxyLoadBalancingGo || analysisExportGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1250,6 +1262,9 @@ func run() error {
 		return err
 	}
 	if err := wireAnalysisCollaboration(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := wireAnalysisExport(gateway, cfg, sharedDB, redisClient, &dashboardMongo); err != nil {
 		return err
 	}
 	if err := wireSituationMonitors(gateway, cfg, sharedDB, authenticator); err != nil {
