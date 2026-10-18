@@ -425,7 +425,7 @@ func (s *Service) getProxyLoadBalancingInternalSnapshot(ctx context.Context) (pr
 // updateProxyLoadBalancingSettings serves
 // PUT /api/system-settings/llm-gateways/proxy-load-balancing.
 //
-// LB1: the platform admin gate runs first. LB2/LB3: the merge baseline is the
+// LB0: the platform admin gate runs first. LB2/LB3: the merge baseline is the
 // authoritative row read inside the global lock, and the response is projected
 // from the bytes just written (never from the pre-write cache envelope).
 func (s *Service) updateProxyLoadBalancingSettings(
@@ -516,7 +516,7 @@ func (s *Service) persistProxyLoadBalancingLocked(
 		return proxyLoadBalancingSettingsPublic{}, &httpError{status: 400, message: "redisHost is required"}
 	}
 
-	strategy, ok := validRoutingStrategy(request.RoutingStrategy)
+	strategy, ok := validRoutingStrategy(string(request.RoutingStrategy))
 	if !ok {
 		return proxyLoadBalancingSettingsPublic{}, &httpError{status: 400, message: "routingStrategy is invalid"}
 	}

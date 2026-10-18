@@ -685,6 +685,9 @@ Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`artic
 模型预测/异常检测/embedding/rerank/moderation 等实际推理。回滚只把
 `API_GO_MODEL_ACCESS_SETTINGS_MODE` 改回 `legacy`；不改表、不改 controller/DTO、
 不改 Web 入口与其他开关默认值。
+（注：`/api/internal/litellm/proxy-load-balancing` 与
+`/api/system-settings/llm-gateways/proxy-load-balancing` 已由后续批次以独立开关
+`API_GO_PROXY_LOAD_BALANCING_MODE` 迁移，见 §18；本节描述的是本开关下的行为。）
 
 ## 17. 平台治理设置 16 条 HTTP（Go）
 

@@ -197,7 +197,7 @@ export class LiteLlmProxyLoadBalancingSettingsService {
       deploymentTpm?: number | null;
     },
   ): Promise<LiteLlmProxyLoadBalancingSettingsPublic> {
-    // LB1: the load balancing row is a global singleton, so only a platform
+    // LB0: the load balancing row is a global singleton, so only a platform
     // admin may write it. The DTO (the ValidationPipe) has already run, which is
     // why this gate sits inside the service.
     await this.platformAccess.assertPlatformAdmin(actorId);
@@ -308,7 +308,7 @@ export class LiteLlmProxyLoadBalancingSettingsService {
     orgId: string,
     actorId: string,
   ): Promise<LiteLlmProxyLoadBalancingSettingsPublic> {
-    // LB1: same global-singleton boundary as PUT.
+    // LB0: same global-singleton boundary as PUT.
     await this.platformAccess.assertPlatformAdmin(actorId);
 
     // LB2: DELETE takes the same lock as PUT, so a reset cannot interleave with
