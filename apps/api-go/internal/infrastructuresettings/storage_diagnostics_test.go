@@ -3,6 +3,8 @@ package infrastructuresettings
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -387,5 +389,59 @@ func TestNewStorageTestObjectKeyIsUnique(t *testing.T) {
 			t.Fatalf("duplicate probe key %q", key)
 		}
 		seen[key] = true
+	}
+}
+
+// TestAcceptStorageTestBody pins the DTO-less body semantics of the diagnostics
+// route against the Express json middleware (body-parser) NestJS installs:
+// a zero-length JSON body is the empty object, strict mode rejects a top-level
+// primitive, and malformed JSON or an oversized body keep the shared errors.
+func TestAcceptStorageTestBody(t *testing.T) {
+	cases := []struct {
+		name        string
+		contentType string
+		body        string
+		wantAccept  bool
+		wantStatus  int
+	}{
+		{"no content type", "", `not json`, true, 0},
+		{"empty json body", "application/json", "", true, 0},
+		{"whitespace json body", "application/json", "   ", false, http.StatusBadRequest},
+		{"empty object", "application/json", "{}", true, 0},
+		{"field object", "application/json", `{"endpoint":"http://evil"}`, true, 0},
+		{"array", "application/json", "[]", true, 0},
+		{"null primitive", "application/json", "null", false, http.StatusBadRequest},
+		{"number primitive", "application/json", "123", false, http.StatusBadRequest},
+		{"string primitive", "application/json", `"x"`, false, http.StatusBadRequest},
+		{"malformed json", "application/json", "{", false, http.StatusBadRequest},
+		{"json with charset", "application/json; charset=utf-8", "{}", true, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, pathStorageConnectionTest, strings.NewReader(tc.body))
+			if tc.contentType != "" {
+				request.Header.Set("Content-Type", tc.contentType)
+			}
+			recorder := httptest.NewRecorder()
+			accepted := acceptStorageTestBody(recorder, request)
+			if accepted != tc.wantAccept {
+				t.Fatalf("accepted = %v, want %v (status %d)", accepted, tc.wantAccept, recorder.Code)
+			}
+			if !tc.wantAccept && recorder.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, tc.wantStatus)
+			}
+		})
+	}
+
+	// An oversized JSON body keeps the shared 413 payload-too-large contract.
+	oversized := httptest.NewRequest(http.MethodPost, pathStorageConnectionTest,
+		strings.NewReader(strings.Repeat("{", maxBodyBytes+1)))
+	oversized.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	if acceptStorageTestBody(recorder, oversized) {
+		t.Fatal("oversized body must be rejected")
+	}
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized status = %d", recorder.Code)
 	}
 }

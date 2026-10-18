@@ -1,6 +1,7 @@
 package infrastructuresettings
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -85,10 +86,19 @@ type storageProbeFactory func(config objectstorage.RuntimeConfig) (storageProbe,
 
 // StorageDiagnosticsHandler serves POST /api/admin/settings/storage/test.
 //
-// The evaluation order matches NestJS: authentication (401) -> settings.manage
-// (403) -> body parsing (400/413) -> business. There is deliberately no
-// platform-admin second gate: the NestJS controller only declares
-// @Permissions("settings.manage") on this route, unlike the PATCH route.
+// The evaluation order follows this repository's other taken-over settings
+// routes: authentication (401) -> settings.manage (403) -> body parsing
+// (400/413) -> business. NestJS installs its global Express json middleware
+// before the guard, so an unauthenticated request carrying a malformed or
+// oversized body answers 400/413 there but 401 here; that pre-existing ordering
+// simplification is shared with the seven infrastructure settings routes and is
+// not widened by this batch. The body itself is otherwise ignored: there is no
+// DTO and the body can never override the endpoint or the credentials (see
+// acceptStorageTestBody for the exact parser semantics).
+//
+// There is deliberately no platform-admin second gate: the NestJS controller
+// only declares @Permissions("settings.manage") on this route, unlike the PATCH
+// route.
 type StorageDiagnosticsHandler struct {
 	auth         *Authenticator
 	svc          *Service
@@ -122,9 +132,9 @@ func (h *StorageDiagnosticsHandler) ServeHTTP(w http.ResponseWriter, r *http.Req
 		return
 	}
 	// There is no request DTO: the body cannot override the endpoint or the
-	// credentials. Only the JSON parser can reject it, exactly like the
-	// Express json middleware NestJS installs before the controller.
-	if _, ok := readBodyOrFail(w, r); !ok {
+	// credentials. Only the JSON parser can reject it, so this route reproduces
+	// the Express json middleware semantics itself (see acceptStorageTestBody).
+	if !acceptStorageTestBody(w, r) {
 		return
 	}
 	result, err := h.checkStorageConnection(r.Context())
@@ -135,6 +145,44 @@ func (h *StorageDiagnosticsHandler) ServeHTTP(w http.ResponseWriter, r *http.Req
 	// NestJS @Post defaults to HTTP 201; a failed individual check still
 	// answers 201 with ok:false.
 	writeResponse(w, r, http.StatusCreated, result)
+}
+
+// acceptStorageTestBody reads the DTO-less request body and reproduces the
+// Express json middleware (body-parser) semantics NestJS installs ahead of the
+// controller:
+//
+//   - a JSON content type with a zero-length body is the empty object and is
+//     accepted (body-parser's documented special case), not a syntax error; a
+//     whitespace-only body is NOT empty and stays a syntax error;
+//   - strict mode is on by default, so a top-level JSON primitive or string is
+//     a syntax error even though it is valid JSON;
+//   - malformed JSON and an oversized body keep the shared contract errors.
+//
+// It writes the response and returns false when the caller must stop.
+func acceptStorageTestBody(w http.ResponseWriter, r *http.Request) bool {
+	body, kind := readRequestBody(r)
+	switch kind {
+	case bodyTooLarge:
+		authhttp.WritePayloadTooLarge(w, r)
+		return false
+	case bodyInvalidJSON:
+		// body-parser special-cases only a zero-length body; a whitespace-only
+		// body still fails its strict first-character check.
+		if len(body) == 0 {
+			return true
+		}
+		authhttp.WriteBadRequest(w, r, "Unexpected token in JSON body")
+		return false
+	case bodyOK:
+		trimmed := bytes.TrimSpace(body)
+		if len(trimmed) > 0 && trimmed[0] != '{' && trimmed[0] != '[' {
+			authhttp.WriteBadRequest(w, r, "Unexpected token in JSON body")
+			return false
+		}
+		return true
+	default: // bodyAbsent: no JSON content type, the body is not parsed at all.
+		return true
+	}
 }
 
 // checkStorageConnection runs the mode-specific diagnostics. A configuration

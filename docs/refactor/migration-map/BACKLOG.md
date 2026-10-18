@@ -29,6 +29,7 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 - **范围/缺口**：GET /api/crawl-media-assets/:assetId/:mode，补 S3 签名重定向（GAP-CRAWL-001），不扩大为全部采集写/存储上传。
 - **基础/依据**：G/crawlreadtelemetry 已做 HMAC、orgId 资产查询与 MySQL blob；infrastructuresettings 只有配置管理。必须补 S3 对象 URL 行为与 config 解密/TTL/disposition/path-style，不是改一个 nil 返回。
 - **文件/前置/冲突**：service_media.go、构造/wire 与必要存储辅助；外部 S3，独立于 crawl worker。**可独立窗口**；先确认是否抽共享存储客户端，避开 BL-15 同文件；实桶验证范围另外登记。
+- 2026-10-18 交付：已由 [STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md) 实施于 `refactor/go-storage-media`（[Ready PR #73](https://github.com/wei500L/newwei/pull/73)），新增窄包 `objectstorage`、`StorageRuntimeConfig` 与 REST/GraphQL 两处注入；PR 未合 main，GAP-CRAWL-001 仍开放，实桶验证未执行。BL-03 不再作为未认领候选。
 
 ### BL-04 · identity / 登录与会话签发主链
 
@@ -130,6 +131,7 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 - **范围/缺口**：POST admin/settings/storage/test、POST system-settings/geo/nominatim/test、GET system-settings/vector-service/diagnostics；settings/email GET、PUT auth-code、POST test；GET assistant-safety/diagnostics（GAP-LEGACY-001）。
 - **基础/依据**：G/infrastructuresettings、dataruntimesettings、platformgovernance 的配置读/解密；N 对应 Controller/Test/Email/Safety service。每种诊断需真实客户端/超时/权限/返回，不是固定 ok；存储、邮件、安全诊断可分别完整交付。
 - **文件/前置/冲突**：各域独立诊断包/main；S3、vector、Nominatim、SMTP/安全外部依赖。**可单个服务窗口**，不同时改 BL-03 存储 helper；与 BL-04 邮件客户端需明确共享；当前未逐方法深读，选批前核请求/失败语义。
+- 2026-10-18 交付：storage/test 子范围由 [STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md) 实施（独立开关 `API_GO_STORAGE_DIAGNOSTICS_MODE`，默认 legacy；[Ready PR #73](https://github.com/wei500L/newwei/pull/73)），与 BL-03 共用 `runtime 配置/客户端`，不并行为同一 helper 开启第二个窗口。Nominatim/vector/email/safety 诊断仍未认领，PR 未合 main。
 
 ### BL-16 · knowledge / 证据复核与 ingestion
 

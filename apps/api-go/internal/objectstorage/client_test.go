@@ -89,11 +89,11 @@ func TestEffectiveTTLSeconds(t *testing.T) {
 // values that leave the SDK default in place.
 func TestPresignExpiry(t *testing.T) {
 	cases := map[float64]time.Duration{
-		0:      0,
-		-1:     0,
-		300:    300 * time.Second,
-		300.9:  300 * time.Second,
-		86400:  86400 * time.Second,
+		0:     0,
+		-1:    0,
+		300:   300 * time.Second,
+		300.9: 300 * time.Second,
+		86400: 86400 * time.Second,
 	}
 	for value, want := range cases {
 		if got := presignExpiry(value); got != want {

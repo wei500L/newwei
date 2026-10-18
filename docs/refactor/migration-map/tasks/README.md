@@ -8,6 +8,7 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 |---|---|---|---|
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |
 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | pr_open | 8 个通知/看板/告警交互写 | Ready [#70](https://github.com/wei500L/newwei/pull/70)，head adb765d0；worktree 干净；尚未合 main，保留占用 |
+| [STORAGE-MEDIA-001](STORAGE-MEDIA-001.md) | pr_open | storage/test 独立接管 + 媒体下发/REST 与 GraphQL 详情的 S3 剩余分支 | Ready [#73](https://github.com/wei500L/newwei/pull/73)，worktree `/Users/oo/project/newwei-go-storage-media`；业务 PR 未合 main，保留占用 |
 
 原始认领/发出时间未提供；原始执行器活动未核实。状态定义见 [PLANNING](../PLANNING.md)。本次没有新业务任务。当前地图文档首版已提交/推送（4e37f285），通过 [Ready PR #69](https://github.com/wei500L/newwei/pull/69) 发布，业务分支状态与文档发布分开；PR URL 见[证据](../EVIDENCE.md)。
 

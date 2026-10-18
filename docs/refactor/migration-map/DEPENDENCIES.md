@@ -66,6 +66,8 @@ flowchart LR
 
 所有位置按页首 SHA。包内小写符号是 **私有**，不能在新包直接调用；需要抽取时先写清所有权和副作用。返回模型共享不代表业务权限可以复用成同一根权限。
 
+S3 专项交付（2026-10-18，业务 PR #73，基线 main 9d0462e1）：STORAGE-MEDIA-001 拥有 `infrastructuresettings.StorageRuntimeConfig`（复用九键、storage:settings 60 秒缓存与回退、明文/加密密钥解密）、新窄包 `internal/objectstorage`（具名 RuntimeConfig/ReadURLOptions + AWS SDK v2 s3/credentials/smithy-go 的 client/presign/HeadBucket/PutObject/DeleteObject，显式静态凭据、不启用默认凭据链或 IMDS）、crawlreadtelemetry 媒体与详情接入、settingscrawl.Options.StorageConfig 注入、独立诊断开关 `API_GO_STORAGE_DIAGNOSTICS_MODE`。对象存储依赖经既有 CI `go-modules-regen` 远端生成，本机不安装。只有诊断写/删自己每次唯一的测试对象；媒体 presign 不 HEAD、不下载；无队列/worker 所有权。BL-15 其余诊断仍未认领。
+
 | 能力 | 真实 Go 入口 / 路径 | 使用限制与副作用 |
 |---|---|---|
 | 鉴权/租户 | [authn](../../../apps/api-go/internal/authn) Verifier、RedisBlacklist；[authz](../../../apps/api-go/internal/authz) MySQLRepository；[authhttp](../../../apps/api-go/internal/authhttp) NewAuthenticator | JWT 后从 DB 重推导 membership/permissions；机器令牌是否允许由 HTTP/GraphQL 分别决定，不能信任请求 orgId |
