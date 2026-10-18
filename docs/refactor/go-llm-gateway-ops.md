@@ -206,8 +206,9 @@ attempts)，每个 worker 复用同一个 HTTP transport，所有 attempt 写入
   `/team/new` 且没有再包一层，AxiosError 直接冒泡成不透明的 500；Go 与同文件的
   `/key/generate` 路径保持一致，用 `toSyncError` 给出 503 与可读原因。
 - **传输层错误的措辞**。Go 没有 axios，连接类失败的消息是 Go net 错误原文
-  （超时已对齐为 `timeout of <n>ms exceeded`）；`axiosCode` 只在超时给出
-  `ECONNABORTED`，不对连接类错误编造 axios 代码。
+  （超时已对齐为 `timeout of <n>ms exceeded`）；`axiosCode` 按 Node errno 近似
+  给出 `ENOTFOUND`/`ECONNREFUSED`/`ECONNRESET`，超时为 `ECONNABORTED`，其余
+  保持为空而不是猜测。
 - **`lastSyncedAt` 只解析 RFC 3339 系列**。手工改坏的旧格式（如 `2026-10-18` 或
   带空格的本地时间）在 Go 里落库为 null；`new Date()` 的本地时区语义不复刻。
 
@@ -223,9 +224,10 @@ attempts)，每个 worker 复用同一个 HTTP transport，所有 attempt 写入
   model-info 脱敏。
 - 本批复核后追加的对齐用例：rerank 默认 query / 覆盖仍带 fallback / 显式 null
   score 回落 / 空 `results` 不回落 `data`、日志成本取 header、不可读 2xx
-  model-info 返回空列表而不是 503、传输错误带上原因、Bearer 前缀必须跟空白、
-  `targetProfileId` 去空白且空串清除、apiBase 末尾 `/` 不产生 `//`、
-  LB 的数字字符串按源 400。
+  model-info 返回空列表而不是 503、传输错误带上原因与 axiosCode、Bearer 前缀
+  必须跟空白、`targetProfileId` 去空白且空串清除、apiBase 末尾 `/` 不产生
+  `//`、LB 的数字字符串按源 400、被拒 2xx 的错误行不带 usage/cost、
+  `rerankDocuments` 的 each 校验消息。
 - 未执行：本机不跑 Docker、不连真实 MySQL/Redis/Mongo、不发任何真实
   LiteLLM/模型请求。
 
