@@ -2590,8 +2590,13 @@ jobs:
                                      {"enabled": False, "issuerUrl": "", "clientId": "",
                                       "scopes": ["  openid  ", "email", "email"]}, 200, setup=reset_a)
               require("F scopes verbatim response", doc["scopes"], ["  openid  ", "email", "email"])
+              # scalar() 会 strip 每一行输出，按元素读回时看不到首尾空白；改用带
+              # 引号的原始 JSON 元素断言存储值逐字节保留原字符串。
+              require("F scopes verbatim raw element",
+                      scalar("SELECT JSON_EXTRACT(scopes, '$[0]') FROM OrgOidcConfig "
+                             "WHERE orgId='" + org_a + "'"), '"  openid  "')
               require("F scopes verbatim row", oidc_scopes_elements(org_a),
-                      ["  openid  ", "email", "email"])
+                      ["openid", "email", "email"])
               require("F scopes verbatim is array",
                       scalar("SELECT JSON_TYPE(scopes) FROM OrgOidcConfig WHERE orgId='" + org_a + "'"),
                       "ARRAY")
