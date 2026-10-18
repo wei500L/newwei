@@ -154,10 +154,12 @@ jobs:
           BASE_DAY = now_utc()
 
           def mts(offset_days):
-              return (BASE_DAY + datetime.timedelta(days=offset_days)).strftime("%Y-%m-%d %H:%M:%S.000")
+              # Fixtures are placed `offset_days` in the past so the RSS window
+              # assertions ("2.5-day-old source") describe real ages.
+              return (BASE_DAY - datetime.timedelta(days=offset_days)).strftime("%Y-%m-%d %H:%M:%S.000")
 
           def its(offset_days):
-              return (BASE_DAY + datetime.timedelta(days=offset_days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+              return (BASE_DAY - datetime.timedelta(days=offset_days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
           # ---------- host process helpers ----------
 
@@ -323,8 +325,8 @@ jobs:
               left_status, left_raw = call(nest, path, method, token, payload)
               right_status, right_raw = call(go, path, method, token, payload)
               if left_status != right_status or core(body(left_raw)) != core(body(right_raw)):
-                  fail("rest parity " + method + " " + path + " nest=" + str(left_status) + " " + repr(left_raw[:500]) +
-                       " go=" + str(right_status) + " " + repr(right_raw[:500]) +
+                  fail("rest parity " + method + " " + path + " nest=" + str(left_status) + " " + repr(left_raw[:2500]) +
+                       " go=" + str(right_status) + " " + repr(right_raw[:2500]) +
                        " diff=" + str(diff_paths(body(left_raw), body(right_raw))))
               return left_status, body(left_raw)
 
@@ -369,8 +371,8 @@ jobs:
               ls, lr = gql(nest, token, query, variables)
               rs, rr = gql(go, token, query, variables)
               if ls != rs or core(body(lr)) != core(body(rr)):
-                  fail("graphql parity " + label + " nest=" + str(ls) + " " + repr(lr[:700]) +
-                       " go=" + str(rs) + " " + repr(rr[:700]) +
+                  fail("graphql parity " + label + " nest=" + str(ls) + " " + repr(lr[:4000]) +
+                       " go=" + str(rs) + " " + repr(rr[:4000]) +
                        " diff=" + str(diff_paths(body(lr), body(rr))))
               return body(lr)
 
