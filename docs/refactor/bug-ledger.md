@@ -1037,7 +1037,7 @@ retentionDays must not be greater than 3650; retentionDays must not be less than
 可见（例如把整数字段传成字符串）；单条约束失败时顺序无区别。本批不修改该已合入包，
 登记为观察项，供后续统一核对。
 
-## 11. LiteLLM 负载均衡配置批次（LB0–LB4）
+## 12. LiteLLM 负载均衡配置批次（LB0–LB4）
 
 > 基线 `f5648fab`（origin/main）· 分支 `refactor/go-proxy-load-balancing` · 开关
 > `API_GO_PROXY_LOAD_BALANCING_MODE`。五条均为本批明确要求改变的行为，不得以「兼容
