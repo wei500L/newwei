@@ -310,10 +310,17 @@ export class ItemsReadModelService {
     };
   }
 
-  private buildLatestItemSnapshotPipeline(itemMetaIds: string[]): PipelineStage[] {
+  private buildLatestItemSnapshotPipeline(
+    orgId: string,
+    itemMetaIds: string[],
+  ): PipelineStage[] {
     return [
       {
         $match: {
+          // Tenant binding (IR1): the snapshot lookup is organization scoped so
+          // a foreign organization's document carrying the same itemMetaId can
+          // never be folded into this organization's read model.
+          orgId,
           itemMetaId: { $in: itemMetaIds },
         },
       },
@@ -361,33 +368,39 @@ export class ItemsReadModelService {
 
   private async loadRawReadModelSnapshots(metas: ItemMetaRow[]) {
     const rawByItemMetaId = new Map<string, ItemReadModelRawSnapshotInput>();
-    const referencedMongoRefs = Array.from(
-      new Set(
-        metas
-          .map((meta) => meta.mongoRef.trim())
-          .filter(
-            (mongoRef) => mongoRef.length > 0 && Types.ObjectId.isValid(mongoRef),
-          ),
-      ),
-    );
-    const latestRawIds = metas
-      .filter((meta) => meta.mongoRef.trim().length === 0)
-      .map((meta) => meta.id);
+    // Tenant binding (IR1): `RawItem` has no `orgId` column, so a raw snapshot
+    // is only trusted when the referenced document id equals the
+    // organization-scoped `ItemMeta.mongoRef` AND the document's own
+    // `itemMetaId` points back at that same meta. A meta whose `mongoRef` is
+    // missing or malformed yields no raw snapshot: the previous
+    // "latest raw for this itemMetaId" fallback is precisely the
+    // cross-organization read path this batch closes.
+    const itemMetaIdByMongoRef = new Map<string, string>();
+    for (const meta of metas) {
+      const mongoRef = meta.mongoRef.trim();
+      if (!mongoRef || !Types.ObjectId.isValid(mongoRef)) {
+        continue;
+      }
+      itemMetaIdByMongoRef.set(mongoRef, meta.id);
+    }
+    if (itemMetaIdByMongoRef.size === 0) {
+      return rawByItemMetaId;
+    }
 
-    const [referencedRawDocs, latestRawDocs] = await Promise.all([
-      referencedMongoRefs.length > 0
-        ? RawItemModel.find({
-            _id: { $in: referencedMongoRefs },
-          }).lean()
-        : Promise.resolve([]),
-      latestRawIds.length > 0
-        ? RawItemModel.aggregate(this.buildLatestItemSnapshotPipeline(latestRawIds))
-        : Promise.resolve([]),
-    ]);
+    const referencedRawDocs = await RawItemModel.find({
+      _id: { $in: Array.from(itemMetaIdByMongoRef.keys()) },
+    }).lean();
 
-    for (const rawDoc of [...referencedRawDocs, ...latestRawDocs]) {
+    for (const rawDoc of referencedRawDocs) {
       const snapshot = this.toRawReadModelSnapshot(rawDoc);
-      if (!snapshot || rawByItemMetaId.has(snapshot.itemMetaId)) {
+      if (!snapshot) {
+        continue;
+      }
+      const expectedItemMetaId = itemMetaIdByMongoRef.get(snapshot.id);
+      if (!expectedItemMetaId || expectedItemMetaId !== snapshot.itemMetaId) {
+        continue;
+      }
+      if (rawByItemMetaId.has(snapshot.itemMetaId)) {
         continue;
       }
       rawByItemMetaId.set(snapshot.itemMetaId, snapshot);
@@ -396,13 +409,13 @@ export class ItemsReadModelService {
     return rawByItemMetaId;
   }
 
-  private async loadProcessedReadModelSnapshots(itemMetaIds: string[]) {
+  private async loadProcessedReadModelSnapshots(orgId: string, itemMetaIds: string[]) {
     if (itemMetaIds.length === 0) {
       return new Map<string, ItemReadModelProcessedSnapshotInput>();
     }
 
     const docs = await ProcessedItemModel.aggregate([
-      ...this.buildLatestItemSnapshotPipeline(itemMetaIds),
+      ...this.buildLatestItemSnapshotPipeline(orgId, itemMetaIds),
       { $project: PROCESSED_READ_MODEL_SNAPSHOT_PROJECTION },
     ]);
     const processedByItemMetaId = new Map<string, ItemReadModelProcessedSnapshotInput>();
@@ -590,7 +603,10 @@ export class ItemsReadModelService {
 
       const [rawByItemMetaId, processedByItemMetaId] = await Promise.all([
         this.loadRawReadModelSnapshots(metas),
-        this.loadProcessedReadModelSnapshots(metas.map((meta) => meta.id)),
+        this.loadProcessedReadModelSnapshots(
+          orgId,
+          metas.map((meta) => meta.id),
+        ),
       ]);
       const records: ItemReadModelHydrationRecord[] = metas.map((meta) => ({
         meta,

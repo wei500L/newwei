@@ -1,0 +1,1870 @@
+# 条目阅读（items reading）真实栈验收。不进普通 CI。
+# PR 上加 label api-go-items-reading-smoke，或 workflow_dispatch。
+# SCHEDULE_ENABLED 保持 false。不请求 crawl4ai/AkShare/翻译上游；
+# ELASTICSEARCH_ENABLED / VECTOR_SERVICE_ENABLED / MODEL_SERVICE_ENABLED 全程 false——
+# 只断言文档化的降级路径（词法建议、列表/分面仍成功），不宣称模型/向量/ES 成功。
+name: api-go-items-reading-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+concurrency:
+  group: api-go-items-reading-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  CI: "true"
+  DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
+  MYSQL_HOST: 127.0.0.1
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: secret
+  MYSQL_DB: app
+  MONGO_URI: mongodb://127.0.0.1:27017/app
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  JWT_ISSUER: modular-monolith
+  JWT_AUDIENCE: modular-monolith-clients
+  SMTP_USER: api-go-items-reading-smoke@example.com
+  SMTP_PASS: api-go-items-reading-smoke-smtp-not-connected
+  JWT_SECRET: d3a7b1e9c5f2408a6b9d2e4f7a1c8b3065e9d4b2a7f6038e5d1c9a7b6f4e2d3c
+  NEXTAUTH_SECRET: f4c2a8e1b7d3509a7c0e3f5a8b2d9c4176f0e5c3b8a7149f6e2d0b8c7a5f3e4d
+  NEXTAUTH_URL: http://localhost:3000
+  API_BASE_URL: http://localhost:4000
+  CRAWL4AI_BASE_URL: http://127.0.0.1:11235
+  CORS_ORIGIN: http://localhost:3000
+  AKSHARE_ENABLED: "false"
+  SCHEDULE_ENABLED: "false"
+  REALTIME_SIGNALS_ENABLED: "false"
+  ELASTICSEARCH_ENABLED: "false"
+  VECTOR_SERVICE_ENABLED: "false"
+  MODEL_SERVICE_ENABLED: "false"
+  SEED_ORG_SLUG: api-go-items-reading-smoke-org
+  SEED_ORG_NAME: api-go Items Reading Smoke Org
+  SEED_ADMIN_EMAIL: api-go-items-reading-smoke-admin@example.com
+  SEED_ADMIN_PASSWORD: ApiGoItemsReading#2026-Ci
+  SEED_ADMIN_FIRST_NAME: Smoke
+  SEED_ADMIN_LAST_NAME: Admin
+
+jobs:
+  api-go-items-reading-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'api-go-items-reading-smoke')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter db run prisma:generate
+      - name: Migrate
+        run: pnpm --filter db run migrate
+      - name: Seed
+        run: pnpm --filter db run seed
+      - name: Build NestJS
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/api
+      - name: Start NestJS
+        run: |
+          NODE_ENV=production PORT=4000 pnpm --filter @modular/api run start > /tmp/api-nestjs.log 2>&1 &
+          echo $! > /tmp/api-nestjs.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/api/healthz/live >/dev/null 2>&1; then
+              echo "nestjs healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -80 /tmp/api-nestjs.log || true
+          exit 1
+      - name: Build api-go image
+        run: docker build -f infra/docker/api-go.Dockerfile -t api-go-items-reading:ci .
+      - name: Exercise item reading routes
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import datetime, json, os, signal, subprocess, time, urllib.error, urllib.parse, urllib.request
+
+          nest = "http://127.0.0.1:4000"
+          go = "http://127.0.0.1:4020"
+          container = "api-go-items-reading"
+          image = "api-go-items-reading:ci"
+
+          def fail(message):
+              print("FAIL", message)
+              try:
+                  logs = subprocess.run(["docker", "logs", "--tail", "120", "api-go-items-reading"],
+                                        text=True, capture_output=True)
+                  print("--- api-go logs (tail) ---")
+                  print((logs.stdout or "")[-6000:])
+                  print((logs.stderr or "")[-6000:])
+              except Exception:
+                  pass
+              raise SystemExit(1)
+
+          def phase(title):
+              print("=== PHASE", title, "===")
+
+          def oid(ch, suffix):
+              return (ch * 24)[: 24 - len(suffix)] + suffix
+
+          def now_utc():
+              return datetime.datetime.now(datetime.timezone.utc)
+
+          BASE_DAY = now_utc()
+
+          def mts(offset_days):
+              # Fixture offsets are relative days from BASE_DAY (now): a larger
+              # offset is a newer document, which is what the processed-priority
+              # and sortAt/createdAt expectations assume.
+              return (BASE_DAY + datetime.timedelta(days=offset_days)).strftime("%Y-%m-%d %H:%M:%S.000")
+
+          def its(offset_days):
+              return (BASE_DAY + datetime.timedelta(days=offset_days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+          # ---------- host process helpers ----------
+
+          def docker_ps(ancestor):
+              out = subprocess.check_output(["docker", "ps", "-q", "-f", "ancestor=" + ancestor], text=True).split()
+              if not out:
+                  fail("no container for " + ancestor)
+              return out[0]
+
+          def mysql_container():
+              return docker_ps("mysql:8.4")
+
+          def mongo_container():
+              return docker_ps("mongo:7.0")
+
+          def redis_container():
+              return docker_ps("redis:7.2")
+
+          def sql(statement):
+              proc = subprocess.run(
+                  ["docker", "exec", "-i", mysql_container(), "mysql", "-uroot", "-psecret", "-N", "app"],
+                  input=statement, text=True, capture_output=True)
+              if proc.returncode != 0:
+                  details = (proc.stderr or "") + (proc.stdout or "")
+                  fail("mysql: " + details + "\n--- statement head ---\n" + statement[:1200]
+                       + "\n--- statement tail ---\n" + statement[-600:])
+              return proc.stdout.strip()
+
+          def scalar(statement):
+              lines = [line.strip() for line in sql(statement).splitlines() if line.strip()]
+              return lines[-1] if lines else ""
+
+          class Oid:
+              def __init__(self, value):
+                  self.value = value
+
+          class JsDate:
+              def __init__(self, value):
+                  self.value = value
+
+          def js(value):
+              if isinstance(value, Oid):
+                  return "ObjectId(" + json.dumps(value.value) + ")"
+              if isinstance(value, JsDate):
+                  return "new Date(" + json.dumps(value.value) + ")"
+              if isinstance(value, dict):
+                  return "{" + ",".join(json.dumps(str(k)) + ":" + js(v) for k, v in value.items()) + "}"
+              if isinstance(value, list):
+                  return "[" + ",".join(js(v) for v in value) + "]"
+              if isinstance(value, bool):
+                  return "true" if value else "false"
+              if value is None:
+                  return "null"
+              if isinstance(value, (int, float)):
+                  return repr(value)
+              return json.dumps(value)
+
+          def mongo(script):
+              proc = subprocess.run(
+                  ["docker", "exec", "-i", mongo_container(), "mongosh", "app", "--quiet", "--eval", script],
+                  text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("mongosh: " + (proc.stderr or proc.stdout))
+              return proc.stdout.strip()
+
+          def mongo_insert(collection, docs):
+              if docs:
+                  mongo("db.getCollection(" + json.dumps(collection) + ").insertMany(" + js(docs) + ");")
+
+          def redis(*args):
+              proc = subprocess.run(
+                  ["docker", "exec", redis_container(), "redis-cli", "--raw"] + list(args),
+                  text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("redis: " + (proc.stderr or proc.stdout))
+              return proc.stdout.strip()
+
+          def redis_keys(pattern):
+              return [line for line in redis("KEYS", pattern).splitlines() if line.strip()]
+
+          def redis_del_pattern(pattern):
+              keys = redis_keys(pattern)
+              if keys:
+                  redis("DEL", *keys)
+
+          # ---------- HTTP helpers (urllib only; no curl) ----------
+
+          def call(base_url, path, method="GET", token=None, payload=None, timeout=60):
+              headers = {}
+              data = None
+              if token:
+                  headers["authorization"] = "Bearer " + token
+              if payload is not None:
+                  data = json.dumps(payload).encode()
+                  headers["content-type"] = "application/json"
+              req = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read()
+
+          def body(raw):
+              if not raw:
+                  return None
+              text = raw.decode("utf-8", "replace").strip()
+              if not text:
+                  return None
+              return json.loads(text)
+
+          def core(value):
+              if isinstance(value, dict):
+                  return {key: core(item) for key, item in value.items() if key not in ("traceId", "timestamp", "locations", "path")}
+              if isinstance(value, list):
+                  return [core(item) for item in value]
+              return value
+
+          def diff_paths(left, right, path="data"):
+              # Returns the first structural or value difference between two parsed
+              # JSON documents, so a parity failure names the exact field.
+              if type(left) is not type(right):
+                  return path + ": type " + type(left).__name__ + " != " + type(right).__name__
+              if isinstance(left, dict):
+                  for key in sorted(set(left.keys()) | set(right.keys())):
+                      if key not in left:
+                          return path + "." + key + ": missing in nest"
+                      if key not in right:
+                          return path + "." + key + ": missing in go"
+                      found = diff_paths(left[key], right[key], path + "." + key)
+                      if found:
+                          return found
+                  return None
+              if isinstance(left, list):
+                  if len(left) != len(right):
+                      return path + ": len " + str(len(left)) + " != " + str(len(right))
+                  for index in range(len(left)):
+                      found = diff_paths(left[index], right[index], path + "[" + str(index) + "]")
+                      if found:
+                          return found
+                  return None
+              if left != right:
+                  return path + ": nest=" + repr(left)[:300] + " go=" + repr(right)[:300]
+              return None
+
+          def message(raw):
+              doc = body(raw) or {}
+              text = doc.get("message")
+              if isinstance(text, list):
+                  return "; ".join(str(item) for item in text)
+              return text
+
+          def login(email, password=None):
+              status, raw = call(nest, "/api/auth/login", "POST", payload={
+                  "email": email,
+                  "password": password or os.environ["SEED_ADMIN_PASSWORD"],
+              })
+              doc = body(raw)
+              if status not in (200, 201) or not doc or not doc.get("accessToken"):
+                  fail("login " + email + " " + str(status) + " " + repr(raw[:400]))
+              return doc["accessToken"]
+
+          def same(path, method="GET", token=None, payload=None):
+              left_status, left_raw = call(nest, path, method, token, payload)
+              right_status, right_raw = call(go, path, method, token, payload)
+              if left_status != right_status or core(body(left_raw)) != core(body(right_raw)):
+                  fail("rest parity " + method + " " + path + " nest=" + str(left_status) + " " + repr(left_raw[:2500]) +
+                       " go=" + str(right_status) + " " + repr(right_raw[:2500]) +
+                       " diff=" + str(diff_paths(body(left_raw), body(right_raw))))
+              return left_status, body(left_raw)
+
+          def detail_projection(doc):
+              if not isinstance(doc, dict):
+                  return doc
+              meta = doc.get("itemMeta") or {}
+              raw = doc.get("rawItem")
+              processed = doc.get("processed")
+              out = {"itemMeta": {key: meta.get(key) for key in ("id", "orgId", "externalId", "name", "status", "mongoRef")}}
+              if isinstance(raw, dict):
+                  out["rawItem"] = {key: raw.get(key) for key in ("_id", "itemMetaId", "payload", "source")}
+              else:
+                  out["rawItem"] = raw
+              if isinstance(processed, dict):
+                  out["processed"] = {key: processed.get(key) for key in ("_id", "itemMetaId", "status", "tags", "createdAt")}
+                  out["processedResult"] = processed.get("result")
+              else:
+                  out["processed"] = processed
+                  out["processedResult"] = None
+              return out
+
+          def detail_same(path, token):
+              left_status, left_raw = call(nest, path, "GET", token)
+              right_status, right_raw = call(go, path, "GET", token)
+              if left_status != right_status or detail_projection(body(left_raw)) != detail_projection(body(right_raw)):
+                  fail("detail parity " + path + " nest=" + str(left_status) + " " + repr(left_raw[:600]) +
+                       " go=" + str(right_status) + " " + repr(right_raw[:600]))
+              return right_status, body(right_raw)
+
+          def gql(base_url, token, query, variables=None):
+              payload = {"query": query}
+              if variables is not None:
+                  payload["variables"] = variables
+              return call(base_url, "/graphql", "POST", token, payload)
+
+          def gql_doc(base_url, token, query, variables=None, label=""):
+              status, raw = gql(base_url, token, query, variables)
+              doc = body(raw)
+              if isinstance(doc, dict) and doc.get("errors"):
+                  # A GraphQL error that a later assertion would turn into a
+                  # confusing TypeError is reported here with the server-side
+                  # cause from the api-go container log.
+                  print("NOTE graphql errors", label, str(status), json.dumps(doc)[:1200])
+                  try:
+                      print("--- api-go logs (tail) ---")
+                      print(go_logs()[-4000:])
+                  except Exception:
+                      pass
+              return status, doc
+
+          def gql_same(token, query, variables=None, label=""):
+              ls, lr = gql(nest, token, query, variables)
+              rs, rr = gql(go, token, query, variables)
+              if ls != rs or core(body(lr)) != core(body(rr)):
+                  fail("graphql parity " + label + " nest=" + str(ls) + " " + repr(lr[:4000]) +
+                       " go=" + str(rs) + " " + repr(rr[:4000]) +
+                       " diff=" + str(diff_paths(body(lr), body(rr))))
+              return body(lr)
+
+          def stats(base_url=go):
+              # The stats endpoint is registered by the GraphQL read handler, so
+              # with API_GO_GRAPHQL_READ_MODE=legacy it is not mounted and the
+              # resolver counter is simply zero.
+              status, raw = call(base_url, "/__go/graphql-read-stats")
+              if status == 404:
+                  return 0
+              doc = body(raw) or {}
+              if status != 200:
+                  fail("graphql-read-stats " + str(status) + " " + repr(raw[:200]))
+              return doc.get("resolverCalls") or 0
+
+          # ---------- docker run / health ----------
+
+          LEGACY_SWITCHES = [
+              "API_GO_GRAPHQL_NEWS_EVENTS_MODE",
+              "API_GO_CRAWL_TEMPLATES_MODE",
+              "API_GO_CRAWL_PROFILES_MODE",
+              "API_GO_CRAWL_WORKFLOWS_MODE",
+              "API_GO_CRAWL_FRONTIER_RUNS_MODE",
+              "API_GO_NEWS_SOURCES_MODE",
+              "API_GO_SITUATION_MONITORS_MODE",
+              "API_GO_CONTENT_SUBSCRIPTIONS_MODE",
+              "API_GO_USER_NEWS_BEHAVIOR_MODE",
+              "API_GO_USER_DIGEST_MODE",
+              "API_GO_DASHBOARD_STATS_MODE",
+              "API_GO_DASHBOARD_CHARTS_MODE",
+              "API_GO_DASHBOARD_WAR_MAP_MODE",
+              "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE",
+              "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE",
+              "API_GO_DASHBOARD_SPACETIME_GEO_MODE",
+              "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE",
+              "API_GO_DASHBOARD_STREAM_MODE",
+              "API_GO_HEALTHZ_MODE",
+              "API_GO_PUBLIC_PORTAL_MODE",
+              "API_GO_ANALYSIS_VIEWS_MODE",
+              "API_GO_ANALYSIS_BOARDS_MODE",
+              "API_GO_ANALYSIS_THREADS_MODE",
+              "API_GO_RBAC_MODE",
+              "API_GO_GRAPHQL_WORKSPACE_READ_MODE",
+              "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE",
+              "API_GO_NEWS_INDICATORS_MODE",
+              "API_GO_QUALITY_OVERVIEW_MODE",
+              "API_GO_CLASSIFICATION_RSS_OPS_MODE",
+              "API_GO_NEWSNOW_CLUSTERING_OPS_MODE",
+              "API_GO_CRAWL_READ_TELEMETRY_MODE",
+              "API_GO_RUNTIME_SETTINGS_MODE",
+              "API_GO_ADMIN_LOGS_MODE",
+              "API_GO_LLM_LOGS_MODE",
+              "API_GO_MODEL_ACCESS_SETTINGS_MODE",
+              "API_GO_INFRASTRUCTURE_SETTINGS_MODE",
+              "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE",
+              "API_GO_SITUATION_MONITOR_SIGNALS_MODE",
+              "API_GO_GRAPHQL_KG_IMPACT_MODE",
+              "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE",
+              "API_GO_USER_SETTINGS_WRITE_MODE",
+          ]
+
+          SWITCH_OVERRIDES = {
+              "API_GO_ONBOARDING_MODE": "shadow",
+              "API_GO_USER_SETTINGS_READ_MODE": "go",
+          }
+
+          def docker_run_args(items_mode, graphql_mode, read_model, vector_hard_fail):
+              env = [
+                  "PORT=4020",
+                  "LEGACY_API_URL=http://host.docker.internal:4000",
+                  "DATABASE_URL=mysql://root:secret@host.docker.internal:3306/app",
+                  "MONGO_URI=mongodb://host.docker.internal:27017/app",
+                  "API_GO_ITEMS_READING_MODE=" + items_mode,
+                  "API_GO_GRAPHQL_READ_MODE=" + graphql_mode,
+                  "ITEMS_READ_MODEL_ENABLED=" + ("true" if read_model else "false"),
+                  "ITEMS_VECTOR_HARD_FAIL_ENABLED=" + ("true" if vector_hard_fail else "false"),
+                  "REALTIME_SIGNALS_ENABLED=false",
+                  "ELASTICSEARCH_ENABLED=false",
+                  "VECTOR_SERVICE_ENABLED=false",
+                  "MODEL_SERVICE_ENABLED=false",
+                  "SCHEDULE_ENABLED=false",
+                  "CANARY_PERCENT=0",
+                  "JWT_SECRET=" + os.environ["JWT_SECRET"],
+                  "JWT_ISSUER=" + os.environ["JWT_ISSUER"],
+                  "JWT_AUDIENCE=" + os.environ["JWT_AUDIENCE"],
+                  "REDIS_HOST=host.docker.internal",
+                  "REDIS_PORT=6379",
+                  "CORS_ORIGIN=" + os.environ["CORS_ORIGIN"],
+              ]
+              for name in LEGACY_SWITCHES:
+                  env.append(name + "=legacy")
+              for name, value in SWITCH_OVERRIDES.items():
+                  env.append(name + "=" + value)
+              cmd = ["docker", "run", "-d", "--name", container,
+                     "--add-host=host.docker.internal:host-gateway",
+                     "--health-interval", "5s", "--health-timeout", "3s",
+                     "--health-retries", "20", "--health-start-period", "5s",
+                     "-p", "127.0.0.1:4020:4020"]
+              for entry in env:
+                  cmd.extend(["-e", entry])
+              cmd.append(image)
+              return cmd
+
+          def go_logs():
+              proc = subprocess.run(["docker", "logs", container], text=True, capture_output=True)
+              return (proc.stdout or "") + (proc.stderr or "")
+
+          def inspect_state():
+              proc = subprocess.run(
+                  ["docker", "inspect", "--format",
+                   "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.State.ExitCode}}",
+                   container], text=True, capture_output=True)
+              if proc.returncode != 0:
+                  return None
+              return proc.stdout.strip()
+
+          def start_go(items_mode, graphql_mode, read_model, vector_hard_fail):
+              subprocess.run(["docker", "rm", "-f", container], check=False, capture_output=True)
+              subprocess.check_call(docker_run_args(items_mode, graphql_mode, read_model, vector_hard_fail))
+              for _ in range(40):
+                  state = inspect_state()
+                  print("health", state, "itemsMode", repr(items_mode), "graphqlRead", repr(graphql_mode),
+                        "readModel", read_model, "vectorHardFail", vector_hard_fail)
+                  if state is None:
+                      fail("container disappeared during startup\n" + go_logs()[-4000:])
+                  status, health, _ = state.split("|")
+                  if health == "healthy":
+                      return
+                  if health == "unhealthy":
+                      fail(go_logs()[-4000:])
+                  if status == "exited":
+                      fail(go_logs()[-4000:])
+                  time.sleep(2)
+              fail(go_logs()[-4000:])
+
+          def start_go_expect_failure(items_mode):
+              subprocess.run(["docker", "rm", "-f", container], check=False, capture_output=True)
+              proc = subprocess.run(docker_run_args(items_mode, "legacy", False, False), text=True, capture_output=True)
+              if proc.returncode != 0:
+                  fail("docker run rejected: " + (proc.stderr or proc.stdout))
+              for _ in range(40):
+                  state = inspect_state()
+                  if state is None:
+                      return
+                  status, health, _ = state.split("|")
+                  if health == "unhealthy" or status == "exited":
+                      return
+                  time.sleep(1)
+              fail("invalid API_GO_ITEMS_READING_MODE did not fail the container; state=" + str(state))
+
+          # ---------- identities / fixture ids ----------
+
+          ORG_A = "ir-org-a-00000000000001"
+          ORG_B = "ir-org-b-00000000000001"
+          ORG_C = "ir-org-c-00000000000001"
+
+          RAW_NORMAL = oid("a", "01")
+          RAW_DUP = oid("a", "02")
+          RAW_NULLPAYLOAD = oid("a", "03")
+          RAW_LATE = oid("a", "04")
+          RAW_RM = oid("a", "11")
+          RAW_X1 = oid("c", "01")
+          RAW_X2 = oid("c", "02")
+          RAW_B_LEAK = oid("b", "01")
+          RAW_B_NORMAL = oid("b", "02")
+          RAW_B_IR3 = oid("b", "03")
+
+          ITEM_NORMAL = "ir-item-a-normal-0000000001"
+          ITEM_DUP = "ir-item-a-dup-000000000002"
+          ITEM_CROSS1 = "ir-item-a-cross-0000000003"
+          ITEM_CROSS2 = "ir-item-a-cross2-000000004"
+          ITEM_BADREF = "ir-item-a-badref-0000000009"
+          ITEM_NULLPAYLOAD = "ir-item-a-nullpayload-0010"
+          ITEM_ORDER_LOW = "ir-item-a-order-0000000005"
+          ITEM_ORDER_HIGH = "ir-item-a-order-0000000006"
+          ITEM_CROSSED_C = "ir-item-a-crossed-00000007"
+          ITEM_CROSSED_S = "ir-item-a-crossed-00000008"
+          ITEM_NORAW = "ir-item-a-noraw-00000000012"
+          ITEM_LATE = "ir-item-a-late-00000000011"
+          ITEM_IR3 = "ir-item-a-ir3-000000000013"
+          ITEM_IR3_DUP = "ir-item-a-ir3dup-0000000014"
+          ITEM_PROC = "ir-item-a-processed-000015"
+          ITEM_EVENT = "ir-item-a-event-00000000016"
+          ITEM_EVENT_FB = "ir-item-a-eventfb-0000000017"
+          ITEM_RM = "ir-item-a-readmodel-0000019"
+          ITEM_B_NORMAL = "ir-item-b-normal-0000000001"
+          ITEM_B_IR3 = "ir-item-b-ir3-000000000002"
+          ITEM_MISSING = "ir-item-a-missing-000000018"
+
+          PI_NORMAL = oid("d", "01")
+          PI_DUP = oid("d", "02")
+          PI_B_LATEST = oid("e", "01")
+          PI_B_LEAK = oid("e", "02")
+          PI_PROC_COMPLETED = oid("d", "03")
+          PI_PROC_FAILED = oid("d", "04")
+          PI_PROC_PROCESSING = oid("d", "05")
+          PI_RESULT_OBJECT = oid("d", "06")
+          PI_RESULT_STRING = oid("d", "07")
+          PI_RESULT_NESTED = oid("d", "08")
+          PI_RESULT_BLANK = oid("d", "09")
+          PI_RESULT_INVALID = oid("d", "0a")
+          PI_DUP_OF_A = oid("d", "0b")
+          PI_DUP_OF_B = oid("d", "0c")
+          PI_IR3 = oid("d", "0d")
+          PI_IR3_DUP = oid("d", "0e")
+          PI_IR3_BAD_REGION = oid("d", "0f")
+          PI_EVENT_DIRECT = oid("d", "10")
+          PI_EVENT_FB = oid("d", "11")
+          PI_RM = oid("d", "12")
+          PI_B_IR3 = oid("e", "03")
+          PI_LATE = oid("d", "13")
+
+          SRC_A_IR3 = "ir-src-a-ir3-000000000001"
+          SRC_A_ARTICLES = "ir-src-a-articles-00000001"
+          SRC_A_PROCESSED = "ir-src-a-processed-000001"
+          SRC_A_BOTH = "ir-src-a-both-000000000002"
+          SRC_A_ZERO = "ir-src-a-zero-000000000003"
+          SRC_A_NONRSS = "ir-src-a-nonrss-0000000004"
+          SRC_A_NORMAL = "ir-src-a-normal-0000000005"
+          # A source whose single Article is three days old, used to prove the
+          # rssSources window actually filters by age (every other fixture is
+          # newer than any window).
+          SRC_A_OLD = "ir-src-a-old-0000000000006"
+
+          ARTICLE_IR3 = "ir-art-a-ir3-0000000000001"
+          ARTICLE_IR3_DUP = "ir-art-a-ir3dup-0000000002"
+          PA_IR3 = "ir-pa-a-ir3-00000000000001"
+          PA_IR3_DUP = "ir-pa-a-ir3dup-00000000002"
+          ARTICLE_EVENT_FB = "ir-art-a-eventfb-000000001"
+          PA_EVENT_FB = "ir-pa-a-eventfb-00000000001"
+          ARTICLE_SRC_ARTICLES = "ir-art-a-srcart-0000000001"
+          ARTICLE_SRC_BOTH = "ir-art-a-srcboth-0000000001"
+          NEWS_EVENT_A = "ir-event-a-0000000000001"
+
+          ACCOUNTS = [
+              ("ir-user-a-admin-0000000001", "ir-admin-a@example.com", ORG_A, "read", 1),
+              ("ir-user-a-noread-00000000002", "ir-noread-a@example.com", ORG_A, "noread", 1),
+              ("ir-user-a-disabled-00000003", "ir-disabled-a@example.com", ORG_A, "read", 0),
+              ("ir-user-b-admin-0000000001", "ir-admin-b@example.com", ORG_B, "read", 1),
+              ("ir-user-c-admin-0000000001", "ir-admin-c@example.com", ORG_C, "read", 1),
+          ]
+
+          ROLE_READ = {
+              ORG_A: "ir-role-a-read-000000000001",
+              ORG_B: "ir-role-b-read-000000000001",
+              ORG_C: "ir-role-c-read-000000000001",
+          }
+          ROLE_NOREAD = {ORG_A: "ir-role-a-noread-00000000001"}
+
+          seed_admin = scalar("SELECT id FROM User WHERE email='" + os.environ["SEED_ADMIN_EMAIL"] + "'")
+          read_perm = scalar("SELECT id FROM Permission WHERE name='items.read'")
+          if not seed_admin or not read_perm:
+              fail("seeded admin user or items.read permission missing")
+
+          sql("""
+          INSERT INTO Org (id, name, slug, isActive, createdAt, updatedAt) VALUES
+            ('%s', 'Items Reading Org A', 'ir-org-a', 1, NOW(3), NOW(3)),
+            ('%s', 'Items Reading Org B', 'ir-org-b', 1, NOW(3), NOW(3)),
+            ('%s', 'Items Reading Org C', 'ir-org-c', 1, NOW(3), NOW(3));
+          INSERT INTO Role (id, name, isSystem, orgId) VALUES
+            ('%s', 'ir-reader-a', 0, '%s'),
+            ('%s', 'ir-noread-a', 0, '%s'),
+            ('%s', 'ir-reader-b', 0, '%s'),
+            ('%s', 'ir-reader-c', 0, '%s');
+          INSERT INTO RolePermission (id, roleId, permissionId) VALUES
+            ('ir-rp-a-read-0000000000001', '%s', '%s'),
+            ('ir-rp-b-read-0000000000001', '%s', '%s'),
+            ('ir-rp-c-read-0000000000001', '%s', '%s');
+          """ % (ORG_A, ORG_B, ORG_C,
+                 ROLE_READ[ORG_A], ORG_A, ROLE_NOREAD[ORG_A], ORG_A,
+                 ROLE_READ[ORG_B], ORG_B, ROLE_READ[ORG_C], ORG_C,
+                 ROLE_READ[ORG_A], read_perm, ROLE_READ[ORG_B], read_perm, ROLE_READ[ORG_C], read_perm))
+
+          for user_id, email, user_org, role_kind, active in ACCOUNTS:
+              role_id = ROLE_READ[user_org] if role_kind == "read" else ROLE_NOREAD[user_org]
+              sql("""
+              INSERT INTO User (id, email, passwordHash, firstName, lastName, isActive, emailVerified, createdAt, updatedAt)
+              SELECT '%s', '%s', passwordHash, 'Smoke', 'Reader', %d, NOW(3), NOW(3), NOW(3)
+              FROM User WHERE id = '%s';
+              INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt)
+              VALUES ('m%s', '%s', '%s', '%s', 1, NOW(3));
+              """ % (user_id, email, active, seed_admin, user_id[1:], user_id, user_org, role_id))
+
+          item_metas = [
+              (ITEM_NORMAL, ORG_A, RAW_NORMAL, "active", 10, 10),
+              (ITEM_DUP, ORG_A, RAW_DUP, "duplicate", 6, 6),
+              (ITEM_CROSS1, ORG_A, RAW_X1, "active", 7, 7),
+              (ITEM_CROSS2, ORG_A, RAW_X2, "active", 8, 8),
+              (ITEM_BADREF, ORG_A, "not-an-objectid", "active", 4, 4),
+              (ITEM_NULLPAYLOAD, ORG_A, RAW_NULLPAYLOAD, "active", 9, 9),
+              (ITEM_ORDER_LOW, ORG_A, oid("a", "05"), "active", 5, 5),
+              (ITEM_ORDER_HIGH, ORG_A, oid("a", "06"), "active", 5, 5),
+              (ITEM_CROSSED_C, ORG_A, oid("a", "07"), "active", 20, 1),
+              (ITEM_CROSSED_S, ORG_A, oid("a", "08"), "active", 1, 20),
+              (ITEM_NORAW, ORG_A, oid("a", "0b"), "active", 3, 3),
+              (ITEM_LATE, ORG_A, RAW_LATE, "active", 2, 2),
+              (ITEM_IR3, ORG_A, oid("a", "0c"), "active", 12, 12),
+              (ITEM_IR3_DUP, ORG_A, oid("a", "0d"), "active", 11, 11),
+              (ITEM_PROC, ORG_A, oid("a", "0e"), "active", 13, 13),
+              (ITEM_EVENT, ORG_A, oid("a", "0f"), "active", 14, 14),
+              (ITEM_EVENT_FB, ORG_A, oid("a", "10"), "active", 15, 15),
+              (ITEM_RM, ORG_A, RAW_RM, "active", 18, 18),
+              (ITEM_B_NORMAL, ORG_B, RAW_B_NORMAL, "active", 16, 16),
+              (ITEM_B_IR3, ORG_B, RAW_B_IR3, "active", 17, 17),
+          ]
+          meta_rows = []
+          for item_id, item_org, ref, status, created, sort in item_metas:
+              meta_rows.append("('%s', '%s', 'ext-%s', 'Name %s', '%s', '%s', 1, NULL, '%s', '%s', '%s')" % (
+                  item_id, item_org, item_id, item_id, status, ref, mts(sort), mts(created), mts(created)))
+          sql("INSERT INTO ItemMeta (id, orgId, externalId, name, status, mongoRef, version, publishedAt, sortAt, createdAt, updatedAt) VALUES "
+              + ",".join(meta_rows) + ";")
+
+          news_sources = [
+              (SRC_A_IR3, "IR IR3 Source", "https://ir.example.com/feed-ir3", "rss", None),
+              (SRC_A_NORMAL, "IR Normal Source", "https://ir.example.com/feed-normal", "rss", None),
+              (SRC_A_ARTICLES, "IR Articles Only", "https://ir.example.com/feed-articles", "rss", None),
+              (SRC_A_PROCESSED, "IR Processed Only", "https://ir.example.com/feed-processed", "rss", None),
+              (SRC_A_BOTH, "IR Both Sides", "https://ir.example.com/feed-both", "rss", None),
+              (SRC_A_ZERO, "IR Zero Window", "https://ir.example.com/feed-zero", "rss", None),
+              (SRC_A_NONRSS, "IR Non RSS", "https://ir.example.com/site", "web", None),
+              (SRC_A_OLD, "IR Old Source", "https://ir.example.com/feed-old", "rss", None),
+          ]
+          source_rows = []
+          for source_id, name, url, mode, _ in news_sources:
+              config = json.dumps({"seed": {"mode": mode, "feedUrl": url}})
+              source_rows.append("('%s', '%s', '%s', 'https://ir.example.com/%s', 'general', 'en', 3600, 0, 1, '%s', NOW(3), NOW(3))" % (
+                  source_id, ORG_A, name, source_id, config))
+          sql("INSERT INTO NewsSource (id, orgId, name, url, siteType, language, frequencySeconds, priority, isActive, config, createdAt, updatedAt) VALUES "
+              + ",".join(source_rows) + ";")
+
+          sql("""
+          INSERT INTO Article (id, orgId, sourceId, url, urlFingerprint, sourceLabel, language, titleGuess, crawlAt, contentHash, markdownRef, version, metadata, createdAt, updatedAt) VALUES
+            ('%s', '%s', '%s', 'https://ir.example.com/ir3', 'fp-ir3', 'IR Articles Only', 'en', 'IR3 Article', '%s', 'hash-ir3', '%s', 1, NULL, NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'https://ir.example.com/ir3dup', 'fp-ir3dup', 'IR Articles Only', 'en', 'IR3 Dup Article', '%s', 'hash-ir3dup', '%s', 1, NULL, NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'https://ir.example.com/eventfb', 'fp-eventfb', 'IR Articles Only', 'en', 'IR Event Fallback', '%s', 'hash-eventfb', '%s', 1, NULL, NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'https://ir.example.com/srcart', 'fp-srcart', 'IR Articles Only', 'en', 'IR Source Article', '%s', 'hash-srcart', NULL, 1, NULL, NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'https://ir.example.com/srcboth', 'fp-srcboth', 'IR Both Sides', 'en', 'IR Source Both', '%s', 'hash-srcboth', NULL, 1, NULL, NOW(3), NOW(3));
+          INSERT INTO ProcessedArticle (id, orgId, articleId, status, title, summary, cleanedMarkdownRef, createdAt, processedAt, updatedAt) VALUES
+            ('%s', '%s', '%s', 'completed', 'IR3 Article', 'IR3 summary', '%s', NOW(3), NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'completed', 'IR3 Dup Article', 'IR3 dup summary', '%s', NOW(3), NOW(3), NOW(3)),
+            ('%s', '%s', '%s', 'completed', 'IR Event Fallback', 'IR event fallback summary', '%s', NOW(3), NOW(3), NOW(3));
+          INSERT INTO NewsEvent (id, orgId, status, language, primaryTopic, primaryEntity, title, summary, startAt, lastAt, createdAt, updatedAt) VALUES
+            ('%s', '%s', 'active', 'en', 'ir-smoke', 'IR Entity', 'IR Smoke Event', 'IR smoke event summary', '%s', '%s', NOW(3), NOW(3));
+          INSERT INTO NewsEventItem (id, orgId, eventId, processedArticleId, processedItemId, similarity, assignedBy, createdAt) VALUES
+            ('ir-nei-a-direct-00000000001', '%s', '%s', '%s', '%s', 0.91, 'overlap', NOW(3)),
+            ('ir-nei-a-fallback-000000001', '%s', '%s', '%s', NULL, 0.73, 'overlap', NOW(3));
+          """ % (
+              ARTICLE_IR3, ORG_A, SRC_A_IR3, mts(13), PI_IR3,
+              ARTICLE_IR3_DUP, ORG_A, SRC_A_IR3, mts(11), PI_IR3_DUP,
+              ARTICLE_EVENT_FB, ORG_A, SRC_A_ARTICLES, mts(15), PI_EVENT_FB,
+              ARTICLE_SRC_ARTICLES, ORG_A, SRC_A_ARTICLES, mts(0.6),
+              ARTICLE_SRC_BOTH, ORG_A, SRC_A_BOTH, mts(2.5),
+              PA_IR3, ORG_A, ARTICLE_IR3, PI_IR3,
+              PA_IR3_DUP, ORG_A, ARTICLE_IR3_DUP, PI_IR3_DUP,
+              PA_EVENT_FB, ORG_A, ARTICLE_EVENT_FB, PI_EVENT_FB,
+              NEWS_EVENT_A, ORG_A, mts(14), mts(15),
+              ORG_A, NEWS_EVENT_A, PA_IR3, PI_EVENT_DIRECT,
+              ORG_A, NEWS_EVENT_A, PA_EVENT_FB,
+          ))
+
+          # A three-day-old Article for SRC_A_OLD: it must appear in the default
+          # 7-day window and disappear from the 1-day window.
+          sql("""
+          INSERT INTO Article (id, orgId, sourceId, url, urlFingerprint, sourceLabel, language, titleGuess, crawlAt, contentHash, markdownRef, version, metadata, createdAt, updatedAt) VALUES
+            ('ir-art-a-old-0000000000001', '%s', '%s', 'https://ir.example.com/old', 'fp-old', 'IR Old Only', 'en', 'IR Old Article', DATE_SUB(NOW(3), INTERVAL 3 DAY), 'hash-old', NULL, 1, NULL, NOW(3), NOW(3));
+          """ % (ORG_A, SRC_A_OLD))
+
+          # The Prisma schema declares @@fulltext([title, summary]) on
+          # ProcessedArticle but no migration creates it, so the smoke adds the
+          # index the production database has; otherwise every ProcessedArticle
+          # full-text recall fails with MySQL error 1191 in BOTH implementations.
+          sql("ALTER TABLE `ProcessedArticle` ADD FULLTEXT INDEX `ProcessedArticle_title_summary_idx`(`title`, `summary`);")
+
+          # ---------- Mongo fixtures ----------
+
+          payload_normal = {
+              "url": "https://ir.example.com/normal",
+              "language": "en",
+              "sourceName": "IR Raw Source",
+              "keywords": ["alpha", "beta"],
+              "tags": ["smoke"],
+              "summaryHints": ["hint-one"],
+              "region": "GLOBAL",
+              "summary": "top-level summary",
+              "sentiment": "neutral",
+              "location": "EU-West",
+              "ticker": "IRSM",
+              "price": 12.5,
+              "changePercent": -1.25,
+              "history": [
+                  {"timestamp": "2026-01-02T00:00:00.000Z", "value": 1.5},
+                  {"timestamp": "2026-01-03T00:00:00.000Z", "value": 2.25},
+              ],
+              "metadata": {
+                  "sourceId": SRC_A_NORMAL,
+                  "region": "EU",
+                  "summary": "metadata summary wins",
+                  "thumbnail": "https://ir.example.com/thumb.png",
+                  "customKey": "custom-value",
+              },
+          }
+          payload_null = {
+              "url": "https://ir.example.com/null-payload",
+              "sourceName": None,
+              "summary": None,
+              "tags": [],
+              "metadata": {"nullable": None},
+          }
+          payload_rm = {
+              "url": "https://ir.example.com/readmodel",
+              "sourceName": "IR Read Model Source",
+              "region": "EU",
+              "summary": "read model raw summary",
+              "metadata": {"sourceId": SRC_A_NORMAL, "region": "EU"},
+          }
+          payload_b_leak = {
+              "url": "https://ir.example.com/b-leak",
+              "sourceName": "IR B LEAK SOURCE",
+              "summary": "B LEAK PAYLOAD",
+              "metadata": {"leak": "IR1-B-LEAK"},
+          }
+
+          def raw_doc(hex_id, item_id, payload, source, created):
+              return {
+                  "_id": Oid(hex_id),
+                  "itemMetaId": item_id,
+                  "payload": payload,
+                  "source": source,
+                  "urlComparableFull": payload.get("url"),
+                  "urlComparableFullHash": None,
+                  "urlComparableBase": payload.get("url"),
+                  "createdAt": JsDate(its(created)),
+                  "updatedAt": JsDate(its(created)),
+              }
+
+          raw_docs = [
+              raw_doc(RAW_NORMAL, ITEM_NORMAL, payload_normal, "rss", 10),
+              raw_doc(RAW_NULLPAYLOAD, ITEM_NULLPAYLOAD, payload_null, "rss", 9),
+              raw_doc(RAW_RM, ITEM_RM, payload_rm, "rss", 18),
+              raw_doc(RAW_B_LEAK, ITEM_CROSS1, payload_b_leak, "rss", 21),
+              raw_doc(RAW_B_NORMAL, ITEM_B_NORMAL, payload_b_leak, "rss", 16),
+              raw_doc(RAW_B_IR3, ITEM_B_IR3, payload_b_leak, "rss", 17),
+          ]
+          mongo_insert("rawitems", raw_docs)
+
+          def processed_doc(hex_id, item_id, item_org, status, created, result=None, result_marker=None,
+                            source=None, duplicate=None, tags=None, raw_ref=None, extra=None):
+              doc = {
+                  "_id": Oid(hex_id),
+                  "rawItemId": Oid(raw_ref or RAW_NORMAL),
+                  "itemMetaId": item_id,
+                  "orgId": item_org,
+                  "status": status,
+                  "tags": tags or [],
+                  "sourceId": source,
+                  "duplicateOf": Oid(duplicate) if duplicate else None,
+                  "duplicateSimilarity": 0.5 if duplicate else None,
+                  "createdAt": JsDate(its(created)),
+                  "updatedAt": JsDate(its(created)),
+              }
+              if result_marker == "string":
+                  doc["result"] = result
+              elif result_marker == "invalid":
+                  doc["result"] = result
+              elif result_marker == "blank":
+                  doc["result"] = ""
+              elif result is not None:
+                  doc["result"] = result
+              if extra:
+                  doc.update(extra)
+              return doc
+
+          processed_docs = [
+              processed_doc(PI_NORMAL, ITEM_NORMAL, ORG_A, "completed", 10, result={
+                  "title": "IR Normal", "summary": "IR normal summary", "sentiment": "positive",
+                  "content_type": "news_fact", "location": "EU", "topics": ["alpha", "beta"],
+                  "entities": [{"name": "IR Entity", "type": "company", "confidence": 0.9}],
+              }, tags=["positive"], source=SRC_A_NORMAL),
+              processed_doc(PI_B_LATEST, ITEM_NORMAL, ORG_B, "completed", 22, result={
+                  "title": "B LEAK PROCESSED", "summary": "B LEAK PROCESSED", "location": "NA",
+              }, tags=["b-leak"], source=SRC_A_NORMAL),
+              processed_doc(PI_B_LEAK, ITEM_CROSS1, ORG_B, "completed", 21, result={
+                  "title": "B LEAK CROSS", "summary": "B LEAK CROSS", "location": "NA",
+              }, tags=["b-leak"], source=SRC_A_NORMAL),
+              processed_doc(PI_PROC_COMPLETED, ITEM_PROC, ORG_A, "completed", 13, result={
+                  "title": "IR Processed Completed", "summary": "completed wins", "location": "EU",
+                  "topics": ["proc-completed"],
+              }, tags=["done"]),
+              processed_doc(PI_PROC_FAILED, ITEM_PROC, ORG_A, "failed", 14, result={
+                  "title": "IR Processed Failed", "summary": "failed newer", "location": "EU",
+              }, tags=["failed"]),
+              processed_doc(PI_PROC_PROCESSING, ITEM_PROC, ORG_A, "processing", 15, result={
+                  "title": "IR Processed Processing", "summary": "processing newest", "location": "EU",
+              }, tags=["processing"]),
+              processed_doc(PI_RESULT_OBJECT, ITEM_RM, ORG_A, "completed", 21, result={
+                  "title": "IR Result Object", "summary": "result object", "location": "EU",
+                  "topics": ["result-object"], "nested": {"inner": "nested-value"},
+              }),
+              processed_doc(PI_RESULT_STRING, ITEM_CROSSED_S, ORG_A, "completed", 20,
+                            result=json.dumps({"title": "IR Result String", "summary": "result string", "location": "EU"}),
+                            result_marker="string"),
+              processed_doc(PI_RESULT_BLANK, ITEM_NULLPAYLOAD, ORG_A, "completed", 9, result="",
+                            result_marker="blank"),
+              processed_doc(PI_RESULT_INVALID, ITEM_BADREF, ORG_A, "completed", 4, result="{not valid json",
+                            result_marker="invalid"),
+              processed_doc(PI_DUP_OF_A, ITEM_DUP, ORG_A, "processing", 6, result={
+                  "title": "IR Duplicate", "summary": "duplicate of normal", "location": "EU",
+              }, duplicate=PI_NORMAL),
+              processed_doc(PI_DUP_OF_B, ITEM_CROSS2, ORG_A, "processing", 8, result={
+                  "title": "IR Duplicate Cross", "summary": "duplicate of B doc", "location": "EU",
+              }, duplicate=PI_B_LATEST),
+              processed_doc(PI_IR3, ITEM_IR3, ORG_A, "completed", 12, result={
+                  "title": "IR3 Item", "summary": "IR3 source fallback", "location": "EU",
+                  "topics": ["ir3-topic"],
+              }, source=None, tags=["ir3"]),
+              processed_doc(PI_IR3_DUP, ITEM_IR3_DUP, ORG_A, "completed", 11, result={
+                  "title": "IR3 Duplicate", "summary": "IR3 duplicate", "location": "EU",
+                  "topics": ["ir3-topic", "ir3-dup-topic"],
+              }, source=None, duplicate=PI_IR3, tags=["ir3"]),
+              processed_doc(PI_IR3_BAD_REGION, ITEM_IR3, ORG_A, "completed", 10, result={
+                  "title": "IR3 Bad Region", "summary": "IR3 NA region", "location": "NA",
+              }, source=None, tags=["ir3-na"]),
+              processed_doc(PI_EVENT_DIRECT, ITEM_EVENT, ORG_A, "completed", 14, result={
+                  "title": "IR Event Direct", "summary": "event direct", "location": "EU",
+              }),
+              processed_doc(PI_EVENT_FB, ITEM_EVENT_FB, ORG_A, "completed", 15, result={
+                  "title": "IR Event Fallback", "summary": "event fallback", "location": "EU",
+              }),
+              processed_doc(PI_RM, ITEM_RM, ORG_A, "completed", 18, result={
+                  "title": "IR Read Model Original", "summary": "read model original", "location": "EU",
+                  "topics": ["rm-topic"],
+              }, source=SRC_A_NORMAL, tags=["rm"]),
+              processed_doc(PI_B_IR3, ITEM_B_IR3, ORG_B, "completed", 17, result={
+                  "title": "IR B IR3", "summary": "B ir3", "location": "EU",
+              }),
+              processed_doc(PI_LATE, ITEM_LATE, ORG_A, "completed", 2, result={
+                  "title": "IR Late", "summary": "late snapshot", "location": "EU",
+              }),
+              # RSS window fixtures: processed-only and both-side sources.
+              processed_doc(oid("d", "20"), ITEM_PROC, ORG_A, "completed", 0.4, result={
+                  "title": "IR Src Processed", "summary": "processed source", "location": "EU",
+              }, source=SRC_A_PROCESSED),
+              processed_doc(oid("d", "21"), ITEM_PROC, ORG_A, "completed", 2.0, result={
+                  "title": "IR Src Both", "summary": "both source", "location": "EU",
+              }, source=SRC_A_BOTH),
+          ]
+          mongo_insert("processeditems", processed_docs)
+          # The Mongo text indexes are created by the Mongoose schemas in
+          # production; the smoke inserts documents directly, so it must create
+          # them too or every $text recall would fail.
+          mongo("db.getCollection('processeditems').createIndex("
+                "{'result.title':'text','result.subtitle':'text','result.summary':'text','result.topics':'text',"
+                "'result.key_points':'text','result.entities.name':'text','result.location':'text','tags':'text'},"
+                "{name:'processed_item_org_status_search_text',default_language:'none',"
+                "weights:{'result.title':10,'result.subtitle':6,'result.summary':4,'result.topics':5,"
+                "'result.key_points':4,'result.entities.name':5,'result.location':3,'tags':2}});")
+          # language_override points at a field that never exists: the API stores
+          # `language: null` for items without a detected language, and MongoDB
+          # rejects a non-string value in the default `language` override field.
+          mongo("db.getCollection('itemreadmodels').createIndex("
+                "{'title':'text','summary':'text','sourceName':'text','searchText':'text','topics':'text',"
+                "'entities':'text','externalId':'text'},"
+                "{name:'itemreadmodels_text',language_override:'irLanguageOverride'});")
+
+          def read_model_doc(item_id, item_org, title, sort_day, payload, processed, duplicate=None, region="EU"):
+              return {
+                  "orgId": item_org,
+                  "itemMetaId": item_id,
+                  "meta": {
+                      "id": item_id, "externalId": "ext-" + item_id, "name": title, "status": "active",
+                      "mongoRef": RAW_RM, "version": 1, "publishedAt": None,
+                      "sortAt": JsDate(its(sort_day)), "createdAt": JsDate(its(sort_day)),
+                      "updatedAt": JsDate(its(sort_day)),
+                  },
+                  "raw": {
+                      "id": RAW_RM, "itemMetaId": item_id, "source": "rss", "payload": payload,
+                      "createdAt": JsDate(its(sort_day)), "updatedAt": JsDate(its(sort_day)),
+                  },
+                  "processed": processed,
+                  "externalId": "ext-" + item_id,
+                  "externalIdLower": ("ext-" + item_id).lower(),
+                  "title": title,
+                  "titleLower": title.lower(),
+                  "status": "active",
+                  "ingestedAt": JsDate(its(sort_day)),
+                  "createdAt": JsDate(its(sort_day)),
+                  "updatedAt": JsDate(its(sort_day)),
+                  "publishedAt": None,
+                  "sortAt": JsDate(its(sort_day)),
+                  "sourceId": SRC_A_NORMAL,
+                  "sourceName": "IR Read Model Source",
+                  "sourceNameLower": "ir read model source",
+                  "url": payload.get("url"),
+                  "thumbnail": None,
+                  "domain": "ir.example.com",
+                  "language": "en",
+                  "summary": "IR Read Model Snapshot Summary",
+                  "topics": ["rm-topic"],
+                  "topicKeys": ["rm-topic"],
+                  "entities": ["IR Entity"],
+                  "entityKeys": ["ir entity"],
+                  "region": region,
+                  "regionKey": region.lower(),
+                  "location": region,
+                  "locationKey": region.lower(),
+                  "sentiment": "positive",
+                  "contentType": "news_fact",
+                  "qualityScore": 0.8,
+                  "duplicateOf": duplicate,
+                  "duplicateSimilarity": None,
+                  "tags": ["rm"],
+                  "hasVector": False,
+                  "embeddingModel": None,
+                  "searchText": title.lower(),
+                  "projectionUpdatedAt": JsDate(its(sort_day)),
+              }
+
+          rm_processed = {
+              "id": PI_RM, "itemMetaId": ITEM_RM, "rawItemId": RAW_RM, "pipelineJobId": None,
+              "sourceId": SRC_A_NORMAL, "status": "completed", "error": None, "tags": ["rm"],
+              "result": {"title": "IR Read Model Snapshot", "summary": "snapshot summary", "location": "EU",
+                         "topics": ["rm-topic"]},
+              "duplicateOf": None, "duplicateSimilarity": None, "summaryEmbeddingModel": None,
+              "summaryEmbeddingDimensions": None, "llm": None,
+              "createdAt": JsDate(its(18)), "updatedAt": JsDate(its(18)),
+          }
+          leak_processed = {
+              "id": PI_B_LEAK, "itemMetaId": ITEM_CROSS1, "rawItemId": RAW_B_LEAK, "pipelineJobId": None,
+              "sourceId": SRC_A_NORMAL, "status": "completed", "error": None, "tags": ["b-leak"],
+              "result": {"title": "B LEAK READ MODEL", "summary": "B LEAK READ MODEL", "location": "NA"},
+              "duplicateOf": None, "duplicateSimilarity": None, "summaryEmbeddingModel": None,
+              "summaryEmbeddingDimensions": None, "llm": None,
+              "createdAt": JsDate(its(21)), "updatedAt": JsDate(its(21)),
+          }
+          read_model_docs = [
+              read_model_doc(ITEM_RM, ORG_A, "IR Read Model Snapshot", 18, payload_rm, rm_processed),
+              read_model_doc(ITEM_CROSS1, ORG_B, "IR B LEAK READ MODEL", 21, payload_b_leak, leak_processed, region="NA"),
+          ]
+          mongo_insert("itemreadmodels", read_model_docs)
+
+          redis("FLUSHALL")
+          print("fixtures inserted")
+          # ================= GraphQL documents =================
+
+          ITEM_QUERY = """
+          query IrItemDetail($id: String!) {
+            item(id: $id) {
+              id title status ingestedAt publishedAt createdAt updatedAt orgId
+              meta { id externalId name status mongoRef createdAt updatedAt }
+              raw { id itemMetaId payload source createdAt updatedAt }
+              processed { id itemMetaId status tags result resultJson duplicateOf eventId createdAt }
+              rawPreview { url sourceName thumbnail summary sentiment region location ticker price changePercent history { timestamp value } }
+              processedPreview { id itemMetaId status tags duplicateOf source title language publishedAt summary sentiment contentType topics entities qualityScore location createdAt eventId }
+            }
+          }
+          """
+          FACETS_QUERY = """
+          query IrFacets($search: String, $filters: ItemsFiltersInput) {
+            itemFacets(search: $search, filters: $filters) {
+              regions { value count }
+              topics { value count }
+              sentiments { value count }
+              contentTypes { value count }
+            }
+          }
+          """
+          RSS_SOURCES_QUERY = """
+          query IrRssSources($windowDays: Int, $onlyWithItems: Boolean) {
+            rssSources(windowDays: $windowDays, onlyWithItems: $onlyWithItems) {
+              id name language siteUrl feedUrl latestItemAt itemCountWindow
+            }
+          }
+          """
+          RSS_TRANSLATION_QUERY = """
+          query IrRssTranslationStatus($targetLanguage: String) {
+            rssTranslationStatus(targetLanguage: $targetLanguage) {
+              provider available message targetLanguageSupported
+            }
+          }
+          """
+          SEARCH_SUGGESTIONS_QUERY = """
+          query IrSearchSuggestions($prefix: String!, $limit: Float) {
+            searchSuggestions(prefix: $prefix, limit: $limit) { type value origin }
+          }
+          """
+          ALIAS_QUERY = """
+          query IrAlias($id: String!) {
+            primary: item(id: $id) { identifier: id label: title ... on ItemModel { state: status } }
+            secondary: item(id: $id) { ...ItemCore }
+          }
+          fragment ItemCore on ItemModel { id title status }
+          """
+          INLINE_FRAGMENT_QUERY = """
+          query IrInline($id: String!) {
+            item(id: $id) { ... on ItemModel { id title } status }
+          }
+          """
+          CONDITIONAL_QUERY = """
+          query IrConditional($id: String!, $withRaw: Boolean!, $skipProcessed: Boolean!) {
+            item(id: $id) {
+              id
+              raw @include(if: $withRaw) { payload }
+              processed @skip(if: $skipProcessed) { status }
+            }
+          }
+          """
+          MIXED_QUERY = """
+          query IrMixed($id: String!) {
+            item(id: $id) { id }
+            items(page: 1, pageSize: 1) { totalCount }
+          }
+          """
+          ITEMS_ROOT_QUERY = """
+          query IrItemsRoot { items(page: 1, pageSize: 1) { totalCount edges { node { id } } } }
+          """
+          CREATE_ITEM_MUTATION = """
+          mutation IrCreateItem($input: CreateItemInput!) { createItem(input: $input) { id title } }
+          """
+
+          FIVE = [
+              ("item", ITEM_QUERY, {"id": ITEM_NORMAL}),
+              ("itemFacets", FACETS_QUERY, {}),
+              ("rssSources", RSS_SOURCES_QUERY, {}),
+              ("rssTranslationStatus", RSS_TRANSLATION_QUERY, {}),
+              ("searchSuggestions", SEARCH_SUGGESTIONS_QUERY, {"prefix": "ir"}),
+          ]
+
+          def expect_status(base_url, path, expected, token, label, method="GET", payload=None):
+              status, raw = call(base_url, path, method, token, payload)
+              if status != expected:
+                  fail(label + " expected " + str(expected) + " got " + str(status) + " " + repr(raw[:400]))
+              return status, body(raw)
+
+          # ================= Phase A: switch matrix =================
+
+          phase("A1 invalid API_GO_ITEMS_READING_MODE")
+          start_go_expect_failure("bogus")
+          state = inspect_state() or "removed|none|0"
+          logs = go_logs()
+          status_text, health_text, exit_text = state.split("|")
+          if health_text != "unhealthy" and status_text != "exited":
+              fail("invalid switch did not fail the container: " + state)
+          if status_text == "exited" and exit_text == "0":
+              fail("invalid switch exited with code 0")
+          if "API_GO_ITEMS_READING_MODE" not in logs:
+              fail("invalid-switch logs are missing the variable name: " + logs[-2000:])
+          if "bogus" not in logs:
+              fail("invalid-switch logs are missing the illegal value: " + logs[-2000:])
+          print("invalid switch rejected:", state)
+
+          phase("A1 empty string behaves exactly like legacy")
+          start_go("", "legacy", False, False)
+          tokens = {}
+          for _, email, _, _, active in ACCOUNTS:
+              if active == 1:
+                  tokens[email] = login(email)
+          a_admin = tokens["ir-admin-a@example.com"]
+          a_noread = tokens["ir-noread-a@example.com"]
+          b_admin = tokens["ir-admin-b@example.com"]
+          c_admin = tokens["ir-admin-c@example.com"]
+          status, raw = call(nest, "/api/auth/login", "POST", payload={
+              "email": "ir-disabled-a@example.com", "password": os.environ["SEED_ADMIN_PASSWORD"]})
+          if status not in (401, 403):
+              fail("disabled user login was not rejected: " + str(status) + " " + repr(raw[:200]))
+          same("/api/items?pageSize=50", "GET", a_admin)
+          print("empty string resolves to legacy")
+
+          phase("A2 legacy+legacy proxy parity")
+          start_go("legacy", "legacy", False, False)
+          same("/api/items", "GET", a_admin)
+          same("/api/items?pageSize=50", "GET", a_admin)
+          same("/api/items?page=2&pageSize=1", "GET", a_admin)
+          same("/api/items?orderBy=PUBLISHED_DESC", "GET", a_admin)
+          detail_same("/api/items/" + ITEM_NORMAL, a_admin)
+          detail_same("/api/items/" + ITEM_NULLPAYLOAD, a_admin)
+          before = stats()
+          for label, query, variables in FIVE:
+              gql_same(a_admin, query, variables, "A2-" + label)
+          if stats() != before:
+              fail("legacy+legacy moved the Go resolver counter")
+          print("legacy+legacy proxy parity ok")
+
+          phase("A3 items=go graphql=legacy")
+          start_go("go", "legacy", False, False)
+          same("/api/items?pageSize=50", "GET", a_admin)
+          detail_same("/api/items/" + ITEM_NORMAL, a_admin)
+          before = stats()
+          for label, query, variables in FIVE:
+              ls, lr = gql(nest, a_admin, query, variables)
+              rs, rr = gql(go, a_admin, query, variables)
+              if ls != rs or core(body(lr)) != core(body(rr)):
+                  fail("A3 graphql parity " + label + " nest=" + str(ls) + " go=" + str(rs) +
+                       " diff=" + str(diff_paths(body(lr), body(rr))))
+          if stats() != before:
+              fail("A3: the five GraphQL roots must stay on Nest while the resolver counter moved")
+          print("items=go + graphql=legacy: REST on Go, five GraphQL roots on Nest")
+
+          phase("A4 go+go")
+          start_go("go", "go", False, False)
+          before = stats()
+          for label, query, variables in FIVE:
+              gql_same(a_admin, query, variables, "A4-" + label)
+          moved = stats() - before
+          if moved != 5:
+              fail("A4: expected exactly five Go resolver executions, moved " + str(moved))
+          before = stats()
+          gql_same(a_admin, MIXED_QUERY, {"id": ITEM_NORMAL}, "A4-mixed")
+          if stats() != before:
+              fail("A4: a mixed migrated+unsupported operation must forward to Nest as a whole")
+          print("go+go: seven entrypoints served by Go")
+
+          # ================= Phase B: REST contract =================
+
+          phase("B REST list normalisation")
+          status, doc = expect_status(go, "/api/items", 200, a_admin, "default list")
+          if doc.get("page") != 1 or doc.get("pageSize") != 10:
+              fail("default page/pageSize " + repr(doc))
+          if len(doc.get("items") or []) > 10:
+              fail("default page returned more than 10 rows")
+          status, doc = expect_status(go, "/api/items?pageSize=50", 200, a_admin, "pageSize=50")
+          if doc.get("pageSize") != 50:
+              fail("pageSize=50 " + repr(doc.get("pageSize")))
+          status, doc = expect_status(go, "/api/items?page=2&pageSize=1", 200, a_admin, "page=2")
+          if doc.get("page") != 2 or doc.get("pageSize") != 1 or len(doc["items"]) != 1:
+              fail("page=2&pageSize=1 " + repr(doc))
+          page2_id = doc["items"][0]["id"]
+          status, first = expect_status(go, "/api/items?page=1&pageSize=1", 200, a_admin, "page=1")
+          if first["items"][0]["id"] == page2_id:
+              fail("page 1 and page 2 returned the same row")
+          status, empty = expect_status(go, "/api/items", 200, c_admin, "fresh org list")
+          if empty.get("items") != [] or empty.get("total") != 0:
+              fail("fresh org list is not empty: " + repr(empty))
+
+          phase("B REST ordering and id tiebreak")
+          # item_metas rows are (id, org, ref, status, createdOffset, sortOffset);
+          # sortAt is built from sortOffset and createdAt from createdOffset.
+          active = [(row[0], row[3], row[4], row[5]) for row in item_metas
+                    if row[1] == ORG_A and row[3] != "duplicate"]
+          by_id_desc = sorted(active, key=lambda row: row[0], reverse=True)
+          expected_created = [row[0] for row in sorted(by_id_desc, key=lambda row: -row[2])]
+          expected_published = [row[0] for row in sorted(by_id_desc, key=lambda row: -row[3])]
+          status, doc = expect_status(go, "/api/items?pageSize=50&orderBy=CREATED_DESC", 200, a_admin, "CREATED_DESC")
+          got_created = [row["id"] for row in doc["items"]]
+          if got_created != expected_created:
+              fail("CREATED_DESC order mismatch\nGOT  " + repr(got_created) + "\nWANT " + repr(expected_created))
+          status, doc = expect_status(go, "/api/items?pageSize=50&orderBy=PUBLISHED_DESC", 200, a_admin, "PUBLISHED_DESC")
+          got_published = [row["id"] for row in doc["items"]]
+          if got_published != expected_published:
+              fail("PUBLISHED_DESC order mismatch\nGOT  " + repr(got_published) + "\nWANT " + repr(expected_published))
+          if expected_created.index(ITEM_ORDER_HIGH) > expected_created.index(ITEM_ORDER_LOW):
+              fail("equal createdAt/sortAt pair must tiebreak by id DESC")
+          if expected_created.index(ITEM_CROSSED_C) > expected_created.index(ITEM_CROSSED_S):
+              fail("crossed timestamps were not ordered by createdAt")
+          if expected_published.index(ITEM_CROSSED_S) > expected_published.index(ITEM_CROSSED_C):
+              fail("crossed timestamps were not ordered by sortAt")
+          print("ordering and id tiebreak ok")
+
+          phase("B REST DTO validation")
+          status, doc = expect_status(go, "/api/items?pagee=1", 400, a_admin, "unknown param")
+          messages = doc.get("message") if isinstance(doc, dict) else None
+          joined = "; ".join(messages) if isinstance(messages, list) else str(messages)
+          if "property pagee should not exist" not in joined:
+              fail("unknown param message " + repr(joined))
+          expect_status(go, "/api/items?orderBy=NOPE", 400, a_admin, "bad orderBy")
+          expect_status(go, "/api/items?page=abc", 400, a_admin, "page=abc")
+          status, doc = expect_status(go, "/api/items?page=1.5&pageSize=5", 200, a_admin, "page=1.5")
+          if doc.get("page") != 1:
+              fail("page=1.5 must floor to page 1: " + repr(doc.get("page")))
+          status, doc = expect_status(go, "/api/items?pageSize=0", 200, a_admin, "pageSize=0")
+          if doc.get("pageSize") != 1:
+              fail("pageSize=0 must clamp to 1: " + repr(doc.get("pageSize")))
+
+          phase("B IR2 pagination offset bound")
+          status, doc = expect_status(go, "/api/items?page=2147483647&pageSize=50", 400, a_admin, "IR2 huge page")
+          if doc.get("message") != "Pagination offset is too large":
+              fail("IR2 message " + repr(doc.get("message")))
+          status, doc = call(go, "/api/items?page=42949674&pageSize=50", "GET", a_admin)
+          if status != 400:
+              fail("IR2 boundary request status " + str(status) + " " + repr(doc[:300] if isinstance(doc, bytes) else doc))
+          if status == 500:
+              fail("IR2 boundary request produced a 500")
+          status, raw = call(go, "/api/items?page=2147483647&pageSize=50", "GET", a_admin)
+          if status == 500:
+              fail("IR2 produced a 500")
+          print("IR2 bound ok")
+
+          phase("B REST detail")
+          status, doc = expect_status(go, "/api/items/" + ITEM_NORMAL, 200, a_admin, "normal detail")
+          if doc["itemMeta"]["id"] != ITEM_NORMAL or doc["rawItem"] is None or doc["processed"] is None:
+              fail("normal detail shape " + repr(doc)[:400])
+          if doc["rawItem"]["payload"]["metadata"]["summary"] != "metadata summary wins":
+              fail("raw payload metadata did not win: " + repr(doc["rawItem"]["payload"])[:400])
+          if doc["processed"]["_id"] != PI_NORMAL or doc["processed"]["orgId"] != ORG_A:
+              fail("normal processed is not org A's own row: " + repr(doc["processed"])[:400])
+          status, doc = call(go, "/api/items/" + ITEM_NORMAL, "GET", b_admin)
+          expect_doc = body(doc)
+          if status != 404 or (expect_doc or {}).get("message") != "Item not found":
+              fail("cross-org detail " + str(status) + " " + repr(doc[:300]))
+          status, doc = expect_status(go, "/api/items/" + ITEM_MISSING, 404, a_admin, "missing detail")
+          if doc.get("message") != "Item not found":
+              fail("missing detail message " + repr(doc))
+          status, doc = expect_status(go, "/api/items/not-an-object-id", 404, a_admin, "non-ObjectId id")
+          if doc.get("message") != "Item not found":
+              fail("non-ObjectId detail message " + repr(doc))
+
+          phase("B IR1 tenant binding (REST, read model off)")
+          status, doc = expect_status(go, "/api/items/" + ITEM_CROSS1, 200, a_admin, "cross-org raw v1")
+          if doc.get("rawItem") is not None:
+              fail("IR1: A read B's raw document: " + repr(doc.get("rawItem"))[:300])
+          status, doc = expect_status(go, "/api/items/" + ITEM_CROSS2, 200, a_admin, "cross-org raw v2")
+          if doc.get("rawItem") is not None:
+              fail("IR1: raw id matched but itemMetaId binding failed to reject")
+          status, doc = expect_status(go, "/api/items/" + ITEM_CROSS1, 200, a_admin, "cross-org processed")
+          if doc.get("processed") is not None:
+              fail("IR1: A read B's processed row: " + repr(doc.get("processed"))[:300])
+          status, doc = expect_status(go, "/api/items/" + ITEM_NORMAL, 200, a_admin, "processed own row")
+          if doc["processed"]["_id"] != PI_NORMAL:
+              fail("IR1: newest-by-itemMetaId leaked B's processed: " + repr(doc["processed"])[:300])
+          status, doc = expect_status(go, "/api/items/" + ITEM_BADREF, 200, a_admin, "non-ObjectId mongoRef")
+          if doc.get("rawItem") is not None:
+              fail("IR1: non-ObjectId mongoRef returned raw data")
+          status, doc = expect_status(go, "/api/items/" + ITEM_NULLPAYLOAD, 200, a_admin, "null payload field")
+          if doc["rawItem"]["payload"].get("summary") is not None:
+              fail("explicit null payload field was not preserved: " + repr(doc["rawItem"]["payload"]))
+          print("IR1 REST binding ok")
+
+          phase("B IR3 source fallback via REST search payload")
+
+          def filters_path(filters, q=""):
+              encoded = urllib.parse.quote(json.dumps({"q": q, "filters": filters}, separators=(",", ":")), safe="")
+              return "/api/items?pageSize=50&search=" + urllib.parse.quote("__items_filters__:" + encoded, safe="")
+
+          status, doc = expect_status(go, filters_path({"sourceIds": [SRC_A_IR3]}), 200, a_admin, "IR3 source only")
+          ids = [row["id"] for row in doc["items"]]
+          if ITEM_IR3 not in ids:
+              fail("IR3(a): source fallback did not return the item: " + repr(ids))
+          status, doc = expect_status(go, filters_path({"sourceIds": [SRC_A_IR3], "regions": ["ZZ"]}), 200, a_admin, "IR3 bad region")
+          if doc["items"] != []:
+              fail("IR3(b): non-matching region returned rows: " + repr(doc["items"])[:300])
+          status, doc = expect_status(go, filters_path({"sourceIds": [SRC_A_IR3], "regions": ["EU"]}), 200, a_admin, "IR3 matching region")
+          ids = [row["id"] for row in doc["items"]]
+          if ITEM_IR3 not in ids:
+              fail("IR3(c): matching region dropped the item: " + repr(ids))
+          status, doc = expect_status(go, filters_path({"sourceIds": [SRC_A_IR3], "regions": ["EU"], "excludeDuplicates": True}),
+                                      200, a_admin, "IR3 exclude duplicates")
+          ids = [row["id"] for row in doc["items"]]
+          if ITEM_IR3 not in ids or ITEM_IR3_DUP in ids:
+              fail("IR3(d): excludeDuplicates did not drop the duplicate: " + repr(ids))
+          print("IR3 REST source fallback ok")
+          # ================= Phase C: GraphQL =================
+
+          phase("C GraphQL item(id)")
+          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_NORMAL})
+          if status != 200 or doc.get("errors"):
+              fail("item(id) " + str(status) + " " + repr(doc)[:600])
+          node = doc["data"]["item"]
+          if not node or node["id"] != ITEM_NORMAL or node["meta"]["id"] != ITEM_NORMAL:
+              fail("item(id) identity " + repr(node)[:400])
+          if "metaId" in node:
+              fail("@HideField metaId leaked into the GraphQL response")
+          if node["ingestedAt"] != node["createdAt"]:
+              fail("ingestedAt must mirror createdAt: " + repr(node["ingestedAt"]))
+          raw_payload = json.loads(node["raw"]["payload"])
+          if raw_payload["metadata"]["summary"] != "metadata summary wins":
+              fail("raw.payload metadata override " + repr(raw_payload)[:300])
+          preview = node["rawPreview"]
+          if preview["region"] != "EU" or preview["summary"] != "metadata summary wins":
+              fail("rawPreview metadata precedence " + repr(preview))
+          if abs(float(preview["price"]) - 12.5) > 1e-9 or abs(float(preview["changePercent"]) + 1.25) > 1e-9:
+              fail("rawPreview numeric fields " + repr(preview))
+          if preview["ticker"] != "IRSM" or preview["thumbnail"] != "https://ir.example.com/thumb.png":
+              fail("rawPreview string fields " + repr(preview))
+          history = preview.get("history") or []
+          if len(history) != 2 or abs(float(history[0]["value"]) - 1.5) > 1e-9 or not history[0]["timestamp"]:
+              fail("rawPreview history " + repr(history))
+          proc = node["processed"]
+          if proc["status"] != "completed" or not isinstance(proc["result"], str):
+              fail("processed string result " + repr(proc)[:400])
+          if not proc["resultJson"] or proc["resultJson"]["title"] != "IR Normal":
+              fail("processed resultJson " + repr(proc.get("resultJson")))
+          if proc["eventId"] is not None:
+              fail("item without an event link returned eventId " + repr(proc["eventId"]))
+          pp = node["processedPreview"]
+          if pp["title"] != "IR Normal" or pp["location"] != "EU" or "positive" not in (pp["sentiment"] or ""):
+              fail("processedPreview " + repr(pp))
+          print("item(id) field shapes ok")
+
+          phase("C item(id) missing semantics")
+          status, doc = gql_doc(go, b_admin, ITEM_QUERY, {"id": ITEM_NORMAL})
+          if status != 200 or doc.get("errors") or doc["data"]["item"] is not None:
+              fail("cross-org item(id) must be null without errors: " + repr(doc)[:400])
+          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_MISSING})
+          if status != 200 or doc.get("errors") or doc["data"]["item"] is not None:
+              fail("missing item(id) must be null without errors: " + repr(doc)[:400])
+
+          phase("C aliases / fragments / variables / directives")
+          doc = gql_same(a_admin, ALIAS_QUERY, {"id": ITEM_NORMAL}, "C-alias")
+          primary = doc["data"]["primary"]
+          if primary["identifier"] != ITEM_NORMAL or primary["label"] != "Name " + ITEM_NORMAL or primary["state"] != "active":
+              fail("alias fields " + repr(primary))
+          if doc["data"]["secondary"]["id"] != ITEM_NORMAL:
+              fail("named fragment fields " + repr(doc["data"]["secondary"]))
+          gql_same(a_admin, INLINE_FRAGMENT_QUERY, {"id": ITEM_NORMAL}, "C-inline")
+          gql_same(a_admin, CONDITIONAL_QUERY, {"id": ITEM_NORMAL, "withRaw": True, "skipProcessed": False}, "C-conditional-on")
+          status, doc = gql_doc(go, a_admin, CONDITIONAL_QUERY, {"id": ITEM_NORMAL, "withRaw": False, "skipProcessed": True})
+          if status != 200 or doc.get("errors"):
+              fail("@include(if:false)/@skip(if:true) failed: " + repr(doc)[:400])
+          if "raw" in doc["data"]["item"] or "processed" in doc["data"]["item"]:
+              fail("skipped fields were still selected: " + repr(doc["data"]["item"]))
+          print("aliases, fragments, variables and directives ok")
+
+          phase("C processed priority / duplicateOf / eventId")
+          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_PROC})
+          if doc["data"]["item"]["processed"]["status"] != "completed":
+              fail("GraphQL processed priority must prefer completed: " + repr(doc["data"]["item"]["processed"]["status"]))
+          status, rest = expect_status(go, "/api/items/" + ITEM_PROC, 200, a_admin, "REST latest processed")
+          if rest["processed"]["status"] != "processing":
+              fail("REST must pick the newest processed row: " + repr(rest["processed"]["status"]))
+          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_DUP})
+          if doc["data"]["item"]["processed"]["duplicateOf"] != ITEM_NORMAL:
+              fail("duplicateOf must resolve to the target ItemMeta id: " + repr(doc["data"]["item"]["processed"]))
+          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_CROSS2})
+          if doc["data"]["item"]["processed"]["duplicateOf"] is not None:
+              fail("cross-org duplicateOf leaked: " + repr(doc["data"]["item"]["processed"]["duplicateOf"]))
+          for event_item in (ITEM_EVENT, ITEM_EVENT_FB):
+              status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": event_item})
+              event_id = doc["data"]["item"]["processed"]["eventId"]
+              if event_id != NEWS_EVENT_A:
+                  fail("eventId link for " + event_item + ": " + repr(event_id))
+          print("processed priority, duplicateOf and eventId ok")
+
+          phase("C processed result normalisation")
+          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_RM})
+          result_json = doc["data"]["item"]["processed"]["resultJson"]
+          if not result_json or result_json.get("nested", {}).get("inner") != "nested-value":
+              fail("nested string in resultJson " + repr(result_json))
+          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_CROSSED_S})
+          result_json = doc["data"]["item"]["processed"]["resultJson"]
+          if not result_json or result_json.get("title") != "IR Result String":
+              fail("JSON-string result was not normalised " + repr(result_json))
+          for blank_item in (ITEM_NULLPAYLOAD, ITEM_BADREF):
+              status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": blank_item})
+              if doc.get("errors"):
+                  fail("blank/invalid result raised errors for " + blank_item + ": " + repr(doc)[:400])
+              if doc["data"]["item"]["processed"]["resultJson"]:
+                  fail("blank/invalid result produced resultJson for " + blank_item)
+          print("result normalisation ok")
+
+          phase("C itemFacets")
+          status, doc = gql_doc(go, c_admin, FACETS_QUERY, {})
+          facets = doc["data"]["itemFacets"]
+          for key in ("regions", "topics", "sentiments", "contentTypes"):
+              if facets[key] != []:
+                  fail("fresh org facet " + key + " is not empty: " + repr(facets[key]))
+          gql_same(a_admin, FACETS_QUERY, {}, "C-facets-default")
+          status, doc = gql_doc(go, a_admin, FACETS_QUERY, {})
+          facets = doc["data"]["itemFacets"]
+          for key in ("regions", "topics", "sentiments", "contentTypes"):
+              options = facets[key]
+              if len(options) > 50:
+                  fail("facet group " + key + " exceeded 50 options")
+              counts = [option["count"] for option in options]
+              if counts != sorted(counts, reverse=True):
+                  fail("facet group " + key + " is not count DESC: " + repr(counts))
+          if not facets["topics"] or not facets["regions"]:
+              fail("facets empty with fixture data: " + repr(facets))
+          status, doc = gql_doc(go, a_admin, FACETS_QUERY, {
+              "filters": {"sourceIds": [SRC_A_IR3], "regions": ["EU"]}})
+          topics = [option["value"] for option in doc["data"]["itemFacets"]["topics"]]
+          if "ir3-topic" not in topics:
+              fail("facet filters combination dropped the IR3 topic: " + repr(topics))
+          status, doc = gql_doc(go, a_admin, FACETS_QUERY, {
+              "filters": {"sourceIds": [SRC_A_IR3], "regions": ["EU"], "excludeDuplicates": True}})
+          topics = [option["value"] for option in doc["data"]["itemFacets"]["topics"]]
+          if "ir3-dup-topic" in topics:
+              fail("facet excludeDuplicates did not drop the duplicate topic: " + repr(topics))
+          status, doc = gql_doc(go, a_admin, FACETS_QUERY, {"filters": {"regions": ["ZZ"]}})
+          facets = doc["data"]["itemFacets"]
+          for key in ("regions", "topics", "sentiments", "contentTypes"):
+              if facets[key] != []:
+                  fail("non-matching region facet " + key + " is not empty")
+          status, doc = gql_doc(go, a_admin, FACETS_QUERY, {"search": "zzz-nothing-matches-zzz"})
+          facets = doc["data"]["itemFacets"]
+          for key in ("regions", "topics", "sentiments", "contentTypes"):
+              if facets[key] != []:
+                  fail("no-match search facet " + key + " is not empty")
+          print("itemFacets ok")
+
+          phase("C rssSources")
+          status, doc = gql_doc(go, a_admin, RSS_SOURCES_QUERY, {})
+          sources = doc["data"]["rssSources"]
+          ids = [entry["id"] for entry in sources]
+          if SRC_A_NONRSS in ids:
+              fail("non-rss source was included: " + repr(ids))
+          if SRC_A_ZERO in ids:
+              fail("default onlyWithItems must drop zero-count sources: " + repr(ids))
+          if SRC_A_OLD not in ids:
+              fail("the default 7-day window must include the 3-day-old source: " + repr(ids))
+          for required in (SRC_A_ARTICLES, SRC_A_PROCESSED, SRC_A_BOTH):
+              if required not in ids:
+                  fail("rssSources missing " + required + ": " + repr(ids))
+          for entry in sources:
+              if not entry["siteUrl"] or not entry["feedUrl"]:
+                  fail("rssSources entry without urls: " + repr(entry))
+          status, doc = gql_doc(go, a_admin, RSS_SOURCES_QUERY, {"onlyWithItems": False})
+          ids = [entry["id"] for entry in doc["data"]["rssSources"]]
+          if SRC_A_ZERO not in ids:
+              fail("onlyWithItems:false must include zero-count sources: " + repr(ids))
+          status, doc = gql_doc(go, a_admin, RSS_SOURCES_QUERY, {"windowDays": 1})
+          window_one = [entry["id"] for entry in doc["data"]["rssSources"]]
+          status, doc = gql_doc(go, a_admin, RSS_SOURCES_QUERY, {"windowDays": 0})
+          window_zero = [entry["id"] for entry in doc["data"]["rssSources"]]
+          if window_zero != window_one:
+              fail("windowDays=0 must clamp to 1: " + repr(window_zero) + " vs " + repr(window_one))
+          if SRC_A_OLD in window_one:
+              fail("windowDays=1 must exclude the source whose only item is 3 days old: " + repr(window_one))
+          status, doc = gql_doc(go, a_admin, RSS_SOURCES_QUERY, {"windowDays": 30})
+          window_thirty = [entry["id"] for entry in doc["data"]["rssSources"]]
+          status, doc = gql_doc(go, a_admin, RSS_SOURCES_QUERY, {"windowDays": 99})
+          window_ninety_nine = [entry["id"] for entry in doc["data"]["rssSources"]]
+          if window_ninety_nine != window_thirty:
+              fail("windowDays=99 must clamp to 30")
+          gql_same(a_admin, RSS_SOURCES_QUERY, {}, "C-rss-default")
+          gql_same(a_admin, RSS_SOURCES_QUERY, {"onlyWithItems": False}, "C-rss-all")
+          gql_same(a_admin, RSS_SOURCES_QUERY, {"windowDays": 1}, "C-rss-window1")
+          print("rssSources ok")
+
+          phase("C rssTranslationStatus")
+          TRANSLATION_DEFAULT_MESSAGE = ("DeepLX translation API key is not configured. "
+                                         "Fallback translation API is disabled in Situation Monitor settings.")
+          FALLBACK_MESSAGE = ("DeepLX primary endpoint is unavailable; fallback translation API is configured "
+                              "and will be used.")
+          LANGUAGE_MESSAGE = "DeepLX API translation currently supports Chinese (zh-CN) target language only."
+          NO_LLM_MESSAGE = "No enabled LLM gateway profile is active."
+
+          def translation_status(token=a_admin, variables=None):
+              redis("DEL", "situation_monitor:settings", "llm_gateway:profiles")
+              status, doc = gql_doc(go, token, RSS_TRANSLATION_QUERY, variables or {})
+              if status != 200 or doc.get("errors"):
+                  fail("rssTranslationStatus " + str(status) + " " + repr(doc)[:400])
+              return doc["data"]["rssTranslationStatus"]
+
+          def set_setting(key, value):
+              sql("REPLACE INTO SystemSetting (`key`, value, isPublic, description, createdAt, updatedAt) VALUES ('%s', '%s', 0, 'ir smoke', NOW(3), NOW(3));"
+                  % (key, json.dumps(value, separators=(",", ":"))))
+
+          sql("DELETE FROM SystemSetting WHERE `key` IN ('situation_monitor_settings','llm_gateway_profiles');")
+          statuses = translation_status()
+          if [entry["provider"] for entry in statuses] != ["deeplx", "llm"]:
+              fail("provider order " + repr(statuses))
+          if statuses[0]["available"] is not False or statuses[0]["message"] != TRANSLATION_DEFAULT_MESSAGE:
+              fail("deeplx default status " + repr(statuses[0]))
+          if statuses[0]["targetLanguageSupported"] is not True:
+              fail("deeplx default targetLanguageSupported " + repr(statuses[0]))
+          if statuses[1]["available"] is not False or statuses[1]["message"] != NO_LLM_MESSAGE:
+              fail("llm default status " + repr(statuses[1]))
+          statuses = translation_status(variables={"targetLanguage": "en"})
+          if statuses[0]["available"] is not False or statuses[0]["targetLanguageSupported"] is not False:
+              fail("deeplx en support flags " + repr(statuses[0]))
+          if statuses[0]["message"] != LANGUAGE_MESSAGE:
+              fail("deeplx en message " + repr(statuses[0]["message"]))
+
+          set_setting("situation_monitor_settings", {"translationApiEnabled": True, "translationApiKey": "smoke-key"})
+          statuses = translation_status()
+          if statuses[0]["available"] is not True or statuses[0]["message"] is not None:
+              fail("deeplx configured status " + repr(statuses[0]))
+
+          set_setting("situation_monitor_settings", {
+              "translationApiEnabled": True,
+              "translationApiBaseUrl": "https://api.deeplx.org",
+              "translationFallbackApiEnabled": True,
+              "translationFallbackApiBaseUrl": "https://fallback.example.com",
+          })
+          statuses = translation_status()
+          if statuses[0]["available"] is not True or statuses[0]["message"] != FALLBACK_MESSAGE:
+              fail("deeplx fallback-only status " + repr(statuses[0]))
+
+          set_setting("llm_gateway_profiles", {"activeId": None, "profiles": [
+              {"id": "ir-profile-enabled", "model": "ir-completion-model", "enabled": True}]})
+          statuses = translation_status()
+          if statuses[1]["available"] is not True or statuses[1]["message"] is not None:
+              fail("llm enabled profile status " + repr(statuses[1]))
+
+          set_setting("llm_gateway_profiles", {"activeId": None, "profiles": [
+              {"id": "ir-profile-disabled", "model": "ir-completion-model", "enabled": False}]})
+          statuses = translation_status()
+          if statuses[1]["available"] is not False or statuses[1]["message"] != NO_LLM_MESSAGE:
+              fail("llm disabled-only status " + repr(statuses[1]))
+
+          set_setting("llm_gateway_profiles", {"activeId": None, "profiles": [
+              {"id": "ir-profile-embedding", "enabled": True, "embeddingModel": "ir-embed-model"}]})
+          statuses = translation_status()
+          if statuses[1]["available"] is not False or statuses[1]["message"] != NO_LLM_MESSAGE:
+              fail("llm embedding-only status " + repr(statuses[1]))
+          print("rssTranslationStatus ok")
+
+          phase("C searchSuggestions")
+          gql_same(a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": ""}, "C-suggestions-empty-prefix")
+          status, doc = gql_doc(go, a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": ""})
+          if doc["data"]["searchSuggestions"] != []:
+              fail("blank prefix must return []")
+          limits = [({}, 10), ({"limit": 3}, 3), ({"limit": 26}, 25), ({"limit": 2.5}, 2)]
+          for extra, bound in limits:
+              variables = {"prefix": "ir"}
+              variables.update(extra)
+              status, doc = gql_doc(go, a_admin, SEARCH_SUGGESTIONS_QUERY, variables)
+              if doc.get("errors"):
+                  fail("searchSuggestions limit variant " + repr(extra) + " " + repr(doc)[:300])
+              count = len(doc["data"]["searchSuggestions"])
+              if count > bound:
+                  fail("searchSuggestions " + repr(extra) + " returned " + str(count) + " > " + str(bound))
+          status, doc = gql_doc(go, a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": "ir"})
+          suggestions = doc["data"]["searchSuggestions"]
+          if not suggestions:
+              fail("searchSuggestions is empty with fixture data")
+          origins = sorted({entry["origin"] for entry in suggestions})
+          if origins != ["LEXICAL"]:
+              fail("lexical-only expectation violated: " + repr(origins))
+          print("searchSuggestions limits and lexical-only ok (vector/ES disabled)")
+
+          # ================= Phase D: cache =================
+
+          phase("D cache interop")
+          redis_del_pattern("__items_search_suggestions__:*")
+          redis_del_pattern("__items_source_suggestions__:*")
+          status, doc = gql_doc(go, a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": "ir", "limit": 10})
+          go_list = doc["data"]["searchSuggestions"]
+          cache_key = "__items_search_suggestions__:" + ORG_A + ":ir:10:v3"
+          if redis("EXISTS", cache_key) != "1":
+              fail("Go did not cache search suggestions at " + cache_key)
+          ttl = int(redis("TTL", cache_key) or "0")
+          if ttl <= 0 or ttl > 60:
+              fail("search suggestion TTL out of range: " + str(ttl))
+          cached = json.loads(redis("GET", cache_key))
+          if cached != go_list:
+              fail("cached suggestions differ from the Go response: " + repr(cached)[:400])
+          if redis("EXISTS", "lock:" + cache_key) == "1":
+              fail("cache lock was not released: lock:" + cache_key)
+          if redis("TTL", cache_key) and int(redis("TTL", cache_key)) > 60:
+              fail("cached suggestion TTL exceeds 60s")
+
+          hand_crafted = [{"type": "TOPIC", "value": "hand-crafted-topic", "origin": "LEXICAL"},
+                          {"type": "SOURCE", "value": "hand-crafted-source", "origin": "LEXICAL"}]
+          hand_key = "__items_search_suggestions__:" + ORG_A + ":zz:10:v3"
+          redis("SET", hand_key, json.dumps(hand_crafted), "EX", "60")
+          status, doc = gql_doc(go, a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": "zz"})
+          if doc["data"]["searchSuggestions"] != hand_crafted:
+              fail("Go did not read the hand-crafted response cache: " + repr(doc["data"]["searchSuggestions"]))
+
+          source_snapshot = [{"source": "Hand Crafted Source", "normalizedSource": "hand crafted source", "count": 7}]
+          redis("SET", "__items_source_suggestions__:" + ORG_A + ":v1", json.dumps(source_snapshot), "EX", "60")
+          redis("DEL", "__items_search_suggestions__:" + ORG_A + ":hand:10:v3")
+          status, doc = gql_doc(go, a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": "hand"})
+          values = [entry["value"] for entry in doc["data"]["searchSuggestions"]]
+          if "Hand Crafted Source" not in values:
+              fail("Go did not read the hand-crafted source snapshot: " + repr(values))
+
+          redis_del_pattern("__items_search_suggestions__:*")
+          status, doc = gql_doc(go, a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": "ir"})
+          if redis("EXISTS", "__items_search_suggestions__:" + ORG_A + ":ir:10:v3") != "1":
+              fail("Go suggestions were not cacheable")
+          status, doc = gql_doc(go, c_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": "ir"})
+          other_key = "__items_search_suggestions__:" + ORG_C + ":ir:10:v3"
+          if redis("EXISTS", other_key) != "1":
+              fail("second org did not get its own suggestion key")
+          first_value = json.loads(redis("GET", "__items_search_suggestions__:" + ORG_A + ":ir:10:v3"))
+          other_value = json.loads(redis("GET", other_key))
+          if first_value == other_value and first_value:
+              fail("two orgs with the same prefix shared cached suggestions")
+
+          phase("D shared settings cache written by Nest, read by Go")
+          redis_del_pattern("situation_monitor:settings")
+          redis_del_pattern("llm_gateway:profiles")
+          set_setting("situation_monitor_settings", {"translationApiEnabled": True, "translationApiKey": "smoke-key"})
+          set_setting("llm_gateway_profiles", {"activeId": None, "profiles": [
+              {"id": "ir-profile-enabled", "model": "ir-completion-model", "enabled": True}]})
+          status, raw = gql(nest, a_admin, RSS_TRANSLATION_QUERY, {})
+          if status != 200:
+              fail("Nest rssTranslationStatus failed while writing the shared cache: " + str(status))
+          for key in ("situation_monitor:settings", "llm_gateway:profiles"):
+              if redis("EXISTS", key) != "1":
+                  fail("Nest did not write the shared cache key " + key)
+          sql("DELETE FROM SystemSetting WHERE `key`='llm_gateway_profiles';")
+          set_setting("situation_monitor_settings", {"translationApiEnabled": False})
+          status, doc = gql_doc(go, a_admin, RSS_TRANSLATION_QUERY, {})
+          if doc["data"]["rssTranslationStatus"][0]["available"] is not True:
+              fail("Go ignored Nest's cached situation monitor settings: " + repr(doc["data"]["rssTranslationStatus"][0]))
+          if doc["data"]["rssTranslationStatus"][1]["available"] is not True:
+              fail("Go ignored Nest's cached llm gateway profiles: " + repr(doc["data"]["rssTranslationStatus"][1]))
+          set_setting("situation_monitor_settings", {"translationApiEnabled": True, "translationApiKey": "smoke-key"})
+          set_setting("llm_gateway_profiles", {"activeId": None, "profiles": [
+              {"id": "ir-profile-enabled", "model": "ir-completion-model", "enabled": True}]})
+          print("cache interop ok")
+
+          # ================= Phase RM: read model enabled =================
+
+          def start_nest(read_model):
+              # NestJS reads ITEMS_READ_MODEL_ENABLED at process start, so the
+              # read-model phases restart it with the flag flipped; otherwise the
+              # parity comparisons would run against a NestJS process serving the
+              # legacy path.
+              if os.path.exists("/tmp/api-nestjs.pid"):
+                  try:
+                      os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+                  except Exception:
+                      pass
+              subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+              subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+              time.sleep(3)
+              env = dict(os.environ)
+              env["NODE_ENV"] = "production"
+              env["PORT"] = "4000"
+              env["ITEMS_READ_MODEL_ENABLED"] = "true" if read_model else "false"
+              log = open("/tmp/api-nestjs.log", "a")
+              proc = subprocess.Popen(["pnpm", "--filter", "@modular/api", "run", "start"],
+                                      env=env, stdout=log, stderr=subprocess.STDOUT)
+              open("/tmp/api-nestjs.pid", "w").write(str(proc.pid))
+              for _ in range(90):
+                  try:
+                      urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+                      return
+                  except Exception:
+                      time.sleep(2)
+              fail("nestjs restart with ITEMS_READ_MODEL_ENABLED=" + str(read_model) + " did not become healthy")
+
+          phase("RM read model enabled")
+
+          start_nest(True)
+
+          def rm_doc_count(item_id, item_org=ORG_A):
+              script = ("print(db.getCollection('itemreadmodels').countDocuments({orgId:%s,itemMetaId:%s}))"
+                        % (json.dumps(item_org), json.dumps(item_id)))
+              return int(mongo(script).strip().splitlines()[-1])
+
+          def rm_detail_projection(doc):
+              if not isinstance(doc, dict):
+                  return doc
+              meta = doc.get("itemMeta") or {}
+              raw = doc.get("rawItem")
+              processed = doc.get("processed")
+              return {
+                  "itemMeta": {key: meta.get(key) for key in ("id", "orgId", "externalId", "name", "status", "mongoRef")},
+                  "raw": None if raw is None else {key: raw.get(key) for key in ("id", "itemMetaId", "source", "payload")},
+                  "processed": None if processed is None else {key: processed.get(key) for key in ("id", "itemMetaId", "status", "tags", "result")},
+              }
+
+          mongo("db.getCollection('itemreadmodels').deleteMany({orgId:" + json.dumps(ORG_A) + ",itemMetaId:" + json.dumps(ITEM_LATE) + "});")
+          start_go("go", "go", True, False)
+          if rm_doc_count(ITEM_LATE) != 0:
+              fail("late item already has a read-model document")
+          status, first = expect_status(go, "/api/items/" + ITEM_LATE, 200, a_admin, "RM late first read")
+          if first.get("rawItem") is not None:
+              fail("late item unexpectedly had a raw snapshot")
+          if rm_doc_count(ITEM_LATE) != 1:
+              fail("first read-model detail read did not hydrate a snapshot")
+          status, second = expect_status(go, "/api/items/" + ITEM_LATE, 200, a_admin, "RM late second read")
+          if second.get("rawItem") != first.get("rawItem") or second.get("processed", {}).get("status") != first.get("processed", {}).get("status"):
+              fail("second read-model read was not stable")
+          mongo_insert("rawitems", [raw_doc(RAW_LATE, ITEM_LATE, payload_normal, "rss", 2)])
+          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_LATE})
+          late_raw = (doc.get("data", {}).get("item") or {}).get("raw")
+          if not late_raw or not late_raw.get("payload"):
+              fail("late raw snapshot was not visible on the next GraphQL read: " + repr(doc)[:400])
+          mongo("db.getCollection('itemreadmodels').deleteOne({orgId:" + json.dumps(ORG_A) + ",itemMetaId:" + json.dumps(ITEM_LATE) + "});")
+          status, doc = expect_status(go, "/api/items/" + ITEM_LATE, 200, a_admin, "RM late rehydrate")
+          if doc["rawItem"] is None:
+              fail("re-hydration did not pick up the late raw document")
+          same("/api/items?pageSize=50", "GET", a_admin)
+          status, doc = expect_status(go, "/api/items?pageSize=50", 200, a_admin, "RM list")
+          names = [row["name"] for row in doc["items"]]
+          if "IR Read Model Snapshot" not in names:
+              fail("read-model list did not use the snapshot title: " + repr(names[:5]))
+          left_status, left_raw = call(nest, "/api/items/" + ITEM_RM, "GET", a_admin)
+          right_status, right_raw = call(go, "/api/items/" + ITEM_RM, "GET", a_admin)
+          if left_status != right_status or rm_detail_projection(body(left_raw)) != rm_detail_projection(body(right_raw)):
+              fail("read-model detail parity " + repr(left_raw[:600]) + " / " + repr(right_raw[:600]))
+          status, doc = expect_status(go, "/api/items/" + ITEM_RM, 200, a_admin, "RM detail")
+          if doc["processed"]["result"]["title"] != "IR Read Model Snapshot":
+              fail("read-model detail did not use the stored snapshot: " + repr(doc["processed"])[:300])
+
+          status, raw = call(go, "/api/items/" + ITEM_CROSS1, "GET", a_admin)
+          cross_doc = body(raw)
+          if "B LEAK" in json.dumps(cross_doc):
+              fail("IR1 read-model leak: " + repr(cross_doc)[:400])
+          if cross_doc.get("rawItem") is not None or cross_doc.get("processed") is not None:
+              fail("IR1 read-model cross-org item should be empty: " + repr(cross_doc)[:400])
+          if rm_doc_count(ITEM_CROSS1, ORG_B) != 1:
+              fail("org B read-model fixture disappeared")
+
+          status, doc = expect_status(go, "/api/items/" + ITEM_NORMAL, 200, a_admin, "RM processed own row")
+          if doc["processed"]["id"] != PI_NORMAL or doc["processed"]["itemMetaId"] != ITEM_NORMAL:
+              fail("read-model processed binding leaked: " + repr(doc["processed"])[:400])
+          status, doc = gql_doc(go, a_admin, FACETS_QUERY, {"filters": {"regions": ["EU"]}})
+          if not doc["data"]["itemFacets"]["regions"]:
+              fail("read-model facet region filter returned nothing")
+          status, doc = gql_doc(go, a_admin, FACETS_QUERY, {"search": "snapshot"})
+          rm_search = doc["data"]["itemFacets"]
+          if not rm_search["topics"] or not rm_search["regions"]:
+              fail("read-model text search returned no facets: " + repr(rm_search))
+          gql_same(a_admin, FACETS_QUERY, {"search": "snapshot"}, "RM-facets-search")
+          gql_same(a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": "ir"}, "RM-suggestions")
+          print("read model enabled phase ok")
+
+          # ================= Phase E: stop Nest =================
+
+          phase("E legacy gateway after Nest stops")
+          start_go("go", "go", False, False)
+          if os.path.exists("/tmp/api-nestjs.pid"):
+              os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+          subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+          subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+          stopped = False
+          for _ in range(30):
+              try:
+                  urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+              except Exception:
+                  stopped = True
+                  break
+              time.sleep(1)
+          if not stopped:
+              fail("nestjs did not stop")
+          for pattern in ("gqlread:resp:v1:*", "__items_search_suggestions__:*",
+                          "__items_source_suggestions__:*", "__items_vector_search__:*",
+                          "situation_monitor:settings", "llm_gateway:profiles"):
+              redis_del_pattern(pattern)
+
+          status, doc = expect_status(go, "/api/items?pageSize=50", 200, a_admin, "E list")
+          if not doc["items"]:
+              fail("list after Nest stop was empty")
+          status, doc = expect_status(go, "/api/items/" + ITEM_NORMAL, 200, a_admin, "E detail")
+          if doc["processed"]["_id"] != PI_NORMAL:
+              fail("detail after Nest stop lost its processed row")
+          status, doc = gql_doc(go, a_admin, ITEM_QUERY, {"id": ITEM_NORMAL})
+          if not (doc.get("data", {}).get("item") or {}).get("raw"):
+              fail("GraphQL item after Nest stop was empty: " + repr(doc)[:300])
+          status, doc = gql_doc(go, a_admin, FACETS_QUERY, {})
+          if not doc["data"]["itemFacets"]["topics"]:
+              fail("itemFacets after Nest stop was empty")
+          status, doc = gql_doc(go, a_admin, RSS_SOURCES_QUERY, {})
+          if not doc["data"]["rssSources"]:
+              fail("rssSources after Nest stop was empty")
+          status, doc = gql_doc(go, a_admin, RSS_TRANSLATION_QUERY, {})
+          if len(doc["data"]["rssTranslationStatus"]) != 2:
+              fail("rssTranslationStatus after Nest stop was not the two providers")
+          status, doc = gql_doc(go, a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": "ir"})
+          if not doc["data"]["searchSuggestions"]:
+              fail("searchSuggestions after Nest stop was empty")
+          status, raw = call(go, "/__go/healthz")
+          if status != 200:
+              fail("/__go/healthz after Nest stop " + str(status))
+
+          status, raw = call(go, "/api/items", "POST", a_admin, {"externalId": "ir-post", "title": "IR Post", "payload": "{}"})
+          if status != 502:
+              fail("POST /api/items must land on the legacy gateway: " + str(status) + " " + repr(raw[:200]))
+          status, doc = gql_doc(go, a_admin, ITEMS_ROOT_QUERY, {})
+          if status != 502:
+              fail("un-migrated items root must be 502 without Nest: " + str(status) + " " + repr(doc)[:200])
+          status, doc = gql_doc(go, a_admin, CREATE_ITEM_MUTATION, {
+              "input": {"title": "IR Smoke Item", "externalId": "ir-smoke-item", "payload": "{}"}})
+          if status != 502:
+              fail("createItem mutation must be 502 without Nest: " + str(status) + " " + repr(doc)[:200])
+          status, doc = gql_doc(go, a_admin, MIXED_QUERY, {"id": ITEM_NORMAL})
+          if status != 502:
+              fail("mixed migrated+unsupported operation must be 502 without Nest: " + str(status))
+          print("seven entrypoints survive Nest stopped; unmigrated paths stay 502")
+
+          # ================= Phase F: honest negative coverage =================
+
+          phase("F honest negative coverage")
+          status, doc = gql_doc(go, a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": "ir"})
+          origins = {entry["origin"] for entry in doc["data"]["searchSuggestions"]}
+          if origins - {"LEXICAL"}:
+              fail("ELASTICSEARCH/VECTOR are disabled but origins were " + repr(origins))
+          status, doc = expect_status(go, "/api/items?pageSize=50", 200, a_admin, "F list")
+          if not doc["items"]:
+              fail("lexical list degraded to empty")
+          status, doc = gql_doc(go, a_admin, FACETS_QUERY, {})
+          if not doc["data"]["itemFacets"]["topics"]:
+              fail("lexical facets degraded to empty")
+          print("F: ELASTICSEARCH_ENABLED/VECTOR_SERVICE_ENABLED/MODEL_SERVICE_ENABLED are false everywhere;")
+          print("F: only the documented lexical degradation was asserted - no model/vector/ES success is claimed")
+          print("ALL PHASES PASSED")
+          PY

@@ -837,6 +837,9 @@ services:
       # 生产 Web 入口仍指向 NestJS，canary 与 shadow 关闭。回滚只把该变量
       # 改回 legacy。
       API_GO_ACCOUNT_SECURITY_MODE: legacy
+      API_GO_ITEMS_READING_MODE: legacy
+      ITEMS_READ_MODEL_ENABLED: "false"
+      ITEMS_VECTOR_HARD_FAIL_ENABLED: "false"
       # 基础设施设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认
       # 值）。S3_* 与 VECTOR_* 都不进入日志；不在这里新增第二套网关配置。
       NODE_ENV: production

@@ -220,3 +220,9 @@ OAuth 刷新、地理编码调用、归档分类/embedding/rerank、BullMQ produ
 canary 关闭。细节见 `docs/refactor/go-data-runtime-settings.md`。
 - ✅ Go-批10：平台治理设置 16 条 HTTP（security / assistant-quota / assistant-safety(+metrics) / task-logs / llm-request-logs(+metadata-policy/reset)）迁入 `apps/api-go`，开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串|legacy|go，默认 legacy）；同批修 SEC-05（全局写接口补平台管理员门禁）、TTL-01（tasklogs NamespaceNotFound）、CONC-01（llm-request-logs MySQL 会话锁 + 以 DB 为新合并基准）。回滚只改该变量。细节见 `docs/refactor/go-platform-governance-settings.md`。
 - 账户资料、会话退出与机器令牌 8 条 HTTP 迁入 Go（`API_GO_ACCOUNT_SECURITY_MODE`，默认 `legacy`，回滚只改该变量）；同批修 AS1–AS4（Nest 与 Go 两侧一致），细节见 `docs/refactor/go-account-security.md`。
+
+- 条目阅读与 RSS 检索辅助 7 个入口迁入 Go（`API_GO_ITEMS_READING_MODE`，默认 `legacy`，回滚只改该变量）：
+  两条 REST（`GET /api/items`、`GET /api/items/:id`）+ 五个 GraphQL 只读 root（`item`、`itemFacets`、
+  `rssSources`、`rssTranslationStatus`、`searchSuggestions`）。五个 root 需 `API_GO_GRAPHQL_READ_MODE=go`
+  与本开关同时为 `go` 才登记。同批修 IR1（Mongo 关联读取与回填的租户绑定缺口）、IR2（分页偏移安全边界）、
+  IR3（来源 fallback 绕过其他筛选）。细节见 `docs/refactor/go-items-reading.md`。

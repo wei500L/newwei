@@ -139,6 +139,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
+	itemsgraphql "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/kgimpact"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
@@ -148,6 +149,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
+	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
@@ -598,6 +600,10 @@ func run() error {
 	if cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo {
 		runtimeSettingsMode = string(legacyproxy.ModeGo)
 	}
+	itemsReadingMode := ""
+	if cfg.ItemsReadingMode == config.ItemsReadingModeGo {
+		itemsReadingMode = string(legacyproxy.ModeGo)
+	}
 	platformGovernanceSettingsMode := ""
 	if cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 		platformGovernanceSettingsMode = string(legacyproxy.ModeGo)
@@ -660,6 +666,7 @@ func run() error {
 	// settings group. The two switches are independent and their paths do not
 	// overlap, so both may be go at the same time.
 	rules = legacyproxy.WithPlatformGovernanceSettings(rules, platformGovernanceSettingsMode)
+	rules = legacyproxy.WithItemsReading(rules, itemsReadingMode)
 	rules = legacyproxy.WithModelAccessSettings(rules, modelAccessSettingsMode)
 	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
 	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
@@ -726,6 +733,7 @@ func run() error {
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
+				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
 				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
@@ -787,6 +795,7 @@ func run() error {
 	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
 	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
+	itemsReadingGo := cfg.ItemsReadingMode == config.ItemsReadingModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	infrastructureSettingsGo := cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo
 	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
@@ -800,10 +809,10 @@ func run() error {
 	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
 	exceptionIngestGo := cfg.ExceptionIngestMode == config.ExceptionIngestModeGo
 	// 平行批次追加的模式全部保留（#53 frontier、#54 platform governance、#55
-	// infrastructure、#56 model access、#57 situation monitor signals、#60 account
-	// security、#61 data runtime、#64 exception ingest）。任一变量改成本批所需值
-	// 都不影响其他批次接线。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo
+	// infrastructure、#56 model access、#57 situation monitor signals、#58 items
+	// reading、#60 account security、#61 data runtime、#64 exception ingest）。任一
+	// 变量改成本批所需值都不影响其他批次接线。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1374,6 +1383,20 @@ func run() error {
 				Redis:     redisClient,
 			})
 		}
+		// The item reading roots (item, itemFacets, rssSources,
+		// rssTranslationStatus, searchSuggestions) are opt-in through the
+		// items-reading switch; when it is legacy, or the GraphQL read switch is
+		// legacy, any document selecting one of them stays on NestJS.
+		if itemsReadingGo {
+			itemReadService := itemsreading.NewService(itemsreading.Options{
+				DB:                    sharedDB,
+				Mongo:                 mongoDatabase.Database(),
+				Redis:                 redisClient,
+				ReadModelEnabled:      cfg.ItemsReadModelEnabled,
+				VectorHardFailEnabled: cfg.ItemsVectorHardFailEnabled,
+			})
+			itemsgraphql.Register(reg, itemReadService, workspaceGo)
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1420,11 +1443,58 @@ func run() error {
 		} else {
 			log.Printf("api-go: GraphQL workspace reads not registered (API_GO_GRAPHQL_WORKSPACE_READ_MODE=legacy)")
 		}
+		if itemsReadingGo {
+			log.Printf("api-go: GraphQL item reading roots registered (item, itemFacets, rssSources, rssTranslationStatus, searchSuggestions)")
+		} else {
+			log.Printf("api-go: GraphQL item reading roots not registered (API_GO_ITEMS_READING_MODE=legacy)")
+		}
 		if settingsCrawlGo {
 			log.Printf("api-go: GraphQL settings/crawl reads registered (rateLimitSettings, entityImpactGraphSettings, knowledgeGraphSettings, newsEventSettings, newsEventSourcePolicy, newsEventSourcePolicyPresets, newsEventSourcePolicyRevisionDiff, newsClassificationSettings, classificationQualitySettings, newsDedupeSettings, newsIndicatorSettings, authCacheSettings, crawlClientSettings, auditLogRetention, newsExtractionSettings, newsPromptConfig, newsEventSourcePolicySyncStatus, knowledgeGraphEvidenceReviewQueue, crawlTasks, crawlTask)")
 		} else {
 			log.Printf("api-go: GraphQL settings/crawl reads not registered (API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE=legacy)")
 		}
+	}
+
+	if itemsReadingGo {
+		if sharedDB == nil || authenticator == nil || redisClient == nil {
+			return fmt.Errorf("api-go: API_GO_ITEMS_READING_MODE=go requires mysql, jwt, and redis")
+		}
+		mongoDatabase := dashboardMongo
+		if mongoDatabase == nil {
+			mongoDatabase = graphqlMongo
+		}
+		var itemsReadingMongo *dashboardstats.Connection
+		if mongoDatabase == nil {
+			opened, openErr := dashboardstats.Open(cfg.MongoURI)
+			if openErr != nil {
+				return fmt.Errorf("api-go: API_GO_ITEMS_READING_MODE=go requires a valid MONGO_URI")
+			}
+			itemsReadingMongo = opened
+			mongoDatabase = opened
+		}
+		itemsReadingService := itemsreading.NewService(itemsreading.Options{
+			DB:                    sharedDB,
+			Mongo:                 mongoDatabase.Database(),
+			Redis:                 redisClient,
+			ReadModelEnabled:      cfg.ItemsReadModelEnabled,
+			VectorHardFailEnabled: cfg.ItemsVectorHardFailEnabled,
+		})
+		itemsReadingHandler := itemsreading.NewHandler(authenticator, sharedDB, itemsReadingService)
+		itemsReadingCORS := cors.New(cfg.CorsOrigin)
+		gateway.RegisterGoHandler(legacyproxy.ItemsReadingKey, func(w http.ResponseWriter, r *http.Request) {
+			if itemsReadingCORS.FinishOptions(w, r) {
+				return
+			}
+			if r.Method == http.MethodOptions {
+				gateway.ServeLegacy(w, r)
+				return
+			}
+			itemsReadingHandler.ServeHTTP(w, r)
+		})
+		if itemsReadingMongo != nil {
+			graphqlMongo = itemsReadingMongo
+		}
+		log.Printf("api-go: item reading REST routes under go takeover (GET /api/items, GET /api/items/:id; readModel=%t)", cfg.ItemsReadModelEnabled)
 	}
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

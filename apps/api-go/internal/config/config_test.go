@@ -3048,3 +3048,102 @@ func TestSituationSignalsModeIsIndependentOfSituationMonitorsMode(t *testing.T) 
 		t.Fatalf("signals mode = %s", cfg.SituationSignalsMode)
 	}
 }
+
+func TestItemsReadingModeAcceptsExplicitLegacyGoAndEmptyString(t *testing.T) {
+	legacy, err := Load(func(key string) string {
+		if key == "API_GO_ITEMS_READING_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.ItemsReadingMode != ItemsReadingModeLegacy {
+		t.Fatalf("explicit legacy = %q", legacy.ItemsReadingMode)
+	}
+	empty, err := Load(func(key string) string {
+		if key == "API_GO_ITEMS_READING_MODE" {
+			return ""
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.ItemsReadingMode != ItemsReadingModeLegacy {
+		t.Fatalf("empty string = %q", empty.ItemsReadingMode)
+	}
+	goMode, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_ITEMS_READING_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://root:secret@localhost:3306/app"
+		case "REDIS_HOST":
+			return "localhost"
+		case "MONGO_URI":
+			return "mongodb://localhost:27017/app"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if goMode.ItemsReadingMode != ItemsReadingModeGo {
+		t.Fatalf("go = %q", goMode.ItemsReadingMode)
+	}
+}
+
+func TestItemsReadingModeRejectsInvalid(t *testing.T) {
+	_, err := Load(func(key string) string {
+		if key == "API_GO_ITEMS_READING_MODE" {
+			return "shadow"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "API_GO_ITEMS_READING_MODE must be one of legacy|go") {
+		t.Fatalf("Load() error = %v", err)
+	}
+	// The failure must echo the rejected value so the operator can see which
+	// deployment value was refused.
+	if !strings.Contains(err.Error(), `got "shadow"`) {
+		t.Fatalf("Load() error must include the illegal value: %v", err)
+	}
+}
+
+func TestItemsReadingModeGoRequiresMongo(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_ITEMS_READING_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://root:secret@localhost:3306/app"
+		case "REDIS_HOST":
+			return "localhost"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_ITEMS_READING_MODE=go") {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestItemsReadingModeGoDoesNotRequireCredentialsUntilGo(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		if key == "API_GO_ITEMS_READING_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ItemsReadingMode != ItemsReadingModeLegacy {
+		t.Fatalf("legacy = %q", cfg.ItemsReadingMode)
+	}
+}

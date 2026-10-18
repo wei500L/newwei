@@ -1013,7 +1013,7 @@ Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
   普通组织管理员 A 对 10 条写路由（8 条新增 + task-logs 2 条）在 Nest 与 Go
   两侧都返回 403 `Platform admin access required`；A 的 GET 返回 200；机器令牌
   GET 返回 200、写返回 403；临时授予 `platform_admin` 后写成功，随后撤销。
-- **状态**：待远端验证。
+- **状态**：已在真实栈 smoke 通过（head `28f414cc`，`ALL PHASES PASSED`；最终 head 的 run 见 PR 正文）。
 
 ### TTL-01（P1）：`tasklogs` 集合不存在时 PUT/DELETE `/task-logs` 返回 500 — 🔧 待远端验证
 
@@ -1035,7 +1035,7 @@ Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
   `db.tasklogs.drop()` 后，平台管理员对 Nest 直连 PUT `/task-logs`（值与当前不同）
   返回 200，且 `tasklogs` 上存在 `task_log_created_at_ttl` 且 `expireAfterSeconds`
   等于 `N·86400`；再 drop 一次对 Go 做同样断言。
-- **状态**：待远端验证。
+- **状态**：已在真实栈 smoke 通过（head `28f414cc`，`ALL PHASES PASSED`；最终 head 的 run 见 PR 正文）。
 
 ### CONC-01（P1）：`llm-request-logs` 部分 PUT 以过期缓存为基准且无互斥 — 🔧 待远端验证
 
@@ -1067,7 +1067,7 @@ Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
   10 秒内对 Nest 直连 PUT `{"metadataAllowedTopLevelPrefixes":["x_"]}`，断言 DB 中
   `retentionDays` 仍为 45、prefixes 为 `["x_"]`；随后同时向 Go 与 Nest 各发一条
   只改不同字段的 PUT，重复 5 轮，断言最终 DB 同时包含两边修改、无 500、审计条数正确。
-- **状态**：待远端验证。
+- **状态**：已在真实栈 smoke 通过（head `28f414cc`，`ALL PHASES PASSED`；最终 head 的 run 见 PR 正文）。
 
 ### 观察（非本批缺陷）：class-validator 同一属性的消息顺序是「装饰器逆序」
 
@@ -1093,3 +1093,77 @@ retentionDays must not be greater than 3650; retentionDays must not be less than
 自上而下（IsInt、Min、Max）拼消息。两者的差异只在**同一属性有多条约束同时失败**时
 可见（例如把整数字段传成字符串）；单条约束失败时顺序无区别。本批不修改该已合入包，
 登记为观察项，供后续统一核对。
+### IR1：Mongo 关联读取与回填没有完整绑定租户 — ✅ 本批同修（Nest + Go）
+
+- **现象**：App 侧按 `itemMetaId` 读取 Mongo（read model / processed / raw）时缺少组织维度，raw 也没有
+  `_id = mongoRef` 的配对校验，跨组织文档可被读成 A 组织条目的 raw/processed/read-model 内容；回填聚合
+  `buildLatestItemSnapshotPipeline` 只按 `itemMetaId` 匹配，可能把外部组织的 processed 写进 A 的快照；
+  `ProcessedArticle.cleanedMarkdownRef → ProcessedItem` 反查也没有 `orgId`。
+- **证据**：`apps/api/src/modules/items/items.service.ts:221-227`、
+  `apps/api/src/graphql/loaders/item-read-model.loader.ts:118-136`、
+  `apps/api/src/graphql/loaders/processed-item.loader.ts:127-152`、
+  `apps/api/src/modules/items/items-read-model.service.ts:313-339` 与 `:377-386`、
+  `apps/api/src/modules/items/items-search-query.service.ts:892-898`。
+- **修复**：Nest 侧 `items.service.ts` 的 processed 查询补 `orgId`、raw 要求 `_id = mongoRef` 且
+  `itemMetaId` 配对；新增 request-scoped `apps/api/src/graphql/loaders/scoped-items-reading.loader.ts`
+  （cache key 含 `orgId`，raw 通过“可信 org-scoped ItemMeta + `mongoRef`/`itemMetaId` 配对”绑定，
+  `mongoRef` 为空或非法时返回 null 而不是“按 itemMetaId 取最新 raw”）；`items-read-model.service.ts` 的
+  快照聚合补 `orgId` 并删除 empty-mongoRef 的宽松回退；`items-search-query.service.ts` 的反查补
+  `orgId` + `status=completed`；`items.resolver.ts` 的 Item 嵌套字段改用 scoped loader 并把
+  `DataLoader<string, any>` 换成明确类型。Go 侧 `apps/api-go/internal/itemsreading` 全部按
+  `itemMetaId` 的 Mongo 读取都带 `orgId`，raw 同样按 `mongoRef`/`itemMetaId` 配对绑定。
+- **回归方式**：`api-go-items-reading-smoke` 构造 A/B 两组织的污染数据（A 的 `mongoRef` 指向 B 的 raw、
+  B 的 processed 伪装 A 的 `itemMetaId`、B 的 read-model 携带 A 的 `itemMetaId`），断言 A 的 REST 详情、
+  GraphQL `item`、批量嵌套读取与回填都读不到 B 的数据，且两组织各自的正常数据仍可见。
+- **状态**：已在真实栈 smoke 通过（head `28f414cc`，`ALL PHASES PASSED`；最终 head 的 run 见 PR 正文）。
+
+### IR2：分页偏移缺少安全边界 — ✅ 本批同修（Nest + Go）
+
+- **现象**：`items-list.service.ts:76-79` 的 `skip = (safePage - 1) * take` 没有整数与数据库边界检查，
+  极大的 `page` 会溢出到超出 MySQL/Prisma 可接受范围（500）或被静默截断。
+- **修复**：Nest 在 `ItemsListService.list` 用 `resolvePaginationOffset` 校验（非负安全整数且
+  `<= 2_147_483_647`），越界抛 `BadRequestException("Pagination offset is too large")`，且在任何搜索、
+  缓存 loader 或数据库分页调用之前失败；Go 在 `apps/api-go/internal/itemsreading` 的
+  `NormalizePagination` 先做范围验证再转整数。CSV 批量导出的 `maxPageSize`（50000）不受影响。
+- **回归方式**：smoke 断言 `page=2147483647&pageSize=50` 与 `page=42949674&pageSize=50` 都是 400 +
+  精确 message，且不产生 500。
+- **状态**：已在真实栈 smoke 通过（head `28f414cc`，`ALL PHASES PASSED`；最终 head 的 run 见 PR 正文）。
+
+### IR3：来源 fallback 绕过其他筛选 — ✅ 本批同修（Nest + Go）
+
+- **现象**：`items-search-query.service.ts:462-470` 的来源 fallback 只接收 `sourceIds`/`dateRange`，
+  与 primary 结果直接并集，因此 `sourceIds` 与 region/topic/sentiment/contentType/excludeDuplicates
+  组合时 fallback 会把不符合其他条件的条目加回来。
+- **修复**：把内容筛选条件抽成共用构造（Nest `buildProcessedContentFilters`、Go
+  `processedContentFilters`），fallback 候选还要在同组织最新 completed 快照上满足这些条件
+  （Nest `applyContentFiltersToLatestSnapshots`、Go `ApplyContentFilters`）；保留 `Article.sourceId`/
+  `crawlAt` 的来源与日期判断，保留 read-model 分支口径，不禁用 fallback。
+- **回归方式**：smoke 覆盖 source-only 正常返回、source+region 排除错误地区、source+topic/contentType/
+  sentiment 排除不匹配记录、source+excludeDuplicates 排除重复条目、source+dateRange 保留现有边界，
+  并同时覆盖 REST 历史 encoded filters 与 `itemFacets`。
+- **状态**：已在真实栈 smoke 通过（head `28f414cc`，`ALL PHASES PASSED`；最终 head 的 run 见 PR 正文）。
+
+### ART-01：`ProcessedArticle` 的 FULLTEXT 索引未进入迁移 — ⬜ 只登记，不修
+
+- **现象**：`packages/db/prisma/schema.prisma` 的 `ProcessedArticle` 声明 `@@fulltext([title, summary])`，
+  但 `packages/db/prisma/migrations/**` 没有任何 `ProcessedArticle` 的 FULLTEXT 索引（`000_init` 只建了
+  `ItemMeta` 的）。用纯迁移库时，`MATCH(pa.title, pa.summary) AGAINST (... IN BOOLEAN MODE)` 返回
+  MySQL 1191（Can't find FULLTEXT index matching the column list），条目搜索的 ProcessedArticle 召回
+  在 Nest 与 Go 都会失败。
+- **本批处理**：`api-go-items-reading-smoke` 在 fixture 阶段补建该索引（与 production 实际索引一致），
+  从而让搜索链路在真实栈上可执行；**不修改 migrations**（不在本批允许修改范围内）。
+- **后续方向**：新增一条迁移补建 `ProcessedArticle(title, summary)` FULLTEXT 索引，并评估
+  `itemreadmodels` 文本索引的 `language_override`（见 ART-02）。
+- **状态**：只登记。
+
+### ART-02：`itemreadmodels` 文本索引的默认 language 覆盖字段与 `language: null` 冲突 — ⬜ 只登记，不修
+
+- **现象**：Mongoose `ItemReadModelSchema` 的文本索引未指定 `language_override`，MongoDB 默认用
+  `language` 字段作为语言覆盖字段；而 API 会写入 `language: null`（未识别语言时），
+  MongoDB 会以 "found language override field in document with non-string type" 拒绝写入。
+  这会同时影响 Nest 的读模型回填与 Go 的回填。
+- **本批处理**：smoke 建索引时显式 `language_override:'irLanguageOverride'`；Go 的 upsert 语义与 Nest 一致，
+  **不修改 `packages/mongo`**。
+- **后续方向**：在 schema 的文本索引上显式指定不存在的 `language_override`，或在写入时省略 null 的
+  `language`（需要同时评估读模型响应形状与 GraphQL 兼容）。
+- **状态**：只登记。
