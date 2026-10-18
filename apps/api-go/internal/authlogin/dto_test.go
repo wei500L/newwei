@@ -81,9 +81,16 @@ func TestVerifyEmailCodeShape(t *testing.T) {
 	if _, err := parseVerifyEmailRequest([]byte(`{"code":"12345678"}`)); err != nil {
 		t.Fatal(err)
 	}
+	// A non-matching string fails only @Matches: @IsString still passes, so the
+	// message array carries one entry, exactly like class-validator.
 	_, err := parseVerifyEmailRequest([]byte(`{"code":"1234567a"}`))
-	if got := errorMessage(t, err); got != "code must match /^\\d{8}$/ regular expression; code must be a string" {
+	if got := errorMessage(t, err); got != "code must match /^\\d{8}$/ regular expression" {
 		t.Fatalf("messages = %q", got)
+	}
+	// A non-string fails both, with @Matches reporting first.
+	_, err = parseVerifyEmailRequest([]byte(`{"code":12345678}`))
+	if got := errorMessage(t, err); got != "code must match /^\\d{8}$/ regular expression; code must be a string" {
+		t.Fatalf("non-string messages = %q", got)
 	}
 }
 

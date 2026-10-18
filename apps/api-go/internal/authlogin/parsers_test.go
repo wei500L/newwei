@@ -107,10 +107,11 @@ func TestClientIPDoesNotTrustForwardedHeaderByDefault(t *testing.T) {
 		t.Fatalf("one-hop ip = %v", ip)
 	}
 
-	// trust proxy = true: the leftmost entry is the client.
+	// A non-numeric value is treated as one trusted hop, matching the address
+	// resolution the other api-go takeovers already use for TRUST_PROXY.
 	ip = clientIP(request, "true")
-	if ip == nil || *ip != "203.0.113.7" {
-		t.Fatalf("trusted ip = %v", ip)
+	if ip == nil || *ip != "10.0.0.1" {
+		t.Fatalf("non-numeric trust value ip = %v", ip)
 	}
 }
 

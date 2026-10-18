@@ -105,8 +105,10 @@ membership/permission 重推导链也复用 `internal/authhttp`）。
 | 限流 | `rate:login:<email>:<ip>`、`rate:login-code:<email>:<ip>`（单一组合键、非两个桶）；配置读 `rate_limit:settings` → `rate_limit_login` → `RATE_LIMIT_LOGIN`/`_WINDOW`（5/60）；`forgot` 用独立 `auth.password_reset` policy（email 3 / IP 10 / 900s） |
 | 审计 | `AuditLog` → 失败回退 `AuditLogOutbox`（既有消费者可重放）；保留 orgId/actorId/resource/action/具名 metadata，并且**写入真实 IP**（旧 `accountsecurity` 端口写 NULL，本批不复用其写入口） |
 
-IP 解析沿用 NestJS `trust proxy` 语义：`TRUST_PROXY` 未设置时使用 socket 地址并忽略
-`X-Forwarded-For`（避免限流桶被伪造头共享）；数字跳数时从右索引；其他配置值取最左。
+IP 解析沿用既有 Go 批次（`exceptioningest`/`graphqlread`）的地址解析方式：`TRUST_PROXY`
+未设置时使用 socket 地址并忽略 `X-Forwarded-For`（避免限流桶被伪造头共享）；配置为
+数字跳数时按从右索引取该跳的地址；其他取值按 1 跳处理。Express 的
+`trust proxy=true`（取最左值）本批不单独实现，以与既有批次保持同一语义。
 
 ## 六、关键事务与顺序（源码注释已说明原因）
 
