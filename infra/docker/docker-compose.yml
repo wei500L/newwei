@@ -612,6 +612,11 @@ services:
       API_GO_ANALYSIS_VIEWS_MODE: legacy
       API_GO_ANALYSIS_BOARDS_MODE: legacy
       API_GO_ANALYSIS_THREADS_MODE: legacy
+      # 条目/事件 CSV 导出两条精确 POST（items、events）。pilot 与样例保持
+      # legacy；改成 go 才由 Go 完成候选选择、排序、字段补全与 CSV 输出，
+      # 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI。
+      # POST /api/analysis/exports/search 仍代理 NestJS。
+      API_GO_ANALYSIS_EXPORT_MODE: legacy
       # 态势监控自定义监控五条 HTTP。pilot 与样例保持 legacy。
       # 改成 go 才由 Go 验签并写 SituationMonitorMonitor。
       # 回滚只把该变量改回 legacy。insights、refresh 和其他采集接口不在这个开关里。

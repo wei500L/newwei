@@ -920,6 +920,29 @@ const (
 	AnalysisThreadsModeGo     AnalysisThreadsMode = "go"
 )
 
+// AnalysisExportMode controls the two CSV export POST routes migrated by this
+// unit (API_GO_ANALYSIS_EXPORT_MODE):
+//
+//	POST /api/analysis/exports/items
+//	POST /api/analysis/exports/events
+//
+// The accepted values are exactly "", "legacy" and "go"; the empty value
+// behaves like legacy, so an unset deployment keeps both exports on NestJS.
+// The third export route, POST /api/analysis/exports/search, stays on NestJS
+// because its headlines mode prepares archive digests. Go requires JWT, MySQL,
+// Redis and Mongo: the item candidates are ranked through the shared search
+// scope, the read-model projection lives in Mongo and the behavior profile is
+// read from MySQL/Redis. The unit initializes the item reading service, the
+// personalization provider and the news-event reader on its own, so it works
+// even while the other item/analysis/GraphQL switches are legacy. Rolling back
+// only means setting this variable back to legacy.
+type AnalysisExportMode string
+
+const (
+	AnalysisExportModeLegacy AnalysisExportMode = "legacy"
+	AnalysisExportModeGo     AnalysisExportMode = "go"
+)
+
 // AuthFactorsMode controls the seven authenticated MFA management and
 // organization OIDC configuration HTTP routes migrated by this unit
 // (API_GO_AUTH_FACTORS_MODE).
@@ -1170,6 +1193,11 @@ type Config struct {
 	AnalysisViewsMode   AnalysisViewsMode
 	AnalysisBoardsMode  AnalysisBoardsMode
 	AnalysisThreadsMode AnalysisThreadsMode
+	// AnalysisExportMode gates the two CSV export POST routes. It defaults to
+	// legacy and is independent of the three collaboration switches; go reuses
+	// the item reading and news-event readers but builds its own instances and
+	// requires JWT, MySQL, Redis and Mongo.
+	AnalysisExportMode AnalysisExportMode
 	// GraphQLReadMode 控制精确 /graphql 的已迁移 query。默认 legacy。
 	// go 只执行本轮 16 个 query；mutation、subscription、未迁移 query 仍代理 NestJS。
 	GraphQLReadMode string
@@ -1937,6 +1965,20 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AnalysisThreadsMode = AnalysisThreadsModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_THREADS_MODE must be one of legacy|go")
+	}
+	// The CSV export switch accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy, so an unset deployment keeps both
+	// export POST routes on NestJS. The failure names the variable and echoes
+	// the rejected value so an operator can see which deployment value was
+	// refused.
+	analysisExportRaw := strings.TrimSpace(getenv("API_GO_ANALYSIS_EXPORT_MODE"))
+	switch analysisExportRaw {
+	case "", string(AnalysisExportModeLegacy):
+		cfg.AnalysisExportMode = AnalysisExportModeLegacy
+	case string(AnalysisExportModeGo):
+		cfg.AnalysisExportMode = AnalysisExportModeGo
+	default:
+		errs = append(errs, "API_GO_ANALYSIS_EXPORT_MODE must be one of legacy|go, got "+strconv.Quote(analysisExportRaw))
 	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_MONITORS_MODE")) {
 	case "", string(SituationMonitorsModeLegacy):
@@ -2828,6 +2870,16 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.AnalysisThreadsMode == AnalysisThreadsModeGo {
 		appendAuthRequirements(&errs, "API_GO_ANALYSIS_THREADS_MODE", cfg)
+	}
+	// The CSV export takeover reads MySQL (NewsEvent/NewsEventItem and the
+	// membership chain), Redis (revocation list and the behavior profile) and
+	// Mongo (the read-model projection), and it verifies JWTs (including the
+	// mtk_ machine tokens) before selecting candidates.
+	if cfg.AnalysisExportMode == AnalysisExportModeGo {
+		appendAuthRequirements(&errs, "API_GO_ANALYSIS_EXPORT_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ANALYSIS_EXPORT_MODE=go")
+		}
 	}
 	if cfg.SituationMonitorsMode == SituationMonitorsModeGo {
 		appendAuthRequirements(&errs, "API_GO_SITUATION_MONITORS_MODE", cfg)

@@ -496,6 +496,14 @@ func UpsertThreadSpecs() []Spec {
 	return []Spec{optionalString("noteMarkdown", 20000)}
 }
 
+// ExportQuerySpecs is ExportAnalysisQueryDto: a single optional queryString
+// with @IsOptional @IsString @MaxLength(4000). The two CSV export routes reuse
+// it together with the shared 400 projection; no required or non-empty
+// constraint is added.
+func ExportQuerySpecs() []Spec {
+	return []Spec{optionalString("queryString", 4000)}
+}
+
 func CreateCommentSpecs() []Spec {
 	return []Spec{requiredString("bodyMarkdown", 5000)}
 }
