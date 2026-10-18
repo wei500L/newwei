@@ -38,6 +38,7 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-05 · items / 完整 GraphQL 列表
 
+- 2026-10-18 已由 [ITEMS-LIST-001](tasks/ITEMS-LIST-001.md) 认领并实现（分支 `refactor/go-graphql-items-list`，pr_open，未合 main），不再属于未认领队列。
 - **范围/缺口**：Query `items`（GAP-LEGACY-001）；完整 connection/page/after/first、排序/过滤、PERSONALIZED 与 RELEVANCE，保留互斥分页校验。
 - **基础/依据**：G/itemsreading.Service.List及同包搜索/facets/read-model、workspace 模型；N/graphql/resolvers/items.resolver.ts 的 items 与 ItemsListService。REST List 只做 RECENCY，不可直接包装后称全量完成；还需 cursor、选择字段、个性化/召回排序和返回 connection 注册。
 - **文件/前置/冲突**：G/itemsreading 与 graphqlread/itemsreading、main/config 最小接线；DB/Mongo/Redis，ES/vector/embedding 外部边界。**可独立窗口**；先明确是否共享 List 核心，BL-08/24 避开搜索核心文件；未核所有 cursor 编码与 totalCount 成本。

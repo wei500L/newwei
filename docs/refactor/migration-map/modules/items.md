@@ -4,7 +4,7 @@
 
 ## 范围与实施状态
 
-HTTP 条目阅读与索引重建、GraphQL item/itemFacets/rssSources/rssTranslationStatus/searchSuggestions 和 processedItemById 已接线；GraphQL items 列表没有生产注册，不能与 REST 列表混淆。
+HTTP 条目阅读与索引重建、GraphQL item/itemFacets/rssSources/rssTranslationStatus/searchSuggestions 和 processedItemById 已接线；GraphQL items 列表在 main 仍没有生产注册，不能与 REST 列表混淆。Query `items` 的 Go 实现是[ITEMS-LIST-001](../tasks/ITEMS-LIST-001.md) 候选（PR 未合 main，覆盖数不提前增加）。
 
 关键数据与副作用：MySQL ItemMeta、Mongo rawitems/processeditems/read-model、Redis reindex 状态/遥测、Elasticsearch 与向量服务。重建是 Go 后台 goroutine 的索引副作用，不是 BullMQ 已整体迁移。
 
@@ -14,7 +14,7 @@ HTTP 条目阅读与索引重建、GraphQL item/itemFacets/rssSources/rssTransla
 
 Nest 功能目录：[items](../../../../apps/api/src/modules/items)、[search-telemetry](../../../../apps/api/src/modules/search-telemetry)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：[ITEMS-LIST-001](../tasks/ITEMS-LIST-001.md) pr_open，Query `items` 完整分页/RECENCY/RELEVANCE/PERSONALIZED/批量嵌套投影；分支 `refactor/go-graphql-items-list`，PR 未合 main 前不更新覆盖数。旧 worktree 不自动视为活动任务。
 
 ## HTTP 开关、实现与生产接线
 
@@ -54,7 +54,7 @@ Nest 功能目录：[items](../../../../apps/api/src/modules/items)、[search-te
 | Mutation `updateItem` | items.write | [items.resolver.ts](../../../../apps/api/src/graphql/resolvers/items.resolver.ts) · `updateItem` | Nest；未注册 |
 | Query `item` | items.read | [items.resolver.ts](../../../../apps/api/src/graphql/resolvers/items.resolver.ts) · `item` | [itemsreading.Register](../../../../apps/api-go/internal/graphqlread/itemsreading/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_ITEMS_READING_MODE` |
 | Query `itemFacets` | items.read | [items.resolver.ts](../../../../apps/api/src/graphql/resolvers/items.resolver.ts) · `itemFacets` | [itemsreading.Register](../../../../apps/api-go/internal/graphqlread/itemsreading/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_ITEMS_READING_MODE` |
-| Query `items` | items.read | [items.resolver.ts](../../../../apps/api/src/graphql/resolvers/items.resolver.ts) · `items` | Nest；未注册 |
+| Query `items` | items.read | [items.resolver.ts](../../../../apps/api/src/graphql/resolvers/items.resolver.ts) · `items` | main 仍 Nest；本批候选 [RegisterList](../../../../apps/api-go/internal/graphqlread/itemsreading/list.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_ITEMS_READING_MODE + API_GO_GRAPHQL_ITEMS_LIST_MODE`（PR 未合） |
 | Query `processedItemById` | items.read | [processed-item.resolver.ts](../../../../apps/api/src/graphql/resolvers/processed-item.resolver.ts) · `processedItemById` | [workspace.Register](../../../../apps/api-go/internal/graphqlread/workspace/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_WORKSPACE_READ_MODE` |
 | Query `rssSources` | items.read | [items.resolver.ts](../../../../apps/api/src/graphql/resolvers/items.resolver.ts) · `rssSources` | [itemsreading.Register](../../../../apps/api-go/internal/graphqlread/itemsreading/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_ITEMS_READING_MODE` |
 | Query `rssTranslationStatus` | items.read | [items.resolver.ts](../../../../apps/api/src/graphql/resolvers/items.resolver.ts) · `rssTranslationStatus` | [itemsreading.Register](../../../../apps/api-go/internal/graphqlread/itemsreading/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_ITEMS_READING_MODE` |

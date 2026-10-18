@@ -9,7 +9,7 @@
 | GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | 未分配；SETTINGS-WRITE-001 主体仍 merged；与 WORKSPACE-WRITE-001 共享接线冲突 |
 | GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | 未分配；BL-02 |
 | GAP-CRAWL-001 | 部分实现；crawl | `GET /api/crawl-media-assets/:assetId/:mode` 的 S3 分支 | 未分配；BL-03 |
-| GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 工作台 8 写已由 WORKSPACE-WRITE-001 覆盖；其余未分配，见 BACKLOG |
+| GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 工作台 8 写已由 WORKSPACE-WRITE-001 覆盖，Query `items` 由 ITEMS-LIST-001 覆盖（均 pr_open）；其余未分配，见 BACKLOG |
 | GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | 未分配；按链路拆分，见执行所有权表 |
 
 “未迁移”是范围事实，不表示 Nest 有 bug；“缺少外部运行证据”不单独计为源码缺陷。当前没有因本轮文档维护而关闭的业务缺口。
@@ -58,7 +58,7 @@
 - 精确范围的唯一事实源：18 个域页的 HTTP/root 表。当前 95 条 HTTP 标为 Nest、6 Query、36 Mutation、4 Subscription 未被 Go 注册；另有 `GET /api/healthz/live` 仍为 shadow，单列为切流状态，不能算新增缺陷。与 274/370 接管口径相容。
 - 触发/影响：请求到达 legacy 规则或包含未接管 GraphQL root，业务由 Nest 执行；停掉 Nest 会失去相应功能。Go 并没有把这些入口返回空值来冒充完成。
 - Nest / Go：Nest Controller/Resolver/Service 定位已在域表；Go [legacyproxy](../../../apps/api-go/internal/legacyproxy) 与 [exec/walk.go](../../../apps/api-go/internal/graphqlread/exec/walk.go) 决定回退。未注册 root 在副作用前整份回退。
-- 任务覆盖：工作台 8 写由 WORKSPACE-WRITE-001 / #70 占用，保持 pr_open；其余候选见 BACKLOG 各自精确范围、文件和前置，不能领取整个集合。主要共享冲突是 main/config/Registry，其余按域隔离。
+- 任务覆盖：工作台 8 写由 WORKSPACE-WRITE-001 / #70 占用，保持 pr_open；Query `items` 由 [ITEMS-LIST-001](tasks/ITEMS-LIST-001.md) 覆盖（pr_open，未合 main，不提前改本页分母）；其余候选见 BACKLOG 各自精确范围、文件和前置，不能领取整个集合。主要共享冲突是 main/config/Registry，其余按域隔离。
 - 状态：部分已被任务覆盖，其余未分配；关闭证据按入口分批关联实际 main 提交，不因一批合并关闭整个 ID。新增/删契约另改分母，不以文档行数算迁移进度。
 
 <a id="gap-async-001"></a>

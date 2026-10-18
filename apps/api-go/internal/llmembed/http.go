@@ -16,7 +16,22 @@ const (
 )
 
 func (c *Client) postWithRetry(ctx context.Context, profile runtimeProfile, primary, fallback string, payload any) ([]byte, error) {
-	attempts := profile.MaxRetries
+	return c.postWithRetryOptions(ctx, profile, primary, fallback, payload, 0, profile.MaxRetries)
+}
+
+// postWithRetryOptions is postWithRetry with a per-request timeout and retry
+// budget. A zero timeout keeps profile.Timeout and a non-positive maxRetries
+// keeps at least one attempt, so the shared callers are unaffected.
+func (c *Client) postWithRetryOptions(
+	ctx context.Context,
+	profile runtimeProfile,
+	primary string,
+	fallback string,
+	payload any,
+	timeout time.Duration,
+	maxRetries int,
+) ([]byte, error) {
+	attempts := maxRetries
 	if attempts < 1 {
 		attempts = 1
 	}
@@ -29,9 +44,9 @@ func (c *Client) postWithRetry(ctx context.Context, profile runtimeProfile, prim
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		status, raw, callErr := c.post(ctx, profile, primary, body)
+		status, raw, callErr := c.postWithTimeout(ctx, profile, primary, body, timeout)
 		if callErr == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) && fallback != "" {
-			status, raw, callErr = c.post(ctx, profile, fallback, body)
+			status, raw, callErr = c.postWithTimeout(ctx, profile, fallback, body, timeout)
 		}
 		if callErr == nil && status >= 200 && status < 300 {
 			return raw, nil
@@ -55,7 +70,15 @@ func (c *Client) postWithRetry(ctx context.Context, profile runtimeProfile, prim
 }
 
 func (c *Client) post(ctx context.Context, profile runtimeProfile, path string, body []byte) (int, []byte, error) {
-	timeout := profile.Timeout
+	return c.postWithTimeout(ctx, profile, path, body, 0)
+}
+
+// postWithTimeout issues one HTTP attempt. A non-positive timeout falls back to
+// the profile timeout (or 60 seconds), which is the shared behavior.
+func (c *Client) postWithTimeout(ctx context.Context, profile runtimeProfile, path string, body []byte, timeout time.Duration) (int, []byte, error) {
+	if timeout <= 0 {
+		timeout = profile.Timeout
+	}
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}

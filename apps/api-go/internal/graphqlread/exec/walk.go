@@ -147,6 +147,29 @@ type collectedField struct {
 	Selections ast.SelectionSet
 }
 
+// buildFieldSet converts a resolved selection set into the read-only metadata a
+// resolver receives. It reuses collectFields, so aliases collapse onto the
+// canonical field name and fragments, @skip and @include are already applied
+// exactly as they are for projection. A scalar field has an empty sub-set.
+func buildFieldSet(schema *ast.Schema, parent *ast.Definition, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any) *contract.FieldSet {
+	out := contract.NewFieldSet()
+	if parent == nil {
+		return out
+	}
+	for _, field := range collectFields(schema, parent, set, doc, vars, map[string]bool{}) {
+		if field.Name == "__typename" {
+			continue
+		}
+		fieldDef := parent.Fields.ForName(field.Name)
+		if fieldDef == nil {
+			continue
+		}
+		child := schema.Types[fieldDef.Type.Name()]
+		out.Set(field.Name, buildFieldSet(schema, child, field.Selections, doc, vars))
+	}
+	return out
+}
+
 func collectFields(schema *ast.Schema, parent *ast.Definition, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any, stack map[string]bool) []collectedField {
 	ordered := make([]collectedField, 0)
 	index := map[string]int{}

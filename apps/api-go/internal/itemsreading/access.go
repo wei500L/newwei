@@ -36,6 +36,42 @@ func (s *Service) ReadModelProjection(
 	return nil, nil
 }
 
+// ReadModelProjectionBatch loads one read-model projection for many item ids in
+// a single organization-scoped query. It is the list-path counterpart of
+// ReadModelProjection and exists so a page of edges never issues one query per
+// item.
+func (s *Service) ReadModelProjectionBatch(
+	ctx context.Context,
+	orgID string,
+	itemMetaIDs []string,
+	projection bson.D,
+) (map[string]ReadModelDocument, error) {
+	out := make(map[string]ReadModelDocument, len(itemMetaIDs))
+	if len(itemMetaIDs) == 0 {
+		return out, nil
+	}
+	docs, err := s.mongo.FindReadModelsProjected(ctx, orgID, itemMetaIDs, projection)
+	if err != nil {
+		return nil, err
+	}
+	for _, doc := range docs {
+		if doc.ItemMetaID == "" {
+			continue
+		}
+		if _, exists := out[doc.ItemMetaID]; exists {
+			continue
+		}
+		out[doc.ItemMetaID] = doc
+	}
+	return out, nil
+}
+
+// RawItemsBound loads the raw documents for many verified ItemMeta bindings in
+// one query, so a page of edges never issues one raw lookup per item.
+func (s *Service) RawItemsBound(ctx context.Context, bindings map[string]string) (map[string]RawItemDoc, error) {
+	return s.mongo.FindRawItemsBound(ctx, bindings)
+}
+
 // RawItemBound loads the raw document bound to a verified ItemMeta. A missing
 // or malformed mongoRef yields nil.
 func (s *Service) RawItemBound(

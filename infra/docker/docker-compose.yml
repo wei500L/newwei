@@ -894,6 +894,9 @@ services:
       # 改回 legacy。
       API_GO_ACCOUNT_SECURITY_MODE: legacy
       API_GO_ITEMS_READING_MODE: legacy
+      # 条目列表 GraphQL root 独立子开关：默认 legacy；go 要求读开关与条目阅读
+      # 开关均为 go。回滚只把该变量改回 legacy，其余已迁读与 REST 不受影响。
+      API_GO_GRAPHQL_ITEMS_LIST_MODE: legacy
       ITEMS_READ_MODEL_ENABLED: "false"
       ITEMS_VECTOR_HARD_FAIL_ENABLED: "false"
       # 组织、角色与成员管理 8 个 GraphQL mutation（createOrg / updateOrg /

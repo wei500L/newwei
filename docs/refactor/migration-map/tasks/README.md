@@ -8,6 +8,7 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 |---|---|---|---|
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |
 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | pr_open | 8 个通知/看板/告警交互写 | Ready [#70](https://github.com/wei500L/newwei/pull/70)，head adb765d0；worktree 干净；尚未合 main，保留占用 |
+| [ITEMS-LIST-001](ITEMS-LIST-001.md) | pr_open | Query `items` 完整分页/RECENCY/RELEVANCE/PERSONALIZED/批量嵌套投影 | 分支 `refactor/go-graphql-items-list`，worktree `/Users/oo/project/newwei-go-graphql-items-list`；Ready PR 见本批推送；未合 main |
 
 原始认领/发出时间未提供；原始执行器活动未核实。状态定义见 [PLANNING](../PLANNING.md)。本次没有新业务任务。当前地图文档首版已提交/推送（4e37f285），通过 [Ready PR #69](https://github.com/wei500L/newwei/pull/69) 发布，业务分支状态与文档发布分开；PR URL 见[证据](../EVIDENCE.md)。
 
@@ -31,6 +32,7 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 | `refactor/go-graphql-settings-write` | `/Users/oo/project/newwei-go-graphql-settings-write` | `a1c96172b7eb` | main 祖先 | 干净 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md)；已合并 PR #68（14:18核对） |
 | `refactor/go-graphql-workspace-read` | `/Users/oo/project/newwei-go-graphql-workspace-read` | `48e939a3d260` | main 祖先 | 干净 | [#48](https://github.com/wei500L/newwei/pull/48) |
 | `refactor/go-graphql-workspace-write` | `/Users/oo/project/newwei-go-graphql-workspace-write` | `adb765d0180e` | 非 main 祖先；PR 未合入 | 干净 | [#70](https://github.com/wei500L/newwei/pull/70)；pr_open |
+| `refactor/go-graphql-items-list` | `/Users/oo/project/newwei-go-graphql-items-list` | 见 PR head | 从 main 9d0462e1 创建 | 本批改动 | [ITEMS-LIST-001](ITEMS-LIST-001.md)；pr_open |
 | `refactor/go-infrastructure-settings` | `/Users/oo/project/newwei-go-infrastructure-settings` | `709dfbcffcc8` | main 祖先 | 干净 | [#55](https://github.com/wei500L/newwei/pull/55) |
 | `refactor/go-items-reading` | `/Users/oo/project/newwei-go-items-reading` | `52dadb0af794` | main 祖先 | 干净 | [#58](https://github.com/wei500L/newwei/pull/58) |
 | `refactor/go-kg-impact-read` | `/Users/oo/project/newwei-go-kg-impact-read` | `9c21455555c1` | 仅合并后报告提交不在 main；#46 已 merged | 干净 | [#46](https://github.com/wei500L/newwei/pull/46) |
