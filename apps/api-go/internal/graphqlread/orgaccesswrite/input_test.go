@@ -40,18 +40,19 @@ func TestCreateOrgInputValidation(t *testing.T) {
 	}
 }
 
-// TestCreateOrgInputAccepted pins the accepted values, including the frontend
-// trim semantics that happen later in the service.
+// TestCreateOrgInputAccepted pins the accepted values. The service trims later;
+// the DTO itself runs the slug pattern on the raw value, so a padded slug is
+// rejected before the service ever sees it.
 func TestCreateOrgInputAccepted(t *testing.T) {
 	input, err := parseCreateOrgInput(inputArgs(map[string]any{
 		"name":        "  Acme  ",
-		"slug":        "  ACME-CORP  ",
+		"slug":        "ACME-CORP",
 		"description": "  hello  ",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if input.Name != "  Acme  " || input.Slug != "  ACME-CORP  " {
+	if input.Name != "  Acme  " || input.Slug != "ACME-CORP" {
 		t.Fatalf("parsed %#v", input)
 	}
 	if input.Description == nil || *input.Description != "  hello  " {
