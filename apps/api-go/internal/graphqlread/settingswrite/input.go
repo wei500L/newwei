@@ -324,7 +324,7 @@ func parseUpdateRateLimitSettingsInput(args map[string]any) (updateRateLimitSett
 		if !ok {
 			// The GraphQL type is non-null, so this is unreachable through the
 			// executor; the message mirrors @ValidateNested failing.
-			*messages = append(*messages, bucket.name+" must be an object")
+			messages = append(messages, bucket.name+" must be an object")
 			continue
 		}
 		*bucket.target = parseRateLimitBucket(nested, bucket.name, &messages)
@@ -908,7 +908,8 @@ func optionalStringValue(input map[string]any, name string, max int, messages *[
 
 // optionalIntValue reads an optional tri-state integer property.
 func optionalIntValue(input map[string]any, name string, min, max int, messages *[]string) optionalValue[int] {
-	_, present := contract.Lookup(input, name)
+	_, state := contract.Lookup(input, name)
+	present := state == contract.ArgValue || state == contract.ArgNull
 	return optionalValue[int]{present: present, value: optionalInt(input, name, min, max, messages)}
 }
 

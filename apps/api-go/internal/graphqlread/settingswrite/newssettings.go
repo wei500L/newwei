@@ -122,12 +122,10 @@ func (s *service) updateNewsClassificationSettings(ctx context.Context, identity
 	if input.LlmModelPresent {
 		candidate.LlmModel = optionalStringJSON(input.LlmModel)
 	}
-	if input.TaxonomyPresent {
-		// The validated nodes are the final taxonomy. A sentinel value that the
-		// shared normalizer cannot parse as an array would fall back, so the
-		// taxonomy is applied to the normalized result instead.
-		candidate.Taxonomy = nil
-	}
+	// The submitted taxonomy is deliberately left out of the candidate: the
+	// validated nodes ARE the final normalized taxonomy, so they are applied to
+	// the normalized result below and their path, keyword and synonym
+	// normalization runs exactly once.
 	raw, err := json.Marshal(candidate)
 	if err != nil {
 		return settingscrawl.NewsClassificationSettingsModel{}, err
@@ -199,6 +197,7 @@ func classifyUpdateTaxonomy(input updateNewsClassificationSettingsInput, current
 		return nil, nil
 	}
 
+	allowed := settingscrawl.AllowedLegacyCategories()
 	seenPaths := make(map[string]bool, len(input.Taxonomy))
 	nodes := make([]settingscrawl.NewsClassificationTaxonomyNodeModel, 0, len(input.Taxonomy))
 	for index, node := range input.Taxonomy {
