@@ -4,7 +4,7 @@
 
 ## 14:18 MSK 增量核对（当前事实）
 
-#68 于14:15:41 MSK 合并，已 fetch 最新 `origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`；仅26条上游变化路径，HTTP/SDL 分母不变，生产新增 settingswrite.Register 13个Mutation。各域按此diff增量复查，完整扫描仍以13:51为初始事实来源。#68 PR head a1c96172 普通 CI 39121676887 成功；最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 此快照进行中。
+#68 于14:15:41 MSK 合并，已 fetch 最新 `origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`；仅26条上游变化路径，HTTP/SDL 分母不变，生产新增 settingswrite.Register 13个Mutation。各域按此diff增量复查，完整扫描仍以13:51为初始事实来源。#68 PR head a1c96172 普通 CI 39121676887 成功；最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 在14:18快照进行中，14:22 MSK已复核为success。
 
 设置任务改为 merged，main Mutation 注册总数从8到21；独立写顶层 graphqlRouteMode/needsCredentialedGo 漏接的实际缺口已记录，不能称完全可独立启用。工作台写仍 in_progress，无PR；14:18本机新增workspacewrite、main/history/alerts修改，仍未提交。#69 通过普通 merge 同步 origin/main，未改上游业务代码，相对最新 main 的PR差异仍仅28个Markdown；不rebase、不amend、不force-push。
 

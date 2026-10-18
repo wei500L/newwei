@@ -27,7 +27,6 @@ Nest `ApiGraphqlModule` 挂载 `/graphql`，没有 `/api` 前缀；配置和 Res
 | [settingscrawl.Register](../../../../apps/api-go/internal/graphqlread/settingscrawl/register.go) | 20 | 0 | `API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` | 设置/来源策略/采集/复核模型；含 OR 根权限 |
 | [itemsreading.Register](../../../../apps/api-go/internal/graphqlread/itemsreading/register.go) | 5 | 0 | `API_GO_GRAPHQL_READ_MODE + API_GO_ITEMS_READING_MODE` | workspace 未开时补三个 processed-item 模型，保持类型投影可用 |
 | [orgaccesswrite.Register](../../../../apps/api-go/internal/graphqlread/orgaccesswrite/register.go) | 0 | 8 | `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE（独立）` | 只开写时不需总读/Mongo；workspace.RegisterModels 单独复用 |
-
 | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go) | 0 | 13 | `SETTINGS_WRITE=go`，当前还需 `READ=go OR ORG_ACCESS_WRITE=go` | settingscrawl.RegisterSettingsModelTypes 复用；独立路由/资源初始化缺口见设置域 |
 
 所有当前 GraphQL 子模式默认 legacy，非法值启动失败；读子模式只有总读 go 才装配。只开组织写时 Query 仍走 Nest；GraphQL 顶层 OR、数据库/鉴权初始化与模型注册必须一起支持写独立性。设置写已合并，main 已识别开关但顶层独立接线有缺口，见[设置域](settings.md)；工作台写开关在 main 尚不存在。
@@ -43,6 +42,6 @@ Nest `ApiGraphqlModule` 挂载 `/graphql`，没有 `/api` 前缀；配置和 Res
 
 6 个未注册 Query：`alertRules`、`archiveCalendar`、`archiveDetail`、`archiveDigest`、`crawlMetadata`、`items`。57 个 Mutation 里组织/角色/成员 8 写及设置 13 写已有生产 Register，共 21；设置写受上述额外顶层条件限制。其余 36 写未注册，其中工作台 8 写已占用；13 写不重复派发，剩余接线单列。4 个 Subscription：alertEvents、analysisEvents、assistantEvents、queueEvents，由 Nest Redis backplane 处理，详见[异步运行时](async-runtime.md)。
 
-最新 main 普通 CI 在14:18快照仍进行中；此前 PR/main CI 成功也不代表每种开关组合、每个所选返回字段或外部依赖已做额外集成。实际部署、配置与流量未核实。
+最新 main 普通 CI 39122519950 已于14:22 MSK 复核为 success；CI 成功仍不代表每种开关组合、每个所选返回字段或外部依赖已做额外集成。实际部署、配置与流量未核实。
 
 本文 SETTINGS_WRITE / READ / ORG_ACCESS_WRITE 是 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE` / `API_GO_GRAPHQL_READ_MODE` / `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 的简写，所有组合以当前 main.run 实际接线为准。

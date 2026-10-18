@@ -3,7 +3,7 @@
 本索引保存 `apps/api → apps/api-go` 的事实、任务占用和规划入口；Nest 暂时保留。本地图用于恢复上下文，具体任务必须再读最新源码。先读本页与 [PLANNING.md](PLANNING.md)，然后只展开候选域、[任务认领](tasks/README.md)及[执行模板](templates/migration-task.md)。
 
 最近核对 main：**2026-10-18 14:18 MSK（UTC+03:00）**，从 13:51 全域基线增量复查 #68；fetch 后 `origin/main = 3cedce9aa3200436aba3596f63b559de5490cec8`。
-最新 main [普通 CI](https://github.com/wei500L/newwei/actions/runs/39122519950) 在此快照**进行中**。此前 main 7fc17faa 的 [CI 39118934491](https://github.com/wei500L/newwei/actions/runs/39118934491)、#68 head a1c96172 的 [CI 39121676887](https://github.com/wei500L/newwei/actions/runs/39121676887) 成功；不把旧结果继承给新 SHA。[核对证据与口径](EVIDENCE.md)。
+最新 main [普通 CI](https://github.com/wei500L/newwei/actions/runs/39122519950) 于14:22 MSK复核为 **success**，精确 head 为上方3cedce9a基线。此前 main 7fc17faa 的 [CI 39118934491](https://github.com/wei500L/newwei/actions/runs/39118934491)、#68 head a1c96172 的 [CI 39121676887](https://github.com/wei500L/newwei/actions/runs/39121676887) 成功；不把旧结果继承给新 SHA。[核对证据与口径](EVIDENCE.md)。
 
 代码已合并、Go 已实现、CI 通过、额外集成验证、开关配置和真实切流是六类不同事实。部署/真实流量均**未核实**；仓库默认 Web → Nest，可选 pilot 不等于部署，canary 默认关闭。
 
