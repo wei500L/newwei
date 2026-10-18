@@ -612,6 +612,10 @@ func run() error {
 	if cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo {
 		crawlReadTelemetryMode = string(legacyproxy.ModeGo)
 	}
+	searchReindexMode := ""
+	if cfg.SearchReindexMode == config.SearchReindexModeGo {
+		searchReindexMode = string(legacyproxy.ModeGo)
+	}
 	runtimeSettingsMode := ""
 	if cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo {
 		runtimeSettingsMode = string(legacyproxy.ModeGo)
@@ -693,6 +697,7 @@ func run() error {
 	rules = legacyproxy.WithClassificationRssOps(rules, classificationRssOpsMode)
 	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
 	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
+	rules = legacyproxy.WithSearchReindex(rules, searchReindexMode)
 	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
 	// The platform governance settings group is registered alongside the runtime
 	// settings group. The two switches are independent and their paths do not
@@ -769,6 +774,7 @@ func run() error {
 				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
+				cfg.SearchReindexMode == config.SearchReindexModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
 				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
 				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
@@ -836,6 +842,7 @@ func run() error {
 	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	itemsReadingGo := cfg.ItemsReadingMode == config.ItemsReadingModeGo
+	searchReindexGo := cfg.SearchReindexMode == config.SearchReindexModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	llmGatewayProfilesGo := cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo
 	infrastructureSettingsGo := cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo
@@ -853,9 +860,9 @@ func run() error {
 	// 平行批次追加的模式全部保留（#53 frontier、#54 platform governance、#55
 	// infrastructure、#56 model access、#57 situation monitor signals、#58 items
 	// reading、#59 llm gateway profiles、#60 account security、#61 data runtime、
-	// #62 auth factors、#63 graphql org access write、#64 exception ingest）。任一
-	// 变量改成本批所需值都不影响其他批次接线。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || graphqlOrgAccessWriteGo
+	// #62 auth factors、#63 graphql org access write、#64 exception ingest、#65
+	// search reindex）。任一变量改成本批所需值都不影响其他批次接线。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || graphqlOrgAccessWriteGo || searchReindexGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1202,6 +1209,13 @@ func run() error {
 		return err
 	}
 	if err := wireCrawlReadTelemetry(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
+	}
+	// The two search index rebuild routes (POST /api/admin/search/reindex and
+	// GET /api/admin/search/reindex/:jobId). The background rebuild runs on the
+	// service lifetime context and is cancelled and awaited by Close.
+	searchReindexService, err := wireSearchReindex(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
+	if err != nil {
 		return err
 	}
 	if err := wireRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
@@ -1600,6 +1614,12 @@ func run() error {
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {
 			return err
+		}
+		// Close the search reindex background goroutine first: cancel the
+		// service lifetime context and wait for the current batch to stop
+		// before its Redis and Mongo connections are closed below.
+		if searchReindexService != nil {
+			searchReindexService.Close()
 		}
 		// go 模式下 onboarding 鉴权栈持有的 Redis 连接随进程收口。
 		if redisClient != nil {

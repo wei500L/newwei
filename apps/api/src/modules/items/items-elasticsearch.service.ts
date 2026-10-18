@@ -23,6 +23,55 @@ export interface ItemSearchReindexResult {
   alias: string;
 }
 
+export interface ItemSearchReindexOptions {
+  /**
+   * Called after every batch with the running number of documents Elasticsearch
+   * actually accepted, so the caller can persist progress and refresh the active
+   * job TTL. Throwing aborts the rebuild.
+   */
+  onProgress?: (indexed: number) => Promise<void> | void;
+}
+
+/** Maximum documents per Mongo page and per Elasticsearch bulk request. */
+const SEARCH_REINDEX_BATCH_SIZE = 500;
+
+/**
+ * Reindex scan projection: only the fields the index document needs, so
+ * raw.payload, processed.result and the other large fields are never read.
+ */
+const SEARCH_REINDEX_PROJECTION = {
+  _id: 0,
+  orgId: 1,
+  itemMetaId: 1,
+  title: 1,
+  externalId: 1,
+  sourceName: 1,
+  summary: 1,
+  topics: 1,
+  entities: 1,
+  region: 1,
+  location: 1,
+  sentiment: 1,
+  contentType: 1,
+  searchText: 1,
+  sortAt: 1,
+  createdAt: 1,
+} as const;
+
+interface ItemBulkItemError {
+  type?: string;
+  reason?: string;
+}
+
+interface ItemBulkItemResult {
+  status?: number;
+  error?: ItemBulkItemError;
+}
+
+interface ItemBulkResponseItem {
+  index?: ItemBulkItemResult;
+}
+
 interface ItemSearchDocument {
   orgId: string;
   itemMetaId: string;
@@ -103,6 +152,45 @@ function normalizeLiteralKeywords(keywords: string[]): string[] {
     }
   }
   return out;
+}
+
+/**
+ * Narrow the bulk reply to its item list without depending on the client's
+ * export types, so a client upgrade cannot silently change the accounting below.
+ */
+function readBulkItems(response: unknown): ItemBulkResponseItem[] {
+  if (!response || typeof response !== "object") {
+    return [];
+  }
+  const items = (response as { items?: unknown }).items;
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.filter(
+    (item): item is ItemBulkResponseItem =>
+      Boolean(item) && typeof item === "object",
+  );
+}
+
+/**
+ * Describe one failed bulk item for the job error text: the itemMetaId, the
+ * Elasticsearch error type and a short reason. Credentials and document bodies
+ * are never included.
+ */
+function describeBulkFailure(
+  itemMetaId: string,
+  result: ItemBulkItemResult | undefined,
+): string {
+  if (!result) {
+    return `itemMetaId=${itemMetaId} type=missing_bulk_item reason=elasticsearch returned no item result for this document`;
+  }
+  const errorType = result.error?.type?.trim() || "unknown";
+  const reason = (
+    result.error?.reason ?? "no reason returned by elasticsearch"
+  )
+    .replace(/\s+/g, " ")
+    .slice(0, 200);
+  return `itemMetaId=${itemMetaId} type=${errorType} reason=${reason}`;
 }
 
 @Injectable()
@@ -306,7 +394,10 @@ export class ItemsElasticsearchService implements OnModuleInit {
     return result;
   }
 
-  async reindexOrg(orgId: string): Promise<ItemSearchReindexResult> {
+  async reindexOrg(
+    orgId: string,
+    options: ItemSearchReindexOptions = {},
+  ): Promise<ItemSearchReindexResult> {
     if (!this.client) {
       return {
         indexed: 0,
@@ -323,10 +414,10 @@ export class ItemsElasticsearchService implements OnModuleInit {
           orgId,
           ...(cursor ? { itemMetaId: { $gt: cursor } } : {}),
         },
-        {},
+        SEARCH_REINDEX_PROJECTION,
       )
         .sort({ itemMetaId: 1 })
-        .limit(500)
+        .limit(SEARCH_REINDEX_BATCH_SIZE)
         .lean()) as ItemReadModel[];
       if (docs.length === 0) {
         break;
@@ -341,8 +432,36 @@ export class ItemsElasticsearchService implements OnModuleInit {
         this.toDocument(doc),
       ]);
       if (operations.length > 0) {
-        await this.client.bulk({ refresh: false, operations });
-        indexed += docs.length;
+        const response = await this.client.bulk({
+          refresh: false,
+          operations,
+        });
+        const items = readBulkItems(response);
+        const failures: string[] = [];
+        let batchIndexed = 0;
+        for (let index = 0; index < docs.length; index += 1) {
+          const doc = docs[index]!;
+          const result = items[index]?.index;
+          const succeeded =
+            result !== undefined &&
+            result.error === undefined &&
+            (typeof result.status !== "number" ||
+              (result.status >= 200 && result.status <= 299));
+          if (succeeded) {
+            batchIndexed += 1;
+            continue;
+          }
+          failures.push(describeBulkFailure(doc.itemMetaId, result));
+        }
+        indexed += batchIndexed;
+        // Persist the real progress and refresh the active job TTL before the
+        // failure check, so a partially applied batch keeps its successes.
+        await options.onProgress?.(indexed);
+        if (failures.length > 0) {
+          throw new Error(
+            `Elasticsearch bulk index failed for ${failures.length} item(s): ${failures[0]}`,
+          );
+        }
       }
       cursor = docs[docs.length - 1]?.itemMetaId ?? null;
       if (!cursor) {

@@ -426,6 +426,35 @@ const (
 	CrawlReadTelemetryModeGo     CrawlReadTelemetryMode = "go"
 )
 
+// SearchReindexMode controls the two search index rebuild HTTP routes migrated by
+// this unit (API_GO_SEARCH_REINDEX_MODE):
+//
+//	POST /api/admin/search/reindex
+//	GET  /api/admin/search/reindex/:jobId
+//
+// The accepted values are exactly "", "legacy" and "go"; the empty value and
+// "legacy" both keep both routes on the NestJS proxy, and any other value fails
+// startup instead of silently degrading. go mode takes over only these two
+// routes: every other method, the trailing-slash path and longer paths keep
+// falling back to NestJS. It requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
+// MONGO_URI (the item read model lives in Mongo). Elasticsearch is not a startup
+// requirement: a disabled or unconfigured ELASTICSEARCH_ENABLED keeps the
+// existing disabled branch. Search telemetry keeps its own
+// API_GO_CRAWL_READ_TELEMETRY_MODE switch. go starts no worker, does not touch
+// BullMQ and does not change the production web entry.
+type SearchReindexMode string
+
+const (
+	// SearchReindexModeLegacy proxies both routes to NestJS (default, including
+	// the empty value). Rolling back only means setting
+	// API_GO_SEARCH_REINDEX_MODE back to legacy.
+	SearchReindexModeLegacy SearchReindexMode = "legacy"
+	// SearchReindexModeGo serves both routes from Go with the same
+	// authentication chain as NestJS and the same Redis job, list, set and lock
+	// layout, so a mixed deployment stays compatible.
+	SearchReindexModeGo SearchReindexMode = "go"
+)
+
 // InfrastructureSettingsMode controls the seven infrastructure connection and
 // crawl-credential settings HTTP routes migrated by this unit
 // (API_GO_INFRASTRUCTURE_SETTINGS_MODE): the three vector-service routes, the
@@ -1008,6 +1037,10 @@ type Config struct {
 	// live in Mongo; crawl tasks, media assets and quality snapshots live in
 	// MySQL). No shadow, no canary and no worker.
 	CrawlReadTelemetryMode CrawlReadTelemetryMode
+	// SearchReindexMode controls the two search index rebuild routes (see
+	// SearchReindexMode). Default legacy. go requires JWT_SECRET, DATABASE_URL,
+	// REDIS_HOST and MONGO_URI; Elasticsearch stays optional at startup.
+	SearchReindexMode SearchReindexMode
 	// RuntimeSettingsMode controls the eighteen runtime/governance settings
 	// routes (see RuntimeSettingsMode). Default legacy. Mode go requires
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
@@ -1618,6 +1651,16 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.CrawlReadTelemetryMode = CrawlReadTelemetryModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_READ_TELEMETRY_MODE must be one of legacy|go")
+	}
+	// The search reindex switch accepts exactly "", "legacy" and "go"; any other
+	// value must fail startup with this exact text.
+	switch strings.TrimSpace(getenv("API_GO_SEARCH_REINDEX_MODE")) {
+	case "", string(SearchReindexModeLegacy):
+		cfg.SearchReindexMode = SearchReindexModeLegacy
+	case string(SearchReindexModeGo):
+		cfg.SearchReindexMode = SearchReindexModeGo
+	default:
+		errs = append(errs, "API_GO_SEARCH_REINDEX_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_RUNTIME_SETTINGS_MODE")) {
 	case "", string(RuntimeSettingsModeLegacy):
@@ -2266,6 +2309,16 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_READ_TELEMETRY_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go")
+		}
+	}
+	// The search reindex takeover reads the item read model from Mongo, so
+	// MONGO_URI is required in addition to the standard JWT + MySQL + Redis
+	// requirements. Elasticsearch is optional at startup: the disabled branch
+	// completes with indexed=0.
+	if cfg.SearchReindexMode == SearchReindexModeGo {
+		appendAuthRequirements(&errs, "API_GO_SEARCH_REINDEX_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_SEARCH_REINDEX_MODE=go")
 		}
 	}
 	// The runtime/governance settings takeover needs JWT verification, MySQL
