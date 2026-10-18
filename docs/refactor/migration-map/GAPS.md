@@ -7,7 +7,7 @@
 | ID | 性质 / 所属域 | 影响范围 | 状态 / 归属 |
 |---|---|---|---|
 | GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | 未分配；SETTINGS-WRITE-001 主体仍 merged；与 WORKSPACE-WRITE-001 共享接线冲突 |
-| GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | 未分配；BL-02 |
+| GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | 已分配NEWS-BRIEF-001 / reserved；缺口仍开放 |
 | GAP-CRAWL-001 | 部分实现；crawl | `GET /api/crawl-media-assets/:assetId/:mode` 的 S3 分支 | 未分配；BL-03 |
 | GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 工作台 8 写已由 WORKSPACE-WRITE-001 覆盖；其余未分配，见 BACKLOG |
 | GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | 未分配；按链路拆分，见执行所有权表 |
@@ -37,7 +37,7 @@
 - Go：[newsevents/brief.go](../../../apps/api-go/internal/graphqlread/newsevents/brief.go) `newsEventBrief` 18–59，loadEvent/loadItems、选源/指纹与缓存命中已实现，末尾固定报错；没有模型调用/metadata 更新。注册在 [register.go](../../../apps/api-go/internal/graphqlread/newsevents/register.go)。核对 SHA 如页首。
 - 可复用但不可直接调用：[publicportal/story.go](../../../apps/api-go/internal/publicportal/story.go) `Service.brief` 已实现选源→Complete→JSON 清洗→SaveEventMetadata；`brief`、`completionRequest`、gateway helper 均为包内私有，公共门户语言/组织选择与 GraphQL 参数也不同，不能声称已共享。
 - 主要文件：newsevents `brief.go` / store/model；如抽共享能力，需明确 publicportal/story.go、brief.go、gateway.go 的所有权。MySQL NewsEvent/NewsEventItem/ProcessedArticle、模型配置/密钥、HTTP 模型上游；无须为了这个同步入口迁 BullMQ。前置是确定具名共享模型/客户端边界，BL-02 可独立窗口评估，避开 BL-17 公共门户客户端并行修改。
-- 状态：未分配；无已有业务任务覆盖。关闭证据：**无**；需命中、miss、forceRefresh、无事件/来源与写回分支的落地证据，实网模型验证另记。
+- 状态：2026-10-18按main 9d0462e1再次确认缺口仍在，已分配[NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)，reserved；只有规划/提示词，无业务实施。新增核对包含生成source缺Summary/KeyPoints、结构schema差异与Nest LLM request log副作用，详见任务/提示词。关闭证据：**无**；需命中、miss、forceRefresh、无事件/来源与写回/日志分支的落地证据，实网模型验证另记。
 
 <a id="gap-crawl-001"></a>
 

@@ -16,7 +16,7 @@
 
 Nest 功能目录：[news-events](../../../../apps/api/src/modules/news-events)、[news-indicator](../../../../apps/api/src/modules/news-indicator)、[news-pipeline](../../../../apps/api/src/modules/news-pipeline)、[news-aggregator](../../../../apps/api/src/modules/news-aggregator)、[news-signals](../../../../apps/api/src/modules/news-signals)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：[NEWS-BRIEF-001](../tasks/NEWS-BRIEF-001.md) 已reserved，仅补newsEventBrief完整冷生成/强刷与必要日志/缓存写回；无本域业务PR、无开工证据，缺口尚未关闭。2026-10-18以main 9d0462e1续核本root；上述全域历史日期不变。旧worktree不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
 
 ## HTTP 开关、实现与生产接线
 

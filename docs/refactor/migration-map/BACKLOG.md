@@ -1,6 +1,8 @@
-# 未认领候选队列
+# 候选队列与已派发去向
 
 [入口](README.md) · [规划](PLANNING.md) · [占用](tasks/README.md) · [缺口](GAPS.md) · [复用/所有权](DEPENDENCIES.md)。核对基线 `3cedce9aa3200436aba3596f63b559de5490cec8`，2026-10-18 本轮静态复核。候选不等于任务，不创建分支/worktree/对话，不自动发业务提示词；选择一项后才核对最新源码并写 task。
+
+本次仅BL-02按9d0462e1续核并转reserved，保留其去向供恢复；其余候选仍未认领，历史核对基线/深度不变。
 
 ## 顺序与隔离
 
@@ -18,7 +20,10 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 - **基础/工作量依据**：settingswrite、settingscrawl.RegisterSettingsModelTypes、workspace.RegisterModels 已存在；需要核对 RouteMode、无效 DSN、needsCredentialedGo、handler 四处条件以及三写模式组合。无新队列/外部调用。
 - **文件/前置/冲突**：`apps/api-go/cmd/api/main.go`，必要时 config/模型注册；#70 正在共享接线，先确认其最终 merge/head。**当前不适合第二独立编码窗口**；不得按 PR 描述假设修复，先读实际提交。
 
-### BL-02 · news / newsEventBrief 生成
+### BL-02 · news / newsEventBrief 生成（已reserved）
+
+- 2026-10-18按main 9d0462e1深读后派发至[NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)，提示词见同目录任务附件。不再属于未认领队列；GAP-NEWS-001仍未关闭。本批没有实施业务，不领取BL-17或其他候选。
+- 补查事实：生成sources须携带Summary/KeyPoints；Nest completion还产生Mongo请求日志，当前Go gateway没有此writer，必须补best-effort typed writer与metadata policy。news_event_brief不在自动moderation集合，运行上下文不是租约。共享main只改新闻事件Register参数，不扩顶层资源/路由OR；独立root开关默认legacy，父读开关依赖明确。
 
 - **范围/缺口**：Query newsEventBrief 的 cache miss、forceRefresh、模型结果清洗与 metadata 写回（GAP-NEWS-001）；保留合法 null 与缓存命中。
 - **基础/依据**：G/graphqlread/newsevents 有选源/指纹/模型；G/publicportal 的完整冷路径和 gatewayClient 是私有，可提取具名共享能力。工作量来自两种调用语义/参数/配置/错误/写回，而非新增一个 root。

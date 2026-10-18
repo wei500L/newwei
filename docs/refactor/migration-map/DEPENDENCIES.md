@@ -64,6 +64,8 @@ flowchart LR
 
 ## 可复用能力索引
 
+本次brief专项增量（main 9d0462e1，2026-10-18）：[NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)保留publicportal简报completion最小导出表面与llmlogs新增typed completion writer；既有helper私有、日志writer尚不存在。计划复用父GraphQL读的DB/auth/Redis/Mongo，不依赖PUBLIC_PORTAL_MODE或LLM_LOGS_MODE；新BRIEF子开关尚未实现，不是当前可部署变量。任务无BullMQ/cron执行权，模型与日志/缓存写回属于同步请求链路。
+
 所有位置按页首 SHA。包内小写符号是 **私有**，不能在新包直接调用；需要抽取时先写清所有权和副作用。返回模型共享不代表业务权限可以复用成同一根权限。
 
 | 能力 | 真实 Go 入口 / 路径 | 使用限制与副作用 |

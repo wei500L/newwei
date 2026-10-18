@@ -63,6 +63,8 @@
 
 ## news
 
+- **本次仅brief续核，2026-10-18，SHA 9d0462e16d88d146b8afbf67cdd58d8b7419ff29**：Nest Resolver/Model/schema/getBrief全链，Go newsevents brief/来源SQL/模型、publicportal同步生成与gateway配置/重试/协议、Nest completion日志/guardrail上下文已阅读。确认Go briefSource尚未携带SQL已有摘要/要点；共用schema/宽松清洗不保证完全等价，执行需按Nest校验；LLM日志必须保留，news_event_brief不触发自动moderation，runtimeContext不是锁/配额。新闻root不在响应缓存root白名单。计划仅JSON briefV1叶子更新，未实施；记录NEWS-BRIEF-001。不扩大其他news查询/worker审查深度，未跑DB/模型/测试。
+
 - **newsEventBrief / Go 部分实现**：命中、无事件/无来源、miss、forceRefresh 已沿两端服务核对，后两支固定错误；[GAP-NEWS-001](GAPS.md#gap-news-001) 为唯一缺口记录。
 - **其余事件/分组、指标读写、NewsNow 本地计算与聚类运维 / 尚未深入核对**：已核各 Register/main 和 newsnowclusteringops.NewService 真实构造排序器，nil ordering 错误不是固定业务占位。尚未逐项比对事件筛选/游标、heat/authority、指标反测、聚类恢复状态与 Redis TTL；后续先读 graphqlread/newsevents 的 service.go/store.go/detail.go 与 newsindicator、newsnowclusteringops 的 service/store。上游读取/推荐、LLM backfill、ingestion/Cron仍由Nest。15:01–15:08续读settingscrawl.policyReader.getSyncStatus，确认其真实对照DB/cache时间戳并区分miss/stale/read_failed，force*读取失败采用false/1；此核对仅覆盖该共享状态分支，不代表其余事件读算法已验完。
 

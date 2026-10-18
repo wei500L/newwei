@@ -2,7 +2,15 @@
 
 [返回入口](README.md)。此页保存核对方法与精确证据；当前事实先看本节，历史快照保留作追踪，不替代各域源码。
 
-## 本轮完整性复核（当前事实）
+## NEWS-BRIEF-001规划刷新（2026-10-18）
+
+- git fetch origin main后：9d0462e16d88d146b8afbf67cdd58d8b7419ff29。#69实际mergeCommit与此相等，已merged；从3cedce9a到此仅地图/导航文档，没有apps/api、apps/api-go、apps/vector-go业务改动，原注册数不变。
+- main最近5次普通CI分别对应9d0462e1/3cedce9a/7fc17faa/9da8e75e/3c9ce2f5，均success；最新[run 39127631691](https://github.com/wei500L/newwei/actions/runs/39127631691)，完整head即上条SHA。
+- #70仍OPEN/Ready，head adb765d0180e8b34910181e8c6fde8be400a2dff；实际文件清单和main/config diff已读，仍缺settingsWrite顶层route/无效DSN并集，needsCredentialedGo已补settingsWrite。其[普通CI 39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) verify/user-settings/vector成功，smoke/regen skipped不当通过。工作台8写仍不计main。
+- git worktree list及所有列出worktree HEAD/status只读刷新；工作台写干净，其他历史目录未发现新业务修改，目录存在/干净不代表执行器活动。新建独立规划worktree只用于文档，不创建编码worktree。
+- 本次仅brief候选两端源码深读、认领、提示词和相关记录维护；无全仓审计、业务实现、本机构建/测试/安装/服务、模型实网或部署切换。规划PR发布记录见NEWS-BRIEF-001，不当作业务CI证据。
+
+## 地图发布前完整性复核（历史快照）
 
 2026-10-18 14:37 开始，14:49 再 fetch，`origin/main = 3cedce9aa3200436aba3596f63b559de5490cec8` 未变。#69 OPEN / Ready / autoMergeRequest=null，原 worktree 干净后在原文档分支追加；未 amend/rebase/force-push。apps/api、apps/api-go、apps/vector-go 相对该 main 无差异。本轮只改 migration-map 文档；原 PR 已有 AGENTS/roadmap 导航，本轮没有扩展业务/配置/测试/schema/workflow。
 

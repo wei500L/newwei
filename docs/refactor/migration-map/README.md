@@ -2,6 +2,8 @@
 
 先读本页 → [PLANNING](PLANNING.md) → [当前任务](tasks/README.md) + [缺口摘要](GAPS.md#当前摘要) → [候选队列](BACKLOG.md) → 候选域与源码。[实现核对深度](AUDIT.md)、[开关/执行所有权/复用入口](DEPENDENCIES.md)、[证据](EVIDENCE.md)按需展开。Nest 暂时保留。
 
+2026-10-18 本次规划增量：#69 已合并，最新代码基线为 9d0462e16d88d146b8afbf67cdd58d8b7419ff29；相对下述3cedce9a仅文档/导航变化，业务与注册覆盖未变，main普通CI成功。#70仍OPEN/Ready，head adb765d0，继续占用工作台8写。[NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md) 已reserved，补新闻事件简报冷生成/强刷及必要日志/写回；[执行提示词](tasks/NEWS-BRIEF-001.prompt.md) 已保存，本窗口不实施。其余历史全域审查日期保持，只有本root按最新SHA深入续核。
+
 本轮基线：`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`；2026-10-18 14:37–14:42 MSK 做结构/指定业务分支静态核对，14:49 再 fetch，main 未变。15:01–15:08续审补组织八写/设置缓存与来源策略、导出拆分证据，main未变；深度按审查组记录，未逐字段审完的内容在AUDIT明列。普通 CI 与启用证据只在 EVIDENCE 维护。
 
 ## 注册覆盖
@@ -44,7 +46,7 @@ HTTP/Query/Mutation 为“生产 Go 接管注册 / Nest 契约入口”，不是
 
 - [SETTINGS-WRITE-001](tasks/SETTINGS-WRITE-001.md)：merged，#68 → `3cedce9a`；剩余接线关联 GAP-GQL-001。
 - [WORKSPACE-WRITE-001](tasks/WORKSPACE-WRITE-001.md)：pr_open，[Ready #70](https://github.com/wei500L/newwei/pull/70)，14:56 head `adb765d0180e8b34910181e8c6fde8be400a2dff`（比200ab944只多历史报告文档），worktree 干净，已正常 merge #68；8写仍未进 main，不重复派发。其公共接线仍需检查设置写路由遗漏。
-- 文档继续使用 [Ready #69](https://github.com/wei500L/newwei/pull/69)，不合并/不开 auto-merge。目录存在、工作目录干净都不能证明执行器活跃。
+- 地图首版 [#69](https://github.com/wei500L/newwei/pull/69) 已于2026-10-18 15:31 MSK合并，merge为9d0462e1；本次规划增量使用独立文档分支，见NEWS-BRIEF-001。目录存在、工作目录干净都不能证明执行器活跃。
 
 [BACKLOG](BACKLOG.md) 保存未认领队列：先协调 BL-01 公共接线，再补 BL-02 简报/BL-03 S3；随后完整条目查询、来源策略、导出、metadata 与登录主链。归档/采集/告警/分析/Assistant/经济等异步链先明确生产者、消费者与外部边界。候选包含未迁入口、已注册部分实现、接线及必要 Nest 步骤，不只筛 Nest 行。
 
