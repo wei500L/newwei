@@ -159,6 +159,7 @@ import (
 	itemsgraphql "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/kgimpact"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgereview"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/orgaccesswrite"
@@ -703,7 +704,7 @@ func run() error {
 	// documents actually execute in Go; everything else is still proxied to
 	// NestJS.
 	graphqlRouteMode := ""
-	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" {
+	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" || cfg.GraphQLKnowledgeReviewMode == "go" {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -829,6 +830,7 @@ func run() error {
 				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
 				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
 				cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo ||
+				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
@@ -883,6 +885,10 @@ func run() error {
 	// 独立开关控制，与读开关解耦；复用 workspace/alerts/history 的模型不要求
 	// Mongo、模型网关或队列。
 	graphqlWorkspaceWriteGo := cfg.GraphQLWorkspaceWriteMode == "go"
+	// 知识图谱证据人工复核的单个 mutation 由独立开关控制，与全部读开关解耦：
+	// 只开写入时图谱十个只读 root 仍走 NestJS，也不需要 Mongo。它复用
+	// knowledgegraph 的设置缓存端口与 settingscrawl 的复核投影模型。
+	graphqlKnowledgeReviewGo := cfg.GraphQLKnowledgeReviewMode == "go"
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
@@ -943,6 +949,7 @@ func run() error {
 		situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || cfg.GraphQLSettingsWriteMode == "go" ||
+		graphqlKnowledgeReviewGo ||
 		identityOnboardingGo ||
 		searchReindexGo || proxyLoadBalancingGo
 	var redisClient *redis.Client
@@ -1526,11 +1533,11 @@ func run() error {
 
 	var graphqlHandler *graphqlread.Handler
 	var graphqlMongo *dashboardstats.Connection
-	// 读查询、组织访问写入、工作台交互写入与设置写各自独立开关；任一为 go
-	// 就装配精确 /graphql 的 Go handler。只开写入时不要求 Mongo，也不初始化
-	// 任何只读域的 Mongo service。
+	// 读查询、组织访问写入、工作台交互写入、设置写与知识图谱证据复核写各自
+	// 独立开关；任一为 go 就装配精确 /graphql 的 Go handler。只开写入时不要求
+	// Mongo，也不初始化任何只读域的 Mongo service。
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
-	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo {
+	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo || graphqlKnowledgeReviewGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -1673,6 +1680,13 @@ func run() error {
 				RateLimitSettingsCacheTTLSeconds: cfg.RateLimitSettingsCacheTTLSeconds,
 			})
 		}
+		// The knowledge-graph evidence review mutation reuses the evidence
+		// review models of the settings/crawl read roots. Those models are only
+		// registered when both the read switch and the settings/crawl switch are
+		// go, so the write path registers them otherwise.
+		if graphqlKnowledgeReviewGo {
+			registerKnowledgeReview(reg, sharedDB, redisClient, graphqlReadGo && settingsCrawlGo)
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1759,6 +1773,11 @@ func run() error {
 			log.Printf("api-go: GraphQL settings writes registered (%s)", strings.Join(settingswrite.RegisteredMutations, ", "))
 		} else {
 			log.Printf("api-go: GraphQL settings writes not registered (API_GO_GRAPHQL_SETTINGS_WRITE_MODE=legacy)")
+		}
+		if graphqlKnowledgeReviewGo {
+			log.Printf("api-go: GraphQL knowledge-graph evidence review write registered (%s)", strings.Join(knowledgereview.RegisteredMutations, ", "))
+		} else {
+			log.Printf("api-go: GraphQL knowledge-graph evidence review write not registered (API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE=legacy)")
 		}
 	}
 
