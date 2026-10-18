@@ -1167,3 +1167,291 @@ retentionDays must not be greater than 3650; retentionDays must not be less than
 - **后续方向**：在 schema 的文本索引上显式指定不存在的 `language_override`，或在写入时省略 null 的
   `language`（需要同时评估读模型响应形状与 GraphQL 兼容）。
 - **状态**：只登记。
+
+
+## 12. LLM 网关配置与三路激活（本批，基线 origin/main@2672b62e）
+
+> 行号以基线 `2672b62e35ed7235604c65939bcd335c81bf7d27` 的工作区文件为准，开工时逐条复核。
+> 三条缺陷都要求 Nest 与 Go 两侧同一规则修复；Go 侧为全新实现，不含历史包袱。
+
+### GP1：全局 LLM 网关配置写入缺平台管理员门禁（P0） — 🟡 已修，待远端验证
+
+- **现象**：任意持有 `settings.manage` 的普通组织管理员（含跨组织的 org admin）都能
+  创建/更新/删除全局 LLM 网关 profile，并把三路激活切到任意 profile；机器令牌同样可以。
+  该配置是全局单例（`SystemSetting.key = llm_gateway_profiles`，无 orgId 维度），
+  写入会影响所有租户的出站模型流量与 apiKey 选择。
+- **证据**：
+  - `apps/api/src/modules/system-settings/llm-gateway-settings.controller.ts:57-64`（create）、
+    `:66-77`（PUT active）、`:79-91`（embedding-active）、`:93-105`（rerank-active）、
+    `:165-173`（PUT :id）、`:175-183`（DELETE :id）只声明 `@Permissions("settings.manage")`。
+  - `apps/api/src/modules/system-settings/llm-gateway-settings.service.ts:130-141` 构造函数
+    未注入 `PlatformAccessService`；`:155-357` 的六个公开写方法没有任何平台角色判断。
+  - 全局配置的既有对照写法：`apps/api/src/modules/system-settings/vector-service-settings.controller.ts:47`
+    与 `:56` 在写操作前调用 `platformAccess.assertPlatformAdmin(user.id)`
+    （`apps/api/src/modules/auth/platform-access.service.ts:31-35` 抛
+    `ForbiddenException("Platform admin access required")`）。
+- **修法**：
+  - Nest：`llm-gateway-settings.service.ts` 注入既有 `PlatformAccessService`，
+    六个公开写方法（`createProfile` / `updateProfile` / `deleteProfile` /
+    `setActiveProfile` / `setEmbeddingActiveProfile` / `setRerankActiveProfile`）
+    首行 `await this.platformAccess.assertPlatformAdmin(actorId)`；`list()` 仍只要求
+    `settings.manage`。门禁在读配置、加锁、编码、写 DB、审计、删缓存之前返回，
+    因此被拒绝的请求不产生任何配置/审计/缓存副作用。
+  - Go：`llmgatewayprofiles.Authenticator.assertPlatformAdmin` 查
+    `GlobalRoleAssignment.userId = 真实 User.id AND role='platform_admin'`；
+    `machine:` 前缀 actor 直接 403（`GlobalRoleAssignment.userId` 是指向 `User(id)` 的
+    外键，机器令牌不是用户行），避免机器令牌写出 `machine:<id>` 外键 500。
+  - 不改 controller / DTO / module 注册。
+- **回归方式**：`api-go-llm-gateway-profiles-smoke` 阶段 2（GP1 权限回归）：
+  普通 org 管理员 A/B 六条写 403；`settings.manage` 机器令牌六条写 403（且无外键 500）；
+  同身份 GET 列表 200；平台管理员 P 六条写成功；有平台角色但无 `settings.manage` 仍是
+  权限 403；非平台但有 `settings.manage` 时非法 DTO 先 400、合法 DTO 才 403。
+- **状态**：待远端验证（Nest 与 Go 两侧已同修；本机按约束未运行构建与测试）。
+
+### GP2：缓存整体读改写无跨实例互斥，丢失更新与旧 apiKey 恢复（P1） — 🟡 已修，待远端验证
+
+- **现象**：六条写都是「读 60 秒缓存 → 在内存整体改写 → 整体 upsert」。
+  并发创建会丢 profile；更新不同 profile 会互相覆盖；三路激活各自持有旧快照，
+  后写者会把另一路刚写入的选择恢复成旧值；省略 apiKey 的更新会把旧缓存里的旧
+  secret 写回（覆盖已经轮换的新 secret）；删除后另一个旧快照可以把 profile 复活。
+- **证据**：
+  - `llm-gateway-settings.service.ts:160`（create 的 `loadSettings()` → `:178` `saveSettings`）、
+    `:203`（update → `:233`）、
+    `:253`（delete → `:270`）、
+    `:278`（setActive → `:290`）、
+    `:303`（embedding-active → `:321`）、
+    `:334`（rerank-active → `:352`）。
+  - `:620-646` `loadSettings()` 优先返回 Redis 缓存（`:631-633`），只有 miss 才读 MySQL。
+  - `:648-673` `saveSettings()` 是无条件整行 upsert，没有锁、没有版本条件。
+- **修法**：
+  - Nest：新增 `apps/api/src/modules/system-settings/llm-gateway-profiles.lock.ts`，
+    包装既有 `withMysqlSessionLock`（`apps/api/src/modules/situation-monitor/situation-monitor-user-lock.ts:66`），
+    固定锁名 `llm-gateway:profiles:write:v1`（专用连接 `GET_LOCK(name,10)`，返回 1 才继续，
+    持锁到 DB 提交、审计、缓存失效全部完成）。
+  - 六个写方法改为「平台门禁 → 进入全局锁 → `loadSettingsAuthoritative()` 直读 MySQL
+    并 normalize → 业务校验 → 保存 + 审计 + 删缓存 → 从本次结果投影响应」。
+    合并基准不再来自 Redis；写响应不再调用 `list()` 读旧缓存。
+  - 响应投影：`persistedView()` 用 Prisma JSON 往返 + `normalizeSettings` 复刻「刚写入的行
+    再被读一次」的结果，保证 immediate response 与随后的 GET 语义一致（含空串 activeId 归 null）。
+  - `GET /api/settings...` 列表仍沿用 60 秒 best-effort 缓存；本批不宣称 GET 具备
+    全局强一致。
+  - Go：`llmgatewayprofiles` 用专用 `*sql.Conn` 持同一锁名的 `GET_LOCK(?,10)`；
+    锁内 `SELECT` SystemSetting 权威 JSON；释放用独立短超时 context，请求取消后仍尝试
+    `RELEASE_LOCK`，释放失败直接关闭物理连接（不把可能持锁的连接放回池）。
+  - 锁获取失败两侧都是 503 `{message:"Internal server error", error:"Service Unavailable"}`；
+    持锁超时 10 秒，超时后不写入任何数据。
+- **回归方式**：`api-go-llm-gateway-profiles-smoke` 阶段 3：
+  确定性旧缓存（cache 只含 A、DB 含 A/B，create C 后 DB=A/B/C；DB 已轮换 B 的 apiKey
+  而 cache 仍旧值，省略 apiKey 的 update 解密结果必须是 B；DB 新 embedding/rerank 选择
+  不被 completion 写的旧快照恢复；删除后旧 cache 不能复活 profile；Nest 与 Go 分别执行）；
+  真实并发 Nest/Nest、Go/Go、Nest/Go；独立 MySQL 连接持锁逐条证明六条写等待；
+  持锁 >10 秒 503 且无写入；取消后锁可再次取得。
+- **状态**：待远端验证（Nest 与 Go 两侧已同修；本机按约束未运行构建与测试）。
+
+### GP3：存量非 boolean `enabled` 被 truthiness 当作启用（P1） — 🟡 已修，待远端验证
+
+- **现象**：存量 `llm_gateway_profiles` 文档里 `enabled` 可能是字符串/数字/对象/数组
+  （早期写路径未做类型约束）。`normalizeProfile` 原样保留该值，公共模型声明
+  `enabled: boolean` 却会输出 `"false"`、`1`、`{}`；随后所有 truthiness 判断
+  （`activeProfile.enabled`、`resolveDefaultProfile`、`resolveRuntimeProfile`）
+  都会把 `"false"`、`1`、`{}`、`[]` 当成启用，导致被禁用的 profile 仍被选中服务流量。
+- **证据**：
+  - `llm-gateway-settings.service.ts:790` `enabled: record.enabled ?? true`（只判 null/undefined，
+    其余类型原样透传）。
+  - `:718` `activeProfile && activeProfile.enabled`、`:724`、`:731` 三处 active ID 归一
+    用 truthiness；`:549` `resolveDefaultProfile`、`:573/:588/:607` `resolveRuntimeProfile`
+    同样用 truthiness。
+  - 公共模型 `LlmGatewayProfilePublic.enabled: boolean`（`:57`）。
+- **修法**：
+  - Nest：新增 `normalizeEnabled(value)` —— boolean 原样保留；`undefined`/`null`
+    保持历史默认 `true`；其他任何类型一律 `false`（不解析 `"true"`/`"false"` 字符串，
+    不把数字 truthiness 当启用）。`normalizeProfile` 改用它，因此公共 `enabled`
+    始终是 JSON boolean，三路 active ID 对不可用 profile 归 null。
+  - Go：`NormalizeEnabled` 同一规则；存量读取路径不做别的类型扩张。
+  - 明确不扩大修复范围：`sendMetadata` / `assistantWebSearchEnabled` 的显式 `null`
+    历史差异（service 写 null、下次 GET 归 false/true）保持不变。
+  - GET 只读，不把修复写回 DB。
+- **回归方式**：`api-go-llm-gateway-profiles-smoke` 阶段 4：
+  seed `enabled` = `"false"` / `"true"` / `1` / `0` / `{}` / `[]`，两侧列表
+  `enabled === false`（JSON boolean），关联的三类 active ID 清 null；
+  `enabled=true/false` 原行为不变；缺字段/null 仍 `true`；GET 后 DB 行内容不变。
+- **状态**：待远端验证（Nest 与 Go 两侧已同修；本机按约束未运行构建与测试）。
+
+
+## 13. 认证要素批次（AF1–AF5）
+
+分支 `refactor/go-auth-factors`；开关 `API_GO_AUTH_FACTORS_MODE`；7 条精确 HTTP
+（`GET /api/auth/mfa`、`POST /api/auth/mfa/enroll`、`POST /api/auth/mfa/verify-enroll`、
+`POST /api/auth/mfa/disable`、`POST /api/auth/mfa/recovery/rotate`、
+`GET/PUT /api/auth/admin/oidc-config`）。以下行号均为**修复前**原始行号，基线
+`57d1d4ba`。细节见 `docs/refactor/go-auth-factors.md`。
+
+### AF1 重复完成已完成的注册会替换恢复码 — ✅ 已修复（本批修复）【P1】
+
+- **用户影响**：一个已经处于 active 状态的因子（`verifiedAt` 有值且 `disabledAt` 为空）
+  可被再次「完成」注册，服务端重新生成整组恢复码——用户手里刚拿到的一套恢复码当场失效。
+- **根因证据（原始行号，基线 57d1d4ba）**：`apps/api/src/modules/auth/mfa.service.ts:115-157`
+  （`verifyEnrollment` 只检查 factor 行是否存在，随后总是取
+  `pendingSecret ?? secret`；active 且无 pending 时仍会走完 update + 删旧码 + 建新码）。
+- **修复（Nest）**：`mfa.service.ts` 的 `verifyEnrollment` 在锁内重读因子，新增
+  `active && !pendingSecret` → 400 `MFA enrollment is not initialized`；因子的读取、
+  校验与提升都在每用户锁内，并发 verify 只能完成一次。
+- **修复（Go）**：`apps/api-go/internal/authfactors/mfa.go` 的 `VerifyEnrollment` 同规则
+  同文案，因子在锁内重读。
+- **回归断言**：对 active 且无 pending 的因子再次 verify-enroll → 400，且旧恢复码集合
+  字节不变；active 因子再 enroll 只写 `pendingSecret`；pending 确认时提升并替换码集；
+  并发完成同一注册只有一个成功、只生成一套恢复码。
+- **状态**：本批修复（Nest 与 Go 两侧）；真实栈回归由
+  `api-go-auth-factors-smoke` 阶段 B/D 覆盖。
+
+### AF2 恢复码消费与管理变更分处两个事务 — ✅ 已修复（本批修复）【P1】
+
+- **用户影响**：后续写失败会留下「恢复码已被消费但管理动作未生效」；两个并发管理动作
+  可以各自用同一旧码集合授权，然后互相覆盖结果。
+- **根因证据（原始行号，基线 57d1d4ba）**：`mfa.service.ts:167`（`disable` 调用
+  `verifyFactorOrRecoveryCode`）与 `mfa.service.ts:183`（`rotateRecoveryCodes` 调用同一
+  helper），而 helper 在 `mfa.service.ts:414-463` 用自己的 `$transaction` 提交
+  `usedAt` 声明，之后 disable/rotate 才打开第二个事务。
+- **修复（Nest）**：`verifyFactorOrRecoveryCode` 改收显式
+  `Prisma.TransactionClient`；disable 与 rotate 的凭据校验 + `lastUsedAt` 刷新 + 状态
+  变更在**一个事务**内提交；声明仍是条件 `UPDATE ... WHERE usedAt IS NULL` 且要求
+  **恰好影响 1 行**；公开登录挑战路径保持原有单次使用语义。
+- **修复（Go）**：`internal/authfactors/mfa.go` 的 `Disable` / `RotateRecoveryCodes`
+  与 `store.go` 的 `claimRecoveryCode` 在同一事务客户端上执行同样的边界与
+  affected-row=1 断言。
+- **回归断言**：只在测试库注入写失败，证明恢复码消费与管理变更同事务回滚；同一恢复码
+  并发最多一个成功；两个不同旧码并发 rotate 不会各自授权后互相覆盖；公开登录挑战的
+  单次使用与尝试锁定行为不变。
+- **状态**：本批修复（Nest 与 Go 两侧）；真实栈回归由
+  `api-go-auth-factors-smoke` 阶段 D 覆盖。
+
+### AF3 MFA 写后 profile 缓存不失效 — ✅ 已修复（本批修复）【P1】
+
+- **用户影响**：`mfaEnabled` 最长可陈旧到 profile 缓存默认 600 秒 TTL，用户完成或关闭
+  MFA 后前端仍显示旧状态。
+- **根因证据（原始行号，基线 57d1d4ba）**：`apps/api/src/modules/auth/auth.service.ts:262-272`
+  （`invalidateProfileCache` 删除 `profile:<userId>:default` 与全部 membership org）、
+  `auth.service.ts:1445-1499`（`getUserProfile` 缓存 `buildAuthenticatedUser`）、
+  `auth.service.ts:404-407`（`buildAuthenticatedUser` 读 `mfaService.getStatus`）；而
+  `MfaService.verifyEnrollment`/`disable` 从不调用该失效。
+- **修复（Nest）**：`MfaService` 注入 `CacheService`，新增专用
+  `invalidateProfileCache(userId)`，在提交后、每用户锁内删除该用户 `default` 条目与每个
+  membership 组织条目。
+- **修复（Go）**：`internal/authfactors/cache.go` 的 `invalidateProfileCache` 删
+  `profile:<userId>:default` + `membershipOrgIDs` 的每个组织条目，提交后执行。
+- **回归断言**：预热用户在 org A/B 的 profile，verify/disable 后两组织的
+  `GET /api/auth/me` 立刻反映 `mfaEnabled`；Nest 写/Go 读与 Go 写/Nest 读都成立；其他
+  用户缓存不被删除；缓存里不含 secret 或恢复码。
+- **状态**：本批修复（Nest 与 Go 两侧）；真实栈回归由
+  `api-go-auth-factors-smoke` 阶段 E 覆盖。
+
+### AF4 OIDC 更新回写预读的旧 client secret — ✅ 已修复（本批修复）【P1】
+
+- **用户影响**：不带 secret 的更新会把先前读到的旧密文写回，静默回退并发轮换产生的新
+  secret，导致登录链使用已失效的 client secret。
+- **根因证据（原始行号，基线 57d1d4ba）**：`apps/api/src/modules/auth/oidc-auth.service.ts:116-121`
+  （预读 `existing` 并以 `existing?.clientSecret` 回落），`:134-136`（把该值写入 upsert，
+  即使请求没有携带新 secret）。
+- **修复（Nest）**：`oidc-auth.service.ts` 的 `updateConfig` 在无有效 secret 时把
+  `clientSecret` 字段整体从 `update` payload 省略（create 分支写 SQL NULL），由数据库
+  在写入期原子保留。
+- **修复（Go）**：`internal/authfactors/store.go` 增加
+  `upsertOidcConfigKeepSecretSQL`（列清单与更新赋值都省略 `clientSecret`），
+  `oidc.go` 的 `UpdateOidcConfig` 在 `ClientSecret == nil` 时走该语句。
+- **回归断言**：secret 缺失/null/空白保留；首次无 secret 写 SQL NULL；并发 Go/Nest
+  不带 secret 不覆盖刚写入的 secret；响应与日志无 secret。
+- **状态**：本批修复（Nest 与 Go 两侧）；真实栈回归由
+  `api-go-auth-factors-smoke` 阶段 F 覆盖。
+
+### AF5 机器身份写 MFA 触发 User(id) 外键 500 — ✅ 已修复（本批修复）【P1】
+
+- **用户影响**：机器令牌调用 MFA 写接口时写入 `machine:<id>` 作为
+  `UserTotpFactor.userId`，违反 `User(id)` 外键，接口泛化成 500（非契约化错误）。
+- **根因证据（原始行号，基线 57d1d4ba）**：`apps/api/src/common/guards/jwt-auth.guard.ts:36-41`
+  放行 `mtk_` 令牌，`apps/api/src/modules/auth/machine-token.service.ts:164` 生成身份
+  `machine:${record.id}`，MFA 路由是 `@AllowAuthenticated()`
+  （`apps/api/src/modules/auth/auth.controller.ts:243-274`），
+  `apps/api/src/modules/auth/mfa.service.ts:64-113`（`beginEnrollment`）随即把该 id 写入
+  `UserTotpFactor.userId`。
+- **修复（Nest）**：四条 MFA 写路由先经 `assertHumanMfaActor` 要求真实人类 `User`
+  （`machine:` 前缀或查不到 User → 403 `MFA management requires a human user`）；
+  `GET /api/auth/mfa` 对机器身份仍返回空状态；OIDC 保持租户机器令牌边界；不施加到其他
+  `/auth` 路由。
+- **修复（Go）**：`internal/authfactors/mfa.go` 的 `requireHumanActor`（`actorIsMachine`
+  或 `loadUserEmail` 未命中 → 403）在四条写路径最先执行，`GetStatus` 不做该检查。
+- **回归断言**：机器令牌四条写 403 且无副作用；`GET /api/auth/mfa` 机器身份空状态；
+  无权限人类仍 403；OIDC 机器令牌按自身存储权限读写本组织配置。
+- **状态**：本批修复（Nest 与 Go 两侧）；真实栈回归由
+  `api-go-auth-factors-smoke` 阶段 B/F 覆盖。
+
+
+## 14. LiteLLM 负载均衡配置批次（LB0–LB4）
+
+> 基线 `f5648fab`（origin/main）· 分支 `refactor/go-proxy-load-balancing` · 开关
+> `API_GO_PROXY_LOAD_BALANCING_MODE`。五条均为本批明确要求改变的行为，不得以「兼容
+> 旧行为」保留。行号在开工时按该基线逐行复核。
+> 状态：✅ Nest 与 Go 两侧已修复（LB0–LB4）。远端普通 CI（`verify`）在代码 head
+> `0bc75855` 上 success：
+> [run 39085013073](https://github.com/wei500L/newwei/actions/runs/39085013073)
+> （Lint/Typecheck/Web 覆盖率/vector/API Vitest/OpenAPI 漂移/auth-matrix 漂移/Go
+> tests/Build 全绿）。细节见 `docs/refactor/go-proxy-load-balancing.md` §9。
+
+### LB0 全局负载均衡配置写接口缺平台管理员门禁（P0）
+
+- **实证**：`litellm-proxy-lb-settings.service.ts` 的 `updateSettings`/
+  `resetToDisabled` 只依赖 controller 的 `settings.manage`，而
+  `SystemSetting.key=litellm_proxy_load_balancing` 是全局单例（无 orgId）；普通组织
+  管理员或机器令牌即可改写影响所有租户的 LiteLLM 上游配置。
+- **修复（Nest）**：服务注入 `PlatformAccessService`，PUT/DELETE 第一步
+  `assertPlatformAdmin(actorId)`；DTO（ValidationPipe）仍在 service 之前执行。
+- **修复（Go）**：`updateProxyLoadBalancingSettings`/`resetProxyLoadBalancingSettings`
+  先 `assertPlatformAdmin`（查 `GlobalRoleAssignment(userId, role='platform_admin')`，
+  `machine:` 身份直接 403 且不查库）。
+- **状态**：✅ 两侧修复；GET 仍只要求 `settings.manage`。
+
+### LB1 公开读取对旧格式加密条目重复解密（P2）
+
+- **实证**：基线 `getPublicSettings` 先 `resolveEffectiveConfig`（内部
+  `resolveAnthropicKeys` 解密旧明文/直接加密条目）再调用
+  `listAnthropicKeyFingerprints`（对同一直接加密条目再次解密）——同一条目一次请求
+  解密两次。
+- **修复（Nest/Go）**：每个条目只分类一次、需要解密时只解一次；明文列表与指纹列表
+  从同一份具名结果投影。包装条目仍直接使用已存 fingerprint，不解密其 value。
+- **状态**：✅ 两侧修复；`anthropicKeysCount`（成功解析去重数）、fingerprint 列表、
+  OpenAI `keysCount`（结构计数）三种口径差异刻意保留。
+
+### LB2 PUT 以 30 秒缓存作为合并基准（P1）
+
+- **实证**：基线 `updateSettings` 用 `loadStoredSettings()`（先读 Redis 信封）取旧
+  配置再整份 `upsert`；缓存陈旧时，省略的 `anthropicApiKeys`/`redisPassword` 会被
+  旧缓存覆盖，且并发写无跨实例互斥。
+- **修复（Nest/Go）**：PUT/DELETE 共用全局 MySQL 会话锁
+  `model-access:proxy-load-balancing:v1`，锁内直接读 MySQL 权威行作为保留基准；
+  仅省略密钥或密码时原样写回既有存储条目，不解密、不重加密整份配置。
+- **状态**：✅ 两侧修复（Nest 复用 `withModelAccessSettingsLock`，Go 复用
+  `mysqlLock`）。
+
+### LB3 写后经缓存构造响应（P1）
+
+- **实证**：基线更新/删除后调用 `getPublicSettings()`（再次读 Redis）构造响应，
+  返回内容可能不是刚写入的配置。
+- **修复（Nest/Go）**：以刚写入对象（DELETE 为默认对象）构造 LB 响应；OpenAI 元数据
+  按它自己的契约独立读取，不受本行缓存影响。
+- **状态**：✅ 两侧修复。
+
+### LB4 显式 null 密码触发 `trim`（P1）
+
+- **实证**：`resolveNextRedisPasswordRaw` 只判 `input === undefined` 后直接
+  `input.trim()`；`redisPassword: null` 通过 `@IsOptional()` 校验后进入此处 →
+  `TypeError` → 500。与「可选字段可显式 null」的运行时输入处理不一致。
+- **修复（Nest/Go）**：省略保留；`null`、空字符串、纯空白均清空；仅非空字符串
+  trim 后按既有加密策略保存。`redisPasswordUpdated` 仍为
+  `input !== undefined`（显式 `null` 计为已更新）。
+- **状态**：✅ 两侧修复。
+
+### 观察（非本批缺陷）：`countStoredKeys` 与 `resolveKeys` 的刻意差异
+
+Anthropic 与 OpenAI 的「存储条目计数」按结构计数、不解密，而「有效密钥数」需要
+成功解析；旧数据下两者可能不同。本批保留该差异并用具名结果结构承载，未统一为
+单一计数，避免改变既有公开字段语义。
+

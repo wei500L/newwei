@@ -886,3 +886,122 @@ one of legacy|go`）。`go` 时要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOS
 - **限流/APQ/深度/复杂度/响应缓存/字段权限沿用既有机制**；身份与 orgId 一律取自服务端认证与 MySQL 权限。
 - 回滚只把 `API_GO_ITEMS_READING_MODE` 改回 `legacy`。细节与验收清单见
   `docs/refactor/go-items-reading.md`。
+
+
+## 21. LLM 网关配置与三路激活（Go）
+
+新增开关 `API_GO_LLM_GATEWAY_PROFILES_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本是 `API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go`）。`go` 复用共享鉴权前置（要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**），不打开 shadow/canary，不启动 worker，不调用模型上游。`go` 时只接管 7 条精确规则（规则在 `apps/api-go/internal/legacyproxy/llm_gateway_profiles_routes.go`），全部要求 `settings.manage`，其中六条写路径另外要求平台管理员（否则 403 `Platform admin access required`；机器令牌永不满足该检查，因为 `GlobalRoleAssignment.userId` 是 `User(id)` 外键而机器身份是 `machine:<tokenId>`）：
+
+| 方法 | 路径 | 权限 | 平台管理员 | 成功码 |
+| --- | --- | --- | --- | --- |
+| GET | `/api/system-settings/llm-gateways` | `settings.manage` | 否 | 200 |
+| POST | `/api/system-settings/llm-gateways` | `settings.manage` | 是 | 201 |
+| PUT | `/api/system-settings/llm-gateways/active` | `settings.manage` | 是 | 200 |
+| PUT | `/api/system-settings/llm-gateways/embedding-active` | `settings.manage` | 是 | 200 |
+| PUT | `/api/system-settings/llm-gateways/rerank-active` | `settings.manage` | 是 | 200 |
+| PUT | `/api/system-settings/llm-gateways/:id` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/llm-gateways/:id` | `settings.manage` | 是 | 200（`{ok:true}`） |
+
+- **路由形态**：集合路径与三条激活路径是 exact 规则（前缀长度自然胜过动态规则，handler 也先按 `switch r.URL.Path` 精确分发）；动态规则只接受 `PUT`/`DELETE`（+ 共享 `OPTIONS` 预检）且**恰好一个非空路径段、无尾段**。因此 `GET`/`POST /:id`、`/:id/`、`/:id/test`、`/:id/models`、`/:id/proxy-health`、`/:id/proxy-model-info`、`/:id/proxy-lb-test`、`/:id/extra` 以及带尾斜杠的路径都不命中本批规则，回落 `/api/` legacy（Go 不返回自己的 profile 404）。
+- **静态例外**：`PUT`/`DELETE`/`OPTIONS` 作用在“恰好一段”的未迁移静态路径上时形态与 `/:id` 完全相同，装配层在**认证、body 解码与 CORS 处理之前**调用 `llmgatewayprofiles.IsUnmigratedStaticPath` 并 `ServeLegacy` 转发：`/proxy-governance`、`/proxy-governance/preflight`、`/proxy-governance/rotate-key`、`/proxy-load-balancing`、`/test-config`、`/models-config`。因此静态路径永远不会被当成 profile id（否则会得到 Go 的 404），`OPTIONS` 也不会被本批预检逻辑认领。没有为这些路径加永久 `ModeLegacy` 精确规则：后续迁移 proxy governance / load balancing 的批次应能以更具体的 Go 规则自然胜出，只需从静态路径表删项。Nest 不可用时被转发的请求照常得到反向代理的 502 `{"statusCode":502,"message":"Bad Gateway","error":"Bad Gateway",…}`。
+- **认证与失败顺序**：人类身份走 JWT 验签（HS256/iss/aud/exp）+ Redis 撤销名单（fail-closed）+ MySQL membership 重推导（**不看 JWT `permissions` claim，也不看 body/query 的 `orgId`**）；`mtk_` 机器令牌走 SHA-256 查 `MachineAccessToken.tokenHash` 并连 `Org.isActive`（撤销/过期/停用 → 401 `Invalid machine token`，命中刷新 `lastUsedAt`，权限与 orgId 只取令牌行）。固定顺序 authentication（401）→ permission（403 `INSUFFICIENT_PERMISSIONS`）→ DTO（400）→ service 平台门禁（403 `Platform admin access required`）→ 业务规则（404/400）。两条 403 正文见 `docs/refactor/go-llm-gateway-profiles.md`。
+- **DTO**：`CreateLlmGatewayDto`（`name`、`apiBase` 必填，`model` 在 DTO 可选但服务层要求）与 `UpdateLlmGatewayDto` 共用 19 字段声明顺序，另有三个激活 DTO（`activeId`；embedding/rerank 另带 `mode`，`@IsIn(["follow_completion","use_default"])`）。未知字段 400 `property <name> should not exist` 且消息在前；单属性约束自下而上注册（`Max→Min→IsInt`、`each→arrayMaxSize→isArray`、`enum→IsString`），错误消息用 `"; "` 拼接。非对象 body 400 `an unknown value was passed to the validate function`；非法 JSON 400 `Unexpected token in JSON body`；>10 MiB → 500 `Internal server error`。
+- **默认值**：创建 fallback 是 `LITELLM_*` 投影（`apiBase` 取 `LITELLM_API_URL`→`LITELLM_API_BASE`→`http://localhost:4001`；`timeoutMs` 60000、`temperature` 0.2、`topP` 0.9；`maxOutputTokens` 取 `LITELLM_MAX_TOKENS`（schema 默认 2048），`maxRetries` 取 `LITELLM_RETRY_ATTEMPTS`（schema 默认 3），故 `LITELLM_MAX_OUTPUT_TOKENS` / `LITELLM_MAX_RETRIES` 永不生效）；`LITELLM_MODEL`、`LITELLM_FALLBACK_MODELS`、`LITELLM_EMBEDDING_MODEL`、`LITELLM_API_KEY` 都不会种入 profile，`rerankModel` / `rerankFallbackModels` 不从 env 创建。
+- **文档与缓存**：SystemSetting 全局单例 `key="llm_gateway_profiles"`，文档形状 `{activeId, embeddingActiveId, embeddingMode, rerankActiveId, rerankMode, profiles[]}`；Redis `llm_gateway:profiles` TTL 60 秒，存归一化文档本身（非信封），GET 是 best-effort 缓存（Redis 故障只记日志，不回填失败）；写路径锁内直读 MySQL 权威行、写后 `DEL` 缓存。`litellm_proxy_governance:settings`（TTL 30）与 `system_security:settings`（Nest 实际 TTL 60）是各自服务的 `{exists,value}` 信封，本包**只读不写**（只解码 `enabled`/`targetProfileId` 与 `secretEncryptionEnabled`）。
+- **secret**：`apiKey` 用 AES-256-GCM（32 字节 key、随机 12 字节 IV、分离 16 字节 tag、无 AAD），信封 `{__enc:"system-settings:v1",alg:"aes-256-gcm",iv,tag,data}`；读取时明文/v1 信封可解，缺失/null/其他类型/解不开都 `hasApiKey=false`，**不回落到 `LITELLM_API_KEY`**；写入策略按 `system_security.secretEncryptionEnabled` 与密钥状态分支（显式关闭→明文、显式开启无有效 key→400、生产无 key→400、非生产无 key→明文+告警）；密钥、密文、指纹不进日志/响应/审计。
+- **治理保护**：治理启用且 `targetProfileId` 命中时，禁用目标 profile、改动其 apiBase（`normalizeOpenAiApiBase` 比较，含 endpoint 后缀表与 `/v1` 截断）或删除它都会得到治理 400（三条固定文案）；delete 的保护检查在存在性检查之前。
+- **锁**：六条写共享 MySQL 会话锁 `llm-gateway:profiles:write:v1`（`GET_LOCK(name,10)`，专用连接；Go 用不保留空闲连接的独立池、独立短超时 context 释放、释放失败驱逐物理连接；Nest 复用 `withMysqlSessionLock`），获取失败两侧都是 503 `{"statusCode":503,"message":"Internal server error","error":"Service Unavailable"}`。该锁只串行化这六条 profile 写，**不是**覆盖未迁移治理写的跨配置事务。
+- **同批缺陷修复**：GP1（六条写补平台管理员门禁，机器令牌 403 不写外键）、GP2（写路径改为锁内直读 MySQL 权威行，响应从本次结果投影；缓存整体读改写不再丢更新或恢复旧 apiKey）、GP3（`enabled` 严格 boolean 归一化，非 boolean 存量值一律 false）；详见 `docs/refactor/bug-ledger.md` §12。回滚只把 `API_GO_LLM_GATEWAY_PROFILES_MODE` 改回 `legacy`；不改表、不改 Web 入口、不改其他开关默认值。细节见 `docs/refactor/go-llm-gateway-profiles.md`。
+
+
+## 22. 认证要素：MFA 管理与组织 OIDC 配置（Go）
+
+新增开关 `API_GO_AUTH_FACTORS_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值
+启动失败，错误文本 `API_GO_AUTH_FACTORS_MODE must be one of legacy|go`）。`go`
+要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`（`appendAuthRequirements`），
+**不要求 `MONGO_URI`**，不启用 shadow，不启动 worker。`go` 时只接管 7 条精确
+方法规则（Go 包 `internal/authfactors`，处理器注册键 `/api/auth#factors`）：
+
+| 方法 | 路径 | 权限 | 成功码 |
+| --- | --- | --- | --- |
+| GET | `/api/auth/mfa` | `AllowAuthenticated` | 200 |
+| POST | `/api/auth/mfa/enroll` | `AllowAuthenticated` | 201 |
+| POST | `/api/auth/mfa/verify-enroll` | `AllowAuthenticated` | 201 |
+| POST | `/api/auth/mfa/disable` | `AllowAuthenticated` | 201 |
+| POST | `/api/auth/mfa/recovery/rotate` | `AllowAuthenticated` | 201 |
+| GET | `/api/auth/admin/oidc-config` | `settings.manage` | 200 |
+| PUT | `/api/auth/admin/oidc-config` | `settings.manage` | 200 |
+
+- **不迁移**：login、refresh、logout、profile、change-password、machine-tokens；
+  公开 MFA 登录挑战 `POST /api/auth/mfa/verify-login` 与强制注册挑战
+  `POST /api/auth/mfa/enrollment/start`、`POST /api/auth/mfa/enrollment/complete`；
+  整条 OIDC 登录链 `GET /api/auth/sso/oidc/start`、
+  `GET /api/auth/oidc/callback`、`POST /api/auth/sso/handoff/exchange`。上表路径的
+  其他方法、尾斜杠与更长路径也回落 NestJS，Go 不返回自己的 404。
+- **认证与身份**：人类走 JWT 验签 + Redis 撤销名单 + MySQL membership/permission
+  重推导（不信任 JWT claims）；`mtk_` 机器令牌走 SHA-256 查 `MachineAccessToken` +
+  `revokedAt`/`expiresAt`/`Org.isActive`。`GET /api/auth/mfa` 对机器身份返回空状态；
+  四条 MFA 写要求真实人类 `User`，否则 403 `MFA management requires a human user`；
+  OIDC 是租户设置（只要求本组织 `settings.manage`，无全局 `platform_admin` 门禁）。
+  四条 MFA 写共用每用户 MySQL 会话锁 `mfa:<sha256(userId) hex 前 60 字符>`
+  （恰好 64 字符，Nest 与 Go 同名互通），锁被占用 409、锁会话失败 503。
+- **同批修复 AF1–AF5（Nest 与 Go 两侧）**：AF1 重复完成已完成的注册会重发恢复码
+  （`active && !pendingSecret` → 400 `MFA enrollment is not initialized`）；AF2
+  恢复码消费与管理变更分处两个事务（改收显式事务客户端，校验 + 状态变更同事务，
+  声明保持条件 `usedAt IS NULL` 且恰好 1 行）；AF3 MFA 写后 profile 缓存不失效
+  （提交后删 `profile:<userId>:default` 与全部 membership 组织）；AF4 OIDC 更新把
+  预读旧 client secret 写回（无新 secret 时整列从写入省略，写入期原子保留）；AF5
+  机器身份写 MFA 触发 `User(id)` 外键 500（四条写先要求真实人类）。细节见
+  `docs/refactor/go-auth-factors.md` 与 `docs/refactor/bug-ledger.md`。
+- 回滚只把 `API_GO_AUTH_FACTORS_MODE` 改回 `legacy`。本批从不访问身份提供方、从不
+  签发 access/refresh token，不改 GraphQL/SDL/controller/DTO/schema。
+
+
+## 23. LiteLLM 负载均衡配置管理与下发（Go · 4 条）
+
+新增开关 `API_GO_PROXY_LOAD_BALANCING_MODE`（空串/`legacy`/`go`，默认 `legacy`，
+非法值启动失败，错误文本 `API_GO_PROXY_LOAD_BALANCING_MODE must be one of
+legacy|go`）。与 `API_GO_MODEL_ACCESS_SETTINGS_MODE` **相互独立**：两者可各自
+`legacy`/`go`；本开关为 `go` 而模型接入为 `legacy` 时，仍直接读取真实 OpenAI 密钥
+配置下发快照。`go` 只要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`（不要求
+Mongo），由 `internal/modelaccesssettings` 复用同一服务接管 4 条**精确路径**：
+
+| 方法 | 路径 | 认证 | 权限 | 平台门禁 | 成功码 |
+|---|---|---|---|---|---|
+| GET | `/api/system-settings/llm-gateways/proxy-load-balancing` | JWT/`mtk_` | `settings.manage` | 否 | 200 |
+| PUT | `/api/system-settings/llm-gateways/proxy-load-balancing` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/llm-gateways/proxy-load-balancing` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| GET | `/api/internal/litellm/proxy-load-balancing` | `LITELLM_CONFIG_INTERNAL_TOKEN` | 不用 JWT/RBAC | 否 | 200 |
+
+契约要点：
+
+- 精确路径：`/api/system-settings/llm-gateways/:id`（Profile 动态段）不会把
+  `proxy-load-balancing` 当作 Profile ID；`proxy-governance`、未列方法与更长路径、
+  尾斜杠继续回落 `/api/`。
+- 公开响应：`source/enabled/openai/anthropicKeysCount/anthropicKeyFingerprints/
+  routingStrategy/redisHost/redisPort/hasRedisPassword/deploymentRpm/deploymentTpm`；
+  `openai` 是完整的 `OpenAiKeysSettingsPublic`。无行时默认
+  `source=none`、`enabled=false`、`routingStrategy=simple-shuffle`、`redisHost=redis`、
+  `redisPort=6379`、`hasRedisPassword=false`、计数 0、指纹 `[]`、rpm/tpm `null`。
+- 内部快照：`hasStoredConfig/enabled/openaiApiKeys/anthropicApiKeys/routingStrategy/
+  redisHost/redisPort` + 可选的 `redisPassword/deploymentRpm/deploymentTpm`（无值时
+  省略，公开响应中仍为 `null`）。`openaiApiKeys` 复用已有明文读取；明文只在此契约
+  允许的位置出现。
+- PUT 语义：`anthropicApiKeys` 提供即整体替换（`[]` 清空，优先于
+  `clearAnthropicApiKeys`），省略/`null` 保留库中既有条目；`redisPassword` 省略
+  保留、空串/纯空白/`null` 清空、非空 trim 后加密；`deploymentRpm`/`deploymentTpm`
+  省略或 `null` 均存 `null`。
+- SystemSetting key `litellm_proxy_load_balancing`（`isPublic=false`）；Redis
+  `litellm_proxy_load_balancing:settings`（30 秒）；全局 MySQL 会话锁
+  `model-access:proxy-load-balancing:v1`（PUT 与 DELETE 共用，Nest 与 Go 同名字面量）。
+- 审计：`resource=system_settings`；PUT `litellm_proxy_lb_update`（metadata 不含
+  密钥/密码），DELETE `litellm_proxy_lb_reset`（`{ok:true}`）。
+- 同批修 LB1–LB4（Nest 与 Go 两侧）：公开读取对旧加密条目重复解密；PUT 以 30 秒
+  缓存做合并基准；写后经缓存构造响应；显式 `null` 密码调用 `trim` 触发 500。并补齐
+  平台管理员写入门禁（全局配置）。
+
+未迁：`/api/system-settings/llm-gateways` 的 Profile CRUD 与激活路由、
+`proxy-governance`、`rotate-key`、模型测试接口，以及实际请求路由（四种策略仍由
+LiteLLM 执行）。回滚只把 `API_GO_PROXY_LOAD_BALANCING_MODE` 改回 `legacy`；不改表、
+不改 controller/DTO、不改 Web 入口与其他开关默认值。细节见
+`docs/refactor/go-proxy-load-balancing.md`。
