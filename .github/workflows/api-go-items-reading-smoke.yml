@@ -364,9 +364,20 @@ jobs:
                   payload["variables"] = variables
               return call(base_url, "/graphql", "POST", token, payload)
 
-          def gql_doc(base_url, token, query, variables=None):
+          def gql_doc(base_url, token, query, variables=None, label=""):
               status, raw = gql(base_url, token, query, variables)
-              return status, body(raw)
+              doc = body(raw)
+              if isinstance(doc, dict) and doc.get("errors"):
+                  # A GraphQL error that a later assertion would turn into a
+                  # confusing TypeError is reported here with the server-side
+                  # cause from the api-go container log.
+                  print("NOTE graphql errors", label, str(status), json.dumps(doc)[:1200])
+                  try:
+                      print("--- api-go logs (tail) ---")
+                      print(go_logs()[-4000:])
+                  except Exception:
+                      pass
+              return status, doc
 
           def gql_same(token, query, variables=None, label=""):
               ls, lr = gql(nest, token, query, variables)
@@ -740,6 +751,12 @@ jobs:
           INSERT INTO Article (id, orgId, sourceId, url, urlFingerprint, sourceLabel, language, titleGuess, crawlAt, contentHash, markdownRef, version, metadata, createdAt, updatedAt) VALUES
             ('ir-art-a-old-0000000000001', '%s', '%s', 'https://ir.example.com/old', 'fp-old', 'IR Old Only', 'en', 'IR Old Article', DATE_SUB(NOW(3), INTERVAL 3 DAY), 'hash-old', NULL, 1, NULL, NOW(3), NOW(3));
           """ % (ORG_A, SRC_A_OLD))
+
+          # The Prisma schema declares @@fulltext([title, summary]) on
+          # ProcessedArticle but no migration creates it, so the smoke adds the
+          # index the production database has; otherwise every ProcessedArticle
+          # full-text recall fails with MySQL error 1191 in BOTH implementations.
+          sql("ALTER TABLE `ProcessedArticle` ADD FULLTEXT INDEX `ProcessedArticle_title_summary_idx`(`title`, `summary`);")
 
           # ---------- Mongo fixtures ----------
 
