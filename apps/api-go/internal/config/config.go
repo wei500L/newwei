@@ -770,6 +770,40 @@ const (
 	LLMGatewayProfilesModeGo LLMGatewayProfilesMode = "go"
 )
 
+// LLMGatewayOpsMode controls the twelve LiteLLM gateway governance and
+// diagnostics routes under /api/system-settings/llm-gateways
+// (API_GO_LLM_GATEWAY_OPS_MODE). Accepted values are exactly "", "legacy" and
+// "go"; any other value fails startup.
+//
+//	go mode takes over exactly these twelve routes:
+//	  GET/PUT/DELETE /proxy-governance
+//	  POST           /proxy-governance/preflight
+//	  POST           /proxy-governance/rotate-key
+//	  POST           /models-config
+//	  POST           /test-config
+//	  GET            /:id/models
+//	  POST           /:id/test
+//	  GET            /:id/proxy-health
+//	  GET            /:id/proxy-model-info
+//	  POST           /:id/proxy-lb-test
+//
+// The switch is independent of API_GO_LLM_GATEWAY_PROFILES_MODE: governance and
+// diagnostics can run on Go while the seven profile CRUD routes stay on NestJS,
+// and the other way round. Go mode requires the shared auth resources plus
+// MONGO_URI, because every real probe attempt writes one llmrequestlogs row. It
+// does NOT require LITELLM_MASTER_KEY or SYSTEM_SETTINGS_ENCRYPTION_KEY at
+// startup: their absence is a per-request 503 on the governance management calls
+// and a per-read "unreadable" key state.
+type LLMGatewayOpsMode string
+
+const (
+	// LLMGatewayOpsModeLegacy proxies all twelve routes to NestJS (default,
+	// including the empty value).
+	LLMGatewayOpsModeLegacy LLMGatewayOpsMode = "legacy"
+	// LLMGatewayOpsModeGo serves the twelve routes from Go.
+	LLMGatewayOpsModeGo LLMGatewayOpsMode = "go"
+)
+
 // ProxyLoadBalancingMode controls the four LiteLLM proxy load balancing
 // configuration and distribution HTTP routes
 // (API_GO_PROXY_LOAD_BALANCING_MODE).
@@ -1535,6 +1569,15 @@ type Config struct {
 	// LLMGatewayProfilesMode 控制 LLM 网关 profile 的七条配置/激活路由。默认
 	// legacy；go 复用 appendAuthRequirements，不要求 Mongo 或真实模型上游。
 	LLMGatewayProfilesMode LLMGatewayProfilesMode
+	// LLMGatewayOpsMode 控制 LLM 网关治理与真实探测的十二条路由。默认 legacy；
+	// go 复用 appendAuthRequirements 并额外要求 MONGO_URI（每次真实探测都写
+	// llmrequestlogs）。LITELLM_MASTER_KEY 与
+	// SYSTEM_SETTINGS_ENCRYPTION_KEY 是请求时语义，不是启动前置。
+	LLMGatewayOpsMode LLMGatewayOpsMode
+	// LiteLLMMasterKey 是 LITELLM_MASTER_KEY 原文，只用于 LiteLLM 管理接口的
+	// Authorization。与 LITELLM_CONFIG_INTERNAL_TOKEN 用途不同：后者是内部下发
+	// 路由的 bearer 校验。不进入日志。
+	LiteLLMMasterKey string
 	// LLMGateway* 是本批 profile 默认值所需的 LITELLM_* 投影。它们镜像
 	// NestJS env schema 的默认值：LITELLM_MAX_TOKENS 与 LITELLM_RETRY_ATTEMPTS
 	// 因为有 schema 默认值，永远优先于 LITELLM_MAX_OUTPUT_TOKENS /
@@ -2036,6 +2079,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go")
 	}
+	// The governance/diagnostics switch is parsed independently of the profile
+	// switch: either one can be go on its own. The empty value behaves exactly
+	// like legacy.
+	switch strings.TrimSpace(getenv("API_GO_LLM_GATEWAY_OPS_MODE")) {
+	case "", string(LLMGatewayOpsModeLegacy):
+		cfg.LLMGatewayOpsMode = LLMGatewayOpsModeLegacy
+	case string(LLMGatewayOpsModeGo):
+		cfg.LLMGatewayOpsMode = LLMGatewayOpsModeGo
+	default:
+		errs = append(errs, "API_GO_LLM_GATEWAY_OPS_MODE must be one of legacy|go")
+	}
 	// Proxy load balancing accepts the empty string, legacy and go. An empty
 	// value behaves exactly like legacy so an unset deployment keeps the NestJS
 	// path. It is parsed independently of the model access switch.
@@ -2424,6 +2478,9 @@ func Load(getenv func(string) string) (Config, error) {
 			cfg.LiteLLMMaxRetries = value
 		}
 	}
+	// LITELLM_MASTER_KEY 只用于 LiteLLM 管理接口。保留原文，使用时再 trim/去
+	// Bearer，与 NestJS normalizeSecret 一致；空串与纯空白都等于未配置。
+	cfg.LiteLLMMasterKey = getenv("LITELLM_MASTER_KEY")
 	// 本批 profile 默认值的 LITELLM_* 投影（镜像 NestJS env schema）。
 	cfg.LLMGatewayModel = stringDefault(getenv("LITELLM_MODEL"), "openai/gpt-4o-mini")
 	cfg.LLMGatewayTemperature = floatDefault(getenv("LITELLM_TEMPERATURE"), 0.2)
@@ -2838,6 +2895,17 @@ func Load(getenv func(string) string) (Config, error) {
 
 	if cfg.LLMGatewayProfilesMode == LLMGatewayProfilesModeGo {
 		appendAuthRequirements(&errs, "API_GO_LLM_GATEWAY_PROFILES_MODE", cfg)
+	}
+	// The governance/diagnostics takeover additionally writes the LLM request
+	// log through the shared Mongo client, so MONGO_URI is required. Neither the
+	// LiteLLM master key nor the settings-encryption key is a startup
+	// requirement: a missing master key is a 503 on the management calls and a
+	// missing encryption key makes the managed key "unreadable" on read.
+	if cfg.LLMGatewayOpsMode == LLMGatewayOpsModeGo {
+		appendAuthRequirements(&errs, "API_GO_LLM_GATEWAY_OPS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_LLM_GATEWAY_OPS_MODE=go")
+		}
 	}
 	// The proxy load balancing takeover has exactly the same infrastructure
 	// footprint: the litellm_proxy_load_balancing row lives in MySQL, its 30

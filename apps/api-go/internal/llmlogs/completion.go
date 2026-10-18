@@ -28,6 +28,7 @@ const (
 	maxFeatureTokenLength       = 64
 	maxMetadataStringLength     = 500
 	maxMetadataObjectKeys       = 40
+	maxMetadataArrayItems       = 40
 	maxMetadataSerializedLength = 8192
 )
 
@@ -263,13 +264,24 @@ func (s *Service) filterCompletionMetadata(ctx context.Context, metadata *Comple
 	if s == nil || metadata == nil {
 		return nil
 	}
+	return s.filterMetadataEntries(ctx, metadata.entries())
+}
+
+// filterMetadataEntries is the shared allowlist/prefix/length filter every typed
+// log writer (brief completion and gateway probe) runs before persistence. The
+// policy is global, so a probe must obey the same filtering as a brief request
+// instead of bypassing it.
+func (s *Service) filterMetadataEntries(ctx context.Context, entries []metadataEntry) *bson.D {
+	if s == nil || len(entries) == 0 {
+		return nil
+	}
 	policy := s.MetadataPolicy(ctx)
 	allowed := make(map[string]struct{}, len(policy.AllowedTopLevelKeys))
 	for _, key := range policy.AllowedTopLevelKeys {
 		allowed[key] = struct{}{}
 	}
 	kept := bson.D{}
-	for _, entry := range metadata.entries() {
+	for _, entry := range entries {
 		key := normalizeMetadataKey(entry.Key)
 		if key == "" {
 			continue
@@ -307,26 +319,28 @@ func metadataKeyAllowed(key string, allowed map[string]struct{}, prefixes []stri
 	return false
 }
 
-// completionMetadataEntry 是过滤前的一个具名 metadata 叶子。
-type completionMetadataEntry struct {
+// metadataEntry is one named metadata leaf before filtering. Exactly one of
+// Text/Number/List is set; the slice order is the write order.
+type metadataEntry struct {
 	Key    string
 	Text   *string
 	Number *float64
+	List   []string
 }
 
-// entries 按模型请求 metadata 的字段顺序返回，保证写入顺序稳定。
-func (m CompletionMetadata) entries() []completionMetadataEntry {
+// entries returns the model-request metadata fields in a stable write order.
+func (m CompletionMetadata) entries() []metadataEntry {
 	feature := m.Feature
 	title := m.EventTitle
 	sources := float64(m.Sources)
-	return []completionMetadataEntry{
+	return []metadataEntry{
 		{Key: "feature", Text: &feature},
 		{Key: "eventTitle", Text: &title},
 		{Key: "sources", Number: &sources},
 	}
 }
 
-func (e completionMetadataEntry) bsonValue() (any, bool) {
+func (e metadataEntry) bsonValue() (any, bool) {
 	if e.Text != nil {
 		text := *e.Text
 		if jsLength(text) > maxMetadataStringLength {
@@ -340,6 +354,19 @@ func (e completionMetadataEntry) bsonValue() (any, bool) {
 			return nil, false
 		}
 		return number, true
+	}
+	if e.List != nil {
+		items := bson.A{}
+		for _, item := range e.List {
+			if jsLength(item) > maxMetadataStringLength {
+				item = truncateUTF16(item, maxMetadataStringLength) + "...[truncated]"
+			}
+			items = append(items, item)
+			if len(items) >= maxMetadataArrayItems {
+				break
+			}
+		}
+		return items, true
 	}
 	return nil, false
 }

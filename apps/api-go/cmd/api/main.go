@@ -647,6 +647,12 @@ func run() error {
 	if cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo {
 		llmGatewayProfilesMode = string(legacyproxy.ModeGo)
 	}
+	// The governance/diagnostics group is an independent switch: it can be go
+	// while the seven profile routes stay on NestJS, and vice versa.
+	llmGatewayOpsMode := ""
+	if cfg.LLMGatewayOpsMode == config.LLMGatewayOpsModeGo {
+		llmGatewayOpsMode = string(legacyproxy.ModeGo)
+	}
 	proxyLoadBalancingMode := ""
 	if cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo {
 		proxyLoadBalancingMode = string(legacyproxy.ModeGo)
@@ -736,6 +742,10 @@ func run() error {
 	rules = legacyproxy.WithItemsReading(rules, itemsReadingMode)
 	rules = legacyproxy.WithModelAccessSettings(rules, modelAccessSettingsMode)
 	rules = legacyproxy.WithLLMGatewayProfiles(rules, llmGatewayProfilesMode)
+	// The governance/diagnostics rules are exact/one-segment rules whose prefixes
+	// are longer than the profile dynamic rule, so they win naturally when both
+	// switches are go and are ignored entirely when this switch is legacy.
+	rules = legacyproxy.WithLLMGatewayOps(rules, llmGatewayOpsMode)
 	// The proxy load balancing group is independent of the model access group:
 	// only its four routes are registered, and its exact rules win over the
 	// llm-gateways :id profile rule because they are longer prefixes.
@@ -1326,6 +1336,11 @@ func run() error {
 		return err
 	}
 	if err := wireLLMGatewayProfiles(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	// The governance/diagnostics takeover reuses the shared Mongo client for the
+	// LLM request log rows of every real probe attempt.
+	if err := wireLLMGatewayOps(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
 	if err := wireInfrastructureSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
