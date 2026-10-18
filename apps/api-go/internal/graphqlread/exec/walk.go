@@ -170,6 +170,21 @@ func buildFieldSet(schema *ast.Schema, parent *ast.Definition, set ast.Selection
 	return out
 }
 
+// rootFieldSelection builds the selection metadata of one root field from its
+// merged selection set, keyed by the field's return type. The resolver sees the
+// fields *inside* its own root field, which is what drives selective nested
+// loading.
+func (e *Engine) rootFieldSelection(parent *ast.Definition, field collectedField, doc *ast.QueryDocument, vars map[string]any) *contract.FieldSet {
+	if parent == nil {
+		return contract.NewFieldSet()
+	}
+	fieldDef := parent.Fields.ForName(field.Name)
+	if fieldDef == nil || fieldDef.Type == nil {
+		return contract.NewFieldSet()
+	}
+	return buildFieldSet(e.schema, e.schema.Types[fieldDef.Type.Name()], field.Selections, doc, vars)
+}
+
 func collectFields(schema *ast.Schema, parent *ast.Definition, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any, stack map[string]bool) []collectedField {
 	ordered := make([]collectedField, 0)
 	index := map[string]int{}

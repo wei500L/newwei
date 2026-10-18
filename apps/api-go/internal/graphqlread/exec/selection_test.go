@@ -6,6 +6,7 @@ import (
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
+	"github.com/vektah/gqlparser/v2/validator"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/schema"
@@ -38,6 +39,11 @@ func TestBuildFieldSetResolvesAliasesFragmentsAndDirectives(t *testing.T) {
 	doc, err := parser.ParseQuery(&ast.Source{Name: "query", Input: source})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Validation annotates the AST with the directive and field definitions the
+	// executor relies on, so @skip/@include can be evaluated.
+	if errors := validator.Validate(loaded, doc); len(errors) > 0 {
+		t.Fatalf("validation errors: %v", errors)
 	}
 	op := doc.Operations[0]
 	selection := buildFieldSet(loaded, loaded.Query, op.SelectionSet, doc, map[string]any{"withRaw": false})
