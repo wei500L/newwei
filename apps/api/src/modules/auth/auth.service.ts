@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  ConflictException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcrypt";
@@ -65,6 +66,25 @@ export interface AuthenticatedUser {
   accessTokenId?: string;
   accessTokenExpiresAt?: number;
 }
+
+/**
+ * AS3: runtime shape of the PATCH /auth/profile body after the global
+ * ValidationPipe has run. `UpdateProfileDto` marks every field `@IsOptional()`,
+ * and class-validator short-circuits an explicit JSON `null`, so the service can
+ * legitimately receive `null` even though the OpenAPI contract says `string`.
+ * The nullable type makes that runtime fact explicit instead of hiding it behind
+ * a `!== undefined` check and an unsafe cast.
+ *
+ * `undefined` still means "leave the field untouched"; `null` is rejected with
+ * the same empty-field 400 as a blank string.
+ *
+ * The type is derived from the DTO instead of re-declared so the DTO stays the
+ * single source of truth for the field set while the nullable runtime fact is
+ * expressed explicitly. The DTO itself is untouched.
+ */
+export type UpdateProfileInput = {
+  [K in keyof UpdateProfileDto]: UpdateProfileDto[K] | null;
+};
 
 export interface AuthenticatedLoginResult {
   user: AuthenticatedUser;
@@ -1342,7 +1362,7 @@ export class AuthService {
   async updateProfile(
     userId: string,
     orgId: string | undefined,
-    input: UpdateProfileDto,
+    input: UpdateProfileInput,
   ) {
     const updates: {
       firstName?: string;
@@ -1350,7 +1370,25 @@ export class AuthService {
       avatarUrl?: string | null;
     } = {};
 
+    // AS3: a machine access token authenticates as `machine:<tokenId>`, which is
+    // not a User row. Confirm the real user before any validation/update so the
+    // request fails with the same 401 the rest of the auth chain uses instead of
+    // reaching a Prisma update for a missing primary key (500). This also keeps
+    // the empty-body no-op path from failing with a membership error.
+    const existingUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!existingUser) {
+      throw new UnauthorizedException("Invalid access token");
+    }
+
+    // AS3: an explicit JSON null survives `@IsOptional()` and must not reach
+    // `.trim()` (TypeError -> 500). Map it onto the same empty-field 400.
     if (input.firstName !== undefined) {
+      if (input.firstName === null) {
+        throw new BadRequestException("First name cannot be empty");
+      }
       const trimmed = input.firstName.trim();
       if (!trimmed) {
         throw new BadRequestException("First name cannot be empty");
@@ -1359,6 +1397,9 @@ export class AuthService {
     }
 
     if (input.lastName !== undefined) {
+      if (input.lastName === null) {
+        throw new BadRequestException("Last name cannot be empty");
+      }
       const trimmed = input.lastName.trim();
       if (!trimmed) {
         throw new BadRequestException("Last name cannot be empty");
@@ -1367,6 +1408,9 @@ export class AuthService {
     }
 
     if (input.avatarUrl !== undefined) {
+      if (input.avatarUrl === null) {
+        throw new BadRequestException("Avatar URL cannot be empty");
+      }
       const trimmed = input.avatarUrl.trim();
       if (!trimmed) {
         throw new BadRequestException("Avatar URL cannot be empty");
@@ -1428,16 +1472,27 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     const now = new Date();
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: userId },
+    // AS2: compare-and-swap on the exact passwordHash that was verified above.
+    // Two concurrent requests can both pass `bcrypt.compare` against the same
+    // old hash; a plain `where: { id }` update would then let the slower request
+    // silently overwrite the winner. The conditional update makes the loser
+    // affect zero rows and abort with 409 (the interactive transaction rolls the
+    // refresh-token revoke back as well).
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: { id: userId, passwordHash: user.passwordHash },
         data: { passwordHash },
-      }),
-      this.prisma.refreshToken.updateMany({
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException(
+          "Password changed by another request; retry with the current password",
+        );
+      }
+      await tx.refreshToken.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: now },
-      }),
-    ]);
+      });
+    });
 
     await this.invalidateProfileCache(userId, orgId);
   }

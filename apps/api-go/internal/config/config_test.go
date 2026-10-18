@@ -2633,6 +2633,99 @@ func TestCrawlFrontierRunsModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
+func TestAccountSecurityModeDefaultsToLegacy(t *testing.T) {
+	// Unset and the empty string both mean legacy: the default deployment keeps
+	// every request on the NestJS proxy.
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AccountSecurityMode != AccountSecurityModeLegacy {
+		t.Fatalf("mode = %s", cfg.AccountSecurityMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_ACCOUNT_SECURITY_MODE" {
+			return ""
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AccountSecurityMode != AccountSecurityModeLegacy {
+		t.Fatalf("empty mode = %s", cfg.AccountSecurityMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_ACCOUNT_SECURITY_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AccountSecurityMode != AccountSecurityModeLegacy {
+		t.Fatalf("legacy mode = %s", cfg.AccountSecurityMode)
+	}
+}
+
+func TestAccountSecurityModeRejectsInvalid(t *testing.T) {
+	// Only legacy and go are accepted; shadow/canary and any typo fail startup
+	// with the exact error text.
+	for _, invalid := range []string{"shadow", "canary", "Go", "GO "} {
+		_, err := Load(func(key string) string {
+			if key == "API_GO_ACCOUNT_SECURITY_MODE" {
+				return invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "API_GO_ACCOUNT_SECURITY_MODE must be one of legacy|go") {
+			t.Fatalf("invalid mode %q: %v", invalid, err)
+		}
+	}
+}
+
+func TestAccountSecurityModeGoRequiresCredentials(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_ACCOUNT_SECURITY_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_ACCOUNT_SECURITY_MODE=go") {
+		t.Fatalf("missing redis: %v", err)
+	}
+
+	// Mongo is deliberately not a startup dependency of this unit: it reads and
+	// writes MySQL and Redis only.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_ACCOUNT_SECURITY_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("go mode must not require Mongo: %v", err)
+	}
+	if cfg.AccountSecurityMode != AccountSecurityModeGo {
+		t.Fatalf("mode = %s", cfg.AccountSecurityMode)
+	}
+}
+
 func TestItemsReadingModeDefaultsToLegacy(t *testing.T) {
 	cfg, err := Load(func(string) string { return "" })
 	if err != nil {

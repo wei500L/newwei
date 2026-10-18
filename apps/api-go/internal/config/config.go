@@ -453,6 +453,35 @@ const (
 	InfrastructureSettingsModeGo InfrastructureSettingsMode = "go"
 )
 
+// AccountSecurityMode controls the eight authenticated account, session and
+// machine-token HTTP routes migrated by this unit
+// (API_GO_ACCOUNT_SECURITY_MODE): GET /api/auth/me, PATCH /api/auth/profile,
+// POST /api/auth/change-password, POST /api/auth/logout,
+// POST /api/auth/machine-tokens, GET /api/auth/machine-tokens,
+// DELETE /api/auth/machine-tokens/:tokenId and
+// POST /api/auth/machine-tokens/:tokenId/rotate.
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. go mode requires JWT_SECRET,
+// DATABASE_URL and REDIS_HOST (the shared appendAuthRequirements check); it
+// never requires MONGO_URI because this unit reads and writes MySQL and Redis
+// only, never enables shadow or canary traffic and never starts a worker.
+type AccountSecurityMode string
+
+const (
+	// AccountSecurityModeLegacy proxies all eight routes to NestJS (default,
+	// including the empty value). Rolling back only means setting
+	// API_GO_ACCOUNT_SECURITY_MODE back to legacy.
+	AccountSecurityModeLegacy AccountSecurityMode = "legacy"
+	// AccountSecurityModeGo serves the eight routes from Go with the same
+	// authentication chain as NestJS (human JWT verification, Redis access
+	// blacklist, MySQL membership re-derivation) plus the mtk_ machine-token
+	// path, without changing the JWT format, the refresh rotation protocol or
+	// the MFA policy.
+	AccountSecurityModeGo AccountSecurityMode = "go"
+)
+
 // RuntimeSettingsMode controls the eighteen platform runtime and governance
 // settings HTTP routes under /api/system-settings (API_GO_RUNTIME_SETTINGS_MODE).
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
@@ -841,6 +870,11 @@ type Config struct {
 	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
 	// it does not require Mongo and does not start any worker or scheduled job.
 	InfrastructureSettingsMode InfrastructureSettingsMode
+	// AccountSecurityMode controls the eight authenticated account, session and
+	// machine-token routes (see AccountSecurityMode). Default legacy. Mode go
+	// requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
+	// Mongo and does not start any worker or scheduled job.
+	AccountSecurityMode AccountSecurityMode
 
 	// The VECTOR_* / S3_* values below are the environment defaults the
 	// infrastructure settings routes fall back to when a SystemSetting row is
@@ -1407,6 +1441,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_ACCOUNT_SECURITY_MODE")) {
+	case "", string(AccountSecurityModeLegacy):
+		cfg.AccountSecurityMode = AccountSecurityModeLegacy
+	case string(AccountSecurityModeGo):
+		cfg.AccountSecurityMode = AccountSecurityModeGo
+	default:
+		errs = append(errs, "API_GO_ACCOUNT_SECURITY_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLReadMode = "legacy"
@@ -1961,6 +2003,13 @@ func Load(getenv func(string) string) (Config, error) {
 	// contracts.
 	if cfg.InfrastructureSettingsMode == InfrastructureSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE", cfg)
+	}
+	// The account/session/machine-token takeover needs JWT verification, MySQL
+	// and Redis only. It reads no Mongo collection, starts no worker and does
+	// not add a second startup check: it reuses appendAuthRequirements exactly
+	// like the other takeover switches.
+	if cfg.AccountSecurityMode == AccountSecurityModeGo {
+		appendAuthRequirements(&errs, "API_GO_ACCOUNT_SECURITY_MODE", cfg)
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)

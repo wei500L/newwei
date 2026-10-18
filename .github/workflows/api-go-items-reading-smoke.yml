@@ -154,12 +154,13 @@ jobs:
           BASE_DAY = now_utc()
 
           def mts(offset_days):
-              # Fixtures are placed `offset_days` in the past so the RSS window
-              # assertions ("2.5-day-old source") describe real ages.
-              return (BASE_DAY - datetime.timedelta(days=offset_days)).strftime("%Y-%m-%d %H:%M:%S.000")
+              # Fixture offsets are relative days from BASE_DAY (now): a larger
+              # offset is a newer document, which is what the processed-priority
+              # and sortAt/createdAt expectations assume.
+              return (BASE_DAY + datetime.timedelta(days=offset_days)).strftime("%Y-%m-%d %H:%M:%S.000")
 
           def its(offset_days):
-              return (BASE_DAY - datetime.timedelta(days=offset_days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+              return (BASE_DAY + datetime.timedelta(days=offset_days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
           # ---------- host process helpers ----------
 
@@ -592,6 +593,10 @@ jobs:
           SRC_A_ZERO = "ir-src-a-zero-000000000003"
           SRC_A_NONRSS = "ir-src-a-nonrss-0000000004"
           SRC_A_NORMAL = "ir-src-a-normal-0000000005"
+          # A source whose single Article is three days old, used to prove the
+          # rssSources window actually filters by age (every other fixture is
+          # newer than any window).
+          SRC_A_OLD = "ir-src-a-old-0000000000006"
 
           ARTICLE_IR3 = "ir-art-a-ir3-0000000000001"
           ARTICLE_IR3_DUP = "ir-art-a-ir3dup-0000000002"
@@ -689,6 +694,7 @@ jobs:
               (SRC_A_BOTH, "IR Both Sides", "https://ir.example.com/feed-both", "rss", None),
               (SRC_A_ZERO, "IR Zero Window", "https://ir.example.com/feed-zero", "rss", None),
               (SRC_A_NONRSS, "IR Non RSS", "https://ir.example.com/site", "web", None),
+              (SRC_A_OLD, "IR Old Source", "https://ir.example.com/feed-old", "rss", None),
           ]
           source_rows = []
           for source_id, name, url, mode, _ in news_sources:
@@ -727,6 +733,13 @@ jobs:
               ORG_A, NEWS_EVENT_A, PA_IR3, PI_EVENT_DIRECT,
               ORG_A, NEWS_EVENT_A, PA_EVENT_FB,
           ))
+
+          # A three-day-old Article for SRC_A_OLD: it must appear in the default
+          # 7-day window and disappear from the 1-day window.
+          sql("""
+          INSERT INTO Article (id, orgId, sourceId, url, urlFingerprint, sourceLabel, language, titleGuess, crawlAt, contentHash, markdownRef, version, metadata, createdAt, updatedAt) VALUES
+            ('ir-art-a-old-0000000000001', '%s', '%s', 'https://ir.example.com/old', 'fp-old', 'IR Old Only', 'en', 'IR Old Article', DATE_SUB(NOW(3), INTERVAL 3 DAY), 'hash-old', NULL, 1, NULL, NOW(3), NOW(3));
+          """ % (ORG_A, SRC_A_OLD))
 
           # ---------- Mongo fixtures ----------
 
@@ -1173,10 +1186,13 @@ jobs:
               fail("fresh org list is not empty: " + repr(empty))
 
           phase("B REST ordering and id tiebreak")
-          active = [(row[0], row[3], row[4]) for row in item_metas if row[1] == ORG_A and row[3] != "duplicate"]
+          # item_metas rows are (id, org, ref, status, createdOffset, sortOffset);
+          # sortAt is built from sortOffset and createdAt from createdOffset.
+          active = [(row[0], row[3], row[4], row[5]) for row in item_metas
+                    if row[1] == ORG_A and row[3] != "duplicate"]
           by_id_desc = sorted(active, key=lambda row: row[0], reverse=True)
           expected_created = [row[0] for row in sorted(by_id_desc, key=lambda row: -row[2])]
-          expected_published = [row[0] for row in sorted(by_id_desc, key=lambda row: -row[1])]
+          expected_published = [row[0] for row in sorted(by_id_desc, key=lambda row: -row[3])]
           status, doc = expect_status(go, "/api/items?pageSize=50&orderBy=CREATED_DESC", 200, a_admin, "CREATED_DESC")
           got_created = [row["id"] for row in doc["items"]]
           if got_created != expected_created:
@@ -1432,6 +1448,8 @@ jobs:
               fail("non-rss source was included: " + repr(ids))
           if SRC_A_ZERO in ids:
               fail("default onlyWithItems must drop zero-count sources: " + repr(ids))
+          if SRC_A_OLD not in ids:
+              fail("the default 7-day window must include the 3-day-old source: " + repr(ids))
           for required in (SRC_A_ARTICLES, SRC_A_PROCESSED, SRC_A_BOTH):
               if required not in ids:
                   fail("rssSources missing " + required + ": " + repr(ids))
@@ -1448,8 +1466,8 @@ jobs:
           window_zero = [entry["id"] for entry in doc["data"]["rssSources"]]
           if window_zero != window_one:
               fail("windowDays=0 must clamp to 1: " + repr(window_zero) + " vs " + repr(window_one))
-          if SRC_A_BOTH in window_one:
-              fail("windowDays=1 must exclude the 2.5-day-old source: " + repr(window_one))
+          if SRC_A_OLD in window_one:
+              fail("windowDays=1 must exclude the source whose only item is 3 days old: " + repr(window_one))
           status, doc = gql_doc(go, a_admin, RSS_SOURCES_QUERY, {"windowDays": 30})
           window_thirty = [entry["id"] for entry in doc["data"]["rssSources"]]
           status, doc = gql_doc(go, a_admin, RSS_SOURCES_QUERY, {"windowDays": 99})
