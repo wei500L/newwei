@@ -78,7 +78,7 @@ export class UpdateLlmGatewayProxyLoadBalancingSettingsDto {
   })
   @IsOptional()
   @IsString()
-  redisPassword?: string;
+  redisPassword?: string | null;
 
   @ApiPropertyOptional({
     description:

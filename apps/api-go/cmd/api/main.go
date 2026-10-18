@@ -636,6 +636,10 @@ func run() error {
 	if cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo {
 		llmGatewayProfilesMode = string(legacyproxy.ModeGo)
 	}
+	proxyLoadBalancingMode := ""
+	if cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo {
+		proxyLoadBalancingMode = string(legacyproxy.ModeGo)
+	}
 	infrastructureSettingsMode := ""
 	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
 		infrastructureSettingsMode = string(legacyproxy.ModeGo)
@@ -706,6 +710,10 @@ func run() error {
 	rules = legacyproxy.WithItemsReading(rules, itemsReadingMode)
 	rules = legacyproxy.WithModelAccessSettings(rules, modelAccessSettingsMode)
 	rules = legacyproxy.WithLLMGatewayProfiles(rules, llmGatewayProfilesMode)
+	// The proxy load balancing group is independent of the model access group:
+	// only its four routes are registered, and its exact rules win over the
+	// llm-gateways :id profile rule because they are longer prefixes.
+	rules = legacyproxy.WithProxyLoadBalancing(rules, proxyLoadBalancingMode)
 	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
 	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
 	rules = legacyproxy.WithAuthFactors(rules, authFactorsMode)
@@ -778,6 +786,7 @@ func run() error {
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
 				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
 				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
+				cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
@@ -856,13 +865,15 @@ func run() error {
 	situationSignalsGo := cfg.SituationSignalsMode == config.SituationSignalsModeGo
 	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
 	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
+	proxyLoadBalancingGo := cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo
 	exceptionIngestGo := cfg.ExceptionIngestMode == config.ExceptionIngestModeGo
 	// 平行批次追加的模式全部保留（#53 frontier、#54 platform governance、#55
 	// infrastructure、#56 model access、#57 situation monitor signals、#58 items
 	// reading、#59 llm gateway profiles、#60 account security、#61 data runtime、
 	// #62 auth factors、#63 graphql org access write、#64 exception ingest、#65
-	// search reindex）。任一变量改成本批所需值都不影响其他批次接线。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || graphqlOrgAccessWriteGo || searchReindexGo
+	// search reindex、#66 proxy load balancing）。任一变量改成本批所需值都不影响
+	// 其他批次接线。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || graphqlOrgAccessWriteGo || searchReindexGo || proxyLoadBalancingGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1244,6 +1255,12 @@ func run() error {
 	}
 
 	if err := wireSituationSignals(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
+		return err
+	}
+
+	// The proxy load balancing takeover reuses the same authenticated stack and
+	// registers only its four routes; the two switches stay independent.
+	if err := wireProxyLoadBalancing(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 

@@ -664,8 +664,9 @@ const (
 //	  GET    /api/internal/litellm/openai-keys
 //	  POST   /api/internal/litellm/openai-keys/applied
 //
-// /api/internal/litellm/proxy-load-balancing, /api/system-settings/llm-gateways and
-// every other /api/system-settings route keep falling back to NestJS. go mode
+// /api/system-settings/llm-gateways and every other /api/system-settings route
+// keep falling back to NestJS; the load balancing paths have their own
+// independent switch (ProxyLoadBalancingMode). go mode
 // requires JWT_SECRET, DATABASE_URL and REDIS_HOST only: it reads no Mongo
 // collection, calls no model upstream and starts no worker. The accepted values
 // are exactly "", "legacy" and "go"; any other value fails startup instead of
@@ -715,6 +716,38 @@ const (
 	// authentication chain as NestJS plus the platform-admin gate. It never
 	// enables shadow or canary traffic.
 	LLMGatewayProfilesModeGo LLMGatewayProfilesMode = "go"
+)
+
+// ProxyLoadBalancingMode controls the four LiteLLM proxy load balancing
+// configuration and distribution HTTP routes
+// (API_GO_PROXY_LOAD_BALANCING_MODE).
+//
+//	go mode takes over exactly these four routes:
+//	  GET    /api/system-settings/llm-gateways/proxy-load-balancing
+//	  PUT    /api/system-settings/llm-gateways/proxy-load-balancing
+//	  DELETE /api/system-settings/llm-gateways/proxy-load-balancing
+//	  GET    /api/internal/litellm/proxy-load-balancing
+//
+// The switch is independent of API_GO_MODEL_ACCESS_SETTINGS_MODE: the Go load
+// balancing service reuses the existing OpenAI key reader, but it neither
+// requires nor enables the model access takeover. Go mode requires JWT_SECRET,
+// DATABASE_URL and REDIS_HOST only: it reads no Mongo collection, calls no model
+// upstream and starts no worker. The accepted values are exactly "", "legacy"
+// and "go"; any other value fails startup instead of silently degrading. The
+// default is legacy.
+type ProxyLoadBalancingMode string
+
+const (
+	// ProxyLoadBalancingModeLegacy proxies all four routes to NestJS (default,
+	// including the empty value). Rollback only changes this variable back to
+	// legacy.
+	ProxyLoadBalancingModeLegacy ProxyLoadBalancingMode = "legacy"
+	// ProxyLoadBalancingModeGo serves all four routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens, the platform admin gate
+	// on the two management writes, and the LITELLM_CONFIG_INTERNAL_TOKEN guard
+	// on the internal snapshot route. It never enables shadow or canary traffic.
+	ProxyLoadBalancingModeGo ProxyLoadBalancingMode = "go"
 )
 
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
@@ -1302,6 +1335,13 @@ type Config struct {
 	// SYSTEM_SETTINGS_ENCRYPTION_KEY keep their runtime semantics and are never
 	// startup requirements.
 	ModelAccessSettingsMode ModelAccessSettingsMode
+	// ProxyLoadBalancingMode controls the four LiteLLM proxy load balancing
+	// routes (see ProxyLoadBalancingMode). Default legacy. Mode go requires
+	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
+	// starts no worker or scheduled job. It is independent of
+	// ModelAccessSettingsMode: the Go service reuses the existing OpenAI key
+	// reader without turning the model access takeover on.
+	ProxyLoadBalancingMode ProxyLoadBalancingMode
 	// 模型接入设置本批消费的原始环境值：config 只做读取与保存，
 	// envBoolean / Number 的 JavaScript 语义解析放在
 	// internal/modelaccesssettings（NewConfigFromEnv）里，且只在 go 模式求值，
@@ -1714,6 +1754,17 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.LLMGatewayProfilesMode = LLMGatewayProfilesModeGo
 	default:
 		errs = append(errs, "API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go")
+	}
+	// Proxy load balancing accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy so an unset deployment keeps the NestJS
+	// path. It is parsed independently of the model access switch.
+	switch strings.TrimSpace(getenv("API_GO_PROXY_LOAD_BALANCING_MODE")) {
+	case "", string(ProxyLoadBalancingModeLegacy):
+		cfg.ProxyLoadBalancingMode = ProxyLoadBalancingModeLegacy
+	case string(ProxyLoadBalancingModeGo):
+		cfg.ProxyLoadBalancingMode = ProxyLoadBalancingModeGo
+	default:
+		errs = append(errs, "API_GO_PROXY_LOAD_BALANCING_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_INFRASTRUCTURE_SETTINGS_MODE")) {
 	case "", string(InfrastructureSettingsModeLegacy):
@@ -2346,6 +2397,15 @@ func Load(getenv func(string) string) (Config, error) {
 
 	if cfg.LLMGatewayProfilesMode == LLMGatewayProfilesModeGo {
 		appendAuthRequirements(&errs, "API_GO_LLM_GATEWAY_PROFILES_MODE", cfg)
+	}
+	// The proxy load balancing takeover has exactly the same infrastructure
+	// footprint: the litellm_proxy_load_balancing row lives in MySQL, its 30
+	// second cache envelope lives in Redis, and it re-reads the existing
+	// openai_keys row instead of calling NestJS. LITELLM_CONFIG_INTERNAL_TOKEN
+	// and SYSTEM_SETTINGS_ENCRYPTION_KEY keep their runtime semantics and are
+	// never startup requirements.
+	if cfg.ProxyLoadBalancingMode == ProxyLoadBalancingModeGo {
+		appendAuthRequirements(&errs, "API_GO_PROXY_LOAD_BALANCING_MODE", cfg)
 	}
 	// The infrastructure settings takeover needs JWT verification, MySQL and
 	// Redis only. It reads no Mongo collection, starts no worker and does not
