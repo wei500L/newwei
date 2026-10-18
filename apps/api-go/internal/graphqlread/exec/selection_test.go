@@ -25,7 +25,7 @@ func TestBuildFieldSetResolvesAliasesFragmentsAndDirectives(t *testing.T) {
 		query ItemSelection($withRaw: Boolean!) {
 			item(id: "x") {
 				...ItemFields
-				raw @include(if: $withRaw)
+				raw @include(if: $withRaw) { id }
 				processed {
 					id
 					resultJson @skip(if: true)
