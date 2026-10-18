@@ -1334,8 +1334,10 @@ jobs:
           # ===================== phase 3: nested rewrite / rollback =====================
 
           print("==== phase 3: nest stopped ====")
-          # 停 Nest 前重新登录，令牌寿命覆盖后续阶段。
+          # 停 Nest 前重新登录：alive 供后续阶段使用，revoked_token 专门用于
+          # 停机后的撤销断言（停机后无法再登录，登录会 ECONNREFUSED）。
           alive = login(PLATFORM_EMAIL)
+          revoked_token = login(PLATFORM_EMAIL)
           stop_nest()
           stopped = False
           for _ in range(30):
@@ -1417,8 +1419,8 @@ jobs:
           after_audit = int(scalar("SELECT COUNT(*) FROM AuditLog"))
           if after_audit <= before_audit:
               fail(f"audit rows did not grow: {before_audit} -> {after_audit}")
-          # 撤回令牌 → 401。
-          revoked = login(PLATFORM_EMAIL)
+          # 撤回令牌 → 401（用停机前预取的令牌，停 Nest 后无法再登录）。
+          revoked = revoked_token
           redis("SET", "access-token:blacklist:" + jwt_jti(revoked), "true", "EX", "600")
           status, raw = call(GO_URL, REALTIME_PATH, "GET", revoked)
           if status != 401 or message_of(raw) != "Access token revoked":
