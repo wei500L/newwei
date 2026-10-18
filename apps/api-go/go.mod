@@ -15,6 +15,7 @@ require (
 	go.mongodb.org/mongo-driver/v2 v2.9.2
 	// 账户安全批次：Node bcrypt@5.1.1 兼容的密码校验与生成（仅用 bcrypt 子包）。
 	golang.org/x/crypto v0.53.0
+	golang.org/x/net v0.55.0
 	// Go-批4A：公开故事 slug 的 NFKD/NFC，对齐 JS String.normalize。
 	golang.org/x/text v0.39.0
 )
