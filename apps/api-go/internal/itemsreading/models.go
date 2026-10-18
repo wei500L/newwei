@@ -602,7 +602,11 @@ type ReadModelMetaDoc struct {
 
 // ReadModelDocument is one Mongo itemreadmodels document.
 type ReadModelDocument struct {
-	MongoID             string                 `bson:"_id,omitempty" json:"_id,omitempty"`
+	// MongoID is a pointer so the read-model upsert omits it entirely: the
+	// driver's omitempty never drops a fixed-size array, and writing an
+	// all-zero ObjectId would either modify the immutable _id of an existing
+	// document or collide on insert.
+	MongoID             *bson.ObjectID         `bson:"_id,omitempty" json:"_id,omitempty"`
 	OrgID               string                 `bson:"orgId" json:"orgId"`
 	ItemMetaID          string                 `bson:"itemMetaId" json:"itemMetaId"`
 	Meta                ReadModelMetaDoc       `bson:"meta" json:"meta"`
