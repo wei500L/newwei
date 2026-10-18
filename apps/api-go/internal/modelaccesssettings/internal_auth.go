@@ -21,16 +21,21 @@ const (
 	internalRouteGetKeys
 	// internalRouteReportApplied is POST /api/internal/litellm/openai-keys/applied.
 	internalRouteReportApplied
+	// internalRouteProxyLoadBalancing is
+	// GET /api/internal/litellm/proxy-load-balancing.
+	internalRouteProxyLoadBalancing
 )
 
-// internalRouteForPath classifies the two internal paths by exact equality, so the
-// neighbouring proxy-load-balancing endpoint can never be captured.
+// internalRouteForPath classifies the internal paths by exact equality, so a
+// neighbouring route can never be captured.
 func internalRouteForPath(path string) internalRoute {
 	switch path {
 	case pathInternalOpenAiKeys:
 		return internalRouteGetKeys
 	case pathInternalOpenAiKeysApplied:
 		return internalRouteReportApplied
+	case pathInternalProxyLoadBalancing:
+		return internalRouteProxyLoadBalancing
 	default:
 		return internalRouteNone
 	}

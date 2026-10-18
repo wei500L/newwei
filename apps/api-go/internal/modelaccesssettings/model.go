@@ -25,6 +25,12 @@ const (
 	descriptionAppliedStatus = "LiteLLM Proxy applied OpenAI key fingerprints (reported at startup)."
 	cacheKeyAppliedStatus    = "openai_keys:applied_status"
 
+	// settingKeyProxyLoadBalancing is the global LiteLLM proxy load balancing
+	// configuration: Anthropic upstream keys plus the router settings.
+	settingKeyProxyLoadBalancing  = "litellm_proxy_load_balancing"
+	descriptionProxyLoadBalancing = "LiteLLM proxy load balancing configuration (Anthropic keys + router settings)"
+	cacheKeyProxyLoadBalancing    = "litellm_proxy_load_balancing:settings"
+
 	// settingKeySystemSecurity / cacheKeySystemSecurity are READ-ONLY here: the
 	// encryption policy needs secretEncryptionEnabled and nothing else. The owner
 	// (SystemSecuritySettingsService) keeps writing both.
@@ -42,6 +48,15 @@ const (
 	actionModelServiceReset  = "model_service_reset"
 	actionOpenAiKeysUpdate   = "openai_keys_update"
 	actionOpenAiKeysReset    = "openai_keys_reset"
+	actionProxyLBUpdate      = "litellm_proxy_lb_update"
+	actionProxyLBReset       = "litellm_proxy_lb_reset"
+
+	// Proxy load balancing defaults and limits. They mirror the NestJS constants
+	// in LiteLlmProxyLoadBalancingSettingsService and the DTO's @ArrayMaxSize.
+	defaultProxyLBRoutingStrategy = routingStrategySimpleShuffle
+	defaultProxyLBRedisHost       = "redis"
+	defaultProxyLBRedisPort       = 6379
+	maxProxyLBAnthropicKeys       = 100
 )
 
 // ---- stored model_service ----
@@ -331,6 +346,118 @@ func (r systemSecurityRecord) resolveConfigured() (bool, bool) {
 	default:
 		return false, false
 	}
+}
+
+// ---- stored litellm_proxy_load_balancing ----
+
+// storedProxyLoadBalancingPayload is the decoded litellm_proxy_load_balancing
+// row. Every field stays a json.RawMessage because a legacy row may hold any
+// JSON shape per field; anthropicApiKeys additionally stays raw so a retained
+// list is written back byte-for-byte instead of being re-serialized.
+type storedProxyLoadBalancingPayload struct {
+	Enabled          json.RawMessage `json:"enabled"`
+	AnthropicApiKeys json.RawMessage `json:"anthropicApiKeys"`
+	RoutingStrategy  json.RawMessage `json:"routingStrategy"`
+	RedisHost        json.RawMessage `json:"redisHost"`
+	RedisPort        json.RawMessage `json:"redisPort"`
+	RedisPassword    json.RawMessage `json:"redisPassword"`
+	DeploymentRpm    json.RawMessage `json:"deploymentRpm"`
+	DeploymentTpm    json.RawMessage `json:"deploymentTpm"`
+}
+
+// proxyLoadBalancingRecord is one decoded row plus the "stored" predicate (see
+// modelServiceRecord).
+type proxyLoadBalancingRecord struct {
+	present bool
+	payload storedProxyLoadBalancingPayload
+}
+
+// decodeProxyLoadBalancingRecord classifies a raw SystemSetting.value for
+// key=litellm_proxy_load_balancing.
+func decodeProxyLoadBalancingRecord(raw json.RawMessage) (proxyLoadBalancingRecord, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return proxyLoadBalancingRecord{}, nil
+	}
+	switch trimmed[0] {
+	case '{':
+		var payload storedProxyLoadBalancingPayload
+		if err := json.Unmarshal(trimmed, &payload); err != nil {
+			return proxyLoadBalancingRecord{}, err
+		}
+		return proxyLoadBalancingRecord{present: true, payload: payload}, nil
+	case '[':
+		return proxyLoadBalancingRecord{present: true}, nil
+	default:
+		return proxyLoadBalancingRecord{}, nil
+	}
+}
+
+// proxyLoadBalancingSettingsPublic is the GET/PUT/DELETE response body. Field
+// order matches the NestJS object literal (and therefore the JSON byte order).
+type proxyLoadBalancingSettingsPublic struct {
+	Source                   settingsSource           `json:"source"`
+	Enabled                  bool                     `json:"enabled"`
+	Openai                   openAiKeysSettingsPublic `json:"openai"`
+	AnthropicKeysCount       int                      `json:"anthropicKeysCount"`
+	AnthropicKeyFingerprints []string                 `json:"anthropicKeyFingerprints"`
+	RoutingStrategy          routingStrategy          `json:"routingStrategy"`
+	RedisHost                string                   `json:"redisHost"`
+	RedisPort                int                      `json:"redisPort"`
+	HasRedisPassword         bool                     `json:"hasRedisPassword"`
+	DeploymentRpm            *int                     `json:"deploymentRpm"`
+	DeploymentTpm            *int                     `json:"deploymentTpm"`
+}
+
+// proxyLoadBalancingInternalSnapshot is the LiteLLM snapshot response. It is the
+// only place where plaintext keys leave the process, and redisPassword/rpm/tpm
+// are omitted (not null) when unset, exactly like JSON.stringify drops
+// undefined.
+type proxyLoadBalancingInternalSnapshot struct {
+	HasStoredConfig  bool            `json:"hasStoredConfig"`
+	Enabled          bool            `json:"enabled"`
+	OpenaiApiKeys    []string        `json:"openaiApiKeys"`
+	AnthropicApiKeys []string        `json:"anthropicApiKeys"`
+	RoutingStrategy  routingStrategy `json:"routingStrategy"`
+	RedisHost        string          `json:"redisHost"`
+	RedisPort        int             `json:"redisPort"`
+	RedisPassword    *string         `json:"redisPassword,omitempty"`
+	DeploymentRpm    *int            `json:"deploymentRpm,omitempty"`
+	DeploymentTpm    *int            `json:"deploymentTpm,omitempty"`
+}
+
+// proxyLoadBalancingSettingsWrite is the stored representation this package
+// writes back. Field order matches the NestJS `nextStored` object literal.
+type proxyLoadBalancingSettingsWrite struct {
+	Enabled          bool            `json:"enabled"`
+	AnthropicApiKeys json.RawMessage `json:"anthropicApiKeys"`
+	RoutingStrategy  routingStrategy `json:"routingStrategy"`
+	RedisHost        string          `json:"redisHost"`
+	RedisPort        int             `json:"redisPort"`
+	RedisPassword    secretValue     `json:"redisPassword"`
+	DeploymentRpm    *int            `json:"deploymentRpm"`
+	DeploymentTpm    *int            `json:"deploymentTpm"`
+}
+
+// anthropicKeyEntryWrite is one freshly encoded {fingerprint, value} entry.
+type anthropicKeyEntryWrite struct {
+	Fingerprint string      `json:"fingerprint"`
+	Value       secretValue `json:"value"`
+}
+
+// proxyLoadBalancingUpdateAudit is the AuditLog.metadata document of
+// action=litellm_proxy_lb_update. It never carries a key or a password.
+type proxyLoadBalancingUpdateAudit struct {
+	Enabled              bool            `json:"enabled"`
+	AnthropicKeysCount   int             `json:"anthropicKeysCount"`
+	RoutingStrategy      routingStrategy `json:"routingStrategy"`
+	RedisHost            string          `json:"redisHost"`
+	RedisPort            int             `json:"redisPort"`
+	HasRedisPassword     bool            `json:"hasRedisPassword"`
+	DeploymentRpm        *int            `json:"deploymentRpm"`
+	DeploymentTpm        *int            `json:"deploymentTpm"`
+	AnthropicKeysUpdated bool            `json:"anthropicKeysUpdated"`
+	RedisPasswordUpdated bool            `json:"redisPasswordUpdated"`
 }
 
 // ---- small JSON helpers ----

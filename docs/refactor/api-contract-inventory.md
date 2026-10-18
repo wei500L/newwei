@@ -719,3 +719,52 @@ one of legacy|go`）。`go` 时要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOS
 
 回滚只把 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE` 改回 `legacy`。说明与 smoke 证据
 见 `docs/refactor/go-platform-governance-settings.md`。
+
+## 18. LiteLLM 负载均衡配置管理与下发（Go · 4 条）
+
+新增开关 `API_GO_PROXY_LOAD_BALANCING_MODE`（空串/`legacy`/`go`，默认 `legacy`，
+非法值启动失败，错误文本 `API_GO_PROXY_LOAD_BALANCING_MODE must be one of
+legacy|go`）。与 `API_GO_MODEL_ACCESS_SETTINGS_MODE` **相互独立**：两者可各自
+`legacy`/`go`；本开关为 `go` 而模型接入为 `legacy` 时，仍直接读取真实 OpenAI 密钥
+配置下发快照。`go` 只要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`（不要求
+Mongo），由 `internal/modelaccesssettings` 复用同一服务接管 4 条**精确路径**：
+
+| 方法 | 路径 | 认证 | 权限 | 平台门禁 | 成功码 |
+|---|---|---|---|---|---|
+| GET | `/api/system-settings/llm-gateways/proxy-load-balancing` | JWT/`mtk_` | `settings.manage` | 否 | 200 |
+| PUT | `/api/system-settings/llm-gateways/proxy-load-balancing` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/llm-gateways/proxy-load-balancing` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| GET | `/api/internal/litellm/proxy-load-balancing` | `LITELLM_CONFIG_INTERNAL_TOKEN` | 不用 JWT/RBAC | 否 | 200 |
+
+契约要点：
+
+- 精确路径：`/api/system-settings/llm-gateways/:id`（Profile 动态段）不会把
+  `proxy-load-balancing` 当作 Profile ID；`proxy-governance`、未列方法与更长路径、
+  尾斜杠继续回落 `/api/`。
+- 公开响应：`source/enabled/openai/anthropicKeysCount/anthropicKeyFingerprints/
+  routingStrategy/redisHost/redisPort/hasRedisPassword/deploymentRpm/deploymentTpm`；
+  `openai` 是完整的 `OpenAiKeysSettingsPublic`。无行时默认
+  `source=none`、`enabled=false`、`routingStrategy=simple-shuffle`、`redisHost=redis`、
+  `redisPort=6379`、`hasRedisPassword=false`、计数 0、指纹 `[]`、rpm/tpm `null`。
+- 内部快照：`hasStoredConfig/enabled/openaiApiKeys/anthropicApiKeys/routingStrategy/
+  redisHost/redisPort` + 可选的 `redisPassword/deploymentRpm/deploymentTpm`（无值时
+  省略，公开响应中仍为 `null`）。`openaiApiKeys` 复用已有明文读取；明文只在此契约
+  允许的位置出现。
+- PUT 语义：`anthropicApiKeys` 提供即整体替换（`[]` 清空，优先于
+  `clearAnthropicApiKeys`），省略/`null` 保留库中既有条目；`redisPassword` 省略
+  保留、空串/纯空白/`null` 清空、非空 trim 后加密；`deploymentRpm`/`deploymentTpm`
+  省略或 `null` 均存 `null`。
+- SystemSetting key `litellm_proxy_load_balancing`（`isPublic=false`）；Redis
+  `litellm_proxy_load_balancing:settings`（30 秒）；全局 MySQL 会话锁
+  `model-access:proxy-load-balancing:v1`（PUT 与 DELETE 共用，Nest 与 Go 同名字面量）。
+- 审计：`resource=system_settings`；PUT `litellm_proxy_lb_update`（metadata 不含
+  密钥/密码），DELETE `litellm_proxy_lb_reset`（`{ok:true}`）。
+- 同批修 LB1–LB4（Nest 与 Go 两侧）：公开读取对旧加密条目重复解密；PUT 以 30 秒
+  缓存做合并基准；写后经缓存构造响应；显式 `null` 密码调用 `trim` 触发 500。并补齐
+  平台管理员写入门禁（全局配置）。
+
+未迁：`/api/system-settings/llm-gateways` 的 Profile CRUD 与激活路由、
+`proxy-governance`、`rotate-key`、模型测试接口，以及实际请求路由（四种策略仍由
+LiteLLM 执行）。回滚只把 `API_GO_PROXY_LOAD_BALANCING_MODE` 改回 `legacy`；不改表、
+不改 controller/DTO、不改 Web 入口与其他开关默认值。细节见
+`docs/refactor/go-proxy-load-balancing.md`。

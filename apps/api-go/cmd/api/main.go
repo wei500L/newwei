@@ -602,6 +602,10 @@ func run() error {
 	if cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo {
 		modelAccessSettingsMode = string(legacyproxy.ModeGo)
 	}
+	proxyLoadBalancingMode := ""
+	if cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo {
+		proxyLoadBalancingMode = string(legacyproxy.ModeGo)
+	}
 	infrastructureSettingsMode := ""
 	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
 		infrastructureSettingsMode = string(legacyproxy.ModeGo)
@@ -652,6 +656,10 @@ func run() error {
 	// overlap, so both may be go at the same time.
 	rules = legacyproxy.WithPlatformGovernanceSettings(rules, platformGovernanceSettingsMode)
 	rules = legacyproxy.WithModelAccessSettings(rules, modelAccessSettingsMode)
+	// The proxy load balancing group is independent of the model access group:
+	// only its four routes are registered, and its exact rules win over the
+	// llm-gateways :id profile rule because they are longer prefixes.
+	rules = legacyproxy.WithProxyLoadBalancing(rules, proxyLoadBalancingMode)
 	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
 	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
@@ -716,6 +724,7 @@ func run() error {
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
 				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
+				cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
@@ -782,10 +791,11 @@ func run() error {
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
 	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
 	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
+	proxyLoadBalancingGo := cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo
 	exceptionIngestGo := cfg.ExceptionIngestMode == config.ExceptionIngestModeGo
 	// 平行批次追加的模式全部保留（#53 frontier、#55 infrastructure、#54 platform
 	// governance、#64 exception ingest、本批 model access 与 account security）。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || proxyLoadBalancingGo || exceptionIngestGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1148,6 +1158,12 @@ func run() error {
 	}
 
 	if err := wireModelAccessSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+
+	// The proxy load balancing takeover reuses the same authenticated stack and
+	// registers only its four routes; the two switches stay independent.
+	if err := wireProxyLoadBalancing(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 

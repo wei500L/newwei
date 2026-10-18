@@ -153,8 +153,8 @@ func TestFingerprintFromPathRequiresExactlyOneSegment(t *testing.T) {
 	}
 }
 
-// TestInternalRouteDispatchIsExact proves the neighbouring internal route is not
-// captured.
+// TestInternalRouteDispatchIsExact proves each internal endpoint is matched by
+// exact equality, so a neighbouring route or a longer path is never captured.
 func TestInternalRouteDispatchIsExact(t *testing.T) {
 	cases := []struct {
 		path string
@@ -162,8 +162,9 @@ func TestInternalRouteDispatchIsExact(t *testing.T) {
 	}{
 		{path: pathInternalOpenAiKeys, want: internalRouteGetKeys},
 		{path: pathInternalOpenAiKeysApplied, want: internalRouteReportApplied},
-		{path: "/api/internal/litellm/proxy-load-balancing", want: internalRouteNone},
+		{path: pathInternalProxyLoadBalancing, want: internalRouteProxyLoadBalancing},
 		{path: pathInternalOpenAiKeys + "/extra", want: internalRouteNone},
+		{path: pathInternalProxyLoadBalancing + "/extra", want: internalRouteNone},
 		{path: "/api/system-settings/llm-gateways", want: internalRouteNone},
 	}
 	for _, testCase := range cases {

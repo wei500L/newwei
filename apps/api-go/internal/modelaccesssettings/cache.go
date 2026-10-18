@@ -110,6 +110,40 @@ func (s *Service) readAppliedStatusAuthoritative(ctx context.Context) (appliedSt
 	return decodeAppliedStatusRecord(raw)
 }
 
+// readProxyLoadBalancingRecordCached mirrors
+// LiteLlmProxyLoadBalancingSettingsService.loadStoredSettings.
+func (s *Service) readProxyLoadBalancingRecordCached(ctx context.Context) (proxyLoadBalancingRecord, error) {
+	cached, found, err := s.cacheGet(ctx, cacheKeyProxyLoadBalancing)
+	if err != nil {
+		logCacheFailure("proxy load balancing settings cache read", cacheKeyProxyLoadBalancing, err)
+	}
+	if found {
+		return decodeCachedProxyLoadBalancingEnvelope(cached)
+	}
+
+	raw, exists, err := s.loadSetting(ctx, settingKeyProxyLoadBalancing)
+	if err != nil {
+		return proxyLoadBalancingRecord{}, err
+	}
+	record, err := decodeProxyLoadBalancingRecord(raw)
+	if err != nil {
+		return proxyLoadBalancingRecord{}, err
+	}
+	s.writeCacheEnvelope(ctx, cacheKeyProxyLoadBalancing, exists, raw, settingsCacheTTLSeconds)
+	return record, nil
+}
+
+// readProxyLoadBalancingRecordAuthoritative reads the row straight from MySQL.
+// Every load balancing write MUST use this as its read-modify-write baseline:
+// the cached reader may still hold the pre-write configuration.
+func (s *Service) readProxyLoadBalancingRecordAuthoritative(ctx context.Context) (proxyLoadBalancingRecord, error) {
+	raw, _, err := s.loadSetting(ctx, settingKeyProxyLoadBalancing)
+	if err != nil {
+		return proxyLoadBalancingRecord{}, err
+	}
+	return decodeProxyLoadBalancingRecord(raw)
+}
+
 // readSystemSecurityRecordCached reads the system_security row through its own
 // cache envelope. The read is READ-ONLY: this package never writes
 // system_security or its cache (SystemSecuritySettingsService owns both), it only
@@ -288,4 +322,17 @@ func decodeCachedAppliedStatusEnvelope(cached json.RawMessage) (appliedStatusRec
 		return appliedStatusRecord{}, nil
 	}
 	return decodeAppliedStatusRecord(envelope.Value)
+}
+
+// decodeCachedProxyLoadBalancingEnvelope decodes one load balancing cache
+// envelope.
+func decodeCachedProxyLoadBalancingEnvelope(cached json.RawMessage) (proxyLoadBalancingRecord, error) {
+	var envelope cacheEnvelope
+	if err := json.Unmarshal(cached, &envelope); err != nil {
+		return proxyLoadBalancingRecord{}, nil
+	}
+	if !envelope.Exists {
+		return proxyLoadBalancingRecord{}, nil
+	}
+	return decodeProxyLoadBalancingRecord(envelope.Value)
 }

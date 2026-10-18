@@ -1,9 +1,14 @@
 // Package modelaccesssettings implements the Go takeover of the model service
-// configuration and OpenAI key distribution closure (ten HTTP routes).
+// configuration, OpenAI key distribution and LiteLLM proxy load balancing
+// closures (ten model access routes plus four load balancing routes).
 //
-// It is wired only when API_GO_MODEL_ACCESS_SETTINGS_MODE=go; the default
-// (legacy, including the empty value) keeps every request on the NestJS proxy
-// and rollback is a single environment variable change.
+// The model access routes are wired only when
+// API_GO_MODEL_ACCESS_SETTINGS_MODE=go, and the load balancing routes only when
+// API_GO_PROXY_LOAD_BALANCING_MODE=go. Both default to legacy (including the
+// empty value), which keeps every request on the NestJS proxy, and each is
+// rolled back by a single environment variable change. The two switches are
+// independent: the load balancing routes always read the real OpenAI key
+// configuration, whether or not the model access takeover is enabled.
 //
 // The package mirrors the NestJS contract one-for-one:
 //

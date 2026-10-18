@@ -967,3 +967,71 @@ retentionDays must not be greater than 3650; retentionDays must not be less than
 自上而下（IsInt、Min、Max）拼消息。两者的差异只在**同一属性有多条约束同时失败**时
 可见（例如把整数字段传成字符串）；单条约束失败时顺序无区别。本批不修改该已合入包，
 登记为观察项，供后续统一核对。
+
+## 11. LiteLLM 负载均衡配置批次（LB0–LB4）
+
+> 基线 `f5648fab`（origin/main）· 分支 `refactor/go-proxy-load-balancing` · 开关
+> `API_GO_PROXY_LOAD_BALANCING_MODE`。五条均为本批明确要求改变的行为，不得以「兼容
+> 旧行为」保留。行号在开工时按该基线逐行复核。
+> 状态：✅ Nest 与 Go 两侧已修复（LB0–LB4）。远端普通 CI 结果见
+> `docs/refactor/go-proxy-load-balancing.md` §9。
+
+### LB0 全局负载均衡配置写接口缺平台管理员门禁（P0）
+
+- **实证**：`litellm-proxy-lb-settings.service.ts` 的 `updateSettings`/
+  `resetToDisabled` 只依赖 controller 的 `settings.manage`，而
+  `SystemSetting.key=litellm_proxy_load_balancing` 是全局单例（无 orgId）；普通组织
+  管理员或机器令牌即可改写影响所有租户的 LiteLLM 上游配置。
+- **修复（Nest）**：服务注入 `PlatformAccessService`，PUT/DELETE 第一步
+  `assertPlatformAdmin(actorId)`；DTO（ValidationPipe）仍在 service 之前执行。
+- **修复（Go）**：`updateProxyLoadBalancingSettings`/`resetProxyLoadBalancingSettings`
+  先 `assertPlatformAdmin`（查 `GlobalRoleAssignment(userId, role='platform_admin')`，
+  `machine:` 身份直接 403 且不查库）。
+- **状态**：✅ 两侧修复；GET 仍只要求 `settings.manage`。
+
+### LB1 公开读取对旧格式加密条目重复解密（P2）
+
+- **实证**：基线 `getPublicSettings` 先 `resolveEffectiveConfig`（内部
+  `resolveAnthropicKeys` 解密旧明文/直接加密条目）再调用
+  `listAnthropicKeyFingerprints`（对同一直接加密条目再次解密）——同一条目一次请求
+  解密两次。
+- **修复（Nest/Go）**：每个条目只分类一次、需要解密时只解一次；明文列表与指纹列表
+  从同一份具名结果投影。包装条目仍直接使用已存 fingerprint，不解密其 value。
+- **状态**：✅ 两侧修复；`anthropicKeysCount`（成功解析去重数）、fingerprint 列表、
+  OpenAI `keysCount`（结构计数）三种口径差异刻意保留。
+
+### LB2 PUT 以 30 秒缓存作为合并基准（P1）
+
+- **实证**：基线 `updateSettings` 用 `loadStoredSettings()`（先读 Redis 信封）取旧
+  配置再整份 `upsert`；缓存陈旧时，省略的 `anthropicApiKeys`/`redisPassword` 会被
+  旧缓存覆盖，且并发写无跨实例互斥。
+- **修复（Nest/Go）**：PUT/DELETE 共用全局 MySQL 会话锁
+  `model-access:proxy-load-balancing:v1`，锁内直接读 MySQL 权威行作为保留基准；
+  仅省略密钥或密码时原样写回既有存储条目，不解密、不重加密整份配置。
+- **状态**：✅ 两侧修复（Nest 复用 `withModelAccessSettingsLock`，Go 复用
+  `mysqlLock`）。
+
+### LB3 写后经缓存构造响应（P1）
+
+- **实证**：基线更新/删除后调用 `getPublicSettings()`（再次读 Redis）构造响应，
+  返回内容可能不是刚写入的配置。
+- **修复（Nest/Go）**：以刚写入对象（DELETE 为默认对象）构造 LB 响应；OpenAI 元数据
+  按它自己的契约独立读取，不受本行缓存影响。
+- **状态**：✅ 两侧修复。
+
+### LB4 显式 null 密码触发 `trim`（P1）
+
+- **实证**：`resolveNextRedisPasswordRaw` 只判 `input === undefined` 后直接
+  `input.trim()`；`redisPassword: null` 通过 `@IsOptional()` 校验后进入此处 →
+  `TypeError` → 500。与「可选字段可显式 null」的运行时输入处理不一致。
+- **修复（Nest/Go）**：省略保留；`null`、空字符串、纯空白均清空；仅非空字符串
+  trim 后按既有加密策略保存。`redisPasswordUpdated` 仍为
+  `input !== undefined`（显式 `null` 计为已更新）。
+- **状态**：✅ 两侧修复。
+
+### 观察（非本批缺陷）：`countStoredKeys` 与 `resolveKeys` 的刻意差异
+
+Anthropic 与 OpenAI 的「存储条目计数」按结构计数、不解密，而「有效密钥数」需要
+成功解析；旧数据下两者可能不同。本批保留该差异并用具名结果结构承载，未统一为
+单一计数，避免改变既有公开字段语义。
+

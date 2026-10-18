@@ -30,7 +30,9 @@ const ModelAccessSettingsKey = "/api/system-settings#model-access"
 // /api/internal/litellm/openai-keys, and both are EXACT paths, so
 // /api/internal/litellm/proxy-load-balancing and every /api/system-settings route
 // this batch does not own (llm-gateways, security, vector-service, ...) keep
-// falling back to the legacy /api/ proxy.
+// falling back to the legacy /api/ proxy. The load balancing paths have their own
+// independent switch (WithProxyLoadBalancing); this function never registers
+// them.
 //
 // `:fingerprint` is exactly one non-empty path segment: the collection path, a
 // trailing slash and /key/:fingerprint/extra never match this rule. OPTIONS is

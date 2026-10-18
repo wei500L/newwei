@@ -14,6 +14,13 @@ import { withMysqlSessionLock } from "../situation-monitor/situation-monitor-use
  */
 export const MODEL_SERVICE_SETTINGS_LOCK_NAME = "model-access:model-service:v1";
 export const OPENAI_KEYS_SETTINGS_LOCK_NAME = "model-access:openai-keys:v1";
+/**
+ * `SystemSetting.key=litellm_proxy_load_balancing` is the third global singleton
+ * of this domain. PUT and DELETE share this lock name, and the Go takeover
+ * (apps/api-go/internal/modelaccesssettings/lock.go) uses the same literal.
+ */
+export const PROXY_LOAD_BALANCING_SETTINGS_LOCK_NAME =
+  "model-access:proxy-load-balancing:v1";
 
 /**
  * Runs `fn` while holding one global MySQL advisory lock.

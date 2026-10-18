@@ -2499,6 +2499,133 @@ func TestModelAccessSettingsGoAcceptsTheAuthStack(t *testing.T) {
 	}
 }
 
+// TestProxyLoadBalancingModeVocabulary pins the switch's accepted values and the
+// exact error text, mirroring the other migration switches.
+func TestProxyLoadBalancingModeVocabulary(t *testing.T) {
+	cases := []struct {
+		name    string
+		value   string
+		want    ProxyLoadBalancingMode
+		wantErr bool
+	}{
+		{name: "unset defaults to legacy", value: "", want: ProxyLoadBalancingModeLegacy},
+		{name: "explicit legacy", value: "legacy", want: ProxyLoadBalancingModeLegacy},
+		{name: "go", value: "go", want: ProxyLoadBalancingModeGo},
+		{name: "whitespace tolerated", value: "  go  ", want: ProxyLoadBalancingModeGo},
+		{name: "shadow is rejected", value: "shadow", wantErr: true},
+		{name: "canary is rejected", value: "canary", wantErr: true},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			env := map[string]string{
+				"API_GO_PROXY_LOAD_BALANCING_MODE": testCase.value,
+				// go mode requires the auth stack, which is not what this test is
+				// about; supplying it keeps the mode the only variable.
+				"JWT_SECRET":   "secret",
+				"DATABASE_URL": "mysql://root:secret@127.0.0.1:3306/app",
+				"REDIS_HOST":   "127.0.0.1",
+			}
+			cfg, err := Load(modelAccessEnv(env))
+			if testCase.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error")
+				}
+				if !strings.Contains(err.Error(), "API_GO_PROXY_LOAD_BALANCING_MODE must be one of legacy|go") {
+					t.Fatalf("error = %q", err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.ProxyLoadBalancingMode != testCase.want {
+				t.Fatalf("mode = %q, want %q", cfg.ProxyLoadBalancingMode, testCase.want)
+			}
+		})
+	}
+}
+
+// TestProxyLoadBalancingGoRequiresAuthStack proves the startup requirements and,
+// in particular, that unrelated model-service variables are never evaluated by
+// this switch.
+func TestProxyLoadBalancingGoRequiresAuthStack(t *testing.T) {
+	_, err := Load(modelAccessEnv(map[string]string{"API_GO_PROXY_LOAD_BALANCING_MODE": "go"}))
+	if err == nil {
+		t.Fatalf("go mode without the auth stack must fail startup")
+	}
+	for _, want := range []string{
+		"JWT_SECRET is required when API_GO_PROXY_LOAD_BALANCING_MODE=go",
+		"DATABASE_URL is required when API_GO_PROXY_LOAD_BALANCING_MODE=go",
+		"REDIS_HOST is required when API_GO_PROXY_LOAD_BALANCING_MODE=go",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q is missing %q", err.Error(), want)
+		}
+	}
+	if strings.Contains(err.Error(), "MONGO_URI") {
+		t.Fatalf("this batch reads no Mongo collection: %q", err.Error())
+	}
+	// The encryption key and the internal token are never startup requirements.
+	if strings.Contains(err.Error(), "SYSTEM_SETTINGS_ENCRYPTION_KEY") || strings.Contains(err.Error(), "LITELLM_CONFIG_INTERNAL_TOKEN") {
+		t.Fatalf("runtime-only secrets must not block startup: %q", err.Error())
+	}
+
+	// An invalid MODEL_SERVICE_* value must not block this switch: the load
+	// balancing takeover never evaluates the model-service configuration.
+	cfg, err := Load(modelAccessEnv(map[string]string{
+		"API_GO_PROXY_LOAD_BALANCING_MODE": "go",
+		"MODEL_SERVICE_TIMEOUT_MS":         "not-a-number",
+		"JWT_SECRET":                       "secret",
+		"DATABASE_URL":                     "mysql://root:secret@127.0.0.1:3306/app",
+		"REDIS_HOST":                       "127.0.0.1",
+	}))
+	if err != nil {
+		t.Fatalf("unrelated model service variables must not fail this switch: %v", err)
+	}
+	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeGo {
+		t.Fatalf("mode = %q", cfg.ProxyLoadBalancingMode)
+	}
+}
+
+// TestProxyLoadBalancingSwitchIsIndependentOfModelAccess proves the two switches
+// neither imply nor require each other.
+func TestProxyLoadBalancingSwitchIsIndependentOfModelAccess(t *testing.T) {
+	authStack := map[string]string{
+		"JWT_SECRET":   "secret",
+		"DATABASE_URL": "mysql://root:secret@127.0.0.1:3306/app",
+		"REDIS_HOST":   "127.0.0.1",
+	}
+	lbOnly := map[string]string{"API_GO_PROXY_LOAD_BALANCING_MODE": "go"}
+	for key, value := range authStack {
+		lbOnly[key] = value
+	}
+	cfg, err := Load(modelAccessEnv(lbOnly))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeGo {
+		t.Fatalf("proxy load balancing mode = %q", cfg.ProxyLoadBalancingMode)
+	}
+	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeLegacy {
+		t.Fatalf("model access mode = %q, want legacy", cfg.ModelAccessSettingsMode)
+	}
+
+	modelAccessOnly := map[string]string{"API_GO_MODEL_ACCESS_SETTINGS_MODE": "go"}
+	for key, value := range authStack {
+		modelAccessOnly[key] = value
+	}
+	cfg, err = Load(modelAccessEnv(modelAccessOnly))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeLegacy {
+		t.Fatalf("proxy load balancing mode = %q, want legacy", cfg.ProxyLoadBalancingMode)
+	}
+	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeGo {
+		t.Fatalf("model access mode = %q", cfg.ModelAccessSettingsMode)
+	}
+}
+
 // TestModelAccessSettingsRawEnvIsCapturedUntrimmed proves the raw reads.
 func TestModelAccessSettingsRawEnvIsCapturedUntrimmed(t *testing.T) {
 	cfg, err := Load(modelAccessEnv(map[string]string{

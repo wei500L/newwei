@@ -16,16 +16,18 @@ import (
 // Route paths taken over by WithModelAccessSettings. They are repeated here
 // because the handler dispatches on the request path itself.
 const (
-	pathModelService              = "/api/system-settings/model-service"
-	pathOpenAiKeys                = "/api/system-settings/openai-keys"
-	pathOpenAiKeysKeyPrefix       = "/api/system-settings/openai-keys/key/"
-	pathInternalOpenAiKeys        = "/api/internal/litellm/openai-keys"
-	pathInternalOpenAiKeysApplied = "/api/internal/litellm/openai-keys/applied"
+	pathModelService               = "/api/system-settings/model-service"
+	pathOpenAiKeys                 = "/api/system-settings/openai-keys"
+	pathOpenAiKeysKeyPrefix        = "/api/system-settings/openai-keys/key/"
+	pathProxyLoadBalancing         = "/api/system-settings/llm-gateways/proxy-load-balancing"
+	pathInternalOpenAiKeys         = "/api/internal/litellm/openai-keys"
+	pathInternalOpenAiKeysApplied  = "/api/internal/litellm/openai-keys/applied"
+	pathInternalProxyLoadBalancing = "/api/internal/litellm/proxy-load-balancing"
 )
 
-// Handler serves the ten model access settings routes. It performs
-// authentication, body decoding and response writing; all persistence and
-// normalization lives in Service.
+// Handler serves the ten model access settings routes plus the four LiteLLM
+// proxy load balancing routes. It performs authentication, body decoding and
+// response writing; all persistence and normalization lives in Service.
 type Handler struct {
 	auth *Authenticator
 	svc  *Service
@@ -54,6 +56,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveModelService(w, r)
 	case pathOpenAiKeys:
 		h.serveOpenAiKeys(w, r)
+	case pathProxyLoadBalancing:
+		h.serveProxyLoadBalancing(w, r)
 	default:
 		if fingerprint, ok := fingerprintFromPath(r.URL.Path); ok {
 			h.serveRemoveOpenAiKey(w, r, fingerprint)
@@ -204,10 +208,59 @@ func (h *Handler) serveRemoveOpenAiKey(w http.ResponseWriter, r *http.Request, f
 	}
 }
 
+// ---- proxy load balancing ----
+
+// serveProxyLoadBalancing handles GET (read), PUT (replace/merge) and DELETE
+// (reset) for the LiteLLM proxy load balancing configuration.
+func (h *Handler) serveProxyLoadBalancing(w http.ResponseWriter, r *http.Request) {
+	identity := h.auth.authorize(w, r)
+	if identity == nil {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		settings, err := h.svc.getProxyLoadBalancingSettings(r.Context())
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		writeJSON(w, r, http.StatusOK, settings)
+	case http.MethodPut:
+		body, ok := readBodyOrFail(w, r)
+		if !ok {
+			return
+		}
+		// The DTO runs before the platform admin gate, exactly like NestJS,
+		// where the ValidationPipe executes before the service method.
+		request, err := parseUpdateProxyLoadBalancingSettingsRequest(body)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		settings, err := h.svc.updateProxyLoadBalancingSettings(r.Context(), identity.OrgID, identity.UserID, request)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		writeJSON(w, r, http.StatusOK, settings)
+	case http.MethodDelete:
+		// No DTO: authentication/permission, then the in-service platform gate.
+		settings, err := h.svc.resetProxyLoadBalancingSettings(r.Context(), identity.OrgID, identity.UserID)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		writeJSON(w, r, http.StatusOK, settings)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 // ---- internal (LITELLM_CONFIG_INTERNAL_TOKEN only) ----
 
-// serveInternal handles routes 9 and 10. The internal bearer guard always runs
-// first; the route-10 DTO runs after it.
+// serveInternal handles the internal endpoints (the OpenAI key routes and the
+// load balancing snapshot). The internal bearer guard always runs
+// first; a body DTO, when present, runs after it.
 func (h *Handler) serveInternal(w http.ResponseWriter, r *http.Request, route internalRoute) {
 	if !h.svc.authorizeInternal(w, r) {
 		return
@@ -248,6 +301,19 @@ func (h *Handler) serveInternal(w http.ResponseWriter, r *http.Request, route in
 			return
 		}
 		writeJSON(w, r, http.StatusCreated, okResponse{OK: true})
+	case internalRouteProxyLoadBalancing:
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		snapshot, err := h.svc.getProxyLoadBalancingInternalSnapshot(r.Context())
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		// The response carries plaintext keys: only a fixed event text is logged.
+		log.Printf("modelaccesssettings: served the LiteLLM proxy load balancing snapshot")
+		writeJSON(w, r, http.StatusOK, snapshot)
 	default:
 		http.NotFound(w, r)
 	}
@@ -360,7 +426,13 @@ type encodedResponse interface {
 func (b modelServiceSettingsPublic) encodeJSON() ([]byte, error) { return json.Marshal(b) }
 func (b openAiKeysSettingsPublic) encodeJSON() ([]byte, error)   { return json.Marshal(b) }
 func (b openAiKeysInternalResponse) encodeJSON() ([]byte, error) { return json.Marshal(b) }
-func (b okResponse) encodeJSON() ([]byte, error)                 { return json.Marshal(b) }
+func (b proxyLoadBalancingSettingsPublic) encodeJSON() ([]byte, error) {
+	return json.Marshal(b)
+}
+func (b proxyLoadBalancingInternalSnapshot) encodeJSON() ([]byte, error) {
+	return json.Marshal(b)
+}
+func (b okResponse) encodeJSON() ([]byte, error) { return json.Marshal(b) }
 
 // writeJSON renders one response body with the content type Express res.json
 // produces (no trailing newline, explicit charset).
