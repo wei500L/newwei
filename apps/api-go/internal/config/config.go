@@ -1334,6 +1334,19 @@ type Config struct {
 	// variable back to legacy; the stored v2 state, legacy documents, presets
 	// and shared cache remain readable by NestJS.
 	GraphQLSourcePolicyWriteMode string
+	// GraphQLKnowledgeReviewMode decides whether the single
+	// reviewKnowledgeGraphEvidence mutation is registered into the Go GraphQL
+	// executor. It is independent of every read switch and of the other write
+	// switches: with the knowledge-graph read switch legacy, only this mutation
+	// is taken over and the eleven knowledge-graph read roots keep serving
+	// through NestJS. The accepted values are exactly "", "legacy" and "go";
+	// the empty value behaves like legacy. While this switch is legacy, any
+	// document that selects the mutation falls back to NestJS as a whole, so
+	// the production web entry keeps serving through NestJS. The takeover needs
+	// JWT verification, MySQL and Redis only: it reads no Mongo collection and
+	// starts no worker, so MONGO_URI is not a startup condition. Rolling back
+	// only means setting this variable back to legacy.
+	GraphQLKnowledgeReviewMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -2430,6 +2443,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE must be one of legacy|go")
 	}
+	// The knowledge-graph evidence review switch accepts the empty string,
+	// legacy and go. An empty value behaves exactly like legacy, so an unset
+	// deployment keeps the mutation on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLKnowledgeReviewMode = "legacy"
+	case "go":
+		cfg.GraphQLKnowledgeReviewMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE must be one of legacy|go")
+	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
 	cfg.GraphQLComplexity = intDefault(getenv("GRAPHQL_COMPLEXITY_LIMIT"), 2000)
@@ -3160,6 +3184,12 @@ func Load(getenv func(string) string) (Config, error) {
 	// is no Mongo collection, worker, queue or upstream call.
 	if cfg.GraphQLSourcePolicyWriteMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE", cfg)
+	}
+	// The knowledge-graph evidence review takeover needs JWT verification, MySQL
+	// and Redis only. It reads no Mongo collection, starts no worker and calls
+	// no model or crawl upstream, so it does not require MONGO_URI.
+	if cfg.GraphQLKnowledgeReviewMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE", cfg)
 	}
 
 	// The situation monitor signals takeover needs the credentialed auth stack

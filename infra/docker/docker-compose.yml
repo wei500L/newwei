@@ -1012,6 +1012,12 @@ services:
       # Query 仍走 NestJS。需要 JWT/MySQL/Redis，不要求 Mongo，不启动 worker。
       # 回滚只把变量改回 legacy，已存 v2/legacy/preset 与共享缓存继续可读。
       API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE: legacy
+      # 知识图谱证据人工复核的单个 mutation（reviewKnowledgeGraphEvidence）。
+      # pilot 与样例保持 legacy，与全部读开关及其他写开关解耦：只开本变量时
+      # 图谱 11 个只读 root 仍走 NestJS，只有该 mutation 由 Go 执行。只需要
+      # JWT/MySQL/Redis，不要求 Mongo，不启动 worker，不调用模型/向量/外部
+      # HTTP。回滚只把该变量改回 legacy。
+      API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE: legacy
       # 基础设施设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认
       # 值）。S3_* 与 VECTOR_* 都不进入日志；不在这里新增第二套网关配置。
       NODE_ENV: production

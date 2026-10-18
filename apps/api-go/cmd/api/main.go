@@ -159,6 +159,7 @@ import (
 	itemsgraphql "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/kgimpact"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgereview"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/orgaccesswrite"
@@ -721,7 +722,8 @@ func run() error {
 	// NestJS.
 	graphqlRouteMode := ""
 	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
-		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" {
+		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" ||
+		cfg.GraphQLKnowledgeReviewMode == "go" {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -858,6 +860,7 @@ func run() error {
 				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
 				cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo ||
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
+				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
@@ -916,6 +919,10 @@ func run() error {
 	// every other write switch. It needs only the credentialed
 	// JWT/MySQL/Redis stack.
 	sourcePolicyWriteGo := cfg.GraphQLSourcePolicyWriteMode == "go"
+	// 知识图谱证据人工复核的单个 mutation 由独立开关控制，与全部读开关解耦：
+	// 只开写入时图谱十个只读 root 仍走 NestJS，也不需要 Mongo。它复用
+	// knowledgegraph 的设置缓存端口与 settingscrawl 的复核投影模型。
+	graphqlKnowledgeReviewGo := cfg.GraphQLKnowledgeReviewMode == "go"
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
@@ -982,6 +989,7 @@ func run() error {
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || cfg.GraphQLSettingsWriteMode == "go" ||
 		sourcePolicyWriteGo ||
+		graphqlKnowledgeReviewGo ||
 		identityOnboardingGo || oidcLoginGo ||
 		searchReindexGo || proxyLoadBalancingGo || analysisExportGo
 	var redisClient *redis.Client
@@ -1582,12 +1590,14 @@ func run() error {
 
 	var graphqlHandler *graphqlread.Handler
 	var graphqlMongo *dashboardstats.Connection
-	// The read switch, the organization/workspace/settings write switches and
-	// the source-policy write switch are independent. Any of them being go
-	// assembles the exact /graphql Go handler; write-only combinations must not
-	// require Mongo or initialize any read-only Mongo service.
+	// The read switch, the organization/workspace/settings write switches, the
+	// source-policy write switch and the knowledge-graph evidence review write are
+	// independent. Any of them being go assembles the exact /graphql Go handler;
+	// write-only combinations must not require Mongo or initialize any read-only
+	// Mongo service.
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
-	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo || sourcePolicyWriteGo {
+	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo ||
+		sourcePolicyWriteGo || graphqlKnowledgeReviewGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -1740,6 +1750,13 @@ func run() error {
 			}
 			settingswrite.RegisterSourcePolicy(reg, sharedDB, redisClient)
 		}
+		// The knowledge-graph evidence review mutation reuses the evidence
+		// review models of the settings/crawl read roots. Those models are only
+		// registered when both the read switch and the settings/crawl switch are
+		// go, so the write path registers them otherwise.
+		if graphqlKnowledgeReviewGo {
+			registerKnowledgeReview(reg, sharedDB, redisClient, graphqlReadGo && settingsCrawlGo)
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1831,6 +1848,11 @@ func run() error {
 			log.Printf("api-go: GraphQL source-policy writes registered (%s)", strings.Join(settingswrite.SourcePolicyRegisteredMutations, ", "))
 		} else {
 			log.Printf("api-go: GraphQL source-policy writes not registered (API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE=legacy)")
+		}
+		if graphqlKnowledgeReviewGo {
+			log.Printf("api-go: GraphQL knowledge-graph evidence review write registered (%s)", strings.Join(knowledgereview.RegisteredMutations, ", "))
+		} else {
+			log.Printf("api-go: GraphQL knowledge-graph evidence review write not registered (API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE=legacy)")
 		}
 	}
 
