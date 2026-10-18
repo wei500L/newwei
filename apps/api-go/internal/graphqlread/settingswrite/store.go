@@ -289,7 +289,14 @@ func graphqlFailure(err error) error {
 	if errors.As(err, &service) {
 		return &contract.Failure{Message: service.message, Status: service.status}
 	}
-	return &contract.Failure{Message: err.Error(), Status: http.StatusInternalServerError}
+	// A resolver may already carry the exact GraphQL failure, most notably the
+	// settingscrawl admin gate (403 Unauthenticated / Admin access required).
+	// Returning it unchanged keeps the executor's extensions contract.
+	var failure *contract.Failure
+	if errors.As(err, &failure) {
+		return failure
+	}
+	return err
 }
 
 // callContext guards against a nil call context.

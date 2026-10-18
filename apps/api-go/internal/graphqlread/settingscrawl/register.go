@@ -102,6 +102,31 @@ func RegisterSettingsModelTypes(reg *contract.Registry) {
 	registerSettingsModelTypes(reg)
 }
 
+// RegisterSourcePolicyModelTypes records only the object types the four source
+// policy mutations return, and registers no root. The read registration
+// (registerPolicyAndCrawlTypes) also records them, so the write path calls this
+// when the read roots did not: registering the whole read batch here would add
+// crawl/Mongo models a write-only deployment does not need.
+func RegisterSourcePolicyModelTypes(reg *contract.Registry) {
+	if reg == nil {
+		panic("graphqlread: settingscrawl.RegisterSourcePolicyModelTypes requires a registry")
+	}
+	registerSourcePolicyModelTypes(reg)
+}
+
+// registerSourcePolicyModelTypes records the source policy object types the
+// policy mutations project. The revision operation is an enum, which the
+// executor treats as a leaf and never looks up.
+func registerSourcePolicyModelTypes(reg *contract.Registry) {
+	reg.RegisterType("NewsEventSourcePolicyDeltaModel", NewsEventSourcePolicyDeltaModel{})
+	reg.RegisterType("NewsEventSourcePolicyConflictModel", NewsEventSourcePolicyConflictModel{})
+	reg.RegisterType("NewsEventSourceCategoryAuthorityDomainBoostModel", NewsEventSourceCategoryAuthorityDomainBoostModel{})
+	reg.RegisterType("NewsEventSourceCategoryAuthorityRuleModel", NewsEventSourceCategoryAuthorityRuleModel{})
+	reg.RegisterType("NewsEventSourcePolicyRevisionModel", NewsEventSourcePolicyRevisionModel{})
+	reg.RegisterType("NewsEventSourcePolicySettingsModel", NewsEventSourcePolicySettingsModel{})
+	reg.RegisterType("NewsEventSourcePolicyPresetSettingsModel", NewsEventSourcePolicyPresetSettingsModel{})
+}
+
 // registerSettingsModelTypes records the twenty settings center object types.
 func registerSettingsModelTypes(reg *contract.Registry) {
 	reg.RegisterType("RateLimitBucketModel", RateLimitBucketModel{})
@@ -130,13 +155,7 @@ func registerSettingsModelTypes(reg *contract.Registry) {
 // evidence review and crawl task object types, which only the read roots
 // project.
 func registerPolicyAndCrawlTypes(reg *contract.Registry) {
-	reg.RegisterType("NewsEventSourcePolicyDeltaModel", NewsEventSourcePolicyDeltaModel{})
-	reg.RegisterType("NewsEventSourcePolicyConflictModel", NewsEventSourcePolicyConflictModel{})
-	reg.RegisterType("NewsEventSourceCategoryAuthorityDomainBoostModel", NewsEventSourceCategoryAuthorityDomainBoostModel{})
-	reg.RegisterType("NewsEventSourceCategoryAuthorityRuleModel", NewsEventSourceCategoryAuthorityRuleModel{})
-	reg.RegisterType("NewsEventSourcePolicyRevisionModel", NewsEventSourcePolicyRevisionModel{})
-	reg.RegisterType("NewsEventSourcePolicySettingsModel", NewsEventSourcePolicySettingsModel{})
-	reg.RegisterType("NewsEventSourcePolicyPresetSettingsModel", NewsEventSourcePolicyPresetSettingsModel{})
+	registerSourcePolicyModelTypes(reg)
 	reg.RegisterType("NewsEventSourcePolicyRevisionDiffModel", NewsEventSourcePolicyRevisionDiffModel{})
 	reg.RegisterType("NewsEventSourcePolicySyncStatusModel", NewsEventSourcePolicySyncStatusModel{})
 

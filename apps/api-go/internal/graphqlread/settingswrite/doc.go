@@ -1,4 +1,6 @@
-// Package settingswrite serves the thirteen settings center GraphQL mutations:
+// Package settingswrite serves the settings center GraphQL mutations. Register
+// adds the thirteen ordinary settings mutations and RegisterSourcePolicy adds
+// the four source-policy version mutations:
 //
 //	updateRateLimitSettings, updateAuthCacheSettings, updateCrawlClientSettings,
 //	updateAuditLogRetention, updateEntityImpactGraphSettings,
@@ -7,12 +9,15 @@
 //	updateClassificationQualitySettings, updateNewsDedupeSettings,
 //	updateNewsExtractionSettings, updateNewsPromptConfig
 //
-// They are registered only when API_GO_GRAPHQL_SETTINGS_WRITE_MODE=go. The
-// switch is independent of every read switch: with the settings/crawl read
-// switch legacy only these mutations are taken over and the twenty settings
-// read roots keep serving through NestJS. While the switch is legacy every
-// document that selects one of these mutations falls back to NestJS as a whole,
-// so the production web entry keeps serving through NestJS.
+//	updateNewsEventSourcePolicy, updateNewsEventSourcePolicyPresets,
+//	rollbackNewsEventSourcePolicy, resetNewsEventSourcePolicy
+//
+// The two entry points have independent switches
+// (API_GO_GRAPHQL_SETTINGS_WRITE_MODE and
+// API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE), both independent of every read
+// switch. While a switch is legacy every document that selects one of its
+// mutations falls back to NestJS as a whole, so the production web entry keeps
+// serving through NestJS.
 //
 // Every root requires the settings.manage permission and re-derives the fixed
 // SettingsResolver.assertAdmin gate from MySQL (a system role of the caller's
