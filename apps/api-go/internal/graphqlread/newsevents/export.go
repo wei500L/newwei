@@ -163,9 +163,7 @@ func (e *Exporter) ExportEvents(ctx context.Context, orgID string, query ExportQ
 // prisma.newsEvent.findMany filter (orgId, optional status, primaryEntity
 // contains, lastAt >= now-window), the item count and the
 // (lastAt DESC, startAt DESC) order, but applies neither the GraphQL root's
-// 300-candidate cap nor its 120-character entity clip. The contains term is
-// passed through as a LIKE pattern with no escaping, which is what Prisma's
-// `contains` does.
+// 300-candidate cap nor its 120-character entity clip.
 func (s *service) listEventRowsForExport(
 	ctx context.Context,
 	orgID string,
@@ -190,7 +188,7 @@ WHERE orgId = ? AND lastAt >= ?`
 	}
 	if entity != "" {
 		query += " AND primaryEntity LIKE ?"
-		args = append(args, "%"+entity+"%")
+		args = append(args, likeContains(entity))
 	}
 	query += " ORDER BY lastAt DESC, startAt DESC LIMIT ?"
 	args = append(args, limit)

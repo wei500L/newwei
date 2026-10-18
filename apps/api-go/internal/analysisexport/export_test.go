@@ -71,12 +71,13 @@ func TestCSVRowWriterContract(t *testing.T) {
 }
 
 // TestBuildItemsRowTitleFallback pins `readModel.title ?? item.name`: an
-// existing read model keeps an explicitly empty title and the publishedAt
-// fallback only applies when the read-model timestamp is missing.
+// explicit empty title is kept, a null/absent title falls back to the ItemMeta
+// name, and publishedAt only falls back when the read-model timestamp is
+// missing.
 func TestBuildItemsRowTitleFallback(t *testing.T) {
 	published := itemsreading.NewISOTime(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
 	row := itemsreading.ItemMetaRow{ID: "item-1", Name: "item name", PublishedAt: &published}
-	rowModel := itemsreading.ExportReadModelRow{ItemMetaID: "item-1", Title: "", SourceName: strPtr("Wire")}
+	rowModel := itemsreading.ExportReadModelRow{ItemMetaID: "item-1", Title: strPtr(""), SourceName: strPtr("Wire")}
 	built := buildItemsRow(row, &rowModel, nil)
 	if built[1] != "" {
 		t.Fatalf("empty read-model title must be kept, got %q", built[1])
@@ -88,8 +89,14 @@ func TestBuildItemsRowTitleFallback(t *testing.T) {
 		t.Fatalf("publishedAt cell = %q, want the ItemMeta fallback", built[4])
 	}
 
+	nullTitle := itemsreading.ExportReadModelRow{ItemMetaID: "item-1"}
+	built = buildItemsRow(row, &nullTitle, nil)
+	if built[1] != "item name" {
+		t.Fatalf("null read-model title must fall back to the ItemMeta name, got %q", built[1])
+	}
+
 	readModelPublished := itemsreading.NewISOTime(time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC))
-	rowModel = itemsreading.ExportReadModelRow{ItemMetaID: "item-1", Title: "Read title", PublishedAt: &readModelPublished}
+	rowModel = itemsreading.ExportReadModelRow{ItemMetaID: "item-1", Title: strPtr("Read title"), PublishedAt: &readModelPublished}
 	link := itemsreading.ExportEventLink{EventID: "event-1", EventTitle: "Event title"}
 	built = buildItemsRow(row, &rowModel, &link)
 	if built[1] != "Read title" || built[4] != "2026-02-03T00:00:00.000Z" {

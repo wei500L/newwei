@@ -72,19 +72,26 @@ func (s *Service) ListForExport(ctx context.Context, orgID string, query ExportI
 		scopedOK: restricted,
 		take:     ExportMaxRows,
 	}
-	page, err := s.listItemsPage(ctx, orgID, query.UserID, args, 1)
+	result, err := s.listItemsPage(ctx, orgID, query.UserID, args, 1)
 	if err != nil {
 		return nil, err
 	}
-	return page.rows, nil
+	rows := make([]ItemMetaRow, 0, len(result.Edges))
+	for _, edge := range result.Edges {
+		rows = append(rows, edge.Row)
+	}
+	return rows, nil
 }
 
 // ExportReadModelRow is the named read-model projection the items CSV needs. A
 // missing document leaves the optional fields nil so the caller falls back to
-// the ItemMeta row or an empty cell, exactly like the NestJS export.
+// the ItemMeta row or an empty cell, exactly like the NestJS export. Title is
+// optional on purpose: the source `readModel?.title ?? item.name` falls back
+// only when the stored value is null or absent, while an explicit empty string
+// is kept.
 type ExportReadModelRow struct {
 	ItemMetaID  string
-	Title       string
+	Title       *string
 	PublishedAt *ISOTime
 	SourceName  *string
 	Domain      *string
@@ -106,7 +113,7 @@ type exportReadModelProcessed struct {
 // exportReadModelDoc decodes the projected itemreadmodels document.
 type exportReadModelDoc struct {
 	ItemMetaID  string                    `bson:"itemMetaId"`
-	Title       string                    `bson:"title"`
+	Title       *string                   `bson:"title"`
 	PublishedAt *ISOTime                  `bson:"publishedAt"`
 	SourceName  *string                   `bson:"sourceName"`
 	Domain      *string                   `bson:"domain"`

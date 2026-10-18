@@ -99,10 +99,11 @@ func (s *Service) ExportEventsCSV(ctx context.Context, orgID string, queryString
 }
 
 // buildItemsRow ports the row projection of buildItemsExportRows. The title is
-// `readModel.title ?? item.name`: an existing read model keeps its title even
-// when it is an empty string, and only a missing document falls back. The other
-// read-model fields default to an empty cell, publishedAt falls back to the
-// ItemMeta timestamp, and the linked event defaults to empty.
+// `readModel.title ?? item.name`: a null or absent read-model title (including
+// a missing document) falls back to the ItemMeta name, while an explicit empty
+// string is kept. The other read-model fields default to an empty cell,
+// publishedAt falls back to the ItemMeta timestamp, and the linked event
+// defaults to empty.
 func buildItemsRow(
 	row itemsreading.ItemMetaRow,
 	readModel *itemsreading.ExportReadModelRow,
@@ -112,7 +113,9 @@ func buildItemsRow(
 	publishedAt := ""
 	source, domain, language, region, sentiment, contentType, url := "", "", "", "", "", "", ""
 	if readModel != nil {
-		title = readModel.Title
+		if readModel.Title != nil {
+			title = *readModel.Title
+		}
 		if readModel.PublishedAt != nil {
 			publishedAt = formatISOTime(readModel.PublishedAt.Time)
 		}
