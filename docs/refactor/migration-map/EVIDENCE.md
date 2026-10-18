@@ -28,8 +28,20 @@
 | 本轮前地图#69 | `7526429123cfc17cdabc971a7fa0ba01d27e323d` | [39122969782](https://github.com/wei500L/newwei/actions/runs/39122969782) success，14:54读取 | 不继承给本轮新提交；两个smoke skipped |
 | 工作台PR #70 前一业务head | `200ab9440bc2c4d217f429999468c90b81a968e0` | [39124393842](https://github.com/wei500L/newwei/actions/runs/39124393842) success，14:56读取 | 普通CI成功；regen与两个smoke skipped，不记额外通过 |
 | 工作台PR #70 当前文档追加head | `adb765d0180e8b34910181e8c6fde8be400a2dff` | [39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) success，15:10读取 | verify、user-settings/vector integration成功；regen与smoke skipped；不等于8写逐字段/部署验证 |
+| 条目列表PR #74 业务head | `c45f1afe3754fab3cdd31e6fb8ba5b9eb37bd9eb` | [39136842080](https://github.com/wei500L/newwei/actions/runs/39136842080) success（17:46 MSK复核） | verify 全步骤（lint/typecheck/Web覆盖率/Vector+API 测试/契约与 SDL 漂移/Go tests/build/SBOM/Compose pin）+ user-settings/vector integration 成功；两个 smoke 与两个 regen skipped；不代替 ES/vector/rerank 实网、部署与流量验证 |
 
 main job直接证据：[verify](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821601)、[MySQL/Redis](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821431)、[Qdrant差分](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821605)。verify含lint/typecheck、Web覆盖率、Vector/API测试、契约漂移、Go tests和build，范围由 `.github/workflows/ci.yml` 与run步骤核对；并非每个业务/外部服务的端到端验收。未复验历史专用smoke精确head，不能引用报告当本轮运行证据。
+
+### 17:22–17:46 MSK 增量：ITEMS-LIST-001（Query items）
+
+- 分支 `refactor/go-graphql-items-list`，Ready [PR #74](https://github.com/wei500L/newwei/pull/74)；从 main `9d0462e1` 创建，未合 main，main 覆盖数/注册数不提前增加。
+- 普通 CI 修复链（同一 PR，正常追加提交，不 amend/rebase/force-push）：
+  1. head `3a8b73d1` [39134685779](https://github.com/wei500L/newwei/actions/runs/39134685779) failure：verify 的 Lint（`go vet`）报 `internal/itemsreading/relevance.go: undefined: pickResultStringArray`。
+  2. head `0c8f645d` [39135069657](https://github.com/wei500L/newwei/actions/runs/39135069657) failure：verify 的 Go tests 报新增选择元数据测试失败——测试未先 `validator.Validate`（`@skip/@include` 的 `Directive.Definition` 只在校验后填充），且 executor 用 Query 作父类型、传字段自身 selection set 构建 root 选择元数据，导致 resolver 收到的元数据恒为空。
+  3. head `de7256b5` [39136040616](https://github.com/wei500L/newwei/actions/runs/39136040616) failure：Go tests 报测试查询里对象字段 `raw` 缺子选择集（GraphQL 校验规则）。
+  4. head `c45f1afe` [39136842080](https://github.com/wei500L/newwei/actions/runs/39136842080) success（见上表）。
+- 已实现：page/after 双分支、复合 (time,id) 游标、CREATED/PUBLISHED/PERSONALIZED 排序、RELEVANCE 两阶段排名（rerank 失败 503 不降级）、个性化增量候选窗口、显式 filters presence、双 read-model 分支、本页批量嵌套投影、独立子开关与父依赖校验、具名 rerank options/观测与隔离请求日志。
+- 未验证：Elasticsearch、vector 服务、embedding/rerank 真实模型、真实 MySQL/Mongo/Redis 并发、部署/流量/回滚演练；`llmrequestlogs` 只做只读源码核对。合入前不得关闭整个 GAP-LEGACY-001。
 
 本轮文档提交后的普通CI以 [#69 Checks](https://github.com/wei500L/newwei/pull/69/checks) **当前head**为准，最终交付/PR描述记录其精确head和run结果；本文件不预先宣称尚未产生的提交已通过，也不为了嵌入自身SHA而不断追加文档提交。实际部署/生产流量、SMTP/模型/S3/crawl4ai/地理/Telegram/Oref/AkShare实网仍未核实。
 

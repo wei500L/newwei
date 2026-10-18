@@ -101,8 +101,7 @@ https://github.com/wei500L/newwei/actions/runs/39127631691 `success`）。本批
 
 ## 验证与未验证
 
-- 普通 CI（verify 的 `go test ./...` / build / lint）在 PR head 上执行；本地只做 `gofmt`、
-  `git diff --check` 与只读静态复核，未在本机运行 build/test/Docker/服务。
+- 普通 CI：业务 head `c45f1afe3754fab3cdd31e6fb8ba5b9eb37bd9eb`，[run 39136842080](https://github.com/wei500L/newwei/actions/runs/39136842080) success（verify 的 lint/typecheck/Web 覆盖率/Vector+API 测试/契约与 SDL 漂移/Go tests/build/SBOM/Compose pin，加 user-settings 与 vector integration）；两个 smoke 与两个 regen 为 skipped，不记为本批通过。修复链：`3a8b73d1`（go vet undefined）→ `0c8f645d`（选择元数据测试与 root 父类型）→ `de7256b5`（测试查询缺子选择集）→ `c45f1afe` success。本地只做 `gofmt`、`git diff --check` 与只读静态复核，未在本机运行 build/test/Docker/服务。
 - 新增少量 CI 行为测试：游标新旧格式与无效值、显式 `{}` filters 优先、IR2 offset 上限、两条排序
   公式、画像词条归一化与来源/域回退、选择元数据对 alias/fragment/`@skip`/`@include` 的解析、
   新子开关与父依赖。

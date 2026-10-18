@@ -1,10 +1,11 @@
 # ITEMS-LIST-001 · 完整GraphQL条目列表与排序
 
-- 状态in_progress；2026-10-18第三批并行提示词发出，编码分支 `refactor/go-graphql-items-list`，
+- 状态pr_open；2026-10-18第三批并行提示词发出，编码分支 `refactor/go-graphql-items-list`，
   worktree `/Users/oo/project/newwei-go-graphql-items-list`，从当时 `origin/main
   9d0462e16d88d146b8afbf67cdd58d8b7419ff29` 创建。
 - 来源BL-05/GAP-LEGACY-001的Query items子范围；[完整提示词](ITEMS-LIST-001.prompt.md)（规划PR #71）。
 - 代码基线9d0462e16d88d146b8afbf67cdd58d8b7419ff29（main run 39127631691 success）。实网与部署未验证。
+- Ready [PR #74](https://github.com/wei500L/newwei/pull/74)，业务 head `c45f1afe3754fab3cdd31e6fb8ba5b9eb37bd9eb`，普通 CI [39136842080](https://github.com/wei500L/newwei/actions/runs/39136842080) success；尚未合 main。
 - 本批强化用户要求：专注必要业务，不写防御性框架；新增/修改源码注释全英文，在分页/排序/租户绑定处解释原因，文档/提交/PR中文。
 
 ## 交付范围
@@ -27,7 +28,7 @@ go 要求 `API_GO_GRAPHQL_READ_MODE=go` 且 `API_GO_ITEMS_READING_MODE=go`）。
 
 ## 验证
 
-- 普通 CI：待 PR head 运行后补齐精确 head/run URL/verify 结论。
+- 普通 CI：head `c45f1afe3754fab3cdd31e6fb8ba5b9eb37bd9eb`，[run 39136842080](https://github.com/wei500L/newwei/actions/runs/39136842080) success（verify 全步骤 + user-settings/vector integration；smoke 与 regen skipped）。
 - 只读静态复核：`gofmt`、`git diff --check`、逐文件类型/契约核对；本机未运行 build/test/Docker/服务。
 - 未验证：ES/vector/rerank 模型、真实 MySQL/Mongo/Redis 并发、部署/流量/回滚演练。
 
