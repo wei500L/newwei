@@ -67,6 +67,18 @@
 //	         与异常上报 POST 仍回 NestJS。回滚只把 API_GO_ADMIN_LOGS_MODE
 //	         改回 legacy。不启用 shadow，不改前端，不改 canary。
 //
+//	         API_GO_EXCEPTION_INGEST_MODE=go takes over the two
+//	         exception-report POSTs: POST /api/observability/exception-events/client
+//	         (AllowAuthenticated plus the existing user/IP sliding-window
+//	         buckets) and POST /api/internal/observability/exception-events
+//	         (LITELLM_CONFIG_INTERNAL_TOKEN). Both write one document into the
+//	         existing exceptionevents collection; the client endpoint never
+//	         persists a stack and always takes orgId/userId from the
+//	         server-side identity. The seven read GETs stay on
+//	         API_GO_ADMIN_LOGS_MODE. Rollback only sets
+//	         API_GO_EXCEPTION_INGEST_MODE back to legacy; no shadow or worker
+//	         is started.
+//
 //	         API_GO_QUALITY_OVERVIEW_MODE=go 时接管管理端质量面板的 5 条
 //	         精确 GET：admin/quality 的 news-sources、pipeline、overview、
 //	         task-logs 与 task-logs/summary。新闻源质量与流水线质量复用
@@ -558,6 +570,10 @@ func run() error {
 	if cfg.AdminLogsMode == config.AdminLogsModeGo {
 		adminLogsMode = string(legacyproxy.ModeGo)
 	}
+	exceptionIngestMode := ""
+	if cfg.ExceptionIngestMode == config.ExceptionIngestModeGo {
+		exceptionIngestMode = string(legacyproxy.ModeGo)
+	}
 	newsIndicatorsMode := ""
 	if cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
 		newsIndicatorsMode = string(legacyproxy.ModeGo)
@@ -581,6 +597,26 @@ func run() error {
 	runtimeSettingsMode := ""
 	if cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo {
 		runtimeSettingsMode = string(legacyproxy.ModeGo)
+	}
+	platformGovernanceSettingsMode := ""
+	if cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
+		platformGovernanceSettingsMode = string(legacyproxy.ModeGo)
+	}
+	modelAccessSettingsMode := ""
+	if cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo {
+		modelAccessSettingsMode = string(legacyproxy.ModeGo)
+	}
+	infrastructureSettingsMode := ""
+	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
+		infrastructureSettingsMode = string(legacyproxy.ModeGo)
+	}
+	dataRuntimeSettingsMode := ""
+	if cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo {
+		dataRuntimeSettingsMode = string(legacyproxy.ModeGo)
+	}
+	accountSecurityMode := ""
+	if cfg.AccountSecurityMode == config.AccountSecurityModeGo {
+		accountSecurityMode = string(legacyproxy.ModeGo)
 	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
@@ -610,12 +646,24 @@ func run() error {
 	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
 	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
 	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
+	// The exception ingest takeover is registered next to the admin logs
+	// takeover. The two switches are independent and their paths do not
+	// overlap, so both may be go at the same time.
+	rules = legacyproxy.WithExceptionIngest(rules, exceptionIngestMode)
 	rules = legacyproxy.WithNewsIndicators(rules, newsIndicatorsMode)
 	rules = legacyproxy.WithQualityOverview(rules, qualityOverviewMode)
 	rules = legacyproxy.WithClassificationRssOps(rules, classificationRssOpsMode)
 	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
 	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
 	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
+	// The platform governance settings group is registered alongside the runtime
+	// settings group. The two switches are independent and their paths do not
+	// overlap, so both may be go at the same time.
+	rules = legacyproxy.WithPlatformGovernanceSettings(rules, platformGovernanceSettingsMode)
+	rules = legacyproxy.WithModelAccessSettings(rules, modelAccessSettingsMode)
+	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
+	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
+	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -671,9 +719,15 @@ func run() error {
 				cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo ||
 				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
+				cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo ||
+				cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo ||
+				cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo ||
+				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
-				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
+				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
+				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
+				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -734,15 +788,22 @@ func run() error {
 	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
+	infrastructureSettingsGo := cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo
+	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
+	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
 	// The situation monitor signals takeover needs the same credentialed stack
 	// (JWT verification, Redis revocation list, MySQL membership re-derivation)
 	// as the other migrated domains, so it participates in the shared assembly.
 	situationSignalsGo := cfg.SituationSignalsMode == config.SituationSignalsModeGo
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || crawlReadTelemetryGo || classificationRssOpsGo
-	// The situation monitor signals takeover appends to the shared decision
-	// instead of rewriting the other domains' expression.
-	needsCredentialedGo = needsCredentialedGo || situationSignalsGo
+	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
+	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
+	exceptionIngestGo := cfg.ExceptionIngestMode == config.ExceptionIngestModeGo
+	// 平行批次追加的模式全部保留（#53 frontier、#54 platform governance、#55
+	// infrastructure、#56 model access、#57 situation monitor signals、#60 account
+	// security、#61 data runtime、#64 exception ingest）。任一变量改成本批所需值
+	// 都不影响其他批次接线。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1072,6 +1133,10 @@ func run() error {
 		return err
 	}
 
+	if err := wireExceptionIngest(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
+	}
+
 	if err := wireNewsIndicators(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
@@ -1088,6 +1153,21 @@ func run() error {
 		return err
 	}
 	if err := wireRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	if err := wirePlatformGovernanceSettings(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
+		return err
+	}
+	if err := wireInfrastructureSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	if err := wireDataRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+	}
+	if err := wireAccountSecurity(gateway, cfg, sharedDB, redisClient); err != nil {
+		return err
+	}
+
+	if err := wireModelAccessSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 
@@ -1227,6 +1307,11 @@ func run() error {
 			// 回落 NestJS；不含连接串与密钥。
 			"newsnowClusteringOps": map[string]any{
 				"mode": string(cfg.NewsnowClusteringOpsMode),
+			},
+			// 账户资料、会话退出与机器令牌的 8 条 HTTP。legacy 时全部回落
+			// NestJS；不含连接串、密码、hash 与令牌。
+			"accountSecurity": map[string]any{
+				"mode": string(cfg.AccountSecurityMode),
 			},
 		})
 	})

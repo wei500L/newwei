@@ -137,7 +137,9 @@ export class ExceptionEventsService {
     const [total, items] = await Promise.all([
       ExceptionEventModel.countDocuments(filter),
       ExceptionEventModel.find(filter)
-        .sort({ timestamp: -1 })
+        // _id DESC is the deterministic tiebreaker for equal timestamps; the
+        // page/offset protocol and the result count are unchanged.
+        .sort({ timestamp: -1, _id: -1 })
         .skip(offset)
         .limit(limit)
         .lean()
@@ -163,42 +165,73 @@ export class ExceptionEventsService {
 
   async stats(options: ExceptionEventStatsOptions = {}): Promise<ExceptionEventStats> {
     const filter = this.buildFilter(options);
-    const [total, byKind, byDay] = await Promise.all([
-      ExceptionEventModel.countDocuments(filter),
-      ExceptionEventModel.aggregate([
-        { $match: filter },
-        { $group: { _id: "$kind", count: { $sum: 1 } } },
-        { $sort: { count: -1 } }
-      ]),
-      ExceptionEventModel.aggregate([
-        { $match: filter },
-        {
-          $group: {
-            _id: {
+
+    // One aggregate replaces the previous countDocuments + two aggregates:
+    // group by (UTC day, kind) first, then fold the compressed buckets into a
+    // single row holding total plus two pushed arrays.
+    const [grouped] = await ExceptionEventModel.aggregate<{
+      total?: unknown;
+      byKind?: { kind?: unknown; count?: unknown }[];
+      byDay?: { date?: unknown; count?: unknown }[];
+    }>([
+      { $match: filter },
+      {
+        $group: {
+          _id: {
+            day: {
               $dateToString: {
                 date: "$timestamp",
                 format: "%Y-%m-%d",
                 timezone: "UTC"
               }
             },
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { _id: -1 } },
-        { $limit: 30 }
-      ])
+            kind: "$kind"
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$count" },
+          byKind: { $push: { kind: "$_id.kind", count: "$count" } },
+          byDay: { $push: { date: "$_id.day", count: "$count" } }
+        }
+      }
     ]);
 
+    // byKind: merge the per-day counts, count DESC then kind ASC.
+    const kindTotals = new Map<string, number>();
+    for (const bucket of grouped?.byKind ?? []) {
+      const kind = typeof bucket.kind === "string" ? bucket.kind : "unknown";
+      kindTotals.set(kind, (kindTotals.get(kind) ?? 0) + Number(bucket.count ?? 0));
+    }
+    const byKind = Array.from(kindTotals.entries())
+      .map(([kind, count]) => ({ kind: kind as ExceptionEventKind, count }))
+      .sort((left, right) => {
+        if (left.count !== right.count) {
+          return right.count - left.count;
+        }
+        return left.kind < right.kind ? -1 : left.kind > right.kind ? 1 : 0;
+      });
+
+    // byDay: merge the per-kind counts, date DESC, at most 30 dates with data.
+    const dayTotals = new Map<string, number>();
+    for (const bucket of grouped?.byDay ?? []) {
+      if (typeof bucket.date !== "string") {
+        continue;
+      }
+      dayTotals.set(bucket.date, (dayTotals.get(bucket.date) ?? 0) + Number(bucket.count ?? 0));
+    }
+    const byDay = Array.from(dayTotals.entries())
+      .map(([date, count]) => ({ date, count }))
+      .sort((left, right) => (left.date < right.date ? 1 : left.date > right.date ? -1 : 0))
+      .slice(0, 30);
+
     return {
-      total,
-      byKind: byKind.map((item) => ({
-        kind: (item._id as ExceptionEventKind) ?? "unknown",
-        count: item.count ?? 0
-      })),
-      byDay: byDay.map((item) => ({
-        date: item._id as string,
-        count: item.count ?? 0
-      }))
+      total: Number(grouped?.total ?? 0),
+      byKind,
+      byDay
     };
   }
 }

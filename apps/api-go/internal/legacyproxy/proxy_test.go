@@ -1573,6 +1573,157 @@ func TestRuntimeSettingsUnmigratedRoutesStayNest(t *testing.T) {
 	}
 }
 
+// platformGovernanceGoRoutes are the sixteen /api/system-settings routes the
+// platform governance settings group takes over when its switch is go.
+func platformGovernanceGoRoutes() []struct{ method, path string } {
+	return []struct{ method, path string }{
+		{http.MethodGet, "/api/system-settings/security"},
+		{http.MethodPut, "/api/system-settings/security"},
+		{http.MethodGet, "/api/system-settings/assistant-quota"},
+		{http.MethodPut, "/api/system-settings/assistant-quota"},
+		{http.MethodDelete, "/api/system-settings/assistant-quota"},
+		{http.MethodGet, "/api/system-settings/assistant-safety"},
+		{http.MethodPut, "/api/system-settings/assistant-safety"},
+		{http.MethodDelete, "/api/system-settings/assistant-safety"},
+		{http.MethodGet, "/api/system-settings/assistant-safety/metrics"},
+		{http.MethodGet, "/api/system-settings/task-logs"},
+		{http.MethodPut, "/api/system-settings/task-logs"},
+		{http.MethodDelete, "/api/system-settings/task-logs"},
+		{http.MethodGet, "/api/system-settings/llm-request-logs"},
+		{http.MethodPut, "/api/system-settings/llm-request-logs"},
+		{http.MethodDelete, "/api/system-settings/llm-request-logs"},
+		{http.MethodPost, "/api/system-settings/llm-request-logs/metadata-policy/reset"},
+	}
+}
+
+// platformGovernanceNestRoutes are the /api/system-settings routes that must
+// keep falling back to the legacy proxy even when the platform governance switch
+// is go.
+func platformGovernanceNestRoutes() []struct{ method, path string } {
+	return []struct{ method, path string }{
+		// Deliberately not migrated: diagnostics calls LiteLLM, and the other
+		// groups have their own services.
+		{http.MethodGet, "/api/system-settings/assistant-safety/diagnostics"},
+		{http.MethodGet, "/api/system-settings/email"},
+		{http.MethodGet, "/api/system-settings/archive-preparation"},
+		{http.MethodGet, "/api/system-settings/realtime-signals"},
+		{http.MethodGet, "/api/system-settings/situation-monitor"},
+		{http.MethodGet, "/api/system-settings/vector-service"},
+		// Unlisted methods on the taken-over exact paths stay on NestJS.
+		{http.MethodPost, "/api/system-settings/security"},
+		{http.MethodPatch, "/api/system-settings/assistant-quota"},
+		{http.MethodPost, "/api/system-settings/assistant-safety"},
+		{http.MethodPost, "/api/system-settings/task-logs"},
+		{http.MethodPost, "/api/system-settings/llm-request-logs"},
+		{http.MethodGet, "/api/system-settings/llm-request-logs/metadata-policy/reset"},
+		// A trailing slash or an extra segment never matches an exact rule.
+		{http.MethodGet, "/api/system-settings/task-logs/"},
+		{http.MethodGet, "/api/system-settings/task-logs/x"},
+		{http.MethodPut, "/api/system-settings/security/extra"},
+		{http.MethodGet, "/api/system-settings/assistant-safety/metrics/extra"},
+		{http.MethodGet, "/api/system-settings/assistant-safety/metrics/"},
+	}
+}
+
+func TestPlatformGovernanceSettingsStayLegacyByDefault(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithPlatformGovernanceSettings(rules, "")
+	rules = WithPlatformGovernanceSettings(rules, "legacy")
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range append(platformGovernanceGoRoutes(), platformGovernanceNestRoutes()...) {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+}
+
+func TestPlatformGovernanceSettingsGoOwnsRoutes(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithPlatformGovernanceSettings(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range platformGovernanceGoRoutes() {
+		got := gateway.match(tc.method, tc.path)
+		if got.Mode != ModeGo {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		}
+		key := got.Prefix
+		if got.HandlerKey != "" {
+			key = got.HandlerKey
+		}
+		if key != PlatformGovernanceSettingsKey {
+			t.Fatalf("%s %s key=%s, want %s", tc.method, tc.path, key, PlatformGovernanceSettingsKey)
+		}
+	}
+	// The two longer exact paths must win over the paths they extend.
+	metrics := gateway.match(http.MethodGet, "/api/system-settings/assistant-safety/metrics")
+	if !metrics.Exact || metrics.Prefix != "/api/system-settings/assistant-safety/metrics" {
+		t.Fatalf("metrics rule=%+v", metrics)
+	}
+	reset := gateway.match(http.MethodPost, "/api/system-settings/llm-request-logs/metadata-policy/reset")
+	if !reset.Exact || reset.Prefix != "/api/system-settings/llm-request-logs/metadata-policy/reset" {
+		t.Fatalf("metadata reset rule=%+v", reset)
+	}
+	// CORS preflight on the taken-over paths is answered by the Go handler.
+	for _, tc := range platformGovernanceGoRoutes() {
+		if got := gateway.match(http.MethodOptions, tc.path); got.Mode != ModeGo {
+			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Mode)
+		}
+	}
+}
+
+func TestPlatformGovernanceSettingsUnmigratedRoutesStayNest(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithPlatformGovernanceSettings(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range platformGovernanceNestRoutes() {
+		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		}
+	}
+}
+
+// TestPlatformGovernanceAndRuntimeSettingsCoexist covers the deployment where
+// both switches are go at once: the two groups share no path, and each route
+// must still resolve to its own handler key.
+func TestPlatformGovernanceAndRuntimeSettingsCoexist(t *testing.T) {
+	rules := DefaultRules(ModeShadow, "")
+	rules = WithRuntimeSettings(rules, string(ModeGo))
+	rules = WithPlatformGovernanceSettings(rules, string(ModeGo))
+	gateway, err := New("http://legacy:4000", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range platformGovernanceGoRoutes() {
+		got := gateway.match(tc.method, tc.path)
+		key := got.Prefix
+		if got.HandlerKey != "" {
+			key = got.HandlerKey
+		}
+		if got.Mode != ModeGo || key != PlatformGovernanceSettingsKey {
+			t.Fatalf("%s %s mode=%s key=%s, want go %s", tc.method, tc.path, got.Mode, key, PlatformGovernanceSettingsKey)
+		}
+	}
+	for _, tc := range runtimeSettingsGoRoutes() {
+		got := gateway.match(tc.method, tc.path)
+		key := got.Prefix
+		if got.HandlerKey != "" {
+			key = got.HandlerKey
+		}
+		if got.Mode != ModeGo || key != RuntimeSettingsKey {
+			t.Fatalf("%s %s mode=%s key=%s, want go %s", tc.method, tc.path, got.Mode, key, RuntimeSettingsKey)
+		}
+	}
+}
+
 // classificationRssOpsRoutes lists the 13 exact route rules owned by the
 // classification/RSS ops switch when it is go.
 func classificationRssOpsRoutes() []struct{ method, path string } {

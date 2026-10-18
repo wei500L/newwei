@@ -411,7 +411,29 @@ export class TaskLogSettingsService implements OnModuleInit {
   }
 
   private async loadIndexesSafe(): Promise<Record<string, unknown>[]> {
-    return TaskLogModel.collection.indexes();
+    const collection = TaskLogModel.collection;
+    try {
+      const indexes = await collection.indexes();
+      return indexes as Record<string, unknown>[];
+    } catch (error) {
+      // TTL-01: a missing `tasklogs` collection is a valid empty index list,
+      // not a failure. Without this the first PUT/DELETE on a fresh deployment
+      // returns 500 and the setting can never be written. Same handling as
+      // llm-request-log-settings.service.ts loadIndexesSafe.
+      if (this.isNamespaceNotFound(error)) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  private isNamespaceNotFound(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+      return false;
+    }
+    const code = (error as { code?: unknown }).code;
+    const codeName = (error as { codeName?: unknown }).codeName;
+    return code === 26 || codeName === "NamespaceNotFound";
   }
 
   private hasDesiredManagedTtlIndex(
