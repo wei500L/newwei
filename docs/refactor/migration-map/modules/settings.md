@@ -120,6 +120,8 @@ Nest 功能目录：[system-settings](../../../../apps/api/src/modules/system-se
 
 ## 设置写已合并与独立启用缺口
 
+15:01–15:08续审补实各组缓存形状/TTL、组织键、prompt无Redis例外与审计边界，见 [AUDIT settings](../AUDIT.md#settings)。来源策略四写的revision/preset/categoryAuthority与同步warning拆分依据见 [BL-07](../BACKLOG.md#bl-07--settings--来源策略四写)。
+
 13 写与 settingscrawl 共享模型/规范化、SystemSetting 与 Redis 已随 #68 合入；本轮沿主路径静态核对，逐字段/运行验证范围见 AUDIT。独立路由与资源条件仍漏接，详见 [GAP-GQL-001](../GAPS.md#gap-gql-001) 和 [GraphQL 组合](graphql-runtime.md#本轮有意义的组合复核)。#70 14:49 head 200ab944 虽已同步 #68、补设置写鉴权资源 OR，路由 OR 仍漏设置写；未合入前不改变 main 结论。只规划最小接线修复，不重新迁整批13写。
 
 ## 合并、CI 与历史报告证据

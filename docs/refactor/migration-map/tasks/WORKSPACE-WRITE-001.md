@@ -8,7 +8,7 @@
 - main 基线：`3cedce9aa3200436aba3596f63b559de5490cec8`。分支 `refactor/go-graphql-workspace-write`；worktree `/Users/oo/project/newwei-go-graphql-workspace-write`。
 - [Ready PR #70](https://github.com/wei500L/newwei/pull/70)：OPEN，isDraft=false，autoMergeRequest=null；head 与本机 HEAD 均为 `adb765d0180e8b34910181e8c6fde8be400a2dff`；相比200ab944只追加历史交付报告文档，业务实现/接线未变。14:37曾只读看到合并冲突；14:49已由原执行任务正常 merge #68 并推送，worktree 干净。本地图未修改该目录；干净不证明执行器活跃。
 - 初始业务提交 `db6339122263658148072f65dc641d9b769117e7` 基于 #67，`200ab944` 为同步 #68 的正常 merge。当前无实际业务 merge SHA，8写未进入 main，main 仍不识别 WORKSPACE_WRITE 模式；不得提前计8个注册。
-- head `200ab944` 的[普通 CI 39124393842](https://github.com/wei500L/newwei/actions/runs/39124393842) 已success；当前 `adb765d0` 的[普通 CI 39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) 于14:56为in_progress，不继承旧head结果；两个smoke skipped不是通过。最新观察以 [EVIDENCE](../EVIDENCE.md) 为准；真实 SMTP/webhook/queue/部署未核实。
+- head `200ab944` 的[普通 CI 39124393842](https://github.com/wei500L/newwei/actions/runs/39124393842) 已success；当前 `adb765d0` 的[普通 CI 39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) 于15:10复核success；verify与两个integration成功，regen/两个smoke skipped不是额外通过，CI仍不替代8写逐字段/运行验收。最新观察以 [EVIDENCE](../EVIDENCE.md) 为准；真实 SMTP/webhook/queue/部署未核实。
 - 候选实现：workspacewrite/register.go 注册8写；#70 修改 main/config、alerts/history 的模型注册/序列化，并修改 Nest dashboard/notifications 优化。地图只确认生产接线差异与文件占用，**没有逐字段验收8写事务/版本/优化实现**，不把 PR 描述当验收。
 - 共享接线：#70 候选中 workspace 写独立条件已有；合并 #68 后 needsCredentialedGo 补设置写，但 graphqlRouteMode/无效 DSN 列表仍漏设置写。详见 [GAP-GQL-001](../GAPS.md#gap-gql-001)；不要误记为 main 已修复，也不在本地图修业务。
 - 记录随地图 [#69](https://github.com/wei500L/newwei/pull/69) 发布；文档发布与业务合并独立。状态保持 pr_open，业务范围持续占用，不重发任务。

@@ -51,14 +51,35 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 ### BL-07 · settings / 来源策略四写
 
 - **范围/缺口**：updateNewsEventSourcePolicy、updateNewsEventSourcePolicyPresets、resetNewsEventSourcePolicy、rollbackNewsEventSourcePolicy（GAP-LEGACY-001）；不动已合并13写。
-- **基础/依据**：G/graphqlread/settingscrawl policyReader 和 publicportal 的来源规范化；N/news-event-source-policy.service.ts updatePolicy/updatePolicyPreset/resetPolicy/rollbackPolicy。expectedRevision 冲突、revision 历史、preset delta/分类同步与 Redis syncWarnings 是主要工作，不只是四次 upsert。
-- **文件/前置/冲突**：新 GraphQL 写包及现有 policy helpers/main；MySQL/SystemSetting/Redis，无须迁 ingestion 才可交付。**BL-01/#70 接线稳定后可独立窗口**；避免 BL-18 同时更改策略模型；先核乐观并发与同步失败语义。
+- **基础/依据**：G/graphqlread/settingscrawl policyReader 和 publicportal 的来源规范化；N/news-event-source-policy.service.ts updatePolicy/updatePolicyPreset/resetPolicy/rollbackPolicy。expectedRevision校验、revision历史、preset delta/分类同步与Redis syncWarnings是主要工作，不只是四次upsert。
+- **文件/前置/冲突**：新 GraphQL 写包及现有 policy helpers/main；MySQL/SystemSetting/Redis，无须迁 ingestion 才可交付。**BL-01/#70 接线稳定后可独立窗口**；避免 BL-18 同时更改策略模型；本轮已进一步核对读后校验/同步失败语义，准入还需明确是否保留或优化其并发边界，见下表。
+
+15:01–15:08源码续读，仍main3cedce9a；可交付步骤已明确：
+
+| 精确root | 必须迁的内部步骤/返回 | 数据与失败边界 |
+|---|---|---|
+| updateNewsEventSourcePolicy | normalize有效列表→转delta→读取prevState→可选expectedRevision校验→新revision→persistState；只有输入显式含categoryAuthority才额外保存该组规则 | SystemSetting news_event_source_policy:<org>；分类规则另键保存，非一个总事务；DB成功后Redis失败返回syncWarnings，不抹去已保存状态 |
+| rollbackNewsEventSourcePolicy | expectedRevision校验→在保留历史中找target→创建**新**rollback revision与note→持久化并返回当前categoryAuthority | 不把activeRevision简单改回旧数字，不回滚categoryAuthority；找不到revision是合法400 |
+| resetNewsEventSourcePolicy | 检查当前版本→新reset revision，delta置空→保留revision历史→返回策略详情 | 是重置delta而非删除整份历史/分类规则；状态Redis TTL60秒 |
+| updateNewsEventSourcePolicyPresets | 可选expectedUpdatedAt精确比较→normalize→独立preset upsert→DB updatedAt→审计/cache→显式categoryAuthority另存→返回syncWarnings | news_event_source_policy_preset:<org>；preset/cache TTL30秒；当前Nest是读后校验再upsert，未使用数据库原子CAS，不描述成已具备CAS事务 |
+
+Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyState/effectiveFromDelta/getPolicyDetails/getPolicyPreset/getRevisionDiff/getSyncStatus及具名模型，但reader/helper大多私有；写端需要在同包补共享表面或明确抽取，不从publicportal另建不兼容state。状态保留60条revision，读取历史默认20、上限100；缓存同步status真实比较DB/cache时间戳与缺失/失败warning，不能由写“成功”自动推断已同步。主要新增文件可隔离为settingscrawl的policy写支持+新写root包；现有13写业务不进入范围。
 
 ### BL-08 · analysis / 三个 CSV 导出
 
 - **范围/缺口**：POST /api/analysis/exports/search、items、events（GAP-LEGACY-001）。search 还含 mode=headlines 归档路径，不只导出当前页面。
 - **基础/依据**：G/analysiscollab.NormalizeQueryString、itemsreading、newsevents；N/AnalysisWorkspaceService.export*CsvStream→buildItemsExportRows/buildArchiveSearchRows/buildEventsExportRows/buildCsvStream。需全量批读取/上限、日期排序、权限/组织过滤、CSV 转义、响应头与审计，避免套 REST 默认50条截断。
-- **文件/前置/冲突**：独立 Go export 包/main；N/modules/analysis-workspace/analysis-workspace.service.ts 为事实源；DB/Mongo/ES/归档搜索边界。**可独立窗口**，BL-05 搜索核心先约文件；归档 headlines 所需分类/翻译不能偷偷代理 Nest，先核冷路径是否要求 BL-09。
+- **文件/前置/冲突**：独立 Go export 包/main；N/modules/analysis-workspace/analysis-workspace.service.ts 为事实源；DB/Mongo/ES/归档搜索边界。**可先独立交付items/events两路**，BL-05搜索核心先约文件；search的mode=headlines已确认经getDigest触发ensureDigestCoverage，完整第三路依赖BL-09准备链边界，不能静默代理Nest后把整路记Go完成。
+
+15:01–15:08源码续读后的拆分依据：
+
+| 可交付范围 | 真实内部步骤/复用与限制 | 隔离/前置 |
+|---|---|---|
+| POST exports/items + events | items复用完整筛选/排序但请求maxPageSize=5000，补read-model与事件关联；events保留time/status/entity/heat/authority/强制权威来源、排序及去重 | 新Go导出包可拥有CSV/DTO/响应；优先导出必要读取表面，别整改itemsreading与news事件读；无新增queue消费者 |
+| POST exports/search的items模式 | 同buildItemsExportRows；queryString规范化移除savedView/page/pageSize，保留真实搜索/排序/用户画像语义 | 可与前两路共享实现，但HTTP整路不能因只支持此模式就标完整；若先分阶段交付，要明确headlines仍Nest且整请求归属 |
+| POST exports/search的headlines模式 | 循环getDigest(pageSize100)，携带各vertical cursor；按processedArticleId去重至5000；getDigest可能enqueue归档准备 | 依赖BL-09查询/分类/准备所有权；不得返回空或丢准备副作用。可以在归档基础完成后再交付此整路，不抢认归档任务 |
+
+三个附件名分别analysis-{items,events,search}-export.csv，content-type text/csv; charset=utf-8；公式前缀= + - @要按当前escapeCsvValue处理，合法数字负值保留。MAX_EXPORT_ROWS是当前契约上限，不是工时估计。未核项缩小为：所有URL参数枚举/默认、底层完整检索排序算法、归档分类冷路径与远端调用；不再把headlines的准备依赖写成未知猜测。
 
 ### BL-23 · crawl / 元数据主动发现
 

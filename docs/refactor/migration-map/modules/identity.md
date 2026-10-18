@@ -108,6 +108,10 @@ Nest 功能目录：[auth](../../../../apps/api/src/modules/auth)、[org](../../
 | Query `userLoginRecords` | users.read | [user.resolver.ts](../../../../apps/api/src/graphql/resolvers/user.resolver.ts) · `userLoginRecords` | [workspace.Register](../../../../apps/api-go/internal/graphqlread/workspace/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_WORKSPACE_READ_MODE` |
 | Query `users` | users.read | [user.resolver.ts](../../../../apps/api/src/graphql/resolvers/user.resolver.ts) · `users` | [workspace.Register](../../../../apps/api-go/internal/graphqlread/workspace/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_WORKSPACE_READ_MODE` |
 
+## 组织八写的实现深度
+
+15:01–15:08续审，同main3cedce9a：createOrg组织/默认角色/成员关联事务、目标组织org.write重推导、角色/权限关联写、成员角色替换与Membership.isActive、缓存失效及审计/Outbox主路径已静态核对，详见 [AUDIT identity](../AUDIT.md#identity)。没有把合法权限拒绝、重复权限404或Nest同样传播的缓存错误当缺陷；并发竞争/全部DTO逐字段/运行验证仍未覆盖。该组8写可独立于总读装配，不与登录签发未迁链混算。
+
 ## 合并、CI 与历史报告证据
 
 PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核对。下列实际 merge commit 均验证为 main 祖先；integration 合并包含在内。

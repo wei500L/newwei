@@ -73,6 +73,10 @@ Nest 功能目录：[analysis](../../../../apps/api/src/modules/analysis)、[ana
 | Query `analysisResults` | analysis.read | [analysis.resolver.ts](../../../../apps/api/src/graphql/resolvers/analysis.resolver.ts) · `analysisResults` | [history.Register](../../../../apps/api-go/internal/graphqlread/history/register.go)；`API_GO_GRAPHQL_READ_MODE` |
 | Subscription `analysisEvents` | analysis.read | [analysis.resolver.ts](../../../../apps/api/src/graphql/resolvers/analysis.resolver.ts) · `analysisEventsSubscription` | Nest Redis backplane；Go 整份回退 |
 
+## 导出候选的实际边界
+
+15:01–15:08续读Nest导出，main3cedce9a未变：items/events可先组成两路同步完整批次；search的headlines模式循环归档digest并可能触发准备队列，第三路整迁依赖归档执行边界。当前5000行上限、read-model/事件联查、CSV公式处理与逐vertical游标见 [BL-08](../BACKLOG.md#bl-08--analysis--三个-csv-导出)；不把Nest内部实现计入Go迁移。
+
 ## 合并、CI 与历史报告证据
 
 PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核对。下列实际 merge commit 均验证为 main 祖先；integration 合并包含在内。

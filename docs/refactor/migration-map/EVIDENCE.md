@@ -12,8 +12,12 @@
 - **三处错误修复**：identity.md、items.md、model-gateway.md 的 #67 显示 `7fc17faa3dc5`，URL误指 #68的3cedce9a；已恢复实际 `7fc17faa3dc5043537bad4038299d11fdba4758d`。全域69条PR merge证据行逐项比较 GitHub PR.mergeCommit、显示SHA、URL目标SHA并检查main祖先关系，修复后无不一致。#68仍指真实3cedce9a，不把历史链接批量换成main。
 - **源码路径/符号**：临时Python静态检查相对链接与Markdown锚、HTTP/root去重、分域集合、生产root、Nest入口符号、PR merge身份；当前508个精确Nest入口方法可定位。新事实用路径+符号+SHA，必要行号均绑定本轮SHA；链接存在不代替符号/行为/merge身份检查。临时脚本留在任务scratch，不引入生成平台/测试体系。
 - **占用再核**：#68 merged；#70仍OPEN/Ready，14:49 head `200ab9440bc2c4d217f429999468c90b81a968e0`，已正常merge #68，本机HEAD相等且干净；14:37曾看到合并冲突只记历史，不据此干预工作目录。只读刷新全部本机worktree的HEAD/status/祖先关系，详见任务索引；目录/干净不推断执行器活跃。最终审查另核kg-impact的非祖先HEAD 9c214555：只多一条合并后报告提交，#46实际merge a80d3945已在main，不能用非祖先推断PR未合入。
-- **#70共享接线**：200ab944补settingsWrite资源OR但仍漏graphqlRouteMode/无效DSN列表；14:56再核PR head adb765d0180e8b34910181e8c6fde8be400a2dff仅追加交付报告，业务仍200ab944，旧head CI已success，新head CI进行中。主main未变，不把此候选修复关闭GAP-GQL-001，不把8写计入main。
+- **#70共享接线**：200ab944补settingsWrite资源OR但仍漏graphqlRouteMode/无效DSN列表；14:56再核PR head adb765d0180e8b34910181e8c6fde8be400a2dff仅追加交付报告，业务仍200ab944，旧head CI已success，新head CI于15:10复核success。主main未变，不把此候选修复关闭GAP-GQL-001，不把8写计入main。
 - **开关边界更正**：onboarding/read的config实际只接受空/shadow/go，**不接受legacy**；写模式go显式依赖read=go。Compose中GraphQL有些模式固定legacy、有些未注入，宿主.env不自动传入。精确条件集中在 [DEPENDENCIES](DEPENDENCIES.md) 和 [GraphQL组合](modules/graphql-runtime.md#本轮有意义的组合复核)。
+
+### 15:01–15:08 续审增量
+
+用户要求继续完善后，再fetch main仍3cedce9a。扩大组织八写的事务/目标租户授权/角色关联/缓存/审计链静态范围，并补设置13写的具体缓存键/TTL/裸数字与prompt无缓存例外；没有新业务迁移或新确认bug，GAP-GQL-001继续开放。候选深读确认来源策略expectedRevision/preset timestamp是读后检查再upsert，非数据库原子CAS；导出search/headlines经ArchiveService.getDigest→ensureDigestCoverage，依赖已确认，收紧BL-08可独立交付为items/events两路。只更新对应审查组、域页和候选，不统一刷新18域时间。所有DTO/并发/算法/外部验证未覆盖范围继续显式保留。15:10读取续审前地图head `4c343d1ea1fabaf4723973fe006932fef0c61f51` 的[普通CI 39125450178](https://github.com/wei500L/newwei/actions/runs/39125450178) success；不继承给续审后新提交。
 
 ### 普通 CI 的精确证据
 
@@ -23,7 +27,7 @@
 | 设置写PR #68 | `a1c96172b7ebf44a18ca71429d29dca8f9096d02` | [39121676887](https://github.com/wei500L/newwei/actions/runs/39121676887) success | 不代替main/设置独立开关与实网验证 |
 | 本轮前地图#69 | `7526429123cfc17cdabc971a7fa0ba01d27e323d` | [39122969782](https://github.com/wei500L/newwei/actions/runs/39122969782) success，14:54读取 | 不继承给本轮新提交；两个smoke skipped |
 | 工作台PR #70 前一业务head | `200ab9440bc2c4d217f429999468c90b81a968e0` | [39124393842](https://github.com/wei500L/newwei/actions/runs/39124393842) success，14:56读取 | 普通CI成功；regen与两个smoke skipped，不记额外通过 |
-| 工作台PR #70 当前文档追加head | `adb765d0180e8b34910181e8c6fde8be400a2dff` | [39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) 14:56 in_progress | 只追加旧交付报告；不继承前一head CI，当前结果另查 |
+| 工作台PR #70 当前文档追加head | `adb765d0180e8b34910181e8c6fde8be400a2dff` | [39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) success，15:10读取 | verify、user-settings/vector integration成功；regen与smoke skipped；不等于8写逐字段/部署验证 |
 
 main job直接证据：[verify](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821601)、[MySQL/Redis](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821431)、[Qdrant差分](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821605)。verify含lint/typecheck、Web覆盖率、Vector/API测试、契约漂移、Go tests和build，范围由 `.github/workflows/ci.yml` 与run步骤核对；并非每个业务/外部服务的端到端验收。未复验历史专用smoke精确head，不能引用报告当本轮运行证据。
 
