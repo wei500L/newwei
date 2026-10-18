@@ -135,6 +135,37 @@ func (s *Service) ActorHasPermission(ctx context.Context, orgID, actorID, permis
 	return false, true, nil
 }
 
+// ActorPermissionSet returns the actor's effective permission names in orgID,
+// re-derived like collectMembershipPermissionSet: the MembershipRole links
+// decide the roles and the primary role is used only when no link exists. found
+// is false when the actor is not a member of the organization.
+//
+// Grant-scope checks need the whole set. Testing one permission at a time cannot
+// establish that every permission of a role is inside the actor's own scope, so
+// the invite and approval paths read this map once per request.
+func (s *Service) ActorPermissionSet(ctx context.Context, orgID, actorID string) (map[string]bool, bool, error) {
+	roles, found, err := loadMembershipRolesForCheck(ctx, s.db, orgID, actorID)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
+		return nil, false, nil
+	}
+	permissions := make(map[string]bool, 16)
+	for _, role := range roles {
+		links, err := loadRolePermissions(ctx, s.db, role.ID)
+		if err != nil {
+			return nil, true, err
+		}
+		for _, link := range links {
+			if name := strings.TrimSpace(link.Permission.Name); name != "" {
+				permissions[name] = true
+			}
+		}
+	}
+	return permissions, true, nil
+}
+
 // CreateRoleView is the GraphQL createRole write. It reuses CreateRole and
 // converts the result to the GraphQL role model.
 func (s *Service) CreateRoleView(ctx context.Context, orgID, actorID string, actorPermissions map[string]bool, name, description string, permissions []string) (RoleView, error) {

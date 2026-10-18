@@ -868,6 +868,16 @@ services:
       # 不重叠。生产 Web 入口与 canary 保持现状。回滚只把该变量改回 legacy。
       API_GO_AUTH_LOGIN_MODE: ${API_GO_AUTH_LOGIN_MODE:-legacy}
 
+      # 注册申请、审批、邀请与入组 14 条 HTTP（/api/auth/admin/invites、
+      # /admin/registration-applications、/register/applications、
+      # /register/join-applications、/invitations/:token）。默认 legacy，
+      # 只接受空串/legacy/go，非法值启动失败。go 要求 JWT_SECRET、
+      # DATABASE_URL、REDIS_HOST 以及 SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS
+      # （邀请、重发与驳回路径同步真实发信），不需要 Mongo；与登录 /
+      # account-security / auth-factors 开关相互独立、路径不重叠。生产 Web
+      # 入口与 canary 保持现状。回滚只把该变量改回 legacy。
+      API_GO_IDENTITY_ONBOARDING_MODE: ${API_GO_IDENTITY_ONBOARDING_MODE:-legacy}
+
       # 模型接入设置 10 条 HTTP（/api/system-settings/model-service、
       # /api/system-settings/openai-keys(+ /key/:fingerprint)、
       # /api/internal/litellm/openai-keys(+ /applied)）。pilot 与样例保持

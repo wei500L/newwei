@@ -974,9 +974,57 @@ const (
 	AuthLoginModeGo AuthLoginMode = "go"
 )
 
+// IdentityOnboardingMode controls the fourteen registration, invitation and
+// registration-application routes migrated by this unit
+// (API_GO_IDENTITY_ONBOARDING_MODE).
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. The default is always legacy.
+//
+// go mode takes over exactly these fourteen routes:
+//
+//	GET  /api/auth/admin/invites
+//	POST /api/auth/admin/invites
+//	POST /api/auth/admin/invites/:id/resend
+//	POST /api/auth/admin/invites/:id/revoke
+//	GET  /api/auth/admin/registration-applications
+//	POST /api/auth/admin/registration-applications/:id/approve-join
+//	POST /api/auth/admin/registration-applications/:id/reject-join
+//	POST /api/auth/admin/registration-applications/:id/approve-org
+//	POST /api/auth/admin/registration-applications/:id/reject-org
+//	POST /api/auth/register/applications
+//	POST /api/auth/register/join-applications
+//	GET  /api/auth/invitations/:token
+//	POST /api/auth/invitations/:token/accept
+//	POST /api/auth/invitations/:token/accept-authenticated
+//
+// Nothing else under /api/auth is registered: login, refresh, logout, profile,
+// change-password, machine tokens, MFA management and the whole OIDC chain keep
+// falling back to NestJS regardless of this switch.
+//
+// go mode requires JWT_SECRET (with issuer/audience), a valid DATABASE_URL, a
+// REDIS_HOST and the SMTP_* transport, because invitations and rejected
+// applications send real mail synchronously inside the request. It never
+// requires MONGO_URI, starts no worker or scheduled job and contacts no identity
+// provider. Rolling back only means setting this variable back to legacy; the
+// invitation hashes, statuses, applications and memberships stay readable by
+// NestJS because every column format is shared.
+type IdentityOnboardingMode string
+
+const (
+	// IdentityOnboardingModeLegacy proxies all fourteen routes to NestJS
+	// (default, including the empty value).
+	IdentityOnboardingModeLegacy IdentityOnboardingMode = "legacy"
+	// IdentityOnboardingModeGo serves all fourteen routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens.
+	IdentityOnboardingModeGo IdentityOnboardingMode = "go"
+)
+
 // SMTPConfig is the real SMTP transport configuration (the Env.smtpConfig
-// equivalent). It is only read when API_GO_AUTH_LOGIN_MODE=go: this unit sends
-// login codes, email-change codes and password-reset links synchronously inside
+// equivalent). It is read when API_GO_AUTH_LOGIN_MODE=go or
+// API_GO_IDENTITY_ONBOARDING_MODE=go: those units send mail synchronously inside
 // the request, so a missing transport is a startup error rather than a
 // per-request failure.
 type SMTPConfig struct {
@@ -1338,6 +1386,12 @@ type Config struct {
 	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and the SMTP_* transport; it
 	// does not require Mongo and does not start any worker or scheduled job.
 	AuthLoginMode AuthLoginMode
+	// IdentityOnboardingMode controls the fourteen registration, invitation and
+	// registration-application routes (see IdentityOnboardingMode). Default
+	// legacy. Mode go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and the
+	// SMTP_* transport; it does not require Mongo and does not start any worker
+	// or scheduled job.
+	IdentityOnboardingMode IdentityOnboardingMode
 	// AuthEmailCode* model the AuthEmailCodeSettingsService environment fallback
 	// (defaults 300 / 90 / 3) and are clamped to the documented ranges.
 	AuthEmailCodeTTLSeconds      int
@@ -1350,8 +1404,9 @@ type Config struct {
 	// NextAuthURL builds the password-reset link; the NestJS controller falls back
 	// to http://localhost:3000.
 	NextAuthURL string
-	// SMTP is the real transport (Env.smtpConfig) the login, email-change and
-	// password-reset messages use. It is only validated when AuthLoginMode is go.
+	// SMTP is the real transport (Env.smtpConfig) the login, email-change,
+	// password-reset, invitation and application-decision messages use. It is
+	// validated when AuthLoginMode or IdentityOnboardingMode is go.
 	SMTP SMTPConfig
 
 	// The VECTOR_* / S3_* values below are the environment defaults the
@@ -2042,6 +2097,17 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AuthLoginMode = AuthLoginModeGo
 	default:
 		errs = append(errs, "API_GO_AUTH_LOGIN_MODE must be one of legacy|go")
+	}
+	// The registration/invitation switch accepts the empty string, legacy and
+	// go. An empty value behaves exactly like legacy, so an unset deployment
+	// keeps serving all fourteen routes through NestJS.
+	switch strings.TrimSpace(getenv("API_GO_IDENTITY_ONBOARDING_MODE")) {
+	case "", string(IdentityOnboardingModeLegacy):
+		cfg.IdentityOnboardingMode = IdentityOnboardingModeLegacy
+	case string(IdentityOnboardingModeGo):
+		cfg.IdentityOnboardingMode = IdentityOnboardingModeGo
+	default:
+		errs = append(errs, "API_GO_IDENTITY_ONBOARDING_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
@@ -2839,6 +2905,25 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		if cfg.SMTP.Pass == "" {
 			errs = append(errs, "SMTP_PASS is required when API_GO_AUTH_LOGIN_MODE=go")
+		}
+	}
+	// The registration/invitation takeover needs the same credentialed stack as
+	// the login batch plus the real SMTP transport: invitation creation, resend
+	// and the two rejection paths send mail synchronously. It reads no Mongo
+	// collection, starts no worker and contacts no identity provider.
+	if cfg.IdentityOnboardingMode == IdentityOnboardingModeGo {
+		appendAuthRequirements(&errs, "API_GO_IDENTITY_ONBOARDING_MODE", cfg)
+		if cfg.SMTP.Host == "" {
+			errs = append(errs, "SMTP_HOST is required when API_GO_IDENTITY_ONBOARDING_MODE=go")
+		}
+		if cfg.SMTP.Port == 0 {
+			errs = append(errs, "SMTP_PORT is required when API_GO_IDENTITY_ONBOARDING_MODE=go")
+		}
+		if cfg.SMTP.User == "" {
+			errs = append(errs, "SMTP_USER is required when API_GO_IDENTITY_ONBOARDING_MODE=go")
+		}
+		if cfg.SMTP.Pass == "" {
+			errs = append(errs, "SMTP_PASS is required when API_GO_IDENTITY_ONBOARDING_MODE=go")
 		}
 	}
 	if cfg.GraphQLReadMode == "go" {

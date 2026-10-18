@@ -23,13 +23,21 @@ type permissionRow struct {
 // the creator's system administrator membership, and the audit row in one
 // transaction. The active organization list is invalidated after the commit.
 func (s *service) createOrg(ctx contract.Context, input createOrgInput) (workspace.OrgModel, error) {
+	return s.createOrgForActor(callContext(ctx), ctx.Identity.UserID, input.Name, input.Slug, input.Description)
+}
+
+// createOrgForActor is the shared organization bootstrap used by the GraphQL
+// createOrg mutation and by the narrow port the identity onboarding batch calls
+// when a platform administrator approves a new-organization application. It
+// keeps the exact validation, transaction, audit and active-org invalidation
+// order of the mutation, and it never reads a request body or a feature switch.
+func (s *service) createOrgForActor(ctx context.Context, actorID, rawName, rawSlug string, rawDescription *string) (workspace.OrgModel, error) {
 	if s == nil || s.db == nil {
 		return workspace.OrgModel{}, errDatabaseUnavailable
 	}
-	callCtx := callContext(ctx)
-	name := jsTrim(input.Name)
-	slug := strings.ToLower(jsTrim(input.Slug))
-	description := trimmedOptional(input.Description)
+	name := jsTrim(rawName)
+	slug := strings.ToLower(jsTrim(rawSlug))
+	description := trimmedOptional(rawDescription)
 	if name == "" {
 		return workspace.OrgModel{}, badRequest("Organization name is required")
 	}
@@ -39,11 +47,11 @@ func (s *service) createOrg(ctx contract.Context, input createOrgInput) (workspa
 	if !slugPattern.MatchString(slug) {
 		return workspace.OrgModel{}, badRequest("Invalid organization slug")
 	}
-	org, err := s.insertOrg(callCtx, ctx.Identity.UserID, name, slug, description)
+	org, err := s.insertOrg(ctx, actorID, name, slug, description)
 	if err != nil {
 		return workspace.OrgModel{}, err
 	}
-	if err := s.invalidateActiveOrgs(callCtx); err != nil {
+	if err := s.invalidateActiveOrgs(ctx); err != nil {
 		return workspace.OrgModel{}, err
 	}
 	return org, nil
