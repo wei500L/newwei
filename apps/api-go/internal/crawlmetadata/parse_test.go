@@ -44,10 +44,13 @@ func TestParseMetadataCollectsHeadFieldsInOnePass(t *testing.T) {
 	if parsed.Keywords == nil || strings.Join(*parsed.Keywords, ",") != "a,b,c" {
 		t.Fatalf("keywords = %v", parsed.Keywords)
 	}
+	// property="author" has no name attribute, so it is collected like any
+	// other standard meta while the first author still wins the single value.
 	wantMeta := []Tag{
 		{Name: "description", Value: "desc"},
 		{Name: "keywords", Value: "a, b ,, c"},
 		{Name: "author", Value: "Alice"},
+		{Name: "author", Value: "Bob"},
 		{Name: "description", Value: "second desc"},
 	}
 	if len(parsed.MetaTags) != len(wantMeta) {

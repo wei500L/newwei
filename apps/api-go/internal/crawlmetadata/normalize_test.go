@@ -19,9 +19,19 @@ func TestNormalizeDomainKeepsOrigin(t *testing.T) {
 			t.Fatalf("normalizeDomain(%q) = %q,%v want %q", input, got, ok, expected)
 		}
 	}
-	for _, input := range []string{"", "   ", "ftp://example.com", "https://ftp://example.com"} {
+	for _, input := range []string{"", "   "} {
 		if got, ok := normalizeDomain(input); ok {
 			t.Fatalf("normalizeDomain(%q) = %q want rejection", input, got)
+		}
+	}
+	// Node's URL parser reads "https://ftp://example.com" as host "ftp" with an
+	// empty port and path "//example.com", so its origin is "https://ftp". The
+	// source does not reject this shape either; the subsequent DNS lookup is
+	// what fails.
+	for _, input := range []string{"ftp://example.com", "https://ftp://example.com"} {
+		got, ok := normalizeDomain(input)
+		if !ok || got != "https://ftp" {
+			t.Fatalf("normalizeDomain(%q) = %q,%v want https://ftp", input, got, ok)
 		}
 	}
 }

@@ -100,8 +100,15 @@ func TestParseSitemapXMLIndexEntries(t *testing.T) {
 	if !ok || len(payload.ChildSitemaps) != 1 || payload.ChildSitemaps[0].Loc != "https://example.com/child.xml" {
 		t.Fatalf("payload = %+v", payload)
 	}
-	if _, ok := parseSitemapXML("<urlset><url><loc>https://e.com/a</loc></url>"); !ok {
-		t.Fatal("a lenient parser must still accept a document without a declaration")
+	// A document without an XML declaration still parses.
+	withoutDeclaration, ok := parseSitemapXML("<urlset><url><loc>https://e.com/a</loc></url></urlset>")
+	if !ok || len(withoutDeclaration.URLs) != 1 {
+		t.Fatalf("document without declaration = %+v ok=%v", withoutDeclaration, ok)
+	}
+	// A truncated document is rejected, so the caller skips it exactly like the
+	// source's caught parse error.
+	if _, ok := parseSitemapXML("<urlset><url><loc>https://e.com/a</loc></url>"); ok {
+		t.Fatal("a truncated document must be rejected")
 	}
 	if _, ok := parseSitemapXML(""); !ok {
 		t.Fatal("an empty body parses to an empty payload")
