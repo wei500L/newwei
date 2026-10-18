@@ -274,7 +274,7 @@ export class NotificationsGateway
       return 0;
     }
     let delivered = 0;
-    for (const socket of this.getConnectedSockets()) {
+    for (const socket of this.getLocalSockets()) {
       const profile = socket.data?.user as AuthenticatedUser | undefined;
       const session = socket.data?.userSession as UserSession | undefined;
       const socketUserId = profile?.id ?? session?.userId;
@@ -403,6 +403,29 @@ export class NotificationsGateway
       origin,
       parseCorsOriginAllowlist(this.env.graphqlConfig.corsOrigin),
     );
+  }
+
+  /**
+   * Local sockets of this notification namespace. Nest injects either the root
+   * server (sockets -> main namespace -> sockets) or the namespace itself
+   * (sockets -> Map), so both shapes are handled without touching the ordinary
+   * broadcast path.
+   */
+  private getLocalSockets(): Socket[] {
+    if (!this.server) {
+      return [];
+    }
+    const sockets: unknown = this.server.sockets;
+    if (sockets instanceof Map) {
+      return Array.from(sockets.values()) as Socket[];
+    }
+    if (sockets && typeof sockets === "object") {
+      const nested: unknown = (sockets as { sockets?: unknown }).sockets;
+      if (nested instanceof Map) {
+        return Array.from(nested.values()) as Socket[];
+      }
+    }
+    return [];
   }
 
   private getConnectedSockets(): Socket[] {
