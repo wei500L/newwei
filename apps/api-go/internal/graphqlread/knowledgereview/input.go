@@ -36,8 +36,8 @@ type reviewInput struct {
 }
 
 // reviewedEntityRef is one normalized subject/object of a corrected relation.
-// Entity properties are parsed for shape fidelity but never persisted: the
-// NestJS upsertEntity only refreshes canonicalName and the alias rows.
+// The NestJS parseSeedEntityRef also reads subject/object properties, but
+// upsertEntity never persists them, so the write path ignores them on purpose.
 type reviewedEntityRef struct {
 	Name    string
 	Type    string
@@ -60,12 +60,12 @@ type reviewedRelationDocument struct {
 	Properties json.RawMessage        `json:"properties"`
 }
 
-// reviewedEntityDocument is the subject/object shape.
+// reviewedEntityDocument is the subject/object shape. Subject/object properties
+// are not modelled because they are never read or persisted on this path.
 type reviewedEntityDocument struct {
-	Name       json.RawMessage `json:"name"`
-	Type       json.RawMessage `json:"type"`
-	Aliases    json.RawMessage `json:"aliases"`
-	Properties json.RawMessage `json:"properties"`
+	Name    json.RawMessage `json:"name"`
+	Type    json.RawMessage `json:"type"`
+	Aliases json.RawMessage `json:"aliases"`
 }
 
 // evidenceReviewDocument is the review sub-document written into the evidence

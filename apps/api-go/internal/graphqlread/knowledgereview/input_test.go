@@ -110,11 +110,30 @@ func TestParseReviewedRelationRejectsInvalidShapes(t *testing.T) {
 		`{"subject":{"name":"","type":"company"},"object":{"name":"b","type":"company"},"predicate":"supplies"}`,
 		`{"subject":{"name":"a"},"object":{"name":"b","type":"company"},"predicate":"supplies"}`,
 		`{"subject":{"name":"a","type":"company"},"object":{"name":"b","type":"company"},"predicate":"unknown"}`,
-		`{"subject":{"name":"a","type":"company"},"object":{"name":"b","type":"company"},"predicate":"supplies","properties":[1,2]}`,
 	}
 	for _, raw := range cases {
 		if _, ok := parseReviewedRelation(json.RawMessage(raw)); ok {
 			t.Fatalf("invalid relation accepted: %s", raw)
+		}
+	}
+}
+
+// TestParseReviewedRelationDropsNonObjectProperties pins the NestJS
+// toOptionalObject rule: a non-object properties value is dropped, not a
+// reason to reject the relation, and the new edge then only carries
+// recordSource.
+func TestParseReviewedRelationDropsNonObjectProperties(t *testing.T) {
+	for _, raw := range []string{
+		`{"subject":{"name":"a","type":"company"},"object":{"name":"b","type":"company"},"predicate":"supplies","properties":[1,2]}`,
+		`{"subject":{"name":"a","type":"company"},"object":{"name":"b","type":"company"},"predicate":"supplies","properties":"text"}`,
+		`{"subject":{"name":"a","type":"company"},"object":{"name":"b","type":"company"},"predicate":"supplies","properties":null}`,
+	} {
+		relation, ok := parseReviewedRelation(json.RawMessage(raw))
+		if !ok {
+			t.Fatalf("relation with non-object properties must still normalize: %s", raw)
+		}
+		if relation.Properties != nil {
+			t.Fatalf("non-object properties must be dropped: %s -> %s", raw, relation.Properties)
 		}
 	}
 }
