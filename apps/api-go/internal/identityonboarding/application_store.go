@@ -14,18 +14,18 @@ const applicationColumns = "`id`, `type`, `status`, `email`, `firstName`, `lastN
 
 func scanApplication(scanner interface{ Scan(dest ...any) error }) (applicationRecord, error) {
 	var application applicationRecord
-	var applicationType, status string
+	var applicationTypeValue, status string
 	var orgID, requestedOrgName, requestedOrgSlug, requestedDescription sql.NullString
 	var decisionReason, generatedInviteID, reviewedByID sql.NullString
 	var reviewedAt sql.NullTime
 	var metadata []byte
-	if err := scanner.Scan(&application.ID, &applicationType, &status, &application.Email,
+	if err := scanner.Scan(&application.ID, &applicationTypeValue, &status, &application.Email,
 		&application.FirstName, &application.LastName, &orgID, &requestedOrgName, &requestedOrgSlug,
 		&requestedDescription, &decisionReason, &generatedInviteID, &reviewedByID, &reviewedAt,
 		&metadata, &application.CreatedAt, &application.UpdatedAt); err != nil {
 		return applicationRecord{}, err
 	}
-	application.Type = applicationType(applicationType)
+	application.Type = applicationType(applicationTypeValue)
 	application.Status = applicationStatus(status)
 	application.OrgID = stringOrNil(orgID)
 	application.RequestedOrgName = stringOrNil(requestedOrgName)

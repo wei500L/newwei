@@ -427,12 +427,3 @@ func loadOrgsByIDs(ctx context.Context, q dbtx, ids []string) (map[string]orgRec
 	}
 	return out, rows.Err()
 }
-
-// scanNullString is a tiny helper for the count queries.
-func scanNullString(row *sql.Row) (string, error) {
-	var value string
-	err := row.Scan(&value)
-	return value, err
-}
-
-var _ = fmt.Sprintf
