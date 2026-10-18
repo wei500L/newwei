@@ -704,12 +704,13 @@ func run() error {
 	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
-	// /graphql is routed to the Go handler when the read switch or either write
+	// /graphql is routed to the Go handler when the read switch or any write
 	// switch is go. The registered roots and their own switches decide which
 	// documents actually execute in Go; everything else is still proxied to
 	// NestJS.
 	graphqlRouteMode := ""
-	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" {
+	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
+		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -810,6 +811,8 @@ func run() error {
 				cfg.GraphQLReadMode == "go" ||
 				cfg.GraphQLOrgAccessWriteMode == "go" ||
 				cfg.GraphQLWorkspaceWriteMode == "go" ||
+				cfg.GraphQLSettingsWriteMode == "go" ||
+				cfg.GraphQLSourcePolicyWriteMode == "go" ||
 				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
@@ -893,6 +896,10 @@ func run() error {
 	// 独立开关控制，与读开关解耦；复用 workspace/alerts/history 的模型不要求
 	// Mongo、模型网关或队列。
 	graphqlWorkspaceWriteGo := cfg.GraphQLWorkspaceWriteMode == "go"
+	// The source-policy version switch is independent of the read switch and of
+	// every other write switch. It needs only the credentialed
+	// JWT/MySQL/Redis stack.
+	sourcePolicyWriteGo := cfg.GraphQLSourcePolicyWriteMode == "go"
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
@@ -953,6 +960,7 @@ func run() error {
 		situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || cfg.GraphQLSettingsWriteMode == "go" ||
+		sourcePolicyWriteGo ||
 		identityOnboardingGo ||
 		searchReindexGo || proxyLoadBalancingGo
 	var redisClient *redis.Client
@@ -1541,11 +1549,12 @@ func run() error {
 
 	var graphqlHandler *graphqlread.Handler
 	var graphqlMongo *dashboardstats.Connection
-	// 读查询、组织访问写入、工作台交互写入与设置写各自独立开关；任一为 go
-	// 就装配精确 /graphql 的 Go handler。只开写入时不要求 Mongo，也不初始化
-	// 任何只读域的 Mongo service。
+	// The read switch, the organization/workspace/settings write switches and
+	// the source-policy write switch are independent. Any of them being go
+	// assembles the exact /graphql Go handler; write-only combinations must not
+	// require Mongo or initialize any read-only Mongo service.
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
-	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo {
+	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo || sourcePolicyWriteGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -1688,6 +1697,16 @@ func run() error {
 				RateLimitSettingsCacheTTLSeconds: cfg.RateLimitSettingsCacheTTLSeconds,
 			})
 		}
+		// The four source-policy mutations return the policy models and two
+		// nested category-authority models. The narrow registration is used
+		// when settingscrawl.Register did not already add them; it never opens
+		// a read root and never registers crawl/Mongo types.
+		if sourcePolicyWriteGo {
+			if !graphqlReadGo || !settingsCrawlGo {
+				settingscrawl.RegisterSourcePolicyModelTypes(reg)
+			}
+			settingswrite.RegisterSourcePolicy(reg, sharedDB, redisClient)
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -1774,6 +1793,11 @@ func run() error {
 			log.Printf("api-go: GraphQL settings writes registered (%s)", strings.Join(settingswrite.RegisteredMutations, ", "))
 		} else {
 			log.Printf("api-go: GraphQL settings writes not registered (API_GO_GRAPHQL_SETTINGS_WRITE_MODE=legacy)")
+		}
+		if sourcePolicyWriteGo {
+			log.Printf("api-go: GraphQL source-policy writes registered (%s)", strings.Join(settingswrite.SourcePolicyRegisteredMutations, ", "))
+		} else {
+			log.Printf("api-go: GraphQL source-policy writes not registered (API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE=legacy)")
 		}
 	}
 

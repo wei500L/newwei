@@ -33,6 +33,11 @@ const (
 	sourcePolicyMaxListSize = 1000
 	// sourcePolicyRevisionRetention caps the retained revision history.
 	sourcePolicyRevisionRetention = 60
+	// sourcePolicyCategoryAuthorityMaxRules and
+	// sourcePolicyCategoryAuthorityMaxBoosts are the normalizeSourceCategoryAuthority
+	// caps the write path reuses.
+	sourcePolicyCategoryAuthorityMaxRules  = 200
+	sourcePolicyCategoryAuthorityMaxBoosts = 100
 )
 
 // fallbackSourcePolicyUpdatedAt is getFallbackState().updatedAt, the epoch ISO
@@ -586,6 +591,17 @@ func normalizeCategoryPrefix(raw json.RawMessage) *string {
 	if !ok {
 		return nil
 	}
+	normalized := normalizeCategoryPrefixString(text)
+	if normalized == "" {
+		return nil
+	}
+	return &normalized
+}
+
+// normalizeCategoryPrefixString is the string half of normalizeCategoryPrefix,
+// shared with the write path so a submitted prefix and a stored prefix go
+// through one implementation.
+func normalizeCategoryPrefixString(text string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(strings.TrimSpace(text)) {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '/' || r == '_' || r == '-' {
@@ -598,10 +614,9 @@ func normalizeCategoryPrefix(raw json.RawMessage) *string {
 	}
 	normalized = strings.Trim(normalized, "/")
 	if normalized == "" {
-		return nil
+		return ""
 	}
-	clipped := truncateRunes(normalized, 160)
-	return &clipped
+	return truncateRunes(normalized, 160)
 }
 
 // clampSignedUnit reproduces clampSignedUnit: a finite number rounded to four
@@ -659,7 +674,7 @@ func normalizeDomainBoosts(raw json.RawMessage) []NewsEventSourceCategoryAuthori
 			Domain: domain,
 			Delta:  clampSignedUnit(document.Delta, 0),
 		})
-		if len(out) >= 100 {
+		if len(out) >= sourcePolicyCategoryAuthorityMaxBoosts {
 			break
 		}
 	}
@@ -712,7 +727,7 @@ func normalizeSourceCategoryAuthority(raw json.RawMessage, fallback []NewsEventS
 			MismatchPenalty:    clampUnit(document.MismatchPenalty, 0),
 			DomainBoosts:       normalizeDomainBoosts(document.DomainBoosts),
 		})
-		if len(out) >= 200 {
+		if len(out) >= sourcePolicyCategoryAuthorityMaxRules {
 			break
 		}
 	}

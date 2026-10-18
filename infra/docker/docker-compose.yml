@@ -984,6 +984,11 @@ services:
       # NestJS。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动 worker，不回调
       # NestJS。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_SETTINGS_WRITE_MODE: legacy
+      # 来源策略 4 个 GraphQL mutation（update/preset/rollback/reset）。pilot 与
+      # 样例保持 legacy；只开本变量时仅登记这 4 个 mutation 与策略嵌套模型，
+      # Query 仍走 NestJS。需要 JWT/MySQL/Redis，不要求 Mongo，不启动 worker。
+      # 回滚只把变量改回 legacy，已存 v2/legacy/preset 与共享缓存继续可读。
+      API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE: legacy
       # 基础设施设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认
       # 值）。S3_* 与 VECTOR_* 都不进入日志；不在这里新增第二套网关配置。
       NODE_ENV: production
