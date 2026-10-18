@@ -607,6 +607,14 @@ func run() error {
 	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
 		infrastructureSettingsMode = string(legacyproxy.ModeGo)
 	}
+	dataRuntimeSettingsMode := ""
+	if cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo {
+		dataRuntimeSettingsMode = string(legacyproxy.ModeGo)
+	}
+	accountSecurityMode := ""
+	if cfg.AccountSecurityMode == config.AccountSecurityModeGo {
+		accountSecurityMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -658,6 +666,8 @@ func run() error {
 	rules = legacyproxy.WithPlatformGovernanceSettings(rules, platformGovernanceSettingsMode)
 	rules = legacyproxy.WithModelAccessSettings(rules, modelAccessSettingsMode)
 	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
+	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
+	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -716,6 +726,8 @@ func run() error {
 				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
 				cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo ||
 				cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo ||
+				cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo ||
+				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
@@ -785,12 +797,17 @@ func run() error {
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	infrastructureSettingsGo := cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo
+	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
+	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
 	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
 	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
 	exceptionIngestGo := cfg.ExceptionIngestMode == config.ExceptionIngestModeGo
-	// 平行批次追加的模式全部保留（多窗口并行合并：以主干列表为基并追加本批开关）。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || graphqlOrgAccessWriteGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo
+	// 平行批次追加的模式全部保留（#53 frontier、#54 platform governance、#55
+	// infrastructure、#56 model access、#60 account security、#61 data runtime、
+	// #63 graphql org access write、#64 exception ingest）。任一变量改成本批所需
+	// 值都不影响其他批次接线。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || graphqlOrgAccessWriteGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1148,6 +1165,11 @@ func run() error {
 	if err := wireInfrastructureSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
+	if err := wireDataRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+	}
+	if err := wireAccountSecurity(gateway, cfg, sharedDB, redisClient); err != nil {
+		return err
+	}
 
 	if err := wireModelAccessSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
@@ -1285,6 +1307,11 @@ func run() error {
 			// 回落 NestJS；不含连接串与密钥。
 			"newsnowClusteringOps": map[string]any{
 				"mode": string(cfg.NewsnowClusteringOpsMode),
+			},
+			// 账户资料、会话退出与机器令牌的 8 条 HTTP。legacy 时全部回落
+			// NestJS；不含连接串、密码、hash 与令牌。
+			"accountSecurity": map[string]any{
+				"mode": string(cfg.AccountSecurityMode),
 			},
 		})
 	})
