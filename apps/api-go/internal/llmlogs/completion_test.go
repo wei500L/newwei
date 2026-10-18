@@ -38,7 +38,7 @@ func TestCompletionMetadataCustomPolicyAndTruncation(t *testing.T) {
 	}
 
 	long := strings.Repeat("x", maxMetadataStringLength+20)
-	entry := completionMetadataEntry{Key: "eventTitle", Text: &long}
+	entry := metadataEntry{Key: "eventTitle", Text: &long}
 	value, ok := entry.bsonValue()
 	if !ok {
 		t.Fatal("string value must survive")
@@ -51,7 +51,7 @@ func TestCompletionMetadataCustomPolicyAndTruncation(t *testing.T) {
 		t.Fatalf("text length = %d", len(text))
 	}
 
-	if _, ok := (completionMetadataEntry{Key: "sources", Number: floatPtr(math.Inf(1))}).bsonValue(); ok {
+	if _, ok := (metadataEntry{Key: "sources", Number: floatPtr(math.Inf(1))}).bsonValue(); ok {
 		t.Fatal("non-finite numbers must be dropped")
 	}
 }

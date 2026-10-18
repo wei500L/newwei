@@ -761,6 +761,21 @@ services:
       # JWT_SECRET、DATABASE_URL、REDIS_HOST（不要求 Mongo，不调用模型
       # 上游）。回滚只把该变量改回 legacy。
       API_GO_LLM_GATEWAY_PROFILES_MODE: ${API_GO_LLM_GATEWAY_PROFILES_MODE:-legacy}
+      # LLM 网关治理与真实探测 12 条 HTTP：proxy-governance（GET/PUT/DELETE）、
+      # proxy-governance/preflight、proxy-governance/rotate-key、models-config、
+      # test-config、:id/models、:id/test、:id/proxy-health、
+      # :id/proxy-model-info、:id/proxy-lb-test。独立于上面的 profiles 开关，
+      # 可只开其一。pilot 与样例保持 legacy。改成 go 才由 Go 独立验签并要求
+      # settings.manage（含 mtk_ 机器令牌）：治理读写 MySQL SystemSetting
+      # litellm_proxy_governance 与 Redis 30 秒 envelope，并按需调用 LiteLLM
+      # /team/*、/key/*（LITELLM_MASTER_KEY）；诊断发起真实
+      # /v1/models、/health/*、/v1/model/info 与
+      # chat/responses/embeddings/rerank 请求，每次真实尝试写
+      # llmrequestlogs（feature=gateway_test，复用共享 Mongo）。
+      # go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI；master key 与
+      # SYSTEM_SETTINGS_ENCRYPTION_KEY 缺失只影响管理调用和密钥状态，不阻止启动。
+      # 回滚只把该变量改回 legacy；远端 team/key 不会自动撤销。
+      API_GO_LLM_GATEWAY_OPS_MODE: ${API_GO_LLM_GATEWAY_OPS_MODE:-legacy}
       # 基础设施连接与采集运行凭据 7 条精确 HTTP：
       # GET/PUT/DELETE /api/system-settings/vector-service、
       # GET/PATCH /api/admin/settings/storage、
