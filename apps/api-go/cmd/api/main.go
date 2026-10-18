@@ -952,6 +952,10 @@ func run() error {
 	searchReindexGo := cfg.SearchReindexMode == config.SearchReindexModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	llmGatewayProfilesGo := cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo
+	// The governance/diagnostics group is an independent switch, but it always
+	// reuses the shared JWT/Redis/MySQL stack: the twelve routes verify tokens
+	// themselves and read the governance envelope from Redis.
+	llmGatewayOpsGo := cfg.LLMGatewayOpsMode == config.LLMGatewayOpsModeGo
 	infrastructureSettingsGo := cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo
 	// The storage connection test needs the credentialed stack (JWT, Redis
 	// blacklist, MySQL membership re-derivation) but no Mongo.
@@ -989,7 +993,7 @@ func run() error {
 		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
-		situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo ||
+		situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || cfg.GraphQLSettingsWriteMode == "go" ||
 		sourcePolicyWriteGo ||
