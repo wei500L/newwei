@@ -694,6 +694,14 @@ services:
       # 写队列与实时抓取接口（POST/DELETE/retry/metadata 与
       # admin/crawl4ai/queue*）仍回 NestJS。回滚只把该变量改回 legacy。
       API_GO_CRAWL_READ_TELEMETRY_MODE: legacy
+      # 网页元数据预览 1 条 HTTP（POST /api/crawl-tasks/metadata）。样例保持
+      # legacy。只接受空串/legacy/go，非法值启动失败；改成 go 才由 Go 验签，
+      # 真实抓取 robots/sitemap 与目标网页并解析 head。要求 JWT_SECRET、
+      # DATABASE_URL、REDIS_HOST；不要求 MONGO_URI/S3/crawl4ai/STORAGE_MODE。
+      # 只接管这条精确 POST 及其 CORS 预检，其他方法、GET
+      # /api/crawl-tasks/metadata 的既有 GET :id 归属及创建/重试/删除接口继续
+      # 回 NestJS。回滚只把该变量改回 legacy。
+      API_GO_CRAWL_METADATA_MODE: legacy
       # 搜索索引重建 2 条 HTTP（POST /api/admin/search/reindex 与
       # GET /api/admin/search/reindex/:jobId）。样例保持 legacy。只接受
       # 空串/legacy/go，非法值启动失败；改成 go 才由 Go 独立鉴权并写 Redis
@@ -882,6 +890,12 @@ services:
       # 且本变量=go 才登记；本变量为 legacy 时含这 20 个 root 的文档整包回
       # NestJS。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE: legacy
+      # 网页元数据预览的 GraphQL root（Query crawlMetadata）。pilot 与样例
+      # 保持 legacy。只有 API_GO_GRAPHQL_READ_MODE=go 且本变量=go 才登记；
+      # 本变量=go 而父读开关非 go 时启动失败。与 API_GO_CRAWL_METADATA_MODE
+      # 互不依赖并共享同一个 metadata 服务实例，也不加入 GraphQL 全量响应
+      # 缓存。回滚只把该变量改回 legacy。
+      API_GO_GRAPHQL_CRAWL_METADATA_MODE: legacy
       # 账户资料、会话退出与机器令牌管理的 8 条 HTTP（GET /api/auth/me、
       # PATCH /api/auth/profile、POST /api/auth/change-password、
       # POST /api/auth/logout、GET/POST /api/auth/machine-tokens、

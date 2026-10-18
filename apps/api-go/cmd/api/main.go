@@ -144,6 +144,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/canary"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlmetadata"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardcharts"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardspacetime"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
@@ -152,6 +153,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/alerts"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
+	graphqlcrawlmetadata "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/crawlmetadata"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
 	itemsgraphql "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/itemsreading"
@@ -613,6 +615,10 @@ func run() error {
 	if cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo {
 		crawlReadTelemetryMode = string(legacyproxy.ModeGo)
 	}
+	crawlMetadataMode := ""
+	if cfg.CrawlMetadataMode == config.CrawlMetadataModeGo {
+		crawlMetadataMode = string(legacyproxy.ModeGo)
+	}
 	searchReindexMode := ""
 	if cfg.SearchReindexMode == config.SearchReindexModeGo {
 		searchReindexMode = string(legacyproxy.ModeGo)
@@ -691,6 +697,7 @@ func run() error {
 	rules = legacyproxy.WithCrawlFrontierRuns(rules, crawlFrontierRunsMode)
 	rules = legacyproxy.WithRbac(rules, rbacMode)
 	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
+	rules = legacyproxy.WithCrawlMetadata(rules, crawlMetadataMode)
 	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
 	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
 	// The exception ingest takeover is registered next to the admin logs
@@ -783,6 +790,7 @@ func run() error {
 				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
+				cfg.CrawlMetadataMode == config.CrawlMetadataModeGo ||
 				cfg.SearchReindexMode == config.SearchReindexModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
 				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
@@ -851,6 +859,10 @@ func run() error {
 	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
 	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
+	crawlMetadataGo := cfg.CrawlMetadataMode == config.CrawlMetadataModeGo
+	// The metadata GraphQL root is a child of the read pilot; it can only be
+	// registered when the read executor itself is assembled.
+	graphqlCrawlMetadataGo := graphqlReadGo && cfg.GraphQLCrawlMetadataMode == "go"
 	itemsReadingGo := cfg.ItemsReadingMode == config.ItemsReadingModeGo
 	searchReindexGo := cfg.SearchReindexMode == config.SearchReindexModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
@@ -874,7 +886,7 @@ func run() error {
 	// #62 auth factors、#63 graphql org access write、#64 exception ingest、#65
 	// search reindex、#66 proxy load balancing）。任一变量改成本批所需值都不影响
 	// 其他批次接线。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || graphqlOrgAccessWriteGo || searchReindexGo || proxyLoadBalancingGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || graphqlOrgAccessWriteGo || searchReindexGo || proxyLoadBalancingGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -890,6 +902,13 @@ func run() error {
 		verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		blacklist := authn.NewRedisBlacklist(redisClient)
 		authenticator = authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
+	}
+	// The HTTP POST and the GraphQL root share one metadata service instance.
+	// It is built once, only when one of the two switches needs it, and reuses
+	// the shared MySQL, Redis and outbound HTTP resources.
+	var metadataService *crawlmetadata.Service
+	if crawlMetadataGo || graphqlCrawlMetadataGo {
+		metadataService = crawlmetadata.NewService(sharedDB, redisClient)
 	}
 	if goTakeover {
 		readHandler := usersettingsread.NewHandler(authenticator, userSettingsRepo)
@@ -1220,6 +1239,9 @@ func run() error {
 	if err := wireNewsnowClusteringOps(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
+	if err := wireCrawlMetadata(gateway, cfg, metadataService, authenticator); err != nil {
+		return err
+	}
 	if err := wireCrawlReadTelemetry(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
@@ -1462,6 +1484,12 @@ func run() error {
 			// evidence review queue and crawl task roots are opt-in through
 			// their own switch; when it is legacy, any document selecting one
 			// of them stays on NestJS.
+			// The metadata preview query is registered outside
+			// settingscrawl.Register and shares the service instance with the
+			// HTTP POST. It adds one root and two models.
+			if graphqlCrawlMetadataGo {
+				graphqlcrawlmetadata.Register(reg, metadataService)
+			}
 			if settingsCrawlGo {
 				settingscrawl.Register(reg, sharedDB, settingscrawl.Options{
 					JWTSecret: cfg.JWTSecret,
@@ -1559,6 +1587,11 @@ func run() error {
 				log.Printf("api-go: GraphQL item reading roots registered (item, itemFacets, rssSources, rssTranslationStatus, searchSuggestions)")
 			} else {
 				log.Printf("api-go: GraphQL item reading roots not registered (API_GO_ITEMS_READING_MODE=legacy)")
+			}
+			if graphqlCrawlMetadataGo {
+				log.Printf("api-go: GraphQL crawl metadata root registered (crawlMetadata)")
+			} else {
+				log.Printf("api-go: GraphQL crawl metadata root not registered (API_GO_GRAPHQL_CRAWL_METADATA_MODE=legacy)")
 			}
 			if cfg.GraphQLSettingsCrawlReadMode == "go" {
 				log.Printf("api-go: GraphQL settings/crawl reads registered (rateLimitSettings, entityImpactGraphSettings, knowledgeGraphSettings, newsEventSettings, newsEventSourcePolicy, newsEventSourcePolicyPresets, newsEventSourcePolicyRevisionDiff, newsClassificationSettings, classificationQualitySettings, newsDedupeSettings, newsIndicatorSettings, authCacheSettings, crawlClientSettings, auditLogRetention, newsExtractionSettings, newsPromptConfig, newsEventSourcePolicySyncStatus, knowledgeGraphEvidenceReviewQueue, crawlTasks, crawlTask)")

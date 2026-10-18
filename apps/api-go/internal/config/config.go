@@ -426,6 +426,28 @@ const (
 	CrawlReadTelemetryModeGo     CrawlReadTelemetryMode = "go"
 )
 
+// CrawlMetadataMode controls the single HTTP entry of the web page metadata
+// preview chain (API_GO_CRAWL_METADATA_MODE):
+//
+//	POST /api/crawl-tasks/metadata
+//
+// The accepted values are exactly "", "legacy" and "go"; the empty value and
+// "legacy" both keep the route on the NestJS proxy, and any other value fails
+// startup instead of silently degrading. go mode takes over exactly this POST
+// plus its CORS preflight and answers 201 {orgId,total,results}; every other
+// method and the neighbouring crawl task routes keep falling back to NestJS.
+//
+// The entry performs real robots/sitemap discovery and page fetching, so go
+// mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST. It does not require
+// Mongo, S3, crawl4ai or STORAGE_MODE. No shadow, no canary, no enqueue, no
+// worker and no business database write is started.
+type CrawlMetadataMode string
+
+const (
+	CrawlMetadataModeLegacy CrawlMetadataMode = "legacy"
+	CrawlMetadataModeGo     CrawlMetadataMode = "go"
+)
+
 // SearchReindexMode controls the two search index rebuild HTTP routes migrated by
 // this unit (API_GO_SEARCH_REINDEX_MODE):
 //
@@ -977,6 +999,16 @@ type Config struct {
 	// a whole, so the production web entry keeps serving through NestJS.
 	// Rolling back only means setting this variable back to legacy.
 	GraphQLSettingsCrawlReadMode string
+	// GraphQLCrawlMetadataMode only decides whether the crawlMetadata root is
+	// registered into the Go GraphQL executor. The accepted values are exactly
+	// "", "legacy" and "go"; the empty value behaves like legacy. The root is
+	// registered only when both API_GO_GRAPHQL_READ_MODE and this switch are go;
+	// while this switch is legacy, any document that selects crawlMetadata
+	// falls back to NestJS as a whole. Go requires
+	// API_GO_GRAPHQL_READ_MODE=go (which already requires Mongo) and otherwise
+	// fails startup. Rolling back only means setting this variable back to
+	// legacy.
+	GraphQLCrawlMetadataMode string
 	// ItemsReadingMode decides whether the two item reading REST routes and the
 	// five item reading GraphQL roots are served by Go. The accepted values are
 	// exactly "", "legacy" and "go"; the empty value behaves like legacy, so an
@@ -1086,6 +1118,11 @@ type Config struct {
 	// live in Mongo; crawl tasks, media assets and quality snapshots live in
 	// MySQL). No shadow, no canary and no worker.
 	CrawlReadTelemetryMode CrawlReadTelemetryMode
+	// CrawlMetadataMode controls POST /api/crawl-tasks/metadata (see
+	// CrawlMetadataMode). Default legacy. go requires JWT_SECRET, DATABASE_URL
+	// and REDIS_HOST; it does not require Mongo, S3, crawl4ai or STORAGE_MODE,
+	// and it starts no worker, queue or business database write.
+	CrawlMetadataMode CrawlMetadataMode
 	// SearchReindexMode controls the two search index rebuild routes (see
 	// SearchReindexMode). Default legacy. go requires JWT_SECRET, DATABASE_URL,
 	// REDIS_HOST and MONGO_URI; Elasticsearch stays optional at startup.
@@ -1708,6 +1745,16 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_CRAWL_READ_TELEMETRY_MODE must be one of legacy|go")
 	}
+	// The metadata preview switch accepts exactly "", "legacy" and "go"; any
+	// other value must fail startup with this exact text.
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_METADATA_MODE")) {
+	case "", string(CrawlMetadataModeLegacy):
+		cfg.CrawlMetadataMode = CrawlMetadataModeLegacy
+	case string(CrawlMetadataModeGo):
+		cfg.CrawlMetadataMode = CrawlMetadataModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_METADATA_MODE must be one of legacy|go")
+	}
 	// The search reindex switch accepts exactly "", "legacy" and "go"; any other
 	// value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_SEARCH_REINDEX_MODE")) {
@@ -1874,6 +1921,17 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.GraphQLSettingsCrawlReadMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE must be one of legacy|go")
+	}
+	// The metadata GraphQL switch accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy so an unset deployment keeps
+	// serving crawlMetadata through NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_CRAWL_METADATA_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLCrawlMetadataMode = "legacy"
+	case "go":
+		cfg.GraphQLCrawlMetadataMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_CRAWL_METADATA_MODE must be one of legacy|go")
 	}
 	// The item reading switch accepts the empty string, legacy and go. An empty
 	// value behaves exactly like legacy so an unset deployment keeps serving
@@ -2388,6 +2446,20 @@ func Load(getenv func(string) string) (Config, error) {
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go")
 		}
+	}
+	// The metadata preview takeover needs the credentialed auth stack plus
+	// Redis (the shared discovery conditional HTTP state) and outbound HTTP/DNS.
+	// It reads no Mongo collection, so MONGO_URI is not required and the entry
+	// can run while every other crawl mode is legacy.
+	if cfg.CrawlMetadataMode == CrawlMetadataModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_METADATA_MODE", cfg)
+	}
+	// The metadata GraphQL root is a child switch of the GraphQL read pilot:
+	// without API_GO_GRAPHQL_READ_MODE=go there is no executor to register into,
+	// so startup must fail instead of silently ignoring the switch. Mongo comes
+	// from the parent read requirement.
+	if cfg.GraphQLCrawlMetadataMode == "go" && cfg.GraphQLReadMode != "go" {
+		errs = append(errs, "API_GO_GRAPHQL_CRAWL_METADATA_MODE=go requires API_GO_GRAPHQL_READ_MODE=go")
 	}
 	// The search reindex takeover reads the item read model from Mongo, so
 	// MONGO_URI is required in addition to the standard JWT + MySQL + Redis
