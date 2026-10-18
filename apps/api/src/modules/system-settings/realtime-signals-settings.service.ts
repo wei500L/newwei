@@ -2,7 +2,9 @@ import { createLogger } from "@modular/utils";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 
+import { normalizeAuditActorId } from "../audit/audit-actor";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { PlatformAccessService } from "../auth/platform-access.service";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
@@ -14,6 +16,10 @@ import {
   resolveSettingsKey,
 } from "../storage/storage-settings.crypto";
 
+import {
+  DATA_RUNTIME_SETTINGS_REALTIME_LOCK,
+  withDataRuntimeSettingsLock,
+} from "./data-runtime-settings.lock";
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export type RealtimeSignalsSettingsSource = "env" | "db";
@@ -74,6 +80,69 @@ interface StoredRealtimeSignalsSettings {
   cloudflareApiToken?: unknown;
   wingbitsApiKey?: unknown;
   polymarketProxyUrl?: unknown;
+}
+
+/**
+ * Partial update accepted by {@link RealtimeSignalsSettingsService.updateSettings}.
+ *
+ * This is the exact structural shape of `UpdateRealtimeSignalsSettingsDto`. It
+ * is named here so the public writer and the locked read-modify-write helper
+ * share one declaration instead of repeating a 47-field inline type.
+ *
+ * Every field is optional and `null` is accepted for all of them, because
+ * `@IsOptional()` skips validation for both `undefined` and `null`. The two
+ * states stay distinguishable all the way into the merge: an absent key keeps
+ * the current stored value, while `null` is normalized (`null` becomes
+ * `Number(null) === 0` for numeric fields, and clears for strings/URLs/secrets).
+ */
+interface RealtimeSignalsSettingsUpdate {
+  enabled?: boolean;
+  requestTimeoutMs?: number;
+  maxRetries?: number;
+  openskyEnabled?: boolean;
+  adsbEnabled?: boolean;
+  openskyIntervalSec?: number;
+  adsbIntervalSec?: number;
+  openskyDailyCreditBudget?: number;
+  openskyDayIntervalSec?: number;
+  openskyNightIntervalSec?: number;
+  openskyDayStartHourHkt?: number;
+  openskyNightStartHourHkt?: number;
+  openskyWarningRemainingPct?: number;
+  openskyCriticalRemainingPct?: number;
+  aisEnabled?: boolean;
+  aisIntervalSec?: number;
+  unrestEnabled?: boolean;
+  unrestIntervalSec?: number;
+  outagesEnabled?: boolean;
+  outagesIntervalSec?: number;
+  keywordSpikeEnabled?: boolean;
+  keywordSpikeIntervalSec?: number;
+  pizzintEnabled?: boolean;
+  pizzintIntervalSec?: number;
+  gdeltTensionEnabled?: boolean;
+  gdeltTensionIntervalSec?: number;
+  polymarketLeadsEnabled?: boolean;
+  polymarketLeadsIntervalSec?: number;
+  keywordSpikeMinCount?: number;
+  keywordSpikeMultiplier?: number;
+  predictionShiftThreshold?: number;
+  predictionNewsActivityThreshold?: number;
+  openskyBaseUrl?: string | null;
+  adsbBaseUrl?: string | null;
+  openskyTokenUrl?: string | null;
+  aisRelayBaseUrl?: string | null;
+  relayBaseUrl?: string | null;
+  openskyClientId?: string | null;
+  openskyClientSecret?: string | null;
+  aisRelaySharedSecret?: string | null;
+  relaySharedSecret?: string | null;
+  acledOauthUsername?: string | null;
+  acledOauthPassword?: string | null;
+  acledOauthClientId?: string | null;
+  cloudflareApiToken?: string | null;
+  wingbitsApiKey?: string | null;
+  polymarketProxyUrl?: string | null;
 }
 
 interface CachedRealtimeSignalsSettings {
@@ -251,6 +320,14 @@ const ACLED_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 const ACLED_REFRESH_LOCK_TTL_MS = 30_000;
 const ACLED_REFRESH_POLL_INTERVAL_MS = 250;
 
+/**
+ * Error text the realtime-signals writer returns when the global MySQL session
+ * lock could not be acquired. The same string (minus the domain prefix) is
+ * produced by the Go takeover, so a client sees one retry contract.
+ */
+const REALTIME_LOCK_BUSY_MESSAGE =
+  "Realtime signals settings are being updated by another request; retry later";
+
 @Injectable()
 export class RealtimeSignalsSettingsService {
   private readonly logger = createLogger({ name: "realtime-signals-settings" });
@@ -260,6 +337,7 @@ export class RealtimeSignalsSettingsService {
     private readonly cache: CacheService,
     private readonly env: EnvService,
     private readonly securitySettings: SystemSecuritySettingsService,
+    private readonly platformAccess: PlatformAccessService,
   ) {}
 
   async getPublicSettings(): Promise<RealtimeSignalsSettingsPublic> {
@@ -469,57 +547,47 @@ export class RealtimeSignalsSettingsService {
   async updateSettings(
     orgId: string,
     actorId: string,
-    input: {
-      enabled?: boolean;
-      requestTimeoutMs?: number;
-      maxRetries?: number;
-      openskyEnabled?: boolean;
-      adsbEnabled?: boolean;
-      openskyIntervalSec?: number;
-      adsbIntervalSec?: number;
-      openskyDailyCreditBudget?: number;
-      openskyDayIntervalSec?: number;
-      openskyNightIntervalSec?: number;
-      openskyDayStartHourHkt?: number;
-      openskyNightStartHourHkt?: number;
-      openskyWarningRemainingPct?: number;
-      openskyCriticalRemainingPct?: number;
-      aisEnabled?: boolean;
-      aisIntervalSec?: number;
-      unrestEnabled?: boolean;
-      unrestIntervalSec?: number;
-      outagesEnabled?: boolean;
-      outagesIntervalSec?: number;
-      keywordSpikeEnabled?: boolean;
-      keywordSpikeIntervalSec?: number;
-      pizzintEnabled?: boolean;
-      pizzintIntervalSec?: number;
-      gdeltTensionEnabled?: boolean;
-      gdeltTensionIntervalSec?: number;
-      polymarketLeadsEnabled?: boolean;
-      polymarketLeadsIntervalSec?: number;
-      keywordSpikeMinCount?: number;
-      keywordSpikeMultiplier?: number;
-      predictionShiftThreshold?: number;
-      predictionNewsActivityThreshold?: number;
-      openskyBaseUrl?: string | null;
-      adsbBaseUrl?: string | null;
-      openskyTokenUrl?: string | null;
-      aisRelayBaseUrl?: string | null;
-      relayBaseUrl?: string | null;
-      openskyClientId?: string | null;
-      openskyClientSecret?: string | null;
-      aisRelaySharedSecret?: string | null;
-      relaySharedSecret?: string | null;
-      acledOauthUsername?: string | null;
-      acledOauthPassword?: string | null;
-      acledOauthClientId?: string | null;
-      cloudflareApiToken?: string | null;
-      wingbitsApiKey?: string | null;
-      polymarketProxyUrl?: string | null;
-    },
+    input: RealtimeSignalsSettingsUpdate,
   ): Promise<RealtimeSignalsSettingsPublic> {
-    const stored = await this.loadStoredSettings();
+    // DS1: `realtime_signals_settings` is a process-wide singleton with no
+    // `orgId` dimension, so a tenant administrator holding `settings.manage`
+    // must never be able to change the run parameters and credentials every
+    // tenant uses. The gate reads the live `GlobalRoleAssignment` table (never
+    // the JWT `globalRoles` claim or a profile cache) and runs before any read,
+    // lock or write. A machine identity can never satisfy it.
+    await this.platformAccess.assertPlatformAdmin(actorId);
+
+    // DS2: the whole read-modify-write runs under one global MySQL session
+    // lock. The merge base is read from MySQL inside that lock, so two partial
+    // updates touching different fields both survive and a stale cached base
+    // can no longer roll back a field another instance just wrote.
+    return await withDataRuntimeSettingsLock(
+      DATA_RUNTIME_SETTINGS_REALTIME_LOCK,
+      REALTIME_LOCK_BUSY_MESSAGE,
+      async () => {
+        const stored = await this.loadStoredSettingsFromDB();
+        return await this.applySettingsUpdate(orgId, actorId, input, stored);
+      },
+    );
+  }
+
+  /**
+   * One locked read-modify-write of `realtime_signals_settings`.
+   *
+   * `stored` is the raw MySQL value read inside the caller's session lock and
+   * is the only merge base used here. Field normalization is unchanged from the
+   * original partial merge: an absent key falls back to the effective value,
+   * `null` on a numeric field becomes `Number(null) === 0` and is then clamped
+   * to the lower bound, and the nullish-coalescing aliases
+   * (`openskyEnabled ?? adsbEnabled`, `openskyBaseUrl ?? adsbBaseUrl`, …) are
+   * preserved verbatim rather than replaced by an "is the key present" test.
+   */
+  private async applySettingsUpdate(
+    orgId: string,
+    actorId: string,
+    input: RealtimeSignalsSettingsUpdate,
+    stored: StoredRealtimeSignalsSettings | null,
+  ): Promise<RealtimeSignalsSettingsPublic> {
     const effective = this.resolveEffectiveConfig(stored);
 
     const nextStored: StoredRealtimeSignalsSettings = {
@@ -769,12 +837,18 @@ export class RealtimeSignalsSettingsService {
       await this.clearAcledAuthState();
     }
 
+    // `AuditLog.actorId` is a nullable foreign key into User(id). The platform
+    // gate above already rejects machine identities, so this normalization is
+    // defensive: it guarantees `machine:<tokenId>` can never reach the column
+    // and turn a settings write into foreign key error 1452 / HTTP 500.
+    const auditActorId = normalizeAuditActorId(actorId);
+
     await writeAuditLogBestEffort(
       this.prisma,
       {
         data: {
           orgId,
-          actorId,
+          actorId: auditActorId,
           resource: "system_settings",
           action: "realtime_signals_update",
           metadata: this.toPrismaJson({
@@ -794,7 +868,7 @@ export class RealtimeSignalsSettingsService {
       },
       {
         orgId,
-        actorId,
+        actorId: auditActorId,
         resource: "system_settings",
         action: "realtime_signals_update",
       },
@@ -815,35 +889,54 @@ export class RealtimeSignalsSettingsService {
     return this.getPublicSettings();
   }
 
+  /**
+   * Deletes the stored realtime-signals settings and the derived ACLED auth
+   * state, then returns the environment-backed public settings.
+   *
+   * DS1: the same platform-admin gate as {@link updateSettings}. DS2: the reset
+   * shares the `data-runtime-settings:realtime:v1` lock with the update path, so
+   * a `DELETE` can never interleave with a concurrent partial `PUT` (a reset
+   * would otherwise be able to delete the row a `PUT` just wrote, or the `PUT`
+   * could resurrect settings the `DELETE` removed).
+   */
   async resetToEnv(orgId: string, actorId: string) {
-    await this.prisma.systemSetting.deleteMany({
-      where: { key: { in: [SETTINGS_KEY, ACLED_AUTH_STATE_KEY] } },
-    });
+    await this.platformAccess.assertPlatformAdmin(actorId);
+    const auditActorId = normalizeAuditActorId(actorId);
 
-    await writeAuditLogBestEffort(
-      this.prisma,
-      {
-        data: {
-          orgId,
-          actorId,
-          resource: "system_settings",
-          action: "realtime_signals_reset",
-          metadata: this.toPrismaJson({
-            ok: true,
-          } satisfies Prisma.InputJsonObject),
-        },
-      },
-      {
-        orgId,
-        actorId,
-        resource: "system_settings",
-        action: "realtime_signals_reset",
+    return await withDataRuntimeSettingsLock(
+      DATA_RUNTIME_SETTINGS_REALTIME_LOCK,
+      REALTIME_LOCK_BUSY_MESSAGE,
+      async () => {
+        await this.prisma.systemSetting.deleteMany({
+          where: { key: { in: [SETTINGS_KEY, ACLED_AUTH_STATE_KEY] } },
+        });
+
+        await writeAuditLogBestEffort(
+          this.prisma,
+          {
+            data: {
+              orgId,
+              actorId: auditActorId,
+              resource: "system_settings",
+              action: "realtime_signals_reset",
+              metadata: this.toPrismaJson({
+                ok: true,
+              } satisfies Prisma.InputJsonObject),
+            },
+          },
+          {
+            orgId,
+            actorId: auditActorId,
+            resource: "system_settings",
+            action: "realtime_signals_reset",
+          },
+        );
+
+        await this.invalidateCache();
+        await this.invalidateAcledAuthStateCache();
+        return this.getPublicSettings();
       },
     );
-
-    await this.invalidateCache();
-    await this.invalidateAcledAuthStateCache();
-    return this.getPublicSettings();
   }
 
   private resolveEffectiveConfig(
@@ -1600,6 +1693,25 @@ export class RealtimeSignalsSettingsService {
       enabled: ACLED_API_ENABLED,
       reason: ACLED_API_DISABLED_REASON,
     };
+  }
+
+  /**
+   * Reads the settings row straight from MySQL, bypassing the Redis cache.
+   *
+   * DS2: this is the only merge base a write may use. The cache-first
+   * {@link loadStoredSettings} is correct for reads (NestJS deliberately
+   * degrades a cache failure to a database read and tolerates a stale entry for
+   * up to the 30 second TTL), but using it as the base of a read-modify-write
+   * is what let two instances overwrite each other's fields.
+   */
+  private async loadStoredSettingsFromDB(): Promise<StoredRealtimeSignalsSettings | null> {
+    const record = await this.prisma.systemSetting.findUnique({
+      where: { key: SETTINGS_KEY },
+    });
+    const raw = record?.value as unknown;
+    return raw && typeof raw === "object"
+      ? (raw as StoredRealtimeSignalsSettings)
+      : null;
   }
 
   private async loadStoredSettings(): Promise<StoredRealtimeSignalsSettings | null> {

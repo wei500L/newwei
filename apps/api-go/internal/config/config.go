@@ -501,6 +501,101 @@ const (
 	RuntimeSettingsModeGo RuntimeSettingsMode = "go"
 )
 
+// DataRuntimeSettingsMode controls the nine "data runtime settings and archive
+// status" HTTP routes migrated by this unit
+// (API_GO_DATA_RUNTIME_SETTINGS_MODE): realtime signals settings, archive
+// preparation settings, the archive preparation operational status and the
+// Nominatim identity settings.
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. go mode requires JWT_SECRET,
+// DATABASE_URL and REDIS_HOST; it never requires MONGO_URI (this unit reads and
+// writes MySQL and Redis only), never enables shadow or canary traffic and never
+// starts a worker.
+//
+// SYSTEM_SETTINGS_ENCRYPTION_KEY is deliberately optional at startup: a missing
+// or invalid key is handled per read and write by the documented fallback and 400
+// contracts rather than blocking boot.
+type DataRuntimeSettingsMode string
+
+const (
+	// DataRuntimeSettingsModeLegacy proxies all nine routes to NestJS (default,
+	// including the empty value). Rolling back only means setting
+	// API_GO_DATA_RUNTIME_SETTINGS_MODE back to legacy.
+	DataRuntimeSettingsModeLegacy DataRuntimeSettingsMode = "legacy"
+	// DataRuntimeSettingsModeGo serves all nine routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens, and the same
+	// platform-admin gate on the five write routes.
+	DataRuntimeSettingsModeGo DataRuntimeSettingsMode = "go"
+)
+
+// DataRuntimeSettingsEnv carries the environment-derived defaults of the data
+// runtime settings unit. Names and defaults mirror the NestJS apiEnvSchema
+// entries and the EnvService.realtimeSignalsConfig getters exactly, so the two
+// implementations agree when no SystemSetting row exists.
+//
+// This block is independent of the existing RealtimeSignals*/Nominatim* fields on
+// Config, which serve the signal collectors and the geocoding client and keep
+// their own semantics: nothing here rewrites them.
+//
+// Optional strings use "" for the NestJS `undefined`. Numeric and boolean values
+// are already coerced by the schema (an empty string means "absent", then the
+// schema default applies), so boolDefault/intDefault/floatDefault reproduce it.
+//
+// Note the deliberate OpenSky precedence: apiEnvSchema defaults
+// REALTIME_SIGNALS_OPENSKY_ENABLED / _INTERVAL_SEC / _BASE_URL, so the
+// `get(OPENSKY_*) ?? get(ADSB_*)` fallback in the NestJS getter can never reach
+// the ADSB_* variables, and the ADSB_* names are intentionally not read here
+// either.
+type DataRuntimeSettingsEnv struct {
+	RealtimeEnabled                  bool
+	RealtimeRequestTimeoutMs         int
+	RealtimeMaxRetries               int
+	RealtimeOpenskyEnabled           bool
+	RealtimeOpenskyIntervalSec       int
+	RealtimeOpenskyDailyCreditBudget int
+	RealtimeOpenskyDayIntervalSec    int
+	RealtimeOpenskyNightIntervalSec  int
+	RealtimeOpenskyDayStartHourHKT   int
+	RealtimeOpenskyNightStartHourHKT int
+	RealtimeOpenskyWarningRemaining  int
+	RealtimeOpenskyCriticalRemaining int
+	RealtimeOpenskyBaseURL           string
+	RealtimeOpenskyTokenURL          string
+	RealtimeOpenskyClientID          string
+	RealtimeOpenskyClientSecret      string
+	RealtimeAisEnabled               bool
+	RealtimeAisIntervalSec           int
+	RealtimeUnrestEnabled            bool
+	RealtimeUnrestIntervalSec        int
+	RealtimeOutagesEnabled           bool
+	RealtimeOutagesIntervalSec       int
+	RealtimeKeywordSpikeEnabled      bool
+	RealtimeKeywordSpikeIntervalSec  int
+	RealtimePizzintEnabled           bool
+	RealtimePizzintIntervalSec       int
+	RealtimeGdeltTensionEnabled      bool
+	RealtimeGdeltTensionIntervalSec  int
+	RealtimePolymarketLeadsEnabled   bool
+	RealtimePolymarketIntervalSec    int
+	RealtimeKeywordSpikeMinCount     int
+	RealtimeKeywordSpikeMultiplier   float64
+	RealtimePredictionShiftThreshold float64
+	RealtimePredictionNewsThreshold  int
+	RealtimeAisBaseURL               string
+	RealtimeAisSharedSecret          string
+	RealtimeAcledOauthUsername       string
+	RealtimeAcledOauthPassword       string
+	RealtimeAcledOauthClientID       string
+	RealtimeCloudflareAPIToken       string
+	RealtimeWingbitsAPIKey           string
+	RealtimePolymarketProxyURL       string
+	NominatimUserAgentDefault        string
+	NominatimEmailDefault            string
+}
+
 // PlatformGovernanceSettingsMode controls the sixteen platform governance
 // settings HTTP routes migrated by this unit
 // (API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE). The accepted values are exactly
@@ -846,6 +941,14 @@ type Config struct {
 	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
 	// it does not require Mongo and does not start any worker or scheduled job.
 	InfrastructureSettingsMode InfrastructureSettingsMode
+	// DataRuntimeSettingsMode controls the nine data runtime settings and
+	// archive status routes (see DataRuntimeSettingsMode). Default legacy. Mode
+	// go requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
+	// Mongo and does not start any worker or scheduled job.
+	DataRuntimeSettingsMode DataRuntimeSettingsMode
+	// DataRuntimeSettings holds the environment defaults of that unit. It is
+	// independent of the RealtimeSignals*/Nominatim* fields below.
+	DataRuntimeSettings DataRuntimeSettingsEnv
 	// AccountSecurityMode controls the eight authenticated account, session and
 	// machine-token routes (see AccountSecurityMode). Default legacy. Mode go
 	// requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
@@ -1372,6 +1475,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_DATA_RUNTIME_SETTINGS_MODE")) {
+	case "", string(DataRuntimeSettingsModeLegacy):
+		cfg.DataRuntimeSettingsMode = DataRuntimeSettingsModeLegacy
+	case string(DataRuntimeSettingsModeGo):
+		cfg.DataRuntimeSettingsMode = DataRuntimeSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_DATA_RUNTIME_SETTINGS_MODE must be one of legacy|go")
+	}
 	// The platform governance switch accepts exactly "", "legacy" and "go"; any
 	// other value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE")) {
@@ -1546,6 +1657,10 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.OpenskyClientID = strings.TrimSpace(getenv("REALTIME_SIGNALS_OPENSKY_CLIENT_ID"))
 	cfg.OpenskyClientSecret = strings.TrimSpace(getenv("REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET"))
 	cfg.NominatimBaseURL = stringDefault(getenv("GEO_NOMINATIM_BASE_URL"), "https://nominatim.openstreetmap.org")
+	// The data runtime settings unit keeps its own typed defaults so its env
+	// semantics stay independent of the signal-collector and geocoding fields
+	// above.
+	cfg.DataRuntimeSettings = loadDataRuntimeSettingsEnv(getenv)
 	cfg.NominatimUserAgent = stringDefault(getenv("GEO_NOMINATIM_USER_AGENT"), "modular-api")
 	cfg.NominatimEmail = strings.TrimSpace(getenv("GEO_NOMINATIM_EMAIL"))
 	cfg.NominatimAcceptLanguage = stringDefault(getenv("GEO_NOMINATIM_ACCEPT_LANGUAGE"), "zh-CN,zh;q=0.9,en;q=0.7")
@@ -1947,6 +2062,13 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.InfrastructureSettingsMode == InfrastructureSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE", cfg)
 	}
+	// The data runtime settings takeover needs JWT verification, MySQL and Redis
+	// only. It reads no Mongo collection, starts no worker, performs no startup
+	// network probe and does not treat the settings-encryption key as a startup
+	// requirement.
+	if cfg.DataRuntimeSettingsMode == DataRuntimeSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_DATA_RUNTIME_SETTINGS_MODE", cfg)
+	}
 	// The account/session/machine-token takeover needs JWT verification, MySQL
 	// and Redis only. It reads no Mongo collection, starts no worker and does
 	// not add a second startup check: it reuses appendAuthRequirements exactly
@@ -1992,6 +2114,102 @@ func appendSpacetimeRequirements(errs *[]string, name string, cfg Config) {
 	if cfg.MongoURI == "" {
 		*errs = append(*errs, "MONGO_URI is required when "+name+"=go")
 	}
+}
+
+// loadDataRuntimeSettingsEnv resolves the environment defaults of the data
+// runtime settings unit.
+//
+// Every default below mirrors the NestJS apiEnvSchema entry and the
+// EnvService.realtimeSignalsConfig getter one-for-one, including the OpenSky
+// "ADSB never applies" precedence documented on DataRuntimeSettingsEnv.
+func loadDataRuntimeSettingsEnv(getenv func(string) string) DataRuntimeSettingsEnv {
+	return DataRuntimeSettingsEnv{
+		RealtimeEnabled:                  boolDefault(getenv("REALTIME_SIGNALS_ENABLED"), true),
+		RealtimeRequestTimeoutMs:         intDefault(getenv("REALTIME_SIGNALS_REQUEST_TIMEOUT_MS"), 12_000),
+		RealtimeMaxRetries:               intDefault(getenv("REALTIME_SIGNALS_MAX_RETRIES"), 2),
+		RealtimeOpenskyEnabled:           boolDefault(getenv("REALTIME_SIGNALS_OPENSKY_ENABLED"), true),
+		RealtimeOpenskyIntervalSec:       intDefault(getenv("REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC"), 900),
+		RealtimeOpenskyDailyCreditBudget: intDefault(getenv("REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET"), 4000),
+		RealtimeOpenskyDayIntervalSec:    intDefault(getenv("REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC"), 600),
+		RealtimeOpenskyNightIntervalSec:  intDefault(getenv("REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC"), 1800),
+		RealtimeOpenskyDayStartHourHKT:   intDefault(getenv("REALTIME_SIGNALS_OPENSKY_DAY_START_HKT"), 8),
+		RealtimeOpenskyNightStartHourHKT: intDefault(getenv("REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT"), 22),
+		RealtimeOpenskyWarningRemaining:  intDefault(getenv("REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT"), 20),
+		RealtimeOpenskyCriticalRemaining: intDefault(getenv("REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT"), 10),
+		RealtimeOpenskyBaseURL:           stringDefault(getenv("REALTIME_SIGNALS_OPENSKY_BASE_URL"), "https://opensky-network.org/api"),
+		RealtimeOpenskyTokenURL:          stringDefault(getenv("REALTIME_SIGNALS_OPENSKY_TOKEN_URL"), "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"),
+		RealtimeOpenskyClientID:          strings.TrimSpace(getenv("REALTIME_SIGNALS_OPENSKY_CLIENT_ID")),
+		RealtimeOpenskyClientSecret:      strings.TrimSpace(getenv("REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET")),
+		RealtimeAisEnabled:               boolDefault(getenv("REALTIME_SIGNALS_AIS_ENABLED"), true),
+		RealtimeAisIntervalSec:           intDefault(getenv("REALTIME_SIGNALS_AIS_INTERVAL_SEC"), 600),
+		RealtimeUnrestEnabled:            boolDefault(getenv("REALTIME_SIGNALS_UNREST_ENABLED"), true),
+		RealtimeUnrestIntervalSec:        intDefault(getenv("REALTIME_SIGNALS_UNREST_INTERVAL_SEC"), 600),
+		RealtimeOutagesEnabled:           boolDefault(getenv("REALTIME_SIGNALS_OUTAGES_ENABLED"), true),
+		RealtimeOutagesIntervalSec:       intDefault(getenv("REALTIME_SIGNALS_OUTAGES_INTERVAL_SEC"), 600),
+		RealtimeKeywordSpikeEnabled:      boolDefault(getenv("REALTIME_SIGNALS_KEYWORD_SPIKE_ENABLED"), true),
+		RealtimeKeywordSpikeIntervalSec:  intDefault(getenv("REALTIME_SIGNALS_KEYWORD_SPIKE_INTERVAL_SEC"), 600),
+		RealtimePizzintEnabled:           boolDefault(getenv("REALTIME_SIGNALS_PIZZINT_ENABLED"), true),
+		RealtimePizzintIntervalSec:       intDefault(getenv("REALTIME_SIGNALS_PIZZINT_INTERVAL_SEC"), 600),
+		RealtimeGdeltTensionEnabled:      boolDefault(getenv("REALTIME_SIGNALS_GDELT_TENSION_ENABLED"), true),
+		RealtimeGdeltTensionIntervalSec:  intDefault(getenv("REALTIME_SIGNALS_GDELT_TENSION_INTERVAL_SEC"), 600),
+		RealtimePolymarketLeadsEnabled:   boolDefault(getenv("REALTIME_SIGNALS_POLYMARKET_LEADS_ENABLED"), true),
+		RealtimePolymarketIntervalSec:    intDefault(getenv("REALTIME_SIGNALS_POLYMARKET_LEADS_INTERVAL_SEC"), 600),
+		RealtimeKeywordSpikeMinCount:     intDefault(getenv("REALTIME_SIGNALS_KEYWORD_SPIKE_MIN_COUNT"), 5),
+		RealtimeKeywordSpikeMultiplier:   floatDefault(getenv("REALTIME_SIGNALS_KEYWORD_SPIKE_MULTIPLIER"), 3),
+		RealtimePredictionShiftThreshold: floatDefault(getenv("REALTIME_SIGNALS_PREDICTION_SHIFT_THRESHOLD"), 5),
+		RealtimePredictionNewsThreshold:  intDefault(getenv("REALTIME_SIGNALS_PREDICTION_NEWS_ACTIVITY_THRESHOLD"), 3),
+		// `AIS_BASE_URL ?? RELAY_BASE_URL` and
+		// `AIS_SHARED_SECRET ?? AIS_RELAY_SHARED_SECRET ?? RELAY_SHARED_SECRET`:
+		// all three name sets are optional with no schema default, so the same
+		// fallback order is reproduced here.
+		RealtimeAisBaseURL: firstNonEmptyString(
+			strings.TrimSpace(getenv("REALTIME_SIGNALS_AIS_BASE_URL")),
+			strings.TrimSpace(getenv("REALTIME_SIGNALS_RELAY_BASE_URL")),
+		),
+		RealtimeAisSharedSecret: firstNonEmptyString(
+			strings.TrimSpace(getenv("REALTIME_SIGNALS_AIS_SHARED_SECRET")),
+			strings.TrimSpace(getenv("AIS_RELAY_SHARED_SECRET")),
+			strings.TrimSpace(getenv("REALTIME_SIGNALS_RELAY_SHARED_SECRET")),
+		),
+		RealtimeAcledOauthUsername: strings.TrimSpace(getenv("REALTIME_SIGNALS_ACLED_USERNAME")),
+		RealtimeAcledOauthPassword: strings.TrimSpace(getenv("REALTIME_SIGNALS_ACLED_PASSWORD")),
+		RealtimeAcledOauthClientID: strings.TrimSpace(getenv("REALTIME_SIGNALS_ACLED_CLIENT_ID")),
+		RealtimeCloudflareAPIToken: strings.TrimSpace(getenv("REALTIME_SIGNALS_CLOUDFLARE_API_TOKEN")),
+		RealtimeWingbitsAPIKey:     strings.TrimSpace(getenv("REALTIME_SIGNALS_WINGBITS_API_KEY")),
+		RealtimePolymarketProxyURL: strings.TrimSpace(getenv("REALTIME_SIGNALS_POLYMARKET_PROXY_URL")),
+		// Nominatim identity defaults. The e-mail is optional; a value that is
+		// not a valid address is normalized to "no override" by the unit.
+		NominatimUserAgentDefault: stringDefault(getenv("GEO_NOMINATIM_USER_AGENT"), "modular-api"),
+		NominatimEmailDefault:     strings.TrimSpace(getenv("GEO_NOMINATIM_EMAIL")),
+	}
+}
+
+// firstNonEmptyString returns the first non-empty candidate, reproducing the
+// NestJS `a ?? b ?? c` fallback chain over values that are already undefined for
+// an absent or empty environment variable.
+func firstNonEmptyString(candidates ...string) string {
+	for _, candidate := range candidates {
+		if candidate != "" {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// floatDefault parses a float environment value, falling back for an absent or
+// unparseable one. It mirrors z.coerce.number() with a default for the schema
+// fields that are not integers (the keyword-spike multiplier and the prediction
+// shift threshold).
+func floatDefault(value string, fallback float64) float64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 // maxEnvRetentionDays is the largest TASK_LOG_RETENTION_DAYS value accepted at
