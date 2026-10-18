@@ -36,7 +36,7 @@
 **Go 迁移状态（api-go 四态路由表，`apps/api-go/internal/legacyproxy/proxy.go`）**：
 - user-settings 只读 GET ×6 —— **ModeGo（Go-批3B 统一接管：onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor；pilot 内 `API_GO_USER_SETTINGS_READ_MODE=go` 显式启用，优先级高于批3A 的 `API_GO_ONBOARDING_MODE`；默认未设置=兼容旧行为）**：六个 GET 全部由统一 Go handler（`internal/usersettingsread`）独立鉴权并全响应——Go 独立验签 HS256 access token（iss/aud/exp 按 jsonwebtoken 语义、jti 缺失按 NestJS 语义放行、拒绝 alg 混淆与 mtk_）、独立查询真实 Redis blacklist（`access-token:blacklist:<jti>` 同 key，fail-closed）、独立从 MySQL 重推导 User/Org/Membership 与 MembershipRole/RolePermission/Permission 权限（与 getUserProfile 同序同文案 401，多角色优先/primary 回退）、独立判定 `items.read`（JWT permissions claim 一律不参与）、独立查 UserSetting（五个单 key 端点各查一个编译期固定常量 key；situation-monitor 一次聚合查询三个固定 key，对齐 NestJS findMany）并经 normalization（War Map 完整移植 war-map-contract.ts；Situation Monitor 三段聚合；NewsNow 有序对象/上限/真值语义）写出契约等价响应（错误形状对齐 GlobalExceptionFilter）。路由为 exact+GET：六个 PUT 同路径与相似路径（onboarding-x/war-map-x/newsnow 子路径等）回落 legacy。已完成远端真实栈接管验证（Phase A-D：8 个固定 key 落库、shadow 零差异、go 契约全等、NestJS 停止后六端点仍 200 且代表性 PUT/未迁移 GET 502）。`API_GO_USER_SETTINGS_READ_MODE=shadow` 时六端点全部回 shadow 差分。
 - user-settings 全部 PUT ×6（onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor）—— **`API_GO_USER_SETTINGS_WRITE_MODE`（Go-批3C）**：默认 `legacy`，精确路径 PUT 仍代理 NestJS；`go` 时由 `internal/usersettingswrite` 经同一鉴权链写入现有 `UserSetting`（八个固定 key 的 upsert，写后重读）。要求读模式同为 `go`。相似路径与其他方法仍回落 legacy。Situation Monitor 三段不是事务。
-- 登录/refresh/logout/MFA/OIDC/机器令牌 —— **全部仍由 NestJS 承载**（迁移序 5 余项，未动）。
+- 登录/refresh/MFA/OIDC/邮箱验证码/密码找回/邀请/注册审核/头像上传签名/个人数据导出 —— **仍由 NestJS 承载**；账户资料、会话退出与机器令牌管理 8 条精确路由可在 `API_GO_ACCOUNT_SECURITY_MODE=go` 时由 Go 承载（默认 legacy，见 §1.8s）。
 - 入口链（Go-批2C）：api-go 具备生产容器（`infra/docker/api-go.Dockerfile`，distroless nonroot + `healthcheck` 子命令）与 Compose 独立 `api-go-pilot` profile 服务；`API_BASE_URL` 可切 `http://api-go:4020` 使入口变为 `Web → api-go → NestJS`（其余请求全部纯代理，契约不变），默认部署仍直连 NestJS。已通过远端真实栈运行验证（`api-go-entry-smoke`：真实登录 JWT + 六个 PUT 持久化 + Shadow GET 零差异零丢弃 + Go-批3A 鉴权链 + Go-批3B 四阶段接管验证）；生产/预发布真实流量验证未完成。trace header（`x-trace-id`/`traceparent`）在 api-go 入口链保持原语义（§0 TraceId 行为镜像）。
 
 ## 1. REST 契约（71 controller · 369 endpoint）
@@ -319,6 +319,31 @@ archive-preparation · assistant-quota · assistant-safety(+diagnostics/metrics)
 | user-digest | 5 | preference GET/PUT · delivery GET/PUT · GET /api/user-digest（items.read） |
 | user-news-behavior | 3 | POST · GET profile · DELETE profile（items.read） |
 | Bull Board | 1 | /admin/queues（无 /api 前缀，Bearer JWT + queue.manage，纯文本错误非 JSON，`bull-board-auth.middleware.ts:27-57`） |
+
+### 1.8s 账户资料、会话退出与机器令牌（Go）
+
+`API_GO_ACCOUNT_SECURITY_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`
+（空串与 `legacy` 等价；其他值启动失败，错误文本含变量名）。`go` 时接管 8 条
+精确路由：`GET /api/auth/me`（AllowAuthenticated）、`PATCH /api/auth/profile`
+（AllowAuthenticated）、`POST /api/auth/change-password`（AllowAuthenticated，200）、
+`POST /api/auth/logout`（AllowAuthenticated，成功 **201**）、
+`GET/POST /api/auth/machine-tokens`（`settings.manage`，POST 201）、
+`DELETE /api/auth/machine-tokens/:tokenId`（`settings.manage`，200）、
+`POST /api/auth/machine-tokens/:tokenId/rotate`（`settings.manage`，201）。
+`:tokenId` 只能是恰好一个非空路径段，`/rotate` 只能是最后一段；其他方法（如
+`GET /api/auth/machine-tokens/:tokenId`）、尾斜杠、更长路径与相似前缀（如
+`/api/auth/mefoo`、`/api/auth/machine-tokensx`）仍回 NestJS（Go 不返回自己的
+404）。人类走 JWT 验签 + Redis access 黑名单 + MySQL membership 权限重推导
+（JWT permissions claim 不参与）；机器令牌按 `mtk_` 全量 SHA-256 查
+`MachineAccessToken`，权限取自存储行且**不按新建白名单裁剪**（历史
+`settings.manage` 令牌仍可管理机器令牌）。`GET /me` 返回基础 profile +
+`accessTokenId`/`accessTokenExpiresAt`（`exp*1000` 毫秒）；`PATCH /profile`
+有意不返回这两个字段。profile 缓存 `profile:<userId>:<orgId|default>`
+（`auth_cache:settings` 60s），资料更新与改密后按该 user 全部 membership 失效。
+登录、refresh、邮箱验证码、密码找回、MFA、OIDC、邀请、注册审核、
+`avatar/presigned-url`、`data-export` 仍回 NestJS。回滚：把
+`API_GO_ACCOUNT_SECURITY_MODE` 改回 `legacy`。不打开 canary，不改生产入口
+（生产 Web 仍指向 NestJS）。细节见 `docs/refactor/go-account-security.md`。
 
 ## 2. GraphQL 契约
 
