@@ -426,6 +426,35 @@ const (
 	CrawlReadTelemetryModeGo     CrawlReadTelemetryMode = "go"
 )
 
+// SearchReindexMode controls the two search index rebuild HTTP routes migrated by
+// this unit (API_GO_SEARCH_REINDEX_MODE):
+//
+//	POST /api/admin/search/reindex
+//	GET  /api/admin/search/reindex/:jobId
+//
+// The accepted values are exactly "", "legacy" and "go"; the empty value and
+// "legacy" both keep both routes on the NestJS proxy, and any other value fails
+// startup instead of silently degrading. go mode takes over only these two
+// routes: every other method, the trailing-slash path and longer paths keep
+// falling back to NestJS. It requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
+// MONGO_URI (the item read model lives in Mongo). Elasticsearch is not a startup
+// requirement: a disabled or unconfigured ELASTICSEARCH_ENABLED keeps the
+// existing disabled branch. Search telemetry keeps its own
+// API_GO_CRAWL_READ_TELEMETRY_MODE switch. go starts no worker, does not touch
+// BullMQ and does not change the production web entry.
+type SearchReindexMode string
+
+const (
+	// SearchReindexModeLegacy proxies both routes to NestJS (default, including
+	// the empty value). Rolling back only means setting
+	// API_GO_SEARCH_REINDEX_MODE back to legacy.
+	SearchReindexModeLegacy SearchReindexMode = "legacy"
+	// SearchReindexModeGo serves both routes from Go with the same
+	// authentication chain as NestJS and the same Redis job, list, set and lock
+	// layout, so a mixed deployment stays compatible.
+	SearchReindexModeGo SearchReindexMode = "go"
+)
+
 // InfrastructureSettingsMode controls the seven infrastructure connection and
 // crawl-credential settings HTTP routes migrated by this unit
 // (API_GO_INFRASTRUCTURE_SETTINGS_MODE): the three vector-service routes, the
@@ -635,8 +664,9 @@ const (
 //	  GET    /api/internal/litellm/openai-keys
 //	  POST   /api/internal/litellm/openai-keys/applied
 //
-// /api/internal/litellm/proxy-load-balancing, /api/system-settings/llm-gateways and
-// every other /api/system-settings route keep falling back to NestJS. go mode
+// /api/system-settings/llm-gateways and every other /api/system-settings route
+// keep falling back to NestJS; the load balancing paths have their own
+// independent switch (ProxyLoadBalancingMode). go mode
 // requires JWT_SECRET, DATABASE_URL and REDIS_HOST only: it reads no Mongo
 // collection, calls no model upstream and starts no worker. The accepted values
 // are exactly "", "legacy" and "go"; any other value fails startup instead of
@@ -668,6 +698,56 @@ const (
 	// and Redis, and (together with API_GO_GRAPHQL_READ_MODE) registers the
 	// five item reading GraphQL roots.
 	ItemsReadingModeGo ItemsReadingMode = "go"
+)
+
+// LLMGatewayProfilesMode controls the seven LLM gateway profile
+// configuration-control routes under /api/system-settings/llm-gateways
+// (API_GO_LLM_GATEWAY_PROFILES_MODE). Accepted values are exactly "", "legacy"
+// and "go"; any other value fails startup instead of silently degrading. The
+// default is legacy. Mode go reuses the shared auth requirements (JWT_SECRET,
+// DATABASE_URL, REDIS_HOST) and never requires Mongo or a live model upstream.
+type LLMGatewayProfilesMode string
+
+const (
+	// LLMGatewayProfilesModeLegacy proxies all seven routes to NestJS
+	// (default, including the empty value).
+	LLMGatewayProfilesModeLegacy LLMGatewayProfilesMode = "legacy"
+	// LLMGatewayProfilesModeGo serves the seven routes from Go with the same
+	// authentication chain as NestJS plus the platform-admin gate. It never
+	// enables shadow or canary traffic.
+	LLMGatewayProfilesModeGo LLMGatewayProfilesMode = "go"
+)
+
+// ProxyLoadBalancingMode controls the four LiteLLM proxy load balancing
+// configuration and distribution HTTP routes
+// (API_GO_PROXY_LOAD_BALANCING_MODE).
+//
+//	go mode takes over exactly these four routes:
+//	  GET    /api/system-settings/llm-gateways/proxy-load-balancing
+//	  PUT    /api/system-settings/llm-gateways/proxy-load-balancing
+//	  DELETE /api/system-settings/llm-gateways/proxy-load-balancing
+//	  GET    /api/internal/litellm/proxy-load-balancing
+//
+// The switch is independent of API_GO_MODEL_ACCESS_SETTINGS_MODE: the Go load
+// balancing service reuses the existing OpenAI key reader, but it neither
+// requires nor enables the model access takeover. Go mode requires JWT_SECRET,
+// DATABASE_URL and REDIS_HOST only: it reads no Mongo collection, calls no model
+// upstream and starts no worker. The accepted values are exactly "", "legacy"
+// and "go"; any other value fails startup instead of silently degrading. The
+// default is legacy.
+type ProxyLoadBalancingMode string
+
+const (
+	// ProxyLoadBalancingModeLegacy proxies all four routes to NestJS (default,
+	// including the empty value). Rollback only changes this variable back to
+	// legacy.
+	ProxyLoadBalancingModeLegacy ProxyLoadBalancingMode = "legacy"
+	// ProxyLoadBalancingModeGo serves all four routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens, the platform admin gate
+	// on the two management writes, and the LITELLM_CONFIG_INTERNAL_TOKEN guard
+	// on the internal snapshot route. It never enables shadow or canary traffic.
+	ProxyLoadBalancingModeGo ProxyLoadBalancingMode = "go"
 )
 
 // SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
@@ -752,6 +832,44 @@ type AnalysisThreadsMode string
 const (
 	AnalysisThreadsModeLegacy AnalysisThreadsMode = "legacy"
 	AnalysisThreadsModeGo     AnalysisThreadsMode = "go"
+)
+
+// AuthFactorsMode controls the seven authenticated MFA management and
+// organization OIDC configuration HTTP routes migrated by this unit
+// (API_GO_AUTH_FACTORS_MODE).
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. The default is always legacy.
+//
+// go mode takes over exactly these seven routes:
+//
+//	GET  /api/auth/mfa
+//	POST /api/auth/mfa/enroll
+//	POST /api/auth/mfa/verify-enroll
+//	POST /api/auth/mfa/disable
+//	POST /api/auth/mfa/recovery/rotate
+//	GET  /api/auth/admin/oidc-config
+//	PUT  /api/auth/admin/oidc-config
+//
+// Everything else under /api/auth keeps falling back to NestJS: login, refresh,
+// logout, profile, change-password, machine-token management, the public MFA
+// login and forced-enrollment challenges, and the OIDC start/callback/handoff
+// login chain. go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it
+// never requires MONGO_URI (this unit reads and writes MySQL and Redis only),
+// never enables shadow or canary traffic, never starts a worker, and never
+// contacts an identity provider. Rolling back only means setting this variable
+// back to legacy.
+type AuthFactorsMode string
+
+const (
+	// AuthFactorsModeLegacy proxies all seven routes to NestJS (default,
+	// including the empty value).
+	AuthFactorsModeLegacy AuthFactorsMode = "legacy"
+	// AuthFactorsModeGo serves all seven routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens.
+	AuthFactorsModeGo AuthFactorsMode = "go"
 )
 
 // Config 是网关运行所需的全部配置。
@@ -869,6 +987,18 @@ type Config struct {
 	// controlled by this switch alone. Rolling back only means setting this
 	// variable back to legacy.
 	ItemsReadingMode ItemsReadingMode
+	// GraphQLOrgAccessWriteMode only decides whether the eight organization,
+	// role and membership mutations (createOrg, updateOrg, setOrgActive,
+	// createRole, updateRole, assignRole, updateMembershipRoles,
+	// setUserActive) are registered into the Go GraphQL executor. It is
+	// independent of API_GO_GRAPHQL_READ_MODE: with the read switch legacy only
+	// these mutations are taken over, and queries keep serving through NestJS.
+	// The accepted values are exactly "", "legacy" and "go"; the empty value
+	// behaves like legacy. While this switch is legacy, any document that
+	// selects one of those mutations falls back to NestJS as a whole, so the
+	// production web entry keeps serving through NestJS. Rolling back only
+	// means setting this variable back to legacy.
+	GraphQLOrgAccessWriteMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -940,6 +1070,10 @@ type Config struct {
 	// live in Mongo; crawl tasks, media assets and quality snapshots live in
 	// MySQL). No shadow, no canary and no worker.
 	CrawlReadTelemetryMode CrawlReadTelemetryMode
+	// SearchReindexMode controls the two search index rebuild routes (see
+	// SearchReindexMode). Default legacy. go requires JWT_SECRET, DATABASE_URL,
+	// REDIS_HOST and MONGO_URI; Elasticsearch stays optional at startup.
+	SearchReindexMode SearchReindexMode
 	// RuntimeSettingsMode controls the eighteen runtime/governance settings
 	// routes (see RuntimeSettingsMode). Default legacy. Mode go requires
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
@@ -999,6 +1133,11 @@ type Config struct {
 	// DataRuntimeSettings holds the environment defaults of that unit. It is
 	// independent of the RealtimeSignals*/Nominatim* fields below.
 	DataRuntimeSettings DataRuntimeSettingsEnv
+	// AuthFactorsMode controls the seven authenticated MFA management and
+	// organization OIDC configuration routes (see AuthFactorsMode). Default
+	// legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does
+	// not require Mongo and does not start any worker or scheduled job.
+	AuthFactorsMode AuthFactorsMode
 	// AccountSecurityMode controls the eight authenticated account, session and
 	// machine-token routes (see AccountSecurityMode). Default legacy. Mode go
 	// requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
@@ -1128,6 +1267,27 @@ type Config struct {
 	LiteLLMTimeoutMs  int
 	LiteLLMMaxRetries int
 
+	// LLMGatewayProfilesMode 控制 LLM 网关 profile 的七条配置/激活路由。默认
+	// legacy；go 复用 appendAuthRequirements，不要求 Mongo 或真实模型上游。
+	LLMGatewayProfilesMode LLMGatewayProfilesMode
+	// LLMGateway* 是本批 profile 默认值所需的 LITELLM_* 投影。它们镜像
+	// NestJS env schema 的默认值：LITELLM_MAX_TOKENS 与 LITELLM_RETRY_ATTEMPTS
+	// 因为有 schema 默认值，永远优先于 LITELLM_MAX_OUTPUT_TOKENS /
+	// LITELLM_MAX_RETRIES。LITELLM_EMBEDDING_MODEL 与 LITELLM_API_KEY 不会
+	// 变成新 profile 的字段。
+	LLMGatewayModel           string
+	LLMGatewayTemperature     float64
+	LLMGatewayTopP            float64
+	LLMGatewayMaxOutputTokens int
+	LLMGatewayMaxRetries      int
+	LLMGatewayFallbackModels  []string
+	// LLMGatewaySettingsEncryptionKey 是 SYSTEM_SETTINGS_ENCRYPTION_KEY 的原文
+	// （不 trim：NestJS 的存在性判断是原始字符串 truthiness）。不进入日志。
+	LLMGatewaySettingsEncryptionKey string
+	// NodeEnvProduction 是 NODE_ENV === "production"，决定无密钥时是否允许
+	// 明文回落。
+	NodeEnvProduction bool
+
 	// CorsOrigin 是与 NestJS 相同的 CORS_ORIGIN 原文。空名单不放行任何
 	// 浏览器 Origin。只用于 Go 自己写出的 user-settings 响应。
 	CorsOrigin string
@@ -1175,6 +1335,13 @@ type Config struct {
 	// SYSTEM_SETTINGS_ENCRYPTION_KEY keep their runtime semantics and are never
 	// startup requirements.
 	ModelAccessSettingsMode ModelAccessSettingsMode
+	// ProxyLoadBalancingMode controls the four LiteLLM proxy load balancing
+	// routes (see ProxyLoadBalancingMode). Default legacy. Mode go requires
+	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
+	// starts no worker or scheduled job. It is independent of
+	// ModelAccessSettingsMode: the Go service reuses the existing OpenAI key
+	// reader without turning the model access takeover on.
+	ProxyLoadBalancingMode ProxyLoadBalancingMode
 	// 模型接入设置本批消费的原始环境值：config 只做读取与保存，
 	// envBoolean / Number 的 JavaScript 语义解析放在
 	// internal/modelaccesssettings（NewConfigFromEnv）里，且只在 go 模式求值，
@@ -1525,6 +1692,16 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_CRAWL_READ_TELEMETRY_MODE must be one of legacy|go")
 	}
+	// The search reindex switch accepts exactly "", "legacy" and "go"; any other
+	// value must fail startup with this exact text.
+	switch strings.TrimSpace(getenv("API_GO_SEARCH_REINDEX_MODE")) {
+	case "", string(SearchReindexModeLegacy):
+		cfg.SearchReindexMode = SearchReindexModeLegacy
+	case string(SearchReindexModeGo):
+		cfg.SearchReindexMode = SearchReindexModeGo
+	default:
+		errs = append(errs, "API_GO_SEARCH_REINDEX_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_RUNTIME_SETTINGS_MODE")) {
 	case "", string(RuntimeSettingsModeLegacy):
 		cfg.RuntimeSettingsMode = RuntimeSettingsModeLegacy
@@ -1570,6 +1747,25 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_MODEL_ACCESS_SETTINGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_LLM_GATEWAY_PROFILES_MODE")) {
+	case "", string(LLMGatewayProfilesModeLegacy):
+		cfg.LLMGatewayProfilesMode = LLMGatewayProfilesModeLegacy
+	case string(LLMGatewayProfilesModeGo):
+		cfg.LLMGatewayProfilesMode = LLMGatewayProfilesModeGo
+	default:
+		errs = append(errs, "API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go")
+	}
+	// Proxy load balancing accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy so an unset deployment keeps the NestJS
+	// path. It is parsed independently of the model access switch.
+	switch strings.TrimSpace(getenv("API_GO_PROXY_LOAD_BALANCING_MODE")) {
+	case "", string(ProxyLoadBalancingModeLegacy):
+		cfg.ProxyLoadBalancingMode = ProxyLoadBalancingModeLegacy
+	case string(ProxyLoadBalancingModeGo):
+		cfg.ProxyLoadBalancingMode = ProxyLoadBalancingModeGo
+	default:
+		errs = append(errs, "API_GO_PROXY_LOAD_BALANCING_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_INFRASTRUCTURE_SETTINGS_MODE")) {
 	case "", string(InfrastructureSettingsModeLegacy):
 		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeLegacy
@@ -1577,6 +1773,18 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go")
+	}
+	// The authenticated MFA management and organization OIDC configuration
+	// switch accepts the empty string, legacy and go. An empty value behaves
+	// exactly like legacy, so an unset deployment keeps serving all seven
+	// routes through NestJS.
+	switch strings.TrimSpace(getenv("API_GO_AUTH_FACTORS_MODE")) {
+	case "", string(AuthFactorsModeLegacy):
+		cfg.AuthFactorsMode = AuthFactorsModeLegacy
+	case string(AuthFactorsModeGo):
+		cfg.AuthFactorsMode = AuthFactorsModeGo
+	default:
+		errs = append(errs, "API_GO_AUTH_FACTORS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ACCOUNT_SECURITY_MODE")) {
 	case "", string(AccountSecurityModeLegacy):
@@ -1664,6 +1872,17 @@ func Load(getenv func(string) string) (Config, error) {
 		// The failure names the variable and echoes the rejected value so an
 		// operator can see which deployment value was refused.
 		errs = append(errs, "API_GO_ITEMS_READING_MODE must be one of legacy|go, got "+strconv.Quote(itemsReadingRaw))
+	}
+	// The organization access write switch accepts the empty string, legacy and
+	// go. An empty value behaves exactly like legacy, so an unset deployment
+	// keeps every mutation on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLOrgAccessWriteMode = "legacy"
+	case "go":
+		cfg.GraphQLOrgAccessWriteMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE must be one of legacy|go")
 	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
@@ -1798,6 +2017,24 @@ func Load(getenv func(string) string) (Config, error) {
 			cfg.LiteLLMMaxRetries = value
 		}
 	}
+	// 本批 profile 默认值的 LITELLM_* 投影（镜像 NestJS env schema）。
+	cfg.LLMGatewayModel = stringDefault(getenv("LITELLM_MODEL"), "openai/gpt-4o-mini")
+	cfg.LLMGatewayTemperature = floatDefault(getenv("LITELLM_TEMPERATURE"), 0.2)
+	cfg.LLMGatewayTopP = floatDefault(getenv("LITELLM_TOP_P"), 0.9)
+	// LITELLM_MAX_TOKENS 在 env schema 里有默认值 2048，所以
+	// LITELLM_MAX_OUTPUT_TOKENS 永远不会生效；Go 侧同样优先 MAX_TOKENS 本身。
+	cfg.LLMGatewayMaxOutputTokens = 2048
+	if value := positiveInt(getenv("LITELLM_MAX_TOKENS")); value > 0 {
+		cfg.LLMGatewayMaxOutputTokens = value
+	}
+	// LITELLM_RETRY_ATTEMPTS 同理（schema 默认 3）。
+	cfg.LLMGatewayMaxRetries = 3
+	if value := positiveInt(getenv("LITELLM_RETRY_ATTEMPTS")); value > 0 {
+		cfg.LLMGatewayMaxRetries = value
+	}
+	cfg.LLMGatewayFallbackModels = splitCommaList(getenv("LITELLM_FALLBACK_MODELS"))
+	cfg.LLMGatewaySettingsEncryptionKey = getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY")
+	cfg.NodeEnvProduction = strings.TrimSpace(getenv("NODE_ENV")) == "production"
 	cfg.CorsOrigin = getenv("CORS_ORIGIN")
 
 	// JWT 验签配置（issuer/audience 默认值与 NestJS env schema 一致——
@@ -2125,6 +2362,16 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, "MONGO_URI is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go")
 		}
 	}
+	// The search reindex takeover reads the item read model from Mongo, so
+	// MONGO_URI is required in addition to the standard JWT + MySQL + Redis
+	// requirements. Elasticsearch is optional at startup: the disabled branch
+	// completes with indexed=0.
+	if cfg.SearchReindexMode == SearchReindexModeGo {
+		appendAuthRequirements(&errs, "API_GO_SEARCH_REINDEX_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_SEARCH_REINDEX_MODE=go")
+		}
+	}
 	// The runtime/governance settings takeover needs JWT verification, MySQL
 	// and Redis only; it reads no Mongo collection and starts no worker.
 	if cfg.RuntimeSettingsMode == RuntimeSettingsModeGo {
@@ -2148,6 +2395,18 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	if cfg.LLMGatewayProfilesMode == LLMGatewayProfilesModeGo {
+		appendAuthRequirements(&errs, "API_GO_LLM_GATEWAY_PROFILES_MODE", cfg)
+	}
+	// The proxy load balancing takeover has exactly the same infrastructure
+	// footprint: the litellm_proxy_load_balancing row lives in MySQL, its 30
+	// second cache envelope lives in Redis, and it re-reads the existing
+	// openai_keys row instead of calling NestJS. LITELLM_CONFIG_INTERNAL_TOKEN
+	// and SYSTEM_SETTINGS_ENCRYPTION_KEY keep their runtime semantics and are
+	// never startup requirements.
+	if cfg.ProxyLoadBalancingMode == ProxyLoadBalancingModeGo {
+		appendAuthRequirements(&errs, "API_GO_PROXY_LOAD_BALANCING_MODE", cfg)
+	}
 	// The infrastructure settings takeover needs JWT verification, MySQL and
 	// Redis only. It reads no Mongo collection, starts no worker and does not
 	// treat the settings-encryption key as a startup requirement: a missing or
@@ -2163,6 +2422,15 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.DataRuntimeSettingsMode == DataRuntimeSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_DATA_RUNTIME_SETTINGS_MODE", cfg)
 	}
+	// The authenticated MFA management / OIDC configuration takeover needs JWT
+	// verification, MySQL and Redis only. It reads no Mongo collection, starts
+	// no worker and never contacts an identity provider. The
+	// settings-encryption key stays optional at startup: a missing or invalid
+	// key is handled per write by the documented fallback and production-500
+	// contracts rather than blocking boot.
+	if cfg.AuthFactorsMode == AuthFactorsModeGo {
+		appendAuthRequirements(&errs, "API_GO_AUTH_FACTORS_MODE", cfg)
+	}
 	// The account/session/machine-token takeover needs JWT verification, MySQL
 	// and Redis only. It reads no Mongo collection, starts no worker and does
 	// not add a second startup check: it reuses appendAuthRequirements exactly
@@ -2175,6 +2443,12 @@ func Load(getenv func(string) string) (Config, error) {
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go")
 		}
+	}
+	// The organization access write takeover needs JWT verification, MySQL and
+	// Redis only. It reads no Mongo collection and starts no worker, so it does
+	// not require MONGO_URI.
+	if cfg.GraphQLOrgAccessWriteMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE", cfg)
 	}
 
 	// The situation monitor signals takeover needs the credentialed auth stack
@@ -2191,6 +2465,35 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, errors.New(strings.Join(errs, "; "))
 	}
 	return cfg, nil
+}
+
+// positiveInt parses a decimal environment value and returns 0 when it is absent
+// or not a positive integer.
+func positiveInt(value string) int {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+	return parsed
+}
+
+// splitCommaList mirrors the NestJS LITELLM_FALLBACK_MODELS handling: split on
+// commas, trim and drop empty entries.
+func splitCommaList(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func appendAuthRequirements(errs *[]string, name string, cfg Config) {

@@ -10,6 +10,7 @@ import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { PlatformAccessService } from "../auth/platform-access.service";
 import { CacheService } from "../cache/cache.service";
 import { EnvService, type LiteLlmEnvConfig } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
@@ -20,6 +21,7 @@ import {
 } from "../storage/storage-settings.crypto";
 
 import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
+import { withLlmGatewayProfilesLock } from "./llm-gateway-profiles.lock";
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export type LlmGatewayEmbeddingMode = "follow_completion" | "use_default";
@@ -136,20 +138,14 @@ export class LlmGatewaySettingsService {
     private readonly cache: CacheService,
     private readonly env: EnvService,
     private readonly securitySettings: SystemSecuritySettingsService,
+    private readonly platformAccess: PlatformAccessService,
     @Inject(forwardRef(() => LiteLlmProxyGovernanceService))
     private readonly proxyGovernance: LiteLlmProxyGovernanceService
   ) {}
 
   async list(): Promise<LlmGatewaySettingsPublic> {
     const settings = await this.loadSettings();
-    return {
-      activeId: settings.activeId,
-      embeddingActiveId: settings.embeddingActiveId,
-      embeddingMode: settings.embeddingMode,
-      rerankActiveId: settings.rerankActiveId,
-      rerankMode: settings.rerankMode,
-      profiles: settings.profiles.map((profile) => this.toPublicProfile(profile))
-    };
+    return this.toPublicSettings(settings);
   }
 
   async createProfile(
@@ -157,41 +153,51 @@ export class LlmGatewaySettingsService {
     actorId: string,
     input: LlmGatewayProfileInput
   ): Promise<LlmGatewayProfilePublic> {
-    const settings = await this.loadSettings();
+    // GP1: the profile document is a single global SystemSetting row with no
+    // orgId dimension, so only platform admins may change it. The gate runs
+    // before any read, lock, encoding, write, audit or cache eviction.
+    await this.platformAccess.assertPlatformAdmin(actorId);
     const fallback = this.env.liteLlmConfig;
     const now = new Date().toISOString();
-    const profile = await this.buildProfileFromInput(
-      {
-        id: randomUUID(),
-        createdAt: now,
-        updatedAt: now
-      },
-      fallback,
-      input
-    );
 
-    settings.profiles.push(profile);
-    if (!settings.activeId) {
-      settings.activeId = profile.id;
-    }
+    return await withLlmGatewayProfilesLock(async () => {
+      // GP2: the merge base is the authoritative MySQL row read inside the
+      // lock, never the 60 second Redis cache, so a stale snapshot can neither
+      // drop concurrent profiles nor resurrect an older apiKey.
+      const settings = await this.loadSettingsAuthoritative();
+      const profile = await this.buildProfileFromInput(
+        {
+          id: randomUUID(),
+          createdAt: now,
+          updatedAt: now
+        },
+        fallback,
+        input
+      );
 
-    await this.saveSettings(orgId, actorId, settings, "llm_gateway_create", {
-      id: profile.id,
-      name: profile.name,
-      apiBase: profile.apiBase,
-      model: profile.model,
-      assistantModel: profile.assistantModel,
-      assistantWebSearchEnabled: profile.assistantWebSearchEnabled,
-      rerankModel: profile.rerankModel,
-      rerankFallbackModels: profile.rerankFallbackModels,
-      enabled: profile.enabled,
-      hasApiKey: this.hasApiKey(profile),
-      sendMetadata: profile.sendMetadata,
-      responseFormatMode: profile.responseFormatMode,
-      apiSurface: profile.apiSurface
+      settings.profiles.push(profile);
+      if (!settings.activeId) {
+        settings.activeId = profile.id;
+      }
+
+      await this.saveSettings(orgId, actorId, settings, "llm_gateway_create", {
+        id: profile.id,
+        name: profile.name,
+        apiBase: profile.apiBase,
+        model: profile.model,
+        assistantModel: profile.assistantModel,
+        assistantWebSearchEnabled: profile.assistantWebSearchEnabled,
+        rerankModel: profile.rerankModel,
+        rerankFallbackModels: profile.rerankFallbackModels,
+        enabled: profile.enabled,
+        hasApiKey: this.hasApiKey(profile),
+        sendMetadata: profile.sendMetadata,
+        responseFormatMode: profile.responseFormatMode,
+        apiSurface: profile.apiSurface
+      });
+
+      return this.toPublicProfile(profile);
     });
-
-    return this.toPublicProfile(profile);
   }
 
   async updateProfile(
@@ -200,74 +206,88 @@ export class LlmGatewaySettingsService {
     id: string,
     input: LlmGatewayProfileInput
   ): Promise<LlmGatewayProfilePublic> {
-    const settings = await this.loadSettings();
-    const index = settings.profiles.findIndex((profile) => profile.id === id);
-    if (index === -1) {
-      throw new NotFoundException("LLM gateway profile not found");
-    }
-    const existing = settings.profiles[index];
-    if (!existing) {
-      throw new NotFoundException("LLM gateway profile not found");
-    }
-    const updated = await this.buildProfileFromInput(
-      { ...existing, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() },
-      existing,
-      input
-    );
-    await this.proxyGovernance.assertProfileUpdateAllowed(id, {
-      currentApiBase: existing.apiBase,
-      nextApiBase: updated.apiBase,
-      nextEnabled: updated.enabled,
-    });
-    settings.profiles[index] = updated;
-    if (settings.activeId === id && !updated.enabled) {
-      settings.activeId = null;
-    }
-    if (settings.embeddingActiveId === id && (!updated.enabled || !updated.embeddingModel)) {
-      settings.embeddingActiveId = null;
-    }
-    if (settings.rerankActiveId === id && (!updated.enabled || !updated.rerankModel)) {
-      settings.rerankActiveId = null;
-    }
+    await this.platformAccess.assertPlatformAdmin(actorId);
 
-    await this.saveSettings(orgId, actorId, settings, "llm_gateway_update", {
-      id,
-      name: updated.name,
-      apiBase: updated.apiBase,
-      model: updated.model,
-      assistantModel: updated.assistantModel,
-      assistantWebSearchEnabled: updated.assistantWebSearchEnabled,
-      rerankModel: updated.rerankModel,
-      rerankFallbackModels: updated.rerankFallbackModels,
-      enabled: updated.enabled,
-      hasApiKey: this.hasApiKey(updated),
-      sendMetadata: updated.sendMetadata,
-      responseFormatMode: updated.responseFormatMode,
-      apiSurface: updated.apiSurface
-    });
+    return await withLlmGatewayProfilesLock(async () => {
+      const settings = await this.loadSettingsAuthoritative();
+      const index = settings.profiles.findIndex((profile) => profile.id === id);
+      if (index === -1) {
+        throw new NotFoundException("LLM gateway profile not found");
+      }
+      const existing = settings.profiles[index];
+      if (!existing) {
+        throw new NotFoundException("LLM gateway profile not found");
+      }
+      const updated = await this.buildProfileFromInput(
+        { ...existing, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() },
+        existing,
+        input
+      );
+      await this.proxyGovernance.assertProfileUpdateAllowed(id, {
+        currentApiBase: existing.apiBase,
+        nextApiBase: updated.apiBase,
+        nextEnabled: updated.enabled,
+      });
+      settings.profiles[index] = updated;
+      if (settings.activeId === id && !updated.enabled) {
+        settings.activeId = null;
+      }
+      if (settings.embeddingActiveId === id && (!updated.enabled || !updated.embeddingModel)) {
+        settings.embeddingActiveId = null;
+      }
+      if (settings.rerankActiveId === id && (!updated.enabled || !updated.rerankModel)) {
+        settings.rerankActiveId = null;
+      }
 
-    return this.toPublicProfile(updated);
+      await this.saveSettings(orgId, actorId, settings, "llm_gateway_update", {
+        id,
+        name: updated.name,
+        apiBase: updated.apiBase,
+        model: updated.model,
+        assistantModel: updated.assistantModel,
+        assistantWebSearchEnabled: updated.assistantWebSearchEnabled,
+        rerankModel: updated.rerankModel,
+        rerankFallbackModels: updated.rerankFallbackModels,
+        enabled: updated.enabled,
+        hasApiKey: this.hasApiKey(updated),
+        sendMetadata: updated.sendMetadata,
+        responseFormatMode: updated.responseFormatMode,
+        apiSurface: updated.apiSurface
+      });
+
+      return this.toPublicProfile(updated);
+    });
   }
 
   async deleteProfile(orgId: string, actorId: string, id: string) {
-    const settings = await this.loadSettings();
-    await this.proxyGovernance.assertProfileDeletionAllowed(id);
-    const nextProfiles = settings.profiles.filter((profile) => profile.id !== id);
-    if (nextProfiles.length === settings.profiles.length) {
-      throw new NotFoundException("LLM gateway profile not found");
-    }
-    settings.profiles = nextProfiles;
-    if (settings.activeId === id) {
-      settings.activeId = null;
-    }
-    if (settings.embeddingActiveId === id) {
-      settings.embeddingActiveId = null;
-    }
-    if (settings.rerankActiveId === id) {
-      settings.rerankActiveId = null;
-    }
+    await this.platformAccess.assertPlatformAdmin(actorId);
 
-    await this.saveSettings(orgId, actorId, settings, "llm_gateway_delete", { id });
+    return await withLlmGatewayProfilesLock(async () => {
+      const settings = await this.loadSettingsAuthoritative();
+      // Governance protection is evaluated before the existence check, so a
+      // managed governance target that is missing from profiles still fails
+      // with the governance 400 rather than a 404.
+      await this.proxyGovernance.assertProfileDeletionAllowed(id);
+      const nextProfiles = settings.profiles.filter((profile) => profile.id !== id);
+      if (nextProfiles.length === settings.profiles.length) {
+        throw new NotFoundException("LLM gateway profile not found");
+      }
+      settings.profiles = nextProfiles;
+      if (settings.activeId === id) {
+        settings.activeId = null;
+      }
+      if (settings.embeddingActiveId === id) {
+        settings.embeddingActiveId = null;
+      }
+      if (settings.rerankActiveId === id) {
+        settings.rerankActiveId = null;
+      }
+
+      await this.saveSettings(orgId, actorId, settings, "llm_gateway_delete", { id });
+
+      // The final profile deletion still persists an empty settings document.
+      return this.toPublicSettings(this.persistedView(settings));
+    });
   }
 
   async setActiveProfile(
@@ -275,23 +295,30 @@ export class LlmGatewaySettingsService {
     actorId: string,
     activeId: string | null
   ): Promise<LlmGatewaySettingsPublic> {
-    const settings = await this.loadSettings();
-    if (activeId) {
-      const found = settings.profiles.find((profile) => profile.id === activeId);
-      if (!found) {
-        throw new NotFoundException("LLM gateway profile not found");
-      }
-      if (!found.enabled) {
-        throw new BadRequestException("Cannot activate a disabled LLM gateway profile");
-      }
-    }
-    settings.activeId = activeId;
+    await this.platformAccess.assertPlatformAdmin(actorId);
 
-    await this.saveSettings(orgId, actorId, settings, "llm_gateway_activate", {
-      activeId
+    return await withLlmGatewayProfilesLock(async () => {
+      const settings = await this.loadSettingsAuthoritative();
+      if (activeId) {
+        const found = settings.profiles.find((profile) => profile.id === activeId);
+        if (!found) {
+          throw new NotFoundException("LLM gateway profile not found");
+        }
+        if (!found.enabled) {
+          throw new BadRequestException("Cannot activate a disabled LLM gateway profile");
+        }
+      }
+      settings.activeId = activeId;
+
+      await this.saveSettings(orgId, actorId, settings, "llm_gateway_activate", {
+        activeId
+      });
+
+      // The response is projected from this authoritative result. Re-reading
+      // through list() could observe a stale cache entry written by another
+      // instance before this write and echo an older selection back.
+      return this.toPublicSettings(this.persistedView(settings));
     });
-
-    return this.list();
   }
 
   async setEmbeddingActiveProfile(
@@ -300,29 +327,33 @@ export class LlmGatewaySettingsService {
     activeId: string | null,
     mode?: LlmGatewayEmbeddingMode
   ): Promise<LlmGatewaySettingsPublic> {
-    const settings = await this.loadSettings();
-    if (activeId) {
-      const found = settings.profiles.find((profile) => profile.id === activeId);
-      if (!found) {
-        throw new NotFoundException("LLM gateway profile not found");
-      }
-      if (!found.enabled) {
-        throw new BadRequestException("Cannot activate a disabled LLM gateway profile");
-      }
-      if (!found.embeddingModel) {
-        throw new BadRequestException("Embeddings gateway profile must configure embeddingModel");
-      }
-    }
-    settings.embeddingActiveId = activeId;
-    if (!activeId) {
-      settings.embeddingMode = mode ?? "follow_completion";
-    }
+    await this.platformAccess.assertPlatformAdmin(actorId);
 
-    await this.saveSettings(orgId, actorId, settings, "llm_gateway_embedding_activate", {
-      embeddingActiveId: activeId
+    return await withLlmGatewayProfilesLock(async () => {
+      const settings = await this.loadSettingsAuthoritative();
+      if (activeId) {
+        const found = settings.profiles.find((profile) => profile.id === activeId);
+        if (!found) {
+          throw new NotFoundException("LLM gateway profile not found");
+        }
+        if (!found.enabled) {
+          throw new BadRequestException("Cannot activate a disabled LLM gateway profile");
+        }
+        if (!found.embeddingModel) {
+          throw new BadRequestException("Embeddings gateway profile must configure embeddingModel");
+        }
+      }
+      settings.embeddingActiveId = activeId;
+      if (!activeId) {
+        settings.embeddingMode = mode ?? "follow_completion";
+      }
+
+      await this.saveSettings(orgId, actorId, settings, "llm_gateway_embedding_activate", {
+        embeddingActiveId: activeId
+      });
+
+      return this.toPublicSettings(this.persistedView(settings));
     });
-
-    return this.list();
   }
 
   async setRerankActiveProfile(
@@ -331,29 +362,33 @@ export class LlmGatewaySettingsService {
     activeId: string | null,
     mode?: LlmGatewayRerankMode
   ): Promise<LlmGatewaySettingsPublic> {
-    const settings = await this.loadSettings();
-    if (activeId) {
-      const found = settings.profiles.find((profile) => profile.id === activeId);
-      if (!found) {
-        throw new NotFoundException("LLM gateway profile not found");
-      }
-      if (!found.enabled) {
-        throw new BadRequestException("Cannot activate a disabled LLM gateway profile");
-      }
-      if (!found.rerankModel) {
-        throw new BadRequestException("Rerank gateway profile must configure rerankModel");
-      }
-    }
-    settings.rerankActiveId = activeId;
-    if (!activeId) {
-      settings.rerankMode = mode ?? "follow_completion";
-    }
+    await this.platformAccess.assertPlatformAdmin(actorId);
 
-    await this.saveSettings(orgId, actorId, settings, "llm_gateway_rerank_activate", {
-      rerankActiveId: activeId
+    return await withLlmGatewayProfilesLock(async () => {
+      const settings = await this.loadSettingsAuthoritative();
+      if (activeId) {
+        const found = settings.profiles.find((profile) => profile.id === activeId);
+        if (!found) {
+          throw new NotFoundException("LLM gateway profile not found");
+        }
+        if (!found.enabled) {
+          throw new BadRequestException("Cannot activate a disabled LLM gateway profile");
+        }
+        if (!found.rerankModel) {
+          throw new BadRequestException("Rerank gateway profile must configure rerankModel");
+        }
+      }
+      settings.rerankActiveId = activeId;
+      if (!activeId) {
+        settings.rerankMode = mode ?? "follow_completion";
+      }
+
+      await this.saveSettings(orgId, actorId, settings, "llm_gateway_rerank_activate", {
+        rerankActiveId: activeId
+      });
+
+      return this.toPublicSettings(this.persistedView(settings));
     });
-
-    return this.list();
   }
 
   async getActiveConfig(): Promise<LlmGatewayResolvedConfig | null> {
@@ -645,6 +680,43 @@ export class LlmGatewaySettingsService {
     return normalized;
   }
 
+  /**
+   * GP2: the authoritative merge base for every write.
+   *
+   * The 60 second Redis entry is a read optimisation only; using it as the base
+   * of a read-modify-write loses concurrent profiles, restores a previously
+   * rotated apiKey, or revives a deleted profile. This method always reads the
+   * MySQL row and never populates the cache, because the caller is about to
+   * overwrite the row and evict the cache anyway.
+   */
+  private async loadSettingsAuthoritative(): Promise<StoredSettings> {
+    const record = await this.prisma.systemSetting.findUnique({
+      where: { key: SETTINGS_KEY }
+    });
+    const raw = (record?.value as unknown) ?? {};
+    return this.normalizeSettings(raw);
+  }
+
+  /**
+   * Rebuilds the read-path projection of the document that was just persisted
+   * (the Prisma JSON round trip matches what the column holds) so write
+   * responses never fall back to a stale cache read.
+   */
+  private persistedView(settings: StoredSettings): StoredSettings {
+    return this.normalizeSettings(this.toPrismaJson(settings));
+  }
+
+  private toPublicSettings(settings: StoredSettings): LlmGatewaySettingsPublic {
+    return {
+      activeId: settings.activeId,
+      embeddingActiveId: settings.embeddingActiveId,
+      embeddingMode: settings.embeddingMode,
+      rerankActiveId: settings.rerankActiveId,
+      rerankMode: settings.rerankMode,
+      profiles: settings.profiles.map((profile) => this.toPublicProfile(profile))
+    };
+  }
+
   private async saveSettings(
     orgId: string,
     actorId: string,
@@ -787,7 +859,12 @@ export class LlmGatewaySettingsService {
         DEFAULT_RESPONSE_FORMAT_MODE
       ),
       apiSurface: this.normalizeApiSurface(record.apiSurface, DEFAULT_API_SURFACE),
-      enabled: record.enabled ?? true,
+      // GP3: a legacy row may hold a non-boolean enabled value (string, number,
+      // object, array). Boolean values are preserved, absent/null keeps the
+      // historical default true, and every other type degrades to false instead
+      // of being enabled by JavaScript truthiness. The public model therefore
+      // always emits a real JSON boolean.
+      enabled: this.normalizeEnabled(record.enabled),
       createdAt: this.normalizeString(record.createdAt) ?? new Date().toISOString(),
       updatedAt: this.normalizeString(record.updatedAt) ?? new Date().toISOString()
     };
@@ -999,6 +1076,21 @@ export class LlmGatewaySettingsService {
       return value;
     }
     return fallback;
+  }
+
+  /**
+   * GP3: strict `enabled` normalisation. Unlike normalizeBoolean, a non-boolean
+   * stored value is not allowed to fall back to the enabled default — the row
+   * is treated as disabled. Only absent/null keep the historical default.
+   */
+  private normalizeEnabled(value: unknown): boolean {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (value === undefined || value === null) {
+      return true;
+    }
+    return false;
   }
 
   private normalizeResponseFormatMode(

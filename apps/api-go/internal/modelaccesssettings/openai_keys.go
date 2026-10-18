@@ -157,9 +157,14 @@ func sameFingerprintSets(left, right []string) bool {
 // purpose — the three deliberately disagree on legacy rows, and the public
 // keysCount is NOT resolveKeys().length.
 func countStoredKeys(entries []json.RawMessage) int {
+	return countStoredKeysParsed(parseOpenAiKeyEntries(entries))
+}
+
+// countStoredKeysParsed is countStoredKeys over an already classified entry
+// list, so a caller that also needs the fingerprints classifies the array once.
+func countStoredKeysParsed(entries []openAiKeyEntry) int {
 	count := 0
-	for _, raw := range entries {
-		entry := parseOpenAiKeyEntry(raw)
+	for _, entry := range entries {
 		switch entry.kind {
 		case openAiKeyLegacyPlain, openAiKeyLegacyEncrypted:
 			count++
@@ -176,10 +181,14 @@ func countStoredKeys(entries []json.RawMessage) int {
 // cannot, and de-duplicate in first-appearance order. A decryption failure is
 // never an error response.
 func (s *Service) resolveKeys(entries []json.RawMessage) []string {
+	return s.resolveParsedKeys(parseOpenAiKeyEntries(entries))
+}
+
+// resolveParsedKeys is resolveKeys over an already classified entry list.
+func (s *Service) resolveParsedKeys(entries []openAiKeyEntry) []string {
 	key, keyPresent := s.settingsDecryptionKey()
 	out := make([]string, 0, len(entries))
-	for _, raw := range entries {
-		entry := parseOpenAiKeyEntry(raw)
+	for _, entry := range entries {
 		switch entry.kind {
 		case openAiKeyWrapped:
 			switch entry.wrapped.value.kind {
@@ -232,10 +241,15 @@ func (s *Service) resolveKeys(entries []json.RawMessage) []string {
 // The empty-plaintext difference against resolveKeys is intentional: it is the
 // source's behaviour and is covered by unit tests.
 func (s *Service) listKeyFingerprints(entries []json.RawMessage) []string {
+	return s.listParsedKeyFingerprints(parseOpenAiKeyEntries(entries))
+}
+
+// listParsedKeyFingerprints is listKeyFingerprints over an already classified
+// entry list.
+func (s *Service) listParsedKeyFingerprints(entries []openAiKeyEntry) []string {
 	key, keyPresent := s.settingsDecryptionKey()
 	out := make([]string, 0, len(entries))
-	for _, raw := range entries {
-		entry := parseOpenAiKeyEntry(raw)
+	for _, entry := range entries {
 		switch entry.kind {
 		case openAiKeyWrapped:
 			if trimmed := jsTrimSpace(entry.wrapped.fingerprint); trimmed != "" {
@@ -278,8 +292,11 @@ func (s *Service) buildOpenAiKeysPublic(
 	record openAiKeysRecord,
 	applied appliedStatusRecord,
 ) openAiKeysSettingsPublic {
-	keysCount := countStoredKeys(record.entries)
-	keyFingerprints := s.listKeyFingerprints(record.entries)
+	// One classification feeds both projections: the structural count and the
+	// fingerprint list no longer parse the stored array separately.
+	entries := parseOpenAiKeyEntries(record.entries)
+	keysCount := countStoredKeysParsed(entries)
+	keyFingerprints := s.listParsedKeyFingerprints(entries)
 	appliedAt, appliedAtOK := jsonString(applied.payload.AppliedAt)
 	appliedKeyFingerprints := s.listAppliedFingerprints(applied.payload.KeyFingerprints)
 	appliedState, appliedOK := s.resolveAppliedSource(applied.payload.Source)

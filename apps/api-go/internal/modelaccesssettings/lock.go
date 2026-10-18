@@ -20,8 +20,9 @@ import (
 // FOR UPDATE would not do: the row may not exist yet (first write) or may be
 // deleted by the sibling reset, and other writers live in other processes.
 const (
-	lockNameModelService = "model-access:model-service:v1"
-	lockNameOpenAiKeys   = "model-access:openai-keys:v1"
+	lockNameModelService  = "model-access:model-service:v1"
+	lockNameOpenAiKeys    = "model-access:openai-keys:v1"
+	lockNameProxyLBConfig = "model-access:proxy-load-balancing:v1"
 )
 
 // lockWaitSeconds is the GET_LOCK timeout. A timeout is never bypassed: the write

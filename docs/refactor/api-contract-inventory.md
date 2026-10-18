@@ -37,6 +37,7 @@
 - user-settings 只读 GET ×6 —— **ModeGo（Go-批3B 统一接管：onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor；pilot 内 `API_GO_USER_SETTINGS_READ_MODE=go` 显式启用，优先级高于批3A 的 `API_GO_ONBOARDING_MODE`；默认未设置=兼容旧行为）**：六个 GET 全部由统一 Go handler（`internal/usersettingsread`）独立鉴权并全响应——Go 独立验签 HS256 access token（iss/aud/exp 按 jsonwebtoken 语义、jti 缺失按 NestJS 语义放行、拒绝 alg 混淆与 mtk_）、独立查询真实 Redis blacklist（`access-token:blacklist:<jti>` 同 key，fail-closed）、独立从 MySQL 重推导 User/Org/Membership 与 MembershipRole/RolePermission/Permission 权限（与 getUserProfile 同序同文案 401，多角色优先/primary 回退）、独立判定 `items.read`（JWT permissions claim 一律不参与）、独立查 UserSetting（五个单 key 端点各查一个编译期固定常量 key；situation-monitor 一次聚合查询三个固定 key，对齐 NestJS findMany）并经 normalization（War Map 完整移植 war-map-contract.ts；Situation Monitor 三段聚合；NewsNow 有序对象/上限/真值语义）写出契约等价响应（错误形状对齐 GlobalExceptionFilter）。路由为 exact+GET：六个 PUT 同路径与相似路径（onboarding-x/war-map-x/newsnow 子路径等）回落 legacy。已完成远端真实栈接管验证（Phase A-D：8 个固定 key 落库、shadow 零差异、go 契约全等、NestJS 停止后六端点仍 200 且代表性 PUT/未迁移 GET 502）。`API_GO_USER_SETTINGS_READ_MODE=shadow` 时六端点全部回 shadow 差分。
 - user-settings 全部 PUT ×6（onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor）—— **`API_GO_USER_SETTINGS_WRITE_MODE`（Go-批3C）**：默认 `legacy`，精确路径 PUT 仍代理 NestJS；`go` 时由 `internal/usersettingswrite` 经同一鉴权链写入现有 `UserSetting`（八个固定 key 的 upsert，写后重读）。要求读模式同为 `go`。相似路径与其他方法仍回落 legacy。Situation Monitor 三段不是事务。
 - 登录/refresh/MFA/OIDC/邮箱验证码/密码找回/邀请/注册审核/头像上传签名/个人数据导出 —— **仍由 NestJS 承载**；账户资料、会话退出与机器令牌管理 8 条精确路由可在 `API_GO_ACCOUNT_SECURITY_MODE=go` 时由 Go 承载（默认 legacy，见 §1.8s）。
+- 搜索索引重建 ×2（`POST /api/admin/search/reindex`、`GET /api/admin/search/reindex/:jobId`，`settings.manage`）—— **`API_GO_SEARCH_REINDEX_MODE`（Go-批11）**：默认 `legacy`，只接受空串/`legacy`/`go`，非法值启动失败；`go` 时由 `internal/searchreindex` 共用既有 Redis job/list/orgs/lock 结构（`lock:search:reindex:org:<orgId>` 为物理键）、按 `itemMetaId` 游标分批读 Mongo `itemreadmodels` 并 bulk 写入 Elasticsearch（`refresh=false`，最后一次显式 refresh 才 completed）。两个遥测端点（`POST /api/search-telemetry`、`GET /api/admin/search-telemetry/summary`）的开关仍是 `API_GO_CRAWL_READ_TELEMETRY_MODE`；本批只优化其 Redis 往返（写入单次 Lua、汇总单次 Pipeline），不改存储与口径。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`；Elasticsearch 不是启动条件。回滚只改 `API_GO_SEARCH_REINDEX_MODE`（细节见 §1.8t）。
 - 入口链（Go-批2C）：api-go 具备生产容器（`infra/docker/api-go.Dockerfile`，distroless nonroot + `healthcheck` 子命令）与 Compose 独立 `api-go-pilot` profile 服务；`API_BASE_URL` 可切 `http://api-go:4020` 使入口变为 `Web → api-go → NestJS`（其余请求全部纯代理，契约不变），默认部署仍直连 NestJS。已通过远端真实栈运行验证（`api-go-entry-smoke`：真实登录 JWT + 六个 PUT 持久化 + Shadow GET 零差异零丢弃 + Go-批3A 鉴权链 + Go-批3B 四阶段接管验证）；生产/预发布真实流量验证未完成。trace header（`x-trace-id`/`traceparent`）在 api-go 入口链保持原语义（§0 TraceId 行为镜像）。
 
 ## 1. REST 契约（71 controller · 369 endpoint）
@@ -256,6 +257,22 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 **同批缺陷修复（两侧同修）**：① `crawl-media-asset.service.ts` 第 264–268 行资产查询补 `orgId`（否则会为跨租户资产签发当前组织的 HMAC）；② `crawl-result.service.ts` 第 754 行 Mongo 内容查询在存在 `accessScope.orgId` 时补 `$or: [{orgId}, {orgId: {$exists:false}}]`；③ `crawl-quality-task-snapshot.service.ts` 的 `aggregateMarkdownRows` 增加 `orgId` 参数并补同样的 `$or`（此前只有 `taskId`）。
 
 仍回 NestJS：`POST /api/crawl-tasks`、`DELETE /api/crawl-tasks/:id`、`POST /api/crawl-tasks/:id/retry`、`POST /api/crawl-tasks/metadata`、`/api/admin/crawl4ai/queue*`、上述 7 条的非注册方法、更长路径与父路径（Go 不返回自己的 404）。回滚：`API_GO_CRAWL_READ_TELEMETRY_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。已知偏差与细节见 `docs/refactor/go-crawl-read-telemetry.md`。SEC-01 的真实登录态未在本批验证。
+
+### 1.8t 搜索索引重建（2 个，Go）与检索遥测批处理优化
+
+`API_GO_SEARCH_REINDEX_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本是 `API_GO_SEARCH_REINDEX_MODE must be one of legacy|go`；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`，Elasticsearch 不是启动条件）。`go` 时只接管 2 条精确规则（规则见 `apps/api-go/internal/legacyproxy/search_reindex_routes.go`）：
+
+- `POST /api/admin/search/reindex`（`settings.manage`，201）：取组织锁（物理键 `lock:search:reindex:org:<orgId>`，`SET NX PX` 5 分钟 + 随机 owner token，续租间隔 TTL/3）→ 落 `queued` 任务（活跃 TTL 12 小时）→ 返回 `{id, orgId, status:"queued", indexed:0, createdAt, updatedAt}`。同组织已有锁时 409 `SEARCH_REINDEX_IN_PROGRESS`（`error:"Conflict"`，无 `detail`）；不新增请求 DTO、不新增输入参数。
+- `GET /api/admin/search/reindex/:jobId`（`settings.manage`，200）：只返回本组织任务，状态仅 `queued|running|completed|failed`，`error` 仅在失败时出现。不存在、已过期或跨组织一律 `null`（200），不新增 UUID 校验、不改 404。
+
+任务状态用 Redis 既有结构 `search:reindex:job:<jobId>` / `search:reindex:org:<orgId>` / `search:reindex:orgs`，与 Nest 存储逐字段兼容（job JSON 的键序与 `error` 位置一致）。后台执行使用服务生命周期 context（HTTP 返回后不因请求取消而终止），顺序为 running → 分批重建 → completed/failed → 停止续租、释放自身锁、只清理本组织历史。清理改为当前组织范围：一次 `LRANGE` + 一次 `MGET` 单遍分类过期/缺失/超额，超额预算基于过滤后的有效列表且只裁终态任务（queued/running 永不被历史清理删除），批量 `DEL` + `LREM`，不用整段覆盖列表。本批不实现进程重启后的自动续跑，也不新增全局清理 scheduler、重试系统或第二套锁。
+
+索引重建：Mongo 只读 `itemreadmodels` 的固定字段投影（不含 `raw.payload`/`processed.result`），始终带 `orgId`、按 `itemMetaId` 升序、`itemMetaId > 上批最后值` 的游标、每批最多 500；ES 文档 ID 为 `<orgId>:<itemMetaId>`。`ensureIndex` 保持现有行为（索引不存在时按当前 mappings 创建，alias 不存在时挂到当前索引，不重建共享索引、不删其他组织文档、不切整库 alias）。Bulk 每批 `refresh=false`、NDJSON 动作行与文档行交替且末尾换行；逐项读取响应，只把成功写入计入 `indexed`，一批存在逐项失败时保存该批成功数并立即 failed（不自动重试，不把后续批次当成功），错误文本含 `itemMetaId`、错误类型与截短原因，不含认证信息或完整文档；最后一次显式 refresh 成功后才 completed。未启用 ES 时沿用禁用分支（`indexed=0`），不算真实重建验收。
+
+本批同时优化两个已迁移遥测入口（开关仍是 `API_GO_CRAWL_READ_TELEMETRY_MODE`，不改存储键、字段名与计数口径）：`POST /api/search-telemetry` 的写入由"N 次 `HINCRBY` + 1 次 `EXPIRE`"合并为一次 Lua（Nest 与 Go 同步），仍是 best-effort；`GET /api/admin/search-telemetry/summary` 的逐日 `HGETALL` 改为一次 Pipeline（Go）与一次批处理读取（Nest），日期顺序与零值日期输出不变。
+
+细节、回滚与未验证项见 `docs/refactor/go-search-reindex.md`。
+
 ### 1.8q 运行时与治理设置（rate-limit / auth-cache / audit-log / scheduler / newsnow）
 
 `API_GO_RUNTIME_SETTINGS_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本是 `API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go`；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，不要求 `MONGO_URI`）。`go` 时只接管 18 条精确规则，统一要求 `settings.manage`（人类身份来自验签、Redis 撤销名单与 membership 重推导；机器令牌走 `MachineAccessToken` 行含 `Org.isActive`，权限与 `orgId` 来自令牌行），其中 `PUT /api/system-settings/audit-log` 另外要求平台管理员（否则 403 `Platform admin access required`；机器令牌永不满足）：
@@ -500,7 +517,22 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 - `entitySentimentSeries` / `topicSentimentSeries`（`dashboards.read`；`days` 默认 30、clamp 1..365，名称 trim）
 - `processedItemById(id)`（`items.read`；非法 ObjectId 400，`duplicateOf` -> 目标 `ItemMeta.id`，`eventId` 两步回退）
 
-未迁：10 个 Mutation（`createOrg`/`updateOrg`/`setOrgActive`/`updateMembershipRoles`/`setUserActive`/`createRole`/`assignRole`/`updateRole`/`upsertDashboard`/`deleteDashboard`）与 `queueEvents` Subscription。同批修 4 个缺陷：非法/跨组织游标返回空页（Nest + Go）、删除 `(doc.llm as any)` 并强类型归一化 `llm`（Nest + Go）、`entityName`/`topic` trim（Nest + Go）、`recentLogs.message` 脱敏（Nest + Go）。回滚只把 `API_GO_GRAPHQL_WORKSPACE_READ_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
+未迁：`upsertDashboard`/`deleteDashboard` Mutation 与 `queueEvents` Subscription。同批修 4 个缺陷：非法/跨组织游标返回空页（Nest + Go）、删除 `(doc.llm as any)` 并强类型归一化 `llm`（Nest + Go）、`entityName`/`topic` trim（Nest + Go）、`recentLogs.message` 脱敏（Nest + Go）。回滚只把 `API_GO_GRAPHQL_WORKSPACE_READ_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
+
+### 11.1 组织、角色与成员管理 GraphQL 写（Go）
+
+新增开关 `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。与 `API_GO_GRAPHQL_READ_MODE` 完全解耦，四种读/写组合分别决定 Query 与 Mutation 的归属。`go` 只要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**，不初始化只读域 Mongo service。
+
+`go` 时在既有精确 `/graphql` 执行器登记 8 个 Mutation（其余 Mutation 仍回 NestJS）：
+
+- `createOrg(input)` / `updateOrg(input)` / `setOrgActive(input)`：`org.write`；组织写在一个事务内创建 `Org`、`DEFAULT_ROLES` 三个系统角色及其 `RolePermission`、创建者的 `Membership`/`MembershipRole` 与 `AuditLog`（`org/create`，metadata `{slug,name}`，缺失权限记 `bootstrapWarnings`），admin 关联数据库全部 `Permission`；`updateOrg`/`setOrgActive` 的目标组织权限从 actor 在目标 org 的 `Membership` + 角色重新推导；禁用组织后逐成员删 `profile:<userId>:<orgId>`。
+- `createRole(input)` / `updateRole(input)`：`roles.write`；复用 `internal/rbacapi`（限流、事务、权限存在性与范围、系统角色限制、缓存失效、审计）。
+- `assignRole(input)`：`roles.write`；复用 `internal/rbacapi`，事务内 `SELECT id FROM Membership ... FOR UPDATE` 后替换 `MembershipRole`。
+- `updateMembershipRoles(input)` / `setUserActive(input)`：`users.write`；`roleIds` trim + 去空 + 去重且 `primaryRoleId` 必须属于该集合；`setUserActive` 只改 `Membership.isActive`。
+
+本批同时为执行器补齐最小必要的 Mutation 能力：Query/Mutation 分别登记与选根（planner、选择集、复杂度、`__typename`、字段定义查找按 operation 选根）、整包接管判断、顶层字段按文档顺序串行执行（非空失败 `data:null` 并停止后续字段）、GET 拒绝（405 + `Allow: POST`，鉴权前发生）、Mutation `Cache-Control: no-store`（`ResponseCacheable` 先限定 operation 为 Query）。
+
+回滚只把 `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。说明见 `docs/refactor/go-graphql-org-access-write.md`。
 
 ## 12. 分类质量工作台与 RSS 诊断/翻译指标（Go）
 
@@ -854,3 +886,122 @@ one of legacy|go`）。`go` 时要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOS
 - **限流/APQ/深度/复杂度/响应缓存/字段权限沿用既有机制**；身份与 orgId 一律取自服务端认证与 MySQL 权限。
 - 回滚只把 `API_GO_ITEMS_READING_MODE` 改回 `legacy`。细节与验收清单见
   `docs/refactor/go-items-reading.md`。
+
+
+## 21. LLM 网关配置与三路激活（Go）
+
+新增开关 `API_GO_LLM_GATEWAY_PROFILES_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本是 `API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go`）。`go` 复用共享鉴权前置（要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**），不打开 shadow/canary，不启动 worker，不调用模型上游。`go` 时只接管 7 条精确规则（规则在 `apps/api-go/internal/legacyproxy/llm_gateway_profiles_routes.go`），全部要求 `settings.manage`，其中六条写路径另外要求平台管理员（否则 403 `Platform admin access required`；机器令牌永不满足该检查，因为 `GlobalRoleAssignment.userId` 是 `User(id)` 外键而机器身份是 `machine:<tokenId>`）：
+
+| 方法 | 路径 | 权限 | 平台管理员 | 成功码 |
+| --- | --- | --- | --- | --- |
+| GET | `/api/system-settings/llm-gateways` | `settings.manage` | 否 | 200 |
+| POST | `/api/system-settings/llm-gateways` | `settings.manage` | 是 | 201 |
+| PUT | `/api/system-settings/llm-gateways/active` | `settings.manage` | 是 | 200 |
+| PUT | `/api/system-settings/llm-gateways/embedding-active` | `settings.manage` | 是 | 200 |
+| PUT | `/api/system-settings/llm-gateways/rerank-active` | `settings.manage` | 是 | 200 |
+| PUT | `/api/system-settings/llm-gateways/:id` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/llm-gateways/:id` | `settings.manage` | 是 | 200（`{ok:true}`） |
+
+- **路由形态**：集合路径与三条激活路径是 exact 规则（前缀长度自然胜过动态规则，handler 也先按 `switch r.URL.Path` 精确分发）；动态规则只接受 `PUT`/`DELETE`（+ 共享 `OPTIONS` 预检）且**恰好一个非空路径段、无尾段**。因此 `GET`/`POST /:id`、`/:id/`、`/:id/test`、`/:id/models`、`/:id/proxy-health`、`/:id/proxy-model-info`、`/:id/proxy-lb-test`、`/:id/extra` 以及带尾斜杠的路径都不命中本批规则，回落 `/api/` legacy（Go 不返回自己的 profile 404）。
+- **静态例外**：`PUT`/`DELETE`/`OPTIONS` 作用在“恰好一段”的未迁移静态路径上时形态与 `/:id` 完全相同，装配层在**认证、body 解码与 CORS 处理之前**调用 `llmgatewayprofiles.IsUnmigratedStaticPath` 并 `ServeLegacy` 转发：`/proxy-governance`、`/proxy-governance/preflight`、`/proxy-governance/rotate-key`、`/proxy-load-balancing`、`/test-config`、`/models-config`。因此静态路径永远不会被当成 profile id（否则会得到 Go 的 404），`OPTIONS` 也不会被本批预检逻辑认领。没有为这些路径加永久 `ModeLegacy` 精确规则：后续迁移 proxy governance / load balancing 的批次应能以更具体的 Go 规则自然胜出，只需从静态路径表删项。Nest 不可用时被转发的请求照常得到反向代理的 502 `{"statusCode":502,"message":"Bad Gateway","error":"Bad Gateway",…}`。
+- **认证与失败顺序**：人类身份走 JWT 验签（HS256/iss/aud/exp）+ Redis 撤销名单（fail-closed）+ MySQL membership 重推导（**不看 JWT `permissions` claim，也不看 body/query 的 `orgId`**）；`mtk_` 机器令牌走 SHA-256 查 `MachineAccessToken.tokenHash` 并连 `Org.isActive`（撤销/过期/停用 → 401 `Invalid machine token`，命中刷新 `lastUsedAt`，权限与 orgId 只取令牌行）。固定顺序 authentication（401）→ permission（403 `INSUFFICIENT_PERMISSIONS`）→ DTO（400）→ service 平台门禁（403 `Platform admin access required`）→ 业务规则（404/400）。两条 403 正文见 `docs/refactor/go-llm-gateway-profiles.md`。
+- **DTO**：`CreateLlmGatewayDto`（`name`、`apiBase` 必填，`model` 在 DTO 可选但服务层要求）与 `UpdateLlmGatewayDto` 共用 19 字段声明顺序，另有三个激活 DTO（`activeId`；embedding/rerank 另带 `mode`，`@IsIn(["follow_completion","use_default"])`）。未知字段 400 `property <name> should not exist` 且消息在前；单属性约束自下而上注册（`Max→Min→IsInt`、`each→arrayMaxSize→isArray`、`enum→IsString`），错误消息用 `"; "` 拼接。非对象 body 400 `an unknown value was passed to the validate function`；非法 JSON 400 `Unexpected token in JSON body`；>10 MiB → 500 `Internal server error`。
+- **默认值**：创建 fallback 是 `LITELLM_*` 投影（`apiBase` 取 `LITELLM_API_URL`→`LITELLM_API_BASE`→`http://localhost:4001`；`timeoutMs` 60000、`temperature` 0.2、`topP` 0.9；`maxOutputTokens` 取 `LITELLM_MAX_TOKENS`（schema 默认 2048），`maxRetries` 取 `LITELLM_RETRY_ATTEMPTS`（schema 默认 3），故 `LITELLM_MAX_OUTPUT_TOKENS` / `LITELLM_MAX_RETRIES` 永不生效）；`LITELLM_MODEL`、`LITELLM_FALLBACK_MODELS`、`LITELLM_EMBEDDING_MODEL`、`LITELLM_API_KEY` 都不会种入 profile，`rerankModel` / `rerankFallbackModels` 不从 env 创建。
+- **文档与缓存**：SystemSetting 全局单例 `key="llm_gateway_profiles"`，文档形状 `{activeId, embeddingActiveId, embeddingMode, rerankActiveId, rerankMode, profiles[]}`；Redis `llm_gateway:profiles` TTL 60 秒，存归一化文档本身（非信封），GET 是 best-effort 缓存（Redis 故障只记日志，不回填失败）；写路径锁内直读 MySQL 权威行、写后 `DEL` 缓存。`litellm_proxy_governance:settings`（TTL 30）与 `system_security:settings`（Nest 实际 TTL 60）是各自服务的 `{exists,value}` 信封，本包**只读不写**（只解码 `enabled`/`targetProfileId` 与 `secretEncryptionEnabled`）。
+- **secret**：`apiKey` 用 AES-256-GCM（32 字节 key、随机 12 字节 IV、分离 16 字节 tag、无 AAD），信封 `{__enc:"system-settings:v1",alg:"aes-256-gcm",iv,tag,data}`；读取时明文/v1 信封可解，缺失/null/其他类型/解不开都 `hasApiKey=false`，**不回落到 `LITELLM_API_KEY`**；写入策略按 `system_security.secretEncryptionEnabled` 与密钥状态分支（显式关闭→明文、显式开启无有效 key→400、生产无 key→400、非生产无 key→明文+告警）；密钥、密文、指纹不进日志/响应/审计。
+- **治理保护**：治理启用且 `targetProfileId` 命中时，禁用目标 profile、改动其 apiBase（`normalizeOpenAiApiBase` 比较，含 endpoint 后缀表与 `/v1` 截断）或删除它都会得到治理 400（三条固定文案）；delete 的保护检查在存在性检查之前。
+- **锁**：六条写共享 MySQL 会话锁 `llm-gateway:profiles:write:v1`（`GET_LOCK(name,10)`，专用连接；Go 用不保留空闲连接的独立池、独立短超时 context 释放、释放失败驱逐物理连接；Nest 复用 `withMysqlSessionLock`），获取失败两侧都是 503 `{"statusCode":503,"message":"Internal server error","error":"Service Unavailable"}`。该锁只串行化这六条 profile 写，**不是**覆盖未迁移治理写的跨配置事务。
+- **同批缺陷修复**：GP1（六条写补平台管理员门禁，机器令牌 403 不写外键）、GP2（写路径改为锁内直读 MySQL 权威行，响应从本次结果投影；缓存整体读改写不再丢更新或恢复旧 apiKey）、GP3（`enabled` 严格 boolean 归一化，非 boolean 存量值一律 false）；详见 `docs/refactor/bug-ledger.md` §12。回滚只把 `API_GO_LLM_GATEWAY_PROFILES_MODE` 改回 `legacy`；不改表、不改 Web 入口、不改其他开关默认值。细节见 `docs/refactor/go-llm-gateway-profiles.md`。
+
+
+## 22. 认证要素：MFA 管理与组织 OIDC 配置（Go）
+
+新增开关 `API_GO_AUTH_FACTORS_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值
+启动失败，错误文本 `API_GO_AUTH_FACTORS_MODE must be one of legacy|go`）。`go`
+要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`（`appendAuthRequirements`），
+**不要求 `MONGO_URI`**，不启用 shadow，不启动 worker。`go` 时只接管 7 条精确
+方法规则（Go 包 `internal/authfactors`，处理器注册键 `/api/auth#factors`）：
+
+| 方法 | 路径 | 权限 | 成功码 |
+| --- | --- | --- | --- |
+| GET | `/api/auth/mfa` | `AllowAuthenticated` | 200 |
+| POST | `/api/auth/mfa/enroll` | `AllowAuthenticated` | 201 |
+| POST | `/api/auth/mfa/verify-enroll` | `AllowAuthenticated` | 201 |
+| POST | `/api/auth/mfa/disable` | `AllowAuthenticated` | 201 |
+| POST | `/api/auth/mfa/recovery/rotate` | `AllowAuthenticated` | 201 |
+| GET | `/api/auth/admin/oidc-config` | `settings.manage` | 200 |
+| PUT | `/api/auth/admin/oidc-config` | `settings.manage` | 200 |
+
+- **不迁移**：login、refresh、logout、profile、change-password、machine-tokens；
+  公开 MFA 登录挑战 `POST /api/auth/mfa/verify-login` 与强制注册挑战
+  `POST /api/auth/mfa/enrollment/start`、`POST /api/auth/mfa/enrollment/complete`；
+  整条 OIDC 登录链 `GET /api/auth/sso/oidc/start`、
+  `GET /api/auth/oidc/callback`、`POST /api/auth/sso/handoff/exchange`。上表路径的
+  其他方法、尾斜杠与更长路径也回落 NestJS，Go 不返回自己的 404。
+- **认证与身份**：人类走 JWT 验签 + Redis 撤销名单 + MySQL membership/permission
+  重推导（不信任 JWT claims）；`mtk_` 机器令牌走 SHA-256 查 `MachineAccessToken` +
+  `revokedAt`/`expiresAt`/`Org.isActive`。`GET /api/auth/mfa` 对机器身份返回空状态；
+  四条 MFA 写要求真实人类 `User`，否则 403 `MFA management requires a human user`；
+  OIDC 是租户设置（只要求本组织 `settings.manage`，无全局 `platform_admin` 门禁）。
+  四条 MFA 写共用每用户 MySQL 会话锁 `mfa:<sha256(userId) hex 前 60 字符>`
+  （恰好 64 字符，Nest 与 Go 同名互通），锁被占用 409、锁会话失败 503。
+- **同批修复 AF1–AF5（Nest 与 Go 两侧）**：AF1 重复完成已完成的注册会重发恢复码
+  （`active && !pendingSecret` → 400 `MFA enrollment is not initialized`）；AF2
+  恢复码消费与管理变更分处两个事务（改收显式事务客户端，校验 + 状态变更同事务，
+  声明保持条件 `usedAt IS NULL` 且恰好 1 行）；AF3 MFA 写后 profile 缓存不失效
+  （提交后删 `profile:<userId>:default` 与全部 membership 组织）；AF4 OIDC 更新把
+  预读旧 client secret 写回（无新 secret 时整列从写入省略，写入期原子保留）；AF5
+  机器身份写 MFA 触发 `User(id)` 外键 500（四条写先要求真实人类）。细节见
+  `docs/refactor/go-auth-factors.md` 与 `docs/refactor/bug-ledger.md`。
+- 回滚只把 `API_GO_AUTH_FACTORS_MODE` 改回 `legacy`。本批从不访问身份提供方、从不
+  签发 access/refresh token，不改 GraphQL/SDL/controller/DTO/schema。
+
+
+## 23. LiteLLM 负载均衡配置管理与下发（Go · 4 条）
+
+新增开关 `API_GO_PROXY_LOAD_BALANCING_MODE`（空串/`legacy`/`go`，默认 `legacy`，
+非法值启动失败，错误文本 `API_GO_PROXY_LOAD_BALANCING_MODE must be one of
+legacy|go`）。与 `API_GO_MODEL_ACCESS_SETTINGS_MODE` **相互独立**：两者可各自
+`legacy`/`go`；本开关为 `go` 而模型接入为 `legacy` 时，仍直接读取真实 OpenAI 密钥
+配置下发快照。`go` 只要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`（不要求
+Mongo），由 `internal/modelaccesssettings` 复用同一服务接管 4 条**精确路径**：
+
+| 方法 | 路径 | 认证 | 权限 | 平台门禁 | 成功码 |
+|---|---|---|---|---|---|
+| GET | `/api/system-settings/llm-gateways/proxy-load-balancing` | JWT/`mtk_` | `settings.manage` | 否 | 200 |
+| PUT | `/api/system-settings/llm-gateways/proxy-load-balancing` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/llm-gateways/proxy-load-balancing` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| GET | `/api/internal/litellm/proxy-load-balancing` | `LITELLM_CONFIG_INTERNAL_TOKEN` | 不用 JWT/RBAC | 否 | 200 |
+
+契约要点：
+
+- 精确路径：`/api/system-settings/llm-gateways/:id`（Profile 动态段）不会把
+  `proxy-load-balancing` 当作 Profile ID；`proxy-governance`、未列方法与更长路径、
+  尾斜杠继续回落 `/api/`。
+- 公开响应：`source/enabled/openai/anthropicKeysCount/anthropicKeyFingerprints/
+  routingStrategy/redisHost/redisPort/hasRedisPassword/deploymentRpm/deploymentTpm`；
+  `openai` 是完整的 `OpenAiKeysSettingsPublic`。无行时默认
+  `source=none`、`enabled=false`、`routingStrategy=simple-shuffle`、`redisHost=redis`、
+  `redisPort=6379`、`hasRedisPassword=false`、计数 0、指纹 `[]`、rpm/tpm `null`。
+- 内部快照：`hasStoredConfig/enabled/openaiApiKeys/anthropicApiKeys/routingStrategy/
+  redisHost/redisPort` + 可选的 `redisPassword/deploymentRpm/deploymentTpm`（无值时
+  省略，公开响应中仍为 `null`）。`openaiApiKeys` 复用已有明文读取；明文只在此契约
+  允许的位置出现。
+- PUT 语义：`anthropicApiKeys` 提供即整体替换（`[]` 清空，优先于
+  `clearAnthropicApiKeys`），省略/`null` 保留库中既有条目；`redisPassword` 省略
+  保留、空串/纯空白/`null` 清空、非空 trim 后加密；`deploymentRpm`/`deploymentTpm`
+  省略或 `null` 均存 `null`。
+- SystemSetting key `litellm_proxy_load_balancing`（`isPublic=false`）；Redis
+  `litellm_proxy_load_balancing:settings`（30 秒）；全局 MySQL 会话锁
+  `model-access:proxy-load-balancing:v1`（PUT 与 DELETE 共用，Nest 与 Go 同名字面量）。
+- 审计：`resource=system_settings`；PUT `litellm_proxy_lb_update`（metadata 不含
+  密钥/密码），DELETE `litellm_proxy_lb_reset`（`{ok:true}`）。
+- 同批修 LB1–LB4（Nest 与 Go 两侧）：公开读取对旧加密条目重复解密；PUT 以 30 秒
+  缓存做合并基准；写后经缓存构造响应；显式 `null` 密码调用 `trim` 触发 500。并补齐
+  平台管理员写入门禁（全局配置）。
+
+未迁：`/api/system-settings/llm-gateways` 的 Profile CRUD 与激活路由、
+`proxy-governance`、`rotate-key`、模型测试接口，以及实际请求路由（四种策略仍由
+LiteLLM 执行）。回滚只把 `API_GO_PROXY_LOAD_BALANCING_MODE` 改回 `legacy`；不改表、
+不改 controller/DTO、不改 Web 入口与其他开关默认值。细节见
+`docs/refactor/go-proxy-load-balancing.md`。

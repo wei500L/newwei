@@ -86,3 +86,40 @@ const (
 	// openAiKeyWrapped means the entry was {fingerprint, value}.
 	openAiKeyWrapped
 )
+
+// routingStrategy is the LiteLLM router_settings.routing_strategy value. Only
+// these four exact strings are accepted: anything else becomes the documented
+// default at read time and a 400 at write time.
+type routingStrategy string
+
+const (
+	// routingStrategySimpleShuffle is the stored default when no row exists.
+	routingStrategySimpleShuffle routingStrategy = "simple-shuffle"
+	// routingStrategyLeastBusy is LiteLLM's least-busy strategy.
+	routingStrategyLeastBusy routingStrategy = "least-busy"
+	// routingStrategyUsageBased is LiteLLM's usage-based-routing strategy.
+	routingStrategyUsageBased routingStrategy = "usage-based-routing"
+	// routingStrategyLatencyBased is LiteLLM's latency-based-routing strategy.
+	routingStrategyLatencyBased routingStrategy = "latency-based-routing"
+)
+
+// routingStrategyValues is the @IsIn allow-list, in DTO declaration order.
+var routingStrategyValues = []string{
+	string(routingStrategySimpleShuffle),
+	string(routingStrategyLeastBusy),
+	string(routingStrategyUsageBased),
+	string(routingStrategyLatencyBased),
+}
+
+// validRoutingStrategy reports whether value is one of the four accepted
+// strategy strings. The caller is responsible for trimming (the write path
+// rejects untrimmed input through the DTO, and the read path trims first).
+func validRoutingStrategy(value string) (routingStrategy, bool) {
+	switch routingStrategy(value) {
+	case routingStrategySimpleShuffle, routingStrategyLeastBusy,
+		routingStrategyUsageBased, routingStrategyLatencyBased:
+		return routingStrategy(value), true
+	default:
+		return "", false
+	}
+}

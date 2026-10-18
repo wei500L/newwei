@@ -187,6 +187,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		h.writeProtocol(w, r, plan.Result)
 	case exec.KindExecute:
+		// A GET request may never run a mutation. Apollo rejects it before the
+		// operation is resolved, so no authentication, authorization, or write
+		// happens; the response is 405 with an Allow: POST header.
+		if r.Method == http.MethodGet {
+			if reject := exec.MutationOverGET(plan); reject != nil {
+				h.writeProtocol(w, r, *reject)
+				return
+			}
+		}
 		if tooComplex := h.engine.CheckComplexity(plan); tooComplex != nil {
 			h.writeProtocol(w, r, *tooComplex)
 			return

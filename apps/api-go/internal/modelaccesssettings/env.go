@@ -91,3 +91,20 @@ func NewConfigFromEnv(input EnvInput) (Config, error) {
 // productionNodeEnv is the exact NODE_ENV value that selects the production
 // encryption policy.
 const productionNodeEnv = "production"
+
+// NewProxyLoadBalancingConfigFromEnv resolves the Config subset the four proxy
+// load balancing routes need.
+//
+// Unlike NewConfigFromEnv it performs no MODEL_SERVICE_* validation: the load
+// balancing switch is independent of the model access takeover, so it must never
+// fail startup on an unrelated variable. Only the DSN (for the dedicated lock
+// session), the LiteLLM internal token (a 403 contract, never a startup
+// requirement) and the encryption policy inputs are consumed.
+func NewProxyLoadBalancingConfigFromEnv(input EnvInput) Config {
+	return Config{
+		DatabaseURL:                input.DatabaseURL,
+		LiteLLMConfigInternalToken: input.LiteLLMConfigInternalTokenRaw,
+		SettingsEncryptionKeyRaw:   input.SettingsEncryptionKeyRaw,
+		IsProduction:               input.NodeEnvRaw == productionNodeEnv,
+	}
+}

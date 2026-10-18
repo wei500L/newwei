@@ -534,3 +534,182 @@ func parseReportAppliedRequest(body []byte) (reportAppliedRequest, error) {
 	applied, _ := validAppliedSource(source)
 	return reportAppliedRequest{Source: applied, KeyFingerprints: fingerprints}, nil
 }
+
+// parseRequiredStringField validates a required @IsString() property.
+func parseRequiredStringField(v *validationErrors, members []jsonMember, field string) (string, bool) {
+	raw, present := member(members, field)
+	if present {
+		if text, ok := jsonString(raw); ok {
+			return text, true
+		}
+	}
+	v.add(field + " must be a string")
+	return "", false
+}
+
+// parseOptionalBoolField validates an @IsOptional() @IsBoolean() property:
+// absent and null both pass without a message and mean false.
+func parseOptionalBoolField(v *validationErrors, members []jsonMember, field string) (bool, bool) {
+	raw, present := member(members, field)
+	if !present || jsonIsNull(raw) {
+		return false, true
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if bytes.Equal(trimmed, []byte("true")) {
+		return true, true
+	}
+	if bytes.Equal(trimmed, []byte("false")) {
+		return false, true
+	}
+	v.add(field + " must be a boolean value")
+	return false, false
+}
+
+// parseOptionalStringArrayListField validates an
+// @IsOptional() @IsArray() @ArrayMaxSize() @IsString({ each: true }) property.
+// The presence flag distinguishes "omitted/null" (keep the stored list) from an
+// explicit empty array (clear it).
+func parseOptionalStringArrayListField(
+	v *validationErrors,
+	members []jsonMember,
+	field string,
+	maxItems int,
+) ([]string, bool, bool) {
+	raw, present := member(members, field)
+	if !present || jsonIsNull(raw) {
+		return nil, false, true
+	}
+	values, ok := parseStringArrayListField(v, members, field, maxItems)
+	if !ok {
+		return nil, true, false
+	}
+	return values, true, true
+}
+
+// parseOptionalIntConstraints validates @IsOptional() @IsInt() @Min() @Max():
+// absent and null both pass without a message, like class-validator's IsOptional
+// conditional validation.
+func parseOptionalIntConstraints(
+	v *validationErrors,
+	members []jsonMember,
+	field string,
+	constraints []intConstraint,
+) (*int, bool) {
+	raw, present := member(members, field)
+	if !present || jsonIsNull(raw) {
+		return nil, true
+	}
+	value, ok := parseIntConstraints(v, members, field, constraints)
+	if !ok {
+		return nil, false
+	}
+	return &value, true
+}
+
+// parseInField validates a bare @IsIn(allowed) property. The load balancing
+// routingStrategy carries no @IsString, so the allow-list message is the only
+// one class-validator produces for it.
+func parseInField(v *validationErrors, members []jsonMember, field string, allowed []string) (string, bool) {
+	raw, present := member(members, field)
+	if present {
+		if decoded, ok := jsonString(raw); ok {
+			for _, candidate := range allowed {
+				if decoded == candidate {
+					return decoded, true
+				}
+			}
+		}
+	}
+	v.add(fmt.Sprintf("%s must be one of the following values: %s", field, strings.Join(allowed, ", ")))
+	return "", false
+}
+
+// updateProxyLBSettingsRequest is the validated
+// UpdateLlmGatewayProxyLoadBalancingSettingsDto.
+type updateProxyLBSettingsRequest struct {
+	Enabled          bool
+	AnthropicApiKeys []string
+	// AnthropicApiKeysProvided separates an omitted/null list (keep the stored
+	// entries) from an explicit empty array (clear them).
+	AnthropicApiKeysProvided bool
+	ClearAnthropicApiKeys    bool
+	RoutingStrategy          routingStrategy
+	RedisHost                string
+	RedisPort                int
+	RedisPassword            optionalString
+	DeploymentRpm            *int
+	DeploymentTpm            *int
+}
+
+// proxyLBRequestFields lists the DTO's declared properties: they are the only
+// body members with validation metadata.
+var proxyLBRequestFields = []string{
+	"enabled",
+	"anthropicApiKeys",
+	"clearAnthropicApiKeys",
+	"routingStrategy",
+	"redisHost",
+	"redisPort",
+	"redisPassword",
+	"deploymentRpm",
+	"deploymentTpm",
+}
+
+// Port constraint order: @IsInt() @Min(1) @Max(65535) applied bottom-up is Max,
+// Min, IsInt.
+var proxyLBPortConstraints = []intConstraint{
+	{Kind: intConstraintMax, Bound: 65535},
+	{Kind: intConstraintMin, Bound: 1},
+	{Kind: intConstraintIsInt},
+}
+
+// RPM constraint order: @IsInt() @Min(1) @Max(1_000_000) applied bottom-up is
+// Max, Min, IsInt.
+var proxyLBDeploymentRpmConstraints = []intConstraint{
+	{Kind: intConstraintMax, Bound: 1_000_000},
+	{Kind: intConstraintMin, Bound: 1},
+	{Kind: intConstraintIsInt},
+}
+
+// TPM constraint order: @IsInt() @Min(1) @Max(10_000_000) applied bottom-up is
+// Max, Min, IsInt.
+var proxyLBDeploymentTpmConstraints = []intConstraint{
+	{Kind: intConstraintMax, Bound: 10_000_000},
+	{Kind: intConstraintMin, Bound: 1},
+	{Kind: intConstraintIsInt},
+}
+
+// parseUpdateProxyLoadBalancingSettingsRequest validates a PUT body against the
+// load balancing DTO. The messages are already "; " joined in the contract order
+// (unknown properties first, then declaration order).
+func parseUpdateProxyLoadBalancingSettingsRequest(body []byte) (updateProxyLBSettingsRequest, error) {
+	classified, err := classifyRequestBody(body)
+	if err != nil {
+		return updateProxyLBSettingsRequest{}, &httpError{status: 400, message: "Invalid request body"}
+	}
+	v := &validationErrors{}
+	for _, message := range unknownPropertyMessages(classified.Members, proxyLBRequestFields) {
+		v.add(message)
+	}
+
+	var request updateProxyLBSettingsRequest
+	// Declaration order: enabled, anthropicApiKeys, clearAnthropicApiKeys,
+	// routingStrategy, redisHost, redisPort, redisPassword, deploymentRpm,
+	// deploymentTpm.
+	request.Enabled, _ = parseBoolField(v, classified.Members, "enabled")
+	request.AnthropicApiKeys, request.AnthropicApiKeysProvided, _ = parseOptionalStringArrayListField(
+		v, classified.Members, "anthropicApiKeys", maxProxyLBAnthropicKeys)
+	request.ClearAnthropicApiKeys, _ = parseOptionalBoolField(v, classified.Members, "clearAnthropicApiKeys")
+	strategy, _ := parseInField(v, classified.Members, "routingStrategy", routingStrategyValues)
+	request.RoutingStrategy = routingStrategy(strategy)
+	request.RedisHost, _ = parseRequiredStringField(v, classified.Members, "redisHost")
+	request.RedisPort, _ = parseIntConstraints(v, classified.Members, "redisPort", proxyLBPortConstraints)
+	request.RedisPassword, _ = parseOptionalStringField(v, classified.Members, "redisPassword")
+	request.DeploymentRpm, _ = parseOptionalIntConstraints(v, classified.Members, "deploymentRpm", proxyLBDeploymentRpmConstraints)
+	request.DeploymentTpm, _ = parseOptionalIntConstraints(v, classified.Members, "deploymentTpm", proxyLBDeploymentTpmConstraints)
+
+	if err := v.err(); err != nil {
+		return updateProxyLBSettingsRequest{}, err
+	}
+	return request, nil
+}

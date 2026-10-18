@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 )
 
@@ -62,6 +64,19 @@ const (
 // searchTelemetryDatePattern is the SearchTelemetrySummaryQueryDto @Matches
 // regular expression.
 var searchTelemetryDatePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+// searchTelemetryWriteScript applies every counter increment and the retention
+// TTL in one round trip. ARGV[1] is the TTL followed by one field/value pair per
+// counter. Lua keeps the whole write atomic, so the stored keys, field names and
+// counting semantics are unchanged.
+const searchTelemetryWriteScript = `
+local ttl = tonumber(ARGV[1])
+for index = 2, #ARGV, 2 do
+  redis.call("HINCRBY", KEYS[1], ARGV[index], ARGV[index + 1])
+end
+redis.call("EXPIRE", KEYS[1], ttl)
+return 1
+`
 
 // serveTelemetryRecord handles POST /api/search-telemetry (permission
 // items.read). The NestJS guard runs before the ValidationPipe, so
@@ -193,16 +208,17 @@ func (s *Service) recordSearchTelemetry(ctx context.Context, orgID string, input
 		fields = append(fields, searchTelemetryQueryLengthFieldPrefix+resolveQueryLengthBucket(*input.QueryLength))
 	}
 
-	pipe := s.redis.Pipeline()
+	// One EVAL applies the increments and the TTL refresh together, replacing
+	// the previous pipeline plus EXPIRE pair. args is the driver argument list
+	// (TTL, then field/value pairs), not business data.
+	args := make([]interface{}, 0, 1+2*len(fields))
+	args = append(args, searchTelemetryRetentionSeconds)
 	for _, field := range fields {
-		pipe.HIncrBy(ctx, key, field, 1)
+		args = append(args, field, 1)
 	}
-	if _, err := pipe.Exec(ctx); err != nil {
+	if err := s.redis.Eval(ctx, searchTelemetryWriteScript, []string{key}, args...).Err(); err != nil {
 		return nil
 	}
-	// The TTL refresh runs only after a successful increment, matching the
-	// await order of the NestJS method.
-	_ = s.redis.Expire(ctx, key, time.Duration(searchTelemetryRetentionSeconds)*time.Second).Err()
 	return nil
 }
 
@@ -219,8 +235,18 @@ func (s *Service) searchTelemetrySummary(ctx context.Context, orgID, from, to st
 		return SearchTelemetrySummaryResponse{}, fmt.Errorf("%w: redis is not configured", errRedis)
 	}
 	rows := make([]searchTelemetryRow, 0, len(dates))
+	// One pipeline reads every day bucket instead of one HGETALL per day; the
+	// rows stay index-aligned with the ascending date list.
+	pipe := s.redis.Pipeline()
+	commands := make([]*redis.MapStringStringCmd, 0, len(dates))
 	for _, date := range dates {
-		row, err := s.redis.HGetAll(ctx, searchTelemetryMetricKey(orgID, date)).Result()
+		commands = append(commands, pipe.HGetAll(ctx, searchTelemetryMetricKey(orgID, date)))
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return SearchTelemetrySummaryResponse{}, fmt.Errorf("%w: %v", errRedis, err)
+	}
+	for _, command := range commands {
+		row, err := command.Result()
 		if err != nil {
 			return SearchTelemetrySummaryResponse{}, fmt.Errorf("%w: %v", errRedis, err)
 		}

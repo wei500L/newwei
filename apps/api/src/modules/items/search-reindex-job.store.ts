@@ -29,7 +29,15 @@ const TERMINAL_STATUSES = new Set<SearchReindexJobStatus>([
   "failed",
 ]);
 
-const JOB_TTL_SECONDS = Math.ceil(SEARCH_REINDEX_TERMINAL_JOB_TTL_MS / 1000);
+// Active jobs keep the long retention; a job that reached a terminal state
+// switches to the short one. The organization list always keeps the active
+// window so it can never expire before a job that may still be queried.
+const ACTIVE_JOB_TTL_SECONDS = Math.ceil(
+  SEARCH_REINDEX_ACTIVE_JOB_MAX_AGE_MS / 1000,
+);
+const TERMINAL_JOB_TTL_SECONDS = Math.ceil(
+  SEARCH_REINDEX_TERMINAL_JOB_TTL_MS / 1000,
+);
 
 /**
  * Reindex job state lives in Redis (not process memory) so that:
@@ -37,13 +45,17 @@ const JOB_TTL_SECONDS = Math.ceil(SEARCH_REINDEX_TERMINAL_JOB_TTL_MS / 1000);
  *   deployment;
  * - an instance restart does not orphan the job state while the Redis-backed
  *   reindex lock still exists.
+ *
+ * The key layout is shared with the Go searchreindex package:
+ * `search:reindex:job:<jobId>`, `search:reindex:org:<orgId>` and
+ * `search:reindex:orgs`.
  */
 @Injectable()
 export class SearchReindexJobStore {
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
 
   async create(orgId: string, now = new Date()): Promise<SearchReindexJob> {
-    await this.prune(now.getTime());
+    await this.prune(orgId, now.getTime());
     const timestamp = now.toISOString();
     const job: SearchReindexJob = {
       id: randomUUID(),
@@ -57,11 +69,11 @@ export class SearchReindexJobStore {
       this.jobKey(job.id),
       JSON.stringify(job),
       "EX",
-      JOB_TTL_SECONDS,
+      ACTIVE_JOB_TTL_SECONDS,
     );
     await this.redis.sadd(REINDEX_ORGS_SET, orgId);
     await this.redis.rpush(this.orgKey(orgId), job.id);
-    await this.redis.expire(this.orgKey(orgId), JOB_TTL_SECONDS);
+    await this.redis.expire(this.orgKey(orgId), ACTIVE_JOB_TTL_SECONDS);
     return job;
   }
 
@@ -91,6 +103,21 @@ export class SearchReindexJobStore {
     });
   }
 
+  /**
+   * Persist the batch progress: a polling GET observes the real indexed count
+   * while the rebuild runs instead of a final jump. The active TTL is refreshed
+   * on every batch.
+   */
+  async updateProgress(
+    jobId: string,
+    indexed: number,
+  ): Promise<SearchReindexJob | null> {
+    return this.update(jobId, {
+      indexed,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   async markCompleted(
     jobId: string,
     indexed: number,
@@ -103,70 +130,115 @@ export class SearchReindexJobStore {
     });
   }
 
+  /**
+   * Move the job to failed while keeping every document that was actually
+   * written: `indexed` is the running total, including the successful documents
+   * of the batch that reported the failure.
+   */
   async markFailed(
     jobId: string,
     error: string,
+    indexed: number,
   ): Promise<SearchReindexJob | null> {
     return this.update(jobId, {
       status: "failed",
+      indexed,
       error,
       updatedAt: new Date().toISOString(),
     });
   }
 
-  async prune(now = Date.now()): Promise<void> {
-    const orgIds = await this.redis.smembers(REINDEX_ORGS_SET);
-    for (const orgId of orgIds) {
-      const jobIds = await this.redis.lrange(this.orgKey(orgId), 0, -1);
-      if (jobIds.length === 0) {
-        await this.redis.srem(REINDEX_ORGS_SET, orgId);
+  /**
+   * Clean the history of one organization only.
+   *
+   * The organization list is read once, the job payloads are batch loaded with
+   * MGET, and a single pass classifies every id as expired, missing, over the
+   * retention limit or valid. The over-limit budget is computed from the
+   * filtered valid list and only terminal jobs are trimmed, so the current
+   * queued/running job is never removed by history retention. Deletions use DEL
+   * plus LREM, so a concurrent RPUSH append is preserved instead of being lost
+   * by rewriting the list.
+   */
+  async prune(orgId: string, now = Date.now()): Promise<void> {
+    const orgKey = this.orgKey(orgId);
+    const jobIds = await this.redis.lrange(orgKey, 0, -1);
+    if (jobIds.length === 0) {
+      await this.redis.srem(REINDEX_ORGS_SET, orgId);
+      return;
+    }
+
+    const payloads = await this.redis.mget(
+      jobIds.map((jobId) => this.jobKey(jobId)),
+    );
+    const staleIds: string[] = [];
+    const terminalIds: string[] = [];
+    let validCount = 0;
+
+    for (let index = 0; index < jobIds.length; index += 1) {
+      const jobId = jobIds[index]!;
+      const raw = payloads[index];
+      if (typeof raw !== "string" || raw.length === 0) {
+        staleIds.push(jobId);
         continue;
       }
-
-      const staleIds: string[] = [];
-      for (const jobId of jobIds) {
-        const raw = await this.redis.get(this.jobKey(jobId));
-        if (!raw) {
+      let job: SearchReindexJob;
+      try {
+        job = JSON.parse(raw) as SearchReindexJob;
+      } catch {
+        staleIds.push(jobId);
+        continue;
+      }
+      const updatedAtMs = Date.parse(job.updatedAt);
+      if (!Number.isFinite(updatedAtMs)) {
+        staleIds.push(jobId);
+        continue;
+      }
+      const ageMs = now - updatedAtMs;
+      if (TERMINAL_STATUSES.has(job.status)) {
+        if (ageMs >= SEARCH_REINDEX_TERMINAL_JOB_TTL_MS) {
           staleIds.push(jobId);
           continue;
         }
-        try {
-          const job = JSON.parse(raw) as SearchReindexJob;
-          const updatedAtMs = Date.parse(job.updatedAt);
-          if (!Number.isFinite(updatedAtMs)) {
-            staleIds.push(jobId);
-            continue;
-          }
-          const ageMs = now - updatedAtMs;
-          if (
-            TERMINAL_STATUSES.has(job.status) &&
-            ageMs >= SEARCH_REINDEX_TERMINAL_JOB_TTL_MS
-          ) {
-            staleIds.push(jobId);
-            continue;
-          }
-          if (
-            !TERMINAL_STATUSES.has(job.status) &&
-            ageMs >= SEARCH_REINDEX_ACTIVE_JOB_MAX_AGE_MS
-          ) {
-            staleIds.push(jobId);
-          }
-        } catch {
-          staleIds.push(jobId);
-        }
+        terminalIds.push(jobId);
+        validCount += 1;
+        continue;
       }
+      if (ageMs >= SEARCH_REINDEX_ACTIVE_JOB_MAX_AGE_MS) {
+        staleIds.push(jobId);
+        continue;
+      }
+      validCount += 1;
+    }
 
-      // Keep the newest SEARCH_REINDEX_MAX_RETAINED_JOBS entries per org.
-      const retained = jobIds.length - staleIds.length;
-      if (retained > SEARCH_REINDEX_MAX_RETAINED_JOBS) {
-        const excess = retained - SEARCH_REINDEX_MAX_RETAINED_JOBS;
-        staleIds.push(...jobIds.slice(0, excess));
-      }
+    // jobIds is oldest first, so the leading terminal entries are the oldest
+    // history records to drop.
+    let excess = validCount - SEARCH_REINDEX_MAX_RETAINED_JOBS;
+    for (
+      let index = 0;
+      excess > 0 && index < terminalIds.length;
+      index += 1
+    ) {
+      staleIds.push(terminalIds[index]!);
+      excess -= 1;
+    }
 
-      for (const jobId of staleIds) {
-        await this.redis.del(this.jobKey(jobId));
-        await this.redis.lrem(this.orgKey(orgId), 1, jobId);
-      }
+    if (staleIds.length === 0) {
+      return;
+    }
+
+    const pipeline = this.redis.pipeline();
+    for (const jobId of staleIds) {
+      pipeline.del(this.jobKey(jobId));
+      pipeline.lrem(orgKey, 1, jobId);
+    }
+    await pipeline.exec();
+
+    if (staleIds.length < jobIds.length) {
+      return;
+    }
+    const remaining = await this.redis.llen(orgKey);
+    if (remaining === 0) {
+      await this.redis.srem(REINDEX_ORGS_SET, orgId);
     }
   }
 
@@ -184,7 +256,9 @@ export class SearchReindexJobStore {
         this.jobKey(jobId),
         JSON.stringify(job),
         "EX",
-        JOB_TTL_SECONDS,
+        TERMINAL_STATUSES.has(job.status)
+          ? TERMINAL_JOB_TTL_SECONDS
+          : ACTIVE_JOB_TTL_SECONDS,
       );
       return job;
     } catch {

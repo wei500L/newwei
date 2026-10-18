@@ -74,12 +74,20 @@ export class SearchTelemetryService {
     }
 
     try {
-      await Promise.all(
-        fields.map(([field, value]) =>
-          this.cache.hincrby(metricKey, field, Math.max(0, Math.floor(value))),
-        ),
+      // One Lua call applies every counter and the 30 day retention TTL, so one
+      // telemetry write costs a single Redis round trip. Key, field names and
+      // counting stay exactly as before.
+      const normalizedFields = fields.map(
+        ([field, value]): [string, number] => [
+          field,
+          Math.max(0, Math.floor(value)),
+        ],
       );
-      await this.cache.expire(metricKey, SEARCH_TELEMETRY_RETENTION_SECONDS);
+      await this.cache.hincrbyMany(
+        metricKey,
+        normalizedFields,
+        SEARCH_TELEMETRY_RETENTION_SECONDS,
+      );
     } catch {
       // Keep telemetry endpoint non-blocking.
     }
@@ -101,7 +109,9 @@ export class SearchTelemetryService {
     const keys = dates.map((date) =>
       this.buildMetricKey(input.orgId, this.parseDateOnly(date)),
     );
-    const rows = await Promise.all(keys.map((key) => this.cache.hgetall(key)));
+    // One pipeline reads every day bucket; the rows stay index-aligned with the
+    // ascending date list.
+    const rows = await this.cache.hgetallMany(keys);
 
     const totals = {
       totalEvents: 0,

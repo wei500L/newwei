@@ -394,6 +394,11 @@ func WithAuthenticatedHealth(rules []Rule, mode string) []Rule {
 // the legacy prefix so only those methods can reach the Go handler. Upgrade
 // requests are still delivered to that handler, which proxies them. Longer
 // paths keep the prefix legacy rule. An empty or legacy mode adds nothing.
+//
+// The caller passes ModeGo when either the GraphQL read switch or the
+// organization access write switch is go: the switch only decides whether
+// /graphql can reach the Go handler at all, while the registered roots and
+// their own switches decide which documents actually execute in Go.
 func WithGraphQLRead(rules []Rule, mode string) []Rule {
 	if mode != string(ModeGo) {
 		return rules

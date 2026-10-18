@@ -58,13 +58,23 @@ export class SearchReindexService {
     const stopRenew = lease.startAutoRenew();
     await this.jobs.markRunning(jobId);
 
+    // The running total is kept here so a failure can persist the documents that
+    // were really written, including the current batch.
+    let indexed = 0;
     try {
-      const result = await this.elasticsearch.reindexOrg(orgId);
+      const result = await this.elasticsearch.reindexOrg(orgId, {
+        onProgress: async (progress) => {
+          indexed = progress;
+          await this.jobs.updateProgress(jobId, progress);
+        },
+      });
+      indexed = result.indexed;
       await this.jobs.markCompleted(jobId, result.indexed);
     } catch (error) {
       await this.jobs.markFailed(
         jobId,
         error instanceof Error ? error.message : String(error),
+        indexed,
       );
     } finally {
       stopRenew();
@@ -73,7 +83,7 @@ export class SearchReindexService {
       } catch {
         // best-effort
       }
-      await this.jobs.prune();
+      await this.jobs.prune(orgId);
     }
   }
 

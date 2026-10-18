@@ -694,6 +694,27 @@ services:
       # 写队列与实时抓取接口（POST/DELETE/retry/metadata 与
       # admin/crawl4ai/queue*）仍回 NestJS。回滚只把该变量改回 legacy。
       API_GO_CRAWL_READ_TELEMETRY_MODE: legacy
+      # 搜索索引重建 2 条 HTTP（POST /api/admin/search/reindex 与
+      # GET /api/admin/search/reindex/:jobId）。样例保持 legacy。只接受
+      # 空串/legacy/go，非法值启动失败；改成 go 才由 Go 独立鉴权并写 Redis
+      # 的既有 job/list/orgs/lock 结构、分批读 Mongo 的 itemreadmodels 并
+      # bulk 写入 Elasticsearch。go 要求 JWT_SECRET、DATABASE_URL、
+      # REDIS_HOST、MONGO_URI；Elasticsearch 不是启动条件（未启用时沿用
+      # 禁用分支 indexed=0）。遥测仍由 API_GO_CRAWL_READ_TELEMETRY_MODE
+      # 控制。回滚只把该变量改回 legacy。
+      API_GO_SEARCH_REINDEX_MODE: ${API_GO_SEARCH_REINDEX_MODE:-legacy}
+      # 与 api 服务同源的 Elasticsearch 配置（与 Nest env schema 同名同默认
+      # 值），只供 reindex 的 ensureIndex 与 bulk 写入使用。
+      # ELASTICSEARCH_ENABLED 为 false 或 NODE 为空时不建客户端、不读 Mongo，
+      # 任务直接 completed/indexed=0。凭据不进入日志、healthz 或错误正文。
+      ELASTICSEARCH_ENABLED: ${ELASTICSEARCH_ENABLED:-true}
+      ELASTICSEARCH_NODE: ${ELASTICSEARCH_NODE:-http://elasticsearch:9200}
+      ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_USERNAME:-elastic}
+      ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_PASSWORD:-}
+      ELASTICSEARCH_API_KEY: ${ELASTICSEARCH_API_KEY:-}
+      ELASTICSEARCH_ITEMS_INDEX: ${ELASTICSEARCH_ITEMS_INDEX:-items-v1}
+      ELASTICSEARCH_ITEMS_ALIAS: ${ELASTICSEARCH_ITEMS_ALIAS:-items-current}
+      ELASTICSEARCH_REQUEST_TIMEOUT_MS: ${ELASTICSEARCH_REQUEST_TIMEOUT_MS:-3000}
       # 运行时与治理设置 18 条 HTTP（/api/system-settings 下的
       # rate-limit-policies、rate-limits、auth-cache、audit-log、
       # multi-tenant-schedulers、news-source-scheduler、
@@ -723,6 +744,15 @@ services:
       ASSISTANT_ORG_MAX_IN_FLIGHT: ${ASSISTANT_ORG_MAX_IN_FLIGHT:-2}
       ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET: ${ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET:-2000000}
       TASK_LOG_RETENTION_DAYS: ${TASK_LOG_RETENTION_DAYS:-14}
+      # LLM 网关 profile 七条配置/激活 HTTP
+      # （GET/POST /api/system-settings/llm-gateways、PUT active /
+      # embedding-active / rerank-active、PUT/DELETE :id）。pilot 与样例
+      # 保持 legacy。改成 go 才由 Go 验签、平台管理员门禁并读写 MySQL
+      # SystemSetting；proxy-governance、proxy-load-balancing、
+      # test-config、models-config 与 :id/... 仍回 NestJS。go 要求
+      # JWT_SECRET、DATABASE_URL、REDIS_HOST（不要求 Mongo，不调用模型
+      # 上游）。回滚只把该变量改回 legacy。
+      API_GO_LLM_GATEWAY_PROFILES_MODE: ${API_GO_LLM_GATEWAY_PROFILES_MODE:-legacy}
       # 基础设施连接与采集运行凭据 7 条精确 HTTP：
       # GET/PUT/DELETE /api/system-settings/vector-service、
       # GET/PATCH /api/admin/settings/storage、
@@ -797,6 +827,20 @@ services:
       REALTIME_SIGNALS_POLYMARKET_PROXY_URL: ${REALTIME_SIGNALS_POLYMARKET_PROXY_URL:-}
       GEO_NOMINATIM_USER_AGENT: ${GEO_NOMINATIM_USER_AGENT:-modular-api}
       GEO_NOMINATIM_EMAIL: ${GEO_NOMINATIM_EMAIL:-}
+      # 已认证 MFA 管理与组织 OIDC 配置 7 条精确 HTTP：
+      # GET /api/auth/mfa、POST /api/auth/mfa/enroll|verify-enroll|disable|
+      # recovery/rotate、GET/PUT /api/auth/admin/oidc-config。
+      # pilot 与样例保持 legacy。改成 go 才由 Go 独立验签（人类 JWT + Redis
+      # blacklist + MySQL membership/权限重推导；机器令牌沿用 mtk_ 查库路径）
+      # 并读写 MySQL UserTotpFactor/UserRecoveryCode/OrgOidcConfig。四条 MFA
+      # 写要求真实人类 User（机器身份 403）；OIDC 是租户设置，按
+      # settings.manage 判定，不套全局平台管理员门禁。go 要求 JWT_SECRET、
+      # DATABASE_URL、REDIS_HOST，不要求 Mongo，不访问身份提供方、不签发
+      # token、不启动 worker。login/refresh/logout/me/change-password/
+      # machine-tokens、公开 MFA 登录与强制 enrollment 挑战，以及 OIDC
+      # start/callback/handoff 仍回 NestJS。回滚只把该变量改回 legacy。
+      API_GO_AUTH_FACTORS_MODE: ${API_GO_AUTH_FACTORS_MODE:-legacy}
+
       # 模型接入设置 10 条 HTTP（/api/system-settings/model-service、
       # /api/system-settings/openai-keys(+ /key/:fingerprint)、
       # /api/internal/litellm/openai-keys(+ /applied)）。pilot 与样例保持
@@ -809,6 +853,18 @@ services:
       # /api/system-settings/llm-gateways 等仍回 NestJS。
       # 回滚只把该变量改回 legacy。
       API_GO_MODEL_ACCESS_SETTINGS_MODE: ${API_GO_MODEL_ACCESS_SETTINGS_MODE:-legacy}
+      # LiteLLM 负载均衡配置管理与下发 4 条 HTTP
+      # （/api/system-settings/llm-gateways/proxy-load-balancing 的
+      # GET/PUT/DELETE、/api/internal/litellm/proxy-load-balancing 的 GET）。
+      # pilot 与样例保持 legacy。改成 go 才由 Go 验签并读写 MySQL 的
+      # SystemSetting（litellm_proxy_load_balancing）与 Redis 缓存，并复用
+      # 真实 OpenAI 密钥读取；两条管理写额外要求平台管理员，内部快照只用
+      # LITELLM_CONFIG_INTERNAL_TOKEN。go 要求 JWT_SECRET、DATABASE_URL、
+      # REDIS_HOST（不要求 Mongo，不启动 worker，不调用模型上游，实际请求
+      # 路由仍由 LiteLLM 执行）。与 API_GO_MODEL_ACCESS_SETTINGS_MODE 相互
+      # 独立。未列路径（Profile/治理路由等）仍回 NestJS。回滚只把该变量改回
+      # legacy。
+      API_GO_PROXY_LOAD_BALANCING_MODE: ${API_GO_PROXY_LOAD_BALANCING_MODE:-legacy}
       # 知识图谱冲击传导与实体共现/价格相关图 4 个 GraphQL 只读 root
       # （getExecutiveChangeImpact / getCommodityMoveImpact /
       # getPolicyEventImpact / getEntityImpactGraph）。pilot 与样例保持
@@ -840,6 +896,13 @@ services:
       API_GO_ITEMS_READING_MODE: legacy
       ITEMS_READ_MODEL_ENABLED: "false"
       ITEMS_VECTOR_HARD_FAIL_ENABLED: "false"
+      # 组织、角色与成员管理 8 个 GraphQL mutation（createOrg / updateOrg /
+      # setOrgActive / createRole / updateRole / assignRole /
+      # updateMembershipRoles / setUserActive）。pilot 与样例保持 legacy，与
+      # API_GO_GRAPHQL_READ_MODE 解耦：只开本变量时 query 仍走 NestJS，只有这
+      # 8 个 mutation 由 Go 执行。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动
+      # worker。回滚只把该变量改回 legacy。
+      API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE: legacy
       # 基础设施设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认
       # 值）。S3_* 与 VECTOR_* 都不进入日志；不在这里新增第二套网关配置。
       NODE_ENV: production
@@ -878,6 +941,15 @@ services:
       LITELLM_API_KEY: ${LITELLM_API_KEY:-}
       LITELLM_TIMEOUT_MS: ${LITELLM_TIMEOUT_MS:-60000}
       LITELLM_RETRY_ATTEMPTS: ${LITELLM_RETRY_ATTEMPTS:-3}
+      # 本批 profile 默认值还需要这几个 LITELLM_* 与 NODE_ENV，与 api
+      # 服务同源同名；上面已有的键不重复声明。LITELLM_MAX_TOKENS 在 Nest
+      # env schema 里有默认值，优先于 LITELLM_MAX_OUTPUT_TOKENS（Go 侧同序）。
+      NODE_ENV: ${NODE_ENV:-production}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4o-mini}
+      LITELLM_TEMPERATURE: ${LITELLM_TEMPERATURE:-0.2}
+      LITELLM_TOP_P: ${LITELLM_TOP_P:-0.9}
+      LITELLM_MAX_TOKENS: ${LITELLM_MAX_TOKENS:-2048}
+      LITELLM_FALLBACK_MODELS: ${LITELLM_FALLBACK_MODELS:-}
       # Go-批3A 兼容变量：readMode 未设时仍控制 onboarding（pilot 固定
       # go，保持与批3A 部署等价；readMode=go 已覆盖全部六端点）。
       API_GO_ONBOARDING_MODE: go

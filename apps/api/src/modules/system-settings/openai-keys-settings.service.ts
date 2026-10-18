@@ -11,7 +11,8 @@ import { PrismaService } from "../config/prisma.service";
 import {
   decryptStringValueV1,
   isEncryptedStringValueV1,
-  resolveSettingsKey
+  resolveSettingsKey,
+  type EncryptedStringValueV1
 } from "../storage/storage-settings.crypto";
 
 import {
@@ -78,6 +79,24 @@ function isStoredOpenAiKeyEntryV1(value: unknown): value is StoredOpenAiKeyEntry
   return typeof record.fingerprint === "string" && "value" in record;
 }
 
+/**
+ * One stored OpenAI key entry, classified exactly once. The public projection
+ * (count + fingerprints) and the plaintext projection both start from this
+ * representation, so an entry is decoded once per snapshot instead of once per
+ * algorithm and an encrypted entry is decrypted at most once per algorithm.
+ */
+interface ParsedOpenAiKeyEntry {
+  kind: "wrapped" | "legacy-plain" | "legacy-encrypted";
+  /** Wrapped entries holding an inline legacy plaintext value. */
+  plain: string | null;
+  /** system-settings:v1 envelope of a wrapped value or of a bare entry. */
+  encrypted: EncryptedStringValueV1 | null;
+  /** Wrapped stored fingerprint, trimmed; null when missing or blank. */
+  storedFingerprint: string | null;
+  /** Wrapped value JS truthiness, used by the structural count. */
+  valuePresent: boolean;
+}
+
 @Injectable()
 export class OpenAiKeysSettingsService {
   private readonly logger = createLogger({ name: "openai-keys-settings" });
@@ -105,8 +124,11 @@ export class OpenAiKeysSettingsService {
     stored: StoredOpenAiKeysSettings | null,
     appliedStatus: StoredOpenAiKeysAppliedStatus | null
   ): OpenAiKeysSettingsPublic {
-    const keysCount = this.countStoredKeys(stored?.openaiApiKeys);
-    const keyFingerprints = this.listKeyFingerprints(stored?.openaiApiKeys);
+    // One classification feeds both projections: the structural count and the
+    // fingerprint list no longer walk (and parse) the stored array separately.
+    const entries = this.parseOpenAiKeyEntries(stored?.openaiApiKeys);
+    const keysCount = this.countStoredKeys(entries);
+    const keyFingerprints = this.listKeyFingerprints(entries);
     const appliedAt = typeof appliedStatus?.appliedAt === "string" ? appliedStatus.appliedAt : null;
     const appliedKeyFingerprints = this.normalizeFingerprints(appliedStatus?.keyFingerprints);
     const appliedSource = this.normalizeAppliedSource(appliedStatus?.source);
@@ -133,12 +155,12 @@ export class OpenAiKeysSettingsService {
 
   async getKeyCount(): Promise<number> {
     const stored = await this.loadStoredSettings();
-    return this.countStoredKeys(stored?.openaiApiKeys);
+    return this.countStoredKeys(this.parseOpenAiKeyEntries(stored?.openaiApiKeys));
   }
 
   async getPlaintextKeys(): Promise<string[]> {
     const stored = await this.loadStoredSettings();
-    return this.resolveKeys(stored?.openaiApiKeys);
+    return this.resolveKeys(this.parseOpenAiKeyEntries(stored?.openaiApiKeys));
   }
 
   async updateSettings(
@@ -167,7 +189,7 @@ export class OpenAiKeysSettingsService {
     // updateSettings, which would try to take the lock again).
     return await withModelAccessSettingsLock(OPENAI_KEYS_SETTINGS_LOCK_NAME, async () => {
       const stored = await this.readStoredSettingsFromDatabase();
-      const existing = this.resolveKeys(stored.settings?.openaiApiKeys);
+      const existing = this.resolveKeys(this.parseOpenAiKeyEntries(stored.settings?.openaiApiKeys));
       const merged = Array.from(new Set([...existing, ...this.normalizeKeys(input.keys)]));
       return await this.persistKeysLocked(orgId, actorId, merged);
     });
@@ -180,7 +202,7 @@ export class OpenAiKeysSettingsService {
     // MA2: same lock and the same in-lock authoritative baseline as appendKeys.
     return await withModelAccessSettingsLock(OPENAI_KEYS_SETTINGS_LOCK_NAME, async () => {
       const stored = await this.readStoredSettingsFromDatabase();
-      const existing = this.resolveKeys(stored.settings?.openaiApiKeys);
+      const existing = this.resolveKeys(this.parseOpenAiKeyEntries(stored.settings?.openaiApiKeys));
       const remaining = existing.filter((key) => this.fingerprintKey(key) !== fingerprint);
       return await this.persistKeysLocked(orgId, actorId, remaining);
     });
@@ -361,58 +383,97 @@ export class OpenAiKeysSettingsService {
     return b.every((fingerprint) => set.has(fingerprint));
   }
 
-  private countStoredKeys(raw: unknown): number {
-    if (!Array.isArray(raw)) {
-      return 0;
-    }
-    let count = 0;
-    for (const entry of raw) {
-      if (!entry) {
-        continue;
-      }
-      if (typeof entry === "string") {
-        count += 1;
-        continue;
-      }
-      if (isEncryptedStringValueV1(entry)) {
-        count += 1;
-        continue;
-      }
-      if (isStoredOpenAiKeyEntryV1(entry)) {
-        if (entry.value) {
-          count += 1;
-        }
-      }
-    }
-    return count;
-  }
-
-  private resolveKeys(raw: unknown): string[] {
+  /**
+   * Classifies every stored key entry exactly once, in stored order:
+   * `{fingerprint, value}` first, then a legacy plaintext string, then a bare
+   * system-settings:v1 envelope. Anything else (null, false, an unrecognized
+   * object) is skipped by every algorithm.
+   */
+  private parseOpenAiKeyEntries(raw: unknown): ParsedOpenAiKeyEntry[] {
     if (!Array.isArray(raw)) {
       return [];
     }
 
-    const key = resolveSettingsKey(this.env);
-    const out: string[] = [];
+    const parsed: ParsedOpenAiKeyEntry[] = [];
 
     for (const entry of raw) {
       if (!entry) {
         continue;
       }
+
       if (isStoredOpenAiKeyEntryV1(entry)) {
         const storedValue = entry.value;
-        if (typeof storedValue === "string") {
-          const trimmed = this.stripBearerPrefix(storedValue);
+        const storedFingerprint =
+          typeof entry.fingerprint === "string" ? entry.fingerprint.trim() : "";
+        parsed.push({
+          kind: "wrapped",
+          plain: typeof storedValue === "string" ? storedValue : null,
+          encrypted: isEncryptedStringValueV1(storedValue) ? storedValue : null,
+          storedFingerprint: storedFingerprint || null,
+          valuePresent: Boolean(storedValue)
+        });
+        continue;
+      }
+
+      if (typeof entry === "string") {
+        parsed.push({
+          kind: "legacy-plain",
+          plain: entry,
+          encrypted: null,
+          storedFingerprint: null,
+          valuePresent: false
+        });
+        continue;
+      }
+
+      if (isEncryptedStringValueV1(entry)) {
+        parsed.push({
+          kind: "legacy-encrypted",
+          plain: null,
+          encrypted: entry,
+          storedFingerprint: null,
+          valuePresent: false
+        });
+      }
+    }
+
+    return parsed;
+  }
+
+  private countStoredKeys(entries: ParsedOpenAiKeyEntry[]): number {
+    let count = 0;
+    for (const entry of entries) {
+      if (entry.kind === "wrapped") {
+        if (entry.valuePresent) {
+          count += 1;
+        }
+        continue;
+      }
+      count += 1;
+    }
+    return count;
+  }
+
+  private resolveKeys(entries: ParsedOpenAiKeyEntry[]): string[] {
+    const key = resolveSettingsKey(this.env);
+    const out: string[] = [];
+
+    for (const entry of entries) {
+      if (entry.kind === "wrapped") {
+        if (entry.plain !== null) {
+          const trimmed = this.stripBearerPrefix(entry.plain);
           if (trimmed) {
             out.push(trimmed);
           }
-        } else if (isEncryptedStringValueV1(storedValue)) {
+          continue;
+        }
+        if (entry.encrypted) {
           if (!key) {
             this.logger.warn("Missing SYSTEM_SETTINGS_ENCRYPTION_KEY for OpenAI keys");
             continue;
           }
           try {
-            const decrypted = decryptStringValueV1(storedValue, key);
+            const decrypted = decryptStringValueV1(entry.encrypted, key);
             const trimmed = this.stripBearerPrefix(decrypted);
             if (trimmed) {
               out.push(trimmed);
@@ -423,20 +484,22 @@ export class OpenAiKeysSettingsService {
         }
         continue;
       }
-      if (typeof entry === "string") {
-        const trimmed = this.stripBearerPrefix(entry);
+
+      if (entry.kind === "legacy-plain") {
+        const trimmed = this.stripBearerPrefix(entry.plain ?? "");
         if (trimmed) {
           out.push(trimmed);
         }
         continue;
       }
-      if (isEncryptedStringValueV1(entry)) {
+
+      if (entry.encrypted) {
         if (!key) {
           this.logger.warn("Missing SYSTEM_SETTINGS_ENCRYPTION_KEY for OpenAI keys");
           continue;
         }
         try {
-          const decrypted = decryptStringValueV1(entry, key);
+          const decrypted = decryptStringValueV1(entry.encrypted, key);
           const trimmed = this.stripBearerPrefix(decrypted);
           if (trimmed) {
             out.push(trimmed);
@@ -450,34 +513,31 @@ export class OpenAiKeysSettingsService {
     return Array.from(new Set(out));
   }
 
-  private listKeyFingerprints(raw: unknown): string[] {
-    if (!Array.isArray(raw)) {
-      return [];
-    }
-
+  private listKeyFingerprints(entries: ParsedOpenAiKeyEntry[]): string[] {
     const out: string[] = [];
     const settingsKey = resolveSettingsKey(this.env);
 
-    for (const entry of raw) {
-      if (!entry) {
-        continue;
-      }
-      if (isStoredOpenAiKeyEntryV1(entry)) {
-        if (typeof entry.fingerprint === "string" && entry.fingerprint.trim()) {
-          out.push(entry.fingerprint.trim());
+    for (const entry of entries) {
+      if (entry.kind === "wrapped") {
+        // A wrapped entry exposes its stored fingerprint: its value is never
+        // decrypted just to recompute one.
+        if (entry.storedFingerprint) {
+          out.push(entry.storedFingerprint);
         }
         continue;
       }
-      if (typeof entry === "string") {
-        out.push(this.fingerprintKey(this.stripBearerPrefix(entry)));
+
+      if (entry.kind === "legacy-plain") {
+        out.push(this.fingerprintKey(this.stripBearerPrefix(entry.plain ?? "")));
         continue;
       }
-      if (isEncryptedStringValueV1(entry)) {
+
+      if (entry.encrypted) {
         if (!settingsKey) {
           continue;
         }
         try {
-          const decrypted = decryptStringValueV1(entry, settingsKey);
+          const decrypted = decryptStringValueV1(entry.encrypted, settingsKey);
           out.push(this.fingerprintKey(this.stripBearerPrefix(decrypted)));
         } catch {
           continue;

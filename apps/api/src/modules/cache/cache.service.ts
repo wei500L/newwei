@@ -139,6 +139,63 @@ export class CacheService implements OnModuleDestroy {
     );
   }
 
+  /**
+   * Read one hash per key with a single pipeline, so a contiguous date range
+   * costs one round trip instead of one HGETALL per key. A missing key yields an
+   * empty object; a failed command rejects.
+   */
+  async hgetallMany(keys: string[]): Promise<Record<string, string>[]> {
+    if (keys.length === 0) {
+      return [];
+    }
+    const pipeline = this.redis.pipeline();
+    for (const key of keys) {
+      pipeline.hgetall(key);
+    }
+    const results = await pipeline.exec();
+    if (!results) {
+      return [];
+    }
+    return results.map(([error, value]) => {
+      if (error) {
+        throw error;
+      }
+      if (!value || typeof value !== "object") {
+        return {};
+      }
+      return value as Record<string, string>;
+    });
+  }
+
+  /**
+   * Apply every field increment and the retention TTL in ONE Lua call, so a
+   * telemetry write costs one round trip instead of one HINCRBY per field plus a
+   * separate EXPIRE. The key, the field names and the counting semantics are
+   * unchanged.
+   */
+  async hincrbyMany(
+    key: string,
+    fields: readonly [string, number][],
+    ttlSeconds: number,
+  ): Promise<void> {
+    if (fields.length === 0) {
+      return;
+    }
+    const script = `
+      local ttl = tonumber(ARGV[1])
+      for index = 2, #ARGV, 2 do
+        redis.call("HINCRBY", KEYS[1], ARGV[index], ARGV[index + 1])
+      end
+      redis.call("EXPIRE", KEYS[1], ttl)
+      return 1
+    `;
+    const args: string[] = [String(Math.max(1, Math.floor(ttlSeconds)))];
+    for (const [field, value] of fields) {
+      args.push(field, String(value));
+    }
+    await this.redis.eval(script, 1, key, ...args);
+  }
+
   async incr(key: string, ttlSeconds: number) {
     const value = await this.redis.incr(key);
     if (value === 1) {

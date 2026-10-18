@@ -2499,6 +2499,133 @@ func TestModelAccessSettingsGoAcceptsTheAuthStack(t *testing.T) {
 	}
 }
 
+// TestProxyLoadBalancingModeVocabulary pins the switch's accepted values and the
+// exact error text, mirroring the other migration switches.
+func TestProxyLoadBalancingModeVocabulary(t *testing.T) {
+	cases := []struct {
+		name    string
+		value   string
+		want    ProxyLoadBalancingMode
+		wantErr bool
+	}{
+		{name: "unset defaults to legacy", value: "", want: ProxyLoadBalancingModeLegacy},
+		{name: "explicit legacy", value: "legacy", want: ProxyLoadBalancingModeLegacy},
+		{name: "go", value: "go", want: ProxyLoadBalancingModeGo},
+		{name: "whitespace tolerated", value: "  go  ", want: ProxyLoadBalancingModeGo},
+		{name: "shadow is rejected", value: "shadow", wantErr: true},
+		{name: "canary is rejected", value: "canary", wantErr: true},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			env := map[string]string{
+				"API_GO_PROXY_LOAD_BALANCING_MODE": testCase.value,
+				// go mode requires the auth stack, which is not what this test is
+				// about; supplying it keeps the mode the only variable.
+				"JWT_SECRET":   "secret",
+				"DATABASE_URL": "mysql://root:secret@127.0.0.1:3306/app",
+				"REDIS_HOST":   "127.0.0.1",
+			}
+			cfg, err := Load(modelAccessEnv(env))
+			if testCase.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error")
+				}
+				if !strings.Contains(err.Error(), "API_GO_PROXY_LOAD_BALANCING_MODE must be one of legacy|go") {
+					t.Fatalf("error = %q", err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.ProxyLoadBalancingMode != testCase.want {
+				t.Fatalf("mode = %q, want %q", cfg.ProxyLoadBalancingMode, testCase.want)
+			}
+		})
+	}
+}
+
+// TestProxyLoadBalancingGoRequiresAuthStack proves the startup requirements and,
+// in particular, that unrelated model-service variables are never evaluated by
+// this switch.
+func TestProxyLoadBalancingGoRequiresAuthStack(t *testing.T) {
+	_, err := Load(modelAccessEnv(map[string]string{"API_GO_PROXY_LOAD_BALANCING_MODE": "go"}))
+	if err == nil {
+		t.Fatalf("go mode without the auth stack must fail startup")
+	}
+	for _, want := range []string{
+		"JWT_SECRET is required when API_GO_PROXY_LOAD_BALANCING_MODE=go",
+		"DATABASE_URL is required when API_GO_PROXY_LOAD_BALANCING_MODE=go",
+		"REDIS_HOST is required when API_GO_PROXY_LOAD_BALANCING_MODE=go",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q is missing %q", err.Error(), want)
+		}
+	}
+	if strings.Contains(err.Error(), "MONGO_URI") {
+		t.Fatalf("this batch reads no Mongo collection: %q", err.Error())
+	}
+	// The encryption key and the internal token are never startup requirements.
+	if strings.Contains(err.Error(), "SYSTEM_SETTINGS_ENCRYPTION_KEY") || strings.Contains(err.Error(), "LITELLM_CONFIG_INTERNAL_TOKEN") {
+		t.Fatalf("runtime-only secrets must not block startup: %q", err.Error())
+	}
+
+	// An invalid MODEL_SERVICE_* value must not block this switch: the load
+	// balancing takeover never evaluates the model-service configuration.
+	cfg, err := Load(modelAccessEnv(map[string]string{
+		"API_GO_PROXY_LOAD_BALANCING_MODE": "go",
+		"MODEL_SERVICE_TIMEOUT_MS":         "not-a-number",
+		"JWT_SECRET":                       "secret",
+		"DATABASE_URL":                     "mysql://root:secret@127.0.0.1:3306/app",
+		"REDIS_HOST":                       "127.0.0.1",
+	}))
+	if err != nil {
+		t.Fatalf("unrelated model service variables must not fail this switch: %v", err)
+	}
+	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeGo {
+		t.Fatalf("mode = %q", cfg.ProxyLoadBalancingMode)
+	}
+}
+
+// TestProxyLoadBalancingSwitchIsIndependentOfModelAccess proves the two switches
+// neither imply nor require each other.
+func TestProxyLoadBalancingSwitchIsIndependentOfModelAccess(t *testing.T) {
+	authStack := map[string]string{
+		"JWT_SECRET":   "secret",
+		"DATABASE_URL": "mysql://root:secret@127.0.0.1:3306/app",
+		"REDIS_HOST":   "127.0.0.1",
+	}
+	lbOnly := map[string]string{"API_GO_PROXY_LOAD_BALANCING_MODE": "go"}
+	for key, value := range authStack {
+		lbOnly[key] = value
+	}
+	cfg, err := Load(modelAccessEnv(lbOnly))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeGo {
+		t.Fatalf("proxy load balancing mode = %q", cfg.ProxyLoadBalancingMode)
+	}
+	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeLegacy {
+		t.Fatalf("model access mode = %q, want legacy", cfg.ModelAccessSettingsMode)
+	}
+
+	modelAccessOnly := map[string]string{"API_GO_MODEL_ACCESS_SETTINGS_MODE": "go"}
+	for key, value := range authStack {
+		modelAccessOnly[key] = value
+	}
+	cfg, err = Load(modelAccessEnv(modelAccessOnly))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeLegacy {
+		t.Fatalf("proxy load balancing mode = %q, want legacy", cfg.ProxyLoadBalancingMode)
+	}
+	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeGo {
+		t.Fatalf("model access mode = %q", cfg.ModelAccessSettingsMode)
+	}
+}
+
 // TestModelAccessSettingsRawEnvIsCapturedUntrimmed proves the raw reads.
 func TestModelAccessSettingsRawEnvIsCapturedUntrimmed(t *testing.T) {
 	cfg, err := Load(modelAccessEnv(map[string]string{
@@ -2817,6 +2944,90 @@ func TestDataRuntimeSettingsEnvPassThrough(t *testing.T) {
 	}
 	if env.NominatimUserAgentDefault != "custom-agent" || env.NominatimEmailDefault != "geocoder@example.com" {
 		t.Fatalf("nominatim = %+v", env)
+	}
+}
+
+func TestAuthFactorsModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthFactorsMode != AuthFactorsModeLegacy {
+		t.Fatalf("mode = %s", cfg.AuthFactorsMode)
+	}
+	// The empty string is explicitly accepted and behaves like legacy.
+	for _, accepted := range []string{"", "legacy", "  legacy  "} {
+		cfg, err = Load(func(key string) string {
+			if key == "API_GO_AUTH_FACTORS_MODE" {
+				return accepted
+			}
+			return ""
+		})
+		if err != nil {
+			t.Fatalf("accepted %q: %v", accepted, err)
+		}
+		if cfg.AuthFactorsMode != AuthFactorsModeLegacy {
+			t.Fatalf("accepted %q mode = %s", accepted, cfg.AuthFactorsMode)
+		}
+	}
+}
+
+func TestAuthFactorsModeRejectsInvalid(t *testing.T) {
+	// shadow and canary are explicitly not accepted: this unit is
+	// legacy-or-go only, so a typo in the switch fails startup instead of
+	// silently degrading to the NestJS proxy.
+	for _, invalid := range []string{"shadow", "canary", "Go", "true", "1"} {
+		_, err := Load(func(key string) string {
+			if key == "API_GO_AUTH_FACTORS_MODE" {
+				return invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "API_GO_AUTH_FACTORS_MODE must be one of legacy|go") {
+			t.Fatalf("invalid mode %q: %v", invalid, err)
+		}
+	}
+}
+
+func TestAuthFactorsModeGoRequiresCredentials(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_AUTH_FACTORS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_AUTH_FACTORS_MODE=go") {
+		t.Fatalf("missing redis: %v", err)
+	}
+
+	// Mongo is not a startup dependency of this unit: it reads and writes MySQL
+	// and Redis only. The settings-encryption key stays optional too, because a
+	// missing or invalid key is handled per write by the documented policy.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_AUTH_FACTORS_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("go mode must not require Mongo or an encryption key: %v", err)
+	}
+	if cfg.AuthFactorsMode != AuthFactorsModeGo {
+		t.Fatalf("mode = %s", cfg.AuthFactorsMode)
 	}
 }
 
@@ -3145,5 +3356,218 @@ func TestItemsReadingModeGoDoesNotRequireCredentialsUntilGo(t *testing.T) {
 	}
 	if cfg.ItemsReadingMode != ItemsReadingModeLegacy {
 		t.Fatalf("legacy = %q", cfg.ItemsReadingMode)
+	}
+}
+
+func TestLLMGatewayProfilesModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeLegacy {
+		t.Fatalf("mode = %s", cfg.LLMGatewayProfilesMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_LLM_GATEWAY_PROFILES_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeLegacy {
+		t.Fatalf("mode = %s", cfg.LLMGatewayProfilesMode)
+	}
+}
+
+func TestLLMGatewayProfilesModeRejectsInvalid(t *testing.T) {
+	// shadow and canary are explicitly not accepted: this unit is
+	// legacy-or-go only, so a typo in the switch fails startup.
+	for _, invalid := range []string{"shadow", "canary", "Go"} {
+		_, err := Load(func(key string) string {
+			if key == "API_GO_LLM_GATEWAY_PROFILES_MODE" {
+				return invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go") {
+			t.Fatalf("invalid mode %q: %v", invalid, err)
+		}
+	}
+}
+
+func TestLLMGatewayProfilesModeGoRequiresCredentialsButNotMongo(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_LLM_GATEWAY_PROFILES_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_LLM_GATEWAY_PROFILES_MODE=go") {
+		t.Fatalf("missing redis: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_LLM_GATEWAY_PROFILES_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeGo {
+		t.Fatalf("mode = %s", cfg.LLMGatewayProfilesMode)
+	}
+	// Mongo and a model upstream are not startup dependencies of this unit.
+	if cfg.MongoURI != "" {
+		t.Fatalf("mongo uri = %q", cfg.MongoURI)
+	}
+}
+
+func TestLLMGatewayProfileEnvProjectionDefaults(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayModel != "openai/gpt-4o-mini" {
+		t.Fatalf("model = %q", cfg.LLMGatewayModel)
+	}
+	if cfg.LiteLLMAPIBase != "http://localhost:4001" {
+		t.Fatalf("apiBase = %q", cfg.LiteLLMAPIBase)
+	}
+	if cfg.LiteLLMTimeoutMs != 60_000 {
+		t.Fatalf("timeoutMs = %d", cfg.LiteLLMTimeoutMs)
+	}
+	if cfg.LLMGatewayTemperature != 0.2 {
+		t.Fatalf("temperature = %v", cfg.LLMGatewayTemperature)
+	}
+	if cfg.LLMGatewayTopP != 0.9 {
+		t.Fatalf("topP = %v", cfg.LLMGatewayTopP)
+	}
+	if cfg.LLMGatewayMaxOutputTokens != 2048 {
+		t.Fatalf("maxOutputTokens = %d", cfg.LLMGatewayMaxOutputTokens)
+	}
+	if cfg.LLMGatewayMaxRetries != 3 {
+		t.Fatalf("maxRetries = %d", cfg.LLMGatewayMaxRetries)
+	}
+	if len(cfg.LLMGatewayFallbackModels) != 0 {
+		t.Fatalf("fallbackModels = %v", cfg.LLMGatewayFallbackModels)
+	}
+	if cfg.NodeEnvProduction {
+		t.Fatal("NODE_ENV unset must not be production")
+	}
+}
+
+func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
+	// LITELLM_MAX_TOKENS has a schema default in NestJS, so setting only
+	// LITELLM_MAX_OUTPUT_TOKENS can never win. The Go projection must agree.
+	cfg, err := Load(func(key string) string {
+		if key == "LITELLM_MAX_OUTPUT_TOKENS" {
+			return "777"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayMaxOutputTokens != 2048 {
+		t.Fatalf("maxOutputTokens = %d, want the MAX_TOKENS schema default", cfg.LLMGatewayMaxOutputTokens)
+	}
+
+	// The same rule applies to LITELLM_MAX_RETRIES.
+	cfg, err = Load(func(key string) string {
+		if key == "LITELLM_MAX_RETRIES" {
+			return "9"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewayMaxRetries != 3 {
+		t.Fatalf("maxRetries = %d, want the RETRY_ATTEMPTS schema default", cfg.LLMGatewayMaxRetries)
+	}
+
+	cfg, err = Load(func(key string) string {
+		switch key {
+		case "LITELLM_API_URL":
+			return "http://primary:1"
+		case "LITELLM_API_BASE":
+			return "http://secondary:2"
+		case "LITELLM_MAX_TOKENS":
+			return "4096"
+		case "LITELLM_RETRY_ATTEMPTS":
+			return "5"
+		case "LITELLM_TEMPERATURE":
+			return "1.25"
+		case "LITELLM_TOP_P":
+			return "0.25"
+		case "LITELLM_MODEL":
+			return "openai/gpt-4o"
+		case "LITELLM_FALLBACK_MODELS":
+			return " a , ,b, a "
+		case "NODE_ENV":
+			return "production"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LiteLLMAPIBase != "http://primary:1" {
+		t.Fatalf("apiBase = %q, want LITELLM_API_URL to win", cfg.LiteLLMAPIBase)
+	}
+	if cfg.LLMGatewayMaxOutputTokens != 4096 || cfg.LLMGatewayMaxRetries != 5 {
+		t.Fatalf("maxima = %d/%d", cfg.LLMGatewayMaxOutputTokens, cfg.LLMGatewayMaxRetries)
+	}
+	if cfg.LLMGatewayTemperature != 1.25 || cfg.LLMGatewayTopP != 0.25 {
+		t.Fatalf("sampling = %v/%v", cfg.LLMGatewayTemperature, cfg.LLMGatewayTopP)
+	}
+	if cfg.LLMGatewayModel != "openai/gpt-4o" {
+		t.Fatalf("model = %q", cfg.LLMGatewayModel)
+	}
+	// The env projection keeps the literal comma split (trim + drop empty, no
+	// de-duplication); de-duplication only happens when a profile list is
+	// normalized.
+	if strings.Join(cfg.LLMGatewayFallbackModels, ",") != "a,b,a" {
+		t.Fatalf("fallbackModels = %v", cfg.LLMGatewayFallbackModels)
+	}
+	if !cfg.NodeEnvProduction {
+		t.Fatal("NODE_ENV=production must be reported")
+	}
+}
+
+func TestLLMGatewaySettingsEncryptionKeyKeepsRawValue(t *testing.T) {
+	// The NestJS presence check is a JavaScript truthiness test on the raw
+	// value, so a whitespace-only key must count as present-but-invalid and the
+	// raw value must survive the config load.
+	cfg, err := Load(func(key string) string {
+		if key == "SYSTEM_SETTINGS_ENCRYPTION_KEY" {
+			return "   "
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMGatewaySettingsEncryptionKey != "   " {
+		t.Fatalf("key = %q, want the raw value", cfg.LLMGatewaySettingsEncryptionKey)
 	}
 }
