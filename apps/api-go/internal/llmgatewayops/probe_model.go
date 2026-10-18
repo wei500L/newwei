@@ -386,11 +386,7 @@ func (s *Service) GetProxyModelInfo(ctx context.Context, profileID string, force
 		return proxyModelInfoResult{}, throwGatewayError(info)
 	}
 
-	models, decodeErr := normalizeProxyModelInfoEntries(response.body)
-	if decodeErr != nil {
-		info := toGatewayErrorInfo(&upstreamError{message: "unexpected /model/info payload"}, errorContext{apiKeyConfigured: boolPointer(apiKey != "")})
-		return proxyModelInfoResult{}, throwGatewayError(info)
-	}
+	models := normalizeProxyModelInfoEntries(response.body)
 	result := proxyModelInfoResult{
 		APIBase:   base,
 		CheckedAt: s.nowUTC().Format("2006-01-02T15:04:05.000Z"),
@@ -413,24 +409,20 @@ func proxyModelInfoCacheKey(profileID, normalizedBase string) string {
 	return modelInfoCachePrefix + profileID + ":" + hex.EncodeToString(digest[:])[:16]
 }
 
-// normalizeProxyModelInfoEntries extracts the sanitized model list.
-func normalizeProxyModelInfoEntries(body []byte) ([]proxyModelInfoEntry, error) {
+// normalizeProxyModelInfoEntries mirrors the NestJS `Array.isArray(response.data?.models)`
+// read: any 2xx body that does not carry a models array yields an EMPTY list, not
+// a failure. The source never throws on a body it cannot read, and turning a
+// non-object payload into a 503 would invent an error NestJS does not return.
+func normalizeProxyModelInfoEntries(body []byte) []proxyModelInfoEntry {
 	var envelope struct {
 		Models json.RawMessage `json:"models"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, err
+		return []proxyModelInfoEntry{}
 	}
-	trimmed := strings.TrimSpace(string(envelope.Models))
-	if trimmed == "" || trimmed == "null" {
-		return []proxyModelInfoEntry{}, nil
-	}
-	if !strings.HasPrefix(trimmed, "[") {
-		return []proxyModelInfoEntry{}, nil
-	}
-	var rawEntries []json.RawMessage
-	if err := json.Unmarshal(envelope.Models, &rawEntries); err != nil {
-		return nil, err
+	rawEntries, isArray := jsonArrayItems(envelope.Models)
+	if !isArray {
+		return []proxyModelInfoEntry{}
 	}
 	entries := make([]proxyModelInfoEntry, 0, len(rawEntries))
 	for _, raw := range rawEntries {
@@ -440,7 +432,7 @@ func normalizeProxyModelInfoEntries(body []byte) ([]proxyModelInfoEntry, error) 
 		}
 		entries = append(entries, entry)
 	}
-	return entries, nil
+	return entries
 }
 
 // normalizeProxyModelInfoEntry mirrors normalizeProxyModelInfoEntry.

@@ -142,6 +142,11 @@ block 旧资源。**DELETE** 先删行 + 失效缓存，再清理远端。
 - rerank：自身模型 + rerankFallbackModels，query/documents trim 去重，
   `top_n = len(documents)`；接受 `relevance_score`/`relevanceScore`/`score`/
   `similarity`，结果**按 index 升序**（不是按分数）；无有效结果即分项错误。
+  三处细节按源逐条对齐：**query 省略或空白时用源常量**
+  `latest US inflation outlook and Fed policy`（不是分项 400）；**显式
+  rerankModel 覆盖时仍会继续尝试 rerankFallbackModels**（completion 的覆盖才会
+  丢弃 fallback，两条规则故意不共用）；score 取值的 `??` 链**跳过显式 null**
+  继续看下一个拼写；`results` 只要存在（**哪怕空数组**）就不回落 `data`。
 - 三项按 completion → embedding → rerank 顺序执行，单项失败（甚至全失败）仍是
   201 的分项诊断；只有 profile/ apiBase / DTO / managed key 错误才整体失败。
 - `proxy-model-info` 缓存 key = `llm_gateway:proxy_model_info:v1:<profileId>:<sha256(normalizedBase) 前 16 位>`，
@@ -162,7 +167,9 @@ metadata 为 `source=gateway-test`、`feature`、`operation`、`model`（请求�
 
 时机：completion/LB 在 2xx 后立即记成功；embedding/rerank 只有在响应体校验通过
 后才记成功，失败只记一条错误——**同一次逻辑尝试（主路径 404 → 短路径成功）只
-记一条最终日志**。Mongo 写失败只记 warning，不影响已完成的诊断。
+记一条最终日志**。成本列与诊断结果共用同一套 header→payload 优先级
+（`x-litellm-response-cost` > `x-litellm-cost` > `litellm-cost` > body
+`response_cost`），未知仍为 null。Mongo 写失败只记 warning，不影响已完成的诊断。
 
 `_unknown_` 只在 actor 缺失时出现。本批**不写**简报专属 metadata，也不改简报
 writer 的行为。
@@ -187,6 +194,23 @@ attempts)，每个 worker 复用同一个 HTTP transport，所有 attempt 写入
 | 鉴权 | `Authenticator.Authorize` | 与 7 条 profile 路由同一链 |
 | 日志存储与过滤 | `llmlogs`（`ProbeWriter` + 共享过滤） | 复用日志设置、归一化、Mongo 存储 |
 
+## 与源的已知差异（有意保留）
+
+这些是静态核对后**故意不逐字复刻**的少数点，其余分支按源实现：
+
+- **机器身份的审计 actor 写 NULL**。`mtk_` 机器令牌的 actorId 形如
+  `machine:<tokenId>`，而 `AuditLog.actorId` / `SystemSetting.updatedById` 是指向
+  `User` 的外键。Go 沿用 `platformgovernance` 与 `llmgatewayprofiles` 已有约定，
+  把机器 actor 写成 NULL（Nest 会直接写原值并触发外键失败）。人类 actor 完全一致。
+- **`/team/new` 失败返回 503 而非 500**。Nest 在 `/team/update` 的 catch 里调用
+  `/team/new` 且没有再包一层，AxiosError 直接冒泡成不透明的 500；Go 与同文件的
+  `/key/generate` 路径保持一致，用 `toSyncError` 给出 503 与可读原因。
+- **传输层错误的措辞**。Go 没有 axios，连接类失败的消息是 Go net 错误原文
+  （超时已对齐为 `timeout of <n>ms exceeded`）；`axiosCode` 只在超时给出
+  `ECONNABORTED`，不对连接类错误编造 axios 代码。
+- **`lastSyncedAt` 只解析 RFC 3339 系列**。手工改坏的旧格式（如 `2026-10-18` 或
+  带空格的本地时间）在 Go 里落库为 null；`new Date()` 的本地时区语义不复刻。
+
 ## 验证
 
 - 静态：`gofmt -l`（干净）、`go build ./...`、`go vet ./...`、
@@ -197,6 +221,11 @@ attempts)，每个 worker 复用同一个 HTTP transport，所有 attempt 写入
   404 → 短路径只记一条日志、embedding/rerank 无效 2xx 只记错误、
   LB worker pool 的并发上界与汇总不变量（含全失败）、密钥三态与投影覆盖、
   model-info 脱敏。
+- 本批复核后追加的对齐用例：rerank 默认 query / 覆盖仍带 fallback / 显式 null
+  score 回落 / 空 `results` 不回落 `data`、日志成本取 header、不可读 2xx
+  model-info 返回空列表而不是 503、传输错误带上原因、Bearer 前缀必须跟空白、
+  `targetProfileId` 去空白且空串清除、apiBase 末尾 `/` 不产生 `//`、
+  LB 的数字字符串按源 400。
 - 未执行：本机不跑 Docker、不连真实 MySQL/Redis/Mongo、不发任何真实
   LiteLLM/模型请求。
 

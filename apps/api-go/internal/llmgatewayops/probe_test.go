@@ -3,6 +3,7 @@ package llmgatewayops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -378,5 +379,187 @@ func TestProxyModelInfoForceSkipsCache(t *testing.T) {
 	}
 	if hits.Load() != 1 {
 		t.Fatalf("upstream hits = %d, want 1", hits.Load())
+	}
+}
+
+// ---- regression coverage for the source-fidelity fixes ----
+
+// TestRerankQueryOrDefault pins that a missing or blank query falls back to the
+// source constant instead of failing the probe.
+func TestRerankQueryOrDefault(t *testing.T) {
+	blank := "   "
+	custom := "  how sticky is inflation  "
+	if got := rerankQueryOrDefault(nil); got != defaultRerankQuery {
+		t.Fatalf("omitted query = %q, want the default", got)
+	}
+	if got := rerankQueryOrDefault(&blank); got != defaultRerankQuery {
+		t.Fatalf("blank query = %q, want the default", got)
+	}
+	if got := rerankQueryOrDefault(&custom); got != "how sticky is inflation" {
+		t.Fatalf("supplied query = %q, want the trimmed input", got)
+	}
+}
+
+// TestRerankOverrideKeepsFallbacks pins the difference between the completion and
+// rerank candidate rules: the rerank override is tried first but the profile
+// backup models still follow, while a completion override replaces them.
+func TestRerankOverrideKeepsFallbacks(t *testing.T) {
+	got := uniqueRerankModels(" override ", "primary", []string{"f1", "f2", "override"})
+	want := []string{"override", "f1", "f2"}
+	if len(got) != len(want) {
+		t.Fatalf("rerank candidates = %v, want %v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("rerank candidates = %v, want %v", got, want)
+		}
+	}
+	completion := uniqueModels("override", "primary", []string{"f1"})
+	if len(completion) != 1 || completion[0] != "override" {
+		t.Fatalf("completion candidates = %v, want only the override", completion)
+	}
+}
+
+// rerankBodyFromJSON decodes one rerank response body.
+func rerankBodyFromJSON(t *testing.T, raw string) rerankBody {
+	t.Helper()
+	var body rerankBody
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	return body
+}
+
+// TestRerankScoreNullFallsThrough pins the `??` chain: an explicit null score
+// spelling must not hide a later valid one, and the rows stay ordered by index.
+func TestRerankScoreNullFallsThrough(t *testing.T) {
+	rows := normalizeRerankResults(rerankBodyFromJSON(t,
+		`{"results":[{"index":2,"relevance_score":null,"score":0.9},{"index":0,"relevance_score":0.4},{"index":1,"score":"0.7"}]}`))
+	if len(rows) != 3 {
+		t.Fatalf("rows = %+v, want 3", rows)
+	}
+	if rows[0].Index != 0 || rows[0].Score != 0.4 || rows[1].Score != 0.7 || rows[2].Score != 0.9 {
+		t.Fatalf("rows = %+v, want the three scores ordered by index", rows)
+	}
+}
+
+// TestRerankEmptyResultsDoesNotFallBackToData pins the Array.isArray branch: a
+// present-but-empty results array is an empty result, not an invitation to read
+// the data array.
+func TestRerankEmptyResultsDoesNotFallBackToData(t *testing.T) {
+	if rows := normalizeRerankResults(rerankBodyFromJSON(t,
+		`{"results":[],"data":[{"index":0,"score":1}]}`)); len(rows) != 0 {
+		t.Fatalf("rows = %+v, want the empty results array to win", rows)
+	}
+	if rows := normalizeRerankResults(rerankBodyFromJSON(t,
+		`{"data":[{"index":0,"score":1}]}`)); len(rows) != 1 {
+		t.Fatalf("rows = %+v, want the data fallback when results is absent", rows)
+	}
+}
+
+// TestProbeLogCostPrefersTheHeader pins that the persisted row reuses the
+// header-over-payload cost precedence instead of logging a null spend.
+func TestProbeLogCostPrefersTheHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.Header().Set("x-litellm-response-cost", "0.0025")
+		_, _ = w.Write([]byte(`{"model":"m1","choices":[{"message":{"content":"OK"}}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}`))
+	}))
+	defer server.Close()
+
+	logs := &fakeLogWriter{}
+	service := newTestService(&fakeProfilePort{}, logs)
+	client := newUpstreamClient(service.http, server.URL, "sk-profile", 5*time.Second)
+
+	if _, completionErr := service.runCompletion(context.Background(), client, probeSettings{
+		Model:           "m1",
+		Temperature:     0.2,
+		TopP:            0.9,
+		MaxOutputTokens: 128,
+	}, "Say OK", "", completionOptions{
+		APISurface:         surfaceChat,
+		ResponseFormatMode: "none",
+		Log:                probeLogContext{OrgID: "org-1", ProfileID: "p1", AuthMode: authModeProfileKey},
+	}); completionErr != nil {
+		t.Fatalf("completion error = %+v", completionErr)
+	}
+
+	entries := logs.snapshot()
+	if len(entries) != 1 {
+		t.Fatalf("log rows = %d, want 1", len(entries))
+	}
+	cost := entries[0].Usage.CostUSD
+	if cost == nil || *cost != 0.0025 {
+		t.Fatalf("logged cost = %v, want the header cost", cost)
+	}
+}
+
+// TestProxyModelInfoUnreadableBodyReturnsEmptyList pins that a 2xx body the
+// source cannot read yields an empty model list instead of a 503.
+func TestProxyModelInfoUnreadableBodyReturnsEmptyList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`[1,2,3]`))
+	}))
+	defer server.Close()
+
+	service := newTestService(&fakeProfilePort{profiles: map[string]llmgatewayprofiles.ResolvedProfileConfig{
+		"p1": profileConfig("p1", server.URL, "m1"),
+	}}, nil)
+
+	result, err := service.GetProxyModelInfo(context.Background(), "p1", true)
+	if err != nil {
+		t.Fatalf("model info error = %v, want an empty list", err)
+	}
+	if len(result.Models) != 0 {
+		t.Fatalf("models = %+v, want empty", result.Models)
+	}
+}
+
+// TestTransportErrorKeepsTheReason pins that a connection failure names its cause
+// instead of surfacing as a bare prefix.
+func TestTransportErrorKeepsTheReason(t *testing.T) {
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	timedOut := classifyTransportError(expired, errors.New("ignored"), 60*time.Second)
+	var upstream *upstreamError
+	if !errors.As(timedOut, &upstream) || upstream.code != timeoutErrorCode {
+		t.Fatalf("timeout error = %+v, want the axios timeout class", timedOut)
+	}
+	if info := toGatewayErrorInfo(timedOut, errorContext{}); !strings.Contains(info.Message, "timeout of 60000ms exceeded") {
+		t.Fatalf("timeout message = %q, want the deadline text", info.Message)
+	}
+
+	refused := classifyTransportError(context.Background(), errors.New("dial tcp: connection refused"), time.Second)
+	if info := toGatewayErrorInfo(refused, errorContext{}); !strings.Contains(info.Message, "connection refused") {
+		t.Fatalf("transport message = %q, want the reason", info.Message)
+	}
+}
+
+// TestNormalizeSecretRequiresWhitespaceAfterBearer pins the source regex
+// /^bearer\s+/i: a key that merely starts with those letters is a literal key.
+func TestNormalizeSecretRequiresWhitespaceAfterBearer(t *testing.T) {
+	if got := normalizeSecret("bearertoken123"); got != "bearertoken123" {
+		t.Fatalf("normalizeSecret = %q, want the literal key", got)
+	}
+	if got := normalizeSecret("  Bearer   sk-abc  "); got != "sk-abc" {
+		t.Fatalf("normalizeSecret = %q, want the stripped key", got)
+	}
+	if got := normalizeSecret("   "); got != "" {
+		t.Fatalf("normalizeSecret = %q, want empty", got)
+	}
+}
+
+// TestUpstreamEndpointTrimsBaseSlashes pins the axios combineURLs join: the raw
+// stored apiBase may end with "/", and a management path must not become
+// "//team/update" because of it.
+func TestUpstreamEndpointTrimsBaseSlashes(t *testing.T) {
+	client := newUpstreamClient(nil, "http://litellm:4000/v1/", "", time.Second)
+	target, err := client.endpoint("/team/update")
+	if err != nil {
+		t.Fatalf("endpoint error = %v", err)
+	}
+	if target != "http://litellm:4000/v1/team/update" {
+		t.Fatalf("endpoint = %q, want a single slash join", target)
 	}
 }

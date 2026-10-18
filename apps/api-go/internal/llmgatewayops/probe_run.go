@@ -1,6 +1,7 @@
 package llmgatewayops
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -213,12 +214,14 @@ type embeddingBody struct {
 	ResponseCost json.RawMessage   `json:"response_cost"`
 }
 
-// rerankBody is the tolerant decode of one rerank response.
+// rerankBody is the tolerant decode of one rerank response. Results and Data
+// stay raw tokens because the NestJS source branches on Array.isArray, which
+// distinguishes an ABSENT list from an EMPTY one.
 type rerankBody struct {
-	Model        json.RawMessage   `json:"model"`
-	Results      []json.RawMessage `json:"results"`
-	Data         []json.RawMessage `json:"data"`
-	ResponseCost json.RawMessage   `json:"response_cost"`
+	Model        json.RawMessage `json:"model"`
+	Results      json.RawMessage `json:"results"`
+	Data         json.RawMessage `json:"data"`
+	ResponseCost json.RawMessage `json:"response_cost"`
 }
 
 // chatTestResult is one completion probe result.
@@ -352,7 +355,7 @@ func (s *Service) recordProbe(ctx context.Context, call probeCall, response *ups
 		entry.GovernanceTargetProfileID = call.Log.ProfileID
 	}
 	if response != nil {
-		entry.Usage = probeUsageOf(call.RequestType, response.body)
+		entry.Usage = probeUsageOf(call.RequestType, *response)
 		if model := responseModelOf(response.body); model != "" {
 			// The top-level model reports what the upstream actually served;
 			// metadata.model keeps the REQUESTED model so a fallback is visible.
@@ -587,7 +590,7 @@ func (s *Service) runRerank(ctx context.Context, client upstreamClient, cfg rera
 		return nil, codedBadRequest(errorCodeRerankDocumentsRequired, "rerank documents are required")
 	}
 
-	candidates := uniqueModels(options.ModelOverride, cfg.Rerank, cfg.Fallbacks)
+	candidates := uniqueRerankModels(options.ModelOverride, cfg.Rerank, cfg.Fallbacks)
 	if len(candidates) == 0 {
 		return nil, codedBadRequest(errorCodeRerankModelRequired, "rerank model is not configured")
 	}
@@ -681,10 +684,14 @@ func (s *Service) rerankAttempt(ctx context.Context, client upstreamClient, mode
 // normalizeRerankResults mirrors normalizeRerankResults: accept results or data,
 // normalise the four score spellings, keep integral indexes and finite scores,
 // then sort by index.
+//
+// The list is chosen with Array.isArray semantics: a PRESENT `results` array wins
+// even when it is empty, so `{"results":[],"data":[...]}` is an empty (invalid)
+// result rather than a silent fallback to `data`.
 func normalizeRerankResults(payload rerankBody) []rerankScore {
-	rawResults := payload.Results
-	if len(rawResults) == 0 {
-		rawResults = payload.Data
+	rawResults, isArray := jsonArrayItems(payload.Results)
+	if !isArray {
+		rawResults, _ = jsonArrayItems(payload.Data)
 	}
 	scored := make([]rerankScore, 0, len(rawResults))
 	for _, raw := range rawResults {
@@ -703,6 +710,21 @@ func normalizeRerankResults(payload rerankBody) []rerankScore {
 	return scored
 }
 
+// jsonArrayItems decodes one raw token when it is a JSON array. isArray is true
+// for an EMPTY array, which is what lets the caller reproduce the NestJS
+// Array.isArray branch instead of a length check.
+func jsonArrayItems(raw json.RawMessage) ([]json.RawMessage, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return nil, false
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(trimmed, &items); err != nil {
+		return nil, false
+	}
+	return items, true
+}
+
 // rerankIndex reads the index member as an integer.
 func rerankIndex(value flexValue) (int, bool) {
 	member, ok := flexMemberOf(value, "index")
@@ -719,11 +741,14 @@ func rerankIndex(value flexValue) (int, bool) {
 	return int(parsed), true
 }
 
-// rerankScoreValue reads the first finite score spelling.
+// rerankScoreValue reads the first finite score spelling. A key that is absent or
+// explicitly null is skipped, because the NestJS `??` chain falls through both;
+// a key present with any other non-numeric shape stops the chain and drops the
+// row.
 func rerankScoreValue(value flexValue) (float64, bool) {
 	for _, key := range []string{"relevance_score", "relevanceScore", "score", "similarity"} {
 		member, ok := flexMemberOf(value, key)
-		if !ok {
+		if !ok || member.kind == flexNull {
 			continue
 		}
 		switch member.kind {
@@ -783,17 +808,34 @@ func normalizeDocuments(values []string) []string {
 	return out
 }
 
-// uniqueModels builds the candidate list: the override replaces the profile
-// model entirely, otherwise the profile model plus its fallbacks. Order is
-// preserved and duplicates are removed.
+// uniqueModels builds the COMPLETION candidate list: an explicit override
+// replaces the profile model entirely, otherwise the profile model plus its
+// fallbacks. Order is preserved and duplicates are removed.
 func uniqueModels(override, primary string, fallbacks []string) []string {
+	if strings.TrimSpace(override) != "" {
+		return dedupeTrimmed([]string{override})
+	}
+	return dedupeTrimmed(append([]string{primary}, fallbacks...))
+}
+
+// uniqueRerankModels builds the RERANK candidate list. It is deliberately not
+// shared with completion: the NestJS testRerank keeps the profile's
+// rerankFallbackModels behind an explicit override, while testCompletion drops
+// them. Reusing the completion rule here would silently stop trying the backup
+// rerank models as soon as an operator pinned rerankModel.
+func uniqueRerankModels(override, primary string, fallbacks []string) []string {
 	source := make([]string, 0, len(fallbacks)+1)
 	if strings.TrimSpace(override) != "" {
 		source = append(source, override)
 	} else {
 		source = append(source, primary)
-		source = append(source, fallbacks...)
 	}
+	return dedupeTrimmed(append(source, fallbacks...))
+}
+
+// dedupeTrimmed trims every candidate, drops the empty ones and keeps the first
+// occurrence of each model, so a fallback can never repeat the primary.
+func dedupeTrimmed(source []string) []string {
 	out := make([]string, 0, len(source))
 	seen := make(map[string]bool, len(source))
 	for _, value := range source {
@@ -1104,17 +1146,19 @@ func firstNumber(values ...*float64) *float64 {
 
 // ---- log usage ----
 
-// probeUsageOf extracts the token/cost columns of one log row.
-func probeUsageOf(requestType llmlogs.ProbeRequestType, body []byte) llmlogs.ProbeUsage {
+// probeUsageOf extracts the token/cost columns of one log row. It takes the whole
+// response because the cost must follow the same header-over-payload precedence
+// as the diagnostic result: LiteLLM commonly reports the cost only in
+// x-litellm-response-cost, and a log row without it would understate spend.
+func probeUsageOf(requestType llmlogs.ProbeRequestType, response upstreamResponse) llmlogs.ProbeUsage {
 	usage := llmlogs.ProbeUsage{}
+	usage.CostUSD = extractCosts(response).costUSD
 	var envelope struct {
-		Usage        json.RawMessage `json:"usage"`
-		ResponseCost json.RawMessage `json:"response_cost"`
+		Usage json.RawMessage `json:"usage"`
 	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
+	if err := json.Unmarshal(response.body, &envelope); err != nil {
 		return usage
 	}
-	usage.CostUSD = rawNumber(envelope.ResponseCost)
 	var fields struct {
 		PromptTokens     json.RawMessage `json:"prompt_tokens"`
 		CompletionTokens json.RawMessage `json:"completion_tokens"`

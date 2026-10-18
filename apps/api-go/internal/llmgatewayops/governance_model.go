@@ -439,17 +439,26 @@ func (r resolvedGovernance) hasManagedRuntimeKey() bool {
 	return r.ManagedRuntimeKeyState != managedKeyMissing
 }
 
+// jsWhitespace is the set JavaScript String.prototype.trim removes (and a
+// superset of the \s the Bearer prefix regex accepts).
+const jsWhitespace = " \t\n\v\f\r\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+
 // normalizeSecret mirrors the NestJS normalizeSecret: trim, drop a leading
-// "Bearer " (case insensitive), and collapse an empty result to "".
+// "Bearer <whitespace>" scheme (case insensitive), and collapse an empty result
+// to "". Whitespace after the scheme is required, so a key that merely starts
+// with the letters "bearer" (for example "bearertoken123") is kept verbatim
+// instead of being truncated.
 func normalizeSecret(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return ""
 	}
-	lower := strings.ToLower(trimmed)
-	if strings.HasPrefix(lower, "bearer") {
-		rest := strings.TrimSpace(trimmed[len("bearer"):])
-		return strings.TrimSpace(rest)
+	const scheme = "bearer"
+	if len(trimmed) > len(scheme) && strings.EqualFold(trimmed[:len(scheme)], scheme) {
+		rest := trimmed[len(scheme):]
+		if stripped := strings.TrimLeft(rest, jsWhitespace); stripped != rest {
+			return strings.TrimSpace(stripped)
+		}
 	}
 	return trimmed
 }

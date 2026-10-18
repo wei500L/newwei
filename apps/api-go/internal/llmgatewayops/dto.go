@@ -605,8 +605,8 @@ func parseLBTestInput(body []byte) (lbTestInput, error) {
 	rejectUnknownKeys(&problems, fields, lbTestFieldOrder)
 	var input lbTestInput
 	input.Model = stringField(&problems, fields, "model", maxModelLength)
-	input.Attempts = optionalNumberField(&problems, fields, "attempts", minLBAttempts, maxLBAttempts)
-	input.Concurrency = optionalNumberField(&problems, fields, "concurrency", minLBConcurrency, maxLBConcurrency)
+	input.Attempts = optionalNumberField(&problems, fields, "attempts", minLBAttempts, maxLBAttempts, false)
+	input.Concurrency = optionalNumberField(&problems, fields, "concurrency", minLBConcurrency, maxLBConcurrency, false)
 	input.Prompt = stringField(&problems, fields, "prompt", maxInputLength)
 	if err := problems.err(); err != nil {
 		return lbTestInput{}, err
@@ -653,7 +653,7 @@ func parseGovernanceUpdateInput(body []byte) (governanceUpdateInput, error) {
 	}
 	input.DailyBudgetUSD = budgetField(&problems, fields, "dailyBudgetUsd")
 	input.MonthlyBudgetUSD = budgetField(&problems, fields, "monthlyBudgetUsd")
-	input.MaxParallelRequests = optionalNumberField(&problems, fields, "maxParallelRequests", minParallelRequest, maxParallelRequest)
+	input.MaxParallelRequests = optionalNumberField(&problems, fields, "maxParallelRequests", minParallelRequest, maxParallelRequest, true)
 	if err := problems.err(); err != nil {
 		return governanceUpdateInput{}, err
 	}
@@ -699,9 +699,21 @@ func stringField(problems *validationErrors, fields []objectField, name string, 
 	return validateStringField(problems, raw, name, false, maxLength)
 }
 
-// nullableStringField reads an optional string that accepts null.
+// nullableStringField reads an optional string that accepts null, then applies the
+// service normalization `normalizeOptionalString(value) ?? null`: the value is
+// trimmed and a blank one collapses to null. Without the trim a padded profile id
+// would be looked up literally and a blank one would be persisted as "" instead of
+// null.
 func nullableStringField(problems *validationErrors, raw json.RawMessage, name string) *string {
-	return validateStringField(problems, raw, name, false, 0)
+	value := validateStringField(problems, raw, name, false, 0)
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 // boolField reads one optional boolean field.
@@ -784,13 +796,15 @@ func budgetField(problems *validationErrors, fields []objectField, name string) 
 	return optionalNumber{Present: value.Present, Null: value.Null, Value: value.Value}
 }
 
-// optionalNumberField reads one @Type(() => Number) integer field.
-func optionalNumberField(problems *validationErrors, fields []objectField, name string, min, max float64) optionalNumber {
+// optionalNumberField reads one integer field. coerce reports whether the DTO has
+// @Type(() => Number): governance maxParallelRequests does, the LB attempts /
+// concurrency fields do NOT, so a JSON string is a validation error there.
+func optionalNumberField(problems *validationErrors, fields []objectField, name string, min, max float64, coerce bool) optionalNumber {
 	raw, ok := fieldValue(fields, name)
 	if !ok {
 		return optionalNumber{}
 	}
-	value := validateNumberField(problems, raw, name, min, max, true, true)
+	value := validateNumberField(problems, raw, name, min, max, true, coerce)
 	return optionalNumber{Present: value.Present, Null: value.Null, Value: value.Value}
 }
 

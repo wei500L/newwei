@@ -232,3 +232,32 @@ func TestLBTestInputDefaults(t *testing.T) {
 		t.Fatal("concurrency below 1 must fail")
 	}
 }
+
+// TestGovernanceTargetProfileIsTrimmed pins the service normalization
+// `normalizeOptionalString(value) ?? null`: a padded id is trimmed and a blank
+// one clears the selection instead of being persisted as "".
+func TestGovernanceTargetProfileIsTrimmed(t *testing.T) {
+	input, err := parseGovernanceUpdateInput([]byte(`{"targetProfileId":"  p1  "}`))
+	if err != nil {
+		t.Fatalf("padded body error = %v", err)
+	}
+	if input.TargetProfileID == nil || *input.TargetProfileID != "p1" {
+		t.Fatalf("targetProfileId = %v, want the trimmed p1", input.TargetProfileID)
+	}
+
+	blank, err := parseGovernanceUpdateInput([]byte(`{"targetProfileId":"   "}`))
+	if err != nil {
+		t.Fatalf("blank body error = %v", err)
+	}
+	if !blank.TargetProfileIDPresent || blank.TargetProfileID != nil {
+		t.Fatalf("blank targetProfileId = %+v, want a cleared selection", blank)
+	}
+
+	preflight, err := parseGovernancePreflightInput([]byte(`{"targetProfileId":""}`))
+	if err != nil {
+		t.Fatalf("preflight body error = %v", err)
+	}
+	if !preflight.TargetProfileIDPresent || preflight.TargetProfileID != nil {
+		t.Fatalf("preflight targetProfileId = %+v, want a cleared selection", preflight)
+	}
+}

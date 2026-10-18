@@ -125,7 +125,7 @@ func (s *Service) TestProfile(ctx context.Context, profileID string, input testI
 			Rerank:    settings.RerankModel,
 			Fallbacks: settings.RerankFallbacks,
 		}, rerankOptions{
-			Query:                optionalTextValue(input.RerankQuery),
+			Query:                rerankQueryOrDefault(input.RerankQuery),
 			Documents:            input.RerankDocuments,
 			ModelOverride:        optionalTextValue(input.RerankModel),
 			IncludeMetadataProbe: includeMetadataProbe,
@@ -182,12 +182,20 @@ func (s *Service) TestConfig(ctx context.Context, input testConfigInput, actor p
 		includeMetadataProbe = *input.IncludeMetadataProbe
 	}
 
-	model := optionalTextValue(input.Model)
+	// input.model is kept as `string | undefined` instead of being collapsed to
+	// an empty string: the NestJS `??` chain treats a present "" as a value, so
+	// an explicit blank model must select "" rather than fall through to the
+	// stored profile model.
+	inputModel := (*string)(nil)
+	if input.Model != nil {
+		trimmed := strings.TrimSpace(*input.Model)
+		inputModel = &trimmed
+	}
 	storedModel := ""
 	if stored != nil {
 		storedModel = strings.TrimSpace(stored.Model)
 	}
-	if shouldTestCompletion && model == "" && storedModel == "" {
+	if shouldTestCompletion && (inputModel == nil || *inputModel == "") && storedModel == "" {
 		return testResult{}, codedBadRequest(errorCodeModelRequired, "model is not configured")
 	}
 
@@ -257,7 +265,15 @@ func (s *Service) TestConfig(ctx context.Context, input testConfigInput, actor p
 		return testResult{}, codedBadRequest(errorCodeNothingToTest, "Nothing to test")
 	}
 
-	modelForProbes := firstNonEmpty(model, storedModel, embeddingModel, "unknown")
+	modelForProbes := "unknown"
+	switch {
+	case inputModel != nil:
+		modelForProbes = *inputModel
+	case storedModel != "":
+		modelForProbes = storedModel
+	case embeddingModel != "":
+		modelForProbes = embeddingModel
+	}
 	settings := probeSettings{
 		ProfileID:       profileID,
 		AuthMode:        authMode,
@@ -323,7 +339,7 @@ func (s *Service) TestConfig(ctx context.Context, input testConfigInput, actor p
 			Rerank:    settings.RerankModel,
 			Fallbacks: settings.RerankFallbacks,
 		}, rerankOptions{
-			Query:                optionalTextValue(input.RerankQuery),
+			Query:                rerankQueryOrDefault(input.RerankQuery),
 			Documents:            input.RerankDocuments,
 			ModelOverride:        optionalTextValue(input.RerankModel),
 			IncludeMetadataProbe: includeMetadataProbe,
@@ -340,6 +356,16 @@ func (s *Service) TestConfig(ctx context.Context, input testConfigInput, actor p
 		}
 	}
 	return result, nil
+}
+
+// rerankQueryOrDefault mirrors testProfile/testConfig: a missing or blank query
+// falls back to the source constant instead of failing the rerank probe. The
+// default only applies to an absent/blank input, never to a supplied query.
+func rerankQueryOrDefault(value *string) string {
+	if trimmed := optionalTextValue(value); trimmed != "" {
+		return trimmed
+	}
+	return defaultRerankQuery
 }
 
 // actorOrgID normalizes the actor orgId the way the log writer expects.

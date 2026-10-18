@@ -68,17 +68,19 @@ func newUpstreamClient(httpClient *http.Client, baseURL, apiKey string, timeout 
 	return upstreamClient{baseURL: baseURL, apiKey: apiKey, timeout: timeout, http: httpClient}
 }
 
-// endpoint joins the base URL and one request path. The base never carries a
-// trailing slash and every path starts with one, so the join is a concatenation
-// of the normalized forms.
+// endpoint joins the base URL and one request path. The trailing slashes of the
+// base are stripped first because axios combineURLs does the same: the management
+// client receives the raw stored apiBase, which may legitimately end with "/", and
+// a plain concatenation would then request "//team/update".
 func (c upstreamClient) endpoint(path string) (string, error) {
-	if strings.TrimSpace(c.baseURL) == "" {
+	base := strings.TrimRight(strings.TrimSpace(c.baseURL), "/")
+	if base == "" {
 		return "", errors.New("llmgatewayops: apiBase is not configured")
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	return c.baseURL + path, nil
+	return base + path, nil
 }
 
 // get performs one GET.
@@ -206,14 +208,19 @@ const timeoutErrorCode = "ECONNABORTED"
 // classifyTransportError maps a transport failure onto the axios error shape: a
 // deadline yields the timeout class, anything else keeps the Go message and no
 // status. Neither case is retried.
+//
+// The text is also stored as the detail, because the diagnostic message is built
+// from the detail: without it a connection failure would surface as a bare
+// "LLM gateway request failed" instead of naming the reason the way the axios
+// error message does in the source.
 func classifyTransportError(ctx context.Context, err error, timeout time.Duration) error {
+	text := err.Error()
+	code := ""
 	if ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return &upstreamError{
-			code:    timeoutErrorCode,
-			message: fmt.Sprintf("timeout of %dms exceeded", timeout.Milliseconds()),
-		}
+		text = fmt.Sprintf("timeout of %dms exceeded", timeout.Milliseconds())
+		code = timeoutErrorCode
 	}
-	return &upstreamError{message: err.Error()}
+	return &upstreamError{code: code, message: text, detail: sanitizeUpstreamErrorText(text, 500)}
 }
 
 // upstreamEnvelope is the tolerant decode boundary of an upstream error body.
