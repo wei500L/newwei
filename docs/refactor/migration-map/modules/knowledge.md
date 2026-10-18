@@ -14,7 +14,7 @@
 
 Nest 功能目录：[knowledge-graph](../../../../apps/api/src/modules/knowledge-graph)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领（2026-10-18限定续核，main90765633）：[KNOWLEDGE-REVIEW-001](../tasks/KNOWLEDGE-REVIEW-001.md) reserved，[完整提示词](../tasks/KNOWLEDGE-REVIEW-001.prompt.md)随规划#80发布。人工复核Mutation、关系/实体别名、证据移动合并、事务内边聚合、审计/outbox与缓存失效全部归本批；已有队列仅改善固定overfetch遮挡、稳定游标/批量投影与设置来源，不重迁11读。该链仅MySQL+Redis；ingestion、历史reconcile脚本与outbox消费者留Nest，未见本域业务PR/目录，未新增Go注册/部署证据。网关#81/来源策略#82/OIDC#83和CSV导出占用继续有效；新端口文件避开来源策略register.go/policy.go。
 
 ## GraphQL 精确 root 清单
 

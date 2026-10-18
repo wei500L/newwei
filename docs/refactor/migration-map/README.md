@@ -1,8 +1,16 @@
 # 后端迁移地图
 
+最新知识图谱选批（2026-10-18）：main仍90765633，普通CI39149114456成功；网关#81、来源策略#82、OIDC#83均Ready开放，CSV导出已见独立目录开发。新认领[KNOWLEDGE-REVIEW-001](tasks/KNOWLEDGE-REVIEW-001.md)，完整迁人工证据复核/关系校正/边聚合与审计缓存，并改善已迁复核队列的固定候选遮挡，[完整提示词](tasks/KNOWLEDGE-REVIEW-001.prompt.md)在规划#80发布。只需MySQL/Redis，ingestion与outbox消费者留Nest；仅续核本域，不新增业务实现、不重建地图。
+
+最新导出选批（2026-10-18，main90765633未变，普通CI39149114456成功）：网关#81/来源策略/OIDC占用保持。新认领[ANALYSIS-EXPORT-001](tasks/ANALYSIS-EXPORT-001.md)，完整迁移items/events两路CSV及5000选择/批量投影/等价去重优化，[提示词](tasks/ANALYSIS-EXPORT-001.prompt.md)在规划#80发布。search整路因归档准备保留Nest；只核本候选，不新增业务实现/注册或重建地图。
+
+最新OIDC选批（2026-10-18）：main仍90765633，普通CI39149114456成功；网关12路已提交Ready #81，来源策略四写已见独立worktree开发，两者继续占用。新认领[OIDC-LOGIN-001](tasks/OIDC-LOGIN-001.md)的组织SSO三入口完整协议/会话/MFA/handoff链，[提示词](tasks/OIDC-LOGIN-001.prompt.md)复用规划#80发布；只深入该身份候选，不包含头像/导出，不重建地图。
+
+最新本批（2026-10-18，main90765633未变）：普通CI39149114456已success。LLM-GATEWAY-OPS-001已见独立worktree真实业务开发，保持占用；新认领[SOURCE-POLICY-WRITE-001](tasks/SOURCE-POLICY-WRITE-001.md)的来源策略四Mutation完整版本链及旧设置13写两处剩余公共接线，[执行提示词](tasks/SOURCE-POLICY-WRITE-001.prompt.md)复用规划#80发布。仅深入settings本候选，不重建全仓地图；不修改正在开发窗口的记录要求。
+
 先读本页 → [PLANNING](PLANNING.md) → [当前任务](tasks/README.md) + [缺口摘要](GAPS.md#当前摘要) → [候选队列](BACKLOG.md) → 候选域与源码。[实现核对深度](AUDIT.md)、[开关/执行所有权/复用入口](DEPENDENCIES.md)、[证据](EVIDENCE.md)按需展开。Nest 暂时保留。
 
-最新规划增量（2026-10-18）：main已到c39f282f11952b487c3ef6fefb14882db265ed9e，#70–#76经[#77](https://github.com/wei500L/newwei/pull/77)合入，普通CI成功，当前无开放PR。新增[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md)的14条申请/审批/邀请入组完整链，[提示词](tasks/IDENTITY-ONBOARDING-001.prompt.md)已发出。本次只深读identity候选并更新必要认领，不重建全仓地图；下面3cedce9a/9d0462e1日期和注册统计是历史快照，不能当作c39f282f现值，六批合并/新占用看任务索引。生产启用与外部验证不由merge/CI推断。
+最新规划增量（2026-10-18）：最终刷新main90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md)14路已由[#79](https://github.com/wei500L/newwei/pull/79)实际merge f35ec572合入，旧规划#78也已合入；此前#70–#76经#77合入的事实不变。新main普通CI39149114456运行中，旧c39f282f成功不能替代。新认领[LLM-GATEWAY-OPS-001](tasks/LLM-GATEWAY-OPS-001.md)治理与真实探测12路，[独立提示词](tasks/LLM-GATEWAY-OPS-001.prompt.md)改在独立规划分支docs/plan-llm-gateway-ops发布；只深读该候选并更新必要记录。下面3cedce9a/9d0462e1日期和注册统计是历史快照，不能当作最新main现值，合并/新占用看任务索引。生产启用与外部验证不由merge/CI推断。
 
 2026-10-18 本次规划增量：#69 已合并，最新代码基线为 9d0462e16d88d146b8afbf67cdd58d8b7419ff29；相对下述3cedce9a仅文档/导航变化，业务与注册覆盖未变，main普通CI成功。#70仍OPEN/Ready，head adb765d0，继续占用工作台8写。[NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md) 已reserved，补新闻事件简报冷生成/强刷及必要日志/写回；[执行提示词](tasks/NEWS-BRIEF-001.prompt.md) 已保存，本窗口不实施。其余历史全域审查日期保持，只有本root按最新SHA深入续核。
 

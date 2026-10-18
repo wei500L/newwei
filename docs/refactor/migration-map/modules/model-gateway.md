@@ -12,7 +12,7 @@
 
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#model-gateway) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前增量核对（2026-10-18，main90765633）：本页既有21路与候选Nest源码相对9d0462e1无本域业务变化。余下12路已认领[LLM-GATEWAY-OPS-001](../tasks/LLM-GATEWAY-OPS-001.md) reserved，[完整提示词](../tasks/LLM-GATEWAY-OPS-001.prompt.md)在独立规划分支docs/plan-llm-gateway-ops发布，无本批业务实现/注册新增。只深入本12路管理/探测/日志与Go复用；不把页首历史日期统一刷新为全域审计。#79身份14路已合入，与本批核心文件隔离，新增公共接线按并集保留；按[认领核对记录](../tasks/README.md)续核。
 
 ## HTTP 开关、实现与生产接线
 

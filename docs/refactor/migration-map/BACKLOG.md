@@ -16,9 +16,10 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-01 · settings / GraphQL 公共接线
 
+- 2026-10-18按main90765633重新核实后，将GAP-GQL-001具体剩余的graphqlRouteMode/无效DSN分支两处settingsWrite条件认领至[SOURCE-POLICY-WRITE-001](tasks/SOURCE-POLICY-WRITE-001.md)，与来源策略独立开关接线一并交付；不重迁13业务，不再另开竞争该两处接线的窗口。缺口未落地仍开放。
 - **目标/范围**：GAP-GQL-001 的13写独立路由/资源条件，保留 READ/ORG_ACCESS_WRITE/工作台写并集、模型与嵌套字段权限；不重写13个业务 resolver。OBS-DATA-001 仅作同文件错误传播审查项，不把不可达观察冒充已确认故障。
 - **基础/工作量依据**：settingswrite、settingscrawl.RegisterSettingsModelTypes、workspace.RegisterModels 已存在；需要核对 RouteMode、无效 DSN、needsCredentialedGo、handler 四处条件以及三写模式组合。无新队列/外部调用。
-- **文件/前置/冲突**：`apps/api-go/cmd/api/main.go`，必要时 config/模型注册；#70 正在共享接线，先确认其最终 merge/head。**当前不适合第二独立编码窗口**；不得按 PR 描述假设修复，先读实际提交。
+- **文件/前置/冲突**：`apps/api-go/cmd/api/main.go`，必要时config/模型注册；#70已由#77合入，但这两处条件仍缺。当前由SOURCE-POLICY-WRITE-001拥有最小修复，保留网关批次main/config并集；无新业务root计数。
 
 ### BL-02 · news / newsEventBrief 生成（已派发）
 
@@ -56,7 +57,8 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-06 · identity / 邀请、审批与 OIDC 接入的后续分段
 
-- 2026-10-18以main c39f282f深读后，将其中邀请/申请审批14路认领为[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md) reserved，[提示词](tasks/IDENTITY-ONBOARDING-001.prompt.md)已保存并发出。#75登录基础已通过#77合入，原会话前置已满足；本批accept不签发会话。已核实新组织审批调用普通invite的system-admin拒绝问题，纳入受控bootstrap路径修复。其余OIDC三路、头像与导出仍未认领，不扩成19路杂批。
+- 2026-10-18按main90765633深入后，OIDC start/callback/handoff exchange三路完整SSO链已认领[OIDC-LOGIN-001](tasks/OIDC-LOGIN-001.md) reserved，[提示词](tasks/OIDC-LOGIN-001.prompt.md)在#80发布；复用已合可信登录/MFA/secret，明确真实discovery/JWKS/token与handoff条件领取修复，不重迁配置CRUD。头像/导出仍未认领，真实IdP未验证。
+- 2026-10-18以main c39f282f深读并发出其中邀请/申请审批14路[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md)，现已由#79实际merge f35ec572进入main90765633；原[提示词](tasks/IDENTITY-ONBOARDING-001.prompt.md)保留，不重复派发。#75登录基础已通过#77合入；本批accept不签发会话。新组织审批调用普通invite的system-admin拒绝问题纳入受控bootstrap路径实现。OIDC三路现独立认领，头像与导出仍未认领，不扩成19路杂批。
 
 - **精确候选集合**：identity 域余下 Nest HTTP：/admin/invites 四路、/admin/registration-applications 五路、/register/{applications,join-applications} 两路、/invitations/:token 三路、GET sso/oidc/start、GET oidc/callback、POST sso/handoff/exchange；另 POST avatar/presigned-url 与 GET data-export 是两个可分离支线。均为 GAP-LEGACY-001，不包含 BL-04。
 - **基础/依据**：G/graphqlread/orgaccesswrite、G/{rbacapi,authfactors,accountsecurity}，N/OrgInviteService、RegistrationApplicationService、OidcAuthService；需要邀请/审批事务、默认角色/租户初始化、邮件、IdP/state/PKCE/handoff token；头像依赖 StorageService、导出依赖完整个人数据聚合。
@@ -64,6 +66,7 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-07 · settings / 来源策略四写
 
+- 2026-10-18按main90765633深读后，整条来源策略版本链认领至[SOURCE-POLICY-WRITE-001](tasks/SOURCE-POLICY-WRITE-001.md) reserved，[完整执行提示词](tasks/SOURCE-POLICY-WRITE-001.prompt.md)在#80发布；不再是未认领候选。已核四写/DTO/helper/normalizer、category presence、20/30/60历史差异、preset时间比较、DB/cache审计失败边界及Go私有复用；无新外部服务/worker，保留源读后校验，不增加CAS/锁。
 - **范围/缺口**：updateNewsEventSourcePolicy、updateNewsEventSourcePolicyPresets、resetNewsEventSourcePolicy、rollbackNewsEventSourcePolicy（GAP-LEGACY-001）；不动已合并13写。
 - **基础/依据**：G/graphqlread/settingscrawl policyReader 和 publicportal 的来源规范化；N/news-event-source-policy.service.ts updatePolicy/updatePolicyPreset/resetPolicy/rollbackPolicy。expectedRevision校验、revision历史、preset delta/分类同步与Redis syncWarnings是主要工作，不只是四次upsert。
 - **文件/前置/冲突**：新 GraphQL 写包及现有 policy helpers/main；MySQL/SystemSetting/Redis，无须迁 ingestion 才可交付。**BL-01/#70 接线稳定后可独立窗口**；避免 BL-18 同时更改策略模型；本轮已进一步核对读后校验/同步失败语义，准入还需明确是否保留或优化其并发边界，见下表。
@@ -81,6 +84,7 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-08 · analysis / 三个 CSV 导出
 
+- 2026-10-18按main90765633深入后，将items/events两路完整CSV认领至[ANALYSIS-EXPORT-001](tasks/ANALYSIS-EXPORT-001.md) reserved，[提示词](tasks/ANALYSIS-EXPORT-001.prompt.md)在#80发布。已核完整参数/5000选择、Go交互50条限制与私有复用、事件聚合/强制权威/先过滤排序后去重、CSV字节与公式语义；新增保持贪心结果的token索引优化。search整路仍未认领并保留Nest，不能因items模式共用业务计整路完成；归档准备与采集生命周期未认领。
 - **范围/缺口**：POST /api/analysis/exports/search、items、events（GAP-LEGACY-001）。search 还含 mode=headlines 归档路径，不只导出当前页面。
 - **基础/依据**：G/analysiscollab.NormalizeQueryString、itemsreading、newsevents；N/AnalysisWorkspaceService.export*CsvStream→buildItemsExportRows/buildArchiveSearchRows/buildEventsExportRows/buildCsvStream。需全量批读取/上限、日期排序、权限/组织过滤、CSV 转义、响应头与审计，避免套 REST 默认50条截断。
 - **文件/前置/冲突**：独立 Go export 包/main；N/modules/analysis-workspace/analysis-workspace.service.ts 为事实源；DB/Mongo/ES/归档搜索边界。**可先独立交付items/events两路**，BL-05搜索核心先约文件；search的mode=headlines已确认经getDigest触发ensureDigestCoverage，完整第三路依赖BL-09准备链边界，不能静默代理Nest后把整路记Go完成。
@@ -152,15 +156,18 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-16 · knowledge / 证据复核与 ingestion
 
+- 2026-10-18限定续核main90765633：人工复核完整链与已有队列选取改善已由[KNOWLEDGE-REVIEW-001](tasks/KNOWLEDGE-REVIEW-001.md) reserved，[提示词](tasks/KNOWLEDGE-REVIEW-001.prompt.md)在规划#80发布。已核事务、实体别名、证据迁移/重复合并、新旧边聚合、耐久边、审计双失败和缓存失效；本子链只有MySQL/Redis，不需要Mongo。ingestion Cron/抽取/模型、历史reconcile脚本与审计outbox消费仍留Nest，未认领。新窄端口文件避开来源策略register/policy，共享接线只追加本开关并集；不把整个BL-16标已完成。
+
 - **范围/缺口**：reviewKnowledgeGraphEvidence 及其关系边/证据/复核状态更新；KnowledgeGraphIngestionService 的后台构图作为后续独立执行阶段（GAP-LEGACY-001 / GAP-ASYNC-001）。
 - **基础/依据**：G/graphqlread/{knowledgegraph,kgimpact}、settingscrawl.reviewReader 已有读模型；N/KnowledgeGraphService.upsertReviewedRelationEdge 与对应 review 服务。需要租户/权限、证据归属、接受/拒绝与边聚合、缓存失效；不能把更新 reviewed 状态当整个复核完成。
 - **文件/前置/冲突**：graphqlread 新写包/knowledge 业务层/main，MySQL+Mongo/Redis，ingestion 可能模型；**复核写可在公共接线后独立窗口**；先核真正 resolver 调用的复核服务/事务，与 BL-18 新闻处理写入共享表的顺序。
 
 ### BL-17 · model-gateway / 治理与真实探测
 
+- 2026-10-18以main c39f282f深入、最终按90765633核增量后，12路整体认领至[LLM-GATEWAY-OPS-001](tasks/LLM-GATEWAY-OPS-001.md) reserved，[执行提示词](tasks/LLM-GATEWAY-OPS-001.prompt.md)已保存并发布，不再是未认领候选。已核team/key管理协议、启停/轮换先后、真实探测/缓存/错误、三类Mongo日志与Go可复用能力；不依赖BL-02私有completion客户端。#79身份已合入，保留其公共接线。无真实外部验证，无队列/cron，其他候选不认领。
 - **范围/缺口**：model-gateway 域12条 Nest HTTP：proxy-governance GET/PUT/DELETE/preflight/rotate-key，:id/models/test/proxy-health/proxy-model-info/proxy-lb-test，models-config/test-config（GAP-LEGACY-001）。
 - **基础/依据**：G/{modelaccesssettings,llmgatewayprofiles} 的 profile、密钥、LB 配置，publicportal.gateway 已有请求实现但私有；N/LlmGatewaySettingsController 与服务。治理事务/密钥轮换、LiteLLM内部配置、真实探测/模型列表是不同子链，可先治理后探测。
-- **文件/前置/冲突**：上述业务包/main、共享 client；MySQL/Redis/加密+LiteLLM/模型。**可独立主窗口**但 BL-02 gateway 提取先明确；未核 preflight/rotate 的服务端应用协议，配置 applied 证据不等于生产生效。
+- **文件/前置/冲突**：新llmgatewayops/wire/路由、profiles窄端口、llmlogs probe writer及main/config条件增量；MySQL/Redis/Mongo/加密+LiteLLM/模型。与#79身份核心业务隔离，公共接线保留并集。preflight/rotate协议已按本次task补核，配置applied与mock仍不等于真实生产生效。
 
 ### BL-18 · news / 上游内容、指标关联与流水线
 
