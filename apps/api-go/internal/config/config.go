@@ -999,6 +999,22 @@ type Config struct {
 	// production web entry keeps serving through NestJS. Rolling back only
 	// means setting this variable back to legacy.
 	GraphQLOrgAccessWriteMode string
+	// GraphQLSettingsWriteMode decides whether the thirteen settings center
+	// mutations (updateRateLimitSettings, updateAuthCacheSettings,
+	// updateCrawlClientSettings, updateAuditLogRetention,
+	// updateEntityImpactGraphSettings, updateKnowledgeGraphSettings,
+	// updateNewsEventSettings, updateNewsIndicatorSettings,
+	// updateNewsClassificationSettings, updateClassificationQualitySettings,
+	// updateNewsDedupeSettings, updateNewsExtractionSettings,
+	// updateNewsPromptConfig) are registered into the Go GraphQL executor. It
+	// is independent of every read switch: with the settings/crawl read switch
+	// legacy, only these mutations are taken over and the twenty read roots
+	// keep serving through NestJS. The accepted values are exactly "",
+	// "legacy" and "go"; the empty value behaves like legacy. While this switch
+	// is legacy, any document that selects one of those mutations falls back to
+	// NestJS as a whole, so the production web entry keeps serving through
+	// NestJS. Rolling back only means setting this variable back to legacy.
+	GraphQLSettingsWriteMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -1884,6 +1900,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE must be one of legacy|go")
 	}
+	// The settings write switch accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy, so an unset deployment keeps
+	// every settings mutation on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_SETTINGS_WRITE_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLSettingsWriteMode = "legacy"
+	case "go":
+		cfg.GraphQLSettingsWriteMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_SETTINGS_WRITE_MODE must be one of legacy|go")
+	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
 	cfg.GraphQLComplexity = intDefault(getenv("GRAPHQL_COMPLEXITY_LIMIT"), 2000)
@@ -2449,6 +2476,12 @@ func Load(getenv func(string) string) (Config, error) {
 	// not require MONGO_URI.
 	if cfg.GraphQLOrgAccessWriteMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE", cfg)
+	}
+	// The settings write takeover needs JWT verification, MySQL and Redis only.
+	// It reads no Mongo collection, starts no worker and calls no upstream
+	// service, so it does not require MONGO_URI.
+	if cfg.GraphQLSettingsWriteMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_SETTINGS_WRITE_MODE", cfg)
 	}
 
 	// The situation monitor signals takeover needs the credentialed auth stack

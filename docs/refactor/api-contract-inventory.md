@@ -534,6 +534,27 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 
 回滚只把 `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。说明见 `docs/refactor/go-graphql-org-access-write.md`。
 
+## 11.2 设置中心 13 个 GraphQL Mutation 写（Go）
+
+新增开关 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。与 `API_GO_GRAPHQL_READ_MODE`、`API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE`、`API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 及全部 REST 开关解耦。`go` 只要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**，只登记 20 个设置模型类型与 13 个 Mutation（通过 `settingscrawl.RegisterSettingsModelTypes` 不登记任何 Query）。
+
+`go` 时登记 13 个 Mutation，全部要求 `settings.manage`，并继续执行 `SettingsResolver.assertAdmin`（当前组织的有效角色集合、角色属于当前 orgId、`isSystem=true`、`name` 大小写不敏感等于 admin；`MembershipRole` 优先，无记录回退 `Membership.roleId`；失败 `403 Unauthenticated` / `403 Admin access required`）：
+
+- `updateRateLimitSettings(input)`：三个桶归一化后在同一事务内 upsert `rate_limit_login` / `rate_limit_crawl_create` / `rate_limit_rbac_write`，审计 `rate_limit_update`，刷新 `rate_limit:settings`。
+- `updateAuthCacheSettings(input)`：`auth_profile_cache_settings` + `auth_cache:settings`（60s）。
+- `updateCrawlClientSettings(input)`：服务层用当前值合并省略字段（`requestTimeoutMs` 旧别名优先级与镜像关系不变），`crawl_client_settings` + `crawl_client:settings`（30s），审计 metadata 为 `{settingsKey,changedFields,changedCount,inputFields,before,after}`（无变化则不写审计）。
+- `updateAuditLogRetention(input)`：裸数字入 `audit_log_retention_days`，同时刷新 `audit_log:retention_days`（30s）。
+- `updateEntityImpactGraphSettings` / `updateNewsIndicatorSettings`：全字段必填。
+- `updateKnowledgeGraphSettings` / `updateNewsEventSettings`：可选字段按 resolver 的 `?? current` 合并。
+- `updateNewsClassificationSettings`：服务层单次遍历完成校验与归一化，保留启用分层、路径格式与重复 path 校验。
+- `updateClassificationQualitySettings` / `updateNewsDedupeSettings`：服务层用当前值合并；去重的 judge 字段区分省略与显式 null。
+- `updateNewsExtractionSettings`：保留该服务自己的默认归一化语义。
+- `updateNewsPromptConfig`：按 `DEFAULT_NEWS_PROMPT_CONFIG` 归一化，审计 resource `news_pipeline_prompt` / action `update`，无 Redis 缓存。
+
+同批优化：crawl client 与审计保留期的进程内缓存改为 Nest/Go 共享 Redis（`crawl_client:settings`、`audit_log:retention_days`，各 30s），Go REST 的审计保留期 GET/PUT 同步改造；taxonomy 与 scopedThresholds 的重复归一化收敛为单次（Nest 与 Go 同结果，校验顺序与文案不变）。
+
+只开本开关时 20 个设置读 query 与全部组织管理 Mutation 仍回 NestJS；含未迁移 root 的文档整包回 NestJS，不存在部分 Go 写入后再转发。回滚只把 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。说明见 `docs/refactor/go-graphql-settings-write.md`。
+
 ## 12. 分类质量工作台与 RSS 诊断/翻译指标（Go）
 
 新增开关 `API_GO_CLASSIFICATION_RSS_OPS_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。`go` 时只接管 13 条精确路由规则（10 条静态 + 3 条“恰好一段”动态路径，另加同路径 `OPTIONS` 预检），全部要求 `settings.manage`（人类身份来自 JWT 验签、Redis 撤销名单与 membership 重推导，忽略 JWT claims 里的 `permissions`；`mtk_` 机器令牌走 `MachineAccessToken` 的 SHA-256 查 `tokenHash`、校验 `Org.isActive`/未撤销/未过期、更新 `lastUsedAt`，身份为 `machine:<tokenId>`）：

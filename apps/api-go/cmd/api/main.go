@@ -162,6 +162,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/orgaccesswrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingscrawl"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingswrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
@@ -1411,9 +1412,11 @@ func run() error {
 
 	var graphqlHandler *graphqlread.Handler
 	var graphqlMongo *dashboardstats.Connection
-	// 读查询与组织访问写入各自独立开关；任一为 go 就装配精确 /graphql 的 Go
-	// handler。只开写入时不要求 Mongo，也不初始化任何只读域的 Mongo service。
-	if graphqlReadGo || graphqlOrgAccessWriteGo {
+	// 设置中心读与设置写各自独立开关；与两个既有开关任一为 go 就装配精确
+	// /graphql 的 Go handler。只开写入时不要求 Mongo，也不初始化任何只读域的
+	// Mongo service。
+	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
+	if graphqlReadGo || graphqlOrgAccessWriteGo || settingsWriteGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -1422,6 +1425,7 @@ func run() error {
 		// processed-item roots are opt-in through their own switch; when it is
 		// legacy, any document selecting one of them stays on NestJS.
 		workspaceGo := cfg.GraphQLWorkspaceReadMode == "go"
+		settingsCrawlGo := cfg.GraphQLSettingsCrawlReadMode == "go"
 		if graphqlReadGo {
 			mongoDatabase := dashboardMongo
 			if mongoDatabase == nil {
@@ -1458,7 +1462,6 @@ func run() error {
 			// evidence review queue and crawl task roots are opt-in through
 			// their own switch; when it is legacy, any document selecting one
 			// of them stays on NestJS.
-			settingsCrawlGo := cfg.GraphQLSettingsCrawlReadMode == "go"
 			if settingsCrawlGo {
 				settingscrawl.Register(reg, sharedDB, settingscrawl.Options{
 					JWTSecret: cfg.JWTSecret,
@@ -1490,6 +1493,20 @@ func run() error {
 				workspace.RegisterModels(reg)
 			}
 			orgaccesswrite.Register(reg, sharedDB, redisClient)
+		}
+		// The thirteen settings mutations reuse the settings center read
+		// models. The models must be registered exactly once: the settings/
+		// crawl read registration already did it when that switch is go, so the
+		// write path only registers them otherwise.
+		if settingsWriteGo {
+			// The settings/crawl read roots only register these models when the
+			// read switch is go as well; otherwise the write path must do it.
+			if !graphqlReadGo || !settingsCrawlGo {
+				settingscrawl.RegisterSettingsModelTypes(reg)
+			}
+			settingswrite.Register(reg, sharedDB, redisClient, settingswrite.Options{
+				RateLimitSettingsCacheTTLSeconds: cfg.RateLimitSettingsCacheTTLSeconds,
+			})
 		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
@@ -1553,6 +1570,11 @@ func run() error {
 			log.Printf("api-go: GraphQL org-access writes registered (%s)", strings.Join(orgaccesswrite.RegisteredMutations, ", "))
 		} else {
 			log.Printf("api-go: GraphQL org-access writes not registered (API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE=legacy)")
+		}
+		if settingsWriteGo {
+			log.Printf("api-go: GraphQL settings writes registered (%s)", strings.Join(settingswrite.RegisteredMutations, ", "))
+		} else {
+			log.Printf("api-go: GraphQL settings writes not registered (API_GO_GRAPHQL_SETTINGS_WRITE_MODE=legacy)")
 		}
 	}
 

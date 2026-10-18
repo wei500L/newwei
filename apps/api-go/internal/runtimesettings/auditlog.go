@@ -4,10 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"strconv"
-	"sync"
-	"time"
 )
 
 // Audit log retention bounds, copied from audit-log-settings.service.ts.
@@ -16,9 +15,14 @@ const (
 	auditLogMaxRetentionDays = 3650
 )
 
-// auditLogRetentionTTLMs is the per-process cache TTL the NestJS service keeps
-// in memory (30 seconds). It is not shared across replicas there either.
-const auditLogRetentionTTLMs = 30000
+// auditLogRetentionCacheKey and auditLogRetentionCacheTTLSeconds are the shared
+// Redis cache the NestJS AuditLogSettingsService and this package both read and
+// write. It replaces the former process-local 30 second cache, which could not
+// see a write performed by the other runtime.
+const (
+	auditLogRetentionCacheKey        = "audit_log:retention_days"
+	auditLogRetentionCacheTTLSeconds = 30
+)
 
 // auditLogRetentionResponse is the GET/PUT response body: a bare object with one
 // integer key.
@@ -40,33 +44,6 @@ type auditLogRetentionMetadata struct {
 // (`{"retentionDays": 90}`); a bare JSON number is also accepted.
 type auditLogStoredValue struct {
 	RetentionDays json.RawMessage `json:"retentionDays"`
-}
-
-// retentionCache mirrors the service's process-local 30 second cache.
-type retentionCache struct {
-	mutex     sync.Mutex
-	days      int
-	expiresAt time.Time
-	valid     bool
-}
-
-// load returns the cached value when it has not expired.
-func (c *retentionCache) load(now time.Time) (int, bool) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	if c.valid && now.Before(c.expiresAt) {
-		return c.days, true
-	}
-	return 0, false
-}
-
-// store refreshes the cache.
-func (c *retentionCache) store(days int, now time.Time) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	c.days = days
-	c.valid = true
-	c.expiresAt = now.Add(auditLogRetentionTTLMs * time.Millisecond)
 }
 
 // parseUpdateAuditLogRetention validates the PUT body.
@@ -134,23 +111,35 @@ func (s *Service) loadRetentionDays(ctx context.Context) (int, error) {
 	}
 }
 
-// getAuditLogRetention mirrors getRetentionDays: a 30 second process-local cache
-// in front of the database read.
+// getAuditLogRetention mirrors getRetentionDays: the shared Redis document is
+// read first, then MySQL, and a cache miss refreshes the shared entry. A Redis
+// failure is logged and never fails the request, which is the same tolerance the
+// NestJS service applies around CacheService.
 func (s *Service) getAuditLogRetention(ctx context.Context) (int, error) {
-	now := time.Now()
-	if days, ok := s.retention.load(now); ok {
-		return days, nil
+	if raw, found, cacheErr := s.cacheGet(ctx, auditLogRetentionCacheKey); cacheErr != nil {
+		logCacheFailure("audit log retention", auditLogRetentionCacheKey, cacheErr)
+	} else if found {
+		var cached int
+		if err := json.Unmarshal(raw, &cached); err == nil {
+			return normalizeRetentionDays(float64(cached)), nil
+		}
+		logCacheFailure("audit log retention", auditLogRetentionCacheKey, errors.New("cache entry is not a retention number"))
 	}
+
 	days, err := s.loadRetentionDays(ctx)
 	if err != nil {
 		return 0, err
 	}
-	s.retention.store(days, now)
+	if encoded, encodeErr := json.Marshal(days); encodeErr == nil {
+		if cacheErr := s.cacheSet(ctx, auditLogRetentionCacheKey, encoded, auditLogRetentionCacheTTLSeconds); cacheErr != nil {
+			logCacheFailure("audit log retention", auditLogRetentionCacheKey, cacheErr)
+		}
+	}
 	return days, nil
 }
 
 // updateAuditLogRetention mirrors updateRetentionDays: upsert the raw number,
-// write the audit row best-effort and refresh the process-local cache. The
+// write the audit row best-effort and refresh the shared Redis document. The
 // caller must have already enforced the platform-admin gate.
 func (s *Service) updateAuditLogRetention(ctx context.Context, orgID, actorID string, days int) (int, error) {
 	if s == nil || s.db == nil {
@@ -164,6 +153,10 @@ func (s *Service) updateAuditLogRetention(ctx context.Context, orgID, actorID st
 	if metadata, marshalErr := json.Marshal(auditLogRetentionMetadata{RetentionDays: normalized}); marshalErr == nil {
 		s.writeAuditLogBestEffort(ctx, orgID, actorID, "audit_log_retention_update", metadata)
 	}
-	s.retention.store(normalized, time.Now())
+	if cachePayload, encodeErr := json.Marshal(normalized); encodeErr == nil {
+		if cacheErr := s.cacheSet(ctx, auditLogRetentionCacheKey, cachePayload, auditLogRetentionCacheTTLSeconds); cacheErr != nil {
+			logCacheFailure("audit log retention", auditLogRetentionCacheKey, cacheErr)
+		}
+	}
 	return normalized, nil
 }
