@@ -2653,7 +2653,7 @@ jobs:
                   ("sql null", "NULL", False),
                   ("plain string", "'\"legacy-plaintext\"'", True),
                   ("empty string", "'\"\"'", False),
-                  ("number zero", "0", False),
+                  ("number zero", "'0'", False),
                   ("envelope", "_utf8mb4'" + sql_escape(json.dumps(encrypt_v1("has-secret-value")))
                    + "'", True),
               ):
