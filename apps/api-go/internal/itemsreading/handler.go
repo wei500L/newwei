@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -268,6 +269,8 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err 
 			return
 		}
 		_ = list
+		// Server-side diagnostics only; the client keeps the generic 500 body.
+		log.Printf("api-go: itemsreading REST failure: %v", err)
 		authhttp.WriteInternalFailure(w, r)
 	}
 }

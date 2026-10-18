@@ -606,8 +606,8 @@ type ReadModelDocument struct {
 	OrgID               string                 `bson:"orgId" json:"orgId"`
 	ItemMetaID          string                 `bson:"itemMetaId" json:"itemMetaId"`
 	Meta                ReadModelMetaDoc       `bson:"meta" json:"meta"`
-	Raw                 *ReadModelRawDoc       `bson:"raw" json:"raw"`
-	Processed           *ReadModelProcessedDoc `bson:"processed" json:"processed"`
+	Raw                 *ReadModelRawDoc       `bson:"raw,omitempty" json:"raw"`
+	Processed           *ReadModelProcessedDoc `bson:"processed,omitempty" json:"processed"`
 	ExternalID          string                 `bson:"externalId" json:"externalId"`
 	ExternalIDLower     string                 `bson:"externalIdLower" json:"externalIdLower"`
 	Title               string                 `bson:"title" json:"title"`
