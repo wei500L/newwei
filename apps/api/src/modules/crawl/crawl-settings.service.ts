@@ -1,7 +1,9 @@
+import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
@@ -94,7 +96,12 @@ const DEFAULT_ADAPTIVE_ERROR_RATE_THRESHOLD = 0.2;
 const DEFAULT_ADAPTIVE_MEMORY_HEADROOM_THRESHOLD = 0.12;
 const MIN_ADAPTIVE_THRESHOLD_RATIO = 0.01;
 const MAX_ADAPTIVE_THRESHOLD_RATIO = 0.99;
-const SETTINGS_CACHE_TTL_MS = 30_000;
+// The normalized settings object is shared with the Go gateway through Redis.
+// The key and the 30 second TTL match the Go settings write path and the Go
+// runtime settings reader, so a write in either runtime is visible to the other
+// without a process-local cache.
+const SETTINGS_CACHE_KEY = "crawl_client:settings";
+const SETTINGS_CACHE_TTL_SECONDS = 30;
 const CRAWL_CLIENT_SETTINGS_AUDIT_FIELDS = [
   "healthCheckTtlMs",
   "requestTimeoutHotMs",
@@ -122,38 +129,35 @@ type CrawlClientSettingsAuditSnapshot = Record<CrawlClientSettingsAuditField, nu
 
 @Injectable()
 export class CrawlSettingsService {
-  private cachedSettings:
-    | {
-        value: CrawlClientSettings;
-        expiresAt: number;
-      }
-    | null = null;
-  private loadingPromise: Promise<CrawlClientSettings> | null = null;
+  private readonly logger = createLogger({ name: "crawl-settings" });
 
-  constructor(private readonly prisma: PrismaService, private readonly env: EnvService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly env: EnvService,
+    private readonly cache: CacheService
+  ) {}
 
   async getSettings(): Promise<CrawlClientSettings> {
-    const cached = this.cachedSettings;
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.value;
+    let cached: CrawlClientSettings | null = null;
+    try {
+      cached = await this.cache.get<CrawlClientSettings>(SETTINGS_CACHE_KEY);
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        "Failed to read crawl client settings from cache; falling back to database"
+      );
     }
-    if (this.loadingPromise) {
-      return this.loadingPromise;
+    if (cached) {
+      return cached;
     }
 
-    this.loadingPromise = this.loadSettings()
-      .then((settings) => {
-        this.cachedSettings = {
-          value: settings,
-          expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS
-        };
-        return settings;
-      })
-      .finally(() => {
-        this.loadingPromise = null;
-      });
-
-    return this.loadingPromise;
+    const settings = await this.loadSettings();
+    try {
+      await this.cache.set(SETTINGS_CACHE_KEY, settings, SETTINGS_CACHE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to write crawl client settings to cache");
+    }
+    return settings;
   }
 
   async updateSettings(
@@ -446,10 +450,11 @@ export class CrawlSettingsService {
         }
       })
     ]);
-    this.cachedSettings = {
-      value: settings,
-      expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS
-    };
+    try {
+      await this.cache.set(SETTINGS_CACHE_KEY, settings, SETTINGS_CACHE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to refresh crawl client settings cache");
+    }
   }
 
   private buildAuditMetadata(

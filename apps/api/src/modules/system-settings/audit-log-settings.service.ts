@@ -1,29 +1,54 @@
+import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 const AUDIT_LOG_RETENTION_KEY = "audit_log_retention_days";
+// The bare retention number is shared with the Go gateway through Redis, so a
+// write in either runtime is visible to the other. The TTL replaces the former
+// process-local 30 second cache.
+const AUDIT_LOG_RETENTION_CACHE_KEY = "audit_log:retention_days";
+const AUDIT_LOG_RETENTION_CACHE_TTL_SECONDS = 30;
 const MIN_RETENTION_DAYS = 1;
 const MAX_RETENTION_DAYS = 3650; // cap to avoid unbounded values
 
 @Injectable()
 export class AuditLogSettingsService {
-  private cache: number | null = null;
-  private cacheExpiresAt = 0;
-  private readonly cacheTtlMs = 30_000;
+  private readonly logger = createLogger({ name: "audit-log-settings" });
 
-  constructor(private readonly prisma: PrismaService, private readonly env: EnvService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly env: EnvService,
+    private readonly cache: CacheService
+  ) {}
 
   async getRetentionDays(): Promise<number> {
-    const now = Date.now();
-    if (this.cache !== null && now < this.cacheExpiresAt) {
-      return this.cache;
+    let cached: number | null = null;
+    try {
+      cached = await this.cache.get<number>(AUDIT_LOG_RETENTION_CACHE_KEY);
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        "Failed to read audit log retention from cache; falling back to database"
+      );
     }
+    if (typeof cached === "number" && Number.isFinite(cached)) {
+      return this.normalize(cached);
+    }
+
     const days = await this.loadRetentionDays();
-    this.cache = days;
-    this.cacheExpiresAt = now + this.cacheTtlMs;
+    try {
+      await this.cache.set(
+        AUDIT_LOG_RETENTION_CACHE_KEY,
+        days,
+        AUDIT_LOG_RETENTION_CACHE_TTL_SECONDS
+      );
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to write audit log retention to cache");
+    }
     return days;
   }
 
@@ -57,14 +82,20 @@ export class AuditLogSettingsService {
       { orgId, actorId, resource: "system_settings", action: "audit_log_retention_update" }
     ).catch(() => undefined);
 
-    this.cache = normalized;
-    this.cacheExpiresAt = Date.now() + this.cacheTtlMs;
+    try {
+      await this.cache.set(
+        AUDIT_LOG_RETENTION_CACHE_KEY,
+        normalized,
+        AUDIT_LOG_RETENTION_CACHE_TTL_SECONDS
+      );
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to refresh audit log retention cache");
+    }
     return normalized;
   }
 
   async invalidateCache() {
-    this.cache = null;
-    this.cacheExpiresAt = 0;
+    await this.cache.del(AUDIT_LOG_RETENTION_CACHE_KEY);
   }
 
   private async loadRetentionDays(): Promise<number> {

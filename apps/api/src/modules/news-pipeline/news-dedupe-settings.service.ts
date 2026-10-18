@@ -309,7 +309,13 @@ export class NewsDedupeSettingsService {
     )
       ? ((value as { categoryThresholds?: unknown[] }).categoryThresholds ?? [])
       : [];
-    const normalizedMap = new Map<string, NewsDedupeScopedThreshold>();
+    // Every entry computes its scope key and its sort key exactly once. The
+    // map deduplicates by scope key and the comparator below only reads the
+    // precomputed sort keys, so it never rebuilds a key or calls toFixed again.
+    const normalizedMap = new Map<
+      string,
+      { value: NewsDedupeScopedThreshold; sortKey: string }
+    >();
 
     for (const rawEntry of scopedList) {
       if (!rawEntry || typeof rawEntry !== "object") {
@@ -335,7 +341,10 @@ export class NewsDedupeSettingsService {
         categoryPath,
         threshold,
       };
-      normalizedMap.set(this.buildScopeKey(scopedThreshold), scopedThreshold);
+      normalizedMap.set(this.buildScopeKey(scopedThreshold), {
+        value: scopedThreshold,
+        sortKey: this.buildScopeSortKey(scopedThreshold),
+      });
 
       if (normalizedMap.size >= MAX_SCOPED_THRESHOLDS) {
         break;
@@ -366,16 +375,19 @@ export class NewsDedupeSettingsService {
       };
       const key = this.buildScopeKey(scopedThreshold);
       if (!normalizedMap.has(key)) {
-        normalizedMap.set(key, scopedThreshold);
+        normalizedMap.set(key, {
+          value: scopedThreshold,
+          sortKey: this.buildScopeSortKey(scopedThreshold),
+        });
       }
       if (normalizedMap.size >= MAX_SCOPED_THRESHOLDS) {
         break;
       }
     }
 
-    const scopedThresholds = Array.from(normalizedMap.values()).sort((left, right) =>
-      this.buildScopeSortKey(left).localeCompare(this.buildScopeSortKey(right)),
-    );
+    const scopedThresholds = Array.from(normalizedMap.values())
+      .sort((left, right) => left.sortKey.localeCompare(right.sortKey))
+      .map((entry) => entry.value);
 
     return {
       defaultThreshold,
