@@ -657,6 +657,10 @@ func run() error {
 	if cfg.AccountSecurityMode == config.AccountSecurityModeGo {
 		accountSecurityMode = string(legacyproxy.ModeGo)
 	}
+	authLoginMode := ""
+	if cfg.AuthLoginMode == config.AuthLoginModeGo {
+		authLoginMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -719,6 +723,10 @@ func run() error {
 	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
 	rules = legacyproxy.WithAuthFactors(rules, authFactorsMode)
 	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
+	// The login/session/email-code unit owns eleven exact POST paths under
+	// /api/auth. It is registered after the two neighbouring auth units; the
+	// three rule sets share no path, so the order between them is irrelevant.
+	rules = legacyproxy.WithAuthLogin(rules, authLoginMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -781,6 +789,7 @@ func run() error {
 				cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo ||
 				cfg.AuthFactorsMode == config.AuthFactorsModeGo ||
 				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
+				cfg.AuthLoginMode == config.AuthLoginModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.SearchReindexMode == config.SearchReindexModeGo ||
@@ -859,6 +868,7 @@ func run() error {
 	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
 	authFactorsGo := cfg.AuthFactorsMode == config.AuthFactorsModeGo
 	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
+	authLoginGo := cfg.AuthLoginMode == config.AuthLoginModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
 	// The situation monitor signals takeover needs the same credentialed stack
 	// (JWT verification, Redis revocation list, MySQL membership re-derivation)
@@ -874,7 +884,7 @@ func run() error {
 	// #62 auth factors、#63 graphql org access write、#64 exception ingest、#65
 	// search reindex、#66 proxy load balancing）。任一变量改成本批所需值都不影响
 	// 其他批次接线。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || graphqlOrgAccessWriteGo || searchReindexGo || proxyLoadBalancingGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo || searchReindexGo || proxyLoadBalancingGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1250,6 +1260,9 @@ func run() error {
 	if err := wireAccountSecurity(gateway, cfg, sharedDB, redisClient); err != nil {
 		return err
 	}
+	if err := wireAuthLogin(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
 
 	if err := wireModelAccessSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
@@ -1402,6 +1415,12 @@ func run() error {
 			// NestJS；不含连接串、密码、hash 与令牌。
 			"accountSecurity": map[string]any{
 				"mode": string(cfg.AccountSecurityMode),
+			},
+			// 登录、会话刷新、验证码登录、公共 MFA challenge、密码找回与
+			// 邮箱变更 11 条 HTTP。legacy 时全部回落 NestJS；不含连接串、
+			// 密码、令牌与密钥。
+			"authLogin": map[string]any{
+				"mode": string(cfg.AuthLoginMode),
 			},
 		})
 	})

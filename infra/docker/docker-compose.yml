@@ -841,6 +841,16 @@ services:
       # start/callback/handoff 仍回 NestJS。回滚只把该变量改回 legacy。
       API_GO_AUTH_FACTORS_MODE: ${API_GO_AUTH_FACTORS_MODE:-legacy}
 
+      # 登录、会话签发与账户验证 11 条精确 HTTP POST（/api/auth/login、
+      # refresh、send-login-code、login-with-code、mfa/verify-login、
+      # mfa/enrollment/start|complete、password/forgot|reset、
+      # send-verification、verify-email）。默认 legacy，只接受空串/legacy/go，
+      # 非法值启动失败。go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST 以及
+      # SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS（四条路由同步真实发信），
+      # 不需要 Mongo；与 account-security / auth-factors 开关相互独立、路径
+      # 不重叠。生产 Web 入口与 canary 保持现状。回滚只把该变量改回 legacy。
+      API_GO_AUTH_LOGIN_MODE: ${API_GO_AUTH_LOGIN_MODE:-legacy}
+
       # 模型接入设置 10 条 HTTP（/api/system-settings/model-service、
       # /api/system-settings/openai-keys(+ /key/:fingerprint)、
       # /api/internal/litellm/openai-keys(+ /applied)）。pilot 与样例保持
