@@ -1,5 +1,7 @@
 # SOURCE-POLICY-WRITE-001 · 来源策略版本管理完整写链
 
+本轮占用刷新（2026-10-18）：状态pr_open，Ready [#82](https://github.com/wei500L/newwei/pull/82)，head `52340760fdedde3f914b384badd30aee2a5c6fbf`；实际业务和共享接线diff已核，包含GAP-GQL-001两处剩余条件。main仍90765633，PR未合、缺口不提前关闭；不要求运行中对话调整记录。下文in_progress/未开PR是历史快照。
+
 最新开发增量（2026-10-18）：状态in_progress；/Users/oo/project/newwei-go-source-policy-write在90765633，已见settingscrawl/policy.go/register.go、policywritesupport.go和settingswrite/sourcepolicy_input.go/sourcepolicy_store.go改动；无业务PR，继续占用四root及GAP-GQL-001两处接线。下文未创建是发出时快照，不干预编码对话。
 
 - 状态reserved，2026-10-18；基线origin/main 90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，普通CI39149114456 success。

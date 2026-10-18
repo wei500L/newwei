@@ -1,5 +1,7 @@
 # ANALYSIS-EXPORT-001 · 条目与事件CSV完整导出
 
+本轮占用刷新（2026-10-18）：状态in_progress；目录 `/Users/oo/project/newwei-go-analysis-export` 在90765633，已见analysisexport、itemsreading/csvexport.go、newsevents/export.go及main/config等本批开发，无业务PR。继续占用两导出链与对应端口；后续reserved/未创建为原发出快照，不干预编码对话。
+
 - reserved，2026-10-18；origin/main90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，普通CI39149114456成功；[完整提示词](ANALYSIS-EXPORT-001.prompt.md)，认领复用规划#80发布。
 - refactor/go-analysis-export；/Users/oo/project/newwei-go-analysis-export，规划时未创建。精确POST /api/analysis/exports/items、/events，analysis.write，成功201/text-csv附件；queryString可选/null、字符串<=4000，最多5000行。
 - 两入口业务工作量集中在完整time/相关性/个性化选择、5000内部端口、Mongo/SQL字段批量联查、事件热度/可信度/强制权威来源与去重。search整路因headlines归档准备依赖留Nest，不领取归档、采集生命周期或worker；不凑无关入口。

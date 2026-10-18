@@ -1,5 +1,7 @@
 # LLM-GATEWAY-OPS-001 · 网关治理与真实探测十二路
 
+本轮占用刷新（2026-10-18）：#81仍Ready OPEN，最新head `0b89196fa1408d5adbad9fb953dae36eb6868a6f`；已核实际文件与接线，main仍90765633，未计入main或真实外部验证。后续旧head/未开PR文字为历史快照。
+
 最新PR增量（2026-10-18）：状态pr_open，Ready [#81](https://github.com/wei500L/newwei/pull/81)，head0901ca15aa31d5c00e98aa5c0c3f94a201b27219；实际文件与main/config patch已核，本批业务不碰OIDC认证包/来源策略。尚未合入main90765633，不提前增加注册或功能完成数；不因PR创建当外部验收。
 
 最新开发增量（2026-10-18）：状态in_progress；/Users/oo/project/newwei-go-llm-gateway-ops已从90765633创建，已见llmgatewayops/**、llmgatewayprofiles/ports.go、llmlogs/probe.go与completion.go改动；无业务PR，不计入main。main普通CI39149114456已success。下文未创建/CI运行中是原发出时快照，原提示词保留；不干预编码对话。

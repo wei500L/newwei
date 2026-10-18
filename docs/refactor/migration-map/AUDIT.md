@@ -76,6 +76,8 @@
 
 ## knowledge
 
+2026-10-18限定续核（main90765633，KNOWLEDGE-REVIEW-001）：已深入Nest人工复核Resolver/DTO/投影、ReviewService事务/移动合并/active聚合/删除、GraphService人工修正/实体/别名/唯一边分支、设置缓存/错误fallback、审计outbox和SCAN失效，以及Go settingscrawl队列/模型、knowledgegraph设置与normalize、Registry/Failure/主装配。确认人工链仅MySQL+Redis；队列固定最多500候选后过滤造成具体遮挡，记GAP-KG-001。证据DTO白名单不一致仅静态观察、无运行验证。图遍历/冲击算法/ingestion抽取与模型仍未续审，不把下段历史未审项整体改为已审；本次无业务修改/测试/真实依赖验证。
+
 11 读已注册；本轮核对 knowledgegraph/kgimpact/settingscrawl 返回类型装配与根权限。**业务算法尚未深入核对**：KnowledgeEdge 遍历/剪枝、置信度阈值、Redis 命中/失效、Mongo 共现/经济相关计算、证据队列分页与复核副作用。需读 graphqlread/{knowledgegraph,kgimpact,settingscrawl} 对应 service/store；不能因配置与读已迁推断 ingestion/review 写已迁。
 
 ## crawl

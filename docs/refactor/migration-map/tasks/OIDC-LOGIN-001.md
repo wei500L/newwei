@@ -1,5 +1,7 @@
 # OIDC-LOGIN-001 · 组织SSO完整登录与一次性交接
 
+本轮占用刷新（2026-10-18）：状态pr_open，Ready [#83](https://github.com/wei500L/newwei/pull/83)，head `2c52763ccbb6db95d5b84b3b5d57add3f13adfc5`；实际业务/端口/共享接线diff已核，main仍90765633。PR未合、真实IdP验证不能由PR推断；后续reserved/未创建文字为原发出快照。
+
 - reserved，2026-10-18；基线origin/main90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，普通CI39149114456成功；[完整提示词](OIDC-LOGIN-001.prompt.md)，认领在规划#80发布。
 - 业务分支refactor/go-oidc-login，目录/Users/oo/project/newwei-go-oidc-login，规划未创建。2GET+1POST：/api/auth/sso/oidc/start、/api/auth/oidc/callback、/api/auth/sso/handoff/exchange；公开路由，302/302/200。
 - 完整授权PKCE/state GETDEL、HTTPS/SSRF discovery/JWKS、公开算法真实验签、已有账户及组织成员校验、MFA/强制绑定、会话、加密策略兼容handoff。3入口内部协议工作量较大，不拼接头像/导出或重迁OIDC配置CRUD。

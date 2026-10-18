@@ -156,6 +156,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-16 · knowledge / 证据复核与 ingestion
 
+- 2026-10-18限定续核main90765633：人工复核完整链与已有队列选取改善已由[KNOWLEDGE-REVIEW-001](tasks/KNOWLEDGE-REVIEW-001.md) reserved，[提示词](tasks/KNOWLEDGE-REVIEW-001.prompt.md)在规划#80发布。已核事务、实体别名、证据迁移/重复合并、新旧边聚合、耐久边、审计双失败和缓存失效；本子链只有MySQL/Redis，不需要Mongo。ingestion Cron/抽取/模型、历史reconcile脚本与审计outbox消费仍留Nest，未认领。新窄端口文件避开来源策略register/policy，共享接线只追加本开关并集；不把整个BL-16标已完成。
+
 - **范围/缺口**：reviewKnowledgeGraphEvidence 及其关系边/证据/复核状态更新；KnowledgeGraphIngestionService 的后台构图作为后续独立执行阶段（GAP-LEGACY-001 / GAP-ASYNC-001）。
 - **基础/依据**：G/graphqlread/{knowledgegraph,kgimpact}、settingscrawl.reviewReader 已有读模型；N/KnowledgeGraphService.upsertReviewedRelationEdge 与对应 review 服务。需要租户/权限、证据归属、接受/拒绝与边聚合、缓存失效；不能把更新 reviewed 状态当整个复核完成。
 - **文件/前置/冲突**：graphqlread 新写包/knowledge 业务层/main，MySQL+Mongo/Redis，ingestion 可能模型；**复核写可在公共接线后独立窗口**；先核真正 resolver 调用的复核服务/事务，与 BL-18 新闻处理写入共享表的顺序。

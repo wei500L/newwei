@@ -1,5 +1,7 @@
 # 后端迁移地图
 
+最新知识图谱选批（2026-10-18）：main仍90765633，普通CI39149114456成功；网关#81、来源策略#82、OIDC#83均Ready开放，CSV导出已见独立目录开发。新认领[KNOWLEDGE-REVIEW-001](tasks/KNOWLEDGE-REVIEW-001.md)，完整迁人工证据复核/关系校正/边聚合与审计缓存，并改善已迁复核队列的固定候选遮挡，[完整提示词](tasks/KNOWLEDGE-REVIEW-001.prompt.md)在规划#80发布。只需MySQL/Redis，ingestion与outbox消费者留Nest；仅续核本域，不新增业务实现、不重建地图。
+
 最新导出选批（2026-10-18，main90765633未变，普通CI39149114456成功）：网关#81/来源策略/OIDC占用保持。新认领[ANALYSIS-EXPORT-001](tasks/ANALYSIS-EXPORT-001.md)，完整迁移items/events两路CSV及5000选择/批量投影/等价去重优化，[提示词](tasks/ANALYSIS-EXPORT-001.prompt.md)在规划#80发布。search整路因归档准备保留Nest；只核本候选，不新增业务实现/注册或重建地图。
 
 最新OIDC选批（2026-10-18）：main仍90765633，普通CI39149114456成功；网关12路已提交Ready #81，来源策略四写已见独立worktree开发，两者继续占用。新认领[OIDC-LOGIN-001](tasks/OIDC-LOGIN-001.md)的组织SSO三入口完整协议/会话/MFA/handoff链，[提示词](tasks/OIDC-LOGIN-001.prompt.md)复用规划#80发布；只深入该身份候选，不包含头像/导出，不重建地图。
