@@ -9,7 +9,7 @@ main 核对时间：2026-10-18 13:51 MSK；两批任务增量刷新：14:03 MSK�
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | pr_open | 13 个设置写；独立 SETTINGS_WRITE 开关 | Ready [PR #68](https://github.com/wei500L/newwei/pull/68)，已推送 a1c96172；CI 进行中 |
 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | in_progress | 8 个通知/看板/告警交互写 | 尚无；本机 config/alerts 有未提交增量；历史提示词仍占用 |
 
-原始认领/发出时间未提供；原始执行器活动未核实。状态定义见 [PLANNING](../PLANNING.md)。本次没有新业务任务。当前地图文档通过地图 PR 发布，业务分支状态与文档发布分开；PR URL 见[证据](../EVIDENCE.md)。
+原始认领/发出时间未提供；原始执行器活动未核实。状态定义见 [PLANNING](../PLANNING.md)。本次没有新业务任务。当前地图文档首版已提交/推送（4e37f285），通过 [Ready PR #69](https://github.com/wei500L/newwei/pull/69) 发布，业务分支状态与文档发布分开；PR URL 见[证据](../EVIDENCE.md)。
 
 ## 其他历史任务与本机 worktree
 

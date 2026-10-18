@@ -39,7 +39,7 @@ HTTP/Query/Mutation 列为“已在生产 Go 注册的入口数 / 本域 Nest �
 - [SETTINGS-WRITE-001](tasks/SETTINGS-WRITE-001.md)：`pr_open`。13 个设置 Mutation；历史提示词已发出，现有 Ready [PR #68](https://github.com/wei500L/newwei/pull/68)，head `a1c96172b7ebf44a18ca71429d29dca8f9096d02`；CI 进行中，尚未合入 main。
 - [WORKSPACE-WRITE-001](tasks/WORKSPACE-WRITE-001.md)：`in_progress`。8 个通知/看板/告警交互 Mutation；历史提示词已发出，worktree 已有 config/alerts 本地开发增量，尚无 PR。保留占用，执行器活动未核实。
 - 首次 13:51 MSK 开放 PR 为 0；14:03 MSK 再核对发现业务 PR #68。其他本机旧 worktree/历史合并索引在 [tasks/README.md](tasks/README.md)，不按 worktree 存在推断在执行。
-- 本地图是文档任务，业务迁移提示词未在本次重新发出；索引在当前地图 PR 发布后才对其他机器可见，main 可发现入口需等 PR 合入。
+- 本地图是文档任务，业务迁移提示词未在本次重新发出；索引已在 [Ready PR #69](https://github.com/wei500L/newwei/pull/69) 发布，对其他机器可见，main 可发现入口需等 PR 合入。
 
 ## 剩余主线（尚未分配候选）
 

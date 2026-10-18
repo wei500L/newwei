@@ -8,7 +8,7 @@
 - 规划/核对基线：`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`；首次入图：2026-10-18 13:51 MSK；任务更新时间：2026-10-18 14:03 MSK（UTC+03:00）。历史原始规划 SHA 未提供。
 - 分支：`refactor/go-graphql-workspace-write`；worktree：`/Users/oo/project/newwei-go-graphql-workspace-write`；本机 HEAD 为 `7fc17faa3dc5043537bad4038299d11fdba4758d`。
 - 核对：`gh pr list --state all --head refactor/go-graphql-workspace-write` 返回空；`git ls-remote --heads origin refactor/go-graphql-workspace-write` 无该远端分支。未发现对应业务 PR；没有 main 合并证据。
-- 记录发布：本任务文档随当前地图分支提交并推送至地图 PR（见[证据页](../EVIDENCE.md)）；本记录发布不等于业务分支已提交/推送。地图 PR 未合入前，main 上尚无本任务文档。
+- 记录发布：本任务文档已随地图首版提交 `4e37f285` 推送至 origin/docs/backend-migration-map，并发布在 [Ready PR #69](https://github.com/wei500L/newwei/pull/69)（见[证据页](../EVIDENCE.md)）；本记录发布不等于业务分支已提交/推送。地图 PR 未合入前，main 上尚无本任务文档。
 - 实际业务 merge SHA：无；业务 CI：无；额外集成验证：未核实。基线 CI 成功不覆盖未提交实现。
 - main 生产实现/注册：这 8 个 Mutation 尚未迁入；main 不识别 `API_GO_GRAPHQL_WORKSPACE_WRITE_MODE`，不能把“拟新增开关”当成可用配置。独立写开关是已发出任务目标；部署启用与流量均未核实。
 - 开工证据：14:03 MSK worktree 出现 `config.go`、`graphqlread/alerts/{channels,convert,events,models}.go` 修改及 `config_workspacewrite_test.go` 未跟踪文件，暂无业务提交/PR/远端分支。早期干净快照已过时，按匹配范围的开发证据升级 in_progress；执行器活动仍未核实。

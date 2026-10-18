@@ -9,7 +9,7 @@
 - 首次检查未发现同目的 migration-map/分支/PR；`gh pr list --state open` 返回空。历史 PR #1–#67 可读，域页所列 merge commit 均通过祖先关系检查；#67 integration 包含 #59/#62/#63/#65/#66，不能只靠原分支判断完成。
 - 基线[CI run 39118934491](https://github.com/wei500L/newwei/actions/runs/39118934491) headSha 完全一致，success。verify、[vector-integration](https://github.com/wei500L/newwei/actions/runs/39118934491/job/117650363887)、[api-go-user-settings-integration](https://github.com/wei500L/newwei/actions/runs/39118934491/job/117650363896) 成功。按需 go-modules-regen、contract-baseline-regen skipped，不计额外通过。
 - 最近另四次 main 普通 CI 同样成功：9da8e75e（39117313330）、3c9ce2f5（39115834065）、776d17bb（39109567813）、f5648fab（39082685243）。这些不是本次业务外部调用证据。
-- 地图交付 PR：待创建后填写。该 PR 是文档发布，不是两个历史业务任务的 PR。
+- 地图交付：[Ready PR #69](https://github.com/wei500L/newwei/pull/69)，首版提交 `4e37f285aa47d39813c2253a64ee65613bce9e56` 已正常推送至 origin/docs/backend-migration-map。PR 为 OPEN、isDraft=false、autoMergeRequest=null；仅发布文档，尚未合入，不是两个历史业务任务的 PR。其后补充文档证据采用正常追加提交，最新 head/普通 CI 以该 PR Checks 为准，不将启动/排队计为通过。
 
 ## 核对路径与统计口径
 
@@ -85,3 +85,5 @@
 提交前检查所有内部路径、入口唯一性、分域求和、两批任务占用、任务状态与 main 注册一致（PR 进展不提前计 main 覆盖），以及仅允许文档路径变化。独立阅读审查验证新对话能判断设置写/工作台写是否重复、剩余 Query 是否有副作用、CI 与切流能否区分。
 
 下次不必重扫全仓：按 PLANNING 增量比较本 SHA 与 origin/main，深入候选域并更新本页或对应域的核对 SHA。只有实际重新核对的范围可以刷新其时间与事实，不能只改全局日期掩盖过时条目。
+
+提交前静态检查结果：26 个地图 Markdown 文件、370 条唯一 HTTP、77/57/4 唯一 GraphQL root；Go 注册数 274/71/8，所有相对文档/源码路径存在。独立读者复验通过；已据审查补充 newsEventBrief 部分实现与 crawlMetadata 主动抓取，并统一两批任务的增量快照。仅 28 个 Markdown 路径变化，无业务或配置改动。

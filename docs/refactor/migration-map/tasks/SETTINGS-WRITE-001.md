@@ -8,7 +8,7 @@
 - 规划/核对基线：`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`；首次入图：2026-10-18 13:51 MSK；任务更新时间：2026-10-18 14:03 MSK（UTC+03:00）。历史原始规划 SHA 未提供。
 - 分支：`refactor/go-graphql-settings-write`；worktree：`/Users/oo/project/newwei-go-graphql-settings-write`；14:03 MSK 本机与远端 HEAD 为 `a1c96172b7ebf44a18ca71429d29dca8f9096d02`。
 - 远端增量核对：[Ready PR #68](https://github.com/wei500L/newwei/pull/68) 为 OPEN、isDraft=false；head `a1c96172b7ebf44a18ca71429d29dca8f9096d02`，base 为地图 main 基线。已推送 origin/refactor/go-graphql-settings-write；本机干净。早期“无 PR/未提交”快照已被此事实替代。
-- 记录发布：本任务文档随当前地图分支提交并推送至地图 PR（见[证据页](../EVIDENCE.md)）；本记录发布不等于业务分支已提交/推送。地图 PR 未合入前，main 上尚无本任务文档。
+- 记录发布：本任务文档已随地图首版提交 `4e37f285` 推送至 origin/docs/backend-migration-map，并发布在 [Ready PR #69](https://github.com/wei500L/newwei/pull/69)（见[证据页](../EVIDENCE.md)）；本记录发布不等于业务分支已提交/推送。地图 PR 未合入前，main 上尚无本任务文档。
 - 实际业务 merge SHA：无；[业务普通 CI 39121676887](https://github.com/wei500L/newwei/actions/runs/39121676887) 对应上述 head，14:03 MSK verify/用户设置集成进行中，vector 集成排队，按需 regen skipped。结果需刷新；额外外部验证未核实。基线 CI 不能替代该 PR 的结果。
 - main 生产实现/注册：这 13 个 Mutation 尚未迁入；main 不识别 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE`，不能把“拟新增开关”当成可用配置。独立写开关是已发出任务目标；部署启用与流量均未核实。
 - 开工/提交证据：`50b8399d` 提交设置写实现，`a1c96172` 追加修复；PR 包含 settingswrite、settingscrawl、main/config 接线、共享 runtime 缓存及四个 Nest 设置服务优化、env/报告。已提交/推送/开 PR，不等于完整契约或 CI 已通过；本地图未执行业务运行验证。
