@@ -261,3 +261,21 @@ func TestGovernanceTargetProfileIsTrimmed(t *testing.T) {
 		t.Fatalf("preflight targetProfileId = %+v, want a cleared selection", preflight)
 	}
 }
+
+// TestRerankDocumentsMessagesMatchClassValidator pins the `each` fallback: when the
+// value is not an array class-validator validates the value itself, so the each
+// messages still appear before ArrayMaxSize, and a non-string element fails both
+// each constraints.
+func TestRerankDocumentsMessagesMatchClassValidator(t *testing.T) {
+	_, err := parseTestInput([]byte(`{"rerankDocuments":"abc"}`))
+	wantNonArray := "rerankDocuments must contain no more than 20 elements; rerankDocuments must be an array"
+	if err == nil || err.Error() != wantNonArray {
+		t.Fatalf("non-array error = %v, want %q", err, wantNonArray)
+	}
+
+	_, err = parseTestInput([]byte(`{"rerankDocuments":[null]}`))
+	wantElement := "each value in rerankDocuments must be shorter than or equal to 4000 characters; each value in rerankDocuments must be a string"
+	if err == nil || err.Error() != wantElement {
+		t.Fatalf("non-string element error = %v, want %q", err, wantElement)
+	}
+}

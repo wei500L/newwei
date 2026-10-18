@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -203,22 +202,28 @@ func normalizeProbeRequestType(value ProbeRequestType) (ProbeRequestType, bool) 
 }
 
 // entries renders the metadata leaves in the same order as the NestJS object
-// literal. Empty values are skipped so the key is absent instead of empty.
+// literal. source/feature/operation/model are unconditional there, while
+// profileid/userid are spread only when truthy: only an EMPTY string is dropped,
+// so a whitespace-only value is kept exactly like JS truthiness keeps it.
 func (m ProbeMetadata) entries() []metadataEntry {
 	entries := make([]metadataEntry, 0, 7)
-	appendText := func(key, value string) {
-		if strings.TrimSpace(value) == "" {
+	appendAlways := func(key, value string) {
+		text := value
+		entries = append(entries, metadataEntry{Key: key, Text: &text})
+	}
+	appendWhenPresent := func(key, value string) {
+		if value == "" {
 			return
 		}
 		text := value
 		entries = append(entries, metadataEntry{Key: key, Text: &text})
 	}
-	appendText("source", m.Source)
-	appendText("feature", m.Feature)
-	appendText("operation", m.Operation)
-	appendText("model", m.Model)
-	appendText("profileid", m.ProfileID)
-	appendText("userid", m.UserID)
+	appendAlways("source", m.Source)
+	appendAlways("feature", m.Feature)
+	appendAlways("operation", m.Operation)
+	appendAlways("model", m.Model)
+	appendWhenPresent("profileid", m.ProfileID)
+	appendWhenPresent("userid", m.UserID)
 	if len(m.Tags) > 0 {
 		entries = append(entries, metadataEntry{Key: "tags", List: m.Tags})
 	}

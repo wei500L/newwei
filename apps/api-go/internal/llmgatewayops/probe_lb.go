@@ -91,10 +91,11 @@ func (s *Service) TestProxyLoadBalancing(ctx context.Context, profileID string, 
 	}
 	client := newUpstreamClient(s.http, base, apiKey, profileTimeout(profile))
 	log := probeLogContext{
-		OrgID:     actorOrgID(actor),
-		UserID:    actor.UserID,
-		ProfileID: profileID,
-		AuthMode:  authModeProfileKey,
+		OrgID:            actorOrgID(actor),
+		UserID:           actor.UserID,
+		ProfileID:        profileID,
+		AuthMode:         authModeProfileKey,
+		APIKeyConfigured: apiKey != "",
 	}
 	startedAt := time.Now()
 	outcomes := make([]lbAttempt, attempts)

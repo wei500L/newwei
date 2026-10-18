@@ -279,6 +279,17 @@ func validateStringArrayField(problems *validationErrors, raw json.RawMessage, f
 	}
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '[' {
+		// class-validator applies an `each` validator to the value itself when it
+		// is not an array, so a non-array still produces the each-MaxLength /
+		// each-IsString messages before ArrayMaxSize and IsArray.
+		text, isString := jsString(trimmed)
+		if maxItemLength > 0 && (!isString || jsLength(text) > maxItemLength) {
+			problems.add("each value in " + field + " must be shorter than or equal to " + strconv.Itoa(maxItemLength) + " characters")
+		}
+		if !isString {
+			problems.add("each value in " + field + " must be a string")
+		}
+		problems.add(field + " must contain no more than " + strconv.Itoa(maxSize) + " elements")
 		problems.add(field + " must be an array")
 		return nil
 	}
@@ -293,7 +304,10 @@ func validateStringArrayField(problems *validationErrors, raw json.RawMessage, f
 	for _, item := range items {
 		text, ok := jsString(item)
 		if !ok {
+			// A non-string element fails BOTH @MaxLength({each}) and
+			// @IsString({each}) in class-validator.
 			allStrings = false
+			lengthOK = false
 			continue
 		}
 		if maxItemLength > 0 && jsLength(text) > maxItemLength {

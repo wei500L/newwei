@@ -354,7 +354,7 @@ func (s *Service) recordProbe(ctx context.Context, call probeCall, response *ups
 	if call.Log.AuthMode == authModeManagedKey {
 		entry.GovernanceTargetProfileID = call.Log.ProfileID
 	}
-	if response != nil {
+	if err == nil && response != nil {
 		entry.Usage = probeUsageOf(call.RequestType, *response)
 		if model := responseModelOf(response.body); model != "" {
 			// The top-level model reports what the upstream actually served;
@@ -364,7 +364,14 @@ func (s *Service) recordProbe(ctx context.Context, call probeCall, response *ups
 	}
 	if err != nil || response == nil {
 		entry.Status = "error"
-		info := toGatewayErrorInfo(err, errorContext{apiSurface: call.APISurface})
+		// A failed probe is logged WITHOUT the response-derived usage/cost/model,
+		// because the source passes no response to the error row: otherwise an
+		// invalid 2xx body (a rejected embedding/rerank) would silently book
+		// spend and a served model that never succeeded.
+		info := toGatewayErrorInfo(err, errorContext{
+			apiKeyConfigured: boolPointer(call.Log.APIKeyConfigured),
+			apiSurface:       call.APISurface,
+		})
 		entry.Error = info.Message
 		entry.Metadata.Tags = []string{"diagnostic", "error"}
 	}

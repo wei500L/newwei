@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -215,12 +217,34 @@ const timeoutErrorCode = "ECONNABORTED"
 // error message does in the source.
 func classifyTransportError(ctx context.Context, err error, timeout time.Duration) error {
 	text := err.Error()
-	code := ""
+	code := transportErrorCode(err)
 	if ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		text = fmt.Sprintf("timeout of %dms exceeded", timeout.Milliseconds())
 		code = timeoutErrorCode
 	}
 	return &upstreamError{code: code, message: text, detail: sanitizeUpstreamErrorText(text, 500)}
+}
+
+// transportErrorCode approximates the Node errno that axios copies onto
+// error.code, so a refused or unresolvable host reaches the console with the same
+// axiosCode the NestJS client reports. It stays empty for anything Go cannot
+// identify unambiguously rather than guessing a class.
+func transportErrorCode(err error) string {
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		if dns.IsNotFound {
+			return "ENOTFOUND"
+		}
+		return ""
+	}
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "ECONNREFUSED"
+	case errors.Is(err, syscall.ECONNRESET):
+		return "ECONNRESET"
+	default:
+		return ""
+	}
 }
 
 // upstreamEnvelope is the tolerant decode boundary of an upstream error body.
@@ -262,8 +286,11 @@ func sanitizeUpstreamErrorText(value string, maxLength int) string {
 	if trimmed == "" {
 		return ""
 	}
-	if maxLength < 64 {
+	if maxLength <= 0 {
 		maxLength = 500
+	}
+	if maxLength < 64 {
+		maxLength = 64
 	}
 	redacted := redactSensitiveText(trimmed)
 	if jsLength(redacted) <= maxLength {

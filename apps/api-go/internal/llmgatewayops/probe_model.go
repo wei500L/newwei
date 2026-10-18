@@ -547,12 +547,15 @@ func normalizeModelArray(raw json.RawMessage) []string {
 // boolPointer builds an optional bool for the error context.
 func boolPointer(value bool) *bool { return &value }
 
-// probeLogContext carries the attribution of one probe attempt.
+// probeLogContext carries the attribution of one probe attempt. APIKeyConfigured
+// travels with it because the persisted error text of a 401/403 depends on
+// whether a key was sent, exactly like the HTTP-facing error.
 type probeLogContext struct {
-	OrgID     string
-	UserID    string
-	ProfileID string
-	AuthMode  string
+	OrgID            string
+	UserID           string
+	ProfileID        string
+	AuthMode         string
+	APIKeyConfigured bool
 }
 
 // Diagnostic surface literals. They are the `apiSurface` values of the response

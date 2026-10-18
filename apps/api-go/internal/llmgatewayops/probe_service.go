@@ -33,10 +33,11 @@ func (s *Service) TestProfile(ctx context.Context, profileID string, input testI
 	}
 	client := newUpstreamClient(s.http, base, apiKey, profileTimeout(profile))
 	log := probeLogContext{
-		OrgID:     actorOrgID(actor),
-		UserID:    actor.UserID,
-		ProfileID: profileID,
-		AuthMode:  authMode,
+		OrgID:            actorOrgID(actor),
+		UserID:           actor.UserID,
+		ProfileID:        profileID,
+		AuthMode:         authMode,
+		APIKeyConfigured: apiKey != "",
 	}
 
 	shouldTestCompletion := true
@@ -290,10 +291,11 @@ func (s *Service) TestConfig(ctx context.Context, input testConfigInput, actor p
 	}
 	client := newUpstreamClient(s.http, base, apiKey, settings.Timeout)
 	log := probeLogContext{
-		OrgID:     actorOrgID(actor),
-		UserID:    actor.UserID,
-		ProfileID: profileID,
-		AuthMode:  authMode,
+		OrgID:            actorOrgID(actor),
+		UserID:           actor.UserID,
+		ProfileID:        profileID,
+		AuthMode:         authMode,
+		APIKeyConfigured: apiKey != "",
 	}
 	prompt := defaultPrompt
 	if value := normalizeOptionalText(input.Prompt); value != nil {

@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -561,5 +564,53 @@ func TestUpstreamEndpointTrimsBaseSlashes(t *testing.T) {
 	}
 	if target != "http://litellm:4000/v1/team/update" {
 		t.Fatalf("endpoint = %q, want a single slash join", target)
+	}
+}
+
+// TestInvalidProbeLogRowDropsResponseUsage pins that an invalid 2xx embedding row
+// is logged without the response-derived usage/cost/model: the source passes no
+// response to the error row, so a rejected body must not book spend.
+func TestInvalidProbeLogRowDropsResponseUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.Header().Set("x-litellm-response-cost", "0.5")
+		_, _ = w.Write([]byte(`{"model":"served-model","data":[{"embedding":[]}],"usage":{"prompt_tokens":9,"total_tokens":9},"response_cost":0.25}`))
+	}))
+	defer server.Close()
+
+	logs := &fakeLogWriter{}
+	service := newTestService(&fakeProfilePort{}, logs)
+	client := newUpstreamClient(service.http, server.URL, "sk-profile", 5*time.Second)
+
+	if _, err := service.runEmbedding(context.Background(), client, embeddingConfig{
+		Model:          "m1",
+		EmbeddingModel: "e1",
+	}, "hello", "", probeLogContext{OrgID: "org-1", ProfileID: "p1", AuthMode: authModeProfileKey}); err == nil {
+		t.Fatal("an empty vector must fail")
+	}
+	entries := logs.snapshot()
+	if len(entries) != 1 {
+		t.Fatalf("log rows = %d, want 1 error row", len(entries))
+	}
+	entry := entries[0]
+	if entry.Model != "e1" {
+		t.Fatalf("logged model = %q, want the requested model", entry.Model)
+	}
+	if entry.Usage.PromptTokens != nil || entry.Usage.TotalTokens != nil || entry.Usage.CostUSD != nil {
+		t.Fatalf("usage = %+v, want no response-derived usage on an error row", entry.Usage)
+	}
+}
+
+// TestTransportErrorCode pins the axios error-code approximation for the two
+// unambiguous connection classes.
+func TestTransportErrorCode(t *testing.T) {
+	if got := transportErrorCode(&net.DNSError{IsNotFound: true}); got != "ENOTFOUND" {
+		t.Fatalf("dns code = %q, want ENOTFOUND", got)
+	}
+	if got := transportErrorCode(fmt.Errorf("dial tcp: %w", syscall.ECONNREFUSED)); got != "ECONNREFUSED" {
+		t.Fatalf("refused code = %q, want ECONNREFUSED", got)
+	}
+	if got := transportErrorCode(errors.New("some other failure")); got != "" {
+		t.Fatalf("unknown code = %q, want empty", got)
 	}
 }
