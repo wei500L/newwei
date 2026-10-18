@@ -7,14 +7,16 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 )
 
 // Media asset signing and content-type constants, copied from
@@ -24,9 +26,6 @@ const (
 	maxSignedURLTTLSeconds     = 86_400
 	defaultSignedURLTTLSeconds = 300
 	defaultBinaryContentType   = "application/octet-stream"
-
-	// storagePresignedTTLSettingKey is STORAGE_SETTING_KEYS.presignedUrlTtlSeconds.
-	storagePresignedTTLSettingKey = "storage_s3_presigned_url_ttl_seconds"
 
 	// signatureWindowMs is MAX_SIGNED_URL_TTL_SECONDS * 1000.
 	signatureWindowMs = int64(maxSignedURLTTLSeconds) * 1000
@@ -414,31 +413,6 @@ func escapeFileName(value string) string {
 	return replacer.Replace(value)
 }
 
-// getSignedURLTTLSeconds reads storage_s3_presigned_url_ttl_seconds from
-// SystemSetting and clamps it to 30..86400 seconds, defaulting to 300 on any
-// read failure.
-func (s *Service) getSignedURLTTLSeconds(ctx context.Context) int {
-	fallback := defaultSignedURLTTLSeconds
-	if s == nil || s.db == nil {
-		return fallback
-	}
-	var raw []byte
-	err := s.db.QueryRowContext(ctx,
-		"SELECT `value` FROM SystemSetting WHERE `key` = ?", storagePresignedTTLSettingKey,
-	).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return fallback
-	}
-	if err != nil {
-		return fallback
-	}
-	var value float64
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return fallback
-	}
-	return normalizeSignedURLTTL(value)
-}
-
 // normalizeSignedURLTTL mirrors normalizeSignedUrlTtl.
 func normalizeSignedURLTTL(value float64) int {
 	seconds := int(value)
@@ -449,6 +423,21 @@ func normalizeSignedURLTTL(value float64) int {
 		seconds = maxSignedURLTTLSeconds
 	}
 	return seconds
+}
+
+// crawlMediaDeliveryRecord is the strongly typed projection of one
+// CrawlMediaAsset row (plus the joined and legacy blob payloads) that the
+// delivery resolution needs.
+type crawlMediaDeliveryRecord struct {
+	ID          string
+	Provider    string
+	Kind        string
+	ContentType sql.NullString
+	Format      sql.NullString
+	Bytes       int
+	StorageKey  sql.NullString
+	JoinedBlob  []byte
+	LegacyBlob  []byte
 }
 
 // getAssetDeliveryPayload loads one asset and resolves its delivery. It returns
@@ -463,13 +452,7 @@ func (s *Service) getAssetDeliveryPayload(
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("%w: mysql is not configured", errDatabase)
 	}
-	var (
-		id, provider, kind     string
-		contentType, format    sql.NullString
-		bytes                  int
-		storageKey             sql.NullString
-		legacyBlob, joinedBlob []byte
-	)
+	var record crawlMediaDeliveryRecord
 	// Identifiers are quoted because `desc` is a MySQL reserved word and the
 	// column names must survive unquoted keyword lookups.
 	err := s.db.QueryRowContext(ctx,
@@ -478,23 +461,34 @@ func (s *Service) getAssetDeliveryPayload(
 			"FROM CrawlMediaAsset a "+
 			"LEFT JOIN CrawlMediaBlob b ON b.`id` = a.`blobId` "+
 			"WHERE a.`id` = ? AND a.`orgId` = ?", assetID, orgID,
-	).Scan(&id, &provider, &kind, &contentType, &format, &bytes, &storageKey, &legacyBlob, &joinedBlob)
+	).Scan(&record.ID, &record.Provider, &record.Kind, &record.ContentType, &record.Format,
+		&record.Bytes, &record.StorageKey, &record.LegacyBlob, &record.JoinedBlob)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errDatabase, err)
 	}
+	return s.resolveDelivery(ctx, record, mode)
+}
 
-	resolvedType := resolveDeliveryContentType(contentType)
+// resolveDelivery turns one loaded record into the delivery payload. It is the
+// single place where the mysql/S3 branch decision is made, so the branch cannot
+// diverge between the controller path and the tests.
+func (s *Service) resolveDelivery(
+	ctx context.Context,
+	record crawlMediaDeliveryRecord,
+	mode CrawlMediaAccessMode,
+) (*crawlMediaDeliveryPayload, error) {
+	resolvedType := resolveDeliveryContentType(record.ContentType)
 	inlineSafe := isInlinePreviewContentType(resolvedType)
-	fileName := buildAssetFileName(kind, id, contentType, format)
+	fileName := buildAssetFileName(record.Kind, record.ID, record.ContentType, record.Format)
 
-	if CrawlImageStorageProvider(provider) == CrawlImageStorageProviderMySQL {
+	if CrawlImageStorageProvider(record.Provider) == CrawlImageStorageProviderMySQL {
 		// Prefer the joined CrawlMediaBlob payload, then the legacy inline blob.
-		data := joinedBlob
+		data := record.JoinedBlob
 		if len(data) == 0 {
-			data = legacyBlob
+			data = record.LegacyBlob
 		}
 		if len(data) == 0 {
 			return nil, nil
@@ -508,14 +502,47 @@ func (s *Service) getAssetDeliveryPayload(
 		}, nil
 	}
 
-	// S3-provider assets are served through an AWS presigned redirect that this
-	// Go unit does not implement; report the asset as unavailable rather than
-	// returning a wrong location.
-	return nil, nil
+	// The S3 branch follows the record's own provider. A record that belongs to
+	// S3 must be served from its own storageKey even when the global
+	// crawl_image_storage setting currently says mysql.
+	if !record.StorageKey.Valid || record.StorageKey.String == "" {
+		log.Printf("crawl read telemetry: S3 crawl media asset %s is missing storage key", record.ID)
+		return nil, nil
+	}
+	client, err := s.storageClient(ctx)
+	if err != nil {
+		// An incomplete configuration is the NestJS BadRequestException (400);
+		// a configuration read failure keeps the existing service error
+		// semantics. Either way the asset is NOT reported as missing.
+		return nil, err
+	}
+	responseDisposition := "attachment"
+	if mode == CrawlMediaAccessModePreview && inlineSafe {
+		responseDisposition = "inline"
+	}
+	// No explicit TTL: createObjectReadUrl uses the configured presigned TTL,
+	// exactly like the NestJS media controller path.
+	redirectURL, err := client.CreateObjectReadURL(ctx, record.StorageKey.String, objectstorage.ReadURLOptions{
+		ResponseContentType:        resolvedType,
+		ResponseContentDisposition: buildContentDisposition(responseDisposition, fileName),
+		ResponseCacheControl:       storagePresignCacheControl,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &crawlMediaDeliveryPayload{
+		ContentType: resolvedType,
+		InlineSafe:  inlineSafe,
+		Bytes:       record.Bytes,
+		FileName:    fileName,
+		RedirectURL: redirectURL,
+	}, nil
 }
 
-// listAssetsForTask loads the MySQL media assets of one crawl task and renders
-// the signed URLs embedded in the detail response.
+// listAssetsForTask loads the media assets of one crawl task and renders the
+// signed URLs embedded in the detail response. MySQL records get HMAC URLs; S3
+// records get presigned URLs from their own storageKey (both via the single
+// storage snapshot passed in by the caller).
 //
 // The query always filters by orgId AND taskId (cross-tenant isolation fix): an
 // asset that belongs to another organisation must never receive a signature
@@ -527,6 +554,7 @@ func (s *Service) listAssetsForTask(
 	orgID, userID, taskID string,
 	resultIDs []string,
 	ttlSeconds int,
+	storageClient *objectstorage.Client,
 ) (map[string][]CrawlStoredMediaAsset, error) {
 	grouped := make(map[string][]CrawlStoredMediaAsset)
 	if len(resultIDs) == 0 {
@@ -564,7 +592,7 @@ func (s *Service) listAssetsForTask(
 		if !requested[row.ResultID] {
 			continue
 		}
-		asset := s.buildStoredMediaAsset(row, expiresAtMs, orgID, userID)
+		asset := s.buildStoredMediaAsset(ctx, row, expiresAtMs, orgID, userID, ttlSeconds, storageClient)
 		grouped[row.ResultID] = append(grouped[row.ResultID], asset)
 	}
 	if err := rows.Err(); err != nil {
@@ -573,12 +601,17 @@ func (s *Service) listAssetsForTask(
 	return grouped, nil
 }
 
-// buildStoredMediaAsset renders one CrawlStoredMediaAsset with signed URLs for
-// MySQL-backed assets.
+// buildStoredMediaAsset renders one CrawlStoredMediaAsset with signed URLs.
+// The MySQL branch signs the HMAC delivery route; the S3 branch presigns the
+// object with the record's own storageKey. An unknown provider keeps the record
+// identity and no URL, which is the pre-existing behaviour.
 func (s *Service) buildStoredMediaAsset(
+	ctx context.Context,
 	row crawlMediaAssetRow,
 	expiresAtMs int64,
 	orgID, userID string,
+	ttlSeconds int,
+	storageClient *objectstorage.Client,
 ) CrawlStoredMediaAsset {
 	contentType := resolveDeliveryContentType(row.ContentType)
 	inlineSafe := isInlinePreviewContentType(contentType)
@@ -603,19 +636,25 @@ func (s *Service) buildStoredMediaAsset(
 		asset.StorageKey = &row.StorageKey.String
 	}
 
-	// Only the MySQL provider can be signed by this unit. S3-provider assets
-	// keep their identity but carry no preview/download URL, matching the
-	// NestJS branch where createObjectReadUrl fails and the URL stays unset.
-	if asset.StorageProvider != CrawlImageStorageProviderMySQL {
+	switch asset.StorageProvider {
+	case CrawlImageStorageProviderS3:
+		// The S3 URL is minted from the record's own object key; a signing or
+		// configuration failure leaves the URL unset and the asset intact.
+		fileName := buildAssetFileName(row.Kind, row.ID, row.ContentType, row.Format)
+		attachStoredS3URLs(ctx, storageClient, &asset, row, contentType, inlineSafe, fileName, ttlSeconds)
+		return asset
+	case CrawlImageStorageProviderMySQL:
+		// Only the MySQL provider is served by the HMAC route.
+		if inlineSafe {
+			previewURL := s.buildSignedAssetURL(row.ID, CrawlMediaAccessModePreview, expiresAtMs, orgID, userID)
+			asset.PreviewURL = &previewURL
+		}
+		downloadURL := s.buildSignedAssetURL(row.ID, CrawlMediaAccessModeDownload, expiresAtMs, orgID, userID)
+		asset.DownloadURL = &downloadURL
+		return asset
+	default:
 		return asset
 	}
-	if inlineSafe {
-		previewURL := s.buildSignedAssetURL(row.ID, CrawlMediaAccessModePreview, expiresAtMs, orgID, userID)
-		asset.PreviewURL = &previewURL
-	}
-	downloadURL := s.buildSignedAssetURL(row.ID, CrawlMediaAccessModeDownload, expiresAtMs, orgID, userID)
-	asset.DownloadURL = &downloadURL
-	return asset
 }
 
 // intPtrFromNull converts a nullable SQL integer into a JSON pointer.

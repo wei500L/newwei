@@ -168,6 +168,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
@@ -645,6 +646,12 @@ func run() error {
 	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
 		infrastructureSettingsMode = string(legacyproxy.ModeGo)
 	}
+	// The storage connection test switch is independent of the infrastructure
+	// settings switch: it only ever takes over the exact POST test route.
+	storageDiagnosticsMode := ""
+	if cfg.StorageDiagnosticsMode == config.StorageDiagnosticsModeGo {
+		storageDiagnosticsMode = string(legacyproxy.ModeGo)
+	}
 	dataRuntimeSettingsMode := ""
 	if cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo {
 		dataRuntimeSettingsMode = string(legacyproxy.ModeGo)
@@ -716,6 +723,9 @@ func run() error {
 	// llm-gateways :id profile rule because they are longer prefixes.
 	rules = legacyproxy.WithProxyLoadBalancing(rules, proxyLoadBalancingMode)
 	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
+	// The storage connection test is registered by its own switch; it never
+	// widens the infrastructure settings route ownership and vice versa.
+	rules = legacyproxy.WithStorageDiagnostics(rules, storageDiagnosticsMode)
 	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
 	rules = legacyproxy.WithAuthFactors(rules, authFactorsMode)
 	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
@@ -778,6 +788,7 @@ func run() error {
 				cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo ||
 				cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo ||
 				cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo ||
+				cfg.StorageDiagnosticsMode == config.StorageDiagnosticsModeGo ||
 				cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo ||
 				cfg.AuthFactorsMode == config.AuthFactorsModeGo ||
 				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
@@ -856,6 +867,9 @@ func run() error {
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	llmGatewayProfilesGo := cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo
 	infrastructureSettingsGo := cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo
+	// The storage connection test needs the credentialed stack (JWT, Redis
+	// blacklist, MySQL membership re-derivation) but no Mongo.
+	storageDiagnosticsGo := cfg.StorageDiagnosticsMode == config.StorageDiagnosticsModeGo
 	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
 	authFactorsGo := cfg.AuthFactorsMode == config.AuthFactorsModeGo
 	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
@@ -874,7 +888,7 @@ func run() error {
 	// #62 auth factors、#63 graphql org access write、#64 exception ingest、#65
 	// search reindex、#66 proxy load balancing）。任一变量改成本批所需值都不影响
 	// 其他批次接线。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || graphqlOrgAccessWriteGo || searchReindexGo || proxyLoadBalancingGo
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || graphqlOrgAccessWriteGo || searchReindexGo || proxyLoadBalancingGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1220,7 +1234,16 @@ func run() error {
 	if err := wireNewsnowClusteringOps(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
-	if err := wireCrawlReadTelemetry(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+	// The runtime storage configuration reader is shared by the REST crawl
+	// media signing path, the GraphQL crawlTask root (its own crawl read
+	// service) and the storage diagnostics handler. It is built once and holds
+	// no state, no connection and no S3 client: every request resolves its own
+	// snapshot through the shared storage:settings cache.
+	var storageConfigReader objectstorage.ConfigReader
+	if crawlReadTelemetryGo || (graphqlReadGo && cfg.GraphQLSettingsCrawlReadMode == "go") || storageDiagnosticsGo {
+		storageConfigReader = newInfrastructureSettingsService(cfg, sharedDB, redisClient)
+	}
+	if err := wireCrawlReadTelemetry(gateway, cfg, sharedDB, redisClient, authenticator, storageConfigReader, &dashboardMongo); err != nil {
 		return err
 	}
 	// The two search index rebuild routes (POST /api/admin/search/reindex and
@@ -1240,6 +1263,9 @@ func run() error {
 		return err
 	}
 	if err := wireInfrastructureSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	if err := wireStorageDiagnostics(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 	if err := wireDataRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
@@ -1403,6 +1429,11 @@ func run() error {
 			"accountSecurity": map[string]any{
 				"mode": string(cfg.AccountSecurityMode),
 			},
+			// 存储连接诊断（POST /api/admin/settings/storage/test）的独立开关。
+			// legacy 时该路由回落 NestJS；不含任何凭据、bucket 或签名 URL。
+			"storageDiagnostics": map[string]any{
+				"mode": string(cfg.StorageDiagnosticsMode),
+			},
 		})
 	})
 
@@ -1465,8 +1496,12 @@ func run() error {
 			if settingsCrawlGo {
 				settingscrawl.Register(reg, sharedDB, settingscrawl.Options{
 					JWTSecret: cfg.JWTSecret,
-					Mongo:     mongoDatabase.Database(),
-					Redis:     redisClient,
+					// The crawlTask root builds its own crawl read service, so
+					// the shared storage configuration reader must be injected
+					// here as well; otherwise its S3 media URLs stay unset.
+					StorageConfig: storageConfigReader,
+					Mongo:         mongoDatabase.Database(),
+					Redis:         redisClient,
 				})
 			}
 			// The item reading roots (item, itemFacets, rssSources,

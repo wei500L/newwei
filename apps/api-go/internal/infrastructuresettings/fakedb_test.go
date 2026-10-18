@@ -243,6 +243,9 @@ func (m *fakeMySQL) query(query string, args []driver.NamedValue) (driver.Rows, 
 		}
 		m.state.releaseCalled = true
 		return &fakeRows{columns: []string{"released"}, rows: [][]driver.Value{{value}}}, nil
+	case strings.TrimSpace(query) == "SELECT 1":
+		// The storage connection test's MySQL probe.
+		return &fakeRows{columns: []string{"1"}, rows: [][]driver.Value{{int64(1)}}}, nil
 	case strings.Contains(query, "SELECT value FROM SystemSetting WHERE `key` = ?"):
 		key := namedValueString(args)
 		if value, ok := m.settings[key]; ok {
