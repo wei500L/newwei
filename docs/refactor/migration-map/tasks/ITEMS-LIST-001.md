@@ -35,3 +35,11 @@ go 要求 `API_GO_GRAPHQL_READ_MODE=go` 且 `API_GO_ITEMS_READING_MODE=go`）。
 ## 交接
 
 本任务只覆盖 Query `items` 子范围；不关闭整个 GAP-LEGACY-001，也不改 main 覆盖数（PR 未合）。
+
+## 并行边界与规划记录（文档 PR #71）
+
+- 规划态：reserved（2026-10-18 第三批并行提示词发出，当时无开工证据、worktree 尚未创建）；本页按交付事实更新为 pr_open。
+- 规划记录复用 `docs/plan-news-event-brief` / [Ready PR #71](https://github.com/wei500L/newwei/pull/71)，规划 PR 不是业务交付；提示词见 [ITEMS-LIST-001.prompt.md](ITEMS-LIST-001.prompt.md)。
+- 所有权：拥有 `internal/itemsreading` 及 `graphqlread/itemsreading` 的列表/排序/批量投影；`llmembed` 仅 rerank 必要 options/观测；`contract`/`exec` 仅只读选择元数据，不变更预规划、权限与 Mutation；`main`/`config` 仅新 `ITEMS_LIST` 子开关与 items 注册段。
+- 并行排除：NEWS-BRIEF-001 已见开发，排除 `newsevents`/`publicportal`/`llmlogs`；本批 rerank 日志在 itemsreading 隔离实现，不依赖简报未合入的 writer。STORAGE-MEDIA-001 已建 worktree，排除 S3 client/config 导出/crawl/settingscrawl，不改 `go.mod`/`go.sum`。#70 保持 OPEN/Ready（head adb765d0），排除工作台八写、公共 GraphQL 顶层接线与 `mutation_test`。
+- 规划期静态结论：Go REST List 只有 RECENCY、无 items root；现成候选融合不是最终相关性分数；`filters:{}` 覆盖历史 filters 不能被现有 `decodeFilters` 抹去；相关性 rerank 默认启用且失败 503；个性化 MIN180/MAX1600/乘 8 及窗口扩大与正负六维画像必须迁入；Nest 选择字段驱动 count/result 加载，Go Context 需要最小只读 selection 元数据与按页批量装配，避免逐 edge 调用 `item()`。

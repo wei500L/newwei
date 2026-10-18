@@ -16,7 +16,7 @@
 
 Nest 功能目录：[news-events](../../../../apps/api/src/modules/news-events)、[news-indicator](../../../../apps/api/src/modules/news-indicator)、[news-pipeline](../../../../apps/api/src/modules/news-pipeline)、[news-aggregator](../../../../apps/api/src/modules/news-aggregator)、[news-signals](../../../../apps/api/src/modules/news-signals)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：[NEWS-BRIEF-001](../tasks/NEWS-BRIEF-001.md) in_progress，只补 newsEventBrief 完整冷生成/强刷、独立子开关与必要日志/缓存写回；候选未合 main，缺口未关闭。旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：[NEWS-BRIEF-001](../tasks/NEWS-BRIEF-001.md) pr_open，只补 newsEventBrief 完整冷生成/强刷、独立子开关与必要日志/缓存写回；候选未合 main，缺口未关闭。规划期以 main 9d0462e1 续核本 root，全域历史日期不变。旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
 
 ## HTTP 开关、实现与生产接线
 

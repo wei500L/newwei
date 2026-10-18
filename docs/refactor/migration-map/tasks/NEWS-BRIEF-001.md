@@ -33,3 +33,11 @@ POST /graphql，Query newsEventBrief(eventId: String!, forceRefresh: Boolean, la
 ## 完成与恢复
 
 业务源码、开关、日志与缓存写回实现已在 PR #72 head `517a73f9`，普通 CI verify/integration 通过。本机仍未运行 build/test/Docker/服务，未做模型实网、MySQL/Mongo 或部署切流验证；实网模型、Redis/Mongo 与真实部署未分别验证，不假称成功。下一步等合并复核，GAP-NEWS-001 只在确认 main 落地后关闭。
+
+## 规划记录（文档 PR #71）
+
+- 规划态：第三批规划时状态 in_progress，仅见开发差异，未创建业务 PR，不推断执行器实时活动；本页随后在业务分支按交付事实更新为 pr_open。
+- 规划记录：`docs/plan-news-event-brief`；规划 worktree `/Users/oo/project/newwei-plan-news-event-brief`；首提交 `efa819e3` 经 [Ready 文档 PR #71](https://github.com/wei500L/newwei/pull/71) 发布。该 PR 仅文档，不是本批业务 PR，其 CI 状态不能当业务验证。
+- 提示词：[完整执行提示词](NEWS-BRIEF-001.prompt.md)（2026-10-18 规划聊天发出，编码执行器身份与活动当时未核实）。
+- 规划期只读核对的 Nest 事实源：`graphql/resolvers/news-events.resolver.ts:261`、`graphql/models/news-event-brief.model.ts`、`modules/news-events/news-event-brief.service.ts:180–543`、`news-pipeline/litellm.service.ts` 的两种 surface 尝试与 guardrail/日志语义、`llm-request-log.service.ts` 的 metadata 过滤（`news_event_brief` 不自动请求 moderation），以及 MySQL `NewsEvent`/`NewsEventItem`/`ProcessedArticle`/`Article`/`SystemSetting` 与 Mongo `llmrequestlogs`；无 BullMQ/cron 前置。
+- 并行边界：同为 BL-02 的后续客户端修改需避开本任务；顶层 route/资源 OR、无效 DSN 判断与多写模型注册仍归先行任务（#70/BL-01），本任务不取得 GAP-GQL-001。

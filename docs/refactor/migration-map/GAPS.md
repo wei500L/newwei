@@ -7,8 +7,8 @@
 | ID | 性质 / 所属域 | 影响范围 | 状态 / 归属 |
 |---|---|---|---|
 | GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | 未分配；SETTINGS-WRITE-001 主体仍 merged；与 WORKSPACE-WRITE-001 共享接线冲突 |
-| GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | NEWS-BRIEF-001 in_progress（候选实现，未合 main）；缺口仍开放 |
-| GAP-CRAWL-001 | 部分实现；crawl | `GET /api/crawl-media-assets/:assetId/:mode` 的 S3 分支 | 未分配；BL-03 |
+| GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | NEWS-BRIEF-001 pr_open（候选实现，未合 main）；缺口仍开放 |
+| GAP-CRAWL-001 | 部分实现；crawl | 媒体下发及已有REST/GraphQL详情的 S3 URL分支 | STORAGE-MEDIA-001 pr_open（候选实现，未合 main）；缺口仍开放 |
 | GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 工作台 8 写已由 WORKSPACE-WRITE-001 覆盖，Query `items` 由 ITEMS-LIST-001 覆盖（均 pr_open）；其余未分配，见 BACKLOG |
 | GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | 未分配；按链路拆分，见执行所有权表 |
 
@@ -37,7 +37,7 @@
 - Go：[newsevents/brief.go](../../../apps/api-go/internal/graphqlread/newsevents/brief.go) `newsEventBrief` 18–59，loadEvent/loadItems、选源/指纹与缓存命中已实现，末尾固定报错；没有模型调用/metadata 更新。注册在 [register.go](../../../apps/api-go/internal/graphqlread/newsevents/register.go)。核对 SHA 如页首。
 - 可复用但不可直接调用：[publicportal/story.go](../../../apps/api-go/internal/publicportal/story.go) `Service.brief` 已实现选源→Complete→JSON 清洗→SaveEventMetadata；`brief`、`completionRequest`、gateway helper 均为包内私有，公共门户语言/组织选择与 GraphQL 参数也不同，不能声称已共享。
 - 主要文件：newsevents `brief.go` / store/model；如抽共享能力，需明确 publicportal/story.go、brief.go、gateway.go 的所有权。MySQL NewsEvent/NewsEventItem/ProcessedArticle、模型配置/密钥、HTTP 模型上游；无须为了这个同步入口迁 BullMQ。前置是确定具名共享模型/客户端边界，BL-02 可独立窗口评估，避开 BL-17 公共门户客户端并行修改。
-- 状态：已分配 [NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)；编码窗口在 main 9d0462e1 上给出候选实现（BRIEF 子开关 + Go 选源→模型→校验清洗→`JSON_SET` 写 briefV1 叶子 + best-effort LLM 请求日志），Ready [PR #72](https://github.com/wei500L/newwei/pull/72) head 517a73f9 普通 CI verify/integration 通过，但**尚未合 main**，故缺口仍开放。关闭证据：**无**；需该候选实际 merge SHA 中命中、miss、forceRefresh、无事件/来源、写回与日志分支的落地证据，实网模型验证另记。
+- 状态：已分配 [NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)（pr_open）；编码窗口在 main 9d0462e1 上给出候选实现（BRIEF 子开关 + Go 选源→模型→校验清洗→`JSON_SET` 写 briefV1 叶子 + best-effort LLM 请求日志），Ready [PR #72](https://github.com/wei500L/newwei/pull/72) head 517a73f9 普通 CI verify/integration 通过，但**尚未合 main**，故缺口仍开放。规划期另核出生成 source 缺 Summary/KeyPoints、结构 schema 差异与 Nest LLM request log 副作用，详见任务/提示词。关闭证据：**无**；需该候选实际 merge SHA 中命中、miss、forceRefresh、无事件/来源、写回与日志分支的落地证据，实网模型验证另记。
 
 <a id="gap-crawl-001"></a>
 
@@ -50,7 +50,8 @@
 - Go：[service_media.go](../../../apps/api-go/internal/crawlreadtelemetry/service_media.go) `getAssetDeliveryPayload` 456–515，MySQL joined blob/legacy blob 已实现；非 MySQL 末尾固定 `(nil,nil)`。`serveMediaAsset` 151 将 nil 映射为 404，虽有 RedirectURL 分支却没有 S3 生产者。核对 SHA 如页首。
 - 主要文件：crawlreadtelemetry/service_media.go、模型/构造与 `cmd/api/crawl_read_telemetry.go`；读取存储配置/解密可能涉及 infrastructuresettings/storage.go，当前该包只提供配置管理，不能当现成 S3 对象客户端。S3/Nest StorageService 是外部对象边界；不需要迁 crawl worker 才可补读。
 - 前置/冲突：明确 S3 配置优先级、endpoint/path-style/publicBaseURL/TTL 与租户签名；BL-03 与 BL-15 的存储配置辅助函数串行。原 #50 已 merged，未迁的是剩余 S3 分支，不重新分配整个 7 路批次。
-- 状态：2026-10-18 已实现，[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md) 交付于 `refactor/go-storage-media`（[Ready PR #73](https://github.com/wei500L/newwei/pull/73)）；PR **未合 main**，本缺口**仍开放**。已交付：媒体路由 S3 presigned 302（按记录自身 storageKey，签名 content-type/disposition/cache-control，配置不完整返回 400）、REST 详情与 `Query crawlTask` 两处注入并各自签名 preview/download、按存储配置 TTL 且修正 env TTL 回退；GAP 同时覆盖详情两处构造。关闭证据：需实际合入 main 的提交 + 该 head 的普通 CI success，以及实桶/MinIO 真实签名下载验证；当前只有 PR/静态契约测试，实桶未执行。
+- 同因缺口（规划期复核确认）：`service_media.go`/`buildStoredMediaAsset` 对非 mysql 直接返回、未生成 preview/download URL；它由 REST 详情及 `settingscrawl` 独立构造的 `Query crawlTask` 共同消费，只修下发路由不能闭环。
+- 状态：2026-10-18 已实现，[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md)（pr_open）交付于 `refactor/go-storage-media`（[Ready PR #73](https://github.com/wei500L/newwei/pull/73)）；PR **未合 main**，本缺口**仍开放**。已交付：媒体路由 S3 presigned 302（按记录自身 storageKey，签名 content-type/disposition/cache-control，配置不完整返回 400）、REST 详情与 `Query crawlTask` 两处注入并各自签名 preview/download、按存储配置 TTL 且修正 env TTL 回退；GAP 同时覆盖详情两处构造。关闭证据：需实际合入 main 的提交 + 该 head 的普通 CI success，以及实桶/MinIO 真实签名下载验证；当前只有 PR/静态契约测试，实桶未执行。
 
 <a id="gap-legacy-001"></a>
 
@@ -60,6 +61,7 @@
 - 触发/影响：请求到达 legacy 规则或包含未接管 GraphQL root，业务由 Nest 执行；停掉 Nest 会失去相应功能。Go 并没有把这些入口返回空值来冒充完成。
 - Nest / Go：Nest Controller/Resolver/Service 定位已在域表；Go [legacyproxy](../../../apps/api-go/internal/legacyproxy) 与 [exec/walk.go](../../../apps/api-go/internal/graphqlread/exec/walk.go) 决定回退。未注册 root 在副作用前整份回退。
 - 任务覆盖：工作台 8 写由 WORKSPACE-WRITE-001 / #70 占用，保持 pr_open；Query `items` 由 [ITEMS-LIST-001](tasks/ITEMS-LIST-001.md) 覆盖（pr_open，未合 main，不提前改本页分母）；其余候选见 BACKLOG 各自精确范围、文件和前置，不能领取整个集合。主要共享冲突是 main/config/Registry，其余按域隔离。
+- 2026-10-18 新增具体子范围认领：ITEMS-LIST-001（pr_open，#74）负责 Query items，STORAGE-MEDIA-001（pr_open，#73）负责 storage/test；不关闭本跨域 GAP，不把未认领集合整体交给任一窗口。news/媒体部分实现另按各自 GAP 记录。
 - 状态：部分已被任务覆盖，其余未分配；关闭证据按入口分批关联实际 main 提交，不因一批合并关闭整个 ID。新增/删契约另改分母，不以文档行数算迁移进度。
 
 <a id="gap-async-001"></a>

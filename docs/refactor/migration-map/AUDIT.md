@@ -50,6 +50,8 @@
 
 ## items
 
+- **2026-10-18完整items候选深读，main9d0462e1**：Nest items resolver/DTO/分页/游标、ItemsListService个性化与特征、ItemsSearchService相关性/rerank/highlights、helpers/shared权重、ScopedItemsReadingLoader绑定；Go现有REST/GraphQL单条模型/批量store/召回、newsbehavior画像与llmembed接口已读。确认REST仅RECENCY、显式filters:{}优先于历史filters、相关性失败503、个性化候选窗口增长及两种cursor优先级，不能泛化合并。Context暂无选择元数据，计划最小只读扩展以省count/result并批量投影，不重写engine。ITEMS-LIST-001 reserved，未实施；实网/运行/全DTO组合未验证，其他items写/后台范围不扩大。
+
 - **REST List / Go 实现已静态核对（调度与分页分支）**：[itemsreading/service.go](../../../apps/api-go/internal/itemsreading/service.go) `Service.List`：NormalizePagination→ParseSearchPayload→ResolveScopedIDs；受限集合为空时返回合法空；read-model Mongo / MySQL 两种 List+Count 分支均执行 order/offset/pageSize。底层 ES/vector/词法召回分数、全部筛选语法尚未逐项复算。
 - **GraphQL item / Go 静态核对的范围**：[graphqlread/itemsreading/register.go](../../../apps/api-go/internal/graphqlread/itemsreading/register.go) 绑定 orgId，查不到合法 null；有 read-model 与 MySQL/Mongo 回退投影；workspace 未注册时补共享 ProcessedItem 嵌套类型。其余 facets/RSS/status/suggestions、processedItemById、原文/预览/事件链接/遥测尚未深入核对逐字段与缓存失效。
 - **重建后台 / Go 实现已静态核对（生命周期）**：[searchreindex/service.go](../../../apps/api-go/internal/searchreindex/service.go) startReindex→Redis queued→goroutine runReindex→分页 Mongo→bulkIndex→refresh→完成/失败；ES 关闭时 indexed=0 是合法禁用分支。重启不自动重排队，不能当 BullMQ worker 已迁；未验证锁续租/故障竞争。
@@ -73,6 +75,8 @@
 11 读已注册；本轮核对 knowledgegraph/kgimpact/settingscrawl 返回类型装配与根权限。**业务算法尚未深入核对**：KnowledgeEdge 遍历/剪枝、置信度阈值、Redis 命中/失效、Mongo 共现/经济相关计算、证据队列分页与复核副作用。需读 graphqlread/{knowledgegraph,kgimpact,settingscrawl} 对应 service/store；不能因配置与读已迁推断 ingestion/review 写已迁。
 
 ## crawl
+
+- **2026-10-18 S3链续核，main9d0462e1**：已读Nest媒体下发/toCrawlStoredAsset/TTL与StorageService全链；Go媒体返回nil之外，buildStoredMediaAsset也对非mysql直接返回，无URL。REST详情与Query crawlTask各有NewService构造，须两处注入；REST分页拒绝越界、GraphQL钳制不统一。认领STORAGE-MEDIA-001，尚未实施/测试/实桶调用，未扩大其他采集范围。
 
 - **媒体下发 / Go 部分实现**：HMAC、orgId SQL、joined/legacy MySQL blob、响应头/重定向消费者与 S3 空返回沿 Nest Controller/Service 对照；新增确认 [GAP-CRAWL-001](GAPS.md#gap-crawl-001)。合法“无资产/无 blob”空返回与缺失 S3 实现分开。
 - **2026-10-18 S3 交付实现核对，main 9d0462e1 → PR #73**：`internal/objectstorage` 只用官方 AWS SDK v2 的 s3/credentials/smithy-go，显式静态凭据 + region/endpoint/path-style，无默认凭据链/IMDS；`getAssetDeliveryPayload` 拆出 `resolveDelivery`，S3 按记录自身 storageKey 生成 302 签名 GET（content-type 归一化、preview 仅 inline 白名单内用 inline，SVG 保持 attachment、cache-control private,max-age=300），配置不完整映射 400；`buildStoredMediaAsset` 对 s3 记录独立签名 preview/download，失败只缺省该 URL；`attachResultContent` 每请求只读一份 `StorageRuntimeConfig` 快照，TTL 由完整快照钳制 30..86400（修正原先只读 DB 单键、丢失 S3_* env 回退）；`settingscrawl.Options` 新增 `StorageConfig` 并经 `newCrawlReader` 注入，GraphQL 与 REST 共用同一 reader；GraphQL resultLimit 钳制与 NOT_FOUND/null 未改。未运行 build/test、无实桶/部署验证。独立契约比对另发现三处**既有**偏差（不在本批范围、未修，待规划窗口登记）：REST 详情在无 complete task log 时省略 memoryStats/lastRunSummary 而 Nest 输出 null；`stringPtrFromNull` 丢空串而 Nest 保留 ""；媒体查库用 trim 后 orgId 而 Nest 用原始 query 值。本批已对齐 publicBaseUrl 归一化回显与 DTO-less POST 的 body-parser 语义（零长度=空对象、strict 拒绝顶层原始值）。
@@ -99,6 +103,8 @@
 配置/密钥/profile/激活/LB 21 HTTP 的 main/wire/config 已核，实际 CRUD、加密失败/轮换、平台权限、内部 token、applied 快照和缓存边界**尚未深入核对**。读 llmgatewayprofiles / modelaccesssettings 对应 service；真实探测与 proxy-governance 12 HTTP 尚为 Nest。LiteLLM 配置下发不等于 LiteLLM 已应用，也不等于业务调用已切 Go。
 
 ## infrastructure-data
+
+- **2026-10-18 storage/test 专项，main 9d0462e1**：已读 Controller 权限、默认 201、StorageService 的 mysql SELECT1/S3 三步 check 汇总、refreshClient 及配置 reader/cache/crypto。确认 test 无 platform_admin 额外门槛、S3 每步失败仍继续、固定测试对象键可优化为每次唯一。Go 有缓存/解密但无对象客户端，AWS SDK 依赖走既有远端 go-modules-regen，不本机安装；STORAGE-MEDIA-001 只认领该子范围。未核其余诊断或实网连通。
 
 **接线已静态核对；9 数据设置和7基础设施组的业务归一化/加解密尚未深入核对**：main 的资源 OR、wireDataRuntimeSettings 创建 handler 与错误返回范围已核，OBS-DATA-001 记录吞错但当前合法路径未证实可触发。archive_status 读取 Redis 派生索引，不是 producer/consumer。未逐项验 storage/vector/nominatim/realtime 配置优先级、清空密钥语义、会话锁、归档状态分页/索引清理。2026-10-18 增量：storage/test 已交付于 `refactor/go-storage-media`（[Ready PR #73](https://github.com/wei500L/newwei/pull/73)）——独立开关 `API_GO_STORAGE_DIAGNOSTICS_MODE`、复用私有 authorize（settings.manage，无平台管理员二次门槛）、`StorageRuntimeConfig` 复用九键/storage:settings 缓存/密钥解密、`objectstorage` 窄包承担 HeadBucket/PutObject/DeleteObject 与 presign；mode=mysql 真实 SELECT 1，mode=s3 三步各自捕获、201 + ok:false 汇总、测试对象 key 每次唯一且 delete 只删本次 key。7 条配置路由与平台管理员写权限未改；PR 未合 main，实桶未验证。
 

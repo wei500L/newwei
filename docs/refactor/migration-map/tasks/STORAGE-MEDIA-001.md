@@ -61,3 +61,11 @@
 - 依赖生成：`go-modules-regen` job 在 head `7666f79e` 远端 `go mod tidy` + `go build ./...` 成功并提交机器人提交 `1d5ff672`，只新增 `github.com/aws/aws-sdk-go-v2 v1.47.3`、`.../credentials v1.20.9`、`.../service/s3 v1.114.3`、`github.com/aws/smithy-go v1.28.5` 及 8 个间接模块；没有上传 manager、没有其他 AWS 服务。该提交由机器人推送，其 run 初始为 `action_required`，维护者批准后 `verify` 仅因上述三处测试期望失败（已修）；不把这次失败或 label 通道的临时检查当本批通过。
 - 首轮 head `a7cba649` 的 [run 39133724820](https://github.com/wei500L/newwei/actions/runs/39133724820) 中 `go-modules-regen` 因 label 在 PR `opened` 事件之后才生效而 skipped，故依赖生成改由后续 `synchronize` 触发；这不是通过证据。
 - **未验证外部项**：未执行真实 S3/MinIO 连通与签名下载、未做 mode=s3 实桶三步验证、未部署、无生产流量；本机全程未安装依赖、未运行 build/test/Docker/服务。
+
+## 规划记录与所有权（文档 PR #71）
+
+- 规划态：reserved（2026-10-18 15:58 MSK 并行提示词交给编码窗口，当时无开工证据）；本页随后在业务分支按交付事实更新为 pr_open。
+- 规划记录复用 `docs/plan-news-event-brief` / [Ready 规划 PR #71](https://github.com/wei500L/newwei/pull/71)；该 PR 仅文档，不是业务 PR，记录提交推送后远端可见。
+- 规划所有权：复用 `infrastructuresettings` 的 `loadStorageRecords` 缓存/解密并导出运行配置；新增窄 `objectstorage` 包与官方 AWS SDK；`go.mod` 当时无 AWS SDK，依赖按既有 `go-modules-regen` label 通道远端生成，不本机安装。
+- 规划期静态结论：`service_media.go` 不仅 S3 交付返回 nil，`buildStoredMediaAsset` 对非 mysql 也直接返回无 URL，两者同属缺少 S3 能力，扩充 GAP-CRAWL-001 而不重迁整批；诊断每次唯一测试 key 是明确优化，保留三步执行/响应语义；详情单请求配置快照避免逐资产查库。
+- 边界：不重迁 7 条设置配置路由、不改平台管理员写权限、不动 #70 的 GraphQL 顶层接线与简报 `newsevents` 段；实桶验证、部署与流量仍未核实。

@@ -19,6 +19,20 @@
 - 本机未安装依赖、未运行 build/test/Docker/服务；无实桶/MinIO 签名下载、无部署、无生产流量。因此 GAP-CRAWL-001 与 storage/test 均不因本 PR 关闭，BL-03 / BL-15.storage/test 指向本任务而不计 main 迁移数。
 - 交付后的精确 head 与普通 CI run 见 [STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md) 的交付记录；本页不提前登记 main 覆盖数。
 
+## NEWS-BRIEF-001 规划刷新（2026-10-18，历史快照；任务状态已被上方交付记录更新）
+
+第三批用户要求“不要防御性编程、写好英文注释”已补PLANNING。再次fetch/main五次CI/开放PR/worktree刷新，main仍9d0462e1，#70 adb765d0仍开放、#71仅规划文档。只深入BL-05并认领ITEMS-LIST-001；两端排序/分页/画像/选择投影与外部边界见task。brief worktree已见业务差异，状态in_progress；storage worktree已创建且当时干净，保留reserved。规划窗口未安装/运行测试/服务或实施迁移，未创建第三批编码目录。
+
+随后用户要求第二个并行提示词，再fetch main仍9d0462e16d88d146b8afbf67cdd58d8b7419ff29；开放仅#70业务与#71规划文档，heads仍adb765d0/3a33ad6e。新增STORAGE-MEDIA-001 reserved，只续核S3媒体/存储诊断及必要源码。#71此旧head的verify仍进行中、两集成job成功，不当新记录或业务CI通过；新记录追加后另查最新head。官方AWS Go v2示例确认有S3 presign/对象操作能力（https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/go_s3_code_examples.html），本仓库go.mod未引入，规划指定现有ci.yml远端go-modules-regen流程。未安装/构建/测试/调用S3，未创建编码worktree。
+
+第二批发出前再核，用户的简报窗口已创建/Users/oo/project/newwei-go-news-event-brief，HEAD9d0462e1且当时无业务差异；保留NEWS-BRIEF-001占用，不推断执行器活动/退出。STORAGE-MEDIA-001编码目录仍未创建，规划窗口未启动实施。
+
+- git fetch origin main后：9d0462e16d88d146b8afbf67cdd58d8b7419ff29。#69实际mergeCommit与此相等，已merged；从3cedce9a到此仅地图/导航文档，没有apps/api、apps/api-go、apps/vector-go业务改动，原注册数不变。
+- main最近5次普通CI分别对应9d0462e1/3cedce9a/7fc17faa/9da8e75e/3c9ce2f5，均success；最新[run 39127631691](https://github.com/wei500L/newwei/actions/runs/39127631691)，完整head即上条SHA。
+- #70仍OPEN/Ready，head adb765d0180e8b34910181e8c6fde8be400a2dff；实际文件清单和main/config diff已读，仍缺settingsWrite顶层route/无效DSN并集，needsCredentialedGo已补settingsWrite。其[普通CI 39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) verify/user-settings/vector成功，smoke/regen skipped不当通过。工作台8写仍不计main。
+- git worktree list及所有列出worktree HEAD/status只读刷新；工作台写干净，其他历史目录未发现新业务修改，目录存在/干净不代表执行器活动。新建独立规划worktree只用于文档，不创建编码worktree。
+- 本次仅brief候选两端源码深读、认领、提示词和相关记录维护；无全仓审计、业务实现、本机构建/测试/安装/服务、模型实网或部署切换。规划PR发布记录见NEWS-BRIEF-001，不当作业务CI证据。
+
 ## 本轮完整性复核（历史快照）
 
 2026-10-18 14:37 开始，14:49 再 fetch，`origin/main = 3cedce9aa3200436aba3596f63b559de5490cec8` 未变。#69 OPEN / Ready / autoMergeRequest=null，原 worktree 干净后在原文档分支追加；未 amend/rebase/force-push。apps/api、apps/api-go、apps/vector-go 相对该 main 无差异。本轮只改 migration-map 文档；原 PR 已有 AGENTS/roadmap 导航，本轮没有扩展业务/配置/测试/schema/workflow。

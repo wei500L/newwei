@@ -65,6 +65,10 @@ flowchart LR
 
 ## 可复用能力索引
 
+第三批 items 专项（main 9d0462e1）：ITEMS-LIST-001 拥有 itemsreading/graphql adapter 完整列表及最小 contract/exec 只读选择元数据；`newsbehavior.GetPersonalizationProfile` 可复用 positive/negative，`llmembed.Rerank` 有现成 HTTP/profile 但本链路需补 timeout/attempt/日志观测表面。现有 REST List 不是完整列表实现，候选融合不是最终相关性排名。新子开关复用 READ+ITEMS 父资源，不需要新顶层接管；不碰简报的 publicportal/llmlogs 或存储的依赖清单。
+
+S3 专项认领（2026-10-18，main 9d0462e1）：STORAGE-MEDIA-001 拥有 infrastructuresettings 运行配置导出、objectstorage 窄包、媒体及两处详情 service 注入和 storage/test；现有 storage:settings/cache/crypto 可复用，S3 客户端原先没有。新诊断 HTTP 模式只需 DB/auth/Redis，不依赖 Mongo 或其他 HTTP 模式；媒体 REST/GraphQL 沿原开关。只有诊断写/删自己的测试对象，无队列/worker 所有权；BL-15 其余诊断未认领，NEWS-BRIEF-001 客户端文件不重叠。
+
 NEWS-BRIEF-001 增量（main 9d0462e1，2026-10-18）：本批拥有 publicportal 简报 completion 最小导出表面（`BriefCompleter`/`BriefCompletionRequest`/`BriefCompletionResult`/`BriefCompletionObserver`/`NewBriefCompleter`）与 llmlogs 新增 typed completion writer；既有 `Service.brief`、`completionRequest`、gateway helper 原先私有，日志 writer 原先不存在。复用父 GraphQL 读的 sharedDB/JWT/Redis/共享 Mongo，不依赖 `PUBLIC_PORTAL_MODE`、`LLM_LOGS_MODE`、gateway 配置管理 HTTP 模式或任何写模式；模型配置懒加载，不在启动探测真实模型。默认/Compose 均为 `API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE=legacy`，实际部署未切换；任务无 BullMQ/cron 执行权，模型调用与日志/缓存写回都在同步请求链路上。
 
 所有位置按页首 SHA。包内小写符号是 **私有**，不能在新包直接调用；需要抽取时先写清所有权和副作用。返回模型共享不代表业务权限可以复用成同一根权限。

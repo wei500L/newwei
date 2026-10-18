@@ -14,7 +14,7 @@ HTTP 条目阅读与索引重建、GraphQL item/itemFacets/rssSources/rssTransla
 
 Nest 功能目录：[items](../../../../apps/api/src/modules/items)、[search-telemetry](../../../../apps/api/src/modules/search-telemetry)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：[ITEMS-LIST-001](../tasks/ITEMS-LIST-001.md) pr_open，Query `items` 完整分页/RECENCY/RELEVANCE/PERSONALIZED/批量嵌套投影；分支 `refactor/go-graphql-items-list`，Ready [PR #74](https://github.com/wei500L/newwei/pull/74)，业务 head `c45f1afe`，普通 CI [39136842080](https://github.com/wei500L/newwei/actions/runs/39136842080) success；PR 未合 main 前不更新覆盖数。旧 worktree 不自动视为活动任务。
+当前认领：[ITEMS-LIST-001](../tasks/ITEMS-LIST-001.md) pr_open，Query `items` 完整分页/RECENCY/RELEVANCE/PERSONALIZED/批量嵌套投影；分支 `refactor/go-graphql-items-list`，Ready [PR #74](https://github.com/wei500L/newwei/pull/74)，业务 head `c45f1afe`，普通 CI [39136842080](https://github.com/wei500L/newwei/actions/runs/39136842080) success；PR 未合 main 前不更新覆盖数。该链按 main 9d0462e1 深读，尚无 main 覆盖增量。旧 worktree 不自动视为活动任务。
 
 ## HTTP 开关、实现与生产接线
 

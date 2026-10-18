@@ -18,6 +18,8 @@ Nest 功能目录：[crawl](../../../../apps/api/src/modules/crawl)。Controller
 
 当前认领与交付：[STORAGE-MEDIA-001](../tasks/STORAGE-MEDIA-001.md) 补已有媒体 HTTP 与 REST/GraphQL 详情的 S3 分支，不重迁采集 7 读。业务实现已在 `refactor/go-storage-media` 分支提交（[Ready PR #73](https://github.com/wei500L/newwei/pull/73)），补 `GET /api/crawl-media-assets/:assetId/:mode` 的 S3 presigned 302 与 `GET /api/crawl-tasks/:id`／`Query crawlTask` 的 S3 mediaAssets，并按存储配置 TTL 签名；PR 未合 main，GAP-CRAWL-001 仍开放，实桶/部署未验证。其余历史审查日期不变；旧 worktree 不自动视为活动任务。
 
+第五批增量（2026-10-18，规划基线 main 仍 9d0462e1）：另将元数据两入口的 urls/sitemap 发现与网页解析完整链认领为 [CRAWL-METADATA-001](../tasks/CRAWL-METADATA-001.md)，现已交付为 Ready [PR #76](https://github.com/wei500L/newwei/pull/76)（pr_open，未合 main）。限定深读 extract 实际调用链，确认不调用 RSS/list/deep/crawl4ai；业务放独立包 `crawlmetadata`，避开 S3 的 read/注册文件，不改变下表 main 覆盖。
+
 ## HTTP 开关、实现与生产接线
 
 所有新迁移单元接受空串/legacy/go、空串视为 legacy、非法值启动失败；用户 UI 读历史兼容模式是例外。启动依赖以 [config.Load](../../../../apps/api-go/internal/config/config.go) 的对应校验为准，不能用配置样例代替启动校验。普通认证接管通常要求 JWT_SECRET、DATABASE_URL、REDIS_HOST；读取 Mongo 的域还要求 MONGO_URI。
