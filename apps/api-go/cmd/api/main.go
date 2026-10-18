@@ -698,12 +698,13 @@ func run() error {
 	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
-	// /graphql is routed to the Go handler when the read switch or either write
+	// /graphql is routed to the Go handler when the read switch, the
+	// organization/workspace write switches or the RSS translation write
 	// switch is go. The registered roots and their own switches decide which
 	// documents actually execute in Go; everything else is still proxied to
 	// NestJS.
 	graphqlRouteMode := ""
-	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" {
+	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" || cfg.GraphQLRssTranslationMode == "go" {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -800,6 +801,7 @@ func run() error {
 				cfg.GraphQLReadMode == "go" ||
 				cfg.GraphQLOrgAccessWriteMode == "go" ||
 				cfg.GraphQLWorkspaceWriteMode == "go" ||
+				cfg.GraphQLRssTranslationMode == "go" ||
 				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
@@ -883,6 +885,10 @@ func run() error {
 	// 独立开关控制，与读开关解耦；复用 workspace/alerts/history 的模型不要求
 	// Mongo、模型网关或队列。
 	graphqlWorkspaceWriteGo := cfg.GraphQLWorkspaceWriteMode == "go"
+	// The RSS translation write switch is independent of the read switches and
+	// the other write switches; it needs MySQL, Redis and Mongo and registers
+	// only the translateRssItems mutation.
+	graphqlRssTranslationGo := cfg.GraphQLRssTranslationMode == "go"
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
@@ -943,6 +949,7 @@ func run() error {
 		situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || cfg.GraphQLSettingsWriteMode == "go" ||
+		graphqlRssTranslationGo ||
 		identityOnboardingGo ||
 		searchReindexGo || proxyLoadBalancingGo
 	var redisClient *redis.Client
@@ -1526,11 +1533,11 @@ func run() error {
 
 	var graphqlHandler *graphqlread.Handler
 	var graphqlMongo *dashboardstats.Connection
-	// 读查询、组织访问写入、工作台交互写入与设置写各自独立开关；任一为 go
-	// 就装配精确 /graphql 的 Go handler。只开写入时不要求 Mongo，也不初始化
-	// 任何只读域的 Mongo service。
+	// 读查询、组织访问写入、工作台交互写入、设置写与 RSS 翻译写各自独立开关；
+	// 任一为 go 就装配精确 /graphql 的 Go handler。只开写入时不要求 Mongo，也
+	// 不初始化任何只读域的 Mongo service（RSS 翻译写除外，它自己要求 Mongo）。
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
-	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo {
+	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo || graphqlRssTranslationGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -1672,6 +1679,32 @@ func run() error {
 			settingswrite.Register(reg, sharedDB, redisClient, settingswrite.Options{
 				RateLimitSettingsCacheTTLSeconds: cfg.RateLimitSettingsCacheTTLSeconds,
 			})
+		}
+		// The RSS translation mutation registers only translateRssItems and its
+		// two models. It reuses an already-open Mongo connection when there is
+		// one; otherwise it opens its own and hands it to the shared
+		// graphqlMongo lifecycle so shutdown closes it. Opening Mongo here (and
+		// not inside the helper) keeps the connection ownership with main.
+		if graphqlRssTranslationGo {
+			mongoDatabase := graphqlMongo
+			if mongoDatabase == nil {
+				mongoDatabase = dashboardMongo
+			}
+			var rssTranslationMongo *dashboardstats.Connection
+			if mongoDatabase == nil {
+				opened, openErr := dashboardstats.Open(cfg.MongoURI)
+				if openErr != nil {
+					return fmt.Errorf("api-go: API_GO_GRAPHQL_RSS_TRANSLATION_MODE=go requires a valid MONGO_URI")
+				}
+				rssTranslationMongo = opened
+				mongoDatabase = opened
+			}
+			if err := registerGraphQLRssTranslation(reg, cfg, sharedDB, redisClient, mongoDatabase.Database()); err != nil {
+				return err
+			}
+			if rssTranslationMongo != nil {
+				graphqlMongo = rssTranslationMongo
+			}
 		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,

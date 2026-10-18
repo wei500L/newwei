@@ -969,6 +969,15 @@ services:
       # NestJS。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动 worker，不回调
       # NestJS。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_SETTINGS_WRITE_MODE: legacy
+      # RSS 阅读批量翻译单个 GraphQL mutation（translateRssItems，根权限
+      # items.read）。pilot 与样例保持 legacy，与全部读开关、条目阅读开关及
+      # 其他写开关解耦：只开本变量时只登记这一个 mutation 与两个返回模型，旧
+      # items query 仍走 NestJS；含未接管 root/字段的文档在任何副作用前整份
+      # operation 回 NestJS。go 要求 JWT/MySQL/Redis/Mongo；provider URL、密钥、
+      # profile 与加密 key 保持请求时语义，不启动实网探测。翻译只写两层缓存、
+      # 每日指标与模型请求日志，不覆盖原文/read-model/ES，不入队、不启动
+      # worker/Cron、不发通知。回滚只把该变量改回 legacy。
+      API_GO_GRAPHQL_RSS_TRANSLATION_MODE: legacy
       # 基础设施设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认
       # 值）。S3_* 与 VECTOR_* 都不进入日志；不在这里新增第二套网关配置。
       NODE_ENV: production

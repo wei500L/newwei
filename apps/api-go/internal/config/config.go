@@ -1227,6 +1227,20 @@ type Config struct {
 	// NestJS as a whole, so the production web entry keeps serving through
 	// NestJS. Rolling back only means setting this variable back to legacy.
 	GraphQLSettingsWriteMode string
+	// GraphQLRssTranslationMode only decides whether the translateRssItems
+	// mutation is registered into the Go GraphQL executor. It is independent
+	// of every read switch and every other write switch: an empty or legacy
+	// value keeps the mutation, with its DeepLX/LLM, cache, metrics and model
+	// log side effects, on NestJS. The accepted values are exactly "",
+	// "legacy" and "go". Go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
+	// MONGO_URI (processeditems and llmrequestlogs live in Mongo). It starts no
+	// worker or Cron, writes no processed document and never probes the
+	// providers at startup; the provider URLs, keys, profiles and encryption
+	// key keep their request-time semantics. While this switch is legacy, any
+	// document that selects translateRssItems falls back to NestJS as a whole
+	// before any translation, cache write or metrics side effect. Rolling back
+	// only means setting this variable back to legacy.
+	GraphQLRssTranslationMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -2259,6 +2273,18 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SETTINGS_WRITE_MODE must be one of legacy|go")
 	}
+	// The RSS translation switch accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy, so an unset deployment keeps
+	// translateRssItems, including its cache/metrics/model-log side effects, on
+	// NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_RSS_TRANSLATION_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLRssTranslationMode = "legacy"
+	case "go":
+		cfg.GraphQLRssTranslationMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_RSS_TRANSLATION_MODE must be one of legacy|go")
+	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
 	cfg.GraphQLComplexity = intDefault(getenv("GRAPHQL_COMPLEXITY_LIMIT"), 2000)
@@ -2949,6 +2975,17 @@ func Load(getenv func(string) string) (Config, error) {
 	// service, so it does not require MONGO_URI.
 	if cfg.GraphQLSettingsWriteMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_SETTINGS_WRITE_MODE", cfg)
+	}
+	// The RSS translation takeover needs JWT verification, MySQL, Redis and
+	// Mongo: processeditems and llmrequestlogs live in Mongo, the two
+	// translation caches live in Redis and the daily metrics row lives in
+	// MySQL. Provider URLs, keys, profiles and the encryption key are resolved
+	// per request and are not startup conditions; no provider is probed.
+	if cfg.GraphQLRssTranslationMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_RSS_TRANSLATION_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_GRAPHQL_RSS_TRANSLATION_MODE=go")
+		}
 	}
 
 	// The situation monitor signals takeover needs the credentialed auth stack
