@@ -2247,9 +2247,15 @@ jobs:
               request_json("D5 reused recovery code", NEST_URL, "POST", VERIFY_LOGIN_PATH, None,
                            {"challengeId": second["authChallengeId"], "code": codes[0]}, 401,
                            INVALID_CODE)
-              remaining_hashes = recovery_hashes(user)
-              if hash_code(codes[0]) in remaining_hashes:
-                  fail("D5: the consumed recovery code is still stored")
+              # 公开登录挑战保持原有语义：恢复码分支只标记 usedAt（单次消费），
+              # 不删除行——行的生命周期由 verify-enroll / disable / rotate 管理。
+              consumed = [row for row in recovery_rows(user) if row[0] == hash_code(codes[0])]
+              if not consumed:
+                  fail("D5: the consumed recovery code row disappeared; the public login path "
+                       "must only mark usedAt")
+              if consumed[0][1] == "<null>":
+                  fail("D5: the consumed recovery code was not marked as used")
+              require("D5 unused codes after one login", unused_recovery_count(user), 7)
               third = login_doc(email_of(user), org_a)
               for attempt in range(1, 5):
                   request_json("D5 wrong attempt %d" % attempt, NEST_URL, "POST", VERIFY_LOGIN_PATH,
@@ -2616,7 +2622,7 @@ jobs:
 
               # scopes 读取规则（直接 SQL 造行）
               for label, raw_sql, expected in (
-                  ("not an array", "'openid'", OIDC_DEFAULT_SCOPES),
+                  ("not an array", "'\"openid\"'", OIDC_DEFAULT_SCOPES),
                   ("object", "'{}'", OIDC_DEFAULT_SCOPES),
                   ("blank members", "'[\"\", \"  \"]'", OIDC_DEFAULT_SCOPES),
                   ("sql null", "NULL", OIDC_DEFAULT_SCOPES),
@@ -2635,8 +2641,8 @@ jobs:
               # hasClientSecret 是 Boolean(存储值)，不是"能否解密"
               for label, secret_sql, expected in (
                   ("sql null", "NULL", False),
-                  ("plain string", "'legacy-plaintext'", True),
-                  ("empty string", "''", False),
+                  ("plain string", "'\"legacy-plaintext\"'", True),
+                  ("empty string", "'\"\"'", False),
                   ("number zero", "0", False),
                   ("envelope", "_utf8mb4'" + sql_escape(json.dumps(encrypt_v1("has-secret-value")))
                    + "'", True),
