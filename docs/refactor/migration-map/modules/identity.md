@@ -4,17 +4,17 @@
 
 ## 范围与实施状态
 
-登录、验证码、refresh、OIDC 登录回调、邀请和注册审批仍由 Nest 承担。已迁移的是账户/登出/机器令牌、已认证 MFA 配置及 RBAC/组织管理子链，不能把整个 auth 标成迁完。
+2026-10-18增量基线c39f282f：#75的登录/验证码/refresh/MFA挑战/找回密码/邮箱变更11路已通过#77合入，相关main/wire/精确规则与复用基础已核对，不重新派发。OIDC登录、邀请和注册审批、头像/导出仍留Nest；账户/登出/机器令牌、已认证MFA和RBAC/组织管理此前已合入，整个auth仍未迁完。下方旧基线表未统一重审，最新范围以本次任务记录与源码为准。
 
 关键数据与副作用：MySQL User/Membership/Role/Permission/Organization/MachineAccessToken；Redis 撤销名单与权限缓存；邮件、OIDC、头像 S3；Go 审计失败可写 AuditLogOutbox，消费仍由 Nest 承担（见异步域）。令牌 claim 不能替代服务端 membership 重推导。
 
-真实剩余缺口：完整登录与会话链、邀请/审批、头像与导出见下表 Nest 行；登录挑战与 MFA 管理是不同范围。GraphQL 8 个组织访问 Mutation 已合入，不再分配。
+本次将注册申请→审批→邮件邀请→接受邀请入组14条HTTP认领为[IDENTITY-ONBOARDING-001](../tasks/IDENTITY-ONBOARDING-001.md) reserved，[完整提示词](../tasks/IDENTITY-ONBOARDING-001.prompt.md)已发出；无业务实现/PR新增。OIDC三路、头像和导出继续未认领。GraphQL组织八写与已合登录11路不重复迁移。
 
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#identity) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 Nest 功能目录：[auth](../../../../apps/api/src/modules/auth)、[org](../../../../apps/api/src/modules/org)、[rbac](../../../../apps/api/src/modules/rbac)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：2026-10-18以main9d0462e1限定深读后，[AUTH-LOGIN-001](../tasks/AUTH-LOGIN-001.md)已reserved，覆盖登录/refresh/验证码/MFA挑战/找回密码/邮箱变更11路；[提示词](../tasks/AUTH-LOGIN-001.prompt.md)已发出，尚无业务PR，不改变下表main注册覆盖。旧worktree不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：IDENTITY-ONBOARDING-001；旧AUTH-LOGIN-001已merged（#75经#77进入c39f282f），不继续占用后续邀请/审批。新任务限定深读两service、14个handler/DTO、平台与组织权限、默认角色bootstrap、真实SMTP及Prisma/Web返回；发现普通invite拒绝system admin与new_org审批冲突，按受控平台bootstrap修复。真实SMTP/数据库运行未验证；[认领核对记录](../tasks/README.md)保存当前占用。
 
 ## HTTP 开关、实现与生产接线
 

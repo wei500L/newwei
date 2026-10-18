@@ -4,17 +4,21 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 ## 当前占用与已合并历史
 
+最新增量（2026-10-18）：fetch后main为c39f282f11952b487c3ef6fefb14882db265ed9e，#70–#76已通过[整合PR #77](https://github.com/wei500L/newwei/pull/77)合入；该SHA普通CI39142523834成功，开放PR为空。以下六批主提交/主要接线已在main，旧worktree均干净，不因目录保留而继续占用。只深入本次identity候选，不把此次合并核对当全仓业务验收。
+
+新认领[IDENTITY-ONBOARDING-001](IDENTITY-ONBOARDING-001.md) reserved：[14条HTTP完整执行提示词](IDENTITY-ONBOARDING-001.prompt.md)，注册申请→审批→真实邀请邮件→accept入组；业务目录未创建。复用已合登录SMTP/密码与组织bootstrap；明确修复平台新组织审批被普通系统admin邀请限制阻断的具体分支。OIDC/头像/导出未认领。
+
 本次规划刷新：2026-10-18，origin/main 9d0462e16d88d146b8afbf67cdd58d8b7419ff29。#69已merged；#70仍OPEN/Ready、head adb765d0180e8b34910181e8c6fde8be400a2dff，实际diff与所有现存worktree HEAD/状态已只读刷新；历史工作目录状态无业务新增证据。这里只增加本批认领，不把旧表日期统一刷新成全仓审查。
 
 | ID | 状态 | 精确范围 | 是否已有业务 PR / 推送 |
 |---|---|---|---|
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |
-| [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | pr_open | 8 个通知/看板/告警交互写 | Ready [#70](https://github.com/wei500L/newwei/pull/70)，head adb765d0；worktree 干净；尚未合 main，保留占用 |
-| [ITEMS-LIST-001](ITEMS-LIST-001.md) | pr_open | Query `items` 完整分页/RECENCY/RELEVANCE/PERSONALIZED/批量嵌套投影 | Ready [#74](https://github.com/wei500L/newwei/pull/74)，head `c45f1afe`；CI 39136842080 success；未合 main |
-| [NEWS-BRIEF-001](NEWS-BRIEF-001.md) | pr_open | Query newsEventBrief 冷生成/forceRefresh、独立 BRIEF 子开关、LLM 请求日志与 briefV1 叶子写回 | Ready [PR #72](https://github.com/wei500L/newwei/pull/72)，head 517a73f9；该 head 普通 CI verify/integration 通过，尚未合 main |
-| [STORAGE-MEDIA-001](STORAGE-MEDIA-001.md) | pr_open | storage/test 独立接管 + 媒体下发/REST 与 GraphQL 详情的 S3 剩余分支 | Ready [#73](https://github.com/wei500L/newwei/pull/73)，head `907d3d4c`；CI 39135727891 success；业务 PR 未合 main，保留占用 |
-| [AUTH-LOGIN-001](AUTH-LOGIN-001.md) | pr_open | 登录/refresh/验证码/MFA挑战/找回密码/邮箱变更11条HTTP | Ready [PR #75](https://github.com/wei500L/newwei/pull/75)，head `59114fe9`；CI verify success；未合 main |
-| [CRAWL-METADATA-001](CRAWL-METADATA-001.md) | pr_open | POST crawl-tasks/metadata + Query crawlMetadata的urls/sitemap完整发现/抓取/解析 | Ready [PR #76](https://github.com/wei500L/newwei/pull/76)，head `085244a5`；CI verify success；未合 main |
+| [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | merged | 8 个通知/看板/告警交互写 | #70经#77进入main c39f282f；实际原PR merge 8e1ff896，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
+| [ITEMS-LIST-001](ITEMS-LIST-001.md) | merged | Query items完整分页/三排序/批量投影 | #74经#77进入main c39f282f；实际原PR merge 99e648c8，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
+| [NEWS-BRIEF-001](NEWS-BRIEF-001.md) | merged | newsEventBrief生成/强刷/日志与写回 | #72经#77进入main c39f282f；实际原PR merge e40e9041，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
+| [STORAGE-MEDIA-001](STORAGE-MEDIA-001.md) | merged | storage/test与S3媒体/详情URL | #73经#77进入main c39f282f；实际原PR merge f4ac4aa8，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
+| [AUTH-LOGIN-001](AUTH-LOGIN-001.md) | merged | 登录/会话/MFA挑战/找回密码/邮箱变更11路 | #75经#77进入main c39f282f；实际原PR merge 7879629e，复用基础已限定核对，目录干净；整合main普通CI成功，非生产启用证据 |
+| [CRAWL-METADATA-001](CRAWL-METADATA-001.md) | merged | HTTP+Query元数据完整预览链 | #76经#77进入main c39f282f；实际原PR merge 501c4930，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
 
 本次增量（2026-10-18）：origin/main 仍为 9d0462e16d88d146b8afbf67cdd58d8b7419ff29；#70 保持 OPEN/Ready、head adb765d0。新增 NEWS-BRIEF-001 与 STORAGE-MEDIA-001 占用，只维护文档与独立编码目录，不取得 BL-01/#70 顶层接线所有权；原表日期不统一刷新成全仓审查。
 

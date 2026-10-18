@@ -56,6 +56,8 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-06 · identity / 邀请、审批与 OIDC 接入的后续分段
 
+- 2026-10-18以main c39f282f深读后，将其中邀请/申请审批14路认领为[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md) reserved，[提示词](tasks/IDENTITY-ONBOARDING-001.prompt.md)已保存并发出。#75登录基础已通过#77合入，原会话前置已满足；本批accept不签发会话。已核实新组织审批调用普通invite的system-admin拒绝问题，纳入受控bootstrap路径修复。其余OIDC三路、头像与导出仍未认领，不扩成19路杂批。
+
 - **精确候选集合**：identity 域余下 Nest HTTP：/admin/invites 四路、/admin/registration-applications 五路、/register/{applications,join-applications} 两路、/invitations/:token 三路、GET sso/oidc/start、GET oidc/callback、POST sso/handoff/exchange；另 POST avatar/presigned-url 与 GET data-export 是两个可分离支线。均为 GAP-LEGACY-001，不包含 BL-04。
 - **基础/依据**：G/graphqlread/orgaccesswrite、G/{rbacapi,authfactors,accountsecurity}，N/OrgInviteService、RegistrationApplicationService、OidcAuthService；需要邀请/审批事务、默认角色/租户初始化、邮件、IdP/state/PKCE/handoff token；头像依赖 StorageService、导出依赖完整个人数据聚合。
 - **文件/前置/冲突**：N/modules/auth 对应服务→新 Go 包；主链依赖 BL-04 token/session 协议。**当前只适合分段源码核对，不能把19条不相干入口一次认领**；先按邀请+审批、OIDC、头像/导出确定可独立交付的 task，后两支需分别声明存储/数据边界。
