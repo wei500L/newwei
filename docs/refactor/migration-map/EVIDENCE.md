@@ -2,7 +2,14 @@
 
 [返回入口](README.md)。此页保存核对方法与精确证据；当前事实先看本节，历史快照保留作追踪，不替代各域源码。
 
-## 本轮完整性复核（当前事实）
+## NEWS-BRIEF-001（2026-10-18，候选实现）
+
+- git fetch origin main 后 `origin/main = 9d0462e16d88d146b8afbf67cdd58d8b7419ff29`；开放 PR 为 #70（业务，head adb765d0）与 #71（规划文档）；`git worktree list` 中 briefing 目录原先不存在，本窗口创建唯一编码 worktree `/Users/oo/project/newwei-go-news-event-brief` 与分支 `refactor/go-news-event-brief`（从 9d0462e1）。规划记录未进 main，本分支从 docs/plan-news-event-brief 带入 [NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md) 与提示词。
+- 本批新增/修改：newsevents brief.go/brief_generate.go/brief_log.go/register.go/service.go、publicportal brief_completion.go/gateway.go/story.go、llmlogs completion.go、config.go、cmd/api/main.go（仅 newsevents.Register 参数与日志）、`.env.sample`、`docker-compose.yml`、api-go README 与同域测试。
+- 静态边界：未在本机安装依赖、未运行 go build/go test/Docker/服务，未做模型实网、MySQL/Mongo 或部署切流验证；gofmt、git diff 静态复核与只读源码核对已完成。普通 CI 结果与精确 head 在本批推送后回填，不用 main 旧 CI 或 skipped smoke 充当通过。
+- 关闭边界：GAP-NEWS-001 仍开放；PR 只记候选实现，实际 merge SHA 落地后才复核关闭。
+
+## 本轮完整性复核（历史快照）
 
 2026-10-18 14:37 开始，14:49 再 fetch，`origin/main = 3cedce9aa3200436aba3596f63b559de5490cec8` 未变。#69 OPEN / Ready / autoMergeRequest=null，原 worktree 干净后在原文档分支追加；未 amend/rebase/force-push。apps/api、apps/api-go、apps/vector-go 相对该 main 无差异。本轮只改 migration-map 文档；原 PR 已有 AGENTS/roadmap 导航，本轮没有扩展业务/配置/测试/schema/workflow。
 

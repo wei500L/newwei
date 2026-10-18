@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -37,7 +39,15 @@ type completionRequest struct {
 	OrgID    string
 	System   string
 	User     string
-	Metadata map[string]any
+	Metadata BriefCompletionMetadata
+}
+
+// BriefSettingsReader is the only store capability the model gateway needs:
+// the raw llm_gateway_profiles and litellm_proxy_governance documents. Keeping
+// it narrow lets the exported brief completion surface run without the public
+// portal home/channel reads.
+type BriefSettingsReader interface {
+	GatewaySettings(ctx context.Context) (profiles, governance []byte, err error)
 }
 
 type completionProfile struct {
@@ -51,15 +61,30 @@ type completionProfile struct {
 	SendMetadata       bool
 	ResponseFormatMode string
 	APISurface         string
+	// Governance mirrors Nest's resolved config after
+	// applyManagedProxyGovernance: whether the managed runtime key replaced
+	// the profile key, the auth mode the request used, and the governance
+	// target profile id. They are also written to the LLM request log.
+	GovernanceApplied         bool
+	GovernanceAuthMode        string
+	GovernanceTargetProfileID string
+}
+
+// authMode mirrors litellm.service.ts governanceAuthMode ?? "profile_key".
+func (p completionProfile) authMode() string {
+	if p.GovernanceApplied {
+		return "managed_runtime_key"
+	}
+	return "profile_key"
 }
 
 type gatewayClient struct {
-	store Store
+	store BriefSettingsReader
 	env   GatewayEnv
 	http  *http.Client
 }
 
-func newGateway(store Store, env GatewayEnv) *gatewayClient {
+func newGateway(store BriefSettingsReader, env GatewayEnv) *gatewayClient {
 	if env.APIBase == "" {
 		env.APIBase = "http://localhost:4001"
 	}
@@ -72,37 +97,65 @@ func newGateway(store Store, env GatewayEnv) *gatewayClient {
 	return &gatewayClient{store: store, env: env, http: &http.Client{}}
 }
 
+// errContentBlocked marks an upstream guardrail refusal that arrived as a
+// successful HTTP response. Nest stops the fallback chain on this error, so the
+// completion loop must not paper over it with another model.
+var errContentBlocked = errors.New("model gateway blocked the request by guardrails")
+
+// completionOutcome is one successful or failed model HTTP exchange.
+type completionOutcome struct {
+	Content string
+	Usage   BriefCompletionUsage
+}
+
+// Complete keeps the public portal story-detail call shape: content only.
 func (g *gatewayClient) Complete(ctx context.Context, req completionRequest) (string, error) {
-	profiles, governance, err := g.store.GatewaySettings(ctx)
+	outcome, err := g.complete(ctx, req, nil)
 	if err != nil {
 		return "", err
+	}
+	return outcome.Content, nil
+}
+
+// complete resolves the active profile and walks the primary model followed by
+// the configured fallback models. observer, when not nil, receives one record
+// per real HTTP attempt.
+func (g *gatewayClient) complete(ctx context.Context, req completionRequest, observer BriefCompletionObserver) (completionOutcome, error) {
+	profiles, governance, err := g.store.GatewaySettings(ctx)
+	if err != nil {
+		return completionOutcome{}, err
 	}
 	profile, err := resolveCompletionProfile(profiles, governance, g.env)
 	if err != nil {
-		return "", err
+		return completionOutcome{}, err
 	}
 	models := uniqueModels(append([]string{profile.Model}, profile.FallbackModels...))
 	if len(models) == 0 {
-		return "", errors.New("completion model is not configured")
+		return completionOutcome{}, errors.New("completion model is not configured")
 	}
 	var last error
-	for _, model := range models {
-		content, err := g.completeModel(ctx, profile, model, req)
+	for index, model := range models {
+		outcome, err := g.completeModel(ctx, profile, model, index, req, observer)
 		if err == nil {
-			return content, nil
+			return outcome, nil
 		}
 		if status, ok := err.(*StatusError); ok {
-			return "", status
+			return completionOutcome{}, status
+		}
+		if errors.Is(err, errContentBlocked) {
+			// A guardrail refusal terminates the whole chain; Nest does not
+			// retry it against a fallback model.
+			return completionOutcome{}, err
 		}
 		last = err
 	}
 	if last == nil {
 		last = errors.New("completion failed")
 	}
-	return "", last
+	return completionOutcome{}, last
 }
 
-func (g *gatewayClient) completeModel(ctx context.Context, profile completionProfile, model string, req completionRequest) (string, error) {
+func (g *gatewayClient) completeModel(ctx context.Context, profile completionProfile, model string, modelIndex int, req completionRequest, observer BriefCompletionObserver) (completionOutcome, error) {
 	attempts := profile.MaxRetries
 	if attempts < 1 {
 		attempts = 1
@@ -110,16 +163,35 @@ func (g *gatewayClient) completeModel(ctx context.Context, profile completionPro
 	delay := time.Second
 	var last error
 	for attempt := 0; attempt < attempts; attempt++ {
-		content, status, err := g.postCompletion(ctx, profile, model, req)
+		started := time.Now()
+		outcome, status, err := g.postCompletion(ctx, profile, model, req)
+		if observer != nil {
+			observer.ObserveBriefCompletionAttempt(ctx, BriefCompletionAttempt{
+				OrgID:                     req.OrgID,
+				Model:                     model,
+				APISurface:                profile.APISurface,
+				GatewayProfileID:          profile.ID,
+				GovernanceApplied:         profile.GovernanceApplied,
+				AuthMode:                  profile.authMode(),
+				GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
+				Attempt:                   attempt + 1,
+				ModelIndex:                modelIndex + 1,
+				Success:                   err == nil,
+				Err:                       err,
+				Latency:                   time.Since(started),
+				Usage:                     outcome.Usage,
+				Metadata:                  req.Metadata,
+			})
+		}
 		if err == nil {
-			return content, nil
+			return outcome, nil
 		}
 		last = err
-		if !retryable(status, err) || attempt+1 >= attempts {
-			return "", err
+		if errors.Is(err, errContentBlocked) || !retryable(status, err) || attempt+1 >= attempts {
+			return completionOutcome{}, err
 		}
 		if sleepErr := sleep(ctx, delay); sleepErr != nil {
-			return "", sleepErr
+			return completionOutcome{}, sleepErr
 		}
 		if delay < 10*time.Second {
 			delay *= 2
@@ -128,16 +200,16 @@ func (g *gatewayClient) completeModel(ctx context.Context, profile completionPro
 			}
 		}
 	}
-	return "", last
+	return completionOutcome{}, last
 }
 
-func (g *gatewayClient) postCompletion(ctx context.Context, profile completionProfile, model string, req completionRequest) (string, int, error) {
+func (g *gatewayClient) postCompletion(ctx context.Context, profile completionProfile, model string, req completionRequest) (completionOutcome, int, error) {
 	payload := map[string]any{
 		"temperature": 0.2,
 		"top_p":       0.9,
 	}
 	format := briefResponseFormat(profile.ResponseFormatMode)
-	if profile.SendMetadata && req.Metadata != nil {
+	if profile.SendMetadata {
 		payload["metadata"] = req.Metadata
 	}
 	var primary, fallback string
@@ -167,26 +239,33 @@ func (g *gatewayClient) postCompletion(ctx context.Context, profile completionPr
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", 0, err
+		return completionOutcome{}, 0, err
 	}
-	status, raw, err := g.post(ctx, profile, primary, body)
+	status, raw, header, err := g.post(ctx, profile, primary, body)
 	if err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
-		status, raw, err = g.post(ctx, profile, fallback, body)
+		status, raw, header, err = g.post(ctx, profile, fallback, body)
 	}
 	if err != nil {
-		return "", status, err
+		return completionOutcome{}, status, err
 	}
 	if status < 200 || status >= 300 {
-		return "", status, errors.New("model gateway request failed")
+		return completionOutcome{}, status, errors.New("model gateway request failed")
 	}
 	content := completionText(raw, profile.APISurface)
-	if strings.TrimSpace(content) == "" {
-		return "", status, errors.New("model gateway returned empty content")
+	usage := completionUsage(raw, profile.APISurface)
+	if cost, ok := extractCostHeader(header); ok {
+		usage.CostUSD = &cost
 	}
-	return content, status, nil
+	if strings.TrimSpace(content) == "" {
+		if isGuardrailBlockedResponse(raw) {
+			return completionOutcome{Usage: usage}, status, errContentBlocked
+		}
+		return completionOutcome{Usage: usage}, status, errors.New("model gateway returned empty content")
+	}
+	return completionOutcome{Content: content, Usage: usage}, status, nil
 }
 
-func (g *gatewayClient) post(ctx context.Context, profile completionProfile, path string, body []byte) (int, []byte, error) {
+func (g *gatewayClient) post(ctx context.Context, profile completionProfile, path string, body []byte) (int, []byte, http.Header, error) {
 	timeout := profile.Timeout
 	if timeout <= 0 {
 		timeout = 60 * time.Second
@@ -196,7 +275,7 @@ func (g *gatewayClient) post(ctx context.Context, profile completionProfile, pat
 	endpoint := strings.TrimRight(profile.APIBase, "/") + path
 	httpReq, err := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if profile.APIKey != "" {
@@ -204,14 +283,111 @@ func (g *gatewayClient) post(ctx context.Context, profile completionProfile, pat
 	}
 	resp, err := g.http.Do(httpReq)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
-		return resp.StatusCode, nil, err
+		return resp.StatusCode, nil, resp.Header, err
 	}
-	return resp.StatusCode, raw, nil
+	return resp.StatusCode, raw, resp.Header, nil
+}
+
+// isGuardrailBlockedResponse mirrors Nest's extractGuardrailBlockedMessage:
+// LiteLLM reports a guardrail refusal as a successful response whose body
+// carries a non-empty messages array and no usable choice.
+func isGuardrailBlockedResponse(raw []byte) bool {
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return false
+	}
+	messages, ok := doc["messages"].([]any)
+	if !ok || len(messages) == 0 {
+		return false
+	}
+	choices, _ := doc["choices"].([]any)
+	return len(choices) == 0
+}
+
+// completionUsage extracts the token accounting of one successful response.
+// Unknown values stay nil; they are never coerced to zero. The responses
+// surface reports no usage at all unless both token counts are numeric, which
+// mirrors normalizeCompletionUsageFromResponses.
+func completionUsage(raw []byte, surface string) BriefCompletionUsage {
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return BriefCompletionUsage{}
+	}
+	usageRecord, _ := doc["usage"].(map[string]any)
+	if surface == "responses" {
+		prompt := firstFinite(usageRecord["prompt_tokens"], usageRecord["input_tokens"])
+		completion := firstFinite(usageRecord["completion_tokens"], usageRecord["output_tokens"])
+		if prompt == nil || completion == nil {
+			return BriefCompletionUsage{CostUSD: payloadCost(doc, usageRecord)}
+		}
+		total := firstFinite(usageRecord["total_tokens"], nil)
+		if total == nil {
+			sum := *prompt + *completion
+			total = &sum
+		}
+		return BriefCompletionUsage{PromptTokens: prompt, CompletionTokens: completion, TotalTokens: total, CostUSD: payloadCost(doc, usageRecord)}
+	}
+	prompt := firstFinite(usageRecord["prompt_tokens"], nil)
+	completion := firstFinite(usageRecord["completion_tokens"], nil)
+	total := firstFinite(usageRecord["total_tokens"], nil)
+	if total == nil && prompt != nil && completion != nil {
+		sum := *prompt + *completion
+		total = &sum
+	}
+	return BriefCompletionUsage{PromptTokens: prompt, CompletionTokens: completion, TotalTokens: total, CostUSD: payloadCost(doc, usageRecord)}
+}
+
+func payloadCost(doc, usageRecord map[string]any) *float64 {
+	if usageRecord != nil {
+		if cost := firstFinite(usageRecord["response_cost"], nil); cost != nil {
+			return cost
+		}
+	}
+	return firstFinite(doc["response_cost"], nil)
+}
+
+func firstFinite(values ...any) *float64 {
+	for _, value := range values {
+		if value == nil {
+			continue
+		}
+		number, ok := finiteNumber(value)
+		if !ok {
+			continue
+		}
+		return &number
+	}
+	return nil
+}
+
+func finiteNumber(value any) (float64, bool) {
+	number, ok := value.(float64)
+	if !ok || math.IsNaN(number) || math.IsInf(number, 0) {
+		return 0, false
+	}
+	return number, true
+}
+
+// extractCostHeader reads the LiteLLM cost headers in Nest's order.
+func extractCostHeader(header http.Header) (float64, bool) {
+	if header == nil {
+		return 0, false
+	}
+	for _, name := range []string{"x-litellm-response-cost", "x-litellm-cost", "litellm-cost"} {
+		raw := strings.TrimSpace(header.Get(name))
+		if raw == "" {
+			continue
+		}
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0) {
+			return parsed, true
+		}
+	}
+	return 0, false
 }
 
 func retryable(status int, err error) bool {
@@ -349,7 +525,15 @@ func normalizeProfile(raw []byte, env GatewayEnv) (completionProfile, bool) {
 	if id == "" || model == "" {
 		return completionProfile{}, false
 	}
-	if enabled, ok := record["enabled"].(bool); ok && !enabled {
+	// Nest normalizeEnabled: a real boolean is kept; undefined/null default to
+	// enabled; any other JSON type disables the profile.
+	switch value := record["enabled"].(type) {
+	case nil:
+	case bool:
+		if !value {
+			return completionProfile{}, false
+		}
+	default:
 		return completionProfile{}, false
 	}
 	apiBase := jsonString(record["apiBase"])
@@ -422,6 +606,12 @@ func applyGovernance(selected *completionProfile, profiles []completionProfile, 
 	}
 	selected.APIBase = target.APIBase
 	selected.APIKey = strings.TrimSpace(key)
+	// Nest records these on the resolved config: the request used the managed
+	// runtime key and the governance target profile id is written to the LLM
+	// request log.
+	selected.GovernanceApplied = true
+	selected.GovernanceAuthMode = "managed_runtime_key"
+	selected.GovernanceTargetProfileID = target.ID
 	return nil
 }
 
@@ -629,27 +819,30 @@ func briefResponseFormat(mode string) any {
 	}
 }
 
+// briefJSONSchema mirrors the JSON schema zodToJsonSchema derives from
+// NewsEventBriefPayloadSchema: the point object requires only text (citations
+// has a default), key_points carries minItems 1, and latest_update is nullable.
 func briefJSONSchema() map[string]any {
 	point := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"text":      map[string]any{"type": "string", "minLength": 1},
-			"citations": map[string]any{"type": "array", "items": map[string]any{"type": "integer", "minimum": 1}, "maxItems": 12},
+			"citations": map[string]any{"type": "array", "items": map[string]any{"type": "integer", "minimum": 1}, "maxItems": 12, "default": []any{}},
 		},
 		"required":             []string{"text"},
 		"additionalProperties": false,
 	}
 	points := func(max int) map[string]any {
-		return map[string]any{"type": "array", "items": point, "maxItems": max}
+		return map[string]any{"type": "array", "items": point, "maxItems": max, "default": []any{}}
 	}
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"detailed_summary": map[string]any{"type": "string", "minLength": 1},
 			"tldr":             map[string]any{"type": "string", "minLength": 1},
-			"key_points":       points(10),
+			"key_points":       map[string]any{"type": "array", "items": point, "minItems": 1, "maxItems": 10},
 			"why_it_matters":   points(10),
-			"latest_update":    point,
+			"latest_update":    map[string]any{"anyOf": []any{point, map[string]any{"type": "null"}}},
 			"what_to_watch":    points(12),
 			"comparison": map[string]any{
 				"type": "object",

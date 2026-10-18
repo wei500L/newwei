@@ -44,7 +44,7 @@ func TestGatewayCompletionUsesConfiguredProfile(t *testing.T) {
 	content, err := client.Complete(context.Background(), completionRequest{
 		System:   "system",
 		User:     "user",
-		Metadata: map[string]any{"feature": "news_event_brief"},
+		Metadata: BriefCompletionMetadata{Feature: "news_event_brief"},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -18,11 +18,14 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 - **基础/工作量依据**：settingswrite、settingscrawl.RegisterSettingsModelTypes、workspace.RegisterModels 已存在；需要核对 RouteMode、无效 DSN、needsCredentialedGo、handler 四处条件以及三写模式组合。无新队列/外部调用。
 - **文件/前置/冲突**：`apps/api-go/cmd/api/main.go`，必要时 config/模型注册；#70 正在共享接线，先确认其最终 merge/head。**当前不适合第二独立编码窗口**；不得按 PR 描述假设修复，先读实际提交。
 
-### BL-02 · news / newsEventBrief 生成
+### BL-02 · news / newsEventBrief 生成（已派发）
+
+- 2026-10-18 按 main 9d0462e1 深读后派发至 [NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)，提示词见同目录任务附件；不再属于未认领队列。GAP-NEWS-001 仍未关闭。本批不领取 BL-17 或其他候选。
+- 补查事实：生成 sources 须携带 Summary/KeyPoints（Go SQL 已有，briefSource 原先未带）；Nest completion 还产生 Mongo LLM 请求日志，Go gateway 原先没有 writer，本批补 best-effort 具名 writer 与 metadata policy。news_event_brief 不在自动 moderation 集合，运行上下文不是租约。共享 main 只改新闻事件 Register 参数，不扩顶层资源/路由 OR；新增独立 BRIEF 子开关默认 legacy，父读开关依赖由 Load 明确校验。
 
 - **范围/缺口**：Query newsEventBrief 的 cache miss、forceRefresh、模型结果清洗与 metadata 写回（GAP-NEWS-001）；保留合法 null 与缓存命中。
 - **基础/依据**：G/graphqlread/newsevents 有选源/指纹/模型；G/publicportal 的完整冷路径和 gatewayClient 是私有，可提取具名共享能力。工作量来自两种调用语义/参数/配置/错误/写回，而非新增一个 root。
-- **文件/边界/次序**：`apps/api-go/internal/graphqlread/newsevents/{brief.go,store.go}`（以实际文件布局为准）、publicportal/{story,brief,gateway}.go；MySQL+外部模型，无 BullMQ 前置。**可独立窗口**，与 BL-17 修改 gateway 辅助函数要串行；准入再核模型配置与所有 metadata 叶子保留策略。
+- **文件/边界/次序**：`apps/api-go/internal/graphqlread/newsevents/{brief.go,store.go}`（以实际文件布局为准）、publicportal/{story,brief,gateway}.go；MySQL+外部模型，无 BullMQ 前置。**已由 NEWS-BRIEF-001 占用**，与 BL-17 修改 gateway 辅助函数串行；准入再核模型配置与所有 metadata 叶子保留策略。
 
 ### BL-03 · crawl / S3 媒体下发
 

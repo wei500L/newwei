@@ -187,10 +187,10 @@ func (s *Service) brief(ctx context.Context, orgID string, event *EventDetail, i
 		OrgID:  orgID,
 		System: buildBriefSystemPrompt(language),
 		User:   buildBriefUserPrompt(title, event.Summary, event.Language, event.StartAt, event.LastAt, sources),
-		Metadata: map[string]any{
-			"feature":    "news_event_brief",
-			"eventTitle": title,
-			"sources":    len(sources),
+		Metadata: BriefCompletionMetadata{
+			Feature:    "news_event_brief",
+			EventTitle: title,
+			Sources:    len(sources),
 		},
 	})
 	if err != nil {

@@ -882,6 +882,13 @@ services:
       # 且本变量=go 才登记；本变量为 legacy 时含这 20 个 root 的文档整包回
       # NestJS。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE: legacy
+      # newsEventBrief 单 root 的独立子开关。pilot 与样例保持 legacy，只接受
+      # 空串/legacy/go，非法值启动失败。只有 API_GO_GRAPHQL_READ_MODE=go 且
+      # API_GO_GRAPHQL_NEWS_EVENTS_MODE=go 时才允许为 go。为 go 时该 root 由
+      # Go 完成选源→调用模型→校验清洗→写回 metadata.briefV1 全链路；为
+      # legacy 时只登记其余五个新闻事件 root，含 newsEventBrief 的文档整包回
+      # NestJS。回滚只把该变量改回 legacy，旧 briefV1 缓存保持兼容。
+      API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE: legacy
       # 账户资料、会话退出与机器令牌管理的 8 条 HTTP（GET /api/auth/me、
       # PATCH /api/auth/profile、POST /api/auth/change-password、
       # POST /api/auth/logout、GET/POST /api/auth/machine-tokens、
