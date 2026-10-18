@@ -5,9 +5,9 @@
 - 模块：[news](../modules/news.md)；状态：reserved（本次提示词交给用户编码窗口，无开工证据）。
 - 来源：BL-02 / GAP-NEWS-001；仅一个已注册但部分实现的 Query，不新增接口计数。
 - 代码基线：9d0462e16d88d146b8afbf67cdd58d8b7419ff29；2026-10-18 15:48 MSK 本域增量静态核对。地图业务基线3cedce9a至此没有业务源码变化。
-- 提示词：[完整执行提示词](NEWS-BRIEF-001.prompt.md)；本次规划聊天将发出；编码执行器身份与活动尚未核实。
+- 提示词：[完整执行提示词](NEWS-BRIEF-001.prompt.md)；2026-10-18本次规划聊天发出；编码执行器身份与活动尚未核实。
 - 编码分支：refactor/go-news-event-brief；worktree：/Users/oo/project/newwei-go-news-event-brief，尚未创建。
-- 规划记录：docs/plan-news-event-brief；规划 worktree /Users/oo/project/newwei-plan-news-event-brief；文档 PR 发布后回填。
+- 规划记录：docs/plan-news-event-brief；规划 worktree /Users/oo/project/newwei-plan-news-event-brief；首提交efa819e3已正常推送，[Ready文档PR #71](https://github.com/wei500L/newwei/pull/71) 已发布。该PR仅文档，不是本批业务PR；CI状态应按其最新head查询，不要求或暗示模型验证。
 - 业务 PR/Ready/head：未创建；实际 merge SHA：无；本批普通 CI/额外集成验证：尚无。
 - main 普通 CI：9d0462e1，run 39127631691 success；不是本任务验证。模型实网、部署与流量未核实。
 
