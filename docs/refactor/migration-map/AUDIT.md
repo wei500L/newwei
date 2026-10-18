@@ -88,6 +88,8 @@
 
 ## settings
 
+2026-10-18本次候选增量，main90765633：只深入来源策略四写及必要复用/接线。已读四Resolver/DTO/helper/返回投影、NewsEventSourcePolicyService管理与state/preset/分类持久化分支、classifier归一化、Go policy读端/私有helper/模型注册和settingswrite审计存储。Mutation20/Query30/持久化60、rollback新版本且不回滚分类权重、category omitted/null、preset时间校验、主文档与分类分步写入、Redis warning均已明确，见SOURCE-POLICY-WRITE-001。源码未提供CAS/跨存储总事务；未做真实DB/跨进程验证，不把下述13写未审范围统一标完成。
+
 本组续审：**2026-10-18 15:01–15:08 MSK**，main SHA仍3cedce9a；以下是新增静态范围。
 
 - **13 写 / Go业务实现已静态核对（共享主路径）；接线仍GAP-GQL-001**：SettingsResolver/DTO/被调用服务→settingswrite.Register→typed resolver→service.go/orgsettings.go/newssettings.go→SystemSetting与模型。根settings.manage之外，AssertSystemAdmin再查本组织的内置isSystem/admin角色，不把跨组织或同名自定义admin放行。

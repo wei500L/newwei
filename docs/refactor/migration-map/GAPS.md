@@ -6,7 +6,7 @@
 
 | ID | 性质 / 所属域 | 影响范围 | 状态 / 归属 |
 |---|---|---|---|
-| GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | 未分配；SETTINGS-WRITE-001 主体仍 merged；与 WORKSPACE-WRITE-001 共享接线冲突 |
+| GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | SOURCE-POLICY-WRITE-001认领main90765633仍缺的路由/无效DSN两处条件；主体仍merged，缺口仍开放 |
 | GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | NEWS-BRIEF-001 pr_open（候选实现，未合 main）；缺口仍开放 |
 | GAP-CRAWL-001 | 部分实现；crawl | 媒体下发及已有REST/GraphQL详情的 S3 URL分支 | STORAGE-MEDIA-001 pr_open（候选实现，未合 main）；缺口仍开放 |
 | GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 工作台 8 写已由 WORKSPACE-WRITE-001 覆盖，Query `items` 由 ITEMS-LIST-001 覆盖（均 pr_open）；其余未分配，见 BACKLOG |
@@ -17,6 +17,8 @@
 <a id="gap-gql-001"></a>
 
 ## GAP-GQL-001 · 设置写独立开关漏入公共接线
+
+- 最新限定增量（2026-10-18，main90765633）：#70已合，但graphqlRouteMode和无效DSN错误分支仍漏旧settingsWrite；needsCredentialedGo/handler已有。两处剩余条件已交[SOURCE-POLICY-WRITE-001](tasks/SOURCE-POLICY-WRITE-001.md)与新来源策略开关接线一并最小修复，不重迁13业务、不在此提前关闭缺口。网关任务只保留其main/config语义增量。
 
 - 精确入口：SETTINGS-WRITE-001 列出的 13 个 `update*` Mutation；根因共用，不按 13 条重复建 bug。
 - 触发：`API_GO_GRAPHQL_SETTINGS_WRITE_MODE=go`，`API_GO_GRAPHQL_READ_MODE=legacy`，`API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE=legacy`。其他模式都关时，即使配置校验通过，仍缺 Redis/authenticator，`run` 在 GraphQL 装配检查处返回错误，进程不监听。若其他 HTTP go 模式补齐资源，handler 可以构造，但 `/graphql` 路由仍走 legacy，写实际由 Nest 执行。

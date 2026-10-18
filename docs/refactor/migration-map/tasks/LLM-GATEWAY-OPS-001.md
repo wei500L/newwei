@@ -1,5 +1,7 @@
 # LLM-GATEWAY-OPS-001 · 网关治理与真实探测十二路
 
+最新开发增量（2026-10-18）：状态in_progress；/Users/oo/project/newwei-go-llm-gateway-ops已从90765633创建，已见llmgatewayops/**、llmgatewayprofiles/ports.go、llmlogs/probe.go与completion.go改动；无业务PR，不计入main。main普通CI39149114456已success。下文未创建/CI运行中是原发出时快照，原提示词保留；不干预编码对话。
+
 - 状态 reserved；2026-10-18 继续选批。最终刷新基线 origin/main 90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，普通CI39149114456运行中；旧c39f282f的CI39142523834成功不能替代。此处只规划，无业务实现/注册/外部验证新增。
 - 分支 refactor/go-llm-gateway-ops；worktree /Users/oo/project/newwei-go-llm-gateway-ops，发出前尚未创建；[完整执行提示词](LLM-GATEWAY-OPS-001.prompt.md)。原#78已合旧head，本批新增记录未随其进入main，改用独立规划分支docs/plan-llm-gateway-ops发布。
 - 精确范围：/api/system-settings/llm-gateways 下 proxy-governance GET/PUT/DELETE/preflight/rotate-key 五路，:id/models/test/proxy-health/proxy-model-info/proxy-lb-test 五路，models-config/test-config 两路；共12，全部 settings.manage，无新增平台角色限制。POST201，其余成功200。BL-17 全范围由本任务占用。

@@ -16,9 +16,10 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-01 · settings / GraphQL 公共接线
 
+- 2026-10-18按main90765633重新核实后，将GAP-GQL-001具体剩余的graphqlRouteMode/无效DSN分支两处settingsWrite条件认领至[SOURCE-POLICY-WRITE-001](tasks/SOURCE-POLICY-WRITE-001.md)，与来源策略独立开关接线一并交付；不重迁13业务，不再另开竞争该两处接线的窗口。缺口未落地仍开放。
 - **目标/范围**：GAP-GQL-001 的13写独立路由/资源条件，保留 READ/ORG_ACCESS_WRITE/工作台写并集、模型与嵌套字段权限；不重写13个业务 resolver。OBS-DATA-001 仅作同文件错误传播审查项，不把不可达观察冒充已确认故障。
 - **基础/工作量依据**：settingswrite、settingscrawl.RegisterSettingsModelTypes、workspace.RegisterModels 已存在；需要核对 RouteMode、无效 DSN、needsCredentialedGo、handler 四处条件以及三写模式组合。无新队列/外部调用。
-- **文件/前置/冲突**：`apps/api-go/cmd/api/main.go`，必要时 config/模型注册；#70 正在共享接线，先确认其最终 merge/head。**当前不适合第二独立编码窗口**；不得按 PR 描述假设修复，先读实际提交。
+- **文件/前置/冲突**：`apps/api-go/cmd/api/main.go`，必要时config/模型注册；#70已由#77合入，但这两处条件仍缺。当前由SOURCE-POLICY-WRITE-001拥有最小修复，保留网关批次main/config并集；无新业务root计数。
 
 ### BL-02 · news / newsEventBrief 生成（已派发）
 
@@ -64,6 +65,7 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-07 · settings / 来源策略四写
 
+- 2026-10-18按main90765633深读后，整条来源策略版本链认领至[SOURCE-POLICY-WRITE-001](tasks/SOURCE-POLICY-WRITE-001.md) reserved，[完整执行提示词](tasks/SOURCE-POLICY-WRITE-001.prompt.md)在#80发布；不再是未认领候选。已核四写/DTO/helper/normalizer、category presence、20/30/60历史差异、preset时间比较、DB/cache审计失败边界及Go私有复用；无新外部服务/worker，保留源读后校验，不增加CAS/锁。
 - **范围/缺口**：updateNewsEventSourcePolicy、updateNewsEventSourcePolicyPresets、resetNewsEventSourcePolicy、rollbackNewsEventSourcePolicy（GAP-LEGACY-001）；不动已合并13写。
 - **基础/依据**：G/graphqlread/settingscrawl policyReader 和 publicportal 的来源规范化；N/news-event-source-policy.service.ts updatePolicy/updatePolicyPreset/resetPolicy/rollbackPolicy。expectedRevision校验、revision历史、preset delta/分类同步与Redis syncWarnings是主要工作，不只是四次upsert。
 - **文件/前置/冲突**：新 GraphQL 写包及现有 policy helpers/main；MySQL/SystemSetting/Redis，无须迁 ingestion 才可交付。**BL-01/#70 接线稳定后可独立窗口**；避免 BL-18 同时更改策略模型；本轮已进一步核对读后校验/同步失败语义，准入还需明确是否保留或优化其并发边界，见下表。

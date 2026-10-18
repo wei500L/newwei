@@ -4,6 +4,8 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 ## 当前占用与已合并历史
 
+最新选批增量（2026-10-18）：main90765633未变，普通CI39149114456已success；仅开放规划#80。LLM-GATEWAY-OPS-001已创建worktree并见llmgatewayops、profiles/ports.go及llmlogs probe writer开发，状态in_progress，不因没有业务PR释放。新认领[SOURCE-POLICY-WRITE-001](SOURCE-POLICY-WRITE-001.md) reserved：[完整提示词](SOURCE-POLICY-WRITE-001.prompt.md)，四策略写+GAP-GQL-001两处剩余接线，本批目录未创建；两批业务文件隔离，共享main/config/env保留并集。认领与提示词在#80正常提交发布。
+
 最新增量（2026-10-18）：最终fetch后main90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，#79通过f35ec572合入，旧规划#78也已合入；开放业务PR为空。此前#70–#76通过[整合PR #77](https://github.com/wei500L/newwei/pull/77)合入c39f282f的事实不变；旧SHA普通CI39142523834成功，新main普通CI39149114456运行中。旧worktree保留不代表继续占用。只深入本次model-gateway候选与新身份公共接线，不把此次核对当全仓业务验收。
 
 上一批[IDENTITY-ONBOARDING-001](IDENTITY-ONBOARDING-001.md)现merged：[#79](https://github.com/wei500L/newwei/pull/79)实际merge f35ec572ccdf607b9224d88d1962cf792f9915be为main祖先，14路规则/wire/main/config资源OR落地已核；原head e105b3ab。OIDC/头像/导出未认领。
@@ -22,7 +24,8 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 | [AUTH-LOGIN-001](AUTH-LOGIN-001.md) | merged | 登录/会话/MFA挑战/找回密码/邮箱变更11路 | #75经#77进入main c39f282f；实际原PR merge 7879629e，复用基础已限定核对，目录干净；整合main普通CI成功，非生产启用证据 |
 | [CRAWL-METADATA-001](CRAWL-METADATA-001.md) | merged | HTTP+Query元数据完整预览链 | #76经#77进入main c39f282f；实际原PR merge 501c4930，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
 | [IDENTITY-ONBOARDING-001](IDENTITY-ONBOARDING-001.md) | merged | 注册审批与邮件邀请入组14路 | #79实际merge f35ec572已在main90765633；新main CI运行中，非生产验证 |
-| [LLM-GATEWAY-OPS-001](LLM-GATEWAY-OPS-001.md) | reserved | 治理与真实探测12路，含远端资源与三类日志 | 认领/提示词在docs/plan-llm-gateway-ops；无业务PR/实施新增 |
+| [LLM-GATEWAY-OPS-001](LLM-GATEWAY-OPS-001.md) | in_progress | 治理与真实探测12路，含远端资源与三类日志 | 独立worktree在90765633，已见业务开发；无业务PR，不计入main |
+| [SOURCE-POLICY-WRITE-001](SOURCE-POLICY-WRITE-001.md) | reserved | 来源策略四Mutation完整版本管理；旧13写仅补两处接线 | 认领/提示词在#80，尚无业务目录/PR |
 
 本次增量（2026-10-18）：origin/main 仍为 9d0462e16d88d146b8afbf67cdd58d8b7419ff29；#70 保持 OPEN/Ready、head adb765d0。新增 NEWS-BRIEF-001 与 STORAGE-MEDIA-001 占用，只维护文档与独立编码目录，不取得 BL-01/#70 顶层接线所有权；原表日期不统一刷新成全仓审查。
 

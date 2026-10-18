@@ -1,5 +1,7 @@
 # 后端迁移地图
 
+最新本批（2026-10-18，main90765633未变）：普通CI39149114456已success。LLM-GATEWAY-OPS-001已见独立worktree真实业务开发，保持占用；新认领[SOURCE-POLICY-WRITE-001](tasks/SOURCE-POLICY-WRITE-001.md)的来源策略四Mutation完整版本链及旧设置13写两处剩余公共接线，[执行提示词](tasks/SOURCE-POLICY-WRITE-001.prompt.md)复用规划#80发布。仅深入settings本候选，不重建全仓地图；不修改正在开发窗口的记录要求。
+
 先读本页 → [PLANNING](PLANNING.md) → [当前任务](tasks/README.md) + [缺口摘要](GAPS.md#当前摘要) → [候选队列](BACKLOG.md) → 候选域与源码。[实现核对深度](AUDIT.md)、[开关/执行所有权/复用入口](DEPENDENCIES.md)、[证据](EVIDENCE.md)按需展开。Nest 暂时保留。
 
 最新规划增量（2026-10-18）：最终刷新main90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md)14路已由[#79](https://github.com/wei500L/newwei/pull/79)实际merge f35ec572合入，旧规划#78也已合入；此前#70–#76经#77合入的事实不变。新main普通CI39149114456运行中，旧c39f282f成功不能替代。新认领[LLM-GATEWAY-OPS-001](tasks/LLM-GATEWAY-OPS-001.md)治理与真实探测12路，[独立提示词](tasks/LLM-GATEWAY-OPS-001.prompt.md)改在独立规划分支docs/plan-llm-gateway-ops发布；只深读该候选并更新必要记录。下面3cedce9a/9d0462e1日期和注册统计是历史快照，不能当作最新main现值，合并/新占用看任务索引。生产启用与外部验证不由merge/CI推断。
