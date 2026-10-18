@@ -10,10 +10,13 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 |---|---|---|---|
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |
 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | pr_open | 8 个通知/看板/告警交互写 | Ready [#70](https://github.com/wei500L/newwei/pull/70)，head adb765d0；worktree 干净；尚未合 main，保留占用 |
-| [NEWS-BRIEF-001](NEWS-BRIEF-001.md) | in_progress | Query newsEventBrief冷生成/forceRefresh、模型日志与briefV1叶子写回 | [提示词](NEWS-BRIEF-001.prompt.md)已发出；第三批规划见newsevents/publicportal/llmlogs本地开发差异，尚无业务PR |
-| [STORAGE-MEDIA-001](STORAGE-MEDIA-001.md) | reserved | storage/test新接管 + 已有媒体下发/REST与GraphQL详情的S3剩余分支 | [提示词](STORAGE-MEDIA-001.prompt.md)已发出；worktree已创建于9d0462e1，当时尚无差异，保留占用 |
-| [ITEMS-LIST-001](ITEMS-LIST-001.md) | reserved | Query items完整分页/相关性/个性化/批量投影 | [提示词](ITEMS-LIST-001.prompt.md)本次第三批发出；编码目录未创建，规划记录复用PR #71 |
-| [AUTH-LOGIN-001](AUTH-LOGIN-001.md) | reserved | 登录/refresh/验证码/MFA挑战/找回密码/邮箱变更11条HTTP | [提示词](AUTH-LOGIN-001.prompt.md)本次第四批发出；编码目录未创建，规划记录复用PR #71；编码窗口不改共享地图 |
+| [NEWS-BRIEF-001](NEWS-BRIEF-001.md) | pr_open | Query newsEventBrief冷生成/forceRefresh、模型日志与briefV1叶子写回 | Ready [#72](https://github.com/wei500L/newwei/pull/72)，本次读head517a73f9及实际main/config diff；普通CI当时verify运行中，尚未合并 |
+| [STORAGE-MEDIA-001](STORAGE-MEDIA-001.md) | in_progress | storage/test新接管 + 已有媒体下发/REST与GraphQL详情的S3剩余分支 | [提示词](STORAGE-MEDIA-001.prompt.md)已发出；本次只读见objectstorage及S3相关本地开发，无业务PR |
+| [ITEMS-LIST-001](ITEMS-LIST-001.md) | in_progress | Query items完整分页/相关性/个性化/批量投影 | [提示词](ITEMS-LIST-001.prompt.md)已发出；本次只读见itemsreading/adapter/llmembed与selection元数据本地开发，无业务PR |
+| [AUTH-LOGIN-001](AUTH-LOGIN-001.md) | reserved | 登录/refresh/验证码/MFA挑战/找回密码/邮箱变更11条HTTP | [提示词](AUTH-LOGIN-001.prompt.md)已发出；worktree已创建于9d0462e1，当时干净，保留占用；编码窗口不改共享地图 |
+| [CRAWL-METADATA-001](CRAWL-METADATA-001.md) | reserved | POST crawl-tasks/metadata + Query crawlMetadata的urls/sitemap完整发现/抓取/解析 | [提示词](CRAWL-METADATA-001.prompt.md)本次第五批发出，编码目录未创建，记录复用PR #71 |
+
+第五批增量：main仍9d0462e1，main最近五次普通CI成功；只深入元数据两入口实际调用链并复核相关公开PR/现存认领。CRAWL-METADATA-001新增独立业务包，不改S3的crawlreadtelemetry/settingscrawl注册或items的contract/exec。共享依赖清单按模块条目：本批HTML解析x/net，S3批AWS SDK；各自远端生成，后合者正常merge主线后再生成并集，不覆盖其他分支。
 
 第四批发出前只读增量核对：main仍9d0462e1，#70仍OPEN/Ready head adb765d0，#71为规划文档PR；ITEMS-LIST-001目录已创建于9d0462e1，因此继续保留占用，不据目录存在宣称已完成。前三批认领与正在运行的编码对话不变。AUTH-LOGIN-001与其核心业务文件隔离；共享接线仅本批条件增量，地图回填由规划窗口集中维护。
 
@@ -60,6 +63,6 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 kg-impact 的HEAD 9c214555不是main祖先，但 `origin/main..HEAD` 仅一条报告提交，三点diff仅go-kg-impact-read.md；#46实际merge `a80d394539c3ff84174b7d8db239016847e7e99c` 已在main，不是未交付业务，不重复派发。
 
-当前唯一开放业务 PR 是 #70；#69地图文档已经合并，最新main为9d0462e1，业务合并仍止于#68，#67 integration的原批次历史归属不变。设置写主体merged与GAP-GQL-001同时成立；NEWS-BRIEF-001不取得BL-01/#70顶层接线所有权，只允许既有新闻事件读注册区块的本批参数增量。
+当前开放业务PR为#70与#72；#69地图文档已经合并，最新main为9d0462e1，业务合并仍止于#68，#67 integration的原批次历史归属不变。设置写主体merged与GAP-GQL-001同时成立；NEWS-BRIEF-001不取得BL-01/#70顶层接线所有权，只允许既有新闻事件读注册区块的本批参数增量。
 
 每次新认领需创建独立 task 文件并保存精确接口/文件所有权。对未提交/未推送的本地记录明确写“其他机器不可见”；正式发出前发布认领记录并再次核对，冲突范围按已有认领或依赖顺序处理。

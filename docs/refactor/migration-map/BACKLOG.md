@@ -94,6 +94,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-23 · crawl / 元数据主动发现
 
+- 2026-10-18以main9d0462e1深入两入口实际调用链后，urls/sitemap网页元数据链已reserved至[CRAWL-METADATA-001](tasks/CRAWL-METADATA-001.md)，[提示词](tasks/CRAWL-METADATA-001.prompt.md)已发出；不再属于未认领候选。extract仅调用urls/sitemap/robots/HTML，不调用同服务RSS/list/deep/crawl4ai；后者不纳入本两入口。新业务包/adapter与S3及items包隔离，GraphQL在现有READ内独立注册，不改settingscrawl或引擎。
+
 - **范围/缺口**：Query crawlMetadata 与 POST /api/crawl-tasks/metadata（GAP-LEGACY-001），同业务双入口；不捆绑完整 task worker。
 - **基础/依据**：G/crawlreadtelemetry DTO/配置读、crawlworkflow/profile 的 normalize 基础；N/CrawlMetadataService.extract/discoverSitemap*/discoverRss*/discoverList*/discoverDeep*。实际是 robots/sitemap/XML/HTML、并发发现、HTTP 缓存/重定向/SSRF 与 crawl4ai 的完整网络链，不是 DB Query。
 - **文件/前置/冲突**：独立 Go metadata 包、graphql/HTTP adapters/main；N/modules/crawl/crawl-metadata.service.ts 为事实源。**可独立窗口先做深读**；需核 feature 开关与各发现模式、私网/域名解析语义，避免与 BL-24/25 重写共享配置；真实站点验证另记。
