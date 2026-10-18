@@ -95,7 +95,11 @@
 
 ## 9. 解析器依赖（共享清单条目）
 
-HTML 使用成熟 HTML5 DOM 解析器 `golang.org/x/net/html`（`html.Parse`，与 Cheerio 默认的 parse5 同为 HTML5 树构造），不使用整段正则或严格 XML 解析器冒充 HTML 语义。`go.mod` / `go.sum` 的 `golang.org/x/net` 条目按仓库既有 **`go-modules-regen` label 远端生成通道**产生（本机未执行 `go get`/`go mod tidy`，未手编 `go.sum`）；本批只负责该条目及 tidy 必需关联，不整理/升级/删除 AWS 等并行批次依赖。
+HTML 使用成熟 HTML5 DOM 解析器 `golang.org/x/net/html`（`html.Parse`，与 Cheerio 默认的 parse5 同为 HTML5 树构造），不使用整段正则或严格 XML 解析器冒充 HTML 语义。
+
+`go.mod` / `go.sum` 的 `golang.org/x/net` 条目按仓库既有 **`go-modules-regen` label 远端生成通道**产生：远端 job 执行 `go mod tidy` 并空跑 `go build ./...` 后提交 **`golang.org/x/net v0.55.0`**（提交 `657b1975`，只新增 go.mod 1 行 + go.sum 2 行，未升级其他依赖）。本机未执行 `go get`/`go mod tidy`，未手编 `go.sum`；本批只负责该条目及 tidy 必需关联，不整理/升级/删除 AWS 等并行批次依赖。
+
+该远端 job 的 `go build ./...` 通过是本批全部新增 Go 包在真实依赖清单下的首次编译证据；但它是生成通道的构建，**不替代普通 CI**（单元测试、`go vet`、NestJS 侧门禁仍由普通 CI 决定）。
 
 ## 10. 共享文件增量（仅本批语义）
 
