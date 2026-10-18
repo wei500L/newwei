@@ -372,8 +372,8 @@ func buildMongoRelevanceCandidate(search string, row ItemMetaRow, result OpenJSO
 		title = row.Name
 	}
 	summary := pickResultString(projection, []string{"summary", "abstract", "subtitle"})
-	topics := pickResultStringArrayFromProjection(projection, []string{"topics"}, 5)
-	entities := pickResultStringArrayFromProjection(projection, []string{"entities"}, 5)
+	topics := capStrings(stringListFromJSON(projection.Topics.Bytes()), 5)
+	entities := capStrings(stringListFromJSON(projection.Entities.Bytes()), 5)
 	sourceValue := pickResultString(projection, []string{"source", "sourceName", "source_name"})
 	var source *string
 	if strings.TrimSpace(sourceValue) != "" {
@@ -452,13 +452,4 @@ func firstNonEmptyPtrString(values ...*string) *string {
 		}
 	}
 	return nil
-}
-
-// pickResultStringArrayFromProjection returns a deduped, capped string list.
-func pickResultStringArrayFromProjection(projection resultProjection, keys []string, limit int) []string {
-	values := pickResultStringArray(projection, keys)
-	if limit > 0 && len(values) > limit {
-		values = values[:limit]
-	}
-	return values
 }

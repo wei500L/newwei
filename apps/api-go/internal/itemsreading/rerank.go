@@ -139,25 +139,25 @@ var defaultLLMLogMetadataPrefixes = []string{"x_", "meta_", "ctx_"}
 // log. The scalar columns are pointers so an unknown value is written as null,
 // exactly like the NestJS defaults.
 type llmRequestLogDoc struct {
-	OrgID                     string    `bson:"orgId"`
-	RequestType               string    `bson:"requestType"`
-	Model                     string    `bson:"model"`
-	Status                    string    `bson:"status"`
-	PromptTokens              *float64  `bson:"promptTokens"`
-	CompletionTokens          *float64  `bson:"completionTokens"`
-	TotalTokens               *float64  `bson:"totalTokens"`
-	CostUSD                   *float64  `bson:"costUsd"`
-	Feature                   *string   `bson:"feature"`
-	GatewayProfileID          *string   `bson:"gatewayProfileId"`
-	GovernanceApplied         *bool     `bson:"governanceApplied"`
-	AuthMode                  *string   `bson:"authMode"`
-	GovernanceTargetProfileID *string   `bson:"governanceTargetProfileId"`
-	LatencyMs                 int64     `bson:"latencyMs"`
-	Error                     *string   `bson:"error"`
-	Metadata                  *bson.D   `bson:"metadata"`
-	APISurface                *string   `bson:"apiSurface"`
-	CreatedAt                 time.Time `bson:"createdAt"`
-	UpdatedAt                 time.Time `bson:"updatedAt"`
+	OrgID                     string            `bson:"orgId"`
+	RequestType               string            `bson:"requestType"`
+	Model                     string            `bson:"model"`
+	Status                    string            `bson:"status"`
+	PromptTokens              *float64          `bson:"promptTokens"`
+	CompletionTokens          *float64          `bson:"completionTokens"`
+	TotalTokens               *float64          `bson:"totalTokens"`
+	CostUSD                   *float64          `bson:"costUsd"`
+	Feature                   *string           `bson:"feature"`
+	GatewayProfileID          *string           `bson:"gatewayProfileId"`
+	GovernanceApplied         *bool             `bson:"governanceApplied"`
+	AuthMode                  *string           `bson:"authMode"`
+	GovernanceTargetProfileID *string           `bson:"governanceTargetProfileId"`
+	LatencyMs                 int64             `bson:"latencyMs"`
+	Error                     *string           `bson:"error"`
+	Metadata                  llmLogMetadataDoc `bson:"metadata"`
+	APISurface                *string           `bson:"apiSurface"`
+	CreatedAt                 time.Time         `bson:"createdAt"`
+	UpdatedAt                 time.Time         `bson:"updatedAt"`
 }
 
 // llmRequestLogMetadata is the named metadata payload of this link's rerank
@@ -166,6 +166,26 @@ type llmRequestLogDoc struct {
 type llmRequestLogMetadata struct {
 	OrgID  string
 	Source string
+}
+
+// llmLogMetadataDoc is the filtered metadata document. An empty result marshals
+// as BSON null instead of an empty document, mirroring the NestJS
+// normalizeMetadata contract.
+type llmLogMetadataDoc struct {
+	entries bson.D
+	present bool
+}
+
+// MarshalBSONValue implements bson.ValueMarshaler.
+func (d llmLogMetadataDoc) MarshalBSONValue() (byte, []byte, error) {
+	if !d.present || len(d.entries) == 0 {
+		return 0x0A, nil, nil // BSON null
+	}
+	encoded, err := bson.Marshal(d.entries)
+	if err != nil {
+		return 0x0A, nil, nil
+	}
+	return 0x03, encoded, nil
 }
 
 // writeRerankLog persists one best-effort rerank request log. It never returns
@@ -211,7 +231,7 @@ func (s *Service) writeRerankLog(ctx context.Context, orgID string, outcome llme
 // the two named tokens this link emits, mirroring normalizeMetadata: keys are
 // lowercased, truncated to 64 characters and kept only when they match an
 // allowed key or prefix.
-func filterLLMLogMetadata(source llmRequestLogMetadata, policy llmLogMetadataPolicy) *bson.D {
+func filterLLMLogMetadata(source llmRequestLogMetadata, policy llmLogMetadataPolicy) llmLogMetadataDoc {
 	candidates := []struct {
 		key   string
 		value string
@@ -232,9 +252,9 @@ func filterLLMLogMetadata(source llmRequestLogMetadata, policy llmLogMetadataPol
 		out = append(out, bson.E{Key: key, Value: value})
 	}
 	if len(out) == 0 {
-		return nil
+		return llmLogMetadataDoc{}
 	}
-	return &out
+	return llmLogMetadataDoc{entries: out, present: true}
 }
 
 // llmLogMetadataPolicy is the resolved metadata allow-list.

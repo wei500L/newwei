@@ -1,7 +1,9 @@
 package itemsreading
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"math"
 	"sort"
 	"strings"
@@ -753,7 +755,7 @@ func normalizePreferenceTerms(raw []byte) []string {
 	terms := make([]string, 0, 8)
 	seen := make(map[string]struct{}, 8)
 	for _, element := range jsonArrayElements(raw) {
-		candidate := elementText(element)
+		candidate := preferenceTermText(element)
 		normalized := normalizePreferenceKeyString(candidate)
 		if normalized == "" {
 			continue
@@ -768,6 +770,36 @@ func normalizePreferenceTerms(raw []byte) []string {
 		}
 	}
 	return terms
+}
+
+// preferenceTermText ports the string-or-object branch of
+// normalizePreferenceTerms. Unlike elementText it deliberately does not fall
+// back to `topic`, because the preference normalizer only reads name, label and
+// value.
+func preferenceTermText(element json.RawMessage) string {
+	trimmed := bytes.TrimSpace(element)
+	if len(trimmed) == 0 {
+		return ""
+	}
+	if trimmed[0] == '"' {
+		var text string
+		if err := json.Unmarshal(trimmed, &text); err != nil {
+			return ""
+		}
+		return text
+	}
+	if trimmed[0] != '{' {
+		return ""
+	}
+	var record struct {
+		Name  *string `json:"name"`
+		Label *string `json:"label"`
+		Value *string `json:"value"`
+	}
+	if err := json.Unmarshal(trimmed, &record); err != nil {
+		return ""
+	}
+	return firstNonEmptyPtr(record.Name, record.Label, record.Value)
 }
 
 // normalizePreferenceDomain ports normalizePreferenceDomain: the lowercase
