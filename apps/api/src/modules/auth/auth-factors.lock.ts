@@ -67,6 +67,22 @@ export function isMachineActorId(actorId: string): boolean {
 }
 
 /**
+ * Marks an error as raised by the lock callback rather than by the lock
+ * acquisition, so {@link withMfaUserLock} can re-throw it unchanged.
+ *
+ * Without this marker a genuine failure inside the critical section (a
+ * decryption error with a wrong key, a database write failure) would be
+ * indistinguishable from a refused lock connection and would be rewritten as a
+ * 503, hiding the real contract.
+ */
+class MfaLockCallbackError extends Error {
+  constructor(readonly callbackError: unknown) {
+    super("MFA lock callback failed");
+    this.name = "MfaLockCallbackError";
+  }
+}
+
+/**
  * Runs `fn` while holding the caller's per-user MFA session lock.
  *
  * This wraps the existing {@link withMysqlSessionLock} helper: one dedicated
@@ -76,12 +92,13 @@ export function isMachineActorId(actorId: string): boolean {
  * recovery-code replacement.
  *
  * Failure mapping keeps the NestJS contract:
- *   - a business `HttpException` raised by `fn` (400/401) is re-thrown
- *     unchanged, so a wrong code is never masked as an infrastructure error;
+ *   - anything raised by `fn` is re-thrown unchanged — including non-HttpException
+ *     failures such as a secret-decryption error, which must keep rendering as
+ *     the production 500 rather than being masked as an infrastructure failure;
  *   - `GET_LOCK` returning 0 is surfaced as a 409 with
  *     {@link MFA_LOCK_BUSY_MESSAGE};
- *   - every other failure (refused connection, failed handshake, missing DSN)
- *     is surfaced as a 503 rendered by `GlobalExceptionFilter` as
+ *   - every lock-acquisition failure (refused connection, failed handshake,
+ *     missing DSN) is surfaced as a 503 rendered by `GlobalExceptionFilter` as
  *     `{statusCode: 503, message: "Internal server error", error: "Service Unavailable"}`.
  *
  * The lock tool name, the MySQL connection details and every secret stay out of
@@ -98,9 +115,20 @@ export async function withMfaUserLock<T>(
     return await withMysqlSessionLock(
       process.env.DATABASE_URL ?? "",
       mfaUserLockName(userId),
-      fn,
+      async () => {
+        try {
+          return await fn();
+        } catch (error) {
+          // Mark the error as callback-owned so the mapping below can tell it
+          // apart from a lock-acquisition failure.
+          throw new MfaLockCallbackError(error);
+        }
+      },
     );
   } catch (error) {
+    if (error instanceof MfaLockCallbackError) {
+      throw error.callbackError;
+    }
     if (error instanceof HttpException) {
       throw error;
     }

@@ -109,6 +109,23 @@ describe("withMfaUserLock", () => {
     );
   });
 
+  it("re-throws a non-HttpException raised by the callback unchanged", async () => {
+    // A secret-decryption failure (wrong key) is not an HttpException: it must
+    // keep rendering as the production 500 instead of being masked as a 503
+    // lock failure.
+    withMysqlSessionLockMock.mockImplementationOnce(
+      async (_url: string, _name: string, fn: () => Promise<string>) => fn(),
+    );
+    const decryptionError = new Error(
+      "Failed to decrypt system setting secret",
+    );
+    await expect(
+      withMfaUserLock("user-1", async () => {
+        throw decryptionError;
+      }),
+    ).rejects.toBe(decryptionError);
+  });
+
   it("fails closed when DATABASE_URL is absent", async () => {
     const previous = process.env.DATABASE_URL;
     delete process.env.DATABASE_URL;
