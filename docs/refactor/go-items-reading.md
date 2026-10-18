@@ -401,16 +401,59 @@ source+dateRange 保留现有边界；REST 历史 encoded filters 与 `itemFacet
 
 ## 12. 验收与未验证项（诚实登记）
 
-- 普通 CI：仓库现有完整检查（Go 编译+单测、Nest lint/typecheck、`check-auth-matrix.js`、
-  契约与环境变量检查）。
-- 真实栈 smoke：`.github/workflows/api-go-items-reading-smoke.yml`
-  （`workflow_dispatch` 或 PR 加 label `api-go-items-reading-smoke`，独立 concurrency group，
-  真实 MySQL 8.4 + Mongo 7 + Redis 7 + Prisma migration/seed + 真实 Nest 认证流程取得的 JWT）。
-- 覆盖：开关四组合与非法值启动失败；两条 REST 与五个 GraphQL 的正常/缺失/边界；
-  read-model false/true 两种模式；IR1/IR2/IR3 双侧断言；缓存互通与组织隔离；
-  停止 Nest 后 7 个入口独立成功、未迁路径 502。
-- **未验证（明确登记）**：未配置真实 LiteLLM/翻译/Elasticsearch 的成功链路；
-  外部 happy path 只做协议 fixture（标注“协议 fixture”，不称真实上游成功）；
-  有条件运行真实 vector-go 时单列其证据。
-- 本机按任务约束未运行 `pnpm install`、`go test`、`go build`、`docker`，未启动任何服务；
-  验证全部在 GitHub Actions。
+### 12.1 已完成的远端验证
+
+- 普通 CI（`ci.yml`，含 Go 编译/单测、Nest lint/typecheck、`check-auth-matrix.js`、契约与环境变量检查、
+  `go-modules-regen` 与 `contract-baseline-regen`）在本分支各 head 上通过；最终 head 的 run 见 PR 正文。
+- 真实栈 smoke（`.github/workflows/api-go-items-reading-smoke.yml`，PR label `api-go-items-reading-smoke`，
+  或 `workflow_dispatch`；PR 上另有 `synchronize`/`reopened` 便于同一 PR 迭代）在 head `28f414cc`
+  上 **ALL PHASES PASSED**：
+  - A 开关矩阵：`API_GO_ITEMS_READING_MODE=bogus` 容器 `exited|unhealthy|1` 且日志同时含变量名与
+    `bogus`；空串与 `legacy` 等价；`legacy+legacy` 两 REST + 五 GraphQL 经 Go 代理与 Nest 逐字段一致且
+    Go 解析器计数不动；`go+legacy` 时两 REST 由 Go 独立处理、五个 root 仍在 Nest（计数不动）；
+    `go+go` 时七个入口由 Go 处理。
+  - B REST：分页归一化（默认 10/1、`pageSize=50`、`page=1.5→1`、`pageSize=0→1`）、`CREATED_DESC`/
+    `PUBLISHED_DESC` 与 `id DESC` 稳定次序、DTO 400（`property pagee should not exist`、
+    `orderBy must be one of the following values: CREATED_DESC, PUBLISHED_DESC`、`page must be a number string`）、
+    IR2 越界 400 + `Pagination offset is too large`、详情 404（跨组织/缺失/非 ObjectId 形状）、
+    IR1 跨组织 raw/processed 绑定、IR3 历史 encoded filters 的 (a)–(d)。
+  - C GraphQL：`item(id)` 全字段形状（含 `raw.payload` JSON 字符串、`result`/`resultJson` 归一化、
+    `duplicateOf` 目标 ItemMeta ID、`eventId` 直接与 `cleanedMarkdownRef` 回退、`metaId` 不泄漏）、
+    缺失语义为 `data.item=null` 且无 errors、aliases/fragments/variables/`@include`/`@skip`、
+    REST 最新 processed 与 GraphQL 状态优先的差异、`itemFacets`（含 filters 组合与 excludeDuplicates）、
+    `rssSources`（默认只含有数据来源、显式 `onlyWithItems:false`、`windowDays` 1/0→1/30/99→30 与
+    3 天旧来源被 1 天窗口排除）、`rssTranslationStatus` 八个配置分支与固定顺序、`searchSuggestions`
+    空前缀/limit 边界/仅 LEXICAL。
+  - D 缓存：建议缓存键与 TTL(≤60) 与响应一致、`lock:` 已释放、手工写入的建议缓存与来源快照被 Go 读取、
+    两个组织的同前缀键不共享；Nest 写入的 `situation_monitor:settings` 与 `llm_gateway:profiles` 被 Go 读到。
+  - RM 读模型：首次读取触发回填（`itemreadmodels` 计数 0→1）、第二次读取稳定、缺 raw 时下一次 GraphQL 读取
+    经 Mongo 回退可见、删除后再次回填可见、读模型列表/详情与 Nest 一致、`meta.name` 用快照标题、
+    读模型文本检索 facets 与 Nest 一致、跨组织读模型不泄漏。
+  - E 停 Nest：七个入口仍返回非空真实数据；`POST /api/items`、`items` root、`createItem` mutation、
+    migrated+unsupported 混合 operation 全部 502；`/__go/healthz` 200。
+  - F 诚实负向：`ELASTICSEARCH_ENABLED`/`VECTOR_SERVICE_ENABLED`/`MODEL_SERVICE_ENABLED` 全程 false，
+    只断言文档化的词法降级（建议仅 LEXICAL、列表与 facets 仍成功）。
+
+### 12.2 验证期间发现并处理的环境事实（不改本批允许范围外的文件）
+
+- `packages/db/prisma/schema.prisma` 在 `ProcessedArticle` 上声明 `@@fulltext([title, summary])`，但
+  **迁移里没有对应索引**（`000_init` 只建了 `ItemMeta` 的 FULLTEXT）。纯迁移建的库里，
+  `ProcessedArticle` 全文召回会返回 MySQL 1191（Nest 与 Go 同样失败）。smoke 在 fixture 阶段补建该索引
+  （与 production 实际存在的索引一致）。**登记为遗留项**（见 `bug-ledger.md`），本批不修改 migrations。
+- Mongoose `itemreadmodels` 的文本索引使用默认 `language` 作为语言覆盖字段，而 API 会写入
+  `language: null`，MongoDB 会拒绝（"found language override field in document with non-string type"）。
+  smoke 建索引时显式指定 `language_override:'irLanguageOverride'`。**登记为遗留项**，本批不修改
+  `packages/mongo`。
+- Go 读模型 upsert 的两个实现细节（本批修复）：`$set` 必须省略缺失的 `raw`/`processed`（否则与
+  `$unset` 冲突），且不能写零值 `_id`（BSON 驱动的 `omitempty` 不会省略定长数组，会改/撞 `_id`）。
+- read-model 模式的 Nest/Go 对比需要 Nest 以 `ITEMS_READ_MODEL_ENABLED=true` 重启（该开关只在进程启动时
+  读取），smoke 的 RM 阶段重启 Nest 后再做同模式比对。
+
+### 12.3 未验证项
+
+- 未配置真实 LiteLLM 网关、DeepLX/fallback 翻译与 Elasticsearch：本批没有这些服务的真实成功链路证据。
+  ES 与向量候选的请求结构、字段 boost/alias、`limit/minScore/lookbackMs`、`null` 与 `[]` 语义均由
+  Go 单测（协议级）覆盖，**不称为真实上游成功**；向量 recall 在 smoke 中只验证“服务未配置时的降级”。
+- 未运行真实 `vector-go` 服务；若要单列其证据，需另起带该服务的 workflow。
+- 本机按任务约束未运行 `pnpm install`、`go test`、`go build`、`go vet`、`docker`，未启动任何服务；
+  所有执行验证均在本仓库的 GitHub Actions 中完成（见 12.1）。
