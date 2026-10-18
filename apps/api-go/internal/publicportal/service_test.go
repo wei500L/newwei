@@ -281,7 +281,7 @@ func TestStoryBriefColdPathWritesCacheAndFailureIsNotSuccess(t *testing.T) {
 		if !strings.Contains(req.User, "https://www.reuters.com/markets-a") {
 			t.Fatalf("prompt = %s", req.User)
 		}
-		if req.Metadata["feature"] != "news_event_brief" {
+		if req.Metadata.Feature != "news_event_brief" {
 			t.Fatalf("metadata = %#v", req.Metadata)
 		}
 		return `{"detailed_summary":"Detail text.","tldr":"Short.","key_points":[{"text":"Fact","citations":[1]}]}`, nil
