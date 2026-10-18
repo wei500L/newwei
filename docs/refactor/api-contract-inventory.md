@@ -687,7 +687,7 @@ Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`artic
 不改 Web 入口与其他开关默认值。
 （注：`/api/internal/litellm/proxy-load-balancing` 与
 `/api/system-settings/llm-gateways/proxy-load-balancing` 已由后续批次以独立开关
-`API_GO_PROXY_LOAD_BALANCING_MODE` 迁移，见 §19；本节描述的是本开关下的行为。）
+`API_GO_PROXY_LOAD_BALANCING_MODE` 迁移，见 §20；本节描述的是本开关下的行为。）
 
 ## 17. 平台治理设置 16 条 HTTP（Go）
 
@@ -797,8 +797,32 @@ one of legacy|go`）。`go` 时要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOS
 403。两把全局锁名 `data-runtime-settings:realtime:v1`、
 `data-runtime-settings:nominatim:v1`（锁未取得 409，连接类故障 503）。回滚只把本变量
 改回 `legacy`。细节见 `docs/refactor/go-data-runtime-settings.md`。
+## 19. 态势监控信号读取与反馈 7 条 HTTP（Go）
 
-## 19. LiteLLM 负载均衡配置管理与下发（Go · 4 条）
+新增开关 `API_GO_SITUATION_MONITOR_SIGNALS_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`（feedback 写 Mongo，refresh-runs 读 MySQL，信号状态读 Redis，settings 读 SystemSetting + Redis 信封）。`go` 时只接管 7 条路由规则（6 条精确 + 1 条「恰好一段」动态路径，另加同路径 `OPTIONS`），处理器注册键 `SituationSignalsKey = "/api/situation-monitor#signals"`，与自定义监控的 `SituationMonitorsKey` 不同：
+
+| 方法 | 精确路径 | 权限 | 成功码 |
+| --- | --- | --- | --- |
+| GET | `/api/situation-monitor/catalog` | `items.read` | 200 |
+| POST | `/api/situation-monitor/feedback` | `items.write` | 201 |
+| GET | `/api/situation-monitor/refresh-runs/:refreshId` | `items.read` | 200 / 404 |
+| GET | `/api/situation-monitor/telegram-feed` | `items.read` | 200 |
+| GET | `/api/situation-monitor/oref-alerts` | `items.read` | 200 |
+| GET | `/api/situation-monitor/oref-history` | `items.read` | 200 |
+| GET | `/api/situation-monitor/live-hls-proxy-config` | `items.read` | 200 |
+
+- **不迁移**：`GET /api/situation-monitor/insights`（重分析域）、`POST /api/situation-monitor/refresh`（触发实网抓取与队列）、`GET/POST/PATCH/DELETE /api/situation-monitor/monitors**`（属于 `API_GO_SITUATION_MONITORS_MODE`）、`GET /api/system-settings/realtime-signals/runtime`；上表路径的其他方法、带尾斜杠与更长路径也继续回落 NestJS（Go 不返回自己的 404）。
+- **身份与权限**：人类身份 = HS256 验签 + Redis 撤销名单（fail-closed）+ MySQL membership/权限重推导，JWT `permissions` claim 不参与；`mtk_` 机器令牌走 `MachineAccessToken.tokenHash` 的 SHA-256 查表（未撤销、未过期、`Org.isActive`，更新 `lastUsedAt`），权限与 orgId 来自令牌行。失败顺序 401 → 403 → 400（仅 feedback 的 DTO / 空白 `signalId`）→ 404。
+- **响应契约**：`catalog` 返回 `narratives`（16 条，`name = formatIdTitle(id)`）、`correlations`（20 条）、`refreshReadiness`（`activeSourceCount` = 本组织 `isActive` 的 `NewsSource` 计数，`backendRefreshTargets` 四布尔来自 `situation_monitor_settings` + env 回退）。`telegram-feed` 返回缓存态（`source/scope/earlySignal/configured/enabled/channelSet/count/updatedAt/items`，有错误时追加 `error`）并追加 `monitorMatches`；`oref-alerts` / `oref-history` 分别以 `alerts` / `history` 为键，`timestamp` 取缓存 `lastPollAt`（无缓存时为当前时间，非确定），计数器来自 history 缓存。`live-hls-proxy-config` 三分支：无/非法 channel 与合法但未配置 → `{channel, configured:false, upstreamUrl:null, referer:null, allowedHosts:[]}`；合法且配置 → 回显 `upstreamUrl`/`referer`，`allowedHosts` = 配置主机（去重、保序）+ 上游主机名。`refresh-runs/:refreshId` 返回 `{refreshId, requestedAt, taskWindowStart, status, crawl, progress:{crawlTasks:{pending,queued,running,completed,failed,paused}, analysisTasks:{pending,queued,running,completed,failed,delayed}}, signals, cache, warnings, terminal}`，`signals`/`cache` 缺失时省略键。
+- **缓存键**：`situation-monitor:signals:telegram:state:v1`（24h，失配时 Go 回写清空态）、`situation-monitor:signals:oref:alerts:v1`、`situation-monitor:signals:oref:history:v1`（Go 只读）、`situation-monitor:refresh-run:<refreshId>`（900s，Go 只回写 `terminal` 一位，键与 TTL 不变）、`situation-monitor:insights:learning-rev:v1:<orgId>`（90 天，INCR 仅首次设 TTL）、`situation_monitor:settings`（30s，信封 `{exists, value?}`）。Mongo 集合 `situationsignalfeedbacks` 与 `situationsignallearningstates`。
+- **监控匹配**：`monitorMatches` 的候选来自 telegram 缓存项与 OREF alerts/history 条目；监控行按 `orgId AND userId` 读取（先跑 legacy 迁移，只保留 `enabled`）。无监控带 `queryEmbeddingVector` 时不发模型调用；`Embed`/`Rerank` 失败一律回退词法规则并按 `0.68/0.55/0.82` 阈值与 `finalScore = clamp01(base + semantic*0.15 + rerank*0.2)` 计算。`link`/`title` 恒存在（falsy → `""`），其余条件键在 falsy 时省略；排序为 `timestamp` 降序 → `score` 降序 → `monitorName` 升序（English collator）。
+- **同批修复的 2 个缺陷（Nest 与 Go 两侧一致）**：① 空白 `signalId` 的 `POST /feedback` 原本抛裸 `Error` → 500，现为 400 `signalId is required`（DTO 不改，控制器不改）；② refresh-run 缓存记录缺 `activeSourceIds`/`warnings`/`crawl` 或 `taskWindowStart` 非法时读取 500，现为数组归一化 → `[]`、`crawl` → 六字段零值对象、非法时间 → 404，正常记录行为不变。`activeSourceIds` 为空时 12 个计数直接为 0（不做无过滤全量计数）。
+- **强类型与注释**：`apps/api-go/internal/situationsignals` 的请求 DTO、响应模型、Redis 缓存文档、Mongo 文档、匹配结果与候选均为具名 `struct`（`json`/`bson` tag），无 schema 的透传 JSON 用具名 `rawJSON`（`IsObject`/`IsArray`），宽松字段用具名 `jsNumberish`/`trimmedString`/`jsStringList`，枚举为具名字符串类型；`any`/`interface{}`/`map[string]any`/`[]any` 为零（MySQL 不构造变长参数列表）。新增/修改的 `.go`/`.ts` 注释全部为英文。
+- 回滚只把 `API_GO_SITUATION_MONITOR_SIGNALS_MODE` 改回 `legacy`。生产入口仍是 Web → NestJS；canary 保持关闭；不启用 shadow，不改前端，不改控制器，不改其他 `API_GO_*` 默认值。语义 / rerank 命中路径在 CI 未验证（无 LiteLLM，两侧同环境降级）。细节与验收清单见 `docs/refactor/go-situation-monitor-signals.md`。
+
+
+
+## 20. LiteLLM 负载均衡配置管理与下发（Go · 4 条）
 
 新增开关 `API_GO_PROXY_LOAD_BALANCING_MODE`（空串/`legacy`/`go`，默认 `legacy`，
 非法值启动失败，错误文本 `API_GO_PROXY_LOAD_BALANCING_MODE must be one of
