@@ -831,10 +831,14 @@ func TestRealtimePublicSettingsEnvCase(t *testing.T) {
 	cfg := realtimeBaseConfig()
 	cfg.RealtimeEnabled = false
 	service := testService(cfg)
-	settings, err := service.getRealtimePublicSettings(context.Background())
+	// The env case is exercised through the resolver plus the response builder so
+	// the assertion needs no MySQL pool; getRealtimePublicSettings adds the cache
+	// and database reads that the real-stack smoke covers.
+	effective, err := service.resolveEffectiveSettings(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	settings := service.buildRealtimePublicSettings(nil, effective)
 
 	require(t, "source", settings.Source, SettingSourceEnv)
 	require(t, "enabled", settings.Enabled, false)
@@ -882,10 +886,11 @@ func TestRealtimePublicSettingsEnvCase(t *testing.T) {
 	cfg = realtimeBaseConfig()
 	cfg.RealtimeAcledOauthClientID = "custom-client"
 	service = testService(cfg)
-	settings, err = service.getRealtimePublicSettings(context.Background())
+	effective, err = service.resolveEffectiveSettings(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	settings = service.buildRealtimePublicSettings(nil, effective)
 	require(t, "acledOauthClientId env", settings.AcledOauthClientID, "custom-client")
 	require(t, "acledOauthClientIdSource env", settings.AcledOauthClientIDSource, SecretSourceEnv)
 
@@ -904,5 +909,37 @@ func require[T comparable](t *testing.T, label string, got, want T) {
 	t.Helper()
 	if got != want {
 		t.Fatalf("%s: got %v, want %v", label, got, want)
+	}
+}
+
+func TestSecretPolicyErrorMapsToBadRequest(t *testing.T) {
+	// Production without a key must surface the documented 400, never a 500.
+	service := testService(Config{NodeEnv: "production"})
+	_, err := service.resolveNextSecretRaw(context.Background(), nil, optionalString{state: presenceValue, value: "s3cret"})
+	var coded *httpError
+	if !errors.As(err, &coded) {
+		t.Fatalf("err = %v, want an httpError", err)
+	}
+	if coded.status != 400 {
+		t.Fatalf("status = %d, want 400", coded.status)
+	}
+	if coded.message != "SYSTEM_SETTINGS_ENCRYPTION_KEY is required to store secrets in production" {
+		t.Fatalf("message = %q", coded.message)
+	}
+
+	// With a valid key and no explicit disable the same input is encrypted (the
+	// plaintext escape hatch needs an explicit system_security=false row, which
+	// the real-stack smoke covers).
+	service = testService(Config{NodeEnv: "production", EncryptionKeyRaw: testKeyHex, EncryptionKeyPresent: true})
+	raw, err := service.resolveNextSecretRaw(context.Background(), nil, optionalString{state: presenceValue, value: "s3cret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope encryptedStringValueV1
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatalf("expected an envelope: %s", raw)
+	}
+	if !envelope.valid() {
+		t.Fatalf("invalid envelope: %+v", envelope)
 	}
 }

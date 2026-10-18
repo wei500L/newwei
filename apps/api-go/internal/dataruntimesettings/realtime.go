@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/url"
@@ -1082,6 +1083,14 @@ func (s *Service) resolveNextSecretRaw(ctx context.Context, current json.RawMess
 	}
 	encoded, err := s.encodeSecretForStorage(ctx, normalized)
 	if err != nil {
+		// The encryption policy raises its own named error so the message can be
+		// asserted without importing the handler. It maps onto the NestJS
+		// BadRequestException contract, never a 500: a misconfigured encryption
+		// key must be reported as a client-visible 400 with the documented text.
+		var policy *secretError
+		if errors.As(err, &policy) {
+			return nil, policy.asHTTPError()
+		}
 		return nil, err
 	}
 	return encoded.toRawValue()
