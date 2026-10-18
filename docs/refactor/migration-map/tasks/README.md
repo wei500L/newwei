@@ -9,6 +9,9 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |
 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | pr_open | 8 个通知/看板/告警交互写 | Ready [#70](https://github.com/wei500L/newwei/pull/70)，head adb765d0；worktree 干净；尚未合 main，保留占用 |
 | [ITEMS-LIST-001](ITEMS-LIST-001.md) | pr_open | Query `items` 完整分页/RECENCY/RELEVANCE/PERSONALIZED/批量嵌套投影 | Ready [#74](https://github.com/wei500L/newwei/pull/74)，head `c45f1afe`；CI 39136842080 success；未合 main |
+| [NEWS-BRIEF-001](NEWS-BRIEF-001.md) | in_progress | Query newsEventBrief 冷生成/forceRefresh、独立 BRIEF 子开关、LLM 请求日志与 briefV1 叶子写回 | Ready [PR #72](https://github.com/wei500L/newwei/pull/72)，head 517a73f9；该 head 普通 CI verify/integration 通过，尚未合 main |
+
+本次增量（2026-10-18）：origin/main 仍为 9d0462e16d88d146b8afbf67cdd58d8b7419ff29；#70 保持 OPEN/Ready、head adb765d0。新增 NEWS-BRIEF-001 占用，只维护文档与独立编码目录，不取得 BL-01/#70 顶层接线所有权；原表日期不统一刷新成全仓审查。
 
 原始认领/发出时间未提供；原始执行器活动未核实。状态定义见 [PLANNING](../PLANNING.md)。本次没有新业务任务。当前地图文档首版已提交/推送（4e37f285），通过 [Ready PR #69](https://github.com/wei500L/newwei/pull/69) 发布，业务分支状态与文档发布分开；PR URL 见[证据](../EVIDENCE.md)。
 

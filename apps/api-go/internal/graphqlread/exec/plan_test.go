@@ -139,7 +139,7 @@ func TestNewsEventsRootsExecuteOnlyWhenRegistered(t *testing.T) {
 	alerts.Register(reg, nil)
 	history.Register(reg, nil, nil, nil)
 	economic.Register(reg, nil)
-	newsevents.Register(reg, nil, nil, nil)
+	newsevents.Register(reg, nil, nil, nil, newsevents.Options{BriefEnabled: true})
 	engine := New(loaded, reg, 8, 2000, nil)
 
 	const six = `query {

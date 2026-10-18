@@ -944,6 +944,13 @@ type Config struct {
 	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
 	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
 	GraphQLNewsEventsMode string
+	// GraphQLNewsEventBriefMode 是 newsEventBrief 单 root 的子开关，默认
+	// legacy。只有 API_GO_GRAPHQL_READ_MODE 与
+	// API_GO_GRAPHQL_NEWS_EVENTS_MODE 都为 go 时才允许为 go：此时该 root 走
+	// Go 的选源→模型→校验→写回 briefV1 全链路。为 legacy 时只登记其余五个
+	// 新闻事件 root，含 newsEventBrief 的文档整包回 NestJS（不再由不完整的
+	// Go 单 root 默认接管）。回滚只改这个变量；旧 briefV1 缓存保持兼容。
+	GraphQLNewsEventBriefMode string
 	// NewsIndicatorsMode 只控制新闻指标关联分析的 3 条 HTTP 与 2 个 GraphQL
 	// 只读 query。默认 legacy。go 要求 JWT、MySQL、Redis。不要求 Mongo，
 	// 不调用 AkShare，也不启动调度。
@@ -1847,6 +1854,22 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.GraphQLNewsEventsMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENTS_MODE must be one of legacy|go")
+	}
+	// The news-event brief sub-switch accepts the empty string, legacy and go.
+	// An empty value behaves exactly like legacy, so an unset deployment keeps
+	// the whole newsEventBrief operation on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLNewsEventBriefMode = "legacy"
+	case "go":
+		cfg.GraphQLNewsEventBriefMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE must be one of legacy|go")
+	}
+	// The brief sub-switch cannot silently enable its parents: it needs both
+	// the GraphQL read takeover and the news-event read registration.
+	if cfg.GraphQLNewsEventBriefMode == "go" && (cfg.GraphQLReadMode != "go" || cfg.GraphQLNewsEventsMode != "go") {
+		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE=go requires API_GO_GRAPHQL_READ_MODE=go and API_GO_GRAPHQL_NEWS_EVENTS_MODE=go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KG_IMPACT_MODE")) {
 	case "", "legacy":

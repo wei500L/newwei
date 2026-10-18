@@ -2,7 +2,17 @@
 
 [返回入口](README.md)。此页保存核对方法与精确证据；当前事实先看本节，历史快照保留作追踪，不替代各域源码。
 
-## 本轮完整性复核（当前事实）
+## NEWS-BRIEF-001（2026-10-18，候选实现）
+
+- git fetch origin main 后 `origin/main = 9d0462e16d88d146b8afbf67cdd58d8b7419ff29`；开放 PR 为 #70（业务，head adb765d0）与 #71（规划文档）；`git worktree list` 中 briefing 目录原先不存在，本窗口创建唯一编码 worktree `/Users/oo/project/newwei-go-news-event-brief` 与分支 `refactor/go-news-event-brief`（从 9d0462e1）。规划记录未进 main，本分支从 docs/plan-news-event-brief 带入 [NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md) 与提示词。
+- 本批新增/修改：newsevents brief.go/brief_generate.go/brief_log.go/register.go/service.go、publicportal brief_completion.go/gateway.go/story.go、llmlogs completion.go、config.go、cmd/api/main.go（仅 newsevents.Register 参数与日志）、`.env.sample`、`docker-compose.yml`、api-go README 与同域测试。
+- 交付：Ready [PR #72](https://github.com/wei500L/newwei/pull/72)，精确 head `517a73f98b495c1664c45fdfaf2bd2692a3b2210`。首个 head b9c4d4f3 的 [run 39132364703](https://github.com/wei500L/newwei/actions/runs/39132364703) 在 Lint 失败（既有 service_test.go 仍按旧 map metadata 取值），已正常追加修复提交、未 amend/rebase/force-push。
+- 本批 head 普通 CI：[run 39132616859](https://github.com/wei500L/newwei/actions/runs/39132616859) — verify success（Lint、Typecheck、Go tests (api-go gateway + vector-go pilot)、Build 均通过）、api-go-user-settings-integration success、vector-integration success。PR 触发的 smoke/regen 全部 skipped，不计通过；不用 main 旧 CI 充当本批验证。
+- 文档回填提交 `4ada70fc`（仅 migration-map 文档，无源码差异）的 [run 39133422346](https://github.com/wei500L/newwei/actions/runs/39133422346) 同样 verify/vector-integration success。功能验证以上一条源码 head 为准；本文件所在提交亦仅文档，最终 head 与其 CI 记录在 PR #72 描述。
+- 静态边界：未在本机安装依赖、未运行 go build/go test/Docker/服务，未做模型实网、MySQL/Mongo 或部署切流验证；gofmt、`git diff --check` 与只读源码核对已完成。
+- 关闭边界：GAP-NEWS-001 仍开放；PR 只记候选实现，实际 merge SHA 落地后才复核关闭。
+
+## 本轮完整性复核（历史快照）
 
 2026-10-18 14:37 开始，14:49 再 fetch，`origin/main = 3cedce9aa3200436aba3596f63b559de5490cec8` 未变。#69 OPEN / Ready / autoMergeRequest=null，原 worktree 干净后在原文档分支追加；未 amend/rebase/force-push。apps/api、apps/api-go、apps/vector-go 相对该 main 无差异。本轮只改 migration-map 文档；原 PR 已有 AGENTS/roadmap 导航，本轮没有扩展业务/配置/测试/schema/workflow。
 

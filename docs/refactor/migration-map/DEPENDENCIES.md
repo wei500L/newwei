@@ -20,7 +20,7 @@
 | `API_GO_DASHBOARD_SPACETIME_GEO_MODE`、`API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE`、`API_GO_DASHBOARD_STREAM_MODE` | A+M；stream 会构造 charts/warMap/spacetime 的内部服务 | 无须强开它们的 HTTP 模式；stream 是 SSE，未开启 GraphQL/Socket.IO executor；外部边界同地图 |
 | `API_GO_CONTENT_SUBSCRIPTIONS_MODE`、`API_GO_USER_DIGEST_MODE` | A+M；wirePersonalNews 按需创建 behavior/catalog/subscription 服务，未开路由不跟随注册 | catalog 可调用 model/vector，digest 可读 ES；投递 scheduler 仍 Nest；不需要先强开 behavior HTTP |
 | `API_GO_LLM_LOGS_MODE`、`API_GO_ADMIN_LOGS_MODE`、`API_GO_EXCEPTION_INGEST_MODE`、`API_GO_QUALITY_OVERVIEW_MODE`、`API_GO_CLASSIFICATION_RSS_OPS_MODE` | A+M；各 wire 共享 Mongo | exception ingest 内部 token 在请求时校验；分类报告创建、pipeline 恢复生产者/worker 未迁 |
-| `API_GO_NEWSNOW_CLUSTERING_OPS_MODE`、`API_GO_CRAWL_READ_TELEMETRY_MODE`、`API_GO_ITEMS_READING_MODE`、`API_GO_SEARCH_REINDEX_MODE`、`API_GO_SITUATION_MONITOR_SIGNALS_MODE`、`API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE` | A+M；各 wire/shared Mongo，items HTTP 与其 GraphQL 使用同业务基础 | ES/vector/model 为请求/功能配置依赖，不是所有启动必需；S3/brief 已确认缺口、后台缓存生产者见 GAPS |
+| `API_GO_NEWSNOW_CLUSTERING_OPS_MODE`、`API_GO_CRAWL_READ_TELEMETRY_MODE`、`API_GO_ITEMS_READING_MODE`、`API_GO_SEARCH_REINDEX_MODE`、`API_GO_SITUATION_MONITOR_SIGNALS_MODE`、`API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE` | A+M；各 wire/shared Mongo，items HTTP 与其 GraphQL 使用同业务基础 | ES/vector/model 为请求/功能配置依赖，不是所有启动必需；S3 缺口已确认；brief 冷生成候选由 NEWS-BRIEF-001 实现但未合 main，见 GAPS |
 | `API_GO_GRAPHQL_ITEMS_LIST_MODE`（本批候选，PR 未合） | A+M；复用 itemsreading Service 与既有 `/graphql` 执行器 | 子开关，go 要求 `API_GO_GRAPHQL_READ_MODE=go` 且 `API_GO_ITEMS_READING_MODE=go`，Load 直接校验；不新增顶层路由/资源 OR |
 | `API_GO_SITUATION_MONITORS_MODE` | A；wireSituationMonitors | 自定义 monitor 管理独立于 signals 读；主动 insight/refresh 与 Telegram 登录仍 Nest |
 | `API_GO_PUBLIC_PORTAL_MODE` | DATABASE_URL；main 构造 publicportal.NewHandler/MySQLStore，不需要 A 中 JWT/Redis | public org/来源策略与模型配置从 DB；故事 miss 调模型 HTTP，需可用 gateway/密钥但不启动探测 |
@@ -29,7 +29,7 @@
 
 GraphQL 精确开关、默认、路由/handler OR、模型与有意义的独立/组合分支集中在 [graphql-runtime](modules/graphql-runtime.md)。main 没有 `API_GO_GRAPHQL_WORKSPACE_WRITE_MODE`；该名称目前只存在 #70，不可把未来模式写成可部署事实。
 
-仓库可见启用：各域 pilot 列保留原始值；[Compose](../../../infra/docker/docker-compose.yml) 的 api-go 是 opt-in profile，CANARY_PERCENT=0，Web 默认指 api:4000。GraphQL 总读/NEWS_EVENTS/KNOWLEDGE_GRAPH 当前未在 api-go environment 显式注入；KG_IMPACT/WORKSPACE_READ/SETTINGS_CRAWL_READ/ORG_ACCESS_WRITE/SETTINGS_WRITE 为固定 legacy。宿主 .env 设置并不自动覆盖固定值或注入未列变量；须按当时部署入口明确传入，不能只凭变量名存在说可启用。本轮未改配置/未实际部署。
+仓库可见启用：各域 pilot 列保留原始值；[Compose](../../../infra/docker/docker-compose.yml) 的 api-go 是 opt-in profile，CANARY_PERCENT=0，Web 默认指 api:4000。GraphQL 总读/NEWS_EVENTS/KNOWLEDGE_GRAPH 当前未在 api-go environment 显式注入；KG_IMPACT/WORKSPACE_READ/SETTINGS_CRAWL_READ/ORG_ACCESS_WRITE/SETTINGS_WRITE 为固定 legacy。NEWS-BRIEF-001 候选新增 `API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE`，本分支的 Compose/.env.sample 固定为 legacy（未合 main 前不是可部署事实）。宿主 .env 设置并不自动覆盖固定值或注入未列变量；须按当时部署入口明确传入，不能只凭变量名存在说可启用。本轮未改配置/未实际部署。
 
 ## 产品链路与执行所有权
 
@@ -64,6 +64,8 @@ flowchart LR
 | vector | vector-go 三 HTTP→Qdrant，api-go 有 vector recall 客户端 | 上游配置/真实部署去向未知，独立 vector Nest 仍可服务 | BL-22 先查配置优先级与部署证据；不重复开发已有算法 |
 
 ## 可复用能力索引
+
+NEWS-BRIEF-001 增量（main 9d0462e1，2026-10-18）：本批拥有 publicportal 简报 completion 最小导出表面（`BriefCompleter`/`BriefCompletionRequest`/`BriefCompletionResult`/`BriefCompletionObserver`/`NewBriefCompleter`）与 llmlogs 新增 typed completion writer；既有 `Service.brief`、`completionRequest`、gateway helper 原先私有，日志 writer 原先不存在。复用父 GraphQL 读的 sharedDB/JWT/Redis/共享 Mongo，不依赖 `PUBLIC_PORTAL_MODE`、`LLM_LOGS_MODE`、gateway 配置管理 HTTP 模式或任何写模式；模型配置懒加载，不在启动探测真实模型。默认/Compose 均为 `API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE=legacy`，实际部署未切换；任务无 BullMQ/cron 执行权，模型调用与日志/缓存写回都在同步请求链路上。
 
 所有位置按页首 SHA。包内小写符号是 **私有**，不能在新包直接调用；需要抽取时先写清所有权和副作用。返回模型共享不代表业务权限可以复用成同一根权限。
 

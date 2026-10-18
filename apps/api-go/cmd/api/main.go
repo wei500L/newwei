@@ -168,6 +168,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
@@ -1442,7 +1443,23 @@ func run() error {
 			economic.Register(reg, sharedDB)
 			newsEventsGo := cfg.GraphQLNewsEventsMode == "go"
 			if newsEventsGo {
-				newsevents.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+				briefOptions := newsevents.Options{}
+				// The newsEventBrief sub-switch is exact: when it is legacy
+				// the root is not registered, so a document selecting it falls
+				// back to NestJS as a whole, while the other five roots keep
+				// serving from Go.
+				if cfg.GraphQLNewsEventBriefMode == "go" {
+					briefOptions.BriefEnabled = true
+					briefOptions.Brief = publicportal.NewBriefCompleter(publicportal.NewMySQLStore(sharedDB), publicportal.GatewayEnv{
+						EncryptionKey: cfg.SettingsEncryptionKey,
+						APIBase:       cfg.LiteLLMAPIBase,
+						APIKey:        cfg.LiteLLMAPIKey,
+						TimeoutMs:     cfg.LiteLLMTimeoutMs,
+						MaxRetries:    cfg.LiteLLMMaxRetries,
+					})
+					briefOptions.BriefLogs = llmlogs.NewCompletionWriter(sharedDB, mongoDatabase.Database())
+				}
+				newsevents.Register(reg, sharedDB, mongoDatabase.Database(), redisClient, briefOptions)
 			}
 			newsIndicatorsRead := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
 			if newsIndicatorsRead {
@@ -1542,7 +1559,11 @@ func run() error {
 		if graphqlReadGo {
 			log.Printf("api-go: GraphQL read pilot under go (16 queries; mutations and other queries stay on NestJS)")
 			if cfg.GraphQLNewsEventsMode == "go" {
-				log.Printf("api-go: GraphQL news-event reads registered (newsEvents, newsEvent, newsEventBrief, newsEventReferencedArticles, topicGroups, eventGroups)")
+				if cfg.GraphQLNewsEventBriefMode == "go" {
+					log.Printf("api-go: GraphQL news-event reads registered (newsEvents, newsEvent, newsEventBrief, newsEventReferencedArticles, topicGroups, eventGroups)")
+				} else {
+					log.Printf("api-go: GraphQL news-event reads registered (newsEvents, newsEvent, newsEventReferencedArticles, topicGroups, eventGroups); newsEventBrief stays on NestJS (API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE=legacy)")
+				}
 			} else {
 				log.Printf("api-go: GraphQL news-event reads not registered (API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy)")
 			}
