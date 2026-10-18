@@ -36,7 +36,9 @@
 //	         Go-批7：API_GO_CONTENT_SUBSCRIPTIONS_MODE、
 //	         API_GO_USER_NEWS_BEHAVIOR_MODE、API_GO_USER_DIGEST_MODE
 //	         各自默认 legacy，只切换对应的精确 HTTP。内部订阅、目录和画像
-//	         调用不看另外两个 HTTP 开关。不启动邮件 Cron。
+//	         调用不看另外两个 HTTP 开关。每日摘要邮件 Cron 由独立
+//	         API_GO_USER_DIGEST_DELIVERY_MODE 控制，默认 legacy 仍由 NestJS
+//	         消费；该开关为 go 时 Go 每分钟执行投递链。
 //	         API_GO_NEWS_SOURCES_MODE=go 时接管新闻源管理台十五条读写路由。
 //	         GET /api/admin/news-sources/:id/preview 仍回 NestJS。
 //	         回滚只把 API_GO_NEWS_SOURCES_MODE 改回 legacy。不入队，不启动采集。
@@ -178,6 +180,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
+	"github.com/wei500L/newwei/apps/api-go/internal/userdigest"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettingsread"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettingswrite"
@@ -861,7 +864,8 @@ func run() error {
 				cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo ||
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
-				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
+				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
+				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -994,7 +998,13 @@ func run() error {
 		searchReindexGo || proxyLoadBalancingGo || analysisExportGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
-	if needsCredentialedGo {
+	// The background digest delivery needs the shared Redis client (tick gate,
+	// organization lease and notification relay) but not the JWT/RBAC stack.
+	// Keep the condition additive so delivery-only starts Redis while every
+	// other mode is legacy, and the authenticator still exists only when an
+	// HTTP takeover needs it.
+	needsRedis := needsCredentialedGo || cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo
+	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
 			Username: cfg.RedisUsername,
@@ -1004,6 +1014,8 @@ func run() error {
 			// 行为画像的同分排序就和 ioredis 对不上。固定 RESP2，和 NestJS 一致。
 			Protocol: 2,
 		})
+	}
+	if needsCredentialedGo {
 		verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		blacklist := authn.NewRedisBlacklist(redisClient)
 		authenticator = authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
@@ -1293,7 +1305,8 @@ func run() error {
 		log.Printf("api-go: GET /api/healthz under go takeover")
 	}
 
-	if err := wirePersonalNews(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+	digestService, err := wirePersonalNews(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
+	if err != nil {
 		return err
 	}
 	if err := wireAnalysisCollaboration(gateway, cfg, sharedDB, authenticator); err != nil {
@@ -1580,6 +1593,12 @@ func run() error {
 			// client secret, state, handoff token or session token.
 			"oidcLogin": map[string]any{
 				"mode": string(cfg.OIDCLoginMode),
+			},
+			// Background daily-digest delivery ownership. legacy keeps the
+			// NestJS Cron; go moves the tick, org lease, SMTP delivery and
+			// digest notification relay to this process.
+			"userDigestDelivery": map[string]any{
+				"mode": string(cfg.UserDigestDeliveryMode),
 			},
 		})
 	})
@@ -1898,6 +1917,57 @@ func run() error {
 		log.Printf("api-go: item reading REST routes under go takeover (GET /api/items, GET /api/items/:id; readModel=%t)", cfg.ItemsReadModelEnabled)
 	}
 
+	// The daily-digest background delivery unit owns the per-minute scan when
+	// API_GO_USER_DIGEST_DELIVERY_MODE=go. It registers no HTTP route and needs
+	// no JWT. The deferred Close stops new ticks and drains in-flight
+	// organizations before the shared Redis/Mongo connections are closed below.
+	var deliveryScheduler *userdigest.DeliveryScheduler
+	// Ordered teardown for both the SIGTERM path and every error return after
+	// this point, including an HTTP listen failure. The digest scheduler stops
+	// first, then background search reindex, then the shared Redis/Mongo
+	// connections and the request-scoped handlers.
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if deliveryScheduler != nil {
+			if closeErr := deliveryScheduler.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: user digest delivery scheduler close: %v", closeErr)
+			}
+		}
+		if searchReindexService != nil {
+			searchReindexService.Close()
+		}
+		// go 模式下 onboarding 鉴权栈持有的 Redis 连接随进程收口。
+		if redisClient != nil {
+			if err := redisClient.Close(); err != nil {
+				log.Printf("api-go: redis client close: %v", err)
+			}
+		}
+		if dashboardMongo != nil {
+			if err := dashboardMongo.Disconnect(closeCtx); err != nil {
+				log.Printf("api-go: mongo client close failed")
+			}
+		}
+		if graphqlMongo != nil {
+			if err := graphqlMongo.Disconnect(closeCtx); err != nil {
+				log.Printf("api-go: graphql mongo client close failed")
+			}
+		}
+		if graphqlHandler != nil {
+			graphqlHandler.Close()
+		}
+		if readyHandler != nil {
+			readyHandler.Close(closeCtx)
+		}
+	}()
+	deliveryScheduler, err = wireDigestDelivery(cfg, sharedDB, redisClient, digestService)
+	if err != nil {
+		return err
+	}
+	if deliveryScheduler != nil {
+		deliveryScheduler.Start(context.Background())
+	}
+
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gateway.ServeHTTPWithShadow(w, r, disp)
 	}))
@@ -1932,34 +2002,10 @@ func run() error {
 		if err := server.Shutdown(ctx); err != nil {
 			return err
 		}
-		// Close the search reindex background goroutine first: cancel the
-		// service lifetime context and wait for the current batch to stop
-		// before its Redis and Mongo connections are closed below.
-		if searchReindexService != nil {
-			searchReindexService.Close()
-		}
-		// go 模式下 onboarding 鉴权栈持有的 Redis 连接随进程收口。
-		if redisClient != nil {
-			if err := redisClient.Close(); err != nil {
-				log.Printf("api-go: redis client close: %v", err)
-			}
-		}
-		if dashboardMongo != nil {
-			if err := dashboardMongo.Disconnect(ctx); err != nil {
-				log.Printf("api-go: mongo client close failed")
-			}
-		}
-		if graphqlMongo != nil {
-			if err := graphqlMongo.Disconnect(ctx); err != nil {
-				log.Printf("api-go: graphql mongo client close failed")
-			}
-		}
-		if graphqlHandler != nil {
-			graphqlHandler.Close()
-		}
-		if readyHandler != nil {
-			readyHandler.Close(ctx)
-		}
+		// The deferred cleanup below owns the ordered teardown: digest
+		// scheduler, search reindex, Redis, Mongo and the request-scoped
+		// handlers. It also runs on an HTTP listen failure instead of only on
+		// SIGTERM.
 		return nil
 	}
 }

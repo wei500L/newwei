@@ -40,6 +40,23 @@ type Service struct {
 	now    func() time.Time
 }
 
+// NewService builds the digest read/write service without the HTTP handler.
+// The background delivery scheduler and the HTTP handler share this
+// constructor, so both use the same collection name, subscription port and
+// optional Elasticsearch searcher.
+func NewService(db *sql.DB, mdb *mongo.Database, subs personalnews.SubscriptionAPI, es ItemSearcher) *Service {
+	var items *mongo.Collection
+	if mdb != nil {
+		items = mdb.Collection(processedItemsCollection)
+	}
+	return &Service{
+		db:     db,
+		items:  items,
+		subs:   subs,
+		search: es,
+	}
+}
+
 func (s *Service) clock() time.Time {
 	if s != nil && s.now != nil {
 		return s.now()

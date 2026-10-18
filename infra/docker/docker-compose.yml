@@ -428,6 +428,10 @@ services:
       ELASTICSEARCH_NODE: ${ELASTICSEARCH_NODE:-http://elasticsearch:9200}
       ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_USERNAME:-elastic}
       ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_PASSWORD:?ELASTICSEARCH_PASSWORD is required}
+      # 每日摘要后台投递所有权。空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。
+      # 默认 legacy=保留 NestJS Cron；go=Go 每分钟扫描并投递，NestJS Cron 在 tick
+      # gate 前退出且摘要通知 subscriber 启动。Nest 与 Go 注入同一变量。
+      API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -605,6 +609,10 @@ services:
       API_GO_CONTENT_SUBSCRIPTIONS_MODE: legacy
       API_GO_USER_NEWS_BEHAVIOR_MODE: legacy
       API_GO_USER_DIGEST_MODE: legacy
+      # 每日摘要后台投递所有权。与上面三个 HTTP 开关独立；delivery-only 时上述
+      # 全部 legacy 也能运行。go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 和
+      # SMTP_*，不要求 JWT_SECRET。默认 legacy；切换/回滚顺序见 docs 与 README。
+      API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
       # 分析工作台保存视图、看板/列/任务、笔记/评论（Go 协作域）。
       # pilot 与样例保持 legacy。三个变量各自改成 go 才切换对应 HTTP。
       # 内部讨论检查、评论计数和删除清理不看另一个开关，也不回调 NestJS。
