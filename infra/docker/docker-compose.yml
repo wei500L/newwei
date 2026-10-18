@@ -903,6 +903,14 @@ services:
       # 8 个 mutation 由 Go 执行。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动
       # worker。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE: legacy
+      # 工作台交互写入的 8 个 GraphQL mutation（markNotificationRead /
+      # markAllNotificationsRead / upsertDashboard / deleteDashboard /
+      # createAlertChannel / updateAlertChannel / deleteAlertChannel /
+      # updateAlertEventStatus）。pilot 与样例保持 legacy，与
+      # API_GO_GRAPHQL_READ_MODE 解耦：只开本变量时 query 仍走 NestJS，只有这
+      # 8 个 mutation 由 Go 执行。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动
+      # worker，也不发送邮件或 webhook。回滚只把该变量改回 legacy。
+      API_GO_GRAPHQL_WORKSPACE_WRITE_MODE: legacy
       # 基础设施设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认
       # 值）。S3_* 与 VECTOR_* 都不进入日志；不在这里新增第二套网关配置。
       NODE_ENV: production

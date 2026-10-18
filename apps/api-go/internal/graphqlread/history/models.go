@@ -1,6 +1,9 @@
 package history
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // AnalysisResultModel is the GraphQL AnalysisResultModel object.
 type AnalysisResultModel struct {
@@ -42,13 +45,14 @@ type AssistantRuntimeCapabilitiesModel struct {
 	WebSearchSupported bool    `graphql:"webSearchSupported"`
 }
 
-// NotificationModel is the GraphQL NotificationModel object.
+// NotificationModel is the GraphQL NotificationModel object. data is the JSON
+// scalar column kept as an opaque JSON leaf.
 type NotificationModel struct {
-	Body      *string    `graphql:"body"`
-	CreatedAt time.Time  `graphql:"createdAt"`
-	Data      any        `graphql:"data"`
-	ID        string     `graphql:"id"`
-	ReadAt    *time.Time `graphql:"readAt"`
-	Title     string     `graphql:"title"`
-	Type      string     `graphql:"type"`
+	Body      *string          `graphql:"body"`
+	CreatedAt time.Time        `graphql:"createdAt"`
+	Data      *json.RawMessage `graphql:"data"`
+	ID        string           `graphql:"id"`
+	ReadAt    *time.Time       `graphql:"readAt"`
+	Title     string           `graphql:"title"`
+	Type      string           `graphql:"type"`
 }

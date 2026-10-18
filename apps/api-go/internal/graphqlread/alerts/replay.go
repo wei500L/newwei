@@ -1,8 +1,10 @@
 package alerts
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -43,11 +45,7 @@ func replayEvent(ctx context.Context, db *sql.DB, orgID, eventID string, windowD
 	if metricSlug == "" {
 		return nil, nil
 	}
-	decoded, err := decodeJSON(rawContext)
-	if err != nil {
-		return nil, err
-	}
-	center, err := replayCenter(triggered, decoded)
+	center, err := replayCenter(triggered, rawContext)
 	if err != nil {
 		return nil, err
 	}
@@ -65,13 +63,25 @@ func replayEvent(ctx context.Context, db *sql.DB, orgID, eventID string, windowD
 	}, nil
 }
 
-func replayCenter(triggered time.Time, contextValue any) (time.Time, error) {
+// replayCenterContext is the named subset of an event context the replay
+// window reads. recordedAt stays an opaque leaf so a non-string value falls
+// back to the trigger time instead of failing the column decode.
+type replayCenterContext struct {
+	RecordedAt json.RawMessage `json:"recordedAt"`
+}
+
+// replayCenter returns the context recordedAt when the context is a JSON
+// object carrying a non-empty JSON string, and the trigger time otherwise.
+func replayCenter(triggered time.Time, rawContext []byte) (time.Time, error) {
 	fallback := truncateMillis(triggered)
-	record := asObject(contextValue)
-	if record == nil {
+	if len(bytes.TrimSpace(rawContext)) == 0 {
 		return fallback, nil
 	}
-	raw, ok := record["recordedAt"].(string)
+	var context replayCenterContext
+	if err := json.Unmarshal(rawContext, &context); err != nil {
+		return fallback, nil
+	}
+	raw, ok := jsonStringLeaf(context.RecordedAt)
 	if !ok || raw == "" {
 		return fallback, nil
 	}

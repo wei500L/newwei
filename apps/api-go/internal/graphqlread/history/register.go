@@ -28,13 +28,8 @@ func Register(reg *contract.Registry, db *sql.DB, mongoDB *mongo.Database, redis
 	if reg == nil {
 		panic("graphqlread: history.Register requires a registry")
 	}
+	RegisterModels(reg)
 	svc := &service{db: db, mongo: mongoDB, redis: redisClient}
-
-	reg.RegisterType("AnalysisResultModel", AnalysisResultModel{})
-	reg.RegisterType("AssistantRunModel", AssistantRunModel{})
-	reg.RegisterType("EconomicSeriesSuggestion", EconomicSeriesSuggestion{})
-	reg.RegisterType("AssistantRuntimeCapabilitiesModel", AssistantRuntimeCapabilitiesModel{})
-	reg.RegisterType("NotificationModel", NotificationModel{})
 
 	reg.RegisterRoot(contract.Root{
 		Name:       "analysisResults",
@@ -66,6 +61,24 @@ func Register(reg *contract.Registry, db *sql.DB, mongoDB *mongo.Database, redis
 		AllowAuthenticated: true,
 		Resolve:            svc.unreadNotificationCount,
 	})
+}
+
+// RegisterModels registers the analysis, assistant and notification object
+// types the read roots project, without registering any read root.
+//
+// It exists so the workspace write batch can return the notification model
+// while the history read roots are not registered at all. Every type may be
+// registered exactly once per registry, so a caller must choose between
+// Register (reads plus models) and RegisterModels (models only), never both.
+func RegisterModels(reg *contract.Registry) {
+	if reg == nil {
+		panic("graphqlread: history.RegisterModels requires a registry")
+	}
+	reg.RegisterType("AnalysisResultModel", AnalysisResultModel{})
+	reg.RegisterType("AssistantRunModel", AssistantRunModel{})
+	reg.RegisterType("EconomicSeriesSuggestion", EconomicSeriesSuggestion{})
+	reg.RegisterType("AssistantRuntimeCapabilitiesModel", AssistantRuntimeCapabilitiesModel{})
+	reg.RegisterType("NotificationModel", NotificationModel{})
 }
 
 func callContext(ctx contract.Context) context.Context {
