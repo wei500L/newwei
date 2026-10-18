@@ -677,6 +677,10 @@ func run() error {
 	if cfg.AuthLoginMode == config.AuthLoginModeGo {
 		authLoginMode = string(legacyproxy.ModeGo)
 	}
+	identityOnboardingMode := ""
+	if cfg.IdentityOnboardingMode == config.IdentityOnboardingModeGo {
+		identityOnboardingMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -747,6 +751,10 @@ func run() error {
 	// /api/auth. It is registered after the two neighbouring auth units; the
 	// three rule sets share no path, so the order between them is irrelevant.
 	rules = legacyproxy.WithAuthLogin(rules, authLoginMode)
+	// The registration/invitation unit owns fourteen exact or one-segment paths
+	// under /api/auth. It shares no path with the three neighbouring auth units,
+	// so the order between them is irrelevant.
+	rules = legacyproxy.WithIdentityOnboarding(rules, identityOnboardingMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -812,6 +820,7 @@ func run() error {
 				cfg.AuthFactorsMode == config.AuthFactorsModeGo ||
 				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
 				cfg.AuthLoginMode == config.AuthLoginModeGo ||
+				cfg.IdentityOnboardingMode == config.IdentityOnboardingModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.CrawlMetadataMode == config.CrawlMetadataModeGo ||
@@ -903,6 +912,7 @@ func run() error {
 	authFactorsGo := cfg.AuthFactorsMode == config.AuthFactorsModeGo
 	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
 	authLoginGo := cfg.AuthLoginMode == config.AuthLoginModeGo
+	identityOnboardingGo := cfg.IdentityOnboardingMode == config.IdentityOnboardingModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
 	// The situation monitor signals takeover needs the same credentialed stack
 	// (JWT verification, Redis revocation list, MySQL membership re-derivation)
@@ -933,6 +943,7 @@ func run() error {
 		situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || cfg.GraphQLSettingsWriteMode == "go" ||
+		identityOnboardingGo ||
 		searchReindexGo || proxyLoadBalancingGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
@@ -1334,6 +1345,9 @@ func run() error {
 	if err := wireAuthLogin(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
+	if err := wireIdentityOnboarding(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
 
 	if err := wireModelAccessSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
@@ -1497,6 +1511,11 @@ func run() error {
 			// 密码、令牌与密钥。
 			"authLogin": map[string]any{
 				"mode": string(cfg.AuthLoginMode),
+			},
+			// 注册申请、审批、邀请与入组 14 条 HTTP。legacy 时全部回落
+			// NestJS；不含连接串、令牌、hash 与邮件凭据。
+			"identityOnboarding": map[string]any{
+				"mode": string(cfg.IdentityOnboardingMode),
 			},
 		})
 	})
