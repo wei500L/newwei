@@ -2736,7 +2736,9 @@ jobs:
               require("F secret set S1 decrypt", decrypt_v1(parse_json_text(row[4])), "S1-secret")
               if "S1-secret" in row[4]:
                   fail("F: the clientSecret column contains the plaintext secret")
-              envelope1 = row[4]
+              # 两侧各自用新的随机 IV 加密同一个 secret，oidc_parity 之后库里是
+              # Go 那一份；后续「保留」语义以当前实际存储字节为基准。
+              envelope1 = oidc_row(org_a)[4]
               for label, payload in (
                   ("absent", {"enabled": True, "issuerUrl": "", "clientId": ""}),
                   ("null", {"enabled": True, "issuerUrl": "", "clientId": "", "clientSecret": None}),
