@@ -50,6 +50,8 @@
 
 ## items
 
+- **2026-10-18完整items候选深读，main9d0462e1**：Nest items resolver/DTO/分页/游标、ItemsListService个性化与特征、ItemsSearchService相关性/rerank/highlights、helpers/shared权重、ScopedItemsReadingLoader绑定；Go现有REST/GraphQL单条模型/批量store/召回、newsbehavior画像与llmembed接口已读。确认REST仅RECENCY、显式filters:{}优先于历史filters、相关性失败503、个性化候选窗口增长及两种cursor优先级，不能泛化合并。Context暂无选择元数据，计划最小只读扩展以省count/result并批量投影，不重写engine。ITEMS-LIST-001 reserved，未实施；实网/运行/全DTO组合未验证，其他items写/后台范围不扩大。
+
 - **REST List / Go 实现已静态核对（调度与分页分支）**：[itemsreading/service.go](../../../apps/api-go/internal/itemsreading/service.go) `Service.List`：NormalizePagination→ParseSearchPayload→ResolveScopedIDs；受限集合为空时返回合法空；read-model Mongo / MySQL 两种 List+Count 分支均执行 order/offset/pageSize。底层 ES/vector/词法召回分数、全部筛选语法尚未逐项复算。
 - **GraphQL item / Go 静态核对的范围**：[graphqlread/itemsreading/register.go](../../../apps/api-go/internal/graphqlread/itemsreading/register.go) 绑定 orgId，查不到合法 null；有 read-model 与 MySQL/Mongo 回退投影；workspace 未注册时补共享 ProcessedItem 嵌套类型。其余 facets/RSS/status/suggestions、processedItemById、原文/预览/事件链接/遥测尚未深入核对逐字段与缓存失效。
 - **重建后台 / Go 实现已静态核对（生命周期）**：[searchreindex/service.go](../../../apps/api-go/internal/searchreindex/service.go) startReindex→Redis queued→goroutine runReindex→分页 Mongo→bulkIndex→refresh→完成/失败；ES 关闭时 indexed=0 是合法禁用分支。重启不自动重排队，不能当 BullMQ worker 已迁；未验证锁续租/故障竞争。

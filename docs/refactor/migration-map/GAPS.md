@@ -60,6 +60,7 @@
 - 触发/影响：请求到达 legacy 规则或包含未接管 GraphQL root，业务由 Nest 执行；停掉 Nest 会失去相应功能。Go 并没有把这些入口返回空值来冒充完成。
 - Nest / Go：Nest Controller/Resolver/Service 定位已在域表；Go [legacyproxy](../../../apps/api-go/internal/legacyproxy) 与 [exec/walk.go](../../../apps/api-go/internal/graphqlread/exec/walk.go) 决定回退。未注册 root 在副作用前整份回退。
 - 任务覆盖：工作台 8 写由 WORKSPACE-WRITE-001 / #70 占用，保持 pr_open；其余候选见 BACKLOG 各自精确范围、文件和前置，不能领取整个集合。主要共享冲突是 main/config/Registry，其余按域隔离。
+- 2026-10-18新增具体子范围认领：ITEMS-LIST-001 / reserved负责Query items，STORAGE-MEDIA-001负责storage/test；不关闭本跨域GAP，不把未认领集合整体交给任一窗口。news/媒体部分实现另按各自GAP记录。
 - 状态：部分已被任务覆盖，其余未分配；关闭证据按入口分批关联实际 main 提交，不因一批合并关闭整个 ID。新增/删契约另改分母，不以文档行数算迁移进度。
 
 <a id="gap-async-001"></a>

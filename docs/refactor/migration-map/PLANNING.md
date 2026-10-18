@@ -24,6 +24,8 @@
 8. 使用已有普通 GitHub Actions CI；不默认新增每批专用 smoke workflow。远端检查要记录精确 head SHA、结果和链接，skipped 不是通过。
 9. Go 业务 DTO、返回模型、数据库 JSON、缓存、审计均用具名强类型；禁止 any/interface{}/map[string]any/[]any 承载业务数据。通用 GraphQL/驱动协议边界可沿用，扩展型 JSON 叶子可用 json.RawMessage。
 10. 新增/修改源码注释用英文；提交、PR 描述和迁移文档用中文。
+
+2026-10-18用户再次强调：不要防御性编程，迁移时写好英文注释。执行提示词应把工作放在完整迁移、必要功能与算法；不凭假设添加校验/锁/重试/兼容框架。必要英文注释解释分页、排序、租户绑定和副作用的原因与契约，不逐行复述代码。既有鉴权/租户/业务校验与必要事务继续保留。
 11. BullMQ worker、cron、入队和未验证外部服务单独识别。读接口也要检查 ensure coverage、准备任务、repeat 注册、同步和真实上游调用，禁止当普通本地 CRUD。
 12. 不伪造 SMTP、LiteLLM、crawl4ai、Nominatim、Telegram/Oref、AkShare 等真实验证结果。
 13. 不自动创建 Codex 新对话，不向其他对话发送消息，不创建定时任务。用户说“新开窗口执行”时默认提供提示词，另有明确授权才操作对话。

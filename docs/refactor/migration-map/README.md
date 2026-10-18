@@ -6,6 +6,8 @@
 
 用户随后要求再并行一批：同一main下认领[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md)，补存储test、S3交付及已有REST/GraphQL详情URL；[独立提示词](tasks/STORAGE-MEDIA-001.prompt.md)已保存，与简报业务包隔离，共享接线按任务语义段最小增量。两批均reserved、未实施，统一在[规划PR #71](https://github.com/wei500L/newwei/pull/71)发布记录。
 
+第三批增量（仍main9d0462e1）：用户简报目录已见业务开发，改in_progress；存储编码目录已创建，继续占用。新增[ITEMS-LIST-001](tasks/ITEMS-LIST-001.md) reserved：[提示词](tasks/ITEMS-LIST-001.prompt.md)完整迁移items分页/相关性/个性化与批量投影；核心文件与前两批隔离，共享只读selection元数据及items注册段已登记。本规划窗口只改文档，不把本地开发/提示词发出计为main进度。
+
 本轮基线：`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`；2026-10-18 14:37–14:42 MSK 做结构/指定业务分支静态核对，14:49 再 fetch，main 未变。15:01–15:08续审补组织八写/设置缓存与来源策略、导出拆分证据，main未变；深度按审查组记录，未逐字段审完的内容在AUDIT明列。普通 CI 与启用证据只在 EVIDENCE 维护。
 
 ## 注册覆盖

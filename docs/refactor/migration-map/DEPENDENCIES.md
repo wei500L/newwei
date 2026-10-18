@@ -64,6 +64,8 @@ flowchart LR
 
 ## 可复用能力索引
 
+第三批items专项（main9d0462e1）：ITEMS-LIST-001拥有itemsreading/graphql adapter完整列表及最小contract/exec只读选择元数据；newsbehavior.GetPersonalizationProfile可复用positive/negative，llmembed.Rerank有现成HTTP/profile但尚缺本链路timeout/attempt/日志观测表面。现有REST List不是完整列表实现，候选融合不是最终相关性排名。新子开关复用READ+ITEMS父资源，不需要新顶层接管；不碰简报的publicportal/llmlogs或存储的依赖清单。
+
 S3专项认领（2026-10-18，main9d0462e1）：STORAGE-MEDIA-001拥有infrastructuresettings运行配置导出、objectstorage窄包、媒体及两处详情service注入和storage/test；现有storage:settings/cache/crypto可复用，S3客户端尚无。新诊断HTTP模式只需DB/auth/Redis，不应依赖Mongo或其他HTTP模式；媒体REST/GraphQL沿原开关。只有诊断写/删自己的测试对象，无队列/worker所有权；BL-15其余诊断未认领，NEWS-BRIEF-001客户端文件不重叠。
 
 本次brief专项增量（main 9d0462e1，2026-10-18）：[NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)保留publicportal简报completion最小导出表面与llmlogs新增typed completion writer；既有helper私有、日志writer尚不存在。计划复用父GraphQL读的DB/auth/Redis/Mongo，不依赖PUBLIC_PORTAL_MODE或LLM_LOGS_MODE；新BRIEF子开关尚未实现，不是当前可部署变量。任务无BullMQ/cron执行权，模型与日志/缓存写回属于同步请求链路。

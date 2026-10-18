@@ -2,7 +2,7 @@
 
 [入口](README.md) · [规划](PLANNING.md) · [占用](tasks/README.md) · [缺口](GAPS.md) · [复用/所有权](DEPENDENCIES.md)。核对基线 `3cedce9aa3200436aba3596f63b559de5490cec8`，2026-10-18 本轮静态复核。候选不等于任务，不创建分支/worktree/对话，不自动发业务提示词；选择一项后才核对最新源码并写 task。
 
-本次仅BL-02按9d0462e1续核并转reserved，保留其去向供恢复；其余候选仍未认领，历史核对基线/深度不变。
+当前已派发BL-02、BL-03及BL-15.storage/test、BL-05，分别见各自task；保留去向供恢复，其余候选不因本轮批量认领，历史核对基线/深度不统一刷新。
 
 ## 顺序与隔离
 
@@ -44,6 +44,8 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 - **文件/前置/冲突**：新 Go 登录业务包、main/config；阅读 `apps/api/src/modules/auth/{auth.service,password-reset.service,mfa.service}.ts`；MySQL/Redis+SMTP。**适合单独主窗口，不与 BL-06 并行改会话协议**。先核 refresh rotation/验证码存储/SMTP helper 可复用性，不能从 verifier 存在推断 signer 已有。
 
 ### BL-05 · items / 完整 GraphQL 列表
+
+- 2026-10-18按main9d0462e1深读后已reserved至[ITEMS-LIST-001](tasks/ITEMS-LIST-001.md)，不再属于未认领队列。完整分页/三排序/相关性rerank/用户正负画像与批量投影，不包装REST后冒充完成；原第三方调用/错误/日志边界见任务。前两批核心业务包不重叠，只读selection元数据由本任务最小扩展。
 
 - **范围/缺口**：Query `items`（GAP-LEGACY-001）；完整 connection/page/after/first、排序/过滤、PERSONALIZED 与 RELEVANCE，保留互斥分页校验。
 - **基础/依据**：G/itemsreading.Service.List及同包搜索/facets/read-model、workspace 模型；N/graphql/resolvers/items.resolver.ts 的 items 与 ItemsListService。REST List 只做 RECENCY，不可直接包装后称全量完成；还需 cursor、选择字段、个性化/召回排序和返回 connection 注册。

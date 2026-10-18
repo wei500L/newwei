@@ -14,7 +14,7 @@ HTTP 条目阅读与索引重建、GraphQL item/itemFacets/rssSources/rssTransla
 
 Nest 功能目录：[items](../../../../apps/api/src/modules/items)、[search-telemetry](../../../../apps/api/src/modules/search-telemetry)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：[ITEMS-LIST-001](../tasks/ITEMS-LIST-001.md) reserved，完整items Query分页/RECENCY/RELEVANCE/PERSONALIZED与批量嵌套投影。2026-10-18仅该链按main9d0462e1深读，尚无本任务编码目录/业务PR，不更新main覆盖数。旧worktree不自动视为活动任务。
 
 ## HTTP 开关、实现与生产接线
 

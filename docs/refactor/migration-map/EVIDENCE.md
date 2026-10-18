@@ -4,6 +4,8 @@
 
 ## NEWS-BRIEF-001规划刷新（2026-10-18）
 
+第三批用户要求“不要防御性编程、写好英文注释”已补PLANNING。再次fetch/main五次CI/开放PR/worktree刷新，main仍9d0462e1，#70 adb765d0仍开放、#71仅规划文档。只深入BL-05并认领ITEMS-LIST-001；两端排序/分页/画像/选择投影与外部边界见task。brief worktree已见业务差异，状态in_progress；storage worktree已创建且当时干净，保留reserved。规划窗口未安装/运行测试/服务或实施迁移，未创建第三批编码目录。
+
 随后用户要求第二个并行提示词，再fetch main仍9d0462e16d88d146b8afbf67cdd58d8b7419ff29；开放仅#70业务与#71规划文档，heads仍adb765d0/3a33ad6e。新增STORAGE-MEDIA-001 reserved，只续核S3媒体/存储诊断及必要源码。#71此旧head的verify仍进行中、两集成job成功，不当新记录或业务CI通过；新记录追加后另查最新head。官方AWS Go v2示例确认有S3 presign/对象操作能力（https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/go_s3_code_examples.html），本仓库go.mod未引入，规划指定现有ci.yml远端go-modules-regen流程。未安装/构建/测试/调用S3，未创建编码worktree。
 
 第二批发出前再核，用户的简报窗口已创建/Users/oo/project/newwei-go-news-event-brief，HEAD9d0462e1且当时无业务差异；保留NEWS-BRIEF-001占用，不推断执行器活动/退出。STORAGE-MEDIA-001编码目录仍未创建，规划窗口未启动实施。

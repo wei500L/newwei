@@ -7,7 +7,7 @@
 - 来源：BL-03/GAP-CRAWL-001，及BL-15仅storage/test子范围；其他诊断不认领。
 - 规划代码基线：9d0462e16d88d146b8afbf67cdd58d8b7419ff29。main相对前批未变，最近5次普通CI success。
 - [完整执行提示词](STORAGE-MEDIA-001.prompt.md)本次发出；执行器身份/活动未核实。
-- 编码分支refactor/go-storage-media；worktree /Users/oo/project/newwei-go-storage-media，尚未创建。
+- 编码分支refactor/go-storage-media；worktree /Users/oo/project/newwei-go-storage-media，第三批规划时已创建于9d0462e1，当时干净，尚未见业务开发差异，保留reserved；不据干净推断执行器活动。
 - 文档发布分支docs/plan-news-event-brief；复用[Ready规划PR #71](https://github.com/wei500L/newwei/pull/71)，本批记录提交/推送后可见。不是业务PR。
 - 业务PR/Ready/head/merge/业务CI：无。实桶验证、部署、流量：未核实；没有实施迁移。
 

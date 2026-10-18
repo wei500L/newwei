@@ -2,11 +2,11 @@
 
 ## 任务记录
 
-- 模块：[news](../modules/news.md)；状态：reserved（本次提示词交给用户编码窗口，无开工证据）。
+- 模块：[news](../modules/news.md)；状态：in_progress（第三批规划时已见本机对应业务开发差异；无业务PR，不推断执行器实时活动）。
 - 来源：BL-02 / GAP-NEWS-001；仅一个已注册但部分实现的 Query，不新增接口计数。
 - 代码基线：9d0462e16d88d146b8afbf67cdd58d8b7419ff29；2026-10-18 15:48 MSK 本域增量静态核对。地图业务基线3cedce9a至此没有业务源码变化。
 - 提示词：[完整执行提示词](NEWS-BRIEF-001.prompt.md)；2026-10-18本次规划聊天发出；编码执行器身份与活动尚未核实。
-- 编码分支：refactor/go-news-event-brief；worktree：/Users/oo/project/newwei-go-news-event-brief，第二批规划末次刷新时已创建，HEAD 9d0462e1、工作目录干净，尚未见业务开发差异，保持reserved；不据干净状态推断执行器不活跃。
+- 编码分支：refactor/go-news-event-brief；worktree：/Users/oo/project/newwei-go-news-event-brief，HEAD9d0462e1；第三批规划时见newsevents/{brief,service}.go、publicportal/{gateway,story}.go及新增brief_completion.go、llmlogs/completion.go等开发差异。只读核占用，未改该目录，不据快照推断当前活跃/退出。
 - 规划记录：docs/plan-news-event-brief；规划 worktree /Users/oo/project/newwei-plan-news-event-brief；首提交efa819e3已正常推送，[Ready文档PR #71](https://github.com/wei500L/newwei/pull/71) 已发布。该PR仅文档，不是本批业务PR；CI状态应按其最新head查询，不要求或暗示模型验证。
 - 业务 PR/Ready/head：未创建；实际 merge SHA：无；本批普通 CI/额外集成验证：尚无。
 - main 普通 CI：9d0462e1，run 39127631691 success；不是本任务验证。模型实网、部署与流量未核实。
@@ -37,4 +37,4 @@ main.go仅已有read/newsEvents区块Register参数与对应日志，config仅�
 
 ## 完成与恢复
 
-当前只做规划/认领与提示词，业务、注册、缺口状态和main计数不变；本机没有安装/构建/测试/启动服务。下一次先fetch与刷新PR/任务占用，再按完整提示词实施。交付必须区分业务PR、规划PR、main落地、普通CI、真实模型验证和部署启用。
+规划窗口只维护文档；编码目录已有本地开发，未逐分支验收、无业务PR，main实现/注册/缺口计数仍不变。规划窗口没有安装/构建/测试/启动服务；其他窗口运行情况未核实。恢复时先fetch与刷新PR/任务占用；交付须区分本地代码、业务PR、规划PR、main落地、普通CI、模型实网与部署。
