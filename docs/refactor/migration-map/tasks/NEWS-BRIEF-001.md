@@ -7,7 +7,8 @@
 - 代码基线：9d0462e16d88d146b8afbf67cdd58d8b7419ff29；编码分支 `refactor/go-news-event-brief`；worktree `/Users/oo/project/newwei-go-news-event-brief`（从该 SHA 创建）。规划记录原在 docs/plan-news-event-brief，本窗口把[本任务](NEWS-BRIEF-001.md)与[提示词](NEWS-BRIEF-001.prompt.md)带入本分支，未覆盖其他任务条目。
 - 提示词：[完整执行提示词](NEWS-BRIEF-001.prompt.md)。
 - 规划记录：docs/plan-news-event-brief；规划 worktree /Users/oo/project/newwei-plan-news-event-brief；Ready 文档 PR #71（仅文档）。
-- 业务 PR/Ready/head：本批创建，见 PR 描述与[证据](../EVIDENCE.md)。
+- 业务 PR/Ready/head：Ready [PR #72](https://github.com/wei500L/newwei/pull/72)，head `517a73f98b495c1664c45fdfaf2bd2692a3b2210`（首个 head b9c4d4f3 因既有测试仍按旧 map metadata 引用未过 lint，已正常追加修复提交）。尚未合 main，缺口未关闭。
+- 普通 CI（本批 head 517a73f9）：[run 39132616859](https://github.com/wei500L/newwei/actions/runs/39132616859) —— verify success（含 Lint、Typecheck、Go tests (api-go gateway + vector-go pilot)、Build）、api-go-user-settings-integration success、vector-integration success；PR 触发的 smoke/regen 全部 skipped，不计通过。
 - main 普通 CI：9d0462e1，run 39127631691 success；不是本任务验证。模型实网、部署与流量未核实。
 
 ## 精确范围与源码证据
@@ -31,4 +32,4 @@ POST /graphql，Query newsEventBrief(eventId: String!, forceRefresh: Boolean, la
 
 ## 完成与恢复
 
-业务源码、开关、日志与缓存写回实现已在本分支；未在本机运行 build/test/Docker/服务，未做模型实网、MySQL/Mongo 或部署切流验证。下一步按普通 CI 结论决定是否追加修复；GAP-NEWS-001 只在确认 main 落地后关闭。
+业务源码、开关、日志与缓存写回实现已在 PR #72 head `517a73f9`，普通 CI verify/integration 通过。本机仍未运行 build/test/Docker/服务，未做模型实网、MySQL/Mongo 或部署切流验证；实网模型、Redis/Mongo 与真实部署未分别验证，不假称成功。下一步等合并复核，GAP-NEWS-001 只在确认 main 落地后关闭。

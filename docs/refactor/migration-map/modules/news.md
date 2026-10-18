@@ -1,6 +1,6 @@
 # news · 新闻事件、指标、聚类与内容流水线
 
-最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。NEWS-BRIEF-001 编码窗口在 main 9d0462e1 基础上实现候选，见[任务](../tasks/NEWS-BRIEF-001.md)，尚未合 main。
+最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。NEWS-BRIEF-001 编码窗口在 main 9d0462e1 基础上实现候选（Ready [PR #72](https://github.com/wei500L/newwei/pull/72)，head 517a73f9，verify/integration 通过），尚未合 main，见[任务](../tasks/NEWS-BRIEF-001.md)。
 
 ## 范围与实施状态
 

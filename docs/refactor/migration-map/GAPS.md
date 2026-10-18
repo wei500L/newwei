@@ -37,7 +37,7 @@
 - Go：[newsevents/brief.go](../../../apps/api-go/internal/graphqlread/newsevents/brief.go) `newsEventBrief` 18–59，loadEvent/loadItems、选源/指纹与缓存命中已实现，末尾固定报错；没有模型调用/metadata 更新。注册在 [register.go](../../../apps/api-go/internal/graphqlread/newsevents/register.go)。核对 SHA 如页首。
 - 可复用但不可直接调用：[publicportal/story.go](../../../apps/api-go/internal/publicportal/story.go) `Service.brief` 已实现选源→Complete→JSON 清洗→SaveEventMetadata；`brief`、`completionRequest`、gateway helper 均为包内私有，公共门户语言/组织选择与 GraphQL 参数也不同，不能声称已共享。
 - 主要文件：newsevents `brief.go` / store/model；如抽共享能力，需明确 publicportal/story.go、brief.go、gateway.go 的所有权。MySQL NewsEvent/NewsEventItem/ProcessedArticle、模型配置/密钥、HTTP 模型上游；无须为了这个同步入口迁 BullMQ。前置是确定具名共享模型/客户端边界，BL-02 可独立窗口评估，避开 BL-17 公共门户客户端并行修改。
-- 状态：已分配 [NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)；编码窗口在 main 9d0462e1 上给出候选实现（BRIEF 子开关 + Go 选源→模型→校验清洗→`JSON_SET` 写 briefV1 叶子 + best-effort LLM 请求日志），但**尚未合 main**，故缺口仍开放。关闭证据：**无**；需该候选普通 CI 与实际 merge SHA 中命中、miss、forceRefresh、无事件/来源、写回与日志分支的落地证据，实网模型验证另记。
+- 状态：已分配 [NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)；编码窗口在 main 9d0462e1 上给出候选实现（BRIEF 子开关 + Go 选源→模型→校验清洗→`JSON_SET` 写 briefV1 叶子 + best-effort LLM 请求日志），Ready [PR #72](https://github.com/wei500L/newwei/pull/72) head 517a73f9 普通 CI verify/integration 通过，但**尚未合 main**，故缺口仍开放。关闭证据：**无**；需该候选实际 merge SHA 中命中、miss、forceRefresh、无事件/来源、写回与日志分支的落地证据，实网模型验证另记。
 
 <a id="gap-crawl-001"></a>
 
