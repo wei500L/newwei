@@ -56,7 +56,7 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-06 · identity / 邀请、审批与 OIDC 接入的后续分段
 
-- 2026-10-18以main c39f282f深读后，将其中邀请/申请审批14路认领为[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md) reserved，[提示词](tasks/IDENTITY-ONBOARDING-001.prompt.md)已保存并发出。#75登录基础已通过#77合入，原会话前置已满足；本批accept不签发会话。已核实新组织审批调用普通invite的system-admin拒绝问题，纳入受控bootstrap路径修复。其余OIDC三路、头像与导出仍未认领，不扩成19路杂批。
+- 2026-10-18以main c39f282f深读并发出其中邀请/申请审批14路[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md)，现已由#79实际merge f35ec572进入main90765633；原[提示词](tasks/IDENTITY-ONBOARDING-001.prompt.md)保留，不重复派发。#75登录基础已通过#77合入；本批accept不签发会话。新组织审批调用普通invite的system-admin拒绝问题纳入受控bootstrap路径实现。其余OIDC三路、头像与导出仍未认领，不扩成19路杂批。
 
 - **精确候选集合**：identity 域余下 Nest HTTP：/admin/invites 四路、/admin/registration-applications 五路、/register/{applications,join-applications} 两路、/invitations/:token 三路、GET sso/oidc/start、GET oidc/callback、POST sso/handoff/exchange；另 POST avatar/presigned-url 与 GET data-export 是两个可分离支线。均为 GAP-LEGACY-001，不包含 BL-04。
 - **基础/依据**：G/graphqlread/orgaccesswrite、G/{rbacapi,authfactors,accountsecurity}，N/OrgInviteService、RegistrationApplicationService、OidcAuthService；需要邀请/审批事务、默认角色/租户初始化、邮件、IdP/state/PKCE/handoff token；头像依赖 StorageService、导出依赖完整个人数据聚合。
@@ -158,7 +158,7 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-17 · model-gateway / 治理与真实探测
 
-- 2026-10-18以main c39f282f深入后，12路整体认领至[LLM-GATEWAY-OPS-001](tasks/LLM-GATEWAY-OPS-001.md) reserved，[执行提示词](tasks/LLM-GATEWAY-OPS-001.prompt.md)已保存并发布，不再是未认领候选。已核team/key管理协议、启停/轮换先后、真实探测/缓存/错误、三类Mongo日志与Go可复用能力；不依赖BL-02私有completion客户端。无真实外部验证，无队列/cron，其他候选不认领。
+- 2026-10-18以main c39f282f深入、最终按90765633核增量后，12路整体认领至[LLM-GATEWAY-OPS-001](tasks/LLM-GATEWAY-OPS-001.md) reserved，[执行提示词](tasks/LLM-GATEWAY-OPS-001.prompt.md)已保存并发布，不再是未认领候选。已核team/key管理协议、启停/轮换先后、真实探测/缓存/错误、三类Mongo日志与Go可复用能力；不依赖BL-02私有completion客户端。#79身份已合入，保留其公共接线。无真实外部验证，无队列/cron，其他候选不认领。
 - **范围/缺口**：model-gateway 域12条 Nest HTTP：proxy-governance GET/PUT/DELETE/preflight/rotate-key，:id/models/test/proxy-health/proxy-model-info/proxy-lb-test，models-config/test-config（GAP-LEGACY-001）。
 - **基础/依据**：G/{modelaccesssettings,llmgatewayprofiles} 的 profile、密钥、LB 配置，publicportal.gateway 已有请求实现但私有；N/LlmGatewaySettingsController 与服务。治理事务/密钥轮换、LiteLLM内部配置、真实探测/模型列表是不同子链，可先治理后探测。
 - **文件/前置/冲突**：新llmgatewayops/wire/路由、profiles窄端口、llmlogs probe writer及main/config条件增量；MySQL/Redis/Mongo/加密+LiteLLM/模型。与#79身份核心业务隔离，公共接线保留并集。preflight/rotate协议已按本次task补核，配置applied与mock仍不等于真实生产生效。

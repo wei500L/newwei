@@ -6,11 +6,11 @@
 
 # 基线、分支与恢复
 
-- 仓库 /Users/oo/project/newwei；已核基线 origin/main 为 c39f282f11952b487c3ef6fefb14882db265ed9e。#70–#76 已经由 #77 合入；该 SHA 普通 CI 39142523834 成功，不代表生产切流或真实外部验证。
+- 仓库 /Users/oo/project/newwei；最新已核基线 origin/main 为 90765633ac6ba2b1d97a89d0ec33be90cb69bcb7。#70–#76 已由 #77 合入；#79 身份14路通过 f35ec572ccdf607b9224d88d1962cf792f9915be 合入，#78 旧身份规划也已合入。本 SHA 普通 CI 39149114456 最后查询仍在运行；旧 c39f282f 的 CI39142523834 成功不能替代新 SHA，不代表生产切流或真实外部验证。
 - 先 git fetch origin main，读取适用 AGENTS.md；重新查 main SHA、开放 PR、最近五次 main CI、git worktree list。旧 checkout 停在历史分支，不能用它判断迁移进度。若 main 前进，只核本批和公共接线增量，不做全仓审计。
 - 从 fetch 后 origin/main 创建 refactor/go-llm-gateway-ops，worktree 固定 /Users/oo/project/newwei-go-llm-gateway-ops。目录/分支已存在时先核归属与改动，不覆盖。不要在旧业务 worktree 开发。
-- 地图主线来自已合 #69，新增规划记录在 Ready 文档 PR #78（https://github.com/wei500L/newwei/pull/78），分支 docs/plan-auth-onboarding；未合时只读该分支的 docs/refactor/migration-map，不合入其业务历史。先读 README.md、PLANNING.md、tasks/README.md、GAPS.md 摘要、BACKLOG.md 的 BL-17、modules/model-gateway.md、AUDIT.md 对应域及 DEPENDENCIES.md 相关资源，再读本任务记录与源码。
-- 当前并行业务 PR #79（https://github.com/wei500L/newwei/pull/79），head e105b3abdb3fa084356918cb29f8385cb5fb4ddb，负责 IDENTITY-ONBOARDING-001 的注册审批与邀请 14 路。其业务不归本批。执行前核实际 diff/认领，不能因暂未合入重派。不开新对话、不向其他对话发消息。
+- 地图主线来自已合 #69；本任务和完整提示词在独立规划分支 docs/plan-llm-gateway-ops 发布，未合时只读该分支的 docs/refactor/migration-map，不合入其文档历史。先读 README.md、PLANNING.md、tasks/README.md、GAPS.md 摘要、BACKLOG.md 的 BL-17、modules/model-gateway.md、AUDIT.md 对应域及 DEPENDENCIES.md 相关资源，再读本任务记录与源码。
+- 发出前开放业务 PR 为空；#79 的 IDENTITY-ONBOARDING-001 已合入，不重复派发或改写。已读实际diff与main接线，本批业务与身份包隔离。执行前仍重新查新开放 PR/认领和 worktree；已有历史目录不自动代表活动占用，后续新增占用以实际改动为准。不开新对话、不向其他对话发消息。
 
 # 精确接口与权限
 
@@ -43,7 +43,7 @@ Nest 事实源位于 apps/api/src：
 - 同目录 dto/llm-gateway-proxy-governance.dto.ts、llm-gateway-test.dto.ts、llm-gateway-test-config.dto.ts、llm-gateway-proxy-lb-test.dto.ts，以及 llm-gateway-error-codes.ts。
 - common/llm-openai-compat.ts 与 modules/news-pipeline/llm-request-log.service.ts：兼容性错误、文本提取、请求日志和 metadata policy。
 
-这些候选 Nest 源码相对旧地图 main 9d0462e1 到当前基线没有业务变化。源码优先；不要只按本提示词复制类型而跳过实现分支。
+这些候选 Nest 源码相对旧地图 main 9d0462e1 到当前基线没有业务变化；c39f282f→90765633 的相关 Go 增量为身份接线，本批 gateway/profile/日志基础未变化。源码优先；不要只按本提示词复制类型而跳过实现分支。
 
 Go 复用 apps/api-go 下：
 - internal/llmgatewayprofiles 的 StoredSettings/StoredProfile、NormalizeSettings/NormalizeProfile、EnvDefaults、SecretValue 加密 envelope、配置缓存、system_security secret_encryption 策略和鉴权器。当前没有导出的 getProfileConfig/运行绑定/完整 secret codec；通过少量具名方法或窄端口暴露所需能力，不假设已有 public 方法，不复制整套 profile 默认值/加密实现。只读 profile 服务不需要为本批另开 GET_LOCK 连接池。

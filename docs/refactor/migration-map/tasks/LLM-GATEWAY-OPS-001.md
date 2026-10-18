@@ -1,7 +1,7 @@
 # LLM-GATEWAY-OPS-001 · 网关治理与真实探测十二路
 
-- 状态 reserved；2026-10-18 继续选批。基线 origin/main c39f282f11952b487c3ef6fefb14882db265ed9e，普通 CI 39142523834 success。此处只规划，无业务实现/注册/外部验证新增。
-- 分支 refactor/go-llm-gateway-ops；worktree /Users/oo/project/newwei-go-llm-gateway-ops，发出前尚未创建；[完整执行提示词](LLM-GATEWAY-OPS-001.prompt.md)。认领与提示词通过现有[规划 PR #78](https://github.com/wei500L/newwei/pull/78)发布。
+- 状态 reserved；2026-10-18 继续选批。最终刷新基线 origin/main 90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，普通CI39149114456运行中；旧c39f282f的CI39142523834成功不能替代。此处只规划，无业务实现/注册/外部验证新增。
+- 分支 refactor/go-llm-gateway-ops；worktree /Users/oo/project/newwei-go-llm-gateway-ops，发出前尚未创建；[完整执行提示词](LLM-GATEWAY-OPS-001.prompt.md)。原#78已合旧head，本批新增记录未随其进入main，改用独立规划分支docs/plan-llm-gateway-ops发布。
 - 精确范围：/api/system-settings/llm-gateways 下 proxy-governance GET/PUT/DELETE/preflight/rotate-key 五路，:id/models/test/proxy-health/proxy-model-info/proxy-lb-test 五路，models-config/test-config 两路；共12，全部 settings.manage，无新增平台角色限制。POST201，其余成功200。BL-17 全范围由本任务占用。
 
 ## 已核事实与依赖
@@ -16,6 +16,6 @@ MySQL全局SystemSetting、Redis治理TTL30与model-info TTL60、共享JWT/机�
 
 ## 并行边界与记录
 
-已核唯一开放业务PR [#79](https://github.com/wei500L/newwei/pull/79)，Ready，head e105b3abdb3fa084356918cb29f8385cb5fb4ddb，IDENTITY-ONBOARDING-001继续占用。读实际diff：身份业务、SMTP端口、组织bootstrap/RBAC不与本批业务包重叠；main/config/env/compose按最小条件并集合并。#70–#76已由#77合入，不因旧worktree存在当作活动占用。
+发出前再fetch发现[#79](https://github.com/wei500L/newwei/pull/79)已通过f35ec572ccdf607b9224d88d1962cf792f9915be合入，#78通过90765633合入，开放业务PR为空。读实际diff及main的身份mode/资源OR/wire/路由：身份业务、SMTP端口、组织bootstrap/RBAC不与本批业务包重叠；候选gateway基础未变。main/config/env/compose保留该并集。#70–#76已由#77合入，不因旧worktree存在当作活动占用。
 
 本批允许新llmgatewayops/wire/精确路由、profiles窄复用端口、llmlogs probe writer和必要共享接线。排除profileCRUD、LB配置/下发、modelservice/OpenAIkeys、publicportal/llmembed重迁、新闻与身份业务。规划窗口维护地图，编码窗口只交业务与PR/短交付说明，不打断正在运行窗口。发出前正常提交/推送本记录，不自动创建编码目录或实施。
