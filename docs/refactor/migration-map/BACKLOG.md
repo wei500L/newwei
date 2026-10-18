@@ -57,7 +57,8 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-06 · identity / 邀请、审批与 OIDC 接入的后续分段
 
-- 2026-10-18以main c39f282f深读并发出其中邀请/申请审批14路[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md)，现已由#79实际merge f35ec572进入main90765633；原[提示词](tasks/IDENTITY-ONBOARDING-001.prompt.md)保留，不重复派发。#75登录基础已通过#77合入；本批accept不签发会话。新组织审批调用普通invite的system-admin拒绝问题纳入受控bootstrap路径实现。其余OIDC三路、头像与导出仍未认领，不扩成19路杂批。
+- 2026-10-18按main90765633深入后，OIDC start/callback/handoff exchange三路完整SSO链已认领[OIDC-LOGIN-001](tasks/OIDC-LOGIN-001.md) reserved，[提示词](tasks/OIDC-LOGIN-001.prompt.md)在#80发布；复用已合可信登录/MFA/secret，明确真实discovery/JWKS/token与handoff条件领取修复，不重迁配置CRUD。头像/导出仍未认领，真实IdP未验证。
+- 2026-10-18以main c39f282f深读并发出其中邀请/申请审批14路[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md)，现已由#79实际merge f35ec572进入main90765633；原[提示词](tasks/IDENTITY-ONBOARDING-001.prompt.md)保留，不重复派发。#75登录基础已通过#77合入；本批accept不签发会话。新组织审批调用普通invite的system-admin拒绝问题纳入受控bootstrap路径实现。OIDC三路现独立认领，头像与导出仍未认领，不扩成19路杂批。
 
 - **精确候选集合**：identity 域余下 Nest HTTP：/admin/invites 四路、/admin/registration-applications 五路、/register/{applications,join-applications} 两路、/invitations/:token 三路、GET sso/oidc/start、GET oidc/callback、POST sso/handoff/exchange；另 POST avatar/presigned-url 与 GET data-export 是两个可分离支线。均为 GAP-LEGACY-001，不包含 BL-04。
 - **基础/依据**：G/graphqlread/orgaccesswrite、G/{rbacapi,authfactors,accountsecurity}，N/OrgInviteService、RegistrationApplicationService、OidcAuthService；需要邀请/审批事务、默认角色/租户初始化、邮件、IdP/state/PKCE/handoff token；头像依赖 StorageService、导出依赖完整个人数据聚合。

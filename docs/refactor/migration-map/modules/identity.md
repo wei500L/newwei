@@ -1,5 +1,7 @@
 # identity · 身份、组织与访问控制
 
+最新限定候选核实（2026-10-18，main90765633）：[OIDC-LOGIN-001](../tasks/OIDC-LOGIN-001.md) reserved，[完整提示词](../tasks/OIDC-LOGIN-001.prompt.md)通过规划#80发布；三公共HTTP的PKCE/state、discovery/JWKS/id_token、现有账户/membership/MFA/session与handoff均在范围，不重迁OIDC配置。已确认handoff读后无条件update的并发重复消费分支，Go用条件领取修复，不新增锁框架；旧Nest混合消费/真实IdP仍未验证。本批尚无业务实现/注册，头像/导出继续未认领。
+
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态

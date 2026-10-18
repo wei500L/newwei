@@ -1,5 +1,7 @@
 # 后端迁移地图
 
+最新OIDC选批（2026-10-18）：main仍90765633，普通CI39149114456成功；网关12路已提交Ready #81，来源策略四写已见独立worktree开发，两者继续占用。新认领[OIDC-LOGIN-001](tasks/OIDC-LOGIN-001.md)的组织SSO三入口完整协议/会话/MFA/handoff链，[提示词](tasks/OIDC-LOGIN-001.prompt.md)复用规划#80发布；只深入该身份候选，不包含头像/导出，不重建地图。
+
 最新本批（2026-10-18，main90765633未变）：普通CI39149114456已success。LLM-GATEWAY-OPS-001已见独立worktree真实业务开发，保持占用；新认领[SOURCE-POLICY-WRITE-001](tasks/SOURCE-POLICY-WRITE-001.md)的来源策略四Mutation完整版本链及旧设置13写两处剩余公共接线，[执行提示词](tasks/SOURCE-POLICY-WRITE-001.prompt.md)复用规划#80发布。仅深入settings本候选，不重建全仓地图；不修改正在开发窗口的记录要求。
 
 先读本页 → [PLANNING](PLANNING.md) → [当前任务](tasks/README.md) + [缺口摘要](GAPS.md#当前摘要) → [候选队列](BACKLOG.md) → 候选域与源码。[实现核对深度](AUDIT.md)、[开关/执行所有权/复用入口](DEPENDENCIES.md)、[证据](EVIDENCE.md)按需展开。Nest 暂时保留。

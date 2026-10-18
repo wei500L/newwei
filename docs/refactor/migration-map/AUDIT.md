@@ -21,6 +21,8 @@
 
 ## identity
 
+2026-10-18本次OIDC候选增量，main90765633：读完整OidcAuthService715行、三handler/DTO、AuthSecurity/opaque token/SSRF、AuthService可信登录/MFA、Prisma和Web回调/NextAuthUA；对照Go authlogin/session/tokens/MFA、authfactors私有crypto/配置与newssources导出SSRF。OIDC三路仍Nest；handoff条件领取缺口、公开算法/claim/JWKS刷新、secret策略非无条件密文、MFA/租户和会话复用边界明确，见OIDC-LOGIN-001。未验证真实IdP/混合Nest消费，不把其他身份支线或旧组未审范围统一标完成。
+
 本组续审：**2026-10-18 15:01–15:08 MSK**，仍为main `3cedce9aa3200436aba3596f63b559de5490cec8`（15:08 fetch未变）；只扩大以下实际读过的业务路径，不刷新其他组深度。
 
 - **组织八写 / Go实现已静态核对（下列业务主路径及必要分支）**：Nest OrgResolver/RbacResolver/UserResolver→OrgService/RbacService/UserAdminService，对照 [orgaccesswrite](../../../apps/api-go/internal/graphqlread/orgaccesswrite) 的register/input/org/rbac/members/models/audit与 [rbacapi/service.go](../../../apps/api-go/internal/rbacapi/service.go)、[graphql.go](../../../apps/api-go/internal/rbacapi/graphql.go)。所有root都有真实数据写入/返回路径，不是只注册适配器。

@@ -1,5 +1,7 @@
 # SOURCE-POLICY-WRITE-001 · 来源策略版本管理完整写链
 
+最新开发增量（2026-10-18）：状态in_progress；/Users/oo/project/newwei-go-source-policy-write在90765633，已见settingscrawl/policy.go/register.go、policywritesupport.go和settingswrite/sourcepolicy_input.go/sourcepolicy_store.go改动；无业务PR，继续占用四root及GAP-GQL-001两处接线。下文未创建是发出时快照，不干预编码对话。
+
 - 状态reserved，2026-10-18；基线origin/main 90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，普通CI39149114456 success。
 - [完整提示词](SOURCE-POLICY-WRITE-001.prompt.md)；业务分支refactor/go-source-policy-write，目录/Users/oo/project/newwei-go-source-policy-write，规划时未创建。文档复用规划分支docs/plan-llm-gateway-ops/Ready PR #80发布，无业务实现新增。
 - 精确范围：updateNewsEventSourcePolicy、updateNewsEventSourcePolicyPresets、rollbackNewsEventSourcePolicy、resetNewsEventSourcePolicy；四Mutation均settings.manage+本组织内置system admin。完整差量、60版历史、20条Mutation响应、preset及两组分类权重、Redis同步warning和审计/outbox。已有Query/13写不重迁。
