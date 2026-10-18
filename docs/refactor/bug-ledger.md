@@ -1037,7 +1037,7 @@ retentionDays must not be greater than 3650; retentionDays must not be less than
 可见（例如把整数字段传成字符串）；单条约束失败时顺序无区别。本批不修改该已合入包，
 登记为观察项，供后续统一核对。
 
-## 10. 认证要素批次（AF1–AF5）
+## 12. 认证要素批次（AF1–AF5）
 
 分支 `refactor/go-auth-factors`；开关 `API_GO_AUTH_FACTORS_MODE`；7 条精确 HTTP
 （`GET /api/auth/mfa`、`POST /api/auth/mfa/enroll`、`POST /api/auth/mfa/verify-enroll`、
