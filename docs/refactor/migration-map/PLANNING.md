@@ -4,11 +4,11 @@
 
 ## 新对话恢复与增量刷新
 
-1. 读 README、本文件、[任务索引](tasks/README.md)；不得只看历史聊天/旧工作目录。
+1. 读 README、本文件、[任务索引](tasks/README.md)、[缺口摘要](GAPS.md#当前摘要)与[候选队列](BACKLOG.md)；不得只看历史聊天/旧工作目录。
 2. 在实际仓库执行 `git fetch origin main`、`gh pr list --state open`、`gh run list --branch main --limit 5`、`git worktree list`；检查适用 AGENTS.md。禁止在旧 checkout 上据工作文件推断 main。
 3. 取 `git rev-parse origin/main`，与地图记录 SHA 比较。查看 `git log <旧SHA>..origin/main`、`git diff --name-status <旧SHA>..origin/main -- apps/api apps/api-go apps/vector-go docs/refactor`；先核对期间新增合并与候选域变更，不每次全仓重扫。路径改名/契约生成变化必须跟踪。
 4. 核对开放 PR 的精确 diff、head SHA、worktree 的 HEAD/状态与任务文件。原 PR 未显示 merged 时，查 integration PR、祖先关系与 main 实际实现；worktree 干净/存在都不代表完成/活跃。
-5. 读候选域文档，再读最新 Nest Controller/Resolver/DTO/service、Go handler/业务服务、生产 Registry、main.go 和 legacyproxy/config。排除已实现、已合并、已预留、开放 PR 覆盖范围。
+5. 读候选域文档，再读最新 Nest Controller/Resolver/DTO/service、Go handler/业务服务、生产 Registry、main.go 和 legacyproxy/config。排除已完成且无剩余缺口、已预留、开放 PR 覆盖范围；已注册/已合并但功能或接线缺失，以及链路中必要 Nest 步骤仍是候选。先用 GAPS 稳定 ID 判定根因，不重复派发原整批。
 6. 选择完整产品链路，建立或更新一个独立 task 文件（见模板），明确精确入口、权限、文件所有权、依赖和排除项。正式发出提示词前再次核对认领。
 7. 输出可直接执行的提示词，保存稳定路径；更新任务状态与模块占用。最后留交接：新基线、已核实事实、任务 ID/提示词、PR/CI、剩余问题、下一次检查点。
 
@@ -47,6 +47,8 @@ HTTP 标识是 METHOD + 全局前缀 + Controller + 方法路径；核对 Contro
 | merged | 实际范围已在 origin/main，保存实际 merge SHA（可来自 integration） |
 | cancelled | 明确取消并记录理由、残留分支/改动与释放范围；不能根据沉默自动取消 |
 
+每个审查组记录实际核对 SHA/时间/深度、已读分支与具体未核对项；参考 [AUDIT](AUDIT.md)，不能统一改日期冒充全审。缺口状态与 task 状态分开；merged + 未关闭 GAP 可以并存。候选 BACKLOG 不占用，只有 task 认领/已有明确历史认领才占用。
+
 每个模块与任务分别记录：提示词发出、认领、开发、PR、合并、生产 Go 实现/注册、普通 CI、额外集成验证、默认/可见开关、实际部署和生产流量。merged 不自动意味着 CI 通过、开关 go 或已切流；legacy 不代表没有实现；引擎支持 Mutation 不代表业务 Mutation 已注册。
 
 ## 并行认领与接线冲突
@@ -64,3 +66,13 @@ HTTP 标识是 METHOD + 全局前缀 + Controller + 方法路径；核对 Contro
 交付时更新自己的 task、域页具体入口、优化与缺口，保存 PR/head SHA/普通 CI/额外验证。PR 开着时仍 pr_open，main 页覆盖数不提前增加；可在域页附候选实现说明。只有确认 main 代码与实际 merge commit 才标 merged。CI、开关与部署各自独立更新。若 integration 合入多批，逐 root/路由核实其落地范围，不能机械沿用原 PR 状态。
 
 交接必须让下一对话只读入口、相关域与任务，就能知道：哪些已经实现、哪些被占用、哪些是真缺口、哪些证据尚缺，以及下一条需要执行的 read-only 核对。不要要求重贴历史聊天。
+
+## 缺口与候选维护
+
+候选来源同时包含未迁入口、已注册部分实现、已合并未接通模块、必要 Nest 执行依赖。GAPS 保存根因、触发、影响、两端行为、SHA/符号、文件/冲突、任务关系、状态与关闭证据；未知/缺运行证据独立列观察项，不自动当 bug。BACKLOG 只保存精确范围、复用、实际步骤/工作量依据、前置/外部/队列/文件边界、冲突、次序、独立窗口适宜性与待核事实；不硬估工时、不批量认领。
+
+提交证据检查须比较 PR 编号→GitHub 实际 mergeCommit→显示 SHA→链接目标 SHA，并检查 main 祖先关系；不能只做 URL/路径存活检查，也不能统一换成最新 main。CI 要记录精确 head、事件和 job 覆盖，skipped 不算通过；源码默认、Compose、部署、流量分别核实。
+
+## 新对话短启动提示词
+
+继续规划 wei500L/newwei 后端迁移，先读 AGENTS.md、docs/refactor/migration-map/README.md、PLANNING.md、tasks/README.md、GAPS.md 摘要与 BACKLOG.md；再只读候选域、AUDIT 对应组和 DEPENDENCIES 相关链。fetch origin main，核对 #69/#70、开放 PR、普通 CI 和只读 worktree 状态；以地图基线3cedce9a做增量，不把候选 PR计入 main。SETTINGS-WRITE-001 已 merged 但关联 GAP-GQL-001；WORKSPACE-WRITE-001 8写已在 #70 占用，不重发。优先复核 #70 最终公共接线并集，再从简报冷生成/S3媒体/完整条目查询等候选选一个完整链路，说明精确范围、前置和文件冲突。未明确要求前只更新规划与地图，不实施业务、不创建其他对话、不合并/auto-merge、不 amend/rebase/force-push；本机不安装或运行 build/test/Docker/服务。

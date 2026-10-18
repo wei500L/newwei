@@ -5,12 +5,12 @@
 ## 来源、基线与发布状态
 
 - 来源：用户本次明确粘贴的“已发出的任务线索”A/B，历史提示词已发出；原始发出/认领时间和执行会话 ID 未提供，不补造。此文件是依用户线索和当前源码恢复的持久化记录。
-- 规划/核对基线：`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`；首次入图：2026-10-18 13:51 MSK；任务更新时间：2026-10-18 14:18 MSK（UTC+03:00）。历史原始规划 SHA 未提供。
+- 规划/核对基线：`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`；首次入图：2026-10-18 13:51 MSK；任务合并快照：2026-10-18 14:18 MSK；本轮状态/缺口复核14:49 MSK（UTC+03:00）。历史原始规划 SHA 未提供。
 - 分支：`refactor/go-graphql-settings-write`；worktree：`/Users/oo/project/newwei-go-graphql-settings-write`；14:03 MSK 本机与远端 HEAD 为 `a1c96172b7ebf44a18ca71429d29dca8f9096d02`。
 - 远端增量核对：[PR #68](https://github.com/wei500L/newwei/pull/68) 于 2026-10-18 14:15:41 MSK 合并；实际 merge SHA 为 `3cedce9aa3200436aba3596f63b559de5490cec8`。14:18 MSK 已 fetch 并按 main 实际实现/生产注册复核；原任务实现不得重复派发。
 - 记录发布：本任务文档已随地图首版提交 `4e37f285` 推送至 origin/docs/backend-migration-map，并发布在 [Ready PR #69](https://github.com/wei500L/newwei/pull/69)（见[证据页](../EVIDENCE.md)）；本记录发布不等于业务分支已提交/推送。地图 PR 未合入前，main 上尚无本任务文档。
 - 实际业务 merge SHA：`3cedce9aa3200436aba3596f63b559de5490cec8`；[PR head CI 39121676887](https://github.com/wei500L/newwei/actions/runs/39121676887) 对应 a1c96172，success；最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 在14:18快照进行中，14:22 MSK已复核为success。外部集成/实际部署/生产流量仍未核实。
-- main 实现/注册：13个业务写及开关已合入，生产 settingswrite.Register 已接在 main 构造中；settingscrawl 模型复用已实现。**独立写启用仍不完整**：graphqlRouteMode 和 needsCredentialedGo 漏 settingsWriteGo。只开本开关会缺鉴权/Redis或仍走legacy；当前实际需总读 go 或组织写 go，具体源码/症状见[设置域缺口](../modules/settings.md)。
+- main 实现/注册：13业务写与开关/模型已合入；2026-10-18 本轮沿主路径静态复核范围见 [AUDIT/settings](../AUDIT.md#settings)。**任务仍 merged，剩余独立启用缺口稳定关联 [GAP-GQL-001](../GAPS.md#gap-gql-001)**；不重新分配整批13写。#70 head 200ab944 已同步本批、补鉴权资源 OR，但路由 OR 仍漏设置写；未进入 main。
 - 开工/提交证据：`50b8399d` 提交设置写实现，`a1c96172` 追加修复；PR 包含 settingswrite、settingscrawl、main/config 接线、共享 runtime 缓存及四个 Nest 设置服务优化、env/报告。已合并且 PR 普通 CI 通过，不等于完整开关组合或真实部署已通过；本地图未执行业务运行验证。
 
 ## 业务范围、事实源与优化
@@ -57,4 +57,4 @@ SETTINGS-WRITE-001 已经 #68 合入 main，不重新执行/重发这13个业务
 
 已完成：历史任务和13个精确root已持久化；#68实现、开关、模型注册、共享Redis/规范化优化已合入 main，实际 merge SHA 和 PR CI 有证据。
 
-剩余：设置写独立启用的顶层路由 OR 与鉴权/Redis 初始化缺口、完整契约和优化额外验证、后续main变更的CI、实网调用/部署。merged 仅表示实际落地主体，不能掩盖这些剩余项；不自动重新认领13写。
+剩余：GAP-GQL-001 的 main 独立接线、完整契约和优化额外验证、后续main变更的CI、实网调用/部署。merged 仅表示实际落地主体，不能掩盖这些剩余项；不自动重新认领13写。

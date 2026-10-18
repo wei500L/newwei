@@ -10,11 +10,7 @@
 
 真实剩余缺口：完整登录与会话链、邀请/审批、头像与导出见下表 Nest 行；登录挑战与 MFA 管理是不同范围。GraphQL 8 个组织访问 Mutation 已合入，不再分配。
 
-状态分层：下表“Go”仅表示该 SHA 已有生产注册、接线及已有业务实现，完整性须看本页具体缺口；“Nest”表示该入口尚无 Go 接管注册。已注册代码已在 main，历史 PR 见证据表。契约完整性、实网验证和部署另行核对；没有业务完成百分比。
-
-验证：首次基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；14:22 MSK 最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 已复核为 success，head 与本页3cedce9a基线一致。#68 的 PR head a1c96172 普通 CI 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
-
-启用：实际部署及生产切流均“未核实”。可见 compose 是可选 pilot，Web 默认仍指 Nest，CANARY_PERCENT=0；模块开关默认 legacy 的例外和当前注入见下文。
+本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#identity) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 Nest 功能目录：[auth](../../../../apps/api/src/modules/auth)、[org](../../../../apps/api/src/modules/org)、[rbac](../../../../apps/api/src/modules/rbac)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
@@ -124,7 +120,7 @@ PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核�
 | [#60](https://github.com/wei500L/newwei/pull/60) | [f5648fab7374](https://github.com/wei500L/newwei/commit/f5648fab7374bbd1a8ec97ba363f4e678d58549d) | 🔐 feat(api-go): 账户资料、会话退出与机器令牌 8 条接口迁入 Go（API_GO_ACCOUNT_SECURITY_MODE，默认 legacy）+ 修 AS1–AS4 |
 | [#62](https://github.com/wei500L/newwei/pull/62) | [a7758f517db4](https://github.com/wei500L/newwei/commit/a7758f517db43d792e06c17d2f43c82226d21bae) | 🔐 feat(api-go): 已认证 MFA 管理与组织 OIDC 配置 7 条接口迁入 Go（API_GO_AUTH_FACTORS_MODE，默认 legacy）+ 修 AF1–AF5 |
 | [#63](https://github.com/wei500L/newwei/pull/63) | [9008c02b381d](https://github.com/wei500L/newwei/commit/9008c02b381dc21ecc0bb4272e92faf3ac5c086c) | ✨ feat(api-go): 迁移组织/角色/成员管理 8 个 GraphQL mutation |
-| [#67](https://github.com/wei500L/newwei/pull/67) | [7fc17faa3dc5](https://github.com/wei500L/newwei/commit/3cedce9aa3200436aba3596f63b559de5490cec8) | 🔀 integration(api-go): 一次性落地 #59/#62/#63/#65/#66 五个迁移批次（冲突统一并集解决 + 全量验证） |
+| [#67](https://github.com/wei500L/newwei/pull/67) | [7fc17faa3dc5](https://github.com/wei500L/newwei/commit/7fc17faa3dc5043537bad4038299d11fdba4758d) | 🔀 integration(api-go): 一次性落地 #59/#62/#63/#65/#66 五个迁移批次（冲突统一并集解决 + 全量验证） |
 
 - [docs/refactor/go-account-security.md](../../go-account-security.md)
 
@@ -134,4 +130,4 @@ PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核�
 
 - [docs/refactor/go-graphql-org-access-write.md](../../go-graphql-org-access-write.md)
 
-后续任务：只将上表 Nest 缺口作为候选；先查任务认领和最新代码，再按完整产品链路选批。未记录的部署配置、所有外部真实调用结果均不能推定。
+后续任务先读[缺口](../GAPS.md)与[候选队列](../BACKLOG.md)，同时检查未迁入口、已注册部分实现、接线和必要 Nest 执行步骤；再核[占用](../tasks/README.md)及最新源码。

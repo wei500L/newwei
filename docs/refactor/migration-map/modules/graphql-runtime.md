@@ -45,3 +45,32 @@ Nest `ApiGraphqlModule` 挂载 `/graphql`，没有 `/api` 前缀；配置和 Res
 最新 main 普通 CI 39122519950 已于14:22 MSK 复核为 success；CI 成功仍不代表每种开关组合、每个所选返回字段或外部依赖已做额外集成。实际部署、配置与流量未核实。
 
 本文 SETTINGS_WRITE / READ / ORG_ACCESS_WRITE 是 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE` / `API_GO_GRAPHQL_READ_MODE` / `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 的简写，所有组合以当前 main.run 实际接线为准。
+
+## 本轮有意义的组合复核
+
+2026-10-18 14:37–14:42 MSK，以本页 `3cedce9a` 做静态控制流/模型装配核对；不是实际启动或逐字段运行契约验证。路由声明在 main 681，资源 OR 在877，handler 在1418，模型分支在1439–1509；[config.Load](../../../../apps/api-go/internal/config/config.go) 2468–2485分别校验总读与两写。缩写 A=MySQL/JWT/Redis，M=Mongo；全部需要真实凭据/可用服务才能运行，静态允许不保证连通。
+
+| 有意义的模式分支 | 路由 / handler / 初始化 | 注册与返回模型结论 |
+|---|---|---|
+| READ/ORG_ACCESS_WRITE/SETTINGS_WRITE 均 legacy | /graphql legacy，无 handler；可选 DATABASE_URL 的池不等于鉴权已创建 | 不装配业务 root；调用仍 Nest |
+| 仅读子模式 go，READ=legacy，两写 legacy | 没有因此创建 GraphQL handler/路由 | 所有读子注册均被 READ 外层关闭；items/news-indicators 复用的 HTTP 模式可能单独初始化 A+M/A，不改变 GraphQL 选择 |
+| 仅 ORG_ACCESS_WRITE=go | 路由 go、handler、A；无需 M | 8 Mutation；workspace.RegisterModels含嵌套模型/字段权限，不注册 workspace Query |
+| 仅 SETTINGS_WRITE=go，其余所有认证接管关闭 | config 只要求 A，不要求M；main 漏该资源 OR，handler 前检查失败，run返回错误 | 未进入监听；不是“自动回 Nest”，见 GAP-GQL-001 |
+| SETTINGS_WRITE=go，READ/ORG_ACCESS_WRITE=legacy，其他 HTTP go 补足 A | handler可构造，但graphqlRouteMode仍legacy | settings返回模型已注册也不可从 /graphql 到达，业务由 Nest 执行 |
+| READ=go，读子模式均legacy，两写legacy | 路由/handler A+M | 基础16 Query（alerts4/history6/economic6）；子模式不默认跟随打开 |
+| READ=go + SETTINGS_WRITE=go，SETTINGS_CRAWL_READ=legacy / go | A+M；两种都到 handler | legacy时单独RegisterSettingsModelTypes；go时由settingscrawl.Register注册20读及模型，writer跳过模型重复装配 |
+| READ=legacy，ORG_ACCESS_WRITE=go + SETTINGS_WRITE=go | 路由/handler/A，无需M | 21 Mutation；workspace与settingscrawl的返回模型集合分别装配；不因此打开Query |
+| READ=go + WORKSPACE_READ=go + ORG_ACCESS_WRITE=go | A+M | workspace.Register已装配模型，org写跳过RegisterModels；User/Role/Membership嵌套字段权限保留 |
+| READ=go + ITEMS_READING=go，WORKSPACE_READ=legacy / go | A+M；items HTTP模式也接管其HTTP | items模型在两种分支都注册；workspace没开时补三个ProcessedItem类型，开时复用。未逐字段运行投影 |
+| 全部读子模式与两写go | A+M | 71 Query+21 Mutation；newsindicators复用economic先注册的EconomicDataItemModel，settings/org模型按上述分支取并集。newsEventBrief仍部分实现，不由模型齐备自动补全 |
+| 任一组合的operation包含未接管root/所选嵌套字段 | Handler先PlanDocument→operationSupported/selectionSupported；在Execute前整份legacy | 不执行前面的Go mutation再回退；解析/验证错误直接响应与业务回退分开。Subscription/协议升级仍Nest |
+
+模型根与嵌套检查的事实源是各 Register 的 RegisterType、模型 graphql tags 与 exec.walk 的递归检查。Registry.RegisterRoot/RegisterMutation 重复名会 panic；RegisterType 会覆盖同名投影而不证明兼容，因此“能启动”不足以证明两个类型定义一致。本轮重点检查 workspace/org、settingscrawl/settingswrite、items/workspace、newsindicators/economic 的装配分支与必要字段权限；尚未对全部模型每个所选字段逐项做两端契约或运行比对，详见 [AUDIT](../AUDIT.md)。
+
+字段权限：workspace.RegisterModels 同时调用 registerFieldPermissions；settings写根使用 settings.manage 且 assertAdmin，不能只注册返回模型就省略业务门禁。ItemModel.meta/raw/processed/preview 的当前读根已有items.read，后续新写若复用必须保留字段权限含义。未知字段导致回退与无权限导致FORBIDDEN不能混为一类。
+
+### PR #70 的候选增量（不计 main）
+
+14:49 MSK，head `200ab9440bc2c4d217f429999468c90b81a968e0`，已正常 merge #68：新增 WORKSPACE_WRITE 独立路由/资源/handler与8写，alerts/history拆RegisterModels；workspaceModelsRegistered避免组织写/工作台写重复装配。设置写资源 OR 已补，但路由 OR/无效DSN判断仍漏设置写，OBS-DATA-001空错误分支也未改。故当前不能关闭 main 的 GAP-GQL-001，也不能给 main 加8写；#70未逐字段验收范围见任务文件。
+
+14:56 再核 #70 head为`adb765d0180e8b34910181e8c6fde8be400a2dff`，相对200ab944仅报告文档追加；上述业务装配结论不变，CI按各自head分别记录。

@@ -8,13 +8,9 @@
 
 关键数据与副作用：MySQL SystemSetting、Redis、存储 S3/MinIO、Nominatim、vector、crawl4ai 与归档状态。真实外部连接测试、Telegram 授权/快照刷新、situation 设置整体仍有 Nest 路径。
 
-真实剩余缺口：存储 test、Nominatim test、vector diagnostics、situation-monitor 设置与 Telegram 授权/外部刷新尚在 Nest；启用必须按本域开关，不能改生产 Web 入口。main.go 调用 wireDataRuntimeSettings 的错误分支为空，尚未评估失败启动行为，后续启用前核对。
+真实剩余缺口：存储 test、Nominatim test、vector diagnostics、situation-monitor 设置与 Telegram 授权/外部刷新尚在 Nest；启用必须按本域开关，不能改生产 Web 入口。main.go 的 wireDataRuntimeSettings 吞错已核；当前合法路径先保证资源，未证明可触发，见 [OBS-DATA-001](../GAPS.md#观察项与缺少验证不计入已确认业务缺口)，不写成当前九路不可用。
 
-状态分层：下表“Go”仅表示该 SHA 已有生产注册、接线及已有业务实现，完整性须看本页具体缺口；“Nest”表示该入口尚无 Go 接管注册。已注册代码已在 main，历史 PR 见证据表。契约完整性、实网验证和部署另行核对；没有业务完成百分比。
-
-验证：首次基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；14:22 MSK 最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 已复核为 success，head 与本页3cedce9a基线一致。#68 的 PR head a1c96172 普通 CI 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
-
-启用：实际部署及生产切流均“未核实”。可见 compose 是可选 pilot，Web 默认仍指 Nest，CANARY_PERCENT=0；模块开关默认 legacy 的例外和当前注入见下文。
+本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#infrastructure-data) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
 
@@ -74,4 +70,4 @@ PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核�
 
 - [docs/refactor/go-data-runtime-settings.md](../../go-data-runtime-settings.md)
 
-后续任务：只将上表 Nest 缺口作为候选；先查任务认领和最新代码，再按完整产品链路选批。未记录的部署配置、所有外部真实调用结果均不能推定。
+后续任务先读[缺口](../GAPS.md)与[候选队列](../BACKLOG.md)，同时检查未迁入口、已注册部分实现、接线和必要 Nest 执行步骤；再核[占用](../tasks/README.md)及最新源码。

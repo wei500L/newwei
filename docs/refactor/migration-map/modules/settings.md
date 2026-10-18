@@ -10,11 +10,7 @@
 
 真实剩余缺口：13 个设置 Mutation 已在 main 注册，禁止重新派发整批；来源策略 update/reset/rollback/presets 四写仍为 Nest，可作为独立候选但必须检查 revision、事务与同步副作用。SMTP 测试、assistant 安全 diagnostics 等外部/诊断入口仍有缺口。
 
-状态分层：下表“Go”仅表示该 SHA 已有生产注册、接线及已有业务实现，完整性须看本页具体缺口；“Nest”表示该入口尚无 Go 接管注册。已注册代码已在 main，历史 PR 见证据表。契约完整性、实网验证和部署另行核对；没有业务完成百分比。
-
-验证：首次基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；14:22 MSK 最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 已复核为 success，head 与本页3cedce9a基线一致。#68 的 PR head a1c96172 普通 CI 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
-
-启用：实际部署及生产切流均“未核实”。可见 compose 是可选 pilot，Web 默认仍指 Nest，CANARY_PERCENT=0；模块开关默认 legacy 的例外和当前注入见下文。
+本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#settings) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 Nest 功能目录：[system-settings](../../../../apps/api/src/modules/system-settings)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
@@ -124,12 +120,7 @@ Nest 功能目录：[system-settings](../../../../apps/api/src/modules/system-se
 
 ## 设置写已合并与独立启用缺口
 
-#68 的 [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go) 新增上表 13 写；[config.Load](../../../../apps/api-go/internal/config/config.go) 接受 API_GO_GRAPHQL_SETTINGS_WRITE_MODE 空/legacy/go，默认 legacy，非法值失败，样例/pilot 均 legacy。返回模型由 settingscrawl.Register 或 RegisterSettingsModelTypes 复用；缓存、taxonomy/去重优化已落入该提交，完整契约仍需按任务事实源复核。
-
-**当前源码的独立写模式尚未接完整**：[main.run](../../../../apps/api-go/cmd/api/main.go) 的 graphqlRouteMode 条件仍只有 GraphQLReadMode/GraphQLOrgAccessWriteMode，needsCredentialedGo 也没有 settingsWriteGo。只开设置写且其他所有认证接管关闭时，authenticator/redisClient 未初始化，稍后的 GraphQL 装配返回 requires mysql, jwt, and redis；即使其他 HTTP 模式初始化了资源，仅设置写仍未使 /graphql 进入 Go。当前可达注册需要 SETTINGS_WRITE=go 且 READ=go 或 ORG_ACCESS_WRITE=go。读开时有 Mongo 要求；组织写开时可不要求 Mongo。不要把目标“独立写”或源码注释当作当前能力。
-
-这属于已合并任务的剩余接线缺口，本次只记录，不改源码、不自动开新的业务任务。后续若单独规划最小接线修复，应与 WORKSPACE-WRITE-001 的 main/config OR 条件取并集，不能重复迁移 13 个业务写。回滚设置写仍可改 legacy。
-
+13 写与 settingscrawl 共享模型/规范化、SystemSetting 与 Redis 已随 #68 合入；本轮沿主路径静态核对，逐字段/运行验证范围见 AUDIT。独立路由与资源条件仍漏接，详见 [GAP-GQL-001](../GAPS.md#gap-gql-001) 和 [GraphQL 组合](graphql-runtime.md#本轮有意义的组合复核)。#70 14:49 head 200ab944 虽已同步 #68、补设置写鉴权资源 OR，路由 OR 仍漏设置写；未合入前不改变 main 结论。只规划最小接线修复，不重新迁整批13写。
 
 ## 合并、CI 与历史报告证据
 
@@ -149,6 +140,6 @@ PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核�
 
 - [#68 合并提交 3cedce9aa320](https://github.com/wei500L/newwei/commit/3cedce9aa3200436aba3596f63b559de5490cec8)；[设置写迁移报告](../../go-graphql-settings-write.md)。
 
-后续任务：只将上表 Nest 缺口作为候选；先查任务认领和最新代码，再按完整产品链路选批。未记录的部署配置、所有外部真实调用结果均不能推定。
+后续任务先读[缺口](../GAPS.md)与[候选队列](../BACKLOG.md)，同时检查未迁入口、已注册部分实现、接线和必要 Nest 执行步骤；再核[占用](../tasks/README.md)及最新源码。
 
 本文 SETTINGS_WRITE / READ / ORG_ACCESS_WRITE 是 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE` / `API_GO_GRAPHQL_READ_MODE` / `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 的简写，所有组合以当前 main.run 实际接线为准。

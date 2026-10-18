@@ -10,15 +10,11 @@
 
 真实剩余缺口：alertRules Query、告警规则写入/触发及订阅仍为 Nest。交互 8 写由历史任务占用，deleteAssistantRun 不属于这批；告警 worker 与渠道投递单列异步域。
 
-状态分层：下表“Go”仅表示该 SHA 已有生产注册、接线及已有业务实现，完整性须看本页具体缺口；“Nest”表示该入口尚无 Go 接管注册。已注册代码已在 main，历史 PR 见证据表。契约完整性、实网验证和部署另行核对；没有业务完成百分比。
-
-验证：首次基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；14:22 MSK 最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 已复核为 success，head 与本页3cedce9a基线一致。#68 的 PR head a1c96172 普通 CI 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
-
-启用：实际部署及生产切流均“未核实”。可见 compose 是可选 pilot，Web 默认仍指 Nest，CANARY_PERCENT=0；模块开关默认 legacy 的例外和当前注入见下文。
+本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#workspace) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 Nest 功能目录：[notifications](../../../../apps/api/src/modules/notifications)、[dashboard](../../../../apps/api/src/modules/dashboard)、[alerts](../../../../apps/api/src/modules/alerts)、[sentiment](../../../../apps/api/src/modules/sentiment)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：[WORKSPACE-WRITE-001](../tasks/WORKSPACE-WRITE-001.md)（in_progress；14:03 MSK 出现 config/alerts 本地开发证据，执行活动未核实）。
+当前认领：[WORKSPACE-WRITE-001](../tasks/WORKSPACE-WRITE-001.md)（pr_open，Ready #70，14:56 head `adb765d0`（仅文档追加，业务仍200ab944）；8写尚未进 main，保持占用）。
 
 ## HTTP 开关、实现与生产接线
 
@@ -63,17 +59,17 @@ Nest 功能目录：[notifications](../../../../apps/api/src/modules/notificatio
 
 | 类型 / root | 根权限 | Nest 事实源与符号 | Go 实现 / 开关条件 |
 |---|---|---|---|
-| Mutation `createAlertChannel` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `createAlertChannel` | Nest；未注册 |
-| Mutation `deleteAlertChannel` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `deleteAlertChannel` | Nest；未注册 |
+| Mutation `createAlertChannel` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `createAlertChannel` | Nest；未注册；WORKSPACE-WRITE-001 / #70 占用 |
+| Mutation `deleteAlertChannel` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `deleteAlertChannel` | Nest；未注册；WORKSPACE-WRITE-001 / #70 占用 |
 | Mutation `deleteAlertRule` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `deleteAlertRule` | Nest；未注册 |
-| Mutation `deleteDashboard` | dashboards.write | [dashboard.resolver.ts](../../../../apps/api/src/graphql/resolvers/dashboard.resolver.ts) · `deleteDashboard` | Nest；未注册 |
-| Mutation `markAllNotificationsRead` | 已认证 | [notification.resolver.ts](../../../../apps/api/src/graphql/resolvers/notification.resolver.ts) · `markAllNotificationsRead` | Nest；未注册 |
-| Mutation `markNotificationRead` | 已认证 | [notification.resolver.ts](../../../../apps/api/src/graphql/resolvers/notification.resolver.ts) · `markNotificationRead` | Nest；未注册 |
+| Mutation `deleteDashboard` | dashboards.write | [dashboard.resolver.ts](../../../../apps/api/src/graphql/resolvers/dashboard.resolver.ts) · `deleteDashboard` | Nest；未注册；WORKSPACE-WRITE-001 / #70 占用 |
+| Mutation `markAllNotificationsRead` | 已认证 | [notification.resolver.ts](../../../../apps/api/src/graphql/resolvers/notification.resolver.ts) · `markAllNotificationsRead` | Nest；未注册；WORKSPACE-WRITE-001 / #70 占用 |
+| Mutation `markNotificationRead` | 已认证 | [notification.resolver.ts](../../../../apps/api/src/graphql/resolvers/notification.resolver.ts) · `markNotificationRead` | Nest；未注册；WORKSPACE-WRITE-001 / #70 占用 |
 | Mutation `triggerAlertRule` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `triggerAlertRule` | Nest；未注册 |
-| Mutation `updateAlertChannel` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `updateAlertChannel` | Nest；未注册 |
-| Mutation `updateAlertEventStatus` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `updateAlertEventStatus` | Nest；未注册 |
+| Mutation `updateAlertChannel` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `updateAlertChannel` | Nest；未注册；WORKSPACE-WRITE-001 / #70 占用 |
+| Mutation `updateAlertEventStatus` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `updateAlertEventStatus` | Nest；未注册；WORKSPACE-WRITE-001 / #70 占用 |
 | Mutation `upsertAlertRule` | alerts.manage | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `upsertAlertRule` | Nest；未注册 |
-| Mutation `upsertDashboard` | dashboards.write | [dashboard.resolver.ts](../../../../apps/api/src/graphql/resolvers/dashboard.resolver.ts) · `upsertDashboard` | Nest；未注册 |
+| Mutation `upsertDashboard` | dashboards.write | [dashboard.resolver.ts](../../../../apps/api/src/graphql/resolvers/dashboard.resolver.ts) · `upsertDashboard` | Nest；未注册；WORKSPACE-WRITE-001 / #70 占用 |
 | Query `alertChannels` | alerts.read | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `alertChannels` | [alerts.Register](../../../../apps/api-go/internal/graphqlread/alerts/register.go)；`API_GO_GRAPHQL_READ_MODE` |
 | Query `alertEventReplay` | alerts.read | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `alertEventReplay` | [alerts.Register](../../../../apps/api-go/internal/graphqlread/alerts/register.go)；`API_GO_GRAPHQL_READ_MODE` |
 | Query `alertEvents` | alerts.read | [alerts.resolver.ts](../../../../apps/api/src/graphql/resolvers/alerts.resolver.ts) · `alertEvents` | [alerts.Register](../../../../apps/api-go/internal/graphqlread/alerts/register.go)；`API_GO_GRAPHQL_READ_MODE` |
@@ -108,4 +104,4 @@ PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核�
 
 - [docs/refactor/graphql-subscriptions-multinode.md](../../graphql-subscriptions-multinode.md)
 
-后续任务：只将上表 Nest 缺口作为候选；先查任务认领和最新代码，再按完整产品链路选批。未记录的部署配置、所有外部真实调用结果均不能推定。
+后续任务先读[缺口](../GAPS.md)与[候选队列](../BACKLOG.md)，同时检查未迁入口、已注册部分实现、接线和必要 Nest 执行步骤；再核[占用](../tasks/README.md)及最新源码。

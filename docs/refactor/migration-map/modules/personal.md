@@ -10,11 +10,7 @@
 
 真实剩余缺口：本表范围均有 Go 路由，但邮件投递 Cron、模型冷路径真实调用和生产流量仍需独立处理；不因 HTTP 入口齐备宣称个人域端到端迁完。
 
-状态分层：下表“Go”仅表示该 SHA 已有生产注册、接线及已有业务实现，完整性须看本页具体缺口；“Nest”表示该入口尚无 Go 接管注册。已注册代码已在 main，历史 PR 见证据表。契约完整性、实网验证和部署另行核对；没有业务完成百分比。
-
-验证：首次基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；14:22 MSK 最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 已复核为 success，head 与本页3cedce9a基线一致。#68 的 PR head a1c96172 普通 CI 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
-
-启用：实际部署及生产切流均“未核实”。可见 compose 是可选 pilot，Web 默认仍指 Nest，CANARY_PERCENT=0；模块开关默认 legacy 的例外和当前注入见下文。
+本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#personal) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 Nest 功能目录：[user-settings](../../../../apps/api/src/modules/user-settings)、[user-content-subscriptions](../../../../apps/api/src/modules/user-content-subscriptions)、[user-news-behavior](../../../../apps/api/src/modules/user-news-behavior)、[user-digest](../../../../apps/api/src/modules/user-digest)、[public-portal](../../../../apps/api/src/modules/public-portal)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
@@ -33,9 +29,9 @@ Nest 功能目录：[user-settings](../../../../apps/api/src/modules/user-settin
 | [WithUserDigest](../../../../apps/api-go/internal/legacyproxy/proxy.go) | `API_GO_USER_DIGEST_MODE` | [userdigest](../../../../apps/api-go/internal/userdigest) | `legacy` |
 | [WithUserNewsBehavior](../../../../apps/api-go/internal/legacyproxy/proxy.go) | `API_GO_USER_NEWS_BEHAVIOR_MODE` | [newsbehavior](../../../../apps/api-go/internal/newsbehavior) | `legacy` |
 
-生产装配：[cmd/api](../../../../apps/api-go/cmd/api) 中 main.run 组合上述 With 路由规则，各域 wire* 或 main 中 RegisterGoHandler 注入本地 Handler/Service。业务包未发现通过 legacyproxy 回调 Nest 的实现；不支持的方法/路径与普通 OPTIONS 的代理不算业务迁移。默认回滚把对应模式改回 legacy；不要修改整段 /api 前缀。
+生产装配：[cmd/api](../../../../apps/api-go/cmd/api) 中 main.run 组合上述 With 路由规则，各域 wire* 或 main 中 RegisterGoHandler 注入本地 Handler/Service。业务包未发现通过 legacyproxy 回调 Nest 的实现；不支持的方法/路径与普通 OPTIONS 的代理不算业务迁移。回滚按下方历史例外处理：六读用 shadow，其他新模式通常用 legacy；不要修改整段 /api 前缀。
 
-历史兼容例外：API_GO_USER_SETTINGS_READ_MODE 默认空，onboarding 由 API_GO_ONBOARDING_MODE（默认 shadow）控制；rss-reader/spacetime-timeline 默认 shadow，其他三个默认 legacy。读可设 shadow/go，写模式 go 要求读 go。`GET /api/healthz/live` 不在个人域。
+历史兼容例外：API_GO_USER_SETTINGS_READ_MODE 默认空，onboarding 由 API_GO_ONBOARDING_MODE（默认 shadow）控制；rss-reader/spacetime-timeline 默认 shadow，其他三个默认 legacy。onboarding 与总读只接受空/shadow/go，**不接受 legacy**；写模式 go 要求读 go。读回滚用 shadow（响应仍 Nest），写回滚用 legacy。`GET /api/healthz/live` 不在个人域。
 
 ## 精确 HTTP 清单
 
@@ -94,4 +90,4 @@ PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核�
 
 - [docs/refactor/api-go-four-mode.md](../../api-go-four-mode.md)
 
-后续任务：只将上表 Nest 缺口作为候选；先查任务认领和最新代码，再按完整产品链路选批。未记录的部署配置、所有外部真实调用结果均不能推定。
+后续任务先读[缺口](../GAPS.md)与[候选队列](../BACKLOG.md)，同时检查未迁入口、已注册部分实现、接线和必要 Nest 执行步骤；再核[占用](../tasks/README.md)及最新源码。

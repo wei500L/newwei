@@ -1,8 +1,35 @@
 # 核对证据与边界
 
-[返回入口](README.md)。此页保存首次建图的可复核证据，不替代各域源码。
+[返回入口](README.md)。此页保存核对方法与精确证据；当前事实先看本节，历史快照保留作追踪，不替代各域源码。
 
-## 14:18 MSK 增量核对（当前事实）
+## 本轮完整性复核（当前事实）
+
+2026-10-18 14:37 开始，14:49 再 fetch，`origin/main = 3cedce9aa3200436aba3596f63b559de5490cec8` 未变。#69 OPEN / Ready / autoMergeRequest=null，原 worktree 干净后在原文档分支追加；未 amend/rebase/force-push。apps/api、apps/api-go、apps/vector-go 相对该 main 无差异。本轮只改 migration-map 文档；原 PR 已有 AGENTS/roadmap 导航，本轮没有扩展业务/配置/测试/schema/workflow。
+
+- **集合复核**：域页 HTTP 与 auth-matrix.rows 的 METHOD+route 集合相等，370条唯一值；逐 root 与当前 schema.gql 的 Query77/Mutation57/Subscription4 集合相等；42个实际 Nest模块目录与归属表集合相等。原有 HTTP Controller/Resolver 装配见 AppModule/ApiGraphqlModule；Go 规则/handler 仍以 main.run/wire* 的同 SHA 实现为准。
+- **生产注册**：排除 *_test.go，对 RegisterRoot/RegisterMutation 的 Name 声明提取71/21，与域表 Go root 集合相等，再核 main 所有生产 Register 调用/开关；HTTP 274承接原基线精确 With*/handler索引，本轮核 config/main/wire分支且业务树与原统计SHA相同，未有新增迁移。0 Subscription executor；live shadow不计Go接管。
+- **变化解释**：分母0、main注册0、业务变化0；发现原有S3分支缺失、确认brief/设置接线、细化吞错观察项、修证据/规划/任务状态，是地图事实改进，不是实现进度。实现/未知分支分别在 [AUDIT](AUDIT.md)，本轮没有声称逐字段/运行完整验收。
+- **三处错误修复**：identity.md、items.md、model-gateway.md 的 #67 显示 `7fc17faa3dc5`，URL误指 #68的3cedce9a；已恢复实际 `7fc17faa3dc5043537bad4038299d11fdba4758d`。全域69条PR merge证据行逐项比较 GitHub PR.mergeCommit、显示SHA、URL目标SHA并检查main祖先关系，修复后无不一致。#68仍指真实3cedce9a，不把历史链接批量换成main。
+- **源码路径/符号**：临时Python静态检查相对链接与Markdown锚、HTTP/root去重、分域集合、生产root、Nest入口符号、PR merge身份；当前508个精确Nest入口方法可定位。新事实用路径+符号+SHA，必要行号均绑定本轮SHA；链接存在不代替符号/行为/merge身份检查。临时脚本留在任务scratch，不引入生成平台/测试体系。
+- **占用再核**：#68 merged；#70仍OPEN/Ready，14:49 head `200ab9440bc2c4d217f429999468c90b81a968e0`，已正常merge #68，本机HEAD相等且干净；14:37曾看到合并冲突只记历史，不据此干预工作目录。只读刷新全部本机worktree的HEAD/status/祖先关系，详见任务索引；目录/干净不推断执行器活跃。
+- **#70共享接线**：200ab944补settingsWrite资源OR但仍漏graphqlRouteMode/无效DSN列表；14:56再核PR head adb765d0180e8b34910181e8c6fde8be400a2dff仅追加交付报告，业务仍200ab944，旧head CI已success，新head CI进行中。主main未变，不把此候选修复关闭GAP-GQL-001，不把8写计入main。
+- **开关边界更正**：onboarding/read的config实际只接受空/shadow/go，**不接受legacy**；写模式go显式依赖read=go。Compose中GraphQL有些模式固定legacy、有些未注入，宿主.env不自动传入。精确条件集中在 [DEPENDENCIES](DEPENDENCIES.md) 和 [GraphQL组合](modules/graphql-runtime.md#本轮有意义的组合复核)。
+
+### 普通 CI 的精确证据
+
+| 证据对象 | head SHA | run / 本轮读取状态 | 实际覆盖与限制 |
+|---|---|---|---|
+| 当前main | `3cedce9aa3200436aba3596f63b559de5490cec8` | [39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) success | verify + user-settings/authz/authn MySQL/Redis integration + vector真实Qdrant差分成功；regen两个job skipped |
+| 设置写PR #68 | `a1c96172b7ebf44a18ca71429d29dca8f9096d02` | [39121676887](https://github.com/wei500L/newwei/actions/runs/39121676887) success | 不代替main/设置独立开关与实网验证 |
+| 本轮前地图#69 | `7526429123cfc17cdabc971a7fa0ba01d27e323d` | [39122969782](https://github.com/wei500L/newwei/actions/runs/39122969782) success，14:54读取 | 不继承给本轮新提交；两个smoke skipped |
+| 工作台PR #70 前一业务head | `200ab9440bc2c4d217f429999468c90b81a968e0` | [39124393842](https://github.com/wei500L/newwei/actions/runs/39124393842) success，14:56读取 | 普通CI成功；regen与两个smoke skipped，不记额外通过 |
+| 工作台PR #70 当前文档追加head | `adb765d0180e8b34910181e8c6fde8be400a2dff` | [39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) 14:56 in_progress | 只追加旧交付报告；不继承前一head CI，当前结果另查 |
+
+main job直接证据：[verify](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821601)、[MySQL/Redis](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821431)、[Qdrant差分](https://github.com/wei500L/newwei/actions/runs/39122519950/job/117660821605)。verify含lint/typecheck、Web覆盖率、Vector/API测试、契约漂移、Go tests和build，范围由 `.github/workflows/ci.yml` 与run步骤核对；并非每个业务/外部服务的端到端验收。未复验历史专用smoke精确head，不能引用报告当本轮运行证据。
+
+本轮文档提交后的普通CI以 [#69 Checks](https://github.com/wei500L/newwei/pull/69/checks) **当前head**为准，最终交付/PR描述记录其精确head和run结果；本文件不预先宣称尚未产生的提交已通过，也不为了嵌入自身SHA而不断追加文档提交。实际部署/生产流量、SMTP/模型/S3/crawl4ai/地理/Telegram/Oref/AkShare实网仍未核实。
+
+## 14:18 MSK 增量核对（历史快照）
 
 #68 于14:15:41 MSK 合并，已 fetch 最新 `origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`；仅26条上游变化路径，HTTP/SDL 分母不变，生产新增 settingswrite.Register 13个Mutation。各域按此diff增量复查，完整扫描仍以13:51为初始事实来源。#68 PR head a1c96172 普通 CI 39121676887 成功；最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 在14:18快照进行中，14:22 MSK已复核为success。
 
@@ -85,13 +112,13 @@
 - `/graphql`、`/socket.io`、`/admin/queues` 不带 /api；Bull Board 条件启用，Socket.IO 与四个 Subscription 仍由 Nest 负责。它们不并进主 REST 或 root 统计。
 - [compose](../../../infra/docker/docker-compose.yml) 的 Web 默认仍用 api:4000；api-go-pilot 是 opt-in，canary 固定 0。模块页展示该源码可见注入，不能当真实部署。user-settings 读有历史 shadow 默认例外。
 - 不读/公开真实 .env、数据库凭据或部署秘密，因此实际部署值和生产流量未核实。外部服务真实验证与历史 smoke 的精确 head 关联见入口未知清单。
-- [main.run](../../../apps/api-go/cmd/api/main.go) 的 wireDataRuntimeSettings 返回错误未在调用处返回；这里只记录后续核对点，不增加业务修复范围。
+- [main.run](../../../apps/api-go/cmd/api/main.go) 的 wireDataRuntimeSettings 返回错误未在调用处返回；本轮已沿校验/初始化/错误返回范围复核为OBS-DATA-001，当前合法路径可达性未证实，见GAPS；不增加业务修复范围。
 - 旧 [system-map](../system-map.md)、[roadmap](../roadmap.md)、[api-contract-inventory](../api-contract-inventory.md) 仍保留历史价值；其中独占写库、已迁范围、订阅后端等描述可能过时，不能覆盖本次源码事实。
 
 ## 文档自检与后续刷新
 
-提交前检查所有内部路径、入口唯一性、分域求和、两批任务占用、任务状态与 main 注册一致（PR 进展不提前计 main 覆盖），以及仅允许文档路径变化。独立阅读审查验证新对话能判断设置写/工作台写是否重复、剩余 Query 是否有副作用、CI 与切流能否区分。
+后续提交前检查所有内部路径、入口唯一性、分域求和、两批任务占用、任务状态与 main 注册一致（PR 进展不提前计 main 覆盖），以及仅允许文档路径变化。独立阅读审查验证新对话能判断设置写/工作台写是否重复、剩余 Query 是否有副作用、CI 与切流能否区分。
 
 下次不必重扫全仓：按 PLANNING 增量比较本 SHA 与 origin/main，深入候选域并更新本页或对应域的核对 SHA。只有实际重新核对的范围可以刷新其时间与事实，不能只改全局日期掩盖过时条目。
 
-提交前静态检查结果：26 个地图 Markdown 文件、370 条唯一 HTTP、77/57/4 唯一 GraphQL root；最新 Go 注册数 274/71/21，所有相对文档/源码路径存在。独立读者复验通过；已据审查补充 newsEventBrief 部分实现与 crawlMetadata 主动抓取，并统一两批任务的增量快照。仅 28 个 Markdown 路径变化，无业务或配置改动。
+首版提交前静态检查结果（历史）：26 个地图 Markdown 文件、370 条唯一 HTTP、77/57/4 唯一 GraphQL root；最新 Go 注册数 274/71/21，所有相对文档/源码路径存在。独立读者复验通过；已据审查补充 newsEventBrief 部分实现与 crawlMetadata 主动抓取，并统一两批任务的增量快照。仅 28 个 Markdown 路径变化，无业务或配置改动。

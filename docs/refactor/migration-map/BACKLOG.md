@@ -1,0 +1,171 @@
+# 未认领候选队列
+
+[入口](README.md) · [规划](PLANNING.md) · [占用](tasks/README.md) · [缺口](GAPS.md) · [复用/所有权](DEPENDENCIES.md)。核对基线 `3cedce9aa3200436aba3596f63b559de5490cec8`，2026-10-18 本轮静态复核。候选不等于任务，不创建分支/worktree/对话，不自动发业务提示词；选择一项后才核对最新源码并写 task。
+
+## 顺序与隔离
+
+先处理 **#70 与设置写的公共接线并集（BL-01）**，但不启动第二个竞争 main/config 的编码窗口。期间 **BL-02 简报冷路径、BL-03 S3 媒体** 可各自做源码设计/确认文件边界，若正式编码要串行登记 main/公共客户端所有权。其后优先 **BL-05 条目完整查询、BL-07 来源策略、BL-08 导出、BL-23 元数据发现**，这些可交付完整同步功能。**BL-04 登录**价值高、协议边界较大，应单独一条主线，之后接 BL-06 邀请/OIDC/审批。需要 queue/worker 的批次在生产者/消费者协议明确后进入，不能为了多计入口先制造不推进的 pending 状态。
+
+WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆盖剩余 alertRules/规则三写。SETTINGS-WRITE-001 merged，不重迁 13 写。以下所有“可独立窗口”仍须先做 PLANNING 的远端刷新；共享 main/config/模型装配需要按提交顺序取并集。
+
+复用索引简称：`G` = Go `apps/api-go/internal/`，`N` = Nest `apps/api/src/`；主要文件写完整仓库相对路径的目录/符号，点击域页可到精确 Controller/Resolver。尚需核对是准入事实，不是已确认 bug。
+
+## 优先修补与同步链路
+
+### BL-01 · settings / GraphQL 公共接线
+
+- **目标/范围**：GAP-GQL-001 的13写独立路由/资源条件，保留 READ/ORG_ACCESS_WRITE/工作台写并集、模型与嵌套字段权限；不重写13个业务 resolver。OBS-DATA-001 仅作同文件错误传播审查项，不把不可达观察冒充已确认故障。
+- **基础/工作量依据**：settingswrite、settingscrawl.RegisterSettingsModelTypes、workspace.RegisterModels 已存在；需要核对 RouteMode、无效 DSN、needsCredentialedGo、handler 四处条件以及三写模式组合。无新队列/外部调用。
+- **文件/前置/冲突**：`apps/api-go/cmd/api/main.go`，必要时 config/模型注册；#70 正在共享接线，先确认其最终 merge/head。**当前不适合第二独立编码窗口**；不得按 PR 描述假设修复，先读实际提交。
+
+### BL-02 · news / newsEventBrief 生成
+
+- **范围/缺口**：Query newsEventBrief 的 cache miss、forceRefresh、模型结果清洗与 metadata 写回（GAP-NEWS-001）；保留合法 null 与缓存命中。
+- **基础/依据**：G/newsevents 有选源/指纹/模型；G/publicportal 的完整冷路径和 gatewayClient 是私有，可提取具名共享能力。工作量来自两种调用语义/参数/配置/错误/写回，而非新增一个 root。
+- **文件/边界/次序**：`apps/api-go/internal/graphqlread/newsevents/{brief.go,store.go}`（以实际文件布局为准）、publicportal/{story,brief,gateway}.go；MySQL+外部模型，无 BullMQ 前置。**可独立窗口**，与 BL-17 修改 gateway 辅助函数要串行；准入再核模型配置与所有 metadata 叶子保留策略。
+
+### BL-03 · crawl / S3 媒体下发
+
+- **范围/缺口**：GET /api/crawl-media-assets/:assetId/:mode，补 S3 签名重定向（GAP-CRAWL-001），不扩大为全部采集写/存储上传。
+- **基础/依据**：G/crawlreadtelemetry 已做 HMAC、orgId 资产查询与 MySQL blob；infrastructuresettings 只有配置管理。必须补 S3 对象 URL 行为与 config 解密/TTL/disposition/path-style，不是改一个 nil 返回。
+- **文件/前置/冲突**：service_media.go、构造/wire 与必要存储辅助；外部 S3，独立于 crawl worker。**可独立窗口**；先确认是否抽共享存储客户端，避开 BL-15 同文件；实桶验证范围另外登记。
+
+### BL-04 · identity / 登录与会话签发主链
+
+- **范围/缺口**：POST /api/auth/login、refresh、send-login-code、login-with-code、mfa/verify-login、mfa/enrollment/start、mfa/enrollment/complete、password/forgot、password/reset、send-verification、verify-email（GAP-LEGACY-001）；不重复已迁已认证 MFA/status 管理。
+- **基础/工作量**：G/authn/authz/authhttp、accountsecurity/authfactors 的密码/会话/密钥基础；N/modules/auth 的 AuthService/PasswordResetService/MfaService，DTO 见 auth.controller.ts。需签发/刷新 token、session/Redis 撤销、MFA challenge、验证码/SMTP、限流与审计；这些步骤均须保持实际可用。
+- **文件/前置/冲突**：新 Go 登录业务包、main/config；阅读 `apps/api/src/modules/auth/{auth.service,password-reset.service,mfa.service}.ts`；MySQL/Redis+SMTP。**适合单独主窗口，不与 BL-06 并行改会话协议**。先核 refresh rotation/验证码存储/SMTP helper 可复用性，不能从 verifier 存在推断 signer 已有。
+
+### BL-05 · items / 完整 GraphQL 列表
+
+- **范围/缺口**：Query `items`（GAP-LEGACY-001）；完整 connection/page/after/first、排序/过滤、PERSONALIZED 与 RELEVANCE，保留互斥分页校验。
+- **基础/依据**：G/itemsreading.Service.List/搜索/facets/read-model、workspace 模型；N/graphql/resolvers/items.resolver.ts 的 items 与 ItemsListService。REST List 只做 RECENCY，不可直接包装后称全量完成；还需 cursor、选择字段、个性化/召回排序和返回 connection 注册。
+- **文件/前置/冲突**：G/itemsreading 与 graphqlread/itemsreading、main/config 最小接线；DB/Mongo/Redis，ES/vector/embedding 外部边界。**可独立窗口**；先明确是否共享 List 核心，BL-08/24 避开搜索核心文件；未核所有 cursor 编码与 totalCount 成本。
+
+### BL-06 · identity / 邀请、审批与 OIDC 接入的后续分段
+
+- **精确候选集合**：identity 域余下 Nest HTTP：/admin/invites 四路、/admin/registration-applications 五路、/register/{applications,join-applications} 两路、/invitations/:token 三路、GET sso/oidc/start、GET oidc/callback、POST sso/handoff/exchange；另 POST avatar/presigned-url 与 GET data-export 是两个可分离支线。均为 GAP-LEGACY-001，不包含 BL-04。
+- **基础/依据**：G/orgaccesswrite/rbacapi/authfactors/accountsecurity，N/OrgInviteService、RegistrationApplicationService、OidcAuthService；需要邀请/审批事务、默认角色/租户初始化、邮件、IdP/state/PKCE/handoff token；头像依赖 StorageService、导出依赖完整个人数据聚合。
+- **文件/前置/冲突**：N/modules/auth 对应服务→新 Go 包；主链依赖 BL-04 token/session 协议。**当前只适合分段源码核对，不能把19条不相干入口一次认领**；先按邀请+审批、OIDC、头像/导出确定可独立交付的 task，后两支需分别声明存储/数据边界。
+
+### BL-07 · settings / 来源策略四写
+
+- **范围/缺口**：updateNewsEventSourcePolicy、updateNewsEventSourcePolicyPresets、resetNewsEventSourcePolicy、rollbackNewsEventSourcePolicy（GAP-LEGACY-001）；不动已合并13写。
+- **基础/依据**：G/graphqlread/settingscrawl policyReader 和 publicportal 的来源规范化；N/news-event-source-policy.service.ts updatePolicy/updatePolicyPreset/resetPolicy/rollbackPolicy。expectedRevision 冲突、revision 历史、preset delta/分类同步与 Redis syncWarnings 是主要工作，不只是四次 upsert。
+- **文件/前置/冲突**：新 GraphQL 写包及现有 policy helpers/main；MySQL/SystemSetting/Redis，无须迁 ingestion 才可交付。**BL-01/#70 接线稳定后可独立窗口**；避免 BL-18 同时更改策略模型；先核乐观并发与同步失败语义。
+
+### BL-08 · analysis / 三个 CSV 导出
+
+- **范围/缺口**：POST /api/analysis/exports/search、items、events（GAP-LEGACY-001）。search 还含 mode=headlines 归档路径，不只导出当前页面。
+- **基础/依据**：G/analysiscollab.NormalizeQueryString、itemsreading、newsevents；N/AnalysisWorkspaceService.export*CsvStream→buildItemsExportRows/buildArchiveSearchRows/buildEventsExportRows/buildCsvStream。需全量批读取/上限、日期排序、权限/组织过滤、CSV 转义、响应头与审计，避免套 REST 默认50条截断。
+- **文件/前置/冲突**：独立 Go export 包/main；N/modules/analysis-workspace/analysis-workspace.service.ts 为事实源；DB/Mongo/ES/归档搜索边界。**可独立窗口**，BL-05 搜索核心先约文件；归档 headlines 所需分类/翻译不能偷偷代理 Nest，先核冷路径是否要求 BL-09。
+
+### BL-23 · crawl / 元数据主动发现
+
+- **范围/缺口**：Query crawlMetadata 与 POST /api/crawl-tasks/metadata（GAP-LEGACY-001），同业务双入口；不捆绑完整 task worker。
+- **基础/依据**：G/crawlreadtelemetry DTO/配置读、crawlworkflow/profile 的 normalize 基础；N/CrawlMetadataService.extract/discoverSitemap*/discoverRss*/discoverList*/discoverDeep*。实际是 robots/sitemap/XML/HTML、并发发现、HTTP 缓存/重定向/SSRF 与 crawl4ai 的完整网络链，不是 DB Query。
+- **文件/前置/冲突**：独立 Go metadata 包、graphql/HTTP adapters/main；N/modules/crawl/crawl-metadata.service.ts 为事实源。**可独立窗口先做深读**；需核 feature 开关与各发现模式、私网/域名解析语义，避免与 BL-24/25 重写共享配置；真实站点验证另记。
+
+## 需要明确异步/外部边界的链路
+
+### BL-09 · archive / 查询与准备闭环
+
+- **范围/缺口**：archiveDigest/archiveCalendar/archiveDetail，ensureDigestCoverage/ensureCalendarCoverage→archivePreparation queue→processor→分类/状态写回（GAP-LEGACY-001 / GAP-ASYNC-001）。现有 status HTTP 不重迁。
+- **基础/依据**：G/dataruntimesettings 状态/设置、itemsreading/llmembed/publicportal 来源规则；N/ArchiveService、ArchivePreparationQueueService、ArchivePreparationProcessor。需要显示资格/分类缓存、embedding/rerank/翻译、job 去重和 partial/ready/failed；工作量远大于三读。
+- **文件/前置/冲突**：archive 新包、Redis queue 协议、Mongo/MySQL 数据层/main；**当前不适合不定边界的独立编码窗口**。可分“完整查询+兼容现有生产者/消费者”与“Go 准备器”两阶段，但第一阶段必须明确仍依赖 Nest，不能关闭整条缺口；先核队列兼容与唯一消费。
+
+### BL-10 · workspace / 告警规则与执行
+
+- **范围/缺口**：alertRules、upsertAlertRule/deleteAlertRule/triggerAlertRule、对应 ensureDefaultRules/评估/投递步骤（GAP-LEGACY-001 / GAP-ASYNC-001），排除 #70 的8交互写。
+- **基础/依据**：G/alerts 的历史/replay/tuning，#70 合入后的模型；N/AlertsService.listRules 会建默认规则，trigger 与 AlertsProcessor/BullMQ/SMTP/webhook 相连。需要规则关联事务、指标计算、事件/投递状态与历史保留。
+- **文件/前置/冲突**：G/graphqlread/alerts、后续规则/执行包、main/config；#70 占用 alerts/{models,channels,events,convert,replay,register}.go。**等待 #70 稳定**；可先拆规则配置完整链与执行器，但须保留已认领渠道写，先核 trigger 是同步还是队列边界。
+
+### BL-11 · economic / 配置调度与抓取
+
+- **范围/缺口**：updateEconomicDataFetchConfig、triggerDataFetch、triggerEconomicDataRefreshPreset；GET /api/admin/akshare/status、version 与 POST upgrade（后者可独立运维子批）；Akshare repeat/processor（GAP-LEGACY-001 / GAP-ASYNC-001）。
+- **基础/依据**：G/graphqlread/economic 历史/分页/insights；N/AkshareService.updateFetchConfig→ensureRepeatableJobs、queue.add、AkshareQueueProcessor。需修改 repeat 时清旧任务、构造 payload、更新全局经济数据/刷新预置状态；AkShare 是独立服务，upgrade 不是本地配置保存。
+- **文件/前置/冲突**：economic 写/调度包、queue adapter/main；DB/Redis/AkShare。**先读队列协议后可单独主窗口**，不要与 BL-20 同时切 queue 通用能力；未核全部 repeat/jobName/退出语义。
+
+### BL-12 · analysis / 三请求执行闭环
+
+- **范围/缺口**：requestCorrelationAnalysis/requestAnomalyExplanation/requestGeoTransportAnalysis→submit*→analysis queue→process→Mongo/通知/analysisEvents（GAP-LEGACY-001 / GAP-ASYNC-001），不重迁协作 CRUD/history。
+- **基础/依据**：G/history 模型/经济/地图读取、publicportal 模型客户端（私有）；N/AnalysisService/AnalysisProcessor。相关计算、异常/地理上下文、流式 chunk、最终失败通知均为必要内部步骤。
+- **文件/前置/冲突**：独立分析执行包、队列/模型 adapter/main；MySQL/Mongo/Redis+模型/运输。**当前先定 producer/consumer 与 BL-21 发布契约**；可先迁一条完整分析类型，不能三个 root 只建记录。共享 gateway 提取需等 BL-02 的决定。
+
+### BL-13 · assistant / 三类请求与删除
+
+- **范围/缺口**：requestAssistantQuery/requestAssistantReport/requestAssistantForecast/deleteAssistantRun 与对应 processor/process/状态通知（GAP-LEGACY-001 / GAP-ASYNC-001）。delete 可成为独立完整子批，须保留活跃运行/对话关联语义。
+- **基础/依据**：G/history capabilities/series/读取、items/经济检索，N/AssistantService/AssistantProcessor。query 的工具/会话/安全配额、report/forecast 模型、流式状态都需迁；仅保存 pending 不可交付为完整链。
+- **文件/前置/冲突**：assistant 执行/工具/queue/client/main；DB/Mongo/Redis/模型、可能 Web search。**先核 provider/tool 能力与 BL-12/21 的共享发布边界**；不得引用未合入的客户端 API；尚未逐工具阅读，当前适合勘查而非一批全认领。
+
+### BL-14 · situation / 主动刷新、授权与信号生成
+
+- **范围/缺口**：POST geo/geocode；GET situation-monitor/insights、POST refresh；GET system-settings/realtime-signals/runtime；system-settings/situation-monitor GET/PUT/DELETE、external-snapshot/refresh、telegram-auth start/complete/DELETE；signals worker/轮询与 snapshot Cron（GAP-LEGACY-001 / GAP-ASYNC-001）。
+- **基础/依据**：G/situationsignals 已读缓存/反馈、dataruntimesettings 配置、dashboardwarmap 地理/实时客户端；N/situation-monitor/signals、TelegramAuth、RealtimeSignalsService。全局 collector 与组织筛选、任务进度/租约、授权 session、外部限额决定拆分。
+- **文件/前置/冲突**：signals/collector/geo/auth 新包与模型/main；Redis/Mongo/MySQL+Telegram/Oref/Nominatim/OpenSky/其他外部。**需先分地理同步链、Telegram授权、refresh消费者三条候选执行边界**；不因都是态势就同时认领；未核全部外部 API/凭据与轮询退出。
+
+### BL-15 · infrastructure / 连接诊断与邮件设置
+
+- **范围/缺口**：POST admin/settings/storage/test、POST system-settings/geo/nominatim/test、GET system-settings/vector-service/diagnostics；settings/email GET、PUT auth-code、POST test；GET assistant-safety/diagnostics（GAP-LEGACY-001）。
+- **基础/依据**：G/infrastructuresettings、dataruntimesettings、platformgovernance 的配置读/解密；N 对应 Controller/Test/Email/Safety service。每种诊断需真实客户端/超时/权限/返回，不是固定 ok；存储、邮件、安全诊断可分别完整交付。
+- **文件/前置/冲突**：各域独立诊断包/main；S3、vector、Nominatim、SMTP/安全外部依赖。**可单个服务窗口**，不同时改 BL-03 存储 helper；与 BL-04 邮件客户端需明确共享；当前未逐方法深读，选批前核请求/失败语义。
+
+### BL-16 · knowledge / 证据复核与 ingestion
+
+- **范围/缺口**：reviewKnowledgeGraphEvidence 及其关系边/证据/复核状态更新；KnowledgeGraphIngestionService 的后台构图作为后续独立执行阶段（GAP-LEGACY-001 / GAP-ASYNC-001）。
+- **基础/依据**：G/knowledgegraph/kgimpact、settingscrawl.reviewReader 已有读模型；N/KnowledgeGraphService.upsertReviewedRelationEdge 与对应 review 服务。需要租户/权限、证据归属、接受/拒绝与边聚合、缓存失效；不能把更新 reviewed 状态当整个复核完成。
+- **文件/前置/冲突**：graphqlread 新写包/knowledge 业务层/main，MySQL+Mongo/Redis，ingestion 可能模型；**复核写可在公共接线后独立窗口**；先核真正 resolver 调用的复核服务/事务，与 BL-18 新闻处理写入共享表的顺序。
+
+### BL-17 · model-gateway / 治理与真实探测
+
+- **范围/缺口**：model-gateway 域12条 Nest HTTP：proxy-governance GET/PUT/DELETE/preflight/rotate-key，:id/models/test/proxy-health/proxy-model-info/proxy-lb-test，models-config/test-config（GAP-LEGACY-001）。
+- **基础/依据**：G/modelaccesssettings/llmgatewayprofiles 的 profile、密钥、LB 配置，publicportal.gateway 已有请求实现但私有；N/LlmGatewaySettingsController 与服务。治理事务/密钥轮换、LiteLLM内部配置、真实探测/模型列表是不同子链，可先治理后探测。
+- **文件/前置/冲突**：上述业务包/main、共享 client；MySQL/Redis/加密+LiteLLM/模型。**可独立主窗口**但 BL-02 gateway 提取先明确；未核 preflight/rotate 的服务端应用协议，配置 applied 证据不等于生产生效。
+
+### BL-18 · news / 上游内容、指标关联与流水线
+
+- **范围/缺口**：GET news-aggregator/source、POST sources/batch、GET recommended/hottest-analysis；POST clustering/failures/:groupId/llm-backfill；refreshNewsIndicatorAssociations；相应 source warm/hottest/事件/指标/pipeline ingestion（GAP-LEGACY-001 / GAP-ASYNC-001）。
+- **基础/依据**：G/newsnowclusteringops 的 metadata/resolve/order/opinion 与 failure store；newsevents/newsindicator 读取；N/news-aggregator、news-events、news-indicator、news-pipeline。真实源 fetch/cache、推荐召回/画像、LLM分析、关联写与恢复任务必须按各条完整链拆批。
+- **文件/前置/冲突**：候选域对应包/新客户端/main；Mongo/MySQL/Redis+上游/模型/queue。**当前可单独核 source/batch 同步链，后台执行另定唯一所有权**；BL-07 来源策略模型稳定后再做依赖它的分支；未核全部生产者/失败回放。
+
+### BL-19 · personal / digest 定时邮件投递
+
+- **范围/缺口**：UserDigestDeliverySchedulerService→到期用户/订阅→构建 digest→SMTP→delivery 状态/去重（GAP-ASYNC-001）；配置 HTTP 与 preview 不重迁。
+- **基础/依据**：G/userdigest 读取/投递设置、contentsubscriptions/contentcatalog 已有；N/user-digest/user-digest-delivery-scheduler.service.ts。工作量在调度时区/租约/重复发送与失败状态，不在增加 HTTP 数。
+- **文件/前置/冲突**：Go scheduler/delivery、SMTP client/main；DB/Mongo/Redis/ES+SMTP。**先核邮件客户端与 BL-04/15 边界后可独立窗口**；必须指定停用 Nest 哪个调度触发，先核租约/重复执行风险，不自行添加新框架。
+
+### BL-20 · async / Outbox、清理与消费者基础
+
+- **范围/缺口**：AuditLogOutboxService、RawItemOutboxService、CrawlCleanupOutboxService 三条补偿链及其当前 Cron（GAP-ASYNC-001）；它们分别交付，不领取“全部 worker”。
+- **基础/依据**：G/settingswrite 等已写 AuditLog/失败 Outbox，读 Mongo/序列化与 Redis 可复用；N 各 service 为锁/可见性/重试事实源。需状态扫描、幂等目标写入、事务/租约与关闭，审计/原文/存储删除副作用不同。
+- **文件/前置/冲突**：独立 Go outbox 消费包/main；MySQL→Mongo、可能 S3；**先审 AuditLogOutbox 单链可独立窗口**，RawItem 与 BL-24、cleanup 与 BL-25 串行。未核每张表的状态/重试上限与停机时 in-flight 语义。
+
+### BL-21 · async / Subscription 与 Socket.IO
+
+- **范围/缺口**：Subscription alertEvents/analysisEvents/assistantEvents/queueEvents 及 Socket.IO 执行/权限/投递（GAP-LEGACY-001 / GAP-ASYNC-001）；dashboard SSE 不重迁。
+- **基础/依据**：G/GraphQL 解析鉴权/字段权限与 SSE 关闭流程；N/graphql-subscriptions Redis backplane、graphql resolvers、websocket gateway。需要 executor、连接鉴权、orgId过滤、payload/取消/背压与多实例 transport；只接 Redis 不够。
+- **文件/前置/冲突**：GraphQL/WS 专门执行层/main/legacyproxy；**在 BL-10/12/13/25 事件生产者契约稳定后执行**，可独立窗口先核协议/事件样本；未核拓扑与全部订阅字段权限，不一次打开所有协议升级。
+
+### BL-22 · vector / 上游部署切换核实
+
+- **范围/缺口**：VECTOR_SERVICE_BASE_URL / SystemSetting 优先级与实际上游切流、回滚；VERIFY-DEPLOY-001，**不是已确认源码 bug**，不重写 vector-go 三接口。
+- **基础/依据**：vector-go/Qdrant 与现有真实差分 CI、api-go vector recall；N/VectorServiceSettingsService，Compose 可选 pilot。工作在配置/部署证据与端到端请求归属。
+- **文件/前置/冲突**：通常先只读 infra/docker、上游 clients/settings 与部署记录；**可独立只读窗口**；实际部署变更不在本轮授权内，执行时再按明确范围决定。未核真实配置值，不从 CI 推断已切流。
+
+### BL-24 · crawl/items / 任务写入与内容导入
+
+- **范围/缺口**：crawl create/retry/delete 的 HTTP 与 createCrawlTask/retryCrawlTask/deleteCrawlTask、updateCrawlTaskIngestToItems/ingestCrawlTaskResultsToItems；POST /api/items、createItem/updateItem/createItemFromCrawlResult/translateRssItems（GAP-LEGACY-001 / GAP-ASYNC-001）。重复 HTTP/root 共用业务，不重复计工作。
+- **基础/依据**：G/crawlreadtelemetry/itemsreading、已有 DB/模型；N/CrawlService/ItemsService/ItemsRssTranslationService、RawItemOutbox/QueueProcessor。任务状态/去重/关联媒体、原文 Mongo 与 MySQL outbox、翻译缓存/真实模型均为必要步骤。
+- **文件/前置/冲突**：新 task/item 写包、数据层与 queue adapter/main；**先拆任务生命周期+消费者、条目写/导入、RSS翻译三段完整任务**，不能一个窗口领取全部。与 BL-03/05/20/25 有共享文件/表，先确定顺序；尚未核全事务/回滚与已处理条目失效链。
+
+### BL-25 · crawl/async / Frontier 生产者与队列运维
+
+- **范围/缺口**：POST crawl-frontier/runs、nodes/:id/retry、nodes/retry、workflow-runs/:runId/replay、workflows/:id/trial-run；news-sources/:id preview/dispatch/cancel-queued/clear-inflight/retry-latest；crawl4ai/queue GET 与 concurrency/pause/resume（GAP-LEGACY-001 / GAP-ASYNC-001）。
+- **基础/依据**：G/crawlfrontierruns/news sources/workflow 的管理/状态基础；N/crawl 与 queue 的 strategy/frontier/dispatch/ops/controllers、QueueProcessor、CrawlQueueProcessor。队列运维必须维护真实 BullMQ job/计数/锁，trial/preview 也会真实外调，不可仅改状态字段。
+- **文件/前置/冲突**：frontier/queue/strategy Go 包与 adapter/main；DB/Redis/Mongo/crawl4ai。**在 BL-24 payload/生命周期明确后按“Frontier生产者”和“队列控制”串行选批**；不重迁已合并取消11路。先核 trace/jobId、消费者重复与实时 queueEvents。
+
+### BL-26 · observability / 质量报告、恢复与指标
+
+- **范围/缺口**：POST admin/quality/classification/reports；GET admin/quality/pipeline/runs、POST replay/rollback；GET /api/metrics（GAP-LEGACY-001 / GAP-ASYNC-001）。
+- **基础/依据**：G/qualityoverview/classificationrssops/adminlogs 与历史模型；N/ClassificationQualityProcessor、PipelineRecoveryController/服务、MetricsController。报告 queue→模型/分批写回、replay/rollback 真实流水线补偿与 metrics 平台鉴权是不同完整链。
+- **文件/前置/冲突**：各运维业务包/worker/main；Mongo/MySQL/Redis+模型/queue。**metrics 可先独立深读，恢复链须先核 BL-18/24 数据所有权**；未核回滚补偿与所有指标 provider，不能给出固定工时或完成百分比。
