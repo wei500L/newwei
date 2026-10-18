@@ -76,7 +76,7 @@ func mapFailure(err error) error {
 	}
 	var inputErr *inputFailure
 	if errors.As(err, &inputErr) {
-		return &contract.Failure{Message: inputErr.Message, Status: http.StatusBadRequest}
+		return &contract.Failure{Message: inputErr.message, Status: http.StatusBadRequest}
 	}
 	log.Printf("api-go: rsstranslation graphql failure: %v", err)
 	return &contract.Failure{Message: "Internal server error", Status: http.StatusInternalServerError}
