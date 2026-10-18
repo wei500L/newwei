@@ -13,11 +13,9 @@ import (
 type serviceError struct {
 	status  int
 	message string
-	cause   error
 }
 
 func (e *serviceError) Error() string { return e.message }
-func (e *serviceError) Unwrap() error { return e.cause }
 
 // dbFailure marks a MySQL failure so the exchange entry answers the Prisma
 // connection 503 instead of disguising it as an invalid handoff.
