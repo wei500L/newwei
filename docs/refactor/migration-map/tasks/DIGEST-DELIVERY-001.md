@@ -3,7 +3,7 @@
 - 状态 reserved；2026-10-18 Europe/Moscow，本规划窗口保存并发出[独立执行提示词](DIGEST-DELIVERY-001.prompt.md)，未实施业务。执行会话/活跃状态未核实。
 - 规划基线 origin/main `90765633ac6ba2b1d97a89d0ec33be90cb69bcb7`；[普通CI39149114456](https://github.com/wei500L/newwei/actions/runs/39149114456)在精确SHA success。候选userdigest/Nest调度/邮件/runtime业务相对地图3cedce9a无改动，NotificationService有#70已合的已读语义改动，不影响notify生产者。
 - 来源 BL-19 / GAP-ASYNC-001，仅认领digest投递，不认领全部异步/通知/邮件诊断。独立分支 `refactor/go-digest-delivery`；业务worktree `/Users/oo/project/newwei-go-digest-delivery`，规划时未创建。业务PR未开/未合，Go执行/生产启用/实网验证均无新增。
-- 记录发布：独立文档分支 `docs/plan-digest-delivery`、worktree `/Users/oo/project/newwei-plan-digest-delivery`，正常提交推送后发布Ready规划PR；不改已有#80规划工作目录。
+- 记录发布：独立文档分支 `docs/plan-digest-delivery`、worktree `/Users/oo/project/newwei-plan-digest-delivery`，认领/提示词提交`f63ac000`已正常推送并发布[Ready规划PR #85](https://github.com/wei500L/newwei/pull/85)；不改已有#80规划工作目录。规划PR的CI另查最终head，不借main绿灯声称该PR已通过。
 
 ## 精确范围与独立条件
 

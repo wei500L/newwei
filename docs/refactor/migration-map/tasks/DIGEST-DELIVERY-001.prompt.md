@@ -11,7 +11,7 @@ Go新增/修改的业务DTO、返回模型、数据库JSON、缓存、通知和�
 - 规划基线：fetch 后 `origin/main 90765633ac6ba2b1d97a89d0ec33be90cb69bcb7`。该 SHA 普通 CI：https://github.com/wei500L/newwei/actions/runs/39149114456 ，success；不是 SMTP、部署或实时链运行证明。
 - 仓库 `/Users/oo/project/newwei` 当前 checkout 可能旧，禁止以其工作文件推断 main。先 `git fetch origin main`，查询 SHA、开放 PR、main 最近五次 CI、worktree；读取适用 AGENTS.md、迁移地图 README/PLANNING/tasks/README、本任务及 personal 域。核对本范围相对规划 SHA 的差异即可，不全仓审计。
 - 业务分支 `refactor/go-digest-delivery`；worktree `/Users/oo/project/newwei-go-digest-delivery`，从当时最新 origin/main 创建。已有同任务目录先核 HEAD/差异/归属后复用，不切换或清理其他窗口目录。后续同步 main 用正常 merge，不 rebase。
-- 规划记录随独立文档分支 `docs/plan-digest-delivery` 发布；main 未含记录时从其规划 PR 读取。业务源码始终取最新 main，不以规划分支代替业务基线。若目标已被其他任务覆盖，按实际剩余步骤缩小本任务，不重做整批。
+- 规划记录随独立文档分支 `docs/plan-digest-delivery` 的 Ready PR #85（https://github.com/wei500L/newwei/pull/85）发布；main 未含记录时从该 PR 读取。业务源码始终取最新 main，不以规划分支代替业务基线。若目标已被其他任务覆盖，按实际剩余步骤缩小本任务，不重做整批。
 
 ## 2. 已核事实与可复用能力
 
