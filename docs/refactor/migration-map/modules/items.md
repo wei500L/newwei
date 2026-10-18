@@ -1,6 +1,6 @@
 # items · 条目检索、RSS 阅读与处理结果
 
-最近核对：2026-10-18 13:51 MSK（UTC+03:00）；`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
+最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态
 
@@ -12,7 +12,7 @@ HTTP 条目阅读与索引重建、GraphQL item/itemFacets/rssSources/rssTransla
 
 状态分层：下表“Go”仅表示该 SHA 已有生产注册、接线及已有业务实现，完整性须看本页具体缺口；“Nest”表示该入口尚无 Go 接管注册。已注册代码已在 main，历史 PR 见证据表。契约完整性、实网验证和部署另行核对；没有业务完成百分比。
 
-验证：基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
+验证：首次基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；14:18 MSK 最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 进行中，不能继承旧结果。#68 的 PR head a1c96172 普通 CI 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
 
 启用：实际部署及生产切流均“未核实”。可见 compose 是可选 pilot，Web 默认仍指 Nest，CANARY_PERCENT=0；模块开关默认 legacy 的例外和当前注入见下文。
 
@@ -74,7 +74,7 @@ PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核�
 | [#50](https://github.com/wei500L/newwei/pull/50) | [b0e4c178b2af](https://github.com/wei500L/newwei/commit/b0e4c178b2af54ea6a72f4555973e011877f0e88) | ✨ feat(api-go): 采集只读、媒体下发与检索遥测迁入 7 条接口（默认 legacy） |
 | [#58](https://github.com/wei500L/newwei/pull/58) | [9da8e75e9d1e](https://github.com/wei500L/newwei/commit/9da8e75e9d1e8bfb683b5f10db8e088121f23191) | ✨ feat(api-go): 条目阅读与 RSS 检索辅助 7 个入口迁入 Go（API_GO_ITEMS_READING_MODE，默认 legacy）+ 修 IR1/IR2/IR3 |
 | [#65](https://github.com/wei500L/newwei/pull/65) | [62ca2adbe6f1](https://github.com/wei500L/newwei/commit/62ca2adbe6f1baaa9ac21490a21207e2524e2116) | ✨ feat(search): 迁移搜索索引重建到 Go 并优化检索遥测读写 |
-| [#67](https://github.com/wei500L/newwei/pull/67) | [7fc17faa3dc5](https://github.com/wei500L/newwei/commit/7fc17faa3dc5043537bad4038299d11fdba4758d) | 🔀 integration(api-go): 一次性落地 #59/#62/#63/#65/#66 五个迁移批次（冲突统一并集解决 + 全量验证） |
+| [#67](https://github.com/wei500L/newwei/pull/67) | [7fc17faa3dc5](https://github.com/wei500L/newwei/commit/3cedce9aa3200436aba3596f63b559de5490cec8) | 🔀 integration(api-go): 一次性落地 #59/#62/#63/#65/#66 五个迁移批次（冲突统一并集解决 + 全量验证） |
 
 - [docs/refactor/go-items-reading.md](../../go-items-reading.md)
 

@@ -1,12 +1,12 @@
 # 任务认领与历史恢复索引
 
-main 核对时间：2026-10-18 13:51 MSK；两批任务增量刷新：14:03 MSK（UTC+03:00）；main：`7fc17faa3dc5043537bad4038299d11fdba4758d`。返回[入口](../README.md)。
+main 核对时间：2026-10-18 13:51 MSK；两批任务增量刷新：14:18 MSK（UTC+03:00）；最新 main：`3cedce9aa3200436aba3596f63b559de5490cec8`。返回[入口](../README.md)。
 
-## 当前占用
+## 当前占用与已合并历史
 
 | ID | 状态 | 精确范围 | 是否已有业务 PR / 推送 |
 |---|---|---|---|
-| [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | pr_open | 13 个设置写；独立 SETTINGS_WRITE 开关 | Ready [PR #68](https://github.com/wei500L/newwei/pull/68)，已推送 a1c96172；CI 进行中 |
+| [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR CI 成功，main CI进行中 |
 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | in_progress | 8 个通知/看板/告警交互写 | 尚无；本机 config/alerts 有未提交增量；历史提示词仍占用 |
 
 原始认领/发出时间未提供；原始执行器活动未核实。状态定义见 [PLANNING](../PLANNING.md)。本次没有新业务任务。当前地图文档首版已提交/推送（4e37f285），通过 [Ready PR #69](https://github.com/wei500L/newwei/pull/69) 发布，业务分支状态与文档发布分开；PR URL 见[证据](../EVIDENCE.md)。
@@ -28,7 +28,7 @@ main 核对时间：2026-10-18 13:51 MSK；两批任务增量刷新：14:03 MSK�
 | `refactor/go-exception-ingest-diagnostics` | `/Users/oo/project/newwei-go-exception-ingest-diagnostics` | `380593e004b3` | main 祖先 | 干净 | [#64](https://github.com/wei500L/newwei/pull/64) |
 | `refactor/go-graphql-org-access-write` | `/Users/oo/project/newwei-go-graphql-org-access-write` | `132fba4493c0` | main 祖先 | 干净 | [#63](https://github.com/wei500L/newwei/pull/63) |
 | `refactor/go-graphql-settings-crawl-read` | `/Users/oo/project/newwei-go-graphql-settings-crawl-read` | `f5655cfe9df0` | main 祖先 | 干净 | [#52](https://github.com/wei500L/newwei/pull/52) |
-| `refactor/go-graphql-settings-write` | `/Users/oo/project/newwei-go-graphql-settings-write` | `a1c96172b7eb` | 非 main 祖先；PR 尚未合入 | 14:03 MSK 干净 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md)；Ready PR #68 |
+| `refactor/go-graphql-settings-write` | `/Users/oo/project/newwei-go-graphql-settings-write` | `a1c96172b7eb` | 最新main祖先；#68已合入 | 14:03 MSK 干净 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md)；已合并 PR #68（14:18核对） |
 | `refactor/go-graphql-workspace-read` | `/Users/oo/project/newwei-go-graphql-workspace-read` | `48e939a3d260` | main 祖先 | 干净 | [#48](https://github.com/wei500L/newwei/pull/48) |
 | `refactor/go-graphql-workspace-write` | `/Users/oo/project/newwei-go-graphql-workspace-write` | `7fc17faa3dc5` | main 祖先 | 14:03 MSK：config/alerts 未提交增量 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md)；开发中 |
 | `refactor/go-infrastructure-settings` | `/Users/oo/project/newwei-go-infrastructure-settings` | `709dfbcffcc8` | main 祖先 | 干净 | [#55](https://github.com/wei500L/newwei/pull/55) |

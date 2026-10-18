@@ -1,24 +1,24 @@
 # settings · 设置中心与平台治理
 
-最近核对：2026-10-18 13:51 MSK（UTC+03:00）；`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
+最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态
 
-运行时/限流/审计保留等 HTTP、平台安全/配额/日志治理 HTTP，以及设置 GraphQL 读均已有 Go。13 个设置写处于历史已分配任务；来源策略四写不在该批。模型/网关、基础设施/数据运行 HTTP 分别见专属域。
+运行时/限流/审计保留等 HTTP、平台安全/配额/日志治理 HTTP，以及设置 GraphQL 读均已有 Go。13 个设置写已通过 #68 合入，独立开关接线仍有具体缺口；来源策略四写不在该批。模型/网关、基础设施/数据运行 HTTP 分别见专属域。
 
 关键数据与副作用：MySQL SystemSetting、Redis crawl_client:settings / audit_log:retention_days / auth 与限流缓存，Mongo 日志保留配置；分类 taxonomy/去重规则规范化影响新闻流水线读取。
 
-真实剩余缺口：13 个设置 Mutation 由 SETTINGS-WRITE-001 占用；来源策略 update/reset/rollback/presets 四写仍为 Nest，可作为独立候选但必须检查 revision、事务与同步副作用。SMTP 测试、assistant 安全 diagnostics 等外部/诊断入口仍有缺口。
+真实剩余缺口：13 个设置 Mutation 已在 main 注册，禁止重新派发整批；来源策略 update/reset/rollback/presets 四写仍为 Nest，可作为独立候选但必须检查 revision、事务与同步副作用。SMTP 测试、assistant 安全 diagnostics 等外部/诊断入口仍有缺口。
 
 状态分层：下表“Go”仅表示该 SHA 已有生产注册、接线及已有业务实现，完整性须看本页具体缺口；“Nest”表示该入口尚无 Go 接管注册。已注册代码已在 main，历史 PR 见证据表。契约完整性、实网验证和部署另行核对；没有业务完成百分比。
 
-验证：基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
+验证：首次基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；14:18 MSK 最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 进行中，不能继承旧结果。#68 的 PR head a1c96172 普通 CI 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
 
 启用：实际部署及生产切流均“未核实”。可见 compose 是可选 pilot，Web 默认仍指 Nest，CANARY_PERCENT=0；模块开关默认 legacy 的例外和当前注入见下文。
 
 Nest 功能目录：[system-settings](../../../../apps/api/src/modules/system-settings)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：[SETTINGS-WRITE-001](../tasks/SETTINGS-WRITE-001.md)（pr_open；14:03 MSK 发现 Ready [PR #68](https://github.com/wei500L/newwei/pull/68)，CI 进行中，尚未合入）。
+历史任务：[SETTINGS-WRITE-001](../tasks/SETTINGS-WRITE-001.md)（merged；#68 于 14:15 MSK 合入 main，尚有独立写接线缺口，不能把任务 merged 等同完全可独立启用）。
 
 ## HTTP 开关、实现与生产接线
 
@@ -90,21 +90,21 @@ Nest 功能目录：[system-settings](../../../../apps/api/src/modules/system-se
 |---|---|---|---|
 | Mutation `resetNewsEventSourcePolicy` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `resetNewsEventSourcePolicy` | Nest；未注册 |
 | Mutation `rollbackNewsEventSourcePolicy` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `rollbackNewsEventSourcePolicy` | Nest；未注册 |
-| Mutation `updateAuditLogRetention` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateAuditLogRetention` | Nest；未注册 |
-| Mutation `updateAuthCacheSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateAuthCacheSettings` | Nest；未注册 |
-| Mutation `updateClassificationQualitySettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateClassificationQualitySettings` | Nest；未注册 |
-| Mutation `updateCrawlClientSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateCrawlClientSettings` | Nest；未注册 |
-| Mutation `updateEntityImpactGraphSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateEntityImpactGraphSettings` | Nest；未注册 |
-| Mutation `updateKnowledgeGraphSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateKnowledgeGraphSettings` | Nest；未注册 |
-| Mutation `updateNewsClassificationSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsClassificationSettings` | Nest；未注册 |
-| Mutation `updateNewsDedupeSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsDedupeSettings` | Nest；未注册 |
-| Mutation `updateNewsEventSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsEventSettings` | Nest；未注册 |
+| Mutation `updateAuditLogRetention` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateAuditLogRetention` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateAuthCacheSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateAuthCacheSettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateClassificationQualitySettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateClassificationQualitySettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateCrawlClientSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateCrawlClientSettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateEntityImpactGraphSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateEntityImpactGraphSettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateKnowledgeGraphSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateKnowledgeGraphSettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateNewsClassificationSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsClassificationSettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateNewsDedupeSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsDedupeSettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateNewsEventSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsEventSettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
 | Mutation `updateNewsEventSourcePolicy` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsEventSourcePolicy` | Nest；未注册 |
 | Mutation `updateNewsEventSourcePolicyPresets` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsEventSourcePolicyPresets` | Nest；未注册 |
-| Mutation `updateNewsExtractionSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsExtractionSettings` | Nest；未注册 |
-| Mutation `updateNewsIndicatorSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsIndicatorSettings` | Nest；未注册 |
-| Mutation `updateNewsPromptConfig` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsPromptConfig` | Nest；未注册 |
-| Mutation `updateRateLimitSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateRateLimitSettings` | Nest；未注册 |
+| Mutation `updateNewsExtractionSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsExtractionSettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateNewsIndicatorSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsIndicatorSettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateNewsPromptConfig` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateNewsPromptConfig` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
+| Mutation `updateRateLimitSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `updateRateLimitSettings` | [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go)；`SETTINGS_WRITE=go` 且当前顶层需 `READ=go OR ORG_ACCESS_WRITE=go`；独立模式缺口见下 |
 | Query `auditLogRetention` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `auditLogRetention` | [settingscrawl.Register](../../../../apps/api-go/internal/graphqlread/settingscrawl/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` |
 | Query `authCacheSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `authCacheSettings` | [settingscrawl.Register](../../../../apps/api-go/internal/graphqlread/settingscrawl/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` |
 | Query `classificationQualitySettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `classificationQualitySettings` | [settingscrawl.Register](../../../../apps/api-go/internal/graphqlread/settingscrawl/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` |
@@ -122,6 +122,15 @@ Nest 功能目录：[system-settings](../../../../apps/api/src/modules/system-se
 | Query `newsPromptConfig` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `newsPromptConfig` | [settingscrawl.Register](../../../../apps/api-go/internal/graphqlread/settingscrawl/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` |
 | Query `rateLimitSettings` | settings.manage | [settings.resolver.ts](../../../../apps/api/src/graphql/resolvers/settings.resolver.ts) · `rateLimitSettings` | [settingscrawl.Register](../../../../apps/api-go/internal/graphqlread/settingscrawl/register.go)；`API_GO_GRAPHQL_READ_MODE + API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE` |
 
+## 设置写已合并与独立启用缺口
+
+#68 的 [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go) 新增上表 13 写；[config.Load](../../../../apps/api-go/internal/config/config.go) 接受 API_GO_GRAPHQL_SETTINGS_WRITE_MODE 空/legacy/go，默认 legacy，非法值失败，样例/pilot 均 legacy。返回模型由 settingscrawl.Register 或 RegisterSettingsModelTypes 复用；缓存、taxonomy/去重优化已落入该提交，完整契约仍需按任务事实源复核。
+
+**当前源码的独立写模式尚未接完整**：[main.run](../../../../apps/api-go/cmd/api/main.go) 的 graphqlRouteMode 条件仍只有 GraphQLReadMode/GraphQLOrgAccessWriteMode，needsCredentialedGo 也没有 settingsWriteGo。只开设置写且其他所有认证接管关闭时，authenticator/redisClient 未初始化，稍后的 GraphQL 装配返回 requires mysql, jwt, and redis；即使其他 HTTP 模式初始化了资源，仅设置写仍未使 /graphql 进入 Go。当前可达注册需要 SETTINGS_WRITE=go 且 READ=go 或 ORG_ACCESS_WRITE=go。读开时有 Mongo 要求；组织写开时可不要求 Mongo。不要把目标“独立写”或源码注释当作当前能力。
+
+这属于已合并任务的剩余接线缺口，本次只记录，不改源码、不自动开新的业务任务。后续若单独规划最小接线修复，应与 WORKSPACE-WRITE-001 的 main/config OR 条件取并集，不能重复迁移 13 个业务写。回滚设置写仍可改 legacy。
+
+
 ## 合并、CI 与历史报告证据
 
 PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核对。下列实际 merge commit 均验证为 main 祖先；integration 合并包含在内。
@@ -138,4 +147,8 @@ PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核�
 
 - [docs/refactor/go-graphql-settings-crawl-read.md](../../go-graphql-settings-crawl-read.md)
 
+- [#68 合并提交 3cedce9aa320](https://github.com/wei500L/newwei/commit/3cedce9aa3200436aba3596f63b559de5490cec8)；[设置写迁移报告](../../go-graphql-settings-write.md)。
+
 后续任务：只将上表 Nest 缺口作为候选；先查任务认领和最新代码，再按完整产品链路选批。未记录的部署配置、所有外部真实调用结果均不能推定。
+
+本文 SETTINGS_WRITE / READ / ORG_ACCESS_WRITE 是 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE` / `API_GO_GRAPHQL_READ_MODE` / `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 的简写，所有组合以当前 main.run 实际接线为准。

@@ -1,6 +1,6 @@
 # identity · 身份、组织与访问控制
 
-最近核对：2026-10-18 13:51 MSK（UTC+03:00）；`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
+最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态
 
@@ -12,7 +12,7 @@
 
 状态分层：下表“Go”仅表示该 SHA 已有生产注册、接线及已有业务实现，完整性须看本页具体缺口；“Nest”表示该入口尚无 Go 接管注册。已注册代码已在 main，历史 PR 见证据表。契约完整性、实网验证和部署另行核对；没有业务完成百分比。
 
-验证：基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
+验证：首次基线[普通 CI](https://github.com/wei500L/newwei/actions/runs/39118934491) 的 verify 成功；14:18 MSK 最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 进行中，不能继承旧结果。#68 的 PR head a1c96172 普通 CI 成功；真实 MySQL/Redis 集成仅覆盖 user-settings/authz，真实 Qdrant 差分仅覆盖 vector。其余域本次仅静态核对，历史报告的 smoke 声明未逐次复验；没有证据则额外集成验证为“未核实”。
 
 启用：实际部署及生产切流均“未核实”。可见 compose 是可选 pilot，Web 默认仍指 Nest，CANARY_PERCENT=0；模块开关默认 legacy 的例外和当前注入见下文。
 
@@ -124,7 +124,7 @@ PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核�
 | [#60](https://github.com/wei500L/newwei/pull/60) | [f5648fab7374](https://github.com/wei500L/newwei/commit/f5648fab7374bbd1a8ec97ba363f4e678d58549d) | 🔐 feat(api-go): 账户资料、会话退出与机器令牌 8 条接口迁入 Go（API_GO_ACCOUNT_SECURITY_MODE，默认 legacy）+ 修 AS1–AS4 |
 | [#62](https://github.com/wei500L/newwei/pull/62) | [a7758f517db4](https://github.com/wei500L/newwei/commit/a7758f517db43d792e06c17d2f43c82226d21bae) | 🔐 feat(api-go): 已认证 MFA 管理与组织 OIDC 配置 7 条接口迁入 Go（API_GO_AUTH_FACTORS_MODE，默认 legacy）+ 修 AF1–AF5 |
 | [#63](https://github.com/wei500L/newwei/pull/63) | [9008c02b381d](https://github.com/wei500L/newwei/commit/9008c02b381dc21ecc0bb4272e92faf3ac5c086c) | ✨ feat(api-go): 迁移组织/角色/成员管理 8 个 GraphQL mutation |
-| [#67](https://github.com/wei500L/newwei/pull/67) | [7fc17faa3dc5](https://github.com/wei500L/newwei/commit/7fc17faa3dc5043537bad4038299d11fdba4758d) | 🔀 integration(api-go): 一次性落地 #59/#62/#63/#65/#66 五个迁移批次（冲突统一并集解决 + 全量验证） |
+| [#67](https://github.com/wei500L/newwei/pull/67) | [7fc17faa3dc5](https://github.com/wei500L/newwei/commit/3cedce9aa3200436aba3596f63b559de5490cec8) | 🔀 integration(api-go): 一次性落地 #59/#62/#63/#65/#66 五个迁移批次（冲突统一并集解决 + 全量验证） |
 
 - [docs/refactor/go-account-security.md](../../go-account-security.md)
 

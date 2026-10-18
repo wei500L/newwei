@@ -5,13 +5,13 @@
 ## 来源、基线与发布状态
 
 - 来源：用户本次明确粘贴的“已发出的任务线索”A/B，历史提示词已发出；原始发出/认领时间和执行会话 ID 未提供，不补造。此文件是依用户线索和当前源码恢复的持久化记录。
-- 规划/核对基线：`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`；首次入图：2026-10-18 13:51 MSK；任务更新时间：2026-10-18 14:03 MSK（UTC+03:00）。历史原始规划 SHA 未提供。
+- 规划/核对基线：`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`；首次入图：2026-10-18 13:51 MSK；任务更新时间：2026-10-18 14:18 MSK（UTC+03:00）。历史原始规划 SHA 未提供。
 - 分支：`refactor/go-graphql-workspace-write`；worktree：`/Users/oo/project/newwei-go-graphql-workspace-write`；本机 HEAD 为 `7fc17faa3dc5043537bad4038299d11fdba4758d`。
 - 核对：`gh pr list --state all --head refactor/go-graphql-workspace-write` 返回空；`git ls-remote --heads origin refactor/go-graphql-workspace-write` 无该远端分支。未发现对应业务 PR；没有 main 合并证据。
 - 记录发布：本任务文档已随地图首版提交 `4e37f285` 推送至 origin/docs/backend-migration-map，并发布在 [Ready PR #69](https://github.com/wei500L/newwei/pull/69)（见[证据页](../EVIDENCE.md)）；本记录发布不等于业务分支已提交/推送。地图 PR 未合入前，main 上尚无本任务文档。
 - 实际业务 merge SHA：无；业务 CI：无；额外集成验证：未核实。基线 CI 成功不覆盖未提交实现。
 - main 生产实现/注册：这 8 个 Mutation 尚未迁入；main 不识别 `API_GO_GRAPHQL_WORKSPACE_WRITE_MODE`，不能把“拟新增开关”当成可用配置。独立写开关是已发出任务目标；部署启用与流量均未核实。
-- 开工证据：14:03 MSK worktree 出现 `config.go`、`graphqlread/alerts/{channels,convert,events,models}.go` 修改及 `config_workspacewrite_test.go` 未跟踪文件，暂无业务提交/PR/远端分支。早期干净快照已过时，按匹配范围的开发证据升级 in_progress；执行器活动仍未核实。
+- 开工证据：14:03 MSK 起 worktree 出现 `config.go`、`graphqlread/alerts/{channels,convert,events,models}.go` 修改及 `config_workspacewrite_test.go` 未跟踪文件，14:18 MSK 新增 main/history 及 workspacewrite 目录；暂无业务提交/PR/远端分支。早期干净快照已过时，按匹配范围的开发证据升级 in_progress；执行器活动仍未核实。
 
 ## 业务范围、事实源与优化
 
@@ -41,6 +41,8 @@
 共享接线：`apps/api-go/cmd/api/main.go`、`internal/config/config.go`、`internal/legacyproxy/proxy.go`（若 GraphQL 顶层路由条件需要扩展）、`apps/api-go/README.md`、`.env.example`、`infra/docker/.env.sample` 与 `docker-compose.yml`。共享只允许本任务开关、初始化 OR 条件、模型注册与最小文档增量；两个写任务和已合并组织写必须并存，不能覆盖整段配置或公共 Register。
 
 开关目标：`API_GO_GRAPHQL_WORKSPACE_WRITE_MODE` 空/legacy/go、默认 legacy、非法值启动失败；只开写时必须初始化 MySQL/JWT/Redis 并接通精确 /graphql，不因读开关关闭强制 Mongo。写返回模型单独装配但避免与读注册重复；独立开关组合未完成前不能称为生产可用。
+
+14:18 main 增量：#68 已合入设置写，请读取新的 `settingswrite.Register` 与 `settingscrawl.RegisterSettingsModelTypes`；设置写原有顶层路由和 needsCredentialedGo 仍漏自己的独立条件。工作台写共享接线取并集时须明确这个已知缺口的处理归属，避免覆盖或重复注册设置模型，不能假设“设置写已合并”就代表接线完整。
 
 ## 可直接恢复执行的提示词
 

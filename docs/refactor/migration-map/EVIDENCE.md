@@ -2,6 +2,14 @@
 
 [返回入口](README.md)。此页保存首次建图的可复核证据，不替代各域源码。
 
+## 14:18 MSK 增量核对（当前事实）
+
+#68 于14:15:41 MSK 合并，已 fetch 最新 `origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`；仅26条上游变化路径，HTTP/SDL 分母不变，生产新增 settingswrite.Register 13个Mutation。各域按此diff增量复查，完整扫描仍以13:51为初始事实来源。#68 PR head a1c96172 普通 CI 39121676887 成功；最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 此快照进行中。
+
+设置任务改为 merged，main Mutation 注册总数从8到21；独立写顶层 graphqlRouteMode/needsCredentialedGo 漏接的实际缺口已记录，不能称完全可独立启用。工作台写仍 in_progress，无PR；14:18本机新增workspacewrite、main/history/alerts修改，仍未提交。#69 通过普通 merge 同步 origin/main，未改上游业务代码，相对最新 main 的PR差异仍仅28个Markdown；不rebase、不amend、不force-push。
+
+地图上一head 542744ea 的普通 CI 39121959053成功；同步main及本轮文档后以#69最新head普通CI为准。以下为首次核对历史，不覆盖本节新事实。
+
 ## 基线与远端
 
 - 核对时间：2026-10-18 13:51 MSK（UTC+03:00）；`git fetch origin main` 后 `origin/main = 7fc17faa3dc5043537bad4038299d11fdba4758d`。
@@ -16,7 +24,7 @@
 1. 阅读根 AGENTS.md；未发现更深层 AGENTS.md。只改地图、导航与一条根 AGENTS 迁移导航，不改业务/运行配置/schema/测试。
 2. 主 HTTP 来自当前 [Controller 源码](../../../apps/api/src/modules)、[main.setGlobalPrefix](../../../apps/api/src/main.ts) 与 [auth-matrix.json](../../../apps/api/tests/contract/auth-matrix.json)/[OpenAPI 快照](../../../apps/api/tests/contract/openapi.snapshot.json)。370 条 METHOD+完整路径，无重复；369 个常规方法装饰器 + 1 个 @Sse(stream)。Controller 列表与所属模块声明交叉核对，并沿 AppModule/SystemSettings/Storage 等 imports 确认装配，不把独立 vector 纳入。
 3. Go HTTP 逐组核对 [legacyproxy](../../../apps/api-go/internal/legacyproxy) 的精确方法/动态段/尾缀规则、[main.run/wire*](../../../apps/api-go/cmd/api) 的初始化与 RegisterGoHandler，以及对应业务包。274 个与上述 Nest HTTP 标识匹配；OPTIONS/示例/测试/重复文档不计。公开 live 是 shadow，不算 Go 接管。
-4. GraphQL 从 [完整 SDL](../../../apps/api/schema.gql) 提取 77 Query / 57 Mutation / 4 Subscription，逐 root 关联当前 Resolver 方法与权限；再对照生产 register.go 和 main 条件，得到 71/8/0 注册。返回字段与回退规则见 [GraphQL 运行时](modules/graphql-runtime.md)。SDL 和 Go 内嵌 SDL 应由现有普通 CI 漂移检查约束，不能凭 SDL 存在计实现。
+4. GraphQL 从 [完整 SDL](../../../apps/api/schema.gql) 提取 77 Query / 57 Mutation / 4 Subscription，逐 root 关联当前 Resolver 方法与权限；再对照生产 register.go 和 main 条件，首次得到 71/8/0 注册；#68后为71/21/0（设置独立接线另列）。返回字段与回退规则见 [GraphQL 运行时](modules/graphql-runtime.md)。SDL 和 Go 内嵌 SDL 应由现有普通 CI 漂移检查约束，不能凭 SDL 存在计实现。
 5. 所有主入口只在一个域页出现一次；共享包/开关在多个域出现可以，但只计自己入口。各分域的分母合计 370/77/57/4。HTTP 计数是注册覆盖口径；业务实现和启用另记，不据此给全后端百分比。
 6. 读新源码核对 Job/cron/repeat/outbox/外部 HTTP：已注册 newsEventBrief 的冷生成缺失（固定报错，不是仅未做实网验证）、crawlMetadata 主动网页/sitemap 抓取、归档 ensure*Coverage、经济 updateFetchConfig→ensureRepeatableJobs、看板读取创建默认看板、故事 brief 冷路径、地图地理/翻译/OpenSky、NewsNow 上游刷新等均保留副作用标记。精确 runtime job 数和实网结果未运行核实。
 7. 两批历史任务从用户明确线索恢复，查对应历史 PR、远端分支、main 开关/Registry、两个本机 worktree 的 status/diff。初始两者无 PR；14:03 MSK 增量复核：设置写已推送 Ready PR #68（a1c96172，普通 CI 进行中），工作台写出现 config/alerts 未提交增量。main SHA 未变化，两个任务都保留占用。
@@ -86,4 +94,4 @@
 
 下次不必重扫全仓：按 PLANNING 增量比较本 SHA 与 origin/main，深入候选域并更新本页或对应域的核对 SHA。只有实际重新核对的范围可以刷新其时间与事实，不能只改全局日期掩盖过时条目。
 
-提交前静态检查结果：26 个地图 Markdown 文件、370 条唯一 HTTP、77/57/4 唯一 GraphQL root；Go 注册数 274/71/8，所有相对文档/源码路径存在。独立读者复验通过；已据审查补充 newsEventBrief 部分实现与 crawlMetadata 主动抓取，并统一两批任务的增量快照。仅 28 个 Markdown 路径变化，无业务或配置改动。
+提交前静态检查结果：26 个地图 Markdown 文件、370 条唯一 HTTP、77/57/4 唯一 GraphQL root；最新 Go 注册数 274/71/21，所有相对文档/源码路径存在。独立读者复验通过；已据审查补充 newsEventBrief 部分实现与 crawlMetadata 主动抓取，并统一两批任务的增量快照。仅 28 个 Markdown 路径变化，无业务或配置改动。

@@ -1,10 +1,10 @@
 # GraphQL 传输、生产注册与返回模型
 
-核对：2026-10-18 13:51 MSK（UTC+03:00）；`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`。返回[入口](../README.md)。本页是跨域事实，不是额外业务模块，不参与域表求和。
+核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[入口](../README.md)。本页是跨域事实，不是额外业务模块，不参与域表求和。
 
 ## 真实挂载与整份回退
 
-Nest `ApiGraphqlModule` 挂载 `/graphql`，没有 `/api` 前缀；配置和 Resolver providers 见 [graphql.module.ts](../../../../apps/api/src/graphql/graphql.module.ts)。Go 精确 GET/POST/OPTIONS 由 [legacyproxy.WithGraphQLRead](../../../../apps/api-go/internal/legacyproxy/proxy.go) 进入 [Handler.ServeHTTP](../../../../apps/api-go/internal/graphqlread/handler.go)，main 当前仅在总读开关或组织访问写开关 go 时创建该 handler。参数更长路径、协议升级与未支持 operation 回 Nest。
+Nest `ApiGraphqlModule` 挂载 `/graphql`，没有 `/api` 前缀；配置和 Resolver providers 见 [graphql.module.ts](../../../../apps/api/src/graphql/graphql.module.ts)。Go 精确 GET/POST/OPTIONS 由 [legacyproxy.WithGraphQLRead](../../../../apps/api-go/internal/legacyproxy/proxy.go) 进入 [Handler.ServeHTTP](../../../../apps/api-go/internal/graphqlread/handler.go)，main 的路由表当前仅在总读或组织写 go 时将 /graphql 交给 Go；handler 构造虽增加 settingsWriteGo，但路由/资源初始化尚漏该独立条件。参数更长路径、协议升级与未支持 operation 回 Nest。
 
 [Engine.PlanDocument](../../../../apps/api-go/internal/graphqlread/exec/engine.go) 和 [operationSupported/selectionSupported](../../../../apps/api-go/internal/graphqlread/exec/walk.go) 在任何业务 resolver 执行前决定所有权：所选 operation 只要存在未注册 root、返回对象/所选字段不支持，就整份回退 Nest，不把多 root 操作拆到两边。解析/验证错误可能由 Go 协议层直接返回，不能把它计成业务已迁移。Mutation 串行执行的引擎能力也不等于 root 已注册。Subscription 根类型没有 Go executor，四个业务 Subscription 全部回退。
 
@@ -12,7 +12,7 @@ Nest `ApiGraphqlModule` 挂载 `/graphql`，没有 `/api` 前缀；配置和 Res
 
 ## 生产 Registry 与开关组合
 
-以下仅来自 [main.run](../../../../apps/api-go/cmd/api/main.go) 的 Register 调用和各 register.go；排除 *_test.go、SDL 声明和重复类型注册。
+以下仅来自 [main.run](../../../../apps/api-go/cmd/api/main.go) 的 Register 调用和各生产 Register 实现（包括 settingswrite/service.go）；排除 *_test.go、SDL 声明和重复类型注册。
 
 | 包/函数 | Query 数 | Mutation 数 | 必须为 go 的开关 | 模型与资源 |
 |---|---|---|---|---|
@@ -28,7 +28,9 @@ Nest `ApiGraphqlModule` 挂载 `/graphql`，没有 `/api` 前缀；配置和 Res
 | [itemsreading.Register](../../../../apps/api-go/internal/graphqlread/itemsreading/register.go) | 5 | 0 | `API_GO_GRAPHQL_READ_MODE + API_GO_ITEMS_READING_MODE` | workspace 未开时补三个 processed-item 模型，保持类型投影可用 |
 | [orgaccesswrite.Register](../../../../apps/api-go/internal/graphqlread/orgaccesswrite/register.go) | 0 | 8 | `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE（独立）` | 只开写时不需总读/Mongo；workspace.RegisterModels 单独复用 |
 
-所有当前 GraphQL 子模式默认 legacy，非法值启动失败；读子模式只有总读 go 才装配。只开组织写时 Query 仍走 Nest；GraphQL 顶层 OR、数据库/鉴权初始化与模型注册必须一起支持写独立性。其他两个历史写开关在 main 尚不存在，见任务记录，不能按本地候选代码标成可用。
+| [settingswrite.Register](../../../../apps/api-go/internal/graphqlread/settingswrite/service.go) | 0 | 13 | `SETTINGS_WRITE=go`，当前还需 `READ=go OR ORG_ACCESS_WRITE=go` | settingscrawl.RegisterSettingsModelTypes 复用；独立路由/资源初始化缺口见设置域 |
+
+所有当前 GraphQL 子模式默认 legacy，非法值启动失败；读子模式只有总读 go 才装配。只开组织写时 Query 仍走 Nest；GraphQL 顶层 OR、数据库/鉴权初始化与模型注册必须一起支持写独立性。设置写已合并，main 已识别开关但顶层独立接线有缺口，见[设置域](settings.md)；工作台写开关在 main 尚不存在。
 
 ## 必要字段权限与模型复用
 
@@ -39,6 +41,8 @@ Nest `ApiGraphqlModule` 挂载 `/graphql`，没有 `/api` 前缀；配置和 Res
 
 ## 真实缺口与验证
 
-6 个未注册 Query：`alertRules`、`archiveCalendar`、`archiveDetail`、`archiveDigest`、`crawlMetadata`、`items`。57 个 Mutation 里只有组织/角色/成员 8 写注册，其他精确缺口在域页；13+8 历史任务保留占用。4 个 Subscription：alertEvents、analysisEvents、assistantEvents、queueEvents，由 Nest Redis backplane 处理，详见[异步运行时](async-runtime.md)。
+6 个未注册 Query：`alertRules`、`archiveCalendar`、`archiveDetail`、`archiveDigest`、`crawlMetadata`、`items`。57 个 Mutation 里组织/角色/成员 8 写及设置 13 写已有生产 Register，共 21；设置写受上述额外顶层条件限制。其余 36 写未注册，其中工作台 8 写已占用；13 写不重复派发，剩余接线单列。4 个 Subscription：alertEvents、analysisEvents、assistantEvents、queueEvents，由 Nest Redis backplane 处理，详见[异步运行时](async-runtime.md)。
 
-普通 CI head 与地图基线一致，但不代表每种开关组合、每个所选返回字段或外部依赖已做额外集成。实际部署、配置与流量未核实。
+最新 main 普通 CI 在14:18快照仍进行中；此前 PR/main CI 成功也不代表每种开关组合、每个所选返回字段或外部依赖已做额外集成。实际部署、配置与流量未核实。
+
+本文 SETTINGS_WRITE / READ / ORG_ACCESS_WRITE 是 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE` / `API_GO_GRAPHQL_READ_MODE` / `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 的简写，所有组合以当前 main.run 实际接线为准。

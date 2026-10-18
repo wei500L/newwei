@@ -1,17 +1,17 @@
 # SETTINGS-WRITE-001 · GraphQL 设置中心写入
 
-所属模块：[settings](../modules/settings.md)；状态：**pr_open**。返回[认领索引](README.md)。
+所属模块：[settings](../modules/settings.md)；状态：**merged**。返回[认领索引](README.md)。
 
 ## 来源、基线与发布状态
 
 - 来源：用户本次明确粘贴的“已发出的任务线索”A/B，历史提示词已发出；原始发出/认领时间和执行会话 ID 未提供，不补造。此文件是依用户线索和当前源码恢复的持久化记录。
-- 规划/核对基线：`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`；首次入图：2026-10-18 13:51 MSK；任务更新时间：2026-10-18 14:03 MSK（UTC+03:00）。历史原始规划 SHA 未提供。
+- 规划/核对基线：`origin/main 7fc17faa3dc5043537bad4038299d11fdba4758d`；首次入图：2026-10-18 13:51 MSK；任务更新时间：2026-10-18 14:18 MSK（UTC+03:00）。历史原始规划 SHA 未提供。
 - 分支：`refactor/go-graphql-settings-write`；worktree：`/Users/oo/project/newwei-go-graphql-settings-write`；14:03 MSK 本机与远端 HEAD 为 `a1c96172b7ebf44a18ca71429d29dca8f9096d02`。
-- 远端增量核对：[Ready PR #68](https://github.com/wei500L/newwei/pull/68) 为 OPEN、isDraft=false；head `a1c96172b7ebf44a18ca71429d29dca8f9096d02`，base 为地图 main 基线。已推送 origin/refactor/go-graphql-settings-write；本机干净。早期“无 PR/未提交”快照已被此事实替代。
+- 远端增量核对：[PR #68](https://github.com/wei500L/newwei/pull/68) 于 2026-10-18 14:15:41 MSK 合并；实际 merge SHA 为 `3cedce9aa3200436aba3596f63b559de5490cec8`。14:18 MSK 已 fetch 并按 main 实际实现/生产注册复核；原任务实现不得重复派发。
 - 记录发布：本任务文档已随地图首版提交 `4e37f285` 推送至 origin/docs/backend-migration-map，并发布在 [Ready PR #69](https://github.com/wei500L/newwei/pull/69)（见[证据页](../EVIDENCE.md)）；本记录发布不等于业务分支已提交/推送。地图 PR 未合入前，main 上尚无本任务文档。
-- 实际业务 merge SHA：无；[业务普通 CI 39121676887](https://github.com/wei500L/newwei/actions/runs/39121676887) 对应上述 head，14:03 MSK verify/用户设置集成进行中，vector 集成排队，按需 regen skipped。结果需刷新；额外外部验证未核实。基线 CI 不能替代该 PR 的结果。
-- main 生产实现/注册：这 13 个 Mutation 尚未迁入；main 不识别 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE`，不能把“拟新增开关”当成可用配置。独立写开关是已发出任务目标；部署启用与流量均未核实。
-- 开工/提交证据：`50b8399d` 提交设置写实现，`a1c96172` 追加修复；PR 包含 settingswrite、settingscrawl、main/config 接线、共享 runtime 缓存及四个 Nest 设置服务优化、env/报告。已提交/推送/开 PR，不等于完整契约或 CI 已通过；本地图未执行业务运行验证。
+- 实际业务 merge SHA：`3cedce9aa3200436aba3596f63b559de5490cec8`；[PR head CI 39121676887](https://github.com/wei500L/newwei/actions/runs/39121676887) 对应 a1c96172，success；最新 main [CI 39122519950](https://github.com/wei500L/newwei/actions/runs/39122519950) 在14:18快照进行中。外部集成/实际部署/生产流量仍未核实。
+- main 实现/注册：13个业务写及开关已合入，生产 settingswrite.Register 已接在 main 构造中；settingscrawl 模型复用已实现。**独立写启用仍不完整**：graphqlRouteMode 和 needsCredentialedGo 漏 settingsWriteGo。只开本开关会缺鉴权/Redis或仍走legacy；当前实际需总读 go 或组织写 go，具体源码/症状见[设置域缺口](../modules/settings.md)。
+- 开工/提交证据：`50b8399d` 提交设置写实现，`a1c96172` 追加修复；PR 包含 settingswrite、settingscrawl、main/config 接线、共享 runtime 缓存及四个 Nest 设置服务优化、env/报告。已合并且 PR 普通 CI 通过，不等于完整开关组合或真实部署已通过；本地图未执行业务运行验证。
 
 ## 业务范围、事实源与优化
 
@@ -35,7 +35,7 @@
 
 数据/缓存：现有 SystemSetting 与既有组织设置键；必须与 Nest 共享 `crawl_client:settings`、`audit_log:retention_days`，核对 TTL/失效，不能另起 Go 私有键。事务、updatedBy/审计与授权保持现状。
 
-实际优化目标：分类 taxonomy 规范化；去重规则规范化并优化排序计算；保留现有含义而非引入兼容层。已看到本地实现文件不表示这些目标已经验收。
+实际优化目标：分类 taxonomy 规范化；去重规则规范化并优化排序计算；保留现有含义而非引入兼容层。已在 main 源码看到缓存共享、taxonomy 规范化和去重规范化实现；普通 CI 通过，跨运行时真实服务/开关组合尚未做本次额外验证。
 
 ## 文件范围与并行边界
 
@@ -47,16 +47,14 @@
 
 开关目标：`API_GO_GRAPHQL_SETTINGS_WRITE_MODE` 空/legacy/go、默认 legacy、非法值启动失败；只开写时必须初始化 MySQL/JWT/Redis 并接通精确 /graphql，不因读开关关闭强制 Mongo。写返回模型单独装配但避免与读注册重复；独立开关组合未完成前不能称为生产可用。
 
-## 可直接恢复执行的提示词
+## 已合并后的恢复提示词
 
-继续执行 SETTINGS-WRITE-001（GraphQL 设置中心写入）。先读 AGENTS.md、迁移地图、PLANNING.md 和本任务；fetch main 并查开放 PR、分支与认领，复用 `/Users/oo/project/newwei-go-graphql-settings-write` / `refactor/go-graphql-settings-write`，不要另开竞争性任务。若本地已有增量，保留并先审查，不 reset、不整段覆盖。以最新 main 源码核对上方精确 Mutation、权限、DTO/返回/缺省/null/错误语义，再实现上方业务与优化；其他范围严格排除。
+SETTINGS-WRITE-001 已经 #68 合入 main，不重新执行/重发这13个业务 Mutation，也不继续向已合并 PR 推送。先读地图、任务及最新 main 差异，核对上方独立开关剩余接线与 WORKSPACE-WRITE-001 的 main/config 共享增量。如果用户继续规划，另立最小且具体的接线任务或明确由工作台写在共享接线取并集，不自动扩展整批范围。本记录的精确13入口与历史文件范围保留作避免重复和契约追踪依据。
 
-Go 业务输入、返回、数据库 JSON、缓存和审计必须具名强类型；通用 GraphQL/驱动边界可沿用，扩展 JSON 叶子可用 json.RawMessage。按上方独立开关完成 config、路由 OR、资源初始化、Registry 与模型复用；与其他写任务共享接线取并集。保留现有鉴权、租户、校验与事务，不改 Nest 装饰器/签名，不扩建框架/锁/重试。源码注释英文、文档/提交/PR 中文。
-
-本机不安装依赖、不运行 build/test/Docker/服务；做精简静态核对、正常 push 后查看现有普通 CI，不默认加 smoke workflow，不把未调用外部服务写成通过。更新自己的任务与所属模块的候选实现、PR/head SHA/CI/剩余项；未合 main 不能增加 main 覆盖数。中文 emoji 提交，仅提交本任务改动，继续维护现有 Ready PR #68，不另建重复 PR；不合并、不 auto-merge、不 amend/rebase/force-push。
+遵循 PLANNING 的强类型、独立 worktree、中文 emoji 提交、普通 CI、Ready PR 和不合并/不 auto-merge/不 amend/rebase/force-push要求；本机不安装或运行 build/test/Docker/服务。源码注释英文、文档中文。未授权前不在本地图任务实施接线修复。
 
 ## 完成项、剩余项与恢复点
 
-已完成：历史占用已恢复、main 注册缺口与本地证据已核对、文件边界及执行提示词已持久化。业务完成项：PR #68 已有候选实现；无可确认的 main 合并范围。
+已完成：历史任务和13个精确root已持久化；#68实现、开关、模型注册、共享Redis/规范化优化已合入 main，实际 merge SHA 和 PR CI 有证据。
 
-剩余：上方 13 个 Mutation 的实现/公共接线完整性、优化验收、PR 后续修复/普通 CI、地图更新；额外验证/部署各自记录。本次只建图，不修改或重新派发业务任务。下一次先复查 worktree 和对应 PR，再决定状态升级。
+剩余：设置写独立启用的顶层路由 OR 与鉴权/Redis 初始化缺口、完整契约和优化额外验证、main当前CI结果、实网调用/部署。merged 仅表示实际落地主体，不能掩盖这些剩余项；不自动重新认领13写。
