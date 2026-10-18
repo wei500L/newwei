@@ -533,6 +533,10 @@ func run() error {
 	if cfg.SituationMonitorsMode == config.SituationMonitorsModeGo {
 		situationMonitorsMode = string(legacyproxy.ModeGo)
 	}
+	situationSignalsMode := ""
+	if cfg.SituationSignalsMode == config.SituationSignalsModeGo {
+		situationSignalsMode = string(legacyproxy.ModeGo)
+	}
 	newsSourcesMode := ""
 	if cfg.NewsSourcesMode == config.NewsSourcesModeGo {
 		newsSourcesMode = string(legacyproxy.ModeGo)
@@ -633,6 +637,7 @@ func run() error {
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
 	rules = legacyproxy.WithGraphQLRead(rules, string(cfg.GraphQLReadMode))
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
+	rules = legacyproxy.WithSituationSignals(rules, situationSignalsMode)
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
@@ -787,13 +792,18 @@ func run() error {
 	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
 	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
+	// The situation monitor signals takeover needs the same credentialed stack
+	// (JWT verification, Redis revocation list, MySQL membership re-derivation)
+	// as the other migrated domains, so it participates in the shared assembly.
+	situationSignalsGo := cfg.SituationSignalsMode == config.SituationSignalsModeGo
 	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
 	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
 	exceptionIngestGo := cfg.ExceptionIngestMode == config.ExceptionIngestModeGo
-	// 平行批次追加的模式全部保留（#53 frontier、#55 infrastructure、#56 model
-	// access、#54 platform governance、#64 exception ingest、#60 account
-	// security、本批 data runtime）。任一变量改成本批所需值都不影响其他批次接线。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo
+	// 平行批次追加的模式全部保留（#53 frontier、#54 platform governance、#55
+	// infrastructure、#56 model access、#57 situation monitor signals、#60 account
+	// security、#61 data runtime、#64 exception ingest）。任一变量改成本批所需值
+	// 都不影响其他批次接线。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1158,6 +1168,10 @@ func run() error {
 	}
 
 	if err := wireModelAccessSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+
+	if err := wireSituationSignals(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
 		return err
 	}
 
