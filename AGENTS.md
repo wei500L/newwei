@@ -1,5 +1,9 @@
 # Repository Guidelines
 
+## Backend Migration Navigation
+
+进行后端迁移规划或相关进度更新前，先读取 [迁移地图入口](docs/refactor/migration-map/README.md) 和 [规划规则](docs/refactor/migration-map/PLANNING.md)。
+
 ## Project Structure & Module Organization
 
 This pnpm + Turborepo workspace splits runtime apps under `apps/`: `apps/api` exposes the NestJS GraphQL/REST gateway, and `apps/web` powers the Next.js console. Shared code lives in `packages/` (`db` for Prisma schema + seeds, `config` for lint/tsconfig presets, `utils` for Zod loaders/loggers, `mongo` for Mongoose helpers). Operational assets sit in `infra/` (Docker compose files plus helper scripts). Place new modules beside the feature they serve; extract to `packages/utils` only when the logic is reused by multiple apps.
