@@ -915,6 +915,18 @@ jobs:
               }, source=SRC_A_BOTH),
           ]
           mongo_insert("processeditems", processed_docs)
+          # The Mongo text indexes are created by the Mongoose schemas in
+          # production; the smoke inserts documents directly, so it must create
+          # them too or every $text recall would fail.
+          mongo("db.getCollection('processeditems').createIndex("
+                "{'result.title':'text','result.subtitle':'text','result.summary':'text','result.topics':'text',"
+                "'result.key_points':'text','result.entities.name':'text','result.location':'text','tags':'text'},"
+                "{name:'processed_item_org_status_search_text',default_language:'none',"
+                "weights:{'result.title':10,'result.subtitle':6,'result.summary':4,'result.topics':5,"
+                "'result.key_points':4,'result.entities.name':5,'result.location':3,'tags':2}});")
+          mongo("db.getCollection('itemreadmodels').createIndex("
+                "{'title':'text','summary':'text','sourceName':'text','searchText':'text','topics':'text',"
+                "'entities':'text','externalId':'text'});")
 
           def read_model_doc(item_id, item_org, title, sort_day, payload, processed, duplicate=None, region="EU"):
               return {
