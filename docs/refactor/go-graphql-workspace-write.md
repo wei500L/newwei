@@ -158,9 +158,13 @@ Go 侧 `AlertDelivery` 没有 `orgId` 列：租户范围通过目标渠道（已
 
 ## 验证
 
-- 普通 GitHub Actions CI（构建、类型检查、Go 测试、Web 测试、SDL/契约漂移检查）结果见 PR 记录；本批不新增专用 smoke workflow。
+- 普通 GitHub Actions CI：run [39124393842](https://github.com/wei500L/newwei/actions/runs/39124393842)（`CI`，success，11m2s）。
+  - `verify` job success（[job 117666363836](https://github.com/wei500L/newwei/actions/runs/39124393842/job/117666363836)）：Go modules 漂移门禁、GraphQL codegen 漂移、Lint（`go vet`，即本批新增 Go 代码的编译检查）、Typecheck（Nest TS 改动）、Web 组件测试、Vector 单测、API 单测、OpenAPI 快照、鉴权矩阵、**GraphQL SDL 漂移**（SDL 未改）、**Go tests（`go test ./...`，含本批新增单测）**、Compose 镜像 pin、SBOM。
+  - `vector-integration` success、`api-go-user-settings-integration` success；`api-go-items-reading-smoke` 与 `api-go-newsnow-clustering-ops-smoke` 按路径过滤 skipped（本批不新增 smoke workflow）。
 - 新增 Go 单元测试 `apps/api-go/internal/graphqlread/workspacewrite/workspacewrite_test.go`（纯函数）：未变化组件不产生 UPDATE、对象键顺序
   不影响比较而数组顺序影响、`sortOrder` 缺省取输入下标、未知组件 id 报错、feedback 合并不丢未知字段与显式 null note、`?? {}` 默认、邮箱
-  规范化与 webhook SSRF 同步拒绝、错误映射。新增 `internal/config/config_workspacewrite_test.go` 覆盖开关默认值/非法值/凭据要求。
+  规范化与 webhook SSRF 同步拒绝、错误映射；`internal/graphqlread/exec/mutation_test.go` 增加本批 8 个 root 的整包归属用例（只注册
+  workspace/alert/history 模型时这 8 个进入 Execute，混入未接管 root 或只读 root 时整包回 legacy）；新增
+  `internal/config/config_workspacewrite_test.go` 覆盖开关默认值/非法值/凭据要求。
 - 本机不运行 `go build` / `go test` / `pnpm` / `docker`：验证以普通 CI 为主。
 - 未验证：真实 SMTP 投递、真实 webhook 发送、真实队列消费、真实告警扫描评估。本批只迁移配置保存与本地业务写。
