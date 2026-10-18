@@ -1260,7 +1260,9 @@ jobs:
           if status != 400 or message_of(raw) != ("SYSTEM_SETTINGS_ENCRYPTION_KEY is required to "
                                                   "store secrets in production"):
               fail(f"go production no key: {status} {message_of(raw)!r}")
-          # 显式 false 是逃生舱：即使有 key 也存明文。
+          # 显式 false 是逃生舱：有合法 key 但策略显式关闭 → 仍存明文。
+          # 必须先用有效 key 重启 Go：上一个容器没有 key，任何密钥写入都会 400。
+          start_go("go", encryption_key=VALID_KEY)
           set_setting("system_security", json.dumps({"secretEncryptionEnabled": False}))
           redis("DEL", "system_security:settings")
           request_json("go explicit false", GO_URL, "PUT", REALTIME_PATH, platform_token,

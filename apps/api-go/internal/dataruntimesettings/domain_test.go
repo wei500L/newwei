@@ -896,7 +896,7 @@ func TestRealtimePublicSettingsEnvCase(t *testing.T) {
 
 	// A stored value wins over the environment and reports "stored".
 	stored := parseStoredRealtimeSettings(json.RawMessage(`{"acledOauthClientId":"stored-client"}`))
-	effective, err := service.resolveEffectiveSettings(stored)
+	effective, err = service.resolveEffectiveSettings(stored)
 	if err != nil {
 		t.Fatal(err)
 	}
