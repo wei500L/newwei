@@ -6,6 +6,8 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 本批整合（2026-10-18）：main=`90765633ac6ba2b1d97a89d0ec33be90cb69bcb7`。开放 PR [#80](https://github.com/wei500L/newwei/pull/80)/[#85](https://github.com/wei500L/newwei/pull/85)（规划）与 [#81](https://github.com/wei500L/newwei/pull/81)/[#82](https://github.com/wei500L/newwei/pull/82)/[#83](https://github.com/wei500L/newwei/pull/83)/[#84](https://github.com/wei500L/newwei/pull/84)/[#86](https://github.com/wei500L/newwei/pull/86)/[#87](https://github.com/wei500L/newwei/pull/87)（实现）由[整合 PR #89](https://github.com/wei500L/newwei/pull/89)（分支 `integration/merge-open-prs-b80-87`）以 merge commit 一次性收口（冲突按开关/键取并集，未 squash/rebase/force-push）；8 个 head：84f8ffde、e8ac410e、0b89196f、52340760、2c52763c、38e4e0e1、4d6d24b8、2b0da7ec。下表为本批收口后的当前占用事实，每个任务 ID 只有一行；merged 回填（merge SHA 与 CI 证据）由后续文档提交完成。以下“最新…”段落为各次发出快照（不同会话交错），不覆盖本段与下表。
 
+本批续并（2026-10-18）：[RSS-TRANSLATION-001](RSS-TRANSLATION-001.md) 的[Ready PR #88](https://github.com/wei500L/newwei/pull/88)（head d4117032，+3692/-35，26 文件，自身普通 CI 成功）在整合 PR #89 之后由集成分支 `integration/merge-open-prs-b88` 单独收口；下表该行由 reserved 归一为 pr_open，均随本批进入 main。
+
 最新复核选批（2026-10-18）：main90765633/普通CI39149114456 success；#81网关head0b89196f、#82来源策略head52340760、#83OIDC head2c52763c均Ready开放，CSV导出已见独立目录开发。新增[KNOWLEDGE-REVIEW-001](KNOWLEDGE-REVIEW-001.md) reserved，人工证据复核/关系校正/边聚合与队列选取改善；[完整提示词](KNOWLEDGE-REVIEW-001.prompt.md)随规划#80发布，未创建业务目录/PR。后续“最新”段落为各次发出快照，以本段及下表为本次占用事实；不干预已运行编码对话。
 
 最新RSS选批（2026-10-18）：main仍90765633，#81/#82/#83/#84仍Ready且head分别0b89196f/52340760/2c52763c/38e4e0e1；已核其实际文件/共享接线，#81的llmlogs私有metadata helper重命名由新writer隔离。KNOWLEDGE-REVIEW-001目录已见review.go/new包开发，状态in_progress；DIGEST-DELIVERY-001目录已创建于main、未见业务改动，仍reserved，存在不代表代理在线。新增[RSS-TRANSLATION-001](RSS-TRANSLATION-001.md) reserved，[提示词](RSS-TRANSLATION-001.prompt.md)随[Ready规划PR #85](https://github.com/wei500L/newwei/pull/85)发出，业务目录未创建。只领取BL-24的RSS翻译，不重复派发其他item/采集/异步范围。
@@ -32,7 +34,7 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 | ID | 状态 | 精确范围 | 是否已有业务 PR / 推送 |
 |---|---|---|---|
-| [RSS-TRANSLATION-001](RSS-TRANSLATION-001.md) | reserved | RSS翻译Mutation完整双provider/正文分块/缓存/指标日志；修状态共享缓存投影写回 | #85发布任务与提示词；未创建业务目录/PR，不计main增量 |
+| [RSS-TRANSLATION-001](RSS-TRANSLATION-001.md) | pr_open | RSS翻译Mutation完整双provider/正文分块/缓存/指标日志；修状态共享缓存投影写回 | Ready #88，headd4117032，实际diff已核；不计入main |
 | [DIGEST-DELIVERY-001](DIGEST-DELIVERY-001.md) | pr_open | 摘要定时投递：Cron、到期CAS、SMTP、状态和摘要通知桥 | Ready #87，head2b0da7ec，实际diff已核；不计入main；原五HTTP不重迁 |
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |
 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | merged | 8 个通知/看板/告警交互写 | #70经#77进入main c39f282f；实际原PR merge 8e1ff896，旧业务目录干净；整合main普通CI成功，非生产启用证据 |

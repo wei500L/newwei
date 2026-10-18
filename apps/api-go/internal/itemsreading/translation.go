@@ -47,14 +47,19 @@ type situationMonitorSettingsCache struct {
 }
 
 // situationMonitorStored is the typed view of the situation_monitor_settings
-// SystemSetting value. Only the translation fields the status query reads are
-// modelled.
+// SystemSetting value. Only the translation fields the status query and the
+// RSS translation runtime read are modelled. The three numeric leaves keep the
+// raw JSON so a stored string or number is coerced like the NestJS
+// asBoundedInt helper instead of failing the whole document decode.
 type situationMonitorStored struct {
-	TranslationAPIEnabled      *bool     `json:"translationApiEnabled"`
-	TranslationAPIBaseURL      *string   `json:"translationApiBaseUrl"`
-	TranslationAPIKey          *OpenJSON `json:"translationApiKey"`
-	TranslationFallbackEnabled *bool     `json:"translationFallbackApiEnabled"`
-	TranslationFallbackBaseURL *string   `json:"translationFallbackApiBaseUrl"`
+	TranslationAPIEnabled      *bool           `json:"translationApiEnabled"`
+	TranslationAPIBaseURL      *string         `json:"translationApiBaseUrl"`
+	TranslationAPIKey          *OpenJSON       `json:"translationApiKey"`
+	TranslationFallbackEnabled *bool           `json:"translationFallbackApiEnabled"`
+	TranslationFallbackBaseURL *string         `json:"translationFallbackApiBaseUrl"`
+	TranslationAPITimeoutMs    json.RawMessage `json:"translationApiTimeoutMs"`
+	TranslationAPIMaxRetries   json.RawMessage `json:"translationApiMaxRetries"`
+	TranslationMaxConcurrency  json.RawMessage `json:"translationMaxConcurrency"`
 }
 
 // llmGatewayProfile is the typed view of one stored LLM gateway profile.
@@ -68,15 +73,6 @@ type llmGatewayProfile struct {
 type llmGatewaySettings struct {
 	ActiveID *string             `json:"activeId"`
 	Profiles []llmGatewayProfile `json:"profiles"`
-}
-
-// translationRuntimeConfig is the resolved DeepLX runtime configuration.
-type translationRuntimeConfig struct {
-	Enabled         bool
-	BaseURL         string
-	APIKey          string
-	FallbackEnabled bool
-	FallbackBaseURL string
 }
 
 // ReadJSONSystemSetting reads one SystemSetting JSON value. The second result
@@ -181,7 +177,7 @@ func isChineseTargetLanguage(value string) bool {
 }
 
 // deepLxConfigError ports buildDeepLxConfigError.
-func deepLxConfigError(runtime translationRuntimeConfig) string {
+func deepLxConfigError(runtime TranslationRuntimeConfig) string {
 	if !runtime.Enabled {
 		return messageDeepLxDisabled
 	}
@@ -195,7 +191,7 @@ func deepLxConfigError(runtime translationRuntimeConfig) string {
 }
 
 // fallbackConfigError ports buildFallbackConfigError.
-func fallbackConfigError(runtime translationRuntimeConfig) string {
+func fallbackConfigError(runtime TranslationRuntimeConfig) string {
 	if !runtime.FallbackEnabled {
 		return messageFallbackDisabled
 	}
@@ -260,12 +256,12 @@ func profileEnabled(profile llmGatewayProfile) bool {
 
 // translationRuntimeConfig loads the stored settings and applies the
 // stored -> env -> default precedence exactly like resolveEffectiveConfig.
-func (s *Service) translationRuntimeConfig(ctx context.Context) (translationRuntimeConfig, error) {
+func (s *Service) translationRuntimeConfig(ctx context.Context) (TranslationRuntimeConfig, error) {
 	stored, err := s.loadSituationMonitorSettings(ctx)
 	if err != nil {
-		return translationRuntimeConfig{}, err
+		return TranslationRuntimeConfig{}, err
 	}
-	config := translationRuntimeConfig{}
+	config := TranslationRuntimeConfig{}
 	config.Enabled = boolWithFallback(storedBool(stored, func(value situationMonitorStored) *bool {
 		return value.TranslationAPIEnabled
 	}), envBoolDefault("SITUATION_MONITOR_TRANSLATION_API_ENABLED", true))
@@ -287,6 +283,29 @@ func (s *Service) translationRuntimeConfig(ctx context.Context) (translationRunt
 			return value.TranslationFallbackBaseURL
 		})),
 		normalizeURLString(os.Getenv("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL")),
+	)
+	// Bounds and env names mirror resolveEffectiveConfig / env.schema.ts:
+	// timeout 1000..120000 (env default 15000), retries 0..5 (env default 2)
+	// and concurrency 1..5000 (stored only, default 2).
+	config.TimeoutMs = translationStoredIntDefault(
+		storedRawMessage(stored, func(value situationMonitorStored) json.RawMessage {
+			return value.TranslationAPITimeoutMs
+		}),
+		"SITUATION_MONITOR_TRANSLATION_TIMEOUT_MS",
+		15_000, 1_000, 120_000,
+	)
+	config.MaxRetries = translationStoredIntDefault(
+		storedRawMessage(stored, func(value situationMonitorStored) json.RawMessage {
+			return value.TranslationAPIMaxRetries
+		}),
+		"SITUATION_MONITOR_TRANSLATION_MAX_RETRIES",
+		2, 0, 5,
+	)
+	config.MaxConcurrency = clampTranslationInt(
+		jsNumericTrunc(storedRawMessage(stored, func(value situationMonitorStored) json.RawMessage {
+			return value.TranslationMaxConcurrency
+		}), 2),
+		1, 5_000,
 	)
 	return config, nil
 }
@@ -330,6 +349,15 @@ func storedRawJSON(stored *situationMonitorStored, pick func(situationMonitorSto
 		return OpenJSON{}
 	}
 	return *value
+}
+
+// storedRawMessage returns the raw JSON of one stored numeric leaf. A missing
+// document or a missing field yields nil, which the coercion treats as absent.
+func storedRawMessage(stored *situationMonitorStored, pick func(situationMonitorStored) json.RawMessage) json.RawMessage {
+	if stored == nil {
+		return nil
+	}
+	return pick(*stored)
 }
 
 func boolWithFallback(value *bool, fallback bool) bool {
@@ -400,9 +428,15 @@ func derefOpenJSON(value *OpenJSON) OpenJSON {
 	return *value
 }
 
-// loadLLMGatewaySettings reads the llm_gateway_profiles cache (stored directly,
-// without an exists wrapper), falls back to MySQL, and normalizes the profiles
-// the same way normalizeSettings does.
+// loadLLMGatewaySettings reads the canonical llm_gateway:profiles cache
+// (stored directly, without an exists wrapper) and otherwise projects the MySQL
+// row into the narrow status shape. It deliberately does not write the
+// projection back: the shared key holds the full NestJS normalized settings
+// (apiBase/apiKey/protocol and every other consumer's configuration), so
+// refilling it with only activeId/id/model/enabled would corrupt that canonical
+// cache. A miss stays a read-only path; the cache is left to its owner
+// (LlmGatewaySettingsService), and the full profile is read from MySQL by the
+// RSS translation runtime.
 func (s *Service) loadLLMGatewaySettings(ctx context.Context) (llmGatewaySettings, error) {
 	if payload, ok := s.cache.Get(ctx, llmGatewayProfilesCacheKey); ok {
 		var cached llmGatewaySettings
@@ -418,11 +452,7 @@ func (s *Service) loadLLMGatewaySettings(ctx context.Context) (llmGatewaySetting
 	if exists && value.Valid() {
 		_ = json.Unmarshal(value.Bytes(), &settings)
 	}
-	normalized := normalizeLLMGatewaySettings(settings)
-	if encoded, err := json.Marshal(normalized); err == nil {
-		_ = s.cache.Set(ctx, llmGatewayProfilesCacheKey, encoded, llmGatewayProfilesTTL)
-	}
-	return normalized, nil
+	return normalizeLLMGatewaySettings(settings), nil
 }
 
 // normalizeLLMGatewaySettings drops profiles without an id or model (matching

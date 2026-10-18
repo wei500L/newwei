@@ -33,6 +33,10 @@ type GatewayEnv struct {
 	APIKey        string
 	TimeoutMs     int
 	MaxRetries    int
+	// TopP is the LITELLM_TOP_P gateway default (0.9). It is the fallback for a
+	// profile without an explicit topP and is only consumed by the RSS
+	// translation completion surface; the brief request keeps its own 0.9.
+	TopP float64
 }
 
 type completionRequest struct {
@@ -61,6 +65,10 @@ type completionProfile struct {
 	SendMetadata       bool
 	ResponseFormatMode string
 	APISurface         string
+	// TopP mirrors the normalized profile topP (clamped 0..1, env default 0.9).
+	// Only the RSS translation request uses it; the brief request keeps its own
+	// literal 0.9.
+	TopP float64
 	// Governance mirrors Nest's resolved config after
 	// applyManagedProxyGovernance: whether the managed runtime key replaced
 	// the profile key, the auth mode the request used, and the governance
@@ -93,6 +101,9 @@ func newGateway(store BriefSettingsReader, env GatewayEnv) *gatewayClient {
 	}
 	if env.MaxRetries <= 0 {
 		env.MaxRetries = 3
+	}
+	if env.TopP <= 0 {
+		env.TopP = 0.9
 	}
 	return &gatewayClient{store: store, env: env, http: &http.Client{}}
 }
@@ -472,6 +483,9 @@ func resolveCompletionProfile(profilesJSON, governanceJSON []byte, env GatewayEn
 	if env.MaxRetries <= 0 {
 		env.MaxRetries = 3
 	}
+	if env.TopP <= 0 {
+		env.TopP = 0.9
+	}
 	var settings struct {
 		ActiveID string            `json:"activeId"`
 		Profiles []json.RawMessage `json:"profiles"`
@@ -551,6 +565,13 @@ func normalizeProfile(raw []byte, env GatewayEnv) (completionProfile, bool) {
 		SendMetadata:       jsonBool(record["sendMetadata"], true),
 		ResponseFormatMode: jsonString(record["responseFormatMode"]),
 		APISurface:         jsonString(record["apiSurface"]),
+	}
+	// Nest clamps a stored topP to 0..1 and otherwise keeps the env default.
+	profile.TopP = env.TopP
+	if storedTopP, ok := record["topP"]; ok {
+		if number, ok := finiteNumber(storedTopP); ok {
+			profile.TopP = math.Max(0, math.Min(1, number))
+		}
 	}
 	if profile.ResponseFormatMode == "" {
 		profile.ResponseFormatMode = "json_schema"
