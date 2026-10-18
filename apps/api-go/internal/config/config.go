@@ -1008,6 +1008,36 @@ const (
 	AuthLoginModeGo AuthLoginMode = "go"
 )
 
+// OIDCLoginMode controls the organization SSO login entries migrated by
+// API_GO_OIDC_LOGIN_MODE:
+//
+//	GET  /api/auth/sso/oidc/start
+//	GET  /api/auth/oidc/callback
+//	POST /api/auth/sso/handoff/exchange
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" keep all three requests on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. The default is always legacy.
+//
+// go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST because it reuses the
+// migrated trusted-login core (JWT signing, MySQL session/membership state and
+// Redis state/discovery/JWKS caches). It never requires MONGO_URI, SMTP_*,
+// AUTH_LOGIN/AUTH_FACTORS/ACCOUNT_SECURITY/IDENTITY_ONBOARDING go modes or an
+// enabled GraphQL executor. API_BASE_URL stays a request-time requirement: a
+// missing value fails the start/callback request with the source 400 and never
+// blocks gateway startup. Rolling back only means setting this variable back to
+// legacy; state, caches, sessions, refresh tokens and handoff rows stay
+// readable by NestJS because every key and column format is shared.
+type OIDCLoginMode string
+
+const (
+	// OIDCLoginModeLegacy proxies all three routes to NestJS (default,
+	// including the empty value).
+	OIDCLoginModeLegacy OIDCLoginMode = "legacy"
+	// OIDCLoginModeGo serves the three SSO entries from Go.
+	OIDCLoginModeGo OIDCLoginMode = "go"
+)
+
 // IdentityOnboardingMode controls the fourteen registration, invitation and
 // registration-application routes migrated by this unit
 // (API_GO_IDENTITY_ONBOARDING_MODE).
@@ -1435,6 +1465,14 @@ type Config struct {
 	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and the SMTP_* transport; it
 	// does not require Mongo and does not start any worker or scheduled job.
 	AuthLoginMode AuthLoginMode
+	// OIDCLoginMode controls the three public organization SSO login entries
+	// (see OIDCLoginMode). Default legacy. Mode go requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST; API_BASE_URL is validated per request.
+	OIDCLoginMode OIDCLoginMode
+	// APIBaseURL is the untrimmed API_BASE_URL used only to build the IdP
+	// redirect_uri. It stays optional at startup: the source answers a missing
+	// value with the request-time 400 "API_BASE_URL is required for OIDC".
+	APIBaseURL string
 	// IdentityOnboardingMode controls the fourteen registration, invitation and
 	// registration-application routes (see IdentityOnboardingMode). Default
 	// legacy. Mode go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and the
@@ -2167,6 +2205,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_AUTH_LOGIN_MODE must be one of legacy|go")
 	}
+	// The OIDC login switch accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy, so an unset deployment keeps all three
+	// SSO routes on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_OIDC_LOGIN_MODE")) {
+	case "", string(OIDCLoginModeLegacy):
+		cfg.OIDCLoginMode = OIDCLoginModeLegacy
+	case string(OIDCLoginModeGo):
+		cfg.OIDCLoginMode = OIDCLoginModeGo
+	default:
+		errs = append(errs, "API_GO_OIDC_LOGIN_MODE must be one of legacy|go")
+	}
 	// The registration/invitation switch accepts the empty string, legacy and
 	// go. An empty value behaves exactly like legacy, so an unset deployment
 	// keeps serving all fourteen routes through NestJS.
@@ -2385,6 +2434,10 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.NextAuthURL == "" {
 		cfg.NextAuthURL = "http://localhost:3000"
 	}
+	// API_BASE_URL keeps its raw value. The OIDC redirect_uri builder applies
+	// trim and the optional trailing /api removal at request time, exactly like
+	// the NestJS controller.
+	cfg.APIBaseURL = getenv("API_BASE_URL")
 	// SMTP transport. The host/port/user/pass quartet is required by the NestJS
 	// EnvService smtpConfig getter (getOrThrow); the remaining values keep the
 	// documented defaults, with SMTP_FROM falling back to the authenticated user.
@@ -3000,6 +3053,12 @@ func Load(getenv func(string) string) (Config, error) {
 		if cfg.SMTP.Pass == "" {
 			errs = append(errs, "SMTP_PASS is required when API_GO_AUTH_LOGIN_MODE=go")
 		}
+	}
+	// The OIDC login takeover needs JWT signing/verification, MySQL and Redis
+	// only. It starts no worker and contacts the IdP only when a request needs
+	// discovery/token/JWKS, so no IdP URL or secret is a startup condition.
+	if cfg.OIDCLoginMode == OIDCLoginModeGo {
+		appendAuthRequirements(&errs, "API_GO_OIDC_LOGIN_MODE", cfg)
 	}
 	// The registration/invitation takeover needs the same credentialed stack as
 	// the login batch plus the real SMTP transport: invitation creation, resend

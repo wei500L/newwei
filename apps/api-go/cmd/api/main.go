@@ -687,6 +687,10 @@ func run() error {
 	if cfg.IdentityOnboardingMode == config.IdentityOnboardingModeGo {
 		identityOnboardingMode = string(legacyproxy.ModeGo)
 	}
+	oidcLoginMode := ""
+	if cfg.OIDCLoginMode == config.OIDCLoginModeGo {
+		oidcLoginMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -766,6 +770,9 @@ func run() error {
 	// under /api/auth. It shares no path with the three neighbouring auth units,
 	// so the order between them is irrelevant.
 	rules = legacyproxy.WithIdentityOnboarding(rules, identityOnboardingMode)
+	// The three public organization-SSO entries are an independent auth unit
+	// with its own switch; no OIDC configuration CRUD is registered here.
+	rules = legacyproxy.WithOIDCLogin(rules, oidcLoginMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -834,6 +841,7 @@ func run() error {
 				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
 				cfg.AuthLoginMode == config.AuthLoginModeGo ||
 				cfg.IdentityOnboardingMode == config.IdentityOnboardingModeGo ||
+				cfg.OIDCLoginMode == config.OIDCLoginModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.CrawlMetadataMode == config.CrawlMetadataModeGo ||
@@ -930,6 +938,7 @@ func run() error {
 	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
 	authLoginGo := cfg.AuthLoginMode == config.AuthLoginModeGo
 	identityOnboardingGo := cfg.IdentityOnboardingMode == config.IdentityOnboardingModeGo
+	oidcLoginGo := cfg.OIDCLoginMode == config.OIDCLoginModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
 	// The situation monitor signals takeover needs the same credentialed stack
 	// (JWT verification, Redis revocation list, MySQL membership re-derivation)
@@ -961,7 +970,7 @@ func run() error {
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || cfg.GraphQLSettingsWriteMode == "go" ||
 		sourcePolicyWriteGo ||
-		identityOnboardingGo ||
+		identityOnboardingGo || oidcLoginGo ||
 		searchReindexGo || proxyLoadBalancingGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
@@ -1368,6 +1377,9 @@ func run() error {
 	if err := wireAuthLogin(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
+	if err := wireOIDCLogin(gateway, cfg, sharedDB, redisClient); err != nil {
+		return err
+	}
 	if err := wireIdentityOnboarding(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
@@ -1539,6 +1551,12 @@ func run() error {
 			// NestJS；不含连接串、令牌、hash 与邮件凭据。
 			"identityOnboarding": map[string]any{
 				"mode": string(cfg.IdentityOnboardingMode),
+			},
+			// The three public organization-SSO HTTP entries. While legacy they
+			// all fall back to NestJS; this diagnostic contains no IdP URL,
+			// client secret, state, handoff token or session token.
+			"oidcLogin": map[string]any{
+				"mode": string(cfg.OIDCLoginMode),
 			},
 		})
 	})
