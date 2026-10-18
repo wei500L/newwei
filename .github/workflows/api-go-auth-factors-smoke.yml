@@ -1824,18 +1824,23 @@ jobs:
                   request_json(label + " malformed " + repr(bad), base, "POST", VERIFY_ENROLL_PATH,
                                token, {"code": bad}, 400, INVALID_CODE)
               # 前导零：找一个当前窗口代码以 '0' 开头的 secret，服务端必须保留补零。
+              # 代码只在找到候选的那一刻计算一次并原样发送：服务端接受
+              # counter-1/0/+1，所以即便请求跨过 30 秒窗口边界仍然成立；重新
+              # 计算会引入跨窗口抖动（曾观察到 235488 这类非零前缀）。
               leading = None
+              code = None
               for _ in range(400):
                   candidate = random_secret()
-                  if totp_now(candidate).startswith("0"):
+                  candidate_code = totp_now(candidate)
+                  if candidate_code.startswith("0"):
                       leading = candidate
+                      code = candidate_code
                       break
-              if leading is None:
+              if leading is None or code is None:
                   fail(label + " leading zero: no secret with a zero-prefixed current code found")
+              if len(code) != 6:
+                  fail(label + " leading zero: local code is not six digits: " + code)
               reseed(leading)
-              code = totp_now(leading)
-              if len(code) != 6 or not code.startswith("0"):
-                  fail(label + " leading zero: local code is not a zero-padded six digit string: " + code)
               doc = request_json(label + " leading zero code " + code, base, "POST", VERIFY_ENROLL_PATH,
                                  token, {"code": code}, 201)
               require_codes_match_db(label + " leading zero code", user_id, doc["recoveryCodes"])
