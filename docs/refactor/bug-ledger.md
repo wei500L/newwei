@@ -973,8 +973,11 @@ retentionDays must not be greater than 3650; retentionDays must not be less than
 > 基线 `f5648fab`（origin/main）· 分支 `refactor/go-proxy-load-balancing` · 开关
 > `API_GO_PROXY_LOAD_BALANCING_MODE`。五条均为本批明确要求改变的行为，不得以「兼容
 > 旧行为」保留。行号在开工时按该基线逐行复核。
-> 状态：✅ Nest 与 Go 两侧已修复（LB0–LB4）。远端普通 CI 结果见
-> `docs/refactor/go-proxy-load-balancing.md` §9。
+> 状态：✅ Nest 与 Go 两侧已修复（LB0–LB4）。远端普通 CI（`verify`）在代码 head
+> `0bc75855` 上 success：
+> [run 39085013073](https://github.com/wei500L/newwei/actions/runs/39085013073)
+> （Lint/Typecheck/Web 覆盖率/vector/API Vitest/OpenAPI 漂移/auth-matrix 漂移/Go
+> tests/Build 全绿）。细节见 `docs/refactor/go-proxy-load-balancing.md` §9。
 
 ### LB0 全局负载均衡配置写接口缺平台管理员门禁（P0）
 

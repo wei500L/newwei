@@ -190,9 +190,33 @@ Go 只需要现有 JWT、MySQL、Redis，不要求 Mongo；内部 token 未配�
 
 ## 9. 远端验证结果
 
-待普通 GitHub Actions CI（lint/typecheck/web 覆盖率/vector/API Vitest/OpenAPI 漂移/
-auth-matrix 漂移/api-go 测试）在最终 head 上完成后回填。本批不新增专用 smoke
-workflow。
+普通 CI（`verify`）在代码 head `0bc75855` 上全绿：
+[run 39085013073](https://github.com/wei500L/newwei/actions/runs/39085013073)，
+conclusion **success**，覆盖：
+
+| 步骤 | 结果 |
+|---|---|
+| Go modules drift gate（api-go go.mod/go.sum） | success |
+| GraphQL codegen drift check | success |
+| Lint（含 `go vet ./...`） | success |
+| Typecheck | success |
+| Web component tests with coverage | success |
+| Vector unit tests | success |
+| API unit tests（SEC-01 / API-01 regression + route scanner） | success |
+| OpenAPI contract snapshot determinism + drift check | success |
+| Auth matrix drift check（fail-closed） | success |
+| GraphQL SDL drift check | success |
+| Go tests（api-go gateway + vector-go pilot） | success |
+| Compose image pin check | success |
+| Build | success |
+
+同一 run 的 `api-go-user-settings-integration` 与 `vector-integration` 也 success。
+本批**不新增专用 smoke workflow**：真实栈配置下发验证沿用既有普通 CI，实际请求路由
+不由 Go 验收（仍由 LiteLLM 执行）。
+
+> 本文件与 `bug-ledger.md` 的验证证据是随后追加的 docs-only 提交；上表对应的代码
+> head 为 `0bc75855`，docs-only 提交不改变任何代码，同一 CI 通道在新 head 上重跑并
+> 保持 success（见 PR #66 评论）。
 
 ## 10. 明确未验证 / 刻意保留
 
