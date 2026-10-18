@@ -8,7 +8,7 @@
 
 WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆盖剩余 alertRules/规则三写。SETTINGS-WRITE-001 merged，不重迁 13 写。以下所有“可独立窗口”仍须先做 PLANNING 的远端刷新；共享 main/config/模型装配需要按提交顺序取并集。
 
-复用索引简称：`G` = Go `apps/api-go/internal/`，`N` = Nest `apps/api/src/`；`G/`下的包按此根目录展开；并列包用顿号区分，符号写在包名后。主要修改文件另列仓库路径，精确Controller/Resolver可从域页表定位。尚需核对是准入事实，不是已确认 bug。
+复用索引简称：`G` = Go `apps/api-go/internal/`，`N` = Nest `apps/api/src/`；`G/`下的包按此根目录展开；并列包用顿号或花括号区分，符号写在包名后。主要修改文件另列仓库路径，精确Controller/Resolver可从域页表定位。尚需核对是准入事实，不是已确认 bug。
 
 ## 优先修补与同步链路
 
@@ -33,19 +33,19 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 ### BL-04 · identity / 登录与会话签发主链
 
 - **范围/缺口**：POST /api/auth/login、refresh、send-login-code、login-with-code、mfa/verify-login、mfa/enrollment/start、mfa/enrollment/complete、password/forgot、password/reset、send-verification、verify-email（GAP-LEGACY-001）；不重复已迁已认证 MFA/status 管理。
-- **基础/工作量**：G/authn/authz/authhttp、accountsecurity/authfactors 的密码/会话/密钥基础；N/modules/auth 的 AuthService/PasswordResetService/MfaService，DTO 见 auth.controller.ts。需签发/刷新 token、session/Redis 撤销、MFA challenge、验证码/SMTP、限流与审计；这些步骤均须保持实际可用。
+- **基础/工作量**：G/{authn,authz,authhttp}、accountsecurity/authfactors 的密码/会话/密钥基础；N/modules/auth 的 AuthService/PasswordResetService/MfaService，DTO 见 auth.controller.ts。需签发/刷新 token、session/Redis 撤销、MFA challenge、验证码/SMTP、限流与审计；这些步骤均须保持实际可用。
 - **文件/前置/冲突**：新 Go 登录业务包、main/config；阅读 `apps/api/src/modules/auth/{auth.service,password-reset.service,mfa.service}.ts`；MySQL/Redis+SMTP。**适合单独主窗口，不与 BL-06 并行改会话协议**。先核 refresh rotation/验证码存储/SMTP helper 可复用性，不能从 verifier 存在推断 signer 已有。
 
 ### BL-05 · items / 完整 GraphQL 列表
 
 - **范围/缺口**：Query `items`（GAP-LEGACY-001）；完整 connection/page/after/first、排序/过滤、PERSONALIZED 与 RELEVANCE，保留互斥分页校验。
-- **基础/依据**：G/itemsreading.Service.List/搜索/facets/read-model、workspace 模型；N/graphql/resolvers/items.resolver.ts 的 items 与 ItemsListService。REST List 只做 RECENCY，不可直接包装后称全量完成；还需 cursor、选择字段、个性化/召回排序和返回 connection 注册。
+- **基础/依据**：G/itemsreading.Service.List及同包搜索/facets/read-model、workspace 模型；N/graphql/resolvers/items.resolver.ts 的 items 与 ItemsListService。REST List 只做 RECENCY，不可直接包装后称全量完成；还需 cursor、选择字段、个性化/召回排序和返回 connection 注册。
 - **文件/前置/冲突**：G/itemsreading 与 graphqlread/itemsreading、main/config 最小接线；DB/Mongo/Redis，ES/vector/embedding 外部边界。**可独立窗口**；先明确是否共享 List 核心，BL-08/24 避开搜索核心文件；未核所有 cursor 编码与 totalCount 成本。
 
 ### BL-06 · identity / 邀请、审批与 OIDC 接入的后续分段
 
 - **精确候选集合**：identity 域余下 Nest HTTP：/admin/invites 四路、/admin/registration-applications 五路、/register/{applications,join-applications} 两路、/invitations/:token 三路、GET sso/oidc/start、GET oidc/callback、POST sso/handoff/exchange；另 POST avatar/presigned-url 与 GET data-export 是两个可分离支线。均为 GAP-LEGACY-001，不包含 BL-04。
-- **基础/依据**：G/graphqlread/orgaccesswrite/rbacapi/authfactors/accountsecurity，N/OrgInviteService、RegistrationApplicationService、OidcAuthService；需要邀请/审批事务、默认角色/租户初始化、邮件、IdP/state/PKCE/handoff token；头像依赖 StorageService、导出依赖完整个人数据聚合。
+- **基础/依据**：G/graphqlread/orgaccesswrite、G/{rbacapi,authfactors,accountsecurity}，N/OrgInviteService、RegistrationApplicationService、OidcAuthService；需要邀请/审批事务、默认角色/租户初始化、邮件、IdP/state/PKCE/handoff token；头像依赖 StorageService、导出依赖完整个人数据聚合。
 - **文件/前置/冲突**：N/modules/auth 对应服务→新 Go 包；主链依赖 BL-04 token/session 协议。**当前只适合分段源码核对，不能把19条不相干入口一次认领**；先按邀请+审批、OIDC、头像/导出确定可独立交付的 task，后两支需分别声明存储/数据边界。
 
 ### BL-07 · settings / 来源策略四写
@@ -119,7 +119,7 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 ### BL-17 · model-gateway / 治理与真实探测
 
 - **范围/缺口**：model-gateway 域12条 Nest HTTP：proxy-governance GET/PUT/DELETE/preflight/rotate-key，:id/models/test/proxy-health/proxy-model-info/proxy-lb-test，models-config/test-config（GAP-LEGACY-001）。
-- **基础/依据**：G/modelaccesssettings/llmgatewayprofiles 的 profile、密钥、LB 配置，publicportal.gateway 已有请求实现但私有；N/LlmGatewaySettingsController 与服务。治理事务/密钥轮换、LiteLLM内部配置、真实探测/模型列表是不同子链，可先治理后探测。
+- **基础/依据**：G/{modelaccesssettings,llmgatewayprofiles} 的 profile、密钥、LB 配置，publicportal.gateway 已有请求实现但私有；N/LlmGatewaySettingsController 与服务。治理事务/密钥轮换、LiteLLM内部配置、真实探测/模型列表是不同子链，可先治理后探测。
 - **文件/前置/冲突**：上述业务包/main、共享 client；MySQL/Redis/加密+LiteLLM/模型。**可独立主窗口**但 BL-02 gateway 提取先明确；未核 preflight/rotate 的服务端应用协议，配置 applied 证据不等于生产生效。
 
 ### BL-18 · news / 上游内容、指标关联与流水线
@@ -155,7 +155,7 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 ### BL-24 · crawl/items / 任务写入与内容导入
 
 - **范围/缺口**：crawl create/retry/delete 的 HTTP 与 createCrawlTask/retryCrawlTask/deleteCrawlTask、updateCrawlTaskIngestToItems/ingestCrawlTaskResultsToItems；POST /api/items、createItem/updateItem/createItemFromCrawlResult/translateRssItems（GAP-LEGACY-001 / GAP-ASYNC-001）。重复 HTTP/root 共用业务，不重复计工作。
-- **基础/依据**：G/crawlreadtelemetry/itemsreading、已有 DB/模型；N/CrawlService/ItemsService/ItemsRssTranslationService、RawItemOutbox/QueueProcessor。任务状态/去重/关联媒体、原文 Mongo 与 MySQL outbox、翻译缓存/真实模型均为必要步骤。
+- **基础/依据**：G/{crawlreadtelemetry,itemsreading}、已有 DB/模型；N/CrawlService/ItemsService/ItemsRssTranslationService、RawItemOutbox/QueueProcessor。任务状态/去重/关联媒体、原文 Mongo 与 MySQL outbox、翻译缓存/真实模型均为必要步骤。
 - **文件/前置/冲突**：新 task/item 写包、数据层与 queue adapter/main；**先拆任务生命周期+消费者、条目写/导入、RSS翻译三段完整任务**，不能一个窗口领取全部。与 BL-03/05/20/25 有共享文件/表，先确定顺序；尚未核全事务/回滚与已处理条目失效链。
 
 ### BL-25 · crawl/async / Frontier 生产者与队列运维
@@ -167,5 +167,5 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 ### BL-26 · observability / 质量报告、恢复与指标
 
 - **范围/缺口**：POST admin/quality/classification/reports；GET admin/quality/pipeline/runs、POST replay/rollback；GET /api/metrics（GAP-LEGACY-001 / GAP-ASYNC-001）。
-- **基础/依据**：G/qualityoverview/classificationrssops/adminlogs 与历史模型；N/ClassificationQualityProcessor、PipelineRecoveryController/服务、MetricsController。报告 queue→模型/分批写回、replay/rollback 真实流水线补偿与 metrics 平台鉴权是不同完整链。
+- **基础/依据**：G/{qualityoverview,classificationrssops,adminlogs} 与历史模型；N/ClassificationQualityProcessor、PipelineRecoveryController/服务、MetricsController。报告 queue→模型/分批写回、replay/rollback 真实流水线补偿与 metrics 平台鉴权是不同完整链。
 - **文件/前置/冲突**：各运维业务包/worker/main；Mongo/MySQL/Redis+模型/queue。**metrics 可先独立深读，恢复链须先核 BL-18/24 数据所有权**；未核回滚补偿与所有指标 provider，不能给出固定工时或完成百分比。
