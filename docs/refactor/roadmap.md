@@ -202,6 +202,21 @@ AS2（改密按原 hash 做 CAS）、AS3（profile null 与机器身份不再触
 **canary 契约提醒**：路由表没有任何 ModeCanary 条目；CANARY_PERCENT 是预留配置。把业务路由切到 ModeCanary 之前必须先落地可信身份来源——`cmd/api/main_test.go` 的 TestDefaultRulesHaveNoCanaryRoutes 会在有人提前切换时失败。
 
 - 采集 Frontier 运行监控与取消 11 条 HTTP 迁入 Go（`API_GO_CRAWL_FRONTIER_RUNS_MODE`，默认 `legacy`，回滚只改该变量）；同批修掉取消改写终态运行、无事务无行锁与并发重复记事件的 F1 缺陷（Nest 与 Go 两侧一致），细节见 `docs/refactor/go-crawl-frontier-runs.md`。
+
+### M7 子批：数据运行设置与归档状态九条 HTTP（PR 待合并）
+
+`API_GO_DATA_RUNTIME_SETTINGS_MODE` 默认 `legacy`；`go` 时接管
+`GET/PUT/DELETE /api/system-settings/realtime-signals`、
+`GET/PUT/DELETE /api/system-settings/archive-preparation`、
+`GET /api/admin/archive-preparation/status`、
+`GET/PUT /api/system-settings/geo/nominatim` 九条精确路由（其他方法、尾斜杠与更长
+路径仍回 NestJS）。五条全局写补齐平台管理员门禁（DS1），实时设置与 Nominatim 身份
+各用一把全局 MySQL 会话锁并从 DB 取合并基准（DS2），归档公开错误脱敏（DS3），归档
+状态改为单快照派生 counts 与 recentStatuses（DS4）。不迁移实时信号采集器、ACLED
+OAuth 刷新、地理编码调用、归档分类/embedding/rerank、BullMQ producer/worker，也不
+迁移 `archiveDigest`/`archiveCalendar`/`archiveDetail`。ACLED API 在源码中固定关闭的
+政策保持。回滚只改 `API_GO_DATA_RUNTIME_SETTINGS_MODE`。生产 Web 仍指向 NestJS，
+canary 关闭。细节见 `docs/refactor/go-data-runtime-settings.md`。
 - ✅ Go-批10：平台治理设置 16 条 HTTP（security / assistant-quota / assistant-safety(+metrics) / task-logs / llm-request-logs(+metadata-policy/reset)）迁入 `apps/api-go`，开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串|legacy|go，默认 legacy）；同批修 SEC-05（全局写接口补平台管理员门禁）、TTL-01（tasklogs NamespaceNotFound）、CONC-01（llm-request-logs MySQL 会话锁 + 以 DB 为新合并基准）。回滚只改该变量。细节见 `docs/refactor/go-platform-governance-settings.md`。
 - 账户资料、会话退出与机器令牌 8 条 HTTP 迁入 Go（`API_GO_ACCOUNT_SECURITY_MODE`，默认 `legacy`，回滚只改该变量）；同批修 AS1–AS4（Nest 与 Go 两侧一致），细节见 `docs/refactor/go-account-security.md`。
 - Go-批11：搜索索引重建 2 条 HTTP（`POST /api/admin/search/reindex`、`GET /api/admin/search/reindex/:jobId`）迁入 `apps/api-go` 的 `internal/searchreindex`，开关 `API_GO_SEARCH_REINDEX_MODE`（空串|legacy|go，默认 legacy，只接管这两条）；同一套 Redis job/list/orgs 与物理锁键 `lock:search:reindex:org:<orgId>` 与 Nest 兼容。同批（Nest 与 Go 两侧同步）修 Bulk 逐项错误统计与真实进度、活动/终态 TTL 与当前组织批量清理，并把两个**已迁移**遥测入口的 Redis 往返降为一次 Lua / 一次 Pipeline（遥测开关仍是 `API_GO_CRAWL_READ_TELEMETRY_MODE`）。回滚只改 `API_GO_SEARCH_REINDEX_MODE`。细节见 `docs/refactor/go-search-reindex.md`。

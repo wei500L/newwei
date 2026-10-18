@@ -1,4 +1,9 @@
-import { createLogger, ensureTraceId, getCurrentTraceId } from '@modular/utils';
+import {
+  createLogger,
+  ensureTraceId,
+  getCurrentTraceId,
+  redactSensitiveFields,
+} from '@modular/utils';
 import { Inject, Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
 
@@ -25,6 +30,14 @@ interface StoredArchivePreparationStatusRecord
   orgId: string;
 }
 
+/**
+ * Maximum number of recent records the operational status reports. The writer's
+ * 200-entry index trim (`ARCHIVE_PREPARATION_STATUS_INDEX_MAX_ENTRIES`) is a
+ * separate, unchanged policy; the reader never writes, trims, renews or deletes
+ * index entries.
+ */
+const RECENT_STATUS_LIMIT = 10;
+
 @Injectable()
 export class ArchivePreparationQueueService {
   private readonly logger = createLogger({ name: 'archive-preparation-queue' });
@@ -50,17 +63,34 @@ export class ArchivePreparationQueueService {
     return this.getStatus('digest', orgId, anchorDate);
   }
 
+  /**
+   * Builds the operational status for the caller's organisation.
+   *
+   * DS4: the counters and the recent list are derived from **one** org-scoped
+   * snapshot. Previously `getRecentStatuses` and `getScopedCounts` each ran
+   * their own `ZCARD`/`ZRANGE`/`MGET`, so a worker finishing between the two
+   * reads could make a single response report a state in `recentStatuses` that
+   * its own `counts` contradicted. This guarantees only that one response is
+   * self-consistent with the snapshot it read: the underlying `ZRANGE`+`MGET`
+   * pair is still not an atomic transaction over the whole Redis index, and no
+   * Lua script, global lock or worker-side lock is introduced.
+   *
+   * Counts cover every record in the snapshot; the list is capped at
+   * {@link RECENT_STATUS_LIMIT} while keeping the index order.
+   */
   async getOperationalStatus(
     orgId: string,
   ): Promise<ArchivePreparationOperationalStatus> {
-    const recentStatuses = await this.getRecentStatuses(orgId, 10);
-    const counts = await this.getScopedCounts(orgId);
+    const records = await this.getScopedStatusRecords(orgId);
+    const counts = this.countStatusStates(records);
     const pending = counts.waiting + counts.active + counts.delayed;
     return {
       updatedAt: new Date().toISOString(),
       pending,
       counts,
-      recentStatuses,
+      recentStatuses: records
+        .slice(0, RECENT_STATUS_LIMIT)
+        .map((record) => this.toPublicStatusRecord(record)),
     };
   }
 
@@ -150,7 +180,7 @@ export class ArchivePreparationQueueService {
       readyCount: 0,
       missingCount: 0,
       updatedAt: new Date(record.updatedAt),
-      errorMessage: record.errorMessage ?? null,
+      errorMessage: this.redactErrorMessage(record.errorMessage),
     };
   }
 
@@ -182,16 +212,17 @@ export class ArchivePreparationQueueService {
     await this.trimStatusIndex();
   }
 
-  private async getRecentStatuses(
-    orgId: string,
-    limit: number,
-  ): Promise<ArchivePreparationStatusRecord[]> {
-    const records = await this.getScopedStatusRecords(orgId);
-    return records.slice(0, limit).map((record) => this.toPublicStatusRecord(record));
-  }
-
-  private async getScopedCounts(orgId: string): Promise<ArchivePreparationOperationalStatus['counts']> {
-    const records = await this.getScopedStatusRecords(orgId);
+  /**
+   * Counts the states of one already-read snapshot (DS4).
+   *
+   * Mapping is unchanged: `QUEUED` -> `waiting`; `PROCESSING` and `PARTIAL` ->
+   * `active`; `READY` -> `completed`; `FAILED` -> `failed`; `delayed` stays 0
+   * because this record set is the derived-status index, not BullMQ's delayed
+   * job set — it is deliberately not "corrected" by querying BullMQ.
+   */
+  private countStatusStates(
+    records: StoredArchivePreparationStatusRecord[],
+  ): ArchivePreparationOperationalStatus['counts'] {
     return records.reduce<ArchivePreparationOperationalStatus['counts']>(
       (counts, record) => {
         switch (record.state) {
@@ -274,8 +305,32 @@ export class ArchivePreparationQueueService {
       scopeValue: record.scopeValue,
       state: record.state,
       updatedAt: record.updatedAt,
-      errorMessage: record.errorMessage ?? null,
+      errorMessage: this.redactErrorMessage(record.errorMessage),
     };
+  }
+
+  /**
+   * DS3: redacts the stored failure text before it leaves the process.
+   *
+   * `archive-preparation.processor.ts` stores a worker's raw `error.message`,
+   * which can carry `Bearer`/`Basic` credentials or `password=`/`token=`/
+   * `api_key=`/`secret=` fragments. The public read path (this file) is the only
+   * place that redacts: the worker's write path, the Redis record and the
+   * diagnostic fields are all untouched, so operators can still read the
+   * original text from Redis.
+   *
+   * Uses the shared `@modular/utils` implementation rather than a second regex
+   * set, so the NestJS and Go outputs stay byte-identical. The original
+   * `undefined`/`null` -> `null` and empty-string-preserved semantics are
+   * unchanged.
+   */
+  private redactErrorMessage(
+    value: string | null | undefined,
+  ): string | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    return redactSensitiveFields(value);
   }
 
   private parseOrgIdFromStatusKey(statusKey: string): string | null {
