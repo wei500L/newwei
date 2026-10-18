@@ -231,10 +231,15 @@ func TestCheckResultFormatsAPIErrors(t *testing.T) {
 		t.Fatalf("successful check = %+v", got)
 	}
 	apiErr := &smithy.GenericAPIError{Code: "NoSuchBucket", Message: "The specified bucket does not exist"}
+	// net/http canonicalizes every response header it reads off the wire, so the
+	// fixture must be built the same way (a literal lowercase map key would
+	// never be found by Header.Get).
+	headers := http.Header{}
+	headers.Set("x-amz-request-id", "req-42")
 	wrapped := &smithyhttp.ResponseError{
 		Response: &smithyhttp.Response{Response: &http.Response{
 			StatusCode: http.StatusNotFound,
-			Header:     http.Header{"x-amz-request-id": []string{"req-42"}},
+			Header:     headers,
 		}},
 		Err: apiErr,
 	}

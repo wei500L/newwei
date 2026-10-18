@@ -294,10 +294,11 @@ func TestStorageDiagnosticsS3AggregatesIndependentFailures(t *testing.T) {
 // the mode-level result is ok:false with the formatted BadRequestException and
 // no checks, never a 500 and never a fabricated ok.
 func TestStorageDiagnosticsS3IncompleteConfiguration(t *testing.T) {
-	settings := s3StorageSettings()
-	delete(settings, settingKeyS3Bucket)
-	store := newFakeMySQL(settings)
-	service := NewService(store.db(), nil, storageTestEnv())
+	// Only the provider row: every S3 member falls back to an empty environment
+	// default, so the snapshot fails the refreshClient completeness condition
+	// before any SDK client (and therefore any network call) is created.
+	store := newFakeMySQL(map[string]string{settingKeyCrawlImageStorage: `"s3"`})
+	service := NewService(store.db(), nil, Config{})
 	handler := NewStorageDiagnosticsHandler(nil, service)
 
 	result, err := handler.checkStorageConnection(context.Background())
@@ -433,7 +434,9 @@ func TestAcceptStorageTestBody(t *testing.T) {
 		})
 	}
 
-	// An oversized JSON body keeps the shared 413 payload-too-large contract.
+	// An oversized JSON body keeps the shared payload-too-large contract, which
+	// authhttp renders as the masked 500 body (the same mapping the seven
+	// infrastructure settings routes use via readBodyOrFail).
 	oversized := httptest.NewRequest(http.MethodPost, pathStorageConnectionTest,
 		strings.NewReader(strings.Repeat("{", maxBodyBytes+1)))
 	oversized.Header.Set("Content-Type", "application/json")
@@ -441,7 +444,7 @@ func TestAcceptStorageTestBody(t *testing.T) {
 	if acceptStorageTestBody(recorder, oversized) {
 		t.Fatal("oversized body must be rejected")
 	}
-	if recorder.Code != http.StatusRequestEntityTooLarge {
+	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("oversized status = %d", recorder.Code)
 	}
 }
