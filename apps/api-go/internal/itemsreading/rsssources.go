@@ -32,7 +32,9 @@ func (s *Service) RssSources(
 	if windowDays != nil {
 		days = ClampInt(*windowDays, RssSourceWindowDaysMin, RssSourceWindowDaysMax)
 	}
-	includeEmpty := true
+	// onlyWithItems defaults to true, so a zero-count source is hidden unless the
+	// caller explicitly passes false.
+	includeEmpty := false
 	if onlyWithItems != nil {
 		includeEmpty = !*onlyWithItems
 	}
