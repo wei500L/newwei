@@ -1148,6 +1148,21 @@ type Config struct {
 	// production web entry keeps serving through NestJS. Rolling back only
 	// means setting this variable back to legacy.
 	GraphQLOrgAccessWriteMode string
+	// GraphQLWorkspaceWriteMode only decides whether the eight workspace
+	// mutations (markNotificationRead, markAllNotificationsRead,
+	// upsertDashboard, deleteDashboard, createAlertChannel,
+	// updateAlertChannel, deleteAlertChannel, updateAlertEventStatus) are
+	// registered into the Go GraphQL executor. It is independent of
+	// API_GO_GRAPHQL_READ_MODE: with the read switch legacy only these
+	// mutations are taken over, and queries keep serving through NestJS. The
+	// accepted values are exactly "", "legacy" and "go"; the empty value
+	// behaves like legacy. While this switch is legacy, any document that
+	// selects one of those mutations falls back to NestJS as a whole, so the
+	// production web entry keeps serving through NestJS. The takeover needs
+	// JWT verification, MySQL and Redis only: it reads no Mongo collection,
+	// starts no worker and requires no queue. Rolling back only means setting
+	// this variable back to legacy.
+	GraphQLWorkspaceWriteMode string
 	// GraphQLSettingsWriteMode decides whether the thirteen settings center
 	// mutations (updateRateLimitSettings, updateAuthCacheSettings,
 	// updateCrawlClientSettings, updateAuditLogRetention,
@@ -2156,6 +2171,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE must be one of legacy|go")
 	}
+	// The workspace write switch accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy, so an unset deployment keeps
+	// these eight mutations on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_WORKSPACE_WRITE_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLWorkspaceWriteMode = "legacy"
+	case "go":
+		cfg.GraphQLWorkspaceWriteMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE must be one of legacy|go")
+	}
 	// The settings write switch accepts the empty string, legacy and go. An
 	// empty value behaves exactly like legacy, so an unset deployment keeps
 	// every settings mutation on NestJS.
@@ -2826,6 +2852,12 @@ func Load(getenv func(string) string) (Config, error) {
 	// not require MONGO_URI.
 	if cfg.GraphQLOrgAccessWriteMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE", cfg)
+	}
+	// The workspace write takeover needs JWT verification, MySQL and Redis
+	// only. Reusing the workspace, alert and history models does not make
+	// MONGO_URI, the model gateway or the queue a startup condition.
+	if cfg.GraphQLWorkspaceWriteMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE", cfg)
 	}
 	// The settings write takeover needs JWT verification, MySQL and Redis only.
 	// It reads no Mongo collection, starts no worker and calls no upstream

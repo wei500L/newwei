@@ -3,6 +3,8 @@ package alerts
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"sort"
 	"time"
 )
@@ -165,17 +167,57 @@ func serializeEvents(ctx context.Context, db *sql.DB, rows []eventRow) ([]AlertE
 	return models, nil
 }
 
+// LoadEventModel loads one alert event by id, scoped to orgID through its rule,
+// and serializes it with exactly the same rules as the alertEvents read root.
+// It returns (nil, nil) when the event does not exist or belongs to another
+// organization, so a caller can map that to its own not-found contract.
+func LoadEventModel(ctx context.Context, db *sql.DB, orgID, eventID string) (*AlertEventModel, error) {
+	if err := requireDB(db); err != nil {
+		return nil, err
+	}
+	rows, err := queryEvents(ctx, db, "e.`id` = ? AND r.`orgId` = ?", []any{eventID, orgID}, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	models, err := serializeEvents(ctx, db, rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(models) == 0 {
+		return nil, nil
+	}
+	return &models[0], nil
+}
+
+// EventContextForOrg returns the raw context JSON column of one alert event,
+// scoped to orgID through its rule. found is false when the event does not
+// exist or belongs to another organization. A NULL column is reported as an
+// empty raw value.
+func EventContextForOrg(ctx context.Context, db *sql.DB, orgID, eventID string) (json.RawMessage, bool, error) {
+	if err := requireDB(db); err != nil {
+		return nil, false, err
+	}
+	var raw []byte
+	err := db.QueryRowContext(ctx,
+		"SELECT e.`context` FROM `AlertEvent` AS e "+
+			"INNER JOIN `AlertRule` AS r ON r.`id` = e.`ruleId` "+
+			"WHERE e.`id` = ? AND r.`orgId` = ? LIMIT 1",
+		eventID, orgID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, queryErr("event context", err)
+	}
+	return json.RawMessage(raw), true, nil
+}
+
 func serializeEvent(row eventRow, deliveries []AlertDeliveryModel) (AlertEventModel, error) {
 	if deliveries == nil {
 		deliveries = []AlertDeliveryModel{}
-	}
-	decoded, err := decodeJSON(row.Context)
-	if err != nil {
-		return AlertEventModel{}, err
-	}
-	var contextValue any
-	if record := asObject(decoded); record != nil {
-		contextValue = record
 	}
 	return AlertEventModel{
 		ID:              row.ID,
@@ -194,7 +236,7 @@ func serializeEvent(row eventRow, deliveries []AlertDeliveryModel) (AlertEventMo
 		ThresholdLower:  optDecimal(row.ThresholdLower),
 		ThresholdUpper:  optDecimal(row.ThresholdUpper),
 		ChangeWindowMin: nullWindow(row.ChangeWindowMin),
-		Context:         contextValue,
+		Context:         jsonObjectScalar(row.Context),
 		Deliveries:      deliveries,
 	}, nil
 }
@@ -264,10 +306,6 @@ func loadDeliveries(ctx context.Context, db *sql.DB, events []eventRow) (map[str
 }
 
 func serializeDelivery(row deliveryRow) (AlertDeliveryModel, error) {
-	snapshotValue, err := decodeJSON(row.TargetSnapshot)
-	if err != nil {
-		return AlertDeliveryModel{}, err
-	}
 	model := AlertDeliveryModel{
 		ID:          row.ID,
 		Status:      row.Status,
@@ -284,16 +322,16 @@ func serializeDelivery(row deliveryRow) (AlertDeliveryModel, error) {
 		}
 	}
 	if model.ChannelName == nil || model.Target == nil {
-		snapshot := asObject(snapshotValue)
+		snapshot := decodeTargetSnapshot(row.TargetSnapshot)
 		if model.ChannelName == nil {
-			if name, ok := stringField(snapshot, "name"); ok {
+			if name, ok := jsonStringLeaf(snapshot.Name); ok {
 				model.ChannelName = stringPtr(name)
 			}
 		}
 		if model.Target == nil {
-			if target, ok := stringField(snapshot, "target"); ok {
+			if target, ok := jsonStringLeaf(snapshot.Target); ok {
 				model.Target = stringPtr(target)
-			} else if userID, ok := stringField(snapshot, "userId"); ok {
+			} else if userID, ok := jsonStringLeaf(snapshot.UserID); ok {
 				model.Target = stringPtr(userID)
 			}
 		}
@@ -302,12 +340,4 @@ func serializeDelivery(row deliveryRow) (AlertDeliveryModel, error) {
 		model.ChannelName = stringPtr("In-app")
 	}
 	return model, nil
-}
-
-func stringField(record map[string]any, name string) (string, bool) {
-	if record == nil {
-		return "", false
-	}
-	value, ok := record[name].(string)
-	return value, ok
 }

@@ -166,6 +166,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingscrawl"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingswrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspacewrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
@@ -693,12 +694,12 @@ func run() error {
 	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
-	// /graphql is routed to the Go handler when either the read switch or the
-	// organization access write switch is go. The registered roots and their
-	// own switches decide which documents actually execute in Go; everything
-	// else is still proxied to NestJS.
+	// /graphql is routed to the Go handler when the read switch or either write
+	// switch is go. The registered roots and their own switches decide which
+	// documents actually execute in Go; everything else is still proxied to
+	// NestJS.
 	graphqlRouteMode := ""
-	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" {
+	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -790,6 +791,7 @@ func run() error {
 				cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo ||
 				cfg.GraphQLReadMode == "go" ||
 				cfg.GraphQLOrgAccessWriteMode == "go" ||
+				cfg.GraphQLWorkspaceWriteMode == "go" ||
 				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
@@ -868,6 +870,10 @@ func run() error {
 	// 组织、角色与成员管理的 8 个 mutation 由独立开关控制，与读开关解耦：
 	// 只开写入时 queries 仍走 NestJS，也不需要 Mongo。
 	graphqlOrgAccessWriteGo := cfg.GraphQLOrgAccessWriteMode == "go"
+	// 工作台交互写入的 8 个 mutation（通知、看板、告警渠道与告警状态）同样由
+	// 独立开关控制，与读开关解耦；复用 workspace/alerts/history 的模型不要求
+	// Mongo、模型网关或队列。
+	graphqlWorkspaceWriteGo := cfg.GraphQLWorkspaceWriteMode == "go"
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
@@ -910,8 +916,8 @@ func run() error {
 	// infrastructure、#56 model access、#57 situation monitor signals、#58 items
 	// reading、#59 llm gateway profiles、#60 account security、#61 data runtime、
 	// #62 auth factors、#63 graphql org access write、#64 exception ingest、#65
-	// search reindex、#66 proxy load balancing）。任一变量改成本批所需值都不影响
-	// 其他批次接线。
+	// search reindex、#66 proxy load balancing、#67 graphql workspace write、#68 graphql settings write）。
+	// 任一变量改成本批所需值都不影响其他批次接线。
 	// 任一批次为 go 都需要凭据装配（JWT/Redis/MySQL）。多行 OR 便于并行批次
 	// 各自就近追加，减少单行改写造成的合并冲突。
 	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo ||
@@ -925,8 +931,9 @@ func run() error {
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
 		situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo ||
-		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo || searchReindexGo ||
-		proxyLoadBalancingGo
+		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
+		graphqlWorkspaceWriteGo || cfg.GraphQLSettingsWriteMode == "go" ||
+		searchReindexGo || proxyLoadBalancingGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1500,11 +1507,11 @@ func run() error {
 
 	var graphqlHandler *graphqlread.Handler
 	var graphqlMongo *dashboardstats.Connection
-	// 设置中心读与设置写各自独立开关；与两个既有开关任一为 go 就装配精确
-	// /graphql 的 Go handler。只开写入时不要求 Mongo，也不初始化任何只读域的
-	// Mongo service。
+	// 读查询、组织访问写入、工作台交互写入与设置写各自独立开关；任一为 go
+	// 就装配精确 /graphql 的 Go handler。只开写入时不要求 Mongo，也不初始化
+	// 任何只读域的 Mongo service。
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
-	if graphqlReadGo || graphqlOrgAccessWriteGo || settingsWriteGo {
+	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -1608,15 +1615,30 @@ func run() error {
 				}
 			}
 		}
+		// The model sets shared by the read roots and the write batches may be
+		// registered exactly once each, so the workspace, alert and history
+		// models are registered here only when the matching read registration
+		// did not already do it. The workspace write batch reuses all three.
+		workspaceModelsRegistered := graphqlReadGo && workspaceGo
+		if graphqlOrgAccessWriteGo && !workspaceModelsRegistered {
+			workspace.RegisterModels(reg)
+			workspaceModelsRegistered = true
+		}
 		// The eight organization, role and membership mutations share the
-		// workspace models. The models (and their field permissions) may be
-		// registered exactly once, so they are registered here only when the
-		// workspace read roots did not already do it.
+		// workspace models.
 		if graphqlOrgAccessWriteGo {
-			if !graphqlReadGo || !workspaceGo {
-				workspace.RegisterModels(reg)
-			}
 			orgaccesswrite.Register(reg, sharedDB, redisClient)
+		}
+		if graphqlWorkspaceWriteGo {
+			if !workspaceModelsRegistered {
+				workspace.RegisterModels(reg)
+				workspaceModelsRegistered = true
+			}
+			if !graphqlReadGo {
+				alerts.RegisterModels(reg)
+				history.RegisterModels(reg)
+			}
+			workspacewrite.Register(reg, sharedDB)
 		}
 		// The thirteen settings mutations reuse the settings center read
 		// models. The models must be registered exactly once: the settings/
@@ -1708,6 +1730,11 @@ func run() error {
 			log.Printf("api-go: GraphQL org-access writes registered (%s)", strings.Join(orgaccesswrite.RegisteredMutations, ", "))
 		} else {
 			log.Printf("api-go: GraphQL org-access writes not registered (API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE=legacy)")
+		}
+		if graphqlWorkspaceWriteGo {
+			log.Printf("api-go: GraphQL workspace writes registered (%s)", strings.Join(workspacewrite.RegisteredMutations, ", "))
+		} else {
+			log.Printf("api-go: GraphQL workspace writes not registered (API_GO_GRAPHQL_WORKSPACE_WRITE_MODE=legacy)")
 		}
 		if settingsWriteGo {
 			log.Printf("api-go: GraphQL settings writes registered (%s)", strings.Join(settingswrite.RegisteredMutations, ", "))

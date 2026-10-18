@@ -15,12 +15,7 @@ func Register(reg *contract.Registry, db *sql.DB) {
 	if reg == nil {
 		panic("graphqlread: alerts.Register requires a registry")
 	}
-	reg.RegisterType("AlertChannelModel", AlertChannelModel{})
-	reg.RegisterType("AlertDeliveryModel", AlertDeliveryModel{})
-	reg.RegisterType("AlertEventModel", AlertEventModel{})
-	reg.RegisterType("AlertEventReplayModel", AlertEventReplayModel{})
-	reg.RegisterType("AlertEventReplayPointModel", AlertEventReplayPointModel{})
-	reg.RegisterType("AlertRuleTuningSuggestionModel", AlertRuleTuningSuggestionModel{})
+	RegisterModels(reg)
 
 	reg.RegisterRoot(contract.Root{
 		Name:       "alertChannels",
@@ -61,4 +56,23 @@ func Register(reg *contract.Registry, db *sql.DB) {
 			return tuningSuggestion(ctx.Ctx, db, ctx.Identity.OrgID, ruleID, days)
 		},
 	})
+}
+
+// RegisterModels registers the alert object types the read roots project,
+// without registering any read root.
+//
+// It exists so the workspace write batch can return the same alert models while
+// the alert read roots are not registered at all. Every type may be registered
+// exactly once per registry, so a caller must choose between Register (reads
+// plus models) and RegisterModels (models only), never both.
+func RegisterModels(reg *contract.Registry) {
+	if reg == nil {
+		panic("graphqlread: alerts.RegisterModels requires a registry")
+	}
+	reg.RegisterType("AlertChannelModel", AlertChannelModel{})
+	reg.RegisterType("AlertDeliveryModel", AlertDeliveryModel{})
+	reg.RegisterType("AlertEventModel", AlertEventModel{})
+	reg.RegisterType("AlertEventReplayModel", AlertEventReplayModel{})
+	reg.RegisterType("AlertEventReplayPointModel", AlertEventReplayPointModel{})
+	reg.RegisterType("AlertRuleTuningSuggestionModel", AlertRuleTuningSuggestionModel{})
 }

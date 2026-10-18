@@ -1,6 +1,7 @@
 package alerts
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -145,23 +146,64 @@ func finiteDecimal(value sql.NullString) (float64, bool) {
 	return contract.FiniteFloat(value.String)
 }
 
-func decodeJSON(raw []byte) (any, error) {
-	if len(raw) == 0 {
-		return nil, nil
-	}
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, errors.New("alerts: invalid json column")
-	}
-	return value, nil
-}
-
-func asObject(value any) map[string]any {
-	record, ok := value.(map[string]any)
-	if !ok {
+// jsonScalar converts a nullable MySQL JSON column into the JSON scalar the
+// projection layer expects. An empty column and a literal JSON null both become
+// nil, which projects as GraphQL null instead of a quoted empty string.
+func jsonScalar(raw []byte) *json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return nil
 	}
-	return record
+	message := json.RawMessage(append([]byte(nil), trimmed...))
+	return &message
+}
+
+// jsonObjectScalar converts a nullable MySQL JSON column into the JSON scalar
+// only when it holds a JSON object, mirroring the NestJS isRecord guard that
+// turns a non-object context into null.
+func jsonObjectScalar(raw []byte) *json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil
+	}
+	message := json.RawMessage(append([]byte(nil), trimmed...))
+	return &message
+}
+
+// deliveryTargetSnapshot is the named shape of a delivery targetSnapshot JSON
+// column. Every member stays an opaque JSON leaf so a non-string member is
+// ignored exactly like the NestJS typeof checks instead of failing the whole
+// decode.
+type deliveryTargetSnapshot struct {
+	Name   json.RawMessage `json:"name"`
+	Target json.RawMessage `json:"target"`
+	UserID json.RawMessage `json:"userId"`
+}
+
+// decodeTargetSnapshot parses a targetSnapshot column. A non-object document
+// yields the zero snapshot, matching isRecord returning false.
+func decodeTargetSnapshot(raw []byte) deliveryTargetSnapshot {
+	var snapshot deliveryTargetSnapshot
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return snapshot
+	}
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return deliveryTargetSnapshot{}
+	}
+	return snapshot
+}
+
+// jsonStringLeaf returns the string held by a JSON leaf, and whether the leaf
+// is a JSON string.
+func jsonStringLeaf(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 {
+		return "", false
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return "", false
+	}
+	return text, true
 }
 
 func clamp(value, low, high int) int {

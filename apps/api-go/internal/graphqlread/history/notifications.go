@@ -1,6 +1,7 @@
 package history
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -62,14 +63,10 @@ func (s *service) listNotifications(ctx context.Context, orgID, userID string, t
 		if err := rows.Scan(&id, &kind, &title, &body, &data, &createdAt, &readAt); err != nil {
 			return nil, err
 		}
-		payload, err := decodeJSON(data)
-		if err != nil {
-			return nil, err
-		}
 		row := NotificationModel{
 			Body:      nullStringPtr(body),
 			CreatedAt: createdAt,
-			Data:      payload,
+			Data:      jsonScalar(data),
 			ID:        id,
 			Title:     title,
 			Type:      kind,
@@ -105,13 +102,14 @@ func (s *service) countUnread(ctx context.Context, orgID, userID string) (int, e
 	return int(count), nil
 }
 
-func decodeJSON(raw []byte) (any, error) {
-	if len(raw) == 0 {
-		return nil, nil
+// jsonScalar converts a nullable MySQL JSON column into the JSON scalar the
+// projection layer expects. An empty column and a literal JSON null both become
+// nil, which projects as GraphQL null instead of a quoted empty string.
+func jsonScalar(raw []byte) *json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return nil
 	}
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, err
-	}
-	return value, nil
+	message := json.RawMessage(append([]byte(nil), trimmed...))
+	return &message
 }
