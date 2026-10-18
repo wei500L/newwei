@@ -175,7 +175,7 @@ export class CacheService implements OnModuleDestroy {
    */
   async hincrbyMany(
     key: string,
-    fields: ReadonlyArray<readonly [string, number]>,
+    fields: readonly [string, number][],
     ttlSeconds: number,
   ): Promise<void> {
     if (fields.length === 0) {
