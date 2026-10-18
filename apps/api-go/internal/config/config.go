@@ -666,6 +666,27 @@ const (
 	SituationMonitorsModeGo     SituationMonitorsMode = "go"
 )
 
+// SituationSignalsMode controls the seven situation monitor signal read and
+// feedback HTTP routes (API_GO_SITUATION_MONITOR_SIGNALS_MODE). The accepted
+// values are exactly "", "legacy" and "go"; any other value fails startup
+// instead of silently degrading. The default is legacy.
+type SituationSignalsMode string
+
+const (
+	// SituationSignalsModeLegacy proxies all seven routes to NestJS (default,
+	// including the empty value). Rollback only changes this variable back to
+	// legacy.
+	SituationSignalsModeLegacy SituationSignalsMode = "legacy"
+	// SituationSignalsModeGo serves the seven routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis revocation list,
+	// MySQL membership re-derivation) plus mtk_ machine tokens. It requires
+	// JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI at startup because
+	// feedback writes Mongo, refresh-runs reads MySQL and the signal state is
+	// read from Redis. Shadow and canary are never enabled by this switch, and
+	// no Telegram, OREF or model-gateway request is issued.
+	SituationSignalsModeGo SituationSignalsMode = "go"
+)
+
 // ContentSubscriptionsMode 只控制内容订阅 7 条精确 HTTP。默认 legacy。
 // 不决定摘要服务能否在进程内调用 Go 订阅查询。
 type ContentSubscriptionsMode string
@@ -865,6 +886,11 @@ type Config struct {
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
+	// SituationSignalsMode controls the seven situation monitor signal read and
+	// feedback routes (see SituationSignalsMode). Default legacy. Mode go
+	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI; it starts no
+	// worker and never issues a Telegram or OREF upstream request.
+	SituationSignalsMode SituationSignalsMode
 	// NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	NewsSourcesMode NewsSourcesMode
@@ -1591,6 +1617,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_READ_MODE must be one of legacy|go")
 	}
+	// The situation monitor signals switch accepts the empty string, legacy and
+	// go. An empty value behaves exactly like legacy so an unset deployment
+	// keeps the NestJS path for all seven routes.
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_MONITOR_SIGNALS_MODE")) {
+	case "", string(SituationSignalsModeLegacy):
+		cfg.SituationSignalsMode = SituationSignalsModeLegacy
+	case string(SituationSignalsModeGo):
+		cfg.SituationSignalsMode = SituationSignalsModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_MONITOR_SIGNALS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_EVENTS_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLNewsEventsMode = "legacy"
@@ -2144,6 +2181,16 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go")
+		}
+	}
+
+	// The situation monitor signals takeover needs the credentialed auth stack
+	// plus Redis (the cached signal state) and Mongo (feedback writes
+	// situationsignalfeedbacks and situationsignallearningstates).
+	if cfg.SituationSignalsMode == SituationSignalsModeGo {
+		appendAuthRequirements(&errs, "API_GO_SITUATION_MONITOR_SIGNALS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go")
 		}
 	}
 

@@ -4,7 +4,7 @@ import {
   type SituationSignalFeedbackLabel,
   type SituationSignalType,
 } from "@modular/mongo";
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 
 import { CacheService } from "../cache/cache.service";
 
@@ -92,7 +92,11 @@ export class SituationMonitorFeedbackService {
   }) {
     const signalId = options.signalId.trim();
     if (!signalId) {
-      throw new Error("signalId is required");
+      // S1: the DTO only enforces @IsString() on signalId, so a blank value
+      // (" ", "\t") passes validation. A bare Error here was mapped by the
+      // global exception filter to a 500; the caller's mistake is a 400.
+      // The message is byte-identical to the Go implementation.
+      throw new BadRequestException("signalId is required");
     }
 
     const itemMetaId = typeof options.itemMetaId === "string" ? options.itemMetaId.trim() : "";
