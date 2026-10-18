@@ -208,7 +208,8 @@ export class LiteLlmProxyLoadBalancingSettingsService {
     return await withModelAccessSettingsLock(
       PROXY_LOAD_BALANCING_SETTINGS_LOCK_NAME,
       async () => {
-        const stored = await this.readStoredSettingsFromDatabase();
+        const { settings: stored } =
+          await this.readStoredSettingsFromDatabase();
 
         const redisHost = input.redisHost?.trim();
         if (!redisHost) {
@@ -419,14 +420,19 @@ export class LiteLlmProxyLoadBalancingSettingsService {
    * Every write path MUST use this instead of the cached reader so a stale 30
    * second envelope can never become a read-modify-write baseline (LB2).
    */
-  private async readStoredSettingsFromDatabase(): Promise<StoredLiteLlmProxyLoadBalancingSettings | null> {
+  private async readStoredSettingsFromDatabase(): Promise<{
+    exists: boolean;
+    settings: StoredLiteLlmProxyLoadBalancingSettings | null;
+  }> {
     const record = await this.prisma.systemSetting.findUnique({
       where: { key: SETTINGS_KEY },
     });
     const raw = record?.value as unknown;
-    return raw && typeof raw === "object"
-      ? (raw as StoredLiteLlmProxyLoadBalancingSettings)
-      : null;
+    const settings =
+      raw && typeof raw === "object"
+        ? (raw as StoredLiteLlmProxyLoadBalancingSettings)
+        : null;
+    return { exists: Boolean(record), settings };
   }
 
   private resolveEffectiveConfig(
