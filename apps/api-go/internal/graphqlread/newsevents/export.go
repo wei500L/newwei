@@ -208,6 +208,16 @@ WHERE orgId = ? AND lastAt >= ?`
 	return out, rows.Err()
 }
 
+// likeContains renders a Prisma `contains` term as a LIKE pattern. Prisma
+// treats % and _ as literals, so the pattern escapes the backslash itself and
+// the two LIKE wildcards; MySQL's default backslash escape character then makes
+// them literal without an explicit ESCAPE clause. This mirrors likeContains in
+// the crawl-profile and news-source stores.
+func likeContains(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + replacer.Replace(value) + "%"
+}
+
 // resolveExportEventTitle ports resolveEventTitle: the first trimmed non-empty
 // value of title, summary, primaryTopic, primaryEntity, then the raw id.
 func resolveExportEventTitle(row eventRow) string {

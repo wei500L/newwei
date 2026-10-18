@@ -100,6 +100,26 @@ func TestDedupeExportEventsMatchesReferenceOnGeneratedData(t *testing.T) {
 	assertSameKeptIDs(t, rows)
 }
 
+// TestLikeContainsEscapesPrismaWildcards pins the Prisma contains semantics:
+// the backslash and both LIKE wildcards are escaped, so a literal % or _ in the
+// entity term cannot widen the export match.
+func TestLikeContainsEscapesPrismaWildcards(t *testing.T) {
+	cases := []struct {
+		term string
+		want string
+	}{
+		{term: "tariff", want: "%tariff%"},
+		{term: "a%b", want: `%a\%b%`},
+		{term: "a_b", want: `%a\_b%`},
+		{term: `a\b`, want: `%a\\b%`},
+	}
+	for _, testCase := range cases {
+		if got := likeContains(testCase.term); got != testCase.want {
+			t.Fatalf("likeContains(%q) = %q, want %q", testCase.term, got, testCase.want)
+		}
+	}
+}
+
 // assertSameKeptIDs compares the kept id sequence of the indexed dedupe with
 // the source greedy loop.
 func assertSameKeptIDs(t *testing.T, rows []scoredEvent) {
