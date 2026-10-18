@@ -227,10 +227,12 @@ cd apps/api-go && go test -tags=integration -count=1 \
 
 ## 约束
 
-- 标准库 + 三个第三方依赖：`github.com/go-sql-driver/mysql`（MySQL 查询）、
-  `github.com/golang-jwt/jwt/v5`（access token 验签——不手写密码学）、
-  `github.com/redis/go-redis/v9`（blacklist 查询）；不引入 Web 框架/ORM/DI
-  容器
+- 不引入 Web 框架/ORM/DI 容器；对象存储只用官方 AWS SDK for Go v2 的
+  `service/s3`、`credentials` 与 `smithy-go`（本批新增，经 `go-modules-regen`
+  远端固定），不引入上传 manager 或其他 AWS 服务，也不启用默认凭据链/
+  IMDS 探测；既有第三方依赖为 `go-sql-driver/mysql`、`golang-jwt/jwt/v5`、
+  `redis/go-redis/v9`、`vektah/gqlparser/v2`、`mongo-driver/v2`、
+  `golang.org/x/crypto`、`golang.org/x/text`
 - `migrations/` 在 Phase 1 禁止 schema 变更（见该目录 README）
 - 契约以 `docs/refactor/api-contract-inventory.md` 为冻结基线；鉴权矩阵（`apps/api/tests/contract/auth-matrix.json`）驱动逐端点语义对齐
 - shadow 只对 GET/HEAD/OPTIONS 差分——写请求禁止双发（双层强制：legacyproxy + shadow runner；user-settings shadow 单元进一步收窄为仅 GET）

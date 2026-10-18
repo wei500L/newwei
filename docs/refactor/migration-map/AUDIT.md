@@ -75,6 +75,7 @@
 ## crawl
 
 - **媒体下发 / Go 部分实现**：HMAC、orgId SQL、joined/legacy MySQL blob、响应头/重定向消费者与 S3 空返回沿 Nest Controller/Service 对照；新增确认 [GAP-CRAWL-001](GAPS.md#gap-crawl-001)。合法“无资产/无 blob”空返回与缺失 S3 实现分开。
+- **2026-10-18 S3 交付实现核对，main 9d0462e1 → PR #73**：`internal/objectstorage` 只用官方 AWS SDK v2 的 s3/credentials/smithy-go，显式静态凭据 + region/endpoint/path-style，无默认凭据链/IMDS；`getAssetDeliveryPayload` 拆出 `resolveDelivery`，S3 按记录自身 storageKey 生成 302 签名 GET（content-type 归一化、preview 仅 inline 白名单内用 inline，SVG 保持 attachment、cache-control private,max-age=300），配置不完整映射 400；`buildStoredMediaAsset` 对 s3 记录独立签名 preview/download，失败只缺省该 URL；`attachResultContent` 每请求只读一份 `StorageRuntimeConfig` 快照，TTL 由完整快照钳制 30..86400（修正原先只读 DB 单键、丢失 S3_* env 回退）；`settingscrawl.Options` 新增 `StorageConfig` 并经 `newCrawlReader` 注入，GraphQL 与 REST 共用同一 reader；GraphQL resultLimit 钳制与 NOT_FOUND/null 未改。未运行 build/test、无实桶/部署验证。独立契约比对另发现三处**既有**偏差（不在本批范围、未修，待规划窗口登记）：REST 详情在无 complete task log 时省略 memoryStats/lastRunSummary 而 Nest 输出 null；`stringPtrFromNull` 丢空串而 Nest 保留 ""；媒体查库用 trim 后 orgId 而 Nest 用原始 query 值。本批已对齐 publicBaseUrl 归一化回显与 DTO-less POST 的 body-parser 语义（零长度=空对象、strict 拒绝顶层原始值）。
 - **来源/模板/画像/工作流/Frontier 与采集读 / 尚未深入核对**：注册、wire 和 config 依赖已复核；未逐项走更新合并/校验、Frontier cancel 事务/租约、task/results/media DTO、Mongo 内容与 telemetry 计数，不能泛称完整 CRUD。metadata 是主动 HTTP/robots/sitemap/crawl4ai 发现，Nest 服务入口已定位；create/retry/delete/ingest 与 worker 另分候选。
 
 ## situation
@@ -99,7 +100,7 @@
 
 ## infrastructure-data
 
-**接线已静态核对；9 数据设置和7基础设施组的业务归一化/加解密尚未深入核对**：main 的资源 OR、wireDataRuntimeSettings 创建 handler 与错误返回范围已核，OBS-DATA-001 记录吞错但当前合法路径未证实可触发。archive_status 读取 Redis 派生索引，不是 producer/consumer。未逐项验 storage/vector/nominatim/realtime 配置优先级、清空密钥语义、会话锁、归档状态分页/索引清理；读取 settings 不能当 S3 对象客户端可复用。
+**接线已静态核对；9 数据设置和7基础设施组的业务归一化/加解密尚未深入核对**：main 的资源 OR、wireDataRuntimeSettings 创建 handler 与错误返回范围已核，OBS-DATA-001 记录吞错但当前合法路径未证实可触发。archive_status 读取 Redis 派生索引，不是 producer/consumer。未逐项验 storage/vector/nominatim/realtime 配置优先级、清空密钥语义、会话锁、归档状态分页/索引清理。2026-10-18 增量：storage/test 已交付于 `refactor/go-storage-media`（[Ready PR #73](https://github.com/wei500L/newwei/pull/73)）——独立开关 `API_GO_STORAGE_DIAGNOSTICS_MODE`、复用私有 authorize（settings.manage，无平台管理员二次门槛）、`StorageRuntimeConfig` 复用九键/storage:settings 缓存/密钥解密、`objectstorage` 窄包承担 HeadBucket/PutObject/DeleteObject 与 presign；mode=mysql 真实 SELECT 1，mode=s3 三步各自捕获、201 + ok:false 汇总、测试对象 key 每次唯一且 delete 只删本次 key。7 条配置路由与平台管理员写权限未改；PR 未合 main，实桶未验证。
 
 ## observability
 

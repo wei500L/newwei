@@ -14,6 +14,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlreadtelemetry"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 )
 
 // wireCrawlReadTelemetry registers the seven crawl read / media / telemetry
@@ -22,13 +23,15 @@ import (
 //
 // The Mongo connection reuses the shared one and is opened on demand; the Redis
 // client is the gateway's shared connection (telemetry counters and the quality
-// snapshot lock).
+// snapshot lock). storageConfig is the shared runtime storage configuration
+// reader used to presign S3 media URLs.
 func wireCrawlReadTelemetry(
 	gateway *legacyproxy.Gateway,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
+	storageConfig objectstorage.ConfigReader,
 	mongoConn **dashboardstats.Connection,
 ) error {
 	if cfg.CrawlReadTelemetryMode != config.CrawlReadTelemetryModeGo {
@@ -46,7 +49,7 @@ func wireCrawlReadTelemetry(
 	}
 	handler := crawlreadtelemetry.NewHandler(
 		authenticator,
-		crawlreadtelemetry.NewService(db, redisClient, (*mongoConn).Database(), cfg.JWTSecret),
+		crawlreadtelemetry.NewService(db, redisClient, (*mongoConn).Database(), cfg.JWTSecret, storageConfig),
 	)
 	policy := cors.New(cfg.CorsOrigin)
 	gateway.RegisterGoHandler(legacyproxy.CrawlReadTelemetryKey, func(w http.ResponseWriter, r *http.Request) {

@@ -547,8 +547,11 @@ func (s *Service) attachResultContent(
 		contents[document.ResultID] = document
 	}
 
-	ttlSeconds := s.getSignedURLTTLSeconds(ctx)
-	assetsByResult, err := s.listAssetsForTask(ctx, orgID, userID, taskID, resultIDs, ttlSeconds)
+	// One storage configuration snapshot per detail request: the TTL and the S3
+	// signing capability are resolved once and reused by every asset, instead of
+	// re-reading the nine settings per asset or per mode.
+	ttlSeconds, storageClient := s.storageSigningContext(ctx)
+	assetsByResult, err := s.listAssetsForTask(ctx, orgID, userID, taskID, resultIDs, ttlSeconds, storageClient)
 	if err != nil {
 		return nil, err
 	}

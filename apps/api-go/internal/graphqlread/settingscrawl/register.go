@@ -9,6 +9,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlreadtelemetry"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
+	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 )
 
 // Permission names used by the twenty roots.
@@ -26,6 +27,12 @@ type Options struct {
 	// the crawl read/telemetry service, which needs the same secret the REST
 	// route uses.
 	JWTSecret string
+	// StorageConfig resolves the storage configuration snapshot that signs S3
+	// media URLs. The GraphQL crawlTask root builds its own crawl read service,
+	// so it must receive the same runtime storage reader as the REST route;
+	// without it the S3 previewUrl/downloadUrl members stay unset. A nil reader
+	// is accepted (tests) and degrades to the documented "no S3 URL" branch.
+	StorageConfig objectstorage.ConfigReader
 	// Mongo is the dashboard Mongo database that stores crawl run logs.
 	Mongo *mongo.Database
 	// Redis is used by the source policy sync-status comparison only.
@@ -54,14 +61,24 @@ func Register(reg *contract.Registry, db *sql.DB, options Options) {
 	settings := &settingsReader{s: st}
 	policies := &policyReader{s: st, settings: settings}
 	review := &reviewReader{s: st, settings: settings}
-	crawl := &crawlReader{
-		s:   st,
-		svc: crawlreadtelemetry.NewService(db, options.Redis, options.Mongo, options.JWTSecret),
-	}
+	crawl := newCrawlReader(db, st, options)
 
 	registerSettingsRoots(reg, settings, policies)
 	registerReviewRoot(reg, review)
 	registerCrawlRoots(reg, crawl)
+}
+
+// newCrawlReader builds the crawl read service shared by the crawlTask root.
+// It is the single construction point for the GraphQL route, so the GraphQL
+// detail query injects exactly the same runtime storage configuration reader as
+// the REST handler (without it the S3 previewUrl/downloadUrl members stay
+// unset).
+func newCrawlReader(db *sql.DB, st *store, options Options) *crawlReader {
+	return &crawlReader{
+		s: st,
+		svc: crawlreadtelemetry.NewService(
+			db, options.Redis, options.Mongo, options.JWTSecret, options.StorageConfig),
+	}
 }
 
 // registerTypes records every GraphQL object type the twenty roots project. An

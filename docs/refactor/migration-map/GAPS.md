@@ -44,12 +44,13 @@
 ## GAP-CRAWL-001 · 已注册媒体入口丢失 S3 下发
 
 - 入口：`GET /api/crawl-media-assets/:assetId/:mode`，mode 为 preview/download；公开路由使用 HMAC 的 exp/org/user/sig 授权，不由公开二字推断可越租户。
+- 同因缺口（本次一并交付）：`GET /api/crawl-tasks/:id` 与 `Query crawlTask` 的 `mediaAssets` 对 S3 记录同样不生成 preview/download URL，且 REST 与 GraphQL 各有独立构造器，必须同时注入存储能力。
 - 触发/用户影响：`API_GO_CRAWL_READ_TELEMETRY_MODE=go`；签名有效、orgId 匹配且资产 provider 为 s3，有合法 storageKey/存储配置，Go 仍返回 404。任务详情返回的媒体 URL 可能因此失效。
 - Nest：[CrawlMediaAssetService.getAssetDeliveryPayload](../../../apps/api/src/modules/crawl/crawl-media-asset.service.ts) 433–520，MySQL blob 与 S3 分支分开，S3 调 storage.createObjectReadUrl，附 content-type/disposition/cache-control；[controller](../../../apps/api/src/modules/crawl/crawl-media-asset.controller.ts) 对 redirectUrl 重定向。
 - Go：[service_media.go](../../../apps/api-go/internal/crawlreadtelemetry/service_media.go) `getAssetDeliveryPayload` 456–515，MySQL joined blob/legacy blob 已实现；非 MySQL 末尾固定 `(nil,nil)`。`serveMediaAsset` 151 将 nil 映射为 404，虽有 RedirectURL 分支却没有 S3 生产者。核对 SHA 如页首。
 - 主要文件：crawlreadtelemetry/service_media.go、模型/构造与 `cmd/api/crawl_read_telemetry.go`；读取存储配置/解密可能涉及 infrastructuresettings/storage.go，当前该包只提供配置管理，不能当现成 S3 对象客户端。S3/Nest StorageService 是外部对象边界；不需要迁 crawl worker 才可补读。
 - 前置/冲突：明确 S3 配置优先级、endpoint/path-style/publicBaseURL/TTL 与租户签名；BL-03 与 BL-15 的存储配置辅助函数串行。原 #50 已 merged，未迁的是剩余 S3 分支，不重新分配整个 7 路批次。
-- 状态：未分配。关闭证据：**无**；需合法 S3 下发分支源码/提交/CI，实桶验证与配置缺失错误另记。
+- 状态：2026-10-18 已实现，[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md) 交付于 `refactor/go-storage-media`（[Ready PR #73](https://github.com/wei500L/newwei/pull/73)）；PR **未合 main**，本缺口**仍开放**。已交付：媒体路由 S3 presigned 302（按记录自身 storageKey，签名 content-type/disposition/cache-control，配置不完整返回 400）、REST 详情与 `Query crawlTask` 两处注入并各自签名 preview/download、按存储配置 TTL 且修正 env TTL 回退；GAP 同时覆盖详情两处构造。关闭证据：需实际合入 main 的提交 + 该 head 的普通 CI success，以及实桶/MinIO 真实签名下载验证；当前只有 PR/静态契约测试，实桶未执行。
 
 <a id="gap-legacy-001"></a>
 

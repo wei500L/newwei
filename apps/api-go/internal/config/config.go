@@ -504,6 +504,36 @@ const (
 	InfrastructureSettingsModeGo InfrastructureSettingsMode = "go"
 )
 
+// StorageDiagnosticsMode controls the single storage connection test route
+// migrated by this unit (API_GO_STORAGE_DIAGNOSTICS_MODE):
+//
+//	POST /api/admin/settings/storage/test
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep the route on the NestJS proxy, and any other value fails
+// startup instead of silently degrading.
+//
+// The switch is deliberately independent of API_GO_INFRASTRUCTURE_SETTINGS_MODE
+// and of API_GO_CRAWL_READ_TELEMETRY_MODE: the seven configuration routes keep
+// their own switch, and enabling the diagnostics alone takes over only this one
+// exact route (plus its CORS preflight). go mode requires JWT_SECRET,
+// DATABASE_URL and REDIS_HOST; it never requires MONGO_URI and never requires
+// the settings/crawl or GraphQL switches. No S3 client is built at startup and
+// no probe runs before a request: the route answers 201 in both modes and
+// reports per-step failures inside the response body. Rollback only means
+// setting the variable back to legacy.
+type StorageDiagnosticsMode string
+
+const (
+	// StorageDiagnosticsModeLegacy proxies the route to NestJS (default,
+	// including the empty value).
+	StorageDiagnosticsModeLegacy StorageDiagnosticsMode = "legacy"
+	// StorageDiagnosticsModeGo serves the route from Go with the ordinary
+	// settings.manage permission (no platform-admin second gate, matching the
+	// NestJS controller) and the shared settings cache and secret decryption.
+	StorageDiagnosticsModeGo StorageDiagnosticsMode = "go"
+)
+
 // AccountSecurityMode controls the eight authenticated account, session and
 // machine-token HTTP routes migrated by this unit
 // (API_GO_ACCOUNT_SECURITY_MODE): GET /api/auth/me, PATCH /api/auth/profile,
@@ -1196,6 +1226,11 @@ type Config struct {
 	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
 	// it does not require Mongo and does not start any worker or scheduled job.
 	InfrastructureSettingsMode InfrastructureSettingsMode
+	// StorageDiagnosticsMode controls the single storage connection test route
+	// (see StorageDiagnosticsMode). Default legacy. Mode go requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST; it does not require Mongo, does not require
+	// any other takeover switch and performs no startup probe.
+	StorageDiagnosticsMode StorageDiagnosticsMode
 	// DataRuntimeSettingsMode controls the nine data runtime settings and
 	// archive status routes (see DataRuntimeSettingsMode). Default legacy. Mode
 	// go requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
@@ -1854,6 +1889,18 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go")
+	}
+	// The storage connection test switch is parsed independently of the
+	// infrastructure settings switch: the diagnostics route can be taken over
+	// while the seven configuration routes stay on NestJS, and the other way
+	// around. An empty value behaves exactly like legacy.
+	switch strings.TrimSpace(getenv("API_GO_STORAGE_DIAGNOSTICS_MODE")) {
+	case "", string(StorageDiagnosticsModeLegacy):
+		cfg.StorageDiagnosticsMode = StorageDiagnosticsModeLegacy
+	case string(StorageDiagnosticsModeGo):
+		cfg.StorageDiagnosticsMode = StorageDiagnosticsModeGo
+	default:
+		errs = append(errs, "API_GO_STORAGE_DIAGNOSTICS_MODE must be one of legacy|go")
 	}
 	// The authenticated MFA management and organization OIDC configuration
 	// switch accepts the empty string, legacy and go. An empty value behaves
@@ -2570,6 +2617,14 @@ func Load(getenv func(string) string) (Config, error) {
 	// contracts.
 	if cfg.InfrastructureSettingsMode == InfrastructureSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE", cfg)
+	}
+	// The storage connection test takeover needs JWT verification, MySQL (the
+	// real SELECT 1 and the settings read) and Redis (the storage settings
+	// cache) only. It reads no Mongo collection, requires no other takeover
+	// switch, builds no S3 client at startup and performs no startup probe: the
+	// diagnostics run inside the request and report failures per step.
+	if cfg.StorageDiagnosticsMode == StorageDiagnosticsModeGo {
+		appendAuthRequirements(&errs, "API_GO_STORAGE_DIAGNOSTICS_MODE", cfg)
 	}
 	// The data runtime settings takeover needs JWT verification, MySQL and Redis
 	// only. It reads no Mongo collection, starts no worker, performs no startup

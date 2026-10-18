@@ -769,9 +769,18 @@ services:
       # SystemSetting 与 Redis 配置缓存（vector_service:settings、
       # storage:settings）；四条写另需平台管理员。go 要求 JWT_SECRET、
       # DATABASE_URL、REDIS_HOST，不要求 Mongo，不建 S3/vector 客户端，
-      # 不做启动网络探测。diagnostics 与 storage/test 仍回 NestJS。
+      # 不做启动网络探测。vector-service/diagnostics 仍回 NestJS。
       # 回滚只把该变量改回 legacy。
       API_GO_INFRASTRUCTURE_SETTINGS_MODE: ${API_GO_INFRASTRUCTURE_SETTINGS_MODE:-legacy}
+      # 存储连接诊断 1 条精确 HTTP：POST /api/admin/settings/storage/test。
+      # 独立于 API_GO_INFRASTRUCTURE_SETTINGS_MODE，只接管这一条路由，不需要
+      # MONGO_URI、GraphQL 或采集读开关。pilot 与样例保持 legacy；改成 go 才由
+      # Go 独立验签并要求 settings.manage（无平台管理员二次门槛），复用
+      # storage:settings 缓存与密钥解密。mode=mysql 真实 SELECT 1；mode=s3 依次
+      # HeadBucket/PutObject/DeleteObject，每步独立报告，失败仍 201 + ok:false；
+      # 测试对象 key 每次唯一，delete 只删本次 key。启动不建 S3 客户端、不探测。
+      # 回滚只把该变量改回 legacy。
+      API_GO_STORAGE_DIAGNOSTICS_MODE: ${API_GO_STORAGE_DIAGNOSTICS_MODE:-legacy}
       # 数据运行设置与归档状态 9 条精确 HTTP：实时信号设置
       # （GET/PUT/DELETE /api/system-settings/realtime-signals）、归档准备设置
       # （GET/PUT/DELETE /api/system-settings/archive-preparation）、归档准备状态

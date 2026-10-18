@@ -35,6 +35,11 @@ var errRedis = errors.New("crawl read telemetry: redis failure")
 // errMongo marks a Mongo failure so the handler can answer 500.
 var errMongo = errors.New("crawl read telemetry: mongo failure")
 
+// errStorageConfigUnavailable marks a missing storage configuration reader. The
+// media paths fail closed instead of fabricating a URL or pretending that an
+// existing asset does not exist.
+var errStorageConfigUnavailable = errors.New("crawl read telemetry: storage configuration reader is not configured")
+
 // writeServiceError maps a service error onto the shared authhttp error shapes.
 // Machine tokens reuse the adminlogs HTTP mapping (401) so the two Go units
 // stay identical.

@@ -12,6 +12,13 @@
 - 静态边界：未在本机安装依赖、未运行 go build/go test/Docker/服务，未做模型实网、MySQL/Mongo 或部署切流验证；gofmt、`git diff --check` 与只读源码核对已完成。
 - 关闭边界：GAP-NEWS-001 仍开放；PR 只记候选实现，实际 merge SHA 落地后才复核关闭。
 
+## STORAGE-MEDIA-001 交付证据（2026-10-18，业务 PR #73）
+
+- 业务分支 `refactor/go-storage-media`，worktree `/Users/oo/project/newwei-go-storage-media`，由 `origin/main 9d0462e16d88d146b8afbf67cdd58d8b7419ff29` 创建；提交 `a7cba649`（存储诊断 + 媒体/REST/GraphQL 的 S3 交付 + 测试 + 开关/Compose/示例/任务记录）。
+- [Ready PR #73](https://github.com/wei500L/newwei/pull/73)（未合 main）。依赖变更按既有 `go-modules-regen` label 通道远端 `go mod tidy`/`go build`；生成后需 fetch+merge 机器人提交、移除 label，再以最终 head 的普通 CI 为准。
+- 本机未安装依赖、未运行 build/test/Docker/服务；无实桶/MinIO 签名下载、无部署、无生产流量。因此 GAP-CRAWL-001 与 storage/test 均不因本 PR 关闭，BL-03 / BL-15.storage/test 指向本任务而不计 main 迁移数。
+- 交付后的精确 head 与普通 CI run 见 [STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md) 的交付记录；本页不提前登记 main 覆盖数。
+
 ## 本轮完整性复核（历史快照）
 
 2026-10-18 14:37 开始，14:49 再 fetch，`origin/main = 3cedce9aa3200436aba3596f63b559de5490cec8` 未变。#69 OPEN / Ready / autoMergeRequest=null，原 worktree 干净后在原文档分支追加；未 amend/rebase/force-push。apps/api、apps/api-go、apps/vector-go 相对该 main 无差异。本轮只改 migration-map 文档；原 PR 已有 AGENTS/roadmap 导航，本轮没有扩展业务/配置/测试/schema/workflow。

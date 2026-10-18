@@ -8,11 +8,11 @@
 
 关键数据与副作用：MySQL SystemSetting、Redis、存储 S3/MinIO、Nominatim、vector、crawl4ai 与归档状态。真实外部连接测试、Telegram 授权/快照刷新、situation 设置整体仍有 Nest 路径。
 
-真实剩余缺口：存储 test、Nominatim test、vector diagnostics、situation-monitor 设置与 Telegram 授权/外部刷新尚在 Nest；启用必须按本域开关，不能改生产 Web 入口。main.go 的 wireDataRuntimeSettings 吞错已核；当前合法路径先保证资源，未证明可触发，见 [OBS-DATA-001](../GAPS.md#观察项与缺少验证不计入已确认业务缺口)，不写成当前九路不可用。
+真实剩余缺口：存储 test 在 `API_GO_STORAGE_DIAGNOSTICS_MODE=go` 时已由 Go 接管（默认 legacy 仍回 Nest，见 [STORAGE-MEDIA-001](../tasks/STORAGE-MEDIA-001.md) 与 [Ready PR #73](https://github.com/wei500L/newwei/pull/73)；PR 未合 main、无实桶验证）；Nominatim test、vector diagnostics、situation-monitor 设置与 Telegram 授权/外部刷新尚在 Nest；启用必须按本域开关，不能改生产 Web 入口。main.go 的 wireDataRuntimeSettings 吞错已核；当前合法路径先保证资源，未证明可触发，见 [OBS-DATA-001](../GAPS.md#观察项与缺少验证不计入已确认业务缺口)，不写成当前九路不可用。
 
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#infrastructure-data) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领与交付：[STORAGE-MEDIA-001](../tasks/STORAGE-MEDIA-001.md) 仅 storage/test 子范围及必要运行配置导出（与采集媒体链共用同一 S3 能力），不认领其余诊断或配置 CRUD。业务实现已在 `refactor/go-storage-media`（[Ready PR #73](https://github.com/wei500L/newwei/pull/73)）：新增独立开关、诊断 handler、`StorageRuntimeConfig` 与新 `objectstorage` 窄包；7 条配置路由与平台管理员写权限不变，PR 未合 main。旧 worktree 不自动视为活动任务。
 
 ## HTTP 开关、实现与生产接线
 
@@ -22,6 +22,7 @@
 |---|---|---|---|
 | [WithDataRuntimeSettings](../../../../apps/api-go/internal/legacyproxy/data_runtime_settings_routes.go) | `API_GO_DATA_RUNTIME_SETTINGS_MODE` | [dataruntimesettings](../../../../apps/api-go/internal/dataruntimesettings) | `${API_GO_DATA_RUNTIME_SETTINGS_MODE:-legacy}` |
 | [WithInfrastructureSettings](../../../../apps/api-go/internal/legacyproxy/infrastructure_settings_routes.go) | `API_GO_INFRASTRUCTURE_SETTINGS_MODE` | [infrastructuresettings](../../../../apps/api-go/internal/infrastructuresettings) | `${API_GO_INFRASTRUCTURE_SETTINGS_MODE:-legacy}` |
+| [WithStorageDiagnostics](../../../../apps/api-go/internal/legacyproxy/storage_diagnostics_routes.go) | `API_GO_STORAGE_DIAGNOSTICS_MODE` | [infrastructuresettings](../../../../apps/api-go/internal/infrastructuresettings)（`storage_diagnostics.go`）+ [objectstorage](../../../../apps/api-go/internal/objectstorage) | `${API_GO_STORAGE_DIAGNOSTICS_MODE:-legacy}` |
 
 生产装配：[cmd/api](../../../../apps/api-go/cmd/api) 中 main.run 组合上述 With 路由规则，各域 wire* 或 main 中 RegisterGoHandler 注入本地 Handler/Service。业务包未发现通过 legacyproxy 回调 Nest 的实现；不支持的方法/路径与普通 OPTIONS 的代理不算业务迁移。默认回滚把对应模式改回 legacy；不要修改整段 /api 前缀。
 
@@ -33,7 +34,7 @@
 |---|---|---|---|
 | `GET /api/admin/settings/storage` | settings.manage | [storage-settings.controller.ts](../../../../apps/api/src/modules/storage/storage-settings.controller.ts) · `getSettings` | WithInfrastructureSettings |
 | `PATCH /api/admin/settings/storage` | settings.manage | [storage-settings.controller.ts](../../../../apps/api/src/modules/storage/storage-settings.controller.ts) · `updateSettings` | WithInfrastructureSettings |
-| `POST /api/admin/settings/storage/test` | settings.manage | [storage-settings.controller.ts](../../../../apps/api/src/modules/storage/storage-settings.controller.ts) · `testConnection` | Nest；尚未接管 |
+| `POST /api/admin/settings/storage/test` | settings.manage；**无**平台管理员二次门槛 | [storage-settings.controller.ts](../../../../apps/api/src/modules/storage/storage-settings.controller.ts) · `testConnection` | [WithStorageDiagnostics](../../../../apps/api-go/internal/legacyproxy/storage_diagnostics_routes.go)（独立开关 `API_GO_STORAGE_DIAGNOSTICS_MODE`，默认 legacy；HTTP 201，mode=mysql 真实 SELECT 1 / mode=s3 三步 check） |
 | `DELETE /api/system-settings/archive-preparation` | settings.manage | [archive-preparation-settings.controller.ts](../../../../apps/api/src/modules/system-settings/archive-preparation-settings.controller.ts) · `resetSettings` | WithDataRuntimeSettings |
 | `GET /api/system-settings/archive-preparation` | settings.manage | [archive-preparation-settings.controller.ts](../../../../apps/api/src/modules/system-settings/archive-preparation-settings.controller.ts) · `getSettings` | WithDataRuntimeSettings |
 | `PUT /api/system-settings/archive-preparation` | settings.manage | [archive-preparation-settings.controller.ts](../../../../apps/api/src/modules/system-settings/archive-preparation-settings.controller.ts) · `updateSettings` | WithDataRuntimeSettings |
