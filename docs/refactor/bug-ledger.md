@@ -4,12 +4,12 @@
 > 审计方法：5 路并行代码勘察（API 契约 / 鉴权安全 / 队列拓扑 / vector 服务 / 前端 IA）+ 主线逐项复核。**标注「已复核」的条目经主线二次验证（文件:行号 亲验）；其余为单路勘察结论，修复前需按同一标准复核。**
 > 规则：先证据后修复；每条修复必须可独立回滚；不制造假测试。
 
-## 0. 字段与级别说明
+## 1. 字段与级别说明
 
 - **严重级别**：P0 阻断发布/门禁失效/数据泄漏 · P1 核心功能受损 · P2 体验/性能/工程化
 - **状态**：✅ 已修复（含回归验证）· 🔧 已修复待运行时验证 · 🔶 部分改善 · ⬜ 开放 · 👁 观察项
 
-## 1. 七条关键用户流程覆盖
+## 2. 七条关键用户流程覆盖
 
 | # | 流程 | 本轮涉及条目 |
 |---|---|---|
@@ -21,7 +21,7 @@
 | F6 | 管理与运维（admin/crawl/system-settings/RBAC/可观测） | BL-02/03/09 · SEC-03 · API-01 |
 | F7 | 个性化与个人工作台（user-settings/digest/subscriptions/onboarding） | API-01 · FE-02/03 |
 
-## 2. 总览
+## 3. 总览
 
 | ID | 级别 | 一句话 | 状态 | 修复提交 |
 |---|---|---|---|---|
@@ -65,7 +65,7 @@
 | AS3 | P1 | profile 字段显式 null 穿过 `@IsOptional` 后触发 `.trim()` 500；机器身份更新不存在 User 也 500 | ✅ Nest 与 Go 两侧已修复；普通 CI 与真实栈 smoke 均已远端验证（见 §8） | 本轮（见 §8） |
 | AS4 | P1 | 机器令牌 `createdById` 直接写入 `machine:<id>` 触发 User 外键 1452；DTO `MinLength(1)` 在 trim 前判断，空白名称可入库 | ✅ Nest 与 Go 两侧已修复；普通 CI 与真实栈 smoke 均已远端验证（见 §8） | 本轮（见 §8） |
 
-## 3. 已修复条目（详细）
+## 4. 已修复条目（详细）
 
 ### BL-01 web lint 35 处错误 — ✅ 已修复【已复核】
 
@@ -204,7 +204,7 @@
 - **验证**：远端 jsdom（diagnostics GET 拒绝 → 表单仍在、诊断区错误可见）；
   真实浏览器未验证。
 
-## 4. 开放条目（待修复，按优先级排序）
+## 5. 开放条目（待修复，按优先级排序）
 
 ### SEC-01 全局 vector 配置可被任意 org 管理员改写 — 🔧 已修复（单元级 CI 已验证；真实登录态未验证）【已复核】
 
@@ -417,7 +417,7 @@ verify success）——CI-01 本轮未复现，无重跑。
   涉及用户可见文案语义取舍（warning vs error），单独决策。
 - **状态**：开放。FE-批5B 以 characterization 锁定现状（测试内注明缺陷），未修改。
 
-## 5. 观察项（非缺陷，迁移决策输入）
+## 6. 观察项（非缺陷，迁移决策输入）
 
 1. GraphQL Subscription 进程内 PubSub vs WS Redis adapter（水平扩容语义不一致）
 2. crawl4ai legacy 与 hot/normal 双轨队列并存
@@ -427,7 +427,7 @@ verify success）——CI-01 本轮未复现，无重跑。
 6. ~~war-map-geometry.ts 零消费导出 splitDeckPathSegments/buildSanitizedPathFeatures（FE-DD-01，批4A 遗留）~~ ✅ 已随 FE-批4B 合并后收口 PR 删除（FE-DD-01，见 §3）
 7. vector-integration 的 upsert 确定性点 ID 断言偶发 500 vs 201（run 33957774254，真实 Qdrant 环境；同分支纯前端改动后的相邻 run 33957963593 通过，无代码因果，非 CI-01 变体——登记观察待复现规律）。第二次复现：PR #12 文档收口提交 `1e9fe1c9`（仅改 3 个 markdown）run 34034804518 vector-integration 同断言失败（500 vs 201）；同 PR 代码提交首跑 run 34034235302 通过——两次 run 之间无代码差异，进一步佐证与代码无因果。仍为观察项。
 
-## 6. 风险与未验证登记
+## 7. 风险与未验证登记
 
 - **BL-04 的 Node 版本前提**：`process.getBuiltinModule` 需 Node ≥20.16。CI 当前 Node 20（latest tag，实际 ≥20.16）已验证通过；若未来 CI 固定到 <20.16 需回退方案。
 - **API-01 / SEC 系列真实登录态验证**：SEC-01 单元级与 API-01 契约级测试已由远端 CI 验证（run 33748591315）；**真实数据库登录态冒烟**（登录→PUT vector 配置→403 / 完成引导→刷新不重现）仍需 Docker 数据库栈——CI 无 DB，列为部署环境可用后的第一优先验证项。
@@ -496,7 +496,7 @@ verify success）——CI-01 本轮未复现，无重跑。
 - **后续方向**：单独一批把权限改为 `crawl.write`，并同步 auth-matrix 快照。
 - **状态**：只登记。
 
-## 7. 基础设施连接与采集运行凭据批次（IS1–IS4）
+## 8. 基础设施连接与采集运行凭据批次（IS1–IS4）
 
 本批次把「基础设施连接与采集运行凭据配置」7 条 HTTP 用 Strangler Fig 方式迁入
 apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy），并同步
@@ -598,7 +598,76 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
   endpoint 仍 DTO 400。
 - **状态**：✅ 两侧已修复；真实栈回归由 `api-go-infrastructure-settings-smoke` 的 JSON null 断言组覆盖（`JSON_TYPE=NULL` 且 `value IS NULL=0`）。
 
-## 8. 账户资料、会话退出与机器令牌批次（AS1–AS4）
+### DS1 三个全局设置域缺少平台管理员写入门禁 — ✅ 已修复【P0】
+
+- **用户影响**：任何持有 `settings.manage` 的组织管理员都能改写所有租户的运行参数、
+  全局凭证、Nominatim 身份与归档并发（`SystemSetting.key` 无 org 维度）。
+- **证据（57d1d4ba）**：`system-settings/realtime-signals-settings.service.ts` 的
+  `updateSettings`/`resetToEnv`、`system-settings/archive-preparation-settings.service.ts`
+  的 `updateSettings`/`resetToDefaults`、`system-settings/geo-nominatim-settings.service.ts`
+  的 `updateSettings` 均无平台检查；三组 controller 只要求 `settings.manage`。
+- **修复（Nest）**：五个 service 公开写方法首行
+  `PlatformAccessService.assertPlatformAdmin`（live `GlobalRoleAssignment`，不信任 JWT
+  `globalRoles`/profile 缓存），controller/DTO 未改；写 User 外键与审计 actor 前统一经
+  `normalizeAuditActorId`。**修复（Go）**：DTO 校验之后同一门禁，机器身份直接 403。
+- **远端回归断言**：四条 GET 不新增门禁；五条写对 org A/B 管理员与机器令牌 403 且
+  DB/cache/audit 无副作用；无 `settings.manage` 先 403 `INSUFFICIENT_PERMISSIONS`；
+  非法 DTO 先 400；动态授予/撤销平台角色即时生效。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-data-runtime-settings-smoke` 的
+  DS1 断言组覆盖。
+
+### DS2 实时信号与 Nominatim 的部分更新跨实例丢失 — ✅ 已修复【P1】
+
+- **用户影响**：两个不同字段的并发 PUT 互相覆盖；实时设置还会用旧 Redis 基准把另一
+  实例刚写的字段回滚。
+- **证据（57d1d4ba）**：`realtime-signals-settings.service.ts` 从
+  `loadStoredSettings()`（缓存优先）取合并基准后整体 upsert；
+  `geo-nominatim-settings.service.ts` 读 `current` 后整体 upsert，两侧都没有跨实例锁。
+- **修复（Nest）**：新增 `data-runtime-settings.lock.ts`（只包装既有
+  `withMysqlSessionLock`）；实时 update/reset 共用
+  `data-runtime-settings:realtime:v1`，geo update 用
+  `data-runtime-settings:nominatim:v1`；合并基准改为锁内
+  `loadStoredSettingsFromDB()`/`loadOverridesFromDB()`；锁未取得 409、连接类故障 503、
+  业务 HttpException 原样上抛。**修复（Go）**：同名锁、`*sql.Conn` 专用连接、
+  `context.WithoutCancel` 释放、同样从 DB 取基准。
+- **远端回归断言**：预热一侧缓存后直接改 DB，再做另一侧单字段 PUT → DB 值不被回滚
+  （双向）；Nest 写 A + Go 写 B 两者都保留；geo 分别改 userAgent/email 不丢；真实
+  MySQL 会话持锁时两侧均等待并 409（文案一致）、无写入，释放后恢复。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-data-runtime-settings-smoke` 的
+  DS2 断言组覆盖。
+
+### DS3 归档状态公开错误缺少脱敏 — ✅ 已修复【P1】
+
+- **用户影响**：worker 的原始 `error.message`（可能含 Bearer/Basic 凭据或
+  `password=`/`token=`/`api_key=`/`secret=` 片段）直接出现在管理端响应里。
+- **证据（57d1d4ba）**：`archive/archive-preparation.processor.ts` 把 `error.message`
+  传给 `markFailed`；`archive/archive-preparation-queue.service.ts` 的 `getStatus` 与
+  `toPublicStatusRecord` 原样输出 `errorMessage`。
+- **修复**：仅公开读取输出调用既有脱敏实现（Nest `@modular/utils`
+  `redactSensitiveFields`，Go `adminlogs.RedactSensitiveFields`），覆盖两个公开映射；
+  不改 worker、不改 Redis 原文、不删诊断字段，缺失/`null`/空串语义保留。
+- **远端回归断言**：Nest 与 Go 的替换结果一致；Redis 中原始记录保持不变；其他租户
+  状态不可见；普通错误文本不变。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-data-runtime-settings-smoke` 的
+  DS3/DS4 断言组覆盖。
+
+### DS4 归档状态列表与计数来自两次读取 — ✅ 已修复【P1】
+
+- **用户影响**：一个响应内部的 `counts` 与 `recentStatuses` 可互相矛盾。
+- **证据（57d1d4ba）**：`archive-preparation-queue.service.ts` 的
+  `getOperationalStatus` 先 `getRecentStatuses` 再 `getScopedCounts`，两者各自重新
+  ZRANGE/MGET。
+- **修复**：`getOperationalStatus` 只取一份 org-scoped 记录快照并同时派生
+  counts 与 recentStatuses（保持排序、最多 10 条、计数映射与 pending 公式）；Go 侧
+  同样单次读取。不宣称 ZRANGE/MGET 是整索引原子事务，不加 Lua 锁、不锁 worker、
+  不改写入协议。
+- **远端回归断言**：直接由 Redis 快照推导期望 counts/recent 并与响应比对（含 >10 条、
+  同 score 字典序、旧无 orgId 回退、过期成员跳过、org 隔离）；Redis 故障不伪装成
+  全零健康状态（Go 侧错误传播）。
+- **状态**：✅ 两侧已修复；真实栈回归由 `api-go-data-runtime-settings-smoke` 的
+  DS4 断言组覆盖。
+
+## 9. 账户资料、会话退出与机器令牌批次（AS1–AS4）
 
 本批次把「账户资料、会话退出与机器令牌管理」8 条 HTTP 用 Strangler Fig 方式迁入
 apps/api-go（独立开关 `API_GO_ACCOUNT_SECURITY_MODE`，默认 legacy），并同步修复
@@ -713,7 +782,7 @@ Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
   继承、list 保留历史 permissions 输出）；真实栈回归由
   `api-go-account-security-smoke` 的 AS4 断言组覆盖。远端证据同 §8 AS1。
 
-## 9. Go-批 M9 模型接入设置与 OpenAI 密钥分发（MA1–MA3）
+## 10. Go-批 M9 模型接入设置与 OpenAI 密钥分发（MA1–MA3）
 
 > 基线 `b89c35a8`（origin/main，普通 CI run 39051652549 success）· 分支
 > `refactor/go-model-access-settings` · 开关 `API_GO_MODEL_ACCESS_SETTINGS_MODE`
@@ -838,7 +907,7 @@ Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
    只能由 seed/SQL 直接写入 `MachineAccessToken.permissions` 构造——smoke 按此
    准备数据，不通过 API 创建。
 
-## 10. Go-批10（平台治理设置 16 条迁移）同批缺陷
+## 11. Go-批10（平台治理设置 16 条迁移）同批缺陷
 
 本节记录随「平台治理设置 16 条迁入 Go」同批修复的三个缺陷。三处都在 NestJS 与 Go
 两侧同修；证据行号以 `origin/main@0dbfc0d0` 为准，开工时已逐条复核。
