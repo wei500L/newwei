@@ -1133,9 +1133,9 @@ func run() error {
 	if err := wireCrawlReadTelemetry(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
-	// 搜索索引重建的两条路由（POST /api/admin/search/reindex 与
-	// GET /api/admin/search/reindex/:jobId）。后台重建使用服务生命周期
-	// context，关闭时由 Close 取消并等待。
+	// The two search index rebuild routes (POST /api/admin/search/reindex and
+	// GET /api/admin/search/reindex/:jobId). The background rebuild runs on the
+	// service lifetime context and is cancelled and awaited by Close.
 	searchReindexService, err := wireSearchReindex(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
 	if err != nil {
 		return err
@@ -1435,8 +1435,9 @@ func run() error {
 		if err := server.Shutdown(ctx); err != nil {
 			return err
 		}
-		// 搜索索引重建的后台协程先收口：取消服务生命周期 context 并等待
-		// 当前批次退出，再关闭它使用的 Redis 与 Mongo 连接。
+		// Close the search reindex background goroutine first: cancel the
+		// service lifetime context and wait for the current batch to stop
+		// before its Redis and Mongo connections are closed below.
 		if searchReindexService != nil {
 			searchReindexService.Close()
 		}
