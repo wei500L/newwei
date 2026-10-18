@@ -37,6 +37,7 @@
 - user-settings 只读 GET ×6 —— **ModeGo（Go-批3B 统一接管：onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor；pilot 内 `API_GO_USER_SETTINGS_READ_MODE=go` 显式启用，优先级高于批3A 的 `API_GO_ONBOARDING_MODE`；默认未设置=兼容旧行为）**：六个 GET 全部由统一 Go handler（`internal/usersettingsread`）独立鉴权并全响应——Go 独立验签 HS256 access token（iss/aud/exp 按 jsonwebtoken 语义、jti 缺失按 NestJS 语义放行、拒绝 alg 混淆与 mtk_）、独立查询真实 Redis blacklist（`access-token:blacklist:<jti>` 同 key，fail-closed）、独立从 MySQL 重推导 User/Org/Membership 与 MembershipRole/RolePermission/Permission 权限（与 getUserProfile 同序同文案 401，多角色优先/primary 回退）、独立判定 `items.read`（JWT permissions claim 一律不参与）、独立查 UserSetting（五个单 key 端点各查一个编译期固定常量 key；situation-monitor 一次聚合查询三个固定 key，对齐 NestJS findMany）并经 normalization（War Map 完整移植 war-map-contract.ts；Situation Monitor 三段聚合；NewsNow 有序对象/上限/真值语义）写出契约等价响应（错误形状对齐 GlobalExceptionFilter）。路由为 exact+GET：六个 PUT 同路径与相似路径（onboarding-x/war-map-x/newsnow 子路径等）回落 legacy。已完成远端真实栈接管验证（Phase A-D：8 个固定 key 落库、shadow 零差异、go 契约全等、NestJS 停止后六端点仍 200 且代表性 PUT/未迁移 GET 502）。`API_GO_USER_SETTINGS_READ_MODE=shadow` 时六端点全部回 shadow 差分。
 - user-settings 全部 PUT ×6（onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor）—— **`API_GO_USER_SETTINGS_WRITE_MODE`（Go-批3C）**：默认 `legacy`，精确路径 PUT 仍代理 NestJS；`go` 时由 `internal/usersettingswrite` 经同一鉴权链写入现有 `UserSetting`（八个固定 key 的 upsert，写后重读）。要求读模式同为 `go`。相似路径与其他方法仍回落 legacy。Situation Monitor 三段不是事务。
 - 登录/refresh/logout/MFA/OIDC/机器令牌 —— **全部仍由 NestJS 承载**（迁移序 5 余项，未动）。
+- 搜索索引重建 ×2（`POST /api/admin/search/reindex`、`GET /api/admin/search/reindex/:jobId`，`settings.manage`）—— **`API_GO_SEARCH_REINDEX_MODE`（Go-批11）**：默认 `legacy`，只接受空串/`legacy`/`go`，非法值启动失败；`go` 时由 `internal/searchreindex` 共用既有 Redis job/list/orgs/lock 结构（`lock:search:reindex:org:<orgId>` 为物理键）、按 `itemMetaId` 游标分批读 Mongo `itemreadmodels` 并 bulk 写入 Elasticsearch（`refresh=false`，最后一次显式 refresh 才 completed）。两个遥测端点（`POST /api/search-telemetry`、`GET /api/admin/search-telemetry/summary`）的开关仍是 `API_GO_CRAWL_READ_TELEMETRY_MODE`；本批只优化其 Redis 往返（写入单次 Lua、汇总单次 Pipeline），不改存储与口径。`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`；Elasticsearch 不是启动条件。回滚只改 `API_GO_SEARCH_REINDEX_MODE`。
 - 入口链（Go-批2C）：api-go 具备生产容器（`infra/docker/api-go.Dockerfile`，distroless nonroot + `healthcheck` 子命令）与 Compose 独立 `api-go-pilot` profile 服务；`API_BASE_URL` 可切 `http://api-go:4020` 使入口变为 `Web → api-go → NestJS`（其余请求全部纯代理，契约不变），默认部署仍直连 NestJS。已通过远端真实栈运行验证（`api-go-entry-smoke`：真实登录 JWT + 六个 PUT 持久化 + Shadow GET 零差异零丢弃 + Go-批3A 鉴权链 + Go-批3B 四阶段接管验证）；生产/预发布真实流量验证未完成。trace header（`x-trace-id`/`traceparent`）在 api-go 入口链保持原语义（§0 TraceId 行为镜像）。
 
 ## 1. REST 契约（71 controller · 369 endpoint）
@@ -241,6 +242,22 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 **同批缺陷修复（两侧同修）**：① `crawl-media-asset.service.ts` 第 264–268 行资产查询补 `orgId`（否则会为跨租户资产签发当前组织的 HMAC）；② `crawl-result.service.ts` 第 754 行 Mongo 内容查询在存在 `accessScope.orgId` 时补 `$or: [{orgId}, {orgId: {$exists:false}}]`；③ `crawl-quality-task-snapshot.service.ts` 的 `aggregateMarkdownRows` 增加 `orgId` 参数并补同样的 `$or`（此前只有 `taskId`）。
 
 仍回 NestJS：`POST /api/crawl-tasks`、`DELETE /api/crawl-tasks/:id`、`POST /api/crawl-tasks/:id/retry`、`POST /api/crawl-tasks/metadata`、`/api/admin/crawl4ai/queue*`、上述 7 条的非注册方法、更长路径与父路径（Go 不返回自己的 404）。回滚：`API_GO_CRAWL_READ_TELEMETRY_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。已知偏差与细节见 `docs/refactor/go-crawl-read-telemetry.md`。SEC-01 的真实登录态未在本批验证。
+
+### 1.8s 搜索索引重建（2 个，Go）与检索遥测批处理优化
+
+`API_GO_SEARCH_REINDEX_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本是 `API_GO_SEARCH_REINDEX_MODE must be one of legacy|go`；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`，Elasticsearch 不是启动条件）。`go` 时只接管 2 条精确规则（规则见 `apps/api-go/internal/legacyproxy/search_reindex_routes.go`）：
+
+- `POST /api/admin/search/reindex`（`settings.manage`，201）：取组织锁（物理键 `lock:search:reindex:org:<orgId>`，`SET NX PX` 5 分钟 + 随机 owner token，续租间隔 TTL/3）→ 落 `queued` 任务（活跃 TTL 12 小时）→ 返回 `{id, orgId, status:"queued", indexed:0, createdAt, updatedAt}`。同组织已有锁时 409 `SEARCH_REINDEX_IN_PROGRESS`（`error:"Conflict"`，无 `detail`）；不新增请求 DTO、不新增输入参数。
+- `GET /api/admin/search/reindex/:jobId`（`settings.manage`，200）：只返回本组织任务，状态仅 `queued|running|completed|failed`，`error` 仅在失败时出现。不存在、已过期或跨组织一律 `null`（200），不新增 UUID 校验、不改 404。
+
+任务状态用 Redis 既有结构 `search:reindex:job:<jobId>` / `search:reindex:org:<orgId>` / `search:reindex:orgs`，与 Nest 存储逐字段兼容（job JSON 的键序与 `error` 位置一致）。后台执行使用服务生命周期 context（HTTP 返回后不因请求取消而终止），顺序为 running → 分批重建 → completed/failed → 停止续租、释放自身锁、只清理本组织历史。清理改为当前组织范围：一次 `LRANGE` + 一次 `MGET` 单遍分类过期/缺失/超额，超额预算基于过滤后的有效列表且只裁终态任务（queued/running 永不被历史清理删除），批量 `DEL` + `LREM`，不用整段覆盖列表。本批不实现进程重启后的自动续跑，也不新增全局清理 scheduler、重试系统或第二套锁。
+
+索引重建：Mongo 只读 `itemreadmodels` 的固定字段投影（不含 `raw.payload`/`processed.result`），始终带 `orgId`、按 `itemMetaId` 升序、`itemMetaId > 上批最后值` 的游标、每批最多 500；ES 文档 ID 为 `<orgId>:<itemMetaId>`。`ensureIndex` 保持现有行为（索引不存在时按当前 mappings 创建，alias 不存在时挂到当前索引，不重建共享索引、不删其他组织文档、不切整库 alias）。Bulk 每批 `refresh=false`、NDJSON 动作行与文档行交替且末尾换行；逐项读取响应，只把成功写入计入 `indexed`，一批存在逐项失败时保存该批成功数并立即 failed（不自动重试，不把后续批次当成功），错误文本含 `itemMetaId`、错误类型与截短原因，不含认证信息或完整文档；最后一次显式 refresh 成功后才 completed。未启用 ES 时沿用禁用分支（`indexed=0`），不算真实重建验收。
+
+本批同时优化两个已迁移遥测入口（开关仍是 `API_GO_CRAWL_READ_TELEMETRY_MODE`，不改存储键、字段名与计数口径）：`POST /api/search-telemetry` 的写入由"N 次 `HINCRBY` + 1 次 `EXPIRE`"合并为一次 Lua（Nest 与 Go 同步），仍是 best-effort；`GET /api/admin/search-telemetry/summary` 的逐日 `HGETALL` 改为一次 Pipeline（Go）与一次批处理读取（Nest），日期顺序与零值日期输出不变。
+
+细节、回滚与未验证项见 `docs/refactor/go-search-reindex.md`。
+
 ### 1.8q 运行时与治理设置（rate-limit / auth-cache / audit-log / scheduler / newsnow）
 
 `API_GO_RUNTIME_SETTINGS_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本是 `API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go`；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，不要求 `MONGO_URI`）。`go` 时只接管 18 条精确规则，统一要求 `settings.manage`（人类身份来自验签、Redis 撤销名单与 membership 重推导；机器令牌走 `MachineAccessToken` 行含 `Org.isActive`，权限与 `orgId` 来自令牌行），其中 `PUT /api/system-settings/audit-log` 另外要求平台管理员（否则 403 `Platform admin access required`；机器令牌永不满足）：

@@ -681,6 +681,27 @@ services:
       # 写队列与实时抓取接口（POST/DELETE/retry/metadata 与
       # admin/crawl4ai/queue*）仍回 NestJS。回滚只把该变量改回 legacy。
       API_GO_CRAWL_READ_TELEMETRY_MODE: legacy
+      # 搜索索引重建 2 条 HTTP（POST /api/admin/search/reindex 与
+      # GET /api/admin/search/reindex/:jobId）。样例保持 legacy。只接受
+      # 空串/legacy/go，非法值启动失败；改成 go 才由 Go 独立鉴权并写 Redis
+      # 的既有 job/list/orgs/lock 结构、分批读 Mongo 的 itemreadmodels 并
+      # bulk 写入 Elasticsearch。go 要求 JWT_SECRET、DATABASE_URL、
+      # REDIS_HOST、MONGO_URI；Elasticsearch 不是启动条件（未启用时沿用
+      # 禁用分支 indexed=0）。遥测仍由 API_GO_CRAWL_READ_TELEMETRY_MODE
+      # 控制。回滚只把该变量改回 legacy。
+      API_GO_SEARCH_REINDEX_MODE: ${API_GO_SEARCH_REINDEX_MODE:-legacy}
+      # 与 api 服务同源的 Elasticsearch 配置（与 Nest env schema 同名同默认
+      # 值），只供 reindex 的 ensureIndex 与 bulk 写入使用。
+      # ELASTICSEARCH_ENABLED 为 false 或 NODE 为空时不建客户端、不读 Mongo，
+      # 任务直接 completed/indexed=0。凭据不进入日志、healthz 或错误正文。
+      ELASTICSEARCH_ENABLED: ${ELASTICSEARCH_ENABLED:-true}
+      ELASTICSEARCH_NODE: ${ELASTICSEARCH_NODE:-http://elasticsearch:9200}
+      ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_USERNAME:-elastic}
+      ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_PASSWORD:-}
+      ELASTICSEARCH_API_KEY: ${ELASTICSEARCH_API_KEY:-}
+      ELASTICSEARCH_ITEMS_INDEX: ${ELASTICSEARCH_ITEMS_INDEX:-items-v1}
+      ELASTICSEARCH_ITEMS_ALIAS: ${ELASTICSEARCH_ITEMS_ALIAS:-items-current}
+      ELASTICSEARCH_REQUEST_TIMEOUT_MS: ${ELASTICSEARCH_REQUEST_TIMEOUT_MS:-3000}
       # 运行时与治理设置 18 条 HTTP（/api/system-settings 下的
       # rate-limit-policies、rate-limits、auth-cache、audit-log、
       # multi-tenant-schedulers、news-source-scheduler、
