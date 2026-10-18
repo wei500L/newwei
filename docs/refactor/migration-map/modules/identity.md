@@ -8,7 +8,7 @@
 
 关键数据与副作用：MySQL User/Membership/Role/Permission/Organization/MachineAccessToken；Redis 撤销名单与权限缓存；邮件、OIDC、头像 S3；Go 审计失败可写 AuditLogOutbox，消费仍由 Nest 承担（见异步域）。令牌 claim 不能替代服务端 membership 重推导。
 
-本次将注册申请→审批→邮件邀请→接受邀请入组14条HTTP认领为[IDENTITY-ONBOARDING-001](../tasks/IDENTITY-ONBOARDING-001.md) reserved，[完整提示词](../tasks/IDENTITY-ONBOARDING-001.prompt.md)已发出；无业务实现/PR新增。OIDC三路、头像和导出继续未认领。GraphQL组织八写与已合登录11路不重复迁移。
+本次注册申请→审批→邮件邀请→接受邀请入组14条HTTP已由[IDENTITY-ONBOARDING-001](../tasks/IDENTITY-ONBOARDING-001.md)提交Ready [#79](https://github.com/wei500L/newwei/pull/79)，head e105b3abdb3fa084356918cb29f8385cb5fb4ddb，状态pr_open，仍未计入main。原[完整提示词](../tasks/IDENTITY-ONBOARDING-001.prompt.md)保留；OIDC三路、头像和导出继续未认领。GraphQL组织八写与已合登录11路不重复迁移。
 
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#identity) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 

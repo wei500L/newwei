@@ -158,9 +158,10 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-17 · model-gateway / 治理与真实探测
 
+- 2026-10-18以main c39f282f深入后，12路整体认领至[LLM-GATEWAY-OPS-001](tasks/LLM-GATEWAY-OPS-001.md) reserved，[执行提示词](tasks/LLM-GATEWAY-OPS-001.prompt.md)已保存并发布，不再是未认领候选。已核team/key管理协议、启停/轮换先后、真实探测/缓存/错误、三类Mongo日志与Go可复用能力；不依赖BL-02私有completion客户端。无真实外部验证，无队列/cron，其他候选不认领。
 - **范围/缺口**：model-gateway 域12条 Nest HTTP：proxy-governance GET/PUT/DELETE/preflight/rotate-key，:id/models/test/proxy-health/proxy-model-info/proxy-lb-test，models-config/test-config（GAP-LEGACY-001）。
 - **基础/依据**：G/{modelaccesssettings,llmgatewayprofiles} 的 profile、密钥、LB 配置，publicportal.gateway 已有请求实现但私有；N/LlmGatewaySettingsController 与服务。治理事务/密钥轮换、LiteLLM内部配置、真实探测/模型列表是不同子链，可先治理后探测。
-- **文件/前置/冲突**：上述业务包/main、共享 client；MySQL/Redis/加密+LiteLLM/模型。**可独立主窗口**但 BL-02 gateway 提取先明确；未核 preflight/rotate 的服务端应用协议，配置 applied 证据不等于生产生效。
+- **文件/前置/冲突**：新llmgatewayops/wire/路由、profiles窄端口、llmlogs probe writer及main/config条件增量；MySQL/Redis/Mongo/加密+LiteLLM/模型。与#79身份核心业务隔离，公共接线保留并集。preflight/rotate协议已按本次task补核，配置applied与mock仍不等于真实生产生效。
 
 ### BL-18 · news / 上游内容、指标关联与流水线
 

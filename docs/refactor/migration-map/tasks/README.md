@@ -4,9 +4,11 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 ## 当前占用与已合并历史
 
-最新增量（2026-10-18）：fetch后main为c39f282f11952b487c3ef6fefb14882db265ed9e，#70–#76已通过[整合PR #77](https://github.com/wei500L/newwei/pull/77)合入；该SHA普通CI39142523834成功，开放PR为空。以下六批主提交/主要接线已在main，旧worktree均干净，不因目录保留而继续占用。只深入本次identity候选，不把此次合并核对当全仓业务验收。
+最新增量（2026-10-18）：fetch后main仍c39f282f11952b487c3ef6fefb14882db265ed9e，#70–#76已通过[整合PR #77](https://github.com/wei500L/newwei/pull/77)合入；该SHA普通CI39142523834成功。现开放业务PR为#79，文档PR为#78。以下六批主提交/主要接线已在main，旧worktree均干净，不因目录保留而继续占用。只深入本次model-gateway候选，不把此次核对当全仓业务验收。
 
-新认领[IDENTITY-ONBOARDING-001](IDENTITY-ONBOARDING-001.md) reserved：[14条HTTP完整执行提示词](IDENTITY-ONBOARDING-001.prompt.md)，注册申请→审批→真实邀请邮件→accept入组；业务目录未创建。复用已合登录SMTP/密码与组织bootstrap；明确修复平台新组织审批被普通系统admin邀请限制阻断的具体分支。OIDC/头像/导出未认领。
+上一批[IDENTITY-ONBOARDING-001](IDENTITY-ONBOARDING-001.md)现pr_open：Ready [#79](https://github.com/wei500L/newwei/pull/79)，head e105b3abdb3fa084356918cb29f8385cb5fb4ddb，worktree已创建；注册申请→审批→邀请入组14路继续占用。已读实际diff，不能提前计入main；OIDC/头像/导出未认领。
+
+本批[LLM-GATEWAY-OPS-001](LLM-GATEWAY-OPS-001.md) reserved：[12条HTTP完整执行提示词](LLM-GATEWAY-OPS-001.prompt.md)。治理启停/预算/轮换、模型列表、健康/model-info缓存、completion/embedding/rerank与LB真实探测及Mongo日志；新llmgatewayops、profiles窄端口、llmlogs probe writer，核心业务不碰#79。独立业务目录尚未创建，文档在#78发布；共享接线保留并集。
 
 本次规划刷新：2026-10-18，origin/main 9d0462e16d88d146b8afbf67cdd58d8b7419ff29。#69已merged；#70仍OPEN/Ready、head adb765d0180e8b34910181e8c6fde8be400a2dff，实际diff与所有现存worktree HEAD/状态已只读刷新；历史工作目录状态无业务新增证据。这里只增加本批认领，不把旧表日期统一刷新成全仓审查。
 
@@ -19,6 +21,8 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 | [STORAGE-MEDIA-001](STORAGE-MEDIA-001.md) | merged | storage/test与S3媒体/详情URL | #73经#77进入main c39f282f；实际原PR merge f4ac4aa8，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
 | [AUTH-LOGIN-001](AUTH-LOGIN-001.md) | merged | 登录/会话/MFA挑战/找回密码/邮箱变更11路 | #75经#77进入main c39f282f；实际原PR merge 7879629e，复用基础已限定核对，目录干净；整合main普通CI成功，非生产启用证据 |
 | [CRAWL-METADATA-001](CRAWL-METADATA-001.md) | merged | HTTP+Query元数据完整预览链 | #76经#77进入main c39f282f；实际原PR merge 501c4930，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
+| [IDENTITY-ONBOARDING-001](IDENTITY-ONBOARDING-001.md) | pr_open | 注册审批与邮件邀请入组14路 | Ready #79，head e105b3ab；实际diff已核，未在main |
+| [LLM-GATEWAY-OPS-001](LLM-GATEWAY-OPS-001.md) | reserved | 治理与真实探测12路，含远端资源与三类日志 | 认领/提示词在#78；无业务PR/实施新增 |
 
 本次增量（2026-10-18）：origin/main 仍为 9d0462e16d88d146b8afbf67cdd58d8b7419ff29；#70 保持 OPEN/Ready、head adb765d0。新增 NEWS-BRIEF-001 与 STORAGE-MEDIA-001 占用，只维护文档与独立编码目录，不取得 BL-01/#70 顶层接线所有权；原表日期不统一刷新成全仓审查。
 
