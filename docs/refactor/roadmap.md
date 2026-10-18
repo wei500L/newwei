@@ -1,5 +1,7 @@
 # 重构路线图（Roadmap）
 
+> 后端迁移最新事实与任务认领：先读 [migration-map/README.md](migration-map/README.md) 和 [规划规则](migration-map/PLANNING.md)；本文件保留阶段路线与历史记录。
+
 > 2026-09-03 · 基于 `edf0c8cf` · 上游输入：baseline / system-map / api-contract-inventory / bug-ledger / frontend-IA / go-migration-adr
 > 里程碑可并行交错，但**同一里程碑内的后端契约变更与前端重构不同 PR**；每个迁移单元附回滚方式。
 
