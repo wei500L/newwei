@@ -454,7 +454,7 @@ strip 再按上表编码。
 
 ## 缺陷修复（GP1 / GP2 / GP3，Nest 与 Go 两侧同修）
 
-三条缺陷的完整证据见 `docs/refactor/bug-ledger.md` §8（行号以基线
+三条缺陷的完整证据见 `docs/refactor/bug-ledger.md` §12（行号以基线
 `2672b62e` 工作区为准；本节引用台账原文行号）。
 
 **GP1：全局 LLM 网关配置写入缺平台管理员门禁（P0）**。根因：六条写方法只声明
@@ -466,7 +466,7 @@ service 构造函数未注入 `PlatformAccessService`
 `await this.platformAccess.assertPlatformAdmin(actorId)`（门禁在读配置、加锁、
 编码、写 DB、审计、删缓存之前返回）；Go 侧 `assertPlatformAdmin` 查
 `GlobalRoleAssignment.userId = 真实 User.id AND role='platform_admin'`，且
-`machine:` actor 直接 403。覆盖（bug-ledger §8 中**计划**的 smoke 阶段，
+`machine:` actor 直接 403。覆盖（bug-ledger §12 中**计划**的 smoke 阶段，
 workflow 尚未落地）：smoke 阶段 2（GP1 权限回归）。
 
 **GP2：缓存整体读改写无跨实例互斥，丢失更新与旧 apiKey 恢复（P1）**。根因：

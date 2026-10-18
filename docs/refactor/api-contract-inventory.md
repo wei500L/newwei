@@ -36,7 +36,7 @@
 **Go 迁移状态（api-go 四态路由表，`apps/api-go/internal/legacyproxy/proxy.go`）**：
 - user-settings 只读 GET ×6 —— **ModeGo（Go-批3B 统一接管：onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor；pilot 内 `API_GO_USER_SETTINGS_READ_MODE=go` 显式启用，优先级高于批3A 的 `API_GO_ONBOARDING_MODE`；默认未设置=兼容旧行为）**：六个 GET 全部由统一 Go handler（`internal/usersettingsread`）独立鉴权并全响应——Go 独立验签 HS256 access token（iss/aud/exp 按 jsonwebtoken 语义、jti 缺失按 NestJS 语义放行、拒绝 alg 混淆与 mtk_）、独立查询真实 Redis blacklist（`access-token:blacklist:<jti>` 同 key，fail-closed）、独立从 MySQL 重推导 User/Org/Membership 与 MembershipRole/RolePermission/Permission 权限（与 getUserProfile 同序同文案 401，多角色优先/primary 回退）、独立判定 `items.read`（JWT permissions claim 一律不参与）、独立查 UserSetting（五个单 key 端点各查一个编译期固定常量 key；situation-monitor 一次聚合查询三个固定 key，对齐 NestJS findMany）并经 normalization（War Map 完整移植 war-map-contract.ts；Situation Monitor 三段聚合；NewsNow 有序对象/上限/真值语义）写出契约等价响应（错误形状对齐 GlobalExceptionFilter）。路由为 exact+GET：六个 PUT 同路径与相似路径（onboarding-x/war-map-x/newsnow 子路径等）回落 legacy。已完成远端真实栈接管验证（Phase A-D：8 个固定 key 落库、shadow 零差异、go 契约全等、NestJS 停止后六端点仍 200 且代表性 PUT/未迁移 GET 502）。`API_GO_USER_SETTINGS_READ_MODE=shadow` 时六端点全部回 shadow 差分。
 - user-settings 全部 PUT ×6（onboarding/rss-reader/spacetime-timeline/war-map/newsnow/situation-monitor）—— **`API_GO_USER_SETTINGS_WRITE_MODE`（Go-批3C）**：默认 `legacy`，精确路径 PUT 仍代理 NestJS；`go` 时由 `internal/usersettingswrite` 经同一鉴权链写入现有 `UserSetting`（八个固定 key 的 upsert，写后重读）。要求读模式同为 `go`。相似路径与其他方法仍回落 legacy。Situation Monitor 三段不是事务。
-- 登录/refresh/logout/MFA/OIDC/机器令牌 —— **全部仍由 NestJS 承载**（迁移序 5 余项，未动）。
+- 登录/refresh/MFA/OIDC/邮箱验证码/密码找回/邀请/注册审核/头像上传签名/个人数据导出 —— **仍由 NestJS 承载**；账户资料、会话退出与机器令牌管理 8 条精确路由可在 `API_GO_ACCOUNT_SECURITY_MODE=go` 时由 Go 承载（默认 legacy，见 §1.8s）。
 - 入口链（Go-批2C）：api-go 具备生产容器（`infra/docker/api-go.Dockerfile`，distroless nonroot + `healthcheck` 子命令）与 Compose 独立 `api-go-pilot` profile 服务；`API_BASE_URL` 可切 `http://api-go:4020` 使入口变为 `Web → api-go → NestJS`（其余请求全部纯代理，契约不变），默认部署仍直连 NestJS。已通过远端真实栈运行验证（`api-go-entry-smoke`：真实登录 JWT + 六个 PUT 持久化 + Shadow GET 零差异零丢弃 + Go-批3A 鉴权链 + Go-批3B 四阶段接管验证）；生产/预发布真实流量验证未完成。trace header（`x-trace-id`/`traceparent`）在 api-go 入口链保持原语义（§0 TraceId 行为镜像）。
 
 ## 1. REST 契约（71 controller · 369 endpoint）
@@ -200,7 +200,22 @@ Go-批4A/4B：`API_GO_PUBLIC_PORTAL_MODE=go` 时，`GET /api/public-portal/home`
 
 缺陷修复（两侧同修）：`ExceptionEventsService.list` 原先直接返回 Mongo 里的 `message` 与 `stack`，没有脱敏，异常消息或堆栈里带 `Bearer xxx`、`password=xxx`、`api_key=xxx` 时会原样返回前端。现在 Nest 与 Go 都在读取输出时对 `message` 与 `stack` 调用 `redactSensitiveFields`（9 条正则按 `packages/utils/src/error-sanitizer.ts` 原样翻译到 Go；`password`/`token`/`apiKey`/`api_key`/`secret`/`credential`/`auth` 保留键名与分隔符后替换成 `[REDACTED]`，`Bearer` 变 `Bearer [REDACTED]`，`Basic` 变 `Basic [REDACTED]`），库内已存文档不动。
 
-仍回 NestJS：`/api/admin/quality/task-logs`（`getQualityTaskLogsOverview` 不迁移）、`/api/admin/quality/*`、`/api/observability/*`、`/api/metrics`、异常上报 `POST /api/internal/observability/exception-events`（以及 `admin/logs/*` 与 `admin/errors(+stats)` 的非 GET 方法）。`/api/admin/quality/*` 后来由独立开关 `API_GO_QUALITY_OVERVIEW_MODE` 接管（见 §1.8o），与 `API_GO_ADMIN_LOGS_MODE` 互不影响。回滚：`API_GO_ADMIN_LOGS_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。SEC-01 的真实登录态未在本批验证。
+仍回 NestJS：`/api/admin/quality/task-logs`（`getQualityTaskLogsOverview` 不迁移）、`/api/admin/quality/*`、`/api/observability/*` 的其余路由、`/api/metrics`（以及 `admin/logs/*` 与 `admin/errors(+stats)` 的非 GET 方法）。两个异常上报 POST 后来由独立开关 `API_GO_EXCEPTION_INGEST_MODE` 接管（见 §1.8s），与 `API_GO_ADMIN_LOGS_MODE` 互不影响。`/api/admin/quality/*` 后来由独立开关 `API_GO_QUALITY_OVERVIEW_MODE` 接管（见 §1.8o），与 `API_GO_ADMIN_LOGS_MODE` 互不影响。回滚：`API_GO_ADMIN_LOGS_MODE=legacy`。不打开 canary，不改生产入口（生产 Web 仍指向 NestJS），不改 Web 的 API 地址，不启用 shadow，不改前端。SEC-01 的真实登录态未在本批验证。
+
+查询算法优化（本批，Nest 与 Go 两侧同步，只改这 7 条读取 GET）：
+
+- **异常统计一次聚合**：`stats`（`logs/errors/summary` 与 `admin/errors/stats`）原先对同一过滤条件分别执行 `countDocuments`、按 `kind` 的聚合、按 UTC 日期的聚合，共三个查询；现在改为一次聚合——`$match` 保持 `orgId`/`kind`/`operationName`/字面量 `messageContains`/`timestamp` 区间的现有条件，先按「UTC 日期（`$dateToString`，`timezone: "UTC"`，`%Y-%m-%d`）+ 原 `kind`」`$group` 出每天各类的数量，再在压缩后的分组结果上汇总 `total`（所有计数之和）、`byKind`（按 `kind` 合并）、`byDay`（按 UTC 日期合并）。响应结构仍为 `{total, byKind, byDay}`；`byKind` 排序 `count DESC, kind ASC`，`byDay` 排序 `date DESC` 并最多保留 30 个有数据的日期。`total` 与 `byKind` 覆盖全部匹配记录，`byDay` 的 30 条上限不截断它们；未传 `start`/`end` 时不自行添加「最近 30 天」过滤；不把原始文档读进内存统计。无数据时 `total=0`、两个列表均为 `[]`。
+- **确定性列表排序**：异常列表 `timestamp DESC, _id DESC`；任务日志列表 `createdAt DESC, _id DESC`；MySQL 审计列表 `createdAt DESC, id DESC`。分页仍是数据库 `skip`/`limit`（或 `LIMIT`/`OFFSET`），不改游标协议，也不是并发写入期间的冻结快照。
+- **Top Errors 最近样本**：分组键仍是 `queue + stage + errorName`，只统计 `failed`，`count` 覆盖该组全部匹配记录，最多 25 组；`sampleMessage` 从无排序的 `$first` 改为该组 `createdAt DESC, _id DESC` 的最近一条失败记录的 `error.message`（否则 `message`）（Mongo 7.0 的 `$top` 有序分组聚合，分组前 `$project` 保留 `createdAt`/`_id`），空值与脱敏规则不变。错误组最终排序 `count DESC`，再按 `queue`、`stage`、`errorName` ASC；`byStage` 最多 50 组，`count DESC`，并列 `stage ASC`。质量面板复用同一任务日志聚合，自然获得相同优化。
+
+### 1.8s 异常上报（Go）
+
+`API_GO_EXCEPTION_INGEST_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`（空串与 `legacy` 等价；其他值启动失败，错误文本含变量名；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`）。只接管 2 个精确路径，且只匹配 `POST`（预检 `OPTIONS` 由 Go 回答，非预检 `OPTIONS` 回落 legacy 代理）：
+
+- `POST /api/observability/exception-events/client`：沿用 `@AllowAuthenticated` 语义（任一已认证用户，不要求 `settings.manage`）；`orgId`/`userId` 只来自服务端认证结果，body 里的 `orgId`/`userId`/`stack` 被忽略，client 的 `stack` 不落库。输入字段 `kind`、`traceId`、`timestamp`、`statusCode`、`message`、`path`、`method`、`operation`、`operationName`、`errorName` 按现有 normalizer 处理：字符串 `trim` 后空当缺省，超长 400 `<fieldName> is too long (max <N> characters)`（`message` 1000、`traceId` 与 `x-trace-id` 128、`timestamp` 64、`path` 512、`method` 16、`operation` 120、`operationName` 160、`errorName` 120，长度按 UTF-16 码元）；`message` 处理后为空 400 `message is required`；`kind` 只认 `http`/`graphql`/`unknown`，其他归 `unknown`；`method` 有效字符串转大写；`statusCode` 沿用 JavaScript `Number` 转换与向下取整，只保留 100–599，否则省略；`traceId` 优先级为有效 `x-trace-id` → 有效 `body.traceId` → 空字符串；`timestamp` 有效按 UTC 保存，省略或无效用当前时间。**先完成输入处理再消费限流**，无效请求不耗额度：先查 `observability:client-exception:user:<orgId>:<userId>`，有有效请求 IP 时再查 `observability:client-exception:ip:<orgId>:<ip>`（复用 Nest `RateLimiterService` 的滑动窗口 Lua 与 fail-closed 策略，Go 侧同样加 `rate:` 前缀以共享同一桶；限额来自 `OBSERVABILITY_CLIENT_EXCEPTION_USER_RATE_LIMIT`（默认 30）、`OBSERVABILITY_CLIENT_EXCEPTION_IP_RATE_LIMIT`（默认 120）、`OBSERVABILITY_CLIENT_EXCEPTION_RATE_LIMIT_WINDOW_SECONDS`（默认 60），IP 解析沿用 `TRUST_PROXY`）；429 文案分别是 `Too many client exception events from this user. Please retry later.` 与 `Too many client exception events from this IP. Please retry later.`。成功 `201 {"ok":true}`。
+- `POST /api/internal/observability/exception-events`：只使用 `LITELLM_CONFIG_INTERNAL_TOKEN`，不要求用户 JWT；沿用现有 Bearer 提取与恒定时间比较语义，未配置 403 `LITELLM_CONFIG_INTERNAL_TOKEN is not configured`，缺 Bearer 401 `Missing bearer token`，不匹配 401 `Invalid bearer token`。输入字段与现有内部 controller 一致（含 `stack`、`orgId`、`userId`），保持内部入口自己的字符串规则（无客户端长度限制，`stack` 按 `record` 规则最多保留 8000 字符），`traceId` 优先级为有效 `body.traceId` → 有效 `x-trace-id` → 空字符串，`message` 处理后为空 400 `message is required`。成功 `201 {"ok":true}`。
+
+两个入口都做**一次 best-effort `InsertOne`**：在请求内完成这一次写入尝试后返回既有响应，写入失败只记服务日志并保持 201；不重试、不排队、不递归上报。写入既有 `exceptionevents` 集合（Mongoose 默认集合名，不另建集合），文档字段为 `id`（UUID 字符串）、`orgId`、`userId`、`kind`、`traceId`、`timestamp`、`statusCode`、`message`、`path`、`method`、`operation`、`operationName`、`errorName`、`stack`、`createdAt`、`updatedAt`，其中 `timestamp`/`createdAt`/`updatedAt` 是 BSON Date，现有管理端读取接口可直接查询。相似路径（如 `/api/observability/exception-events/clients`）与其他方法继续回落 NestJS。回滚：`API_GO_EXCEPTION_INGEST_MODE=legacy`。不打开 canary，不改生产入口，不改 Web 的 API 地址，不启用 shadow，不改前端；7 条读取 GET 仍由 `API_GO_ADMIN_LOGS_MODE` 决定。
 
 ### 1.8n LLM 请求日志列表 / CSV 导出 / 用量汇总
 
@@ -304,6 +319,31 @@ archive-preparation · assistant-quota · assistant-safety(+diagnostics/metrics)
 | user-digest | 5 | preference GET/PUT · delivery GET/PUT · GET /api/user-digest（items.read） |
 | user-news-behavior | 3 | POST · GET profile · DELETE profile（items.read） |
 | Bull Board | 1 | /admin/queues（无 /api 前缀，Bearer JWT + queue.manage，纯文本错误非 JSON，`bull-board-auth.middleware.ts:27-57`） |
+
+### 1.8s 账户资料、会话退出与机器令牌（Go）
+
+`API_GO_ACCOUNT_SECURITY_MODE` 默认 `legacy`，只接受空字符串、`legacy` 或 `go`
+（空串与 `legacy` 等价；其他值启动失败，错误文本含变量名）。`go` 时接管 8 条
+精确路由：`GET /api/auth/me`（AllowAuthenticated）、`PATCH /api/auth/profile`
+（AllowAuthenticated）、`POST /api/auth/change-password`（AllowAuthenticated，200）、
+`POST /api/auth/logout`（AllowAuthenticated，成功 **201**）、
+`GET/POST /api/auth/machine-tokens`（`settings.manage`，POST 201）、
+`DELETE /api/auth/machine-tokens/:tokenId`（`settings.manage`，200）、
+`POST /api/auth/machine-tokens/:tokenId/rotate`（`settings.manage`，201）。
+`:tokenId` 只能是恰好一个非空路径段，`/rotate` 只能是最后一段；其他方法（如
+`GET /api/auth/machine-tokens/:tokenId`）、尾斜杠、更长路径与相似前缀（如
+`/api/auth/mefoo`、`/api/auth/machine-tokensx`）仍回 NestJS（Go 不返回自己的
+404）。人类走 JWT 验签 + Redis access 黑名单 + MySQL membership 权限重推导
+（JWT permissions claim 不参与）；机器令牌按 `mtk_` 全量 SHA-256 查
+`MachineAccessToken`，权限取自存储行且**不按新建白名单裁剪**（历史
+`settings.manage` 令牌仍可管理机器令牌）。`GET /me` 返回基础 profile +
+`accessTokenId`/`accessTokenExpiresAt`（`exp*1000` 毫秒）；`PATCH /profile`
+有意不返回这两个字段。profile 缓存 `profile:<userId>:<orgId|default>`
+（`auth_cache:settings` 60s），资料更新与改密后按该 user 全部 membership 失效。
+登录、refresh、邮箱验证码、密码找回、MFA、OIDC、邀请、注册审核、
+`avatar/presigned-url`、`data-export` 仍回 NestJS。回滚：把
+`API_GO_ACCOUNT_SECURITY_MODE` 改回 `legacy`。不打开 canary，不改生产入口
+（生产 Web 仍指向 NestJS）。细节见 `docs/refactor/go-account-security.md`。
 
 ## 2. GraphQL 契约
 
@@ -593,7 +633,169 @@ Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`artic
 403。两把全局锁名 `infra-settings:vector-service:v1`、
 `infra-settings:news-source-runtime-secrets:v1`。回滚只把本变量改回 `legacy`。
 
-## 16. LLM 网关配置与三路激活（Go）
+## 16. 模型接入设置与 OpenAI 密钥分发（Go · 10 条）
+
+开关 `API_GO_MODEL_ACCESS_SETTINGS_MODE`（空串/`legacy`/`go`，默认 `legacy`，
+非法值启动失败）。`go` 时由 `internal/modelaccesssettings` 独立验签并接管 10 条
+**精确路径**：
+
+| 方法 | 路径 | 认证 | 权限 | 平台门禁 | 成功码 |
+|---|---|---|---|---|---|
+| GET | `/api/system-settings/model-service` | JWT/`mtk_` | `settings.manage` | 否 | 200 |
+| PUT | `/api/system-settings/model-service` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/model-service` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| GET | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 否 | 200 |
+| PUT | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| POST | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 是 | 201 |
+| DELETE | `/api/system-settings/openai-keys/key/:fingerprint` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| DELETE | `/api/system-settings/openai-keys` | JWT/`mtk_` | `settings.manage` | 是 | 200 |
+| GET | `/api/internal/litellm/openai-keys` | `LITELLM_CONFIG_INTERNAL_TOKEN` | 不用 JWT/RBAC | 否 | 200 |
+| POST | `/api/internal/litellm/openai-keys/applied` | `LITELLM_CONFIG_INTERNAL_TOKEN` | 不用 JWT/RBAC | 否 | 201 |
+
+契约要点：
+
+- 失败顺序：认证 → `settings.manage` → DTO（有 body 时）→ 平台门禁（service 内，
+  仅六条管理写）→ 业务校验/写库。平台管理员仍必须有 `settings.manage`。
+- 权限载荷复用既有安全形状：`code=INSUFFICIENT_PERMISSIONS`、
+  `detail="Requires any permission: settings.manage"`、`permissionsMode="any"`、
+  不带 `missingPermissions`；平台门禁为 403 `Platform admin access required`。
+- 内部端点失败顺序：未配置 403 `LITELLM_CONFIG_INTERNAL_TOKEN is not configured`
+  → 无可提取 bearer 401 `Missing bearer token` → 不匹配 401 `Invalid bearer token`
+  （常量时间比较；header 解析严格对齐 `extractBearerToken`）。内部 token 缺失
+  不阻止启动。
+- 公共响应字段全集：模型 `source/enabled/baseUrl/timeoutMs/maxRetries/hasToken/
+  tokenSource`；密钥 `source/keysCount/hasKeys/keyFingerprints/
+  internalTokenConfigured/appliedAt/appliedSource/appliedKeyFingerprints/
+  restartRequired`；`keyFingerprints` 与 `appliedKeyFingerprints` 空值序列化为
+  `[]`，`appliedAt`/`appliedSource` 空值序列化为 `null`。
+- 不返回任何完整/部分明文 key、加密包或 token 指纹（模型）。
+- SystemSetting key：`model_service`、`openai_keys`、`litellm_openai_keys_applied`
+  （+ 只读 `system_security`）；Redis：`model_service:settings`、
+  `openai_keys:settings`、`openai_keys:applied_status`（30 秒）与只读
+  `system_security:settings`（60 秒）。
+- 两把全局 MySQL 会话锁：`model-access:model-service:v1`、
+  `model-access:openai-keys:v1`（Nest 与 Go 同名字面量）；锁内重读权威行，
+  锁失败 503（`message=Internal server error`、`error=Service Unavailable`）。
+- 同批修 3 个缺陷（Nest 与 Go 两侧）：全局模型/密钥写缺平台管理员门禁（MA1）、
+  密钥追加与按指纹删除的缓存读改写与缺互斥（MA2）、模型 PUT 省略 token 时写回
+  旧缓存 token（MA3）。
+
+未迁：`/api/internal/litellm/proxy-load-balancing`、
+`/api/system-settings/llm-gateways`、`/api/system-settings/*` 其余全部路径，以及
+模型预测/异常检测/embedding/rerank/moderation 等实际推理。回滚只把
+`API_GO_MODEL_ACCESS_SETTINGS_MODE` 改回 `legacy`；不改表、不改 controller/DTO、
+不改 Web 入口与其他开关默认值。
+
+## 17. 平台治理设置 16 条 HTTP（Go）
+
+新增开关 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE`（空串/`legacy`/`go`，默认
+`legacy`，非法值启动失败，错误文本 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be
+one of legacy|go`）。`go` 时要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、
+`MONGO_URI`，并注册 16 条精确路由（handler 键
+`/api/system-settings#platform-governance`，与运行时的 `/api/system-settings` 不同键）：
+
+- `GET|PUT /api/system-settings/security`
+- `GET|PUT|DELETE /api/system-settings/assistant-quota`
+- `GET|PUT|DELETE /api/system-settings/assistant-safety`
+- `GET /api/system-settings/assistant-safety/metrics`
+- `GET|PUT|DELETE /api/system-settings/task-logs`
+- `GET|PUT|DELETE /api/system-settings/llm-request-logs`
+- `POST /api/system-settings/llm-request-logs/metadata-policy/reset`（201）
+
+全部要求重推导的 `settings.manage`；其中 9 条写路由另外要求 handler 内平台管理员
+（机器令牌永不满足）。orgId 一律取自令牌/会话，`assistant-quota` 的用量聚合与
+`assistant-safety/metrics` 的 `$match` 都带 `orgId`，防止跨租户读出。
+
+**仍留在 NestJS 的路径**（两条开关都为 `go` 时也回落 `/api/` 代理）：
+
+- `GET /api/system-settings/assistant-safety/diagnostics`（实际请求 LiteLLM）
+- `GET /api/system-settings/email`
+- `GET /api/system-settings/archive-preparation`
+- `GET /api/system-settings/realtime-signals`
+- `GET /api/system-settings/situation-monitor`
+- `GET /api/system-settings/vector-service`
+- 上述 16 条路径的未列出方法（如 `POST /api/system-settings/security`）
+- 带尾斜杠或多一段的路径（如 `/api/system-settings/task-logs/x`）
+
+回滚只把 `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE` 改回 `legacy`。说明与 smoke 证据
+见 `docs/refactor/go-platform-governance-settings.md`。
+
+## 18. 数据运行设置与归档状态（Go）
+
+新增开关 `API_GO_DATA_RUNTIME_SETTINGS_MODE`（空串/`legacy`/`go`，默认 `legacy`，
+非法值启动失败，错误原句
+`API_GO_DATA_RUNTIME_SETTINGS_MODE must be one of legacy|go`）。`go` 时只接管 9 条
+精确 METHOD+path（Go 包 `internal/dataruntimesettings`，路由键
+`/api/system-settings#data-runtime`）：
+
+- 实时信号设置：`GET`/`PUT`/`DELETE /api/system-settings/realtime-signals`
+  （`settings.manage`；PUT/DELETE 另需平台管理员，本批补齐 DS1）。读写全局
+  `SystemSetting` key `realtime_signals_settings`（description
+  `Realtime signals settings (source toggles, thresholds, and API credentials).`，
+  不写 isPublic/updatedById）与派生 key `realtime_signals_acled_auth_state`；Redis
+  `realtime-signals:settings`（30 秒 `{exists,value}` 信封，值缺失时省略 value）与
+  `realtime-signals:acled-auth-state`（30 秒信封，仅失效/删除）。PUT 是部分合并：
+  保留 `openskyEnabled ?? adsbEnabled`、`openskyIntervalSec ?? adsbIntervalSec`、
+  `openskyBaseUrl ?? adsbBaseUrl`、`aisRelayBaseUrl ?? relayBaseUrl`、
+  `aisRelaySharedSecret ?? relaySharedSecret` 的 nullish 语义；数值 `null` 变
+  `Number(null)=0` 再 clamp 到下限；missing 的密钥保持原密文原字节；URL 按 WHATWG
+  等价规范化（http/https，含默认端口剥离与结尾斜杠删除）并以
+  `<field> must be a valid http(s) URL` 拒绝非法值。写出的 JSON 为 46 键：别名
+  `relayBaseUrl`/`relaySharedSecret` 按 `JSON.stringify(undefined)` 省略，
+  `acledAccessToken` 恒为 `null`。响应保留全部规范字段与 has/source；四个跨字段约束
+  原句与顺序不变。ACLED 固定关闭：`acledApiEnabled=false`、
+  `acledApiDisabledReason=Open myACLED does not include API access.`、
+  `hasAcledAccessToken=false`、`acledAccessTokenSource=none`、
+  `acledAccessTokenStatus=missing`，不可达状态字段省略（历史 token 不报告 ready）。
+  审计 `resource=system_settings`、`action=realtime_signals_update`，metadata
+  `{ok:true,updatedFields,secretsUpdated}`，其中 `updatedFields` 是 DTO 的 47 项
+  声明序常量数组（ES2022 class fields 使 `Object.keys(input)` 与请求体无关），
+  `secretsUpdated` 按 `!== undefined` 判断且不含任何 secret；重置为
+  `realtime_signals_reset` + `{ok:true}`。
+- 归档准备设置：`GET`/`PUT`/`DELETE /api/system-settings/archive-preparation`
+  （`settings.manage`；PUT/DELETE 另需平台管理员，本批补齐 DS1）。全局 key
+  `archive_preparation_settings`（description
+  `Archive background preparation settings (batch sizes and embedding/rerank concurrency).`，
+  `isPublic=false`，`updatedById` 为平台管理员真实 User.id）；Redis
+  `archive_preparation:settings`（30 秒，**原始设置或 JSON null，无信封**）。四字段
+  `jobBatchSize`/`embeddingBatchSize`（1..100，默认 20）、
+  `embeddingMaxConcurrency`/`rerankMaxConcurrency`（1..8，默认 1）；PUT 是完整四字段
+  替换（本批不加锁），DTO 带 `@Type(() => Number)`；响应
+  `{source:"default"|"db",...}`，`source` 按存储值的 JavaScript truthiness 判断。
+  审计 `archive_preparation_update`（metadata 为四字段）与
+  `archive_preparation_reset`（`{ok:true}`）。
+- 归档准备状态：`GET /api/admin/archive-preparation/status`（`settings.manage`，无平台
+  门禁，无 query/body DTO）。Redis zset `archive:preparation:status:index`，成员
+  `archive:preparation:status:<scope>:<orgId>:<scopeValue>`（scope=digest|calendar），
+  单记录 TTL 3600 秒，writer 索引上限 200 条。读取 ZCARD → ZRANGE 0..total-1 →
+  MGET → 跳过过期 null → orgId 缺失按旧 key 第 5 段回退 → 只保留当前 orgId →
+  reverse；reader 不写入/不裁剪/不续租/不删除。响应
+  `{updatedAt,pending,counts:{waiting,active,completed,failed,delayed},recentStatuses}`，
+  counts 覆盖整份快照、recentStatuses 最多 10 条且不含 orgId/Redis key/traceId；
+  计数 `QUEUED`→waiting、`PROCESSING|PARTIAL`→active、`READY`→completed、
+  `FAILED`→failed、`IDLE`/未知不加计数、`delayed` 恒 0；`errorMessage` 仅公开读取
+  输出脱敏（`adminlogs.RedactSensitiveFields`），Redis 原文不变。
+- Nominatim 身份设置：`GET`/`PUT /api/system-settings/geo/nominatim`
+  （`settings.manage`；PUT 另需平台管理员，本批补齐 DS1）。全局 key
+  `geo_nominatim_identity`（create 写 description
+  `Nominatim geocoding identity settings (User-Agent / email)`，update 保留既有
+  description/isPublic）；无 Redis 配置缓存，保留 NestJS 每进程 30,000ms 缓存
+  （Go 侧为线程安全实现）。DTO `userAgent`（`@MinLength(1)`）与 `email`
+  （`@IsEmail`）均可选可空，`null` 清 override、missing 保留；响应
+  `{userAgent,email,effectiveUserAgent,effectiveEmail}`，env 缺省
+  `GEO_NOMINATIM_USER_AGENT=modular-api`、`GEO_NOMINATIM_EMAIL` 可选。审计
+  `geo_nominatim_settings_update`（metadata 为 overrides，非 effective），保持
+  fire-and-forget 且失败不改变 200。
+
+未迁：`POST /api/system-settings/geo/nominatim/test`、`POST /api/geo/geocode`
+（真实地理编码）与 `GEO_NOMINATIM_BASE_URL`，实时信号采集器与 ACLED OAuth 刷新，
+归档分类/embedding/rerank 与 BullMQ producer/worker，`archiveDigest` /
+`archiveCalendar` / `archiveDetail`，以及全部 GraphQL。机器令牌四条 GET 可读、五条写
+403。两把全局锁名 `data-runtime-settings:realtime:v1`、
+`data-runtime-settings:nominatim:v1`（锁未取得 409，连接类故障 503）。回滚只把本变量
+改回 `legacy`。细节见 `docs/refactor/go-data-runtime-settings.md`。
+
+## 19. LLM 网关配置与三路激活（Go）
 
 新增开关 `API_GO_LLM_GATEWAY_PROFILES_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本是 `API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go`）。`go` 复用共享鉴权前置（要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**），不打开 shadow/canary，不启动 worker，不调用模型上游。`go` 时只接管 7 条精确规则（规则在 `apps/api-go/internal/legacyproxy/llm_gateway_profiles_routes.go`），全部要求 `settings.manage`，其中六条写路径另外要求平台管理员（否则 403 `Platform admin access required`；机器令牌永不满足该检查，因为 `GlobalRoleAssignment.userId` 是 `User(id)` 外键而机器身份是 `machine:<tokenId>`）：
 
@@ -616,4 +818,4 @@ Prisma `P2025` 500；证据复核队列的 `edge`/`fromEntity`/`toEntity`/`artic
 - **secret**：`apiKey` 用 AES-256-GCM（32 字节 key、随机 12 字节 IV、分离 16 字节 tag、无 AAD），信封 `{__enc:"system-settings:v1",alg:"aes-256-gcm",iv,tag,data}`；读取时明文/v1 信封可解，缺失/null/其他类型/解不开都 `hasApiKey=false`，**不回落到 `LITELLM_API_KEY`**；写入策略按 `system_security.secretEncryptionEnabled` 与密钥状态分支（显式关闭→明文、显式开启无有效 key→400、生产无 key→400、非生产无 key→明文+告警）；密钥、密文、指纹不进日志/响应/审计。
 - **治理保护**：治理启用且 `targetProfileId` 命中时，禁用目标 profile、改动其 apiBase（`normalizeOpenAiApiBase` 比较，含 endpoint 后缀表与 `/v1` 截断）或删除它都会得到治理 400（三条固定文案）；delete 的保护检查在存在性检查之前。
 - **锁**：六条写共享 MySQL 会话锁 `llm-gateway:profiles:write:v1`（`GET_LOCK(name,10)`，专用连接；Go 用不保留空闲连接的独立池、独立短超时 context 释放、释放失败驱逐物理连接；Nest 复用 `withMysqlSessionLock`），获取失败两侧都是 503 `{"statusCode":503,"message":"Internal server error","error":"Service Unavailable"}`。该锁只串行化这六条 profile 写，**不是**覆盖未迁移治理写的跨配置事务。
-- **同批缺陷修复**：GP1（六条写补平台管理员门禁，机器令牌 403 不写外键）、GP2（写路径改为锁内直读 MySQL 权威行，响应从本次结果投影；缓存整体读改写不再丢更新或恢复旧 apiKey）、GP3（`enabled` 严格 boolean 归一化，非 boolean 存量值一律 false）；详见 `docs/refactor/bug-ledger.md` §8。回滚只把 `API_GO_LLM_GATEWAY_PROFILES_MODE` 改回 `legacy`；不改表、不改 Web 入口、不改其他开关默认值。细节见 `docs/refactor/go-llm-gateway-profiles.md`。
+- **同批缺陷修复**：GP1（六条写补平台管理员门禁，机器令牌 403 不写外键）、GP2（写路径改为锁内直读 MySQL 权威行，响应从本次结果投影；缓存整体读改写不再丢更新或恢复旧 apiKey）、GP3（`enabled` 严格 boolean 归一化，非 boolean 存量值一律 false）；详见 `docs/refactor/bug-ledger.md` §12。回滚只把 `API_GO_LLM_GATEWAY_PROFILES_MODE` 改回 `legacy`；不改表、不改 Web 入口、不改其他开关默认值。细节见 `docs/refactor/go-llm-gateway-profiles.md`。

@@ -7,8 +7,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -281,6 +283,25 @@ const (
 	AdminLogsModeGo     AdminLogsMode = "go"
 )
 
+// ExceptionIngestMode controls only the two exception-report POST endpoints that
+// this batch migrates:
+//
+//	POST /api/observability/exception-events/client
+//	POST /api/internal/observability/exception-events
+//
+// Default legacy. go takes over exactly those two paths; the seven admin log
+// and error read GETs stay on their own API_GO_ADMIN_LOGS_MODE switch. Similar
+// paths, other methods and every /api/observability/ read route keep falling
+// through to NestJS. Shadow is never enabled, no worker is started and the
+// missing LITELLM_CONFIG_INTERNAL_TOKEN stays an endpoint-level 403 instead of
+// a startup failure.
+type ExceptionIngestMode string
+
+const (
+	ExceptionIngestModeLegacy ExceptionIngestMode = "legacy"
+	ExceptionIngestModeGo     ExceptionIngestMode = "go"
+)
+
 // NewsIndicatorsMode 只控制新闻指标关联分析的 3 条 HTTP 与 2 个 GraphQL 只读
 // query。默认 legacy。go 时接管
 //
@@ -432,6 +453,35 @@ const (
 	InfrastructureSettingsModeGo InfrastructureSettingsMode = "go"
 )
 
+// AccountSecurityMode controls the eight authenticated account, session and
+// machine-token HTTP routes migrated by this unit
+// (API_GO_ACCOUNT_SECURITY_MODE): GET /api/auth/me, PATCH /api/auth/profile,
+// POST /api/auth/change-password, POST /api/auth/logout,
+// POST /api/auth/machine-tokens, GET /api/auth/machine-tokens,
+// DELETE /api/auth/machine-tokens/:tokenId and
+// POST /api/auth/machine-tokens/:tokenId/rotate.
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. go mode requires JWT_SECRET,
+// DATABASE_URL and REDIS_HOST (the shared appendAuthRequirements check); it
+// never requires MONGO_URI because this unit reads and writes MySQL and Redis
+// only, never enables shadow or canary traffic and never starts a worker.
+type AccountSecurityMode string
+
+const (
+	// AccountSecurityModeLegacy proxies all eight routes to NestJS (default,
+	// including the empty value). Rolling back only means setting
+	// API_GO_ACCOUNT_SECURITY_MODE back to legacy.
+	AccountSecurityModeLegacy AccountSecurityMode = "legacy"
+	// AccountSecurityModeGo serves the eight routes from Go with the same
+	// authentication chain as NestJS (human JWT verification, Redis access
+	// blacklist, MySQL membership re-derivation) plus the mtk_ machine-token
+	// path, without changing the JWT format, the refresh rotation protocol or
+	// the MFA policy.
+	AccountSecurityModeGo AccountSecurityMode = "go"
+)
+
 // RuntimeSettingsMode controls the eighteen platform runtime and governance
 // settings HTTP routes under /api/system-settings (API_GO_RUNTIME_SETTINGS_MODE).
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
@@ -449,6 +499,161 @@ const (
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST at startup. It never enables
 	// shadow or canary traffic.
 	RuntimeSettingsModeGo RuntimeSettingsMode = "go"
+)
+
+// DataRuntimeSettingsMode controls the nine "data runtime settings and archive
+// status" HTTP routes migrated by this unit
+// (API_GO_DATA_RUNTIME_SETTINGS_MODE): realtime signals settings, archive
+// preparation settings, the archive preparation operational status and the
+// Nominatim identity settings.
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. go mode requires JWT_SECRET,
+// DATABASE_URL and REDIS_HOST; it never requires MONGO_URI (this unit reads and
+// writes MySQL and Redis only), never enables shadow or canary traffic and never
+// starts a worker.
+//
+// SYSTEM_SETTINGS_ENCRYPTION_KEY is deliberately optional at startup: a missing
+// or invalid key is handled per read and write by the documented fallback and 400
+// contracts rather than blocking boot.
+type DataRuntimeSettingsMode string
+
+const (
+	// DataRuntimeSettingsModeLegacy proxies all nine routes to NestJS (default,
+	// including the empty value). Rolling back only means setting
+	// API_GO_DATA_RUNTIME_SETTINGS_MODE back to legacy.
+	DataRuntimeSettingsModeLegacy DataRuntimeSettingsMode = "legacy"
+	// DataRuntimeSettingsModeGo serves all nine routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens, and the same
+	// platform-admin gate on the five write routes.
+	DataRuntimeSettingsModeGo DataRuntimeSettingsMode = "go"
+)
+
+// DataRuntimeSettingsEnv carries the environment-derived defaults of the data
+// runtime settings unit. Names and defaults mirror the NestJS apiEnvSchema
+// entries and the EnvService.realtimeSignalsConfig getters exactly, so the two
+// implementations agree when no SystemSetting row exists.
+//
+// This block is independent of the existing RealtimeSignals*/Nominatim* fields on
+// Config, which serve the signal collectors and the geocoding client and keep
+// their own semantics: nothing here rewrites them.
+//
+// Optional strings use "" for the NestJS `undefined`. Numeric and boolean values
+// are already coerced by the schema (an empty string means "absent", then the
+// schema default applies), so boolDefault/intDefault/floatDefault reproduce it.
+//
+// Note the deliberate OpenSky precedence: apiEnvSchema defaults
+// REALTIME_SIGNALS_OPENSKY_ENABLED / _INTERVAL_SEC / _BASE_URL, so the
+// `get(OPENSKY_*) ?? get(ADSB_*)` fallback in the NestJS getter can never reach
+// the ADSB_* variables, and the ADSB_* names are intentionally not read here
+// either.
+type DataRuntimeSettingsEnv struct {
+	RealtimeEnabled                  bool
+	RealtimeRequestTimeoutMs         int
+	RealtimeMaxRetries               int
+	RealtimeOpenskyEnabled           bool
+	RealtimeOpenskyIntervalSec       int
+	RealtimeOpenskyDailyCreditBudget int
+	RealtimeOpenskyDayIntervalSec    int
+	RealtimeOpenskyNightIntervalSec  int
+	RealtimeOpenskyDayStartHourHKT   int
+	RealtimeOpenskyNightStartHourHKT int
+	RealtimeOpenskyWarningRemaining  int
+	RealtimeOpenskyCriticalRemaining int
+	RealtimeOpenskyBaseURL           string
+	RealtimeOpenskyTokenURL          string
+	RealtimeOpenskyClientID          string
+	RealtimeOpenskyClientSecret      string
+	RealtimeAisEnabled               bool
+	RealtimeAisIntervalSec           int
+	RealtimeUnrestEnabled            bool
+	RealtimeUnrestIntervalSec        int
+	RealtimeOutagesEnabled           bool
+	RealtimeOutagesIntervalSec       int
+	RealtimeKeywordSpikeEnabled      bool
+	RealtimeKeywordSpikeIntervalSec  int
+	RealtimePizzintEnabled           bool
+	RealtimePizzintIntervalSec       int
+	RealtimeGdeltTensionEnabled      bool
+	RealtimeGdeltTensionIntervalSec  int
+	RealtimePolymarketLeadsEnabled   bool
+	RealtimePolymarketIntervalSec    int
+	RealtimeKeywordSpikeMinCount     int
+	RealtimeKeywordSpikeMultiplier   float64
+	RealtimePredictionShiftThreshold float64
+	RealtimePredictionNewsThreshold  int
+	RealtimeAisBaseURL               string
+	RealtimeAisSharedSecret          string
+	RealtimeAcledOauthUsername       string
+	RealtimeAcledOauthPassword       string
+	RealtimeAcledOauthClientID       string
+	RealtimeCloudflareAPIToken       string
+	RealtimeWingbitsAPIKey           string
+	RealtimePolymarketProxyURL       string
+	NominatimUserAgentDefault        string
+	NominatimEmailDefault            string
+}
+
+// PlatformGovernanceSettingsMode controls the sixteen platform governance
+// settings HTTP routes migrated by this unit
+// (API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE). The accepted values are exactly
+// "", "legacy" and "go"; any other value fails startup with the fixed text
+// "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be one of legacy|go" instead
+// of silently degrading. The default is legacy.
+type PlatformGovernanceSettingsMode string
+
+const (
+	// PlatformGovernanceSettingsModeLegacy proxies all sixteen routes to NestJS
+	// (default, including the empty value). Rollback only changes this variable
+	// back to legacy.
+	PlatformGovernanceSettingsModeLegacy PlatformGovernanceSettingsMode = "legacy"
+	// PlatformGovernanceSettingsModeGo serves all sixteen routes from Go with
+	// the same authentication chain as NestJS (JWT verification, Redis
+	// blacklist, MySQL membership re-derivation) plus mtk_ machine tokens. It
+	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI at startup
+	// because the assistant-quota usage query and the assistant-safety metrics
+	// aggregation read Mongo and the task-log / llm-request-log retention
+	// settings reconcile Mongo TTL indexes. It never enables shadow or canary
+	// traffic.
+	PlatformGovernanceSettingsModeGo PlatformGovernanceSettingsMode = "go"
+)
+
+// ModelAccessSettingsMode controls the ten model service configuration and OpenAI
+// key distribution HTTP routes (API_GO_MODEL_ACCESS_SETTINGS_MODE).
+//
+//	go mode takes over exactly these ten routes:
+//	  GET    /api/system-settings/model-service
+//	  PUT    /api/system-settings/model-service
+//	  DELETE /api/system-settings/model-service
+//	  GET    /api/system-settings/openai-keys
+//	  PUT    /api/system-settings/openai-keys
+//	  POST   /api/system-settings/openai-keys
+//	  DELETE /api/system-settings/openai-keys/key/:fingerprint
+//	  DELETE /api/system-settings/openai-keys
+//	  GET    /api/internal/litellm/openai-keys
+//	  POST   /api/internal/litellm/openai-keys/applied
+//
+// /api/internal/litellm/proxy-load-balancing, /api/system-settings/llm-gateways and
+// every other /api/system-settings route keep falling back to NestJS. go mode
+// requires JWT_SECRET, DATABASE_URL and REDIS_HOST only: it reads no Mongo
+// collection, calls no model upstream and starts no worker. The accepted values
+// are exactly "", "legacy" and "go"; any other value fails startup instead of
+// silently degrading. The default is legacy.
+type ModelAccessSettingsMode string
+
+const (
+	// ModelAccessSettingsModeLegacy proxies all ten routes to NestJS (default,
+	// including the empty value). Rollback only changes this variable back to
+	// legacy.
+	ModelAccessSettingsModeLegacy ModelAccessSettingsMode = "legacy"
+	// ModelAccessSettingsModeGo serves all ten routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens, the platform admin gate
+	// on the six management writes, and the LITELLM_CONFIG_INTERNAL_TOKEN guard
+	// on the two internal routes. It never enables shadow or canary traffic.
+	ModelAccessSettingsModeGo ModelAccessSettingsMode = "go"
 )
 
 // LLMGatewayProfilesMode controls the seven LLM gateway profile
@@ -668,6 +873,12 @@ type Config struct {
 	// go 要求 JWT、MySQL、Redis、Mongo（tasklogs 与 exceptionevents 都在
 	// Mongo，审计日志在 MySQL）。不启用 shadow，不启动任何 worker。
 	AdminLogsMode AdminLogsMode
+	// ExceptionIngestMode controls only the two migrated exception-report POST
+	// endpoints (client JWT ingest and LiteLLM-internal ingest). Default
+	// legacy. go requires JWT, MySQL, Redis and Mongo (the reports are written
+	// into the existing exceptionevents collection). Shadow is never enabled
+	// and no worker is started.
+	ExceptionIngestMode ExceptionIngestMode
 	// QualityOverviewMode 只控制管理端质量面板的 5 条 GET。默认 legacy。
 	// go 要求 JWT、MySQL、Redis、Mongo（processeditems 与 tasklogs 都在
 	// Mongo；新闻源/流水线快照与 outbox 在 MySQL）。不启用 shadow，不启动
@@ -702,11 +913,65 @@ type Config struct {
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
 	// does not start any worker or scheduled job.
 	RuntimeSettingsMode RuntimeSettingsMode
+	// PlatformGovernanceSettingsMode controls the sixteen platform governance
+	// settings routes (see PlatformGovernanceSettingsMode). Default legacy.
+	// Mode go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI; it
+	// starts no worker or scheduled job.
+	PlatformGovernanceSettingsMode PlatformGovernanceSettingsMode
+	// The platform governance environment defaults below mirror the NestJS zod
+	// schema (apps/api/src/modules/config/env.schema.ts,
+	// packages/utils/src/env.ts) exactly, including the .default() values and
+	// Number() coercion. They are parsed unconditionally but only validated
+	// (and therefore only able to fail startup) when
+	// PlatformGovernanceSettingsMode is go, so a legacy deployment behaves
+	// exactly like main even if these variables are set to garbage.
+	//
+	// AssistantGuardrailsEnabled is ASSISTANT_GUARDRAILS_ENABLED
+	// (envBoolean, default true).
+	PlatformGovernanceAssistantGuardrailsEnabled bool
+	// PlatformGovernanceAssistantGuardrailsRaw is the raw ASSISTANT_GUARDRAILS
+	// string; unset or whitespace-only becomes "openai-moderation-pre". The
+	// comma split / trim / drop-empty step happens in the serving package,
+	// matching EnvService.assistantConfig.
+	PlatformGovernanceAssistantGuardrailsRaw string
+	// PlatformGovernanceAssistantOrgSubmitLimitPerHour is
+	// ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR (int, 0..10000, default 30).
+	PlatformGovernanceAssistantOrgSubmitLimitPerHour int
+	// PlatformGovernanceAssistantOrgMaxInFlight is ASSISTANT_ORG_MAX_IN_FLIGHT
+	// (int, 0..100, default 2).
+	PlatformGovernanceAssistantOrgMaxInFlight int
+	// PlatformGovernanceAssistantOrgMonthlyTokenBudget is
+	// ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET (int, 0..1e12, default 2000000).
+	PlatformGovernanceAssistantOrgMonthlyTokenBudget int64
+	// PlatformGovernanceTaskLogRetentionDays is TASK_LOG_RETENTION_DAYS
+	// (positive int, default 14). The 1..3650 clamp is applied where the value
+	// is used, matching TaskLogSettingsService.normalizeRetentionDays.
+	PlatformGovernanceTaskLogRetentionDays int
+	// PlatformGovernanceEncryptionKeyRaw is SYSTEM_SETTINGS_ENCRYPTION_KEY kept
+	// verbatim (NOT trimmed): the serving package must distinguish "unset or
+	// empty" (present=false) from "whitespace only" (present=true, then
+	// "SYSTEM_SETTINGS_ENCRYPTION_KEY is empty"). The existing
+	// SettingsEncryptionKey field is trimmed and is used by other domains.
+	PlatformGovernanceEncryptionKeyRaw string
+
 	// InfrastructureSettingsMode controls the seven infrastructure connection
 	// and crawl-credential settings routes (see InfrastructureSettingsMode).
 	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
 	// it does not require Mongo and does not start any worker or scheduled job.
 	InfrastructureSettingsMode InfrastructureSettingsMode
+	// DataRuntimeSettingsMode controls the nine data runtime settings and
+	// archive status routes (see DataRuntimeSettingsMode). Default legacy. Mode
+	// go requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
+	// Mongo and does not start any worker or scheduled job.
+	DataRuntimeSettingsMode DataRuntimeSettingsMode
+	// DataRuntimeSettings holds the environment defaults of that unit. It is
+	// independent of the RealtimeSignals*/Nominatim* fields below.
+	DataRuntimeSettings DataRuntimeSettingsEnv
+	// AccountSecurityMode controls the eight authenticated account, session and
+	// machine-token routes (see AccountSecurityMode). Default legacy. Mode go
+	// requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
+	// Mongo and does not start any worker or scheduled job.
+	AccountSecurityMode AccountSecurityMode
 
 	// The VECTOR_* / S3_* values below are the environment defaults the
 	// infrastructure settings routes fall back to when a SystemSetting row is
@@ -749,6 +1014,12 @@ type Config struct {
 	RateLimitFailOpen    bool
 	RateLimitLogin       int
 	RateLimitLoginWindow int
+	// Observability client exception ingest buckets. They mirror the NestJS
+	// EnvService observabilityClientExceptionRateLimit getter (defaults
+	// 30 / 120 / 60) and are consumed by API_GO_EXCEPTION_INGEST_MODE=go.
+	ObservabilityClientExceptionUserRateLimit int
+	ObservabilityClientExceptionIPRateLimit   int
+	ObservabilityClientExceptionWindowSeconds int
 	// The remaining rate limit buckets and the auth profile cache values are
 	// the environment defaults the sixteen runtime/governance settings routes
 	// return when no SystemSetting row exists. Names and defaults mirror the
@@ -877,6 +1148,26 @@ type Config struct {
 
 	// canary 分流：
 	CanaryPercent int // 0=legacy 等价；100=go 等价；中间按 orgId 稳定哈希分流
+
+	// ModelAccessSettingsMode controls the ten model access settings routes (see
+	// ModelAccessSettingsMode). Default legacy. Mode go requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST; it does not require Mongo and starts no worker
+	// or scheduled job. LITELLM_CONFIG_INTERNAL_TOKEN and
+	// SYSTEM_SETTINGS_ENCRYPTION_KEY keep their runtime semantics and are never
+	// startup requirements.
+	ModelAccessSettingsMode ModelAccessSettingsMode
+	// 模型接入设置本批消费的原始环境值：config 只做读取与保存，
+	// envBoolean / Number 的 JavaScript 语义解析放在
+	// internal/modelaccesssettings（NewConfigFromEnv）里，且只在 go 模式求值，
+	// legacy 模式的启动行为不变。
+	ModelServiceEnabledRaw         string
+	ModelServiceBaseURLRaw         string
+	ModelServiceInternalTokenRaw   string
+	ModelServiceTimeoutMsRaw       string
+	ModelServiceMaxRetriesRaw      string
+	LiteLLMConfigInternalTokenRaw  string
+	SystemSettingsEncryptionKeyRaw string
+	NodeEnvRaw                     string
 }
 
 // Load 从 getenv 读取并校验配置。
@@ -1167,6 +1458,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_ADMIN_LOGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_EXCEPTION_INGEST_MODE")) {
+	case "", string(ExceptionIngestModeLegacy):
+		cfg.ExceptionIngestMode = ExceptionIngestModeLegacy
+	case string(ExceptionIngestModeGo):
+		cfg.ExceptionIngestMode = ExceptionIngestModeGo
+	default:
+		errs = append(errs, "API_GO_EXCEPTION_INGEST_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_NEWS_INDICATORS_MODE")) {
 	case "", string(NewsIndicatorsModeLegacy):
 		cfg.NewsIndicatorsMode = NewsIndicatorsModeLegacy
@@ -1215,6 +1514,43 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_DATA_RUNTIME_SETTINGS_MODE")) {
+	case "", string(DataRuntimeSettingsModeLegacy):
+		cfg.DataRuntimeSettingsMode = DataRuntimeSettingsModeLegacy
+	case string(DataRuntimeSettingsModeGo):
+		cfg.DataRuntimeSettingsMode = DataRuntimeSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_DATA_RUNTIME_SETTINGS_MODE must be one of legacy|go")
+	}
+	// The platform governance switch accepts exactly "", "legacy" and "go"; any
+	// other value must fail startup with this exact text.
+	switch strings.TrimSpace(getenv("API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE")) {
+	case "", string(PlatformGovernanceSettingsModeLegacy):
+		cfg.PlatformGovernanceSettingsMode = PlatformGovernanceSettingsModeLegacy
+	case string(PlatformGovernanceSettingsModeGo):
+		cfg.PlatformGovernanceSettingsMode = PlatformGovernanceSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be one of legacy|go")
+	}
+	// The seven environment defaults the sixteen platform governance settings
+	// routes expose. They are parsed unconditionally so that a legacy
+	// deployment is untouched, but their parse failures are only promoted to
+	// startup errors when the switch is go (see validate()).
+	governanceErrs := parsePlatformGovernanceDefaults(&cfg, getenv)
+	if cfg.PlatformGovernanceSettingsMode == PlatformGovernanceSettingsModeGo {
+		errs = append(errs, governanceErrs...)
+	}
+	// Model access settings accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy so an unset deployment keeps the NestJS
+	// path.
+	switch strings.TrimSpace(getenv("API_GO_MODEL_ACCESS_SETTINGS_MODE")) {
+	case "", string(ModelAccessSettingsModeLegacy):
+		cfg.ModelAccessSettingsMode = ModelAccessSettingsModeLegacy
+	case string(ModelAccessSettingsModeGo):
+		cfg.ModelAccessSettingsMode = ModelAccessSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_MODEL_ACCESS_SETTINGS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_LLM_GATEWAY_PROFILES_MODE")) {
 	case "", string(LLMGatewayProfilesModeLegacy):
 		cfg.LLMGatewayProfilesMode = LLMGatewayProfilesModeLegacy
@@ -1230,6 +1566,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_ACCOUNT_SECURITY_MODE")) {
+	case "", string(AccountSecurityModeLegacy):
+		cfg.AccountSecurityMode = AccountSecurityModeLegacy
+	case string(AccountSecurityModeGo):
+		cfg.AccountSecurityMode = AccountSecurityModeGo
+	default:
+		errs = append(errs, "API_GO_ACCOUNT_SECURITY_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
 	case "", "legacy":
@@ -1303,6 +1647,11 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.RateLimitFailOpen = boolDefault(getenv("RATE_LIMIT_REDIS_FAIL_OPEN"), false)
 	cfg.RateLimitLogin = intDefault(getenv("RATE_LIMIT_LOGIN"), 5)
 	cfg.RateLimitLoginWindow = intDefault(getenv("RATE_LIMIT_LOGIN_WINDOW"), 60)
+	// Client exception ingest buckets (mirrors EnvService
+	// observabilityClientExceptionRateLimit; defaults 30 / 120 / 60).
+	cfg.ObservabilityClientExceptionUserRateLimit = intDefault(getenv("OBSERVABILITY_CLIENT_EXCEPTION_USER_RATE_LIMIT"), 30)
+	cfg.ObservabilityClientExceptionIPRateLimit = intDefault(getenv("OBSERVABILITY_CLIENT_EXCEPTION_IP_RATE_LIMIT"), 120)
+	cfg.ObservabilityClientExceptionWindowSeconds = intDefault(getenv("OBSERVABILITY_CLIENT_EXCEPTION_RATE_LIMIT_WINDOW_SECONDS"), 60)
 	cfg.RateLimitCrawlTaskCreate = intDefault(getenv("RATE_LIMIT_CRAWL_TASK_CREATE"), 10)
 	cfg.RateLimitCrawlTaskCreateWindow = intDefault(getenv("RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW"), 300)
 	cfg.RateLimitRbacWrite = intDefault(getenv("RATE_LIMIT_RBAC_WRITE"), 20)
@@ -1355,6 +1704,10 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.OpenskyClientID = strings.TrimSpace(getenv("REALTIME_SIGNALS_OPENSKY_CLIENT_ID"))
 	cfg.OpenskyClientSecret = strings.TrimSpace(getenv("REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET"))
 	cfg.NominatimBaseURL = stringDefault(getenv("GEO_NOMINATIM_BASE_URL"), "https://nominatim.openstreetmap.org")
+	// The data runtime settings unit keeps its own typed defaults so its env
+	// semantics stay independent of the signal-collector and geocoding fields
+	// above.
+	cfg.DataRuntimeSettings = loadDataRuntimeSettingsEnv(getenv)
 	cfg.NominatimUserAgent = stringDefault(getenv("GEO_NOMINATIM_USER_AGENT"), "modular-api")
 	cfg.NominatimEmail = strings.TrimSpace(getenv("GEO_NOMINATIM_EMAIL"))
 	cfg.NominatimAcceptLanguage = stringDefault(getenv("GEO_NOMINATIM_ACCEPT_LANGUAGE"), "zh-CN,zh;q=0.9,en;q=0.7")
@@ -1370,6 +1723,19 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.TranslationFallbackBaseURL = strings.TrimRight(strings.TrimSpace(getenv("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL")), "/")
 	cfg.MongoURI = strings.TrimSpace(getenv("MONGO_URI"))
 	cfg.SettingsEncryptionKey = strings.TrimSpace(getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
+	// 模型接入设置（本批）的原始环境值。这里保留未 trim 的原文：
+	// NestJS 的 env schema 只在「整串为空白」时视为未设置，接受值本身不做
+	// trim；SYSTEM_SETTINGS_ENCRYPTION_KEY 也没有 preprocess。解析与 go 模式
+	// 的启动校验在 internal/modelaccesssettings.NewConfigFromEnv 内完成，
+	// legacy 模式完全不受影响。
+	cfg.SystemSettingsEncryptionKeyRaw = getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY")
+	cfg.ModelServiceEnabledRaw = getenv("MODEL_SERVICE_ENABLED")
+	cfg.ModelServiceBaseURLRaw = getenv("MODEL_SERVICE_BASE_URL")
+	cfg.ModelServiceInternalTokenRaw = getenv("MODEL_SERVICE_INTERNAL_TOKEN")
+	cfg.ModelServiceTimeoutMsRaw = getenv("MODEL_SERVICE_TIMEOUT_MS")
+	cfg.ModelServiceMaxRetriesRaw = getenv("MODEL_SERVICE_MAX_RETRIES")
+	cfg.LiteLLMConfigInternalTokenRaw = getenv("LITELLM_CONFIG_INTERNAL_TOKEN")
+	cfg.NodeEnvRaw = getenv("NODE_ENV")
 	cfg.LiteLLMAPIBase = strings.TrimSpace(getenv("LITELLM_API_URL"))
 	if cfg.LiteLLMAPIBase == "" {
 		cfg.LiteLLMAPIBase = strings.TrimSpace(getenv("LITELLM_API_BASE"))
@@ -1689,8 +2055,28 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, "MONGO_URI is required when API_GO_ADMIN_LOGS_MODE=go")
 		}
 	}
+	// The exception ingest takeover writes into the existing exceptionevents
+	// Mongo collection, so it needs Mongo on top of the JWT/MySQL/Redis
+	// requirements. A missing LITELLM_CONFIG_INTERNAL_TOKEN is an endpoint
+	// contract (403) and must not fail startup.
+	if cfg.ExceptionIngestMode == ExceptionIngestModeGo {
+		appendAuthRequirements(&errs, "API_GO_EXCEPTION_INGEST_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_EXCEPTION_INGEST_MODE=go")
+		}
+	}
 	if cfg.NewsIndicatorsMode == NewsIndicatorsModeGo {
 		appendAuthRequirements(&errs, "API_GO_NEWS_INDICATORS_MODE", cfg)
+	}
+	// The platform governance settings takeover reads Mongo (assistant quota
+	// usage, assistant safety metrics) and reconciles Mongo TTL indexes (task
+	// logs, llm request logs), so it needs the standard JWT + MySQL + Redis
+	// requirements plus MONGO_URI.
+	if cfg.PlatformGovernanceSettingsMode == PlatformGovernanceSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE=go")
+		}
 	}
 	if cfg.QualityOverviewMode == QualityOverviewModeGo {
 		appendAuthRequirements(&errs, "API_GO_QUALITY_OVERVIEW_MODE", cfg)
@@ -1724,6 +2110,15 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.RuntimeSettingsMode == RuntimeSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_RUNTIME_SETTINGS_MODE", cfg)
 	}
+	// The model access settings takeover needs JWT verification, MySQL and Redis
+	// only (the model_service and openai_keys rows live in MySQL, the 30 second
+	// cache envelopes live in Redis). It reads no Mongo collection, calls no model
+	// upstream and starts no worker. Neither the encryption key nor the LiteLLM
+	// internal token is a startup requirement: their absence has runtime semantics
+	// (a fail-closed 400 at write time and a 403 on the internal endpoints).
+	if cfg.ModelAccessSettingsMode == ModelAccessSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_MODEL_ACCESS_SETTINGS_MODE", cfg)
+	}
 	if cfg.LLMGatewayProfilesMode == LLMGatewayProfilesModeGo {
 		appendAuthRequirements(&errs, "API_GO_LLM_GATEWAY_PROFILES_MODE", cfg)
 	}
@@ -1734,6 +2129,20 @@ func Load(getenv func(string) string) (Config, error) {
 	// contracts.
 	if cfg.InfrastructureSettingsMode == InfrastructureSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE", cfg)
+	}
+	// The data runtime settings takeover needs JWT verification, MySQL and Redis
+	// only. It reads no Mongo collection, starts no worker, performs no startup
+	// network probe and does not treat the settings-encryption key as a startup
+	// requirement.
+	if cfg.DataRuntimeSettingsMode == DataRuntimeSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_DATA_RUNTIME_SETTINGS_MODE", cfg)
+	}
+	// The account/session/machine-token takeover needs JWT verification, MySQL
+	// and Redis only. It reads no Mongo collection, starts no worker and does
+	// not add a second startup check: it reuses appendAuthRequirements exactly
+	// like the other takeover switches.
+	if cfg.AccountSecurityMode == AccountSecurityModeGo {
+		appendAuthRequirements(&errs, "API_GO_ACCOUNT_SECURITY_MODE", cfg)
 	}
 	if cfg.GraphQLReadMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_READ_MODE", cfg)
@@ -1746,20 +2155,6 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, errors.New(strings.Join(errs, "; "))
 	}
 	return cfg, nil
-}
-
-// floatDefault parses a decimal environment value, falling back when it is
-// absent or not a float.
-func floatDefault(value string, fallback float64) float64 {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseFloat(trimmed, 64)
-	if err != nil {
-		return fallback
-	}
-	return parsed
 }
 
 // positiveInt parses a decimal environment value and returns 0 when it is absent
@@ -1816,6 +2211,301 @@ func appendSpacetimeRequirements(errs *[]string, name string, cfg Config) {
 	if cfg.MongoURI == "" {
 		*errs = append(*errs, "MONGO_URI is required when "+name+"=go")
 	}
+}
+
+// loadDataRuntimeSettingsEnv resolves the environment defaults of the data
+// runtime settings unit.
+//
+// Every default below mirrors the NestJS apiEnvSchema entry and the
+// EnvService.realtimeSignalsConfig getter one-for-one, including the OpenSky
+// "ADSB never applies" precedence documented on DataRuntimeSettingsEnv.
+func loadDataRuntimeSettingsEnv(getenv func(string) string) DataRuntimeSettingsEnv {
+	return DataRuntimeSettingsEnv{
+		RealtimeEnabled:                  boolDefault(getenv("REALTIME_SIGNALS_ENABLED"), true),
+		RealtimeRequestTimeoutMs:         intDefault(getenv("REALTIME_SIGNALS_REQUEST_TIMEOUT_MS"), 12_000),
+		RealtimeMaxRetries:               intDefault(getenv("REALTIME_SIGNALS_MAX_RETRIES"), 2),
+		RealtimeOpenskyEnabled:           boolDefault(getenv("REALTIME_SIGNALS_OPENSKY_ENABLED"), true),
+		RealtimeOpenskyIntervalSec:       intDefault(getenv("REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC"), 900),
+		RealtimeOpenskyDailyCreditBudget: intDefault(getenv("REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET"), 4000),
+		RealtimeOpenskyDayIntervalSec:    intDefault(getenv("REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC"), 600),
+		RealtimeOpenskyNightIntervalSec:  intDefault(getenv("REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC"), 1800),
+		RealtimeOpenskyDayStartHourHKT:   intDefault(getenv("REALTIME_SIGNALS_OPENSKY_DAY_START_HKT"), 8),
+		RealtimeOpenskyNightStartHourHKT: intDefault(getenv("REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT"), 22),
+		RealtimeOpenskyWarningRemaining:  intDefault(getenv("REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT"), 20),
+		RealtimeOpenskyCriticalRemaining: intDefault(getenv("REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT"), 10),
+		RealtimeOpenskyBaseURL:           stringDefault(getenv("REALTIME_SIGNALS_OPENSKY_BASE_URL"), "https://opensky-network.org/api"),
+		RealtimeOpenskyTokenURL:          stringDefault(getenv("REALTIME_SIGNALS_OPENSKY_TOKEN_URL"), "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"),
+		RealtimeOpenskyClientID:          strings.TrimSpace(getenv("REALTIME_SIGNALS_OPENSKY_CLIENT_ID")),
+		RealtimeOpenskyClientSecret:      strings.TrimSpace(getenv("REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET")),
+		RealtimeAisEnabled:               boolDefault(getenv("REALTIME_SIGNALS_AIS_ENABLED"), true),
+		RealtimeAisIntervalSec:           intDefault(getenv("REALTIME_SIGNALS_AIS_INTERVAL_SEC"), 600),
+		RealtimeUnrestEnabled:            boolDefault(getenv("REALTIME_SIGNALS_UNREST_ENABLED"), true),
+		RealtimeUnrestIntervalSec:        intDefault(getenv("REALTIME_SIGNALS_UNREST_INTERVAL_SEC"), 600),
+		RealtimeOutagesEnabled:           boolDefault(getenv("REALTIME_SIGNALS_OUTAGES_ENABLED"), true),
+		RealtimeOutagesIntervalSec:       intDefault(getenv("REALTIME_SIGNALS_OUTAGES_INTERVAL_SEC"), 600),
+		RealtimeKeywordSpikeEnabled:      boolDefault(getenv("REALTIME_SIGNALS_KEYWORD_SPIKE_ENABLED"), true),
+		RealtimeKeywordSpikeIntervalSec:  intDefault(getenv("REALTIME_SIGNALS_KEYWORD_SPIKE_INTERVAL_SEC"), 600),
+		RealtimePizzintEnabled:           boolDefault(getenv("REALTIME_SIGNALS_PIZZINT_ENABLED"), true),
+		RealtimePizzintIntervalSec:       intDefault(getenv("REALTIME_SIGNALS_PIZZINT_INTERVAL_SEC"), 600),
+		RealtimeGdeltTensionEnabled:      boolDefault(getenv("REALTIME_SIGNALS_GDELT_TENSION_ENABLED"), true),
+		RealtimeGdeltTensionIntervalSec:  intDefault(getenv("REALTIME_SIGNALS_GDELT_TENSION_INTERVAL_SEC"), 600),
+		RealtimePolymarketLeadsEnabled:   boolDefault(getenv("REALTIME_SIGNALS_POLYMARKET_LEADS_ENABLED"), true),
+		RealtimePolymarketIntervalSec:    intDefault(getenv("REALTIME_SIGNALS_POLYMARKET_LEADS_INTERVAL_SEC"), 600),
+		RealtimeKeywordSpikeMinCount:     intDefault(getenv("REALTIME_SIGNALS_KEYWORD_SPIKE_MIN_COUNT"), 5),
+		RealtimeKeywordSpikeMultiplier:   floatDefault(getenv("REALTIME_SIGNALS_KEYWORD_SPIKE_MULTIPLIER"), 3),
+		RealtimePredictionShiftThreshold: floatDefault(getenv("REALTIME_SIGNALS_PREDICTION_SHIFT_THRESHOLD"), 5),
+		RealtimePredictionNewsThreshold:  intDefault(getenv("REALTIME_SIGNALS_PREDICTION_NEWS_ACTIVITY_THRESHOLD"), 3),
+		// `AIS_BASE_URL ?? RELAY_BASE_URL` and
+		// `AIS_SHARED_SECRET ?? AIS_RELAY_SHARED_SECRET ?? RELAY_SHARED_SECRET`:
+		// all three name sets are optional with no schema default, so the same
+		// fallback order is reproduced here.
+		RealtimeAisBaseURL: firstNonEmptyString(
+			strings.TrimSpace(getenv("REALTIME_SIGNALS_AIS_BASE_URL")),
+			strings.TrimSpace(getenv("REALTIME_SIGNALS_RELAY_BASE_URL")),
+		),
+		RealtimeAisSharedSecret: firstNonEmptyString(
+			strings.TrimSpace(getenv("REALTIME_SIGNALS_AIS_SHARED_SECRET")),
+			strings.TrimSpace(getenv("AIS_RELAY_SHARED_SECRET")),
+			strings.TrimSpace(getenv("REALTIME_SIGNALS_RELAY_SHARED_SECRET")),
+		),
+		RealtimeAcledOauthUsername: strings.TrimSpace(getenv("REALTIME_SIGNALS_ACLED_USERNAME")),
+		RealtimeAcledOauthPassword: strings.TrimSpace(getenv("REALTIME_SIGNALS_ACLED_PASSWORD")),
+		RealtimeAcledOauthClientID: strings.TrimSpace(getenv("REALTIME_SIGNALS_ACLED_CLIENT_ID")),
+		RealtimeCloudflareAPIToken: strings.TrimSpace(getenv("REALTIME_SIGNALS_CLOUDFLARE_API_TOKEN")),
+		RealtimeWingbitsAPIKey:     strings.TrimSpace(getenv("REALTIME_SIGNALS_WINGBITS_API_KEY")),
+		RealtimePolymarketProxyURL: strings.TrimSpace(getenv("REALTIME_SIGNALS_POLYMARKET_PROXY_URL")),
+		// Nominatim identity defaults. The e-mail is optional; a value that is
+		// not a valid address is normalized to "no override" by the unit.
+		NominatimUserAgentDefault: stringDefault(getenv("GEO_NOMINATIM_USER_AGENT"), "modular-api"),
+		NominatimEmailDefault:     strings.TrimSpace(getenv("GEO_NOMINATIM_EMAIL")),
+	}
+}
+
+// firstNonEmptyString returns the first non-empty candidate, reproducing the
+// NestJS `a ?? b ?? c` fallback chain over values that are already undefined for
+// an absent or empty environment variable.
+func firstNonEmptyString(candidates ...string) string {
+	for _, candidate := range candidates {
+		if candidate != "" {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// floatDefault parses a float environment value, falling back for an absent or
+// unparseable one. It mirrors z.coerce.number() with a default for the schema
+// fields that are not integers (the keyword-spike multiplier and the prediction
+// shift threshold).
+func floatDefault(value string, fallback float64) float64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+// maxEnvRetentionDays is the largest TASK_LOG_RETENTION_DAYS value accepted at
+// startup. The zod schema only requires a positive integer, but the value is
+// clamped to 1..3650 where it is served, so any larger input produces the same
+// observable behaviour while keeping the int conversion in range.
+const maxEnvRetentionDays = int64(1)<<31 - 1
+
+// parsePlatformGovernanceDefaults resolves the seven environment variables the
+// sixteen platform governance settings routes expose, mirroring the NestJS zod
+// schema (apps/api/src/modules/config/env.schema.ts plus
+// packages/utils/src/env.ts) one for one, including the .default() values and
+// the Number()/envBoolean coercion.
+//
+// The returned strings are startup errors. Load only promotes them when
+// PlatformGovernanceSettingsMode is go, so a legacy deployment behaves exactly
+// like main even when these variables hold garbage.
+func parsePlatformGovernanceDefaults(cfg *Config, getenv func(string) string) []string {
+	var errs []string
+
+	// ASSISTANT_GUARDRAILS_ENABLED: envBoolean.default(true) — an unset or
+	// empty value takes the default, a recognised word is accepted, and
+	// anything else fails z.boolean() exactly like Nest startup does.
+	switch strings.ToLower(strings.TrimSpace(getenv("ASSISTANT_GUARDRAILS_ENABLED"))) {
+	case "", "true", "1", "yes", "y", "on":
+		cfg.PlatformGovernanceAssistantGuardrailsEnabled = true
+	case "false", "0", "no", "n", "off":
+		cfg.PlatformGovernanceAssistantGuardrailsEnabled = false
+	default:
+		// Keep the field usable even though the value is invalid: the error is
+		// only promoted to a startup failure in go mode, and a zero value here
+		// would otherwise leak a bogus default into a go deployment that was
+		// started before the mistake was noticed.
+		cfg.PlatformGovernanceAssistantGuardrailsEnabled = true
+		errs = append(errs, "ASSISTANT_GUARDRAILS_ENABLED must be a boolean")
+	}
+
+	// ASSISTANT_GUARDRAILS: z.preprocess(trim()=="" -> undefined,
+	// z.string().default("openai-moderation-pre")). The comma split / trim /
+	// drop-empty step lives in EnvService.assistantConfig and is applied by the
+	// serving package, so only the default substitution happens here.
+	if raw := getenv("ASSISTANT_GUARDRAILS"); strings.TrimSpace(raw) == "" {
+		cfg.PlatformGovernanceAssistantGuardrailsRaw = "openai-moderation-pre"
+	} else {
+		cfg.PlatformGovernanceAssistantGuardrailsRaw = raw
+	}
+
+	// ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR:
+	// z.coerce.number().int().min(0).max(10000).default(30).
+	if value, ok := platformGovernanceEnvInt(getenv("ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR"), 30, 0, 10000); ok {
+		cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour = int(value)
+	} else {
+		cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour = 30
+		errs = append(errs, "ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR must be an integer between 0 and 10000")
+	}
+
+	// ASSISTANT_ORG_MAX_IN_FLIGHT:
+	// z.coerce.number().int().min(0).max(100).default(2).
+	if value, ok := platformGovernanceEnvInt(getenv("ASSISTANT_ORG_MAX_IN_FLIGHT"), 2, 0, 100); ok {
+		cfg.PlatformGovernanceAssistantOrgMaxInFlight = int(value)
+	} else {
+		cfg.PlatformGovernanceAssistantOrgMaxInFlight = 2
+		errs = append(errs, "ASSISTANT_ORG_MAX_IN_FLIGHT must be an integer between 0 and 100")
+	}
+
+	// ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET:
+	// z.coerce.number().int().min(0).max(1_000_000_000_000).default(2_000_000).
+	if value, ok := platformGovernanceEnvInt(getenv("ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET"), 2_000_000, 0, 1_000_000_000_000); ok {
+		cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget = value
+	} else {
+		cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget = 2_000_000
+		errs = append(errs, "ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET must be an integer between 0 and 1000000000000")
+	}
+
+	// TASK_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(14).
+	// There is no upper bound in the schema; the 1..3650 clamp happens where the
+	// value is served, exactly like TaskLogSettingsService.normalizeRetentionDays.
+	if value, ok := platformGovernanceEnvInt(getenv("TASK_LOG_RETENTION_DAYS"), 14, 1, maxEnvRetentionDays); ok {
+		cfg.PlatformGovernanceTaskLogRetentionDays = int(value)
+	} else {
+		cfg.PlatformGovernanceTaskLogRetentionDays = 14
+		errs = append(errs, "TASK_LOG_RETENTION_DAYS must be a positive integer")
+	}
+
+	// SYSTEM_SETTINGS_ENCRYPTION_KEY: z.string().optional(), kept verbatim
+	// (never trimmed) so the serving package can tell "unset or empty"
+	// (present=false) from "whitespace only" (present=true, then the decoder
+	// reports "SYSTEM_SETTINGS_ENCRYPTION_KEY is empty").
+	cfg.PlatformGovernanceEncryptionKeyRaw = getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY")
+
+	return errs
+}
+
+// platformGovernanceEnvInt mirrors z.coerce.number().int().min(min).max(max)
+// plus .default(fallback) for one environment variable. An unset (or empty)
+// variable yields the fallback; a set variable is coerced with JavaScript
+// Number() semantics and must then be a finite integer inside [min, max].
+func platformGovernanceEnvInt(raw string, fallback, min, max int64) (int64, bool) {
+	if raw == "" {
+		return fallback, true
+	}
+	value := jsEnvNumber(raw)
+	if math.IsNaN(value) || math.IsInf(value, 0) || value != math.Trunc(value) {
+		return 0, false
+	}
+	if value < float64(min) || value > float64(max) {
+		return 0, false
+	}
+	return int64(value), true
+}
+
+// jsDecimalEnvPattern is the ECMAScript StrDecimalLiteral grammar (without the
+// Infinity alternative, which is handled separately). It is deliberately
+// narrower than Go's number syntax: Number("inf"), Number("nan"),
+// Number("0x1p3") and Number("1_000") are all NaN.
+var jsDecimalEnvPattern = regexp.MustCompile(`^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$`)
+
+// jsEnvNumber mirrors JavaScript's Number(string) for environment values.
+//
+// It validates against the ECMAScript grammar instead of calling
+// strconv.ParseFloat directly, because ParseFloat also accepts "inf", "nan",
+// hexadecimal floats and digit separators that Number() rejects.
+func jsEnvNumber(raw string) float64 {
+	trimmed := jsTrimEnvSpace(raw)
+	if trimmed == "" {
+		return 0
+	}
+	switch strings.ToLower(trimmed) {
+	case "infinity", "+infinity":
+		return math.Inf(1)
+	case "-infinity":
+		return math.Inf(-1)
+	}
+	if len(trimmed) > 2 && trimmed[0] == '0' {
+		switch trimmed[1] {
+		case 'x', 'X':
+			return jsRadixInteger(trimmed[2:], 16)
+		case 'o', 'O':
+			return jsRadixInteger(trimmed[2:], 8)
+		case 'b', 'B':
+			return jsRadixInteger(trimmed[2:], 2)
+		}
+	}
+	if !jsDecimalEnvPattern.MatchString(trimmed) {
+		return math.NaN()
+	}
+	value, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil {
+		var numErr *strconv.NumError
+		if errors.As(err, &numErr) && numErr.Err == strconv.ErrRange {
+			// Number("1e999") is Infinity, not an error.
+			return value
+		}
+		return math.NaN()
+	}
+	return value
+}
+
+// jsRadixInteger mirrors Number() for the 0x/0o/0b integer literal forms. An
+// empty or malformed literal is NaN; a literal too large for uint64 saturates to
+// a large finite double (Number() returns the nearest double, never Infinity,
+// and every caller compares against a far smaller window).
+func jsRadixInteger(digits string, base int) float64 {
+	if digits == "" {
+		return math.NaN()
+	}
+	for _, r := range digits {
+		if envDigitValue(r) >= base {
+			return math.NaN()
+		}
+	}
+	value, err := strconv.ParseUint(digits, base, 64)
+	if err != nil {
+		return float64(^uint64(0))
+	}
+	return float64(value)
+}
+
+// envDigitValue returns the digit value of one ASCII character, or 16 for a
+// character that is not a digit in any supported base.
+func envDigitValue(r rune) int {
+	switch {
+	case r >= '0' && r <= '9':
+		return int(r - '0')
+	case r >= 'a' && r <= 'f':
+		return int(r-'a') + 10
+	case r >= 'A' && r <= 'F':
+		return int(r-'A') + 10
+	default:
+		return 16
+	}
+}
+
+// jsTrimEnvSpace mirrors JavaScript's String.prototype.trim, which also strips
+// the U+FEFF byte order mark that unicode.IsSpace does not classify as space.
+func jsTrimEnvSpace(raw string) string {
+	return strings.TrimFunc(raw, func(r rune) bool {
+		return r == '\uFEFF' || strings.ContainsRune(" \t\n\v\f\r\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000", r)
+	})
 }
 
 func stringDefault(value, fallback string) string {
