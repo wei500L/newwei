@@ -941,9 +941,13 @@ jobs:
                 "{name:'processed_item_org_status_search_text',default_language:'none',"
                 "weights:{'result.title':10,'result.subtitle':6,'result.summary':4,'result.topics':5,"
                 "'result.key_points':4,'result.entities.name':5,'result.location':3,'tags':2}});")
+          # language_override points at a field that never exists: the API stores
+          # `language: null` for items without a detected language, and MongoDB
+          # rejects a non-string value in the default `language` override field.
           mongo("db.getCollection('itemreadmodels').createIndex("
                 "{'title':'text','summary':'text','sourceName':'text','searchText':'text','topics':'text',"
-                "'entities':'text','externalId':'text'});")
+                "'entities':'text','externalId':'text'},"
+                "{name:'itemreadmodels_text',language_override:'irLanguageOverride'});")
 
           def read_model_doc(item_id, item_org, title, sort_day, payload, processed, duplicate=None, region="EU"):
               return {
@@ -1745,6 +1749,11 @@ jobs:
           status, doc = gql_doc(go, a_admin, FACETS_QUERY, {"filters": {"regions": ["EU"]}})
           if not doc["data"]["itemFacets"]["regions"]:
               fail("read-model facet region filter returned nothing")
+          status, doc = gql_doc(go, a_admin, FACETS_QUERY, {"search": "snapshot"})
+          rm_search = doc["data"]["itemFacets"]
+          if not rm_search["topics"] or not rm_search["regions"]:
+              fail("read-model text search returned no facets: " + repr(rm_search))
+          gql_same(a_admin, FACETS_QUERY, {"search": "snapshot"}, "RM-facets-search")
           gql_same(a_admin, SEARCH_SUGGESTIONS_QUERY, {"prefix": "ir"}, "RM-suggestions")
           print("read model enabled phase ok")
 
