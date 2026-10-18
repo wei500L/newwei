@@ -672,6 +672,10 @@ func run() error {
 	if cfg.AccountSecurityMode == config.AccountSecurityModeGo {
 		accountSecurityMode = string(legacyproxy.ModeGo)
 	}
+	authLoginMode := ""
+	if cfg.AuthLoginMode == config.AuthLoginModeGo {
+		authLoginMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -738,6 +742,10 @@ func run() error {
 	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
 	rules = legacyproxy.WithAuthFactors(rules, authFactorsMode)
 	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
+	// The login/session/email-code unit owns eleven exact POST paths under
+	// /api/auth. It is registered after the two neighbouring auth units; the
+	// three rule sets share no path, so the order between them is irrelevant.
+	rules = legacyproxy.WithAuthLogin(rules, authLoginMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -801,6 +809,7 @@ func run() error {
 				cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo ||
 				cfg.AuthFactorsMode == config.AuthFactorsModeGo ||
 				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
+				cfg.AuthLoginMode == config.AuthLoginModeGo ||
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.CrawlMetadataMode == config.CrawlMetadataModeGo ||
@@ -887,6 +896,7 @@ func run() error {
 	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
 	authFactorsGo := cfg.AuthFactorsMode == config.AuthFactorsModeGo
 	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
+	authLoginGo := cfg.AuthLoginMode == config.AuthLoginModeGo
 	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
 	// The situation monitor signals takeover needs the same credentialed stack
 	// (JWT verification, Redis revocation list, MySQL membership re-derivation)
@@ -915,7 +925,7 @@ func run() error {
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
 		situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo ||
-		authFactorsGo || graphqlOrgAccessWriteGo || searchReindexGo ||
+		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo || searchReindexGo ||
 		proxyLoadBalancingGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
@@ -1314,6 +1324,9 @@ func run() error {
 	if err := wireAccountSecurity(gateway, cfg, sharedDB, redisClient); err != nil {
 		return err
 	}
+	if err := wireAuthLogin(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
 
 	if err := wireModelAccessSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
@@ -1471,6 +1484,12 @@ func run() error {
 			// legacy 时该路由回落 NestJS；不含任何凭据、bucket 或签名 URL。
 			"storageDiagnostics": map[string]any{
 				"mode": string(cfg.StorageDiagnosticsMode),
+			},
+			// 登录、会话刷新、验证码登录、公共 MFA challenge、密码找回与
+			// 邮箱变更 11 条 HTTP。legacy 时全部回落 NestJS；不含连接串、
+			// 密码、令牌与密钥。
+			"authLogin": map[string]any{
+				"mode": string(cfg.AuthLoginMode),
 			},
 		})
 	})
