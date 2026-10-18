@@ -24,12 +24,12 @@ import (
 )
 
 const (
-	testSecret     = "0f1e2d3c4b5a69788697a5b4c3d2e1f0a9b8c7d6e5f40312030211c1d1e1f20"
-	otherSecret    = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-	testIssuer     = "modular-monolith"
-	testAudience   = "modular-monolith-clients"
-	otherIssuer    = "someone-else"
-	otherAudience  = "someone-else-clients"
+	testSecret    = "0f1e2d3c4b5a69788697a5b4c3d2e1f0a9b8c7d6e5f40312030211c1d1e1f20"
+	otherSecret   = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	testIssuer    = "modular-monolith"
+	testAudience  = "modular-monolith-clients"
+	otherIssuer   = "someone-else"
+	otherAudience = "someone-else-clients"
 )
 
 // signToken 用指定算法与 secret 签发测试 token（claim 形态镜像
@@ -128,5 +128,40 @@ func TestVerifyTable(t *testing.T) {
 		if got := ExtractBearerToken(req); got != tc.want {
 			t.Errorf("%s: ExtractBearerToken = %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// TestVerifyCarriesVerifiedExpiry covers the account-security metadata
+// exception: Token.ExpiresAt is filled from the verified exp claim (seconds) so
+// logout and GET /me can use it, and stays at the zero value when the claim is
+// absent. The exp->millisecond conversion is asserted because the response field
+// and the access blacklist TTL both depend on it.
+func TestVerifyCarriesVerifiedExpiry(t *testing.T) {
+	verifier := NewVerifier(testSecret, testIssuer, testAudience)
+	expiry := time.Now().Add(14 * time.Minute).Truncate(time.Second)
+
+	token, err := verifier.Verify(signToken(t, jwt.SigningMethodHS256, []byte(testSecret),
+		map[string]any{"exp": expiry.Unix()}))
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if token.ExpiresAt.IsZero() {
+		t.Fatalf("verified exp was not carried on Token")
+	}
+	if token.ExpiresAt.Unix() != expiry.Unix() {
+		t.Fatalf("exp = %v want %v", token.ExpiresAt, expiry)
+	}
+	if token.ExpiresAt.UnixMilli() != expiry.Unix()*1000 {
+		t.Fatalf("exp millis = %d want %d", token.ExpiresAt.UnixMilli(), expiry.Unix()*1000)
+	}
+
+	// A token without exp keeps the zero value: callers must omit the metadata
+	// instead of sending 0.
+	withoutExp, err := verifier.Verify(signToken(t, jwt.SigningMethodHS256, []byte(testSecret), nil, "exp"))
+	if err != nil {
+		t.Fatalf("verify without exp: %v", err)
+	}
+	if !withoutExp.ExpiresAt.IsZero() {
+		t.Fatalf("absent exp = %v", withoutExp.ExpiresAt)
 	}
 }

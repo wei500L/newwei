@@ -4,12 +4,12 @@
 > 审计方法：5 路并行代码勘察（API 契约 / 鉴权安全 / 队列拓扑 / vector 服务 / 前端 IA）+ 主线逐项复核。**标注「已复核」的条目经主线二次验证（文件:行号 亲验）；其余为单路勘察结论，修复前需按同一标准复核。**
 > 规则：先证据后修复；每条修复必须可独立回滚；不制造假测试。
 
-## 0. 字段与级别说明
+## 1. 字段与级别说明
 
 - **严重级别**：P0 阻断发布/门禁失效/数据泄漏 · P1 核心功能受损 · P2 体验/性能/工程化
 - **状态**：✅ 已修复（含回归验证）· 🔧 已修复待运行时验证 · 🔶 部分改善 · ⬜ 开放 · 👁 观察项
 
-## 1. 七条关键用户流程覆盖
+## 2. 七条关键用户流程覆盖
 
 | # | 流程 | 本轮涉及条目 |
 |---|---|---|
@@ -21,7 +21,7 @@
 | F6 | 管理与运维（admin/crawl/system-settings/RBAC/可观测） | BL-02/03/09 · SEC-03 · API-01 |
 | F7 | 个性化与个人工作台（user-settings/digest/subscriptions/onboarding） | API-01 · FE-02/03 |
 
-## 2. 总览
+## 3. 总览
 
 | ID | 级别 | 一句话 | 状态 | 修复提交 |
 |---|---|---|---|---|
@@ -60,8 +60,12 @@
 | SEC-05 | **P0** | 4 组全局治理设置写接口只要求 `settings.manage`：任一租户管理员可改全平台 MFA 策略/助手配额/内容审核护栏/LLM 日志保留期 | 🔧 待远端验证（本轮，见 §7） |
 | TTL-01 | P1 | `tasklogs` 集合不存在时 PUT/DELETE `/task-logs` 返回 500（NamespaceNotFound 26 未按空索引列表处理） | 🔧 待远端验证（本轮，见 §7） |
 | CONC-01 | P1 | `llm-request-logs` 部分 PUT 以进程内 30 秒旧缓存为合并基准且无互斥，会悄悄回滚他人写入 | 🔧 待远端验证（本轮，见 §7） |
+| AS1 | **P0** | 机器令牌轮换先撤销后创建、无原子事务：创建失败旧凭证已被撤销，并发轮换可留下多个有效 successor | ✅ Nest 与 Go 两侧已修复；普通 CI 与真实栈 smoke 均已远端验证（见 §8） | 本轮（见 §8） |
+| AS2 | **P0** | 并发修改密码可覆盖另一个已成功提交的密码修改（事务内仅按 id 更新） | ✅ Nest 与 Go 两侧已修复；普通 CI 与真实栈 smoke 均已远端验证（见 §8） | 本轮（见 §8） |
+| AS3 | P1 | profile 字段显式 null 穿过 `@IsOptional` 后触发 `.trim()` 500；机器身份更新不存在 User 也 500 | ✅ Nest 与 Go 两侧已修复；普通 CI 与真实栈 smoke 均已远端验证（见 §8） | 本轮（见 §8） |
+| AS4 | P1 | 机器令牌 `createdById` 直接写入 `machine:<id>` 触发 User 外键 1452；DTO `MinLength(1)` 在 trim 前判断，空白名称可入库 | ✅ Nest 与 Go 两侧已修复；普通 CI 与真实栈 smoke 均已远端验证（见 §8） | 本轮（见 §8） |
 
-## 3. 已修复条目（详细）
+## 4. 已修复条目（详细）
 
 ### BL-01 web lint 35 处错误 — ✅ 已修复【已复核】
 
@@ -200,7 +204,7 @@
 - **验证**：远端 jsdom（diagnostics GET 拒绝 → 表单仍在、诊断区错误可见）；
   真实浏览器未验证。
 
-## 4. 开放条目（待修复，按优先级排序）
+## 5. 开放条目（待修复，按优先级排序）
 
 ### SEC-01 全局 vector 配置可被任意 org 管理员改写 — 🔧 已修复（单元级 CI 已验证；真实登录态未验证）【已复核】
 
@@ -413,7 +417,7 @@ verify success）——CI-01 本轮未复现，无重跑。
   涉及用户可见文案语义取舍（warning vs error），单独决策。
 - **状态**：开放。FE-批5B 以 characterization 锁定现状（测试内注明缺陷），未修改。
 
-## 5. 观察项（非缺陷，迁移决策输入）
+## 6. 观察项（非缺陷，迁移决策输入）
 
 1. GraphQL Subscription 进程内 PubSub vs WS Redis adapter（水平扩容语义不一致）
 2. crawl4ai legacy 与 hot/normal 双轨队列并存
@@ -423,7 +427,7 @@ verify success）——CI-01 本轮未复现，无重跑。
 6. ~~war-map-geometry.ts 零消费导出 splitDeckPathSegments/buildSanitizedPathFeatures（FE-DD-01，批4A 遗留）~~ ✅ 已随 FE-批4B 合并后收口 PR 删除（FE-DD-01，见 §3）
 7. vector-integration 的 upsert 确定性点 ID 断言偶发 500 vs 201（run 33957774254，真实 Qdrant 环境；同分支纯前端改动后的相邻 run 33957963593 通过，无代码因果，非 CI-01 变体——登记观察待复现规律）。第二次复现：PR #12 文档收口提交 `1e9fe1c9`（仅改 3 个 markdown）run 34034804518 vector-integration 同断言失败（500 vs 201）；同 PR 代码提交首跑 run 34034235302 通过——两次 run 之间无代码差异，进一步佐证与代码无因果。仍为观察项。
 
-## 6. 风险与未验证登记
+## 7. 风险与未验证登记
 
 - **BL-04 的 Node 版本前提**：`process.getBuiltinModule` 需 Node ≥20.16。CI 当前 Node 20（latest tag，实际 ≥20.16）已验证通过；若未来 CI 固定到 <20.16 需回退方案。
 - **API-01 / SEC 系列真实登录态验证**：SEC-01 单元级与 API-01 契约级测试已由远端 CI 验证（run 33748591315）；**真实数据库登录态冒烟**（登录→PUT vector 配置→403 / 完成引导→刷新不重现）仍需 Docker 数据库栈——CI 无 DB，列为部署环境可用后的第一优先验证项。
@@ -492,7 +496,7 @@ verify success）——CI-01 本轮未复现，无重跑。
 - **后续方向**：单独一批把权限改为 `crawl.write`，并同步 auth-matrix 快照。
 - **状态**：只登记。
 
-## 7. 基础设施连接与采集运行凭据批次（IS1–IS4）
+## 8. 基础设施连接与采集运行凭据批次（IS1–IS4）
 
 本批次把「基础设施连接与采集运行凭据配置」7 条 HTTP 用 Strangler Fig 方式迁入
 apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy），并同步
@@ -662,7 +666,123 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
   全零健康状态（Go 侧错误传播）。
 - **状态**：✅ 两侧已修复；真实栈回归由 `api-go-data-runtime-settings-smoke` 的
   DS4 断言组覆盖。
-## 8. Go-批 M9 模型接入设置与 OpenAI 密钥分发（MA1–MA3）
+
+## 9. 账户资料、会话退出与机器令牌批次（AS1–AS4）
+
+本批次把「账户资料、会话退出与机器令牌管理」8 条 HTTP 用 Strangler Fig 方式迁入
+apps/api-go（独立开关 `API_GO_ACCOUNT_SECURITY_MODE`，默认 legacy），并同步修复
+Nest 侧 AS1–AS4。行号以基线 `57d1d4baa5f8432686c8db396968633fd559d43e`
+（origin/main，普通 CI run 39064805065 success）为准。
+
+远端验收：`api-go-account-security-smoke` 阶段 A–F 全部通过（PR #60，head
+`c6eb4e06`：普通 CI run 39079671944 success、smoke run 39079675913 success，
+末行输出 `api-go account security smoke: ALL OK`）。
+
+### AS1 机器令牌轮换不是原子操作 — ✅ 已修复（远端验证）【P0】
+
+- **用户影响**：轮换可能先撤销旧凭证、再因创建失败（例如存储权限归一化后为空、
+  数据库错误）留下不可恢复的空档；并发轮换同一令牌可产生多个有效 successor，
+  旧凭证的持有者与轮换者都能拿到有效令牌。
+- **证据（57d1d4ba）**：
+  - `apps/api/src/modules/auth/machine-token.service.ts:115-133`：`rotate` 先
+    `findFirst`，`:126` 调 `revoke`，`:127` 再调 `create`——两次写不在同一事务；
+  - `:104-113`：`revoke` 用 `updateMany` 命中后立即返回，无法参与外层事务；
+  - `:61-86`：`create` 始终在 `this.prisma` 上执行，事务内调用也会逃出事务。
+- **修复（Nest）**：`rotate` 改为 `prisma.$transaction(async (tx) => ...)`；新增
+  接受 `Prisma.TransactionClient` 的内部 helper `createRecord`，事务内绝不再调用
+  public `create`；归一化（权限白名单/空数组/空白名称）在条件撤销之前完成，条件
+  `WHERE id + orgId + revokedAt IS NULL` 的 `updateMany` 影响行数必须为 1。
+- **修复（Go）**：`machine_tokens.go` 用 `sql.Tx`：`SELECT ... FOR UPDATE` →
+  归一化 → 条件 `UPDATE`（RowsAffected 必须为 1）→ `INSERT` successor → `Commit`；
+  任何错误路径 `Rollback`，Commit 成功后才返回新明文。
+- **远端回归断言**：正常轮换旧 token 失效、新 token 有效；仅含不支持权限的历史
+  token 轮换失败且旧行 `revokedAt` 保持 NULL；用触发器让新行 INSERT 失败时旧行
+  `revokedAt` 仍为 NULL（证明回滚）；Nest/Go 并发轮换同一旧 token 只有一个 201，
+  其余 400 同一错误；最终仅一个 successor；token 明文不出现在 DB/Redis/audit/日志。
+- **状态**：✅ Nest 与 Go 两侧已修复（纯单测覆盖事务客户端归属、零行撤销、INSERT
+  失败回滚）；真实栈回归由 `api-go-account-security-smoke` 的 AS1 断言组覆盖。
+  远端证据（PR #60，head `c6eb4e06`）：普通 CI run
+  [39079671944](https://github.com/wei500L/newwei/actions/runs/39079671944) success、
+  smoke run [39079675913](https://github.com/wei500L/newwei/actions/runs/39079675913)
+  success（`api-go account security smoke: ALL OK`）。
+
+### AS2 并发修改密码可覆盖已完成修改 — ✅ 已修复（远端验证）【P0】
+
+- **用户影响**：两个请求都用同一旧密码通过校验时，后提交的请求会覆盖先成功的新
+  密码——用户拿到「改密成功」但实际密码是另一个请求写入的，属于账户接管面。
+- **证据（57d1d4ba）**：
+  - `apps/api/src/modules/auth/auth.service.ts:1410-1428`：事务前读取并
+    `bcrypt.compare` 旧 hash；
+  - `:1431-1440`：事务中仅 `where: { id: userId }` 更新，没有把已校验的旧 hash
+    作为条件，两个请求都可成功。
+- **修复（Nest）**：`$transaction(async (tx) => ...)` 内先
+  `tx.user.updateMany({ where: { id, passwordHash: user.passwordHash } })`，`count
+  !== 1` 抛 `ConflictException("Password changed by another request; retry with
+  the current password")`（事务回滚，refresh 撤销不生效）；同一事务内撤销该 user
+  全部未撤销 `RefreshToken`。
+- **修复（Go）**：`password.go` 同事务
+  `UPDATE User SET passwordHash=? WHERE id=? AND passwordHash=?`，RowsAffected 必须
+  为 1，否则返回 409 并回滚；refresh 撤销在同一事务。
+- **远端回归断言**：Nest↔Go 用同一旧密码、不同新密码并发，最多一个 200；CAS 失败
+  为 409；读取发生在获胜提交之后的请求按现有校验得到 401；最终只有获胜新密码能
+  通过真实 Nest 登录；失败请求不覆盖密码；获胜事务撤销全部应撤销 refresh 行；
+  纯单测确定性覆盖 CAS=0。
+- **状态**：✅ 两侧已修复（单测覆盖 CAS=0、CAS 条件、cost=10、72 字节适配）；真实栈
+  回归由 `api-go-account-security-smoke` 的 AS2 断言组覆盖（Nest↔Go 同旧密码并发，
+  恰好一个 200、最终只有获胜密码可登录、refresh 行全部撤销）。远端证据同 §8 AS1。
+
+### AS3 profile 显式 null 与不存在 User 触发 500 — ✅ 已修复（远端验证）【P1】
+
+- **用户影响**：`PATCH /api/auth/profile` 传 `{"firstName": null}` 时
+  class-validator 的 `@IsOptional()` 跳过后续校验，service 仍按 `!== undefined`
+  进入 `.trim()` → TypeError → 500；机器身份（`id=machine:<tokenId>`）调用同一
+  接口会对不存在的 User 主键发起更新 → 500。
+- **证据（57d1d4ba）**：
+  - `apps/api/src/modules/auth/dto/profile.dto.ts:6-21`：三个字段均 `@IsOptional()`；
+  - `apps/api/src/modules/auth/auth.service.ts:1353-1370`：仅判 `!== undefined`
+    后直接 `.trim()`，并用 `updates.avatarUrl` 之类经 `as string` 掩盖可空事实；
+  - `:1386-1389`：`prisma.user.update({ where: { id: userId } })` 对机器身份不存在
+    的行报错。
+- **修复（Nest）**：新增 `UpdateProfileInput`（由 DTO 派生的可空映射类型），
+  `null` 明确转为同字段 empty 400；`updateProfile` 在写入前
+  `user.findUnique({ select: { id: true } })`，缺失抛
+  `UnauthorizedException("Invalid access token")`，不再让 Prisma 更新不存在记录。
+  DTO / 控制器 / OpenAPI 契约均未改。
+- **修复（Go）**：`profile.go` 用同样的可空处理（`profileFieldValue`）与
+  `userExists` 预检查；机器身份在资料更新中返回 401 `Invalid access token`。
+- **远端回归断言**：三个字段分别 null、全空白均 400 且无部分写入；混合合法/非法
+  字段失败时不发生部分更新；空 body 不更新 `updatedAt`；历史 `settings.manage`
+  机器令牌调用 profile 不再 500；其他账户/组织的 User 不受影响。
+- **状态**：✅ 两侧已修复（vitest + Go 单测覆盖 null/空白/机器身份/空 body 不写）；
+  真实栈回归由 `api-go-account-security-smoke` 的 AS3 断言组覆盖。远端证据同 §8 AS1。
+
+### AS4 机器令牌 createdById 外键与空白名称 — ✅ 已修复（远端验证）【P1】
+
+- **用户影响**：历史带 `settings.manage` 的机器身份创建机器令牌时，
+  `createdById` 写入 `machine:<id>`（不是 User 行）触发 MySQL 外键 1452 → 500；
+  DTO `@MinLength(1)` 在 trim 前判断，纯空白名称可通过并入库为空名称。
+- **证据（57d1d4ba）**：
+  - `apps/api/src/modules/auth/machine-token.service.ts:74`：`createdById:
+    input.actorId` 直接写入 actor id；
+  - `packages/db/prisma/schema.prisma:96-97`：`createdById` 是
+    `User?` 关系（外键）；
+  - `apps/api/src/modules/auth/dto/machine-token.dto.ts:12-14`：`@MinLength(1)`
+    在 service trim 之前判断；
+  - `machine-token.service.ts:71`：`name: input.name.trim()` 可写入空串。
+- **修复（Nest）**：复用 `normalizeAuditActorId`——`machine:` 前缀与空 actor 写
+  SQL NULL，人类 id 保留；空白名称在权限归一化通过后 400
+  `Machine token name cannot be empty`，不再创建空名记录；轮换继承原
+  `createdById`，不改为当前操作者。
+- **修复（Go）**：`machine_tokens.go` 用同一归一化（`nullableActorID`）与空白名称
+  400；轮换同样继承原创建者（`machine:` 前缀 → NULL），不放宽新建权限白名单。
+- **远端回归断言**：seed 一条历史 `settings.manage` 机器令牌后由它创建令牌
+  `createdById IS NULL` 且 201；空白名称 400 且无新行；人类创建者保留原 id；
+  轮换后 successor 的 `createdById` 不变；新建权限白名单仍只有 `metrics.read`。
+- **状态**：✅ 两侧已修复（vitest + Go 单测覆盖 NULL 归一化、空白名称、creator
+  继承、list 保留历史 permissions 输出）；真实栈回归由
+  `api-go-account-security-smoke` 的 AS4 断言组覆盖。远端证据同 §8 AS1。
+
+## 10. Go-批 M9 模型接入设置与 OpenAI 密钥分发（MA1–MA3）
 
 > 基线 `b89c35a8`（origin/main，普通 CI run 39051652549 success）· 分支
 > `refactor/go-model-access-settings` · 开关 `API_GO_MODEL_ACCESS_SETTINGS_MODE`
@@ -787,7 +907,7 @@ apps/api-go（独立开关 `API_GO_INFRASTRUCTURE_SETTINGS_MODE`，默认 legacy
    只能由 seed/SQL 直接写入 `MachineAccessToken.permissions` 构造——smoke 按此
    准备数据，不通过 API 创建。
 
-## 9. Go-批10（平台治理设置 16 条迁移）同批缺陷
+## 11. Go-批10（平台治理设置 16 条迁移）同批缺陷
 
 本节记录随「平台治理设置 16 条迁入 Go」同批修复的三个缺陷。三处都在 NestJS 与 Go
 两侧同修；证据行号以 `origin/main@0dbfc0d0` 为准，开工时已逐条复核。
