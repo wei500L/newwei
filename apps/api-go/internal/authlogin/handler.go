@@ -328,6 +328,7 @@ type encodedResponse interface{ responseBody() }
 func (sessionResult) responseBody()             {}
 func (mfaChallengeResult) responseBody()        {}
 func (enrollmentChallengeResult) responseBody() {}
+func (enrollmentCompleteResult) responseBody()  {}
 func (mfaEnrollmentStartResult) responseBody()  {}
 func (emailCodeSendResult) responseBody()       {}
 func (okResult) responseBody()                  {}

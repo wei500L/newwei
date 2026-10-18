@@ -170,7 +170,7 @@ func nullableTime(value sql.NullTime) *time.Time {
 	if !value.Valid {
 		return nil
 	}
-	instant := value.UTC()
+	instant := value.Time.UTC()
 	return &instant
 }
 
