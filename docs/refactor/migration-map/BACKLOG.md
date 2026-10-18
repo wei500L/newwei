@@ -31,6 +31,8 @@ WORKSPACE-WRITE-001 占用的 8 roots 不出现在候选范围中；BL-10 只覆
 
 ### BL-03 · crawl / S3 媒体下发
 
+- 2026-10-18按main9d0462e1续读后已reserved至[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md)，不再属于未认领队列；范围补充同因缺失的REST详情/Query crawlTask媒体URL，与BL-15仅storage/test构成完整链。其余候选不认领。
+
 - **范围/缺口**：GET /api/crawl-media-assets/:assetId/:mode，补 S3 签名重定向（GAP-CRAWL-001），不扩大为全部采集写/存储上传。
 - **基础/依据**：G/crawlreadtelemetry 已做 HMAC、orgId 资产查询与 MySQL blob；infrastructuresettings 只有配置管理。必须补 S3 对象 URL 行为与 config 解密/TTL/disposition/path-style，不是改一个 nil 返回。
 - **文件/前置/冲突**：service_media.go、构造/wire 与必要存储辅助；外部 S3，独立于 crawl worker。**可独立窗口**；先确认是否抽共享存储客户端，避开 BL-15 同文件；实桶验证范围另外登记。
@@ -131,6 +133,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 - **文件/前置/冲突**：signals/collector/geo/auth 新包与模型/main；Redis/Mongo/MySQL+Telegram/Oref/Nominatim/OpenSky/其他外部。**需先分地理同步链、Telegram授权、refresh消费者三条候选执行边界**；不因都是态势就同时认领；未核全部外部 API/凭据与轮询退出。
 
 ### BL-15 · infrastructure / 连接诊断与邮件设置
+
+- storage/test子范围已由[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md)认领，与BL-03共享runtime配置/客户端；不再并行派发该路及存储helper。Nominatim/vector/email/safety诊断仍未认领。新诊断独立开关不强开设置CRUD或媒体读取开关。
 
 - **范围/缺口**：POST admin/settings/storage/test、POST system-settings/geo/nominatim/test、GET system-settings/vector-service/diagnostics；settings/email GET、PUT auth-code、POST test；GET assistant-safety/diagnostics（GAP-LEGACY-001）。
 - **基础/依据**：G/infrastructuresettings、dataruntimesettings、platformgovernance 的配置读/解密；N 对应 Controller/Test/Email/Safety service。每种诊断需真实客户端/超时/权限/返回，不是固定 ok；存储、邮件、安全诊断可分别完整交付。

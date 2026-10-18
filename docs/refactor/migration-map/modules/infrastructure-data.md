@@ -12,7 +12,7 @@
 
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#infrastructure-data) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：[STORAGE-MEDIA-001](../tasks/STORAGE-MEDIA-001.md) reserved，仅storage/test和必要运行配置导出，与采集媒体链共用S3能力；不认领其余诊断/CRUD。2026-10-18以main9d0462e1续核该方法，无业务PR或实施，历史全域日期不变。
 
 ## HTTP 开关、实现与生产接线
 

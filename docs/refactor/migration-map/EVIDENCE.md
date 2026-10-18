@@ -4,6 +4,10 @@
 
 ## NEWS-BRIEF-001规划刷新（2026-10-18）
 
+随后用户要求第二个并行提示词，再fetch main仍9d0462e16d88d146b8afbf67cdd58d8b7419ff29；开放仅#70业务与#71规划文档，heads仍adb765d0/3a33ad6e。新增STORAGE-MEDIA-001 reserved，只续核S3媒体/存储诊断及必要源码。#71此旧head的verify仍进行中、两集成job成功，不当新记录或业务CI通过；新记录追加后另查最新head。官方AWS Go v2示例确认有S3 presign/对象操作能力（https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/go_s3_code_examples.html），本仓库go.mod未引入，规划指定现有ci.yml远端go-modules-regen流程。未安装/构建/测试/调用S3，未创建编码worktree。
+
+第二批发出前再核，用户的简报窗口已创建/Users/oo/project/newwei-go-news-event-brief，HEAD9d0462e1且当时无业务差异；保留NEWS-BRIEF-001占用，不推断执行器活动/退出。STORAGE-MEDIA-001编码目录仍未创建，规划窗口未启动实施。
+
 - git fetch origin main后：9d0462e16d88d146b8afbf67cdd58d8b7419ff29。#69实际mergeCommit与此相等，已merged；从3cedce9a到此仅地图/导航文档，没有apps/api、apps/api-go、apps/vector-go业务改动，原注册数不变。
 - main最近5次普通CI分别对应9d0462e1/3cedce9a/7fc17faa/9da8e75e/3c9ce2f5，均success；最新[run 39127631691](https://github.com/wei500L/newwei/actions/runs/39127631691)，完整head即上条SHA。
 - #70仍OPEN/Ready，head adb765d0180e8b34910181e8c6fde8be400a2dff；实际文件清单和main/config diff已读，仍缺settingsWrite顶层route/无效DSN并集，needsCredentialedGo已补settingsWrite。其[普通CI 39125203024](https://github.com/wei500L/newwei/actions/runs/39125203024) verify/user-settings/vector成功，smoke/regen skipped不当通过。工作台8写仍不计main。

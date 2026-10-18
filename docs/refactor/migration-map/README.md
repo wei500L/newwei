@@ -4,6 +4,8 @@
 
 2026-10-18 本次规划增量：#69 已合并，最新代码基线为 9d0462e16d88d146b8afbf67cdd58d8b7419ff29；相对下述3cedce9a仅文档/导航变化，业务与注册覆盖未变，main普通CI成功。#70仍OPEN/Ready，head adb765d0，继续占用工作台8写。[NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md) 已reserved，补新闻事件简报冷生成/强刷及必要日志/写回；[执行提示词](tasks/NEWS-BRIEF-001.prompt.md) 已保存，本窗口不实施。其余历史全域审查日期保持，只有本root按最新SHA深入续核。
 
+用户随后要求再并行一批：同一main下认领[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md)，补存储test、S3交付及已有REST/GraphQL详情URL；[独立提示词](tasks/STORAGE-MEDIA-001.prompt.md)已保存，与简报业务包隔离，共享接线按任务语义段最小增量。两批均reserved、未实施，统一在[规划PR #71](https://github.com/wei500L/newwei/pull/71)发布记录。
+
 本轮基线：`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`；2026-10-18 14:37–14:42 MSK 做结构/指定业务分支静态核对，14:49 再 fetch，main 未变。15:01–15:08续审补组织八写/设置缓存与来源策略、导出拆分证据，main未变；深度按审查组记录，未逐字段审完的内容在AUDIT明列。普通 CI 与启用证据只在 EVIDENCE 维护。
 
 ## 注册覆盖

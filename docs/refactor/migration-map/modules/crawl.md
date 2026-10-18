@@ -16,7 +16,7 @@
 
 Nest 功能目录：[crawl](../../../../apps/api/src/modules/crawl)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：[STORAGE-MEDIA-001](../tasks/STORAGE-MEDIA-001.md) reserved，补已有媒体HTTP及REST/GraphQL详情的S3分支，不重迁采集7读。2026-10-18只对该链按main9d0462e1续核，无业务PR/开工证据；其余历史审查日期不变。旧worktree不自动视为活动任务。
 
 ## HTTP 开关、实现与生产接线
 

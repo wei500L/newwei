@@ -10,9 +10,10 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 |---|---|---|---|
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |
 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | pr_open | 8 个通知/看板/告警交互写 | Ready [#70](https://github.com/wei500L/newwei/pull/70)，head adb765d0；worktree 干净；尚未合 main，保留占用 |
-| [NEWS-BRIEF-001](NEWS-BRIEF-001.md) | reserved | Query newsEventBrief冷生成/forceRefresh、模型日志与briefV1叶子写回 | [提示词](NEWS-BRIEF-001.prompt.md)本次发出；编码分支/worktree尚未创建；规划文档独立PR发布，不代表业务已开工 |
+| [NEWS-BRIEF-001](NEWS-BRIEF-001.md) | reserved | Query newsEventBrief冷生成/forceRefresh、模型日志与briefV1叶子写回 | [提示词](NEWS-BRIEF-001.prompt.md)已发出；第二批末次核对worktree已创建于9d0462e1，尚无业务差异；占用继续有效 |
+| [STORAGE-MEDIA-001](STORAGE-MEDIA-001.md) | reserved | storage/test新接管 + 已有媒体下发/REST与GraphQL详情的S3剩余分支 | [提示词](STORAGE-MEDIA-001.prompt.md)本次并行发出；编码分支/worktree尚未创建，复用规划PR #71 |
 
-两个历史任务的原始认领/发出时间未提供；原始执行器活动未核实。状态定义见 [PLANNING](../PLANNING.md)。地图首版已提交/推送（4e37f285），通过 [PR #69](https://github.com/wei500L/newwei/pull/69) 发布并合并。本次新增NEWS-BRIEF-001认领与提示词，未实施业务；业务分支状态与文档发布分开，PR URL见[证据](../EVIDENCE.md)。
+两个历史任务的原始认领/发出时间未提供；原始执行器活动未核实。状态定义见 [PLANNING](../PLANNING.md)。地图首版已提交/推送（4e37f285），通过 [PR #69](https://github.com/wei500L/newwei/pull/69) 发布并合并。本次先后新增NEWS-BRIEF-001、STORAGE-MEDIA-001两批认领与提示词，均未实施业务；业务分支状态与文档发布分开，规划记录复用Ready PR #71，见[证据](../EVIDENCE.md)。
 
 ## 其他历史任务与本机 worktree
 

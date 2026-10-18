@@ -74,6 +74,8 @@
 
 ## crawl
 
+- **2026-10-18 S3链续核，main9d0462e1**：已读Nest媒体下发/toCrawlStoredAsset/TTL与StorageService全链；Go媒体返回nil之外，buildStoredMediaAsset也对非mysql直接返回，无URL。REST详情与Query crawlTask各有NewService构造，须两处注入；REST分页拒绝越界、GraphQL钳制不统一。认领STORAGE-MEDIA-001，尚未实施/测试/实桶调用，未扩大其他采集范围。
+
 - **媒体下发 / Go 部分实现**：HMAC、orgId SQL、joined/legacy MySQL blob、响应头/重定向消费者与 S3 空返回沿 Nest Controller/Service 对照；新增确认 [GAP-CRAWL-001](GAPS.md#gap-crawl-001)。合法“无资产/无 blob”空返回与缺失 S3 实现分开。
 - **来源/模板/画像/工作流/Frontier 与采集读 / 尚未深入核对**：注册、wire 和 config 依赖已复核；未逐项走更新合并/校验、Frontier cancel 事务/租约、task/results/media DTO、Mongo 内容与 telemetry 计数，不能泛称完整 CRUD。metadata 是主动 HTTP/robots/sitemap/crawl4ai 发现，Nest 服务入口已定位；create/retry/delete/ingest 与 worker 另分候选。
 
@@ -98,6 +100,8 @@
 配置/密钥/profile/激活/LB 21 HTTP 的 main/wire/config 已核，实际 CRUD、加密失败/轮换、平台权限、内部 token、applied 快照和缓存边界**尚未深入核对**。读 llmgatewayprofiles / modelaccesssettings 对应 service；真实探测与 proxy-governance 12 HTTP 尚为 Nest。LiteLLM 配置下发不等于 LiteLLM 已应用，也不等于业务调用已切 Go。
 
 ## infrastructure-data
+
+- **2026-10-18 storage/test专项，main9d0462e1**：已读Controller权限、默认201、StorageService的mysql SELECT1/S3三步check汇总、refreshClient及配置reader/cache/crypto。确认test无platform_admin额外门槛、S3每步失败仍继续、固定测试对象键可优化为每次唯一。Go有缓存/解密但无对象客户端，AWS SDK依赖需走既有远端go-modules-regen，不本机安装；STORAGE-MEDIA-001只认领该子范围。未核其余诊断或实网连通。
 
 **接线已静态核对；9 数据设置和7基础设施组的业务归一化/加解密尚未深入核对**：main 的资源 OR、wireDataRuntimeSettings 创建 handler 与错误返回范围已核，OBS-DATA-001 记录吞错但当前合法路径未证实可触发。archive_status 读取 Redis 派生索引，不是 producer/consumer。未逐项验 storage/vector/nominatim/realtime 配置优先级、清空密钥语义、会话锁、归档状态分页/索引清理；读取 settings 不能当 S3 对象客户端可复用。
 

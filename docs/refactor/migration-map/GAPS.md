@@ -8,7 +8,7 @@
 |---|---|---|---|
 | GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | 未分配；SETTINGS-WRITE-001 主体仍 merged；与 WORKSPACE-WRITE-001 共享接线冲突 |
 | GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | 已分配NEWS-BRIEF-001 / reserved；缺口仍开放 |
-| GAP-CRAWL-001 | 部分实现；crawl | `GET /api/crawl-media-assets/:assetId/:mode` 的 S3 分支 | 未分配；BL-03 |
+| GAP-CRAWL-001 | 部分实现；crawl | 媒体下发及已有REST/GraphQL详情的 S3 URL分支 | STORAGE-MEDIA-001 / reserved；仍开放 |
 | GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 工作台 8 写已由 WORKSPACE-WRITE-001 覆盖；其余未分配，见 BACKLOG |
 | GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | 未分配；按链路拆分，见执行所有权表 |
 
@@ -49,7 +49,8 @@
 - Go：[service_media.go](../../../apps/api-go/internal/crawlreadtelemetry/service_media.go) `getAssetDeliveryPayload` 456–515，MySQL joined blob/legacy blob 已实现；非 MySQL 末尾固定 `(nil,nil)`。`serveMediaAsset` 151 将 nil 映射为 404，虽有 RedirectURL 分支却没有 S3 生产者。核对 SHA 如页首。
 - 主要文件：crawlreadtelemetry/service_media.go、模型/构造与 `cmd/api/crawl_read_telemetry.go`；读取存储配置/解密可能涉及 infrastructuresettings/storage.go，当前该包只提供配置管理，不能当现成 S3 对象客户端。S3/Nest StorageService 是外部对象边界；不需要迁 crawl worker 才可补读。
 - 前置/冲突：明确 S3 配置优先级、endpoint/path-style/publicBaseURL/TTL 与租户签名；BL-03 与 BL-15 的存储配置辅助函数串行。原 #50 已 merged，未迁的是剩余 S3 分支，不重新分配整个 7 路批次。
-- 状态：未分配。关闭证据：**无**；需合法 S3 下发分支源码/提交/CI，实桶验证与配置缺失错误另记。
+- 2026-10-18以main9d0462e1续核，同因缺口还包括service_media.go/buildStoredMediaAsset对非mysql直接返回、未生成preview/download URL；它由REST详情及settingscrawl独立构造的Query crawlTask共同消费。只修下发路由不能闭环。
+- 状态：已分配[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md)，reserved，另迁storage/test验证同一运行配置；无业务实施。关闭证据：**无**；需下发、REST与GraphQL两处注入/URL分支的落地源码/提交/CI，实桶验证与配置缺失错误另记。
 
 <a id="gap-legacy-001"></a>
 
