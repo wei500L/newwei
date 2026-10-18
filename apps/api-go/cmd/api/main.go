@@ -612,6 +612,10 @@ func run() error {
 	if cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo {
 		modelAccessSettingsMode = string(legacyproxy.ModeGo)
 	}
+	llmGatewayProfilesMode := ""
+	if cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo {
+		llmGatewayProfilesMode = string(legacyproxy.ModeGo)
+	}
 	infrastructureSettingsMode := ""
 	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
 		infrastructureSettingsMode = string(legacyproxy.ModeGo)
@@ -668,6 +672,7 @@ func run() error {
 	rules = legacyproxy.WithPlatformGovernanceSettings(rules, platformGovernanceSettingsMode)
 	rules = legacyproxy.WithItemsReading(rules, itemsReadingMode)
 	rules = legacyproxy.WithModelAccessSettings(rules, modelAccessSettingsMode)
+	rules = legacyproxy.WithLLMGatewayProfiles(rules, llmGatewayProfilesMode)
 	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
 	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
 	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
@@ -727,6 +732,7 @@ func run() error {
 				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
 				cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo ||
+				cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo ||
 				cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo ||
 				cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo ||
 				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
@@ -797,6 +803,7 @@ func run() error {
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	itemsReadingGo := cfg.ItemsReadingMode == config.ItemsReadingModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
+	llmGatewayProfilesGo := cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo
 	infrastructureSettingsGo := cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo
 	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
 	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
@@ -810,9 +817,9 @@ func run() error {
 	exceptionIngestGo := cfg.ExceptionIngestMode == config.ExceptionIngestModeGo
 	// 平行批次追加的模式全部保留（#53 frontier、#54 platform governance、#55
 	// infrastructure、#56 model access、#57 situation monitor signals、#58 items
-	// reading、#60 account security、#61 data runtime、#64 exception ingest）。任一
-	// 变量改成本批所需值都不影响其他批次接线。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo
+	// reading、#59 llm gateway profiles、#60 account security、#61 data runtime、
+	// #64 exception ingest）。任一变量改成本批所需值都不影响其他批次接线。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1165,6 +1172,9 @@ func run() error {
 		return err
 	}
 	if err := wirePlatformGovernanceSettings(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
+		return err
+	}
+	if err := wireLLMGatewayProfiles(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 	if err := wireInfrastructureSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
