@@ -19,10 +19,11 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/userdigest"
 )
 
-// wirePersonalNews 装配订阅、行为画像和每日摘要。
-// HTTP 开关只决定注册哪些精确路由。摘要开启时仍直接调用 Go 订阅服务，
-// 推荐开启时仍直接调用 Go 画像服务，即使对应 HTTP 开关是 legacy。
-// 三个域共用已有的 MySQL、Redis，以及按需打开的一条 Mongo 连接。
+// wirePersonalNews 装配订阅、行为画像、每日摘要读链以及摘要后台投递共用的
+// 摘要服务。HTTP 开关只决定注册哪些精确路由；后台投递开关不注册 HTTP。
+// 三个 HTTP 域共用已有的 MySQL、Redis，以及按需打开的一条 Mongo 连接。
+// 返回值是摘要服务：HTTP 为 go 时交给 handler，后台投递为 go 时交给调度器，
+// 两者同时开启时共用同一个实例和同一条 Mongo 连接。
 func wirePersonalNews(
 	gateway *legacyproxy.Gateway,
 	cfg config.Config,
@@ -30,15 +31,19 @@ func wirePersonalNews(
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
-) error {
+) (*userdigest.Service, error) {
 	behaviorGo := cfg.UserNewsBehaviorMode == config.UserNewsBehaviorModeGo
 	subsGo := cfg.ContentSubscriptionsMode == config.ContentSubscriptionsModeGo
 	digestGo := cfg.UserDigestMode == config.UserDigestModeGo
-	if !behaviorGo && !subsGo && !digestGo {
-		return nil
+	deliveryGo := cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo
+	if !behaviorGo && !subsGo && !digestGo && !deliveryGo {
+		return nil, nil
 	}
-	if db == nil || authenticator == nil || redisClient == nil {
-		return fmt.Errorf("api-go: personal news go takeover requires mysql, jwt, and redis")
+	if db == nil || redisClient == nil {
+		return nil, fmt.Errorf("api-go: personal news go takeover requires mysql and redis")
+	}
+	if (behaviorGo || subsGo || digestGo) && authenticator == nil {
+		return nil, fmt.Errorf("api-go: personal news HTTP takeover requires jwt")
 	}
 
 	var behaviorSvc *newsbehavior.Service
@@ -47,11 +52,11 @@ func wirePersonalNews(
 	}
 
 	var subsSvc *contentsubscriptions.Service
-	if subsGo || digestGo {
+	if subsGo || digestGo || deliveryGo {
 		if mongoConn == nil || *mongoConn == nil {
 			conn, err := dashboardstats.Open(cfg.MongoURI)
 			if err != nil {
-				return fmt.Errorf("api-go: personal news go takeover requires a valid MONGO_URI")
+				return nil, fmt.Errorf("api-go: personal news go takeover requires a valid MONGO_URI")
 			}
 			*mongoConn = conn
 		}
@@ -60,47 +65,53 @@ func wirePersonalNews(
 		subsSvc = contentsubscriptions.NewService(db, catalog)
 	}
 
-	policy := cors.New(cfg.CorsOrigin)
-	register := func(path string, handler http.Handler) {
-		gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
-			if policy.FinishOptions(w, r) {
-				return
-			}
-			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
-				return
-			}
-			handler.ServeHTTP(w, r)
-		})
+	var digestSvc *userdigest.Service
+	if digestGo || deliveryGo {
+		searcher := userdigest.NewElasticsearchFromEnv()
+		digestSvc = userdigest.NewService(db, (*mongoConn).Database(), subsSvc, searcher)
 	}
 
-	if behaviorGo {
-		handler := newsbehavior.NewHandler(authenticator, behaviorSvc)
-		register(newsbehavior.RecordPath, handler)
-		register(newsbehavior.ProfilePath, handler)
-	}
-	if subsGo {
-		handler := contentsubscriptions.NewHandler(authenticator, subsSvc, behaviorSvc)
-		for _, path := range []string{
-			contentsubscriptions.ListPath,
-			contentsubscriptions.BatchUpsertPath,
-			contentsubscriptions.BatchDeletePath,
-			contentsubscriptions.CatalogPath,
-			contentsubscriptions.RecommendationsPath,
-			contentsubscriptions.LookupPath,
-			contentsubscriptions.RelatedTopicsPath,
-		} {
-			register(path, handler)
+	if behaviorGo || subsGo || digestGo {
+		policy := cors.New(cfg.CorsOrigin)
+		register := func(path string, handler http.Handler) {
+			gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+				if policy.FinishOptions(w, r) {
+					return
+				}
+				if r.Method == http.MethodOptions {
+					gateway.ServeLegacy(w, r)
+					return
+				}
+				handler.ServeHTTP(w, r)
+			})
+		}
+		if behaviorGo {
+			handler := newsbehavior.NewHandler(authenticator, behaviorSvc)
+			register(newsbehavior.RecordPath, handler)
+			register(newsbehavior.ProfilePath, handler)
+		}
+		if subsGo {
+			handler := contentsubscriptions.NewHandler(authenticator, subsSvc, behaviorSvc)
+			for _, path := range []string{
+				contentsubscriptions.ListPath,
+				contentsubscriptions.BatchUpsertPath,
+				contentsubscriptions.BatchDeletePath,
+				contentsubscriptions.CatalogPath,
+				contentsubscriptions.RecommendationsPath,
+				contentsubscriptions.LookupPath,
+				contentsubscriptions.RelatedTopicsPath,
+			} {
+				register(path, handler)
+			}
+		}
+		if digestGo {
+			handler := userdigest.NewHandlerWithService(authenticator, digestSvc)
+			register(userdigest.PreferencePath, handler)
+			register(userdigest.DeliveryPath, handler)
+			register(userdigest.DigestPath, handler)
 		}
 	}
-	if digestGo {
-		searcher := userdigest.NewElasticsearchFromEnv()
-		handler := userdigest.NewHandler(authenticator, db, (*mongoConn).Database(), subsSvc, searcher)
-		register(userdigest.PreferencePath, handler)
-		register(userdigest.DeliveryPath, handler)
-		register(userdigest.DigestPath, handler)
-	}
-	log.Printf("api-go: personal news takeover behavior=%s subscriptions=%s digest=%s",
-		cfg.UserNewsBehaviorMode, cfg.ContentSubscriptionsMode, cfg.UserDigestMode)
-	return nil
+	log.Printf("api-go: personal news takeover behavior=%s subscriptions=%s digest=%s delivery=%s",
+		cfg.UserNewsBehaviorMode, cfg.ContentSubscriptionsMode, cfg.UserDigestMode, cfg.UserDigestDeliveryMode)
+	return digestSvc, nil
 }

@@ -7,6 +7,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
@@ -25,10 +26,20 @@ export class UserDigestDeliverySchedulerService {
     private readonly cache: CacheService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly deliveryService: UserDigestDeliveryService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async runScheduledDeliveries() {
+    // API_GO_USER_DIGEST_DELIVERY_MODE=go moves the whole execution chain to
+    // Go. Return before claiming the tick gate so a mixed-version deployment
+    // never runs two Cron owners during a switch.
+    if (this.resolveDeliveryMode() === "go") {
+      logger.info(
+        "Skipped user digest delivery scheduler because Go owns delivery (API_GO_USER_DIGEST_DELIVERY_MODE=go)",
+      );
+      return;
+    }
     const claimed = await claimSchedulerTick(
       this.cache,
       "cron:user-digest-delivery:tick-gate",
@@ -78,6 +89,14 @@ export class UserDigestDeliverySchedulerService {
     logger.info(
       { orgCount: orgs.length, concurrency, failedOrgs, skippedOrgs },
       "User digest delivery scheduler tick completed",
+    );
+  }
+
+  private resolveDeliveryMode(): string {
+    return (
+      this.env.get("API_GO_USER_DIGEST_DELIVERY_MODE", {
+        infer: true,
+      }) ?? "legacy"
     );
   }
 

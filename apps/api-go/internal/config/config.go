@@ -860,6 +860,24 @@ const (
 	UserDigestModeGo     UserDigestMode = "go"
 )
 
+// UserDigestDeliveryMode controls the background daily-digest delivery owner.
+// It is independent of the five HTTP switches. The accepted values are exactly
+// "", "legacy" and "go"; the empty value behaves like legacy.
+//
+// legacy: the NestJS Cron keeps owning delivery and no Go scheduler or NestJS
+// digest subscriber starts.
+// go: Go owns the per-minute scan, due-slot CAS, SMTP delivery, status write-back
+// and digest notifications; the NestJS Cron returns before its tick gate and the
+// NestJS digest subscriber connects to the relay channel. Go requires
+// DATABASE_URL, REDIS_HOST, MONGO_URI and the SMTP_* transport, but not
+// JWT_SECRET or any HTTP takeover switch.
+type UserDigestDeliveryMode string
+
+const (
+	UserDigestDeliveryModeLegacy UserDigestDeliveryMode = "legacy"
+	UserDigestDeliveryModeGo     UserDigestDeliveryMode = "go"
+)
+
 // AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
 type AnalysisViewsMode string
 
@@ -1100,6 +1118,9 @@ type Config struct {
 	ContentSubscriptionsMode ContentSubscriptionsMode
 	UserNewsBehaviorMode     UserNewsBehaviorMode
 	UserDigestMode           UserDigestMode
+	// UserDigestDeliveryMode 见 UserDigestDeliveryMode 常量。默认 legacy。
+	// 与五个 HTTP 开关独立；go 需要 MySQL、Redis、Mongo 和 SMTP，不要求 JWT。
+	UserDigestDeliveryMode UserDigestDeliveryMode
 	// 分析工作台三个 HTTP 开关，彼此独立，默认都是 legacy。
 	// 只决定对应精确路由。讨论检查、评论计数和删除清理不看另一个开关。
 	// go 要求 JWT、MySQL、Redis，不要求 Mongo。
@@ -1817,6 +1838,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.UserDigestMode = UserDigestModeGo
 	default:
 		errs = append(errs, "API_GO_USER_DIGEST_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_USER_DIGEST_DELIVERY_MODE")) {
+	case "", string(UserDigestDeliveryModeLegacy):
+		cfg.UserDigestDeliveryMode = UserDigestDeliveryModeLegacy
+	case string(UserDigestDeliveryModeGo):
+		cfg.UserDigestDeliveryMode = UserDigestDeliveryModeGo
+	default:
+		errs = append(errs, "API_GO_USER_DIGEST_DELIVERY_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_VIEWS_MODE")) {
 	case "", string(AnalysisViewsModeLegacy):
@@ -2682,6 +2711,33 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_USER_DIGEST_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_USER_DIGEST_MODE=go")
+		}
+	}
+	// The background digest delivery unit owns the Cron without JWT/RBAC: it
+	// reads MySQL, Redis, Mongo and the real SMTP transport. No HTTP takeover
+	// switch or JWT_SECRET is required, so delivery-only can run while every
+	// other mode (including API_GO_USER_DIGEST_MODE) is legacy.
+	if cfg.UserDigestDeliveryMode == UserDigestDeliveryModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.SMTP.Host == "" {
+			errs = append(errs, "SMTP_HOST is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.SMTP.Port == 0 {
+			errs = append(errs, "SMTP_PORT is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.SMTP.User == "" {
+			errs = append(errs, "SMTP_USER is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.SMTP.Pass == "" {
+			errs = append(errs, "SMTP_PASS is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
 		}
 	}
 	if cfg.AnalysisViewsMode == AnalysisViewsModeGo {

@@ -32,7 +32,10 @@ import {
   attachTokenRevalidation,
   cleanupTokenRevalidation,
 } from "../websocket/socket-token-revalidation";
-import { UserSessionManager } from "../websocket/user-session-manager.service";
+import {
+  UserSessionManager,
+  type UserSession,
+} from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 
 import {
@@ -251,6 +254,38 @@ export class NotificationsGateway
       return;
     }
     this.sessions.emitToOrg(this.server, event.orgId, "notification", event);
+  }
+
+  /**
+   * Delivers one notification only to sockets authenticated on this Nest
+   * instance whose orgId and userId both match. The Socket.IO Redis adapter is
+   * deliberately bypassed: the digest relay already fans out one Redis message
+   * per instance, and re-entering a cluster-wide room broadcast would duplicate
+   * the notification once per instance.
+   *
+   * Returns the number of local sockets that received the event.
+   */
+  emitLocalNotification(
+    orgId: string,
+    userId: string,
+    event: NotificationEvent,
+  ): number {
+    if (!this.server) {
+      return 0;
+    }
+    let delivered = 0;
+    for (const socket of this.getConnectedSockets()) {
+      const profile = socket.data?.user as AuthenticatedUser | undefined;
+      const session = socket.data?.userSession as UserSession | undefined;
+      const socketUserId = profile?.id ?? session?.userId;
+      const socketOrgId = profile?.orgId ?? session?.orgId;
+      if (socketUserId !== userId || socketOrgId !== orgId) {
+        continue;
+      }
+      socket.emit("notification", event);
+      delivered += 1;
+    }
+    return delivered;
   }
 
   private verifyToken(token: string): JwtPayload {
