@@ -33,7 +33,7 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 | `refactor/go-graphql-workspace-write` | `/Users/oo/project/newwei-go-graphql-workspace-write` | `adb765d0180e` | 非 main 祖先；PR 未合入 | 干净 | [#70](https://github.com/wei500L/newwei/pull/70)；pr_open |
 | `refactor/go-infrastructure-settings` | `/Users/oo/project/newwei-go-infrastructure-settings` | `709dfbcffcc8` | main 祖先 | 干净 | [#55](https://github.com/wei500L/newwei/pull/55) |
 | `refactor/go-items-reading` | `/Users/oo/project/newwei-go-items-reading` | `52dadb0af794` | main 祖先 | 干净 | [#58](https://github.com/wei500L/newwei/pull/58) |
-| `refactor/go-kg-impact-read` | `/Users/oo/project/newwei-go-kg-impact-read` | `9c21455555c1` | 非 main 祖先；PR 未合入 | 干净 | [#46](https://github.com/wei500L/newwei/pull/46) |
+| `refactor/go-kg-impact-read` | `/Users/oo/project/newwei-go-kg-impact-read` | `9c21455555c1` | 仅合并后报告提交不在 main；#46 已 merged | 干净 | [#46](https://github.com/wei500L/newwei/pull/46) |
 | `refactor/go-knowledge-graph-read` | `/Users/oo/project/newwei-go-knowledge-graph-read` | `34d26c86412c` | main 祖先 | 干净 | [#44](https://github.com/wei500L/newwei/pull/44) |
 | `refactor/go-llm-gateway-profiles` | `/Users/oo/project/newwei-go-llm-gateway-profiles` | `268ec60fcb60` | main 祖先 | 干净 | [#59](https://github.com/wei500L/newwei/pull/59) |
 | `refactor/go-llm-logs` | `/Users/oo/project/newwei-go-llm-logs` | `2323ec869e6c` | main 祖先 | 干净 | [#41](https://github.com/wei500L/newwei/pull/41)、[#42](https://github.com/wei500L/newwei/pull/42) |
@@ -49,6 +49,8 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 | `refactor/go-situation-monitor-signals` | `/Users/oo/project/newwei-go-situation-monitor-signals` | `536817f6e52d` | main 祖先 | 干净 | [#57](https://github.com/wei500L/newwei/pull/57) |
 
 已合并任务无需重建全部历史提示词：按 [模块入口](../README.md) 找域页的 PR/实际 merge SHA/现有报告。最新 #67 集成合入 #59/#62/#63/#65/#66，主线已有网关配置、MFA 管理、组织访问写、索引重建与代理负载均衡；不可因为旧分支/旧报告而重复派发。
+
+kg-impact 的HEAD 9c214555不是main祖先，但 `origin/main..HEAD` 仅一条报告提交，三点diff仅go-kg-impact-read.md；#46实际merge `a80d394539c3ff84174b7d8db239016847e7e99c` 已在main，不是未交付业务，不重复派发。
 
 当前唯一开放业务 PR 是 #70；#69 是地图文档 PR。新合并仍止于 #68，#67 integration 的原批次历史归属不变。设置写主体 merged 与 GAP-GQL-001 同时成立；候选 BL-01 不自动取得 #70 的公共文件所有权。
 

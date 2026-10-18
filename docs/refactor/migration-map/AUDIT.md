@@ -49,7 +49,7 @@
 ## news
 
 - **newsEventBrief / Go 部分实现**：命中、无事件/无来源、miss、forceRefresh 已沿两端服务核对，后两支固定错误；[GAP-NEWS-001](GAPS.md#gap-news-001) 为唯一缺口记录。
-- **其余事件/分组、指标读写、NewsNow 本地计算与聚类运维 / 尚未深入核对**：已核各 Register/main 和 newsnowclusteringops.NewService 真实构造排序器，nil ordering 错误不是固定业务占位。尚未逐项比对事件筛选/游标、heat/authority、指标反测、聚类恢复状态与 Redis TTL；后续先读 newsevents/queries 与 newsindicator、newsnowclusteringops 的 service/store。上游读取/推荐、LLM backfill、ingestion/Cron 仍由 Nest。
+- **其余事件/分组、指标读写、NewsNow 本地计算与聚类运维 / 尚未深入核对**：已核各 Register/main 和 newsnowclusteringops.NewService 真实构造排序器，nil ordering 错误不是固定业务占位。尚未逐项比对事件筛选/游标、heat/authority、指标反测、聚类恢复状态与 Redis TTL；后续先读 graphqlread/newsevents 的 service.go/store.go/detail.go 与 newsindicator、newsnowclusteringops 的 service/store。上游读取/推荐、LLM backfill、ingestion/Cron 仍由 Nest。
 
 ## knowledge
 

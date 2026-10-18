@@ -11,7 +11,7 @@
 - **变化解释**：分母0、main注册0、业务变化0；发现原有S3分支缺失、确认brief/设置接线、细化吞错观察项、修证据/规划/任务状态，是地图事实改进，不是实现进度。实现/未知分支分别在 [AUDIT](AUDIT.md)，本轮没有声称逐字段/运行完整验收。
 - **三处错误修复**：identity.md、items.md、model-gateway.md 的 #67 显示 `7fc17faa3dc5`，URL误指 #68的3cedce9a；已恢复实际 `7fc17faa3dc5043537bad4038299d11fdba4758d`。全域69条PR merge证据行逐项比较 GitHub PR.mergeCommit、显示SHA、URL目标SHA并检查main祖先关系，修复后无不一致。#68仍指真实3cedce9a，不把历史链接批量换成main。
 - **源码路径/符号**：临时Python静态检查相对链接与Markdown锚、HTTP/root去重、分域集合、生产root、Nest入口符号、PR merge身份；当前508个精确Nest入口方法可定位。新事实用路径+符号+SHA，必要行号均绑定本轮SHA；链接存在不代替符号/行为/merge身份检查。临时脚本留在任务scratch，不引入生成平台/测试体系。
-- **占用再核**：#68 merged；#70仍OPEN/Ready，14:49 head `200ab9440bc2c4d217f429999468c90b81a968e0`，已正常merge #68，本机HEAD相等且干净；14:37曾看到合并冲突只记历史，不据此干预工作目录。只读刷新全部本机worktree的HEAD/status/祖先关系，详见任务索引；目录/干净不推断执行器活跃。
+- **占用再核**：#68 merged；#70仍OPEN/Ready，14:49 head `200ab9440bc2c4d217f429999468c90b81a968e0`，已正常merge #68，本机HEAD相等且干净；14:37曾看到合并冲突只记历史，不据此干预工作目录。只读刷新全部本机worktree的HEAD/status/祖先关系，详见任务索引；目录/干净不推断执行器活跃。最终审查另核kg-impact的非祖先HEAD 9c214555：只多一条合并后报告提交，#46实际merge a80d3945已在main，不能用非祖先推断PR未合入。
 - **#70共享接线**：200ab944补settingsWrite资源OR但仍漏graphqlRouteMode/无效DSN列表；14:56再核PR head adb765d0180e8b34910181e8c6fde8be400a2dff仅追加交付报告，业务仍200ab944，旧head CI已success，新head CI进行中。主main未变，不把此候选修复关闭GAP-GQL-001，不把8写计入main。
 - **开关边界更正**：onboarding/read的config实际只接受空/shadow/go，**不接受legacy**；写模式go显式依赖read=go。Compose中GraphQL有些模式固定legacy、有些未注入，宿主.env不自动传入。精确条件集中在 [DEPENDENCIES](DEPENDENCIES.md) 和 [GraphQL组合](modules/graphql-runtime.md#本轮有意义的组合复核)。
 
