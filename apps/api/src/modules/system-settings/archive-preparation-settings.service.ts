@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { toPrismaJsonValue } from '../../common/prisma-json';
+import { normalizeAuditActorId } from '../audit/audit-actor';
 import { writeAuditLogBestEffort } from '../audit/audit-log.writer';
+import { PlatformAccessService } from '../auth/platform-access.service';
 import { CacheService } from '../cache/cache.service';
 import { PrismaService } from '../config/prisma.service';
 
@@ -42,6 +44,7 @@ export class ArchivePreparationSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly platformAccess: PlatformAccessService,
   ) {}
 
   async getPublicSettings(): Promise<ArchivePreparationSettingsPublic> {
@@ -58,24 +61,44 @@ export class ArchivePreparationSettingsService {
     return this.normalize(record ?? {});
   }
 
+  /**
+   * Replaces the four archive-preparation fields.
+   *
+   * DS1: `archive_preparation_settings` is a process-wide singleton with no
+   * `orgId` dimension (the `orgId` argument only labels the audit row), so an
+   * ordinary organisation administrator holding `settings.manage` must not be
+   * able to change the batch sizes and concurrency every tenant's archive
+   * preparation worker runs with. The gate reads the live
+   * `GlobalRoleAssignment` table and runs before any read or write; a machine
+   * identity can never pass it.
+   *
+   * This route is a full four-field replacement, not a partial merge, so it
+   * deliberately stays lock-free: there is no read-modify-write window to
+   * protect.
+   */
   async updateSettings(
     orgId: string,
     actorId: string,
     input: ArchivePreparationSettings,
   ): Promise<ArchivePreparationSettingsPublic> {
+    await this.platformAccess.assertPlatformAdmin(actorId);
+    // `SystemSetting.updatedById` and `AuditLog.actorId` are nullable foreign
+    // keys into User(id); the gate already rejects machine identities, so this
+    // normalization is defensive.
+    const auditActorId = normalizeAuditActorId(actorId);
     const settings = this.normalize(input);
     await this.prisma.systemSetting.upsert({
       where: { key: SETTINGS_KEY },
       update: {
         value: toPrismaJsonValue(settings),
-        updatedById: actorId,
+        updatedById: auditActorId,
         description: SETTINGS_DESCRIPTION,
         isPublic: false,
       },
       create: {
         key: SETTINGS_KEY,
         value: toPrismaJsonValue(settings),
-        updatedById: actorId,
+        updatedById: auditActorId,
         description: SETTINGS_DESCRIPTION,
         isPublic: false,
       },
@@ -86,7 +109,7 @@ export class ArchivePreparationSettingsService {
       {
         data: {
           orgId,
-          actorId,
+          actorId: auditActorId,
           resource: 'system_settings',
           action: 'archive_preparation_update',
           metadata: toPrismaJsonValue(settings),
@@ -94,7 +117,7 @@ export class ArchivePreparationSettingsService {
       },
       {
         orgId,
-        actorId,
+        actorId: auditActorId,
         resource: 'system_settings',
         action: 'archive_preparation_update',
       },
@@ -104,10 +127,18 @@ export class ArchivePreparationSettingsService {
     return this.getPublicSettings();
   }
 
+  /**
+   * Deletes the stored archive-preparation row and returns the defaults.
+   *
+   * DS1: same platform-admin gate as {@link updateSettings}, running before the
+   * delete and the audit write.
+   */
   async resetToDefaults(
     orgId: string,
     actorId: string,
   ): Promise<ArchivePreparationSettingsPublic> {
+    await this.platformAccess.assertPlatformAdmin(actorId);
+    const auditActorId = normalizeAuditActorId(actorId);
     await this.prisma.systemSetting.deleteMany({ where: { key: SETTINGS_KEY } });
 
     await writeAuditLogBestEffort(
@@ -115,7 +146,7 @@ export class ArchivePreparationSettingsService {
       {
         data: {
           orgId,
-          actorId,
+          actorId: auditActorId,
           resource: 'system_settings',
           action: 'archive_preparation_reset',
           metadata: toPrismaJsonValue({ ok: true } satisfies Prisma.InputJsonObject),
@@ -123,7 +154,7 @@ export class ArchivePreparationSettingsService {
       },
       {
         orgId,
-        actorId,
+        actorId: auditActorId,
         resource: 'system_settings',
         action: 'archive_preparation_reset',
       },
