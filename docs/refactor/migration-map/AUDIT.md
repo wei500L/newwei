@@ -41,6 +41,8 @@
 
 ## personal
 
+- **每日摘要投递候选限定深读 / main90765633，2026-10-18**：Nest delivery service全部到期/claim/failure/模板/通知分支、scheduler/tick/活动组织/cache续租及SMTP模板；Go userdigest生成/返回/投递设置/构造、runtime并发规范化、SMTP公开端口、main资源/退出条件；NotificationDispatcher→Gateway/Socket.IO adapter与本地socket/org-user边界。相对3cedce9a此候选业务无变化（NotificationService已读更新除外），#81–#84实际业务文件及公共接线diff已读。认领DIGEST-DELIVERY-001，不重复核全部personal。未实跑dayjs、SMTP/ES/Redis/Mongo/WS；未逐算法复算摘要所有召回/情绪/指标，只复用其已存在实现；未核真实部署。
+
 - **公共门户故事 / Go 实现已静态核对（冷路径限定）**：[publicportal/story.go](../../../apps/api-go/internal/publicportal/story.go) `Service.brief`：无来源合法 nil、指纹命中、miss 调 completer.Complete、JSON 清洗、metadata 合并和 SaveEventMetadata；写回失败保留生成响应。gateway.go 有真实 HTTP 客户端，未实网验证。此实现不能关闭 GAP-NEWS-001；helper 私有且组织/语言参数不同。
 - **其余门户、六 UI 读/六写、订阅目录/行为/digest / 尚未深入核对**：已核 main 的 user-settings 与 wirePersonalNews 装配；未逐键检查 UI normalization、订阅候选召回/排序、行为衰减、digest 组合与跨租户投递。delivery 配置不负责 SMTP 定时发送，见 GAP-ASYNC-001。
 
@@ -51,6 +53,8 @@
 - **8 个交互写 / Nest 在 main 执行**：#70 已提交但未合入；不将本地模型拆分计入当前实现。`alertRules` 也不在此任务：Nest AlertsService.listRules 会 ensureDefaultRules，不能只搬 SELECT。详见 BL-10。
 
 ## items
+
+- **RSS翻译完整候选限定深读 / main90765633，2026-10-18**：Nest DTO/SDL/Model/Resolver、ItemsRssTranslationService全执行分支，SituationMonitorTranslationService的RSS内层缓存/HTTP/重试/语言检测，situation设置runtime，LiteLlm双协议/format/guardrail/模型fallback/日志及active治理；Go status/config/cache、publicportal配置/协议与brief边界、llmlogs强类型/policy、classificationrssops指标读及GraphQL生产装配。确认GAP-RSS-001窄投影污染完整profile缓存；计划数据库侧最新记录分组。未实跑DeepLX/fallback/LLM/数据库或全部网关兼容组合，不扩大其他条目写/流水线审查。#81实际completion.go helper重命名和#84 csvexport隔离已核。
 
 - **2026-10-18完整items候选深读，main9d0462e1**：Nest items resolver/DTO/分页/游标、ItemsListService个性化与特征、ItemsSearchService相关性/rerank/highlights、helpers/shared权重、ScopedItemsReadingLoader绑定；Go现有REST/GraphQL单条模型/批量store/召回、newsbehavior画像与llmembed接口已读。确认REST仅RECENCY、显式filters:{}优先于历史filters、相关性失败503、个性化候选窗口增长及两种cursor优先级，不能泛化合并。Context暂无选择元数据，计划最小只读扩展以省count/result并批量投影，不重写engine。ITEMS-LIST-001 reserved，未实施；实网/运行/全DTO组合未验证，其他items写/后台范围不扩大。
 

@@ -177,6 +177,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-19 · personal / digest 定时邮件投递
 
+- 2026-10-18按main90765633深入核对后，本单链已reserved至[DIGEST-DELIVERY-001](tasks/DIGEST-DELIVERY-001.md)，[完整提示词](tasks/DIGEST-DELIVERY-001.prompt.md)已发出，不再为未认领候选。已有Go GenerateDigest/SMTP端口可复用；NotificationDispatcher仅进程内，明确新建摘要专用Redis→Nest本地socket桥，保留原WS服务。无BullMQ；独立同名跨进程开关默认legacy，明确停旧Cron/drain/启Go及反序回滚。具体改善为固定cutoff游标批扫及未领取slot的失败写CAS，不把设置CRUD或缓存读取当已投递。BL-15/20/21其余范围未认领。
+
 - **范围/缺口**：UserDigestDeliverySchedulerService→到期用户/订阅→构建 digest→SMTP→delivery 状态/去重（GAP-ASYNC-001）；配置 HTTP 与 preview 不重迁。
 - **基础/依据**：G/userdigest 读取/投递设置、contentsubscriptions/contentcatalog 已有；N/user-digest/user-digest-delivery-scheduler.service.ts。工作量在调度时区/租约/重复发送与失败状态，不在增加 HTTP 数。
 - **文件/前置/冲突**：Go scheduler/delivery、SMTP client/main；DB/Mongo/Redis/ES+SMTP。**先核邮件客户端与 BL-04/15 边界后可独立窗口**；必须指定停用 Nest 哪个调度触发，先核租约/重复执行风险，不自行添加新框架。
@@ -200,6 +202,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 - **文件/前置/冲突**：通常先只读 infra/docker、上游 clients/settings 与部署记录；**可独立只读窗口**；实际部署变更不在本轮授权内，执行时再按明确范围决定。未核真实配置值，不从 CI 推断已切流。
 
 ### BL-24 · crawl/items / 任务写入与内容导入
+
+- 2026-10-18按main90765633深入后，仅RSS翻译子链已reserved至[RSS-TRANSLATION-001](tasks/RSS-TRANSLATION-001.md)，[提示词](tasks/RSS-TRANSLATION-001.prompt.md)随#85发出；不再重复派发translateRssItems。同步DeepLX主备/LLM、四字段分块、双缓存、指标/日志齐备才算本链；无BullMQ/Cron或原文写回。确认GAP-RSS-001共享完整profile缓存被状态投影覆盖，一并具体修复；Mongo选最新记录改数据库侧分组。其他任务生命周期、创建/更新/导入仍未认领。
 
 - **范围/缺口**：crawl create/retry/delete 的 HTTP 与 createCrawlTask/retryCrawlTask/deleteCrawlTask、updateCrawlTaskIngestToItems/ingestCrawlTaskResultsToItems；POST /api/items、createItem/updateItem/createItemFromCrawlResult/translateRssItems（GAP-LEGACY-001 / GAP-ASYNC-001）。重复 HTTP/root 共用业务，不重复计工作。
 - **基础/依据**：G/{crawlreadtelemetry,itemsreading}、已有 DB/模型；N/CrawlService/ItemsService/ItemsRssTranslationService、RawItemOutbox/QueueProcessor。任务状态/去重/关联媒体、原文 Mongo 与 MySQL outbox、翻译缓存/真实模型均为必要步骤。
