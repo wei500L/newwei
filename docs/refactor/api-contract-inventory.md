@@ -500,7 +500,22 @@ Apollo errors 数组；与 REST 的差异：`extensions.code` 为 **HttpStatus �
 - `entitySentimentSeries` / `topicSentimentSeries`（`dashboards.read`；`days` 默认 30、clamp 1..365，名称 trim）
 - `processedItemById(id)`（`items.read`；非法 ObjectId 400，`duplicateOf` -> 目标 `ItemMeta.id`，`eventId` 两步回退）
 
-未迁：10 个 Mutation（`createOrg`/`updateOrg`/`setOrgActive`/`updateMembershipRoles`/`setUserActive`/`createRole`/`assignRole`/`updateRole`/`upsertDashboard`/`deleteDashboard`）与 `queueEvents` Subscription。同批修 4 个缺陷：非法/跨组织游标返回空页（Nest + Go）、删除 `(doc.llm as any)` 并强类型归一化 `llm`（Nest + Go）、`entityName`/`topic` trim（Nest + Go）、`recentLogs.message` 脱敏（Nest + Go）。回滚只把 `API_GO_GRAPHQL_WORKSPACE_READ_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
+未迁：`upsertDashboard`/`deleteDashboard` Mutation 与 `queueEvents` Subscription。同批修 4 个缺陷：非法/跨组织游标返回空页（Nest + Go）、删除 `(doc.llm as any)` 并强类型归一化 `llm`（Nest + Go）、`entityName`/`topic` trim（Nest + Go）、`recentLogs.message` 脱敏（Nest + Go）。回滚只把 `API_GO_GRAPHQL_WORKSPACE_READ_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。
+
+### 11.1 组织、角色与成员管理 GraphQL 写（Go）
+
+新增开关 `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE`（空串/`legacy`/`go`，默认 `legacy`，非法值启动失败，错误文本含变量名）。与 `API_GO_GRAPHQL_READ_MODE` 完全解耦，四种读/写组合分别决定 Query 与 Mutation 的归属。`go` 只要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，**不要求 `MONGO_URI`**，不初始化只读域 Mongo service。
+
+`go` 时在既有精确 `/graphql` 执行器登记 8 个 Mutation（其余 Mutation 仍回 NestJS）：
+
+- `createOrg(input)` / `updateOrg(input)` / `setOrgActive(input)`：`org.write`；组织写在一个事务内创建 `Org`、`DEFAULT_ROLES` 三个系统角色及其 `RolePermission`、创建者的 `Membership`/`MembershipRole` 与 `AuditLog`（`org/create`，metadata `{slug,name}`，缺失权限记 `bootstrapWarnings`），admin 关联数据库全部 `Permission`；`updateOrg`/`setOrgActive` 的目标组织权限从 actor 在目标 org 的 `Membership` + 角色重新推导；禁用组织后逐成员删 `profile:<userId>:<orgId>`。
+- `createRole(input)` / `updateRole(input)`：`roles.write`；复用 `internal/rbacapi`（限流、事务、权限存在性与范围、系统角色限制、缓存失效、审计）。
+- `assignRole(input)`：`roles.write`；复用 `internal/rbacapi`，事务内 `SELECT id FROM Membership ... FOR UPDATE` 后替换 `MembershipRole`。
+- `updateMembershipRoles(input)` / `setUserActive(input)`：`users.write`；`roleIds` trim + 去空 + 去重且 `primaryRoleId` 必须属于该集合；`setUserActive` 只改 `Membership.isActive`。
+
+本批同时为执行器补齐最小必要的 Mutation 能力：Query/Mutation 分别登记与选根（planner、选择集、复杂度、`__typename`、字段定义查找按 operation 选根）、整包接管判断、顶层字段按文档顺序串行执行（非空失败 `data:null` 并停止后续字段）、GET 拒绝（405 + `Allow: POST`，鉴权前发生）、Mutation `Cache-Control: no-store`（`ResponseCacheable` 先限定 operation 为 Query）。
+
+回滚只把 `API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE` 改回 `legacy`；不改表、不改 SDL、不改 Web 入口、不改其他开关默认值。说明见 `docs/refactor/go-graphql-org-access-write.md`。
 
 ## 12. 分类质量工作台与 RSS 诊断/翻译指标（Go）
 

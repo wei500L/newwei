@@ -159,6 +159,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgegraph"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/orgaccesswrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingscrawl"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
@@ -664,7 +665,15 @@ func run() error {
 	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
-	rules = legacyproxy.WithGraphQLRead(rules, string(cfg.GraphQLReadMode))
+	// /graphql is routed to the Go handler when either the read switch or the
+	// organization access write switch is go. The registered roots and their
+	// own switches decide which documents actually execute in Go; everything
+	// else is still proxied to NestJS.
+	graphqlRouteMode := ""
+	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" {
+		graphqlRouteMode = string(legacyproxy.ModeGo)
+	}
+	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
 	rules = legacyproxy.WithSituationSignals(rules, situationSignalsMode)
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
@@ -739,6 +748,7 @@ func run() error {
 				cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo ||
 				cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo ||
 				cfg.GraphQLReadMode == "go" ||
+				cfg.GraphQLOrgAccessWriteMode == "go" ||
 				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
@@ -809,6 +819,9 @@ func run() error {
 		cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo
 	// user-settings、dashboard、stream、认证版 healthz、个人内容和分析工作台共用 JWT/Redis/MySQL 鉴权栈。
 	graphqlReadGo := cfg.GraphQLReadMode == "go"
+	// 组织、角色与成员管理的 8 个 mutation 由独立开关控制，与读开关解耦：
+	// 只开写入时 queries 仍走 NestJS，也不需要 Mongo。
+	graphqlOrgAccessWriteGo := cfg.GraphQLOrgAccessWriteMode == "go"
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
@@ -840,9 +853,9 @@ func run() error {
 	// 平行批次追加的模式全部保留（#53 frontier、#54 platform governance、#55
 	// infrastructure、#56 model access、#57 situation monitor signals、#58 items
 	// reading、#59 llm gateway profiles、#60 account security、#61 data runtime、
-	// #62 auth factors、#64 exception ingest）。任一变量改成本批所需值都不影响
-	// 其他批次接线。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo
+	// #62 auth factors、#63 graphql org access write、#64 exception ingest）。任一
+	// 变量改成本批所需值都不影响其他批次接线。
+	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo || transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo || streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo || situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo || crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo || adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo || newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo || dataRuntimeSettingsGo || accountSecurityGo || crawlReadTelemetryGo || classificationRssOpsGo || platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo || situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || authFactorsGo || graphqlOrgAccessWriteGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	if needsCredentialedGo {
@@ -1367,71 +1380,85 @@ func run() error {
 
 	var graphqlHandler *graphqlread.Handler
 	var graphqlMongo *dashboardstats.Connection
-	if graphqlReadGo {
+	// 读查询与组织访问写入各自独立开关；任一为 go 就装配精确 /graphql 的 Go
+	// handler。只开写入时不要求 Mongo，也不初始化任何只读域的 Mongo service。
+	if graphqlReadGo || graphqlOrgAccessWriteGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
-			return fmt.Errorf("api-go: API_GO_GRAPHQL_READ_MODE=go requires mysql, jwt, and redis")
-		}
-		mongoDatabase := dashboardMongo
-		if mongoDatabase == nil {
-			opened, openErr := dashboardstats.Open(cfg.MongoURI)
-			if openErr != nil {
-				return fmt.Errorf("api-go: API_GO_GRAPHQL_READ_MODE=go requires a valid MONGO_URI")
-			}
-			graphqlMongo = opened
-			mongoDatabase = opened
+			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
 		reg := contract.NewRegistry()
-		alerts.Register(reg, sharedDB)
-		history.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
-		economic.Register(reg, sharedDB)
-		newsEventsGo := cfg.GraphQLNewsEventsMode == "go"
-		if newsEventsGo {
-			newsevents.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
-		}
-		newsIndicatorsRead := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
-		if newsIndicatorsRead {
-			newsindicators.Register(reg, sharedDB)
-		}
-		kgImpactGo := cfg.GraphQLKgImpactMode == "go"
-		if kgImpactGo {
-			kgimpact.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
-		}
-		knowledgeGraphGo := cfg.GraphQLKnowledgeGraphMode == "go"
-		if knowledgeGraphGo {
-			knowledgegraph.Register(reg, sharedDB, redisClient)
-		}
 		// The workspace identity/organization/RBAC/dashboard/queue/sentiment/
 		// processed-item roots are opt-in through their own switch; when it is
 		// legacy, any document selecting one of them stays on NestJS.
 		workspaceGo := cfg.GraphQLWorkspaceReadMode == "go"
-		if workspaceGo {
-			workspace.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+		if graphqlReadGo {
+			mongoDatabase := dashboardMongo
+			if mongoDatabase == nil {
+				opened, openErr := dashboardstats.Open(cfg.MongoURI)
+				if openErr != nil {
+					return fmt.Errorf("api-go: API_GO_GRAPHQL_READ_MODE=go requires a valid MONGO_URI")
+				}
+				graphqlMongo = opened
+				mongoDatabase = opened
+			}
+			alerts.Register(reg, sharedDB)
+			history.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+			economic.Register(reg, sharedDB)
+			newsEventsGo := cfg.GraphQLNewsEventsMode == "go"
+			if newsEventsGo {
+				newsevents.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+			}
+			newsIndicatorsRead := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
+			if newsIndicatorsRead {
+				newsindicators.Register(reg, sharedDB)
+			}
+			kgImpactGo := cfg.GraphQLKgImpactMode == "go"
+			if kgImpactGo {
+				kgimpact.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+			}
+			knowledgeGraphGo := cfg.GraphQLKnowledgeGraphMode == "go"
+			if knowledgeGraphGo {
+				knowledgegraph.Register(reg, sharedDB, redisClient)
+			}
+			if workspaceGo {
+				workspace.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
+			}
+			// The settings center, source policy, sync status, knowledge-graph
+			// evidence review queue and crawl task roots are opt-in through
+			// their own switch; when it is legacy, any document selecting one
+			// of them stays on NestJS.
+			settingsCrawlGo := cfg.GraphQLSettingsCrawlReadMode == "go"
+			if settingsCrawlGo {
+				settingscrawl.Register(reg, sharedDB, settingscrawl.Options{
+					JWTSecret: cfg.JWTSecret,
+					Mongo:     mongoDatabase.Database(),
+					Redis:     redisClient,
+				})
+			}
+			// The item reading roots (item, itemFacets, rssSources,
+			// rssTranslationStatus, searchSuggestions) are opt-in through the
+			// items-reading switch; when it is legacy, or the GraphQL read switch
+			// is legacy, any document selecting one of them stays on NestJS.
+			if itemsReadingGo {
+				itemReadService := itemsreading.NewService(itemsreading.Options{
+					DB:                    sharedDB,
+					Mongo:                 mongoDatabase.Database(),
+					Redis:                 redisClient,
+					ReadModelEnabled:      cfg.ItemsReadModelEnabled,
+					VectorHardFailEnabled: cfg.ItemsVectorHardFailEnabled,
+				})
+				itemsgraphql.Register(reg, itemReadService, workspaceGo)
+			}
 		}
-		// The settings center, source policy, sync status, knowledge-graph
-		// evidence review queue and crawl task roots are opt-in through their
-		// own switch; when it is legacy, any document selecting one of them
-		// stays on NestJS.
-		settingsCrawlGo := cfg.GraphQLSettingsCrawlReadMode == "go"
-		if settingsCrawlGo {
-			settingscrawl.Register(reg, sharedDB, settingscrawl.Options{
-				JWTSecret: cfg.JWTSecret,
-				Mongo:     mongoDatabase.Database(),
-				Redis:     redisClient,
-			})
-		}
-		// The item reading roots (item, itemFacets, rssSources,
-		// rssTranslationStatus, searchSuggestions) are opt-in through the
-		// items-reading switch; when it is legacy, or the GraphQL read switch is
-		// legacy, any document selecting one of them stays on NestJS.
-		if itemsReadingGo {
-			itemReadService := itemsreading.NewService(itemsreading.Options{
-				DB:                    sharedDB,
-				Mongo:                 mongoDatabase.Database(),
-				Redis:                 redisClient,
-				ReadModelEnabled:      cfg.ItemsReadModelEnabled,
-				VectorHardFailEnabled: cfg.ItemsVectorHardFailEnabled,
-			})
-			itemsgraphql.Register(reg, itemReadService, workspaceGo)
+		// The eight organization, role and membership mutations share the
+		// workspace models. The models (and their field permissions) may be
+		// registered exactly once, so they are registered here only when the
+		// workspace read roots did not already do it.
+		if graphqlOrgAccessWriteGo {
+			if !graphqlReadGo || !workspaceGo {
+				workspace.RegisterModels(reg)
+			}
+			orgaccesswrite.Register(reg, sharedDB, redisClient)
 		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
@@ -1453,41 +1480,48 @@ func run() error {
 		graphqlHandler = handler
 		gateway.RegisterGoHandler(graphqlread.Path, graphqlHandler.ServeHTTP)
 		gateway.RegisterGoHandler(graphqlread.StatsPath, graphqlHandler.ServeStats)
-		log.Printf("api-go: GraphQL read pilot under go (16 queries; mutations and other queries stay on NestJS)")
-		if newsEventsGo {
-			log.Printf("api-go: GraphQL news-event reads registered (newsEvents, newsEvent, newsEventBrief, newsEventReferencedArticles, topicGroups, eventGroups)")
-		} else {
-			log.Printf("api-go: GraphQL news-event reads not registered (API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy)")
+		if graphqlReadGo {
+			log.Printf("api-go: GraphQL read pilot under go (16 queries; mutations and other queries stay on NestJS)")
+			if cfg.GraphQLNewsEventsMode == "go" {
+				log.Printf("api-go: GraphQL news-event reads registered (newsEvents, newsEvent, newsEventBrief, newsEventReferencedArticles, topicGroups, eventGroups)")
+			} else {
+				log.Printf("api-go: GraphQL news-event reads not registered (API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy)")
+			}
+			if cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
+				log.Printf("api-go: GraphQL news-indicator reads registered (newsIndicatorAssociations, newsIndicatorAssociation)")
+			} else {
+				log.Printf("api-go: GraphQL news-indicator reads not registered (API_GO_NEWS_INDICATORS_MODE=legacy)")
+			}
+			if cfg.GraphQLKgImpactMode == "go" {
+				log.Printf("api-go: GraphQL knowledge-graph impact reads registered (getExecutiveChangeImpact, getCommodityMoveImpact, getPolicyEventImpact, getEntityImpactGraph)")
+			} else {
+				log.Printf("api-go: GraphQL knowledge-graph impact reads not registered (API_GO_GRAPHQL_KG_IMPACT_MODE=legacy)")
+			}
+			if cfg.GraphQLKnowledgeGraphMode == "go" {
+				log.Printf("api-go: GraphQL knowledge-graph reads registered (getKnowledgeGraphSubgraph, articleEntityLinks, knowledgeGraphEdgeEvidence, entityIntelligenceCard, entityIntelligenceEvidence, knowledgeEntityByName)")
+			} else {
+				log.Printf("api-go: GraphQL knowledge-graph reads not registered (API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy)")
+			}
+			if workspaceGo {
+				log.Printf("api-go: GraphQL workspace reads registered (me, myOrganizations, users, userLoginRecords, roles, permissions, memberships, dashboards, queueStats, entitySentimentSeries, topicSentimentSeries, processedItemById)")
+			} else {
+				log.Printf("api-go: GraphQL workspace reads not registered (API_GO_GRAPHQL_WORKSPACE_READ_MODE=legacy)")
+			}
+			if itemsReadingGo {
+				log.Printf("api-go: GraphQL item reading roots registered (item, itemFacets, rssSources, rssTranslationStatus, searchSuggestions)")
+			} else {
+				log.Printf("api-go: GraphQL item reading roots not registered (API_GO_ITEMS_READING_MODE=legacy)")
+			}
+			if cfg.GraphQLSettingsCrawlReadMode == "go" {
+				log.Printf("api-go: GraphQL settings/crawl reads registered (rateLimitSettings, entityImpactGraphSettings, knowledgeGraphSettings, newsEventSettings, newsEventSourcePolicy, newsEventSourcePolicyPresets, newsEventSourcePolicyRevisionDiff, newsClassificationSettings, classificationQualitySettings, newsDedupeSettings, newsIndicatorSettings, authCacheSettings, crawlClientSettings, auditLogRetention, newsExtractionSettings, newsPromptConfig, newsEventSourcePolicySyncStatus, knowledgeGraphEvidenceReviewQueue, crawlTasks, crawlTask)")
+			} else {
+				log.Printf("api-go: GraphQL settings/crawl reads not registered (API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE=legacy)")
+			}
 		}
-		if newsIndicatorsRead {
-			log.Printf("api-go: GraphQL news-indicator reads registered (newsIndicatorAssociations, newsIndicatorAssociation)")
+		if graphqlOrgAccessWriteGo {
+			log.Printf("api-go: GraphQL org-access writes registered (%s)", strings.Join(orgaccesswrite.RegisteredMutations, ", "))
 		} else {
-			log.Printf("api-go: GraphQL news-indicator reads not registered (API_GO_NEWS_INDICATORS_MODE=legacy)")
-		}
-		if kgImpactGo {
-			log.Printf("api-go: GraphQL knowledge-graph impact reads registered (getExecutiveChangeImpact, getCommodityMoveImpact, getPolicyEventImpact, getEntityImpactGraph)")
-		} else {
-			log.Printf("api-go: GraphQL knowledge-graph impact reads not registered (API_GO_GRAPHQL_KG_IMPACT_MODE=legacy)")
-		}
-		if knowledgeGraphGo {
-			log.Printf("api-go: GraphQL knowledge-graph reads registered (getKnowledgeGraphSubgraph, articleEntityLinks, knowledgeGraphEdgeEvidence, entityIntelligenceCard, entityIntelligenceEvidence, knowledgeEntityByName)")
-		} else {
-			log.Printf("api-go: GraphQL knowledge-graph reads not registered (API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy)")
-		}
-		if workspaceGo {
-			log.Printf("api-go: GraphQL workspace reads registered (me, myOrganizations, users, userLoginRecords, roles, permissions, memberships, dashboards, queueStats, entitySentimentSeries, topicSentimentSeries, processedItemById)")
-		} else {
-			log.Printf("api-go: GraphQL workspace reads not registered (API_GO_GRAPHQL_WORKSPACE_READ_MODE=legacy)")
-		}
-		if itemsReadingGo {
-			log.Printf("api-go: GraphQL item reading roots registered (item, itemFacets, rssSources, rssTranslationStatus, searchSuggestions)")
-		} else {
-			log.Printf("api-go: GraphQL item reading roots not registered (API_GO_ITEMS_READING_MODE=legacy)")
-		}
-		if settingsCrawlGo {
-			log.Printf("api-go: GraphQL settings/crawl reads registered (rateLimitSettings, entityImpactGraphSettings, knowledgeGraphSettings, newsEventSettings, newsEventSourcePolicy, newsEventSourcePolicyPresets, newsEventSourcePolicyRevisionDiff, newsClassificationSettings, classificationQualitySettings, newsDedupeSettings, newsIndicatorSettings, authCacheSettings, crawlClientSettings, auditLogRetention, newsExtractionSettings, newsPromptConfig, newsEventSourcePolicySyncStatus, knowledgeGraphEvidenceReviewQueue, crawlTasks, crawlTask)")
-		} else {
-			log.Printf("api-go: GraphQL settings/crawl reads not registered (API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE=legacy)")
+			log.Printf("api-go: GraphQL org-access writes not registered (API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE=legacy)")
 		}
 	}
 

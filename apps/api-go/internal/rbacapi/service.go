@@ -320,10 +320,10 @@ func (s *Service) CreateRole(ctx context.Context, orgID, actorID string, actorPe
 		return roleJSON{}, err
 	}
 
-	writeAuditLogBestEffort(ctx, s.db, orgID, actorID, "roles", "create", map[string]any{
-		"roleId":      created.ID,
-		"name":        normalizedName,
-		"permissions": permissions,
+	writeAuditLogBestEffort(ctx, s.db, orgID, actorID, "roles", "create", roleCreateAudit{
+		RoleID:      created.ID,
+		Name:        normalizedName,
+		Permissions: permissions,
 	})
 	return created, nil
 }
@@ -412,9 +412,9 @@ func (s *Service) AssignRole(ctx context.Context, orgID, actorID string, actorPe
 	}
 
 	s.invalidateUsersWithRole(ctx, orgID, roleID)
-	writeAuditLogBestEffort(ctx, s.db, orgID, actorID, "users", "assign_role", map[string]any{
-		"targetUserId": userID,
-		"roleId":       roleID,
+	writeAuditLogBestEffort(ctx, s.db, orgID, actorID, "users", "assign_role", roleAssignAudit{
+		TargetUserID: userID,
+		RoleID:       roleID,
 	})
 	return membership, nil
 }
