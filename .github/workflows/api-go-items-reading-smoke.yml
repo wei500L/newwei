@@ -1681,7 +1681,38 @@ jobs:
 
           # ================= Phase RM: read model enabled =================
 
+          def start_nest(read_model):
+              # NestJS reads ITEMS_READ_MODEL_ENABLED at process start, so the
+              # read-model phases restart it with the flag flipped; otherwise the
+              # parity comparisons would run against a NestJS process serving the
+              # legacy path.
+              if os.path.exists("/tmp/api-nestjs.pid"):
+                  try:
+                      os.kill(int(open("/tmp/api-nestjs.pid").read().strip()), signal.SIGTERM)
+                  except Exception:
+                      pass
+              subprocess.run(["pkill", "-f", "apps/api/dist/main.js"], check=False)
+              subprocess.run(["pkill", "-f", "node dist/main.js"], check=False)
+              time.sleep(3)
+              env = dict(os.environ)
+              env["NODE_ENV"] = "production"
+              env["PORT"] = "4000"
+              env["ITEMS_READ_MODEL_ENABLED"] = "true" if read_model else "false"
+              log = open("/tmp/api-nestjs.log", "a")
+              proc = subprocess.Popen(["pnpm", "--filter", "@modular/api", "run", "start"],
+                                      env=env, stdout=log, stderr=subprocess.STDOUT)
+              open("/tmp/api-nestjs.pid", "w").write(str(proc.pid))
+              for _ in range(90):
+                  try:
+                      urllib.request.urlopen(nest + "/api/healthz/live", timeout=2).read()
+                      return
+                  except Exception:
+                      time.sleep(2)
+              fail("nestjs restart with ITEMS_READ_MODEL_ENABLED=" + str(read_model) + " did not become healthy")
+
           phase("RM read model enabled")
+
+          start_nest(True)
 
           def rm_doc_count(item_id, item_org=ORG_A):
               script = ("print(db.getCollection('itemreadmodels').countDocuments({orgId:%s,itemMetaId:%s}))"
