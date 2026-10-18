@@ -124,12 +124,12 @@ func (s *Service) runReindex(jobID, orgID string, lock *reindexLock) {
 	})
 	if err != nil {
 		finalizeCtx, finalizeCancel := context.WithTimeout(finishCtx, finalizeTimeout)
-		_ = s.jobs.markFailed(finalizeCtx, jobID, written, err.Error(), time.Now())
+		_, _ = s.jobs.markFailed(finalizeCtx, jobID, written, err.Error(), time.Now())
 		finalizeCancel()
 		return
 	}
 	finalizeCtx, finalizeCancel := context.WithTimeout(finishCtx, finalizeTimeout)
-	_ = s.jobs.markCompleted(finalizeCtx, jobID, written, time.Now())
+	_, _ = s.jobs.markCompleted(finalizeCtx, jobID, written, time.Now())
 	finalizeCancel()
 }
 
