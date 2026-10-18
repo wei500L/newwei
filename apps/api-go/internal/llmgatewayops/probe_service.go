@@ -211,7 +211,7 @@ func (s *Service) TestConfig(ctx context.Context, input testConfigInput, actor p
 		return testResult{}, err
 	}
 
-	timeoutMS := defaultTimeoutMS
+	timeoutMS := defaultProfileTimeoutMS
 	if input.TimeoutMS != nil {
 		timeoutMS = *input.TimeoutMS
 	} else if stored != nil && stored.TimeoutMs > 0 {

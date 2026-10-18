@@ -22,7 +22,6 @@ const (
 	maxBudgetUSD              = 1_000_000
 	minParallelRequests       = 1
 	maxParallelRequests       = 1_024
-	budgetDecimals            = 4
 )
 
 // governanceSource reports where the effective settings came from.

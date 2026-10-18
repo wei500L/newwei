@@ -21,8 +21,6 @@ const (
 	defaultEmbeddingInput = "hello"
 	// defaultRerankQuery is the rerank probe query.
 	defaultRerankQuery = "latest US inflation outlook and Fed policy"
-	// defaultTimeoutMS is the fallback request deadline.
-	defaultTimeoutMS = 60_000
 	// defaultTemperature is the fallback completion temperature.
 	defaultTemperature = 0.2
 	// defaultTopP is the fallback completion top_p.
