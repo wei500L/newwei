@@ -1404,7 +1404,12 @@ jobs:
           takeover("archive PUT", "PUT", ARCHIVE_SETTINGS_PATH, alive,
                    {"jobBatchSize": 12, "embeddingBatchSize": 12,
                     "embeddingMaxConcurrency": 2, "rerankMaxConcurrency": 2})
-          require("archive PUT persisted", json.loads(raw_setting(ARCHIVE_KEY)).get("jobBatchSize"), 12)
+          archive_raw = raw_setting(ARCHIVE_KEY)
+          archive_doc = json.loads(archive_raw) if archive_raw else None
+          if not isinstance(archive_doc, dict) or archive_doc.get("jobBatchSize") != 12:
+              fail(f"archive PUT persisted: raw={archive_raw!r}")
+          if set(archive_doc) != {"jobBatchSize", "embeddingBatchSize", "embeddingMaxConcurrency", "rerankMaxConcurrency"}:
+              fail(f"archive PUT persisted with unexpected keys: {sorted(archive_doc)}")
           takeover("archive DELETE", "DELETE", ARCHIVE_SETTINGS_PATH, alive)
           require("archive DELETE removed the row", raw_setting(ARCHIVE_KEY), "")
           takeover("realtime DELETE", "DELETE", REALTIME_PATH, alive)

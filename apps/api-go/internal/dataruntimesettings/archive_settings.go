@@ -24,12 +24,19 @@ type storedArchivePreparationSettings struct {
 	RerankMaxConcurrency    json.RawMessage `json:"rerankMaxConcurrency,omitempty"`
 }
 
-// archivePreparationSettings is the normalized four-field document.
+// archivePreparationSettings is the normalized four-field document that is
+// written to the `archive_preparation_settings` row.
+//
+// The json tags are REQUIRED: NestJS reads `raw.jobBatchSize` and friends by
+// their camelCase names, so a document written with Go's default PascalCase keys
+// would silently normalize back to the defaults on the NestJS side (Go's own
+// decoder is case-insensitive, which is why only a real-stack database assertion
+// catches this).
 type archivePreparationSettings struct {
-	JobBatchSize            int
-	EmbeddingBatchSize      int
-	EmbeddingMaxConcurrency int
-	RerankMaxConcurrency    int
+	JobBatchSize            int `json:"jobBatchSize"`
+	EmbeddingBatchSize      int `json:"embeddingBatchSize"`
+	EmbeddingMaxConcurrency int `json:"embeddingMaxConcurrency"`
+	RerankMaxConcurrency    int `json:"rerankMaxConcurrency"`
 }
 
 // archivePreparationPublicSettings is the response body. Member order matches

@@ -37,7 +37,7 @@ func realtimeBaseConfig() Config {
 		RealtimeOpenskyWarningRemaining:  20,
 		RealtimeOpenskyCriticalRemaining: 10,
 		RealtimeOpenskyBaseURL:           "https://opensky-network.org/api",
-		RealtimeOpenskyTokenURL:          "https://auth.opensky-network.org/token",
+		RealtimeOpenskyTokenURL:          defaultOpenskyTokenURL,
 		RealtimeAisEnabled:               true,
 		RealtimeAisIntervalSec:           600,
 		RealtimeUnrestEnabled:            true,
@@ -941,5 +941,24 @@ func TestSecretPolicyErrorMapsToBadRequest(t *testing.T) {
 	}
 	if !envelope.valid() {
 		t.Fatalf("invalid envelope: %+v", envelope)
+	}
+}
+
+func TestArchivePreparationDocumentUsesCamelCaseKeys(t *testing.T) {
+	// The stored document must use the same keys NestJS reads; a PascalCase
+	// document would read back as "no override" on the NestJS side.
+	settings := normalizeArchivePreparation(&storedArchivePreparationSettings{
+		JobBatchSize:            json.RawMessage(`12`),
+		EmbeddingBatchSize:      json.RawMessage(`13`),
+		EmbeddingMaxConcurrency: json.RawMessage(`2`),
+		RerankMaxConcurrency:    json.RawMessage(`3`),
+	})
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"jobBatchSize":12,"embeddingBatchSize":13,"embeddingMaxConcurrency":2,"rerankMaxConcurrency":3}`
+	if string(encoded) != want {
+		t.Fatalf("document = %s, want %s", encoded, want)
 	}
 }
