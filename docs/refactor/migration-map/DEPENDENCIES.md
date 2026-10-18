@@ -33,6 +33,8 @@ GraphQL 精确开关、默认、路由/handler OR、模型与有意义的独立/
 
 ## 产品链路与执行所有权
 
+DIGEST-DELIVERY-001规划增量（main90765633，2026-10-18）：仅认领摘要Cron/生成/SMTP/结果与通知完整链，无BullMQ。Go已有GenerateDigest、authlogin.NewMailSender；digest独立构造与runtime公开窄读取端口需本批补，不能假定已存在。tick NX EX55、组织锁实际lock:cron:user-digest-delivery:org:<orgId> PX55000并自动续租/比较token。拟新增API_GO_USER_DIGEST_DELIVERY_MODE同时注入Go/Nest，默认legacy；go下Nest旧Cron在tick gate前退出、仅保留本批摘要通知relay和已有Socket.IO。relay通道拟新增user-digest:notifications:v1，写Notification后发布ID，Nest按租户重读、仅发本实例匹配socket，避免Redis adapter多次广播；未实现/未实网验证。delivery-only独立需DB/Redis/Mongo/SMTP，不强开HTTP或JWT；切换先停Nest并drain再启Go，回滚先停Go并drain再恢复Nest。其他调度/四Subscription/Outbox所有权不变。
+
 ```mermaid
 flowchart LR
   Client[HTTP / GraphQL 请求] --> Gateway[Go 路由与 GraphQL 预规划]

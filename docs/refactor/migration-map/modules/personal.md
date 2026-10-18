@@ -14,7 +14,7 @@
 
 Nest 功能目录：[user-settings](../../../../apps/api/src/modules/user-settings)、[user-content-subscriptions](../../../../apps/api/src/modules/user-content-subscriptions)、[user-news-behavior](../../../../apps/api/src/modules/user-news-behavior)、[user-digest](../../../../apps/api/src/modules/user-digest)、[public-portal](../../../../apps/api/src/modules/public-portal)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领增量（2026-10-18，main90765633）：[DIGEST-DELIVERY-001](../tasks/DIGEST-DELIVERY-001.md) reserved，[提示词](../tasks/DIGEST-DELIVERY-001.prompt.md)已发出。只补每日摘要定时投递完整链和必要摘要通知桥，原五HTTP不重迁；业务目录/PR未创建，main调度仍Nest。拟新增开关默认legacy，SMTP/多实例/实际部署未验证；本域其他读算法未重新审查。
 
 ## HTTP 开关、实现与生产接线
 

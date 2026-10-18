@@ -4,6 +4,10 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 ## 当前占用与已合并历史
 
+最新digest选批（2026-10-18）：main90765633/普通CI39149114456 success。开放Ready #81 head0b89196f（网关）、#82 head52340760（来源策略/旧设置写漏接线）、#83 head2c52763c（OIDC）、#84 head38e4e0e1（分析导出，后续修正已提交推送）均占用；已读实际diff中的业务文件及共享接线。开放规划[#80](https://github.com/wei500L/newwei/pull/80)含KNOWLEDGE-REVIEW-001 reserved，目录在main基线已创建且未见开发，保留认领；#80其他四批记录也继续有效，尚未合main不能重复派发。只读工作目录不等于确认执行器在线。
+
+新增[DIGEST-DELIVERY-001](DIGEST-DELIVERY-001.md) reserved，原五HTTP契约不变，补每分钟摘要投递执行链、稳定分批到期扫描、旧slot失败认领和摘要专用通知桥；[提示词](DIGEST-DELIVERY-001.prompt.md)已保存并发出，业务分支/目录尚未创建。认领由独立docs/plan-digest-delivery文档分支发布，不改#80工作目录。下方旧快照和“最新”均按各次时间理解，本段仅刷新当前范围与冲突。
+
 最新增量（2026-10-18）：fetch后main为c39f282f11952b487c3ef6fefb14882db265ed9e，#70–#76已通过[整合PR #77](https://github.com/wei500L/newwei/pull/77)合入；该SHA普通CI39142523834成功，开放PR为空。以下六批主提交/主要接线已在main，旧worktree均干净，不因目录保留而继续占用。只深入本次identity候选，不把此次合并核对当全仓业务验收。
 
 新认领[IDENTITY-ONBOARDING-001](IDENTITY-ONBOARDING-001.md) reserved：[14条HTTP完整执行提示词](IDENTITY-ONBOARDING-001.prompt.md)，注册申请→审批→真实邀请邮件→accept入组；业务目录未创建。复用已合登录SMTP/密码与组织bootstrap；明确修复平台新组织审批被普通系统admin邀请限制阻断的具体分支。OIDC/头像/导出未认领。
@@ -12,6 +16,7 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 | ID | 状态 | 精确范围 | 是否已有业务 PR / 推送 |
 |---|---|---|---|
+| [DIGEST-DELIVERY-001](DIGEST-DELIVERY-001.md) | reserved | 摘要定时投递：Cron、到期CAS、SMTP、状态和摘要通知桥 | 本次独立规划分支发布；无业务PR/实施/部署，原五HTTP不重迁 |
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |
 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | merged | 8 个通知/看板/告警交互写 | #70经#77进入main c39f282f；实际原PR merge 8e1ff896，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
 | [ITEMS-LIST-001](ITEMS-LIST-001.md) | merged | Query items完整分页/三排序/批量投影 | #74经#77进入main c39f282f；实际原PR merge 99e648c8，旧业务目录干净；整合main普通CI成功，非生产启用证据 |

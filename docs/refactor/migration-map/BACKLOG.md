@@ -170,6 +170,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-19 · personal / digest 定时邮件投递
 
+- 2026-10-18按main90765633深入核对后，本单链已reserved至[DIGEST-DELIVERY-001](tasks/DIGEST-DELIVERY-001.md)，[完整提示词](tasks/DIGEST-DELIVERY-001.prompt.md)已发出，不再为未认领候选。已有Go GenerateDigest/SMTP端口可复用；NotificationDispatcher仅进程内，明确新建摘要专用Redis→Nest本地socket桥，保留原WS服务。无BullMQ；独立同名跨进程开关默认legacy，明确停旧Cron/drain/启Go及反序回滚。具体改善为固定cutoff游标批扫及未领取slot的失败写CAS，不把设置CRUD或缓存读取当已投递。BL-15/20/21其余范围未认领。
+
 - **范围/缺口**：UserDigestDeliverySchedulerService→到期用户/订阅→构建 digest→SMTP→delivery 状态/去重（GAP-ASYNC-001）；配置 HTTP 与 preview 不重迁。
 - **基础/依据**：G/userdigest 读取/投递设置、contentsubscriptions/contentcatalog 已有；N/user-digest/user-digest-delivery-scheduler.service.ts。工作量在调度时区/租约/重复发送与失败状态，不在增加 HTTP 数。
 - **文件/前置/冲突**：Go scheduler/delivery、SMTP client/main；DB/Mongo/Redis/ES+SMTP。**先核邮件客户端与 BL-04/15 边界后可独立窗口**；必须指定停用 Nest 哪个调度触发，先核租约/重复执行风险，不自行添加新框架。
