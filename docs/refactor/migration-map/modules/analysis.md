@@ -14,7 +14,7 @@
 
 Nest 功能目录：[analysis](../../../../apps/api/src/modules/analysis)、[analysis-workspace](../../../../apps/api/src/modules/analysis-workspace)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领（2026-10-18，main90765633）：[ANALYSIS-EXPORT-001](../tasks/ANALYSIS-EXPORT-001.md) reserved，[完整提示词](../tasks/ANALYSIS-EXPORT-001.prompt.md)在规划#80发布，负责POST exports/items与events的5000选择/完整投影/CSV及等价去重优化；无本批业务实现/注册新增。exports/search完整保留Nest，归档准备/analysis请求与worker不在本批；其他并行任务/文件边界见[认领核对记录](../tasks/README.md)。
 
 ## HTTP 开关、实现与生产接线
 

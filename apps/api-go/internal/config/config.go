@@ -770,6 +770,40 @@ const (
 	LLMGatewayProfilesModeGo LLMGatewayProfilesMode = "go"
 )
 
+// LLMGatewayOpsMode controls the twelve LiteLLM gateway governance and
+// diagnostics routes under /api/system-settings/llm-gateways
+// (API_GO_LLM_GATEWAY_OPS_MODE). Accepted values are exactly "", "legacy" and
+// "go"; any other value fails startup.
+//
+//	go mode takes over exactly these twelve routes:
+//	  GET/PUT/DELETE /proxy-governance
+//	  POST           /proxy-governance/preflight
+//	  POST           /proxy-governance/rotate-key
+//	  POST           /models-config
+//	  POST           /test-config
+//	  GET            /:id/models
+//	  POST           /:id/test
+//	  GET            /:id/proxy-health
+//	  GET            /:id/proxy-model-info
+//	  POST           /:id/proxy-lb-test
+//
+// The switch is independent of API_GO_LLM_GATEWAY_PROFILES_MODE: governance and
+// diagnostics can run on Go while the seven profile CRUD routes stay on NestJS,
+// and the other way round. Go mode requires the shared auth resources plus
+// MONGO_URI, because every real probe attempt writes one llmrequestlogs row. It
+// does NOT require LITELLM_MASTER_KEY or SYSTEM_SETTINGS_ENCRYPTION_KEY at
+// startup: their absence is a per-request 503 on the governance management calls
+// and a per-read "unreadable" key state.
+type LLMGatewayOpsMode string
+
+const (
+	// LLMGatewayOpsModeLegacy proxies all twelve routes to NestJS (default,
+	// including the empty value).
+	LLMGatewayOpsModeLegacy LLMGatewayOpsMode = "legacy"
+	// LLMGatewayOpsModeGo serves the twelve routes from Go.
+	LLMGatewayOpsModeGo LLMGatewayOpsMode = "go"
+)
+
 // ProxyLoadBalancingMode controls the four LiteLLM proxy load balancing
 // configuration and distribution HTTP routes
 // (API_GO_PROXY_LOAD_BALANCING_MODE).
@@ -860,6 +894,24 @@ const (
 	UserDigestModeGo     UserDigestMode = "go"
 )
 
+// UserDigestDeliveryMode controls the background daily-digest delivery owner.
+// It is independent of the five HTTP switches. The accepted values are exactly
+// "", "legacy" and "go"; the empty value behaves like legacy.
+//
+// legacy: the NestJS Cron keeps owning delivery and no Go scheduler or NestJS
+// digest subscriber starts.
+// go: Go owns the per-minute scan, due-slot CAS, SMTP delivery, status write-back
+// and digest notifications; the NestJS Cron returns before its tick gate and the
+// NestJS digest subscriber connects to the relay channel. Go requires
+// DATABASE_URL, REDIS_HOST, MONGO_URI and the SMTP_* transport, but not
+// JWT_SECRET or any HTTP takeover switch.
+type UserDigestDeliveryMode string
+
+const (
+	UserDigestDeliveryModeLegacy UserDigestDeliveryMode = "legacy"
+	UserDigestDeliveryModeGo     UserDigestDeliveryMode = "go"
+)
+
 // AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
 type AnalysisViewsMode string
 
@@ -884,6 +936,29 @@ type AnalysisThreadsMode string
 const (
 	AnalysisThreadsModeLegacy AnalysisThreadsMode = "legacy"
 	AnalysisThreadsModeGo     AnalysisThreadsMode = "go"
+)
+
+// AnalysisExportMode controls the two CSV export POST routes migrated by this
+// unit (API_GO_ANALYSIS_EXPORT_MODE):
+//
+//	POST /api/analysis/exports/items
+//	POST /api/analysis/exports/events
+//
+// The accepted values are exactly "", "legacy" and "go"; the empty value
+// behaves like legacy, so an unset deployment keeps both exports on NestJS.
+// The third export route, POST /api/analysis/exports/search, stays on NestJS
+// because its headlines mode prepares archive digests. Go requires JWT, MySQL,
+// Redis and Mongo: the item candidates are ranked through the shared search
+// scope, the read-model projection lives in Mongo and the behavior profile is
+// read from MySQL/Redis. The unit initializes the item reading service, the
+// personalization provider and the news-event reader on its own, so it works
+// even while the other item/analysis/GraphQL switches are legacy. Rolling back
+// only means setting this variable back to legacy.
+type AnalysisExportMode string
+
+const (
+	AnalysisExportModeLegacy AnalysisExportMode = "legacy"
+	AnalysisExportModeGo     AnalysisExportMode = "go"
 )
 
 // AuthFactorsMode controls the seven authenticated MFA management and
@@ -972,6 +1047,36 @@ const (
 	// AuthLoginModeGo serves all eleven routes from Go with the same session,
 	// challenge, email-code, rate-limit and audit protocols NestJS uses.
 	AuthLoginModeGo AuthLoginMode = "go"
+)
+
+// OIDCLoginMode controls the organization SSO login entries migrated by
+// API_GO_OIDC_LOGIN_MODE:
+//
+//	GET  /api/auth/sso/oidc/start
+//	GET  /api/auth/oidc/callback
+//	POST /api/auth/sso/handoff/exchange
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" keep all three requests on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. The default is always legacy.
+//
+// go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST because it reuses the
+// migrated trusted-login core (JWT signing, MySQL session/membership state and
+// Redis state/discovery/JWKS caches). It never requires MONGO_URI, SMTP_*,
+// AUTH_LOGIN/AUTH_FACTORS/ACCOUNT_SECURITY/IDENTITY_ONBOARDING go modes or an
+// enabled GraphQL executor. API_BASE_URL stays a request-time requirement: a
+// missing value fails the start/callback request with the source 400 and never
+// blocks gateway startup. Rolling back only means setting this variable back to
+// legacy; state, caches, sessions, refresh tokens and handoff rows stay
+// readable by NestJS because every key and column format is shared.
+type OIDCLoginMode string
+
+const (
+	// OIDCLoginModeLegacy proxies all three routes to NestJS (default,
+	// including the empty value).
+	OIDCLoginModeLegacy OIDCLoginMode = "legacy"
+	// OIDCLoginModeGo serves the three SSO entries from Go.
+	OIDCLoginModeGo OIDCLoginMode = "go"
 )
 
 // IdentityOnboardingMode controls the fourteen registration, invitation and
@@ -1100,12 +1205,20 @@ type Config struct {
 	ContentSubscriptionsMode ContentSubscriptionsMode
 	UserNewsBehaviorMode     UserNewsBehaviorMode
 	UserDigestMode           UserDigestMode
+	// UserDigestDeliveryMode 见 UserDigestDeliveryMode 常量。默认 legacy。
+	// 与五个 HTTP 开关独立；go 需要 MySQL、Redis、Mongo 和 SMTP，不要求 JWT。
+	UserDigestDeliveryMode UserDigestDeliveryMode
 	// 分析工作台三个 HTTP 开关，彼此独立，默认都是 legacy。
 	// 只决定对应精确路由。讨论检查、评论计数和删除清理不看另一个开关。
 	// go 要求 JWT、MySQL、Redis，不要求 Mongo。
 	AnalysisViewsMode   AnalysisViewsMode
 	AnalysisBoardsMode  AnalysisBoardsMode
 	AnalysisThreadsMode AnalysisThreadsMode
+	// AnalysisExportMode gates the two CSV export POST routes. It defaults to
+	// legacy and is independent of the three collaboration switches; go reuses
+	// the item reading and news-event readers but builds its own instances and
+	// requires JWT, MySQL, Redis and Mongo.
+	AnalysisExportMode AnalysisExportMode
 	// GraphQLReadMode 控制精确 /graphql 的已迁移 query。默认 legacy。
 	// go 只执行本轮 16 个 query；mutation、subscription、未迁移 query 仍代理 NestJS。
 	GraphQLReadMode string
@@ -1227,6 +1340,34 @@ type Config struct {
 	// NestJS as a whole, so the production web entry keeps serving through
 	// NestJS. Rolling back only means setting this variable back to legacy.
 	GraphQLSettingsWriteMode string
+	// GraphQLSourcePolicyWriteMode decides whether the four source-policy
+	// version mutations (updateNewsEventSourcePolicy,
+	// updateNewsEventSourcePolicyPresets, rollbackNewsEventSourcePolicy,
+	// resetNewsEventSourcePolicy) are registered into the Go GraphQL executor.
+	// It is independent of API_GO_GRAPHQL_READ_MODE,
+	// API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE,
+	// API_GO_GRAPHQL_SETTINGS_WRITE_MODE and every REST switch. The accepted
+	// values are exactly "", "legacy" and "go"; the empty value behaves like
+	// legacy. The takeover needs JWT verification, MySQL and Redis only: it
+	// reads no Mongo collection, starts no worker and calls no upstream. While
+	// this switch is legacy, any document selecting one of these mutations
+	// falls back to NestJS as a whole. Rolling back only means setting this
+	// variable back to legacy; the stored v2 state, legacy documents, presets
+	// and shared cache remain readable by NestJS.
+	GraphQLSourcePolicyWriteMode string
+	// GraphQLKnowledgeReviewMode decides whether the single
+	// reviewKnowledgeGraphEvidence mutation is registered into the Go GraphQL
+	// executor. It is independent of every read switch and of the other write
+	// switches: with the knowledge-graph read switch legacy, only this mutation
+	// is taken over and the eleven knowledge-graph read roots keep serving
+	// through NestJS. The accepted values are exactly "", "legacy" and "go";
+	// the empty value behaves like legacy. While this switch is legacy, any
+	// document that selects the mutation falls back to NestJS as a whole, so
+	// the production web entry keeps serving through NestJS. The takeover needs
+	// JWT verification, MySQL and Redis only: it reads no Mongo collection and
+	// starts no worker, so MONGO_URI is not a startup condition. Rolling back
+	// only means setting this variable back to legacy.
+	GraphQLKnowledgeReviewMode string
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -1386,6 +1527,14 @@ type Config struct {
 	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and the SMTP_* transport; it
 	// does not require Mongo and does not start any worker or scheduled job.
 	AuthLoginMode AuthLoginMode
+	// OIDCLoginMode controls the three public organization SSO login entries
+	// (see OIDCLoginMode). Default legacy. Mode go requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST; API_BASE_URL is validated per request.
+	OIDCLoginMode OIDCLoginMode
+	// APIBaseURL is the untrimmed API_BASE_URL used only to build the IdP
+	// redirect_uri. It stays optional at startup: the source answers a missing
+	// value with the request-time 400 "API_BASE_URL is required for OIDC".
+	APIBaseURL string
 	// IdentityOnboardingMode controls the fourteen registration, invitation and
 	// registration-application routes (see IdentityOnboardingMode). Default
 	// legacy. Mode go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and the
@@ -1535,6 +1684,15 @@ type Config struct {
 	// LLMGatewayProfilesMode 控制 LLM 网关 profile 的七条配置/激活路由。默认
 	// legacy；go 复用 appendAuthRequirements，不要求 Mongo 或真实模型上游。
 	LLMGatewayProfilesMode LLMGatewayProfilesMode
+	// LLMGatewayOpsMode 控制 LLM 网关治理与真实探测的十二条路由。默认 legacy；
+	// go 复用 appendAuthRequirements 并额外要求 MONGO_URI（每次真实探测都写
+	// llmrequestlogs）。LITELLM_MASTER_KEY 与
+	// SYSTEM_SETTINGS_ENCRYPTION_KEY 是请求时语义，不是启动前置。
+	LLMGatewayOpsMode LLMGatewayOpsMode
+	// LiteLLMMasterKey 是 LITELLM_MASTER_KEY 原文，只用于 LiteLLM 管理接口的
+	// Authorization。与 LITELLM_CONFIG_INTERNAL_TOKEN 用途不同：后者是内部下发
+	// 路由的 bearer 校验。不进入日志。
+	LiteLLMMasterKey string
 	// LLMGateway* 是本批 profile 默认值所需的 LITELLM_* 投影。它们镜像
 	// NestJS env schema 的默认值：LITELLM_MAX_TOKENS 与 LITELLM_RETRY_ATTEMPTS
 	// 因为有 schema 默认值，永远优先于 LITELLM_MAX_OUTPUT_TOKENS /
@@ -1818,6 +1976,14 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_USER_DIGEST_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_USER_DIGEST_DELIVERY_MODE")) {
+	case "", string(UserDigestDeliveryModeLegacy):
+		cfg.UserDigestDeliveryMode = UserDigestDeliveryModeLegacy
+	case string(UserDigestDeliveryModeGo):
+		cfg.UserDigestDeliveryMode = UserDigestDeliveryModeGo
+	default:
+		errs = append(errs, "API_GO_USER_DIGEST_DELIVERY_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_VIEWS_MODE")) {
 	case "", string(AnalysisViewsModeLegacy):
 		cfg.AnalysisViewsMode = AnalysisViewsModeLegacy
@@ -1841,6 +2007,20 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AnalysisThreadsMode = AnalysisThreadsModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_THREADS_MODE must be one of legacy|go")
+	}
+	// The CSV export switch accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy, so an unset deployment keeps both
+	// export POST routes on NestJS. The failure names the variable and echoes
+	// the rejected value so an operator can see which deployment value was
+	// refused.
+	analysisExportRaw := strings.TrimSpace(getenv("API_GO_ANALYSIS_EXPORT_MODE"))
+	switch analysisExportRaw {
+	case "", string(AnalysisExportModeLegacy):
+		cfg.AnalysisExportMode = AnalysisExportModeLegacy
+	case string(AnalysisExportModeGo):
+		cfg.AnalysisExportMode = AnalysisExportModeGo
+	default:
+		errs = append(errs, "API_GO_ANALYSIS_EXPORT_MODE must be one of legacy|go, got "+strconv.Quote(analysisExportRaw))
 	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_MONITORS_MODE")) {
 	case "", string(SituationMonitorsModeLegacy):
@@ -2036,6 +2216,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go")
 	}
+	// The governance/diagnostics switch is parsed independently of the profile
+	// switch: either one can be go on its own. The empty value behaves exactly
+	// like legacy.
+	switch strings.TrimSpace(getenv("API_GO_LLM_GATEWAY_OPS_MODE")) {
+	case "", string(LLMGatewayOpsModeLegacy):
+		cfg.LLMGatewayOpsMode = LLMGatewayOpsModeLegacy
+	case string(LLMGatewayOpsModeGo):
+		cfg.LLMGatewayOpsMode = LLMGatewayOpsModeGo
+	default:
+		errs = append(errs, "API_GO_LLM_GATEWAY_OPS_MODE must be one of legacy|go")
+	}
 	// Proxy load balancing accepts the empty string, legacy and go. An empty
 	// value behaves exactly like legacy so an unset deployment keeps the NestJS
 	// path. It is parsed independently of the model access switch.
@@ -2097,6 +2288,17 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AuthLoginMode = AuthLoginModeGo
 	default:
 		errs = append(errs, "API_GO_AUTH_LOGIN_MODE must be one of legacy|go")
+	}
+	// The OIDC login switch accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy, so an unset deployment keeps all three
+	// SSO routes on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_OIDC_LOGIN_MODE")) {
+	case "", string(OIDCLoginModeLegacy):
+		cfg.OIDCLoginMode = OIDCLoginModeLegacy
+	case string(OIDCLoginModeGo):
+		cfg.OIDCLoginMode = OIDCLoginModeGo
+	default:
+		errs = append(errs, "API_GO_OIDC_LOGIN_MODE must be one of legacy|go")
 	}
 	// The registration/invitation switch accepts the empty string, legacy and
 	// go. An empty value behaves exactly like legacy, so an unset deployment
@@ -2259,6 +2461,28 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SETTINGS_WRITE_MODE must be one of legacy|go")
 	}
+	// The source-policy write switch accepts the empty string, legacy and go.
+	// An empty value behaves exactly like legacy, so an unset deployment keeps
+	// all four version mutations on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLSourcePolicyWriteMode = "legacy"
+	case "go":
+		cfg.GraphQLSourcePolicyWriteMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE must be one of legacy|go")
+	}
+	// The knowledge-graph evidence review switch accepts the empty string,
+	// legacy and go. An empty value behaves exactly like legacy, so an unset
+	// deployment keeps the mutation on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLKnowledgeReviewMode = "legacy"
+	case "go":
+		cfg.GraphQLKnowledgeReviewMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE must be one of legacy|go")
+	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
 	cfg.GraphQLComplexity = intDefault(getenv("GRAPHQL_COMPLEXITY_LIMIT"), 2000)
@@ -2305,6 +2529,10 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.NextAuthURL == "" {
 		cfg.NextAuthURL = "http://localhost:3000"
 	}
+	// API_BASE_URL keeps its raw value. The OIDC redirect_uri builder applies
+	// trim and the optional trailing /api removal at request time, exactly like
+	// the NestJS controller.
+	cfg.APIBaseURL = getenv("API_BASE_URL")
 	// SMTP transport. The host/port/user/pass quartet is required by the NestJS
 	// EnvService smtpConfig getter (getOrThrow); the remaining values keep the
 	// documented defaults, with SMTP_FROM falling back to the authenticated user.
@@ -2424,6 +2652,9 @@ func Load(getenv func(string) string) (Config, error) {
 			cfg.LiteLLMMaxRetries = value
 		}
 	}
+	// LITELLM_MASTER_KEY 只用于 LiteLLM 管理接口。保留原文，使用时再 trim/去
+	// Bearer，与 NestJS normalizeSecret 一致；空串与纯空白都等于未配置。
+	cfg.LiteLLMMasterKey = getenv("LITELLM_MASTER_KEY")
 	// 本批 profile 默认值的 LITELLM_* 投影（镜像 NestJS env schema）。
 	cfg.LLMGatewayModel = stringDefault(getenv("LITELLM_MODEL"), "openai/gpt-4o-mini")
 	cfg.LLMGatewayTemperature = floatDefault(getenv("LITELLM_TEMPERATURE"), 0.2)
@@ -2684,6 +2915,33 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, "MONGO_URI is required when API_GO_USER_DIGEST_MODE=go")
 		}
 	}
+	// The background digest delivery unit owns the Cron without JWT/RBAC: it
+	// reads MySQL, Redis, Mongo and the real SMTP transport. No HTTP takeover
+	// switch or JWT_SECRET is required, so delivery-only can run while every
+	// other mode (including API_GO_USER_DIGEST_MODE) is legacy.
+	if cfg.UserDigestDeliveryMode == UserDigestDeliveryModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.SMTP.Host == "" {
+			errs = append(errs, "SMTP_HOST is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.SMTP.Port == 0 {
+			errs = append(errs, "SMTP_PORT is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.SMTP.User == "" {
+			errs = append(errs, "SMTP_USER is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+		if cfg.SMTP.Pass == "" {
+			errs = append(errs, "SMTP_PASS is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+	}
 	if cfg.AnalysisViewsMode == AnalysisViewsModeGo {
 		appendAuthRequirements(&errs, "API_GO_ANALYSIS_VIEWS_MODE", cfg)
 	}
@@ -2692,6 +2950,16 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.AnalysisThreadsMode == AnalysisThreadsModeGo {
 		appendAuthRequirements(&errs, "API_GO_ANALYSIS_THREADS_MODE", cfg)
+	}
+	// The CSV export takeover reads MySQL (NewsEvent/NewsEventItem and the
+	// membership chain), Redis (revocation list and the behavior profile) and
+	// Mongo (the read-model projection), and it verifies JWTs (including the
+	// mtk_ machine tokens) before selecting candidates.
+	if cfg.AnalysisExportMode == AnalysisExportModeGo {
+		appendAuthRequirements(&errs, "API_GO_ANALYSIS_EXPORT_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ANALYSIS_EXPORT_MODE=go")
+		}
 	}
 	if cfg.SituationMonitorsMode == SituationMonitorsModeGo {
 		appendAuthRequirements(&errs, "API_GO_SITUATION_MONITORS_MODE", cfg)
@@ -2839,6 +3107,17 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.LLMGatewayProfilesMode == LLMGatewayProfilesModeGo {
 		appendAuthRequirements(&errs, "API_GO_LLM_GATEWAY_PROFILES_MODE", cfg)
 	}
+	// The governance/diagnostics takeover additionally writes the LLM request
+	// log through the shared Mongo client, so MONGO_URI is required. Neither the
+	// LiteLLM master key nor the settings-encryption key is a startup
+	// requirement: a missing master key is a 503 on the management calls and a
+	// missing encryption key makes the managed key "unreadable" on read.
+	if cfg.LLMGatewayOpsMode == LLMGatewayOpsModeGo {
+		appendAuthRequirements(&errs, "API_GO_LLM_GATEWAY_OPS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_LLM_GATEWAY_OPS_MODE=go")
+		}
+	}
 	// The proxy load balancing takeover has exactly the same infrastructure
 	// footprint: the litellm_proxy_load_balancing row lives in MySQL, its 30
 	// second cache envelope lives in Redis, and it re-reads the existing
@@ -2907,6 +3186,12 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, "SMTP_PASS is required when API_GO_AUTH_LOGIN_MODE=go")
 		}
 	}
+	// The OIDC login takeover needs JWT signing/verification, MySQL and Redis
+	// only. It starts no worker and contacts the IdP only when a request needs
+	// discovery/token/JWKS, so no IdP URL or secret is a startup condition.
+	if cfg.OIDCLoginMode == OIDCLoginModeGo {
+		appendAuthRequirements(&errs, "API_GO_OIDC_LOGIN_MODE", cfg)
+	}
 	// The registration/invitation takeover needs the same credentialed stack as
 	// the login batch plus the real SMTP transport: invitation creation, resend
 	// and the two rejection paths send mail synchronously. It reads no Mongo
@@ -2949,6 +3234,18 @@ func Load(getenv func(string) string) (Config, error) {
 	// service, so it does not require MONGO_URI.
 	if cfg.GraphQLSettingsWriteMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_SETTINGS_WRITE_MODE", cfg)
+	}
+	// The source-policy write takeover needs the same JWT/MySQL/Redis stack. It
+	// stores SystemSetting documents and refreshes shared Redis keys only; there
+	// is no Mongo collection, worker, queue or upstream call.
+	if cfg.GraphQLSourcePolicyWriteMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE", cfg)
+	}
+	// The knowledge-graph evidence review takeover needs JWT verification, MySQL
+	// and Redis only. It reads no Mongo collection, starts no worker and calls
+	// no model or crawl upstream, so it does not require MONGO_URI.
+	if cfg.GraphQLKnowledgeReviewMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE", cfg)
 	}
 
 	// The situation monitor signals takeover needs the credentialed auth stack

@@ -4,6 +4,8 @@
 
 ## 范围与实施状态
 
+最新限定选批（2026-10-18，main90765633）：来源策略四Mutation已认领[SOURCE-POLICY-WRITE-001](../tasks/SOURCE-POLICY-WRITE-001.md) reserved，[提示词](../tasks/SOURCE-POLICY-WRITE-001.prompt.md)在规划#80发布，仍未新增Go业务/注册。完整迁移版本差量、preset、categoryAuthority、DB/cache审计；同时仅补旧13写的路由OR/无效DSN剩余条件，不重迁主体。核心settingswrite/settingscrawl与网关任务隔离；普通main CI39149114456成功。
+
 运行时/限流/审计保留等 HTTP、平台安全/配额/日志治理 HTTP，以及设置 GraphQL 读均已有 Go。13 个设置写已通过 #68 合入，独立开关接线仍有具体缺口；来源策略四写不在该批。模型/网关、基础设施/数据运行 HTTP 分别见专属域。
 
 关键数据与副作用：MySQL SystemSetting、Redis crawl_client:settings / audit_log:retention_days / auth 与限流缓存，Mongo 日志保留配置；分类 taxonomy/去重规则规范化影响新闻流水线读取。

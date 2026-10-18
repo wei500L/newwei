@@ -34,19 +34,13 @@ type Handler struct {
 // es 和 mdb 都可以是 nil：es 为 nil 时关键词走 Mongo；mdb 为 nil 时关键词/地理
 // 分支仍会执行查询并按缺少 Mongo 连接失败，不会把该分支跳过。
 func NewHandler(auth *authhttp.Authenticator, db *sql.DB, mdb *mongo.Database, subs personalnews.SubscriptionAPI, es ItemSearcher) *Handler {
-	var items *mongo.Collection
-	if mdb != nil {
-		items = mdb.Collection(processedItemsCollection)
-	}
-	return &Handler{
-		auth: auth,
-		svc: &Service{
-			db:     db,
-			items:  items,
-			subs:   subs,
-			search: es,
-		},
-	}
+	return NewHandlerWithService(auth, NewService(db, mdb, subs, es))
+}
+
+// NewHandlerWithService reuses a service instance that the background delivery
+// scheduler may share when both HTTP and the scheduler are enabled.
+func NewHandlerWithService(auth *authhttp.Authenticator, svc *Service) *Handler {
+	return &Handler{auth: auth, svc: svc}
 }
 
 // ServeHTTP 分发精确路径。PUT /api/user-digest 没有对应的 Nest 路由，返回 404。

@@ -428,6 +428,10 @@ services:
       ELASTICSEARCH_NODE: ${ELASTICSEARCH_NODE:-http://elasticsearch:9200}
       ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_USERNAME:-elastic}
       ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_PASSWORD:?ELASTICSEARCH_PASSWORD is required}
+      # 每日摘要后台投递所有权。空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。
+      # 默认 legacy=保留 NestJS Cron；go=Go 每分钟扫描并投递，NestJS Cron 在 tick
+      # gate 前退出且摘要通知 subscriber 启动。Nest 与 Go 注入同一变量。
+      API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -573,6 +577,12 @@ services:
       PORT: 4020
       LEGACY_API_URL: http://api:4000
       DATABASE_URL: mysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD}@mysql:${MYSQL_PORT:-3306}/${MYSQL_DB}
+      # The OIDC login unit builds the web callback from NEXTAUTH_URL and the
+      # IdP redirect_uri from API_BASE_URL. Both keep the same values the api
+      # service uses; API_BASE_URL is only read per request.
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      API_BASE_URL: ${API_BASE_URL:-http://api:4000}
+      TRUST_PROXY: ${TRUST_PROXY:-}
       # pilot 明确接管六个 user-settings 只读 GET（Go-批3B 统一读模式，
       # 优先级高于 API_GO_ONBOARDING_MODE；默认部署不启动本服务；手工
       # 裸启 api-go 时该变量未设——旧行为不变：onboarding 由
@@ -599,6 +609,10 @@ services:
       API_GO_CONTENT_SUBSCRIPTIONS_MODE: legacy
       API_GO_USER_NEWS_BEHAVIOR_MODE: legacy
       API_GO_USER_DIGEST_MODE: legacy
+      # 每日摘要后台投递所有权。与上面三个 HTTP 开关独立；delivery-only 时上述
+      # 全部 legacy 也能运行。go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 和
+      # SMTP_*，不要求 JWT_SECRET。默认 legacy；切换/回滚顺序见 docs 与 README。
+      API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
       # 分析工作台保存视图、看板/列/任务、笔记/评论（Go 协作域）。
       # pilot 与样例保持 legacy。三个变量各自改成 go 才切换对应 HTTP。
       # 内部讨论检查、评论计数和删除清理不看另一个开关，也不回调 NestJS。
@@ -606,6 +620,11 @@ services:
       API_GO_ANALYSIS_VIEWS_MODE: legacy
       API_GO_ANALYSIS_BOARDS_MODE: legacy
       API_GO_ANALYSIS_THREADS_MODE: legacy
+      # 条目/事件 CSV 导出两条精确 POST（items、events）。pilot 与样例保持
+      # legacy；改成 go 才由 Go 完成候选选择、排序、字段补全与 CSV 输出，
+      # 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI。
+      # POST /api/analysis/exports/search 仍代理 NestJS。
+      API_GO_ANALYSIS_EXPORT_MODE: legacy
       # 态势监控自定义监控五条 HTTP。pilot 与样例保持 legacy。
       # 改成 go 才由 Go 验签并写 SituationMonitorMonitor。
       # 回滚只把该变量改回 legacy。insights、refresh 和其他采集接口不在这个开关里。
@@ -761,6 +780,21 @@ services:
       # JWT_SECRET、DATABASE_URL、REDIS_HOST（不要求 Mongo，不调用模型
       # 上游）。回滚只把该变量改回 legacy。
       API_GO_LLM_GATEWAY_PROFILES_MODE: ${API_GO_LLM_GATEWAY_PROFILES_MODE:-legacy}
+      # LLM 网关治理与真实探测 12 条 HTTP：proxy-governance（GET/PUT/DELETE）、
+      # proxy-governance/preflight、proxy-governance/rotate-key、models-config、
+      # test-config、:id/models、:id/test、:id/proxy-health、
+      # :id/proxy-model-info、:id/proxy-lb-test。独立于上面的 profiles 开关，
+      # 可只开其一。pilot 与样例保持 legacy。改成 go 才由 Go 独立验签并要求
+      # settings.manage（含 mtk_ 机器令牌）：治理读写 MySQL SystemSetting
+      # litellm_proxy_governance 与 Redis 30 秒 envelope，并按需调用 LiteLLM
+      # /team/*、/key/*（LITELLM_MASTER_KEY）；诊断发起真实
+      # /v1/models、/health/*、/v1/model/info 与
+      # chat/responses/embeddings/rerank 请求，每次真实尝试写
+      # llmrequestlogs（feature=gateway_test，复用共享 Mongo）。
+      # go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI；master key 与
+      # SYSTEM_SETTINGS_ENCRYPTION_KEY 缺失只影响管理调用和密钥状态，不阻止启动。
+      # 回滚只把该变量改回 legacy；远端 team/key 不会自动撤销。
+      API_GO_LLM_GATEWAY_OPS_MODE: ${API_GO_LLM_GATEWAY_OPS_MODE:-legacy}
       # 基础设施连接与采集运行凭据 7 条精确 HTTP：
       # GET/PUT/DELETE /api/system-settings/vector-service、
       # GET/PATCH /api/admin/settings/storage、
@@ -878,6 +912,18 @@ services:
       # 入口与 canary 保持现状。回滚只把该变量改回 legacy。
       API_GO_IDENTITY_ONBOARDING_MODE: ${API_GO_IDENTITY_ONBOARDING_MODE:-legacy}
 
+      # 组织 OIDC 登录 3 条公开 HTTP（GET /api/auth/sso/oidc/start、
+      # GET /api/auth/oidc/callback、POST /api/auth/sso/handoff/exchange）。
+      # 默认 legacy，只接受空串/legacy/go，非法值启动失败。go 要求
+      # JWT_SECRET、DATABASE_URL、REDIS_HOST；API_BASE_URL 只在请求时用于
+      # IdP redirect_uri（缺失返回源 400，不阻塞启动），NEXTAUTH_URL 缺省
+      # http://localhost:3000。复用既有可信登录/MFA/会话签发与 AuthSecurity
+      # secret 策略，state/discovery/JWKS、AuthChallenge 与 RefreshToken 与
+      # NestJS 共用；不要求 MONGO_URI/SMTP_*，不访问新增外部服务。
+      # OIDC 配置 GET/PUT 与其余 /api/auth/* 仍回 NestJS。回滚只把该变量
+      # 改回 legacy。
+      API_GO_OIDC_LOGIN_MODE: ${API_GO_OIDC_LOGIN_MODE:-legacy}
+
       # 模型接入设置 10 条 HTTP（/api/system-settings/model-service、
       # /api/system-settings/openai-keys(+ /key/:fingerprint)、
       # /api/internal/litellm/openai-keys(+ /applied)）。pilot 与样例保持
@@ -969,6 +1015,17 @@ services:
       # NestJS。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动 worker，不回调
       # NestJS。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_SETTINGS_WRITE_MODE: legacy
+      # 来源策略 4 个 GraphQL mutation（update/preset/rollback/reset）。pilot 与
+      # 样例保持 legacy；只开本变量时仅登记这 4 个 mutation 与策略嵌套模型，
+      # Query 仍走 NestJS。需要 JWT/MySQL/Redis，不要求 Mongo，不启动 worker。
+      # 回滚只把变量改回 legacy，已存 v2/legacy/preset 与共享缓存继续可读。
+      API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE: legacy
+      # 知识图谱证据人工复核的单个 mutation（reviewKnowledgeGraphEvidence）。
+      # pilot 与样例保持 legacy，与全部读开关及其他写开关解耦：只开本变量时
+      # 图谱 11 个只读 root 仍走 NestJS，只有该 mutation 由 Go 执行。只需要
+      # JWT/MySQL/Redis，不要求 Mongo，不启动 worker，不调用模型/向量/外部
+      # HTTP。回滚只把该变量改回 legacy。
+      API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE: legacy
       # 基础设施设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认
       # 值）。S3_* 与 VECTOR_* 都不进入日志；不在这里新增第二套网关配置。
       NODE_ENV: production

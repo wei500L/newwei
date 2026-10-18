@@ -1,6 +1,7 @@
 # IDENTITY-ONBOARDING-001 · 注册审批与邮件邀请入组
 
-- 状态reserved；2026-10-18用户确认全部合并后要求下一批迁移量更大，选择14条同链HTTP并发出提示词；本窗口不实施业务/操作编码对话。
+- 当前状态merged；[PR #79](https://github.com/wei500L/newwei/pull/79)实际merge f35ec572ccdf607b9224d88d1962cf792f9915be已验证为origin/main 90765633祖先。已核14路规则、wire和main/config资源OR落地，原head e105b3abdb3fa084356918cb29f8385cb5fb4ddb；业务worktree保留不等于仍占用。main普通CI39149114456运行中，不推断通过/生产启用/SMTP实测；不打断编码窗口或重做其文档。
+- 原始认领：2026-10-18用户确认全部合并后要求下一批迁移量更大，选择14条同链HTTP并发出提示词；本窗口不实施业务/操作编码对话。下文无业务PR/未创建目录是发出时快照。
 - 基线origin/main c39f282f11952b487c3ef6fefb14882db265ed9e；#70–#76由[PR #77](https://github.com/wei500L/newwei/pull/77)合入，开放PR为空；该SHA[普通CI 39142523834](https://github.com/wei500L/newwei/actions/runs/39142523834)成功。
 - 分支refactor/go-identity-onboarding；worktree /Users/oo/project/newwei-go-identity-onboarding，规划时未创建。
 - [完整提示词](IDENTITY-ONBOARDING-001.prompt.md)，记录在本次独立规划PR发布；业务PR尚无。

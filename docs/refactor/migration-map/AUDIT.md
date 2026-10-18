@@ -21,6 +21,8 @@
 
 ## identity
 
+2026-10-18本次OIDC候选增量，main90765633：读完整OidcAuthService715行、三handler/DTO、AuthSecurity/opaque token/SSRF、AuthService可信登录/MFA、Prisma和Web回调/NextAuthUA；对照Go authlogin/session/tokens/MFA、authfactors私有crypto/配置与newssources导出SSRF。OIDC三路仍Nest；handoff条件领取缺口、公开算法/claim/JWKS刷新、secret策略非无条件密文、MFA/租户和会话复用边界明确，见OIDC-LOGIN-001。未验证真实IdP/混合Nest消费，不把其他身份支线或旧组未审范围统一标完成。
+
 本组续审：**2026-10-18 15:01–15:08 MSK**，仍为main `3cedce9aa3200436aba3596f63b559de5490cec8`（15:08 fetch未变）；只扩大以下实际读过的业务路径，不刷新其他组深度。
 
 - **组织八写 / Go实现已静态核对（下列业务主路径及必要分支）**：Nest OrgResolver/RbacResolver/UserResolver→OrgService/RbacService/UserAdminService，对照 [orgaccesswrite](../../../apps/api-go/internal/graphqlread/orgaccesswrite) 的register/input/org/rbac/members/models/audit与 [rbacapi/service.go](../../../apps/api-go/internal/rbacapi/service.go)、[graphql.go](../../../apps/api-go/internal/rbacapi/graphql.go)。所有root都有真实数据写入/返回路径，不是只注册适配器。
@@ -39,6 +41,8 @@
 
 ## personal
 
+- **每日摘要投递候选限定深读 / main90765633，2026-10-18**：Nest delivery service全部到期/claim/failure/模板/通知分支、scheduler/tick/活动组织/cache续租及SMTP模板；Go userdigest生成/返回/投递设置/构造、runtime并发规范化、SMTP公开端口、main资源/退出条件；NotificationDispatcher→Gateway/Socket.IO adapter与本地socket/org-user边界。相对3cedce9a此候选业务无变化（NotificationService已读更新除外），#81–#84实际业务文件及公共接线diff已读。认领DIGEST-DELIVERY-001，不重复核全部personal。未实跑dayjs、SMTP/ES/Redis/Mongo/WS；未逐算法复算摘要所有召回/情绪/指标，只复用其已存在实现；未核真实部署。
+
 - **公共门户故事 / Go 实现已静态核对（冷路径限定）**：[publicportal/story.go](../../../apps/api-go/internal/publicportal/story.go) `Service.brief`：无来源合法 nil、指纹命中、miss 调 completer.Complete、JSON 清洗、metadata 合并和 SaveEventMetadata；写回失败保留生成响应。gateway.go 有真实 HTTP 客户端，未实网验证。此实现不能关闭 GAP-NEWS-001；helper 私有且组织/语言参数不同。
 - **其余门户、六 UI 读/六写、订阅目录/行为/digest / 尚未深入核对**：已核 main 的 user-settings 与 wirePersonalNews 装配；未逐键检查 UI normalization、订阅候选召回/排序、行为衰减、digest 组合与跨租户投递。delivery 配置不负责 SMTP 定时发送，见 GAP-ASYNC-001。
 
@@ -50,6 +54,8 @@
 
 ## items
 
+- **RSS翻译完整候选限定深读 / main90765633，2026-10-18**：Nest DTO/SDL/Model/Resolver、ItemsRssTranslationService全执行分支，SituationMonitorTranslationService的RSS内层缓存/HTTP/重试/语言检测，situation设置runtime，LiteLlm双协议/format/guardrail/模型fallback/日志及active治理；Go status/config/cache、publicportal配置/协议与brief边界、llmlogs强类型/policy、classificationrssops指标读及GraphQL生产装配。确认GAP-RSS-001窄投影污染完整profile缓存；计划数据库侧最新记录分组。未实跑DeepLX/fallback/LLM/数据库或全部网关兼容组合，不扩大其他条目写/流水线审查。#81实际completion.go helper重命名和#84 csvexport隔离已核。
+
 - **2026-10-18完整items候选深读，main9d0462e1**：Nest items resolver/DTO/分页/游标、ItemsListService个性化与特征、ItemsSearchService相关性/rerank/highlights、helpers/shared权重、ScopedItemsReadingLoader绑定；Go现有REST/GraphQL单条模型/批量store/召回、newsbehavior画像与llmembed接口已读。确认REST仅RECENCY、显式filters:{}优先于历史filters、相关性失败503、个性化候选窗口增长及两种cursor优先级，不能泛化合并。Context暂无选择元数据，计划最小只读扩展以省count/result并批量投影，不重写engine。ITEMS-LIST-001 reserved，未实施；实网/运行/全DTO组合未验证，其他items写/后台范围不扩大。
 
 - **REST List / Go 实现已静态核对（调度与分页分支）**：[itemsreading/service.go](../../../apps/api-go/internal/itemsreading/service.go) `Service.List`：NormalizePagination→ParseSearchPayload→ResolveScopedIDs；受限集合为空时返回合法空；read-model Mongo / MySQL 两种 List+Count 分支均执行 order/offset/pageSize。底层 ES/vector/词法召回分数、全部筛选语法尚未逐项复算。
@@ -57,6 +63,8 @@
 - **重建后台 / Go 实现已静态核对（生命周期）**：[searchreindex/service.go](../../../apps/api-go/internal/searchreindex/service.go) startReindex→Redis queued→goroutine runReindex→分页 Mongo→bulkIndex→refresh→完成/失败；ES 关闭时 indexed=0 是合法禁用分支。重启不自动重排队，不能当 BullMQ worker 已迁；未验证锁续租/故障竞争。
 
 ## analysis
+
+2026-10-18导出候选增量（main90765633）：只深入items/events Controller/DTO、全部两路row构造/参数/排序/去重/CSV助手、ItemsService→ItemsListService页分支/rerank错误、NewsEvents heat/authority与source-policy读取；对照Go itemsreading完整列表/画像/rerank日志/投影store、newsevents私有聚合/排序去重、analysiscollab规范化/校验及JWT与机器认证差异。明确成功201、analysis.write、5000候选上限、50交互上限不可复用、无直接导出审计、公式/换行字节契约，见ANALYSIS-EXPORT-001。search/headlines准备、真实外部/生产大导出未验证，不把协作CRUD/worker未审范围统一标完成。
 
 - **协作 23 HTTP / 部分分支静态核对，整体尚未深入核对**：[cmd/api/analysis.go](../../../apps/api-go/cmd/api/analysis.go) 三独立模式与 handler；[analysisboards/service.go](../../../apps/api-go/internal/analysisboards/service.go) List/Get→ensureDefaultBoard→组织锁事务内二次检查/创建默认列，确认读可能写。其余列/任务移动重排、评论归属/计数、删除关联清理及版本并发尚未逐路径验完。
 - **analysisResults / Go 实现已静态核对（读取）**：history/register.go→runs.go findRuns，按 orgId/createdAt/limit 查询 Mongo analysisresults，映射 input/output/status；更新这些记录的 submit/process/worker 仍由 Nest 执行。三个 CSV 导出与三个 request root 未迁。
@@ -71,6 +79,8 @@
 - **其余事件/分组、指标读写、NewsNow 本地计算与聚类运维 / 尚未深入核对**：已核各 Register/main 和 newsnowclusteringops.NewService 真实构造排序器，nil ordering 错误不是固定业务占位。尚未逐项比对事件筛选/游标、heat/authority、指标反测、聚类恢复状态与 Redis TTL；后续先读 graphqlread/newsevents 的 service.go/store.go/detail.go 与 newsindicator、newsnowclusteringops 的 service/store。上游读取/推荐、LLM backfill、ingestion/Cron仍由Nest。15:01–15:08续读settingscrawl.policyReader.getSyncStatus，确认其真实对照DB/cache时间戳并区分miss/stale/read_failed，force*读取失败采用false/1；此核对仅覆盖该共享状态分支，不代表其余事件读算法已验完。
 
 ## knowledge
+
+2026-10-18限定续核（main90765633，KNOWLEDGE-REVIEW-001）：已深入Nest人工复核Resolver/DTO/投影、ReviewService事务/移动合并/active聚合/删除、GraphService人工修正/实体/别名/唯一边分支、设置缓存/错误fallback、审计outbox和SCAN失效，以及Go settingscrawl队列/模型、knowledgegraph设置与normalize、Registry/Failure/主装配。确认人工链仅MySQL+Redis；队列固定最多500候选后过滤造成具体遮挡，记GAP-KG-001。证据DTO白名单不一致仅静态观察、无运行验证。图遍历/冲击算法/ingestion抽取与模型仍未续审，不把下段历史未审项整体改为已审；本次无业务修改/测试/真实依赖验证。
 
 11 读已注册；本轮核对 knowledgegraph/kgimpact/settingscrawl 返回类型装配与根权限。**业务算法尚未深入核对**：KnowledgeEdge 遍历/剪枝、置信度阈值、Redis 命中/失效、Mongo 共现/经济相关计算、证据队列分页与复核副作用。需读 graphqlread/{knowledgegraph,kgimpact,settingscrawl} 对应 service/store；不能因配置与读已迁推断 ingestion/review 写已迁。
 
@@ -87,6 +97,8 @@
 **信号缓存读的所有权已静态核对，其他业务尚未深入核对**：[situationsignals/oref.go](../../../apps/api-go/internal/situationsignals/oref.go) loadCachedOrefState 读取两份 Redis 文档；miss 合法空数组/计数，不发起 Oref 轮询。telegram/refreshrun 也围绕已有缓存；不能把缓存无新内容误报“生成器缺陷”。尚须逐字段核对 monitor 匹配、scope/时间/地理筛选、feedback Mongo 学习状态、Telegram channelSet 与 refresh-run 租户校验。polling/insights/refresh/geo 与授权为 Nest。
 
 ## settings
+
+2026-10-18本次候选增量，main90765633：只深入来源策略四写及必要复用/接线。已读四Resolver/DTO/helper/返回投影、NewsEventSourcePolicyService管理与state/preset/分类持久化分支、classifier归一化、Go policy读端/私有helper/模型注册和settingswrite审计存储。Mutation20/Query30/持久化60、rollback新版本且不回滚分类权重、category omitted/null、preset时间校验、主文档与分类分步写入、Redis warning均已明确，见SOURCE-POLICY-WRITE-001。源码未提供CAS/跨存储总事务；未做真实DB/跨进程验证，不把下述13写未审范围统一标完成。
 
 本组续审：**2026-10-18 15:01–15:08 MSK**，main SHA仍3cedce9a；以下是新增静态范围。
 

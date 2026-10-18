@@ -1,5 +1,7 @@
 # identity · 身份、组织与访问控制
 
+最新限定候选核实（2026-10-18，main90765633）：[OIDC-LOGIN-001](../tasks/OIDC-LOGIN-001.md) reserved，[完整提示词](../tasks/OIDC-LOGIN-001.prompt.md)通过规划#80发布；三公共HTTP的PKCE/state、discovery/JWKS/id_token、现有账户/membership/MFA/session与handoff均在范围，不重迁OIDC配置。已确认handoff读后无条件update的并发重复消费分支，Go用条件领取修复，不新增锁框架；旧Nest混合消费/真实IdP仍未验证。本批尚无业务实现/注册，头像/导出继续未认领。
+
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态
@@ -8,13 +10,13 @@
 
 关键数据与副作用：MySQL User/Membership/Role/Permission/Organization/MachineAccessToken；Redis 撤销名单与权限缓存；邮件、OIDC、头像 S3；Go 审计失败可写 AuditLogOutbox，消费仍由 Nest 承担（见异步域）。令牌 claim 不能替代服务端 membership 重推导。
 
-本次将注册申请→审批→邮件邀请→接受邀请入组14条HTTP认领为[IDENTITY-ONBOARDING-001](../tasks/IDENTITY-ONBOARDING-001.md) reserved，[完整提示词](../tasks/IDENTITY-ONBOARDING-001.prompt.md)已发出；无业务实现/PR新增。OIDC三路、头像和导出继续未认领。GraphQL组织八写与已合登录11路不重复迁移。
+最新增量（main90765633）：注册申请→审批→邮件邀请→接受邀请入组14条HTTP的[IDENTITY-ONBOARDING-001](../tasks/IDENTITY-ONBOARDING-001.md)已由[#79](https://github.com/wei500L/newwei/pull/79)实际merge f35ec572ccdf607b9224d88d1962cf792f9915be进入main；14路规则/wire/main/config资源OR已核落地。普通CI39149114456运行中，非生产启用或SMTP实测证据。原[完整提示词](../tasks/IDENTITY-ONBOARDING-001.prompt.md)保留；OIDC三路、头像和导出继续未认领。GraphQL组织八写与已合登录11路不重复迁移。
 
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#identity) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 Nest 功能目录：[auth](../../../../apps/api/src/modules/auth)、[org](../../../../apps/api/src/modules/org)、[rbac](../../../../apps/api/src/modules/rbac)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：IDENTITY-ONBOARDING-001；旧AUTH-LOGIN-001已merged（#75经#77进入c39f282f），不继续占用后续邀请/审批。新任务限定深读两service、14个handler/DTO、平台与组织权限、默认角色bootstrap、真实SMTP及Prisma/Web返回；发现普通invite拒绝system admin与new_org审批冲突，按受控平台bootstrap修复。真实SMTP/数据库运行未验证；[认领核对记录](../tasks/README.md)保存当前占用。
+当前认领：本域本两批AUTH-LOGIN-001和IDENTITY-ONBOARDING-001均merged，不重复派发。上一批限定深读两service、14个handler/DTO、平台与组织权限、默认角色bootstrap、真实SMTP及Prisma/Web返回；普通invite拒绝system admin与new_org审批冲突纳入受控平台bootstrap实现。真实SMTP/数据库运行未验证；[认领核对记录](../tasks/README.md)保存合并证据与后续占用。
 
 ## HTTP 开关、实现与生产接线
 

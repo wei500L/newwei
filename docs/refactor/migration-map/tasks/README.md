@@ -4,14 +4,36 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 ## 当前占用与已合并历史
 
+本批整合（2026-10-18）：main=`90765633ac6ba2b1d97a89d0ec33be90cb69bcb7`。开放 PR [#80](https://github.com/wei500L/newwei/pull/80)/[#85](https://github.com/wei500L/newwei/pull/85)（规划）与 [#81](https://github.com/wei500L/newwei/pull/81)/[#82](https://github.com/wei500L/newwei/pull/82)/[#83](https://github.com/wei500L/newwei/pull/83)/[#84](https://github.com/wei500L/newwei/pull/84)/[#86](https://github.com/wei500L/newwei/pull/86)/[#87](https://github.com/wei500L/newwei/pull/87)（实现）由[整合 PR #89](https://github.com/wei500L/newwei/pull/89)（分支 `integration/merge-open-prs-b80-87`）以 merge commit 一次性收口（冲突按开关/键取并集，未 squash/rebase/force-push）；8 个 head：84f8ffde、e8ac410e、0b89196f、52340760、2c52763c、38e4e0e1、4d6d24b8、2b0da7ec。下表为本批收口后的当前占用事实，每个任务 ID 只有一行；merged 回填（merge SHA 与 CI 证据）由后续文档提交完成。以下“最新…”段落为各次发出快照（不同会话交错），不覆盖本段与下表。
+
+最新复核选批（2026-10-18）：main90765633/普通CI39149114456 success；#81网关head0b89196f、#82来源策略head52340760、#83OIDC head2c52763c均Ready开放，CSV导出已见独立目录开发。新增[KNOWLEDGE-REVIEW-001](KNOWLEDGE-REVIEW-001.md) reserved，人工证据复核/关系校正/边聚合与队列选取改善；[完整提示词](KNOWLEDGE-REVIEW-001.prompt.md)随规划#80发布，未创建业务目录/PR。后续“最新”段落为各次发出快照，以本段及下表为本次占用事实；不干预已运行编码对话。
+
+最新RSS选批（2026-10-18）：main仍90765633，#81/#82/#83/#84仍Ready且head分别0b89196f/52340760/2c52763c/38e4e0e1；已核其实际文件/共享接线，#81的llmlogs私有metadata helper重命名由新writer隔离。KNOWLEDGE-REVIEW-001目录已见review.go/new包开发，状态in_progress；DIGEST-DELIVERY-001目录已创建于main、未见业务改动，仍reserved，存在不代表代理在线。新增[RSS-TRANSLATION-001](RSS-TRANSLATION-001.md) reserved，[提示词](RSS-TRANSLATION-001.prompt.md)随[Ready规划PR #85](https://github.com/wei500L/newwei/pull/85)发出，业务目录未创建。只领取BL-24的RSS翻译，不重复派发其他item/采集/异步范围。
+
+最新digest选批（2026-10-18）：main90765633/普通CI39149114456 success。开放Ready #81 head0b89196f（网关）、#82 head52340760（来源策略/旧设置写漏接线）、#83 head2c52763c（OIDC）、#84 head38e4e0e1（分析导出，后续修正已提交推送）均占用；已读实际diff中的业务文件及共享接线。开放规划[#80](https://github.com/wei500L/newwei/pull/80)含KNOWLEDGE-REVIEW-001 reserved，目录在main基线已创建且未见开发，保留认领；#80其他四批记录也继续有效，尚未合main不能重复派发。只读工作目录不等于确认执行器在线。
+
+新增[DIGEST-DELIVERY-001](DIGEST-DELIVERY-001.md) reserved，原五HTTP契约不变，补每分钟摘要投递执行链、稳定分批到期扫描、旧slot失败认领和摘要专用通知桥；[提示词](DIGEST-DELIVERY-001.prompt.md)已保存并发出，业务分支/目录尚未创建。认领由独立docs/plan-digest-delivery文档分支在[Ready规划PR #85](https://github.com/wei500L/newwei/pull/85)发布，不改#80工作目录。下方旧快照和“最新”均按各次时间理解，本段仅刷新当前范围与冲突。
+
 最新增量（2026-10-18）：fetch后main为c39f282f11952b487c3ef6fefb14882db265ed9e，#70–#76已通过[整合PR #77](https://github.com/wei500L/newwei/pull/77)合入；该SHA普通CI39142523834成功，开放PR为空。以下六批主提交/主要接线已在main，旧worktree均干净，不因目录保留而继续占用。只深入本次identity候选，不把此次合并核对当全仓业务验收。
 
-新认领[IDENTITY-ONBOARDING-001](IDENTITY-ONBOARDING-001.md) reserved：[14条HTTP完整执行提示词](IDENTITY-ONBOARDING-001.prompt.md)，注册申请→审批→真实邀请邮件→accept入组；业务目录未创建。复用已合登录SMTP/密码与组织bootstrap；明确修复平台新组织审批被普通系统admin邀请限制阻断的具体分支。OIDC/头像/导出未认领。
+最新导出选批（2026-10-18）：main90765633/普通CI39149114456 success不变，开放业务#81仍Ready/head0901ca15，来源策略在独立目录开发，OIDC reserved；均继续占用。新增[ANALYSIS-EXPORT-001](ANALYSIS-EXPORT-001.md) reserved，[完整提示词](ANALYSIS-EXPORT-001.prompt.md)在规划#80发布：items/events两路CSV，最多5000，保留筛选/排名/补全与CSV字节契约，token索引保持事件去重等价。search整路/归档/采集写不认领；核心analysisexport/itemsreading/newsevents窄端口与三批隔离，共享接线保留并集。
+
+最新OIDC选批（2026-10-18）：main90765633/普通CI39149114456 success不变；开放业务Ready #81，head0901ca15aa31d5c00e98aa5c0c3f94a201b27219，实际业务/共享接线diff已核，网关仍未计入main。来源策略独立worktree已见policy/register及typed写支持开发，in_progress。新增[OIDC-LOGIN-001](OIDC-LOGIN-001.md) reserved，[完整提示词](OIDC-LOGIN-001.prompt.md)在#80发布；本批业务目录未创建，核心authlogin/authfactors/oidclogin与前两批隔离，公共接线保留并集。
+
+最新选批增量（2026-10-18）：main90765633未变，普通CI39149114456已success；仅开放规划#80。LLM-GATEWAY-OPS-001已创建worktree并见llmgatewayops、profiles/ports.go及llmlogs probe writer开发，状态in_progress，不因没有业务PR释放。新认领[SOURCE-POLICY-WRITE-001](SOURCE-POLICY-WRITE-001.md) reserved：[完整提示词](SOURCE-POLICY-WRITE-001.prompt.md)，四策略写+GAP-GQL-001两处剩余接线，本批目录未创建；两批业务文件隔离，共享main/config/env保留并集。认领与提示词在#80正常提交发布。
+
+最新增量（2026-10-18）：最终fetch后main90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，#79通过f35ec572合入，旧规划#78也已合入；该时刻开放业务PR为空（此后 #80–#87 相继开放，本批整合见上文）。此前#70–#76通过[整合PR #77](https://github.com/wei500L/newwei/pull/77)合入c39f282f的事实不变；旧SHA普通CI39142523834成功，新main普通CI39149114456运行中。旧worktree保留不代表继续占用。只深入本次model-gateway候选与新身份公共接线，不把此次核对当全仓业务验收。
+
+上一批[IDENTITY-ONBOARDING-001](IDENTITY-ONBOARDING-001.md)现merged：[#79](https://github.com/wei500L/newwei/pull/79)实际merge f35ec572ccdf607b9224d88d1962cf792f9915be为main祖先，14路规则/wire/main/config资源OR落地已核；原head e105b3ab。OIDC/头像/导出未认领。
+
+本批[LLM-GATEWAY-OPS-001](LLM-GATEWAY-OPS-001.md) reserved：[12条HTTP完整执行提示词](LLM-GATEWAY-OPS-001.prompt.md)。治理启停/预算/轮换、模型列表、健康/model-info缓存、completion/embedding/rerank与LB真实探测及Mongo日志；新llmgatewayops、profiles窄端口、llmlogs probe writer，核心业务不碰已合#79。独立业务目录尚未创建；#78合并时未包含本批新增，改在独立规划分支docs/plan-llm-gateway-ops发布；共享接线保留并集。
 
 本次规划刷新：2026-10-18，origin/main 9d0462e16d88d146b8afbf67cdd58d8b7419ff29。#69已merged；#70仍OPEN/Ready、head adb765d0180e8b34910181e8c6fde8be400a2dff，实际diff与所有现存worktree HEAD/状态已只读刷新；历史工作目录状态无业务新增证据。这里只增加本批认领，不把旧表日期统一刷新成全仓审查。
 
 | ID | 状态 | 精确范围 | 是否已有业务 PR / 推送 |
 |---|---|---|---|
+| [RSS-TRANSLATION-001](RSS-TRANSLATION-001.md) | reserved | RSS翻译Mutation完整双provider/正文分块/缓存/指标日志；修状态共享缓存投影写回 | #85发布任务与提示词；未创建业务目录/PR，不计main增量 |
+| [DIGEST-DELIVERY-001](DIGEST-DELIVERY-001.md) | pr_open | 摘要定时投递：Cron、到期CAS、SMTP、状态和摘要通知桥 | Ready #87，head2b0da7ec，实际diff已核；不计入main；原五HTTP不重迁 |
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |
 | [WORKSPACE-WRITE-001](WORKSPACE-WRITE-001.md) | merged | 8 个通知/看板/告警交互写 | #70经#77进入main c39f282f；实际原PR merge 8e1ff896，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
 | [ITEMS-LIST-001](ITEMS-LIST-001.md) | merged | Query items完整分页/三排序/批量投影 | #74经#77进入main c39f282f；实际原PR merge 99e648c8，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
@@ -19,6 +41,12 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 | [STORAGE-MEDIA-001](STORAGE-MEDIA-001.md) | merged | storage/test与S3媒体/详情URL | #73经#77进入main c39f282f；实际原PR merge f4ac4aa8，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
 | [AUTH-LOGIN-001](AUTH-LOGIN-001.md) | merged | 登录/会话/MFA挑战/找回密码/邮箱变更11路 | #75经#77进入main c39f282f；实际原PR merge 7879629e，复用基础已限定核对，目录干净；整合main普通CI成功，非生产启用证据 |
 | [CRAWL-METADATA-001](CRAWL-METADATA-001.md) | merged | HTTP+Query元数据完整预览链 | #76经#77进入main c39f282f；实际原PR merge 501c4930，旧业务目录干净；整合main普通CI成功，非生产启用证据 |
+| [IDENTITY-ONBOARDING-001](IDENTITY-ONBOARDING-001.md) | merged | 注册审批与邮件邀请入组14路 | #79实际merge f35ec572已在main90765633；新main CI39149114456成功，非生产验证 |
+| [LLM-GATEWAY-OPS-001](LLM-GATEWAY-OPS-001.md) | pr_open | 治理与真实探测12路，含远端资源与三类日志 | Ready #81，head0b89196f，实际diff已核；不计入main |
+| [SOURCE-POLICY-WRITE-001](SOURCE-POLICY-WRITE-001.md) | pr_open | 来源策略四Mutation完整版本管理；旧13写仅补两处接线 | Ready #82，head52340760，实际业务/共享接线diff已核；不计入main |
+| [OIDC-LOGIN-001](OIDC-LOGIN-001.md) | pr_open | 组织SSO三入口，含PKCE/JWKS/MFA/session/handoff | Ready #83，head2c52763c，实际业务/接线diff已核；不计入main |
+| [ANALYSIS-EXPORT-001](ANALYSIS-EXPORT-001.md) | pr_open | 条目/事件两路完整CSV导出与等价去重优化 | Ready #84，head38e4e0e1，实际diff已核；不计入main；search留Nest |
+| [KNOWLEDGE-REVIEW-001](KNOWLEDGE-REVIEW-001.md) | pr_open | 人工证据复核、关系校正、实体别名、边聚合与队列选取改善 | Ready #86，head4d6d24b8，实际diff已核；不计入main；ingestion与outbox消费留Nest |
 
 本次增量（2026-10-18）：origin/main 仍为 9d0462e16d88d146b8afbf67cdd58d8b7419ff29；#70 保持 OPEN/Ready、head adb765d0。新增 NEWS-BRIEF-001 与 STORAGE-MEDIA-001 占用，只维护文档与独立编码目录，不取得 BL-01/#70 顶层接线所有权；原表日期不统一刷新成全仓审查。
 

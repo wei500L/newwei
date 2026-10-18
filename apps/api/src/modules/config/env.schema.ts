@@ -30,6 +30,17 @@ export const apiEnvSchema = baseEnvSchema
     JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
     JWT_ISSUER: z.string().default("modular-monolith"),
     JWT_AUDIENCE: z.string().default("modular-monolith-clients"),
+    // The background daily-digest delivery owner. It is independent of
+    // API_GO_USER_DIGEST_MODE (which only controls the five HTTP routes).
+    // Empty string behaves like legacy. An invalid value fails Nest startup
+    // instead of being silently stripped from the validated config.
+    API_GO_USER_DIGEST_DELIVERY_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     REDIS_DB: z.coerce.number().int().nonnegative().default(0),
     REDIS_USERNAME: z.string().optional(),
     REDIS_PASSWORD: z.string().optional(),

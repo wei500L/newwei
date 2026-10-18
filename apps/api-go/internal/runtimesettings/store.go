@@ -51,6 +51,9 @@ type Service struct {
 	// newsSourceCache mirrors the news-source scheduler service's process-local
 	// 30 second cache.
 	newsSourceCache newsSourceSchedulerCache
+	// digestDeliveryCache mirrors the multi-tenant scheduler service's 30 second
+	// runtime cache for the digest delivery organization concurrency.
+	digestDeliveryCache digestDeliveryRuntimeCache
 }
 
 // NewService wires the runtime settings data access. db and redisClient are the

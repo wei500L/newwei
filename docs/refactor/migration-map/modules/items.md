@@ -4,6 +4,8 @@
 
 ## 范围与实施状态
 
+RSS限定增量（2026-10-18，main90765633）：[RSS-TRANSLATION-001](../tasks/RSS-TRANSLATION-001.md) reserved，[提示词](../tasks/RSS-TRANSLATION-001.prompt.md)在规划#85发出，补translateRssItems完整同步翻译/缓存/统计/日志，不重迁rssTranslationStatus。确认GAP-RSS-001：status loader把窄profile投影写回共享完整缓存，需具体修复；未实施/未调用外部/未计覆盖。下方items Query旧候选描述已是历史快照：#74随#77已进入main，源码RegisterList存在；#84导出另占用csvexport端口，不重复派发。
+
 HTTP 条目阅读与索引重建、GraphQL item/itemFacets/rssSources/rssTranslationStatus/searchSuggestions 和 processedItemById 已接线；GraphQL items 列表在 main 仍没有生产注册，不能与 REST 列表混淆。Query `items` 的 Go 实现是[ITEMS-LIST-001](../tasks/ITEMS-LIST-001.md) 候选（[PR #74](https://github.com/wei500L/newwei/pull/74)，CI 39136842080 success，未合 main，覆盖数不提前增加）。
 
 关键数据与副作用：MySQL ItemMeta、Mongo rawitems/processeditems/read-model、Redis reindex 状态/遥测、Elasticsearch 与向量服务。重建是 Go 后台 goroutine 的索引副作用，不是 BullMQ 已整体迁移。

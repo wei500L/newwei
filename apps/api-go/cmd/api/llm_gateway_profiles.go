@@ -41,21 +41,7 @@ func wireLLMGatewayProfiles(gateway *legacyproxy.Gateway, cfg config.Config, db 
 	}
 	lockDB.SetMaxIdleConns(0)
 
-	service := llmgatewayprofiles.NewService(db, lockDB, redisClient, llmgatewayprofiles.Config{
-		Env: llmgatewayprofiles.EnvDefaults{
-			Model:           cfg.LLMGatewayModel,
-			APIBase:         cfg.LiteLLMAPIBase,
-			TimeoutMs:       float64(cfg.LiteLLMTimeoutMs),
-			Temperature:     cfg.LLMGatewayTemperature,
-			TopP:            cfg.LLMGatewayTopP,
-			MaxOutputTokens: float64(cfg.LLMGatewayMaxOutputTokens),
-			MaxRetries:      float64(cfg.LLMGatewayMaxRetries),
-			FallbackModels:  cfg.LLMGatewayFallbackModels,
-		},
-		SettingsEncryptionKey: cfg.LLMGatewaySettingsEncryptionKey,
-		Production:            cfg.NodeEnvProduction,
-		LockTimeoutSeconds:    10,
-	})
+	service := newLLMGatewayProfilesService(cfg, db, redisClient, lockDB)
 	handler := llmgatewayprofiles.NewHandler(
 		llmgatewayprofiles.NewAuthenticator(authenticator, db),
 		service,
@@ -82,4 +68,28 @@ func wireLLMGatewayProfiles(gateway *legacyproxy.Gateway, cfg config.Config, db 
 	})
 	log.Printf("api-go: llm gateway profiles takeover mode=%s", cfg.LLMGatewayProfilesMode)
 	return nil
+}
+
+// newLLMGatewayProfilesService builds the shared LLM gateway profile service.
+//
+// Both the seven profile routes and the governance/diagnostics batch use it, so
+// one profile document is normalized, selected and decrypted identically on both
+// paths. lockDB is nil for read-only consumers: they must not open a second
+// GET_LOCK pool just to read a profile snapshot.
+func newLLMGatewayProfilesService(cfg config.Config, db *sql.DB, redisClient *redis.Client, lockDB *sql.DB) *llmgatewayprofiles.Service {
+	return llmgatewayprofiles.NewService(db, lockDB, redisClient, llmgatewayprofiles.Config{
+		Env: llmgatewayprofiles.EnvDefaults{
+			Model:           cfg.LLMGatewayModel,
+			APIBase:         cfg.LiteLLMAPIBase,
+			TimeoutMs:       float64(cfg.LiteLLMTimeoutMs),
+			Temperature:     cfg.LLMGatewayTemperature,
+			TopP:            cfg.LLMGatewayTopP,
+			MaxOutputTokens: float64(cfg.LLMGatewayMaxOutputTokens),
+			MaxRetries:      float64(cfg.LLMGatewayMaxRetries),
+			FallbackModels:  cfg.LLMGatewayFallbackModels,
+		},
+		SettingsEncryptionKey: cfg.LLMGatewaySettingsEncryptionKey,
+		Production:            cfg.NodeEnvProduction,
+		LockTimeoutSeconds:    10,
+	})
 }

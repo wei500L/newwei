@@ -1,6 +1,22 @@
 # 后端迁移地图
 
+本批整合（2026-10-18）：main=`90765633ac6ba2b1d97a89d0ec33be90cb69bcb7`。开放 PR [#80](https://github.com/wei500L/newwei/pull/80)/[#85](https://github.com/wei500L/newwei/pull/85)（规划）与 [#81](https://github.com/wei500L/newwei/pull/81)/[#82](https://github.com/wei500L/newwei/pull/82)/[#83](https://github.com/wei500L/newwei/pull/83)/[#84](https://github.com/wei500L/newwei/pull/84)/[#86](https://github.com/wei500L/newwei/pull/86)/[#87](https://github.com/wei500L/newwei/pull/87)（实现）由[整合 PR #89](https://github.com/wei500L/newwei/pull/89)（分支 `integration/merge-open-prs-b80-87`）以 merge commit 一次性收口（冲突按开关/键取并集，未 squash/rebase/force-push）；8 个 head：84f8ffde、e8ac410e、0b89196f、52340760、2c52763c、38e4e0e1、4d6d24b8、2b0da7ec。本页下方注册覆盖与模块页的统计日期仍是各自历史快照，不回填为本批现值；任务占用与状态以[任务索引](tasks/README.md)为准，merged 回填（merge SHA 与 CI 证据）由后续文档提交完成。以下“最新…”段落为各次发出快照（不同会话交错），不覆盖本段。
+
+最新知识图谱选批（2026-10-18）：main仍90765633，普通CI39149114456成功；网关#81、来源策略#82、OIDC#83均Ready开放，CSV导出已见独立目录开发。新认领[KNOWLEDGE-REVIEW-001](tasks/KNOWLEDGE-REVIEW-001.md)，完整迁人工证据复核/关系校正/边聚合与审计缓存，并改善已迁复核队列的固定候选遮挡，[完整提示词](tasks/KNOWLEDGE-REVIEW-001.prompt.md)在规划#80发布。只需MySQL/Redis，ingestion与outbox消费者留Nest；仅续核本域，不新增业务实现、不重建地图。
+
+最新导出选批（2026-10-18，main90765633未变，普通CI39149114456成功）：网关#81/来源策略/OIDC占用保持。新认领[ANALYSIS-EXPORT-001](tasks/ANALYSIS-EXPORT-001.md)，完整迁移items/events两路CSV及5000选择/批量投影/等价去重优化，[提示词](tasks/ANALYSIS-EXPORT-001.prompt.md)在规划#80发布。search整路因归档准备保留Nest；只核本候选，不新增业务实现/注册或重建地图。
+
+最新OIDC选批（2026-10-18）：main仍90765633，普通CI39149114456成功；网关12路已提交Ready #81，来源策略四写已见独立worktree开发，两者继续占用。新认领[OIDC-LOGIN-001](tasks/OIDC-LOGIN-001.md)的组织SSO三入口完整协议/会话/MFA/handoff链，[提示词](tasks/OIDC-LOGIN-001.prompt.md)复用规划#80发布；只深入该身份候选，不包含头像/导出，不重建地图。
+
+最新本批（2026-10-18，main90765633未变）：普通CI39149114456已success。LLM-GATEWAY-OPS-001已见独立worktree真实业务开发，保持占用；新认领[SOURCE-POLICY-WRITE-001](tasks/SOURCE-POLICY-WRITE-001.md)的来源策略四Mutation完整版本链及旧设置13写两处剩余公共接线，[执行提示词](tasks/SOURCE-POLICY-WRITE-001.prompt.md)复用规划#80发布。仅深入settings本候选，不重建全仓地图；不修改正在开发窗口的记录要求。
+
 先读本页 → [PLANNING](PLANNING.md) → [当前任务](tasks/README.md) + [缺口摘要](GAPS.md#当前摘要) → [候选队列](BACKLOG.md) → 候选域与源码。[实现核对深度](AUDIT.md)、[开关/执行所有权/复用入口](DEPENDENCIES.md)、[证据](EVIDENCE.md)按需展开。Nest 暂时保留。
+
+最新规划增量（2026-10-18）：最终刷新main90765633ac6ba2b1d97a89d0ec33be90cb69bcb7，[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md)14路已由[#79](https://github.com/wei500L/newwei/pull/79)实际merge f35ec572合入，旧规划#78也已合入；此前#70–#76经#77合入的事实不变。新main普通CI39149114456运行中，旧c39f282f成功不能替代。新认领[LLM-GATEWAY-OPS-001](tasks/LLM-GATEWAY-OPS-001.md)治理与真实探测12路，[独立提示词](tasks/LLM-GATEWAY-OPS-001.prompt.md)改在独立规划分支docs/plan-llm-gateway-ops发布；只深读该候选并更新必要记录。下面3cedce9a/9d0462e1日期和注册统计是历史快照，不能当作最新main现值，合并/新占用看任务索引。生产启用与外部验证不由merge/CI推断。
+
+最新RSS选批增量（2026-10-18）：再次fetch main仍90765633，开放业务#81–#84未变；知识复核目录已见业务开发，摘要投递目录已创建但尚未见改动，均继续占用。新增[RSS-TRANSLATION-001](tasks/RSS-TRANSLATION-001.md) reserved，[完整提示词](tasks/RSS-TRANSLATION-001.prompt.md)随[规划PR #85](https://github.com/wei500L/newwei/pull/85)发布：单Mutation的双provider/四字段/正文分块/两层缓存/日志指标完整链，同时修复GAP-RSS-001状态投影覆盖共享完整网关缓存。仅深入RSS调用链，不重迁条目列表或导出，不启动业务，历史统计不提前增加。
+
+最新digest选批增量（2026-10-18）：fetch后main为`90765633ac6ba2b1d97a89d0ec33be90cb69bcb7`，普通CI39149114456 success；#69/#70已merged，#70–#76经#77合入，#79身份申请/邀请也已合入。开放业务Ready #81网关、#82来源策略、#83 OIDC、#84分析导出继续占用；开放规划[#80](https://github.com/wei500L/newwei/pull/80)的知识复核认领同样保留，不能以main尚无task文件重复派发。新增[DIGEST-DELIVERY-001](tasks/DIGEST-DELIVERY-001.md) reserved：[完整提示词](tasks/DIGEST-DELIVERY-001.prompt.md)，只补每日摘要Cron→到期认领→真实SMTP→状态/通知完整链，原五HTTP不重迁；包含摘要专用Nest通知桥及明确切换所有权。本次只深读该链、维护规划，未实施、未创建业务目录，历史全域统计/审查日期不更新为新验收。
 
 最新规划增量（2026-10-18）：main已到c39f282f11952b487c3ef6fefb14882db265ed9e，#70–#76经[#77](https://github.com/wei500L/newwei/pull/77)合入，普通CI成功，当前无开放PR。新增[IDENTITY-ONBOARDING-001](tasks/IDENTITY-ONBOARDING-001.md)的14条申请/审批/邀请入组完整链，[提示词](tasks/IDENTITY-ONBOARDING-001.prompt.md)已发出。本次只深读identity候选并更新必要认领，不重建全仓地图；下面3cedce9a/9d0462e1日期和注册统计是历史快照，不能当作c39f282f现值，六批合并/新占用看任务索引。生产启用与外部验证不由merge/CI推断。
 

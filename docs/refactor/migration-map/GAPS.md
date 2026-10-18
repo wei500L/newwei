@@ -6,17 +6,39 @@
 
 | ID | 性质 / 所属域 | 影响范围 | 状态 / 归属 |
 |---|---|---|---|
-| GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | 未分配；SETTINGS-WRITE-001 主体仍 merged；与 WORKSPACE-WRITE-001 共享接线冲突 |
+| GAP-RSS-001 | 部分实现/共享缓存；items | rssTranslationStatus在LLM profile缓存miss后覆盖完整缓存字段 | RSS-TRANSLATION-001 reserved，main缺口开放；只修本链写回 |
+| GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | SOURCE-POLICY-WRITE-001认领main90765633仍缺的路由/无效DSN两处条件；主体仍merged，缺口仍开放 |
 | GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | NEWS-BRIEF-001 pr_open（候选实现，未合 main）；缺口仍开放 |
 | GAP-CRAWL-001 | 部分实现；crawl | 媒体下发及已有REST/GraphQL详情的 S3 URL分支 | STORAGE-MEDIA-001 pr_open（候选实现，未合 main）；缺口仍开放 |
 | GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 工作台 8 写已由 WORKSPACE-WRITE-001 覆盖，Query `items` 由 ITEMS-LIST-001 覆盖（均 pr_open）；其余未分配，见 BACKLOG |
-| GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | 未分配；按链路拆分，见执行所有权表 |
+| GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | digest投递子链由DIGEST-DELIVERY-001 pr_open（#87）覆盖；其余按链路拆分，见执行所有权表，不关闭整个缺口 |
+| GAP-KG-001 | 部分实现；knowledge | 已迁证据复核队列的固定候选遮挡 | main90765633限定确认；KNOWLEDGE-REVIEW-001 pr_open（#86，head4d6d24b8，随本批整合），缺口仍开放 |
 
 “未迁移”是范围事实，不表示 Nest 有 bug；“缺少外部运行证据”不单独计为源码缺陷。当前没有因本轮文档维护而关闭的业务缺口。
+
+<a id="gap-kg-001"></a>
+
+## GAP-KG-001 · 复核队列固定候选遮挡待办
+
+- 基线 `90765633ac6ba2b1d97a89d0ec33be90cb69bcb7`，2026-10-18只深入本域。入口Query knowledgeGraphEvidenceReviewQueue，settings.manage OR knowledgegraph.review，已有总读+settings/crawl子开关。
+- Nest KnowledgeGraphReviewService.listEvidenceReviewQueue 和 Go settingscrawl/review.go/evidenceReviewQueue 都先take=min(500,max(50,limit*4))，再跳过合法已复核状态。候选前缀足够多时，后面符合confidence/组织的待办永远不出现在列表；这不是Go完全缺入口，也不是新发现未迁root。
+- [KNOWLEDGE-REVIEW-001](tasks/KNOWLEDGE-REVIEW-001.md)认领：按createdAt DESC/id DESC稳定游标轻字段分批，直到选满/耗尽，选中ID再批量关联；保留同组织关联、limit/nullable/confidence与状态判定。明确改变固定总候选上限和同时间排序，改善用户可见待办列表；不照搬原算法遮挡。
+- 允许文件settingscrawl/review.go及新review_support.go、knowledgegraph/review_support.go；不碰来源策略#82的register.go/policy.go。新增人工复核写是GAP-LEGACY-001子范围，ingestion仍属GAP-ASYNC-001，不随队列修复关闭。
+- 状态pr_open（Ready #86，head4d6d24b8），随集成分支 integration/merge-open-prs-b80-87 收口；合并与运行验证证据待回填，不由规划文档关闭。关闭需实际main提交中队列分页/组织/投影分支、该head普通CI和明确算法证据。
+
+## GAP-RSS-001 · RSS状态读取用窄投影覆盖完整网关缓存
+
+- 核对main90765633（2026-10-18），入口Query rssTranslationStatus，items.read，原READ+ITEMS_READING；触发llm_gateway:profiles miss而MySQL有完整llm_gateway_profiles设置。
+- `apps/api-go/internal/itemsreading/translation.go`：llmGatewayProfile只含ID/Model/Enabled，llmGatewaySettings只含ActiveID/Profiles；loadLLMGatewaySettings从DB解码此投影、normalize后Marshal并Set同key60秒，导致apiBase/apiKey/模型协议/embedding/rerank等字段不在缓存内。
+- Nest `LlmGatewaySettingsService.loadSettings`（modules/system-settings/llm-gateway-settings.service.ts）在同key读写完整normalized settings，真实completion会消费它。状态读取不应改变实际网关配置；未运行证明生产已触发，不把静态根因推成已发生外网故障。
+- [RSS-TRANSLATION-001](tasks/RSS-TRANSLATION-001.md)仅修此status写回：保留canonical缓存读取，miss从DB投影返回但不回填窄结构，不重做profile CRUD或盲目删缓存。业务translation新root另属GAP-LEGACY-001，不与此具体缺口混计。
+- 核心文件translation.go；与#84 csvexport无文件交集，与#81 profiles/llmlogs核心隔离。状态reserved、main未修、关闭证据无；需实际merge中无损缓存行为及对应CI，真实部署独立核实。
 
 <a id="gap-gql-001"></a>
 
 ## GAP-GQL-001 · 设置写独立开关漏入公共接线
+
+- 最新限定增量（2026-10-18，main90765633）：#70已合，但graphqlRouteMode和无效DSN错误分支仍漏旧settingsWrite；needsCredentialedGo/handler已有。两处剩余条件已交[SOURCE-POLICY-WRITE-001](tasks/SOURCE-POLICY-WRITE-001.md)与新来源策略开关接线一并最小修复，不重迁13业务、不在此提前关闭缺口。网关任务只保留其main/config语义增量。
 
 - 精确入口：SETTINGS-WRITE-001 列出的 13 个 `update*` Mutation；根因共用，不按 13 条重复建 bug。
 - 触发：`API_GO_GRAPHQL_SETTINGS_WRITE_MODE=go`，`API_GO_GRAPHQL_READ_MODE=legacy`，`API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE=legacy`。其他模式都关时，即使配置校验通过，仍缺 Redis/authenticator，`run` 在 GraphQL 装配检查处返回错误，进程不监听。若其他 HTTP go 模式补齐资源，handler 可以构造，但 `/graphql` 路由仍走 legacy，写实际由 Nest 执行。
@@ -67,6 +89,8 @@
 <a id="gap-async-001"></a>
 
 ## GAP-ASYNC-001 · 已迁读取背后的 Nest 执行所有权
+
+2026-10-18限定增量（main90765633）：[DIGEST-DELIVERY-001](tasks/DIGEST-DELIVERY-001.md)已reserved并发出提示词，补Cron/到期CAS/SMTP/状态及摘要专用实时通知桥，现有五HTTP不重迁。NotificationDispatcher目前仅Nest进程内，桥尚不存在；只写通知表不能关闭此子链。本批无BullMQ，不覆盖其他调度/补偿/WS执行器；main仍Nest投递，未实施或真实验证，关闭证据无。
 
 这是迁移边界，不是“所有 Go 读都未实现”。精确步骤和源码见 [DEPENDENCIES 执行所有权](DEPENDENCIES.md#产品链路与执行所有权) 与 [异步域](modules/async-runtime.md)。
 
