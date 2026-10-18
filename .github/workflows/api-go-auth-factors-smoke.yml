@@ -2458,7 +2458,20 @@ jobs:
                        f"nest={nest_raw[:300]!r} go={go_raw[:300]!r}")
               if canon(body(nest_raw)) != canon(body(go_raw)):
                   fail(f"oidc parity {label}: body mismatch nest={nest_raw[:600]!r} go={go_raw[:600]!r}")
-              if nest_row != go_row:
+              # 带新 clientSecret 的请求在两侧各自用新的随机 IV 加密，密文必然
+              # 不同：只比较确定性列与 secret 的有无。不带新 secret 时（AF4 保留
+              # 语义）要求整行逐字节一致，包括 clientSecret 列。
+              carries_secret = (isinstance(payload, dict)
+                                and isinstance(payload.get("clientSecret"), str)
+                                and payload["clientSecret"].strip() != "")
+              if carries_secret:
+                  if nest_row[:4] + nest_row[5:] != go_row[:4] + go_row[5:]:
+                      fail(f"oidc parity {label}: deterministic columns differ "
+                           f"nest={nest_row} go={go_row}")
+                  if (nest_row[4] == "<null>") != (go_row[4] == "<null>"):
+                      fail(f"oidc parity {label}: clientSecret presence differs "
+                           f"nest={nest_row[4]!r} go={go_row[4]!r}")
+              elif nest_row != go_row:
                   fail(f"oidc parity {label}: DB row mismatch nest={nest_row} go={go_row}")
               if expected_message is not None:
                   for side, raw in (("nest", nest_raw), ("go", go_raw)):
