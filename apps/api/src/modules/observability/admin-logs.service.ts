@@ -361,7 +361,8 @@ export class AdminLogsService {
       statusAgg: [{ $group: { _id: "$status", count: { $sum: 1 } } }],
       stageAgg: [
         { $group: { _id: "$stage", count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
+        // count DESC with stage ASC as the deterministic tiebreaker.
+        { $sort: { count: -1, _id: 1 } },
         { $limit: 50 },
       ],
     };
@@ -371,7 +372,7 @@ export class AdminLogsService {
       if (input.itemsMatch && Object.keys(input.itemsMatch).length > 0) {
         itemsPipeline.push({ $match: input.itemsMatch });
       }
-      itemsPipeline.push({ $sort: { createdAt: -1 } });
+      itemsPipeline.push({ $sort: { createdAt: -1, _id: -1 } });
       if (
         typeof input.page === "number" &&
         Number.isFinite(input.page) &&
@@ -403,6 +404,10 @@ export class AdminLogsService {
           $project: {
             queue: 1,
             stage: 1,
+            // createdAt and _id must survive the projection so the ordered
+            // $top below can pick the most recent sample.
+            createdAt: 1,
+            _id: 1,
             errorName: { $ifNull: ["$error.name", "unknown"] },
             errorMessage: { $ifNull: ["$error.message", "$message"] },
           },
@@ -411,10 +416,19 @@ export class AdminLogsService {
           $group: {
             _id: { queue: "$queue", stage: "$stage", errorName: "$errorName" },
             count: { $sum: 1 },
-            sampleMessage: { $first: "$errorMessage" },
+            // sampleMessage is the message of the group's most recent failed
+            // record (createdAt DESC, _id DESC), not an arbitrary $first in
+            // collection order.
+            sampleMessage: {
+              $top: {
+                sortBy: { createdAt: -1, _id: -1 },
+                output: "$errorMessage",
+              },
+            },
           },
         },
-        { $sort: { count: -1 } },
+        // count DESC, then queue / stage / errorName ASC.
+        { $sort: { count: -1, "_id.queue": 1, "_id.stage": 1, "_id.errorName": 1 } },
         { $limit: 25 },
       ];
     }
@@ -589,7 +603,8 @@ export class AdminLogsService {
       this.prisma.auditLog.count({ where }),
       this.prisma.auditLog.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        // id DESC is the deterministic tiebreaker for equal createdAt values.
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip,
         take: pageSize,
       }),
