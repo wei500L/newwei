@@ -34,7 +34,7 @@
 
 - 状态：pr_open（业务 PR 已创建，未合 main）。分支 `refactor/go-storage-media`；首次提交 `a7cba649`（代码+测试+开关/Compose/示例/本记录）。
 - 业务 PR：[Ready #73](https://github.com/wei500L/newwei/pull/73)。带 `go-modules-regen` label 由既有 CI job 远端生成 `apps/api-go/go.mod`/`go.sum`；`gh pr create --label` 先建 PR 后加 label，首次 run 的 `pull_request.opened` payload 不含 label，故该 job 在首个 run 中 skipped，需后续 push 触发 `synchronize` 才会运行。生成后正常 fetch + fast-forward 合并机器人提交、移除 label，再以最终 head 的普通 CI 为准。
-- 精确 head 与普通 CI run URL：见下方「验证证据」（在依赖生成与最终 head 确定后回写，不把 skipped、旧 head 成功或 main 成功当本批通过）。
+- 精确 head 与普通 CI：实现最终 head `907d3d4c5cff5dcf33ccb46673ce2c1f7444fb3a`，[run 39135727891](https://github.com/wei500L/newwei/actions/runs/39135727891) success（详见下方「验证证据」；不把 skipped、旧 head 成功或 main 成功当本批通过）。
 - 入口与实现落点：新接管 `POST /api/admin/settings/storage/test`（[storage_diagnostics.go](../../../../apps/api-go/internal/infrastructuresettings/storage_diagnostics.go)、[storage_diagnostics_routes.go](../../../../apps/api-go/internal/legacyproxy/storage_diagnostics_routes.go)、[cmd/api/storage_diagnostics.go](../../../../apps/api-go/cmd/api/storage_diagnostics.go)）；S3 交付（[service_media.go](../../../../apps/api-go/internal/crawlreadtelemetry/service_media.go)、[service_media_storage.go](../../../../apps/api-go/internal/crawlreadtelemetry/service_media_storage.go)）；运行配置导出（[storage_runtime.go](../../../../apps/api-go/internal/infrastructuresettings/storage_runtime.go)）；对象存储窄包（[objectstorage](../../../../apps/api-go/internal/objectstorage)）；GraphQL 注入（[settingscrawl/register.go](../../../../apps/api-go/internal/graphqlread/settingscrawl/register.go)）。
 - 独立开关：`API_GO_STORAGE_DIAGNOSTICS_MODE`（空/legacy/go，默认 legacy，非法值启动失败），只接管该精确 POST 及 CORS 预检；只要求 JWT_SECRET/DATABASE_URL/REDIS_HOST，不要求 MONGO_URI，也不要求其他接管开关。媒体 REST/详情仍由 `API_GO_CRAWL_READ_TELEMETRY_MODE` 控制，GraphQL 详情仍由 READ + SETTINGS_CRAWL_READ 双父模式控制。
 - TTL 与测试对象优化：详情每次只读一份存储配置快照，TTL 由完整快照钳制 30..86400（读失败 300），修正原实现只读 `storage_s3_presigned_url_ttl_seconds` 单键、丢失 `S3_PRESIGNED_URL_TTL_SECONDS` 环境回退；诊断测试对象 key 由固定键改为 `__healthcheck__/` 前缀下每次唯一，delete 只删本次 key。
@@ -55,4 +55,9 @@
 
 ## 验证证据
 
-（依赖生成与最终 head 普通 CI 完成后回写精确 head SHA、run URL 与适用 job。）
+- Ready 业务 PR：[#73](https://github.com/wei500L/newwei/pull/73)。
+- 实现最终 head：`907d3d4c5cff5dcf33ccb46673ce2c1f7444fb3a`（提交链：`a7cba649` 实现 → `7666f79e` 契约对齐 + 地图回写 → `1d5ff672` 远端再生成 go.mod/go.sum → `907d3d4c` 三处测试期望修正）。
+- 最终 head 普通 CI：[run 39135727891](https://github.com/wei500L/newwei/actions/runs/39135727891)（event `pull_request`，conclusion **success**）。适用 job：`verify` success（含 `Go modules drift gate (api-go go.mod/go.sum)`、Lint、Typecheck、Web/Vitest、Vector tests、API unit tests + route scanner、OpenAPI 快照确定性与漂移、Auth matrix、GraphQL SDL 漂移、`Go tests (api-go gateway + vector-go pilot)`）、`api-go-user-settings-integration` success、`vector-integration` success；`contract-baseline-regen` skipped（非本批）；`go-modules-regen` skipped（label 已移除，最终 head 恢复漂移门禁 fail-on-drift 语义，同一 run 的漂移门禁通过）。本批新增/修改的 Go 包在该 run 中均 `ok`：`internal/objectstorage`、`internal/infrastructuresettings`、`internal/crawlreadtelemetry`、`internal/graphqlread/settingscrawl`、`internal/legacyproxy`、`internal/config`。
+- 依赖生成：`go-modules-regen` job 在 head `7666f79e` 远端 `go mod tidy` + `go build ./...` 成功并提交机器人提交 `1d5ff672`，只新增 `github.com/aws/aws-sdk-go-v2 v1.47.3`、`.../credentials v1.20.9`、`.../service/s3 v1.114.3`、`github.com/aws/smithy-go v1.28.5` 及 8 个间接模块；没有上传 manager、没有其他 AWS 服务。该提交由机器人推送，其 run 初始为 `action_required`，维护者批准后 `verify` 仅因上述三处测试期望失败（已修）；不把这次失败或 label 通道的临时检查当本批通过。
+- 首轮 head `a7cba649` 的 [run 39133724820](https://github.com/wei500L/newwei/actions/runs/39133724820) 中 `go-modules-regen` 因 label 在 PR `opened` 事件之后才生效而 skipped，故依赖生成改由后续 `synchronize` 触发；这不是通过证据。
+- **未验证外部项**：未执行真实 S3/MinIO 连通与签名下载、未做 mode=s3 实桶三步验证、未部署、无生产流量；本机全程未安装依赖、未运行 build/test/Docker/服务。
