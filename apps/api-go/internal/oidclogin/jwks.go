@@ -21,15 +21,15 @@ import (
 // an "oct" key never produces a verification key.
 type jwk struct {
 	Kty    string   `json:"kty"`
-	Kid    string   `json:"kid"`
-	Alg    string   `json:"alg"`
-	Use    string   `json:"use"`
-	KeyOps []string `json:"key_ops"`
-	N      string   `json:"n"`
-	E      string   `json:"e"`
-	Crv    string   `json:"crv"`
-	X      string   `json:"x"`
-	Y      string   `json:"y"`
+	Kid    string   `json:"kid,omitempty"`
+	Alg    string   `json:"alg,omitempty"`
+	Use    string   `json:"use,omitempty"`
+	KeyOps []string `json:"key_ops,omitempty"`
+	N      string   `json:"n,omitempty"`
+	E      string   `json:"e,omitempty"`
+	Crv    string   `json:"crv,omitempty"`
+	X      string   `json:"x,omitempty"`
+	Y      string   `json:"y,omitempty"`
 }
 
 // jwksDocument is the complete named key set stored in Redis.
