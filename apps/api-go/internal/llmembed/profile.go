@@ -41,6 +41,16 @@ type gatewaySettings struct {
 
 type runtimeProfile struct {
 	storedProfile
+	// GovernanceApplied reports whether applyGovernance replaced the profile
+	// key with the managed runtime key for this call. It is observation-only:
+	// no request behavior depends on it.
+	GovernanceApplied bool
+	// GovernanceTargetProfileID is the governance target profile id when the
+	// key was swapped.
+	GovernanceTargetProfileID string
+	// AuthMode is the effective credential mode, "profile_key" or
+	// "managed_runtime_key".
+	AuthMode string
 }
 
 func (c *Client) resolveEmbedding(ctx context.Context) (runtimeProfile, error) {
@@ -110,7 +120,7 @@ func findProfile(profiles []storedProfile, id string) *storedProfile {
 }
 
 func (c *Client) applyGovernance(ctx context.Context, profiles []storedProfile, profile storedProfile) (runtimeProfile, error) {
-	runtime := runtimeProfile{storedProfile: profile}
+	runtime := runtimeProfile{storedProfile: profile, AuthMode: "profile_key"}
 	runtime.APIBase = normalizeAPIBase(profile.APIBase)
 	gov, err := c.loadGovernance(ctx)
 	if err != nil {
@@ -133,6 +143,9 @@ func (c *Client) applyGovernance(ctx context.Context, profiles []storedProfile, 
 	}
 	runtime.APIBase = targetBase
 	runtime.APIKey = stripBearer(gov.Key)
+	runtime.GovernanceApplied = true
+	runtime.GovernanceTargetProfileID = gov.TargetID
+	runtime.AuthMode = "managed_runtime_key"
 	return runtime, nil
 }
 

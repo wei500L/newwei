@@ -4,9 +4,15 @@
 //
 // The package talks to the real MySQL, Mongo and Redis instances directly: it
 // never proxies NestJS for a route it claims to serve. Two REST routes
-// (GET /api/items and GET /api/items/:id) plus five GraphQL roots
-// (item, itemFacets, rssSources, rssTranslationStatus, searchSuggestions) are
-// built on the same strongly typed read core.
+// (GET /api/items and GET /api/items/:id) plus six GraphQL roots
+// (item, itemFacets, rssSources, rssTranslationStatus, searchSuggestions and
+// the items connection) are built on the same strongly typed read core.
+//
+// The items connection root (API_GO_GRAPHQL_ITEMS_LIST_MODE=go) additionally
+// implements filtering, page and composite (time, id) cursor pagination, the
+// CREATED_DESC / PUBLISHED_DESC orderings, the RELEVANCE rerank pipeline and the
+// PERSONALIZED behavior-profile ordering. Those live in itemslist.go, listtime.go,
+// relevance.go, personalized.go and rerank.go; ListItems is the entry point.
 //
 // Tenant binding rules that the whole package must preserve:
 //   - Every MySQL query carries the caller's orgId, derived from the

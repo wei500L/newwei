@@ -987,6 +987,17 @@ type Config struct {
 	// controlled by this switch alone. Rolling back only means setting this
 	// variable back to legacy.
 	ItemsReadingMode ItemsReadingMode
+	// GraphQLItemsListMode only decides whether the items connection root
+	// (items(after, filters, first, orderBy, page, rankingMode, search)) is
+	// registered into the Go GraphQL executor. It defaults to legacy. The
+	// accepted values are exactly "", "legacy" and "go"; an empty value behaves
+	// like legacy. Go requires API_GO_GRAPHQL_READ_MODE=go and
+	// API_GO_ITEMS_READING_MODE=go, because the root reuses the item reading
+	// service and the shared GraphQL executor; Load fails when the dependency
+	// is missing instead of silently enabling a parent switch. While this switch
+	// is legacy, any document selecting items falls back to NestJS as a whole.
+	// Rolling back only means setting this variable back to legacy.
+	GraphQLItemsListMode string
 	// GraphQLOrgAccessWriteMode only decides whether the eight organization,
 	// role and membership mutations (createOrg, updateOrg, setOrgActive,
 	// createRole, updateRole, assignRole, updateMembershipRoles,
@@ -1889,6 +1900,17 @@ func Load(getenv func(string) string) (Config, error) {
 		// operator can see which deployment value was refused.
 		errs = append(errs, "API_GO_ITEMS_READING_MODE must be one of legacy|go, got "+strconv.Quote(itemsReadingRaw))
 	}
+	// The items list switch accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy, so an unset deployment keeps the items
+	// connection root on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_ITEMS_LIST_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLItemsListMode = "legacy"
+	case "go":
+		cfg.GraphQLItemsListMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_ITEMS_LIST_MODE must be one of legacy|go")
+	}
 	// The organization access write switch accepts the empty string, legacy and
 	// go. An empty value behaves exactly like legacy, so an unset deployment
 	// keeps every mutation on NestJS.
@@ -2419,6 +2441,18 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_ITEMS_READING_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_ITEMS_READING_MODE=go")
+		}
+	}
+	// The items connection root reuses the item reading service and the shared
+	// GraphQL executor, so it has hard parent dependencies instead of silently
+	// enabling a parent switch. The Mongo requirement is already implied by the
+	// two parents.
+	if cfg.GraphQLItemsListMode == "go" {
+		if cfg.GraphQLReadMode != "go" {
+			errs = append(errs, "API_GO_GRAPHQL_ITEMS_LIST_MODE=go requires API_GO_GRAPHQL_READ_MODE=go")
+		}
+		if cfg.ItemsReadingMode != ItemsReadingModeGo {
+			errs = append(errs, "API_GO_GRAPHQL_ITEMS_LIST_MODE=go requires API_GO_ITEMS_READING_MODE=go")
 		}
 	}
 

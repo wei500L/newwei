@@ -8,6 +8,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // ResolveDuplicateItemMetaID resolves a stored ProcessedItem.duplicateOf
@@ -139,4 +140,97 @@ func (s *Service) ResolveDuplicateOfHex(ctx context.Context, orgID string, dupli
 // ResolveEventID exposes the eventId chain to the GraphQL adapter.
 func (s *Service) ResolveEventID(ctx context.Context, orgID string, processedItemID string) (*string, error) {
 	return s.mysql.EventIDForProcessedItem(ctx, orgID, processedItemID)
+}
+
+// ResolveDuplicateOfHexes is the page-batch form of ResolveDuplicateOfHex. It
+// resolves every stored ProcessedItem ObjectId hex through one
+// organization-scoped Mongo query and omits references that do not resolve, so
+// a caller loops without issuing a query per edge.
+func (s *Service) ResolveDuplicateOfHexes(ctx context.Context, orgID string, duplicateOfHexes []string) (map[string]*string, error) {
+	out := make(map[string]*string, len(duplicateOfHexes))
+	objectIDs := make([]bson.ObjectID, 0, len(duplicateOfHexes))
+	hexByObjectID := make(map[bson.ObjectID]string, len(duplicateOfHexes))
+	for _, raw := range duplicateOfHexes {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" || !isValidObjectIDHex(trimmed) {
+			continue
+		}
+		objectID, err := bson.ObjectIDFromHex(trimmed)
+		if err != nil {
+			continue
+		}
+		objectIDs = append(objectIDs, objectID)
+		hexByObjectID[objectID] = trimmed
+	}
+	if len(objectIDs) == 0 {
+		return out, nil
+	}
+	cursor, err := s.mongo.processedItems().Find(ctx, bson.D{
+		{Key: "_id", Value: bson.D{{Key: "$in", Value: objectIDs}}},
+		{Key: "orgId", Value: orgID},
+	}, options.Find().SetProjection(bson.D{{Key: "itemMetaId", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	for cursor.Next(ctx) {
+		var row struct {
+			ID         bson.ObjectID `bson:"_id"`
+			ItemMetaID string        `bson:"itemMetaId"`
+		}
+		if err := cursor.Decode(&row); err != nil {
+			return nil, err
+		}
+		hex, ok := hexByObjectID[row.ID]
+		if !ok {
+			continue
+		}
+		trimmed := strings.TrimSpace(row.ItemMetaID)
+		if trimmed == "" {
+			continue
+		}
+		value := trimmed
+		out[hex] = &value
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ResolveEventIDs is the page-batch form of ResolveEventID. The direct
+// NewsEventItem.processedItemId link is fetched for the whole page in one
+// organization-scoped query; only the ids without a direct link run the
+// ProcessedArticle fallback, so the rare fallback stays per-id but the common
+// path is a single query.
+func (s *Service) ResolveEventIDs(ctx context.Context, orgID string, processedItemIDs []string) (map[string]*string, error) {
+	out := make(map[string]*string, len(processedItemIDs))
+	ordered := DedupeItemMetaIDs(processedItemIDs)
+	if len(ordered) == 0 {
+		return out, nil
+	}
+	direct, err := s.mysql.NewsEventItemEventIDsByProcessedItemIDs(ctx, orgID, ordered)
+	if err != nil {
+		return nil, err
+	}
+	misses := make([]string, 0)
+	for _, id := range ordered {
+		eventIDs := direct[id]
+		if len(eventIDs) > 0 {
+			value := eventIDs[0]
+			out[id] = &value
+			continue
+		}
+		misses = append(misses, id)
+	}
+	for _, id := range misses {
+		eventID, err := s.mysql.EventIDForProcessedItem(ctx, orgID, id)
+		if err != nil {
+			return nil, err
+		}
+		if eventID != nil {
+			out[id] = eventID
+		}
+	}
+	return out, nil
 }

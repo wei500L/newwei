@@ -21,6 +21,7 @@
 | `API_GO_CONTENT_SUBSCRIPTIONS_MODE`、`API_GO_USER_DIGEST_MODE` | A+M；wirePersonalNews 按需创建 behavior/catalog/subscription 服务，未开路由不跟随注册 | catalog 可调用 model/vector，digest 可读 ES；投递 scheduler 仍 Nest；不需要先强开 behavior HTTP |
 | `API_GO_LLM_LOGS_MODE`、`API_GO_ADMIN_LOGS_MODE`、`API_GO_EXCEPTION_INGEST_MODE`、`API_GO_QUALITY_OVERVIEW_MODE`、`API_GO_CLASSIFICATION_RSS_OPS_MODE` | A+M；各 wire 共享 Mongo | exception ingest 内部 token 在请求时校验；分类报告创建、pipeline 恢复生产者/worker 未迁 |
 | `API_GO_NEWSNOW_CLUSTERING_OPS_MODE`、`API_GO_CRAWL_READ_TELEMETRY_MODE`、`API_GO_ITEMS_READING_MODE`、`API_GO_SEARCH_REINDEX_MODE`、`API_GO_SITUATION_MONITOR_SIGNALS_MODE`、`API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE` | A+M；各 wire/shared Mongo，items HTTP 与其 GraphQL 使用同业务基础 | ES/vector/model 为请求/功能配置依赖，不是所有启动必需；S3/brief 已确认缺口、后台缓存生产者见 GAPS |
+| `API_GO_GRAPHQL_ITEMS_LIST_MODE`（本批候选，PR 未合） | A+M；复用 itemsreading Service 与既有 `/graphql` 执行器 | 子开关，go 要求 `API_GO_GRAPHQL_READ_MODE=go` 且 `API_GO_ITEMS_READING_MODE=go`，Load 直接校验；不新增顶层路由/资源 OR |
 | `API_GO_SITUATION_MONITORS_MODE` | A；wireSituationMonitors | 自定义 monitor 管理独立于 signals 读；主动 insight/refresh 与 Telegram 登录仍 Nest |
 | `API_GO_PUBLIC_PORTAL_MODE` | DATABASE_URL；main 构造 publicportal.NewHandler/MySQLStore，不需要 A 中 JWT/Redis | public org/来源策略与模型配置从 DB；故事 miss 调模型 HTTP，需可用 gateway/密钥但不启动探测 |
 | `API_GO_ONBOARDING_MODE`、`API_GO_USER_SETTINGS_READ_MODE` | 任一个 go 需要 A；main 创建读 handler。onboarding 接受空/shadow/go，默认 shadow；read 接受空/shadow/go，默认空；两者均不接受 legacy | read 空时 onboarding 服从 onboarding 模式，rss-reader/spacetime-timeline 默认 shadow，其余 UI GET legacy；read 显式值决定六读 |

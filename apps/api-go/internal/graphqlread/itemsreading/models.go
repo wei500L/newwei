@@ -1,12 +1,14 @@
-// Package itemsreading serves the five item reading and RSS search-assist
-// GraphQL read roots that belong to the items-reading migration unit: item,
-// itemFacets, rssSources, rssTranslationStatus and searchSuggestions.
+// Package itemsreading serves the item reading and RSS search-assist GraphQL
+// read roots that belong to the items-reading migration unit: item, itemFacets,
+// rssSources, rssTranslationStatus and searchSuggestions, plus the items
+// connection root registered separately by RegisterList.
 //
 // The roots are registered only when both API_GO_GRAPHQL_READ_MODE and
-// API_GO_ITEMS_READING_MODE are go; while either switch is legacy, every
-// document selecting one of them stays on NestJS. The GraphQL `items` root,
-// the createItem/updateItem/translateRssItems mutations and the RSS
-// subscription are not migrated.
+// API_GO_ITEMS_READING_MODE are go; the items connection root additionally
+// requires API_GO_GRAPHQL_ITEMS_LIST_MODE=go. While a switch is legacy, every
+// document selecting one of its roots stays on NestJS as a whole. The
+// createItem/updateItem/translateRssItems mutations and the RSS subscription are
+// not migrated.
 //
 // The nested types ProcessedItemErrorModelGraph, ProcessedItemLlmModel and
 // ProcessedItemModelGraph are the workspace package's exported models, reused so
@@ -18,6 +20,7 @@ package itemsreading
 import (
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingscrawl"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
 	itemsdomain "github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 )
@@ -117,6 +120,19 @@ type ItemModel struct {
 	Status           string                             `graphql:"status"`
 	Title            string                             `graphql:"title"`
 	UpdatedAt        time.Time                          `graphql:"updatedAt"`
+}
+
+// ItemConnectionModel is the GraphQL ItemConnection object.
+type ItemConnectionModel struct {
+	Edges      []ItemEdgeModel        `graphql:"edges"`
+	PageInfo   settingscrawl.PageInfo `graphql:"pageInfo"`
+	TotalCount int                    `graphql:"totalCount"`
+}
+
+// ItemEdgeModel is the GraphQL ItemEdge object.
+type ItemEdgeModel struct {
+	Cursor string    `graphql:"cursor"`
+	Node   ItemModel `graphql:"node"`
 }
 
 // ItemFacetOption is the GraphQL ItemFacetOption object.

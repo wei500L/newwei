@@ -908,6 +908,30 @@ one of legacy|go`）。`go` 时要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOS
 - 回滚只把 `API_GO_ITEMS_READING_MODE` 改回 `legacy`。细节与验收清单见
   `docs/refactor/go-items-reading.md`。
 
+### 20.1 Query `items` 完整列表（本批候选，PR 未合 main）
+
+- 新增接管 Query `items(after, filters, first, orderBy, page, rankingMode, search): ItemConnection!`，
+  根权限 `items.read`，`orgId`/个性化 `userId` 只取服务端身份。
+- 新增独立子开关 `API_GO_GRAPHQL_ITEMS_LIST_MODE`（空串|`legacy`|`go`，默认 `legacy`，非法值
+  `Load` 失败）。`go` 明确要求 `API_GO_GRAPHQL_READ_MODE=go` 且 `API_GO_ITEMS_READING_MODE=go`，
+  不静默打开父开关；本开关 `legacy` 时不登记该 root，含它的 operation 整份回 NestJS。
+- 实现：`first` 默认 10、交互上限 50；`after`/`page` 互斥 400；page 分支 `checkedOffset`（IR2 上限）
+  与 `page*pageSize < total`；时间游标 `base64(JSON)` 复合 `(time,id)` 边界 + `take+1`；
+  `RELEVANCE`/`PERSONALIZED` 游标 `{id,offset}` 重定位顺序不同且不合并；显式 `filters`（含 `{}`）
+  优先于历史 payload；`rankingMode` 缺省由原始 `search.trim()` 决定。
+- RELEVANCE：recall 120 / rerank 40 / timeout 300 / halfLife 48；预排 `lexical*0.7+recency*0.3` 取
+  rerank 集合，final `0.55/0.25/0.15/0.05` 混合并钳制；未进 rerank 的候选保留 lexical；rerank 启用而
+  失败时 503 `RERANK_UNAVAILABLE`（安全 detail），不静默降级；ES highlight 失败按原行为可缺省。
+- PERSONALIZED：复用 `newsbehavior` 画像（不重建行为 API、读取不记点击），候选 MIN 180 / MAX 1600 /
+  ×8 增量扩大；`recency=1/(1+age/36)`、六维权重 1.15/1/0.9/1.45/1.2/0.75、
+  `behavior=log1p(max(0,pos))-log1p(max(0,neg*1.15))`、`final=0.78*behavior+0.22*recency`；阈值
+  0.0001 后 `sortAt DESC, id ASC`。
+- 批量投影：`contract`/`exec` 新增最小只读选择元数据（alias/fragment/`@skip`/`@include`），
+  `RegisterList` 注册 `ItemConnection`/`ItemEdge`；本页一次性读五个 read-model 投影或
+  `FindRawItemsBound`+`ProcessedByKeys`，并批量解析 `eventId`/`duplicateOf`，不再逐 edge 调 `item()`。
+- 回滚只把 `API_GO_GRAPHQL_ITEMS_LIST_MODE` 改回 `legacy`；Mutation、订阅与 items 域其余入口仍回
+  NestJS。细节见 `docs/refactor/go-graphql-items-list.md`。
+
 
 ## 21. LLM 网关配置与三路激活（Go）
 

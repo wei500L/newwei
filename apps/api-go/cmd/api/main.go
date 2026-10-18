@@ -168,6 +168,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
@@ -1480,8 +1481,18 @@ func run() error {
 					Redis:                 redisClient,
 					ReadModelEnabled:      cfg.ItemsReadModelEnabled,
 					VectorHardFailEnabled: cfg.ItemsVectorHardFailEnabled,
+					// The personalized ordering reuses the behavior profile
+					// service lazily; the switch only gates the items list
+					// root, not the behavior endpoints.
+					Personalization: newsbehavior.NewService(sharedDB, redisClient),
 				})
 				itemsgraphql.Register(reg, itemReadService, workspaceGo)
+				// The items connection root is opt-in through its own
+				// sub-switch on top of the two parents; while it is legacy, any
+				// document selecting items stays on NestJS.
+				if cfg.GraphQLItemsListMode == "go" {
+					itemsgraphql.RegisterList(reg, itemReadService)
+				}
 			}
 		}
 		// The eight organization, role and membership mutations share the
@@ -1557,6 +1568,11 @@ func run() error {
 			}
 			if itemsReadingGo {
 				log.Printf("api-go: GraphQL item reading roots registered (item, itemFacets, rssSources, rssTranslationStatus, searchSuggestions)")
+				if cfg.GraphQLItemsListMode == "go" {
+					log.Printf("api-go: GraphQL items list registered (items connection; page/after cursors, CREATED_DESC/PUBLISHED_DESC/PERSONALIZED, relevance rerank)")
+				} else {
+					log.Printf("api-go: GraphQL items list not registered (API_GO_GRAPHQL_ITEMS_LIST_MODE=legacy)")
+				}
 			} else {
 				log.Printf("api-go: GraphQL item reading roots not registered (API_GO_ITEMS_READING_MODE=legacy)")
 			}

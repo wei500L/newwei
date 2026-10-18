@@ -272,7 +272,13 @@ func (e *Engine) Execute(ctx context.Context, plan Plan, prepare PrepareRoot, ca
 		if item.field.Field != nil && item.field.Field.Definition != nil {
 			args = item.field.Field.ArgumentMap(plan.Variables)
 		}
-		value, err := item.root.Resolve(contract.Context{Ctx: ctx, Identity: item.identity, Args: args})
+		selection := e.rootFieldSelection(rootDef, item.field, plan.Doc, plan.Variables)
+		value, err := item.root.Resolve(contract.Context{
+			Ctx:       ctx,
+			Identity:  item.identity,
+			Args:      args,
+			Selection: selection,
+		})
 		fieldPath := []any{item.field.Key}
 		if err != nil {
 			errors = append(errors, fieldFailure(err, item.field, traceID))
@@ -377,7 +383,13 @@ func (e *Engine) executeMutation(ctx context.Context, plan Plan, prepare Prepare
 		if field.Field != nil && field.Field.Definition != nil {
 			args = field.Field.ArgumentMap(plan.Variables)
 		}
-		value, err := root.Resolve(contract.Context{Ctx: ctx, Identity: identity, Args: args})
+		selection := e.rootFieldSelection(rootDef, field, plan.Doc, plan.Variables)
+		value, err := root.Resolve(contract.Context{
+			Ctx:       ctx,
+			Identity:  identity,
+			Args:      args,
+			Selection: selection,
+		})
 		if err != nil {
 			errors = append(errors, fieldFailure(err, field, traceID))
 			if fieldNonNull(field.Field) {
