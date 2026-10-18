@@ -33,6 +33,12 @@ func routeQuery(routes []queryRoute) func(string, []driver.NamedValue) (driver.R
 	return func(query string, _ []driver.NamedValue) (driver.Rows, error) {
 		for _, route := range routes {
 			if strings.Contains(query, route.fragment) {
+				// Each call must get an unconsumed cursor: a test may execute the
+				// same statement twice (for example the actor permission lookup in
+				// assertOrgAdmin and again in assertRolesAssignable).
+				if typed, ok := route.rows.(*stubRows); ok {
+					return &stubRows{columns: typed.columns, rows: typed.rows}, route.err
+				}
 				return route.rows, route.err
 			}
 		}
