@@ -57,3 +57,5 @@ AUDIT-OUTBOX-001：Ready [#92](https://github.com/wei500L/newwei/pull/92) OPEN/h
 
 - Ready PR [#95](https://github.com/wei500L/newwei/pull/95) → main，head `68a4536d37eabde0695edfe152987cadffcc41f7`，base `91e759b449c4511dc96d86539ea0eb258754d07e`；未合并、未 auto-merge。
 - 首次普通 CI [39301019113](https://github.com/wei500L/newwei/actions/runs/39301019113) 在精确 head 失败于 `go.sum` 缺少 `github.com/coder/websocket v1.8.12` 两行；`go-modules-regen` 因 label 添加不会重触发 PR 事件而 skipped。后续推送新 head 触发远端 tidy/build，生成 go.sum 后再移除 label 运行普通 CI。skipped 不算通过。
+
+- 远端 `go-modules-regen` 在 head `1d4d64ab` 通过 `go mod tidy` + `go build ./...`，bot 提交 [cfa0c4fc](https://github.com/wei500L/newwei/commit/cfa0c4fcecc4141e49f9b18b653268f8e09fbc30) 补充 coder/websocket go.sum；构造/编译错误已在本任务内修复（legacy operation 类型、gateway handler 类型）。bot 触发的 workflow 被 GitHub 标为 `action_required`，不以该状态计通过；移除 label 后由普通提交触发最终普通 CI。
