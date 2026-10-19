@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wei500L/newwei-go-crawl-discovery/apps/api-go/internal/crawlworkflow"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
 )
 
 // These tests exercise the graph semantics and the node executors that do not

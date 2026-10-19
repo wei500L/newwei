@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/wei500L/newwei-go-crawl-discovery/apps/api-go/internal/crawlworkflow"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
 )
 
 // These tests cover the pure preview helpers that do not need MySQL: the seed
