@@ -34,6 +34,8 @@ MySQL只读ProcessedArticle/Article/ArchiveArticleClassification/NewsEvent/Item/
 规划只做静态核对/git diff --check；未安装依赖/运行build/test、Docker或服务，真实DB/Mongo/Redis/Nest worker、外部embedding/vector/rerank和部署均未验证。下一次核执行PR逐入口/必要入队/独立开关/导出快照、最终head普通CI和Redis协议证据；未合main不增加注册数，不关闭worker依赖或GAP-ASYNC-001。
 
 
+- Ready PR [#97](https://github.com/wei500L/newwei/pull/97)，业务 head `6b70350df46851b25885e9d06ecdb11b5ac25c3e`。首轮普通 CI 39306149780：`verify` 与 `api-go-user-settings-integration` 均因 `go.sum` 尚无 `msgpack/v5` 条目失败（drift gate 只报依赖清单差异，未进入编译/用例）；已加 `go-modules-regen` label，等待远端 tidy 提交后移除并重跑。
+
 ## 本次执行记录（2026-10-19）
 
 - 已实现四入口：三个 Query 根（`items.read`）与 `POST /api/analysis/exports/search`（`analysis.write`，201 CSV，items/headlines 两模式）。新增 `internal/archivereading`、`internal/archivepreparation`、`internal/graphqlread/archivereading`、`analysisexport` search 文件、精确 legacyproxy 规则与 `cmd/api/archive_reading.go`。
