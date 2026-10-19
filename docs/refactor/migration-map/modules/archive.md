@@ -14,7 +14,7 @@ main剩余：三Query与准备生产/消费仍Nest；第一阶段[ARCHIVE-READIN
 
 Nest 功能目录：[archive](../../../../apps/api/src/modules/archive)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：[ARCHIVE-READING-001](../tasks/ARCHIVE-READING-001.md) reserved，规划Ready #93发布，业务refactor/go-archive-reading及/Users/oo/project/newwei-go-archive-reading尚未创建，无业务PR。允许新archive_port/vector_port窄复用，避开NewsNow registry、条目hydration及四订阅contract/exec；共享接线最小并集。
+当前认领：[ARCHIVE-READING-001](../tasks/ARCHIVE-READING-001.md) in_progress，规划Ready #93发布，业务refactor/go-archive-reading及/Users/oo/project/newwei-go-archive-reading已创建于91e759b4并出现vector/llmembed/规则端口开发，无业务PR。允许新archive_port/vector_port窄复用，避开NewsNow registry、条目hydration及四订阅contract/exec；共享接线最小并集。
 
 ## HTTP 开关、实现与生产接线
 

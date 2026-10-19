@@ -23,7 +23,7 @@ GAP-ANALYSIS-001：Nest analysis.service.ts:134-148只认pending/failed，BullMQ
 
 ## 并行占用与交接
 
-审计Ready #92/head28c8f761、NewsNow Ready #94/headcf25026f均未合main且普通CI成功；四订阅Ready #95正在正常补依赖/修复（观察到68a→a042→5b309→后续head，不能拿旧head失败/绿灯替代最终CI），共享实际diff已读：新增变化在自身入口/legacy连接及文档，无分析业务文件。条目入库in_progress，水合/Item投影/pipelineenqueue占用；归档ARCHIVE-READING-001 reserved保留。全部不重复分配。
+审计Ready #92/head28c8f761、NewsNow Ready #94/headcf25026f均未合main且普通CI成功；四订阅Ready #95正在正常补依赖/修复（观察到68a→a042→5b309→后续head，不能拿旧head失败/绿灯替代最终CI），共享实际diff已读：新增变化在自身入口/legacy连接及文档，无分析业务文件。条目入库in_progress，水合/Item投影/pipelineenqueue占用；归档ARCHIVE-READING-001发布前已见vector/llmembed/规则端口开发，改in_progress、无业务PR。全部不重复分配。
 
 核心新增文件隔离；共享main/config/env/compose/go依赖/ci只最小并集，英文文件头/GoDoc明确职责、租户/队列所有权、租约/重试、SSE/fallback与Geo有界查询。用户本轮明确“工作量大一些、写好英文文件注释、必须真实实现”，已写入完整prompt与PLANNING偏好。
 

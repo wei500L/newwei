@@ -1,6 +1,6 @@
 # 任务认领与历史恢复索引
 
-2026-10-19分析执行选批：main仍91e759b4/普通CI39247556593成功，无新业务合并。#92/#94未合，#95观察head8d759fe2/普通CI39302998528运行中，条目入库in_progress、归档reserved均保持占用。新增[ANALYSIS-RUNS-001](ANALYSIS-RUNS-001.md) reserved与[完整提示词](ANALYSIS-RUNS-001.prompt.md)，Ready规划#93发布；完整三请求/真实Go worker/统计和Geo/模型SSE/结果/通知，双开关、英文文件注释和真实实现要求明确。无业务实施，不重建地图，以下旧段落保留发出快照。
+2026-10-19分析执行选批：main仍91e759b4/普通CI39247556593成功，无新业务合并。#92/#94未合，#95观察head8d759fe2/普通CI39302998528运行中，条目入库in_progress、归档in_progress（已见vector/llmembed/规则端口开发）均保持占用。新增[ANALYSIS-RUNS-001](ANALYSIS-RUNS-001.md) reserved与[完整提示词](ANALYSIS-RUNS-001.prompt.md)，Ready规划#93发布；完整三请求/真实Go worker/统计和Geo/模型SSE/结果/通知，双开关、英文文件注释和真实实现要求明确。无业务实施，不重建地图，以下旧段落保留发出快照。
 
 2026-10-19归档选批：fetch后main仍`91e759b449c4511dc96d86539ea0eb258754d07e`，普通CI39247556593成功；审计Ready #92 OPEN/head28c8f761不变，NewsNow Ready #94 OPEN/headcf25026f、普通CI39297914942已成功，均未合main。四订阅已Ready #95 OPEN/head68a4536d，首轮普通CI39301019113因Go modules drift gate失败、已加regen label，继续占contract/exec；条目入库已见itemsingest/pipelineenqueue/go.mod开发，改in_progress。新增[ARCHIVE-READING-001](ARCHIVE-READING-001.md) reserved及[完整执行提示词](ARCHIVE-READING-001.prompt.md)，在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布：三归档Query+search整路两模式、分类/显示/语义检索/兼容准备入队、单请求快照CSV优化，Nest准备worker明确保留。本次只深读该完整候选与相关共享diff，不重建地图或增加main覆盖；下方旧段落保留为发出快照，以本增量和任务表为准。
 
@@ -51,7 +51,7 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 | ID | 状态 | 精确范围 | 是否已有业务 PR / 推送 |
 |---|---|---|---|
 | [ANALYSIS-RUNS-001](ANALYSIS-RUNS-001.md) | reserved | 三分析Mutation完整Go执行：原生producer/consumer、统计/Geo/真实SSE、结果/事件/最终通知 | 提示词在Ready规划#93发布，业务worktree/PR未创建；双独立默认legacy开关 |
-| [ARCHIVE-READING-001](ARCHIVE-READING-001.md) | reserved | 三归档Query+search两模式CSV：分类/显示/语义搜索、兼容BullMQ准备生产与导出快照 | 完整提示词在Ready规划#93发布，业务worktree/PR未创建；Nest准备worker保留 |
+| [ARCHIVE-READING-001](ARCHIVE-READING-001.md) | in_progress | 三归档Query+search两模式CSV：分类/显示/语义搜索、兼容BullMQ准备生产与导出快照 | 业务目录已见vector/llmembed/规则端口开发，无业务PR；Nest准备worker保留 |
 | [ITEMS-INGEST-001](ITEMS-INGEST-001.md) | in_progress | 1HTTP+5Mutation：人工条目写/采集入库、Mongo/水合/原子BullMQ producer与raw_item同步/定时补偿 | 已见itemsingest/pipelineenqueue及go.mod开发，尚无业务PR；Nest处理worker保持 |
 | [GRAPHQL-SUBSCRIPTIONS-001](GRAPHQL-SUBSCRIPTIONS-001.md) | pr_open | 四个Subscription完整WS协议/鉴权/组织投影、PubSub和BullMQ广播观察、非本批operation整份legacy兼容 | Ready #95 OPEN/head8d759fe2，普通CI39302998528运行中；自身类型修复/依赖regen正常推进，contract/exec占用保持 |
 | [NEWSNOW-SOURCES-001](NEWSNOW-SOURCES-001.md) | pr_open | 两公开来源HTTP完整冷获取/强刷；64来源ID/41族、特殊getter/缓存/凭据/实时接缝与批并发优化 | Ready #94 OPEN/headcf25026f，普通CI39297914942成功；最新提交只补验证文档，未合main/无部署证据 |

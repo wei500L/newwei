@@ -1,8 +1,8 @@
 # ARCHIVE-READING-001 · 归档检索、月历、详情与搜索导出
 
-- 状态 **reserved**；2026-10-19 Europe/Moscow，完整[执行提示词](ARCHIVE-READING-001.prompt.md)在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布。规划目录 /Users/oo/project/newwei-plan-newsnow-feed，分支 docs/plan-newsnow-feed；本窗口仅文档，无业务实施。
+- 当前状态 **in_progress**；2026-10-19 Europe/Moscow，完整[执行提示词](ARCHIVE-READING-001.prompt.md)在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布。规划目录 /Users/oo/project/newwei-plan-newsnow-feed，分支 docs/plan-newsnow-feed；本窗口仅文档，无业务实施。
 - 基线 origin/main `91e759b449c4511dc96d86539ea0eb258754d07e`，[普通CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)精确head success。规划#93追加前head76f6d06ecf5ac0300249b611f57f4cf192302972的普通CI39297509652成功，新head须独立查询。
-- 业务分支 refactor/go-archive-reading、worktree /Users/oo/project/newwei-go-archive-reading，尚未创建；无业务提交/PR/merge/CI/生产注册/启用或部署证据，执行器活动未核实。
+- 业务分支 refactor/go-archive-reading、worktree /Users/oo/project/newwei-go-archive-reading，已创建于91e759b4；分析选批发布前续核出现itemsreading/vector_port.go、llmembed/archive_port.go、newsnowclusteringops/archive_port.go开发，尚无业务提交/PR/merge/CI/生产注册/部署证据；执行器活动未核实。
 - 来源BL-09第一阶段+BL-08剩余search整路，关联GAP-LEGACY-001/GAP-ASYNC-001。不认领Go归档准备worker或其他候选。
 
 ## 精确范围与所有权

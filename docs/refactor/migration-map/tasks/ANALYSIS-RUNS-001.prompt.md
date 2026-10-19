@@ -134,7 +134,7 @@ Nest仅允许：AnalysisProcessor的owner gate及本链恢复上下文、Analysi
 - NEWSNOW-SOURCES-001 Ready #94（headcf25026f，普通CI39297914942成功），不碰来源/provider/relay、infra runtime reader、ops registry。
 - GRAPHQL-SUBSCRIPTIONS-001 Ready #95，正在正常修复/依赖regen，head变化快、最终普通CI另查；不把旧失败或旧绿灯当最新结论。不碰contract/exec/workspace/WS包；本批只生产其既有analysis envelope。
 - ITEMS-INGEST-001 in_progress，独立目录已有itemsingest/pipelineenqueue、itemsreading水合/GraphQL投影及go.mod开发；这些文件/producer归其所有，不能复用未合能力或改它们。
-- ARCHIVE-READING-001 reserved，拥有归档查询/search导出、archivepreparation、llmembed/llmgatewayprofiles窄端口、llmlogs/archive_search.go、ops archive_port、items vector_port；本批不碰这些文件，流式与日志用独立新文件。
+- ARCHIVE-READING-001 in_progress，独立目录已有vector/llmembed/规则端口开发、无业务PR；拥有归档查询/search导出、archivepreparation、llmembed/llmgatewayprofiles窄端口、llmlogs/archive_search.go、ops archive_port、items vector_port；本批不碰这些文件，流式与日志用独立新文件。
 
 排除Assistant/告警/经济/AkShare/crawl/归档worker、分析协作CRUD和CSV、analysisResults重迁、四订阅transport、其他队列/Outbox/cron、地图采集。不能把本任务扩成全模型网关或全BullMQ重构。
 
