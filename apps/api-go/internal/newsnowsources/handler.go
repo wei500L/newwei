@@ -124,7 +124,7 @@ func (h *Handler) getBatch(w http.ResponseWriter, r *http.Request) {
 
 // parseLatestFlag mirrors parseBooleanFlag. The caller passes the raw query
 // values so a repeated parameter (an array in Express) is rejected.
-func parseLatestFlag(values []string) (bool, error) {
+func parseLatestFlag(values []string) (bool, *APIError) {
 	if len(values) == 0 {
 		return false, nil
 	}

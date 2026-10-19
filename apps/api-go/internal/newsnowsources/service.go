@@ -225,7 +225,7 @@ func (s *Service) refresh(
 		freshTTL = 1
 	}
 
-	if err := s.writeBothCaches(ctx, freshKey, staleKey, response, freshTTL); err != nil {
+	if err := s.writeBothCaches(ctx, freshKey, staleKey, response, int64(freshTTL)); err != nil {
 		return SourceResponse{}, FetchFailedAPIError(requestedID, err)
 	}
 
