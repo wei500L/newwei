@@ -3,7 +3,7 @@
 - 状态：reserved；2026-10-19 13:12 MSK，规划窗口保存并发出[完整执行提示词](AUDIT-OUTBOX-001.prompt.md)，未开始业务实施，执行器活动未核实。
 - 基线：`origin/main c70b0373990ab931758f7a000511c2d34572fc33`。只深入 BL-20 的 AuditLogOutbox，不认领其余 Outbox/worker；关联 GAP-ASYNC-001。
 - 独立业务分支：`refactor/go-audit-outbox`；worktree：`/Users/oo/project/newwei-go-audit-outbox`（规划时未创建）。业务 PR、head、merge、CI 均未产生。
-- 规划发布分支：`docs/plan-audit-outbox`，worktree：`/Users/oo/project/newwei-plan-audit-outbox`；发布链接见本记录后续增量。
+- 规划发布分支：`docs/plan-audit-outbox`，worktree：`/Users/oo/project/newwei-plan-audit-outbox`；首份认领/提示词已提交 `777abe3284214f2e9f787f5497169ad3f2eeef1b` 并正常推送，发布于 [Ready规划PR #91](https://github.com/wei500L/newwei/pull/91)。规划PR自身普通CI尚未确认完成，不能借用基线CI；业务PR仍未创建。
 - 基线普通CI [39163544617](https://github.com/wei500L/newwei/actions/runs/39163544617) 在精确SHA c70b0373990ab931758f7a000511c2d34572fc33 success；verify/vector-integration/api-go-user-settings-integration success，两个regen skipped。非本任务实现/部署/故障恢复证据。
 
 ## 范围、契约与复用

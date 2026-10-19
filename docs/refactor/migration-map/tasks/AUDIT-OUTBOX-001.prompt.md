@@ -9,7 +9,7 @@
 - 仓库 `/Users/oo/project/newwei` 当前 checkout 可能很旧；规划基线是 fetch 后的 `origin/main c70b0373990ab931758f7a000511c2d34572fc33`。
 - 先读取最新 main 的 `AGENTS.md`、`docs/refactor/migration-map/{README,PLANNING}.md`、`tasks/README.md` 和本任务记录。再执行 `git fetch origin main`、`git rev-parse origin/main`、`gh pr list --state open`、`gh run list --branch main --limit 5`、`git worktree list`。只检查本链增量与新占用。
 - 独立业务分支 `refactor/go-audit-outbox`；worktree `/Users/oo/project/newwei-go-audit-outbox`，从执行时最新 `origin/main` 创建。规划窗口没有创建业务目录或启动实施。若目录已存在，先核对身份和改动，不能重置别人的目录。
-- 规划记录在 `docs/plan-audit-outbox` 文档分支、`/Users/oo/project/newwei-plan-audit-outbox`。若尚未合 main，可只读此分支的任务与提示词，不将整份旧地图覆盖到业务分支。
+- 规划记录在 `docs/plan-audit-outbox` 文档分支、`/Users/oo/project/newwei-plan-audit-outbox`。记录已在 Ready规划PR #91（https://github.com/wei500L/newwei/pull/91）发布。若尚未合 main，先 `git fetch origin docs/plan-audit-outbox`，只读 `origin/docs/plan-audit-outbox` 中的任务与提示词，不将整份旧地图覆盖到业务分支。
 - 规划时无开放 PR；#69/#70 已合并，#81–#87 的实现经 #89（实际 main merge `f1167769f8c1d90017a6105cc65f135741ea47a1`）进入 main，#88 经 #90（`c70b0373990ab931758f7a000511c2d34572fc33`）进入 main。旧目录保留不表示仍占用。已有这些范围不得再做一遍。
 - 该基线普通 CI：`https://github.com/wei500L/newwei/actions/runs/39163544617`，verify、vector-integration、api-go-user-settings-integration 成功；两个 regen job skipped。此证据不代表本任务已实现、真实数据库已验证或生产已切流。
 
