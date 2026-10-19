@@ -140,6 +140,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/assistantqueue"
+	"github.com/wei500L/newwei/apps/api-go/internal/assistantruns"
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/authn"
 	"github.com/wei500L/newwei/apps/api-go/internal/authz"
@@ -154,6 +156,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardwarmap"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/alerts"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/assistantwrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	graphqlcrawlmetadata "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/crawlmetadata"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
@@ -728,7 +731,8 @@ func run() error {
 	graphqlRouteMode := ""
 	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
 		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" ||
-		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" {
+		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" ||
+		cfg.GraphQLAssistantWriteMode == "go" {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -835,6 +839,8 @@ func run() error {
 				cfg.GraphQLSettingsWriteMode == "go" ||
 				cfg.GraphQLSourcePolicyWriteMode == "go" ||
 				cfg.GraphQLRssTranslationMode == "go" ||
+				cfg.GraphQLAssistantWriteMode == "go" ||
+				cfg.AssistantWorkerMode == "go" ||
 				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
@@ -934,6 +940,11 @@ func run() error {
 	// the other write switches; it needs MySQL, Redis and Mongo and registers
 	// only the translateRssItems mutation.
 	graphqlRssTranslationGo := cfg.GraphQLRssTranslationMode == "go"
+	// The assistant write takeover registers only the four assistant mutations.
+	// It is independent of every read switch; the worker switch is separate and
+	// may be enabled in a different process.
+	graphqlAssistantWriteGo := cfg.GraphQLAssistantWriteMode == "go"
+	assistantWorkerGo := cfg.AssistantWorkerMode == "go"
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
@@ -1006,6 +1017,7 @@ func run() error {
 		sourcePolicyWriteGo ||
 		graphqlKnowledgeReviewGo ||
 		graphqlRssTranslationGo ||
+		graphqlAssistantWriteGo ||
 		identityOnboardingGo || oidcLoginGo ||
 		searchReindexGo || proxyLoadBalancingGo || analysisExportGo
 	var redisClient *redis.Client
@@ -1015,7 +1027,7 @@ func run() error {
 	// Keep the condition additive so delivery-only starts Redis while every
 	// other mode is legacy, and the authenticator still exists only when an
 	// HTTP takeover needs it.
-	needsRedis := needsCredentialedGo || cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo
+	needsRedis := needsCredentialedGo || cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo || assistantWorkerGo
 	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -1031,6 +1043,24 @@ func run() error {
 		verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		blacklist := authn.NewRedisBlacklist(redisClient)
 		authenticator = authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
+	}
+	// The assistant write mutations and the assistant worker share one service
+	// instance. Mongo is opened here when no other domain has opened it yet, and
+	// is closed by the ordered teardown below.
+	var assistantRunService *assistantruns.Service
+	var assistantWorker *assistantqueue.Worker
+	if graphqlAssistantWriteGo || assistantWorkerGo {
+		if dashboardMongo == nil {
+			opened, openErr := dashboardstats.Open(cfg.MongoURI)
+			if openErr != nil {
+				return fmt.Errorf("api-go: assistant requires a valid MONGO_URI")
+			}
+			dashboardMongo = opened
+		}
+		assistantRunService, err = wireAssistantRuns(cfg, sharedDB, redisClient, dashboardMongo)
+		if err != nil {
+			return err
+		}
 	}
 	// The HTTP POST and the GraphQL root share one metadata service instance.
 	// It is built once, only when one of the two switches needs it, and reuses
@@ -1629,7 +1659,7 @@ func run() error {
 	// is the exception: it requires Mongo itself).
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
 	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo ||
-		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo {
+		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || graphqlAssistantWriteGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -1746,6 +1776,16 @@ func run() error {
 		// workspace models.
 		if graphqlOrgAccessWriteGo {
 			orgaccesswrite.Register(reg, sharedDB, redisClient)
+		}
+		// The assistant mutations return history.AssistantRunModel. The model
+		// set is registered by the read registration when it is go, otherwise by
+		// the workspace write registration when that switch is go; only when
+		// neither runs does this batch register history models itself.
+		if graphqlAssistantWriteGo {
+			if !graphqlReadGo && !graphqlWorkspaceWriteGo {
+				history.RegisterModels(reg)
+			}
+			assistantwrite.Register(reg, assistantRunService)
 		}
 		if graphqlWorkspaceWriteGo {
 			if !workspaceModelsRegistered {
@@ -1912,6 +1952,11 @@ func run() error {
 		} else {
 			log.Printf("api-go: GraphQL knowledge-graph evidence review write not registered (API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE=legacy)")
 		}
+		if graphqlAssistantWriteGo {
+			log.Printf("api-go: GraphQL assistant writes registered (%s)", strings.Join(assistantwrite.RegisteredMutations, ", "))
+		} else {
+			log.Printf("api-go: GraphQL assistant writes not registered (API_GO_GRAPHQL_ASSISTANT_WRITE_MODE=legacy)")
+		}
 	}
 
 	if itemsReadingGo {
@@ -1968,6 +2013,11 @@ func run() error {
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		if assistantWorker != nil {
+			if closeErr := assistantWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: assistant worker close: %v", closeErr)
+			}
+		}
 		if deliveryScheduler != nil {
 			if closeErr := deliveryScheduler.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: user digest delivery scheduler close: %v", closeErr)
@@ -2006,6 +2056,7 @@ func run() error {
 	if deliveryScheduler != nil {
 		deliveryScheduler.Start(context.Background())
 	}
+	assistantWorker = startAssistantWorker(cfg, assistantRunService, redisClient)
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gateway.ServeHTTPWithShadow(w, r, disp)

@@ -1382,6 +1382,35 @@ type Config struct {
 	// before any translation, cache write or metrics side effect. Rolling back
 	// only means setting this variable back to legacy.
 	GraphQLRssTranslationMode string
+	// GraphQLAssistantWriteMode only decides whether the four assistant write
+	// mutations (requestAssistantQuery, requestAssistantReport,
+	// requestAssistantForecast, deleteAssistantRun) are registered into the Go
+	// GraphQL executor. It is independent of every read switch and of the
+	// worker switch: with the read switch legacy only these mutations are taken
+	// over, and queries keep serving through NestJS. The accepted values are
+	// exactly "", "legacy" and "go"; the empty value behaves like legacy. Go
+	// needs JWT, MySQL, Redis and Mongo (assistantruns live in Mongo, the queue
+	// and subscription bus in Redis) but starts no worker. Rolling back only
+	// means setting this variable back to legacy.
+	GraphQLAssistantWriteMode string
+	// AssistantWorkerMode controls which process consumes the BullMQ assistant
+	// queue. It accepts exactly "", "legacy" and "go"; the empty value behaves
+	// like legacy, where NestJS AssistantProcessor owns the Worker. When it is
+	// go, NestJS keeps the Queue and QueueEvents but does not create a Worker,
+	// and api-go starts the worker. The two processes never consume the same
+	// queue at the same time. Go needs MySQL, Redis and Mongo; it does not need
+	// JWT (no HTTP route is taken over).
+	AssistantWorkerMode string
+	// AssistantQueueConcurrency mirrors ASSISTANT_QUEUE_CONCURRENCY (default 2).
+	AssistantQueueConcurrency int
+	// AssistantMaxRetries mirrors ASSISTANT_MAX_RETRIES (default 3).
+	AssistantMaxRetries int
+	// AssistantLLMTimeoutMs mirrors ASSISTANT_LLM_TIMEOUT_MS (default 300000).
+	AssistantLLMTimeoutMs int
+	// AssistantStreamFlushChars mirrors ASSISTANT_STREAM_FLUSH_CHARS (default 80).
+	AssistantStreamFlushChars int
+	// AssistantStreamFlushMs mirrors ASSISTANT_STREAM_FLUSH_MS (default 250).
+	AssistantStreamFlushMs int
 	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
@@ -2509,6 +2538,51 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_RSS_TRANSLATION_MODE must be one of legacy|go")
 	}
+	// The assistant write switch accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy, so an unset deployment keeps the
+	// four mutations on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_ASSISTANT_WRITE_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLAssistantWriteMode = "legacy"
+	case "go":
+		cfg.GraphQLAssistantWriteMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_ASSISTANT_WRITE_MODE must be one of legacy|go")
+	}
+	// The assistant worker switch accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy, so an unset deployment keeps the
+	// NestJS Worker.
+	switch strings.TrimSpace(getenv("API_GO_ASSISTANT_WORKER_MODE")) {
+	case "", "legacy":
+		cfg.AssistantWorkerMode = "legacy"
+	case "go":
+		cfg.AssistantWorkerMode = "go"
+	default:
+		errs = append(errs, "API_GO_ASSISTANT_WORKER_MODE must be one of legacy|go")
+	}
+	// Assistant runtime tuning. The defaults mirror the NestJS env schema.
+	cfg.AssistantQueueConcurrency = 2
+	if value := positiveInt(getenv("ASSISTANT_QUEUE_CONCURRENCY")); value > 0 {
+		cfg.AssistantQueueConcurrency = value
+	}
+	cfg.AssistantMaxRetries = 3
+	if value := positiveInt(getenv("ASSISTANT_MAX_RETRIES")); value > 0 {
+		cfg.AssistantMaxRetries = value
+	}
+	cfg.AssistantLLMTimeoutMs = 300_000
+	if value := positiveInt(getenv("ASSISTANT_LLM_TIMEOUT_MS")); value > 0 {
+		cfg.AssistantLLMTimeoutMs = value
+	}
+	cfg.AssistantStreamFlushChars = 80
+	if value := positiveInt(getenv("ASSISTANT_STREAM_FLUSH_CHARS")); value > 0 {
+		cfg.AssistantStreamFlushChars = value
+	}
+	cfg.AssistantStreamFlushMs = 250
+	if raw := strings.TrimSpace(getenv("ASSISTANT_STREAM_FLUSH_MS")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value >= 0 {
+			cfg.AssistantStreamFlushMs = value
+		}
+	}
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
 	cfg.GraphQLComplexity = intDefault(getenv("GRAPHQL_COMPLEXITY_LIMIT"), 2000)
@@ -3282,6 +3356,30 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_RSS_TRANSLATION_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_GRAPHQL_RSS_TRANSLATION_MODE=go")
+		}
+	}
+	// The assistant write takeover needs JWT verification, MySQL, Redis and
+	// Mongo: assistantruns and llmrequestlogs live in Mongo, the BullMQ queue
+	// and the subscription bus in Redis, and the quota/settings/profiles in
+	// MySQL. It starts no worker and does not probe LiteLLM or the model
+	// service at startup.
+	if cfg.GraphQLAssistantWriteMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_ASSISTANT_WRITE_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_GRAPHQL_ASSISTANT_WRITE_MODE=go")
+		}
+	}
+	// The assistant worker needs MySQL, Redis and Mongo but no JWT: it consumes
+	// the queue and writes runs/logs without serving HTTP.
+	if cfg.AssistantWorkerMode == "go" {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_ASSISTANT_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_ASSISTANT_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ASSISTANT_WORKER_MODE=go")
 		}
 	}
 

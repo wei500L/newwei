@@ -29,6 +29,18 @@ export class AssistantProcessor implements OnModuleInit, OnModuleDestroy {
       logger.warn("BullMQ workers disabled on this process");
       return;
     }
+    // Execution ownership is controlled by API_GO_ASSISTANT_WORKER_MODE. While
+    // it is legacy (the default) this process consumes the queue exactly as
+    // before. When it is go, api-go owns the Worker; the Queue and QueueEvents
+    // stay registered here for submission and AssistantQueueEventPublisher.
+    const workerMode =
+      this.env.get("API_GO_ASSISTANT_WORKER_MODE", { infer: true }) ?? "legacy";
+    if (workerMode === "go") {
+      logger.warn(
+        "Assistant worker runs in api-go (API_GO_ASSISTANT_WORKER_MODE=go); keeping the queue and queue events only",
+      );
+      return;
+    }
     this.worker = new Worker<AssistantJobPayload>(
       ASSISTANT_QUEUE_NAME,
       async (job) => {

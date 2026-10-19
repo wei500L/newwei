@@ -52,6 +52,18 @@ export const apiEnvSchema = baseEnvSchema
       .default(3),
     BULLMQ_NAMESPACE: z.string().default("modular"),
     BULLMQ_WORKERS_ENABLED: envBoolean.default(true),
+    // The BullMQ assistant queue consumer owner. Empty behaves like legacy,
+    // where AssistantProcessor creates the Worker. When it is go, NestJS keeps
+    // the Queue and QueueEvents (submission and event forwarding) but does not
+    // create a Worker; api-go consumes the same queue. An invalid value fails
+    // startup instead of being silently stripped.
+    API_GO_ASSISTANT_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     PRISMA_CONNECTION_LIMIT: z.coerce.number().int().positive().default(10),
     PRISMA_POOL_TIMEOUT_SECONDS: z.coerce
       .number()
