@@ -721,6 +721,17 @@ services:
       # /api/crawl-tasks/metadata 的既有 GET :id 归属及创建/重试/删除接口继续
       # 回 NestJS。回滚只把该变量改回 legacy。
       API_GO_CRAWL_METADATA_MODE: legacy
+      # 采集任务生命周期 3 条 REST + 3 个 GraphQL Mutation。样例保持 legacy；
+      # 改成 go 才由 Go 校验/规范化参数、限流、写 MySQL 与审计，并按
+      # bullmq 5.63.2 协议写入/移除任务、维护 Redis 采集活动计数。NestJS
+      # CrawlQueueProcessor 仍是唯一消费者；Go 不启动 worker/janitor。
+      # go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST。回滚只改回 legacy。
+      API_GO_CRAWL_TASK_WRITE_MODE: legacy
+      # crawl4ai 队列管理 4 条 HTTP（queue 状态与 pause/resume/concurrency）。
+      # 样例保持 legacy；改成 go 才由 Go 读队列计数/暂停/全局并发与自适应
+      # 状态，并写队列控制键、发布 crawl:worker-concurrency:v1 广播。
+      # go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST。回滚只改回 legacy。
+      API_GO_CRAWL_QUEUE_OPS_MODE: legacy
       # 搜索索引重建 2 条 HTTP（POST /api/admin/search/reindex 与
       # GET /api/admin/search/reindex/:jobId）。样例保持 legacy。只接受
       # 空串/legacy/go，非法值启动失败；改成 go 才由 Go 独立鉴权并写 Redis

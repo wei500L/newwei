@@ -426,6 +426,43 @@ const (
 	CrawlReadTelemetryModeGo     CrawlReadTelemetryMode = "go"
 )
 
+// CrawlTaskWriteMode controls the three crawl task lifecycle writes
+// (API_GO_CRAWL_TASK_WRITE_MODE):
+//
+//	POST   /api/crawl-tasks
+//	DELETE /api/crawl-tasks/:id
+//	POST   /api/crawl-tasks/:id/retry
+//
+// and the three GraphQL mutations createCrawlTask, deleteCrawlTask and
+// retryCrawlTask. The accepted values are exactly "", "legacy" and "go"; any
+// other value fails startup. go requires JWT_SECRET, DATABASE_URL and
+// REDIS_HOST. Go writes the BullMQ job protocol and leaves execution to the
+// NestJS CrawlQueueProcessor; it starts no worker, janitor or scheduled job.
+type CrawlTaskWriteMode string
+
+const (
+	CrawlTaskWriteModeLegacy CrawlTaskWriteMode = "legacy"
+	CrawlTaskWriteModeGo     CrawlTaskWriteMode = "go"
+)
+
+// CrawlQueueOpsMode controls the four crawl4ai queue administration routes
+// (API_GO_CRAWL_QUEUE_OPS_MODE):
+//
+//	GET  /api/admin/crawl4ai/queue
+//	POST /api/admin/crawl4ai/queue/pause
+//	POST /api/admin/crawl4ai/queue/resume
+//	POST /api/admin/crawl4ai/queue/concurrency
+//
+// The accepted values are exactly "", "legacy" and "go"; any other value fails
+// startup. go requires JWT_SECRET, DATABASE_URL and REDIS_HOST. The switch is
+// independent of API_GO_CRAWL_TASK_WRITE_MODE and of the crawl read switch.
+type CrawlQueueOpsMode string
+
+const (
+	CrawlQueueOpsModeLegacy CrawlQueueOpsMode = "legacy"
+	CrawlQueueOpsModeGo     CrawlQueueOpsMode = "go"
+)
+
 // CrawlMetadataMode controls the single HTTP entry of the web page metadata
 // preview chain (API_GO_CRAWL_METADATA_MODE):
 //
@@ -1458,6 +1495,23 @@ type Config struct {
 	// and REDIS_HOST; it does not require Mongo, S3, crawl4ai or STORAGE_MODE,
 	// and it starts no worker, queue or business database write.
 	CrawlMetadataMode CrawlMetadataMode
+	// CrawlTaskWriteMode controls the three crawl task lifecycle writes and the
+	// three crawl task GraphQL mutations (see CrawlTaskWriteMode). Default
+	// legacy. go requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it starts no
+	// worker and no scheduled job.
+	CrawlTaskWriteMode CrawlTaskWriteMode
+	// CrawlQueueOpsMode controls the four crawl4ai queue administration routes
+	// (see CrawlQueueOpsMode). Default legacy. go requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST; it only reads queue meta/counts and writes
+	// the queue control keys.
+	CrawlQueueOpsMode CrawlQueueOpsMode
+	// CrawlMaxConcurrency, CrawlMaxRetries and CrawlRetryBackoffMs mirror
+	// EnvService.crawl4aiConfig. They are the environment defaults used when
+	// creating a crawl task and when the stored crawl client settings row is
+	// absent.
+	CrawlMaxConcurrency int
+	CrawlMaxRetries     int
+	CrawlRetryBackoffMs int
 	// SearchReindexMode controls the two search index rebuild routes (see
 	// SearchReindexMode). Default legacy. go requires JWT_SECRET, DATABASE_URL,
 	// REDIS_HOST and MONGO_URI; Elasticsearch stays optional at startup.
@@ -2167,6 +2221,22 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_CRAWL_METADATA_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_TASK_WRITE_MODE")) {
+	case "", string(CrawlTaskWriteModeLegacy):
+		cfg.CrawlTaskWriteMode = CrawlTaskWriteModeLegacy
+	case string(CrawlTaskWriteModeGo):
+		cfg.CrawlTaskWriteMode = CrawlTaskWriteModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_TASK_WRITE_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_QUEUE_OPS_MODE")) {
+	case "", string(CrawlQueueOpsModeLegacy):
+		cfg.CrawlQueueOpsMode = CrawlQueueOpsModeLegacy
+	case string(CrawlQueueOpsModeGo):
+		cfg.CrawlQueueOpsMode = CrawlQueueOpsModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_QUEUE_OPS_MODE must be one of legacy|go")
+	}
 	// The search reindex switch accepts exactly "", "legacy" and "go"; any other
 	// value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_SEARCH_REINDEX_MODE")) {
@@ -2602,6 +2672,9 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.CrawlBaseURL = strings.TrimRight(strings.TrimSpace(getenv("CRAWL4AI_BASE_URL")), "/")
 	cfg.CrawlAPIKey = strings.TrimSpace(getenv("CRAWL4AI_API_KEY"))
 	cfg.CrawlTimeoutMs = intDefault(getenv("CRAWL4AI_TIMEOUT_MS"), 120_000)
+	cfg.CrawlMaxConcurrency = intDefault(getenv("CRAWL4AI_MAX_CONCURRENCY"), 3)
+	cfg.CrawlMaxRetries = intDefault(getenv("CRAWL4AI_MAX_RETRIES"), 3)
+	cfg.CrawlRetryBackoffMs = intDefault(getenv("CRAWL4AI_RETRY_BACKOFF_MS"), 5_000)
 	cfg.CrawlHealthTTLMs = intDefault(getenv("CRAWL4AI_HEALTH_CHECK_TTL_MS"), 60_000)
 	cfg.CrawlSSRFProxyURL = strings.TrimSpace(getenv("CRAWL4AI_SSRF_PROXY_URL"))
 	cfg.ItemsSearchRerankEnabled = boolDefault(getenv("ITEMS_SEARCH_RERANK_ENABLED"), true)
@@ -3077,6 +3150,18 @@ func Load(getenv func(string) string) (Config, error) {
 	// can run while every other crawl mode is legacy.
 	if cfg.CrawlMetadataMode == CrawlMetadataModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_METADATA_MODE", cfg)
+	}
+	// The crawl task write takeover needs the credentialed stack: JWT verify,
+	// Redis revocation/counters and MySQL task/audit writes. It starts no worker
+	// and calls no crawl4ai endpoint.
+	if cfg.CrawlTaskWriteMode == CrawlTaskWriteModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_TASK_WRITE_MODE", cfg)
+	}
+	// The queue administration takeover reads and writes Redis queue meta,
+	// counts, activity counters and the crawl settings row; MySQL and Redis are
+	// both required and Mongo is not.
+	if cfg.CrawlQueueOpsMode == CrawlQueueOpsModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_QUEUE_OPS_MODE", cfg)
 	}
 	// The metadata GraphQL root is a child switch of the GraphQL read pilot:
 	// without API_GO_GRAPHQL_READ_MODE=go there is no executor to register into,

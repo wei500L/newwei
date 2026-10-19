@@ -22,10 +22,15 @@ require (
 	golang.org/x/net v0.55.0
 	// Go-批4A：公开故事 slug 的 NFKD/NFC，对齐 JS String.normalize。
 	golang.org/x/text v0.39.0
+	// BullMQ v5 protocol: the crawl queue producer packs the Lua script
+	// arguments exactly like msgpackr does. Same version as the itemPipeline
+	// producer branch.
+	github.com/vmihailenco/msgpack/v5 v5.4.1
 )
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.22 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.6 // indirect

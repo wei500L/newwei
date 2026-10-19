@@ -147,6 +147,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlmetadata"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawltaskwrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardcharts"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardspacetime"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
@@ -156,6 +157,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/alerts"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	graphqlcrawlmetadata "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/crawlmetadata"
+	graphqlcrawltaskwrite "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/crawltaskwrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
 	itemsgraphql "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/itemsreading"
@@ -633,6 +635,14 @@ func run() error {
 	if cfg.CrawlMetadataMode == config.CrawlMetadataModeGo {
 		crawlMetadataMode = string(legacyproxy.ModeGo)
 	}
+	crawlTaskWriteMode := ""
+	if cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo {
+		crawlTaskWriteMode = string(legacyproxy.ModeGo)
+	}
+	crawlQueueOpsMode := ""
+	if cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo {
+		crawlQueueOpsMode = string(legacyproxy.ModeGo)
+	}
 	searchReindexMode := ""
 	if cfg.SearchReindexMode == config.SearchReindexModeGo {
 		searchReindexMode = string(legacyproxy.ModeGo)
@@ -728,7 +738,8 @@ func run() error {
 	graphqlRouteMode := ""
 	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
 		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" ||
-		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" {
+		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" ||
+		cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -752,6 +763,11 @@ func run() error {
 	rules = legacyproxy.WithClassificationRssOps(rules, classificationRssOpsMode)
 	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
 	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
+	// The lifecycle write routes and the queue administration routes are two
+	// independent switches. Their rules are method-scoped, so they coexist with
+	// the GET-only crawl read rules on the same prefixes.
+	rules = legacyproxy.WithCrawlTaskWrite(rules, crawlTaskWriteMode)
+	rules = legacyproxy.WithCrawlQueueOps(rules, crawlQueueOpsMode)
 	rules = legacyproxy.WithSearchReindex(rules, searchReindexMode)
 	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
 	// The platform governance settings group is registered alongside the runtime
@@ -860,6 +876,8 @@ func run() error {
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.CrawlMetadataMode == config.CrawlMetadataModeGo ||
+				cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo ||
+				cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo ||
 				cfg.SearchReindexMode == config.SearchReindexModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
 				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
@@ -948,6 +966,11 @@ func run() error {
 	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	crawlMetadataGo := cfg.CrawlMetadataMode == config.CrawlMetadataModeGo
+	// The crawl task lifecycle writes and the queue administration routes are
+	// independent switches; both reuse the credentialed JWT/MySQL/Redis stack
+	// and the shared BullMQ producer.
+	crawlTaskWriteGo := cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo
+	crawlQueueOpsGo := cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo
 	// The metadata GraphQL root is a child of the read pilot; it can only be
 	// registered when the read executor itself is assembled.
 	graphqlCrawlMetadataGo := graphqlReadGo && cfg.GraphQLCrawlMetadataMode == "go"
@@ -1007,7 +1030,8 @@ func run() error {
 		graphqlKnowledgeReviewGo ||
 		graphqlRssTranslationGo ||
 		identityOnboardingGo || oidcLoginGo ||
-		searchReindexGo || proxyLoadBalancingGo || analysisExportGo
+		searchReindexGo || proxyLoadBalancingGo || analysisExportGo ||
+		crawlTaskWriteGo || crawlQueueOpsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	// The background digest delivery needs the shared Redis client (tick gate,
@@ -1038,6 +1062,16 @@ func run() error {
 	var metadataService *crawlmetadata.Service
 	if crawlMetadataGo || graphqlCrawlMetadataGo {
 		metadataService = crawlmetadata.NewService(sharedDB, redisClient)
+	}
+	// The crawl task lifecycle producer is built once, only when a crawl task
+	// switch is go. It reuses the shared Redis client and needs no separate
+	// close; two legacy switches create no Go-side queue resource at all.
+	var crawlTaskService *crawltaskwrite.Service
+	if crawlTaskWriteGo || crawlQueueOpsGo {
+		if sharedDB == nil || redisClient == nil {
+			return fmt.Errorf("api-go: crawl task lifecycle go takeover requires mysql, jwt, and redis")
+		}
+		crawlTaskService = newCrawlTaskWriteService(cfg, sharedDB, redisClient)
 	}
 	if goTakeover {
 		readHandler := usersettingsread.NewHandler(authenticator, userSettingsRepo)
@@ -1387,6 +1421,13 @@ func run() error {
 	if err := wireCrawlReadTelemetry(gateway, cfg, sharedDB, redisClient, authenticator, storageConfigReader, &dashboardMongo); err != nil {
 		return err
 	}
+	wireCrawlTaskLifecycle(gateway, cfg, crawlTaskService, authenticator)
+	if crawlTaskWriteGo {
+		log.Printf("api-go: crawl task write routes and GraphQL mutations under go takeover (POST /api/crawl-tasks, DELETE /api/crawl-tasks/:id, POST /api/crawl-tasks/:id/retry, createCrawlTask, deleteCrawlTask, retryCrawlTask)")
+	}
+	if crawlQueueOpsGo {
+		log.Printf("api-go: crawl4ai queue administration under go takeover (GET /api/admin/crawl4ai/queue, pause, resume, concurrency)")
+	}
 	// The two search index rebuild routes (POST /api/admin/search/reindex and
 	// GET /api/admin/search/reindex/:jobId). The background rebuild runs on the
 	// service lifetime context and is cancelled and awaited by Close.
@@ -1629,7 +1670,7 @@ func run() error {
 	// is the exception: it requires Mongo itself).
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
 	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo ||
-		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo {
+		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || crawlTaskWriteGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -1772,6 +1813,16 @@ func run() error {
 				RateLimitSettingsCacheTTLSeconds: cfg.RateLimitSettingsCacheTTLSeconds,
 			})
 		}
+		// The three crawl task mutations reuse the CrawlTaskModel graph. The
+		// settings/crawl read registration already added it when both that read
+		// switch and the settings/crawl switch are go; otherwise the narrow
+		// registration adds it exactly once here.
+		if crawlTaskWriteGo {
+			if !graphqlReadGo || !settingsCrawlGo {
+				settingscrawl.RegisterCrawlTaskModelTypes(reg)
+			}
+			graphqlcrawltaskwrite.Register(reg, crawlTaskService)
+		}
 		// The four source-policy mutations return the policy models and two
 		// nested category-authority models. The narrow registration is used
 		// when settingscrawl.Register did not already add them; it never opens
@@ -1896,6 +1947,11 @@ func run() error {
 			log.Printf("api-go: GraphQL workspace writes registered (%s)", strings.Join(workspacewrite.RegisteredMutations, ", "))
 		} else {
 			log.Printf("api-go: GraphQL workspace writes not registered (API_GO_GRAPHQL_WORKSPACE_WRITE_MODE=legacy)")
+		}
+		if crawlTaskWriteGo {
+			log.Printf("api-go: GraphQL crawl task writes registered (%s)", strings.Join(graphqlcrawltaskwrite.RegisteredMutations, ", "))
+		} else {
+			log.Printf("api-go: GraphQL crawl task writes not registered (API_GO_CRAWL_TASK_WRITE_MODE=legacy)")
 		}
 		if settingsWriteGo {
 			log.Printf("api-go: GraphQL settings writes registered (%s)", strings.Join(settingswrite.RegisteredMutations, ", "))
