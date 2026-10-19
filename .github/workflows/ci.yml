@@ -314,6 +314,11 @@ jobs:
 
       - name: MySQL/Redis integration tests (user-settings repository + authz RBAC + authn blacklist)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ ./internal/authz/ -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
+      # 分类质量队列批次：BullMQ 生产/消费、重试与卡死恢复需要真实 Redis。
+      # 同一 job 的 redis service 已提供，Mongo 不在该 job 内（分类质量的 Mongo
+      # 读写由单元测试的 fake 覆盖）。
+      - name: BullMQ classification quality queue integration tests (Redis)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/qualityqueue/ -run 'TestBullMQ' -v
 
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #

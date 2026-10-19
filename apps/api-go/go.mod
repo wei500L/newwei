@@ -17,6 +17,9 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.62
 	// Go-批5A：dashboard stats 只读查询 ProcessedItem 与 TaskLog。
 	go.mongodb.org/mongo-driver/v2 v2.9.2
+	// 分类质量队列批次：BullMQ 的 Lua 脚本用 Redis 内建 cmsgpack 解包
+	// ARGV，所以生产/消费两侧的脚本参数必须按 msgpack 编码。
+	github.com/vmihailenco/msgpack/v5 v5.4.1
 	// 账户安全批次：Node bcrypt@5.1.1 兼容的密码校验与生成（仅用 bcrypt 子包）。
 	golang.org/x/crypto v0.53.0
 	golang.org/x/net v0.55.0

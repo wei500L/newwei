@@ -370,6 +370,69 @@ const (
 	ClassificationRssOpsModeGo ClassificationRssOpsMode = "go"
 )
 
+// ClassificationReportsMode controls only POST
+// /api/admin/quality/classification/reports. The default is legacy.
+//
+// In go mode Go creates the ClassificationReportJob document and enqueues the
+// "classification_quality" BullMQ job that builds the report. The GET
+// /reports/:jobId read stays under API_GO_CLASSIFICATION_RSS_OPS_MODE; both
+// switches can be combined, and either order is safe because the Mongo
+// documents are shared.
+//
+// go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI. No worker is
+// started by this switch: report generation is owned by
+// API_GO_CLASSIFICATION_QUALITY_WORKER_MODE so the two can roll out separately.
+type ClassificationReportsMode string
+
+const (
+	// ClassificationReportsModeLegacy keeps the POST on NestJS.
+	ClassificationReportsModeLegacy ClassificationReportsMode = "legacy"
+	// ClassificationReportsModeGo serves the POST from Go.
+	ClassificationReportsModeGo ClassificationReportsMode = "go"
+)
+
+// ClassificationQualityWorkerMode controls who consumes the
+// "classification_quality" BullMQ queue. The default is legacy.
+//
+// The switch is read by both runtimes: NestJS skips creating its
+// ClassificationQualityProcessor Worker when it is go (the Queue itself stays,
+// because the news pipeline keeps producing review-seed jobs), and api-go starts
+// the consumer. Execution is therefore exclusive and a job is never processed
+// twice.
+//
+//	go requires DATABASE_URL, REDIS_HOST and MONGO_URI. It does not need
+//	JWT_SECRET: the consumer authenticates nothing, it only reads and writes the
+//	organization ids carried by each job.
+//
+// Concurrency is max(1, min(4, NEWS_PROCESS_QUEUE_CONCURRENCY)) with 2 as the
+// unset value, which is the formula classification-quality.processor.ts uses.
+type ClassificationQualityWorkerMode string
+
+const (
+	// ClassificationQualityWorkerModeLegacy leaves consumption to NestJS.
+	ClassificationQualityWorkerModeLegacy ClassificationQualityWorkerMode = "legacy"
+	// ClassificationQualityWorkerModeGo consumes the queue in api-go.
+	ClassificationQualityWorkerModeGo ClassificationQualityWorkerMode = "go"
+)
+
+// PipelineRecoveryMode controls GET /api/admin/quality/pipeline/runs. The
+// default is legacy.
+//
+// go requires JWT_SECRET, DATABASE_URL and MONGO_URI: ItemMeta comes from MySQL,
+// ProcessedItem and TaskLog from Mongo, and the route keeps settings.manage.
+//
+// POST /replay and POST /rollback are not part of this switch: they need the
+// item pipeline producer (internal/pipelineenqueue), which is not on main yet, so
+// both keep proxying to NestJS.
+type PipelineRecoveryMode string
+
+const (
+	// PipelineRecoveryModeLegacy keeps the read on NestJS.
+	PipelineRecoveryModeLegacy PipelineRecoveryMode = "legacy"
+	// PipelineRecoveryModeGo serves the read from Go.
+	PipelineRecoveryModeGo PipelineRecoveryMode = "go"
+)
+
 // NewsnowClusteringOpsMode controls the nine NewsNow local-computation and
 // news-event clustering failure HTTP endpoints. It defaults to legacy. In go
 // mode it takes over exactly these nine routes and nothing else:
@@ -1797,6 +1860,15 @@ type Config struct {
 	LiteLLMConfigInternalTokenRaw  string
 	SystemSettingsEncryptionKeyRaw string
 	NodeEnvRaw                     string
+	// ClassificationReportsMode controls the report creation POST; the worker
+	// mode controls queue consumption; the pipeline recovery mode controls the
+	// runs read. All three default to legacy and are independent.
+	ClassificationReportsMode       ClassificationReportsMode
+	ClassificationQualityWorkerMode ClassificationQualityWorkerMode
+	PipelineRecoveryMode            PipelineRecoveryMode
+	// NewsProcessQueueConcurrency is the raw NEWS_PROCESS_QUEUE_CONCURRENCY
+	// value; zero means unset. QualityWorkerConcurrency applies the clamp.
+	NewsProcessQueueConcurrency int
 }
 
 // Load 从 getenv 读取并校验配置。
@@ -2140,6 +2212,39 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.ClassificationRssOpsMode = ClassificationRssOpsModeGo
 	default:
 		errs = append(errs, "API_GO_CLASSIFICATION_RSS_OPS_MODE must be one of legacy|go")
+	}
+
+	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_REPORTS_MODE")) {
+	case "", string(ClassificationReportsModeLegacy):
+		cfg.ClassificationReportsMode = ClassificationReportsModeLegacy
+	case string(ClassificationReportsModeGo):
+		cfg.ClassificationReportsMode = ClassificationReportsModeGo
+	default:
+		errs = append(errs, "API_GO_CLASSIFICATION_REPORTS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_QUALITY_WORKER_MODE")) {
+	case "", string(ClassificationQualityWorkerModeLegacy):
+		cfg.ClassificationQualityWorkerMode = ClassificationQualityWorkerModeLegacy
+	case string(ClassificationQualityWorkerModeGo):
+		cfg.ClassificationQualityWorkerMode = ClassificationQualityWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_CLASSIFICATION_QUALITY_WORKER_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_PIPELINE_RECOVERY_MODE")) {
+	case "", string(PipelineRecoveryModeLegacy):
+		cfg.PipelineRecoveryMode = PipelineRecoveryModeLegacy
+	case string(PipelineRecoveryModeGo):
+		cfg.PipelineRecoveryMode = PipelineRecoveryModeGo
+	default:
+		errs = append(errs, "API_GO_PIPELINE_RECOVERY_MODE must be one of legacy|go")
+	}
+	if raw := strings.TrimSpace(getenv("NEWS_PROCESS_QUEUE_CONCURRENCY")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, fmt.Sprintf("NEWS_PROCESS_QUEUE_CONCURRENCY must be a positive integer, got %q", raw))
+		} else {
+			cfg.NewsProcessQueueConcurrency = value
+		}
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_CLUSTERING_OPS_MODE")) {
 	case "", string(NewsnowClusteringOpsModeLegacy):
@@ -3057,6 +3162,42 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	// The report creation takeover reports a job through Redis and stores it in
+	// Mongo, so it needs the full credentialed stack.
+	if cfg.ClassificationReportsMode == ClassificationReportsModeGo {
+		appendAuthRequirements(&errs, "API_GO_CLASSIFICATION_REPORTS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CLASSIFICATION_REPORTS_MODE=go")
+		}
+	}
+	// The worker consumes the shared queue: it needs MySQL (source and article
+	// context), Redis (the queue) and Mongo (reports, reviews, annotations), but
+	// no JWT because it never authenticates a caller.
+	if cfg.ClassificationQualityWorkerMode == ClassificationQualityWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_CLASSIFICATION_QUALITY_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_CLASSIFICATION_QUALITY_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CLASSIFICATION_QUALITY_WORKER_MODE=go")
+		}
+	}
+	// The runs read joins MySQL and Mongo behind the normal JWT verifier; it
+	// never touches Redis.
+	if cfg.PipelineRecoveryMode == PipelineRecoveryModeGo {
+		if cfg.JWTSecret == "" {
+			errs = append(errs, "JWT_SECRET is required when API_GO_PIPELINE_RECOVERY_MODE=go")
+		}
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_PIPELINE_RECOVERY_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_PIPELINE_RECOVERY_MODE=go")
+		}
+	}
+
 	if cfg.NewsnowClusteringOpsMode == NewsnowClusteringOpsModeGo {
 		appendAuthRequirements(&errs, "API_GO_NEWSNOW_CLUSTERING_OPS_MODE", cfg)
 		if cfg.MongoURI == "" {
@@ -3690,3 +3831,23 @@ func LoadFromOS() (Config, error) {
 
 // ReadTimeoutSec 导出给 main 组装 http.Server 使用。
 func ReadTimeoutSec() int { return readTimeoutSec }
+
+// QualityWorkerConcurrency is the classification quality worker concurrency:
+// max(1, min(4, NEWS_PROCESS_QUEUE_CONCURRENCY)) where an unset value means 2.
+//
+// The formula is the one classification-quality.processor.ts applies to
+// env.newsPipelineEnv.processQueueConcurrency. Keeping it here makes it
+// testable without starting a worker.
+func (c Config) QualityWorkerConcurrency() int {
+	configured := c.NewsProcessQueueConcurrency
+	if configured <= 0 {
+		configured = 2
+	}
+	if configured > 4 {
+		configured = 4
+	}
+	if configured < 1 {
+		configured = 1
+	}
+	return configured
+}
