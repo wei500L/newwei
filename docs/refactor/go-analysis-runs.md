@@ -116,9 +116,9 @@
 
 已执行（远端）：
 
-- 普通 CI：待本 PR head 运行后回填 run/job。
-- 集成 job 内：真实 MySQL/Redis/Mongo 7.0 + 真 Go worker + 锁定 Node BullMQ 5.63.2 双向 + 本地 HTTP SSE fixture，覆盖 Node 入队→Go 完成、Go 入队→Node ack、一次失败后成功、最终失败通知一次、paused 不领取、completed 不重复模型调用、双组织隔离、Geo 每组 30 点、锁丢失/stalled 恢复。
-- Go 单元测试覆盖 JS number/toFixed/UTF-16 长度、四检测器边界与顺序、prompt 覆盖空串、DTO/组织/独立开关、SSE 两 surface/半包/fallback/guardrail。
+- 实现 head `a933d982e548ebc19fb811d96724cd62d7808d3a`；普通 CI [run 39314539054](https://github.com/wei500L/newwei/actions/runs/39314539054) **success**。verify job 118272476424：Go module 漂移门禁、lint、typecheck、web/vector/API 单测、OpenAPI/auth matrix/SDL 契约、Go 单测、Compose、SBOM、build 全部 success。integration job 118272476548 success；vector job 118272475937 success。
+- 集成 job 内：真实 MySQL/Redis/Mongo 7.0 + 真 Go worker + 锁定 Node BullMQ 5.63.2 双向 + 本地 HTTP SSE fixture。`TestAnalysisRunsIntegration` 18.88s PASS，10 个子项全部 PASS：Node 入队→Go 完成、Go 入队→Node ack、一次失败后成功、最终失败通知一次、paused 不领取、completed 不重复模型调用、双组织/类型隔离、Geo 大量轨迹每组 30、锁丢失/stalled 恢复、stalled 耗尽最终失败。
+- Go 单元测试覆盖 JS number/toFixed/UTF-16 长度、四检测器边界与顺序、prompt 覆盖空串、DTO/组织/独立开关、SSE 两 surface/半包/fallback/guardrail、BullMQ job/opts 解码。
 
 未验证（明确不推断）：
 
