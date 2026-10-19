@@ -158,6 +158,12 @@ HTTP 模式；`needsCredentialedGo` 的鉴权边界保持不变。`wireAuditOutb
   - 独立模式、非法模式、只要求 MySQL/Redis 的启动校验
     （`config_auditoutbox_test.go`）
 
+交付 head `876dc6a4c65095627347810772857f41bc3758cb` 的普通
+[CI 39241876877](https://github.com/wei500L/newwei/actions/runs/39241876877)
+success：`verify`（含 `go vet ./...` 与 `go test ./...`）、
+`api-go-user-settings-integration`、`vector-integration` 成功，
+`contract-baseline-regen`、`go-modules-regen` skipped（不计通过）。
+
 未验证（不写成已通过）：
 
 - 真实 MySQL/Redis 上的故障恢复、并发认领、租约续期与多实例切换未实跑。

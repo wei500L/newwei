@@ -1,8 +1,9 @@
 # AUDIT-OUTBOX-001 · 审计失败补偿完整消费链
 
-- 状态：in_progress；2026-10-19 编码窗口在独立分支 `refactor/go-audit-outbox` 完成实现，待推送并创建业务 PR。规划 PR [#91](https://github.com/wei500L/newwei/pull/91) 仍开放。
+- 状态：pr_open；[Ready PR #92](https://github.com/wei500L/newwei/pull/92) 指向 `main`，实现 head `876dc6a4c65095627347810772857f41bc3758cb`，普通 CI [39241876877](https://github.com/wei500L/newwei/actions/runs/39241876877) success。规划 PR [#91](https://github.com/wei500L/newwei/pull/91) 仍开放。
 - 基线：`origin/main c70b0373990ab931758f7a000511c2d34572fc33`。只深入 BL-20 的 AuditLogOutbox，不认领其余 Outbox/worker；关联 GAP-ASYNC-001。
 - 独立业务分支：`refactor/go-audit-outbox`；worktree：`/Users/oo/project/newwei-go-audit-outbox`，从执行时最新 `origin/main` 创建，创建前目录不存在、无其他窗口占用。
+- 首个实现提交 `506ce81f16efc6bf42fb1fa62b11ac135ef61f50` 的 CI 39241659895 因紧随的收口提交被 concurrency 取消（cancelled 不算通过，也不代表失败）；交付以 head 876dc6a4 的 CI 为准。
 - 规划发布分支：`docs/plan-audit-outbox`，worktree：`/Users/oo/project/newwei-plan-audit-outbox`；任务与提示词来自该分支的单文件，不改写整份地图。
 - 基线普通 CI [39163544617](https://github.com/wei500L/newwei/actions/runs/39163544617) 在精确SHA c70b0373990ab931758f7a000511c2d34572fc33 success；verify/vector-integration/api-go-user-settings-integration success，两个regen skipped。非本任务实现/部署/故障恢复证据。
 
@@ -58,5 +59,18 @@ Redis key/续租/释放、main 退出顺序。新增 Go 测试覆盖合并/200�
 校验；本机按约束未运行 build/test。
 
 未验证：真实 MySQL/Redis 故障恢复、多实例租约切换、混合版本启用/回滚、
-`Prisma Json?` 实际落库、旧 id 字符集。下一检查点是业务 PR 的精确 head 与普通 CI；
+`Prisma Json?` 实际落库、旧 id 字符集。下一检查点是本 PR 的合并与生产切换；
 届时只回填本审计子链，不关闭整个 GAP-ASYNC-001。
+
+## PR 与普通 CI（head 876dc6a4）
+
+- [PR #92](https://github.com/wei500L/newwei/pull/92)，Ready，base `main`。
+- [CI 39241876877](https://github.com/wei500L/newwei/actions/runs/39241876877)
+  在精确 head `876dc6a4c65095627347810772857f41bc3758cb` success：
+  - `verify` success（含 `go vet ./...`、`go test ./...`、api/web/vector 测试、
+    OpenAPI/auth-matrix/GraphQL SDL 漂移门禁与 Build）
+  - `api-go-user-settings-integration` success
+  - `vector-integration` success
+  - `contract-baseline-regen`、`go-modules-regen` skipped（按 label 门控，不计通过）
+- `graphql-subscriptions-smoke` [39241876835](https://github.com/wei500L/newwei/actions/runs/39241876835) success。
+- 本记录随后的文档提交只更新本文件，不改业务代码；该文档 head 的 CI 结果由 PR 页面另记。
