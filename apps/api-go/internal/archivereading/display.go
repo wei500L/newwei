@@ -350,9 +350,9 @@ func extractDisplaySignals(value any) displaySignals {
 		return &text
 	}
 	signals := displaySignals{Exists: true}
-	if content, ok := textValue(get("content_type")); ok {
+	if content := textValue(get("content_type")); content != nil {
 		signals.ContentType = normalizeNewsContentType(content)
-	} else if content, ok := textValue(get("contentType")); ok {
+	} else if content := textValue(get("contentType")); content != nil {
 		signals.ContentType = normalizeNewsContentType(content)
 	}
 	signals.CategoryPath = normalizeCategoryPathValue(get("category_path"))
