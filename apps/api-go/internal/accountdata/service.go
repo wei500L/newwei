@@ -113,13 +113,16 @@ func (s *Service) RequestIP(r *http.Request) *string {
 		return nonEmptyString(host)
 	}
 	parts := strings.Split(forwarded, ",")
-	hops := 1
+	// A numeric TRUST_PROXY is the Express hop count and indexes the chain from
+	// the right; every other configured value (true, loopback, an IP/subnet
+	// list) trusts the chain and yields the leftmost entry, which is what
+	// Express req.ip returns in that configuration.
+	index := 0
 	if parsed, err := strconv.Atoi(trust); err == nil && parsed > 0 {
-		hops = parsed
-	}
-	index := len(parts) - hops
-	if index < 0 {
-		index = 0
+		index = len(parts) - parsed
+		if index < 0 {
+			index = 0
+		}
 	}
 	ip := strings.TrimPrefix(strings.TrimSpace(parts[index]), "::ffff:")
 	if ip == "" {

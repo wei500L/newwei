@@ -45,9 +45,17 @@ func integrationRedis(t *testing.T) *redis.Client {
 	return redis.NewClient(&redis.Options{Addr: addr})
 }
 
+var integrationTables = []string{
+	"AuditLog", "AuditLogOutbox", "Notification", "AnalysisComment", "AnalysisThread",
+	"SavedAnalysisView", "UserDigestDeliverySchedule", "UserNewsSimilaritySnapshot",
+	"UserNewsBehaviorAggregate", "UserContentSubscription", "UserSetting", "UserRecoveryCode",
+	"UserTotpFactor", "MembershipRole", "Membership", "RolePermission", "Role", "Permission",
+	"User", "Org",
+}
+
 var integrationDDL = []string{
 	"CREATE TABLE IF NOT EXISTS `Org` (`id` VARCHAR(191) PRIMARY KEY, `name` VARCHAR(191) NOT NULL, `slug` VARCHAR(191) NOT NULL, `description` TEXT NULL, `planTier` VARCHAR(191) NULL, `subscriptionStatus` VARCHAR(191) NULL, `isActive` TINYINT(1) NOT NULL DEFAULT 1, `createdAt` DATETIME(3) NOT NULL, `updatedAt` DATETIME(3) NOT NULL)",
-	"CREATE TABLE IF NOT EXISTS `User` (`id` VARCHAR(191) PRIMARY KEY, `email` VARCHAR(191) NOT NULL, `emailVerified` DATETIME(3) NULL, `pendingEmail` VARCHAR(191) NULL, `firstName` VARCHAR(191) NOT NULL, `lastName` VARCHAR(191) NOT NULL, `avatarUrl` VARCHAR(191) NULL, `isActive` TINYINT(1) NOT NULL DEFAULT 1, `lastLoginAt` DATETIME(3) NULL, `createdAt` DATETIME(3) NOT NULL, `updatedAt` DATETIME(3) NOT NULL)",
+	"CREATE TABLE IF NOT EXISTS `User` (`id` VARCHAR(191) PRIMARY KEY, `email` VARCHAR(191) NOT NULL, `passwordHash` VARCHAR(191) NOT NULL, `emailVerified` DATETIME(3) NULL, `pendingEmail` VARCHAR(191) NULL, `firstName` VARCHAR(191) NOT NULL, `lastName` VARCHAR(191) NOT NULL, `avatarUrl` VARCHAR(191) NULL, `isActive` TINYINT(1) NOT NULL DEFAULT 1, `lastLoginAt` DATETIME(3) NULL, `createdAt` DATETIME(3) NOT NULL, `updatedAt` DATETIME(3) NOT NULL)",
 	"CREATE TABLE IF NOT EXISTS `Role` (`id` VARCHAR(191) PRIMARY KEY, `orgId` VARCHAR(191) NOT NULL, `name` VARCHAR(191) NOT NULL, `description` TEXT NULL, `isSystem` TINYINT(1) NOT NULL DEFAULT 0)",
 	"CREATE TABLE IF NOT EXISTS `Permission` (`id` VARCHAR(191) PRIMARY KEY, `name` VARCHAR(191) NOT NULL, `description` TEXT NULL)",
 	"CREATE TABLE IF NOT EXISTS `RolePermission` (`roleId` VARCHAR(191) NOT NULL, `permissionId` VARCHAR(191) NOT NULL)",
@@ -92,6 +100,16 @@ func TestDataExportIntegration(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// The job reuses one database for several packages (usersettings, authz and
+	// this one), and those earlier packages create User/Org/Role/... with a
+	// narrower schema. Recreate the tables this fixture needs so the SELECT
+	// column lists below match; this step runs last in the job, after the other
+	// packages finished.
+	for _, table := range integrationTables {
+		if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS `"+table+"`"); err != nil {
+			t.Fatalf("drop %s: %v", table, err)
+		}
+	}
 	for _, statement := range integrationDDL {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			t.Fatalf("ddl: %v", err)
@@ -129,7 +147,7 @@ func TestDataExportIntegration(t *testing.T) {
 	}
 	exec("INSERT INTO `Org` (`id`,`name`,`slug`,`isActive`,`createdAt`,`updatedAt`) VALUES (?,?,?,1,?,?)", orgID, "Acme", "acme-corp", created, created)
 	exec("INSERT INTO `Org` (`id`,`name`,`slug`,`isActive`,`createdAt`,`updatedAt`) VALUES (?,?,?,1,?,?)", otherOrgID, "Other", "other-corp", created, created)
-	exec("INSERT INTO `User` (`id`,`email`,`firstName`,`lastName`,`isActive`,`createdAt`,`updatedAt`) VALUES (?,?,?,?,1,?,?)", userID, "user@example.com", "Ada", "Lovelace", created, created)
+	exec("INSERT INTO `User` (`id`,`email`,`passwordHash`,`firstName`,`lastName`,`isActive`,`createdAt`,`updatedAt`) VALUES (?,?,?,?,?,1,?,?)", userID, "user@example.com", "not-a-real-hash", "Ada", "Lovelace", created, created)
 	exec("INSERT INTO `Role` (`id`,`orgId`,`name`,`isSystem`) VALUES (?,?,?,1)", "role-"+suffix, orgID, "owner")
 	exec("INSERT INTO `Permission` (`id`,`name`) VALUES (?,?)", "perm-"+suffix, "settings.manage")
 	exec("INSERT INTO `RolePermission` (`roleId`,`permissionId`) VALUES (?,?)", "role-"+suffix, "perm-"+suffix)
