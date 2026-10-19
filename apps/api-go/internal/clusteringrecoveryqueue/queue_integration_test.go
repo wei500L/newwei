@@ -150,20 +150,27 @@ func TestIntegrationWorkerCompletesJob(t *testing.T) {
 		t.Fatal("worker did not process the job")
 	}
 
+	// removeOnComplete=true makes BullMQ delete the job hash and retain no
+	// completed entry. Wait for the hash to disappear and assert the job is in
+	// neither wait nor active.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		score, err := client.ZScore(ctx, keys.Completed, jobID).Result()
-		if err == nil {
-			_ = score
+		exists, err := client.Exists(ctx, keys.Job(jobID)).Result()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if exists == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("job did not reach completed: %v", err)
+			t.Fatal("completed job hash still exists")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if exists, err := client.Exists(ctx, keys.Job(jobID)).Result(); err != nil || exists != 0 {
-		t.Fatalf("completed job hash still exists exists=%d err=%v", exists, err)
+	for _, list := range []string{keys.Wait, keys.Active} {
+		if _, err := client.LPos(ctx, list, jobID, redis.LPosArgs{}).Result(); !errors.Is(err, redis.Nil) {
+			t.Fatalf("completed job is still in %s: err=%v", list, err)
+		}
 	}
 }
 
@@ -245,11 +252,16 @@ func TestIntegrationStalledJobIsRecovered(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Simulate a consumer that claimed the job and died before creating a
-	// lock: the job is active with no <job>:lock key.
+	// lock: the job is active with no <job>:lock key, and BullMQ's extendLock
+	// has flagged it in the stalled set. moveStalledJobsToWait walks that set,
+	// not the active list.
 	if err := client.LRem(ctx, keys.Wait, 1, jobID).Err(); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.LPush(ctx, keys.Active, jobID).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SAdd(ctx, keys.Stalled, jobID).Err(); err != nil {
 		t.Fatal(err)
 	}
 

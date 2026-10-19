@@ -187,9 +187,10 @@ func TestIntegrationAssignSignalToSpecificEventWidensWindow(t *testing.T) {
 		t.Fatalf("similarity=%v assignedBy=%q", stored, assignedBy)
 	}
 
-	// A duplicate article must not be attached twice. NestJS returns the
-	// requested event id with created=false for the specific-assignment path;
-	// the stored item keeps pointing at the original event.
+	// A duplicate article must not be attached twice. The NestJS pre-check
+	// returns the event that already holds the article (created=false); the
+	// requested target is only returned by the in-transaction P2002 branch,
+	// which a non-racing call never reaches.
 	other, err := service.assignSignalToNewEvent(ctx, orgID, signalFor("article-specific-3", base, "finance", ""))
 	if err != nil {
 		t.Fatalf("create other event: %v", err)
@@ -198,7 +199,7 @@ func TestIntegrationAssignSignalToSpecificEventWidensWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("duplicate assign: %v", err)
 	}
-	if duplicate.Created || duplicate.EventID != other.EventID {
+	if duplicate.Created || duplicate.EventID != first.EventID {
 		t.Fatalf("duplicate = %+v", duplicate)
 	}
 	var storedEventID string
