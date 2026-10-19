@@ -402,6 +402,28 @@ const (
 	NewsnowClusteringOpsModeGo NewsnowClusteringOpsMode = "go"
 )
 
+// NewsnowSourcesMode controls the two public NewsNow source fetch endpoints:
+//
+//	GET  /api/news-aggregator/source
+//	POST /api/news-aggregator/sources/batch
+//
+// It defaults to legacy. In go mode Go performs the real upstream fetch for all
+// 64 registry ids, reads the global runtime-secret row from MySQL, writes the
+// compatible fresh/stale Redis cache and publishes the source-refresh relay for
+// the NestJS socket subscriber. It requires DATABASE_URL and REDIS_HOST only:
+// the routes are public, so no JWT/Mongo/queue dependency is added and no
+// scheduler, worker or cron is started. The NestJS warm and hottest-analysis
+// schedulers keep running unchanged.
+type NewsnowSourcesMode string
+
+const (
+	// NewsnowSourcesModeLegacy keeps both routes on NestJS and is the default,
+	// including when the environment variable is unset or empty.
+	NewsnowSourcesModeLegacy NewsnowSourcesMode = "legacy"
+	// NewsnowSourcesModeGo performs the fetches in Go.
+	NewsnowSourcesModeGo NewsnowSourcesMode = "go"
+)
+
 // CrawlReadTelemetryMode controls the seven crawl read/media/telemetry HTTP
 // endpoints migrated by this unit. It defaults to legacy.
 //
@@ -1443,6 +1465,10 @@ type Config struct {
 	// newseventclusteringfailures collection. No external source fetch, no LLM
 	// call and no queue delivery happens in this mode, and no worker is started.
 	NewsnowClusteringOpsMode NewsnowClusteringOpsMode
+	// NewsnowSourcesMode controls the two public NewsNow source fetch
+	// endpoints. Defaults to legacy. go requires DATABASE_URL and REDIS_HOST;
+	// it needs no JWT, Mongo or queue and starts no worker.
+	NewsnowSourcesMode NewsnowSourcesMode
 	// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry
 	// endpoints migrated by this unit. It defaults to legacy. go mode
 	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
@@ -2148,6 +2174,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.NewsnowClusteringOpsMode = NewsnowClusteringOpsModeGo
 	default:
 		errs = append(errs, "API_GO_NEWSNOW_CLUSTERING_OPS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_SOURCES_MODE")) {
+	case "", string(NewsnowSourcesModeLegacy):
+		cfg.NewsnowSourcesMode = NewsnowSourcesModeLegacy
+	case string(NewsnowSourcesModeGo):
+		cfg.NewsnowSourcesMode = NewsnowSourcesModeGo
+	default:
+		errs = append(errs, "API_GO_NEWSNOW_SOURCES_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_READ_TELEMETRY_MODE")) {
 	case "", string(CrawlReadTelemetryModeLegacy):
@@ -3061,6 +3095,18 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_NEWSNOW_CLUSTERING_OPS_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_NEWSNOW_CLUSTERING_OPS_MODE=go")
+		}
+	}
+	// The public source fetch takeover needs MySQL for the global runtime-secret
+	// row and Redis for the compatible cache, refresh lock and relay. The two
+	// routes are public, so JWT_SECRET, Mongo, GraphQL and model switches are
+	// deliberately not required.
+	if cfg.NewsnowSourcesMode == NewsnowSourcesModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_NEWSNOW_SOURCES_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_NEWSNOW_SOURCES_MODE=go")
 		}
 	}
 	// Crawl read/telemetry takeover reads crawlresultcontents and tasklogs from

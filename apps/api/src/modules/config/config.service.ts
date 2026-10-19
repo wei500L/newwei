@@ -529,6 +529,15 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  // NewsNow source fetch ownership. The schema already rejects every value
+  // other than "", legacy and go, so the getter only distinguishes go.
+  get newsnowSourcesMode(): "legacy" | "go" {
+    return this.get<string>("API_GO_NEWSNOW_SOURCES_MODE", { infer: true }) ===
+      "go"
+      ? "go"
+      : "legacy";
+  }
+
   get systemSettingsEncryptionKey(): string | undefined {
     return this.get<string | undefined>("SYSTEM_SETTINGS_ENCRYPTION_KEY", {
       infer: true,
