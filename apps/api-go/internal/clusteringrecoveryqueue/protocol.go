@@ -274,6 +274,11 @@ func (t *tokenSource) Next() string {
 	return t.id + ":" + strconv.FormatUint(t.counter.Add(1), 10)
 }
 
+// ErrLeaseLost is the cancel cause used when lock renewal fails or the lock
+// belongs to another token. The processor context is canceled with it so the
+// domain handler stops writing without recording a terminal state.
+var ErrLeaseLost = errors.New("clusteringrecoveryqueue: job lock was lost")
+
 // LeaseLostError tells the worker that this attempt no longer owns the BullMQ
 // job lease. The worker must not acknowledge the job; the queue recovers it.
 type LeaseLostError struct{ Reason string }

@@ -31,7 +31,6 @@ func (s *Service) listAssignmentCandidates(ctx context.Context, orgID string, si
 	if limit > 12 {
 		limit = 12
 	}
-	language := normalizeOptionalString(signal.Language)
 	primaryTopic := pickPrimaryTopic(signal.Topics)
 	primaryEntity := pickPrimaryEntity(signal.Entities)
 	state := make(map[string]*candidateScore)
