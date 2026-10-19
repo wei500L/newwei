@@ -98,7 +98,7 @@ func (c *ModelServiceClient) ForecastHoldoutLast(ctx context.Context, request Mo
 		}
 		delay := time.Duration(mathMinInt(5_000, 200*(1<<attempt))) * time.Millisecond
 		delay += time.Duration(rand.Intn(150)) * time.Millisecond
-		if sleepErr := sleep(ctx, delay); sleepErr != nil {
+		if sleepErr := sleepContext(ctx, delay); sleepErr != nil {
 			return ModelServiceForecastResponse{}, sleepErr
 		}
 	}
@@ -166,6 +166,18 @@ func modelServiceError(status int, detail string, err error) error {
 		return fmt.Errorf("%s: %s", prefix, err.Error())
 	}
 	return errors.New(prefix)
+}
+
+// sleepContext waits for delay or the caller's cancellation.
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func mathMinInt(left, right int) int {

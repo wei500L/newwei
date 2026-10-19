@@ -198,7 +198,7 @@ func (s *Service) buildQueryHistory(ctx context.Context, record *runRecord, crea
 	for index := len(runs) - 1; index >= 0; index-- {
 		run := runs[index]
 		var input QueryInput
-		if len(run.Input) > 0 {
+		if !run.Input.IsZero() {
 			_ = run.Input.Unmarshal(&input)
 		}
 		if userMessage := strings.TrimSpace(input.Message); userMessage != "" {
@@ -208,7 +208,7 @@ func (s *Service) buildQueryHistory(ctx context.Context, record *runRecord, crea
 			Summary *string `bson:"summary"`
 		}
 		outputSummary := ""
-		if len(run.Output) > 0 {
+		if !run.Output.IsZero() {
 			if run.Output.Unmarshal(&output) == nil && output.Summary != nil {
 				outputSummary = strings.TrimSpace(*output.Summary)
 			}

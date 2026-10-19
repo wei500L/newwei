@@ -160,7 +160,7 @@ func (s *Service) runForecast(ctx context.Context, record *runRecord, createdAt 
 		TimeWindow:       TimeWindow{StartDate: start.Format("2006-01-02"), EndDate: end.Format("2006-01-02")},
 		Series:           seriesPayload,
 		ModelServiceUsed: true,
-		Model:            JSONValue(modelResponse.Model),
+		Model:            modelResponse.Model,
 		Actual:           actual,
 		Forecast:         forecast,
 		Errors:           errorsPayload,
