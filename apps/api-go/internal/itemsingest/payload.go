@@ -240,11 +240,15 @@ func NormalizeNewsPayload(raw []byte) (NormalizedNewsPayload, error) {
 	}
 
 	if rawPrefetched, ok := object["prefetchedArticle"]; ok {
-		value, kind := jsonValueKind(rawPrefetched)
+		_, kind := jsonValueKind(rawPrefetched)
 		if kind != "object" {
 			return NormalizedNewsPayload{}, invalidPayload("Expected object, received " + kind)
 		}
-		prefetched, failure := normalizePrefetchedArticle(value.(map[string]json.RawMessage))
+		prefetchedObject, err := decodeJSONObject(rawPrefetched)
+		if err != nil {
+			return NormalizedNewsPayload{}, invalidPayload(err.Error())
+		}
+		prefetched, failure := normalizePrefetchedArticle(prefetchedObject)
 		if failure != "" {
 			return NormalizedNewsPayload{}, invalidPayload(failure)
 		}
