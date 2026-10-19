@@ -312,7 +312,10 @@ func (s *Service) RetryTask(ctx context.Context, caller *authhttp.Identity, task
 		return crawlreadtelemetry.CrawlTaskView{}, newStatus(http.StatusForbidden,
 			"items.write permission is required to ingest crawl results into Items")
 	}
-	enqueueOptions := extractEnqueueOptions(configRaw)
+	enqueueOptions := crawlqueue.EnqueueOptions{}
+	if extracted := extractEnqueueOptions(configRaw); extracted != nil {
+		enqueueOptions = *extracted
+	}
 
 	status := string(original.Status)
 	if status == string(crawlreadtelemetry.CrawlTaskStatusRunning) || status == string(crawlreadtelemetry.CrawlTaskStatusQueued) {
