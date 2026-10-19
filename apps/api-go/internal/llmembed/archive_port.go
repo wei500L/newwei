@@ -76,9 +76,9 @@ func failureLabel(kind ModelFailureKind) string {
 	}
 }
 
-// Usage is the upstream-reported token/cost snapshot. Unreported members stay
+// ArchiveUsage is the upstream-reported token/cost snapshot. Unreported members stay
 // nil so the log document stores null rather than a fabricated zero.
-type Usage struct {
+type ArchiveUsage struct {
 	PromptTokens     *float64
 	CompletionTokens *float64
 	TotalTokens      *float64
@@ -88,7 +88,7 @@ type Usage struct {
 // Attempt is one real logical model attempt: one HTTP call after the optional
 // 404/405 path fallback, exactly like executeEmbeddingWithRetry /
 // executeRerankWithRetry.
-type Attempt struct {
+type ArchiveAttempt struct {
 	Model                     string
 	ProfileID                 string
 	ProfileName               string
@@ -99,22 +99,22 @@ type Attempt struct {
 	Latency                   time.Duration
 	Success                   bool
 	Error                     string
-	Usage                     Usage
+	Usage                     ArchiveUsage
 	OccurredAt                time.Time
 }
 
-// EmbeddingOutcome is the archive embedding result with every attempt.
-type EmbeddingOutcome struct {
+// ArchiveEmbeddingOutcome is the archive embedding result with every attempt.
+type ArchiveEmbeddingOutcome struct {
 	Vectors  [][]float64
 	Model    string
-	Attempts []Attempt
+	Attempts []ArchiveAttempt
 }
 
-// RerankOutcome is the archive rerank result with every attempt.
-type RerankOutcome struct {
+// ArchiveRerankOutcome is the archive rerank result with every attempt.
+type ArchiveRerankOutcome struct {
 	Hits     []Hit
 	Model    string
-	Attempts []Attempt
+	Attempts []ArchiveAttempt
 }
 
 // RuntimeEmbeddingModel reports the currently selected embedding model. ok is
@@ -158,8 +158,8 @@ func (c *Client) RuntimeRerankProfile(ctx context.Context) (string, time.Duratio
 // EmbedForArchive embeds one query for the archive search. configuredModel is
 // the model the caller observed before the cache lookup; the profile is resolved
 // again so governance and fallback behavior match the shared client.
-func (c *Client) EmbedForArchive(ctx context.Context, orgID, configuredModel, input, source string) (EmbeddingOutcome, error) {
-	outcome := EmbeddingOutcome{}
+func (c *Client) EmbedForArchive(ctx context.Context, orgID, configuredModel, input, source string) (ArchiveEmbeddingOutcome, error) {
+	outcome := ArchiveEmbeddingOutcome{}
 	profile, err := c.resolveEmbedding(ctx)
 	if err != nil {
 		return outcome, &ModelFailure{Kind: ModelFailureUnavailable, API: "embeddings", Cause: err}
@@ -214,7 +214,7 @@ func (c *Client) EmbedForArchive(ctx context.Context, orgID, configuredModel, in
 		if callErr == nil {
 			callErr = fmt.Errorf("gateway returned status %d", status)
 		}
-		outcome.Attempts = append(outcome.Attempts, archiveAttempt(profile, "embeddings", model, latency, callErr, Usage{}))
+		outcome.Attempts = append(outcome.Attempts, archiveAttempt(profile, "embeddings", model, latency, callErr, ArchiveUsage{}))
 		lastErr = callErr
 		if attempt+1 >= attempts || !archiveRetryable(status, callErr) {
 			break
@@ -235,8 +235,8 @@ func (c *Client) EmbedForArchive(ctx context.Context, orgID, configuredModel, in
 // fallback list is tried only after the previous model's attempts fail. timeout
 // must be the profile timeout; passing 0 here would be a caller bug because the
 // explicit timeout is what keeps this path off the shared 100ms floor.
-func (c *Client) RerankForArchive(ctx context.Context, orgID, query string, documents []string, maxRetries int, timeout time.Duration, source string) (RerankOutcome, error) {
-	outcome := RerankOutcome{}
+func (c *Client) RerankForArchive(ctx context.Context, orgID, query string, documents []string, maxRetries int, timeout time.Duration, source string) (ArchiveRerankOutcome, error) {
+	outcome := ArchiveRerankOutcome{}
 	if len(documents) == 0 {
 		return outcome, &ModelFailure{Kind: ModelFailureUpstream, API: "rerank", Cause: fmt.Errorf("documents are required")}
 	}
@@ -300,7 +300,7 @@ func (c *Client) RerankForArchive(ctx context.Context, orgID, query string, docu
 			if callErr == nil {
 				callErr = fmt.Errorf("gateway returned status %d", status)
 			}
-			outcome.Attempts = append(outcome.Attempts, archiveAttempt(profile, "rerank", model, latency, callErr, Usage{}))
+			outcome.Attempts = append(outcome.Attempts, archiveAttempt(profile, "rerank", model, latency, callErr, ArchiveUsage{}))
 			lastErr = callErr
 			invalidResponse = false
 			if attempt+1 >= attempts || !archiveRetryable(status, callErr) {
@@ -355,8 +355,8 @@ func (c *Client) postRawOnce(ctx context.Context, profile runtimeProfile, path s
 	return resp.StatusCode, resp.Header.Clone(), raw, err
 }
 
-func archiveAttempt(profile runtimeProfile, surface, model string, latency time.Duration, callErr error, usage Usage) Attempt {
-	attempt := Attempt{
+func archiveAttempt(profile runtimeProfile, surface, model string, latency time.Duration, callErr error, usage ArchiveUsage) ArchiveAttempt {
+	attempt := ArchiveAttempt{
 		Model:                     model,
 		ProfileID:                 profile.ID,
 		ProfileName:               profile.Name,
@@ -375,14 +375,14 @@ func archiveAttempt(profile runtimeProfile, surface, model string, latency time.
 	return attempt
 }
 
-func parseArchiveEmbeddings(raw []byte, headers http.Header) ([][]float64, string, Usage, error) {
+func parseArchiveEmbeddings(raw []byte, headers http.Header) ([][]float64, string, ArchiveUsage, error) {
 	var doc map[string]any
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, "", Usage{}, err
+		return nil, "", ArchiveUsage{}, err
 	}
 	rows, _ := doc["data"].([]any)
 	if len(rows) == 0 {
-		return nil, "", Usage{}, fmt.Errorf("embedding response has no data")
+		return nil, "", ArchiveUsage{}, fmt.Errorf("embedding response has no data")
 	}
 	vectors := make([][]float64, 0, len(rows))
 	for _, row := range rows {
@@ -397,15 +397,15 @@ func parseArchiveEmbeddings(raw []byte, headers http.Header) ([][]float64, strin
 		vectors = append(vectors, vector)
 	}
 	if len(vectors) == 0 {
-		return nil, "", Usage{}, fmt.Errorf("embedding response has no usable vector")
+		return nil, "", ArchiveUsage{}, fmt.Errorf("embedding response has no usable vector")
 	}
 	return vectors, jsonString(doc["model"]), archiveUsage(doc, headers), nil
 }
 
-func parseArchiveRerank(raw []byte, headers http.Header, docCount int) ([]Hit, string, Usage, error) {
+func parseArchiveRerank(raw []byte, headers http.Header, docCount int) ([]Hit, string, ArchiveUsage, error) {
 	var doc map[string]any
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, "", Usage{}, err
+		return nil, "", ArchiveUsage{}, err
 	}
 	rows, _ := doc["results"].([]any)
 	if rows == nil {
@@ -428,14 +428,14 @@ func parseArchiveRerank(raw []byte, headers http.Header, docCount int) ([]Hit, s
 		hits = append(hits, Hit{Index: index, Score: score})
 	}
 	if len(hits) == 0 {
-		return nil, "", Usage{}, fmt.Errorf("rerank response has no usable score")
+		return nil, "", ArchiveUsage{}, fmt.Errorf("rerank response has no usable score")
 	}
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
 	return hits, jsonString(doc["model"]), archiveUsage(doc, headers), nil
 }
 
-func archiveUsage(doc map[string]any, headers http.Header) Usage {
-	usage := Usage{}
+func archiveUsage(doc map[string]any, headers http.Header) ArchiveUsage {
+	usage := ArchiveUsage{}
 	if payload, ok := doc["usage"].(map[string]any); ok {
 		usage.PromptTokens = optionalNumber(payload["prompt_tokens"])
 		usage.CompletionTokens = optionalNumber(payload["completion_tokens"])

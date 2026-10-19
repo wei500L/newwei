@@ -467,7 +467,7 @@ func archiveModelFailure(err error, unavailable, failed, invalid string) *Error 
 	return serviceUnavailable(failed, "", err.Error())
 }
 
-func (s *Service) recordAttempts(ctx context.Context, orgID string, attempts []llmembed.Attempt, source string) {
+func (s *Service) recordAttempts(ctx context.Context, orgID string, attempts []llmembed.ArchiveAttempt, source string) {
 	if s.attempts == nil || len(attempts) == 0 {
 		return
 	}
