@@ -735,8 +735,18 @@ func TestCrawlTaskLifecycleAdminGate(t *testing.T) {
 	if err := h.db.QueryRow("SELECT config FROM CrawlTask WHERE id = ?", customView.ID).Scan(&customConfig); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(customConfig), "jsCode") || strings.Contains(string(customConfig), `"jsOnly":true`) {
+	var customDocument struct {
+		JSCode json.RawMessage `json:"jsCode"`
+		JSOnly *bool           `json:"jsOnly"`
+	}
+	if err := json.Unmarshal(customConfig, &customDocument); err != nil {
+		t.Fatalf("custom config json: %v", err)
+	}
+	if len(customDocument.JSCode) > 0 && string(customDocument.JSCode) != "null" {
 		t.Fatalf("custom admin kept jsCode: %s", customConfig)
+	}
+	if customDocument.JSOnly != nil && *customDocument.JSOnly {
+		t.Fatalf("custom admin kept jsOnly: %s", customConfig)
 	}
 
 	systemCaller := authhttp.NewIdentity("user-system-admin", systemOrg, []string{"crawl.write"})
@@ -751,7 +761,17 @@ func TestCrawlTaskLifecycleAdminGate(t *testing.T) {
 	if err := h.db.QueryRow("SELECT config FROM CrawlTask WHERE id = ?", systemView.ID).Scan(&systemConfig); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(systemConfig), "jsCode") || !strings.Contains(string(systemConfig), `"jsOnly":true`) {
+	var systemDocument struct {
+		JSCode json.RawMessage `json:"jsCode"`
+		JSOnly *bool           `json:"jsOnly"`
+	}
+	if err := json.Unmarshal(systemConfig, &systemDocument); err != nil {
+		t.Fatalf("system config json: %v", err)
+	}
+	if len(systemDocument.JSCode) == 0 || string(systemDocument.JSCode) == "null" {
 		t.Fatalf("system admin lost jsCode: %s", systemConfig)
+	}
+	if systemDocument.JSOnly == nil || !*systemDocument.JSOnly {
+		t.Fatalf("system admin lost jsOnly: %s", systemConfig)
 	}
 }
