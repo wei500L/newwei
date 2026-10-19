@@ -724,7 +724,9 @@ func (w *Worker) rescheduleRepeat(ctx context.Context, job Job) error {
 	if len(templateData) == 0 || !json.Valid(templateData) {
 		templateData = []byte("{}")
 	}
-	result, err := w.scripts.updateJobScheduler.Run(ctx, w.client,
+	// The script returns the id of the next delayed job or nil; only the error
+	// matters here because the next iteration is not processed by this worker.
+	if _, err := w.scripts.updateJobScheduler.Run(ctx, w.client,
 		[]string{
 			w.keys.Repeat,
 			w.keys.Delayed,
@@ -748,8 +750,7 @@ func (w *Worker) rescheduleRepeat(ctx context.Context, job Job) error {
 		time.Now().UnixMilli(),
 		w.keys.Base,
 		job.ID,
-	).Result()
-	if err != nil {
+	).Result(); err != nil {
 		return fmt.Errorf("alertworker/queue: update job scheduler %s: %w", job.RepeatJobKey, err)
 	}
 	return nil
