@@ -8,8 +8,10 @@
 //
 // The roots are registered only when both API_GO_GRAPHQL_READ_MODE and
 // API_GO_GRAPHQL_WORKSPACE_READ_MODE are go; otherwise every document that
-// selects one of them stays on NestJS. The remaining mutations and the
-// queueEvents subscription always fall back; the eight organization, role and
+// selects one of them stays on NestJS. The remaining mutations fall back; the
+// queueEvents subscription is served by the independent
+// graphqlsubscriptions executor (its QueueEventModel projection is registered
+// here by RegisterQueueEventModel). The eight organization, role and
 // membership mutations live in the orgaccesswrite package behind their own
 // switch and reuse the models registered here.
 //
@@ -67,6 +69,16 @@ func RegisterModels(reg *contract.Registry) {
 		panic("graphqlread: workspace.RegisterModels requires a registry")
 	}
 	registerModels(reg)
+}
+
+// RegisterQueueEventModel registers only the QueueEventModel projection. The
+// local graphql-transport-ws subscription executor returns this model without
+// assembling any workspace read root, Mongo service or field permission.
+func RegisterQueueEventModel(reg *contract.Registry) {
+	if reg == nil {
+		panic("graphqlread: workspace.RegisterQueueEventModel requires a registry")
+	}
+	reg.RegisterType("QueueEventModel", QueueEventModel{})
 }
 
 func registerModels(reg *contract.Registry) {

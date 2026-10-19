@@ -150,6 +150,33 @@ type Root struct {
 	Resolve            Resolver
 }
 
+// SubscriptionEvent is one value from a subscription source. Value is
+// projected by the engine exactly like a Query root result. Error, when set,
+// describes a conversion failure in one nested scalar field that must be
+// reported with GraphQL non-null propagation instead of being rendered as a
+// zero value (for example an invalid $gqlDate tag).
+type SubscriptionEvent struct {
+	Value any
+	Error *SubscriptionEventError
+}
+
+// SubscriptionEventError is a nested field conversion failure. Field is the
+// canonical GraphQL field name inside the subscription root object.
+type SubscriptionEventError struct {
+	Field   string
+	Message string
+}
+
+// Subscription is one migrated Subscription root. It is registered in a
+// namespace separate from Query and Mutation so the same root name on another
+// operation type is never resolved by the wrong executor. Open returns the
+// event stream for one authenticated operation; it must stop producing and
+// release its reader when Context.Ctx is cancelled.
+type Subscription struct {
+	Root
+	Open func(Context) (<-chan SubscriptionEvent, error)
+}
+
 // Bind adapts a strongly typed resolver function to the untyped Resolver
 // boundary the executor invokes. Packages keep their resolver signatures
 // strongly typed and call Bind only at registration, so their GraphQL models
@@ -189,11 +216,12 @@ func (f *Failure) Error() string {
 // that exists on both root types (or on neither) can never be resolved by the
 // wrong operation type.
 type Registry struct {
-	mu        sync.RWMutex
-	roots     map[string]Root
-	mutations map[string]Root
-	types     map[string]reflect.Type
-	fields    map[string]map[string]struct{}
+	mu            sync.RWMutex
+	roots         map[string]Root
+	mutations     map[string]Root
+	subscriptions map[string]Subscription
+	types         map[string]reflect.Type
+	fields        map[string]map[string]struct{}
 	// fieldPermissions maps a GraphQL object type and field to the single
 	// permission required to select that field. The executor rejects a
 	// selection of a protected field with the same FORBIDDEN failure the
@@ -207,6 +235,7 @@ func NewRegistry() *Registry {
 	return &Registry{
 		roots:            map[string]Root{},
 		mutations:        map[string]Root{},
+		subscriptions:    map[string]Subscription{},
 		types:            map[string]reflect.Type{},
 		fields:           map[string]map[string]struct{}{},
 		fieldPermissions: map[string]map[string]string{},
@@ -222,6 +251,20 @@ func (r *Registry) RegisterRoot(root Root) {
 // name panics.
 func (r *Registry) RegisterMutation(root Root) {
 	r.register(r.mutations, "mutation", root)
+}
+
+// RegisterSubscription adds a Subscription field. A second registration of the
+// same name panics; the name namespace is independent of Query and Mutation.
+func (r *Registry) RegisterSubscription(subscription Subscription) {
+	if subscription.Name == "" || subscription.Open == nil {
+		panic("graphqlread: subscription requires a name and open function")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.subscriptions[subscription.Name]; ok {
+		panic("graphqlread: duplicate subscription " + subscription.Name)
+	}
+	r.subscriptions[subscription.Name] = subscription
 }
 
 func (r *Registry) register(target map[string]Root, kind string, root Root) {
@@ -311,6 +354,14 @@ func (r *Registry) Mutation(name string) (Root, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	root, ok := r.mutations[name]
+	return root, ok
+}
+
+// Subscription returns a registered Subscription root and whether it exists.
+func (r *Registry) Subscription(name string) (Subscription, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	root, ok := r.subscriptions[name]
 	return root, ok
 }
 

@@ -418,6 +418,10 @@ services:
       NODE_ENV: production
       CI: "true"
       HUSKY: "0"
+      # Nest producers and the api-go subscription executor must use the same
+      # Redis channels. The container receives the value explicitly instead of
+      # relying on a host-side .env that compose would not inject.
+      GRAPHQL_SUBSCRIPTION_BUS: ${GRAPHQL_SUBSCRIPTION_BUS:-redis}
       PRISMA_AUTO_RESOLVE_FAILED_MIGRATIONS: "false"
       AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
       AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
@@ -576,6 +580,11 @@ services:
     environment:
       PORT: 4020
       LEGACY_API_URL: http://api:4000
+      # Realtime GraphQL subscriptions are an independent takeover: default
+      # legacy keeps every upgrade on the legacy proxy. go needs JWT, MySQL and
+      # Redis only and must share the Nest producers' Redis bus.
+      API_GO_GRAPHQL_SUBSCRIPTIONS_MODE: ${API_GO_GRAPHQL_SUBSCRIPTIONS_MODE:-legacy}
+      GRAPHQL_SUBSCRIPTION_BUS: ${GRAPHQL_SUBSCRIPTION_BUS:-redis}
       DATABASE_URL: mysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD}@mysql:${MYSQL_PORT:-3306}/${MYSQL_DB}
       # The OIDC login unit builds the web callback from NEXTAUTH_URL and the
       # IdP redirect_uri from API_BASE_URL. Both keep the same values the api

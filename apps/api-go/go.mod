@@ -7,6 +7,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
 	github.com/aws/smithy-go v1.28.5
+	// GraphQL realtime subscriptions: maintained RFC6455 client/server with
+	// context cancellation, used instead of a hand-written frame layer.
+	github.com/coder/websocket v1.8.12
 	github.com/go-sql-driver/mysql v1.9.3
 	// Go-批3A：NestJS access token 独立验签（HS256/iss/aud/exp）。
 	// 成熟维护中的最小 JWT 库——不手写密码学。

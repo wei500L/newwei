@@ -128,7 +128,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -170,6 +169,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingswrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspacewrite"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlsubscriptions"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
@@ -725,10 +725,16 @@ func run() error {
 	// switch is go. The registered roots and their own switches decide which
 	// documents actually execute in Go; everything else is still proxied to
 	// NestJS.
+	// Realtime GraphQL subscriptions own only legal graphql-transport-ws
+	// upgrades on exact /graphql. They are independent of the HTTP read/write
+	// switches: non-upgrade methods keep following those switches and every
+	// non-local operation is forwarded whole to NestJS.
+	graphqlSubscriptionsGo := cfg.GraphQLSubscriptionsMode == config.GraphQLSubscriptionsModeGo
 	graphqlRouteMode := ""
 	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
 		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" ||
-		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" {
+		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" ||
+		graphqlSubscriptionsGo {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -868,7 +874,8 @@ func run() error {
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
-				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo {
+				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
+				graphqlSubscriptionsGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -1007,8 +1014,10 @@ func run() error {
 		graphqlKnowledgeReviewGo ||
 		graphqlRssTranslationGo ||
 		identityOnboardingGo || oidcLoginGo ||
-		searchReindexGo || proxyLoadBalancingGo || analysisExportGo
+		searchReindexGo || proxyLoadBalancingGo || analysisExportGo ||
+		graphqlSubscriptionsGo
 	var redisClient *redis.Client
+	var redisOptions *redis.Options
 	var authenticator *authhttp.Authenticator
 	// The background digest delivery needs the shared Redis client (tick gate,
 	// organization lease and notification relay) but not the JWT/RBAC stack.
@@ -1017,20 +1026,22 @@ func run() error {
 	// HTTP takeover needs it.
 	needsRedis := needsCredentialedGo || cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo
 	if needsRedis {
-		redisClient = redis.NewClient(&redis.Options{
-			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
-			Username: cfg.RedisUsername,
-			Password: cfg.RedisPassword,
-			DB:       cfg.RedisDB,
-			// go-redis v9 默认协商 RESP3。HGETALL 会变成 map，原始字段顺序丢失，
-			// 行为画像的同分排序就和 ioredis 对不上。固定 RESP2，和 NestJS 一致。
-			Protocol: 2,
-		})
+		// The blocking BullMQ XREAD reader and the queue jobctx cache share
+		// this exact Redis configuration but use dedicated connections.
+		redisOptions = newRedisOptions(cfg)
+		redisClient = redis.NewClient(redisOptions)
 	}
 	if needsCredentialedGo {
 		verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		blacklist := authn.NewRedisBlacklist(redisClient)
 		authenticator = authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
+	}
+	// HTTP GraphQL and the WebSocket executor share one limiter instance so
+	// their local circuit breaker state cannot disagree about the same Redis
+	// bucket.
+	var graphqlLimiter *policy.Limiter
+	if redisClient != nil {
+		graphqlLimiter = policy.NewLimiter(redisClient, cfg.RateLimitLogin, cfg.RateLimitLoginWindow, cfg.RateLimitFailOpen)
 	}
 	// The HTTP POST and the GraphQL root share one metadata service instance.
 	// It is built once, only when one of the two switches needs it, and reuses
@@ -1818,7 +1829,7 @@ func run() error {
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
-			Limiter:         policy.NewLimiter(redisClient, cfg.RateLimitLogin, cfg.RateLimitLoginWindow, cfg.RateLimitFailOpen),
+			Limiter:         graphqlLimiter,
 			Cache:           policy.NewResponseCache(redisClient),
 			Legacy:          gateway.ServeLegacy,
 			CORS:            cors.New(cfg.CorsOrigin),
@@ -1833,7 +1844,6 @@ func run() error {
 			return handlerErr
 		}
 		graphqlHandler = handler
-		gateway.RegisterGoHandler(graphqlread.Path, graphqlHandler.ServeHTTP)
 		gateway.RegisterGoHandler(graphqlread.StatsPath, graphqlHandler.ServeStats)
 		if graphqlReadGo {
 			log.Printf("api-go: GraphQL read pilot under go (16 queries; mutations and other queries stay on NestJS)")
@@ -1956,6 +1966,30 @@ func run() error {
 		log.Printf("api-go: item reading REST routes under go takeover (GET /api/items, GET /api/items/:id; readModel=%t)", cfg.ItemsReadModelEnabled)
 	}
 
+	// The realtime subscription executor registers no root on the HTTP read
+	// path. It needs only the credentialed stack: no Mongo, no queue worker and
+	// no HTTP read/write switch. Construction happens before the ordered
+	// teardown defer and Start after it, so every later error path releases the
+	// dedicated pub/sub and XREAD resources.
+	var graphqlSubscriptions *graphqlsubscriptions.Runtime
+	if graphqlSubscriptionsGo {
+		if sharedDB == nil || authenticator == nil || redisClient == nil || graphqlLimiter == nil || redisOptions == nil {
+			return errGraphQLSubscriptionsResources
+		}
+		runtime, runtimeErr := wireGraphQLSubscriptions(cfg, authenticator, redisClient, graphqlLimiter, redisOptions)
+		if runtimeErr != nil {
+			return runtimeErr
+		}
+		graphqlSubscriptions = runtime
+		log.Printf("api-go: GraphQL subscriptions under go (alertEvents, analysisEvents, assistantEvents, queueEvents; bus=%s)", cfg.GraphQLSubscriptionBus)
+	}
+	// A legal graphql-transport-ws upgrade goes to the local executor; every
+	// other exact /graphql request keeps the Go read handler or the legacy
+	// proxy. Registering this entrypoint is independent of the read switch.
+	if graphqlHandler != nil || graphqlSubscriptions != nil {
+		gateway.RegisterGoHandler(graphqlread.Path, graphqlEntrypoint(graphqlSubscriptions, graphqlHandler, gateway.ServeLegacy))
+	}
+
 	// The daily-digest background delivery unit owns the per-minute scan when
 	// API_GO_USER_DIGEST_DELIVERY_MODE=go. It registers no HTTP route and needs
 	// no JWT. The deferred Close stops new ticks and drains in-flight
@@ -1968,6 +2002,13 @@ func run() error {
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		// Stop accepting subscriptions, cancel operations and upstream sockets,
+		// then stop pub/sub/XREAD before the shared Redis client closes below.
+		if graphqlSubscriptions != nil {
+			if closeErr := graphqlSubscriptions.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: graphql subscriptions close: %v", closeErr)
+			}
+		}
 		if deliveryScheduler != nil {
 			if closeErr := deliveryScheduler.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: user digest delivery scheduler close: %v", closeErr)
@@ -1999,6 +2040,11 @@ func run() error {
 			readyHandler.Close(closeCtx)
 		}
 	}()
+	if graphqlSubscriptions != nil {
+		if startErr := graphqlSubscriptions.Start(context.Background()); startErr != nil {
+			return startErr
+		}
+	}
 	deliveryScheduler, err = wireDigestDelivery(cfg, sharedDB, redisClient, digestService)
 	if err != nil {
 		return err
@@ -2036,6 +2082,17 @@ func run() error {
 		return nil
 	case sig := <-stop:
 		log.Printf("api-go: received %s, shutting down", sig)
+		// http.Server.Shutdown neither waits for nor closes hijacked WebSocket
+		// connections. Stop new subscriptions, cancel operations/legacy
+		// upstreams and close those sockets before the HTTP drain, then let the
+		// deferred idempotent Close cover the shared Redis/Mongo teardown.
+		if graphqlSubscriptions != nil {
+			subscriptionCtx, cancelSubscriptions := context.WithTimeout(context.Background(), 10*time.Second)
+			if closeErr := graphqlSubscriptions.Close(subscriptionCtx); closeErr != nil {
+				log.Printf("api-go: graphql subscriptions close: %v", closeErr)
+			}
+			cancelSubscriptions()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {

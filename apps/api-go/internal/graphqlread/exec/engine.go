@@ -557,6 +557,13 @@ func authorizeRoot(root contract.Root, id contract.Identity) error {
 	}
 }
 
+// Authorize applies the same root permission contract to a Query, Mutation or
+// Subscription root. Subscription planning reuses it so a local subscription
+// fails with byte-identical FORBIDDEN/UNAUTHORIZED shapes.
+func Authorize(root contract.Root, id contract.Identity) error {
+	return authorizeRoot(root, id)
+}
+
 // fieldPermissionError builds the GraphQL error raised when the caller
 // selects a field guarded by @HasPermission without holding that permission.
 // The message, extensions, and HTTP status match the root permission failure
