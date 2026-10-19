@@ -144,13 +144,13 @@ func TestAggregatedMetricsMatchRowByRow(t *testing.T) {
 	rowByRow := computeConfusionMetrics(pairs, settings)
 
 	// Reproduce the $group stage: unique raw pairs with their counts.
-	type rawPair struct{ predicted, actual *string }
+	type rawPair struct{ Predicted, Actual *string }
 	order := make([]rawPair, 0, len(pairs))
 	counts := make(map[string]int, len(pairs))
 	for _, pair := range pairs {
 		key := derefString(pair.Predicted) + "\x00" + derefString(pair.Actual)
 		if _, ok := counts[key]; !ok {
-			order = append(order, pair)
+			order = append(order, rawPair{Predicted: pair.Predicted, Actual: pair.Actual})
 		}
 		counts[key]++
 	}
