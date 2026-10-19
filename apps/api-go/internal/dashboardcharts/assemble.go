@@ -59,11 +59,11 @@ type heatmapWarning struct {
 }
 
 type heatmapBody struct {
-	XLabels   []string          `json:"xLabels"`
-	YLabels   []string          `json:"yLabels"`
-	Cells     []heatmapCell     `json:"cells"`
-	UpdatedAt *string           `json:"updatedAt,omitempty"`
-	Warnings  []heatmapWarning  `json:"warnings,omitempty"`
+	XLabels   []string         `json:"xLabels"`
+	YLabels   []string         `json:"yLabels"`
+	Cells     []heatmapCell    `json:"cells"`
+	UpdatedAt *string          `json:"updatedAt,omitempty"`
+	Warnings  []heatmapWarning `json:"warnings,omitempty"`
 }
 
 func heatmapXLabels() []string {
@@ -85,7 +85,25 @@ func heatmapYLabels(cellCount int, noItems bool) []string {
 	return full[:rows]
 }
 
-func buildHeatmap(items []sectorItem, fields map[string][]string, lookup func(itemID, field string) (samplePoint, samplePoint, bool, error)) (heatmapBody, error) {
+// seriesKey identifies one economic series (item + source field).
+type seriesKey struct {
+	ItemID string
+	Field  string
+}
+
+// seriesEndpoints is the first and the last sample of one series inside the
+// requested window. Both come from the same (itemId, sourceField, recordedAt)
+// index range, so the batch keeps the per-pair plan of the old lookups.
+type seriesEndpoints struct {
+	First samplePoint
+	Last  samplePoint
+}
+
+// buildHeatmap resolves the source field of every cell first and then asks the
+// store for all first/last samples in one batch. Field selection stays in Go
+// because it depends on per-item metadata; the batch only replaces the
+// per-pair point lookups that made this endpoint issue one query per cell.
+func buildHeatmap(items []sectorItem, fields map[string][]string, load func(keys []seriesKey) (map[seriesKey]seriesEndpoints, error)) (heatmapBody, error) {
 	body := heatmapBody{
 		XLabels: heatmapXLabels(),
 		Cells:   []heatmapCell{},
@@ -94,9 +112,15 @@ func buildHeatmap(items []sectorItem, fields map[string][]string, lookup func(it
 		body.YLabels = heatmapYLabels(0, true)
 		return body, nil
 	}
-	var updated time.Time
-	var hasUpdated bool
+	type plannedCell struct {
+		item      sectorItem
+		fieldKey  string
+		available []string
+	}
 	var warnings []heatmapWarning
+	plans := make([]plannedCell, 0, len(items))
+	keys := make([]seriesKey, 0, len(items))
+	seen := make(map[seriesKey]struct{}, len(items))
 	for _, item := range items {
 		available := fields[item.ID]
 		if len(available) == 0 {
@@ -119,13 +143,30 @@ func buildHeatmap(items []sectorItem, fields map[string][]string, lookup func(it
 				SelectedSourceField:   fieldKey,
 			})
 		}
-		first, last, ok, err := lookup(item.ID, fieldKey)
+		key := seriesKey{ItemID: item.ID, Field: fieldKey}
+		if _, ok := seen[key]; !ok {
+			seen[key] = struct{}{}
+			keys = append(keys, key)
+		}
+		plans = append(plans, plannedCell{item: item, fieldKey: fieldKey})
+	}
+	endpoints := map[seriesKey]seriesEndpoints{}
+	if len(keys) > 0 {
+		loaded, err := load(keys)
 		if err != nil {
 			return heatmapBody{}, err
 		}
+		endpoints = loaded
+	}
+	var updated time.Time
+	var hasUpdated bool
+	for _, plan := range plans {
+		samples, ok := endpoints[seriesKey{ItemID: plan.item.ID, Field: plan.fieldKey}]
 		if !ok {
 			continue
 		}
+		first := samples.First
+		last := samples.Last
 		firstValue := first.Value
 		lastValue := last.Value
 		change := 0.0
@@ -136,11 +177,11 @@ func buildHeatmap(items []sectorItem, fields map[string][]string, lookup func(it
 		body.Cells = append(body.Cells, heatmapCell{
 			X:           index % heatmapColumns,
 			Y:           index / heatmapColumns,
-			Name:        item.DisplayName,
+			Name:        plan.item.DisplayName,
 			Value:       jsFixed(lastValue, 2),
 			Change:      jsFixed(change, 2),
-			Unit:        coalesceUnit(last.Unit, item.DefaultUnit),
-			SourceField: fieldKey,
+			Unit:        coalesceUnit(last.Unit, plan.item.DefaultUnit),
+			SourceField: plan.fieldKey,
 		})
 		if !hasUpdated || last.RecordedAt.After(updated) {
 			updated = last.RecordedAt
@@ -173,12 +214,16 @@ func coalesceUnit(pointUnit, defaultUnit sql.NullString) *string {
 	return nil
 }
 
+// jsFixed is Number(value.toFixed(digits)). toFixed rounds half towards
+// +Infinity ("pick the larger n"), so math.Round — which rounds half away from
+// zero — disagrees for exact negative ties such as -0.125 at two digits, where
+// the frontend renders -0.12 and math.Round would produce -0.13.
 func jsFixed(value float64, digits int) float64 {
 	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return value
 	}
 	pow := math.Pow10(digits)
-	rounded := math.Round(value*pow) / pow
+	rounded := math.Floor(value*pow+0.5) / pow
 	text := strconv.FormatFloat(rounded, 'f', digits, 64)
 	parsed, err := strconv.ParseFloat(text, 64)
 	if err != nil {

@@ -24,7 +24,7 @@ const (
 	// FinancialCandlestickPath 是 K 线的精确路径。
 	FinancialCandlestickPath = "/api/dashboard/financial-candlestick"
 	// WarMapGeoJSONPath 是世界底图的精确路径。
-	WarMapGeoJSONPath = "/api/dashboard/war-map/geojson"
+	WarMapGeoJSONPath  = "/api/dashboard/war-map/geojson"
 	requiredPermission = "dashboards.read"
 )
 
@@ -59,7 +59,10 @@ func (g membershipGate) Open(w http.ResponseWriter, r *http.Request) bool {
 type Store interface {
 	SectorItems(ctx context.Context) ([]sectorItem, error)
 	SectorFields(ctx context.Context, ids []string, start, end time.Time) (map[string][]string, error)
-	SectorPoint(ctx context.Context, itemID, field string, start, end time.Time, desc bool) (*samplePoint, error)
+	// SectorEndpoints loads the first and last sample of every requested series
+	// in one round trip. The heatmap needs exactly those two samples per cell,
+	// and one lookup per pair made the endpoint issue 2+2*N statements.
+	SectorEndpoints(ctx context.Context, keys []seriesKey, start, end time.Time) (map[seriesKey]seriesEndpoints, error)
 	CandleItem(ctx context.Context) (*candleItem, error)
 	CandlePoints(ctx context.Context, itemID string, fields []string, start, end time.Time) ([]rawPoint, error)
 	CandleCount(ctx context.Context, itemID string, start, end time.Time) (int, error)
@@ -146,16 +149,8 @@ func (h *Handler) serveHeatmap(w http.ResponseWriter, r *http.Request, start, en
 		h.failDB(w, r)
 		return
 	}
-	body, err := buildHeatmap(items, fields, func(itemID, field string) (samplePoint, samplePoint, bool, error) {
-		first, err := h.store.SectorPoint(r.Context(), itemID, field, start, end, false)
-		if err != nil || first == nil {
-			return samplePoint{}, samplePoint{}, false, err
-		}
-		last, err := h.store.SectorPoint(r.Context(), itemID, field, start, end, true)
-		if err != nil || last == nil {
-			return samplePoint{}, samplePoint{}, false, err
-		}
-		return *first, *last, true, nil
+	body, err := buildHeatmap(items, fields, func(keys []seriesKey) (map[seriesKey]seriesEndpoints, error) {
+		return h.store.SectorEndpoints(r.Context(), keys, start, end)
 	})
 	if err != nil {
 		h.failDB(w, r)
@@ -322,17 +317,17 @@ type ohlcJSON struct {
 }
 
 type candleFailure struct {
-	StatusCode            int           `json:"statusCode"`
-	Message               string        `json:"message"`
-	Error                 string        `json:"error"`
-	Code                  string        `json:"code"`
-	Detail                string        `json:"detail"`
-	Item                  mismatchItem  `json:"item"`
-	ExpectedAliases       ohlcJSON      `json:"expectedAliases"`
-	AvailableSourceFields []string      `json:"availableSourceFields"`
-	TraceID               string        `json:"traceId"`
-	Path                  string        `json:"path"`
-	Timestamp             string        `json:"timestamp"`
+	StatusCode            int          `json:"statusCode"`
+	Message               string       `json:"message"`
+	Error                 string       `json:"error"`
+	Code                  string       `json:"code"`
+	Detail                string       `json:"detail"`
+	Item                  mismatchItem `json:"item"`
+	ExpectedAliases       ohlcJSON     `json:"expectedAliases"`
+	AvailableSourceFields []string     `json:"availableSourceFields"`
+	TraceID               string       `json:"traceId"`
+	Path                  string       `json:"path"`
+	Timestamp             string       `json:"timestamp"`
 }
 
 func nonNil(values []string) []string {

@@ -28,6 +28,8 @@ type fakeStore struct {
 	err       error
 	items     []sectorItem
 	fields    map[string][]string
+	endpoint  map[seriesKey]seriesEndpoints
+	asked     []seriesKey
 	candle    *candleItem
 	matched   []rawPoint
 	total     int
@@ -44,8 +46,13 @@ func (f *fakeStore) SectorFields(_ context.Context, _ []string, start, end time.
 	return f.fields, f.err
 }
 
-func (f *fakeStore) SectorPoint(context.Context, string, string, time.Time, time.Time, bool) (*samplePoint, error) {
-	return nil, f.err
+func (f *fakeStore) SectorEndpoints(_ context.Context, keys []seriesKey, _, _ time.Time) (map[seriesKey]seriesEndpoints, error) {
+	f.calls++
+	f.asked = append([]seriesKey(nil), keys...)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.endpoint, nil
 }
 
 func (f *fakeStore) CandleItem(context.Context) (*candleItem, error) {
@@ -143,7 +150,8 @@ func TestHeatmapReadsStoreAndCandleMismatchHidesDriverText(t *testing.T) {
 		}},
 		fields: map[string][]string{"a": {"close"}},
 	}
-	rich := &pointStore{fakeStore: store, point: samplePoint{RecordedAt: day, Value: 110.5, Unit: sql.NullString{String: "pts", Valid: true}}}
+	point := samplePoint{RecordedAt: day, Value: 110.5, Unit: sql.NullString{String: "pts", Valid: true}}
+	rich := &pointStore{fakeStore: store, first: samplePoint{RecordedAt: day.AddDate(0, 0, -5), Value: 100}, last: point}
 	handler := &Handler{
 		gate:  membershipGate{auth: stubAuth{identity: authhttp.NewIdentity("user", "org-a", []string{"dashboards.read"})}},
 		store: rich,
@@ -158,6 +166,9 @@ func TestHeatmapReadsStoreAndCandleMismatchHidesDriverText(t *testing.T) {
 	if toISO(rich.start) != "2026-09-09T00:00:00.000Z" {
 		t.Fatalf("default start = %s", toISO(rich.start))
 	}
+	if rich.batches != 1 || len(rich.asked) != 1 || rich.asked[0] != (seriesKey{ItemID: "a", Field: "close"}) {
+		t.Fatalf("batches=%d keys=%+v", rich.batches, rich.asked)
+	}
 
 	secret := "mysql://user:s3cret@db:3306/app"
 	rich.err = errors.New(secret)
@@ -168,9 +179,14 @@ func TestHeatmapReadsStoreAndCandleMismatchHidesDriverText(t *testing.T) {
 	}
 }
 
+// pointStore answers the batched endpoint read with a fixed first/last pair and
+// counts how many times the batch was requested, so the test can assert that the
+// heatmap no longer issues one query per cell.
 type pointStore struct {
 	fakeStore
-	point samplePoint
+	first   samplePoint
+	last    samplePoint
+	batches int
 }
 
 func (p *pointStore) SectorFields(_ context.Context, _ []string, start, end time.Time) (map[string][]string, error) {
@@ -181,12 +197,16 @@ func (p *pointStore) SectorFields(_ context.Context, _ []string, start, end time
 	return p.fields, nil
 }
 
-func (p *pointStore) SectorPoint(context.Context, string, string, time.Time, time.Time, bool) (*samplePoint, error) {
+func (p *pointStore) SectorEndpoints(_ context.Context, keys []seriesKey, _, _ time.Time) (map[seriesKey]seriesEndpoints, error) {
+	p.batches++
 	if p.err != nil {
 		return nil, p.err
 	}
-	point := p.point
-	return &point, nil
+	loaded := make(map[seriesKey]seriesEndpoints, len(keys))
+	for _, key := range keys {
+		loaded[key] = seriesEndpoints{First: p.first, Last: p.last}
+	}
+	return loaded, nil
 }
 
 func (p *pointStore) CandleItem(context.Context) (*candleItem, error) {
