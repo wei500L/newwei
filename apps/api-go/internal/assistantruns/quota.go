@@ -113,7 +113,10 @@ func (s *Service) assertCanSubmit(ctx context.Context, orgID string) error {
 	}
 	if snapshot.SubmitLimitPerHour > 0 {
 		allowed, err := s.consumeSubmitSlot(ctx, orgID, snapshot.SubmitLimitPerHour)
-		if err != nil || !allowed {
+		if err != nil && !s.env.RateLimitFailOpen {
+			return &Failure{Status: 429, Message: submitLimitMessage}
+		}
+		if err == nil && !allowed {
 			return &Failure{Status: 429, Message: submitLimitMessage}
 		}
 	}

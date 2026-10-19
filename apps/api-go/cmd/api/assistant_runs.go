@@ -89,11 +89,12 @@ func wireAssistantRuns(
 		Publisher:    assistantruns.NewRedisPublisher(redisClient),
 		Observer:     assistantruns.NewLLMLogObserver(llmlogs.NewCompletionWriter(db, mongoConn.Database())),
 		Env: assistantruns.Env{
-			QueueConcurrency: cfg.AssistantQueueConcurrency,
-			MaxRetries:       cfg.AssistantMaxRetries,
-			LLMTimeout:       time.Duration(cfg.AssistantLLMTimeoutMs) * time.Millisecond,
-			StreamFlushChars: cfg.AssistantStreamFlushChars,
-			StreamFlushMs:    cfg.AssistantStreamFlushMs,
+			QueueConcurrency:  cfg.AssistantQueueConcurrency,
+			MaxRetries:        cfg.AssistantMaxRetries,
+			LLMTimeout:        time.Duration(cfg.AssistantLLMTimeoutMs) * time.Millisecond,
+			StreamFlushChars:  cfg.AssistantStreamFlushChars,
+			StreamFlushMs:     cfg.AssistantStreamFlushMs,
+			RateLimitFailOpen: cfg.RateLimitFailOpen,
 		},
 	}), nil
 }

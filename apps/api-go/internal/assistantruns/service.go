@@ -30,6 +30,9 @@ type Env struct {
 	LLMTimeout       time.Duration
 	StreamFlushChars int
 	StreamFlushMs    int
+	// RateLimitFailOpen mirrors RATE_LIMIT_REDIS_FAIL_OPEN (default false).
+	// The submit limiter follows the same failure policy as NestJS.
+	RateLimitFailOpen bool
 }
 
 // GovernanceReader is the platformgovernance read surface the submit gate and
