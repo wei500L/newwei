@@ -9,7 +9,7 @@
 - 仓库 `/Users/oo/project/newwei`。规划基线 `origin/main 91e759b449c4511dc96d86539ea0eb258754d07e`；不能按旧checkout推断进度。
 - 先读最新 `AGENTS.md`、`docs/refactor/migration-map/{README,PLANNING}.md`、`tasks/README.md`、本task和本提示词，再fetch main、查询开放PR/最近5次main普通CI/worktree。只核本候选增量，不重建地图。
 - 独立业务分支 `refactor/go-newsnow-sources`；worktree `/Users/oo/project/newwei-go-newsnow-sources`。从执行时最新origin/main创建；已有目录先核对任务身份与改动，不重置其他目录。
-- 规划记录在 `docs/plan-newsnow-feed`、`/Users/oo/project/newwei-plan-newsnow-feed`；尚未合main时先 `git fetch origin docs/plan-newsnow-feed`，只取本任务记录/提示词，不覆盖整份旧地图。本批业务目录规划时未创建。
+- 规划记录已发布于Ready规划PR #93（https://github.com/wei500L/newwei/pull/93），分支 `docs/plan-newsnow-feed`、`/Users/oo/project/newwei-plan-newsnow-feed`；尚未合main时先 `git fetch origin docs/plan-newsnow-feed`，只取本任务记录/提示词，不覆盖整份旧地图。本批业务目录规划时未创建。
 - 上批规划#91已合入main；审计实现Ready #92仍OPEN，head `28c8f761a2ce4a447080414f154b567648cc6bd1`，普通CI39248452603成功，继续占用AuditOutbox。其真实diff已读：与本批只重叠main/config/env schema/compose/README，保留所有条件与关闭顺序并集，不改它的业务文件或记录要求。
 - 基线main普通CI39247556593，精确head为上述91e759b4，verify/vector-integration/api-go-user-settings-integration success，两regen skipped。链接 `https://github.com/wei500L/newwei/actions/runs/39247556593`。不是本批CI、真实上游连通或部署证据。
 

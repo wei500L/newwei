@@ -3,7 +3,7 @@
 - 状态reserved；2026-10-19 Europe/Moscow，本规划窗口保存并发出[独立完整提示词](NEWSNOW-SOURCES-001.prompt.md)，未实施业务。
 - 基线origin/main `91e759b449c4511dc96d86539ea0eb258754d07e`，普通CI[39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)在该精确head success；verify/vector-integration/api-go-user-settings-integration success，两regen skipped。非本批运行/部署证据。
 - 业务分支 `refactor/go-newsnow-sources`，worktree `/Users/oo/project/newwei-go-newsnow-sources`，尚未创建；执行器活动未核实。业务PR/head/merge/CI未产生。
-- 规划分支 `docs/plan-newsnow-feed`，worktree `/Users/oo/project/newwei-plan-newsnow-feed`；发布证据在后续增量回填。
+- 规划分支 `docs/plan-newsnow-feed`，worktree `/Users/oo/project/newwei-plan-newsnow-feed`；首份认领/提示词提交 `b194917391d54514a8e52ece2680544067d3abe1` 已正常推送，发布于 [Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)。规划PR自身CI尚未确认完成，不借用main绿灯；业务PR仍未创建。
 - 来源BL-18的source/batch子链，关联GAP-LEGACY-001；必要来源实时接缝受GAP-ASYNC-001索引，但不认领通用WS或cron。
 
 ## 精确交付与工作量
