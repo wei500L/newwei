@@ -1124,26 +1124,6 @@ func optionalStringValueRaw(raw json.RawMessage) *string {
 	return &value
 }
 
-func numberValue(raw json.RawMessage) (float64, bool) {
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" {
-		return 0, false
-	}
-	switch trimmed[0] {
-	case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-	default:
-		return 0, false
-	}
-	var value float64
-	if err := json.Unmarshal([]byte(trimmed), &value); err != nil {
-		return 0, false
-	}
-	if math.IsNaN(value) || math.IsInf(value, 0) {
-		return 0, false
-	}
-	return value, true
-}
-
 func clampIntValue(raw json.RawMessage, min, max, fallback int) int {
 	value, ok := numberValue(raw)
 	if !ok {
@@ -1207,27 +1187,6 @@ func nullStringValue(value sql.NullString) string {
 		return ""
 	}
 	return value.String
-}
-
-func stringValue(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
-
-func intPointer(value int) *int { return &value }
-
-func boolPointer(value bool) *bool { return &value }
-
-func floatPointer(value float64) *float64 { return &value }
-
-func millisToISO(millis *int64) *string {
-	if millis == nil {
-		return nil
-	}
-	value := time.UnixMilli(*millis).UTC().Format("2006-01-02T15:04:05.000Z")
-	return &value
 }
 
 func timePointerISO(value time.Time) *string {
@@ -1318,4 +1277,13 @@ func placeholders(count int) string {
 		parts = append(parts, "?")
 	}
 	return strings.Join(parts, ",")
+}
+
+// millisToISO renders a millisecond timestamp as new Date(ms).toISOString().
+func millisToISO(millis *int64) *string {
+	if millis == nil {
+		return nil
+	}
+	value := time.UnixMilli(*millis).UTC().Format("2006-01-02T15:04:05.000Z")
+	return &value
 }

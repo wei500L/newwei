@@ -153,7 +153,7 @@ func (r *Runtime) executeSeedDiscovery(ctx context.Context, runtime *runtimeCont
 		mode = "rss"
 	}
 	maxURLs := int(toNumberValue(config["maxUrls"], 40))
-	seedURL := firstNonEmptyString(stringValueOf(config["seedUrl"]), stringValueOf(runtime.seedURL), newsSourceURL(runtime))
+	seedURL := firstNonEmptyString(stringValueOf(config["seedUrl"]), stringValue(runtime.seedURL), newsSourceURL(runtime))
 	domain := stringValueOf(config["domain"])
 	if domain == "" {
 		domain = resolveOrigin(seedURL)
@@ -187,7 +187,7 @@ func (r *Runtime) executeSeedDiscovery(ctx context.Context, runtime *runtimeCont
 
 func (r *Runtime) executeListDiscovery(ctx context.Context, runtime *runtimeContext, node crawlworkflow.WorkflowNode, registry *candidateRegistry) (nodeExecutionResult, error) {
 	config := objectOfValue(node.Config)
-	listURL := firstNonEmptyString(stringValueOf(config["listUrl"]), stringValueOf(runtime.seedURL), newsSourceURL(runtime))
+	listURL := firstNonEmptyString(stringValueOf(config["listUrl"]), stringValue(runtime.seedURL), newsSourceURL(runtime))
 	maxURLs := int(toNumberValue(config["maxUrls"], 60))
 	listMaxPages := int(toNumberValue(config["listMaxPages"], 6))
 	listPageConcurrency := int(toNumberValue(config["listPageConcurrency"], 2))
@@ -215,7 +215,7 @@ func (r *Runtime) executeListDiscovery(ctx context.Context, runtime *runtimeCont
 
 func (r *Runtime) executeDeepDiscovery(ctx context.Context, runtime *runtimeContext, node crawlworkflow.WorkflowNode, registry *candidateRegistry) (nodeExecutionResult, error) {
 	config := objectOfValue(node.Config)
-	seedURL := firstNonEmptyString(stringValueOf(config["seedUrl"]), stringValueOf(runtime.seedURL), newsSourceURL(runtime))
+	seedURL := firstNonEmptyString(stringValueOf(config["seedUrl"]), stringValue(runtime.seedURL), newsSourceURL(runtime))
 	maxURLs := int(toNumberValue(config["maxUrls"], 60))
 	discovered, err := r.discovery.DiscoverDeepCandidates(ctx, crawlmetadata.DeepDiscoveryInput{
 		URL:          seedURL,
@@ -557,7 +557,7 @@ func (r *Runtime) executeFallbackStrategy(ctx context.Context, runtime *runtimeC
 	discoveryConfig := map[string]json.RawMessage{}
 	seedURL := stringValueOf(config["seedUrl"])
 	if seedURL == "" {
-		seedURL = stringValueOf(runtime.seedURL)
+		seedURL = stringValue(runtime.seedURL)
 	}
 	if mode == "list" {
 		discoveryConfig["listUrl"] = rawOf(seedURL)
@@ -687,7 +687,7 @@ func (r *Runtime) mapDiscoveryCandidates(nodeID, nodeType string, candidates []c
 			NodeID: nodeID, NodeType: nodeType, Action: "discovered",
 			Message: "Candidate discovered", Accepted: boolPointer(true),
 			BeforeSnapshot: beforeSnapshot, AfterSnapshot: buildCandidateSnapshot(candidate),
-			Details: rawOf(map[string]any{"relevanceScore": jsonValue(entry.RelevanceScore)}),
+			Details: rawOf(map[string]any{"relevanceScore": entry.RelevanceScore}),
 		})
 		registry.set(candidate.URL, candidate)
 		out = append(out, candidate)

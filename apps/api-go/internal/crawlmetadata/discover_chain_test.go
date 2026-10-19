@@ -58,8 +58,8 @@ func TestDiscoverRSSCandidatesParsesPayloadAndPrefetch(t *testing.T) {
 	if candidate.PrefetchedArticle == nil {
 		t.Fatal("missing prefetchedArticle")
 	}
-	if candidate.PrefetchedArticle.MarkdownSource != "content" {
-		t.Fatalf("markdown source = %s", candidate.PrefetchedArticle.MarkdownSource)
+	if len(candidate.PrefetchedArticle.Metadata) == 0 || !strings.Contains(string(candidate.PrefetchedArticle.Metadata), "markdownSource") {
+		t.Fatalf("metadata = %s", candidate.PrefetchedArticle.Metadata)
 	}
 	if !strings.Contains(candidate.PrefetchedArticle.Markdown, "Full body text") {
 		t.Fatalf("markdown = %q", candidate.PrefetchedArticle.Markdown)
