@@ -2,7 +2,7 @@
 
 - 状态 **pr_open**，2026-10-19 Europe/Moscow；业务 [Ready PR #96](https://github.com/wei500L/newwei/pull/96)，分支 `refactor/go-items-ingest`。认领与稳定提示词来自[Ready 规划 PR #93](https://github.com/wei500L/newwei/pull/93) 的最新 docs/plan-newsnow-feed 分支（规划 head `76f6d06ecf5ac0300249b611f57f4cf192302972`）；本窗口从该 PR 只带入本任务 `ITEMS-INGEST-001.md` 与原始 prompt，未把其他未合业务分支当前提。
 - 业务分支 `refactor/go-items-ingest`，worktree `/Users/oo/project/newwei-go-items-ingest`；从 `origin/main` `91e759b449c4511dc96d86539ea0eb258754d07e` 创建。该精确 SHA 的[普通 CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593) 成功；旧主工作目录 c70b0373 不作为本批基线。
-- 本任务来源 BL-24 条目写/导入与 BL-20 raw_item 必要补偿；关联 GAP-LEGACY-001 / GAP-ASYNC-001 及具体 GAP-ITEMS-001。首批 head `ce4dfb23fa6fca872ffb38f8ee3ffd6e5214bcb1`，初始普通 CI 39304263592 在 `go.sum` 未再生成时失败（MessagePack 依赖与 go.mod 排序漂移），随后加 `go-modules-regen` 走远端 tidy 并重跑；最终 head/CI 以 PR 当前值与 EVIDENCE 回填为准。pr_open 不代表已合 main 或已启用。
+- 本任务来源 BL-24 条目写/导入与 BL-20 raw_item 必要补偿；关联 GAP-LEGACY-001 / GAP-ASYNC-001 及具体 GAP-ITEMS-001。首批 head `ce4dfb23fa6fca872ffb38f8ee3ffd6e5214bcb1`，初始普通 CI 39304263592 在 `go.sum` 未再生成时失败（MessagePack 依赖与 go.mod 排序漂移），随后加 `go-modules-regen`，远端 tidy 生成 go.sum（bot 提交 `a98b3f7fdd595a3bdf85bef916c61cfee13e9f12`，含 msgpack v5.4.1/tagparser v2.0.0）；最终 head/CI 以 PR 当前值与 EVIDENCE 回填为准。pr_open 不代表已合 main 或已启用。
 
 ## 完整范围与执行所有权
 
