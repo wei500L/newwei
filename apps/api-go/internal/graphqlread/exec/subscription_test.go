@@ -104,7 +104,7 @@ func TestPlanSubscriptionOwnership(t *testing.T) {
 func TestPlanSubscriptionVariableFailureIsProtocolResult(t *testing.T) {
 	engine := newSubscriptionTestEngine(t)
 	plan := engine.PlanSubscription(
-		`subscription Alert($limit: Int!) { alertEvents { id } }`,
+		`subscription Alert($show: Boolean!) { alertEvents { id severity @include(if: $show) } }`,
 		nil,
 		nil,
 	)
@@ -144,8 +144,11 @@ func TestPlanSubscriptionIncludeAndSkipAreExpandedOnce(t *testing.T) {
 		TriggeredAt: time.Date(2026, 10, 19, 20, 1, 2, 345_000_000, time.FixedZone("MSK", 3*60*60)),
 		Severity:    "high",
 	}})
-	if !strings.Contains(string(result.Body), `"severity"`) {
+	if strings.Contains(string(result.Body), `"severity"`) {
 		t.Fatalf("body = %s: @include(if: false) must drop severity", result.Body)
+	}
+	if !strings.Contains(string(result.Body), `"id":"event-1"`) {
+		t.Fatalf("body = %s: the selected id must be projected", result.Body)
 	}
 	if !strings.Contains(string(result.Body), `"triggeredAt":"2026-10-19T17:01:02.345Z"`) {
 		t.Fatalf("body = %s: DateTime must be UTC milliseconds", result.Body)

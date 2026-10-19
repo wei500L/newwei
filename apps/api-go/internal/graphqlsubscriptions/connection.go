@@ -148,7 +148,10 @@ func (c *connection) writeLoop() {
 	for {
 		select {
 		case request := <-c.closeReq:
+			// Send the protocol close frame before cancelling the read context:
+			// cancelling first can abort the socket without the close code.
 			_ = c.ws.Close(request.code, request.reason)
+			c.cancel()
 			return
 		case data := <-c.out:
 			if err := c.ws.Write(c.ctx, websocket.MessageText, data); err != nil {
@@ -168,7 +171,14 @@ func (c *connection) writeLoop() {
 }
 
 func (c *connection) cleanup() {
-	c.cancel()
+	c.mu.Lock()
+	closing := c.closing
+	c.mu.Unlock()
+	if !closing {
+		// The peer closed or the read failed without a protocol close request;
+		// no specific close code needs to be delivered.
+		c.cancel()
+	}
 	c.mu.Lock()
 	c.closing = true
 	ops := make([]*operation, 0, len(c.ops))
@@ -196,6 +206,7 @@ func (c *connection) cleanup() {
 		case <-time.After(time.Second):
 		}
 	}
+	c.cancel()
 }
 
 func (c *connection) handleMessage(data []byte) bool {
@@ -624,12 +635,21 @@ func (c *connection) closeWith(code websocket.StatusCode, reason string) {
 	c.closeOnce.Do(func() {
 		c.mu.Lock()
 		c.closing = true
+		ops := make([]*operation, 0, len(c.ops))
+		for _, op := range c.ops {
+			ops = append(ops, op)
+		}
+		c.ops = map[string]*operation{}
 		c.mu.Unlock()
+		// Stop sources immediately, but leave the connection context alive so
+		// the writer can deliver the close frame with the protocol code.
+		for _, op := range ops {
+			op.cancel()
+		}
 		select {
 		case c.closeReq <- closeRequest{code: code, reason: reason}:
 		default:
 		}
-		c.cancel()
 	})
 }
 

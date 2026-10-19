@@ -266,17 +266,28 @@ func TestQueueColdInstanceResolvesSharedContext(t *testing.T) {
 	defer cancel()
 	feed := cold.Subscribe(ctx, "org-a")
 	cold.handle(context.Background(), StreamEntry{ID: "3-0", Fields: map[string]string{
-		"event": "completed", "jobId": "job-1", "returnvalue": `{"ok":true}`,
+		"event": "progress", "jobId": "job-1", "data": `{"p":1}`,
 	}})
-	completed := readQueueEvent(t, feed)
-	if completed.Event != "COMPLETED" || completed.JobID != "job-1" {
-		t.Fatalf("cold completed = %+v", completed)
+	progress := readQueueEvent(t, feed)
+	if progress.Event != "PROGRESS" || progress.JobID != "job-1" {
+		t.Fatalf("cold progress = %+v", progress)
 	}
 	cold.mu.Lock()
 	_, warmLocal := cold.local["job-1"]
 	cold.mu.Unlock()
 	if !warmLocal {
 		t.Fatal("a shared-cache hit must warm the local context")
+	}
+
+	cold.handle(context.Background(), StreamEntry{ID: "4-0", Fields: map[string]string{
+		"event": "completed", "jobId": "job-1", "returnvalue": `{"ok":true}`,
+	}})
+	completed := readQueueEvent(t, feed)
+	if completed.Event != "COMPLETED" || completed.JobID != "job-1" {
+		t.Fatalf("cold completed = %+v", completed)
+	}
+	if len(store.shared("queue:pipeline:jobctx:job-1")) == 0 {
+		t.Fatal("the terminal event must keep the shared context")
 	}
 }
 
