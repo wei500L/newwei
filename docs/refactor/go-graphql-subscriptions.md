@@ -124,10 +124,11 @@
   与迟到结果、同连接 local+legacy 整份回退且仅执行一次、四根权限/双组织隔离、
   Date tag/null/enum/alias/fragment/non-null、queue progress/completed 包装/job
   删除后共享上下文/每实例一次、独立模式配置与公共关闭。
-- 普通 CI [39305405252](https://github.com/wei500L/newwei/actions/runs/39305405252) 已在代码/测试
-  head `33492e0f7c73c80450bd9915055a521032578e9b` success：verify（含 Lint、
+- 普通 CI [39308530143](https://github.com/wei500L/newwei/actions/runs/39308530143) 已在代码/测试
+  head `51fb0d1aecf39c29c44fa91dfea1f425e488b7e7` success：verify（含 Lint、
   `Go tests (api-go gateway + vector-go pilot)`、Build）、vector-integration、
-  api-go-user-settings-integration success；两个 regen skipped。依赖已由
+  api-go-user-settings-integration success；两个 regen skipped。SDL 解析/校验错误已本地
+  以 operation 级 error 结束且不关闭连接。依赖已由
   `go-modules-regen` 在 cfa0c4fc 远端生成。
 - 未验证：Go+真实 Redis/多实例、真实 Nest producer 产生的事件、真实 BullMQ job
   终态、生产切流/部署。现有 `graphql-subscriptions-smoke` 只覆盖 Nest 跨实例链，
