@@ -59,5 +59,5 @@ NestJS `QueueProcessor`/`QueueEvents`/`QueueOrgStatsTracker`/`QueueEventPublishe
 
 - 本机未安装依赖、未运行 build/test/Docker/服务，未读真实 .env/凭据，未调用真实 Mongo/Redis/模型/crawl4ai/ES/vector/SMTP。
 - 静态检查：`gofmt`、`git diff --check`、类型/事务/org 绑定/raw 引用/幂等竞争/关闭顺序只读 review。
-- 代码 head `8582fb29a1e4ce9e9aef0c784239921e72e9e4ca`：[普通 CI39306302625](https://github.com/wei500L/newwei/actions/runs/39306302625) success（verify / vector-integration / api-go-user-settings-integration）。`api-go-user-settings-integration` 中新增的真实 Redis 用例覆盖 standard/priority、pause、重复 job、MessagePack 参数/job hash/options/events/marker、org 计数；MySQL 用例覆盖 ItemMeta/Outbox CAS、事务、JSON itemMetaId 过滤与 dead 不污染新版引用。两个 regen job skipped，不计为通过。
+- 代码 head `e66052d66c0b1dbf36a7f1af3fff70ae95070ade`：[普通 CI39308942328](https://github.com/wei500L/newwei/actions/runs/39308942328) success；前序 `8582fb29` 的 CI39306302625 同样 success（verify / vector-integration / api-go-user-settings-integration）。`api-go-user-settings-integration` 中新增的真实 Redis 用例覆盖 standard/priority、pause、重复 job、MessagePack 参数/job hash/options/events/marker、org 计数；MySQL 用例覆盖 ItemMeta/Outbox CAS、事务、JSON itemMetaId 过滤与 dead 不污染新版引用。两个 regen job skipped，不计为通过。
 - 未验证：真实 Mongo 副本集/写入、双端 owner 切换/drain、Nest 完整 worker 消费与外部内容处理、生产部署与流量、机器令牌真实数据。
