@@ -75,4 +75,6 @@ worker 使用独立阻塞 Redis 连接，默认并发 `AKSHARE_QUEUE_CONCURRENCY
 
 ## 验证边界
 
-已计划由普通 CI 覆盖的 Go 单元测试包括：repeatCron 省略/null/字符串、七个预设映射与去重、平滑槽位、provider fixture 映射与缺配置、upsert 唯一键、latest 跳过条件和限流键/消息、非法开关值。真实 AkShare 网关、Finnhub、FRED、Yahoo Finance、生产 Redis、真实升级后的网关进程未在本批实网验证；外部调用失败、超时和非 2xx 仍按 provider 失败路径记录，不写成已通过。
+普通 Go 单测已加入：repeatCron 省略/null/字符串、七个预设映射、平滑槽位、provider fixture 映射与缺配置、upsert 唯一键、latest 跳过条件、限流消息、目录 slug/provider 数量、管理路由注册，以及非法开关值。普通 CI [39318891222](https://github.com/wei500L/newwei/actions/runs/39318891222) 在 head `084387d4fff9ef69c53097989baf7eb0763417f6` 成功；两个 regen job 为 skipped，不计为测试通过。
+
+真实 AkShare 网关、Finnhub、FRED、Yahoo Finance、生产 Redis、真实升级后的网关进程未在本批实网验证；外部调用失败、超时和非 2xx 仍按 provider 失败路径记录，不写成已通过。

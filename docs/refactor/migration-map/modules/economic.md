@@ -14,7 +14,7 @@
 
 Nest 功能目录：[akshare](../../../../apps/api/src/modules/akshare)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：[PR #99](https://github.com/wei500L/newwei/pull/99)，分支 `refactor/go-economic-data`，head `084387d4fff9ef69c53097989baf7eb0763417f6`，Ready 未合并；普通 CI [39318891222](https://github.com/wei500L/newwei/actions/runs/39318891222) 在该 head 成功，两个 regen job 为 skipped（不是测试通过）。旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
 
 ## 精确 HTTP 清单
 
