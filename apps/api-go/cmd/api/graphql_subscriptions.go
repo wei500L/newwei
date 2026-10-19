@@ -13,6 +13,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlsubscriptions"
+	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 )
 
 var errGraphQLSubscriptionsResources = errors.New("api-go: GraphQL subscriptions require mysql, jwt, and redis")
@@ -65,7 +66,7 @@ func graphqlEntrypoint(
 	subscriptions *graphqlsubscriptions.Runtime,
 	readHandler *graphqlread.Handler,
 	legacy func(http.ResponseWriter, *http.Request),
-) http.HandlerFunc {
+) legacyproxy.GoHandler {
 	return func(w http.ResponseWriter, request *http.Request) {
 		if subscriptions != nil && subscriptions.Handles(request) {
 			subscriptions.ServeHTTP(w, request)
