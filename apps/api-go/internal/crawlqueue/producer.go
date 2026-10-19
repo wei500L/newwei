@@ -399,7 +399,14 @@ func (p *Producer) setPaused(ctx context.Context, keys queueKeys, pause bool) er
 	scriptKeys := []string{
 		src, dst, keys.meta, keys.prioritized, keys.events, keys.delayed, keys.marker,
 	}
-	return p.redis.Eval(ctx, pauseScript, scriptKeys, arg).Err()
+	// The official pause script ends with an XADD statement and no return, so
+	// Redis answers nil. ioredis treats that as a null reply; go-redis maps it
+	// to redis.Nil, which is not an error here.
+	err := p.redis.Eval(ctx, pauseScript, scriptKeys, arg).Err()
+	if err != nil && err != redis.Nil {
+		return err
+	}
+	return nil
 }
 
 // Counts is CrawlQueueService.getJobCounts: hot + normal + legacy.

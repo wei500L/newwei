@@ -506,7 +506,14 @@ func TestCrawlTaskLifecycleDelete(t *testing.T) {
 		"SELECT metadata FROM AuditLog WHERE orgId = ? AND action = 'delete'", h.caller.OrgID).Scan(&metadata); err != nil {
 		t.Fatalf("delete audit: %v", err)
 	}
-	if !strings.Contains(string(metadata), `"deletedResultCount":2`) {
+	var deleteMetadata struct {
+		TaskID             string `json:"taskId"`
+		DeletedResultCount int    `json:"deletedResultCount"`
+	}
+	if err := json.Unmarshal(metadata, &deleteMetadata); err != nil {
+		t.Fatalf("delete audit json: %v", err)
+	}
+	if deleteMetadata.TaskID != "task-lifecycle-delete" || deleteMetadata.DeletedResultCount != 2 {
 		t.Fatalf("delete audit metadata = %s", metadata)
 	}
 
@@ -643,8 +650,13 @@ func TestCrawlTaskLifecycleConcurrencyBroadcast(t *testing.T) {
 	if err := h.db.QueryRow("SELECT value FROM SystemSetting WHERE `key` = 'crawl_client_settings'").Scan(&stored); err != nil {
 		t.Fatalf("stored settings: %v", err)
 	}
-	if !strings.Contains(string(stored), `"maxConcurrency":9`) {
-		t.Fatalf("stored settings = %s", stored)
+	var storedSettings struct {
+		MaxConcurrency int `json:"maxConcurrency"`
+	}
+	// MySQL's JSON column re-serializes the document (with spaces), so the
+	// field is compared after decoding rather than by substring.
+	if err := json.Unmarshal(stored, &storedSettings); err != nil || storedSettings.MaxConcurrency != 9 {
+		t.Fatalf("stored settings = %s (err = %v)", stored, err)
 	}
 	value, err := h.redis.HGet(ctx, "bull:"+crawlqueue.QueueHot+":meta", "concurrency").Result()
 	if err != nil || value != "9" {
@@ -669,41 +681,49 @@ func TestCrawlTaskLifecycleAdminGate(t *testing.T) {
 	h := newLifecycleHarness(t)
 	h.reset(t)
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	role := func(id, name string, isSystem bool) {
+	const (
+		customOrg = "org-lifecycle-custom"
+		systemOrg = "org-lifecycle-system"
+	)
+	role := func(orgID, id, name string, isSystem bool) {
 		if _, err := h.db.Exec("INSERT INTO Role (id, name, isSystem, orgId) VALUES (?, ?, ?, ?)",
-			id, name, isSystem, h.caller.OrgID); err != nil {
-			t.Fatal(err)
+			id, name, isSystem, orgID); err != nil {
+			t.Fatalf("insert role %s: %v", id, err)
 		}
 	}
-	membership := func(id, userID, roleID string) {
+	membership := func(orgID, id, userID, roleID string) {
 		if _, err := h.db.Exec("INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt) VALUES (?, ?, ?, ?, 1, ?)",
-			id, userID, h.caller.OrgID, roleID, now); err != nil {
-			t.Fatal(err)
+			id, userID, orgID, roleID, now); err != nil {
+			t.Fatalf("insert membership %s: %v", id, err)
 		}
 	}
-	role("role-custom-admin", "admin", false)
-	role("role-system-admin", "Admin", true)
-	role("role-member", "member", true)
-	membership("membership-custom", "user-custom-admin", "role-custom-admin")
-	membership("membership-system", "user-system-admin", "role-member")
+	// The MySQL collation is case-insensitive, so a custom "admin" role and a
+	// system "Admin" role cannot coexist in one organization; the two actors use
+	// separate organizations instead.
+	role(customOrg, "role-custom-admin", "admin", false)
+	role(customOrg, "role-custom-member", "member", true)
+	membership(customOrg, "membership-custom", "user-custom-admin", "role-custom-admin")
+	role(systemOrg, "role-system-admin", "Admin", true)
+	role(systemOrg, "role-system-member", "member", true)
+	membership(systemOrg, "membership-system", "user-system-admin", "role-system-member")
+	if _, err := h.db.Exec("INSERT INTO MembershipRole (membershipId, roleId, orgId, createdAt) VALUES (?, ?, ?, ?)",
+		"membership-system", "role-system-admin", systemOrg, now); err != nil {
+		t.Fatalf("insert additional role: %v", err)
+	}
 
-	if h.svc.isActorAdmin(h.ctx, h.caller.OrgID, "user-custom-admin") {
+	if h.svc.isActorAdmin(h.ctx, customOrg, "user-custom-admin") {
 		t.Fatal("a custom role named admin must not pass the C3 gate")
 	}
-	if h.svc.isActorAdmin(h.ctx, h.caller.OrgID, "user-system-admin") {
-		t.Fatal("a system member role must not pass the C3 gate")
-	}
-	if _, err := h.db.Exec("INSERT INTO MembershipRole (membershipId, roleId, orgId, createdAt) VALUES (?, ?, ?, ?)",
-		"membership-system", "role-system-admin", h.caller.OrgID, now); err != nil {
-		t.Fatal(err)
-	}
-	if !h.svc.isActorAdmin(h.ctx, h.caller.OrgID, "user-system-admin") {
+	if h.svc.isActorAdmin(h.ctx, systemOrg, "user-system-admin") != true {
 		t.Fatal("a system role named Admin (case-insensitive) must pass the C3 gate")
+	}
+	if h.svc.isActorAdmin(h.ctx, customOrg, "user-system-admin") {
+		t.Fatal("a membership in another organization must not pass the C3 gate")
 	}
 
 	// End to end: the custom-admin user's jsCode is stripped, the system
 	// admin's jsCode survives.
-	customCaller := authhttp.NewIdentity("user-custom-admin", h.caller.OrgID, []string{"crawl.write"})
+	customCaller := authhttp.NewIdentity("user-custom-admin", customOrg, []string{"crawl.write"})
 	customView, err := h.svc.CreateTask(h.ctx, customCaller, taskInput(t, `{
 		"url":"https://example.com/custom",
 		"options":{"jsCode":["document.querySelector('#more').click()"],"jsOnly":true}
@@ -719,7 +739,7 @@ func TestCrawlTaskLifecycleAdminGate(t *testing.T) {
 		t.Fatalf("custom admin kept jsCode: %s", customConfig)
 	}
 
-	systemCaller := authhttp.NewIdentity("user-system-admin", h.caller.OrgID, []string{"crawl.write"})
+	systemCaller := authhttp.NewIdentity("user-system-admin", systemOrg, []string{"crawl.write"})
 	systemView, err := h.svc.CreateTask(h.ctx, systemCaller, taskInput(t, `{
 		"url":"https://example.com/system",
 		"options":{"jsCode":["document.querySelector('#more').click()"],"jsOnly":true}
