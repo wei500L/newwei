@@ -570,6 +570,7 @@ func run() error {
 	if cfg.ArchiveReadingMode == config.ArchiveReadingModeGo {
 		archiveReadingMode = string(legacyproxy.ModeGo)
 	}
+	archiveReadingGo := cfg.ArchiveReadingMode == config.ArchiveReadingModeGo
 	situationMonitorsMode := ""
 	if cfg.SituationMonitorsMode == config.SituationMonitorsModeGo {
 		situationMonitorsMode = string(legacyproxy.ModeGo)
@@ -967,7 +968,6 @@ func run() error {
 	// it builds its own item and news-event readers and only owns the two exact
 	// POST export routes.
 	analysisExportGo := cfg.AnalysisExportMode == config.AnalysisExportModeGo
-	archiveReadingGo := cfg.ArchiveReadingMode == config.ArchiveReadingModeGo
 	searchReindexGo := cfg.SearchReindexMode == config.SearchReindexModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	llmGatewayProfilesGo := cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo
