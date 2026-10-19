@@ -867,7 +867,10 @@ func normalizeSeedConfig(config map[string]json.RawMessage, sourceURL string) *N
 		return nil
 	}
 	rawSeed, _ := objectOfRaw(config["seed"])
-	if rawSeed == nil || stringValueRaw(rawSeed["enabled"]) != "true" {
+	if rawSeed == nil {
+		return nil
+	}
+	if enabled, ok := rawJSONBool(rawSeed["enabled"]); !ok || !enabled {
 		return nil
 	}
 	modeRaw := strings.ToLower(strings.TrimSpace(stringValueRaw(rawSeed["mode"])))
@@ -904,7 +907,7 @@ func normalizeSeedConfig(config map[string]json.RawMessage, sourceURL string) *N
 		MaxNewURLsPerRun:    clampIntValue(rawSeed["maxNewUrlsPerRun"], 1, 500, 80),
 		ListMaxPages:        clampIntValue(rawSeed["listMaxPages"], 1, 20, 6),
 		ListPageConcurrency: clampIntValue(rawSeed["listPageConcurrency"], 1, 5, 2),
-		FollowPagination:    stringValueRaw(rawSeed["followPagination"]) != "false",
+		FollowPagination:    followPaginationValue(rawSeed["followPagination"]),
 		ScoreThreshold:      clampFloatValue(rawSeed["scoreThreshold"], 0, 1, 0),
 		Concurrency:         clampIntValue(rawSeed["concurrency"], 1, 10, 5),
 		DedupeWindowHours:   clampIntValue(rawSeed["dedupeWindowHours"], 0, 24*30, 24),
@@ -980,7 +983,9 @@ func normalizeSeedFeedURL(raw json.RawMessage, sourceURL string) *string {
 func normalizeSeedRSSFetchConfig(raw json.RawMessage) *NewsSourceRSSFetchConfig {
 	record, _ := objectOfRaw(raw)
 	hasCustomFields := record != nil && (record["requestTimeoutMs"] != nil || record["bodySourceStrategy"] != nil || record["noBodyPolicy"] != nil)
-	enabled := record != nil && (stringValueRaw(record["enabled"]) == "true" || (stringValueRaw(record["enabled"]) != "false" && hasCustomFields))
+	enabledTrue, _ := rawJSONBoolAt(record, "enabled")
+	enabledFalse, enabledPresent := rawJSONBoolAt(record, "enabled")
+	enabled := record != nil && (enabledTrue || (!enabledPresent || !enabledFalse) && hasCustomFields)
 	if !enabled {
 		return &NewsSourceRSSFetchConfig{Enabled: false, RequestTimeoutMs: 15_000, BodySourceStrategy: "content_first", NoBodyPolicy: "skip"}
 	}
@@ -1180,6 +1185,32 @@ func normalizeStringList(raw json.RawMessage) []string {
 		}
 	}
 	return out
+}
+
+// rawJSONBool reads a JSON boolean leaf (true/false), ignoring other shapes.
+func rawJSONBool(raw json.RawMessage) (bool, bool) {
+	switch strings.TrimSpace(string(raw)) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	}
+	return false, false
+}
+
+func rawJSONBoolAt(record map[string]json.RawMessage, key string) (bool, bool) {
+	if record == nil {
+		return false, false
+	}
+	return rawJSONBool(record[key])
+}
+
+// followPaginationValue mirrors `rawSeed?.followPagination !== false`.
+func followPaginationValue(raw json.RawMessage) bool {
+	if value, ok := rawJSONBool(raw); ok {
+		return value
+	}
+	return true
 }
 
 func nullStringValue(value sql.NullString) string {
