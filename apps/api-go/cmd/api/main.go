@@ -701,6 +701,13 @@ func run() error {
 	if cfg.OIDCLoginMode == config.OIDCLoginModeGo {
 		oidcLoginMode = string(legacyproxy.ModeGo)
 	}
+	// The GDELT external snapshot entry has its own switch: it can be go while
+	// the scheduler stays on NestJS and vice versa. Both executions share the
+	// Redis rebuild lease, so a mixed deployment still rebuilds at most once.
+	gdeltSnapshotRefreshMode := ""
+	if cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo {
+		gdeltSnapshotRefreshMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -774,6 +781,9 @@ func run() error {
 	// widens the infrastructure settings route ownership and vice versa.
 	rules = legacyproxy.WithStorageDiagnostics(rules, storageDiagnosticsMode)
 	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
+	// The forced GDELT snapshot refresh is one exact POST with its own switch.
+	// The scheduler switch is independent and shares only the Redis lease.
+	rules = legacyproxy.WithGdeltSnapshotRefresh(rules, gdeltSnapshotRefreshMode)
 	rules = legacyproxy.WithAuthFactors(rules, authFactorsMode)
 	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
 	// The login/session/email-code unit owns eleven exact POST paths under
@@ -866,6 +876,8 @@ func run() error {
 				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
 				cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo ||
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
+				cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
+				cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
 				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo {
@@ -1007,7 +1019,8 @@ func run() error {
 		graphqlKnowledgeReviewGo ||
 		graphqlRssTranslationGo ||
 		identityOnboardingGo || oidcLoginGo ||
-		searchReindexGo || proxyLoadBalancingGo || analysisExportGo
+		searchReindexGo || proxyLoadBalancingGo || analysisExportGo ||
+		cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	// The background digest delivery needs the shared Redis client (tick gate,
@@ -1015,7 +1028,8 @@ func run() error {
 	// Keep the condition additive so delivery-only starts Redis while every
 	// other mode is legacy, and the authenticator still exists only when an
 	// HTTP takeover needs it.
-	needsRedis := needsCredentialedGo || cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo
+	needsRedis := needsCredentialedGo || cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
+		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo
 	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -1032,6 +1046,14 @@ func run() error {
 		blacklist := authn.NewRedisBlacklist(redisClient)
 		authenticator = authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
 	}
+	// The GDELT snapshot unit is shared by the optional scheduler and the
+	// optional forced-refresh route. It is nil while both switches are legacy.
+	gdeltSnapshot := newGdeltSnapshotUnit(cfg, sharedDB, redisClient)
+	if gdeltSnapshot != nil {
+		log.Printf("api-go: situation-monitor GDELT snapshot unit configured (scheduler=%s, refresh=%s)",
+			cfg.GdeltSnapshotMode, cfg.GdeltSnapshotRefreshMode)
+	}
+
 	// The HTTP POST and the GraphQL root share one metadata service instance.
 	// It is built once, only when one of the two switches needs it, and reuses
 	// the shared MySQL, Redis and outbound HTTP resources.
@@ -1328,6 +1350,9 @@ func run() error {
 		return err
 	}
 	if err := wireSituationMonitors(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := gdeltSnapshot.RegisterRoute(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
 	if err := wireNewsSources(gateway, cfg, sharedDB, authenticator); err != nil {
@@ -1968,6 +1993,11 @@ func run() error {
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		if gdeltSnapshot != nil {
+			if closeErr := gdeltSnapshot.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: GDELT snapshot scheduler close: %v", closeErr)
+			}
+		}
 		if deliveryScheduler != nil {
 			if closeErr := deliveryScheduler.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: user digest delivery scheduler close: %v", closeErr)
@@ -2006,6 +2036,7 @@ func run() error {
 	if deliveryScheduler != nil {
 		deliveryScheduler.Start(context.Background())
 	}
+	gdeltSnapshot.Start(cfg)
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gateway.ServeHTTPWithShadow(w, r, disp)

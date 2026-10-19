@@ -8,6 +8,7 @@ import {
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 import {
@@ -118,11 +119,23 @@ export class SituationMonitorExternalSnapshotService {
     private readonly cache: CacheService,
     private readonly prisma: PrismaService,
     private readonly external: SituationMonitorExternalService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron("0 */15 * * * *")
   async refreshScheduled() {
     if (!this.external.isGdeltEnabled()) {
+      return;
+    }
+
+    // Execution ownership: when API_GO_GDELT_SNAPSHOT_MODE=go the Go scheduler
+    // owns the 15-minute rebuild, so this callback returns BEFORE taking the
+    // lease. The lease is the same Redis key in both implementations, so a
+    // switch flip that briefly leaves both schedulers alive still rebuilds at
+    // most once. The forced refresh is not affected: it has its own switch.
+    if (
+      this.env.get<string>("API_GO_GDELT_SNAPSHOT_MODE", { infer: true }) === "go"
+    ) {
       return;
     }
 

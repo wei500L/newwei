@@ -333,6 +333,8 @@ pnpm --filter infra-scripts run env:check
 - 登录与会话：`JWT_SECRET`、`NEXTAUTH_SECRET`、`NEXTAUTH_URL`。`NEXTAUTH_SECRET` 只在运行时注入（compose `env_file`），不要作为 Docker build ARG，以免进入 `docker history`
 - Web ↔ API：`NEXT_PUBLIC_API_BASE_URL`（浏览器访问 API）、`API_BASE_URL`（服务端访问 API，可选）
 - API 入口试点（Go-批2C/批3A/批3B/批3C）：`API_GO_HOST_PORT`、`API_GO_IMAGE`、`API_GO_USER_SETTINGS_READ_MODE`、`API_GO_USER_SETTINGS_WRITE_MODE`（`legacy` 默认，六个 PUT 代理 NestJS；`go` 要求读模式同为 `go`，pilot 注入 `go`；回滚先改回 `legacy`）、`API_GO_ONBOARDING_MODE`。启用/切流/回滚见下方「api-go 入口试点」
+- 态势监控 GDELT 外部快照定时重建：`API_GO_GDELT_SNAPSHOT_MODE`（`legacy` 默认，NestJS `@Cron("0 */15 * * * *")` 持有；`go` 由 Go 每 15 分钟重建，NestJS 在加锁前返回；`go` 要求 `DATABASE_URL`、`REDIS_HOST`，不要求 JWT。切换顺序为先 api 服务设 `go` 并重启，再把 api-go 设 `go` 并重启；回滚按相反顺序。两侧共用 `lock:cron:situation-monitor:external-snapshot:gdelt`，写入的历史与两层缓存格式相同）
+- 态势监控 GDELT 强制刷新入口：`API_GO_GDELT_SNAPSHOT_REFRESH_MODE`（`legacy` 默认，`POST /api/system-settings/situation-monitor/external-snapshot/refresh` 仍由 NestJS 处理；`go` 由 Go 处理，要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`。只有 Go 读取该变量，与定时任务的执行权相互独立，靠同一把锁互斥；流量回滚只把该变量改回 `legacy`）
 - 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_SSRF_PROXY_URL`、`CRAWL4AI_*`
 - LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MASTER_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`。Docker 栈中 `LITELLM_MASTER_KEY` 必填（`openssl rand -hex 32`），空值时代理直接退出
 - Docker 端口绑定：`DOCKER_PUBLISH_HOST`（默认 `127.0.0.1`，仅本机可达；需要局域网访问时设为 `0.0.0.0`）
