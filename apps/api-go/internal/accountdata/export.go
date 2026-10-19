@@ -127,6 +127,9 @@ func (s *Service) writeExportBody(stream *jsonStream, ctx context.Context, ident
 	writeArrayValues(stream, 2, small.contentSubscriptions, &counts.ContentSubscriptions)
 	stream.write(",\n    \"newsBehavior\": ")
 	stream.value(2, small.newsBehavior)
+	// aggregates is an in-memory array inside the section object, so its count
+	// is taken from the slice NestJS would read with the same query.
+	counts.NewsBehaviorAggregates = len(small.newsBehavior.Aggregates)
 	stream.write(",\n    \"digest\": ")
 	stream.value(2, small.digest)
 

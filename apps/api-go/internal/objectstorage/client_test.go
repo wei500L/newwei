@@ -330,7 +330,9 @@ func resignUploadURL(t *testing.T, parsed *url.URL, contentType string, contentL
 		t.Fatalf("X-Amz-Date = %q: %v", query.Get("X-Amz-Date"), err)
 	}
 	// Reconstruct the request the browser sends: the signed material headers
-	// plus the body size, and the unsigned-payload marker hoisted to the query.
+	// plus the body size. PresignPutObject removes the X-Amz-Content-Sha256
+	// header middleware and carries UNSIGNED-PAYLOAD as the payload hash, so the
+	// marker is an argument to PresignHTTP rather than a header.
 	request, err := http.NewRequest(http.MethodPut, parsed.String(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -338,7 +340,9 @@ func resignUploadURL(t *testing.T, parsed *url.URL, contentType string, contentL
 	request.Host = parsed.Host
 	request.ContentLength = contentLength
 	request.Header.Set("Content-Type", contentType)
-	request.Header.Set("X-Amz-Content-Sha256", "UNSIGNED-PAYLOAD")
+	// The unsigned-payload marker is passed to the signer as the payload hash,
+	// not as a header (addPutObjectPayloadAsUnsigned removes the header
+	// middleware), so no X-Amz-Content-Sha256 header is set here.
 	for _, name := range []string{
 		"X-Amz-Algorithm", "X-Amz-Credential", "X-Amz-Date",
 		"X-Amz-Signature", "X-Amz-SignedHeaders", "X-Amz-Content-Sha256",

@@ -42,7 +42,9 @@ func integrationRedis(t *testing.T) *redis.Client {
 	if addr == "" {
 		t.Skip("API_GO_TEST_REDIS_ADDR not set — integration test requires Redis")
 	}
-	return redis.NewClient(&redis.Options{Addr: addr})
+	// Protocol 2 mirrors the shared client in cmd/api/main.go: the newsbehavior
+	// reader depends on HGETALL field order, which RESP3 maps do not preserve.
+	return redis.NewClient(&redis.Options{Addr: addr, Protocol: 2})
 }
 
 var integrationTables = []string{
