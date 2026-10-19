@@ -432,7 +432,7 @@ func evaluatePoints(points []metricPoint, windowMin int, nowMs int64) snapshotEv
 		context["stale"] = json.RawMessage("true")
 		context["latestTimestamp"] = mustJSON(latestPoint.TS)
 		context["maxStaleMinutes"] = mustJSON(maxStaleMin)
-		return snapshotEvaluation{context: context}, nil
+		return snapshotEvaluation{context: context}
 	}
 
 	var previousPoint *metricPoint
@@ -467,7 +467,7 @@ func evaluatePoints(points []metricPoint, windowMin int, nowMs int64) snapshotEv
 			}
 		}
 	}
-	return result, nil
+	return result
 }
 
 func mustJSON(value any) json.RawMessage {

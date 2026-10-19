@@ -1,6 +1,7 @@
 package dashboardwarmap
 
 import (
+	"context"
 	"strings"
 
 	"github.com/redis/go-redis/v9"
@@ -17,6 +18,17 @@ import (
 
 // geoHit is the war map's historical result type.
 type geoHit = geocoding.Hit
+
+// geocoder is the historical resolver interface used by the service.
+type geocoder interface {
+	Resolve(ctx context.Context, candidates []string, alpha2 string, network bool) (*geoHit, error)
+}
+
+// settingsDB is the historical SystemSetting reader used by the geocoder and the
+// translator.
+type settingsDB interface {
+	Setting(ctx context.Context, key string) ([]byte, bool, error)
+}
 
 // nominatimConfig is the historical configuration struct.
 type nominatimConfig = geocoding.Config
