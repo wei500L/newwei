@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -641,17 +642,11 @@ func normalizeQuality(value *float64) *float64 {
 }
 
 func sortDigestItems(items []DigestItem, useRelevance bool) {
-	// A stable insertion sort keeps the JS comparator semantics (relevance,
-	// weight, sortAt, id) without allocating a second index slice.
-	for i := 1; i < len(items); i++ {
-		current := items[i]
-		j := i - 1
-		for j >= 0 && compareDigestItems(items[j], current, useRelevance) > 0 {
-			items[j+1] = items[j]
-			j--
-		}
-		items[j+1] = current
-	}
+	// Stable sorting keeps the JS comparator semantics (relevance, weight,
+	// sortAt, id) for equal keys without materializing a second index slice.
+	sort.SliceStable(items, func(i, j int) bool {
+		return compareDigestItems(items[i], items[j], useRelevance) < 0
+	})
 }
 
 func compareDigestItems(a, b DigestItem, useRelevance bool) int {
@@ -686,15 +681,7 @@ func compareDigestItems(a, b DigestItem, useRelevance bool) int {
 }
 
 func sortCalendarDays(days []CalendarDay) {
-	for i := 1; i < len(days); i++ {
-		current := days[i]
-		j := i - 1
-		for j >= 0 && strings.Compare(days[j].Date, current.Date) > 0 {
-			days[j+1] = days[j]
-			j--
-		}
-		days[j+1] = current
-	}
+	sort.Slice(days, func(i, j int) bool { return days[i].Date < days[j].Date })
 }
 
 func clampOffset(offset, total int) int {
