@@ -90,6 +90,8 @@
 
 ## GAP-ASYNC-001 · 已迁读取背后的 Nest 执行所有权
 
+2026-10-19仅审计子链增量（main c70b0373）：[AUDIT-OUTBOX-001](tasks/AUDIT-OUTBOX-001.md) reserved，[完整提示词](tasks/AUDIT-OUTBOX-001.prompt.md)已保存；Go生产者已存在，AuditLogOutboxService仍Nest每分钟重放，Go消费者尚未实现，不能关闭缺口。摘要业务head2b0da7ec已通过#89进入main；这仅纠正下方旧快照的任务合并状态，不表示所有调度/实际部署已验证。新任务仅处理审计消费/所有权/查询优化，其余Outbox/worker范围不变。
+
 2026-10-18限定增量（main90765633）：[DIGEST-DELIVERY-001](tasks/DIGEST-DELIVERY-001.md)已reserved并发出提示词，补Cron/到期CAS/SMTP/状态及摘要专用实时通知桥，现有五HTTP不重迁。NotificationDispatcher目前仅Nest进程内，桥尚不存在；只写通知表不能关闭此子链。本批无BullMQ，不覆盖其他调度/补偿/WS执行器；main仍Nest投递，未实施或真实验证，关闭证据无。
 
 这是迁移边界，不是“所有 Go 读都未实现”。精确步骤和源码见 [DEPENDENCIES 执行所有权](DEPENDENCIES.md#产品链路与执行所有权) 与 [异步域](modules/async-runtime.md)。

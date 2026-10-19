@@ -185,6 +185,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-20 · async / Outbox、清理与消费者基础
 
+- 2026-10-19，main c70b0373：仅审计子链已 reserved 至 [AUDIT-OUTBOX-001](tasks/AUDIT-OUTBOX-001.md)，[完整提示词](tasks/AUDIT-OUTBOX-001.prompt.md)已发出。已核每分钟200/并发8、三状态/5分钟陈旧、认领事务、五元去重、10次dead、实际Redis续租锁和近期Go生产者；只需MySQL/Redis，无BullMQ/Mongo/外部。查询优化为轻字段选200后只补选中payload。RawItem/CrawlCleanup及其他消费者不认领，仍按原候选拆分；Go消费尚未实现。
+
 - **范围/缺口**：AuditLogOutboxService、RawItemOutboxService、CrawlCleanupOutboxService 三条补偿链及其当前 Cron（GAP-ASYNC-001）；它们分别交付，不领取“全部 worker”。
 - **基础/依据**：G/graphqlread/settingswrite 等已写 AuditLog/失败 Outbox，读 Mongo/序列化与 Redis 可复用；N 各 service 为锁/可见性/重试事实源。需状态扫描、幂等目标写入、事务/租约与关闭，审计/原文/存储删除副作用不同。
 - **文件/前置/冲突**：独立 Go outbox 消费包/main；MySQL→Mongo、可能 S3；**先审 AuditLogOutbox 单链可独立窗口**，RawItem 与 BL-24、cleanup 与 BL-25 串行。未核每张表的状态/重试上限与停机时 in-flight 语义。
