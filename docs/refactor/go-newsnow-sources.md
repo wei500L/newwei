@@ -103,6 +103,7 @@ Nest 订阅者：
 
 - `gofmt` 语法/格式检查。
 - 静态复核 typed DTO、缺省/null/false、错误过滤器、全局 secret/socket 组织边界、缓存/锁、资源关闭与 #92 公共接线并集。
+- 代码 head `b33cc1ea` 普通 CI [39296327154](https://github.com/wei500L/newwei/actions/runs/39296327154) success：verify、vector-integration、api-go-user-settings-integration 成功；contract-baseline-regen/go-modules-regen skipped（不计通过）。前两次 run 的 Lint/Go tests 失败已由追加提交修复。
 
 新增 Go 测试（交普通 CI 执行）：
 

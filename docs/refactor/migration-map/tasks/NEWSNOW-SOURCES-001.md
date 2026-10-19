@@ -1,6 +1,7 @@
 # NEWSNOW-SOURCES-001 · NewsNow来源获取、批量刷新与实时接缝
 
-- 状态pr_open；分支 `refactor/go-newsnow-sources`，worktree `/Users/oo/project/newwei-go-newsnow-sources`，从执行时 `origin/main 91e759b449c4511dc96d86539ea0eb258754d07e` 创建。
+- 状态pr_open；[Ready PR #94](https://github.com/wei500L/newwei/pull/94)，分支 `refactor/go-newsnow-sources`，worktree `/Users/oo/project/newwei-go-newsnow-sources`，从执行时 `origin/main 91e759b449c4511dc96d86539ea0eb258754d07e` 创建。
+- 代码 head `b33cc1eab4dd56d08e9a802a2670d363a3227462`；普通 CI [39296327154](https://github.com/wei500L/newwei/actions/runs/39296327154) success：verify、vector-integration、api-go-user-settings-integration success，contract-baseline-regen/go-modules-regen skipped。此前 24d491ee/06542a7f 的 Lint/Go tests 失败已由追加提交修复，不用失败 run 充当通过。
 - 基线普通CI [39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593) 在精确 head success（verify、vector-integration、api-go-user-settings-integration；两 regen skipped），不是本批实现/真实上游/部署证据。
 - 规划 [PR #93](https://github.com/wei500L/newwei/pull/93) 分支 `docs/plan-newsnow-feed`，任务/提示词从该远端分支读取，未覆盖其他地图文件。
 - 审计补偿 [PR #92](https://github.com/wei500L/newwei/pull/92) head `28c8f761a2ce4a447080414f154b567648cc6bd1` 保持开放；本批只在其共享 main/config/env/compose 接线旁追加本批增量，不改其业务包、不依赖未合入符号。
@@ -24,6 +25,7 @@ Nest 预热（每分钟、并发 6、`lock:cron:newsnow-source-warm`）与热点
 
 ## 执行记录
 
+- 2026-10-19：创建 Ready PR #94；代码 head `b33cc1ea` 普通 CI `39296327154` 全绿（skipped 不计通过）。
 - 2026-10-19：完成两路实现、64 ID/50 可达 getter、特殊 provider 分支、兼容缓存/锁、worker pool、relay、Nest subscriber、开关/路由/compose/env 接线与 Go 测试；本机未运行 build/test/Docker/服务，未读取真实 `.env` 或调用真实站点。
 - 详细交付与未验证项见 [go-newsnow-sources.md](../../go-newsnow-sources.md)。
 - 共享地图由规划窗口集中回填；本文件不关闭整个 GAP-LEGACY-001 或 GAP-ASYNC-001。
