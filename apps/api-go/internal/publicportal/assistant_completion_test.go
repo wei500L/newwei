@@ -142,6 +142,7 @@ func TestAssistantCompleteFallsBackToNextModel(t *testing.T) {
 		OrgID:    "org-1",
 		Messages: []AssistantMessage{{Role: "user", Content: "hi"}},
 		Metadata: AssistantRequestMetadata{OrgID: "org-1", Source: "assistant", Feature: "assistant"},
+		Observer: observer,
 	})
 	if err != nil {
 		t.Fatal(err)
