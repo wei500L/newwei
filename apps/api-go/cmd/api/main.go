@@ -140,6 +140,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/auditoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/authn"
 	"github.com/wei500L/newwei/apps/api-go/internal/authz"
@@ -868,7 +869,8 @@ func run() error {
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
-				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo {
+				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
+				cfg.AuditOutboxMode == config.AuditOutboxModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -1014,8 +1016,11 @@ func run() error {
 	// organization lease and notification relay) but not the JWT/RBAC stack.
 	// Keep the condition additive so delivery-only starts Redis while every
 	// other mode is legacy, and the authenticator still exists only when an
-	// HTTP takeover needs it.
-	needsRedis := needsCredentialedGo || cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo
+	// HTTP takeover needs it. The audit outbox replay reuses the same client
+	// for its cron lease and needs no JWT either.
+	needsRedis := needsCredentialedGo ||
+		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
+		cfg.AuditOutboxMode == config.AuditOutboxModeGo
 	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -1961,6 +1966,9 @@ func run() error {
 	// no JWT. The deferred Close stops new ticks and drains in-flight
 	// organizations before the shared Redis/Mongo connections are closed below.
 	var deliveryScheduler *userdigest.DeliveryScheduler
+	// The audit-log outbox replay unit owns the per-minute audit recovery when
+	// API_GO_AUDIT_OUTBOX_MODE=go. It registers no HTTP route and needs no JWT.
+	var auditOutboxScheduler *auditoutbox.Scheduler
 	// Ordered teardown for both the SIGTERM path and every error return after
 	// this point, including an HTTP listen failure. The digest scheduler stops
 	// first, then background search reindex, then the shared Redis/Mongo
@@ -1971,6 +1979,11 @@ func run() error {
 		if deliveryScheduler != nil {
 			if closeErr := deliveryScheduler.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: user digest delivery scheduler close: %v", closeErr)
+			}
+		}
+		if auditOutboxScheduler != nil {
+			if closeErr := auditOutboxScheduler.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: audit log outbox scheduler close: %v", closeErr)
 			}
 		}
 		if searchReindexService != nil {
@@ -2005,6 +2018,13 @@ func run() error {
 	}
 	if deliveryScheduler != nil {
 		deliveryScheduler.Start(context.Background())
+	}
+	auditOutboxScheduler, err = wireAuditOutbox(cfg, sharedDB, redisClient)
+	if err != nil {
+		return err
+	}
+	if auditOutboxScheduler != nil {
+		auditOutboxScheduler.Start(context.Background())
 	}
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
