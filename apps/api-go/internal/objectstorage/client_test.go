@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
@@ -266,6 +268,113 @@ func TestCheckResultFormatsAPIErrors(t *testing.T) {
 	if !strings.HasPrefix(plain.Error, "Error: ") {
 		t.Fatalf("transport error text = %q", plain.Error)
 	}
+}
+
+// TestCreateObjectUploadURLSignsContentTypeAndLength proves the V1 property
+// without any network call: the presigned PUT carries content-type and
+// content-length in X-Amz-SignedHeaders, and the SDK's own v4 signer reproduces
+// the same signature for the same declared request (headers + body size).
+func TestCreateObjectUploadURLSignsContentTypeAndLength(t *testing.T) {
+	client, err := NewClient(testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "avatars/org-1/user-1/1700000000000-abc.png"
+	raw, err := client.CreateObjectUploadURL(context.Background(), key, UploadURLOptions{
+		ContentType:   "image/png",
+		ContentLength: 102400,
+	})
+	if err != nil {
+		t.Fatalf("CreateObjectUploadURL: %v", err)
+	}
+	if signed, ok := verifyUploadSignature(t, raw, "image/png", 102400); !ok {
+		t.Fatalf("SDK signer did not reproduce the signature for %s", signed)
+	}
+
+	// Different body size: the signature is bound to the declared size.
+	signed := verifySignatureWithSize(t, raw, 102400+1)
+	original := mustURL(t, raw).Query().Get("X-Amz-Signature")
+	if signed == original {
+		t.Fatal("signature did not change when content-length changed")
+	}
+}
+
+// verifyUploadSignature reproduces the presigned URL with the SDK v4 signer and
+// reports whether the signatures match. It also asserts that the signed header
+// list covers content-type and content-length.
+func verifyUploadSignature(t *testing.T, raw, contentType string, contentLength int64) (string, bool) {
+	t.Helper()
+	parsed := mustURL(t, raw)
+	query := parsed.Query()
+	signedHeaderNames := query.Get("X-Amz-SignedHeaders")
+	if !containsHeader(signedHeaderNames, "content-type") {
+		t.Fatalf("X-Amz-SignedHeaders = %q, want content-type", signedHeaderNames)
+	}
+	if !containsHeader(signedHeaderNames, "content-length") {
+		t.Fatalf("X-Amz-SignedHeaders = %q, want content-length", signedHeaderNames)
+	}
+	signedURL := resignUploadURL(t, parsed, contentType, contentLength)
+	return signedURL, signedURL == query.Get("X-Amz-Signature")
+}
+
+func verifySignatureWithSize(t *testing.T, raw string, contentLength int64) string {
+	t.Helper()
+	return resignUploadURL(t, mustURL(t, raw), "image/png", contentLength)
+}
+
+func resignUploadURL(t *testing.T, parsed *url.URL, contentType string, contentLength int64) string {
+	t.Helper()
+	query := parsed.Query()
+	signingTime, err := time.Parse("20060102T150405Z", query.Get("X-Amz-Date"))
+	if err != nil {
+		t.Fatalf("X-Amz-Date = %q: %v", query.Get("X-Amz-Date"), err)
+	}
+	// Reconstruct the request the browser sends: the signed material headers
+	// plus the body size, and the unsigned-payload marker hoisted to the query.
+	request, err := http.NewRequest(http.MethodPut, parsed.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Host = parsed.Host
+	request.ContentLength = contentLength
+	request.Header.Set("Content-Type", contentType)
+	request.Header.Set("X-Amz-Content-Sha256", "UNSIGNED-PAYLOAD")
+	for _, name := range []string{
+		"X-Amz-Algorithm", "X-Amz-Credential", "X-Amz-Date",
+		"X-Amz-Signature", "X-Amz-SignedHeaders", "X-Amz-Content-Sha256",
+	} {
+		query.Del(name)
+	}
+	request.URL.RawQuery = query.Encode()
+
+	signer := v4.NewSigner(func(options *v4.SignerOptions) {
+		options.DisableURIPathEscaping = true
+	})
+	signed, _, err := signer.PresignHTTP(context.Background(),
+		aws.Credentials{AccessKeyID: testConfig().AccessKeyID, SecretAccessKey: testConfig().SecretAccessKey},
+		request, "UNSIGNED-PAYLOAD", "s3", testConfig().EffectiveRegion(), signingTime)
+	if err != nil {
+		t.Fatalf("resign: %v", err)
+	}
+	return mustURL(t, signed).Query().Get("X-Amz-Signature")
+}
+
+func mustURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse url: %v", err)
+	}
+	return parsed
+}
+
+func containsHeader(list, want string) bool {
+	for _, name := range strings.Split(list, ";") {
+		if name == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestNormalizedPublicBaseURL pins the single trailing-slash removal.
