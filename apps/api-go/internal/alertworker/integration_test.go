@@ -178,6 +178,43 @@ func TestAlertWorkerIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("cross-org channel is skipped (B2)", func(t *testing.T) {
+		// A legacy AlertRuleChannel may point at a channel of another
+		// organization. The evaluation must ignore it and record no delivery.
+		if _, err := db.ExecContext(ctx,
+			"INSERT IGNORE INTO `AlertNotificationChannel` (`id`,`orgId`,`type`,`name`,`target`,`config`,`isActive`) VALUES (?,?,?,?,?,?,?)",
+			"channel-it-cross", itOtherOrgID, "email", "cross", "cross@example.com", []byte(`{}`), true); err != nil {
+			t.Fatalf("insert cross-org channel: %v", err)
+		}
+		if _, err := db.ExecContext(ctx,
+			"INSERT IGNORE INTO `AlertRuleChannel` (`id`,`ruleId`,`channelId`) VALUES (?,?,?)",
+			"link-it-cross", itRuleID, "channel-it-cross"); err != nil {
+			t.Fatalf("link cross-org channel: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE `AlertRule` SET `lastTriggeredAt` = NULL WHERE `id` = ?", itRuleID); err != nil {
+			t.Fatalf("reset cooldown: %v", err)
+		}
+		result, err := service.EvaluateRule(ctx, itRuleID, itOrgID)
+		if err != nil {
+			t.Fatalf("evaluate: %v", err)
+		}
+		if result == nil {
+			t.Fatal("expected the rule to trigger")
+		}
+		if len(result.ExternalDeliveryIDs) != 1 {
+			t.Fatalf("external deliveries = %d, want 1 (the cross-org channel must be skipped)", len(result.ExternalDeliveryIDs))
+		}
+		var crossDeliveries int
+		if err := db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM `AlertDelivery` WHERE `eventId` = ? AND `channelId` = ?",
+			result.Event.ID, "channel-it-cross").Scan(&crossDeliveries); err != nil {
+			t.Fatalf("count cross-org deliveries: %v", err)
+		}
+		if crossDeliveries != 0 {
+			t.Fatalf("cross-org deliveries = %d, want 0", crossDeliveries)
+		}
+	})
+
 	t.Run("delivery failure marks the last attempt failed (B1)", func(t *testing.T) {
 		eventID := "event-it-b1"
 		deliveryID := "delivery-it-b1"
