@@ -336,7 +336,7 @@ func (s *PreviewService) Preview(ctx context.Context, orgID, sourceID string) (a
 			Pattern:      stringValue(seedConfig.Pattern),
 			Query:        stringValue(seedConfig.Query),
 			MaxURLs:      intPointer(seedConfig.MaxURLs),
-			Deep:         rawOfObject(deepOptions(seedConfig.Deep)),
+			Deep:         deepOptions(seedConfig.Deep),
 			CrawlOptions: rawOfObject(crawlOptions),
 		})
 		if err != nil {
