@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"go.mongodb.org/mongo-driver/v2/bson"
-
 	"github.com/wei500L/newwei/apps/api-go/internal/assistantqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
