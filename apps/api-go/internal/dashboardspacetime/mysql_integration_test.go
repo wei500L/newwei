@@ -200,7 +200,7 @@ VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, 1, ?, ?)`,
 
 	start := at(1)
 	end := at(9)
-	query, args := geoQuery("it-org-a", start, end, "")
+	query, args := heatmapRowsQuery("it-org-a", start, end, "")
 	assertIndexBackedPlan(t, db, ctx, query, args, "pa",
 		"ProcessedArticle_orgId_status_hasLocation_eventAt_articleId_idx")
 

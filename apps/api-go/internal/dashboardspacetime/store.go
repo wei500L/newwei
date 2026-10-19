@@ -66,11 +66,11 @@ type mysqlArticles struct {
 	db *sql.DB
 }
 
-// geoQuery is the heatmap row read. The predicate order matches
+// heatmapRowsQuery is the heatmap row read. The predicate order matches
 // (orgId, status, hasLocation, eventAt, articleId) so the range walks that
 // index and the ORDER BY needs no filesort; taking 2000 rows is the same cap as
 // the Nest implementation it replaces.
-func geoQuery(orgID string, start, end time.Time, eventID string) (string, []any) {
+func heatmapRowsQuery(orgID string, start, end time.Time, eventID string) (string, []any) {
 	query := `
 SELECT pa.id, pa.articleId, pa.title, pa.location, pa.cleanedMarkdownRef,
        pa.publishedAt, pa.eventAt, pa.processedAt, a.url, a.sourceLabel, a.crawlAt
@@ -100,7 +100,7 @@ func (s *mysqlArticles) Geo(ctx context.Context, orgID string, start, end time.T
 	if s == nil || s.db == nil {
 		return nil, errors.New("mysql is not configured")
 	}
-	query, args := geoQuery(orgID, start, end, eventID)
+	query, args := heatmapRowsQuery(orgID, start, end, eventID)
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
