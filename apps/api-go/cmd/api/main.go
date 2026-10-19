@@ -633,6 +633,16 @@ func run() error {
 	if cfg.CrawlMetadataMode == config.CrawlMetadataModeGo {
 		crawlMetadataMode = string(legacyproxy.ModeGo)
 	}
+	// The crawl discovery entries are two independent switches: the preview and
+	// the trial/replay pair can be go separately.
+	newsSourcePreviewMode := ""
+	if cfg.NewsSourcePreviewMode == config.NewsSourcePreviewModeGo {
+		newsSourcePreviewMode = string(legacyproxy.ModeGo)
+	}
+	crawlWorkflowTrialMode := ""
+	if cfg.CrawlWorkflowTrialMode == config.CrawlWorkflowTrialModeGo {
+		crawlWorkflowTrialMode = string(legacyproxy.ModeGo)
+	}
 	searchReindexMode := ""
 	if cfg.SearchReindexMode == config.SearchReindexModeGo {
 		searchReindexMode = string(legacyproxy.ModeGo)
@@ -741,6 +751,11 @@ func run() error {
 	rules = legacyproxy.WithRbac(rules, rbacMode)
 	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
 	rules = legacyproxy.WithCrawlMetadata(rules, crawlMetadataMode)
+	// The three crawl discovery entries (news-source preview, workflow trial-run
+	// and run replay) are dynamic one-segment rules whose methods are not owned by
+	// any neighbouring rule. Both switches are independent; a legacy switch adds
+	// no rule.
+	rules = legacyproxy.WithCrawlDiscovery(rules, newsSourcePreviewMode, crawlWorkflowTrialMode)
 	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
 	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
 	// The exception ingest takeover is registered next to the admin logs
@@ -860,6 +875,8 @@ func run() error {
 				cfg.LlmLogsMode == config.LlmLogsModeGo ||
 				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
 				cfg.CrawlMetadataMode == config.CrawlMetadataModeGo ||
+				cfg.NewsSourcePreviewMode == config.NewsSourcePreviewModeGo ||
+				cfg.CrawlWorkflowTrialMode == config.CrawlWorkflowTrialModeGo ||
 				cfg.SearchReindexMode == config.SearchReindexModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
 				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
@@ -1373,6 +1390,12 @@ func run() error {
 		return err
 	}
 	if err := wireCrawlMetadata(gateway, cfg, metadataService, authenticator); err != nil {
+		return err
+	}
+	// The crawl discovery takeover builds its own crawl4ai client, discovery
+	// chain and run runtime; it needs MySQL, Redis and the auth stack only when
+	// one of its two switches is go.
+	if err := wireCrawlDiscovery(gateway, cfg, sharedDB, redisClient, metadataService, authenticator); err != nil {
 		return err
 	}
 	// The runtime storage configuration reader is shared by the REST crawl

@@ -3756,3 +3756,172 @@ func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
 		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
 	}
 }
+
+func TestNewsSourcePreviewModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NewsSourcePreviewMode != NewsSourcePreviewModeLegacy {
+		t.Fatalf("mode = %s", cfg.NewsSourcePreviewMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_NEWS_SOURCE_PREVIEW_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NewsSourcePreviewMode != NewsSourcePreviewModeLegacy {
+		t.Fatalf("mode = %s", cfg.NewsSourcePreviewMode)
+	}
+}
+
+func TestNewsSourcePreviewModeRejectsInvalid(t *testing.T) {
+	_, err := Load(func(key string) string {
+		if key == "API_GO_NEWS_SOURCE_PREVIEW_MODE" {
+			return "shadow"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWS_SOURCE_PREVIEW_MODE must be one of legacy|go") {
+		t.Fatalf("invalid mode: %v", err)
+	}
+}
+
+func TestNewsSourcePreviewModeGoRequiresCredentials(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_SOURCE_PREVIEW_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_NEWS_SOURCE_PREVIEW_MODE=go") {
+		t.Fatalf("missing redis: %v", err)
+	}
+
+	// crawl4ai and Mongo are not startup dependencies of this unit.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_SOURCE_PREVIEW_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NewsSourcePreviewMode != NewsSourcePreviewModeGo {
+		t.Fatalf("mode = %s", cfg.NewsSourcePreviewMode)
+	}
+}
+
+func TestCrawlWorkflowTrialModeDefaultsToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CrawlWorkflowTrialMode != CrawlWorkflowTrialModeLegacy {
+		t.Fatalf("mode = %s", cfg.CrawlWorkflowTrialMode)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "API_GO_CRAWL_WORKFLOW_TRIAL_MODE" {
+			return "legacy"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CrawlWorkflowTrialMode != CrawlWorkflowTrialModeLegacy {
+		t.Fatalf("mode = %s", cfg.CrawlWorkflowTrialMode)
+	}
+}
+
+func TestCrawlWorkflowTrialModeRejectsInvalid(t *testing.T) {
+	_, err := Load(func(key string) string {
+		if key == "API_GO_CRAWL_WORKFLOW_TRIAL_MODE" {
+			return "canary"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_WORKFLOW_TRIAL_MODE must be one of legacy|go") {
+		t.Fatalf("invalid mode: %v", err)
+	}
+}
+
+func TestCrawlWorkflowTrialModeGoRequiresCredentials(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_CRAWL_WORKFLOW_TRIAL_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_CRAWL_WORKFLOW_TRIAL_MODE=go") {
+		t.Fatalf("missing jwt: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_CRAWL_WORKFLOW_TRIAL_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CrawlWorkflowTrialMode != CrawlWorkflowTrialModeGo {
+		t.Fatalf("mode = %s", cfg.CrawlWorkflowTrialMode)
+	}
+}
+
+func TestNewsSourceSchedulerInFlightLookbackDefault(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NewsSourceSchedulerInFlightLookbackMs != 21_600_000 {
+		t.Fatalf("lookback = %d", cfg.NewsSourceSchedulerInFlightLookbackMs)
+	}
+	cfg, err = Load(func(key string) string {
+		if key == "NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS" {
+			return "900000"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NewsSourceSchedulerInFlightLookbackMs != 900_000 {
+		t.Fatalf("lookback = %d", cfg.NewsSourceSchedulerInFlightLookbackMs)
+	}
+}

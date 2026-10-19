@@ -315,6 +315,12 @@ jobs:
       - name: MySQL/Redis integration tests (user-settings repository + authz RBAC + authn blacklist)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ ./internal/authz/ -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
 
+      # 采集发现链：运行记录五张表 + CrawlFrontierRun 关联的真实写入与既有
+      # 读取接口往返，以及新闻源预览的在途计数/候选合并在真实 MySQL 上运行
+      # （出站 HTTP 用进程内 stub，不访问外网或 crawl4ai）。
+      - name: Crawl discovery integration tests (workflow run tables + news-source preview)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlstrategyruns/ ./internal/crawlmetadata/ -run 'TestCrawlRunRecorderMySQLIntegration|TestCrawlRunRecorderFailureMarksTheRun|TestCrawlRunReplaySourceRunRead|TestNewsSourcePreviewMySQLIntegration' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从
