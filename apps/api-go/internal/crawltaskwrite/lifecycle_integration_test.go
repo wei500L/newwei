@@ -326,8 +326,10 @@ func TestCrawlTaskLifecycleDedup(t *testing.T) {
 	if got := h.activityCount(t); got != 1 {
 		t.Fatalf("activeTaskCount = %d", got)
 	}
+	// The deduplication key is written under the queue's own `de:` prefix, so a
+	// duplicate is only recognised inside the same queue (same as NestJS).
 	second, err := h.svc.Producer().EnqueueTask(h.ctx, "task-lifecycle-dedup", h.caller.OrgID, crawlqueue.EnqueueOptions{
-		PriorityClass: crawlqueue.PriorityClassHot,
+		PriorityClass: crawlqueue.PriorityClassNormal,
 		TraceID:       "trace-2",
 	})
 	if err != nil {
