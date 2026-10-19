@@ -104,7 +104,7 @@ func TestPlanSubscriptionOwnership(t *testing.T) {
 func TestPlanSubscriptionVariableFailureIsProtocolResult(t *testing.T) {
 	engine := newSubscriptionTestEngine(t)
 	plan := engine.PlanSubscription(
-		`subscription Alert($show: Boolean!) { alertEvents { id severity @include(if: $show) } }`,
+		`subscription Alert($show: Boolean!) { alertEvents { id triggeredAt severity @include(if: $show) } }`,
 		nil,
 		nil,
 	)
@@ -119,7 +119,7 @@ func TestPlanSubscriptionVariableFailureIsProtocolResult(t *testing.T) {
 func TestPlanSubscriptionIncludeAndSkipAreExpandedOnce(t *testing.T) {
 	engine := newSubscriptionTestEngine(t)
 	plan := engine.PlanSubscription(
-		`subscription Alert($show: Boolean!) { alertEvents { id severity @include(if: $show) } }`,
+		`subscription Alert($show: Boolean!) { alertEvents { id triggeredAt severity @include(if: $show) } }`,
 		nil,
 		map[string]any{"show": false},
 	)
