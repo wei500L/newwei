@@ -485,6 +485,11 @@ func dedupeChannelIDs(channelIDs []string) []string {
 // currentValueFinite reports whether metadata.currentValue is a finite JSON
 // number, mirroring `typeof input.metadata.currentValue === "number"` plus
 // Number.isFinite. A non-object metadata document has no such member.
+//
+// The leaf is decoded through an interface value, not json.Number: json.Number
+// is a string type, so decoding a JSON string into it would succeed and turn
+// "5" into 5. encoding/json decodes a JSON number into float64 and every other
+// JSON type into a non-float64, which is exactly the typeof check.
 func currentValueFinite(metadata json.RawMessage) bool {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(metadata, &fields); err != nil {
@@ -494,15 +499,15 @@ func currentValueFinite(metadata json.RawMessage) bool {
 	if !ok {
 		return false
 	}
-	var number json.Number
-	if err := json.Unmarshal(raw, &number); err != nil {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
 		return false
 	}
-	parsed, err := number.Float64()
-	if err != nil {
+	number, ok := value.(float64)
+	if !ok {
 		return false
 	}
-	return isFinite(parsed)
+	return isFinite(number)
 }
 
 // ensureProducer guards the resolver boundary. main always constructs the
