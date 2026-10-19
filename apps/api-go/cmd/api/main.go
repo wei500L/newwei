@@ -1108,24 +1108,6 @@ func run() error {
 	// GET /api/dashboard/stats。只读 MySQL/Mongo/Redis，不启动队列 worker。
 	// War Map 与 stats 共用这一条 Mongo 连接。
 	var dashboardMongo *dashboardstats.Connection
-	// The assistant write mutations and the assistant worker share one service
-	// instance. Mongo is opened here when no other domain has opened it yet, and
-	// is closed by the ordered teardown below.
-	var assistantRunService *assistantruns.Service
-	var assistantWorker *assistantqueue.Worker
-	if graphqlAssistantWriteGo || assistantWorkerGo {
-		if dashboardMongo == nil {
-			opened, openErr := dashboardstats.Open(cfg.MongoURI)
-			if openErr != nil {
-				return fmt.Errorf("api-go: assistant requires a valid MONGO_URI")
-			}
-			dashboardMongo = opened
-		}
-		assistantRunService, err = wireAssistantRuns(cfg, sharedDB, redisClient, dashboardMongo)
-		if err != nil {
-			return err
-		}
-	}
 	if dashboardGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: dashboard stats go takeover requires mysql, jwt, and redis")
@@ -1649,6 +1631,24 @@ func run() error {
 	// 是同一实现，保证差分通过即切换可信）。
 	gateway.RegisterGoHandler("/api/healthz/live", health.LiveHandler)
 
+	// The assistant write mutations and the assistant worker share one service
+	// instance. Mongo is opened here when no other domain has opened it yet, and
+	// is closed by the ordered teardown below.
+	var assistantRunService *assistantruns.Service
+	var assistantWorker *assistantqueue.Worker
+	if graphqlAssistantWriteGo || assistantWorkerGo {
+		if dashboardMongo == nil {
+			opened, openErr := dashboardstats.Open(cfg.MongoURI)
+			if openErr != nil {
+				return fmt.Errorf("api-go: assistant requires a valid MONGO_URI")
+			}
+			dashboardMongo = opened
+		}
+		assistantRunService, err = wireAssistantRuns(cfg, sharedDB, redisClient, dashboardMongo)
+		if err != nil {
+			return err
+		}
+	}
 	var graphqlHandler *graphqlread.Handler
 	var graphqlMongo *dashboardstats.Connection
 	// The read switch, the organization/workspace/settings write switches, the

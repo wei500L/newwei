@@ -95,7 +95,9 @@ func TestAssistantCompleteChatPayloadAndLogging(t *testing.T) {
 	if result.Usage.CostUSD == nil || *result.Usage.CostUSD != 0.25 {
 		t.Fatalf("cost = %v", result.Usage.CostUSD)
 	}
-	if received["model"] != "assistant-model" {
+	// The caller passes the assistantModel override in the request; the client
+	// itself falls back to the profile model, like params.model ?? cfg.model.
+	if received["model"] != "model-a" {
 		t.Fatalf("model = %v", received["model"])
 	}
 	if received["max_tokens"] != float64(900) || received["temperature"] != 0.3 || received["top_p"] != 0.8 {
@@ -112,7 +114,7 @@ func TestAssistantCompleteChatPayloadAndLogging(t *testing.T) {
 	if _, ok := received["response_format"].(map[string]any); !ok {
 		t.Fatalf("response_format = %v", received["response_format"])
 	}
-	if len(observer.attempts) != 1 || !observer.attempts[0].Success || observer.attempts[0].Model != "assistant-model" ||
+	if len(observer.attempts) != 1 || !observer.attempts[0].Success || observer.attempts[0].Model != "model-a" ||
 		observer.attempts[0].GatewayProfileID != "p1" || observer.attempts[0].APISurface != "chat_completions" {
 		t.Fatalf("attempts = %+v", observer.attempts)
 	}
@@ -126,7 +128,7 @@ func TestAssistantCompleteFallsBackToNextModel(t *testing.T) {
 		model, _ := body["model"].(string)
 		models = append(models, model)
 		w.Header().Set("content-type", "application/json")
-		if model == "assistant-model" {
+		if model == "model-a" {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(`{"error":{"message":"upstream failed"}}`))
 			return
@@ -147,7 +149,7 @@ func TestAssistantCompleteFallsBackToNextModel(t *testing.T) {
 	if result.Content != "fallback" || result.Model != "model-b" {
 		t.Fatalf("result = %+v", result)
 	}
-	if strings.Join(models, ",") != "assistant-model,model-b" {
+	if strings.Join(models, ",") != "model-a,model-b" {
 		t.Fatalf("models = %v", models)
 	}
 	if len(observer.attempts) != 2 || observer.attempts[0].Success || !observer.attempts[1].Success || observer.attempts[1].ModelIndex != 2 {

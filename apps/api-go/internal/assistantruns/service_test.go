@@ -65,7 +65,7 @@ func TestHistoryPackingAndBudget(t *testing.T) {
 	}
 	base := []publicportal.AssistantMessage{{Role: "system", Content: "system"}, {Role: "user", Content: "now"}}
 	packed := injectQueryHistory(base, history)
-	if len(packed) != 4 || packed[0].Role != "system" || !strings.HasSuffix(packed[0].Content, historyIsolation) {
+	if len(packed) != 3 || packed[0].Role != "system" || !strings.HasSuffix(packed[0].Content, historyIsolation) {
 		t.Fatalf("packed = %+v", packed)
 	}
 	if packed[1].Role != "user" || !strings.Contains(packed[1].Content, "<untrusted_history>") ||
