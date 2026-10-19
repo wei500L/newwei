@@ -181,8 +181,6 @@ func strategyOverrides(value any) *crawloptions.StrategyOverrides {
 		SemaphoreCount:          intPtr(record["semaphoreCount"]),
 		RemoveForms:             boolPtr(record["removeForms"]),
 		CacheMode:               stringPtr(record["cacheMode"]),
-		SessionID:               stringPtr(record["sessionId"]),
-		StorageState:            stringPtr(record["storageState"]),
 		WordCountThreshold:      intPtr(record["wordCountThreshold"]),
 		ExcludeExternalLinks:    boolPtr(record["excludeExternalLinks"]),
 		RemoveOverlayElements:   boolPtr(record["removeOverlayElements"]),
