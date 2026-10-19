@@ -461,17 +461,17 @@ func TestKnowledgeGraphIngestionRedisIntegration(t *testing.T) {
 	t.Cleanup(func() { _ = redisClient.Del(ctx, blockedKey).Err() })
 	_ = redisClient.Del(ctx, blockedKey).Err()
 	blocking := &blockingOrgProcessor{started: make(chan struct{}), release: make(chan struct{})}
-	first := NewScheduler(SchedulerOptions{Store: NewRedisStore(redisClient), Processor: blocking})
-	second := NewScheduler(SchedulerOptions{Store: NewRedisStore(redisClient), Processor: blocking})
+	holder := NewScheduler(SchedulerOptions{Store: NewRedisStore(redisClient), Processor: blocking})
+	contender := NewScheduler(SchedulerOptions{Store: NewRedisStore(redisClient), Processor: blocking})
 	done := make(chan orgRunResult, 1)
 	go func() {
-		done <- first.runOrgWithLock(ctx, "org-kg-lock")
+		done <- holder.runOrgWithLock(ctx, "org-kg-lock")
 	}()
 	<-blocking.started
 	if exists, err := redisClient.Exists(ctx, blockedKey).Result(); err != nil || exists != 1 {
 		t.Fatalf("organization lease missing during run = %d, %v", exists, err)
 	}
-	if result := second.runOrgWithLock(ctx, "org-kg-lock"); result.outcome != orgRunSkipped {
+	if result := contender.runOrgWithLock(ctx, "org-kg-lock"); result.outcome != orgRunSkipped {
 		t.Fatalf("second run outcome = %v, want skipped", result.outcome)
 	}
 	close(blocking.release)
