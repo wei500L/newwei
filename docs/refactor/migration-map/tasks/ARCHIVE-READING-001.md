@@ -34,7 +34,7 @@ MySQL只读ProcessedArticle/Article/ArchiveArticleClassification/NewsEvent/Item/
 规划只做静态核对/git diff --check；未安装依赖/运行build/test、Docker或服务，真实DB/Mongo/Redis/Nest worker、外部embedding/vector/rerank和部署均未验证。下一次核执行PR逐入口/必要入队/独立开关/导出快照、最终head普通CI和Redis协议证据；未合main不增加注册数，不关闭worker依赖或GAP-ASYNC-001。
 
 
-- Ready PR [#97](https://github.com/wei500L/newwei/pull/97)，业务 head `6b70350df46851b25885e9d06ecdb11b5ac25c3e`。首轮普通 CI 39306149780：`verify` 与 `api-go-user-settings-integration` 均因 `go.sum` 尚无 `msgpack/v5` 条目失败（drift gate 只报依赖清单差异，未进入编译/用例）；`go-modules-regen` 已成功提交 `517592ad`（go.mod/go.sum 增加 msgpack/v5 与 tagparser），label 已移除。代码 head `5683e0cf` 的普通 CI [39310112110](https://github.com/wei500L/newwei/actions/runs/39310112110) 全绿：`verify` success、`api-go-user-settings-integration` success（含 archivepreparation 真实 Redis 7.2 协议用例）、`vector-integration` success；`go-modules-regen`/`contract-baseline-regen` skipped 不计通过。
+- Ready PR [#97](https://github.com/wei500L/newwei/pull/97)，业务 head `6b70350df46851b25885e9d06ecdb11b5ac25c3e`。首轮普通 CI 39306149780：`verify` 与 `api-go-user-settings-integration` 均因 `go.sum` 尚无 `msgpack/v5` 条目失败（drift gate 只报依赖清单差异，未进入编译/用例）；`go-modules-regen` 已成功提交 `517592ad`（go.mod/go.sum 增加 msgpack/v5 与 tagparser），label 已移除。最终代码 head `5885ca13` 的普通 CI [39314849303](https://github.com/wei500L/newwei/actions/runs/39314849303) 全绿：`verify`（含 lint/Go tests）、`api-go-user-settings-integration`（含 archivepreparation 真实 Redis 7.2 协议用例）、`vector-integration` 均 success；`go-modules-regen`/`contract-baseline-regen` skipped 不计通过。此前 5683e0cf 的 [39310112110](https://github.com/wei500L/newwei/actions/runs/39310112110) 同样全绿。
 
 ## 本次执行记录（2026-10-19）
 
@@ -43,4 +43,4 @@ MySQL只读ProcessedArticle/Article/ArchiveArticleClassification/NewsEvent/Item/
 - 分类新鲜度、显示资格、真实 embedding/vector/lexical/rerank、两层缓存/指标、错误 appCode、缺数据准备入队与状态投影均已接线；headlines 导出改为单请求五栏目快照（每轮 100、去重至 5000），items 模式复用已迁 12 列。
 - BullMQ producer 固定 5.63.2 Lua/MessagePack，waiting/active/delayed 去重、其他状态受锁移除再 add、状态 TTL 3600 与 200 条裁剪；Nest `ArchivePreparationProcessor` 仍是唯一消费者。Redis 协议用例加入现有 `api-go-user-settings-integration` job。
 - 开关 `API_GO_ARCHIVE_READING_MODE` 默认 legacy，单开装配三 Query、GraphQL handler、search HTTP、DB/JWT/Redis/Mongo 与 items 导出依赖；回滚改 legacy 并重启。
-- 本机仅 gofmt/静态审阅；未运行 build/test/Docker/服务。普通 CI、PR head 与 Redis 协议结果在 Ready PR 创建后回填。真实 MySQL/Mongo、Nest worker 消费、模型/向量上游与部署切流未验证。
+- 本机仅 gofmt/静态审阅；未运行 build/test/Docker/服务。最终代码 head 5885ca13 普通 CI 39314849303 全绿（见上）。真实 MySQL/Mongo、Nest worker 消费、模型/向量上游与部署切流未验证。
