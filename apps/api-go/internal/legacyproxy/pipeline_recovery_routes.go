@@ -1,7 +1,5 @@
 package legacyproxy
 
-import "net/http"
-
 // PipelineRecoveryKey is the handler registration key for the pipeline recovery
 // read route.
 const PipelineRecoveryKey = "/api/admin/quality/pipeline/runs"
