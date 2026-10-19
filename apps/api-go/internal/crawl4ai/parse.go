@@ -1,6 +1,7 @@
 package crawl4ai
 
 import (
+	"bytes"
 	"encoding/json"
 	"strconv"
 	"time"
@@ -83,21 +84,31 @@ func normalizeResponse(data []byte) (Response, error) {
 	return response, nil
 }
 
-// decodeLinks flattens every link bucket, keeping only array buckets, exactly
-// like normalizeLinkRecord.
+// decodeLinks flattens every link bucket in document order. JSON.parse keeps the
+// object's key order and the discovery chain walks Object.values(...), so the
+// bucket order decides the candidate order when a page yields both internal and
+// external links; a Go map would randomize it.
 func decodeLinks(raw json.RawMessage) []Link {
 	trimmed := trimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return nil
 	}
-	var buckets map[string]json.RawMessage
-	if err := json.Unmarshal(trimmed, &buckets); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(trimmed))
+	if _, err := decoder.Token(); err != nil {
 		return nil
 	}
 	links := []Link{}
-	for _, bucketRaw := range buckets {
+	for decoder.More() {
+		if _, err := decoder.Token(); err != nil {
+			return nil
+		}
+		var bucket json.RawMessage
+		if err := decoder.Decode(&bucket); err != nil {
+			return nil
+		}
 		var entries []rawLink
-		if err := json.Unmarshal(bucketRaw, &entries); err != nil {
+		if err := json.Unmarshal(bucket, &entries); err != nil {
+			// A non-array bucket is skipped, like normalizeLinkRecord.
 			continue
 		}
 		for _, entry := range entries {
