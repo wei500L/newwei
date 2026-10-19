@@ -15,7 +15,7 @@ func TestJSValueFormatting(t *testing.T) {
 		1e20:               "100000000000000000000",
 		1e21:               "1e+21",
 		-2.25:              "-2.25",
-		123.40000000000001: "123.40000000000001",
+		123.45678901234567: "123.45678901234567",
 	}
 	for value, want := range cases {
 		if got := jsNumberString(value); got != want {
