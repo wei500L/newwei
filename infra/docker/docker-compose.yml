@@ -613,6 +613,12 @@ services:
       # 全部 legacy 也能运行。go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 和
       # SMTP_*，不要求 JWT_SECRET。默认 legacy；切换/回滚顺序见 docs 与 README。
       API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
+      # raw_item 失败补偿的定时重放所有权。与条目写/读开关独立；默认 legacy。
+      # go 时 NestJS Cron 在申请锁前退出，Go 每分钟扫描并投递。Nest 与 Go 注入
+      # 同一变量；SCHEDULE_ENABLED=false 时两边都停止定时重放，但请求内即时投递
+      # 不受影响。回滚只把该变量改回 legacy。
+      API_GO_RAW_ITEM_OUTBOX_MODE: ${API_GO_RAW_ITEM_OUTBOX_MODE:-legacy}
+      SCHEDULE_ENABLED: ${SCHEDULE_ENABLED:-true}
       # 分析工作台保存视图、看板/列/任务、笔记/评论（Go 协作域）。
       # pilot 与样例保持 legacy。三个变量各自改成 go 才切换对应 HTTP。
       # 内部讨论检查、评论计数和删除清理不看另一个开关，也不回调 NestJS。
@@ -990,6 +996,14 @@ services:
       # 改回 legacy。
       API_GO_ACCOUNT_SECURITY_MODE: legacy
       API_GO_ITEMS_READING_MODE: legacy
+      # 条目写入（POST /api/items 与五个 item/crawl mutation）和 raw_item 定时
+      # 补偿是独立开关。默认 legacy；仅接受空串/legacy/go，非法值启动失败。
+      # 写模式需要 JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI；后台补偿
+      # 单开只需要 DATABASE_URL、REDIS_HOST、MONGO_URI。SCHEDULE_ENABLED=false
+      # 只停定时重放，不停请求内即时投递。回滚分别改回 legacy。
+      API_GO_ITEMS_INGEST_MODE: ${API_GO_ITEMS_INGEST_MODE:-legacy}
+      API_GO_RAW_ITEM_OUTBOX_MODE: ${API_GO_RAW_ITEM_OUTBOX_MODE:-legacy}
+      SCHEDULE_ENABLED: ${SCHEDULE_ENABLED:-true}
       # 条目列表 GraphQL root 独立子开关：默认 legacy；go 要求读开关与条目阅读
       # 开关均为 go。回滚只把该变量改回 legacy，其余已迁读与 REST 不受影响。
       API_GO_GRAPHQL_ITEMS_LIST_MODE: legacy

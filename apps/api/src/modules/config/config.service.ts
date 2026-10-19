@@ -529,6 +529,15 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  // raw_item outbox replay ownership. The schema already rejects values other
+  // than "", legacy and go, so the getter only distinguishes go.
+  get rawItemOutboxMode(): "legacy" | "go" {
+    return this.get<string>("API_GO_RAW_ITEM_OUTBOX_MODE", { infer: true }) ===
+      "go"
+      ? "go"
+      : "legacy";
+  }
+
   get systemSettingsEncryptionKey(): string | undefined {
     return this.get<string | undefined>("SYSTEM_SETTINGS_ENCRYPTION_KEY", {
       infer: true,

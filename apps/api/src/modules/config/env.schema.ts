@@ -41,6 +41,17 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The raw_item outbox scheduled-replay owner. Empty string behaves like
+    // legacy. go makes the NestJS Cron return before acquiring the lock; the
+    // synchronous request-time delivery still runs here. Invalid values fail
+    // Nest startup.
+    API_GO_RAW_ITEM_OUTBOX_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     REDIS_DB: z.coerce.number().int().nonnegative().default(0),
     REDIS_USERNAME: z.string().optional(),
     REDIS_PASSWORD: z.string().optional(),
