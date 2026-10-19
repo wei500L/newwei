@@ -265,6 +265,12 @@ func TestIntegrationStalledJobIsRecovered(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Previous workers of this package set the shared stalled-check key with a
+	// 30 second TTL; clear it so this check is not skipped.
+	if err := client.Del(ctx, keys.Base+"stalled-check").Err(); err != nil {
+		t.Fatal(err)
+	}
+
 	processed := make(chan string, 1)
 	blocking := redis.NewClient(client.Options())
 	defer blocking.Close()
