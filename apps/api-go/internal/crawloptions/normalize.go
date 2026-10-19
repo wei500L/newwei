@@ -120,19 +120,19 @@ func normalizeOptions(options *OptionsInput, crawlBaseURL string) Options {
 	}
 	var mergedExcluded []string
 	var targetElements []string
-	removeOverlayElements := true
-	wordCountThresholdDefault := 12
+	cleanRemoveOverlay := true
+	cleanWordCount := 12
 	if qualityProfile == "quality_first" {
-		wordCountThresholdDefault = 18
+		cleanWordCount = 18
 	}
 	if cleanMarkdownSource != nil {
 		mergedExcluded = append(mergedExcluded, cleanMarkdownSource.ExcludedTags...)
 		targetElements = cleanMarkdownSource.TargetElements
 		if cleanMarkdownSource.RemoveOverlayElements != nil {
-			removeOverlayElements = *cleanMarkdownSource.RemoveOverlayElements
+			cleanRemoveOverlay = *cleanMarkdownSource.RemoveOverlayElements
 		}
 		if cleanMarkdownSource.WordCountThreshold != nil {
-			wordCountThresholdDefault = *cleanMarkdownSource.WordCountThreshold
+			cleanWordCount = *cleanMarkdownSource.WordCountThreshold
 		}
 	}
 	mergedExcluded = append(mergedExcluded, excludedFallback...)
@@ -142,8 +142,8 @@ func normalizeOptions(options *OptionsInput, crawlBaseURL string) Options {
 	cleanMarkdown := normalizeCleanMarkdownOptions(&CleanMarkdownInput{
 		TargetElements:        targetElements,
 		ExcludedTags:          mergeSelectorValues(mergedExcluded),
-		RemoveOverlayElements: &removeOverlayElements,
-		WordCountThreshold:    &wordCountThresholdDefault,
+		RemoveOverlayElements: &cleanRemoveOverlay,
+		WordCountThreshold:    &cleanWordCount,
 	})
 
 	linkPreview := normalizeLinkPreviewOptions(options.LinkPreview)
@@ -1187,7 +1187,7 @@ func normalizeVirtualScrollConfig(config *VirtualScroll) *VirtualScroll {
 	}
 }
 
-func normalizeScrollBy(raw, pixelsRaw json.RawMessage) json.RawMessage {
+func normalizeScrollBy(raw json.RawMessage, pixels *int) json.RawMessage {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -1205,11 +1205,11 @@ func normalizeScrollBy(raw, pixelsRaw json.RawMessage) json.RawMessage {
 		case "viewport":
 			return mustJSON("page_height")
 		case "pixels":
-			pixels := 500
-			if value, ok := jsToNumber(pixelsRaw); ok && isFinite(value) {
-				pixels = clampInt(jsRound(value), 1, 20000)
+			value := 500
+			if pixels != nil {
+				value = clampInt(*pixels, 1, 20000)
 			}
-			return mustJSON(pixels)
+			return mustJSON(value)
 		}
 		trimmed := strings.TrimSpace(typed)
 		if trimmed == "" {
