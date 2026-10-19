@@ -612,6 +612,69 @@ const (
 	DataRuntimeSettingsModeGo DataRuntimeSettingsMode = "go"
 )
 
+// EmailSettingsMode controls the three email settings routes
+// (API_GO_EMAIL_SETTINGS_MODE): GET /api/system-settings/email,
+// PUT /api/system-settings/email/auth-code and
+// POST /api/system-settings/email/test.
+//
+// The accepted values are exactly "", "legacy" and "go"; any other value fails
+// startup instead of silently degrading. The default is legacy. go requires
+// JWT_SECRET, DATABASE_URL, REDIS_HOST and the SMTP_* transport, because the
+// status route performs a real SMTP verify and the test route sends a real
+// message.
+type EmailSettingsMode string
+
+const (
+	// EmailSettingsModeLegacy proxies the three routes to NestJS (default,
+	// including the empty value). Rolling back only changes this variable.
+	EmailSettingsModeLegacy EmailSettingsMode = "legacy"
+	// EmailSettingsModeGo serves the three routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens. It reads and writes
+	// MySQL and Redis and talks to the configured SMTP server.
+	EmailSettingsModeGo EmailSettingsMode = "go"
+)
+
+// GeocodingMode controls the two geocoding routes (API_GO_GEOCODING_MODE):
+// POST /api/geo/geocode (items.read) and
+// POST /api/system-settings/geo/nominatim/test (settings.manage).
+//
+// The accepted values are exactly "", "legacy" and "go"; any other value fails
+// startup. The default is legacy. go requires JWT_SECRET, DATABASE_URL and
+// REDIS_HOST; it does not require Mongo and contacts Nominatim only inside a
+// request.
+type GeocodingMode string
+
+const (
+	// GeocodingModeLegacy proxies the two routes to NestJS (default, including
+	// the empty value).
+	GeocodingModeLegacy GeocodingMode = "legacy"
+	// GeocodingModeGo serves the two routes from Go, sharing the
+	// geo:geocode:v1 cache and the geocode:nominatim rate limit with NestJS.
+	GeocodingModeGo GeocodingMode = "go"
+)
+
+// RuntimeDiagnosticsMode controls the two read-only runtime diagnostics routes
+// (API_GO_RUNTIME_DIAGNOSTICS_MODE):
+// GET /api/system-settings/assistant-safety/diagnostics and
+// GET /api/system-settings/realtime-signals/runtime.
+//
+// The accepted values are exactly "", "legacy" and "go"; any other value fails
+// startup. The default is legacy. go requires JWT_SECRET, DATABASE_URL,
+// REDIS_HOST and MONGO_URI, because the realtime diagnostics read the
+// processeditems collection and the assistant safety probe talks to LiteLLM.
+type RuntimeDiagnosticsMode string
+
+const (
+	// RuntimeDiagnosticsModeLegacy proxies the two routes to NestJS (default,
+	// including the empty value).
+	RuntimeDiagnosticsModeLegacy RuntimeDiagnosticsMode = "legacy"
+	// RuntimeDiagnosticsModeGo serves the two read-only diagnostics from Go.
+	// It starts no worker, refreshes no ACLED token, writes no cache and only
+	// reads shared MySQL/Redis/Mongo state.
+	RuntimeDiagnosticsModeGo RuntimeDiagnosticsMode = "go"
+)
+
 // DataRuntimeSettingsEnv carries the environment-derived defaults of the data
 // runtime settings unit. Names and defaults mirror the NestJS apiEnvSchema
 // entries and the EnvService.realtimeSignalsConfig getters exactly, so the two
@@ -1140,6 +1203,10 @@ type SMTPConfig struct {
 	Pass                  string
 	From                  string
 	Pool                  bool
+	MaxConnections        int
+	MaxMessages           int
+	RateDeltaMs           int
+	RateLimit             int
 	ConnectionTimeoutMs   int
 	GreetingTimeoutMs     int
 	SocketTimeoutMs       int
@@ -1526,6 +1593,20 @@ type Config struct {
 	// DataRuntimeSettings holds the environment defaults of that unit. It is
 	// independent of the RealtimeSignals*/Nominatim* fields below.
 	DataRuntimeSettings DataRuntimeSettingsEnv
+	// EmailSettingsMode controls the three email settings routes (see
+	// EmailSettingsMode). Default legacy. Mode go requires JWT_SECRET,
+	// DATABASE_URL, REDIS_HOST and the SMTP_* transport; it does not require
+	// Mongo and starts no worker.
+	EmailSettingsMode EmailSettingsMode
+	// GeocodingMode controls the two geocoding routes (see GeocodingMode).
+	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
+	// it does not require Mongo and performs no startup network probe.
+	GeocodingMode GeocodingMode
+	// RuntimeDiagnosticsMode controls the assistant safety and realtime signal
+	// diagnostics (see RuntimeDiagnosticsMode). Default legacy. Mode go requires
+	// JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI; it starts no worker and
+	// performs no startup network probe.
+	RuntimeDiagnosticsMode RuntimeDiagnosticsMode
 	// AuthFactorsMode controls the seven authenticated MFA management and
 	// organization OIDC configuration routes (see AuthFactorsMode). Default
 	// legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does
@@ -2193,6 +2274,30 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_DATA_RUNTIME_SETTINGS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_EMAIL_SETTINGS_MODE")) {
+	case "", string(EmailSettingsModeLegacy):
+		cfg.EmailSettingsMode = EmailSettingsModeLegacy
+	case string(EmailSettingsModeGo):
+		cfg.EmailSettingsMode = EmailSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_EMAIL_SETTINGS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_GEOCODING_MODE")) {
+	case "", string(GeocodingModeLegacy):
+		cfg.GeocodingMode = GeocodingModeLegacy
+	case string(GeocodingModeGo):
+		cfg.GeocodingMode = GeocodingModeGo
+	default:
+		errs = append(errs, "API_GO_GEOCODING_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_RUNTIME_DIAGNOSTICS_MODE")) {
+	case "", string(RuntimeDiagnosticsModeLegacy):
+		cfg.RuntimeDiagnosticsMode = RuntimeDiagnosticsModeLegacy
+	case string(RuntimeDiagnosticsModeGo):
+		cfg.RuntimeDiagnosticsMode = RuntimeDiagnosticsModeGo
+	default:
+		errs = append(errs, "API_GO_RUNTIME_DIAGNOSTICS_MODE must be one of legacy|go")
+	}
 	// The platform governance switch accepts exactly "", "legacy" and "go"; any
 	// other value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE")) {
@@ -2570,6 +2675,10 @@ func Load(getenv func(string) string) (Config, error) {
 		Pass:                  getenv("SMTP_PASS"),
 		From:                  strings.TrimSpace(getenv("SMTP_FROM")),
 		Pool:                  boolDefault(getenv("SMTP_POOL"), false),
+		MaxConnections:        intDefault(getenv("SMTP_MAX_CONNECTIONS"), 5),
+		MaxMessages:           intDefault(getenv("SMTP_MAX_MESSAGES"), 100),
+		RateDeltaMs:           intDefault(getenv("SMTP_RATE_DELTA_MS"), 1_000),
+		RateLimit:             intDefault(getenv("SMTP_RATE_LIMIT"), 10),
 		ConnectionTimeoutMs:   intDefault(getenv("SMTP_CONNECTION_TIMEOUT_MS"), 10_000),
 		GreetingTimeoutMs:     intDefault(getenv("SMTP_GREETING_TIMEOUT_MS"), 10_000),
 		SocketTimeoutMs:       intDefault(getenv("SMTP_SOCKET_TIMEOUT_MS"), 30_000),
@@ -3175,6 +3284,40 @@ func Load(getenv func(string) string) (Config, error) {
 	// requirement.
 	if cfg.DataRuntimeSettingsMode == DataRuntimeSettingsModeGo {
 		appendAuthRequirements(&errs, "API_GO_DATA_RUNTIME_SETTINGS_MODE", cfg)
+	}
+	// The email settings takeover performs a real SMTP verify and can send a
+	// real test message, so it requires the transport in addition to the
+	// credentialed JWT/MySQL/Redis stack.
+	if cfg.EmailSettingsMode == EmailSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_EMAIL_SETTINGS_MODE", cfg)
+		if cfg.SMTP.Host == "" {
+			errs = append(errs, "SMTP_HOST is required when API_GO_EMAIL_SETTINGS_MODE=go")
+		}
+		if cfg.SMTP.Port == 0 {
+			errs = append(errs, "SMTP_PORT is required when API_GO_EMAIL_SETTINGS_MODE=go")
+		}
+		if cfg.SMTP.User == "" {
+			errs = append(errs, "SMTP_USER is required when API_GO_EMAIL_SETTINGS_MODE=go")
+		}
+		if cfg.SMTP.Pass == "" {
+			errs = append(errs, "SMTP_PASS is required when API_GO_EMAIL_SETTINGS_MODE=go")
+		}
+	}
+	// The geocoding takeover needs JWT verification, MySQL and Redis (the
+	// identity row and the shared cache/rate-limit keys). It contacts Nominatim
+	// only inside a request, so no external endpoint is a startup requirement.
+	if cfg.GeocodingMode == GeocodingModeGo {
+		appendAuthRequirements(&errs, "API_GO_GEOCODING_MODE", cfg)
+	}
+	// The runtime diagnostics takeover reads Redis, MySQL and Mongo and probes
+	// LiteLLM inside the request. Mongo is required because the marker
+	// readiness section aggregates processeditems; no LiteLLM endpoint is a
+	// startup requirement.
+	if cfg.RuntimeDiagnosticsMode == RuntimeDiagnosticsModeGo {
+		appendAuthRequirements(&errs, "API_GO_RUNTIME_DIAGNOSTICS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_RUNTIME_DIAGNOSTICS_MODE=go")
+		}
 	}
 	// The authenticated MFA management / OIDC configuration takeover needs JWT
 	// verification, MySQL and Redis only. It reads no Mongo collection, starts

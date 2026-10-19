@@ -1,4 +1,4 @@
-package dashboardwarmap
+package geocoding
 
 import (
 	"regexp"
@@ -117,7 +117,7 @@ func addCountry(idx *countryIndex, name, alpha2, alpha3 string) {
 	idx.alpha3ToName[alpha3] = name
 }
 
-func normalizeCountryCode(input string) string {
+func NormalizeCountryCode(input string) string {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
 		return ""
@@ -146,7 +146,7 @@ func normalizeCountryCode(input string) string {
 	return ""
 }
 
-func extractCountryCodeFromText(text string) string {
+func ExtractCountryCodeFromText(text string) string {
 	if strings.TrimSpace(text) == "" {
 		return ""
 	}
@@ -156,7 +156,7 @@ func extractCountryCodeFromText(text string) string {
 		}
 		return "USA"
 	})
-	if code := normalizeCountryCode(sanitized); code != "" {
+	if code := NormalizeCountryCode(sanitized); code != "" {
 		return code
 	}
 	for _, token := range strings.FieldsFunc(sanitized, isTokenSep) {
@@ -167,7 +167,7 @@ func extractCountryCodeFromText(text string) string {
 		if len([]rune(token)) <= 3 && token != strings.ToUpper(token) {
 			continue
 		}
-		if code := normalizeCountryCode(token); code != "" {
+		if code := NormalizeCountryCode(token); code != "" {
 			return code
 		}
 	}
@@ -204,16 +204,16 @@ func extractCountryCodeFromText(text string) string {
 	return ""
 }
 
-func countryName(code string) string {
-	normalized := normalizeCountryCode(code)
+func CountryName(code string) string {
+	normalized := NormalizeCountryCode(code)
 	if normalized == "" {
 		return ""
 	}
 	return countryCodes().alpha3ToName[normalized]
 }
 
-func countryAlpha2(code string) string {
-	normalized := normalizeCountryCode(code)
+func CountryAlpha2(code string) string {
+	normalized := NormalizeCountryCode(code)
 	if normalized == "" {
 		return ""
 	}

@@ -681,6 +681,18 @@ func run() error {
 	if cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo {
 		dataRuntimeSettingsMode = string(legacyproxy.ModeGo)
 	}
+	emailSettingsMode := ""
+	if cfg.EmailSettingsMode == config.EmailSettingsModeGo {
+		emailSettingsMode = string(legacyproxy.ModeGo)
+	}
+	geocodingMode := ""
+	if cfg.GeocodingMode == config.GeocodingModeGo {
+		geocodingMode = string(legacyproxy.ModeGo)
+	}
+	runtimeDiagnosticsMode := ""
+	if cfg.RuntimeDiagnosticsMode == config.RuntimeDiagnosticsModeGo {
+		runtimeDiagnosticsMode = string(legacyproxy.ModeGo)
+	}
 	authFactorsMode := ""
 	if cfg.AuthFactorsMode == config.AuthFactorsModeGo {
 		authFactorsMode = string(legacyproxy.ModeGo)
@@ -774,6 +786,13 @@ func run() error {
 	// widens the infrastructure settings route ownership and vice versa.
 	rules = legacyproxy.WithStorageDiagnostics(rules, storageDiagnosticsMode)
 	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
+	// The three settings-diagnostics groups are independent switches with
+	// exact paths that never overlap an existing rule; the matcher's
+	// longest-prefix rule also keeps them ahead of the platform governance
+	// /assistant-safety and data runtime /realtime-signals rules.
+	rules = legacyproxy.WithEmailSettings(rules, emailSettingsMode)
+	rules = legacyproxy.WithGeocoding(rules, geocodingMode)
+	rules = legacyproxy.WithRuntimeDiagnostics(rules, runtimeDiagnosticsMode)
 	rules = legacyproxy.WithAuthFactors(rules, authFactorsMode)
 	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
 	// The login/session/email-code unit owns eleven exact POST paths under
@@ -868,7 +887,10 @@ func run() error {
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
-				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo {
+				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
+				cfg.EmailSettingsMode == config.EmailSettingsModeGo ||
+				cfg.GeocodingMode == config.GeocodingModeGo ||
+				cfg.RuntimeDiagnosticsMode == config.RuntimeDiagnosticsModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -968,6 +990,9 @@ func run() error {
 	// blacklist, MySQL membership re-derivation) but no Mongo.
 	storageDiagnosticsGo := cfg.StorageDiagnosticsMode == config.StorageDiagnosticsModeGo
 	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
+	emailSettingsGo := cfg.EmailSettingsMode == config.EmailSettingsModeGo
+	geocodingGo := cfg.GeocodingMode == config.GeocodingModeGo
+	runtimeDiagnosticsGo := cfg.RuntimeDiagnosticsMode == config.RuntimeDiagnosticsModeGo
 	authFactorsGo := cfg.AuthFactorsMode == config.AuthFactorsModeGo
 	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
 	authLoginGo := cfg.AuthLoginMode == config.AuthLoginModeGo
@@ -1007,7 +1032,8 @@ func run() error {
 		graphqlKnowledgeReviewGo ||
 		graphqlRssTranslationGo ||
 		identityOnboardingGo || oidcLoginGo ||
-		searchReindexGo || proxyLoadBalancingGo || analysisExportGo
+		searchReindexGo || proxyLoadBalancingGo || analysisExportGo ||
+		emailSettingsGo || geocodingGo || runtimeDiagnosticsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	// The background digest delivery needs the shared Redis client (tick gate,
@@ -1415,6 +1441,15 @@ func run() error {
 		return err
 	}
 	if err := wireDataRuntimeSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+	}
+	if err := wireEmailSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	if err := wireGeocoding(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	if err := wireRuntimeDiagnostics(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
 	}
 	if err := wireAuthFactors(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err

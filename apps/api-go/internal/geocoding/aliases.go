@@ -1,4 +1,4 @@
-package dashboardwarmap
+package geocoding
 
 // aliasEntries / localeAliasEntries 与 packages/utils/src/geo.ts 的手写别名同序。
 // 中文国名的其余条目来自 CLDR（golang.org/x/text），对应 Node Intl.DisplayNames。

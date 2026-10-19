@@ -1,4 +1,4 @@
-package dashboardwarmap
+package geocoding
 
 // countryData 是 packages/utils/src/country-data.ts 的同一张表，按原顺序。
 // alpha2 冲突时后写覆盖前写，与 Nest 的 for 循环一致。
