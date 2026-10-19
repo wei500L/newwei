@@ -32,6 +32,16 @@ export class AkshareQueueProcessor
   ) {}
 
   async onApplicationBootstrap() {
+    // The Go worker owns the akshare-data queue when the worker switch is go.
+    // Creating a second Worker here would make both processes consume the same
+    // jobs; rollback only flips this switch back to legacy.
+    if (
+      this.env.get<string>("API_GO_ECONOMIC_DATA_WORKER_MODE", {
+        infer: true,
+      }) === "go"
+    ) {
+      return;
+    }
     const config = this.env.akshareConfig;
 
     this.worker = new Worker<AkshareJobPayload>(

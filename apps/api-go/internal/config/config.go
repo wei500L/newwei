@@ -912,6 +912,30 @@ const (
 	UserDigestDeliveryModeGo     UserDigestDeliveryMode = "go"
 )
 
+// EconomicDataMode controls the three economic-data GraphQL mutations and the
+// three AkShare gateway admin HTTP routes (API_GO_ECONOMIC_DATA_MODE). The
+// empty value is legacy, matching every other migration switch. Go requires
+// JWT_SECRET, DATABASE_URL and REDIS_HOST; Mongo is not a request-path startup
+// requirement.
+type EconomicDataMode string
+
+const (
+	EconomicDataModeLegacy EconomicDataMode = "legacy"
+	EconomicDataModeGo     EconomicDataMode = "go"
+)
+
+// EconomicDataWorkerMode controls catalog synchronization, repeat-job
+// synchronization and the akshare-data BullMQ consumer
+// (API_GO_ECONOMIC_DATA_WORKER_MODE). It is independent of the request switch
+// and of every GraphQL read switch. Go requires DATABASE_URL, REDIS_HOST and
+// MONGO_URI, but not JWT_SECRET.
+type EconomicDataWorkerMode string
+
+const (
+	EconomicDataWorkerModeLegacy EconomicDataWorkerMode = "legacy"
+	EconomicDataWorkerModeGo     EconomicDataWorkerMode = "go"
+)
+
 // AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
 type AnalysisViewsMode string
 
@@ -1603,6 +1627,21 @@ type Config struct {
 	// NodeEnv is the raw NODE_ENV the secret-encoding policy compares against
 	// the exact string "production".
 	NodeEnv string
+
+	// The economic-data request and worker switches are independent. The
+	// request switch only registers the three mutations and admin HTTP routes;
+	// the worker switch owns catalog/repeat synchronization and the queue
+	// consumer. Both default to legacy.
+	EconomicDataMode           EconomicDataMode
+	EconomicDataWorkerMode     EconomicDataWorkerMode
+	AkshareEnabled             bool
+	AkshareBaseURL             string
+	AkshareTimeoutMs           int
+	AkshareMaxRetries          int
+	AkshareAdminToken          string
+	AkshareQueueConcurrency    int
+	AkshareScheduleSmoothing   bool
+	AkshareSkipUnchangedLatest bool
 
 	GraphQLAPQEnabled    bool
 	GraphQLDepthLimit    int
@@ -2509,6 +2548,40 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_RSS_TRANSLATION_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_ECONOMIC_DATA_MODE")) {
+	case "", string(EconomicDataModeLegacy):
+		cfg.EconomicDataMode = EconomicDataModeLegacy
+	case string(EconomicDataModeGo):
+		cfg.EconomicDataMode = EconomicDataModeGo
+	default:
+		errs = append(errs, "API_GO_ECONOMIC_DATA_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_ECONOMIC_DATA_WORKER_MODE")) {
+	case "", string(EconomicDataWorkerModeLegacy):
+		cfg.EconomicDataWorkerMode = EconomicDataWorkerModeLegacy
+	case string(EconomicDataWorkerModeGo):
+		cfg.EconomicDataWorkerMode = EconomicDataWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_ECONOMIC_DATA_WORKER_MODE must be one of legacy|go")
+	}
+	cfg.AkshareEnabled = boolDefault(getenv("AKSHARE_ENABLED"), true)
+	cfg.AkshareBaseURL = stringDefault(getenv("AKSHARE_HTTP_BASE_URL"), "http://localhost:8081")
+	cfg.AkshareTimeoutMs = intDefault(getenv("AKSHARE_HTTP_TIMEOUT_MS"), 20_000)
+	if cfg.AkshareTimeoutMs <= 0 {
+		cfg.AkshareTimeoutMs = 20_000
+	}
+	cfg.AkshareMaxRetries = intDefault(getenv("AKSHARE_HTTP_MAX_RETRIES"), 3)
+	if cfg.AkshareMaxRetries <= 0 {
+		cfg.AkshareMaxRetries = 3
+	}
+	cfg.AkshareAdminToken = strings.TrimSpace(getenv("AKSHARE_ADMIN_TOKEN"))
+	cfg.AkshareQueueConcurrency = intDefault(getenv("AKSHARE_QUEUE_CONCURRENCY"), 2)
+	if cfg.AkshareQueueConcurrency <= 0 {
+		cfg.AkshareQueueConcurrency = 2
+	}
+	cfg.AkshareScheduleSmoothing = boolDefault(getenv("AKSHARE_SCHEDULE_SMOOTHING_ENABLED"), false)
+	cfg.AkshareSkipUnchangedLatest = boolDefault(getenv("AKSHARE_SKIP_UNCHANGED_LATEST_POINTS"), false)
+
 	cfg.GraphQLAPQEnabled = boolDefault(getenv("GRAPHQL_APQ_ENABLED"), true)
 	cfg.GraphQLDepthLimit = intDefault(getenv("GRAPHQL_DEPTH_LIMIT"), 8)
 	cfg.GraphQLComplexity = intDefault(getenv("GRAPHQL_COMPLEXITY_LIMIT"), 2000)
@@ -3292,6 +3365,29 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_SITUATION_MONITOR_SIGNALS_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go")
+		}
+	}
+
+	if cfg.EconomicDataMode == EconomicDataModeGo {
+		if cfg.JWTSecret == "" {
+			errs = append(errs, "JWT_SECRET is required when API_GO_ECONOMIC_DATA_MODE=go")
+		}
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_ECONOMIC_DATA_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_ECONOMIC_DATA_MODE=go")
+		}
+	}
+	if cfg.EconomicDataWorkerMode == EconomicDataWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_ECONOMIC_DATA_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_ECONOMIC_DATA_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ECONOMIC_DATA_WORKER_MODE=go")
 		}
 	}
 

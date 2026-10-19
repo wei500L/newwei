@@ -226,6 +226,16 @@ cd apps/api-go && go test -tags=integration -count=1 \
   -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
 ```
 
+## 经济数据与 AkShare（`API_GO_ECONOMIC_DATA_MODE` / `API_GO_ECONOMIC_DATA_WORKER_MODE`）
+
+两个变量都默认 `legacy`，接受空串/`legacy`/`go`，非法值在 Nest 与 Go 启动失败。
+
+- `API_GO_ECONOMIC_DATA_MODE=go`：三个 GraphQL Mutation（`updateEconomicDataFetchConfig`、`triggerDataFetch`、`triggerEconomicDataRefreshPreset`）与三条 `settings.manage` HTTP（`/api/admin/akshare/version|status|upgrade`）由 Go 执行。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，不要求 Mongo。`triggerDataFetch` 入队后立即返回；预设刷新按组织每 60 秒 1 次限流并写审计。
+- `API_GO_ECONOMIC_DATA_WORKER_MODE=go`：Go 在启动时执行目录同步和重复任务同步，并成为 `akshare-data` 的唯一消费者；要求 `DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`，不要求 JWT。Nest 在此模式下跳过 `ensureCatalog`/`ensureRepeatableJobs`，且不创建 Worker。
+- 切换消费者前先停掉 Nest worker 并等待在途 job；回滚 worker 开关先停 Go 再恢复 Nest。不要 drain 队列或删除已写数据点。
+- `updateEconomicDataFetchConfig` 省略 `repeatCron` 时保留数据库原值；显式 `null` 才清空。该修正在 legacy NestJS 路径同样生效。
+- 详细契约与未验证边界见 [docs/refactor/go-economic-data.md](../../docs/refactor/go-economic-data.md)。
+
 ## 依赖清单（go.mod / go.sum）
 
 `go.sum` 是 tracked file（Go-批2A 起有第三方依赖）。本仓库约束「生成器不在

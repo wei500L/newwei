@@ -152,11 +152,13 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstream"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardwarmap"
+	"github.com/wei500L/newwei/apps/api-go/internal/economicdata"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/alerts"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	graphqlcrawlmetadata "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/crawlmetadata"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
+	economicdatagraphql "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economicdata"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/history"
 	itemsgraphql "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/kgimpact"
@@ -701,6 +703,13 @@ func run() error {
 	if cfg.OIDCLoginMode == config.OIDCLoginModeGo {
 		oidcLoginMode = string(legacyproxy.ModeGo)
 	}
+	economicDataGo := cfg.EconomicDataMode == config.EconomicDataModeGo
+	economicDataRouteMode := ""
+	if economicDataGo {
+		economicDataRouteMode = string(legacyproxy.ModeGo)
+	}
+	economicDataWorkerGo := cfg.EconomicDataWorkerMode == config.EconomicDataWorkerModeGo
+
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -728,7 +737,8 @@ func run() error {
 	graphqlRouteMode := ""
 	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
 		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" ||
-		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" {
+		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" ||
+		economicDataGo {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -787,6 +797,7 @@ func run() error {
 	// The three public organization-SSO entries are an independent auth unit
 	// with its own switch; no OIDC configuration CRUD is registered here.
 	rules = legacyproxy.WithOIDCLogin(rules, oidcLoginMode)
+	rules = legacyproxy.WithEconomicData(rules, economicDataRouteMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -868,7 +879,9 @@ func run() error {
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
-				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo {
+				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
+				cfg.EconomicDataMode == config.EconomicDataModeGo ||
+				cfg.EconomicDataWorkerMode == config.EconomicDataWorkerModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -1007,7 +1020,7 @@ func run() error {
 		graphqlKnowledgeReviewGo ||
 		graphqlRssTranslationGo ||
 		identityOnboardingGo || oidcLoginGo ||
-		searchReindexGo || proxyLoadBalancingGo || analysisExportGo
+		searchReindexGo || proxyLoadBalancingGo || analysisExportGo || economicDataGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	// The background digest delivery needs the shared Redis client (tick gate,
@@ -1015,7 +1028,7 @@ func run() error {
 	// Keep the condition additive so delivery-only starts Redis while every
 	// other mode is legacy, and the authenticator still exists only when an
 	// HTTP takeover needs it.
-	needsRedis := needsCredentialedGo || cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo
+	needsRedis := needsCredentialedGo || cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo || economicDataWorkerGo
 	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -1445,6 +1458,13 @@ func run() error {
 	if err := wireProxyLoadBalancing(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
+	// Economic-data request routes and (separately) the Go queue consumer. The
+	// service instance is also handed to the GraphQL mutation registration
+	// below; the runtime stays unstarted until the shutdown defer is installed.
+	economicService, economicRuntime, err := wireEconomicData(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
+	if err != nil {
+		return err
+	}
 
 	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
 	//（ModeGo 规则也不会进入 serveShadow——双重收口，保证 go 接管的
@@ -1629,7 +1649,7 @@ func run() error {
 	// is the exception: it requires Mongo itself).
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
 	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo ||
-		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo {
+		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || economicDataGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -1733,6 +1753,14 @@ func run() error {
 				}
 			}
 		}
+		// Economic mutations reuse the read models when the read switch is go.
+		// Register them after the read package so type registration happens once.
+		if economicDataGo {
+			if economicService == nil {
+				return fmt.Errorf("api-go: economic-data GraphQL takeover requires the service")
+			}
+			economicdatagraphql.Register(reg, economicService)
+		}
 		// The model sets shared by the read roots and the write batches may be
 		// registered exactly once each, so the workspace, alert and history
 		// models are registered here only when the matching read registration
@@ -1833,7 +1861,12 @@ func run() error {
 			return handlerErr
 		}
 		graphqlHandler = handler
-		gateway.RegisterGoHandler(graphqlread.Path, graphqlHandler.ServeHTTP)
+		gateway.RegisterGoHandler(graphqlread.Path, func(w http.ResponseWriter, r *http.Request) {
+			if economicDataGo {
+				r = r.WithContext(economicdata.WithRequestIP(r.Context(), economicRequestIP(r)))
+			}
+			graphqlHandler.ServeHTTP(w, r)
+		})
 		gateway.RegisterGoHandler(graphqlread.StatsPath, graphqlHandler.ServeStats)
 		if graphqlReadGo {
 			log.Printf("api-go: GraphQL read pilot under go (16 queries; mutations and other queries stay on NestJS)")
@@ -1907,6 +1940,9 @@ func run() error {
 		} else {
 			log.Printf("api-go: GraphQL source-policy writes not registered (API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE=legacy)")
 		}
+		if economicDataGo {
+			log.Printf("api-go: GraphQL economic-data mutations registered (%s)", strings.Join(economicdatagraphql.RegisteredMutations, ", "))
+		}
 		if graphqlKnowledgeReviewGo {
 			log.Printf("api-go: GraphQL knowledge-graph evidence review write registered (%s)", strings.Join(knowledgereview.RegisteredMutations, ", "))
 		} else {
@@ -1968,6 +2004,11 @@ func run() error {
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		if economicRuntime != nil {
+			if closeErr := economicRuntime.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: economic-data runtime close: %v", closeErr)
+			}
+		}
 		if deliveryScheduler != nil {
 			if closeErr := deliveryScheduler.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: user digest delivery scheduler close: %v", closeErr)
@@ -1999,6 +2040,11 @@ func run() error {
 			readyHandler.Close(closeCtx)
 		}
 	}()
+	if economicRuntime != nil {
+		if err := economicRuntime.Start(context.Background()); err != nil {
+			return err
+		}
+	}
 	deliveryScheduler, err = wireDigestDelivery(cfg, sharedDB, redisClient, digestService)
 	if err != nil {
 		return err
