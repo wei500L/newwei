@@ -532,12 +532,10 @@ func (v *restValidator) validateVirtualScroll(raw json.RawMessage, path string) 
 		scroll = &VirtualScroll{
 			ContainerSelector: valueOrEmpty(v.optionalString(request.ContainerSelector, entryPath+".containerSelector", 512)),
 			ScrollCount:       v.optionalInt(request.ScrollCount, entryPath+".scrollCount", intPtr(1), intPtr(1000)),
+			ScrollByPixels:    v.optionalInt(request.ScrollByPixels, entryPath+".scrollByPixels", intPtr(1), intPtr(20000)),
 			WaitAfterScrollMs: v.optionalInt(request.WaitAfterScrollMs, entryPath+".waitAfterScrollMs", intPtr(0), intPtr(60000)),
 		}
 		scroll.ScrollBy = v.validateScrollBy(request.ScrollBy, entryPath+".scrollBy")
-		if !nullish(request.ScrollByPixels) {
-			_ = v.optionalInt(request.ScrollByPixels, entryPath+".scrollByPixels", intPtr(1), intPtr(20000))
-		}
 	})
 	return scroll
 }

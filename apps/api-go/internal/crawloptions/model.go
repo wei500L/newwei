@@ -292,7 +292,10 @@ type VirtualScroll struct {
 	ContainerSelector string          `json:"containerSelector"`
 	ScrollCount       *int            `json:"scrollCount,omitempty"`
 	ScrollBy          json.RawMessage `json:"scrollBy,omitempty"`
-	WaitAfterScrollMs *int            `json:"waitAfterScrollMs,omitempty"`
+	// ScrollByPixels is the DTO input that feeds scrollBy="pixels"; it is never
+	// part of the normalized document.
+	ScrollByPixels    *int `json:"-"`
+	WaitAfterScrollMs *int `json:"waitAfterScrollMs,omitempty"`
 }
 
 // MultiURLConfig mirrors CrawlMultiUrlConfig.

@@ -54,7 +54,7 @@ func normalizeOptions(options *OptionsInput, crawlBaseURL string) Options {
 	var scrollDelayMs *int
 	if scanFullPage {
 		if options.ScrollDelayMs != nil {
-			value := clampScrollDelay(*options.ScrollDelayMs)
+			value := clampScrollDelay(float64(*options.ScrollDelayMs))
 			scrollDelayMs = &value
 		} else {
 			value := 200
@@ -113,16 +113,27 @@ func normalizeOptions(options *OptionsInput, crawlBaseURL string) Options {
 	tableScoreThreshold := normalizeTableScore(options.TableScoreThreshold)
 	tableExtraction := normalizeTableExtraction(options.TableExtraction)
 
-	cleanMarkdownInput := normalizeCleanMarkdownOptions(options.CleanMarkdown)
+	cleanMarkdownSource := normalizeCleanMarkdownOptions(options.CleanMarkdown)
 	excludedFallback := []string{"script", "style", "noscript"}
 	if qualityProfile == "quality_first" {
 		excludedFallback = []string{"nav", "footer", "aside", "script", "style", "noscript", "form"}
 	}
 	var mergedExcluded []string
 	var targetElements []string
-	if cleanMarkdownInput != nil {
-		mergedExcluded = append(mergedExcluded, cleanMarkdownInput.ExcludedTags...)
-		targetElements = cleanMarkdownInput.TargetElements
+	removeOverlayElements := true
+	wordCountThresholdDefault := 12
+	if qualityProfile == "quality_first" {
+		wordCountThresholdDefault = 18
+	}
+	if cleanMarkdownSource != nil {
+		mergedExcluded = append(mergedExcluded, cleanMarkdownSource.ExcludedTags...)
+		targetElements = cleanMarkdownSource.TargetElements
+		if cleanMarkdownSource.RemoveOverlayElements != nil {
+			removeOverlayElements = *cleanMarkdownSource.RemoveOverlayElements
+		}
+		if cleanMarkdownSource.WordCountThreshold != nil {
+			wordCountThresholdDefault = *cleanMarkdownSource.WordCountThreshold
+		}
 	}
 	mergedExcluded = append(mergedExcluded, excludedFallback...)
 	// cssSelector is deliberately dropped: the normalized document only keeps
@@ -131,8 +142,8 @@ func normalizeOptions(options *OptionsInput, crawlBaseURL string) Options {
 	cleanMarkdown := normalizeCleanMarkdownOptions(&CleanMarkdownInput{
 		TargetElements:        targetElements,
 		ExcludedTags:          mergeSelectorValues(mergedExcluded),
-		RemoveOverlayElements: boolPtrOr(cleanMarkdownInputRemoveOverlay(cleanMarkdownInput), true),
-		WordCountThreshold:    cleanMarkdownWordThreshold(cleanMarkdownInput, qualityProfile),
+		RemoveOverlayElements: &removeOverlayElements,
+		WordCountThreshold:    &wordCountThresholdDefault,
 	})
 
 	linkPreview := normalizeLinkPreviewOptions(options.LinkPreview)
@@ -265,24 +276,6 @@ func normalizeOptions(options *OptionsInput, crawlBaseURL string) Options {
 		DetailExpansion:         detailExpansion,
 		QualityProfile:          qualityProfile,
 	}
-}
-
-func cleanMarkdownInputRemoveOverlay(input *CleanMarkdownInput) *bool {
-	if input == nil {
-		return nil
-	}
-	return input.RemoveOverlayElements
-}
-
-func cleanMarkdownWordThreshold(input *CleanMarkdownInput, qualityProfile string) *int {
-	if input != nil && input.WordCountThreshold != nil {
-		return input.WordCountThreshold
-	}
-	value := 12
-	if qualityProfile == "quality_first" {
-		value = 18
-	}
-	return &value
 }
 
 // ---------------------------------------------------------------------------
