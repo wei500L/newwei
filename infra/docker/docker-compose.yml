@@ -721,6 +721,29 @@ services:
       # /api/crawl-tasks/metadata 的既有 GET :id 归属及创建/重试/删除接口继续
       # 回 NestJS。回滚只把该变量改回 legacy。
       API_GO_CRAWL_METADATA_MODE: legacy
+      # 新闻源预览 1 条 HTTP（GET /api/admin/news-sources/:id/preview）。样例
+      # 保持 legacy。只接受空串/legacy/go，非法值启动失败；改成 go 才由 Go
+      # 独立鉴权并合并工作流覆盖/模板 crawlOptions、统计在途任务、执行
+      # RSS/列表/深度/sitemap 发现与元数据抽取（只读，不入队）。要求
+      # JWT_SECRET、DATABASE_URL、REDIS_HOST；crawl4ai 缺失时深度发现返回
+      # SEED_DEEP_CRAWL4AI_UNAVAILABLE、列表页回退 HTML。回滚只把该变量改回
+      # legacy。
+      API_GO_NEWS_SOURCE_PREVIEW_MODE: ${API_GO_NEWS_SOURCE_PREVIEW_MODE:-legacy}
+      # 采集策略试运行与回放 2 条 HTTP（POST
+      # /api/admin/crawl-frontier/workflows/:id/trial-run 与 POST
+      # /api/admin/crawl-frontier/workflow-runs/:runId/replay）。样例保持
+      # legacy。只接受空串/legacy/go，非法值启动失败；改成 go 才由 Go 写运行
+      # 记录并执行工作流图。要求 JWT_SECRET、DATABASE_URL、REDIS_HOST；
+      # crawl4ai 缺失时深度发现节点报错。回滚只把该变量改回 legacy。
+      API_GO_CRAWL_WORKFLOW_TRIAL_MODE: ${API_GO_CRAWL_WORKFLOW_TRIAL_MODE:-legacy}
+      # 新闻源的在途回看窗口与 crawl4ai 请求参数透传（与 Nest 同名同默认）。
+      NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS: ${NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS:-21600000}
+      CRAWL4AI_BASE_URL: ${CRAWL4AI_BASE_URL:-http://crawl4ai:11235}
+      CRAWL4AI_API_KEY: ${CRAWL4AI_API_KEY:-}
+      CRAWL4AI_TIMEOUT_MS: ${CRAWL4AI_TIMEOUT_MS:-120000}
+      CRAWL4AI_HEALTH_CHECK_TTL_MS: ${CRAWL4AI_HEALTH_CHECK_TTL_MS:-60000}
+      CRAWL4AI_SSRF_PROXY_URL: ${CRAWL4AI_SSRF_PROXY_URL:-}
+      CRAWL4AI_JSCODE_ENABLED: ${CRAWL4AI_JSCODE_ENABLED:-true}
       # 搜索索引重建 2 条 HTTP（POST /api/admin/search/reindex 与
       # GET /api/admin/search/reindex/:jobId）。样例保持 legacy。只接受
       # 空串/legacy/go，非法值启动失败；改成 go 才由 Go 独立鉴权并写 Redis

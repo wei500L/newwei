@@ -334,6 +334,7 @@ pnpm --filter infra-scripts run env:check
 - Web ↔ API：`NEXT_PUBLIC_API_BASE_URL`（浏览器访问 API）、`API_BASE_URL`（服务端访问 API，可选）
 - API 入口试点（Go-批2C/批3A/批3B/批3C）：`API_GO_HOST_PORT`、`API_GO_IMAGE`、`API_GO_USER_SETTINGS_READ_MODE`、`API_GO_USER_SETTINGS_WRITE_MODE`（`legacy` 默认，六个 PUT 代理 NestJS；`go` 要求读模式同为 `go`，pilot 注入 `go`；回滚先改回 `legacy`）、`API_GO_ONBOARDING_MODE`。启用/切流/回滚见下方「api-go 入口试点」
 - 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_SSRF_PROXY_URL`、`CRAWL4AI_*`
+- 采集发现链试点：`API_GO_NEWS_SOURCE_PREVIEW_MODE`（新闻源预览 GET，`legacy` 默认）、`API_GO_CRAWL_WORKFLOW_TRIAL_MODE`（采集策略试运行与回放 POST，`legacy` 默认），都只接受空串/`legacy`/`go`，非法值启动失败；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，crawl4ai 由 `CRAWL4AI_BASE_URL`/`CRAWL4AI_API_KEY`/`CRAWL4AI_TIMEOUT_MS`/`CRAWL4AI_HEALTH_CHECK_TTL_MS`/`CRAWL4AI_SSRF_PROXY_URL`/`CRAWL4AI_JSCODE_ENABLED` 透传且可缺省（深度发现报不可用、列表页回退 HTML）。另新增 `NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS`（在途回看窗口，默认 6 小时）。回滚把两个开关改回 `legacy` 并重启 api-go，已写入的运行记录格式与 Nest 相同、两边的读取接口都能展示
 - LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MASTER_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`。Docker 栈中 `LITELLM_MASTER_KEY` 必填（`openssl rand -hex 32`），空值时代理直接退出
 - Docker 端口绑定：`DOCKER_PUBLISH_HOST`（默认 `127.0.0.1`，仅本机可达；需要局域网访问时设为 `0.0.0.0`）
 - 向量：`VECTOR_SERVICE_ENABLED`、`VECTOR_SERVICE_BASE_URL`、`VECTOR_INTERNAL_TOKEN`、`QDRANT_URL`
