@@ -216,7 +216,7 @@ func buildVirtualScrollConfig(config *VirtualScroll) *component {
 		return nil
 	}
 	params := map[string]any{}
-	if selector := trimmedString(config.ContainerSelector); selector != "" {
+	if selector := strings.TrimSpace(config.ContainerSelector); selector != "" {
 		params["container_selector"] = selector
 	}
 	if config.ScrollCount > 0 {

@@ -1,6 +1,9 @@
 package crawl4ai
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"net/http"
+)
 
 // Options is the client configuration. It mirrors EnvService.crawl4aiConfig
 // (apps/api/src/modules/config/config.service.ts): the base URL, the API key
