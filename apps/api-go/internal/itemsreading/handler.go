@@ -140,9 +140,17 @@ func decodePermissionList(raw []byte) []string {
 	if len(raw) == 0 {
 		return nil
 	}
-	var permissions []string
-	if err := json.Unmarshal(raw, &permissions); err != nil {
+	// MachineTokenService.validate keeps only the string members of a JSON
+	// permissions array; a mixed array does not invalidate the token.
+	var values []any
+	if err := json.Unmarshal(raw, &values); err != nil {
 		return nil
+	}
+	permissions := make([]string, 0, len(values))
+	for _, value := range values {
+		if permission, ok := value.(string); ok {
+			permissions = append(permissions, permission)
+		}
 	}
 	return permissions
 }

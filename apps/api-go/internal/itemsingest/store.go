@@ -560,7 +560,7 @@ func (s *store) insertAuditLog(ctx context.Context, orgID, userID, resource, act
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	_, err := s.db.ExecContext(ctx,
 		"INSERT INTO AuditLog (`id`,`orgId`,`actorId`,`resource`,`action`,`metadata`,`ipAddress`,`createdAt`) VALUES (?,?,?,?,?,?,?,?)",
-		newRowID(), orgID, userID, resource, action, metadata, nil, now)
+		newRowID(), orgID, userID, resource, action, string(metadata), nil, now)
 	if err == nil {
 		return nil
 	}
