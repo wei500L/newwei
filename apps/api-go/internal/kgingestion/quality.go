@@ -394,7 +394,7 @@ func parseValidationContent(content string) (string, float64, bool) {
 	if !ok || (verdict != "yes" && verdict != "no" && verdict != "uncertain") {
 		return "", 0, false
 	}
-	confidence, ok := decodeConfidence(document.Confidence)
+	confidence, ok := decodeStrictConfidence(document.Confidence)
 	if !ok {
 		return "", 0, false
 	}

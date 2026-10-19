@@ -409,7 +409,7 @@ func parseDisambiguationContent(content string) (string, bool) {
 	if err := json.Unmarshal([]byte(jsonText), &document); err != nil {
 		return "", false
 	}
-	if _, ok := decodeConfidence(document.Confidence); !ok {
+	if _, ok := decodeStrictConfidence(document.Confidence); !ok {
 		return "", false
 	}
 	trimmed := bytes.TrimSpace(document.EntityID)

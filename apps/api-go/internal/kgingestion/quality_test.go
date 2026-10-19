@@ -211,11 +211,13 @@ func TestPrepareModelFailureIsRecordedNotFatal(t *testing.T) {
 func TestPrepareSkipsValidationWithFewerThanTwoModels(t *testing.T) {
 	completer := &fakeCompleter{models: []string{"only"}}
 	quality := NewQuality(completer, nil, nil, nil)
+	settings := validationSettings()
+	settings.MultiModelValidationModels = nil
 	prepared := quality.Prepare(context.Background(), PrepareInput{
 		OrgID:       "org",
 		ArticleID:   "article",
 		KGRelations: relationsJSON(t, 0.9),
-		Settings:    validationSettings(),
+		Settings:    settings,
 	})
 	if prepared.ValidatedRelations != 0 {
 		t.Fatalf("validated = %d", prepared.ValidatedRelations)

@@ -97,6 +97,10 @@ func normalizeRelationsValue(value json.RawMessage) []Relation {
 		if !ok {
 			continue
 		}
+		predicate = knowledgegraph.TrimSpace(predicate)
+		if predicate == "" {
+			continue
+		}
 		confidence, ok := decodeConfidence(document.Confidence)
 		if !ok {
 			continue
@@ -205,6 +209,24 @@ func decodeConfidence(raw json.RawMessage) (float64, bool) {
 		return 0, false
 	}
 	return clampConfidence(value), true
+}
+
+// decodeStrictConfidence parses a model verdict confidence. The zod schemas
+// reject values outside 0..1 instead of clamping them, so a model that answers
+// 1.2 is treated as an invalid response.
+func decodeStrictConfidence(raw json.RawMessage) (float64, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return 0, false
+	}
+	var value float64
+	if err := json.Unmarshal(trimmed, &value); err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false
+	}
+	if value < 0 || value > 1 {
+		return 0, false
+	}
+	return value, true
 }
 
 func clampConfidence(value float64) float64 {
