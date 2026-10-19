@@ -55,7 +55,7 @@ HTTP 模式；`needsCredentialedGo` 的鉴权边界保持不变。`wireAuditOutb
    （`selection.go:14` `mergeCandidates`）。
 4. **payload 只补入选记录**：三路轻字段扫描后，仅对最终 200 条发一条
    `SELECT id, payload … WHERE id IN (…)`；两次读取之间被删除的 id 直接跳过
-   （`scheduler.go:248`）。
+   （`scheduler.go:251`）。
 5. **条件认领**（`repository.go:141` `Claim`）：短事务内
    `UPDATE … SET status='processing', lockedAt=now, attempts=attempts+1,
    lastError=NULL, updatedAt=now WHERE id=? AND orgId=? AND status=?
@@ -68,7 +68,7 @@ HTTP 模式；`needsCredentialedGo` 的鉴权边界保持不变。`wireAuditOutb
    `ipAddress`；id 由客户端生成 cuid 形态字符串；不使用 outboxId 作为 `AuditLog.id`。
 8. **删除**（`repository.go:243`）：`DELETE … WHERE id=? AND orgId=?`，绑定已核对
    的租户。
-9. **失败**（`scheduler.go:336`）：使用认领后的 `attempts`；`attempts>=10` 转
+9. **失败**（`scheduler.go:339`）：使用认领后的 `attempts`；`attempts>=10` 转
    `dead`，否则 `failed`，`lockedAt=NULL`，`lastError=错误消息`，
    `availableAt=失败时刻+退避`。退避为
    `round(30000 * 2^max(min(attempt,5)-1,0) * (0.5+random()))` 毫秒。
@@ -116,7 +116,7 @@ HTTP 模式；`needsCredentialedGo` 的鉴权边界保持不变。`wireAuditOutb
 
 无效 payload 或 `payload.orgId !== AuditLogOutbox.orgId`：不写 `AuditLog`；
 `status=dead`、`lastError="Invalid outbox payload"`、`attempts=原值+1（至少 1）`、
-`lockedAt=NULL`、`availableAt=当前时间`（`scheduler.go:248`）。
+`lockedAt=NULL`、`availableAt=当前时间`（`scheduler.go:251`）。
 
 ## Redis 租约与退出收口
 
@@ -176,10 +176,10 @@ Nest：
 
 Go：
 - `apps/api-go/internal/auditoutbox/scheduler.go:70` Start、`:89` Close、
-  `:146` runTick、`:187` collectCandidates、`:214` processCandidates、
-  `:248` processCandidate、`:267` deliver、`:289` failDelivery、
-  `:302` writeAuditLog、`:336` markFailure、`:359` markDead、`:375` backoffDelay、
-  `:390` startLockRenew
+  `:146` runTick、`:190` collectCandidates、`:217` processCandidates、
+  `:248` processCandidate、`:270` deliver、`:292` failDelivery、
+  `:305` writeAuditLog、`:336` markFailure、`:362` markDead、`:378` backoffDelay、
+  `:393` startLockRenew
 - `apps/api-go/internal/auditoutbox/repository.go:43/50/59` 三状态扫描、
   `:95` 批量 payload、`:141` 认领、`:189` 查重、`:223` 插入、`:243` 删除、
   `:261/283` 状态回写

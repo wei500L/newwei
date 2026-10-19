@@ -147,6 +147,9 @@ func (s *Scheduler) runTick(ctx context.Context) error {
 	if s == nil || s.deps.Repository == nil || s.deps.Locks == nil {
 		return errors.New("auditoutbox: scheduler is not fully configured")
 	}
+	if s.stopped() {
+		return nil
+	}
 	token, err := newToken()
 	if err != nil {
 		return fmt.Errorf("auditoutbox: generate cron lease token: %w", err)
