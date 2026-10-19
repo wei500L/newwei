@@ -100,7 +100,6 @@ func toModel(run assistantruns.SubmittedRun) history.AssistantRunModel {
 		CreatedAt:      run.CreatedAt,
 		Summary:        nil,
 		Error:          nil,
-		Input:          run.Input,
 		Output:         nil,
 		ConversationID: run.ConversationID,
 	}
