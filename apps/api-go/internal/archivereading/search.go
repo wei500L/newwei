@@ -193,7 +193,10 @@ func (s *Service) searchCandidates(ctx context.Context, orgID string, anchor tim
 	if s.models == nil {
 		return searchCandidateResult{}, serviceUnavailable(AppCodeEmbeddingUnavailable, "", "embedding model is not configured")
 	}
-	configuredModel, ok := s.models.RuntimeEmbeddingModel(ctx)
+	configuredModel, ok, configErr := s.models.RuntimeEmbeddingModelState(ctx)
+	if configErr != nil {
+		return searchCandidateResult{}, configErr
+	}
 	if !ok || strings.TrimSpace(configuredModel) == "" {
 		log.Printf("api-go: archive search embedding model is not configured org=%s", orgID)
 		return searchCandidateResult{}, serviceUnavailable(AppCodeEmbeddingUnavailable, "", "embedding model is not configured")
@@ -380,7 +383,10 @@ func (s *Service) searchCandidates(ctx context.Context, orgID string, anchor tim
 		for _, row := range rerankCandidates {
 			documents = append(documents, buildRerankDocument(row))
 		}
-		_, timeout, ok := s.models.RuntimeRerankProfile(ctx)
+		_, timeout, ok, configErr := s.models.RuntimeRerankProfileState(ctx)
+		if configErr != nil {
+			return searchCandidateResult{}, configErr
+		}
 		if !ok {
 			return searchCandidateResult{}, serviceUnavailable(AppCodeRerankFailed, "", "rerank model is not configured")
 		}

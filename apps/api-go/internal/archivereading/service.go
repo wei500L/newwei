@@ -381,18 +381,26 @@ func (s *Service) classificationLookups(rows []*ArchiveRow) map[string]classific
 	return lookups
 }
 
-func (s *Service) currentModels(ctx context.Context) modelSelection {
+func (s *Service) currentModels(ctx context.Context) (modelSelection, error) {
 	selection := modelSelection{}
 	if s.models == nil {
-		return selection
+		return selection, nil
 	}
-	if model, ok := s.models.RuntimeEmbeddingModel(ctx); ok && strings.TrimSpace(model) != "" {
-		selection.EmbeddingModel = &model
+	embedding, ok, err := s.models.RuntimeEmbeddingModelState(ctx)
+	if err != nil {
+		return selection, err
 	}
-	if model, ok := s.models.RuntimeRerankModel(ctx); ok && strings.TrimSpace(model) != "" {
-		selection.RerankModel = &model
+	if ok && strings.TrimSpace(embedding) != "" {
+		selection.EmbeddingModel = &embedding
 	}
-	return selection
+	rerank, _, ok, err := s.models.RuntimeRerankProfileState(ctx)
+	if err != nil {
+		return selection, err
+	}
+	if ok && strings.TrimSpace(rerank) != "" {
+		selection.RerankModel = &rerank
+	}
+	return selection, nil
 }
 
 func (s *Service) loadFreshClassifications(ctx context.Context, orgID string, rows []*ArchiveRow) (map[string]cachedClassification, error) {
@@ -401,7 +409,11 @@ func (s *Service) loadFreshClassifications(ctx context.Context, orgID string, ro
 	for _, lookup := range lookups {
 		list = append(list, lookup)
 	}
-	cached, err := s.classification.loadCached(ctx, orgID, list, s.currentModels(ctx))
+	models, err := s.currentModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cached, err := s.classification.loadCached(ctx, orgID, list, models)
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +432,11 @@ func (s *Service) loadClassificationWithStale(ctx context.Context, orgID string,
 	for _, lookup := range lookups {
 		list = append(list, lookup)
 	}
-	return s.classification.loadCached(ctx, orgID, list, s.currentModels(ctx))
+	models, err := s.currentModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.classification.loadCached(ctx, orgID, list, models)
 }
 
 func (s *Service) buildDigestItem(row *ArchiveRow, classification classificationResult, weight int, search string, result searchCandidateResult) DigestItem {

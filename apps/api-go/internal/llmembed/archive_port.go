@@ -120,12 +120,27 @@ type ArchiveRerankOutcome struct {
 // RuntimeEmbeddingModel reports the currently selected embedding model. ok is
 // false when no enabled profile configures one.
 func (c *Client) RuntimeEmbeddingModel(ctx context.Context) (string, bool) {
-	profile, err := c.resolveEmbedding(ctx)
+	model, ok, err := c.RuntimeEmbeddingModelState(ctx)
 	if err != nil {
 		return "", false
 	}
-	model := strings.TrimSpace(profile.EmbeddingModel)
-	return model, model != ""
+	return model, ok
+}
+
+// RuntimeEmbeddingModelState distinguishes "no model configured" from a
+// configuration read failure. Archive cache freshness must not treat a MySQL
+// failure as an absent model.
+func (c *Client) RuntimeEmbeddingModelState(ctx context.Context) (string, bool, error) {
+	settings, err := c.loadGatewaySettings(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	selected := selectKind(settings, "embedding")
+	if selected == nil {
+		return "", false, nil
+	}
+	model := strings.TrimSpace(selected.EmbeddingModel)
+	return model, model != "", nil
 }
 
 // RuntimeRerankModel reports the currently selected rerank model.
@@ -144,15 +159,29 @@ func (c *Client) RuntimeRerankModel(ctx context.Context) (string, bool) {
 // RuntimeRerankProfile reports the selected rerank model and its effective
 // profile timeout. The archive rerank must pass that timeout explicitly.
 func (c *Client) RuntimeRerankProfile(ctx context.Context) (string, time.Duration, bool) {
-	profile, err := c.resolveRerank(ctx)
+	model, timeout, ok, err := c.RuntimeRerankProfileState(ctx)
 	if err != nil {
 		return "", 0, false
 	}
-	model := strings.TrimSpace(profile.RerankModel)
-	if model == "" || profile.Timeout <= 0 {
-		return "", 0, false
+	return model, timeout, ok
+}
+
+// RuntimeRerankProfileState distinguishes "no rerank profile" from a
+// configuration read failure, like RuntimeEmbeddingModelState.
+func (c *Client) RuntimeRerankProfileState(ctx context.Context) (string, time.Duration, bool, error) {
+	settings, err := c.loadGatewaySettings(ctx)
+	if err != nil {
+		return "", 0, false, err
 	}
-	return model, profile.Timeout, true
+	selected := selectKind(settings, "rerank")
+	if selected == nil {
+		return "", 0, false, nil
+	}
+	model := strings.TrimSpace(selected.RerankModel)
+	if model == "" || selected.Timeout <= 0 {
+		return "", 0, false, nil
+	}
+	return model, selected.Timeout, true, nil
 }
 
 // EmbedForArchive embeds one query for the archive search. configuredModel is
