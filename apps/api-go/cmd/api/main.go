@@ -140,6 +140,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/alertworker"
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/authn"
 	"github.com/wei500L/newwei/apps/api-go/internal/authz"
@@ -1961,6 +1962,12 @@ func run() error {
 	// no JWT. The deferred Close stops new ticks and drains in-flight
 	// organizations before the shared Redis/Mongo connections are closed below.
 	var deliveryScheduler *userdigest.DeliveryScheduler
+	// The alert worker owns the shared `alerts` queue when
+	// API_GO_ALERT_WORKER_MODE=go: the scan schedule, rule evaluation, in-app
+	// notification write and email/webhook delivery. It registers no HTTP route
+	// and needs no JWT. The deferred Close stops claiming jobs and drains the
+	// in-flight ones before the shared Redis/Mongo connections close below.
+	var alertWorker *alertworker.Service
 	// Ordered teardown for both the SIGTERM path and every error return after
 	// this point, including an HTTP listen failure. The digest scheduler stops
 	// first, then background search reindex, then the shared Redis/Mongo
@@ -1968,6 +1975,11 @@ func run() error {
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		if alertWorker != nil {
+			if closeErr := alertWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: alert worker close: %v", closeErr)
+			}
+		}
 		if deliveryScheduler != nil {
 			if closeErr := deliveryScheduler.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: user digest delivery scheduler close: %v", closeErr)
@@ -2005,6 +2017,16 @@ func run() error {
 	}
 	if deliveryScheduler != nil {
 		deliveryScheduler.Start(context.Background())
+	}
+
+	alertWorker, err = wireAlertWorker(cfg, sharedDB, redisClient, &graphqlMongo, &dashboardMongo)
+	if err != nil {
+		return err
+	}
+	if alertWorker != nil {
+		if startErr := alertWorker.Start(context.Background()); startErr != nil {
+			return startErr
+		}
 	}
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

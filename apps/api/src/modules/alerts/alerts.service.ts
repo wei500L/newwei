@@ -2111,7 +2111,11 @@ export class AlertsService {
         throw error;
       }
       const message = (error as Error)?.message ?? "unknown error";
-      const isLastAttempt = job.attemptsMade >= (job.opts.attempts ?? 1);
+      // BullMQ increments attemptsMade only after an attempt fails, so during the
+      // last attempt it still holds the number of previous failures. Comparing
+      // attemptsMade + 1 against the attempt budget is what marks the final
+      // failure; the previous `attemptsMade >= attempts` test never matched.
+      const isLastAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
       await this.transitionDeliveryStatus(
         delivery.id,
         [AlertDeliveryStatus.sending],

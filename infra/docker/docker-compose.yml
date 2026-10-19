@@ -432,6 +432,25 @@ services:
       # 默认 legacy=保留 NestJS Cron；go=Go 每分钟扫描并投递，NestJS Cron 在 tick
       # gate 前退出且摘要通知 subscriber 启动。Nest 与 Go 注入同一变量。
       API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
+      # 告警队列（scan / 规则评估 / 站内通知 / 邮件与 Webhook 投递）的执行权。
+      # 空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。默认 legacy=保留
+      # NestJS AlertsProcessor；go=Go 消费 alerts 队列，Nest 处理器只保留幂等的
+      # 定时计划并在创建 Worker 前退出，告警实时推送改由 Go 的
+      # alert:notifications:v1 桥接通道驱动。Nest 与 Go 注入同一变量。
+      # go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 与 SMTP_*（站内通知、邮件
+      # 与 Webhook 都由 Go 产生）；模型服务可选，缺失时经济异常规则回退本地检测。
+      API_GO_ALERT_WORKER_MODE: ${API_GO_ALERT_WORKER_MODE:-legacy}
+      # ALERT_* 与 BULLMQ_NAMESPACE 与 NestJS 同源同名（同一份默认值），
+      # 只在 API_GO_ALERT_WORKER_MODE=go 时被 Go 读取。
+      BULLMQ_NAMESPACE: ${BULLMQ_NAMESPACE:-modular}
+      ALERT_QUEUE_CONCURRENCY: ${ALERT_QUEUE_CONCURRENCY:-4}
+      ALERT_WEBHOOK_TIMEOUT_MS: ${ALERT_WEBHOOK_TIMEOUT_MS:-5000}
+      ALERT_SCAN_INTERVAL_MS: ${ALERT_SCAN_INTERVAL_MS:-300000}
+      ALERT_NOTIFY_GLOBAL_PER_SECOND: ${ALERT_NOTIFY_GLOBAL_PER_SECOND:-10}
+      ALERT_NOTIFY_EMAIL_PER_SECOND: ${ALERT_NOTIFY_EMAIL_PER_SECOND:-2}
+      ALERT_NOTIFY_WEBHOOK_PER_SECOND: ${ALERT_NOTIFY_WEBHOOK_PER_SECOND:-10}
+      ALERT_NOTIFY_PER_CHANNEL_PER_SECOND: ${ALERT_NOTIFY_PER_CHANNEL_PER_SECOND:-2}
+      ALERT_NOTIFY_LIMITER_TTL_MS: ${ALERT_NOTIFY_LIMITER_TTL_MS:-60000}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -613,6 +632,33 @@ services:
       # 全部 legacy 也能运行。go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 和
       # SMTP_*，不要求 JWT_SECRET。默认 legacy；切换/回滚顺序见 docs 与 README。
       API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
+      # 告警队列（scan / 规则评估 / 站内通知 / 邮件与 Webhook 投递）的执行权。
+      # 空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。默认 legacy=保留
+      # NestJS AlertsProcessor；go=Go 消费 alerts 队列，Nest 处理器只保留幂等的
+      # 定时计划并在创建 Worker 前退出，告警实时推送改由 Go 的
+      # alert:notifications:v1 桥接通道驱动。Nest 与 Go 注入同一变量。
+      # go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 与 SMTP_*（站内通知、邮件
+      # 与 Webhook 都由 Go 产生）；模型服务可选，缺失时经济异常规则回退本地检测。
+      API_GO_ALERT_WORKER_MODE: ${API_GO_ALERT_WORKER_MODE:-legacy}
+      # ALERT_* 与 BULLMQ_NAMESPACE 与 NestJS 同源同名（同一份默认值），
+      # 只在 API_GO_ALERT_WORKER_MODE=go 时被 Go 读取。
+      BULLMQ_NAMESPACE: ${BULLMQ_NAMESPACE:-modular}
+      ALERT_QUEUE_CONCURRENCY: ${ALERT_QUEUE_CONCURRENCY:-4}
+      ALERT_WEBHOOK_TIMEOUT_MS: ${ALERT_WEBHOOK_TIMEOUT_MS:-5000}
+      ALERT_SCAN_INTERVAL_MS: ${ALERT_SCAN_INTERVAL_MS:-300000}
+      ALERT_NOTIFY_GLOBAL_PER_SECOND: ${ALERT_NOTIFY_GLOBAL_PER_SECOND:-10}
+      ALERT_NOTIFY_EMAIL_PER_SECOND: ${ALERT_NOTIFY_EMAIL_PER_SECOND:-2}
+      ALERT_NOTIFY_WEBHOOK_PER_SECOND: ${ALERT_NOTIFY_WEBHOOK_PER_SECOND:-10}
+      ALERT_NOTIFY_PER_CHANNEL_PER_SECOND: ${ALERT_NOTIFY_PER_CHANNEL_PER_SECOND:-2}
+      ALERT_NOTIFY_LIMITER_TTL_MS: ${ALERT_NOTIFY_LIMITER_TTL_MS:-60000}
+      # 告警邮件通道复用的 SMTP 传输（与 api 服务同一份配置）。
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_POOL: ${SMTP_POOL:-false}
       # 分析工作台保存视图、看板/列/任务、笔记/评论（Go 协作域）。
       # pilot 与样例保持 legacy。三个变量各自改成 go 才切换对应 HTTP。
       # 内部讨论检查、评论计数和删除清理不看另一个开关，也不回调 NestJS。

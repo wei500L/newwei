@@ -912,6 +912,27 @@ const (
 	UserDigestDeliveryModeGo     UserDigestDeliveryMode = "go"
 )
 
+// AlertWorkerMode controls the owner of the NestJS `alerts` queue: the
+// scan-active-rules scan, the rule evaluation, the in-app notification write and
+// the email/webhook delivery. It is independent of every HTTP switch. The
+// accepted values are exactly "", "legacy" and "go"; the empty value behaves
+// like legacy.
+//
+// legacy: the NestJS AlertsProcessor keeps consuming the queue and nothing in
+// api-go starts.
+// go: api-go consumes the queue, schedules the scan, writes the events,
+// deliveries and notifications, and publishes the alertEvents and alert
+// notification bridges. Go requires DATABASE_URL, REDIS_HOST and MONGO_URI, and
+// the SMTP transport for email channels; JWT is not required. The model service
+// client is optional (the economic anomaly provider degrades to its local
+// fallback).
+type AlertWorkerMode string
+
+const (
+	AlertWorkerModeLegacy AlertWorkerMode = "legacy"
+	AlertWorkerModeGo     AlertWorkerMode = "go"
+)
+
 // AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
 type AnalysisViewsMode string
 
@@ -1208,6 +1229,22 @@ type Config struct {
 	// UserDigestDeliveryMode 见 UserDigestDeliveryMode 常量。默认 legacy。
 	// 与五个 HTTP 开关独立；go 需要 MySQL、Redis、Mongo 和 SMTP，不要求 JWT。
 	UserDigestDeliveryMode UserDigestDeliveryMode
+	// AlertWorkerMode 见 AlertWorkerMode 常量。默认 legacy。
+	// go 需要 MySQL、Redis、Mongo 与 SMTP；ALERT_* 与 BULLMQ_NAMESPACE 只在
+	// 该模式被读取。
+	AlertWorkerMode AlertWorkerMode
+	// 告警队列的 ALERT_* 调参（NestJS EnvService.alertingConfig 的等价物）。
+	AlertQueueConcurrency     int
+	AlertWebhookTimeoutMs     int
+	AlertScanIntervalMs       int64
+	AlertNotifyGlobalPerSec   float64
+	AlertNotifyEmailPerSec    float64
+	AlertNotifyWebhookPerSec  float64
+	AlertNotifyPerChannelPSec float64
+	AlertNotifyLimiterTTLMs   int64
+	// BullMQNamespace is BULLMQ_NAMESPACE (default "modular"): it prefixes the
+	// alert notification pace keys.
+	BullMQNamespace string
 	// 分析工作台三个 HTTP 开关，彼此独立，默认都是 legacy。
 	// 只决定对应精确路由。讨论检查、评论计数和删除清理不看另一个开关。
 	// go 要求 JWT、MySQL、Redis，不要求 Mongo。
@@ -1800,6 +1837,78 @@ type Config struct {
 }
 
 // Load 从 getenv 读取并校验配置。
+// loadAlertingConfig reads the ALERT_* tuning and BULLMQ_NAMESPACE. The bounds
+// and defaults match apps/api/src/modules/config/env.schema.ts, so a value NestJS
+// refuses is also a startup error here. ALERT_MAX_RETRIES is deliberately not
+// read: a delivery job's attempts are the fixed length of the backoff table plus
+// one, like NOTIFICATION_BACKOFF_DELAYS_MS in alerts.service.ts.
+func loadAlertingConfig(getenv func(string) string, cfg *Config) []string {
+	errs := make([]string, 0)
+	readInt := func(name string, fallback int, positive bool, target *int) {
+		raw := strings.TrimSpace(getenv(name))
+		if raw == "" {
+			*target = fallback
+			return
+		}
+		value, err := strconv.Atoi(raw)
+		if err != nil || (positive && value <= 0) || (!positive && value < 0) {
+			if positive {
+				errs = append(errs, fmt.Sprintf("%s must be a positive integer, got %q", name, raw))
+			} else {
+				errs = append(errs, fmt.Sprintf("%s must be a non-negative integer, got %q", name, raw))
+			}
+			*target = fallback
+			return
+		}
+		*target = value
+	}
+	readInt64 := func(name string, fallback int64, positive bool, target *int64) {
+		raw := strings.TrimSpace(getenv(name))
+		if raw == "" {
+			*target = fallback
+			return
+		}
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || (positive && value <= 0) || (!positive && value < 0) {
+			if positive {
+				errs = append(errs, fmt.Sprintf("%s must be a positive integer, got %q", name, raw))
+			} else {
+				errs = append(errs, fmt.Sprintf("%s must be a non-negative integer, got %q", name, raw))
+			}
+			*target = fallback
+			return
+		}
+		*target = value
+	}
+	readPerSecond := func(name string, fallback float64, target *float64) {
+		raw := strings.TrimSpace(getenv(name))
+		if raw == "" {
+			*target = fallback
+			return
+		}
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil || value < 0 || value != math.Trunc(value) {
+			errs = append(errs, fmt.Sprintf("%s must be a non-negative integer, got %q", name, raw))
+			*target = fallback
+			return
+		}
+		*target = value
+	}
+	readInt("ALERT_QUEUE_CONCURRENCY", 4, true, &cfg.AlertQueueConcurrency)
+	readInt("ALERT_WEBHOOK_TIMEOUT_MS", 5_000, true, &cfg.AlertWebhookTimeoutMs)
+	readInt64("ALERT_SCAN_INTERVAL_MS", 300_000, true, &cfg.AlertScanIntervalMs)
+	readPerSecond("ALERT_NOTIFY_GLOBAL_PER_SECOND", 10, &cfg.AlertNotifyGlobalPerSec)
+	readPerSecond("ALERT_NOTIFY_EMAIL_PER_SECOND", 2, &cfg.AlertNotifyEmailPerSec)
+	readPerSecond("ALERT_NOTIFY_WEBHOOK_PER_SECOND", 10, &cfg.AlertNotifyWebhookPerSec)
+	readPerSecond("ALERT_NOTIFY_PER_CHANNEL_PER_SECOND", 2, &cfg.AlertNotifyPerChannelPSec)
+	readInt64("ALERT_NOTIFY_LIMITER_TTL_MS", 60_000, true, &cfg.AlertNotifyLimiterTTLMs)
+	cfg.BullMQNamespace = strings.TrimSpace(getenv("BULLMQ_NAMESPACE"))
+	if cfg.BullMQNamespace == "" {
+		cfg.BullMQNamespace = "modular"
+	}
+	return errs
+}
+
 func Load(getenv func(string) string) (Config, error) {
 	var errs []string
 
@@ -1998,6 +2107,15 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_USER_DIGEST_DELIVERY_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_ALERT_WORKER_MODE")) {
+	case "", string(AlertWorkerModeLegacy):
+		cfg.AlertWorkerMode = AlertWorkerModeLegacy
+	case string(AlertWorkerModeGo):
+		cfg.AlertWorkerMode = AlertWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_ALERT_WORKER_MODE must be one of legacy|go")
+	}
+	errs = append(errs, loadAlertingConfig(getenv, &cfg)...)
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_VIEWS_MODE")) {
 	case "", string(AnalysisViewsModeLegacy):
 		cfg.AnalysisViewsMode = AnalysisViewsModeLegacy
@@ -2966,6 +3084,33 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		if cfg.SMTP.Pass == "" {
 			errs = append(errs, "SMTP_PASS is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+	}
+	// The alert worker owns the shared `alerts` queue without JWT/RBAC: it reads
+	// MySQL, Redis and Mongo and sends through the real SMTP transport, so it
+	// needs no HTTP takeover switch. The model service is optional: the economic
+	// anomaly provider falls back to its local detector when it is unavailable.
+	if cfg.AlertWorkerMode == AlertWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_ALERT_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_ALERT_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ALERT_WORKER_MODE=go")
+		}
+		if cfg.SMTP.Host == "" {
+			errs = append(errs, "SMTP_HOST is required when API_GO_ALERT_WORKER_MODE=go")
+		}
+		if cfg.SMTP.Port == 0 {
+			errs = append(errs, "SMTP_PORT is required when API_GO_ALERT_WORKER_MODE=go")
+		}
+		if cfg.SMTP.User == "" {
+			errs = append(errs, "SMTP_USER is required when API_GO_ALERT_WORKER_MODE=go")
+		}
+		if cfg.SMTP.Pass == "" {
+			errs = append(errs, "SMTP_PASS is required when API_GO_ALERT_WORKER_MODE=go")
 		}
 	}
 	if cfg.AnalysisViewsMode == AnalysisViewsModeGo {

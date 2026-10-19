@@ -24,6 +24,16 @@ Go-批7 把个人内容订阅、新闻行为画像、每日摘要和投递设置
 
 切换顺序：1）先部署默认 `legacy` 的新代码；2）所有 Nest 实例改 `go`，停旧 Cron、开 relay；3）等旧 in-flight 退出；4）再启 Go 后台 `go`。回滚顺序：1）停 Go 后台新任务；2）等 in-flight 收口、组织锁释放；3）再把所有 Nest 实例改回 `legacy` 恢复 Cron。共用 tick/组织锁和 SQL CAS 只是混合版本期间的保护，不能代替明确的单一执行权。Go 后台本身不验 JWT，也不要求 `JWT_SECRET` 或任何 HTTP 开关；`go` 要求 `DATABASE_URL`、`REDIS_HOST`、`MONGO_URI` 与既有 `SMTP_*`。SMTP 连接在到期发送时创建，不做启动实网探测；ES 关键词读取沿用既有可选回退。说明见 `docs/refactor/go-digest-delivery.md`。
 
+`API_GO_ALERT_WORKER_MODE` 是告警队列（`alerts`）的独立执行权开关，默认 `legacy`，只接受空串/`legacy`/`go`，空串按 `legacy`，非法值在 Nest 和 Go 都启动失败。它与全部 HTTP 开关解耦：规则与通道的配置写入、告警读取接口、`AlertsQueueEventPublisher`、订阅传输层都不看这个变量。`go` 时 Go 消费与 NestJS 相同的 `alerts` 队列：定时 upsert `scan-active-rules` 计划；扫描为所有组织补建默认规则并入队到期规则；评估按 9 个 provider 取值、按冷却期预检并在同一事务里领取 `lastTriggeredAt`、写 `AlertEvent`、为每个活跃通道和有权限的接收人写 `AlertDelivery`；站内通知写 `Notification` 后发布 `alert:notifications:v1`，NestJS 的 alert subscriber 只向本实例 socket 推送一次；外部投递由同一个队列按 `alertNotifications` 退避表（60s/5m/15m，4 次尝试）发送邮件与 Webhook；触发后发布 `gqlsub:alertEvents`，envelope 与 NestJS 的 `GraphqlSubscriptionBus` 逐字节一致。NestJS 侧只保留幂等的 `scheduleScanJob`/`ensureAllSchedules`，并在创建 Worker 前退出。
+
+任务格式不变：队列名 `alerts`、前缀 `bull`、job name（`scan-active-rules`/`evaluate-rule:*`/`deliver-notification:*`）、jobId（`evaluate:<ruleId>:<ms>`/`evaluate-<ruleId>`/`deliver-<deliveryId>`/`repeat:<md5>:<ms>`）、data 字段、opts（`attempts`、`backoff`、`removeOnComplete`、`removeOnFail`）与限速 key（`${BULLMQ_NAMESPACE}:alerts:notify:...`）都与 NestJS 相同，切换前后可以互相消费。延迟语义同样是 5.63.2 的 `moveToDelayed`：限速与间隔用 `skipAttempt=1`（不消耗尝试次数），重试用 `skipAttempt=0`（`atm` 只加一次）。
+
+三处有意的行为变化：1）投递最后一次失败改判 `attemptsMade + 1 >= attempts`，因此最终失败会被正确标为 `failed`，事件也能汇总为 `failed` 或 `delivered`（NestJS 只改这一行）；2）评估只取 `channel.orgId` 等于 `rule.orgId` 的活跃通道，历史的跨组织关联被跳过并记 warn，不写投递记录；3）扫描只为「最近评估时间不存在或已超过 `max(60, checkIntervalSec)`」的活跃规则入队（Redis key `alerts:rule:last-evaluated:<ruleId>`，TTL 为 2×该间隔），因此间隔大于 5 分钟的规则按自己的间隔评估，5 分钟的扫描只作兜底，默认 300 秒的规则不再在每个扫描窗口被评估两次。
+
+`go` 要求 `DATABASE_URL`、`REDIS_HOST`、`MONGO_URI` 与既有 `SMTP_*`，不要求 `JWT_SECRET` 或任何 HTTP 开关。模型服务可选：`MODEL_SERVICE_*` 缺失或不可用时经济异常规则回退本地 z-score/滚动突变判定，与 NestJS 的 best-effort 一致。
+
+切换顺序：1）先把 `api` 服务的开关设为 `go` 并重启，Nest 停止消费、进行中的任务处理完；2）再把 `api-go` 的开关设为 `go` 并重启。回滚按相反顺序，队列里未处理的任务格式相同，Nest 可以继续消费。已写入的事件、投递与通知保留，不回滚；失败时不在 Go 与 legacy 之间自动重放，因为投递可能已经发出。验证状态：单元与集成测试覆盖队列协议、事务领取、延迟与退避、限速 key、订阅 envelope、通知桥、模板快照与 9 个 provider 的 fixture；没有真实发送 SMTP/Webhook，没有调用模型服务，也没有在部署环境切换执行权。
+
 分析工作台的保存视图、看板/列/任务、笔记与评论共 23 条 HTTP 由三个默认 `legacy` 的开关分别接管：`API_GO_ANALYSIS_VIEWS_MODE`、`API_GO_ANALYSIS_BOARDS_MODE`、`API_GO_ANALYSIS_THREADS_MODE`。`GET /api/analysis/boards` 与看板详情会在组织没有未归档看板时创建默认看板，不是纯读。讨论检查、评论计数和删除清理直接查库，不看另一个 HTTP 开关，也不回调 NestJS。条目与事件的 CSV 导出共 2 条精确 POST 由独立的 `API_GO_ANALYSIS_EXPORT_MODE` 接管；`POST /api/analysis/exports/search`、`/graphql`、Redis 订阅、分析/助手 worker、采集流水线和邮件 Cron 仍由 NestJS 承担。说明见 `docs/refactor/go-analysis-collaboration.md` 与 `docs/refactor/go-analysis-export.md`。
 
 ## 运行

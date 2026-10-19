@@ -3756,3 +3756,132 @@ func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
 		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
 	}
 }
+
+func TestAlertWorkerMode(t *testing.T) {
+	deps := map[string]string{
+		"DATABASE_URL": "mysql://u:p@h:3306/db",
+		"REDIS_HOST":   "h",
+		"MONGO_URI":    "mongodb://h:27017/db",
+		"SMTP_HOST":    "smtp",
+		"SMTP_PORT":    "587",
+		"SMTP_USER":    "u",
+		"SMTP_PASS":    "p",
+	}
+	cases := []struct {
+		name      string
+		mode      string
+		extraEnv  map[string]string
+		wantMode  string
+		wantError bool
+	}{
+		{"empty is legacy", "", nil, "legacy", false},
+		{"legacy accepted", "legacy", nil, "legacy", false},
+		{"go accepted with deps", "go", deps, "go", false},
+		{"go without deps fails", "go", nil, "", true},
+		{"go without mongo fails", "go", map[string]string{
+			"DATABASE_URL": deps["DATABASE_URL"], "REDIS_HOST": deps["REDIS_HOST"],
+			"SMTP_HOST": deps["SMTP_HOST"], "SMTP_PORT": deps["SMTP_PORT"],
+			"SMTP_USER": deps["SMTP_USER"], "SMTP_PASS": deps["SMTP_PASS"],
+		}, "", true},
+		{"go without smtp fails", "go", map[string]string{
+			"DATABASE_URL": deps["DATABASE_URL"], "REDIS_HOST": deps["REDIS_HOST"],
+			"MONGO_URI": deps["MONGO_URI"],
+		}, "", true},
+		{"invalid value rejected", "shadow", nil, "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(func(key string) string {
+				if v, ok := tc.extraEnv[key]; ok {
+					return v
+				}
+				if key == "API_GO_ALERT_WORKER_MODE" {
+					return tc.mode
+				}
+				return ""
+			})
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("want error, got cfg %+v", cfg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if string(cfg.AlertWorkerMode) != tc.wantMode {
+				t.Errorf("AlertWorkerMode = %q, want %q", cfg.AlertWorkerMode, tc.wantMode)
+			}
+		})
+	}
+}
+
+func TestAlertingConfigDefaultsAndBounds(t *testing.T) {
+	cfg, err := Load(func(key string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AlertQueueConcurrency != 4 ||
+		cfg.AlertWebhookTimeoutMs != 5_000 ||
+		cfg.AlertScanIntervalMs != 300_000 ||
+		cfg.AlertNotifyGlobalPerSec != 10 ||
+		cfg.AlertNotifyEmailPerSec != 2 ||
+		cfg.AlertNotifyWebhookPerSec != 10 ||
+		cfg.AlertNotifyPerChannelPSec != 2 ||
+		cfg.AlertNotifyLimiterTTLMs != 60_000 ||
+		cfg.BullMQNamespace != "modular" {
+		t.Fatalf("alerting defaults = %+v", cfg)
+	}
+
+	env := map[string]string{
+		"ALERT_QUEUE_CONCURRENCY":             "8",
+		"ALERT_WEBHOOK_TIMEOUT_MS":            "2500",
+		"ALERT_SCAN_INTERVAL_MS":              "60000",
+		"ALERT_NOTIFY_GLOBAL_PER_SECOND":      "0",
+		"ALERT_NOTIFY_EMAIL_PER_SECOND":       "1",
+		"ALERT_NOTIFY_WEBHOOK_PER_SECOND":     "3",
+		"ALERT_NOTIFY_PER_CHANNEL_PER_SECOND": "4",
+		"ALERT_NOTIFY_LIMITER_TTL_MS":         "120000",
+		"BULLMQ_NAMESPACE":                    "custom",
+	}
+	cfg, err = Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AlertQueueConcurrency != 8 ||
+		cfg.AlertWebhookTimeoutMs != 2_500 ||
+		cfg.AlertScanIntervalMs != 60_000 ||
+		cfg.AlertNotifyGlobalPerSec != 0 ||
+		cfg.AlertNotifyEmailPerSec != 1 ||
+		cfg.AlertNotifyWebhookPerSec != 3 ||
+		cfg.AlertNotifyPerChannelPSec != 4 ||
+		cfg.AlertNotifyLimiterTTLMs != 120_000 ||
+		cfg.BullMQNamespace != "custom" {
+		t.Fatalf("alerting values = %+v", cfg)
+	}
+
+	for _, key := range []string{
+		"ALERT_QUEUE_CONCURRENCY",
+		"ALERT_WEBHOOK_TIMEOUT_MS",
+		"ALERT_SCAN_INTERVAL_MS",
+		"ALERT_NOTIFY_LIMITER_TTL_MS",
+	} {
+		_, err := Load(func(name string) string {
+			if name == key {
+				return "0"
+			}
+			return ""
+		})
+		if err == nil {
+			t.Errorf("%s=0 must be rejected", key)
+		}
+	}
+	if _, err := Load(func(name string) string {
+		if name == "ALERT_NOTIFY_GLOBAL_PER_SECOND" {
+			return "-1"
+		}
+		return ""
+	}); err == nil {
+		t.Error("negative per-second rate must be rejected")
+	}
+}

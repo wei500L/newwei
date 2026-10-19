@@ -315,6 +315,13 @@ jobs:
       - name: MySQL/Redis integration tests (user-settings repository + authz RBAC + authn blacklist)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ ./internal/authz/ -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
 
+      # 告警 worker 的队列协议与事务语义：领取事务（并发只有一方成功）、B1 投递
+      # 最后一次失败、moveToDelayed 的 skipAttempt 与自定义重试退避、限速 key、
+      # O1/O2/B3 扫描，以及 alertEvents/通知桥的两条 Redis 消息。fixture 使用
+      # MySQL 后端的 system_event provider，因此不需要 Mongo 服务。
+      - name: Alert worker integration tests (queue protocol, claim transaction, delivery state machine, scan)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/alertworker/ -run 'TestAlertWorkerIntegration' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从
