@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 
 import { EnvService } from "../../config/config.service";
+import { FinancialDataProviderSettingsService } from "../../system-settings/financial-data-provider-settings.service";
 import type {
   SituationMonitorFedIndicator,
   SituationMonitorFedSnapshot,
@@ -57,10 +58,13 @@ const REQUEST_TIMEOUT_MS = 12_000;
 
 @Injectable()
 export class FinancialMainlineSnapshotService {
-  constructor(private readonly env: EnvService) {}
+  constructor(
+    private readonly env: EnvService,
+    private readonly financialSettings: FinancialDataProviderSettingsService,
+  ) {}
 
   async getMarketsSnapshot(): Promise<SituationMonitorMarketsSnapshot> {
-    const apiKey = this.finnhubApiKey;
+    const apiKey = await this.resolveFinnhubApiKey();
     if (!apiKey) {
       return {
         hasFinnhubApiKey: false,
@@ -130,7 +134,7 @@ export class FinancialMainlineSnapshotService {
   }
 
   async getFedSnapshot(): Promise<SituationMonitorFedSnapshot> {
-    const apiKey = this.fredApiKey;
+    const apiKey = await this.resolveFredApiKey();
     if (!apiKey) {
       return {
         hasFredApiKey: false,
@@ -182,13 +186,27 @@ export class FinancialMainlineSnapshotService {
     };
   }
 
-  private get finnhubApiKey(): string | undefined {
+  /**
+   * F1: the administrator-saved keys must win over the container environment.
+   * FinancialDataProviderSettingsService reads the same encrypted
+   * SystemSetting values AkShare uses; the environment fallback preserves the
+   * previous behaviour for deployments that only set env vars.
+   */
+  private async resolveFinnhubApiKey(): Promise<string | undefined> {
+    const stored = await this.financialSettings.getFinnhubApiKey();
+    if (stored?.trim()) {
+      return stored.trim();
+    }
     return this.env.get<string | undefined>("FINNHUB_API_KEY", {
       infer: true,
     });
   }
 
-  private get fredApiKey(): string | undefined {
+  private async resolveFredApiKey(): Promise<string | undefined> {
+    const stored = await this.financialSettings.getFredApiKey();
+    if (stored?.trim()) {
+      return stored.trim();
+    }
     return this.env.get<string | undefined>("FRED_API_KEY", {
       infer: true,
     });
