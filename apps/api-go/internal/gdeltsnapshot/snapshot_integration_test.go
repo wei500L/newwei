@@ -28,6 +28,7 @@ package gdeltsnapshot
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"math"
 	"os"
 	"strings"
@@ -233,8 +234,16 @@ WHERE scope = ? AND variantKey = ? ORDER BY generatedAt DESC, createdAt DESC`, s
 	if err != nil || !found {
 		t.Fatalf("LatestPayload: found=%v err=%v", found, err)
 	}
-	if !strings.Contains(string(latest), `"generatedAt":"`+completed.GeneratedAt+`"`) {
-		t.Errorf("latest payload = %.160s, want the newest row", latest)
+	// MySQL normalizes the stored JSON (spacing and key order), so the newest
+	// row is compared by value and not by raw bytes.
+	var latestPayload struct {
+		GeneratedAt string `json:"generatedAt"`
+	}
+	if err := json.Unmarshal(latest, &latestPayload); err != nil {
+		t.Fatalf("decode latest payload: %v", err)
+	}
+	if latestPayload.GeneratedAt != completed.GeneratedAt {
+		t.Errorf("latest generatedAt = %q, want %q", latestPayload.GeneratedAt, completed.GeneratedAt)
 	}
 }
 

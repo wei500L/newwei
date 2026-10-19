@@ -3,6 +3,7 @@ package gdeltsnapshot
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,9 @@ func TestFetchCategoryClassifiesFailures(t *testing.T) {
 		wantCode     string
 		wantSeverity string
 		wantDetail   string
+		// anyDetail covers the decode failure: the detail text is the
+		// implementation's JSON error, like the Node SyntaxError text.
+		anyDetail bool
 	}{
 		{
 			name:         "rate limited",
@@ -92,6 +96,7 @@ func TestFetchCategoryClassifiesFailures(t *testing.T) {
 			response:     gdeltStubResponse{status: http.StatusOK, body: "<html>not json</html>"},
 			wantCode:     codeFetchFailed,
 			wantSeverity: severityWarning,
+			anyDetail:    true,
 		},
 		{
 			name:         "empty list",
@@ -116,7 +121,11 @@ func TestFetchCategoryClassifiesFailures(t *testing.T) {
 			if outcome.warning.Severity != testCase.wantSeverity {
 				t.Errorf("severity = %q, want %q", outcome.warning.Severity, testCase.wantSeverity)
 			}
-			if outcome.warning.Detail != testCase.wantDetail {
+			if testCase.anyDetail {
+				if outcome.warning.Detail == "" {
+					t.Error("detail is empty, want the decode error text")
+				}
+			} else if outcome.warning.Detail != testCase.wantDetail {
 				t.Errorf("detail = %q, want %q", outcome.warning.Detail, testCase.wantDetail)
 			}
 		})
@@ -175,20 +184,28 @@ func TestFetchCategoryCallerCancellationIsNotRetried(t *testing.T) {
 	}
 }
 
-// TestCategoryURLCapsRecordsAndKeepsParameterOrder pins the request line.
-func TestCategoryURLCapsRecordsAndKeepsParameterOrder(t *testing.T) {
-	fetcher := newGDeltFetcher(time.Now)
-	over := fetcher.categoryURL(CategoryGov, 100)
-	if !strings.Contains(over, "maxrecords=25") {
-		t.Errorf("url = %q, want maxrecords=25", over)
+// TestFetchCategoryCapsRecordsAndKeepsParameterOrder pins the request line: the
+// per-category limit is clamped to GDELT_MAX_RECORDS (25) and to at least 1,
+// and the parameters keep the NestJS order.
+func TestFetchCategoryCapsRecordsAndKeepsParameterOrder(t *testing.T) {
+	fetcher, stub := newFetchRig(t, CategoryGov, gdeltStubResponse{status: http.StatusOK, body: `{"articles":[]}`}, 0)
+	ctx := context.Background()
+
+	if outcome := fetcher.fetchCategory(ctx, CategoryGov, 100); outcome.warning == nil || outcome.warning.Code != codeEmpty {
+		t.Fatalf("warning = %+v, want gdelt_empty for the stub body", outcome.warning)
 	}
-	want := gdeltDoc2URL + "?query=" +
-		"%22government%22+OR+%22policy%22+OR+%22regulation%22+OR+%22legislation%22+OR+%22cabinet%22" +
-		"&mode=artlist&maxrecords=20&timespan=24h&format=json&lang=eng"
-	if got := fetcher.categoryURL(CategoryGov, categoryLimit); got != want {
-		t.Errorf("url = %q\nwant %q", got, want)
+	if outcome := fetcher.fetchCategory(ctx, CategoryGov, 0); outcome.warning == nil || outcome.warning.Code != codeEmpty {
+		t.Fatalf("warning = %+v, want gdelt_empty for the stub body", outcome.warning)
 	}
-	if got := fetcher.categoryURL(CategoryGov, 0); !strings.Contains(got, "maxrecords=1") {
-		t.Errorf("url = %q, want maxrecords=1 for a zero limit", got)
+	if len(stub.requests) != 2 {
+		t.Fatalf("requests = %d, want 2", len(stub.requests))
+	}
+	wantParams := "?query=" + url.QueryEscape(categoryQueries[CategoryGov]) +
+		"&mode=artlist&maxrecords=25&timespan=24h&format=json&lang=eng"
+	if !strings.HasSuffix(stub.requests[0], wantParams) {
+		t.Errorf("request = %q\nwant the suffix %q", stub.requests[0], wantParams)
+	}
+	if !strings.HasSuffix(stub.requests[1], strings.Replace(wantParams, "maxrecords=25", "maxrecords=1", 1)) {
+		t.Errorf("request = %q, want maxrecords=1 for a zero limit", stub.requests[1])
 	}
 }
