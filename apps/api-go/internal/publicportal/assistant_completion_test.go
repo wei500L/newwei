@@ -85,6 +85,7 @@ func TestAssistantCompleteChatPayloadAndLogging(t *testing.T) {
 		Guardrails:     []string{"openai-moderation-pre"},
 		ResponseFormat: json.RawMessage(`{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object"}}}`),
 		Metadata:       AssistantRequestMetadata{OrgID: "org-1", Source: "assistant-planner", Feature: "assistant"},
+		Observer:       observer,
 	})
 	if err != nil {
 		t.Fatal(err)
