@@ -138,6 +138,8 @@ adminlogs/llmlogs/qualityoverview/classificationrssops/exceptioningest 与认证
 
 ## async-runtime
 
+2026-10-19限定续核，main c70b0373990ab931758f7a000511c2d34572fc33：仅深入 AuditLogOutboxService 全方法、audit writer/schema/索引、CacheService withLock/物理key/续租、Go各域producer envelope、adminlogs既有出口、digest已合生命周期/公开Redis端口及main/config资源条件。明确纯MySQL双表+Redis、无BullMQ/Mongo/外部；来源BL-20，由AUDIT-OUTBOX-001 reserved。本次检查确认Nest消费者与Go adminlogs相对地图3cedce9a无变化，后续新增生产者/复用能力按具体文件核对。未运行故障恢复/租约/并发或部署，不扩展为全部job/Outbox已审。
+
 本轮复核 AppModule 的 SCHEDULE_ENABLED/Bull Board 条件、已列 worker/调度入口、analysis/assistant/archive 的 submit/process/状态推进。**未深入核对所有 job payload、重试/租约、Outbox 幂等和实时拓扑**；具体文件继续用异步域既有清单。Go reindex goroutine/SSE 不等于 BullMQ/Subscription executor 已迁；配置写与结果查询不自动改变执行所有权。
 
 ## vector

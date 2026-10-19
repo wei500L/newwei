@@ -1,5 +1,7 @@
 # async-runtime · 队列、调度、Outbox 与实时传输
 
+2026-10-19候选限定续核（main c70b0373）：审计补偿链由[AUDIT-OUTBOX-001](../tasks/AUDIT-OUTBOX-001.md) reserved，[完整提示词](../tasks/AUDIT-OUTBOX-001.prompt.md)已发出。当前仍Nest消费，Go任务未实施；独立MySQL+Redis，无新HTTP/root、BullMQ或外部服务。详细状态/文件/双端开关/切换顺序见task；不重领其他Outbox。此增量不刷新下方全域审查日期。
+
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态

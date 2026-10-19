@@ -1,6 +1,6 @@
 # AUDIT-OUTBOX-001 · 审计失败补偿完整消费链
 
-- 状态：pr_open；[Ready PR #92](https://github.com/wei500L/newwei/pull/92) 指向 `main`，实现 head `876dc6a4c65095627347810772857f41bc3758cb`，普通 CI [39241876877](https://github.com/wei500L/newwei/actions/runs/39241876877) success。规划 PR [#91](https://github.com/wei500L/newwei/pull/91) 仍开放。
+- 状态：pr_open；[Ready PR #92](https://github.com/wei500L/newwei/pull/92) 指向 `main`，实现 head `876dc6a4c65095627347810772857f41bc3758cb`，普通 CI [39241876877](https://github.com/wei500L/newwei/actions/runs/39241876877) success。规划 PR [#91](https://github.com/wei500L/newwei/pull/91) 已合入 main（merge `91e759b449c4511dc96d86539ea0eb258754d07e`）；2026-10-19 本分支正常 merge 该 main，冲突仅本任务记录（规划 reserved 版 vs 实现版），保留实现版，共享地图增量按 main 并集进入。
 - 基线：`origin/main c70b0373990ab931758f7a000511c2d34572fc33`。只深入 BL-20 的 AuditLogOutbox，不认领其余 Outbox/worker；关联 GAP-ASYNC-001。
 - 独立业务分支：`refactor/go-audit-outbox`；worktree：`/Users/oo/project/newwei-go-audit-outbox`，从执行时最新 `origin/main` 创建，创建前目录不存在、无其他窗口占用。
 - 首个实现提交 `506ce81f16efc6bf42fb1fa62b11ac135ef61f50` 的 CI 39241659895 因紧随的收口提交被 concurrency 取消（cancelled 不算通过，也不代表失败）；交付以 head 876dc6a4 的 CI 为准。
