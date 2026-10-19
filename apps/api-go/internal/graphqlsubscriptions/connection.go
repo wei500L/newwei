@@ -292,11 +292,27 @@ func (c *connection) handleSubscribe(message clientMessage) {
 	case exec.KindProtocol:
 		c.sendServer(serverMessage{Type: "next", ID: message.ID, Payload: plan.Result.Body})
 		c.sendServer(serverMessage{Type: "complete", ID: message.ID})
+	case exec.KindSubscriptionError:
+		c.sendSubscriptionProtocolError(message.ID, plan.Result.Body)
 	case exec.KindExecute:
 		c.startLocalOperation(message.ID, plan)
 	default:
 		c.startLegacyOperation(message.ID, message.Payload)
 	}
+}
+
+// sendSubscriptionProtocolError emits graphql-ws' operation-level error (a
+// GraphQLError array). It terminates only this operation and never sends
+// complete; resolver/guard failures use next+complete instead.
+func (c *connection) sendSubscriptionProtocolError(id string, body json.RawMessage) {
+	var payload struct {
+		Errors json.RawMessage `json:"errors"`
+	}
+	if json.Unmarshal(body, &payload) != nil || len(payload.Errors) == 0 || string(payload.Errors) == "null" {
+		c.sendServer(serverMessage{Type: "error", ID: id, Payload: internalErrorArray()})
+		return
+	}
+	c.sendServer(serverMessage{Type: "error", ID: id, Payload: payload.Errors})
 }
 
 func (c *connection) startLocalOperation(id string, plan exec.SubscriptionPlan) {

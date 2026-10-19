@@ -47,18 +47,25 @@ func (e *Engine) PlanSubscription(query string, operationName *string, rawVariab
 	}
 	doc, err := parser.ParseQuery(&ast.Source{Name: "query", Input: query})
 	if err != nil {
-		plan.Kind = KindLegacy
+		// graphql-ws reports parse/validation failures as an operation-level
+		// error message and does not send complete.
+		plan.Kind = KindSubscriptionError
+		plan.Result = parseFailure(err)
 		return plan
 	}
 	plan.Doc = doc
 	op, selectionErr := selectOperation(doc, operationName)
-	if len(validator.Validate(e.schema, doc)) > 0 {
-		plan.Kind = KindLegacy
+	if validation := validator.Validate(e.schema, doc); len(validation) > 0 {
+		plan.Kind = KindSubscriptionError
 		plan.Op = op
+		plan.Result = validationErrors(toGraphErrors(validation))
 		return plan
 	}
 	if selectionErr != nil || op == nil {
-		plan.Kind = KindLegacy
+		// Unknown or ambiguous operation resolution is an ExecutionResult
+		// failure: next(errors) then complete, not a protocol error.
+		plan.Kind = KindProtocol
+		plan.Result = operationResolution(selectionMessage(operationName, doc))
 		return plan
 	}
 	plan.Op = op

@@ -75,20 +75,20 @@ func TestPlanSubscriptionOwnership(t *testing.T) {
 			expected: KindLegacy,
 		},
 		{
-			name:     "unsupported selected field is legacy",
+			name:     "unknown selected field is a protocol error",
 			query:    `subscription Q { alertEvents { notAField } }`,
-			expected: KindLegacy,
+			expected: KindSubscriptionError,
 		},
 		{
-			name:     "parse failure is legacy",
+			name:     "parse failure is a protocol error",
 			query:    `subscription {`,
-			expected: KindLegacy,
+			expected: KindSubscriptionError,
 		},
 		{
-			name:     "unknown operation name is legacy",
+			name:     "unknown operation name is an execution result",
 			query:    `subscription Q { alertEvents { id } }`,
 			opName:   name("Missing"),
-			expected: KindLegacy,
+			expected: KindProtocol,
 		},
 	}
 	for _, test := range tests {

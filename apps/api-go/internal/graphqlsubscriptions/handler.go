@@ -26,6 +26,7 @@ const (
 	defaultInitTimeout     = 3 * time.Second
 	defaultMaxMessageBytes = 16 << 20
 	upstreamErrorPayload   = `{"errors":[{"message":"Internal server error","extensions":{"code":"INTERNAL_SERVER_ERROR","http":{"status":500}}}]}`
+	upstreamErrorArray     = `[{"message":"Internal server error","extensions":{"code":"INTERNAL_SERVER_ERROR","http":{"status":500}}}]`
 )
 
 // Identifier is the existing authhttp chain. Identify never writes an HTTP
@@ -282,4 +283,8 @@ func (r *Runtime) Close(ctx context.Context) error {
 
 func internalErrorPayload() json.RawMessage {
 	return json.RawMessage(upstreamErrorPayload)
+}
+
+func internalErrorArray() json.RawMessage {
+	return json.RawMessage(upstreamErrorArray)
 }

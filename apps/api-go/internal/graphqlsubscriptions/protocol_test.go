@@ -350,3 +350,44 @@ func TestPingPongAndUnauthorizedOperation(t *testing.T) {
 		t.Fatalf("order = %v, want limit then identify", order)
 	}
 }
+
+func TestInvalidDocumentIsProtocolErrorAndConnectionSurvives(t *testing.T) {
+	source := newFakeSource()
+	auth := &fakeAuth{identities: map[string]*authhttp.Identity{"token": alertIdentity("alerts.read")}}
+	runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, "", 2*time.Second)
+	server := httptest.NewServer(runtime)
+	t.Cleanup(server.Close)
+
+	conn := dialTestConnection(t, server.URL)
+	initConnection(t, conn, "token")
+	sendClientMessage(t, conn, map[string]any{
+		"type": "subscribe", "id": "bad",
+		"payload": map[string]any{"query": `subscription {`},
+	})
+	message := readServerMessage(t, conn)
+	if message.Type != "error" || message.ID != "bad" {
+		t.Fatalf("invalid document message = %+v, want operation-level error", message)
+	}
+	var errors []map[string]any
+	if err := json.Unmarshal(message.Payload, &errors); err != nil || len(errors) == 0 {
+		t.Fatalf("protocol error payload = %s", message.Payload)
+	}
+
+	// The operation error must not close the connection or send complete.
+	sendClientMessage(t, conn, map[string]any{"type": "ping"})
+	if pong := readServerMessage(t, conn); pong.Type != "pong" {
+		t.Fatalf("connection after invalid document = %q, want pong", pong.Type)
+	}
+	sendClientMessage(t, conn, map[string]any{
+		"type": "subscribe", "id": "good",
+		"payload": map[string]any{"query": `subscription { alertEvents { id } }`},
+	})
+	source.waitForSubscribers(t, "alertEvents", "org-a", 1)
+	source.push("alertEvents", "org-a", FeedEvent{Value: alerts.AlertEventModel{
+		ID: "event-1", TriggeredAt: time.Now(), Severity: "high", Status: "pending",
+	}})
+	next := decodeNextPayload(t, readServerMessage(t, conn))
+	if next["data"].(map[string]any)["alertEvents"].(map[string]any)["id"] != "event-1" {
+		t.Fatalf("valid subscription after invalid document = %v", next)
+	}
+}
