@@ -143,7 +143,7 @@ func mapLabelToCategory(raw string) (Category, bool) {
 		return category, true
 	}
 	for _, mapping := range categoryLabelMappings {
-		if mapping.pattern.Match(normalized) {
+		if mapping.pattern.MatchString(normalized) {
 			return mapping.category, true
 		}
 	}
@@ -165,7 +165,7 @@ func classifyFromText(text string) (Category, bool) {
 		return "", false
 	}
 	for _, rule := range textRules {
-		if rule.pattern.Match(normalized) {
+		if rule.pattern.MatchString(normalized) {
 			return rule.category, true
 		}
 	}
