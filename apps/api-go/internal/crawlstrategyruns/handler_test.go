@@ -127,7 +127,7 @@ func TestSingleSegmentRouteParsing(t *testing.T) {
 		wantID string
 		wantOK bool
 	}{
-		{"/api/admin/news-sources/src-1/preview", "/api/admin/news-sources/", false, false},
+		{"/api/admin/news-sources/src-1/preview", "/api/admin/news-sources/", "", false},
 		// The caller trims the action suffix first, mirroring ServeHTTP.
 		{"/api/admin/news-sources/src-1", "/api/admin/news-sources/", "src-1", true},
 		{"/api/admin/news-sources/a/b", "/api/admin/news-sources/", "", false},

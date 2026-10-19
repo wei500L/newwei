@@ -369,18 +369,18 @@ func TestInferPageTypeScoreAndFreshnessHeuristics(t *testing.T) {
 
 func TestCandidateKeyAndSnapshotContracts(t *testing.T) {
 	plain := candidate("https://a.example.com/1")
-	key := candidateKeyOf(plain)
+	key := candidateKeyOf(*plain)
 	if len(key) != 64 {
 		t.Fatalf("sha256 key = %q", key)
 	}
 	withKey := candidate("https://a.example.com/2")
 	withKey.Metadata = json.RawMessage(`{"candidateKey":"  custom-key  "}`)
-	if got := candidateKeyOf(withKey); got != "custom-key" {
+	if got := candidateKeyOf(*withKey); got != "custom-key" {
 		t.Fatalf("custom key = %q", got)
 	}
 	longKey := candidate("https://a.example.com/3")
 	longKey.Metadata = json.RawMessage(`{"candidateKey":"` + strings.Repeat("x", 250) + `"}`)
-	if got := candidateKeyOf(longKey); len(got) != 191 {
+	if got := candidateKeyOf(*longKey); len(got) != 191 {
 		t.Fatalf("long key length = %d", len(got))
 	}
 

@@ -226,7 +226,7 @@ func utcDateTimestamp(yearText, monthText, dayText string) *int64 {
 	if parsed.Year() != year || int(parsed.Month()) != month || parsed.Day() != day {
 		return nil
 	}
-	return normalizeTimestamp(int64Ptr(parsed.UnixMilli()))
+	return normalizeTimestamp(millisPtr(parsed.UnixMilli()))
 }
 
 // isLikelyPaginationLink implements the pagination heuristic.
@@ -608,7 +608,7 @@ func parseJSTimestamp(value string) *int64 {
 			parsed, err = time.ParseInLocation(layout, trimmed, time.Local)
 		}
 		if err == nil {
-			return normalizeTimestamp(int64Ptr(parsed.UnixMilli()))
+			return normalizeTimestamp(millisPtr(parsed.UnixMilli()))
 		}
 	}
 	return nil
@@ -810,7 +810,7 @@ func isoFromMillis(millis *int64) *string {
 	return &value
 }
 
-func int64Ptr(value int64) *int64 { return &value }
+func millisPtr(value int64) *int64 { return &value }
 
 func intPtrValue(value int) *int { return &value }
 
