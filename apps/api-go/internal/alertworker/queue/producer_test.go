@@ -144,12 +144,12 @@ func TestJobAttemptsAndFinalFailure(t *testing.T) {
 }
 
 func TestKeepJobsDecoding(t *testing.T) {
-	job := Job{Ops: JobOptions{RemoveOnComplete: json.RawMessage("true")}}
+	job := Job{Opts: JobOptions{RemoveOnComplete: json.RawMessage("true")}}
 	keep := KeepOnComplete(job.Opts)
 	if keep.Count == nil || *keep.Count != 0 {
 		t.Fatalf("removeOnComplete=true keepJobs = %+v", keep)
 	}
-	job = Job{Ops: JobOptions{RemoveOnFail: json.RawMessage(`{"age":604800,"count":10000}`)}}
+	job = Job{Opts: JobOptions{RemoveOnFail: json.RawMessage(`{"age":604800,"count":10000}`)}}
 	keep = KeepOnFail(job.Opts)
 	if keep.Age == nil || *keep.Age != 604800 || keep.Count == nil || *keep.Count != 10000 {
 		t.Fatalf("removeOnFail keepJobs = %+v", keep)

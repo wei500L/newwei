@@ -232,9 +232,13 @@ func (s *Service) occupyDeliveryForSend(ctx context.Context, delivery *DeliveryR
 	if delivery.Status == DeliveryStatusSending {
 		return true, nil
 	}
-	return s.transitionDelivery(ctx, delivery.ID, []string{DeliveryStatusPending}, deliveryStatusUpdate{
+	err := s.transitionDelivery(ctx, delivery.ID, []string{DeliveryStatusPending}, deliveryStatusUpdate{
 		Status: DeliveryStatusSending,
 	})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // transitionDeliveryOnError mirrors the catch block: the delivery becomes
