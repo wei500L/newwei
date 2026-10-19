@@ -1,20 +1,20 @@
 # archive · 归档阅读与准备任务
 
-最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
+本域限定续核：2026-10-19 Europe/Moscow，`origin/main 91e759b449c4511dc96d86539ea0eb258754d07e`；深度为三Query/搜索CSV/缓存分类与显示/准备生产及Nest消费边界，不把历史全域审查扩为当前验收。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态
 
 仅 GET 准备运行状态经数据运行开关接管。archiveDigest/archiveCalendar/archiveDetail Query 均未在 Go Registry 注册；前两项读入口会在缺数据时入准备队列。
 
-关键数据与副作用：MySQL ProcessedArticle/归档分类、Mongo 内容、Redis 准备状态/BullMQ archivePreparation、分类/翻译模型。ArchiveService.getDigest 调 ensureDigestCoverage，getCalendar 调 ensureCalendarCoverage；detail 需继续沿服务检查字段来源。
+关键数据与副作用：MySQL ProcessedArticle/Article/归档分类/事件关联、Mongo completed ProcessedItem显示信号、Redis双层缓存/指标/准备状态及BullMQ archivePreparation。Digest/Calendar缺分类或信号会ensure coverage；搜索真实调用embedding/vector/rerank。getDetail只读显示资格、缓存分类（可stale）、时间线160/相关文章12，当前没有正文翻译或分类冷生成。
 
-真实剩余缺口：三个归档 Query、准备任务生产/消费仍需独立迁移规划。不能仅在 Go 返回空集合而绕过缺口准备，也不能把 status 接口当归档 worker 完成。
+main剩余：三Query与准备生产/消费仍Nest；第一阶段[ARCHIVE-READING-001](../tasks/ARCHIVE-READING-001.md)已reserved并保存[提示词](../tasks/ARCHIVE-READING-001.prompt.md)，连同search整路两模式迁查询/原生生产者，含请求快照导出。准备worker/显示回填/分类生成仍Nest、第二阶段未认领；不绕过准备副作用，不关闭整链GAP。main注册0/3不变。
 
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#archive) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 Nest 功能目录：[archive](../../../../apps/api/src/modules/archive)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：[ARCHIVE-READING-001](../tasks/ARCHIVE-READING-001.md) reserved，规划Ready #93发布，业务refactor/go-archive-reading及/Users/oo/project/newwei-go-archive-reading尚未创建，无业务PR。允许新archive_port/vector_port窄复用，避开NewsNow registry、条目hydration及四订阅contract/exec；共享接线最小并集。
 
 ## HTTP 开关、实现与生产接线
 

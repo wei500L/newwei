@@ -84,6 +84,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-08 · analysis / 三个 CSV 导出
 
+- 2026-10-19当前main91e759b4：items/events已合main，不重派；search整路（items/headlines）现归[ARCHIVE-READING-001](tasks/ARCHIVE-READING-001.md) reserved，与BL-09第一阶段一并交付，不能再单独认领。独立archive开关接search，不改原两CSV开关；Nest准备worker保留。下方为原选批快照。
+
 - 2026-10-18按main90765633深入后，将items/events两路完整CSV认领至[ANALYSIS-EXPORT-001](tasks/ANALYSIS-EXPORT-001.md) reserved，[提示词](tasks/ANALYSIS-EXPORT-001.prompt.md)在#80发布。已核完整参数/5000选择、Go交互50条限制与私有复用、事件聚合/强制权威/先过滤排序后去重、CSV字节与公式语义；新增保持贪心结果的token索引优化。search整路仍未认领并保留Nest，不能因items模式共用业务计整路完成；归档准备与采集生命周期未认领。
 - **范围/缺口**：POST /api/analysis/exports/search、items、events（GAP-LEGACY-001）。search 还含 mode=headlines 归档路径，不只导出当前页面。
 - **基础/依据**：G/analysiscollab.NormalizeQueryString、itemsreading、newsevents；N/AnalysisWorkspaceService.export*CsvStream→buildItemsExportRows/buildArchiveSearchRows/buildEventsExportRows/buildCsvStream。需全量批读取/上限、日期排序、权限/组织过滤、CSV 转义、响应头与审计，避免套 REST 默认50条截断。
@@ -111,9 +113,11 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-09 · archive / 查询与准备闭环
 
+- 2026-10-19限定核实main91e759b4：三Query+BL-08剩余search两模式已认领[ARCHIVE-READING-001](tasks/ARCHIVE-READING-001.md) reserved，[完整提示词](tasks/ARCHIVE-READING-001.prompt.md)在Ready规划#93发布。已明确原生BullMQ5.63.2 producer（add/state/remove/status）→Nest唯一consumer边界，适合独立偏大窗口；工作量包含分类hash/stale/完整本地signals、Mongo显示资格、500召回/180重排和CSV请求快照。业务尚未实施。Go准备worker/分类写回/backfill执行器第二阶段仍未认领，不关闭GAP-ASYNC-001。
+
 - **范围/缺口**：archiveDigest/archiveCalendar/archiveDetail，ensureDigestCoverage/ensureCalendarCoverage→archivePreparation queue→processor→分类/状态写回（GAP-LEGACY-001 / GAP-ASYNC-001）。现有 status HTTP 不重迁。
-- **基础/依据**：G/dataruntimesettings 状态/设置、itemsreading/llmembed/publicportal 来源规则；N/ArchiveService、ArchivePreparationQueueService、ArchivePreparationProcessor。需要显示资格/分类缓存、embedding/rerank/翻译、job 去重和 partial/ready/failed；工作量远大于三读。
-- **文件/前置/冲突**：archive 新包、Redis queue 协议、Mongo/MySQL 数据层/main；**当前不适合不定边界的独立编码窗口**。可分“完整查询+兼容现有生产者/消费者”与“Go 准备器”两阶段，但第一阶段必须明确仍依赖 Nest，不能关闭整条缺口；先核队列兼容与唯一消费。
+- **基础/依据**：G/dataruntimesettings 状态/设置、itemsreading/llmembed/publicportal 来源规则；N/ArchiveService、ArchivePreparationQueueService、ArchivePreparationProcessor。需要显示资格/fresh-stale分类缓存、搜索embedding/vector/rerank、job去重和partial/ready/failed；getDetail当前无翻译/分类冷生成，不能凭旧标题加入。工作量远大于三读。
+- **文件/前置/冲突**：archive 新包、Redis queue 协议、Mongo/MySQL 数据层/main；现已按“完整查询+兼容原生生产者/既有Nest消费者”与“Go准备器”两阶段划定；第一阶段已占用，第二阶段仍须深读生成/回填/模型算法与消费者切换后另选，不能关闭整条缺口。
 
 ### BL-10 · workspace / 告警规则与执行
 

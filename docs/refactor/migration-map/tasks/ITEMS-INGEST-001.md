@@ -1,8 +1,8 @@
 # ITEMS-INGEST-001 · 条目写入、采集结果入库与原文补偿
 
-- 状态 **reserved**，2026-10-19 Europe/Moscow；[完整提示词](ITEMS-INGEST-001.prompt.md)在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发出。规划分支docs/plan-newsnow-feed、worktree /Users/oo/project/newwei-plan-newsnow-feed；未实施业务。
+- 当前状态 **in_progress**，2026-10-19归档选批发布前续核已见itemsingest/pipelineenqueue/go.mod真实开发，无业务PR；[完整提示词](ITEMS-INGEST-001.prompt.md)在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发出。规划分支docs/plan-newsnow-feed、worktree /Users/oo/project/newwei-plan-newsnow-feed；未实施业务。
 - 基线origin/main `91e759b449c4511dc96d86539ea0eb258754d07e`，[普通CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)精确head成功。#93旧head c4ae295c839ae211704f38d3bf8161a914b19d05的普通CI39293839565成功，本轮追加head的CI独立查。
-- 业务分支refactor/go-items-ingest、worktree /Users/oo/project/newwei-go-items-ingest，尚未创建，无业务提交/PR/merge/CI，执行器活动未核实。
+- 业务分支refactor/go-items-ingest、worktree /Users/oo/project/newwei-go-items-ingest，已创建于91e759b4，发布前续核出现itemsingest/pipelineenqueue与go.mod（MessagePack）开发，改in_progress；尚无业务提交/PR/merge/CI，执行器活动未核实。
 - 来源BL-24条目写/导入及BL-20 raw_item必要补偿；关联GAP-LEGACY-001/GAP-ASYNC-001及具体GAP-ITEMS-001。
 
 ## 完整范围与执行所有权

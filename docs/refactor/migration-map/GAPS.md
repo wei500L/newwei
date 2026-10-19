@@ -115,7 +115,7 @@
 | 受影响的 Go 范围 | 仍须 Nest 执行的必要步骤 | 用户影响 / 触发 | 候选与前置 |
 |---|---|---|---|
 | `analysisResults` / `assistantRuns` | submit* 入队、processor→process、Mongo 结果更新、事件发布 | 查询可读历史；新分析/Assistant 运行仍须 Nest | BL-12/13；明确队列 payload 与唯一消费者 |
-| 归档准备状态 HTTP | archiveDigest/Calendar→ensure*Coverage→ArchivePreparationProcessor→分类写回/markReady | status 可以读，但不会自己生成缺失归档；无 Nest worker 状态不能正常推进 | BL-09；准备配置已迁不代表 worker 已迁 |
+| 归档准备状态 HTTP；三Query/search尚Nest | ensure*Coverage→archivePreparation→ArchivePreparationProcessor→分类/显示信号回填/状态写回 | status可读不代表有生成能力；停Nest worker无法推进冷数据。ARCHIVE-READING-001 reserved仅查询+兼容producer，尚未实现 | BL-09/08第一阶段已占用；Go准备worker第二阶段未认领，整链未关闭 |
 | Telegram/Oref 信号和 refresh-run 读 | signals processor、轮询器、external snapshot Cron、refresh 入队 | Go 读取已有 Redis 缓存；停 Nest 会失去后续刷新 | BL-14；外部凭据与租约先确认 |
 | 经济六读、新闻事件/指标、知识图谱读 | AkShare repeat/processor、news pipeline/ingestion、KG ingestion | 已有数据查询在 Go；新数据/关联仍依赖 Nest 更新 | BL-11/16/18；先划每条数据写入所有权 |
 | digest 投递配置；审计补偿 | UserDigestDeliveryScheduler；AuditLogOutboxService 等 Cron | 配置已保存不等于邮件发送；设置写审计失败时 Go 写 outbox，重放仍在 Nest | BL-19/20；去重键、租约、关闭与外部 SMTP |

@@ -1,9 +1,9 @@
 # NEWSNOW-SOURCES-001 · NewsNow来源获取、批量刷新与实时接缝
 
-- 状态in_progress；2026-10-19 Europe/Moscow，规划窗口已保存并发出[独立完整提示词](NEWSNOW-SOURCES-001.prompt.md)。后续只读复核在独立业务worktree发现对应开发，不代表执行器在线或main已实现。
+- 当前状态 **pr_open**；2026-10-19归档选批只读续核：[Ready业务PR #94](https://github.com/wei500L/newwei/pull/94) OPEN/head cf25026ff99b26fb3bf2122cd240d4ac4021889a，[普通CI39297914942](https://github.com/wei500L/newwei/actions/runs/39297914942)成功；Nest订阅smoke39297914851成功，其他skipped不计通过。尚未合main或验证真实部署。[独立完整提示词](NEWSNOW-SOURCES-001.prompt.md)保留为发出快照。
 - 基线origin/main `91e759b449c4511dc96d86539ea0eb258754d07e`，普通CI[39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)在该精确head success；verify/vector-integration/api-go-user-settings-integration success，两regen skipped。非本批运行/部署证据。
-- 业务分支 `refactor/go-newsnow-sources`，worktree `/Users/oo/project/newwei-go-newsnow-sources`，HEAD仍91e759b449c4511dc96d86539ea0eb258754d07e；已有main/config、infra runtime-reader、registry port、新newsnowsources/路由接线及Nest source-refresh subscriber/module/compose改动，尚未提交/业务PR。执行器活动未核实，业务head/merge/CI未产生。
-- 规划分支 `docs/plan-newsnow-feed`，worktree `/Users/oo/project/newwei-plan-newsnow-feed`；首份认领/提示词提交 `b194917391d54514a8e52ece2680544067d3abe1` 已正常推送，发布于 [Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)。该PR后续head a92d0caba6bb72ea5b49bc5d7dee351ce0f1d00a的普通CI[39254495422](https://github.com/wei500L/newwei/actions/runs/39254495422)成功，后续追加GraphQL规划须另看新head；业务PR仍未创建。
+- 业务分支 `refactor/go-newsnow-sources`，worktree `/Users/oo/project/newwei-go-newsnow-sources`，HEAD cf25026ff99b26fb3bf2122cd240d4ac4021889a；main/config、infra runtime-reader、ops registry_port、新newsnowsources/路由及Nest source-refresh已提交。b33cc1ea补traceId修复，cf25026f仅补CI验证文档；本次核实际共享diff/文件占用，不重新验收全部provider。
+- 规划分支 `docs/plan-newsnow-feed`，worktree `/Users/oo/project/newwei-plan-newsnow-feed`；首份认领/提示词提交 `b194917391d54514a8e52ece2680544067d3abe1` 已正常推送，发布于 [Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)。该PR后续head a92d0caba6bb72ea5b49bc5d7dee351ce0f1d00a的普通CI[39254495422](https://github.com/wei500L/newwei/actions/runs/39254495422)成功，后续追加规划须另看新head；业务PR现已#94，以上旧规划head不代替当前验证。
 - 来源BL-18的source/batch子链，关联GAP-LEGACY-001；必要来源实时接缝受GAP-ASYNC-001索引，但不认领通用WS或cron。
 
 ## 精确交付与工作量

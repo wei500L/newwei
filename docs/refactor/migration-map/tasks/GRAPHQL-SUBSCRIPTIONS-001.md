@@ -1,5 +1,7 @@
 # GRAPHQL-SUBSCRIPTIONS-001 · 四条 GraphQL 实时订阅完整传输
 
+2026-10-19归档选批发布前续核：当前 **pr_open**，[Ready #95](https://github.com/wei500L/newwei/pull/95) OPEN/head68a4536d37eabde0695edfe152987cadffcc41f7；[首轮普通CI39301019113](https://github.com/wei500L/newwei/actions/runs/39301019113)在Go modules drift gate失败（vector-integration与既有MySQL/Redis job成功，regen skipped）。PR已加go-modules-regen label，最终依赖提交/head/普通CI尚须复核，不记通过/合并/部署。实际main/config/contract及文件diff已读；本批仍占contract/exec/workspace端口，不干预执行窗口记录。下方旧状态按原发出时点理解。
+
 - 状态 **in_progress**；2026-10-19 Europe/Moscow，本规划窗口保存并发出[完整独立提示词](GRAPHQL-SUBSCRIPTIONS-001.prompt.md)，未实施业务。
 - 代码基线 origin/main `91e759b449c4511dc96d86539ea0eb258754d07e`；[普通 CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)在该精确 SHA success，verify/vector-integration/api-go-user-settings-integration success，两个 regen skipped。不是本任务运行/部署证据。
 - 业务分支 `refactor/go-graphql-subscriptions`，worktree `/Users/oo/project/newwei-go-graphql-subscriptions`，已创建于91e759b449c4511dc96d86539ea0eb258754d07e；2026-10-19续核contract.go/exec/engine.go已有Subscription注册与Authorize导出开发，实际diff已读，更新in_progress。执行器活动未核实，无业务提交/PR/head/merge/CI。

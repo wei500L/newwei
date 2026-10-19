@@ -138,7 +138,7 @@ adminlogs/llmlogs/qualityoverview/classificationrssops/exceptioningest 与认证
 
 ## archive
 
-**Go 状态入口资源/读取边界已核，业务准备仍 Nest**：Digest/Calendar 调 ensureDigestCoverage/ensureCalendarCoverage，processor 读取设置、分批 classifyRowsBatch、更新 processing/partial/ready/failed。只迁 Query SELECT 会漏必要准备。detail 的分类/翻译/显示资格、搜索/补偿链尚未深入核对，见 BL-09；当前没有三个 Query 的 Go 注册。
+2026-10-19限定续核，main91e759b449c4511dc96d86539ea0eb258754d07e，候选Nest相对地图3cedce9a无业务变化。三Query未Go注册；已深读完整查询/DTO/模型/显示资格、fresh与stale分类缓存/hash/版本/selection、本地classifier及taxonomy规则、语义500召回+180重排/lexical与缓存指标、模型每次尝试日志与既有Go缺口、queue ensure/status/index及consumer生命周期、search CSV。Digest/Calendar缺fresh分类或显示信号backfill须兼容archivePreparation生产，Nest processor仍唯一concurrency1消费并分类写回。getDetail本身无翻译/分类冷生成：组织/completed/显示资格过滤，缓存分类可stale，事件时间线160与相关文章12。Go已有私有部分规则/国家词典、vector transport/模型/CSV可窄复用，非已有完整归档实现。ARCHIVE-READING-001 reserved（Ready规划#93），准备worker不认领；提示词明确CSV请求快照优化与交互预算不变。未运行真实Redis/Nest消费/模型/向量或数据验证，未深审worker生成算法或其他域。
 
 ## async-runtime
 
