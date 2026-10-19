@@ -14,6 +14,13 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 )
 
+// The two exact paths this unit owns. They are declared here (not imported
+// from legacyproxy) so the handler has no dependency on the routing layer.
+const (
+	avatarPresignPath = "/api/auth/avatar/presigned-url"
+	dataExportPath    = "/api/auth/data-export"
+)
+
 // Handler serves the two taken-over account-data routes. It performs the
 // authentication, body decoding and DTO-shape validation; all persistence and
 // signing lives in Service. The evaluation order matches NestJS: authentication

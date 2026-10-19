@@ -651,35 +651,3 @@ func rawJSON(value []byte) json.RawMessage {
 	}
 	return json.RawMessage(append([]byte(nil), value...))
 }
-
-// formatTimeValue renders a non-null timestamp as an ISO string.
-// formatTimeValue renders a non-null timestamp as an ISO string.
-func formatTimeValue(value time.Time) *string {
-	formatted := value.UTC().Truncate(time.Millisecond).Format(jsDateLayout)
-	return &formatted
-}
-
-// formatTime renders a nullable timestamp as an ISO string or JSON null.
-func formatTime(value sql.NullTime) *string {
-	if !value.Valid {
-		return nil
-	}
-	return formatTimeValue(value.Time)
-}
-
-// formatNullString renders a nullable string as a string or JSON null.
-func formatNullString(value sql.NullString) *string {
-	if !value.Valid {
-		return nil
-	}
-	text := value.String
-	return &text
-}
-
-// rawJSON keeps one JSON column value unchanged. A nil value is the JSON null.
-func rawJSON(value []byte) json.RawMessage {
-	if value == nil {
-		return nil
-	}
-	return json.RawMessage(append([]byte(nil), value...))
-}

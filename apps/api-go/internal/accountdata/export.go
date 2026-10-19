@@ -2,6 +2,7 @@ package accountdata
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -246,7 +247,7 @@ func (s *jsonStream) value(depth int, value any) {
 		return
 	}
 	compact := strings.TrimSuffix(encoded.String(), "\n")
-	var indented strings.Builder
+	var indented bytes.Buffer
 	if err := json.Indent(&indented, []byte(compact), "", "  "); err != nil {
 		s.err = err
 		return
