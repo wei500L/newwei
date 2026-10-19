@@ -91,6 +91,7 @@ type clusteringFailureDoc struct {
 // path consumes, after normalization.
 type newsEventSettings struct {
 	LookbackDays                 int
+	VectorMinScore               float64
 	CrossLanguagePenalty         float64
 	ClassificationGateEnabled    bool
 	CategoryConflictReject       bool
@@ -103,6 +104,7 @@ type newsEventSettings struct {
 // strings, exactly like the NestJS toNumber helper accepts.
 type newsEventSettingsDoc struct {
 	LookbackDays                 json.RawMessage `json:"lookbackDays"`
+	VectorMinScore               json.RawMessage `json:"vectorMinScore"`
 	CrossLanguagePenalty         json.RawMessage `json:"crossLanguagePenalty"`
 	ClassificationGateEnabled    json.RawMessage `json:"classificationGateEnabled"`
 	CategoryConflictReject       json.RawMessage `json:"categoryConflictReject"`
@@ -328,6 +330,7 @@ func (s *clusteringStore) readOrgNewsEventSettings(ctx context.Context, orgID st
 		return settings
 	}
 	settings.LookbackDays = clampIntRaw(doc.LookbackDays, 1, 180, settings.LookbackDays)
+	settings.VectorMinScore = clampFloatRaw(doc.VectorMinScore, 0, 1, settings.VectorMinScore)
 	settings.CrossLanguagePenalty = clampFloatRaw(doc.CrossLanguagePenalty, 0, 1, settings.CrossLanguagePenalty)
 	settings.ClassificationGateEnabled = boolRaw(doc.ClassificationGateEnabled, settings.ClassificationGateEnabled)
 	settings.CategoryConflictReject = boolRaw(doc.CategoryConflictReject, settings.CategoryConflictReject)
@@ -341,6 +344,7 @@ func (s *clusteringStore) readOrgNewsEventSettings(ctx context.Context, orgID st
 func defaultNewsEventSettings() newsEventSettings {
 	return newsEventSettings{
 		LookbackDays:                 30,
+		VectorMinScore:               0.82,
 		CrossLanguagePenalty:         0.1,
 		ClassificationGateEnabled:    true,
 		CategoryConflictReject:       true,

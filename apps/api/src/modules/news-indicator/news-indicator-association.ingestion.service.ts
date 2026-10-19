@@ -7,6 +7,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
@@ -28,10 +29,24 @@ export class NewsIndicatorAssociationIngestionService {
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly settings: NewsIndicatorSettingsService,
     private readonly associations: NewsIndicatorAssociationService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron("0 */6 * * *")
   async refreshAssociations() {
+    // API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE=go moves the six-hourly
+    // refresh to Go. Return before claiming the tick gate so only one runtime
+    // ever refreshes an interval.
+    if (
+      this.env.get("API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE", {
+        infer: true,
+      }) === "go"
+    ) {
+      logger.info(
+        "Skipped news indicator association refresh because Go owns the cron (API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE=go)",
+      );
+      return;
+    }
     const claimed = await claimSchedulerTick(
       this.cache,
       "cron:news-indicator-association:tick-gate",

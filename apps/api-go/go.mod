@@ -22,6 +22,9 @@ require (
 	golang.org/x/net v0.55.0
 	// Go-批4A：公开故事 slug 的 NFKD/NFC，对齐 JS String.normalize。
 	golang.org/x/text v0.39.0
+	// News-event clustering recovery queue: BullMQ 5.63.2 encodes job options
+	// and Lua command arguments as MessagePack at the Redis boundary.
+	github.com/vmihailenco/msgpack/v5 v5.4.1
 )
 
 require (

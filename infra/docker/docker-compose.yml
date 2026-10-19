@@ -432,6 +432,13 @@ services:
       # 默认 legacy=保留 NestJS Cron；go=Go 每分钟扫描并投递，NestJS Cron 在 tick
       # gate 前退出且摘要通知 subscriber 启动。Nest 与 Go 注入同一变量。
       API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
+      # 新闻事件聚类失败的 LLM 补救链与新闻—指标关联刷新。四个开关互相独立，
+      # 默认 legacy；worker 与 6 小时 cron 开关 Nest 也读取，为 go 时 Nest 在
+      # 领取锁/创建 Worker 之前退出。手动入队与 GraphQL mutation 只在 Go 读取。
+      API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE: ${API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE:-legacy}
+      API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE: ${API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE:-legacy}
+      API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE: ${API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE:-legacy}
+      API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE: ${API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE:-legacy}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -613,6 +620,13 @@ services:
       # 全部 legacy 也能运行。go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 和
       # SMTP_*，不要求 JWT_SECRET。默认 legacy；切换/回滚顺序见 docs 与 README。
       API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
+      # 新闻事件聚类失败的 LLM 补救链与新闻—指标关联刷新。四个开关互相独立，
+      # 默认 legacy；worker 与 6 小时 cron 开关 Nest 也读取，为 go 时 Nest 在
+      # 领取锁/创建 Worker 之前退出。手动入队与 GraphQL mutation 只在 Go 读取。
+      API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE: ${API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE:-legacy}
+      API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE: ${API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE:-legacy}
+      API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE: ${API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE:-legacy}
+      API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE: ${API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE:-legacy}
       # 分析工作台保存视图、看板/列/任务、笔记/评论（Go 协作域）。
       # pilot 与样例保持 legacy。三个变量各自改成 go 才切换对应 HTTP。
       # 内部讨论检查、评论计数和删除清理不看另一个开关，也不回调 NestJS。

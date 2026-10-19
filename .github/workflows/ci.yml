@@ -314,6 +314,13 @@ jobs:
 
       - name: MySQL/Redis integration tests (user-settings repository + authz RBAC + authn blacklist)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ ./internal/authz/ -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
+      # 新闻事件聚类 LLM 补救链与新闻—指标关联刷新的真实副作用：
+      # BullMQ 任务写入/消费/失败/卡死恢复的 Redis 原始结构断言、NewsEvent/
+      # NewsEventItem 事务写入与 (orgId, processedArticleId) 唯一约束、扫描锁/
+      # 时间片/组织锁。Mongo 不在本 job 的服务里，Mongo fixture 相关分支由
+      # 单元测试的纯函数与 fake 覆盖（PR 说明）。
+      - name: News backfill integration tests (BullMQ protocol, event writes, scheduler locks)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/clusteringrecoveryqueue/ ./internal/newsnowclusteringops/ ./internal/newsbackfilljobs/ -run 'TestIntegration' -v
 
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #

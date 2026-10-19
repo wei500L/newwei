@@ -41,6 +41,38 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The four news-event clustering LLM backfill / news-indicator refresh
+    // switches. NestJS reads two of them (the recovery worker and the
+    // six-hourly association refresh) and validates all four so a bad value
+    // fails startup on both runtimes. Empty string behaves like legacy.
+    API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     REDIS_DB: z.coerce.number().int().nonnegative().default(0),
     REDIS_USERNAME: z.string().optional(),
     REDIS_PASSWORD: z.string().optional(),

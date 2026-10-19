@@ -3756,3 +3756,240 @@ func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
 		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
 	}
 }
+
+func TestNewsBackfillSwitchesDefaultToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsClusteringLlmBackfillMode != NewsClusteringLlmBackfillModeLegacy {
+		t.Fatalf("llm backfill mode = %s", cfg.NewsClusteringLlmBackfillMode)
+	}
+	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeLegacy {
+		t.Fatalf("recovery worker mode = %s", cfg.NewsClusteringRecoveryWorkerMode)
+	}
+	if cfg.GraphQLNewsIndicatorRefreshMode != "legacy" {
+		t.Fatalf("graphql refresh mode = %s", cfg.GraphQLNewsIndicatorRefreshMode)
+	}
+	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeLegacy {
+		t.Fatalf("association cron mode = %s", cfg.NewsIndicatorAssociationCronMode)
+	}
+	if cfg.NewsProcessQueueConcurrency != 8 {
+		t.Fatalf("process queue concurrency = %d", cfg.NewsProcessQueueConcurrency)
+	}
+}
+
+func TestNewsBackfillSwitchesAcceptEmptyAndExplicitLegacy(t *testing.T) {
+	keys := []string{
+		"API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE",
+		"API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE",
+		"API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE",
+		"API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE",
+	}
+	for _, key := range keys {
+		cfg, err := Load(func(name string) string {
+			if name == key {
+				return "legacy"
+			}
+			return ""
+		})
+		if err != nil {
+			t.Fatalf("%s=legacy: %v", key, err)
+		}
+		_ = cfg
+	}
+}
+
+func TestNewsBackfillSwitchesRejectInvalid(t *testing.T) {
+	keys := []string{
+		"API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE",
+		"API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE",
+		"API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE",
+		"API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE",
+	}
+	for _, key := range keys {
+		for _, invalid := range []string{"shadow", "Go", "on"} {
+			_, err := Load(func(name string) string {
+				if name == key {
+					return invalid
+				}
+				return ""
+			})
+			if err == nil || !strings.Contains(err.Error(), key+" must be one of legacy|go") {
+				t.Fatalf("%s=%q: %v", key, invalid, err)
+			}
+		}
+	}
+}
+
+func TestNewsClusteringLlmBackfillModeGoRequiresFullStack(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE=go") {
+		t.Fatalf("missing mongo: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://127.0.0.1:27017/app"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsClusteringLlmBackfillMode != NewsClusteringLlmBackfillModeGo {
+		t.Fatalf("mode = %s", cfg.NewsClusteringLlmBackfillMode)
+	}
+	// The worker and cron switches stay legacy and independently owned.
+	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeLegacy {
+		t.Fatalf("worker mode = %s", cfg.NewsClusteringRecoveryWorkerMode)
+	}
+	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeLegacy {
+		t.Fatalf("cron mode = %s", cfg.NewsIndicatorAssociationCronMode)
+	}
+}
+
+func TestNewsClusteringRecoveryWorkerModeGoDoesNotRequireJWT(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go") {
+		t.Fatalf("missing mongo: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://127.0.0.1:27017/app"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeGo {
+		t.Fatalf("mode = %s", cfg.NewsClusteringRecoveryWorkerMode)
+	}
+}
+
+func TestNewsIndicatorAssociationCronModeGoRequiresMySQLAndRedisOnly(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE":
+			return "go"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required when API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE=go") {
+		t.Fatalf("missing mysql: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeGo {
+		t.Fatalf("mode = %s", cfg.NewsIndicatorAssociationCronMode)
+	}
+}
+
+func TestGraphQLNewsIndicatorRefreshModeGoRequiresAuthStack(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE":
+			return "go"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE=go") {
+		t.Fatalf("missing jwt: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.GraphQLNewsIndicatorRefreshMode != "go" {
+		t.Fatalf("mode = %s", cfg.GraphQLNewsIndicatorRefreshMode)
+	}
+}
+
+func TestNewsProcessQueueConcurrencyEnv(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		if key == "NEWS_PROCESS_QUEUE_CONCURRENCY" {
+			return "1"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsProcessQueueConcurrency != 1 {
+		t.Fatalf("concurrency = %d", cfg.NewsProcessQueueConcurrency)
+	}
+}
