@@ -205,6 +205,11 @@ func writeErrorBody(w http.ResponseWriter, r *http.Request, status int, message,
 	if r != nil {
 		body.TraceID = httpx.TraceIDFromContext(r.Context())
 	}
+	if body.TraceID == "" {
+		// The gateway's trace middleware normally supplies this; a direct
+		// invocation still honours the NestJS filter contract (ensureTraceId).
+		body.TraceID = httpx.EnsureTraceID("")
+	}
 	body.Timestamp = isoMillis(millisOf(time.Now()))
 	encoded, err := json.Marshal(body)
 	if err != nil {
