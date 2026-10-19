@@ -13,6 +13,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/accountsecurity"
 	"github.com/wei500L/newwei/apps/api-go/internal/analysiscollab"
+	"github.com/wei500L/newwei/apps/api-go/internal/archivereading"
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
@@ -36,6 +37,8 @@ const (
 	RouteItems Route = "items"
 	// RouteEvents is POST /api/analysis/exports/events.
 	RouteEvents Route = "events"
+	// RouteSearch is POST /api/analysis/exports/search.
+	RouteSearch Route = "search"
 )
 
 // itemsFilename and eventsFilename are the exact Content-Disposition names.
@@ -50,9 +53,10 @@ const (
 // path), enforces analysis.write, validates the optional DTO and then runs the
 // export.
 type Handler struct {
-	auth  *accountsecurity.Authenticator
-	svc   *Service
-	route Route
+	auth   *accountsecurity.Authenticator
+	svc    *Service
+	search *SearchService
+	route  Route
 }
 
 // NewHandler wires one export route.
@@ -60,10 +64,16 @@ func NewHandler(auth *accountsecurity.Authenticator, svc *Service, route Route) 
 	return &Handler{auth: auth, svc: svc, route: route}
 }
 
+// NewSearchHandler wires the third export route. It shares the authenticated
+// body/DTO path and the delayed CSV response with the other two routes.
+func NewSearchHandler(auth *accountsecurity.Authenticator, search *SearchService) *Handler {
+	return &Handler{auth: auth, search: search, route: RouteSearch}
+}
+
 // ServeHTTP implements http.Handler. CORS preflight and the OPTIONS fallback
 // are handled by the registration wrapper before this method runs.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h == nil || h.auth == nil || h.svc == nil {
+	if h == nil || h.auth == nil || (h.route != RouteSearch && h.svc == nil) || (h.route == RouteSearch && h.search == nil) {
 		authhttp.WriteInternalFailure(w, r)
 		return
 	}
@@ -97,6 +107,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case RouteEvents:
 		h.writeExport(w, r, eventsFilename, func(out io.Writer) error {
 			return h.svc.ExportEventsCSV(r.Context(), identity.OrgID, queryString, out)
+		})
+	case RouteSearch:
+		h.writeExport(w, r, searchFilename, func(out io.Writer) error {
+			return h.search.ExportSearchCSV(r.Context(), identity.OrgID, identity.UserID, queryString, out)
 		})
 	default:
 		authhttp.WriteInternalFailure(w, r)
@@ -201,6 +215,19 @@ type codedServiceUnavailableBody struct {
 // generic 500 the items reading REST handler uses, with the driver text only in
 // the server log.
 func writeExportError(w http.ResponseWriter, r *http.Request, err error) {
+	var archiveError *archivereading.Error
+	if errors.As(err, &archiveError) {
+		status := archiveError.Status
+		if status == 0 {
+			status = http.StatusServiceUnavailable
+		}
+		message := archiveError.Message
+		if status >= 500 {
+			message = "Internal server error"
+		}
+		writeCodedError(w, r, status, archiveError.AppCode, message, "")
+		return
+	}
 	var rerank *itemsreading.RerankUnavailableError
 	if errors.As(err, &rerank) {
 		writeCodedServiceUnavailable(w, r, "RERANK_UNAVAILABLE", rerank.Error(), rerank.Detail)
@@ -222,10 +249,16 @@ func writeExportError(w http.ResponseWriter, r *http.Request, err error) {
 // writeCodedServiceUnavailable writes the 503 envelope. A blank detail is
 // omitted so the JSON shape matches the source exception without a detail key.
 func writeCodedServiceUnavailable(w http.ResponseWriter, r *http.Request, code, message, detail string) {
+	writeCodedError(w, r, http.StatusServiceUnavailable, code, message, detail)
+}
+
+// writeCodedError is the shared coded failure envelope for the 400/503 export
+// failures. The public message is already masked by the caller for 5xx.
+func writeCodedError(w http.ResponseWriter, r *http.Request, status int, code, message, detail string) {
 	body := codedServiceUnavailableBody{
-		StatusCode: http.StatusServiceUnavailable,
+		StatusCode: status,
 		Message:    message,
-		Error:      "Service Unavailable",
+		Error:      http.StatusText(status),
 		Code:       code,
 		TraceID:    httpx.TraceIDFromContext(r.Context()),
 		Path:       r.URL.Path,
@@ -240,6 +273,6 @@ func writeCodedServiceUnavailable(w http.ResponseWriter, r *http.Request, code, 
 		return
 	}
 	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusServiceUnavailable)
+	w.WriteHeader(status)
 	_, _ = w.Write(encoded)
 }

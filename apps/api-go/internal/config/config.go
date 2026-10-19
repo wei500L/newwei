@@ -961,6 +961,28 @@ const (
 	AnalysisExportModeGo     AnalysisExportMode = "go"
 )
 
+// ArchiveReadingMode controls the three archive GraphQL queries and the
+// headlines search export (API_GO_ARCHIVE_READING_MODE):
+//
+//	Query archiveDigest
+//	Query archiveCalendar
+//	Query archiveDetail
+//	POST /api/analysis/exports/search
+//
+// The accepted values are exactly "", "legacy" and "go"; the empty value
+// behaves like legacy. Go needs the credentialed JWT/MySQL/Redis stack and
+// Mongo (display eligibility and model attempt logs). The switch is independent
+// of API_GO_GRAPHQL_READ_MODE and API_GO_ANALYSIS_EXPORT_MODE: turning it on
+// alone assembles the GraphQL handler and the search export. The archive
+// preparation consumer stays in NestJS; this switch only produces compatible
+// BullMQ jobs.
+type ArchiveReadingMode string
+
+const (
+	ArchiveReadingModeLegacy ArchiveReadingMode = "legacy"
+	ArchiveReadingModeGo     ArchiveReadingMode = "go"
+)
+
 // AuthFactorsMode controls the seven authenticated MFA management and
 // organization OIDC configuration HTTP routes migrated by this unit
 // (API_GO_AUTH_FACTORS_MODE).
@@ -1219,6 +1241,10 @@ type Config struct {
 	// the item reading and news-event readers but builds its own instances and
 	// requires JWT, MySQL, Redis and Mongo.
 	AnalysisExportMode AnalysisExportMode
+	// ArchiveReadingMode gates the three archive queries and the search CSV
+	// export. It is independent of every read/export switch and defaults to
+	// legacy. Go requires JWT, MySQL, Redis and Mongo.
+	ArchiveReadingMode ArchiveReadingMode
 	// GraphQLReadMode 控制精确 /graphql 的已迁移 query。默认 legacy。
 	// go 只执行本轮 16 个 query；mutation、subscription、未迁移 query 仍代理 NestJS。
 	GraphQLReadMode string
@@ -2035,6 +2061,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AnalysisExportMode = AnalysisExportModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_EXPORT_MODE must be one of legacy|go, got "+strconv.Quote(analysisExportRaw))
+	}
+	switch archiveReadingRaw := strings.TrimSpace(getenv("API_GO_ARCHIVE_READING_MODE")); archiveReadingRaw {
+	case "", string(ArchiveReadingModeLegacy):
+		cfg.ArchiveReadingMode = ArchiveReadingModeLegacy
+	case string(ArchiveReadingModeGo):
+		cfg.ArchiveReadingMode = ArchiveReadingModeGo
+	default:
+		errs = append(errs, "API_GO_ARCHIVE_READING_MODE must be one of legacy|go, got "+strconv.Quote(archiveReadingRaw))
 	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_MONITORS_MODE")) {
 	case "", string(SituationMonitorsModeLegacy):
@@ -2985,6 +3019,16 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_ANALYSIS_EXPORT_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_ANALYSIS_EXPORT_MODE=go")
+		}
+	}
+	// The archive reading unit verifies JWTs (human and mtk_), reads the Redis
+	// revocation list, re-derives membership from MySQL, reads Mongo display
+	// signals and writes Mongo model attempt logs. It also uses the shared Redis
+	// cache/metrics and the BullMQ preparation queue.
+	if cfg.ArchiveReadingMode == ArchiveReadingModeGo {
+		appendAuthRequirements(&errs, "API_GO_ARCHIVE_READING_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ARCHIVE_READING_MODE=go")
 		}
 	}
 	if cfg.SituationMonitorsMode == SituationMonitorsModeGo {

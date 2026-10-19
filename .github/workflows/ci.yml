@@ -315,6 +315,14 @@ jobs:
       - name: MySQL/Redis integration tests (user-settings repository + authz RBAC + authn blacklist)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ ./internal/authz/ -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
 
+      # Archive preparation producer: real Redis 7.2 wire check for the BullMQ
+      # 5.63.2 MessagePack/hash/options, wait/pause/marker/events, de-dupe,
+      # active non-removal, completed/failed re-add, status shape/TTL/index and
+      # the 200-entry trim. It proves the Redis protocol only; the NestJS
+      # worker is not started here.
+      - name: Redis integration test (archive preparation BullMQ producer)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/archivepreparation/ -run TestArchivePreparationRedisIntegration -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从
