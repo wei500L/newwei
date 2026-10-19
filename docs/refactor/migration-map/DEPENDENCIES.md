@@ -33,6 +33,8 @@ GraphQL 精确开关、默认、路由/handler OR、模型与有意义的独立/
 
 ## 产品链路与执行所有权
 
+NEWSNOW-SOURCES-001规划增量（2026-10-19，main91e759b4）：认领两公开source/batch HTTP的实际源getter/运行secret/双缓存/锁/增量提醒；Go尚未实现。拟新增API_GO_NEWSNOW_SOURCES_MODE默认legacy，双端校验/注入，Go只需DB+Redis，不强开JWT/Mongo/旧ops。fresh/stale键和物理refresh锁与Nest兼容；来源secret全局单例只读，不改CRUD权限。Nest进程内dispatcher/active registry需要新newsnow:source-refresh:v1专用relay，按真实认证订阅org选目标，adapter启用时以(refreshId,orgId)60秒NX标记防重复跨实例广播、关闭时各实例本地广播；不建耐久事件平台。Nest source-warm每分钟并发6与hottest每10分钟Cron保持唯一后台所有权，仍调用Nest fetchSource；本批不迁cron/BullMQ/通用WS，不能由HTTP接管宣称停Nest。详见[完整提示词](tasks/NEWSNOW-SOURCES-001.prompt.md)。
+
 AUDIT-OUTBOX-001规划增量（2026-10-19，main c70b0373）：审计producer已在多个Go域及Nest使用同一MySQL AuditLogOutbox协议，当前消费仍Nest；新任务仅认领此消费者与双端gate，未实现。拟新增API_GO_AUDIT_OUTBOX_MODE默认legacy、双端非法值失败；go仅需DB+Redis、不强开HTTP/JWT/Mongo。物理锁lock:cron:audit-log-outbox，PX55000、token续租/释放；每分钟200、并发8、5分钟stale与10次dead保持。复用userdigest.NewRedisDeliveryStore的公开端口与现有sharedDB/Redis，不迁摘要业务；SCHEDULE_ENABLED=false停本链。先停旧owner/drain再启Go，回滚反向；RawItem/Cleanup/retention等保持Nest。详见[提示词](tasks/AUDIT-OUTBOX-001.prompt.md)，不把其他异步链标完成。
 
 RSS-TRANSLATION-001规划增量（main90765633，2026-10-18）：同步Mutation内由Go选本租户最新processeditems→四字段/Markdown分块→外层7天缓存→DeepLX主备/LLM→内层DeepLX30天缓存→指标原子upsert/逐attempt模型日志。无入队/worker/Cron，无原文/索引写回；默认legacy新独立写模式，不强开旧items读或网关管理HTTP。itemsreading runtime私有需新窄端口，BriefCompleter固定简报JSON不能直接复用；publicportal新RSS端口选择复用配置/治理/协议helper，llmlogs新writer不碰#81变动helper。status不得回填窄profile污染llm_gateway:profiles，详见GAP-RSS-001。外部未验证，具体边界见任务/提示词；摘要投递与其runtime/notifications文件所有权保持。

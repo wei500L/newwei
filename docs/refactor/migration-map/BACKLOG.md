@@ -171,6 +171,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-18 · news / 上游内容、指标关联与流水线
 
+- 2026-10-19以main91e759b4深入后，仅source/batch完整子链由[NEWSNOW-SOURCES-001](tasks/NEWSNOW-SOURCES-001.md) reserved，[提示词](tasks/NEWSNOW-SOURCES-001.prompt.md)已发出。元数据64ID/41可达族（registry导入44模块含3个停用），JSON/HTML/RSS/Cookie/签名/GB2312/相对日期、共享冷热缓存和进程内通知接缝均需迁；仅DB/Redis，无Mongo/BullMQ。改10项整块等待为保持结果顺序的10并发池。Nest预热Cron、推荐/热点模型/自动bridge/LLM backfill与pipeline等仍不认领；不把整个BL-18关闭。与#92核心业务隔离，main/config/env/compose/README保留并集。
+
 - **范围/缺口**：GET news-aggregator/source、POST sources/batch、GET recommended/hottest-analysis；POST clustering/failures/:groupId/llm-backfill；refreshNewsIndicatorAssociations；相应 source warm/hottest/事件/指标/pipeline ingestion（GAP-LEGACY-001 / GAP-ASYNC-001）。
 - **基础/依据**：G/newsnowclusteringops 的 metadata/resolve/order/opinion 与 failure store；newsevents/newsindicator 读取；N/news-aggregator、news-events、news-indicator、news-pipeline。真实源 fetch/cache、推荐召回/画像、LLM分析、关联写与恢复任务必须按各条完整链拆批。
 - **文件/前置/冲突**：候选域对应包/新客户端/main；Mongo/MySQL/Redis+上游/模型/queue。**当前可单独核 source/batch 同步链，后台执行另定唯一所有权**；BL-07 来源策略模型稳定后再做依赖它的分支；未核全部生产者/失败回放。

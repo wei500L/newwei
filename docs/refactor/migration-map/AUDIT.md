@@ -73,6 +73,8 @@
 
 ## news
 
+2026-10-19限定续核（main91e759b449c4511dc96d86539ea0eb258754d07e）：只深入source/batch Controller参数、fetchSource/cache/redirect/normalize/batch/realtime全分支、registry/genSources与当前可达getter，runtime secret读/30秒cache/覆盖次序/解密与GlobalExceptionFilter。核Go静态64项registry、infra私有严格parser/crypto、shared资源、Nest进程内active registry/dispatcher与Socket.IO Redis adapter。明确41可达族，ghxi/linuxdo/smzdm disable:true不恢复，cf仍可达；502HTTP脱敏与batch Error.message不同，sourceId/requiredKeys不在HTTP过滤白名单；具体依据见NEWSNOW-SOURCES-001。仅静态核对，无真实上游、fixture运行或多实例验证；推荐/热点模型/指标/ingestion仍按原未审范围，不统一刷新。
+
 - **本次仅 brief 续核与实现，2026-10-18，SHA 9d0462e16d88d146b8afbf67cdd58d8b7419ff29**：Nest Resolver/Model/schema/getBrief 全链，Go newsevents brief/来源 SQL/模型、publicportal 同步生成与 gateway 配置/重试/协议、Nest completion 日志/guardrail 上下文已阅读。确认 Go briefSource 原先未携带 SQL 已有摘要/要点；共用 schema/宽松清洗不保证完全等价，本批按 Nest 校验；LLM 日志保留；news_event_brief 不触发自动 moderation，runtimeContext 不是锁/配额；新闻 root 不在响应缓存白名单。已实现候选（未合 main）：JSON `briefV1` 叶子更新、独立 BRIEF 子开关、attempt 感知 completion 与 typed 日志 writer。静态核对 root/model/nullable、错误转换、where 租户条件、写回副作用、选源/指纹与父子注册；未跑 DB/模型/测试，未扩大其他 news 查询/worker 审查深度。
 
 - **newsEventBrief / Go 部分实现**：命中、无事件/无来源、miss、forceRefresh 已沿两端服务核对，后两支原先固定错误；[GAP-NEWS-001](GAPS.md#gap-news-001) 为唯一缺口记录。

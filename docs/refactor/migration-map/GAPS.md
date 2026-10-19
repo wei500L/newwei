@@ -79,6 +79,8 @@
 
 ## GAP-LEGACY-001 · 尚无 Go 接管的契约入口
 
+2026-10-19来源子链限定增量（main91e759b4）：GET /api/news-aggregator/source、POST /api/news-aggregator/sources/batch完整范围由[NEWSNOW-SOURCES-001](tasks/NEWSNOW-SOURCES-001.md) reserved，当前仍Nest，Go未实施。包含64来源ID的实际上游/凭据/缓存/必要实时接缝，不把它们当64HTTP。推荐/热点分析与后台预热不认领，不关闭本跨域GAP。审计#92仍开放、未合main；与此子链无核心业务交集。
+
 - 精确范围的唯一事实源：18 个域页的 HTTP/root 表。当前 95 条 HTTP 标为 Nest、6 Query、36 Mutation、4 Subscription 未被 Go 注册；另有 `GET /api/healthz/live` 仍为 shadow，单列为切流状态，不能算新增缺陷。与 274/370 接管口径相容。
 - 触发/影响：请求到达 legacy 规则或包含未接管 GraphQL root，业务由 Nest 执行；停掉 Nest 会失去相应功能。Go 并没有把这些入口返回空值来冒充完成。
 - Nest / Go：Nest Controller/Resolver/Service 定位已在域表；Go [legacyproxy](../../../apps/api-go/internal/legacyproxy) 与 [exec/walk.go](../../../apps/api-go/internal/graphqlread/exec/walk.go) 决定回退。未注册 root 在副作用前整份回退。

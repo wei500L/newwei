@@ -1,5 +1,9 @@
 # 任务认领与历史恢复索引
 
+2026-10-19本次继续选批：最新main `91e759b449c4511dc96d86539ea0eb258754d07e`，相对c70b0373仅合入上批规划#91，未新增业务实现；[普通CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)精确head成功。审计实现[Ready #92](https://github.com/wei500L/newwei/pull/92) OPEN/head28c8f761a2ce4a447080414f154b567648cc6bd1，普通CI39248452603成功，范围继续占用，不能提前记main已消费。仅读其真实共享接线diff，没有重审审计业务。
+
+新增[NEWSNOW-SOURCES-001](NEWSNOW-SOURCES-001.md) reserved，[完整提示词](NEWSNOW-SOURCES-001.prompt.md)已发出：两公开HTTP完整冷获取/强刷，64个来源ID、41个可达来源族（不是64个HTTP），双缓存/凭据/特殊解析/实时接缝及保持顺序的10并发池。Go业务尚未实施；推荐、热点模型、Nest source-warm/热点Cron及其他BL-18范围不认领。只更新本链和当前占用，不重建地图或重算全仓统计；下方历史快照不覆盖本增量。
+
 2026-10-19 本次规划刷新（仅占用和审计候选）：fetch 后 main=`c70b0373990ab931758f7a000511c2d34572fc33`；[#89](https://github.com/wei500L/newwei/pull/89) 实际 main merge `f1167769f8c1d90017a6105cc65f135741ea47a1`、[#90](https://github.com/wei500L/newwei/pull/90) 实际 merge `c70b0373990ab931758f7a000511c2d34572fc33` 均已可达。#81–#88 的七个业务 head 均为 main 祖先；#70 早已经 #77 合入，不能再按下方旧快照分配。选批时无开放 PR；[普通 CI39163544617](https://github.com/wei500L/newwei/actions/runs/39163544617) 在精确SHA c70b0373990ab931758f7a000511c2d34572fc33 成功（verify/vector-integration/api-go-user-settings-integration success，两个regen skipped）。只核合并/占用，未重新验收这些全域业务，不从CI推断部署或实网结果。
 
 本次仅新增 [AUDIT-OUTBOX-001](AUDIT-OUTBOX-001.md) reserved：[完整执行提示词](AUDIT-OUTBOX-001.prompt.md)，迁审计失败补偿整链，含三状态轻候选/入选payload查询优化。[Ready规划PR #91](https://github.com/wei500L/newwei/pull/91)已发布认领；尚无业务目录/PR/实现，MySQL+Redis，Nest仍消费；其余Outbox/worker不认领。下面各日期和覆盖统计继续是历史快照，当前任务状态以下表及本增量为准；不重建地图。
@@ -38,7 +42,8 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 | ID | 状态 | 精确范围 | 是否已有业务 PR / 推送 |
 |---|---|---|---|
-| [AUDIT-OUTBOX-001](AUDIT-OUTBOX-001.md) | reserved | 审计Outbox完整消费、三状态扫描/租约/退避/落库与轻字段优化 | 本次提示词已发出；业务分支/目录未创建；规划发布见task |
+| [NEWSNOW-SOURCES-001](NEWSNOW-SOURCES-001.md) | reserved | 两公开来源HTTP完整冷获取/强刷；64来源ID/41族、特殊getter/缓存/凭据/实时接缝与批并发优化 | 提示词已发出；业务目录/PR未创建；Nest预热/推荐/热点分析不认领 |
+| [AUDIT-OUTBOX-001](AUDIT-OUTBOX-001.md) | pr_open | 审计Outbox完整消费、三状态扫描/租约/退避/落库与轻字段优化 | Ready #92 OPEN，head28c8f761a2ce4a447080414f154b567648cc6bd1；普通CI39248452603 success，真实共享接线diff已核；尚未合main，继续占用 |
 | [RSS-TRANSLATION-001](RSS-TRANSLATION-001.md) | merged | RSS翻译Mutation完整双provider/正文分块/缓存/指标日志；修状态共享缓存投影写回 | 经#90实际merge c70b0373990ab931758f7a000511c2d34572fc33；原#88 head d4117032，main祖先；普通CI39163544617成功，非生产启用证据 |
 | [DIGEST-DELIVERY-001](DIGEST-DELIVERY-001.md) | merged | 摘要定时投递：Cron、到期CAS、SMTP、状态和摘要通知桥 | 经#89实际merge f1167769f8c1d90017a6105cc65f135741ea47a1；原#87 head 2b0da7ec，main祖先；CI39163544617成功；审计outbox消费仍Nest |
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |
