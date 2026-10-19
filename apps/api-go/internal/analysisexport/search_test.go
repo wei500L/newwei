@@ -28,7 +28,7 @@ func TestParseArchiveSearchInputDefaults(t *testing.T) {
 }
 
 func TestParseArchiveSearchInputValues(t *testing.T) {
-	params := parseQueryParams("archiveDate=2026-02-03&archiveRegion=middle_east&archiveWeights=5%2C3%2Cx&q=ai")
+	params := parseQueryParams("archiveDate=2026-02-03&archiveRegion=middle_east&archiveWeights=5%2C3%2Cx&q=a")
 	input, err := parseArchiveSearchInput(params)
 	if err != nil {
 		t.Fatal(err)

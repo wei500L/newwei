@@ -93,7 +93,12 @@ func TestSelectVerticalOutcome(t *testing.T) {
 		t.Fatalf("low-semantic fallback = %+v", outcome)
 	}
 
-	outcome = selectVerticalOutcome(scoreVector{}, scoreVector{}, scoreVector{}, scoreVector{}, RuleSignals{})
+	// All-zero fused/rule but a confident semantic score: neither the
+	// low-semantic fallback nor the strong override applies, so the explicit
+	// default foreign-affairs branch wins.
+	confident := scoreVector{}
+	confident[verticalIndex(VerticalEastSea)] = 0.6
+	outcome = selectVerticalOutcome(scoreVector{}, scoreVector{}, confident, confident, RuleSignals{})
 	if outcome.vertical != VerticalForeignAffairs || outcome.reason != DecisionDefaultForeignAffairs {
 		t.Fatalf("default fallback = %+v", outcome)
 	}

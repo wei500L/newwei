@@ -17,13 +17,8 @@ func TestExportRoundRobinOrderAndCap(t *testing.T) {
 	// Round 0: 100 east, 30 south, 90 foreign, 100 domestic. Round 1 picks the
 	// remaining 50 east then 20 domestic. Empty groups are skipped without
 	// restarting a completed group.
-	want := []string{
-		"east-0", "south-0", "foreign-0", "domestic-0",
-	}
-	for index, id := range want {
-		if items[index].ProcessedArticleID != id {
-			t.Fatalf("first round order[%d] = %s, want %s", index, items[index].ProcessedArticleID, id)
-		}
+	if items[0].ProcessedArticleID != "east-0" || items[99].ProcessedArticleID != "east-99" {
+		t.Fatalf("east round 0 = %s..%s", items[0].ProcessedArticleID, items[99].ProcessedArticleID)
 	}
 	if items[100].ProcessedArticleID != "south-0" {
 		t.Fatalf("south did not start at 100: %s", items[100].ProcessedArticleID)

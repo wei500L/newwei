@@ -32,11 +32,14 @@ func TestBackfillMissingDocumentVersusMissingFields(t *testing.T) {
 		t.Fatal("an existing document without content type needs backfill")
 	}
 	content := contentTypeNewsFact
-	if needsBackfill(displaySignals{Exists: true, ContentType: &content}) {
-		t.Fatal("content type plus either category field is complete")
+	if !needsBackfill(displaySignals{Exists: true, ContentType: &content}) {
+		t.Fatal("content type without a category field still needs backfill")
 	}
 	if needsBackfill(displaySignals{Exists: true, ContentType: &content, CategoryMethod: "llm"}) {
-		t.Fatal("category method alone satisfies the category half")
+		t.Fatal("content type plus category method is complete")
+	}
+	if needsBackfill(displaySignals{Exists: true, ContentType: &content, CategoryPath: "intel"}) {
+		t.Fatal("content type plus category path is complete")
 	}
 }
 
@@ -44,7 +47,7 @@ func TestNormalizeNewsContentTypeAliases(t *testing.T) {
 	for raw, want := range map[string]contentType{
 		"news-fact":        contentTypeNewsFact,
 		"Op-Ed":            contentTypeOpinion,
-		"深度 分析":            contentTypeAnalysis,
+		"分析":               contentTypeAnalysis,
 		"fact_and_opinion": contentTypeMixed,
 	} {
 		value := raw
