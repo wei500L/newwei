@@ -563,6 +563,38 @@ const (
 	AccountSecurityModeGo AccountSecurityMode = "go"
 )
 
+// AvatarUploadMode controls POST /api/auth/avatar/presigned-url
+// (API_GO_AVATAR_UPLOAD_MODE). Accepted values are exactly "", "legacy" and
+// "go"; empty and legacy keep the route on NestJS, any other value fails
+// startup. go requires JWT_SECRET, DATABASE_URL and REDIS_HOST and never
+// requires MONGO_URI: the route reads the storage settings from MySQL, uses the
+// shared Redis cache and signs locally without contacting S3.
+type AvatarUploadMode string
+
+const (
+	// AvatarUploadModeLegacy proxies the route to NestJS (default).
+	AvatarUploadModeLegacy AvatarUploadMode = "legacy"
+	// AvatarUploadModeGo serves the route from Go with the same validation
+	// order, messages, status code and response body as NestJS, plus the V1
+	// content-length binding.
+	AvatarUploadModeGo AvatarUploadMode = "go"
+)
+
+// UserDataExportMode controls GET /api/auth/data-export
+// (API_GO_USER_DATA_EXPORT_MODE). Accepted values are exactly "", "legacy" and
+// "go"; empty and legacy keep the route on NestJS, any other value fails
+// startup. go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI
+// (assistantruns lives in Mongo).
+type UserDataExportMode string
+
+const (
+	// UserDataExportModeLegacy proxies the route to NestJS (default).
+	UserDataExportModeLegacy UserDataExportMode = "legacy"
+	// UserDataExportModeGo serves the route from Go with the same document,
+	// filename, headers, rate limit and audit side effects as NestJS.
+	UserDataExportModeGo UserDataExportMode = "go"
+)
+
 // RuntimeSettingsMode controls the eighteen platform runtime and governance
 // settings HTTP routes under /api/system-settings (API_GO_RUNTIME_SETTINGS_MODE).
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
@@ -1536,6 +1568,15 @@ type Config struct {
 	// requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
 	// Mongo and does not start any worker or scheduled job.
 	AccountSecurityMode AccountSecurityMode
+	// AvatarUploadMode controls POST /api/auth/avatar/presigned-url (see
+	// AvatarUploadMode). Default legacy. Mode go requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST; it does not require Mongo and never
+	// contacts S3 at startup.
+	AvatarUploadMode AvatarUploadMode
+	// UserDataExportMode controls GET /api/auth/data-export (see
+	// UserDataExportMode). Default legacy. Mode go requires JWT_SECRET,
+	// DATABASE_URL, REDIS_HOST and MONGO_URI.
+	UserDataExportMode UserDataExportMode
 	// AuthLoginMode controls the eleven POST /api/auth login, session, email-code
 	// and password-recovery routes (see AuthLoginMode). Default legacy. Mode go
 	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and the SMTP_* transport; it
@@ -2291,6 +2332,25 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AccountSecurityMode = AccountSecurityModeGo
 	default:
 		errs = append(errs, "API_GO_ACCOUNT_SECURITY_MODE must be one of legacy|go")
+	}
+	// The two remaining identity entries have independent switches. Each
+	// accepts the empty string, legacy and go; an empty value keeps the route
+	// on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_AVATAR_UPLOAD_MODE")) {
+	case "", string(AvatarUploadModeLegacy):
+		cfg.AvatarUploadMode = AvatarUploadModeLegacy
+	case string(AvatarUploadModeGo):
+		cfg.AvatarUploadMode = AvatarUploadModeGo
+	default:
+		errs = append(errs, "API_GO_AVATAR_UPLOAD_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_USER_DATA_EXPORT_MODE")) {
+	case "", string(UserDataExportModeLegacy):
+		cfg.UserDataExportMode = UserDataExportModeLegacy
+	case string(UserDataExportModeGo):
+		cfg.UserDataExportMode = UserDataExportModeGo
+	default:
+		errs = append(errs, "API_GO_USER_DATA_EXPORT_MODE must be one of legacy|go")
 	}
 	// The login/session/email-code switch accepts the empty string, legacy and
 	// go. An empty value behaves exactly like legacy, so an unset deployment
@@ -3191,6 +3251,20 @@ func Load(getenv func(string) string) (Config, error) {
 	// like the other takeover switches.
 	if cfg.AccountSecurityMode == AccountSecurityModeGo {
 		appendAuthRequirements(&errs, "API_GO_ACCOUNT_SECURITY_MODE", cfg)
+	}
+	// The avatar presign route needs JWT verification, MySQL (the storage
+	// settings read) and Redis (the settings cache). It signs locally and never
+	// requires Mongo or S3 connectivity.
+	if cfg.AvatarUploadMode == AvatarUploadModeGo {
+		appendAuthRequirements(&errs, "API_GO_AVATAR_UPLOAD_MODE", cfg)
+	}
+	// The data export reads MySQL, Redis (rate limit + behavior profile) and
+	// Mongo (assistantruns), and verifies the caller's JWT.
+	if cfg.UserDataExportMode == UserDataExportModeGo {
+		appendAuthRequirements(&errs, "API_GO_USER_DATA_EXPORT_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_USER_DATA_EXPORT_MODE=go")
+		}
 	}
 	// The login/session/email-code takeover needs JWT verification, MySQL, Redis
 	// and a real SMTP transport: four of its routes send mail synchronously

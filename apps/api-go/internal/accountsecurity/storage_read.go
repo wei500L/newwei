@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 )
 
 // This file reproduces the read side of StorageSettingsService.getStorageConfig
@@ -179,6 +181,30 @@ func (s *Service) isPublicURL(ctx context.Context, value string) (bool, error) {
 	}
 	base := strings.TrimSuffix(config.PublicBaseURL, "/")
 	return strings.HasPrefix(value, base+"/"), nil
+}
+
+// StorageRuntimeConfig exposes the same resolved snapshot as
+// effectiveStorageConfig in the objectstorage shape, so the avatar upload
+// signer reuses this reader instead of duplicating the nine-key lookup, the
+// Redis cache fallback and the secret decryption. It never contacts S3.
+func (s *Service) StorageRuntimeConfig(ctx context.Context) (objectstorage.RuntimeConfig, error) {
+	config, err := s.effectiveStorageConfig(ctx)
+	if err != nil {
+		return objectstorage.RuntimeConfig{}, err
+	}
+	runtime := objectstorage.RuntimeConfig{
+		AccessKeyID:            config.AccessKeyID,
+		SecretAccessKey:        config.SecretAccessKey,
+		Region:                 config.Region,
+		Bucket:                 config.Bucket,
+		PublicBaseURL:          config.PublicBaseURL,
+		ForcePathStyle:         config.ForcePathStyle,
+		PresignedURLTTLSeconds: config.PresignedURLTTLSeconds,
+	}
+	if config.Endpoint != nil {
+		runtime.Endpoint = *config.Endpoint
+	}
+	return runtime, nil
 }
 
 // stringOrEnv mirrors `asString(stored) ?? fallback`.
