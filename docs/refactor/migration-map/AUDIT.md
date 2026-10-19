@@ -140,6 +140,8 @@ adminlogs/llmlogs/qualityoverview/classificationrssops/exceptioningest 与认证
 
 ## async-runtime
 
+2026-10-19四订阅限定续核，main91e759b449c4511dc96d86539ea0eb258754d07e：深入四Resolver/模型/权限、alert序列化、三域pubsub/service发布点、graphql module/context/guard/ExceptionFilter、Redis bus/codec/module与org精确匹配、QueueEventPublisher全部事件/context/终态清理和queue常量/装配；核对Go authhttp/policy、contract/exec/schema/project、模型独立注册、legacy upgrade/Trace/main/config/关闭。相对地图3cedce9a本候选Nest事件链未变，Go模型拆分/items选择元数据已在main，仍无Subscription执行器。graphql-ws5.13.1与Nest GraphQL11.0.6、BullMQ5.63.2一手源码静态核对，确认WS Query/Mutation兼容、guard错误结果分层、HTTP插件不自动施加WS、广播XREAD/JSON解析；并读#92真实共享diff及NewsNow本地共享diff。仅认领GRAPHQL-SUBSCRIPTIONS-001，不重审worker算法/全仓，不运行协议、Redis、多实例或真实业务/外部依赖；无部署/切流证据。
+
 2026-10-19限定续核，main c70b0373990ab931758f7a000511c2d34572fc33：仅深入 AuditLogOutboxService 全方法、audit writer/schema/索引、CacheService withLock/物理key/续租、Go各域producer envelope、adminlogs既有出口、digest已合生命周期/公开Redis端口及main/config资源条件。明确纯MySQL双表+Redis、无BullMQ/Mongo/外部；来源BL-20，由AUDIT-OUTBOX-001 reserved。本次检查确认Nest消费者与Go adminlogs相对地图3cedce9a无变化，后续新增生产者/复用能力按具体文件核对。未运行故障恢复/租约/并发或部署，不扩展为全部job/Outbox已审。
 
 本轮复核 AppModule 的 SCHEDULE_ENABLED/Bull Board 条件、已列 worker/调度入口、analysis/assistant/archive 的 submit/process/状态推进。**未深入核对所有 job payload、重试/租约、Outbox 幂等和实时拓扑**；具体文件继续用异步域既有清单。Go reindex goroutine/SSE 不等于 BullMQ/Subscription executor 已迁；配置写与结果查询不自动改变执行所有权。

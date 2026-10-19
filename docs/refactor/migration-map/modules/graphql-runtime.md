@@ -1,5 +1,7 @@
 # GraphQL 传输、生产注册与返回模型
 
+2026-10-19仅四订阅限定续核，origin/main `91e759b449c4511dc96d86539ea0eb258754d07e`：当前Subscription/upgrade仍由Nest执行；[GRAPHQL-SUBSCRIPTIONS-001](../tasks/GRAPHQL-SUBSCRIPTIONS-001.md) reserved，[完整提示词](../tasks/GRAPHQL-SUBSCRIPTIONS-001.prompt.md)在Ready规划#93发布，未实施/不计main。alertEvents/alerts.read、analysisEvents/analysis.read、assistantEvents/**assistant.read**、queueEvents/queue.manage，均无参数；新独立WS模式拟默认legacy。任务包含三Redis通道、BullMQ广播读、强类型逐事件投影/取消及同WS非本批operation整份legacy，HTTP订阅仍legacy。已核最新main有alerts/history.RegisterModels和items选择元数据，可独立复用无需READ/Mongo；此事实覆盖下方旧模型复用限制，但不刷新历史全域表/开关组合为新验收。详情见task；#92审计/NewsNow不占本批核心包，共享main/config增量取并集。
+
 核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[入口](../README.md)。本页是跨域事实，不是额外业务模块，不参与域表求和。
 
 ## 真实挂载与整份回退

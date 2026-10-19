@@ -195,6 +195,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-21 · async / Subscription 与 Socket.IO
 
+- 2026-10-19 main91e759b4限定深读后，仅四GraphQL订阅子链已reserved至[GRAPHQL-SUBSCRIPTIONS-001](tasks/GRAPHQL-SUBSCRIPTIONS-001.md)，[完整提示词](tasks/GRAPHQL-SUBSCRIPTIONS-001.prompt.md)在Ready规划#93发布，不能重复分配。producer的org/envelope与三Redis通道、QueueEvents本地广播读已在当前Nest稳定；本批只迁独立传输，不以BL-10/12/13/25未来执行器迁移为先决。工作包含标准WS多operation/整份legacy兼容、认证与组织投影、Date codec、BullMQ XREAD/终态cache及关闭，少量根仍是较大完整产品链。优化为按(root/org)索引fanout和plan-once。Socket.IO及其他实时网关仍未认领；新业务producer必须继续兼容这些已固定契约。
+
 - **范围/缺口**：Subscription alertEvents/analysisEvents/assistantEvents/queueEvents 及 Socket.IO 执行/权限/投递（GAP-LEGACY-001 / GAP-ASYNC-001）；dashboard SSE 不重迁。
 - **基础/依据**：G/graphqlread 解析鉴权/字段权限与 SSE 关闭流程；N/graphql-subscriptions Redis backplane、graphql resolvers、websocket gateway。需要 executor、连接鉴权、orgId过滤、payload/取消/背压与多实例 transport；只接 Redis 不够。
 - **文件/前置/冲突**：GraphQL/WS 专门执行层/main/legacyproxy；**在 BL-10/12/13/25 事件生产者契约稳定后执行**，可独立窗口先核协议/事件样本；未核拓扑与全部订阅字段权限，不一次打开所有协议升级。

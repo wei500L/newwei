@@ -1,5 +1,7 @@
 # 后端迁移地图
 
+2026-10-19四订阅选批：fetch后main仍`91e759b449c4511dc96d86539ea0eb258754d07e`、普通CI39247556593成功，无新业务合并；审计Ready #92仍OPEN/head28c8f761，NewsNow工作区已有main/config/新业务包及Nest来源relay开发，状态in_progress、无业务PR，均保持占用。新增[GRAPHQL-SUBSCRIPTIONS-001](tasks/GRAPHQL-SUBSCRIPTIONS-001.md) reserved及[完整执行提示词](tasks/GRAPHQL-SUBSCRIPTIONS-001.prompt.md)，复用[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布。只迁四个Subscription完整WebSocket执行/投影、三通道PubSub和itemPipeline广播观察链，以及同连接非本批operation整份legacy兼容；Socket.IO/producer/worker/cron不认领。仅限定深读相关源码及两批共享diff，不重建地图或增加main注册数；下方旧快照不覆盖本增量。
+
 2026-10-19本次继续选批：最新main `91e759b449c4511dc96d86539ea0eb258754d07e`，相对c70b0373仅合入上批规划#91，未新增业务实现；[普通CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)精确head成功。审计实现[Ready #92](https://github.com/wei500L/newwei/pull/92) OPEN/head28c8f761a2ce4a447080414f154b567648cc6bd1，普通CI39248452603成功，范围继续占用，不能提前记main已消费。仅读其真实共享接线diff，没有重审审计业务。
 
 新增[NEWSNOW-SOURCES-001](tasks/NEWSNOW-SOURCES-001.md) reserved，[完整提示词](tasks/NEWSNOW-SOURCES-001.prompt.md)已发出：两公开HTTP完整冷获取/强刷，64个来源ID、41个可达来源族（不是64个HTTP），双缓存/凭据/特殊解析/实时接缝及保持顺序的10并发池。[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)已发布认领，Go业务尚未实施；推荐、热点模型、Nest source-warm/热点Cron及其他BL-18范围不认领。只更新本链和当前占用，不重建地图或重算全仓统计；下方历史快照不覆盖本增量。
