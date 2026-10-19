@@ -332,7 +332,7 @@ pnpm --filter infra-scripts run env:check
 - 数据库：`DATABASE_URL`（可选，宿主机优先）、`MYSQL_*`、`MONGO_URI`、`REDIS_*`
 - 登录与会话：`JWT_SECRET`、`NEXTAUTH_SECRET`、`NEXTAUTH_URL`。`NEXTAUTH_SECRET` 只在运行时注入（compose `env_file`），不要作为 Docker build ARG，以免进入 `docker history`
 - Web ↔ API：`NEXT_PUBLIC_API_BASE_URL`（浏览器访问 API）、`API_BASE_URL`（服务端访问 API，可选）
-- API 入口试点（Go-批2C/批3A/批3B/批3C）：`API_GO_HOST_PORT`、`API_GO_IMAGE`、`API_GO_USER_SETTINGS_READ_MODE`、`API_GO_USER_SETTINGS_WRITE_MODE`（`legacy` 默认，六个 PUT 代理 NestJS；`go` 要求读模式同为 `go`，pilot 注入 `go`；回滚先改回 `legacy`）、`API_GO_ONBOARDING_MODE`。启用/切流/回滚见下方「api-go 入口试点」
+- API 入口试点（Go-批2C/批3A/批3B/批3C）：`API_GO_HOST_PORT`、`API_GO_IMAGE`、`API_GO_USER_SETTINGS_READ_MODE`、`API_GO_USER_SETTINGS_WRITE_MODE`（`legacy` 默认，六个 PUT 代理 NestJS；`go` 要求读模式同为 `go`，pilot 注入 `go`；回滚先改回 `legacy`）、`API_GO_ONBOARDING_MODE`、`API_GO_SITUATION_INSIGHTS_MODE`（态势洞察只读链，默认 `legacy`；`go` 要求 JWT/MySQL/Redis/Mongo）。启用/切流/回滚见下方「api-go 入口试点」
 - 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_SSRF_PROXY_URL`、`CRAWL4AI_*`
 - LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MASTER_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`。Docker 栈中 `LITELLM_MASTER_KEY` 必填（`openssl rand -hex 32`），空值时代理直接退出
 - Docker 端口绑定：`DOCKER_PUBLISH_HOST`（默认 `127.0.0.1`，仅本机可达；需要局域网访问时设为 `0.0.0.0`）

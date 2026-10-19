@@ -315,6 +315,12 @@ jobs:
       - name: MySQL/Redis integration tests (user-settings repository + authz RBAC + authn blacklist)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ ./internal/authz/ -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
 
+      # The insights lane has no Mongo service in this job. Its Mongo reads are
+      # covered by unit-level query construction/fakes; this step exercises the
+      # cache envelope, TTL and lock against the real Redis service above.
+      - name: Redis integration tests (situation insights cache/lock)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/situationsignals/ -run 'TestInsightsRedisIntegration|TestInsightsRedisKeyConstants' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从
