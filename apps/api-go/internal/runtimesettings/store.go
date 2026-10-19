@@ -54,6 +54,9 @@ type Service struct {
 	// digestDeliveryCache mirrors the multi-tenant scheduler service's 30 second
 	// runtime cache for the digest delivery organization concurrency.
 	digestDeliveryCache digestDeliveryRuntimeCache
+	// kgIngestionCache is the same runtime cache for the knowledge-graph
+	// ingestion organization concurrency.
+	kgIngestionCache kgIngestionRuntimeCache
 }
 
 // NewService wires the runtime settings data access. db and redisClient are the

@@ -1015,7 +1015,9 @@ func run() error {
 	// Keep the condition additive so delivery-only starts Redis while every
 	// other mode is legacy, and the authenticator still exists only when an
 	// HTTP takeover needs it.
-	needsRedis := needsCredentialedGo || cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo
+	needsRedis := needsCredentialedGo ||
+		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
+		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo
 	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -1961,6 +1963,10 @@ func run() error {
 	// no JWT. The deferred Close stops new ticks and drains in-flight
 	// organizations before the shared Redis/Mongo connections are closed below.
 	var deliveryScheduler *userdigest.DeliveryScheduler
+	// The knowledge-graph automatic construction chain owns the five-minute tick
+	// when API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go. It registers no HTTP route
+	// and needs no JWT.
+	var kgIngestion *kgIngestionRuntime
 	// Ordered teardown for both the SIGTERM path and every error return after
 	// this point, including an HTTP listen failure. The digest scheduler stops
 	// first, then background search reindex, then the shared Redis/Mongo
@@ -1971,6 +1977,11 @@ func run() error {
 		if deliveryScheduler != nil {
 			if closeErr := deliveryScheduler.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: user digest delivery scheduler close: %v", closeErr)
+			}
+		}
+		if kgIngestion != nil {
+			if closeErr := kgIngestion.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: knowledge graph ingestion scheduler close: %v", closeErr)
 			}
 		}
 		if searchReindexService != nil {
@@ -2005,6 +2016,14 @@ func run() error {
 	}
 	if deliveryScheduler != nil {
 		deliveryScheduler.Start(context.Background())
+	}
+	kgIngestion, err = wireKGIngestion(cfg, sharedDB, redisClient, sharedKGIngestionMongo(dashboardMongo, graphqlMongo))
+	if err != nil {
+		return err
+	}
+	if kgIngestion != nil {
+		kgIngestion.scheduler.Start(context.Background())
+		log.Printf("api-go: knowledge graph ingestion scheduler enabled mode=%s", cfg.KnowledgeGraphIngestionMode)
 	}
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
