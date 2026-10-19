@@ -784,11 +784,10 @@ func resolveRSSPrefetchedContent(entry rssDiscoveryEntry, options RSSFetchOption
 
 func prefetchedArticle(entry rssDiscoveryEntry, markdown *string, source string) *PrefetchedArticle {
 	article := &PrefetchedArticle{
-		Title:          truncateText(entry.Title, rssPrefetchMaxTitleChars),
-		Description:    truncateText(entry.Description, rssPrefetchMaxDescriptionChars),
-		Author:         truncateText(entry.Author, rssPrefetchMaxAuthorChars),
-		Markdown:       *markdown,
-		MarkdownSource: source,
+		Title:       truncateText(entry.Title, rssPrefetchMaxTitleChars),
+		Description: truncateText(entry.Description, rssPrefetchMaxDescriptionChars),
+		Author:      truncateText(entry.Author, rssPrefetchMaxAuthorChars),
+		Markdown:    *markdown,
 	}
 	if entry.PublishedAtTs != nil {
 		article.PublishedAt = isoFromMillis(entry.PublishedAtTs)

@@ -178,13 +178,13 @@ func (d *Discovery) discoverDeepCandidatesViaCrawl4ai(ctx context.Context, input
 			visitedPages[result.normalizedCurrentURL] = true
 
 			for _, candidate := range result.discoveredCandidates {
-				existing, found := candidates[candidate.url]
+				existing, found := candidates[candidate.URL]
 				if !found {
-					candidates[candidate.url] = candidate
+					candidates[candidate.URL] = candidate
 					continue
 				}
-				candidates[candidate.url] = deepDiscoveryCandidate{
-					URL:            candidate.url,
+				candidates[candidate.URL] = deepDiscoveryCandidate{
+					URL:            candidate.URL,
 					LinkScore:      math.Max(existing.LinkScore, candidate.LinkScore),
 					RelevanceScore: maxRelevance(existing.RelevanceScore, candidate.RelevanceScore),
 					PublishedAtTs:  resolveBetterTimestamp(existing.PublishedAtTs, candidate.PublishedAtTs),
@@ -231,19 +231,19 @@ func (d *Discovery) discoverDeepCandidatesViaCrawl4ai(ctx context.Context, input
 	if len(headTargets) > 0 {
 		concurrency := maxInt(1, minInt(input.deep.PageConcurrency, 5))
 		timestamps := mapWithConcurrency(headTargets, concurrency, func(candidate deepDiscoveryCandidate) *int64 {
-			return d.service.fetchPublishedAtTimestamp(ctx, candidate.url, input.requestTimeoutMs)
+			return d.service.fetchPublishedAtTimestamp(ctx, candidate.URL, input.requestTimeoutMs)
 		})
 		for index, target := range headTargets {
 			publishedAtTs := timestamps[index]
 			if publishedAtTs == nil {
 				continue
 			}
-			existing, found := candidates[target.url]
+			existing, found := candidates[target.URL]
 			if !found {
 				continue
 			}
 			existing.PublishedAtTs = publishedAtTs
-			candidates[target.url] = existing
+			candidates[target.URL] = existing
 		}
 		ranked = rankDeepCandidates(candidates, input.deep)
 	}
