@@ -73,4 +73,4 @@ HTTP 成功固定 `201`、`text/csv; charset=utf-8`、`attachment; filename="ana
 
 ## 验证边界
 
-本机未安装依赖、未运行 build/test/Docker/服务。已做 `gofmt` 与静态审阅。真实 MySQL/Mongo 数据、NestJS worker 消费、embedding/vector/rerank 上游、部署与切流均未验证。普通 CI 与 Redis 协议 job 结果在 PR 中回填；Redis 协议通过不等于完整 NestJS worker 已运行。
+本机未安装依赖、未运行 build/test/Docker/服务。已做 `gofmt` 与静态审阅。代码 head `5683e0cf` 的普通 CI [39310112110](https://github.com/wei500L/newwei/actions/runs/39310112110)：`verify`、`api-go-user-settings-integration`（含 archivepreparation 真实 Redis 7.2 协议用例）、`vector-integration` 均 success；skipped job 不计通过。真实 MySQL/Mongo 数据、NestJS worker 消费、embedding/vector/rerank 上游、部署与切流均未验证；Redis 协议通过不等于完整 NestJS worker 已运行。

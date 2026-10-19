@@ -1,6 +1,6 @@
 # ARCHIVE-READING-001 · 归档检索、月历、详情与搜索导出
 
-- 当前状态 **in_progress**；2026-10-19 Europe/Moscow，完整[执行提示词](ARCHIVE-READING-001.prompt.md)在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布。规划目录 /Users/oo/project/newwei-plan-newsnow-feed，分支 docs/plan-newsnow-feed；本窗口仅文档，无业务实施。
+- 当前状态 **pr_open**；2026-10-19 Europe/Moscow，完整[执行提示词](ARCHIVE-READING-001.prompt.md)在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布。规划目录 /Users/oo/project/newwei-plan-newsnow-feed，分支 docs/plan-newsnow-feed；本窗口仅文档，无业务实施。
 - 基线 origin/main `91e759b449c4511dc96d86539ea0eb258754d07e`，[普通CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)精确head success。规划#93追加前head76f6d06ecf5ac0300249b611f57f4cf192302972的普通CI39297509652成功，新head须独立查询。
 - 业务分支 refactor/go-archive-reading、worktree /Users/oo/project/newwei-go-archive-reading，已创建于91e759b4；分析选批发布前续核出现itemsreading/vector_port.go、llmembed/archive_port.go、newsnowclusteringops/archive_port.go开发，尚无业务提交/PR/merge/CI/生产注册/部署证据；执行器活动未核实。
 - 来源BL-09第一阶段+BL-08剩余search整路，关联GAP-LEGACY-001/GAP-ASYNC-001。不认领Go归档准备worker或其他候选。
@@ -34,7 +34,7 @@ MySQL只读ProcessedArticle/Article/ArchiveArticleClassification/NewsEvent/Item/
 规划只做静态核对/git diff --check；未安装依赖/运行build/test、Docker或服务，真实DB/Mongo/Redis/Nest worker、外部embedding/vector/rerank和部署均未验证。下一次核执行PR逐入口/必要入队/独立开关/导出快照、最终head普通CI和Redis协议证据；未合main不增加注册数，不关闭worker依赖或GAP-ASYNC-001。
 
 
-- Ready PR [#97](https://github.com/wei500L/newwei/pull/97)，业务 head `6b70350df46851b25885e9d06ecdb11b5ac25c3e`。首轮普通 CI 39306149780：`verify` 与 `api-go-user-settings-integration` 均因 `go.sum` 尚无 `msgpack/v5` 条目失败（drift gate 只报依赖清单差异，未进入编译/用例）；`go-modules-regen` 已成功提交 `517592ad`（go.mod/go.sum 增加 msgpack/v5 与 tagparser），label 已移除；首轮编译暴露的两处类型/返回值错误已修，随后在最终 head 重跑普通 CI。
+- Ready PR [#97](https://github.com/wei500L/newwei/pull/97)，业务 head `6b70350df46851b25885e9d06ecdb11b5ac25c3e`。首轮普通 CI 39306149780：`verify` 与 `api-go-user-settings-integration` 均因 `go.sum` 尚无 `msgpack/v5` 条目失败（drift gate 只报依赖清单差异，未进入编译/用例）；`go-modules-regen` 已成功提交 `517592ad`（go.mod/go.sum 增加 msgpack/v5 与 tagparser），label 已移除。代码 head `5683e0cf` 的普通 CI [39310112110](https://github.com/wei500L/newwei/actions/runs/39310112110) 全绿：`verify` success、`api-go-user-settings-integration` success（含 archivepreparation 真实 Redis 7.2 协议用例）、`vector-integration` success；`go-modules-regen`/`contract-baseline-regen` skipped 不计通过。
 
 ## 本次执行记录（2026-10-19）
 
