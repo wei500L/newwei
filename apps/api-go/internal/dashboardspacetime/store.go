@@ -66,10 +66,11 @@ type mysqlArticles struct {
 	db *sql.DB
 }
 
-func (s *mysqlArticles) Geo(ctx context.Context, orgID string, start, end time.Time, eventID string) ([]geoRow, error) {
-	if s == nil || s.db == nil {
-		return nil, errors.New("mysql is not configured")
-	}
+// geoQuery is the heatmap row read. The predicate order matches
+// (orgId, status, hasLocation, eventAt, articleId) so the range walks that
+// index and the ORDER BY needs no filesort; taking 2000 rows is the same cap as
+// the Nest implementation it replaces.
+func geoQuery(orgID string, start, end time.Time, eventID string) (string, []any) {
 	query := `
 SELECT pa.id, pa.articleId, pa.title, pa.location, pa.cleanedMarkdownRef,
        pa.publishedAt, pa.eventAt, pa.processedAt, a.url, a.sourceLabel, a.crawlAt
@@ -92,6 +93,14 @@ WHERE pa.orgId = ?
 ORDER BY pa.eventAt DESC, pa.articleId DESC
 LIMIT ?`
 	args = append(args, maxGeoRecords)
+	return query, args
+}
+
+func (s *mysqlArticles) Geo(ctx context.Context, orgID string, start, end time.Time, eventID string) ([]geoRow, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("mysql is not configured")
+	}
+	query, args := geoQuery(orgID, start, end, eventID)
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -126,11 +135,11 @@ LIMIT ?`
 	return out, rows.Err()
 }
 
-func (s *mysqlArticles) Propagation(ctx context.Context, orgID, eventID string, start, end time.Time) ([]propRow, error) {
-	if s == nil || s.db == nil {
-		return nil, errors.New("mysql is not configured")
-	}
-	rows, err := s.db.QueryContext(ctx, `
+// propagationQuery reads the event's items. (orgId, eventId, createdAt) is an
+// index prefix, so the ORDER BY + LIMIT 2000 stops after 2000 index entries
+// instead of sorting the whole event.
+func propagationQuery(orgID, eventID string, start, end time.Time) (string, []any) {
+	return `
 SELECT nei.processedItemId, pa.id, pa.cleanedMarkdownRef, pa.title,
        pa.publishedAt, pa.processedAt, a.url, a.sourceLabel, a.crawlAt
 FROM NewsEventItem nei
@@ -140,7 +149,15 @@ WHERE nei.orgId = ? AND nei.eventId = ?
   AND pa.status = 'completed' AND pa.orgId = ?
   AND pa.eventAt >= ? AND pa.eventAt <= ?
 ORDER BY nei.createdAt DESC
-LIMIT ?`, orgID, eventID, orgID, start.UTC(), end.UTC(), propRowLimit)
+LIMIT ?`, []any{orgID, eventID, orgID, start.UTC(), end.UTC(), propRowLimit}
+}
+
+func (s *mysqlArticles) Propagation(ctx context.Context, orgID, eventID string, start, end time.Time) ([]propRow, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("mysql is not configured")
+	}
+	query, args := propagationQuery(orgID, eventID, start, end)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
