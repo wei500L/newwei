@@ -1,7 +1,9 @@
 // Package alerts serves the migrated alert read queries.
 //
 // Register wires alertChannels, alertEvents, alertEventReplay, and
-// alertRuleTuningSuggestion. alertRules stays on the legacy gateway.
+// alertRuleTuningSuggestion. The alert rule unit (alertRules plus the
+// upsertAlertRule, deleteAlertRule and triggerAlertRule mutations) is a
+// separate, independently switched unit registered by RegisterRules.
 package alerts
 
 import (

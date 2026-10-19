@@ -315,6 +315,11 @@ jobs:
       - name: MySQL/Redis integration tests (user-settings repository + authz RBAC + authn blacklist)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ ./internal/authz/ -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
 
+      # 告警规则迁移：默认规则补建、upsert/delete/trigger、B1 通道归属、B3 定时
+      # 计划替换，以及直接读取 bull:alerts:* 原始结构断言任务字段。
+      - name: MySQL/Redis integration tests (alert rules + BullMQ producer)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/graphqlread/alerts/ -run 'TestAlertRules' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从

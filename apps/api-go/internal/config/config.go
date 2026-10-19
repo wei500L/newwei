@@ -1324,6 +1324,20 @@ type Config struct {
 	// starts no worker and requires no queue. Rolling back only means setting
 	// this variable back to legacy.
 	GraphQLWorkspaceWriteMode string
+	// GraphQLAlertRulesMode decides whether the alert rule unit (the alertRules
+	// query and the upsertAlertRule, deleteAlertRule and triggerAlertRule
+	// mutations) is registered into the Go GraphQL executor. It is independent
+	// of API_GO_GRAPHQL_READ_MODE on purpose: alertRules itself writes, because
+	// it backfills the organization's missing default rules, schedules them and
+	// enqueues one evaluation each, so the read and the three writes must move
+	// as one unit. The accepted values are exactly "", "legacy" and "go"; the
+	// empty value behaves like legacy. While this switch is legacy, every
+	// document selecting one of those roots falls back to NestJS as a whole.
+	// Go requires JWT verification, MySQL and Redis (the queue writes go
+	// through the shared Redis client with the same REDIS_DB as NestJS); it
+	// reads no Mongo collection, starts no worker and sends no email or
+	// webhook. Rolling back only means setting this variable back to legacy.
+	GraphQLAlertRulesMode string
 	// GraphQLSettingsWriteMode decides whether the thirteen settings center
 	// mutations (updateRateLimitSettings, updateAuthCacheSettings,
 	// updateCrawlClientSettings, updateAuditLogRetention,
@@ -2464,6 +2478,17 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE must be one of legacy|go")
 	}
+	// The alert rule switch accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy, so an unset deployment keeps alertRules
+	// and the three rule mutations on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_ALERT_RULES_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLAlertRulesMode = "legacy"
+	case "go":
+		cfg.GraphQLAlertRulesMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_ALERT_RULES_MODE must be one of legacy|go")
+	}
 	// The settings write switch accepts the empty string, legacy and go. An
 	// empty value behaves exactly like legacy, so an unset deployment keeps
 	// every settings mutation on NestJS.
@@ -3254,6 +3279,12 @@ func Load(getenv func(string) string) (Config, error) {
 	// MONGO_URI, the model gateway or the queue a startup condition.
 	if cfg.GraphQLWorkspaceWriteMode == "go" {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE", cfg)
+	}
+	// The alert rule unit needs JWT verification, MySQL and Redis. The queue
+	// writes reuse the shared Redis client and do not require Mongo, the model
+	// gateway, SMTP or a worker in this process.
+	if cfg.GraphQLAlertRulesMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_ALERT_RULES_MODE", cfg)
 	}
 	// The settings write takeover needs JWT verification, MySQL and Redis only.
 	// It reads no Mongo collection, starts no worker and calls no upstream
