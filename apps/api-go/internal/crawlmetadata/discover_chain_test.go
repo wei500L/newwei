@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -125,7 +126,17 @@ func (c crawlTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if strings.HasSuffix(req.URL.Path, "/health") {
 		return textResponse(http.StatusOK, nil, `{}`), nil
 	}
-	body := c.pages[req.URL.String()]
+	raw, _ := io.ReadAll(req.Body)
+	_ = req.Body.Close()
+	var payload struct {
+		URLs []string `json:"urls"`
+	}
+	_ = json.Unmarshal(raw, &payload)
+	target := ""
+	if len(payload.URLs) > 0 {
+		target = payload.URLs[0]
+	}
+	body := c.pages[target]
 	if body == "" {
 		body = `{"results":[]}`
 	}

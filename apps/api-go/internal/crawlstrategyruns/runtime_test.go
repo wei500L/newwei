@@ -168,8 +168,10 @@ func TestExecuteFailureCarriesPartialSteps(t *testing.T) {
 		},
 		Edges: []crawlworkflow.WorkflowEdge{},
 	}
+	seedURL := "https://8.8.8.8/"
 	runContext := &runtimeContext{
 		definition:             definition,
+		seedURL:                &seedURL,
 		effectiveProfileConfig: json.RawMessage(`{}`),
 		maxCandidates:          100,
 		systemEvents:           []crawlfrontierruns.StrategyRunEvent{},
