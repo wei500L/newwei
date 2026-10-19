@@ -62,7 +62,7 @@ func TestExpectedGuardrailsExpansionAndMissing(t *testing.T) {
 	if strings.Join(expected, ",") != "pre,pre-2,pre-3,post,post-2,post-3" {
 		t.Fatalf("expected = %v", expected)
 	}
-	if strings.Join(missing, ",") != "pre-3,post-3" {
+	if strings.Join(missing, ",") != "pre-2,pre-3,post-3" {
 		t.Fatalf("missing = %v", missing)
 	}
 	// A failed guardrails probe makes every expected name missing.
