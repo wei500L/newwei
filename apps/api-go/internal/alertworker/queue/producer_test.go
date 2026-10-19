@@ -69,7 +69,7 @@ func TestRepeatKeysMatchBullMQ(t *testing.T) {
 		"repeat:ce9ce89ea085b8356ae8dbddf1cee058:1700000000000"; got != want {
 		t.Fatalf("delayed job id = %s, want %s", got, want)
 	}
-	if got, want := legacyRepeatJobID(hashRepeatKey(concat)), "repeat:86f03d6b4be61a1e09256b29ceb515f0:"; got != want {
+	if got, want := legacyRepeatJobID(hashRepeatKey(concat)), "repeat:f01d9aabf7d57cee67d0a7ee05baa572:"; got != want {
 		t.Fatalf("legacy repeat job id = %s, want %s", got, want)
 	}
 	if got := removalConcatOptions(hashRepeatKey(concat)); got != "" {

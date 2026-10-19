@@ -437,11 +437,22 @@ func fallbackScore(series []SeriesPoint) (float64, anomalyFallbackDetail) {
 // toAnomalyMetadata mirrors toMetadata plus the `typeof` guards: a JSON null,
 // array or non-object decodes to the zero struct, which reads as "absent".
 func toAnomalyMetadata(raw json.RawMessage) anomalyMetadata {
+	// readRuleMetadata keeps the raw values, so a field of the wrong JSON type
+	// stays absent instead of being decoded into a zero value. A struct decode
+	// would allocate the pointer before the type error and turn, say, the string
+	// "90" into a present 0.
+	fields := readRuleMetadata(raw)
 	var metadata anomalyMetadata
-	if len(raw) == 0 {
+	if fields == nil {
 		return metadata
 	}
-	_ = json.Unmarshal(raw, &metadata)
+	metadata.LookbackDays = fields.numberPointer("lookbackDays")
+	metadata.MaxPoints = fields.numberPointer("maxPoints")
+	metadata.CacheTTLSeconds = fields.numberPointer("cacheTtlSeconds")
+	metadata.ConfidenceLevel = fields.numberPointer("confidenceLevel")
+	metadata.SeasonalPeriod = fields.numberPointer("seasonalPeriod")
+	metadata.ModelKind = fields.textPointer("modelKind")
+	metadata.SourceField = fields.textPointer("sourceField")
 	return metadata
 }
 

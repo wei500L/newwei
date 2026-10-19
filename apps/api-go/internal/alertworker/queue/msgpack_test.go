@@ -54,8 +54,8 @@ func TestMarshalMsgpackMapKeyOrderIsStable(t *testing.T) {
 			t.Fatalf("encoding is not stable: %x vs %x", first, next)
 		}
 	}
-	// 0x81 0xa1 'a' 0x01 0xa1 'b' 0x02
-	if got := hex.EncodeToString(first); got != "81a16101a16202" {
+	// 0x82 (fixmap, two entries) 0xa1 'a' 0x01 0xa1 'b' 0x02
+	if got := hex.EncodeToString(first); got != "82a16101a16202" {
 		t.Fatalf("encoded = %s", got)
 	}
 }

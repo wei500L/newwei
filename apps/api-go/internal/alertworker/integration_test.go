@@ -21,6 +21,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -301,11 +302,15 @@ func TestAlertWorkerIntegration(t *testing.T) {
 				mu.Unlock()
 				if current == 1 {
 					// The rate-limit path: move to delayed without consuming an attempt.
-					raw, err := redisClient.HGet(ctx, "bull:alerts:"+job.ID, "atm").Int64()
-					if err == nil {
-						sawDelayedAtm = raw
-					}
 					return &queue.DelayedError{UntilMs: time.Now().Add(150 * time.Millisecond).UnixMilli()}
+				}
+				// Second attempt: the delayed move must not have consumed an attempt,
+				// so atm is still absent (0).
+				raw, err := redisClient.HGet(ctx, "bull:alerts:"+job.ID, "atm").Int64()
+				if errors.Is(err, redis.Nil) {
+					sawDelayedAtm = 0
+				} else if err == nil {
+					sawDelayedAtm = raw
 				}
 				close(done)
 				return context.DeadlineExceeded

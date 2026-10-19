@@ -174,6 +174,24 @@ func (m ruleMetadataFields) textArray(key string) ([]string, bool) {
 	return values, true
 }
 
+// numberPointer is the `typeof value === "number" ? value : undefined` guard
+// with a pointer result, for the providers that keep a "field present" flag.
+func (m ruleMetadataFields) numberPointer(key string) *float64 {
+	if value, ok := m.number(key); ok {
+		return &value
+	}
+	return nil
+}
+
+// textPointer is the `typeof value === "string" ? value : undefined` guard with
+// a pointer result.
+func (m ruleMetadataFields) textPointer(key string) *string {
+	if value, ok := m.text(key); ok {
+		return &value
+	}
+	return nil
+}
+
 // numberOr is the `typeof metadata?.key === "number" ? metadata.key : fallback`
 // ternary.
 func (m ruleMetadataFields) numberOr(key string, fallback float64) float64 {

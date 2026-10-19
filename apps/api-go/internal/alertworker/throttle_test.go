@@ -131,19 +131,19 @@ func TestPaceTargets(t *testing.T) {
 			name:  "zero minimum interval is ignored",
 			cfg:   ThrottleConfig{},
 			input: ReserveInput{ChannelType: "webhook", ChannelID: "c3", MinIntervalSeconds: throttleInt64Pointer(0)},
-			want:  nil,
+			want:  []paceTarget{},
 		},
 		{
 			name:  "negative minimum interval is ignored",
 			cfg:   ThrottleConfig{},
 			input: ReserveInput{ChannelType: "webhook", ChannelID: "c4", MinIntervalSeconds: throttleInt64Pointer(-5)},
-			want:  nil,
+			want:  []paceTarget{},
 		},
 		{
 			name:  "nil minimum interval is ignored",
 			cfg:   ThrottleConfig{},
 			input: ReserveInput{ChannelType: "webhook", ChannelID: "c5"},
-			want:  nil,
+			want:  []paceTarget{},
 		},
 		{
 			name:  "slow rate saturates the interval",

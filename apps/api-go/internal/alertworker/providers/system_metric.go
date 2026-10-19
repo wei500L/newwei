@@ -3,7 +3,6 @@ package providers
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -46,15 +45,6 @@ type systemMetricSourceContext struct {
 	Source string `json:"source"`
 }
 
-// orefMetricsSnapshot is the cached OREF metrics payload. updatedAt is
-// `string | undefined` in NestJS, so a non-string value is dropped (see
-// evaluateOrefSnapshot).
-type orefMetricsSnapshot struct {
-	ActiveAlerts    *float64 `json:"activeAlerts"`
-	HistoryCount24h *float64 `json:"historyCount24h"`
-	UpdatedAt       *string  `json:"updatedAt"`
-}
-
 // orefMetricContext is the context of an OREF snapshot read. updatedAt is
 // omitted when the snapshot carried no string value, matching JSON.stringify
 // dropping an `undefined` key.
@@ -81,13 +71,11 @@ func (p *systemMetricProvider) Type() string { return TypeSystemMetric }
 // snapshot metrics.
 func (p *systemMetricProvider) Fetch(ctx context.Context, rule Rule) (Evaluation, error) {
 	metricSlug := strings.TrimSpace(rule.MetricSlug)
-	metadata := systemMetricMetadata{}
-	if len(rule.Metadata) > 0 {
-		// A non-number currentValue leaves the pointer nil, which is exactly
-		// the `typeof currentValue === "number"` guard; the decode error is
-		// therefore intentionally ignored.
-		_ = json.Unmarshal(rule.Metadata, &metadata)
-	}
+	// readRuleMetadata keeps the raw value, so a pipeline of the wrong JSON type
+	// stays absent instead of decoding into a present zero: a struct decode
+	// would allocate the currentValue pointer before the type error.
+	metadataFields := readRuleMetadata(rule.Metadata)
+	metadata := systemMetricMetadata{CurrentValue: metadataFields.numberPointer("currentValue")}
 	if metadata.CurrentValue != nil && metricFinite(*metadata.CurrentValue) {
 		payload, err := metricContextJSON(systemMetricSourceContext{Source: "metadata"})
 		if err != nil {
@@ -141,27 +129,23 @@ func evaluateOrefSnapshot(payload []byte, key string) (Evaluation, error) {
 	if len(bytes.TrimSpace(payload)) == 0 {
 		return metricErrorEvaluation("metrics_unavailable"), nil
 	}
-	var snapshot orefMetricsSnapshot
-	if err := json.Unmarshal(payload, &snapshot); err != nil {
-		var typeError *json.UnmarshalTypeError
-		if !errors.As(err, &typeError) {
-			// A syntax error throws in NestJS (JSON.parse), so it is reported.
-			return Evaluation{}, fmt.Errorf("alertworker/providers: system metric oref snapshot: %w", err)
-		}
-		// Type mismatches are tolerated like the NestJS `typeof` guards; the
-		// unaffected fields are still decoded.
+	fields := readRuleMetadata(payload)
+	if fields == nil {
+		// The cached value is JSON (CacheService.get runs JSON.parse), so a
+		// non-object payload is a contract violation rather than "no metrics".
+		return Evaluation{}, fmt.Errorf("alertworker/providers: system metric oref snapshot is not a JSON object")
 	}
 
 	var latest *float64
 	switch key {
 	case orefActiveAlertsField:
-		latest = snapshot.ActiveAlerts
+		latest = fields.numberPointer("activeAlerts")
 	case orefHistory24hField:
-		latest = snapshot.HistoryCount24h
+		latest = fields.numberPointer("historyCount24h")
 	}
 	payloadContext, err := metricContextJSON(orefMetricContext{
 		Source:    "situation-monitor-signals",
-		UpdatedAt: snapshot.UpdatedAt,
+		UpdatedAt: fields.textPointer("updatedAt"),
 	})
 	if err != nil {
 		return Evaluation{}, err

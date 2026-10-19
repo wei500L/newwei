@@ -211,8 +211,30 @@ func (s *Service) ScanActiveRules(ctx context.Context) error {
 	if err := s.producer.AddEvaluateJobs(ctx, specs); err != nil {
 		return err
 	}
+	// B3: the marker is written when an evaluation starts, but a scan that
+	// enqueues a rule must not enqueue it again before that evaluation runs.
+	// Recording the enqueue keeps repeated scans in one window idempotent; the
+	// per-rule schedules never read the marker, so they are unaffected.
+	s.markRulesEnqueued(ctx, due)
 	s.logf("alertworker: scan enqueued %d of %d active rule(s)", len(specs), len(rules))
 	return nil
+}
+
+// markRulesEnqueued records the B3 marker for rules whose evaluation was just
+// queued, using one Redis pipeline.
+func (s *Service) markRulesEnqueued(ctx context.Context, rules []activeRule) {
+	if len(rules) == 0 {
+		return
+	}
+	pipe := s.redis.Pipeline()
+	nowMs := s.now().UnixMilli()
+	for _, rule := range rules {
+		ttl := time.Duration(2*maxInt(60, rule.CheckIntervalSec)) * time.Second
+		pipe.Set(ctx, lastEvaluatedKeyPrefix+rule.ID, nowMs, ttl)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		s.logf("alertworker: mark enqueued rules evaluated: %v", err)
+	}
 }
 
 // dueRuleIDs keeps the rules whose last evaluation is missing or older than
@@ -283,6 +305,7 @@ func (s *Service) ensureDefaultRulesForAllOrgs(ctx context.Context) error {
 	for _, row := range existingRows {
 		existing[defaultRuleKeyID(row.OrgID, row.MetricProvider, normalizeMetricSlug(row.MetricSlug))] = struct{}{}
 	}
+	createdRules := make([]activeRule, 0, 32)
 	for _, orgID := range orgIDs {
 		for _, group := range defaultRuleGroups {
 			for _, definition := range group.Definitions {
@@ -328,9 +351,13 @@ func (s *Service) ensureDefaultRulesForAllOrgs(ctx context.Context) error {
 				if err := s.producer.AddEvaluateJob(ctx, ruleID, orgID, ensureTraceID("")); err != nil {
 					return err
 				}
+				createdRules = append(createdRules, activeRule{ID: ruleID, OrgID: orgID, CheckIntervalSec: 300})
 			}
 		}
 	}
+	// A newly created default rule already has its one evaluation queued, so the
+	// scan that runs next must not queue it a second time.
+	s.markRulesEnqueued(ctx, createdRules)
 	return nil
 }
 
