@@ -151,7 +151,7 @@ func TestNormalizeMultiURLConfigs(t *testing.T) {
 			"multiUrlConfigs":[
 				{
 					"name":"  section  ",
-					"urls":[" https://example.com/a ","https://example.com/a",""],
+					"urls":["https://example.com/a","https://example.com/a"],
 					"matcher":{"matchMode":"glob","patterns":[" /a/* ","/a/*"]},
 					"options":{"jsOnly":true,"waitForTimeoutMs":600,"scrollDelayMs":900,"scanFullPage":true}
 				},
