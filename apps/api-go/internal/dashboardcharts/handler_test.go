@@ -199,6 +199,7 @@ func (p *pointStore) SectorFields(_ context.Context, _ []string, start, end time
 
 func (p *pointStore) SectorEndpoints(_ context.Context, keys []seriesKey, _, _ time.Time) (map[seriesKey]seriesEndpoints, error) {
 	p.batches++
+	p.asked = append([]seriesKey(nil), keys...)
 	if p.err != nil {
 		return nil, p.err
 	}
