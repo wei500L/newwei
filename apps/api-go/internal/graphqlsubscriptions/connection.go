@@ -399,14 +399,14 @@ func (c *connection) startLegacyOperation(id string, payload json.RawMessage) {
 	go func() {
 		upstream, err := c.ensureLegacy(ctx)
 		if err != nil {
-			c.failLegacyOperation(op)
+			c.failLegacyLocalOperation(op)
 			return
 		}
 		if !c.operationCurrent(op) {
 			return
 		}
 		if _, err := upstream.subscribe(ctx, op.id, op.generation, payload); err != nil {
-			c.failLegacyOperation(op)
+			c.failLegacyLocalOperation(op)
 			return
 		}
 		if !c.operationCurrent(op) {
@@ -435,6 +435,10 @@ func (c *connection) ensureLegacy(ctx context.Context) (*legacyUpstream, error) 
 	}
 	c.legacy = upstream
 	return upstream, nil
+}
+
+func (c *connection) failLegacyLocalOperation(op *operation) {
+	c.failLegacyOperation(&legacyOperation{downstreamID: op.id, generation: op.generation})
 }
 
 func (c *connection) handleLegacyMessage(op *legacyOperation, messageType string, payload json.RawMessage) {
