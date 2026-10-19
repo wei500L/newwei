@@ -68,7 +68,7 @@ func (s *Service) ResolveBoundWorkflowVersion(ctx context.Context, orgID, workfl
 		if version.OrgID != orgID {
 			return nil, newStatus(404, "Workflow version not found")
 		}
-		workflow, err := loadWorkflow(ctx, s.db, version.WorkflowID)
+		workflow, err := s.loadWorkflow(ctx, s.db, version.WorkflowID)
 		if err != nil {
 			return nil, err
 		}
@@ -78,7 +78,7 @@ func (s *Service) ResolveBoundWorkflowVersion(ctx context.Context, orgID, workfl
 	if workflowID == "" {
 		return nil, nil
 	}
-	workflow, err := loadWorkflow(ctx, s.db, workflowID)
+	workflow, err := s.loadWorkflow(ctx, s.db, workflowID)
 	if err != nil {
 		if isMissing(err) {
 			return nil, newStatus(404, "Workflow not found")

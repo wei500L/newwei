@@ -348,7 +348,7 @@ func (s *Service) replaceRunSteps(ctx context.Context, tx *sql.Tx, runID string,
 		placeholders := make([]string, 0, len(batch))
 		args := make([]any, 0, len(batch)*16)
 		for _, item := range batch {
-			placeholders = append(placeholders, "(?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))")
+			placeholders = append(placeholders, "(?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))")
 			args = append(args, item.id, runID, item.stepKey, item.sequence, item.nodeID, item.nodeType, item.label,
 				item.status, item.durationMs, item.inputCount, item.outputCount, item.rejectedCount,
 				item.sampleURLs, item.metrics, item.errText, []byte(`{}`))

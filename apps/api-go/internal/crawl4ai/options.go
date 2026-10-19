@@ -405,7 +405,12 @@ func normalizeScriptList(raw json.RawMessage) []string {
 }
 
 func normalizeSelectorList(raw json.RawMessage) []string {
-	values := rawStringArray(raw)
+	return normalizeSelectorValues(rawStringArray(raw))
+}
+
+// normalizeSelectorValues applies the selector-list normalization to an already
+// decoded string slice (the clean-markdown spread path).
+func normalizeSelectorValues(values []string) []string {
 	if len(values) == 0 {
 		return nil
 	}

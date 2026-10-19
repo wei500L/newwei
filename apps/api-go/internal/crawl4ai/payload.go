@@ -245,13 +245,13 @@ func applyCleanMarkdown(params *crawlerParams, clean *CleanMarkdown) {
 	if clean == nil {
 		return
 	}
-	if selector := normalizeCSSSelector(clean.CSSSelector); selector != nil && *selector != "" {
+	if selector := normalizeTrimmedString(clean.CSSSelector); selector != nil && *selector != "" {
 		params.CSSSelector = *selector
 	}
 	if len(clean.TargetElements) > 0 {
 		params.TargetElements = clean.TargetElements
 	}
-	if tags := normalizeSelectorList(clean.ExcludedTags); len(tags) > 0 {
+	if tags := normalizeSelectorValues(clean.ExcludedTags); len(tags) > 0 {
 		params.ExcludedTags = tags
 	}
 	if clean.RemoveOverlayElements != nil {
