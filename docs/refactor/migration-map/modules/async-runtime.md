@@ -1,5 +1,7 @@
 # async-runtime · 队列、调度、Outbox 与实时传输
 
+2026-10-19分析执行限定增量（main91e759b4）：[ANALYSIS-RUNS-001](../tasks/ANALYSIS-RUNS-001.md) reserved，只占analysis队列真正Go producer/consumer（BullMQ5.63.2兼容锁/重试/stalled/retention/关闭）、三分析计算/SSE/结果/最终通知，Nest仅legacy、owner gate/回滚恢复窄修与本地通知接缝。双独立默认legacy开关分三写与后台owner，后台单开无JWT；不依赖其他未合producer。不占Assistant/其他queue/cron/Outbox或四订阅transport。main尚无Go worker，本批未实施，GAP-ANALYSIS-001开放。
+
 2026-10-19条目入库限定增量（main91e759b4）：[ITEMS-INGEST-001](../tasks/ITEMS-INGEST-001.md) reserved，[提示词](../tasks/ITEMS-INGEST-001.prompt.md)只领取raw_item MongoOutbox同步投递/定时重试及itemPipeline窄producer。后台独立owner模式默认legacy，Nest仅Cron在go时退出，旧同步请求继续按行CAS；三状态合并50/5分钟stale/10次dead、原锁token续租和引用受限补偿保持，其他Outbox归原任务/Nest。新增Go兼容BullMQ5.63.2 producer不等于worker/QueueEvents已迁；后两者本批不动。纯补偿模式DB/Redis/Mongo、无JWT，写模式另需JWT；未实施或运行，不改历史全域核对日期。
 
 2026-10-19四订阅候选限定续核（main91e759b4）：[GRAPHQL-SUBSCRIPTIONS-001](../tasks/GRAPHQL-SUBSCRIPTIONS-001.md) reserved，[完整提示词](../tasks/GRAPHQL-SUBSCRIPTIONS-001.prompt.md)在Ready规划#93发布。当前四订阅仍Nest；拟迁三域gqlsub既有PubSub及itemPipeline每进程XREAD广播观察/任务上下文缓存，不迁业务worker/cron/Socket.IO、不把queueEvents再广播到gqlsub。Nest producer与fallback保留，Go仅DB/JWT/Redis，不需Mongo。审计Ready #92仍OPEN/head28c8f761、CI成功，NewsNow来源/专用relay已有worktree开发，均继续占用；下方“未发现开放PR/审计未实施”等是旧快照，不覆盖本增量，不重审全部异步域。

@@ -1,5 +1,7 @@
 # 后端迁移地图
 
+2026-10-19分析执行选批：main仍91e759b449c4511dc96d86539ea0eb258754d07e，普通CI39247556593成功，无新业务合并。#92/#94未合且原精确head普通CI成功；四订阅Ready #95观察head8d759fe2、普通CI39302998528运行中，条目入库in_progress，归档reserved，均保留占用。新增[ANALYSIS-RUNS-001](tasks/ANALYSIS-RUNS-001.md) reserved与[完整提示词](tasks/ANALYSIS-RUNS-001.prompt.md)，在Ready规划#93发布：三分析Mutation、原生BullMQ真正Go消费、统计/Geo/真实SSE、结果/事件/最终通知，含running恢复GAP-ANALYSIS-001和有界top30查询。双开关/owner回滚、英文文件注释、禁止占位实现明确。本次只深读该链，不启动业务、不重建地图或增加main覆盖；下方旧快照按原时点理解。
+
 2026-10-19归档选批：fetch后main仍`91e759b449c4511dc96d86539ea0eb258754d07e`，普通CI39247556593成功；审计Ready #92 OPEN/head28c8f761不变，NewsNow Ready #94 OPEN/headcf25026f、普通CI39297914942已成功，均未合main。四订阅已Ready #95 OPEN/head68a4536d，首轮普通CI39301019113因Go modules drift gate失败、已加regen label，继续占contract/exec；条目入库已见itemsingest/pipelineenqueue/go.mod开发，改in_progress。新增[ARCHIVE-READING-001](tasks/ARCHIVE-READING-001.md) reserved及[完整执行提示词](tasks/ARCHIVE-READING-001.prompt.md)，在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布：三归档Query+search整路两模式、分类/显示/语义检索/兼容准备入队、单请求快照CSV优化，Nest准备worker明确保留。本次只深读该完整候选与相关共享diff，不重建地图或增加main覆盖；下方旧段落保留为发出快照，以本增量和任务表为准。
 
 2026-10-19条目入库选批：main仍91e759b449c4511dc96d86539ea0eb258754d07e/普通CI39247556593成功；审计#92仍OPEN，NewsNow已Ready #94（headb33cc1ea、普通CI39296327154运行中），四订阅已有contract/exec开发/in_progress，均继续占用。新认领[ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) reserved，[完整提示词](tasks/ITEMS-INGEST-001.prompt.md)在Ready规划#93发布：1HTTP+5Mutation、原文/读模型/原子BullMQ producer与raw_item同步/定时补偿，Nest流水线worker保留。仅本候选深读，登记hydration具体GAP-ITEMS-001，不重建地图或把未合PR计main。

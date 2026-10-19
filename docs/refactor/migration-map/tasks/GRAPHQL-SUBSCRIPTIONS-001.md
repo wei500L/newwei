@@ -1,5 +1,7 @@
 # GRAPHQL-SUBSCRIPTIONS-001 · 四条 GraphQL 实时订阅完整传输
 
+2026-10-19分析选批续核：Ready #95 OPEN，观察head8d759fe2ee62bb1119b17c2ba879379153d28662，[普通CI39302998528](https://github.com/wei500L/newwei/actions/runs/39302998528)运行中；旧head失败/action_required/regen不替代本head。相对68a共享main/config/contract/workspace无新增变化，自身graphql入口/legacy类型修复与依赖清单正常推进；不干预执行窗口，保持占用、未合main。
+
 2026-10-19归档选批发布前续核：当前 **pr_open**，[Ready #95](https://github.com/wei500L/newwei/pull/95) OPEN/head68a4536d37eabde0695edfe152987cadffcc41f7；[首轮普通CI39301019113](https://github.com/wei500L/newwei/actions/runs/39301019113)在Go modules drift gate失败（vector-integration与既有MySQL/Redis job成功，regen skipped）。PR已加go-modules-regen label，最终依赖提交/head/普通CI尚须复核，不记通过/合并/部署。实际main/config/contract及文件diff已读；本批仍占contract/exec/workspace端口，不干预执行窗口记录。下方旧状态按原发出时点理解。
 
 - 状态 **in_progress**；2026-10-19 Europe/Moscow，本规划窗口保存并发出[完整独立提示词](GRAPHQL-SUBSCRIPTIONS-001.prompt.md)，未实施业务。

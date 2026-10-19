@@ -66,6 +66,8 @@
 
 ## analysis
 
+2026-10-19本链深读，main91e759b449c4511dc96d86539ea0eb258754d07e：三Mutation DTO/Resolver/SDL/model、AnalysisService完整submit/process/stream/Geo/通知、Processor/gate/queue配置与观察者、四统计检测器/全部prompt、Mongo模型/运输窗口/索引；模型stream两surface/fallback/部分失败/usage日志、组织Redis envelope、SQL通知和已有本地socket接缝；Go history/profile/治理/完成客户端与日志复用。当前无三写注册/真正Go分析consumer/stream，完成客户端不能充当流。确认GAP-ANALYSIS-001：仅认pending/failed，stalled重排可跳过running；Geo先push全量再slice30且无轨迹重复同range查询。ANALYSIS-RUNS-001 reserved完整链（Ready规划#93），含worker/恢复/SSE/有界top30。未运行真实服务/队列/模型，不重审Assistant或全仓。
+
 2026-10-18导出候选增量（main90765633）：只深入items/events Controller/DTO、全部两路row构造/参数/排序/去重/CSV助手、ItemsService→ItemsListService页分支/rerank错误、NewsEvents heat/authority与source-policy读取；对照Go itemsreading完整列表/画像/rerank日志/投影store、newsevents私有聚合/排序去重、analysiscollab规范化/校验及JWT与机器认证差异。明确成功201、analysis.write、5000候选上限、50交互上限不可复用、无直接导出审计、公式/换行字节契约，见ANALYSIS-EXPORT-001。search/headlines准备、真实外部/生产大导出未验证，不把协作CRUD/worker未审范围统一标完成。
 
 - **协作 23 HTTP / 部分分支静态核对，整体尚未深入核对**：[cmd/api/analysis.go](../../../apps/api-go/cmd/api/analysis.go) 三独立模式与 handler；[analysisboards/service.go](../../../apps/api-go/internal/analysisboards/service.go) List/Get→ensureDefaultBoard→组织锁事务内二次检查/创建默认列，确认读可能写。其余列/任务移动重排、评论归属/计数、删除关联清理及版本并发尚未逐路径验完。

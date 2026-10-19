@@ -6,6 +6,7 @@
 
 | ID | 性质 / 所属域 | 影响范围 | 状态 / 归属 |
 |---|---|---|---|
+| GAP-ANALYSIS-001 | 中断恢复；analysis | BullMQ stalled重排时Mongo仍running，被process认领条件跳过，可能形成队列结束/结果永久running | ANALYSIS-RUNS-001 reserved；main91e759b4静态确认，未修/未运行 |
 | GAP-ITEMS-001 | 部分实现/水合；items | Go读模型水合只取completed窄快照，丢最新pending/failed及必要字段 | ITEMS-INGEST-001 reserved，main91e759b4静态确认，未修/未运行验证 |
 | GAP-RSS-001 | 部分实现/共享缓存；items | rssTranslationStatus在LLM profile缓存miss后覆盖完整缓存字段 | RSS-TRANSLATION-001 reserved，main缺口开放；只修本链写回 |
 | GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | SOURCE-POLICY-WRITE-001认领main90765633仍缺的路由/无效DSN两处条件；主体仍merged，缺口仍开放 |
@@ -16,6 +17,17 @@
 | GAP-KG-001 | 部分实现；knowledge | 已迁证据复核队列的固定候选遮挡 | main90765633限定确认；KNOWLEDGE-REVIEW-001 pr_open（#86，head4d6d24b8，随本批整合），缺口仍开放 |
 
 “未迁移”是范围事实，不表示 Nest 有 bug；“缺少外部运行证据”不单独计为源码缺陷。当前没有因本轮文档维护而关闭的业务缺口。
+
+<a id="gap-analysis-001"></a>
+
+## GAP-ANALYSIS-001 · 分析中断重排与结果running脱节
+
+- SHA：91e759b449c4511dc96d86539ea0eb258754d07e，2026-10-19限定analysis链静态核对；没有生产故障/运行复现证据。
+- 触发：worker在Mongo标running后崩溃/锁丢失，BullMQ5.63.2按stalled策略重新交付。Nest apps/api/src/modules/analysis/analysis.service.ts:134-148只认pending/failed，running不匹配就return；analysis.processor.ts调用后无恢复。官方Worker/Job/Scripts的stalled回wait和重新执行路径已核。
+- 影响：可重试任务不再实际计算，队列可结束但analysisresults仍running；stalled最终失败也须和Mongo/通知对齐。不能以BullMQ有重试认定业务已恢复。
+- Go事实：当前无完整analysis执行器，history读无法修复。ANALYSIS-RUNS-001认领持当前queue租约的running接续、最小attempt条件写/旧token不能覆盖、终态/最终通知，Nest回滚侧同步本链窄修；队列仍at-least-once，不引入跨库exactly-once框架。
+- 文件：Nest analysis.processor.ts/analysis.service.ts、必要analysis-result可选字段，Go新analysisqueue/analysisruns；不扩展其他worker。远端普通CI真实Redis/Mongo/worker+SSE fixture须覆盖重排、旧token、已完成不重复；真实模型和部署分别记。
+- 状态reserved、未实施、关闭证据无；须实际main落地、精确head CI/恢复行为证据，生产启用另记。
 
 <a id="gap-items-001"></a>
 
@@ -114,7 +126,7 @@
 
 | 受影响的 Go 范围 | 仍须 Nest 执行的必要步骤 | 用户影响 / 触发 | 候选与前置 |
 |---|---|---|---|
-| `analysisResults` / `assistantRuns` | submit* 入队、processor→process、Mongo 结果更新、事件发布 | 查询可读历史；新分析/Assistant 运行仍须 Nest | BL-12/13；明确队列 payload 与唯一消费者 |
+| `analysisResults` / `assistantRuns` | 当前submit/worker/Mongo更新/发布仍Nest | ANALYSIS-RUNS-001 reserved完整analysis Go执行，未实施；Assistant未认领，不一并关闭 | BL-12已占用，双开关/原生兼容/恢复GAP；BL-13独立核 |
 | 归档准备状态 HTTP；三Query/search尚Nest | ensure*Coverage→archivePreparation→ArchivePreparationProcessor→分类/显示信号回填/状态写回 | status可读不代表有生成能力；停Nest worker无法推进冷数据。ARCHIVE-READING-001 reserved仅查询+兼容producer，尚未实现 | BL-09/08第一阶段已占用；Go准备worker第二阶段未认领，整链未关闭 |
 | Telegram/Oref 信号和 refresh-run 读 | signals processor、轮询器、external snapshot Cron、refresh 入队 | Go 读取已有 Redis 缓存；停 Nest 会失去后续刷新 | BL-14；外部凭据与租约先确认 |
 | 经济六读、新闻事件/指标、知识图谱读 | AkShare repeat/processor、news pipeline/ingestion、KG ingestion | 已有数据查询在 Go；新数据/关联仍依赖 Nest 更新 | BL-11/16/18；先划每条数据写入所有权 |

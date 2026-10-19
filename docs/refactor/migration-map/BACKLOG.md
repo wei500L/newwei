@@ -133,6 +133,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-12 · analysis / 三请求执行闭环
 
+- 2026-10-19 main91e759b4完整候选已由[ANALYSIS-RUNS-001](tasks/ANALYSIS-RUNS-001.md) reserved，[提示词](tasks/ANALYSIS-RUNS-001.prompt.md)在Ready规划#93发布，不能重派三请求/analysis worker。完整Go生产/消费/计算/真实SSE/结果/通知，不是pending子批；双开关/owner切换/锁重试stalled/关闭明确。含GAP-ANALYSIS-001恢复与有界top30，publicportal独立stream文件/llmlogs新writer避开归档端口、四订阅contract/exec、条目producer。仅本链深入，Assistant等不认领。
+
 - **范围/缺口**：requestCorrelationAnalysis/requestAnomalyExplanation/requestGeoTransportAnalysis→submit*→analysis queue→process→Mongo/通知/analysisEvents（GAP-LEGACY-001 / GAP-ASYNC-001），不重迁协作 CRUD/history。
 - **基础/依据**：G/graphqlread/history 模型/经济/地图读取、publicportal 模型客户端（私有）；N/AnalysisService/AnalysisProcessor。相关计算、异常/地理上下文、流式 chunk、最终失败通知均为必要内部步骤。
 - **文件/前置/冲突**：独立分析执行包、队列/模型 adapter/main；MySQL/Mongo/Redis+模型/运输。**当前先定 producer/consumer 与 BL-21 发布契约**；可先迁一条完整分析类型，不能三个 root 只建记录。共享 gateway 提取需等 BL-02 的决定。
