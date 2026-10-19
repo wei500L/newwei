@@ -455,3 +455,18 @@ func atoiDefault(value string) int {
 	}
 	return result
 }
+
+// parseISOTime accepts the ISO-8601 spellings the runtime stores for candidate
+// timestamps.
+func parseISOTime(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05"} {
+		if parsed, err := time.Parse(layout, trimmed); err == nil {
+			return parsed.UTC(), true
+		}
+	}
+	return time.Time{}, false
+}

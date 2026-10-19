@@ -1,6 +1,7 @@
 package crawlstrategyruns
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -142,7 +143,7 @@ func TestExecuteUsesTerminalNodesInDefinitionOrder(t *testing.T) {
 	// output through the registry is not possible here, so execute starts with
 	// no input and produces no candidates; the terminal selection itself is
 	// what this test pins.
-	result, err := runtime.execute(runContext)
+	result, err := runtime.execute(context.Background(), runContext)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +174,7 @@ func TestExecuteFailureCarriesPartialSteps(t *testing.T) {
 		maxCandidates:          100,
 		systemEvents:           []crawlfrontierruns.StrategyRunEvent{},
 	}
-	_, err := runtime.execute(runContext)
+	_, err := runtime.execute(context.Background(), runContext)
 	var executionError *ExecutionError
 	if err == nil {
 		t.Fatal("expected a failure")
