@@ -48,7 +48,11 @@ func (o WorkerOptions) normalized() WorkerOptions {
 	if o.StalledInterval <= 0 {
 		o.StalledInterval = StalledInterval
 	}
-	if o.MaxStalledCount < 0 {
+	// BullMQ's worker default is one stalled recovery. Treat the zero value as
+	// "use the default" so an unset option never means "fail on the first
+	// stall" (moveStalledJobsToWait fails a job once stalledCount exceeds the
+	// limit).
+	if o.MaxStalledCount < 1 {
 		o.MaxStalledCount = MaxStalledCount
 	}
 	if o.DrainDelay <= 0 {

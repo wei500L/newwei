@@ -67,6 +67,12 @@ func parseLlmBackfillGroupID(path string) (string, bool) {
 	if !strings.HasPrefix(path, llmBackfillRoutePrefix) || !strings.HasSuffix(path, llmBackfillRouteSuffix) {
 		return "", false
 	}
+	// The prefix and the suffix can both match a path shorter than their sum
+	// (for example .../failures/llm-backfill), so bound the slice explicitly
+	// instead of trusting the two independent prefix/suffix checks.
+	if len(path) < len(llmBackfillRoutePrefix)+len(llmBackfillRouteSuffix) {
+		return "", false
+	}
 	raw := path[len(llmBackfillRoutePrefix) : len(path)-len(llmBackfillRouteSuffix)]
 	if raw == "" || strings.Contains(raw, "/") {
 		return "", false
