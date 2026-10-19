@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf16"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
@@ -207,7 +208,7 @@ func (s *Service) createFromCrawlResults(
 		})
 	}
 
-	existingResults := runConcurrent(withRef, crawlResultIngestConcurrency, func(ctx context.Context, entry crawlPrepared) (itemsreading.ItemMetaRow, error) {
+	existingResults := runConcurrent(ctx, withRef, crawlResultIngestConcurrency, func(ctx context.Context, entry crawlPrepared) (itemsreading.ItemMetaRow, error) {
 		meta := metaByExternalID[entry.externalID]
 		if err := s.enqueueCrawlResultItem(ctx, orgID, meta, entry); err != nil {
 			return meta, err
@@ -225,7 +226,7 @@ func (s *Service) createFromCrawlResults(
 	}
 
 	cleanup := make(map[string]struct{})
-	validated := runConcurrent(withoutRef, crawlResultIngestConcurrency, func(ctx context.Context, plan crawlPlan) (crawlPlan, error) {
+	validated := runConcurrent(ctx, withoutRef, crawlResultIngestConcurrency, func(ctx context.Context, plan crawlPlan) (crawlPlan, error) {
 		rawID := bson.NewObjectID().Hex()
 		rawDoc, err := newRawItemDocument(plan.meta.ID, rawID, "crawl-task", plan.prepared.payload, s.now())
 		if err != nil {
@@ -268,7 +269,7 @@ func (s *Service) createFromCrawlResults(
 		if err != nil {
 			return nil, err
 		}
-		bindResults := runConcurrent(plans, crawlResultIngestConcurrency, func(ctx context.Context, plan crawlPlan) (itemsreading.ItemMetaRow, error) {
+		bindResults := runConcurrent(ctx, plans, crawlResultIngestConcurrency, func(ctx context.Context, plan crawlPlan) (itemsreading.ItemMetaRow, error) {
 			if _, ok := inserted[plan.rawID]; !ok {
 				return plan.meta, NewFailure(503, "Failed to persist raw crawl result item")
 			}

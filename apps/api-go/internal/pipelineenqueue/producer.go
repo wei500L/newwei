@@ -299,7 +299,7 @@ func (p *Producer) upsertPendingProcessedItem(
 				{Key: "createdAt", Value: now},
 			}},
 		},
-		options.Update().SetUpsert(true),
+		options.UpdateOne().SetUpsert(true),
 	)
 	if err != nil {
 		log.Printf("pipelineenqueue: failed to upsert pending processed item orgId=%s itemMetaId=%s: %v", orgID, itemMetaID, err)
