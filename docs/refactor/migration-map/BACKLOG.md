@@ -187,6 +187,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-20 · async / Outbox、清理与消费者基础
 
+- 2026-10-19仅raw_item MongoOutbox消费子链随[ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) reserved，双独立开关/同步CAS/后台owner与生产者边界见提示词；不重复分配。AuditLogOutbox由#92继续占用，processed_item/CrawlCleanup及其他消费者未认领。
+
 - 2026-10-19，main c70b0373：仅审计子链已 reserved 至 [AUDIT-OUTBOX-001](tasks/AUDIT-OUTBOX-001.md)，[完整提示词](tasks/AUDIT-OUTBOX-001.prompt.md)已发出。已核每分钟200/并发8、三状态/5分钟陈旧、认领事务、五元去重、10次dead、实际Redis续租锁和近期Go生产者；只需MySQL/Redis，无BullMQ/Mongo/外部。查询优化为轻字段选200后只补选中payload。RawItem/CrawlCleanup及其他消费者不认领，仍按原候选拆分；Go消费尚未实现。
 
 - **范围/缺口**：AuditLogOutboxService、RawItemOutboxService、CrawlCleanupOutboxService 三条补偿链及其当前 Cron（GAP-ASYNC-001）；它们分别交付，不领取“全部 worker”。
@@ -208,6 +210,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 - **文件/前置/冲突**：通常先只读 infra/docker、上游 clients/settings 与部署记录；**可独立只读窗口**；实际部署变更不在本轮授权内，执行时再按明确范围决定。未核真实配置值，不从 CI 推断已切流。
 
 ### BL-24 · crawl/items / 任务写入与内容导入
+
+- 2026-10-19 main91e759b4限定深读后，仅人工条目写/采集结果导入六入口及必要raw_item补偿已reserved至[ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md)，[完整提示词](tasks/ITEMS-INGEST-001.prompt.md)在Ready规划#93发布，不再分配。包括MySQL事务Outbox/即时Mongo、采集直接批写/CAS/逐项部分失败、真实BullMQ5.63.2 producer/计数/水合与独立后台owner；消费者itemPipeline仍Nest，其他任务生命周期/Frontier/自动采集器不认领。改善为补偿先item过滤再限50和GAP-ITEMS-001 hydration最新任意状态聚合；不改变搜索/RSS completed-only。核心新包独立，四订阅contract/exec不改。
 
 - 2026-10-18按main90765633深入后，仅RSS翻译子链已reserved至[RSS-TRANSLATION-001](tasks/RSS-TRANSLATION-001.md)，[提示词](tasks/RSS-TRANSLATION-001.prompt.md)随#85发出；不再重复派发translateRssItems。同步DeepLX主备/LLM、四字段分块、双缓存、指标/日志齐备才算本链；无BullMQ/Cron或原文写回。确认GAP-RSS-001共享完整profile缓存被状态投影覆盖，一并具体修复；Mongo选最新记录改数据库侧分组。其他任务生命周期、创建/更新/导入仍未认领。
 

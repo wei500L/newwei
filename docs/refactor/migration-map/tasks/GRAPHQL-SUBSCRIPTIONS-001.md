@@ -1,8 +1,8 @@
 # GRAPHQL-SUBSCRIPTIONS-001 · 四条 GraphQL 实时订阅完整传输
 
-- 状态 **reserved**；2026-10-19 Europe/Moscow，本规划窗口保存并发出[完整独立提示词](GRAPHQL-SUBSCRIPTIONS-001.prompt.md)，未实施业务。
+- 状态 **in_progress**；2026-10-19 Europe/Moscow，本规划窗口保存并发出[完整独立提示词](GRAPHQL-SUBSCRIPTIONS-001.prompt.md)，未实施业务。
 - 代码基线 origin/main `91e759b449c4511dc96d86539ea0eb258754d07e`；[普通 CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)在该精确 SHA success，verify/vector-integration/api-go-user-settings-integration success，两个 regen skipped。不是本任务运行/部署证据。
-- 业务分支 `refactor/go-graphql-subscriptions`，worktree `/Users/oo/project/newwei-go-graphql-subscriptions`，尚未创建；执行器活动未核实，无业务提交/PR/head/merge/CI。
+- 业务分支 `refactor/go-graphql-subscriptions`，worktree `/Users/oo/project/newwei-go-graphql-subscriptions`，已创建于91e759b449c4511dc96d86539ea0eb258754d07e；2026-10-19续核contract.go/exec/engine.go已有Subscription注册与Authorize导出开发，实际diff已读，更新in_progress。执行器活动未核实，无业务提交/PR/head/merge/CI。
 - 规划记录复用 `docs/plan-newsnow-feed`、`/Users/oo/project/newwei-plan-newsnow-feed` 和 [Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)正常增量发布，保留原 NewsNow 认领；本轮发布提交/head/CI在后续交接追加，不以此前该 PR 绿灯代替新 head。
 - 首次四订阅认领/完整提示词发布提交 `1ee329a21beede567c0e86977d08a4fa8a6c0338` 已正常推送到该PR，GitHub确认OPEN/非Draft。后续交接文档提交不改变任务范围；普通CI以最终PR head实时结果为准，当前未确认本轮CI完成，不借用旧head或main成功。
 - 来源 BL-21 的 GraphQL 子链，关联 GAP-LEGACY-001 / GAP-ASYNC-001；不领取 Socket.IO/业务 producer/worker/cron。

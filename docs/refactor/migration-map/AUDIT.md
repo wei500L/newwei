@@ -54,6 +54,8 @@
 
 ## items
 
+2026-10-19 ITEMS-INGEST-001限定深读，main91e759b449c4511dc96d86539ea0eb258754d07e：ItemsController/DTO/Resolver/模型、ItemsService写、ItemsIngest与RawOutbox全方法、NormalizedNewsPayload/RawItem Mongoose/URL hook、SQL schema/index、CrawlTask导入/开关/视图、Queue.enqueueItem/stableID/组织计数Lua/retention；Go hydration/store/选择集投影/模型权限、机器令牌/鉴权与main/config/生命周期/现CI。确认GAP-ITEMS-001：Go hydration误用completed-only窄快照，Nest为最新任意状态完整快照；补偿按item先组织前50后过滤也遮挡当前item。raw consumer与native BullMQ producer完整边界见task。Nest链相对地图3cedce9a无业务变化，Go列表等已合但无这些写/consumer；仅读#94实际共享diff及其traceId续改。未重审其他items/crawl/worker或实跑DB/Redis/Mongo/外部/部署，不把旧未核项整体改已审。
+
 - **RSS翻译完整候选限定深读 / main90765633，2026-10-18**：Nest DTO/SDL/Model/Resolver、ItemsRssTranslationService全执行分支，SituationMonitorTranslationService的RSS内层缓存/HTTP/重试/语言检测，situation设置runtime，LiteLlm双协议/format/guardrail/模型fallback/日志及active治理；Go status/config/cache、publicportal配置/协议与brief边界、llmlogs强类型/policy、classificationrssops指标读及GraphQL生产装配。确认GAP-RSS-001窄投影污染完整profile缓存；计划数据库侧最新记录分组。未实跑DeepLX/fallback/LLM/数据库或全部网关兼容组合，不扩大其他条目写/流水线审查。#81实际completion.go helper重命名和#84 csvexport隔离已核。
 
 - **2026-10-18完整items候选深读，main9d0462e1**：Nest items resolver/DTO/分页/游标、ItemsListService个性化与特征、ItemsSearchService相关性/rerank/highlights、helpers/shared权重、ScopedItemsReadingLoader绑定；Go现有REST/GraphQL单条模型/批量store/召回、newsbehavior画像与llmembed接口已读。确认REST仅RECENCY、显式filters:{}优先于历史filters、相关性失败503、个性化候选窗口增长及两种cursor优先级，不能泛化合并。Context暂无选择元数据，计划最小只读扩展以省count/result并批量投影，不重写engine。ITEMS-LIST-001 reserved，未实施；实网/运行/全DTO组合未验证，其他items写/后台范围不扩大。

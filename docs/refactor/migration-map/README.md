@@ -1,5 +1,7 @@
 # 后端迁移地图
 
+2026-10-19条目入库选批：main仍91e759b449c4511dc96d86539ea0eb258754d07e/普通CI39247556593成功；审计#92仍OPEN，NewsNow已Ready #94（headb33cc1ea、普通CI39296327154运行中），四订阅已有contract/exec开发/in_progress，均继续占用。新认领[ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) reserved，[完整提示词](tasks/ITEMS-INGEST-001.prompt.md)在Ready规划#93发布：1HTTP+5Mutation、原文/读模型/原子BullMQ producer与raw_item同步/定时补偿，Nest流水线worker保留。仅本候选深读，登记hydration具体GAP-ITEMS-001，不重建地图或把未合PR计main。
+
 2026-10-19四订阅选批：fetch后main仍`91e759b449c4511dc96d86539ea0eb258754d07e`、普通CI39247556593成功，无新业务合并；审计Ready #92仍OPEN/head28c8f761，NewsNow工作区已有main/config/新业务包及Nest来源relay开发，状态in_progress、无业务PR，均保持占用。新增[GRAPHQL-SUBSCRIPTIONS-001](tasks/GRAPHQL-SUBSCRIPTIONS-001.md) reserved及[完整执行提示词](tasks/GRAPHQL-SUBSCRIPTIONS-001.prompt.md)，复用[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布。只迁四个Subscription完整WebSocket执行/投影、三通道PubSub和itemPipeline广播观察链，以及同连接非本批operation整份legacy兼容；Socket.IO/producer/worker/cron不认领。仅限定深读相关源码及两批共享diff，不重建地图或增加main注册数；下方旧快照不覆盖本增量。
 
 2026-10-19本次继续选批：最新main `91e759b449c4511dc96d86539ea0eb258754d07e`，相对c70b0373仅合入上批规划#91，未新增业务实现；[普通CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)精确head成功。审计实现[Ready #92](https://github.com/wei500L/newwei/pull/92) OPEN/head28c8f761a2ce4a447080414f154b567648cc6bd1，普通CI39248452603成功，范围继续占用，不能提前记main已消费。仅读其真实共享接线diff，没有重审审计业务。

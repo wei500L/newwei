@@ -6,15 +6,25 @@
 
 | ID | 性质 / 所属域 | 影响范围 | 状态 / 归属 |
 |---|---|---|---|
+| GAP-ITEMS-001 | 部分实现/水合；items | Go读模型水合只取completed窄快照，丢最新pending/failed及必要字段 | ITEMS-INGEST-001 reserved，main91e759b4静态确认，未修/未运行验证 |
 | GAP-RSS-001 | 部分实现/共享缓存；items | rssTranslationStatus在LLM profile缓存miss后覆盖完整缓存字段 | RSS-TRANSLATION-001 reserved，main缺口开放；只修本链写回 |
 | GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | SOURCE-POLICY-WRITE-001认领main90765633仍缺的路由/无效DSN两处条件；主体仍merged，缺口仍开放 |
 | GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | NEWS-BRIEF-001 pr_open（候选实现，未合 main）；缺口仍开放 |
 | GAP-CRAWL-001 | 部分实现；crawl | 媒体下发及已有REST/GraphQL详情的 S3 URL分支 | STORAGE-MEDIA-001 pr_open（候选实现，未合 main）；缺口仍开放 |
-| GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 2026-10-19限定增量：四Subscription由GRAPHQL-SUBSCRIPTIONS-001 reserved，NewsNow两来源HTTP已in_progress；其他入口合并/占用按任务索引，不据旧快照重发 |
-| GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | digest经#89入main；审计消费者#92 pr_open；四Subscription由GRAPHQL-SUBSCRIPTIONS-001 reserved（main仍Nest）；其他链/Socket.IO不认领，不关闭整个缺口 |
+| GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 四Subscription in_progress；NewsNow两来源HTTP pr_open/#94；条目写/采集入库六入口ITEMS-INGEST-001 reserved；其他按任务索引，不据旧快照重发 |
+| GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | digest经#89入main；审计#92 pr_open；四Subscription in_progress；raw_item补偿/窄producer由ITEMS-INGEST-001 reserved，itemPipeline worker/Socket.IO继续Nest，不关闭整个缺口 |
 | GAP-KG-001 | 部分实现；knowledge | 已迁证据复核队列的固定候选遮挡 | main90765633限定确认；KNOWLEDGE-REVIEW-001 pr_open（#86，head4d6d24b8，随本批整合），缺口仍开放 |
 
 “未迁移”是范围事实，不表示 Nest 有 bug；“缺少外部运行证据”不单独计为源码缺陷。当前没有因本轮文档维护而关闭的业务缺口。
+
+<a id="gap-items-001"></a>
+
+## GAP-ITEMS-001 · 水合快照误用已完成数据读取
+
+- 2026-10-19限定核对main `91e759b449c4511dc96d86539ea0eb258754d07e`，触发已有itemreadmodels水合/新写后刷新；不推断生产已发生故障。
+- Go `apps/api-go/internal/itemsreading/readmodel.go:loadProcessedSnapshots` 调用 `mongo.go:ListLatestProcessedSnapshots`，后者where固定status=completed，投影不含rawItemId/error/llm/updatedAt等水合字段。Nest `ItemsReadModelService.loadProcessedReadModelSnapshots/buildLatestItemSnapshotPipeline` 在org+item IDs内按createdAt DESC,_id DESC取最新任意状态及完整snapshot，没有completed过滤。
+- 影响：最新pending/failed可能缺失或旧completed替代最新运行状态；仅导出Go私有hydration helper不能完成写后读模型契约。搜索/RSS取completed本身不是此缺口，不改它们的语义。
+- [ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) reserved，仅认领hydration专用Mongo聚合/全snapshot、组织和raw双向绑定/缺snapshot unset及新写链调用。允许readmodel.go与独立hydration store/port，不重建全库read-model、不新增后台回填；状态未修，无关闭证据。关闭需实际main实现/对应head验证与最新状态case，生产启用另记。
 
 <a id="gap-kg-001"></a>
 
@@ -91,6 +101,8 @@
 <a id="gap-async-001"></a>
 
 ## GAP-ASYNC-001 · 已迁读取背后的 Nest 执行所有权
+
+2026-10-19条目入库限定增量（main91e759b4）：[ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) reserved，含raw_item消费者/后台owner与itemPipeline native producer、读模型刷新；完整[提示词](tasks/ITEMS-INGEST-001.prompt.md)已保存。当前main仍由Nest投递/补偿；新任务不迁itemPipeline worker、processed_item/其他Outbox或Socket.IO，不因这条认领关闭本跨域GAP。
 
 2026-10-19四订阅限定增量（main91e759b4）：[GRAPHQL-SUBSCRIPTIONS-001](tasks/GRAPHQL-SUBSCRIPTIONS-001.md) reserved，[完整提示词](tasks/GRAPHQL-SUBSCRIPTIONS-001.prompt.md)已保存于Ready规划#93；四Subscription executor/upgrade在main仍Nest。只规划传输/事件投影、三域Redis订阅与itemPipeline广播观察及终态组织上下文，不迁入队/业务worker/Socket.IO，不关闭本跨域GAP。审计#92 OPEN/CI成功但未入main，NewsNow已in_progress；缺口/部署仍分别核实，不从本次规划增加完成数。
 

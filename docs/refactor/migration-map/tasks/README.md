@@ -1,5 +1,7 @@
 # 任务认领与历史恢复索引
 
+2026-10-19条目写/入库规划：main仍91e759b449c4511dc96d86539ea0eb258754d07e，普通CI39247556593成功。审计Ready #92 OPEN/head28c8f761不变；NewsNow已Ready #94 OPEN/headb33cc1eab4dd56d08e9a802a2670d363a3227462，普通CI39296327154运行中，核心/共享实际diff已核；四订阅worktree在91e759b4已有contract/exec业务增量，in_progress，无业务PR。新增[ITEMS-INGEST-001](ITEMS-INGEST-001.md) reserved及[完整提示词](ITEMS-INGEST-001.prompt.md)，复用Ready规划#93；只领取本完整链与raw_item补偿，不改四订阅contract/exec或其他Outbox。#93旧head c4ae295c普通CI39293839565成功，本轮新head另查。
+
 2026-10-19四订阅规划刷新：origin/main仍`91e759b449c4511dc96d86539ea0eb258754d07e`，[普通CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)精确head成功。Ready审计[#92](https://github.com/wei500L/newwei/pull/92) OPEN/head28c8f761a2ce4a447080414f154b567648cc6bd1，普通CI39248452603成功；NEWSNOW-SOURCES-001已有main/config/核心包/来源relay开发，in_progress，无业务PR。新增[GRAPHQL-SUBSCRIPTIONS-001](GRAPHQL-SUBSCRIPTIONS-001.md) reserved：[提示词](GRAPHQL-SUBSCRIPTIONS-001.prompt.md)与原NewsNow规划共同在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布；本轮只更新相关占用/深读记录，不启动业务，#93旧head a92d0cab的普通CI39254495422成功不能代替追加后的head。下方各次旧快照按日期理解，状态以本段和表为准。
 
 2026-10-19本次继续选批：最新main `91e759b449c4511dc96d86539ea0eb258754d07e`，相对c70b0373仅合入上批规划#91，未新增业务实现；[普通CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)精确head成功。审计实现[Ready #92](https://github.com/wei500L/newwei/pull/92) OPEN/head28c8f761a2ce4a447080414f154b567648cc6bd1，普通CI39248452603成功，范围继续占用，不能提前记main已消费。仅读其真实共享接线diff，没有重审审计业务。
@@ -44,8 +46,9 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 | ID | 状态 | 精确范围 | 是否已有业务 PR / 推送 |
 |---|---|---|---|
-| [GRAPHQL-SUBSCRIPTIONS-001](GRAPHQL-SUBSCRIPTIONS-001.md) | reserved | 四个Subscription完整WS协议/鉴权/组织投影、PubSub和BullMQ广播观察、非本批operation整份legacy兼容 | 提示词在Ready规划#93发出；业务分支/worktree未创建，无业务PR |
-| [NEWSNOW-SOURCES-001](NEWSNOW-SOURCES-001.md) | in_progress | 两公开来源HTTP完整冷获取/强刷；64来源ID/41族、特殊getter/缓存/凭据/实时接缝与批并发优化 | worktree在main91e759b4已有核心包、main/config/Nest来源relay开发，尚无业务提交/PR；Nest预热/推荐/热点分析不认领 |
+| [ITEMS-INGEST-001](ITEMS-INGEST-001.md) | reserved | 1HTTP+5Mutation：人工条目写/采集入库、Mongo/水合/原子BullMQ producer与raw_item同步/定时补偿 | 提示词在Ready规划#93发出，业务目录/PR未创建；Nest处理worker保持 |
+| [GRAPHQL-SUBSCRIPTIONS-001](GRAPHQL-SUBSCRIPTIONS-001.md) | in_progress | 四个Subscription完整WS协议/鉴权/组织投影、PubSub和BullMQ广播观察、非本批operation整份legacy兼容 | worktree在main91e759b4已有Subscription注册/exec开发，无业务PR；contract/exec占用保持 |
+| [NEWSNOW-SOURCES-001](NEWSNOW-SOURCES-001.md) | pr_open | 两公开来源HTTP完整冷获取/强刷；64来源ID/41族、特殊getter/缓存/凭据/实时接缝与批并发优化 | Ready #94 OPEN/headb33cc1ea，普通CI39296327154运行中；实际diff续核，无main合并/部署证据 |
 | [AUDIT-OUTBOX-001](AUDIT-OUTBOX-001.md) | pr_open | 审计Outbox完整消费、三状态扫描/租约/退避/落库与轻字段优化 | Ready #92 OPEN，head28c8f761a2ce4a447080414f154b567648cc6bd1；普通CI39248452603 success，真实共享接线diff已核；尚未合main，继续占用 |
 | [RSS-TRANSLATION-001](RSS-TRANSLATION-001.md) | merged | RSS翻译Mutation完整双provider/正文分块/缓存/指标日志；修状态共享缓存投影写回 | 经#90实际merge c70b0373990ab931758f7a000511c2d34572fc33；原#88 head d4117032，main祖先；普通CI39163544617成功，非生产启用证据 |
 | [DIGEST-DELIVERY-001](DIGEST-DELIVERY-001.md) | merged | 摘要定时投递：Cron、到期CAS、SMTP、状态和摘要通知桥 | 经#89实际merge f1167769f8c1d90017a6105cc65f135741ea47a1；原#87 head 2b0da7ec，main祖先；CI39163544617成功；审计outbox消费仍Nest |
