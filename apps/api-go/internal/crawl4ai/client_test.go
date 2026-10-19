@@ -236,9 +236,13 @@ func TestCrawlProbesHealthAgainAfterTTL(t *testing.T) {
 	}
 }
 
+// timeoutTransport answers /health and times out the /crawl call.
 type timeoutTransport struct{}
 
-func (timeoutTransport) RoundTrip(*http.Request) (*http.Response, error) {
+func (timeoutTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if strings.HasSuffix(request.URL.Path, "/health") {
+		return jsonResponse(http.StatusOK, `{}`), nil
+	}
 	return nil, &timeoutError{}
 }
 
@@ -450,7 +454,7 @@ func TestEnsureHealthyReportsServiceFailure(t *testing.T) {
 	if err == nil || err.Error() != "crawl4ai health check failed" {
 		t.Fatalf("err = %v", err)
 	}
-	if !client.healthChecked() {
+	if client.healthChecked() {
 		t.Fatal("a failed probe must not be cached as healthy")
 	}
 }

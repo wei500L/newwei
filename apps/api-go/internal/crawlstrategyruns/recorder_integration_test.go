@@ -149,7 +149,7 @@ func ensureIntegrationSchema(t *testing.T, db *sql.DB) {
 // database can host the other integration packages at the same time.
 func cleanupIntegrationRows(t *testing.T, db *sql.DB) {
 	t.Helper()
-	for _, statement := range []string{
+	multiTable := []string{
 		`DELETE t FROM CrawlStrategyWorkflowRunCandidateTrace t
 		   JOIN CrawlStrategyWorkflowRunCandidate c ON c.id = t.candidateId
 		   JOIN CrawlStrategyWorkflowRun r ON r.id = c.runId
@@ -163,20 +163,18 @@ func cleanupIntegrationRows(t *testing.T, db *sql.DB) {
 		`DELETE e FROM CrawlStrategyWorkflowRunEvent e
 		   JOIN CrawlStrategyWorkflowRun r ON r.id = e.runId
 		  WHERE r.orgId IN (?, ?)`,
-		"CrawlStrategyWorkflowRun",
-		"CrawlFrontierRun",
-		"PipelineJob",
-		"Article",
-		"NewsSource",
-		"CrawlTemplate",
-		"CrawlStrategyWorkflowVersion",
-		"CrawlStrategyWorkflow",
-	} {
-		if strings.HasPrefix(statement, "DELETE ") && !strings.Contains(statement, " WHERE ") {
-			statement += " WHERE orgId IN (?, ?)"
-		}
+	}
+	for _, statement := range multiTable {
 		if _, err := db.Exec(statement, integrationOrgID, integrationOtherOrgID); err != nil {
-			t.Fatalf("cleanup %s: %v", statement, err)
+			t.Fatalf("cleanup: %v", err)
+		}
+	}
+	for _, table := range []string{
+		"CrawlStrategyWorkflowRun", "CrawlFrontierRun", "PipelineJob", "Article",
+		"NewsSource", "CrawlTemplate", "CrawlStrategyWorkflowVersion", "CrawlStrategyWorkflow",
+	} {
+		if _, err := db.Exec("DELETE FROM "+table+" WHERE orgId IN (?, ?)", integrationOrgID, integrationOtherOrgID); err != nil {
+			t.Fatalf("cleanup %s: %v", table, err)
 		}
 	}
 }

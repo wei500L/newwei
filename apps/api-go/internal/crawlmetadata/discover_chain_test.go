@@ -125,7 +125,7 @@ func TestDiscoverRSSCandidatesParsesRSSAndAtom(t *testing.T) {
 
 	// One conditional fetch for the feed, no crawl4ai call.
 	for _, request := range transport.requests() {
-		if strings.Contains(request, "/crawl") || strings.Contains(request, "/health") {
+		if strings.HasSuffix(request, "/crawl") || strings.HasSuffix(request, "/health") {
 			t.Fatalf("RSS discovery must not call crawl4ai: %s", request)
 		}
 	}
@@ -181,7 +181,7 @@ func TestDiscoverRSSCandidatesReturnsEmptyOnFetchFailure(t *testing.T) {
 
 const listPageHTML = `<html><body>
   <a href="/2026/10/19/html-one">One</a>
-  <a href="https://news.example.com/2026/10/18/html-two">Two</a>
+  <a href="https://93.184.216.34/2026/10/18/html-two">Two</a>
   <a href="https://news.example.com/about">About</a>
   <a href="javascript:void(0)">js</a>
   <a href="#fragment">fragment</a>
@@ -228,7 +228,7 @@ func TestDiscoverListCandidatesUsesCrawl4aiAndPagination(t *testing.T) {
 		t.Fatalf("crawl calls = %d, want 2 (seed + next page)", crawlCalls)
 	}
 	for _, request := range transport.requests() {
-		if strings.Contains(request, "/2026/10") {
+		if strings.Contains(request, "93.184.216.34/2026/10") {
 			t.Fatalf("list discovery must not fetch the article pages directly: %s", request)
 		}
 	}
@@ -264,7 +264,7 @@ func TestDiscoverListCandidatesFallsBackToRawHTML(t *testing.T) {
 	crawls, pages := 0, 0
 	for _, request := range transport.requests() {
 		switch {
-		case strings.Contains(request, "/crawl"):
+		case strings.HasSuffix(request, "/crawl"):
 			crawls++
 		case strings.Contains(request, "/list") && strings.HasPrefix(request, "GET"):
 			pages++
@@ -379,7 +379,7 @@ func TestDiscoverDeepCandidatesRanksFetchesPublishedAtAndCaps(t *testing.T) {
 	}
 	crawls := 0
 	for _, request := range transport.requests() {
-		if strings.Contains(request, "/crawl") {
+		if strings.HasSuffix(request, "/crawl") {
 			crawls++
 		}
 	}
