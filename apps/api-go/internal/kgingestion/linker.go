@@ -368,7 +368,7 @@ func (l *Linker) chooseEntityID(
 		userParts = append(userParts, "- "+candidate.id+": "+candidate.name+" ("+candidate.typ+")")
 	}
 
-	response, err := l.completer.Complete(ctx, publicportal.KGCompletionRequest{
+	response, err := l.completer.KGComplete(ctx, publicportal.KGCompletionRequest{
 		OrgID:      orgID,
 		System:     system,
 		User:       strings.Join(userParts, "\n"),

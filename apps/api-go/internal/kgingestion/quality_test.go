@@ -21,7 +21,7 @@ type fakeCompleter struct {
 	requests    []publicportal.KGCompletionRequest
 }
 
-func (c *fakeCompleter) Models(context.Context) ([]string, error) {
+func (c *fakeCompleter) KGModels(context.Context) ([]string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.modelsCalls++
@@ -31,7 +31,7 @@ func (c *fakeCompleter) Models(context.Context) ([]string, error) {
 	return append([]string(nil), c.models...), nil
 }
 
-func (c *fakeCompleter) Complete(_ context.Context, req publicportal.KGCompletionRequest) (publicportal.KGCompletionResult, error) {
+func (c *fakeCompleter) KGComplete(_ context.Context, req publicportal.KGCompletionRequest) (publicportal.KGCompletionResult, error) {
 	c.mu.Lock()
 	c.requests = append(c.requests, req)
 	complete := c.completeFn

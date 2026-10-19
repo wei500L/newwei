@@ -102,10 +102,10 @@ type KGCompletionResult struct {
 // KGCompleter is the exported knowledge-graph completion surface reused by the
 // ingestion quality and disambiguation paths.
 type KGCompleter interface {
-	// Models returns the primary model plus the configured fallback models,
+	// KGModels returns the primary model plus the configured fallback models,
 	// trimmed and deduplicated in order.
-	Models(ctx context.Context) ([]string, error)
-	Complete(ctx context.Context, req KGCompletionRequest) (KGCompletionResult, error)
+	KGModels(ctx context.Context) ([]string, error)
+	KGComplete(ctx context.Context, req KGCompletionRequest) (KGCompletionResult, error)
 }
 
 // NewKGCompleter builds the production knowledge-graph completer over the
@@ -121,11 +121,11 @@ func NewKGCompleter(settings BriefSettingsReader, env GatewayEnv) KGCompleter {
 // unavailableKGCompleter reports a missing settings reader instead of panicking.
 type unavailableKGCompleter struct{}
 
-func (unavailableKGCompleter) Models(context.Context) ([]string, error) {
+func (unavailableKGCompleter) KGModels(context.Context) ([]string, error) {
 	return nil, errors.New("completion model is not configured")
 }
 
-func (unavailableKGCompleter) Complete(context.Context, KGCompletionRequest) (KGCompletionResult, error) {
+func (unavailableKGCompleter) KGComplete(context.Context, KGCompletionRequest) (KGCompletionResult, error) {
 	return KGCompletionResult{}, errors.New("completion model is not configured")
 }
 
@@ -153,9 +153,9 @@ const KGEntityDisambiguationSchema = `{"type":"object","properties":{"entityId":
 // completion loop must not paper over it with another model.
 var errKGContentBlocked = errors.New("model gateway blocked the request by guardrails")
 
-// Models resolves the active completion profile and returns the primary model
+// KGModels resolves the active completion profile and returns the primary model
 // followed by the configured fallback models.
-func (g *gatewayClient) Models(ctx context.Context) ([]string, error) {
+func (g *gatewayClient) KGModels(ctx context.Context) ([]string, error) {
 	profiles, governance, err := g.store.GatewaySettings(ctx)
 	if err != nil {
 		return nil, err
@@ -167,10 +167,10 @@ func (g *gatewayClient) Models(ctx context.Context) ([]string, error) {
 	return uniqueModels(append([]string{profile.Model}, profile.FallbackModels...)), nil
 }
 
-// Complete walks the requested model followed by the configured fallback
+// KGComplete walks the requested model followed by the configured fallback
 // models and performs the configured attempts per model. observer, when not
 // nil, receives one record per real attempt.
-func (g *gatewayClient) Complete(ctx context.Context, req KGCompletionRequest) (KGCompletionResult, error) {
+func (g *gatewayClient) KGComplete(ctx context.Context, req KGCompletionRequest) (KGCompletionResult, error) {
 	profiles, governance, err := g.store.GatewaySettings(ctx)
 	if err != nil {
 		return KGCompletionResult{}, err

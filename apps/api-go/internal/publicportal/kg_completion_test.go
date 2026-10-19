@@ -46,18 +46,18 @@ func profilesJSON(t *testing.T, apiBase string, extra map[string]any) []byte {
 	return encoded
 }
 
-type recordingObserver struct {
+type kgRecordingObserver struct {
 	mu       sync.Mutex
 	attempts []KGCompletionAttempt
 }
 
-func (o *recordingObserver) ObserveKGCompletionAttempt(_ context.Context, attempt KGCompletionAttempt) {
+func (o *kgRecordingObserver) ObserveKGCompletionAttempt(_ context.Context, attempt KGCompletionAttempt) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.attempts = append(o.attempts, attempt)
 }
 
-func (o *recordingObserver) captured() []KGCompletionAttempt {
+func (o *kgRecordingObserver) captured() []KGCompletionAttempt {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return append([]KGCompletionAttempt(nil), o.attempts...)
@@ -77,9 +77,9 @@ func TestKGCompletionChatRequestShapeAndResult(t *testing.T) {
 	}))
 	defer server.Close()
 
-	observer := &recordingObserver{}
+	observer := &kgRecordingObserver{}
 	completer := NewKGCompleter(fakeGatewaySettings{profiles: profilesJSON(t, server.URL, nil)}, GatewayEnv{})
-	result, err := completer.Complete(context.Background(), KGCompletionRequest{
+	result, err := completer.KGComplete(context.Background(), KGCompletionRequest{
 		OrgID:      "org",
 		Model:      "primary",
 		System:     "system",
@@ -152,9 +152,9 @@ func TestKGCompletionFallsBackToNextModel(t *testing.T) {
 	}))
 	defer server.Close()
 
-	observer := &recordingObserver{}
+	observer := &kgRecordingObserver{}
 	completer := NewKGCompleter(fakeGatewaySettings{profiles: profilesJSON(t, server.URL, nil)}, GatewayEnv{})
-	result, err := completer.Complete(context.Background(), KGCompletionRequest{
+	result, err := completer.KGComplete(context.Background(), KGCompletionRequest{
 		OrgID:      "org",
 		Model:      "primary",
 		SchemaName: "kg_relation_validation",
@@ -189,9 +189,9 @@ func TestKGCompletionStopsOnGuardrailBlock(t *testing.T) {
 	}))
 	defer server.Close()
 
-	observer := &recordingObserver{}
+	observer := &kgRecordingObserver{}
 	completer := NewKGCompleter(fakeGatewaySettings{profiles: profilesJSON(t, server.URL, nil)}, GatewayEnv{})
-	_, err := completer.Complete(context.Background(), KGCompletionRequest{
+	_, err := completer.KGComplete(context.Background(), KGCompletionRequest{
 		OrgID:      "org",
 		Model:      "primary",
 		SchemaName: "kg_relation_validation",
@@ -223,7 +223,7 @@ func TestKGCompletionResponsesSurface(t *testing.T) {
 	defer server.Close()
 
 	completer := NewKGCompleter(fakeGatewaySettings{profiles: profilesJSON(t, server.URL, map[string]any{"apiSurface": "responses"})}, GatewayEnv{})
-	result, err := completer.Complete(context.Background(), KGCompletionRequest{
+	result, err := completer.KGComplete(context.Background(), KGCompletionRequest{
 		OrgID:      "org",
 		Model:      "primary",
 		System:     "system",
@@ -259,7 +259,7 @@ func TestKGCompletionResponsesSurface(t *testing.T) {
 
 func TestKGCompletionModels(t *testing.T) {
 	completer := NewKGCompleter(fakeGatewaySettings{profiles: profilesJSON(t, "http://127.0.0.1:1", nil)}, GatewayEnv{})
-	models, err := completer.Models(context.Background())
+	models, err := completer.KGModels(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestKGCompletionModels(t *testing.T) {
 
 func TestKGCompletionWithoutProfileFails(t *testing.T) {
 	completer := NewKGCompleter(fakeGatewaySettings{}, GatewayEnv{})
-	_, err := completer.Complete(context.Background(), KGCompletionRequest{OrgID: "org", SchemaName: "kg_relation_validation"})
+	_, err := completer.KGComplete(context.Background(), KGCompletionRequest{OrgID: "org", SchemaName: "kg_relation_validation"})
 	if err == nil {
 		t.Fatal("expected configuration error")
 	}
@@ -283,9 +283,9 @@ func TestKGCompletionTimeoutOverride(t *testing.T) {
 	}))
 	defer server.Close()
 
-	observer := &recordingObserver{}
+	observer := &kgRecordingObserver{}
 	completer := NewKGCompleter(fakeGatewaySettings{profiles: profilesJSON(t, server.URL, nil)}, GatewayEnv{TimeoutMs: 60_000})
-	_, err := completer.Complete(context.Background(), KGCompletionRequest{
+	_, err := completer.KGComplete(context.Background(), KGCompletionRequest{
 		OrgID:      "org",
 		Model:      "primary",
 		SchemaName: "kg_relation_validation",

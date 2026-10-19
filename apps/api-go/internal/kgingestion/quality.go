@@ -160,7 +160,7 @@ func (q *Quality) resolveValidationModels(ctx context.Context, settings Settings
 	if q.completer == nil {
 		return nil
 	}
-	models, err := q.completer.Models(ctx)
+	models, err := q.completer.KGModels(ctx)
 	if err != nil {
 		q.warn("failed to resolve validation models from LiteLLM config", err)
 		return nil
@@ -344,7 +344,7 @@ func (q *Quality) callValidationModel(
 		result.err = errCompleterUnavailable
 		return result
 	}
-	response, err := q.completer.Complete(ctx, publicportal.KGCompletionRequest{
+	response, err := q.completer.KGComplete(ctx, publicportal.KGCompletionRequest{
 		OrgID:      input.OrgID,
 		Model:      model,
 		System:     system,
