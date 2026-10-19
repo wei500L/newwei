@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { AuthModule } from "../auth/auth.module";
 
+import { AnalysisNotificationSubscriber } from "./analysis-notification.subscriber";
 import { NotificationDispatcher } from "./notification.dispatcher";
 import { NotificationsGateway } from "./notifications.gateway";
 import { NotificationsService } from "./notifications.service";
@@ -14,6 +15,7 @@ import { UserDigestNotificationSubscriber } from "./user-digest-notification.sub
     NotificationsGateway,
     NotificationDispatcher,
     UserDigestNotificationSubscriber,
+    AnalysisNotificationSubscriber,
   ],
   exports: [NotificationsService, NotificationDispatcher]
 })

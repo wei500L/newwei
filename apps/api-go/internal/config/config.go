@@ -961,6 +961,56 @@ const (
 	AnalysisExportModeGo     AnalysisExportMode = "go"
 )
 
+// AnalysisRunsMode controls the three analysis run Mutations migrated by this
+// unit (API_GO_ANALYSIS_RUNS_MODE):
+//
+//	requestCorrelationAnalysis
+//	requestAnomalyExplanation
+//	requestGeoTransportAnalysis
+//
+// It owns only those three roots and is independent of the GraphQL read switch,
+// the analysis CSV export switch and the three collaboration HTTP switches. The
+// empty value behaves like legacy. Go mode verifies JWTs, re-derives the
+// organization from MySQL membership, inserts the pending result into Mongo and
+// adds the BullMQ job to Redis. It does not claim that a worker is running: the
+// separate API_GO_ANALYSIS_WORKER_MODE owns consumption.
+type AnalysisRunsMode string
+
+const (
+	AnalysisRunsModeLegacy AnalysisRunsMode = "legacy"
+	AnalysisRunsModeGo     AnalysisRunsMode = "go"
+)
+
+// AnalysisWorkerMode controls the owner of the analysis BullMQ consumer
+// (API_GO_ANALYSIS_WORKER_MODE). The empty value behaves like legacy, which
+// keeps the NestJS AnalysisProcessor. In go mode the NestJS processor returns
+// before creating its Worker and this process consumes the same queue, so it
+// can process jobs produced by the legacy NestJS mutations as well.
+//
+// The worker needs MySQL, Redis, Mongo and GRAPHQL_SUBSCRIPTION_BUS=redis, but
+// no JWT_SECRET and no GraphQL read/write switch. BULLMQ_WORKERS_ENABLED=false
+// still disables consumption on both sides.
+type AnalysisWorkerMode string
+
+const (
+	AnalysisWorkerModeLegacy AnalysisWorkerMode = "legacy"
+	AnalysisWorkerModeGo     AnalysisWorkerMode = "go"
+)
+
+// AnalysisPromptOverrides carries the six ANALYSIS_PROMPT_* overrides. A nil
+// pointer means the variable is absent and the package default is used; a
+// non-nil pointer is the configured value verbatim, including the empty string.
+// NestJS reads these through ConfigService's process.env fallback (they are not
+// in the env schema), and `??` treats only null/undefined as absent.
+type AnalysisPromptOverrides struct {
+	CorrelationSystem  *string
+	CorrelationUser    *string
+	AnomalySystem      *string
+	AnomalyUser        *string
+	GeoTransportSystem *string
+	GeoTransportUser   *string
+}
+
 // AuthFactorsMode controls the seven authenticated MFA management and
 // organization OIDC configuration HTTP routes migrated by this unit
 // (API_GO_AUTH_FACTORS_MODE).
@@ -1219,6 +1269,33 @@ type Config struct {
 	// the item reading and news-event readers but builds its own instances and
 	// requires JWT, MySQL, Redis and Mongo.
 	AnalysisExportMode AnalysisExportMode
+	// AnalysisRunsMode gates the three analysis run Mutations. It is
+	// independent of the GraphQL read switch and requires JWT, MySQL, Redis and
+	// Mongo in go mode.
+	AnalysisRunsMode AnalysisRunsMode
+	// AnalysisWorkerMode moves the analysis queue consumer from NestJS to this
+	// process. It requires MySQL, Redis, Mongo and the Redis subscription bus,
+	// but no JWT.
+	AnalysisWorkerMode AnalysisWorkerMode
+	// AnalysisQueueConcurrency, AnalysisMaxRetries, AnalysisPrompts,
+	// AnalysisLLMTimeoutMs and the two stream flush bounds are the effective
+	// NestJS analysisConfig values. Only concurrency, retries and the
+	// auto-trigger flag are validated by the NestJS env schema; the prompt,
+	// timeout and flush variables are read through ConfigService's process.env
+	// fallback, so Go reads the same environment with the same defaults.
+	AnalysisQueueConcurrency int
+	AnalysisMaxRetries       int
+	AnalysisPrompts          AnalysisPromptOverrides
+	AnalysisLLMTimeoutMs     int
+	AnalysisStreamFlushChars int
+	AnalysisStreamFlushMs    int
+	// BullMQWorkersEnabled is the existing shared boolean. False disables the
+	// analysis consumer on both NestJS and Go; it is not a queue-owner switch.
+	BullMQWorkersEnabled bool
+	// GraphQLSubscriptionBus is the existing GRAPHQL_SUBSCRIPTION_BUS value.
+	// The Go analysis worker requires "redis" because it publishes the same
+	// gqlsub:analysisEvents envelope the NestJS bus consumes.
+	GraphQLSubscriptionBus string
 	// GraphQLReadMode 控制精确 /graphql 的已迁移 query。默认 legacy。
 	// go 只执行本轮 16 个 query；mutation、subscription、未迁移 query 仍代理 NestJS。
 	GraphQLReadMode string
@@ -1801,6 +1878,14 @@ type Config struct {
 
 // Load 从 getenv 读取并校验配置。
 func Load(getenv func(string) string) (Config, error) {
+	return load(getenv, nil)
+}
+
+// load is the shared implementation. lookup, when non-nil, distinguishes an
+// absent environment variable from one configured as the empty string; the
+// six ANALYSIS_PROMPT_* overrides use that distinction because NestJS `??`
+// only falls back when the variable is undefined.
+func load(getenv func(string) string, lookup func(string) (string, bool)) (Config, error) {
 	var errs []string
 
 	cfg := Config{
@@ -2035,6 +2120,24 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AnalysisExportMode = AnalysisExportModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_EXPORT_MODE must be one of legacy|go, got "+strconv.Quote(analysisExportRaw))
+	}
+	analysisRunsRaw := strings.TrimSpace(getenv("API_GO_ANALYSIS_RUNS_MODE"))
+	switch analysisRunsRaw {
+	case "", string(AnalysisRunsModeLegacy):
+		cfg.AnalysisRunsMode = AnalysisRunsModeLegacy
+	case string(AnalysisRunsModeGo):
+		cfg.AnalysisRunsMode = AnalysisRunsModeGo
+	default:
+		errs = append(errs, "API_GO_ANALYSIS_RUNS_MODE must be one of legacy|go, got "+strconv.Quote(analysisRunsRaw))
+	}
+	analysisWorkerRaw := strings.TrimSpace(getenv("API_GO_ANALYSIS_WORKER_MODE"))
+	switch analysisWorkerRaw {
+	case "", string(AnalysisWorkerModeLegacy):
+		cfg.AnalysisWorkerMode = AnalysisWorkerModeLegacy
+	case string(AnalysisWorkerModeGo):
+		cfg.AnalysisWorkerMode = AnalysisWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_ANALYSIS_WORKER_MODE must be one of legacy|go, got "+strconv.Quote(analysisWorkerRaw))
 	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_MONITORS_MODE")) {
 	case "", string(SituationMonitorsModeLegacy):
@@ -2640,6 +2743,73 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.TranslationFallbackEnabled = boolDefault(getenv("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_ENABLED"), false)
 	cfg.TranslationFallbackBaseURL = strings.TrimRight(strings.TrimSpace(getenv("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL")), "/")
 	cfg.MongoURI = strings.TrimSpace(getenv("MONGO_URI"))
+	// Effective NestJS analysisConfig. ANALYSIS_QUEUE_CONCURRENCY and
+	// ANALYSIS_MAX_RETRIES are validated by the NestJS env schema (positive
+	// integers), so invalid values fail Go startup too. The prompt, timeout and
+	// flush variables are not in that schema; ConfigService reads them from
+	// process.env with the defaults below, which is what Go mirrors.
+	cfg.AnalysisQueueConcurrency = 2
+	if raw := strings.TrimSpace(getenv("ANALYSIS_QUEUE_CONCURRENCY")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, "ANALYSIS_QUEUE_CONCURRENCY must be a positive integer, got "+strconv.Quote(raw))
+		} else {
+			cfg.AnalysisQueueConcurrency = value
+		}
+	}
+	cfg.AnalysisMaxRetries = 3
+	if raw := strings.TrimSpace(getenv("ANALYSIS_MAX_RETRIES")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, "ANALYSIS_MAX_RETRIES must be a positive integer, got "+strconv.Quote(raw))
+		} else {
+			cfg.AnalysisMaxRetries = value
+		}
+	}
+	cfg.AnalysisPrompts = AnalysisPromptOverrides{
+		CorrelationSystem:  promptOverride(getenv, lookup, "ANALYSIS_PROMPT_CORRELATION_SYSTEM"),
+		CorrelationUser:    promptOverride(getenv, lookup, "ANALYSIS_PROMPT_CORRELATION_USER"),
+		AnomalySystem:      promptOverride(getenv, lookup, "ANALYSIS_PROMPT_ANOMALY_SYSTEM"),
+		AnomalyUser:        promptOverride(getenv, lookup, "ANALYSIS_PROMPT_ANOMALY_USER"),
+		GeoTransportSystem: promptOverride(getenv, lookup, "ANALYSIS_PROMPT_GEO_TRANSPORT_SYSTEM"),
+		GeoTransportUser:   promptOverride(getenv, lookup, "ANALYSIS_PROMPT_GEO_TRANSPORT_USER"),
+	}
+	cfg.AnalysisLLMTimeoutMs = 300_000
+	if raw := strings.TrimSpace(getenv("ANALYSIS_LLM_TIMEOUT_MS")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value >= 0 {
+			cfg.AnalysisLLMTimeoutMs = value
+		}
+	}
+	cfg.AnalysisStreamFlushChars = 80
+	if raw := strings.TrimSpace(getenv("ANALYSIS_STREAM_FLUSH_CHARS")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil {
+			if value < 1 {
+				value = 1
+			}
+			cfg.AnalysisStreamFlushChars = value
+		}
+	}
+	cfg.AnalysisStreamFlushMs = 250
+	if raw := strings.TrimSpace(getenv("ANALYSIS_STREAM_FLUSH_MS")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil {
+			if value < 0 {
+				value = 0
+			}
+			cfg.AnalysisStreamFlushMs = value
+		}
+	}
+	cfg.BullMQWorkersEnabled = true
+	if raw := strings.ToLower(strings.TrimSpace(getenv("BULLMQ_WORKERS_ENABLED"))); raw != "" {
+		switch raw {
+		case "true", "1", "yes", "y", "on":
+			cfg.BullMQWorkersEnabled = true
+		case "false", "0", "no", "n", "off":
+			cfg.BullMQWorkersEnabled = false
+		default:
+			errs = append(errs, "BULLMQ_WORKERS_ENABLED must be a boolean, got "+strconv.Quote(raw))
+		}
+	}
+	cfg.GraphQLSubscriptionBus = stringDefault(getenv("GRAPHQL_SUBSCRIPTION_BUS"), "redis")
 	cfg.SettingsEncryptionKey = strings.TrimSpace(getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
 	// 模型接入设置（本批）的原始环境值。这里保留未 trim 的原文：
 	// NestJS 的 env schema 只在「整串为空白」时视为未设置，接受值本身不做
@@ -2985,6 +3155,33 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_ANALYSIS_EXPORT_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_ANALYSIS_EXPORT_MODE=go")
+		}
+	}
+	// The request producer needs JWT (permission and identity), MySQL
+	// (membership re-derivation), Redis (the analysis queue) and Mongo (the
+	// pending analysisresults row).
+	if cfg.AnalysisRunsMode == AnalysisRunsModeGo {
+		appendAuthRequirements(&errs, "API_GO_ANALYSIS_RUNS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ANALYSIS_RUNS_MODE=go")
+		}
+	}
+	// The worker owner needs no JWT: it consumes jobs, computes, streams the
+	// model, writes Mongo/MySQL and publishes the GraphQL subscription event.
+	// The event must reach the existing Redis backplane, so a local bus is not
+	// a valid owner configuration.
+	if cfg.AnalysisWorkerMode == AnalysisWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_ANALYSIS_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_ANALYSIS_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ANALYSIS_WORKER_MODE=go")
+		}
+		if cfg.GraphQLSubscriptionBus != "redis" {
+			errs = append(errs, "GRAPHQL_SUBSCRIPTION_BUS must be redis when API_GO_ANALYSIS_WORKER_MODE=go")
 		}
 	}
 	if cfg.SituationMonitorsMode == SituationMonitorsModeGo {
@@ -3672,6 +3869,24 @@ func intDefault(value string, fallback int) int {
 	return parsed
 }
 
+// promptOverride returns the configured prompt when the variable exists. A nil
+// return means "not configured": the caller uses the package default. The
+// returned pointer may point at the empty string, which is a real override.
+func promptOverride(getenv func(string) string, lookup func(string) (string, bool), key string) *string {
+	if lookup != nil {
+		if value, ok := lookup(key); ok {
+			configured := value
+			return &configured
+		}
+		return nil
+	}
+	if value := getenv(key); value != "" {
+		configured := value
+		return &configured
+	}
+	return nil
+}
+
 func boolDefault(value string, fallback bool) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "true", "1", "yes", "y", "on":
@@ -3685,7 +3900,7 @@ func boolDefault(value string, fallback bool) bool {
 
 // LoadFromOS 是生产入口的便捷封装。
 func LoadFromOS() (Config, error) {
-	return Load(os.Getenv)
+	return load(os.Getenv, os.LookupEnv)
 }
 
 // ReadTimeoutSec 导出给 main 组装 http.Server 使用。

@@ -41,6 +41,28 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The three analysis run Mutations. Empty string behaves like legacy.
+    // Go mode owns only requestCorrelationAnalysis/requestAnomalyExplanation/
+    // requestGeoTransportAnalysis and requires JWT, MySQL, Redis and Mongo.
+    // An invalid value fails Nest startup; Go applies the same rule.
+    API_GO_ANALYSIS_RUNS_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The analysis BullMQ consumer owner. Empty string behaves like legacy
+    // (the NestJS AnalysisProcessor). In go mode the NestJS processor returns
+    // before creating its Worker; the Go process consumes the same queue and
+    // needs GRAPHQL_SUBSCRIPTION_BUS=redis (validated at startup).
+    API_GO_ANALYSIS_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     REDIS_DB: z.coerce.number().int().nonnegative().default(0),
     REDIS_USERNAME: z.string().optional(),
     REDIS_PASSWORD: z.string().optional(),

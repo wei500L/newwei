@@ -10,6 +10,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { NotificationType } from "@prisma/client";
 import type { Queue } from "bullmq";
 import type { PubSubEngine } from "graphql-subscriptions";
+import { randomUUID } from "node:crypto";
 
 import { EnvService } from "../config/config.service";
 import {
@@ -131,14 +132,47 @@ export class AnalysisService {
       .lean();
   }
 
-  async process(job: AnalysisJobPayload) {
+  /**
+   * Claims and executes one analysis job.
+   *
+   * runToken is the BullMQ lock token of this attempt. It is written to the
+   * record as a fencing token: every terminal update is conditional on it, so
+   * a worker that lost its lease cannot overwrite the result of a newer
+   * attempt. A running record is claimable again because BullMQ stalled
+   * recovery re-delivers the job after the crashed worker's lock expires
+   * (GAP-ANALYSIS-001); only the worker that received the current job can reach
+   * this method with the matching token.
+   */
+  async process(job: AnalysisJobPayload, runToken?: string) {
+    const token =
+      typeof runToken === "string" && runToken.trim().length > 0
+        ? runToken
+        : randomUUID();
     const record = await AnalysisResultModel.findOneAndUpdate(
-      { _id: job.analysisId, status: { $in: ["pending", "failed"] } },
-      { $set: { status: "running" }, $unset: { error: 1 } },
+      {
+        _id: job.analysisId,
+        type: job.type,
+        ...(job.orgId ? { orgId: job.orgId } : {}),
+        status: { $in: ["pending", "failed", "running"] },
+      },
+      {
+        $set: { status: "running", runToken: token },
+        $unset: { error: 1 },
+      },
       { new: true },
     );
     if (!record) {
       logger.warn({ job }, "Analysis record not claimable");
+      return;
+    }
+    // A legacy payload may omit orgId; when present it must identify the
+    // record's organization. A mismatch must not touch or notify another
+    // tenant's result.
+    if (job.orgId && job.orgId !== record.orgId) {
+      logger.warn(
+        { jobId: job.analysisId, jobOrgId: job.orgId },
+        "Analysis job org does not match the result record",
+      );
       return;
     }
     const createdAt = record.createdAt
@@ -154,69 +188,174 @@ export class AnalysisService {
     );
 
     try {
+      let output: { summary: string };
       if (job.type === "correlation") {
-        const output = await this.runCorrelation(
+        output = await this.runCorrelation(
           record.orgId,
           record.id,
           createdAt,
           record.input as CorrelationInput,
         );
-        record.output = output;
-        record.summary = output.summary;
       } else if (job.type === "anomaly") {
-        const output = await this.runAnomaly(
+        output = await this.runAnomaly(
           record.orgId,
           record.id,
           createdAt,
           record.input as AnomalyInput,
         );
-        record.output = output;
-        record.summary = output.summary;
       } else {
-        const output = await this.runGeoTransport(
+        output = await this.runGeoTransport(
           record.orgId,
           record.id,
           createdAt,
           record.input as GeoTransportInput,
         );
-        record.output = output;
-        record.summary = output.summary;
       }
-      record.status = "completed";
-      // A retried run may carry an error from an earlier failed attempt;
-      // clear it so consumers (and notifications) never see "completed with
-      // an error".
-      record.error = undefined;
-      await record.save();
+      const completed = await AnalysisResultModel.findOneAndUpdate(
+        {
+          _id: record._id,
+          runToken: token,
+          status: "running",
+        },
+        {
+          $set: {
+            status: "completed",
+            output,
+            summary: output.summary ?? "",
+          },
+          // A retried run may carry an error from an earlier failed attempt;
+          // clear it so consumers never see "completed with an error".
+          $unset: { error: 1 },
+        },
+        { new: true },
+      );
+      if (!completed) {
+        // The lease was superseded (or another attempt completed the run).
+        // Never publish a second terminal event or notify from a stale token.
+        logger.warn(
+          { jobId: job.analysisId },
+          "Analysis completion ignored: run token no longer owns the record",
+        );
+        return;
+      }
       await this.publish(
-        record.orgId,
-        record.id,
-        record.type,
-        record.status,
-        record.summary ?? undefined,
+        completed.orgId,
+        completed.id,
+        completed.type,
+        completed.status,
+        completed.summary ?? undefined,
         createdAt,
       );
-      await this.notifyResult(record);
+      await this.notifyResult(completed);
     } catch (error: unknown) {
       logger.error({ job, error }, "Analysis job failed");
-      record.status = "failed";
-      record.error = error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       const partialSummary = getPartialSummaryFromError(error);
-      if (partialSummary) record.summary = partialSummary;
-      await record.save();
+      const update: { status: "failed"; error: string; summary?: string } = {
+        status: "failed",
+        error: message,
+      };
+      if (partialSummary) {
+        update.summary = partialSummary;
+      }
+      const failed = await AnalysisResultModel.findOneAndUpdate(
+        {
+          _id: record._id,
+          runToken: token,
+          status: "running",
+        },
+        { $set: update },
+        { new: true },
+      );
+      if (!failed) {
+        logger.warn(
+          { jobId: job.analysisId },
+          "Analysis failure ignored: run token no longer owns the record",
+        );
+        throw error;
+      }
       await this.publish(
-        record.orgId,
-        record.id,
-        record.type,
-        record.status,
-        record.summary ?? undefined,
+        failed.orgId,
+        failed.id,
+        failed.type,
+        failed.status,
+        failed.summary ?? undefined,
         createdAt,
-        record.error ?? undefined,
+        failed.error ?? undefined,
       );
       // Failure notifications are sent once by the worker's failed handler on
       // the final attempt only; notifying here would fire once per retry.
       throw error;
     }
+  }
+
+  /**
+   * Advances the terminal state of a job that BullMQ finalized as unrecoverable
+   * without calling process() again (stalled recovery exceeded the allowable
+   * limit).
+   *
+   * The row is still running under the token of the crashed attempt. The
+   * current job holds a fresh BullMQ lock, so this attempt may take the row
+   * over: the update is conditional on status=running and writes the current
+   * token, which fences any later write from the old attempt. A row that is
+   * already failed only receives the single final notification; a completed row
+   * is never touched.
+   */
+  async finalizeStalledFailure(
+    job: AnalysisJobPayload,
+    runToken: string | undefined,
+    reason: string,
+  ) {
+    // Always install a fresh token: leaving the crashed attempt's token in
+    // place would let its stale Mongo write still match the fencing filter.
+    const token =
+      typeof runToken === "string" && runToken.trim().length > 0
+        ? runToken
+        : randomUUID();
+    const failedUpdate: {
+      status: "failed";
+      error: string;
+      runToken: string;
+    } = { status: "failed", error: reason, runToken: token };
+    const record = await AnalysisResultModel.findOneAndUpdate(
+      {
+        _id: job.analysisId,
+        type: job.type,
+        ...(job.orgId ? { orgId: job.orgId } : {}),
+        status: "running",
+      },
+      { $set: failedUpdate },
+      { new: true },
+    );
+    if (record) {
+      const createdAt = record.createdAt
+        ? new Date(record.createdAt)
+        : new Date();
+      await this.publish(
+        record.orgId,
+        record.id,
+        record.type,
+        "failed",
+        record.summary ?? undefined,
+        createdAt,
+        reason,
+      );
+      await this.notifyFinalFailure(job.analysisId);
+      return;
+    }
+    const existing = await AnalysisResultModel.findById(job.analysisId)
+      .select({ status: 1 })
+      .lean();
+    if (!existing || existing.status !== "failed") {
+      return;
+    }
+    // The row was already failed by an earlier attempt. Refresh the fencing
+    // token so that attempt's stale completion write cannot match either.
+    await AnalysisResultModel.updateOne(
+      { _id: job.analysisId, status: "failed" },
+      { $set: { runToken: token } },
+    );
+    await this.notifyFinalFailure(job.analysisId);
   }
 
   /**
@@ -227,6 +366,12 @@ export class AnalysisService {
   async notifyFinalFailure(analysisId: string) {
     const record = await AnalysisResultModel.findById(analysisId).lean();
     if (!record) {
+      return;
+    }
+    // With lease fencing a stale attempt can reach the worker's failed event
+    // after a newer attempt has taken the record over. Only a record that is
+    // actually failed may produce the one final user notification.
+    if (record.status !== "failed") {
       return;
     }
     const status = "failed";

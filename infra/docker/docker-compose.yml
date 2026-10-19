@@ -432,6 +432,12 @@ services:
       # 默认 legacy=保留 NestJS Cron；go=Go 每分钟扫描并投递，NestJS Cron 在 tick
       # gate 前退出且摘要通知 subscriber 启动。Nest 与 Go 注入同一变量。
       API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
+      # 分析三写与 analysis 队列消费者所有权。空串按 legacy；非法值 Nest/Go 都启动失败。
+      # 三写请求模式需要 JWT/DATABASE_URL/REDIS_HOST/MONGO_URI；worker 模式需要
+      # DATABASE_URL/REDIS_HOST/MONGO_URI 与 GRAPHQL_SUBSCRIPTION_BUS=redis，不要求 JWT。
+      # BULLMQ_WORKERS_ENABLED=false 时两端都不启动 analysis 消费。
+      API_GO_ANALYSIS_RUNS_MODE: ${API_GO_ANALYSIS_RUNS_MODE:-legacy}
+      API_GO_ANALYSIS_WORKER_MODE: ${API_GO_ANALYSIS_WORKER_MODE:-legacy}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -625,6 +631,13 @@ services:
       # 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI。
       # POST /api/analysis/exports/search 仍代理 NestJS。
       API_GO_ANALYSIS_EXPORT_MODE: legacy
+      # 三个分析 run Mutation 与 analysis 队列消费者所有权。空串按 legacy；
+      # 非法值 Nest/Go 都启动失败。请求模式要求 JWT/DATABASE_URL/REDIS_HOST/
+      # MONGO_URI；worker 模式要求 DATABASE_URL/REDIS_HOST/MONGO_URI 和
+      # GRAPHQL_SUBSCRIPTION_BUS=redis，不要求 JWT。BULLMQ_WORKERS_ENABLED=false
+      # 时两端都不消费。默认 legacy，生产 Web 仍走 NestJS。
+      API_GO_ANALYSIS_RUNS_MODE: ${API_GO_ANALYSIS_RUNS_MODE:-legacy}
+      API_GO_ANALYSIS_WORKER_MODE: ${API_GO_ANALYSIS_WORKER_MODE:-legacy}
       # 态势监控自定义监控五条 HTTP。pilot 与样例保持 legacy。
       # 改成 go 才由 Go 验签并写 SituationMonitorMonitor。
       # 回滚只把该变量改回 legacy。insights、refresh 和其他采集接口不在这个开关里。

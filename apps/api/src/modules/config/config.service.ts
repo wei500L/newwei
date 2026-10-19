@@ -1279,6 +1279,26 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  // API_GO_ANALYSIS_RUNS_MODE owns only the three analysis run Mutations.
+  // The env schema has already rejected every value outside legacy|go.
+  get apiGoAnalysisRunsMode(): "legacy" | "go" {
+    return (
+      this.get<"legacy" | "go">("API_GO_ANALYSIS_RUNS_MODE", {
+        infer: true,
+      }) ?? "legacy"
+    );
+  }
+
+  // API_GO_ANALYSIS_WORKER_MODE owns the analysis BullMQ consumer. Legacy (and
+  // an unset value) keeps the NestJS AnalysisProcessor.
+  get apiGoAnalysisWorkerMode(): "legacy" | "go" {
+    return (
+      this.get<"legacy" | "go">("API_GO_ANALYSIS_WORKER_MODE", {
+        infer: true,
+      }) ?? "legacy"
+    );
+  }
+
   get observabilityConfig(): ObservabilityEnvConfig {
     const rawBuckets =
       this.get<string | undefined>("METRICS_DEFAULT_BUCKETS", {

@@ -34,9 +34,16 @@ type GatewayEnv struct {
 	TimeoutMs     int
 	MaxRetries    int
 	// TopP is the LITELLM_TOP_P gateway default (0.9). It is the fallback for a
-	// profile without an explicit topP and is only consumed by the RSS
-	// translation completion surface; the brief request keeps its own 0.9.
+	// profile without an explicit topP and is consumed by the RSS translation
+	// completion surface and the analysis stream; the brief request keeps its
+	// own literal 0.9.
 	TopP float64
+	// Temperature and MaxOutputTokens are the LITELLM_TEMPERATURE (0.2) and
+	// effective LITELLM_MAX_TOKENS (2048) defaults. They are only read by the
+	// analysis stream; the brief and RSS completion requests keep their own
+	// hard-coded sampling values.
+	Temperature     float64
+	MaxOutputTokens int
 }
 
 type completionRequest struct {
@@ -66,9 +73,14 @@ type completionProfile struct {
 	ResponseFormatMode string
 	APISurface         string
 	// TopP mirrors the normalized profile topP (clamped 0..1, env default 0.9).
-	// Only the RSS translation request uses it; the brief request keeps its own
-	// literal 0.9.
+	// The RSS translation request and the analysis stream use it; the brief
+	// request keeps its own literal 0.9.
 	TopP float64
+	// Temperature and MaxOutputTokens mirror the normalized profile values
+	// (temperature clamped 0..2, env default 0.2; positive maxOutputTokens,
+	// effective env default 2048). They are only read by the analysis stream.
+	Temperature     float64
+	MaxOutputTokens int
 	// Governance mirrors Nest's resolved config after
 	// applyManagedProxyGovernance: whether the managed runtime key replaced
 	// the profile key, the auth mode the request used, and the governance
@@ -104,6 +116,12 @@ func newGateway(store BriefSettingsReader, env GatewayEnv) *gatewayClient {
 	}
 	if env.TopP <= 0 {
 		env.TopP = 0.9
+	}
+	if env.Temperature <= 0 {
+		env.Temperature = 0.2
+	}
+	if env.MaxOutputTokens <= 0 {
+		env.MaxOutputTokens = 2_048
 	}
 	return &gatewayClient{store: store, env: env, http: &http.Client{}}
 }
@@ -486,6 +504,12 @@ func resolveCompletionProfile(profilesJSON, governanceJSON []byte, env GatewayEn
 	if env.TopP <= 0 {
 		env.TopP = 0.9
 	}
+	if env.Temperature <= 0 {
+		env.Temperature = 0.2
+	}
+	if env.MaxOutputTokens <= 0 {
+		env.MaxOutputTokens = 2_048
+	}
 	var settings struct {
 		ActiveID string            `json:"activeId"`
 		Profiles []json.RawMessage `json:"profiles"`
@@ -571,6 +595,21 @@ func normalizeProfile(raw []byte, env GatewayEnv) (completionProfile, bool) {
 	if storedTopP, ok := record["topP"]; ok {
 		if number, ok := finiteNumber(storedTopP); ok {
 			profile.TopP = math.Max(0, math.Min(1, number))
+		}
+	}
+	// The analysis stream must use the profile sampling values, not the brief's
+	// hard-coded request. Normalization mirrors normalizeProfile in
+	// llm-gateway-settings.service.ts: clamp 0..2 and keep positive integers.
+	profile.Temperature = env.Temperature
+	if storedTemperature, ok := record["temperature"]; ok {
+		if number, ok := finiteNumber(storedTemperature); ok {
+			profile.Temperature = math.Max(0, math.Min(2, number))
+		}
+	}
+	profile.MaxOutputTokens = env.MaxOutputTokens
+	if storedMax, ok := record["maxOutputTokens"]; ok {
+		if number, ok := finiteNumber(storedMax); ok && number == math.Trunc(number) && number > 0 {
+			profile.MaxOutputTokens = int(number)
 		}
 	}
 	if profile.ResponseFormatMode == "" {
