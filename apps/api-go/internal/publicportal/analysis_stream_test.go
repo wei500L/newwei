@@ -266,7 +266,7 @@ func TestAnalysisStreamObserverSeesOneAttemptPerModel(t *testing.T) {
 	}))
 	defer server.Close()
 
-	observer := &recordingObserver{}
+	observer := &analysisRecordingObserver{}
 	streamer := NewAnalysisStreamer(staticSettings{profiles: profileJSON(server.URL, "chat_completions", []string{"fallback"})}, GatewayEnv{})
 	var chunks []AnalysisStreamChunk
 	request := streamRequest(&chunks)
@@ -285,10 +285,10 @@ func TestAnalysisStreamObserverSeesOneAttemptPerModel(t *testing.T) {
 	}
 }
 
-type recordingObserver struct {
+type analysisRecordingObserver struct {
 	attempts []AnalysisStreamAttempt
 }
 
-func (o *recordingObserver) ObserveAnalysisStreamAttempt(_ context.Context, attempt AnalysisStreamAttempt) {
+func (o *analysisRecordingObserver) ObserveAnalysisStreamAttempt(_ context.Context, attempt AnalysisStreamAttempt) {
 	o.attempts = append(o.attempts, attempt)
 }

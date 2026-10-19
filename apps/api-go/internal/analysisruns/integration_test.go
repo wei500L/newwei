@@ -249,6 +249,18 @@ func newTestWorker(t *testing.T, db *sql.DB, redisClient *redis.Client, mongoDat
 	return worker
 }
 
+// closeTestWorker bounds the drain so a deliberately blocked fixture request
+// cannot hang the test process. Production main passes its own 30s shutdown
+// context.
+func closeTestWorker(worker *analysisqueue.Worker) {
+	if worker == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = worker.Close(ctx)
+}
+
 // WorkerTestOptions keeps test overrides explicit; production uses the fixed
 // BullMQ defaults.
 type WorkerTestOptions struct {
@@ -476,7 +488,7 @@ func TestAnalysisRunsIntegration(t *testing.T) {
 	handler := newTestHandler(t, db, redisClient, mongoDatabase)
 	worker := newTestWorker(t, db, redisClient, mongoDatabase, handler, defaultWorkerOptions())
 	defer func() {
-		_ = worker.Close(context.Background())
+		closeTestWorker(worker)
 	}()
 
 	t.Run("NodeBullMQToGoWorkerCompletes", func(t *testing.T) {
@@ -533,9 +545,7 @@ func TestAnalysisRunsIntegration(t *testing.T) {
 	})
 
 	t.Run("GoProducerToNodeBullMQWorker", func(t *testing.T) {
-		if err := worker.Close(context.Background()); err != nil {
-			t.Fatalf("close go worker: %v", err)
-		}
+		closeTestWorker(worker)
 		defer func() {
 			worker = newTestWorker(t, db, redisClient, mongoDatabase, handler, defaultWorkerOptions())
 		}()
@@ -855,14 +865,19 @@ func TestAnalysisRunsIntegration(t *testing.T) {
 	})
 
 	t.Run("StalledRecoveryResumesRunningRecord", func(t *testing.T) {
-		if err := worker.Close(context.Background()); err != nil {
-			t.Fatalf("close main worker: %v", err)
+		closeTestWorker(worker)
+		if err := redisClient.Del(ctx, "bull:analysis:stalled-check").Err(); err != nil {
+			t.Fatalf("clear stale stalled-check key: %v", err)
 		}
 		firstCall := make(chan struct{}, 1)
+		release := make(chan struct{})
 		fixture := newSSEFixture(func(call int64, w http.ResponseWriter, r *http.Request) {
 			if call == 1 {
 				firstCall <- struct{}{}
-				<-r.Context().Done()
+				select {
+				case <-release:
+				case <-r.Context().Done():
+				}
 				return
 			}
 			writeChatSuccess(w, "stalled recovered")
@@ -884,11 +899,10 @@ func TestAnalysisRunsIntegration(t *testing.T) {
 			LockDuration:    500 * time.Millisecond,
 			LockRenewTime:   250 * time.Millisecond,
 			StalledInterval: 300 * time.Millisecond,
-			DrainDelay:      100 * time.Millisecond,
+			DrainDelay:      time.Second,
 		})
-		defer func() {
-			_ = fastWorker.Close(context.Background())
-		}()
+		defer closeTestWorker(fastWorker)
+		defer close(release)
 		select {
 		case <-firstCall:
 		case <-time.After(10 * time.Second):
@@ -912,10 +926,17 @@ func TestAnalysisRunsIntegration(t *testing.T) {
 	})
 
 	t.Run("StalledExhaustionFinalizesFailed", func(t *testing.T) {
+		if err := redisClient.Del(ctx, "bull:analysis:stalled-check").Err(); err != nil {
+			t.Fatalf("clear stale stalled-check key: %v", err)
+		}
 		callSignal := make(chan struct{}, 4)
+		release := make(chan struct{})
 		fixture := newSSEFixture(func(_ int64, w http.ResponseWriter, r *http.Request) {
 			callSignal <- struct{}{}
-			<-r.Context().Done()
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
 		})
 		defer fixture.close()
 		seedProfile(t, db, fixture.url(), "chat_completions", nil)
@@ -934,11 +955,10 @@ func TestAnalysisRunsIntegration(t *testing.T) {
 			LockDuration:    500 * time.Millisecond,
 			LockRenewTime:   250 * time.Millisecond,
 			StalledInterval: 300 * time.Millisecond,
-			DrainDelay:      100 * time.Millisecond,
+			DrainDelay:      time.Second,
 		})
-		defer func() {
-			_ = fastWorker.Close(context.Background())
-		}()
+		defer closeTestWorker(fastWorker)
+		defer close(release)
 		lockKey := fmt.Sprintf("bull:analysis:%s:lock", jobID)
 		// Two attempts are stalled by dropping their lock. maxStalledCount=1
 		// means the second stall marks the job deferred-failed; the next fetch
