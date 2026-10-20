@@ -203,12 +203,18 @@ type fakeOrgLookup struct {
 	inferCalls    int
 }
 
-func (l *fakeOrgLookup) OrgIDFromJobData(map[string]json.RawMessage) (string, bool) {
+func (l *fakeOrgLookup) OrgIDFromJobData(fields map[string]json.RawMessage) (string, bool) {
 	l.orgIDCalls++
-	if l.orgID == "" {
+	// Mirror the production implementations: only an explicit job.data.orgId
+	// wins here; the test's orgID field is the identifier-resolution result.
+	var direct string
+	if raw, ok := fields["orgId"]; ok {
+		_ = json.Unmarshal(raw, &direct)
+	}
+	if direct == "" {
 		return "", false
 	}
-	return l.orgID, true
+	return direct, true
 }
 
 func (l *fakeOrgLookup) IdentifierFromJobData(map[string]json.RawMessage) (orgLookupIdentifier, bool) {

@@ -34,15 +34,17 @@ const (
 // newsnowUpdatePayload is the browser wire payload. The field order is the
 // NestJS order (orgId, sourceId, newItemsCount, topTitles, updatedTime,
 // intervalMs, timestamp) and must not change: the JSON bytes are forwarded
-// unchanged by realtimesocket.
+// unchanged by realtimesocket. The msgpack tags keep the Redis adapter copy
+// byte-compatible with a NestJS emit; without them notepack would encode the Go
+// field names and every other instance would deliver the wrong keys.
 type newsnowUpdatePayload struct {
-	OrgID         string   `json:"orgId"`
-	SourceID      string   `json:"sourceId"`
-	NewItemsCount float64  `json:"newItemsCount"`
-	TopTitles     []string `json:"topTitles"`
-	UpdatedTime   string   `json:"updatedTime"`
-	IntervalMs    float64  `json:"intervalMs"`
-	Timestamp     string   `json:"timestamp"`
+	OrgID         string   `json:"orgId" msgpack:"orgId"`
+	SourceID      string   `json:"sourceId" msgpack:"sourceId"`
+	NewItemsCount float64  `json:"newItemsCount" msgpack:"newItemsCount"`
+	TopTitles     []string `json:"topTitles" msgpack:"topTitles"`
+	UpdatedTime   string   `json:"updatedTime" msgpack:"updatedTime"`
+	IntervalMs    float64  `json:"intervalMs" msgpack:"intervalMs"`
+	Timestamp     string   `json:"timestamp" msgpack:"timestamp"`
 }
 
 // strictNumber is a JSON number that rejects null, strings, booleans and

@@ -74,7 +74,7 @@ func TestHandleAdapterBroadcastPushesLocalRooms(t *testing.T) {
 	sources.sink = sink
 	encoded, err := encodeAdapterBroadcast("NESTID", NamespaceNewsnow, []string{"org:abc"}, []string{"user:u9"}, newsnowUpdateEvent,
 		struct {
-			OrgID string `json:"orgId"`
+			OrgID string `json:"orgId" msgpack:"orgId"`
 		}{OrgID: "org:abc"})
 	if err != nil {
 		t.Fatalf("encodeAdapterBroadcast() error = %v", err)
@@ -113,7 +113,7 @@ func TestHandleAdapterBroadcastUsesChannelRoomFallback(t *testing.T) {
 	sources.sink = sink
 	encoded, err := encodeAdapterBroadcast("NESTID", NamespaceNewsnow, []string{"org:abc"}, nil, newsnowUpdateEvent,
 		struct {
-			OrgID string `json:"orgId"`
+			OrgID string `json:"orgId" msgpack:"orgId"`
 		}{OrgID: "org:abc"})
 	if err != nil {
 		t.Fatalf("encodeAdapterBroadcast() error = %v", err)

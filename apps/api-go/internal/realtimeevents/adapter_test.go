@@ -76,9 +76,9 @@ func TestDecodeAdapterMessageRejectsProtocolViolations(t *testing.T) {
 
 func TestEncodeAdapterBroadcastRoundTrip(t *testing.T) {
 	type payloadExample struct {
-		OrgID         string  `json:"orgId"`
-		SourceID      string  `json:"sourceId"`
-		NewItemsCount float64 `json:"newItemsCount"`
+		OrgID         string  `json:"orgId" msgpack:"orgId"`
+		SourceID      string  `json:"sourceId" msgpack:"sourceId"`
+		NewItemsCount float64 `json:"newItemsCount" msgpack:"newItemsCount"`
 	}
 	payload := payloadExample{OrgID: "org:abc", SourceID: "cls-hot", NewItemsCount: 2}
 	encoded, err := encodeAdapterBroadcast("XYZ123", "/newsnow", []string{"org:abc"}, []string{"user:u1"}, "newsnow:update", payload)
@@ -103,7 +103,7 @@ func TestEncodeAdapterBroadcastRoundTrip(t *testing.T) {
 func TestDecodeAdapterMessagePreservesDateAndRejectsBinary(t *testing.T) {
 	stamp := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	type payloadWithDate struct {
-		At time.Time `json:"at"`
+		At time.Time `json:"at" msgpack:"at"`
 	}
 	encoded, err := encodeAdapterBroadcast("XYZ123", "/newsnow", []string{"org:abc"}, nil, "newsnow:update", payloadWithDate{At: stamp})
 	if err != nil {

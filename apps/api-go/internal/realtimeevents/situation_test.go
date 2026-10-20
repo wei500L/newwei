@@ -83,8 +83,10 @@ func TestHandleSituationBridgeFallsBackToRawPayload(t *testing.T) {
 			if len(calls) != 1 {
 				t.Fatalf("PublishUser calls = %d", len(calls))
 			}
-			if calls[0].payload != string(raw) {
-				t.Fatalf("payload = %s, want the raw payload", calls[0].payload)
+			// The fallback pushes the bridge payload object (not the whole
+			// envelope) unchanged, exactly like the NestJS gateway fallback.
+			if calls[0].payload != `{"alerts":[],"historyEntry":null}` {
+				t.Fatalf("payload = %s, want the original bridge payload", calls[0].payload)
 			}
 			if calls[0].event != situationOrefUpdate {
 				t.Fatalf("event = %q", calls[0].event)
