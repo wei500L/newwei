@@ -74,7 +74,7 @@ func openFixture(t *testing.T) *writeFixture {
 	) ENGINE=InnoDB`); err != nil {
 		t.Fatalf("create ItemMeta: %v", err)
 	}
-	if _, err := db.ExecContext(ctx, "DELETE FROM ItemMeta"); err != nil {
+	if _, err := db.ExecContext(ctx, "DELETE FROM ItemMeta WHERE orgId = ?", "org-1"); err != nil {
 		t.Fatalf("clear ItemMeta: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })

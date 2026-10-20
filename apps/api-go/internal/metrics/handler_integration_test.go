@@ -41,10 +41,19 @@ func openMetricsTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("ping mysql: %v", err)
 	}
 	for _, statement := range []string{
+		// Matches the Org table the authz integration step creates earlier in
+		// this job, so CREATE IF NOT EXISTS is a no-op and the insert satisfies
+		// every NOT NULL column.
 		`CREATE TABLE IF NOT EXISTS Org (
-			id varchar(40) NOT NULL PRIMARY KEY,
-			isActive int NOT NULL DEFAULT 1
-		) ENGINE=InnoDB`,
+			id varchar(191) NOT NULL,
+			name varchar(191) NOT NULL,
+			slug varchar(191) NOT NULL,
+			isActive boolean NOT NULL DEFAULT true,
+			createdAt datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+			updatedAt datetime(3) NOT NULL,
+			UNIQUE KEY Org_slug_key (slug),
+			PRIMARY KEY (id)
+		) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 		`CREATE TABLE IF NOT EXISTS MachineAccessToken (
 			id varchar(40) NOT NULL PRIMARY KEY,
 			orgId varchar(40) NOT NULL,
@@ -68,10 +77,14 @@ func openMetricsTestDB(t *testing.T) *sql.DB {
 			t.Fatalf("create table: %v", err)
 		}
 	}
-	for _, table := range []string{"MachineAccessToken", "GlobalRoleAssignment", "Org"} {
+	for _, table := range []string{"MachineAccessToken", "GlobalRoleAssignment"} {
 		if _, err := db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			t.Fatalf("clear %s: %v", table, err)
 		}
+	}
+	// Only the row this test owns: earlier steps in the same job also use Org.
+	if _, err := db.ExecContext(ctx, "DELETE FROM Org WHERE id = 'org-1'"); err != nil {
+		t.Fatalf("clear org-1: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	return db
@@ -113,7 +126,8 @@ func scrape(t *testing.T, handler *Handler, authorization string) *httptest.Resp
 func TestMetricsEndpointAuthorizationIntegration(t *testing.T) {
 	db := openMetricsTestDB(t)
 	ctx := context.Background()
-	if _, err := db.ExecContext(ctx, "INSERT INTO Org (id, isActive) VALUES ('org-1', 1)"); err != nil {
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO Org (id, name, slug, isActive, updatedAt) VALUES ('org-1', 'org-1', 'org-1', 1, NOW(3))"); err != nil {
 		t.Fatalf("insert org: %v", err)
 	}
 	adminID := "user-admin"

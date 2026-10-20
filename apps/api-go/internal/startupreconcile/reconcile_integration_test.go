@@ -65,8 +65,13 @@ func openReconcileFixture(t *testing.T, redisDB int) *reconcileFixture {
 	if err := db.PingContext(pingCtx); err != nil {
 		t.Fatalf("ping mysql: %v", err)
 	}
+	// Matches the SystemSetting table the email-settings integration step
+	// creates earlier in this job, including the NOT NULL updatedAt column.
 	if _, err := db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS SystemSetting ("+
-		"`key` varchar(191) NOT NULL PRIMARY KEY, value json NOT NULL) ENGINE=InnoDB"); err != nil {
+		"`key` varchar(191) NOT NULL, value json NOT NULL, isPublic tinyint(1) NOT NULL DEFAULT 0, "+
+		"description varchar(191) NULL, createdAt datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), "+
+		"updatedAt datetime(3) NOT NULL, updatedById varchar(191) NULL, PRIMARY KEY (`key`)) "+
+		"DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); err != nil {
 		t.Fatalf("create SystemSetting: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, "DELETE FROM SystemSetting"); err != nil {
@@ -129,7 +134,7 @@ func openReconcileFixture(t *testing.T, redisDB int) *reconcileFixture {
 func (f *reconcileFixture) seedSetting(t *testing.T, key, value string) {
 	t.Helper()
 	if _, err := f.db.ExecContext(f.ctx,
-		"INSERT INTO SystemSetting (`key`, value) VALUES (?, ?)", key, value); err != nil {
+		"INSERT INTO SystemSetting (`key`, value, updatedAt) VALUES (?, ?, NOW(3))", key, value); err != nil {
 		t.Fatalf("seed setting %s: %v", key, err)
 	}
 }
