@@ -541,7 +541,7 @@ ORDER BY sequence ASC, timestamp ASC`, candidateID)
 	for rows.Next() {
 		var (
 			nodeID, nodeType, action, message string
-			accepted                          sql.NullBool
+			accepted                          sql.NullInt64
 			scoreDelta, freshnessDelta        sql.NullFloat64
 			ruleHits                          []byte
 			beforeSnapshot, afterSnapshot     []byte
@@ -559,7 +559,7 @@ ORDER BY sequence ASC, timestamp ASC`, candidateID)
 		item.SetString("action", action)
 		item.SetString("message", message)
 		if accepted.Valid {
-			item.SetBool("accepted", accepted.Bool)
+			item.SetBool("accepted", accepted.Int64 != 0)
 		}
 		if scoreDelta.Valid {
 			item.SetNumber("scoreDelta", scoreDelta.Float64)
