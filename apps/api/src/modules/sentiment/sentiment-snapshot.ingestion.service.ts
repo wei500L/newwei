@@ -9,6 +9,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
@@ -50,10 +51,23 @@ export class SentimentSnapshotIngestionService {
     private readonly prisma: PrismaService,
     private readonly activeOrgRegistry: ActiveOrgRegistryService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
   async rebuildRecentSnapshots() {
+    // API_GO_SENTIMENT_SNAPSHOT_MODE=go moves the rebuild to Go. Return before
+    // claiming the Redis tick gate so a mixed-version deployment never runs two
+    // schedulers for the same interval. Go uses the same gate and organization
+    // lock keys, so even a brief overlap cannot rebuild one organization's day
+    // twice.
+    if (this.resolveSnapshotMode() === "go") {
+      logger.info(
+        "Skipped sentiment snapshot rebuild because Go owns the cron (API_GO_SENTIMENT_SNAPSHOT_MODE=go)",
+      );
+      return;
+    }
+
     const claimed = await claimSchedulerTick(
       this.cache,
       "cron:sentiment-snapshot:tick-gate",
@@ -105,6 +119,14 @@ export class SentimentSnapshotIngestionService {
     logger.info(
       { orgCount: orgs.length, concurrency, failedOrgs, skippedOrgs },
       "Sentiment snapshot scheduler tick completed",
+    );
+  }
+
+  private resolveSnapshotMode(): string {
+    return (
+      this.env.get("API_GO_SENTIMENT_SNAPSHOT_MODE", {
+        infer: true,
+      }) ?? "legacy"
     );
   }
 

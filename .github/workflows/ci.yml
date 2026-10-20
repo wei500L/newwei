@@ -472,6 +472,13 @@ jobs:
       # 不启动 crawl worker 与条目流水线 worker。
       - name: MySQL/Redis news-source scheduler integration tests
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newssourcescheduler/ -run 'TestNewsSourceSchedulerIntegration' -v
+      # 事件时间线与情绪快照重建：真实 MySQL/Redis/Mongo 覆盖端到端写入与
+      # graphqlread/newsevents 读取端回读、B1（只写 $.timeline，重建期间写入的
+      # briefV1 保留；metadata 非对象时为 {timeline}）、保留窗口修剪、B2（排序规则
+      # 等价的名称合并、avgScore 用 DOUBLE 除法）、事务失败保留旧数据，以及
+      # tick gate / 组织锁的键名与互斥。
+      - name: MySQL/Redis/Mongo integration tests (event timeline + sentiment snapshot rebuild)
+        run: cd apps/api-go && go test -tags=integration -count=1 -p 1 ./internal/newseventstimeline/ ./internal/sentimentsnapshot/ -v -timeout 10m
 
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #

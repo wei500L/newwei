@@ -2629,6 +2629,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// The event-timeline and sentiment snapshot cron units own the ten-minute
+	// timeline rebuild and the hourly snapshot rebuild when their switches are
+	// go. They register no HTTP route and need no JWT; the deferred Close stops
+	// both loops and drains the in-flight organizations before the shared
+	// Redis/Mongo connections close below.
+	var eventTimelineSentiment *eventTimelineSentimentUnit
 	// Ordered teardown for both the SIGTERM path and every error return after
 	// this point, including an HTTP listen failure. The analysis worker stops
 	// first, then the digest scheduler, then background search reindex, then the
@@ -2668,6 +2674,11 @@ func run() error {
 		if alertWorker != nil {
 			if closeErr := alertWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: alert worker close: %v", closeErr)
+			}
+		}
+		if eventTimelineSentiment != nil {
+			if closeErr := eventTimelineSentiment.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: event timeline and sentiment snapshot schedulers close: %v", closeErr)
 			}
 		}
 		if analysisWorker != nil {
@@ -2839,6 +2850,15 @@ func run() error {
 			return startErr
 		}
 	}
+
+	// The ten-minute news-event timeline rebuild and the hourly sentiment
+	// snapshot rebuild. Both share the NestJS tick gate and organization lease
+	// keys, so a flip between the processes never runs one organization twice.
+	eventTimelineSentiment, err = wireEventTimelineSentiment(cfg, sharedDB, redisClient, &graphqlMongo, &dashboardMongo)
+	if err != nil {
+		return err
+	}
+	eventTimelineSentiment.Start(cfg)
 
 	// The analysis queue consumer owner. It reuses the already-open Mongo
 	// connection when one exists; otherwise startAnalysisWorker opens one and

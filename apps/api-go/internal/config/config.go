@@ -1449,6 +1449,39 @@ const (
 	AuditOutboxModeGo     AuditOutboxMode = "go"
 )
 
+// NewsEventsTimelineMode controls which process owns the ten-minute news-event
+// timeline rebuild (API_GO_NEWS_EVENTS_TIMELINE_MODE). The accepted values are
+// exactly "", "legacy" and "go"; any other value fails startup instead of
+// silently degrading.
+//
+// legacy: the NestJS @Cron keeps owning the rebuild and no Go scheduler starts.
+// go: Go owns the ten-minute wall-clock tick, the Redis tick gate, the
+// per-organization lease, the NewsEventTimelineEntry rows and the
+// metadata.timeline write; the NestJS @Cron returns before claiming the gate.
+// Both processes share the same gate and lease keys, so a brief overlap cannot
+// rebuild one organization twice. Go requires DATABASE_URL, REDIS_HOST and
+// MONGO_URI, but not JWT_SECRET: the unit serves no HTTP route.
+type NewsEventsTimelineMode string
+
+const (
+	NewsEventsTimelineModeLegacy NewsEventsTimelineMode = "legacy"
+	NewsEventsTimelineModeGo     NewsEventsTimelineMode = "go"
+)
+
+// SentimentSnapshotMode controls which process owns the hourly sentiment
+// snapshot rebuild (API_GO_SENTIMENT_SNAPSHOT_MODE). The accepted values are
+// again "", "legacy" and "go", and the default is legacy.
+//
+// It is independent of NewsEventsTimelineMode. Go requires DATABASE_URL,
+// REDIS_HOST and MONGO_URI, but not JWT_SECRET: the unit serves no HTTP route
+// and never reads the HTTP snapshot endpoints.
+type SentimentSnapshotMode string
+
+const (
+	SentimentSnapshotModeLegacy SentimentSnapshotMode = "legacy"
+	SentimentSnapshotModeGo     SentimentSnapshotMode = "go"
+)
+
 // EconomicDataMode controls the three economic-data GraphQL mutations and the
 // three AkShare gateway admin HTTP routes (API_GO_ECONOMIC_DATA_MODE). The
 // empty value is legacy, matching every other migration switch. Go requires
@@ -1934,6 +1967,14 @@ type Config struct {
 	// AuditOutboxMode 见 AuditOutboxMode 常量。默认 legacy。
 	// 与所有 HTTP 开关独立；go 只要求 MySQL 与 Redis，不要求 JWT、Mongo 或 SMTP。
 	AuditOutboxMode AuditOutboxMode
+	// NewsEventsTimelineMode 见 NewsEventsTimelineMode 常量。默认 legacy。
+	// 与所有 HTTP / GraphQL 开关独立；go 需要 MySQL、Redis 与 Mongo，
+	// 不要求 JWT。与 NestJS 共用 tick gate 与组织锁的键名。
+	NewsEventsTimelineMode NewsEventsTimelineMode
+	// SentimentSnapshotMode 见 SentimentSnapshotMode 常量。默认 legacy。
+	// 与 NewsEventsTimelineMode 独立；go 需要 MySQL、Redis 与 Mongo，
+	// 不要求 JWT。与 NestJS 共用 tick gate 与组织锁的键名。
+	SentimentSnapshotMode SentimentSnapshotMode
 	// ScheduleEnabled mirrors the NestJS `process.env.SCHEDULE_ENABLED !==
 	// "false"` check. Background units (audit outbox, raw_item replay) use it to
 	// stop scheduling without changing their ownership switch; the digest
@@ -3723,6 +3764,27 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_GDELT_SNAPSHOT_REFRESH_MODE must be one of legacy|go")
 	}
+	// The news-event timeline rebuild accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy so an unset deployment keeps the
+	// NestJS @Cron ownership.
+	switch strings.TrimSpace(getenv("API_GO_NEWS_EVENTS_TIMELINE_MODE")) {
+	case "", string(NewsEventsTimelineModeLegacy):
+		cfg.NewsEventsTimelineMode = NewsEventsTimelineModeLegacy
+	case string(NewsEventsTimelineModeGo):
+		cfg.NewsEventsTimelineMode = NewsEventsTimelineModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_EVENTS_TIMELINE_MODE must be one of legacy|go")
+	}
+	// The sentiment snapshot rebuild is an independent switch with the same
+	// accepted values.
+	switch strings.TrimSpace(getenv("API_GO_SENTIMENT_SNAPSHOT_MODE")) {
+	case "", string(SentimentSnapshotModeLegacy):
+		cfg.SentimentSnapshotMode = SentimentSnapshotModeLegacy
+	case string(SentimentSnapshotModeGo):
+		cfg.SentimentSnapshotMode = SentimentSnapshotModeGo
+	default:
+		errs = append(errs, "API_GO_SENTIMENT_SNAPSHOT_MODE must be one of legacy|go")
+	}
 	// Both executions check this flag before doing any work, the same way
 	// isGdeltEnabled does. The Go default matches the NestJS schema default.
 	cfg.SituationMonitorGdeltEnabled = boolDefault(getenv("SITUATION_MONITOR_GDELT_ENABLED"), true)
@@ -5381,6 +5443,32 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.RedisHost == "" {
 			errs = append(errs, "REDIS_HOST is required when API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE=go")
+		}
+	}
+	// Both cron units are background owners like the GDELT snapshot scheduler:
+	// they write MySQL rows under a Redis lease, read the Mongo processed items
+	// and register no route, so every HTTP switch (and JWT_SECRET) can stay
+	// legacy.
+	if cfg.NewsEventsTimelineMode == NewsEventsTimelineModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_NEWS_EVENTS_TIMELINE_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_NEWS_EVENTS_TIMELINE_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_NEWS_EVENTS_TIMELINE_MODE=go")
+		}
+	}
+	if cfg.SentimentSnapshotMode == SentimentSnapshotModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_SENTIMENT_SNAPSHOT_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_SENTIMENT_SNAPSHOT_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_SENTIMENT_SNAPSHOT_MODE=go")
 		}
 	}
 	// The GDELT snapshot scheduler writes the MySQL history row and both Redis
