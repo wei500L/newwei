@@ -5,10 +5,10 @@ import { renderWithProviders } from "@/test/render";
 
 const socketMockState = vi.hoisted(() => ({
   permissions: [] as string[],
-  ioCalls: [] as Array<{
+  ioCalls: [] as {
     namespace: string;
     options?: Record<string, unknown>;
-  }>,
+  }[],
 }));
 
 vi.mock("next-auth/react", () => ({
