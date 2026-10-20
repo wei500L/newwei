@@ -59,7 +59,7 @@ type articleSignal struct {
 
 // detailExpansionOptions is Required<CrawlDetailExpansionOptions>.
 type detailExpansionOptions struct {
-	MaxDetailURLs        int
+	MaxDetailUrls        int
 	MinRelevanceScore    float64
 	RequireSameDomain    bool
 	AllowExternalLinks   bool
@@ -70,7 +70,7 @@ type detailExpansionOptions struct {
 }
 
 var defaultDetailExpansionOptions = detailExpansionOptions{
-	MaxDetailURLs:        12,
+	MaxDetailUrls:        12,
 	MinRelevanceScore:    0.35,
 	RequireSameDomain:    true,
 	AllowExternalLinks:   true,
@@ -95,15 +95,15 @@ func resolveDetailExpansionOptions(options normalizedOptions) detailExpansionOpt
 	if input == nil {
 		return resolved
 	}
-	if input.MaxDetailURLs != nil {
-		value := *input.MaxDetailURLs
+	if input.MaxDetailUrls != nil {
+		value := *input.MaxDetailUrls
 		if value < 1 {
 			value = 1
 		}
 		if value > 30 {
 			value = 30
 		}
-		resolved.MaxDetailURLs = value
+		resolved.MaxDetailUrls = value
 	}
 	if input.MinRelevanceScore != nil {
 		value := *input.MinRelevanceScore
@@ -427,7 +427,7 @@ func (s *Service) expandListLikeResultsIfNeeded(ctx context.Context, input expan
 	} else if qualityProfile == "speed_first" {
 		profileMultiplier = 0.8
 	}
-	baseLimit := detailOptions.MaxDetailURLs
+	baseLimit := detailOptions.MaxDetailUrls
 	if effectiveAllLowSignal {
 		baseLimit += 2
 	}
@@ -589,8 +589,8 @@ func (s *Service) expandListLikeResultsIfNeeded(ctx context.Context, input expan
 	if maxImproved < 1 {
 		maxImproved = 1
 	}
-	if maxImproved > detailOptions.MaxDetailURLs {
-		maxImproved = detailOptions.MaxDetailURLs
+	if maxImproved > detailOptions.MaxDetailUrls {
+		maxImproved = detailOptions.MaxDetailUrls
 	}
 	if maxImproved > len(improved) {
 		maxImproved = len(improved)

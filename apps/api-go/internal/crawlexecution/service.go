@@ -420,7 +420,7 @@ func (s *Service) completeFrom304Reuse(
 		},
 	})
 	if err := s.markTaskCompleted(ctx, task, completedTaskUpdate{
-		LastResultAt: latest.FetchedAt,
+		LastResultAt: timePtr(latest.FetchedAt),
 		LastCursor:   task.LastCursor,
 		Memory:       memoryStats{},
 	}); err != nil {

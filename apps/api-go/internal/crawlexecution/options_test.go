@@ -156,8 +156,8 @@ func TestCrawlOptionsMapping(t *testing.T) {
 
 func TestResolveDetailExpansionOptionsDefaults(t *testing.T) {
 	resolved := resolveDetailExpansionOptions(crawloptions.NormalizeOptions(&crawloptions.OptionsInput{}))
-	if resolved.MaxDetailURLs != 12 {
-		t.Fatalf("maxDetailUrls = %d", resolved.MaxDetailURLs)
+	if resolved.MaxDetailUrls != 12 {
+		t.Fatalf("maxDetailUrls = %d", resolved.MaxDetailUrls)
 	}
 	if resolved.MinRelevanceScore != 0.35 {
 		t.Fatalf("minRelevanceScore = %v", resolved.MinRelevanceScore)
@@ -179,7 +179,7 @@ func TestResolveDetailExpansionOptionsDefaults(t *testing.T) {
 			RequireSameDomain: &requireSame,
 		},
 	}))
-	if overridden.MaxDetailURLs != 3 || overridden.MinRelevanceScore != 0.9 || overridden.RequireSameDomain {
+	if overridden.MaxDetailUrls != 3 || overridden.MinRelevanceScore != 0.9 || overridden.RequireSameDomain {
 		t.Fatalf("overridden = %#v", overridden)
 	}
 	if !overridden.AllowExternalLinks {
