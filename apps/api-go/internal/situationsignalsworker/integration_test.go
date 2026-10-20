@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -43,70 +44,84 @@ var (
 
 // ---- real Redis / MySQL fixtures ----
 
+// sitWorkerITMySQL creates a throwaway MySQL database for one test. The job runs
+// other integration steps against the shared `app` schema, so a dedicated
+// database keeps the Org/AlertRule fixture isolated from their leftovers (and
+// removes any dependency on the order the job steps run in).
+func sitWorkerITMySQL(t *testing.T) *sql.DB {
+	t.Helper()
+	baseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if baseURL == "" {
+		t.Skip("DATABASE_URL not set - integration test requires MySQL")
+	}
+	base, err := usersettings.OpenMySQLFromURL(baseURL)
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	databaseName := "situation_signals_worker_it_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	if _, err := base.ExecContext(ctx, "CREATE DATABASE `"+databaseName+"`"); err != nil {
+		_ = base.Close()
+		t.Fatalf("create integration database: %v", err)
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		_ = base.Close()
+		t.Fatalf("parse DATABASE_URL: %v", err)
+	}
+	parsed.Path = "/" + databaseName
+	db, err := usersettings.OpenMySQLFromURL(parsed.String())
+	if err != nil {
+		_ = base.Close()
+		t.Fatalf("open integration mysql: %v", err)
+	}
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		_ = base.Close()
+		t.Fatalf("ping integration mysql: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_ = db.Close()
+		_, _ = base.ExecContext(cleanupCtx, "DROP DATABASE `"+databaseName+"`")
+		_ = base.Close()
+	})
+	return db
+}
+
+// sitWorkerITRedis addresses a dedicated Redis database so the job's other
+// integration steps (which use database 0/9/11) can never collide with the
+// worker keys, and cleanly flushes it before and after every test.
 func sitWorkerITRedis(t *testing.T) *redis.Client {
 	t.Helper()
 	address := strings.TrimSpace(os.Getenv("API_GO_TEST_REDIS_ADDR"))
 	if address == "" {
 		t.Skip("API_GO_TEST_REDIS_ADDR not set - integration test requires Redis")
 	}
-	client := redis.NewClient(&redis.Options{Addr: address, Protocol: 2})
-	t.Cleanup(func() { _ = client.Close() })
+	client := redis.NewClient(&redis.Options{Addr: address, DB: 13, Protocol: 2})
 	if err := client.Ping(context.Background()).Err(); err != nil {
+		_ = client.Close()
 		t.Fatalf("redis ping: %v", err)
 	}
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = client.FlushDB(cleanupCtx).Err()
+		_ = client.Close()
+	})
 	return client
 }
 
-func sitWorkerITMySQL(t *testing.T) *sql.DB {
-	t.Helper()
-	url := strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	if url == "" {
-		t.Skip("DATABASE_URL not set - integration test requires MySQL")
-	}
-	db, err := usersettings.OpenMySQLFromURL(url)
-	if err != nil {
-		t.Fatalf("open mysql: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
-}
-
-// sitWorkerITDeletePattern removes every key matching the SCAN pattern.
-func sitWorkerITDeletePattern(t *testing.T, client *redis.Client, patterns ...string) {
-	t.Helper()
-	ctx := context.Background()
-	for _, pattern := range patterns {
-		var cursor uint64
-		for {
-			keys, next, err := client.Scan(ctx, cursor, pattern, 500).Result()
-			if err != nil {
-				t.Fatalf("scan %q: %v", pattern, err)
-			}
-			if len(keys) > 0 {
-				if err := client.Del(ctx, keys...).Err(); err != nil {
-					t.Fatalf("delete %q: %v", pattern, err)
-				}
-			}
-			cursor = next
-			if cursor == 0 {
-				break
-			}
-		}
-	}
-}
-
-// sitWorkerITResetRedis clears every key this package owns. The shared CI
-// Redis is also used by other packages' steps, so the helper never flushes the
-// whole database: parallel package binaries keep their own namespaces.
+// sitWorkerITResetRedis clears the dedicated test database. Only database 13 is
+// touched, never the shared keyspace of the other integration steps.
 func sitWorkerITResetRedis(t *testing.T, client *redis.Client) {
 	t.Helper()
-	sitWorkerITDeletePattern(t, client,
-		"situation-monitor:signals:*",
-		"situation-monitor:telegram-clear:v1",
-		"cron:situation-monitor-oref-default-rules:*",
-		"lock:situation-monitor:signals:*",
-		"bull:situationMonitorSignals:*",
-	)
+	if err := client.FlushDB(context.Background()).Err(); err != nil {
+		t.Fatalf("flush integration redis database: %v", err)
+	}
 }
 
 // sitWorkerITEnv resolves the worker environment from an explicit map.
@@ -319,7 +334,7 @@ func sitWorkerITAssertTelegramState(t *testing.T, client *redis.Client, handle s
 			t.Fatalf("items are not sorted by ts descending at %d", index)
 		}
 	}
-	sitWorkerITAssertTTL(t, client, telegramStateCacheKey, telegramStateCacheTTL, time.Minute)
+	sitWorkerITAssertTTL(t, client, telegramStateCacheKey, 24*time.Hour, time.Minute)
 }
 
 // TestSituationSignalsWorkerTelegramTwoInstanceIntegration covers B1: two worker
@@ -708,9 +723,9 @@ func TestSituationSignalsWorkerOrefB3Integration(t *testing.T) {
 	if metrics := sitWorkerITLoadOrefMetrics(t, client); metrics.ActiveAlerts != 0 || metrics.HistoryCount24h != 0 {
 		t.Fatalf("metrics document = %+v", metrics)
 	}
-	sitWorkerITAssertTTL(t, client, orefAlertsCacheKey, orefAlertsCacheTTL, time.Minute)
-	sitWorkerITAssertTTL(t, client, orefHistoryCacheKey, orefHistoryCacheTTL, time.Minute)
-	sitWorkerITAssertTTL(t, client, orefMetricsCacheKey, orefHistoryCacheTTL, time.Minute)
+	sitWorkerITAssertTTL(t, client, orefAlertsCacheKey, time.Hour, time.Minute)
+	sitWorkerITAssertTTL(t, client, orefHistoryCacheKey, 7*24*time.Hour, time.Minute)
+	sitWorkerITAssertTTL(t, client, orefMetricsCacheKey, 7*24*time.Hour, time.Minute)
 
 	// The bootstrap history request and the alerts request went through the
 	// authenticated proxy with the NestJS curl headers.
@@ -1117,8 +1132,14 @@ func TestSituationSignalsWorkerRepeatablesIntegration(t *testing.T) {
 		!strings.Contains(iterationFields["opts"], `"type":"exponential"`) {
 		t.Fatalf("oref iteration default options missing: %s", iterationFields["opts"])
 	}
-	if delayedScore, err := client.ZScore(ctx, queueBase+":delayed", iterationID).Result(); err != nil || int64(delayedScore) != nextMillis {
-		t.Fatalf("delayed score = %v (err=%v), want %d", delayedScore, err, nextMillis)
+	delayedScore, err := client.ZScore(ctx, queueBase+":delayed", iterationID).Result()
+	if err != nil {
+		t.Fatalf("delayed score: %v", err)
+	}
+	// BullMQ packs the delayed timestamp into the high bits of the score:
+	// delayedTimestamp * 0x1000 (plus a small slot offset for collisions).
+	if minimum, maximum := float64(nextMillis*0x1000), float64((nextMillis+1)*0x1000-1); delayedScore < minimum || delayedScore > maximum {
+		t.Fatalf("delayed score = %v, want the %d millisecond slot", delayedScore, nextMillis)
 	}
 
 	// Telegram is disabled: no JobScheduler and no Telegram bootstrap job, but
@@ -1232,20 +1253,9 @@ func TestSituationSignalsWorkerOrefAlertRulesMySQLIntegration(t *testing.T) {
 	defer cancel()
 
 	const orgID = "it-org-situation-signals-worker"
-	// The worker creates the two default rules for every active organization in
-	// the shared database, so cleanup removes exactly the OREF system-metric
-	// rules (no other test in this job creates them) instead of only this
-	// fixture's rows.
-	deleteFixtures := func() {
-		_, _ = db.ExecContext(context.Background(),
-			"DELETE FROM `AlertRule` WHERE `metricProvider` = ? AND `metricSlug` IN (?, ?)",
-			orefSystemMetricProvider, orefActiveAlertsMetricSlug, orefHistory24hMetricSlug)
-		_, _ = db.ExecContext(context.Background(), "DELETE FROM `AlertRule` WHERE `orgId` = ?", orgID)
-		_, _ = db.ExecContext(context.Background(), "DELETE FROM `Org` WHERE `id` = ?", orgID)
-		_ = client.Del(context.Background(), orefDefaultRuleTickGateKey).Err()
-	}
-	deleteFixtures()
-	t.Cleanup(deleteFixtures)
+	// The dedicated database is empty, so this org is the only active
+	// organization the default-rule maintenance can fan out to.
+	t.Cleanup(func() { _ = client.Del(context.Background(), orefDefaultRuleTickGateKey).Err() })
 
 	for _, statement := range []string{sitWorkerITOrgTableSchema, sitWorkerITAlertRuleTableSchema} {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
