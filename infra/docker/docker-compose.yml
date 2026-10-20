@@ -451,6 +451,13 @@ services:
       # 默认 legacy=保留 NestJS 每分钟 Cron；go=Go 每分钟扫描并重放，NestJS 在申请锁前退出。
       # SCHEDULE_ENABLED=false 时两边都停止调度本链；切换/回滚顺序见 docs 与 README。
       API_GO_AUDIT_OUTBOX_MODE: ${API_GO_AUDIT_OUTBOX_MODE:-legacy}
+      # processed_item MongoOutbox 补偿链所有权。空串按 legacy；go=Go 每 5 分钟
+      # 扫描并按时间预算分批并发补偿，Nest 的定时扫描在申请锁前退出。立即投递与
+      # 进程内重试仍归 Nest。go 需要 MySQL、Redis、Mongo；回滚改回 legacy。
+      API_GO_PROCESSED_ITEM_OUTBOX_MODE: ${API_GO_PROCESSED_ITEM_OUTBOX_MODE:-legacy}
+      PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS: ${PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS:-240000}
+      PROCESSED_ITEM_OUTBOX_CONCURRENCY: ${PROCESSED_ITEM_OUTBOX_CONCURRENCY:-4}
+      PROCESSED_ITEM_OUTBOX_BATCH_SIZE: ${PROCESSED_ITEM_OUTBOX_BATCH_SIZE:-10}
       # NewsNow 来源获取两路（公开）：GET /api/news-aggregator/source 与
       # POST /api/news-aggregator/sources/batch。Nest 与 Go 注入同一变量；
       # 空串按 legacy。go 时 Go 真实抓取上游、写兼容缓存并发布
@@ -706,6 +713,13 @@ services:
       # 需要 DATABASE_URL 与 REDIS_HOST，不要求 JWT/Mongo/SMTP，也不强开任何
       # HTTP 模式。Nest 与 Go 注入同一变量，默认 legacy 仍由 NestJS Cron 消费。
       API_GO_AUDIT_OUTBOX_MODE: ${API_GO_AUDIT_OUTBOX_MODE:-legacy}
+      # processed_item MongoOutbox 补偿链所有权。空串按 legacy；go=Go 每 5 分钟
+      # 扫描并按时间预算分批并发补偿，Nest 的定时扫描在申请锁前退出。立即投递与
+      # 进程内重试仍归 Nest。go 需要 MySQL、Redis、Mongo；回滚改回 legacy。
+      API_GO_PROCESSED_ITEM_OUTBOX_MODE: ${API_GO_PROCESSED_ITEM_OUTBOX_MODE:-legacy}
+      PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS: ${PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS:-240000}
+      PROCESSED_ITEM_OUTBOX_CONCURRENCY: ${PROCESSED_ITEM_OUTBOX_CONCURRENCY:-4}
+      PROCESSED_ITEM_OUTBOX_BATCH_SIZE: ${PROCESSED_ITEM_OUTBOX_BATCH_SIZE:-10}
       # NewsNow 来源获取两路（公开）：GET /api/news-aggregator/source 与
       # POST /api/news-aggregator/sources/batch。pilot 默认仍交 NestJS；
       # go 只接管这两条精确路由（无 JWT/Mongo 依赖），Nest 预热与热点

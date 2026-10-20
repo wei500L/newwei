@@ -218,6 +218,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
+	"github.com/wei500L/newwei/apps/api-go/internal/processeditemoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
@@ -1075,6 +1076,7 @@ func run() error {
 				cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo ||
 				cfg.ItemsIngestMode == config.ItemsIngestModeGo ||
 				cfg.RawItemOutboxMode == config.RawItemOutboxModeGo ||
+				cfg.ProcessedItemOutboxMode == config.ProcessedItemOutboxModeGo ||
 				cfg.EconomicDataMode == config.EconomicDataModeGo ||
 				cfg.EconomicDataWorkerMode == config.EconomicDataWorkerModeGo ||
 				cfg.EmailSettingsMode == config.EmailSettingsModeGo ||
@@ -1193,6 +1195,9 @@ func run() error {
 	// other background owners.
 	itemsIngestGo := cfg.ItemsIngestMode == config.ItemsIngestModeGo
 	rawItemOutboxGo := cfg.RawItemOutboxMode == config.RawItemOutboxModeGo
+	// The processed_item compensation owner is independent of the item write
+	// and raw_item replay switches.
+	processedItemOutboxGo := cfg.ProcessedItemOutboxMode == config.ProcessedItemOutboxModeGo
 	// The analysis CSV export unit is independent of the item reading switch:
 	// it builds its own item and news-event readers and only owns the two exact
 	// POST export routes.
@@ -1292,6 +1297,7 @@ func run() error {
 		cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo ||
 		newsnowBackgroundGo ||
 		rawItemOutboxGo ||
+		processedItemOutboxGo ||
 		economicDataWorkerGo ||
 		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo ||
 		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
@@ -2537,6 +2543,9 @@ func run() error {
 	// and GraphQL switches. Its Close stops new ticks and drains the in-flight
 	// batch before the shared Redis/Mongo handles close below.
 	var rawItemOutboxScheduler *itemsingest.OutboxScheduler
+	// The processed_item compensation owner is a background unit independent of
+	// JWT, HTTP and GraphQL switches. It shares the outbox CAS with NestJS.
+	var processedItemOutboxScheduler *processeditemoutbox.Scheduler
 	// The knowledge-graph automatic construction chain owns the five-minute tick
 	// when API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go. It registers no HTTP route
 	// and needs no JWT.
@@ -2611,6 +2620,11 @@ func run() error {
 				log.Printf("api-go: raw-item outbox scheduler close: %v", closeErr)
 			}
 		}
+		if processedItemOutboxScheduler != nil {
+			if closeErr := processedItemOutboxScheduler.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: processed-item outbox scheduler close: %v", closeErr)
+			}
+		}
 		if kgIngestion != nil {
 			if closeErr := kgIngestion.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: knowledge graph ingestion scheduler close: %v", closeErr)
@@ -2682,6 +2696,31 @@ func run() error {
 	if rawItemOutboxScheduler != nil {
 		rawItemOutboxScheduler.Start(context.Background())
 		log.Printf("api-go: raw-item outbox scheduled replay owned by Go (SCHEDULE_ENABLED=%t)", cfg.ScheduleEnabled)
+	}
+	if processedItemOutboxGo {
+		if !cfg.ScheduleEnabled {
+			log.Printf("api-go: processed-item outbox scheduler not started (SCHEDULE_ENABLED=false)")
+		} else {
+			if dashboardMongo == nil {
+				dashboardMongo = graphqlMongo
+			}
+			if dashboardMongo == nil {
+				opened, openErr := dashboardstats.Open(cfg.MongoURI)
+				if openErr != nil {
+					return fmt.Errorf("api-go: processed-item outbox go mode requires a valid MONGO_URI")
+				}
+				dashboardMongo = opened
+			}
+			processedItemOutboxScheduler, err = wireProcessedItemOutbox(cfg, sharedDB, redisClient, dashboardMongo.Database())
+			if err != nil {
+				return err
+			}
+			if processedItemOutboxScheduler != nil {
+				processedItemOutboxScheduler.Start(context.Background())
+				log.Printf("api-go: processed-item outbox compensation owned by Go (batchSize=%d, concurrency=%d, budgetMs=%d)",
+					cfg.ProcessedItemOutboxBatchSize, cfg.ProcessedItemOutboxConcurrency, cfg.ProcessedItemOutboxTickBudgetMs)
+			}
+		}
 	}
 	kgIngestion, err = wireKGIngestion(cfg, sharedDB, redisClient, sharedKGIngestionMongo(dashboardMongo, graphqlMongo))
 	if err != nil {

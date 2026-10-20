@@ -1110,6 +1110,25 @@ const (
 	RawItemOutboxModeGo     RawItemOutboxMode = "go"
 )
 
+// ProcessedItemOutboxMode controls the processed_item MongoOutbox compensation
+// owner. The accepted values are exactly "", "legacy" and "go"; empty behaves
+// like legacy. go starts the Go five-minute scanner and makes the NestJS Cron
+// return before scanning. The synchronous in-worker delivery and in-process
+// retry remain in NestJS. Go requires MySQL, Redis and Mongo, but no JWT or any
+// HTTP/GraphQL switch; vector settings are resolved from the effective
+// SystemSetting row at delivery time.
+//
+// The throughput knobs are only read in go mode:
+// PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS (default 240000, below the 5-minute
+// period), PROCESSED_ITEM_OUTBOX_CONCURRENCY (default 4) and
+// PROCESSED_ITEM_OUTBOX_BATCH_SIZE (default 10).
+type ProcessedItemOutboxMode string
+
+const (
+	ProcessedItemOutboxModeLegacy ProcessedItemOutboxMode = "legacy"
+	ProcessedItemOutboxModeGo     ProcessedItemOutboxMode = "go"
+)
+
 // LLMGatewayProfilesMode controls the seven LLM gateway profile
 // configuration-control routes under /api/system-settings/llm-gateways
 // (API_GO_LLM_GATEWAY_PROFILES_MODE). Accepted values are exactly "", "legacy"
@@ -1953,6 +1972,17 @@ type Config struct {
 	// legacy. go requires DATABASE_URL, REDIS_HOST and MONGO_URI but no JWT or
 	// HTTP/GraphQL switch. It is independent of ItemsIngestMode.
 	RawItemOutboxMode RawItemOutboxMode
+	// ProcessedItemOutboxMode controls the processed_item compensation owner.
+	// Defaults to legacy; go requires DATABASE_URL, REDIS_HOST and MONGO_URI
+	// but no JWT or HTTP/GraphQL switch.
+	ProcessedItemOutboxMode ProcessedItemOutboxMode
+	// ProcessedItemOutboxTickBudgetMs bounds one Go scan tick. It must stay
+	// below the five-minute period.
+	ProcessedItemOutboxTickBudgetMs int
+	// ProcessedItemOutboxConcurrency is the per-batch delivery worker count.
+	ProcessedItemOutboxConcurrency int
+	// ProcessedItemOutboxBatchSize is the scan cut of one batch.
+	ProcessedItemOutboxBatchSize int
 	// GraphQLItemsListMode only decides whether the items connection root
 	// (items(after, filters, first, orderBy, page, rankingMode, search)) is
 	// registered into the Go GraphQL executor. It defaults to legacy. The
@@ -3606,6 +3636,43 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_RAW_ITEM_OUTBOX_MODE must be one of legacy|go")
 	}
+	// The processed_item compensation owner is independent of the write and
+	// read switches. Empty behaves like legacy; an invalid value fails startup.
+	switch strings.TrimSpace(getenv("API_GO_PROCESSED_ITEM_OUTBOX_MODE")) {
+	case "", string(ProcessedItemOutboxModeLegacy):
+		cfg.ProcessedItemOutboxMode = ProcessedItemOutboxModeLegacy
+	case string(ProcessedItemOutboxModeGo):
+		cfg.ProcessedItemOutboxMode = ProcessedItemOutboxModeGo
+	default:
+		errs = append(errs, "API_GO_PROCESSED_ITEM_OUTBOX_MODE must be one of legacy|go")
+	}
+	cfg.ProcessedItemOutboxTickBudgetMs = 240000
+	if raw := strings.TrimSpace(getenv("PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, fmt.Sprintf("PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS must be a positive integer, got %q", raw))
+		} else {
+			cfg.ProcessedItemOutboxTickBudgetMs = value
+		}
+	}
+	cfg.ProcessedItemOutboxConcurrency = 4
+	if raw := strings.TrimSpace(getenv("PROCESSED_ITEM_OUTBOX_CONCURRENCY")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, fmt.Sprintf("PROCESSED_ITEM_OUTBOX_CONCURRENCY must be a positive integer, got %q", raw))
+		} else {
+			cfg.ProcessedItemOutboxConcurrency = value
+		}
+	}
+	cfg.ProcessedItemOutboxBatchSize = 10
+	if raw := strings.TrimSpace(getenv("PROCESSED_ITEM_OUTBOX_BATCH_SIZE")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, fmt.Sprintf("PROCESSED_ITEM_OUTBOX_BATCH_SIZE must be a positive integer, got %q", raw))
+		} else {
+			cfg.ProcessedItemOutboxBatchSize = value
+		}
+	}
 	// The cross-process scheduling stop switch uses the exact NestJS
 	// `!== "false"` comparison.
 	// The items list switch accepts the empty string, legacy and go. An empty
@@ -4699,6 +4766,20 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_RAW_ITEM_OUTBOX_MODE=go")
+		}
+	}
+	// The processed_item compensation owner reads MySQL and Mongo, takes its
+	// scan lease in Redis and resolves vector settings at delivery time. It
+	// verifies no JWT and registers no route.
+	if cfg.ProcessedItemOutboxMode == ProcessedItemOutboxModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_PROCESSED_ITEM_OUTBOX_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_PROCESSED_ITEM_OUTBOX_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_PROCESSED_ITEM_OUTBOX_MODE=go")
 		}
 	}
 	// The items connection root reuses the item reading service and the shared

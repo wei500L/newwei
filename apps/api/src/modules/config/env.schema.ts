@@ -163,6 +163,34 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The processed_item outbox compensation owner. Empty string behaves like
+    // legacy. go makes the NestJS five-minute Cron return before scanning; the
+    // in-worker immediate delivery and the process-local retry remain here.
+    // Invalid values fail Nest startup.
+    API_GO_PROCESSED_ITEM_OUTBOX_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // Go-only throughput knobs for the processed_item compensation owner. Nest
+    // validates them so both processes reject malformed deployment values.
+    PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(240_000),
+    PROCESSED_ITEM_OUTBOX_CONCURRENCY: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(4),
+    PROCESSED_ITEM_OUTBOX_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(10),
     // Economic-data worker ownership (catalog/repeat synchronization and the
     // akshare-data consumer). Independent of the request switch.
     API_GO_ECONOMIC_DATA_WORKER_MODE: z

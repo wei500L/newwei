@@ -190,6 +190,12 @@ export class NewsPipelineService implements OnModuleDestroy {
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async retryPendingOutbox(): Promise<void> {
+    // The compensation owner is exclusive: in go mode the Go scanner owns the
+    // five-minute tick. Immediate delivery and the in-process retry created by
+    // this worker stay here; only this process-wide scan returns early.
+    if ((process.env.API_GO_PROCESSED_ITEM_OUTBOX_MODE ?? "").trim() === "go") {
+      return;
+    }
     await this.outbox.retryPendingOutbox();
   }
 }
