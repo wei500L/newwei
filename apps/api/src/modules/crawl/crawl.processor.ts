@@ -13,7 +13,9 @@ import {
   UnrecoverableError,
   type BackoffOptions,
 } from "bullmq";
+import Redis from "ioredis";
 
+import { REDIS_CLIENT } from "../cache/cache.tokens";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
@@ -50,6 +52,12 @@ const MEMORY_PRESSURE_COOLDOWN_MIN_MS = 5_000;
 const MEMORY_PRESSURE_COOLDOWN_MAX_MS = 10 * 60 * 1000;
 const MEMORY_PRESSURE_DEFAULT_COOLDOWN_MS = 30_000;
 const MEMORY_PRESSURE_PERCENT_PATTERN = /memory\s+at\s+(\d+(?:\.\d+)?)%/i;
+// C2: Go publishes this channel after it updates the crawl client setting and
+// the BullMQ meta concurrency. Every Nest instance subscribed here applies the
+// new worker-local concurrency immediately instead of waiting for a restart.
+const CRAWL_WORKER_CONCURRENCY_CHANNEL = "crawl:worker-concurrency:v1";
+const CRAWL_WORKER_CONCURRENCY_VERSION = 1;
+const MAX_CRAWL_CONCURRENCY = 20;
 
 const RETRYABLE_MESSAGE_HINTS = [
   "timeout",
@@ -477,7 +485,10 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly normalEvents: QueueEvents,
     @Optional()
     private readonly newsSourceOpsSnapshots?: NewsSourceOpsSnapshotService,
+    @Inject(REDIS_CLIENT) private readonly redis?: Redis,
   ) {}
+
+  private concurrencySubscriber?: Redis;
 
   private queueContexts(includeLegacy = true): QueueRuntimeContext[] {
     const contexts: QueueRuntimeContext[] = [
@@ -542,6 +553,95 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       this.createLlmWorker(CRAWL_QUEUE_LLM_JUDGE_NAME, this.llmJudgeQueue),
       this.createLlmWorker(CRAWL_QUEUE_LLM_LEARN_NAME, this.llmLearnQueue),
     );
+
+    await this.subscribeWorkerConcurrency();
+  }
+
+  /**
+   * Subscribes the C2 worker concurrency broadcast with a dedicated connection.
+   * It changes nothing until Go publishes a message, so legacy deployments and
+   * instances that never see the channel keep their current behaviour.
+   */
+  private async subscribeWorkerConcurrency() {
+    if (!this.redis) {
+      return;
+    }
+    let subscriber: Redis;
+    try {
+      subscriber = this.redis.duplicate();
+    } catch (error) {
+      logger.warn(
+        { err: error },
+        "Failed to open crawl worker concurrency subscriber connection",
+      );
+      return;
+    }
+    subscriber.on("error", (error) => {
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        "Crawl worker concurrency subscriber redis error",
+      );
+    });
+    subscriber.on("message", (channel, message) => {
+      if (channel !== CRAWL_WORKER_CONCURRENCY_CHANNEL) {
+        return;
+      }
+      const parsed = this.parseWorkerConcurrencyMessage(message);
+      if (parsed === undefined) {
+        return;
+      }
+      this.setWorkerConcurrency(parsed);
+      logger.info(
+        { maxConcurrency: parsed },
+        "Applied crawl worker concurrency broadcast",
+      );
+    });
+    this.concurrencySubscriber = subscriber;
+    try {
+      await subscriber.subscribe(CRAWL_WORKER_CONCURRENCY_CHANNEL);
+    } catch (error) {
+      this.concurrencySubscriber = undefined;
+      logger.warn(
+        { err: error },
+        "Failed to subscribe crawl worker concurrency channel",
+      );
+      await subscriber.quit().catch(() => subscriber.disconnect());
+    }
+  }
+
+  /**
+   * Validates {"version":1,"maxConcurrency":N}. An invalid message is ignored
+   * with a warning; the Redis meta and the persisted setting remain the source
+   * of truth.
+   */
+  private parseWorkerConcurrencyMessage(message: string): number | undefined {
+    let value: unknown;
+    try {
+      value = JSON.parse(message);
+    } catch {
+      logger.warn("Ignored crawl worker concurrency message: invalid JSON");
+      return undefined;
+    }
+    if (!value || typeof value !== "object") {
+      logger.warn("Ignored crawl worker concurrency message: not an object");
+      return undefined;
+    }
+    const record = value as { version?: unknown; maxConcurrency?: unknown };
+    const concurrency = record.maxConcurrency;
+    if (
+      record.version !== CRAWL_WORKER_CONCURRENCY_VERSION ||
+      typeof concurrency !== "number" ||
+      !Number.isInteger(concurrency) ||
+      concurrency < 1 ||
+      concurrency > MAX_CRAWL_CONCURRENCY
+    ) {
+      logger.warn(
+        { message },
+        "Ignored crawl worker concurrency message: unsupported payload",
+      );
+      return undefined;
+    }
+    return concurrency;
   }
 
   private createWorker(
@@ -1016,6 +1116,7 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    await this.closeWorkerConcurrencySubscriber();
     for (const { worker } of this.workers) {
       await worker.close();
     }
@@ -1032,6 +1133,24 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       binding.events.off("failed", binding.onFailed);
     }
     this.queueEventBindings.length = 0;
+  }
+
+  private async closeWorkerConcurrencySubscriber() {
+    const subscriber = this.concurrencySubscriber;
+    this.concurrencySubscriber = undefined;
+    if (!subscriber) {
+      return;
+    }
+    try {
+      await subscriber.unsubscribe(CRAWL_WORKER_CONCURRENCY_CHANNEL);
+    } catch {
+      // best-effort unsubscribe
+    }
+    try {
+      await subscriber.quit();
+    } catch {
+      subscriber.disconnect();
+    }
   }
 
   setWorkerConcurrency(

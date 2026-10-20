@@ -16,7 +16,8 @@ require (
 	// GraphQL read pilot：完整 SDL 的解析、校验与变量强制。v2.5.62 是 2026-10-08 的正式 tag。
 	github.com/vektah/gqlparser/v2 v2.5.62
 	// BullMQ 5.63.2 msgpack wire format shared by the items-ingest,
-	// archive-preparation and alert-rules producers. v5.4.1 is the fixed tag.
+	// archive-preparation, alert-rules and crawl-task producers. v5.4.1 is the
+	// fixed tag.
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	// Go-批5A：dashboard stats 只读查询 ProcessedItem 与 TaskLog。
 	go.mongodb.org/mongo-driver/v2 v2.9.2
