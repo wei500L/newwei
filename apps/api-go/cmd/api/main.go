@@ -730,6 +730,10 @@ func run() error {
 	if cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 		platformGovernanceSettingsMode = string(legacyproxy.ModeGo)
 	}
+	situationSettingsMode := ""
+	if cfg.SituationSettingsMode == config.SituationSettingsModeGo {
+		situationSettingsMode = string(legacyproxy.ModeGo)
+	}
 	modelAccessSettingsMode := ""
 	if cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo {
 		modelAccessSettingsMode = string(legacyproxy.ModeGo)
@@ -866,6 +870,9 @@ func run() error {
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
 	rules = legacyproxy.WithSituationSignals(rules, situationSignalsMode)
 	rules = legacyproxy.WithSituationInsights(rules, situationInsightsMode)
+	// The four situation-monitor settings entries are an independent switch.
+	// Their exact paths never overlap the signals, insights or monitors rules.
+	rules = legacyproxy.WithSituationSettings(rules, situationSettingsMode)
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
@@ -1056,6 +1063,7 @@ func run() error {
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
 				cfg.ArchiveReadingMode == config.ArchiveReadingModeGo ||
 				cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
+				cfg.SituationSettingsMode == config.SituationSettingsModeGo ||
 				cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
 				cfg.AnalysisRunsMode == config.AnalysisRunsModeGo ||
 				cfg.AnalysisWorkerMode == config.AnalysisWorkerModeGo ||
@@ -1214,6 +1222,9 @@ func run() error {
 	situationSignalsGo := cfg.SituationSignalsMode == config.SituationSignalsModeGo
 	// The insights takeover needs the same credentialed stack plus Mongo.
 	situationInsightsGo := cfg.SituationInsightsMode == config.SituationInsightsModeGo
+	// The settings takeover needs the credentialed stack plus Mongo (quality
+	// summary) and the settings encryption key.
+	situationSettingsGo := cfg.SituationSettingsMode == config.SituationSettingsModeGo
 	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
 	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
 	proxyLoadBalancingGo := cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo
@@ -1236,7 +1247,7 @@ func run() error {
 		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
-		situationSignalsGo || situationInsightsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
+		situationSignalsGo || situationInsightsGo || situationSettingsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || graphqlAlertRulesGo || cfg.GraphQLSettingsWriteMode == "go" ||
 		sourcePolicyWriteGo ||
@@ -1785,6 +1796,13 @@ func run() error {
 	// below; the runtime stays unstarted until the shutdown defer is installed.
 	economicService, economicRuntime, err := wireEconomicData(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
 	if err != nil {
+		return err
+	}
+
+	// The situation-monitor settings unit reuses the economic-data service so a
+	// settings write can hot-sync the same repeatable jobs. It also reuses the
+	// shared Mongo client for the insights quality summary.
+	if err := wireSituationSettings(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator, economicService); err != nil {
 		return err
 	}
 

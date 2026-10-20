@@ -422,6 +422,12 @@ jobs:
       - name: MySQL/Redis integration tests (GDELT external snapshot store, cache and lease)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/gdeltsnapshot/ -run 'TestGDELTSnapshotIntegration' -v
 
+      # 态势监控设置：真实 MySQL/Redis 覆盖读写/重置/清除授权、加密信封、审计、
+      # 缓存失效、O3 写后重读等价与 T1 广播；Telegram JobScheduler 用原始 Redis
+      # 结构断言，并用已锁定的 Node BullMQ 5.63.2 fixture 双向读取/替换。
+      - name: MySQL/Redis integration tests (situation-monitor settings + Telegram scheduler)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/situationsettings/ ./internal/situationsettings/telegramsched/ -run 'Integration|TestTelegramSchedulerNodeInterop' -v
+
       - name: MySQL integration tests (crawl-strategy run records + preview in-flight queries)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlfrontierruns/ ./internal/crawlstrategyruns/ -run 'TestStrategyRunWriteIntegration|TestStrategyRunBatchWriterMatchesPerRowIntegration|TestCountActivePipelineJobsIntegration' -v
 

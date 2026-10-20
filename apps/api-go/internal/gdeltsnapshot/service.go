@@ -196,3 +196,14 @@ func (s *Service) ForceRefresh(ctx context.Context) (Summary, error) {
 	}
 	return s.buildStatusSummary(ctx, current.payload, current.stale, true)
 }
+
+// GetStatusSummary mirrors SituationMonitorExternalSnapshotService.getStatusSummary:
+// read the current cache/database snapshot and build the summary with the
+// configured GDELT enabled flag. It performs no rebuild and takes no lease.
+func (s *Service) GetStatusSummary(ctx context.Context) (Summary, error) {
+	current, err := s.readSnapshot(ctx)
+	if err != nil {
+		return Summary{}, err
+	}
+	return s.buildStatusSummary(ctx, current.payload, current.stale, s.enabled)
+}
