@@ -2,6 +2,7 @@ package notificationssocket
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -78,6 +79,58 @@ func TestValidateRelayedRow(t *testing.T) {
 	}
 	if validateRelayedRow(relayAlert, notificationEventWithData(`{"presentation":{"kind":"other"}}`)) {
 		t.Fatal("wrong presentation kind must not validate")
+	}
+}
+
+func TestValidateRelayedRowNewsSource(t *testing.T) {
+	// The three org-wide news-source alerts written by the Go scheduler/ops
+	// takeover must validate only with a NULL userId and a system type.
+	for _, kind := range []string{
+		"news_source_scheduler_backpressure",
+		"news_source_rss_body_missing_spike",
+		"news_source_pipeline_retry_spike",
+	} {
+		event := NotificationEvent{
+			Type: "system",
+			Data: json.RawMessage(fmt.Sprintf(`{"presentation":{"kind":%q}}`, kind)),
+		}
+		if !validateRelayedRow(relayNewsSource, event) {
+			t.Fatalf("news-source row with kind %q should validate", kind)
+		}
+	}
+
+	orgWide := NotificationEvent{
+		Type: "system",
+		Data: json.RawMessage(`{"presentation":{"kind":"news_source_scheduler_backpressure"}}`),
+	}
+	if validateRelayedRow(relayNewsSource, NotificationEvent{
+		Type:   "system",
+		UserID: stringPointer("u1"),
+		Data:   orgWide.Data,
+	}) {
+		t.Fatal("user-scoped row must not validate for the org-wide news-source relay")
+	}
+	if validateRelayedRow(relayNewsSource, NotificationEvent{
+		Type: "alert_triggered",
+		Data: orgWide.Data,
+	}) {
+		t.Fatal("non-system row must not validate for the news-source relay")
+	}
+	if validateRelayedRow(relayNewsSource, notificationEventWithData(`{"presentation":{"kind":"other"}}`)) {
+		t.Fatal("unknown presentation kind must not validate for the news-source relay")
+	}
+}
+
+func TestRelayChannelsIncludeNewsSource(t *testing.T) {
+	kind, ok := relayChannels["news-source:notifications:v1"]
+	if !ok {
+		t.Fatal("news-source notification relay channel must be subscribed")
+	}
+	if kind != relayNewsSource {
+		t.Fatalf("channel kind = %v, want relayNewsSource", kind)
+	}
+	if len(relayChannels) != 5 {
+		t.Fatalf("relay channel count = %d, want 5", len(relayChannels))
 	}
 }
 

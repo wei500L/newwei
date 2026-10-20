@@ -259,10 +259,12 @@ func (r *Runtime) handleRelay(ctx context.Context, kind relayKind, raw string) {
 	if err != nil {
 		return
 	}
-	// The three domain channels always target one user. Only the generic
-	// NotificationsService relay may be org-wide, so a malformed alert/analysis/
-	// digest envelope cannot fan a user-specific row out to the whole org.
-	if kind != relayGeneric && strings.TrimSpace(message.UserID) == "" {
+	// The alert, analysis and digest channels always target one user; the
+	// generic NotificationsService relay may be org-wide, and the news-source
+	// relay is org-wide by design (its rows have a NULL userId). A malformed
+	// user-scoped envelope therefore cannot fan a user-specific row out to the
+	// whole organization.
+	if kind != relayGeneric && kind != relayNewsSource && strings.TrimSpace(message.UserID) == "" {
 		return
 	}
 	event, found, err := r.loadNotification(ctx, message)

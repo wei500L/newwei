@@ -16,7 +16,7 @@ type feedSource interface {
 
 type relayHandler func(context.Context, relayKind, string)
 
-// redisFeed subscribes to the four identifiers-only channels. A message is
+// redisFeed subscribes to the five identifiers-only channels. A message is
 // handled asynchronously so one slow MySQL re-read cannot block the Redis
 // reader, but each connection still serializes its own writes.
 type redisFeed struct {

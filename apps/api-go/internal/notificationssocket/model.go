@@ -60,22 +60,25 @@ const (
 	relayAlert
 	relayAnalysis
 	relayDigest
+	relayNewsSource
 )
 
 const (
 	relayVersion = 1
 
-	channelGeneric  = "notification:events:v1"
-	channelAlert    = "alert:notifications:v1"
-	channelAnalysis = "analysis:notification:v1"
-	channelDigest   = "user-digest:notifications:v1"
+	channelGeneric    = "notification:events:v1"
+	channelAlert      = "alert:notifications:v1"
+	channelAnalysis   = "analysis:notification:v1"
+	channelDigest     = "user-digest:notifications:v1"
+	channelNewsSource = "news-source:notifications:v1"
 )
 
 var relayChannels = map[string]relayKind{
-	channelGeneric:  relayGeneric,
-	channelAlert:    relayAlert,
-	channelAnalysis: relayAnalysis,
-	channelDigest:   relayDigest,
+	channelGeneric:    relayGeneric,
+	channelAlert:      relayAlert,
+	channelAnalysis:   relayAnalysis,
+	channelDigest:     relayDigest,
+	channelNewsSource: relayNewsSource,
 }
 
 func parseRelayMessage(raw string) (relayMessage, error) {
@@ -133,6 +136,24 @@ func validateRelayedRow(kind relayKind, event NotificationEvent) bool {
 		}
 		switch data.Presentation.Kind {
 		case "user_digest_ready", "user_digest_empty", "user_digest_delivery_failed":
+			return true
+		}
+		return false
+	case relayNewsSource:
+		// News-source alerts are org-wide system rows (userId NULL) written by
+		// the Go scheduler/ops takeover, so a user-scoped row must never be
+		// fanned out to the whole organization.
+		if event.Type != "system" || event.UserID != nil {
+			return false
+		}
+		data, ok := parseNotificationData(event.Data)
+		if !ok || data.Presentation == nil {
+			return false
+		}
+		switch data.Presentation.Kind {
+		case "news_source_scheduler_backpressure",
+			"news_source_rss_body_missing_spike",
+			"news_source_pipeline_retry_spike":
 			return true
 		}
 		return false
