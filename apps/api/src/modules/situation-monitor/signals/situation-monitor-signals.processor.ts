@@ -46,6 +46,21 @@ export class SituationMonitorSignalsProcessor implements OnModuleInit, OnModuleD
   ) {}
 
   async onModuleInit() {
+    // Execution ownership is exclusive: when the Go worker switch is go, api-go
+    // registers the repeatable jobs and consumes situationMonitorSignals, so
+    // NestJS must not touch the queue scheduler or create a Worker at all. The
+    // Queue/QueueEvents providers stay registered for the other NestJS callers.
+    const workerOwner =
+      this.env.get<string>('API_GO_SITUATION_SIGNALS_WORKER_MODE', {
+        infer: true,
+      }) ?? 'legacy';
+    if (workerOwner === 'go') {
+      logger.info(
+        'Situation monitor signals worker disabled: consumed by api-go (API_GO_SITUATION_SIGNALS_WORKER_MODE=go)',
+      );
+      return;
+    }
+
     await this.ensureRepeatableJobs();
 
     this.worker = new Worker<SituationMonitorSignalsJobPayload>(

@@ -49,8 +49,10 @@ type SupportedSituationMonitorRealtimeEvent =
   | SituationMonitorRealtimeEvent<SituationTelegramRealtimePayload>
   | SituationMonitorRealtimeEvent<SituationOrefRealtimePayload>;
 
+const SITUATION_MONITOR_SIGNALS_NAMESPACE = "situation-monitor";
+
 @WebSocketGateway({
-  namespace: "situation-monitor",
+  namespace: SITUATION_MONITOR_SIGNALS_NAMESPACE,
   cors: {
     origin: true,
     credentials: true,
@@ -277,6 +279,79 @@ export class SituationMonitorSignalsGateway
     );
   }
 
+  /**
+   * Delivers one realtime event only to the sockets connected to this Nest
+   * instance, reusing the ordinary per-organization payload augmentation.
+   *
+   * The Socket.IO Redis adapter is deliberately bypassed: the Go
+   * situation-signals worker publishes one message per update on the shared
+   * Redis bridge channel and every NestJS instance receives it, so re-entering
+   * a cluster-wide `broadcast` (room emit) would duplicate the event once per
+   * instance. This method therefore emits directly to the local sockets and
+   * never publishes anything back to Redis.
+   *
+   * This is read-only with respect to the dispatcher: feeding the event back
+   * into `SituationMonitorSignalsDispatcher.publish` would push it onto the
+   * bridge again and loop forever.
+   */
+  async emitLocalEvent(
+    event: SupportedSituationMonitorRealtimeEvent,
+  ): Promise<void> {
+    if (!this.server) {
+      return;
+    }
+
+    const localSockets = this.getLocalSockets();
+    if (localSockets.length === 0) {
+      return;
+    }
+
+    const usersByOrg = new Map<string, string[]>();
+    const seenUsers = new Set<string>();
+    for (const socket of localSockets) {
+      const profile = socket.data?.user as AuthenticatedUser | undefined;
+      if (!profile?.id || !profile.orgId) {
+        continue;
+      }
+      const userKey = `${profile.orgId}:${profile.id}`;
+      if (seenUsers.has(userKey)) {
+        continue;
+      }
+      seenUsers.add(userKey);
+      const userIds = usersByOrg.get(profile.orgId) ?? [];
+      userIds.push(profile.id);
+      usersByOrg.set(profile.orgId, userIds);
+    }
+    if (usersByOrg.size === 0) {
+      return;
+    }
+
+    await Promise.allSettled(
+      Array.from(usersByOrg.entries()).map(async ([orgId, userIds]) => {
+        const payloadsByUser = await this.augmentPayloadForOrg(
+          event,
+          orgId,
+          userIds,
+        );
+        const orgUserIds = new Set(userIds);
+        for (const socket of localSockets) {
+          const profile = socket.data?.user as AuthenticatedUser | undefined;
+          if (
+            !profile?.id ||
+            profile.orgId !== orgId ||
+            !orgUserIds.has(profile.id)
+          ) {
+            continue;
+          }
+          socket.emit(
+            event.type,
+            payloadsByUser.get(profile.id) ?? event.payload,
+          );
+        }
+      }),
+    );
+  }
+
   private async augmentPayloadForOrg(
     event: SupportedSituationMonitorRealtimeEvent,
     orgId: string,
@@ -439,6 +514,35 @@ export class SituationMonitorSignalsGateway
       origin,
       parseCorsOriginAllowlist(this.env.graphqlConfig.corsOrigin),
     );
+  }
+
+  /**
+   * Local sockets of this situation-monitor namespace. Nest injects either the
+   * namespaced Namespace (sockets -> Map) or the root Server (sockets -> default
+   * namespace), so both shapes are resolved to the sockets of this gateway's own
+   * namespace without touching the ordinary broadcast path.
+   */
+  private getLocalSockets(): Socket[] {
+    if (!this.server) {
+      return [];
+    }
+    const sockets: unknown = this.server.sockets;
+    if (sockets instanceof Map) {
+      return Array.from(sockets.values()) as Socket[];
+    }
+    // Root Server injection: `server.sockets` is the default namespace, so the
+    // gateway namespace must be resolved explicitly to avoid missing its sockets.
+    // A namespace instance exposes no `of`, so the presence of that method tells
+    // the two shapes apart without guessing.
+    if ("of" in this.server) {
+      const namespaceSockets: unknown = this.server.of(
+        SITUATION_MONITOR_SIGNALS_NAMESPACE,
+      ).sockets;
+      if (namespaceSockets instanceof Map) {
+        return Array.from(namespaceSockets.values()) as Socket[];
+      }
+    }
+    return [];
   }
 
   private getConnectedUsersByOrg() {
