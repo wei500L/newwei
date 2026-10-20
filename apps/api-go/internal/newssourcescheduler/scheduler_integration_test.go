@@ -146,7 +146,7 @@ func createSchedulerTables(t *testing.T, db *sql.DB) {
 			"PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 		"CREATE TABLE IF NOT EXISTS `NewsSource` (" +
 			"`id` VARCHAR(191) NOT NULL, `orgId` VARCHAR(191) NOT NULL, `name` VARCHAR(191) NOT NULL, " +
-			"`url` VARCHAR(1024) NOT NULL, `siteType` VARCHAR(32) NOT NULL DEFAULT 'general', `language` VARCHAR(191) NULL, " +
+			"`url` VARCHAR(191) NOT NULL, `siteType` VARCHAR(32) NOT NULL DEFAULT 'general', `language` VARCHAR(191) NULL, " +
 			"`crawlTemplateId` VARCHAR(191) NULL, `workflowId` VARCHAR(191) NULL, `workflowVersionId` VARCHAR(191) NULL, " +
 			"`workflowBindingMode` VARCHAR(32) NOT NULL DEFAULT 'published', `frequencySeconds` INT NOT NULL DEFAULT 3600, " +
 			"`priority` INT NOT NULL DEFAULT 0, `isActive` BOOLEAN NOT NULL DEFAULT true, `config` JSON NULL, " +
