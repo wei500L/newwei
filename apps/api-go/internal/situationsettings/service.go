@@ -360,24 +360,14 @@ func (s *Service) buildNextStored(stored storedFields, input UpdateInput, encode
 	if err != nil {
 		return storedValue{}, nil, err
 	}
-	// telegramApiId is not a member of this DTO either; preserve the current
-	// normalized value exactly like resolveNextString(current, undefined).
 	// telegramApiId/apiHash/session are not members of the HTTP PUT DTO, but
 	// completeAuth writes them through NewTelegramAuthUpdate. A missing member
 	// preserves the stored value exactly like the NestJS updateSettings merge;
-	// the present members are set through the same normalization/encryption
-	// policy the NestJS service uses.
-	nextTelegramAPIID, err := resolveNextString(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramAPIID }),
+	// the present members go through the same normalization/encryption policy.
+	next.TelegramAPIID, err = resolveNextString(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramAPIID }),
 		input.TelegramAPIID)
 	if err != nil {
 		return storedValue{}, nil, err
-	}
-	if nextTelegramAPIID != nil {
-		encodedAPIID, marshalErr := json.Marshal(*nextTelegramAPIID)
-		if marshalErr != nil {
-			return storedValue{}, nil, marshalErr
-		}
-		next.TelegramAPIID = encodedAPIID
 	}
 	next.TelegramAPIHash, err = resolveNextAPIKey(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramAPIHash }),
 		input.TelegramAPIHash, encoder, s.env)
