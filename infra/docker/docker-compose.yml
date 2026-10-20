@@ -423,6 +423,11 @@ services:
       # Redis channels. The container receives the value explicitly instead of
       # relying on a host-side .env that compose would not inject.
       GRAPHQL_SUBSCRIPTION_BUS: ${GRAPHQL_SUBSCRIPTION_BUS:-redis}
+      # Go notifications Socket.IO 传输的执行权。Nest 也读取它：go 时
+      # NotificationsService 改发 identifiers-only relay、由 api-go 的
+      # /socket.io-notifications 推给浏览器。两侧必须看到同一值，否则会退化成
+      # Nest 发本机 socket 而 Web 连 Go 路径（实时通知丢失）。
+      API_GO_NOTIFICATIONS_SOCKET_MODE: ${API_GO_NOTIFICATIONS_SOCKET_MODE:-legacy}
       PRISMA_AUTO_RESOLVE_FAILED_MIGRATIONS: "false"
       AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
       AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
