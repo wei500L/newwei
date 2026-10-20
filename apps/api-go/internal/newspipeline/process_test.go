@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,8 @@ import (
 var pipelineTestNow = time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
 
 // pipelineTestRecorder records the order in which the pipeline calls its ports.
+var pipelineStagePathPattern = regexp.MustCompile(`\$\.([a-zA-Z_][a-zA-Z0-9_]*)`)
+
 type pipelineTestRecorder struct {
 	mu    sync.Mutex
 	calls []string
@@ -49,10 +52,8 @@ func (c *pipelineMetadataCapture) exec(_ context.Context, query string, args ...
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.queries = append(c.queries, query)
-	if len(args) > 0 {
-		if path, ok := args[0].(string); ok {
-			c.stages = append(c.stages, strings.TrimPrefix(path, "$."))
-		}
+	if match := pipelineStagePathPattern.FindStringSubmatch(query); len(match) == 2 {
+		c.stages = append(c.stages, match[1])
 	}
 	return c.failWith
 }

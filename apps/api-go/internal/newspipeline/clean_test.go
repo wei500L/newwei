@@ -566,7 +566,7 @@ func contentTestProcessedRow() contentRow {
 		"pa-1",             // pa.id
 		nil, nil, nil, nil, // title, subtitle, author, source
 		sql.NullTime{Time: publishedAt, Valid: true}, // publishedAt
-		nil, nil, nil, nil, nil, nil, // category, summary, topics, keyPoints, entities, kgRelations
+		nil, nil, nil, nil, nil, nil, nil, // category, summary, topics, keyPoints, entities, kgRelations, removedNoiseTypes
 		contentTestString("0123456789abcdef01234567"), // cleanedMarkdownRef
 		sql.NullFloat64{},                                        // qualityScore
 		contentTestString("gpt-cached"), contentTestString("v1"), // llmModel, llmPromptVersion

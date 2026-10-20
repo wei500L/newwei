@@ -392,7 +392,7 @@ func TestMarkdownHelpers(t *testing.T) {
 		"rawMarkdown": json.RawMessage(`"` + strings.Repeat("real content ", 150) + `"`),
 	}
 	selected = selectBestMarkdownFromContentDoc(challenge)
-	if selected == nil || *selected != strings.Repeat("real content ", 150) {
+	if selected == nil || *selected != strings.TrimSpace(strings.Repeat("real content ", 150)) {
 		t.Fatalf("challenge primary should defer to richer raw markdown")
 	}
 	if selected := selectBestMarkdownFromContentDoc(map[string]json.RawMessage{}); selected != nil {

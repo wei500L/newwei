@@ -99,8 +99,8 @@ func TestClassifyResultAndPartition(t *testing.T) {
 	if partition.Failures[0].Retryable {
 		t.Fatalf("low-signal failure must not be retryable: %#v", partition.Failures[0])
 	}
-	if !partition.Failures[1].Retryable || partition.Failures[1].StatusCode == nil || *partition.Failures[1].StatusCode != 403 {
-		t.Fatalf("403 failure must be retryable: %#v", partition.Failures[1])
+	if partition.Failures[1].Retryable || partition.Failures[1].StatusCode == nil || *partition.Failures[1].StatusCode != 403 {
+		t.Fatalf("403 failure must not be retryable (NestJS retryable set is 408/423/425/429/5xx): %#v", partition.Failures[1])
 	}
 	if partition.Failures[0].Message == "" || partition.Failures[1].Message == "" {
 		t.Fatal("failure messages are required")

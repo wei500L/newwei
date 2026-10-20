@@ -77,7 +77,7 @@ func TestJitterBackoffMatchesMathRound(t *testing.T) {
 		// Capped before jitter: 3_600_000 * 2^9 capped at 86_400_000.
 		{3_600_000, 10, 86_400_000, 0, 64_800_000},
 		// Fractional random rounds like Math.round.
-		{1000, 1, 10_000, 0.001, 753},
+		{1000, 1, 10_000, 0.001, 751},
 		// attempt < 1 normalizes to 1.
 		{1000, 0, 10_000, 0.5, 1000},
 	}

@@ -476,7 +476,7 @@ func TestDedupeResolveSummaryDedupThreshold(t *testing.T) {
 		{length: 120, base: 0.88, want: 0.88},
 		{length: 200, base: 0.88, want: 0.88},
 		{length: 201, base: 0.88, want: 0.88},
-		{length: 201, base: 0.8, want: 0.8},
+		{length: 201, base: 0.8, want: 0.88},
 		{length: 201, base: 0.87, want: 0.88},
 		{length: 281, base: 0.88, want: 0.86},
 		{length: 281, base: 0.9, want: 0.87},

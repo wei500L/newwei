@@ -358,7 +358,7 @@ func TestPipelineExtractProcessedArticleTerms(t *testing.T) {
 		stringPointer("The quick brown fox jumps over"),
 		[]string{"Market Analysis", "live"},
 	)
-	expected := []string{"markets", "quick", "brown", "jumps", "over", "market"}
+	expected := []string{"breaking", "markets", "update", "quick", "brown", "jumps", "over", "market", "analysis", "live"}
 	if !pipelineTestEqualStrings(terms, expected) {
 		t.Fatalf("terms = %v, want %v", terms, expected)
 	}

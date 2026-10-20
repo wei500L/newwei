@@ -191,10 +191,13 @@ type searchResponsePayload struct {
 // searchMatchPayload is one raw hit. CreatedAtMS stays raw so a non-integer or
 // negative value can be rejected the way z.number().int().nonnegative() does.
 type searchMatchPayload struct {
-	ProcessedItemID string          `json:"processedItemId"`
-	ItemMetaID      string          `json:"itemMetaId"`
-	Score           float64         `json:"score"`
-	CreatedAtMS     json.RawMessage `json:"createdAtMs"`
+	ProcessedItemID string `json:"processedItemId"`
+	ItemMetaID      string `json:"itemMetaId"`
+	// Score and CreatedAtMS stay raw because the NestJS zod schema requires
+	// both members and a missing member must be rejected, which a plain
+	// float64/int64 zero value cannot distinguish.
+	Score       json.RawMessage `json:"score"`
+	CreatedAtMS json.RawMessage `json:"createdAtMs"`
 }
 
 // searchAttemptError is one classified attempt failure. It carries the NestJS
@@ -388,7 +391,14 @@ func decodeSearchResponse(raw []byte) ([]SearchMatch, error) {
 		if strings.TrimSpace(match.ItemMetaID) == "" {
 			return nil, errors.New("missing itemMetaId")
 		}
-		if math.IsNaN(match.Score) || math.IsInf(match.Score, 0) {
+		if len(bytes.TrimSpace(match.Score)) == 0 || string(bytes.TrimSpace(match.Score)) == "null" {
+			return nil, errors.New("missing score")
+		}
+		var score float64
+		if err := json.Unmarshal(match.Score, &score); err != nil {
+			return nil, errors.New("score is not a number")
+		}
+		if math.IsNaN(score) || math.IsInf(score, 0) {
 			return nil, errors.New("score is not finite")
 		}
 		createdAtMS, err := searchDecodeNonNegativeInteger(match.CreatedAtMS)
@@ -399,7 +409,7 @@ func decodeSearchResponse(raw []byte) ([]SearchMatch, error) {
 			ProcessedItemID: match.ProcessedItemID,
 			ItemMetaID:      match.ItemMetaID,
 			CreatedAtMS:     createdAtMS,
-			Score:           match.Score,
+			Score:           score,
 		})
 	}
 	return matches, nil
@@ -410,6 +420,9 @@ func searchDecodeNonNegativeInteger(raw json.RawMessage) (int64, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
 		return 0, errors.New("missing createdAtMs")
+	}
+	if string(trimmed) == "null" {
+		return 0, errors.New("createdAtMs is not a number")
 	}
 	var value float64
 	if err := json.Unmarshal(trimmed, &value); err != nil {

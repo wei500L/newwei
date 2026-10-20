@@ -171,7 +171,7 @@ func TestFullPipelineChainIntegration(t *testing.T) {
 	}
 
 	// Persist side: Article + ProcessedArticle + MongoOutbox were written.
-	contentHash := sha256.Sum256([]byte(fullchainMarkdown))
+	contentHash := sha256.Sum256([]byte(strings.TrimSpace(fullchainMarkdown)))
 	expectedHash := hex.EncodeToString(contentHash[:])
 	var articleID string
 	if err := db.QueryRow("SELECT id FROM Article WHERE orgId = ? AND contentHash = ?", fullchainOrgID, expectedHash).Scan(&articleID); err != nil {

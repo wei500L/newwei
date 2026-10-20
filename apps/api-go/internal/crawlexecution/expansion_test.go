@@ -42,8 +42,8 @@ func TestDetailCandidateSelection(t *testing.T) {
 	// Excluding the article path pattern filters the candidate out.
 	excluded := options
 	excluded.ExcludeURLPatterns = append(append([]string(nil), options.ExcludeURLPatterns...), "*a-long-article*")
-	if got := extractDetailLinkCandidates(article, article.URL, excluded); len(got) != 0 {
-		t.Fatalf("exclude pattern did not filter: %#v", got)
+	if got := extractDetailLinkCandidates(article, article.URL, excluded); len(got) != 1 || got[0] != "https://other.example.com/2026/10/20/external-story-slug" {
+		t.Fatalf("exclude pattern must drop only the matching candidate: %#v", got)
 	}
 
 	// allowExternalLinks=false with requireSameDomain=false keeps the same-domain rule.
