@@ -19,8 +19,11 @@ import (
 
 // OREF response and bootstrap constants.
 const (
-	// maxOrefResponseBytes mirrors the curl maxBuffer of 2 MiB.
-	maxOrefResponseBytes = 2 * 1024 * 1024
+	// maxOrefAlertsResponseBytes mirrors the curl maxBuffer of 2 MiB for the
+	// alerts request (NestJS orefCurlFetch without -o toFile captures stdout).
+	// The history request uses curl -o <tmpfile>, whose maxBuffer only bounds the
+	// empty stdout, so it has no body limit and is fetched with maxBytes 0.
+	maxOrefAlertsResponseBytes = 2 * 1024 * 1024
 	// orefHistoryBootstrapLimit is the `parsed.slice(0, 500)` cap.
 	orefHistoryBootstrapLimit = 500
 	// orefAlertsURLReferer and the two request headers mirror orefCurlFetch.
@@ -79,7 +82,7 @@ func (s *Service) pollOref(ctx context.Context) error {
 		}
 	}
 
-	body, err := s.fetchOref(ctx, s.env.OrefAlertsURL, proxyAuth)
+	body, err := s.fetchOref(ctx, s.env.OrefAlertsURL, proxyAuth, maxOrefAlertsResponseBytes)
 	if err != nil {
 		s.orefState.LastError = redactOrefError(err.Error())
 		s.logf("situationsignalsworker: OREF poll failed: %s", s.orefState.LastError)
@@ -149,7 +152,11 @@ func orefDocumentTimestamp(lastPollAt int64, now time.Time) string {
 
 // fetchOref performs one OREF HTTP GET with the same proxy, timeout and headers
 // as orefCurlFetch, but through net/http instead of exec'ing curl.
-func (s *Service) fetchOref(ctx context.Context, rawURL, proxyAuth string) ([]byte, error) {
+//
+// maxBytes > 0 bounds the response body (the alerts request mirrors curl's 2 MiB
+// maxBuffer); maxBytes == 0 reads the body without a size limit, which is what
+// the history request needs because NestJS downloads it with curl -o <tmpfile>.
+func (s *Service) fetchOref(ctx context.Context, rawURL, proxyAuth string, maxBytes int64) ([]byte, error) {
 	client := s.orefHTTP
 	if client == nil {
 		var err error
@@ -179,13 +186,19 @@ func (s *Service) fetchOref(ctx context.Context, rawURL, proxyAuth string) ([]by
 		return nil, fmt.Errorf("OREF request failed with HTTP status %d", response.StatusCode)
 	}
 
-	limited := io.LimitReader(response.Body, maxOrefResponseBytes+1)
-	body, err := io.ReadAll(limited)
+	if maxBytes > 0 {
+		body, err := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
+		if err != nil {
+			return nil, fmt.Errorf("read OREF response: %w", err)
+		}
+		if int64(len(body)) > maxBytes {
+			return nil, fmt.Errorf("OREF response exceeded %d bytes", maxBytes)
+		}
+		return body, nil
+	}
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read OREF response: %w", err)
-	}
-	if len(body) > maxOrefResponseBytes {
-		return nil, fmt.Errorf("OREF response exceeded %d bytes", maxOrefResponseBytes)
 	}
 	return body, nil
 }
@@ -354,7 +367,7 @@ func (s *Service) bootstrapOrefHistoryWithRetry(ctx context.Context) bool {
 // replace the in-memory history with the rebuilt list.
 func (s *Service) bootstrapOrefHistoryFromUpstream(ctx context.Context) error {
 	proxyAuth := strings.TrimSpace(s.env.OrefProxyAuth)
-	body, err := s.fetchOref(ctx, s.env.OrefHistoryURL, proxyAuth)
+	body, err := s.fetchOref(ctx, s.env.OrefHistoryURL, proxyAuth, 0)
 	if err != nil {
 		return err
 	}
