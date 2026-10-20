@@ -474,6 +474,13 @@ services:
       # 默认 legacy=保留 NestJS 每 5 分钟 Cron；go=Go 领取同一 tick gate、按组织锁
       # 构建图谱，NestJS Cron 在领取时间片前退出。Nest 与 Go 注入同一变量。
       API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE: ${API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE:-legacy}
+      # 新闻事件入库所有权。空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。
+      # 默认 legacy=保留 NestJS 每 5 分钟 Cron；go=Go 领取同一 tick gate、持有同一
+      # 组织锁、读共享游标并写入事件/条目/TaskLog/失败分组，NestJS Cron 在领取
+      # 时间片前退出。Nest 与 Go 注入同一变量；NEWS_EVENTS_INGESTION_SETTLE_MS
+      # 只由 Go 读取。
+      API_GO_NEWS_EVENTS_INGESTION_MODE: ${API_GO_NEWS_EVENTS_INGESTION_MODE:-legacy}
+      NEWS_EVENTS_INGESTION_SETTLE_MS: ${NEWS_EVENTS_INGESTION_SETTLE_MS:-120000}
       # 新闻事件聚类失败的 LLM 补救链与新闻—指标关联刷新。四个开关互相独立，
       # 默认 legacy；worker 与 6 小时 cron 开关 Nest 也读取，为 go 时 Nest 在
       # 领取锁/创建 Worker 之前退出。手动入队与 GraphQL mutation 只在 Go 读取。
@@ -814,6 +821,13 @@ services:
       # 知识图谱自动构建所有权。与所有 HTTP / GraphQL 读开关独立；go 要求
       # DATABASE_URL 与 REDIS_HOST，不要求 JWT 或 MONGO_URI。Nest 与 Go 同一变量。
       API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE: ${API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE:-legacy}
+      # 新闻事件入库所有权。空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。
+      # 默认 legacy=保留 NestJS 每 5 分钟 Cron；go=Go 领取同一 tick gate、持有同一
+      # 组织锁、读共享游标并写入事件/条目/TaskLog/失败分组，NestJS Cron 在领取
+      # 时间片前退出。Nest 与 Go 注入同一变量；NEWS_EVENTS_INGESTION_SETTLE_MS
+      # 只由 Go 读取。
+      API_GO_NEWS_EVENTS_INGESTION_MODE: ${API_GO_NEWS_EVENTS_INGESTION_MODE:-legacy}
+      NEWS_EVENTS_INGESTION_SETTLE_MS: ${NEWS_EVENTS_INGESTION_SETTLE_MS:-120000}
       # 新闻事件聚类失败的 LLM 补救链与新闻—指标关联刷新。四个开关互相独立，
       # 默认 legacy；worker 与 6 小时 cron 开关 Nest 也读取，为 go 时 Nest 在
       # 领取锁/创建 Worker 之前退出。手动入队与 GraphQL mutation 只在 Go 读取。

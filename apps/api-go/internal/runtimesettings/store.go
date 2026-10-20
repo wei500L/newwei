@@ -60,6 +60,9 @@ type Service struct {
 	// newsnowHottestCache is the same runtime cache for the NewsNow hottest
 	// analysis organization concurrency.
 	newsnowHottestCache newsnowHottestRuntimeCache
+	// newsEventsIngestionCache is the same runtime cache for the news-event
+	// ingestion organization concurrency.
+	newsEventsIngestionCache newsEventsIngestionRuntimeCache
 }
 
 // NewService wires the runtime settings data access. db and redisClient are the

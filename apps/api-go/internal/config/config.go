@@ -1551,6 +1551,28 @@ const (
 	KnowledgeGraphIngestionModeGo     KnowledgeGraphIngestionMode = "go"
 )
 
+// NewsEventsIngestionMode controls the owner of the news-event ingestion Cron
+// (API_GO_NEWS_EVENTS_INGESTION_MODE). It is independent of every HTTP switch
+// and of the GraphQL read switches. The accepted values are exactly "",
+// "legacy" and "go"; the empty value behaves like legacy and an invalid value
+// fails startup.
+//
+// legacy: NewsEventsIngestionService.ingestRecentProcessedArticles keeps
+// owning the five-minute tick and no Go scheduler starts.
+// go: Go owns the tick gate, the per-organization lock, the ingestion cursor,
+// the per-article assignment and the bertopic_primary batch, and the NestJS
+// Cron returns before claiming the tick gate. Go requires DATABASE_URL,
+// REDIS_HOST and MONGO_URI: the cursor and the events live in MySQL, the tick
+// gate and the organization leases in Redis, and ProcessedItem/TaskLog/the
+// clustering failure groups in Mongo. The vector and model services are
+// resolved at call time, so they are not startup requirements.
+type NewsEventsIngestionMode string
+
+const (
+	NewsEventsIngestionModeLegacy NewsEventsIngestionMode = "legacy"
+	NewsEventsIngestionModeGo     NewsEventsIngestionMode = "go"
+)
+
 // AlertWorkerMode controls the owner of the NestJS `alerts` queue: the
 // scan-active-rules scan, the rule evaluation, the in-app notification write and
 // the email/webhook delivery. It is independent of every HTTP switch. The
@@ -2008,6 +2030,14 @@ type Config struct {
 	// legacy。与所有 HTTP / GraphQL 读开关独立；go 需要 MySQL 和 Redis，不
 	// 要求 JWT、Mongo 或任何接管的 HTTP 开关。
 	KnowledgeGraphIngestionMode KnowledgeGraphIngestionMode
+	// NewsEventsIngestionMode 见 NewsEventsIngestionMode 常量。默认 legacy。
+	// 与所有 HTTP / GraphQL 读开关独立；go 需要 MySQL、Redis 和 Mongo，不要求
+	// JWT，也不要求任何接管的 HTTP 开关。
+	NewsEventsIngestionMode NewsEventsIngestionMode
+	// NewsEventsIngestionSettleMs 是 NEWS_EVENTS_INGESTION_SETTLE_MS：入库读取的
+	// processedAt 上界（now - settleMs）。默认 120000 毫秒。它让「processedAt 较
+	// 早、但事务提交较晚」的文章不会因为游标越过而被永久跳过。
+	NewsEventsIngestionSettleMs int64
 	// AlertWorkerMode 见 AlertWorkerMode 常量。默认 legacy。
 	// go 需要 MySQL、Redis、Mongo 与 SMTP；ALERT_* 与 BULLMQ_NAMESPACE 只在
 	// 该模式被读取。
@@ -3168,6 +3198,26 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.KnowledgeGraphIngestionMode = KnowledgeGraphIngestionModeGo
 	default:
 		errs = append(errs, "API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWS_EVENTS_INGESTION_MODE")) {
+	case "", string(NewsEventsIngestionModeLegacy):
+		cfg.NewsEventsIngestionMode = NewsEventsIngestionModeLegacy
+	case string(NewsEventsIngestionModeGo):
+		cfg.NewsEventsIngestionMode = NewsEventsIngestionModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_EVENTS_INGESTION_MODE must be one of legacy|go")
+	}
+	// The settle window of the ingestion cursor. An absent value keeps the
+	// 120 s default; a non-integer or negative value fails startup instead of
+	// silently disabling the bound that keeps late commits from being skipped.
+	cfg.NewsEventsIngestionSettleMs = 120_000
+	if raw := strings.TrimSpace(getenv("NEWS_EVENTS_INGESTION_SETTLE_MS")); raw != "" {
+		value, parseErr := strconv.ParseInt(raw, 10, 64)
+		if parseErr != nil || value < 0 {
+			errs = append(errs, fmt.Sprintf("NEWS_EVENTS_INGESTION_SETTLE_MS must be a non-negative integer, got %q", raw))
+		} else {
+			cfg.NewsEventsIngestionSettleMs = value
+		}
 	}
 	switch strings.TrimSpace(getenv("API_GO_ALERT_WORKER_MODE")) {
 	case "", string(AlertWorkerModeLegacy):
@@ -4764,6 +4814,23 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.RedisHost == "" {
 			errs = append(errs, "REDIS_HOST is required when API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go")
+		}
+	}
+	// The news-event ingestion scheduler owns the five-minute Cron without
+	// JWT/RBAC: it reads MySQL (cursor, events), Redis (tick gate, organization
+	// leases, active-org cache) and Mongo (ProcessedItem, TaskLog, clustering
+	// failures). The vector and model services are resolved per call, so they are
+	// not startup requirements: a missing service only degrades the assignment
+	// path exactly like a missing service degrades the NestJS path.
+	if cfg.NewsEventsIngestionMode == NewsEventsIngestionModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_NEWS_EVENTS_INGESTION_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_NEWS_EVENTS_INGESTION_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_NEWS_EVENTS_INGESTION_MODE=go")
 		}
 	}
 	// The alert worker owns the shared `alerts` queue without JWT/RBAC: it reads
