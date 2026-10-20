@@ -147,6 +147,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/alertqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/archivereading"
 	"github.com/wei500L/newwei/apps/api-go/internal/auditoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
@@ -771,7 +772,8 @@ func run() error {
 		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" ||
 		cfg.ItemsIngestMode == config.ItemsIngestModeGo ||
 		archiveReadingGo ||
-		economicDataGo {
+		economicDataGo ||
+		cfg.GraphQLAlertRulesMode == "go" {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -882,6 +884,7 @@ func run() error {
 				cfg.GraphQLReadMode == "go" ||
 				cfg.GraphQLOrgAccessWriteMode == "go" ||
 				cfg.GraphQLWorkspaceWriteMode == "go" ||
+				cfg.GraphQLAlertRulesMode == "go" ||
 				cfg.GraphQLSettingsWriteMode == "go" ||
 				cfg.GraphQLSourcePolicyWriteMode == "go" ||
 				cfg.GraphQLRssTranslationMode == "go" ||
@@ -979,6 +982,10 @@ func run() error {
 	// 独立开关控制，与读开关解耦；复用 workspace/alerts/history 的模型不要求
 	// Mongo、模型网关或队列。
 	graphqlWorkspaceWriteGo := cfg.GraphQLWorkspaceWriteMode == "go"
+	// The alert rule unit is independent of the read switch: alertRules itself
+	// writes (default backfill + schedule + evaluation), so the read root and
+	// the three rule mutations move together behind one switch.
+	graphqlAlertRulesGo := cfg.GraphQLAlertRulesMode == "go"
 	// The source-policy version switch is independent of the read switch and of
 	// every other write switch. It needs only the credentialed
 	// JWT/MySQL/Redis stack.
@@ -1064,7 +1071,7 @@ func run() error {
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
 		situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
-		graphqlWorkspaceWriteGo || cfg.GraphQLSettingsWriteMode == "go" ||
+		graphqlWorkspaceWriteGo || graphqlAlertRulesGo || cfg.GraphQLSettingsWriteMode == "go" ||
 		sourcePolicyWriteGo ||
 		graphqlKnowledgeReviewGo ||
 		graphqlRssTranslationGo ||
@@ -1738,7 +1745,7 @@ func run() error {
 	// Mongo or initialize any read-only Mongo service (the RSS translation write
 	// is the exception: it requires Mongo itself).
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
-	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo ||
+	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || graphqlAlertRulesGo || settingsWriteGo ||
 		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || itemsIngestGo || archiveReadingGo || economicDataGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
@@ -1897,6 +1904,17 @@ func run() error {
 			}
 			workspacewrite.Register(reg, sharedDB)
 		}
+		// The alert rule unit registers alertRules and the three rule mutations.
+		// AlertChannelModel is shared with the alert reads and the workspace
+		// writes, so it is registered here only when neither of those batches
+		// did it. The queue producer is built only in go mode and reuses the
+		// shared Redis client (same REDIS_DB as NestJS); it owns no connection.
+		if graphqlAlertRulesGo {
+			if !graphqlReadGo && !graphqlWorkspaceWriteGo {
+				alerts.RegisterModels(reg)
+			}
+			alerts.RegisterRules(reg, sharedDB, alertqueue.New(redisClient))
+		}
 		// The thirteen settings mutations reuse the settings center read
 		// models. The models must be registered exactly once: the settings/
 		// crawl read registration already did it when that switch is go, so the
@@ -2045,6 +2063,11 @@ func run() error {
 			log.Printf("api-go: GraphQL item/crawl writes registered (%s)", strings.Join(itemsingestgraphql.RegisteredMutations, ", "))
 		} else {
 			log.Printf("api-go: GraphQL item/crawl writes not registered (API_GO_ITEMS_INGEST_MODE=legacy)")
+		}
+		if graphqlAlertRulesGo {
+			log.Printf("api-go: GraphQL alert rules registered (%s)", strings.Join(alerts.RegisteredRoots, ", "))
+		} else {
+			log.Printf("api-go: GraphQL alert rules not registered (API_GO_GRAPHQL_ALERT_RULES_MODE=legacy)")
 		}
 		if settingsWriteGo {
 			log.Printf("api-go: GraphQL settings writes registered (%s)", strings.Join(settingswrite.RegisteredMutations, ", "))

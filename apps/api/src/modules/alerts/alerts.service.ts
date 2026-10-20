@@ -1158,6 +1158,24 @@ export class AlertsService {
     };
 
     const rule = await this.prisma.$transaction(async (tx) => {
+      // B1: AlertRuleChannel has no organization column, so linking a channel of
+      // another tenant would leak that tenant's target/config through listRules
+      // and deliver this organization's alerts to it. Verify every distinct
+      // channel id belongs to the caller's organization before writing anything;
+      // a mismatch aborts the whole transaction. Duplicates are only collapsed
+      // for this check, so an input like [a, a] still violates the unique index
+      // exactly as before.
+      if (input.channelIds) {
+        const uniqueChannelIds = Array.from(new Set(input.channelIds));
+        const ownedChannels = await tx.alertNotificationChannel.findMany({
+          where: { id: { in: uniqueChannelIds }, orgId },
+          select: { id: true },
+        });
+        if (ownedChannels.length !== uniqueChannelIds.length) {
+          throw new Error("Alert channel not found for this org");
+        }
+      }
+
       let currentRule = existingRule;
       if (currentRule) {
         currentRule = await tx.alertRule.update({

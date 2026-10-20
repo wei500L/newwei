@@ -1067,6 +1067,14 @@ services:
       # 8 个 mutation 由 Go 执行。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动
       # worker，也不发送邮件或 webhook。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_WORKSPACE_WRITE_MODE: legacy
+      # 告警规则配置与手动触发 4 个 GraphQL root（alertRules query 与
+      # upsertAlertRule / deleteAlertRule / triggerAlertRule）。pilot 与样例
+      # 保持 legacy，与 API_GO_GRAPHQL_READ_MODE 刻意解耦：alertRules 会补建
+      # 17 条默认规则、更新定时计划并排入一次评估，所以读与三个写作为一个整体。
+      # 只需要 JWT/MySQL/Redis，不要求 Mongo，不启动 worker，也不发邮件或
+      # webhook；AlertsProcessor 仍是 alerts 队列唯一消费者。回滚只把该变量
+      # 改回 legacy。
+      API_GO_GRAPHQL_ALERT_RULES_MODE: legacy
       # 设置中心 13 个 GraphQL mutation。pilot 与样例保持 legacy，与全部读开关
       # 解耦：只开本变量时只登记这 13 个 mutation，20 个设置读 query 仍走
       # NestJS。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动 worker，不回调
