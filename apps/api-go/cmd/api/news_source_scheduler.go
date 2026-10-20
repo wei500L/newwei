@@ -24,6 +24,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsingest"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
 )
@@ -119,7 +120,8 @@ func wireNewsSourceScheduler(
 	})
 
 	if opsGo {
-		handler := newssourcescheduler.NewHandler(authenticator, service)
+		handler := newssourcescheduler.NewHandler(authenticator, service).
+			UseMachineAuthentication(newssources.NewServiceWithRedis(db, redisClient))
 		policy := cors.New(cfg.CorsOrigin)
 		gateway.RegisterGoHandler(legacyproxy.NewsSourceOpsKey, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {

@@ -1,12 +1,14 @@
 package newssourcescheduler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/authlogin"
+	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
 )
 
 // This file serves the four operations routes. Only the exact POST paths are
@@ -20,15 +22,29 @@ const (
 	permissionCrawlWrite = "crawl.write"
 )
 
+// machineAuthenticator is the existing machine-token path the news-sources CRUD
+// already uses. The four POSTs accept machine tokens in NestJS (the global JWT
+// guard validates mtk_ tokens), so the Go handler keeps that caller class.
+type machineAuthenticator interface {
+	AuthenticateMachine(ctx context.Context, token string) (*authhttp.Identity, error)
+}
+
 // Handler serves the four POST routes.
 type Handler struct {
-	auth *authhttp.Authenticator
-	svc  *Service
+	auth    *authhttp.Authenticator
+	svc     *Service
+	machine machineAuthenticator
 }
 
 // NewHandler builds the handler.
 func NewHandler(auth *authhttp.Authenticator, svc *Service) *Handler {
 	return &Handler{auth: auth, svc: svc}
+}
+
+// UseMachineAuthentication enables mtk_ bearer tokens on the four routes.
+func (h *Handler) UseMachineAuthentication(authenticator machineAuthenticator) *Handler {
+	h.machine = authenticator
+	return h
 }
 
 // ServeHTTP dispatches the four routes.
@@ -108,19 +124,49 @@ func parseNewsSourceOpsPath(path string) (string, string, bool) {
 
 // authorize runs the shared authentication chain and enforces crawl.write.
 func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Identity {
-	if h == nil || h.svc == nil || h.auth == nil {
+	if h == nil || h.svc == nil {
 		authhttp.WriteDatabaseFailure(w, r)
 		return nil
 	}
-	identity := h.auth.Authenticate(w, r)
-	if identity == nil {
-		return nil
+	var identity *authhttp.Identity
+	if raw := rawBearer(r); strings.HasPrefix(raw, "mtk_") && h.machine != nil {
+		resolved, err := h.machine.AuthenticateMachine(r.Context(), raw)
+		if err != nil {
+			if status, message, ok := newssources.HTTPStatus(err); ok {
+				authhttp.WriteHTTPException(w, r, status, message)
+				return nil
+			}
+			authhttp.WriteDatabaseFailure(w, r)
+			return nil
+		}
+		identity = resolved
+	} else {
+		if h.auth == nil {
+			authhttp.WriteDatabaseFailure(w, r)
+			return nil
+		}
+		identity = h.auth.Authenticate(w, r)
+		if identity == nil {
+			return nil
+		}
 	}
 	if !identity.HasPermission(permissionCrawlWrite) {
 		authhttp.WriteForbidden(w, r, []string{permissionCrawlWrite})
 		return nil
 	}
 	return identity
+}
+
+// rawBearer extracts the Authorization bearer token.
+func rawBearer(r *http.Request) string {
+	header := r.Header.Get("authorization")
+	if header == "" {
+		header = r.Header.Get("Authorization")
+	}
+	if len(header) < 7 || !strings.EqualFold(header[:7], "bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(header[7:])
 }
 
 // clientIP mirrors resolveRequestIp through the shared TRUST_PROXY-aware helper.
