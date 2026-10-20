@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -48,7 +49,7 @@ func (s *Service) Update(ctx context.Context, orgID, actorID string, input Updat
 	// getPublicSettings (which deletes the cache, reads MySQL and repopulates
 	// the same envelope) and is proven by the equivalence test.
 	fields := decodeStoredFields(encoded)
-	loaded := loadedSettings{exists: true, stored: true, raw: encoded, fields: fields}
+	loaded = loadedSettings{exists: true, stored: true, raw: encoded, fields: fields}
 	s.writeSettingsCache(ctx, loaded)
 	return s.publicSettings(&fields, true), nil
 }
@@ -341,10 +342,10 @@ func (s *Service) buildNextStored(stored storedFields, input UpdateInput, encode
 	if err != nil {
 		return storedValue{}, nil, err
 	}
-	next.TelegramAPIID, err = resolveNextString(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramAPIID }), input.TelegramAPIID)
-	if err != nil {
-		return storedValue{}, nil, err
-	}
+	// telegramApiId is not a member of this DTO either; preserve the current
+	// normalized value exactly like resolveNextString(current, undefined).
+	next.TelegramAPIID, _ = resolveNextString(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramAPIID }),
+		optionalString{state: presenceMissing})
 	// telegramApiId/apiHash/session are not members of this DTO (telegram-auth
 	// start/complete stay on NestJS), so they are always preserved as-is. The
 	// audit flags therefore stay false, exactly like the NestJS DTO path.
@@ -539,8 +540,19 @@ func normalizeEnvURL(value string) (string, bool) {
 // them. The map is a JSON-object merge, not a business container.
 func clearTelegramStoredValue(raw json.RawMessage) ([]byte, error) {
 	merged := map[string]json.RawMessage{}
-	if len(raw) > 0 {
+	trimmed := strings.TrimSpace(string(raw))
+	switch {
+	case strings.HasPrefix(trimmed, "{"):
 		_ = json.Unmarshal(raw, &merged)
+	case strings.HasPrefix(trimmed, "["):
+		// JavaScript object spread of an array keeps its numeric indices as
+		// string keys; reproduce that instead of dropping them.
+		var items []json.RawMessage
+		if json.Unmarshal(raw, &items) == nil {
+			for index, item := range items {
+				merged[strconv.Itoa(index)] = item
+			}
+		}
 	}
 	merged["telegramEnabled"] = json.RawMessage("false")
 	merged["telegramApiId"] = json.RawMessage("null")

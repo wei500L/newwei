@@ -396,6 +396,23 @@ func TestClearTelegramStoredValuePreservesUnknownMembers(t *testing.T) {
 	}
 }
 
+func TestClearTelegramStoredValueArraySpread(t *testing.T) {
+	encoded, err := clearTelegramStoredValue(json.RawMessage(`["zero","one"]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if string(decoded["0"]) != `"zero"` || string(decoded["1"]) != `"one"` {
+		t.Fatalf("array spread lost indices: %s", encoded)
+	}
+	if string(decoded["telegramSession"]) != "null" {
+		t.Fatalf("telegram field missing: %s", encoded)
+	}
+}
+
 func TestClearTelegramStoredValueOnMissingRow(t *testing.T) {
 	encoded, err := clearTelegramStoredValue(nil)
 	if err != nil {

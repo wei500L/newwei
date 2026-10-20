@@ -91,20 +91,26 @@ func TestTelegramSchedulerRedisIntegration(t *testing.T) {
 		t.Fatalf("scheduler opts = %s", hash["opts"])
 	}
 
-	delayedID := "repeat:" + PollSchedulerID + ":" + itoa64(now)
-	if _, err := client.ZScore(ctx, scheduler.keys.delayed, delayedID).Result(); err != nil {
-		t.Fatalf("delayed iteration missing: %v", err)
+	// The first `every` iteration has delay 0, so addJobFromScheduler pushes it
+	// to the wait list instead of the delayed zset (BullMQ behaviour).
+	scheduledID := "repeat:" + PollSchedulerID + ":" + itoa64(now)
+	waiting, err := client.LRange(ctx, scheduler.keys.wait, 0, -1).Result()
+	if err != nil {
+		t.Fatal(err)
 	}
-	delayedOpts, err := client.HGet(ctx, scheduler.keys.prefix+delayedID, "opts").Result()
+	if !containsString(waiting, scheduledID) {
+		t.Fatalf("scheduled iteration %s missing from wait: %v", scheduledID, waiting)
+	}
+	scheduledOpts, err := client.HGet(ctx, scheduler.keys.prefix+scheduledID, "opts").Result()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var opts map[string]any
-	if err := json.Unmarshal([]byte(delayedOpts), &opts); err != nil {
+	if err := json.Unmarshal([]byte(scheduledOpts), &opts); err != nil {
 		t.Fatal(err)
 	}
 	if opts["repeatJobKey"] != PollSchedulerID {
-		t.Fatalf("delayed opts = %v", opts)
+		t.Fatalf("scheduled opts = %v", opts)
 	}
 
 	bootstrapName, bootstrapData := findJobByName(t, client, scheduler, PollJobName+":bootstrap")
@@ -179,9 +185,12 @@ func TestTelegramSchedulerRemovalIntegration(t *testing.T) {
 	if exists, _ := client.Exists(ctx, scheduler.keys.prefix+"telegram-poll:locked").Result(); exists != 1 {
 		t.Fatal("locked job must survive")
 	}
+	// The BullMQ legacy branch (removeRepeatable-3 ARGV[2] = the legacy key)
+	// removes the zset member and returns before the new branch deletes the
+	// hash, so the legacy repeat hash is an allowed orphan; the zset member
+	// assertion above is the functional check.
 	for _, key := range []string{
 		scheduler.keys.repeat + ":" + PollSchedulerID,
-		scheduler.keys.repeat + ":" + legacyKey,
 		scheduler.keys.prefix + "telegram-poll:waiting",
 		scheduler.keys.prefix + "telegram-poll:paused",
 		scheduler.keys.prefix + "telegram-poll:prioritized",
@@ -348,4 +357,13 @@ func runNodeFixture(t *testing.T, mode string, environment map[string]string) st
 		t.Fatalf("node fixture %s: %v\n%s", mode, err, output)
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
