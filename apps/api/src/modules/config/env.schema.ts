@@ -1106,6 +1106,28 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The ten-minute news-event timeline rebuild owner. Empty string behaves
+    // like legacy. An invalid value fails Nest startup instead of being
+    // silently stripped from the validated config. Go reads the same variable
+    // and starts its own scheduler when it is go; Nest then returns from the
+    // @Cron callback before taking the shared Redis tick gate. The organization
+    // lock key and the timeline algorithm are unchanged either way.
+    API_GO_NEWS_EVENTS_TIMELINE_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The hourly sentiment snapshot rebuild owner, independent of the timeline
+    // switch. Same values, same default and the same NestJS early return.
+    API_GO_SENTIMENT_SNAPSHOT_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
   })
   .superRefine((value, ctx) => {
     for (const key of getMissingMysqlConnectionEnvVars(value)) {
