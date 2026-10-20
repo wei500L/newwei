@@ -220,6 +220,14 @@ export class ItemsElasticsearchService implements OnModuleInit {
     if (!this.client) {
       return;
     }
+    // API_GO_STARTUP_RECONCILE_MODE=go runs the same ensureIndex from api-go.
+    if (
+      this.env.get<string>("API_GO_STARTUP_RECONCILE_MODE", {
+        infer: true,
+      }) === "go"
+    ) {
+      return;
+    }
     await this.ensureIndex().catch(() => undefined);
   }
 

@@ -59,6 +59,20 @@ export class TaskLogSettingsService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
+    // API_GO_STARTUP_RECONCILE_MODE=go applies the same TTL index from api-go.
+    // The settings update path stays here and keeps applying the index when the
+    // number changes, so ttlReconcileReady must still become true.
+    const startupOwner =
+      this.env.get<string>("API_GO_STARTUP_RECONCILE_MODE", {
+        infer: true,
+      }) ?? "legacy";
+    if (startupOwner === "go") {
+      this.logger.info(
+        "TaskLog TTL startup reconciliation disabled: owned by api-go (API_GO_STARTUP_RECONCILE_MODE=go)",
+      );
+      this.ttlReconcileReady = true;
+      return;
+    }
     try {
       const settings = await this.refreshSettingsCache();
       await this.applyRetentionTtlIndex(settings.retentionDays);

@@ -76,6 +76,44 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // Residual duties migrated to Go in refactor/go-nest-residual-duties.
+    // Each switch accepts "" (legacy), legacy or go and fails Nest startup on
+    // any other value. The Go side reads the same five variables.
+    API_GO_BULLMQ_CLEANUP_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_CLASSIFICATION_REVIEW_SEED_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_PIPELINE_RECOVERY_WRITE_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_METRICS_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_STARTUP_RECONCILE_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // The manual LLM backfill enqueue route; the recovery worker and the
     // six-hourly association refresh read the same variables in NestJS. Empty
     // string behaves like legacy; invalid values fail startup.
