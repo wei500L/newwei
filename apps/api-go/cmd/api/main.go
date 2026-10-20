@@ -2699,7 +2699,7 @@ func run() error {
 	if crawlMaintenance != nil {
 		crawlMaintenance.Start(context.Background())
 		log.Printf("api-go: crawl maintenance owned by Go (maintenance=%s, auditRetention=%s)",
-			cfg.CrawlMaintenanceMode, cfg.AuditLogRetentionMode)
+			string(cfg.CrawlMaintenanceMode), string(cfg.AuditLogRetentionMode))
 	}
 
 	alertWorker, err = wireAlertWorker(cfg, sharedDB, redisClient, &graphqlMongo, &dashboardMongo)
