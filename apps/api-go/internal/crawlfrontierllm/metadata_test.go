@@ -36,7 +36,8 @@ func TestMergeObjectsOrderOverrideAndNull(t *testing.T) {
 		t.Fatalf("d = %s, want null", raw)
 	}
 	if nested, ok := merged.Object("c"); !ok || nested.Len() != 1 || !nested.Has("y") {
-		t.Fatalf("c = %v, want {y:2}", merged.Raw("c"))
+		raw, _ := merged.Raw("c")
+		t.Fatalf("c = %s, want {y:2}", raw)
 	}
 	if empty := mergeObjects(nil, nil); empty != nil {
 		t.Fatalf("empty merge = %v, want nil", empty)
