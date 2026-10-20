@@ -3,7 +3,6 @@ package dataruntimesettings
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -460,7 +459,8 @@ func (s *Service) persistAcledAuthState(ctx context.Context, state *parsedAcledA
 		descriptionAcledAuthState, now, now); err != nil {
 		return err
 	}
-	return s.invalidateAcledAuthStateCache(ctx)
+	s.invalidateAcledAuthStateCache(ctx)
+	return nil
 }
 
 // descriptionAcledAuthState is written on both upsert branches, exactly like the
@@ -473,16 +473,7 @@ func (s *Service) clearAcledAuthState(ctx context.Context) error {
 			return err
 		}
 	}
-	return s.invalidateAcledAuthStateCache(ctx)
-}
-
-func (s *Service) invalidateAcledAuthStateCache(ctx context.Context) error {
-	if s.redis == nil {
-		return nil
-	}
-	if err := s.redis.Del(ctx, cacheKeyAcledAuthState).Err(); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		log.Printf("dataruntimesettings: failed to invalidate ACLED auth state cache: %v", err)
-	}
+	s.invalidateAcledAuthStateCache(ctx)
 	return nil
 }
 
