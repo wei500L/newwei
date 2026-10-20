@@ -430,6 +430,16 @@ jobs:
       - name: MySQL/Redis integration tests (GDELT external snapshot store, cache and lease)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/gdeltsnapshot/ -run 'TestGDELTSnapshotIntegration' -v
 
+      # 实时信号采集 Cron 的真实 MySQL/Redis/Mongo 验证：一轮完整采集后的指标
+      # 序列、源状态、洞察快照、ADS-B/AIS 快照与 OpenSky 额度账本；B1（3 个组织
+      # 并发时军机区域只预扣一次）；O1（AIS 与 Polymarket 每轮各只请求一次）；
+      # 全量航班抓取的游标与 transport 写入；dashboardwarmap 与
+      # runtimediagnostics 读取端回读；以及 enabled=false 时的清理。外部接口全部
+      # 由测试进程内的 httptest 服务器模拟，不调用真实 OpenSky/ACLED/Cloudflare/
+      # PizzINT/GDELT/Polymarket/AIS。同一 job 的 Mongo service 提供 transport 集合。
+      - name: Realtime signals collector integration tests (MySQL/Redis/Mongo + httptest upstreams)
+        run: cd apps/api-go && go test -tags=integration -count=1 -p 1 ./internal/realtimesignals/ ./internal/dataruntimesettings/ -run 'TestRealtimeSignalsCollectorIntegration|TestAcledAuthStateIntegration|TestAcledRefreshLockIntegration|TestEffectiveRealtimeCronRuntimeIntegration' -v -timeout 10m
+
       - name: MySQL integration tests (crawl-strategy run records + preview in-flight queries)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlfrontierruns/ ./internal/crawlstrategyruns/ -run 'TestStrategyRunWriteIntegration|TestStrategyRunBatchWriterMatchesPerRowIntegration|TestCountActivePipelineJobsIntegration' -v
 

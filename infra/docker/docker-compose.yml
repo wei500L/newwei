@@ -539,6 +539,13 @@ services:
       # DATABASE_URL、REDIS_HOST、MONGO_URI，不要求 JWT。
       API_GO_NEWS_EVENTS_TIMELINE_MODE: ${API_GO_NEWS_EVENTS_TIMELINE_MODE:-legacy}
       API_GO_SENTIMENT_SNAPSHOT_MODE: ${API_GO_SENTIMENT_SNAPSHOT_MODE:-legacy}
+      # 实时信号采集 Cron（每分钟）的执行权。空串按 legacy 处理；非法值在 Nest 与
+      # Go 都启动失败。默认 legacy=NestJS @Cron 持有；go=Go 每分钟采集 8 个数据源，
+      # NestJS @Cron 在领取共享 tick gate 前返回（全量航班抓取随同停止）。两侧共用
+      # cron:realtime-signals:tick-gate 与 lock:cron:realtime-signals:org:{orgId}，
+      # 切换不会重复采集或重复预扣 OpenSky 额度。go 要求 DATABASE_URL、REDIS_HOST、
+      # MONGO_URI，不要求 JWT。
+      API_GO_REALTIME_SIGNALS_MODE: ${API_GO_REALTIME_SIGNALS_MODE:-legacy}
       # 告警队列（scan / 规则评估 / 站内通知 / 邮件与 Webhook 投递）的执行权。
       # 空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。默认 legacy=保留
       # NestJS AlertsProcessor；go=Go 消费 alerts 队列，Nest 处理器只保留幂等的
@@ -1477,6 +1484,11 @@ services:
       # （以及 api 服务的同名变量）改回 legacy，NestJS 下一轮会整体覆盖。
       API_GO_NEWS_EVENTS_TIMELINE_MODE: ${API_GO_NEWS_EVENTS_TIMELINE_MODE:-legacy}
       API_GO_SENTIMENT_SNAPSHOT_MODE: ${API_GO_SENTIMENT_SNAPSHOT_MODE:-legacy}
+      # 实时信号采集 Cron（与 api 服务同一变量）。默认 legacy=不启动 Go 采集；
+      # go=Go 每分钟采集 8 个数据源，与 NestJS 共用 tick gate 与组织锁，要求
+      # DATABASE_URL、REDIS_HOST、MONGO_URI，不要求 JWT。回滚只把两侧变量改回
+      # legacy；Redis/Mongo 文档与额度账本格式相同，NestJS 可直接沿用。
+      API_GO_REALTIME_SIGNALS_MODE: ${API_GO_REALTIME_SIGNALS_MODE:-legacy}
       # 强制刷新入口 POST /api/system-settings/situation-monitor/external-snapshot/
       # refresh 的执行权（仅 Go 读取；Nest 控制器始终保留该路由）。默认 legacy=
       # 继续由 NestJS 处理；go=Go 处理，要求 JWT、MySQL、Redis，与定时任务共用

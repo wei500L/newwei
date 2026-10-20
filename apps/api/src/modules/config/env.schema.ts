@@ -1230,6 +1230,20 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The realtime signal collection cron ownership. Empty string behaves like
+    // legacy. An invalid value fails Nest startup instead of being silently
+    // stripped from the validated config. Go reads the same variable and starts
+    // its own every-minute scheduler when it is go; Nest then returns from
+    // refreshScheduled before claiming the shared Redis tick gate, so a rolling
+    // flip still collects at most once per interval. The global all-flight
+    // capture is part of the same tick and therefore stops with this switch.
+    API_GO_REALTIME_SIGNALS_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
   })
   .superRefine((value, ctx) => {
     for (const key of getMissingMysqlConnectionEnvVars(value)) {

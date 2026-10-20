@@ -111,6 +111,18 @@ export class RealtimeSignalsService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async refreshScheduled() {
+    // Execution ownership: when API_GO_REALTIME_SIGNALS_MODE=go the Go
+    // collector owns the whole tick, including the global all-flight capture.
+    // This callback returns BEFORE claiming the shared tick gate, so a switch
+    // flip that briefly leaves both schedulers alive still collects at most
+    // once. legacy (the default) keeps the behavior below unchanged.
+    if (
+      this.env.get<string>("API_GO_REALTIME_SIGNALS_MODE", { infer: true }) ===
+      "go"
+    ) {
+      return;
+    }
+
     const claimed = await claimSchedulerTick(
       this.cache,
       "cron:realtime-signals:tick-gate",
