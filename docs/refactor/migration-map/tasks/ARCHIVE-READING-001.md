@@ -1,6 +1,6 @@
 # ARCHIVE-READING-001 · 归档检索、月历、详情与搜索导出
 
-- 当前状态 **in_progress**；2026-10-19 Europe/Moscow，完整[执行提示词](ARCHIVE-READING-001.prompt.md)在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布。规划目录 /Users/oo/project/newwei-plan-newsnow-feed，分支 docs/plan-newsnow-feed；本窗口仅文档，无业务实施。
+- 当前状态 **pr_open**；2026-10-19 Europe/Moscow，完整[执行提示词](ARCHIVE-READING-001.prompt.md)在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布。规划目录 /Users/oo/project/newwei-plan-newsnow-feed，分支 docs/plan-newsnow-feed；本窗口仅文档，无业务实施。
 - 基线 origin/main `91e759b449c4511dc96d86539ea0eb258754d07e`，[普通CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)精确head success。规划#93追加前head76f6d06ecf5ac0300249b611f57f4cf192302972的普通CI39297509652成功，新head须独立查询。
 - 业务分支 refactor/go-archive-reading、worktree /Users/oo/project/newwei-go-archive-reading，已创建于91e759b4；分析选批发布前续核出现itemsreading/vector_port.go、llmembed/archive_port.go、newsnowclusteringops/archive_port.go开发，尚无业务提交/PR/merge/CI/生产注册/部署证据；执行器活动未核实。
 - 来源BL-09第一阶段+BL-08剩余search整路，关联GAP-LEGACY-001/GAP-ASYNC-001。不认领Go归档准备worker或其他候选。
@@ -32,3 +32,15 @@ MySQL只读ProcessedArticle/Article/ArchiveArticleClassification/NewsEvent/Item/
 一手兼容依据：[BullMQ Scripts 5.63.2](https://github.com/taskforcesh/bullmq/blob/v5.63.2/src/classes/scripts.ts)、[Job 5.63.2](https://github.com/taskforcesh/bullmq/blob/v5.63.2/src/classes/job.ts)。只确认实施路线，Go准备producer尚不存在。
 
 规划只做静态核对/git diff --check；未安装依赖/运行build/test、Docker或服务，真实DB/Mongo/Redis/Nest worker、外部embedding/vector/rerank和部署均未验证。下一次核执行PR逐入口/必要入队/独立开关/导出快照、最终head普通CI和Redis协议证据；未合main不增加注册数，不关闭worker依赖或GAP-ASYNC-001。
+
+
+- Ready PR [#97](https://github.com/wei500L/newwei/pull/97)，业务 head `6b70350df46851b25885e9d06ecdb11b5ac25c3e`。首轮普通 CI 39306149780：`verify` 与 `api-go-user-settings-integration` 均因 `go.sum` 尚无 `msgpack/v5` 条目失败（drift gate 只报依赖清单差异，未进入编译/用例）；`go-modules-regen` 已成功提交 `517592ad`（go.mod/go.sum 增加 msgpack/v5 与 tagparser），label 已移除。最终代码 head `5885ca13` 的普通 CI [39314849303](https://github.com/wei500L/newwei/actions/runs/39314849303) 全绿：`verify`（含 lint/Go tests）、`api-go-user-settings-integration`（含 archivepreparation 真实 Redis 7.2 协议用例）、`vector-integration` 均 success；`go-modules-regen`/`contract-baseline-regen` skipped 不计通过。此前 5683e0cf 的 [39310112110](https://github.com/wei500L/newwei/actions/runs/39310112110) 同样全绿。
+
+## 本次执行记录（2026-10-19）
+
+- 已实现四入口：三个 Query 根（`items.read`）与 `POST /api/analysis/exports/search`（`analysis.write`，201 CSV，items/headlines 两模式）。新增 `internal/archivereading`、`internal/archivepreparation`、`internal/graphqlread/archivereading`、`analysisexport` search 文件、精确 legacyproxy 规则与 `cmd/api/archive_reading.go`。
+- 复用窄端口：`newsnowclusteringops/archive_port.go`（完整 rule signals/国家表）、`itemsreading/vector_port.go`（不回落 Mongo）、`llmembed/archive_port.go`（真实模型 outcome/每次 attempt）、`llmlogs/archive_search.go`（专用 writer）。未改 `data_gen.go`、`registry_port.go`、hydration/readmodel 或条目搜索算法。
+- 分类新鲜度、显示资格、真实 embedding/vector/lexical/rerank、两层缓存/指标、错误 appCode、缺数据准备入队与状态投影均已接线；headlines 导出改为单请求五栏目快照（每轮 100、去重至 5000），items 模式复用已迁 12 列。
+- BullMQ producer 固定 5.63.2 Lua/MessagePack，waiting/active/delayed 去重、其他状态受锁移除再 add、状态 TTL 3600 与 200 条裁剪；Nest `ArchivePreparationProcessor` 仍是唯一消费者。Redis 协议用例加入现有 `api-go-user-settings-integration` job。
+- 开关 `API_GO_ARCHIVE_READING_MODE` 默认 legacy，单开装配三 Query、GraphQL handler、search HTTP、DB/JWT/Redis/Mongo 与 items 导出依赖；回滚改 legacy 并重启。
+- 本机仅 gofmt/静态审阅；未运行 build/test/Docker/服务。最终代码 head 5885ca13 普通 CI 39314849303 全绿（见上）。真实 MySQL/Mongo、Nest worker 消费、模型/向量上游与部署切流未验证。

@@ -649,6 +649,7 @@ services:
       # 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI。
       # POST /api/analysis/exports/search 仍代理 NestJS。
       API_GO_ANALYSIS_EXPORT_MODE: legacy
+      API_GO_ARCHIVE_READING_MODE: legacy
       # 态势监控自定义监控五条 HTTP。pilot 与样例保持 legacy。
       # 改成 go 才由 Go 验签并写 SituationMonitorMonitor。
       # 回滚只把该变量改回 legacy。insights、refresh 和其他采集接口不在这个开关里。

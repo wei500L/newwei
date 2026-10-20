@@ -147,6 +147,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/archivereading"
 	"github.com/wei500L/newwei/apps/api-go/internal/auditoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/authn"
@@ -162,6 +163,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardwarmap"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/alerts"
+	archivereadinggraphql "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/archivereading"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	graphqlcrawlmetadata "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/crawlmetadata"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/economic"
@@ -574,6 +576,11 @@ func run() error {
 	if cfg.AnalysisExportMode == config.AnalysisExportModeGo {
 		analysisExportMode = string(legacyproxy.ModeGo)
 	}
+	archiveReadingMode := ""
+	if cfg.ArchiveReadingMode == config.ArchiveReadingModeGo {
+		archiveReadingMode = string(legacyproxy.ModeGo)
+	}
+	archiveReadingGo := cfg.ArchiveReadingMode == config.ArchiveReadingModeGo
 	situationMonitorsMode := ""
 	if cfg.SituationMonitorsMode == config.SituationMonitorsModeGo {
 		situationMonitorsMode = string(legacyproxy.ModeGo)
@@ -740,6 +747,9 @@ func run() error {
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
 	rules = legacyproxy.WithAnalysisExport(rules, analysisExportMode)
+	// The archive reading switch owns only the exact search export route; the
+	// three GraphQL roots are registered with the shared GraphQL handler.
+	rules = legacyproxy.WithArchiveReadingSearch(rules, archiveReadingMode)
 	// /graphql is routed to the Go handler when the read switch or any of the
 	// organization/workspace/settings/source-policy/knowledge-review/RSS
 	// translation write
@@ -750,7 +760,8 @@ func run() error {
 	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
 		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" ||
 		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" ||
-		cfg.ItemsIngestMode == config.ItemsIngestModeGo {
+		cfg.ItemsIngestMode == config.ItemsIngestModeGo ||
+		archiveReadingGo {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -894,6 +905,7 @@ func run() error {
 				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
 				cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo ||
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
+				cfg.ArchiveReadingMode == config.ArchiveReadingModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
 				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
@@ -1044,7 +1056,7 @@ func run() error {
 		graphqlKnowledgeReviewGo ||
 		graphqlRssTranslationGo ||
 		identityOnboardingGo || oidcLoginGo ||
-		searchReindexGo || proxyLoadBalancingGo || analysisExportGo || itemsIngestGo
+		searchReindexGo || proxyLoadBalancingGo || analysisExportGo || itemsIngestGo || archiveReadingGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	// The background digest delivery needs the shared Redis client (tick gate,
@@ -1363,6 +1375,11 @@ func run() error {
 	}
 
 	digestService, err := wirePersonalNews(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
+	if err != nil {
+		return err
+	}
+	var archiveReadingService *archivereading.Service
+	archiveReadingService, err = wireArchiveReadingHTTP(gateway, cfg, sharedDB, redisClient, &dashboardMongo)
 	if err != nil {
 		return err
 	}
@@ -1700,11 +1717,17 @@ func run() error {
 	// is the exception: it requires Mongo itself).
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
 	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || settingsWriteGo ||
-		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || itemsIngestGo {
+		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || itemsIngestGo || archiveReadingGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
 		reg := contract.NewRegistry()
+		if archiveReadingGo {
+			if archiveReadingService == nil {
+				return fmt.Errorf("api-go: archive reading GraphQL registration requires the archive service")
+			}
+			archivereadinggraphql.Register(reg, archiveReadingService)
+		}
 		// The workspace identity/organization/RBAC/dashboard/queue/sentiment/
 		// processed-item roots are opt-in through their own switch; when it is
 		// legacy, any document selecting one of them stays on NestJS.
