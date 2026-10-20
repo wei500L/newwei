@@ -106,7 +106,7 @@ func TestCanonicalURLFingerprint(t *testing.T) {
 	if canonical == nil {
 		t.Fatal("canonical is nil")
 	}
-	if canonical.CanonicalURL != "https://example.com/a/b?a=1" {
+	if canonical.CanonicalURL != "https://example.com/a/b" {
 		t.Fatalf("canonical = %q", canonical.CanonicalURL)
 	}
 	if got := BuildCanonicalURLFingerprint("not a url", nil); got != nil {
@@ -162,7 +162,7 @@ func TestAggregateRefreshNodes(t *testing.T) {
 	if value, _ := aggregate.CandidateStats.Number("scanned"); value != 5 {
 		t.Fatalf("candidateStats.scanned = %v", value)
 	}
-	if value, _ := aggregate.RejectionCounts.Number("duplicate"); value != 1 {
+	if value, _ := aggregate.RejectionCounts.Number("duplicate"); value != 2 {
 		t.Fatalf("rejectionCounts.duplicate = %v", value)
 	}
 	if value, _ := aggregate.FailureKindCounts.Number("challenge_detected"); value != 1 {

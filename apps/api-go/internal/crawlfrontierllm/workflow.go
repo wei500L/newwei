@@ -323,6 +323,8 @@ func (s *Service) insertCandidateTrace(ctx context.Context, traceID, candidateID
 	if err != nil {
 		return err
 	}
+	// The Prisma trace table has no rejectedReason column: Nest merges it into
+	// details, and the read path surfaces details.rejectedReason.
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO CrawlStrategyWorkflowRunCandidateTrace
   (id, candidateId, sequence, timestamp, nodeId, nodeType, action, message, accepted,
@@ -528,7 +530,7 @@ ORDER BY updatedAt DESC, createdAt ASC`, runID)
 func (s *Service) loadCandidateTraces(ctx context.Context, candidateID string) (*Array, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT nodeId, nodeType, action, message, accepted, scoreDelta, freshnessDelta, ruleHits,
-       rejectedReason, beforeSnapshot, afterSnapshot, details, timestamp
+       beforeSnapshot, afterSnapshot, details, timestamp
 FROM CrawlStrategyWorkflowRunCandidateTrace WHERE candidateId = ?
 ORDER BY sequence ASC, timestamp ASC`, candidateID)
 	if err != nil {
@@ -542,13 +544,12 @@ ORDER BY sequence ASC, timestamp ASC`, candidateID)
 			accepted                          sql.NullBool
 			scoreDelta, freshnessDelta        sql.NullFloat64
 			ruleHits                          []byte
-			rejectedReason                    sql.NullString
 			beforeSnapshot, afterSnapshot     []byte
 			details                           []byte
 			timestamp                         time.Time
 		)
 		if err := rows.Scan(&nodeID, &nodeType, &action, &message, &accepted, &scoreDelta,
-			&freshnessDelta, &ruleHits, &rejectedReason, &beforeSnapshot, &afterSnapshot,
+			&freshnessDelta, &ruleHits, &beforeSnapshot, &afterSnapshot,
 			&details, &timestamp); err != nil {
 			return nil, err
 		}
@@ -569,8 +570,10 @@ ORDER BY sequence ASC, timestamp ASC`, candidateID)
 		if hits := parseStringList(ruleHits); hits != nil {
 			item.Set("ruleHits", hits)
 		}
-		if rejectedReason.Valid {
-			item.SetString("rejectedReason", rejectedReason.String)
+		if object := parseObjectOrNil(details); object != nil {
+			if reason, ok := object.String("rejectedReason"); ok {
+				item.SetString("rejectedReason", reason)
+			}
 		}
 		if object := parseObjectOrNil(beforeSnapshot); object != nil {
 			item.SetRaw("beforeSnapshot", mustJSON(object))
