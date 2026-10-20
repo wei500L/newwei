@@ -11,7 +11,9 @@ package archivepreparationworker
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -194,7 +196,7 @@ func TestArchivePreparationWorkerIntegration(t *testing.T) {
 	var item struct {
 		Result bson.RawValue `bson:"result"`
 	}
-	if err := database.Collection("processeditems").FindOne(ctx, bson.D{{Key: "_id", Value: objectID(digestIDs[0])}}).Decode(&item); err != nil {
+	if err := database.Collection("processeditems").FindOne(ctx, bson.D{{Key: "orgId", Value: itOrgID}}).Decode(&item); err != nil {
 		t.Fatalf("find item: %v", err)
 	}
 	var stored map[string]any
@@ -272,11 +274,6 @@ func waitForState(status *recordingStatus, target string, timeout time.Duration)
 		time.Sleep(10 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for %s", target)
-}
-
-func objectID(hex string) bson.ObjectID {
-	id, _ := bson.ObjectIDFromHex(hex)
-	return id
 }
 
 func mongoDatabaseName(uri string) string {
@@ -370,14 +367,11 @@ func seedArticles(ctx context.Context, db *sql.DB, database *mongo.Database, org
 	}
 	ids := make([]string, 0, count)
 	prefix := strings.ReplaceAll(anchor, "-", "")
-	seedBase := int64(0)
-	for _, r := range orgID + anchor {
-		seedBase = seedBase*31 + int64(r)
-	}
 	for index := 0; index < count; index++ {
 		articleID := fmt.Sprintf("%s-a-%s-%02d", orgID, prefix, index)
 		processedID := fmt.Sprintf("%s-p-%s-%02d", orgID, prefix, index)
-		ref := fmt.Sprintf("%024x", seedBase+int64(index))
+		sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d", orgID, anchor, index)))
+		ref := hex.EncodeToString(sum[:12])
 		processedAt := base.Add(12*time.Hour - time.Duration(index)*time.Minute)
 		if _, err := db.ExecContext(ctx,
 			"INSERT INTO Article (id, orgId, url, sourceLabel, crawlAt) VALUES (?, ?, ?, ?, ?)",
