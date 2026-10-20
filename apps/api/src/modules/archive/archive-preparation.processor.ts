@@ -2,6 +2,7 @@ import { createLogger, ensureTraceId, runWithTraceId } from '@modular/utils';
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, QueueEvents, Worker } from 'bullmq';
 
+import { EnvService } from '../config/config.service';
 import { ArchivePreparationSettingsService } from '../system-settings/archive-preparation-settings.service';
 
 import { ArchivePreparationQueueService } from './archive-preparation-queue.service';
@@ -23,6 +24,7 @@ export class ArchivePreparationProcessor implements OnModuleInit, OnModuleDestro
   };
 
   constructor(
+    private readonly env: EnvService,
     private readonly archiveService: ArchiveService,
     private readonly queueService: ArchivePreparationQueueService,
     private readonly settings: ArchivePreparationSettingsService,
@@ -33,6 +35,19 @@ export class ArchivePreparationProcessor implements OnModuleInit, OnModuleDestro
   ) {}
 
   async onModuleInit() {
+    // API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go moves the consumer to Go.
+    // Return before creating the Worker and before registering the failed
+    // listener so a mixed-version deployment never has two consumers.
+    if (
+      this.env.get('API_GO_ARCHIVE_PREPARATION_WORKER_MODE', {
+        infer: true,
+      }) === 'go'
+    ) {
+      logger.info(
+        'Skipped archive preparation worker because Go owns the consumer (API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go)',
+      );
+      return;
+    }
     this.worker = new Worker<ArchivePreparationJobPayload>(
       ARCHIVE_PREPARATION_QUEUE_NAME,
       async (job) => {

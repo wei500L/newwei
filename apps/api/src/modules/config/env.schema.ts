@@ -93,6 +93,16 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The archivePreparation BullMQ consumer owner. Empty string behaves like
+    // legacy (the NestJS ArchivePreparationProcessor); go mode lets Go consume
+    // the same queue and requires MySQL, Redis, Mongo and the settings key.
+    API_GO_ARCHIVE_PREPARATION_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE: z
       .preprocess(
         (value) =>

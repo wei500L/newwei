@@ -576,6 +576,20 @@ const (
 	NewsClusteringRecoveryWorkerModeGo     NewsClusteringRecoveryWorkerMode = "go"
 )
 
+// ArchivePreparationWorkerMode controls the BullMQ consumer of the
+// archivePreparation queue. Default legacy. go requires MySQL, Redis, Mongo and
+// SYSTEM_SETTINGS_ENCRYPTION_KEY: the worker reads processed articles and cache
+// rows from MySQL, the state record and caches from Redis, ProcessedItem display
+// signals from Mongo, and decrypts gateway profile api keys. NestJS reads the
+// same variable and creates no Worker while it is go, so the queue never has two
+// owners.
+type ArchivePreparationWorkerMode string
+
+const (
+	ArchivePreparationWorkerModeLegacy ArchivePreparationWorkerMode = "legacy"
+	ArchivePreparationWorkerModeGo     ArchivePreparationWorkerMode = "go"
+)
+
 // NewsIndicatorAssociationCronMode controls the six-hourly news-indicator
 // association refresh. Default legacy. go requires DATABASE_URL and REDIS_HOST:
 // the refresh writes MySQL and the tick gate and organization leases live in
@@ -2924,6 +2938,9 @@ type Config struct {
 	// API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE. Default legacy; see the mode
 	// type for the consumer, its scan and the R1 recovery rule.
 	NewsClusteringRecoveryWorkerMode NewsClusteringRecoveryWorkerMode
+	// API_GO_ARCHIVE_PREPARATION_WORKER_MODE. Default legacy; see the mode type
+	// for the consumer and its required connections.
+	ArchivePreparationWorkerMode ArchivePreparationWorkerMode
 	// API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE. Default legacy. go registers
 	// the refreshNewsIndicatorAssociations mutation; it requires JWT_SECRET,
 	// DATABASE_URL and REDIS_HOST. It is a string like the other GraphQL write
@@ -4709,6 +4726,14 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_ARCHIVE_PREPARATION_WORKER_MODE")) {
+	case "", string(ArchivePreparationWorkerModeLegacy):
+		cfg.ArchivePreparationWorkerMode = ArchivePreparationWorkerModeLegacy
+	case string(ArchivePreparationWorkerModeGo):
+		cfg.ArchivePreparationWorkerMode = ArchivePreparationWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_ARCHIVE_PREPARATION_WORKER_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLNewsIndicatorRefreshMode = "legacy"
@@ -5647,6 +5672,20 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go")
+		}
+	}
+	if cfg.ArchivePreparationWorkerMode == ArchivePreparationWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go")
+		}
+		if strings.TrimSpace(cfg.SettingsEncryptionKeyRaw) == "" {
+			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go")
 		}
 	}
 	if cfg.GraphQLNewsIndicatorRefreshMode == "go" {

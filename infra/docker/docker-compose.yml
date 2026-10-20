@@ -489,6 +489,9 @@ services:
       API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE: ${API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE:-legacy}
       API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE: ${API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE:-legacy}
       API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE: ${API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE:-legacy}
+      # 归档准备 worker（archivePreparation，并发 1）。Nest 与 Go 同一变量；
+      # go 时 Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go。
+      API_GO_ARCHIVE_PREPARATION_WORKER_MODE: ${API_GO_ARCHIVE_PREPARATION_WORKER_MODE:-legacy}
       # 分类质量报告创建、队列消费权与流水线运行记录。三个开关互相独立，默认
       # legacy。worker 开关 Nest 与 Go 都读：go 时 Nest 不再建 Worker，由 api-go 消费。
       API_GO_CLASSIFICATION_REPORTS_MODE: ${API_GO_CLASSIFICATION_REPORTS_MODE:-legacy}
@@ -851,6 +854,9 @@ services:
       API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE: ${API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE:-legacy}
       API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE: ${API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE:-legacy}
       API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE: ${API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE:-legacy}
+      # 归档准备 worker（archivePreparation，并发 1）。Nest 与 Go 同一变量；
+      # go 时 Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go。
+      API_GO_ARCHIVE_PREPARATION_WORKER_MODE: ${API_GO_ARCHIVE_PREPARATION_WORKER_MODE:-legacy}
       # 告警队列（scan / 规则评估 / 站内通知 / 邮件与 Webhook 投递）的执行权。
       # 空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。默认 legacy=保留
       # NestJS AlertsProcessor；go=Go 消费 alerts 队列，Nest 处理器只保留幂等的
