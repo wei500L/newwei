@@ -33,14 +33,14 @@ const (
 	// Path 是精确路径。
 	Path = "/api/dashboard/stream"
 
-	eventWarMapEvents     = "war-map-events"
-	eventWarMapNews       = "war-map-news-markers"
-	eventWarMapLayers     = "war-map-layers"
-	eventCandlestick      = "financial-candlestick"
-	eventGeoHeatmap       = "spacetime-geo-heatmap"
-	eventGeoUnavailable   = "spacetime-geo-heatmap-unavailable"
-	eventStreamError      = "stream-error"
-	eventPing             = "ping"
+	eventWarMapEvents      = "war-map-events"
+	eventWarMapNews        = "war-map-news-markers"
+	eventWarMapLayers      = "war-map-layers"
+	eventCandlestick       = "financial-candlestick"
+	eventGeoHeatmap        = "spacetime-geo-heatmap"
+	eventGeoUnavailable    = "spacetime-geo-heatmap-unavailable"
+	eventStreamError       = "stream-error"
+	eventPing              = "ping"
 	unavailableFingerprint = "unavailable"
 )
 
@@ -63,6 +63,13 @@ type requestAuth interface {
 	Authenticate(http.ResponseWriter, *http.Request) *authhttp.Identity
 }
 
+// warRead is one war map poll: the three bodies the SSE frame sequence needs.
+type warRead struct {
+	events  []byte
+	markers []byte
+	layers  []byte
+}
+
 // Handler 持有一条 SSE 连接的依赖。
 type Handler struct {
 	auth     requestAuth
@@ -75,20 +82,35 @@ type Handler struct {
 	ping     time.Duration
 	getenv   func(string) string
 
+	// Shared per-tick reads. See shared.go for the sharing and freshness rules.
+	warReads    *sharedReads[warRead]
+	candleReads *sharedReads[[]byte]
+	heatReads   *sharedReads[[]byte]
+	bucketNow   func() time.Time
+
 	active atomic.Int64
 	cycles atomic.Int64
 }
 
+// sharedReadTimeout bounds a detached shared read. A read normally finishes in
+// milliseconds; the bound only exists so a connection that disconnects mid-read
+// cannot hold the query (and the entry's waiters) open indefinitely.
+const sharedReadTimeout = 30 * time.Second
+
 // NewHandler 使用生产定时器。测试可以改 Interval 和 Ping。
 func NewHandler(auth requestAuth, war WarSource, candles CandleSource, heat HeatSource, policy cors.Policy) *Handler {
 	return &Handler{
-		auth:    auth,
-		war:     war,
-		candles: candles,
-		heat:    heat,
-		policy:  policy,
-		now:     time.Now,
-		getenv:  os.Getenv,
+		auth:        auth,
+		war:         war,
+		candles:     candles,
+		heat:        heat,
+		policy:      policy,
+		now:         time.Now,
+		getenv:      os.Getenv,
+		warReads:    newSharedReads[warRead](sharedReadTimeout),
+		candleReads: newSharedReads[[]byte](sharedReadTimeout),
+		heatReads:   newSharedReads[[]byte](sharedReadTimeout),
+		bucketNow:   time.Now,
 	}
 }
 
@@ -215,7 +237,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		defer inflight.Store(false)
 		h.cycles.Add(1)
-		h.publish(ctx, &writeMu, w, flusher, identity.OrgID, dashStart, dashEnd, warStart, warEnd, view, state, force)
+		h.publish(ctx, &writeMu, w, flusher, identity.OrgID, dashStart, dashEnd, warStart, warEnd, view, state, force, h.tickBucket(interval))
 	}
 
 	var wg sync.WaitGroup
@@ -265,10 +287,10 @@ type fingerprints struct {
 	geo    string
 }
 
-func (h *Handler) publish(ctx context.Context, mu *sync.Mutex, w http.ResponseWriter, flusher http.Flusher, orgID string, dashStart, dashEnd, warStart, warEnd time.Time, view dashboardwarmap.StreamView, state *fingerprints, force bool) {
+func (h *Handler) publish(ctx context.Context, mu *sync.Mutex, w http.ResponseWriter, flusher http.Flusher, orgID string, dashStart, dashEnd, warStart, warEnd time.Time, view dashboardwarmap.StreamView, state *fingerprints, force bool, bucket int64) {
 	type warResult struct {
-		events, markers, layers []byte
-		err                     error
+		read warRead
+		err  error
 	}
 	type byteResult struct {
 		body []byte
@@ -278,15 +300,22 @@ func (h *Handler) publish(ctx context.Context, mu *sync.Mutex, w http.ResponseWr
 	candleCh := make(chan byteResult, 1)
 	heatCh := make(chan byteResult, 1)
 	go func() {
-		events, markers, layers, err := h.war.ReadForStream(ctx, orgID, warStart, warEnd, view)
-		warCh <- warResult{events: events, markers: markers, layers: layers, err: err}
+		read, err := h.warReads.do(ctx, warReadKey(orgID, warStart, warEnd, view), bucket, func(readCtx context.Context) (warRead, error) {
+			events, markers, layers, err := h.war.ReadForStream(readCtx, orgID, warStart, warEnd, view)
+			return warRead{events: events, markers: markers, layers: layers}, err
+		})
+		warCh <- warResult{read: read, err: err}
 	}()
 	go func() {
-		body, err := h.candles.ReadCandlestick(ctx, dashStart, dashEnd)
+		body, err := h.candleReads.do(ctx, candleReadKey(dashStart, dashEnd), bucket, func(readCtx context.Context) ([]byte, error) {
+			return h.candles.ReadCandlestick(readCtx, dashStart, dashEnd)
+		})
 		candleCh <- byteResult{body: body, err: err}
 	}()
 	go func() {
-		body, err := h.heat.ReadHeatmap(ctx, orgID, dashStart, dashEnd)
+		body, err := h.heatReads.do(ctx, heatReadKey(orgID, dashStart, dashEnd), bucket, func(readCtx context.Context) ([]byte, error) {
+			return h.heat.ReadHeatmap(readCtx, orgID, dashStart, dashEnd)
+		})
 		heatCh <- byteResult{body: body, err: err}
 	}()
 
@@ -323,9 +352,9 @@ func (h *Handler) publish(ctx context.Context, mu *sync.Mutex, w http.ResponseWr
 			}
 		}
 	}
-	sendChanged(eventWarMapEvents, warPart.events, &state.war)
-	sendChanged(eventWarMapNews, warPart.markers, &state.news)
-	sendChanged(eventWarMapLayers, warPart.layers, &state.layers)
+	sendChanged(eventWarMapEvents, warPart.read.events, &state.war)
+	sendChanged(eventWarMapNews, warPart.read.markers, &state.news)
+	sendChanged(eventWarMapLayers, warPart.read.layers, &state.layers)
 	sendChanged(eventCandlestick, candlePart.body, &state.candle)
 	if heatPart.err != nil || len(heatPart.body) == 0 {
 		if state.geo != unavailableFingerprint {
@@ -336,6 +365,67 @@ func (h *Handler) publish(ctx context.Context, mu *sync.Mutex, w http.ResponseWr
 		return
 	}
 	sendChanged(eventGeoHeatmap, heatPart.body, &state.geo)
+}
+
+// tickBucket is the sharing window for one publish round: connections whose
+// ticks fall into the same wall-clock bucket read the data once. The bucket is
+// derived from the same interval the ticker uses, so a connection always moves
+// to a new bucket on its next tick and never reuses its own previous result.
+func (h *Handler) tickBucket(interval time.Duration) int64 {
+	if interval <= 0 {
+		interval = time.Second
+	}
+	now := h.bucketNow
+	if now == nil {
+		now = time.Now
+	}
+	return now().UnixNano() / int64(interval)
+}
+
+// warReadKey scopes a shared war map read to everything the response depends on.
+// The org id is part of the key, so tenants never share a body.
+func warReadKey(orgID string, start, end time.Time, view dashboardwarmap.StreamView) string {
+	var key strings.Builder
+	key.WriteString("war|")
+	key.WriteString(orgID)
+	key.WriteByte('|')
+	key.WriteString(strconv.FormatInt(start.UnixMilli(), 10))
+	key.WriteByte('|')
+	key.WriteString(strconv.FormatInt(end.UnixMilli(), 10))
+	key.WriteByte('|')
+	if view.Translate {
+		key.WriteByte('1')
+	} else {
+		key.WriteByte('0')
+	}
+	key.WriteByte('|')
+	key.WriteString(view.FlightMode)
+	key.WriteByte('|')
+	key.WriteString(view.AisMode)
+	key.WriteByte('|')
+	if view.BBox != nil {
+		for index, edge := range view.BBox {
+			if index > 0 {
+				key.WriteByte(',')
+			}
+			key.WriteString(strconv.FormatFloat(edge, 'g', -1, 64))
+		}
+	}
+	key.WriteByte('|')
+	if view.Zoom != nil {
+		key.WriteString(strconv.FormatFloat(*view.Zoom, 'g', -1, 64))
+	}
+	return key.String()
+}
+
+// candleReadKey has no org: the candlestick series is global, so every org with
+// the same range shares one read.
+func candleReadKey(start, end time.Time) string {
+	return "candle|" + strconv.FormatInt(start.UnixMilli(), 10) + "|" + strconv.FormatInt(end.UnixMilli(), 10)
+}
+
+func heatReadKey(orgID string, start, end time.Time) string {
+	return "heat|" + orgID + "|" + strconv.FormatInt(start.UnixMilli(), 10) + "|" + strconv.FormatInt(end.UnixMilli(), 10)
 }
 
 func firstError(errs ...error) error {
@@ -352,14 +442,18 @@ func fingerprint(payload []byte) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
+// writeFrame writes one SSE message. Nest's SerializedSse emits the same three
+// lines ("event: <type>", "data: <json>", blank), so the wire format matches;
+// the frame is assembled in one buffer so a message costs one Write and one
+// Flush instead of three writes per event.
 func writeFrame(w http.ResponseWriter, flusher http.Flusher, event string, data []byte) error {
-	if _, err := w.Write([]byte("event: " + event + "\ndata: ")); err != nil {
-		return err
-	}
-	if _, err := w.Write(data); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte("\n\n")); err != nil {
+	frame := make([]byte, 0, len("event: ")+len(event)+len("\ndata: ")+len(data)+len("\n\n"))
+	frame = append(frame, "event: "...)
+	frame = append(frame, event...)
+	frame = append(frame, "\ndata: "...)
+	frame = append(frame, data...)
+	frame = append(frame, "\n\n"...)
+	if _, err := w.Write(frame); err != nil {
 		return err
 	}
 	flusher.Flush()

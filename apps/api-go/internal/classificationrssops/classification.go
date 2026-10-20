@@ -1577,74 +1577,14 @@ type confusionPair struct {
 // computeConfusionMetrics mirrors the metric half of computeSampleMetrics: every
 // annotation contributes to the confusion matrix, identical paths count as
 // correct, and only pairs above both configured thresholds become problem pairs.
+// The counting itself lives in confusionAccumulator so the aggregated report
+// path (report_metrics.go) shares it.
 func computeConfusionMetrics(pairs []confusionPair, settings qualitySettings) sampleMetrics {
-	confusion := make(map[string]int)
-	order := make([]string, 0, len(pairs))
-	total := 0
-	correct := 0
+	accumulator := newConfusionAccumulator(len(pairs))
 	for _, pair := range pairs {
-		predicted := "unknown"
-		if normalized := normalizePath(derefString(pair.Predicted)); normalized != nil {
-			predicted = *normalized
-		}
-		actual := "unknown"
-		if normalized := normalizePath(derefString(pair.Actual)); normalized != nil {
-			actual = *normalized
-		}
-		total++
-		if predicted == actual {
-			correct++
-		}
-		key := predicted + "=>" + actual
-		if _, ok := confusion[key]; !ok {
-			order = append(order, key)
-		}
-		confusion[key]++
+		accumulator.add(pair.Predicted, pair.Actual, 1)
 	}
-
-	confusionMatrix := make([]confusionEntry, 0, len(order))
-	for _, key := range order {
-		predicted, actual := splitConfusionKey(key)
-		confusionMatrix = append(confusionMatrix, confusionEntry{
-			PredictedPath: predicted,
-			ActualPath:    actual,
-			Count:         confusion[key],
-		})
-	}
-	sort.SliceStable(confusionMatrix, func(left, right int) bool {
-		return confusionMatrix[left].Count > confusionMatrix[right].Count
-	})
-
-	problemPathPairs := make([]problemPathPair, 0, len(confusionMatrix))
-	for _, entry := range confusionMatrix {
-		if entry.PredictedPath == entry.ActualPath {
-			continue
-		}
-		errorRate := ratio4(float64(entry.Count), float64(total), 0)
-		if entry.Count < settings.ReportMinPairCount || errorRate < settings.ReportMinPairErrorRate {
-			continue
-		}
-		problemPathPairs = append(problemPathPairs, problemPathPair{
-			PredictedPath: entry.PredictedPath,
-			ActualPath:    entry.ActualPath,
-			Count:         entry.Count,
-			ErrorRate:     errorRate,
-		})
-	}
-	sort.SliceStable(problemPathPairs, func(left, right int) bool {
-		return problemPathPairs[left].Count > problemPathPairs[right].Count
-	})
-	if len(problemPathPairs) > 50 {
-		problemPathPairs = problemPathPairs[:50]
-	}
-
-	return sampleMetrics{
-		Total:            total,
-		Correct:          correct,
-		Accuracy:         ratio4(float64(correct), float64(total), 0),
-		ConfusionMatrix:  confusionMatrix,
-		ProblemPathPairs: problemPathPairs,
-	}
+	return accumulator.metrics(settings)
 }
 
 // splitConfusionKey mirrors the NestJS destructuring of key.split("=>"): a path

@@ -140,9 +140,17 @@ func decodePermissionList(raw []byte) []string {
 	if len(raw) == 0 {
 		return nil
 	}
-	var permissions []string
-	if err := json.Unmarshal(raw, &permissions); err != nil {
+	// MachineTokenService.validate keeps only the string members of a JSON
+	// permissions array; a mixed array does not invalidate the token.
+	var values []any
+	if err := json.Unmarshal(raw, &values); err != nil {
 		return nil
+	}
+	permissions := make([]string, 0, len(values))
+	for _, value := range values {
+		if permission, ok := value.(string); ok {
+			permissions = append(permissions, permission)
+		}
 	}
 	return permissions
 }
@@ -341,3 +349,18 @@ func writeJSONBytes(w http.ResponseWriter, status int, encoded []byte) {
 	w.WriteHeader(status)
 	_, _ = w.Write(encoded)
 }
+
+// AuthenticateMachineToken exposes the machine-token lookup used by the items
+// reading GET routes to the items ingest POST. It performs the same SHA-256
+// hash, Org.isActive/revocation/expiry checks, lastUsedAt best-effort update
+// and returns the DB-derived permissions and machine:<id> identity.
+func AuthenticateMachineToken(ctx context.Context, db *sql.DB, token string) (*authhttp.Identity, error) {
+	handler := &Handler{db: db}
+	return handler.authenticateMachine(ctx, token)
+}
+
+// ErrInvalidMachineToken is the exported rejection sentinel.
+var ErrInvalidMachineToken = errInvalidMachineToken
+
+// ExtractBearerToken returns the raw bearer value with the shared syntax.
+func ExtractBearerToken(r *http.Request) string { return rawBearer(r) }

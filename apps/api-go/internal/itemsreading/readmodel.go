@@ -182,8 +182,10 @@ func (s *readModelService) hydrateItemReadModelsBatch(
 	return hydrated, nil
 }
 
-// loadProcessedSnapshots loads the newest completed snapshot per item, scoped
-// to the organization.
+// loadProcessedSnapshots loads the newest snapshot per item in any status.
+// NestJS loadProcessedReadModelSnapshots takes the latest createdAt/_id row
+// regardless of status, so a just-enqueued pending document is visible instead
+// of an older completed one. The completed-only search helper is untouched.
 func (s *readModelService) loadProcessedSnapshots(
 	ctx context.Context,
 	orgID string,
@@ -193,15 +195,12 @@ func (s *readModelService) loadProcessedSnapshots(
 	for _, meta := range metas {
 		ids = append(ids, meta.ID)
 	}
-	docs, err := s.mongo.ListLatestProcessedSnapshots(ctx, orgID, ids)
+	docs, err := s.mongo.ListLatestProcessedSnapshotsAnyStatus(ctx, orgID, ids)
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]ProcessedItemDoc, len(docs))
 	for _, doc := range docs {
-		if doc.Status != string(PipelineStageCompleted) {
-			continue
-		}
 		if _, exists := out[doc.ItemMetaID]; exists {
 			continue
 		}
@@ -213,11 +212,15 @@ func (s *readModelService) loadProcessedSnapshots(
 // processedSnapshot maps a stored processed document onto the read-model
 // snapshot shape.
 func processedSnapshot(doc ProcessedItemDoc) ReadModelProcessedDoc {
-	rawItemID := doc.RawItemID.Hex()
+	var rawItemID *string
+	if !doc.RawItemID.IsZero() {
+		value := doc.RawItemID.Hex()
+		rawItemID = &value
+	}
 	return ReadModelProcessedDoc{
 		ID:                         doc.HexID(),
 		ItemMetaID:                 doc.ItemMetaID,
-		RawItemID:                  &rawItemID,
+		RawItemID:                  rawItemID,
 		PipelineJobID:              doc.PipelineJobID,
 		SourceID:                   doc.SourceID,
 		Status:                     doc.Status,

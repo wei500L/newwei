@@ -103,6 +103,46 @@ func (c *Client) CreateObjectReadURL(ctx context.Context, objectKey string, opts
 	return request.URL, nil
 }
 
+// UploadURLOptions carries the headers a browser PUT must send. ContentLength
+// is the size the API validated; it is signed so S3 rejects an object whose
+// actual body size differs from the declared one.
+//
+// Cache-Control is deliberately not part of the signature. The AWS SDK for
+// JavaScript (used by the NestJS implementation) treats cache-control as
+// unsignable, and the existing web client only sends Content-Type plus the
+// browser-generated Content-Length. Signing cache-control here would make the
+// browser upload fail with 403 SignatureDoesNotMatch, because no client sends
+// that header on the presigned PUT.
+type UploadURLOptions struct {
+	ContentType   string
+	ContentLength int64
+}
+
+// CreateObjectUploadURL presigns a PUT for objectKey. The signature covers the
+// endpoint, the path-style switch, content-type and content-length; S3 then
+// enforces the declared size. Signing happens locally and no S3 request is
+// made.
+func (c *Client) CreateObjectUploadURL(ctx context.Context, objectKey string, opts UploadURLOptions) (string, error) {
+	if c == nil || c.presigner == nil {
+		return "", ErrIncompleteConfig
+	}
+	input := &s3.PutObjectInput{
+		Bucket:        aws.String(c.cfg.Bucket),
+		Key:           aws.String(objectKey),
+		ContentType:   aws.String(opts.ContentType),
+		ContentLength: aws.Int64(opts.ContentLength),
+	}
+	request, err := c.presigner.PresignPutObject(ctx, input,
+		s3.WithPresignExpires(presignExpiry(c.cfg.PresignedURLTTLSeconds)))
+	if err != nil {
+		return "", err
+	}
+	if request == nil || request.URL == "" {
+		return "", errors.New("object storage: presigner returned no url")
+	}
+	return request.URL, nil
+}
+
 // HeadBucket probes bucket reachability with the caller's credentials.
 func (c *Client) HeadBucket(ctx context.Context) CheckResult {
 	if c == nil || c.client == nil {

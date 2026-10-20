@@ -3756,3 +3756,518 @@ func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
 		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
 	}
 }
+
+func TestNewsBackfillSwitchesDefaultToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsClusteringLlmBackfillMode != NewsClusteringLlmBackfillModeLegacy {
+		t.Fatalf("llm backfill mode = %s", cfg.NewsClusteringLlmBackfillMode)
+	}
+	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeLegacy {
+		t.Fatalf("recovery worker mode = %s", cfg.NewsClusteringRecoveryWorkerMode)
+	}
+	if cfg.GraphQLNewsIndicatorRefreshMode != "legacy" {
+		t.Fatalf("graphql refresh mode = %s", cfg.GraphQLNewsIndicatorRefreshMode)
+	}
+	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeLegacy {
+		t.Fatalf("association cron mode = %s", cfg.NewsIndicatorAssociationCronMode)
+	}
+	if cfg.NewsProcessQueueConcurrency != 8 {
+		t.Fatalf("process queue concurrency = %d", cfg.NewsProcessQueueConcurrency)
+	}
+}
+
+func TestNewsBackfillSwitchesAcceptEmptyAndExplicitLegacy(t *testing.T) {
+	keys := []string{
+		"API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE",
+		"API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE",
+		"API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE",
+		"API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE",
+	}
+	for _, key := range keys {
+		cfg, err := Load(func(name string) string {
+			if name == key {
+				return "legacy"
+			}
+			return ""
+		})
+		if err != nil {
+			t.Fatalf("%s=legacy: %v", key, err)
+		}
+		_ = cfg
+	}
+}
+
+func TestNewsBackfillSwitchesRejectInvalid(t *testing.T) {
+	keys := []string{
+		"API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE",
+		"API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE",
+		"API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE",
+		"API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE",
+	}
+	for _, key := range keys {
+		for _, invalid := range []string{"shadow", "Go", "on"} {
+			_, err := Load(func(name string) string {
+				if name == key {
+					return invalid
+				}
+				return ""
+			})
+			if err == nil || !strings.Contains(err.Error(), key+" must be one of legacy|go") {
+				t.Fatalf("%s=%q: %v", key, invalid, err)
+			}
+		}
+	}
+}
+
+func TestNewsClusteringLlmBackfillModeGoRequiresFullStack(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE=go") {
+		t.Fatalf("missing mongo: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://127.0.0.1:27017/app"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsClusteringLlmBackfillMode != NewsClusteringLlmBackfillModeGo {
+		t.Fatalf("mode = %s", cfg.NewsClusteringLlmBackfillMode)
+	}
+	// The worker and cron switches stay legacy and independently owned.
+	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeLegacy {
+		t.Fatalf("worker mode = %s", cfg.NewsClusteringRecoveryWorkerMode)
+	}
+	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeLegacy {
+		t.Fatalf("cron mode = %s", cfg.NewsIndicatorAssociationCronMode)
+	}
+}
+
+func TestNewsClusteringRecoveryWorkerModeGoDoesNotRequireJWT(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go") {
+		t.Fatalf("missing mongo: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "MONGO_URI":
+			return "mongodb://127.0.0.1:27017/app"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeGo {
+		t.Fatalf("mode = %s", cfg.NewsClusteringRecoveryWorkerMode)
+	}
+}
+
+func TestNewsIndicatorAssociationCronModeGoRequiresMySQLAndRedisOnly(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE":
+			return "go"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required when API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE=go") {
+		t.Fatalf("missing mysql: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeGo {
+		t.Fatalf("mode = %s", cfg.NewsIndicatorAssociationCronMode)
+	}
+}
+
+func TestGraphQLNewsIndicatorRefreshModeGoRequiresAuthStack(t *testing.T) {
+	_, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE":
+			return "go"
+		default:
+			return ""
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE=go") {
+		t.Fatalf("missing jwt: %v", err)
+	}
+
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE":
+			return "go"
+		case "JWT_SECRET":
+			return "secret"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.GraphQLNewsIndicatorRefreshMode != "go" {
+		t.Fatalf("mode = %s", cfg.GraphQLNewsIndicatorRefreshMode)
+	}
+}
+
+func TestNewsProcessQueueConcurrencyEnv(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		if key == "NEWS_PROCESS_QUEUE_CONCURRENCY" {
+			return "1"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsProcessQueueConcurrency != 1 {
+		t.Fatalf("concurrency = %d", cfg.NewsProcessQueueConcurrency)
+	}
+}
+
+func TestGdeltSnapshotModesDefaultToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GdeltSnapshotMode != GdeltSnapshotModeLegacy {
+		t.Fatalf("scheduler mode = %s", cfg.GdeltSnapshotMode)
+	}
+	if cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
+		t.Fatalf("refresh mode = %s", cfg.GdeltSnapshotRefreshMode)
+	}
+	// SITUATION_MONITOR_GDELT_ENABLED defaults to true in the NestJS schema too.
+	if !cfg.SituationMonitorGdeltEnabled {
+		t.Fatal("SITUATION_MONITOR_GDELT_ENABLED default = false, want true")
+	}
+	for _, empty := range []string{"", "  "} {
+		cfg, err := Load(func(key string) string {
+			switch key {
+			case "API_GO_GDELT_SNAPSHOT_MODE", "API_GO_GDELT_SNAPSHOT_REFRESH_MODE":
+				return empty
+			default:
+				return ""
+			}
+		})
+		if err != nil {
+			t.Fatalf("empty mode %q: %v", empty, err)
+		}
+		if cfg.GdeltSnapshotMode != GdeltSnapshotModeLegacy || cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
+			t.Fatalf("empty mode %q parsed as %s/%s", empty, cfg.GdeltSnapshotMode, cfg.GdeltSnapshotRefreshMode)
+		}
+	}
+}
+
+func TestGdeltSnapshotModesRejectInvalid(t *testing.T) {
+	for _, testCase := range []struct{ key, invalid string }{
+		{"API_GO_GDELT_SNAPSHOT_MODE", "shadow"},
+		{"API_GO_GDELT_SNAPSHOT_MODE", "Go"},
+		{"API_GO_GDELT_SNAPSHOT_REFRESH_MODE", "canary"},
+		{"API_GO_GDELT_SNAPSHOT_REFRESH_MODE", "true"},
+	} {
+		_, err := Load(func(key string) string {
+			if key == testCase.key {
+				return testCase.invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), testCase.key+" must be one of legacy|go") {
+			t.Fatalf("%s=%q: %v", testCase.key, testCase.invalid, err)
+		}
+	}
+}
+
+func TestGdeltSnapshotSchedulerGoRequiresMySQLAndRedisOnly(t *testing.T) {
+	full := map[string]string{
+		"API_GO_GDELT_SNAPSHOT_MODE": "go",
+		"DATABASE_URL":               "mysql://user:pass@127.0.0.1:3306/app",
+		"REDIS_HOST":                 "redis",
+	}
+	for missing, expected := range map[string]string{
+		"DATABASE_URL": "DATABASE_URL is required when API_GO_GDELT_SNAPSHOT_MODE=go",
+		"REDIS_HOST":   "REDIS_HOST is required when API_GO_GDELT_SNAPSHOT_MODE=go",
+	} {
+		_, err := Load(func(key string) string {
+			if key == missing {
+				return ""
+			}
+			return full[key]
+		})
+		if err == nil || !strings.Contains(err.Error(), expected) {
+			t.Fatalf("missing %s: %v", missing, err)
+		}
+	}
+	// The scheduler serves no route, so a missing JWT secret is not a startup
+	// condition.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_GDELT_SNAPSHOT_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("scheduler go must not require JWT: %v", err)
+	}
+	if cfg.GdeltSnapshotMode != GdeltSnapshotModeGo {
+		t.Fatalf("mode = %s", cfg.GdeltSnapshotMode)
+	}
+}
+
+func TestGdeltSnapshotRefreshGoRequiresCredentialedStack(t *testing.T) {
+	full := map[string]string{
+		"API_GO_GDELT_SNAPSHOT_REFRESH_MODE": "go",
+		"JWT_SECRET":                         "secret",
+		"DATABASE_URL":                       "mysql://user:pass@127.0.0.1:3306/app",
+		"REDIS_HOST":                         "redis",
+	}
+	for missing, expected := range map[string]string{
+		"JWT_SECRET":   "JWT_SECRET is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
+		"DATABASE_URL": "DATABASE_URL is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
+		"REDIS_HOST":   "REDIS_HOST is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
+	} {
+		_, err := Load(func(key string) string {
+			if key == missing {
+				return ""
+			}
+			return full[key]
+		})
+		if err == nil || !strings.Contains(err.Error(), expected) {
+			t.Fatalf("missing %s: %v", missing, err)
+		}
+	}
+}
+
+func TestGdeltSnapshotSwitchesAreIndependentAndReadTheEnabledFlag(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_GDELT_SNAPSHOT_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "SITUATION_MONITOR_GDELT_ENABLED":
+			return "off"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GdeltSnapshotMode != GdeltSnapshotModeGo {
+		t.Fatalf("scheduler mode = %s", cfg.GdeltSnapshotMode)
+	}
+	// The refresh switch never follows the scheduler switch, and the scheduler
+	// switch never enables the HTTP entry.
+	if cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
+		t.Fatalf("refresh mode = %s, want legacy", cfg.GdeltSnapshotRefreshMode)
+	}
+	if cfg.SituationMonitorGdeltEnabled {
+		t.Fatal("SITUATION_MONITOR_GDELT_ENABLED=off parsed as enabled")
+	}
+}
+
+func TestAlertWorkerMode(t *testing.T) {
+	deps := map[string]string{
+		"DATABASE_URL": "mysql://u:p@h:3306/db",
+		"REDIS_HOST":   "h",
+		"MONGO_URI":    "mongodb://h:27017/db",
+		"SMTP_HOST":    "smtp",
+		"SMTP_PORT":    "587",
+		"SMTP_USER":    "u",
+		"SMTP_PASS":    "p",
+	}
+	cases := []struct {
+		name      string
+		mode      string
+		extraEnv  map[string]string
+		wantMode  string
+		wantError bool
+	}{
+		{"empty is legacy", "", nil, "legacy", false},
+		{"legacy accepted", "legacy", nil, "legacy", false},
+		{"go accepted with deps", "go", deps, "go", false},
+		{"go without deps fails", "go", nil, "", true},
+		{"go without mongo fails", "go", map[string]string{
+			"DATABASE_URL": deps["DATABASE_URL"], "REDIS_HOST": deps["REDIS_HOST"],
+			"SMTP_HOST": deps["SMTP_HOST"], "SMTP_PORT": deps["SMTP_PORT"],
+			"SMTP_USER": deps["SMTP_USER"], "SMTP_PASS": deps["SMTP_PASS"],
+		}, "", true},
+		{"go without smtp fails", "go", map[string]string{
+			"DATABASE_URL": deps["DATABASE_URL"], "REDIS_HOST": deps["REDIS_HOST"],
+			"MONGO_URI": deps["MONGO_URI"],
+		}, "", true},
+		{"invalid value rejected", "shadow", nil, "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(func(key string) string {
+				if v, ok := tc.extraEnv[key]; ok {
+					return v
+				}
+				if key == "API_GO_ALERT_WORKER_MODE" {
+					return tc.mode
+				}
+				return ""
+			})
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("want error, got cfg %+v", cfg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if string(cfg.AlertWorkerMode) != tc.wantMode {
+				t.Errorf("AlertWorkerMode = %q, want %q", cfg.AlertWorkerMode, tc.wantMode)
+			}
+		})
+	}
+}
+
+func TestAlertingConfigDefaultsAndBounds(t *testing.T) {
+	cfg, err := Load(func(key string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AlertQueueConcurrency != 4 ||
+		cfg.AlertWebhookTimeoutMs != 5_000 ||
+		cfg.AlertScanIntervalMs != 300_000 ||
+		cfg.AlertNotifyGlobalPerSec != 10 ||
+		cfg.AlertNotifyEmailPerSec != 2 ||
+		cfg.AlertNotifyWebhookPerSec != 10 ||
+		cfg.AlertNotifyPerChannelPSec != 2 ||
+		cfg.AlertNotifyLimiterTTLMs != 60_000 ||
+		cfg.BullMQNamespace != "modular" {
+		t.Fatalf("alerting defaults = %+v", cfg)
+	}
+
+	env := map[string]string{
+		"ALERT_QUEUE_CONCURRENCY":             "8",
+		"ALERT_WEBHOOK_TIMEOUT_MS":            "2500",
+		"ALERT_SCAN_INTERVAL_MS":              "60000",
+		"ALERT_NOTIFY_GLOBAL_PER_SECOND":      "0",
+		"ALERT_NOTIFY_EMAIL_PER_SECOND":       "1",
+		"ALERT_NOTIFY_WEBHOOK_PER_SECOND":     "3",
+		"ALERT_NOTIFY_PER_CHANNEL_PER_SECOND": "4",
+		"ALERT_NOTIFY_LIMITER_TTL_MS":         "120000",
+		"BULLMQ_NAMESPACE":                    "custom",
+	}
+	cfg, err = Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AlertQueueConcurrency != 8 ||
+		cfg.AlertWebhookTimeoutMs != 2_500 ||
+		cfg.AlertScanIntervalMs != 60_000 ||
+		cfg.AlertNotifyGlobalPerSec != 0 ||
+		cfg.AlertNotifyEmailPerSec != 1 ||
+		cfg.AlertNotifyWebhookPerSec != 3 ||
+		cfg.AlertNotifyPerChannelPSec != 4 ||
+		cfg.AlertNotifyLimiterTTLMs != 120_000 ||
+		cfg.BullMQNamespace != "custom" {
+		t.Fatalf("alerting values = %+v", cfg)
+	}
+
+	for _, key := range []string{
+		"ALERT_QUEUE_CONCURRENCY",
+		"ALERT_WEBHOOK_TIMEOUT_MS",
+		"ALERT_SCAN_INTERVAL_MS",
+		"ALERT_NOTIFY_LIMITER_TTL_MS",
+	} {
+		_, err := Load(func(name string) string {
+			if name == key {
+				return "0"
+			}
+			return ""
+		})
+		if err == nil {
+			t.Errorf("%s=0 must be rejected", key)
+		}
+	}
+	if _, err := Load(func(name string) string {
+		if name == "ALERT_NOTIFY_GLOBAL_PER_SECOND" {
+			return "-1"
+		}
+		return ""
+	}); err == nil {
+		t.Error("negative per-second rate must be rejected")
+	}
+}

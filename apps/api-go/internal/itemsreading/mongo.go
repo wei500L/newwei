@@ -787,3 +787,63 @@ func (s *mongoStore) RssWindowStats(
 	}
 	return out, nil
 }
+
+// ListLatestProcessedSnapshotsAnyStatus returns the newest processed document
+// per item in any status, with the full hydration snapshot projection. The
+// group runs in Mongo so the read-model write path does not page the whole
+// history of every item. It is used only by hydration; search/RSS continue to
+// use the completed-only helper above.
+func (s *mongoStore) ListLatestProcessedSnapshotsAnyStatus(
+	ctx context.Context,
+	orgID string,
+	itemMetaIDs []string,
+) ([]ProcessedItemDoc, error) {
+	if len(itemMetaIDs) == 0 {
+		return nil, nil
+	}
+	projection := bson.D{
+		{Key: "_id", Value: 1},
+		{Key: "rawItemId", Value: 1},
+		{Key: "itemMetaId", Value: 1},
+		{Key: "pipelineJobId", Value: 1},
+		{Key: "sourceId", Value: 1},
+		{Key: "status", Value: 1},
+		{Key: "error", Value: 1},
+		{Key: "tags", Value: 1},
+		{Key: "result", Value: 1},
+		{Key: "duplicateOf", Value: 1},
+		{Key: "duplicateSimilarity", Value: 1},
+		{Key: "summaryEmbeddingModel", Value: 1},
+		{Key: "summaryEmbeddingDimensions", Value: 1},
+		{Key: "llm", Value: 1},
+		{Key: "createdAt", Value: 1},
+		{Key: "updatedAt", Value: 1},
+	}
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{
+			{Key: "orgId", Value: orgID},
+			{Key: "itemMetaId", Value: bson.D{{Key: "$in", Value: itemMetaIDs}}},
+		}}},
+		{{Key: "$sort", Value: bson.D{{Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$itemMetaId"},
+			{Key: "document", Value: bson.D{{Key: "$first", Value: "$$ROOT"}}},
+		}}},
+		{{Key: "$replaceRoot", Value: bson.D{{Key: "newRoot", Value: "$document"}}}},
+		{{Key: "$project", Value: projection}},
+	}
+	cursor, err := s.processedItems().Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	out := make([]ProcessedItemDoc, 0, len(itemMetaIDs))
+	for cursor.Next(ctx) {
+		var doc ProcessedItemDoc
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, err
+		}
+		out = append(out, doc)
+	}
+	return out, cursor.Err()
+}

@@ -1,0 +1,1342 @@
+package crawlqueue
+
+// The Lua scripts below are the official BullMQ v5.63.2 command sources with
+// every @include directive recursively flattened, exactly as the locked
+// bullmq package ships them in dist/cjs/scripts. They are embedded instead
+// of downloaded at runtime.
+//
+// Source: https://github.com/taskforcesh/bullmq/tree/v5.63.2/src/commands
+// License: MIT (Copyright (c) 2018 BullForce Labs AB). See NOTICE.
+//
+// SHA-256 of each script as embedded:
+//   addStandardJobScript 9e2e57d86565bcc3d16634449c11d52317299ab9895a19ca50e6619164da675e
+//   addPrioritizedJobScript 7dbb395410e784c536d282cea64658605a46ca080fa4290695c4937c304cc462
+//   removeJobScript 8eb5cf906f29e65df42e30580ce416eb18791b1684f9a8ced6d8c799f3f9ab7a
+//   pauseScript ef92926f5a206d2650b4c2fb15c1019f03f2f18e2351ff6a52fdccdc449bfc0d
+//   getCountsScript 8b92225a199eba16fbcf42c6bfcb6a17fdad7c490270cf06527ba5951b6862bf
+//
+// This package implements only the producer and control side: add (standard
+// and prioritized), remove, pause/resume, counts and meta reads. NestJS keeps
+// consuming the three crawl queues.
+
+const addStandardJobScript = `--[[
+  Adds a job to the queue by doing the following:
+    - Increases the job counter if needed.
+    - Creates a new job key with the job data.
+    - if delayed:
+      - computes timestamp.
+      - adds to delayed zset.
+      - Emits a global event 'delayed' if the job is delayed.
+    - if not delayed
+      - Adds the jobId to the wait/paused list in one of three ways:
+         - LIFO
+         - FIFO
+         - prioritized.
+      - Adds the job to the "added" list so that workers gets notified.
+    Input:
+      KEYS[1] 'wait',
+      KEYS[2] 'paused'
+      KEYS[3] 'meta'
+      KEYS[4] 'id'
+      KEYS[5] 'completed'
+      KEYS[6] 'delayed'
+      KEYS[7] 'active'
+      KEYS[8] events stream key
+      KEYS[9] marker key
+      ARGV[1] msgpacked arguments array
+            [1]  key prefix,
+            [2]  custom id (will not generate one automatically)
+            [3]  name
+            [4]  timestamp
+            [5]  parentKey?
+            [6]  parent dependencies key.
+            [7]  parent? {id, queueKey}
+            [8]  repeat job key
+            [9] deduplication key
+      ARGV[2] Json stringified job data
+      ARGV[3] msgpacked options
+      Output:
+        jobId  - OK
+        -5     - Missing parent key
+]]
+local eventsKey = KEYS[8]
+local jobId
+local jobIdKey
+local rcall = redis.call
+local args = cmsgpack.unpack(ARGV[1])
+local data = ARGV[2]
+local opts = cmsgpack.unpack(ARGV[3])
+local parentKey = args[5]
+local parent = args[7]
+local repeatJobKey = args[8]
+local deduplicationKey = args[9]
+local parentData
+-- Includes
+--[[
+  Function to add job in target list and add marker if needed.
+]]
+-- Includes
+--[[
+  Add marker if needed when a job is available.
+]]
+local function addBaseMarkerIfNeeded(markerKey, isPausedOrMaxed)
+  if not isPausedOrMaxed then
+    rcall("ZADD", markerKey, 0, "0")
+  end  
+end
+local function addJobInTargetList(targetKey, markerKey, pushCmd, isPausedOrMaxed, jobId)
+  rcall(pushCmd, targetKey, jobId)
+  addBaseMarkerIfNeeded(markerKey, isPausedOrMaxed)
+end
+--[[
+  Function to debounce a job.
+]]
+-- Includes
+--[[
+  Function to remove job keys.
+]]
+local function removeJobKeys(jobKey)
+  return rcall("DEL", jobKey, jobKey .. ':logs', jobKey .. ':dependencies',
+    jobKey .. ':processed', jobKey .. ':failed', jobKey .. ':unsuccessful')
+end
+local function removeDelayedJob(delayedKey, deduplicationKey, eventsKey, maxEvents, currentDeduplicatedJobId,
+    jobId, deduplicationId, prefix)
+    if rcall("ZREM", delayedKey, currentDeduplicatedJobId) > 0 then
+        removeJobKeys(prefix .. currentDeduplicatedJobId)
+        rcall("XADD", eventsKey, "*", "event", "removed", "jobId", currentDeduplicatedJobId,
+            "prev", "delayed")
+        -- TODO remove debounced event in next breaking change
+        rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "debounced", "jobId",
+            jobId, "debounceId", deduplicationId)
+        rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "deduplicated", "jobId",
+            jobId, "deduplicationId", deduplicationId, "deduplicatedJobId", currentDeduplicatedJobId)
+        return true
+    end
+    return false
+end
+local function deduplicateJob(deduplicationOpts, jobId, delayedKey, deduplicationKey, eventsKey, maxEvents,
+    prefix)
+    local deduplicationId = deduplicationOpts and deduplicationOpts['id']
+    if deduplicationId then
+        local ttl = deduplicationOpts['ttl']
+        if deduplicationOpts['replace'] then
+            if ttl and ttl > 0 then
+                local currentDebounceJobId = rcall('GET', deduplicationKey)
+                if currentDebounceJobId then
+                    local isRemoved = removeDelayedJob(delayedKey, deduplicationKey, eventsKey, maxEvents,
+                        currentDebounceJobId, jobId, deduplicationId, prefix)
+                    if isRemoved then
+                        if deduplicationOpts['extend'] then
+                            rcall('SET', deduplicationKey, jobId, 'PX', ttl)
+                        else
+                            rcall('SET', deduplicationKey, jobId, 'KEEPTTL')
+                        end
+                        return
+                    else
+                        return currentDebounceJobId
+                    end
+                else
+                    rcall('SET', deduplicationKey, jobId, 'PX', ttl)
+                    return
+                end
+            else
+                local currentDebounceJobId = rcall('GET', deduplicationKey)
+                if currentDebounceJobId then
+                    local isRemoved = removeDelayedJob(delayedKey, deduplicationKey, eventsKey, maxEvents,
+                        currentDebounceJobId, jobId, deduplicationId, prefix)
+                    if isRemoved then
+                        rcall('SET', deduplicationKey, jobId)
+                        return
+                    else
+                        return currentDebounceJobId
+                    end
+                else
+                    rcall('SET', deduplicationKey, jobId)
+                    return
+                end
+            end
+        else
+            local deduplicationKeyExists
+            if ttl and ttl > 0 then
+                if deduplicationOpts['extend'] then
+                    local currentDebounceJobId = rcall('GET', deduplicationKey)
+                    if currentDebounceJobId then
+                        rcall('SET', deduplicationKey, currentDebounceJobId, 'PX', ttl)
+                        rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "debounced",
+                            "jobId", currentDebounceJobId, "debounceId", deduplicationId)
+                        rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "deduplicated", "jobId",
+                            currentDebounceJobId, "deduplicationId", deduplicationId, "deduplicatedJobId", jobId)
+                        return currentDebounceJobId
+                    else
+                        rcall('SET', deduplicationKey, jobId, 'PX', ttl)
+                        return
+                    end
+                else
+                    deduplicationKeyExists = not rcall('SET', deduplicationKey, jobId, 'PX', ttl, 'NX')
+                end
+            else
+                deduplicationKeyExists = not rcall('SET', deduplicationKey, jobId, 'NX')
+            end
+            if deduplicationKeyExists then
+                local currentDebounceJobId = rcall('GET', deduplicationKey)
+                -- TODO remove debounced event in next breaking change
+                rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "debounced", "jobId",
+                    currentDebounceJobId, "debounceId", deduplicationId)
+                rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "deduplicated", "jobId",
+                    currentDebounceJobId, "deduplicationId", deduplicationId, "deduplicatedJobId", jobId)
+                return currentDebounceJobId
+            end
+        end
+    end
+end
+--[[
+  Function to get max events value or set by default 10000.
+]]
+local function getOrSetMaxEvents(metaKey)
+  local maxEvents = rcall("HGET", metaKey, "opts.maxLenEvents")
+  if not maxEvents then
+    maxEvents = 10000
+    rcall("HSET", metaKey, "opts.maxLenEvents", maxEvents)
+  end
+  return maxEvents
+end
+--[[
+  Function to check for the meta.paused key to decide if we are paused or not
+  (since an empty list and !EXISTS are not really the same).
+]]
+local function getTargetQueueList(queueMetaKey, activeKey, waitKey, pausedKey)
+  local queueAttributes = rcall("HMGET", queueMetaKey, "paused", "concurrency", "max", "duration")
+  if queueAttributes[1] then
+    return pausedKey, true, queueAttributes[3], queueAttributes[4]
+  else
+    if queueAttributes[2] then
+      local activeCount = rcall("LLEN", activeKey)
+      if activeCount >= tonumber(queueAttributes[2]) then
+        return waitKey, true, queueAttributes[3], queueAttributes[4]
+      else
+        return waitKey, false, queueAttributes[3], queueAttributes[4]
+      end
+    end
+  end
+  return waitKey, false, queueAttributes[3], queueAttributes[4]
+end
+--[[
+  Function to handle the case when job is duplicated.
+]]
+-- Includes
+--[[
+    This function is used to update the parent's dependencies if the job
+    is already completed and about to be ignored. The parent must get its
+    dependencies updated to avoid the parent job being stuck forever in 
+    the waiting-children state.
+]]
+-- Includes
+--[[
+  Validate and move or add dependencies to parent.
+]]
+-- Includes
+--[[
+  Validate and move parent to a wait status (waiting, delayed or prioritized)
+  if no pending dependencies.
+]]
+-- Includes
+--[[
+  Validate and move parent to a wait status (waiting, delayed or prioritized) if needed.
+]]
+-- Includes
+--[[
+  Move parent to a wait status (wait, prioritized or delayed)
+]]
+-- Includes
+--[[
+  Add delay marker if needed.
+]]
+-- Includes
+--[[
+  Function to return the next delayed job timestamp.
+]]
+local function getNextDelayedTimestamp(delayedKey)
+  local result = rcall("ZRANGE", delayedKey, 0, 0, "WITHSCORES")
+  if #result then
+    local nextTimestamp = tonumber(result[2])
+    if nextTimestamp ~= nil then
+      return nextTimestamp / 0x1000
+    end
+  end
+end
+local function addDelayMarkerIfNeeded(markerKey, delayedKey)
+  local nextTimestamp = getNextDelayedTimestamp(delayedKey)
+  if nextTimestamp ~= nil then
+    -- Replace the score of the marker with the newest known
+    -- next timestamp.
+    rcall("ZADD", markerKey, nextTimestamp, "1")
+  end
+end
+--[[
+  Function to add job considering priority.
+]]
+-- Includes
+--[[
+  Function to get priority score.
+]]
+local function getPriorityScore(priority, priorityCounterKey)
+  local prioCounter = rcall("INCR", priorityCounterKey)
+  return priority * 0x100000000 + prioCounter % 0x100000000
+end
+local function addJobWithPriority(markerKey, prioritizedKey, priority, jobId, priorityCounterKey,
+  isPausedOrMaxed)
+  local score = getPriorityScore(priority, priorityCounterKey)
+  rcall("ZADD", prioritizedKey, score, jobId)
+  addBaseMarkerIfNeeded(markerKey, isPausedOrMaxed)
+end
+--[[
+  Function to check if queue is paused or maxed
+  (since an empty list and !EXISTS are not really the same).
+]]
+local function isQueuePausedOrMaxed(queueMetaKey, activeKey)
+  local queueAttributes = rcall("HMGET", queueMetaKey, "paused", "concurrency")
+  if queueAttributes[1] then
+    return true
+  else
+    if queueAttributes[2] then
+      local activeCount = rcall("LLEN", activeKey)
+      return activeCount >= tonumber(queueAttributes[2])
+    end
+  end
+  return false
+end
+local function moveParentToWait(parentQueueKey, parentKey, parentId, timestamp)
+    local parentWaitKey = parentQueueKey .. ":wait"
+    local parentPausedKey = parentQueueKey .. ":paused"
+    local parentActiveKey = parentQueueKey .. ":active"
+    local parentMetaKey = parentQueueKey .. ":meta"
+    local parentMarkerKey = parentQueueKey .. ":marker"
+    local jobAttributes = rcall("HMGET", parentKey, "priority", "delay")
+    local priority = tonumber(jobAttributes[1]) or 0
+    local delay = tonumber(jobAttributes[2]) or 0
+    if delay > 0 then
+        local delayedTimestamp = tonumber(timestamp) + delay
+        local score = delayedTimestamp * 0x1000
+        local parentDelayedKey = parentQueueKey .. ":delayed"
+        rcall("ZADD", parentDelayedKey, score, parentId)
+        rcall("XADD", parentQueueKey .. ":events", "*", "event", "delayed", "jobId", parentId, "delay",
+            delayedTimestamp)
+        addDelayMarkerIfNeeded(parentMarkerKey, parentDelayedKey)
+    else
+        if priority == 0 then
+            local parentTarget, isParentPausedOrMaxed = getTargetQueueList(parentMetaKey, parentActiveKey,
+                parentWaitKey, parentPausedKey)
+            addJobInTargetList(parentTarget, parentMarkerKey, "RPUSH", isParentPausedOrMaxed, parentId)
+        else
+            local isPausedOrMaxed = isQueuePausedOrMaxed(parentMetaKey, parentActiveKey)
+            addJobWithPriority(parentMarkerKey, parentQueueKey .. ":prioritized", priority, parentId,
+                parentQueueKey .. ":pc", isPausedOrMaxed)
+        end
+        rcall("XADD", parentQueueKey .. ":events", "*", "event", "waiting", "jobId", parentId, "prev",
+            "waiting-children")
+    end
+end
+local function moveParentToWaitIfNeeded(parentQueueKey, parentKey, parentId, timestamp)
+  if rcall("EXISTS", parentKey) == 1 then
+    local parentWaitingChildrenKey = parentQueueKey .. ":waiting-children"
+    if rcall("ZSCORE", parentWaitingChildrenKey, parentId) then    
+      rcall("ZREM", parentWaitingChildrenKey, parentId)
+      moveParentToWait(parentQueueKey, parentKey, parentId, timestamp)
+    end
+  end
+end
+local function moveParentToWaitIfNoPendingDependencies(parentQueueKey, parentDependenciesKey, parentKey,
+  parentId, timestamp)
+  local doNotHavePendingDependencies = rcall("SCARD", parentDependenciesKey) == 0
+  if doNotHavePendingDependencies then
+    moveParentToWaitIfNeeded(parentQueueKey, parentKey, parentId, timestamp)
+  end
+end
+local function updateParentDepsIfNeeded(parentKey, parentQueueKey, parentDependenciesKey,
+  parentId, jobIdKey, returnvalue, timestamp )
+  local processedSet = parentKey .. ":processed"
+  rcall("HSET", processedSet, jobIdKey, returnvalue)
+  moveParentToWaitIfNoPendingDependencies(parentQueueKey, parentDependenciesKey, parentKey, parentId, timestamp)
+end
+local function updateExistingJobsParent(parentKey, parent, parentData,
+                                        parentDependenciesKey, completedKey,
+                                        jobIdKey, jobId, timestamp)
+    if parentKey ~= nil then
+        if rcall("ZSCORE", completedKey, jobId) then
+            local returnvalue = rcall("HGET", jobIdKey, "returnvalue")
+            updateParentDepsIfNeeded(parentKey, parent['queueKey'],
+                                     parentDependenciesKey, parent['id'],
+                                     jobIdKey, returnvalue, timestamp)
+        else
+            if parentDependenciesKey ~= nil then
+                rcall("SADD", parentDependenciesKey, jobIdKey)
+            end
+        end
+        rcall("HMSET", jobIdKey, "parentKey", parentKey, "parent", parentData)
+    end
+end
+local function handleDuplicatedJob(jobKey, jobId, currentParentKey, currentParent,
+  parentData, parentDependenciesKey, completedKey, eventsKey, maxEvents, timestamp)
+  local existedParentKey = rcall("HGET", jobKey, "parentKey")
+  if not existedParentKey or existedParentKey == currentParentKey then
+    updateExistingJobsParent(currentParentKey, currentParent, parentData,
+      parentDependenciesKey, completedKey, jobKey,
+      jobId, timestamp)
+  else
+    if currentParentKey ~= nil and currentParentKey ~= existedParentKey
+      and (rcall("EXISTS", existedParentKey) == 1) then
+      return -7
+    end
+  end
+  rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event",
+    "duplicated", "jobId", jobId)
+  return jobId .. "" -- convert to string
+end
+--[[
+  Function to store a job
+]]
+local function storeJob(eventsKey, jobIdKey, jobId, name, data, opts, timestamp,
+                        parentKey, parentData, repeatJobKey)
+    local jsonOpts = cjson.encode(opts)
+    local delay = opts['delay'] or 0
+    local priority = opts['priority'] or 0
+    local debounceId = opts['de'] and opts['de']['id']
+    local optionalValues = {}
+    if parentKey ~= nil then
+        table.insert(optionalValues, "parentKey")
+        table.insert(optionalValues, parentKey)
+        table.insert(optionalValues, "parent")
+        table.insert(optionalValues, parentData)
+    end
+    if repeatJobKey then
+        table.insert(optionalValues, "rjk")
+        table.insert(optionalValues, repeatJobKey)
+    end
+    if debounceId then
+        table.insert(optionalValues, "deid")
+        table.insert(optionalValues, debounceId)
+    end
+    rcall("HMSET", jobIdKey, "name", name, "data", data, "opts", jsonOpts,
+          "timestamp", timestamp, "delay", delay, "priority", priority,
+          unpack(optionalValues))
+    rcall("XADD", eventsKey, "*", "event", "added", "jobId", jobId, "name", name)
+    return delay, priority
+end
+if parentKey ~= nil then
+    if rcall("EXISTS", parentKey) ~= 1 then return -5 end
+    parentData = cjson.encode(parent)
+end
+local jobCounter = rcall("INCR", KEYS[4])
+local metaKey = KEYS[3]
+local maxEvents = getOrSetMaxEvents(metaKey)
+local parentDependenciesKey = args[6]
+local timestamp = args[4]
+if args[2] == "" then
+    jobId = jobCounter
+    jobIdKey = args[1] .. jobId
+else
+    jobId = args[2]
+    jobIdKey = args[1] .. jobId
+    if rcall("EXISTS", jobIdKey) == 1 then
+        return handleDuplicatedJob(jobIdKey, jobId, parentKey, parent,
+            parentData, parentDependenciesKey, KEYS[5], eventsKey,
+            maxEvents, timestamp)
+    end
+end
+local deduplicationJobId = deduplicateJob(opts['de'], jobId, KEYS[6],
+  deduplicationKey, eventsKey, maxEvents, args[1])
+if deduplicationJobId then
+  return deduplicationJobId
+end
+-- Store the job.
+storeJob(eventsKey, jobIdKey, jobId, args[3], ARGV[2], opts, timestamp,
+         parentKey, parentData, repeatJobKey)
+local target, isPausedOrMaxed = getTargetQueueList(metaKey, KEYS[7], KEYS[1], KEYS[2])
+-- LIFO or FIFO
+local pushCmd = opts['lifo'] and 'RPUSH' or 'LPUSH'
+addJobInTargetList(target, KEYS[9], pushCmd, isPausedOrMaxed, jobId)
+-- Emit waiting event
+rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "waiting",
+      "jobId", jobId)
+-- Check if this job is a child of another job, if so add it to the parents dependencies
+if parentDependenciesKey ~= nil then
+    rcall("SADD", parentDependenciesKey, jobIdKey)
+end
+return jobId .. "" -- convert to string
+`
+
+const addPrioritizedJobScript = `--[[
+  Adds a priotitized job to the queue by doing the following:
+    - Increases the job counter if needed.
+    - Creates a new job key with the job data.
+    - Adds the job to the "added" list so that workers gets notified.
+    Input:
+      KEYS[1] 'marker',
+      KEYS[2] 'meta'
+      KEYS[3] 'id'
+      KEYS[4] 'prioritized'
+      KEYS[5] 'delayed'
+      KEYS[6] 'completed'
+      KEYS[7] 'active'
+      KEYS[8] events stream key
+      KEYS[9] 'pc' priority counter
+      ARGV[1] msgpacked arguments array
+            [1]  key prefix,
+            [2]  custom id (will not generate one automatically)
+            [3]  name
+            [4]  timestamp
+            [5]  parentKey?
+            [6]  parent dependencies key.
+            [7]  parent? {id, queueKey}
+            [8]  repeat job key
+            [9] deduplication key
+      ARGV[2] Json stringified job data
+      ARGV[3] msgpacked options
+      Output:
+        jobId  - OK
+        -5     - Missing parent key
+]] 
+local metaKey = KEYS[2]
+local idKey = KEYS[3]
+local priorityKey = KEYS[4]
+local completedKey = KEYS[6]
+local activeKey = KEYS[7]
+local eventsKey = KEYS[8]
+local priorityCounterKey = KEYS[9]
+local jobId
+local jobIdKey
+local rcall = redis.call
+local args = cmsgpack.unpack(ARGV[1])
+local data = ARGV[2]
+local opts = cmsgpack.unpack(ARGV[3])
+local parentKey = args[5]
+local parent = args[7]
+local repeatJobKey = args[8]
+local deduplicationKey = args[9]
+local parentData
+-- Includes
+--[[
+  Function to add job considering priority.
+]]
+-- Includes
+--[[
+  Add marker if needed when a job is available.
+]]
+local function addBaseMarkerIfNeeded(markerKey, isPausedOrMaxed)
+  if not isPausedOrMaxed then
+    rcall("ZADD", markerKey, 0, "0")
+  end  
+end
+--[[
+  Function to get priority score.
+]]
+local function getPriorityScore(priority, priorityCounterKey)
+  local prioCounter = rcall("INCR", priorityCounterKey)
+  return priority * 0x100000000 + prioCounter % 0x100000000
+end
+local function addJobWithPriority(markerKey, prioritizedKey, priority, jobId, priorityCounterKey,
+  isPausedOrMaxed)
+  local score = getPriorityScore(priority, priorityCounterKey)
+  rcall("ZADD", prioritizedKey, score, jobId)
+  addBaseMarkerIfNeeded(markerKey, isPausedOrMaxed)
+end
+--[[
+  Function to debounce a job.
+]]
+-- Includes
+--[[
+  Function to remove job keys.
+]]
+local function removeJobKeys(jobKey)
+  return rcall("DEL", jobKey, jobKey .. ':logs', jobKey .. ':dependencies',
+    jobKey .. ':processed', jobKey .. ':failed', jobKey .. ':unsuccessful')
+end
+local function removeDelayedJob(delayedKey, deduplicationKey, eventsKey, maxEvents, currentDeduplicatedJobId,
+    jobId, deduplicationId, prefix)
+    if rcall("ZREM", delayedKey, currentDeduplicatedJobId) > 0 then
+        removeJobKeys(prefix .. currentDeduplicatedJobId)
+        rcall("XADD", eventsKey, "*", "event", "removed", "jobId", currentDeduplicatedJobId,
+            "prev", "delayed")
+        -- TODO remove debounced event in next breaking change
+        rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "debounced", "jobId",
+            jobId, "debounceId", deduplicationId)
+        rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "deduplicated", "jobId",
+            jobId, "deduplicationId", deduplicationId, "deduplicatedJobId", currentDeduplicatedJobId)
+        return true
+    end
+    return false
+end
+local function deduplicateJob(deduplicationOpts, jobId, delayedKey, deduplicationKey, eventsKey, maxEvents,
+    prefix)
+    local deduplicationId = deduplicationOpts and deduplicationOpts['id']
+    if deduplicationId then
+        local ttl = deduplicationOpts['ttl']
+        if deduplicationOpts['replace'] then
+            if ttl and ttl > 0 then
+                local currentDebounceJobId = rcall('GET', deduplicationKey)
+                if currentDebounceJobId then
+                    local isRemoved = removeDelayedJob(delayedKey, deduplicationKey, eventsKey, maxEvents,
+                        currentDebounceJobId, jobId, deduplicationId, prefix)
+                    if isRemoved then
+                        if deduplicationOpts['extend'] then
+                            rcall('SET', deduplicationKey, jobId, 'PX', ttl)
+                        else
+                            rcall('SET', deduplicationKey, jobId, 'KEEPTTL')
+                        end
+                        return
+                    else
+                        return currentDebounceJobId
+                    end
+                else
+                    rcall('SET', deduplicationKey, jobId, 'PX', ttl)
+                    return
+                end
+            else
+                local currentDebounceJobId = rcall('GET', deduplicationKey)
+                if currentDebounceJobId then
+                    local isRemoved = removeDelayedJob(delayedKey, deduplicationKey, eventsKey, maxEvents,
+                        currentDebounceJobId, jobId, deduplicationId, prefix)
+                    if isRemoved then
+                        rcall('SET', deduplicationKey, jobId)
+                        return
+                    else
+                        return currentDebounceJobId
+                    end
+                else
+                    rcall('SET', deduplicationKey, jobId)
+                    return
+                end
+            end
+        else
+            local deduplicationKeyExists
+            if ttl and ttl > 0 then
+                if deduplicationOpts['extend'] then
+                    local currentDebounceJobId = rcall('GET', deduplicationKey)
+                    if currentDebounceJobId then
+                        rcall('SET', deduplicationKey, currentDebounceJobId, 'PX', ttl)
+                        rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "debounced",
+                            "jobId", currentDebounceJobId, "debounceId", deduplicationId)
+                        rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "deduplicated", "jobId",
+                            currentDebounceJobId, "deduplicationId", deduplicationId, "deduplicatedJobId", jobId)
+                        return currentDebounceJobId
+                    else
+                        rcall('SET', deduplicationKey, jobId, 'PX', ttl)
+                        return
+                    end
+                else
+                    deduplicationKeyExists = not rcall('SET', deduplicationKey, jobId, 'PX', ttl, 'NX')
+                end
+            else
+                deduplicationKeyExists = not rcall('SET', deduplicationKey, jobId, 'NX')
+            end
+            if deduplicationKeyExists then
+                local currentDebounceJobId = rcall('GET', deduplicationKey)
+                -- TODO remove debounced event in next breaking change
+                rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "debounced", "jobId",
+                    currentDebounceJobId, "debounceId", deduplicationId)
+                rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "deduplicated", "jobId",
+                    currentDebounceJobId, "deduplicationId", deduplicationId, "deduplicatedJobId", jobId)
+                return currentDebounceJobId
+            end
+        end
+    end
+end
+--[[
+  Function to store a job
+]]
+local function storeJob(eventsKey, jobIdKey, jobId, name, data, opts, timestamp,
+                        parentKey, parentData, repeatJobKey)
+    local jsonOpts = cjson.encode(opts)
+    local delay = opts['delay'] or 0
+    local priority = opts['priority'] or 0
+    local debounceId = opts['de'] and opts['de']['id']
+    local optionalValues = {}
+    if parentKey ~= nil then
+        table.insert(optionalValues, "parentKey")
+        table.insert(optionalValues, parentKey)
+        table.insert(optionalValues, "parent")
+        table.insert(optionalValues, parentData)
+    end
+    if repeatJobKey then
+        table.insert(optionalValues, "rjk")
+        table.insert(optionalValues, repeatJobKey)
+    end
+    if debounceId then
+        table.insert(optionalValues, "deid")
+        table.insert(optionalValues, debounceId)
+    end
+    rcall("HMSET", jobIdKey, "name", name, "data", data, "opts", jsonOpts,
+          "timestamp", timestamp, "delay", delay, "priority", priority,
+          unpack(optionalValues))
+    rcall("XADD", eventsKey, "*", "event", "added", "jobId", jobId, "name", name)
+    return delay, priority
+end
+--[[
+  Function to get max events value or set by default 10000.
+]]
+local function getOrSetMaxEvents(metaKey)
+  local maxEvents = rcall("HGET", metaKey, "opts.maxLenEvents")
+  if not maxEvents then
+    maxEvents = 10000
+    rcall("HSET", metaKey, "opts.maxLenEvents", maxEvents)
+  end
+  return maxEvents
+end
+--[[
+  Function to handle the case when job is duplicated.
+]]
+-- Includes
+--[[
+    This function is used to update the parent's dependencies if the job
+    is already completed and about to be ignored. The parent must get its
+    dependencies updated to avoid the parent job being stuck forever in 
+    the waiting-children state.
+]]
+-- Includes
+--[[
+  Validate and move or add dependencies to parent.
+]]
+-- Includes
+--[[
+  Validate and move parent to a wait status (waiting, delayed or prioritized)
+  if no pending dependencies.
+]]
+-- Includes
+--[[
+  Validate and move parent to a wait status (waiting, delayed or prioritized) if needed.
+]]
+-- Includes
+--[[
+  Move parent to a wait status (wait, prioritized or delayed)
+]]
+-- Includes
+--[[
+  Add delay marker if needed.
+]]
+-- Includes
+--[[
+  Function to return the next delayed job timestamp.
+]]
+local function getNextDelayedTimestamp(delayedKey)
+  local result = rcall("ZRANGE", delayedKey, 0, 0, "WITHSCORES")
+  if #result then
+    local nextTimestamp = tonumber(result[2])
+    if nextTimestamp ~= nil then
+      return nextTimestamp / 0x1000
+    end
+  end
+end
+local function addDelayMarkerIfNeeded(markerKey, delayedKey)
+  local nextTimestamp = getNextDelayedTimestamp(delayedKey)
+  if nextTimestamp ~= nil then
+    -- Replace the score of the marker with the newest known
+    -- next timestamp.
+    rcall("ZADD", markerKey, nextTimestamp, "1")
+  end
+end
+--[[
+  Function to add job in target list and add marker if needed.
+]]
+-- Includes
+local function addJobInTargetList(targetKey, markerKey, pushCmd, isPausedOrMaxed, jobId)
+  rcall(pushCmd, targetKey, jobId)
+  addBaseMarkerIfNeeded(markerKey, isPausedOrMaxed)
+end
+--[[
+  Function to check if queue is paused or maxed
+  (since an empty list and !EXISTS are not really the same).
+]]
+local function isQueuePausedOrMaxed(queueMetaKey, activeKey)
+  local queueAttributes = rcall("HMGET", queueMetaKey, "paused", "concurrency")
+  if queueAttributes[1] then
+    return true
+  else
+    if queueAttributes[2] then
+      local activeCount = rcall("LLEN", activeKey)
+      return activeCount >= tonumber(queueAttributes[2])
+    end
+  end
+  return false
+end
+--[[
+  Function to check for the meta.paused key to decide if we are paused or not
+  (since an empty list and !EXISTS are not really the same).
+]]
+local function getTargetQueueList(queueMetaKey, activeKey, waitKey, pausedKey)
+  local queueAttributes = rcall("HMGET", queueMetaKey, "paused", "concurrency", "max", "duration")
+  if queueAttributes[1] then
+    return pausedKey, true, queueAttributes[3], queueAttributes[4]
+  else
+    if queueAttributes[2] then
+      local activeCount = rcall("LLEN", activeKey)
+      if activeCount >= tonumber(queueAttributes[2]) then
+        return waitKey, true, queueAttributes[3], queueAttributes[4]
+      else
+        return waitKey, false, queueAttributes[3], queueAttributes[4]
+      end
+    end
+  end
+  return waitKey, false, queueAttributes[3], queueAttributes[4]
+end
+local function moveParentToWait(parentQueueKey, parentKey, parentId, timestamp)
+    local parentWaitKey = parentQueueKey .. ":wait"
+    local parentPausedKey = parentQueueKey .. ":paused"
+    local parentActiveKey = parentQueueKey .. ":active"
+    local parentMetaKey = parentQueueKey .. ":meta"
+    local parentMarkerKey = parentQueueKey .. ":marker"
+    local jobAttributes = rcall("HMGET", parentKey, "priority", "delay")
+    local priority = tonumber(jobAttributes[1]) or 0
+    local delay = tonumber(jobAttributes[2]) or 0
+    if delay > 0 then
+        local delayedTimestamp = tonumber(timestamp) + delay
+        local score = delayedTimestamp * 0x1000
+        local parentDelayedKey = parentQueueKey .. ":delayed"
+        rcall("ZADD", parentDelayedKey, score, parentId)
+        rcall("XADD", parentQueueKey .. ":events", "*", "event", "delayed", "jobId", parentId, "delay",
+            delayedTimestamp)
+        addDelayMarkerIfNeeded(parentMarkerKey, parentDelayedKey)
+    else
+        if priority == 0 then
+            local parentTarget, isParentPausedOrMaxed = getTargetQueueList(parentMetaKey, parentActiveKey,
+                parentWaitKey, parentPausedKey)
+            addJobInTargetList(parentTarget, parentMarkerKey, "RPUSH", isParentPausedOrMaxed, parentId)
+        else
+            local isPausedOrMaxed = isQueuePausedOrMaxed(parentMetaKey, parentActiveKey)
+            addJobWithPriority(parentMarkerKey, parentQueueKey .. ":prioritized", priority, parentId,
+                parentQueueKey .. ":pc", isPausedOrMaxed)
+        end
+        rcall("XADD", parentQueueKey .. ":events", "*", "event", "waiting", "jobId", parentId, "prev",
+            "waiting-children")
+    end
+end
+local function moveParentToWaitIfNeeded(parentQueueKey, parentKey, parentId, timestamp)
+  if rcall("EXISTS", parentKey) == 1 then
+    local parentWaitingChildrenKey = parentQueueKey .. ":waiting-children"
+    if rcall("ZSCORE", parentWaitingChildrenKey, parentId) then    
+      rcall("ZREM", parentWaitingChildrenKey, parentId)
+      moveParentToWait(parentQueueKey, parentKey, parentId, timestamp)
+    end
+  end
+end
+local function moveParentToWaitIfNoPendingDependencies(parentQueueKey, parentDependenciesKey, parentKey,
+  parentId, timestamp)
+  local doNotHavePendingDependencies = rcall("SCARD", parentDependenciesKey) == 0
+  if doNotHavePendingDependencies then
+    moveParentToWaitIfNeeded(parentQueueKey, parentKey, parentId, timestamp)
+  end
+end
+local function updateParentDepsIfNeeded(parentKey, parentQueueKey, parentDependenciesKey,
+  parentId, jobIdKey, returnvalue, timestamp )
+  local processedSet = parentKey .. ":processed"
+  rcall("HSET", processedSet, jobIdKey, returnvalue)
+  moveParentToWaitIfNoPendingDependencies(parentQueueKey, parentDependenciesKey, parentKey, parentId, timestamp)
+end
+local function updateExistingJobsParent(parentKey, parent, parentData,
+                                        parentDependenciesKey, completedKey,
+                                        jobIdKey, jobId, timestamp)
+    if parentKey ~= nil then
+        if rcall("ZSCORE", completedKey, jobId) then
+            local returnvalue = rcall("HGET", jobIdKey, "returnvalue")
+            updateParentDepsIfNeeded(parentKey, parent['queueKey'],
+                                     parentDependenciesKey, parent['id'],
+                                     jobIdKey, returnvalue, timestamp)
+        else
+            if parentDependenciesKey ~= nil then
+                rcall("SADD", parentDependenciesKey, jobIdKey)
+            end
+        end
+        rcall("HMSET", jobIdKey, "parentKey", parentKey, "parent", parentData)
+    end
+end
+local function handleDuplicatedJob(jobKey, jobId, currentParentKey, currentParent,
+  parentData, parentDependenciesKey, completedKey, eventsKey, maxEvents, timestamp)
+  local existedParentKey = rcall("HGET", jobKey, "parentKey")
+  if not existedParentKey or existedParentKey == currentParentKey then
+    updateExistingJobsParent(currentParentKey, currentParent, parentData,
+      parentDependenciesKey, completedKey, jobKey,
+      jobId, timestamp)
+  else
+    if currentParentKey ~= nil and currentParentKey ~= existedParentKey
+      and (rcall("EXISTS", existedParentKey) == 1) then
+      return -7
+    end
+  end
+  rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event",
+    "duplicated", "jobId", jobId)
+  return jobId .. "" -- convert to string
+end
+if parentKey ~= nil then
+    if rcall("EXISTS", parentKey) ~= 1 then return -5 end
+    parentData = cjson.encode(parent)
+end
+local jobCounter = rcall("INCR", idKey)
+local maxEvents = getOrSetMaxEvents(metaKey)
+local parentDependenciesKey = args[6]
+local timestamp = args[4]
+if args[2] == "" then
+    jobId = jobCounter
+    jobIdKey = args[1] .. jobId
+else
+    jobId = args[2]
+    jobIdKey = args[1] .. jobId
+    if rcall("EXISTS", jobIdKey) == 1 then
+        return handleDuplicatedJob(jobIdKey, jobId, parentKey, parent,
+            parentData, parentDependenciesKey, completedKey, eventsKey,
+            maxEvents, timestamp)
+    end
+end
+local deduplicationJobId = deduplicateJob(opts['de'], jobId, KEYS[5],
+  deduplicationKey, eventsKey, maxEvents, args[1])
+if deduplicationJobId then
+  return deduplicationJobId
+end
+-- Store the job.
+local delay, priority = storeJob(eventsKey, jobIdKey, jobId, args[3], ARGV[2],
+                                 opts, timestamp, parentKey, parentData,
+                                 repeatJobKey)
+-- Add the job to the prioritized set
+local isPausedOrMaxed = isQueuePausedOrMaxed(metaKey, activeKey)
+addJobWithPriority( KEYS[1], priorityKey, priority, jobId, priorityCounterKey, isPausedOrMaxed)
+-- Emit waiting event
+rcall("XADD", eventsKey, "MAXLEN", "~", maxEvents, "*", "event", "waiting",
+      "jobId", jobId)
+-- Check if this job is a child of another job, if so add it to the parents dependencies
+if parentDependenciesKey ~= nil then
+    rcall("SADD", parentDependenciesKey, jobIdKey)
+end
+return jobId .. "" -- convert to string
+`
+
+const removeJobScript = `--[[
+    Remove a job from all the statuses it may be in as well as all its data.
+    In order to be able to remove a job, it cannot be active.
+    Input:
+      KEYS[1] jobKey
+      KEYS[2] repeat key
+      ARGV[1] jobId
+      ARGV[2] remove children
+      ARGV[3] queue prefix
+    Events:
+      'removed'
+]]
+local rcall = redis.call
+-- Includes
+--[[
+  Function to check if the job belongs to a job scheduler and
+  current delayed job matches with jobId
+]]
+local function isJobSchedulerJob(jobId, jobKey, jobSchedulersKey)
+  local repeatJobKey = rcall("HGET", jobKey, "rjk")
+  if repeatJobKey  then
+    local prevMillis = rcall("ZSCORE", jobSchedulersKey, repeatJobKey)
+    if prevMillis then
+      local currentDelayedJobId = "repeat:" .. repeatJobKey .. ":" .. prevMillis
+      return jobId == currentDelayedJobId
+    end
+  end
+  return false
+end
+--[[
+  Function to recursively check if there are no locks
+  on the jobs to be removed.
+  returns:
+    boolean
+]]
+--[[
+  Functions to destructure job key.
+  Just a bit of warning, these functions may be a bit slow and affect performance significantly.
+]]
+local getJobIdFromKey = function (jobKey)
+  return string.match(jobKey, ".*:(.*)")
+end
+local getJobKeyPrefix = function (jobKey, jobId)
+  return string.sub(jobKey, 0, #jobKey - #jobId)
+end
+local function isLocked( prefix, jobId, removeChildren)
+  local jobKey = prefix .. jobId;
+  -- Check if this job is locked
+  local lockKey = jobKey .. ':lock'
+  local lock = rcall("GET", lockKey)
+  if not lock then
+    if removeChildren == "1" then
+      local dependencies = rcall("SMEMBERS", jobKey .. ":dependencies")
+      if (#dependencies > 0) then
+        for i, childJobKey in ipairs(dependencies) do
+          -- We need to get the jobId for this job.
+          local childJobId = getJobIdFromKey(childJobKey)
+          local childJobPrefix = getJobKeyPrefix(childJobKey, childJobId)
+          local result = isLocked( childJobPrefix, childJobId, removeChildren )
+          if result then
+            return true
+          end
+        end
+      end
+    end
+    return false
+  end
+  return true
+end
+--[[
+    Remove a job from all the statuses it may be in as well as all its data,
+    including its children. Active children can be ignored.
+    Events:
+      'removed'
+]]
+local rcall = redis.call
+-- Includes
+--[[
+  Function to get max events value or set by default 10000.
+]]
+local function getOrSetMaxEvents(metaKey)
+  local maxEvents = rcall("HGET", metaKey, "opts.maxLenEvents")
+  if not maxEvents then
+    maxEvents = 10000
+    rcall("HSET", metaKey, "opts.maxLenEvents", maxEvents)
+  end
+  return maxEvents
+end
+--[[
+  Function to remove deduplication key if needed
+  when a job is being removed.
+]]
+local function removeDeduplicationKeyIfNeededOnRemoval(prefixKey,
+  jobKey, jobId)
+  local deduplicationId = rcall("HGET", jobKey, "deid")
+  if deduplicationId then
+    local deduplicationKey = prefixKey .. "de:" .. deduplicationId
+    local currentJobId = rcall('GET', deduplicationKey)
+    if currentJobId and currentJobId == jobId then
+      return rcall("DEL", deduplicationKey)
+    end
+  end
+end
+--[[
+  Function to remove from any state.
+  returns:
+    prev state
+]]
+local function removeJobFromAnyState( prefix, jobId)
+  -- We start with the ZSCORE checks, since they have O(1) complexity
+  if rcall("ZSCORE", prefix .. "completed", jobId) then
+    rcall("ZREM", prefix .. "completed", jobId)
+    return "completed"
+  elseif rcall("ZSCORE", prefix .. "waiting-children", jobId) then
+    rcall("ZREM", prefix .. "waiting-children", jobId)
+    return "waiting-children"
+  elseif rcall("ZSCORE", prefix .. "delayed", jobId) then
+    rcall("ZREM", prefix .. "delayed", jobId)
+    return "delayed"
+  elseif rcall("ZSCORE", prefix .. "failed", jobId) then
+    rcall("ZREM", prefix .. "failed", jobId)
+    return "failed"
+  elseif rcall("ZSCORE", prefix .. "prioritized", jobId) then
+    rcall("ZREM", prefix .. "prioritized", jobId)
+    return "prioritized"
+  -- We remove only 1 element from the list, since we assume they are not added multiple times
+  elseif rcall("LREM", prefix .. "wait", 1, jobId) == 1 then
+    return "wait"
+  elseif rcall("LREM", prefix .. "paused", 1, jobId) == 1 then
+    return "paused"
+  elseif rcall("LREM", prefix .. "active", 1, jobId) == 1 then
+    return "active"
+  end
+  return "unknown"
+end
+--[[
+  Function to remove job keys.
+]]
+local function removeJobKeys(jobKey)
+  return rcall("DEL", jobKey, jobKey .. ':logs', jobKey .. ':dependencies',
+    jobKey .. ':processed', jobKey .. ':failed', jobKey .. ':unsuccessful')
+end
+--[[
+  Check if this job has a parent. If so we will just remove it from
+  the parent child list, but if it is the last child we should move the parent to "wait/paused"
+  which requires code from "moveToFinished"
+]]
+-- Includes
+--[[
+  Function to add job in target list and add marker if needed.
+]]
+-- Includes
+--[[
+  Add marker if needed when a job is available.
+]]
+local function addBaseMarkerIfNeeded(markerKey, isPausedOrMaxed)
+  if not isPausedOrMaxed then
+    rcall("ZADD", markerKey, 0, "0")
+  end  
+end
+local function addJobInTargetList(targetKey, markerKey, pushCmd, isPausedOrMaxed, jobId)
+  rcall(pushCmd, targetKey, jobId)
+  addBaseMarkerIfNeeded(markerKey, isPausedOrMaxed)
+end
+--[[
+  Function to check for the meta.paused key to decide if we are paused or not
+  (since an empty list and !EXISTS are not really the same).
+]]
+local function getTargetQueueList(queueMetaKey, activeKey, waitKey, pausedKey)
+  local queueAttributes = rcall("HMGET", queueMetaKey, "paused", "concurrency", "max", "duration")
+  if queueAttributes[1] then
+    return pausedKey, true, queueAttributes[3], queueAttributes[4]
+  else
+    if queueAttributes[2] then
+      local activeCount = rcall("LLEN", activeKey)
+      if activeCount >= tonumber(queueAttributes[2]) then
+        return waitKey, true, queueAttributes[3], queueAttributes[4]
+      else
+        return waitKey, false, queueAttributes[3], queueAttributes[4]
+      end
+    end
+  end
+  return waitKey, false, queueAttributes[3], queueAttributes[4]
+end
+local function _moveParentToWait(parentPrefix, parentId, emitEvent)
+  local parentTarget, isPausedOrMaxed = getTargetQueueList(parentPrefix .. "meta", parentPrefix .. "active",
+    parentPrefix .. "wait", parentPrefix .. "paused")
+  addJobInTargetList(parentTarget, parentPrefix .. "marker", "RPUSH", isPausedOrMaxed, parentId)
+  if emitEvent then
+    local parentEventStream = parentPrefix .. "events"
+    rcall("XADD", parentEventStream, "*", "event", "waiting", "jobId", parentId, "prev", "waiting-children")
+  end
+end
+local function removeParentDependencyKey(jobKey, hard, parentKey, baseKey, debounceId)
+  if parentKey then
+    local parentDependenciesKey = parentKey .. ":dependencies"
+    local result = rcall("SREM", parentDependenciesKey, jobKey)
+    if result > 0 then
+      local pendingDependencies = rcall("SCARD", parentDependenciesKey)
+      if pendingDependencies == 0 then
+        local parentId = getJobIdFromKey(parentKey)
+        local parentPrefix = getJobKeyPrefix(parentKey, parentId)
+        local numRemovedElements = rcall("ZREM", parentPrefix .. "waiting-children", parentId)
+        if numRemovedElements == 1 then
+          if hard then -- remove parent in same queue
+            if parentPrefix == baseKey then
+              removeParentDependencyKey(parentKey, hard, nil, baseKey, nil)
+              removeJobKeys(parentKey)
+              if debounceId then
+                rcall("DEL", parentPrefix .. "de:" .. debounceId)
+              end
+            else
+              _moveParentToWait(parentPrefix, parentId)
+            end
+          else
+            _moveParentToWait(parentPrefix, parentId, true)
+          end
+        end
+      end
+      return true
+    end
+  else
+    local parentAttributes = rcall("HMGET", jobKey, "parentKey", "deid")
+    local missedParentKey = parentAttributes[1]
+    if( (type(missedParentKey) == "string") and missedParentKey ~= ""
+      and (rcall("EXISTS", missedParentKey) == 1)) then
+      local parentDependenciesKey = missedParentKey .. ":dependencies"
+      local result = rcall("SREM", parentDependenciesKey, jobKey)
+      if result > 0 then
+        local pendingDependencies = rcall("SCARD", parentDependenciesKey)
+        if pendingDependencies == 0 then
+          local parentId = getJobIdFromKey(missedParentKey)
+          local parentPrefix = getJobKeyPrefix(missedParentKey, parentId)
+          local numRemovedElements = rcall("ZREM", parentPrefix .. "waiting-children", parentId)
+          if numRemovedElements == 1 then
+            if hard then
+              if parentPrefix == baseKey then
+                removeParentDependencyKey(missedParentKey, hard, nil, baseKey, nil)
+                removeJobKeys(missedParentKey)
+                if parentAttributes[2] then
+                  rcall("DEL", parentPrefix .. "de:" .. parentAttributes[2])
+                end
+              else
+                _moveParentToWait(parentPrefix, parentId)
+              end
+            else
+              _moveParentToWait(parentPrefix, parentId, true)
+            end
+          end
+        end
+        return true
+      end
+    end
+  end
+  return false
+end
+local removeJobChildren
+local removeJobWithChildren
+removeJobChildren = function(prefix, jobKey, options)
+    -- Check if this job has children
+    -- If so, we are going to try to remove the children recursively in a depth-first way
+    -- because if some job is locked, we must exit with an error.
+    if not options.ignoreProcessed then
+        local processed = rcall("HGETALL", jobKey .. ":processed")
+        if #processed > 0 then
+            for i = 1, #processed, 2 do
+                local childJobId = getJobIdFromKey(processed[i])
+                local childJobPrefix = getJobKeyPrefix(processed[i], childJobId)
+                removeJobWithChildren(childJobPrefix, childJobId, jobKey, options)
+            end
+        end
+        local failed = rcall("HGETALL", jobKey .. ":failed")
+        if #failed > 0 then
+            for i = 1, #failed, 2 do
+                local childJobId = getJobIdFromKey(failed[i])
+                local childJobPrefix = getJobKeyPrefix(failed[i], childJobId)
+                removeJobWithChildren(childJobPrefix, childJobId, jobKey, options)
+            end
+        end
+        local unsuccessful = rcall("ZRANGE", jobKey .. ":unsuccessful", 0, -1)
+        if #unsuccessful > 0 then
+            for i = 1, #unsuccessful, 1 do
+                local childJobId = getJobIdFromKey(unsuccessful[i])
+                local childJobPrefix = getJobKeyPrefix(unsuccessful[i], childJobId)
+                removeJobWithChildren(childJobPrefix, childJobId, jobKey, options)
+            end
+        end
+    end
+    local dependencies = rcall("SMEMBERS", jobKey .. ":dependencies")
+    if #dependencies > 0 then
+        for i, childJobKey in ipairs(dependencies) do
+            local childJobId = getJobIdFromKey(childJobKey)
+            local childJobPrefix = getJobKeyPrefix(childJobKey, childJobId)
+            removeJobWithChildren(childJobPrefix, childJobId, jobKey, options)
+        end
+    end
+end
+removeJobWithChildren = function(prefix, jobId, parentKey, options)
+    local jobKey = prefix .. jobId
+    if options.ignoreLocked then
+        if isLocked(prefix, jobId) then
+            return
+        end
+    end
+    -- Check if job is in the failed zset
+    local failedSet = prefix .. "failed"
+    if not (options.ignoreProcessed and rcall("ZSCORE", failedSet, jobId)) then
+        removeParentDependencyKey(jobKey, false, parentKey, nil)
+        if options.removeChildren then
+            removeJobChildren(prefix, jobKey, options)
+        end
+        local prev = removeJobFromAnyState(prefix, jobId)
+        removeDeduplicationKeyIfNeededOnRemoval(prefix, jobKey, jobId)
+        if removeJobKeys(jobKey) > 0 then
+            local metaKey = prefix .. "meta"
+            local maxEvents = getOrSetMaxEvents(metaKey)
+            rcall("XADD", prefix .. "events", "MAXLEN", "~", maxEvents, "*", "event", "removed",
+                "jobId", jobId, "prev", prev)
+        end
+    end
+end
+local jobId = ARGV[1]
+local shouldRemoveChildren = ARGV[2]
+local prefix = ARGV[3]
+local jobKey = KEYS[1]
+local repeatKey = KEYS[2]
+if isJobSchedulerJob(jobId, jobKey, repeatKey) then
+    return -8
+end
+if not isLocked(prefix, jobId, shouldRemoveChildren) then
+    local options = {
+        removeChildren = shouldRemoveChildren == "1",
+        ignoreProcessed = false,
+        ignoreLocked = false
+    }
+    removeJobWithChildren(prefix, jobId, nil, options)
+    return 1
+end
+return 0
+`
+
+const pauseScript = `--[[
+  Pauses or resumes a queue globably.
+  Input:
+    KEYS[1] 'wait' or 'paused''
+    KEYS[2] 'paused' or 'wait'
+    KEYS[3] 'meta'
+    KEYS[4] 'prioritized'
+    KEYS[5] events stream key
+    KEYS[6] 'delayed'
+    KEYS|7] 'marker'
+    ARGV[1] 'paused' or 'resumed'
+  Event:
+    publish paused or resumed event.
+]]
+local rcall = redis.call
+-- Includes
+--[[
+  Add delay marker if needed.
+]]
+-- Includes
+--[[
+  Function to return the next delayed job timestamp.
+]]
+local function getNextDelayedTimestamp(delayedKey)
+  local result = rcall("ZRANGE", delayedKey, 0, 0, "WITHSCORES")
+  if #result then
+    local nextTimestamp = tonumber(result[2])
+    if nextTimestamp ~= nil then
+      return nextTimestamp / 0x1000
+    end
+  end
+end
+local function addDelayMarkerIfNeeded(markerKey, delayedKey)
+  local nextTimestamp = getNextDelayedTimestamp(delayedKey)
+  if nextTimestamp ~= nil then
+    -- Replace the score of the marker with the newest known
+    -- next timestamp.
+    rcall("ZADD", markerKey, nextTimestamp, "1")
+  end
+end
+local markerKey = KEYS[7]
+local hasJobs = rcall("EXISTS", KEYS[1]) == 1
+--TODO: check this logic to be reused when changing a delay
+if hasJobs then rcall("RENAME", KEYS[1], KEYS[2]) end
+if ARGV[1] == "paused" then
+    rcall("HSET", KEYS[3], "paused", 1)
+    rcall("DEL", markerKey)
+else
+    rcall("HDEL", KEYS[3], "paused")
+    if hasJobs or rcall("ZCARD", KEYS[4]) > 0 then
+        -- Add marker if there are waiting or priority jobs
+        rcall("ZADD", markerKey, 0, "0")
+    else
+        addDelayMarkerIfNeeded(markerKey, KEYS[6])
+    end
+end
+rcall("XADD", KEYS[5], "*", "event", ARGV[1]);
+`
+
+const getCountsScript = `--[[
+  Get counts per provided states
+    Input:
+      KEYS[1]    'prefix'
+      ARGV[1...] types
+]]
+local rcall = redis.call;
+local prefix = KEYS[1]
+local results = {}
+for i = 1, #ARGV do
+  local stateKey = prefix .. ARGV[i]
+  if ARGV[i] == "wait" or ARGV[i] == "paused" then
+    -- Markers in waitlist DEPRECATED in v5: Remove in v6.
+    local marker = rcall("LINDEX", stateKey, -1)
+    if marker and string.sub(marker, 1, 2) == "0:" then
+      local count = rcall("LLEN", stateKey)
+      if count > 1 then
+        rcall("RPOP", stateKey)
+        results[#results+1] = count-1
+      else
+        results[#results+1] = 0
+      end
+    else
+      results[#results+1] = rcall("LLEN", stateKey)
+    end
+  elseif ARGV[i] == "active" then
+    results[#results+1] = rcall("LLEN", stateKey)
+  else
+    results[#results+1] = rcall("ZCARD", stateKey)
+  end
+end
+return results
+`

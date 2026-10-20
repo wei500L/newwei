@@ -23,12 +23,12 @@ type recentLog struct {
 	hasMessage bool
 	msgNull    bool
 
-	stage    string
-	hasStage bool
+	stage     string
+	hasStage  bool
 	stageNull bool
 
-	status    string
-	hasStatus bool
+	status     string
+	hasStatus  bool
 	statusNull bool
 }
 
@@ -39,6 +39,11 @@ func recentLogFromDoc(doc bson.M) recentLog {
 	log.message, log.hasMessage, log.msgNull = stringField(doc, "message")
 	log.stage, log.hasStage, log.stageNull = stringField(doc, "stage")
 	log.status, log.hasStatus, log.statusNull = stringField(doc, "status")
+	// Nest redacts every non-empty message at this boundary; null and missing
+	// stay as they are so the JSON shape does not change.
+	if log.hasMessage && !log.msgNull && log.message != "" {
+		log.message = redactSensitiveFields(log.message)
+	}
 	return log
 }
 

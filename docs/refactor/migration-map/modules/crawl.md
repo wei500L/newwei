@@ -1,5 +1,7 @@
 # crawl · 采集源、模板、画像、工作流与 Frontier
 
+2026-10-19仅采集结果→条目候选限定续核（main91e759b4）：[ITEMS-INGEST-001](../tasks/ITEMS-INGEST-001.md) reserved，[提示词](../tasks/ITEMS-INGEST-001.prompt.md)包含createItemFromCrawlResult、ingestCrawlTaskResultsToItems及updateCrawlTaskIngestToItems；前两者crawl.read AND items.write，后者crawl.write且启用另需items.write。包括保序分页/批量Mongo插入确认/空ref CAS与输家清理、原子BullMQ producer、审计和水合，不只保存配置。crawl创建/retry/delete、Frontier/自动采集器不认领；这些执行器继续Nest。
+
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态

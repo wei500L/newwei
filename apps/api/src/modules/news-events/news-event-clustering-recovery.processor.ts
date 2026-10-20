@@ -27,6 +27,20 @@ export class NewsEventClusteringRecoveryProcessor
   ) {}
 
   async onModuleInit() {
+    // API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go moves the consumer, the
+    // five-minute scan and the stale-processing recovery to Go. Return before
+    // creating the Worker so a mixed-version deployment never has two
+    // consumers of news_event_clustering_recovery.
+    if (
+      this.env.get("API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE", {
+        infer: true,
+      }) === "go"
+    ) {
+      logger.info(
+        "Skipped news event clustering recovery worker because Go owns the consumer (API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go)",
+      );
+      return;
+    }
     const configured =
       this.env.newsPipelineEnv.processQueueConcurrency > 0
         ? this.env.newsPipelineEnv.processQueueConcurrency

@@ -781,17 +781,24 @@ export class CrawlTaskService {
         },
       },
       select: {
-        role: { select: { name: true } },
-        roles: { select: { role: { select: { name: true } } } },
+        role: { select: { name: true, isSystem: true } },
+        roles: {
+          select: { role: { select: { name: true, isSystem: true } } },
+        },
       },
     });
     if (!membership) {
       return false;
     }
-    if (membership.role.name === "admin") {
+    // C3: a custom role merely named "admin" must not keep jsCode/jsOnly. The
+    // gate matches SettingsResolver.assertAdmin: the role must belong to a
+    // system role (isSystem) and be named "admin" case-insensitively.
+    const isSystemAdminRole = (role: { name: string; isSystem: boolean }) =>
+      role.isSystem && role.name.toLowerCase() === "admin";
+    if (isSystemAdminRole(membership.role)) {
       return true;
     }
-    return membership.roles.some((link) => link.role.name === "admin");
+    return membership.roles.some((link) => isSystemAdminRole(link.role));
   }
 
   private async normalizeActorOptions(

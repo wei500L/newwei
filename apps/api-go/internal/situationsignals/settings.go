@@ -67,6 +67,20 @@ type storedSituationMonitorSettings struct {
 	LiveHLSProxyCnbcURL     trimmedString `json:"liveHlsProxyCnbcUpstreamUrl"`
 	LiveHLSProxyCnbcReferer trimmedString `json:"liveHlsProxyCnbcReferer"`
 	LiveHLSProxyCnbcHosts   jsStringList  `json:"liveHlsProxyCnbcAllowedHosts"`
+
+	// Insights-only members. They use rawJSON because NestJS accepts any
+	// stored type and falls back to the environment/default; adding them here
+	// reuses loadStored's Redis envelope, MySQL fallback and decryption path.
+	TranslationMaxConcurrency     rawJSON `json:"translationMaxConcurrency"`
+	TranslationAPIEnabled         rawJSON `json:"translationApiEnabled"`
+	TranslationAPIBaseURL         rawJSON `json:"translationApiBaseUrl"`
+	TranslationFallbackAPIEnabled rawJSON `json:"translationFallbackApiEnabled"`
+	TranslationFallbackAPIBaseURL rawJSON `json:"translationFallbackApiBaseUrl"`
+	TranslationAPITimeoutMS       rawJSON `json:"translationApiTimeoutMs"`
+	TranslationAPIMaxRetries      rawJSON `json:"translationApiMaxRetries"`
+	TranslationAPIKey             rawJSON `json:"translationApiKey"`
+	FinnhubAPIKey                 rawJSON `json:"finnhubApiKey"`
+	FredAPIKey                    rawJSON `json:"fredApiKey"`
 }
 
 // cachedSettingsEnvelope is the Redis envelope NestJS writes:

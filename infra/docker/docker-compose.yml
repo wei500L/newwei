@@ -418,9 +418,24 @@ services:
       NODE_ENV: production
       CI: "true"
       HUSKY: "0"
+      # Nest producers and the api-go subscription executor must use the same
+      # Redis channels. The container receives the value explicitly instead of
+      # relying on a host-side .env that compose would not inject.
+      GRAPHQL_SUBSCRIPTION_BUS: ${GRAPHQL_SUBSCRIPTION_BUS:-redis}
       PRISMA_AUTO_RESOLVE_FAILED_MIGRATIONS: "false"
       AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
       AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
+      AKSHARE_HTTP_TIMEOUT_MS: ${AKSHARE_HTTP_TIMEOUT_MS:-20000}
+      AKSHARE_HTTP_MAX_RETRIES: ${AKSHARE_HTTP_MAX_RETRIES:-3}
+      AKSHARE_ADMIN_TOKEN: ${AKSHARE_ADMIN_TOKEN:-}
+      AKSHARE_QUEUE_CONCURRENCY: ${AKSHARE_QUEUE_CONCURRENCY:-2}
+      AKSHARE_SCHEDULE_SMOOTHING_ENABLED: ${AKSHARE_SCHEDULE_SMOOTHING_ENABLED:-false}
+      AKSHARE_SKIP_UNCHANGED_LATEST_POINTS: ${AKSHARE_SKIP_UNCHANGED_LATEST_POINTS:-false}
+      # Economic-data request and worker ownership. Empty behaves like legacy;
+      # both Nest and Go must see the same worker value so only one process
+      # consumes the akshare-data queue.
+      API_GO_ECONOMIC_DATA_MODE: ${API_GO_ECONOMIC_DATA_MODE:-legacy}
+      API_GO_ECONOMIC_DATA_WORKER_MODE: ${API_GO_ECONOMIC_DATA_WORKER_MODE:-legacy}
       MODEL_SERVICE_ENABLED: ${MODEL_SERVICE_ENABLED:-true}
       MODEL_SERVICE_BASE_URL: ${MODEL_SERVICE_BASE_URL:-http://model-service:8090}
       MODEL_SERVICE_INTERNAL_TOKEN: ${MODEL_SERVICE_INTERNAL_TOKEN:-dev-model-token}
@@ -432,6 +447,68 @@ services:
       # 默认 legacy=保留 NestJS Cron；go=Go 每分钟扫描并投递，NestJS Cron 在 tick
       # gate 前退出且摘要通知 subscriber 启动。Nest 与 Go 注入同一变量。
       API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
+      # 审计日志失败补偿链的执行所有权。空串按 legacy；非法值在 Nest 与 Go 都启动失败。
+      # 默认 legacy=保留 NestJS 每分钟 Cron；go=Go 每分钟扫描并重放，NestJS 在申请锁前退出。
+      # SCHEDULE_ENABLED=false 时两边都停止调度本链；切换/回滚顺序见 docs 与 README。
+      API_GO_AUDIT_OUTBOX_MODE: ${API_GO_AUDIT_OUTBOX_MODE:-legacy}
+      # NewsNow 来源获取两路（公开）：GET /api/news-aggregator/source 与
+      # POST /api/news-aggregator/sources/batch。Nest 与 Go 注入同一变量；
+      # 空串按 legacy。go 时 Go 真实抓取上游、写兼容缓存并发布
+      # newsnow:source-refresh:v1；Nest 预热与热点 Cron 所有权不变。
+      API_GO_NEWSNOW_SOURCES_MODE: ${API_GO_NEWSNOW_SOURCES_MODE:-legacy}
+      # 知识图谱自动构建所有权。空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。
+      # 默认 legacy=保留 NestJS 每 5 分钟 Cron；go=Go 领取同一 tick gate、按组织锁
+      # 构建图谱，NestJS Cron 在领取时间片前退出。Nest 与 Go 注入同一变量。
+      API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE: ${API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE:-legacy}
+      # 新闻事件聚类失败的 LLM 补救链与新闻—指标关联刷新。四个开关互相独立，
+      # 默认 legacy；worker 与 6 小时 cron 开关 Nest 也读取，为 go 时 Nest 在
+      # 领取锁/创建 Worker 之前退出。手动入队与 GraphQL mutation 只在 Go 读取。
+      API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE: ${API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE:-legacy}
+      API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE: ${API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE:-legacy}
+      API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE: ${API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE:-legacy}
+      API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE: ${API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE:-legacy}
+      # 分类质量报告创建、队列消费权与流水线运行记录。三个开关互相独立，默认
+      # legacy。worker 开关 Nest 与 Go 都读：go 时 Nest 不再建 Worker，由 api-go 消费。
+      API_GO_CLASSIFICATION_REPORTS_MODE: ${API_GO_CLASSIFICATION_REPORTS_MODE:-legacy}
+      API_GO_CLASSIFICATION_QUALITY_WORKER_MODE: ${API_GO_CLASSIFICATION_QUALITY_WORKER_MODE:-legacy}
+      API_GO_PIPELINE_RECOVERY_MODE: ${API_GO_PIPELINE_RECOVERY_MODE:-legacy}
+      # AI 助手执行权。提交/删除 Mutation 的 Go 接管与 worker 消费是两个独立
+      # 开关，只接受空串/legacy/go，非法值启动失败。默认均 legacy：四个
+      # Mutation 与 assistant worker 都仍由 NestJS 处理。切换 worker 前先把
+      # 本服务的 worker 开关设为 go 并重启，再把 api-go 的设为 go。
+      API_GO_GRAPHQL_ASSISTANT_WRITE_MODE: ${API_GO_GRAPHQL_ASSISTANT_WRITE_MODE:-legacy}
+      API_GO_ASSISTANT_WORKER_MODE: ${API_GO_ASSISTANT_WORKER_MODE:-legacy}
+      # 态势监控 GDELT 外部快照 15 分钟重建的执行权。空串按 legacy 处理；非法值在
+      # Nest 与 Go 都启动失败。默认 legacy=NestJS @Cron 持有；go=Go 定时重建，
+      # NestJS @Cron 在加锁前返回。两侧共用同一把 Redis 锁，切换不会并发重建。
+      # 只控制定时重建；强制刷新入口另有 API_GO_GDELT_SNAPSHOT_REFRESH_MODE（仅
+      # api-go 读取）。
+      API_GO_GDELT_SNAPSHOT_MODE: ${API_GO_GDELT_SNAPSHOT_MODE:-legacy}
+      # 告警队列（scan / 规则评估 / 站内通知 / 邮件与 Webhook 投递）的执行权。
+      # 空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。默认 legacy=保留
+      # NestJS AlertsProcessor；go=Go 消费 alerts 队列，Nest 处理器只保留幂等的
+      # 定时计划并在创建 Worker 前退出，告警实时推送改由 Go 的
+      # alert:notifications:v1 桥接通道驱动。Nest 与 Go 注入同一变量。
+      # go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 与 SMTP_*（站内通知、邮件
+      # 与 Webhook 都由 Go 产生）；模型服务可选，缺失时经济异常规则回退本地检测。
+      API_GO_ALERT_WORKER_MODE: ${API_GO_ALERT_WORKER_MODE:-legacy}
+      # ALERT_* 与 BULLMQ_NAMESPACE 与 NestJS 同源同名（同一份默认值），
+      # 只在 API_GO_ALERT_WORKER_MODE=go 时被 Go 读取。
+      BULLMQ_NAMESPACE: ${BULLMQ_NAMESPACE:-modular}
+      ALERT_QUEUE_CONCURRENCY: ${ALERT_QUEUE_CONCURRENCY:-4}
+      ALERT_WEBHOOK_TIMEOUT_MS: ${ALERT_WEBHOOK_TIMEOUT_MS:-5000}
+      ALERT_SCAN_INTERVAL_MS: ${ALERT_SCAN_INTERVAL_MS:-300000}
+      ALERT_NOTIFY_GLOBAL_PER_SECOND: ${ALERT_NOTIFY_GLOBAL_PER_SECOND:-10}
+      ALERT_NOTIFY_EMAIL_PER_SECOND: ${ALERT_NOTIFY_EMAIL_PER_SECOND:-2}
+      ALERT_NOTIFY_WEBHOOK_PER_SECOND: ${ALERT_NOTIFY_WEBHOOK_PER_SECOND:-10}
+      ALERT_NOTIFY_PER_CHANNEL_PER_SECOND: ${ALERT_NOTIFY_PER_CHANNEL_PER_SECOND:-2}
+      ALERT_NOTIFY_LIMITER_TTL_MS: ${ALERT_NOTIFY_LIMITER_TTL_MS:-60000}
+      # 分析三写与 analysis 队列消费者所有权。空串按 legacy；非法值 Nest/Go 都启动失败。
+      # 三写请求模式需要 JWT/DATABASE_URL/REDIS_HOST/MONGO_URI；worker 模式需要
+      # DATABASE_URL/REDIS_HOST/MONGO_URI 与 GRAPHQL_SUBSCRIPTION_BUS=redis，不要求 JWT。
+      # BULLMQ_WORKERS_ENABLED=false 时两端都不启动 analysis 消费。
+      API_GO_ANALYSIS_RUNS_MODE: ${API_GO_ANALYSIS_RUNS_MODE:-legacy}
+      API_GO_ANALYSIS_WORKER_MODE: ${API_GO_ANALYSIS_WORKER_MODE:-legacy}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -576,6 +653,11 @@ services:
     environment:
       PORT: 4020
       LEGACY_API_URL: http://api:4000
+      # Realtime GraphQL subscriptions are an independent takeover: default
+      # legacy keeps every upgrade on the legacy proxy. go needs JWT, MySQL and
+      # Redis only and must share the Nest producers' Redis bus.
+      API_GO_GRAPHQL_SUBSCRIPTIONS_MODE: ${API_GO_GRAPHQL_SUBSCRIPTIONS_MODE:-legacy}
+      GRAPHQL_SUBSCRIPTION_BUS: ${GRAPHQL_SUBSCRIPTION_BUS:-redis}
       DATABASE_URL: mysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD}@mysql:${MYSQL_PORT:-3306}/${MYSQL_DB}
       # The OIDC login unit builds the web callback from NEXTAUTH_URL and the
       # IdP redirect_uri from API_BASE_URL. Both keep the same values the api
@@ -613,6 +695,71 @@ services:
       # 全部 legacy 也能运行。go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 和
       # SMTP_*，不要求 JWT_SECRET。默认 legacy；切换/回滚顺序见 docs 与 README。
       API_GO_USER_DIGEST_DELIVERY_MODE: ${API_GO_USER_DIGEST_DELIVERY_MODE:-legacy}
+      # 审计日志失败补偿链（AUDIT-OUTBOX-001）。只开本变量即可由 Go 消费：
+      # 需要 DATABASE_URL 与 REDIS_HOST，不要求 JWT/Mongo/SMTP，也不强开任何
+      # HTTP 模式。Nest 与 Go 注入同一变量，默认 legacy 仍由 NestJS Cron 消费。
+      API_GO_AUDIT_OUTBOX_MODE: ${API_GO_AUDIT_OUTBOX_MODE:-legacy}
+      # NewsNow 来源获取两路（公开）：GET /api/news-aggregator/source 与
+      # POST /api/news-aggregator/sources/batch。pilot 默认仍交 NestJS；
+      # go 只接管这两条精确路由（无 JWT/Mongo 依赖），Nest 预热与热点
+      # Cron 继续运行。回滚只把本变量改回 legacy。
+      API_GO_NEWSNOW_SOURCES_MODE: ${API_GO_NEWSNOW_SOURCES_MODE:-legacy}
+      # raw_item 失败补偿的定时重放所有权。与条目写/读开关独立；默认 legacy。
+      # go 时 NestJS Cron 在申请锁前退出，Go 每分钟扫描并投递。Nest 与 Go 注入
+      # 同一变量；SCHEDULE_ENABLED=false 时两边都停止定时重放，但请求内即时投递
+      # 不受影响。回滚只把该变量改回 legacy。
+      API_GO_RAW_ITEM_OUTBOX_MODE: ${API_GO_RAW_ITEM_OUTBOX_MODE:-legacy}
+      SCHEDULE_ENABLED: ${SCHEDULE_ENABLED:-true}
+      # 经济数据的三个 Mutation、三个管理 HTTP 与 akshare-data 消费所有权。
+      # 两个开关独立，空串按 legacy；worker=go 时 NestJS 跳过目录/重复任务
+      # 初始化且不再创建 Worker，只有 Go 消费。回滚先停 Go worker 再改回 legacy。
+      API_GO_ECONOMIC_DATA_MODE: ${API_GO_ECONOMIC_DATA_MODE:-legacy}
+      API_GO_ECONOMIC_DATA_WORKER_MODE: ${API_GO_ECONOMIC_DATA_WORKER_MODE:-legacy}
+      AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
+      AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
+      AKSHARE_HTTP_TIMEOUT_MS: ${AKSHARE_HTTP_TIMEOUT_MS:-20000}
+      AKSHARE_HTTP_MAX_RETRIES: ${AKSHARE_HTTP_MAX_RETRIES:-3}
+      AKSHARE_ADMIN_TOKEN: ${AKSHARE_ADMIN_TOKEN:-}
+      AKSHARE_QUEUE_CONCURRENCY: ${AKSHARE_QUEUE_CONCURRENCY:-2}
+      AKSHARE_SCHEDULE_SMOOTHING_ENABLED: ${AKSHARE_SCHEDULE_SMOOTHING_ENABLED:-false}
+      AKSHARE_SKIP_UNCHANGED_LATEST_POINTS: ${AKSHARE_SKIP_UNCHANGED_LATEST_POINTS:-false}
+      # 知识图谱自动构建所有权。与所有 HTTP / GraphQL 读开关独立；go 要求
+      # DATABASE_URL 与 REDIS_HOST，不要求 JWT 或 MONGO_URI。Nest 与 Go 同一变量。
+      API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE: ${API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE:-legacy}
+      # 新闻事件聚类失败的 LLM 补救链与新闻—指标关联刷新。四个开关互相独立，
+      # 默认 legacy；worker 与 6 小时 cron 开关 Nest 也读取，为 go 时 Nest 在
+      # 领取锁/创建 Worker 之前退出。手动入队与 GraphQL mutation 只在 Go 读取。
+      API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE: ${API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE:-legacy}
+      API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE: ${API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE:-legacy}
+      API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE: ${API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE:-legacy}
+      API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE: ${API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE:-legacy}
+      # 告警队列（scan / 规则评估 / 站内通知 / 邮件与 Webhook 投递）的执行权。
+      # 空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。默认 legacy=保留
+      # NestJS AlertsProcessor；go=Go 消费 alerts 队列，Nest 处理器只保留幂等的
+      # 定时计划并在创建 Worker 前退出，告警实时推送改由 Go 的
+      # alert:notifications:v1 桥接通道驱动。Nest 与 Go 注入同一变量。
+      # go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 与 SMTP_*（站内通知、邮件
+      # 与 Webhook 都由 Go 产生）；模型服务可选，缺失时经济异常规则回退本地检测。
+      API_GO_ALERT_WORKER_MODE: ${API_GO_ALERT_WORKER_MODE:-legacy}
+      # ALERT_* 与 BULLMQ_NAMESPACE 与 NestJS 同源同名（同一份默认值），
+      # 只在 API_GO_ALERT_WORKER_MODE=go 时被 Go 读取。
+      BULLMQ_NAMESPACE: ${BULLMQ_NAMESPACE:-modular}
+      ALERT_QUEUE_CONCURRENCY: ${ALERT_QUEUE_CONCURRENCY:-4}
+      ALERT_WEBHOOK_TIMEOUT_MS: ${ALERT_WEBHOOK_TIMEOUT_MS:-5000}
+      ALERT_SCAN_INTERVAL_MS: ${ALERT_SCAN_INTERVAL_MS:-300000}
+      ALERT_NOTIFY_GLOBAL_PER_SECOND: ${ALERT_NOTIFY_GLOBAL_PER_SECOND:-10}
+      ALERT_NOTIFY_EMAIL_PER_SECOND: ${ALERT_NOTIFY_EMAIL_PER_SECOND:-2}
+      ALERT_NOTIFY_WEBHOOK_PER_SECOND: ${ALERT_NOTIFY_WEBHOOK_PER_SECOND:-10}
+      ALERT_NOTIFY_PER_CHANNEL_PER_SECOND: ${ALERT_NOTIFY_PER_CHANNEL_PER_SECOND:-2}
+      ALERT_NOTIFY_LIMITER_TTL_MS: ${ALERT_NOTIFY_LIMITER_TTL_MS:-60000}
+      # 告警邮件通道复用的 SMTP 传输（与 api 服务同一份配置）。
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_POOL: ${SMTP_POOL:-false}
       # 分析工作台保存视图、看板/列/任务、笔记/评论（Go 协作域）。
       # pilot 与样例保持 legacy。三个变量各自改成 go 才切换对应 HTTP。
       # 内部讨论检查、评论计数和删除清理不看另一个开关，也不回调 NestJS。
@@ -625,10 +772,21 @@ services:
       # 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI。
       # POST /api/analysis/exports/search 仍代理 NestJS。
       API_GO_ANALYSIS_EXPORT_MODE: legacy
+      API_GO_ARCHIVE_READING_MODE: legacy
+      # 三个分析 run Mutation 与 analysis 队列消费者所有权。空串按 legacy；
+      # 非法值 Nest/Go 都启动失败。请求模式要求 JWT/DATABASE_URL/REDIS_HOST/
+      # MONGO_URI；worker 模式要求 DATABASE_URL/REDIS_HOST/MONGO_URI 和
+      # GRAPHQL_SUBSCRIPTION_BUS=redis，不要求 JWT。BULLMQ_WORKERS_ENABLED=false
+      # 时两端都不消费。默认 legacy，生产 Web 仍走 NestJS。
+      API_GO_ANALYSIS_RUNS_MODE: ${API_GO_ANALYSIS_RUNS_MODE:-legacy}
+      API_GO_ANALYSIS_WORKER_MODE: ${API_GO_ANALYSIS_WORKER_MODE:-legacy}
       # 态势监控自定义监控五条 HTTP。pilot 与样例保持 legacy。
       # 改成 go 才由 Go 验签并写 SituationMonitorMonitor。
       # 回滚只把该变量改回 legacy。insights、refresh 和其他采集接口不在这个开关里。
       API_GO_SITUATION_MONITORS_MODE: legacy
+      # 态势页市场/美联储面板的上游密钥；管理员在设置中保存的值优先。
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      FRED_API_KEY: ${FRED_API_KEY:-}
       # 态势监控信号读取与反馈 7 条 HTTP（catalog、feedback、refresh-runs/:id、
       # telegram-feed、oref-alerts、oref-history、live-hls-proxy-config）。
       # pilot 与样例默认 legacy。改成 go 才由 Go 独立验签（JWT + Redis
@@ -636,6 +794,9 @@ services:
       # 写 Mongo 反馈。insights、POST refresh、monitors** 与
       # realtime-signals/runtime 不在这个开关里。回滚只把该变量改回 legacy。
       API_GO_SITUATION_MONITOR_SIGNALS_MODE: ${API_GO_SITUATION_MONITOR_SIGNALS_MODE:-legacy}
+      # 态势监控洞察只读链（GET /api/situation-monitor/insights）。默认 legacy；
+      # go 时要求 JWT、MySQL、Redis、Mongo。不刷新 GDELT 快照、不派发采集。
+      API_GO_SITUATION_INSIGHTS_MODE: ${API_GO_SITUATION_INSIGHTS_MODE:-legacy}
       # 新闻源管理台十五条 HTTP。pilot 与样例保持 legacy。
       # 改成 go 才由 Go 验签并读写 NewsSource。GET :id/preview 仍回 NestJS。
       # 回滚只把该变量改回 legacy。不入队，不启动采集 worker。
@@ -697,6 +858,24 @@ services:
       # settings.manage；POST /api/admin/quality/classification/reports 会投递
       # BullMQ 任务，不迁移，继续回落 NestJS。回滚只把该变量改回 legacy。
       API_GO_CLASSIFICATION_RSS_OPS_MODE: legacy
+      # 分类质量报告创建 1 条 POST。样例保持 legacy；改成 go 才由 Go 写
+      # ClassificationReportJob 并投入 classification_quality 队列
+      # （jobId=classification-quality-report:<reportJobId>，attempts=3、指数
+      # 退避 2000ms）。GET /reports/:jobId 仍由上面的 rss-ops 开关决定。
+      # 回滚只把该变量改回 legacy。
+      API_GO_CLASSIFICATION_REPORTS_MODE: ${API_GO_CLASSIFICATION_REPORTS_MODE:-legacy}
+      # classification_quality 队列消费权（报告生成 + 评审种子写入）。样例保持
+      # legacy=NestJS 消费。改成 go 才由 Go 消费，NestJS processor 不再建 Worker
+      # （Queue 保留，流水线仍生产评审种子任务），执行权互斥。并发
+      # max(1,min(4,NEWS_PROCESS_QUEUE_CONCURRENCY))，未配置为 2。要求
+      # DATABASE_URL、REDIS_HOST、MONGO_URI；不要求 JWT。回滚时先停本 worker，
+      # 再由 NestJS 继续消费同格式任务。
+      API_GO_CLASSIFICATION_QUALITY_WORKER_MODE: ${API_GO_CLASSIFICATION_QUALITY_WORKER_MODE:-legacy}
+      # 流水线恢复运行记录 1 条 GET。样例保持 legacy。改成 go 才由 Go 验签并读
+      # MySQL ItemMeta 与 Mongo processeditems/tasklogs；要求 JWT_SECRET、
+      # DATABASE_URL、MONGO_URI。replay/rollback 依赖条目流水线生产者（未合入），
+      # 继续回 NestJS。回滚只把该变量改回 legacy。
+      API_GO_PIPELINE_RECOVERY_MODE: ${API_GO_PIPELINE_RECOVERY_MODE:-legacy}
       # NewsNow 本地计算与聚类失败管理的 9 条 HTTP。pilot 与样例保持
       # legacy。改成 go 才由 Go 独立鉴权并读 Redis/Mongo 的
       # rawitems、processeditems 与 newseventclusteringfailures，以及
@@ -721,6 +900,40 @@ services:
       # /api/crawl-tasks/metadata 的既有 GET :id 归属及创建/重试/删除接口继续
       # 回 NestJS。回滚只把该变量改回 legacy。
       API_GO_CRAWL_METADATA_MODE: legacy
+      # 采集任务生命周期 3 条 REST + 3 个 GraphQL Mutation。样例保持 legacy；
+      # 改成 go 才由 Go 校验/规范化参数、限流、写 MySQL 与审计，并按
+      # bullmq 5.63.2 协议写入/移除任务、维护 Redis 采集活动计数。NestJS
+      # CrawlQueueProcessor 仍是唯一消费者；Go 不启动 worker/janitor。
+      # go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST。回滚只改回 legacy。
+      API_GO_CRAWL_TASK_WRITE_MODE: legacy
+      # crawl4ai 队列管理 4 条 HTTP（queue 状态与 pause/resume/concurrency）。
+      # 样例保持 legacy；改成 go 才由 Go 读队列计数/暂停/全局并发与自适应
+      # 状态，并写队列控制键、发布 crawl:worker-concurrency:v1 广播。
+      # go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST。回滚只改回 legacy。
+      API_GO_CRAWL_QUEUE_OPS_MODE: legacy
+      # 新闻源预览 1 条 HTTP（GET /api/admin/news-sources/:id/preview）。样例
+      # 保持 legacy。只接受空串/legacy/go，非法值启动失败；改成 go 才由 Go
+      # 独立鉴权并合并工作流覆盖/模板 crawlOptions、统计在途任务、执行
+      # RSS/列表/深度/sitemap 发现与元数据抽取（只读，不入队）。要求
+      # JWT_SECRET、DATABASE_URL、REDIS_HOST；crawl4ai 缺失时深度发现返回
+      # SEED_DEEP_CRAWL4AI_UNAVAILABLE、列表页回退 HTML。回滚只把该变量改回
+      # legacy。
+      API_GO_NEWS_SOURCE_PREVIEW_MODE: ${API_GO_NEWS_SOURCE_PREVIEW_MODE:-legacy}
+      # 采集策略试运行与回放 2 条 HTTP（POST
+      # /api/admin/crawl-frontier/workflows/:id/trial-run 与 POST
+      # /api/admin/crawl-frontier/workflow-runs/:runId/replay）。样例保持
+      # legacy。只接受空串/legacy/go，非法值启动失败；改成 go 才由 Go 写运行
+      # 记录并执行工作流图。要求 JWT_SECRET、DATABASE_URL、REDIS_HOST；
+      # crawl4ai 缺失时深度发现节点报错。回滚只把该变量改回 legacy。
+      API_GO_CRAWL_WORKFLOW_TRIAL_MODE: ${API_GO_CRAWL_WORKFLOW_TRIAL_MODE:-legacy}
+      # 新闻源的在途回看窗口与 crawl4ai 请求参数透传（与 Nest 同名同默认）。
+      NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS: ${NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS:-21600000}
+      CRAWL4AI_BASE_URL: ${CRAWL4AI_BASE_URL:-http://crawl4ai:11235}
+      CRAWL4AI_API_KEY: ${CRAWL4AI_API_KEY:-}
+      CRAWL4AI_TIMEOUT_MS: ${CRAWL4AI_TIMEOUT_MS:-120000}
+      CRAWL4AI_HEALTH_CHECK_TTL_MS: ${CRAWL4AI_HEALTH_CHECK_TTL_MS:-60000}
+      CRAWL4AI_SSRF_PROXY_URL: ${CRAWL4AI_SSRF_PROXY_URL:-}
+      CRAWL4AI_JSCODE_ENABLED: ${CRAWL4AI_JSCODE_ENABLED:-true}
       # 搜索索引重建 2 条 HTTP（POST /api/admin/search/reindex 与
       # GET /api/admin/search/reindex/:jobId）。样例保持 legacy。只接受
       # 空串/legacy/go，非法值启动失败；改成 go 才由 Go 独立鉴权并写 Redis
@@ -771,6 +984,13 @@ services:
       ASSISTANT_ORG_MAX_IN_FLIGHT: ${ASSISTANT_ORG_MAX_IN_FLIGHT:-2}
       ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET: ${ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET:-2000000}
       TASK_LOG_RETENTION_DAYS: ${TASK_LOG_RETENTION_DAYS:-14}
+      # AI 助手执行权（与 api 服务同源的两个开关）。写开关只注册四个
+      # assistant Mutation，要求 JWT/MySQL/Redis/Mongo；worker 开关只启动
+      # assistant 队列消费者，要求 MySQL/Redis/Mongo，不要求 JWT。NestJS 与
+      # Go 写出的任务格式相同，同一任务只会被持有锁的一个 worker 消费。
+      # 回滚：先按相反顺序把两个开关改回 legacy；未处理任务 NestJS 可继续消费。
+      API_GO_GRAPHQL_ASSISTANT_WRITE_MODE: ${API_GO_GRAPHQL_ASSISTANT_WRITE_MODE:-legacy}
+      API_GO_ASSISTANT_WORKER_MODE: ${API_GO_ASSISTANT_WORKER_MODE:-legacy}
       # LLM 网关 profile 七条配置/激活 HTTP
       # （GET/POST /api/system-settings/llm-gateways、PUT active /
       # embedding-active / rerank-active、PUT/DELETE :id）。pilot 与样例
@@ -827,6 +1047,11 @@ services:
       # 网络探测。ACLED API 固定关闭，本开关不改变该政策。
       # 回滚只把该变量改回 legacy。
       API_GO_DATA_RUNTIME_SETTINGS_MODE: ${API_GO_DATA_RUNTIME_SETTINGS_MODE:-legacy}
+      # 设置中心运行检查与地理编码（邮件设置三入口、地理编码两入口、
+      # 助理安全与实时信号诊断两入口）。默认 legacy；三组互相独立。
+      API_GO_EMAIL_SETTINGS_MODE: ${API_GO_EMAIL_SETTINGS_MODE:-legacy}
+      API_GO_GEOCODING_MODE: ${API_GO_GEOCODING_MODE:-legacy}
+      API_GO_RUNTIME_DIAGNOSTICS_MODE: ${API_GO_RUNTIME_DIAGNOSTICS_MODE:-legacy}
       # 实时信号设置的 env 缺省与 api 服务同源（同一份 .env，同样的默认值）。
       # 注意 REALTIME_SIGNALS_ADSB_* 刻意不在此列：apiEnvSchema 已给
       # REALTIME_SIGNALS_OPENSKY_* 设了默认值，ADSB_* 回落分支不可达，这里不
@@ -985,11 +1210,28 @@ services:
       # POST /api/auth/machine-tokens/:tokenId/rotate）。默认 legacy，只接受
       # 空串/legacy/go，非法值启动失败。go 需要 JWT_SECRET、DATABASE_URL、
       # REDIS_HOST，不需要 Mongo。登录、refresh、邮箱验证码、密码找回、
-      # MFA、OIDC、邀请与注册审核、头像上传签名、个人数据导出仍回 NestJS。
-      # 生产 Web 入口仍指向 NestJS，canary 与 shadow 关闭。回滚只把该变量
-      # 改回 legacy。
+      # MFA、OIDC、邀请与注册审核仍回 NestJS；头像上传签名与个人数据导出
+      # 由各自的开关控制（见下）。生产 Web 入口仍指向 NestJS，canary 与
+      # shadow 关闭。回滚只把该变量改回 legacy。
       API_GO_ACCOUNT_SECURITY_MODE: legacy
+      # 头像上传签名（POST /api/auth/avatar/presigned-url）。默认 legacy，
+      # 只接受空串/legacy/go，非法值启动失败。go 需要 JWT_SECRET、
+      # DATABASE_URL、REDIS_HOST，不需要 Mongo；签名在本地完成，不访问 S3。
+      # 回滚只把该变量改回 legacy。
+      API_GO_AVATAR_UPLOAD_MODE: legacy
+      # 个人数据导出（GET /api/auth/data-export）。默认 legacy，只接受空串/
+      # legacy/go，非法值启动失败。go 需要 JWT_SECRET、DATABASE_URL、
+      # REDIS_HOST 与 MONGO_URI（assistantruns 在 Mongo）。文件名、响应头、
+      # 限流（3 次/小时）与审计副作用与 Nest 一致；回滚只把该变量改回
+      # legacy。
+      API_GO_USER_DATA_EXPORT_MODE: legacy
       API_GO_ITEMS_READING_MODE: legacy
+      # 条目写入（POST /api/items 与五个 item/crawl mutation）和 raw_item 定时
+      # 补偿是独立开关。默认 legacy；仅接受空串/legacy/go，非法值启动失败。
+      # 写模式需要 JWT_SECRET、DATABASE_URL、REDIS_HOST、MONGO_URI；后台补偿
+      # 单开只需要 DATABASE_URL、REDIS_HOST、MONGO_URI。SCHEDULE_ENABLED=false
+      # 只停定时重放，不停请求内即时投递。回滚分别改回 legacy。
+      API_GO_ITEMS_INGEST_MODE: ${API_GO_ITEMS_INGEST_MODE:-legacy}
       # 条目列表 GraphQL root 独立子开关：默认 legacy；go 要求读开关与条目阅读
       # 开关均为 go。回滚只把该变量改回 legacy，其余已迁读与 REST 不受影响。
       API_GO_GRAPHQL_ITEMS_LIST_MODE: legacy
@@ -1010,6 +1252,14 @@ services:
       # 8 个 mutation 由 Go 执行。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动
       # worker，也不发送邮件或 webhook。回滚只把该变量改回 legacy。
       API_GO_GRAPHQL_WORKSPACE_WRITE_MODE: legacy
+      # 告警规则配置与手动触发 4 个 GraphQL root（alertRules query 与
+      # upsertAlertRule / deleteAlertRule / triggerAlertRule）。pilot 与样例
+      # 保持 legacy，与 API_GO_GRAPHQL_READ_MODE 刻意解耦：alertRules 会补建
+      # 17 条默认规则、更新定时计划并排入一次评估，所以读与三个写作为一个整体。
+      # 只需要 JWT/MySQL/Redis，不要求 Mongo，不启动 worker，也不发邮件或
+      # webhook；AlertsProcessor 仍是 alerts 队列唯一消费者。回滚只把该变量
+      # 改回 legacy。
+      API_GO_GRAPHQL_ALERT_RULES_MODE: legacy
       # 设置中心 13 个 GraphQL mutation。pilot 与样例保持 legacy，与全部读开关
       # 解耦：只开本变量时只登记这 13 个 mutation，20 个设置读 query 仍走
       # NestJS。只需要 JWT/MySQL/Redis，不要求 Mongo，不启动 worker，不回调
@@ -1101,6 +1351,20 @@ services:
       # 与 NestJS 同一份来源白名单。浏览器跨源访问 :4020 上已接管的
       # user-settings GET/PUT 时，Go 用它回 CORS 头；空名单不放行任何 Origin。
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      # 态势监控 GDELT 外部快照定时重建的执行权（与 api 服务同一变量）。
+      # 默认 legacy=不启动 Go 定时任务；go=Go 每 15 分钟重建，与 NestJS 共用
+      # lock:cron:situation-monitor:external-snapshot:gdelt。要求 DATABASE_URL、
+      # REDIS_HOST，不要求 JWT。回滚只把该变量（以及 api 服务的同名变量）改回
+      # legacy，写入的历史与两层缓存格式相同，NestJS 可直接读取。
+      API_GO_GDELT_SNAPSHOT_MODE: ${API_GO_GDELT_SNAPSHOT_MODE:-legacy}
+      # 强制刷新入口 POST /api/system-settings/situation-monitor/external-snapshot/
+      # refresh 的执行权（仅 Go 读取；Nest 控制器始终保留该路由）。默认 legacy=
+      # 继续由 NestJS 处理；go=Go 处理，要求 JWT、MySQL、Redis，与定时任务共用
+      # 同一把锁。与上面的定时开关相互独立。
+      API_GO_GDELT_SNAPSHOT_REFRESH_MODE: ${API_GO_GDELT_SNAPSHOT_REFRESH_MODE:-legacy}
+      # NestJS 的 GDELT 总开关（默认 true；false 时定时重建与强制刷新都直接返回）。
+      # api-go 未设置时按 true 解析，与 Nest env schema 默认一致。
+      SITUATION_MONITOR_GDELT_ENABLED: ${SITUATION_MONITOR_GDELT_ENABLED:-true}
     ports:
       - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${API_GO_HOST_PORT:-4020}:4020"
     logging: *json-file-logging

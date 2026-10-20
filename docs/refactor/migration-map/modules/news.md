@@ -1,5 +1,9 @@
 # news · 新闻事件、指标、聚类与内容流水线
 
+2026-10-19仅占用刷新：NEWSNOW-SOURCES-001已有Ready业务PR #94 OPEN，续核headb33cc1eab4dd56d08e9a802a2670d363a3227462（初head06542a7f后仅traceId修复）；普通CI39296327154运行中，未合main91e759b4。业务task由编码窗口维护，规划仅回填占用/实际共享diff，不把候选实现加入main或重复分配来源接口。
+
+2026-10-19本次限定选批（main91e759b4）：仅两公开来源HTTP由[NEWSNOW-SOURCES-001](../tasks/NEWSNOW-SOURCES-001.md) reserved，[完整提示词](../tasks/NEWSNOW-SOURCES-001.prompt.md)已发出。64个元数据ID/41个可达族，包含真实getter、凭据、兼容缓存、实时接缝与并发池优化；尚无Go生产实现/注册，不提前增加本域覆盖。推荐、热点模型、LLM backfill和所有Nest预热/热点Cron保持原所有权。只续核该链，不刷新下方全域历史日期。
+
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。NEWS-BRIEF-001 编码窗口在 main 9d0462e1 基础上实现候选（Ready [PR #72](https://github.com/wei500L/newwei/pull/72)，head 517a73f9，verify/integration 通过），尚未合 main，见[任务](../tasks/NEWS-BRIEF-001.md)。
 
 ## 范围与实施状态
@@ -40,8 +44,8 @@ Nest 功能目录：[news-events](../../../../apps/api/src/modules/news-events)�
 | `GET /api/news-aggregator/metadata` | 公开 | [news-aggregator.controller.ts](../../../../apps/api/src/modules/news-aggregator/news-aggregator.controller.ts) · `getMetadata` | WithNewsnowClusteringOps |
 | `GET /api/news-aggregator/recommended` | items.read | [news-aggregator.controller.ts](../../../../apps/api/src/modules/news-aggregator/news-aggregator.controller.ts) · `getRecommendedFeed` | Nest；尚未接管 |
 | `GET /api/news-aggregator/resolve` | 公开 | [news-aggregator.controller.ts](../../../../apps/api/src/modules/news-aggregator/news-aggregator.controller.ts) · `resolveByUrl` | WithNewsnowClusteringOps |
-| `GET /api/news-aggregator/source` | 公开 | [news-aggregator.controller.ts](../../../../apps/api/src/modules/news-aggregator/news-aggregator.controller.ts) · `getSource` | Nest；尚未接管 |
-| `POST /api/news-aggregator/sources/batch` | 公开 | [news-aggregator.controller.ts](../../../../apps/api/src/modules/news-aggregator/news-aggregator.controller.ts) · `getSourcesBatch` | Nest；尚未接管 |
+| `GET /api/news-aggregator/source` | 公开 | [news-aggregator.controller.ts](../../../../apps/api/src/modules/news-aggregator/news-aggregator.controller.ts) · `getSource` | Nest；NEWSNOW-SOURCES-001 reserved，完整冷获取/强刷，未实施 |
+| `POST /api/news-aggregator/sources/batch` | 公开 | [news-aggregator.controller.ts](../../../../apps/api/src/modules/news-aggregator/news-aggregator.controller.ts) · `getSourcesBatch` | Nest；NEWSNOW-SOURCES-001 reserved，完整批量，未实施 |
 | `POST /api/news-aggregator/sources/order` | items.read | [news-aggregator.controller.ts](../../../../apps/api/src/modules/news-aggregator/news-aggregator.controller.ts) · `getPersonalizedSourcesOrder` | WithNewsnowClusteringOps |
 | `GET /api/news-indicator/associations` | dashboards.read | [news-indicator.controller.ts](../../../../apps/api/src/modules/news-indicator/news-indicator.controller.ts) · `listAssociations` | WithNewsIndicators |
 | `GET /api/news-indicator/associations/:id` | dashboards.read | [news-indicator.controller.ts](../../../../apps/api/src/modules/news-indicator/news-indicator.controller.ts) · `getAssociation` | WithNewsIndicators |

@@ -29,22 +29,24 @@ type EntityImpactGraphSettingsModel struct {
 }
 
 // KnowledgeGraphSettingsModel is the GraphQL KnowledgeGraphSettingsModel
-// object. Every field is non-null in the SDL.
+// object. Every field is non-null in the SDL. The json tags are the persisted
+// and Redis-cached camelCase document shape; the GraphQL projection ignores
+// them.
 type KnowledgeGraphSettingsModel struct {
-	CacheTTLSeconds                            int      `graphql:"cacheTtlSeconds"`
-	DynamicEdgeConfidenceEnabled               bool     `graphql:"dynamicEdgeConfidenceEnabled"`
-	DynamicEdgeConfidenceQuantile              float64  `graphql:"dynamicEdgeConfidenceQuantile"`
-	Enabled                                    bool     `graphql:"enabled"`
-	EntityDisambiguationEnabled                bool     `graphql:"entityDisambiguationEnabled"`
-	EntityDisambiguationMaxCandidates          int      `graphql:"entityDisambiguationMaxCandidates"`
-	IngestionEnabled                           bool     `graphql:"ingestionEnabled"`
-	MaxBatchSize                               int      `graphql:"maxBatchSize"`
-	MaxRelationsPerArticle                     int      `graphql:"maxRelationsPerArticle"`
-	MinEdgeConfidence                          float64  `graphql:"minEdgeConfidence"`
-	MultiModelValidationEnabled                bool     `graphql:"multiModelValidationEnabled"`
-	MultiModelValidationMaxRelationsPerArticle int      `graphql:"multiModelValidationMaxRelationsPerArticle"`
-	MultiModelValidationModelCount             int      `graphql:"multiModelValidationModelCount"`
-	MultiModelValidationModels                 []string `graphql:"multiModelValidationModels"`
+	CacheTTLSeconds                            int      `graphql:"cacheTtlSeconds" json:"cacheTtlSeconds"`
+	DynamicEdgeConfidenceEnabled               bool     `graphql:"dynamicEdgeConfidenceEnabled" json:"dynamicEdgeConfidenceEnabled"`
+	DynamicEdgeConfidenceQuantile              float64  `graphql:"dynamicEdgeConfidenceQuantile" json:"dynamicEdgeConfidenceQuantile"`
+	Enabled                                    bool     `graphql:"enabled" json:"enabled"`
+	EntityDisambiguationEnabled                bool     `graphql:"entityDisambiguationEnabled" json:"entityDisambiguationEnabled"`
+	EntityDisambiguationMaxCandidates          int      `graphql:"entityDisambiguationMaxCandidates" json:"entityDisambiguationMaxCandidates"`
+	IngestionEnabled                           bool     `graphql:"ingestionEnabled" json:"ingestionEnabled"`
+	MaxBatchSize                               int      `graphql:"maxBatchSize" json:"maxBatchSize"`
+	MaxRelationsPerArticle                     int      `graphql:"maxRelationsPerArticle" json:"maxRelationsPerArticle"`
+	MinEdgeConfidence                          float64  `graphql:"minEdgeConfidence" json:"minEdgeConfidence"`
+	MultiModelValidationEnabled                bool     `graphql:"multiModelValidationEnabled" json:"multiModelValidationEnabled"`
+	MultiModelValidationMaxRelationsPerArticle int      `graphql:"multiModelValidationMaxRelationsPerArticle" json:"multiModelValidationMaxRelationsPerArticle"`
+	MultiModelValidationModelCount             int      `graphql:"multiModelValidationModelCount" json:"multiModelValidationModelCount"`
+	MultiModelValidationModels                 []string `graphql:"multiModelValidationModels" json:"multiModelValidationModels"`
 }
 
 // NewsEventSettingsModel is the GraphQL NewsEventSettingsModel object.

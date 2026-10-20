@@ -587,3 +587,15 @@ func (s *Service) getPlaintextKeys(ctx context.Context) (openAiKeysInternalRespo
 	}
 	return openAiKeysInternalResponse{OpenaiApiKeys: keys}, nil
 }
+
+// OpenAiKeysPublicSettings is the public projection served by
+// GET /api/system-settings/openai-keys. The alias keeps the exact JSON contract
+// without re-declaring a second struct.
+type OpenAiKeysPublicSettings = openAiKeysSettingsPublic
+
+// PublicOpenAiKeysSettings exposes that projection to the diagnostics unit. It
+// reuses the same 30 second caches and the same structural keysCount as the
+// settings route.
+func (s *Service) PublicOpenAiKeysSettings(ctx context.Context) (OpenAiKeysPublicSettings, error) {
+	return s.getOpenAiKeysSettings(ctx)
+}

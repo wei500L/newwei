@@ -34,6 +34,17 @@ type Service struct {
 	items    itemReader
 	snaps    snapshotCache
 	geo      placeResolver
+	// rows memoizes the heatmap row read for sharedQueryTTL. A nil cache (tests
+	// that build a Service directly) reads through.
+	rows *geoRowsCache
+	now  func() time.Time
+}
+
+func (s *Service) clock() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 type sentimentCounts struct {
@@ -70,14 +81,14 @@ type bucketJSON struct {
 }
 
 type heatPointJSON struct {
-	ID        string           `json:"id"`
-	Name      string           `json:"name"`
-	Lat       float64          `json:"lat"`
-	Lng       float64          `json:"lng"`
-	Heat      json.Number      `json:"heat"`
-	Total     int              `json:"total"`
-	Sentiment sentimentCounts  `json:"sentiment"`
-	Buckets   *[]bucketJSON    `json:"buckets,omitempty"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Lat       float64         `json:"lat"`
+	Lng       float64         `json:"lng"`
+	Heat      json.Number     `json:"heat"`
+	Total     int             `json:"total"`
+	Sentiment sentimentCounts `json:"sentiment"`
+	Buckets   *[]bucketJSON   `json:"buckets,omitempty"`
 }
 
 type heatResponse struct {
@@ -252,7 +263,9 @@ func (s *Service) Heatmap(ctx context.Context, orgID string, start, end time.Tim
 	if s == nil || s.articles == nil {
 		return heatResponse{}, errors.New("mysql is not configured")
 	}
-	rows, err := s.articles.Geo(ctx, orgID, start, end, eventID)
+	rows, err := s.rows.load(ctx, geoRowsKey(orgID, start, end, eventID), s.clock(), func(loadCtx context.Context) ([]geoRow, error) {
+		return s.articles.Geo(loadCtx, orgID, start, end, eventID)
+	})
 	if err != nil {
 		return heatResponse{}, err
 	}

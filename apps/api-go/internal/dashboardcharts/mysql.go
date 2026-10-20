@@ -85,25 +85,80 @@ GROUP BY itemId, sourceField`, args...)
 	return fields, rows.Err()
 }
 
-func (s *MySQLStore) SectorPoint(ctx context.Context, itemID, field string, start, end time.Time, desc bool) (*samplePoint, error) {
-	direction := "ASC"
-	if desc {
-		direction = "DESC"
+// sectorEndpointQuery builds the batched first/last lookup. Every branch keeps
+// the plan of the previous single-point queries: equality on itemId +
+// sourceField walks the (itemId, sourceField, recordedAt) index in range order
+// and LIMIT 1 stops at the first row. Joining the branches with UNION ALL turns
+// 2*N round trips into one without widening any branch into a range scan.
+//
+// Each branch is parenthesised because MySQL rejects a per-SELECT ORDER BY +
+// LIMIT inside a bare UNION (the ORDER BY would bind to the whole union).
+func sectorEndpointQuery(keys []seriesKey, start, end time.Time) (string, []any) {
+	edge := func(rank int, direction string) string {
+		return "(SELECT " + strconv.Itoa(rank) + " AS `edge`, itemId, sourceField, recordedAt, value, unit" +
+			"\nFROM EconomicDataPoint" +
+			"\nWHERE itemId = ? AND sourceField = ? AND recordedAt >= ? AND recordedAt <= ?" +
+			"\nORDER BY recordedAt " + direction +
+			"\nLIMIT 1)"
 	}
-	row := s.db.QueryRowContext(ctx, `
-SELECT recordedAt, value, unit
-FROM EconomicDataPoint
-WHERE itemId = ? AND sourceField = ? AND recordedAt >= ? AND recordedAt <= ?
-ORDER BY recordedAt `+direction+`
-LIMIT 1`, itemID, field, start.UTC(), end.UTC())
-	point, err := scanSample(row)
-	if err == sql.ErrNoRows {
-		return nil, nil
+	var query strings.Builder
+	query.Grow(len(keys) * 2 * 320)
+	args := make([]any, 0, len(keys)*8)
+	for _, key := range keys {
+		for _, branch := range [2]string{edge(sectorFirstEdge, "ASC"), edge(sectorLastEdge, "DESC")} {
+			if query.Len() > 0 {
+				query.WriteString("\nUNION ALL\n")
+			}
+			query.WriteString(branch)
+			args = append(args, key.ItemID, key.Field, start.UTC(), end.UTC())
+		}
 	}
+	return query.String(), args
+}
+
+const (
+	sectorFirstEdge = 1
+	sectorLastEdge  = 0
+)
+
+// SectorEndpoints returns the first and last sample of every requested series.
+// A series without rows in the window is absent from the result, which is what
+// the old two lookups signalled with a nil point.
+func (s *MySQLStore) SectorEndpoints(ctx context.Context, keys []seriesKey, start, end time.Time) (map[seriesKey]seriesEndpoints, error) {
+	endpoints := make(map[seriesKey]seriesEndpoints, len(keys))
+	if len(keys) == 0 {
+		return endpoints, nil
+	}
+	query, args := sectorEndpointQuery(keys, start, end)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	return &point, nil
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			edge   int
+			key    seriesKey
+			point  samplePoint
+			rawVal []byte
+		)
+		if err := rows.Scan(&edge, &key.ItemID, &key.Field, &point.RecordedAt, &rawVal, &point.Unit); err != nil {
+			return nil, err
+		}
+		value, err := parseDecimal(rawVal)
+		if err != nil {
+			return nil, err
+		}
+		point.Value = value
+		entry := endpoints[key]
+		if edge == sectorFirstEdge {
+			entry.First = point
+		} else {
+			entry.Last = point
+		}
+		endpoints[key] = entry
+	}
+	return endpoints, rows.Err()
 }
 
 func (s *MySQLStore) CandleItem(ctx context.Context) (*candleItem, error) {
@@ -154,7 +209,7 @@ ORDER BY recordedAt ASC`, args...)
 		if err := rows.Scan(&point.RecordedAt, &rawValue, &point.Unit, &point.SourceField); err != nil {
 			return nil, err
 		}
-		parsed, err := strconv.ParseFloat(string(rawValue), 64)
+		parsed, err := parseDecimal(rawValue)
 		if err != nil {
 			return nil, err
 		}
@@ -194,21 +249,16 @@ LIMIT 50`, itemID, start.UTC(), end.UTC())
 	return fields, rows.Err()
 }
 
-type scanner interface {
-	Scan(dest ...any) error
-}
-
-func scanSample(row scanner) (samplePoint, error) {
-	var point samplePoint
-	var rawValue []byte
-	err := row.Scan(&point.RecordedAt, &rawValue, &point.Unit)
+// parseDecimal reads a DECIMAL(38,12) column and folds -0 into +0.
+// JSON.stringify prints negative zero as "0" while encoding/json prints "-0",
+// so a stored "-0.000000000000" must not reach the response.
+func parseDecimal(raw []byte) (float64, error) {
+	value, err := strconv.ParseFloat(string(raw), 64)
 	if err != nil {
-		return samplePoint{}, err
+		return 0, err
 	}
-	parsed, err := strconv.ParseFloat(string(rawValue), 64)
-	if err != nil {
-		return samplePoint{}, err
+	if value == 0 {
+		return 0, nil
 	}
-	point.Value = parsed
-	return point, nil
+	return value, nil
 }

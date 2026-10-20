@@ -14,7 +14,13 @@ const AnalysisResultSchema = new Schema(
     summary: String,
     error: String,
     model: String,
-    triggeredById: String
+    triggeredById: String,
+    // The BullMQ lock token of the attempt that currently owns the record.
+    // Optional on historical documents: the first attempt that receives the
+    // job writes it, and every terminal update is conditional on it. This is
+    // the fencing token that lets a stalled attempt be recovered without
+    // letting the old worker overwrite the new result.
+    runToken: String
   },
   {
     timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" }

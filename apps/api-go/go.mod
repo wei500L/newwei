@@ -7,6 +7,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
 	github.com/aws/smithy-go v1.28.5
+	// GraphQL realtime subscriptions: maintained RFC6455 client/server with
+	// context cancellation, used instead of a hand-written frame layer.
+	github.com/coder/websocket v1.8.12
 	github.com/go-sql-driver/mysql v1.9.3
 	// Go-批3A：NestJS access token 独立验签（HS256/iss/aud/exp）。
 	// 成熟维护中的最小 JWT 库——不手写密码学。
@@ -15,6 +18,11 @@ require (
 	github.com/redis/go-redis/v9 v9.7.3
 	// GraphQL read pilot：完整 SDL 的解析、校验与变量强制。v2.5.62 是 2026-10-08 的正式 tag。
 	github.com/vektah/gqlparser/v2 v2.5.62
+	// BullMQ 5.63.2 msgpack wire format shared by the items-ingest,
+	// archive-preparation, alert-rules, crawl-task, news-backfill,
+	// classification-quality, assistant and analysis producers/consumers.
+	// v5.4.1 is the fixed tag.
+	github.com/vmihailenco/msgpack/v5 v5.4.1
 	// Go-批5A：dashboard stats 只读查询 ProcessedItem 与 TaskLog。
 	go.mongodb.org/mongo-driver/v2 v2.9.2
 	// 账户安全批次：Node bcrypt@5.1.1 兼容的密码校验与生成（仅用 bcrypt 子包）。
@@ -38,6 +46,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect

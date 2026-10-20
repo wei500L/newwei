@@ -8,6 +8,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
@@ -35,10 +36,23 @@ export class KnowledgeGraphIngestionService {
     private readonly settings: KnowledgeGraphSettingsService,
     private readonly quality: KnowledgeGraphQualityService,
     private readonly graph: KnowledgeGraphService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async ingestRecentProcessedArticles() {
+    // API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go moves the whole background chain
+    // to Go. Return before claiming the Redis tick gate so a mixed-version
+    // deployment never runs two schedulers for the same interval. Go uses the
+    // same gate and organization lock keys, so even a brief overlap cannot
+    // process one organization twice.
+    if (this.resolveIngestionMode() === "go") {
+      logger.info(
+        "Skipped knowledge graph ingestion because Go owns the chain (API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go)",
+      );
+      return;
+    }
+
     const claimed = await claimSchedulerTick(
       this.cache,
       "cron:knowledge-graph-ingestion:tick-gate",
@@ -114,6 +128,14 @@ export class KnowledgeGraphIngestionService {
       "Skipped knowledge graph ingestion because previous org run is still in progress",
     );
     return "skipped";
+  }
+
+  private resolveIngestionMode(): string {
+    return (
+      this.env.get("API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE", {
+        infer: true,
+      }) ?? "legacy"
+    );
   }
 
   private async ingestOrg(orgId: string) {

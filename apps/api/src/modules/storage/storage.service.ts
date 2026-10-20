@@ -98,6 +98,10 @@ export class StorageService {
       Bucket: this.bucket,
       Key: key,
       ContentType: contentType,
+      // Sign the declared size so S3 rejects an upload whose actual body size
+      // differs from the size validated above (the browser sets Content-Length
+      // from the File it sends, so a matching upload still succeeds).
+      ContentLength: contentLength,
       CacheControl: "public, max-age=31536000, immutable"
     });
     const uploadUrl = await getSignedUrl(this.s3 as S3Client, command, {

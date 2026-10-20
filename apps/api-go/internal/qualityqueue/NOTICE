@@ -1,0 +1,78 @@
+BullMQ Lua scripts (expanded)
+================================
+
+Files in this directory:
+
+  addStandardJob.lua
+  moveStalledJobsToWait.lua
+  moveToActive.lua
+  moveToDelayed.lua
+  moveToFinished.lua
+  extendLock.lua
+
+Origin
+------
+
+Extracted from the locked dependency in this repository:
+
+  node_modules/.pnpm/bullmq@5.63.2/node_modules/bullmq/dist/cjs/scripts/*.js
+
+Each file there embeds the fully expanded script (the `--- @include` directives of
+`dist/cjs/commands/*.lua` resolved) as the `content` template literal. The files
+here are that embedded content copied verbatim, so the requires/includes and the
+function ordering are exactly what BullMQ 5.63.2 executes against Redis.
+
+Mapping from BullMQ command names (and script versions) to file names:
+
+  addStandardJob:9          -> addStandardJob.lua
+  moveStalledJobsToWait:8   -> moveStalledJobsToWait.lua
+  moveToActive:11           -> moveToActive.lua
+  moveToDelayed:8           -> moveToDelayed.lua
+  moveToFinished:14         -> moveToFinished.lua
+  extendLock:2              -> extendLock.lua
+
+Why the scripts are vendored
+----------------------------
+
+api-go and NestJS share the `classification_quality` queue, so a job moved by Go
+must be indistinguishable from a job moved by BullMQ. Re-implementing the state
+machine in Go would drift; running the same Lua keeps the hash fields, the
+wait/active/delayed structures, the lock and the stalled set byte-compatible in
+both directions. Only the subset needed by this queue is vendored (no delayed
+add, no priorities, no repeat jobs, no parent/child jobs, no rate limiter).
+
+Licence
+-------
+
+BullMQ is MIT licensed:
+
+  MIT License
+
+  Copyright (c) 2018 BullForce Labs AB.
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+Upgrade note
+------------
+
+When bullmq is upgraded, re-extract these six files from the new
+`dist/cjs/scripts/*.js` and update the version references above. The Go call
+sites in producer.go / worker.go pass the same keys and argument tuples the
+matching JavaScript methods build; a script version bump therefore has to be
+checked against `classes/scripts.js` as well.

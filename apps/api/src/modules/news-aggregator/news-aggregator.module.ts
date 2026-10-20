@@ -15,6 +15,7 @@ import { NewsnowHottestAnalysisSchedulerService } from "./newsnow-hottest-analys
 import { NewsnowHottestAnalysisService } from "./newsnow-hottest-analysis.service";
 import { NewsnowRealtimeDispatcher } from "./newsnow-realtime.dispatcher";
 import { NewsnowRecommendedService } from "./newsnow-recommended.service";
+import { NewsnowSourceRefreshSubscriber } from "./newsnow-source-refresh.subscriber";
 import { NewsnowSourceWarmSchedulerService } from "./newsnow-source-warm.scheduler.service";
 import { NewsnowGateway } from "./newsnow.gateway";
 
@@ -36,6 +37,7 @@ import { NewsnowGateway } from "./newsnow.gateway";
     NewsnowHottestAnalysisService,
     NewsnowRecommendedService,
     NewsnowRealtimeDispatcher,
+    NewsnowSourceRefreshSubscriber,
     NewsnowSourceWarmSchedulerService,
     NewsnowGateway,
   ],

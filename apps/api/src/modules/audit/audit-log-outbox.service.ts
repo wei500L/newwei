@@ -5,6 +5,7 @@ import { AuditLogOutboxStatus, Prisma } from "@prisma/client";
 
 import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 const logger = createLogger({ name: "audit-log-outbox" });
@@ -51,10 +52,21 @@ export class AuditLogOutboxService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async retryPendingAuditLogOutbox() {
+    // API_GO_AUDIT_OUTBOX_MODE=go moves the whole replay chain to Go. Return
+    // before acquiring the Redis lock and scanning so a mixed-version
+    // deployment never runs two consumers.
+    if (this.resolveAuditOutboxMode() === "go") {
+      logger.info(
+        "Skipped audit log outbox batch because Go owns delivery (API_GO_AUDIT_OUTBOX_MODE=go)",
+      );
+      return;
+    }
+
     const locked = await this.cache.withLock(
       AUDIT_LOG_OUTBOX_LOCK_KEY,
       AUDIT_LOG_OUTBOX_LOCK_TTL_MS,
@@ -382,6 +394,14 @@ export class AuditLogOutboxService {
         "Failed to mark audit log outbox dead",
       );
     }
+  }
+
+  private resolveAuditOutboxMode(): string {
+    return (
+      this.env.get("API_GO_AUDIT_OUTBOX_MODE", {
+        infer: true,
+      }) ?? "legacy"
+    );
   }
 
   private computeBackoffDelay(

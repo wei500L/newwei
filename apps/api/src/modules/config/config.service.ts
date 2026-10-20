@@ -529,6 +529,24 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  // NewsNow source fetch ownership. The schema already rejects every value
+  // other than "", legacy and go, so the getter only distinguishes go.
+  get newsnowSourcesMode(): "legacy" | "go" {
+    return this.get<string>("API_GO_NEWSNOW_SOURCES_MODE", { infer: true }) ===
+      "go"
+      ? "go"
+      : "legacy";
+  }
+
+  // raw_item outbox replay ownership. The schema already rejects values other
+  // than "", legacy and go, so the getter only distinguishes go.
+  get rawItemOutboxMode(): "legacy" | "go" {
+    return this.get<string>("API_GO_RAW_ITEM_OUTBOX_MODE", { infer: true }) ===
+      "go"
+      ? "go"
+      : "legacy";
+  }
+
   get systemSettingsEncryptionKey(): string | undefined {
     return this.get<string | undefined>("SYSTEM_SETTINGS_ENCRYPTION_KEY", {
       infer: true,
@@ -1277,6 +1295,26 @@ export class EnvService extends ConfigService<ApiEnv> {
       streamFlushMs:
         this.get<number>("ANALYSIS_STREAM_FLUSH_MS", { infer: true }) ?? 250,
     };
+  }
+
+  // API_GO_ANALYSIS_RUNS_MODE owns only the three analysis run Mutations.
+  // The env schema has already rejected every value outside legacy|go.
+  get apiGoAnalysisRunsMode(): "legacy" | "go" {
+    return this.get<string>("API_GO_ANALYSIS_RUNS_MODE", {
+      infer: true,
+    }) === "go"
+      ? "go"
+      : "legacy";
+  }
+
+  // API_GO_ANALYSIS_WORKER_MODE owns the analysis BullMQ consumer. Legacy (and
+  // an unset value) keeps the NestJS AnalysisProcessor.
+  get apiGoAnalysisWorkerMode(): "legacy" | "go" {
+    return this.get<string>("API_GO_ANALYSIS_WORKER_MODE", {
+      infer: true,
+    }) === "go"
+      ? "go"
+      : "legacy";
   }
 
   get observabilityConfig(): ObservabilityEnvConfig {

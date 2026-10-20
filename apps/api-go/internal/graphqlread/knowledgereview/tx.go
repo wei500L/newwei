@@ -277,6 +277,19 @@ func upsertReviewedEdge(
 // existing rows only get a refreshed canonicalName, and the alias set is
 // canonical name plus company/ticker variants plus the explicit aliases.
 func upsertEntity(ctx context.Context, tx *sql.Tx, orgID string, ref reviewedEntityRef, now time.Time) (string, error) {
+	return upsertEntityWithSource(ctx, tx, orgID, ref, "user", now)
+}
+
+// upsertEntityWithSource is the shared entity upsert. The manual review writes
+// aliases with source "user"; the knowledge-graph cron writes them with "llm".
+func upsertEntityWithSource(
+	ctx context.Context,
+	tx *sql.Tx,
+	orgID string,
+	ref reviewedEntityRef,
+	source string,
+	now time.Time,
+) (string, error) {
 	entityType := normalizeEntityType(ref.Type)
 	canonicalName := knowledgegraph.CollapseEntityName(ref.Name)
 	normalizedKey := knowledgegraph.NormalizeEntityKey(canonicalName)
@@ -302,7 +315,7 @@ func upsertEntity(ctx context.Context, tx *sql.Tx, orgID string, ref reviewedEnt
 		return "", err
 	}
 
-	if err := upsertEntityAliases(ctx, tx, orgID, entityID, entityType, canonicalName, ref.Aliases, now); err != nil {
+	if err := upsertEntityAliases(ctx, tx, orgID, entityID, entityType, canonicalName, ref.Aliases, source, now); err != nil {
 		return "", err
 	}
 	return entityID, nil
@@ -310,12 +323,13 @@ func upsertEntity(ctx context.Context, tx *sql.Tx, orgID string, ref reviewedEnt
 
 // upsertEntityAliases inserts the alias candidates. The unique key is
 // (entityId, normalizedAlias), so a pre-existing alias keeps its original
-// source and the insert is a no-op instead of flipping it to user.
+// source and the insert is a no-op instead of flipping it.
 func upsertEntityAliases(
 	ctx context.Context,
 	tx *sql.Tx,
 	orgID, entityID, entityType, canonicalName string,
 	explicit []string,
+	source string,
 	now time.Time,
 ) error {
 	candidates := []string{canonicalName}
@@ -345,9 +359,9 @@ func upsertEntityAliases(
 		}
 		if _, err := tx.ExecContext(ctx,
 			"INSERT INTO `KnowledgeEntityAlias` (`id`, `orgId`, `entityId`, `alias`, `normalizedAlias`, `source`, `createdAt`) "+
-				"VALUES (?, ?, ?, ?, ?, 'user', ?) AS new_row "+
+				"VALUES (?, ?, ?, ?, ?, ?, ?) AS new_row "+
 				"ON DUPLICATE KEY UPDATE `entityId` = new_row.`entityId`",
-			id, orgID, entityID, alias, normalizedAlias, now); err != nil {
+			id, orgID, entityID, alias, normalizedAlias, source, now); err != nil {
 			return err
 		}
 	}

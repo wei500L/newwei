@@ -1158,6 +1158,24 @@ export class AlertsService {
     };
 
     const rule = await this.prisma.$transaction(async (tx) => {
+      // B1: AlertRuleChannel has no organization column, so linking a channel of
+      // another tenant would leak that tenant's target/config through listRules
+      // and deliver this organization's alerts to it. Verify every distinct
+      // channel id belongs to the caller's organization before writing anything;
+      // a mismatch aborts the whole transaction. Duplicates are only collapsed
+      // for this check, so an input like [a, a] still violates the unique index
+      // exactly as before.
+      if (input.channelIds) {
+        const uniqueChannelIds = Array.from(new Set(input.channelIds));
+        const ownedChannels = await tx.alertNotificationChannel.findMany({
+          where: { id: { in: uniqueChannelIds }, orgId },
+          select: { id: true },
+        });
+        if (ownedChannels.length !== uniqueChannelIds.length) {
+          throw new Error("Alert channel not found for this org");
+        }
+      }
+
       let currentRule = existingRule;
       if (currentRule) {
         currentRule = await tx.alertRule.update({
@@ -2111,7 +2129,11 @@ export class AlertsService {
         throw error;
       }
       const message = (error as Error)?.message ?? "unknown error";
-      const isLastAttempt = job.attemptsMade >= (job.opts.attempts ?? 1);
+      // BullMQ increments attemptsMade only after an attempt fails, so during the
+      // last attempt it still holds the number of previous failures. Comparing
+      // attemptsMade + 1 against the attempt budget is what marks the final
+      // failure; the previous `attemptsMade >= attempts` test never matched.
+      const isLastAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
       await this.transitionDeliveryStatus(
         delivery.id,
         [AlertDeliveryStatus.sending],
