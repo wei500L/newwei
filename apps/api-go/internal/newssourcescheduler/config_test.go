@@ -559,9 +559,13 @@ func TestTruncateUTF16(t *testing.T) {
 		t.Fatalf("truncate = %q", got)
 	}
 	// An astral character counts as two code units: "a😀b" is 4 units, so a
-	// limit of 3 cuts before the emoji.
-	if got := truncateUTF16("a😀b", 3); got != "a" {
+	// limit of 3 keeps the emoji whole and a limit of 2 cuts before it, exactly
+	// like String.prototype.slice.
+	if got := truncateUTF16("a😀b", 3); got != "a😀" {
 		t.Fatalf("truncate astral = %q", got)
+	}
+	if got := truncateUTF16("a😀b", 2); got != "a" {
+		t.Fatalf("truncate astral (cut) = %q", got)
 	}
 	if got := displayName(&source{ID: "s", Name: "n"}); got != "NewsSource:s:n" {
 		t.Fatalf("displayName = %q", got)

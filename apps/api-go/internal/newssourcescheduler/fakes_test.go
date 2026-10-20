@@ -520,10 +520,14 @@ func newTestService(repo *fakeRepo, cache *fakeCache, options Options) *Service 
 	if options.Settings == (Settings{}) {
 		options.Settings = testSettings()
 	}
-	options.Now = func() time.Time {
-		return time.Date(2026, 10, 20, 13, 30, 25, 123_000_000, time.UTC)
+	if options.Now == nil {
+		options.Now = func() time.Time {
+			return time.Date(2026, 10, 20, 13, 30, 25, 123_000_000, time.UTC)
+		}
 	}
-	options.Random = func() float64 { return 0.5 }
+	if options.Random == nil {
+		options.Random = func() float64 { return 0.5 }
+	}
 	return newServiceWithPorts(repo, cache, options)
 }
 
