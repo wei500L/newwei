@@ -142,6 +142,18 @@ func (h *schedulerHarness) reset(t *testing.T) {
 
 func createSchedulerTables(t *testing.T, db *sql.DB) {
 	t.Helper()
+	// Earlier integration steps in the same job create narrow versions of these
+	// shared tables (for example a PipelineJob without createdAt). Drop and
+	// recreate them with the columns this unit projects, exactly like the other
+	// integration harnesses do.
+	for _, table := range []string{
+		"NewsSourceOpsSnapshot", "PipelineJob", "CrawlTask", "Article",
+		"NewsSource", "CrawlTemplate", "Notification", "Membership", "SystemSetting",
+	} {
+		if _, err := db.Exec("DROP TABLE IF EXISTS `" + table + "`"); err != nil {
+			t.Fatalf("drop table %s: %v", table, err)
+		}
+	}
 	statements := []string{
 		"CREATE TABLE IF NOT EXISTS `CrawlTemplate` (" +
 			"`id` VARCHAR(191) NOT NULL, `isActive` BOOLEAN NOT NULL DEFAULT true, `crawlOptions` JSON NULL, " +
