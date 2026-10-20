@@ -254,6 +254,12 @@ func (r *Runtime) handleRelay(ctx context.Context, kind relayKind, raw string) {
 	if err != nil {
 		return
 	}
+	// The three domain channels always target one user. Only the generic
+	// NotificationsService relay may be org-wide, so a malformed alert/analysis/
+	// digest envelope cannot fan a user-specific row out to the whole org.
+	if kind != relayGeneric && strings.TrimSpace(message.UserID) == "" {
+		return
+	}
 	event, found, err := r.loadNotification(ctx, message)
 	if err != nil {
 		log.Printf("notificationssocket: load relayed notification failed: %v", err)
