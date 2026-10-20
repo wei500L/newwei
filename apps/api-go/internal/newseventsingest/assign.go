@@ -313,7 +313,9 @@ func scoreOverlapCandidates(candidates []eventRecord, signal NewsSignal, derived
 // specification treats as "equal", so a stable sort keeps the candidate order.
 // Sorting on `a.Score > b.Score` has exactly the same effect for NaN.
 func sortScoredEvents(scored []scoredEvent) {
-	sort.SliceStable(scored, func(left, right int) bool { return scored[left].Score > scored[right].Score })
+	sort.SliceStable(scored, func(left, right int) bool {
+		return scoredEventLess(scored[left], scored[right])
+	})
 }
 
 // persistAssignment mirrors the runInTransaction body of
@@ -641,4 +643,12 @@ func (s *orderedScores) setIfHigher(eventID string, score float64) {
 // len reports the number of scored events.
 func (s *orderedScores) len() int {
 	return len(s.keys)
+}
+
+// scoredEventLess is the stable-sort comparator: a strictly higher score sorts
+// first. The NestJS comparator is `b.score - a.score`; a NaN score makes that
+// expression NaN, which the specification treats as "equal", so `less` reports
+// false in both directions here too.
+func scoredEventLess(left, right scoredEvent) bool {
+	return left.Score > right.Score
 }

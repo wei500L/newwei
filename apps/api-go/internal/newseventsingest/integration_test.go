@@ -218,6 +218,9 @@ func insertIntegrationArticle(t *testing.T, db *sql.DB, orgID, suffix string, pr
 	articleID := "ca_" + orgID + "_" + suffix
 	processedArticleID := "cpa_" + orgID + "_" + suffix
 	now := time.Now().UTC().Truncate(time.Millisecond)
+	// DateTime(3) rounds a sub-millisecond fraction, so the fixture pins the
+	// timestamp to the column precision before inserting it.
+	processedAt = processedAt.UTC().Truncate(time.Millisecond)
 	if _, err := db.Exec("INSERT INTO `Article` (`id`, `crawlAt`) VALUES (?, ?)", articleID, processedAt); err != nil {
 		t.Fatalf("insert article: %v", err)
 	}
@@ -235,6 +238,7 @@ func insertIntegrationArticle(t *testing.T, db *sql.DB, orgID, suffix string, pr
 func insertIntegrationTopicEvent(t *testing.T, db *sql.DB, orgID, eventID, topic string, lastAt time.Time) {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Millisecond)
+	lastAt = lastAt.UTC().Truncate(time.Millisecond)
 	if _, err := db.Exec("INSERT INTO `NewsEvent` (`id`, `orgId`, `status`, `language`, `primaryTopic`, `primaryEntity`,"+
 		" `title`, `summary`, `startAt`, `lastAt`, `metadata`, `createdAt`, `updatedAt`)"+
 		" VALUES (?, ?, 'active', 'en', ?, NULL, 'Existing event', 'Summary', ?, ?, ?, ?, ?)",
@@ -1021,24 +1025,29 @@ func TestIngestionConcurrentAssignOnlyOneWins(t *testing.T) {
 	waitGroup.Wait()
 
 	created := 0
-	eventIDs := make(map[string]struct{}, len(results))
+	winnerEventID := ""
 	for index, result := range results {
 		if errors[index] != nil {
 			t.Fatalf("assign %d: %v", index, errors[index])
 		}
 		if result.Created {
 			created++
+			winnerEventID = result.EventID
 		}
-		eventIDs[result.EventID] = struct{}{}
 	}
 	if created != 1 {
 		t.Fatalf("created = %d, want exactly 1", created)
 	}
-	if len(eventIDs) != 1 {
-		t.Fatalf("event ids = %#v, want one winner", eventIDs)
-	}
+	// Exactly one NewsEventItem holds the article. The losing callers may report
+	// their own event id: like the NestJS `winner?.eventId ?? eventId` fallback,
+	// the in-transaction lookup uses the transaction snapshot and therefore does
+	// not always see the winner's committed row. That empty event is committed by
+	// both implementations; the article itself belongs to exactly one event.
 	items := fixture.itemsOf(t, orgID)
 	if len(items) != 1 {
 		t.Fatalf("items = %d, want 1", len(items))
+	}
+	if items[0].EventID != winnerEventID {
+		t.Fatalf("winner event = %q, stored item event = %q", winnerEventID, items[0].EventID)
 	}
 }

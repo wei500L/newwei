@@ -192,23 +192,43 @@ func TestScoreOverlapCandidatesMatchesJSOrdering(t *testing.T) {
 	}
 }
 
-// TestSortScoredEventsTreatsNaNAndOverlapAsEqual locks the NaN behaviour of the
-// JS comparator.
-func TestSortScoredEventsTreatsNaNAndOverlapAsEqual(t *testing.T) {
+// TestSortScoredEventsOrdersFiniteScoresStably locks the descending order and
+// the first-wins tie break.
+func TestSortScoredEventsOrdersFiniteScoresStably(t *testing.T) {
 	scored := []scoredEvent{
-		{EventID: "a", Score: math.NaN()},
-		{EventID: "b", Score: 0.5},
-		{EventID: "c", Score: math.NaN()},
-		{EventID: "d", Score: 0.9},
+		{EventID: "a", Score: 0.5},
+		{EventID: "b", Score: 0.9},
+		{EventID: "c", Score: 0.5},
+		{EventID: "d", Score: 0.1},
 	}
 	sortScoredEvents(scored)
-	if scored[0].EventID != "d" || scored[1].EventID != "b" {
-		t.Fatalf("order = %q,%q,%q,%q", scored[0].EventID, scored[1].EventID, scored[2].EventID, scored[3].EventID)
+	want := []string{"b", "a", "c", "d"}
+	for index, id := range want {
+		if scored[index].EventID != id {
+			t.Fatalf("order = %q,%q,%q,%q, want %q", scored[0].EventID, scored[1].EventID,
+				scored[2].EventID, scored[3].EventID, want)
+		}
 	}
-	// The two NaN entries keep their relative order (stable sort, NaN compares
-	// equal to everything).
-	if scored[2].EventID != "a" || scored[3].EventID != "c" {
-		t.Fatalf("NaN order = %q,%q", scored[2].EventID, scored[3].EventID)
+}
+
+// TestScoredEventLessTreatsNaNAsEqual locks the comparator itself. The NestJS
+// comparator `b.score - a.score` returns NaN when either score is NaN, which the
+// specification turns into "equal"; `less` therefore has to report false in both
+// directions. The resulting order of a NaN score is implementation-defined in
+// both runtimes (the comparator is not a strict weak ordering), and no reachable
+// assignment can produce one: every score comes from a clamped setting or from a
+// proximity result.
+func TestScoredEventLessTreatsNaNAsEqual(t *testing.T) {
+	nan := scoredEvent{EventID: "nan", Score: math.NaN()}
+	finite := scoredEvent{EventID: "finite", Score: 0.5}
+	if scoredEventLess(nan, finite) || scoredEventLess(finite, nan) {
+		t.Fatal("a NaN score must compare equal in both directions")
+	}
+	if !scoredEventLess(finite, scoredEvent{EventID: "lower", Score: 0.4}) {
+		t.Fatal("a higher score must sort first")
+	}
+	if scoredEventLess(finite, scoredEvent{EventID: "same", Score: 0.5}) {
+		t.Fatal("equal scores must not reorder")
 	}
 }
 

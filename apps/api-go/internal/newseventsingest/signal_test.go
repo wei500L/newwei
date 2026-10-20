@@ -105,7 +105,7 @@ func TestBuildNewsSignalMatchesNestValues(t *testing.T) {
 	if signal.LegacyCategory == nil || *signal.LegacyCategory != "politics" {
 		t.Fatalf("LegacyCategory = %v", signal.LegacyCategory)
 	}
-	if signal.CategoryPath == nil || *signal.CategoryPath != "world/europe/politics" {
+	if signal.CategoryPath == nil || *signal.CategoryPath != "world/europe-/-politics" {
 		t.Fatalf("CategoryPath = %v", signal.CategoryPath)
 	}
 	if signal.CategoryConfidence == nil || *signal.CategoryConfidence != 1 {
@@ -203,7 +203,7 @@ func TestNormalizeLegacyCategoryWhitelist(t *testing.T) {
 			t.Fatalf("%q => %v, want %q", input, got, value)
 		}
 	}
-	for _, value := range []string{"", "  ", "sports", "tech ", "Tech2"} {
+	for _, value := range []string{"", "  ", "sports", "Tech2", "politics-news"} {
 		input := value
 		if got := normalizeLegacyCategory(&input); got != nil {
 			t.Fatalf("%q => %q, want nil", value, *got)
@@ -216,7 +216,9 @@ func TestNormalizeLegacyCategoryWhitelist(t *testing.T) {
 // dash, while Go's regexp \s would not.
 func TestNormalizeCategoryPathUsesJavaScriptWhitespace(t *testing.T) {
 	cases := map[string]string{
-		"World\\Europe / Politics": "world/europe/politics",
+		// The space runs become dashes BEFORE the slashes collapse, so the
+		// separators around a slash are kept: this is the JS replace order.
+		"World\\Europe / Politics": "world/europe-/-politics",
 		"//A//B//":                 "a/b",
 		"  A  B  ":                 "a-b",
 		"A\u00a0B":                 "a-b",
@@ -225,7 +227,7 @@ func TestNormalizeCategoryPathUsesJavaScriptWhitespace(t *testing.T) {
 		"A\u3000B":                 "a-b",
 		// U+0085 is Go's IsSpace but NOT a JavaScript \s, so it must survive.
 		"A\u0085B":                           "a\u0085b",
-		"World/\u00a0Europe\u00a0/ Politics": "world/europe/politics",
+		"World/\u00a0Europe\u00a0/ Politics": "world/-europe-/-politics",
 		"\u00a0":                             "",
 		"a\u2000\u2001b":                     "a-b",
 		"Tech/Ünïcode  Path":                 "tech/ünïcode-path",

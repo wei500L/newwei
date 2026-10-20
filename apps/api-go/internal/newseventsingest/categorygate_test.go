@@ -221,6 +221,8 @@ func TestApplyCategoryGateBranches(t *testing.T) {
 func TestCategoryGateLogFieldOrder(t *testing.T) {
 	settings := baseSettings()
 	settings.CategorySoftPenalty = 0.2
+	// Soft conflict: the branch writes adjustedScore before eventCategory.
+	settings.CategoryConflictReject = false
 	session := &assignmentSession{orgID: "org_1", settings: settings}
 	session.applyCategoryGate(1, gatedSignal("tech", "a/b", 0.9), metadataWithClassification("politics", "a/c"))
 
