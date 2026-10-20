@@ -148,13 +148,13 @@ type stats24h struct {
 }
 
 type runtimeState struct {
-	CrawlTaskQueuedCount    int     `json:"crawlTaskQueuedCount"`
-	CrawlTaskRunningCount   int     `json:"crawlTaskRunningCount"`
-	BackpressureUntil       *string `json:"backpressureUntil"`
-	BackpressurePendingJobs *int    `json:"backpressurePendingJobs"`
-	BackpressureThreshold   *int    `json:"backpressureThreshold"`
-	BackpressureCount24h    int     `json:"backpressureCount24h"`
-	RssAdaptiveState        any     `json:"rssAdaptiveState"`
+	CrawlTaskQueuedCount    int                       `json:"crawlTaskQueuedCount"`
+	CrawlTaskRunningCount   int                       `json:"crawlTaskRunningCount"`
+	BackpressureUntil       *string                   `json:"backpressureUntil"`
+	BackpressurePendingJobs *int                      `json:"backpressurePendingJobs"`
+	BackpressureThreshold   *int                      `json:"backpressureThreshold"`
+	BackpressureCount24h    int                       `json:"backpressureCount24h"`
+	RssAdaptiveState        *rssAdaptiveRuntimeRecord `json:"rssAdaptiveState"`
 }
 
 func emptyOps() opsSummary {

@@ -54,12 +54,37 @@ func (s *Service) discoverFromSitemaps(ctx context.Context, config normalizedCon
 // sitemaps depth first. Insertion order is the discovery order and duplicates
 // are dropped on first sight; nothing is re-sorted by date or relevance.
 func (s *Service) discoverFromSitemapCandidates(ctx context.Context, config normalizedConfig) ([]string, error) {
+	collected := s.walkSitemaps(ctx, config)
+	return collected.slice(config.maxURLs), nil
+}
+
+// discoverFromSitemapCandidateEntries is discoverFromSitemapsCandidates: the
+// same depth-first walk, but every page URL keeps the publish timestamp the
+// sitemap carried. The news-source scheduler needs the timestamp for its
+// freshness window and for the effective-time sort; the URL-only discovery
+// paths keep their existing projection.
+func (s *Service) discoverFromSitemapCandidateEntries(ctx context.Context, config normalizedConfig) ([]DiscoveryCandidate, error) {
+	collected := s.walkSitemaps(ctx, config)
+	urls := collected.slice(config.maxURLs)
+	candidates := make([]DiscoveryCandidate, 0, len(urls))
+	for _, entry := range urls {
+		candidates = append(candidates, DiscoveryCandidate{
+			URL:           entry,
+			PublishedAtTs: collected.timestamp(entry),
+		})
+	}
+	return candidates, nil
+}
+
+// walkSitemaps runs the shared depth-first sitemap traversal and returns the
+// first-seen URL set with the timestamps recorded alongside it.
+func (s *Service) walkSitemaps(ctx context.Context, config normalizedConfig) *orderedURLSet {
+	collected := newOrderedURLSet()
 	if config.domain == "" {
-		return nil, nil
+		return collected
 	}
 	seeds := s.resolveSitemapSeedURLs(ctx, config.domain, config.requestTimeoutMs)
 
-	collected := newOrderedURLSet()
 	visited := map[string]bool{}
 	for _, sitemapURL := range seeds {
 		if collected.len() >= config.maxURLs {
@@ -75,7 +100,7 @@ func (s *Service) discoverFromSitemapCandidates(ctx context.Context, config norm
 		}
 		s.extractFromSitemapPayload(ctx, sitemapURL, xmlBody, config, collected, visited)
 	}
-	return collected.slice(config.maxURLs), nil
+	return collected
 }
 
 // extractFromSitemapPayload collects page URLs from one sitemap body and then
@@ -112,7 +137,7 @@ func (s *Service) extractFromSitemapPayload(
 				continue
 			}
 		}
-		collected.add(normalized)
+		collected.addWithTimestamp(normalized, resolveSitemapEntryPublishedAt(entry))
 	}
 
 	for _, child := range payload.ChildSitemaps {
@@ -388,9 +413,12 @@ func parseSitemapTimestamp(value string) *int64 {
 }
 
 // orderedURLSet keeps first-seen insertion order while dropping duplicates.
+// The optional timestamp map carries the sitemap publish date for the callers
+// that need CrawlDiscoveryCandidate parity; URL-only callers never read it.
 type orderedURLSet struct {
-	seen   map[string]bool
-	values []string
+	seen       map[string]bool
+	values     []string
+	timestamps map[string]*int64
 }
 
 func newOrderedURLSet() *orderedURLSet {
@@ -398,11 +426,28 @@ func newOrderedURLSet() *orderedURLSet {
 }
 
 func (s *orderedURLSet) add(value string) {
+	s.addWithTimestamp(value, nil)
+}
+
+func (s *orderedURLSet) addWithTimestamp(value string, publishedAtTs *int64) {
 	if s.seen[value] {
 		return
 	}
 	s.seen[value] = true
 	s.values = append(s.values, value)
+	if publishedAtTs != nil {
+		if s.timestamps == nil {
+			s.timestamps = map[string]*int64{}
+		}
+		s.timestamps[value] = publishedAtTs
+	}
+}
+
+func (s *orderedURLSet) timestamp(value string) *int64 {
+	if s.timestamps == nil {
+		return nil
+	}
+	return s.timestamps[value]
 }
 
 func (s *orderedURLSet) len() int { return len(s.values) }

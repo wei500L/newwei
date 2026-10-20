@@ -996,6 +996,12 @@ export const apiEnvSchema = baseEnvSchema
       .int()
       .nonnegative()
       .default(0),
+    // Go-only per-tick source fan-out; 1 keeps the serial loop.
+    NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(1),
     NEWS_SOURCE_CRAWL_QUALITY_PROFILE: z
       .enum(["balanced", "quality_first", "speed_first"])
       .default("quality_first"),
@@ -1151,6 +1157,27 @@ export const apiEnvSchema = baseEnvSchema
     // @Cron callback before taking the shared Redis lease. This switch does NOT
     // own POST external-snapshot/refresh, which has its own Go-only switch.
     API_GO_GDELT_SNAPSHOT_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The news-source scheduler ownership. Nest reads the same variable: when
+    // it is go the @Cron returns before taking the shared
+    // cron:news-source-scheduler lock, which stays the same Redis key on both
+    // sides. Empty string behaves like legacy; an invalid value fails startup.
+    API_GO_NEWS_SOURCE_SCHEDULER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The four news-source ops POSTs ownership. Nest only reads it to decide
+    // whether to relay Go-written org notifications. Empty string behaves like
+    // legacy; an invalid value fails startup.
+    API_GO_NEWS_SOURCE_OPS_MODE: z
       .preprocess(
         (value) =>
           typeof value === "string" && value.trim() === "" ? "legacy" : value,

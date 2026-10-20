@@ -265,6 +265,19 @@ export class NewsSourceSchedulerService implements OnModuleInit {
 
   @Cron("*/30 * * * * *")
   async scheduleCron() {
+    // Execution ownership: when Go owns the scheduler this callback returns
+    // BEFORE taking cron:news-source-scheduler. That lock is the same Redis key
+    // on both sides, so a switch flip that briefly leaves both schedulers alive
+    // still dispatches each per-WINDOW dedupe key at most once. The
+    // onModuleInit TTL migration intentionally stays in Nest and is idempotent,
+    // so both sides may run it.
+    if (
+      this.env.get<string>("API_GO_NEWS_SOURCE_SCHEDULER_MODE", {
+        infer: true,
+      }) === "go"
+    ) {
+      return;
+    }
     const config = this.env.newsSourceSchedulerConfig;
     if (!config.enabled) {
       return;

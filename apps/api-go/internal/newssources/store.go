@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 )
 
@@ -18,10 +20,20 @@ const sourceSelect = `id, orgId, name, url, siteType, language, crawlTemplateId,
 
 type Service struct {
 	db *sql.DB
+	// redis carries the news-source list runtime state. It is optional: the
+	// write routes work without it, and the list falls back to the empty
+	// runtime block when Redis is not configured.
+	redis *redis.Client
 }
 
 func NewService(db *sql.DB) *Service {
 	return &Service{db: db}
+}
+
+// NewServiceWithRedis builds the service with the shared Redis client so the
+// list response can include the runtime block the scheduler writes.
+func NewServiceWithRedis(db *sql.DB, client *redis.Client) *Service {
+	return &Service{db: db, redis: client}
 }
 
 func nowMillis() time.Time {
@@ -61,6 +73,13 @@ func scanSource(row interface{ Scan(dest ...any) error }) (sourceRow, error) {
 	out.IsActive = active != 0
 	out.Config = config
 	return out, nil
+}
+
+// ListDefault is List with the REST defaults (page 1, 10 per page, no filters).
+// Other units use it to assert the read model round-trip without rebuilding the
+// unexported query struct.
+func (s *Service) ListDefault(ctx context.Context, orgID string) (map[string]any, error) {
+	return s.List(ctx, orgID, listQuery{Page: 1, PageSize: 10})
 }
 
 func (s *Service) List(ctx context.Context, orgID string, query listQuery) (map[string]any, error) {
@@ -103,6 +122,9 @@ func (s *Service) List(ctx context.Context, orgID string, query listQuery) (map[
 	}
 	summaries, err := s.readSnapshots(ctx, orgID, sources)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.applyRuntimeStates(ctx, sources, summaries); err != nil {
 		return nil, err
 	}
 	items := make([]listItem, 0, len(sources))
