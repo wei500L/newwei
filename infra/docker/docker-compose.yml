@@ -478,12 +478,17 @@ services:
       # 本服务的 worker 开关设为 go 并重启，再把 api-go 的设为 go。
       API_GO_GRAPHQL_ASSISTANT_WRITE_MODE: ${API_GO_GRAPHQL_ASSISTANT_WRITE_MODE:-legacy}
       API_GO_ASSISTANT_WORKER_MODE: ${API_GO_ASSISTANT_WORKER_MODE:-legacy}
-      # 态势监控 GDELT 外部快照 15 分钟重建的执行权。空串按 legacy 处理；非法值在
-      # Nest 与 Go 都启动失败。默认 legacy=NestJS @Cron 持有；go=Go 定时重建，
-      # NestJS @Cron 在加锁前返回。两侧共用同一把 Redis 锁，切换不会并发重建。
-      # 只控制定时重建；强制刷新入口另有 API_GO_GDELT_SNAPSHOT_REFRESH_MODE（仅
-      # api-go 读取）。
-      API_GO_GDELT_SNAPSHOT_MODE: ${API_GO_GDELT_SNAPSHOT_MODE:-legacy}
+      # 采集维护四个 Cron 与审计保留清理的执行权。空串按 legacy；非法值在
+      # Nest 与 Go 都启动失败。legacy=NestJS @Cron；go=Go 定时执行，Nest 在读取
+      # 活动计数或领取同名 Redis 锁/tick gate 之前返回。Nest 与 Go 注入同一组值。
+      API_GO_CRAWL_MAINTENANCE_MODE: ${API_GO_CRAWL_MAINTENANCE_MODE:-legacy}
+      API_GO_AUDIT_LOG_RETENTION_MODE: ${API_GO_AUDIT_LOG_RETENTION_MODE:-legacy}
+      CRAWL_TASK_JANITOR_ENABLED: ${CRAWL_TASK_JANITOR_ENABLED:-true}
+      CRAWL_TASK_RUNNING_TIMEOUT_MS: ${CRAWL_TASK_RUNNING_TIMEOUT_MS:-1800000}
+      CRAWL_TASK_QUEUED_TIMEOUT_MS: ${CRAWL_TASK_QUEUED_TIMEOUT_MS:-43200000}
+      CRAWL_TASK_JANITOR_BATCH_SIZE: ${CRAWL_TASK_JANITOR_BATCH_SIZE:-50}
+      CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT: ${CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT:-5000}
+      CRAWL_TASK_JANITOR_LOCK_TTL_MS: ${CRAWL_TASK_JANITOR_LOCK_TTL_MS:-120000}
       # 告警队列（scan / 规则评估 / 站内通知 / 邮件与 Webhook 投递）的执行权。
       # 空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。默认 legacy=保留
       # NestJS AlertsProcessor；go=Go 消费 alerts 队列，Nest 处理器只保留幂等的
@@ -699,6 +704,17 @@ services:
       # 需要 DATABASE_URL 与 REDIS_HOST，不要求 JWT/Mongo/SMTP，也不强开任何
       # HTTP 模式。Nest 与 Go 注入同一变量，默认 legacy 仍由 NestJS Cron 消费。
       API_GO_AUDIT_OUTBOX_MODE: ${API_GO_AUDIT_OUTBOX_MODE:-legacy}
+      # 采集维护四个 Cron 由 Go 执行时需要的共享资源：DATABASE_URL 已在上方，
+      # Redis/Mongo 与 Nest 同源。审计保留清理同样只需 DATABASE_URL 与 Redis。
+      # 变量与 api 服务同名同默认值，切换时两侧读到同一组阈值。
+      API_GO_CRAWL_MAINTENANCE_MODE: ${API_GO_CRAWL_MAINTENANCE_MODE:-legacy}
+      API_GO_AUDIT_LOG_RETENTION_MODE: ${API_GO_AUDIT_LOG_RETENTION_MODE:-legacy}
+      CRAWL_TASK_JANITOR_ENABLED: ${CRAWL_TASK_JANITOR_ENABLED:-true}
+      CRAWL_TASK_RUNNING_TIMEOUT_MS: ${CRAWL_TASK_RUNNING_TIMEOUT_MS:-1800000}
+      CRAWL_TASK_QUEUED_TIMEOUT_MS: ${CRAWL_TASK_QUEUED_TIMEOUT_MS:-43200000}
+      CRAWL_TASK_JANITOR_BATCH_SIZE: ${CRAWL_TASK_JANITOR_BATCH_SIZE:-50}
+      CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT: ${CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT:-5000}
+      CRAWL_TASK_JANITOR_LOCK_TTL_MS: ${CRAWL_TASK_JANITOR_LOCK_TTL_MS:-120000}
       # NewsNow 来源获取两路（公开）：GET /api/news-aggregator/source 与
       # POST /api/news-aggregator/sources/batch。pilot 默认仍交 NestJS；
       # go 只接管这两条精确路由（无 JWT/Mongo 依赖），Nest 预热与热点

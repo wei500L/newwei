@@ -4,6 +4,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { MongoOutboxStatus, MongoOutboxType, Prisma } from "@prisma/client";
 
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { CrawlResultService } from "./crawl-result.service";
@@ -37,11 +38,21 @@ export class CrawlCleanupOutboxService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
-    private readonly resultService: CrawlResultService
+    private readonly resultService: CrawlResultService,
+    private readonly env: EnvService
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async retryPendingCleanupOutbox() {
+    // Execution ownership: when API_GO_CRAWL_MAINTENANCE_MODE=go the Go replay
+    // owns this cron and this callback returns before taking the shared
+    // "cron:crawl-cleanup-outbox" lease.
+    if (
+      this.env.get<string>("API_GO_CRAWL_MAINTENANCE_MODE", { infer: true }) ===
+      "go"
+    ) {
+      return;
+    }
     await this.cache.withLock(
       CLEANUP_OUTBOX_LOCK_KEY,
       CLEANUP_OUTBOX_LOCK_TTL_MS,

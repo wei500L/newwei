@@ -367,6 +367,15 @@ jobs:
       - name: MySQL/Redis integration tests (alert rules + BullMQ producer)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/graphqlread/alerts/ -run 'TestAlertRules' -v
 
+      # 采集维护 Cron 的真实 MySQL/Redis/Mongo 集成测试：janitor（三类
+      # 标记、B1 prioritized 不误杀、B2 空闲 pending、B3 事务内选取、
+      # crawl:activity）、cleanup outbox（投递、退避、死信、Mongo 删除）、
+      # 自适应并发（设置行、队列 meta、C2 广播、冷却）、质量快照（tick gate、
+      # 组织锁、最近变化发现、快照 upsert）与审计保留（B5 租约、主键游标
+      # 2500 行、保留未过期记录）。
+      - name: MySQL/Redis/Mongo crawl maintenance integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlmaintenance/ -run 'TestCrawlMaintenance' -v -timeout 10m
+
       # 采集任务生命周期与队列控制的真实 MySQL/Redis 集成测试：BullMQ
       # 任务哈希/wait/prioritized/去重键/meta、删除事务与 MongoOutbox、
       # 审计、活动计数、暂停/恢复/并发与 C2 广播。Nest worker 不在这个
