@@ -35,6 +35,8 @@ Nest 功能目录：[queue](../../../../apps/api/src/modules/queue)、[audit](..
 | `POST /api/admin/news-sources/:id/dispatch` | crawl.write | [news-source-dispatch.controller.ts](../../../../apps/api/src/modules/queue/news-source-dispatch.controller.ts) · `dispatch` | Nest；尚未接管 |
 | `POST /api/admin/news-sources/:id/retry-latest` | crawl.write | [news-source-ops.controller.ts](../../../../apps/api/src/modules/queue/news-source-ops.controller.ts) · `retryLatest` | Nest；尚未接管 |
 
+以上四条新闻源运维 POST（`API_GO_NEWS_SOURCE_OPS_MODE`）候选实现见 PR #118，未合 main。
+
 ## Worker / repeat / Cron / Outbox 定位
 
 以下是当前源文件与生命周期符号清单；同文件可能创建多个 Worker，不能把文件数当队列数。开关与唯一消费者尚未逐队列设计，全部保留 Nest 消费者状态。
@@ -76,6 +78,8 @@ Nest 功能目录：[queue](../../../../apps/api/src/modules/queue)、[audit](..
 | Cron | [situation-monitor-external-snapshot.service.ts](../../../../apps/api/src/modules/situation-monitor/situation-monitor-external-snapshot.service.ts) | `SituationMonitorExternalSnapshotService` · `@Cron("0 */15 * * * *")` |
 | repeat / 调度生产者 | [situation-monitor-settings.controller.ts](../../../../apps/api/src/modules/system-settings/situation-monitor-settings.controller.ts) | `SituationMonitorSettingsController`；检查 repeat、add 与启动注册 |
 | Cron | [user-digest-delivery-scheduler.service.ts](../../../../apps/api/src/modules/user-digest/user-digest-delivery-scheduler.service.ts) | `UserDigestDeliverySchedulerService` · `@Cron(CronExpression.EVERY_MINUTE)` |
+
+上表 `NewsSourceSchedulerService` 的 30 秒新闻源调度循环（`API_GO_NEWS_SOURCE_SCHEDULER_MODE`）候选实现见 PR #118，未合 main。
 
 Outbox 事实源：[audit-log-outbox.service.ts](../../../../apps/api/src/modules/audit/audit-log-outbox.service.ts)、[crawl-cleanup-outbox.service.ts](../../../../apps/api/src/modules/crawl/crawl-cleanup-outbox.service.ts)、[raw-item-outbox.service.ts](../../../../apps/api/src/modules/items/raw-item-outbox.service.ts)、[news-pipeline-outbox.service.ts](../../../../apps/api/src/modules/news-pipeline/news-pipeline-outbox.service.ts)。
 

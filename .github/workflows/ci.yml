@@ -353,7 +353,6 @@ jobs:
       # compensation against the real MySQL 8.4 service above.
       - name: MySQL item write/outbox integration tests
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/itemsingest/ -run 'TestItemsIngestMySQLIntegration' -v
-
       # Archive preparation producer: real Redis 7.2 wire check for the BullMQ
       # 5.63.2 MessagePack/hash/options, wait/pause/marker/events, de-dupe,
       # active non-removal, completed/failed re-add, status shape/TTL/index and
@@ -437,6 +436,33 @@ jobs:
       # 模型、生产数据或多实例切换已验证。
       - name: Analysis runs integration (Go worker + Node BullMQ + Mongo/MySQL/Redis + SSE fixture)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/analysisruns/ -run TestAnalysisRunsIntegration -v -timeout 10m
+
+      # NewsNow 热点分析与个性化推荐：真实 MySQL/Redis/Mongo 覆盖 H1（匹配只用本组织
+      # 条目/事件）与 O1（分阶段批量匹配与逐 URL 等价）、O4 多行舆情快照写入、tick
+      # gate/组织锁/warm 锁的上限 TTL，以及信号状态的一次 pipeline 写入。模型网关不在
+      # 本 job 调用（解析与请求形状由单元 httptest 覆盖）。
+      - name: MySQL/Redis/Mongo integration tests (NewsNow hottest analysis)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newsnowhottest/ -run 'TestNewsnowHottestIntegration' -v
+
+      # processed_item Outbox: CAS claim, delivery across MySQL/Mongo, vector
+      # condition, backoff/dead compensation, O1 scan order and B1 multi-batch
+      # draining against the real MySQL 8.4, Redis 7.2 and Mongo 7.0 services.
+      - name: MySQL/Mongo processed_item outbox integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/processeditemoutbox/ -run 'TestProcessedItemOutboxIntegration' -v
+
+      # 态势监控设置：真实 MySQL/Redis 覆盖读写/重置/清除授权、加密信封、审计、
+      # 缓存失效、O3 写后重读等价与 T1 广播；Telegram JobScheduler 用原始 Redis
+      # 结构断言，并用已锁定的 Node BullMQ 5.63.2 fixture 双向读取/替换。
+      - name: MySQL/Redis integration tests (situation-monitor settings + Telegram scheduler)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/situationsettings/ ./internal/situationsettings/telegramsched/ -run 'Integration|TestTelegramSchedulerNodeInterop' -v
+
+      # 新闻源采集调度与运维：真实 MySQL/Redis 覆盖派发事务（PipelineJob +
+      # CrawlTask + 预生成 id）、BullMQ crawl 队列原始结构、25 秒共享派发去重
+      # key、背压 key/TTL/计数与通知桥消息、运营快照写入 + Go newssources 读取
+      # 往返，以及四个运维入口。种子发现用 fixture，不访问外部站点或 crawl4ai；
+      # 不启动 crawl worker 与条目流水线 worker。
+      - name: MySQL/Redis news-source scheduler integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newssourcescheduler/ -run 'TestNewsSourceSchedulerIntegration' -v
 
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #

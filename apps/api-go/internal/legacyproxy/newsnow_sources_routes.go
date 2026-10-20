@@ -14,9 +14,10 @@ const NewsnowSourcesKey = "/api/news-aggregator/source"
 //
 // Every other NewsNow path keeps its current owner: metadata/resolve/order,
 // domestic-opinion-index and clustering stay on WithNewsnowClusteringOps,
-// hottest-analysis and recommended stay on NestJS, and unknown methods or
-// longer paths fall through to the legacy proxy. The default (empty or legacy)
-// appends no rule at all, so rollback is a single variable change.
+// hottest-analysis and recommended belong to WithNewsnowHottest (their own
+// independent switch; NestJS while it is legacy), and unknown methods or longer
+// paths fall through to the legacy proxy. The default (empty or legacy) appends
+// no rule at all, so rollback is a single variable change.
 func WithNewsnowSources(rules []Rule, mode string) []Rule {
 	if mode != string(ModeGo) {
 		return rules

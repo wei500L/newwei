@@ -217,7 +217,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
+	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
+	"github.com/wei500L/newwei/apps/api-go/internal/processeditemoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
@@ -626,6 +628,13 @@ func run() error {
 	if cfg.NewsSourcesMode == config.NewsSourcesModeGo {
 		newsSourcesMode = string(legacyproxy.ModeGo)
 	}
+	// The four dispatch/cancel/clear/retry POSTs are their own switch: they are
+	// method- and tail-scoped, so they never shadow the news-sources CRUD rules
+	// or the GET :id/preview rule.
+	newsSourceOpsMode := ""
+	if cfg.NewsSourceOpsMode == config.NewsSourceOpsModeGo {
+		newsSourceOpsMode = string(legacyproxy.ModeGo)
+	}
 	crawlWorkflowsMode := ""
 	if cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo {
 		crawlWorkflowsMode = string(legacyproxy.ModeGo)
@@ -682,6 +691,12 @@ func run() error {
 	if cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo {
 		newsnowSourcesMode = string(legacyproxy.ModeGo)
 	}
+	// The two authenticated hot reads have their own switch, independent of the
+	// public source fetch routes and the background owners.
+	newsnowHottestMode := ""
+	if cfg.NewsnowHottestMode == config.NewsnowHottestModeGo {
+		newsnowHottestMode = string(legacyproxy.ModeGo)
+	}
 	newsClusteringLlmBackfillMode := ""
 	if cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo {
 		newsClusteringLlmBackfillMode = string(legacyproxy.ModeGo)
@@ -729,6 +744,10 @@ func run() error {
 	platformGovernanceSettingsMode := ""
 	if cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 		platformGovernanceSettingsMode = string(legacyproxy.ModeGo)
+	}
+	situationSettingsMode := ""
+	if cfg.SituationSettingsMode == config.SituationSettingsModeGo {
+		situationSettingsMode = string(legacyproxy.ModeGo)
 	}
 	modelAccessSettingsMode := ""
 	if cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo {
@@ -866,7 +885,11 @@ func run() error {
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
 	rules = legacyproxy.WithSituationSignals(rules, situationSignalsMode)
 	rules = legacyproxy.WithSituationInsights(rules, situationInsightsMode)
+	// The four situation-monitor settings entries are an independent switch.
+	// Their exact paths never overlap the signals, insights or monitors rules.
+	rules = legacyproxy.WithSituationSettings(rules, situationSettingsMode)
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
+	rules = legacyproxy.WithNewsSourceOps(rules, newsSourceOpsMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
 	rules = legacyproxy.WithCrawlFrontierRuns(rules, crawlFrontierRunsMode)
@@ -901,6 +924,9 @@ func run() error {
 	// The two public source fetch routes. Registered after the local-computation
 	// rules; the two rule sets share no path.
 	rules = legacyproxy.WithNewsnowSources(rules, newsnowSourcesMode)
+	// The two authenticated hot reads. Exact paths; they never intersect the
+	// public source rules or the metadata/resolve rules.
+	rules = legacyproxy.WithNewsnowHottest(rules, newsnowHottestMode)
 	// The manual LLM backfill route has its own switch. It is registered next
 	// to the nine-route clustering takeover but never widens it.
 	rules = legacyproxy.WithNewsClusteringLlmBackfill(rules, newsClusteringLlmBackfillMode)
@@ -1056,6 +1082,7 @@ func run() error {
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
 				cfg.ArchiveReadingMode == config.ArchiveReadingModeGo ||
 				cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
+				cfg.SituationSettingsMode == config.SituationSettingsModeGo ||
 				cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
 				cfg.AnalysisRunsMode == config.AnalysisRunsModeGo ||
 				cfg.AnalysisWorkerMode == config.AnalysisWorkerModeGo ||
@@ -1066,6 +1093,7 @@ func run() error {
 				cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo ||
 				cfg.ItemsIngestMode == config.ItemsIngestModeGo ||
 				cfg.RawItemOutboxMode == config.RawItemOutboxModeGo ||
+				cfg.ProcessedItemOutboxMode == config.ProcessedItemOutboxModeGo ||
 				cfg.EconomicDataMode == config.EconomicDataModeGo ||
 				cfg.EconomicDataWorkerMode == config.EconomicDataWorkerModeGo ||
 				cfg.EmailSettingsMode == config.EmailSettingsModeGo ||
@@ -1158,6 +1186,11 @@ func run() error {
 	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
 	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
 	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
+	// The two authenticated hot reads and the two background owners are separate
+	// switches. The HTTP unit needs the credentialed stack; the background unit
+	// needs only MySQL, Redis and Mongo.
+	newsnowHottestGo := cfg.NewsnowHottestMode == config.NewsnowHottestModeGo
+	newsnowBackgroundGo := cfg.NewsnowBackgroundMode == config.NewsnowBackgroundModeGo
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	crawlMetadataGo := cfg.CrawlMetadataMode == config.CrawlMetadataModeGo
 	// The crawl task lifecycle writes and the queue administration routes are
@@ -1179,6 +1212,9 @@ func run() error {
 	// other background owners.
 	itemsIngestGo := cfg.ItemsIngestMode == config.ItemsIngestModeGo
 	rawItemOutboxGo := cfg.RawItemOutboxMode == config.RawItemOutboxModeGo
+	// The processed_item compensation owner is independent of the item write
+	// and raw_item replay switches.
+	processedItemOutboxGo := cfg.ProcessedItemOutboxMode == config.ProcessedItemOutboxModeGo
 	// The analysis CSV export unit is independent of the item reading switch:
 	// it builds its own item and news-event readers and only owns the two exact
 	// POST export routes.
@@ -1214,6 +1250,9 @@ func run() error {
 	situationSignalsGo := cfg.SituationSignalsMode == config.SituationSignalsModeGo
 	// The insights takeover needs the same credentialed stack plus Mongo.
 	situationInsightsGo := cfg.SituationInsightsMode == config.SituationInsightsModeGo
+	// The settings takeover needs the credentialed stack plus Mongo (quality
+	// summary) and the settings encryption key.
+	situationSettingsGo := cfg.SituationSettingsMode == config.SituationSettingsModeGo
 	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
 	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
 	proxyLoadBalancingGo := cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo
@@ -1232,11 +1271,11 @@ func run() error {
 		situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo ||
 		crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo ||
 		adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo ||
-		newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo ||
+		newsnowClusteringOpsGo || newsnowHottestGo || runtimeSettingsGo || infrastructureSettingsGo ||
 		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
-		situationSignalsGo || situationInsightsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
+		situationSignalsGo || situationInsightsGo || situationSettingsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || graphqlAlertRulesGo || cfg.GraphQLSettingsWriteMode == "go" ||
 		sourcePolicyWriteGo ||
@@ -1276,7 +1315,9 @@ func run() error {
 		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
 		cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
 		cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo ||
+		newsnowBackgroundGo ||
 		rawItemOutboxGo ||
+		processedItemOutboxGo ||
 		economicDataWorkerGo ||
 		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo ||
 		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
@@ -1625,7 +1666,7 @@ func run() error {
 	if err := gdeltSnapshot.RegisterRoute(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
-	if err := wireNewsSources(gateway, cfg, sharedDB, authenticator); err != nil {
+	if err := wireNewsSources(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 	if err := wireCrawlWorkflows(gateway, cfg, sharedDB, authenticator); err != nil {
@@ -1680,6 +1721,18 @@ func run() error {
 	newsnowSourcesService, wireSourcesErr := wireNewsnowSources(gateway, cfg, sharedDB, redisClient)
 	if wireSourcesErr != nil {
 		return wireSourcesErr
+	}
+	// The NewsNow hottest unit owns the two hot reads and both background
+	// owners. It is nil while both switches are legacy; the deferred teardown
+	// stops it before the shared Redis/Mongo connections close.
+	var newsnowHottestUnit *newsnowHottestUnit
+	// The hottest/recommended reads and the two NewsNow schedulers share the
+	// source fetch service when the public source switch is go; otherwise this
+	// unit builds its own instance over the same cache and locks.
+	newsnowHottestUnit, err = newNewsnowHottestUnit(
+		gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo, newsnowSourcesService)
+	if err != nil {
+		return err
 	}
 	if err := wireCrawlMetadata(gateway, cfg, metadataService, authenticator); err != nil {
 		return err
@@ -1785,6 +1838,13 @@ func run() error {
 	// below; the runtime stays unstarted until the shutdown defer is installed.
 	economicService, economicRuntime, err := wireEconomicData(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
 	if err != nil {
+		return err
+	}
+
+	// The situation-monitor settings unit reuses the economic-data service so a
+	// settings write can hot-sync the same repeatable jobs. It also reuses the
+	// shared Mongo client for the insights quality summary.
+	if err := wireSituationSettings(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator, economicService); err != nil {
 		return err
 	}
 
@@ -1987,6 +2047,21 @@ func run() error {
 			dashboardMongo = opened
 		}
 		itemsIngestService = buildItemsIngestService(cfg, sharedDB, redisClient, dashboardMongo.Database())
+	}
+
+	// The news-source scheduler and the four operations POSTs share one service
+	// instance. The scheduler switch owns only the 30-second tick; the ops switch
+	// owns only the four exact POST routes. Both reuse the existing crawl queue
+	// producer, crawl metadata discovery, workflow overlay compiler, items
+	// ingest outbox and item pipeline producer, so the queue formats, priorities
+	// and job ids stay identical to NestJS.
+	var newsSourceScheduler *newssourcescheduler.Scheduler
+	newsSourceScheduler, err = wireNewsSourceScheduler(
+		gateway, cfg, sharedDB, redisClient, authenticator,
+		itemsIngestService, crawlTaskService, &dashboardMongo,
+	)
+	if err != nil {
+		return err
 	}
 
 	// The assistant write mutations and the assistant worker share one service
@@ -2510,6 +2585,9 @@ func run() error {
 	// and GraphQL switches. Its Close stops new ticks and drains the in-flight
 	// batch before the shared Redis/Mongo handles close below.
 	var rawItemOutboxScheduler *itemsingest.OutboxScheduler
+	// The processed_item compensation owner is a background unit independent of
+	// JWT, HTTP and GraphQL switches. It shares the outbox CAS with NestJS.
+	var processedItemOutboxScheduler *processeditemoutbox.Scheduler
 	// The knowledge-graph automatic construction chain owns the five-minute tick
 	// when API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go. It registers no HTTP route
 	// and needs no JWT.
@@ -2559,6 +2637,11 @@ func run() error {
 				log.Printf("api-go: GDELT snapshot scheduler close: %v", closeErr)
 			}
 		}
+		if newsSourceScheduler != nil {
+			if closeErr := newsSourceScheduler.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: news source scheduler close: %v", closeErr)
+			}
+		}
 		if alertWorker != nil {
 			if closeErr := alertWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: alert worker close: %v", closeErr)
@@ -2584,6 +2667,11 @@ func run() error {
 				log.Printf("api-go: raw-item outbox scheduler close: %v", closeErr)
 			}
 		}
+		if processedItemOutboxScheduler != nil {
+			if closeErr := processedItemOutboxScheduler.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: processed-item outbox scheduler close: %v", closeErr)
+			}
+		}
 		if kgIngestion != nil {
 			if closeErr := kgIngestion.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: knowledge graph ingestion scheduler close: %v", closeErr)
@@ -2591,6 +2679,13 @@ func run() error {
 		}
 		if searchReindexService != nil {
 			searchReindexService.Close()
+		}
+		// The NewsNow hot schedulers stop before the shared Redis client closes;
+		// a timed-out organization lock is left to expire naturally.
+		if newsnowHottestUnit != nil {
+			if closeErr := newsnowHottestUnit.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: NewsNow hottest unit close: %v", closeErr)
+			}
 		}
 		// The source fetch unit's outbound HTTP transport drains before the
 		// shared Redis client closes.
@@ -2649,6 +2744,31 @@ func run() error {
 		rawItemOutboxScheduler.Start(context.Background())
 		log.Printf("api-go: raw-item outbox scheduled replay owned by Go (SCHEDULE_ENABLED=%t)", cfg.ScheduleEnabled)
 	}
+	if processedItemOutboxGo {
+		if !cfg.ScheduleEnabled {
+			log.Printf("api-go: processed-item outbox scheduler not started (SCHEDULE_ENABLED=false)")
+		} else {
+			if dashboardMongo == nil {
+				dashboardMongo = graphqlMongo
+			}
+			if dashboardMongo == nil {
+				opened, openErr := dashboardstats.Open(cfg.MongoURI)
+				if openErr != nil {
+					return fmt.Errorf("api-go: processed-item outbox go mode requires a valid MONGO_URI")
+				}
+				dashboardMongo = opened
+			}
+			processedItemOutboxScheduler, err = wireProcessedItemOutbox(cfg, sharedDB, redisClient, dashboardMongo.Database())
+			if err != nil {
+				return err
+			}
+			if processedItemOutboxScheduler != nil {
+				processedItemOutboxScheduler.Start(context.Background())
+				log.Printf("api-go: processed-item outbox compensation owned by Go (batchSize=%d, concurrency=%d, budgetMs=%d)",
+					cfg.ProcessedItemOutboxBatchSize, cfg.ProcessedItemOutboxConcurrency, cfg.ProcessedItemOutboxTickBudgetMs)
+			}
+		}
+	}
 	kgIngestion, err = wireKGIngestion(cfg, sharedDB, redisClient, sharedKGIngestionMongo(dashboardMongo, graphqlMongo))
 	if err != nil {
 		return err
@@ -2668,6 +2788,13 @@ func run() error {
 	}
 	assistantWorker = startAssistantWorker(cfg, assistantRunService, redisClient)
 	gdeltSnapshot.Start(cfg)
+	if newsnowHottestUnit != nil {
+		newsnowHottestUnit.Start(cfg)
+	}
+
+	if newsSourceScheduler != nil {
+		newsSourceScheduler.Start(context.Background())
+	}
 
 	alertWorker, err = wireAlertWorker(cfg, sharedDB, redisClient, &graphqlMongo, &dashboardMongo)
 	if err != nil {

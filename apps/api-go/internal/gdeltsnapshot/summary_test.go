@@ -197,3 +197,44 @@ func assertOptionalFloat(t *testing.T, name string, got, want *float64) {
 		t.Errorf("%s = %v, want %v", name, *got, *want)
 	}
 }
+
+// TestGetStatusSummaryReadsCurrentSnapshot pins the new exported read used by
+// the situation settings GET/PUT/DELETE responses: it reads the current
+// snapshot and applies the configured enabled flag, without rebuilding.
+func TestGetStatusSummaryReadsCurrentSnapshot(t *testing.T) {
+	rig := newTestRig(t, rigOptions{enabled: true, responses: allCategoriesArticles()})
+	ctx := context.Background()
+	payload, err := rig.service.rebuild(ctx)
+	if err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if err := rig.service.persist(ctx, payload, rig.now, rig.now.Add(15*time.Minute)); err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+	summary, err := rig.service.GetStatusSummary(ctx)
+	if err != nil {
+		t.Fatalf("GetStatusSummary: %v", err)
+	}
+	if !summary.Enabled || summary.Status != string(StatusCompleted) {
+		t.Fatalf("summary = %+v", summary)
+	}
+	if summary.GeneratedAt == nil || *summary.GeneratedAt != payload.GeneratedAt {
+		t.Fatalf("generatedAt = %v", summary.GeneratedAt)
+	}
+
+	disabledRig := newTestRig(t, rigOptions{enabled: false, responses: allCategoriesArticles()})
+	disabledPayload, err := disabledRig.service.rebuild(ctx)
+	if err != nil {
+		t.Fatalf("disabled rebuild: %v", err)
+	}
+	if err := disabledRig.service.persist(ctx, disabledPayload, disabledRig.now, disabledRig.now.Add(15*time.Minute)); err != nil {
+		t.Fatalf("disabled persist: %v", err)
+	}
+	disabled, err := disabledRig.service.GetStatusSummary(ctx)
+	if err != nil {
+		t.Fatalf("disabled GetStatusSummary: %v", err)
+	}
+	if disabled.Enabled || disabled.Status != "disabled" || disabled.NextScheduledAt != nil {
+		t.Fatalf("disabled summary = %+v", disabled)
+	}
+}

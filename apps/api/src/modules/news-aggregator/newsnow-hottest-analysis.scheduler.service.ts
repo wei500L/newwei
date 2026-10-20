@@ -7,6 +7,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
@@ -25,10 +26,23 @@ export class NewsnowHottestAnalysisSchedulerService {
     private readonly cache: CacheService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly hottestAnalysis: NewsnowHottestAnalysisService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async refreshScheduled() {
+    // Execution ownership: when API_GO_NEWSNOW_BACKGROUND_MODE=go the Go
+    // scheduler owns this 10-minute tick, so this callback returns BEFORE
+    // claiming the tick gate. Both implementations use the same Redis key, so a
+    // switch flip that briefly leaves both schedulers alive still refreshes an
+    // organization at most once.
+    if (
+      this.env.get<string>("API_GO_NEWSNOW_BACKGROUND_MODE", { infer: true }) ===
+      "go"
+    ) {
+      return;
+    }
+
     const claimed = await claimSchedulerTick(
       this.cache,
       "cron:newsnow-hottest-analysis:tick-gate",

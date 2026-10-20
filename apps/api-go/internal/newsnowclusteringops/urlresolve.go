@@ -423,3 +423,34 @@ func decodeResolveResponse(raw []byte) (ResolveResponse, bool) {
 	}
 	return out, true
 }
+
+// ComparableURLVariants is the exported triple produced by
+// buildComparableUrlVariants in packages/mongo/src/url-comparison.ts. The
+// NewsNow hottest projection resolves candidate URLs with exactly these values,
+// so the same normalization is reused instead of duplicating it.
+type ComparableURLVariants struct {
+	Full     string
+	Base     string
+	FullHash string
+}
+
+// BuildComparableURLVariants exposes the comparable-URL normalization to the
+// NewsNow hottest matcher. It reports false for a URL that WHATWG URL cannot
+// parse, which the caller treats as the trimmed raw string.
+func BuildComparableURLVariants(value string) (ComparableURLVariants, bool) {
+	variants, ok := buildComparableURLVariants(value)
+	if !ok {
+		return ComparableURLVariants{}, false
+	}
+	return ComparableURLVariants{
+		Full:     variants.Full,
+		Base:     variants.Base,
+		FullHash: variants.FullHash,
+	}, true
+}
+
+// BuildResolveFallbackPattern is the level-5 case-insensitive regex over
+// payload.url, built from the comparable base URL.
+func BuildResolveFallbackPattern(base string) string {
+	return "^" + escapeRegex(base) + "(?:/)?(?:[?#].*)?$"
+}

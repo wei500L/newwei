@@ -288,6 +288,33 @@ export class NotificationsGateway
     return delivered;
   }
 
+  /**
+   * Delivers one org-wide notification only to sockets authenticated on this
+   * Nest instance whose orgId matches. The Socket.IO Redis adapter is
+   * deliberately bypassed: one Redis relay message is delivered to every
+   * instance, so re-entering the cluster-wide org room would duplicate the
+   * event once per instance.
+   *
+   * Returns the number of local sockets that received the event.
+   */
+  emitLocalOrgNotification(orgId: string, event: NotificationEvent): number {
+    if (!this.server) {
+      return 0;
+    }
+    let delivered = 0;
+    for (const socket of this.getLocalSockets()) {
+      const profile = socket.data?.user as AuthenticatedUser | undefined;
+      const session = socket.data?.userSession as UserSession | undefined;
+      const socketOrgId = profile?.orgId ?? session?.orgId;
+      if (socketOrgId !== orgId) {
+        continue;
+      }
+      socket.emit("notification", event);
+      delivered += 1;
+    }
+    return delivered;
+  }
+
   private verifyToken(token: string): JwtPayload {
     const jwtConfig = this.env.jwtConfig;
     const decoded = verify(token, jwtConfig.secret, {

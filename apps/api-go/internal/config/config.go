@@ -184,6 +184,25 @@ const (
 	NewsSourcesModeGo     NewsSourcesMode = "go"
 )
 
+// NewsSourceSchedulerMode controls the 30-second news source cron only. It
+// defaults to legacy. Go requires MySQL and Redis. The NestJS @Cron returns
+// before taking the shared lock when this is go.
+type NewsSourceSchedulerMode string
+
+const (
+	NewsSourceSchedulerModeLegacy NewsSourceSchedulerMode = "legacy"
+	NewsSourceSchedulerModeGo     NewsSourceSchedulerMode = "go"
+)
+
+// NewsSourceOpsMode controls only the four POST /api/admin/news-sources/:id/{dispatch,cancel-queued,clear-inflight,retry-latest}
+// routes. It defaults to legacy. Go requires JWT, MySQL and Redis.
+type NewsSourceOpsMode string
+
+const (
+	NewsSourceOpsModeLegacy NewsSourceOpsMode = "legacy"
+	NewsSourceOpsModeGo     NewsSourceOpsMode = "go"
+)
+
 // CrawlWorkflowsMode 只控制采集策略工作流的编辑接口。默认 legacy。
 // go 只接管列表、详情、创建、草稿、发布、版本、对比、节点 schema 和两条
 // bridge；trial-run、replay、workflow-runs、profiles 列表/创建/预览/回滚，
@@ -485,6 +504,46 @@ const (
 	NewsnowSourcesModeLegacy NewsnowSourcesMode = "legacy"
 	// NewsnowSourcesModeGo performs the fetches in Go.
 	NewsnowSourcesModeGo NewsnowSourcesMode = "go"
+)
+
+// NewsnowHottestMode controls the two authenticated NewsNow "hot" reading
+// endpoints:
+//
+//	GET /api/news-aggregator/hottest-analysis
+//	GET /api/news-aggregator/recommended
+//
+// It defaults to legacy. In go mode Go builds the global hottest snapshot,
+// projects it per organization, optionally auto-imports items when the caller
+// holds items.write, scores the recommended feed and writes the same Redis
+// documents and locks as NestJS. It requires JWT_SECRET, DATABASE_URL,
+// REDIS_HOST and MONGO_URI plus the existing LiteLLM gateway configuration, and
+// starts no scheduler by itself.
+type NewsnowHottestMode string
+
+const (
+	// NewsnowHottestModeLegacy keeps both routes on NestJS and is the default,
+	// including when the environment variable is unset or empty.
+	NewsnowHottestModeLegacy NewsnowHottestMode = "legacy"
+	// NewsnowHottestModeGo serves both routes from Go.
+	NewsnowHottestModeGo NewsnowHottestMode = "go"
+)
+
+// NewsnowBackgroundMode controls the two NewsNow background owners:
+//
+//	NewsnowHottestAnalysisScheduler   every 10 minutes
+//	NewsnowSourceWarmScheduler        every minute
+//
+// Both NestJS and Go read it. When it is go the NestJS Cron callbacks return
+// before claiming the tick gate or taking the lock. It defaults to legacy and
+// requires DATABASE_URL, REDIS_HOST and MONGO_URI (the hottest refresh writes
+// projections and domestic opinion snapshots); no JWT is involved.
+type NewsnowBackgroundMode string
+
+const (
+	// NewsnowBackgroundModeLegacy keeps both Cron jobs on NestJS.
+	NewsnowBackgroundModeLegacy NewsnowBackgroundMode = "legacy"
+	// NewsnowBackgroundModeGo runs both schedules in Go.
+	NewsnowBackgroundModeGo NewsnowBackgroundMode = "go"
 )
 
 // NewsClusteringLlmBackfillMode controls the manual LLM backfill enqueue route:
@@ -1070,6 +1129,25 @@ const (
 	RawItemOutboxModeGo     RawItemOutboxMode = "go"
 )
 
+// ProcessedItemOutboxMode controls the processed_item MongoOutbox compensation
+// owner. The accepted values are exactly "", "legacy" and "go"; empty behaves
+// like legacy. go starts the Go five-minute scanner and makes the NestJS Cron
+// return before scanning. The synchronous in-worker delivery and in-process
+// retry remain in NestJS. Go requires MySQL, Redis and Mongo, but no JWT or any
+// HTTP/GraphQL switch; vector settings are resolved from the effective
+// SystemSetting row at delivery time.
+//
+// The throughput knobs are only read in go mode:
+// PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS (default 240000, below the 5-minute
+// period), PROCESSED_ITEM_OUTBOX_CONCURRENCY (default 4) and
+// PROCESSED_ITEM_OUTBOX_BATCH_SIZE (default 10).
+type ProcessedItemOutboxMode string
+
+const (
+	ProcessedItemOutboxModeLegacy ProcessedItemOutboxMode = "legacy"
+	ProcessedItemOutboxModeGo     ProcessedItemOutboxMode = "go"
+)
+
 // LLMGatewayProfilesMode controls the seven LLM gateway profile
 // configuration-control routes under /api/system-settings/llm-gateways
 // (API_GO_LLM_GATEWAY_PROFILES_MODE). Accepted values are exactly "", "legacy"
@@ -1201,6 +1279,31 @@ const (
 	// Go. It starts no worker and never rebuilds the GDELT snapshot or
 	// dispatches news collection.
 	SituationInsightsModeGo SituationInsightsMode = "go"
+)
+
+// SituationSettingsMode controls the four situation-monitor settings HTTP
+// routes (API_GO_SITUATION_SETTINGS_MODE): GET/PUT/DELETE
+// /api/system-settings/situation-monitor and DELETE
+// /api/system-settings/situation-monitor/telegram-auth.
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. go mode requires JWT_SECRET,
+// DATABASE_URL, REDIS_HOST, MONGO_URI (the quality summary runs the insights
+// pipeline) and a non-empty SYSTEM_SETTINGS_ENCRYPTION_KEY (the write path
+// encrypts credentials). It starts no worker and never issues a Telegram/OREF
+// upstream request.
+type SituationSettingsMode string
+
+const (
+	// SituationSettingsModeLegacy proxies the four routes to NestJS (default,
+	// including the empty value). Rollback only changes this variable.
+	SituationSettingsModeLegacy SituationSettingsMode = "legacy"
+	// SituationSettingsModeGo serves the four routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens and the controller's
+	// settings.manage permission gate.
+	SituationSettingsModeGo SituationSettingsMode = "go"
 )
 
 // GdeltSnapshotMode controls which process owns the 15-minute GDELT external
@@ -1698,6 +1801,32 @@ type SMTPConfig struct {
 	TLSRejectUnauthorized bool
 }
 
+// NewsSourceSchedulerSettings mirrors EnvService.newsSourceSchedulerConfig
+// (apps/api/src/modules/config/config.service.ts) plus the Go-only source
+// concurrency knob. Every field is read from the same environment variable
+// and default the NestJS getter uses, so switching execution ownership does
+// not change nextRunAt, backpressure or circuit-breaker math.
+type NewsSourceSchedulerSettings struct {
+	Enabled                    bool
+	BatchSize                  int
+	LockTTLMs                  int
+	InFlightLookbackMs         int
+	InFlightRescheduleDelayMs  int
+	JitterMaxMs                int
+	MaxEnqueuePerTick          int
+	BackpressureMaxPendingJobs int
+	BackpressureDelayMs        int
+	FailureRecoveryDelayMs     int
+	FailureMaxDelayMs          int
+	CircuitBreakerThreshold    int
+	CircuitBreakerBaseDelayMs  int
+	CircuitBreakerMaxDelayMs   int
+	// SourceConcurrency is the Go-only per-tick source fan-out
+	// (NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY). The default 1 is exactly
+	// the serial NestJS loop.
+	SourceConcurrency int
+}
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -1913,6 +2042,17 @@ type Config struct {
 	// legacy. go requires DATABASE_URL, REDIS_HOST and MONGO_URI but no JWT or
 	// HTTP/GraphQL switch. It is independent of ItemsIngestMode.
 	RawItemOutboxMode RawItemOutboxMode
+	// ProcessedItemOutboxMode controls the processed_item compensation owner.
+	// Defaults to legacy; go requires DATABASE_URL, REDIS_HOST and MONGO_URI
+	// but no JWT or HTTP/GraphQL switch.
+	ProcessedItemOutboxMode ProcessedItemOutboxMode
+	// ProcessedItemOutboxTickBudgetMs bounds one Go scan tick. It must stay
+	// below the five-minute period.
+	ProcessedItemOutboxTickBudgetMs int
+	// ProcessedItemOutboxConcurrency is the per-batch delivery worker count.
+	ProcessedItemOutboxConcurrency int
+	// ProcessedItemOutboxBatchSize is the scan cut of one batch.
+	ProcessedItemOutboxBatchSize int
 	// GraphQLItemsListMode only decides whether the items connection root
 	// (items(after, filters, first, orderBy, page, rankingMode, search)) is
 	// registered into the Go GraphQL executor. It defaults to legacy. The
@@ -2063,6 +2203,10 @@ type Config struct {
 	// SituationInsightsMode controls GET /api/situation-monitor/insights.
 	// Default legacy. Mode go requires JWT, MySQL, Redis and Mongo.
 	SituationInsightsMode SituationInsightsMode
+	// SituationSettingsMode controls the four situation-monitor settings routes
+	// (see SituationSettingsMode). Default legacy. Mode go requires JWT, MySQL,
+	// Redis, Mongo and the settings-encryption key; it starts no worker.
+	SituationSettingsMode SituationSettingsMode
 	// GdeltSnapshotMode 控制 GDELT 外部快照 15 分钟重建的执行权（见
 	// GdeltSnapshotMode）。默认 legacy；go 要求 DATABASE_URL 与 REDIS_HOST。
 	GdeltSnapshotMode GdeltSnapshotMode
@@ -2130,6 +2274,13 @@ type Config struct {
 	// endpoints. Defaults to legacy. go requires DATABASE_URL and REDIS_HOST;
 	// it needs no JWT, Mongo or queue and starts no worker.
 	NewsnowSourcesMode NewsnowSourcesMode
+	// NewsnowHottestMode controls GET /api/news-aggregator/hottest-analysis and
+	// GET /api/news-aggregator/recommended. Defaults to legacy. go requires JWT,
+	// MySQL, Redis, Mongo and the existing model gateway configuration.
+	NewsnowHottestMode NewsnowHottestMode
+	// NewsnowBackgroundMode controls the two NewsNow schedulers. Defaults to
+	// legacy. go requires MySQL, Redis and Mongo and is read by NestJS too.
+	NewsnowBackgroundMode NewsnowBackgroundMode
 	// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry
 	// endpoints migrated by this unit. It defaults to legacy. go mode
 	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
@@ -2170,6 +2321,17 @@ type Config struct {
 	// entries (see CrawlWorkflowTrialMode). Default legacy. go requires
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; crawl4ai stays optional.
 	CrawlWorkflowTrialMode CrawlWorkflowTrialMode
+	// NewsSourceSchedulerMode 控制新闻源 30 秒定时调度的执行权（见
+	// NewsSourceSchedulerMode）。默认 legacy；go 要求 DATABASE_URL 与
+	// REDIS_HOST。ScheduleEnabled 仍是总开关，false 时该循环不执行。
+	NewsSourceSchedulerMode NewsSourceSchedulerMode
+	// NewsSourceOpsMode 控制四条新闻源运维 POST 的执行权（见
+	// NewsSourceOpsMode）。默认 legacy；go 要求 JWT、MySQL 与 Redis。
+	NewsSourceOpsMode NewsSourceOpsMode
+	// NewsSourceScheduler 是 NEWS_SOURCE_SCHEDULER_* 的数值与开关配置，
+	// 与 NestJS EnvService.newsSourceSchedulerConfig 同名同默认值；另加
+	// Go 专用的 SourceConcurrency。
+	NewsSourceScheduler NewsSourceSchedulerSettings
 	// SearchReindexMode controls the two search index rebuild routes (see
 	// SearchReindexMode). Default legacy. go requires JWT_SECRET, DATABASE_URL,
 	// REDIS_HOST and MONGO_URI; Elasticsearch stays optional at startup.
@@ -2968,6 +3130,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_NEWS_SOURCES_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCE_SCHEDULER_MODE")) {
+	case "", string(NewsSourceSchedulerModeLegacy):
+		cfg.NewsSourceSchedulerMode = NewsSourceSchedulerModeLegacy
+	case string(NewsSourceSchedulerModeGo):
+		cfg.NewsSourceSchedulerMode = NewsSourceSchedulerModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_SOURCE_SCHEDULER_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCE_OPS_MODE")) {
+	case "", string(NewsSourceOpsModeLegacy):
+		cfg.NewsSourceOpsMode = NewsSourceOpsModeLegacy
+	case string(NewsSourceOpsModeGo):
+		cfg.NewsSourceOpsMode = NewsSourceOpsModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_SOURCE_OPS_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_WORKFLOWS_MODE")) {
 	case "", string(CrawlWorkflowsModeLegacy):
 		cfg.CrawlWorkflowsMode = CrawlWorkflowsModeLegacy
@@ -3097,6 +3275,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.NewsnowClusteringOpsMode = NewsnowClusteringOpsModeGo
 	default:
 		errs = append(errs, "API_GO_NEWSNOW_CLUSTERING_OPS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_HOTTEST_MODE")) {
+	case "", string(NewsnowHottestModeLegacy):
+		cfg.NewsnowHottestMode = NewsnowHottestModeLegacy
+	case string(NewsnowHottestModeGo):
+		cfg.NewsnowHottestMode = NewsnowHottestModeGo
+	default:
+		errs = append(errs, "API_GO_NEWSNOW_HOTTEST_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_BACKGROUND_MODE")) {
+	case "", string(NewsnowBackgroundModeLegacy):
+		cfg.NewsnowBackgroundMode = NewsnowBackgroundModeLegacy
+	case string(NewsnowBackgroundModeGo):
+		cfg.NewsnowBackgroundMode = NewsnowBackgroundModeGo
+	default:
+		errs = append(errs, "API_GO_NEWSNOW_BACKGROUND_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_SOURCES_MODE")) {
 	case "", string(NewsnowSourcesModeLegacy):
@@ -3413,6 +3607,14 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_SITUATION_INSIGHTS_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_SETTINGS_MODE")) {
+	case "", string(SituationSettingsModeLegacy):
+		cfg.SituationSettingsMode = SituationSettingsModeLegacy
+	case string(SituationSettingsModeGo):
+		cfg.SituationSettingsMode = SituationSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_SETTINGS_MODE must be one of legacy|go")
+	}
 	// The GDELT external snapshot scheduler accepts the empty string, legacy
 	// and go. An empty value behaves exactly like legacy so an unset deployment
 	// keeps the NestJS @Cron ownership.
@@ -3542,6 +3744,43 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.RawItemOutboxMode = RawItemOutboxModeGo
 	default:
 		errs = append(errs, "API_GO_RAW_ITEM_OUTBOX_MODE must be one of legacy|go")
+	}
+	// The processed_item compensation owner is independent of the write and
+	// read switches. Empty behaves like legacy; an invalid value fails startup.
+	switch strings.TrimSpace(getenv("API_GO_PROCESSED_ITEM_OUTBOX_MODE")) {
+	case "", string(ProcessedItemOutboxModeLegacy):
+		cfg.ProcessedItemOutboxMode = ProcessedItemOutboxModeLegacy
+	case string(ProcessedItemOutboxModeGo):
+		cfg.ProcessedItemOutboxMode = ProcessedItemOutboxModeGo
+	default:
+		errs = append(errs, "API_GO_PROCESSED_ITEM_OUTBOX_MODE must be one of legacy|go")
+	}
+	cfg.ProcessedItemOutboxTickBudgetMs = 240000
+	if raw := strings.TrimSpace(getenv("PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, fmt.Sprintf("PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS must be a positive integer, got %q", raw))
+		} else {
+			cfg.ProcessedItemOutboxTickBudgetMs = value
+		}
+	}
+	cfg.ProcessedItemOutboxConcurrency = 4
+	if raw := strings.TrimSpace(getenv("PROCESSED_ITEM_OUTBOX_CONCURRENCY")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, fmt.Sprintf("PROCESSED_ITEM_OUTBOX_CONCURRENCY must be a positive integer, got %q", raw))
+		} else {
+			cfg.ProcessedItemOutboxConcurrency = value
+		}
+	}
+	cfg.ProcessedItemOutboxBatchSize = 10
+	if raw := strings.TrimSpace(getenv("PROCESSED_ITEM_OUTBOX_BATCH_SIZE")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, fmt.Sprintf("PROCESSED_ITEM_OUTBOX_BATCH_SIZE must be a positive integer, got %q", raw))
+		} else {
+			cfg.ProcessedItemOutboxBatchSize = value
+		}
 	}
 	// The cross-process scheduling stop switch uses the exact NestJS
 	// `!== "false"` comparison.
@@ -3817,6 +4056,30 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	cfg.CrawlSSRFProxyURL = strings.TrimSpace(getenv("CRAWL4AI_SSRF_PROXY_URL"))
 	cfg.CrawlJSCodeEnabled = boolDefault(getenv("CRAWL4AI_JSCODE_ENABLED"), true)
 	cfg.NewsSourceInFlightLookbackMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS"), 21_600_000)
+	// The scheduler settings mirror EnvService.newsSourceSchedulerConfig
+	// one-for-one. SourceConcurrency is Go-only: the default 1 keeps exactly
+	// the serial NestJS loop and lower values are clamped to 1.
+	cfg.NewsSourceScheduler = NewsSourceSchedulerSettings{
+		Enabled:                    boolDefault(getenv("NEWS_SOURCE_SCHEDULER_ENABLED"), true),
+		BatchSize:                  intDefault(getenv("NEWS_SOURCE_SCHEDULER_BATCH_SIZE"), 20),
+		LockTTLMs:                  intDefault(getenv("NEWS_SOURCE_SCHEDULER_LOCK_TTL_MS"), 120_000),
+		InFlightLookbackMs:         intDefault(getenv("NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS"), 21_600_000),
+		InFlightRescheduleDelayMs:  intDefault(getenv("NEWS_SOURCE_SCHEDULER_INFLIGHT_RESCHEDULE_DELAY_MS"), 300_000),
+		JitterMaxMs:                intDefault(getenv("NEWS_SOURCE_SCHEDULER_JITTER_MAX_MS"), 60_000),
+		MaxEnqueuePerTick:          intDefault(getenv("NEWS_SOURCE_SCHEDULER_MAX_ENQUEUE_PER_TICK"), 100),
+		BackpressureMaxPendingJobs: intDefault(getenv("NEWS_SOURCE_SCHEDULER_BACKPRESSURE_MAX_PENDING_JOBS"), 100),
+		BackpressureDelayMs:        intDefault(getenv("NEWS_SOURCE_SCHEDULER_BACKPRESSURE_DELAY_MS"), 300_000),
+		FailureRecoveryDelayMs:     intDefault(getenv("NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS"), 600_000),
+		FailureMaxDelayMs:          intDefault(getenv("NEWS_SOURCE_SCHEDULER_FAILURE_MAX_DELAY_MS"), 21_600_000),
+		CircuitBreakerThreshold:    intDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_THRESHOLD"), 3),
+		CircuitBreakerBaseDelayMs:  intDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS"), 3_600_000),
+		CircuitBreakerMaxDelayMs:   intDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS"), 86_400_000),
+	}
+	sourceConcurrency := intDefault(getenv("NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY"), 1)
+	if sourceConcurrency < 1 {
+		sourceConcurrency = 1
+	}
+	cfg.NewsSourceScheduler.SourceConcurrency = sourceConcurrency
 	cfg.ItemsSearchRerankEnabled = boolDefault(getenv("ITEMS_SEARCH_RERANK_ENABLED"), true)
 	cfg.ItemsReadModelEnabled = boolDefault(getenv("ITEMS_READ_MODEL_ENABLED"), false)
 	cfg.ItemsVectorHardFailEnabled = boolDefault(getenv("ITEMS_VECTOR_HARD_FAIL_ENABLED"), false)
@@ -4510,6 +4773,24 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 			errs = append(errs, "MONGO_URI is required when API_GO_NEWSNOW_CLUSTERING_OPS_MODE=go")
 		}
 	}
+	// The two NewsNow hot reading routes need the credentialed stack plus Mongo
+	// (rawitems, processeditems, NewsEventItem via MySQL) and the model gateway.
+	if cfg.NewsnowHottestMode == NewsnowHottestModeGo {
+		appendSpacetimeRequirements(&errs, "API_GO_NEWSNOW_HOTTEST_MODE", cfg)
+	}
+	// The background owners synchronize their snapshots and projections through
+	// the same MySQL/Redis/Mongo stores. They never authenticate a caller.
+	if cfg.NewsnowBackgroundMode == NewsnowBackgroundModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_NEWSNOW_BACKGROUND_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_NEWSNOW_BACKGROUND_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_NEWSNOW_BACKGROUND_MODE=go")
+		}
+	}
 	// The public source fetch takeover needs MySQL for the global runtime-secret
 	// row and Redis for the compatible cache, refresh lock and relay. The two
 	// routes are public, so JWT_SECRET, Mongo, GraphQL and model switches are
@@ -4559,6 +4840,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// stack plus Redis and MySQL for the run records. crawl4ai is optional.
 	if cfg.CrawlWorkflowTrialMode == CrawlWorkflowTrialModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_WORKFLOW_TRIAL_MODE", cfg)
+	}
+	// The news-source scheduler writes the MySQL due-source state and takes the
+	// shared Redis lock, so it needs MySQL and Redis but no JWT: it serves no
+	// route.
+	if cfg.NewsSourceSchedulerMode == NewsSourceSchedulerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_NEWS_SOURCE_SCHEDULER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_NEWS_SOURCE_SCHEDULER_MODE=go")
+		}
+	}
+	// The four ops POSTs re-derive the caller's crawl.write permission from the
+	// credentialed JWT/MySQL/Redis stack.
+	if cfg.NewsSourceOpsMode == NewsSourceOpsModeGo {
+		appendAuthRequirements(&errs, "API_GO_NEWS_SOURCE_OPS_MODE", cfg)
 	}
 	// The metadata GraphQL root is a child switch of the GraphQL read pilot:
 	// without API_GO_GRAPHQL_READ_MODE=go there is no executor to register into,
@@ -4618,6 +4915,20 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_RAW_ITEM_OUTBOX_MODE=go")
+		}
+	}
+	// The processed_item compensation owner reads MySQL and Mongo, takes its
+	// scan lease in Redis and resolves vector settings at delivery time. It
+	// verifies no JWT and registers no route.
+	if cfg.ProcessedItemOutboxMode == ProcessedItemOutboxModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_PROCESSED_ITEM_OUTBOX_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_PROCESSED_ITEM_OUTBOX_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_PROCESSED_ITEM_OUTBOX_MODE=go")
 		}
 	}
 	// The items connection root reuses the item reading service and the shared
@@ -4910,6 +5221,21 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		appendAuthRequirements(&errs, "API_GO_SITUATION_INSIGHTS_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_SITUATION_INSIGHTS_MODE=go")
+		}
+	}
+	// The situation settings takeover reads and writes the settings row (MySQL
+	// + Redis envelope), builds the quality summary through the insights
+	// pipeline (Mongo) and encrypts credentials with the shared
+	// system-settings:v1 envelope. The encryption key is therefore a startup
+	// requirement in go mode; a malformed key keeps the per-request 400 /
+	// decrypt-as-absent behavior documented by the service.
+	if cfg.SituationSettingsMode == SituationSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_SITUATION_SETTINGS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_SITUATION_SETTINGS_MODE=go")
+		}
+		if cfg.SettingsEncryptionKeyRaw == "" {
+			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_SITUATION_SETTINGS_MODE=go")
 		}
 	}
 	// The manual LLM backfill enqueue route authenticates a human or machine
