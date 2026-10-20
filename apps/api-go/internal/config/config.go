@@ -1491,6 +1491,24 @@ type AnalysisPromptOverrides struct {
 	GeoTransportUser   *string
 }
 
+// GraphQLSubscriptionsMode controls the four realtime Subscription roots
+// (alertEvents, analysisEvents, assistantEvents, queueEvents) on an exact GET
+// /graphql graphql-transport-ws upgrade. The accepted values are exactly "",
+// "legacy" and "go"; empty behaves like legacy.
+//
+// go owns only legal upgrade requests. HTTP GET/POST/OPTIONS continue through
+// the existing GraphQL read/write switches, other subprotocols and longer paths
+// continue through legacy proxying, and Query/Mutation or unsupported
+// subscription operations on the same socket are forwarded as a whole to
+// NestJS. The local executor needs JWT verification, MySQL and Redis but no
+// Mongo, regardless of READ or any write switch.
+type GraphQLSubscriptionsMode string
+
+const (
+	GraphQLSubscriptionsModeLegacy GraphQLSubscriptionsMode = "legacy"
+	GraphQLSubscriptionsModeGo     GraphQLSubscriptionsMode = "go"
+)
+
 // AuthFactorsMode controls the seven authenticated MFA management and
 // organization OIDC configuration HTTP routes migrated by this unit
 // (API_GO_AUTH_FACTORS_MODE).
@@ -1808,13 +1826,21 @@ type Config struct {
 	// BullMQWorkersEnabled is the existing shared boolean. False disables the
 	// analysis consumer on both NestJS and Go; it is not a queue-owner switch.
 	BullMQWorkersEnabled bool
-	// GraphQLSubscriptionBus is the existing GRAPHQL_SUBSCRIPTION_BUS value.
-	// The Go analysis worker requires "redis" because it publishes the same
-	// gqlsub:analysisEvents envelope the NestJS bus consumes.
+	// GraphQLSubscriptionBus is the NestJS GRAPHQL_SUBSCRIPTION_BUS value. It
+	// defaults to redis. The analysis worker and the realtime subscriptions
+	// require redis because they publish/consume the existing gqlsub:*
+	// channels; legacy accepts redis or local with unchanged NestJS semantics.
 	GraphQLSubscriptionBus string
 	// GraphQLReadMode 控制精确 /graphql 的已迁移 query。默认 legacy。
 	// go 只执行本轮 16 个 query；mutation、subscription、未迁移 query 仍代理 NestJS。
 	GraphQLReadMode string
+	// GraphQLSubscriptionsMode controls the four realtime subscriptions on an
+	// exact GET /graphql WebSocket upgrade. It defaults to legacy. go takes
+	// over graphql-transport-ws upgrade requests only: HTTP GET/POST/OPTIONS
+	// keep their existing read/write switch behavior, other upgrades and longer
+	// paths keep proxying to NestJS. It is independent of every read and write
+	// switch and requires JWT, MySQL and Redis only (no Mongo).
+	GraphQLSubscriptionsMode GraphQLSubscriptionsMode
 	// GraphQLNewsEventsMode 只决定六个新闻事件 root 是否登记。默认 legacy。
 	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
 	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
@@ -3343,6 +3369,31 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_READ_MODE must be one of legacy|go")
 	}
+	// The realtime subscription transport is an independent switch. An empty
+	// value behaves like legacy so an unset deployment keeps upgrade requests
+	// on the legacy proxy.
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_SUBSCRIPTIONS_MODE")) {
+	case "", string(GraphQLSubscriptionsModeLegacy):
+		cfg.GraphQLSubscriptionsMode = GraphQLSubscriptionsModeLegacy
+	case string(GraphQLSubscriptionsModeGo):
+		cfg.GraphQLSubscriptionsMode = GraphQLSubscriptionsModeGo
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_SUBSCRIPTIONS_MODE must be one of legacy|go")
+	}
+	// The bus value must be one the NestJS env schema accepts. Go subscriptions
+	// and the still-running NestJS producers have to share redis, otherwise a
+	// local bus would silently drop every cross-process event.
+	switch strings.TrimSpace(getenv("GRAPHQL_SUBSCRIPTION_BUS")) {
+	case "", "redis":
+		cfg.GraphQLSubscriptionBus = "redis"
+	case "local":
+		cfg.GraphQLSubscriptionBus = "local"
+	default:
+		errs = append(errs, "GRAPHQL_SUBSCRIPTION_BUS must be one of redis|local")
+	}
+	if cfg.GraphQLSubscriptionsMode == GraphQLSubscriptionsModeGo && cfg.GraphQLSubscriptionBus != "redis" {
+		errs = append(errs, "API_GO_GRAPHQL_SUBSCRIPTIONS_MODE=go requires GRAPHQL_SUBSCRIPTION_BUS=redis")
+	}
 	// The situation monitor signals switch accepts the empty string, legacy and
 	// go. An empty value behaves exactly like legacy so an unset deployment
 	// keeps the NestJS path for all seven routes.
@@ -4742,6 +4793,11 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go")
 		}
+	}
+	// The realtime subscription transport verifies JWTs, re-derives membership
+	// in MySQL and reads Redis, but never opens Mongo or starts a worker.
+	if cfg.GraphQLSubscriptionsMode == GraphQLSubscriptionsModeGo {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_SUBSCRIPTIONS_MODE", cfg)
 	}
 	// The organization access write takeover needs JWT verification, MySQL and
 	// Redis only. It reads no Mongo collection and starts no worker, so it does

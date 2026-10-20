@@ -28,6 +28,10 @@ const (
 	KindProtocol = "protocol"
 	// KindExecute means the selected query is fully implemented.
 	KindExecute = "execute"
+	// KindSubscriptionError means graphql-ws must send an operation-level
+	// error message (no complete) for an unparseable or schema-invalid
+	// subscription document.
+	KindSubscriptionError = "subscription_error"
 )
 
 // PrepareRoot runs before each business root field. It must apply rate
@@ -555,6 +559,13 @@ func authorizeRoot(root contract.Root, id contract.Identity) error {
 		RequiredPermissions: []string{root.Permission},
 		PermissionsMode:     "any",
 	}
+}
+
+// Authorize applies the same root permission contract to a Query, Mutation or
+// Subscription root. Subscription planning reuses it so a local subscription
+// fails with byte-identical FORBIDDEN/UNAUTHORIZED shapes.
+func Authorize(root contract.Root, id contract.Identity) error {
+	return authorizeRoot(root, id)
 }
 
 // fieldPermissionError builds the GraphQL error raised when the caller

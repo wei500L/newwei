@@ -1,14 +1,10 @@
 # GRAPHQL-SUBSCRIPTIONS-001 · 四条 GraphQL 实时订阅完整传输
 
-2026-10-19分析选批续核：Ready #95 OPEN，观察head8d759fe2ee62bb1119b17c2ba879379153d28662，[普通CI39302998528](https://github.com/wei500L/newwei/actions/runs/39302998528)运行中；旧head失败/action_required/regen不替代本head。相对68a共享main/config/contract/workspace无新增变化，自身graphql入口/legacy类型修复与依赖清单正常推进；不干预执行窗口，保持占用、未合main。
-
-2026-10-19归档选批发布前续核：当前 **pr_open**，[Ready #95](https://github.com/wei500L/newwei/pull/95) OPEN/head68a4536d37eabde0695edfe152987cadffcc41f7；[首轮普通CI39301019113](https://github.com/wei500L/newwei/actions/runs/39301019113)在Go modules drift gate失败（vector-integration与既有MySQL/Redis job成功，regen skipped）。PR已加go-modules-regen label，最终依赖提交/head/普通CI尚须复核，不记通过/合并/部署。实际main/config/contract及文件diff已读；本批仍占contract/exec/workspace端口，不干预执行窗口记录。下方旧状态按原发出时点理解。
-
-- 状态 **in_progress**；2026-10-19 Europe/Moscow，本规划窗口保存并发出[完整独立提示词](GRAPHQL-SUBSCRIPTIONS-001.prompt.md)，未实施业务。
+- 状态 **pr_open**（Ready [PR #95](https://github.com/wei500L/newwei/pull/95)，head `51fb0d1aecf39c29c44fa91dfea1f425e488b7e7`（代码/测试 head））；2026-10-19 Europe/Moscow，规划窗口保存并发出[完整独立提示词](GRAPHQL-SUBSCRIPTIONS-001.prompt.md)，执行窗口已接续实施。
 - 代码基线 origin/main `91e759b449c4511dc96d86539ea0eb258754d07e`；[普通 CI39247556593](https://github.com/wei500L/newwei/actions/runs/39247556593)在该精确 SHA success，verify/vector-integration/api-go-user-settings-integration success，两个 regen skipped。不是本任务运行/部署证据。
-- 业务分支 `refactor/go-graphql-subscriptions`，worktree `/Users/oo/project/newwei-go-graphql-subscriptions`，已创建于91e759b449c4511dc96d86539ea0eb258754d07e；2026-10-19续核contract.go/exec/engine.go已有Subscription注册与Authorize导出开发，实际diff已读，更新in_progress。执行器活动未核实，无业务提交/PR/head/merge/CI。
+- 业务分支 `refactor/go-graphql-subscriptions`，worktree `/Users/oo/project/newwei-go-graphql-subscriptions` 已从精确基线创建；实现见 [go-graphql-subscriptions](../../go-graphql-subscriptions.md)。PR/head 已回填；未合并、未部署、未切流。
 - 规划记录复用 `docs/plan-newsnow-feed`、`/Users/oo/project/newwei-plan-newsnow-feed` 和 [Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)正常增量发布，保留原 NewsNow 认领；本轮发布提交/head/CI在后续交接追加，不以此前该 PR 绿灯代替新 head。
-- 首次四订阅认领/完整提示词发布提交 `1ee329a21beede567c0e86977d08a4fa8a6c0338` 已正常推送到该PR，GitHub确认OPEN/非Draft。后续交接文档提交不改变任务范围；普通CI以最终PR head实时结果为准，当前未确认本轮CI完成，不借用旧head或main成功。
+- 首次四订阅认领/完整提示词发布提交 `1ee329a21beede567c0e86977d08a4fa8a6c0338` 已正常推送到该PR，GitHub确认OPEN/非Draft。后续交接文档提交不改变任务范围；普通CI以最终PR head实时结果为准。
 - 来源 BL-21 的 GraphQL 子链，关联 GAP-LEGACY-001 / GAP-ASYNC-001；不领取 Socket.IO/业务 producer/worker/cron。
 
 ## 精确范围与可独立条件
@@ -46,3 +42,27 @@ AUDIT-OUTBOX-001：Ready [#92](https://github.com/wei500L/newwei/pull/92) OPEN/h
 本规划只改文档：未创建业务worktree/安装依赖/运行build/test、Docker、服务、Redis/WS或外部模型；没有生产配置或流量证据。业务窗口通过少量行为测试和现有普通CI验证协议、四权限/组织、投影、队列删除后终态、取消与混合legacy一次执行；不新增专用smoke。已有graphql-subscriptions-smoke只验证Nest，不能当Go覆盖。
 
 执行器仅维护自己的task与docs/refactor/go-graphql-subscriptions.md；共享地图由规划窗口回填。下一次只核业务PR实际四root/源/回退与独立接线、最终head普通CI、关闭与未验证多实例，未落main前不加覆盖数或关闭跨域GAP。
+
+
+## 执行记录（2026-10-19）
+
+- 已实现精确 `GET /graphql` + `graphql-transport-ws` upgrade 接管；HTTP GET/POST/OPTIONS、其他子协议/upgrade、`/graphql/` 与更长路径保持原 legacy 或原 GraphQL 读写开关行为。
+- 新增 `internal/graphqlsubscriptions`：`coder/websocket v1.8.12` 协议层、四根独立 Subscription 注册、Redis `gqlsub:*` 组织索引、每进程 BullMQ `XREAD` 观察器与 `queue:pipeline:jobctx:*` 回退、懒建 Nest graphql-ws 上游整份回退、关闭/背压收口。
+- `contract` 新增独立 `Subscription` 命名空间；`exec` 新增只用于 WS 的 `PlanSubscription`/`PrepareSubscription`/`OpenSubscription`/`ProjectSubscriptionEvent`，复用既有投影与错误语义；`workspace.RegisterQueueEventModel` 只注册所需模型。
+- 新增 `API_GO_GRAPHQL_SUBSCRIPTIONS_MODE`（默认 legacy，go 要求 JWT/MySQL/Redis，不要求 Mongo）与 `GRAPHQL_SUBSCRIPTION_BUS`（默认 redis；go+local 启动失败）；Compose/Sample 显式注入同一 bus。
+- 行为测试覆盖握手/ACK、四根权限与双组织隔离、取消/ID 复用/迟到结果、Date tag/null/enum/alias/fragment/non-null、同连接 local+legacy 整份回退且仅执行一次、queue 包装/共享上下文/每实例一次、关闭与配置校验。
+- 验证边界：本机未安装依赖、未运行 build/test/Docker/服务/真实 Redis/WS；未验证真实 producer 事件、多实例和部署切流。依赖 `go-modules-regen` label 远端生成 go.sum，普通 CI 以最终 head 为准。
+
+## PR 与 CI 记录
+
+- Ready PR [#95](https://github.com/wei500L/newwei/pull/95) → main，head `51fb0d1aecf39c29c44fa91dfea1f425e488b7e7`（代码/测试 head），base `91e759b449c4511dc96d86539ea0eb258754d07e`；未合并、未 auto-merge。
+- 首次普通 CI [39301019113](https://github.com/wei500L/newwei/actions/runs/39301019113) 在精确 head 失败于 `go.sum` 缺少 `github.com/coder/websocket v1.8.12` 两行；`go-modules-regen` 因 label 添加不会重触发 PR 事件而 skipped。后续推送新 head 触发远端 tidy/build，生成 go.sum 后再移除 label 运行普通 CI。skipped 不算通过。
+
+- 远端 `go-modules-regen` 在 head `1d4d64ab` 通过 `go mod tidy` + `go build ./...`，bot 提交 [cfa0c4fc](https://github.com/wei500L/newwei/commit/cfa0c4fcecc4141e49f9b18b653268f8e09fbc30) 补充 coder/websocket go.sum；构造/编译错误已在本任务内修复（legacy operation 类型、gateway handler 类型）。bot 触发的 workflow 被 GitHub 标为 `action_required`，不以该状态计通过；移除 label 后由普通提交触发最终普通 CI。
+
+- 普通 CI [39305405252](https://github.com/wei500L/newwei/actions/runs/39305405252) 在精确 head `33492e0f7c73c80450bd9915055a521032578e9b` **success**：verify（Lint、Go tests（api-go gateway + vector-go pilot）、Build）、vector-integration、api-go-user-settings-integration success；go-modules-regen / contract-baseline-regen skipped（依赖已由 cfa0c4fc 生成，skipped 不作为通过项）。此前 8d759fe2 的普通 CI 仅在本任务测试断言/关闭帧顺序上失败，已在本任务内修复。
+- 本任务后续仅再提交一次性任务记录/交付文档；最终 PR head 以 GitHub 实时显示为准，并以其新 head 的普通 CI 结果复核，不改变上述代码 head 的四根本地执行与事件源证据。
+
+- 后续修正：SDL 解析/校验错误改为本地 operation 级 `error`（不 complete、不关闭连接），未知 operation/变量错误保持 `next+complete`，避免为无效文档拨起 Nest 上游；对应行为测试已加入。
+- 最新普通 CI [39308530143](https://github.com/wei500L/newwei/actions/runs/39308530143) 在精确 head `51fb0d1aecf39c29c44fa91dfea1f425e488b7e7` **success**：verify（Lint、Go tests、Build）、vector-integration、api-go-user-settings-integration success；两个 regen skipped。此前 39305405252 在 33492e0f 的 success 仅覆盖修正前的协议错误语义。
+- 最终只追加本任务记录/交付文档提交；最终 PR head 与普通 CI 以 GitHub 实时为准并在交付说明中给出。
