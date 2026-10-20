@@ -75,6 +75,10 @@ func newSchedulerHarness(t *testing.T) *schedulerHarness {
 		_ = redisClient.Close()
 		_ = db.Close()
 	})
+	// Registered last so it runs FIRST (LIFO), while the MySQL handle is still
+	// open: leave the shared tables absent for the later integration steps in
+	// this job, which recreate their own narrow versions with IF NOT EXISTS.
+	t.Cleanup(func() { dropSchedulerTables(db) })
 
 	discovery := &fakeDiscovery{}
 	queue := crawlqueue.NewProducer(crawlqueue.Options{Redis: redisClient, DB: db})
@@ -146,13 +150,8 @@ func createSchedulerTables(t *testing.T, db *sql.DB) {
 	// shared tables (for example a PipelineJob without createdAt). Drop and
 	// recreate them with the columns this unit projects, exactly like the other
 	// integration harnesses do.
-	for _, table := range []string{
-		"NewsSourceOpsSnapshot", "PipelineJob", "CrawlTask", "Article",
-		"NewsSource", "CrawlTemplate", "Notification", "Membership", "SystemSetting",
-	} {
-		if _, err := db.Exec("DROP TABLE IF EXISTS `" + table + "`"); err != nil {
-			t.Fatalf("drop table %s: %v", table, err)
-		}
+	if err := dropSchedulerTablesErr(db); err != nil {
+		t.Fatalf("drop tables: %v", err)
 	}
 	statements := []string{
 		"CREATE TABLE IF NOT EXISTS `CrawlTemplate` (" +
@@ -263,6 +262,27 @@ func (h *schedulerHarness) queueSnapshotJobIDs() ([]string, error) {
 		return nil, err
 	}
 	return append(prioritized, waiting...), nil
+}
+
+// schedulerTables are the shared tables this unit recreates.
+var schedulerTables = []string{
+	"NewsSourceOpsSnapshot", "PipelineJob", "CrawlTask", "Article",
+	"NewsSource", "CrawlTemplate", "Notification", "Membership", "SystemSetting",
+}
+
+// dropSchedulerTablesErr removes the shared tables.
+func dropSchedulerTablesErr(db *sql.DB) error {
+	for _, table := range schedulerTables {
+		if _, err := db.Exec("DROP TABLE IF EXISTS `" + table + "`"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// dropSchedulerTables is the test-cleanup wrapper.
+func dropSchedulerTables(db *sql.DB) {
+	_ = dropSchedulerTablesErr(db)
 }
 
 func TestNewsSourceSchedulerIntegrationDispatch(t *testing.T) {
