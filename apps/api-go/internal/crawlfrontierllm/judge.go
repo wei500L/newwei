@@ -489,26 +489,27 @@ func (s *Service) cleanupFailedJudge(ctx context.Context, node *NodeRecord, payl
 		return
 	}
 	run, err := s.loadRun(cleanupCtx, node.RunID)
-	if err != nil || run == nil || run.WorkflowRunID == nil {
-		if err != nil {
-			log.Printf("crawlfrontierllm: judge cleanup run read for node %s failed: %v", node.ID, err)
+	if err != nil {
+		log.Printf("crawlfrontierllm: judge cleanup run read for node %s failed: %v", node.ID, err)
+	}
+	if run != nil && run.WorkflowRunID != nil {
+		details := NewObject()
+		details.SetString("mode", string(payload.Mode))
+		details.SetString("error", cause.Error())
+		details.Set("warningFlags", []string{"llm_judge_job_failed"})
+		if err := s.AppendEvent(cleanupCtx, *run.WorkflowRunID, WorkflowEvent{
+			Level: "warn", EventType: "llm_judge_resolved", NodeID: &node.ID,
+			NodeType:      stringPointer("branch"),
+			Message:       "Deferred LLM judge job failed; pending judge counter reconciled",
+			TriggerReason: stringPointer("llm_judge_job_failed"),
+			BeforeCount:   intPointer(len(payload.Candidates)), AfterCount: intPointer(0),
+			RescuedCount: intPointer(0), Details: details, Timestamp: s.nowISO(),
+		}); err != nil {
+			log.Printf("crawlfrontierllm: judge cleanup event for run %s failed: %v", run.ID, err)
 		}
-		return
 	}
-	details := NewObject()
-	details.SetString("mode", string(payload.Mode))
-	details.SetString("error", cause.Error())
-	details.Set("warningFlags", []string{"llm_judge_job_failed"})
-	if err := s.AppendEvent(cleanupCtx, *run.WorkflowRunID, WorkflowEvent{
-		Level: "warn", EventType: "llm_judge_resolved", NodeID: &node.ID,
-		NodeType:      stringPointer("branch"),
-		Message:       "Deferred LLM judge job failed; pending judge counter reconciled",
-		TriggerReason: stringPointer("llm_judge_job_failed"),
-		BeforeCount:   intPointer(len(payload.Candidates)), AfterCount: intPointer(0),
-		RescuedCount: intPointer(0), Details: details, Timestamp: s.nowISO(),
-	}); err != nil {
-		log.Printf("crawlfrontierllm: judge cleanup event for run %s failed: %v", run.ID, err)
-	}
+	// The refresh must run even without a workflow run: it is what turns the
+	// reconciled pending counter into a terminal run status.
 	if err := s.refreshRunStatus(cleanupCtx, node.RunID); err != nil {
 		log.Printf("crawlfrontierllm: judge cleanup refresh for run %s failed: %v", node.RunID, err)
 	}
