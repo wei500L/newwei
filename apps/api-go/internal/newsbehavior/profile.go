@@ -70,6 +70,14 @@ func (s *Service) profileJSON(ctx context.Context, orgID, userID string) ([]byte
 	return loaded.raw, nil
 }
 
+// ProfileJSON returns the exact UserNewsBehaviorProfile document getProfile
+// serves (the Redis-cached wire shape). It is the read the user-data export
+// embeds verbatim, so the export and GET /api/user-news-behavior/profile can
+// never disagree.
+func (s *Service) ProfileJSON(ctx context.Context, orgID, userID string) ([]byte, error) {
+	return s.profileJSON(ctx, orgID, userID)
+}
+
 // GetPersonalizationProfile 返回 Nest getPersonalizationProfile 的四段：
 // positive、negative、net，以及完整 meta。空分数表是空对象。
 func (s *Service) GetPersonalizationProfile(ctx context.Context, orgID, userID string) (personalnews.PersonalizationProfile, error) {

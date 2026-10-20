@@ -769,6 +769,14 @@ func run() error {
 	if cfg.AccountSecurityMode == config.AccountSecurityModeGo {
 		accountSecurityMode = string(legacyproxy.ModeGo)
 	}
+	avatarUploadMode := ""
+	if cfg.AvatarUploadMode == config.AvatarUploadModeGo {
+		avatarUploadMode = string(legacyproxy.ModeGo)
+	}
+	userDataExportMode := ""
+	if cfg.UserDataExportMode == config.UserDataExportModeGo {
+		userDataExportMode = string(legacyproxy.ModeGo)
+	}
 	authLoginMode := ""
 	if cfg.AuthLoginMode == config.AuthLoginModeGo {
 		authLoginMode = string(legacyproxy.ModeGo)
@@ -919,6 +927,10 @@ func run() error {
 	// with its own switch; no OIDC configuration CRUD is registered here.
 	rules = legacyproxy.WithOIDCLogin(rules, oidcLoginMode)
 	rules = legacyproxy.WithEconomicData(rules, economicDataRouteMode)
+	// The two remaining identity entries have independent switches and exact
+	// method/path rules, so they cannot be shadowed by the account-security,
+	// login or onboarding rules.
+	rules = legacyproxy.WithAccountData(rules, avatarUploadMode, userDataExportMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -1657,6 +1669,9 @@ func run() error {
 		return err
 	}
 	if err := wireAccountSecurity(gateway, cfg, sharedDB, redisClient); err != nil {
+		return err
+	}
+	if err := wireAccountData(gateway, cfg, sharedDB, redisClient, &dashboardMongo); err != nil {
 		return err
 	}
 	if err := wireAuthLogin(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {

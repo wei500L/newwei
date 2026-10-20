@@ -1100,10 +1100,21 @@ services:
       # POST /api/auth/machine-tokens/:tokenId/rotate）。默认 legacy，只接受
       # 空串/legacy/go，非法值启动失败。go 需要 JWT_SECRET、DATABASE_URL、
       # REDIS_HOST，不需要 Mongo。登录、refresh、邮箱验证码、密码找回、
-      # MFA、OIDC、邀请与注册审核、头像上传签名、个人数据导出仍回 NestJS。
-      # 生产 Web 入口仍指向 NestJS，canary 与 shadow 关闭。回滚只把该变量
-      # 改回 legacy。
+      # MFA、OIDC、邀请与注册审核仍回 NestJS；头像上传签名与个人数据导出
+      # 由各自的开关控制（见下）。生产 Web 入口仍指向 NestJS，canary 与
+      # shadow 关闭。回滚只把该变量改回 legacy。
       API_GO_ACCOUNT_SECURITY_MODE: legacy
+      # 头像上传签名（POST /api/auth/avatar/presigned-url）。默认 legacy，
+      # 只接受空串/legacy/go，非法值启动失败。go 需要 JWT_SECRET、
+      # DATABASE_URL、REDIS_HOST，不需要 Mongo；签名在本地完成，不访问 S3。
+      # 回滚只把该变量改回 legacy。
+      API_GO_AVATAR_UPLOAD_MODE: legacy
+      # 个人数据导出（GET /api/auth/data-export）。默认 legacy，只接受空串/
+      # legacy/go，非法值启动失败。go 需要 JWT_SECRET、DATABASE_URL、
+      # REDIS_HOST 与 MONGO_URI（assistantruns 在 Mongo）。文件名、响应头、
+      # 限流（3 次/小时）与审计副作用与 Nest 一致；回滚只把该变量改回
+      # legacy。
+      API_GO_USER_DATA_EXPORT_MODE: legacy
       API_GO_ITEMS_READING_MODE: legacy
       # 条目写入（POST /api/items 与五个 item/crawl mutation）和 raw_item 定时
       # 补偿是独立开关。默认 legacy；仅接受空串/legacy/go，非法值启动失败。

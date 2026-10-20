@@ -47,9 +47,9 @@ Nest 功能目录：[auth](../../../../apps/api/src/modules/auth)、[org](../../
 | `POST /api/auth/admin/registration-applications/:id/approve-org` | 已认证 | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `approveNewOrgApplication` | Nest；尚未接管 |
 | `POST /api/auth/admin/registration-applications/:id/reject-join` | users.write | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `rejectJoinApplication` | Nest；尚未接管 |
 | `POST /api/auth/admin/registration-applications/:id/reject-org` | 已认证 | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `rejectNewOrgApplication` | Nest；尚未接管 |
-| `POST /api/auth/avatar/presigned-url` | 已认证 | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `createAvatarPresignedUrl` | Nest；尚未接管 |
+| `POST /api/auth/avatar/presigned-url` | 已认证 | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `createAvatarPresignedUrl` | 候选实现见 PR #108，未合 main |
 | `POST /api/auth/change-password` | 已认证 | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `changePassword` | WithAccountSecurity |
-| `GET /api/auth/data-export` | 已认证 | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `exportUserData` | Nest；尚未接管 |
+| `GET /api/auth/data-export` | 已认证 | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `exportUserData` | 候选实现见 PR #108，未合 main |
 | `GET /api/auth/invitations/:token` | 公开 | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `getInvitation` | Nest；尚未接管 |
 | `POST /api/auth/invitations/:token/accept` | 公开 | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `acceptInvitation` | Nest；尚未接管 |
 | `POST /api/auth/invitations/:token/accept-authenticated` | 已认证 | [auth.controller.ts](../../../../apps/api/src/modules/auth/auth.controller.ts) · `acceptInvitationAuthenticated` | Nest；尚未接管 |
