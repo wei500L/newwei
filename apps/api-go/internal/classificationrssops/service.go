@@ -10,6 +10,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/adminlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/qualityqueue"
 )
 
 // Service carries every MySQL, Mongo and Redis query behind the migrated
@@ -24,18 +25,26 @@ type Service struct {
 	// SHA-256 lookup, revoked/expiry checks and lastUsedAt update have exactly
 	// one implementation.
 	logs *adminlogs.Service
+	// reportQueue produces classification-quality-report jobs. It is nil when
+	// Redis is not configured, which makes CreateReportJob fail loudly instead
+	// of leaving a pending report job that nothing will ever process.
+	reportQueue reportEnqueuer
 }
 
 // NewService assembles the read/write dependencies. A nil Mongo database makes
 // every Mongo query fail closed instead of degrading to an empty result.
 func NewService(db *sql.DB, database *mongo.Database, redisClient *redis.Client) *Service {
-	return &Service{
+	service := &Service{
 		db:    db,
 		mongo: database,
 		redis: redisClient,
 		store: &snapshotStore{db: db, redis: redisClient},
 		logs:  adminlogs.NewService(db, database),
 	}
+	if redisClient != nil {
+		service.reportQueue = qualityqueue.NewQueue(redisClient)
+	}
+	return service
 }
 
 // AuthenticateMachine resolves a mtk_ token through the shared adminlogs

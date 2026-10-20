@@ -113,6 +113,24 @@
 //	         API_GO_AUTH_FACTORS_MODE 改回 legacy。不访问身份提供方、不签发
 //	         token、不启用 shadow、不改 canary。
 //
+//	         API_GO_CLASSIFICATION_REPORTS_MODE=go 时接管精确路由
+//	         POST /api/admin/quality/classification/reports：Go 写
+//	         ClassificationReportJob 并入队 classification_quality（任务名与
+//	         jobId 都是 classification-quality-report:<jobId>，attempts=3、
+//	         指数退避 2000ms、removeOnComplete=true、
+//	         removeOnFail={age:7d,count:10000}）；GET /reports/:jobId 仍由
+//	         API_GO_CLASSIFICATION_RSS_OPS_MODE 决定。回滚只把该开关改回 legacy。
+//	         API_GO_CLASSIFICATION_QUALITY_WORKER_MODE=go 时由 Go 消费
+//	         classification_quality（报告生成与评审种子写入），NestJS 的
+//	         processor 不再建 Worker（Queue 保留，流水线仍会生产评审种子任务），
+//	         执行权互斥。并发 max(1,min(4,NEWS_PROCESS_QUEUE_CONCURRENCY))，
+//	         未配置为 2。回滚时先关 Go worker，再由 NestJS 继续消费同格式任务。
+//	         API_GO_PIPELINE_RECOVERY_MODE=go 时接管精确 GET
+//	         /api/admin/quality/pipeline/runs（MySQL ItemMeta + Mongo
+//	         processeditems/tasklogs）。replay/rollback 依赖条目流水线生产者
+//	         （#96 pipelineenqueue），main 上尚不存在，继续由 NestJS 服务。
+//	         三个开关都默认 legacy，互不影响。
+//
 // 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
 // API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
 // API_GO_DASHBOARD_STATS_MODE=legacy 把 stats 交回 NestJS；
@@ -829,6 +847,19 @@ func run() error {
 	rules = legacyproxy.WithNewsIndicators(rules, newsIndicatorsMode)
 	rules = legacyproxy.WithQualityOverview(rules, qualityOverviewMode)
 	rules = legacyproxy.WithClassificationRssOps(rules, classificationRssOpsMode)
+	// The report creation POST and the pipeline recovery runs read are their own
+	// switches: each only owns one route, and neither widens the classification
+	// read takeover above.
+	reportsMode := ""
+	if cfg.ClassificationReportsMode == config.ClassificationReportsModeGo {
+		reportsMode = string(legacyproxy.ModeGo)
+	}
+	rules = legacyproxy.WithClassificationReports(rules, reportsMode)
+	pipelineRecoveryMode := ""
+	if cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo {
+		pipelineRecoveryMode = string(legacyproxy.ModeGo)
+	}
+	rules = legacyproxy.WithPipelineRecovery(rules, pipelineRecoveryMode)
 	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
 	// The two public source fetch routes. Registered after the local-computation
 	// rules; the two rule sets share no path.
@@ -947,6 +978,9 @@ func run() error {
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
 				cfg.QualityOverviewMode == config.QualityOverviewModeGo ||
 				cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo ||
+				cfg.ClassificationReportsMode == config.ClassificationReportsModeGo ||
+				cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
+				cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
 				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo ||
 				cfg.NewsClusteringRecoveryWorkerMode == config.NewsClusteringRecoveryWorkerModeGo ||
@@ -1146,7 +1180,11 @@ func run() error {
 		identityOnboardingGo || oidcLoginGo ||
 		searchReindexGo || proxyLoadBalancingGo || analysisExportGo || itemsIngestGo || archiveReadingGo || economicDataGo ||
 		crawlTaskWriteGo || crawlQueueOpsGo ||
-		emailSettingsGo || geocodingGo || runtimeDiagnosticsGo
+		emailSettingsGo || geocodingGo || runtimeDiagnosticsGo ||
+		// This batch's HTTP entries: report creation and the runs read both
+		// verify the caller. The queue worker does not (see needsRedis).
+		cfg.ClassificationReportsMode == config.ClassificationReportsModeGo ||
+		cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	// The background digest delivery needs the shared Redis client (tick gate,
@@ -1160,14 +1198,16 @@ func run() error {
 	// raw_item replay owner needs Redis for its cron lease but no JWT, the
 	// economic-data worker owns the akshare consumer without JWT too, and the
 	// knowledge-graph ingestion scheduler takes its tick gate and org locks in
-	// Redis.
+	// Redis. The classification quality worker consumes its queue without
+	// authenticating a caller, so it must not pull in the JWT/membership stack.
 	needsRedis := needsCredentialedGo ||
 		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
 		cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
 		cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo ||
 		rawItemOutboxGo ||
 		economicDataWorkerGo ||
-		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo
+		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo ||
+		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo
 	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -1534,6 +1574,13 @@ func run() error {
 		return err
 	}
 	if err := wireClassificationRssOps(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
+	}
+	// Classification report creation, the classification quality worker and the
+	// pipeline recovery read share this batch's wiring. Each switch is
+	// independent; with all three legacy nothing is registered or started.
+	qualityOps, err := wireQualityOps(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
+	if err != nil {
 		return err
 	}
 	if err := wireNewsnowClusteringOps(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
@@ -2306,6 +2353,13 @@ func run() error {
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		// The classification quality worker stops first: it must finish its
+		// in-flight jobs while Redis and Mongo are still open.
+		if qualityOps != nil {
+			if closeErr := qualityOps.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: classification quality worker stop: %v", closeErr)
+			}
+		}
 		if economicRuntime != nil {
 			if closeErr := economicRuntime.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: economic-data runtime close: %v", closeErr)

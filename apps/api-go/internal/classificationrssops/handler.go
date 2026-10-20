@@ -26,6 +26,7 @@ const (
 	sourcesSuffix           = "/items"
 	reviewsPrefix           = "/api/admin/quality/classification/reviews/"
 	reviewsSuffix           = "/decision"
+	reportsCreatePath       = "/api/admin/quality/classification/reports"
 	reportsPrefix           = "/api/admin/quality/classification/reports/"
 	diagnosticsOverviewPath = "/api/system-settings/rss-diagnostics/overview"
 	diagnosticsChainPath    = "/api/system-settings/rss-diagnostics/chain"
@@ -90,6 +91,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.serveReviewDecision(w, r, segment)
+	case path == reportsCreatePath:
+		h.serveCreateReport(w, r)
 	case strings.HasPrefix(path, reportsPrefix):
 		segment := strings.TrimPrefix(path, reportsPrefix)
 		if segment == "" || strings.Contains(segment, "/") {
@@ -262,6 +265,13 @@ type samplingAnnotationEntryBody struct {
 	HumanCategoryPath *string          `json:"humanCategoryPath"`
 	Note              *string          `json:"note"`
 	QuickTags         stringArrayField `json:"quickTags"`
+}
+
+// createReportBody mirrors ClassificationCreateReportBodyDto: sampleId is the
+// only field and it is optional. The DTO transform drops non-string and blank
+// values before @IsOptional runs, so they all mean "no sample filter".
+type createReportBody struct {
+	SampleID json.RawMessage `json:"sampleId"`
 }
 
 // samplingAnnotationsBody mirrors ClassificationSamplingAnnotationsBodyDto.
@@ -623,6 +633,37 @@ func (h *Handler) serveSamplingAnnotations(w http.ResponseWriter, r *http.Reques
 		ActorID:     identity.UserID,
 		SampleID:    sampleID,
 		Annotations: annotations,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, encoded)
+}
+
+func (h *Handler) serveCreateReport(w http.ResponseWriter, r *http.Request) {
+	identity := h.authorize(w, r)
+	if identity == nil {
+		return
+	}
+	var body createReportBody
+	if err := decodeJSONBody(r, func(raw []byte) error { return json.Unmarshal(raw, &body) }); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	var sampleID *string
+	if trimmed := payloadString(body.SampleID); trimmed != "" {
+		sampleID = &trimmed
+	}
+	response, err := h.svc.CreateReportJob(r.Context(), createReportJobRequest{
+		OrgID:    identity.OrgID,
+		ActorID:  identity.UserID,
+		SampleID: sampleID,
 	})
 	if err != nil {
 		writeServiceError(w, r, err)

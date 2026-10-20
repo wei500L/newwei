@@ -27,6 +27,22 @@ export class ClassificationQualityProcessor
   ) {}
 
   async onModuleInit() {
+    // Execution ownership is exclusive: when the Go worker switch is go, api-go
+    // consumes classification_quality and NestJS must not create a Worker at
+    // all. The Queue itself stays registered because the news pipeline keeps
+    // producing review-seed jobs into it, and the payload/option contract is
+    // shared, so switching back to legacy just resumes consumption.
+    const workerOwner =
+      this.env.get<string>("API_GO_CLASSIFICATION_QUALITY_WORKER_MODE", {
+        infer: true,
+      }) ?? "legacy";
+    if (workerOwner === "go") {
+      logger.info(
+        "Classification quality worker disabled: consumed by api-go (API_GO_CLASSIFICATION_QUALITY_WORKER_MODE=go)",
+      );
+      return;
+    }
+
     const configured =
       this.env.newsPipelineEnv.processQueueConcurrency > 0
         ? this.env.newsPipelineEnv.processQueueConcurrency
