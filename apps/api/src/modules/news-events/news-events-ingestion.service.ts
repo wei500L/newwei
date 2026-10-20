@@ -9,6 +9,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { buildNewsSignalFromProcessedArticle } from "../news-signals/news-signal";
 import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
@@ -37,10 +38,24 @@ export class NewsEventsIngestionService {
     private readonly settings: NewsEventsSettingsService,
     private readonly events: NewsEventsService,
     private readonly bertopic: NewsEventsBertopicService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async ingestRecentProcessedArticles() {
+    // API_GO_NEWS_EVENTS_INGESTION_MODE=go moves the whole ingestion chain to
+    // Go. Return before claiming the Redis tick gate so a mixed-version
+    // deployment never runs two schedulers for the same interval. Go uses the
+    // same gate and organization lock keys, and the assignment itself is
+    // idempotent through the (orgId, processedArticleId) unique key, so even a
+    // brief overlap cannot assign one article twice.
+    if (this.resolveIngestionMode() === "go") {
+      logger.info(
+        "Skipped news event ingestion because Go owns the chain (API_GO_NEWS_EVENTS_INGESTION_MODE=go)",
+      );
+      return;
+    }
+
     const claimed = await claimSchedulerTick(
       this.cache,
       "cron:news-events-ingestion:tick-gate",
@@ -92,6 +107,14 @@ export class NewsEventsIngestionService {
     logger.info(
       { orgCount: orgs.length, concurrency, failedOrgs, skippedOrgs },
       "News event ingestion scheduler tick completed",
+    );
+  }
+
+  private resolveIngestionMode(): string {
+    return (
+      this.env.get("API_GO_NEWS_EVENTS_INGESTION_MODE", {
+        infer: true,
+      }) ?? "legacy"
     );
   }
 

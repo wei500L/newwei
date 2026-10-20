@@ -160,6 +160,18 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The owner of the news-event ingestion Cron: the five-minute tick gate,
+    // the per-organization lock, the ingestion cursor and the two ingestion
+    // modes. Empty string behaves like legacy. An invalid value fails Nest
+    // startup instead of being silently stripped from the validated config;
+    // NEWS_EVENTS_INGESTION_SETTLE_MS is read by the Go implementation only.
+    API_GO_NEWS_EVENTS_INGESTION_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // The owner of the `alerts` queue: the scan, the rule evaluation, the
     // external delivery and the in-app notification write. Empty string behaves
     // like legacy. An invalid value fails Nest startup instead of being silently

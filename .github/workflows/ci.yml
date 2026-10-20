@@ -438,6 +438,15 @@ jobs:
       - name: Analysis runs integration (Go worker + Node BullMQ + Mongo/MySQL/Redis + SSE fixture)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/analysisruns/ -run TestAnalysisRunsIntegration -v -timeout 10m
 
+      # 新闻事件入库 Cron（NewsEventsIngestionService.ingestRecentProcessedArticles）：
+      # 真实 MySQL/Redis/Mongo + 本进程 httptest 模型服务与向量服务。覆盖默认模式
+      # 的向量/重叠/新建三条分配路径与逐篇游标、B1 settle 窗口（含并发晚提交竞态）、
+      # bertopic 代表与成员分配、聚类失败分组与 TaskLog、唯一键并发只有一个胜出者，
+      # 以及 tick gate / 组织锁的键名与互斥。fixture 只证明协议与本地闭环：没有连接
+      # 真实模型服务或向量服务，也没有用生产数据比对分配结果。
+      - name: MySQL/Redis/Mongo integration tests (news-event ingestion and assignment)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newseventsingest/ -v -timeout 10m
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从

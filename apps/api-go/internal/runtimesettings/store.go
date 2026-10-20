@@ -57,6 +57,9 @@ type Service struct {
 	// kgIngestionCache is the same runtime cache for the knowledge-graph
 	// ingestion organization concurrency.
 	kgIngestionCache kgIngestionRuntimeCache
+	// newsEventsIngestionCache is the same runtime cache for the news-event
+	// ingestion organization concurrency.
+	newsEventsIngestionCache newsEventsIngestionRuntimeCache
 }
 
 // NewService wires the runtime settings data access. db and redisClient are the

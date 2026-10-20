@@ -2514,6 +2514,11 @@ func run() error {
 	// when API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go. It registers no HTTP route
 	// and needs no JWT.
 	var kgIngestion *kgIngestionRuntime
+	// The news-event ingestion Cron owner claims the five-minute tick when
+	// API_GO_NEWS_EVENTS_INGESTION_MODE=go. It registers no HTTP route and needs
+	// no JWT; the deferred Close stops new ticks and drains in-flight
+	// organizations before the shared Redis/Mongo handles close below.
+	var newsEventsIngestion *newsEventsIngestionRuntime
 	// The news backfill runtime owns the LLM backfill worker/scans and the
 	// six-hourly association refresh when their switches are go. It is nil in
 	// the legacy default, so no component is constructed.
@@ -2589,6 +2594,11 @@ func run() error {
 				log.Printf("api-go: knowledge graph ingestion scheduler close: %v", closeErr)
 			}
 		}
+		if newsEventsIngestion != nil {
+			if closeErr := newsEventsIngestion.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: news event ingestion scheduler close: %v", closeErr)
+			}
+		}
 		if searchReindexService != nil {
 			searchReindexService.Close()
 		}
@@ -2656,6 +2666,14 @@ func run() error {
 	if kgIngestion != nil {
 		kgIngestion.scheduler.Start(context.Background())
 		log.Printf("api-go: knowledge graph ingestion scheduler enabled mode=%s", cfg.KnowledgeGraphIngestionMode)
+	}
+	newsEventsIngestion, err = wireNewsEventsIngestion(cfg, sharedDB, redisClient, sharedKGIngestionMongo(dashboardMongo, graphqlMongo))
+	if err != nil {
+		return err
+	}
+	if newsEventsIngestion != nil {
+		newsEventsIngestion.scheduler.Start(context.Background())
+		log.Printf("api-go: news event ingestion scheduler enabled mode=%s", cfg.NewsEventsIngestionMode)
 	}
 	newsBackfill, err = wireNewsBackfillJobs(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
 	if err != nil {
