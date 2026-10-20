@@ -1,6 +1,8 @@
 package crawlmaintenance
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
 	"math/big"
 	"sort"
@@ -94,6 +96,20 @@ func jsToFixed(value float64, digits int) string {
 		out = "-" + out
 	}
 	return out
+}
+
+// marshalJSONNoHTMLEscape is JSON.stringify: encoding/json escapes <, > and &
+// as \u003c/\u003e/\u0026 by default, while JSON.stringify emits them raw.
+// The adaptive reason text contains ">" and the audit metadata repeats it, so
+// the shared Redis document and the AuditLog JSON must keep the unescaped form.
+func marshalJSONNoHTMLEscape[T any](value T) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }
 
 // jsNumberString is String(number) for the finite values interpolated into the

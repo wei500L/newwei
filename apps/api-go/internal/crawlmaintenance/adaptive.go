@@ -435,7 +435,7 @@ func (s *AdaptiveScheduler) readPreviousState(ctx context.Context) (*adaptiveSta
 
 // persistState is CacheService.set: JSON.stringify then SET EX 604800.
 func (s *AdaptiveScheduler) persistState(ctx context.Context, state adaptiveStateDocument) error {
-	payload, err := json.Marshal(state)
+	payload, err := marshalJSONNoHTMLEscape(state)
 	if err != nil {
 		return err
 	}

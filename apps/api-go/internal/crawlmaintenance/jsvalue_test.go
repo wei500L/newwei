@@ -54,6 +54,21 @@ func TestParseISO(t *testing.T) {
 	}
 }
 
+// TestMarshalJSONNoHTMLEscape pins JSON.stringify's <, >, & behaviour, which
+// the adaptive reason text and the janitor audit metadata depend on.
+func TestMarshalJSONNoHTMLEscape(t *testing.T) {
+	type sample struct {
+		Reason string `json:"reason"`
+	}
+	payload, err := marshalJSONNoHTMLEscape(sample{Reason: "p95 > 850ms & < 2000ms"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(payload), `{"reason":"p95 > 850ms & < 2000ms"}`; got != want {
+		t.Fatalf("payload = %s, want %s", got, want)
+	}
+}
+
 // TestJSRound covers Math.round for the non-negative maintenance values.
 func TestJSRound(t *testing.T) {
 	cases := map[float64]float64{0: 0, 0.5: 1, 1.49: 1, 1.5: 2, 2.5: 3, 99.5: 100}

@@ -3,7 +3,6 @@ package crawlmaintenance
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -477,7 +476,7 @@ func (s *JanitorScheduler) writeAuditLogs(ctx context.Context, tasks []staleTask
 		byOrg[task.OrgID] = append(byOrg[task.OrgID], task.ID)
 	}
 	for _, orgID := range order {
-		metadata, err := json.Marshal(janitorAuditMetadata{Kind: kind, Message: message, TaskIDs: byOrg[orgID]})
+		metadata, err := marshalJSONNoHTMLEscape(janitorAuditMetadata{Kind: kind, Message: message, TaskIDs: byOrg[orgID]})
 		if err != nil {
 			s.logf("crawlmaintenance: failed to encode crawl stale-task audit metadata orgId=%s: %v", orgID, err)
 			continue
