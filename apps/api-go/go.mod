@@ -11,6 +11,11 @@ require (
 	// context cancellation, used instead of a hand-written frame layer.
 	github.com/coder/websocket v1.8.12
 	github.com/go-sql-driver/mysql v1.9.3
+	// Situation monitor Telegram worker/login: maintained MTProto client with
+	// GramJS-compatible session import/export, DC migration and SRP 2FA,
+	// instead of hand-writing the crypto and session layer. v0.162.0 is the
+	// 2026-09-18 stable tag (MIT).
+	github.com/gotd/td v0.162.0
 	// Go-批3A：NestJS access token 独立验签（HS256/iss/aud/exp）。
 	// 成熟维护中的最小 JWT 库——不手写密码学。
 	github.com/golang-jwt/jwt/v5 v5.2.3
