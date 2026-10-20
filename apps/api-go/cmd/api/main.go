@@ -798,7 +798,13 @@ func run() error {
 		economicDataRouteMode = string(legacyproxy.ModeGo)
 	}
 	economicDataWorkerGo := cfg.EconomicDataWorkerMode == config.EconomicDataWorkerModeGo
-
+	// The GDELT external snapshot entry has its own switch: it can be go while
+	// the scheduler stays on NestJS and vice versa. Both executions share the
+	// Redis rebuild lease, so a mixed deployment still rebuilds at most once.
+	gdeltSnapshotRefreshMode := ""
+	if cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo {
+		gdeltSnapshotRefreshMode = string(legacyproxy.ModeGo)
+	}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -917,6 +923,9 @@ func run() error {
 	rules = legacyproxy.WithEmailSettings(rules, emailSettingsMode)
 	rules = legacyproxy.WithGeocoding(rules, geocodingMode)
 	rules = legacyproxy.WithRuntimeDiagnostics(rules, runtimeDiagnosticsMode)
+	// The forced GDELT snapshot refresh is one exact POST with its own switch.
+	// The scheduler switch is independent and shares only the Redis lease.
+	rules = legacyproxy.WithGdeltSnapshotRefresh(rules, gdeltSnapshotRefreshMode)
 	rules = legacyproxy.WithAuthFactors(rules, authFactorsMode)
 	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
 	// The login/session/email-code unit owns eleven exact POST paths under
@@ -1027,6 +1036,8 @@ func run() error {
 				cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo ||
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
 				cfg.ArchiveReadingMode == config.ArchiveReadingModeGo ||
+				cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
+				cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
 				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
@@ -1208,7 +1219,8 @@ func run() error {
 		// This batch's HTTP entries: report creation and the runs read both
 		// verify the caller. The queue worker does not (see needsRedis).
 		cfg.ClassificationReportsMode == config.ClassificationReportsModeGo ||
-		cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo
+		cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
+		cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	// The background digest delivery needs the shared Redis client (tick gate,
@@ -1222,8 +1234,9 @@ func run() error {
 	// raw_item replay owner needs Redis for its cron lease but no JWT, the
 	// economic-data worker owns the akshare consumer without JWT too, the
 	// knowledge-graph ingestion scheduler takes its tick gate and org locks in
-	// Redis, and the classification quality/assistant workers consume their
-	// queues without authenticating a caller.
+	// Redis, the classification quality/assistant workers consume their queues
+	// without authenticating a caller, and the GDELT snapshot scheduler shares
+	// its rebuild lease in Redis.
 	needsRedis := needsCredentialedGo ||
 		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
 		cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
@@ -1232,7 +1245,8 @@ func run() error {
 		economicDataWorkerGo ||
 		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo ||
 		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
-		assistantWorkerGo
+		assistantWorkerGo ||
+		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo
 	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -1249,6 +1263,14 @@ func run() error {
 		blacklist := authn.NewRedisBlacklist(redisClient)
 		authenticator = authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
 	}
+	// The GDELT snapshot unit is shared by the optional scheduler and the
+	// optional forced-refresh route. It is nil while both switches are legacy.
+	gdeltSnapshot := newGdeltSnapshotUnit(cfg, sharedDB, redisClient)
+	if gdeltSnapshot != nil {
+		log.Printf("api-go: situation-monitor GDELT snapshot unit configured (scheduler=%s, refresh=%s)",
+			cfg.GdeltSnapshotMode, cfg.GdeltSnapshotRefreshMode)
+	}
+
 	// The HTTP POST and the GraphQL root share one metadata service instance.
 	// It is built once, only when one of the two switches needs it, and reuses
 	// the shared MySQL, Redis and outbound HTTP resources.
@@ -1560,6 +1582,9 @@ func run() error {
 		return err
 	}
 	if err := wireSituationMonitors(gateway, cfg, sharedDB, authenticator); err != nil {
+		return err
+	}
+	if err := gdeltSnapshot.RegisterRoute(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
 	if err := wireNewsSources(gateway, cfg, sharedDB, authenticator); err != nil {
@@ -2421,19 +2446,14 @@ func run() error {
 				log.Printf("api-go: classification quality worker stop: %v", closeErr)
 			}
 		}
-		if economicRuntime != nil {
-			if closeErr := economicRuntime.Close(closeCtx); closeErr != nil {
-				log.Printf("api-go: economic-data runtime close: %v", closeErr)
-			}
-		}
-		if newsBackfill != nil {
-			if closeErr := newsBackfill.Close(closeCtx); closeErr != nil {
-				log.Printf("api-go: news backfill runtime close: %v", closeErr)
-			}
-		}
 		if assistantWorker != nil {
 			if closeErr := assistantWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: assistant worker close: %v", closeErr)
+			}
+		}
+		if gdeltSnapshot != nil {
+			if closeErr := gdeltSnapshot.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: GDELT snapshot scheduler close: %v", closeErr)
 			}
 		}
 		if deliveryScheduler != nil {
@@ -2529,6 +2549,7 @@ func run() error {
 		}
 	}
 	assistantWorker = startAssistantWorker(cfg, assistantRunService, redisClient)
+	gdeltSnapshot.Start(cfg)
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gateway.ServeHTTPWithShadow(w, r, disp)

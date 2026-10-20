@@ -3993,3 +3993,152 @@ func TestNewsProcessQueueConcurrencyEnv(t *testing.T) {
 		t.Fatalf("concurrency = %d", cfg.NewsProcessQueueConcurrency)
 	}
 }
+
+func TestGdeltSnapshotModesDefaultToLegacy(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GdeltSnapshotMode != GdeltSnapshotModeLegacy {
+		t.Fatalf("scheduler mode = %s", cfg.GdeltSnapshotMode)
+	}
+	if cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
+		t.Fatalf("refresh mode = %s", cfg.GdeltSnapshotRefreshMode)
+	}
+	// SITUATION_MONITOR_GDELT_ENABLED defaults to true in the NestJS schema too.
+	if !cfg.SituationMonitorGdeltEnabled {
+		t.Fatal("SITUATION_MONITOR_GDELT_ENABLED default = false, want true")
+	}
+	for _, empty := range []string{"", "  "} {
+		cfg, err := Load(func(key string) string {
+			switch key {
+			case "API_GO_GDELT_SNAPSHOT_MODE", "API_GO_GDELT_SNAPSHOT_REFRESH_MODE":
+				return empty
+			default:
+				return ""
+			}
+		})
+		if err != nil {
+			t.Fatalf("empty mode %q: %v", empty, err)
+		}
+		if cfg.GdeltSnapshotMode != GdeltSnapshotModeLegacy || cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
+			t.Fatalf("empty mode %q parsed as %s/%s", empty, cfg.GdeltSnapshotMode, cfg.GdeltSnapshotRefreshMode)
+		}
+	}
+}
+
+func TestGdeltSnapshotModesRejectInvalid(t *testing.T) {
+	for _, testCase := range []struct{ key, invalid string }{
+		{"API_GO_GDELT_SNAPSHOT_MODE", "shadow"},
+		{"API_GO_GDELT_SNAPSHOT_MODE", "Go"},
+		{"API_GO_GDELT_SNAPSHOT_REFRESH_MODE", "canary"},
+		{"API_GO_GDELT_SNAPSHOT_REFRESH_MODE", "true"},
+	} {
+		_, err := Load(func(key string) string {
+			if key == testCase.key {
+				return testCase.invalid
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), testCase.key+" must be one of legacy|go") {
+			t.Fatalf("%s=%q: %v", testCase.key, testCase.invalid, err)
+		}
+	}
+}
+
+func TestGdeltSnapshotSchedulerGoRequiresMySQLAndRedisOnly(t *testing.T) {
+	full := map[string]string{
+		"API_GO_GDELT_SNAPSHOT_MODE": "go",
+		"DATABASE_URL":               "mysql://user:pass@127.0.0.1:3306/app",
+		"REDIS_HOST":                 "redis",
+	}
+	for missing, expected := range map[string]string{
+		"DATABASE_URL": "DATABASE_URL is required when API_GO_GDELT_SNAPSHOT_MODE=go",
+		"REDIS_HOST":   "REDIS_HOST is required when API_GO_GDELT_SNAPSHOT_MODE=go",
+	} {
+		_, err := Load(func(key string) string {
+			if key == missing {
+				return ""
+			}
+			return full[key]
+		})
+		if err == nil || !strings.Contains(err.Error(), expected) {
+			t.Fatalf("missing %s: %v", missing, err)
+		}
+	}
+	// The scheduler serves no route, so a missing JWT secret is not a startup
+	// condition.
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_GDELT_SNAPSHOT_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatalf("scheduler go must not require JWT: %v", err)
+	}
+	if cfg.GdeltSnapshotMode != GdeltSnapshotModeGo {
+		t.Fatalf("mode = %s", cfg.GdeltSnapshotMode)
+	}
+}
+
+func TestGdeltSnapshotRefreshGoRequiresCredentialedStack(t *testing.T) {
+	full := map[string]string{
+		"API_GO_GDELT_SNAPSHOT_REFRESH_MODE": "go",
+		"JWT_SECRET":                         "secret",
+		"DATABASE_URL":                       "mysql://user:pass@127.0.0.1:3306/app",
+		"REDIS_HOST":                         "redis",
+	}
+	for missing, expected := range map[string]string{
+		"JWT_SECRET":   "JWT_SECRET is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
+		"DATABASE_URL": "DATABASE_URL is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
+		"REDIS_HOST":   "REDIS_HOST is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
+	} {
+		_, err := Load(func(key string) string {
+			if key == missing {
+				return ""
+			}
+			return full[key]
+		})
+		if err == nil || !strings.Contains(err.Error(), expected) {
+			t.Fatalf("missing %s: %v", missing, err)
+		}
+	}
+}
+
+func TestGdeltSnapshotSwitchesAreIndependentAndReadTheEnabledFlag(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_GDELT_SNAPSHOT_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@127.0.0.1:3306/app"
+		case "REDIS_HOST":
+			return "redis"
+		case "SITUATION_MONITOR_GDELT_ENABLED":
+			return "off"
+		default:
+			return ""
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GdeltSnapshotMode != GdeltSnapshotModeGo {
+		t.Fatalf("scheduler mode = %s", cfg.GdeltSnapshotMode)
+	}
+	// The refresh switch never follows the scheduler switch, and the scheduler
+	// switch never enables the HTTP entry.
+	if cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
+		t.Fatalf("refresh mode = %s, want legacy", cfg.GdeltSnapshotRefreshMode)
+	}
+	if cfg.SituationMonitorGdeltEnabled {
+		t.Fatal("SITUATION_MONITOR_GDELT_ENABLED=off parsed as enabled")
+	}
+}

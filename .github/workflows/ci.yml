@@ -389,6 +389,12 @@ jobs:
       - name: Assistant queue and subscription integration tests
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/assistantqueue/ ./internal/assistantruns/ -run 'TestProducerWorkerRetryAndRemove|TestStalledJobReturnsWithCounter|TestPublisherRawMessageMatchesNestEnvelope' -v
 
+      # GDELT 外部快照链路的真实 MySQL/Redis 验证：投影聚合与逐份
+      # payload 参考实现等价、7 天清理、两层缓存的 key/TTL/原始值、共享锁互斥
+      # 与数据库回填缓存。与上一个步骤同一 MySQL/Redis service。
+      - name: MySQL/Redis integration tests (GDELT external snapshot store, cache and lease)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/gdeltsnapshot/ -run 'TestGDELTSnapshotIntegration' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从

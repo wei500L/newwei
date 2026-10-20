@@ -1167,6 +1167,42 @@ const (
 	SituationInsightsModeGo SituationInsightsMode = "go"
 )
 
+// GdeltSnapshotMode controls which process owns the 15-minute GDELT external
+// snapshot rebuild (API_GO_GDELT_SNAPSHOT_MODE). The accepted values are exactly
+// "", "legacy" and "go"; any other value fails startup instead of silently
+// degrading. The default is legacy, which keeps the NestJS @Cron callback and
+// its Redis lease.
+type GdeltSnapshotMode string
+
+const (
+	// GdeltSnapshotModeLegacy keeps the NestJS scheduler (default, including
+	// the empty value). Rollback only changes this variable back to legacy.
+	GdeltSnapshotModeLegacy GdeltSnapshotMode = "legacy"
+	// GdeltSnapshotModeGo runs the rebuild in this process every quarter hour.
+	// It requires DATABASE_URL and REDIS_HOST because the rebuild writes the
+	// MySQL history row and both Redis cache layers, and it needs no JWT because
+	// the scheduler serves no HTTP route. NestJS and Go share one rebuild lease,
+	// so a flip cannot rebuild twice.
+	GdeltSnapshotModeGo GdeltSnapshotMode = "go"
+)
+
+// GdeltSnapshotRefreshMode controls which process owns
+// POST /api/system-settings/situation-monitor/external-snapshot/refresh
+// (API_GO_GDELT_SNAPSHOT_REFRESH_MODE). Only Go reads this variable; NestJS
+// keeps serving the controller route. The accepted values are again "",
+// "legacy" and "go", and the default is legacy.
+type GdeltSnapshotRefreshMode string
+
+const (
+	// GdeltSnapshotRefreshModeLegacy keeps the route on NestJS (default).
+	GdeltSnapshotRefreshModeLegacy GdeltSnapshotRefreshMode = "legacy"
+	// GdeltSnapshotRefreshModeGo serves the route from Go. It requires
+	// JWT_SECRET, DATABASE_URL and REDIS_HOST: the handler re-derives the
+	// caller's settings.manage permission and runs the same rebuild as the
+	// scheduler under the shared lease.
+	GdeltSnapshotRefreshModeGo GdeltSnapshotRefreshMode = "go"
+)
+
 // ContentSubscriptionsMode 只控制内容订阅 7 条精确 HTTP。默认 legacy。
 // 不决定摘要服务能否在进程内调用 Go 订阅查询。
 type ContentSubscriptionsMode string
@@ -1851,6 +1887,16 @@ type Config struct {
 	// SituationInsightsMode controls GET /api/situation-monitor/insights.
 	// Default legacy. Mode go requires JWT, MySQL, Redis and Mongo.
 	SituationInsightsMode SituationInsightsMode
+	// GdeltSnapshotMode 控制 GDELT 外部快照 15 分钟重建的执行权（见
+	// GdeltSnapshotMode）。默认 legacy；go 要求 DATABASE_URL 与 REDIS_HOST。
+	GdeltSnapshotMode GdeltSnapshotMode
+	// GdeltSnapshotRefreshMode 控制强制刷新 POST 的入口执行权（见
+	// GdeltSnapshotRefreshMode）。默认 legacy；go 要求 JWT、MySQL、Redis。
+	// 与 GdeltSnapshotMode 相互独立。
+	GdeltSnapshotRefreshMode GdeltSnapshotRefreshMode
+	// SituationMonitorGdeltEnabled 是 SITUATION_MONITOR_GDELT_ENABLED，默认
+	// true。为 false 时定时重建与强制刷新都直接返回，与 isGdeltEnabled 一致。
+	SituationMonitorGdeltEnabled bool
 	// NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	NewsSourcesMode NewsSourcesMode
@@ -3027,6 +3073,30 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_SITUATION_INSIGHTS_MODE must be one of legacy|go")
 	}
+	// The GDELT external snapshot scheduler accepts the empty string, legacy
+	// and go. An empty value behaves exactly like legacy so an unset deployment
+	// keeps the NestJS @Cron ownership.
+	switch strings.TrimSpace(getenv("API_GO_GDELT_SNAPSHOT_MODE")) {
+	case "", string(GdeltSnapshotModeLegacy):
+		cfg.GdeltSnapshotMode = GdeltSnapshotModeLegacy
+	case string(GdeltSnapshotModeGo):
+		cfg.GdeltSnapshotMode = GdeltSnapshotModeGo
+	default:
+		errs = append(errs, "API_GO_GDELT_SNAPSHOT_MODE must be one of legacy|go")
+	}
+	// The forced-refresh entry switch is read by Go only; while it is legacy the
+	// route stays on NestJS.
+	switch strings.TrimSpace(getenv("API_GO_GDELT_SNAPSHOT_REFRESH_MODE")) {
+	case "", string(GdeltSnapshotRefreshModeLegacy):
+		cfg.GdeltSnapshotRefreshMode = GdeltSnapshotRefreshModeLegacy
+	case string(GdeltSnapshotRefreshModeGo):
+		cfg.GdeltSnapshotRefreshMode = GdeltSnapshotRefreshModeGo
+	default:
+		errs = append(errs, "API_GO_GDELT_SNAPSHOT_REFRESH_MODE must be one of legacy|go")
+	}
+	// Both executions check this flag before doing any work, the same way
+	// isGdeltEnabled does. The Go default matches the NestJS schema default.
+	cfg.SituationMonitorGdeltEnabled = boolDefault(getenv("SITUATION_MONITOR_GDELT_ENABLED"), true)
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_EVENTS_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLNewsEventsMode = "legacy"
@@ -4397,6 +4467,21 @@ func Load(getenv func(string) string) (Config, error) {
 		if cfg.RedisHost == "" {
 			errs = append(errs, "REDIS_HOST is required when API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE=go")
 		}
+	}
+	// The GDELT snapshot scheduler writes the MySQL history row and both Redis
+	// cache layers, so it needs MySQL and Redis but no JWT: it serves no route.
+	if cfg.GdeltSnapshotMode == GdeltSnapshotModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_GDELT_SNAPSHOT_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_GDELT_SNAPSHOT_MODE=go")
+		}
+	}
+	// The forced-refresh route re-derives the caller's settings.manage
+	// permission from the credentialed JWT/MySQL/Redis stack.
+	if cfg.GdeltSnapshotRefreshMode == GdeltSnapshotRefreshModeGo {
+		appendAuthRequirements(&errs, "API_GO_GDELT_SNAPSHOT_REFRESH_MODE", cfg)
 	}
 
 	if len(errs) > 0 {

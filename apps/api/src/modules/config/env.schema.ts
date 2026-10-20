@@ -1062,6 +1062,19 @@ export const apiEnvSchema = baseEnvSchema
       .int()
       .positive()
       .default(300),
+    // The GDELT external snapshot scheduler ownership. Empty string behaves
+    // like legacy. An invalid value fails Nest startup instead of being
+    // silently stripped from the validated config. Go reads the same variable
+    // and starts its own scheduler when it is go; Nest then returns from the
+    // @Cron callback before taking the shared Redis lease. This switch does NOT
+    // own POST external-snapshot/refresh, which has its own Go-only switch.
+    API_GO_GDELT_SNAPSHOT_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
   })
   .superRefine((value, ctx) => {
     for (const key of getMissingMysqlConnectionEnvVars(value)) {

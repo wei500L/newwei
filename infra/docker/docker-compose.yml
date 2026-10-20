@@ -474,6 +474,12 @@ services:
       # 本服务的 worker 开关设为 go 并重启，再把 api-go 的设为 go。
       API_GO_GRAPHQL_ASSISTANT_WRITE_MODE: ${API_GO_GRAPHQL_ASSISTANT_WRITE_MODE:-legacy}
       API_GO_ASSISTANT_WORKER_MODE: ${API_GO_ASSISTANT_WORKER_MODE:-legacy}
+      # 态势监控 GDELT 外部快照 15 分钟重建的执行权。空串按 legacy 处理；非法值在
+      # Nest 与 Go 都启动失败。默认 legacy=NestJS @Cron 持有；go=Go 定时重建，
+      # NestJS @Cron 在加锁前返回。两侧共用同一把 Redis 锁，切换不会并发重建。
+      # 只控制定时重建；强制刷新入口另有 API_GO_GDELT_SNAPSHOT_REFRESH_MODE（仅
+      # api-go 读取）。
+      API_GO_GDELT_SNAPSHOT_MODE: ${API_GO_GDELT_SNAPSHOT_MODE:-legacy}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -1256,6 +1262,20 @@ services:
       # 与 NestJS 同一份来源白名单。浏览器跨源访问 :4020 上已接管的
       # user-settings GET/PUT 时，Go 用它回 CORS 头；空名单不放行任何 Origin。
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      # 态势监控 GDELT 外部快照定时重建的执行权（与 api 服务同一变量）。
+      # 默认 legacy=不启动 Go 定时任务；go=Go 每 15 分钟重建，与 NestJS 共用
+      # lock:cron:situation-monitor:external-snapshot:gdelt。要求 DATABASE_URL、
+      # REDIS_HOST，不要求 JWT。回滚只把该变量（以及 api 服务的同名变量）改回
+      # legacy，写入的历史与两层缓存格式相同，NestJS 可直接读取。
+      API_GO_GDELT_SNAPSHOT_MODE: ${API_GO_GDELT_SNAPSHOT_MODE:-legacy}
+      # 强制刷新入口 POST /api/system-settings/situation-monitor/external-snapshot/
+      # refresh 的执行权（仅 Go 读取；Nest 控制器始终保留该路由）。默认 legacy=
+      # 继续由 NestJS 处理；go=Go 处理，要求 JWT、MySQL、Redis，与定时任务共用
+      # 同一把锁。与上面的定时开关相互独立。
+      API_GO_GDELT_SNAPSHOT_REFRESH_MODE: ${API_GO_GDELT_SNAPSHOT_REFRESH_MODE:-legacy}
+      # NestJS 的 GDELT 总开关（默认 true；false 时定时重建与强制刷新都直接返回）。
+      # api-go 未设置时按 true 解析，与 Nest env schema 默认一致。
+      SITUATION_MONITOR_GDELT_ENABLED: ${SITUATION_MONITOR_GDELT_ENABLED:-true}
     ports:
       - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${API_GO_HOST_PORT:-4020}:4020"
     logging: *json-file-logging
