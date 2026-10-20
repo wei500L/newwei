@@ -186,10 +186,17 @@ func (r *Runtime) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		http.Error(w, "not a notifications websocket upgrade", http.StatusBadRequest)
 		return
 	}
+	// Register before the upgrade so Close cannot return while an accepted
+	// socket is about to start serving. The check and Add share the same lock.
+	r.mu.Lock()
 	if r.closing.Load() {
+		r.mu.Unlock()
 		http.Error(w, "server shutting down", http.StatusServiceUnavailable)
 		return
 	}
+	r.wg.Add(1)
+	r.mu.Unlock()
+	defer r.wg.Done()
 	ws, err := websocket.Accept(w, request, &websocket.AcceptOptions{
 		InsecureSkipVerify: true,
 		CompressionMode:    websocket.CompressionDisabled,
@@ -198,8 +205,6 @@ func (r *Runtime) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	ctx, cancel := context.WithCancel(request.Context())
-	r.wg.Add(1)
-	defer r.wg.Done()
 	conn := &connection{
 		runtime: r,
 		ws:      ws,
@@ -221,13 +226,13 @@ func (r *Runtime) Close(ctx context.Context) error {
 	}
 	var closeErr error
 	r.closeOnce.Do(func() {
+		r.mu.Lock()
 		r.closing.Store(true)
-		r.mu.RLock()
 		connections := make([]*connection, 0, len(r.conns))
 		for _, conn := range r.conns {
 			connections = append(connections, conn)
 		}
-		r.mu.RUnlock()
+		r.mu.Unlock()
 		for _, conn := range connections {
 			conn.shutdown(true)
 		}
