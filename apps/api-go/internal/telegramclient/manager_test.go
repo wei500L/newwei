@@ -326,7 +326,7 @@ func TestManagerLeaseMutualExclusion(t *testing.T) {
 	if first.count() != 1 {
 		t.Errorf("owner created %d clients, want 1 (long-lived)", first.count())
 	}
-	if _, setNX, _ := store.counts(); setNX != 1 {
+	if setNX, _, _ := store.counts(); setNX != 1 {
 		t.Errorf("SetNX calls = %d, want 1 (lease held across calls)", setNX)
 	}
 
@@ -406,7 +406,7 @@ func TestManagerClientFailureKeepsLeaseAndSkipsCallback(t *testing.T) {
 	if !factory.at(0).isClosed() {
 		t.Error("failed client was not closed")
 	}
-	if _, setNX, _ := store.counts(); setNX != 1 {
+	if setNX, _, _ := store.counts(); setNX != 1 {
 		t.Errorf("SetNX calls = %d, want 1 (lease kept for the retry)", setNX)
 	}
 
@@ -418,7 +418,7 @@ func TestManagerClientFailureKeepsLeaseAndSkipsCallback(t *testing.T) {
 	if factory.count() != 2 {
 		t.Errorf("client count after retry = %d, want 2", factory.count())
 	}
-	if _, setNX, _ := store.counts(); setNX != 1 {
+	if setNX, _, _ := store.counts(); setNX != 1 {
 		t.Errorf("SetNX calls after retry = %d, want 1", setNX)
 	}
 }

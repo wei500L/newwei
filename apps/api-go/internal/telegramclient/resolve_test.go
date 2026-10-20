@@ -162,7 +162,7 @@ func TestNormalizeChannelHandle(t *testing.T) {
 	tests := map[string]string{
 		"channel":     "channel",
 		"@channel":    "channel",
-		"  @channel ": "channel",
+		"  @channel ": "@channel", // the @ is stripped before trimming, like NestJS
 		"  channel  ": "channel",
 		"@":           "",
 		"":            "",
