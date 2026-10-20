@@ -1,5 +1,7 @@
 # items · 条目检索、RSS 阅读与处理结果
 
+2026-10-19条目写/入库限定续核，main91e759b449c4511dc96d86539ea0eb258754d07e：[ITEMS-INGEST-001](../tasks/ITEMS-INGEST-001.md) reserved，[完整提示词](../tasks/ITEMS-INGEST-001.prompt.md)在Ready规划#93发布。仅POST /api/items与五Mutation、RawItem即时/定时补偿、兼容itemPipeline producer和读模型水合，六入口见task；不重迁已合列表/RSS/CSV/查询。确认hydration采用completed-only窄投影的GAP-ITEMS-001，仅修其专用路径；同时改善按item补偿先过滤再限50。后台worker仍Nest，Go写与consumer未实施，不提前计main；下方域表/认领为历史快照。
+
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态

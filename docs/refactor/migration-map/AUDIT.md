@@ -54,6 +54,8 @@
 
 ## items
 
+2026-10-19 ITEMS-INGEST-001限定深读，main91e759b449c4511dc96d86539ea0eb258754d07e：ItemsController/DTO/Resolver/模型、ItemsService写、ItemsIngest与RawOutbox全方法、NormalizedNewsPayload/RawItem Mongoose/URL hook、SQL schema/index、CrawlTask导入/开关/视图、Queue.enqueueItem/stableID/组织计数Lua/retention；Go hydration/store/选择集投影/模型权限、机器令牌/鉴权与main/config/生命周期/现CI。确认GAP-ITEMS-001：Go hydration误用completed-only窄快照，Nest为最新任意状态完整快照；补偿按item先组织前50后过滤也遮挡当前item。raw consumer与native BullMQ producer完整边界见task。Nest链相对地图3cedce9a无业务变化，Go列表等已合但无这些写/consumer；仅读#94实际共享diff及其traceId续改。未重审其他items/crawl/worker或实跑DB/Redis/Mongo/外部/部署，不把旧未核项整体改已审。
+
 - **RSS翻译完整候选限定深读 / main90765633，2026-10-18**：Nest DTO/SDL/Model/Resolver、ItemsRssTranslationService全执行分支，SituationMonitorTranslationService的RSS内层缓存/HTTP/重试/语言检测，situation设置runtime，LiteLlm双协议/format/guardrail/模型fallback/日志及active治理；Go status/config/cache、publicportal配置/协议与brief边界、llmlogs强类型/policy、classificationrssops指标读及GraphQL生产装配。确认GAP-RSS-001窄投影污染完整profile缓存；计划数据库侧最新记录分组。未实跑DeepLX/fallback/LLM/数据库或全部网关兼容组合，不扩大其他条目写/流水线审查。#81实际completion.go helper重命名和#84 csvexport隔离已核。
 
 - **2026-10-18完整items候选深读，main9d0462e1**：Nest items resolver/DTO/分页/游标、ItemsListService个性化与特征、ItemsSearchService相关性/rerank/highlights、helpers/shared权重、ScopedItemsReadingLoader绑定；Go现有REST/GraphQL单条模型/批量store/召回、newsbehavior画像与llmembed接口已读。确认REST仅RECENCY、显式filters:{}优先于历史filters、相关性失败503、个性化候选窗口增长及两种cursor优先级，不能泛化合并。Context暂无选择元数据，计划最小只读扩展以省count/result并批量投影，不重写engine。ITEMS-LIST-001 reserved，未实施；实网/运行/全DTO组合未验证，其他items写/后台范围不扩大。
@@ -64,6 +66,8 @@
 
 ## analysis
 
+2026-10-19本链深读，main91e759b449c4511dc96d86539ea0eb258754d07e：三Mutation DTO/Resolver/SDL/model、AnalysisService完整submit/process/stream/Geo/通知、Processor/gate/queue配置与观察者、四统计检测器/全部prompt、Mongo模型/运输窗口/索引；模型stream两surface/fallback/部分失败/usage日志、组织Redis envelope、SQL通知和已有本地socket接缝；Go history/profile/治理/完成客户端与日志复用。当前无三写注册/真正Go分析consumer/stream，完成客户端不能充当流。确认GAP-ANALYSIS-001：仅认pending/failed，stalled重排可跳过running；Geo先push全量再slice30且无轨迹重复同range查询。ANALYSIS-RUNS-001 reserved完整链（Ready规划#93），含worker/恢复/SSE/有界top30。未运行真实服务/队列/模型，不重审Assistant或全仓。
+
 2026-10-18导出候选增量（main90765633）：只深入items/events Controller/DTO、全部两路row构造/参数/排序/去重/CSV助手、ItemsService→ItemsListService页分支/rerank错误、NewsEvents heat/authority与source-policy读取；对照Go itemsreading完整列表/画像/rerank日志/投影store、newsevents私有聚合/排序去重、analysiscollab规范化/校验及JWT与机器认证差异。明确成功201、analysis.write、5000候选上限、50交互上限不可复用、无直接导出审计、公式/换行字节契约，见ANALYSIS-EXPORT-001。search/headlines准备、真实外部/生产大导出未验证，不把协作CRUD/worker未审范围统一标完成。
 
 - **协作 23 HTTP / 部分分支静态核对，整体尚未深入核对**：[cmd/api/analysis.go](../../../apps/api-go/cmd/api/analysis.go) 三独立模式与 handler；[analysisboards/service.go](../../../apps/api-go/internal/analysisboards/service.go) List/Get→ensureDefaultBoard→组织锁事务内二次检查/创建默认列，确认读可能写。其余列/任务移动重排、评论归属/计数、删除关联清理及版本并发尚未逐路径验完。
@@ -72,6 +76,8 @@
 导出候选续读（15:01–15:08，同SHA，**仍未迁Go**）：AnalysisWorkspaceService的buildItemsExportRows使用MAX_EXPORT_ROWS=5000并显式maxPageSize绕过50条分页上限；联查Mongo ItemReadModel与MySQL NewsEventItem补字段；events先取5000条，再heat/authority/forceAuthoritative/filter/sort/dedupe。buildArchiveSearchRows循环调用ArchiveService.getDigest，用每个vertical的cursor继续翻页、processedArticleId去重。因此search的headlines模式具有归档准备副作用。Controller仅构造StreamableFile与csv附件名，当前未见这三个导出方法直接写审计；CSV转义还处理公式前缀与合法负数。此读取用于收紧BL-08边界，不把Nest实现算作Go进度。
 
 ## news
+
+2026-10-19限定续核（main91e759b449c4511dc96d86539ea0eb258754d07e）：只深入source/batch Controller参数、fetchSource/cache/redirect/normalize/batch/realtime全分支、registry/genSources与当前可达getter，runtime secret读/30秒cache/覆盖次序/解密与GlobalExceptionFilter。核Go静态64项registry、infra私有严格parser/crypto、shared资源、Nest进程内active registry/dispatcher与Socket.IO Redis adapter。明确41可达族，ghxi/linuxdo/smzdm disable:true不恢复，cf仍可达；502HTTP脱敏与batch Error.message不同，sourceId/requiredKeys不在HTTP过滤白名单；具体依据见NEWSNOW-SOURCES-001。仅静态核对，无真实上游、fixture运行或多实例验证；推荐/热点模型/指标/ingestion仍按原未审范围，不统一刷新。
 
 - **本次仅 brief 续核与实现，2026-10-18，SHA 9d0462e16d88d146b8afbf67cdd58d8b7419ff29**：Nest Resolver/Model/schema/getBrief 全链，Go newsevents brief/来源 SQL/模型、publicportal 同步生成与 gateway 配置/重试/协议、Nest completion 日志/guardrail 上下文已阅读。确认 Go briefSource 原先未携带 SQL 已有摘要/要点；共用 schema/宽松清洗不保证完全等价，本批按 Nest 校验；LLM 日志保留；news_event_brief 不触发自动 moderation，runtimeContext 不是锁/配额；新闻 root 不在响应缓存白名单。已实现候选（未合 main）：JSON `briefV1` 叶子更新、独立 BRIEF 子开关、attempt 感知 completion 与 typed 日志 writer。静态核对 root/model/nullable、错误转换、where 租户条件、写回副作用、选源/指纹与父子注册；未跑 DB/模型/测试，未扩大其他 news 查询/worker 审查深度。
 
@@ -134,9 +140,11 @@ adminlogs/llmlogs/qualityoverview/classificationrssops/exceptioningest 与认证
 
 ## archive
 
-**Go 状态入口资源/读取边界已核，业务准备仍 Nest**：Digest/Calendar 调 ensureDigestCoverage/ensureCalendarCoverage，processor 读取设置、分批 classifyRowsBatch、更新 processing/partial/ready/failed。只迁 Query SELECT 会漏必要准备。detail 的分类/翻译/显示资格、搜索/补偿链尚未深入核对，见 BL-09；当前没有三个 Query 的 Go 注册。
+2026-10-19限定续核，main91e759b449c4511dc96d86539ea0eb258754d07e，候选Nest相对地图3cedce9a无业务变化。三Query未Go注册；已深读完整查询/DTO/模型/显示资格、fresh与stale分类缓存/hash/版本/selection、本地classifier及taxonomy规则、语义500召回+180重排/lexical与缓存指标、模型每次尝试日志与既有Go缺口、queue ensure/status/index及consumer生命周期、search CSV。Digest/Calendar缺fresh分类或显示信号backfill须兼容archivePreparation生产，Nest processor仍唯一concurrency1消费并分类写回。getDetail本身无翻译/分类冷生成：组织/completed/显示资格过滤，缓存分类可stale，事件时间线160与相关文章12。Go已有私有部分规则/国家词典、vector transport/模型/CSV可窄复用，非已有完整归档实现。ARCHIVE-READING-001 reserved（Ready规划#93），准备worker不认领；提示词明确CSV请求快照优化与交互预算不变。未运行真实Redis/Nest消费/模型/向量或数据验证，未深审worker生成算法或其他域。
 
 ## async-runtime
+
+2026-10-19四订阅限定续核，main91e759b449c4511dc96d86539ea0eb258754d07e：深入四Resolver/模型/权限、alert序列化、三域pubsub/service发布点、graphql module/context/guard/ExceptionFilter、Redis bus/codec/module与org精确匹配、QueueEventPublisher全部事件/context/终态清理和queue常量/装配；核对Go authhttp/policy、contract/exec/schema/project、模型独立注册、legacy upgrade/Trace/main/config/关闭。相对地图3cedce9a本候选Nest事件链未变，Go模型拆分/items选择元数据已在main，仍无Subscription执行器。graphql-ws5.13.1与Nest GraphQL11.0.6、BullMQ5.63.2一手源码静态核对，确认WS Query/Mutation兼容、guard错误结果分层、HTTP插件不自动施加WS、广播XREAD/JSON解析；并读#92真实共享diff及NewsNow本地共享diff。仅认领GRAPHQL-SUBSCRIPTIONS-001，不重审worker算法/全仓，不运行协议、Redis、多实例或真实业务/外部依赖；无部署/切流证据。
 
 2026-10-19限定续核，main c70b0373990ab931758f7a000511c2d34572fc33：仅深入 AuditLogOutboxService 全方法、audit writer/schema/索引、CacheService withLock/物理key/续租、Go各域producer envelope、adminlogs既有出口、digest已合生命周期/公开Redis端口及main/config资源条件。明确纯MySQL双表+Redis、无BullMQ/Mongo/外部；来源BL-20，由AUDIT-OUTBOX-001 reserved。本次检查确认Nest消费者与Go adminlogs相对地图3cedce9a无变化，后续新增生产者/复用能力按具体文件核对。未运行故障恢复/租约/并发或部署，不扩展为全部job/Outbox已审。
 

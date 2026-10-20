@@ -84,6 +84,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-08 · analysis / 三个 CSV 导出
 
+- 2026-10-19当前main91e759b4：items/events已合main，不重派；search整路（items/headlines）现归[ARCHIVE-READING-001](tasks/ARCHIVE-READING-001.md) reserved，与BL-09第一阶段一并交付，不能再单独认领。独立archive开关接search，不改原两CSV开关；Nest准备worker保留。下方为原选批快照。
+
 - 2026-10-18按main90765633深入后，将items/events两路完整CSV认领至[ANALYSIS-EXPORT-001](tasks/ANALYSIS-EXPORT-001.md) reserved，[提示词](tasks/ANALYSIS-EXPORT-001.prompt.md)在#80发布。已核完整参数/5000选择、Go交互50条限制与私有复用、事件聚合/强制权威/先过滤排序后去重、CSV字节与公式语义；新增保持贪心结果的token索引优化。search整路仍未认领并保留Nest，不能因items模式共用业务计整路完成；归档准备与采集生命周期未认领。
 - **范围/缺口**：POST /api/analysis/exports/search、items、events（GAP-LEGACY-001）。search 还含 mode=headlines 归档路径，不只导出当前页面。
 - **基础/依据**：G/analysiscollab.NormalizeQueryString、itemsreading、newsevents；N/AnalysisWorkspaceService.export*CsvStream→buildItemsExportRows/buildArchiveSearchRows/buildEventsExportRows/buildCsvStream。需全量批读取/上限、日期排序、权限/组织过滤、CSV 转义、响应头与审计，避免套 REST 默认50条截断。
@@ -111,9 +113,11 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-09 · archive / 查询与准备闭环
 
+- 2026-10-19限定核实main91e759b4：三Query+BL-08剩余search两模式已认领[ARCHIVE-READING-001](tasks/ARCHIVE-READING-001.md) reserved，[完整提示词](tasks/ARCHIVE-READING-001.prompt.md)在Ready规划#93发布。已明确原生BullMQ5.63.2 producer（add/state/remove/status）→Nest唯一consumer边界，适合独立偏大窗口；工作量包含分类hash/stale/完整本地signals、Mongo显示资格、500召回/180重排和CSV请求快照。业务尚未实施。Go准备worker/分类写回/backfill执行器第二阶段仍未认领，不关闭GAP-ASYNC-001。
+
 - **范围/缺口**：archiveDigest/archiveCalendar/archiveDetail，ensureDigestCoverage/ensureCalendarCoverage→archivePreparation queue→processor→分类/状态写回（GAP-LEGACY-001 / GAP-ASYNC-001）。现有 status HTTP 不重迁。
-- **基础/依据**：G/dataruntimesettings 状态/设置、itemsreading/llmembed/publicportal 来源规则；N/ArchiveService、ArchivePreparationQueueService、ArchivePreparationProcessor。需要显示资格/分类缓存、embedding/rerank/翻译、job 去重和 partial/ready/failed；工作量远大于三读。
-- **文件/前置/冲突**：archive 新包、Redis queue 协议、Mongo/MySQL 数据层/main；**当前不适合不定边界的独立编码窗口**。可分“完整查询+兼容现有生产者/消费者”与“Go 准备器”两阶段，但第一阶段必须明确仍依赖 Nest，不能关闭整条缺口；先核队列兼容与唯一消费。
+- **基础/依据**：G/dataruntimesettings 状态/设置、itemsreading/llmembed/publicportal 来源规则；N/ArchiveService、ArchivePreparationQueueService、ArchivePreparationProcessor。需要显示资格/fresh-stale分类缓存、搜索embedding/vector/rerank、job去重和partial/ready/failed；getDetail当前无翻译/分类冷生成，不能凭旧标题加入。工作量远大于三读。
+- **文件/前置/冲突**：archive 新包、Redis queue 协议、Mongo/MySQL 数据层/main；现已按“完整查询+兼容原生生产者/既有Nest消费者”与“Go准备器”两阶段划定；第一阶段已占用，第二阶段仍须深读生成/回填/模型算法与消费者切换后另选，不能关闭整条缺口。
 
 ### BL-10 · workspace / 告警规则与执行
 
@@ -128,6 +132,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 - **文件/前置/冲突**：economic 写/调度包、queue adapter/main；DB/Redis/AkShare。**先读队列协议后可单独主窗口**，不要与 BL-20 同时切 queue 通用能力；未核全部 repeat/jobName/退出语义。
 
 ### BL-12 · analysis / 三请求执行闭环
+
+- 2026-10-19 main91e759b4完整候选已由[ANALYSIS-RUNS-001](tasks/ANALYSIS-RUNS-001.md) reserved，[提示词](tasks/ANALYSIS-RUNS-001.prompt.md)在Ready规划#93发布，不能重派三请求/analysis worker。完整Go生产/消费/计算/真实SSE/结果/通知，不是pending子批；双开关/owner切换/锁重试stalled/关闭明确。含GAP-ANALYSIS-001恢复与有界top30，publicportal独立stream文件/llmlogs新writer避开归档端口、四订阅contract/exec、条目producer。仅本链深入，Assistant等不认领。
 
 - **范围/缺口**：requestCorrelationAnalysis/requestAnomalyExplanation/requestGeoTransportAnalysis→submit*→analysis queue→process→Mongo/通知/analysisEvents（GAP-LEGACY-001 / GAP-ASYNC-001），不重迁协作 CRUD/history。
 - **基础/依据**：G/graphqlread/history 模型/经济/地图读取、publicportal 模型客户端（私有）；N/AnalysisService/AnalysisProcessor。相关计算、异常/地理上下文、流式 chunk、最终失败通知均为必要内部步骤。
@@ -171,6 +177,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-18 · news / 上游内容、指标关联与流水线
 
+- 2026-10-19以main91e759b4深入后，仅source/batch完整子链由[NEWSNOW-SOURCES-001](tasks/NEWSNOW-SOURCES-001.md) reserved，[提示词](tasks/NEWSNOW-SOURCES-001.prompt.md)已发出。元数据64ID/41可达族（registry导入44模块含3个停用），JSON/HTML/RSS/Cookie/签名/GB2312/相对日期、共享冷热缓存和进程内通知接缝均需迁；仅DB/Redis，无Mongo/BullMQ。改10项整块等待为保持结果顺序的10并发池。Nest预热Cron、推荐/热点模型/自动bridge/LLM backfill与pipeline等仍不认领；不把整个BL-18关闭。与#92核心业务隔离，main/config/env/compose/README保留并集。
+
 - **范围/缺口**：GET news-aggregator/source、POST sources/batch、GET recommended/hottest-analysis；POST clustering/failures/:groupId/llm-backfill；refreshNewsIndicatorAssociations；相应 source warm/hottest/事件/指标/pipeline ingestion（GAP-LEGACY-001 / GAP-ASYNC-001）。
 - **基础/依据**：G/newsnowclusteringops 的 metadata/resolve/order/opinion 与 failure store；newsevents/newsindicator 读取；N/news-aggregator、news-events、news-indicator、news-pipeline。真实源 fetch/cache、推荐召回/画像、LLM分析、关联写与恢复任务必须按各条完整链拆批。
 - **文件/前置/冲突**：候选域对应包/新客户端/main；Mongo/MySQL/Redis+上游/模型/queue。**当前可单独核 source/batch 同步链，后台执行另定唯一所有权**；BL-07 来源策略模型稳定后再做依赖它的分支；未核全部生产者/失败回放。
@@ -185,6 +193,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 
 ### BL-20 · async / Outbox、清理与消费者基础
 
+- 2026-10-19仅raw_item MongoOutbox消费子链随[ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) reserved，双独立开关/同步CAS/后台owner与生产者边界见提示词；不重复分配。AuditLogOutbox由#92继续占用，processed_item/CrawlCleanup及其他消费者未认领。
+
 - 2026-10-19，main c70b0373：仅审计子链已 reserved 至 [AUDIT-OUTBOX-001](tasks/AUDIT-OUTBOX-001.md)，[完整提示词](tasks/AUDIT-OUTBOX-001.prompt.md)已发出。已核每分钟200/并发8、三状态/5分钟陈旧、认领事务、五元去重、10次dead、实际Redis续租锁和近期Go生产者；只需MySQL/Redis，无BullMQ/Mongo/外部。查询优化为轻字段选200后只补选中payload。RawItem/CrawlCleanup及其他消费者不认领，仍按原候选拆分；Go消费尚未实现。
 
 - **范围/缺口**：AuditLogOutboxService、RawItemOutboxService、CrawlCleanupOutboxService 三条补偿链及其当前 Cron（GAP-ASYNC-001）；它们分别交付，不领取“全部 worker”。
@@ -192,6 +202,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 - **文件/前置/冲突**：独立 Go outbox 消费包/main；MySQL→Mongo、可能 S3；**先审 AuditLogOutbox 单链可独立窗口**，RawItem 与 BL-24、cleanup 与 BL-25 串行。未核每张表的状态/重试上限与停机时 in-flight 语义。
 
 ### BL-21 · async / Subscription 与 Socket.IO
+
+- 2026-10-19 main91e759b4限定深读后，仅四GraphQL订阅子链已reserved至[GRAPHQL-SUBSCRIPTIONS-001](tasks/GRAPHQL-SUBSCRIPTIONS-001.md)，[完整提示词](tasks/GRAPHQL-SUBSCRIPTIONS-001.prompt.md)在Ready规划#93发布，不能重复分配。producer的org/envelope与三Redis通道、QueueEvents本地广播读已在当前Nest稳定；本批只迁独立传输，不以BL-10/12/13/25未来执行器迁移为先决。工作包含标准WS多operation/整份legacy兼容、认证与组织投影、Date codec、BullMQ XREAD/终态cache及关闭，少量根仍是较大完整产品链。优化为按(root/org)索引fanout和plan-once。Socket.IO及其他实时网关仍未认领；新业务producer必须继续兼容这些已固定契约。
 
 - **范围/缺口**：Subscription alertEvents/analysisEvents/assistantEvents/queueEvents 及 Socket.IO 执行/权限/投递（GAP-LEGACY-001 / GAP-ASYNC-001）；dashboard SSE 不重迁。
 - **基础/依据**：G/graphqlread 解析鉴权/字段权限与 SSE 关闭流程；N/graphql-subscriptions Redis backplane、graphql resolvers、websocket gateway。需要 executor、连接鉴权、orgId过滤、payload/取消/背压与多实例 transport；只接 Redis 不够。
@@ -204,6 +216,8 @@ Go读端settingscrawl/policy.go已有stateFromStoredValue/normalizeSourcePolicyS
 - **文件/前置/冲突**：通常先只读 infra/docker、上游 clients/settings 与部署记录；**可独立只读窗口**；实际部署变更不在本轮授权内，执行时再按明确范围决定。未核真实配置值，不从 CI 推断已切流。
 
 ### BL-24 · crawl/items / 任务写入与内容导入
+
+- 2026-10-19 main91e759b4限定深读后，仅人工条目写/采集结果导入六入口及必要raw_item补偿已reserved至[ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md)，[完整提示词](tasks/ITEMS-INGEST-001.prompt.md)在Ready规划#93发布，不再分配。包括MySQL事务Outbox/即时Mongo、采集直接批写/CAS/逐项部分失败、真实BullMQ5.63.2 producer/计数/水合与独立后台owner；消费者itemPipeline仍Nest，其他任务生命周期/Frontier/自动采集器不认领。改善为补偿先item过滤再限50和GAP-ITEMS-001 hydration最新任意状态聚合；不改变搜索/RSS completed-only。核心新包独立，四订阅contract/exec不改。
 
 - 2026-10-18按main90765633深入后，仅RSS翻译子链已reserved至[RSS-TRANSLATION-001](tasks/RSS-TRANSLATION-001.md)，[提示词](tasks/RSS-TRANSLATION-001.prompt.md)随#85发出；不再重复派发translateRssItems。同步DeepLX主备/LLM、四字段分块、双缓存、指标/日志齐备才算本链；无BullMQ/Cron或原文写回。确认GAP-RSS-001共享完整profile缓存被状态投影覆盖，一并具体修复；Mongo选最新记录改数据库侧分组。其他任务生命周期、创建/更新/导入仍未认领。
 

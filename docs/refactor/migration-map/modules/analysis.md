@@ -1,14 +1,18 @@
 # analysis · 分析协作工作区与导出
 
+2026-10-19分析执行限定续核（main91e759b4）：新增[ANALYSIS-RUNS-001](../tasks/ANALYSIS-RUNS-001.md) reserved，[完整提示词](../tasks/ANALYSIS-RUNS-001.prompt.md)在Ready规划#93发布，占三analysis.run Mutation与analysis队列完整Go生产/消费/统计和Geo/真实模型SSE/结果与通知。main仍0/3写、Nest执行不变；analysisResults不重迁，analysisEvents传输归Ready #95，search CSV归ARCHIVE-READING-001。包含具体GAP-ANALYSIS-001中断running恢复与Mongo有界top30改善，双开关默认legacy、英文文件注释、禁止占位。仅本链深入，不重审协作域或提前计Go覆盖。
+
+2026-10-19限定续核（main91e759b4）：items/events两CSV已合main（原ANALYSIS-EXPORT-001，历史合并/CI见task索引），不重迁；剩余POST /api/analysis/exports/search整路的items/headlines两模式现由[ARCHIVE-READING-001](../tasks/ARCHIVE-READING-001.md) reserved，和三归档Query/准备producer成一条完整链，[提示词](../tasks/ARCHIVE-READING-001.prompt.md)在Ready规划#93发布。本次只深读search契约/归档调用与已迁导出复用，未重新审阅其他analysis写/worker；下方旧全域统计/表为历史快照。
+
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态
 
 保存视图、看板/列/任务、笔记与评论共 23 条 HTTP 已接管；看板列表/详情在缺默认看板时会创建，不能规划为无写入读接口。analysisResults 只读取历史。
 
-关键数据与副作用：MySQL Analysis*（事务、讨论清理、评论计数）、Mongo 历史结果、Redis/BullMQ analysis、LLM。exports 三入口仍为 Nest，导出权限/查询过滤以 Controller 和导出服务为准。
+关键数据与副作用：MySQL Analysis*（事务、讨论清理、评论计数）、Mongo历史结果、Redis/BullMQ analysis、LLM。当前items/events CSV已Go；search仍Nest（analysis.write，headlines经归档可入准备队列），权限/过滤以Controller和服务为准。
 
-真实剩余缺口：三条导出、requestCorrelationAnalysis/requestAnomalyExplanation/requestGeoTransportAnalysis、analysisEvents Subscription 与 analysis worker 尚在 Nest。
+当前剩余导出为search整路；requestCorrelationAnalysis/requestAnomalyExplanation/requestGeoTransportAnalysis与analysis worker仍Nest，analysisEvents由GRAPHQL-SUBSCRIPTIONS-001占用、未合main，不在新归档任务内。
 
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#analysis) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
