@@ -7,15 +7,17 @@
 // go-modules-regen run can resolve and commit the complete module graph before
 // the real implementation files exist. It is deleted once the implementation
 // imports the same set; the final go-modules-regen pass prunes anything unused.
+//
+// tgtest is deliberately absent: its non-test files import stretchr/testify and
+// a second websocket module, which would add unrelated modules to go.mod.
 package gotdprobe
 
 import (
 	_ "github.com/gotd/td/bin"
 	_ "github.com/gotd/td/crypto"
+	_ "github.com/gotd/td/session"
 	_ "github.com/gotd/td/telegram"
 	_ "github.com/gotd/td/telegram/auth"
-	_ "github.com/gotd/td/telegram/session"
 	_ "github.com/gotd/td/tg"
 	_ "github.com/gotd/td/tgerr"
-	_ "github.com/gotd/td/tgtest"
 )
