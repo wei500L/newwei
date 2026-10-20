@@ -1,5 +1,26 @@
 # 任务认领与历史恢复索引
 
+2026-10-20 本批整合：main 基线 `91e759b449c4511dc96d86539ea0eb258754d07e`，21 条开放 PR 由 `integration/merge-open-prs-b92-113` 以 merge commit 一次性收口（#92–#113；#111 由 #112 取代并关闭，未 squash/rebase/force-push）。head：#93 f5dca8d4、#92 28c8f761、#94 cf25026f、#96 761ed72c、#97 b3e760d0、#99 f2891760、#100 daca0be4、#101 479004fc、#102 2e3c172a、#103 96530bb3、#104 e8c32f22、#105 3193eedb、#106 4220940c、#107 35fc68b1、#108 a2113b81、#109 76d974f7、#110 3f6a5192、#112 69f16608、#113 eca49b21、#98 e9c99ec9、#95 47095336。下表六行归一为对应的最终 PR/head；其余 14 个实现单元没有独立 task 页，按 PR/分支/head 记录如下，不新建 task ID。批次状态在整合 PR 合并前保持 `pr_open`，merged 回填与 merge SHA 由后续文档提交完成。
+
+本批无独立 task 页的实现单元：
+
+| PR | 分支 | head | 范围 |
+|---|---|---|---|
+| #99 | `refactor/go-economic-data` | f2891760 | 经济数据三 Mutation/三管理 HTTP 与 akshare-data worker |
+| #100 | `refactor/go-alert-rules` | daca0be4 | 告警规则配置写、默认规则、手动触发与 BullMQ producer |
+| #101 | `refactor/go-crawl-task-lifecycle` | 479004fc | 采集任务生命周期 3 REST + 3 Mutation 与队列控制 |
+| #102 | `refactor/go-settings-diagnostics` | 2e3c172a | 邮件设置、地理编码与运行诊断 |
+| #103 | `refactor/go-situation-insights` | 96530bb3 | 态势监控洞察只读链 |
+| #104 | `refactor/go-kg-ingestion` | e8c32f22 | 知识图谱自动构建 Cron |
+| #105 | `refactor/go-news-backfill-jobs` | 3193eedb | 聚类 LLM 补救、恢复 worker 与指标关联刷新 |
+| #106 | `refactor/go-dashboard-optimization` | 4220940c | 看板图表/时空/统计/SSE 契约与读取共享 |
+| #107 | `refactor/go-quality-ops` | 35fc68b1 | 分类质量报告、质量队列 worker 与流水线运行记录 |
+| #108 | `refactor/go-account-data` | a2113b81 | 头像上传签名与个人数据导出 |
+| #109 | `refactor/go-assistant-runs` | 76d974f7 | Assistant 提交/执行/删除与 worker |
+| #110 | `refactor/go-gdelt-snapshot` | 3f6a5192 | GDELT 外部快照定时重建与强制刷新 |
+| #112 | `refactor/go-crawl-discovery-2` | 69f16608 | 新闻源预览与工作流试运行/回放的采集发现链（取代 #111） |
+| #113 | `refactor/go-alert-worker` | eca49b21 | 告警评估、站内通知与邮件/Webhook 投递 worker |
+
 2026-10-19分析执行选批：main仍91e759b4/普通CI39247556593成功，无新业务合并。#92/#94未合，#95观察head8d759fe2/普通CI39302998528运行中，条目入库in_progress、归档in_progress（已见vector/llmembed/规则端口开发）均保持占用。新增[ANALYSIS-RUNS-001](ANALYSIS-RUNS-001.md) reserved与[完整提示词](ANALYSIS-RUNS-001.prompt.md)，Ready规划#93发布；完整三请求/真实Go worker/统计和Geo/模型SSE/结果/通知，双开关、英文文件注释和真实实现要求明确。无业务实施，不重建地图，以下旧段落保留发出快照。
 
 2026-10-19归档选批：fetch后main仍`91e759b449c4511dc96d86539ea0eb258754d07e`，普通CI39247556593成功；审计Ready #92 OPEN/head28c8f761不变，NewsNow Ready #94 OPEN/headcf25026f、普通CI39297914942已成功，均未合main。四订阅已Ready #95 OPEN/head68a4536d，首轮普通CI39301019113因Go modules drift gate失败、已加regen label，继续占contract/exec；条目入库已见itemsingest/pipelineenqueue/go.mod开发，改in_progress。新增[ARCHIVE-READING-001](ARCHIVE-READING-001.md) reserved及[完整执行提示词](ARCHIVE-READING-001.prompt.md)，在[Ready规划PR #93](https://github.com/wei500L/newwei/pull/93)发布：三归档Query+search整路两模式、分类/显示/语义检索/兼容准备入队、单请求快照CSV优化，Nest准备worker明确保留。本次只深读该完整候选与相关共享diff，不重建地图或增加main覆盖；下方旧段落保留为发出快照，以本增量和任务表为准。
@@ -50,12 +71,12 @@ main 结构/指定业务分支核对：2026-10-18 14:37–14:42 MSK；任务/wor
 
 | ID | 状态 | 精确范围 | 是否已有业务 PR / 推送 |
 |---|---|---|---|
-| [ANALYSIS-RUNS-001](ANALYSIS-RUNS-001.md) | reserved | 三分析Mutation完整Go执行：原生producer/consumer、统计/Geo/真实SSE、结果/事件/最终通知 | 提示词在Ready规划#93发布，业务worktree/PR未创建；双独立默认legacy开关 |
-| [ARCHIVE-READING-001](ARCHIVE-READING-001.md) | in_progress | 三归档Query+search两模式CSV：分类/显示/语义搜索、兼容BullMQ准备生产与导出快照 | 业务目录已见vector/llmembed/规则端口开发，无业务PR；Nest准备worker保留 |
-| [ITEMS-INGEST-001](ITEMS-INGEST-001.md) | in_progress | 1HTTP+5Mutation：人工条目写/采集入库、Mongo/水合/原子BullMQ producer与raw_item同步/定时补偿 | 已见itemsingest/pipelineenqueue及go.mod开发，尚无业务PR；Nest处理worker保持 |
-| [GRAPHQL-SUBSCRIPTIONS-001](GRAPHQL-SUBSCRIPTIONS-001.md) | pr_open | 四个Subscription完整WS协议/鉴权/组织投影、PubSub和BullMQ广播观察、非本批operation整份legacy兼容 | Ready #95 OPEN/head8d759fe2，普通CI39302998528运行中；自身类型修复/依赖regen正常推进，contract/exec占用保持 |
-| [NEWSNOW-SOURCES-001](NEWSNOW-SOURCES-001.md) | pr_open | 两公开来源HTTP完整冷获取/强刷；64来源ID/41族、特殊getter/缓存/凭据/实时接缝与批并发优化 | Ready #94 OPEN/headcf25026f，普通CI39297914942成功；最新提交只补验证文档，未合main/无部署证据 |
-| [AUDIT-OUTBOX-001](AUDIT-OUTBOX-001.md) | pr_open | 审计Outbox完整消费、三状态扫描/租约/退避/落库与轻字段优化 | Ready #92 OPEN，head28c8f761a2ce4a447080414f154b567648cc6bd1；普通CI39248452603 success，真实共享接线diff已核；尚未合main，继续占用 |
+| [ANALYSIS-RUNS-001](ANALYSIS-RUNS-001.md) | pr_open | 三分析Mutation完整Go执行：原生producer/consumer、统计/Geo/真实SSE、结果/事件/最终通知 | Ready #98，head `e9c99ec92962e7e4fff4efe4862ee974d440e726`；普通 CI [39316192738](https://github.com/wei500L/newwei/actions/runs/39316192738) success；本批整合分支 `integration/merge-open-prs-b92-113` 待合并 |
+| [ARCHIVE-READING-001](ARCHIVE-READING-001.md) | pr_open | 三归档Query+search两模式CSV：分类/显示/语义搜索、兼容BullMQ准备生产与导出快照 | Ready #97，head `b3e760d07366b995c7cf37bfe2802a7f720e3e03`；普通 CI [39316394249](https://github.com/wei500L/newwei/actions/runs/39316394249) success；Nest准备worker保留；本批整合分支待合并 |
+| [ITEMS-INGEST-001](ITEMS-INGEST-001.md) | pr_open | 1HTTP+5Mutation：人工条目写/采集入库、Mongo/水合/原子BullMQ producer与raw_item同步/定时补偿 | Ready #96，head `761ed72c78341e743029bd473b569917c962579f`；普通 CI [39310062045](https://github.com/wei500L/newwei/actions/runs/39310062045) success；Nest处理worker保持；本批整合分支待合并 |
+| [GRAPHQL-SUBSCRIPTIONS-001](GRAPHQL-SUBSCRIPTIONS-001.md) | pr_open | 四个Subscription完整WS协议/鉴权/组织投影、PubSub和BullMQ广播观察、非本批operation整份legacy兼容 | Ready #95，head `470953366da34602fedf80f66f7e504659e17d89`；普通 CI [39310002253](https://github.com/wei500L/newwei/actions/runs/39310002253) success；本批整合分支待合并 |
+| [NEWSNOW-SOURCES-001](NEWSNOW-SOURCES-001.md) | pr_open | 两公开来源HTTP完整冷获取/强刷；64来源ID/41族、特殊getter/缓存/凭据/实时接缝与批并发优化 | Ready #94，head `cf25026ff99b26fb3bf2122cd240d4ac4021889a`；普通 CI [39297914942](https://github.com/wei500L/newwei/actions/runs/39297914942) success；本批整合分支待合并 |
+| [AUDIT-OUTBOX-001](AUDIT-OUTBOX-001.md) | pr_open | 审计Outbox完整消费、三状态扫描/租约/退避/落库与轻字段优化 | Ready #92，head `28c8f761a2ce4a447080414f154b567648cc6bd1`；普通 CI [39248452603](https://github.com/wei500L/newwei/actions/runs/39248452603) success；本批整合分支待合并 |
 | [RSS-TRANSLATION-001](RSS-TRANSLATION-001.md) | merged | RSS翻译Mutation完整双provider/正文分块/缓存/指标日志；修状态共享缓存投影写回 | 经#90实际merge c70b0373990ab931758f7a000511c2d34572fc33；原#88 head d4117032，main祖先；普通CI39163544617成功，非生产启用证据 |
 | [DIGEST-DELIVERY-001](DIGEST-DELIVERY-001.md) | merged | 摘要定时投递：Cron、到期CAS、SMTP、状态和摘要通知桥 | 经#89实际merge f1167769f8c1d90017a6105cc65f135741ea47a1；原#87 head 2b0da7ec，main祖先；CI39163544617成功；审计outbox消费仍Nest |
 | [SETTINGS-WRITE-001](SETTINGS-WRITE-001.md) | merged | 13 个设置写已合入；独立开关接线有剩余缺口 | [PR #68](https://github.com/wei500L/newwei/pull/68) → 3cedce9a；PR/main CI 均成功（main14:22复核） |

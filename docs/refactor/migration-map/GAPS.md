@@ -6,17 +6,19 @@
 
 | ID | 性质 / 所属域 | 影响范围 | 状态 / 归属 |
 |---|---|---|---|
-| GAP-ANALYSIS-001 | 中断恢复；analysis | BullMQ stalled重排时Mongo仍running，被process认领条件跳过，可能形成队列结束/结果永久running | ANALYSIS-RUNS-001 reserved；main91e759b4静态确认，未修/未运行 |
-| GAP-ITEMS-001 | 部分实现/水合；items | Go读模型水合只取completed窄快照，丢最新pending/failed及必要字段 | ITEMS-INGEST-001 reserved，main91e759b4静态确认，未修/未运行验证 |
-| GAP-RSS-001 | 部分实现/共享缓存；items | rssTranslationStatus在LLM profile缓存miss后覆盖完整缓存字段 | RSS-TRANSLATION-001 reserved，main缺口开放；只修本链写回 |
-| GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | SOURCE-POLICY-WRITE-001认领main90765633仍缺的路由/无效DSN两处条件；主体仍merged，缺口仍开放 |
+| GAP-ANALYSIS-001 | 中断恢复；analysis | BullMQ stalled重排时Mongo仍running，被process认领条件跳过，可能形成队列结束/结果永久running | ANALYSIS-RUNS-001 pr_open（#98，head e9c99ec9）；实现已提交、本批整合分支待合并；未部署/未运行验证 |
+| GAP-ITEMS-001 | 部分实现/水合；items | Go读模型水合只取completed窄快照，丢最新pending/failed及必要字段 | ITEMS-INGEST-001 pr_open（#96，head 761ed72c）；实现已提交、本批整合分支待合并；未部署/未运行验证 |
+| GAP-RSS-001 | 部分实现/共享缓存；items | rssTranslationStatus在LLM profile缓存miss后覆盖完整缓存字段 | RSS-TRANSLATION-001 经#90合入main c70b0373，修共享缓存投影写回；未生产验证 |
+| GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | SOURCE-POLICY-WRITE-001 经#89合入main f1167769；旧13写剩余接线仍按设置写任务跟踪，缺口仍开放 |
 | GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | NEWS-BRIEF-001 pr_open（候选实现，未合 main）；缺口仍开放 |
 | GAP-CRAWL-001 | 部分实现；crawl | 媒体下发及已有REST/GraphQL详情的 S3 URL分支 | STORAGE-MEDIA-001 pr_open（候选实现，未合 main）；缺口仍开放 |
-| GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 四Subscription in_progress；NewsNow两来源HTTP pr_open/#94；条目写/采集入库六入口ITEMS-INGEST-001 reserved；其他按任务索引，不据旧快照重发 |
-| GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | digest经#89入main；审计#92 pr_open；四Subscription in_progress；raw_item补偿/窄producer由ITEMS-INGEST-001 reserved，itemPipeline worker/Socket.IO继续Nest，不关闭整个缺口 |
-| GAP-KG-001 | 部分实现；knowledge | 已迁证据复核队列的固定候选遮挡 | main90765633限定确认；KNOWLEDGE-REVIEW-001 pr_open（#86，head4d6d24b8，随本批整合），缺口仍开放 |
+| GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 主要子链已由 #92–#113 的 21 条 PR 覆盖（四订阅、来源、条目写、归档、经济、告警、采集、设置、态势、导出等），整合分支待合并；未部署验证，整域缺口不关闭 |
+| GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | digest/审计/四订阅/analysis worker/告警 worker/质检 worker/形状回填等已由本批 PR 覆盖，整合分支待合并；itemPipeline worker、Socket.IO 与真实外部服务继续由 NestJS 承担，整域缺口不关闭 |
+| GAP-KG-001 | 部分实现；knowledge | 已迁证据复核队列的固定候选遮挡 | KNOWLEDGE-REVIEW-001 经#89合入main f1167769；未部署验证，缺口仍开放 |
 
 “未迁移”是范围事实，不表示 Nest 有 bug；“缺少外部运行证据”不单独计为源码缺陷。当前没有因本轮文档维护而关闭的业务缺口。
+
+2026-10-20 本批整合增量：`docs/refactor/migration-map` 的 21 条开放 PR 由 `integration/merge-open-prs-b92-113` 一次性收口（#92–#113，#111 由 #112 取代并关闭）。GAP-ANALYSIS-001、GAP-ITEMS-001 由 reserved 改为 pr_open（#98 head e9c99ec9、#96 head 761ed72c）；GAP-RSS-001、GAP-KG-001、SOURCE-POLICY-WRITE-001 等经 #89/#90 合入的事实回填为 merged，但均未部署/未运行验证，不关闭缺口。本批新增的 worker/Cron/订阅仍按“实现已提交、整合分支待合并”记录，不以 PR CI 代替部署或实网证据。
 
 <a id="gap-analysis-001"></a>
 
@@ -25,7 +27,7 @@
 - SHA：91e759b449c4511dc96d86539ea0eb258754d07e，2026-10-19限定analysis链静态核对；没有生产故障/运行复现证据。
 - 触发：worker在Mongo标running后崩溃/锁丢失，BullMQ5.63.2按stalled策略重新交付。Nest apps/api/src/modules/analysis/analysis.service.ts:134-148只认pending/failed，running不匹配就return；analysis.processor.ts调用后无恢复。官方Worker/Job/Scripts的stalled回wait和重新执行路径已核。
 - 影响：可重试任务不再实际计算，队列可结束但analysisresults仍running；stalled最终失败也须和Mongo/通知对齐。不能以BullMQ有重试认定业务已恢复。
-- Go事实：当前无完整analysis执行器，history读无法修复。ANALYSIS-RUNS-001认领持当前queue租约的running接续、最小attempt条件写/旧token不能覆盖、终态/最终通知，Nest回滚侧同步本链窄修；队列仍at-least-once，不引入跨库exactly-once框架。
+- Go事实：当前无完整analysis执行器，history读无法修复。ANALYSIS-RUNS-001（#98，head e9c99ec9）已提交实现并持当前queue租约的running接续、最小attempt条件写/旧token不能覆盖、终态/最终通知，Nest回滚侧同步本链窄修；队列仍at-least-once，不引入跨库exactly-once框架。
 - 文件：Nest analysis.processor.ts/analysis.service.ts、必要analysis-result可选字段，Go新analysisqueue/analysisruns；不扩展其他worker。远端普通CI真实Redis/Mongo/worker+SSE fixture须覆盖重排、旧token、已完成不重复；真实模型和部署分别记。
 - 状态reserved、未实施、关闭证据无；须实际main落地、精确head CI/恢复行为证据，生产启用另记。
 
@@ -36,7 +38,7 @@
 - 2026-10-19限定核对main `91e759b449c4511dc96d86539ea0eb258754d07e`，触发已有itemreadmodels水合/新写后刷新；不推断生产已发生故障。
 - Go `apps/api-go/internal/itemsreading/readmodel.go:loadProcessedSnapshots` 调用 `mongo.go:ListLatestProcessedSnapshots`，后者where固定status=completed，投影不含rawItemId/error/llm/updatedAt等水合字段。Nest `ItemsReadModelService.loadProcessedReadModelSnapshots/buildLatestItemSnapshotPipeline` 在org+item IDs内按createdAt DESC,_id DESC取最新任意状态及完整snapshot，没有completed过滤。
 - 影响：最新pending/failed可能缺失或旧completed替代最新运行状态；仅导出Go私有hydration helper不能完成写后读模型契约。搜索/RSS取completed本身不是此缺口，不改它们的语义。
-- [ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) reserved，仅认领hydration专用Mongo聚合/全snapshot、组织和raw双向绑定/缺snapshot unset及新写链调用。允许readmodel.go与独立hydration store/port，不重建全库read-model、不新增后台回填；状态未修，无关闭证据。关闭需实际main实现/对应head验证与最新状态case，生产启用另记。
+- [ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) 已 pr_open（#96，head 761ed72c），仅认领hydration专用Mongo聚合/全snapshot、组织和raw双向绑定/缺snapshot unset及新写链调用。允许readmodel.go与独立hydration store/port，不重建全库read-model、不新增后台回填；状态未修，无关闭证据。关闭需实际main实现/对应head验证与最新状态case，生产启用另记。
 
 <a id="gap-kg-001"></a>
 
@@ -114,7 +116,7 @@
 
 ## GAP-ASYNC-001 · 已迁读取背后的 Nest 执行所有权
 
-2026-10-19条目入库限定增量（main91e759b4）：[ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) reserved，含raw_item消费者/后台owner与itemPipeline native producer、读模型刷新；完整[提示词](tasks/ITEMS-INGEST-001.prompt.md)已保存。当前main仍由Nest投递/补偿；新任务不迁itemPipeline worker、processed_item/其他Outbox或Socket.IO，不因这条认领关闭本跨域GAP。
+2026-10-19条目入库限定增量（main91e759b4）：[ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) pr_open，含raw_item消费者/后台owner与itemPipeline native producer、读模型刷新；完整[提示词](tasks/ITEMS-INGEST-001.prompt.md)已保存。当前main仍由Nest投递/补偿；新任务不迁itemPipeline worker、processed_item/其他Outbox或Socket.IO，不因这条认领关闭本跨域GAP。
 
 2026-10-19四订阅限定增量（main91e759b4）：[GRAPHQL-SUBSCRIPTIONS-001](tasks/GRAPHQL-SUBSCRIPTIONS-001.md) reserved，[完整提示词](tasks/GRAPHQL-SUBSCRIPTIONS-001.prompt.md)已保存于Ready规划#93；四Subscription executor/upgrade在main仍Nest。只规划传输/事件投影、三域Redis订阅与itemPipeline广播观察及终态组织上下文，不迁入队/业务worker/Socket.IO，不关闭本跨域GAP。审计#92 OPEN/CI成功但未入main，NewsNow已in_progress；缺口/部署仍分别核实，不从本次规划增加完成数。
 
@@ -126,7 +128,7 @@
 
 | 受影响的 Go 范围 | 仍须 Nest 执行的必要步骤 | 用户影响 / 触发 | 候选与前置 |
 |---|---|---|---|
-| `analysisResults` / `assistantRuns` | 当前submit/worker/Mongo更新/发布仍Nest | ANALYSIS-RUNS-001 reserved完整analysis Go执行，未实施；Assistant未认领，不一并关闭 | BL-12已占用，双开关/原生兼容/恢复GAP；BL-13独立核 |
+| `analysisResults` / `assistantRuns` | 当前submit/worker/Mongo更新/发布仍Nest | ANALYSIS-RUNS-001 pr_open（#98）完整analysis Go执行，实现已提交、待整合合并；Assistant未认领，不一并关闭 | BL-12已占用，双开关/原生兼容/恢复GAP；BL-13独立核 |
 | 归档准备状态 HTTP；三Query/search尚Nest | ensure*Coverage→archivePreparation→ArchivePreparationProcessor→分类/显示信号回填/状态写回 | status可读不代表有生成能力；停Nest worker无法推进冷数据。ARCHIVE-READING-001 reserved仅查询+兼容producer，尚未实现 | BL-09/08第一阶段已占用；Go准备worker第二阶段未认领，整链未关闭 |
 | Telegram/Oref 信号和 refresh-run 读 | signals processor、轮询器、external snapshot Cron、refresh 入队 | Go 读取已有 Redis 缓存；停 Nest 会失去后续刷新 | BL-14；外部凭据与租约先确认 |
 | 经济六读、新闻事件/指标、知识图谱读 | AkShare repeat/processor、news pipeline/ingestion、KG ingestion | 已有数据查询在 Go；新数据/关联仍依赖 Nest 更新 | BL-11/16/18；先划每条数据写入所有权 |

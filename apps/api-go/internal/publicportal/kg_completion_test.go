@@ -11,15 +11,6 @@ import (
 	"time"
 )
 
-type fakeGatewaySettings struct {
-	profiles   []byte
-	governance []byte
-}
-
-func (f fakeGatewaySettings) GatewaySettings(context.Context) ([]byte, []byte, error) {
-	return f.profiles, f.governance, nil
-}
-
 func profilesJSON(t *testing.T, apiBase string, extra map[string]any) []byte {
 	t.Helper()
 	profile := map[string]any{
