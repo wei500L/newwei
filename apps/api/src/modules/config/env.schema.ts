@@ -160,6 +160,17 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The owner of the `alerts` queue: the scan, the rule evaluation, the
+    // external delivery and the in-app notification write. Empty string behaves
+    // like legacy. An invalid value fails Nest startup instead of being silently
+    // stripped from the validated config.
+    API_GO_ALERT_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     REDIS_DB: z.coerce.number().int().nonnegative().default(0),
     REDIS_USERNAME: z.string().optional(),
     REDIS_PASSWORD: z.string().optional(),

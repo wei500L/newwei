@@ -24,10 +24,20 @@ export class AlertsProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
+    // The schedules stay here even when Go owns the queue: scheduleScanJob and
+    // ensureAllSchedules are idempotent upserts of the same repeatable jobs that
+    // api-go's scan needs, so keeping them leaves the Redis layout identical in
+    // both modes.
     await this.alertsService.scheduleScanJob();
     await this.alertsService.ensureAllSchedules();
     if (!this.env.bullmqWorkersEnabled) {
       logger.warn("BullMQ workers disabled on this process");
+      return;
+    }
+    if (this.resolveAlertWorkerMode() === "go") {
+      logger.info(
+        "alerts queue ownership moved to api-go (API_GO_ALERT_WORKER_MODE=go)"
+      );
       return;
     }
     this.worker = new Worker<AlertJobPayload>(
@@ -78,5 +88,13 @@ export class AlertsProcessor implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy() {
     this.events.off("failed", this.handleQueueFailed);
     await this.worker?.close();
+  }
+
+  /** API_GO_ALERT_WORKER_MODE, defaulting to legacy (also for the empty string). */
+  private resolveAlertWorkerMode(): string {
+    const mode = this.env.get<string>("API_GO_ALERT_WORKER_MODE", {
+      infer: true
+    });
+    return mode ?? "legacy";
   }
 }
