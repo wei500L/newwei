@@ -69,10 +69,10 @@ func (a *Activity) EnsureActiveTaskCount(ctx context.Context, db *sql.DB) (int, 
 		count = 0
 	}
 	lastLoadedAt := a.clock().UTC().Format("2006-01-02T15:04:05.000Z")
-	if err := a.redis.HSet(ctx, ActivityHashKey, map[string]any{
-		ActiveTaskCountField: strconv.FormatInt(count, 10),
-		LastLoadedAtField:    lastLoadedAt,
-	}).Err(); err != nil {
+	if err := a.redis.HSet(ctx, ActivityHashKey,
+		ActiveTaskCountField, strconv.FormatInt(count, 10),
+		LastLoadedAtField, lastLoadedAt,
+	).Err(); err != nil {
 		return 0, err
 	}
 	return int(count), nil
