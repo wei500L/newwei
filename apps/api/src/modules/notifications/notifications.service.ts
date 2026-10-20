@@ -4,8 +4,8 @@ import type { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
 
-import { NotificationDispatcher, NotificationEvent } from "./notification.dispatcher";
 import { NotificationRealtimeRelay } from "./notification-realtime.relay";
+import { NotificationDispatcher, NotificationEvent } from "./notification.dispatcher";
 
 export interface CreateNotificationInput {
   orgId: string;
