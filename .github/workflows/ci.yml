@@ -530,6 +530,25 @@ jobs:
           go test -tags=integration -count=1 ./internal/metrics/ -run 'TestMetricsEndpointAuthorizationIntegration' -v
           go test -tags=integration -count=1 ./internal/startupreconcile/ -run 'TestStartupReconcile' -v
 
+      # 条目流水线 worker（API_GO_ITEM_PIPELINE_WORKER_MODE=go 的 Go 消费端）：
+      # 真实 MySQL/Redis/Mongo 验证入队到 BullMQ worker 的完整协议（completed
+      # 事件、TaskLog、ItemMeta/PipelineJob/NewsSource 状态写入）、瞬时失败进入
+      # delayed 集合并按 exponential backoff 重试、永久错误直接进入 failed 并写
+      # itemPipelineDlq（原始 data 展开 + failedAt/errorKind/error）、以及 B1
+      # 并发两次最终失败时计数 +2 且熔断通知只发一次。测试进程内的 fake pipeline
+      # 只验证 worker/失败语义；完整流水线由 newspipeline 的单元测试覆盖。
+      - name: Item pipeline worker integration tests (MySQL/Redis/Mongo)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/itempipeline/ -run 'TestItemPipelineWorkerIntegration|TestItemPipelineWorkerRetriesTransientFailure|TestItemPipelineWorkerPermanentFailureGoesToDLQ|TestMarkSourceFailureStateConcurrentFinalFailures' -v -timeout 10m
+
+      # 完整条目流水线链路：真实 MySQL/Mongo，任务带预取正文（不请求 crawl4ai），
+      # LLM 由进程内 fake 提供、向量服务禁用。覆盖 staged 模式的预检门控、清洗、
+      # 质量门控、实体/情感/知识图谱抽取、去重、持久化（Article +
+      # ProcessedArticle + MongoOutbox）以及 #116 立即投递（ProcessedItem →
+      # ItemMeta completed → 读模型 → outbox 行删除）。没有连接真实 LLM 网关、
+      # crawl4ai 或向量服务，也没有用生产数据比对结果。
+      - name: Full item pipeline chain integration test (MySQL/Mongo + fake LLM)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newspipeline/ -run 'TestFullPipelineChainIntegration' -v -timeout 10m
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从
