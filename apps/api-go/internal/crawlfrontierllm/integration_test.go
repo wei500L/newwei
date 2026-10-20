@@ -338,9 +338,9 @@ func TestFrontierLlmJudgeIntegration(t *testing.T) {
 	if got := h.scalar("SELECT COUNT(*) FROM CrawlStrategyWorkflowRunStep WHERE runId = 'wf-1' AND stepKey = 'frontier:node-root:llm-judge:seed'"); got != "1" {
 		t.Fatalf("judge step = %s", got)
 	}
-	// The child node was enqueued to the hot crawl4ai queue with the NodeJS
-	// job id shape.
-	waiting, err := h.redis.LRange(context.Background(), "bull:crawl4ai-hot:wait", 0, -1).Result()
+	// The article child node is enqueued to the normal crawl4ai queue with the
+	// NodeJS job id shape.
+	waiting, err := h.redis.LRange(context.Background(), "bull:crawl4ai-normal:wait", 0, -1).Result()
 	if err != nil {
 		t.Fatal(err)
 	}
