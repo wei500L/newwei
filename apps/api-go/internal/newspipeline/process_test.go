@@ -52,8 +52,16 @@ func (c *pipelineMetadataCapture) exec(_ context.Context, query string, args ...
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.queries = append(c.queries, query)
-	if match := pipelineStagePathPattern.FindStringSubmatch(query); len(match) == 2 {
+	for _, match := range pipelineStagePathPattern.FindAllStringSubmatch(query, -1) {
+		if len(match) != 2 {
+			continue
+		}
+		switch match[1] {
+		case "extraction", "stages", "updatedAt":
+			continue
+		}
 		c.stages = append(c.stages, match[1])
+		break
 	}
 	return c.failWith
 }
