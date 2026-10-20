@@ -3,6 +3,7 @@ package dashboardcharts
 import (
 	"database/sql"
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 )
@@ -19,22 +20,29 @@ func TestHeatmapPrefersLabelThenFallsBack(t *testing.T) {
 		"a": {"volume", "close"},
 		"b": {"zzz_custom"},
 	}
-	lookup := func(itemID, field string) (samplePoint, samplePoint, bool, error) {
-		switch itemID + "/" + field {
-		case "a/close":
-			return samplePoint{RecordedAt: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), Value: 100},
-				samplePoint{RecordedAt: time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC), Value: 110.5, Unit: sql.NullString{String: "pts", Valid: true}},
-				true, nil
-		case "b/zzz_custom":
-			return samplePoint{RecordedAt: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), Value: 50},
-				samplePoint{RecordedAt: time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC), Value: 40},
-				true, nil
-		default:
-			t.Fatalf("unexpected lookup %s %s", itemID, field)
-			return samplePoint{}, samplePoint{}, false, nil
+	batches := 0
+	load := func(keys []seriesKey) (map[seriesKey]seriesEndpoints, error) {
+		batches++
+		loaded := make(map[seriesKey]seriesEndpoints, len(keys))
+		for _, key := range keys {
+			switch key.ItemID + "/" + key.Field {
+			case "a/close":
+				loaded[key] = seriesEndpoints{
+					First: samplePoint{RecordedAt: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), Value: 100},
+					Last:  samplePoint{RecordedAt: time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC), Value: 110.5, Unit: sql.NullString{String: "pts", Valid: true}},
+				}
+			case "b/zzz_custom":
+				loaded[key] = seriesEndpoints{
+					First: samplePoint{RecordedAt: time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC), Value: 50},
+					Last:  samplePoint{RecordedAt: time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC), Value: 40},
+				}
+			default:
+				t.Fatalf("unexpected key %s/%s", key.ItemID, key.Field)
+			}
 		}
+		return loaded, nil
 	}
-	body, err := buildHeatmap(items, fields, lookup)
+	body, err := buildHeatmap(items, fields, load)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +64,10 @@ func TestHeatmapPrefersLabelThenFallsBack(t *testing.T) {
 	if len(body.YLabels) != 1 || body.YLabels[0] != "Row 1" || len(body.XLabels) != 4 {
 		t.Fatalf("labels x=%v y=%v", body.XLabels, body.YLabels)
 	}
-	empty, err := buildHeatmap(nil, nil, lookup)
+	if batches != 1 {
+		t.Fatalf("endpoint batches = %d, want one per request", batches)
+	}
+	empty, err := buildHeatmap(nil, nil, load)
 	if err != nil || len(empty.Cells) != 0 || len(empty.YLabels) != 2 {
 		t.Fatalf("empty heatmap = %+v err=%v", empty, err)
 	}
@@ -120,5 +131,50 @@ func TestCandlestickAliasPriorityAndIncomplete(t *testing.T) {
 	missing, mismatch := buildCandle(nil, nil, 0, nil)
 	if mismatch != nil || missing.Symbol != candlestickSlug || missing.Interval != "daily" || len(missing.Points) != 0 || missing.IncludeUnit {
 		t.Fatalf("missing item = %+v", missing)
+	}
+}
+
+// Number.prototype.toFixed rounds the two equally close candidates towards
+// +Infinity, so an exact negative tie keeps the smaller magnitude. math.Round
+// rounds away from zero instead, which produced -0.13 for -0.125.
+func TestJSFixedMatchesToFixedTies(t *testing.T) {
+	cases := []struct {
+		value  float64
+		digits int
+		want   float64
+	}{
+		{0.125, 2, 0.13},
+		{-0.125, 2, -0.12},
+		{1.005, 2, 1},
+		{-1.005, 2, -1},
+		{-0.001, 2, 0},
+		{110.456, 2, 110.46},
+		{-20.0, 2, -20},
+	}
+	for _, entry := range cases {
+		if got := jsFixed(entry.value, entry.digits); got != entry.want {
+			t.Fatalf("jsFixed(%v, %d) = %v, want %v", entry.value, entry.digits, got, entry.want)
+		}
+	}
+	// A rounded-to-zero negative value must serialise as 0, like JSON.stringify
+	// of negative zero, not as "-0".
+	if encoded, err := encodeJSON(jsFixed(-0.0001, 2)); err != nil || string(encoded) != "0" {
+		t.Fatalf("negative zero = %s err=%v", encoded, err)
+	}
+}
+
+func TestParseDecimalFoldsNegativeZero(t *testing.T) {
+	for _, raw := range []string{"-0.000000000000", "-0", "0"} {
+		value, err := parseDecimal([]byte(raw))
+		if err != nil {
+			t.Fatalf("parse %q: %v", raw, err)
+		}
+		if math.Signbit(value) {
+			t.Fatalf("parse %q kept the sign bit", raw)
+		}
+	}
+	value, err := parseDecimal([]byte("110.500000000000"))
+	if err != nil || value != 110.5 {
+		t.Fatalf("parse value = %v err=%v", value, err)
 	}
 }

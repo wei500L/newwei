@@ -68,17 +68,17 @@ type signal struct {
 }
 
 type edgeAgg struct {
-	kind       string
-	source     string
-	target     string
-	weight     int
-	lagSum     int64
-	lagCount   int
-	first      int64
-	last       int64
-	simSum     float64
-	simCount   int
-	hasSim     bool
+	kind     string
+	source   string
+	target   string
+	weight   int
+	lagSum   int64
+	lagCount int
+	first    int64
+	last     int64
+	simSum   float64
+	simCount int
+	hasSim   bool
 }
 
 func sourceKey(label, rawURL string) string {

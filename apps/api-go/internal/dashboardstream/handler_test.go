@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -311,4 +312,211 @@ func readFrames(t *testing.T, body io.Reader, want int, timeout time.Duration) [
 		}
 	}
 	return frames
+}
+
+// sharedStreamQuery pins every parameter the shared read keys use, so tests can
+// observe one computation per parameter set instead of one per connection.
+const sharedStreamQuery = "?start=2026-03-01T00:00:00.000Z&end=2026-03-02T00:00:00.000Z" +
+	"&warMapStart=2026-03-01T00:00:00.000Z&warMapEnd=2026-03-02T00:00:00.000Z" +
+	"&warMapFlightMode=military&warMapAisMode=military"
+
+// countingSources is a deterministic source set: the same bodies on every poll,
+// so a shared read and an independent read must produce identical frames.
+type countingSources struct {
+	warCalls    atomic.Int32
+	candleCalls atomic.Int32
+	heatCalls   atomic.Int32
+}
+
+func (c *countingSources) ReadForStream(context.Context, string, time.Time, time.Time, dashboardwarmap.StreamView) ([]byte, []byte, []byte, error) {
+	c.warCalls.Add(1)
+	return []byte(`{"events":[{"id":"a"}]}`), []byte(`{"markers":[]}`), []byte(`{"layers":{}}`), nil
+}
+
+func (c *countingSources) ReadCandlestick(context.Context, time.Time, time.Time) ([]byte, error) {
+	c.candleCalls.Add(1)
+	return []byte(`{"symbol":"sp500_index","interval":"daily","points":[]}`), nil
+}
+
+func (c *countingSources) ReadHeatmap(context.Context, string, time.Time, time.Time) ([]byte, error) {
+	c.heatCalls.Add(1)
+	return []byte(`{"points":[{"id":"kyiv"}]}`), nil
+}
+
+func (c *countingSources) calls() (int32, int32, int32) {
+	return c.warCalls.Load(), c.candleCalls.Load(), c.heatCalls.Load()
+}
+
+// Two connections for the same org/range/view must poll the same data once per
+// tick, and each connection must still receive the same first-frame sequence it
+// would receive with its own worker.
+func TestStreamSharesReadsAcrossConnections(t *testing.T) {
+	sources := &countingSources{}
+	handler := NewHandler(allowAuth{}, sources, sources, sources, cors.Policy{})
+	handler.SetTimings(20*time.Millisecond, time.Hour)
+	frozen := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	handler.bucketNow = func() time.Time { return frozen }
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	// Pinned ranges and view keep both connections on one parameter set; the
+	// war map range is otherwise derived from "now" and would differ per request.
+	open := func() *http.Response {
+		req, err := http.NewRequest(http.MethodGet, server.URL+Path+sharedStreamQuery, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	first := open()
+	defer first.Body.Close()
+	second := open()
+	defer second.Body.Close()
+
+	firstFrames := readFrames(t, first.Body, 5, 2*time.Second)
+	secondFrames := readFrames(t, second.Body, 5, 2*time.Second)
+	want := []string{eventWarMapEvents, eventWarMapNews, eventWarMapLayers, eventCandlestick, eventGeoHeatmap}
+	for index, name := range want {
+		if index >= len(firstFrames) || index >= len(secondFrames) {
+			t.Fatalf("missing frames: first=%#v second=%#v", firstFrames, secondFrames)
+		}
+		if firstFrames[index].event != name || secondFrames[index].event != name {
+			t.Fatalf("frame %d first=%s second=%s, want %s", index, firstFrames[index].event, secondFrames[index].event, name)
+		}
+		if firstFrames[index].data != secondFrames[index].data {
+			t.Fatalf("frame %d payload differs: %s vs %s", index, firstFrames[index].data, secondFrames[index].data)
+		}
+	}
+
+	// Both connections polled several ticks inside the same bucket window.
+	time.Sleep(60 * time.Millisecond)
+	war, candles, heat := sources.calls()
+	if war != 1 || candles != 1 || heat != 1 {
+		t.Fatalf("shared reads per bucket: war=%d candle=%d heat=%d, want 1/1/1", war, candles, heat)
+	}
+	if size := handler.warReads.size(); size != 1 {
+		t.Fatalf("war entries = %d, want one per parameter set", size)
+	}
+}
+
+// The connection that started a shared read may disconnect first. The waiting
+// connection must still receive the payload instead of a stream-error.
+func TestStreamSharedReadSurvivesInitiatorDisconnect(t *testing.T) {
+	blocking := &blockingWar{
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	handler := NewHandler(allowAuth{}, blocking, &countingSources{}, &countingSources{}, cors.Policy{})
+	handler.SetTimings(20*time.Millisecond, time.Hour)
+	frozen := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	handler.bucketNow = func() time.Time { return frozen }
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+Path+sharedStreamQuery, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initiator, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The initiator registered the shared entry and is waiting inside the read;
+	// it now leaves before the read can finish.
+	<-blocking.started
+	initiator.Body.Close()
+
+	waiter, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer waiter.Body.Close()
+	close(blocking.release)
+
+	frames := readFrames(t, waiter.Body, 5, 2*time.Second)
+	if len(frames) < 1 || frames[0].event != eventWarMapEvents {
+		t.Fatalf("waiter frames = %#v", frames)
+	}
+	for _, frame := range frames {
+		if frame.event == eventStreamError {
+			t.Fatalf("waiter reported the initiator's disconnect as an error: %#v", frames)
+		}
+	}
+	if blocking.canceled.Load() {
+		t.Fatal("shared read was cancelled by the initiator's disconnect")
+	}
+}
+
+type blockingWar struct {
+	started  chan struct{}
+	release  chan struct{}
+	canceled atomic.Bool
+}
+
+func (b *blockingWar) ReadForStream(ctx context.Context, _ string, _, _ time.Time, _ dashboardwarmap.StreamView) ([]byte, []byte, []byte, error) {
+	select {
+	case b.started <- struct{}{}:
+	default:
+	}
+	select {
+	case <-b.release:
+		return []byte(`{"events":[]}`), []byte(`{"markers":[]}`), []byte(`{"layers":{}}`), nil
+	case <-ctx.Done():
+		b.canceled.Store(true)
+		return nil, nil, nil, ctx.Err()
+	}
+}
+
+// Closed connections must leave no per-connection cache entry behind, and the
+// publish goroutines must exit.
+func TestStreamReleasesPerConnectionState(t *testing.T) {
+	sources := &countingSources{}
+	handler := NewHandler(allowAuth{}, sources, sources, sources, cors.Policy{})
+	handler.SetTimings(20*time.Millisecond, time.Hour)
+	frozen := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	handler.bucketNow = func() time.Time { return frozen }
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	connectOnce := func() {
+		req, err := http.NewRequest(http.MethodGet, server.URL+Path+sharedStreamQuery, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 16)
+		_, _ = resp.Body.Read(buf)
+		resp.Body.Close()
+	}
+
+	connectOnce()
+	baseline := runtime.NumGoroutine()
+	for index := 0; index < 10; index++ {
+		connectOnce()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		active, _ := handler.Stats()
+		if active == 0 && runtime.NumGoroutine() <= baseline+8 {
+			if handler.warReads.size() > 1 || handler.candleReads.size() > 1 || handler.heatReads.size() > 1 {
+				t.Fatalf("shared cache kept per-connection entries: war=%d candle=%d heat=%d",
+					handler.warReads.size(), handler.candleReads.size(), handler.heatReads.size())
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	active, _ := handler.Stats()
+	t.Fatalf("connections did not settle: active=%d goroutines=%d baseline=%d", active, runtime.NumGoroutine(), baseline)
 }

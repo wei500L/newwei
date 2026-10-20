@@ -219,11 +219,11 @@ func (q geoArticlesQuery) validation() string {
 
 type propQuery struct {
 	timeQuery
-	eventID    stringField
-	window     stringField
-	maxNodes   stringField
-	maxEdges   stringField
-	maxPred    stringField
+	eventID  stringField
+	window   stringField
+	maxNodes stringField
+	maxEdges stringField
+	maxPred  stringField
 }
 
 func parsePropQuery(raw string) propQuery {

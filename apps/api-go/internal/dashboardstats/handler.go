@@ -14,6 +14,7 @@
 //   - Mongo tasklogs 中 queue=itemPipeline 的最近 10 条；
 //   - Redis 组织计数 hash。Redis 失败时五个计数归零且
 //     queueCountsAvailable=false，请求仍成功。
+//
 // MySQL 或 Mongo 任一失败则整请求失败，不用 0 冒充空数据。
 // 不启动队列 worker，不写 Redis 计数。
 package dashboardstats

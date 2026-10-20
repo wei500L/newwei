@@ -40,6 +40,8 @@ func NewHandler(auth *authhttp.Authenticator, db *sql.DB, rdb *redis.Client, dat
 			items:    items,
 			snaps:    redisSnapshots{client: rdb},
 			geo:      dashboardwarmap.NewPlaceResolver(rdb, db, geo),
+			rows:     newGeoRowsCache(),
+			now:      time.Now,
 		},
 		now: time.Now,
 	}
