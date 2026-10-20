@@ -229,7 +229,7 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-		job, limitUntil, nextDelayed, err := w.moveToActive(ctx)
+		job, limitDelay, nextDelayed, err := w.moveToActive(ctx)
 		if err != nil {
 			<-w.slot
 			if ctx.Err() != nil {
@@ -244,10 +244,11 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 		if job == nil {
 			<-w.slot
 			now := time.Now().UnixMilli()
-			if limitUntil > now {
-				// Queue-level limiter: BullMQ waits exactly until the limiter
-				// TTL expires before asking for another job.
-				if !sleepWorkerContext(ctx, time.Duration(limitUntil-now)*time.Millisecond) {
+			if limitDelay > 0 {
+				// Queue-level limiter: moveToActive returns the remaining
+				// limiter PTTL in milliseconds, so the worker waits exactly
+				// that long before asking for another job.
+				if !sleepWorkerContext(ctx, time.Duration(limitDelay)*time.Millisecond) {
 					return
 				}
 				continue
@@ -300,9 +301,9 @@ func (w *Worker) waitForMarker(ctx context.Context) {
 	}
 }
 
-// moveToActive returns (job, limitUntil, nextDelayed). The two delay values are
-// the BullMQ rate-limit TTL (reply[2]) and the next delayed job timestamp
-// (reply[3]).
+// moveToActive returns (job, limitDelayMs, nextDelayed). reply[2] is the
+// BullMQ rate-limit remaining TTL in milliseconds (a relative delay, not a
+// timestamp); reply[3] is the next delayed job timestamp.
 func (w *Worker) moveToActive(ctx context.Context) (*Job, int64, int64, error) {
 	token := w.tokens.Next()
 	options, err := pack(moveToActiveOptions{
@@ -323,17 +324,17 @@ func (w *Worker) moveToActive(ctx context.Context) (*Job, int64, int64, error) {
 	if !ok || len(values) < 4 {
 		return nil, 0, 0, fmt.Errorf("crawlfrontierllm: unexpected moveToActive result %T", result)
 	}
-	limitUntil := toInt64(values[2])
+	limitDelay := toInt64(values[2])
 	nextDelayed := toInt64(values[3])
 	flat, ok := values[0].([]any)
 	if !ok || len(flat) == 0 {
-		return nil, limitUntil, nextDelayed, nil
+		return nil, limitDelay, nextDelayed, nil
 	}
 	job, err := jobFromFlat(flat, token, toText(values[1]))
 	if err != nil {
-		return nil, limitUntil, nextDelayed, err
+		return nil, limitDelay, nextDelayed, err
 	}
-	return &job, limitUntil, nextDelayed, nil
+	return &job, limitDelay, nextDelayed, nil
 }
 
 func (w *Worker) process(parent context.Context, job Job) {
