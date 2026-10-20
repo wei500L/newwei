@@ -318,8 +318,10 @@ func (s *Service) writeProcessedItem(ctx context.Context, document Document, ing
 	if document.SummaryEmbeddingSet && document.SummaryEmbedding != nil {
 		update = append(update, bson.E{Key: "summaryEmbedding", Value: document.SummaryEmbedding})
 	}
+	duplicateOfSet := false
 	if duplicateID, ok := normalizedObjectID(document.DuplicateOf); ok {
 		update = append(update, bson.E{Key: "duplicateOf", Value: duplicateID})
+		duplicateOfSet = true
 	}
 	updateDoc := bson.D{{Key: "$set", Value: update}}
 	if truthyRaw(document.Error, document.ErrorSet) {
@@ -331,13 +333,19 @@ func (s *Service) writeProcessedItem(ctx context.Context, document Document, ing
 	} else {
 		updateDoc = append(updateDoc, bson.E{Key: "$unset", Value: bson.D{{Key: "error", Value: ""}}})
 	}
-	updateDoc = append(updateDoc, bson.E{Key: "$setOnInsert", Value: bson.D{
+	insert := bson.D{
 		{Key: "_id", Value: processedID},
 		{Key: "createdAt", Value: now},
 		{Key: "traceId", Value: nil},
 		{Key: "pipelineJobId", Value: nil},
-		{Key: "duplicateOf", Value: nil},
-	}})
+	}
+	if !duplicateOfSet {
+		// Mongoose applies the duplicateOf default only on insert. Keeping it
+		// out of $set preserves an existing value on retries, while putting it in
+		// $setOnInsert matches a freshly inserted document.
+		insert = append(insert, bson.E{Key: "duplicateOf", Value: nil})
+	}
+	updateDoc = append(updateDoc, bson.E{Key: "$setOnInsert", Value: insert})
 
 	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
 	var created itemsreading.ProcessedItemDoc
