@@ -18,6 +18,19 @@ func (s *Service) GetPublicSettings(ctx context.Context) (PublicSettings, error)
 	return s.publicSettings(&loaded.fields, loaded.stored), nil
 }
 
+// EffectiveSettings returns the resolved effective configuration (stored row
+// with environment fallbacks), the same object SituationMonitorSettingsService
+// .getTelegramRuntimeConfig and the OREF reads are built from. The signals
+// worker and the Telegram auth start path read it; it performs the same single
+// settings load as GetPublicSettings.
+func (s *Service) EffectiveSettings(ctx context.Context) (EffectiveSettings, error) {
+	loaded, err := s.loadSettings(ctx)
+	if err != nil {
+		return EffectiveSettings{}, err
+	}
+	return s.resolveEffective(&loaded.fields), nil
+}
+
 // Update mirrors updateSettings: resolve every field's tri-state against the
 // stored document, encrypt credentials, upsert, audit, invalidate the cache and
 // build the response from the written value (O3).
@@ -349,13 +362,33 @@ func (s *Service) buildNextStored(stored storedFields, input UpdateInput, encode
 	}
 	// telegramApiId is not a member of this DTO either; preserve the current
 	// normalized value exactly like resolveNextString(current, undefined).
-	next.TelegramAPIID, _ = resolveNextString(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramAPIID }),
-		optionalString{state: presenceMissing})
-	// telegramApiId/apiHash/session are not members of this DTO (telegram-auth
-	// start/complete stay on NestJS), so they are always preserved as-is. The
-	// audit flags therefore stay false, exactly like the NestJS DTO path.
-	next.TelegramAPIHash = copyRaw(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramAPIHash }))
-	next.TelegramSession = copyRaw(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramSession }))
+	// telegramApiId/apiHash/session are not members of the HTTP PUT DTO, but
+	// completeAuth writes them through NewTelegramAuthUpdate. A missing member
+	// preserves the stored value exactly like the NestJS updateSettings merge;
+	// the present members are set through the same normalization/encryption
+	// policy the NestJS service uses.
+	nextTelegramAPIID, err := resolveNextString(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramAPIID }),
+		input.TelegramAPIID)
+	if err != nil {
+		return storedValue{}, nil, err
+	}
+	if nextTelegramAPIID != nil {
+		encodedAPIID, marshalErr := json.Marshal(*nextTelegramAPIID)
+		if marshalErr != nil {
+			return storedValue{}, nil, marshalErr
+		}
+		next.TelegramAPIID = encodedAPIID
+	}
+	next.TelegramAPIHash, err = resolveNextAPIKey(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramAPIHash }),
+		input.TelegramAPIHash, encoder, s.env)
+	if err != nil {
+		return storedValue{}, nil, err
+	}
+	next.TelegramSession, err = resolveNextAPIKey(storedRaw(func(f *storedFields) json.RawMessage { return f.TelegramSession }),
+		input.TelegramSession, encoder, s.env)
+	if err != nil {
+		return storedValue{}, nil, err
+	}
 	next.LiveHLSProxyCnnUpstreamURL, err = resolveNextURL(storedRaw(func(f *storedFields) json.RawMessage { return f.LiveHLSProxyCnnUpstreamURL }),
 		input.LiveHLSProxyCnnUpstreamURL, "liveHlsProxyCnnUpstreamUrl", "https")
 	if err != nil {
@@ -408,9 +441,9 @@ func (s *Service) buildNextStored(stored storedFields, input UpdateInput, encode
 		TelegramStartupDelayMS:            next.TelegramStartupDelayMS,
 		TelegramRateLimitMS:               next.TelegramRateLimitMS,
 		TelegramPollIntervalMS:            next.TelegramPollIntervalMS,
-		TelegramAPIIDUpdated:              false,
-		TelegramAPIHashUpdated:            false,
-		TelegramSessionUpdated:            false,
+		TelegramAPIIDUpdated:              provided(input.TelegramAPIID.state),
+		TelegramAPIHashUpdated:            provided(input.TelegramAPIHash.state),
+		TelegramSessionUpdated:            provided(input.TelegramSession.state),
 		LiveHLSProxyCnnConfigured:         next.LiveHLSProxyCnnUpstreamURL != nil,
 		LiveHLSProxyCnnAllowedHostsCount:  len(next.LiveHLSProxyCnnAllowedHosts),
 		LiveHLSProxyCnbcConfigured:        next.LiveHLSProxyCnbcUpstreamURL != nil,
@@ -433,7 +466,7 @@ func (s *Service) buildNextStored(stored storedFields, input UpdateInput, encode
 // empty-string values clear or keep the stored value and never touch
 // system_security.
 func updateNeedsSecretEncoder(input UpdateInput) bool {
-	for _, field := range []optionalString{input.TranslationAPIKey, input.FinnhubAPIKey, input.FredAPIKey} {
+	for _, field := range []optionalString{input.TranslationAPIKey, input.FinnhubAPIKey, input.FredAPIKey, input.TelegramAPIHash, input.TelegramSession} {
 		if field.state == presenceValue && strings.TrimSpace(field.value) != "" {
 			return true
 		}
