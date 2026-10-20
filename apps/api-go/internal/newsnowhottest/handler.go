@@ -248,7 +248,7 @@ func parseOptionalPositiveInt(value, fieldName string, min, max int) (*int, erro
 		return nil, nil
 	}
 	parsed, ok := jsParseInt(value)
-	if !ok || parsed < min || parsed > max {
+	if !ok || parsed < int64(min) || parsed > int64(max) {
 		return nil, errors.New(fieldName + " must be an integer between " +
 			strconv.Itoa(min) + " and " + strconv.Itoa(max))
 	}

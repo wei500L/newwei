@@ -173,7 +173,6 @@ func TestOrgMatcherMatchesReferenceAcrossStagesAndOrgs(t *testing.T) {
 	}
 	variantsA, _ := comparableURLVariants("https://news.example/a")
 	variantsB, _ := comparableURLVariants("https://news.example/b")
-	variantsC, _ := comparableURLVariants("https://news.example/c")
 	variantsD, _ := comparableURLVariants("https://news.example/d")
 	variantsE, _ := comparableURLVariants("https://news.example/e")
 	variantsG, _ := comparableURLVariants("https://news.example/g")
