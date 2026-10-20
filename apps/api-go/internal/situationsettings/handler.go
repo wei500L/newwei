@@ -206,7 +206,7 @@ func (h *Handler) writeWithExtras(w http.ResponseWriter, r *http.Request, orgID 
 // (public settings + externalSnapshotStatus + qualitySummary). The Telegram
 // auth complete route reuses it so there is exactly one implementation of the
 // response shape.
-func WriteWithExtras(w http.ResponseWriter, r *http.Request, orgID string, settings PublicSettings, external ExternalSnapshotProvider, quality QualitySummaryProvider) {
+func WriteWithExtras(w http.ResponseWriter, r *http.Request, orgID string, settings PublicSettings, externalProvider ExternalSnapshotProvider, qualityProvider QualitySummaryProvider) {
 	type externalResult struct {
 		value gdeltsnapshot.Summary
 		err   error
@@ -219,19 +219,19 @@ func WriteWithExtras(w http.ResponseWriter, r *http.Request, orgID string, setti
 	qualityCh := make(chan qualityResult, 1)
 
 	go func() {
-		if external == nil {
+		if externalProvider == nil {
 			externalCh <- externalResult{err: errNoExternalSnapshotProvider}
 			return
 		}
-		summary, err := external.GetStatusSummary(r.Context())
+		summary, err := externalProvider.GetStatusSummary(r.Context())
 		externalCh <- externalResult{value: summary, err: err}
 	}()
 	go func() {
-		if quality == nil {
+		if qualityProvider == nil {
 			qualityCh <- qualityResult{}
 			return
 		}
-		summary, err := quality.GetQualitySummary(r.Context(), orgID)
+		summary, err := qualityProvider.GetQualitySummary(r.Context(), orgID)
 		qualityCh <- qualityResult{value: summary, err: err}
 	}()
 
