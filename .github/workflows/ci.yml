@@ -353,6 +353,11 @@ jobs:
       # compensation against the real MySQL 8.4 service above.
       - name: MySQL item write/outbox integration tests
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/itemsingest/ -run 'TestItemsIngestMySQLIntegration' -v
+      # processed_item Outbox: CAS claim, delivery across MySQL/Mongo, vector
+      # condition, backoff/dead compensation, O1 scan order and B1 multi-batch
+      # draining against the real MySQL 8.4, Redis 7.2 and Mongo 7.0 services.
+      - name: MySQL/Mongo processed_item outbox integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/processeditemoutbox/ -run 'TestProcessedItemOutboxIntegration' -v
 
       # Archive preparation producer: real Redis 7.2 wire check for the BullMQ
       # 5.63.2 MessagePack/hash/options, wait/pause/marker/events, de-dupe,
