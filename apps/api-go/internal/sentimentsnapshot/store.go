@@ -230,7 +230,7 @@ func insertEntityRows(ctx context.Context, tx *sql.Tx, orgID string, bucketStart
 		query := "INSERT INTO `" + entitySnapshotTable + "` " +
 			"(`id`,`orgId`,`entityName`,`entityType`,`bucketStart`,`totalDocs`,`negativeDocs`," +
 			"`positiveDocs`,`neutralDocs`,`scoreSum`,`avgScore`,`negativeRatio`,`updatedAt`) VALUES " +
-			values.String() + " AS incoming ON DUPLICATE KEY UPDATE " + mergeAccumulateSQL()
+			values.String() + " ON DUPLICATE KEY UPDATE " + mergeAccumulateSQL()
 		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return err
 		}
@@ -265,7 +265,7 @@ func insertTopicRows(ctx context.Context, tx *sql.Tx, orgID string, bucketStart 
 		query := "INSERT INTO `" + topicSnapshotTable + "` " +
 			"(`id`,`orgId`,`topic`,`bucketStart`,`totalDocs`,`negativeDocs`," +
 			"`positiveDocs`,`neutralDocs`,`scoreSum`,`avgScore`,`negativeRatio`,`updatedAt`) VALUES " +
-			values.String() + " AS incoming ON DUPLICATE KEY UPDATE " + mergeAccumulateSQL()
+			values.String() + " ON DUPLICATE KEY UPDATE " + mergeAccumulateSQL()
 		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return err
 		}
@@ -276,20 +276,27 @@ func insertTopicRows(ctx context.Context, tx *sql.Tx, orgID string, bucketStart 
 // mergeAccumulateSQL is the single ON DUPLICATE KEY UPDATE list for the whole
 // statement.
 //
-// The "incoming" row alias is required: a repeated assignment list would apply
-// every chunk row's increment to whichever row conflicted. MySQL evaluates the
-// list left to right and every reference to a target column sees the value the
-// previous assignment produced, so totalDocs/negativeDocs/scoreSum are already
-// accumulated when avgScore and negativeRatio are recomputed.
+// The assignment list must appear once: a repeated list would apply every chunk
+// row's increment to whichever row conflicted. It uses the VALUES() function
+// rather than the 8.0.19 row alias because the accumulation form
+// "totalDocs = totalDocs + <new>" is ambiguous once an alias introduces a second
+// totalDocs column (MySQL error 1052). VALUES() is deprecated but still supported
+// and is the form the existing crawlreadtelemetry / qualityoverview / economicdata
+// upserts use.
+//
+// MySQL evaluates the list left to right and every reference to a target column
+// sees the value the previous assignment produced, so totalDocs / negativeDocs /
+// scoreSum are already accumulated when avgScore and negativeRatio are
+// recomputed.
 func mergeAccumulateSQL() string {
-	return "`totalDocs`=`totalDocs`+incoming.`totalDocs`," +
-		"`negativeDocs`=`negativeDocs`+incoming.`negativeDocs`," +
-		"`positiveDocs`=`positiveDocs`+incoming.`positiveDocs`," +
-		"`neutralDocs`=`neutralDocs`+incoming.`neutralDocs`," +
-		"`scoreSum`=`scoreSum`+incoming.`scoreSum`," +
+	return "`totalDocs`=`totalDocs`+VALUES(`totalDocs`)," +
+		"`negativeDocs`=`negativeDocs`+VALUES(`negativeDocs`)," +
+		"`positiveDocs`=`positiveDocs`+VALUES(`positiveDocs`)," +
+		"`neutralDocs`=`neutralDocs`+VALUES(`neutralDocs`)," +
+		"`scoreSum`=`scoreSum`+VALUES(`scoreSum`)," +
 		"`avgScore`=" + averageExpression("scoreSum") + "," +
 		"`negativeRatio`=" + averageExpression("negativeDocs") + "," +
-		"`updatedAt`=incoming.`updatedAt`"
+		"`updatedAt`=VALUES(`updatedAt`)"
 }
 
 // averageExpression is the merged average: numerator / totalDocs as DOUBLE, and

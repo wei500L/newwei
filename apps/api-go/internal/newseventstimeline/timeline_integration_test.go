@@ -403,17 +403,34 @@ func TestTimelineRebuildIntegration(t *testing.T) {
 	if model.TopicDriftSummary == nil || !strings.Contains(*model.TopicDriftSummary, "cross-category share 50.0%") {
 		t.Errorf("read-back topicDriftSummary = %v, want the 50.0%% cross-category share", model.TopicDriftSummary)
 	}
-	distribution, ok := model.CategoryDistribution.(json.RawMessage)
-	if !ok || !strings.Contains(string(distribution), `"categoryPath":"tech/ai"`) {
-		t.Errorf("read-back categoryDistribution = %v", model.CategoryDistribution)
-	}
 	phases, ok := model.TimelinePhases.(json.RawMessage)
-	if !ok || !strings.Contains(string(phases), `"Technology release stage"`) {
-		t.Errorf("read-back timelinePhases = %v", model.TimelinePhases)
+	if !ok {
+		t.Fatalf("read-back timelinePhases is %T, want json.RawMessage", model.TimelinePhases)
 	}
+	var decodedPhases []timelinePhaseSummary
+	if err := json.Unmarshal(phases, &decodedPhases); err != nil {
+		t.Fatalf("decode timelinePhases: %v", err)
+	}
+	// Each bucket carries one item, below minBucketItemsForDrift, so the prefix
+	// change alone does not split the phase.
+	if len(decodedPhases) != 1 {
+		t.Fatalf("read-back phases = %+v, want 1 merged phase", decodedPhases)
+	}
+	if decodedPhases[0].CategoryPrefix != "finance" || decodedPhases[0].ItemCount != 2 ||
+		decodedPhases[0].BucketCount != 2 || decodedPhases[0].Label != "Finance stage" {
+		t.Errorf("read-back phase = %+v", decodedPhases[0])
+	}
+
 	subEvents, ok := model.SubEvents.(json.RawMessage)
-	if !ok || !strings.Contains(string(subEvents), `"parentEventId":"`+eventID+`"`) {
-		t.Errorf("read-back subEvents = %v", model.SubEvents)
+	if !ok {
+		t.Fatalf("read-back subEvents is %T, want json.RawMessage", model.SubEvents)
+	}
+	var decodedSubEvents []timelineSubEvent
+	if err := json.Unmarshal(subEvents, &decodedSubEvents); err != nil {
+		t.Fatalf("decode subEvents: %v", err)
+	}
+	if len(decodedSubEvents) != 1 || decodedSubEvents[0].ParentEventID != eventID {
+		t.Fatalf("read-back subEvents = %+v, want one child of %s", decodedSubEvents, eventID)
 	}
 
 	// B1: the briefV1 leaf written before the run is still there.
@@ -422,19 +439,29 @@ func TestTimelineRebuildIntegration(t *testing.T) {
 		eventID, orgID).Scan(&metadata); err != nil {
 		t.Fatalf("select metadata: %v", err)
 	}
-	var document struct {
-		Brief  json.RawMessage   `json:"briefV1"`
-		Timing *timelineMetadata `json:"timeline"`
-	}
+	var document metadataDocument
 	if err := json.Unmarshal(metadata, &document); err != nil {
 		t.Fatalf("decode metadata: %v", err)
 	}
-	if !strings.Contains(string(document.Brief), `"tldr":"kept"`) {
-		t.Errorf("briefV1 = %s, want the pre-existing leaf", document.Brief)
+	if document.Brief.Tldr != "kept" {
+		t.Errorf("briefV1 = %+v, want the pre-existing leaf", document.Brief)
 	}
 	if document.Timing == nil || len(document.Timing.Entries) != 2 {
-		t.Errorf("metadata.timeline entries = %v, want 2", document.Timing)
+		t.Fatalf("metadata.timeline entries = %v, want 2", document.Timing)
 	}
+	if len(document.Timing.CategoryDistribution) != 2 {
+		t.Errorf("metadata.timeline categoryDistribution = %+v, want 2 entries",
+			document.Timing.CategoryDistribution)
+	}
+}
+
+// metadataDocument is the NewsEvent.metadata view these tests decode. Only the
+// leaves they assert are typed.
+type metadataDocument struct {
+	Brief struct {
+		Tldr string `json:"tldr"`
+	} `json:"briefV1"`
+	Timing *timelineMetadata `json:"timeline"`
 }
 
 // TestTimelineWritePreservesConcurrentBrief pins B1 at the write boundary: a
@@ -479,10 +506,14 @@ func TestTimelineWritePreservesConcurrentBrief(t *testing.T) {
 		eventID, orgID).Scan(&metadata); err != nil {
 		t.Fatalf("select metadata: %v", err)
 	}
-	if !strings.Contains(string(metadata), `"tldr":"fresh"`) {
-		t.Fatalf("metadata = %s, want the concurrent briefV1 to survive", metadata)
+	var document metadataDocument
+	if err := json.Unmarshal(metadata, &document); err != nil {
+		t.Fatalf("decode metadata: %v", err)
 	}
-	if !strings.Contains(string(metadata), `"timeline"`) {
+	if document.Brief.Tldr != "fresh" {
+		t.Fatalf("briefV1 = %+v, want the concurrent write to survive", document.Brief)
+	}
+	if document.Timing == nil {
 		t.Fatalf("metadata = %s, want the timeline leaf", metadata)
 	}
 }
