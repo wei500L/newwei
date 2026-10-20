@@ -1,15 +1,23 @@
-import { screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders } from "@/test/render";
+
+const socketMockState = vi.hoisted(() => ({
+  permissions: [] as string[],
+  ioCalls: [] as Array<{
+    namespace: string;
+    options?: Record<string, unknown>;
+  }>,
+}));
 
 vi.mock("next-auth/react", () => ({
   useSession: () => ({
     status: "authenticated",
     data: {
       accessToken: "token",
-      permissions: [],
-      user: { id: "user-1", permissions: [] },
+      permissions: socketMockState.permissions,
+      user: { id: "user-1", permissions: socketMockState.permissions },
     },
   }),
 }));
@@ -19,11 +27,15 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("socket.io-client", () => ({
-  io: () => ({
-    on: vi.fn(),
-    off: vi.fn(),
-    disconnect: vi.fn(),
-  }),
+  io: (namespace: string, options?: Record<string, unknown>) => {
+    socketMockState.ioCalls.push({ namespace, options });
+    return {
+      on: vi.fn(),
+      off: vi.fn(),
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    };
+  },
 }));
 
 vi.mock("@/lib/api-client", () => ({
@@ -48,6 +60,11 @@ vi.mock("@/app/(app)/crawl/components/Crawl4aiHealthCard", () => ({
 }));
 
 describe("NewsSourcesContent permissions", () => {
+  beforeEach(() => {
+    socketMockState.permissions.length = 0;
+    socketMockState.ioCalls.length = 0;
+  });
+
   it("hides management UI when the session lacks crawl.read", async () => {
     const { NewsSourcesContent } = await import("./news-sources-content");
     renderWithProviders(<NewsSourcesContent />);
@@ -61,5 +78,19 @@ describe("NewsSourcesContent permissions", () => {
     expect(
       screen.queryByPlaceholderText("Search by name or URL"),
     ).not.toBeInTheDocument();
+  });
+
+  it("connects to the {apiRoot}/ops namespace with the configured Engine.IO path", async () => {
+    socketMockState.permissions.push("crawl.read");
+    const { NewsSourcesContent } = await import("./news-sources-content");
+    renderWithProviders(<NewsSourcesContent />);
+
+    await waitFor(() => {
+      expect(socketMockState.ioCalls).toHaveLength(1);
+    });
+    expect(socketMockState.ioCalls[0]!).toMatchObject({
+      namespace: "http://localhost:4000/ops",
+      options: { path: "/socket.io" },
+    });
   });
 });

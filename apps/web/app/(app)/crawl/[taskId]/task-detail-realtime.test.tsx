@@ -76,6 +76,7 @@ describe("CrawlTaskDetail realtime（Socket /ops + 合并刷新 + fallback polli
 
     expect(testOpsSocket.namespaces).toEqual(["http://localhost:4000/ops"]);
     expect(testOpsSocket.options[0]!).toMatchObject({
+      path: "/socket.io",
       auth: { token: "token-1" },
       transports: ["websocket"],
       withCredentials: true,

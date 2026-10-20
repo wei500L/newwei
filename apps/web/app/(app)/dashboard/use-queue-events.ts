@@ -56,6 +56,7 @@ export function useQueueEvents(
     }
 
     const socket = io(`${env.apiRoot}/queue`, {
+      path: env.NEXT_PUBLIC_REALTIME_SOCKET_PATH,
       transports: ["websocket"],
       auth: { token },
       withCredentials: true,
