@@ -912,6 +912,26 @@ const (
 	UserDigestDeliveryModeGo     UserDigestDeliveryMode = "go"
 )
 
+// AuditOutboxMode controls the AuditLogOutbox replay owner. It is independent
+// of every HTTP switch. The accepted values are exactly "", "legacy" and "go";
+// the empty value behaves like legacy.
+//
+// legacy: the NestJS @Cron keeps owning the per-minute replay and no Go
+// scheduler starts.
+// go: Go owns the per-minute scan, Redis cron lease, conditional claim,
+// dedupe insert and failure/dead write-back; the NestJS Cron returns before
+// acquiring the lease and scanning. Go requires DATABASE_URL and REDIS_HOST,
+// but not JWT_SECRET, MONGO_URI, SMTP or any HTTP takeover switch.
+//
+// SCHEDULE_ENABLED=false stops this chain in both processes: the NestJS module
+// stops registering the Cron and the Go wiring does not start the scheduler.
+type AuditOutboxMode string
+
+const (
+	AuditOutboxModeLegacy AuditOutboxMode = "legacy"
+	AuditOutboxModeGo     AuditOutboxMode = "go"
+)
+
 // AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
 type AnalysisViewsMode string
 
@@ -1208,6 +1228,14 @@ type Config struct {
 	// UserDigestDeliveryMode 见 UserDigestDeliveryMode 常量。默认 legacy。
 	// 与五个 HTTP 开关独立；go 需要 MySQL、Redis、Mongo 和 SMTP，不要求 JWT。
 	UserDigestDeliveryMode UserDigestDeliveryMode
+	// AuditOutboxMode 见 AuditOutboxMode 常量。默认 legacy。
+	// 与所有 HTTP 开关独立；go 只要求 MySQL 与 Redis，不要求 JWT、Mongo 或 SMTP。
+	AuditOutboxMode AuditOutboxMode
+	// ScheduleEnabled mirrors the NestJS `process.env.SCHEDULE_ENABLED !==
+	// "false"` check. The audit outbox unit uses it to stop scheduling without
+	// changing its ownership switch; the digest delivery unit keeps its
+	// existing behavior.
+	ScheduleEnabled bool
 	// 分析工作台三个 HTTP 开关，彼此独立，默认都是 legacy。
 	// 只决定对应精确路由。讨论检查、评论计数和删除清理不看另一个开关。
 	// go 要求 JWT、MySQL、Redis，不要求 Mongo。
@@ -1842,6 +1870,11 @@ func Load(getenv func(string) string) (Config, error) {
 	// OnboardingMode=go 时下方显式要求非空（启动失败）。
 	cfg.DatabaseURL = strings.TrimSpace(getenv("DATABASE_URL"))
 
+	// SCHEDULE_ENABLED is the cross-process scheduling stop switch. The exact
+	// comparison matches the NestJS `!== "false"` check character for
+	// character, so both processes agree on the value.
+	cfg.ScheduleEnabled = getenv("SCHEDULE_ENABLED") != "false"
+
 	// onboarding 迁移单元的路由模式：默认 shadow（手工启动的旧行为）；
 	// 非法值启动失败（不静默降级）。
 	switch strings.TrimSpace(getenv("API_GO_ONBOARDING_MODE")) {
@@ -1997,6 +2030,16 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.UserDigestDeliveryMode = UserDigestDeliveryModeGo
 	default:
 		errs = append(errs, "API_GO_USER_DIGEST_DELIVERY_MODE must be one of legacy|go")
+	}
+	// The audit-log outbox replay owner. Empty behaves like legacy; an invalid
+	// value fails startup instead of being silently downgraded.
+	switch strings.TrimSpace(getenv("API_GO_AUDIT_OUTBOX_MODE")) {
+	case "", string(AuditOutboxModeLegacy):
+		cfg.AuditOutboxMode = AuditOutboxModeLegacy
+	case string(AuditOutboxModeGo):
+		cfg.AuditOutboxMode = AuditOutboxModeGo
+	default:
+		errs = append(errs, "API_GO_AUDIT_OUTBOX_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_VIEWS_MODE")) {
 	case "", string(AnalysisViewsModeLegacy):
@@ -2966,6 +3009,18 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		if cfg.SMTP.Pass == "" {
 			errs = append(errs, "SMTP_PASS is required when API_GO_USER_DIGEST_DELIVERY_MODE=go")
+		}
+	}
+	// The audit outbox replay unit is a background owner like digest delivery:
+	// it reads and writes MySQL and takes the cron lease in Redis. It verifies
+	// no JWT, reads no Mongo collection, sends no mail and registers no route,
+	// so every HTTP switch can stay legacy.
+	if cfg.AuditOutboxMode == AuditOutboxModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_AUDIT_OUTBOX_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_AUDIT_OUTBOX_MODE=go")
 		}
 	}
 	if cfg.AnalysisViewsMode == AnalysisViewsModeGo {

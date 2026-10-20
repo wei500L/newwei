@@ -41,6 +41,16 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The audit-log outbox replay owner. It is independent of every HTTP
+    // switch. Empty string behaves like legacy. An invalid value fails Nest
+    // startup instead of being silently stripped from the validated config.
+    API_GO_AUDIT_OUTBOX_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     REDIS_DB: z.coerce.number().int().nonnegative().default(0),
     REDIS_USERNAME: z.string().optional(),
     REDIS_PASSWORD: z.string().optional(),
