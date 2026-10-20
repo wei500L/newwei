@@ -1,5 +1,7 @@
 # 任务认领与历史恢复索引
 
+2026-10-20 NOTIFICATIONS-SOCKET-001：新增 [通知 Socket.IO 传输](NOTIFICATIONS-SOCKET-001.md)（`refactor/go-notifications-socket`，基线 `d4227721`）。范围为 `/notifications` namespace 的 Engine.IO v4 + Socket.IO v5 WebSocket 子集、独立路径 `/socket.io-notifications`、四类标识符-only relay、B1 本地推送与 B2 行复核；其他 namespace 与 `/socket.io` 保持 NestJS。状态 pr_open，最终 head/普通 CI 在 PR 回填。
+
 2026-10-20 本批整合：main 基线 `91e759b449c4511dc96d86539ea0eb258754d07e`，21 条开放 PR 由 `integration/merge-open-prs-b92-113` 以 merge commit 一次性收口（#92–#113；#111 由 #112 取代并关闭，未 squash/rebase/force-push）。head：#93 f5dca8d4、#92 28c8f761、#94 cf25026f、#96 761ed72c、#97 b3e760d0、#99 f2891760、#100 daca0be4、#101 479004fc、#102 2e3c172a、#103 96530bb3、#104 e8c32f22、#105 3193eedb、#106 4220940c、#107 35fc68b1、#108 a2113b81、#109 76d974f7、#110 3f6a5192、#112 69f16608、#113 eca49b21、#98 e9c99ec9、#95 47095336。下表六行归一为对应的最终 PR/head；其余 14 个实现单元没有独立 task 页，按 PR/分支/head 记录如下，不新建 task ID。批次状态在整合 PR 合并前保持 `pr_open`，merged 回填与 merge SHA 由后续文档提交完成。
 
 本批无独立 task 页的实现单元：

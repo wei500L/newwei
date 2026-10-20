@@ -400,6 +400,7 @@ services:
         API_BASE_URL: ${API_BASE_URL:-http://api:4000}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
+        NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: ${NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:-/socket.io}
     restart: unless-stopped
     working_dir: /workspace
     command: >
@@ -552,6 +553,7 @@ services:
         API_BASE_URL: ${API_BASE_URL:-http://api:4000}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
+        NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: ${NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:-/socket.io}
     restart: unless-stopped
     working_dir: /workspace
     command: >
@@ -657,6 +659,14 @@ services:
       # legacy keeps every upgrade on the legacy proxy. go needs JWT, MySQL and
       # Redis only and must share the Nest producers' Redis bus.
       API_GO_GRAPHQL_SUBSCRIPTIONS_MODE: ${API_GO_GRAPHQL_SUBSCRIPTIONS_MODE:-legacy}
+      # Dedicated Go Socket.IO transport for /notifications. Default legacy
+      # leaves every Socket.IO namespace on the NestJS path.
+      API_GO_NOTIFICATIONS_SOCKET_MODE: ${API_GO_NOTIFICATIONS_SOCKET_MODE:-legacy}
+      WS_MAX_CONNECTIONS_PER_USER: ${WS_MAX_CONNECTIONS_PER_USER:-5}
+      WS_MAX_CONNECTIONS_PER_IP: ${WS_MAX_CONNECTIONS_PER_IP:-50}
+      WS_CONNECT_RATE_LIMIT_PER_IP: ${WS_CONNECT_RATE_LIMIT_PER_IP:-60}
+      WS_CONNECT_RATE_LIMIT_PER_USER: ${WS_CONNECT_RATE_LIMIT_PER_USER:-30}
+      WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS: ${WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS:-60}
       GRAPHQL_SUBSCRIPTION_BUS: ${GRAPHQL_SUBSCRIPTION_BUS:-redis}
       DATABASE_URL: mysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD}@mysql:${MYSQL_PORT:-3306}/${MYSQL_DB}
       # The OIDC login unit builds the web callback from NEXTAUTH_URL and the
@@ -1397,6 +1407,7 @@ services:
         API_BASE_URL: ${API_BASE_URL:-http://api:4000}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
+        NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: ${NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:-/socket.io}
     restart: unless-stopped
     working_dir: /workspace
     # 启动等待使用最终配置的 API base（API_BASE_URL，默认 NestJS），

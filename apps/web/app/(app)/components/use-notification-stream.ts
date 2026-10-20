@@ -59,6 +59,7 @@ export function useNotificationStream(
     }
 
     const socket = io(`${env.apiRoot}/notifications`, {
+      path: env.NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH,
       transports: ["websocket"],
       auth: { token },
       withCredentials: true,

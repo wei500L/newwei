@@ -1509,6 +1509,19 @@ const (
 	GraphQLSubscriptionsModeGo     GraphQLSubscriptionsMode = "go"
 )
 
+// NotificationsSocketMode controls the dedicated Go Socket.IO transport for
+// the /notifications namespace (Engine.IO v4 + Socket.IO v5 over WebSocket).
+// The accepted values are exactly "", "legacy" and "go"; empty behaves like
+// legacy. go requires JWT, MySQL and Redis and serves the dedicated
+// /socket.io-notifications path, so every other Socket.IO namespace keeps the
+// NestJS transport and the default Web entrypoint unchanged.
+type NotificationsSocketMode string
+
+const (
+	NotificationsSocketModeLegacy NotificationsSocketMode = "legacy"
+	NotificationsSocketModeGo     NotificationsSocketMode = "go"
+)
+
 // AuthFactorsMode controls the seven authenticated MFA management and
 // organization OIDC configuration HTTP routes migrated by this unit
 // (API_GO_AUTH_FACTORS_MODE).
@@ -1841,6 +1854,17 @@ type Config struct {
 	// paths keep proxying to NestJS. It is independent of every read and write
 	// switch and requires JWT, MySQL and Redis only (no Mongo).
 	GraphQLSubscriptionsMode GraphQLSubscriptionsMode
+	// NotificationsSocketMode takes over only the /notifications namespace on
+	// the dedicated /socket.io-notifications path. It is independent of every
+	// GraphQL switch and defaults to legacy.
+	NotificationsSocketMode NotificationsSocketMode
+	// WebSocket connection caps and connect-window limits share the NestJS
+	// environment names and defaults so the Go path enforces the same policy.
+	WSMaxConnectionsPerUser         int
+	WSMaxConnectionsPerIP           int
+	WSConnectRateLimitPerIP         int
+	WSConnectRateLimitPerUser       int
+	WSConnectRateLimitWindowSeconds int
 	// GraphQLNewsEventsMode 只决定六个新闻事件 root 是否登记。默认 legacy。
 	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
 	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
@@ -3394,6 +3418,40 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	if cfg.GraphQLSubscriptionsMode == GraphQLSubscriptionsModeGo && cfg.GraphQLSubscriptionBus != "redis" {
 		errs = append(errs, "API_GO_GRAPHQL_SUBSCRIPTIONS_MODE=go requires GRAPHQL_SUBSCRIPTION_BUS=redis")
 	}
+	// The notifications Socket.IO transport is independent of the GraphQL WS
+	// executor: it has its own path, namespace and Redis relay. An empty value
+	// behaves like legacy.
+	switch strings.TrimSpace(getenv("API_GO_NOTIFICATIONS_SOCKET_MODE")) {
+	case "", string(NotificationsSocketModeLegacy):
+		cfg.NotificationsSocketMode = NotificationsSocketModeLegacy
+	case string(NotificationsSocketModeGo):
+		cfg.NotificationsSocketMode = NotificationsSocketModeGo
+	default:
+		errs = append(errs, "API_GO_NOTIFICATIONS_SOCKET_MODE must be one of legacy|go")
+	}
+	cfg.WSMaxConnectionsPerUser = 5
+	cfg.WSMaxConnectionsPerIP = 50
+	cfg.WSConnectRateLimitPerIP = 60
+	cfg.WSConnectRateLimitPerUser = 30
+	cfg.WSConnectRateLimitWindowSeconds = 60
+	for name, target := range map[string]*int{
+		"WS_MAX_CONNECTIONS_PER_USER":          &cfg.WSMaxConnectionsPerUser,
+		"WS_MAX_CONNECTIONS_PER_IP":            &cfg.WSMaxConnectionsPerIP,
+		"WS_CONNECT_RATE_LIMIT_PER_IP":         &cfg.WSConnectRateLimitPerIP,
+		"WS_CONNECT_RATE_LIMIT_PER_USER":       &cfg.WSConnectRateLimitPerUser,
+		"WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS": &cfg.WSConnectRateLimitWindowSeconds,
+	} {
+		raw := strings.TrimSpace(getenv(name))
+		if raw == "" {
+			continue
+		}
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, fmt.Sprintf("%s must be a positive integer, got %q", name, raw))
+			continue
+		}
+		*target = value
+	}
 	// The situation monitor signals switch accepts the empty string, legacy and
 	// go. An empty value behaves exactly like legacy so an unset deployment
 	// keeps the NestJS path for all seven routes.
@@ -4798,6 +4856,11 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// in MySQL and reads Redis, but never opens Mongo or starts a worker.
 	if cfg.GraphQLSubscriptionsMode == GraphQLSubscriptionsModeGo {
 		appendAuthRequirements(&errs, "API_GO_GRAPHQL_SUBSCRIPTIONS_MODE", cfg)
+	}
+	// The notifications transport verifies JWTs, re-derives membership in
+	// MySQL and reads Redis. It never opens Mongo or starts a worker.
+	if cfg.NotificationsSocketMode == NotificationsSocketModeGo {
+		appendAuthRequirements(&errs, "API_GO_NOTIFICATIONS_SOCKET_MODE", cfg)
 	}
 	// The organization access write takeover needs JWT verification, MySQL and
 	// Redis only. It reads no Mongo collection and starts no worker, so it does

@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../config/prisma.service";
 
 import { NotificationDispatcher, NotificationEvent } from "./notification.dispatcher";
+import { NotificationRealtimeRelay } from "./notification-realtime.relay";
 
 export interface CreateNotificationInput {
   orgId: string;
@@ -19,7 +20,8 @@ export interface CreateNotificationInput {
 export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly dispatcher: NotificationDispatcher
+    private readonly dispatcher: NotificationDispatcher,
+    private readonly realtimeRelay: NotificationRealtimeRelay
   ) {}
 
   async notify(input: CreateNotificationInput) {
@@ -37,7 +39,14 @@ export class NotificationsService {
       }
     });
     const event = this.toEvent(record);
-    await this.dispatcher.publish(event);
+    if (this.realtimeRelay.enabled) {
+      // Go owns the /notifications transport in this mode. The in-process
+      // dispatcher is bypassed so legacy Nest sockets cannot receive the same
+      // event a second time through the Socket.IO Redis adapter.
+      await this.realtimeRelay.publish(event);
+    } else {
+      await this.dispatcher.publish(event);
+    }
     return event;
   }
 
