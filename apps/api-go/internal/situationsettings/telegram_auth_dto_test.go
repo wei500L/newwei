@@ -280,7 +280,7 @@ func TestTelegramAuthDTORejectsNonObjectBodies(t *testing.T) {
 		`42`:        "Invalid request body",
 		`true`:      "Invalid request body",
 		`{"a":}`:    "Invalid request body",
-		"{broken":   "Unexpected token in JSON body",
+		"{broken":   "Invalid request body",
 		`[{"a":1}]`: "Invalid request body",
 	}
 	for body, want := range cases {

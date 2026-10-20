@@ -315,7 +315,11 @@ func TestManagerLeaseMutualExclusion(t *testing.T) {
 		t.Errorf("second manager created %d clients without the lease, want 0", second.count())
 	}
 
-	// The owner reuses its long-lived client and keeps the lease between calls.
+	// The owner reuses its long-lived client and keeps the lease between calls:
+	// a second WithLease must not attempt another SETNX (the shared fake store
+	// also counts the loser's failed attempt, so compare the delta instead of the
+	// absolute value).
+	beforeOwned, _, _ := store.counts()
 	owned, err = m1.WithLease(ctx, Options{}, "fingerprint", func(context.Context, PollClient) error {
 		firstCalls++
 		return nil
@@ -326,8 +330,8 @@ func TestManagerLeaseMutualExclusion(t *testing.T) {
 	if first.count() != 1 {
 		t.Errorf("owner created %d clients, want 1 (long-lived)", first.count())
 	}
-	if setNX, _, _ := store.counts(); setNX != 1 {
-		t.Errorf("SetNX calls = %d, want 1 (lease held across calls)", setNX)
+	if afterOwned, _, _ := store.counts(); afterOwned != beforeOwned {
+		t.Errorf("SetNX calls = %d after the owner reuse, want %d (lease held across calls)", afterOwned, beforeOwned)
 	}
 
 	// Releasing lets the other process take over.
