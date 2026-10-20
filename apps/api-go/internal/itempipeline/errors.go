@@ -285,6 +285,11 @@ func ClassifyQueueError(err error) ClassifiedError {
 
 	name := errorName(err)
 	switch name {
+	case "QueuePermanentError":
+		// Any package's QueuePermanentError-named error (the pipeline's
+		// extraction permanent error, the worker's own validation errors) is
+		// permanent, exactly like `error instanceof QueuePermanentError`.
+		return classified(ErrorKindPermanent, "explicit-permanent", err)
 	case "LiteLlmGuardrailViolationError":
 		return classified(ErrorKindPermanent, "guardrail", err)
 	case "UnrecoverableError":

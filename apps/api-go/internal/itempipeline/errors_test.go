@@ -25,6 +25,7 @@ func TestClassifyQueueError(t *testing.T) {
 		{"permanent", NewPermanentError("Queue job missing orgId"), ErrorKindPermanent, "explicit-permanent"},
 		{"transient wrapper", transient, ErrorKindTransient, "explicit-transient"},
 		{"zod", zod, ErrorKindPermanent, "validation"},
+		{"foreign QueuePermanentError", &namedTestError{name: "QueuePermanentError", message: "empty content"}, ErrorKindPermanent, "explicit-permanent"},
 		{"guardrail", guardrail, ErrorKindPermanent, "guardrail"},
 		{"crawl4ai 503", &crawl4ai.Error{Status: 503, Message: "upstream"}, ErrorKindTransient, "crawl4ai"},
 		{"crawl4ai 404", &crawl4ai.Error{Status: 404, Message: "not found"}, ErrorKindPermanent, "crawl4ai"},
