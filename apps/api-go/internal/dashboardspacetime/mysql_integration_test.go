@@ -165,7 +165,7 @@ func TestSpacetimeMySQLIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	for _, statement := range []string{"DROP TABLE IF EXISTS ProcessedArticle", createIntegrationTables, createProcessedArticleTable, createNewsEventItemTable} {
+	for _, statement := range []string{"DROP TABLE IF EXISTS NewsEventItem", "DROP TABLE IF EXISTS ProcessedArticle", createIntegrationTables, createProcessedArticleTable, createNewsEventItemTable} {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			t.Fatalf("create table: %v", err)
 		}
