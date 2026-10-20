@@ -342,10 +342,19 @@ func TestProcessStagedDedupeReasonRecorded(t *testing.T) {
 	if entry == nil || entry.Reason == nil || *entry.Reason != "duplicate:"+duplicateOf {
 		t.Fatalf("dedupe entry = %+v", entry)
 	}
-	if store.input.DuplicateOf == nil || *store.input.DuplicateOf != duplicateOf {
+	var outbox struct {
+		Document struct {
+			DuplicateOf      *string    `json:"duplicateOf"`
+			SummaryEmbedding *[]float64 `json:"summaryEmbedding"`
+		} `json:"document"`
+	}
+	if err := json.Unmarshal(store.input.OutboxPayload, &outbox); err != nil {
+		t.Fatalf("decode outbox payload: %v", err)
+	}
+	if outbox.Document.DuplicateOf == nil || *outbox.Document.DuplicateOf != duplicateOf {
 		t.Fatal("the duplicateOf must be passed to persist")
 	}
-	if store.input.SummaryEmbedding != nil {
+	if outbox.Document.SummaryEmbedding != nil {
 		t.Fatal("no summary embedding is expected from the default dedupe result")
 	}
 }

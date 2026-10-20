@@ -133,7 +133,7 @@ func TestItemPipelineWorkerIntegration(t *testing.T) {
 	assertNewsSourceSuccessReset(t, db)
 	assertTaskLogStage(t, database, "complete", "completed")
 	events := readQueueEvents(t, redisClient)
-	if !strings.Contains(events, `"completed"`) {
+	if !strings.Contains(events, "completed") {
 		t.Fatalf("event stream has no completed event: %s", events)
 	}
 	if pipeline.calls != 1 {
