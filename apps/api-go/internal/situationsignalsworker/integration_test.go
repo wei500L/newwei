@@ -1232,9 +1232,17 @@ func TestSituationSignalsWorkerOrefAlertRulesMySQLIntegration(t *testing.T) {
 	defer cancel()
 
 	const orgID = "it-org-situation-signals-worker"
+	// The worker creates the two default rules for every active organization in
+	// the shared database, so cleanup removes exactly the OREF system-metric
+	// rules (no other test in this job creates them) instead of only this
+	// fixture's rows.
 	deleteFixtures := func() {
+		_, _ = db.ExecContext(context.Background(),
+			"DELETE FROM `AlertRule` WHERE `metricProvider` = ? AND `metricSlug` IN (?, ?)",
+			orefSystemMetricProvider, orefActiveAlertsMetricSlug, orefHistory24hMetricSlug)
 		_, _ = db.ExecContext(context.Background(), "DELETE FROM `AlertRule` WHERE `orgId` = ?", orgID)
 		_, _ = db.ExecContext(context.Background(), "DELETE FROM `Org` WHERE `id` = ?", orgID)
+		_ = client.Del(context.Background(), orefDefaultRuleTickGateKey).Err()
 	}
 	deleteFixtures()
 	t.Cleanup(deleteFixtures)
@@ -1305,8 +1313,12 @@ func TestSituationSignalsWorkerOrefAlertRulesMySQLIntegration(t *testing.T) {
 		if changeWindow != orefDefaultRuleChangeWindowMin || cooldown != orefDefaultRuleCooldownSeconds || checkInterval != orefDefaultRuleCheckInterval {
 			t.Fatalf("rule %s windows = %d/%d/%d", slug, changeWindow, cooldown, checkInterval)
 		}
-		if string(metadata) != orefDefaultRuleMetadata {
-			t.Fatalf("rule %s metadata = %s, want %s", slug, metadata, orefDefaultRuleMetadata)
+		var metadataFields map[string]any
+		if err := json.Unmarshal(metadata, &metadataFields); err != nil {
+			t.Fatalf("rule %s metadata = %s: %v", slug, metadata, err)
+		}
+		if metadataFields["source"] != "situation-monitor-signals" || metadataFields["systemDefault"] != true {
+			t.Fatalf("rule %s metadata = %s", slug, metadata)
 		}
 		thresholdValue, parseErr := strconv.ParseFloat(strings.TrimSpace(threshold.String), 64)
 		if parseErr != nil {
@@ -1333,22 +1345,33 @@ func TestSituationSignalsWorkerOrefAlertRulesMySQLIntegration(t *testing.T) {
 		}
 	}
 
-	calls := alerts.snapshot()
-	if len(calls) != 2 {
-		t.Fatalf("enqueued rule checks = %d, want 2", len(calls))
-	}
 	expectedCallIDs := map[string]bool{
 		buildDefaultOrefRuleID(orgID, orefActiveAlertsMetricSlug): true,
 		buildDefaultOrefRuleID(orgID, orefHistory24hMetricSlug):   true,
 	}
-	for _, call := range calls {
-		if call.OrgID != orgID || !expectedCallIDs[call.RuleID] {
-			t.Fatalf("enqueued rule check = %+v", call)
+	// The tick-gate owner fans the OREF maintenance out to every active
+	// organization in the shared database, so only this test organization's
+	// jobs are asserted here.
+	assertOrgRuleChecks := func(want int) {
+		t.Helper()
+		matched := 0
+		for _, call := range alerts.snapshot() {
+			if !expectedCallIDs[call.RuleID] {
+				continue
+			}
+			if call.OrgID != orgID {
+				t.Fatalf("enqueued rule check = %+v, want org %s", call, orgID)
+			}
+			if strings.TrimSpace(call.TraceID) == "" {
+				t.Fatalf("enqueued rule check for %s has no trace id", call.RuleID)
+			}
+			matched++
 		}
-		if strings.TrimSpace(call.TraceID) == "" {
-			t.Fatalf("enqueued rule check for %s has no trace id", call.RuleID)
+		if matched != want {
+			t.Fatalf("enqueued checks for org %s = %d, want %d", orgID, matched, want)
 		}
 	}
+	assertOrgRuleChecks(2)
 	if exists, err := client.Exists(ctx, orefDefaultRuleTickGateKey).Result(); err != nil || exists != 1 {
 		t.Fatalf("OREF default rule tick gate exists = %d (err=%v)", exists, err)
 	}
@@ -1373,7 +1396,5 @@ func TestSituationSignalsWorkerOrefAlertRulesMySQLIntegration(t *testing.T) {
 	if ruleCount != 2 {
 		t.Fatalf("alert rules after the second pass = %d, want 2 (no duplicates)", ruleCount)
 	}
-	if calls := alerts.snapshot(); len(calls) != 4 {
-		t.Fatalf("enqueued rule checks after the second pass = %d, want 4", len(calls))
-	}
+	assertOrgRuleChecks(4)
 }
