@@ -239,7 +239,9 @@ func TestDispatchInFlightBlocksAndReschedules(t *testing.T) {
 			cache := newFakeCache()
 			queue := newFakeQueue()
 			service := newTestService(repo, cache, Options{Queue: queue})
-			source := testSource("source-1", "org-1", dispatchTestConfig("sitemap"))
+			config := dispatchTestConfig("sitemap")
+			config["seed"].(map[string]any)["maxNewUrlsPerRun"] = 1
+			source := testSource("source-1", "org-1", config)
 
 			input := dispatchInput{Mode: mode}
 			if mode == dispatchModeManual {
