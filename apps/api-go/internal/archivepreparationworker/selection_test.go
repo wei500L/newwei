@@ -169,7 +169,7 @@ func TestResolveDigestAnchorUsesUTCDayEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("anchor: %v", err)
 	}
-	want := time.Date(2026, 10, 20, 23, 59, 59, 999*time.Millisecond, time.UTC)
+	want := time.Date(2026, 10, 20, 23, 59, 59, 999*int(time.Millisecond), time.UTC)
 	if !anchor.Equal(want) {
 		t.Fatalf("anchor = %s, want %s", anchor, want)
 	}
@@ -181,7 +181,7 @@ func TestResolveMonthRangeUsesUTCBounds(t *testing.T) {
 		t.Fatalf("month: %v", err)
 	}
 	wantStart := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
-	wantEnd := time.Date(2026, 2, 28, 23, 59, 59, 999*time.Millisecond, time.UTC)
+	wantEnd := time.Date(2026, 2, 28, 23, 59, 59, 999*int(time.Millisecond), time.UTC)
 	if !start.ProcessedAt.Equal(wantStart) || !end.ProcessedAt.Equal(wantEnd) {
 		t.Fatalf("range = %s .. %s", start.ProcessedAt, end.ProcessedAt)
 	}
