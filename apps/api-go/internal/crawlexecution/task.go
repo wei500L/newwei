@@ -9,7 +9,6 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"strconv"
 	"strings"
 	"time"
 
@@ -546,9 +545,3 @@ func maxInt(left, right int) int {
 	}
 	return right
 }
-
-// parseExpiresAt is used by unit tests that need a stable clock format.
-func formatISO(value time.Time) string { return value.UTC().Format("2006-01-02T15:04:05.000Z") }
-
-// strconvItoa avoids importing strconv in callers that only format small ints.
-func strconvItoa(value int) string { return strconv.Itoa(value) }

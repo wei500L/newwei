@@ -18,6 +18,9 @@ type requestPayload struct {
 	URLs     []string
 	Keywords []string
 	Options  normalizedOptions
+	// RequestTimeoutMs is the per-attempt crawl4ai timeout override the
+	// pipeline retry context carries (0 means the settings default).
+	RequestTimeoutMs int
 }
 
 // extractOptions ports CrawlOptionsNormalizerService.extractOptions: the stored

@@ -30,10 +30,12 @@ func TestDetailCandidateSelection(t *testing.T) {
 	if len(candidates) != 2 {
 		t.Fatalf("candidates = %#v", candidates)
 	}
-	if candidates[0] != "https://news.example.com/2026/10/20/a-long-article-slug-about-climate" {
+	// Buckets are walked in sorted key order (external before internal) so the
+	// selection is deterministic.
+	if candidates[0] != "https://other.example.com/2026/10/20/external-story-slug" {
 		t.Fatalf("candidate = %q", candidates[0])
 	}
-	if candidates[1] != "https://other.example.com/2026/10/20/external-story-slug" {
+	if candidates[1] != "https://news.example.com/2026/10/20/a-long-article-slug-about-climate" {
 		t.Fatalf("candidate = %q", candidates[1])
 	}
 

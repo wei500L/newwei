@@ -100,6 +100,8 @@ func parseCanonicalHTTPURL(value string) (*url.URL, bool) {
 	if err != nil {
 		return nil, false
 	}
+	// WHATWG URL lower-cases the scheme; net/url keeps the input case.
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return nil, false
 	}

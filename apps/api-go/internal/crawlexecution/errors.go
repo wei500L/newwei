@@ -6,11 +6,9 @@ package crawlexecution
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawl4ai"
 )
@@ -124,29 +122,4 @@ func sanitizeError(err error) map[string]any {
 	return map[string]any{
 		"message": strings.TrimSpace(err.Error()),
 	}
-}
-
-// taskLogErrorMessage is the TaskLog error leaf for a plain string message.
-func taskLogErrorMessage(message string) map[string]any {
-	if strings.TrimSpace(message) == "" {
-		return nil
-	}
-	return map[string]any{"message": strings.TrimSpace(message)}
-}
-
-// jsonRawOrNull returns the raw JSON value or nil.
-func jsonRawOrNull(raw json.RawMessage) any {
-	if len(raw) == 0 {
-		return nil
-	}
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil
-	}
-	return value
-}
-
-// durationMillis is a helper for task-log duration fields.
-func durationMillis(start time.Time, end time.Time) int64 {
-	return end.Sub(start).Milliseconds()
 }

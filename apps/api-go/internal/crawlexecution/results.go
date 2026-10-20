@@ -28,13 +28,13 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawl4ai"
 )
 
-const (
-	// resultPersistConcurrencyLimit is RESULT_PERSIST_CONCURRENCY_LIMIT. The
-	// Go port persists sequentially: the observable order is the same (a failed
-	// entry aborts the batch) and it keeps the shared connection count low.
-	resultPersistConcurrencyLimit = 6
-	crawlResultContentsCollection = "crawlresultcontents"
-)
+// crawlResultContentsCollection is Mongoose's pluralized CrawlResultContent
+// collection name.
+const crawlResultContentsCollection = "crawlresultcontents"
+
+// The NestJS persistResults writes in RESULT_PERSIST_CONCURRENCY_LIMIT batches;
+// the Go port persists sequentially because the observable order (a failed entry
+// aborts the batch) is identical and it keeps the shared connection count low.
 
 // hashedItem is HashedCrawlResultItem.
 type hashedItem struct {

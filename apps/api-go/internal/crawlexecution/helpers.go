@@ -11,9 +11,6 @@ import (
 	"time"
 )
 
-// maxAPISideRedirectHops is MAX_API_SIDE_REDIRECT_HOPS.
-const maxAPISideRedirectHops = 5
-
 // blockedDetailPathSegments is BLOCKED_DETAIL_PATH_SEGMENTS.
 var blockedDetailPathSegments = map[string]struct{}{
 	"video": {}, "videos": {}, "photo": {}, "photos": {}, "pictures": {},

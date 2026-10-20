@@ -868,10 +868,7 @@ func (s *Service) buildEmptyMarkdownFallbackProfiles(options normalizedOptions) 
 	rawRelaxedInput := optionsToInput(options)
 	rawRelaxedInput.OnlyMainContent = boolPtr(false)
 	rawRelaxedInput.MarkdownFilter = nil
-	rawRelaxedInput.MarkdownOptions = markdownOptionsToInput(&crawloptions.MarkdownOptions{
-		ContentSource: stringPtr("raw_html"),
-		Citations:     boolPtr(citations),
-	})
+	rawRelaxedInput.MarkdownOptions = fallbackMarkdownOptionsInput(options.MarkdownOptions, "raw_html", citations)
 	rawRelaxedInput.CleanMarkdown = relaxedClean
 	rawRelaxedInput.CSSSelector = nil
 	rawRelaxedInput.WordCountThreshold = intPtrOf(10)
@@ -900,10 +897,7 @@ func (s *Service) buildEmptyMarkdownFallbackProfiles(options normalizedOptions) 
 		Threshold:        floatPtr(0.2),
 		MinWordThreshold: intPtrOf(5),
 	}
-	balancedInput.MarkdownOptions = markdownOptionsToInput(&crawloptions.MarkdownOptions{
-		ContentSource: stringPtr("cleaned_html"),
-		Citations:     boolPtr(citations),
-	})
+	balancedInput.MarkdownOptions = fallbackMarkdownOptionsInput(options.MarkdownOptions, "cleaned_html", citations)
 	balancedInput.CleanMarkdown = balancedClean
 	balancedInput.CSSSelector = nil
 	balancedInput.WordCountThreshold = intPtrOf(minIntPtrValue(options.WordCountThreshold, 80, 40))
@@ -1103,6 +1097,18 @@ func (s *Service) runEmptyMarkdownFallback(ctx context.Context, task *taskRow, o
 		return &best.run, nil
 	}
 	return lowSignalRun, nil
+}
+
+// fallbackMarkdownOptionsInput spreads the task's markdown options and
+// overrides the content source/citations, like the NestJS object spread.
+func fallbackMarkdownOptionsInput(base *crawloptions.MarkdownOptions, contentSource string, citations bool) *crawloptions.MarkdownOptionsInput {
+	input := markdownOptionsToInput(base)
+	if input == nil {
+		input = &crawloptions.MarkdownOptionsInput{}
+	}
+	input.ContentSource = stringPtr(contentSource)
+	input.Citations = boolPtr(citations)
+	return input
 }
 
 func intPtrOf(value int) *int { return &value }

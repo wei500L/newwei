@@ -171,7 +171,7 @@ func TestBuildAntiBotWarmupURLs(t *testing.T) {
 	if len(urls) == 0 {
 		t.Fatal("warmup urls must not be empty")
 	}
-	if urls[0] != "https://news.example.com" {
+	if urls[0] != "https://news.example.com/" {
 		t.Fatalf("origin = %q", urls[0])
 	}
 	for _, value := range urls {

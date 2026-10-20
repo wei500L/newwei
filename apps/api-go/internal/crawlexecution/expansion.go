@@ -699,10 +699,7 @@ func (s *Service) buildDetailExpansionOptions(options normalizedOptions, quality
 	input.MarkdownFilter = nil
 	input.ExtractLinks = boolPtr(false)
 	input.WordCountThreshold = intPtrOf(qualityWordCountThreshold)
-	input.MarkdownOptions = markdownOptionsToInput(&crawloptions.MarkdownOptions{
-		ContentSource: stringPtr(contentSource),
-		Citations:     boolPtr(citations),
-	})
+	input.MarkdownOptions = fallbackMarkdownOptionsInput(options.MarkdownOptions, contentSource, citations)
 	if options.CleanMarkdown != nil {
 		wordCount := 20
 		if options.CleanMarkdown.WordCountThreshold != nil && *options.CleanMarkdown.WordCountThreshold < 40 {
