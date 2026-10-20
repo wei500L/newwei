@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 
 import { NewsEventClusteringRecoveryService } from "./news-event-clustering-recovery.service";
 
@@ -16,10 +17,24 @@ export class NewsEventClusteringRecoverySchedulerService {
   constructor(
     private readonly cache: CacheService,
     private readonly recovery: NewsEventClusteringRecoveryService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async enqueuePendingLlmBackfills() {
+    // API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go moves the scan (and the
+    // worker) to Go. Return before claiming the scan lock so only one runtime
+    // ever scans, even during a rolling switch.
+    if (
+      this.env.get("API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE", {
+        infer: true,
+      }) === "go"
+    ) {
+      logger.info(
+        "Skipped news event clustering recovery scheduler because Go owns the scan (API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go)",
+      );
+      return;
+    }
     const locked = await this.cache.withLock(
       "cron:news-event-clustering-recovery",
       CLUSTERING_RECOVERY_SCHEDULER_LOCK_TTL_MS,

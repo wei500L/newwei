@@ -333,6 +333,7 @@ pnpm --filter infra-scripts run env:check
 - 登录与会话：`JWT_SECRET`、`NEXTAUTH_SECRET`、`NEXTAUTH_URL`。`NEXTAUTH_SECRET` 只在运行时注入（compose `env_file`），不要作为 Docker build ARG，以免进入 `docker history`
 - Web ↔ API：`NEXT_PUBLIC_API_BASE_URL`（浏览器访问 API）、`API_BASE_URL`（服务端访问 API，可选）
 - API 入口试点（Go-批2C/批3A/批3B/批3C）：`API_GO_HOST_PORT`、`API_GO_IMAGE`、`API_GO_USER_SETTINGS_READ_MODE`、`API_GO_USER_SETTINGS_WRITE_MODE`（`legacy` 默认，六个 PUT 代理 NestJS；`go` 要求读模式同为 `go`，pilot 注入 `go`；回滚先改回 `legacy`）、`API_GO_ONBOARDING_MODE`、`API_GO_SITUATION_INSIGHTS_MODE`（态势洞察只读链，默认 `legacy`；`go` 要求 JWT/MySQL/Redis/Mongo）。启用/切流/回滚见下方「api-go 入口试点」
+- 新闻事件聚类补救与指标关联刷新（四个独立开关，默认 `legacy`，只接受空串/`legacy`/`go`，非法值启动失败）：`API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE`（手动 LLM 补救入队）、`API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE`（BullMQ worker、每 5 分钟扫描与卡住分组回收；Nest 也读取，`go` 时 Nest 不创建 Worker 且扫描定时任务在加锁前返回）、`API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE`（`refreshNewsIndicatorAssociations` mutation）、`API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE`（每 6 小时刷新；Nest 也读取，`go` 时在领取时间片前返回）。切换 worker 执行权先改 `api` 再改 `api-go`，回退按相反顺序；队列任务格式两边一致，已写入数据不回滚
 - 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_SSRF_PROXY_URL`、`CRAWL4AI_*`
 - LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MASTER_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`。Docker 栈中 `LITELLM_MASTER_KEY` 必填（`openssl rand -hex 32`），空值时代理直接退出
 - Docker 端口绑定：`DOCKER_PUBLISH_HOST`（默认 `127.0.0.1`，仅本机可达；需要局域网访问时设为 `0.0.0.0`）

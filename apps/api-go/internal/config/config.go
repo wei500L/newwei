@@ -424,6 +424,48 @@ const (
 	NewsnowSourcesModeGo NewsnowSourcesMode = "go"
 )
 
+// NewsClusteringLlmBackfillMode controls the manual LLM backfill enqueue route:
+//
+//	POST /api/system-settings/news-events/clustering/failures/:groupId/llm-backfill
+//
+// Default legacy. go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
+// MONGO_URI, and adds one BullMQ job to the shared
+// news_event_clustering_recovery queue. It does not start the worker: the
+// consumer has its own switch. The default (empty or legacy) leaves the route
+// on NestJS.
+type NewsClusteringLlmBackfillMode string
+
+const (
+	NewsClusteringLlmBackfillModeLegacy NewsClusteringLlmBackfillMode = "legacy"
+	NewsClusteringLlmBackfillModeGo     NewsClusteringLlmBackfillMode = "go"
+)
+
+// NewsClusteringRecoveryWorkerMode controls the BullMQ consumer of the
+// news_event_clustering_recovery queue, its five-minute pending scan and the
+// stale-processing recovery rule (R1). Default legacy. go requires
+// DATABASE_URL, REDIS_HOST and MONGO_URI; it serves no HTTP request, so
+// JWT_SECRET is not a startup condition. NestJS reads the same variable and
+// creates no Worker and runs no scan tick while it is go, so the queue never
+// has two owners.
+type NewsClusteringRecoveryWorkerMode string
+
+const (
+	NewsClusteringRecoveryWorkerModeLegacy NewsClusteringRecoveryWorkerMode = "legacy"
+	NewsClusteringRecoveryWorkerModeGo     NewsClusteringRecoveryWorkerMode = "go"
+)
+
+// NewsIndicatorAssociationCronMode controls the six-hourly news-indicator
+// association refresh. Default legacy. go requires DATABASE_URL and REDIS_HOST:
+// the refresh writes MySQL and the tick gate and organization leases live in
+// Redis, so the cron does not need JWT_SECRET or MONGO_URI. NestJS reads the same
+// variable and returns before claiming the tick gate while it is go.
+type NewsIndicatorAssociationCronMode string
+
+const (
+	NewsIndicatorAssociationCronModeLegacy NewsIndicatorAssociationCronMode = "legacy"
+	NewsIndicatorAssociationCronModeGo     NewsIndicatorAssociationCronMode = "go"
+)
+
 // CrawlReadTelemetryMode controls the seven crawl read/media/telemetry HTTP
 // endpoints migrated by this unit. It defaults to legacy.
 //
@@ -2142,6 +2184,25 @@ type Config struct {
 	LiteLLMConfigInternalTokenRaw  string
 	SystemSettingsEncryptionKeyRaw string
 	NodeEnvRaw                     string
+
+	// API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE. Default legacy; see the mode
+	// type for the route and requirements.
+	NewsClusteringLlmBackfillMode NewsClusteringLlmBackfillMode
+	// API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE. Default legacy; see the mode
+	// type for the consumer, its scan and the R1 recovery rule.
+	NewsClusteringRecoveryWorkerMode NewsClusteringRecoveryWorkerMode
+	// API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE. Default legacy. go registers
+	// the refreshNewsIndicatorAssociations mutation; it requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST. It is a string like the other GraphQL write
+	// switches.
+	GraphQLNewsIndicatorRefreshMode string
+	// API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE. Default legacy; see the mode
+	// type for the six-hour refresh.
+	NewsIndicatorAssociationCronMode NewsIndicatorAssociationCronMode
+	// NewsProcessQueueConcurrency mirrors NEWS_PROCESS_QUEUE_CONCURRENCY
+	// (default 8). The clustering recovery worker uses
+	// max(1, min(2, value)), the same clamp the NestJS processor applies.
+	NewsProcessQueueConcurrency int
 }
 
 // Load 从 getenv 读取并校验配置。
@@ -3323,6 +3384,47 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	// The four news backfill switches accept exactly "", "legacy" and "go".
+	// An empty value behaves like legacy; any other value fails startup. The
+	// manual enqueue route and the GraphQL mutation are request switches, while
+	// the worker and the six-hour cron switches are also read by NestJS so the
+	// two runtimes never own the same background chain.
+	switch strings.TrimSpace(getenv("API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE")) {
+	case "", string(NewsClusteringLlmBackfillModeLegacy):
+		cfg.NewsClusteringLlmBackfillMode = NewsClusteringLlmBackfillModeLegacy
+	case string(NewsClusteringLlmBackfillModeGo):
+		cfg.NewsClusteringLlmBackfillMode = NewsClusteringLlmBackfillModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE")) {
+	case "", string(NewsClusteringRecoveryWorkerModeLegacy):
+		cfg.NewsClusteringRecoveryWorkerMode = NewsClusteringRecoveryWorkerModeLegacy
+	case string(NewsClusteringRecoveryWorkerModeGo):
+		cfg.NewsClusteringRecoveryWorkerMode = NewsClusteringRecoveryWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE")) {
+	case "", "legacy":
+		cfg.GraphQLNewsIndicatorRefreshMode = "legacy"
+	case "go":
+		cfg.GraphQLNewsIndicatorRefreshMode = "go"
+	default:
+		errs = append(errs, "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE")) {
+	case "", string(NewsIndicatorAssociationCronModeLegacy):
+		cfg.NewsIndicatorAssociationCronMode = NewsIndicatorAssociationCronModeLegacy
+	case string(NewsIndicatorAssociationCronModeGo):
+		cfg.NewsIndicatorAssociationCronMode = NewsIndicatorAssociationCronModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE must be one of legacy|go")
+	}
+	// The clustering recovery worker reads the same process-queue concurrency
+	// the NestJS processor uses and clamps it to max(1, min(2, value)).
+	cfg.NewsProcessQueueConcurrency = intDefault(getenv("NEWS_PROCESS_QUEUE_CONCURRENCY"), 8)
+
 	// Go 接管模式的依赖前置校验：不得在依赖缺失时启动一个必然失败的
 	// 「Go 接管端点」——启动即失败，错误只指出缺失的配置项名，不打印值。
 	// Go-批3B：UserSettingsReadMode=go 触发同一套前置（六个 GET 全部由
@@ -3950,6 +4052,41 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_SITUATION_INSIGHTS_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_SITUATION_INSIGHTS_MODE=go")
+		}
+	}
+	// The manual LLM backfill enqueue route authenticates a human or machine
+	// caller, reads the Mongo failure group, writes its claim and adds a BullMQ
+	// job, so it needs the full stack. The recovery worker consumes the same
+	// queue and writes the same Mongo/MySQL records but serves no HTTP request,
+	// so JWT_SECRET is not a startup condition for it. The six-hour association
+	// refresh needs MySQL and Redis only: it reuses the newsindicator refresh
+	// and its organization session lock, and writes no Mongo document.
+	if cfg.NewsClusteringLlmBackfillMode == NewsClusteringLlmBackfillModeGo {
+		appendAuthRequirements(&errs, "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE=go")
+		}
+	}
+	if cfg.NewsClusteringRecoveryWorkerMode == NewsClusteringRecoveryWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go")
+		}
+	}
+	if cfg.GraphQLNewsIndicatorRefreshMode == "go" {
+		appendAuthRequirements(&errs, "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE", cfg)
+	}
+	if cfg.NewsIndicatorAssociationCronMode == NewsIndicatorAssociationCronModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE=go")
 		}
 	}
 

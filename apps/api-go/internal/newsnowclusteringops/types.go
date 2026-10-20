@@ -14,8 +14,14 @@
 //	POST /api/system-settings/news-events/clustering/failures/:groupId/vector-backfill
 //	POST /api/system-settings/news-events/clustering/failures/:groupId/ignore
 //
-// Nothing in this package fetches an external news source, calls an LLM or
-// delivers a queue job. The endpoints that do stay on NestJS.
+// The same package also owns the data and scoring primitives of the LLM
+// backfill chain (llm_backfill*.go): the manual enqueue body, the five-minute
+// scan with the stale-processing recovery rule, and the worker body. That chain
+// has its own two switches, API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE and
+// API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE; while both are legacy none of
+// its code runs. Nothing in the nine endpoint handlers fetches an external news
+// source; the LLM backfill worker does call the configured model gateway and
+// the vector service, and it does add BullMQ jobs when its own switch is go.
 package newsnowclusteringops
 
 // SortMode is the personalized-ordering mode reported back to the console.

@@ -180,6 +180,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/knowledgereview"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicatorwrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/orgaccesswrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingscrawl"
@@ -658,6 +659,10 @@ func run() error {
 	if cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo {
 		newsnowSourcesMode = string(legacyproxy.ModeGo)
 	}
+	newsClusteringLlmBackfillMode := ""
+	if cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo {
+		newsClusteringLlmBackfillMode = string(legacyproxy.ModeGo)
+	}
 	crawlReadTelemetryMode := ""
 	if cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo {
 		crawlReadTelemetryMode = string(legacyproxy.ModeGo)
@@ -800,7 +805,8 @@ func run() error {
 		archiveReadingGo ||
 		economicDataGo ||
 		cfg.GraphQLAlertRulesMode == "go" ||
-		cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo {
+		cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo ||
+		cfg.GraphQLNewsIndicatorRefreshMode == "go" {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -827,6 +833,9 @@ func run() error {
 	// The two public source fetch routes. Registered after the local-computation
 	// rules; the two rule sets share no path.
 	rules = legacyproxy.WithNewsnowSources(rules, newsnowSourcesMode)
+	// The manual LLM backfill route has its own switch. It is registered next
+	// to the nine-route clustering takeover but never widens it.
+	rules = legacyproxy.WithNewsClusteringLlmBackfill(rules, newsClusteringLlmBackfillMode)
 	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
 	// The lifecycle write routes and the queue administration routes are two
 	// independent switches. Their rules are method-scoped, so they coexist with
@@ -939,6 +948,10 @@ func run() error {
 				cfg.QualityOverviewMode == config.QualityOverviewModeGo ||
 				cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo ||
 				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
+				cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo ||
+				cfg.NewsClusteringRecoveryWorkerMode == config.NewsClusteringRecoveryWorkerModeGo ||
+				cfg.GraphQLNewsIndicatorRefreshMode == "go" ||
+				cfg.NewsIndicatorAssociationCronMode == config.NewsIndicatorAssociationCronModeGo ||
 				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
 				cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo ||
 				cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo ||
@@ -1767,6 +1780,15 @@ func run() error {
 			"newsnowClusteringOps": map[string]any{
 				"mode": string(cfg.NewsnowClusteringOpsMode),
 			},
+			// The news-event clustering LLM backfill chain and the six-hourly
+			// news-indicator association refresh. The four switches are
+			// independent; the worker switch also stops the NestJS consumer.
+			"newsBackfillJobs": map[string]any{
+				"llmBackfillMode":                  string(cfg.NewsClusteringLlmBackfillMode),
+				"recoveryWorkerMode":               string(cfg.NewsClusteringRecoveryWorkerMode),
+				"graphqlNewsIndicatorRefreshMode":  cfg.GraphQLNewsIndicatorRefreshMode,
+				"newsIndicatorAssociationCronMode": string(cfg.NewsIndicatorAssociationCronMode),
+			},
 			// 账户资料、会话退出与机器令牌的 8 条 HTTP。legacy 时全部回落
 			// NestJS；不含连接串、密码、hash 与令牌。
 			"accountSecurity": map[string]any{
@@ -1836,7 +1858,8 @@ func run() error {
 	// is the exception: it requires Mongo itself).
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
 	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || graphqlAlertRulesGo || settingsWriteGo ||
-		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || itemsIngestGo || archiveReadingGo || economicDataGo || crawlTaskWriteGo {
+		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || itemsIngestGo || archiveReadingGo || economicDataGo || crawlTaskWriteGo ||
+		cfg.GraphQLNewsIndicatorRefreshMode == "go" {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -2028,6 +2051,14 @@ func run() error {
 				settingscrawl.RegisterCrawlTaskModelTypes(reg)
 			}
 			graphqlcrawltaskwrite.Register(reg, crawlTaskService)
+		}
+		// The news-indicator association refresh mutation reuses
+		// newsindicator.RefreshOrg and its per-organization MySQL session lock.
+		// It is independent of the news-indicator read switch: when only this
+		// switch is go the two read queries stay on NestJS while this mutation
+		// is served by Go.
+		if cfg.GraphQLNewsIndicatorRefreshMode == "go" {
+			newsindicatorwrite.Register(reg, sharedDB, redisClient)
 		}
 		// The four source-policy mutations return the policy models and two
 		// nested category-authority models. The narrow registration is used
@@ -2264,6 +2295,10 @@ func run() error {
 	// when API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go. It registers no HTTP route
 	// and needs no JWT.
 	var kgIngestion *kgIngestionRuntime
+	// The news backfill runtime owns the LLM backfill worker/scans and the
+	// six-hourly association refresh when their switches are go. It is nil in
+	// the legacy default, so no component is constructed.
+	var newsBackfill *newsBackfillRuntime
 	// Ordered teardown for both the SIGTERM path and every error return after
 	// this point, including an HTTP listen failure. The digest scheduler stops
 	// first, then background search reindex, then the shared Redis/Mongo
@@ -2274,6 +2309,11 @@ func run() error {
 		if economicRuntime != nil {
 			if closeErr := economicRuntime.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: economic-data runtime close: %v", closeErr)
+			}
+		}
+		if newsBackfill != nil {
+			if closeErr := newsBackfill.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: news backfill runtime close: %v", closeErr)
 			}
 		}
 		if deliveryScheduler != nil {
@@ -2358,6 +2398,15 @@ func run() error {
 	if kgIngestion != nil {
 		kgIngestion.scheduler.Start(context.Background())
 		log.Printf("api-go: knowledge graph ingestion scheduler enabled mode=%s", cfg.KnowledgeGraphIngestionMode)
+	}
+	newsBackfill, err = wireNewsBackfillJobs(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
+	if err != nil {
+		return err
+	}
+	if newsBackfill != nil {
+		if err := newsBackfill.Start(context.Background()); err != nil {
+			return err
+		}
 	}
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -51,6 +51,37 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The manual LLM backfill enqueue route; the recovery worker and the
+    // six-hourly association refresh read the same variables in NestJS. Empty
+    // string behaves like legacy; invalid values fail startup.
+    API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // Economic-data request ownership (three GraphQL mutations and three
     // AkShare gateway admin routes). Empty behaves like legacy.
     API_GO_ECONOMIC_DATA_MODE: z
