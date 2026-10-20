@@ -352,7 +352,7 @@ func (r *Runtime) register(conn *connection) error {
 	if r.closing.Load() {
 		return errors.New("server shutting down")
 	}
-	if r.limiter.maxPerUser > 0 && len(r.byUser[conn.userID]) >= r.limiter.maxPerUser {
+	if r.maxPerUser > 0 && len(r.byUser[conn.userID]) >= r.maxPerUser {
 		return errors.New("Too many connections")
 	}
 	if conn.ip != "" && r.maxPerIP > 0 && r.byIP[conn.ip] >= r.maxPerIP {
