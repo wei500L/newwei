@@ -54,6 +54,9 @@ func openMetricsTestDB(t *testing.T) *sql.DB {
 			UNIQUE KEY Org_slug_key (slug),
 			PRIMARY KEY (id)
 		) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+		// The Org table from the authz step uses utf8mb4_unicode_ci; the token
+		// tables must use the same collation or the JOIN on orgId compares
+		// values with different collations (MySQL error 1267).
 		`CREATE TABLE IF NOT EXISTS MachineAccessToken (
 			id varchar(40) NOT NULL PRIMARY KEY,
 			orgId varchar(40) NOT NULL,
@@ -65,13 +68,13 @@ func openMetricsTestDB(t *testing.T) *sql.DB {
 			lastUsedAt datetime(3) NULL,
 			createdById varchar(40) NULL,
 			UNIQUE KEY MachineAccessToken_tokenHash (tokenHash)
-		) ENGINE=InnoDB`,
+		) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 		`CREATE TABLE IF NOT EXISTS GlobalRoleAssignment (
 			id varchar(40) NOT NULL PRIMARY KEY,
 			userId varchar(40) NOT NULL,
 			role varchar(40) NOT NULL,
 			createdAt datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
-		) ENGINE=InnoDB`,
+		) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 	} {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			t.Fatalf("create table: %v", err)

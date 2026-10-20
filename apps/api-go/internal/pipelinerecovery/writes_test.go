@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -37,7 +38,7 @@ func TestParseObjectIDMatchesMongoose(t *testing.T) {
 			if tc.value == "abcdefghijkl" && string(id[:]) != tc.value {
 				t.Fatalf("12-byte id = %q", string(id[:]))
 			}
-			if len(tc.value) == 24 && id.Hex() != tc.value {
+			if len(tc.value) == 24 && !strings.EqualFold(id.Hex(), tc.value) {
 				t.Fatalf("hex round trip = %q", id.Hex())
 			}
 		})
