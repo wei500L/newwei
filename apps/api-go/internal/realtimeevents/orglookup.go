@@ -144,7 +144,10 @@ type mongoOrgLookup struct {
 }
 
 func (l *mongoOrgLookup) lookup(ctx context.Context, id string) (string, bool) {
-	if l == nil || l.database == nil {
+	if l == nil {
+		return "", false
+	}
+	if l.database == nil {
 		l.warnOnce.Do(func() {
 			log.Printf("realtimeevents: Mongo is not configured; %s events without a job-data orgId are dropped", l.kind)
 		})
@@ -214,7 +217,10 @@ func (l *alertsLookup) IdentifierFromJobData(fields map[string]json.RawMessage) 
 }
 
 func (l *alertsLookup) ResolveIdentifier(ctx context.Context, identifier orgLookupIdentifier) (string, bool) {
-	if l == nil || l.db == nil {
+	if l == nil {
+		return "", false
+	}
+	if l.db == nil {
 		l.warnOnce.Do(func() {
 			log.Printf("realtimeevents: MySQL is not configured; alerts events without a job-data orgId are dropped")
 		})

@@ -166,7 +166,10 @@ func wireClassificationAlert(
 		return nil, errClassificationAlertResources
 	}
 	mongoDatabase, err := sharedMongoDatabase(cfg.MongoURI, mongoConn)
-	if err != nil || mongoDatabase == nil {
+	if err != nil {
+		return nil, fmt.Errorf("api-go: classification quality alert scheduler requires a valid MONGO_URI: %w", err)
+	}
+	if mongoDatabase == nil {
 		return nil, errClassificationAlertResources
 	}
 	summary := classificationrssops.NewService(db, mongoDatabase, redisClient)
@@ -181,21 +184,20 @@ func wireClassificationAlert(
 }
 
 // sharedMongoDatabase returns the process-wide Mongo database, opening it on
-// first use when MONGO_URI is configured. An empty URI returns nil without
-// touching mongoConn; an unparsable URI is reported to the caller.
+// first use when MONGO_URI is configured. An already-open connection is reused
+// even when the URI is empty (every opener uses the same cfg.MongoURI); an
+// unparsable URI is reported to the caller.
 func sharedMongoDatabase(mongoURI string, mongoConn **dashboardstats.Connection) (*mongo.Database, error) {
-	if strings.TrimSpace(mongoURI) == "" {
+	if mongoConn != nil && *mongoConn != nil {
+		return (*mongoConn).Database(), nil
+	}
+	if strings.TrimSpace(mongoURI) == "" || mongoConn == nil {
 		return nil, nil
 	}
-	if mongoConn == nil {
-		return nil, nil
+	conn, err := dashboardstats.Open(mongoURI)
+	if err != nil {
+		return nil, err
 	}
-	if *mongoConn == nil {
-		conn, err := dashboardstats.Open(mongoURI)
-		if err != nil {
-			return nil, err
-		}
-		*mongoConn = conn
-	}
+	*mongoConn = conn
 	return (*mongoConn).Database(), nil
 }
