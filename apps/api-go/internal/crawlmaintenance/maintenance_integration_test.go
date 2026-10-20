@@ -20,6 +20,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -63,9 +64,26 @@ func newMaintenanceHarness(t *testing.T) *maintenanceHarness {
 	if mongoURI == "" {
 		t.Skip("MONGO_URI not set — integration test requires MongoDB")
 	}
-	db, err := usersettings.OpenMySQLFromURL(databaseURL)
+	// Isolate the fixture in its own database: the job runs other integration
+	// steps against the shared `app` schema, and this package needs a narrower
+	// CrawlTask/AuditLog/MongoOutbox shape. Creating a dedicated database keeps
+	// the shared tables untouched, mirroring the #114 schema isolation.
+	baseDB, err := usersettings.OpenMySQLFromURL(databaseURL)
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
+	}
+	mysqlDatabaseName := "crawl_maintenance_it_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	if _, err := baseDB.ExecContext(context.Background(), "CREATE DATABASE `"+mysqlDatabaseName+"`"); err != nil {
+		t.Fatalf("create integration database: %v", err)
+	}
+	parsedDatabaseURL, err := url.Parse(databaseURL)
+	if err != nil {
+		t.Fatalf("parse DATABASE_URL: %v", err)
+	}
+	parsedDatabaseURL.Path = "/" + mysqlDatabaseName
+	db, err := usersettings.OpenMySQLFromURL(parsedDatabaseURL.String())
+	if err != nil {
+		t.Fatalf("open integration mysql: %v", err)
 	}
 	if err := db.Ping(); err != nil {
 		t.Fatalf("ping mysql: %v", err)
@@ -92,6 +110,8 @@ func newMaintenanceHarness(t *testing.T) *maintenanceHarness {
 		_ = mongoClient.Disconnect(cleanupCtx)
 		_ = redisClient.Close()
 		_ = db.Close()
+		_, _ = baseDB.ExecContext(cleanupCtx, "DROP DATABASE `"+mysqlDatabaseName+"`")
+		_ = baseDB.Close()
 	})
 
 	harness := &maintenanceHarness{
@@ -114,14 +134,6 @@ func newMaintenanceHarness(t *testing.T) *maintenanceHarness {
 func createMaintenanceTables(t *testing.T, db *sql.DB) {
 	t.Helper()
 	statements := []string{
-		"DROP TABLE IF EXISTS `CrawlQualityTaskSnapshot`",
-		"DROP TABLE IF EXISTS `CrawlResult`",
-		"DROP TABLE IF EXISTS `CrawlTask`",
-		"DROP TABLE IF EXISTS `MongoOutbox`",
-		"DROP TABLE IF EXISTS `AuditLogOutbox`",
-		"DROP TABLE IF EXISTS `AuditLog`",
-		"DROP TABLE IF EXISTS `SystemSetting`",
-		"DROP TABLE IF EXISTS `Org`",
 		"CREATE TABLE `Org` (`id` varchar(30) NOT NULL, `isActive` tinyint(1) NOT NULL, PRIMARY KEY (`id`))",
 		"CREATE TABLE `CrawlTask` (" +
 			"`id` varchar(30) NOT NULL, `orgId` varchar(30) NOT NULL," +
