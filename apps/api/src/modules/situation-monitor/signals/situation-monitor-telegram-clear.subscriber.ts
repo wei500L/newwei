@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import Redis from "ioredis";
 
-import { REDIS_CLIENT } from "../cache/cache.tokens";
+import { REDIS_CLIENT } from "../../cache/cache.tokens";
 
 import { SituationMonitorSignalsService } from "./situation-monitor-signals.service";
 
