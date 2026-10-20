@@ -248,3 +248,17 @@ func displayContentTypeString(value *contentType) string {
 	}
 	return string(*value)
 }
+
+// NormalizeNewsContentTypeValue is the exported normalizeNewsContentType.
+func NormalizeNewsContentTypeValue(value string) (string, bool) {
+	normalized := normalizeNewsContentType(&value)
+	if normalized == nil {
+		return "", false
+	}
+	return string(*normalized), true
+}
+
+// InferNewsContentTypeValue is the exported inferNewsContentType.
+func InferNewsContentTypeValue(title, summary, source, rawURL string, topics, tags []string) string {
+	return string(inferNewsContentType(title, summary, source, rawURL, topics, tags))
+}

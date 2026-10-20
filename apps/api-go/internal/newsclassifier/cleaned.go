@@ -163,7 +163,7 @@ func ParseStoredCleanedNews(raw json.RawMessage) (*StoredCleanedNews, bool) {
 		CategoryMethod: normalizeStoredCategoryMethod(stringPointerValue(record.CategoryMethod)),
 		Location:       stringPointerValue(record.Location),
 	}
-	if normalized, ok := archivereading.NormalizeNewsContentTypeValue(stringPointerValue(record.ContentType)); ok {
+	if normalized, ok := archivereading.NormalizeNewsContentTypeValue(stringValueRaw(record.ContentType)); ok {
 		cleaned.ContentType = normalized
 	}
 	return cleaned, true
