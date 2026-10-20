@@ -488,7 +488,7 @@ func (s *Service) fetchPolymarketLeadsSignal(ctx context.Context, orgID string, 
 		if err != nil {
 			return nil, err
 		}
-		if float64(newsActivity) >= runtime.Thresholds.PredictionNewsActivityThreshold {
+		if float64(newsActivity) >= float64(runtime.Thresholds.PredictionNewsActivityThreshold) {
 			continue
 		}
 		confidence := math.Min(0.9, 0.5+shift/20)

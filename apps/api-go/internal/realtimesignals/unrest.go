@@ -680,7 +680,7 @@ func parseTensionPayload(payload jsonRawMessage) []TensionRow {
 			}
 			ts := normalizeStringRaw(firstRaw(point.T, point.Timestamp, point.Date))
 			if ts == "" {
-				ts = formatISO(s.clockMillis())
+				ts = formatISO(millisNow())
 			}
 			points = append(points, struct {
 				value float64

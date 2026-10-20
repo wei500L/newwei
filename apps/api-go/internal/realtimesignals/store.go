@@ -171,7 +171,7 @@ func (s *Store) getLastRun(ctx context.Context, orgID string, source SignalSourc
 	if s.redis == nil {
 		return nil, rediscache.ErrNoClient
 	}
-	raw, err := s.redis.Get(ctx, lastRunKey(orgID, source)).Text()
+	raw, err := s.redis.Get(ctx, lastRunKey(orgID, source)).Result()
 	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}

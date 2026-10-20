@@ -779,7 +779,7 @@ func (o *openSkyService) refreshGlobalAllFlightCapture(ctx context.Context, orgI
 		return err
 	}
 	nowMs := o.clockMillis()
-	if lastRunMs != nil && nowMs-*lastRunMs < globalAllCaptureInterval*1000 {
+	if lastRunMs != nil && nowMs-int64(*lastRunMs) < globalAllCaptureInterval*1000 {
 		return nil
 	}
 	summary, err := o.getBudgetSummary(ctx, runtime, nowMs)
@@ -840,7 +840,7 @@ func (o *openSkyService) readNumberCache(ctx context.Context, key string) (*floa
 	if o.store.redis == nil {
 		return nil, rediscache.ErrNoClient
 	}
-	raw, err := o.store.redis.Get(ctx, key).Text()
+	raw, err := o.store.redis.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}

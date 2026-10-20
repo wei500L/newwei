@@ -594,15 +594,15 @@ func shouldPersistTransportTrackPoint(record transportRecord, existing transport
 // transportStateDoc is the projection of an existing object-state document the
 // decision logic reads.
 type transportStateDoc struct {
-	ObjectKey          string        `bson:"objectKey"`
-	ObservedAt         *time.Time    `bson:"observedAt"`
-	Lat                *float64      `bson:"lat"`
-	Lng                *float64      `bson:"lng"`
-	Heading            *float64      `bson:"heading"`
-	Course             *float64      `bson:"course"`
-	Speed              *float64      `bson:"speed"`
-	AltitudeFt         *float64      `bson:"altitudeFt"`
-	LatestTrackPointID bson.ObjectID `bson:"latestTrackPointId"`
+	ObjectKey          string         `bson:"objectKey"`
+	ObservedAt         *time.Time     `bson:"observedAt"`
+	Lat                *float64       `bson:"lat"`
+	Lng                *float64       `bson:"lng"`
+	Heading            *float64       `bson:"heading"`
+	Course             *float64       `bson:"course"`
+	Speed              *float64       `bson:"speed"`
+	AltitudeFt         *float64       `bson:"altitudeFt"`
+	LatestTrackPointID *bson.ObjectID `bson:"latestTrackPointId"`
 }
 
 // transportTrackDocument is a track point insert. Every nullable member carries
