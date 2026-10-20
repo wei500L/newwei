@@ -118,7 +118,7 @@ func TestAdaptiveStateJSONContract(t *testing.T) {
 			SamplingMode:       "recent_sample",
 		},
 	}
-	encoded, err := json.Marshal(document)
+	encoded, err := marshalJSONNoHTMLEscape(document)
 	if err != nil {
 		t.Fatal(err)
 	}
