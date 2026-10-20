@@ -177,6 +177,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/canary"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlmetadata"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawltaskwrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardcharts"
@@ -2528,6 +2529,12 @@ func run() error {
 	// while renewing their locks, and only then lets the digest scheduler and
 	// the shared Redis/Mongo connections close.
 	var analysisWorker *analysisqueue.Worker
+	// The Frontier LLM owner consumes the frontier-llm-judge and
+	// frontier-llm-learn queues when
+	// API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE=go. The three crawl4ai queues stay
+	// on NestJS. Close stops claiming and drains the in-flight judge/learn job
+	// before the shared Redis/MySQL handles close below.
+	var frontierLlmWorker *crawlfrontierllm.Runtime
 	// Ordered teardown for both the SIGTERM path and every error return after
 	// this point, including an HTTP listen failure. The analysis worker stops
 	// first, then the digest scheduler, then background search reindex, then the
@@ -2567,6 +2574,11 @@ func run() error {
 		if analysisWorker != nil {
 			if closeErr := analysisWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: analysis worker close: %v", closeErr)
+			}
+		}
+		if frontierLlmWorker != nil {
+			if closeErr := frontierLlmWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: frontier LLM worker close: %v", closeErr)
 			}
 		}
 		if deliveryScheduler != nil {
@@ -2695,6 +2707,16 @@ func run() error {
 		analysisWorker = worker
 		if ownedMongo != nil {
 			graphqlMongo = ownedMongo
+		}
+	}
+
+	frontierLlmWorker, err = wireCrawlFrontierLlmWorker(cfg, sharedDB, redisClient, redisOptions, frontierMongoDatabase(graphqlMongo, dashboardMongo))
+	if err != nil {
+		return err
+	}
+	if frontierLlmWorker != nil {
+		if startErr := frontierLlmWorker.Start(context.Background()); startErr != nil {
+			return startErr
 		}
 	}
 

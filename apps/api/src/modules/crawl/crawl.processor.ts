@@ -549,10 +549,20 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       this.registerQueueEvents(context);
     }
 
-    this.llmWorkers.push(
-      this.createLlmWorker(CRAWL_QUEUE_LLM_JUDGE_NAME, this.llmJudgeQueue),
-      this.createLlmWorker(CRAWL_QUEUE_LLM_LEARN_NAME, this.llmLearnQueue),
-    );
+    // The two Frontier LLM queues have a single owner. When the Go worker
+    // switch is go this process keeps the three crawl4ai queue workers and
+    // creates no LLM worker, so only api-go claims those jobs. legacy (the
+    // default and unset value) is unchanged.
+    if (this.env.apiGoCrawlFrontierLlmWorkerMode !== "go") {
+      this.llmWorkers.push(
+        this.createLlmWorker(CRAWL_QUEUE_LLM_JUDGE_NAME, this.llmJudgeQueue),
+        this.createLlmWorker(CRAWL_QUEUE_LLM_LEARN_NAME, this.llmLearnQueue),
+      );
+    } else {
+      logger.info(
+        "Frontier LLM queue workers owned by api-go; NestJS keeps the three crawl queue workers",
+      );
+    }
 
     await this.subscribeWorkerConcurrency();
   }

@@ -492,6 +492,12 @@ services:
       # go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 与 SMTP_*（站内通知、邮件
       # 与 Webhook 都由 Go 产生）；模型服务可选，缺失时经济异常规则回退本地检测。
       API_GO_ALERT_WORKER_MODE: ${API_GO_ALERT_WORKER_MODE:-legacy}
+      # Frontier LLM 判定/学习队列执行权。空串按 legacy 处理；非法值在 Nest
+      # 与 Go 都启动失败。默认 legacy 保留 NestJS 的两个 LLM Worker；go 时
+      # Nest 只跳过这两个 worker（三个爬取队列 worker 仍由 Nest 执行），Go
+      # 消费两个队列（并发 1、限速 1/1000ms，共用同一 limiter 键）。go 要求
+      # DATABASE_URL、REDIS_HOST 与 SYSTEM_SETTINGS_ENCRYPTION_KEY。
+      API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE: ${API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE:-legacy}
       # ALERT_* 与 BULLMQ_NAMESPACE 与 NestJS 同源同名（同一份默认值），
       # 只在 API_GO_ALERT_WORKER_MODE=go 时被 Go 读取。
       BULLMQ_NAMESPACE: ${BULLMQ_NAMESPACE:-modular}
@@ -741,6 +747,12 @@ services:
       # go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 与 SMTP_*（站内通知、邮件
       # 与 Webhook 都由 Go 产生）；模型服务可选，缺失时经济异常规则回退本地检测。
       API_GO_ALERT_WORKER_MODE: ${API_GO_ALERT_WORKER_MODE:-legacy}
+      # Frontier LLM 判定/学习队列执行权。空串按 legacy 处理；非法值在 Nest
+      # 与 Go 都启动失败。默认 legacy 保留 NestJS 的两个 LLM Worker；go 时
+      # Nest 只跳过这两个 worker（三个爬取队列 worker 仍由 Nest 执行），Go
+      # 消费两个队列（并发 1、限速 1/1000ms，共用同一 limiter 键）。go 要求
+      # DATABASE_URL、REDIS_HOST 与 SYSTEM_SETTINGS_ENCRYPTION_KEY。
+      API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE: ${API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE:-legacy}
       # ALERT_* 与 BULLMQ_NAMESPACE 与 NestJS 同源同名（同一份默认值），
       # 只在 API_GO_ALERT_WORKER_MODE=go 时被 Go 读取。
       BULLMQ_NAMESPACE: ${BULLMQ_NAMESPACE:-modular}

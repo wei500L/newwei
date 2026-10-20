@@ -1370,6 +1370,25 @@ const (
 	AlertWorkerModeGo     AlertWorkerMode = "go"
 )
 
+// CrawlFrontierLlmWorkerMode controls the owner of the two Frontier LLM
+// BullMQ queues (`frontier-llm-judge` and `frontier-llm-learn`). It is
+// independent of every HTTP switch and of the three crawl4ai queue workers,
+// which stay on NestJS. The accepted values are exactly "", "legacy" and "go";
+// the empty value behaves like legacy and an invalid value fails startup.
+//
+// legacy: NestJS CrawlQueueProcessor keeps creating both LLM workers.
+// go: NestJS creates only the three crawl workers and api-go consumes the two
+// LLM queues with concurrency 1 and the shared queue-level limiter
+// (max 1 per 1000ms). Go requires DATABASE_URL, REDIS_HOST and
+// SYSTEM_SETTINGS_ENCRYPTION_KEY (the gateway profile key and the managed
+// governance key are decrypted with it); JWT is not required.
+type CrawlFrontierLlmWorkerMode string
+
+const (
+	CrawlFrontierLlmWorkerModeLegacy CrawlFrontierLlmWorkerMode = "legacy"
+	CrawlFrontierLlmWorkerModeGo     CrawlFrontierLlmWorkerMode = "go"
+)
+
 // AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
 type AnalysisViewsMode string
 
@@ -1776,6 +1795,10 @@ type Config struct {
 	// go 需要 MySQL、Redis、Mongo 与 SMTP；ALERT_* 与 BULLMQ_NAMESPACE 只在
 	// 该模式被读取。
 	AlertWorkerMode AlertWorkerMode
+	// CrawlFrontierLlmWorkerMode 见 CrawlFrontierLlmWorkerMode 常量。默认
+	// legacy。go 需要 MySQL、Redis 与设置加密密钥；三个爬取队列 worker 仍由
+	// NestJS 执行。
+	CrawlFrontierLlmWorkerMode CrawlFrontierLlmWorkerMode
 	// 告警队列的 ALERT_* 调参（NestJS EnvService.alertingConfig 的等价物）。
 	AlertQueueConcurrency     int
 	AlertWebhookTimeoutMs     int
@@ -2886,6 +2909,14 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.AlertWorkerMode = AlertWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_ALERT_WORKER_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE")) {
+	case "", string(CrawlFrontierLlmWorkerModeLegacy):
+		cfg.CrawlFrontierLlmWorkerMode = CrawlFrontierLlmWorkerModeLegacy
+	case string(CrawlFrontierLlmWorkerModeGo):
+		cfg.CrawlFrontierLlmWorkerMode = CrawlFrontierLlmWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE must be one of legacy|go")
 	}
 	errs = append(errs, loadAlertingConfig(getenv, &cfg)...)
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_VIEWS_MODE")) {
@@ -4319,6 +4350,21 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// MySQL, Redis and Mongo and sends through the real SMTP transport, so it
 	// needs no HTTP takeover switch. The model service is optional: the economic
 	// anomaly provider falls back to its local detector when it is unavailable.
+	// The Frontier LLM worker owner consumes the two LLM queues without
+	// JWT/RBAC. The model gateway profile and the managed governance key are
+	// decrypted with SYSTEM_SETTINGS_ENCRYPTION_KEY, so an empty key would make
+	// every judge/learn call fail at runtime instead of at startup.
+	if cfg.CrawlFrontierLlmWorkerMode == CrawlFrontierLlmWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE=go")
+		}
+		if cfg.SystemSettingsEncryptionKeyRaw == "" {
+			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE=go")
+		}
+	}
 	if cfg.AlertWorkerMode == AlertWorkerModeGo {
 		if cfg.DatabaseURL == "" {
 			errs = append(errs, "DATABASE_URL is required when API_GO_ALERT_WORKER_MODE=go")
