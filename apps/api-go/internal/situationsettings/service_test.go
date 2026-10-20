@@ -465,3 +465,23 @@ func TestUpdateAuditMetadataNeverContainsSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateNeedsSecretEncoder(t *testing.T) {
+	cases := []struct {
+		name  string
+		input UpdateInput
+		want  bool
+	}{
+		{"all missing", UpdateInput{}, false},
+		{"null key", UpdateInput{TranslationAPIKey: optionalString{state: presenceNull}}, false},
+		{"empty key", UpdateInput{TranslationAPIKey: optionalString{state: presenceValue, value: "  "}}, false},
+		{"translation key", UpdateInput{TranslationAPIKey: optionalString{state: presenceValue, value: "k"}}, true},
+		{"finnhub key", UpdateInput{FinnhubAPIKey: optionalString{state: presenceValue, value: "k"}}, true},
+		{"fred key", UpdateInput{FredAPIKey: optionalString{state: presenceValue, value: "k"}}, true},
+	}
+	for _, tc := range cases {
+		if got := updateNeedsSecretEncoder(tc.input); got != tc.want {
+			t.Fatalf("%s = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

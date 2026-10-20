@@ -26,9 +26,14 @@ func (s *Service) Update(ctx context.Context, orgID, actorID string, input Updat
 	if err != nil {
 		return PublicSettings{}, err
 	}
-	encoder, err := s.loadSecretEncoder(ctx)
-	if err != nil {
-		return PublicSettings{}, err
+	// NestJS only reads system_security when a credential is actually being
+	// encoded, so a PUT that keeps every key does not depend on that row.
+	var encoder secretEncoder
+	if updateNeedsSecretEncoder(input) {
+		encoder, err = s.loadSecretEncoder(ctx)
+		if err != nil {
+			return PublicSettings{}, err
+		}
 	}
 	next, metadata, err := s.buildNextStored(loaded.fields, input, encoder)
 	if err != nil {
@@ -421,6 +426,19 @@ func (s *Service) buildNextStored(stored storedFields, input UpdateInput, encode
 		return storedValue{}, nil, err
 	}
 	return next, metadata, nil
+}
+
+// updateNeedsSecretEncoder reports whether any of the three credential fields
+// present in this DTO would call encodeSecretForStorage. Missing, null and
+// empty-string values clear or keep the stored value and never touch
+// system_security.
+func updateNeedsSecretEncoder(input UpdateInput) bool {
+	for _, field := range []optionalString{input.TranslationAPIKey, input.FinnhubAPIKey, input.FredAPIKey} {
+		if field.state == presenceValue && strings.TrimSpace(field.value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- option merge helpers ----
