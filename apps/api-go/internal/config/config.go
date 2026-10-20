@@ -1239,6 +1239,30 @@ const (
 	GdeltSnapshotRefreshModeGo GdeltSnapshotRefreshMode = "go"
 )
 
+// RealtimeSignalsMode controls which process owns the realtime signal collection
+// cron, RealtimeSignalsService.refreshScheduled (API_GO_REALTIME_SIGNALS_MODE).
+// The accepted values are exactly "", "legacy" and "go"; any other value fails
+// startup instead of silently degrading. The default is legacy, which keeps the
+// NestJS @Cron callback and its shared Redis tick gate.
+//
+// Execution ownership is all-or-nothing: the eight sources feed one insight
+// snapshot, so the switch cannot split the source set between the two processes.
+// Both sides claim the same tick gate and organization leases, so a rolling flip
+// still collects at most once per interval.
+type RealtimeSignalsMode string
+
+const (
+	// RealtimeSignalsModeLegacy keeps the NestJS scheduler (default, including
+	// the empty value). Rollback only changes this variable back to legacy.
+	RealtimeSignalsModeLegacy RealtimeSignalsMode = "legacy"
+	// RealtimeSignalsModeGo runs the collector in this process every minute. It
+	// requires DATABASE_URL, REDIS_HOST and MONGO_URI because a round reads MySQL
+	// settings, organizations and processed articles, writes the shared Redis
+	// documents, and writes Mongo transport tracks. It serves no HTTP route, so
+	// JWT_SECRET is not a startup condition.
+	RealtimeSignalsModeGo RealtimeSignalsMode = "go"
+)
+
 // ContentSubscriptionsMode 只控制内容订阅 7 条精确 HTTP。默认 legacy。
 // 不决定摘要服务能否在进程内调用 Go 订阅查询。
 type ContentSubscriptionsMode string
@@ -2070,6 +2094,10 @@ type Config struct {
 	// GdeltSnapshotRefreshMode）。默认 legacy；go 要求 JWT、MySQL、Redis。
 	// 与 GdeltSnapshotMode 相互独立。
 	GdeltSnapshotRefreshMode GdeltSnapshotRefreshMode
+	// RealtimeSignalsMode 控制实时信号采集 Cron 的执行权（见
+	// RealtimeSignalsMode）。默认 legacy；go 要求 MySQL、Redis 与 Mongo，
+	// 不需要 JWT，也不注册任何 HTTP 路由。
+	RealtimeSignalsMode RealtimeSignalsMode
 	// SituationMonitorGdeltEnabled 是 SITUATION_MONITOR_GDELT_ENABLED，默认
 	// true。为 false 时定时重建与强制刷新都直接返回，与 isGdeltEnabled 一致。
 	SituationMonitorGdeltEnabled bool
@@ -3423,6 +3451,17 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.GdeltSnapshotMode = GdeltSnapshotModeGo
 	default:
 		errs = append(errs, "API_GO_GDELT_SNAPSHOT_MODE must be one of legacy|go")
+	}
+	// The realtime signal collector accepts the empty string, legacy and go. An
+	// empty value behaves exactly like legacy so an unset deployment keeps the
+	// NestJS @Cron ownership.
+	switch strings.TrimSpace(getenv("API_GO_REALTIME_SIGNALS_MODE")) {
+	case "", string(RealtimeSignalsModeLegacy):
+		cfg.RealtimeSignalsMode = RealtimeSignalsModeLegacy
+	case string(RealtimeSignalsModeGo):
+		cfg.RealtimeSignalsMode = RealtimeSignalsModeGo
+	default:
+		errs = append(errs, "API_GO_REALTIME_SIGNALS_MODE must be one of legacy|go")
 	}
 	// The forced-refresh entry switch is read by Go only; while it is legacy the
 	// route stays on NestJS.
@@ -4955,6 +4994,20 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.RedisHost == "" {
 			errs = append(errs, "REDIS_HOST is required when API_GO_GDELT_SNAPSHOT_MODE=go")
+		}
+	}
+	// The realtime signal collector writes the shared Redis documents and the
+	// Mongo transport tracks, and reads settings, organizations and processed
+	// articles from MySQL. It serves no route, so it needs no JWT.
+	if cfg.RealtimeSignalsMode == RealtimeSignalsModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_REALTIME_SIGNALS_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_REALTIME_SIGNALS_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_REALTIME_SIGNALS_MODE=go")
 		}
 	}
 	// The forced-refresh route re-derives the caller's settings.manage

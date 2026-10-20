@@ -1057,6 +1057,7 @@ func run() error {
 				cfg.ArchiveReadingMode == config.ArchiveReadingModeGo ||
 				cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
 				cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
+				cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo ||
 				cfg.AnalysisRunsMode == config.AnalysisRunsModeGo ||
 				cfg.AnalysisWorkerMode == config.AnalysisWorkerModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
@@ -1282,6 +1283,7 @@ func run() error {
 		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
 		assistantWorkerGo ||
 		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
+		cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo ||
 		analysisWorkerGo
 	if needsRedis {
 		// The blocking BullMQ XREAD reader and the queue jobctx cache share
@@ -2503,6 +2505,12 @@ func run() error {
 	// no JWT. The deferred Close stops new ticks and drains in-flight
 	// organizations before the shared Redis/Mongo connections are closed below.
 	var deliveryScheduler *userdigest.DeliveryScheduler
+	// The realtime signal collection cron is owned by Go when
+	// API_GO_REALTIME_SIGNALS_MODE=go. It registers no HTTP route, shares the
+	// Redis tick gate and org leases with NestJS, and writes the shared Redis
+	// documents plus Mongo transport tracks. The deferred Close drains the
+	// in-flight round before the shared connections close below.
+	var realtimeSignals *realtimeSignalsUnit
 	// The audit-log outbox replay unit owns the per-minute audit recovery when
 	// API_GO_AUDIT_OUTBOX_MODE=go. It registers no HTTP route and needs no JWT.
 	var auditOutboxScheduler *auditoutbox.Scheduler
@@ -2557,6 +2565,11 @@ func run() error {
 		if gdeltSnapshot != nil {
 			if closeErr := gdeltSnapshot.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: GDELT snapshot scheduler close: %v", closeErr)
+			}
+		}
+		if realtimeSignals != nil {
+			if closeErr := realtimeSignals.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: realtime signals collector close: %v", closeErr)
 			}
 		}
 		if alertWorker != nil {
@@ -2668,6 +2681,22 @@ func run() error {
 	}
 	assistantWorker = startAssistantWorker(cfg, assistantRunService, redisClient)
 	gdeltSnapshot.Start(cfg)
+
+	// The realtime signal collector needs Mongo for the transport track writes.
+	// Reuse an already-open handle when another unit opened one; otherwise open
+	// the same database this process uses elsewhere and let the teardown close it.
+	if cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo && (sharedDB == nil || redisClient == nil) {
+		return fmt.Errorf("api-go: API_GO_REALTIME_SIGNALS_MODE=go requires mysql and redis")
+	}
+	if cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo && dashboardMongo == nil {
+		opened, openErr := dashboardstats.Open(cfg.MongoURI)
+		if openErr != nil {
+			return fmt.Errorf("api-go: API_GO_REALTIME_SIGNALS_MODE=go requires a valid MONGO_URI")
+		}
+		dashboardMongo = opened
+	}
+	realtimeSignals = newRealtimeSignalsUnit(cfg, sharedDB, redisClient, dashboardMongo)
+	realtimeSignals.Start(cfg)
 
 	alertWorker, err = wireAlertWorker(cfg, sharedDB, redisClient, &graphqlMongo, &dashboardMongo)
 	if err != nil {
