@@ -244,7 +244,6 @@ func TestSimpleOrgResolverPrecedence(t *testing.T) {
 		sources := testSources()
 		sources.store = store
 		resolver := &simpleOrgResolver{
-			kind:   "analysis",
 			queue:  queueAnalysis,
 			store:  store,
 			cache:  newQueueContextCache(sources.now),

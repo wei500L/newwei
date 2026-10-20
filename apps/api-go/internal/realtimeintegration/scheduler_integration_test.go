@@ -230,6 +230,16 @@ func TestRealtimeClassificationSchedulerIntegration(t *testing.T) {
 		close(results)
 
 		completed, skipped := 0, 0
+		// The contender was already read from the channel while the lease was
+		// held, so count it before draining the remaining result.
+		switch contender.Outcome {
+		case classificationalert.OrgOutcomeCompleted:
+			completed++
+		case classificationalert.OrgOutcomeSkipped:
+			skipped++
+		default:
+			t.Fatalf("concurrent EvaluateOrg outcome = %q (%v), want completed or skipped", contender.Outcome, contender.Err)
+		}
 		for result := range results {
 			switch result.Outcome {
 			case classificationalert.OrgOutcomeCompleted:

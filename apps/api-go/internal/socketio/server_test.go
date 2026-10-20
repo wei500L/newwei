@@ -398,7 +398,6 @@ func TestClientNamespaceDisconnectLeavesOtherNamespaces(t *testing.T) {
 		return handler.sessionFor("/alpha") != nil && handler.sessionFor("/beta") != nil
 	})
 	alpha := handler.sessionFor("/alpha")
-	beta := handler.sessionFor("/beta")
 
 	mustWriteFrame(t, conn, "41/beta,")
 	waitFor(t, "beta disconnect callback", func() bool { return handler.disconnectCount("/beta") == 1 })
