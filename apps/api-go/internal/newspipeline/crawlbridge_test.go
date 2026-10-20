@@ -168,8 +168,8 @@ func TestSelectBestPipelineCrawlResultIDPrefersHigherQualityCandidate(t *testing
 	sqlFake, reader, logger := contentTestBridgeParts(bridge)
 	sqlFake.queryFn = func(query string, args []any) (contentRows, error) {
 		return &contentTestRows{rows: []contentRow{
-			{scan: contentTestScan("short", sql.NullString{String: "https://example.com/short", Valid: true})},
-			{scan: contentTestScan("long", sql.NullString{String: "https://example.com/other", Valid: true})},
+			contentTestRow{scan: contentTestScan("short", sql.NullString{String: "https://example.com/short", Valid: true})},
+			contentTestRow{scan: contentTestScan("long", sql.NullString{String: "https://example.com/other", Valid: true})},
 		}}, nil
 	}
 	reader.byResultIDs["short"] = contentTestDocument("# Short\n\nTiny body.", "")
@@ -218,7 +218,7 @@ func TestCrawlViaCrawlTaskUsesReusedResultID(t *testing.T) {
 	}
 	sqlFake.queryFn = func(query string, args []any) (contentRows, error) {
 		return &contentTestRows{rows: []contentRow{
-			{scan: contentTestScan("cr-reused", sql.NullString{String: "https://example.com/a", Valid: true})},
+			contentTestRow{scan: contentTestScan("cr-reused", sql.NullString{String: "https://example.com/a", Valid: true})},
 		}}, nil
 	}
 	reader.byResultIDs["cr-reused"] = contentTestDocument("# Reused\n\nBody", "")

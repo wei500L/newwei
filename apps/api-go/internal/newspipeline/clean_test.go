@@ -428,7 +428,7 @@ func TestFetchArticleCrawlTaskBranchAndCleanArticleSeesPatchedMetadata(t *testin
 	sqlFake.queryFn = func(query string, args []any) (contentRows, error) {
 		if strings.Contains(query, "LIMIT 12") {
 			return &contentTestRows{rows: []contentRow{
-				{scan: contentTestScan("cr1", sql.NullString{String: "https://example.com/a", Valid: true})},
+				contentTestRow{scan: contentTestScan("cr1", sql.NullString{String: "https://example.com/a", Valid: true})},
 			}}, nil
 		}
 		return &contentTestRows{}, nil
@@ -525,7 +525,7 @@ func TestFetchArticleExpandsListLikeArticle(t *testing.T) {
 	sqlFake.queryFn = func(query string, args []any) (contentRows, error) {
 		if strings.Contains(query, "LIMIT 12") {
 			return &contentTestRows{rows: []contentRow{
-				{scan: contentTestScan("detail-1", sql.NullString{String: detailURL, Valid: true})},
+				contentTestRow{scan: contentTestScan("detail-1", sql.NullString{String: detailURL, Valid: true})},
 			}}, nil
 		}
 		return &contentTestRows{}, nil

@@ -151,7 +151,7 @@ func (p *Processor) upsertProcessedItemStatus(ctx context.Context, update proces
 			{Key: "$unset", Value: unset},
 			{Key: "$setOnInsert", Value: setOnInsert},
 		},
-		options.Update().SetUpsert(true),
+		options.UpdateOne().SetUpsert(true),
 	)
 	if err != nil {
 		log.Printf("itempipeline: failed to upsert processed item processedItemId=%s status=%s: %v",
