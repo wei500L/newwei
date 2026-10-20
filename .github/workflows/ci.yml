@@ -362,6 +362,14 @@ jobs:
       - name: Redis integration test (archive preparation BullMQ producer)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/archivepreparation/ -run TestArchivePreparationRedisIntegration -v
 
+      # Archive preparation worker: real MySQL/Redis/Mongo end-to-end for a
+      # digest and a calendar job (status processing -> partial -> ready,
+      # classification writes), the B1 jobBatchSize+5 unparseable-result
+      # termination case, and a model-layer failure that writes FAILED and
+      # schedules the BullMQ retry. Model calls use httptest.
+      - name: Archive preparation worker integration tests (MySQL/Redis/Mongo)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/archivepreparationworker/ -run 'TestArchivePreparationWorkerIntegration' -v
+
       # 告警规则迁移：默认规则补建、upsert/delete/trigger、B1 通道归属、B3 定时
       # 计划替换，以及直接读取 bull:alerts:* 原始结构断言任务字段。
       - name: MySQL/Redis integration tests (alert rules + BullMQ producer)

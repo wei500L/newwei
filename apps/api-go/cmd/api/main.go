@@ -1030,6 +1030,7 @@ func run() error {
 				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo ||
 				cfg.NewsClusteringRecoveryWorkerMode == config.NewsClusteringRecoveryWorkerModeGo ||
+				cfg.ArchivePreparationWorkerMode == config.ArchivePreparationWorkerModeGo ||
 				cfg.GraphQLNewsIndicatorRefreshMode == "go" ||
 				cfg.NewsIndicatorAssociationCronMode == config.NewsIndicatorAssociationCronModeGo ||
 				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
@@ -1282,6 +1283,7 @@ func run() error {
 		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
 		assistantWorkerGo ||
 		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
+		cfg.ArchivePreparationWorkerMode == config.ArchivePreparationWorkerModeGo ||
 		analysisWorkerGo
 	if needsRedis {
 		// The blocking BullMQ XREAD reader and the queue jobctx cache share
@@ -2518,6 +2520,10 @@ func run() error {
 	// six-hourly association refresh when their switches are go. It is nil in
 	// the legacy default, so no component is constructed.
 	var newsBackfill *newsBackfillRuntime
+	// The archive preparation worker owns the archivePreparation BullMQ
+	// consumer when API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go. It is nil in the
+	// legacy default, so no client or goroutine is constructed.
+	var archivePreparationWorker *archivePreparationRuntime
 	// The alert worker owns the shared `alerts` queue when
 	// API_GO_ALERT_WORKER_MODE=go: the scan schedule, rule evaluation, in-app
 	// notification write and email/webhook delivery. It registers no HTTP route
@@ -2587,6 +2593,11 @@ func run() error {
 		if kgIngestion != nil {
 			if closeErr := kgIngestion.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: knowledge graph ingestion scheduler close: %v", closeErr)
+			}
+		}
+		if archivePreparationWorker != nil {
+			if closeErr := archivePreparationWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: archive preparation worker close: %v", closeErr)
 			}
 		}
 		if searchReindexService != nil {
@@ -2663,6 +2674,15 @@ func run() error {
 	}
 	if newsBackfill != nil {
 		if err := newsBackfill.Start(context.Background()); err != nil {
+			return err
+		}
+	}
+	archivePreparationWorker, err = wireArchivePreparationWorker(cfg, sharedDB, redisClient, &dashboardMongo)
+	if err != nil {
+		return err
+	}
+	if archivePreparationWorker != nil {
+		if err := archivePreparationWorker.Start(context.Background()); err != nil {
 			return err
 		}
 	}
