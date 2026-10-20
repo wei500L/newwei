@@ -594,6 +594,10 @@ func run() error {
 	if cfg.SituationSignalsMode == config.SituationSignalsModeGo {
 		situationSignalsMode = string(legacyproxy.ModeGo)
 	}
+	situationInsightsMode := ""
+	if cfg.SituationInsightsMode == config.SituationInsightsModeGo {
+		situationInsightsMode = string(legacyproxy.ModeGo)
+	}
 	newsSourcesMode := ""
 	if cfg.NewsSourcesMode == config.NewsSourcesModeGo {
 		newsSourcesMode = string(legacyproxy.ModeGo)
@@ -802,6 +806,7 @@ func run() error {
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
 	rules = legacyproxy.WithSituationSignals(rules, situationSignalsMode)
+	rules = legacyproxy.WithSituationInsights(rules, situationInsightsMode)
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
@@ -1095,6 +1100,8 @@ func run() error {
 	// (JWT verification, Redis revocation list, MySQL membership re-derivation)
 	// as the other migrated domains, so it participates in the shared assembly.
 	situationSignalsGo := cfg.SituationSignalsMode == config.SituationSignalsModeGo
+	// The insights takeover needs the same credentialed stack plus Mongo.
+	situationInsightsGo := cfg.SituationInsightsMode == config.SituationInsightsModeGo
 	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
 	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
 	proxyLoadBalancingGo := cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo
@@ -1117,7 +1124,7 @@ func run() error {
 		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
-		situationSignalsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
+		situationSignalsGo || situationInsightsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || graphqlAlertRulesGo || cfg.GraphQLSettingsWriteMode == "go" ||
 		sourcePolicyWriteGo ||
@@ -1604,6 +1611,10 @@ func run() error {
 	}
 
 	if err := wireSituationSignals(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
+		return err
+	}
+
+	if err := wireSituationInsights(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
 		return err
 	}
 

@@ -1012,6 +1012,24 @@ const (
 	SituationSignalsModeGo SituationSignalsMode = "go"
 )
 
+// SituationInsightsMode controls GET /api/situation-monitor/insights
+// (API_GO_SITUATION_INSIGHTS_MODE). The accepted values are exactly "",
+// "legacy" and "go"; any other value fails startup. The default is legacy.
+// The go mode needs JWT, MySQL, Redis and Mongo because the route reads
+// ProcessedItem/RawItem, the settings envelope, the external snapshot, the
+// realtime insight snapshot and the monitor rules.
+type SituationInsightsMode string
+
+const (
+	// SituationInsightsModeLegacy proxies the route to NestJS (default,
+	// including the empty value). Rollback only changes this variable.
+	SituationInsightsModeLegacy SituationInsightsMode = "legacy"
+	// SituationInsightsModeGo serves the complete insights read pipeline from
+	// Go. It starts no worker and never rebuilds the GDELT snapshot or
+	// dispatches news collection.
+	SituationInsightsModeGo SituationInsightsMode = "go"
+)
+
 // ContentSubscriptionsMode 只控制内容订阅 7 条精确 HTTP。默认 legacy。
 // 不决定摘要服务能否在进程内调用 Go 订阅查询。
 type ContentSubscriptionsMode string
@@ -1639,6 +1657,9 @@ type Config struct {
 	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI; it starts no
 	// worker and never issues a Telegram or OREF upstream request.
 	SituationSignalsMode SituationSignalsMode
+	// SituationInsightsMode controls GET /api/situation-monitor/insights.
+	// Default legacy. Mode go requires JWT, MySQL, Redis and Mongo.
+	SituationInsightsMode SituationInsightsMode
 	// NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	NewsSourcesMode NewsSourcesMode
@@ -2713,6 +2734,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.SituationSignalsMode = SituationSignalsModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_MONITOR_SIGNALS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_INSIGHTS_MODE")) {
+	case "", string(SituationInsightsModeLegacy):
+		cfg.SituationInsightsMode = SituationInsightsModeLegacy
+	case string(SituationInsightsModeGo):
+		cfg.SituationInsightsMode = SituationInsightsModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_INSIGHTS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_EVENTS_MODE")) {
 	case "", "legacy":
@@ -3865,6 +3894,15 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_ECONOMIC_DATA_WORKER_MODE=go")
+		}
+	}
+	// The insights takeover reads ProcessedItem/RawItem and the two Mongo
+	// learning-state documents, and uses the same JWT/MySQL/Redis stack as the
+	// signals routes.
+	if cfg.SituationInsightsMode == SituationInsightsModeGo {
+		appendAuthRequirements(&errs, "API_GO_SITUATION_INSIGHTS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_SITUATION_INSIGHTS_MODE=go")
 		}
 	}
 

@@ -678,6 +678,9 @@ services:
       # 改成 go 才由 Go 验签并写 SituationMonitorMonitor。
       # 回滚只把该变量改回 legacy。insights、refresh 和其他采集接口不在这个开关里。
       API_GO_SITUATION_MONITORS_MODE: legacy
+      # 态势页市场/美联储面板的上游密钥；管理员在设置中保存的值优先。
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      FRED_API_KEY: ${FRED_API_KEY:-}
       # 态势监控信号读取与反馈 7 条 HTTP（catalog、feedback、refresh-runs/:id、
       # telegram-feed、oref-alerts、oref-history、live-hls-proxy-config）。
       # pilot 与样例默认 legacy。改成 go 才由 Go 独立验签（JWT + Redis
@@ -685,6 +688,9 @@ services:
       # 写 Mongo 反馈。insights、POST refresh、monitors** 与
       # realtime-signals/runtime 不在这个开关里。回滚只把该变量改回 legacy。
       API_GO_SITUATION_MONITOR_SIGNALS_MODE: ${API_GO_SITUATION_MONITOR_SIGNALS_MODE:-legacy}
+      # 态势监控洞察只读链（GET /api/situation-monitor/insights）。默认 legacy；
+      # go 时要求 JWT、MySQL、Redis、Mongo。不刷新 GDELT 快照、不派发采集。
+      API_GO_SITUATION_INSIGHTS_MODE: ${API_GO_SITUATION_INSIGHTS_MODE:-legacy}
       # 新闻源管理台十五条 HTTP。pilot 与样例保持 legacy。
       # 改成 go 才由 Go 验签并读写 NewsSource。GET :id/preview 仍回 NestJS。
       # 回滚只把该变量改回 legacy。不入队，不启动采集 worker。
