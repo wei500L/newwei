@@ -826,6 +826,12 @@ services:
       # 态势监控洞察只读链（GET /api/situation-monitor/insights）。默认 legacy；
       # go 时要求 JWT、MySQL、Redis、Mongo。不刷新 GDELT 快照、不派发采集。
       API_GO_SITUATION_INSIGHTS_MODE: ${API_GO_SITUATION_INSIGHTS_MODE:-legacy}
+      # 态势监控系统设置四条 HTTP。默认 legacy；go 时要求 JWT、MySQL、
+      # Redis、Mongo 与 SYSTEM_SETTINGS_ENCRYPTION_KEY。只接管
+      # GET/PUT/DELETE /api/system-settings/situation-monitor 与 DELETE
+      # .../telegram-auth；telegram-auth/start、complete 与
+      # external-snapshot/refresh 仍回 NestJS。回滚只把该变量改回 legacy。
+      API_GO_SITUATION_SETTINGS_MODE: ${API_GO_SITUATION_SETTINGS_MODE:-legacy}
       # 新闻源管理台十五条 HTTP。pilot 与样例保持 legacy。
       # 改成 go 才由 Go 验签并读写 NewsSource。GET :id/preview 仍回 NestJS。
       # 回滚只把该变量改回 legacy。不入队，不启动采集 worker。

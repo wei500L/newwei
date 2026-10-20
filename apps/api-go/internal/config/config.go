@@ -1262,6 +1262,31 @@ const (
 	SituationInsightsModeGo SituationInsightsMode = "go"
 )
 
+// SituationSettingsMode controls the four situation-monitor settings HTTP
+// routes (API_GO_SITUATION_SETTINGS_MODE): GET/PUT/DELETE
+// /api/system-settings/situation-monitor and DELETE
+// /api/system-settings/situation-monitor/telegram-auth.
+//
+// The accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" both keep every request on the NestJS proxy, and any other value
+// fails startup instead of silently degrading. go mode requires JWT_SECRET,
+// DATABASE_URL, REDIS_HOST, MONGO_URI (the quality summary runs the insights
+// pipeline) and a non-empty SYSTEM_SETTINGS_ENCRYPTION_KEY (the write path
+// encrypts credentials). It starts no worker and never issues a Telegram/OREF
+// upstream request.
+type SituationSettingsMode string
+
+const (
+	// SituationSettingsModeLegacy proxies the four routes to NestJS (default,
+	// including the empty value). Rollback only changes this variable.
+	SituationSettingsModeLegacy SituationSettingsMode = "legacy"
+	// SituationSettingsModeGo serves the four routes from Go with the same
+	// authentication chain as NestJS (JWT verification, Redis blacklist, MySQL
+	// membership re-derivation) plus mtk_ machine tokens and the controller's
+	// settings.manage permission gate.
+	SituationSettingsModeGo SituationSettingsMode = "go"
+)
+
 // GdeltSnapshotMode controls which process owns the 15-minute GDELT external
 // snapshot rebuild (API_GO_GDELT_SNAPSHOT_MODE). The accepted values are exactly
 // "", "legacy" and "go"; any other value fails startup instead of silently
@@ -2133,6 +2158,10 @@ type Config struct {
 	// SituationInsightsMode controls GET /api/situation-monitor/insights.
 	// Default legacy. Mode go requires JWT, MySQL, Redis and Mongo.
 	SituationInsightsMode SituationInsightsMode
+	// SituationSettingsMode controls the four situation-monitor settings routes
+	// (see SituationSettingsMode). Default legacy. Mode go requires JWT, MySQL,
+	// Redis, Mongo and the settings-encryption key; it starts no worker.
+	SituationSettingsMode SituationSettingsMode
 	// GdeltSnapshotMode 控制 GDELT 外部快照 15 分钟重建的执行权（见
 	// GdeltSnapshotMode）。默认 legacy；go 要求 DATABASE_URL 与 REDIS_HOST。
 	GdeltSnapshotMode GdeltSnapshotMode
@@ -3505,6 +3534,14 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.SituationInsightsMode = SituationInsightsModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_INSIGHTS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_SETTINGS_MODE")) {
+	case "", string(SituationSettingsModeLegacy):
+		cfg.SituationSettingsMode = SituationSettingsModeLegacy
+	case string(SituationSettingsModeGo):
+		cfg.SituationSettingsMode = SituationSettingsModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_SETTINGS_MODE must be one of legacy|go")
 	}
 	// The GDELT external snapshot scheduler accepts the empty string, legacy
 	// and go. An empty value behaves exactly like legacy so an unset deployment
@@ -5072,6 +5109,21 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		appendAuthRequirements(&errs, "API_GO_SITUATION_INSIGHTS_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_SITUATION_INSIGHTS_MODE=go")
+		}
+	}
+	// The situation settings takeover reads and writes the settings row (MySQL
+	// + Redis envelope), builds the quality summary through the insights
+	// pipeline (Mongo) and encrypts credentials with the shared
+	// system-settings:v1 envelope. The encryption key is therefore a startup
+	// requirement in go mode; a malformed key keeps the per-request 400 /
+	// decrypt-as-absent behavior documented by the service.
+	if cfg.SituationSettingsMode == SituationSettingsModeGo {
+		appendAuthRequirements(&errs, "API_GO_SITUATION_SETTINGS_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_SITUATION_SETTINGS_MODE=go")
+		}
+		if cfg.SettingsEncryptionKeyRaw == "" {
+			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_SITUATION_SETTINGS_MODE=go")
 		}
 	}
 	// The manual LLM backfill enqueue route authenticates a human or machine

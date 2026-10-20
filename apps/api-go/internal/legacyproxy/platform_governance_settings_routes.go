@@ -36,9 +36,12 @@ const PlatformGovernanceSettingsKey = "/api/system-settings#platform-governance"
 //
 // Everything else under /api/system-settings keeps falling back to NestJS,
 // including GET /assistant-safety/diagnostics, the email, archive-preparation,
-// realtime-signals, situation-monitor and vector-service groups, every
+// realtime-signals, vector-service and situation-monitor groups, every
 // unlisted method on the sixteen paths (for example POST /security) and any
 // path with a trailing slash or an extra segment (for example /task-logs/x).
+// The four situation-monitor settings entries (GET/PUT/DELETE on
+// /api/system-settings/situation-monitor and DELETE on its /telegram-auth) are
+// independent and owned by WithSituationSettings.
 //
 // An empty or legacy mode adds no rules at all, so the default deployment is
 // unchanged and rollback only flips this one switch. The shared rule helper also

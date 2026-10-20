@@ -17,6 +17,7 @@ import { SituationMonitorSignalsDispatcher } from './situation-monitor-signals.d
 import { SituationMonitorSignalsGateway } from './situation-monitor-signals.gateway';
 import { SituationMonitorSignalsProcessor } from './situation-monitor-signals.processor';
 import { SituationMonitorSignalsService } from './situation-monitor-signals.service';
+import { SituationMonitorTelegramClearSubscriber } from './situation-monitor-telegram-clear.subscriber';
 
 @Module({
   imports: [AuthModule, AlertsModule],
@@ -26,6 +27,7 @@ import { SituationMonitorSignalsService } from './situation-monitor-signals.serv
     SituationMonitorSignalsProcessor,
     SituationMonitorSignalsGateway,
     SituationMonitorSignalsQueueCleanupService,
+    SituationMonitorTelegramClearSubscriber,
     {
       provide: SITUATION_MONITOR_SIGNALS_QUEUE,
       inject: [
@@ -78,6 +80,7 @@ import { SituationMonitorSignalsService } from './situation-monitor-signals.serv
   ],
   exports: [
     SituationMonitorSignalsService,
+    SituationMonitorTelegramClearSubscriber,
     SituationMonitorSignalsDispatcher,
     SITUATION_MONITOR_SIGNALS_QUEUE,
     SITUATION_MONITOR_SIGNALS_QUEUE_EVENTS,

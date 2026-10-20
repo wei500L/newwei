@@ -32,8 +32,11 @@ const DataRuntimeSettingsKey = "/api/system-settings#data-runtime"
 //
 // The routes that stay on NestJS even in go mode include
 // POST /api/system-settings/geo/nominatim/test and POST /api/geo/geocode (real
-// geocoding calls), the whole situation-monitor settings surface, and the
-// archiveDigest / archiveCalendar / archiveDetail routes.
+// geocoding calls), and the archiveDigest / archiveCalendar / archiveDetail
+// routes. The four situation-monitor settings entries belong to their own
+// switch (WithSituationSettings) and the remaining situation-monitor sub-paths
+// (telegram-auth/start, telegram-auth/complete, external-snapshot/refresh) stay
+// on NestJS there as well.
 func WithDataRuntimeSettings(rules []Rule, mode string) []Rule {
 	if mode != string(ModeGo) {
 		return rules
