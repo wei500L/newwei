@@ -223,6 +223,16 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The Go notifications Socket.IO transport. Empty string behaves like
+    // legacy; go makes NotificationsService publish the identifiers-only relay
+    // instead of the in-process dispatcher. An invalid value fails startup.
+    API_GO_NOTIFICATIONS_SOCKET_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // The owner of the `alerts` queue: the scan, the rule evaluation, the
     // external delivery and the in-app notification write. Empty string behaves
     // like legacy. An invalid value fails Nest startup instead of being silently

@@ -62,6 +62,20 @@ func (p Policy) enabled() bool {
 	return len(p.allowlist) > 0
 }
 
+// AllowsOrigin reports whether a browser Origin header may use a Go-owned
+// upgrade. It mirrors NestJS isOriginAllowed: a missing Origin is allowed
+// (server-to-server clients), an empty allowlist rejects every browser
+// origin, and matching is exact after normalization.
+func (p Policy) AllowsOrigin(origin string) bool {
+	if origin == "" {
+		return true
+	}
+	if !p.enabled() {
+		return false
+	}
+	return p.allows(origin)
+}
+
 func (p Policy) allows(origin string) bool {
 	if origin == "" || origin == "*" {
 		return false

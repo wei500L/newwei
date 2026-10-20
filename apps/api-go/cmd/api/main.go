@@ -218,6 +218,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
+	"github.com/wei500L/newwei/apps/api-go/internal/notificationssocket"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 	"github.com/wei500L/newwei/apps/api-go/internal/processeditemoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
@@ -848,6 +849,9 @@ func run() error {
 	rules = legacyproxy.WithContentSubscriptions(rules, contentSubscriptionsMode)
 	rules = legacyproxy.WithUserNewsBehavior(rules, userNewsBehaviorMode)
 	rules = legacyproxy.WithUserDigest(rules, userDigestMode)
+	if cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
+		rules = legacyproxy.WithNotificationsSocket(rules, string(legacyproxy.ModeGo))
+	}
 	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
@@ -866,6 +870,7 @@ func run() error {
 	// switches: non-upgrade methods keep following those switches and every
 	// non-local operation is forwarded whole to NestJS.
 	graphqlSubscriptionsGo := cfg.GraphQLSubscriptionsMode == config.GraphQLSubscriptionsModeGo
+	notificationsSocketGo := cfg.NotificationsSocketMode == config.NotificationsSocketModeGo
 	graphqlRouteMode := ""
 	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
 		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" ||
@@ -1100,7 +1105,8 @@ func run() error {
 				cfg.EmailSettingsMode == config.EmailSettingsModeGo ||
 				cfg.GeocodingMode == config.GeocodingModeGo ||
 				cfg.RuntimeDiagnosticsMode == config.RuntimeDiagnosticsModeGo ||
-				graphqlSubscriptionsGo {
+				graphqlSubscriptionsGo ||
+				cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -1301,7 +1307,7 @@ func run() error {
 		cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
 		cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
 		newsSourcePreviewGo || crawlWorkflowTrialGo || analysisRunsGo ||
-		graphqlSubscriptionsGo
+		graphqlSubscriptionsGo || notificationsSocketGo
 	var redisClient *redis.Client
 	var redisOptions *redis.Options
 	var authenticator *authhttp.Authenticator
@@ -1333,7 +1339,8 @@ func run() error {
 		assistantWorkerGo ||
 		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
 		cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo ||
-		analysisWorkerGo
+		analysisWorkerGo ||
+		notificationsSocketGo
 	// The crawl maintenance crons and the audit retention purge take their
 	// leases in the shared Redis even when no HTTP takeover is enabled.
 	if !needsRedis && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
@@ -2576,6 +2583,36 @@ func run() error {
 		graphqlSubscriptions = runtime
 		log.Printf("api-go: GraphQL subscriptions under go (alertEvents, analysisEvents, assistantEvents, queueEvents; bus=%s)", cfg.GraphQLSubscriptionBus)
 	}
+
+	// The notifications transport owns the dedicated /socket.io-notifications
+	// path only. Constructing it before the ordered teardown defer lets every
+	// later error path close its relay and live sockets.
+	var notificationsSocket *notificationssocket.Runtime
+	if notificationsSocketGo {
+		if sharedDB == nil || redisClient == nil {
+			return fmt.Errorf("api-go: API_GO_NOTIFICATIONS_SOCKET_MODE=go requires mysql, jwt, and redis")
+		}
+		runtime, runtimeErr := notificationssocket.New(notificationssocket.Options{
+			DB:                    sharedDB,
+			Verifier:              authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience),
+			Blacklist:             authn.NewRedisBlacklist(redisClient),
+			Authz:                 authz.NewMySQLRepository(sharedDB),
+			Redis:                 redisClient,
+			CORS:                  cors.New(cfg.CorsOrigin),
+			TrustProxy:            strings.TrimSpace(cfg.TrustProxy) != "",
+			MaxConnectionsPerUser: cfg.WSMaxConnectionsPerUser,
+			MaxConnectionsPerIP:   cfg.WSMaxConnectionsPerIP,
+			ConnectLimitPerIP:     cfg.WSConnectRateLimitPerIP,
+			ConnectLimitPerUser:   cfg.WSConnectRateLimitPerUser,
+			ConnectWindowSeconds:  cfg.WSConnectRateLimitWindowSeconds,
+		})
+		if runtimeErr != nil {
+			return runtimeErr
+		}
+		notificationsSocket = runtime
+		gateway.RegisterGoHandler(notificationssocket.Path, runtime.ServeHTTP)
+		log.Printf("api-go: notifications Socket.IO transport under go (%s, namespace %s)", notificationssocket.Path, notificationssocket.Namespace)
+	}
 	// A legal graphql-transport-ws upgrade goes to the local executor; every
 	// other exact /graphql request keeps the Go read handler or the legacy
 	// proxy. Registering this entrypoint is independent of the read switch.
@@ -2655,6 +2692,13 @@ func run() error {
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		// Close live notification sockets and the relay before the shared
+		// Redis client is closed below.
+		if notificationsSocket != nil {
+			if closeErr := notificationsSocket.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: notifications socket close: %v", closeErr)
+			}
+		}
 		// Stop accepting subscriptions, cancel operations and upstream sockets,
 		// then stop pub/sub/XREAD before the shared Redis client closes below.
 		if graphqlSubscriptions != nil {
@@ -2779,6 +2823,11 @@ func run() error {
 	}()
 	if graphqlSubscriptions != nil {
 		if startErr := graphqlSubscriptions.Start(context.Background()); startErr != nil {
+			return startErr
+		}
+	}
+	if notificationsSocket != nil {
+		if startErr := notificationsSocket.Start(context.Background()); startErr != nil {
 			return startErr
 		}
 	}
@@ -2959,6 +3008,13 @@ func run() error {
 		// connections. Stop new subscriptions, cancel operations/legacy
 		// upstreams and close those sockets before the HTTP drain, then let the
 		// deferred idempotent Close cover the shared Redis/Mongo teardown.
+		if notificationsSocket != nil {
+			notificationCtx, cancelNotifications := context.WithTimeout(context.Background(), 10*time.Second)
+			if closeErr := notificationsSocket.Close(notificationCtx); closeErr != nil {
+				log.Printf("api-go: notifications socket close: %v", closeErr)
+			}
+			cancelNotifications()
+		}
 		if graphqlSubscriptions != nil {
 			subscriptionCtx, cancelSubscriptions := context.WithTimeout(context.Background(), 10*time.Second)
 			if closeErr := graphqlSubscriptions.Close(subscriptionCtx); closeErr != nil {
