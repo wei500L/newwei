@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { AuditLogSettingsService } from "../system-settings/audit-log-settings.service";
 
@@ -11,11 +12,22 @@ export class AuditLogRetentionService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogSettings: AuditLogSettingsService
+    private readonly auditLogSettings: AuditLogSettingsService,
+    private readonly env: EnvService
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
   async handleCron() {
+    // Execution ownership: when API_GO_AUDIT_LOG_RETENTION_MODE=go the Go
+    // scheduler owns this purge and this callback returns before reading the
+    // retention setting. NestJS takes no lock here, so a mixed-version window
+    // can run both sides once; the DELETE is idempotent.
+    if (
+      this.env.get<string>("API_GO_AUDIT_LOG_RETENTION_MODE", { infer: true }) ===
+      "go"
+    ) {
+      return;
+    }
     try {
       await this.purgeExpiredAuditLogs();
     } catch (error) {

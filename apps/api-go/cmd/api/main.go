@@ -1116,6 +1116,14 @@ func run() error {
 		}
 	}
 
+	// The crawl maintenance and audit retention ownership switches write MySQL;
+	// an unusable DATABASE_URL must fail startup instead of silently degrading to
+	// a process with no pool.
+	if sharedDB == nil && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
+		cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo) {
+		return fmt.Errorf("api-go: API_GO_CRAWL_MAINTENANCE_MODE/API_GO_AUDIT_LOG_RETENTION_MODE=go requires a usable DATABASE_URL")
+	}
+
 	// go 接管模式的 Go 鉴权/响应栈装配（Go-批3A 引入，批3B 收敛为六个
 	// user-settings 只读 GET 的统一 handler）：
 	// authn（JWT 验签 + Redis blacklist）→ authz（MySQL membership/
@@ -1324,6 +1332,12 @@ func run() error {
 		assistantWorkerGo ||
 		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
 		analysisWorkerGo
+	// The crawl maintenance crons and the audit retention purge take their
+	// leases in the shared Redis even when no HTTP takeover is enabled.
+	if !needsRedis && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
+		cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo) {
+		needsRedis = true
+	}
 	if needsRedis {
 		// The blocking BullMQ XREAD reader and the queue jobctx cache share
 		// this exact Redis configuration but use dedicated connections.
@@ -2606,6 +2620,15 @@ func run() error {
 	// while renewing their locks, and only then lets the digest scheduler and
 	// the shared Redis/Mongo connections close.
 	var analysisWorker *analysisqueue.Worker
+	// The crawl maintenance unit owns the janitor, cleanup outbox, adaptive
+	// concurrency and quality snapshot crons plus the audit log retention purge
+	// when their switches are go. It registers no HTTP route and needs no JWT.
+	// The deferred Close stops the loops before the shared Redis/MySQL/Mongo
+	// handles close below.
+	crawlMaintenance, err := wireCrawlMaintenance(cfg, sharedDB, redisClient, &dashboardMongo)
+	if err != nil {
+		return err
+	}
 	// Ordered teardown for both the SIGTERM path and every error return after
 	// this point, including an HTTP listen failure. The analysis worker stops
 	// first, then the digest scheduler, then background search reindex, then the
@@ -2691,6 +2714,11 @@ func run() error {
 		// shared Redis client closes.
 		if newsnowSourcesService != nil {
 			newsnowSourcesService.CloseIdleConnections()
+		}
+		if crawlMaintenance != nil {
+			if closeErr := crawlMaintenance.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: crawl maintenance close: %v", closeErr)
+			}
 		}
 		// go 模式下 onboarding 鉴权栈持有的 Redis 连接随进程收口。
 		if redisClient != nil {
@@ -2794,6 +2822,12 @@ func run() error {
 
 	if newsSourceScheduler != nil {
 		newsSourceScheduler.Start(context.Background())
+	}
+
+	if crawlMaintenance != nil {
+		crawlMaintenance.Start(context.Background())
+		log.Printf("api-go: crawl maintenance owned by Go (maintenance=%s, auditRetention=%s)",
+			string(cfg.CrawlMaintenanceMode), string(cfg.AuditLogRetentionMode))
 	}
 
 	alertWorker, err = wireAlertWorker(cfg, sharedDB, redisClient, &graphqlMongo, &dashboardMongo)

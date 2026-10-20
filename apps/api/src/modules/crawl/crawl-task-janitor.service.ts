@@ -33,6 +33,15 @@ export class CrawlTaskJanitorService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async cleanupCron() {
+    // Execution ownership: when API_GO_CRAWL_MAINTENANCE_MODE=go the Go janitor
+    // owns this cron and this callback returns before reading the activity hash
+    // or taking the shared "cron:crawl-task-janitor" lease.
+    if (
+      this.env.get<string>("API_GO_CRAWL_MAINTENANCE_MODE", { infer: true }) ===
+      "go"
+    ) {
+      return;
+    }
     const config = this.env.crawlTaskJanitorConfig;
     if (!config.enabled) {
       return;

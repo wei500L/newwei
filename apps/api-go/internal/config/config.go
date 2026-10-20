@@ -649,6 +649,48 @@ const (
 	CrawlQueueOpsModeGo     CrawlQueueOpsMode = "go"
 )
 
+// CrawlMaintenanceMode controls the execution ownership of the four crawl
+// maintenance crons (API_GO_CRAWL_MAINTENANCE_MODE):
+//
+//	CrawlTaskJanitorService.cleanupCron              every minute
+//	CrawlCleanupOutboxService.retryPendingCleanupOutbox every minute
+//	CrawlAdaptiveConcurrencyService.adjustCron        every minute
+//	CrawlQualityTaskSnapshotService.refreshRecentSnapshots every five minutes
+//
+// The accepted values are exactly "", "legacy" and "go"; any other value fails
+// startup instead of silently degrading. legacy (the default) keeps every
+// NestJS @Cron callback. go starts the Go schedulers and makes NestJS return
+// from the five callbacks before taking any lock. It requires DATABASE_URL,
+// REDIS_HOST and MONGO_URI because the janitor writes TaskLog documents, the
+// outbox replay deletes Mongo content and the quality refresh rolls Mongo
+// aggregates. It needs no JWT: the crons serve no HTTP route. The shared Redis
+// keys are the same in both processes, so a flip cannot double-run a tick.
+type CrawlMaintenanceMode string
+
+const (
+	// CrawlMaintenanceModeLegacy keeps every NestJS maintenance cron (default,
+	// including the empty value).
+	CrawlMaintenanceModeLegacy CrawlMaintenanceMode = "legacy"
+	// CrawlMaintenanceModeGo runs the four maintenance crons in this process.
+	CrawlMaintenanceModeGo CrawlMaintenanceMode = "go"
+)
+
+// AuditLogRetentionMode controls the execution ownership of
+// AuditLogRetentionService.handleCron (API_GO_AUDIT_LOG_RETENTION_MODE). The
+// accepted values are exactly "", "legacy" and "go"; any other value fails
+// startup. legacy keeps the NestJS daily 01:00 callback; go runs the purge in
+// this process and NestJS returns from the callback. It requires DATABASE_URL
+// and REDIS_HOST (the retention cache) and no JWT or Mongo.
+type AuditLogRetentionMode string
+
+const (
+	// AuditLogRetentionModeLegacy keeps the NestJS @Cron (default, including the
+	// empty value).
+	AuditLogRetentionModeLegacy AuditLogRetentionMode = "legacy"
+	// AuditLogRetentionModeGo runs the hourly-01:00 local purge in this process.
+	AuditLogRetentionModeGo AuditLogRetentionMode = "go"
+)
+
 // CrawlMetadataMode controls the single HTTP entry of the web page metadata
 // preview chain (API_GO_CRAWL_METADATA_MODE):
 //
@@ -2306,6 +2348,23 @@ type Config struct {
 	// DATABASE_URL and REDIS_HOST; it only reads queue meta/counts and writes
 	// the queue control keys.
 	CrawlQueueOpsMode CrawlQueueOpsMode
+	// CrawlMaintenanceMode controls the four crawl maintenance crons (see
+	// CrawlMaintenanceMode). Default legacy. go requires DATABASE_URL,
+	// REDIS_HOST and MONGO_URI and starts no HTTP route.
+	CrawlMaintenanceMode CrawlMaintenanceMode
+	// AuditLogRetentionMode controls the daily audit log retention purge (see
+	// AuditLogRetentionMode). Default legacy. go requires DATABASE_URL and
+	// REDIS_HOST.
+	AuditLogRetentionMode AuditLogRetentionMode
+	// CrawlTaskJanitor* mirror the NestJS CRAWL_TASK_JANITOR_* environment. The
+	// defaults are identical, and both processes read the same values so the
+	// stale windows and batch sizes cannot drift while ownership moves.
+	CrawlTaskJanitorEnabled        bool
+	CrawlTaskRunningTimeoutMs      int
+	CrawlTaskQueuedTimeoutMs       int
+	CrawlTaskJanitorBatchSize      int
+	CrawlTaskJanitorQueueScanLimit int
+	CrawlTaskJanitorLockTTLMs      int
 	// CrawlMaxConcurrency, CrawlMaxRetries and CrawlRetryBackoffMs mirror
 	// EnvService.crawl4aiConfig. They are the environment defaults used when
 	// creating a crawl task and when the stored crawl client settings row is
@@ -3334,6 +3393,34 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_CRAWL_QUEUE_OPS_MODE must be one of legacy|go")
 	}
+	// The four crawl maintenance crons and the audit retention purge are two
+	// independent ownership switches. They accept the empty string, legacy and
+	// go; an empty value behaves exactly like legacy.
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_MAINTENANCE_MODE")) {
+	case "", string(CrawlMaintenanceModeLegacy):
+		cfg.CrawlMaintenanceMode = CrawlMaintenanceModeLegacy
+	case string(CrawlMaintenanceModeGo):
+		cfg.CrawlMaintenanceMode = CrawlMaintenanceModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_MAINTENANCE_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_AUDIT_LOG_RETENTION_MODE")) {
+	case "", string(AuditLogRetentionModeLegacy):
+		cfg.AuditLogRetentionMode = AuditLogRetentionModeLegacy
+	case string(AuditLogRetentionModeGo):
+		cfg.AuditLogRetentionMode = AuditLogRetentionModeGo
+	default:
+		errs = append(errs, "API_GO_AUDIT_LOG_RETENTION_MODE must be one of legacy|go")
+	}
+	// Janitor defaults are the NestJS env schema defaults. Both processes read
+	// the same values while ownership is go, so a stale window cannot differ
+	// between the two cron implementations.
+	cfg.CrawlTaskJanitorEnabled = boolDefault(getenv("CRAWL_TASK_JANITOR_ENABLED"), true)
+	cfg.CrawlTaskRunningTimeoutMs = intDefault(getenv("CRAWL_TASK_RUNNING_TIMEOUT_MS"), 1_800_000)
+	cfg.CrawlTaskQueuedTimeoutMs = intDefault(getenv("CRAWL_TASK_QUEUED_TIMEOUT_MS"), 43_200_000)
+	cfg.CrawlTaskJanitorBatchSize = intDefault(getenv("CRAWL_TASK_JANITOR_BATCH_SIZE"), 50)
+	cfg.CrawlTaskJanitorQueueScanLimit = intDefault(getenv("CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT"), 5_000)
+	cfg.CrawlTaskJanitorLockTTLMs = intDefault(getenv("CRAWL_TASK_JANITOR_LOCK_TTL_MS"), 120_000)
 	// The news-source preview switch accepts exactly "", "legacy" and "go"; any
 	// other value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCE_PREVIEW_MODE")) {
@@ -4829,6 +4916,29 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// both required and Mongo is not.
 	if cfg.CrawlQueueOpsMode == CrawlQueueOpsModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_QUEUE_OPS_MODE", cfg)
+	}
+	// The crawl maintenance crons write MySQL rows, take Redis leases and
+	// touch Mongo documents, so go requires all three and no JWT.
+	if cfg.CrawlMaintenanceMode == CrawlMaintenanceModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_CRAWL_MAINTENANCE_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_CRAWL_MAINTENANCE_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CRAWL_MAINTENANCE_MODE=go")
+		}
+	}
+	// The audit retention purge reads the shared retention cache and deletes
+	// AuditLog rows; Mongo and JWT are not involved.
+	if cfg.AuditLogRetentionMode == AuditLogRetentionModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_AUDIT_LOG_RETENTION_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_AUDIT_LOG_RETENTION_MODE=go")
+		}
 	}
 	// The news-source preview takeover needs the credentialed auth stack plus
 	// Redis (shared with the deep-discovery failure state). crawl4ai is optional

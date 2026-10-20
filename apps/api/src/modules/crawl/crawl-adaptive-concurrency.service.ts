@@ -4,6 +4,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { CrawlTaskStatus } from "@prisma/client";
 
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { CrawlActivityService } from "./crawl-activity.service";
@@ -78,11 +79,21 @@ export class CrawlAdaptiveConcurrencyService {
     private readonly crawlSettings: CrawlSettingsService,
     private readonly activity: CrawlActivityService,
     private readonly crawlQueue: CrawlQueueService,
-    private readonly crawlProcessor: CrawlQueueProcessor
+    private readonly crawlProcessor: CrawlQueueProcessor,
+    private readonly env: EnvService
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async adjustCron() {
+    // Execution ownership: when API_GO_CRAWL_MAINTENANCE_MODE=go the Go
+    // adjustment owns this cron and this callback returns before taking the
+    // shared "cron:crawl-adaptive-concurrency" lease.
+    if (
+      this.env.get<string>("API_GO_CRAWL_MAINTENANCE_MODE", { infer: true }) ===
+      "go"
+    ) {
+      return;
+    }
     await this.cache.withLock(ADAPTIVE_LOCK_KEY, ADAPTIVE_LOCK_TTL_MS, async () =>
       this.adjustConcurrency(new Date())
     );
