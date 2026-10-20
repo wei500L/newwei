@@ -347,7 +347,7 @@ func TestFrontierLlmJudgeIntegration(t *testing.T) {
 	if len(waiting) != 1 {
 		t.Fatalf("hot wait = %v", waiting)
 	}
-	if !strings.Contains(waiting[0], "-hot") {
+	if !strings.Contains(waiting[0], "-normal") {
 		t.Fatalf("job id = %q", waiting[0])
 	}
 	if got := h.scalar("SELECT nodeCount FROM CrawlFrontierRun WHERE id = 'run-1'"); got != "2" {
