@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlprofile"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
 )
 
 // judge.go ports CrawlFrontierService.processQueuedLlmJudge, including the

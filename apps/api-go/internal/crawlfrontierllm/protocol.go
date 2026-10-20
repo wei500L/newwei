@@ -133,6 +133,7 @@ type queueKeys struct {
 	Paused      string
 	Meta        string
 	Completed   string
+	Failed      string
 	Delayed     string
 	Active      string
 	Events      string
@@ -149,7 +150,7 @@ func newQueueKeys(queue string) queueKeys {
 	key := func(suffix string) string { return base + suffix }
 	return queueKeys{
 		Prefix: DefaultPrefix, Base: base, Wait: key("wait"), Paused: key("paused"),
-		Meta: key("meta"), Completed: key("completed"), Delayed: key("delayed"),
+		Meta: key("meta"), Completed: key("completed"), Failed: key("failed"), Delayed: key("delayed"),
 		Active: key("active"), Events: key("events"), Marker: key("marker"),
 		Stalled: key("stalled"), Limiter: key("limiter"), PC: key("pc"),
 		Prioritized: key("prioritized"), ID: key("id"),

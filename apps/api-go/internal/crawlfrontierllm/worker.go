@@ -219,7 +219,7 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 			return
 		}
 		if w.isPaused(ctx) {
-			if !sleepContext(ctx, 250*time.Millisecond) {
+			if !sleepWorkerContext(ctx, 250*time.Millisecond) {
 				return
 			}
 			continue
@@ -236,7 +236,7 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 				return
 			}
 			w.opts.Logger("crawlfrontierllm: fetch job from %s: %v", w.queue, err)
-			if !sleepContext(ctx, time.Second) {
+			if !sleepWorkerContext(ctx, time.Second) {
 				return
 			}
 			continue
@@ -247,7 +247,7 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 			if limitUntil > now {
 				// Queue-level limiter: BullMQ waits exactly until the limiter
 				// TTL expires before asking for another job.
-				if !sleepContext(ctx, time.Duration(limitUntil-now)*time.Millisecond) {
+				if !sleepWorkerContext(ctx, time.Duration(limitUntil-now)*time.Millisecond) {
 					return
 				}
 				continue
@@ -257,7 +257,7 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 				if wait > w.opts.DrainDelay {
 					wait = w.opts.DrainDelay
 				}
-				if !sleepContext(ctx, wait) {
+				if !sleepWorkerContext(ctx, wait) {
 					return
 				}
 				continue
@@ -294,7 +294,7 @@ func (w *Worker) waitForMarker(ctx context.Context) {
 	_, err := w.blocking.BZPopMin(ctx, timeout, w.keys.Marker).Result()
 	if err != nil && !errors.Is(err, redis.Nil) && ctx.Err() == nil {
 		w.opts.Logger("crawlfrontierllm: wait for marker on %s: %v", w.queue, err)
-		if !sleepContext(ctx, time.Second) {
+		if !sleepWorkerContext(ctx, time.Second) {
 			return
 		}
 	}
@@ -505,4 +505,21 @@ func newBlockingClient(options *redis.Options, database int) *redis.Client {
 	opts.DB = database
 	opts.Protocol = 2
 	return redis.NewClient(&opts)
+}
+
+// sleepWorkerContext is the worker loop's cancellable sleep. It returns false
+// when the context ended, matching the clustering runner's helper; the LLM
+// retry loop uses the error-returning sleepContext in llm.go.
+func sleepWorkerContext(ctx context.Context, duration time.Duration) bool {
+	if duration <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
