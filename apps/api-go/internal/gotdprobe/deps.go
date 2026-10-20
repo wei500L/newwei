@@ -13,11 +13,11 @@
 package gotdprobe
 
 import (
-	_ "github.com/gotd/td/bin"
 	_ "github.com/gotd/td/crypto"
 	_ "github.com/gotd/td/session"
 	_ "github.com/gotd/td/telegram"
 	_ "github.com/gotd/td/telegram/auth"
+	_ "github.com/gotd/td/telegram/dcs"
 	_ "github.com/gotd/td/tg"
 	_ "github.com/gotd/td/tgerr"
 )
