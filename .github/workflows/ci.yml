@@ -444,7 +444,7 @@ jobs:
       # 等价的名称合并、avgScore 用 DOUBLE 除法）、事务失败保留旧数据，以及
       # tick gate / 组织锁的键名与互斥。
       - name: MySQL/Redis/Mongo integration tests (event timeline + sentiment snapshot rebuild)
-        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newseventstimeline/ ./internal/sentimentsnapshot/ -v -timeout 10m
+        run: cd apps/api-go && go test -tags=integration -count=1 -p 1 ./internal/newseventstimeline/ ./internal/sentimentsnapshot/ -v -timeout 10m
 
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #

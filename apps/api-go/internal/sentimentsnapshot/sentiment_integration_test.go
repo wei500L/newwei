@@ -68,12 +68,17 @@ func openIntegrationMongo(t *testing.T) *dashboardstats.Connection {
 
 func createSentimentTables(t *testing.T, db *sql.DB) {
 	t.Helper()
+	// The two snapshot tables are recreated from scratch: the integration job shares
+	// one database across test packages, and the timezone-independent collation is
+	// part of what these tests verify.
 	statements := []string{
+		"DROP TABLE IF EXISTS `EntitySentimentSnapshot`",
+		"DROP TABLE IF EXISTS `TopicSentimentSnapshot`",
 		"CREATE TABLE IF NOT EXISTS `Org` (" +
 			"`id` VARCHAR(191) NOT NULL, `name` VARCHAR(191) NOT NULL, `slug` VARCHAR(191) NOT NULL," +
 			"`isActive` BOOLEAN NOT NULL DEFAULT true, `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)," +
 			"`updatedAt` DATETIME(3) NOT NULL, PRIMARY KEY (`id`)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
-		"CREATE TABLE IF NOT EXISTS `EntitySentimentSnapshot` (" +
+		"CREATE TABLE `EntitySentimentSnapshot` (" +
 			"`id` VARCHAR(191) NOT NULL, `orgId` VARCHAR(191) NOT NULL, `entityName` VARCHAR(191) NOT NULL," +
 			"`entityType` VARCHAR(191) NOT NULL DEFAULT '', `bucketStart` DATETIME(3) NOT NULL," +
 			"`totalDocs` INT NOT NULL, `negativeDocs` INT NOT NULL, `positiveDocs` INT NOT NULL," +
@@ -82,7 +87,7 @@ func createSentimentTables(t *testing.T, db *sql.DB) {
 			"`createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), `updatedAt` DATETIME(3) NOT NULL," +
 			"UNIQUE INDEX `EntitySentimentSnapshot_org_entity_type_bucket_uq`(`orgId`,`entityName`,`entityType`,`bucketStart`)," +
 			"PRIMARY KEY (`id`)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
-		"CREATE TABLE IF NOT EXISTS `TopicSentimentSnapshot` (" +
+		"CREATE TABLE `TopicSentimentSnapshot` (" +
 			"`id` VARCHAR(191) NOT NULL, `orgId` VARCHAR(191) NOT NULL, `topic` VARCHAR(191) NOT NULL," +
 			"`bucketStart` DATETIME(3) NOT NULL, `totalDocs` INT NOT NULL, `negativeDocs` INT NOT NULL," +
 			"`positiveDocs` INT NOT NULL, `neutralDocs` INT NOT NULL, `scoreSum` INT NOT NULL," +
@@ -127,7 +132,7 @@ type seedProcessedItem struct {
 	topics    []string
 }
 
-func seedProcessedItem(t *testing.T, collection *mongo.Collection, orgID string, document seedProcessedItem) {
+func insertProcessedItem(t *testing.T, collection *mongo.Collection, orgID string, document seedProcessedItem) {
 	t.Helper()
 	entities := bson.A{}
 	for _, entity := range document.entities {
@@ -212,7 +217,7 @@ func TestSentimentSnapshotRebuildIntegration(t *testing.T) {
 			topics:    []string{"cloud"},
 		},
 	} {
-		seedProcessedItem(t, collection, orgID, document)
+		insertProcessedItem(t, collection, orgID, document)
 	}
 
 	timelineStore := newStore(storeOptions{DB: db, Mongo: mongoDB, Now: func() time.Time { return now }})
@@ -297,7 +302,7 @@ func TestSentimentSnapshotCollationMerge(t *testing.T) {
 		{createdAt: base.Add(6 * time.Minute), label: "neutral", entities: []bson.D{entity("gamma", "org", 0.9)}, topics: []string{"finance"}},
 	}
 	for _, document := range documents {
-		seedProcessedItem(t, collection, orgID, document)
+		insertProcessedItem(t, collection, orgID, document)
 	}
 
 	timelineStore := newStore(storeOptions{DB: db, Mongo: mongoDB, Now: func() time.Time { return now }})
@@ -386,7 +391,7 @@ func TestSentimentSnapshotTransactionRollback(t *testing.T) {
 		"old-row", orgID, "Legacy", "company", todayStart, 9, 0, 9, 0, 9, 1, 0); err != nil {
 		t.Fatalf("seed old snapshot: %v", err)
 	}
-	seedProcessedItem(t, collection, orgID, seedProcessedItem{
+	insertProcessedItem(t, collection, orgID, seedProcessedItem{
 		createdAt: todayStart.Add(time.Hour),
 		label:     "positive",
 		entities:  []bson.D{entity("Fresh", "Company", 0.9)},
@@ -399,7 +404,7 @@ func TestSentimentSnapshotTransactionRollback(t *testing.T) {
 		t.Fatalf("drop topic table: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = db.Exec("CREATE TABLE IF NOT EXISTS `TopicSentimentSnapshot` (" +
+		_, _ = db.Exec("CREATE TABLE `TopicSentimentSnapshot` (" +
 			"`id` VARCHAR(191) NOT NULL, `orgId` VARCHAR(191) NOT NULL, `topic` VARCHAR(191) NOT NULL," +
 			"`bucketStart` DATETIME(3) NOT NULL, `totalDocs` INT NOT NULL, `negativeDocs` INT NOT NULL," +
 			"`positiveDocs` INT NOT NULL, `neutralDocs` INT NOT NULL, `scoreSum` INT NOT NULL," +
@@ -450,7 +455,7 @@ func TestSentimentSchedulerKeys(t *testing.T) {
 
 	now := time.Now().UTC()
 	todayStart := toUTCDayStart(now)
-	seedProcessedItem(t, collection, orgID, seedProcessedItem{
+	insertProcessedItem(t, collection, orgID, seedProcessedItem{
 		createdAt: todayStart.Add(time.Hour),
 		label:     "positive",
 		entities:  []bson.D{entity("Scheduler", "Company", 0.9)},

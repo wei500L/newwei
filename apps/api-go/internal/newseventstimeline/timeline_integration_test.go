@@ -74,7 +74,16 @@ func openIntegrationMongo(t *testing.T) *dashboardstats.Connection {
 
 func createTimelineTables(t *testing.T, db *sql.DB) {
 	t.Helper()
+	// Every table this package owns is dropped first: the integration job shares one
+	// database across test packages, and an Article created by an earlier package
+	// with a narrower column set would otherwise survive CREATE TABLE IF NOT EXISTS.
 	statements := []string{
+		"DROP TABLE IF EXISTS `NewsEventTimelineEntry`",
+		"DROP TABLE IF EXISTS `NewsEventItem`",
+		"DROP TABLE IF EXISTS `ProcessedArticle`",
+		"DROP TABLE IF EXISTS `Article`",
+		"DROP TABLE IF EXISTS `NewsEvent`",
+		"DROP TABLE IF EXISTS `SystemSetting`",
 		"CREATE TABLE IF NOT EXISTS `Org` (" +
 			"`id` VARCHAR(191) NOT NULL, `name` VARCHAR(191) NOT NULL, `slug` VARCHAR(191) NOT NULL," +
 			"`isActive` BOOLEAN NOT NULL DEFAULT true, `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)," +
@@ -378,24 +387,31 @@ func TestTimelineRebuildIntegration(t *testing.T) {
 	if readBack.CategoryConfidence == nil || *readBack.CategoryConfidence != 0.9 {
 		t.Errorf("read-back categoryConfidence = %v, want 0.9", readBack.CategoryConfidence)
 	}
-	if readBack.Tentative == nil || *readBack.Tentative || readBack.Anchor == nil || *readBack.Anchor {
-		t.Errorf("read-back tentative/anchor = %v/%v, want false/false", readBack.Tentative, readBack.Anchor)
+	// The bucket confidence is 0.9, above the 0.8 anchor threshold and below the
+	// 0.5 tentative threshold.
+	if readBack.Tentative == nil || *readBack.Tentative || readBack.Anchor == nil || !*readBack.Anchor {
+		t.Errorf("read-back tentative/anchor = %v/%v, want false/true", readBack.Tentative, readBack.Anchor)
 	}
 	if references, ok := readBack.ReferencedArticleIDs.([]byte); !ok || string(references) != `["a-today"]` {
 		t.Errorf("read-back references = %v", readBack.ReferencedArticleIDs)
 	}
-	if model.TopicDriftWarning == nil || *model.TopicDriftWarning {
-		t.Errorf("read-back topicDriftWarning = %v, want false", model.TopicDriftWarning)
+	// Two equally sized buckets in different categories put the cross-category share
+	// at 50%, above the 30% warning threshold.
+	if model.TopicDriftWarning == nil || !*model.TopicDriftWarning {
+		t.Errorf("read-back topicDriftWarning = %v, want true", model.TopicDriftWarning)
 	}
-	distribution, ok := model.CategoryDistribution.([]byte)
+	if model.TopicDriftSummary == nil || !strings.Contains(*model.TopicDriftSummary, "cross-category share 50.0%") {
+		t.Errorf("read-back topicDriftSummary = %v, want the 50.0%% cross-category share", model.TopicDriftSummary)
+	}
+	distribution, ok := model.CategoryDistribution.(json.RawMessage)
 	if !ok || !strings.Contains(string(distribution), `"categoryPath":"tech/ai"`) {
 		t.Errorf("read-back categoryDistribution = %v", model.CategoryDistribution)
 	}
-	phases, ok := model.TimelinePhases.([]byte)
+	phases, ok := model.TimelinePhases.(json.RawMessage)
 	if !ok || !strings.Contains(string(phases), `"Technology release stage"`) {
 		t.Errorf("read-back timelinePhases = %v", model.TimelinePhases)
 	}
-	subEvents, ok := model.SubEvents.([]byte)
+	subEvents, ok := model.SubEvents.(json.RawMessage)
 	if !ok || !strings.Contains(string(subEvents), `"parentEventId":"`+eventID+`"`) {
 		t.Errorf("read-back subEvents = %v", model.SubEvents)
 	}

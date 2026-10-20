@@ -48,7 +48,7 @@ func TestNormalizeCategoryPath(t *testing.T) {
 		empty bool
 	}{
 		{stringPointer("Tech/AI"), "tech/ai", false},
-		{stringPointer("  Tech / AI  "), "tech-/ai", false},
+		{stringPointer("  Tech / AI  "), "tech-/-ai", false},
 		{stringPointer(`\Tech\\AI\`), "tech/ai", false},
 		{stringPointer("\ufeffTech\u3000/\u00a0AI "), "tech-/-ai", false},
 		{stringPointer("///"), "", true},
