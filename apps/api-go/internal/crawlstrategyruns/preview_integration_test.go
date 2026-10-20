@@ -33,6 +33,9 @@ func setupPipelineJobs(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS PipelineJob"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS PipelineJob (" +
 		"id VARCHAR(191) NOT NULL PRIMARY KEY, sourceId VARCHAR(191) NULL, url TEXT NOT NULL," +
 		"status VARCHAR(32) NOT NULL, createdAt DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)" +
