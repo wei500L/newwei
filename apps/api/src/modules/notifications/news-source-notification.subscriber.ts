@@ -28,6 +28,10 @@ const NEWS_SOURCE_PRESENTATION_KINDS = new Set<string>([
   NotificationPresentationKind.NewsSourceSchedulerBackpressure,
   NotificationPresentationKind.NewsSourceRssBodyMissingSpike,
   NotificationPresentationKind.NewsSourcePipelineRetrySpike,
+  // Written by the Go itemPipeline worker on the final failure that opens the
+  // circuit or auto-disables a source.
+  NotificationPresentationKind.NewsSourceCircuitOpened,
+  NotificationPresentationKind.NewsSourceAutoDisabled,
 ]);
 
 interface NewsSourceRelayMessage {
@@ -135,12 +139,19 @@ export class NewsSourceNotificationSubscriber
   private isGoOwned(): boolean {
     return (
       this.resolveMode("API_GO_NEWS_SOURCE_SCHEDULER_MODE") === "go" ||
-      this.resolveMode("API_GO_NEWS_SOURCE_OPS_MODE") === "go"
+      this.resolveMode("API_GO_NEWS_SOURCE_OPS_MODE") === "go" ||
+      // The Go item pipeline worker also writes news-source system
+      // notifications (circuit opened / auto disabled), so the relay must be
+      // subscribed even when the scheduler and ops routes are still legacy.
+      this.resolveMode("API_GO_ITEM_PIPELINE_WORKER_MODE") === "go"
     );
   }
 
   private resolveMode(
-    key: "API_GO_NEWS_SOURCE_SCHEDULER_MODE" | "API_GO_NEWS_SOURCE_OPS_MODE",
+    key:
+      | "API_GO_NEWS_SOURCE_SCHEDULER_MODE"
+      | "API_GO_NEWS_SOURCE_OPS_MODE"
+      | "API_GO_ITEM_PIPELINE_WORKER_MODE",
   ): string {
     const mode = this.env.get<string>(key, { infer: true });
     return mode ?? "legacy";
