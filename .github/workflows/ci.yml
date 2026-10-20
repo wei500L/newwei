@@ -438,6 +438,13 @@ jobs:
       - name: Analysis runs integration (Go worker + Node BullMQ + Mongo/MySQL/Redis + SSE fixture)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/analysisruns/ -run TestAnalysisRunsIntegration -v -timeout 10m
 
+      # NewsNow 热点分析与个性化推荐：真实 MySQL/Redis/Mongo 覆盖 H1（匹配只用本组织
+      # 条目/事件）与 O1（分阶段批量匹配与逐 URL 等价）、O4 多行舆情快照写入、tick
+      # gate/组织锁/warm 锁的上限 TTL，以及信号状态的一次 pipeline 写入。模型网关不在
+      # 本 job 调用（解析与请求形状由单元 httptest 覆盖）。
+      - name: MySQL/Redis/Mongo integration tests (NewsNow hottest analysis)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newsnowhottest/ -run 'TestNewsnowHottestIntegration' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从

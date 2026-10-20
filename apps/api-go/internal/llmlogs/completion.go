@@ -48,6 +48,9 @@ type CompletionMetadata struct {
 	Feature    string `json:"feature"`
 	EventTitle string `json:"eventTitle"`
 	Sources    int    `json:"sources"`
+	// Clusters is the NewsNow hottest cluster count. The other completion
+	// surfaces leave it nil, which omits the member from the filtered metadata.
+	Clusters *int `json:"clusters,omitempty"`
 }
 
 // CompletionLogEntry 是一次真实模型尝试的日志输入。调用方（简报路径）按每次
@@ -333,11 +336,16 @@ func (m CompletionMetadata) entries() []metadataEntry {
 	feature := m.Feature
 	title := m.EventTitle
 	sources := float64(m.Sources)
-	return []metadataEntry{
+	entries := []metadataEntry{
 		{Key: "feature", Text: &feature},
 		{Key: "eventTitle", Text: &title},
 		{Key: "sources", Number: &sources},
 	}
+	if m.Clusters != nil {
+		clusters := float64(*m.Clusters)
+		entries = append(entries, metadataEntry{Key: "clusters", Number: &clusters})
+	}
+	return entries
 }
 
 func (e metadataEntry) bsonValue() (any, bool) {

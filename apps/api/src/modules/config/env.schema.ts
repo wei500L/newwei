@@ -129,6 +129,29 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The two authenticated NewsNow "hot" reads:
+    // GET /api/news-aggregator/hottest-analysis and GET /api/news-aggregator/recommended.
+    // Empty string behaves like legacy. go makes Go build the global snapshot,
+    // project it per organization, auto-import items for callers with items.write
+    // and score the recommended feed; invalid values fail Nest startup.
+    API_GO_NEWSNOW_HOTTEST_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The two NewsNow background owners (hottest analysis every 10 minutes and
+    // source warm every minute). NestJS reads it to return before claiming the
+    // tick gate/lock; Go reads it to start its schedulers. Both read the same
+    // state, so an invalid value fails every process.
+    API_GO_NEWSNOW_BACKGROUND_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // The raw_item outbox scheduled-replay owner. Empty string behaves like
     // legacy. go makes the NestJS Cron return before acquiring the lock; the
     // synchronous request-time delivery still runs here. Invalid values fail
