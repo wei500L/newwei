@@ -530,6 +530,14 @@ jobs:
           go test -tags=integration -count=1 ./internal/metrics/ -run 'TestMetricsEndpointAuthorizationIntegration' -v
           go test -tags=integration -count=1 ./internal/startupreconcile/ -run 'TestStartupReconcile' -v
 
+      # 五个实时 namespace 与分类质检告警调度：最小 Socket.IO 客户端在一条
+      # Engine.IO 连接上连接 5 个 namespace（connected 载荷/sid 独立/权限拒绝先
+      # error 后断）、newsnow 的 Socket.IO Redis adapter msgpack 广播按房间投递、
+      # 态势事件桥的按用户载荷补充、BullMQ 事件双实例恰好一次（B1）、身份复核
+      # 断开（B2），以及调度 tick gate/组织锁/并发度/摘要参数。
+      - name: Realtime Socket.IO and classification alert integration tests (MySQL/Redis/Mongo)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/realtimeintegration/ -run 'TestRealtime' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从
