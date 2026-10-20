@@ -93,6 +93,17 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The knowledge-graph automatic construction owner. It is independent of
+    // every HTTP and GraphQL read switch. Empty string behaves like legacy. An
+    // invalid value fails Nest startup instead of being silently stripped from
+    // the validated config.
+    API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     REDIS_DB: z.coerce.number().int().nonnegative().default(0),
     REDIS_USERNAME: z.string().optional(),
     REDIS_PASSWORD: z.string().optional(),

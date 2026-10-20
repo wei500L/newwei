@@ -360,6 +360,11 @@ jobs:
       - name: Redis integration tests (situation insights cache/lock)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/situationsignals/ -run 'TestInsightsRedisIntegration|TestInsightsRedisKeyConstants' -v
 
+      # 知识图谱自动构建：游标、实体/边/证据事务写入、K2 重量修正、链接去重、
+      # 设置缓存，以及 tick gate / 组织锁的 Redis 结构与互斥。
+      - name: MySQL/Redis integration tests (knowledge-graph ingestion)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/kgingestion/ -run 'TestKnowledgeGraphIngestion' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从

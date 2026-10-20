@@ -1119,6 +1119,27 @@ const (
 	EconomicDataWorkerModeGo     EconomicDataWorkerMode = "go"
 )
 
+// KnowledgeGraphIngestionMode controls the knowledge-graph automatic
+// construction background chain (API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE). It is
+// independent of every HTTP switch and of the GraphQL read switches. The
+// accepted values are exactly "", "legacy" and "go"; the empty value behaves
+// like legacy.
+//
+// legacy: the NestJS Cron keeps owning the five-minute tick and no Go
+// scheduler starts.
+// go: Go owns the tick gate, the per-organization lock, the cursor, the model
+// validation/disambiguation calls and the transactional graph writes; the
+// NestJS Cron returns before claiming the tick gate. Go requires DATABASE_URL
+// and REDIS_HOST; the model gateway is resolved at request time from the same
+// gateway profiles publicportal uses, so no JWT or HTTP takeover switch is
+// required.
+type KnowledgeGraphIngestionMode string
+
+const (
+	KnowledgeGraphIngestionModeLegacy KnowledgeGraphIngestionMode = "legacy"
+	KnowledgeGraphIngestionModeGo     KnowledgeGraphIngestionMode = "go"
+)
+
 // AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
 type AnalysisViewsMode string
 
@@ -1449,6 +1470,10 @@ type Config struct {
 	// stop scheduling without changing their ownership switch; the digest
 	// delivery unit keeps its existing behavior.
 	ScheduleEnabled bool
+	// KnowledgeGraphIngestionMode 见 KnowledgeGraphIngestionMode 常量。默认
+	// legacy。与所有 HTTP / GraphQL 读开关独立；go 需要 MySQL 和 Redis，不
+	// 要求 JWT、Mongo 或任何接管的 HTTP 开关。
+	KnowledgeGraphIngestionMode KnowledgeGraphIngestionMode
 	// 分析工作台三个 HTTP 开关，彼此独立，默认都是 legacy。
 	// 只决定对应精确路由。讨论检查、评论计数和删除清理不看另一个开关。
 	// go 要求 JWT、MySQL、Redis，不要求 Mongo。
@@ -2332,6 +2357,14 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.AuditOutboxMode = AuditOutboxModeGo
 	default:
 		errs = append(errs, "API_GO_AUDIT_OUTBOX_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE")) {
+	case "", string(KnowledgeGraphIngestionModeLegacy):
+		cfg.KnowledgeGraphIngestionMode = KnowledgeGraphIngestionModeLegacy
+	case string(KnowledgeGraphIngestionModeGo):
+		cfg.KnowledgeGraphIngestionMode = KnowledgeGraphIngestionModeGo
+	default:
+		errs = append(errs, "API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_VIEWS_MODE")) {
 	case "", string(AnalysisViewsModeLegacy):
@@ -3450,6 +3483,20 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		if cfg.RedisHost == "" {
 			errs = append(errs, "REDIS_HOST is required when API_GO_AUDIT_OUTBOX_MODE=go")
+		}
+	}
+	// The knowledge-graph ingestion chain owns the Cron without JWT/RBAC: it
+	// reads MySQL, Redis and the same gateway profiles publicportal uses. The
+	// model gateway itself is resolved at request time, so it is not a startup
+	// requirement (a missing profile only skips validation/disambiguation and
+	// still writes the graph). Mongo is optional: the LLM request log is
+	// best-effort, exactly like every other writer.
+	if cfg.KnowledgeGraphIngestionMode == KnowledgeGraphIngestionModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go")
 		}
 	}
 	if cfg.AnalysisViewsMode == AnalysisViewsModeGo {
