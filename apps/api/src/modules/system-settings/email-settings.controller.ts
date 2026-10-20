@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Post, Put } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Put,
+} from "@nestjs/common";
 import {
   ApiBearerAuth,
   ApiBody,
@@ -109,11 +116,12 @@ export class EmailSettingsController {
       recipientDomain !== configuredDomain ||
       recipient.toLowerCase() !== smtpUser.toLowerCase()
     ) {
-      return {
-        ok: false,
-        error:
-          "Test emails may only be sent to the configured SMTP account to prevent relay abuse",
-      };
+      // D1: a disallowed recipient is a client error. Returning 201 with
+      // {ok:false} made the web panel report a false success because it only
+      // checks whether the request threw.
+      throw new BadRequestException(
+        "Test emails may only be sent to the configured SMTP account to prevent relay abuse",
+      );
     }
     const subject = body.subject?.trim() || "Test email";
     await this.email.verifyCached(0);

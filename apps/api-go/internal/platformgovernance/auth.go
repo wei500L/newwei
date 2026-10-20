@@ -44,6 +44,13 @@ func NewAuthenticator(chain *authhttp.Authenticator, db *sql.DB) *Authenticator 
 // authentication (401) before permission (403), fail-closed on Redis/MySQL
 // errors.
 func (a *Authenticator) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Identity {
+	return a.Authorize(w, r, requiredPermission)
+}
+
+// Authorize runs the same chain for an arbitrary permission. The settings
+// diagnostics batch reuses it for items.read (geocode) and settings.manage (the
+// other six routes) instead of rebuilding a second machine-token lookup.
+func (a *Authenticator) Authorize(w http.ResponseWriter, r *http.Request, permission string) *authhttp.Identity {
 	raw := rawBearer(r)
 	if raw == "" {
 		authhttp.WriteUnauthorized(w, r, "")
@@ -69,12 +76,26 @@ func (a *Authenticator) authorize(w http.ResponseWriter, r *http.Request) *authh
 		}
 	}
 
-	if !identity.HasPermission(requiredPermission) {
-		authhttp.WriteForbidden(w, r, []string{requiredPermission})
+	if !identity.HasPermission(permission) {
+		authhttp.WriteForbidden(w, r, []string{permission})
 		return nil
 	}
 	return identity
 }
+
+// RequirePlatformAdmin runs assertPlatformAdmin and writes the contract error
+// itself. It returns false when the caller must stop.
+func (a *Authenticator) RequirePlatformAdmin(w http.ResponseWriter, r *http.Request, actorID string) bool {
+	if err := a.assertPlatformAdmin(r.Context(), actorID); err != nil {
+		writeServiceError(w, r, err)
+		return false
+	}
+	return true
+}
+
+// NullableActorID exposes the machine-to-NULL projection for the settings
+// diagnostics audit rows.
+func NullableActorID(actorID string) *string { return nullableActorID(actorID) }
 
 // machineTokenPermissions is the typed shape of MachineAccessToken.permissions.
 // Only string entries are kept; anything else is ignored, exactly like the

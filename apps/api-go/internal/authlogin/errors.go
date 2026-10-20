@@ -36,6 +36,9 @@ func (e *redisError) Unwrap() error { return e.err }
 var (
 	errNoDatabase = errors.New("authlogin: mysql is not configured")
 	errNoRedis    = errors.New("authlogin: redis is not configured")
+	// errMailerNotConfigured is returned by the nil mailer guard; the real
+	// transport reports its own missing-configuration error.
+	errMailerNotConfigured = errors.New("authlogin: smtp transport is not configured")
 )
 
 func dbWrap(err error) error    { return &dbError{err: err} }

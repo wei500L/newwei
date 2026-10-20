@@ -188,3 +188,10 @@ func (s *Service) safetyEnvironmentOutputModeration() bool {
 	}
 	return false
 }
+
+// AssistantSafetyPublicSettings exposes the GET /assistant-safety projection to
+// the diagnostics unit. It is the same computation, including the Redis-backed
+// row cache, so the diagnostics panel and the settings panel cannot disagree.
+func (s *Service) AssistantSafetyPublicSettings(ctx context.Context) (AssistantSafetySettingsResponse, error) {
+	return s.assistantSafetySettings(ctx)
+}

@@ -586,3 +586,35 @@ func logSurface(value string) llmlogs.ProbeAPISurface {
 		return ""
 	}
 }
+
+// ManagedRuntimeCredentials resolves the LiteLLM managed governance override for
+// one gateway profile, mirroring LiteLlmProxyGovernanceService's
+// getManagedRuntimeApiKeyForProfile + getGovernedApiBaseForProfile pair.
+//
+// governed is false when governance is disabled or the profile/apiBase is not the
+// governed target; the caller then keeps the profile's own credentials. A
+// governed profile whose managed key is unreadable or missing returns the same
+// 503 the NestJS service raises.
+func (s *Service) ManagedRuntimeCredentials(ctx context.Context, profileID, apiBase string) (string, string, bool, error) {
+	resolved, _, err := s.loadResolvedGovernance(ctx)
+	if err != nil {
+		return "", "", false, err
+	}
+	if !resolved.Enabled {
+		return "", "", false, nil
+	}
+	target, err := s.resolveTargetProfile(ctx, resolved.TargetProfileID)
+	if err != nil {
+		return "", "", false, err
+	}
+	if target == nil || !governedProfileMatches(profileID, apiBase, target) {
+		return "", "", false, nil
+	}
+	if resolved.ManagedRuntimeKeyState == managedKeyUnreadable {
+		return "", "", true, serviceUnavailable("LiteLLM governance is enabled but the managed runtime key is unreadable")
+	}
+	if resolved.ManagedRuntimeKey == "" {
+		return "", "", true, serviceUnavailable("LiteLLM governance is enabled but the managed runtime key is missing")
+	}
+	return target.APIBase, resolved.ManagedRuntimeKey, true, nil
+}
