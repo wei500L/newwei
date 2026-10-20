@@ -299,13 +299,25 @@ func TestCategoryGateLogKeepsNulls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var decoded bson.D
+	var decoded bson.Raw
 	if err := bson.Unmarshal(document, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	values := make(map[string]bson.RawValue, len(decoded))
-	for _, element := range decoded {
-		values[element.Key] = element.Value
+	elements, err := decoded.Elements()
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := make(map[string]bson.RawValue, len(elements))
+	for _, element := range elements {
+		key, err := element.KeyErr()
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, err := element.ValueErr()
+		if err != nil {
+			t.Fatal(err)
+		}
+		values[key] = value
 	}
 	for _, key := range []string{"processedItemId", "signalCategory", "signalCategoryPath", "signalConfidence"} {
 		value, ok := values[key]
@@ -387,13 +399,21 @@ func (r *recordingTaskLogStore) flush(ctx context.Context, session *assignmentSe
 // order.
 func bsonDocumentKeys(t *testing.T, document bsonDocument) []string {
 	t.Helper()
-	var decoded bson.D
+	var decoded bson.Raw
 	if err := bson.Unmarshal(document, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	keys := make([]string, 0, len(decoded))
-	for _, element := range decoded {
-		keys = append(keys, element.Key)
+	elements, err := decoded.Elements()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := make([]string, 0, len(elements))
+	for _, element := range elements {
+		key, err := element.KeyErr()
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, key)
 	}
 	return keys
 }

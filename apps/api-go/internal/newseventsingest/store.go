@@ -365,7 +365,7 @@ func (s *store) loadProcessedItemLeaves(ctx context.Context, ids []string) (map[
 // tryResolveSummaryEmbedding does: the array must be non-empty, every element
 // must be a number and the model name must be a non-blank string.
 func (leaf processedItemLeaf) summaryVector() *summaryVector {
-	elements, ok := jsonArrayElements(leaf.SummaryEmbedding)
+	elements, ok := jsonArrayElements(json.RawMessage(leaf.SummaryEmbedding))
 	if !ok || len(elements) == 0 {
 		return nil
 	}
@@ -377,7 +377,7 @@ func (leaf processedItemLeaf) summaryVector() *summaryVector {
 		}
 		embedding = append(embedding, value)
 	}
-	model, ok := jsonString(leaf.SummaryEmbeddingModel)
+	model, ok := jsonString(json.RawMessage(leaf.SummaryEmbeddingModel))
 	if !ok {
 		return nil
 	}

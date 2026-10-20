@@ -120,24 +120,40 @@ func jsonLeafToBSONDocument(raw json.RawMessage) (bsonDocument, bool, error) {
 	if trimmed[0] != '{' {
 		return nil, false, errInvalidJSONLeaf
 	}
-	var document bson.D
+	var document bson.Raw
 	if err := bson.UnmarshalExtJSON(trimmed, false, &document); err != nil {
 		return nil, false, err
 	}
-	encoded, err := bson.Marshal(nativeBSONDocument(document))
+	normalized, err := normalizeBSONDocument(document)
+	if err != nil {
+		return nil, false, err
+	}
+	encoded, err := bson.Marshal(normalized)
 	if err != nil {
 		return nil, false, err
 	}
 	return bsonDocument(encoded), true, nil
 }
 
-// nativeBSONDocument rewrites one document so every number is a BSON double.
-func nativeBSONDocument(document bson.D) bson.D {
-	rewritten := make(bson.D, 0, len(document))
-	for _, element := range document {
-		rewritten = append(rewritten, bson.E{Key: element.Key, Value: nativeBSONValue(element.Value)})
+// normalizeBSONDocument rewrites one document so every number is a BSON double.
+func normalizeBSONDocument(document bson.Raw) (bson.D, error) {
+	elements, err := document.Elements()
+	if err != nil {
+		return nil, err
 	}
-	return rewritten
+	rewritten := make(bson.D, 0, len(elements))
+	for _, element := range elements {
+		key, err := element.KeyErr()
+		if err != nil {
+			return nil, err
+		}
+		value, err := element.ValueErr()
+		if err != nil {
+			return nil, err
+		}
+		rewritten = append(rewritten, bson.E{Key: key, Value: nativeBSONValue(value)})
+	}
+	return rewritten, nil
 }
 
 // nativeBSONValue converts one raw value to its JavaScript-typed Go value so the
@@ -163,11 +179,11 @@ func nativeBSONValue(value bson.RawValue) any {
 		return nil
 	}
 	if nested, ok := value.DocumentOK(); ok {
-		var document bson.D
-		if err := bson.Unmarshal(nested, &document); err != nil {
+		document, err := normalizeBSONDocument(nested)
+		if err != nil {
 			return value
 		}
-		return nativeBSONDocument(document)
+		return document
 	}
 	if array, ok := value.ArrayOK(); ok {
 		values, err := bson.Raw(array).Values()
