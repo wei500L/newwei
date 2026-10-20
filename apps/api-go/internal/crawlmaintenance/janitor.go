@@ -501,7 +501,8 @@ type taskLogCleanupData struct {
 }
 
 // taskLogDocument is the TaskLog document the janitor writes. Mongoose adds the
-// timestamps, so they are written explicitly.
+// timestamps and the version key, so both are written explicitly to keep the
+// document shape identical to a NestJS insert.
 type taskLogDocument struct {
 	Queue     string             `bson:"queue"`
 	JobID     string             `bson:"jobId"`
@@ -512,6 +513,7 @@ type taskLogDocument struct {
 	Data      taskLogCleanupData `bson:"data"`
 	CreatedAt time.Time          `bson:"createdAt"`
 	UpdatedAt time.Time          `bson:"updatedAt"`
+	Version   int                `bson:"__v"`
 }
 
 // writeTaskLogs writes one cleanup TaskLog per failed task. A failure only
