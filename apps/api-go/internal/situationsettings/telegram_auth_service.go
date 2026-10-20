@@ -19,7 +19,7 @@ import (
 
 // This file is the Go equivalent of
 // apps/api/src/modules/system-settings/situation-monitor-telegram-auth.service.ts.
-// It owns the pending-request cache document and the four rate-limit buckets
+// It owns the pending-request cache document and the three rate-limit buckets
 // (shared with NestJS through the same Redis keys), while the MTProto client
 // itself stays behind TelegramAuthClient/TelegramAuthClientFactory so the unit
 // tests never touch the network.
@@ -144,7 +144,7 @@ func newTelegramAuthService(options telegramAuthServiceOptions) *telegramAuthSer
 // ---- startAuth ----
 
 // startAuth mirrors startAuth: resolve credentials, validate the phone number,
-// consume the four rate-limit buckets BEFORE talking to Telegram, send the code,
+// consume the three rate-limit buckets BEFORE talking to Telegram, send the code,
 // cache the pending request (600s) and return the request descriptor.
 func (s *telegramAuthService) startAuth(ctx context.Context, orgID, actorID string, input StartTelegramAuthInput, clientIP string) (telegramAuthStartResult, error) {
 	credentials, err := s.resolveStartCredentials(ctx, input)
@@ -476,6 +476,11 @@ func signInPendingTelegramAuth(ctx context.Context, client TelegramAuthClient, p
 			return telegramAuthBadRequest(telegramAuthCodePasswordRequired)
 		}
 		if err := client.SignInWithPassword(ctx, password); err != nil {
+			// NestJS routes the thrown error through toBadRequest, whose
+			// SESSION_PASSWORD_NEEDED text branch answers PASSWORD_REQUIRED.
+			if errors.Is(err, ErrTelegramPasswordNeeded) {
+				return telegramAuthBadRequest(telegramAuthCodePasswordRequired)
+			}
 			return toTelegramAuthBadRequest(err)
 		}
 		return nil
@@ -496,31 +501,66 @@ func telegramAuthCacheKey(requestID string) string {
 	return telegramAuthCacheKeyPrefix + ":" + requestID
 }
 
-// marshalTelegramAuthPending produces the exact JSON.stringify bytes of the
-// pending request (declaration order, no HTML escaping of any character the
-// payload can contain).
+// marshalTelegramAuthPending produces JSON.stringify-compatible bytes of the
+// pending request: declaration order, raw UTF-8 and no HTML escaping. The
+// encoder is used with SetEscapeHTML(false) because NestJS JSON.stringify does
+// not turn <, > or & into \u003c sequences; Encode's trailing newline is removed
+// so the Redis value is exactly one line.
 func marshalTelegramAuthPending(pending telegramAuthPending) ([]byte, error) {
-	return json.Marshal(pending)
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(pending); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }
 
-// decodeTelegramAuthPending parses a cache value. NestJS CacheService.get
-// returns null for a falsy raw value and JSON.parse maps the literals
-// null/false/0/"" to a falsy pending request, which completeAuth treats as
-// TELEGRAM_AUTH_REQUEST_EXPIRED.
+// decodeTelegramAuthPending parses a cache value like CacheService.get +
+// JSON.parse + the pending truthiness check:
+//   - an absent or falsy document (null/false/0/""/empty) is "no pending
+//     request" -> TELEGRAM_AUTH_REQUEST_EXPIRED;
+//   - a truthy non-object document (array/string/number/true) has undefined
+//     properties in NestJS, so the owner comparison fails ->
+//     TELEGRAM_AUTH_REQUEST_MISMATCH (returned as a zero pending document);
+//   - malformed JSON throws in JSON.parse -> 500 (plain error).
 func decodeTelegramAuthPending(payload []byte) (telegramAuthPending, bool, error) {
 	trimmed := bytes.TrimSpace(payload)
 	if len(trimmed) == 0 {
 		return telegramAuthPending{}, false, nil
 	}
-	switch string(trimmed) {
-	case "null", "false", "0", `""`:
+	var decoded any
+	if err := json.Unmarshal(trimmed, &decoded); err != nil {
+		return telegramAuthPending{}, false, fmt.Errorf("situationsettings: telegram auth cache decode failed: %w", err)
+	}
+	if !telegramAuthJSONTruthy(decoded) {
 		return telegramAuthPending{}, false, nil
+	}
+	if _, isObject := decoded.(map[string]any); !isObject {
+		return telegramAuthPending{}, true, nil
 	}
 	var pending telegramAuthPending
 	if err := json.Unmarshal(trimmed, &pending); err != nil {
 		return telegramAuthPending{}, false, fmt.Errorf("situationsettings: telegram auth cache decode failed: %w", err)
 	}
 	return pending, true, nil
+}
+
+// telegramAuthJSONTruthy mirrors JavaScript truthiness for a JSON.parse result:
+// null/false/0/"" and NaN are falsy, every object and array is truthy.
+func telegramAuthJSONTruthy(value any) bool {
+	switch decoded := value.(type) {
+	case nil:
+		return false
+	case bool:
+		return decoded
+	case float64:
+		return decoded != 0 && !math.IsNaN(decoded)
+	case string:
+		return decoded != ""
+	default:
+		return true
+	}
 }
 
 // telegramAuthISOTime is new Date().toISOString(): UTC with millisecond

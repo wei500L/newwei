@@ -239,6 +239,11 @@ func TestParseCompleteTelegramAuthValidationMatrix(t *testing.T) {
 			wantErr: "property extra should not exist",
 		},
 		{
+			name:    "unknown property plus missing required keeps whitelist-first order",
+			body:    `{"extra":1}`,
+			wantErr: "property extra should not exist; requestId must be a string; phoneCode must be a string",
+		},
+		{
 			name:    "property order is DTO declaration order",
 			body:    `{"enableTelegram":1,"requestId":2}`,
 			wantErr: "requestId must be a string; phoneCode must be a string; enableTelegram must be a boolean value",

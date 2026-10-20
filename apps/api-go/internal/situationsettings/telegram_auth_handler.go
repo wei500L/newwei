@@ -39,7 +39,7 @@ const (
 )
 
 // TelegramAuthHandlerOptions collects the collaborators of the two login
-// routes. Redis is the shared go-redis client (pending cache + the four
+// routes. Redis is the shared go-redis client (pending cache + the three
 // rate-limit buckets); Settings is the same *Service the settings handler uses.
 type TelegramAuthHandlerOptions struct {
 	Auth     *platformgovernance.Authenticator

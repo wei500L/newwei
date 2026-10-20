@@ -258,6 +258,27 @@ func TestTelegramAuthHandlerCompleteSignUpRequired(t *testing.T) {
 	}
 }
 
+func TestTelegramAuthHandlerCompleteExpiredRequest(t *testing.T) {
+	settings := &fakeTelegramAuthSettings{}
+	store := newFakeTelegramAuthStore()
+	factory := &fakeTelegramAuthFactory{client: &fakeTelegramAuthClient{}}
+	handler := newTestTelegramAuthHandler(settings, factory, store,
+		&fakeTelegramAuthLimiter{}, &fakeTelegramAuthAuthorizer{identity: testTelegramAuthIdentity()}, &fakeTelegram{})
+
+	recorder := serveTelegramAuthHandlerRequest(t, handler, http.MethodPost, telegramAuthCompletePath,
+		`{"requestId":"`+testTelegramAuthRequestID+`","phoneCode":"12345"}`)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body=%s)", recorder.Code, recorder.Body.String())
+	}
+	payload := decodeTelegramAuthTestBody(t, recorder)
+	if payload["code"] != telegramAuthCodeRequestExpired || payload["message"] != telegramAuthCodeRequestExpired {
+		t.Fatalf("body = %v", payload)
+	}
+	if factory.calls != 0 || settings.updateCalls != 0 {
+		t.Fatalf("expired request must stop before Telegram/settings")
+	}
+}
+
 func TestTelegramAuthHandlerCompleteTenantMismatch(t *testing.T) {
 	settings := &fakeTelegramAuthSettings{}
 	store := newFakeTelegramAuthStore()

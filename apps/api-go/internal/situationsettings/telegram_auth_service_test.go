@@ -1,6 +1,7 @@
 package situationsettings
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -271,6 +272,36 @@ func TestMarshalTelegramAuthPendingDocumentBytes(t *testing.T) {
 	}
 	if decoded != pending {
 		t.Fatalf("round trip = %+v, want %+v", decoded, pending)
+	}
+}
+
+func TestMarshalTelegramAuthPendingDoesNotHTMLEscape(t *testing.T) {
+	// JSON.stringify leaves <, > and & untouched; the Go encoder must do the
+	// same or the shared Redis document would differ byte-for-byte.
+	pending := telegramAuthPending{
+		RequestID:       "req-1",
+		OrgID:           "org-1",
+		ActorID:         "user-1",
+		TelegramAPIID:   "123",
+		TelegramAPIHash: "a&b<c>d",
+		PhoneNumber:     "+14155552671",
+		PhoneCodeHash:   "code-hash",
+		Session:         "SESSION+/=",
+		CreatedAt:       "2026-10-20T20:47:16.123Z",
+	}
+	payload, err := marshalTelegramAuthPending(pending)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want := `{"requestId":"req-1","orgId":"org-1","actorId":"user-1","telegramApiId":"123","telegramApiHash":"a&b<c>d","phoneNumber":"+14155552671","phoneCodeHash":"code-hash","session":"SESSION+/=","createdAt":"2026-10-20T20:47:16.123Z"}`
+	if string(payload) != want {
+		t.Fatalf("pending document = %s, want %s", payload, want)
+	}
+	if strings.Contains(string(payload), `\u`) {
+		t.Fatalf("pending document must not HTML-escape: %s", payload)
+	}
+	if bytes.HasSuffix(payload, []byte("\n")) {
+		t.Fatalf("pending document must not have the encoder newline: %q", payload)
 	}
 }
 
@@ -875,6 +906,7 @@ func TestCompleteAuthPasswordFlow(t *testing.T) {
 		{name: "sentinel password needed", signInErr: ErrTelegramPasswordNeeded},
 		{name: "text password needed", signInErr: errors.New("SESSION_PASSWORD_NEEDED")},
 		{name: "wrong password", signInErr: ErrTelegramPasswordNeeded, passwordErr: errors.New("PASSWORD_HASH_INVALID"), wantCode: telegramAuthCodePasswordInvalid},
+		{name: "password still needed after password step", signInErr: ErrTelegramPasswordNeeded, passwordErr: ErrTelegramPasswordNeeded, wantCode: telegramAuthCodePasswordRequired},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -1094,10 +1126,28 @@ func TestNewTelegramAuthRequestIDIsUUIDv4(t *testing.T) {
 }
 
 func TestDecodeTelegramAuthPendingRejectsFalsyDocuments(t *testing.T) {
-	for _, payload := range []string{"", "null", "false", "0", `""`} {
+	for _, payload := range []string{"", "null", "false", "0", "-0", "0.0", `""`} {
 		_, found, err := decodeTelegramAuthPending([]byte(payload))
 		if err != nil || found {
 			t.Fatalf("decode(%q) found=%v err=%v, want not found", payload, found, err)
+		}
+	}
+}
+
+func TestDecodeTelegramAuthPendingTruthyNonObject(t *testing.T) {
+	// NestJS JSON.parse yields a truthy primitive/array whose properties are
+	// undefined, so completeAuth reports TELEGRAM_AUTH_REQUEST_MISMATCH; the
+	// decoder reproduces that with found=true and a zero pending document.
+	for _, payload := range []string{"[]", `"str"`, "123", "true", "[1,2]"} {
+		pending, found, err := decodeTelegramAuthPending([]byte(payload))
+		if err != nil {
+			t.Fatalf("decode(%q) error = %v", payload, err)
+		}
+		if !found {
+			t.Fatalf("decode(%q) found=false, want found truthy", payload)
+		}
+		if pending != (telegramAuthPending{}) {
+			t.Fatalf("decode(%q) = %+v, want zero pending", payload, pending)
 		}
 	}
 }

@@ -120,6 +120,9 @@ func (r *situationSignalsWorkerRuntime) Start(ctx context.Context) error {
 		return nil
 	}
 	if err := situationsignalsworker.EnsureRepeatables(ctx, r.redis, r.sched); err != nil {
+		// Nothing was started, so close the done channel: the deferred Close in
+		// main must not wait for loops that will never run.
+		close(r.done)
 		return fmt.Errorf("api-go: situation signals repeatables: %w", err)
 	}
 	runCtx, cancel := context.WithCancel(ctx)

@@ -144,7 +144,10 @@ func TestWriteTelegramAuthCodedErrorRateLimitShape(t *testing.T) {
 }
 
 func TestWriteTelegramAuthCodedErrorKeepsDetail(t *testing.T) {
-	coded := telegramAuthBadRequestWithDetail(telegramAuthCodeInvalidInput, "requestId is required")
+	var coded *telegramAuthCodedError
+	if !errors.As(telegramAuthBadRequestWithDetail(telegramAuthCodeInvalidInput, "requestId is required"), &coded) {
+		t.Fatal("detail helper must return a coded error")
+	}
 	recorder := serveTelegramAuthError(t, telegramAuthCompletePath, coded)
 	body := recorder.Body.String()
 	if !strings.HasPrefix(body, `{"statusCode":400,"message":"TELEGRAM_AUTH_INVALID_INPUT","error":"Bad Request","code":"TELEGRAM_AUTH_INVALID_INPUT","detail":"requestId is required","traceId":"`) {
