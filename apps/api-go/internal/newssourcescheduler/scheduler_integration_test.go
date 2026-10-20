@@ -250,6 +250,21 @@ func (h *schedulerHarness) seedConfig() map[string]any {
 	}
 }
 
+// queueSnapshotJobIDs returns the crawl4ai-normal job ids from the prioritized
+// zset (where priority-bearing jobs live) and the wait list.
+func (h *schedulerHarness) queueSnapshotJobIDs() ([]string, error) {
+	prefix := "bull:" + crawlqueue.QueueNormal + ":"
+	prioritized, err := h.redis.ZRange(h.ctx, prefix+"prioritized", 0, -1).Result()
+	if err != nil {
+		return nil, err
+	}
+	waiting, err := h.redis.LRange(h.ctx, prefix+"wait", 0, -1).Result()
+	if err != nil {
+		return nil, err
+	}
+	return append(prioritized, waiting...), nil
+}
+
 func TestNewsSourceSchedulerIntegrationDispatch(t *testing.T) {
 	h := newSchedulerHarness(t)
 	h.reset(t)
@@ -310,13 +325,15 @@ func TestNewsSourceSchedulerIntegrationDispatch(t *testing.T) {
 		if triggeredBy != "user-int" {
 			t.Fatalf("triggeredById = %q", triggeredBy)
 		}
-		// The raw BullMQ job hash carries the same task/org ids.
-		jobIDs, err := h.redis.LRange(h.ctx, "bull:"+crawlqueue.QueueNormal+":wait", 0, -1).Result()
+		// The raw BullMQ job hash carries the same task/org ids. A source
+		// priority is always set, so the producer adds into the prioritized
+		// zset (BullMQ 5.63.2), not the wait list.
+		jobIDs, err := h.queueSnapshotJobIDs()
 		if err != nil {
-			t.Fatalf("wait list: %v", err)
+			t.Fatalf("queue job ids: %v", err)
 		}
 		if len(jobIDs) != 2 {
-			t.Fatalf("wait jobs = %d, want 2", len(jobIDs))
+			t.Fatalf("queued jobs = %d, want 2", len(jobIDs))
 		}
 		found := false
 		for _, rawJobID := range jobIDs {

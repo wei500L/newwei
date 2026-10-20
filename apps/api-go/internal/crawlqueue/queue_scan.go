@@ -57,9 +57,28 @@ func (p *Producer) taskIDsForJobs(ctx context.Context, keys queueKeys, ids []str
 	return out
 }
 
+// rangeJobIDsWithPrioritized adds the prioritized zset to the four states
+// BullMQ's getRanges reads for "waiting". A job added with a priority (the news
+// source scheduler always sets sourcePriority, so every crawl task it creates)
+// lives in `prioritized` and NOT in the `wait` list: BullMQ 5.63.2
+// getRanges(['wait']) reads only the list. Scanning it here is what makes
+// cancel-queued actually find scheduler-dispatched tasks; the key set, the
+// removal script and the activity compensation are unchanged.
+func (p *Producer) rangeJobIDsWithPrioritized(ctx context.Context, keys queueKeys, start, end int) ([]string, error) {
+	ids, err := p.rangeJobIDs(ctx, keys, start, end)
+	if err != nil {
+		return nil, err
+	}
+	prioritized, err := p.redis.ZRevRange(ctx, keys.prioritized, int64(start), int64(end)).Result()
+	if err != nil && err != redis.Nil {
+		return nil, err
+	}
+	return append(prioritized, ids...), nil
+}
+
 // ListQueuedTaskIDs is CrawlQueueService.listQueuedTaskIds: every crawl-task id
-// that currently has a waiting, delayed, failed or paused job, capped at 5000
-// per state and read in pages of 500.
+// that currently has a waiting, prioritized, delayed, failed or paused job,
+// capped at 5000 per state and read in pages of 500.
 func (p *Producer) ListQueuedTaskIDs(ctx context.Context) (map[string]struct{}, error) {
 	taskIDs := map[string]struct{}{}
 	if p == nil || p.redis == nil {
@@ -71,7 +90,7 @@ func (p *Producer) ListQueuedTaskIDs(ctx context.Context) (map[string]struct{}, 
 			if end >= listQueuedScanLimit {
 				end = listQueuedScanLimit - 1
 			}
-			ids, err := p.rangeJobIDs(ctx, keys, start, end)
+			ids, err := p.rangeJobIDsWithPrioritized(ctx, keys, start, end)
 			if err != nil {
 				return taskIDs, err
 			}
@@ -112,7 +131,7 @@ func (p *Producer) RemoveQueuedJobsForTasks(ctx context.Context, taskIDs map[str
 			if end >= removeScanLimit {
 				end = removeScanLimit - 1
 			}
-			ids, err := p.rangeJobIDs(ctx, keys, start, end)
+			ids, err := p.rangeJobIDsWithPrioritized(ctx, keys, start, end)
 			if err != nil {
 				return result, err
 			}
