@@ -133,8 +133,11 @@ func openReconcileFixture(t *testing.T, redisDB int) *reconcileFixture {
 // stores, so the reconciliation reads a realistic value.
 func (f *reconcileFixture) seedSetting(t *testing.T, key, value string) {
 	t.Helper()
+	// crawltaskwrite (an earlier step in this job) creates SystemSetting with
+	// createdAt/updatedAt NOT NULL and no defaults, so both are supplied.
 	if _, err := f.db.ExecContext(f.ctx,
-		"INSERT INTO SystemSetting (`key`, value, updatedAt) VALUES (?, ?, NOW(3))", key, value); err != nil {
+		"INSERT INTO SystemSetting (`key`, value, createdAt, updatedAt) VALUES (?, ?, NOW(3), NOW(3))",
+		key, value); err != nil {
 		t.Fatalf("seed setting %s: %v", key, err)
 	}
 }
