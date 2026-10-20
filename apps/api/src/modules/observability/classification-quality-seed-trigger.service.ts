@@ -1,6 +1,7 @@
 import { createLogger } from "@modular/utils";
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 
+import { EnvService } from "../config/config.service";
 import { QueueEventPayload, QueueEventPublisher } from "../queue/queue-event.publisher";
 
 import { ClassificationQualityService } from "./classification-quality.service";
@@ -18,9 +19,24 @@ export class ClassificationQualitySeedTriggerService
   constructor(
     private readonly queueEvents: QueueEventPublisher,
     private readonly classificationQuality: ClassificationQualityService,
+    private readonly env: EnvService,
   ) {}
 
   onModuleInit() {
+    // API_GO_CLASSIFICATION_REVIEW_SEED_MODE=go means api-go consumes the same
+    // itemPipeline completed events and enqueues the review-seed job. Running
+    // both sides would be safe (the BullMQ job id is stable), but only the Go
+    // consumer should do the work after the switchover.
+    const owner =
+      this.env.get<string>("API_GO_CLASSIFICATION_REVIEW_SEED_MODE", {
+        infer: true,
+      }) ?? "legacy";
+    if (owner === "go") {
+      this.logger.info(
+        "Classification review seed trigger disabled: owned by api-go (API_GO_CLASSIFICATION_REVIEW_SEED_MODE=go)",
+      );
+      return;
+    }
     this.unsubscribe = this.queueEvents.registerListener((orgId, payload) =>
       this.handlePipelineQueueEvent(orgId, payload),
     );

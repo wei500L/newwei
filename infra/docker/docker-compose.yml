@@ -492,11 +492,20 @@ services:
       # 归档准备 worker（archivePreparation，并发 1）。Nest 与 Go 同一变量；
       # go 时 Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go。
       API_GO_ARCHIVE_PREPARATION_WORKER_MODE: ${API_GO_ARCHIVE_PREPARATION_WORKER_MODE:-legacy}
-      # 分类质量报告创建、队列消费权与流水线运行记录。三个开关互相独立，默认
-      # legacy。worker 开关 Nest 与 Go 都读：go 时 Nest 不再建 Worker，由 api-go 消费。
+      # 分类质量报告创建、队列消费权、流水线运行记录与两条写接口。各开关互相
+      # 独立，默认 legacy。worker/清理/复核样本/启动对齐开关 Nest 与 Go 都读：
+      # go 时 Nest 不再启动对应的定时器、监听或启动对齐。指标与写接口只需切
+      # api-go 的开关。
       API_GO_CLASSIFICATION_REPORTS_MODE: ${API_GO_CLASSIFICATION_REPORTS_MODE:-legacy}
       API_GO_CLASSIFICATION_QUALITY_WORKER_MODE: ${API_GO_CLASSIFICATION_QUALITY_WORKER_MODE:-legacy}
       API_GO_PIPELINE_RECOVERY_MODE: ${API_GO_PIPELINE_RECOVERY_MODE:-legacy}
+      # 保留任务清理、分类复核样本触发、流水线恢复写、指标端点与启动对齐。
+      # 后四项见 .env.sample 的说明；后台类切换先 api=go 再 api-go=go，回退反向。
+      API_GO_BULLMQ_CLEANUP_MODE: ${API_GO_BULLMQ_CLEANUP_MODE:-legacy}
+      API_GO_CLASSIFICATION_REVIEW_SEED_MODE: ${API_GO_CLASSIFICATION_REVIEW_SEED_MODE:-legacy}
+      API_GO_PIPELINE_RECOVERY_WRITE_MODE: ${API_GO_PIPELINE_RECOVERY_WRITE_MODE:-legacy}
+      API_GO_METRICS_MODE: ${API_GO_METRICS_MODE:-legacy}
+      API_GO_STARTUP_RECONCILE_MODE: ${API_GO_STARTUP_RECONCILE_MODE:-legacy}
       # AI 助手执行权。提交/删除 Mutation 的 Go 接管与 worker 消费是两个独立
       # 开关，只接受空串/legacy/go，非法值启动失败。默认均 legacy：四个
       # Mutation 与 assistant worker 都仍由 NestJS 处理。切换 worker 前先把
@@ -1009,9 +1018,31 @@ services:
       API_GO_CLASSIFICATION_QUALITY_WORKER_MODE: ${API_GO_CLASSIFICATION_QUALITY_WORKER_MODE:-legacy}
       # 流水线恢复运行记录 1 条 GET。样例保持 legacy。改成 go 才由 Go 验签并读
       # MySQL ItemMeta 与 Mongo processeditems/tasklogs；要求 JWT_SECRET、
-      # DATABASE_URL、MONGO_URI。replay/rollback 依赖条目流水线生产者（未合入），
-      # 继续回 NestJS。回滚只把该变量改回 legacy。
+      # DATABASE_URL、MONGO_URI。两条写接口由下面的独立开关控制。回滚只把该
+      # 变量改回 legacy。
       API_GO_PIPELINE_RECOVERY_MODE: ${API_GO_PIPELINE_RECOVERY_MODE:-legacy}
+      # 流水线恢复写接口（POST replay/rollback）。样例保持 legacy。go 由 Go 验签、
+      # 克隆 RawItem/写 ProcessedItem 并投递 itemPipeline；要求 JWT_SECRET、
+      # DATABASE_URL、MONGO_URI、REDIS_HOST。回滚只把该变量（或 api 侧对应变量）
+      # 改回 legacy。
+      API_GO_PIPELINE_RECOVERY_WRITE_MODE: ${API_GO_PIPELINE_RECOVERY_WRITE_MODE:-legacy}
+      # 保留任务清理。样例保持 legacy=NestJS 定时器。go 时 NestJS 不再启动定时器，
+      # 由 api-go 在 lock:cron:bullmq-retained-cleanup 下启动即清理一次、之后每小时
+      # 一次；要求 REDIS_HOST。回退时先把 api 侧改回 legacy。
+      API_GO_BULLMQ_CLEANUP_MODE: ${API_GO_BULLMQ_CLEANUP_MODE:-legacy}
+      # 分类复核样本触发。样例保持 legacy=NestJS 监听。go 时由 api-go 在唯一的
+      # itemPipeline 事件流读取循环上入队 review_seed_item；要求 REDIS_HOST。
+      # 任务 id 幂等，回退不会重复入队。
+      API_GO_CLASSIFICATION_REVIEW_SEED_MODE: ${API_GO_CLASSIFICATION_REVIEW_SEED_MODE:-legacy}
+      # Prometheus 指标端点。样例保持 legacy=NestJS。go 时由 api-go 输出文本格式；
+      # 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST。nodejs_* 进程指标改为
+      # go_*/process_*，监控面板需同步调整。回滚只把该变量改回 legacy。
+      API_GO_METRICS_MODE: ${API_GO_METRICS_MODE:-legacy}
+      # 启动对齐（TTL 索引 + Elasticsearch ensureIndex）。样例保持 legacy=NestJS
+      # onModuleInit。go 时 api-go 启动后异步执行，失败只记录 warn，并用
+      # lock:startup:reconcile 保证多副本只执行一次；要求 REDIS_HOST。回退时先把
+      # api 侧改回 legacy。
+      API_GO_STARTUP_RECONCILE_MODE: ${API_GO_STARTUP_RECONCILE_MODE:-legacy}
       # NewsNow 本地计算与聚类失败管理的 9 条 HTTP。pilot 与样例保持
       # legacy。改成 go 才由 Go 独立鉴权并读 Redis/Mongo 的
       # rawitems、processeditems 与 newseventclusteringfailures，以及

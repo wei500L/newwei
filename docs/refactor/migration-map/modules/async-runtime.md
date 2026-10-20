@@ -1,5 +1,7 @@
 # async-runtime · 队列、调度、Outbox 与实时传输
 
+2026-10-20残留职责候选限定续核（main d4227721）：BullMQ 保留任务定期清理与 itemPipeline completed → 复核样本触发的候选实现见 [PR #127](https://github.com/wei500L/newwei/pull/127)，未合 main。清理覆盖 15 个 `cleanup.track(queue)` 队列（仅 itemPipelineDlq 另清 wait），Go 侧在 `lock:cron:bullmq-retained-cleanup` 租约下单实例执行；复核样本与 graphqlsubscriptions 共用同一 itemPipeline XREAD 循环，并用固定 jobId 去重。开关 `API_GO_BULLMQ_CLEANUP_MODE` / `API_GO_CLASSIFICATION_REVIEW_SEED_MODE` 默认 legacy，Nest 对应定时器/监听在 go 时跳过。不改覆盖统计。
+
 2026-10-19分析执行限定增量（main91e759b4）：[ANALYSIS-RUNS-001](../tasks/ANALYSIS-RUNS-001.md) reserved，只占analysis队列真正Go producer/consumer（BullMQ5.63.2兼容锁/重试/stalled/retention/关闭）、三分析计算/SSE/结果/最终通知，Nest仅legacy、owner gate/回滚恢复窄修与本地通知接缝。双独立默认legacy开关分三写与后台owner，后台单开无JWT；不依赖其他未合producer。不占Assistant/其他queue/cron/Outbox或四订阅transport。main尚无Go worker，本批未实施，GAP-ANALYSIS-001开放。
 
 2026-10-19条目入库限定增量（main91e759b4）：[ITEMS-INGEST-001](../tasks/ITEMS-INGEST-001.md) reserved，[提示词](../tasks/ITEMS-INGEST-001.prompt.md)只领取raw_item MongoOutbox同步投递/定时重试及itemPipeline窄producer。后台独立owner模式默认legacy，Nest仅Cron在go时退出，旧同步请求继续按行CAS；三状态合并50/5分钟stale/10次dead、原锁token续租和引用受限补偿保持，其他Outbox归原任务/Nest。新增Go兼容BullMQ5.63.2 producer不等于worker/QueueEvents已迁；后两者本批不动。纯补偿模式DB/Redis/Mongo、无JWT，写模式另需JWT；未实施或运行，不改历史全域核对日期。

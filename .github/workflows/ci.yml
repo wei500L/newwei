@@ -466,6 +466,19 @@ jobs:
       - name: Alert worker integration tests (queue protocol, claim transaction, delivery state machine, scan)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/alertworker/ -run 'TestAlertWorkerIntegration' -v
 
+      # 本批五项残留职责：真实 MySQL/Redis/Mongo 覆盖清理范围与 B1 租约、复核
+      # 样本事件入队幂等、replay/rollback 的写入与跨组织 404、指标端点鉴权与
+      # 文本格式、启动 TTL 对齐与启动锁。每个包单独一次 go test：包级 FlushDB
+      # 不能并发执行。
+      - name: Residual duties integration tests (BullMQ cleanup + review seed + pipeline writes + metrics + startup reconcile)
+        run: |
+          cd apps/api-go
+          go test -tags=integration -count=1 ./internal/bullmqcleanup/ -run 'TestBullmqCleanup' -v
+          go test -tags=integration -count=1 ./internal/classificationreviewseed/ -run 'TestClassificationReviewSeed' -v
+          go test -tags=integration -count=1 ./internal/pipelinerecovery/ -run 'TestPipelineRecoveryWritesIntegration' -v
+          go test -tags=integration -count=1 ./internal/metrics/ -run 'TestMetricsEndpointAuthorizationIntegration' -v
+          go test -tags=integration -count=1 ./internal/startupreconcile/ -run 'TestStartupReconcile' -v
+
       # 真实 MySQL/Redis/Mongo + 真 Go worker + Node BullMQ 5.63.2 + 本地
       # HTTP SSE fixture。fixture 通过只证明协议与本地闭环，不代表真实外部
       # 模型、生产数据或多实例切换已验证。

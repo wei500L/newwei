@@ -242,6 +242,13 @@ type QueueObserver struct {
 	local     map[string]localContextEntry
 	lastPrune time.Time
 
+	// completedMu guards the extra consumers registered on this read loop.
+	// Review-seed triggering and any future itemPipeline observer share the one
+	// XREAD loop instead of opening a second one (optimization O2).
+	completedMu       sync.Mutex
+	completedHandlers map[uint64]PipelineCompletedHandler
+	nextCompletedID   uint64
+
 	startOnce sync.Once
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
@@ -333,6 +340,12 @@ func (q *QueueObserver) handle(ctx context.Context, entry StreamEntry) {
 		Timestamp: contract.FormatDateTime(q.clock().UTC()),
 	}
 	q.hub.publish(jobContext.OrgID, FeedEvent{Value: model}, terminal)
+	if event == "COMPLETED" {
+		// Extra consumers (classification review seed) observe the same entry
+		// after the GraphQL feed has been handed off, so enqueue latency never
+		// delays a subscriber. Handlers resolve their own errors.
+		q.dispatchPipelineCompleted(ctx, entry.ID, jobID, jobContext.OrgID, data)
+	}
 	if terminal {
 		// Keep the shared cache so a cold instance can still resolve the
 		// removed job; only this instance's local context is gone.
@@ -578,6 +591,9 @@ func (q *QueueObserver) Close(ctx context.Context) error {
 	case <-ctx.Done():
 	}
 	q.hub.closeAll()
+	q.completedMu.Lock()
+	q.completedHandlers = nil
+	q.completedMu.Unlock()
 	if q.store != nil {
 		return q.store.Close()
 	}

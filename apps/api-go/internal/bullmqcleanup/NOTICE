@@ -1,0 +1,74 @@
+BullMQ Lua scripts (expanded)
+================================
+
+Files in this directory:
+
+  cleanJobsInSet.lua
+  getCounts.lua
+  getRanges.lua
+  removeJob.lua
+
+Origin
+------
+
+Extracted from the locked dependency in this repository:
+
+  node_modules/.pnpm/bullmq@5.63.2/node_modules/bullmq/dist/cjs/scripts/*.js
+
+Each file there embeds the fully expanded script (the `--- @include` directives of
+`dist/cjs/commands/*.lua` resolved) as the `content` template literal. The files
+here are that embedded content copied verbatim, so the requires/includes and the
+function ordering are exactly what BullMQ 5.63.2 executes against Redis.
+
+Mapping from BullMQ command names (and script versions) to file names:
+
+  cleanJobsInSet:3   -> cleanJobsInSet.lua
+  getCounts:1        -> getCounts.lua
+  getRanges:1        -> getRanges.lua
+  removeJob:2        -> removeJob.lua
+
+Why the scripts are vendored
+----------------------------
+
+The NestJS BullmqQueueCleanupService calls Queue.clean(), Queue.getJobCounts(),
+Queue.getJobs() and Job.remove(). Each of those resolves to the scripts above.
+Re-implementing their range/lock/marker semantics in Go would drift; running the
+same Lua keeps the deleted set and the surviving jobs identical to NestJS.
+
+The Go call sites pass the same keys and argument tuples the matching BullMQ
+JavaScript methods build (classes/queue.js, classes/queue-getters.js and
+classes/scripts.js of the same version).
+
+Licence
+-------
+
+BullMQ is MIT licensed:
+
+  MIT License
+
+  Copyright (c) 2018 BullForce Labs AB.
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+Upgrade note
+------------
+
+When bullmq is upgraded, re-extract these four files from the new
+`dist/cjs/scripts/*.js` and update the version references above. The Go call
+sites must then be re-checked against classes/scripts.js.

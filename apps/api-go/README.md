@@ -154,6 +154,58 @@ Go-批4B 故事详情在同一真实栈里已验证缓存命中的 id/slug、公
 | `CANARY_PERCENT` | 0 | canary 分流比例（0=legacy，100=go；当前无 ModeCanary 路由） |
 | `DATABASE_URL` | （空） | MySQL 连接（Prisma 同名同格式 `mysql://user:pass@host:port/db`）。user-settings 只读 shadow（六个 GET 的旁路查询）+ `go` 模式下 authz RBAC 重推导与业务查询共用同一连接池。shadow 模式下**空/无效时网关照常启动并代理全部请求**（shadow 单元跳过，`/__go/healthz` 报 `userSettingsRead.database` 为 `unconfigured`/`invalid`；`configured` 只代表 DSN 已解析为 driver 配置——`sql.Open` 是惰性初始化，不承诺数据库可连接）；`go` 模式下必填且 DSN 无效启动失败。值本身不进入日志/healthz/错误文本 |
 
+## Nest 残留职责（本批五项开关）
+
+五个开关都只接受空串/`legacy`/`go`，默认 `legacy`（行为与合入前的 main 完全一致），
+非法值在 Nest 与 Go 启动失败。后台类先把 api 服务设为 `go`，再把 api-go 设为
+`go`；回退顺序相反。接口类只需要切 api-go 的开关。
+
+| 环境变量 | 默认 | 说明 |
+|---|---|---|
+| `API_GO_BULLMQ_CLEANUP_MODE` | legacy | 保留任务清理。`go` 时 NestJS 不再启动每进程每小时一次的定时器（`track` 仍登记资源用于关闭），由 api-go 在 `lock:cron:bullmq-retained-cleanup`（55 分钟租约、自动续租）下启动即清理一次、之后每小时一次。要求 `REDIS_HOST`。清理本身幂等，切换窗口短暂重叠不会出错 |
+| `API_GO_CLASSIFICATION_REVIEW_SEED_MODE` | legacy | 分类复核样本触发。`go` 时 NestJS 不注册 `itemPipeline` COMPLETED 监听，api-go 把自己的消费者挂到进程内唯一的 `bull:itemPipeline:events` XREAD 循环（GraphQL 订阅运行时已启用时复用它的循环，否则本单元创建并启动一个）。要求 `REDIS_HOST`。复核样本任务 id 为 `classification-quality-review-seed-item:<orgId>:<processedItemId>`，BullMQ 对重复 id 返回已存在任务，因此多实例或切换重叠只入队一次 |
+| `API_GO_PIPELINE_RECOVERY_WRITE_MODE` | legacy | `POST /api/admin/quality/pipeline/replay` 与 `/rollback`。`go` 时由 Go 验签（`settings.manage`，含 `mtk_` 机器令牌）、按 orgId 查 ItemMeta、克隆 RawItem 或写 ProcessedItem、更新 ItemMeta 并投递 itemPipeline；成功返回 201，错误文案与 Nest 一致（404 `Item not found` / `Raw item not found`，400 duplicate / `Invalid rawItemId` / `rawItemId does not belong to item`）。要求 `JWT_SECRET`、`DATABASE_URL`、`MONGO_URI`、`REDIS_HOST`。与 `API_GO_PIPELINE_RECOVERY_MODE`（GET runs）独立 |
+| `API_GO_METRICS_MODE` | legacy | `GET /api/metrics`。`go` 时由 Go 输出 Prometheus 文本格式（`text/plain; version=0.0.4; charset=utf-8`）。鉴权与 Nest 一致：`metrics.read` + 平台管理员；`mtk_` 机器令牌另查创建者当前是否平台管理员。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST` |
+| `API_GO_STARTUP_RECONCILE_MODE` | legacy | 启动对齐。`go` 时 NestJS 跳过 TaskLog、LLM 请求日志与 Elasticsearch 的 `onModuleInit` 索引对齐，api-go 在启动后异步执行（不阻塞监听、失败只记 warn）：读取两个保留设置并应用 Mongo TTL 索引，配置了 Elasticsearch 时执行 `ensureIndex`。`lock:startup:reconcile` 保证多副本只执行一次。要求 `REDIS_HOST`；Mongo/MySQL/Elasticsearch 缺失或失败只记 warn |
+
+### 队列清理清单
+
+`bull:*` 前缀（Nest 未设置自定义 prefix）。所有队列清理 failed；只有
+`itemPipelineDlq` 同时清理 wait。
+
+| 队列 | failed | wait |
+|---|---|---|
+| `assistant`、`analysis`、`archivePreparation`、`classification_quality`、`alerts`、`crawl4ai`、`crawl4ai-hot`、`crawl4ai-normal`、`frontier-llm-judge`、`frontier-llm-learn`、`news_event_clustering_recovery`、`itemPipeline`、`situationMonitorSignals`、`akshare-data` | 7 天 / 10000 | 不清理 |
+| `itemPipelineDlq` | 30 天 / 20000 | 30 天 / 20000 |
+
+每个状态先按时间 `clean`（每批 1000，最多 10 批，不足 1000 即停），再按数量从最旧
+开始每批 1000 逐个移除（总数最多 10000）。按数量修剪使用 Redis pipeline 每批一次
+往返（等价于 Nest 的逐任务 `job.remove()`；被锁住的任务同样跳过）。
+
+### Prometheus 进程指标名称变化
+
+Nest 的 `prom-client` 默认指标是 `nodejs_*`，Go 进程没有事件循环，因此改为
+`go_*` / `process_*`。自定义指标族（名称、类型、标签、直方图桶）保持不变：
+`http_request_duration_seconds`、`background_job_duration_seconds`、
+`integration_events_total`、`scheduler_runs_total`、`pipeline_metric_value`。
+其他 Go 迁移单元可直接调用 `internal/metrics` 的 `RecordSchedulerRun` 等函数，
+无需再建第二个注册表。
+
+| Nest（`nodejs_*`） | Go |
+|---|---|
+| `nodejs_process_cpu_seconds_total` | `process_cpu_seconds_total` |
+| `nodejs_process_start_time_seconds` | `process_start_time_seconds` |
+| `nodejs_heap_size_total_bytes` | `go_memstats_heap_sys_bytes` |
+| `nodejs_heap_size_used_bytes` | `go_memstats_heap_alloc_bytes` |
+| `nodejs_heap_space_size_available_bytes` | `go_memstats_heap_inuse_bytes` |
+| `nodejs_external_memory_bytes` | `go_memstats_sys_bytes` |
+| `nodejs_version_info` | `go_info{version="..."}` |
+| `nodejs_gc_duration_seconds` | 不提供（summary 类型不在本批范围） |
+| `nodejs_eventloop_lag_seconds`、`nodejs_active_handles*`、`nodejs_active_requests*` | 不适用 |
+
+另输出 `go_goroutines`、`go_memstats_*`、`go_gc_cycles_total`。使用 `nodejs_*` 的
+监控面板与告警需要按上表调整。
+
 ## 四态路由（当前路由表）
 
 路由匹配：**迁移单元 = exact path + method 白名单**。相似路径、POST 以及写模式为 `legacy` 时的 PUT 回落 `/api/`。写模式为 `go` 时，同一六个路径的 PUT 另有 exact+PUT 规则。

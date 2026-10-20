@@ -440,9 +440,9 @@ const (
 // go requires JWT_SECRET, DATABASE_URL and MONGO_URI: ItemMeta comes from MySQL,
 // ProcessedItem and TaskLog from Mongo, and the route keeps settings.manage.
 //
-// POST /replay and POST /rollback are not part of this switch: they need the
-// item pipeline producer (internal/pipelineenqueue), which is not on main yet, so
-// both keep proxying to NestJS.
+// POST /replay and POST /rollback are not part of this switch; they are owned by
+// PipelineRecoveryWriteMode, so the read and the writes can be switched
+// independently.
 type PipelineRecoveryMode string
 
 const (
@@ -450,6 +450,84 @@ const (
 	PipelineRecoveryModeLegacy PipelineRecoveryMode = "legacy"
 	// PipelineRecoveryModeGo serves the read from Go.
 	PipelineRecoveryModeGo PipelineRecoveryMode = "go"
+)
+
+// BullmqCleanupMode controls ownership of the retained-job cleanup for every
+// tracked business queue (API_GO_BULLMQ_CLEANUP_MODE). The default is legacy.
+//
+// go stops the per-process NestJS timers and lets api-go run one leased cycle
+// (lock:cron:bullmq-retained-cleanup) immediately after start and then hourly.
+// Cleanup is idempotent, so a brief overlap while switching is harmless.
+type BullmqCleanupMode string
+
+const (
+	// BullmqCleanupModeLegacy leaves every cleanup timer in NestJS.
+	BullmqCleanupModeLegacy BullmqCleanupMode = "legacy"
+	// BullmqCleanupModeGo runs the cleanup in api-go.
+	BullmqCleanupModeGo BullmqCleanupMode = "go"
+)
+
+// ClassificationReviewSeedMode controls who enqueues classification review-seed
+// jobs after an itemPipeline job completes
+// (API_GO_CLASSIFICATION_REVIEW_SEED_MODE). The default is legacy.
+//
+// go attaches the consumer to api-go's single itemPipeline events reader and
+// stops the NestJS listener. The review-seed job id is stable per organization
+// and processed item, so several api-go instances or a switchover overlap still
+// enqueue one job.
+type ClassificationReviewSeedMode string
+
+const (
+	// ClassificationReviewSeedModeLegacy keeps the NestJS listener.
+	ClassificationReviewSeedModeLegacy ClassificationReviewSeedMode = "legacy"
+	// ClassificationReviewSeedModeGo triggers the enqueue from api-go.
+	ClassificationReviewSeedModeGo ClassificationReviewSeedMode = "go"
+)
+
+// PipelineRecoveryWriteMode controls POST
+// /api/admin/quality/pipeline/replay and /rollback
+// (API_GO_PIPELINE_RECOVERY_WRITE_MODE). The default is legacy.
+//
+// go requires JWT_SECRET, DATABASE_URL, MONGO_URI and REDIS_HOST. It is
+// independent of PipelineRecoveryMode, which still owns the runs read.
+type PipelineRecoveryWriteMode string
+
+const (
+	// PipelineRecoveryWriteModeLegacy keeps both writes on NestJS.
+	PipelineRecoveryWriteModeLegacy PipelineRecoveryWriteMode = "legacy"
+	// PipelineRecoveryWriteModeGo serves both writes from Go.
+	PipelineRecoveryWriteModeGo PipelineRecoveryWriteMode = "go"
+)
+
+// MetricsMode controls GET /api/metrics (API_GO_METRICS_MODE). The default is
+// legacy, where NestJS serves the prom-client registry.
+//
+// go requires JWT_SECRET, DATABASE_URL and REDIS_HOST because the endpoint
+// requires metrics.read plus a platform administrator, and a machine-token
+// bearer is checked against its creator's current platform_admin role.
+type MetricsMode string
+
+const (
+	// MetricsModeLegacy keeps the scrape on NestJS.
+	MetricsModeLegacy MetricsMode = "legacy"
+	// MetricsModeGo serves the scrape from the Go registry.
+	MetricsModeGo MetricsMode = "go"
+)
+
+// StartupReconcileMode controls the asynchronous startup alignment of the
+// TaskLog and LLM request log Mongo TTL indexes and, when configured, the
+// Elasticsearch items index (API_GO_STARTUP_RECONCILE_MODE). The default is
+// legacy.
+//
+// go requires REDIS_HOST for the startup:reconcile lease. Mongo, MySQL and
+// Elasticsearch failures are warnings: they never block startup.
+type StartupReconcileMode string
+
+const (
+	// StartupReconcileModeLegacy keeps both onModuleInit hooks in NestJS.
+	StartupReconcileModeLegacy StartupReconcileMode = "legacy"
+	// StartupReconcileModeGo runs the reconciliation in api-go.
+	StartupReconcileModeGo StartupReconcileMode = "go"
 )
 
 // NewsnowClusteringOpsMode controls the nine NewsNow local-computation and
@@ -2955,6 +3033,13 @@ type Config struct {
 	ClassificationReportsMode       ClassificationReportsMode
 	ClassificationQualityWorkerMode ClassificationQualityWorkerMode
 	PipelineRecoveryMode            PipelineRecoveryMode
+	// The five residual-duty switches. All default to legacy, accept only "",
+	// "legacy" and "go", and fail startup on any other value.
+	BullmqCleanupMode            BullmqCleanupMode
+	ClassificationReviewSeedMode ClassificationReviewSeedMode
+	PipelineRecoveryWriteMode    PipelineRecoveryWriteMode
+	MetricsMode                  MetricsMode
+	StartupReconcileMode         StartupReconcileMode
 	// NewsProcessQueueConcurrency mirrors NEWS_PROCESS_QUEUE_CONCURRENCY
 	// (default 8). The clustering recovery worker uses max(1, min(2, value));
 	// the quality worker uses max(1, min(4, value)).
@@ -3509,6 +3594,46 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.PipelineRecoveryMode = PipelineRecoveryModeGo
 	default:
 		errs = append(errs, "API_GO_PIPELINE_RECOVERY_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_BULLMQ_CLEANUP_MODE")) {
+	case "", string(BullmqCleanupModeLegacy):
+		cfg.BullmqCleanupMode = BullmqCleanupModeLegacy
+	case string(BullmqCleanupModeGo):
+		cfg.BullmqCleanupMode = BullmqCleanupModeGo
+	default:
+		errs = append(errs, "API_GO_BULLMQ_CLEANUP_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_REVIEW_SEED_MODE")) {
+	case "", string(ClassificationReviewSeedModeLegacy):
+		cfg.ClassificationReviewSeedMode = ClassificationReviewSeedModeLegacy
+	case string(ClassificationReviewSeedModeGo):
+		cfg.ClassificationReviewSeedMode = ClassificationReviewSeedModeGo
+	default:
+		errs = append(errs, "API_GO_CLASSIFICATION_REVIEW_SEED_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_PIPELINE_RECOVERY_WRITE_MODE")) {
+	case "", string(PipelineRecoveryWriteModeLegacy):
+		cfg.PipelineRecoveryWriteMode = PipelineRecoveryWriteModeLegacy
+	case string(PipelineRecoveryWriteModeGo):
+		cfg.PipelineRecoveryWriteMode = PipelineRecoveryWriteModeGo
+	default:
+		errs = append(errs, "API_GO_PIPELINE_RECOVERY_WRITE_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_METRICS_MODE")) {
+	case "", string(MetricsModeLegacy):
+		cfg.MetricsMode = MetricsModeLegacy
+	case string(MetricsModeGo):
+		cfg.MetricsMode = MetricsModeGo
+	default:
+		errs = append(errs, "API_GO_METRICS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_STARTUP_RECONCILE_MODE")) {
+	case "", string(StartupReconcileModeLegacy):
+		cfg.StartupReconcileMode = StartupReconcileModeLegacy
+	case string(StartupReconcileModeGo):
+		cfg.StartupReconcileMode = StartupReconcileModeGo
+	default:
+		errs = append(errs, "API_GO_STARTUP_RECONCILE_MODE must be one of legacy|go")
 	}
 	if raw := strings.TrimSpace(getenv("NEWS_PROCESS_QUEUE_CONCURRENCY")); raw != "" {
 		value, err := strconv.Atoi(raw)
@@ -5026,6 +5151,27 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_ANALYSIS_RUNS_MODE=go")
 		}
+	}
+	// The residual-duty switches. The cleanup, review-seed and startup units are
+	// Redis-only; the two HTTP units need the credentialed stack, and both
+	// pipeline writes also read and write Mongo.
+	if cfg.BullmqCleanupMode == BullmqCleanupModeGo && cfg.RedisHost == "" {
+		errs = append(errs, "REDIS_HOST is required when API_GO_BULLMQ_CLEANUP_MODE=go")
+	}
+	if cfg.ClassificationReviewSeedMode == ClassificationReviewSeedModeGo && cfg.RedisHost == "" {
+		errs = append(errs, "REDIS_HOST is required when API_GO_CLASSIFICATION_REVIEW_SEED_MODE=go")
+	}
+	if cfg.PipelineRecoveryWriteMode == PipelineRecoveryWriteModeGo {
+		appendAuthRequirements(&errs, "API_GO_PIPELINE_RECOVERY_WRITE_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_PIPELINE_RECOVERY_WRITE_MODE=go")
+		}
+	}
+	if cfg.MetricsMode == MetricsModeGo {
+		appendAuthRequirements(&errs, "API_GO_METRICS_MODE", cfg)
+	}
+	if cfg.StartupReconcileMode == StartupReconcileModeGo && cfg.RedisHost == "" {
+		errs = append(errs, "REDIS_HOST is required when API_GO_STARTUP_RECONCILE_MODE=go")
 	}
 	// The worker owner needs no JWT: it consumes jobs, computes, streams the
 	// model, writes Mongo/MySQL and publishes the GraphQL subscription event.

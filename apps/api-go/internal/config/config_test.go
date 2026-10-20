@@ -4389,3 +4389,103 @@ func TestNewsSourceSwitchesRequireTheirDependencies(t *testing.T) {
 		t.Fatalf("ops go error = %v, want a JWT_SECRET requirement", err)
 	}
 }
+
+// TestResidualDutyModes pins the five switches: default legacy, explicit
+// legacy, go, and an invalid value that fails startup. A go value also honours
+// its resource requirements.
+func TestResidualDutyModes(t *testing.T) {
+	names := []struct {
+		key   string
+		apply func(*Config) string
+	}{
+		{"API_GO_BULLMQ_CLEANUP_MODE", func(cfg *Config) string { return string(cfg.BullmqCleanupMode) }},
+		{"API_GO_CLASSIFICATION_REVIEW_SEED_MODE", func(cfg *Config) string { return string(cfg.ClassificationReviewSeedMode) }},
+		{"API_GO_PIPELINE_RECOVERY_WRITE_MODE", func(cfg *Config) string { return string(cfg.PipelineRecoveryWriteMode) }},
+		{"API_GO_METRICS_MODE", func(cfg *Config) string { return string(cfg.MetricsMode) }},
+		{"API_GO_STARTUP_RECONCILE_MODE", func(cfg *Config) string { return string(cfg.StartupReconcileMode) }},
+	}
+	fullEnv := map[string]string{
+		"JWT_SECRET":   "secret",
+		"DATABASE_URL": "mysql://user:pass@127.0.0.1:3306/app",
+		"REDIS_HOST":   "127.0.0.1",
+		"MONGO_URI":    "mongodb://127.0.0.1:27017/app",
+	}
+	for _, name := range names {
+		name := name
+		t.Run(name.key+" default", func(t *testing.T) {
+			cfg, err := Load(func(string) string { return "" })
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got := name.apply(&cfg); got != "legacy" {
+				t.Fatalf("%s default = %q, want legacy", name.key, got)
+			}
+		})
+		t.Run(name.key+" legacy", func(t *testing.T) {
+			cfg, err := Load(func(key string) string {
+				if key == name.key {
+					return "legacy"
+				}
+				return ""
+			})
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got := name.apply(&cfg); got != "legacy" {
+				t.Fatalf("%s = %q, want legacy", name.key, got)
+			}
+		})
+		t.Run(name.key+" go", func(t *testing.T) {
+			cfg, err := Load(func(key string) string {
+				if key == name.key {
+					return "go"
+				}
+				return fullEnv[key]
+			})
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got := name.apply(&cfg); got != "go" {
+				t.Fatalf("%s = %q, want go", name.key, got)
+			}
+		})
+		t.Run(name.key+" invalid", func(t *testing.T) {
+			_, err := Load(func(key string) string {
+				if key == name.key {
+					return "on"
+				}
+				return ""
+			})
+			if err == nil || !strings.Contains(err.Error(), name.key+" must be one of legacy|go") {
+				t.Fatalf("Load() error = %v", err)
+			}
+		})
+	}
+}
+
+// TestResidualDutyModesRequireResources pins the startup requirements each go
+// mode declares: Redis for the three background units, the credentialed stack
+// for the two HTTP units, and Mongo for the pipeline writes.
+func TestResidualDutyModesRequireResources(t *testing.T) {
+	cases := []struct {
+		key  string
+		want string
+	}{
+		{"API_GO_BULLMQ_CLEANUP_MODE", "REDIS_HOST is required when API_GO_BULLMQ_CLEANUP_MODE=go"},
+		{"API_GO_CLASSIFICATION_REVIEW_SEED_MODE", "REDIS_HOST is required when API_GO_CLASSIFICATION_REVIEW_SEED_MODE=go"},
+		{"API_GO_PIPELINE_RECOVERY_WRITE_MODE", "JWT_SECRET is required when API_GO_PIPELINE_RECOVERY_WRITE_MODE=go"},
+		{"API_GO_METRICS_MODE", "JWT_SECRET is required when API_GO_METRICS_MODE=go"},
+		{"API_GO_STARTUP_RECONCILE_MODE", "REDIS_HOST is required when API_GO_STARTUP_RECONCILE_MODE=go"},
+	}
+	for _, tc := range cases {
+		_, err := Load(func(key string) string {
+			if key == tc.key {
+				return "go"
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s error = %v, want %q", tc.key, err, tc.want)
+		}
+	}
+}

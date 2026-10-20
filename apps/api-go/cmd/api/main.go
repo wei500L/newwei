@@ -926,6 +926,19 @@ func run() error {
 		pipelineRecoveryMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithPipelineRecovery(rules, pipelineRecoveryMode)
+	// The two pipeline recovery writes and the metrics scrape are independent
+	// ownership switches. They register exact, method-scoped rules so no other
+	// method or path moves with them.
+	pipelineRecoveryWriteMode := ""
+	if cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo {
+		pipelineRecoveryWriteMode = string(legacyproxy.ModeGo)
+	}
+	rules = legacyproxy.WithPipelineRecoveryWrite(rules, pipelineRecoveryWriteMode)
+	metricsRouteMode := ""
+	if cfg.MetricsMode == config.MetricsModeGo {
+		metricsRouteMode = string(legacyproxy.ModeGo)
+	}
+	rules = legacyproxy.WithMetrics(rules, metricsRouteMode)
 	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
 	// The two public source fetch routes. Registered after the local-computation
 	// rules; the two rule sets share no path.
@@ -1059,6 +1072,8 @@ func run() error {
 				cfg.ClassificationReportsMode == config.ClassificationReportsModeGo ||
 				cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
 				cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
+				cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
+				cfg.MetricsMode == config.MetricsModeGo ||
 				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo ||
 				cfg.NewsClusteringRecoveryWorkerMode == config.NewsClusteringRecoveryWorkerModeGo ||
@@ -1309,6 +1324,8 @@ func run() error {
 		cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
 		cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
 		newsSourcePreviewGo || crawlWorkflowTrialGo || analysisRunsGo ||
+		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
+		cfg.MetricsMode == config.MetricsModeGo ||
 		graphqlSubscriptionsGo || notificationsSocketGo
 	var redisClient *redis.Client
 	var redisOptions *redis.Options
@@ -1343,7 +1360,12 @@ func run() error {
 		cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo ||
 		cfg.ArchivePreparationWorkerMode == config.ArchivePreparationWorkerModeGo ||
 		analysisWorkerGo ||
-		notificationsSocketGo
+		notificationsSocketGo ||
+		cfg.BullmqCleanupMode == config.BullmqCleanupModeGo ||
+		cfg.ClassificationReviewSeedMode == config.ClassificationReviewSeedModeGo ||
+		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
+		cfg.MetricsMode == config.MetricsModeGo ||
+		cfg.StartupReconcileMode == config.StartupReconcileModeGo
 	// The crawl maintenance crons and the audit retention purge take their
 	// leases in the shared Redis even when no HTTP takeover is enabled.
 	if !needsRedis && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
@@ -2698,6 +2720,9 @@ func run() error {
 	// on NestJS. Close stops claiming and drains the in-flight judge/learn job
 	// before the shared Redis/MySQL handles close below.
 	var frontierLlmWorker *crawlfrontierllm.Runtime
+	// The residual duties migrated out of NestJS: leased retained-job cleanup,
+	// the review-seed event consumer, and the startup reconciliation.
+	var residualDuties *residualDutiesRuntime
 	// Ordered teardown for both the SIGTERM path and every error return after
 	// this point, including an HTTP listen failure. The analysis worker stops
 	// first, then the digest scheduler, then background search reindex, then the
@@ -2821,6 +2846,13 @@ func run() error {
 				log.Printf("api-go: crawl maintenance close: %v", closeErr)
 			}
 		}
+		// The residual-duty units stop before the shared Redis/Mongo handles
+		// they use are closed.
+		if residualDuties != nil {
+			if closeErr := residualDuties.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: residual duties close: %v", closeErr)
+			}
+		}
 		// go 模式下 onboarding 鉴权栈持有的 Redis 连接随进程收口。
 		if redisClient != nil {
 			if err := redisClient.Close(); err != nil {
@@ -2844,6 +2876,17 @@ func run() error {
 			readyHandler.Close(closeCtx)
 		}
 	}()
+	// The residual-duty owners register their HTTP handlers and start their
+	// background units. They attach the review-seed consumer to the GraphQL
+	// subscription observer when that runtime already owns the itemPipeline
+	// read loop, so one process keeps one XREAD loop. This runs before the
+	// subscription runtime starts reading so no completed event can slip
+	// between the two.
+	residualDuties, err = startResidualDuties(gateway, cfg, sharedDB, redisClient, redisOptions,
+		authenticator, &dashboardMongo, graphqlSubscriptions)
+	if err != nil {
+		return err
+	}
 	if graphqlSubscriptions != nil {
 		if startErr := graphqlSubscriptions.Start(context.Background()); startErr != nil {
 			return startErr

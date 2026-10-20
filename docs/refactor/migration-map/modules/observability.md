@@ -10,6 +10,8 @@
 
 真实剩余缺口：创建分类质量报告、pipeline recovery runs/replay/rollback 与 metrics 仍见 Nest；普通 CI 不代表真实 crawl4ai/RSS 翻译模型或故障恢复已验证。
 
+2026-10-20残留职责候选限定续核（main d4227721）：pipeline recovery 的 replay/rollback 写接口、`GET /api/metrics` 与启动时 TaskLog/LLM 请求日志 TTL、Elasticsearch `ensureIndex` 对齐的候选实现见 [PR #127](https://github.com/wei500L/newwei/pull/127)，未合 main。三个开关默认 legacy，Nest 控制器与 metrics 端点保留；Go 侧启动对齐以 `lock:startup:reconcile` 保证多副本只执行一次。进程指标由 `nodejs_*` 改为 `go_*`/`process_*`，需监控面板同步调整。不改覆盖统计。
+
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#observability) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 Nest 功能目录：[observability](../../../../apps/api/src/modules/observability)、[health](../../../../apps/api/src/modules/health)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。

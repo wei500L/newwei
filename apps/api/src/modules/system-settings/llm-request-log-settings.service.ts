@@ -12,6 +12,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { normalizeAuditActorId } from "../audit/audit-actor";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import {
   SituationMonitorLockError,
@@ -156,9 +157,26 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
   private cacheExpiresAt = 0;
   private cacheRefreshPromise: Promise<LlmRequestLogSettingsPublic> | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly env: EnvService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
+    // See TaskLogSettingsService: api-go owns the startup TTL alignment when
+    // API_GO_STARTUP_RECONCILE_MODE=go, while the update path keeps its own TTL
+    // reconciliation.
+    const startupOwner =
+      this.env.get<string>("API_GO_STARTUP_RECONCILE_MODE", {
+        infer: true,
+      }) ?? "legacy";
+    if (startupOwner === "go") {
+      this.logger.info(
+        "LLM request log TTL startup reconciliation disabled: owned by api-go (API_GO_STARTUP_RECONCILE_MODE=go)",
+      );
+      this.ttlReconcileReady = true;
+      return;
+    }
     try {
       const settings = await this.refreshSettingsCache();
       await this.applyRetentionTtlIndex(settings.retentionDays);

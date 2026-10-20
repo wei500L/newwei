@@ -38,7 +38,7 @@ export class BullmqQueueCleanupService implements OnModuleDestroy {
     profile?: TrackedCleanupProfile,
   ): T {
     this.resources.set(resource, profile);
-    if (this.resolveProfile(resource, profile)) {
+    if (this.resolveProfile(resource, profile) && this.cleanupSchedulingEnabled()) {
       this.ensureCleanupTimer();
       this.scheduleImmediateCleanup();
     }
@@ -85,6 +85,15 @@ export class BullmqQueueCleanupService implements OnModuleDestroy {
 
     this.resources.clear();
     await Promise.allSettled(tasks);
+  }
+
+  // API_GO_BULLMQ_CLEANUP_MODE=go means api-go runs the leased cleanup, so this
+  // process must not start its own timer (B1: the NestJS timer has no lock and N
+  // instances clean the same queues). Every resource is still tracked so
+  // onModuleDestroy keeps closing queues and QueueEvents. env.schema.ts validates
+  // the value, so reading process.env here cannot see an invalid mode.
+  private cleanupSchedulingEnabled(): boolean {
+    return process.env.API_GO_BULLMQ_CLEANUP_MODE !== "go";
   }
 
   private ensureCleanupTimer(): void {

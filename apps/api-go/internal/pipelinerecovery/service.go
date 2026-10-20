@@ -12,6 +12,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/adminlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
 )
 
 const (
@@ -27,15 +28,25 @@ const (
 
 // Service carries the MySQL and Mongo reads behind the runs endpoint.
 type Service struct {
-	db    *sql.DB
-	mongo *mongo.Database
-	logs  *adminlogs.Service
+	db       *sql.DB
+	mongo    *mongo.Database
+	logs     *adminlogs.Service
+	producer *pipelineenqueue.Producer
 }
 
 // NewService assembles the dependencies. The adminlogs service is reused for
 // machine-token authentication, exactly like the neighbouring quality handlers.
 func NewService(db *sql.DB, database *mongo.Database) *Service {
 	return &Service{db: db, mongo: database, logs: adminlogs.NewService(db, database)}
+}
+
+// NewServiceWithProducer adds the itemPipeline producer that the replay and
+// rollback writes use. The read-only constructor keeps a nil producer so the
+// runs endpoint never depends on Redis.
+func NewServiceWithProducer(db *sql.DB, database *mongo.Database, producer *pipelineenqueue.Producer) *Service {
+	service := NewService(db, database)
+	service.producer = producer
+	return service
 }
 
 // AuthenticateMachine resolves a mtk_ token through the shared adminlogs
