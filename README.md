@@ -357,6 +357,7 @@ pnpm --filter infra-scripts run env:check
 - 助手额度：`ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR`、`ASSISTANT_ORG_MAX_IN_FLIGHT`、`ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET`
 - 助手执行权（提交/删除 Mutation）：`API_GO_GRAPHQL_ASSISTANT_WRITE_MODE`（`legacy` 默认；`go` 时四个 assistant Mutation 由 Go 执行，要求 JWT/MySQL/Redis/Mongo；回滚改回 `legacy`）
 - 助手执行权（BullMQ worker）：`API_GO_ASSISTANT_WORKER_MODE`（`legacy` 默认；`go` 时 NestJS 不创建 AssistantProcessor 的 Worker，由 Go 消费同一 assistant 队列；切换前先把 api 服务设为 `go`，再把 api-go 设为 `go`；回滚按相反顺序）
+- Frontier LLM 判定/学习队列执行权：`API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE`（`legacy` 默认，只接受空串/`legacy`/`go`，非法值在 Nest 与 Go 都启动失败）。`go` 时 NestJS `CrawlQueueProcessor` 只跳过 `frontier-llm-judge` 与 `frontier-llm-learn` 两个 LLM Worker，三个爬取队列 worker 继续由 NestJS 执行；两个 LLM 队列由 Go 消费（并发 1、队列级限速 1/1000ms，与 Nest 共用 `bull:<queue>:limiter`）。`go` 要求 `DATABASE_URL`、`REDIS_HOST` 与 `SYSTEM_SETTINGS_ENCRYPTION_KEY`，不要求 JWT。切换顺序：先把 api 服务设为 `go` 并重启，再把 api-go 设为 `go` 并重启；回退按相反顺序。队列名与任务数据格式不变，回退后 Nest 可继续消费；回退后判定任务失败时 `pendingLlmJudgeJobs` 不再由 Go 收尾（B1 修复失效）
 - 对象存储：`S3_*`（Docker 默认用 MinIO）
 - 经济数据：`AKSHARE_ENABLED`、`AKSHARE_HTTP_BASE_URL`、`AKSHARE_ADMIN_TOKEN`
 - 模型服务：`MODEL_SERVICE_ENABLED`、`MODEL_SERVICE_BASE_URL`、`MODEL_SERVICE_INTERNAL_TOKEN`
