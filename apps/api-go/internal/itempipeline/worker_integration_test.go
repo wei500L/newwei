@@ -122,8 +122,10 @@ func TestItemPipelineWorkerIntegration(t *testing.T) {
 	snapshots := &countingSnapshots{}
 	processor := newIntegrationProcessor(t, db, database, redisClient, pipeline, notifier, snapshots)
 	runtime := startIntegrationWorker(t, redisClient, processor)
-	_ = enqueueIntegrationJob(t, redisClient, database, "trace-success")
-	waitForSetCard(t, redisClient, "bull:itemPipeline:completed", 1, 15*time.Second)
+	jobID := enqueueIntegrationJob(t, redisClient, database, "trace-success")
+	// The producer sets removeOnComplete=true, so a completed job leaves no
+	// completed-set entry; the event stream is the observable completion.
+	waitForEvent(t, redisClient, "completed", jobID, 15*time.Second)
 	stopIntegrationWorker(t, runtime)
 
 	assertItemMetaStatus(t, db, "processing")
@@ -541,6 +543,24 @@ func enqueueIntegrationJob(t *testing.T, redisClient *redis.Client, database *mo
 		t.Fatalf("producer job id = %q, want %q", enqueued, integrationJobID)
 	}
 	return enqueued
+}
+
+func waitForEvent(t *testing.T, redisClient *redis.Client, eventName, jobID string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		entries, err := redisClient.XRange(context.Background(), "bull:itemPipeline:events", "-", "+").Result()
+		if err != nil {
+			t.Fatalf("read events: %v", err)
+		}
+		for _, entry := range entries {
+			if fmt.Sprint(entry.Values["event"]) == eventName && fmt.Sprint(entry.Values["jobId"]) == jobID {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("event %s for job %s did not appear", eventName, jobID)
 }
 
 func waitForHash(t *testing.T, redisClient *redis.Client, key string, timeout time.Duration) {

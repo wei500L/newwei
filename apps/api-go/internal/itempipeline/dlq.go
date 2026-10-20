@@ -142,8 +142,11 @@ func (d *dlqProducer) enqueue(ctx context.Context, originalJobID string, attempt
 	}
 	// BullMQ Redis wire protocol: positional MessagePack array; the parent,
 	// repeat and deduplication slots are null.
+	// BullMQ's add script builds the job hash key as ARGV[1] .. jobId, so the
+	// first argument is the queue key prefix (bull:itemPipelineDlq:), not the
+	// bare "bull" prefix.
 	args := []any{
-		d.keys.Prefix,
+		d.keys.Base,
 		jobID,
 		"dlq",
 		time.Now().UnixMilli(),

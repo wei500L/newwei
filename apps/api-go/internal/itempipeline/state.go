@@ -136,10 +136,12 @@ func (p *Processor) upsertProcessedItemStatus(ctx context.Context, update proces
 	if update.Error == nil {
 		unset = append(unset, bson.E{Key: "error", Value: ""})
 	}
+	// updatedAt is written by $set; MongoDB rejects the same path in $set and
+	// $setOnInsert ("would create a conflict"), so the insert branch relies on
+	// the $set value. The remaining members are the NestJS upsert defaults.
 	setOnInsert := bson.D{
 		{Key: "_id", Value: processedID},
 		{Key: "createdAt", Value: now},
-		{Key: "updatedAt", Value: now},
 		{Key: "ingestedAt", Value: now},
 		{Key: "sortAt", Value: now},
 		{Key: "tags", Value: bson.A{}},

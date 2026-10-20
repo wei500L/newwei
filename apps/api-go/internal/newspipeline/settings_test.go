@@ -299,9 +299,9 @@ func TestSettingsCacheDocumentRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal dedupe cache doc: %v", err)
 	}
-	roundTripped = normalizeDedupeSettings(mustDecodeSettings(t, encoded), reader.fallbackDedupeSettings())
-	if !reflect.DeepEqual(roundTripped, dedupe) {
-		t.Fatalf("dedupe cache round trip mismatch:\n got %#v\nwant %#v", roundTripped, dedupe)
+	dedupeRoundTripped := normalizeDedupeSettings(mustDecodeSettings(t, encoded), reader.fallbackDedupeSettings())
+	if !reflect.DeepEqual(dedupeRoundTripped, dedupe) {
+		t.Fatalf("dedupe cache round trip mismatch:\n got %#v\nwant %#v", dedupeRoundTripped, dedupe)
 	}
 }
 
