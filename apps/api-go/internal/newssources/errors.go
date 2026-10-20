@@ -39,6 +39,16 @@ func unavailable(err error) bool {
 	return errors.As(err, &netErr)
 }
 
+// HTTPStatus exposes a typed HTTP failure to other migrated units that reuse
+// this package's machine-token authentication.
+func HTTPStatus(err error) (status int, message string, ok bool) {
+	var typed *statusError
+	if errors.As(err, &typed) {
+		return typed.status, typed.message, true
+	}
+	return 0, "", false
+}
+
 func duplicateURL(err error) bool {
 	var mysqlErr *mysqlDriver.MySQLError
 	if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1062 {

@@ -76,6 +76,44 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // Residual duties migrated to Go in refactor/go-nest-residual-duties.
+    // Each switch accepts "" (legacy), legacy or go and fails Nest startup on
+    // any other value. The Go side reads the same five variables.
+    API_GO_BULLMQ_CLEANUP_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_CLASSIFICATION_REVIEW_SEED_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_PIPELINE_RECOVERY_WRITE_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_METRICS_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_STARTUP_RECONCILE_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // The manual LLM backfill enqueue route; the recovery worker and the
     // six-hourly association refresh read the same variables in NestJS. Empty
     // string behaves like legacy; invalid values fail startup.
@@ -87,6 +125,16 @@ export const apiEnvSchema = baseEnvSchema
       )
       .default("legacy"),
     API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The archivePreparation BullMQ consumer owner. Empty string behaves like
+    // legacy (the NestJS ArchivePreparationProcessor); go mode lets Go consume
+    // the same queue and requires MySQL, Redis, Mongo and the settings key.
+    API_GO_ARCHIVE_PREPARATION_WORKER_MODE: z
       .preprocess(
         (value) =>
           typeof value === "string" && value.trim() === "" ? "legacy" : value,
@@ -129,6 +177,29 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The two authenticated NewsNow "hot" reads:
+    // GET /api/news-aggregator/hottest-analysis and GET /api/news-aggregator/recommended.
+    // Empty string behaves like legacy. go makes Go build the global snapshot,
+    // project it per organization, auto-import items for callers with items.write
+    // and score the recommended feed; invalid values fail Nest startup.
+    API_GO_NEWSNOW_HOTTEST_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The two NewsNow background owners (hottest analysis every 10 minutes and
+    // source warm every minute). NestJS reads it to return before claiming the
+    // tick gate/lock; Go reads it to start its schedulers. Both read the same
+    // state, so an invalid value fails every process.
+    API_GO_NEWSNOW_BACKGROUND_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // The raw_item outbox scheduled-replay owner. Empty string behaves like
     // legacy. go makes the NestJS Cron return before acquiring the lock; the
     // synchronous request-time delivery still runs here. Invalid values fail
@@ -140,6 +211,34 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The processed_item outbox compensation owner. Empty string behaves like
+    // legacy. go makes the NestJS five-minute Cron return before scanning; the
+    // in-worker immediate delivery and the process-local retry remain here.
+    // Invalid values fail Nest startup.
+    API_GO_PROCESSED_ITEM_OUTBOX_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // Go-only throughput knobs for the processed_item compensation owner. Nest
+    // validates them so both processes reject malformed deployment values.
+    PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(240_000),
+    PROCESSED_ITEM_OUTBOX_CONCURRENCY: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(4),
+    PROCESSED_ITEM_OUTBOX_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(10),
     // Economic-data worker ownership (catalog/repeat synchronization and the
     // akshare-data consumer). Independent of the request switch.
     API_GO_ECONOMIC_DATA_WORKER_MODE: z
@@ -160,11 +259,44 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The owner of the news-event ingestion Cron: the five-minute tick gate,
+    // the per-organization lock, the ingestion cursor and the two ingestion
+    // modes. Empty string behaves like legacy. An invalid value fails Nest
+    // startup instead of being silently stripped from the validated config;
+    // NEWS_EVENTS_INGESTION_SETTLE_MS is read by the Go implementation only.
+    API_GO_NEWS_EVENTS_INGESTION_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The Go notifications Socket.IO transport. Empty string behaves like
+    // legacy; go makes NotificationsService publish the identifiers-only relay
+    // instead of the in-process dispatcher. An invalid value fails startup.
+    API_GO_NOTIFICATIONS_SOCKET_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // The owner of the `alerts` queue: the scan, the rule evaluation, the
     // external delivery and the in-app notification write. Empty string behaves
     // like legacy. An invalid value fails Nest startup instead of being silently
     // stripped from the validated config.
     API_GO_ALERT_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // Owner of the two Frontier LLM queues (frontier-llm-judge and
+    // frontier-llm-learn). Empty string behaves like legacy: NestJS creates
+    // both LLM workers. go: NestJS skips those two workers only (the three
+    // crawl4ai queue workers keep running here) and api-go consumes them.
+    API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE: z
       .preprocess(
         (value) =>
           typeof value === "string" && value.trim() === "" ? "legacy" : value,
@@ -945,6 +1077,12 @@ export const apiEnvSchema = baseEnvSchema
       .int()
       .nonnegative()
       .default(0),
+    // Go-only per-tick source fan-out; 1 keeps the serial loop.
+    NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(1),
     NEWS_SOURCE_CRAWL_QUALITY_PROFILE: z
       .enum(["balanced", "quality_first", "speed_first"])
       .default("quality_first"),
@@ -1100,6 +1238,87 @@ export const apiEnvSchema = baseEnvSchema
     // @Cron callback before taking the shared Redis lease. This switch does NOT
     // own POST external-snapshot/refresh, which has its own Go-only switch.
     API_GO_GDELT_SNAPSHOT_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The news-source scheduler ownership. Nest reads the same variable: when
+    // it is go the @Cron returns before taking the shared
+    // cron:news-source-scheduler lock, which stays the same Redis key on both
+    // sides. Empty string behaves like legacy; an invalid value fails startup.
+    API_GO_NEWS_SOURCE_SCHEDULER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The four crawl maintenance crons (janitor, cleanup outbox, adaptive
+    // concurrency and the five-minute quality snapshot refresh). Empty string
+    // behaves like legacy. An invalid value fails Nest startup instead of being
+    // silently stripped from the validated config. Go reads the same variable
+    // and starts its own schedulers when it is go; Nest then returns from all
+    // four @Cron callbacks before taking their shared Redis locks/tick gate.
+    API_GO_CRAWL_MAINTENANCE_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The ten-minute news-event timeline rebuild owner. Empty string behaves
+    // like legacy. An invalid value fails Nest startup instead of being
+    // silently stripped from the validated config. Go reads the same variable
+    // and starts its own scheduler when it is go; Nest then returns from the
+    // @Cron callback before taking the shared Redis tick gate. The organization
+    // lock key and the timeline algorithm are unchanged either way.
+    API_GO_NEWS_EVENTS_TIMELINE_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The four news-source ops POSTs ownership. Nest only reads it to decide
+    // whether to relay Go-written org notifications. Empty string behaves like
+    // legacy; an invalid value fails startup.
+    API_GO_NEWS_SOURCE_OPS_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The daily 01:00 local-time audit log retention purge. Empty string
+    // behaves like legacy; an invalid value fails Nest startup. Go reads the
+    // same variable and runs the purge behind a 30 minute Redis lease when it is
+    // go; Nest then returns from handleCron.
+    API_GO_AUDIT_LOG_RETENTION_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The hourly sentiment snapshot rebuild owner, independent of the timeline
+    // switch. Same values, same default and the same NestJS early return.
+    API_GO_SENTIMENT_SNAPSHOT_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The realtime signal collection cron ownership. Empty string behaves like
+    // legacy. An invalid value fails Nest startup instead of being silently
+    // stripped from the validated config. Go reads the same variable and starts
+    // its own every-minute scheduler when it is go; Nest then returns from
+    // refreshScheduled before claiming the shared Redis tick gate, so a rolling
+    // flip still collects at most once per interval. The global all-flight
+    // capture is part of the same tick and therefore stops with this switch.
+    API_GO_REALTIME_SIGNALS_MODE: z
       .preprocess(
         (value) =>
           typeof value === "string" && value.trim() === "" ? "legacy" : value,

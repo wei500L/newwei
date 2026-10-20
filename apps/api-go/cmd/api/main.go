@@ -177,6 +177,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/canary"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlmetadata"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawltaskwrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardcharts"
@@ -217,7 +218,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
+	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
+	"github.com/wei500L/newwei/apps/api-go/internal/notificationssocket"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
+	"github.com/wei500L/newwei/apps/api-go/internal/processeditemoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
@@ -626,6 +630,13 @@ func run() error {
 	if cfg.NewsSourcesMode == config.NewsSourcesModeGo {
 		newsSourcesMode = string(legacyproxy.ModeGo)
 	}
+	// The four dispatch/cancel/clear/retry POSTs are their own switch: they are
+	// method- and tail-scoped, so they never shadow the news-sources CRUD rules
+	// or the GET :id/preview rule.
+	newsSourceOpsMode := ""
+	if cfg.NewsSourceOpsMode == config.NewsSourceOpsModeGo {
+		newsSourceOpsMode = string(legacyproxy.ModeGo)
+	}
 	crawlWorkflowsMode := ""
 	if cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo {
 		crawlWorkflowsMode = string(legacyproxy.ModeGo)
@@ -682,6 +693,12 @@ func run() error {
 	if cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo {
 		newsnowSourcesMode = string(legacyproxy.ModeGo)
 	}
+	// The two authenticated hot reads have their own switch, independent of the
+	// public source fetch routes and the background owners.
+	newsnowHottestMode := ""
+	if cfg.NewsnowHottestMode == config.NewsnowHottestModeGo {
+		newsnowHottestMode = string(legacyproxy.ModeGo)
+	}
 	newsClusteringLlmBackfillMode := ""
 	if cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo {
 		newsClusteringLlmBackfillMode = string(legacyproxy.ModeGo)
@@ -729,6 +746,10 @@ func run() error {
 	platformGovernanceSettingsMode := ""
 	if cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
 		platformGovernanceSettingsMode = string(legacyproxy.ModeGo)
+	}
+	situationSettingsMode := ""
+	if cfg.SituationSettingsMode == config.SituationSettingsModeGo {
+		situationSettingsMode = string(legacyproxy.ModeGo)
 	}
 	modelAccessSettingsMode := ""
 	if cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo {
@@ -829,6 +850,9 @@ func run() error {
 	rules = legacyproxy.WithContentSubscriptions(rules, contentSubscriptionsMode)
 	rules = legacyproxy.WithUserNewsBehavior(rules, userNewsBehaviorMode)
 	rules = legacyproxy.WithUserDigest(rules, userDigestMode)
+	if cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
+		rules = legacyproxy.WithNotificationsSocket(rules, string(legacyproxy.ModeGo))
+	}
 	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
@@ -847,6 +871,7 @@ func run() error {
 	// switches: non-upgrade methods keep following those switches and every
 	// non-local operation is forwarded whole to NestJS.
 	graphqlSubscriptionsGo := cfg.GraphQLSubscriptionsMode == config.GraphQLSubscriptionsModeGo
+	notificationsSocketGo := cfg.NotificationsSocketMode == config.NotificationsSocketModeGo
 	graphqlRouteMode := ""
 	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
 		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" ||
@@ -866,7 +891,11 @@ func run() error {
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
 	rules = legacyproxy.WithSituationSignals(rules, situationSignalsMode)
 	rules = legacyproxy.WithSituationInsights(rules, situationInsightsMode)
+	// The four situation-monitor settings entries are an independent switch.
+	// Their exact paths never overlap the signals, insights or monitors rules.
+	rules = legacyproxy.WithSituationSettings(rules, situationSettingsMode)
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
+	rules = legacyproxy.WithNewsSourceOps(rules, newsSourceOpsMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
 	rules = legacyproxy.WithCrawlFrontierRuns(rules, crawlFrontierRunsMode)
@@ -897,10 +926,26 @@ func run() error {
 		pipelineRecoveryMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithPipelineRecovery(rules, pipelineRecoveryMode)
+	// The two pipeline recovery writes and the metrics scrape are independent
+	// ownership switches. They register exact, method-scoped rules so no other
+	// method or path moves with them.
+	pipelineRecoveryWriteMode := ""
+	if cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo {
+		pipelineRecoveryWriteMode = string(legacyproxy.ModeGo)
+	}
+	rules = legacyproxy.WithPipelineRecoveryWrite(rules, pipelineRecoveryWriteMode)
+	metricsRouteMode := ""
+	if cfg.MetricsMode == config.MetricsModeGo {
+		metricsRouteMode = string(legacyproxy.ModeGo)
+	}
+	rules = legacyproxy.WithMetrics(rules, metricsRouteMode)
 	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
 	// The two public source fetch routes. Registered after the local-computation
 	// rules; the two rule sets share no path.
 	rules = legacyproxy.WithNewsnowSources(rules, newsnowSourcesMode)
+	// The two authenticated hot reads. Exact paths; they never intersect the
+	// public source rules or the metadata/resolve rules.
+	rules = legacyproxy.WithNewsnowHottest(rules, newsnowHottestMode)
 	// The manual LLM backfill route has its own switch. It is registered next
 	// to the nine-route clustering takeover but never widens it.
 	rules = legacyproxy.WithNewsClusteringLlmBackfill(rules, newsClusteringLlmBackfillMode)
@@ -1027,9 +1072,12 @@ func run() error {
 				cfg.ClassificationReportsMode == config.ClassificationReportsModeGo ||
 				cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
 				cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
+				cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
+				cfg.MetricsMode == config.MetricsModeGo ||
 				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
 				cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo ||
 				cfg.NewsClusteringRecoveryWorkerMode == config.NewsClusteringRecoveryWorkerModeGo ||
+				cfg.ArchivePreparationWorkerMode == config.ArchivePreparationWorkerModeGo ||
 				cfg.GraphQLNewsIndicatorRefreshMode == "go" ||
 				cfg.NewsIndicatorAssociationCronMode == config.NewsIndicatorAssociationCronModeGo ||
 				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
@@ -1056,7 +1104,9 @@ func run() error {
 				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
 				cfg.ArchiveReadingMode == config.ArchiveReadingModeGo ||
 				cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
+				cfg.SituationSettingsMode == config.SituationSettingsModeGo ||
 				cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
+				cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo ||
 				cfg.AnalysisRunsMode == config.AnalysisRunsModeGo ||
 				cfg.AnalysisWorkerMode == config.AnalysisWorkerModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
@@ -1066,12 +1116,14 @@ func run() error {
 				cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo ||
 				cfg.ItemsIngestMode == config.ItemsIngestModeGo ||
 				cfg.RawItemOutboxMode == config.RawItemOutboxModeGo ||
+				cfg.ProcessedItemOutboxMode == config.ProcessedItemOutboxModeGo ||
 				cfg.EconomicDataMode == config.EconomicDataModeGo ||
 				cfg.EconomicDataWorkerMode == config.EconomicDataWorkerModeGo ||
 				cfg.EmailSettingsMode == config.EmailSettingsModeGo ||
 				cfg.GeocodingMode == config.GeocodingModeGo ||
 				cfg.RuntimeDiagnosticsMode == config.RuntimeDiagnosticsModeGo ||
-				graphqlSubscriptionsGo {
+				graphqlSubscriptionsGo ||
+				cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -1086,6 +1138,14 @@ func run() error {
 			userSettingsDBStatus = "configured"
 			sharedDB = db
 		}
+	}
+
+	// The crawl maintenance and audit retention ownership switches write MySQL;
+	// an unusable DATABASE_URL must fail startup instead of silently degrading to
+	// a process with no pool.
+	if sharedDB == nil && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
+		cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo) {
+		return fmt.Errorf("api-go: API_GO_CRAWL_MAINTENANCE_MODE/API_GO_AUDIT_LOG_RETENTION_MODE=go requires a usable DATABASE_URL")
 	}
 
 	// go 接管模式的 Go 鉴权/响应栈装配（Go-批3A 引入，批3B 收敛为六个
@@ -1158,6 +1218,11 @@ func run() error {
 	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
 	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
 	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
+	// The two authenticated hot reads and the two background owners are separate
+	// switches. The HTTP unit needs the credentialed stack; the background unit
+	// needs only MySQL, Redis and Mongo.
+	newsnowHottestGo := cfg.NewsnowHottestMode == config.NewsnowHottestModeGo
+	newsnowBackgroundGo := cfg.NewsnowBackgroundMode == config.NewsnowBackgroundModeGo
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	crawlMetadataGo := cfg.CrawlMetadataMode == config.CrawlMetadataModeGo
 	// The crawl task lifecycle writes and the queue administration routes are
@@ -1179,6 +1244,9 @@ func run() error {
 	// other background owners.
 	itemsIngestGo := cfg.ItemsIngestMode == config.ItemsIngestModeGo
 	rawItemOutboxGo := cfg.RawItemOutboxMode == config.RawItemOutboxModeGo
+	// The processed_item compensation owner is independent of the item write
+	// and raw_item replay switches.
+	processedItemOutboxGo := cfg.ProcessedItemOutboxMode == config.ProcessedItemOutboxModeGo
 	// The analysis CSV export unit is independent of the item reading switch:
 	// it builds its own item and news-event readers and only owns the two exact
 	// POST export routes.
@@ -1214,6 +1282,9 @@ func run() error {
 	situationSignalsGo := cfg.SituationSignalsMode == config.SituationSignalsModeGo
 	// The insights takeover needs the same credentialed stack plus Mongo.
 	situationInsightsGo := cfg.SituationInsightsMode == config.SituationInsightsModeGo
+	// The settings takeover needs the credentialed stack plus Mongo (quality
+	// summary) and the settings encryption key.
+	situationSettingsGo := cfg.SituationSettingsMode == config.SituationSettingsModeGo
 	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
 	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
 	proxyLoadBalancingGo := cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo
@@ -1232,11 +1303,11 @@ func run() error {
 		situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo ||
 		crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo ||
 		adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo ||
-		newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo ||
+		newsnowClusteringOpsGo || newsnowHottestGo || runtimeSettingsGo || infrastructureSettingsGo ||
 		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
-		situationSignalsGo || situationInsightsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
+		situationSignalsGo || situationInsightsGo || situationSettingsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || graphqlAlertRulesGo || cfg.GraphQLSettingsWriteMode == "go" ||
 		sourcePolicyWriteGo ||
@@ -1253,7 +1324,9 @@ func run() error {
 		cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
 		cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
 		newsSourcePreviewGo || crawlWorkflowTrialGo || analysisRunsGo ||
-		graphqlSubscriptionsGo
+		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
+		cfg.MetricsMode == config.MetricsModeGo ||
+		graphqlSubscriptionsGo || notificationsSocketGo
 	var redisClient *redis.Client
 	var redisOptions *redis.Options
 	var authenticator *authhttp.Authenticator
@@ -1276,13 +1349,29 @@ func run() error {
 		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
 		cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
 		cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo ||
+		newsnowBackgroundGo ||
 		rawItemOutboxGo ||
+		processedItemOutboxGo ||
 		economicDataWorkerGo ||
 		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo ||
 		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
 		assistantWorkerGo ||
 		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
-		analysisWorkerGo
+		cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo ||
+		cfg.ArchivePreparationWorkerMode == config.ArchivePreparationWorkerModeGo ||
+		analysisWorkerGo ||
+		notificationsSocketGo ||
+		cfg.BullmqCleanupMode == config.BullmqCleanupModeGo ||
+		cfg.ClassificationReviewSeedMode == config.ClassificationReviewSeedModeGo ||
+		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
+		cfg.MetricsMode == config.MetricsModeGo ||
+		cfg.StartupReconcileMode == config.StartupReconcileModeGo
+	// The crawl maintenance crons and the audit retention purge take their
+	// leases in the shared Redis even when no HTTP takeover is enabled.
+	if !needsRedis && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
+		cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo) {
+		needsRedis = true
+	}
 	if needsRedis {
 		// The blocking BullMQ XREAD reader and the queue jobctx cache share
 		// this exact Redis configuration but use dedicated connections.
@@ -1625,7 +1714,7 @@ func run() error {
 	if err := gdeltSnapshot.RegisterRoute(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
-	if err := wireNewsSources(gateway, cfg, sharedDB, authenticator); err != nil {
+	if err := wireNewsSources(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 	if err := wireCrawlWorkflows(gateway, cfg, sharedDB, authenticator); err != nil {
@@ -1680,6 +1769,18 @@ func run() error {
 	newsnowSourcesService, wireSourcesErr := wireNewsnowSources(gateway, cfg, sharedDB, redisClient)
 	if wireSourcesErr != nil {
 		return wireSourcesErr
+	}
+	// The NewsNow hottest unit owns the two hot reads and both background
+	// owners. It is nil while both switches are legacy; the deferred teardown
+	// stops it before the shared Redis/Mongo connections close.
+	var newsnowHottestUnit *newsnowHottestUnit
+	// The hottest/recommended reads and the two NewsNow schedulers share the
+	// source fetch service when the public source switch is go; otherwise this
+	// unit builds its own instance over the same cache and locks.
+	newsnowHottestUnit, err = newNewsnowHottestUnit(
+		gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo, newsnowSourcesService)
+	if err != nil {
+		return err
 	}
 	if err := wireCrawlMetadata(gateway, cfg, metadataService, authenticator); err != nil {
 		return err
@@ -1785,6 +1886,13 @@ func run() error {
 	// below; the runtime stays unstarted until the shutdown defer is installed.
 	economicService, economicRuntime, err := wireEconomicData(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
 	if err != nil {
+		return err
+	}
+
+	// The situation-monitor settings unit reuses the economic-data service so a
+	// settings write can hot-sync the same repeatable jobs. It also reuses the
+	// shared Mongo client for the insights quality summary.
+	if err := wireSituationSettings(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator, economicService); err != nil {
 		return err
 	}
 
@@ -1987,6 +2095,21 @@ func run() error {
 			dashboardMongo = opened
 		}
 		itemsIngestService = buildItemsIngestService(cfg, sharedDB, redisClient, dashboardMongo.Database())
+	}
+
+	// The news-source scheduler and the four operations POSTs share one service
+	// instance. The scheduler switch owns only the 30-second tick; the ops switch
+	// owns only the four exact POST routes. Both reuse the existing crawl queue
+	// producer, crawl metadata discovery, workflow overlay compiler, items
+	// ingest outbox and item pipeline producer, so the queue formats, priorities
+	// and job ids stay identical to NestJS.
+	var newsSourceScheduler *newssourcescheduler.Scheduler
+	newsSourceScheduler, err = wireNewsSourceScheduler(
+		gateway, cfg, sharedDB, redisClient, authenticator,
+		itemsIngestService, crawlTaskService, &dashboardMongo,
+	)
+	if err != nil {
+		return err
 	}
 
 	// The assistant write mutations and the assistant worker share one service
@@ -2485,6 +2608,36 @@ func run() error {
 		graphqlSubscriptions = runtime
 		log.Printf("api-go: GraphQL subscriptions under go (alertEvents, analysisEvents, assistantEvents, queueEvents; bus=%s)", cfg.GraphQLSubscriptionBus)
 	}
+
+	// The notifications transport owns the dedicated /socket.io-notifications
+	// path only. Constructing it before the ordered teardown defer lets every
+	// later error path close its relay and live sockets.
+	var notificationsSocket *notificationssocket.Runtime
+	if notificationsSocketGo {
+		if sharedDB == nil || redisClient == nil {
+			return fmt.Errorf("api-go: API_GO_NOTIFICATIONS_SOCKET_MODE=go requires mysql, jwt, and redis")
+		}
+		runtime, runtimeErr := notificationssocket.New(notificationssocket.Options{
+			DB:                    sharedDB,
+			Verifier:              authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience),
+			Blacklist:             authn.NewRedisBlacklist(redisClient),
+			Authz:                 authz.NewMySQLRepository(sharedDB),
+			Redis:                 redisClient,
+			CORS:                  cors.New(cfg.CorsOrigin),
+			TrustProxy:            strings.TrimSpace(cfg.TrustProxy) != "",
+			MaxConnectionsPerUser: cfg.WSMaxConnectionsPerUser,
+			MaxConnectionsPerIP:   cfg.WSMaxConnectionsPerIP,
+			ConnectLimitPerIP:     cfg.WSConnectRateLimitPerIP,
+			ConnectLimitPerUser:   cfg.WSConnectRateLimitPerUser,
+			ConnectWindowSeconds:  cfg.WSConnectRateLimitWindowSeconds,
+		})
+		if runtimeErr != nil {
+			return runtimeErr
+		}
+		notificationsSocket = runtime
+		gateway.RegisterGoHandler(notificationssocket.Path, runtime.ServeHTTP)
+		log.Printf("api-go: notifications Socket.IO transport under go (%s, namespace %s)", notificationssocket.Path, notificationssocket.Namespace)
+	}
 	// A legal graphql-transport-ws upgrade goes to the local executor; every
 	// other exact /graphql request keeps the Go read handler or the legacy
 	// proxy. Registering this entrypoint is independent of the read switch.
@@ -2503,6 +2656,12 @@ func run() error {
 	// no JWT. The deferred Close stops new ticks and drains in-flight
 	// organizations before the shared Redis/Mongo connections are closed below.
 	var deliveryScheduler *userdigest.DeliveryScheduler
+	// The realtime signal collection cron is owned by Go when
+	// API_GO_REALTIME_SIGNALS_MODE=go. It registers no HTTP route, shares the
+	// Redis tick gate and org leases with NestJS, and writes the shared Redis
+	// documents plus Mongo transport tracks. The deferred Close drains the
+	// in-flight round before the shared connections close below.
+	var realtimeSignals *realtimeSignalsUnit
 	// The audit-log outbox replay unit owns the per-minute audit recovery when
 	// API_GO_AUDIT_OUTBOX_MODE=go. It registers no HTTP route and needs no JWT.
 	var auditOutboxScheduler *auditoutbox.Scheduler
@@ -2510,14 +2669,26 @@ func run() error {
 	// and GraphQL switches. Its Close stops new ticks and drains the in-flight
 	// batch before the shared Redis/Mongo handles close below.
 	var rawItemOutboxScheduler *itemsingest.OutboxScheduler
+	// The processed_item compensation owner is a background unit independent of
+	// JWT, HTTP and GraphQL switches. It shares the outbox CAS with NestJS.
+	var processedItemOutboxScheduler *processeditemoutbox.Scheduler
 	// The knowledge-graph automatic construction chain owns the five-minute tick
 	// when API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go. It registers no HTTP route
 	// and needs no JWT.
 	var kgIngestion *kgIngestionRuntime
+	// The news-event ingestion Cron owner claims the five-minute tick when
+	// API_GO_NEWS_EVENTS_INGESTION_MODE=go. It registers no HTTP route and needs
+	// no JWT; the deferred Close stops new ticks and drains in-flight
+	// organizations before the shared Redis/Mongo handles close below.
+	var newsEventsIngestion *newsEventsIngestionRuntime
 	// The news backfill runtime owns the LLM backfill worker/scans and the
 	// six-hourly association refresh when their switches are go. It is nil in
 	// the legacy default, so no component is constructed.
 	var newsBackfill *newsBackfillRuntime
+	// The archive preparation worker owns the archivePreparation BullMQ
+	// consumer when API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go. It is nil in the
+	// legacy default, so no client or goroutine is constructed.
+	var archivePreparationWorker *archivePreparationRuntime
 	// The alert worker owns the shared `alerts` queue when
 	// API_GO_ALERT_WORKER_MODE=go: the scan schedule, rule evaluation, in-app
 	// notification write and email/webhook delivery. It registers no HTTP route
@@ -2528,6 +2699,30 @@ func run() error {
 	// while renewing their locks, and only then lets the digest scheduler and
 	// the shared Redis/Mongo connections close.
 	var analysisWorker *analysisqueue.Worker
+	// The crawl maintenance unit owns the janitor, cleanup outbox, adaptive
+	// concurrency and quality snapshot crons plus the audit log retention purge
+	// when their switches are go. It registers no HTTP route and needs no JWT.
+	// The deferred Close stops the loops before the shared Redis/MySQL/Mongo
+	// handles close below.
+	crawlMaintenance, err := wireCrawlMaintenance(cfg, sharedDB, redisClient, &dashboardMongo)
+	if err != nil {
+		return err
+	}
+	// The event-timeline and sentiment snapshot cron units own the ten-minute
+	// timeline rebuild and the hourly snapshot rebuild when their switches are
+	// go. They register no HTTP route and need no JWT; the deferred Close stops
+	// both loops and drains the in-flight organizations before the shared
+	// Redis/Mongo connections close below.
+	var eventTimelineSentiment *eventTimelineSentimentUnit
+	// The Frontier LLM owner consumes the frontier-llm-judge and
+	// frontier-llm-learn queues when
+	// API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE=go. The three crawl4ai queues stay
+	// on NestJS. Close stops claiming and drains the in-flight judge/learn job
+	// before the shared Redis/MySQL handles close below.
+	var frontierLlmWorker *crawlfrontierllm.Runtime
+	// The residual duties migrated out of NestJS: leased retained-job cleanup,
+	// the review-seed event consumer, and the startup reconciliation.
+	var residualDuties *residualDutiesRuntime
 	// Ordered teardown for both the SIGTERM path and every error return after
 	// this point, including an HTTP listen failure. The analysis worker stops
 	// first, then the digest scheduler, then background search reindex, then the
@@ -2535,6 +2730,13 @@ func run() error {
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		// Close live notification sockets and the relay before the shared
+		// Redis client is closed below.
+		if notificationsSocket != nil {
+			if closeErr := notificationsSocket.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: notifications socket close: %v", closeErr)
+			}
+		}
 		// Stop accepting subscriptions, cancel operations and upstream sockets,
 		// then stop pub/sub/XREAD before the shared Redis client closes below.
 		if graphqlSubscriptions != nil {
@@ -2559,14 +2761,34 @@ func run() error {
 				log.Printf("api-go: GDELT snapshot scheduler close: %v", closeErr)
 			}
 		}
+		if newsSourceScheduler != nil {
+			if closeErr := newsSourceScheduler.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: news source scheduler close: %v", closeErr)
+			}
+		}
+		if realtimeSignals != nil {
+			if closeErr := realtimeSignals.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: realtime signals collector close: %v", closeErr)
+			}
+		}
 		if alertWorker != nil {
 			if closeErr := alertWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: alert worker close: %v", closeErr)
 			}
 		}
+		if eventTimelineSentiment != nil {
+			if closeErr := eventTimelineSentiment.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: event timeline and sentiment snapshot schedulers close: %v", closeErr)
+			}
+		}
 		if analysisWorker != nil {
 			if closeErr := analysisWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: analysis worker close: %v", closeErr)
+			}
+		}
+		if frontierLlmWorker != nil {
+			if closeErr := frontierLlmWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: frontier LLM worker close: %v", closeErr)
 			}
 		}
 		if deliveryScheduler != nil {
@@ -2584,18 +2806,52 @@ func run() error {
 				log.Printf("api-go: raw-item outbox scheduler close: %v", closeErr)
 			}
 		}
+		if processedItemOutboxScheduler != nil {
+			if closeErr := processedItemOutboxScheduler.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: processed-item outbox scheduler close: %v", closeErr)
+			}
+		}
 		if kgIngestion != nil {
 			if closeErr := kgIngestion.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: knowledge graph ingestion scheduler close: %v", closeErr)
 			}
 		}
+		if newsEventsIngestion != nil {
+			if closeErr := newsEventsIngestion.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: news event ingestion scheduler close: %v", closeErr)
+			}
+		}
+		if archivePreparationWorker != nil {
+			if closeErr := archivePreparationWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: archive preparation worker close: %v", closeErr)
+			}
+		}
 		if searchReindexService != nil {
 			searchReindexService.Close()
+		}
+		// The NewsNow hot schedulers stop before the shared Redis client closes;
+		// a timed-out organization lock is left to expire naturally.
+		if newsnowHottestUnit != nil {
+			if closeErr := newsnowHottestUnit.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: NewsNow hottest unit close: %v", closeErr)
+			}
 		}
 		// The source fetch unit's outbound HTTP transport drains before the
 		// shared Redis client closes.
 		if newsnowSourcesService != nil {
 			newsnowSourcesService.CloseIdleConnections()
+		}
+		if crawlMaintenance != nil {
+			if closeErr := crawlMaintenance.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: crawl maintenance close: %v", closeErr)
+			}
+		}
+		// The residual-duty units stop before the shared Redis/Mongo handles
+		// they use are closed.
+		if residualDuties != nil {
+			if closeErr := residualDuties.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: residual duties close: %v", closeErr)
+			}
 		}
 		// go 模式下 onboarding 鉴权栈持有的 Redis 连接随进程收口。
 		if redisClient != nil {
@@ -2620,8 +2876,24 @@ func run() error {
 			readyHandler.Close(closeCtx)
 		}
 	}()
+	// The residual-duty owners register their HTTP handlers and start their
+	// background units. They attach the review-seed consumer to the GraphQL
+	// subscription observer when that runtime already owns the itemPipeline
+	// read loop, so one process keeps one XREAD loop. This runs before the
+	// subscription runtime starts reading so no completed event can slip
+	// between the two.
+	residualDuties, err = startResidualDuties(gateway, cfg, sharedDB, redisClient, redisOptions,
+		authenticator, &dashboardMongo, graphqlSubscriptions)
+	if err != nil {
+		return err
+	}
 	if graphqlSubscriptions != nil {
 		if startErr := graphqlSubscriptions.Start(context.Background()); startErr != nil {
+			return startErr
+		}
+	}
+	if notificationsSocket != nil {
+		if startErr := notificationsSocket.Start(context.Background()); startErr != nil {
 			return startErr
 		}
 	}
@@ -2649,6 +2921,31 @@ func run() error {
 		rawItemOutboxScheduler.Start(context.Background())
 		log.Printf("api-go: raw-item outbox scheduled replay owned by Go (SCHEDULE_ENABLED=%t)", cfg.ScheduleEnabled)
 	}
+	if processedItemOutboxGo {
+		if !cfg.ScheduleEnabled {
+			log.Printf("api-go: processed-item outbox scheduler not started (SCHEDULE_ENABLED=false)")
+		} else {
+			if dashboardMongo == nil {
+				dashboardMongo = graphqlMongo
+			}
+			if dashboardMongo == nil {
+				opened, openErr := dashboardstats.Open(cfg.MongoURI)
+				if openErr != nil {
+					return fmt.Errorf("api-go: processed-item outbox go mode requires a valid MONGO_URI")
+				}
+				dashboardMongo = opened
+			}
+			processedItemOutboxScheduler, err = wireProcessedItemOutbox(cfg, sharedDB, redisClient, dashboardMongo.Database())
+			if err != nil {
+				return err
+			}
+			if processedItemOutboxScheduler != nil {
+				processedItemOutboxScheduler.Start(context.Background())
+				log.Printf("api-go: processed-item outbox compensation owned by Go (batchSize=%d, concurrency=%d, budgetMs=%d)",
+					cfg.ProcessedItemOutboxBatchSize, cfg.ProcessedItemOutboxConcurrency, cfg.ProcessedItemOutboxTickBudgetMs)
+			}
+		}
+	}
 	kgIngestion, err = wireKGIngestion(cfg, sharedDB, redisClient, sharedKGIngestionMongo(dashboardMongo, graphqlMongo))
 	if err != nil {
 		return err
@@ -2656,6 +2953,14 @@ func run() error {
 	if kgIngestion != nil {
 		kgIngestion.scheduler.Start(context.Background())
 		log.Printf("api-go: knowledge graph ingestion scheduler enabled mode=%s", cfg.KnowledgeGraphIngestionMode)
+	}
+	newsEventsIngestion, err = wireNewsEventsIngestion(cfg, sharedDB, redisClient, sharedKGIngestionMongo(dashboardMongo, graphqlMongo))
+	if err != nil {
+		return err
+	}
+	if newsEventsIngestion != nil {
+		newsEventsIngestion.scheduler.Start(context.Background())
+		log.Printf("api-go: news event ingestion scheduler enabled mode=%s", cfg.NewsEventsIngestionMode)
 	}
 	newsBackfill, err = wireNewsBackfillJobs(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
 	if err != nil {
@@ -2666,8 +2971,46 @@ func run() error {
 			return err
 		}
 	}
+	archivePreparationWorker, err = wireArchivePreparationWorker(cfg, sharedDB, redisClient, &dashboardMongo)
+	if err != nil {
+		return err
+	}
+	if archivePreparationWorker != nil {
+		if err := archivePreparationWorker.Start(context.Background()); err != nil {
+			return err
+		}
+	}
 	assistantWorker = startAssistantWorker(cfg, assistantRunService, redisClient)
 	gdeltSnapshot.Start(cfg)
+	if newsnowHottestUnit != nil {
+		newsnowHottestUnit.Start(cfg)
+	}
+
+	if newsSourceScheduler != nil {
+		newsSourceScheduler.Start(context.Background())
+	}
+
+	if crawlMaintenance != nil {
+		crawlMaintenance.Start(context.Background())
+		log.Printf("api-go: crawl maintenance owned by Go (maintenance=%s, auditRetention=%s)",
+			string(cfg.CrawlMaintenanceMode), string(cfg.AuditLogRetentionMode))
+	}
+
+	// The realtime signal collector needs Mongo for the transport track writes.
+	// Reuse an already-open handle when another unit opened one; otherwise open
+	// the same database this process uses elsewhere and let the teardown close it.
+	if cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo && (sharedDB == nil || redisClient == nil) {
+		return fmt.Errorf("api-go: API_GO_REALTIME_SIGNALS_MODE=go requires mysql and redis")
+	}
+	if cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo && dashboardMongo == nil {
+		opened, openErr := dashboardstats.Open(cfg.MongoURI)
+		if openErr != nil {
+			return fmt.Errorf("api-go: API_GO_REALTIME_SIGNALS_MODE=go requires a valid MONGO_URI")
+		}
+		dashboardMongo = opened
+	}
+	realtimeSignals = newRealtimeSignalsUnit(cfg, sharedDB, redisClient, dashboardMongo)
+	realtimeSignals.Start(cfg)
 
 	alertWorker, err = wireAlertWorker(cfg, sharedDB, redisClient, &graphqlMongo, &dashboardMongo)
 	if err != nil {
@@ -2678,6 +3021,15 @@ func run() error {
 			return startErr
 		}
 	}
+
+	// The ten-minute news-event timeline rebuild and the hourly sentiment
+	// snapshot rebuild. Both share the NestJS tick gate and organization lease
+	// keys, so a flip between the processes never runs one organization twice.
+	eventTimelineSentiment, err = wireEventTimelineSentiment(cfg, sharedDB, redisClient, &graphqlMongo, &dashboardMongo)
+	if err != nil {
+		return err
+	}
+	eventTimelineSentiment.Start(cfg)
 
 	// The analysis queue consumer owner. It reuses the already-open Mongo
 	// connection when one exists; otherwise startAnalysisWorker opens one and
@@ -2695,6 +3047,16 @@ func run() error {
 		analysisWorker = worker
 		if ownedMongo != nil {
 			graphqlMongo = ownedMongo
+		}
+	}
+
+	frontierLlmWorker, err = wireCrawlFrontierLlmWorker(cfg, sharedDB, redisClient, redisOptions, frontierMongoDatabase(graphqlMongo, dashboardMongo))
+	if err != nil {
+		return err
+	}
+	if frontierLlmWorker != nil {
+		if startErr := frontierLlmWorker.Start(context.Background()); startErr != nil {
+			return startErr
 		}
 	}
 
@@ -2731,6 +3093,13 @@ func run() error {
 		// connections. Stop new subscriptions, cancel operations/legacy
 		// upstreams and close those sockets before the HTTP drain, then let the
 		// deferred idempotent Close cover the shared Redis/Mongo teardown.
+		if notificationsSocket != nil {
+			notificationCtx, cancelNotifications := context.WithTimeout(context.Background(), 10*time.Second)
+			if closeErr := notificationsSocket.Close(notificationCtx); closeErr != nil {
+				log.Printf("api-go: notifications socket close: %v", closeErr)
+			}
+			cancelNotifications()
+		}
 		if graphqlSubscriptions != nil {
 			subscriptionCtx, cancelSubscriptions := context.WithTimeout(context.Background(), 10*time.Second)
 			if closeErr := graphqlSubscriptions.Close(subscriptionCtx); closeErr != nil {

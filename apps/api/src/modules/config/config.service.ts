@@ -1317,6 +1317,18 @@ export class EnvService extends ConfigService<ApiEnv> {
       : "legacy";
   }
 
+  // API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE owns the two Frontier LLM BullMQ
+  // consumers (frontier-llm-judge / frontier-llm-learn). Legacy (and an unset
+  // value) keeps both NestJS workers; go leaves the three crawl4ai workers in
+  // NestJS and lets api-go consume only the two LLM queues.
+  get apiGoCrawlFrontierLlmWorkerMode(): "legacy" | "go" {
+    return this.get<string>("API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE", {
+      infer: true,
+    }) === "go"
+      ? "go"
+      : "legacy";
+  }
+
   get observabilityConfig(): ObservabilityEnvConfig {
     const rawBuckets =
       this.get<string | undefined>("METRICS_DEFAULT_BUCKETS", {

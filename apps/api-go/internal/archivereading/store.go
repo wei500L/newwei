@@ -20,10 +20,14 @@ const (
 // ArchiveRow is one ProcessedArticle joined with its Article and first
 // org-scoped NewsEventItem.
 type ArchiveRow struct {
-	ID                 string
-	Title              string
-	Summary            string
-	Source             string
+	ID      string
+	Title   string
+	Summary string
+	Source  string
+	// SourceValid reports a non-NULL ProcessedArticle.source. The classifier
+	// uses `source ?? article.sourceLabel`, so an empty string must not fall
+	// back to the article label.
+	SourceValid        bool
 	PublishedAt        *time.Time
 	TopicsJSON         []byte
 	EntitiesJSON       []byte
@@ -156,6 +160,7 @@ func (s *archiveStore) queryRows(ctx context.Context, query string, args ...any)
 		row.Title = title.String
 		row.Summary = summary.String
 		row.Source = source.String
+		row.SourceValid = source.Valid
 		row.Location = location.String
 		row.CleanedMarkdownRef = cleanedRef.String
 		row.ArticleSourceLabel = sourceLabel.String

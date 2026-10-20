@@ -29,14 +29,21 @@ func NewHandler(auth *authhttp.Authenticator, svc *Service) *Handler {
 	return &Handler{auth: auth, svc: svc}
 }
 
-// ServeHTTP dispatches the exact runs path. Replay and rollback are not
-// registered: they stay on NestJS until the item pipeline producer lands.
+// ServeHTTP dispatches the three pipeline recovery paths. The runs read is
+// registered by API_GO_PIPELINE_RECOVERY_MODE; the two writes are registered by
+// API_GO_PIPELINE_RECOVERY_WRITE_MODE. Each rule pins its own method, so this
+// dispatcher only sees the methods the gateway routed here.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != runsPath {
+	switch {
+	case r.URL.Path == runsPath && r.Method == http.MethodGet:
+		h.serveRuns(w, r)
+	case r.URL.Path == replayPath && r.Method == http.MethodPost:
+		h.serveReplay(w, r)
+	case r.URL.Path == rollbackPath && r.Method == http.MethodPost:
+		h.serveRollback(w, r)
+	default:
 		http.NotFound(w, r)
-		return
 	}
-	h.serveRuns(w, r)
 }
 
 func (h *Handler) serveRuns(w http.ResponseWriter, r *http.Request) {

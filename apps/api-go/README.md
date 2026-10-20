@@ -26,6 +26,11 @@ Go-批7 把个人内容订阅、新闻行为画像、每日摘要和投递设置
 
 `API_GO_AUDIT_OUTBOX_MODE` 是审计日志失败补偿链的独立所有权开关，默认 `legacy`，只接受空串/`legacy`/`go`，空串按 `legacy`，非法值在 Nest 和 Go 都启动失败。`legacy` 保留 NestJS 每分钟 `retryPendingAuditLogOutbox`；`go` 时 NestJS 在申请 Redis 锁和扫描之前直接退出，Go 每分钟扫描 `AuditLogOutbox` 的 pending/failed（`availableAt <= now`）与超过 5 分钟未续租的 processing，三路各取 200 条轻字段合并排序后取 200 条，并发 8 条执行条件认领。成功路径按 `(orgId, actorId, resource, action, createdAt)` 查重后写入 `AuditLog`（保留 payload 的业务 `createdAt`、metadata、ipAddress）再删除 outbox；失败路径用认领后的 `attempts` 计算 `round(30000 * 2^max(min(attempt,5)-1,0) * (0.5+random()))` 毫秒退避，第 10 次转 `dead`。payload 无效或 `payload.orgId` 与 outbox 行不一致时不写审计行，直接 `dead` 且 `lastError="Invalid outbox payload"`。租约键为物理键 `lock:cron:audit-log-outbox`（`SET NX PX 55000`、随机 token、约 TTL/3 续租、按 token 释放）。Go 只要求 `DATABASE_URL` 与 `REDIS_HOST`，不要求 JWT、Mongo、SMTP，也不强开任何 HTTP 模式；`SCHEDULE_ENABLED=false` 时 Nest 与 Go 都停止调度本链。启用前先停所有旧 Nest 实例的本链调度并 drain，再把模式切 `go` 并启动 Go；回滚先停 Go 并 drain，再恢复 Nest `legacy`。旧版本不识别该 gate 时必须先升级或停止。说明见 `docs/refactor/go-audit-outbox.md`。
 
+`API_GO_PROCESSED_ITEM_OUTBOX_MODE` 是条目流水线 `processed_item` MongoOutbox 补偿链的独立所有权开关，默认 `legacy`，只接受空串/`legacy`/`go`，空串按 `legacy`，非法值在 Nest 和 Go 都启动失败。`legacy` 保留 NestJS 每 5 分钟、每批 10 条的 `retryPendingOutbox`；`go` 时 NestJS 的 `NewsPipelineService.retryPendingOutbox` 在扫描前直接返回，由 Go 每 5 分钟按墙钟对齐扫描。流水线 worker 内的立即投递、进程内 `setTimeout` 重试和 outbox 创建都不变；Go 与 Nest 通过同一行 `pending/failed(availableAt<=now)` 或 `processing(lockedAt<now-5m)` 的条件更新互斥，因此切换窗口内不会重复投递。Go 成功路径保持原顺序：读取 `ItemMeta` 与 `RawItem`、按 `published_at`→`ItemMeta.publishedAt`→raw payload 顺序取时间、写 `ProcessedItem` upsert（含 `hasLocation`、向量维度、`duplicateOf` 转换）、按条件写 vector-go、更新 `ItemMeta` 完成态/名称/时间、upsert `itemreadmodels`、删除 outbox。失败仍按认领后的 `attempts` 使用 `round(30000 * 2^max(min(attempt,5)-1,0) * (0.5+random()))` 毫秒退避，第 10 次转 `dead` 并把仍为 `processing` 的 `ProcessedItem` 与读模型补偿为 `failed`；payload 不合法时领取后直接 `dead`，尝试次数取领取后的值。向量配置复用 `vector_service` 的 MySQL 行、Redis 缓存与环境默认值；未启用直接跳过，启用但缺 `baseUrl`/token 或调用失败时整次投递失败，Nest 的进程内熔断状态不移植。
+
+B1 是有意变化：Go 的每次 tick 在 `PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS`（默认 240000，小于 5 分钟周期）内循环处理批次，而不是只取 10 条。每批 `PROCESSED_ITEM_OUTBOX_BATCH_SIZE`（默认 10）条、批内 `PROCESSED_ITEM_OUTBOX_CONCURRENCY`（默认 4）并发。大面积故障后积压可在单轮内推进多批；代价是 MySQL、Mongo 与 vector-go 压力上升，可用三个变量调低速度。扫描按 O1 只取 `id`（按 `createdAt` 升序），领取成功后才读取 payload；不合法 payload 的最终状态仍是 `dead`，只是判定时点从“扫描后、领取前”移到“领取后”。api-go 多副本用 Redis `lock:cron:processed-item-outbox`（PX 290000、token 续租/释放）保证同一时刻只有一个扫描者。Go 只要求 `DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`，不要求 JWT；`SCHEDULE_ENABLED=false` 时 Go 不启动。切换时先把 `api` 的开关设为 `go` 并重启，再把 `api-go` 设为 `go`；回滚反向。已有数据不回滚，未处理的 outbox 行格式不变，回退后 Nest 仍可按原低吞吐继续补偿。
+`API_GO_CRAWL_MAINTENANCE_MODE` 与 `API_GO_AUDIT_LOG_RETENTION_MODE` 是采集维护四个 Cron 与审计日志保留清理的执行权开关，默认均 `legacy`，只接受空串/`legacy`/`go`，空串按 `legacy`，非法值在 Nest 和 Go 都启动失败。`legacy` 保留 NestJS 的 `cleanupCron`（janitor）、`retryPendingCleanupOutbox`、`adjustCron`（自适应并发）、`refreshRecentSnapshots`（每 5 分钟）与 `handleCron`（每天 1:00 本地时间）；`go` 时 NestJS 在读取活动计数、领取锁或 tick gate 之前返回，Go 按同一墙钟执行。四个采集 Cron 共用 `lock:cron:crawl-task-janitor`（默认 120s）、`lock:cron:crawl-cleanup-outbox`（55s）、`lock:cron:crawl-adaptive-concurrency`（45s）、`cron:crawl-quality-task-snapshot:tick-gate`（285s）与 `lock:cron:crawl-quality-task-snapshot:org:{orgId}`（240s），全部与 NestJS 的 `CacheService.withLock`/`claimSchedulerTick` 物理键一致；审计保留使用新键 `lock:cron:audit-log-retention`（30 分钟、自动续租）。写出格式保持等价：`CrawlTask.status/lastError`、`AuditLog`（含 outbox 兜底）、Mongo `tasklogs`、`MongoOutbox` 状态与退避、`CrawlQualityTaskSnapshot` upsert、`crawl:activity` hash、自适应状态 JSON（字段顺序与 `null` 保留）与 `crawl:worker-concurrency:v1` 广播。B1–B5 是 Go 侧有意的修复：队列扫描与积压计数纳入 `wait/paused/delayed/prioritized/active`；活动计数为 0 时仍检查并回收卡住的 `pending`；janitor 在事务内 `SELECT ... FOR UPDATE` 后只对实际更新的任务写审计/TaskLog/扣减计数；自适应降并发后额外广播让所有实例更新本地 worker；审计保留清理加实例租约并用主键游标分批。O1 合并 queued/pending 的一次队列扫描、O2 使用主键游标、O3 合并两条任务查询为 `UNION ALL`。`go` 要求 `DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`（审计保留只需前两项），不要求 JWT；`SCHEDULE_ENABLED=false` 时两边都停止调度。切换顺序：先 `api` 设 `go` 并重启，再把 `api-go` 设 `go` 并重启；回滚按相反顺序。切换窗口内同名锁/tick gate 保证同一时刻只有一边执行；审计保留在 Nest 侧无锁，但删除幂等。验证状态：单元测试覆盖合并/排序/去重、`lastError` 文案、JS `toFixed`（含 12.25 这类恰好一半）、自适应各分支与状态 JSON、ISO 时间、payload 校验与退避、开关解析；集成测试覆盖 B1/B2/B3、cleanup 投递/退避/死信/Mongo 删除、设置与广播/冷却、tick gate/组织锁/快照 upsert、审计主键游标 2500 行。没有在真实采集负载下运行，也没有在部署环境切换执行权；TZ 一致性只做静态核对（`api` 与 `api-go` 的 compose 服务都没有设置 `TZ`，均使用镜像默认的 UTC）。
+
 分析工作台的保存视图、看板/列/任务、笔记与评论共 23 条 HTTP 由三个默认 `legacy` 的开关分别接管：`API_GO_ANALYSIS_VIEWS_MODE`、`API_GO_ANALYSIS_BOARDS_MODE`、`API_GO_ANALYSIS_THREADS_MODE`。`GET /api/analysis/boards` 与看板详情会在组织没有未归档看板时创建默认看板，不是纯读。讨论检查、评论计数和删除清理直接查库，不看另一个 HTTP 开关，也不回调 NestJS。条目与事件的 CSV 导出共 2 条精确 POST 由独立的 `API_GO_ANALYSIS_EXPORT_MODE` 接管；`POST /api/analysis/exports/search` 由独立的 `API_GO_ARCHIVE_READING_MODE` 接管（连同三个归档 Query）；Redis 订阅、分析/助手 worker、归档准备消费、采集流水线和邮件 Cron 仍由 NestJS 承担。说明见 `docs/refactor/go-analysis-collaboration.md` 与 `docs/refactor/go-analysis-export.md`。
 `API_GO_ALERT_WORKER_MODE` 是告警队列（`alerts`）的独立执行权开关，默认 `legacy`，只接受空串/`legacy`/`go`，空串按 `legacy`，非法值在 Nest 和 Go 都启动失败。它与全部 HTTP 开关解耦：规则与通道的配置写入、告警读取接口、`AlertsQueueEventPublisher`、订阅传输层都不看这个变量。`go` 时 Go 消费与 NestJS 相同的 `alerts` 队列：定时 upsert `scan-active-rules` 计划；扫描为所有组织补建默认规则并入队到期规则；评估按 9 个 provider 取值、按冷却期预检并在同一事务里领取 `lastTriggeredAt`、写 `AlertEvent`、为每个活跃通道和有权限的接收人写 `AlertDelivery`；站内通知写 `Notification` 后发布 `alert:notifications:v1`，NestJS 的 alert subscriber 只向本实例 socket 推送一次；外部投递由同一个队列按 `alertNotifications` 退避表（60s/5m/15m，4 次尝试）发送邮件与 Webhook；触发后发布 `gqlsub:alertEvents`，envelope 与 NestJS 的 `GraphqlSubscriptionBus` 逐字节一致。NestJS 侧只保留幂等的 `scheduleScanJob`/`ensureAllSchedules`，并在创建 Worker 前退出。
 
@@ -131,6 +136,7 @@ Go-批4B 故事详情在同一真实栈里已验证缓存命中的 id/slug、公
 | `API_GO_RUNTIME_DIAGNOSTICS_MODE` | legacy | 只读运行诊断两入口：`GET /api/system-settings/assistant-safety/diagnostics` 与 `GET /api/system-settings/realtime-signals/runtime`（均为 `settings.manage`）。只接受空串/`legacy`/`go`，非法值启动失败。`go` 时助理安全诊断读取 assistant-safety、openai-keys（`keysCount`）与 LLM 网关 active 配置（含 LiteLLM 治理托管的 apiBase/apiKey），并发探测 `/health/liveliness`（2s，无鉴权）、`/v1/models`（5s，404 回退 `/models`）与 `/guardrails/list`（5s，404 回退 `/v1/guardrails/list`），外部失败写进字段而非 HTTP 错误；实时信号诊断只读 Redis（insight/series/last-run/source-state/ADSB/AIS/OpenSky credits）、MySQL `ProcessedArticle` 与 Mongo `processeditems`，不刷新 ACLED token、不写缓存、不触发采集。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`，不启动 worker。回滚改回 `legacy` |
 | `API_GO_SITUATION_INSIGHTS_MODE` | legacy | 态势监控洞察只读链 `GET /api/situation-monitor/insights`（权限 `items.read`）。只接受空串/`legacy`/`go`，非法值启动失败。`go` 时由 Go 完成参数解析、core/external 缓存（45s/300s + 同名 `lock:` 锁）、Mongo `processeditems`/`rawitems` 读取、分类/聚类/关联/叙事/主角/PIZZINT/外部面板/翻译/监控规则标注；要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`。不执行 POST refresh、不重建 GDELT 快照、不派发采集、不启动 worker。回滚改回 `legacy` |
 | `API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE` | legacy | 知识图谱自动构建后台链（每 5 分钟领取全局时间片、按组织锁、读取 `KnowledgeGraphSettings` 与 `ProcessedArticle` 游标、关系规范化与多模型校验、事务写实体/边/证据、文章实体关联与消歧义、推进游标）。只接受空串/`legacy`/`go`，非法值启动失败。`legacy` 保持 NestJS Cron；`go` 时 Go 用同一 `cron:knowledge-graph-ingestion:tick-gate`（SET NX EX 285）与 `lock:cron:knowledge-graph-ingestion:org:<orgId>`（PX 60000，自动续租）执行，NestJS Cron 在领取时间片前退出。要求 `DATABASE_URL`、`REDIS_HOST`；模型网关复用 `llm_gateway_profiles`，`MONGO_URI` 只用于 best-effort 的 `llmrequestlogs`。`go` 下 K1（失败文章不再被游标跳过，连续 3 次失败后跳过）与 K2（同一文章重复处理不再重复计数边权重）生效；回退 `legacy` 后 NestJS 从当前游标继续，已写数据不回滚，NestJS 之后的写入恢复旧的权重计数方式。pilot 与样例保持 `legacy` |
+| `API_GO_NEWS_EVENTS_INGESTION_MODE` | legacy | 新闻事件入库 Cron（`NewsEventsIngestionService.ingestRecentProcessedArticles`：每 5 分钟领取全局时间片、按组织锁、读取共享 `NewsEventIngestionState` 游标、逐篇构建信号并分配事件，或 `bertopic_primary` 模式整批聚类后统一推进游标）。只接受空串/`legacy`/`go`，非法值启动失败。`legacy` 保持 NestJS Cron；`go` 时 Go 用同一 `cron:news-events-ingestion:tick-gate`（SET NX EX 285）与 `lock:cron:news-events-ingestion:org:<orgId>`（PX 60000，自动续租）执行，NestJS Cron 在领取时间片前退出。写入 `NewsEvent`/`NewsEventItem`/`NewsEventIngestionState`/`TaskLog`/`newseventclusteringfailures`，分配结果（选中事件、similarity、assignedBy）与 NestJS 等价。要求 `DATABASE_URL`、`REDIS_HOST`、`MONGO_URI`；向量服务（`vector_service` 行 + `VECTOR_SERVICE_*`）与模型服务（`model_service` 行 + `MODEL_SERVICE_*`）按调用读取，不是启动条件。`NEWS_EVENTS_INGESTION_SETTLE_MS`（默认 120000）只由 Go 读取：只处理 `processedAt <= now - settle` 的文章，避免 processedAt 较早但事务提交较晚的文章被游标永久跳过。回退 `legacy` 后 NestJS 从同一游标继续，已写数据不回滚，B1 的跳过风险恢复 |
 | `JWT_SECRET` | （空） | NestJS access token 的 HMAC 验签 secret（与 api 服务同一值）。仅 `go` 模式必填。值不进入日志/healthz/错误文本 |
 | `JWT_ISSUER` | modular-monolith | 与 NestJS env schema 同默认值；`go` 模式下用于验签 |
 | `JWT_AUDIENCE` | modular-monolith-clients | 同上 |
@@ -147,6 +153,58 @@ Go-批4B 故事详情在同一真实栈里已验证缓存命中的 id/slug、公
 | `SHADOW_DEBUG_BODY_LOG_MAX_BYTES` | 2048 | debug 正文的截断长度上限 |
 | `CANARY_PERCENT` | 0 | canary 分流比例（0=legacy，100=go；当前无 ModeCanary 路由） |
 | `DATABASE_URL` | （空） | MySQL 连接（Prisma 同名同格式 `mysql://user:pass@host:port/db`）。user-settings 只读 shadow（六个 GET 的旁路查询）+ `go` 模式下 authz RBAC 重推导与业务查询共用同一连接池。shadow 模式下**空/无效时网关照常启动并代理全部请求**（shadow 单元跳过，`/__go/healthz` 报 `userSettingsRead.database` 为 `unconfigured`/`invalid`；`configured` 只代表 DSN 已解析为 driver 配置——`sql.Open` 是惰性初始化，不承诺数据库可连接）；`go` 模式下必填且 DSN 无效启动失败。值本身不进入日志/healthz/错误文本 |
+
+## Nest 残留职责（本批五项开关）
+
+五个开关都只接受空串/`legacy`/`go`，默认 `legacy`（行为与合入前的 main 完全一致），
+非法值在 Nest 与 Go 启动失败。后台类先把 api 服务设为 `go`，再把 api-go 设为
+`go`；回退顺序相反。接口类只需要切 api-go 的开关。
+
+| 环境变量 | 默认 | 说明 |
+|---|---|---|
+| `API_GO_BULLMQ_CLEANUP_MODE` | legacy | 保留任务清理。`go` 时 NestJS 不再启动每进程每小时一次的定时器（`track` 仍登记资源用于关闭），由 api-go 在 `lock:cron:bullmq-retained-cleanup`（55 分钟租约、自动续租）下启动即清理一次、之后每小时一次。要求 `REDIS_HOST`。清理本身幂等，切换窗口短暂重叠不会出错 |
+| `API_GO_CLASSIFICATION_REVIEW_SEED_MODE` | legacy | 分类复核样本触发。`go` 时 NestJS 不注册 `itemPipeline` COMPLETED 监听，api-go 把自己的消费者挂到进程内唯一的 `bull:itemPipeline:events` XREAD 循环（GraphQL 订阅运行时已启用时复用它的循环，否则本单元创建并启动一个）。要求 `REDIS_HOST`。复核样本任务 id 为 `classification-quality-review-seed-item:<orgId>:<processedItemId>`，BullMQ 对重复 id 返回已存在任务，因此多实例或切换重叠只入队一次 |
+| `API_GO_PIPELINE_RECOVERY_WRITE_MODE` | legacy | `POST /api/admin/quality/pipeline/replay` 与 `/rollback`。`go` 时由 Go 验签（`settings.manage`，含 `mtk_` 机器令牌）、按 orgId 查 ItemMeta、克隆 RawItem 或写 ProcessedItem、更新 ItemMeta 并投递 itemPipeline；成功返回 201，错误文案与 Nest 一致（404 `Item not found` / `Raw item not found`，400 duplicate / `Invalid rawItemId` / `rawItemId does not belong to item`）。要求 `JWT_SECRET`、`DATABASE_URL`、`MONGO_URI`、`REDIS_HOST`。与 `API_GO_PIPELINE_RECOVERY_MODE`（GET runs）独立 |
+| `API_GO_METRICS_MODE` | legacy | `GET /api/metrics`。`go` 时由 Go 输出 Prometheus 文本格式（`text/plain; version=0.0.4; charset=utf-8`）。鉴权与 Nest 一致：`metrics.read` + 平台管理员；`mtk_` 机器令牌另查创建者当前是否平台管理员。要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST` |
+| `API_GO_STARTUP_RECONCILE_MODE` | legacy | 启动对齐。`go` 时 NestJS 跳过 TaskLog、LLM 请求日志与 Elasticsearch 的 `onModuleInit` 索引对齐，api-go 在启动后异步执行（不阻塞监听、失败只记 warn）：读取两个保留设置并应用 Mongo TTL 索引，配置了 Elasticsearch 时执行 `ensureIndex`。`lock:startup:reconcile` 保证多副本只执行一次。要求 `REDIS_HOST`；Mongo/MySQL/Elasticsearch 缺失或失败只记 warn |
+
+### 队列清理清单
+
+`bull:*` 前缀（Nest 未设置自定义 prefix）。所有队列清理 failed；只有
+`itemPipelineDlq` 同时清理 wait。
+
+| 队列 | failed | wait |
+|---|---|---|
+| `assistant`、`analysis`、`archivePreparation`、`classification_quality`、`alerts`、`crawl4ai`、`crawl4ai-hot`、`crawl4ai-normal`、`frontier-llm-judge`、`frontier-llm-learn`、`news_event_clustering_recovery`、`itemPipeline`、`situationMonitorSignals`、`akshare-data` | 7 天 / 10000 | 不清理 |
+| `itemPipelineDlq` | 30 天 / 20000 | 30 天 / 20000 |
+
+每个状态先按时间 `clean`（每批 1000，最多 10 批，不足 1000 即停），再按数量从最旧
+开始每批 1000 逐个移除（总数最多 10000）。按数量修剪使用 Redis pipeline 每批一次
+往返（等价于 Nest 的逐任务 `job.remove()`；被锁住的任务同样跳过）。
+
+### Prometheus 进程指标名称变化
+
+Nest 的 `prom-client` 默认指标是 `nodejs_*`，Go 进程没有事件循环，因此改为
+`go_*` / `process_*`。自定义指标族（名称、类型、标签、直方图桶）保持不变：
+`http_request_duration_seconds`、`background_job_duration_seconds`、
+`integration_events_total`、`scheduler_runs_total`、`pipeline_metric_value`。
+其他 Go 迁移单元可直接调用 `internal/metrics` 的 `RecordSchedulerRun` 等函数，
+无需再建第二个注册表。
+
+| Nest（`nodejs_*`） | Go |
+|---|---|
+| `nodejs_process_cpu_seconds_total` | `process_cpu_seconds_total` |
+| `nodejs_process_start_time_seconds` | `process_start_time_seconds` |
+| `nodejs_heap_size_total_bytes` | `go_memstats_heap_sys_bytes` |
+| `nodejs_heap_size_used_bytes` | `go_memstats_heap_alloc_bytes` |
+| `nodejs_heap_space_size_available_bytes` | `go_memstats_heap_inuse_bytes` |
+| `nodejs_external_memory_bytes` | `go_memstats_sys_bytes` |
+| `nodejs_version_info` | `go_info{version="..."}` |
+| `nodejs_gc_duration_seconds` | 不提供（summary 类型不在本批范围） |
+| `nodejs_eventloop_lag_seconds`、`nodejs_active_handles*`、`nodejs_active_requests*` | 不适用 |
+
+另输出 `go_goroutines`、`go_memstats_*`、`go_gc_cycles_total`。使用 `nodejs_*` 的
+监控面板与告警需要按上表调整。
 
 ## 四态路由（当前路由表）
 

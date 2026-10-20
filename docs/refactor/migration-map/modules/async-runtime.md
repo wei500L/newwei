@@ -1,5 +1,7 @@
 # async-runtime · 队列、调度、Outbox 与实时传输
 
+2026-10-20残留职责候选限定续核（main d4227721）：BullMQ 保留任务定期清理与 itemPipeline completed → 复核样本触发的候选实现见 [PR #127](https://github.com/wei500L/newwei/pull/127)，未合 main。清理覆盖 15 个 `cleanup.track(queue)` 队列（仅 itemPipelineDlq 另清 wait），Go 侧在 `lock:cron:bullmq-retained-cleanup` 租约下单实例执行；复核样本与 graphqlsubscriptions 共用同一 itemPipeline XREAD 循环，并用固定 jobId 去重。开关 `API_GO_BULLMQ_CLEANUP_MODE` / `API_GO_CLASSIFICATION_REVIEW_SEED_MODE` 默认 legacy，Nest 对应定时器/监听在 go 时跳过。不改覆盖统计。
+
 2026-10-19分析执行限定增量（main91e759b4）：[ANALYSIS-RUNS-001](../tasks/ANALYSIS-RUNS-001.md) reserved，只占analysis队列真正Go producer/consumer（BullMQ5.63.2兼容锁/重试/stalled/retention/关闭）、三分析计算/SSE/结果/最终通知，Nest仅legacy、owner gate/回滚恢复窄修与本地通知接缝。双独立默认legacy开关分三写与后台owner，后台单开无JWT；不依赖其他未合producer。不占Assistant/其他queue/cron/Outbox或四订阅transport。main尚无Go worker，本批未实施，GAP-ANALYSIS-001开放。
 
 2026-10-19条目入库限定增量（main91e759b4）：[ITEMS-INGEST-001](../tasks/ITEMS-INGEST-001.md) reserved，[提示词](../tasks/ITEMS-INGEST-001.prompt.md)只领取raw_item MongoOutbox同步投递/定时重试及itemPipeline窄producer。后台独立owner模式默认legacy，Nest仅Cron在go时退出，旧同步请求继续按行CAS；三状态合并50/5分钟stale/10次dead、原锁token续租和引用受限补偿保持，其他Outbox归原任务/Nest。新增Go兼容BullMQ5.63.2 producer不等于worker/QueueEvents已迁；后两者本批不动。纯补偿模式DB/Redis/Mongo、无JWT，写模式另需JWT；未实施或运行，不改历史全域核对日期。
@@ -35,6 +37,8 @@ Nest 功能目录：[queue](../../../../apps/api/src/modules/queue)、[audit](..
 | `POST /api/admin/news-sources/:id/dispatch` | crawl.write | [news-source-dispatch.controller.ts](../../../../apps/api/src/modules/queue/news-source-dispatch.controller.ts) · `dispatch` | Nest；尚未接管 |
 | `POST /api/admin/news-sources/:id/retry-latest` | crawl.write | [news-source-ops.controller.ts](../../../../apps/api/src/modules/queue/news-source-ops.controller.ts) · `retryLatest` | Nest；尚未接管 |
 
+以上四条新闻源运维 POST（`API_GO_NEWS_SOURCE_OPS_MODE`）候选实现见 PR #118，未合 main。
+
 ## Worker / repeat / Cron / Outbox 定位
 
 以下是当前源文件与生命周期符号清单；同文件可能创建多个 Worker，不能把文件数当队列数。开关与唯一消费者尚未逐队列设计，全部保留 Nest 消费者状态。
@@ -60,7 +64,7 @@ Nest 功能目录：[queue](../../../../apps/api/src/modules/queue)、[audit](..
 | Cron | [newsnow-source-warm.scheduler.service.ts](../../../../apps/api/src/modules/news-aggregator/newsnow-source-warm.scheduler.service.ts) | `NewsnowSourceWarmSchedulerService` · `@Cron(CronExpression.EVERY_MINUTE)` |
 | Cron | [news-event-clustering-recovery-scheduler.service.ts](../../../../apps/api/src/modules/news-events/news-event-clustering-recovery-scheduler.service.ts) | `NewsEventClusteringRecoverySchedulerService` · `@Cron(CronExpression.EVERY_5_MINUTES)` |
 | BullMQ worker | [news-event-clustering-recovery.processor.ts](../../../../apps/api/src/modules/news-events/news-event-clustering-recovery.processor.ts) | `NewsEventClusteringRecoveryProcessor` · new Worker / onModuleInit |
-| Cron | [news-events-ingestion.service.ts](../../../../apps/api/src/modules/news-events/news-events-ingestion.service.ts) | `NewsEventsIngestionService` · `@Cron(CronExpression.EVERY_5_MINUTES)` |
+| Cron | [news-events-ingestion.service.ts](../../../../apps/api/src/modules/news-events/news-events-ingestion.service.ts) | `NewsEventsIngestionService` · `@Cron(CronExpression.EVERY_5_MINUTES)`（候选实现见 PR #123，未合 main） |
 | Cron | [news-events-timeline.service.ts](../../../../apps/api/src/modules/news-events/news-events-timeline.service.ts) | `NewsEventsTimelineService` · `@Cron(CronExpression.EVERY_10_MINUTES)` |
 | Cron | [news-indicator-association.ingestion.service.ts](../../../../apps/api/src/modules/news-indicator/news-indicator-association.ingestion.service.ts) | `NewsIndicatorAssociationIngestionService` · `@Cron("0 */6 * * *")` |
 | Cron | [news-pipeline.service.ts](../../../../apps/api/src/modules/news-pipeline/news-pipeline.service.ts) | `NewsPipelineService` · `@Cron(CronExpression.EVERY_5_MINUTES)` |
@@ -76,6 +80,8 @@ Nest 功能目录：[queue](../../../../apps/api/src/modules/queue)、[audit](..
 | Cron | [situation-monitor-external-snapshot.service.ts](../../../../apps/api/src/modules/situation-monitor/situation-monitor-external-snapshot.service.ts) | `SituationMonitorExternalSnapshotService` · `@Cron("0 */15 * * * *")` |
 | repeat / 调度生产者 | [situation-monitor-settings.controller.ts](../../../../apps/api/src/modules/system-settings/situation-monitor-settings.controller.ts) | `SituationMonitorSettingsController`；检查 repeat、add 与启动注册 |
 | Cron | [user-digest-delivery-scheduler.service.ts](../../../../apps/api/src/modules/user-digest/user-digest-delivery-scheduler.service.ts) | `UserDigestDeliverySchedulerService` · `@Cron(CronExpression.EVERY_MINUTE)` |
+
+上表 `NewsSourceSchedulerService` 的 30 秒新闻源调度循环（`API_GO_NEWS_SOURCE_SCHEDULER_MODE`）候选实现见 PR #118，未合 main。
 
 Outbox 事实源：[audit-log-outbox.service.ts](../../../../apps/api/src/modules/audit/audit-log-outbox.service.ts)、[crawl-cleanup-outbox.service.ts](../../../../apps/api/src/modules/crawl/crawl-cleanup-outbox.service.ts)、[raw-item-outbox.service.ts](../../../../apps/api/src/modules/items/raw-item-outbox.service.ts)、[news-pipeline-outbox.service.ts](../../../../apps/api/src/modules/news-pipeline/news-pipeline-outbox.service.ts)。
 

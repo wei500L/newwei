@@ -111,7 +111,8 @@ func TestPipelineRecoveryOwnsOnlyRuns(t *testing.T) {
 	if got := gateway.match(http.MethodGet, "/api/admin/quality/pipeline"); got.HandlerKey != QualityOverviewKey {
 		t.Fatalf("pipeline rule = %+v", got)
 	}
-	// Replay and rollback are not implemented in this batch.
+	// Replay and rollback have their own switch (WithPipelineRecoveryWrite),
+	// so the runs read rule must leave them on NestJS.
 	for _, path := range []string{
 		"/api/admin/quality/pipeline/replay",
 		"/api/admin/quality/pipeline/rollback",

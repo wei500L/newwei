@@ -438,6 +438,98 @@ jobs:
       - name: Analysis runs integration (Go worker + Node BullMQ + Mongo/MySQL/Redis + SSE fixture)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/analysisruns/ -run TestAnalysisRunsIntegration -v -timeout 10m
 
+      # NewsNow 热点分析与个性化推荐：真实 MySQL/Redis/Mongo 覆盖 H1（匹配只用本组织
+      # 条目/事件）与 O1（分阶段批量匹配与逐 URL 等价）、O4 多行舆情快照写入、tick
+      # gate/组织锁/warm 锁的上限 TTL，以及信号状态的一次 pipeline 写入。模型网关不在
+      # 本 job 调用（解析与请求形状由单元 httptest 覆盖）。
+      - name: MySQL/Redis/Mongo integration tests (NewsNow hottest analysis)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newsnowhottest/ -run 'TestNewsnowHottestIntegration' -v
+
+      # processed_item Outbox: CAS claim, delivery across MySQL/Mongo, vector
+      # condition, backoff/dead compensation, O1 scan order and B1 multi-batch
+      # draining against the real MySQL 8.4, Redis 7.2 and Mongo 7.0 services.
+      - name: MySQL/Mongo processed_item outbox integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/processeditemoutbox/ -run 'TestProcessedItemOutboxIntegration' -v
+
+      # 态势监控设置：真实 MySQL/Redis 覆盖读写/重置/清除授权、加密信封、审计、
+      # 缓存失效、O3 写后重读等价与 T1 广播；Telegram JobScheduler 用原始 Redis
+      # 结构断言，并用已锁定的 Node BullMQ 5.63.2 fixture 双向读取/替换。
+      - name: MySQL/Redis integration tests (situation-monitor settings + Telegram scheduler)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/situationsettings/ ./internal/situationsettings/telegramsched/ -run 'Integration|TestTelegramSchedulerNodeInterop' -v
+
+      # 新闻源采集调度与运维：真实 MySQL/Redis 覆盖派发事务（PipelineJob +
+      # CrawlTask + 预生成 id）、BullMQ crawl 队列原始结构、25 秒共享派发去重
+      # key、背压 key/TTL/计数与通知桥消息、运营快照写入 + Go newssources 读取
+      # 往返，以及四个运维入口。种子发现用 fixture，不访问外部站点或 crawl4ai；
+      # 不启动 crawl worker 与条目流水线 worker。
+      - name: MySQL/Redis news-source scheduler integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newssourcescheduler/ -run 'TestNewsSourceSchedulerIntegration' -v
+
+      # 采集维护 Cron 的真实 MySQL/Redis/Mongo 集成测试：janitor（三类
+      # 标记、B1 prioritized 不误杀、B2 空闲 pending、B3 事务内选取、
+      # crawl:activity）、cleanup outbox（投递、退避、死信、Mongo 删除）、
+      # 自适应并发（设置行、队列 meta、C2 广播、冷却）、质量快照（tick gate、
+      # 组织锁、最近变化发现、快照 upsert）与审计保留（B5 租约、主键游标
+      # 2500 行、保留未过期记录）。
+      - name: MySQL/Redis/Mongo crawl maintenance integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlmaintenance/ -run 'TestCrawlMaintenance' -v -timeout 10m
+
+      # 事件时间线与情绪快照重建：真实 MySQL/Redis/Mongo 覆盖端到端写入与
+      # graphqlread/newsevents 读取端回读、B1（只写 $.timeline，重建期间写入的
+      # briefV1 保留；metadata 非对象时为 {timeline}）、保留窗口修剪、B2（排序规则
+      # 等价的名称合并、avgScore 用 DOUBLE 除法）、事务失败保留旧数据，以及
+      # tick gate / 组织锁的键名与互斥。
+      - name: MySQL/Redis/Mongo integration tests (event timeline + sentiment snapshot rebuild)
+        run: cd apps/api-go && go test -tags=integration -count=1 -p 1 ./internal/newseventstimeline/ ./internal/sentimentsnapshot/ -v -timeout 10m
+
+      # 实时信号采集 Cron 的真实 MySQL/Redis/Mongo 验证：一轮完整采集后的指标
+      # 序列、源状态、洞察快照、ADS-B/AIS 快照与 OpenSky 额度账本；B1（3 个组织
+      # 并发时军机区域只预扣一次）；O1（AIS 与 Polymarket 每轮各只请求一次）；
+      # 全量航班抓取的游标与 transport 写入；dashboardwarmap 与
+      # runtimediagnostics 读取端回读；以及 enabled=false 时的清理。外部接口全部
+      # 由测试进程内的 httptest 服务器模拟，不调用真实 OpenSky/ACLED/Cloudflare/
+      # PizzINT/GDELT/Polymarket/AIS。同一 job 的 Mongo service 提供 transport 集合。
+      - name: Realtime signals collector integration tests (MySQL/Redis/Mongo + httptest upstreams)
+        run: cd apps/api-go && go test -tags=integration -count=1 -p 1 ./internal/realtimesignals/ ./internal/dataruntimesettings/ -run 'TestRealtimeSignalsCollectorIntegration|TestAcledAuthStateIntegration|TestAcledRefreshLockIntegration|TestEffectiveRealtimeCronRuntimeIntegration' -v -timeout 10m
+
+      # 新闻事件入库 Cron（NewsEventsIngestionService.ingestRecentProcessedArticles）：
+      # 真实 MySQL/Redis/Mongo + 本进程 httptest 模型服务与向量服务。覆盖默认模式
+      # 的向量/重叠/新建三条分配路径与逐篇游标、B1 settle 窗口（含并发晚提交竞态）、
+      # bertopic 代表与成员分配、聚类失败分组与 TaskLog、唯一键并发只有一个胜出者，
+      # 以及 tick gate / 组织锁的键名与互斥。fixture 只证明协议与本地闭环：没有连接
+      # 真实模型服务或向量服务，也没有用生产数据比对分配结果。
+      - name: MySQL/Redis/Mongo integration tests (news-event ingestion and assignment)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newseventsingest/ -v -timeout 10m
+
+      # Frontier LLM 判定/学习 worker：真实 MySQL/Redis 验证判定物化与工作流
+      # 事件/步骤、B1 失败收尾、学习成功/失败重试一次、租户隔离，以及两个
+      # 队列的 1/1000ms 限速。LLM 由进程内 httptest 提供，不连接真实网关。
+      - name: MySQL/Redis Frontier LLM worker integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlfrontierllm/ -run 'TestFrontierLlm' -v
+        env:
+          API_GO_TEST_REDIS_ADDR: 127.0.0.1:6379
+
+      # Archive preparation worker: real MySQL/Redis/Mongo end-to-end for a
+      # digest and a calendar job (status processing -> partial -> ready,
+      # classification writes), the B1 jobBatchSize+5 unparseable-result
+      # termination case, and a model-layer failure that writes FAILED and
+      # schedules the BullMQ retry. Model calls use httptest.
+      - name: Archive preparation worker integration tests (MySQL/Redis/Mongo)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/archivepreparationworker/ -run 'TestArchivePreparationWorkerIntegration' -v
+
+      # 本批五项残留职责：真实 MySQL/Redis/Mongo 覆盖清理范围与 B1 租约、复核
+      # 样本事件入队幂等、replay/rollback 的写入与跨组织 404、指标端点鉴权与
+      # 文本格式、启动 TTL 对齐与启动锁。每个包单独一次 go test：包级 FlushDB
+      # 不能并发执行。
+      - name: Residual duties integration tests (BullMQ cleanup + review seed + pipeline writes + metrics + startup reconcile)
+        run: |
+          cd apps/api-go
+          go test -tags=integration -count=1 ./internal/bullmqcleanup/ -run 'TestBullmqCleanup' -v
+          go test -tags=integration -count=1 ./internal/classificationreviewseed/ -run 'TestClassificationReviewSeed' -v
+          go test -tags=integration -count=1 ./internal/pipelinerecovery/ -run 'TestPipelineRecoveryWritesIntegration' -v
+          go test -tags=integration -count=1 ./internal/metrics/ -run 'TestMetricsEndpointAuthorizationIntegration' -v
+          go test -tags=integration -count=1 ./internal/startupreconcile/ -run 'TestStartupReconcile' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从

@@ -9,6 +9,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
@@ -87,10 +88,20 @@ export class CrawlQualityTaskSnapshotService {
     private readonly cache: CacheService,
     private readonly activeOrgRegistry: ActiveOrgRegistryService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async refreshRecentSnapshots() {
+    // Execution ownership: when API_GO_CRAWL_MAINTENANCE_MODE=go the Go
+    // five-minute refresh owns this cron and this callback returns before
+    // claiming the shared "cron:crawl-quality-task-snapshot:tick-gate".
+    if (
+      this.env.get<string>("API_GO_CRAWL_MAINTENANCE_MODE", { infer: true }) ===
+      "go"
+    ) {
+      return;
+    }
     const claimed = await claimSchedulerTick(
       this.cache,
       "cron:crawl-quality-task-snapshot:tick-gate",

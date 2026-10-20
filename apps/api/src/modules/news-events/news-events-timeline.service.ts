@@ -9,6 +9,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
@@ -177,10 +178,22 @@ export class NewsEventsTimelineService {
     private readonly activeOrgRegistry: ActiveOrgRegistryService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly settings: NewsEventsSettingsService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async rebuildRecentTimelines() {
+    // API_GO_NEWS_EVENTS_TIMELINE_MODE=go moves the rebuild to Go. Return before
+    // claiming the Redis tick gate so a mixed-version deployment never runs two
+    // schedulers for the same interval. Go uses the same gate and organization
+    // lock keys, so even a brief overlap cannot process one organization twice.
+    if (this.resolveTimelineMode() === "go") {
+      logger.info(
+        "Skipped news event timeline rebuild because Go owns the cron (API_GO_NEWS_EVENTS_TIMELINE_MODE=go)",
+      );
+      return;
+    }
+
     const claimed = await claimSchedulerTick(
       this.cache,
       "cron:news-events-timeline:tick-gate",
@@ -231,6 +244,14 @@ export class NewsEventsTimelineService {
     logger.info(
       { orgCount: orgs.length, concurrency, failedOrgs, skippedOrgs },
       "News event timeline rebuild tick completed",
+    );
+  }
+
+  private resolveTimelineMode(): string {
+    return (
+      this.env.get("API_GO_NEWS_EVENTS_TIMELINE_MODE", {
+        infer: true,
+      }) ?? "legacy"
     );
   }
 

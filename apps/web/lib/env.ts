@@ -23,6 +23,13 @@ const envBoolean = z.preprocess((value) => {
 const publicSchema = z.object({
   NEXT_PUBLIC_API_BASE_URL: z.string().url(),
   NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: envBoolean.default(true),
+  // Engine.IO path for the notifications namespace. The default keeps the
+  // existing NestJS Socket.IO path; set it to /socket.io-notifications when the
+  // Go transport is enabled.
+  NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: z
+    .string()
+    .regex(/^\//, "must start with /")
+    .default("/socket.io"),
 });
 
 const serverSchema = z.object({
@@ -34,6 +41,8 @@ const isServer = typeof window === "undefined";
 const publicParsed = publicSchema.safeParse({
   NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
   NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: process.env.NEXT_PUBLIC_GRAPHQL_APQ_ENABLED,
+  NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:
+    process.env.NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH,
 });
 
 if (!publicParsed.success) {

@@ -184,6 +184,21 @@ func WithPublicPortal(rules []Rule, mode string) []Rule {
 	)
 }
 
+// WithNotificationsSocket takes over the dedicated Engine.IO path used by the
+// Go notifications transport. It is separate from /socket.io so the other
+// Socket.IO namespaces keep their NestJS transport. Non-GET requests and the
+// default /socket.io path are untouched.
+func WithNotificationsSocket(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	return append(rules, Rule{
+		Prefix:  "/socket.io-notifications",
+		Mode:    ModeGo,
+		Methods: map[string]bool{http.MethodGet: true},
+	})
+}
+
 // WithDashboardStats 在 mode 为 go 时接管精确路径 GET /api/dashboard/stats。
 // 同一路径的 OPTIONS 也交给 Go，让浏览器预检不落到 NestJS。
 // 其他方法、/api/dashboard/stats 的子路径、dashboard/stream 和其他图表

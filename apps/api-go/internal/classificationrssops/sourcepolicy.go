@@ -391,3 +391,12 @@ func stringSet(values []string) map[string]bool {
 	}
 	return out
 }
+
+// ClassifyDefaultSourceAuthority classifies a source with the shipped default
+// policy. The NewsNow hottest analysis uses it to weight a signal's authority;
+// callers that already have an organization policy keep using the internal
+// classifier.
+func ClassifyDefaultSourceAuthority(label, rawURL string) ClassifiedSourceType {
+	policy := getDefaultNewsEventSourcePolicy()
+	return classifySourceByLabelAndURL(&label, &rawURL, policy)
+}
