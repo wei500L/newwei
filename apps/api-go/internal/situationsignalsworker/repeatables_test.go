@@ -142,6 +142,56 @@ func TestOrefRepeatIterationOptions(t *testing.T) {
 	}
 }
 
+// TestOrefIterationFeedsNextRepeatOptions closes the loop between the producer
+// (orefRepeatIterationOptions, what the addDelayedJob script stores) and the
+// worker (queueNextRepeatOptions, what BullMQ reschedules for the iteration
+// after this one). Lua stores the opts as JSON through cjson, so the packed map
+// is re-marshalled as JSON before it is parsed back like a job hash.
+func TestOrefIterationFeedsNextRepeatOptions(t *testing.T) {
+	now := time.UnixMilli(1_700_000_000_000)
+	every := int64(300_000)
+	nextMillis := nextEveryMillis(now.UnixMilli(), every)
+	repeatKey := hashRepeatKey(repeatConcatOptions(OrefPollJobName, orefRepeatJobID, every))
+	jobID := repeatDelayedJobID(repeatKey, nextMillis)
+
+	packed := mustPack(t, orefRepeatIterationOptions(jobID, repeatKey, every, now, nextMillis))
+	storedJSON, err := json.Marshal(decodePackedMap(t, packed))
+	if err != nil {
+		t.Fatalf("re-marshal stored opts: %v", err)
+	}
+	var opts queueJobOptions
+	if err := json.Unmarshal(storedJSON, &opts); err != nil {
+		t.Fatalf("parse stored opts: %v", err)
+	}
+	if opts.Repeat == nil || opts.Repeat.Count == nil || *opts.Repeat.Count != 1 {
+		t.Fatalf("parsed repeat = %+v", opts.Repeat)
+	}
+	if opts.Attempts == nil || *opts.Attempts != defaultJobAttempts {
+		t.Fatalf("parsed attempts = %v", opts.Attempts)
+	}
+
+	job := queuedJob{
+		ID:           jobID,
+		Name:         OrefPollJobName,
+		RepeatJobKey: repeatKey,
+		Opts:         opts,
+	}
+	merged := queueNextRepeatOptions(job, now.Add(5*time.Minute))
+	repeat, ok := merged["repeat"].(map[string]any)
+	if !ok {
+		t.Fatalf("next repeat = %T", merged["repeat"])
+	}
+	if count := repeat["count"]; count != int64(2) {
+		t.Fatalf("next repeat.count = %v", count)
+	}
+	if repeat["jobId"] != orefRepeatJobID {
+		t.Fatalf("next repeat.jobId = %v", repeat["jobId"])
+	}
+	if merged["attempts"] != defaultJobAttempts {
+		t.Fatalf("next attempts = %v", merged["attempts"])
+	}
+}
+
 func TestBootstrapJobOptions(t *testing.T) {
 	decoded := decodePackedMap(t, mustPack(t, bootstrapJobOptions()))
 	if got := packedInt(t, decoded["attempts"]); got != defaultJobAttempts {

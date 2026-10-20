@@ -454,6 +454,22 @@ func TestTelegramChannelsMatchesNest(t *testing.T) {
 	}
 }
 
+// TestJSONMarshalingDoesNotEscapeHTML keeps the cache/event bytes under
+// JSON.stringify semantics (Go escapes <, > and & by default).
+func TestJSONMarshalingDoesNotEscapeHTML(t *testing.T) {
+	encoded, err := marshalJSONNoEscape(map[string]string{"text": "a <b> & c"})
+	if err != nil {
+		t.Fatalf("marshalJSONNoEscape() error = %v", err)
+	}
+	if string(encoded) != `{"text":"a <b> & c"}` {
+		t.Fatalf("marshalJSONNoEscape() = %s", encoded)
+	}
+	alerts := []json.RawMessage{json.RawMessage(`{"title":"a <b> & c"}`)}
+	if got := marshalAlerts(alerts); got != `[{"title":"a <b> & c"}]` {
+		t.Fatalf("marshalAlerts() = %s", got)
+	}
+}
+
 // TestCompactJSONPreservesKeyOrder guards the change-detection fingerprint.
 func TestCompactJSONPreservesKeyOrder(t *testing.T) {
 	raw := []byte(" {\n \"z\": 1, \"a\": 2 } ")

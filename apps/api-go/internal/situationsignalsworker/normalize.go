@@ -89,6 +89,24 @@ func redactOrefError(message string) string {
 	return orefErrorRedactionPattern.ReplaceAllString(message, "//<redacted>@")
 }
 
+// marshalJSONNoEscape encodes a value exactly like JSON.stringify does for the
+// characters that matter here: no HTML escaping of <, > and & and no trailing
+// newline. encoding/json escapes those three by default, which would make the
+// cache documents and the event bridge payload diverge from NestJS bytes.
+func marshalJSONNoEscape(value any) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	encoded := buffer.Bytes()
+	if len(encoded) > 0 && encoded[len(encoded)-1] == '\n' {
+		encoded = encoded[:len(encoded)-1]
+	}
+	return encoded, nil
+}
+
 // compactJSON re-encodes a JSON value without insignificant whitespace, which
 // is what JSON.stringify produces. It fails on invalid JSON.
 func compactJSON(raw []byte) ([]byte, error) {

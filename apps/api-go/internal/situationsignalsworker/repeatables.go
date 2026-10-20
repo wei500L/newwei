@@ -52,7 +52,8 @@ type RepeatablesConfig struct {
 //
 //  1. Removes the legacy Telegram repeat jobs.
 //  2. When Telegram is enabled, upserts the BullMQ 5 JobScheduler
-//     "telegram-poll:scheduler" and enqueues the Telegram bootstrap job;
+//     "telegram-poll:scheduler" (with the NestJS startup Queue defaultJobOptions
+//     attempts=3 / exponential 1000ms) and enqueues the Telegram bootstrap job;
 //     otherwise removes the scheduler and the queued Telegram poll jobs.
 //  3. Adds the legacy Oref repeat job "<oref-poll:repeat>" with
 //     repeat={every: OrefIntervalMS}.
@@ -69,7 +70,12 @@ func EnsureRepeatables(ctx context.Context, client *redis.Client, cfg Repeatable
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := telegramsched.New(client).Sync(ctx, cfg.TelegramEnabled, cfg.TelegramIntervalMS); err != nil {
+	// The NestJS startup owner creates its Queue with attempts=3 and an
+	// exponential 1000ms backoff, so the JobScheduler template and the bootstrap
+	// job it writes carry them. The settings-controller hot-sync path does not,
+	// which is why telegramsched keeps that shape as the zero JobOptions value.
+	if err := telegramsched.New(client).SyncWithOptions(ctx, cfg.TelegramEnabled, cfg.TelegramIntervalMS,
+		telegramsched.JobOptions{Attempts: 3, BackoffType: "exponential", BackoffDelayMS: 1_000}); err != nil {
 		return fmt.Errorf("situationsignalsworker: sync telegram poll schedule: %w", err)
 	}
 	if err := ensureOrefRepeat(ctx, client, cfg.OrefIntervalMS); err != nil {

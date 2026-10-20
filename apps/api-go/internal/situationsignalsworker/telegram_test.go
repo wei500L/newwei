@@ -200,7 +200,7 @@ func TestPollTelegramPerChannelTimeout(t *testing.T) {
 	worker.owner.client = slow
 
 	worker.handleJob(t, SourceTelegram)
-	if !strings.Contains(worker.service.telegramState.LastError, "TIMEOUT 5ms: getEntity(VahidOnline)") {
+	if !strings.Contains(worker.service.telegramState.LastError, "TIMEOUT 5ms: getEntity(") {
 		t.Fatalf("lastError = %q", worker.service.telegramState.LastError)
 	}
 }

@@ -325,8 +325,8 @@ func TestPollOrefBootstrapFromCache(t *testing.T) {
 	if len(state.History) != 2 {
 		t.Fatalf("history = %d entries, want the cached wave plus the new one", len(state.History))
 	}
-	if state.BootstrapSource != "cache" {
-		t.Fatalf("bootstrap source = %q", state.BootstrapSource)
+	if worker.service.orefState.BootstrapSource != "cache" {
+		t.Fatalf("bootstrap source = %q", worker.service.orefState.BootstrapSource)
 	}
 }
 

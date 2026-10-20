@@ -206,6 +206,11 @@ func (s *Service) newOrefHTTPClient(proxyAuth string) (*http.Client, error) {
 	return &http.Client{
 		Transport: cloned,
 		Timeout:   time.Duration(s.env.OrefCurlTimeoutSeconds) * time.Second,
+		// curl without -L does not follow redirects; a 3xx is a non-2xx body
+		// (and therefore a B3 failure) rather than a transparent follow.
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}, nil
 }
 
@@ -425,7 +430,7 @@ func (s *Service) bootstrapOrefHistoryFromUpstream(ctx context.Context) error {
 			Desc:      "",
 			AlertDate: alertDate,
 		}
-		encoded, err := json.Marshal(alert)
+		encoded, err := marshalJSONNoEscape(alert)
 		if err != nil {
 			continue
 		}

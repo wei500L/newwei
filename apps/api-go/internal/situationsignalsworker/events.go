@@ -73,7 +73,7 @@ func (p *RedisEventPublisher) Publish(ctx context.Context, event RealtimeEvent) 
 		}
 		event.Timestamp = now().UTC().Format(nestISOLayout)
 	}
-	encoded, err := json.Marshal(event)
+	encoded, err := marshalJSONNoEscape(event)
 	if err != nil {
 		return fmt.Errorf("situationsignalsworker: encode realtime event: %w", err)
 	}
@@ -86,7 +86,7 @@ func (p *RedisEventPublisher) Publish(ctx context.Context, event RealtimeEvent) 
 // newRealtimeEvent builds the envelope for one payload, marshaling the payload
 // and stamping the current instant in the ISO millisecond form NestJS writes.
 func newRealtimeEvent(eventType RealtimeEventType, payload any) (RealtimeEvent, error) {
-	encoded, err := json.Marshal(payload)
+	encoded, err := marshalJSONNoEscape(payload)
 	if err != nil {
 		return RealtimeEvent{}, fmt.Errorf("situationsignalsworker: encode %s payload: %w", eventType, err)
 	}

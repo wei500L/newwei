@@ -36,8 +36,12 @@ const (
 	pausedQueuePollInterval = 250 * time.Millisecond
 	fetchErrorRetryInterval = time.Second
 	finishTimeout           = 10 * time.Second
-	shutdownGrace           = 30 * time.Second
-	shutdownCancelGrace     = 5 * time.Second
+	// shutdownGrace bounds the graceful drain: the process-level shutdown budget
+	// is 30s and several components share it. A poll still running when the
+	// grace expires is cancelled and left in the active list, where BullMQ
+	// stalled recovery hands it to the next owner after the lock expires.
+	shutdownGrace       = 15 * time.Second
+	shutdownCancelGrace = 5 * time.Second
 )
 
 // logPrefix keeps every queue-layer log line attributable to this package.
@@ -627,7 +631,9 @@ func (w *QueueWorker) shutdown() {
 		if cancelJobs != nil {
 			cancelJobs()
 		}
-		close(w.closed)
+		if w.closed != nil {
+			close(w.closed)
+		}
 	})
 }
 
@@ -832,7 +838,10 @@ func queueQueuedJobFromFlat(flat []any, token, jobID string) (queuedJob, error) 
 // fresh while the processor runs, and finally acks the job as completed, moves
 // it to the delayed set for a retry, or fails it.
 func (w *QueueWorker) processJob(job queuedJob) {
-	if err := w.rescheduleRepeat(w.fetchCtx, job); err != nil {
+	// The repeat iteration is scheduled before the processor runs, exactly like
+	// Worker.nextJobFromJobData. jobCtx keeps it alive during a graceful
+	// shutdown drain (only the shutdown deadline cancels jobCtx).
+	if err := w.rescheduleRepeat(w.jobCtx, job); err != nil {
 		log.Printf(logPrefix+"reschedule repeat for job %s: %v", job.ID, err)
 		return
 	}

@@ -466,6 +466,7 @@ func TestQueueWorkerLifecycleWithoutRedis(t *testing.T) {
 		DialTimeout: 50 * time.Millisecond,
 		MaxRetries:  -1,
 	})
+	t.Cleanup(func() { _ = client.Close() })
 	worker, err := NewQueueWorker(client)
 	if err != nil {
 		t.Fatalf("NewQueueWorker: %v", err)
@@ -473,11 +474,13 @@ func TestQueueWorkerLifecycleWithoutRedis(t *testing.T) {
 	worker.Close()
 	worker.Close() // idempotent
 
-	runWorker, err := NewQueueWorker(redis.NewClient(&redis.Options{
+	runClient := redis.NewClient(&redis.Options{
 		Addr:        "127.0.0.1:1",
 		DialTimeout: 50 * time.Millisecond,
 		MaxRetries:  -1,
-	}))
+	})
+	t.Cleanup(func() { _ = runClient.Close() })
+	runWorker, err := NewQueueWorker(runClient)
 	if err != nil {
 		t.Fatalf("NewQueueWorker: %v", err)
 	}

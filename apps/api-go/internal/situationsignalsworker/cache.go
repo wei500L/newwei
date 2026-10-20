@@ -270,7 +270,7 @@ func (s *Service) persistTelegramState(ctx context.Context, state telegramState)
 		message := state.LastError
 		document.LastError = &message
 	}
-	encoded, err := json.Marshal(document)
+	encoded, err := marshalJSONNoEscape(document)
 	if err != nil {
 		s.logf("situationsignalsworker: encode telegram state failed: %v", err)
 		return
@@ -374,7 +374,7 @@ func (s *Service) persistOrefAlerts(ctx context.Context, state orefState, config
 		message := state.LastError
 		document.Error = &message
 	}
-	encoded, err := json.Marshal(document)
+	encoded, err := marshalJSONNoEscape(document)
 	if err != nil {
 		s.logf("situationsignalsworker: encode oref alerts failed: %v", err)
 		return
@@ -398,7 +398,7 @@ func (s *Service) persistOrefHistory(ctx context.Context, state orefState, confi
 	if document.History == nil {
 		document.History = []OrefHistoryEntry{}
 	}
-	encoded, err := json.Marshal(document)
+	encoded, err := marshalJSONNoEscape(document)
 	if err != nil {
 		s.logf("situationsignalsworker: encode oref history failed: %v", err)
 		return
@@ -415,7 +415,7 @@ func (s *Service) persistOrefMetrics(ctx context.Context, state orefState, updat
 		HistoryCount24h: state.HistoryCount24h,
 		UpdatedAt:       updatedAt,
 	}
-	encoded, err := json.Marshal(document)
+	encoded, err := marshalJSONNoEscape(document)
 	if err != nil {
 		s.logf("situationsignalsworker: encode oref metrics failed: %v", err)
 		return
@@ -426,14 +426,14 @@ func (s *Service) persistOrefMetrics(ctx context.Context, state orefState, updat
 }
 
 // marshalAlerts renders the change-detection fingerprint: the compact JSON
-// array JSON.stringify(alerts) produces. encoding/json compacts the raw
-// elements of a json.RawMessage, so the original key order inside every alert
-// is preserved while insignificant whitespace is removed.
+// array JSON.stringify(alerts) produces. The raw elements of a json.RawMessage
+// keep their original key order while insignificant whitespace is removed, and
+// HTML characters are not escaped (JSON.stringify leaves them as-is).
 func marshalAlerts(alerts []json.RawMessage) string {
 	if alerts == nil {
 		return "[]"
 	}
-	encoded, err := json.Marshal(alerts)
+	encoded, err := marshalJSONNoEscape(alerts)
 	if err != nil {
 		return "[]"
 	}
