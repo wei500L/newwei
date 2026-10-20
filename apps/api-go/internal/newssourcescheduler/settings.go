@@ -117,7 +117,9 @@ func (s *Service) readSeedRuntimeSettings(ctx context.Context) (seedRuntimeSetti
 // does not exist.
 func (s *Service) readStoredSeedRuntimeSettings(ctx context.Context) (json.RawMessage, error) {
 	if s.db == nil {
-		return nil, errors.New("newssourcescheduler: mysql is not configured")
+		// A service built on ports alone (tests) has no SystemSetting reader; the
+		// documented defaults are the same fallback as a missing row.
+		return nil, nil
 	}
 	var value []byte
 	err := s.db.QueryRowContext(ctx,

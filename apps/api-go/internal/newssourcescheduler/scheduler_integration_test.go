@@ -85,6 +85,8 @@ func newSchedulerHarness(t *testing.T) *schedulerHarness {
 		newMySQLRepository(db, itemsingest.WriteRawItemOutboxTx),
 		newRedisCache(redisClient),
 		Options{
+			DB:              db,
+			Redis:           redisClient,
 			Discovery:       discovery,
 			Queue:           queue,
 			Pipeline:        pipeline,
