@@ -7,6 +7,7 @@ import {
   settleWithConcurrency,
 } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { ActiveOrgRegistryService } from "../org/active-org-registry.service";
 import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
@@ -33,6 +34,7 @@ export class ClassificationQualityAlertSchedulerService {
     private readonly cache: CacheService,
     private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly classificationQuality: ClassificationQualityService,
+    private readonly env: EnvService,
   ) {}
 
   @Interval(
@@ -40,6 +42,21 @@ export class ClassificationQualityAlertSchedulerService {
     CLASSIFICATION_ALERT_SCHEDULER_INTERVAL_MS,
   )
   async evaluate(): Promise<void> {
+    // Execution ownership is exclusive. In go mode api-go owns the evaluation
+    // and shares the same tick gate / per-org lock as this scheduler, so Nest
+    // must return before claiming the gate; otherwise a lucky Nest tick would
+    // consume the interval and skip the Go evaluation.
+    if (
+      this.env.get<string>("API_GO_CLASSIFICATION_QUALITY_ALERT_MODE", {
+        infer: true,
+      }) === "go"
+    ) {
+      this.logger.info(
+        "Skipping classification quality alert scheduler tick: evaluation is owned by api-go (API_GO_CLASSIFICATION_QUALITY_ALERT_MODE=go)",
+      );
+      return;
+    }
+
     const claimed = await claimSchedulerTick(
       this.cache,
       "cron:classification-quality-alert:tick-gate",

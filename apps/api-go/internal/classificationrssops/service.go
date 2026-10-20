@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync"
 
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -29,6 +30,11 @@ type Service struct {
 	// Redis is not configured, which makes CreateReportJob fail loudly instead
 	// of leaving a pending report job that nothing will ever process.
 	reportQueue reportEnqueuer
+	// notificationRelayMu guards the optional notification:events:v1 publisher.
+	// The scheduler and the HTTP summary route both write Notification rows, and
+	// the publisher is installed once during startup, before either path runs.
+	notificationRelayMu        sync.RWMutex
+	notificationRelayPublisher NotificationRelayPublisher
 }
 
 // NewService assembles the read/write dependencies. A nil Mongo database makes
