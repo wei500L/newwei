@@ -383,6 +383,12 @@ jobs:
       - name: MySQL/Redis integration test (account-data export fixture, isolation, quota, audit)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/accountdata/ -run 'TestDataExportIntegration' -v
 
+      # Assistant 队列与订阅总线只使用既有 Redis：BullMQ 生产/消费/重试/卡死
+      # 恢复（A2）以及 gqlsub:assistantEvents 的原始消息逐字节断言。Mongo 在
+      # 该 job 中不可用，运行记录的持久化由 assistantruns 单元测试的 fake 覆盖。
+      - name: Assistant queue and subscription integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/assistantqueue/ ./internal/assistantruns/ -run 'TestProducerWorkerRetryAndRemove|TestStalledJobReturnsWithCounter|TestPublisherRawMessageMatchesNestEnvelope' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从

@@ -167,6 +167,8 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/alertqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/archivereading"
+	"github.com/wei500L/newwei/apps/api-go/internal/assistantqueue"
+	"github.com/wei500L/newwei/apps/api-go/internal/assistantruns"
 	"github.com/wei500L/newwei/apps/api-go/internal/auditoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/authn"
@@ -185,6 +187,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/alerts"
 	archivereadinggraphql "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/archivereading"
+	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/assistantwrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	graphqlcrawlmetadata "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/crawlmetadata"
 	graphqlcrawltaskwrite "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/crawltaskwrite"
@@ -832,7 +835,8 @@ func run() error {
 		economicDataGo ||
 		cfg.GraphQLAlertRulesMode == "go" ||
 		cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo ||
-		cfg.GraphQLNewsIndicatorRefreshMode == "go" {
+		cfg.GraphQLNewsIndicatorRefreshMode == "go" ||
+		cfg.GraphQLAssistantWriteMode == "go" {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -980,6 +984,8 @@ func run() error {
 				cfg.GraphQLSettingsWriteMode == "go" ||
 				cfg.GraphQLSourcePolicyWriteMode == "go" ||
 				cfg.GraphQLRssTranslationMode == "go" ||
+				cfg.GraphQLAssistantWriteMode == "go" ||
+				cfg.AssistantWorkerMode == "go" ||
 				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
 				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
@@ -1102,6 +1108,11 @@ func run() error {
 	// the other write switches; it needs MySQL, Redis and Mongo and registers
 	// only the translateRssItems mutation.
 	graphqlRssTranslationGo := cfg.GraphQLRssTranslationMode == "go"
+	// The assistant write takeover registers only the four assistant mutations.
+	// It is independent of every read switch; the worker switch is separate and
+	// may be enabled in a different process.
+	graphqlAssistantWriteGo := cfg.GraphQLAssistantWriteMode == "go"
+	assistantWorkerGo := cfg.AssistantWorkerMode == "go"
 	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
 	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
 	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
@@ -1189,6 +1200,7 @@ func run() error {
 		sourcePolicyWriteGo ||
 		graphqlKnowledgeReviewGo ||
 		graphqlRssTranslationGo ||
+		graphqlAssistantWriteGo ||
 		identityOnboardingGo || oidcLoginGo ||
 		searchReindexGo || proxyLoadBalancingGo || analysisExportGo || itemsIngestGo || archiveReadingGo || economicDataGo ||
 		crawlTaskWriteGo || crawlQueueOpsGo ||
@@ -1208,10 +1220,10 @@ func run() error {
 	// fetch unit needs it for the compatible cache, refresh lock and
 	// source-refresh relay, also without the credentialed JWT/RBAC stack. The
 	// raw_item replay owner needs Redis for its cron lease but no JWT, the
-	// economic-data worker owns the akshare consumer without JWT too, and the
+	// economic-data worker owns the akshare consumer without JWT too, the
 	// knowledge-graph ingestion scheduler takes its tick gate and org locks in
-	// Redis. The classification quality worker consumes its queue without
-	// authenticating a caller, so it must not pull in the JWT/membership stack.
+	// Redis, and the classification quality/assistant workers consume their
+	// queues without authenticating a caller.
 	needsRedis := needsCredentialedGo ||
 		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
 		cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
@@ -1219,7 +1231,8 @@ func run() error {
 		rawItemOutboxGo ||
 		economicDataWorkerGo ||
 		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo ||
-		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo
+		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
+		assistantWorkerGo
 	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -1910,6 +1923,24 @@ func run() error {
 		itemsIngestService = buildItemsIngestService(cfg, sharedDB, redisClient, dashboardMongo.Database())
 	}
 
+	// The assistant write mutations and the assistant worker share one service
+	// instance. Mongo is opened here when no other domain has opened it yet, and
+	// is closed by the ordered teardown below.
+	var assistantRunService *assistantruns.Service
+	var assistantWorker *assistantqueue.Worker
+	if graphqlAssistantWriteGo || assistantWorkerGo {
+		if dashboardMongo == nil {
+			opened, openErr := dashboardstats.Open(cfg.MongoURI)
+			if openErr != nil {
+				return fmt.Errorf("api-go: assistant requires a valid MONGO_URI")
+			}
+			dashboardMongo = opened
+		}
+		assistantRunService, err = wireAssistantRuns(cfg, sharedDB, redisClient, dashboardMongo)
+		if err != nil {
+			return err
+		}
+	}
 	var graphqlHandler *graphqlread.Handler
 	var graphqlMongo *dashboardstats.Connection
 	// The read switch, the organization/workspace/settings write switches, the
@@ -1921,7 +1952,7 @@ func run() error {
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
 	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || graphqlAlertRulesGo || settingsWriteGo ||
 		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || itemsIngestGo || archiveReadingGo || economicDataGo || crawlTaskWriteGo ||
-		cfg.GraphQLNewsIndicatorRefreshMode == "go" {
+		cfg.GraphQLNewsIndicatorRefreshMode == "go" || graphqlAssistantWriteGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -2067,6 +2098,16 @@ func run() error {
 		// workspace models.
 		if graphqlOrgAccessWriteGo {
 			orgaccesswrite.Register(reg, sharedDB, redisClient)
+		}
+		// The assistant mutations return history.AssistantRunModel. The model
+		// set is registered by the read registration when it is go, otherwise by
+		// the workspace write registration when that switch is go; only when
+		// neither runs does this batch register history models itself.
+		if graphqlAssistantWriteGo {
+			if !graphqlReadGo && !graphqlWorkspaceWriteGo {
+				history.RegisterModels(reg)
+			}
+			assistantwrite.Register(reg, assistantRunService)
 		}
 		if graphqlWorkspaceWriteGo {
 			if !workspaceModelsRegistered {
@@ -2285,6 +2326,11 @@ func run() error {
 		} else {
 			log.Printf("api-go: GraphQL knowledge-graph evidence review write not registered (API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE=legacy)")
 		}
+		if graphqlAssistantWriteGo {
+			log.Printf("api-go: GraphQL assistant writes registered (%s)", strings.Join(assistantwrite.RegisteredMutations, ", "))
+		} else {
+			log.Printf("api-go: GraphQL assistant writes not registered (API_GO_GRAPHQL_ASSISTANT_WRITE_MODE=legacy)")
+		}
 	}
 
 	var itemsReadingHandler *itemsreading.Handler
@@ -2385,6 +2431,11 @@ func run() error {
 				log.Printf("api-go: news backfill runtime close: %v", closeErr)
 			}
 		}
+		if assistantWorker != nil {
+			if closeErr := assistantWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: assistant worker close: %v", closeErr)
+			}
+		}
 		if deliveryScheduler != nil {
 			if closeErr := deliveryScheduler.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: user digest delivery scheduler close: %v", closeErr)
@@ -2477,6 +2528,7 @@ func run() error {
 			return err
 		}
 	}
+	assistantWorker = startAssistantWorker(cfg, assistantRunService, redisClient)
 
 	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gateway.ServeHTTPWithShadow(w, r, disp)

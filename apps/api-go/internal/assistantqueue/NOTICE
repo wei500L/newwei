@@ -1,0 +1,11 @@
+This package embeds Lua scripts from BullMQ 5.63.2.
+
+BullMQ
+Copyright (c) Taskforce.sh Inc.
+Licensed under the MIT License.
+https://github.com/taskforcesh/bullmq
+
+The files in scripts.go are the contents of
+node_modules/.pnpm/bullmq@5.63.2/node_modules/bullmq/dist/cjs/scripts/<name>.js
+with the template literal extracted verbatim (the @include directives were
+already expanded in the published package). They are not modified.

@@ -468,6 +468,12 @@ services:
       API_GO_CLASSIFICATION_REPORTS_MODE: ${API_GO_CLASSIFICATION_REPORTS_MODE:-legacy}
       API_GO_CLASSIFICATION_QUALITY_WORKER_MODE: ${API_GO_CLASSIFICATION_QUALITY_WORKER_MODE:-legacy}
       API_GO_PIPELINE_RECOVERY_MODE: ${API_GO_PIPELINE_RECOVERY_MODE:-legacy}
+      # AI 助手执行权。提交/删除 Mutation 的 Go 接管与 worker 消费是两个独立
+      # 开关，只接受空串/legacy/go，非法值启动失败。默认均 legacy：四个
+      # Mutation 与 assistant worker 都仍由 NestJS 处理。切换 worker 前先把
+      # 本服务的 worker 开关设为 go 并重启，再把 api-go 的设为 go。
+      API_GO_GRAPHQL_ASSISTANT_WRITE_MODE: ${API_GO_GRAPHQL_ASSISTANT_WRITE_MODE:-legacy}
+      API_GO_ASSISTANT_WORKER_MODE: ${API_GO_ASSISTANT_WORKER_MODE:-legacy}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -881,6 +887,13 @@ services:
       ASSISTANT_ORG_MAX_IN_FLIGHT: ${ASSISTANT_ORG_MAX_IN_FLIGHT:-2}
       ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET: ${ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET:-2000000}
       TASK_LOG_RETENTION_DAYS: ${TASK_LOG_RETENTION_DAYS:-14}
+      # AI 助手执行权（与 api 服务同源的两个开关）。写开关只注册四个
+      # assistant Mutation，要求 JWT/MySQL/Redis/Mongo；worker 开关只启动
+      # assistant 队列消费者，要求 MySQL/Redis/Mongo，不要求 JWT。NestJS 与
+      # Go 写出的任务格式相同，同一任务只会被持有锁的一个 worker 消费。
+      # 回滚：先按相反顺序把两个开关改回 legacy；未处理任务 NestJS 可继续消费。
+      API_GO_GRAPHQL_ASSISTANT_WRITE_MODE: ${API_GO_GRAPHQL_ASSISTANT_WRITE_MODE:-legacy}
+      API_GO_ASSISTANT_WORKER_MODE: ${API_GO_ASSISTANT_WORKER_MODE:-legacy}
       # LLM 网关 profile 七条配置/激活 HTTP
       # （GET/POST /api/system-settings/llm-gateways、PUT active /
       # embedding-active / rerank-active、PUT/DELETE :id）。pilot 与样例
