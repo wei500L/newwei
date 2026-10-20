@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Payload is the validated processed_item MongoOutbox envelope. Its shape and
@@ -285,6 +286,10 @@ func (o *looseNumber) UnmarshalJSON(data []byte) error {
 		o.Value = nil
 		return nil
 	}
+	if trimmed[0] != '-' && (trimmed[0] < '0' || trimmed[0] > '9') {
+		o.Value = nil
+		return nil
+	}
 	decoder := json.NewDecoder(bytes.NewReader(trimmed))
 	decoder.UseNumber()
 	var number json.Number
@@ -312,6 +317,10 @@ func (o *optionalFiniteNumber) UnmarshalJSON(data []byte) error {
 	o.Set = true
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 || string(trimmed) == "null" {
+		o.Value = nil
+		return nil
+	}
+	if trimmed[0] != '-' && (trimmed[0] < '0' || trimmed[0] > '9') {
 		o.Value = nil
 		return nil
 	}
@@ -353,6 +362,9 @@ func (o *optionalEmbedding) UnmarshalJSON(data []byte) error {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
 			return errors.New("summaryEmbedding contains a non-finite number")
 		}
+	}
+	if values == nil {
+		values = []float64{}
 	}
 	o.Value = values
 	return nil
@@ -913,7 +925,7 @@ func collapseWhitespaceToUnderscore(value string) string {
 	builder.Grow(len(value))
 	inSpace := false
 	for _, r := range value {
-		if r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\v' || r == '\f' {
+		if unicode.IsSpace(r) {
 			if !inSpace {
 				builder.WriteByte('_')
 				inSpace = true

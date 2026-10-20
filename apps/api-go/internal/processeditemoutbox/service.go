@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 	"unicode/utf16"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -702,15 +703,9 @@ func toItemMetaName(value string) string {
 		return value
 	}
 	head := string(utf16.Decode(units[:190]))
-	return strings.TrimRightFunc(head, isSpaceRune) + "…"
-}
-
-func isSpaceRune(r rune) bool {
-	switch r {
-	case ' ', '\t', '\n', '\v', '\f', '\r', '\u00a0', '\u1680', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\ufeff':
-		return true
-	}
-	return r >= '\u2000' && r <= '\u200a'
+	return strings.TrimRightFunc(head, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '\ufeff'
+	}) + "…"
 }
 
 func hasLocation(result CleanedNews) bool {
@@ -809,23 +804,27 @@ func readModelError(raw json.RawMessage) *itemsreading.ProcessedItemErrorDoc {
 	if text := jsonStringValue(record.Message); strings.TrimSpace(text) != "" {
 		message = text
 	}
-	var name *string
-	if text := jsonStringValue(record.Name); text != "" {
-		name = &text
-	}
-	return &itemsreading.ProcessedItemErrorDoc{Message: message, Name: name}
+	return &itemsreading.ProcessedItemErrorDoc{Message: message, Name: jsonOptionalString(record.Name)}
 }
 
 func jsonStringValue(raw json.RawMessage) string {
+	value := jsonOptionalString(raw)
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func jsonOptionalString(raw json.RawMessage) *string {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || string(trimmed) == "null" {
-		return ""
+		return nil
 	}
 	var value string
 	if err := json.Unmarshal(trimmed, &value); err != nil {
-		return ""
+		return nil
 	}
-	return value
+	return &value
 }
 
 func readModelLLM(llm LLMMetadata) *itemsreading.ProcessedItemLlmDoc {

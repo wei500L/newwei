@@ -118,7 +118,7 @@ func (c *Client) Upsert(ctx context.Context, cfg Config, request UpsertRequest) 
 		return nil
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
-	token := strings.TrimSpace(cfg.Token)
+	token := cfg.Token
 	if baseURL == "" || token == "" {
 		return &Error{Kind: "VectorServiceUnavailableError", Message: "Vector service enabled but configuration is incomplete"}
 	}
@@ -205,19 +205,21 @@ func (c *Client) upsertOnce(ctx context.Context, endpoint, token string, body []
 // non-negative integer and collection is a non-empty string.
 func validateUpsertResponse(raw []byte) error {
 	var payload struct {
-		Upserted   *json.Number `json:"upserted"`
-		Collection *string      `json:"collection"`
+		Upserted   json.RawMessage `json:"upserted"`
+		Collection *string         `json:"collection"`
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if err := decoder.Decode(&payload); err != nil {
+	if err := json.Unmarshal(raw, &payload); err != nil {
 		return err
 	}
-	if payload.Upserted == nil || payload.Collection == nil || strings.TrimSpace(*payload.Collection) == "" {
+	if len(bytes.TrimSpace(payload.Upserted)) == 0 || payload.Collection == nil || strings.TrimSpace(*payload.Collection) == "" {
 		return errors.New("missing upserted or collection")
 	}
-	value, err := payload.Upserted.Float64()
-	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || math.Trunc(value) != value {
+	number := bytes.TrimSpace(payload.Upserted)
+	if number[0] != '-' && (number[0] < '0' || number[0] > '9') {
+		return errors.New("upserted is not a non-negative integer")
+	}
+	var value float64
+	if err := json.Unmarshal(number, &value); err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || math.Trunc(value) != value {
 		return errors.New("upserted is not a non-negative integer")
 	}
 	return nil

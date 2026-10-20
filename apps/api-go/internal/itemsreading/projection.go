@@ -62,7 +62,7 @@ func (h *Hydrator) UpsertReadModelProjection(ctx context.Context, doc ReadModelD
 		ctx,
 		bson.D{{Key: "orgId", Value: doc.OrgID}, {Key: "itemMetaId", Value: doc.ItemMetaID}},
 		bson.D{{Key: "$set", Value: set}},
-		options.Update().SetUpsert(true),
+		options.UpdateOne().SetUpsert(true),
 	)
 	return err
 }
