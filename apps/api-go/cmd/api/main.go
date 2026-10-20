@@ -175,6 +175,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authn"
 	"github.com/wei500L/newwei/apps/api-go/internal/authz"
 	"github.com/wei500L/newwei/apps/api-go/internal/canary"
+	"github.com/wei500L/newwei/apps/api-go/internal/classificationalert"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
@@ -223,6 +224,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 	"github.com/wei500L/newwei/apps/api-go/internal/processeditemoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
+	"github.com/wei500L/newwei/apps/api-go/internal/realtimesocket"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
 	"github.com/wei500L/newwei/apps/api-go/internal/userdigest"
@@ -853,6 +855,12 @@ func run() error {
 	if cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
 		rules = legacyproxy.WithNotificationsSocket(rules, string(legacyproxy.ModeGo))
 	}
+	// The five-namespace realtime transport owns only its dedicated Engine.IO
+	// path; /socket.io keeps proxying to NestJS so the default Web build and
+	// every not-yet-migrated namespace are untouched.
+	if cfg.RealtimeSocketMode == config.RealtimeSocketModeGo {
+		rules = legacyproxy.WithRealtimeSocket(rules, string(legacyproxy.ModeGo))
+	}
 	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
 	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
 	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
@@ -872,6 +880,8 @@ func run() error {
 	// non-local operation is forwarded whole to NestJS.
 	graphqlSubscriptionsGo := cfg.GraphQLSubscriptionsMode == config.GraphQLSubscriptionsModeGo
 	notificationsSocketGo := cfg.NotificationsSocketMode == config.NotificationsSocketModeGo
+	realtimeSocketGo := cfg.RealtimeSocketMode == config.RealtimeSocketModeGo
+	classificationAlertGo := cfg.ClassificationQualityAlertMode == config.ClassificationQualityAlertModeGo
 	graphqlRouteMode := ""
 	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
 		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" ||
@@ -1123,6 +1133,8 @@ func run() error {
 				cfg.GeocodingMode == config.GeocodingModeGo ||
 				cfg.RuntimeDiagnosticsMode == config.RuntimeDiagnosticsModeGo ||
 				graphqlSubscriptionsGo ||
+				realtimeSocketGo ||
+				classificationAlertGo ||
 				cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
@@ -1326,7 +1338,7 @@ func run() error {
 		newsSourcePreviewGo || crawlWorkflowTrialGo || analysisRunsGo ||
 		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
 		cfg.MetricsMode == config.MetricsModeGo ||
-		graphqlSubscriptionsGo || notificationsSocketGo
+		graphqlSubscriptionsGo || notificationsSocketGo || realtimeSocketGo
 	var redisClient *redis.Client
 	var redisOptions *redis.Options
 	var authenticator *authhttp.Authenticator
@@ -1361,6 +1373,8 @@ func run() error {
 		cfg.ArchivePreparationWorkerMode == config.ArchivePreparationWorkerModeGo ||
 		analysisWorkerGo ||
 		notificationsSocketGo ||
+		realtimeSocketGo ||
+		classificationAlertGo ||
 		cfg.BullmqCleanupMode == config.BullmqCleanupModeGo ||
 		cfg.ClassificationReviewSeedMode == config.ClassificationReviewSeedModeGo ||
 		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
@@ -2638,6 +2652,37 @@ func run() error {
 		gateway.RegisterGoHandler(notificationssocket.Path, runtime.ServeHTTP)
 		log.Printf("api-go: notifications Socket.IO transport under go (%s, namespace %s)", notificationssocket.Path, notificationssocket.Namespace)
 	}
+	// The realtime transport owns the dedicated /socket.io-realtime path and
+	// multiplexes the five remaining console namespaces over one Engine.IO
+	// connection. It is constructed before the ordered teardown defer so every
+	// later error path stops its event sources and disconnects live sockets.
+	var realtimeSocket *realtimeSocketUnit
+	if realtimeSocketGo {
+		if sharedDB == nil || redisClient == nil || redisOptions == nil {
+			return errRealtimeSocketResources
+		}
+		unit, wireErr := wireRealtimeSocket(cfg, sharedDB, redisClient, redisOptions, &dashboardMongo)
+		if wireErr != nil {
+			return wireErr
+		}
+		realtimeSocket = unit
+		gateway.RegisterGoHandler(realtimesocket.Path, unit.runtime.ServeHTTP)
+		log.Printf("api-go: realtime Socket.IO transport under go (%s, namespaces /newsnow /ops /quality /queue /situation-monitor)", realtimesocket.Path)
+	}
+	// The classification quality alert cron owns the five-minute evaluation in
+	// go mode. It shares the tick gate and per-organization lease with NestJS.
+	var classificationAlert *classificationalert.Scheduler
+	if classificationAlertGo {
+		if sharedDB == nil || redisClient == nil {
+			return errClassificationAlertResources
+		}
+		scheduler, wireErr := wireClassificationAlert(cfg, sharedDB, redisClient, &dashboardMongo)
+		if wireErr != nil {
+			return wireErr
+		}
+		classificationAlert = scheduler
+		log.Printf("api-go: classification quality alert scheduler under go")
+	}
 	// A legal graphql-transport-ws upgrade goes to the local executor; every
 	// other exact /graphql request keeps the Go read handler or the legacy
 	// proxy. Registering this entrypoint is independent of the read switch.
@@ -2735,6 +2780,21 @@ func run() error {
 		if notificationsSocket != nil {
 			if closeErr := notificationsSocket.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: notifications socket close: %v", closeErr)
+			}
+		}
+		// Stop the classification alert cron before the in-flight evaluation
+		// drains and the realtime sources stop: it must finish its summary and
+		// notification write while Redis, MySQL and Mongo are still open.
+		if classificationAlert != nil {
+			if closeErr := classificationAlert.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: classification quality alert scheduler close: %v", closeErr)
+			}
+		}
+		// Stop the realtime event sources and disconnect the five-namespace
+		// sockets before the shared Redis client is closed below.
+		if realtimeSocket != nil {
+			if closeErr := realtimeSocket.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: realtime socket close: %v", closeErr)
 			}
 		}
 		// Stop accepting subscriptions, cancel operations and upstream sockets,
@@ -2896,6 +2956,14 @@ func run() error {
 		if startErr := notificationsSocket.Start(context.Background()); startErr != nil {
 			return startErr
 		}
+	}
+	if realtimeSocket != nil {
+		if startErr := realtimeSocket.Start(context.Background()); startErr != nil {
+			return startErr
+		}
+	}
+	if classificationAlert != nil {
+		classificationAlert.Start(context.Background())
 	}
 	if economicRuntime != nil {
 		if err := economicRuntime.Start(context.Background()); err != nil {
@@ -3099,6 +3167,20 @@ func run() error {
 				log.Printf("api-go: notifications socket close: %v", closeErr)
 			}
 			cancelNotifications()
+		}
+		if classificationAlert != nil {
+			alertCtx, cancelAlert := context.WithTimeout(context.Background(), 10*time.Second)
+			if closeErr := classificationAlert.Close(alertCtx); closeErr != nil {
+				log.Printf("api-go: classification quality alert scheduler close: %v", closeErr)
+			}
+			cancelAlert()
+		}
+		if realtimeSocket != nil {
+			realtimeCtx, cancelRealtime := context.WithTimeout(context.Background(), 10*time.Second)
+			if closeErr := realtimeSocket.Close(realtimeCtx); closeErr != nil {
+				log.Printf("api-go: realtime socket close: %v", closeErr)
+			}
+			cancelRealtime()
 		}
 		if graphqlSubscriptions != nil {
 			subscriptionCtx, cancelSubscriptions := context.WithTimeout(context.Background(), 10*time.Second)

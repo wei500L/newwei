@@ -1857,6 +1857,36 @@ const (
 	NotificationsSocketModeGo     NotificationsSocketMode = "go"
 )
 
+// RealtimeSocketMode controls the dedicated Go Socket.IO transport for the
+// five remaining realtime namespaces (/newsnow, /ops, /quality, /queue and
+// /situation-monitor). The accepted values are exactly "", "legacy" and "go";
+// empty behaves like legacy. go serves the dedicated /socket.io-realtime
+// Engine.IO path only, so /socket.io and every namespace still proxied to
+// NestJS keep their existing transport and the default Web entrypoint.
+//
+// The newsnow namespace is relayed from the Socket.IO Redis adapter, so go
+// mode is rejected when WS_REDIS_ADAPTER_ENABLED=false: without the adapter
+// the NestJS producers never publish the channel Go subscribes to.
+type RealtimeSocketMode string
+
+const (
+	RealtimeSocketModeLegacy RealtimeSocketMode = "legacy"
+	RealtimeSocketModeGo     RealtimeSocketMode = "go"
+)
+
+// ClassificationQualityAlertMode controls the owner of the five-minute
+// classification quality alert evaluation. The accepted values are exactly
+// "", "legacy" and "go"; empty behaves like legacy. In go mode the Go
+// scheduler evaluates every active organization and the NestJS @Interval
+// returns immediately, so both processes share one tick gate and one
+// per-organization lock.
+type ClassificationQualityAlertMode string
+
+const (
+	ClassificationQualityAlertModeLegacy ClassificationQualityAlertMode = "legacy"
+	ClassificationQualityAlertModeGo     ClassificationQualityAlertMode = "go"
+)
+
 // AuthFactorsMode controls the seven authenticated MFA management and
 // organization OIDC configuration HTTP routes migrated by this unit
 // (API_GO_AUTH_FACTORS_MODE).
@@ -2239,6 +2269,14 @@ type Config struct {
 	// the dedicated /socket.io-notifications path. It is independent of every
 	// GraphQL switch and defaults to legacy.
 	NotificationsSocketMode NotificationsSocketMode
+	// RealtimeSocketMode takes over the five remaining realtime namespaces on
+	// the dedicated /socket.io-realtime path. It is independent of every
+	// GraphQL and HTTP switch and defaults to legacy.
+	RealtimeSocketMode RealtimeSocketMode
+	// ClassificationQualityAlertMode controls whether this process runs the
+	// five-minute classification quality alert evaluation. It defaults to
+	// legacy so an unset deployment keeps the NestJS @Interval owner.
+	ClassificationQualityAlertMode ClassificationQualityAlertMode
 	// WebSocket connection caps and connect-window limits share the NestJS
 	// environment names and defaults so the Go path enforces the same policy.
 	WSMaxConnectionsPerUser         int
@@ -2246,6 +2284,11 @@ type Config struct {
 	WSConnectRateLimitPerIP         int
 	WSConnectRateLimitPerUser       int
 	WSConnectRateLimitWindowSeconds int
+	// WSRedisAdapterEnabled and WSRedisAdapterKey mirror the NestJS Socket.IO
+	// Redis adapter configuration. The newsnow namespace is relayed from the
+	// adapter broadcast channel, so Go must know the same switch and key.
+	WSRedisAdapterEnabled bool
+	WSRedisAdapterKey     string
 	// GraphQLNewsEventsMode 只决定六个新闻事件 root 是否登记。默认 legacy。
 	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
 	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
@@ -4002,6 +4045,46 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_NOTIFICATIONS_SOCKET_MODE must be one of legacy|go")
 	}
+	// The realtime transport is intentionally separate from the notifications
+	// transport: one Engine.IO path multiplexes five namespaces, while
+	// /notifications keeps its own path and runtime.
+	switch strings.TrimSpace(getenv("API_GO_REALTIME_SOCKET_MODE")) {
+	case "", string(RealtimeSocketModeLegacy):
+		cfg.RealtimeSocketMode = RealtimeSocketModeLegacy
+	case string(RealtimeSocketModeGo):
+		cfg.RealtimeSocketMode = RealtimeSocketModeGo
+	default:
+		errs = append(errs, "API_GO_REALTIME_SOCKET_MODE must be one of legacy|go")
+	}
+	// The classification quality alert scheduler is a background cron with no
+	// HTTP surface. Empty behaves like legacy.
+	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_QUALITY_ALERT_MODE")) {
+	case "", string(ClassificationQualityAlertModeLegacy):
+		cfg.ClassificationQualityAlertMode = ClassificationQualityAlertModeLegacy
+	case string(ClassificationQualityAlertModeGo):
+		cfg.ClassificationQualityAlertMode = ClassificationQualityAlertModeGo
+	default:
+		errs = append(errs, "API_GO_CLASSIFICATION_QUALITY_ALERT_MODE must be one of legacy|go")
+	}
+	// The Socket.IO Redis adapter configuration must match NestJS exactly:
+	// the newsnow dispatcher publishes into the adapter channel and Go
+	// subscribes to the same key. An invalid boolean is a startup error like
+	// the NestJS env schema, not a silent fallback.
+	cfg.WSRedisAdapterEnabled = true
+	if raw := strings.TrimSpace(getenv("WS_REDIS_ADAPTER_ENABLED")); raw != "" {
+		switch strings.ToLower(raw) {
+		case "true", "1", "yes", "y", "on":
+			cfg.WSRedisAdapterEnabled = true
+		case "false", "0", "no", "n", "off":
+			cfg.WSRedisAdapterEnabled = false
+		default:
+			errs = append(errs, fmt.Sprintf("WS_REDIS_ADAPTER_ENABLED must be a boolean, got %q", raw))
+		}
+	}
+	cfg.WSRedisAdapterKey = strings.TrimSpace(getenv("WS_REDIS_ADAPTER_KEY"))
+	if cfg.WSRedisAdapterKey == "" {
+		cfg.WSRedisAdapterKey = "socket.io"
+	}
 	cfg.WSMaxConnectionsPerUser = 5
 	cfg.WSMaxConnectionsPerIP = 50
 	cfg.WSConnectRateLimitPerIP = 60
@@ -5667,6 +5750,31 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// MySQL and reads Redis. It never opens Mongo or starts a worker.
 	if cfg.NotificationsSocketMode == NotificationsSocketModeGo {
 		appendAuthRequirements(&errs, "API_GO_NOTIFICATIONS_SOCKET_MODE", cfg)
+	}
+	// The five-namespace realtime transport uses the same JWT/MySQL/Redis
+	// stack and additionally depends on the Redis adapter broadcast channel
+	// for newsnow. Disabling the adapter silently would make Go receive no
+	// newsnow events at all, so the combination is rejected at startup.
+	if cfg.RealtimeSocketMode == RealtimeSocketModeGo {
+		appendAuthRequirements(&errs, "API_GO_REALTIME_SOCKET_MODE", cfg)
+		if !cfg.WSRedisAdapterEnabled {
+			errs = append(errs, "API_GO_REALTIME_SOCKET_MODE=go requires WS_REDIS_ADAPTER_ENABLED=true")
+		}
+	}
+	// The classification quality alert scheduler reads the summary documents
+	// from Mongo, the active organizations and matcher tables from MySQL and the
+	// shared tick gate / organization leases from Redis. It authenticates no
+	// caller, so JWT_SECRET is intentionally not required.
+	if cfg.ClassificationQualityAlertMode == ClassificationQualityAlertModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_CLASSIFICATION_QUALITY_ALERT_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_CLASSIFICATION_QUALITY_ALERT_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CLASSIFICATION_QUALITY_ALERT_MODE=go")
+		}
 	}
 	// The organization access write takeover needs JWT verification, MySQL and
 	// Redis only. It reads no Mongo collection and starts no worker, so it does
