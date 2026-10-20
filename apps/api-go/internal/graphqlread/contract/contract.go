@@ -166,8 +166,13 @@ func Bind[T any](fn func(Context) (T, error)) Resolver {
 // Failure is a field error whose HTTP status and extensions follow the Nest
 // GraphQL exception filter. Status 0 means 500.
 type Failure struct {
-	Message             string
-	Status              int
+	Message string
+	Status  int
+	// ExposeMessage keeps an explicit 5xx message. Without it the executor
+	// masks every server-side failure as "Internal server error", matching the
+	// NestJS production filter. The economic item-not-found contract is the
+	// only migrated root that intentionally exposes a specific 500 message.
+	ExposeMessage       bool
 	Code                string
 	AppCode             string
 	Detail              string

@@ -51,6 +51,15 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // Economic-data request ownership (three GraphQL mutations and three
+    // AkShare gateway admin routes). Empty behaves like legacy.
+    API_GO_ECONOMIC_DATA_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // NewsNow source fetch ownership: empty/legacy keep
     // GET /api/news-aggregator/source and POST /api/news-aggregator/sources/batch
     // on NestJS; go lets the Go gateway fetch upstream, write the compatible
@@ -69,6 +78,15 @@ export const apiEnvSchema = baseEnvSchema
     // synchronous request-time delivery still runs here. Invalid values fail
     // Nest startup.
     API_GO_RAW_ITEM_OUTBOX_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // Economic-data worker ownership (catalog/repeat synchronization and the
+    // akshare-data consumer). Independent of the request switch.
+    API_GO_ECONOMIC_DATA_WORKER_MODE: z
       .preprocess(
         (value) =>
           typeof value === "string" && value.trim() === "" ? "legacy" : value,

@@ -1,20 +1,20 @@
 # economic · 经济数据与 AkShare
 
-最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
+最近核对：2026-10-19 23:50 MSK（UTC+03:00），经济数据 Go 所有权分支 `refactor/go-economic-data`（基线 `origin/main 91e759b449c4511dc96d86539ea0eb258754d07e`）。该批尚未合入 main，下表“Go 实现”是待合并实现事实。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态
 
-经济数据六 Query 是 Go 直接数据库读；AkShare 管理升级和数据抓取/配置写仍为 Nest。共享全局经济数据不按 org 过滤，权限检查仍必须存在。
+经济数据六 Query 是 Go 直接数据库读，本批不重写。新分支增加默认 legacy 的 `API_GO_ECONOMIC_DATA_MODE` 与 `API_GO_ECONOMIC_DATA_WORKER_MODE`：请求开关接管三个 Mutation 与三条 AkShare 管理 HTTP；worker 开关接管目录/重复任务同步与 `akshare-data` 唯一消费。两个开关独立，worker=go 时 Nest 跳过 `ensureCatalog`/`ensureRepeatableJobs` 且不创建 Worker。共享全局经济数据不按 org 过滤，权限检查仍必须存在。
 
-关键数据与副作用：MySQL EconomicDataItem/Point/FetchConfig，Redis/BullMQ akshare-data，AkShare HTTP。AkshareService.onModuleInit 会 ensureCatalog/ensureRepeatableJobs；updateFetchConfig 写库后调用 ensureRepeatableJobs，不能当普通配置 CRUD。
+关键数据与副作用：MySQL EconomicDataItem/ItemCategory/Category/Point/FetchConfig，Redis/BullMQ akshare-data，Mongo EconomicProviderResponse/AkshareResponse，AkShare/Finnhub/FRED/Yahoo HTTP。Go worker 按 provider 失败契约写 fetch config 状态；prefetch 配置错误归档 skipped 后成功结束 job。详见 [go-economic-data](../../go-economic-data.md)。
 
-真实剩余缺口：updateEconomicDataFetchConfig、triggerDataFetch、triggerEconomicDataRefreshPreset 以及 admin 升级/status/version 尚在 Nest；AkShare 与 repeat scheduler 本次无实网验证。
+真实剩余缺口：本批未实网验证 AkShare、Finnhub、FRED、Yahoo、生产 Redis 与升级后的网关进程；`origin/main` 仍没有这些 Go 入口，待 PR 合并。
 
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#economic) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 Nest 功能目录：[akshare](../../../../apps/api/src/modules/akshare)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。
 
-当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
+当前认领：[PR #99](https://github.com/wei500L/newwei/pull/99)，分支 `refactor/go-economic-data`，head `084387d4fff9ef69c53097989baf7eb0763417f6`，Ready 未合并；普通 CI [39318891222](https://github.com/wei500L/newwei/actions/runs/39318891222) 在该 head 成功，两个 regen job 为 skipped（不是测试通过）。旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
 
 ## 精确 HTTP 清单
 
@@ -22,9 +22,9 @@ Nest 功能目录：[akshare](../../../../apps/api/src/modules/akshare)。Contro
 
 | HTTP 入口 | 根权限 / 额外约束 | Nest 事实源与符号 | Go 接管组 / 缺口 |
 |---|---|---|---|
-| `GET /api/admin/akshare/status` | settings.manage | [admin-akshare.controller.ts](../../../../apps/api/src/modules/akshare/admin-akshare.controller.ts) · `status` | Nest；尚未接管 |
-| `POST /api/admin/akshare/upgrade` | settings.manage | [admin-akshare.controller.ts](../../../../apps/api/src/modules/akshare/admin-akshare.controller.ts) · `upgrade` | Nest；尚未接管 |
-| `GET /api/admin/akshare/version` | settings.manage | [admin-akshare.controller.ts](../../../../apps/api/src/modules/akshare/admin-akshare.controller.ts) · `version` | Nest；尚未接管 |
+| `GET /api/admin/akshare/status` | settings.manage | [admin-akshare.controller.ts](../../../../apps/api/src/modules/akshare/admin-akshare.controller.ts) · `status` | Go `economicdata.AdminHandler`；`API_GO_ECONOMIC_DATA_MODE=go`（分支待合并） |
+| `POST /api/admin/akshare/upgrade` | settings.manage | [admin-akshare.controller.ts](../../../../apps/api/src/modules/akshare/admin-akshare.controller.ts) · `upgrade` | Go `economicdata.AdminHandler`；`API_GO_ECONOMIC_DATA_MODE=go`（分支待合并） |
+| `GET /api/admin/akshare/version` | settings.manage | [admin-akshare.controller.ts](../../../../apps/api/src/modules/akshare/admin-akshare.controller.ts) · `version` | Go `economicdata.AdminHandler`；`API_GO_ECONOMIC_DATA_MODE=go`（分支待合并） |
 
 ## GraphQL 精确 root 清单
 
@@ -32,9 +32,9 @@ Nest 功能目录：[akshare](../../../../apps/api/src/modules/akshare)。Contro
 
 | 类型 / root | 根权限 | Nest 事实源与符号 | Go 实现 / 开关条件 |
 |---|---|---|---|
-| Mutation `triggerDataFetch` | economicdata.manage | [economic-data.resolver.ts](../../../../apps/api/src/graphql/resolvers/economic-data.resolver.ts) · `triggerDataFetch` | Nest；未注册 |
-| Mutation `triggerEconomicDataRefreshPreset` | economicdata.manage | [economic-data.resolver.ts](../../../../apps/api/src/graphql/resolvers/economic-data.resolver.ts) · `triggerEconomicDataRefreshPreset` | Nest；未注册 |
-| Mutation `updateEconomicDataFetchConfig` | economicdata.manage | [economic-data.resolver.ts](../../../../apps/api/src/graphql/resolvers/economic-data.resolver.ts) · `updateEconomicDataFetchConfig` | Nest；未注册 |
+| Mutation `triggerDataFetch` | economicdata.manage | [economic-data.resolver.ts](../../../../apps/api/src/graphql/resolvers/economic-data.resolver.ts) · `triggerDataFetch` | `graphqlread/economicdata.Register`；`API_GO_ECONOMIC_DATA_MODE=go`（分支待合并） |
+| Mutation `triggerEconomicDataRefreshPreset` | economicdata.manage | [economic-data.resolver.ts](../../../../apps/api/src/graphql/resolvers/economic-data.resolver.ts) · `triggerEconomicDataRefreshPreset` | `graphqlread/economicdata.Register`；`API_GO_ECONOMIC_DATA_MODE=go`（分支待合并） |
+| Mutation `updateEconomicDataFetchConfig` | economicdata.manage | [economic-data.resolver.ts](../../../../apps/api/src/graphql/resolvers/economic-data.resolver.ts) · `updateEconomicDataFetchConfig` | `graphqlread/economicdata.Register`；`API_GO_ECONOMIC_DATA_MODE=go`（分支待合并） |
 | Query `economicDataFetchConfigs` | economicdata.manage | [economic-data.resolver.ts](../../../../apps/api/src/graphql/resolvers/economic-data.resolver.ts) · `economicDataFetchConfigs` | [economic.Register](../../../../apps/api-go/internal/graphqlread/economic/register.go)；`API_GO_GRAPHQL_READ_MODE` |
 | Query `economicDataRefreshPresetStatus` | economicdata.manage | [economic-data.resolver.ts](../../../../apps/api/src/graphql/resolvers/economic-data.resolver.ts) · `economicDataRefreshPresetStatus` | [economic.Register](../../../../apps/api-go/internal/graphqlread/economic/register.go)；`API_GO_GRAPHQL_READ_MODE` |
 | Query `getEconomicData` | economicdata.read | [economic-data.resolver.ts](../../../../apps/api/src/graphql/resolvers/economic-data.resolver.ts) · `getEconomicData` | [economic.Register](../../../../apps/api-go/internal/graphqlread/economic/register.go)；`API_GO_GRAPHQL_READ_MODE` |

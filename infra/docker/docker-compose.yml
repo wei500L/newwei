@@ -421,6 +421,17 @@ services:
       PRISMA_AUTO_RESOLVE_FAILED_MIGRATIONS: "false"
       AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
       AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
+      AKSHARE_HTTP_TIMEOUT_MS: ${AKSHARE_HTTP_TIMEOUT_MS:-20000}
+      AKSHARE_HTTP_MAX_RETRIES: ${AKSHARE_HTTP_MAX_RETRIES:-3}
+      AKSHARE_ADMIN_TOKEN: ${AKSHARE_ADMIN_TOKEN:-}
+      AKSHARE_QUEUE_CONCURRENCY: ${AKSHARE_QUEUE_CONCURRENCY:-2}
+      AKSHARE_SCHEDULE_SMOOTHING_ENABLED: ${AKSHARE_SCHEDULE_SMOOTHING_ENABLED:-false}
+      AKSHARE_SKIP_UNCHANGED_LATEST_POINTS: ${AKSHARE_SKIP_UNCHANGED_LATEST_POINTS:-false}
+      # Economic-data request and worker ownership. Empty behaves like legacy;
+      # both Nest and Go must see the same worker value so only one process
+      # consumes the akshare-data queue.
+      API_GO_ECONOMIC_DATA_MODE: ${API_GO_ECONOMIC_DATA_MODE:-legacy}
+      API_GO_ECONOMIC_DATA_WORKER_MODE: ${API_GO_ECONOMIC_DATA_WORKER_MODE:-legacy}
       MODEL_SERVICE_ENABLED: ${MODEL_SERVICE_ENABLED:-true}
       MODEL_SERVICE_BASE_URL: ${MODEL_SERVICE_BASE_URL:-http://model-service:8090}
       MODEL_SERVICE_INTERNAL_TOKEN: ${MODEL_SERVICE_INTERNAL_TOKEN:-dev-model-token}
@@ -637,6 +648,19 @@ services:
       # 不受影响。回滚只把该变量改回 legacy。
       API_GO_RAW_ITEM_OUTBOX_MODE: ${API_GO_RAW_ITEM_OUTBOX_MODE:-legacy}
       SCHEDULE_ENABLED: ${SCHEDULE_ENABLED:-true}
+      # 经济数据的三个 Mutation、三个管理 HTTP 与 akshare-data 消费所有权。
+      # 两个开关独立，空串按 legacy；worker=go 时 NestJS 跳过目录/重复任务
+      # 初始化且不再创建 Worker，只有 Go 消费。回滚先停 Go worker 再改回 legacy。
+      API_GO_ECONOMIC_DATA_MODE: ${API_GO_ECONOMIC_DATA_MODE:-legacy}
+      API_GO_ECONOMIC_DATA_WORKER_MODE: ${API_GO_ECONOMIC_DATA_WORKER_MODE:-legacy}
+      AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
+      AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
+      AKSHARE_HTTP_TIMEOUT_MS: ${AKSHARE_HTTP_TIMEOUT_MS:-20000}
+      AKSHARE_HTTP_MAX_RETRIES: ${AKSHARE_HTTP_MAX_RETRIES:-3}
+      AKSHARE_ADMIN_TOKEN: ${AKSHARE_ADMIN_TOKEN:-}
+      AKSHARE_QUEUE_CONCURRENCY: ${AKSHARE_QUEUE_CONCURRENCY:-2}
+      AKSHARE_SCHEDULE_SMOOTHING_ENABLED: ${AKSHARE_SCHEDULE_SMOOTHING_ENABLED:-false}
+      AKSHARE_SKIP_UNCHANGED_LATEST_POINTS: ${AKSHARE_SKIP_UNCHANGED_LATEST_POINTS:-false}
       # 分析工作台保存视图、看板/列/任务、笔记/评论（Go 协作域）。
       # pilot 与样例保持 legacy。三个变量各自改成 go 才切换对应 HTTP。
       # 内部讨论检查、评论计数和删除清理不看另一个开关，也不回调 NestJS。

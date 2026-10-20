@@ -424,7 +424,7 @@ export class EconomicDataResolver {
   ): Promise<EconomicDataFetchConfigModel> {
     const updated = await this.akshareService.updateFetchConfig(slug, {
       frequency,
-      repeatCron: repeatCron ?? null,
+      repeatCron,
       isEnabled,
     });
     const rawItem = updated.item ?? { slug };

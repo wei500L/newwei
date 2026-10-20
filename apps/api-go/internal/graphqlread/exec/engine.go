@@ -589,7 +589,7 @@ func fieldFailure(err error, field collectedField, traceID string) graphError {
 			status = http.StatusInternalServerError
 		}
 		message := failure.Message
-		if status >= 500 {
+		if status >= 500 && !failure.ExposeMessage {
 			message = "Internal server error"
 		}
 		if message == "" {

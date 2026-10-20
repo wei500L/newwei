@@ -151,6 +151,16 @@ export class AkshareService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // Go owns catalog and repeat synchronization when it owns the consumer.
+    // The request switch is independent: NestJS still calls its own
+    // ensureRepeatableJobs from updateFetchConfig when requests remain legacy.
+    if (
+      this.env?.get<string>("API_GO_ECONOMIC_DATA_WORKER_MODE", {
+        infer: true,
+      }) === "go"
+    ) {
+      return;
+    }
     await this.ensureCatalog();
     await this.ensureRepeatableJobs();
   }
