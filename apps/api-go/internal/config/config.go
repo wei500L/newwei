@@ -184,6 +184,25 @@ const (
 	NewsSourcesModeGo     NewsSourcesMode = "go"
 )
 
+// NewsSourceSchedulerMode controls the 30-second news source cron only. It
+// defaults to legacy. Go requires MySQL and Redis. The NestJS @Cron returns
+// before taking the shared lock when this is go.
+type NewsSourceSchedulerMode string
+
+const (
+	NewsSourceSchedulerModeLegacy NewsSourceSchedulerMode = "legacy"
+	NewsSourceSchedulerModeGo     NewsSourceSchedulerMode = "go"
+)
+
+// NewsSourceOpsMode controls only the four POST /api/admin/news-sources/:id/{dispatch,cancel-queued,clear-inflight,retry-latest}
+// routes. It defaults to legacy. Go requires JWT, MySQL and Redis.
+type NewsSourceOpsMode string
+
+const (
+	NewsSourceOpsModeLegacy NewsSourceOpsMode = "legacy"
+	NewsSourceOpsModeGo     NewsSourceOpsMode = "go"
+)
+
 // CrawlWorkflowsMode 只控制采集策略工作流的编辑接口。默认 legacy。
 // go 只接管列表、详情、创建、草稿、发布、版本、对比、节点 schema 和两条
 // bridge；trial-run、replay、workflow-runs、profiles 列表/创建/预览/回滚，
@@ -1698,6 +1717,32 @@ type SMTPConfig struct {
 	TLSRejectUnauthorized bool
 }
 
+// NewsSourceSchedulerSettings mirrors EnvService.newsSourceSchedulerConfig
+// (apps/api/src/modules/config/config.service.ts) plus the Go-only source
+// concurrency knob. Every field is read from the same environment variable
+// and default the NestJS getter uses, so switching execution ownership does
+// not change nextRunAt, backpressure or circuit-breaker math.
+type NewsSourceSchedulerSettings struct {
+	Enabled                    bool
+	BatchSize                  int
+	LockTTLMs                  int
+	InFlightLookbackMs         int
+	InFlightRescheduleDelayMs  int
+	JitterMaxMs                int
+	MaxEnqueuePerTick          int
+	BackpressureMaxPendingJobs int
+	BackpressureDelayMs        int
+	FailureRecoveryDelayMs     int
+	FailureMaxDelayMs          int
+	CircuitBreakerThreshold    int
+	CircuitBreakerBaseDelayMs  int
+	CircuitBreakerMaxDelayMs   int
+	// SourceConcurrency is the Go-only per-tick source fan-out
+	// (NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY). The default 1 is exactly
+	// the serial NestJS loop.
+	SourceConcurrency int
+}
+
 // Config 是网关运行所需的全部配置。
 type Config struct {
 	Port         int
@@ -2170,6 +2215,17 @@ type Config struct {
 	// entries (see CrawlWorkflowTrialMode). Default legacy. go requires
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; crawl4ai stays optional.
 	CrawlWorkflowTrialMode CrawlWorkflowTrialMode
+	// NewsSourceSchedulerMode 控制新闻源 30 秒定时调度的执行权（见
+	// NewsSourceSchedulerMode）。默认 legacy；go 要求 DATABASE_URL 与
+	// REDIS_HOST。ScheduleEnabled 仍是总开关，false 时该循环不执行。
+	NewsSourceSchedulerMode NewsSourceSchedulerMode
+	// NewsSourceOpsMode 控制四条新闻源运维 POST 的执行权（见
+	// NewsSourceOpsMode）。默认 legacy；go 要求 JWT、MySQL 与 Redis。
+	NewsSourceOpsMode NewsSourceOpsMode
+	// NewsSourceScheduler 是 NEWS_SOURCE_SCHEDULER_* 的数值与开关配置，
+	// 与 NestJS EnvService.newsSourceSchedulerConfig 同名同默认值；另加
+	// Go 专用的 SourceConcurrency。
+	NewsSourceScheduler NewsSourceSchedulerSettings
 	// SearchReindexMode controls the two search index rebuild routes (see
 	// SearchReindexMode). Default legacy. go requires JWT_SECRET, DATABASE_URL,
 	// REDIS_HOST and MONGO_URI; Elasticsearch stays optional at startup.
@@ -2967,6 +3023,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.NewsSourcesMode = NewsSourcesModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_SOURCES_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCE_SCHEDULER_MODE")) {
+	case "", string(NewsSourceSchedulerModeLegacy):
+		cfg.NewsSourceSchedulerMode = NewsSourceSchedulerModeLegacy
+	case string(NewsSourceSchedulerModeGo):
+		cfg.NewsSourceSchedulerMode = NewsSourceSchedulerModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_SOURCE_SCHEDULER_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCE_OPS_MODE")) {
+	case "", string(NewsSourceOpsModeLegacy):
+		cfg.NewsSourceOpsMode = NewsSourceOpsModeLegacy
+	case string(NewsSourceOpsModeGo):
+		cfg.NewsSourceOpsMode = NewsSourceOpsModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_SOURCE_OPS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_WORKFLOWS_MODE")) {
 	case "", string(CrawlWorkflowsModeLegacy):
@@ -3817,6 +3889,30 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	cfg.CrawlSSRFProxyURL = strings.TrimSpace(getenv("CRAWL4AI_SSRF_PROXY_URL"))
 	cfg.CrawlJSCodeEnabled = boolDefault(getenv("CRAWL4AI_JSCODE_ENABLED"), true)
 	cfg.NewsSourceInFlightLookbackMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS"), 21_600_000)
+	// The scheduler settings mirror EnvService.newsSourceSchedulerConfig
+	// one-for-one. SourceConcurrency is Go-only: the default 1 keeps exactly
+	// the serial NestJS loop and lower values are clamped to 1.
+	cfg.NewsSourceScheduler = NewsSourceSchedulerSettings{
+		Enabled:                    boolDefault(getenv("NEWS_SOURCE_SCHEDULER_ENABLED"), true),
+		BatchSize:                  intDefault(getenv("NEWS_SOURCE_SCHEDULER_BATCH_SIZE"), 20),
+		LockTTLMs:                  intDefault(getenv("NEWS_SOURCE_SCHEDULER_LOCK_TTL_MS"), 120_000),
+		InFlightLookbackMs:         intDefault(getenv("NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS"), 21_600_000),
+		InFlightRescheduleDelayMs:  intDefault(getenv("NEWS_SOURCE_SCHEDULER_INFLIGHT_RESCHEDULE_DELAY_MS"), 300_000),
+		JitterMaxMs:                intDefault(getenv("NEWS_SOURCE_SCHEDULER_JITTER_MAX_MS"), 60_000),
+		MaxEnqueuePerTick:          intDefault(getenv("NEWS_SOURCE_SCHEDULER_MAX_ENQUEUE_PER_TICK"), 100),
+		BackpressureMaxPendingJobs: intDefault(getenv("NEWS_SOURCE_SCHEDULER_BACKPRESSURE_MAX_PENDING_JOBS"), 100),
+		BackpressureDelayMs:        intDefault(getenv("NEWS_SOURCE_SCHEDULER_BACKPRESSURE_DELAY_MS"), 300_000),
+		FailureRecoveryDelayMs:     intDefault(getenv("NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS"), 600_000),
+		FailureMaxDelayMs:          intDefault(getenv("NEWS_SOURCE_SCHEDULER_FAILURE_MAX_DELAY_MS"), 21_600_000),
+		CircuitBreakerThreshold:    intDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_THRESHOLD"), 3),
+		CircuitBreakerBaseDelayMs:  intDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS"), 3_600_000),
+		CircuitBreakerMaxDelayMs:   intDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS"), 86_400_000),
+	}
+	sourceConcurrency := intDefault(getenv("NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY"), 1)
+	if sourceConcurrency < 1 {
+		sourceConcurrency = 1
+	}
+	cfg.NewsSourceScheduler.SourceConcurrency = sourceConcurrency
 	cfg.ItemsSearchRerankEnabled = boolDefault(getenv("ITEMS_SEARCH_RERANK_ENABLED"), true)
 	cfg.ItemsReadModelEnabled = boolDefault(getenv("ITEMS_READ_MODEL_ENABLED"), false)
 	cfg.ItemsVectorHardFailEnabled = boolDefault(getenv("ITEMS_VECTOR_HARD_FAIL_ENABLED"), false)
@@ -4559,6 +4655,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// stack plus Redis and MySQL for the run records. crawl4ai is optional.
 	if cfg.CrawlWorkflowTrialMode == CrawlWorkflowTrialModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_WORKFLOW_TRIAL_MODE", cfg)
+	}
+	// The news-source scheduler writes the MySQL due-source state and takes the
+	// shared Redis lock, so it needs MySQL and Redis but no JWT: it serves no
+	// route.
+	if cfg.NewsSourceSchedulerMode == NewsSourceSchedulerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_NEWS_SOURCE_SCHEDULER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_NEWS_SOURCE_SCHEDULER_MODE=go")
+		}
+	}
+	// The four ops POSTs re-derive the caller's crawl.write permission from the
+	// credentialed JWT/MySQL/Redis stack.
+	if cfg.NewsSourceOpsMode == NewsSourceOpsModeGo {
+		appendAuthRequirements(&errs, "API_GO_NEWS_SOURCE_OPS_MODE", cfg)
 	}
 	// The metadata GraphQL root is a child switch of the GraphQL read pilot:
 	// without API_GO_GRAPHQL_READ_MODE=go there is no executor to register into,

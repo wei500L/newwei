@@ -4271,3 +4271,121 @@ func TestAlertingConfigDefaultsAndBounds(t *testing.T) {
 		t.Error("negative per-second rate must be rejected")
 	}
 }
+
+func TestNewsSourceSchedulerDefaults(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsSourceSchedulerMode != NewsSourceSchedulerModeLegacy ||
+		cfg.NewsSourceOpsMode != NewsSourceOpsModeLegacy {
+		t.Fatalf("modes = %q/%q, want legacy", cfg.NewsSourceSchedulerMode, cfg.NewsSourceOpsMode)
+	}
+	scheduler := cfg.NewsSourceScheduler
+	if !scheduler.Enabled ||
+		scheduler.BatchSize != 20 ||
+		scheduler.LockTTLMs != 120_000 ||
+		scheduler.InFlightLookbackMs != 21_600_000 ||
+		scheduler.InFlightRescheduleDelayMs != 300_000 ||
+		scheduler.JitterMaxMs != 60_000 ||
+		scheduler.MaxEnqueuePerTick != 100 ||
+		scheduler.BackpressureMaxPendingJobs != 100 ||
+		scheduler.BackpressureDelayMs != 300_000 ||
+		scheduler.FailureRecoveryDelayMs != 600_000 ||
+		scheduler.FailureMaxDelayMs != 21_600_000 ||
+		scheduler.CircuitBreakerThreshold != 3 ||
+		scheduler.CircuitBreakerBaseDelayMs != 3_600_000 ||
+		scheduler.CircuitBreakerMaxDelayMs != 86_400_000 ||
+		scheduler.SourceConcurrency != 1 {
+		t.Fatalf("scheduler defaults = %+v", scheduler)
+	}
+}
+
+func TestNewsSourceSwitchesParseEmptyAsLegacy(t *testing.T) {
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_SOURCE_SCHEDULER_MODE", "API_GO_NEWS_SOURCE_OPS_MODE":
+			return "   "
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NewsSourceSchedulerMode != NewsSourceSchedulerModeLegacy ||
+		cfg.NewsSourceOpsMode != NewsSourceOpsModeLegacy {
+		t.Fatalf("modes = %q/%q, want legacy", cfg.NewsSourceSchedulerMode, cfg.NewsSourceOpsMode)
+	}
+}
+
+func TestNewsSourceSwitchesRejectInvalidValues(t *testing.T) {
+	for _, key := range []string{
+		"API_GO_NEWS_SOURCE_SCHEDULER_MODE",
+		"API_GO_NEWS_SOURCE_OPS_MODE",
+	} {
+		_, err := Load(func(name string) string {
+			if name == key {
+				return "canary"
+			}
+			return ""
+		})
+		if err == nil {
+			t.Fatalf("%s=canary must be rejected", key)
+		}
+		if !strings.Contains(err.Error(), key) {
+			t.Fatalf("%s error = %q, want the variable name", key, err)
+		}
+	}
+}
+
+func TestNewsSourceSchedulerSourceConcurrency(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want int
+	}{
+		{"0", 1},
+		{"-2", 1},
+		{"4", 4},
+	} {
+		cfg, err := Load(func(key string) string {
+			if key == "NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY" {
+				return tc.raw
+			}
+			return ""
+		})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.NewsSourceScheduler.SourceConcurrency != tc.want {
+			t.Errorf("NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY=%q source concurrency = %d, want %d",
+				tc.raw, cfg.NewsSourceScheduler.SourceConcurrency, tc.want)
+		}
+	}
+}
+
+func TestNewsSourceSwitchesRequireTheirDependencies(t *testing.T) {
+	_, err := Load(func(key string) string {
+		if key == "API_GO_NEWS_SOURCE_SCHEDULER_MODE" {
+			return "go"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
+		t.Fatalf("scheduler go error = %v, want a DATABASE_URL requirement", err)
+	}
+
+	_, err = Load(func(key string) string {
+		switch key {
+		case "API_GO_NEWS_SOURCE_OPS_MODE":
+			return "go"
+		case "DATABASE_URL":
+			return "mysql://user:pass@localhost:3306/db"
+		case "REDIS_HOST":
+			return "localhost"
+		}
+		return ""
+	})
+	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET") {
+		t.Fatalf("ops go error = %v, want a JWT_SECRET requirement", err)
+	}
+}

@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
@@ -13,14 +15,14 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
 )
 
-func wireNewsSources(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, authenticator *authhttp.Authenticator) error {
+func wireNewsSources(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if cfg.NewsSourcesMode != config.NewsSourcesModeGo {
 		return nil
 	}
-	if db == nil || authenticator == nil {
+	if db == nil || authenticator == nil || redisClient == nil {
 		return fmt.Errorf("api-go: news sources go takeover requires mysql, jwt, and redis")
 	}
-	handler := newssources.NewHandler(authenticator, newssources.NewService(db))
+	handler := newssources.NewHandler(authenticator, newssources.NewServiceWithRedis(db, redisClient))
 	policy := cors.New(cfg.CorsOrigin)
 	gateway.RegisterGoHandler(legacyproxy.NewsSourcesKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {

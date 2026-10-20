@@ -217,6 +217,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
+	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
@@ -626,6 +627,13 @@ func run() error {
 	if cfg.NewsSourcesMode == config.NewsSourcesModeGo {
 		newsSourcesMode = string(legacyproxy.ModeGo)
 	}
+	// The four dispatch/cancel/clear/retry POSTs are their own switch: they are
+	// method- and tail-scoped, so they never shadow the news-sources CRUD rules
+	// or the GET :id/preview rule.
+	newsSourceOpsMode := ""
+	if cfg.NewsSourceOpsMode == config.NewsSourceOpsModeGo {
+		newsSourceOpsMode = string(legacyproxy.ModeGo)
+	}
 	crawlWorkflowsMode := ""
 	if cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo {
 		crawlWorkflowsMode = string(legacyproxy.ModeGo)
@@ -867,6 +875,7 @@ func run() error {
 	rules = legacyproxy.WithSituationSignals(rules, situationSignalsMode)
 	rules = legacyproxy.WithSituationInsights(rules, situationInsightsMode)
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
+	rules = legacyproxy.WithNewsSourceOps(rules, newsSourceOpsMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
 	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
 	rules = legacyproxy.WithCrawlFrontierRuns(rules, crawlFrontierRunsMode)
@@ -1625,7 +1634,7 @@ func run() error {
 	if err := gdeltSnapshot.RegisterRoute(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
-	if err := wireNewsSources(gateway, cfg, sharedDB, authenticator); err != nil {
+	if err := wireNewsSources(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 	if err := wireCrawlWorkflows(gateway, cfg, sharedDB, authenticator); err != nil {
@@ -1987,6 +1996,21 @@ func run() error {
 			dashboardMongo = opened
 		}
 		itemsIngestService = buildItemsIngestService(cfg, sharedDB, redisClient, dashboardMongo.Database())
+	}
+
+	// The news-source scheduler and the four operations POSTs share one service
+	// instance. The scheduler switch owns only the 30-second tick; the ops switch
+	// owns only the four exact POST routes. Both reuse the existing crawl queue
+	// producer, crawl metadata discovery, workflow overlay compiler, items
+	// ingest outbox and item pipeline producer, so the queue formats, priorities
+	// and job ids stay identical to NestJS.
+	var newsSourceScheduler *newssourcescheduler.Scheduler
+	newsSourceScheduler, err = wireNewsSourceScheduler(
+		gateway, cfg, sharedDB, redisClient, authenticator,
+		itemsIngestService, crawlTaskService, &dashboardMongo,
+	)
+	if err != nil {
+		return err
 	}
 
 	// The assistant write mutations and the assistant worker share one service
@@ -2559,6 +2583,11 @@ func run() error {
 				log.Printf("api-go: GDELT snapshot scheduler close: %v", closeErr)
 			}
 		}
+		if newsSourceScheduler != nil {
+			if closeErr := newsSourceScheduler.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: news source scheduler close: %v", closeErr)
+			}
+		}
 		if alertWorker != nil {
 			if closeErr := alertWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: alert worker close: %v", closeErr)
@@ -2668,6 +2697,10 @@ func run() error {
 	}
 	assistantWorker = startAssistantWorker(cfg, assistantRunService, redisClient)
 	gdeltSnapshot.Start(cfg)
+
+	if newsSourceScheduler != nil {
+		newsSourceScheduler.Start(context.Background())
+	}
 
 	alertWorker, err = wireAlertWorker(cfg, sharedDB, redisClient, &graphqlMongo, &dashboardMongo)
 	if err != nil {
