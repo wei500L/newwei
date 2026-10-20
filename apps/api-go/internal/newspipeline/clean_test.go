@@ -734,8 +734,8 @@ func TestCleanArticleRejectsUnsupportedProvider(t *testing.T) {
 func TestBuildMarkdownForLlmPrefersRicherCandidateAndAppliesReferences(t *testing.T) {
 	article := CrawledArticle{
 		Markdown:           "# Short\n\nTiny body.",
-		RawMarkdown:        "# Raw\n\n" + strings.Repeat("Long substantive raw sentence. ", 120),
-		ReferencesMarkdown: "[^1]: source one",
+		RawMarkdown:        contentTestString("# Raw\n\n" + strings.Repeat("Long substantive raw sentence. ", 120)),
+		ReferencesMarkdown: contentTestString("[^1]: source one"),
 	}
 	result := buildMarkdownForLlm(article, 48000)
 	if result.Variant != "raw" {
@@ -750,7 +750,7 @@ func TestBuildMarkdownForLlmPrefersRicherCandidateAndAppliesReferences(t *testin
 
 	cited := CrawledArticle{
 		Markdown:           "# Cited\n\n" + strings.Repeat("Sentence with a claim [^1]. ", 60),
-		ReferencesMarkdown: "[^1]: https://example.com/source",
+		ReferencesMarkdown: contentTestString("[^1]: https://example.com/source"),
 	}
 	citedResult := buildMarkdownForLlm(cited, 48000)
 	if !citedResult.ReferencesAppended || !strings.Contains(citedResult.Markdown, "[^1]: https://example.com/source") {

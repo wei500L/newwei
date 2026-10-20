@@ -353,13 +353,13 @@ func openFullChainMySQL(t *testing.T) *sql.DB {
 			updatedAt datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 		) ENGINE=InnoDB`,
 		`CREATE TABLE SystemSetting (
-			id varchar(40) NOT NULL PRIMARY KEY,
-			` + "`key`" + ` varchar(191) NOT NULL,
+			` + "`key`" + ` varchar(191) NOT NULL PRIMARY KEY,
 			value json NOT NULL,
+			isPublic tinyint(1) NOT NULL DEFAULT 0,
 			description text NULL,
 			createdAt datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 			updatedAt datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-			UNIQUE KEY SystemSetting_key (` + "`key`" + `)
+			updatedById varchar(40) NULL
 		) ENGINE=InnoDB`,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -454,8 +454,8 @@ func insertFullChainRows(t *testing.T, db *sql.DB, database *mongo.Database, now
 func seedDedupeSettings(t *testing.T, db *sql.DB) {
 	t.Helper()
 	value := `{"useEmbeddings":false,"defaultThreshold":0.9,"scopedThresholds":[]}`
-	if _, err := db.Exec("INSERT INTO SystemSetting (id,`key`,value) VALUES (?,?,?)",
-		"setting-dedupe-1", "news_dedupe_settings:"+fullchainOrgID, value); err != nil {
+	if _, err := db.Exec("INSERT INTO SystemSetting (`key`,value) VALUES (?,?)",
+		"news_dedupe_settings:"+fullchainOrgID, value); err != nil {
 		t.Fatalf("seed dedupe settings: %v", err)
 	}
 }

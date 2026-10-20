@@ -77,7 +77,7 @@ func TestAutoDisableNotificationContent(t *testing.T) {
 }
 
 func TestSanitizeErrorRedactsSensitiveFields(t *testing.T) {
-	err := newNamedTestError("Error", "upstream password=secret123 token: abc.def failed")
+	err := &namedTestError{name: "Error", message: "upstream password=secret123 token: abc.def failed"}
 	sanitized := sanitizeError(err)
 	if strings.Contains(sanitized.Message, "secret123") || strings.Contains(sanitized.Message, "abc.def") {
 		t.Fatalf("message was not redacted: %q", sanitized.Message)
