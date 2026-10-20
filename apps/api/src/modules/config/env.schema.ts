@@ -51,6 +51,19 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // NewsNow source fetch ownership: empty/legacy keep
+    // GET /api/news-aggregator/source and POST /api/news-aggregator/sources/batch
+    // on NestJS; go lets the Go gateway fetch upstream, write the compatible
+    // cache and publish the source-refresh relay consumed by the NestJS
+    // subscriber. The value only controls these two public routes and the
+    // subscriber, never the warm/hottest cron ownership.
+    API_GO_NEWSNOW_SOURCES_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     REDIS_DB: z.coerce.number().int().nonnegative().default(0),
     REDIS_USERNAME: z.string().optional(),
     REDIS_PASSWORD: z.string().optional(),

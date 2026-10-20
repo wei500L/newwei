@@ -42,6 +42,13 @@
 //	         API_GO_NEWS_SOURCES_MODE=go 时接管新闻源管理台十五条读写路由。
 //	         GET /api/admin/news-sources/:id/preview 仍回 NestJS。
 //	         回滚只把 API_GO_NEWS_SOURCES_MODE 改回 legacy。不入队，不启动采集。
+//	         API_GO_NEWSNOW_SOURCES_MODE=go 时接管两条公开来源获取路由
+//	         （GET /api/news-aggregator/source 与
+//	         POST /api/news-aggregator/sources/batch）：Go 真实请求上游、
+//	         写兼容 fresh/stale 缓存与刷新锁，并向
+//	         newsnow:source-refresh:v1 发布来源增量供 Nest 订阅转发。
+//	         只要求 DATABASE_URL/REDIS_HOST；预热与热点 Cron 仍归 Nest。
+//	         回滚只把该变量改回 legacy。不启动调度、不入队。
 //	         API_GO_CRAWL_WORKFLOWS_MODE=go 时接管采集策略工作流编辑接口
 //	         （node-schemas、列表、详情、创建、草稿、发布、版本、对比与
 //	         两条 bridge）。trial-run、replay、workflow-runs、profiles
@@ -626,6 +633,13 @@ func run() error {
 	if cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo {
 		newsnowClusteringOpsMode = string(legacyproxy.ModeGo)
 	}
+	// The two public source fetch routes are an independent switch: they need
+	// only MySQL and Redis, and their ownership does not overlap the nine
+	// local-computation/clustering routes above.
+	newsnowSourcesMode := ""
+	if cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo {
+		newsnowSourcesMode = string(legacyproxy.ModeGo)
+	}
 	crawlReadTelemetryMode := ""
 	if cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo {
 		crawlReadTelemetryMode = string(legacyproxy.ModeGo)
@@ -752,6 +766,9 @@ func run() error {
 	rules = legacyproxy.WithQualityOverview(rules, qualityOverviewMode)
 	rules = legacyproxy.WithClassificationRssOps(rules, classificationRssOpsMode)
 	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
+	// The two public source fetch routes. Registered after the local-computation
+	// rules; the two rule sets share no path.
+	rules = legacyproxy.WithNewsnowSources(rules, newsnowSourcesMode)
 	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
 	rules = legacyproxy.WithSearchReindex(rules, searchReindexMode)
 	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
@@ -870,7 +887,8 @@ func run() error {
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
 				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
-				cfg.AuditOutboxMode == config.AuditOutboxModeGo {
+				cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
+				cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
 			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
@@ -1017,10 +1035,13 @@ func run() error {
 	// Keep the condition additive so delivery-only starts Redis while every
 	// other mode is legacy, and the authenticator still exists only when an
 	// HTTP takeover needs it. The audit outbox replay reuses the same client
-	// for its cron lease and needs no JWT either.
+	// for its cron lease and needs no JWT either. The public NewsNow source
+	// fetch unit needs it for the compatible cache, refresh lock and
+	// source-refresh relay, also without the credentialed JWT/RBAC stack.
 	needsRedis := needsCredentialedGo ||
 		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
-		cfg.AuditOutboxMode == config.AuditOutboxModeGo
+		cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
+		cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo
 	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -1376,6 +1397,13 @@ func run() error {
 	}
 	if err := wireNewsnowClusteringOps(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
+	}
+	// The public source fetch unit is anonymous and independent of the nine
+	// local-computation routes. It only needs the shared MySQL pool and Redis
+	// client; the service keeps the outbound HTTP client for shutdown cleanup.
+	newsnowSourcesService, wireSourcesErr := wireNewsnowSources(gateway, cfg, sharedDB, redisClient)
+	if wireSourcesErr != nil {
+		return wireSourcesErr
 	}
 	if err := wireCrawlMetadata(gateway, cfg, metadataService, authenticator); err != nil {
 		return err
@@ -1988,6 +2016,11 @@ func run() error {
 		}
 		if searchReindexService != nil {
 			searchReindexService.Close()
+		}
+		// The source fetch unit's outbound HTTP transport drains before the
+		// shared Redis client closes.
+		if newsnowSourcesService != nil {
+			newsnowSourcesService.CloseIdleConnections()
 		}
 		// go 模式下 onboarding 鉴权栈持有的 Redis 连接随进程收口。
 		if redisClient != nil {

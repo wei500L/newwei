@@ -436,6 +436,11 @@ services:
       # 默认 legacy=保留 NestJS 每分钟 Cron；go=Go 每分钟扫描并重放，NestJS 在申请锁前退出。
       # SCHEDULE_ENABLED=false 时两边都停止调度本链；切换/回滚顺序见 docs 与 README。
       API_GO_AUDIT_OUTBOX_MODE: ${API_GO_AUDIT_OUTBOX_MODE:-legacy}
+      # NewsNow 来源获取两路（公开）：GET /api/news-aggregator/source 与
+      # POST /api/news-aggregator/sources/batch。Nest 与 Go 注入同一变量；
+      # 空串按 legacy。go 时 Go 真实抓取上游、写兼容缓存并发布
+      # newsnow:source-refresh:v1；Nest 预热与热点 Cron 所有权不变。
+      API_GO_NEWSNOW_SOURCES_MODE: ${API_GO_NEWSNOW_SOURCES_MODE:-legacy}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -621,6 +626,11 @@ services:
       # 需要 DATABASE_URL 与 REDIS_HOST，不要求 JWT/Mongo/SMTP，也不强开任何
       # HTTP 模式。Nest 与 Go 注入同一变量，默认 legacy 仍由 NestJS Cron 消费。
       API_GO_AUDIT_OUTBOX_MODE: ${API_GO_AUDIT_OUTBOX_MODE:-legacy}
+      # NewsNow 来源获取两路（公开）：GET /api/news-aggregator/source 与
+      # POST /api/news-aggregator/sources/batch。pilot 默认仍交 NestJS；
+      # go 只接管这两条精确路由（无 JWT/Mongo 依赖），Nest 预热与热点
+      # Cron 继续运行。回滚只把本变量改回 legacy。
+      API_GO_NEWSNOW_SOURCES_MODE: ${API_GO_NEWSNOW_SOURCES_MODE:-legacy}
       # 分析工作台保存视图、看板/列/任务、笔记/评论（Go 协作域）。
       # pilot 与样例保持 legacy。三个变量各自改成 go 才切换对应 HTTP。
       # 内部讨论检查、评论计数和删除清理不看另一个开关，也不回调 NestJS。
