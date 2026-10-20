@@ -241,11 +241,12 @@ func TestSentimentSnapshotRebuildIntegration(t *testing.T) {
 	if apple.name != "Apple" || apple.entityType != "company" {
 		t.Fatalf("first entity = %q/%q, want Apple/company", apple.name, apple.entityType)
 	}
-	if apple.totalDocs != 2 || apple.positiveDocs != 2 || apple.negativeDocs != 0 || apple.scoreSum != 2 {
+	// One positive and one negative mention: scoreSum 0, avgScore 0, ratio 0.5.
+	if apple.totalDocs != 2 || apple.positiveDocs != 1 || apple.negativeDocs != 1 || apple.scoreSum != 0 {
 		t.Errorf("Apple counters = %+v", apple)
 	}
-	if math.Abs(apple.avgScore-1) > 1e-12 || apple.negativeRatio != 0 {
-		t.Errorf("Apple averages = %v/%v, want 1/0", apple.avgScore, apple.negativeRatio)
+	if math.Abs(apple.avgScore) > 1e-12 || math.Abs(apple.negativeRatio-0.5) > 1e-12 {
+		t.Errorf("Apple averages = %v/%v, want 0/0.5", apple.avgScore, apple.negativeRatio)
 	}
 
 	topics := readTopicSnapshots(t, db, orgID, todayStart)
@@ -356,11 +357,13 @@ func TestSentimentSnapshotCollationMerge(t *testing.T) {
 	}
 	for _, row := range topics {
 		if row.topic == "AI" {
-			if row.totalDocs != 3 || row.positiveDocs != 2 || row.negativeDocs != 1 {
+			// Four documents carry a topic that collapses to "AI": two positive, one
+			// negative and one neutral, so scoreSum is 1.
+			if row.totalDocs != 4 || row.positiveDocs != 2 || row.negativeDocs != 1 || row.neutralDocs != 1 {
 				t.Errorf("AI merged counters = %+v", row)
 			}
-			if math.Abs(row.avgScore-1.0/3.0) > 1e-12 {
-				t.Errorf("AI avgScore = %v, want %v", row.avgScore, 1.0/3.0)
+			if math.Abs(row.avgScore-0.25) > 1e-12 {
+				t.Errorf("AI avgScore = %v, want 0.25", row.avgScore)
 			}
 		}
 	}
