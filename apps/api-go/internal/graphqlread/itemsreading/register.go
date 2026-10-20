@@ -41,6 +41,7 @@ func Register(reg *contract.Registry, svc *itemsdomain.Service, workspaceRegiste
 	reg.RegisterType("RssSourceOptionModel", RssSourceOptionModel{})
 	reg.RegisterType("RssTranslationProviderStatusModel", RssTranslationProviderStatusModel{})
 	reg.RegisterType("SearchSuggestionModel", SearchSuggestionModel{})
+	registerItemFieldPermissions(reg)
 	if !workspaceRegistered {
 		// The workspace package registers these three when its own switch is
 		// go. Registering the identical exported structs again is harmless

@@ -314,6 +314,18 @@ jobs:
 
       - name: MySQL/Redis integration tests (user-settings repository + authz RBAC + authn blacklist)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ ./internal/authz/ -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
+      # ITEMS-INGEST-001: the itemPipeline producer is validated against the
+      # real Redis 7.2 service above with the same fixed BullMQ 5.63.2 Lua the
+      # NestJS producer uses. This proves the Redis wire protocol only; it does
+      # not start a NestJS worker or any external content pipeline.
+      - name: Redis itemPipeline producer integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/pipelineenqueue/ -run 'TestPipelineEnqueueRedisIntegration' -v
+        env:
+          API_GO_TEST_REDIS_ADDR: 127.0.0.1:6379
+      # ItemMeta/raw_item Outbox claim, transaction, JSON filtering and dead
+      # compensation against the real MySQL 8.4 service above.
+      - name: MySQL item write/outbox integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/itemsingest/ -run 'TestItemsIngestMySQLIntegration' -v
 
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #

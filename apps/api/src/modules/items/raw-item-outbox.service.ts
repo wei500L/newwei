@@ -14,6 +14,7 @@ import { z } from "zod";
 import { ItemStatus } from "../../common/pipeline-status";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import {
   NormalizedNewsPayload,
@@ -61,6 +62,7 @@ export class RawItemOutboxService {
     private readonly cache: CacheService,
     @Inject(forwardRef(() => ItemsService))
     private readonly itemsService: ItemsService,
+    private readonly env: EnvService,
   ) {}
 
   async enqueueWrite(
@@ -149,6 +151,19 @@ export class RawItemOutboxService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async retryPendingRawItemOutbox() {
+    // API_GO_RAW_ITEM_OUTBOX_MODE=go moves only the scheduled replay owner to
+    // Go. Return before acquiring the Redis lease or scanning so a mixed-version
+    // deployment never runs two replay loops. The synchronous deliverNow /
+    // deliverPendingForItemMeta calls below still serve NestJS requests and
+    // race with Go through the existing row CAS, which is the original
+    // multi-instance behaviour.
+    if (this.resolveRawItemOutboxMode() === "go") {
+      logger.info(
+        "Skipped raw-item outbox batch because Go owns scheduled delivery (API_GO_RAW_ITEM_OUTBOX_MODE=go)",
+      );
+      return;
+    }
+
     await this.cache.withLock(
       RAW_ITEM_OUTBOX_LOCK_KEY,
       RAW_ITEM_OUTBOX_LOCK_TTL_MS,
@@ -454,6 +469,14 @@ export class RawItemOutboxService {
         typeof error === "object" &&
         "code" in error &&
         (error as { code?: number }).code === 11000,
+    );
+  }
+
+  private resolveRawItemOutboxMode(): string {
+    return (
+      this.env.get("API_GO_RAW_ITEM_OUTBOX_MODE", {
+        infer: true,
+      }) ?? "legacy"
     );
   }
 

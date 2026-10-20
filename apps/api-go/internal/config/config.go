@@ -774,6 +774,29 @@ const (
 	ItemsReadingModeGo ItemsReadingMode = "go"
 )
 
+// ItemsIngestMode controls the write side of the items domain: the exact
+// POST /api/items and the five item/crawl mutations. It defaults to legacy and
+// is independent of every read switch. Go requires JWT, MySQL, Redis and Mongo,
+// and starts no background scheduler; immediate raw_item delivery is part of
+// each request.
+type ItemsIngestMode string
+
+const (
+	ItemsIngestModeLegacy ItemsIngestMode = "legacy"
+	ItemsIngestModeGo     ItemsIngestMode = "go"
+)
+
+// RawItemOutboxMode controls the per-minute raw_item replay owner. It defaults
+// to legacy and is independent of ItemsIngestMode. Go requires MySQL, Redis and
+// Mongo but no JWT, HTTP or GraphQL switch. SCHEDULE_ENABLED=false stops the
+// scheduled replay in both processes but never stops request-time delivery.
+type RawItemOutboxMode string
+
+const (
+	RawItemOutboxModeLegacy RawItemOutboxMode = "legacy"
+	RawItemOutboxModeGo     RawItemOutboxMode = "go"
+)
+
 // LLMGatewayProfilesMode controls the seven LLM gateway profile
 // configuration-control routes under /api/system-settings/llm-gateways
 // (API_GO_LLM_GATEWAY_PROFILES_MODE). Accepted values are exactly "", "legacy"
@@ -1254,9 +1277,9 @@ type Config struct {
 	// 与所有 HTTP 开关独立；go 只要求 MySQL 与 Redis，不要求 JWT、Mongo 或 SMTP。
 	AuditOutboxMode AuditOutboxMode
 	// ScheduleEnabled mirrors the NestJS `process.env.SCHEDULE_ENABLED !==
-	// "false"` check. The audit outbox unit uses it to stop scheduling without
-	// changing its ownership switch; the digest delivery unit keeps its
-	// existing behavior.
+	// "false"` check. Background units (audit outbox, raw_item replay) use it to
+	// stop scheduling without changing their ownership switch; the digest
+	// delivery unit keeps its existing behavior.
 	ScheduleEnabled bool
 	// 分析工作台三个 HTTP 开关，彼此独立，默认都是 legacy。
 	// 只决定对应精确路由。讨论检查、评论计数和删除清理不看另一个开关。
@@ -1336,6 +1359,14 @@ type Config struct {
 	// controlled by this switch alone. Rolling back only means setting this
 	// variable back to legacy.
 	ItemsReadingMode ItemsReadingMode
+	// ItemsIngestMode controls POST /api/items and the five write mutations.
+	// Defaults to legacy. go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
+	// MONGO_URI, and registers no read root.
+	ItemsIngestMode ItemsIngestMode
+	// RawItemOutboxMode controls the scheduled raw_item replay. Defaults to
+	// legacy. go requires DATABASE_URL, REDIS_HOST and MONGO_URI but no JWT or
+	// HTTP/GraphQL switch. It is independent of ItemsIngestMode.
+	RawItemOutboxMode RawItemOutboxMode
 	// GraphQLItemsListMode only decides whether the items connection root
 	// (items(after, filters, first, orderBy, page, rankingMode, search)) is
 	// registered into the Go GraphQL executor. It defaults to legacy. The
@@ -2508,6 +2539,27 @@ func Load(getenv func(string) string) (Config, error) {
 		// operator can see which deployment value was refused.
 		errs = append(errs, "API_GO_ITEMS_READING_MODE must be one of legacy|go, got "+strconv.Quote(itemsReadingRaw))
 	}
+	// The items ingest switch. Empty behaves like legacy; an invalid value
+	// fails startup instead of silently downgrading.
+	switch strings.TrimSpace(getenv("API_GO_ITEMS_INGEST_MODE")) {
+	case "", string(ItemsIngestModeLegacy):
+		cfg.ItemsIngestMode = ItemsIngestModeLegacy
+	case string(ItemsIngestModeGo):
+		cfg.ItemsIngestMode = ItemsIngestModeGo
+	default:
+		errs = append(errs, "API_GO_ITEMS_INGEST_MODE must be one of legacy|go")
+	}
+	// The raw_item replay owner is independent of the write switch.
+	switch strings.TrimSpace(getenv("API_GO_RAW_ITEM_OUTBOX_MODE")) {
+	case "", string(RawItemOutboxModeLegacy):
+		cfg.RawItemOutboxMode = RawItemOutboxModeLegacy
+	case string(RawItemOutboxModeGo):
+		cfg.RawItemOutboxMode = RawItemOutboxModeGo
+	default:
+		errs = append(errs, "API_GO_RAW_ITEM_OUTBOX_MODE must be one of legacy|go")
+	}
+	// The cross-process scheduling stop switch uses the exact NestJS
+	// `!== "false"` comparison.
 	// The items list switch accepts the empty string, legacy and go. An empty
 	// value behaves exactly like legacy, so an unset deployment keeps the items
 	// connection root on NestJS.
@@ -3216,6 +3268,27 @@ func Load(getenv func(string) string) (Config, error) {
 		appendAuthRequirements(&errs, "API_GO_ITEMS_READING_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_ITEMS_READING_MODE=go")
+		}
+	}
+	// The items write mode needs the credentialed stack plus Mongo. The
+	// immediate raw_item delivery is executed by the request handler.
+	if cfg.ItemsIngestMode == ItemsIngestModeGo {
+		appendAuthRequirements(&errs, "API_GO_ITEMS_INGEST_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ITEMS_INGEST_MODE=go")
+		}
+	}
+	// The raw_item replay owner is a background unit: it needs MySQL, Redis and
+	// Mongo for hydration but verifies no JWT and registers no route.
+	if cfg.RawItemOutboxMode == RawItemOutboxModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_RAW_ITEM_OUTBOX_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_RAW_ITEM_OUTBOX_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_RAW_ITEM_OUTBOX_MODE=go")
 		}
 	}
 	// The items connection root reuses the item reading service and the shared
