@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func newMaintenanceHarness(t *testing.T) *maintenanceHarness {
 	if err != nil {
 		t.Fatalf("connect mongo: %v", err)
 	}
-	databaseName := "crawl_maintenance_it_" + time.Now().UTC().Format("20060102150405")
+	databaseName := "crawl_maintenance_it_" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	database := mongoClient.Database(databaseName)
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -221,7 +222,8 @@ func (h *maintenanceHarness) count(t *testing.T, query string, args ...any) int 
 	return value
 }
 
-func (h *maintenanceHarness) janitor(config JanitorConfig) *JanitorScheduler {
+func (h *maintenanceHarness) janitor(t *testing.T, config JanitorConfig) *JanitorScheduler {
+	t.Helper()
 	return NewJanitorScheduler(JanitorDeps{
 		DB:       h.db,
 		Redis:    h.redis,
@@ -248,7 +250,7 @@ func defaultJanitorConfig() JanitorConfig {
 // TestCrawlMaintenanceJanitorIntegration covers T1/A1/A2/B1/B2/B3.
 func TestCrawlMaintenanceJanitorIntegration(t *testing.T) {
 	h := newMaintenanceHarness(t)
-	scheduler := h.janitor(defaultJanitorConfig())
+	scheduler := h.janitor(t, defaultJanitorConfig())
 
 	oldRunning := h.now.Add(-2 * time.Hour)
 	oldQueued := h.now.Add(-13 * time.Hour)
@@ -666,7 +668,7 @@ func TestCrawlMaintenanceQualitySnapshotIntegration(t *testing.T) {
 	if err := scheduler.runTick(h.ctx); err != nil {
 		t.Fatalf("quality tick: %v", err)
 	}
-	if !h.redis.Exists(h.ctx, qualityTickGateKey).Val() {
+	if h.redis.Exists(h.ctx, qualityTickGateKey).Val() == 0 {
 		t.Fatal("tick gate was not claimed")
 	}
 	if got := h.count(t, "SELECT COUNT(*) FROM `CrawlQualityTaskSnapshot` WHERE `taskId` = 'task-quality'"); got != 1 {
@@ -685,7 +687,7 @@ func TestCrawlMaintenanceQualitySnapshotIntegration(t *testing.T) {
 	if err := h.redis.Del(h.ctx, qualityTickGateKey).Err(); err != nil {
 		t.Fatalf("clear tick gate: %v", err)
 	}
-	if err := h.db.ExecContext(h.ctx, "DELETE FROM `CrawlQualityTaskSnapshot`"); err != nil {
+	if _, err := h.db.ExecContext(h.ctx, "DELETE FROM `CrawlQualityTaskSnapshot`"); err != nil {
 		t.Fatalf("clear snapshots: %v", err)
 	}
 	orgLockKey := "lock:" + qualityOrgLockPrefix + "org-q1"

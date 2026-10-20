@@ -43,11 +43,13 @@ func jsRound(value float64) float64 {
 	return math.Floor(value + 0.5)
 }
 
-// jsToFixed is Number.prototype.toFixed. ECMAScript picks the integer n for
-// which n/10^digits - x is closest to zero and, on an exact tie, picks the
-// LARGER n; the computation runs on the exact binary value with big.Rat so a
-// genuine tie such as 12.25 becomes "12.3" (strconv.FormatFloat would round half
-// to even and produce "12.2").
+// jsToFixed is Number.prototype.toFixed for the non-negative ratios this batch
+// formats. ECMAScript picks the integer n for which n/10^digits - x is closest
+// to zero and, on an exact tie, picks the LARGER n; the computation runs on the
+// exact binary value with big.Rat so a genuine tie such as 12.25 becomes "12.3"
+// (strconv.FormatFloat would round half to even and produce "12.2"). Negative
+// inputs never reach this helper (error rate and memory headroom are in
+// [0, 100]), so the V8-versus-spec divergence for negative ties does not apply.
 func jsToFixed(value float64, digits int) string {
 	if math.IsNaN(value) {
 		return "NaN"
