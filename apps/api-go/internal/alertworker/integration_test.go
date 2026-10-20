@@ -566,6 +566,15 @@ func createAlertWorkerSchema(ctx context.Context, db *sql.DB) error {
 			"`ipAddress` VARCHAR(191) NULL, `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)," +
 			"PRIMARY KEY (`id`)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
 	}
+	for _, table := range []string{
+		"AlertRuleChannel", "AlertDelivery", "AlertEvent", "AlertNotificationChannel",
+		"Notification", "AuditLog", "MembershipRole", "Membership", "RolePermission",
+		"Permission", "Role", "User", "Org", "AlertRule",
+	} {
+		if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS `"+table+"`"); err != nil {
+			return err
+		}
+	}
 	for _, statement := range statements {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			return err
