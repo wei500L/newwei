@@ -510,8 +510,18 @@ func TestIngestionDefaultModeAssignsThroughAllPaths(t *testing.T) {
 	}
 
 	// The new event carries metadata.classification from the article category.
+	// MySQL's JSON column re-serializes the value (it inserts a space after the
+	// colon), so the assertion is on the members, not on the exact bytes.
 	metadata := fixture.eventMetadata(t, freshItem.EventID)
-	if !strings.Contains(string(metadata), `"classification"`) || !strings.Contains(string(metadata), `"legacyCategory":"tech"`) {
+	var envelope struct {
+		Classification *struct {
+			LegacyCategory string `json:"legacyCategory"`
+		} `json:"classification"`
+	}
+	if err := json.Unmarshal(metadata, &envelope); err != nil || envelope.Classification == nil {
+		t.Fatalf("new event metadata = %s (%v)", metadata, err)
+	}
+	if envelope.Classification.LegacyCategory != "tech" {
 		t.Fatalf("new event metadata = %s", metadata)
 	}
 

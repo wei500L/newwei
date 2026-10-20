@@ -2,6 +2,7 @@ package newseventsingest
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -111,7 +112,7 @@ func normalizeLegacyCategory(value *string) *string {
 	if normalized == nil {
 		return nil
 	}
-	lowered := lowerASCII(*normalized)
+	lowered := lowerJS(*normalized)
 	if _, ok := legacyCategories[lowered]; !ok {
 		return nil
 	}
@@ -136,7 +137,7 @@ func normalizeCategoryPath(value *string) *string {
 	if normalized == nil {
 		return nil
 	}
-	lowered := lowerASCII(*normalized)
+	lowered := lowerJS(*normalized)
 	slashed := replaceAllRune(lowered, '\\', '/')
 	dashed := collapseJSWhitespaceToDash(slashed)
 	collapsed := collapseRuneRuns(dashed, '/')
@@ -168,7 +169,7 @@ func normalizeSentimentLabel(raw json.RawMessage) *NewsSentimentLabel {
 	if normalized == nil {
 		return nil
 	}
-	lowered := lowerASCII(*normalized)
+	lowered := lowerJS(*normalized)
 	switch {
 	case lowered == string(NewsSentimentLabelPositive) || hasPrefix(lowered, "pos"):
 		label := NewsSentimentLabelPositive
@@ -415,23 +416,12 @@ func firstNonNil(values ...*string) *string {
 	return nil
 }
 
-// lowerASCII lowercases a string. JavaScript toLowerCase is locale independent
-// and also folds non-ASCII letters; the categories and sentiment labels this
-// package compares are ASCII, so the ASCII fold is sufficient and never changes
-// a non-ASCII byte.
-func lowerASCII(value string) string {
-	buffer := []byte(value)
-	changed := false
-	for index, char := range buffer {
-		if char >= 'A' && char <= 'Z' {
-			buffer[index] = char + ('a' - 'A')
-			changed = true
-		}
-	}
-	if !changed {
-		return value
-	}
-	return string(buffer)
+// lowerJS lowercases a string the way String.prototype.toLowerCase does:
+// locale independent and folding non-ASCII letters too, so a category path with
+// accented characters keeps the same value as the NestJS original. Go's
+// strings.ToLower is the same Unicode simple case mapping.
+func lowerJS(value string) string {
+	return strings.ToLower(value)
 }
 
 // hasPrefix reports strings.HasPrefix without importing strings here.
