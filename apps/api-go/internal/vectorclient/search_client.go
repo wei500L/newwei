@@ -39,8 +39,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
 )
 
