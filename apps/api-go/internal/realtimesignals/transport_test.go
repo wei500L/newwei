@@ -76,25 +76,32 @@ func TestShouldPersistTransportTrackPoint(t *testing.T) {
 		t.Fatal("an observation at the existing timestamp must not persist")
 	}
 
+	// A later observation is required before the movement thresholds are
+	// considered: the NestJS helper returns false for an equal timestamp first.
+	later := "2026-10-20T12:01:00.000Z"
 	moved := base
+	moved.ObservedAt = later
 	moved.Lat = 10.03 // about 3.3 km north
 	if !shouldPersistTransportTrackPoint(moved, existing, true) {
 		t.Fatal("a move beyond 2 km must persist")
 	}
 
 	turned := base
+	turned.ObservedAt = later
 	turned.Heading = floatPointer(110)
 	if !shouldPersistTransportTrackPoint(turned, existing, true) {
 		t.Fatal("a heading change beyond 15 degrees must persist")
 	}
 
 	faster := base
+	faster.ObservedAt = later
 	faster.Speed = floatPointer(106)
 	if !shouldPersistTransportTrackPoint(faster, existing, true) {
 		t.Fatal("a speed change beyond 5 knots must persist")
 	}
 
 	climbed := base
+	climbed.ObservedAt = later
 	climbed.AltitudeFt = floatPointer(31200)
 	if !shouldPersistTransportTrackPoint(climbed, existing, true) {
 		t.Fatal("an altitude change beyond 1000 ft must persist")
@@ -108,6 +115,7 @@ func TestShouldPersistTransportTrackPoint(t *testing.T) {
 
 	vessel := base
 	vessel.EntityKind = "vessel"
+	vessel.ObservedAt = later
 	vessel.AltitudeFt = floatPointer(31200)
 	if shouldPersistTransportTrackPoint(vessel, existing, true) {
 		t.Fatal("the altitude threshold must not apply to vessels")

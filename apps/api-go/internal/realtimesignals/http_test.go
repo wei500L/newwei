@@ -318,7 +318,7 @@ func TestGdeltTensionRequestShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(rawQuery, "pairs=usa_russia,russia_ukraine,usa_china,china_taiwan,usa_iran,usa_venezuela&method=gpr&dateStart=") {
+	if !strings.HasPrefix(rawQuery, "pairs=usa_russia%2Crussia_ukraine%2Cusa_china%2Cchina_taiwan%2Cusa_iran%2Cusa_venezuela&method=gpr&dateStart=") {
 		t.Fatalf("query = %q", rawQuery)
 	}
 	if results[0].Value != 71.5 {
