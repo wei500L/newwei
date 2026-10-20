@@ -16,6 +16,7 @@ import {
   TELEGRAM_POLL_JOB_NAME,
 } from "../situation-monitor/signals/situation-monitor-signals.constants";
 import { SituationMonitorSignalsService } from "../situation-monitor/signals/situation-monitor-signals.service";
+import { SituationMonitorTelegramClearSubscriber } from "../situation-monitor/signals/situation-monitor-telegram-clear.subscriber";
 import {
   removeLegacyTelegramRepeatJobs,
   removeQueuedTelegramPollJobs,
@@ -46,6 +47,7 @@ export class SituationMonitorSettingsController {
     private readonly telegramAuth: SituationMonitorTelegramAuthService,
     private readonly bullmqConnections: BullmqConnectionService,
     private readonly signals: SituationMonitorSignalsService,
+    private readonly telegramClear: SituationMonitorTelegramClearSubscriber,
     private readonly akshareService: AkshareService,
     private readonly externalSnapshots: SituationMonitorExternalSnapshotService,
     private readonly monitor: SituationMonitorService,
@@ -97,7 +99,7 @@ export class SituationMonitorSettingsController {
     await this.syncTelegramScheduleBestEffort(reset.telegramEnabled, reset.telegramPollIntervalMs);
     await this.syncEconomicDataScheduleBestEffort();
     if (!reset.hasTelegramSession) {
-      await this.signals.clearTelegramState({ clearItems: true });
+      await this.clearTelegramStateEverywhere();
     }
     return await this.withExternalSnapshotStatus(reset, user);
   }
@@ -106,7 +108,7 @@ export class SituationMonitorSettingsController {
   async clearTelegramAuth(@CurrentUser() user: AuthenticatedUser) {
     const updated = await this.settings.clearTelegramConfiguration(user.orgId, user.id);
     await this.syncTelegramScheduleBestEffort(updated.telegramEnabled, updated.telegramPollIntervalMs);
-    await this.signals.clearTelegramState({ clearItems: true });
+    await this.clearTelegramStateEverywhere();
     return await this.withExternalSnapshotStatus(updated, user);
   }
 
@@ -140,6 +142,23 @@ export class SituationMonitorSettingsController {
   @Post("external-snapshot/refresh")
   async forceExternalSnapshotRefresh() {
     return await this.externalSnapshots.forceRefresh();
+  }
+
+  /**
+   * T1: clear this instance first (the pre-existing behavior), then broadcast so
+   * every other NestJS instance clears its own GramJS client and in-memory state
+   * too. api-go publishes the same channel without a local NestJS clear.
+   */
+  private async clearTelegramStateEverywhere(): Promise<void> {
+    await this.signals.clearTelegramState({ clearItems: true });
+    try {
+      await this.telegramClear.publish(true);
+    } catch (error) {
+      this.logger.warn(
+        { error },
+        "Failed to broadcast situation monitor Telegram state clear"
+      );
+    }
   }
 
   private async syncTelegramScheduleBestEffort(
