@@ -361,7 +361,7 @@ func (s *Service) refreshOrg(ctx context.Context, orgID string, runtime *datarun
 		nextEligibleAt := formatISO(completedAtMs + int64(maxInt(minSourceInterval, int(jsTrunc(float64(effectiveIntervalSec)))))*1000)
 		for _, result := range results {
 			if err := s.store.appendPoint(ctx, orgID, result.MetricSlug, metricPoint{
-				TS: nowIso, Value: result.Value, Context: result.Context.rawContext(),
+				TS: nowIso, Value: result.Value, Context: signalContextRaw(result.Context),
 			}); err != nil {
 				return err
 			}
@@ -381,7 +381,7 @@ func (s *Service) refreshOrg(ctx context.Context, orgID string, runtime *datarun
 			value := results[0].Value
 			success.LatestValue = &value
 			if results[0].Context != nil {
-				success.Context = results[0].Context.rawContext()
+				success.Context = signalContextRaw(results[0].Context)
 			}
 		}
 		if err := s.store.setSourceState(ctx, orgID, success); err != nil {

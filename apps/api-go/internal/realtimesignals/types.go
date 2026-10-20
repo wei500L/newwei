@@ -51,10 +51,10 @@ type SourceState struct {
 	Context         json.RawMessage   `json:"context,omitempty"`
 }
 
-// DiagnosticContext converts the typed context into the stored JSON leaf. NestJS
+// signalContextRaw converts a typed context into the stored JSON leaf. NestJS
 // stores the same object it attached to the point, so the marshaled bytes are the
 // contract.
-func (c SignalContext) rawContext() json.RawMessage {
+func signalContextRaw(c SignalContext) json.RawMessage {
 	if c == nil {
 		return nil
 	}
