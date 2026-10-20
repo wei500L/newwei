@@ -682,6 +682,12 @@ func run() error {
 	if cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo {
 		newsnowSourcesMode = string(legacyproxy.ModeGo)
 	}
+	// The two authenticated hot reads have their own switch, independent of the
+	// public source fetch routes and the background owners.
+	newsnowHottestMode := ""
+	if cfg.NewsnowHottestMode == config.NewsnowHottestModeGo {
+		newsnowHottestMode = string(legacyproxy.ModeGo)
+	}
 	newsClusteringLlmBackfillMode := ""
 	if cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo {
 		newsClusteringLlmBackfillMode = string(legacyproxy.ModeGo)
@@ -901,6 +907,9 @@ func run() error {
 	// The two public source fetch routes. Registered after the local-computation
 	// rules; the two rule sets share no path.
 	rules = legacyproxy.WithNewsnowSources(rules, newsnowSourcesMode)
+	// The two authenticated hot reads. Exact paths; they never intersect the
+	// public source rules or the metadata/resolve rules.
+	rules = legacyproxy.WithNewsnowHottest(rules, newsnowHottestMode)
 	// The manual LLM backfill route has its own switch. It is registered next
 	// to the nine-route clustering takeover but never widens it.
 	rules = legacyproxy.WithNewsClusteringLlmBackfill(rules, newsClusteringLlmBackfillMode)
@@ -1158,6 +1167,11 @@ func run() error {
 	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
 	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
 	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
+	// The two authenticated hot reads and the two background owners are separate
+	// switches. The HTTP unit needs the credentialed stack; the background unit
+	// needs only MySQL, Redis and Mongo.
+	newsnowHottestGo := cfg.NewsnowHottestMode == config.NewsnowHottestModeGo
+	newsnowBackgroundGo := cfg.NewsnowBackgroundMode == config.NewsnowBackgroundModeGo
 	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
 	crawlMetadataGo := cfg.CrawlMetadataMode == config.CrawlMetadataModeGo
 	// The crawl task lifecycle writes and the queue administration routes are
@@ -1232,7 +1246,7 @@ func run() error {
 		situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo ||
 		crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo ||
 		adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo ||
-		newsnowClusteringOpsGo || runtimeSettingsGo || infrastructureSettingsGo ||
+		newsnowClusteringOpsGo || newsnowHottestGo || runtimeSettingsGo || infrastructureSettingsGo ||
 		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
@@ -1276,6 +1290,7 @@ func run() error {
 		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
 		cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
 		cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo ||
+		newsnowBackgroundGo ||
 		rawItemOutboxGo ||
 		economicDataWorkerGo ||
 		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo ||
@@ -1680,6 +1695,18 @@ func run() error {
 	newsnowSourcesService, wireSourcesErr := wireNewsnowSources(gateway, cfg, sharedDB, redisClient)
 	if wireSourcesErr != nil {
 		return wireSourcesErr
+	}
+	// The NewsNow hottest unit owns the two hot reads and both background
+	// owners. It is nil while both switches are legacy; the deferred teardown
+	// stops it before the shared Redis/Mongo connections close.
+	var newsnowHottestUnit *newsnowHottestUnit
+	// The hottest/recommended reads and the two NewsNow schedulers share the
+	// source fetch service when the public source switch is go; otherwise this
+	// unit builds its own instance over the same cache and locks.
+	newsnowHottestUnit, err = newNewsnowHottestUnit(
+		gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo, newsnowSourcesService)
+	if err != nil {
+		return err
 	}
 	if err := wireCrawlMetadata(gateway, cfg, metadataService, authenticator); err != nil {
 		return err
@@ -2592,6 +2619,13 @@ func run() error {
 		if searchReindexService != nil {
 			searchReindexService.Close()
 		}
+		// The NewsNow hot schedulers stop before the shared Redis client closes;
+		// a timed-out organization lock is left to expire naturally.
+		if newsnowHottestUnit != nil {
+			if closeErr := newsnowHottestUnit.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: NewsNow hottest unit close: %v", closeErr)
+			}
+		}
 		// The source fetch unit's outbound HTTP transport drains before the
 		// shared Redis client closes.
 		if newsnowSourcesService != nil {
@@ -2668,6 +2702,9 @@ func run() error {
 	}
 	assistantWorker = startAssistantWorker(cfg, assistantRunService, redisClient)
 	gdeltSnapshot.Start(cfg)
+	if newsnowHottestUnit != nil {
+		newsnowHottestUnit.Start(cfg)
+	}
 
 	alertWorker, err = wireAlertWorker(cfg, sharedDB, redisClient, &graphqlMongo, &dashboardMongo)
 	if err != nil {

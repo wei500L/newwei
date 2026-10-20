@@ -22,17 +22,16 @@ const NewsnowClusteringOpsKey = "/api/news-aggregator/metadata"
 //
 // Every rule is a method whitelist plus either an exact path or a single
 // dynamic segment with a fixed tail, so OPTIONS preflight reaches the Go
-// handler while anything else falls back to NestJS. In particular the four
-// NewsNow endpoints that fetch external sources stay on NestJS under this
-// switch (GET /api/news-aggregator/source, POST /api/news-aggregator/sources/batch,
-// GET /api/news-aggregator/hottest-analysis, GET /api/news-aggregator/recommended);
-// the first two belong to WithNewsnowSources only when its own independent
-// switch is go,
-// as does POST /api/system-settings/news-events/clustering/failures/:groupId/llm-backfill,
-// which enqueues a BullMQ job. Longer paths, sibling paths such as
-// /api/news-aggregator/sources, and every unlisted method also stay on NestJS;
-// Go never answers with its own 404. The default (empty or legacy) appends no
-// rule at all.
+// handler while anything else falls back to NestJS. The four external-source
+// NewsNow endpoints are not part of this rule set: GET /api/news-aggregator/source
+// and POST /api/news-aggregator/sources/batch belong to WithNewsnowSources, and
+// GET /api/news-aggregator/hottest-analysis and GET /api/news-aggregator/recommended
+// belong to WithNewsnowHottest; each is registered only when its own independent
+// switch is go. POST /api/system-settings/news-events/clustering/failures/:groupId/llm-backfill
+// enqueues a BullMQ job and has its own switch as well. Longer paths, sibling
+// paths such as /api/news-aggregator/sources, and every unlisted method stay on
+// NestJS; Go never answers with its own 404. The default (empty or legacy)
+// appends no rule at all.
 func WithNewsnowClusteringOps(rules []Rule, mode string) []Rule {
 	if mode != string(ModeGo) {
 		return rules

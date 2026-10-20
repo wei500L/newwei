@@ -487,6 +487,46 @@ const (
 	NewsnowSourcesModeGo NewsnowSourcesMode = "go"
 )
 
+// NewsnowHottestMode controls the two authenticated NewsNow "hot" reading
+// endpoints:
+//
+//	GET /api/news-aggregator/hottest-analysis
+//	GET /api/news-aggregator/recommended
+//
+// It defaults to legacy. In go mode Go builds the global hottest snapshot,
+// projects it per organization, optionally auto-imports items when the caller
+// holds items.write, scores the recommended feed and writes the same Redis
+// documents and locks as NestJS. It requires JWT_SECRET, DATABASE_URL,
+// REDIS_HOST and MONGO_URI plus the existing LiteLLM gateway configuration, and
+// starts no scheduler by itself.
+type NewsnowHottestMode string
+
+const (
+	// NewsnowHottestModeLegacy keeps both routes on NestJS and is the default,
+	// including when the environment variable is unset or empty.
+	NewsnowHottestModeLegacy NewsnowHottestMode = "legacy"
+	// NewsnowHottestModeGo serves both routes from Go.
+	NewsnowHottestModeGo NewsnowHottestMode = "go"
+)
+
+// NewsnowBackgroundMode controls the two NewsNow background owners:
+//
+//	NewsnowHottestAnalysisScheduler   every 10 minutes
+//	NewsnowSourceWarmScheduler        every minute
+//
+// Both NestJS and Go read it. When it is go the NestJS Cron callbacks return
+// before claiming the tick gate or taking the lock. It defaults to legacy and
+// requires DATABASE_URL, REDIS_HOST and MONGO_URI (the hottest refresh writes
+// projections and domestic opinion snapshots); no JWT is involved.
+type NewsnowBackgroundMode string
+
+const (
+	// NewsnowBackgroundModeLegacy keeps both Cron jobs on NestJS.
+	NewsnowBackgroundModeLegacy NewsnowBackgroundMode = "legacy"
+	// NewsnowBackgroundModeGo runs both schedules in Go.
+	NewsnowBackgroundModeGo NewsnowBackgroundMode = "go"
+)
+
 // NewsClusteringLlmBackfillMode controls the manual LLM backfill enqueue route:
 //
 //	POST /api/system-settings/news-events/clustering/failures/:groupId/llm-backfill
@@ -2130,6 +2170,13 @@ type Config struct {
 	// endpoints. Defaults to legacy. go requires DATABASE_URL and REDIS_HOST;
 	// it needs no JWT, Mongo or queue and starts no worker.
 	NewsnowSourcesMode NewsnowSourcesMode
+	// NewsnowHottestMode controls GET /api/news-aggregator/hottest-analysis and
+	// GET /api/news-aggregator/recommended. Defaults to legacy. go requires JWT,
+	// MySQL, Redis, Mongo and the existing model gateway configuration.
+	NewsnowHottestMode NewsnowHottestMode
+	// NewsnowBackgroundMode controls the two NewsNow schedulers. Defaults to
+	// legacy. go requires MySQL, Redis and Mongo and is read by NestJS too.
+	NewsnowBackgroundMode NewsnowBackgroundMode
 	// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry
 	// endpoints migrated by this unit. It defaults to legacy. go mode
 	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
@@ -3097,6 +3144,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.NewsnowClusteringOpsMode = NewsnowClusteringOpsModeGo
 	default:
 		errs = append(errs, "API_GO_NEWSNOW_CLUSTERING_OPS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_HOTTEST_MODE")) {
+	case "", string(NewsnowHottestModeLegacy):
+		cfg.NewsnowHottestMode = NewsnowHottestModeLegacy
+	case string(NewsnowHottestModeGo):
+		cfg.NewsnowHottestMode = NewsnowHottestModeGo
+	default:
+		errs = append(errs, "API_GO_NEWSNOW_HOTTEST_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_BACKGROUND_MODE")) {
+	case "", string(NewsnowBackgroundModeLegacy):
+		cfg.NewsnowBackgroundMode = NewsnowBackgroundModeLegacy
+	case string(NewsnowBackgroundModeGo):
+		cfg.NewsnowBackgroundMode = NewsnowBackgroundModeGo
+	default:
+		errs = append(errs, "API_GO_NEWSNOW_BACKGROUND_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_SOURCES_MODE")) {
 	case "", string(NewsnowSourcesModeLegacy):
@@ -4508,6 +4571,24 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		appendAuthRequirements(&errs, "API_GO_NEWSNOW_CLUSTERING_OPS_MODE", cfg)
 		if cfg.MongoURI == "" {
 			errs = append(errs, "MONGO_URI is required when API_GO_NEWSNOW_CLUSTERING_OPS_MODE=go")
+		}
+	}
+	// The two NewsNow hot reading routes need the credentialed stack plus Mongo
+	// (rawitems, processeditems, NewsEventItem via MySQL) and the model gateway.
+	if cfg.NewsnowHottestMode == NewsnowHottestModeGo {
+		appendSpacetimeRequirements(&errs, "API_GO_NEWSNOW_HOTTEST_MODE", cfg)
+	}
+	// The background owners synchronize their snapshots and projections through
+	// the same MySQL/Redis/Mongo stores. They never authenticate a caller.
+	if cfg.NewsnowBackgroundMode == NewsnowBackgroundModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_NEWSNOW_BACKGROUND_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_NEWSNOW_BACKGROUND_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_NEWSNOW_BACKGROUND_MODE=go")
 		}
 	}
 	// The public source fetch takeover needs MySQL for the global runtime-secret

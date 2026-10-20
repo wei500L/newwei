@@ -456,6 +456,13 @@ services:
       # 空串按 legacy。go 时 Go 真实抓取上游、写兼容缓存并发布
       # newsnow:source-refresh:v1；Nest 预热与热点 Cron 所有权不变。
       API_GO_NEWSNOW_SOURCES_MODE: ${API_GO_NEWSNOW_SOURCES_MODE:-legacy}
+      # NewsNow 热点分析与推荐两路（需 items.read；自动导入需 items.write）。
+      # 空串按 legacy；go 由 Go 计算并返回，要求 JWT/MySQL/Redis/Mongo 与
+      # 既有 LiteLLM 网关配置。回滚只把本变量改回 legacy。
+      API_GO_NEWSNOW_HOTTEST_MODE: ${API_GO_NEWSNOW_HOTTEST_MODE:-legacy}
+      # NewsNow 两个后台任务（热点 10 分钟、来源预热 1 分钟）。Nest 与 Go
+      # 注入同一变量；go 时 Nest 在领取时间片/加锁前返回，Go 运行两个调度。
+      API_GO_NEWSNOW_BACKGROUND_MODE: ${API_GO_NEWSNOW_BACKGROUND_MODE:-legacy}
       # 知识图谱自动构建所有权。空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。
       # 默认 legacy=保留 NestJS 每 5 分钟 Cron；go=Go 领取同一 tick gate、按组织锁
       # 构建图谱，NestJS Cron 在领取时间片前退出。Nest 与 Go 注入同一变量。
@@ -704,6 +711,14 @@ services:
       # go 只接管这两条精确路由（无 JWT/Mongo 依赖），Nest 预热与热点
       # Cron 继续运行。回滚只把本变量改回 legacy。
       API_GO_NEWSNOW_SOURCES_MODE: ${API_GO_NEWSNOW_SOURCES_MODE:-legacy}
+      # NewsNow 热点分析与推荐两路（需 items.read；自动导入需 items.write）。
+      # pilot 默认仍交 NestJS；go 由 Go 计算并返回，要求 JWT/MySQL/Redis/Mongo
+      # 与既有 LiteLLM 网关配置。回滚只把本变量改回 legacy。
+      API_GO_NEWSNOW_HOTTEST_MODE: ${API_GO_NEWSNOW_HOTTEST_MODE:-legacy}
+      # NewsNow 两个后台任务（热点 10 分钟、来源预热 1 分钟）。Nest 与 Go
+      # 注入同一变量；go 时 Nest 在领取时间片/加锁前返回，Go 运行两个调度。
+      # 两侧共用同一组缓存、锁与时间片，切换中不会对同一组织并发刷新。
+      API_GO_NEWSNOW_BACKGROUND_MODE: ${API_GO_NEWSNOW_BACKGROUND_MODE:-legacy}
       # raw_item 失败补偿的定时重放所有权。与条目写/读开关独立；默认 legacy。
       # go 时 NestJS Cron 在申请锁前退出，Go 每分钟扫描并投递。Nest 与 Go 注入
       # 同一变量；SCHEDULE_ENABLED=false 时两边都停止定时重放，但请求内即时投递

@@ -4,6 +4,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 
 import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
 import { CacheService } from "../cache/cache.service";
+import { EnvService } from "../config/config.service";
 
 import { NewsAggregatorService } from "./news-aggregator.service";
 import { NewsnowActiveSourceRegistryService } from "./newsnow-active-source-registry.service";
@@ -19,10 +20,22 @@ export class NewsnowSourceWarmSchedulerService {
     private readonly cache: CacheService,
     private readonly activeSources: NewsnowActiveSourceRegistryService,
     private readonly aggregator: NewsAggregatorService,
+    private readonly env: EnvService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async refreshScheduled() {
+    // Execution ownership: when API_GO_NEWSNOW_BACKGROUND_MODE=go the Go
+    // scheduler owns this minute tick, so this callback returns BEFORE taking
+    // the warm lock. Both implementations use the same lock key, so a switch
+    // flip that briefly leaves both schedulers alive still warms once.
+    if (
+      this.env.get<string>("API_GO_NEWSNOW_BACKGROUND_MODE", { infer: true }) ===
+      "go"
+    ) {
+      return;
+    }
+
     const locked = await this.cache.withLock(
       NEWSNOW_SOURCE_WARM_LOCK_KEY,
       NEWSNOW_SOURCE_WARM_LOCK_TTL_MS,
