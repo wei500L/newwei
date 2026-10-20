@@ -67,6 +67,11 @@ func integrationDatabase(t *testing.T) *sql.DB {
 			"updatedAt DATETIME(3) NOT NULL, PRIMARY KEY (id), INDEX Notification_orgId_createdAt (orgId, createdAt)) " +
 			"DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
 	}
+	for _, table := range []string{"SystemSetting", "Notification"} {
+		if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS `"+table+"`"); err != nil {
+			t.Fatalf("drop integration table: %v", err)
+		}
+	}
 	for _, statement := range statements {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			t.Fatalf("create integration table: %v", err)
