@@ -269,7 +269,7 @@ jobs:
   # 重推导 + authn blacklist 的真实栈验证）。
   api-go-user-settings-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     services:
       mysql:
         # 固定版本（不用 latest）；与 infra/docker/docker-compose.yml 的
@@ -296,9 +296,22 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
+      # ANALYSIS-RUNS-001：真实 Mongo 7.0 验证 $topN、running 恢复、结果/日志
+      # 终态。版本与 infra/docker/docker-compose.yml 的 Mongo 服务同线。
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     env:
       DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
       API_GO_TEST_REDIS_ADDR: 127.0.0.1:6379
+      MONGO_URI: mongodb://127.0.0.1:27017/app
+      HUSKY: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -308,6 +321,20 @@ jobs:
         with:
           go-version-file: apps/api-go/go.mod
           cache: false
+
+      # 使用仓库已锁定的 bullmq 5.63.2 做双向协议验证。只安装 api 的
+      # workspace 依赖，node fixture 从 apps/api 目录读取同一 lockfile。
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install locked Node BullMQ fixture dependencies
+        run: pnpm install --frozen-lockfile --filter @modular/api...
 
       - name: Go modules (download with committed go.sum)
         run: cd apps/api-go && go mod download
@@ -404,6 +431,12 @@ jobs:
       # MySQL 后端的 system_event provider，因此不需要 Mongo 服务。
       - name: Alert worker integration tests (queue protocol, claim transaction, delivery state machine, scan)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/alertworker/ -run 'TestAlertWorkerIntegration' -v
+
+      # 真实 MySQL/Redis/Mongo + 真 Go worker + Node BullMQ 5.63.2 + 本地
+      # HTTP SSE fixture。fixture 通过只证明协议与本地闭环，不代表真实外部
+      # 模型、生产数据或多实例切换已验证。
+      - name: Analysis runs integration (Go worker + Node BullMQ + Mongo/MySQL/Redis + SSE fixture)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/analysisruns/ -run TestAnalysisRunsIntegration -v -timeout 10m
 
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #

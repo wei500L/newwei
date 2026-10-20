@@ -167,6 +167,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/alertqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/alertworker"
+	"github.com/wei500L/newwei/apps/api-go/internal/analysisqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/archivereading"
 	"github.com/wei500L/newwei/apps/api-go/internal/assistantqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/assistantruns"
@@ -851,7 +852,8 @@ func run() error {
 		cfg.GraphQLAlertRulesMode == "go" ||
 		cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo ||
 		cfg.GraphQLNewsIndicatorRefreshMode == "go" ||
-		cfg.GraphQLAssistantWriteMode == "go" {
+		cfg.GraphQLAssistantWriteMode == "go" ||
+		cfg.AnalysisRunsMode == config.AnalysisRunsModeGo {
 		graphqlRouteMode = string(legacyproxy.ModeGo)
 	}
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
@@ -1049,6 +1051,8 @@ func run() error {
 				cfg.ArchiveReadingMode == config.ArchiveReadingModeGo ||
 				cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
 				cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
+				cfg.AnalysisRunsMode == config.AnalysisRunsModeGo ||
+				cfg.AnalysisWorkerMode == config.AnalysisWorkerModeGo ||
 				cfg.GraphQLKnowledgeReviewMode == "go" ||
 				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
 				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
@@ -1172,6 +1176,10 @@ func run() error {
 	// it builds its own item and news-event readers and only owns the two exact
 	// POST export routes.
 	analysisExportGo := cfg.AnalysisExportMode == config.AnalysisExportModeGo
+	// The three analysis run mutations are an independent GraphQL write unit.
+	// The worker owner is separate: it needs no JWT and no GraphQL switch.
+	analysisRunsGo := cfg.AnalysisRunsMode == config.AnalysisRunsModeGo
+	analysisWorkerGo := cfg.AnalysisWorkerMode == config.AnalysisWorkerModeGo
 	searchReindexGo := cfg.SearchReindexMode == config.SearchReindexModeGo
 	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
 	llmGatewayProfilesGo := cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo
@@ -1237,7 +1245,7 @@ func run() error {
 		cfg.ClassificationReportsMode == config.ClassificationReportsModeGo ||
 		cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
 		cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
-		newsSourcePreviewGo || crawlWorkflowTrialGo
+		newsSourcePreviewGo || crawlWorkflowTrialGo || analysisRunsGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	// The background digest delivery needs the shared Redis client (tick gate,
@@ -1252,8 +1260,9 @@ func run() error {
 	// economic-data worker owns the akshare consumer without JWT too, the
 	// knowledge-graph ingestion scheduler takes its tick gate and org locks in
 	// Redis, the classification quality/assistant workers consume their queues
-	// without authenticating a caller, and the GDELT snapshot scheduler shares
-	// its rebuild lease in Redis.
+	// without authenticating a caller, the GDELT snapshot scheduler shares its
+	// rebuild lease in Redis, and the analysis worker consumes its queue while
+	// writing Mongo/MySQL without JWT.
 	needsRedis := needsCredentialedGo ||
 		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
 		cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
@@ -1263,7 +1272,8 @@ func run() error {
 		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo ||
 		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
 		assistantWorkerGo ||
-		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo
+		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
+		analysisWorkerGo
 	if needsRedis {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -1997,7 +2007,7 @@ func run() error {
 	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
 	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || graphqlAlertRulesGo || settingsWriteGo ||
 		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || itemsIngestGo || archiveReadingGo || economicDataGo || crawlTaskWriteGo ||
-		cfg.GraphQLNewsIndicatorRefreshMode == "go" || graphqlAssistantWriteGo {
+		cfg.GraphQLNewsIndicatorRefreshMode == "go" || graphqlAssistantWriteGo || analysisRunsGo {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -2015,6 +2025,9 @@ func run() error {
 		settingsCrawlGo := cfg.GraphQLSettingsCrawlReadMode == "go"
 		if graphqlReadGo {
 			mongoDatabase := dashboardMongo
+			if mongoDatabase == nil {
+				mongoDatabase = graphqlMongo
+			}
 			if mongoDatabase == nil {
 				opened, openErr := dashboardstats.Open(cfg.MongoURI)
 				if openErr != nil {
@@ -2251,6 +2264,26 @@ func run() error {
 				graphqlMongo = rssTranslationMongo
 			}
 		}
+		// The three analysis run mutations insert pending Mongo documents and
+		// enqueue BullMQ jobs. They reuse an already-open connection and hand a
+		// newly opened one to the shared graphqlMongo lifecycle.
+		if analysisRunsGo {
+			mongoDatabase := dashboardMongo
+			if mongoDatabase == nil {
+				mongoDatabase = graphqlMongo
+			}
+			if mongoDatabase == nil {
+				opened, openErr := dashboardstats.Open(cfg.MongoURI)
+				if openErr != nil {
+					return fmt.Errorf("api-go: API_GO_ANALYSIS_RUNS_MODE=go requires a valid MONGO_URI")
+				}
+				graphqlMongo = opened
+				mongoDatabase = opened
+			}
+			if err := registerAnalysisRunMutations(reg, cfg, sharedDB, redisClient, mongoDatabase.Database()); err != nil {
+				return err
+			}
+		}
 		handler, handlerErr := graphqlread.NewHandler(graphqlread.Options{
 			Registry:        reg,
 			Authenticator:   authenticator,
@@ -2458,10 +2491,14 @@ func run() error {
 	// and needs no JWT. The deferred Close stops claiming jobs and drains the
 	// in-flight ones before the shared Redis/Mongo connections close below.
 	var alertWorker *alertworker.Service
+	// The analysis worker owner stops claiming first, drains in-flight jobs
+	// while renewing their locks, and only then lets the digest scheduler and
+	// the shared Redis/Mongo connections close.
+	var analysisWorker *analysisqueue.Worker
 	// Ordered teardown for both the SIGTERM path and every error return after
-	// this point, including an HTTP listen failure. The digest scheduler stops
-	// first, then background search reindex, then the shared Redis/Mongo
-	// connections and the request-scoped handlers.
+	// this point, including an HTTP listen failure. The analysis worker stops
+	// first, then the digest scheduler, then background search reindex, then the
+	// shared Redis/Mongo connections and the request-scoped handlers.
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -2485,6 +2522,11 @@ func run() error {
 		if alertWorker != nil {
 			if closeErr := alertWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: alert worker close: %v", closeErr)
+			}
+		}
+		if analysisWorker != nil {
+			if closeErr := analysisWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: analysis worker close: %v", closeErr)
 			}
 		}
 		if deliveryScheduler != nil {
@@ -2589,6 +2631,25 @@ func run() error {
 	if alertWorker != nil {
 		if startErr := alertWorker.Start(context.Background()); startErr != nil {
 			return startErr
+		}
+	}
+
+	// The analysis queue consumer owner. It reuses the already-open Mongo
+	// connection when one exists; otherwise startAnalysisWorker opens one and
+	// hands it to graphqlMongo so the existing teardown closes it after the
+	// worker drain.
+	if analysisWorkerGo {
+		existingMongo := dashboardMongo
+		if existingMongo == nil {
+			existingMongo = graphqlMongo
+		}
+		worker, ownedMongo, workerErr := startAnalysisWorker(cfg, sharedDB, redisClient, existingMongo)
+		if workerErr != nil {
+			return workerErr
+		}
+		analysisWorker = worker
+		if ownedMongo != nil {
+			graphqlMongo = ownedMongo
 		}
 	}
 

@@ -17,8 +17,8 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.62
 	// BullMQ 5.63.2 msgpack wire format shared by the items-ingest,
 	// archive-preparation, alert-rules, crawl-task, news-backfill,
-	// classification-quality and assistant producers/consumers. v5.4.1 is the
-	// fixed tag.
+	// classification-quality, assistant and analysis producers/consumers.
+	// v5.4.1 is the fixed tag.
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	// Go-批5A：dashboard stats 只读查询 ProcessedItem 与 TaskLog。
 	go.mongodb.org/mongo-driver/v2 v2.9.2
