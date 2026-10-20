@@ -186,5 +186,5 @@ func resolveDigestAnchor(anchorDate string, now time.Time) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 23, 59, 59, 999*time.Millisecond, time.UTC), nil
+	return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 23, 59, 59, 999*int(time.Millisecond), time.UTC), nil
 }

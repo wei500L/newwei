@@ -262,3 +262,9 @@ func NormalizeNewsContentTypeValue(value string) (string, bool) {
 func InferNewsContentTypeValue(title, summary, source, rawURL string, topics, tags []string) string {
 	return string(inferNewsContentType(title, summary, source, rawURL, topics, tags))
 }
+
+// DecodeStoredStringArray is the exported decodeStringArray.
+func DecodeStoredStringArray(raw []byte) []string { return decodeStringArray(raw) }
+
+// DecodeStoredEntities is the exported decodeEntityNames.
+func DecodeStoredEntities(raw []byte) []Entity { return decodeEntityNames(raw) }

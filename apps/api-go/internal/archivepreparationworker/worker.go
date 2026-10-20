@@ -16,7 +16,7 @@ import (
 // (worker shutdown or a lost lease). Returning a *LeaseLostError means this
 // attempt lost the BullMQ lock; the worker then leaves the job in the active
 // list for stalled recovery instead of acknowledging it.
-type Processor func(ctx context.Context, job Job) error
+type JobProcessor func(ctx context.Context, job Job) error
 
 // WorkerOptions are the fixed BullMQ 5.63.2 worker defaults plus the
 // concurrency derived from NEWS_PROCESS_QUEUE_CONCURRENCY.
@@ -28,7 +28,7 @@ type WorkerOptions struct {
 	StalledInterval time.Duration
 	MaxStalledCount int
 	DrainDelay      time.Duration
-	Processor       Processor
+	Processor       JobProcessor
 	// OnFailure runs once for every failed attempt before BullMQ retries or
 	// terminally fails the job. The archive preparation status record mirrors
 	// the NestJS in-process Worker 'failed' event, which fires on every
