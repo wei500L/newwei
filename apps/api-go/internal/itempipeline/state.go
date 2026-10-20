@@ -311,9 +311,13 @@ type notificationParams struct {
 	CircuitOpenUntil    string `json:"circuitOpenUntil,omitempty"`
 }
 
-// markSourceFailureState is markSourceFailureState: consecutiveFailures+1,
-// jittered retry backoff, circuit breaker, auto-disable, nextRunAt and the two
-// system notifications, inside one transaction.
+// markSourceFailureState is markSourceFailureState with the B1 fix: the
+// NewsSource row is read with SELECT ... FOR UPDATE inside the same transaction
+// that writes the new counter, so two concurrent final failures of one source
+// can no longer read the same old value (lost update) or both send the
+// threshold notification (duplicate alert). The winner of the row lock is the
+// only transaction that observes the threshold crossing, therefore the only
+// one that notifies.
 func (p *Processor) markSourceFailureState(ctx context.Context, sourceID string, failureAt time.Time) {
 	if p == nil || p.db == nil || sourceID == "" {
 		return
@@ -336,7 +340,7 @@ func (p *Processor) markSourceFailureState(ctx context.Context, sourceID string,
 		var orgID string
 		var name string
 		row := tx.QueryRowContext(ctx,
-			"SELECT consecutiveFailures, isActive, orgId, name FROM `NewsSource` WHERE id = ?", sourceID)
+			"SELECT consecutiveFailures, isActive, orgId, name FROM `NewsSource` WHERE id = ? FOR UPDATE", sourceID)
 		if err := row.Scan(&previousFailures, &isActive, &orgID, &name); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
