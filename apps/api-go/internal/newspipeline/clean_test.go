@@ -351,6 +351,13 @@ func TestFetchArticleStoredCrawlResultBranch(t *testing.T) {
 	if result.FetchedAt != "2024-03-04T05:06:07.000Z" {
 		t.Fatalf("fetchedAt = %q", result.FetchedAt)
 	}
+	state := cleaner.takePendingState(contentTestJob(), payload.URL)
+	if !state.fromCache {
+		t.Fatalf("a stored crawl result must carry fromCache=true into the clean prompt")
+	}
+	if state.patch == nil || len(state.patch.keys) != 0 {
+		t.Fatalf("branch 2 must not write payload.metadata: %+v", state.patch)
+	}
 }
 
 func TestFetchArticleRecentBranchStoresCrawlResultID(t *testing.T) {

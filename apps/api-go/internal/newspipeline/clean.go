@@ -905,7 +905,12 @@ func (c *Cleaner) dropPendingState(job Job, url string) {
 
 // storePendingState records the patch/fromCache of one fetchArticle result.
 func (c *Cleaner) storePendingState(job Job, url string, fromCache bool, patch *contentOrderedJSON) {
-	if patch == nil || len(patch.keys) == 0 {
+	if patch == nil {
+		patch = contentNewOrderedJSON()
+	}
+	// A cached article without a metadata patch still has to carry fromCache so
+	// the clean prompt reports Cache hit: yes.
+	if len(patch.keys) == 0 && !fromCache {
 		return
 	}
 	key := cleanPendingKey(job, url)
