@@ -20,7 +20,7 @@ func TestSchedulerLeaseContract(t *testing.T) {
 
 func TestSchedulerSkipsTickWithoutLease(t *testing.T) {
 	lock := &fakeLock{acquired: false}
-	scheduler := NewScheduler(&Service{store: &mysqlStore{}}, lock, nil)
+	scheduler := NewScheduler(&Service{store: &mysqlStore{}, now: time.Now}, lock, nil)
 	scheduler.runTick(context.Background())
 	if lock.releases != 0 || lock.renews != 0 {
 		t.Fatalf("lease operations = renew:%d release:%d", lock.renews, lock.releases)
@@ -29,7 +29,7 @@ func TestSchedulerSkipsTickWithoutLease(t *testing.T) {
 
 func TestSchedulerReleasesAcquiredLease(t *testing.T) {
 	lock := &fakeLock{acquired: true}
-	scheduler := NewScheduler(&Service{store: &mysqlStore{}}, lock, nil)
+	scheduler := NewScheduler(&Service{store: &mysqlStore{}, now: time.Now}, lock, nil)
 	scheduler.runTick(context.Background())
 	if lock.releases != 1 {
 		t.Fatalf("release count = %d, want 1", lock.releases)
