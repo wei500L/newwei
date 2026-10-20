@@ -102,7 +102,6 @@ const (
 	crawlHotPriorityThreshold                         = 50
 	itemMetaNameMaxLength                             = 191
 	displayNameMaxLength                              = 80
-	timestampFallbackDisallowed                       = 0
 	deepDiscoveryFailureStateTTLSeconds               = 7 * 24 * 60 * 60
 	deepDiscoveryFailureStatsTTLSeconds               = 24 * 60 * 60
 	notificationRelayChannel                          = "news-source:notifications:v1"
@@ -111,8 +110,6 @@ const (
 	pipelineDispatchReasonInFlight                    = "in_flight"
 	pipelineDispatchReasonNoNewURLs                   = "no_new_urls"
 	pipelineDispatchReasonOK                          = "ok"
-	dispatchModeSchedule                              = "schedule"
-	dispatchModeManual                                = "dispatch_now"
 	metricsContextSchedule                            = "schedule"
 	metricsContextDispatchNow                         = "dispatch_now"
 	presentationKindBackpressure                      = "news_source_scheduler_backpressure"
@@ -120,11 +117,6 @@ const (
 	presentationKindPipelineRetrySpike                = "news_source_pipeline_retry_spike"
 	deepDiscoveryErrorCodePrefix                      = "SEED_DEEP_"
 	deepDiscoveryUnknownErrorCode                     = "SEED_DEEP_UNKNOWN"
-	legacyRSSSeedCacheTTLSeconds                      = 600
-	rssSeedCacheTTLMigrationLockKey                   = "lock:migration:news-source:rss-seed-cache-ttl-600"
-	rssSeedCacheTTLMigrationDoneKey                   = "migration:news-source:rss-seed-cache-ttl-600:done"
-	rssSeedCacheTTLMigrationDoneTTLSeconds            = 365 * 24 * 60 * 60
-	rssSeedCacheTTLMigrationMaxRetries                = 3
 )
 
 // Settings is the resolved scheduler configuration. It mirrors

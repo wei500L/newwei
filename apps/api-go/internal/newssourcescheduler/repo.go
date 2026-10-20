@@ -458,7 +458,8 @@ func (r *mysqlRepository) MarkCrawlTaskFailed(ctx context.Context, crawlTaskID, 
 
 func (r *mysqlRepository) PersistRSSSeed(ctx context.Context, input rssSeedPersist) (string, error) {
 	var outboxID string
-	err := withTransaction(ctx, r.db, func(tx *sql.Tx) error {
+	var err error
+	err = withTransaction(ctx, r.db, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			"INSERT INTO PipelineJob (id, orgId, sourceId, url, urlFingerprint, priority, status, queueName, scheduledFor, metadata, createdAt, updatedAt)"+
 				" VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",

@@ -144,6 +144,10 @@ func New(options Options) *Service {
 			return source.Float64()
 		}
 	}
+	defaults := options.CrawlDefaults
+	if defaults == (CrawlDefaults{}) {
+		defaults = defaultCrawlDefaults()
+	}
 	service := &Service{
 		db:              options.DB,
 		discovery:       options.Discovery,
