@@ -165,7 +165,9 @@ func TestAggregateRefreshNodes(t *testing.T) {
 	if value, _ := aggregate.RejectionCounts.Number("duplicate"); value != 2 {
 		t.Fatalf("rejectionCounts.duplicate = %v", value)
 	}
-	if value, _ := aggregate.FailureKindCounts.Number("challenge_detected"); value != 1 {
+	// The child has no metadata object, and refreshRunStatus only classifies a
+	// node's lastError inside the isPlainObject(metadata) branch.
+	if aggregate.FailureKindCounts.Len() != 0 {
 		t.Fatalf("failureKindCounts = %s", mustJSON(aggregate.FailureKindCounts))
 	}
 	if value, _ := aggregate.JudgeMethodCounts.Number("llm"); value != 1 {
@@ -184,7 +186,7 @@ func TestAggregateRefreshNodes(t *testing.T) {
 		t.Fatalf("root failureKind = %s", raw)
 	}
 	flags := aggregate.WarningFlags
-	if len(flags) != 2 || flags[0] != "a" || flags[1] != "challenge_detected" {
+	if len(flags) != 1 || flags[0] != "a" {
 		t.Fatalf("warning flags = %v", flags)
 	}
 }

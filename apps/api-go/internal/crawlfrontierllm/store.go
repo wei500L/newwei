@@ -392,6 +392,12 @@ func (s *Service) createNode(ctx context.Context, node NodeRecord) (string, erro
 		}
 	}
 	now := truncateMillis(time.Now())
+	var queuedAt any
+	if node.QueuedAt != nil {
+		if parsed, ok := parseJSONTime(*node.QueuedAt); ok {
+			queuedAt = truncateMillis(parsed)
+		}
+	}
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO CrawlFrontierNode
   (id, runId, parentNodeId, orgId, url, canonicalUrl, urlFingerprint, pageType, depth,
@@ -401,7 +407,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, NULL, NULL, NULL, ?, 
 		nodeID, node.RunID, nullableString(node.ParentNodeID), node.OrgID, node.URL,
 		nullableString(node.CanonicalURL), nullableString(node.URLFingerprint), node.PageType,
 		node.Depth, node.QueueClass, node.Status, nullableFloat(node.Score), nullableFloat(node.FreshnessScore),
-		nullableString(node.QueuedAt), metadata, now, now, now)
+		queuedAt, metadata, now, now, now)
 	if err != nil {
 		return "", err
 	}
