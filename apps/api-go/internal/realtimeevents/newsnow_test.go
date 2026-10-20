@@ -99,9 +99,17 @@ func TestHandleAdapterBroadcastPushesLocalRooms(t *testing.T) {
 	}
 
 	// Messages published by this process are skipped (the local push already
-	// happened when the fanout was published).
+	// happened when the fanout was published). The adapter uid is this
+	// instance's own id, not the Nest id used above.
+	ownEncoded, err := encodeAdapterBroadcast(sources.uid, NamespaceNewsnow, []string{"org:abc"}, nil, newsnowUpdateEvent,
+		struct {
+			OrgID string `json:"orgId" msgpack:"orgId"`
+		}{OrgID: "org:abc"})
+	if err != nil {
+		t.Fatalf("encodeAdapterBroadcast(own uid) error = %v", err)
+	}
 	sink.rooms = nil
-	sources.handleAdapterBroadcast("socket.io#/newsnow#org:abc#", encoded)
+	sources.handleAdapterBroadcast("socket.io#/newsnow#org:abc#", ownEncoded)
 	if len(sink.rooms) != 0 {
 		t.Fatal("own uid message must be skipped")
 	}
