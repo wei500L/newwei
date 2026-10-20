@@ -700,6 +700,14 @@ func run() error {
 	if cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo {
 		crawlQueueOpsMode = string(legacyproxy.ModeGo)
 	}
+	newsSourcePreviewMode := ""
+	if cfg.NewsSourcePreviewMode == config.NewsSourcePreviewModeGo {
+		newsSourcePreviewMode = string(legacyproxy.ModeGo)
+	}
+	crawlWorkflowTrialMode := ""
+	if cfg.CrawlWorkflowTrialMode == config.CrawlWorkflowTrialModeGo {
+		crawlWorkflowTrialMode = string(legacyproxy.ModeGo)
+	}
 	searchReindexMode := ""
 	if cfg.SearchReindexMode == config.SearchReindexModeGo {
 		searchReindexMode = string(legacyproxy.ModeGo)
@@ -856,6 +864,8 @@ func run() error {
 	rules = legacyproxy.WithRbac(rules, rbacMode)
 	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
 	rules = legacyproxy.WithCrawlMetadata(rules, crawlMetadataMode)
+	rules = legacyproxy.WithNewsSourcePreview(rules, newsSourcePreviewMode)
+	rules = legacyproxy.WithCrawlWorkflowTrial(rules, crawlWorkflowTrialMode)
 	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
 	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
 	// The exception ingest takeover is registered next to the admin logs
@@ -1143,6 +1153,11 @@ func run() error {
 	// and the shared BullMQ producer.
 	crawlTaskWriteGo := cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo
 	crawlQueueOpsGo := cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo
+	// The two crawl discovery entries are independent switches: the preview GET
+	// and the crawl-strategy trial/replay POSTs share the crawl4ai client and the
+	// metadata Service but never gate each other.
+	newsSourcePreviewGo := cfg.NewsSourcePreviewMode == config.NewsSourcePreviewModeGo
+	crawlWorkflowTrialGo := cfg.CrawlWorkflowTrialMode == config.CrawlWorkflowTrialModeGo
 	// The metadata GraphQL root is a child of the read pilot; it can only be
 	// registered when the read executor itself is assembled.
 	graphqlCrawlMetadataGo := graphqlReadGo && cfg.GraphQLCrawlMetadataMode == "go"
@@ -1220,7 +1235,8 @@ func run() error {
 		// verify the caller. The queue worker does not (see needsRedis).
 		cfg.ClassificationReportsMode == config.ClassificationReportsModeGo ||
 		cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
-		cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo
+		cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
+		newsSourcePreviewGo || crawlWorkflowTrialGo
 	var redisClient *redis.Client
 	var authenticator *authhttp.Authenticator
 	// The background digest delivery needs the shared Redis client (tick gate,
@@ -1644,6 +1660,9 @@ func run() error {
 		return wireSourcesErr
 	}
 	if err := wireCrawlMetadata(gateway, cfg, metadataService, authenticator); err != nil {
+		return err
+	}
+	if err := wireCrawlDiscovery(gateway, cfg, sharedDB, redisClient, metadataService, authenticator); err != nil {
 		return err
 	}
 	// The runtime storage configuration reader is shared by the REST crawl

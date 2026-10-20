@@ -395,6 +395,9 @@ jobs:
       - name: MySQL/Redis integration tests (GDELT external snapshot store, cache and lease)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/gdeltsnapshot/ -run 'TestGDELTSnapshotIntegration' -v
 
+      - name: MySQL integration tests (crawl-strategy run records + preview in-flight queries)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlfrontierruns/ ./internal/crawlstrategyruns/ -run 'TestStrategyRunWriteIntegration|TestStrategyRunBatchWriterMatchesPerRowIntegration|TestCountActivePipelineJobsIntegration' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从

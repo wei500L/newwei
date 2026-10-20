@@ -338,6 +338,7 @@ pnpm --filter infra-scripts run env:check
 - 态势监控 GDELT 外部快照定时重建：`API_GO_GDELT_SNAPSHOT_MODE`（`legacy` 默认，NestJS `@Cron("0 */15 * * * *")` 持有；`go` 由 Go 每 15 分钟重建，NestJS 在加锁前返回；`go` 要求 `DATABASE_URL`、`REDIS_HOST`，不要求 JWT。切换顺序为先 api 服务设 `go` 并重启，再把 api-go 设 `go` 并重启；回滚按相反顺序。两侧共用 `lock:cron:situation-monitor:external-snapshot:gdelt`，写入的历史与两层缓存格式相同）
 - 态势监控 GDELT 强制刷新入口：`API_GO_GDELT_SNAPSHOT_REFRESH_MODE`（`legacy` 默认，`POST /api/system-settings/situation-monitor/external-snapshot/refresh` 仍由 NestJS 处理；`go` 由 Go 处理，要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`。只有 Go 读取该变量，与定时任务的执行权相互独立，靠同一把锁互斥；流量回滚只把该变量改回 `legacy`）
 - 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_SSRF_PROXY_URL`、`CRAWL4AI_*`
+- 采集发现链试点：`API_GO_NEWS_SOURCE_PREVIEW_MODE`（新闻源预览 GET，`legacy` 默认）、`API_GO_CRAWL_WORKFLOW_TRIAL_MODE`（采集策略试运行与回放 POST，`legacy` 默认），都只接受空串/`legacy`/`go`，非法值启动失败；`go` 要求 `JWT_SECRET`、`DATABASE_URL`、`REDIS_HOST`，crawl4ai 由 `CRAWL4AI_BASE_URL`/`CRAWL4AI_API_KEY`/`CRAWL4AI_TIMEOUT_MS`/`CRAWL4AI_HEALTH_CHECK_TTL_MS`/`CRAWL4AI_SSRF_PROXY_URL`/`CRAWL4AI_JSCODE_ENABLED` 透传且可缺省（深度发现报不可用、列表页回退 HTML）。另新增 `NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS`（在途回看窗口，默认 6 小时）。回滚把两个开关改回 `legacy` 并重启 api-go，已写入的运行记录格式与 Nest 相同、两边的读取接口都能展示
 - LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MASTER_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`。Docker 栈中 `LITELLM_MASTER_KEY` 必填（`openssl rand -hex 32`），空值时代理直接退出
 - Docker 端口绑定：`DOCKER_PUBLISH_HOST`（默认 `127.0.0.1`，仅本机可达；需要局域网访问时设为 `0.0.0.0`）
 - 向量：`VECTOR_SERVICE_ENABLED`、`VECTOR_SERVICE_BASE_URL`、`VECTOR_INTERNAL_TOKEN`、`QDRANT_URL`

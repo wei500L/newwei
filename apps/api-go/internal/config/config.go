@@ -612,6 +612,42 @@ const (
 	CrawlMetadataModeGo     CrawlMetadataMode = "go"
 )
 
+// NewsSourcePreviewMode controls the single news-source preview entry
+// (API_GO_NEWS_SOURCE_PREVIEW_MODE):
+//
+//	GET /api/admin/news-sources/:id/preview
+//
+// The accepted values are exactly "", "legacy" and "go"; the empty value and
+// "legacy" both keep the route on the NestJS proxy, and any other value fails
+// startup. go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST; crawl4ai
+// stays optional (deep discovery then reports SEED_DEEP_CRAWL4AI_UNAVAILABLE
+// and list discovery falls back to raw HTML, exactly like NestJS). The entry is
+// read-only: no row is written and nothing is enqueued.
+type NewsSourcePreviewMode string
+
+const (
+	NewsSourcePreviewModeLegacy NewsSourcePreviewMode = "legacy"
+	NewsSourcePreviewModeGo     NewsSourcePreviewMode = "go"
+)
+
+// CrawlWorkflowTrialMode controls the crawl-strategy workflow trial run and
+// replay entries (API_GO_CRAWL_WORKFLOW_TRIAL_MODE):
+//
+//	POST /api/admin/crawl-frontier/workflows/:id/trial-run
+//	POST /api/admin/crawl-frontier/workflow-runs/:runId/replay
+//
+// The accepted values are exactly "", "legacy" and "go"; the empty value and
+// "legacy" both keep the two routes on the NestJS proxy, and any other value
+// fails startup. go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
+// crawl4ai stays optional in the same way as the preview. The entries write the
+// crawl-strategy run records and start no queue, worker or timer.
+type CrawlWorkflowTrialMode string
+
+const (
+	CrawlWorkflowTrialModeLegacy CrawlWorkflowTrialMode = "legacy"
+	CrawlWorkflowTrialModeGo     CrawlWorkflowTrialMode = "go"
+)
+
 // SearchReindexMode controls the two search index rebuild HTTP routes migrated by
 // this unit (API_GO_SEARCH_REINDEX_MODE):
 //
@@ -1986,6 +2022,14 @@ type Config struct {
 	CrawlMaxConcurrency int
 	CrawlMaxRetries     int
 	CrawlRetryBackoffMs int
+	// NewsSourcePreviewMode controls GET /api/admin/news-sources/:id/preview
+	// (see NewsSourcePreviewMode). Default legacy. go requires JWT_SECRET,
+	// DATABASE_URL and REDIS_HOST; crawl4ai stays optional.
+	NewsSourcePreviewMode NewsSourcePreviewMode
+	// CrawlWorkflowTrialMode controls the crawl-strategy trial-run and replay
+	// entries (see CrawlWorkflowTrialMode). Default legacy. go requires
+	// JWT_SECRET, DATABASE_URL and REDIS_HOST; crawl4ai stays optional.
+	CrawlWorkflowTrialMode CrawlWorkflowTrialMode
 	// SearchReindexMode controls the two search index rebuild routes (see
 	// SearchReindexMode). Default legacy. go requires JWT_SECRET, DATABASE_URL,
 	// REDIS_HOST and MONGO_URI; Elasticsearch stays optional at startup.
@@ -2204,12 +2248,16 @@ type Config struct {
 
 	// 认证版健康检查沿用 Nest 已有的 crawl / rerank 配置。空值表示未配置，
 	// 探针如实失败。URL 和密钥不进入日志或健康响应。
-	CrawlBaseURL             string
-	CrawlAPIKey              string
-	CrawlTimeoutMs           int
-	CrawlHealthTTLMs         int
-	CrawlSSRFProxyURL        string
-	ItemsSearchRerankEnabled bool
+	CrawlBaseURL       string
+	CrawlAPIKey        string
+	CrawlTimeoutMs     int
+	CrawlHealthTTLMs   int
+	CrawlSSRFProxyURL  string
+	CrawlJSCodeEnabled bool
+	// NewsSourceInFlightLookbackMs is NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS
+	// (default 21_600_000): the preview's in-flight PipelineJob window.
+	NewsSourceInFlightLookbackMs int
+	ItemsSearchRerankEnabled     bool
 	// ItemsReadModelEnabled mirrors the NestJS ITEMS_READ_MODEL_ENABLED switch
 	// (default false). It is a read-model switch, not a migration switch: the
 	// migrated endpoints honour it in both modes.
@@ -2845,6 +2893,26 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, "API_GO_CRAWL_QUEUE_OPS_MODE must be one of legacy|go")
 	}
+	// The news-source preview switch accepts exactly "", "legacy" and "go"; any
+	// other value must fail startup with this exact text.
+	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCE_PREVIEW_MODE")) {
+	case "", string(NewsSourcePreviewModeLegacy):
+		cfg.NewsSourcePreviewMode = NewsSourcePreviewModeLegacy
+	case string(NewsSourcePreviewModeGo):
+		cfg.NewsSourcePreviewMode = NewsSourcePreviewModeGo
+	default:
+		errs = append(errs, "API_GO_NEWS_SOURCE_PREVIEW_MODE must be one of legacy|go")
+	}
+	// The crawl-strategy trial/replay switch accepts exactly "", "legacy" and
+	// "go"; any other value must fail startup with this exact text.
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_WORKFLOW_TRIAL_MODE")) {
+	case "", string(CrawlWorkflowTrialModeLegacy):
+		cfg.CrawlWorkflowTrialMode = CrawlWorkflowTrialModeLegacy
+	case string(CrawlWorkflowTrialModeGo):
+		cfg.CrawlWorkflowTrialMode = CrawlWorkflowTrialModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_WORKFLOW_TRIAL_MODE must be one of legacy|go")
+	}
 	// The search reindex switch accepts exactly "", "legacy" and "go"; any other
 	// value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_SEARCH_REINDEX_MODE")) {
@@ -3475,6 +3543,8 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.CrawlRetryBackoffMs = intDefault(getenv("CRAWL4AI_RETRY_BACKOFF_MS"), 5_000)
 	cfg.CrawlHealthTTLMs = intDefault(getenv("CRAWL4AI_HEALTH_CHECK_TTL_MS"), 60_000)
 	cfg.CrawlSSRFProxyURL = strings.TrimSpace(getenv("CRAWL4AI_SSRF_PROXY_URL"))
+	cfg.CrawlJSCodeEnabled = boolDefault(getenv("CRAWL4AI_JSCODE_ENABLED"), true)
+	cfg.NewsSourceInFlightLookbackMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS"), 21_600_000)
 	cfg.ItemsSearchRerankEnabled = boolDefault(getenv("ITEMS_SEARCH_RERANK_ENABLED"), true)
 	cfg.ItemsReadModelEnabled = boolDefault(getenv("ITEMS_READ_MODEL_ENABLED"), false)
 	cfg.ItemsVectorHardFailEnabled = boolDefault(getenv("ITEMS_VECTOR_HARD_FAIL_ENABLED"), false)
@@ -4085,6 +4155,17 @@ func Load(getenv func(string) string) (Config, error) {
 	// both required and Mongo is not.
 	if cfg.CrawlQueueOpsMode == CrawlQueueOpsModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_QUEUE_OPS_MODE", cfg)
+	}
+	// The news-source preview takeover needs the credentialed auth stack plus
+	// Redis (shared with the deep-discovery failure state). crawl4ai is optional
+	// at startup, exactly like NestJS.
+	if cfg.NewsSourcePreviewMode == NewsSourcePreviewModeGo {
+		appendAuthRequirements(&errs, "API_GO_NEWS_SOURCE_PREVIEW_MODE", cfg)
+	}
+	// The crawl-strategy trial/replay takeover needs the credentialed auth
+	// stack plus Redis and MySQL for the run records. crawl4ai is optional.
+	if cfg.CrawlWorkflowTrialMode == CrawlWorkflowTrialModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_WORKFLOW_TRIAL_MODE", cfg)
 	}
 	// The metadata GraphQL root is a child switch of the GraphQL read pilot:
 	// without API_GO_GRAPHQL_READ_MODE=go there is no executor to register into,
