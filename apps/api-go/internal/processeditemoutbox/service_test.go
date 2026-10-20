@@ -2,6 +2,7 @@ package processeditemoutbox
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,7 +55,7 @@ func TestToItemMetaNameMatches191Boundary(t *testing.T) {
 		t.Fatalf("truncated prefix = %q", got[:190])
 	}
 	spaced := string(exact[:189]) + "  " + "xyz"
-	if trimmed := toItemMetaName(spaced); trimmed[len(trimmed)-1] != '…' {
+	if trimmed := toItemMetaName(spaced); !strings.HasSuffix(trimmed, "…") {
 		t.Fatalf("spaced name = %q", trimmed)
 	}
 }

@@ -103,7 +103,7 @@ func TestProcessedItemOutboxIntegration(t *testing.T) {
 		if meta.Status != "completed" || meta.Name != "Delivered title" {
 			t.Fatalf("item meta = %+v", meta)
 		}
-		if meta.PublishedAt == nil || meta.PublishedAt.Time.Format(time.RFC3339) != "2026-01-02T03:04:05Z" {
+		if meta.PublishedAt == nil || meta.PublishedAt.Format(time.RFC3339) != "2026-01-02T03:04:05Z" {
 			t.Fatalf("publishedAt = %v", meta.PublishedAt)
 		}
 		processed := loadProcessedForTest(t, database, "507f1f77bcf86cd799439011")
