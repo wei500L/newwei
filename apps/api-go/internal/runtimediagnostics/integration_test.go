@@ -71,6 +71,9 @@ func TestRealtimeDiagnosticsIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	if _, err := store.db.ExecContext(ctx, "DROP TABLE IF EXISTS ProcessedArticle"); err != nil {
+		t.Fatalf("drop ProcessedArticle: %v", err)
+	}
 	if _, err := store.db.ExecContext(ctx, createProcessedArticle); err != nil {
 		t.Fatalf("create ProcessedArticle: %v", err)
 	}

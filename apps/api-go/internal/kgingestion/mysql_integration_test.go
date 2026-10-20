@@ -57,6 +57,7 @@ func openIntegrationRedis(t *testing.T) *redis.Client {
 func createKnowledgeGraphTables(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ddl := []string{
+		"DROP TABLE IF EXISTS `ProcessedArticle`",
 		"CREATE TABLE IF NOT EXISTS `Org` (" +
 			"`id` VARCHAR(191) NOT NULL, `name` VARCHAR(191) NOT NULL, `slug` VARCHAR(191) NOT NULL," +
 			"`isActive` BOOLEAN NOT NULL DEFAULT true, `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)," +
