@@ -147,7 +147,9 @@ func TestMetricsEndpointAuthorizationIntegration(t *testing.T) {
 	expired := time.Now().Add(-time.Hour).UTC()
 	insertMachine(t, db, "token-expired", "mtk_expired", `["metrics.read"]`, &adminID, false, &expired)
 
-	handler := NewHandler(nil, db, NewRegistry())
+	// A nil registry selects the process-wide default registry, which owns the
+	// five custom families the scrape must expose.
+	handler := NewHandler(nil, db, nil)
 
 	// Missing bearer.
 	if response := scrape(t, handler, ""); response.Code != 401 {
