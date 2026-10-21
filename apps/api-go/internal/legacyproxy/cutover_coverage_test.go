@@ -105,6 +105,10 @@ func allGoRules() []Rule {
 	// rules by prefix length. New builders are appended at the end so parallel
 	// cutover batches never touch the same alphabetical region.
 	rules = WithCrawlFrontierWrites(rules, "go")
+	// refactor/go-queue-ops: the queue operations console is a Go-only surface
+	// with no NestJS route, so it is never listed in nest-routes.txt. The builder
+	// stays last to keep the shared append point stable for parallel windows.
+	rules = WithQueueOps(rules, "go")
 	return rules
 }
 

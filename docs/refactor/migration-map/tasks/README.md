@@ -1,5 +1,7 @@
 # 任务认领与历史恢复索引
 
+2026-10-21 Go 队列运维批：main `ed436ead`（#137 已合入），无开放迁移 PR。本批三个并行窗口之一 `refactor/go-queue-ops`（worktree `/Users/oo/project/newwei-go-queue-ops`）承接 `docs/refactor/cutover/ownership-audit.md` 的 **C-6**（`itemPipelineDlq` 人工处理）、**C-8**（Bull Board 运维面）与 §6 的「QueueEvents 派生读侧（统计部分）」「告警规则全量 repeatable 对账」两项残留职责；另外两个窗口 `refactor/go-ops-entrypoints` 与 `refactor/go-crawl-frontier-writes` 同批进行，共享文件按「只追加」约定并行（config.go 连续块、all-go.env 末尾、`allGoRules()` 末尾、`cmd/api/main.go` 最少调用行、cutover 文档与 env 样例）。本批不新建 task ID/task 文件；未合并前状态保持 `pr_open`，HEAD、普通 CI 与集成 job 结论在 PR 回填。
+
 2026-10-21 `refactor/go-ops-entrypoints`（本批新增，无独立 task ID）：关闭审计 C-1/C-5/C-7/C-9，新增 `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow）、`API_GO_VECTOR_DIAGNOSTICS_MODE`、`API_GO_DOCS_MODE`、`API_GO_LEGACY_FALLBACK_MODE`（默认 legacy/legacy/proxy），并新增 `api_go_legacy_rejected_requests_total`；范围与回退见 [runbook](../../cutover/runbook.md#阶段-6停-nest-收尾6a--6b--6c)。状态 pr_open，最终 head/普通 CI 在 PR 回填。
 
 2026-10-21 本批回填（以 `origin/main = dcbe563b917f`，即 #136 为准）：下方任务表的全部历史任务均已合入 main，状态回填为 `merged` 并给出 12 位 merge commit；整合收口关系为 #114 → `d42277219bc4`（#92–#113，#111 由 #112 取代并关闭）、#122 → `d6c6c7bb2135`（#115–#118）、#128 → `1ba22e3beb86`（#119–#127）、#132 → `170a95d86752`（#129–#131）、#136 → `dcbe563b917f`（#133–#135）；更早的 #67 → `7fc17faa3dc5`、#77 → `c39f282f1195`、#89 → `f1167769f8c1`、#90 → `c70b0373990a`。每个 SHA 均已用 `git merge-base --is-ancestor <sha> origin/main` 校验可达；PR #38–#55 不在本次合并抓取窗口内，merge SHA **未核实**，见文末说明。**NOTIFICATIONS-SOCKET-001** 亦已合入（#124 → `9eebc5386dec`，经 #128），其上方 2026-10-20 段落为发出时快照。当前无开放迁移 PR；本批没有新增任务 ID 或 task 文件。

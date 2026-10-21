@@ -38,18 +38,18 @@
 | C-3 | `POST /api/admin/crawl-frontier/nodes/retry` | **已在 refactor/go-crawl-frontier-writes 关闭**：新增 `WithCrawlFrontierWrites` 的 exact POST 规则与 handler（`apps/api-go/internal/crawlfrontierruns/handler_write.go`），沿用 `crawl.write` 权限 | —（分类已关闭，无需决策） | §2 的「C 类与缺口」 |
 | C-4 | `POST /api/admin/crawl-frontier/nodes/:id/retry` | **已在 refactor/go-crawl-frontier-writes 关闭**：新增带动态段的 exact POST 规则与 handler（`apps/api-go/internal/crawlfrontierruns/handler_write.go`），沿用 `crawl.write` 权限 | —（分类已关闭，无需决策） | §2 的「C 类与缺口」 |
 | C-5 | `GET /api/system-settings/vector-service/diagnostics` | 语义上报告 **Nest 进程内** vector client 计数器（baseline `infrastructuresettings/doc.go:52-54`） | **已关闭：`refactor/go-ops-entrypoints`** 新增 `API_GO_VECTOR_DIAGNOSTICS_MODE`（默认 `legacy`），Go 侧重建进程级共享 vector 健康状态并输出同样的 17 字段；报告的是处理该请求的 api-go 进程状态（多实例可能不同） | §2 的「C 类与缺口」 |
-| C-6 | `itemPipelineDlq` 消费 | 两侧都只生产、无 `new Worker`；唯一处理入口是 Nest Bull Board | ① 用 Go 的 queue ops/CLI 提供重放（新功能）；② 保留最小 Node Bull Board；③ 接受人工 Redis 处理 | §5 的队列表、§6 的 Bull Board |
+| C-6 | `itemPipelineDlq` 消费 | 两侧都只生产、无 `new Worker`；唯一处理入口是 Nest Bull Board | **已在 `refactor/go-queue-ops` 关闭**（选项 ①）：`API_GO_QUEUE_OPS_MODE=go` 提供 `/api/admin/queue-ops/dlq/*` 的查看、重放与删除，重放复用 `pipelineenqueue` 生产者并以 `replay-<dlqJobId>` 去重；Bull Board 保留不删。②③ 不再需要 | §5 的队列表、§6 的 Bull Board |
 | C-7 | `GET /docs`（Swagger UI/JSON） | 只有 Nest 提供，Go 只按前缀代理（baseline `proxy.go:146`） | **已关闭：`refactor/go-ops-entrypoints`** 新增 `API_GO_DOCS_MODE`（默认 `legacy`）；go 时 api-go 从内嵌的 `openapi.snapshot.json` 与 swagger-ui-dist 5.29.4 资源提供 `/docs`、`/docs/json` 与静态资源，仍受 `SWAGGER_ENABLED` 控制 | §6 的 1 |
-| C-8 | `/admin/queues`（Bull Board） | 只有 Nest 提供（`proxy.go:147`），且默认 `BULL_BOARD_ENABLED=false` 时本来就是 404 | ① 独立 Bull Board 进程（连同一 Redis）；② 队列运维改 CLI/Redis 工具，面板下线；③ Nest 边车 | §6 的 2 |
+| C-8 | `/admin/queues`（Bull Board） | 只有 Nest 提供（`proxy.go:147`），且默认 `BULL_BOARD_ENABLED=false` 时本来就是 404 | **已在 `refactor/go-queue-ops` 关闭**（选项 ② 的 Go 版）：`API_GO_QUEUE_OPS_MODE=go` 的队列运维 REST + Web 控制台替代面板，且把鉴权从组织级 `queue.manage` 收紧为「平台管理员 + `queue.manage`」。Bull Board 本身不删，`/admin/queues` 的代理规则仍归 `refactor/go-ops-entrypoints` | §6 的 2 |
 | C-9 | 根路径与未匹配 404 | Go 无 catch-all，未命中规则一律代理 Nest；停 Nest 后变 502（baseline `proxy.go:814-830/560-561`） | **已关闭：`refactor/go-ops-entrypoints`** 新增 `API_GO_LEGACY_FALLBACK_MODE`（`proxy` 默认 / `reject`）；reject 时所有原本走 `proxyLegacy` 的请求由 Go 返回 Nest 等价 404 并计入 `api_go_legacy_rejected_requests_total`，启动校验要求其余开关全为 go | §6 的 8 |
 
 另有 3 项「Nest 进程内派生、无 Go 开关」的读侧职责（QueueEvents 派生的 org stats / GraphQL `queueEvents` / ops 广播 / alerts 指标 provider、告警规则全量 repeatable 对账、News-source RSS seed 的一次性 TTL 迁移），已在 §5 的 Cron/订阅小节逐条列出，停 Nest 前需要逐一确认替代或保留。
 
 ### 0.3 至今仍然只有 Nest 能承担的项目（汇总）
 
-- Bull Board（`/admin/queues`）与其对 `itemPipelineDlq` 的人工处理能力（C-6/C-8，队列运维窗口）。
+- 无。C-1…C-9 已全部关闭：C-1/C-5/C-7/C-9 由 `refactor/go-ops-entrypoints`、C-2/C-3/C-4 由 `refactor/go-crawl-frontier-writes`、C-6/C-8 由 `refactor/go-queue-ops` 关闭。
+- Bull Board 面板本身仍只在 Nest（`/admin/queues` 前缀代理），但它的运维能力与 DLQ 人工处置已有 Go 替代（`API_GO_QUEUE_OPS_MODE=go` 的 `/api/admin/queue-ops`）；若选择保留面板，Nest 仍需运行，但这已不是 C 类阻塞。
 - ~~交互式 Swagger（`/docs`、`/docs/json`）~~、~~公开存活探针 `/api/healthz/live`~~、~~Nest 进程内计数器的诊断接口~~、~~根路径/未知路径的 Nest 404 语义~~：已由 `refactor/go-ops-entrypoints` 关闭（C-1/C-5/C-7/C-9）。
-- ~~三条 crawl-frontier 管理写（创建 run、节点批量重试、单节点重试）~~：已由 `refactor/go-crawl-frontier-writes` 关闭（C-2/C-3/C-4），不再阻塞停 Nest。
 
 > 这与「NestJS 的全部业务功能都已经有 Go 实现」的规划前提存在差异：业务执行面确实已全部有 Go 实现，但**运维/诊断面**（Swagger、Bull Board、DLQ 处理、进程内计数器）仍在 Nest；crawl-frontier 的三条管理写（C-2/C-3/C-4）已在本批迁入 Go。本批审计本身没有新增业务迁移，只如实记录；C-2/C-3/C-4 的关闭状态由迁移批次回填。
 
@@ -1507,17 +1507,16 @@ Nest 业务订阅站点（10 个）：9 个 `subscriber.subscribe(<频道>)` + 1
 
 按“只有漏接线这类最小修复才标可本批最小修复”的要求，本批**未发现**漏接线，以下均为后续业务批次缺口（C），不改代码。
 
-1. **`itemPipelineDlq` 无消费者（C）**
-   - 事实：Nest 仅生产（`queue.module.ts:75-99`），Go 仅生产（`apps/api-go/internal/itempipeline/dlq.go:108-137`）；全仓无该队列 Worker。人工处理入口是 Nest Bull Board `/admin/queues`（`queue-admin.module.ts:26,56`），该入口在 legacyproxy 中固定回退 Nest（BRIEF）。
-   - 影响：阶段 6 停 Nest 后，DLQ 只能通过 Redis 人工处理，没有 UI/API。不是执行权迁移缺口，而是运维入口缺口。
-   - 选项：(a) 保留 Nest Bull Board 作为最后停用的只读运维面；(b) 后续批次给 Go 增加只读 DLQ 列表/重放端点（需要审计与权限）；(c) 文档化 Redis 手工处理流程并接受无 UI。
-2. **告警规则级 repeatable 全量对账只在 Nest（C）**
-   - 事实：Nest `ensureAllSchedules`（`alerts.service.ts:1284-1301`）在每次启动枚举所有 active 规则并 upsert；Go 只有 `EnsureScanSchedule`（`internal/alertworker/queue/producer.go:260`）和规则变更时的 `EnsureRuleSchedule`（`:282`），没有“启动时全量对账”。
-   - 现状可接受：告警规则写仍是 Nest 的 workspace Mutation（迁移地图 0/11），Nest 不会先停；规则变更会触发 Nest 的 `ensureRuleSchedule`。
-   - 后续：若规则写迁到 Go，必须补 Go 启动/定期全量对账，否则新规则不会自动注册 repeatable。
-3. **QueueEvents 派生的 Nest 读侧职责无 Go 开关（C/依赖）**
-   - `QueueOrgStatsTracker`（`queue-org-stats.tracker.ts:45`）、`QueueEventPublisher`（GraphQL `queueEvents`）、`CrawlQueueEventPublisher`（ops 命名空间）、alerts 的 pipeline/crawl metric providers 都消费 QueueEvents 或队列计数，没有 `API_GO_*` 开关。
-   - 它们随 Nest 停止一起消失；阶段 5/6 之前必须确认 Go 的对应读路径（`queueEvents` 已有 Go 本地 observer；队列统计 REST/GraphQL 见 T1.1/T1.2）已可服务。本批不修复。
+1. **`itemPipelineDlq` 无消费者（C-6，已在 `refactor/go-queue-ops` 关闭）**
+   - 事实：Nest 仅生产（`queue.module.ts:75-99`），Go 仅生产（`apps/api-go/internal/itempipeline/dlq.go:108-137`）；全仓无该队列 Worker。人工处理入口原来只有 Nest Bull Board `/admin/queues`（`queue-admin.module.ts:26,56`）。
+   - 承接方式：`API_GO_QUEUE_OPS_MODE=go` 的 `/api/admin/queue-ops/dlq/replay` 与 `/dlq/delete` —— 剥离 `processor.go:255-280` 追加的七个信封字段后，用 `pipelineenqueue` 生产者以 `replay-<dlqJobId>` 重新加入 itemPipeline（与正常生产同一套 job 选项），加入成功才删除 DLQ job；同名字段污染时拒绝重放而不是静默重放被覆盖的数据。每次重放写 AuditLog（原 jobId、新 jobId、orgId）。
+2. **告警规则级 repeatable 全量对账只在 Nest（已在 `refactor/go-queue-ops` 关闭）**
+   - 事实：Nest `ensureAllSchedules`（`alerts.service.ts:1284-1301`）在每次启动枚举所有 active 规则并 upsert；此前 Go 只有 `EnsureScanSchedule`（`internal/alertworker/queue/producer.go:260`）和规则变更时的 `EnsureRuleSchedule`（`:282`），没有“启动时全量对账”。
+   - 承接方式：`API_GO_ALERT_WORKER_MODE=go` 时 `internal/alertworker` 在启动阶段（`Service.Start`，创建 worker 之前）执行一次 `ReconcileRuleSchedules`：先 `ensureDefaultRulesForAllOrgs`（已有实现 `evaluate.go:292`），再对全部 active 规则调用 `EnsureRuleSchedule`，并发上限与 Nest 的 `ALERT_RULE_TASK_CONCURRENCY` 相同；按规则 id 有序分批读取，多实例用 Redis 租约只让一个实例执行。对账幂等，Nest 在 go 模式下继续执行也不会产生重复 repeatable。不新增开关。
+3. **QueueEvents 派生的 Nest 读侧职责（C/依赖，本批承接统计侧）**
+   - `QueueOrgStatsTracker`（`queue-org-stats.tracker.ts:45`）、`QueueEventPublisher`（GraphQL `queueEvents`）、`CrawlQueueEventPublisher`（ops 命名空间）、alerts 的 pipeline/crawl metric providers 都消费 QueueEvents 或队列计数。
+   - 承接方式：`API_GO_QUEUE_ORG_STATS_MODE=go` 把 `QueueOrgStatsTracker` 的职责迁到 api-go 的 `internal/queueorgstats`：读同一条 `bull:itemPipeline:events` 事件流，用与 Nest **逐字节相同**的三段 Lua 维护 `queue:itemPipeline:job:<id>:meta` 与 `queue:itemPipeline:org:<orgId>:counts`（TTL 7 天 / 30 天不变），Redis 键名、字段与读取方全部无需改动。两侧同读该变量：Nest 为 `go` 时不再注册那 6 个 QueueEvents 监听。
+   - 单一所有者：事件流是 XREAD（不是消费组，每个实例都会收到每条事件），因此 Go 侧用 Redis 租约只让一个实例读取；租约丢失即停止读取，接手者从当前流尾（`$`）继续——与 Nest 现状（多实例同时 apply、靠 Lua 的相等判断兜底）相比，把「同一状态重复应用」和「滞后实例写回旧状态」的窗口降为单实例无竞争。剩余缺口：`queueEvents` 订阅与 ops 广播的 Go 读侧仍按 T1.2/T1.3 的开关处理，不在本批范围。
 4. **`situation-monitor:telegram-clear:v1` 无模式门（C/低风险）**
    - Nest subscriber 无条件订阅并清本地状态（`:54-76`），即使 signals worker 已迁 Go。它不影响执行权（只清 Nest 进程内缓存），但会让“Nest 完全停用前”始终保留一条 Redis 订阅。属预期桥，不需要本批修。
 5. **`gqlsub:queueEvents` 名义频道（文档缺口）**
@@ -1561,7 +1560,7 @@ Nest 业务订阅站点（10 个）：9 个 `subscriber.subscribe(<频道>)` + 1
 | 入口 | 归属 | 开关 | 停 Nest 后是否可用 |
 |---|---|---|---|
 | `GET /docs`、`/docs/json`、`/docs/*`（Swagger UI/JSON） | **A（本批关闭 C-7）** | `API_GO_DOCS_MODE`（默认 legacy）；Nest 侧仍由 `SWAGGER_ENABLED` 决定是否挂载 | 可用（go 且 SWAGGER_ENABLED 为真时由 api-go 提供；否则 404） |
-| `/admin/queues`、`/admin/queues/*`（Bull Board） | **C**（仅 Nest，且默认不装配） | 无 `API_GO_*`；Nest 用 `BULL_BOARD_ENABLED` | 不可用（Go 只按 `/admin/queues` 前缀代理） |
+| `/admin/queues`、`/admin/queues/*`（Bull Board） | **C**（仅 Nest，且默认不装配） | 无 `API_GO_*`；Nest 用 `BULL_BOARD_ENABLED` | 面板不可用（Go 只按 `/admin/queues` 前缀代理）；**运维能力已由 `API_GO_QUEUE_OPS_MODE=go` 的 `/api/admin/queue-ops` 承接** |
 | `GET /api/healthz`（认证版就绪探针） | **A** | `API_GO_HEALTHZ_MODE`（默认 legacy） | 可用（Go 接管需 MySQL/Redis/JWT） |
 | `GET /api/healthz/live`（公开存活探针） | **A（本批关闭 C-1）** | `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow，可 legacy/go） | 可用（go 时由 api-go 精确 GET 响应） |
 | `GET /api/metrics`（Prometheus） | **A** | `API_GO_METRICS_MODE`（默认 legacy） | 可用（Go 接管需 MySQL/Redis/JWT） |
@@ -1593,6 +1592,10 @@ Nest 业务订阅站点（10 个）：9 个 `subscriber.subscribe(<频道>)` + 1
   1. 保留一个独立 Bull Board 进程（Bull Board 自身可用 Express/BullMQAdapter 单独起，连同一 Redis），不依赖 Nest 主应用；需要新服务与新鉴权。
   2. 停 Nest 前把队列运维改为 CLI/Redis 工具（`bullmq` 脚本、RedisInsight、`/api/metrics` 告警），接受 `queue.manage` 的 Web 面板下线。
   3. 保留 Nest 仅作为 `/admin/queues` 边车（不推荐：为单一运维页维持整套 Nest 依赖）。
+- **本批落地（C-8 已在 `refactor/go-queue-ops` 关闭，选项 2 的 Go 版）**：
+  - 新增 `API_GO_QUEUE_OPS_MODE`（默认 `legacy`）：`go` 时 api-go 在 `/api/admin/queue-ops` 注册队列运维 REST（队列列表与计数、按状态分页 job、job 详情、重试/删除/提升、批量重试、按状态清理、暂停/恢复）与 itemPipelineDlq 的死信查看/重放/删除；`apps/web` 在 `admin/ops/queue-ops` 新增对应控制台页面。`legacy` 时一条规则都不注册，请求落到 NestJS——Nest 没有这些路由，返回 404，页面显示「需要 `API_GO_QUEUE_OPS_MODE=go`」。
+  - **鉴权收紧（B1 的行为变化）**：Bull Board 的 middleware 只校验 JWT + 黑名单 + `queue.manage`（`bull-board-auth.middleware.ts:22-60`），而 `queue.manage` 是组织级 manager 的默认权限（`packages/config/src/rbac.ts:94`），因此任何组织的 manager 都能看到全部租户的 job 数据并执行重试/删除。Go 控制台要求「登录 + `queue.manage` + 平台管理员」，平台管理员判定复用 `internal/platformgovernance` 的 `assertPlatformAdmin`。
+  - **Bull Board 本批不删、不改**：`/admin/queues` 的 legacy 代理规则仍归 `refactor/go-ops-entrypoints`。若部署里 `BULL_BOARD_ENABLED=true`，runbook 阶段 4 建议尽快改用 Go 控制台或先关闭 Bull Board。
 
 ### 3. `GET /api/healthz`（认证版就绪）
 

@@ -5,19 +5,32 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useTranslation } from "react-i18next";
 
+import { canViewQueueOps } from "./queue-ops/queue-ops-access";
+
+interface OpsVisibilityContext {
+  permissions: readonly string[];
+  globalRoles: readonly string[];
+}
+
 interface OpsLink {
   key: string;
   title: string;
   description: string;
   href: string;
-  permission: "crawl.read" | "crawl.write";
+  permission?: "crawl.read" | "crawl.write";
+  /** 自定义可见性判定（优先于 permission 字段）。 */
+  isVisible?: (context: OpsVisibilityContext) => boolean;
 }
 
 export function OpsContent() {
   const { t } = useTranslation();
   const { data: session, status } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canViewOps = permissions.includes("crawl.read") || permissions.includes("crawl.write");
+  const globalRoles = session?.user?.globalRoles ?? [];
+  const canViewOps =
+    permissions.includes("crawl.read") ||
+    permissions.includes("crawl.write") ||
+    canViewQueueOps({ permissions, globalRoles });
 
   const opsLinks: OpsLink[] = [
     {
@@ -54,10 +67,23 @@ export function OpsContent() {
       description: t("ops.links.newsSources.description"),
       href: "/admin/ops/news-sources",
       permission: "crawl.write"
+    },
+    {
+      key: "queue-ops",
+      title: t("ops.links.queueOps.title"),
+      description: t("ops.links.queueOps.description"),
+      href: "/admin/ops/queue-ops",
+      isVisible: canViewQueueOps
     }
   ];
 
   const visibleLinks = opsLinks.filter((link) => {
+    if (link.isVisible) {
+      return link.isVisible({ permissions, globalRoles });
+    }
+    if (!link.permission) {
+      return canViewOps;
+    }
     if (permissions.includes(link.permission)) {
       return true;
     }

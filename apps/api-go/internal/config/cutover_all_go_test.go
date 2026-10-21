@@ -71,13 +71,12 @@ func TestAllGoCutoverConfigLoads(t *testing.T) {
 			t.Errorf("%s = %q, want go; testdata/all-go.env is missing its API_GO_* switch", field.Name, got)
 		}
 	}
-	// The switch matrix documents 135 API_GO_* switches (130 before the
-	// refactor/go-ops-entrypoints and refactor/go-crawl-frontier-writes batches)
-	// and every one of them lands in exactly one *Mode field. One of them,
-	// API_GO_LEGACY_FALLBACK_MODE, is exempt from this "must read go" check, so
-	// 134 non-exempt fields remain. Keep the count in sync with config.go and
-	// the switch matrix.
-	if seen != 134 {
-		t.Fatalf("config has %d non-exempt string *Mode fields, want 134", seen)
+	// The switch matrix documents 137 API_GO_* switches (130 before the three
+	// cutover batches) and every one of them lands in exactly one *Mode field.
+	// One of them, API_GO_LEGACY_FALLBACK_MODE, is exempt from this "must read go"
+	// check, so 136 non-exempt fields remain. Keep the count in sync with
+	// config.go and the switch matrix.
+	if seen != 136 {
+		t.Fatalf("config has %d non-exempt string *Mode fields, want 136", seen)
 	}
 }

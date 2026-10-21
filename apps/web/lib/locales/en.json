@@ -3114,6 +3114,157 @@
       "crawlFrontier": {
         "title": "Crawl Frontier",
         "description": "Manage crawl site profiles, frontier runs, and layered/native execution."
+      },
+      "queueOps": {
+        "title": "Queue Operations",
+        "description": "Inspect queue counters and jobs, retry, clean, pause/resume, and replay dead letters"
+      }
+    },
+    "queueOps": {
+      "title": "Queue Operations",
+      "subtitle": "Inspect BullMQ queue counters and jobs, then retry, clean, pause/resume, or replay dead letters.",
+      "loadFailed": "Failed to load queue operations data",
+      "legacy": {
+        "title": "Queue operations API not enabled",
+        "description": "Queue operations require api-go API_GO_QUEUE_OPS_MODE=go. Enable it and refresh this page."
+      },
+      "forbidden": {
+        "title": "Queue operations permission required",
+        "description": "Requires the queue.manage permission and the platform_admin role."
+      },
+      "confirm": {
+        "pauseTitle": "Pause queue {{queue}}?",
+        "pauseDescription": "The queue stops processing new jobs while paused.",
+        "resumeTitle": "Resume queue {{queue}}?",
+        "resumeDescription": "The queue continues processing jobs after resuming.",
+        "pauseSuccess": "Queue paused",
+        "resumeSuccess": "Queue resumed",
+        "retryTitle": "Retry job {{jobId}}?",
+        "retryDescription": "The job will be re-queued for processing.",
+        "deleteTitle": "Delete job {{jobId}}?",
+        "deleteDescription": "Deleting a job cannot be undone.",
+        "promoteTitle": "Promote job {{jobId}}?",
+        "promoteDescription": "The delayed job moves to the waiting queue immediately."
+      },
+      "queues": {
+        "title": "Queues",
+        "empty": "No queues yet",
+        "columns": {
+          "name": "Queue",
+          "waiting": "Waiting",
+          "active": "Active",
+          "delayed": "Delayed",
+          "completed": "Completed",
+          "failed": "Failed",
+          "paused": "Paused count",
+          "status": "Status",
+          "concurrency": "Concurrency",
+          "actions": "Actions"
+        },
+        "tags": {
+          "paused": "Paused",
+          "running": "Running",
+          "dlq": "DLQ"
+        },
+        "actions": {
+          "pause": "Pause",
+          "resume": "Resume",
+          "clean": "Clean",
+          "viewJobs": "View jobs"
+        },
+        "clean": {
+          "title": "Clean queue {{queue}}",
+          "state": "Target state",
+          "grace": "Grace period (ms)",
+          "limit": "Max jobs to clean",
+          "submit": "Clean",
+          "success": "Removed {{removed}} jobs"
+        }
+      },
+      "jobs": {
+        "title": "Jobs · {{queue}}",
+        "empty": "No jobs in this state",
+        "states": {
+          "waiting": "Waiting",
+          "active": "Active",
+          "delayed": "Delayed",
+          "completed": "Completed",
+          "failed": "Failed"
+        },
+        "columns": {
+          "id": "Job ID",
+          "name": "Name",
+          "createdAt": "Created",
+          "attemptsMade": "Attempts",
+          "failedReason": "Failure reason",
+          "dataPreview": "Data preview"
+        },
+        "actions": {
+          "loadMore": "Load more",
+          "batchRetry": "Retry failed jobs (up to {{limit}})"
+        },
+        "retryFailed": {
+          "confirmTitle": "Retry failed jobs?",
+          "confirmDescription": "Up to {{limit}} failed jobs will be re-queued.",
+          "success": "Retried {{retried}} of {{matched}} jobs"
+        }
+      },
+      "detail": {
+        "title": "Job details",
+        "dataTruncated": "Job data is large and has been truncated.",
+        "emptyStacktrace": "No stack trace",
+        "emptyLogs": "No logs",
+        "fields": {
+          "id": "ID",
+          "name": "Name",
+          "state": "State",
+          "attemptsMade": "Attempts",
+          "orgId": "Org ID",
+          "createdAt": "Created",
+          "processedAt": "Processed",
+          "finishedAt": "Finished"
+        },
+        "sections": {
+          "data": "Data",
+          "opts": "Options",
+          "returnValue": "Return value",
+          "stacktrace": "Stack trace",
+          "logs": "Logs"
+        },
+        "actions": {
+          "retry": "Retry",
+          "delete": "Delete",
+          "promote": "Promote",
+          "close": "Close"
+        },
+        "deleteActiveHint": "Active jobs cannot be deleted; wait for the job to finish.",
+        "retrySuccess": "Job re-queued.",
+        "deleteSuccess": "Job deleted.",
+        "promoteSuccess": "Job promoted to waiting."
+      },
+      "dlq": {
+        "title": "Dead letter queue (itemPipelineDlq)",
+        "description": "Queued dead-letter jobs; replay re-enqueues them into their original queue.",
+        "empty": "No queued dead letters",
+        "actions": {
+          "replay": "Replay",
+          "delete": "Delete"
+        },
+        "selection": {
+          "selected": "{{selected}} selected",
+          "replay": "Replay selected",
+          "empty": "Select dead-letter jobs first",
+          "confirmTitle": "Replay selected dead letters?",
+          "confirmDescription": "{{selected}} dead letters will be re-enqueued into their original queues."
+        },
+        "replayConfirmTitle": "Replay this dead letter?",
+        "replayConfirmDescription": "The dead letter will be re-enqueued into its original queue.",
+        "deleteConfirmTitle": "Delete this dead letter?",
+        "deleteConfirmDescription": "Deleted dead letters cannot be replayed.",
+        "replaySuccess": "Replayed {{replayed}} dead letters",
+        "deleteSuccess": "Dead letter deleted",
+        "residualWarning": "Replay succeeded but the DLQ entry remains; replaying again will not enqueue a duplicate",
+        "residualDescription": "{{residuals}} dead letters were replayed but their DLQ entries were not removed."
       }
     }
   },

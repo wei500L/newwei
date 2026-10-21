@@ -3114,6 +3114,157 @@
       "crawlFrontier": {
         "title": "抓取前沿",
         "description": "管理抓取站点画像、frontier 运行任务以及分层/原生执行。"
+      },
+      "queueOps": {
+        "title": "队列运维",
+        "description": "查看队列计数与作业，执行重试、清理、暂停恢复与死信重放"
+      }
+    },
+    "queueOps": {
+      "title": "队列运维",
+      "subtitle": "查看 BullMQ 队列计数与作业详情，执行重试、清理、暂停恢复与死信重放。",
+      "loadFailed": "加载队列运维数据失败",
+      "legacy": {
+        "title": "队列运维接口未启用",
+        "description": "队列运维需要 api-go 的 API_GO_QUEUE_OPS_MODE=go。启用后刷新本页。"
+      },
+      "forbidden": {
+        "title": "没有队列运维权限",
+        "description": "需要 queue.manage 权限与 platform_admin 角色。"
+      },
+      "confirm": {
+        "pauseTitle": "暂停队列 {{queue}}？",
+        "pauseDescription": "暂停后该队列不再处理新作业。",
+        "resumeTitle": "恢复队列 {{queue}}？",
+        "resumeDescription": "恢复后该队列会继续处理作业。",
+        "pauseSuccess": "队列已暂停",
+        "resumeSuccess": "队列已恢复",
+        "retryTitle": "重试作业 {{jobId}}？",
+        "retryDescription": "作业将重新入队等待处理。",
+        "deleteTitle": "删除作业 {{jobId}}？",
+        "deleteDescription": "删除后无法恢复。",
+        "promoteTitle": "提升作业 {{jobId}}？",
+        "promoteDescription": "延迟作业将立即进入等待队列。"
+      },
+      "queues": {
+        "title": "队列列表",
+        "empty": "暂无队列",
+        "columns": {
+          "name": "队列",
+          "waiting": "等待",
+          "active": "执行中",
+          "delayed": "延迟",
+          "completed": "已完成",
+          "failed": "失败",
+          "paused": "暂停计数",
+          "status": "状态",
+          "concurrency": "并发",
+          "actions": "操作"
+        },
+        "tags": {
+          "paused": "已暂停",
+          "running": "运行中",
+          "dlq": "死信队列"
+        },
+        "actions": {
+          "pause": "暂停",
+          "resume": "恢复",
+          "clean": "清理",
+          "viewJobs": "查看作业"
+        },
+        "clean": {
+          "title": "清理队列 {{queue}}",
+          "state": "目标状态",
+          "grace": "宽限期（毫秒）",
+          "limit": "最多清理条数",
+          "submit": "清理",
+          "success": "已清理 {{removed}} 个作业"
+        }
+      },
+      "jobs": {
+        "title": "作业 · {{queue}}",
+        "empty": "该状态下暂无作业",
+        "states": {
+          "waiting": "等待",
+          "active": "执行中",
+          "delayed": "延迟",
+          "completed": "已完成",
+          "failed": "失败"
+        },
+        "columns": {
+          "id": "作业 ID",
+          "name": "名称",
+          "createdAt": "创建时间",
+          "attemptsMade": "尝试次数",
+          "failedReason": "失败原因",
+          "dataPreview": "数据预览"
+        },
+        "actions": {
+          "loadMore": "加载更多",
+          "batchRetry": "批量重试失败作业（最多 {{limit}} 个）"
+        },
+        "retryFailed": {
+          "confirmTitle": "批量重试失败作业？",
+          "confirmDescription": "将重新入队最多 {{limit}} 个失败作业。",
+          "success": "已重试 {{retried}} / {{matched}} 个作业"
+        }
+      },
+      "detail": {
+        "title": "作业详情",
+        "dataTruncated": "作业数据过大，已截断展示。",
+        "emptyStacktrace": "无堆栈信息",
+        "emptyLogs": "无日志",
+        "fields": {
+          "id": "ID",
+          "name": "名称",
+          "state": "状态",
+          "attemptsMade": "尝试次数",
+          "orgId": "组织 ID",
+          "createdAt": "创建时间",
+          "processedAt": "开始处理",
+          "finishedAt": "完成时间"
+        },
+        "sections": {
+          "data": "数据",
+          "opts": "选项",
+          "returnValue": "返回值",
+          "stacktrace": "堆栈",
+          "logs": "日志"
+        },
+        "actions": {
+          "retry": "重试",
+          "delete": "删除",
+          "promote": "提升",
+          "close": "关闭"
+        },
+        "deleteActiveHint": "执行中的作业不能删除，请等待其完成。",
+        "retrySuccess": "作业已重新入队。",
+        "deleteSuccess": "作业已删除。",
+        "promoteSuccess": "作业已提升到等待队列。"
+      },
+      "dlq": {
+        "title": "死信队列（itemPipelineDlq）",
+        "description": "排队中的死信作业；重放会重新入队到原始队列。",
+        "empty": "暂无排队中的死信",
+        "actions": {
+          "replay": "重放",
+          "delete": "删除"
+        },
+        "selection": {
+          "selected": "已选 {{selected}} 条",
+          "replay": "批量重放",
+          "empty": "请先选择死信作业",
+          "confirmTitle": "重放选中的死信？",
+          "confirmDescription": "将把 {{selected}} 条死信重新入队到原始队列。"
+        },
+        "replayConfirmTitle": "重放这条死信？",
+        "replayConfirmDescription": "将把死信重新入队到原始队列。",
+        "deleteConfirmTitle": "删除这条死信？",
+        "deleteConfirmDescription": "删除后无法重放。",
+        "replaySuccess": "已重放 {{replayed}} 条死信",
+        "deleteSuccess": "已删除死信作业",
+        "residualWarning": "重放成功但 DLQ 残留，下次重放不会重复入队",
+        "residualDescription": "有 {{residuals}} 条死信的原始作业已重放，但 DLQ 条目未被移除。"
       }
     }
   },

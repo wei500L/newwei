@@ -10,4 +10,8 @@
 // QueueEvents publisher or schema regression. NestJS keeps executing
 // process-item jobs and publishing queue events; this producer only writes the
 // same Redis protocol NestJS writes.
+//
+// EnqueueReplay (replay.go) is the dead-letter replay entry point: it adds one
+// itemPipeline job with an explicit deterministic job id and the same job options
+// a normal enqueue uses, and never touches ProcessedItem.
 package pipelineenqueue
