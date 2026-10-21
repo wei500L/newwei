@@ -1411,6 +1411,10 @@ func TestFrontierWritesIntegrationRetryTerminalRun(t *testing.T) {
 		ID: runID, OrgID: orgID, WorkflowRunID: &runWorkflowID, CrawlTaskID: &runTaskID,
 		SeedURL: "https://example.com/seed", Status: string(RunStatusCanceled), FinishedAt: &finishedAt,
 	})
+	// The run references a workflow run, so the row has to exist: the assertion
+	// below proves the refused retry left it untouched rather than that it is
+	// missing.
+	frontierWritesSeedWorkflowRun(t, h.db, workflowID, orgID, string(RunStatusCanceled), &finishedAt)
 	frontierWritesSeedNode(t, h.db, frontierWritesNodeSeed{
 		ID: nodeID, RunID: runID, OrgID: orgID, PageType: "article", QueueClass: "normal",
 		Status: string(NodeStatusFailed), Depth: 1,
