@@ -3,6 +3,7 @@ package crawlexecution
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawloptions"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
+	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
+	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 )
 
 // Config carries the environment values the crawl execution path reads. They
@@ -34,6 +37,13 @@ type Config struct {
 	// CrawlJSCodeEnabled is CRAWL4AI_JSCODE_ENABLED.
 	CrawlJSCodeEnabled bool
 
+	// Crawl media assets (CRAWL_MEDIA_*): download timeout, per-asset byte
+	// ceiling and assets stored per crawl result. Zero values mirror the
+	// NestJS "disabled" semantics.
+	MediaFetchTimeoutMs int
+	MediaMaxBytes       int
+	MediaMaxPerResult   int
+
 	// News source failure-recovery/circuit-breaker values
 	// (NEWS_SOURCE_SCHEDULER_*); zero keeps the NestJS defaults.
 	FailureRecoveryDelayMs    int
@@ -41,6 +51,10 @@ type Config struct {
 	CircuitBreakerThreshold   int
 	CircuitBreakerBaseDelayMs int
 	CircuitBreakerMaxDelayMs  int
+	// AutoDisableThreshold is NEWS_SOURCE_SCHEDULER_AUTO_DISABLE_THRESHOLD: the
+	// consecutive-failure count that deactivates a source. Zero disables the
+	// auto-disable branch together with its notification.
+	AutoDisableThreshold int
 }
 
 // ItemIngestor is the ItemsService.createFromCrawlResultsBatch branch used by
@@ -64,20 +78,51 @@ type Options struct {
 	Settings *crawlqueue.SettingsReader
 	// Items is required only for tasks whose config sets ingestToItems=true.
 	Items ItemIngestor
+	// Storage resolves the runtime storage configuration snapshot the media
+	// branch signs and uploads with. Nil keeps media persistence disabled.
+	Storage objectstorage.ConfigReader
+	// Relay publishes the identifiers-only notification relay after a
+	// Notification row commits (notification:events:v1). Nil writes the row and
+	// skips the relay, which is the legacy socket mode contract.
+	Relay NotificationRelayPublisher
+	// Scheduler writes the org-wide circuit-open and auto-disable notifications
+	// of the news source failure state (B2). A nil scheduler turns them into
+	// no-ops; O2 never uses it.
+	Scheduler SchedulerPort
+}
+
+// SchedulerPort is the newssourcescheduler surface the crawl execution path
+// needs: the org-wide system notification writer with the generic relay (B2).
+// *newssourcescheduler.Service implements it.
+type SchedulerPort interface {
+	// NotifySystemGeneric writes one org-wide system notification and publishes
+	// the generic notification:events:v1 relay (never the legacy
+	// news-source:notifications:v1 channel).
+	NotifySystemGeneric(ctx context.Context, orgID, title, body string, data json.RawMessage, relay newssourcescheduler.NotificationRelayFunc)
 }
 
 // Service runs one CrawlTask in process. The three crawl BullMQ queues stay on
 // NestJS; this service never enqueues crawl work.
 type Service struct {
-	db       *sql.DB
-	mongo    *mongo.Database
-	redis    *redis.Client
-	cfg      Config
-	client   *crawl4ai.Client
-	http     *http.Client
-	settings *crawlqueue.SettingsReader
-	items    ItemIngestor
-	now      func() time.Time
+	db        *sql.DB
+	mongo     *mongo.Database
+	redis     *redis.Client
+	cfg       Config
+	client    *crawl4ai.Client
+	http      *http.Client
+	settings  *crawlqueue.SettingsReader
+	items     ItemIngestor
+	storage   objectstorage.ConfigReader
+	relay     NotificationRelayPublisher
+	scheduler SchedulerPort
+	now       func() time.Time
+	// sleep is the notification retry delay, overridable in tests.
+	sleep func(ctx context.Context, delay time.Duration)
+	// snapshots coalesces the per-source ops snapshot refresh (O2).
+	snapshots *snapshotCoalescer
+	// publishSignalFetch overrides the SSRF-guarded outbound fetch of the
+	// publish-signal probes in tests.
+	publishSignalFetch func(ctx context.Context, targetURL string, timeoutMs int) (*http.Response, bool)
 }
 
 // New builds the service. A nil HTTPClient uses a redirect-disabled client so
@@ -100,15 +145,20 @@ func New(options Options) *Service {
 		settings = crawlqueue.NewSettingsReader(options.DB, options.Redis, nil)
 	}
 	service := &Service{
-		db:       options.DB,
-		mongo:    options.Mongo,
-		redis:    options.Redis,
-		cfg:      options.Config,
-		http:     httpClient,
-		settings: settings,
-		items:    options.Items,
-		now:      now,
+		db:        options.DB,
+		mongo:     options.Mongo,
+		redis:     options.Redis,
+		cfg:       options.Config,
+		http:      httpClient,
+		settings:  settings,
+		items:     options.Items,
+		storage:   options.Storage,
+		relay:     options.Relay,
+		scheduler: options.Scheduler,
+		now:       now,
+		sleep:     sleepWithContext,
 	}
+	service.snapshots = newSnapshotCoalescer(snapshotRefresherFunc(service.refreshSourceQueueCounts), snapshotCoalesceWindow, now)
 	service.client = crawl4ai.New(crawl4ai.Options{
 		BaseURL:          options.Config.CrawlBaseURL,
 		APIKey:           options.Config.CrawlAPIKey,
@@ -122,56 +172,30 @@ func New(options Options) *Service {
 	return service
 }
 
-// RunTask is CrawlExecutionService.runTask for the pipeline call path. The
-// pipeline bridge calls it synchronously with the task it just created or
-// reused, so there is no triggeredById and no queue retry context (the NestJS
-// signature accepts both; neither is present on this path).
-func (s *Service) RunTask(ctx context.Context, orgID, taskID string) (Summary, error) {
-	task, err := s.loadTask(ctx, orgID, taskID)
-	if err != nil {
-		return Summary{}, err
-	}
-	if task == nil {
-		log.Printf("crawlexecution: attempted to run missing crawl task taskId=%s orgId=%s", taskID, orgID)
-		return Summary{Inserted: 0, Skipped: 0}, nil
-	}
-
-	pipelineJobID := extractPipelineJobID(task.Config)
-	sourceID := task.NewsSourceID
-	if sourceID == nil {
-		sourceID = extractPipelineSourceID(task.Config)
-	}
-
-	if err := s.markTaskRunning(ctx, task.ID); err != nil {
-		return Summary{}, err
-	}
-	s.syncSourceQueueCounts(ctx, orgID, sourceID)
-
-	summary, runErr := s.runTaskBody(ctx, task, orgID, sourceID, pipelineJobID)
-	if runErr != nil {
-		s.handleRunError(ctx, task, orgID, sourceID, pipelineJobID, runErr)
-		return Summary{}, runErr
-	}
-	return summary, nil
-}
+// RunTask, RunQueuedTask and the shared runTask entry point live in queued.go.
 
 // runTaskBody is the try block of runTask.
-func (s *Service) runTaskBody(ctx context.Context, task *taskRow, orgID string, sourceID, pipelineJobID *string) (Summary, error) {
+func (s *Service) runTaskBody(ctx context.Context, scope *runTaskContext) (FullSummary, error) {
+	task := scope.Task
+	orgID := scope.OrgID
+	sourceID := scope.SourceID
+	// requestTimeoutMs is the normalized retryContext.requestTimeoutMs; the
+	// pipeline path has no retry context and normalizes zero.
+	requestTimeoutMs := scope.RequestTimeoutMs
 	configRecord := decodeConfigObject(task.Config)
 
 	if err := assertNoUnsupportedProxy(task.Config, "task.config"); err != nil {
-		return Summary{}, err
+		return FullSummary{}, err
 	}
 	options := extractOptions(configRecord)
-	requestTimeoutMs := normalizeRequestTimeoutMs(0)
 	urlQueryParamAllowlist := extractURLQueryParamAllowlistFromTaskConfig(task.Config)
 	conditionalSettings := s.getConditionalRequestSettings(ctx)
 	marshaledOptions, marshalErr := marshalOptions(options)
 	if marshalErr != nil {
-		return Summary{}, marshalErr
+		return FullSummary{}, marshalErr
 	}
 	if err := assertNoCrawl4aiLLMOptions(marshaledOptions, "task.config.options"); err != nil {
-		return Summary{}, err
+		return FullSummary{}, err
 	}
 	ingestToItems := configBool(configRecord, "ingestToItems")
 
@@ -188,7 +212,7 @@ func (s *Service) runTaskBody(ctx context.Context, task *taskRow, orgID string, 
 
 	latestValidation, err := s.findLatestResultHTTPValidationState(ctx, task, urlQueryParamAllowlist)
 	if err != nil {
-		return Summary{}, err
+		return FullSummary{}, err
 	}
 	var preflightResult *conditionalPreflightOutcome
 	if conditionalSettings.Enabled {
@@ -243,7 +267,7 @@ func (s *Service) runTaskBody(ctx context.Context, task *taskRow, orgID string, 
 	if preflightResult != nil && preflightResult.Status == "completed" &&
 		preflightResult.Result.Status == http.StatusNotModified &&
 		isSingleURLPayload && latestValidation != nil && latestValidation.ResultID != "" {
-		return s.completeFrom304Reuse(ctx, task, orgID, sourceID, preflightResult, latestValidation, ingestToItems)
+		return s.completeFrom304Reuse(ctx, scope, preflightResult, latestValidation, ingestToItems)
 	}
 
 	preflightMetadata := buildHTTPValidationMetadata(preflightResult)
@@ -258,7 +282,7 @@ func (s *Service) runTaskBody(ctx context.Context, task *taskRow, orgID string, 
 		Reason:           "initial_request",
 	})
 	if err != nil {
-		return Summary{}, err
+		return FullSummary{}, err
 	}
 	run := initialRun
 	effectiveOptions = initialRun.Options
@@ -281,7 +305,7 @@ func (s *Service) runTaskBody(ctx context.Context, task *taskRow, orgID string, 
 	if s.shouldAttemptEmptyMarkdownFallback(run.Successes, run.Failures) {
 		fallbackRun, err := s.runEmptyMarkdownFallback(ctx, task, orgID, effectiveOptions, requestTimeoutMs)
 		if err != nil {
-			return Summary{}, err
+			return FullSummary{}, err
 		}
 		if fallbackRun != nil {
 			run = *fallbackRun
@@ -301,7 +325,7 @@ func (s *Service) runTaskBody(ctx context.Context, task *taskRow, orgID string, 
 		RequestTimeoutMs:    requestTimeoutMs,
 	})
 	if err != nil {
-		return Summary{}, err
+		return FullSummary{}, err
 	}
 	if expansion != nil {
 		run.Successes = expansion.Successes
@@ -347,16 +371,18 @@ func (s *Service) runTaskBody(ctx context.Context, task *taskRow, orgID string, 
 		},
 	})
 
-	summary, memory, err := s.persistResults(ctx, task, persistedSuccesses, effectiveOptions, run.Response, ingestToItems, orgID)
+	persisted, memory, err := s.persistResults(ctx, task, persistedSuccesses, effectiveOptions, run.Response, ingestToItems, orgID)
 	if err != nil {
-		return Summary{}, err
+		return FullSummary{}, err
 	}
+	summary := fullSummaryFromPersisted(persisted, memory, ingestToItems)
 	if len(run.Failures) > 0 {
 		summary.Failures = run.Failures
-		summary.RetryableFailures = failureRetryableCount
+		retryableFailures := failureRetryableCount
+		summary.RetryableFailures = &retryableFailures
 	}
 	if summary.Inserted == 0 && summary.Skipped == 0 {
-		return Summary{}, buildNoResultsError(run.Failures)
+		return FullSummary{}, buildNoResultsError(run.Failures)
 	}
 
 	lastResultAt := summary.LastFetchedAt
@@ -372,18 +398,17 @@ func (s *Service) runTaskBody(ctx context.Context, task *taskRow, orgID string, 
 		LastCursor:   nextCursor,
 		Memory:       memory,
 	}); err != nil {
-		return Summary{}, err
+		return FullSummary{}, err
 	}
 	s.syncSourceQueueCounts(ctx, orgID, sourceID)
 
-	s.writeTaskLog(ctx, taskLogEntry{
-		Queue:  crawlQueueName,
-		JobID:  task.ID,
-		OrgID:  orgID,
-		Stage:  "complete",
-		Status: "completed",
-		Data:   summaryLogData(summary),
-	})
+	// The complete-stage TaskLog data IS the runTask summary, including the
+	// memory block, the failure details and retryableFailures, in NestJS member
+	// order.
+	s.writeCompleteTaskLog(ctx, task.ID, orgID, summary)
+	if scope.TriggeredByID != "" {
+		s.safeNotifyCrawl(ctx, task, summary, scope.TriggeredByID, notificationStatusCompleted, "")
+	}
 	return summary, nil
 }
 
@@ -392,18 +417,20 @@ func (s *Service) runTaskBody(ctx context.Context, task *taskRow, orgID string, 
 // reused result may predate the ingest switch.
 func (s *Service) completeFrom304Reuse(
 	ctx context.Context,
-	task *taskRow,
-	orgID string,
-	sourceID *string,
+	scope *runTaskContext,
 	preflightResult *conditionalPreflightOutcome,
 	latest *httpValidationState,
 	ingestToItems bool,
-) (Summary, error) {
-	summary := Summary{
+) (FullSummary, error) {
+	task := scope.Task
+	orgID := scope.OrgID
+	reusedResultID := latest.ResultID
+	fetchedAt := latest.FetchedAt
+	summary := FullSummary{
 		Inserted:       0,
 		Skipped:        1,
-		ReusedResultID: latest.ResultID,
-		LastFetchedAt:  timePtr(latest.FetchedAt),
+		ReusedResultID: &reusedResultID,
+		LastFetchedAt:  &fetchedAt,
 	}
 	s.writeTaskLog(ctx, taskLogEntry{
 		Queue:   crawlQueueName,
@@ -420,21 +447,21 @@ func (s *Service) completeFrom304Reuse(
 		},
 	})
 	if err := s.markTaskCompleted(ctx, task, completedTaskUpdate{
-		LastResultAt: timePtr(latest.FetchedAt),
+		LastResultAt: &fetchedAt,
 		LastCursor:   task.LastCursor,
 		Memory:       memoryStats{},
 	}); err != nil {
-		return Summary{}, err
+		return FullSummary{}, err
 	}
-	s.syncSourceQueueCounts(ctx, orgID, sourceID)
-	s.writeTaskLog(ctx, taskLogEntry{
-		Queue:  crawlQueueName,
-		JobID:  task.ID,
-		OrgID:  orgID,
-		Stage:  "complete",
-		Status: "completed",
-		Data:   summaryLogData(summary),
-	})
+	s.syncSourceQueueCounts(ctx, orgID, scope.SourceID)
+	s.writeCompleteTaskLog(ctx, task.ID, orgID, summary)
+	if scope.TriggeredByID != "" {
+		s.safeNotifyCrawl(ctx, task, summary, scope.TriggeredByID, notificationStatusCompleted, "")
+	}
+	// 304 reuse skips persistResults entirely, so an ingestToItems task whose
+	// reused result was never ingested (fresh switch, or a reuse of a pre-ingest
+	// history run) would silently never reach the pipeline. The ingest is
+	// idempotent, so re-running it is safe.
 	if ingestToItems && latest.ResultID != "" {
 		s.ingestReusedResult(ctx, orgID, task, latest.ResultID)
 	}

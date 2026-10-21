@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawl4ai"
 )
@@ -134,34 +133,6 @@ func TestBuildNoResultsError(t *testing.T) {
 	message := buildNoResultsError([]Failure{{URL: "https://example.com/a", StatusCode: &status, Message: "not found"}}).Error()
 	if !strings.Contains(message, "1 failure") || !strings.Contains(message, "HTTP 404") || !strings.Contains(message, "https://example.com/a") {
 		t.Fatalf("got %q", message)
-	}
-}
-
-func timePointer() *time.Time {
-	value := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
-	return &value
-}
-
-func TestSummaryLogData(t *testing.T) {
-	fetchedAt := timePointer()
-	summary := Summary{
-		Inserted:          2,
-		Skipped:           1,
-		ReusedResultID:    "result-1",
-		RunID:             "run-1",
-		LastFetchedAt:     fetchedAt,
-		ItemsQueued:       2,
-		ItemsQueueFailed:  1,
-		RetryableFailures: 1,
-	}
-	data := summaryLogData(summary)
-	if data["inserted"] != 2 || data["skipped"] != 1 || data["reusedResultId"] != "result-1" ||
-		data["runId"] != "run-1" || data["itemsQueued"] != 2 || data["itemsQueueFailed"] != 1 ||
-		data["retryableFailures"] != 1 {
-		t.Fatalf("data = %#v", data)
-	}
-	if _, ok := data["lastFetchedAt"].(string); !ok {
-		t.Fatalf("lastFetchedAt = %#v", data["lastFetchedAt"])
 	}
 }
 
