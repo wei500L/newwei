@@ -90,9 +90,9 @@ func TestSnapshotCoalescerFlushRunsPendingRefreshes(t *testing.T) {
 	coalescer.request("org-1", "source-2")
 
 	coalescer.flush(context.Background())
-	if got := refresher.count(); got != 3 {
-		t.Fatalf("refreshes after flush = %d, want 3", got)
-	}
+	// source-2's first request refreshes immediately in the background; flush
+	// only guarantees the pending source-1 refresh has run when it returns.
+	waitFor(t, func() bool { return refresher.count() == 3 })
 	// The pending timers were stopped, so nothing fires later.
 	time.Sleep(300 * time.Millisecond)
 	if got := refresher.count(); got != 3 {

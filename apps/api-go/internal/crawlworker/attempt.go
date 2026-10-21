@@ -194,6 +194,9 @@ func (a *attempt) resolveRequestTimeout(ctx context.Context, class crawlqueue.Pr
 	settings, err := a.settings.Read(ctx)
 	if err != nil {
 		a.logf("crawlworker: failed to resolve the crawl timeout tier for %s: %v; using the env fallback", class, err)
+		// The NestJS catch branch discards the settings document entirely, so a
+		// partially populated value must not win over CRAWL4AI_TIMEOUT_MS.
+		settings = crawlqueue.Settings{}
 	}
 	return resolveRequestTimeoutMs(class, settings, a.config.DefaultTimeoutMs)
 }

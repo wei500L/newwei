@@ -104,6 +104,13 @@ func (c *snapshotCoalescer) request(orgID, sourceID string) {
 	now := c.now()
 	if state.LastRefresh.IsZero() || now.Sub(state.LastRefresh) >= c.window {
 		state.LastRefresh = now
+		// The immediate refresh reads the current state, so it covers any change
+		// folded into a still-armed trailing timer.
+		if state.Timer != nil {
+			state.Timer.Stop()
+			state.Timer = nil
+		}
+		state.Pending = false
 		c.mu.Unlock()
 		go c.refreshDetached(orgID, sourceID)
 		return
