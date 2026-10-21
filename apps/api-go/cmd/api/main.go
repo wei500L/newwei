@@ -660,6 +660,10 @@ func run() error {
 	if cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo {
 		crawlFrontierRunsMode = string(legacyproxy.ModeGo)
 	}
+	crawlFrontierWritesMode := ""
+	if cfg.CrawlFrontierWritesMode == config.CrawlFrontierWritesModeGo {
+		crawlFrontierWritesMode = string(legacyproxy.ModeGo)
+	}
 	rbacMode := ""
 	if cfg.RbacMode == config.RbacModeGo {
 		rbacMode = string(legacyproxy.ModeGo)
@@ -1054,6 +1058,10 @@ func run() error {
 	// C-7: go replaces the /docs legacy prefix rule with a Go rule; the default
 	// (legacy) leaves the rule table untouched.
 	rules = legacyproxy.WithDocs(rules, string(cfg.DocsMode))
+	// The three crawl frontier write routes are method-scoped exact/segment rules
+	// that never overlap the GET rules above; appended last so parallel cutover
+	// batches stay conflict-free.
+	rules = legacyproxy.WithCrawlFrontierWrites(rules, crawlFrontierWritesMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -1110,6 +1118,7 @@ func run() error {
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
 				cfg.CrawlProfilesMode == config.CrawlProfilesModeGo ||
 				cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo ||
+				cfg.CrawlFrontierWritesMode == config.CrawlFrontierWritesModeGo ||
 				cfg.RbacMode == config.RbacModeGo ||
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
@@ -1795,6 +1804,9 @@ func run() error {
 		return err
 	}
 	if err := wireCrawlFrontierRuns(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	if err := wireCrawlFrontierWrites(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 	if err := wireRbac(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {

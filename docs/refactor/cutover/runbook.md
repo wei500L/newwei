@@ -3,8 +3,8 @@
 > **本批未在部署环境执行任何切换。** 本手册中的所有命令、接口调用、Redis/MySQL/Mongo 查询、重建与重启步骤**均未在本批执行**；本批只做了静态阅读与文本核对。手册不声称任何步骤已通过、已演练或已在生产验证。
 >
 > - 基线：`dcbe563b`（#136），worktree 分支 `docs/go-cutover-readiness`。
-> - 事实来源：`apps/api-go/internal/config/config.go`（130 个 `API_GO_*` 开关与全部启动校验）、`apps/api-go/cmd/api/main.go`（路由表、Registry、worker 接线）、`apps/api-go/internal/legacyproxy/`（回落规则）、`infra/docker/docker-compose.yml`、`infra/docker/.env.sample`、`docs/refactor/go-*.md`、`docs/refactor/bug-ledger.md`。行号均来自 `dcbe563b`。
-> - 配套交付：`infra/docker/api-go-cutover.env.sample`（130 个开关全 `go` 的样例）、`infra/docker/docker-compose.api-go-cutover.sample.yml`（compose override：env_file + 59 个重新声明）、`docs/refactor/cutover/switch-matrix.md`（逐开关矩阵，T3）、`docs/refactor/cutover/ownership-audit.md`（执行权审计，T1）、`docs/refactor/cutover/README.md`。**本批开关总数仍是 130；`/api/healthz/live` 是 C 类、没有开关、不计入 130。**
+> - 事实来源：`apps/api-go/internal/config/config.go`（131 个 `API_GO_*` 开关与全部启动校验）、`apps/api-go/cmd/api/main.go`（路由表、Registry、worker 接线）、`apps/api-go/internal/legacyproxy/`（回落规则）、`infra/docker/docker-compose.yml`、`infra/docker/.env.sample`、`docs/refactor/go-*.md`、`docs/refactor/bug-ledger.md`。行号均来自 `dcbe563b`。
+> - 配套交付：`infra/docker/api-go-cutover.env.sample`（131 个开关全 `go` 的样例）、`infra/docker/docker-compose.api-go-cutover.sample.yml`（compose override：env_file + 59 个重新声明）、`docs/refactor/cutover/switch-matrix.md`（逐开关矩阵，T3）、`docs/refactor/cutover/ownership-audit.md`（执行权审计，T1）、`docs/refactor/cutover/README.md`。**开关总数 131（本批 `refactor/go-crawl-frontier-writes` 新增 `API_GO_CRAWL_FRONTIER_WRITES_MODE`）；`/api/healthz/live` 是 C 类、没有开关、不计入 131。**
 > - 本手册与 T3 矩阵的阶段归属如不一致，**以 `switch-matrix.md` 为准**；本手册用于演练编排与验证方法。
 
 ---
@@ -37,10 +37,10 @@
 - 固定 `legacy` 的 42 个：`ACCOUNT_SECURITY`、`ADMIN_LOGS`、`ANALYSIS_BOARDS`、`ANALYSIS_EXPORT`、`ANALYSIS_THREADS`、`ANALYSIS_VIEWS`、`ARCHIVE_READING`、`AVATAR_UPLOAD`、`CLASSIFICATION_RSS_OPS`、`CONTENT_SUBSCRIPTIONS`、`CRAWL_METADATA`、`CRAWL_PROFILES`、`CRAWL_QUEUE_OPS`、`CRAWL_READ_TELEMETRY`、`CRAWL_TASK_WRITE`、`CRAWL_TEMPLATES`、`CRAWL_WORKFLOWS`、`EXCEPTION_INGEST`、`GRAPHQL_ALERT_RULES`、`GRAPHQL_CRAWL_METADATA`、`GRAPHQL_ITEMS_LIST`、`GRAPHQL_KG_IMPACT`、`GRAPHQL_KNOWLEDGE_REVIEW`、`GRAPHQL_NEWS_EVENT_BRIEF`、`GRAPHQL_ORG_ACCESS_WRITE`、`GRAPHQL_RSS_TRANSLATION`、`GRAPHQL_SETTINGS_CRAWL_READ`、`GRAPHQL_SETTINGS_WRITE`、`GRAPHQL_SOURCE_POLICY_WRITE`、`GRAPHQL_WORKSPACE_READ`、`GRAPHQL_WORKSPACE_WRITE`、`ITEMS_READING`、`LLM_LOGS`、`NEWSNOW_CLUSTERING_OPS`、`NEWS_INDICATORS`、`NEWS_SOURCES`、`QUALITY_OVERVIEW`、`RUNTIME_SETTINGS`、`SITUATION_MONITORS`、`USER_DATA_EXPORT`、`USER_DIGEST`、`USER_NEWS_BEHAVIOR`（均带 `_MODE` 后缀）。
 - 完全未注入的 10 个：`API_GO_DASHBOARD_SPACETIME_GEO_MODE`、`API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE`、`API_GO_DASHBOARD_STREAM_MODE`、`API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE`、`API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE`、`API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE`、`API_GO_GRAPHQL_NEWS_EVENTS_MODE`、`API_GO_GRAPHQL_READ_MODE`、`API_GO_HEALTHZ_MODE`、`API_GO_RBAC_MODE`。
 
-**结论：** 只把 `api-go-cutover.env.sample` 传给 `--env-file`，最多只能改变 71/130 个开关。本批为此新增了配套 override `infra/docker/docker-compose.api-go-cutover.sample.yml`（同样**不会被默认加载**，必须用 `-f` 显式指定）：它给 `api-go` 服务加 `env_file: ./api-go-cutover.env.sample`（注入全部开关与资源占位符），并把 compose 中**不经过 `${VAR}` 插值的 59 个开关**（49 个写死字面量 + 10 个完全未注入）用 `${VAR:-legacy}` 重新声明（`environment` 优先级高于 `env_file`，不重新声明就改不动）。其余 71 个在 base compose 里已经是 `${API_GO_X:-legacy}`，无需重复。三者合起来，130 个开关才全部可控：
+**结论：** 只把 `api-go-cutover.env.sample` 传给 `--env-file`，最多只能改变 71/130 个 compose 开关；本批新增的 `API_GO_CRAWL_FRONTIER_WRITES_MODE` 不在 compose 中，需随 override 的 `env_file` 注入。本批为此新增了配套 override `infra/docker/docker-compose.api-go-cutover.sample.yml`（同样**不会被默认加载**，必须用 `-f` 显式指定）：它给 `api-go` 服务加 `env_file: ./api-go-cutover.env.sample`（注入全部开关与资源占位符），并把 compose 中**不经过 `${VAR}` 插值的 59 个开关**（49 个写死字面量 + 10 个完全未注入）用 `${VAR:-legacy}` 重新声明（`environment` 优先级高于 `env_file`，不重新声明就改不动）。其余 71 个在 base compose 里已经是 `${API_GO_X:-legacy}`，无需重复。三者合起来，131 个开关才全部可控：
 
 ```
-infra/docker/api-go-cutover.env.sample                    # 值（130 个开关 + 资源占位）
+infra/docker/api-go-cutover.env.sample                    # 值（131 个开关 + 资源占位）
 infra/docker/docker-compose.api-go-cutover.sample.yml     # 注入方式（env_file + 59 个重新声明）
 ```
 
@@ -62,7 +62,7 @@ awk 'NR>=774 && NR<=1697' infra/docker/docker-compose.yml \
 **H3. 「停业务流量」可做，「完全停 Nest」有硬阻断（C 类 + 编排依赖）。**
 - `api-go` 服务 `depends_on: api: service_healthy`（`docker-compose.yml:1681-1689`），`api` 的 healthcheck 是 `GET /api/healthz/live`（`docker-compose.yml:665`）；Nest 停止后 api-go 无法被 compose 重新创建。
 - `web` 启动命令会先等待 `${API_BASE_URL}/api/healthz/live`（最长 300s，失败即退出，`docker-compose.yml:1717-1723`）。当 `API_BASE_URL=http://api-go:4020` 时，该请求经 api-go 的 shadow 规则回落到 Nest；Nest 不在时 Web 重启会失败。
-- 已知 C 类（`ownership-audit.md` §0.2）：C-1 `/api/healthz/live`、C-2 `POST /api/admin/crawl-frontier/runs`、C-3 `POST /api/admin/crawl-frontier/nodes/retry`、C-4 `POST .../nodes/:id/retry`、C-5 `GET /api/system-settings/vector-service/diagnostics`、C-6 `itemPipelineDlq` 无消费者、C-7 Swagger `/docs`、C-8 Bull Board `/admin/queues`、C-9 根路径/未匹配 404。逐项与选项见 §4.2。
+- 已知 C 类（`ownership-audit.md` §0.2）：C-1 `/api/healthz/live`、C-2/C-3/C-4（`POST /api/admin/crawl-frontier/runs`、`POST .../nodes/retry`、`POST .../nodes/:id/retry`，已在 `refactor/go-crawl-frontier-writes` 关闭）、C-5 `GET /api/system-settings/vector-service/diagnostics`、C-6 `itemPipelineDlq` 无消费者、C-7 Swagger `/docs`、C-8 Bull Board `/admin/queues`、C-9 根路径/未匹配 404。逐项与选项见 §4.2。
 - 结论：**阶段 6 拆成 6a「停业务流量（本批可执行）」与 6b「完全停 Nest（本批不可执行，取决于 C 类决定）」**；6b 的前置工程变更见 §3.6。
 
 ### 0.3 切流总表
@@ -71,17 +71,17 @@ awk 'NR>=774 && NR<=1697' infra/docker/docker-compose.yml \
 |---|---|---:|---|---|---|
 | 0 | Web 入口指向 api-go，其余保持 legacy/ shadow | 0 | `.env`（`API_BASE_URL`）、可选 Web 构建参数 | 重启 web；浏览器入口需重建 web | 重启 1–2 分钟；重建另计 5–15 分钟（未实测） |
 | 1 | 只读 HTTP + GraphQL 读 | 36 | api-go 环境变量 | 重启 api-go | 1–3 分钟（容器重启 + healthcheck 15s） |
-| 2 | 写入 HTTP + GraphQL Mutation | 60 | api-go；部分开关 api 与 api-go 同值 | 重启 api-go；涉及 34 个有行为的双方开关时重启 api | 2–6 分钟（含 Nest 就绪等待，start_period 300s 为上限） |
+| 2 | 写入 HTTP + GraphQL Mutation | 61 | api-go；部分开关 api 与 api-go 同值 | 重启 api-go；涉及 34 个有行为的双方开关时重启 api | 2–6 分钟（含 Nest 就绪等待，start_period 300s 为上限） |
 | 3 | Cron / Interval / 启动任务 / 后台调度 | 18 | api + api-go 同值 | 先 api 后 api-go 重启 | 2–6 分钟（两侧重启） |
 | 4 | BullMQ worker | 12 | api + api-go 同值 | 先 api 后 api-go，必要时排空 | 5–30 分钟（爬取任务运行超时上限 30 分钟，需排空） |
 | 5 | GraphQL Subscription + 两个 Socket.IO 路径 | 3 | api + api-go + Web 构建参数 | 两侧重启 + **重建 Web** | 重建 5–15 分钟 + 重启 2–4 分钟（未实测） |
 | 6a | 认证 `/api/healthz` + 停业务流量判定 | 1 | api-go | 重启 api-go | 1–3 分钟 |
-| 6b | 完全停 Nest | 0 | compose/探针/C 类 | 需工程变更 + 用户决定 | **本批不可执行（C-1–C-9：live、crawl-frontier 写、vector diagnostics、DLQ、Swagger、Bull Board、根路径 404；另加 `depends_on`/Web 探针）** |
+| 6b | 完全停 Nest | 0 | compose/探针/C 类 | 需工程变更 + 用户决定 | **本批不可执行（C-1、C-5–C-9：live、vector diagnostics、DLQ、Swagger、Bull Board、根路径 404；C-2/C-3/C-4 已关闭；另加 `depends_on`/Web 探针）** |
 
 > 说明：阶段 2 虽然只改 api-go 的读/写接管，但 46 个开关在 Nest 侧出现（附录 A：34 个有行为、11 个仅 schema、1 个未使用 getter），其中 34 个行为开关必须双侧同值；本手册把它们放在出现的最早阶段处理，后续阶段不再重复。
 > 时间估计的依据仅限：`api-go` healthcheck `start_period 10s / interval 15s`（`docker-compose.yml:1690-1696`）、`api` healthcheck `start_period 300s / interval 15s`（`docker-compose.yml:664-669`）、Web 重建需要 `turbo run build`（`infra/docker/runtime.Dockerfile:51`）。**本批没有计时，均为保守估计。**
 
-**默认部署不变（本批的硬约束）：** 不传本批的 `-f`/`--env-file` 时，行为与 `dcbe563b` 完全一致：130 个开关仍按 compose/config 默认（绝大多数 `legacy`；api-go 服务仍有 7 个写死 `go` 的 pilot 既有行为）、Web 仍指向 NestJS（`API_BASE_URL=http://api:4000`、`NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api`）、canary 仍为 0、api-go 仍只在 `api-go-pilot` profile 下启动。本批只新增样例文件，没有修改 `docker-compose.yml`、`infra/docker/.env.sample`、`config.go` 或任何默认值。
+**默认部署不变（本批的硬约束）：** 不传本批的 `-f`/`--env-file` 时，行为与 `dcbe563b` 完全一致：131 个开关仍按 compose/config 默认（绝大多数 `legacy`；api-go 服务仍有 7 个写死 `go` 的 pilot 既有行为）、Web 仍指向 NestJS（`API_BASE_URL=http://api:4000`、`NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api`）、canary 仍为 0、api-go 仍只在 `api-go-pilot` profile 下启动。本批只新增样例文件，没有修改 `docker-compose.yml`、`infra/docker/.env.sample`、`config.go` 或任何默认值。
 
 ---
 
@@ -341,8 +341,8 @@ sed -i.bak 's/^API_GO_ONBOARDING_MODE=legacy$/API_GO_ONBOARDING_MODE=shadow/' \
 sed -i.bak 's/^API_GO_USER_SETTINGS_READ_MODE=legacy$/API_GO_USER_SETTINGS_READ_MODE=/' \
   infra/docker/api-go-cutover.phase0.env
 rm -f infra/docker/api-go-cutover.phase0.env.bak
-# 复核：130 行开关，除 ONBOARDING/READ 两个例外外全部 legacy
-grep -cE '^API_GO_[A-Z0-9_]+_MODE=' infra/docker/api-go-cutover.phase0.env   # 130
+# 复核：131 行开关，除 ONBOARDING/READ 两个例外外全部 legacy
+grep -cE '^API_GO_[A-Z0-9_]+_MODE=' infra/docker/api-go-cutover.phase0.env   # 131
 grep -E '^API_GO_[A-Z0-9_]+_MODE=' infra/docker/api-go-cutover.phase0.env | grep -v '=legacy$'
 # 预期只剩：API_GO_ONBOARDING_MODE=shadow 与 API_GO_USER_SETTINGS_READ_MODE=
 ```
@@ -397,14 +397,14 @@ docker compose \
 **回退：** 把本批次的开关改回 `legacy`，重启 api-go。1D 回退只改对应子开关即可（例如只回退 `GRAPHQL_ITEMS_LIST_MODE`），不必关闭整个 GraphQL 读。耗时 1–3 分钟。数据风险：无。
 **已知行为差异：** 只读路径的差异见 §8 第 5/7 条（缓存读取路径、REST/GraphQL 语义）；回退后按 Nest 原语义。
 
-### 阶段 2：写入类 HTTP 与 GraphQL Mutation（60 个开关）
+### 阶段 2：写入类 HTTP 与 GraphQL Mutation（61 个开关）
 
 **分组与顺序**（对应 sample 2A–2E）：
 
 | 批次 | 开关（数量） | 建议节奏 |
 |---|---|---|
 | 2A 设置/治理/诊断写 | `DATA_RUNTIME_SETTINGS`、`EMAIL_SETTINGS`、`RUNTIME_SETTINGS`、`PLATFORM_GOVERNANCE_SETTINGS`、`INFRASTRUCTURE_SETTINGS`、`MODEL_ACCESS_SETTINGS`、`LLM_GATEWAY_PROFILES`、`LLM_GATEWAY_OPS`、`PROXY_LOAD_BALANCING`、`SITUATION_SETTINGS`、`EXCEPTION_INGEST`、`STORAGE_DIAGNOSTICS`、`SITUATION_REFRESH`（13） | 每次 3–4 个；每组后回读设置 |
-| 2B 采集写 | `CRAWL_TASK_WRITE`、`CRAWL_QUEUE_OPS`、`CRAWL_TEMPLATES`、`CRAWL_PROFILES`、`CRAWL_WORKFLOWS`、`CRAWL_WORKFLOW_TRIAL`、`CRAWL_FRONTIER_RUNS`、`CRAWL_READ_TELEMETRY`、`SEARCH_REINDEX`、`GDELT_SNAPSHOT_REFRESH`、`NEWS_SOURCES`、`NEWS_SOURCE_OPS`（12） | 每次 3–4 个；先只读后写 |
+| 2B 采集写 | `CRAWL_TASK_WRITE`、`CRAWL_QUEUE_OPS`、`CRAWL_TEMPLATES`、`CRAWL_PROFILES`、`CRAWL_WORKFLOWS`、`CRAWL_WORKFLOW_TRIAL`、`CRAWL_FRONTIER_RUNS`、`CRAWL_FRONTIER_WRITES`、`CRAWL_READ_TELEMETRY`、`SEARCH_REINDEX`、`GDELT_SNAPSHOT_REFRESH`、`NEWS_SOURCES`、`NEWS_SOURCE_OPS`（13） | 每次 3–4 个；先只读后写 |
 | 2C 业务对象写 | `ITEMS_INGEST`、`RBAC`、`USER_SETTINGS_WRITE`、`USER_DIGEST`、`USER_NEWS_BEHAVIOR`、`CONTENT_SUBSCRIPTIONS`、`ANALYSIS_VIEWS`、`ANALYSIS_BOARDS`、`ANALYSIS_THREADS`、`NEWS_INDICATORS`、`NEWSNOW_HOTTEST`、`NEWSNOW_CLUSTERING_OPS`、`ECONOMIC_DATA`、`CLASSIFICATION_RSS_OPS`、`CLASSIFICATION_REPORTS`、`SITUATION_MONITORS`、`PIPELINE_RECOVERY_WRITE`、`NEWS_CLUSTERING_LLM_BACKFILL`、`AVATAR_UPLOAD`（19） | 每次 3–5 个；每批观察 30 分钟 |
 | 2D 身份/登录写 | `IDENTITY_ONBOARDING`、`AUTH_FACTORS`、`ACCOUNT_SECURITY`、`OIDC_LOGIN`、`SITUATION_TELEGRAM_AUTH`、`AUTH_LOGIN`（6） | **一次只切 1 个**；先完成 §5 第 2/10 项 |
 | 2E GraphQL Mutation | `GRAPHQL_ORG_ACCESS_WRITE`、`GRAPHQL_WORKSPACE_WRITE`、`GRAPHQL_SETTINGS_WRITE`、`GRAPHQL_SOURCE_POLICY_WRITE`、`GRAPHQL_ALERT_RULES`、`GRAPHQL_RSS_TRANSLATION`、`GRAPHQL_KNOWLEDGE_REVIEW`、`GRAPHQL_ASSISTANT_WRITE`、`GRAPHQL_NEWS_INDICATOR_REFRESH`、`ANALYSIS_RUNS`（10） | 每次 2–3 个 |
@@ -414,6 +414,7 @@ docker compose \
 - `GRAPHQL_ALERT_RULES` / `CLASSIFICATION_REPORTS` / `NEWS_CLUSTERING_LLM_BACKFILL` 会写 BullMQ 队列；消费者在阶段 4 仍由 Nest 承担，切换期间不会丢任务（Nest 的 Queue 仍存在，只是 worker 归属未变）。
 - 2D 放最后：登录/会话写一旦出错影响所有用户；先完成 SMTP、OIDC、Telegram 的真实发信/登录验证（§5）。
 - `SITUATION_MONITOR_SIGNALS`/`ONBOARDING`/`GEOCODING`/`USER_DATA_EXPORT`/`RUNTIME_DIAGNOSTICS` 按 T3 矩阵归入阶段 1（只读或轻量诊断）；阶段 2 的 `SITUATION_REFRESH` 有硬依赖例外：`config.go:6177/6180` 要求 `SITUATION_SIGNALS_WORKER_MODE=go` 且 `NEWS_SOURCE_SCHEDULER_MODE=go`，因此它虽然在阶段 2 分组，**实际必须等到阶段 3D 与 4D 完成后再执行**。
+- `API_GO_CRAWL_FRONTIER_WRITES_MODE` 必须与 `API_GO_CRAWL_FRONTIER_RUNS_MODE` 同侧（创建/重试返回同一个 run-detail payload，config 强制要求 RUNS=go）；回退到 legacy 后节点重试恢复 Nest 语义，若两侧存在既有行为差异会重新出现。
 
 **验证方法（每个批次都要做）：**
 
@@ -655,14 +656,14 @@ sum(increase(api_go_legacy_proxy_requests_total{
 
 ### 4.2 C 类项已有处理决定
 
-C 类 = 只能由 Nest 提供、Go 没有等价实现的入口/能力。**本批审计（`ownership-audit.md` §0.2）确认 C-1–C-9**；每一项都必须由用户选定「保留 / 迁移 / 下线」并签字，未签字不得停 Nest。
+C 类 = 只能由 Nest 提供、Go 没有等价实现的入口/能力。**本批审计（`ownership-audit.md` §0.2）确认 C-1–C-9，其中 C-2/C-3/C-4 已由 `refactor/go-crawl-frontier-writes` 关闭**；其余每一项都必须由用户选定「保留 / 迁移 / 下线」并签字，未签字不得停 Nest。
 
 | 编号（审计 §0.2） | C 类项 | 为什么是 C / 证据 | 选项（必须选一个并记录） |
 |---|---|---|---|
 | C-1 | `GET /api/healthz/live` | **已关闭**：`API_GO_HEALTHZ_LIVE_MODE`（默认 shadow，可 legacy/go）+ `WithHealthzLive` exact GET 规则；6b 步骤 1 | ①已实现（本批）；②无需直接改 ModeGo；③保留 `/__go/healthz` 作为备选探针 |
-| C-2 | `POST /api/admin/crawl-frontier/runs` | 无 Go 规则/handler（`ownership-audit.md` §0.2；`crawl_frontier_runs_routes.go:54-55`） | ①后续补 Go handler + 独立开关；②承认停 Nest 后不可用；③保留 Nest 边车 |
-| C-3 | `POST /api/admin/crawl-frontier/nodes/retry` | 无 Go 规则/handler（同上，`crawl_frontier_runs_routes.go:78`） | 同 C-2 三选项 |
-| C-4 | `POST /api/admin/crawl-frontier/nodes/:id/retry` | 无 Go 规则/handler（动态段单列） | 同 C-2 三选项 |
+| C-2 | `POST /api/admin/crawl-frontier/runs` | 已迁移（`refactor/go-crawl-frontier-writes`）：`WithCrawlFrontierWrites` exact POST 规则 + `crawl.write` + `API_GO_CRAWL_FRONTIER_WRITES_MODE` | —（已在 refactor/go-crawl-frontier-writes 关闭，无需决策） |
+| C-3 | `POST /api/admin/crawl-frontier/nodes/retry` | 已迁移（同上）：exact POST 规则 + handler（`internal/crawlfrontierruns/`） | —（已在 refactor/go-crawl-frontier-writes 关闭，无需决策） |
+| C-4 | `POST /api/admin/crawl-frontier/nodes/:id/retry` | 已迁移（同上）：动态段 exact POST 规则 + handler | —（已在 refactor/go-crawl-frontier-writes 关闭，无需决策） |
 | C-5 | `GET /api/system-settings/vector-service/diagnostics` | **已关闭**：`API_GO_VECTOR_DIAGNOSTICS_MODE`（默认 legacy）+ 进程级共享 `vectorclient.Health`；鉴权为登录 + `settings.manage` | ①已实现（本批）；②无需下线；③不需要 Nest 边车 |
 | C-6 | `itemPipelineDlq` 无消费者 | Nest 与 Go 都只生产；唯一人工入口是 Nest Bull Board（`ownership-audit.md` §5 的 1.1 主表与「4. 真实缺口」） | ①保留 Nest Bull Board 只读运维面；②后续给 Go 增加只读 DLQ 列表/重放端点；③文档化 Redis 手工处理并接受无 UI |
 | C-7 | Swagger `/docs` | **已关闭**：`API_GO_DOCS_MODE`（默认 legacy）；go 时嵌入 OpenAPI 快照 + swagger-ui-dist 5.29.4 资源，`SWAGGER_ENABLED` 决定是否提供 | ①已实现（本批，保留 `/docs/json`）；②不需要独立文档站；③生产仍可用 `SWAGGER_ENABLED=false` 关闭 |
@@ -670,10 +671,9 @@ C 类 = 只能由 Nest 提供、Go 没有等价实现的入口/能力。**本批
 | C-9 | 根路径与未匹配 404 | **已关闭**：`API_GO_LEGACY_FALLBACK_MODE`（默认 proxy，可 reject）；reject 时 Go 返回 Nest 等价 404 并记录异常事件 | ①已实现（本批）；②不再需要接受 502；③不需要 ingress catch-all |
 
 **判定：**
-- C-1/C-5/C-7/C-9 已由 `refactor/go-ops-entrypoints` 关闭，不再是 6b/6c 的阻塞项；6b 的步骤 1–3 是它们的切换与回退手册。
+- C-1/C-5/C-7/C-9 已由 `refactor/go-ops-entrypoints` 关闭，C-2–C-4 已由 `refactor/go-crawl-frontier-writes` 迁入 Go 并关闭，均不再是 6b/6c 的阻塞项；6b 的步骤 1–3 是它们的切换与回退手册。
 - 若 C-6/C-8 选「保留 Nest 旁路」，则 Nest 进程不能完全停止——只能停业务流量与后台职责（worker/cron/subscription），保留 `/admin/queues` 与 DLQ 人工入口。
-- C-2–C-4 选「保留 Nest 边车」同样意味着 Nest 不能完全停止；选「迁移」由 crawl-frontier 写接口窗口实现。
-- **没有书面决定 = 不能进入 6c（停 Nest 进程）。** 6a/6b 不受此限。
+- 剩余阻塞只有 C-6（`itemPipelineDlq` 人工入口）与 C-8（`/admin/queues`）；**没有书面决定 = 不能进入 6c（停 Nest 进程）。** 6a/6b 不受此限。
 
 ### 4.3 所有 BullMQ 队列只有 Go 在消费
 
@@ -743,7 +743,7 @@ done
 3. 已完成一次「演练回退」：把最后一阶段改回 legacy，确认 10 分钟内恢复，再切回 go。
 4. §5 的 12 项真实外部验证全部通过并有记录。
 5. **阶段 5 收尾：** 浏览器/客户端不再连接 `/socket.io`（Nest 传输）；Web 使用 `/socket.io-notifications` 与 `/socket.io-realtime`；只要 Nest 还在跑且 `/socket.io` 仍有活跃 Web 连接，就不能算完成阶段 5（详见 §3 阶段 6a）。
-6. `ownership-audit.md` 的 C-1–C-9 决定、`switch-matrix.md` 的阶段状态、本手册的回退记录三者齐备，变更负责人/业务验收人/决策人签字。
+6. `ownership-audit.md` 的 C-1、C-5–C-9 决定（C-2/C-3/C-4 已关闭）、`switch-matrix.md` 的阶段状态、本手册的回退记录三者齐备，变更负责人/业务验收人/决策人签字。
 
 ---
 
@@ -881,7 +881,7 @@ sum by (route_prefix) (increase(api_go_legacy_rejected_requests_total{
 5. **重启/重建耗时**：全部是保守估计，未计时；Nest 的 healthcheck `start_period 300s` 只是上限，不代表实际启动时间。
 6. **`/api/metrics` 的实际输出**：静态结论是多数 family 没有 series（仅 `scheduler_runs_total` 有记录点），未实跑验证。
 7. **legacy 回落指标**：`api_go_legacy_proxy_requests_total` 已在本批实现并提交（`metrics/families.go`、`legacyproxy/proxy.go`），但**未运行 go test、未部署、未实跑**；PromQL 中的标签值以 `legacyRoutePrefix` 的实现与测试为准，部署后需用真实 `/api/metrics` 输出核对。
-8. **C 类清单**：本手册按 `ownership-audit.md` §0.2 列 C-1–C-9（`/api/healthz/live`、三条 crawl-frontier 写、vector diagnostics、`itemPipelineDlq`、Swagger、Bull Board、根路径 404）；DLQ 细节见 `ownership-audit.md` §5 的 1.1 主表与「4. 真实缺口」。本批未实现任何 C 类处理。
+8. **C 类清单**：本手册按 `ownership-audit.md` §0.2 列 C-1–C-9（`/api/healthz/live`、crawl-frontier 三条写（C-2/C-3/C-4 已由 `refactor/go-crawl-frontier-writes` 关闭）、vector diagnostics、`itemPipelineDlq`、Swagger、Bull Board、根路径 404）；DLQ 细节见 `ownership-audit.md` §5 的 1.1 主表与「4. 真实缺口」。本批只关闭 C-2/C-3/C-4，未实现 C-1、C-5–C-9 的处理。
 9. **阶段归属**：本手册的阶段分组是 T4/T5 的编排建议；若与 `switch-matrix.md`（T3）不一致，以 T3 为准。
 10. **外部服务**：crawl4ai、LiteLLM、SMTP、Telegram、Oref、AkShare、MinIO/S3、Nominatim、OpenSky、OIDC 全部未验证。
 11. **身份/网络细节**：`API_BASE_URL` 同时被 web（服务端）与 api-go（OIDC redirect_uri）读取；切到 `http://api-go:4020` 后 IdP 回调是否可接受未核实。TLS、反向代理、CORS_ORIGIN、`TRUST_PROXY` 的真实配置未核对。
@@ -889,7 +889,7 @@ sum by (route_prefix) (increase(api_go_legacy_rejected_requests_total{
 13. **Nest 侧涉及的 46 个开关**（附录 A：34 行为 + 11 仅 schema + 1 未使用 getter）：来自 `apps/api/src` 的静态 grep，未逐个运行验证；其中 `RAW_ITEM_OUTBOX_MODE`（行为）与 `USER_DIGEST_MODE`（仅 schema）未在 compose 的 api 服务显式映射，依赖 `.env` 注入。
 14. **PR 号**：多数 Go 文档页没有记录合并 PR 号；表中标「未核实」的条目，回退前需按 `git log`/GitHub 核对。
 15. **性能/容量**：Go 与 Nest 的吞吐、内存、连接数对比未测；`bull:<q>:meta` 并发参数的实际效果未验证。
-16. **停 Nest 的工程变更**：C-1–C-9 处理、`depends_on` 解除（`!reset`/`!override` 版本行为未验证）、Web 启动等待改 `/__go/healthz`、外部探针迁移均未实施；`/api/healthz/live` 停 Nest 后会 502。
+16. **停 Nest 的工程变更**：C-1、C-5–C-9 处理（C-2/C-3/C-4 已关闭）、`depends_on` 解除（`!reset`/`!override` 版本行为未验证）、Web 启动等待改 `/__go/healthz`、外部探针迁移均未实施；`/api/healthz/live` 停 Nest 后会 502。
 
 ---
 
@@ -899,13 +899,14 @@ sum by (route_prefix) (increase(api_go_legacy_rejected_requests_total{
 |---|---|---|
 | 2026-10-21 | 初版：阶段 0–6、前置检查、停 Nest 判定、12 项用户验证、legacy 回落观测、行为差异 | runbook-config（T5） |
 | 2026-10-21 | 按 Lead 审阅修正：env 样例去掉行内注释；新增 compose override（59 个未插值开关 + 凭据）；更新切流命令为双 `--env-file` + 双 `-f`；阶段 0 增加 phase0 生成方法 | runbook-config（T5） |
-| 2026-10-21 | 按 Lead 决策修正：阶段 6 拆为 6a（停业务流量）/6b（完全停 Nest，本批不可执行）；C-1–C-9 与选项；`/api/healthz/live` 不新增开关、不计入 130；补充探针/`depends_on` 工程变更与 `/__go/healthz` 迁移；确认凭据类 env 已由 compose 注入（正向校验保留） | runbook-config（T5） |
+| 2026-10-21 | 按 Lead 决策修正：阶段 6 拆为 6a（停业务流量）/6b（完全停 Nest，本批不可执行）；C-1–C-9 与选项；`/api/healthz/live` 不新增开关、不计入 131；补充探针/`depends_on` 工程变更与 `/__go/healthz` 迁移；确认凭据类 env 已由 compose 注入（正向校验保留） | runbook-config（T5） |
+| 2026-10-21 | `refactor/go-crawl-frontier-writes`：C-2/C-3/C-4 三条 crawl-frontier 管理写迁入 Go（`API_GO_CRAWL_FRONTIER_WRITES_MODE`，要求 RUNS=go；开关总数 130→131、阶段 2 60→61）；本手册回填 C 类状态并补阶段 2 依赖说明 | docs-cutover（T5） |
 
 ---
 
 ## 附录 A：Nest 侧涉及的 46 个开关（34 行为 + 11 仅 schema + 1 未使用 getter）
 
-> **口径说明（与 `switch-matrix.md` 的「Nest 同读」列一致）：** 130 = **34 个有行为分支**（`是`：Nest 在 go 时返回/不建 Worker/不订阅，必须与 api-go 同值）+ **11 个仅在 `apps/api/src/modules/config/env.schema.ts` 声明**（zod 校验用，无行为分支）+ **85 个 Nest 完全不读**（其中 84 个完全无引用，1 个是 `API_GO_ANALYSIS_RUNS_MODE`：有未使用 getter、无行为分支）。因此「Nest 侧涉及」的集合 = 34 + 11 + 1 = **46**（`grep` 能命中的数量），但真正需要双侧同值的只有 **34** 个。
+> **口径说明（与 `switch-matrix.md` 的「Nest 同读」列一致）：** 131 = **34 个有行为分支**（`是`：Nest 在 go 时返回/不建 Worker/不订阅，必须与 api-go 同值）+ **11 个仅在 `apps/api/src/modules/config/env.schema.ts` 声明**（zod 校验用，无行为分支）+ **86 个 Nest 完全不读**（其中 85 个完全无引用，1 个是 `API_GO_ANALYSIS_RUNS_MODE`：有未使用 getter、无行为分支）。因此「Nest 侧涉及」的集合 = 34 + 11 + 1 = **46**（`grep` 能命中的数量），但真正需要双侧同值的只有 **34** 个。
 >
 > 来源：`grep -rho 'API_GO_[A-Z0-9_]*' apps/api/src --include=*.ts | sort -u`（46 个，静态核对）。**只有 34 个行为开关必须双侧同值**；11 个 schema-only 只需保证 compose 不注入非法值；1 个未使用 getter 不影响 Nest 行为。启用顺序：先 `api` 设 `go` 并重启，再 `api-go` 设 `go` 并重启；回退顺序相反。
 

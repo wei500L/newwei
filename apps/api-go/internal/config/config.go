@@ -319,16 +319,40 @@ const (
 //	GET  /api/admin/crawl-frontier/workflow-runs/:runId/candidates/:candidateId/explanation
 //
 // Every other method, trailing slash and longer path falls back to NestJS.
-// The write queue routes (create run, retry, replay, trial-run) are never
-// registered here. Go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
-// Mongo is not a startup dependency. No shadow, no canary, no worker and no
-// crawler process is started, and rolling back only means setting this
-// variable back to legacy.
+// The three write routes (create run and the two node retries) belong to
+// CrawlFrontierWritesMode below, not to this switch. Go mode requires
+// JWT_SECRET, DATABASE_URL and REDIS_HOST; Mongo is not a startup dependency.
+// No shadow, no canary, no worker and no crawler process is started, and
+// rolling back only means setting this variable back to legacy.
 type CrawlFrontierRunsMode string
 
 const (
 	CrawlFrontierRunsModeLegacy CrawlFrontierRunsMode = "legacy"
 	CrawlFrontierRunsModeGo     CrawlFrontierRunsMode = "go"
+)
+
+// CrawlFrontierWritesMode controls the three crawl frontier write HTTP routes
+// under /api/admin/crawl-frontier (API_GO_CRAWL_FRONTIER_WRITES_MODE). It
+// defaults to legacy and accepts only "", "legacy" and "go".
+//
+// Go mode takes over exactly these routes:
+//
+//	POST /api/admin/crawl-frontier/runs
+//	POST /api/admin/crawl-frontier/nodes/retry
+//	POST /api/admin/crawl-frontier/nodes/:id/retry
+//
+// Only POST (plus the CORS preflight) is registered for each path; every other
+// method, trailing slash and longer path falls back to NestJS. Create and retry
+// return the same run detail as GET /runs/:id, so this switch requires
+// API_GO_CRAWL_FRONTIER_RUNS_MODE=go and both are served by one side during
+// cutover. Go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST; Mongo is
+// not a startup dependency. No shadow, no canary and no background worker is
+// started, and rolling back only means setting this variable back to legacy.
+type CrawlFrontierWritesMode string
+
+const (
+	CrawlFrontierWritesModeLegacy CrawlFrontierWritesMode = "legacy"
+	CrawlFrontierWritesModeGo     CrawlFrontierWritesMode = "go"
 )
 
 // LlmLogsMode 只控制 LLM 请求日志的列表、CSV 导出与用量汇总这 3 条只读
@@ -2767,6 +2791,11 @@ type Config struct {
 	// requires JWT, MySQL and Redis, does not require Mongo, and never
 	// starts a crawl worker or enqueues a job.
 	CrawlFrontierRunsMode CrawlFrontierRunsMode
+	// CrawlFrontierWritesMode controls the three crawl frontier write HTTP
+	// routes. It defaults to legacy. Go requires JWT, MySQL and Redis plus
+	// API_GO_CRAWL_FRONTIER_RUNS_MODE=go, does not require Mongo, and starts
+	// no background worker.
+	CrawlFrontierWritesMode CrawlFrontierWritesMode
 	// RbacMode 只控制组织访问控制六条 HTTP。默认 legacy。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动任何 worker。
 	RbacMode RbacMode
@@ -3825,6 +3854,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.CrawlFrontierRunsMode = CrawlFrontierRunsModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_FRONTIER_RUNS_MODE must be one of legacy|go")
+	}
+	// Unset = legacy. The write takeover's createRun/retry responses are the
+	// getRun run detail, so reads and writes must be served by one side to avoid
+	// two detail payload definitions during cutover. Same pattern as the
+	// user-settings read/write pair above.
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_FRONTIER_WRITES_MODE")) {
+	case "", string(CrawlFrontierWritesModeLegacy):
+		cfg.CrawlFrontierWritesMode = CrawlFrontierWritesModeLegacy
+	case string(CrawlFrontierWritesModeGo):
+		cfg.CrawlFrontierWritesMode = CrawlFrontierWritesModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_FRONTIER_WRITES_MODE must be one of legacy|go")
+	}
+	if cfg.CrawlFrontierWritesMode == CrawlFrontierWritesModeGo &&
+		cfg.CrawlFrontierRunsMode != CrawlFrontierRunsModeGo {
+		errs = append(errs, "API_GO_CRAWL_FRONTIER_WRITES_MODE=go requires API_GO_CRAWL_FRONTIER_RUNS_MODE=go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_RBAC_MODE")) {
 	case "", string(RbacModeLegacy):
@@ -5650,6 +5695,9 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	}
 	if cfg.CrawlFrontierRunsMode == CrawlFrontierRunsModeGo {
 		appendAuthRequirements(&errs, "API_GO_CRAWL_FRONTIER_RUNS_MODE", cfg)
+	}
+	if cfg.CrawlFrontierWritesMode == CrawlFrontierWritesModeGo {
+		appendAuthRequirements(&errs, "API_GO_CRAWL_FRONTIER_WRITES_MODE", cfg)
 	}
 	if cfg.RbacMode == RbacModeGo {
 		appendAuthRequirements(&errs, "API_GO_RBAC_MODE", cfg)

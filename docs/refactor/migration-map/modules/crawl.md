@@ -2,7 +2,9 @@
 
 2026-10-19仅采集结果→条目候选限定续核（main91e759b4）：[ITEMS-INGEST-001](../tasks/ITEMS-INGEST-001.md) reserved，[提示词](../tasks/ITEMS-INGEST-001.prompt.md)包含createItemFromCrawlResult、ingestCrawlTaskResultsToItems及updateCrawlTaskIngestToItems；前两者crawl.read AND items.write，后者crawl.write且启用另需items.write。包括保序分页/批量Mongo插入确认/空ref CAS与输家清理、原子BullMQ producer、审计和水合，不只保存配置。crawl创建/retry/delete、Frontier/自动采集器不认领；这些执行器继续Nest。
 
-**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **65/68**、Query **3/3**、Mutation **5/5**（Go 注册/分母，**C 类 3 条**：`POST /api/admin/crawl-frontier/runs`、`POST /api/admin/crawl-frontier/nodes/retry`、`POST /api/admin/crawl-frontier/nodes/:id/retry`）；68 条中 65 条注册；3 个 Query 与 5 个写 Mutation（含两条采集入库根，按本表归属）全部注册；4 条新闻源运维 POST 按本表归属计入 async-runtime。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 54/68、Query 2/3、Mutation 0/5），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+**覆盖更新（2026-10-21，基线 `dcbe563b`/`ed436ead`，更新至 #136 与 `refactor/go-crawl-frontier-writes`）**：HTTP **68/68**、Query **3/3**、Mutation **5/5**（Go 注册/分母，**C 类 0 条**：原 3 条 `POST /api/admin/crawl-frontier/runs`、`POST /api/admin/crawl-frontier/nodes/retry`、`POST /api/admin/crawl-frontier/nodes/:id/retry` 已由 `refactor/go-crawl-frontier-writes` 迁入，见下表 `WithCrawlFrontierWrites`）；68 条全部注册；3 个 Query 与 5 个写 Mutation（含两条采集入库根，按本表归属）全部注册；4 条新闻源运维 POST 按本表归属计入 async-runtime。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 54/68、Query 2/3、Mutation 0/5），差值即 #92–#136 与 `refactor/go-crawl-frontier-writes` 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
+**2026-10-21 增量（`refactor/go-crawl-frontier-writes`，基线 `ed436ead`）**：Frontier 管理写 3 条 HTTP（创建 run、节点批量重试、单节点重试）迁入 api-go，新增开关 `API_GO_CRAWL_FRONTIER_WRITES_MODE`（默认 legacy；=go 时要求 `API_GO_CRAWL_FRONTIER_RUNS_MODE=go`，两侧共用同一 run-detail payload），沿用 Nest 的 `crawl.write` 权限与 POST 201 语义；规则文件与 handler 路径见下表。PR 待创建。
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
@@ -12,7 +14,7 @@
 
 关键数据与副作用：MySQL NewsSource/CrawlTemplate/CrawlSiteProfile/Workflow/Run/Node，Mongo 抓取结果与媒体，Redis BullMQ，crawl4ai、对象存储、LLM judge/learn。取消更新与真正入队/重放不能混为一谈。
 
-真实剩余缺口：crawlMetadata（主动外部抓取，非纯数据库读）、任务创建/删除/重试/导入、Frontier 创建/节点重试/trial-run/replay、crawl4ai 队列管理、来源 preview 尚在 Nest；入队/worker 归异步域协同。
+真实剩余缺口：crawlMetadata（主动外部抓取，非纯数据库读）、任务创建/删除/重试/导入、Frontier trial-run/replay、crawl4ai 队列管理、来源 preview 尚在 Nest（Frontier 创建/节点重试已由 `refactor/go-crawl-frontier-writes` 迁入 Go）；入队/worker 归异步域协同。
 
 `crawlMetadata` 与 `POST /api/crawl-tasks/metadata`：Resolver → [CrawlMetadataService.extract](../../../../apps/api/src/modules/crawl/crawl-metadata.service.ts) → resolveUrls / fetchMetadata / fetchWithStatus；读取 sitemap 并逐 URL 请求真实网页，fetchWithStatus 包含逐跳 SSRF、重定向和超时语义。深度发现可选 crawl4ai，但普通 metadata 不是必经 crawl4ai；迁移时按真实模式保留安全约束并单列外部调用验证。
 
@@ -31,6 +33,7 @@ Nest 功能目录：[crawl](../../../../apps/api/src/modules/crawl)。Controller
 | 路由组符号 | 开关（须 go 才接管） | Go 业务实现 | 可见 pilot 注入 |
 |---|---|---|---|
 | [WithCrawlFrontierRuns](../../../../apps/api-go/internal/legacyproxy/crawl_frontier_runs_routes.go) | `API_GO_CRAWL_FRONTIER_RUNS_MODE` | [crawlfrontierruns](../../../../apps/api-go/internal/crawlfrontierruns) | `${API_GO_CRAWL_FRONTIER_RUNS_MODE:-legacy}` |
+| [WithCrawlFrontierWrites](../../../../apps/api-go/internal/legacyproxy/crawl_frontier_writes_routes.go) | `API_GO_CRAWL_FRONTIER_WRITES_MODE`（=go 要求 `API_GO_CRAWL_FRONTIER_RUNS_MODE=go`） | [crawlfrontierruns](../../../../apps/api-go/internal/crawlfrontierruns)（写 handler）；创建 run 经 [crawlfrontierllm](../../../../apps/api-go/internal/crawlfrontierllm) 导出 | —（base compose 未注入，由 cutover override 的 `env_file` 注入；代码批次若补 compose 插值需回填） |
 | [WithCrawlProfiles](../../../../apps/api-go/internal/legacyproxy/crawl_profiles_routes.go) | `API_GO_CRAWL_PROFILES_MODE` | [crawlprofile](../../../../apps/api-go/internal/crawlprofile) | `legacy` |
 | [WithCrawlReadTelemetry](../../../../apps/api-go/internal/legacyproxy/crawl_read_telemetry_routes.go) | `API_GO_CRAWL_READ_TELEMETRY_MODE` | [crawlreadtelemetry](../../../../apps/api-go/internal/crawlreadtelemetry) | `legacy` |
 | [WithCrawlTemplates](../../../../apps/api-go/internal/legacyproxy/crawl_templates_routes.go) | `API_GO_CRAWL_TEMPLATES_MODE` | [crawltemplate](../../../../apps/api-go/internal/crawltemplate) | `legacy` |
@@ -47,8 +50,8 @@ Nest 功能目录：[crawl](../../../../apps/api/src/modules/crawl)。Controller
 |---|---|---|---|
 | `GET /api/admin/crawl-frontier/news-sources/:id/workflow-bridge` | crawl.read | [crawl-strategy.controller.ts](../../../../apps/api/src/modules/crawl/crawl-strategy.controller.ts) · `getNewsSourceWorkflowBridge` | WithCrawlWorkflows |
 | `GET /api/admin/crawl-frontier/nodes/:id` | crawl.read | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `getNode` | WithCrawlFrontierRuns |
-| `POST /api/admin/crawl-frontier/nodes/:id/retry` | crawl.write | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `retryNode` | Nest；尚未接管 |
-| `POST /api/admin/crawl-frontier/nodes/retry` | crawl.write | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `retryNodes` | Nest；尚未接管 |
+| `POST /api/admin/crawl-frontier/nodes/:id/retry` | crawl.write | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `retryNode` | WithCrawlFrontierWrites（`API_GO_CRAWL_FRONTIER_WRITES_MODE`） |
+| `POST /api/admin/crawl-frontier/nodes/retry` | crawl.write | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `retryNodes` | WithCrawlFrontierWrites（`API_GO_CRAWL_FRONTIER_WRITES_MODE`） |
 | `GET /api/admin/crawl-frontier/profiles` | crawl.read | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `listProfiles` | WithCrawlProfiles |
 | `POST /api/admin/crawl-frontier/profiles` | crawl.write | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `createProfile` | WithCrawlProfiles |
 | `GET /api/admin/crawl-frontier/profiles/:id` | crawl.read | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `getProfile` | WithCrawlProfiles |
@@ -59,7 +62,7 @@ Nest 功能目录：[crawl](../../../../apps/api/src/modules/crawl)。Controller
 | `GET /api/admin/crawl-frontier/profiles/match` | crawl.read | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `matchProfile` | WithCrawlProfiles |
 | `POST /api/admin/crawl-frontier/profiles/preview` | crawl.read | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `previewProfile` | WithCrawlProfiles |
 | `GET /api/admin/crawl-frontier/runs` | crawl.read | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `listRuns` | WithCrawlFrontierRuns |
-| `POST /api/admin/crawl-frontier/runs` | crawl.write | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `createRun` | Nest；尚未接管 |
+| `POST /api/admin/crawl-frontier/runs` | crawl.write | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `createRun` | WithCrawlFrontierWrites（`API_GO_CRAWL_FRONTIER_WRITES_MODE`） |
 | `GET /api/admin/crawl-frontier/runs/:id` | crawl.read | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `getRun` | WithCrawlFrontierRuns |
 | `POST /api/admin/crawl-frontier/runs/:id/cancel` | crawl.write | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `cancelRun` | WithCrawlFrontierRuns |
 | `GET /api/admin/crawl-frontier/runs/:id/workflow-candidates` | crawl.read | [crawl-frontier.controller.ts](../../../../apps/api/src/modules/crawl/crawl-frontier.controller.ts) · `listRunWorkflowCandidates` | WithCrawlFrontierRuns |
@@ -135,7 +138,7 @@ Nest 功能目录：[crawl](../../../../apps/api/src/modules/crawl)。Controller
 
 ## 合并、CI 与历史报告证据
 
-PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核对。下列实际 merge commit 均验证为 main 祖先；integration 合并包含在内。
+PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核对。除标「PR 待创建」的一行外，下列实际 merge commit 均验证为 main 祖先；integration 合并包含在内。
 
 | PR | 实际 merge commit | 说明 |
 |---|---|---|
@@ -146,6 +149,7 @@ PR 记录只作索引；实际功能状态已按本页 SHA 的源码/注册核�
 | [#50](https://github.com/wei500L/newwei/pull/50) | [b0e4c178b2af](https://github.com/wei500L/newwei/commit/b0e4c178b2af54ea6a72f4555973e011877f0e88) | ✨ feat(api-go): 采集只读、媒体下发与检索遥测迁入 7 条接口（默认 legacy） |
 | [#52](https://github.com/wei500L/newwei/pull/52) | [b89c35a85998](https://github.com/wei500L/newwei/commit/b89c35a85998512392e32566ccd96b2766f65441) | ✨ feat(api-go): 迁入设置中心/来源策略/复核队列/采集任务 20 个 GraphQL 只读 root（API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE） |
 | [#53](https://github.com/wei500L/newwei/pull/53) | [2672b62e35ed](https://github.com/wei500L/newwei/commit/2672b62e35ed7235604c65939bcd335c81bf7d27) | ✨ feat(api-go): 采集 Frontier 运行监控与取消 11 条接口迁入 Go（API_GO_CRAWL_FRONTIER_RUNS_MODE，默认 legacy） |
+| PR 待创建 | — | ✨ feat(api-go): crawl-frontier 管理写 3 条入口迁入 Go（API_GO_CRAWL_FRONTIER_WRITES_MODE，默认 legacy；`refactor/go-crawl-frontier-writes`） |
 
 - [docs/refactor/go-crawl-templates.md](../../go-crawl-templates.md)
 

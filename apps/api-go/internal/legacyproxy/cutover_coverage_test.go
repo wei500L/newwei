@@ -101,6 +101,10 @@ func allGoRules() []Rule {
 	rules = WithHealthzLive(rules, "go")
 	rules = WithVectorDiagnostics(rules, "go")
 	rules = WithDocs(rules, "go")
+	// The order of the builder calls does not affect matching: match() sorts the
+	// rules by prefix length. New builders are appended at the end so parallel
+	// cutover batches never touch the same alphabetical region.
+	rules = WithCrawlFrontierWrites(rules, "go")
 	return rules
 }
 
