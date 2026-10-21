@@ -10,6 +10,8 @@
 
 真实剩余缺口：insights、POST refresh、geo/geocode、realtime runtime 诊断仍为 Nest；后台 refresh/signals worker 与外部轮询需要另立边界。
 
+候选实现见 PR #129，未合 main：态势信号 worker（`situationMonitorSignals` 的 Telegram/Oref 轮询、重复任务注册、`situation-monitor:signals:events:v1` 事件桥，`API_GO_SITUATION_SIGNALS_WORKER_MODE`）与 Telegram 登录两条 POST（`API_GO_SITUATION_TELEGRAM_AUTH_MODE`）。
+
 本域注册、实现、接线、合并、验证和启用分别读取：[实现核对与具体未审范围](../AUDIT.md#situation) · [开关/资源](../DEPENDENCIES.md#开关与资源装配) · [普通 CI 与部署证据](../EVIDENCE.md)。下表 Go 仅为接管注册，不自动意味着全部分支实现或所有开关组合可用；实际 merge 提交保留在本页历史表。
 
 Nest 功能目录：[situation-monitor](../../../../apps/api/src/modules/situation-monitor)、[realtime-signals](../../../../apps/api/src/modules/realtime-signals)、[geo](../../../../apps/api/src/modules/geo)。Controller 装配入口见 [AppModule](../../../../apps/api/src/app.module.ts)；GraphQL providers 见 [ApiGraphqlModule](../../../../apps/api/src/graphql/graphql.module.ts)。

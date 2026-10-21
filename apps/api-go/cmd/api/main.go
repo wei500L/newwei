@@ -894,6 +894,10 @@ func run() error {
 	// The four situation-monitor settings entries are an independent switch.
 	// Their exact paths never overlap the signals, insights or monitors rules.
 	rules = legacyproxy.WithSituationSettings(rules, situationSettingsMode)
+	// The two Telegram login POSTs are a separate switch from the settings
+	// CRUD above; the rules are exact and method-scoped so the shared prefix
+	// keeps one owner per method.
+	rules = legacyproxy.WithSituationTelegramAuth(rules, string(cfg.SituationTelegramAuthMode))
 	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
 	rules = legacyproxy.WithNewsSourceOps(rules, newsSourceOpsMode)
 	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
@@ -1285,6 +1289,16 @@ func run() error {
 	// The settings takeover needs the credentialed stack plus Mongo (quality
 	// summary) and the settings encryption key.
 	situationSettingsGo := cfg.SituationSettingsMode == config.SituationSettingsModeGo
+	// The Telegram login takeover serves the two authenticated POSTs, writes the
+	// encrypted session into the settings row and returns the controller's
+	// quality summary, so it joins the credentialed assembly below.
+	situationTelegramAuthGo := cfg.SituationTelegramAuthMode == config.SituationTelegramAuthModeGo
+	// The signals worker consumes the situationMonitorSignals queue and
+	// registers its repeat schedules. It serves no HTTP route and needs no JWT;
+	// it needs the shared Redis (queue, cached signal state, Telegram lease and
+	// the realtime event bridge) and MySQL (settings row and default OREF
+	// alert rules). Legacy default constructs nothing.
+	situationSignalsWorkerGo := cfg.SituationSignalsWorkerMode == config.SituationSignalsWorkerModeGo
 	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
 	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
 	proxyLoadBalancingGo := cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo
@@ -1307,7 +1321,7 @@ func run() error {
 		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
-		situationSignalsGo || situationInsightsGo || situationSettingsGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
+		situationSignalsGo || situationInsightsGo || situationSettingsGo || situationTelegramAuthGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
 		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
 		graphqlWorkspaceWriteGo || graphqlAlertRulesGo || cfg.GraphQLSettingsWriteMode == "go" ||
 		sourcePolicyWriteGo ||
@@ -1365,7 +1379,11 @@ func run() error {
 		cfg.ClassificationReviewSeedMode == config.ClassificationReviewSeedModeGo ||
 		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
 		cfg.MetricsMode == config.MetricsModeGo ||
-		cfg.StartupReconcileMode == config.StartupReconcileModeGo
+		cfg.StartupReconcileMode == config.StartupReconcileModeGo ||
+		// The signals worker owns the shared queue, the cached signal state,
+		// the single-instance Telegram lease and the event bridge, so it needs
+		// the shared Redis client even with every HTTP switch on legacy.
+		situationSignalsWorkerGo
 	// The crawl maintenance crons and the audit retention purge take their
 	// leases in the shared Redis even when no HTTP takeover is enabled.
 	if !needsRedis && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
@@ -1893,6 +1911,13 @@ func run() error {
 	// settings write can hot-sync the same repeatable jobs. It also reuses the
 	// shared Mongo client for the insights quality summary.
 	if err := wireSituationSettings(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator, economicService); err != nil {
+		return err
+	}
+
+	// The Telegram login takeover serves the two POSTs with the shared
+	// credentialed stack, the settings service and the temporary MTProto client
+	// factory. It registers no worker and no other route.
+	if err := wireSituationTelegramAuth(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
 		return err
 	}
 
@@ -2695,6 +2720,13 @@ func run() error {
 	// and needs no JWT. The deferred Close stops claiming jobs and drains the
 	// in-flight ones before the shared Redis/Mongo connections close below.
 	var alertWorker *alertworker.Service
+	// The situation-monitor signals worker owns the situationMonitorSignals
+	// queue, its repeat schedules, the Telegram/OREF polls and the realtime
+	// event bridge when API_GO_SITUATION_SIGNALS_WORKER_MODE=go. It registers no
+	// HTTP route and needs no JWT. The deferred Close stops claiming, disconnects
+	// the leased MTProto session and stops the Telegram clear subscription
+	// before the shared Redis/MySQL handles close below.
+	var situationSignalsWorker *situationSignalsWorkerRuntime
 	// The analysis worker owner stops claiming first, drains in-flight jobs
 	// while renewing their locks, and only then lets the digest scheduler and
 	// the shared Redis/Mongo connections close.
@@ -2774,6 +2806,14 @@ func run() error {
 		if alertWorker != nil {
 			if closeErr := alertWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: alert worker close: %v", closeErr)
+			}
+		}
+		// The signals worker stops claiming first, then disconnects the leased
+		// MTProto session, unsubscribes the clear broadcast and releases the
+		// Redis lease while the shared client is still open.
+		if situationSignalsWorker != nil {
+			if closeErr := situationSignalsWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: situation signals worker close: %v", closeErr)
 			}
 		}
 		if eventTimelineSentiment != nil {
@@ -3018,6 +3058,19 @@ func run() error {
 	}
 	if alertWorker != nil {
 		if startErr := alertWorker.Start(context.Background()); startErr != nil {
+			return startErr
+		}
+	}
+
+	// The signals worker registers its repeat schedules before claiming jobs, so
+	// a flip from the NestJS owner leaves exactly one scheduler in the queue.
+	// Legacy default returns nil and constructs nothing.
+	situationSignalsWorker, err = wireSituationSignalsWorker(cfg, sharedDB, redisClient)
+	if err != nil {
+		return err
+	}
+	if situationSignalsWorker != nil {
+		if startErr := situationSignalsWorker.Start(context.Background()); startErr != nil {
 			return startErr
 		}
 	}

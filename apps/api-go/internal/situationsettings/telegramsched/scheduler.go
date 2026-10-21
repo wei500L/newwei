@@ -86,11 +86,29 @@ func New(client *redis.Client) *Scheduler {
 	}
 }
 
+// JobOptions are the BullMQ queue defaultJobOptions (attempts/backoff) the
+// JobScheduler template and the bootstrap job inherit. The NestJS startup path
+// creates its Queue with attempts=3 and exponential backoff 1000ms, while the
+// settings-controller hot-sync path only sets removeOnFail; the caller decides
+// which of the two it mirrors. Zero value keeps the hot-sync shape.
+type JobOptions struct {
+	Attempts       int
+	BackoffType    string
+	BackoffDelayMS int
+}
+
 // Sync is syncTelegramScheduleBestEffort without the catch: it removes legacy
 // repeat entries, then either removes or upserts the JobScheduler and adds the
 // one-shot bootstrap job. The caller logs a warning and keeps the HTTP response
 // on any error, exactly like the NestJS controller.
 func (s *Scheduler) Sync(ctx context.Context, enabled bool, intervalMs int) error {
+	return s.SyncWithOptions(ctx, enabled, intervalMs, JobOptions{})
+}
+
+// SyncWithOptions is Sync with the queue defaultJobOptions the NestJS startup
+// owner writes. The signals worker uses it so the JobScheduler template it
+// installs is byte-equivalent to the one the NestJS processor installed.
+func (s *Scheduler) SyncWithOptions(ctx context.Context, enabled bool, intervalMs int, jobOpts JobOptions) error {
 	if s == nil || s.redis == nil {
 		return errors.New("telegramsched: redis is not configured")
 	}
@@ -107,10 +125,10 @@ func (s *Scheduler) Sync(ctx context.Context, enabled bool, intervalMs int) erro
 		}
 		return s.removeQueuedPollJobs(ctx, scripts)
 	}
-	if err := s.upsertPollScheduler(ctx, scripts, intervalMs); err != nil {
+	if err := s.upsertPollScheduler(ctx, scripts, intervalMs, jobOpts); err != nil {
 		return err
 	}
-	return s.addBootstrapJob(ctx, scripts)
+	return s.addBootstrapJob(ctx, scripts, jobOpts)
 }
 
 // removeLegacyRepeatJobs mirrors removeLegacyTelegramRepeatJobs: read every
@@ -142,7 +160,7 @@ func (s *Scheduler) removeLegacyRepeatJobs(ctx context.Context, scripts schedule
 // upsertPollScheduler mirrors upsertTelegramPollScheduler. BullMQ calls
 // JobScheduler.upsertJobScheduler with {override:true}, which executes
 // addJobScheduler-11 and stores the next iteration in the repeat zset + hash.
-func (s *Scheduler) upsertPollScheduler(ctx context.Context, scripts schedulerScripts, intervalMs int) error {
+func (s *Scheduler) upsertPollScheduler(ctx context.Context, scripts schedulerScripts, intervalMs int, jobOpts JobOptions) error {
 	every := intervalMs
 	if every < MinIntervalMillis {
 		every = MinIntervalMillis
@@ -162,10 +180,10 @@ func (s *Scheduler) upsertPollScheduler(ctx context.Context, scripts schedulerSc
 	if err != nil {
 		return fmt.Errorf("telegramsched: encode scheduler options: %w", err)
 	}
-	templateOpts, err := msgpack.Marshal(map[string]any{
+	templateOpts, err := msgpack.Marshal(withJobOptions(map[string]any{
 		"removeOnComplete": true,
 		"removeOnFail":     failedRetention(),
-	})
+	}, jobOpts))
 	if err != nil {
 		return fmt.Errorf("telegramsched: encode template options: %w", err)
 	}
@@ -173,7 +191,7 @@ func (s *Scheduler) upsertPollScheduler(ctx context.Context, scripts schedulerSc
 	// undefined nextMillis for an every schedule, so jobId ends in ":undefined"
 	// and delay is NaN. addJobFromScheduler overwrites both fields; keeping the
 	// same shape makes the packed argument identical in meaning.
-	delayedOpts, err := msgpack.Marshal(map[string]any{
+	delayedOpts, err := msgpack.Marshal(withJobOptions(map[string]any{
 		"removeOnComplete": true,
 		"removeOnFail":     failedRetention(),
 		"jobId":            "repeat:" + PollSchedulerID + ":undefined",
@@ -185,7 +203,7 @@ func (s *Scheduler) upsertPollScheduler(ctx context.Context, scripts schedulerSc
 			"offset": nil,
 			"count":  int64(1),
 		},
-	})
+	}, jobOpts))
 	if err != nil {
 		return fmt.Errorf("telegramsched: encode delayed options: %w", err)
 	}
@@ -234,7 +252,7 @@ func (s *Scheduler) removePollScheduler(ctx context.Context, scripts schedulerSc
 // ...) call: one ordinary wait-list job with removeOnComplete and the shared
 // failed-job retention. It has no job id, so the script allocates the counter id
 // exactly like BullMQ's Job.create.
-func (s *Scheduler) addBootstrapJob(ctx context.Context, scripts schedulerScripts) error {
+func (s *Scheduler) addBootstrapJob(ctx context.Context, scripts schedulerScripts, jobOpts JobOptions) error {
 	now := s.now().UnixMilli()
 	args, err := msgpack.Marshal([]any{
 		s.keys.prefix,
@@ -250,10 +268,10 @@ func (s *Scheduler) addBootstrapJob(ctx context.Context, scripts schedulerScript
 	if err != nil {
 		return fmt.Errorf("telegramsched: encode bootstrap arguments: %w", err)
 	}
-	opts, err := msgpack.Marshal(map[string]any{
+	opts, err := msgpack.Marshal(withJobOptions(map[string]any{
 		"removeOnFail":     failedRetention(),
 		"removeOnComplete": true,
-	})
+	}, jobOpts))
 	if err != nil {
 		return fmt.Errorf("telegramsched: encode bootstrap options: %w", err)
 	}
@@ -414,4 +432,20 @@ func splitRepeatKey(repeatKey string) (string, string) {
 		jobID = parts[1]
 	}
 	return name, jobID
+}
+
+// withJobOptions merges the queue defaultJobOptions into one packed job options
+// map. The NestJS Queue definition writes attempts=3 and an exponential 1000ms
+// backoff, so the job hashes the script stores match the ones NestJS wrote.
+func withJobOptions(opts map[string]any, jobOpts JobOptions) map[string]any {
+	if jobOpts.Attempts > 0 {
+		opts["attempts"] = int64(jobOpts.Attempts)
+	}
+	if jobOpts.BackoffType != "" {
+		opts["backoff"] = map[string]any{
+			"type":  jobOpts.BackoffType,
+			"delay": int64(jobOpts.BackoffDelayMS),
+		}
+	}
+	return opts
 }

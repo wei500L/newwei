@@ -7,6 +7,7 @@ import { AlertsModule } from '../../alerts/alerts.module';
 import { AuthModule } from '../../auth/auth.module';
 import { BullmqConnectionService } from '../../config/bullmq-connection.service';
 
+import { SituationMonitorSignalsEventsSubscriber } from './situation-monitor-signals-events.subscriber';
 import { SituationMonitorSignalsQueueCleanupService } from './situation-monitor-signals-queue-cleanup.service';
 import {
   SITUATION_MONITOR_SIGNALS_QUEUE,
@@ -27,6 +28,7 @@ import { SituationMonitorTelegramClearSubscriber } from './situation-monitor-tel
     SituationMonitorSignalsProcessor,
     SituationMonitorSignalsGateway,
     SituationMonitorSignalsQueueCleanupService,
+    SituationMonitorSignalsEventsSubscriber,
     SituationMonitorTelegramClearSubscriber,
     {
       provide: SITUATION_MONITOR_SIGNALS_QUEUE,

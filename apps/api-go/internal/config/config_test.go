@@ -4489,3 +4489,106 @@ func TestResidualDutyModesRequireResources(t *testing.T) {
 		}
 	}
 }
+
+func TestSituationSignalsWorkerMode(t *testing.T) {
+	deps := map[string]string{
+		"DATABASE_URL": "mysql://u:p@h:3306/db",
+		"REDIS_HOST":   "h",
+	}
+	cases := []struct {
+		name      string
+		raw       string
+		withDeps  bool
+		wantError bool
+	}{
+		{"default legacy", "", false, false},
+		{"explicit legacy", "legacy", false, false},
+		{"go requires deps", "go", false, true},
+		{"go with deps", "go", true, false},
+		{"invalid", "both", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(func(key string) string {
+				if tc.withDeps {
+					if v, ok := deps[key]; ok {
+						return v
+					}
+				}
+				if key == "API_GO_SITUATION_SIGNALS_WORKER_MODE" {
+					return tc.raw
+				}
+				return ""
+			})
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("want error, got %+v", cfg.SituationSignalsWorkerMode)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := SituationSignalsWorkerModeLegacy
+			if tc.raw == "go" {
+				want = SituationSignalsWorkerModeGo
+			}
+			if cfg.SituationSignalsWorkerMode != want {
+				t.Fatalf("mode = %q, want %q", cfg.SituationSignalsWorkerMode, want)
+			}
+		})
+	}
+}
+
+func TestSituationTelegramAuthMode(t *testing.T) {
+	deps := map[string]string{
+		"JWT_SECRET":                     "s",
+		"DATABASE_URL":                   "mysql://u:p@h:3306/db",
+		"REDIS_HOST":                     "h",
+		"MONGO_URI":                      "mongodb://h:27017/db",
+		"SYSTEM_SETTINGS_ENCRYPTION_KEY": "k",
+	}
+	cases := []struct {
+		name      string
+		raw       string
+		withDeps  bool
+		wantError bool
+	}{
+		{"default legacy", "", false, false},
+		{"explicit legacy", "legacy", false, false},
+		{"go requires deps", "go", false, true},
+		{"go with deps", "go", true, false},
+		{"invalid", "yes", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(func(key string) string {
+				if tc.withDeps {
+					if v, ok := deps[key]; ok {
+						return v
+					}
+				}
+				if key == "API_GO_SITUATION_TELEGRAM_AUTH_MODE" {
+					return tc.raw
+				}
+				return ""
+			})
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("want error, got %+v", cfg.SituationTelegramAuthMode)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := SituationTelegramAuthModeLegacy
+			if tc.raw == "go" {
+				want = SituationTelegramAuthModeGo
+			}
+			if cfg.SituationTelegramAuthMode != want {
+				t.Fatalf("mode = %q, want %q", cfg.SituationTelegramAuthMode, want)
+			}
+		})
+	}
+}

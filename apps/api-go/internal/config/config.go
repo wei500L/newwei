@@ -1440,6 +1440,56 @@ const (
 	SituationSettingsModeGo SituationSettingsMode = "go"
 )
 
+// SituationSignalsWorkerMode controls who consumes the "situationMonitorSignals"
+// BullMQ queue and registers its repeat schedules
+// (API_GO_SITUATION_SIGNALS_WORKER_MODE): the Telegram channel poll and the
+// OREF alerts poll. The accepted values are exactly "", "legacy" and "go"; an
+// empty value and "legacy" both leave consumption and repeat registration to
+// NestJS, and any other value fails startup instead of silently degrading.
+//
+// go requires DATABASE_URL (the settings row and the default OREF alert rules
+// live in MySQL) and REDIS_HOST (queue, cached signal state, single-instance
+// Telegram lease and the realtime event bridge); it needs no JWT because the
+// worker serves no HTTP route. Execution must be exclusive: set this variable
+// to go in the api service first (NestJS then stops creating the Worker and
+// closes its Telegram connection), then in api-go. Rollback is the reverse
+// order and needs no re-login, because the GramJS session string, the Redis
+// state documents and the queue protocol are shared.
+type SituationSignalsWorkerMode string
+
+const (
+	// SituationSignalsWorkerModeLegacy leaves consumption to NestJS (default,
+	// including the empty value).
+	SituationSignalsWorkerModeLegacy SituationSignalsWorkerMode = "legacy"
+	// SituationSignalsWorkerModeGo consumes the queue and registers the repeat
+	// schedules in api-go.
+	SituationSignalsWorkerModeGo SituationSignalsWorkerMode = "go"
+)
+
+// SituationTelegramAuthMode controls the two situation-monitor Telegram login
+// routes (API_GO_SITUATION_TELEGRAM_AUTH_MODE):
+// POST /api/system-settings/situation-monitor/telegram-auth/start and
+// POST /api/system-settings/situation-monitor/telegram-auth/complete. The
+// accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" keep both requests on the NestJS proxy and any other value fails
+// startup.
+//
+// go requires JWT_SECRET, DATABASE_URL and REDIS_HOST (the shared auth chain,
+// the pending-request cache and the four start-rate-limit buckets) plus
+// SYSTEM_SETTINGS_ENCRYPTION_KEY and MONGO_URI (completeAuth writes the
+// encrypted session into the settings row and returns the controller's
+// qualitySummary). Pending requests use the exact NestJS cache document, so a
+// start on one runtime can be completed on the other while the switch flips.
+type SituationTelegramAuthMode string
+
+const (
+	// SituationTelegramAuthModeLegacy proxies both routes to NestJS (default,
+	// including the empty value).
+	SituationTelegramAuthModeLegacy SituationTelegramAuthMode = "legacy"
+	// SituationTelegramAuthModeGo serves both routes from Go.
+	SituationTelegramAuthModeGo SituationTelegramAuthMode = "go"
+)
+
 // GdeltSnapshotMode controls which process owns the 15-minute GDELT external
 // snapshot rebuild (API_GO_GDELT_SNAPSHOT_MODE). The accepted values are exactly
 // "", "legacy" and "go"; any other value fails startup instead of silently
@@ -2483,6 +2533,15 @@ type Config struct {
 	// (see SituationSettingsMode). Default legacy. Mode go requires JWT, MySQL,
 	// Redis, Mongo and the settings-encryption key; it starts no worker.
 	SituationSettingsMode SituationSettingsMode
+	// SituationSignalsWorkerMode controls the situationMonitorSignals queue
+	// consumer and repeat registration (see SituationSignalsWorkerMode).
+	// Default legacy. Mode go requires MySQL and Redis.
+	SituationSignalsWorkerMode SituationSignalsWorkerMode
+	// SituationTelegramAuthMode controls the two Telegram login routes (see
+	// SituationTelegramAuthMode). Default legacy. It is independent from
+	// SituationSettingsMode: only these two POSTs move, the settings CRUD and
+	// DELETE telegram-auth stay on their own switches.
+	SituationTelegramAuthMode SituationTelegramAuthMode
 	// GdeltSnapshotMode 控制 GDELT 外部快照 15 分钟重建的执行权（见
 	// GdeltSnapshotMode）。默认 legacy；go 要求 DATABASE_URL 与 REDIS_HOST。
 	GdeltSnapshotMode GdeltSnapshotMode
@@ -4051,6 +4110,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.SituationSettingsMode = SituationSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_SETTINGS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_SIGNALS_WORKER_MODE")) {
+	case "", string(SituationSignalsWorkerModeLegacy):
+		cfg.SituationSignalsWorkerMode = SituationSignalsWorkerModeLegacy
+	case string(SituationSignalsWorkerModeGo):
+		cfg.SituationSignalsWorkerMode = SituationSignalsWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_SIGNALS_WORKER_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_TELEGRAM_AUTH_MODE")) {
+	case "", string(SituationTelegramAuthModeLegacy):
+		cfg.SituationTelegramAuthMode = SituationTelegramAuthModeLegacy
+	case string(SituationTelegramAuthModeGo):
+		cfg.SituationTelegramAuthMode = SituationTelegramAuthModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_TELEGRAM_AUTH_MODE must be one of legacy|go")
 	}
 	// The GDELT external snapshot scheduler accepts the empty string, legacy
 	// and go. An empty value behaves exactly like legacy so an unset deployment
@@ -5794,6 +5869,31 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.SettingsEncryptionKeyRaw == "" {
 			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_SITUATION_SETTINGS_MODE=go")
+		}
+	}
+	// The signals worker consumes the migrated queue and writes the shared
+	// Redis state, the single-instance Telegram lease and the event bridge; the
+	// settings row and the default OREF alert rules are MySQL. It serves no HTTP
+	// route, so JWT_SECRET is not a startup requirement.
+	if cfg.SituationSignalsWorkerMode == SituationSignalsWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_SITUATION_SIGNALS_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_SITUATION_SIGNALS_WORKER_MODE=go")
+		}
+	}
+	// The Telegram login takeover serves authenticated HTTP, stores the pending
+	// request in Redis, encrypts the final session into the settings row and
+	// returns the controller's quality summary, so it needs the full stack that
+	// API_GO_SITUATION_SETTINGS_MODE=go already requires.
+	if cfg.SituationTelegramAuthMode == SituationTelegramAuthModeGo {
+		appendAuthRequirements(&errs, "API_GO_SITUATION_TELEGRAM_AUTH_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_SITUATION_TELEGRAM_AUTH_MODE=go")
+		}
+		if cfg.SettingsEncryptionKeyRaw == "" {
+			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_SITUATION_TELEGRAM_AUTH_MODE=go")
 		}
 	}
 	// The manual LLM backfill enqueue route authenticates a human or machine

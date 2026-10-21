@@ -904,6 +904,27 @@ export const apiEnvSchema = baseEnvSchema
         typeof value === "string" && value.trim() === "" ? undefined : value,
       z.string().url().optional(),
     ),
+    // Situation-monitor Go migration switches. Each switch accepts "" (legacy),
+    // legacy or go and fails Nest startup on any other value (an empty string is
+    // normalized to legacy). The worker switch decides whether NestJS may still
+    // register the repeatable jobs and consume the situationMonitorSignals
+    // queue; the auth switch only controls which process serves the two
+    // telegram-auth POST routes (the api-go legacyproxy owns the route switch,
+    // so NestJS keeps its controller unchanged).
+    API_GO_SITUATION_SIGNALS_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_SITUATION_TELEGRAM_AUTH_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     SITUATION_MONITOR_TELEGRAM_ENABLED: envBoolean.default(false),
     SITUATION_MONITOR_TELEGRAM_API_ID: z.string().optional(),
     SITUATION_MONITOR_TELEGRAM_API_HASH: z.string().optional(),
