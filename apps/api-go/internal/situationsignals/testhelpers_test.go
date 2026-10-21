@@ -17,6 +17,11 @@ type memoryCache struct {
 	values map[string][]byte
 	ttls   map[string]time.Duration
 	incs   map[string]int64
+	// deletedPrefixes records every delByPrefix call so a test can assert which
+	// prefixes the refresh cleared.
+	deletedPrefixes []string
+	// deleteErr, when set, makes delByPrefix fail like a Redis outage.
+	deleteErr error
 }
 
 func newMemoryCache() (*memoryCache, cacheOps) {
@@ -45,6 +50,21 @@ func newMemoryCache() (*memoryCache, cacheOps) {
 		expire: func(_ context.Context, key string, ttl time.Duration) error {
 			store.ttls[key] = ttl
 			return nil
+		},
+		deleteByPrefix: func(_ context.Context, prefix string) (int, error) {
+			store.deletedPrefixes = append(store.deletedPrefixes, prefix)
+			if store.deleteErr != nil {
+				return 0, store.deleteErr
+			}
+			removed := 0
+			for key := range store.values {
+				if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+					delete(store.values, key)
+					delete(store.ttls, key)
+					removed++
+				}
+			}
+			return removed, nil
 		},
 	}
 	return store, ops

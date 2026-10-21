@@ -624,6 +624,12 @@ func run() error {
 	if cfg.SituationSignalsMode == config.SituationSignalsModeGo {
 		situationSignalsMode = string(legacyproxy.ModeGo)
 	}
+	// The refresh POST is its own switch: its rule is exact and method-scoped, so
+	// it never shadows the refresh-runs read route or the settings rules.
+	situationRefreshMode := ""
+	if cfg.SituationRefreshMode == config.SituationRefreshModeGo {
+		situationRefreshMode = string(legacyproxy.ModeGo)
+	}
 	situationInsightsMode := ""
 	if cfg.SituationInsightsMode == config.SituationInsightsModeGo {
 		situationInsightsMode = string(legacyproxy.ModeGo)
@@ -900,6 +906,9 @@ func run() error {
 	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
 	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
 	rules = legacyproxy.WithSituationSignals(rules, situationSignalsMode)
+	// The refresh POST keeps its own switch so a signals or insights rollout
+	// never moves it, and rolling refresh back leaves the seven read routes alone.
+	rules = legacyproxy.WithSituationRefresh(rules, situationRefreshMode)
 	rules = legacyproxy.WithSituationInsights(rules, situationInsightsMode)
 	// The four situation-monitor settings entries are an independent switch.
 	// Their exact paths never overlap the signals, insights or monitors rules.
@@ -3161,6 +3170,22 @@ func run() error {
 		if startErr := situationSignalsWorker.Start(context.Background()); startErr != nil {
 			return startErr
 		}
+	}
+
+	// The manual refresh takeover needs both units above (the Telegram/OREF poll
+	// entry points and the immediate scheduler dispatch), so it is registered
+	// after they exist. Legacy (default) registers no route.
+	if err := wireSituationRefresh(
+		gateway,
+		cfg,
+		sharedDB,
+		redisClient,
+		dashboardMongo,
+		authenticator,
+		newsSourceScheduler,
+		situationSignalsWorkerService(situationSignalsWorker),
+	); err != nil {
+		return err
 	}
 
 	// The ten-minute news-event timeline rebuild and the hourly sentiment
