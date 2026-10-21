@@ -396,8 +396,10 @@ func TestSituationSignalsWorkerTelegramTwoInstanceIntegration(t *testing.T) {
 		t.Fatalf("instance A events = %+v", events)
 	}
 
-	// Lease contention: while A holds the lease, B must skip the whole cycle and
-	// leave the shared document byte-identical.
+	// Lease contention: while A holds the lease, B must not dial and must leave the
+	// shared document byte-identical. B2: the cycle is not dropped silently any
+	// more — B publishes a poll request, and because no instance subscribes to the
+	// handover channel in this test the lease is retried once (two skips).
 	before := sitWorkerITRedisString(t, client, telegramStateCacheKey)
 	if err := second.HandleJob(ctx, SourceTelegram); err != nil {
 		t.Fatalf("instance B contended job: %v", err)
@@ -405,8 +407,8 @@ func TestSituationSignalsWorkerTelegramTwoInstanceIntegration(t *testing.T) {
 	if after := sitWorkerITRedisString(t, client, telegramStateCacheKey); after != before {
 		t.Fatalf("state changed while the other instance held the lease")
 	}
-	if connects, skipped, _ := secondOwner.counts(); connects != 0 || skipped != 1 {
-		t.Fatalf("instance B connects/skips = %d/%d, want 0/1", connects, skipped)
+	if connects, skipped, _ := secondOwner.counts(); connects != 0 || skipped != 2 {
+		t.Fatalf("instance B connects/skips = %d/%d, want 0/2 (the handover retries the lease once)", connects, skipped)
 	}
 	if events := secondPublisher.snapshot(); len(events) != 0 {
 		t.Fatalf("instance B published while it did not own the lease: %+v", events)
@@ -454,8 +456,8 @@ func TestSituationSignalsWorkerTelegramTwoInstanceIntegration(t *testing.T) {
 	if connects, skipped, _ := firstOwner.counts(); connects != 2 || skipped != 0 {
 		t.Fatalf("instance A connects/skips = %d/%d, want 2/0", connects, skipped)
 	}
-	if connects, skipped, _ := secondOwner.counts(); connects != 2 || skipped != 1 {
-		t.Fatalf("instance B connects/skips = %d/%d, want 2/1", connects, skipped)
+	if connects, skipped, _ := secondOwner.counts(); connects != 2 || skipped != 2 {
+		t.Fatalf("instance B connects/skips = %d/%d, want 2/2", connects, skipped)
 	}
 	firstFingerprint := firstOwner.fingerprintValue()
 	secondFingerprint := secondOwner.fingerprintValue()

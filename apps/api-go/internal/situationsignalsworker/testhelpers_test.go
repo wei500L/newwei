@@ -188,6 +188,7 @@ type fakeTelegramOwner struct {
 	mu              sync.Mutex
 	lease           *fakeLease
 	client          telegramclient.PollClient
+	denyLease       int
 	withLeaseCalls  int
 	connectCalls    int
 	disconnectCalls int
@@ -201,8 +202,18 @@ func newFakeTelegramOwner(client telegramclient.PollClient) *fakeTelegramOwner {
 func (o *fakeTelegramOwner) WithLease(ctx context.Context, _ telegramclient.Options, _ string, fn func(context.Context, telegramclient.PollClient) error) (bool, error) {
 	o.mu.Lock()
 	o.withLeaseCalls++
+	denied := o.denyLease > 0
+	if denied {
+		o.denyLease--
+	}
 	lease := o.lease
 	o.mu.Unlock()
+	if denied {
+		// Simulates a lease that is still held elsewhere for this call only, which
+		// is how a take-over between the first attempt and the handover retry is
+		// expressed.
+		return false, nil
+	}
 	if lease != nil && !lease.acquire() {
 		return false, nil
 	}
@@ -353,6 +364,9 @@ type testWorkerOptions struct {
 	db         *sql.DB
 	httpClient *http.Client
 	clock      *fakeClock
+	// handover, when set, is the poll handover transport (B2). A nil value keeps
+	// the historical "skip on a foreign lease" behavior.
+	handover pollHandover
 }
 
 type testWorker struct {
@@ -390,6 +404,7 @@ func newTestWorker(t *testing.T, opts testWorkerOptions) *testWorker {
 		telegram:   owner,
 		alerts:     alerts,
 		dispatcher: publisher,
+		handover:   opts.handover,
 		httpClient: opts.httpClient,
 		env:        opts.env,
 		logger:     func(string, ...any) {},
