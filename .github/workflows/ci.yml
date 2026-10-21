@@ -425,6 +425,13 @@ jobs:
       - name: MySQL integration tests (crawl-strategy run records + preview in-flight queries)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlfrontierruns/ ./internal/crawlstrategyruns/ -run 'TestStrategyRunWriteIntegration|TestStrategyRunBatchWriterMatchesPerRowIntegration|TestCountActivePipelineJobsIntegration' -v
 
+      # Frontier 管理端写路由（创建运行 + 单条/批量重试节点）：真实 MySQL/Redis
+      # 验证四个行族与 runDetail 回读、crawl4ai-hot/normal 的 BullMQ 原始结构
+      # 与去重键、B2 元数据行锁合并、B3 失败回滚、B4 终态拒绝。不连接真实
+      # crawl4ai，也不启动 worker（节点只入队，不会被执行）。
+      - name: MySQL/Redis integration tests (crawl-frontier admin write routes)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlfrontierruns/ -run 'TestFrontierWritesIntegration' -v
+
       # 告警 worker 的队列协议与事务语义：领取事务（并发只有一方成功）、B1 投递
       # 最后一次失败、moveToDelayed 的 skipAttempt 与自定义重试退避、限速 key、
       # O1/O2/B3 扫描，以及 alertEvents/通知桥的两条 Redis 消息。fixture 使用
