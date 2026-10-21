@@ -90,6 +90,19 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
       logger.warn("BullMQ workers disabled on this process");
       return;
     }
+    // Execution ownership is whole-process: when api-go consumes itemPipeline,
+    // NestJS keeps the Queue/QueueEvents providers but must not create a second
+    // Worker. Switching back to legacy needs only a restart.
+    const itemPipelineWorkerMode =
+      this.env.get<string>("API_GO_ITEM_PIPELINE_WORKER_MODE", {
+        infer: true,
+      }) ?? "legacy";
+    if (itemPipelineWorkerMode === "go") {
+      logger.warn(
+        "Skipped item pipeline worker because Go owns the consumer (API_GO_ITEM_PIPELINE_WORKER_MODE=go)",
+      );
+      return;
+    }
     const concurrency =
       this.env.newsPipelineEnv.processQueueConcurrency > 0
         ? this.env.newsPipelineEnv.processQueueConcurrency

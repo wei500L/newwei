@@ -92,6 +92,9 @@ type CompletionResponse struct {
 	RequestedModel string
 	FallbackUsed   bool
 	Usage          Usage
+	// LatencyMS is the wall-clock duration of the successful upstream attempt
+	// in milliseconds, matching LiteLlmService's latencyMs member.
+	LatencyMS *float64
 }
 
 // EmbeddingRequest is one embedding call.

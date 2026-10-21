@@ -668,6 +668,25 @@ const (
 	ArchivePreparationWorkerModeGo     ArchivePreparationWorkerMode = "go"
 )
 
+// ItemPipelineWorkerMode controls the BullMQ consumer of the itemPipeline
+// queue (API_GO_ITEM_PIPELINE_WORKER_MODE). The default is legacy, where
+// NestJS QueueProcessor creates the Worker. go stops that Worker and lets
+// api-go consume the same queue; it requires DATABASE_URL, REDIS_HOST,
+// MONGO_URI and SYSTEM_SETTINGS_ENCRYPTION_KEY because the pipeline writes
+// MySQL, Mongo, Redis and resolves encrypted gateway/vector secrets.
+//
+// The switch is whole-process: any stage that cannot run in Go keeps the switch
+// on legacy. Switching back needs no data change because the queue and data
+// formats are identical.
+type ItemPipelineWorkerMode string
+
+const (
+	// ItemPipelineWorkerModeLegacy keeps the consumer on NestJS.
+	ItemPipelineWorkerModeLegacy ItemPipelineWorkerMode = "legacy"
+	// ItemPipelineWorkerModeGo consumes itemPipeline in api-go.
+	ItemPipelineWorkerModeGo ItemPipelineWorkerMode = "go"
+)
+
 // NewsIndicatorAssociationCronMode controls the six-hourly news-indicator
 // association refresh. Default legacy. go requires DATABASE_URL and REDIS_HOST:
 // the refresh writes MySQL and the tick gate and organization leases live in
@@ -3103,6 +3122,22 @@ type Config struct {
 	// (default 8). The clustering recovery worker uses max(1, min(2, value));
 	// the quality worker uses max(1, min(4, value)).
 	NewsProcessQueueConcurrency int
+	// API_GO_ITEM_PIPELINE_WORKER_MODE. Default legacy; see the mode type.
+	ItemPipelineWorkerMode ItemPipelineWorkerMode
+	// NewsSourceSchedulerFailureRecoveryDelayMs,
+	// NewsSourceSchedulerFailureMaxDelayMs,
+	// NewsSourceSchedulerCircuitBreakerThreshold,
+	// NewsSourceSchedulerCircuitBreakerBaseDelayMs,
+	// NewsSourceSchedulerCircuitBreakerMaxDelayMs and
+	// NewsSourceSchedulerAutoDisableThreshold mirror the
+	// EnvService.newsSourceSchedulerConfig block the item pipeline failure path
+	// reads (defaults 600000, 21600000, 3, 3600000, 86400000, 0).
+	NewsSourceSchedulerFailureRecoveryDelayMs    int
+	NewsSourceSchedulerFailureMaxDelayMs         int
+	NewsSourceSchedulerCircuitBreakerThreshold   float64
+	NewsSourceSchedulerCircuitBreakerBaseDelayMs int
+	NewsSourceSchedulerCircuitBreakerMaxDelayMs  int
+	NewsSourceSchedulerAutoDisableThreshold      float64
 }
 
 // Load 从 getenv 读取并校验配置。
@@ -4934,6 +4969,14 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_ARCHIVE_PREPARATION_WORKER_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_ITEM_PIPELINE_WORKER_MODE")) {
+	case "", string(ItemPipelineWorkerModeLegacy):
+		cfg.ItemPipelineWorkerMode = ItemPipelineWorkerModeLegacy
+	case string(ItemPipelineWorkerModeGo):
+		cfg.ItemPipelineWorkerMode = ItemPipelineWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_ITEM_PIPELINE_WORKER_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLNewsIndicatorRefreshMode = "legacy"
@@ -4953,6 +4996,12 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// The clustering recovery worker reads the same process-queue concurrency
 	// the NestJS processor uses and clamps it to max(1, min(2, value)).
 	cfg.NewsProcessQueueConcurrency = intDefault(getenv("NEWS_PROCESS_QUEUE_CONCURRENCY"), 8)
+	cfg.NewsSourceSchedulerFailureRecoveryDelayMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS"), 600_000)
+	cfg.NewsSourceSchedulerFailureMaxDelayMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_FAILURE_MAX_DELAY_MS"), 21_600_000)
+	cfg.NewsSourceSchedulerCircuitBreakerBaseDelayMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS"), 3_600_000)
+	cfg.NewsSourceSchedulerCircuitBreakerMaxDelayMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS"), 86_400_000)
+	cfg.NewsSourceSchedulerCircuitBreakerThreshold = floatDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_THRESHOLD"), 3)
+	cfg.NewsSourceSchedulerAutoDisableThreshold = floatDefault(getenv("NEWS_SOURCE_SCHEDULER_AUTO_DISABLE_THRESHOLD"), 0)
 
 	// Go 接管模式的依赖前置校验：不得在依赖缺失时启动一个必然失败的
 	// 「Go 接管端点」——启动即失败，错误只指出缺失的配置项名，不打印值。
@@ -5932,6 +5981,20 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if strings.TrimSpace(cfg.SettingsEncryptionKeyRaw) == "" {
 			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go")
+		}
+	}
+	if cfg.ItemPipelineWorkerMode == ItemPipelineWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_ITEM_PIPELINE_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_ITEM_PIPELINE_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ITEM_PIPELINE_WORKER_MODE=go")
+		}
+		if strings.TrimSpace(cfg.SettingsEncryptionKeyRaw) == "" {
+			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_ITEM_PIPELINE_WORKER_MODE=go")
 		}
 	}
 	if cfg.GraphQLNewsIndicatorRefreshMode == "go" {

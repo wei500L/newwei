@@ -1373,6 +1373,7 @@ func run() error {
 		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
 		cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo ||
 		cfg.ArchivePreparationWorkerMode == config.ArchivePreparationWorkerModeGo ||
+		cfg.ItemPipelineWorkerMode == config.ItemPipelineWorkerModeGo ||
 		analysisWorkerGo ||
 		notificationsSocketGo ||
 		cfg.BullmqCleanupMode == config.BullmqCleanupModeGo ||
@@ -2714,6 +2715,11 @@ func run() error {
 	// consumer when API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go. It is nil in the
 	// legacy default, so no client or goroutine is constructed.
 	var archivePreparationWorker *archivePreparationRuntime
+	// The item pipeline worker owns the itemPipeline BullMQ consumer when
+	// API_GO_ITEM_PIPELINE_WORKER_MODE=go: it processes one news item end to end
+	// (crawl execution, cleaning, extraction, classification, dedupe, persist
+	// and outbox creation). It is nil in the legacy default.
+	var itemPipelineWorker *itemPipelineRuntime
 	// The alert worker owns the shared `alerts` queue when
 	// API_GO_ALERT_WORKER_MODE=go: the scan schedule, rule evaluation, in-app
 	// notification write and email/webhook delivery. It registers no HTTP route
@@ -2864,6 +2870,11 @@ func run() error {
 		if archivePreparationWorker != nil {
 			if closeErr := archivePreparationWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: archive preparation worker close: %v", closeErr)
+			}
+		}
+		if itemPipelineWorker != nil {
+			if closeErr := itemPipelineWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: item pipeline worker close: %v", closeErr)
 			}
 		}
 		if searchReindexService != nil {
@@ -3017,6 +3028,15 @@ func run() error {
 	}
 	if archivePreparationWorker != nil {
 		if err := archivePreparationWorker.Start(context.Background()); err != nil {
+			return err
+		}
+	}
+	itemPipelineWorker, err = wireItemPipelineWorker(cfg, sharedDB, redisClient, &dashboardMongo)
+	if err != nil {
+		return err
+	}
+	if itemPipelineWorker != nil {
+		if err := itemPipelineWorker.Start(context.Background()); err != nil {
 			return err
 		}
 	}

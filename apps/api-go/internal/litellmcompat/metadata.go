@@ -172,11 +172,34 @@ func metadataLogFields(metadata Metadata) []llmlogs.ModelRequestMetadataField {
 // untrusted-content guardrail decision. The migrated metadata types only carry
 // source.
 func metadataFeatureTokens(metadata Metadata) []string {
-	switch metadata.(type) {
+	switch typed := metadata.(type) {
 	case ArchiveEmbeddingMetadata, ArchiveAnchorMetadata, ArchiveRerankMetadata:
 		return []string{"archive-classification"}
 	case NewsClassifierMetadata:
 		return []string{"news-classifier"}
+	case NewsPipelineMetadata:
+		// NestJS resolves the feature from metadata.feature first and falls
+		// back to source, then module. The guardrail decision additionally
+		// looks at source and stage, so the list keeps all three with the
+		// feature token first.
+		tokens := make([]string, 0, 3)
+		if feature := typed.Feature(); feature != "" {
+			tokens = append(tokens, feature)
+		}
+		for _, field := range typed.Fields {
+			if field.Text == nil {
+				continue
+			}
+			if field.Key == "source" || field.Key == "stage" {
+				tokens = append(tokens, *field.Text)
+			}
+		}
+		return tokens
+	case *NewsPipelineMetadata:
+		if typed == nil {
+			return nil
+		}
+		return metadataFeatureTokens(*typed)
 	default:
 		return nil
 	}

@@ -346,6 +346,18 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The BullMQ itemPipeline queue consumer owner. Empty behaves like legacy,
+    // where QueueProcessor creates the Worker. When it is go, NestJS keeps the
+    // Queue and QueueEvents (submission, DLQ producer and event forwarding) but
+    // does not create a Worker; api-go consumes the same queue. An invalid
+    // value fails startup instead of being silently stripped.
+    API_GO_ITEM_PIPELINE_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     PRISMA_CONNECTION_LIMIT: z.coerce.number().int().positive().default(10),
     PRISMA_POOL_TIMEOUT_SECONDS: z.coerce
       .number()

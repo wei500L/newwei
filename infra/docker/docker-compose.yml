@@ -507,6 +507,9 @@ services:
       # 归档准备 worker（archivePreparation，并发 1）。Nest 与 Go 同一变量；
       # go 时 Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go。
       API_GO_ARCHIVE_PREPARATION_WORKER_MODE: ${API_GO_ARCHIVE_PREPARATION_WORKER_MODE:-legacy}
+      # 条目流水线 worker（itemPipeline）执行权。Nest 与 Go 同一变量；go 时
+      # Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go，回退相反。
+      API_GO_ITEM_PIPELINE_WORKER_MODE: ${API_GO_ITEM_PIPELINE_WORKER_MODE:-legacy}
       # 分类质量报告创建、队列消费权、流水线运行记录与两条写接口。各开关互相
       # 独立，默认 legacy。worker/清理/复核样本/启动对齐开关 Nest 与 Go 都读：
       # go 时 Nest 不再启动对应的定时器、监听或启动对齐。指标与写接口只需切
@@ -881,6 +884,9 @@ services:
       # 归档准备 worker（archivePreparation，并发 1）。Nest 与 Go 同一变量；
       # go 时 Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go。
       API_GO_ARCHIVE_PREPARATION_WORKER_MODE: ${API_GO_ARCHIVE_PREPARATION_WORKER_MODE:-legacy}
+      # 条目流水线 worker（itemPipeline）执行权。Nest 与 Go 同一变量；go 时
+      # Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go，回退相反。
+      API_GO_ITEM_PIPELINE_WORKER_MODE: ${API_GO_ITEM_PIPELINE_WORKER_MODE:-legacy}
       # 告警队列（scan / 规则评估 / 站内通知 / 邮件与 Webhook 投递）的执行权。
       # 空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。默认 legacy=保留
       # NestJS AlertsProcessor；go=Go 消费 alerts 队列，Nest 处理器只保留幂等的
