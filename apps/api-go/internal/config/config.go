@@ -267,11 +267,11 @@ const (
 //	GET  /api/admin/crawl-frontier/workflow-runs/:runId/candidates/:candidateId/explanation
 //
 // Every other method, trailing slash and longer path falls back to NestJS.
-// The write queue routes (create run, retry, replay, trial-run) are never
-// registered here. Go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
-// Mongo is not a startup dependency. No shadow, no canary, no worker and no
-// crawler process is started, and rolling back only means setting this
-// variable back to legacy.
+// The three write routes (create run and the two node retries) belong to
+// CrawlFrontierWritesMode below, not to this switch. Go mode requires
+// JWT_SECRET, DATABASE_URL and REDIS_HOST; Mongo is not a startup dependency.
+// No shadow, no canary, no worker and no crawler process is started, and
+// rolling back only means setting this variable back to legacy.
 type CrawlFrontierRunsMode string
 
 const (
