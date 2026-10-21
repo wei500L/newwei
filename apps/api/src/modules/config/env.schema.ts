@@ -328,6 +328,19 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // Owner of the three crawl4ai queue workers (crawl4ai, crawl4ai-hot,
+    // crawl4ai-normal). Empty string behaves like legacy: NestJS creates the
+    // three crawl Workers, their QueueEvents listeners and the C2 concurrency
+    // subscriber. go: NestJS creates none of them and api-go consumes the
+    // queues. The two Frontier LLM queues keep their own switch
+    // (API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE).
+    API_GO_CRAWL_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // The three analysis run Mutations. Empty string behaves like legacy.
     // Go mode owns only requestCorrelationAnalysis/requestAnomalyExplanation/
     // requestGeoTransportAnalysis and requires JWT, MySQL, Redis and Mongo.

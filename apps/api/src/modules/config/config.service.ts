@@ -1329,6 +1329,19 @@ export class EnvService extends ConfigService<ApiEnv> {
       : "legacy";
   }
 
+  // API_GO_CRAWL_WORKER_MODE owns the three crawl4ai BullMQ consumers
+  // (crawl4ai / crawl4ai-hot / crawl4ai-normal). Legacy (and an unset value)
+  // keeps the three NestJS Workers, their QueueEvents listeners and the C2
+  // concurrency subscriber; go creates none of them and api-go consumes the
+  // queues.
+  get apiGoCrawlWorkerMode(): "legacy" | "go" {
+    return this.get<string>("API_GO_CRAWL_WORKER_MODE", {
+      infer: true,
+    }) === "go"
+      ? "go"
+      : "legacy";
+  }
+
   get observabilityConfig(): ObservabilityEnvConfig {
     const rawBuckets =
       this.get<string | undefined>("METRICS_DEFAULT_BUCKETS", {

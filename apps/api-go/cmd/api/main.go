@@ -1139,6 +1139,7 @@ func run() error {
 				graphqlSubscriptionsGo ||
 				realtimeSocketGo ||
 				classificationAlertGo ||
+				cfg.CrawlWorkerMode == config.CrawlWorkerModeGo ||
 				cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
 				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
 			}
@@ -1386,6 +1387,7 @@ func run() error {
 		cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo ||
 		cfg.ArchivePreparationWorkerMode == config.ArchivePreparationWorkerModeGo ||
 		cfg.ItemPipelineWorkerMode == config.ItemPipelineWorkerModeGo ||
+		cfg.CrawlWorkerMode == config.CrawlWorkerModeGo ||
 		analysisWorkerGo ||
 		notificationsSocketGo ||
 		realtimeSocketGo ||
@@ -2765,6 +2767,16 @@ func run() error {
 	// (crawl execution, cleaning, extraction, classification, dedupe, persist
 	// and outbox creation). It is nil in the legacy default.
 	var itemPipelineWorker *itemPipelineRuntime
+	// The crawl worker owns the three crawl4ai BullMQ consumers when
+	// API_GO_CRAWL_WORKER_MODE=go: the shared priority concurrency limiter, the
+	// meta global concurrency, the queue-level limiter, the C2 concurrency
+	// broadcast, the per-queue timeout tier, the memory-pressure cooldown
+	// requeue, the exactly-once stalled/completed/failed side effects and the
+	// unified notification relay. It is nil in the legacy default. Close stops
+	// claiming first, drains the in-flight jobs while their locks keep renewing,
+	// flushes the coalesced snapshot refreshes and then releases the dedicated
+	// blocking Redis connections before the shared handles close below.
+	var crawlWorker *crawlWorkerRuntime
 	// The alert worker owns the shared `alerts` queue when
 	// API_GO_ALERT_WORKER_MODE=go: the scan schedule, rule evaluation, in-app
 	// notification write and email/webhook delivery. It registers no HTTP route
@@ -2935,6 +2947,15 @@ func run() error {
 		if itemPipelineWorker != nil {
 			if closeErr := itemPipelineWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: item pipeline worker close: %v", closeErr)
+			}
+		}
+		// The crawl worker stops claiming first, drains the in-flight crawl jobs
+		// while their BullMQ locks keep renewing, flushes the coalesced ops
+		// snapshot refreshes and releases its blocking Redis connections before
+		// the shared handles close.
+		if crawlWorker != nil {
+			if closeErr := crawlWorker.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: crawl worker close: %v", closeErr)
 			}
 		}
 		if searchReindexService != nil {
@@ -3108,6 +3129,19 @@ func run() error {
 			return err
 		}
 	}
+	// The three crawl4ai queue consumers. The frontier node processor is
+	// delivered by the separate crawlfrontiernode window; until both changes are
+	// integrated this passes nil and API_GO_CRAWL_WORKER_MODE=go fails startup
+	// instead of claiming jobs it cannot execute.
+	crawlWorker, err = wireCrawlWorker(cfg, sharedDB, redisClient, redisOptions, &dashboardMongo, nil)
+	if err != nil {
+		return err
+	}
+	if crawlWorker != nil {
+		if err := crawlWorker.Start(context.Background()); err != nil {
+			return err
+		}
+	}
 	assistantWorker = startAssistantWorker(cfg, assistantRunService, redisClient)
 	gdeltSnapshot.Start(cfg)
 	if newsnowHottestUnit != nil {
@@ -3230,6 +3264,18 @@ func run() error {
 		return nil
 	case sig := <-stop:
 		log.Printf("api-go: received %s, shutting down", sig)
+		// Stop claiming crawl jobs before the HTTP drain: the three queue
+		// workers must not take new jobs while the process is going away, and
+		// the in-flight ones drain with renewed locks. The deferred teardown
+		// then skips the already-closed runtime.
+		if crawlWorker != nil {
+			crawlCtx, cancelCrawl := context.WithTimeout(context.Background(), 30*time.Second)
+			if closeErr := crawlWorker.Close(crawlCtx); closeErr != nil {
+				log.Printf("api-go: crawl worker close: %v", closeErr)
+			}
+			cancelCrawl()
+			crawlWorker = nil
+		}
 		// http.Server.Shutdown neither waits for nor closes hijacked WebSocket
 		// connections. Stop new subscriptions, cancel operations/legacy
 		// upstreams and close those sockets before the HTTP drain, then let the
