@@ -310,6 +310,65 @@ func TestAttemptCompletesAFrontierNode(t *testing.T) {
 	}
 }
 
+// TestAttemptRequeuesAFrontierCrawl4aiError locks the cross-package contract the
+// integration adds: crawlfrontiernode rethrows the *crawl4ai.Error unchanged
+// (crawlfrontiernode service.go returns execErr without wrapping), so the retry
+// classification must see the same Status on the frontier_node path as on the
+// ordinary task path. Without this seam the whole HTTP status contract would be
+// unverified across the two packages.
+func TestAttemptRequeuesAFrontierCrawl4aiError(t *testing.T) {
+	fixture := newAttemptFixture()
+	fixture.frontier.err = &crawl4ai.Error{Status: 503, Message: "crawl4ai request failed\n(status 503)"}
+	job := testJob(t, testFrontierJobData, `{"attempts":3,"backoff":{"type":"exponential","delay":1000}}`, 0, 1)
+
+	outcome := fixture.attempt.run(context.Background(), fixture.hotTarget(), job)
+	if outcome != outcomeRetried {
+		t.Fatalf("outcome = %v, want retried for a 503 frontier error", outcome)
+	}
+	if len(fixture.transitions.retryDelays) != 1 || fixture.transitions.retryDelays[0] != 1000 {
+		t.Errorf("retry delays = %v, want [1000]", fixture.transitions.retryDelays)
+	}
+	if len(fixture.transitions.calls) != 1 || fixture.transitions.calls[0] != "retryLater" {
+		t.Errorf("transitions = %v, want [retryLater]", fixture.transitions.calls)
+	}
+	if len(fixture.transitions.failedReasons) != 0 || fixture.activity.calls != 0 {
+		t.Errorf("a retried frontier attempt must not run the failure side effects: failed=%v activity=%d",
+			fixture.transitions.failedReasons, fixture.activity.calls)
+	}
+	if fixture.runner.calls != 0 {
+		t.Errorf("the task runner must not run for a frontier node job (calls=%d)", fixture.runner.calls)
+	}
+}
+
+// TestAttemptRequeuesAFrontierMemoryPressureError is the same cross-package
+// contract for the memory pressure branch: isMemoryPressureError reads the
+// message text, which crawlfrontiernode forwards unchanged.
+func TestAttemptRequeuesAFrontierMemoryPressureError(t *testing.T) {
+	fixture := newAttemptFixture()
+	fixture.frontier.err = &crawl4ai.Error{Status: 503, Message: "browser pool refusing new browser: memory at 97%"}
+	job := testJob(t, testFrontierJobData, `{"attempts":5,"backoff":{"type":"exponential","delay":1000}}`, 0, 1)
+	fixture.transitions.moveToWaitPTTL = 90_000
+
+	outcome := fixture.attempt.run(context.Background(), fixture.hotTarget(), job)
+	if outcome != outcomeRateLimited {
+		t.Fatalf("outcome = %v, want rate-limited for a frontier memory pressure error", outcome)
+	}
+	if len(fixture.rateLimitCalls) != 1 || fixture.rateLimitCalls[0] != 90_000 {
+		t.Fatalf("rate limit calls = %v, want [90000]", fixture.rateLimitCalls)
+	}
+	if len(fixture.transitions.updateDataCalls) != 1 || fixture.transitions.moveToWaitCalls != 1 {
+		t.Errorf("updateData=%d moveToWait=%d, want 1 and 1",
+			len(fixture.transitions.updateDataCalls), fixture.transitions.moveToWaitCalls)
+	}
+	if len(fixture.transitions.failedReasons) != 0 || len(fixture.transitions.retryDelays) != 0 {
+		t.Errorf("a requeue must not fail or retry the job: failed=%v retries=%v",
+			fixture.transitions.failedReasons, fixture.transitions.retryDelays)
+	}
+	if fixture.activity.calls != 0 || len(fixture.tasks.calls) != 0 || len(fixture.snapshots.calls) != 0 {
+		t.Errorf("a requeue must not run the terminal side effects")
+	}
+}
+
 func TestAttemptDelaysARetryableFailure(t *testing.T) {
 	fixture := newAttemptFixture()
 	fixture.runner.err = errors.New("upstream connection reset by peer")
