@@ -86,7 +86,10 @@ type ruleScheduleReconciler struct {
 	lease          ruleScheduleLease
 	ensureDefaults func(context.Context) error
 	concurrency    int
-	logger         *log.Logger
+	// batchSize overrides activeRuleBatchSize; 0 means the production page size.
+	// The tests lower it so the keyset walk over several pages is observable.
+	batchSize int
+	logger    *log.Logger
 }
 
 // reconcile runs one leased cycle. A missing lease is a configuration error; a
@@ -128,6 +131,10 @@ func (r *ruleScheduleReconciler) ensureActiveRuleSchedules(ctx context.Context) 
 	if concurrency < 1 {
 		concurrency = defaultRuleTaskConcurrency
 	}
+	batchSize := r.batchSize
+	if batchSize < 1 {
+		batchSize = activeRuleBatchSize
+	}
 	afterID := ""
 	total := 0
 	failures := make([]error, 0, 4)
@@ -135,7 +142,7 @@ func (r *ruleScheduleReconciler) ensureActiveRuleSchedules(ctx context.Context) 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		batch, err := r.source.listActiveRuleBatch(ctx, afterID, activeRuleBatchSize)
+		batch, err := r.source.listActiveRuleBatch(ctx, afterID, batchSize)
 		if err != nil {
 			return errors.Join(append(failures, fmt.Errorf("list the active alert rules after %q: %w", afterID, err))...)
 		}
@@ -145,7 +152,7 @@ func (r *ruleScheduleReconciler) ensureActiveRuleSchedules(ctx context.Context) 
 		failures = append(failures, r.ensureRuleBatch(ctx, batch, concurrency)...)
 		total += len(batch)
 		afterID = batch[len(batch)-1].ID
-		if len(batch) < activeRuleBatchSize {
+		if len(batch) < batchSize {
 			break
 		}
 	}

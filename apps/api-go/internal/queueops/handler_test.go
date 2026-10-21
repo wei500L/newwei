@@ -260,6 +260,8 @@ func TestHandlerValidationErrors(t *testing.T) {
 		body   string
 		status int
 		code   string
+		// endpoint is the crawl4ai administration path the refusal must point at.
+		endpoint string
 	}{
 		{
 			name:   "jobs without queue",
@@ -335,11 +337,13 @@ func TestHandlerValidationErrors(t *testing.T) {
 			name:   "crawl pause refused",
 			method: http.MethodPost, target: pathPause,
 			body: `{"queue":"crawl4ai"}`, status: http.StatusConflict, code: codeCrawlQueuePauseUnsupported,
+			endpoint: "/api/admin/crawl4ai/queue/pause",
 		},
 		{
 			name:   "crawl resume refused",
 			method: http.MethodPost, target: pathResume,
 			body: `{"queue":"crawl4ai-normal"}`, status: http.StatusConflict, code: codeCrawlQueuePauseUnsupported,
+			endpoint: "/api/admin/crawl4ai/queue/resume",
 		},
 	}
 	for _, testCase := range cases {
@@ -353,9 +357,9 @@ func TestHandlerValidationErrors(t *testing.T) {
 				if decoded.Code != testCase.code {
 					t.Fatalf("code = %q, want %q", decoded.Code, testCase.code)
 				}
-				if testCase.code == codeCrawlQueuePauseUnsupported &&
-					!strings.Contains(decoded.Message, "/api/admin/crawl4ai/queue/pause") {
-					t.Fatalf("message does not point at the crawl endpoint: %q", decoded.Message)
+				if testCase.endpoint != "" &&
+					!strings.Contains(decoded.Message, testCase.endpoint) {
+					t.Fatalf("message does not point at %s: %q", testCase.endpoint, decoded.Message)
 				}
 			}
 		})

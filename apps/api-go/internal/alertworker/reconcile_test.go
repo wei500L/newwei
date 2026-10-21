@@ -309,7 +309,11 @@ func TestReconcileRuleSchedulesPaginatesInIDOrder(t *testing.T) {
 	writer := newFakeScheduleWriter()
 	lease := &fakeRuleScheduleLease{acquired: true}
 
-	if err := testReconciler(source, writer, lease, &fakeDefaults{}, 4).reconcile(context.Background()); err != nil {
+	reconciler := testReconciler(source, writer, lease, &fakeDefaults{}, 4)
+	// A production page is activeRuleBatchSize rows; the fake pages by two so the
+	// keyset walk over three pages is observable.
+	reconciler.batchSize = source.pageSize
+	if err := reconciler.reconcile(context.Background()); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	cursors := source.recordedCursors()

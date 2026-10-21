@@ -111,7 +111,8 @@ func TestQueueListResponseShape(t *testing.T) {
 		Concurrency: &concurrency,
 		IsDLQ:       false,
 	}, {
-		Name: "itemPipelineDlq",
+		Name:  "itemPipelineDlq",
+		IsDLQ: true,
 	}}}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
