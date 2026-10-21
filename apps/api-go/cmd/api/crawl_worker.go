@@ -11,9 +11,12 @@ package main
 // (API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE) and are wired separately.
 //
 // The frontier_node jobs are executed through crawlworker.FrontierNodeProcessor,
-// implemented by internal/crawlfrontiernode. That package is delivered by a
-// separate window; until both changes are integrated this wiring passes nil, and
-// go mode then fails startup instead of claiming jobs it cannot execute.
+// implemented by internal/crawlfrontiernode. That processor is built here from
+// the same MySQL/Mongo/Redis handles, the same crawl_client:settings reader, the
+// same workflow compiler and the same crawlexecution.Service the ordinary task
+// path uses, so a Frontier result write stores media, feeds ingestToItems and
+// relays notifications exactly like a normal crawl. A nil processor still fails
+// go mode at startup as a defence in depth.
 
 import (
 	"context"
@@ -24,20 +27,32 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/accountsecurity"
 	"github.com/wei500L/newwei/apps/api-go/internal/classificationrssops"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawl4ai"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlexecution"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontiernode"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworker"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
+	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 )
 
 // errCrawlWorkerResources reports a missing shared handle in go mode.
 var errCrawlWorkerResources = errors.New("api-go: crawl worker go takeover requires mysql, redis and mongo")
+
+// errCrawlWorkerFrontierProcessor reports a missing Frontier node executor in go
+// mode. wireCrawlWorker builds the processor itself, so this is a defence in
+// depth: claiming frontier_node jobs without an executor would fail every one of
+// them at run time instead of at startup.
+var errCrawlWorkerFrontierProcessor = errors.New("api-go: API_GO_CRAWL_WORKER_MODE=go requires the crawlfrontiernode processor (internal/crawlfrontiernode) so frontier_node jobs have an executor")
 
 // crawlWorkerRuntime owns the three crawl queue consumers plus the process-local
 // snapshot coalescer and notification relay they use.
@@ -85,16 +100,16 @@ func (r *crawlWorkerRuntime) Close(ctx context.Context) error {
 // API_GO_CRAWL_WORKER_MODE=go and BULLMQ_WORKERS_ENABLED is not false. The legacy
 // default returns (nil, nil) and claims nothing.
 //
-// frontier is the crawlfrontiernode implementation. go mode requires a non-nil
-// value: without it frontier_node jobs could never run, so switching before both
-// changes are integrated must fail startup.
+// The Frontier node processor is built here instead of being passed in, so it can
+// share the crawlexecution.Service the ordinary task path uses. go mode requires a
+// non-nil processor: without it frontier_node jobs could never run, so a failed or
+// empty construction fails startup.
 func wireCrawlWorker(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
 	redisOptions *redis.Options,
 	mongoConn **dashboardstats.Connection,
-	frontier crawlworker.FrontierNodeProcessor,
 ) (*crawlWorkerRuntime, error) {
 	if cfg.CrawlWorkerMode != config.CrawlWorkerModeGo {
 		return nil, nil
@@ -102,9 +117,6 @@ func wireCrawlWorker(
 	if !cfg.BullMQWorkersEnabled {
 		log.Printf("api-go: crawl worker requested by API_GO_CRAWL_WORKER_MODE=go but BULLMQ_WORKERS_ENABLED=false; no consumer started")
 		return nil, nil
-	}
-	if frontier == nil {
-		return nil, fmt.Errorf("api-go: API_GO_CRAWL_WORKER_MODE=go requires the crawlfrontiernode processor (internal/crawlfrontiernode) so frontier_node jobs have an executor; integrate both changes before switching")
 	}
 	if db == nil || redisClient == nil {
 		return nil, errCrawlWorkerResources
@@ -185,12 +197,32 @@ func wireCrawlWorker(
 		Scheduler: schedulerService,
 	})
 
+	// The crawl_client:settings reader shared by the queue consumers and the
+	// Frontier node executor: one resolution order (Redis cache → SystemSetting →
+	// env defaults) for both paths.
 	settings := crawlqueue.NewSettingsReader(db, redisClient, &crawlqueue.EnvDefaults{
 		MaxConcurrency:   cfg.CrawlMaxConcurrency,
 		MaxRetries:       cfg.CrawlMaxRetries,
 		RetryBackoffMs:   cfg.CrawlRetryBackoffMs,
 		RequestTimeoutMs: cfg.CrawlTimeoutMs,
 	})
+
+	// The frontier_node executor. It reuses `execution` as its
+	// crawlexecution.Service, so a Frontier result write uploads media through the
+	// same object storage reader, feeds ingestToItems through the same item
+	// ingestor and relays notifications through the same publisher as a normal
+	// crawl. The package would otherwise build its own service without any of
+	// them and silently drop the media files NestJS stores.
+	frontier, err := newCrawlFrontierNodeProcessor(cfg, db, redisClient, mongoDatabase, execution, settings)
+	if err != nil {
+		return nil, err
+	}
+	if frontier == nil {
+		// Defence in depth: newCrawlFrontierNodeProcessor never returns (nil, nil),
+		// but a frontier_node job must never be claimed without an executor.
+		return nil, errCrawlWorkerFrontierProcessor
+	}
+
 	activity := crawlqueue.NewActivity(redisClient)
 
 	worker, err := crawlworker.New(crawlworker.Options{
@@ -216,4 +248,101 @@ func wireCrawlWorker(
 	log.Printf("api-go: crawl queue workers owned by Go (API_GO_CRAWL_WORKER_MODE=go, queues=%s,%s,%s)",
 		crawlqueue.QueueHot, crawlqueue.QueueNormal, crawlqueue.QueueLegacy)
 	return &crawlWorkerRuntime{worker: worker, exec: execution, relay: relay}, nil
+}
+
+// newCrawlFrontierNodeProcessor builds the frontier_node executor the three
+// crawl queues carry. processQueuedNode runs inside the crawl worker's attempt,
+// so every dependency is taken from the objects the crawl worker already owns:
+//
+//   - MySQL/Mongo/Redis are the shared handles.
+//   - Crawl is the same crawl4ai client configuration the crawl discovery and the
+//     news source scheduler use; Settings comes from the crawl worker's own
+//     crawl_client:settings reader, so a request-scoped timeout change applies to
+//     both paths and healthCheckTtlMs keeps the stored override.
+//   - LLM is built exactly like the Frontier LLM worker
+//     (crawl_frontier_llm.go): one LLMClient over the shared MySQL handle plus the
+//     #125 request log sink when Mongo is available. There is no startup-time
+//     "LLM is not configured" signal — the gateway profile is resolved per request
+//     from SystemSetting (crawlfrontierllm llm_profile.go resolveGatewayProfile) —
+//     and NestJS always injects CrawlFrontierLlmService, so passing a real client
+//     is what keeps the deferred judge branch identical to NestJS. A nil LLM stays
+//     supported and means the same as a NestJS without the service.
+//   - Workflows is the workflow compiler that turns the profile overlay into a
+//     layered plan.
+//   - Enqueuer is the crawlqueue producer, so deferred child nodes land on the
+//     same BullMQ queues the crawl worker owns.
+//   - Exec is the crawl worker's crawlexecution.Service, not a fresh one: it is
+//     the instance that carries the object storage reader, the item ingestor, the
+//     notification relay and the news source scheduler. A package-local service
+//     would drop Frontier result media on the floor.
+//
+// A construction failure fails startup: go mode must not claim frontier_node jobs
+// it cannot execute.
+func newCrawlFrontierNodeProcessor(
+	cfg config.Config,
+	db *sql.DB,
+	redisClient *redis.Client,
+	mongoDatabase *mongo.Database,
+	execution *crawlexecution.Service,
+	settings *crawlqueue.SettingsReader,
+) (crawlworker.FrontierNodeProcessor, error) {
+	client := crawl4ai.New(crawl4ai.Options{
+		BaseURL:          cfg.CrawlBaseURL,
+		APIKey:           cfg.CrawlAPIKey,
+		TimeoutMs:        cfg.CrawlTimeoutMs,
+		HealthCheckTTLMs: cfg.CrawlHealthTTLMs,
+		SSRFProxyURL:     cfg.CrawlSSRFProxyURL,
+		JSCodeEnabled:    cfg.CrawlJSCodeEnabled,
+	})
+
+	// The node package takes a per-request crawl4ai Settings provider. Reuse the
+	// crawl worker's reader through the shared projection, so both paths read the
+	// same Redis cache document and the same SystemSetting row.
+	settingsView := func(ctx context.Context) crawl4ai.Settings {
+		return settingsFromNormalized(settings.ReadNormalized(ctx))
+	}
+
+	var sink crawlfrontierllm.RequestLogSink
+	if mongoDatabase != nil {
+		sink = frontierLogSink{writer: llmlogs.NewFrontierWriter(db, mongoDatabase)}
+	}
+	llm := crawlfrontierllm.NewLLMClient(crawlfrontierllm.LLMClientOptions{
+		DB: db,
+		Env: crawlfrontierllm.LLMGatewayEnv{
+			APIBase:       cfg.LiteLLMAPIBase,
+			APIKey:        cfg.LiteLLMAPIKey,
+			EncryptionKey: cfg.SystemSettingsEncryptionKeyRaw,
+			TimeoutMs:     cfg.LiteLLMTimeoutMs,
+			MaxRetries:    cfg.LiteLLMMaxRetries,
+		},
+		Sink: sink,
+	})
+
+	producer := crawlqueue.NewProducer(crawlqueue.Options{
+		Redis: redisClient,
+		DB:    db,
+		Env: &crawlqueue.EnvDefaults{
+			MaxConcurrency:   cfg.CrawlMaxConcurrency,
+			MaxRetries:       cfg.CrawlMaxRetries,
+			RetryBackoffMs:   cfg.CrawlRetryBackoffMs,
+			RequestTimeoutMs: cfg.CrawlTimeoutMs,
+		},
+	})
+
+	processor, err := crawlfrontiernode.New(crawlfrontiernode.Options{
+		DB:        db,
+		Mongo:     mongoDatabase,
+		Redis:     redisClient,
+		Crawl:     client,
+		Settings:  settingsView,
+		LLM:       llm,
+		Workflows: crawlworkflow.NewService(db),
+		Enqueuer:  producer,
+		Now:       time.Now,
+		Exec:      execution,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("api-go: crawl frontier node processor: %w", err)
+	}
+	return processor, nil
 }

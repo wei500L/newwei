@@ -3138,11 +3138,11 @@ func run() error {
 			return err
 		}
 	}
-	// The three crawl4ai queue consumers. The frontier node processor is
-	// delivered by the separate crawlfrontiernode window; until both changes are
-	// integrated this passes nil and API_GO_CRAWL_WORKER_MODE=go fails startup
-	// instead of claiming jobs it cannot execute.
-	crawlWorker, err = wireCrawlWorker(cfg, sharedDB, redisClient, redisOptions, &dashboardMongo, nil)
+	// The three crawl4ai queue consumers. wireCrawlWorker builds the
+	// crawlfrontiernode processor itself from these shared handles and the same
+	// crawlexecution.Service, so a construction failure fails startup instead of
+	// claiming frontier_node jobs it cannot execute.
+	crawlWorker, err = wireCrawlWorker(cfg, sharedDB, redisClient, redisOptions, &dashboardMongo)
 	if err != nil {
 		return err
 	}
