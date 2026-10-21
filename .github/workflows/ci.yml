@@ -566,6 +566,19 @@ jobs:
       - name: Realtime Socket.IO and classification alert integration tests (MySQL/Redis/Mongo)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/realtimeintegration/ -run 'TestRealtime' -v
 
+      # Frontier 节点执行（processQueuedNode 及其调用链，Go-批 candidate 实现）：
+      # 真实 MySQL/Redis/Mongo 覆盖 layered 节点（结果写入 + 子节点物化 + BullMQ
+      # 原始任务结构 + 工作流事件/步骤 + refreshRunStatus）、native 根节点分支、
+      # run 已取消、不可重试失败（节点 failed、run lastError、错误文本契约）、
+      # crawl4ai 503（errors.As 取 *crawl4ai.Error.Status）、hot 降级 normal，
+      # 以及 B1（同一 run 两个节点并发完成时元数据补丁都保留）。crawl4ai 由本进程
+      # httptest 提供；种子发现分支的集成用例把站点配置固定为 frontier_only，只断言
+      # seed_branch_skipped，不访问外部站点（crawlmetadata 没有可注入的 transport，
+      # sitemap 抓取本身未在本步骤覆盖）。不连接真实 crawl4ai，也没有用生产数据比对
+      # 结果；本包只交付库，不消费队列、不新增开关。
+      - name: MySQL/Redis/Mongo Frontier node execution integration tests
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlfrontiernode/ -run 'TestFrontierNode' -v -timeout 10m
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从
