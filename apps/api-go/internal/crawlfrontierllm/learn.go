@@ -759,30 +759,56 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'published', ?, ?, ?)`,
 
 // createRunOptions is createRunFromProfile's argument set.
 type createRunOptions struct {
-	OrgID         string
-	ActorID       string
-	SeedURL       string
-	Profile       ProfileRecord
-	ExecutionMode string
-	MaxDepth      int
-	MaxPages      int
-	Keywords      []string
-	RunMetadata   *Object
+	OrgID   string
+	ActorID string
+	// SeedURL is the seed the root node is created for.
+	SeedURL string
+	// SeedURLIsNormalized skips the lenient parseHTTPURL re-parse below. The
+	// admin create-run route has already applied the WHATWG serialisation
+	// (new URL(value).toString()) that the NestJS createRun path requires, and
+	// parseHTTPURL is a different, http(s)-only normaliser that would rewrite or
+	// reject such a value (an ftp: seed, for example). The shadow-learning
+	// caller leaves it false and keeps the original re-parse.
+	SeedURLIsNormalized bool
+	Profile             ProfileRecord
+	ExecutionMode       string
+	MaxDepth            int
+	MaxPages            int
+	Keywords            []string
+	RunMetadata         *Object
 }
 
 // createRunFromProfile ports createRunFromProfile.
-func (s *Service) createRunFromProfile(ctx context.Context, options createRunOptions) (string, error) {
+func (s *Service) createRunFromProfile(ctx context.Context, options createRunOptions) (runID string, err error) {
 	seedURL := strings.TrimSpace(options.SeedURL)
-	if parsed, ok := parseHTTPURL(seedURL); ok {
-		seedURL = parsed.String()
-	} else {
-		return "", badRequest("seedUrl must be a valid absolute URL")
+	if !options.SeedURLIsNormalized {
+		if parsed, ok := parseHTTPURL(seedURL); ok {
+			seedURL = parsed.String()
+		} else {
+			return "", badRequest("seedUrl must be a valid absolute URL")
+		}
 	}
 	now := truncateMillis(s.now())
 	taskID, err := newRowID()
 	if err != nil {
 		return "", err
 	}
+	// B3: the writes below mirror NestJS, which performs them without a
+	// transaction. A process death after the synthetic CrawlTask insert therefore
+	// leaves a queued task with `config.frontier = true` and no frontier run. No
+	// producer scans CrawlTask by status, so nothing executes it automatically,
+	// but it is not inert forever: the stale-task janitor eventually marks it
+	// failed, after which the ordinary crawl-task retry route would enqueue it
+	// and runTask has no frontier check, so it would be crawled as a normal task.
+	// The Go path removes the rows it created whenever it returns an error. The
+	// enqueue stays the last step, so a run that did get enqueued is never rolled
+	// back.
+	created := createdRunRows{taskID: taskID}
+	defer func() {
+		if err != nil {
+			s.discardCreatedRunRows(ctx, created)
+		}
+	}()
 	displayName := sliceRunes("Frontier: "+options.Profile.Name, 80)
 	keywords := options.Keywords
 	if keywords == nil {
@@ -821,10 +847,11 @@ VALUES (?, ?, ?, ?, ?, 'queued', 1, ?, ?, ?, ?)`,
 		return "", err
 	}
 
-	runID, err := newRowID()
+	runID, err = newRowID()
 	if err != nil {
 		return "", err
 	}
+	created.runID = runID
 	metadata := NewObject()
 	metadata.SetNumber("profileVersion", float64(options.Profile.Version))
 	budgets := ComputeFrontierPageTypeBudgets(options.MaxDepth, options.MaxPages)
@@ -882,6 +909,7 @@ VALUES (?, ?, ?, NULL, ?, ?, ?, 'queued', ?, ?, ?, 0, 0, 0, 0, 0, NULL, NULL, ?,
 	if err != nil {
 		return "", err
 	}
+	created.workflowRunID = workflowRunID
 	runPatch := NewObject()
 	runPatch.SetString("workflowRunId", workflowRunID)
 	runPatch.SetString("workflowOrigin", workflowOrigin)

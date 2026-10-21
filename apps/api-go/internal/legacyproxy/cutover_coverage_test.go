@@ -91,6 +91,10 @@ func allGoRules() []Rule {
 	rules = WithStorageDiagnostics(rules, "go")
 	rules = WithUserDigest(rules, "go")
 	rules = WithUserNewsBehavior(rules, "go")
+	// The order of the builder calls does not affect matching: match() sorts the
+	// rules by prefix length. New builders are appended at the end so parallel
+	// cutover batches never touch the same alphabetical region.
+	rules = WithCrawlFrontierWrites(rules, "go")
 	return rules
 }
 

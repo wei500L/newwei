@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
 )
 
 const (
@@ -19,6 +20,7 @@ const (
 	runsPath           = basePath + "/runs"
 	runsPrefix         = runsPath + "/"
 	nodesPrefix        = basePath + "/nodes/"
+	nodesRetryPath     = nodesPrefix + "retry"
 	workflowRunsPath   = basePath + "/workflow-runs"
 	workflowRunsPrefix = workflowRunsPath + "/"
 	maxJSONBytes       = 10 << 20
@@ -32,16 +34,32 @@ type document interface {
 	isDocument()
 }
 
-// Handler serves the eleven takeover routes. Identity comes from the
+// Handler serves the eleven takeover routes and, when a WriteService is
+// attached, the three create/retry routes. Identity comes from the
 // authentication chain only.
 type Handler struct {
 	auth *authhttp.Authenticator
 	svc  *Service
+	// writes is nil for a read-only handler. The write routes are only reachable
+	// when the gateway registered WithCrawlFrontierWrites rules, which the wiring
+	// does together with attaching this service.
+	writes *WriteService
 }
 
 // NewHandler builds a handler around the shared authenticator and service.
 func NewHandler(auth *authhttp.Authenticator, svc *Service) *Handler {
 	return &Handler{auth: auth, svc: svc}
+}
+
+// NewWriteHandler builds a handler that serves the three write routes only. It
+// shares this package's identity chain, body reader and error writer with the
+// read unit, so the 401/403/400 ordering and the response shape stay identical.
+func NewWriteHandler(auth *authhttp.Authenticator, svc *WriteService) *Handler {
+	handler := &Handler{auth: auth, writes: svc}
+	if svc != nil {
+		handler.svc = svc.reads
+	}
+	return handler
 }
 
 // ServeHTTP dispatches by URL path and method. The route table already limits
@@ -52,8 +70,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case path == runsPath && r.Method == http.MethodGet:
 		h.serveList(w, r)
+	case path == runsPath && r.Method == http.MethodPost:
+		h.serveCreateRun(w, r)
 	case path == runsPath+"/cancel" && r.Method == http.MethodPost:
 		h.serveCancelRuns(w, r)
+	case path == nodesRetryPath && r.Method == http.MethodPost:
+		h.serveRetryNodes(w, r)
 	default:
 		switch {
 		case r.Method == http.MethodGet:
@@ -92,6 +114,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case r.Method == http.MethodPost:
 			if runID, ok := suffixTarget(path, runsPrefix, "/cancel"); ok {
 				h.serveCancelRun(w, r, runID)
+				return
+			}
+			// The exact nodes/retry path is matched above, so a segment here is
+			// always the :id of nodes/:id/retry.
+			if nodeID, ok := suffixTarget(path, nodesPrefix, "/retry"); ok {
+				h.serveRetryNode(w, r, nodeID)
 				return
 			}
 		}
@@ -395,6 +423,14 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	var input *inputError
 	if errors.As(err, &input) {
 		authhttp.WriteBadRequest(w, r, input.Message)
+		return
+	}
+	// The crawl frontier chain service reports the NestJS HttpExceptions it
+	// mirrors (404 "Workflow version not found", 400 "Workflow has no published
+	// version", ...) as its own error type.
+	var nest *crawlfrontierllm.NestError
+	if errors.As(err, &nest) {
+		authhttp.WriteHTTPException(w, r, nest.Status, nest.Message)
 		return
 	}
 	log.Printf("crawl frontier runs: %v", err)
