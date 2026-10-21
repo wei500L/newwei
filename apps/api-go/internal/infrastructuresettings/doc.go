@@ -48,10 +48,15 @@
 // named structs immediately; the package never uses any / interface{} /
 // map[string]any.
 //
-// What deliberately stays on NestJS: GET /api/system-settings/vector-service/
-// diagnostics (it reports the NestJS process's vector client counters), every
-// vector search/upsert/dedupe/backfill path, every other S3 object operation
-// (avatar uploads, crawl media writes and deletes, cleanup), the actual
-// news-source fetch chain that consumes getSecretsForSource, and all GraphQL,
-// BullMQ and scheduler work.
+// The package also serves GET /api/system-settings/vector-service/diagnostics
+// (ownership audit C-5) under its own API_GO_VECTOR_DIAGNOSTICS_MODE switch: it
+// renders the NestJS VectorServiceRuntimeDiagnostics model from the api-go
+// process, using the process-wide vectorclient.Health shared by the search and
+// upsert clients plus the same settings read path as the public vector-service
+// route (see vector_diagnostics.go for the multi-instance semantics).
+//
+// What deliberately stays on NestJS: every other vector search/upsert/dedupe/
+// backfill path, every other S3 object operation (avatar uploads, crawl media
+// writes and deletes, cleanup), the actual news-source fetch chain that consumes
+// getSecretsForSource, and all GraphQL, BullMQ and scheduler work.
 package infrastructuresettings

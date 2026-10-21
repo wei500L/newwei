@@ -57,9 +57,14 @@ type SearcherEnv struct {
 
 // SearcherOptions wires the vector search client.
 type SearcherOptions struct {
-	DB     *sql.DB
-	Redis  *redis.Client
-	Env    SearcherEnv
+	DB    *sql.DB
+	Redis *redis.Client
+	Env   SearcherEnv
+	// Health is the process-wide circuit state shared with every other vector
+	// client of the process. A nil value makes NewSearcher build a private
+	// zero-value Health, so an unwired caller keeps the previous behaviour and
+	// a standalone searcher still gets a working window.
+	Health *Health
 	Now    func() time.Time
 	Random func() float64
 }
