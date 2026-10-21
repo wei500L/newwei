@@ -5,12 +5,15 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
 )
 
 // newStubWriteHandler registers a fixture and returns a handler that serves the
-// three write routes. The chain service is nil on purpose: every case below is
-// decided by the identity chain or the DTO layer, which both run before the
-// service call.
+// three write routes. The chain service is built around the same stub handle but
+// carries no workflow or queue dependency: every case below is decided by the
+// identity chain, the DTO layer, or the node lookup, all of which run before the
+// requeue transaction needs either.
 func newStubWriteHandler(t *testing.T, name string) *Handler {
 	t.Helper()
 	state := &stubState{tokens: []stubToken{
@@ -23,7 +26,7 @@ func newStubWriteHandler(t *testing.T, name string) *Handler {
 		t.Fatalf("open stub: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return NewWriteHandler(nil, NewWriteService(db, nil))
+	return NewWriteHandler(nil, NewWriteService(db, crawlfrontierllm.New(crawlfrontierllm.Options{DB: db})))
 }
 
 // TestWriteHandlerAuthAndValidation pins the 401 -> 403 -> 400 order on all three
