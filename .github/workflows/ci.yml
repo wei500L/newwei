@@ -457,15 +457,6 @@ jobs:
       - name: MySQL/Redis integration tests (situation-monitor settings + Telegram scheduler)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/situationsettings/ ./internal/situationsettings/telegramsched/ -run 'Integration|TestTelegramSchedulerNodeInterop' -v
 
-      # 态势信号 worker（situationMonitorSignals）：真实 Redis/MySQL 覆盖 B1 双实例
-      # 状态连续与单实例租约、B3 OREF 失败语义与三份缓存文档、事件桥 envelope
-      # 原始字节、A2 清除广播、A4 重复任务协议，以及 OREF 默认告警规则。
-      # Telegram 全部 fake（不拨号），OREF 上游/代理为进程内 httptest，无外网。
-      - name: Redis/MySQL integration tests (situation monitor signals worker)
-        run: cd apps/api-go && go test -tags=integration -count=1 -timeout 5m ./internal/situationsignalsworker/ -run 'TestSituationSignalsWorker' -v
-        env:
-          API_GO_TEST_REDIS_ADDR: 127.0.0.1:6379
-
       # 新闻源采集调度与运维：真实 MySQL/Redis 覆盖派发事务（PipelineJob +
       # CrawlTask + 预生成 id）、BullMQ crawl 队列原始结构、25 秒共享派发去重
       # key、背压 key/TTL/计数与通知桥消息、运营快照写入 + Go newssources 读取
@@ -538,6 +529,15 @@ jobs:
           go test -tags=integration -count=1 ./internal/pipelinerecovery/ -run 'TestPipelineRecoveryWritesIntegration' -v
           go test -tags=integration -count=1 ./internal/metrics/ -run 'TestMetricsEndpointAuthorizationIntegration' -v
           go test -tags=integration -count=1 ./internal/startupreconcile/ -run 'TestStartupReconcile' -v
+
+      # 态势信号 worker（situationMonitorSignals）：真实 Redis/MySQL 覆盖 B1 双实例
+      # 状态连续与单实例租约、B3 OREF 失败语义与三份缓存文档、事件桥 envelope
+      # 原始字节、A2 清除广播、A4 重复任务协议，以及 OREF 默认告警规则。
+      # Telegram 全部 fake（不拨号），OREF 上游/代理为进程内 httptest，无外网。
+      - name: Redis/MySQL integration tests (situation monitor signals worker)
+        run: cd apps/api-go && go test -tags=integration -count=1 -timeout 5m ./internal/situationsignalsworker/ -run 'TestSituationSignalsWorker' -v
+        env:
+          API_GO_TEST_REDIS_ADDR: 127.0.0.1:6379
 
       # 条目流水线 worker（API_GO_ITEM_PIPELINE_WORKER_MODE=go 的 Go 消费端）：
       # 真实 MySQL/Redis/Mongo 验证入队到 BullMQ worker 的完整协议（completed
