@@ -3,6 +3,7 @@ package situationsignals
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -48,6 +49,50 @@ func (p *fakeSignalPoller) calls() (telegram, oref int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.telegramCalls, p.orefCalls
+}
+
+// concurrentSignalPoller proves O1 structurally instead of by timing: the Telegram
+// cycle only returns after the OREF cycle started, so a sequential implementation
+// can never pass (it reports the timeout instead of hanging the suite).
+type concurrentSignalPoller struct {
+	orefStarted chan struct{}
+	mu          sync.Mutex
+	telegramErr error
+	orefCalls   int
+}
+
+func newConcurrentSignalPoller() *concurrentSignalPoller {
+	return &concurrentSignalPoller{orefStarted: make(chan struct{})}
+}
+
+func (p *concurrentSignalPoller) PollTelegramWait(context.Context) error {
+	select {
+	case <-p.orefStarted:
+		return nil
+	case <-time.After(2 * time.Second):
+		err := errors.New("OREF cycle did not start while the Telegram cycle was running")
+		p.mu.Lock()
+		p.telegramErr = err
+		p.mu.Unlock()
+		return err
+	}
+}
+
+func (p *concurrentSignalPoller) PollOref(context.Context) error {
+	p.mu.Lock()
+	p.orefCalls++
+	first := p.orefCalls == 1
+	p.mu.Unlock()
+	if first {
+		close(p.orefStarted)
+	}
+	return nil
+}
+
+func (p *concurrentSignalPoller) failure() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.telegramErr
 }
 
 // TestBuildCrawlDispatchMessagePlurals pins the English singular/plural rule of
@@ -152,20 +197,13 @@ func TestRunSignalRefreshKeepsTelegramThenOrefOrder(t *testing.T) {
 	store.values[telegramStateKey] = []byte(`{"channelSet":"full","cursorByHandle":{},"items":[],"lastPollAt":1000,"lastError":"telegram-state-error"}`)
 	store.values[orefAlertsKey] = []byte(`{"alerts":[],"timestamp":"2026-01-01T00:00:00.000Z","error":"oref-state-error"}`)
 
-	poller := &fakeSignalPoller{telegramDelay: 40 * time.Millisecond}
+	poller := newConcurrentSignalPoller()
 	service := NewRefreshService(&Service{cache: ops}, poller, nil)
 
-	started := time.Now()
 	telegram, oref := service.runSignalRefresh(t.Context())
-	elapsed := time.Since(started)
 
-	if telegram, orefCalls := poller.calls(); telegram != 1 || orefCalls != 1 {
-		t.Fatalf("poller calls = %d/%d, want one each", telegram, orefCalls)
-	}
-	// Concurrency: the 40ms Telegram delay and the immediate OREF cycle overlap,
-	// so the pair finishes in about one Telegram delay, not two cycles.
-	if elapsed >= 80*time.Millisecond {
-		t.Fatalf("elapsed = %s, want the two cycles to overlap", elapsed)
+	if err := poller.failure(); err != nil {
+		t.Fatalf("the two cycles did not overlap: %v", err)
 	}
 	if telegram.result.Message != "telegram-state-error" || telegram.warning == nil {
 		t.Fatalf("telegram outcome = %+v", telegram)
