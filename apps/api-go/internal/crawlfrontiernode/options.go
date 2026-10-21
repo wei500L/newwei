@@ -48,9 +48,24 @@ type Options struct {
 	// Now is the clock seam. Tests pin it to compare ISO timestamps.
 	Now func() time.Time
 
-	// Exec carries the crawlexecution settings. Only the result-write path is
-	// used, so the crawl transport fields may stay zero.
-	Exec crawlexecution.Config
+	// ExecConfig carries the crawlexecution settings used when Exec is nil. Only
+	// the result-write path is used, so the crawl transport fields may stay
+	// zero.
+	ExecConfig crawlexecution.Config
+
+	// Exec optionally injects an already-built crawlexecution.Service. The crawl
+	// worker shares the instance it runs ordinary tasks with, so a Frontier
+	// result write stores media through the same object storage reader, feeds
+	// ingestToItems through the same item ingestor and relays notifications
+	// through the same publisher, exactly like the ordinary task path and like
+	// NestJS resultService.persistResults.
+	//
+	// A nil value keeps the package-local construction from DB/Mongo/Redis,
+	// ExecConfig and HTTPClient. That fallback carries no storage reader, no item
+	// ingestor, no relay and no scheduler, so Frontier result media is not
+	// stored; it exists for the package's own tests and for callers that only
+	// exercise the read path.
+	Exec *crawlexecution.Service
 }
 
 // Service runs one Frontier node: the processQueuedNode state machine plus the
@@ -100,14 +115,21 @@ func New(options Options) (*Service, error) {
 		Workflows: options.Workflows,
 		Now:       now,
 	})
-	exec := crawlexecution.New(crawlexecution.Options{
-		DB:         options.DB,
-		Mongo:      options.Mongo,
-		Redis:      options.Redis,
-		Config:     options.Exec,
-		HTTPClient: options.HTTPClient,
-		Now:        now,
-	})
+	// The crawl worker shares its crawlexecution.Service so the Frontier result
+	// write keeps the media storage reader, the item ingestor, the notification
+	// relay and the news-source scheduler. Without it the local construction only
+	// has DB/Mongo/Redis and silently skips media storage.
+	exec := options.Exec
+	if exec == nil {
+		exec = crawlexecution.New(crawlexecution.Options{
+			DB:         options.DB,
+			Mongo:      options.Mongo,
+			Redis:      options.Redis,
+			Config:     options.ExecConfig,
+			HTTPClient: options.HTTPClient,
+			Now:        now,
+		})
+	}
 	metadata := options.Metadata
 	if metadata == nil {
 		metadata = crawlmetadata.NewDiscovery(

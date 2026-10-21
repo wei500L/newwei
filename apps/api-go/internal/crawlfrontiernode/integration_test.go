@@ -345,13 +345,13 @@ func (h *testNodeHarness) service() *Service {
 		Now:   func() time.Time { return testClockTime },
 	})
 	service, err := New(Options{
-		DB:       h.db,
-		Mongo:    h.mongoDB,
-		Redis:    h.redis,
-		Crawl:    client,
-		Enqueuer: producer,
-		Now:      func() time.Time { return testClockTime },
-		Exec:     crawlexecution.Config{},
+		DB:         h.db,
+		Mongo:      h.mongoDB,
+		Redis:      h.redis,
+		Crawl:      client,
+		Enqueuer:   producer,
+		Now:        func() time.Time { return testClockTime },
+		ExecConfig: crawlexecution.Config{},
 	})
 	if err != nil {
 		h.t.Fatalf("build service: %v", err)
