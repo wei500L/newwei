@@ -39,10 +39,15 @@ func readEnvFixture(t *testing.T, path string) map[string]string {
 }
 
 // TestAllGoCutoverConfigLoads is the T2 cutover gate for config.Load: the
-// all-go fixture (every API_GO_* switch = go plus placeholder resources) must
-// pass every cross-switch and resource validation, and every *Mode field must
-// actually read "go". If a future switch is added without updating
-// testdata/all-go.env, the field keeps its legacy default and this test fails.
+// all-go fixture (every API_GO_* switch = go plus placeholder resources, and
+// API_GO_LEGACY_FALLBACK_MODE=reject) must pass every cross-switch and resource
+// validation, and every *Mode field must actually read "go". If a future switch
+// is added without updating testdata/all-go.env, the field keeps its legacy
+// default and this test fails.
+//
+// API_GO_LEGACY_FALLBACK_MODE is the single exception: its accepted values are
+// proxy and reject, so it can never read "go". tests in
+// cutover_legacy_fallback_test.go cover its own validation.
 func TestAllGoCutoverConfigLoads(t *testing.T) {
 	env := readEnvFixture(t, "testdata/all-go.env")
 	cfg, err := Load(func(key string) string { return env[key] })
@@ -58,14 +63,18 @@ func TestAllGoCutoverConfigLoads(t *testing.T) {
 		if !strings.HasSuffix(field.Name, "Mode") || field.Type.Kind() != reflect.String {
 			continue
 		}
+		if _, exempt := legacyRejectExemptModes[field.Name]; exempt {
+			continue
+		}
 		seen++
 		if got := value.Field(i).String(); got != "go" {
 			t.Errorf("%s = %q, want go; testdata/all-go.env is missing its API_GO_* switch", field.Name, got)
 		}
 	}
-	// The switch matrix documents 130 API_GO_* switches and every one of them
-	// lands in exactly one *Mode field. Keep the count in sync with config.go.
-	if seen != 130 {
-		t.Fatalf("config has %d string *Mode fields, want 130", seen)
+	// The switch matrix documents 134 API_GO_* switches (130 before the
+	// refactor/go-ops-entrypoints batch) and every one of them lands in exactly
+	// one *Mode field. Keep the count in sync with config.go.
+	if seen != 134 {
+		t.Fatalf("config has %d non-exempt string *Mode fields, want 134", seen)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -173,6 +174,57 @@ type HealthzMode string
 const (
 	HealthzModeLegacy HealthzMode = "legacy"
 	HealthzModeGo     HealthzMode = "go"
+)
+
+// HealthzLiveMode controls the public liveness probe GET /api/healthz/live.
+// Default shadow.
+//
+// This is the only migration switch whose default is shadow instead of legacy:
+// the route already runs in shadow today (NestJS answers, Go diffs), so a
+// default of legacy would silently change the current production behaviour into
+// "no Go observation". shadow keeps the existing rule table byte for byte;
+// legacy and go only change who answers the exact GET.
+type HealthzLiveMode string
+
+const (
+	HealthzLiveModeShadow HealthzLiveMode = "shadow"
+	HealthzLiveModeLegacy HealthzLiveMode = "legacy"
+	HealthzLiveModeGo     HealthzLiveMode = "go"
+)
+
+// LegacyFallbackMode controls what the gateway does with a request that would
+// otherwise be forwarded to the NestJS API. Default proxy (current behaviour).
+//
+// reject is only accepted when every other API_GO_*_MODE switch reads "go": the
+// gateway then answers the NestJS global-exception-filter 404 itself and never
+// opens a connection to the legacy API. See validateLegacyRejectModes.
+type LegacyFallbackMode string
+
+const (
+	LegacyFallbackModeProxy  LegacyFallbackMode = "proxy"
+	LegacyFallbackModeReject LegacyFallbackMode = "reject"
+)
+
+// DocsMode controls GET /docs, GET /docs/json and the Swagger UI static assets.
+// Default legacy. go serves the embedded OpenAPI contract snapshot from the
+// api-go process; whether the page is available at all still follows the
+// NestJS SWAGGER_ENABLED rule (see internal/apidocs).
+type DocsMode string
+
+const (
+	DocsModeLegacy DocsMode = "legacy"
+	DocsModeGo     DocsMode = "go"
+)
+
+// VectorDiagnosticsMode controls the exact GET
+// /api/system-settings/vector-service/diagnostics. Default legacy.
+// go reports the vector client runtime state of the api-go process that served
+// the request; it needs JWT, MySQL and Redis (the shared settings read path).
+type VectorDiagnosticsMode string
+
+const (
+	VectorDiagnosticsModeLegacy VectorDiagnosticsMode = "legacy"
+	VectorDiagnosticsModeGo     VectorDiagnosticsMode = "go"
 )
 
 // NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 legacy。
@@ -2285,6 +2337,19 @@ type Config struct {
 	// go 只要求 JWT、MySQL、Redis，用来验签。Mongo、crawl4ai、SSRF 和 LLM
 	// 不是启动条件，只在认证请求到达时探测。
 	HealthzMode HealthzMode
+	// HealthzLiveMode 见 HealthzLiveMode。默认 shadow（唯一例外，见类型注释）。
+	// 纯 handler，无外部依赖。
+	HealthzLiveMode HealthzLiveMode
+	// LegacyFallbackMode 见 LegacyFallbackMode。默认 proxy。
+	// reject 要求所有其他 *Mode 开关都为 go，且允许 LEGACY_API_URL 留空
+	//（空值仍按默认地址填充，但 reject 不会建立任何上游连接）。
+	LegacyFallbackMode LegacyFallbackMode
+	// DocsMode 见 DocsMode。默认 legacy。go 不需要额外资源；是否实际提供
+	// 文档由 SWAGGER_ENABLED 决定。
+	DocsMode DocsMode
+	// VectorDiagnosticsMode 见 VectorDiagnosticsMode。默认 legacy。
+	// go 需要 JWT、MySQL 与 Redis。
+	VectorDiagnosticsMode VectorDiagnosticsMode
 	// 三个个人内容域的 HTTP 开关，彼此独立，默认都是 legacy。
 	// 订阅与摘要的 go 模式需要 Mongo（目录候选或相关内容回退）。
 	// 行为 go 模式不需要 Mongo。ES、embedding 凭据和 SMTP 都不是启动条件。
@@ -3511,6 +3576,40 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.HealthzMode = HealthzModeGo
 	default:
 		errs = append(errs, "API_GO_HEALTHZ_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_HEALTHZ_LIVE_MODE")) {
+	case "", string(HealthzLiveModeShadow):
+		cfg.HealthzLiveMode = HealthzLiveModeShadow
+	case string(HealthzLiveModeLegacy):
+		cfg.HealthzLiveMode = HealthzLiveModeLegacy
+	case string(HealthzLiveModeGo):
+		cfg.HealthzLiveMode = HealthzLiveModeGo
+	default:
+		errs = append(errs, "API_GO_HEALTHZ_LIVE_MODE must be one of shadow|legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_LEGACY_FALLBACK_MODE")) {
+	case "", string(LegacyFallbackModeProxy):
+		cfg.LegacyFallbackMode = LegacyFallbackModeProxy
+	case string(LegacyFallbackModeReject):
+		cfg.LegacyFallbackMode = LegacyFallbackModeReject
+	default:
+		errs = append(errs, "API_GO_LEGACY_FALLBACK_MODE must be one of proxy|reject")
+	}
+	switch strings.TrimSpace(getenv("API_GO_DOCS_MODE")) {
+	case "", string(DocsModeLegacy):
+		cfg.DocsMode = DocsModeLegacy
+	case string(DocsModeGo):
+		cfg.DocsMode = DocsModeGo
+	default:
+		errs = append(errs, "API_GO_DOCS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_VECTOR_DIAGNOSTICS_MODE")) {
+	case "", string(VectorDiagnosticsModeLegacy):
+		cfg.VectorDiagnosticsMode = VectorDiagnosticsModeLegacy
+	case string(VectorDiagnosticsModeGo):
+		cfg.VectorDiagnosticsMode = VectorDiagnosticsModeGo
+	default:
+		errs = append(errs, "API_GO_VECTOR_DIAGNOSTICS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CONTENT_SUBSCRIPTIONS_MODE")) {
 	case "", string(ContentSubscriptionsModeLegacy):
@@ -5293,6 +5392,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 			errs = append(errs, "REDIS_HOST is required when API_GO_HEALTHZ_MODE=go")
 		}
 	}
+	// The public liveness probe (API_GO_HEALTHZ_LIVE_MODE) and the Swagger
+	// takeover (API_GO_DOCS_MODE) are self-contained handlers: neither needs
+	// JWT, MySQL, Redis or Mongo at startup.
+	//
+	// The vector diagnostics route reuses the shared settings read path and the
+	// ordinary authentication chain, so it needs exactly the same resources as
+	// the infrastructure settings takeover.
+	if cfg.VectorDiagnosticsMode == VectorDiagnosticsModeGo {
+		appendAuthRequirements(&errs, "API_GO_VECTOR_DIAGNOSTICS_MODE", cfg)
+	}
+	// reject mode removes the NestJS fallback entirely, so every other switch
+	// must have handed its execution unit to Go first. The reflection-based
+	// check automatically covers switches added by later batches.
+	if cfg.LegacyFallbackMode == LegacyFallbackModeReject {
+		validateLegacyRejectModes(cfg, &errs)
+	}
 	if cfg.UserNewsBehaviorMode == UserNewsBehaviorModeGo {
 		appendAuthRequirements(&errs, "API_GO_USER_NEWS_BEHAVIOR_MODE", cfg)
 	}
@@ -6744,4 +6859,98 @@ func (c Config) QualityWorkerConcurrency() int {
 		configured = 1
 	}
 	return configured
+}
+
+// legacyRejectExemptModes lists the *Mode fields that
+// API_GO_LEGACY_FALLBACK_MODE=reject does not require to read "go".
+//
+// The fallback switch itself is the only exemption: its accepted values are
+// proxy and reject, so it can never read "go", while every other *Mode field
+// selects a NestJS-owned execution unit that must hand ownership to Go before
+// the legacy API may disappear. Adding an exemption requires a comment here
+// explaining why that unit does not have to be owned by Go.
+var legacyRejectExemptModes = map[string]string{
+	"LegacyFallbackMode": "the legacy fallback switch itself (accepted values: proxy|reject)",
+}
+
+// validateLegacyRejectModes appends one aggregated error listing every
+// API_GO_*_MODE switch that is not go while the legacy fallback is reject.
+//
+// The check is reflection-based on purpose: the three cutover batches add
+// switches in parallel, and every new switch must automatically be required to
+// be go before the NestJS fallback can be removed. Only string fields whose
+// name ends in "Mode" are considered, which is the repository-wide naming
+// contract for API_GO_*_MODE switches.
+func validateLegacyRejectModes(cfg Config, errs *[]string) {
+	value := reflect.ValueOf(cfg)
+	typ := value.Type()
+	missing := make([]string, 0, typ.NumField())
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if !strings.HasSuffix(field.Name, "Mode") || field.Type.Kind() != reflect.String {
+			continue
+		}
+		if _, exempt := legacyRejectExemptModes[field.Name]; exempt {
+			continue
+		}
+		if got := value.Field(i).String(); got != "go" {
+			missing = append(missing, modeSwitchEnvName(field.Name)+"="+got)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	*errs = append(*errs,
+		"API_GO_LEGACY_FALLBACK_MODE=reject requires every API_GO_*_MODE switch to be go; not go: "+
+			strings.Join(missing, ", "))
+}
+
+// modeSwitchEnvOverrides names the few *Mode fields whose environment variable
+// does not follow the mechanical conversion. The GraphQL group is handled by
+// modeSwitchEnvName itself because every one of its fields shares the acronym.
+var modeSwitchEnvOverrides = map[string]string{
+	// The field name predates the switch: the route under /api/situation-monitors
+	// keeps API_GO_SITUATION_MONITOR_SIGNALS_MODE.
+	"SituationSignalsMode": "API_GO_SITUATION_MONITOR_SIGNALS_MODE",
+}
+
+// modeSwitchEnvName derives the environment variable name of one *Mode field.
+// The mechanical SCREAMING_SNAKE_CASE conversion is correct for every switch
+// except the overrides above and the GraphQL group, whose field names
+// concatenate the acronym.
+func modeSwitchEnvName(field string) string {
+	if env, ok := modeSwitchEnvOverrides[field]; ok {
+		return env
+	}
+	if rest, ok := strings.CutPrefix(field, "GraphQL"); ok {
+		return "API_GO_GRAPHQL" + envNameSuffix(rest)
+	}
+	return "API_GO" + envNameSuffix(field)
+}
+
+func envNameSuffix(field string) string {
+	return "_" + upperSnakeCase(field)
+}
+
+// upperSnakeCase converts an exported Go identifier to SCREAMING_SNAKE_CASE:
+// an underscore is inserted before an upper-case letter that follows a
+// lower-case letter or digit, and before the last capital of an acronym that is
+// followed by a lower-case letter (OIDCLogin -> OIDC_LOGIN).
+func upperSnakeCase(identifier string) string {
+	var builder strings.Builder
+	builder.Grow(len(identifier) + 8)
+	for i := 0; i < len(identifier); i++ {
+		current := identifier[i]
+		if current >= 'A' && current <= 'Z' && i > 0 {
+			previous := identifier[i-1]
+			previousLowerOrDigit := (previous >= 'a' && previous <= 'z') || (previous >= '0' && previous <= '9')
+			previousUpper := previous >= 'A' && previous <= 'Z'
+			nextLower := i+1 < len(identifier) && identifier[i+1] >= 'a' && identifier[i+1] <= 'z'
+			if previousLowerOrDigit || (previousUpper && nextLower) {
+				builder.WriteByte('_')
+			}
+		}
+		builder.WriteByte(current)
+	}
+	return strings.ToUpper(builder.String())
 }
