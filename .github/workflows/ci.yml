@@ -582,7 +582,11 @@ jobs:
       # CRAWL-WORKER：三个爬取队列（crawl4ai / crawl4ai-hot / crawl4ai-normal）
       # 由 api-go 消费时的端到端行为（API_GO_CRAWL_WORKER_MODE=go）。crawl4ai 与
       # 媒体源都用 httptest，对象存储走 mysql provider（不需要真实 S3）；测试
-      # 自行 DROP/CREATE 窄表并使用独立 Mongo 库，所以放在本 job 末尾。
+      # 自行 DROP/CREATE 窄表并使用独立 Mongo 库，因此这两个 step 及其后的
+      # crawlexecution step 放在共享 schema 的最后：本批整合在它们之后追加的
+      # 态势刷新与 Telegram 轮询转交 step 分别使用私有 MySQL 库和只连 Redis，
+      # 不依赖共享 app schema。同一 go test 命令并发跑这两个包会互删同名表，
+      # 所以必须一个 step 一个包。
       # 覆盖：成功路径（CrawlTask/CrawlResult/Mongo 内容与媒体资产/TaskLog/
       # 通知行 + notification:events:v1/returnvalue/事件流 completed/
       # crawl:activity 减一）、可重试失败后成功、不可重试直接 failed、最终失败
