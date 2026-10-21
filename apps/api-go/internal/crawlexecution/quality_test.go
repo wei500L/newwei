@@ -39,9 +39,11 @@ func TestEstimateMarkdownWordUnits(t *testing.T) {
 	if score != 2 || density != 2 {
 		t.Fatalf("ascii = %d/%d", score, density)
 	}
-	// Four CJK characters: half a word each for scoring, a sixth for density.
+	// Four CJK characters with no whitespace: NestJS counts the single
+	// whitespace-separated field plus Math.round(4/2) for scoring and
+	// Math.round(4/6) for density, so 3/2.
 	score, density = estimateMarkdownWordUnits("你好世界")
-	if score != 2 || density != 1 {
+	if score != 3 || density != 2 {
 		t.Fatalf("cjk = %d/%d", score, density)
 	}
 }

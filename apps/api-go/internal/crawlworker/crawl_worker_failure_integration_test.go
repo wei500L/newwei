@@ -252,10 +252,10 @@ func TestCrawlWorkerIntegrationMemoryPressureRequeue(t *testing.T) {
 		if value != crawlBullLimiterSentinel {
 			t.Fatalf("bull:%s:limiter = %q, want the BullMQ rate limit sentinel %s", queue, value, crawlBullLimiterSentinel)
 		}
-		// Base cooldown 6000ms scaled by 2 for the 97% memory reading (the
-		// multiplier tiers are >=94% x2, >=96% x3 and >=98% x4) = 12000ms.
-		if ttl < 11*time.Second || ttl > 12*time.Second {
-			t.Fatalf("bull:%s:limiter PTTL = %s, want ~12000ms (6000ms x2)", queue, ttl)
+		// Base cooldown 6000ms scaled by 3 for the 97% memory reading (the
+		// multiplier tiers are >=94% x2, >=96% x3 and >=98% x4) = 18000ms.
+		if ttl < 17*time.Second || ttl > 18*time.Second {
+			t.Fatalf("bull:%s:limiter PTTL = %s, want ~18000ms (6000ms x3)", queue, ttl)
 		}
 	}
 	data := harness.jobData(t, crawlqueue.QueueNormal, jobID)
