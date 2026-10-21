@@ -436,6 +436,11 @@ services:
       # api-go 侧改为 go；回退按相反顺序。会话字符串、Redis 状态与队列协议
       # 两端相同，回退不需要重新登录。
       API_GO_SITUATION_SIGNALS_WORKER_MODE: ${API_GO_SITUATION_SIGNALS_WORKER_MODE:-legacy}
+      # 态势手动刷新 POST /api/situation-monitor/refresh 的执行权。Nest 只做
+      # schema 校验；go 时该路由由 api-go 处理（要求 api-go 侧同名变量为 go，
+      # 且 API_GO_SITUATION_SIGNALS_WORKER_MODE 与
+      # API_GO_NEWS_SOURCE_SCHEDULER_MODE 已为 go，否则 api-go 启动失败）。
+      API_GO_SITUATION_REFRESH_MODE: ${API_GO_SITUATION_REFRESH_MODE:-legacy}
       # Telegram 登录两个 POST 的执行权。Nest 只做 schema 校验；go 时这两条
       # 请求由 api-go 处理（Nest 控制器不改，其余 settings 路由不受影响）。
       API_GO_SITUATION_TELEGRAM_AUTH_MODE: ${API_GO_SITUATION_TELEGRAM_AUTH_MODE:-legacy}
@@ -606,6 +611,15 @@ services:
       # 消费两个队列（并发 1、限速 1/1000ms，共用同一 limiter 键）。go 要求
       # DATABASE_URL、REDIS_HOST 与 SYSTEM_SETTINGS_ENCRYPTION_KEY。
       API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE: ${API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE:-legacy}
+      # 三个爬取队列 worker（crawl4ai / crawl4ai-hot / crawl4ai-normal）的
+      # 执行权。空串与 legacy 等价，非法值在 Nest 与 Go 都启动失败。默认
+      # legacy=三个 Worker、QueueEvents 与 C2 订阅都由 NestJS 创建；go=NestJS
+      # 不再创建这三者，由 Go 消费（共享并发限制器 hot 优先、meta 全局并发、
+      # 队列级 limiter、C2 广播、按队列等级超时、内存压力冷却重排队、副作用
+      # 恰好一次、统一通知中继）。go 要求 DATABASE_URL、REDIS_HOST、
+      # MONGO_URI、CRAWL4AI_BASE_URL、SYSTEM_SETTINGS_ENCRYPTION_KEY，并在
+      # 接线时有非 nil 的 crawlfrontiernode processor。
+      API_GO_CRAWL_WORKER_MODE: ${API_GO_CRAWL_WORKER_MODE:-legacy}
       # ALERT_* 与 BULLMQ_NAMESPACE 与 NestJS 同源同名（同一份默认值），
       # 只在 API_GO_ALERT_WORKER_MODE=go 时被 Go 读取。
       BULLMQ_NAMESPACE: ${BULLMQ_NAMESPACE:-modular}
@@ -922,6 +936,12 @@ services:
       # 保证集群内只有一个实例持有 MTProto 连接。切换前先把 api 服务同名
       # 变量改为 go；回退最后再把 api 侧改回 legacy。
       API_GO_SITUATION_SIGNALS_WORKER_MODE: ${API_GO_SITUATION_SIGNALS_WORKER_MODE:-legacy}
+      # 态势手动刷新 POST /api/situation-monitor/refresh 的执行权。默认 legacy=
+      # 由 NestJS 处理；go 时由 api-go 处理，并要求本服务的
+      # API_GO_SITUATION_SIGNALS_WORKER_MODE 与 API_GO_NEWS_SOURCE_SCHEDULER_MODE
+      # 同为 go（否则启动失败：Telegram 会话只能由 Go 租约持有方使用，调度入口
+      # 在 Go）。刷新记录键/字段/TTL 两端相同，GET refresh-runs 不受影响。
+      API_GO_SITUATION_REFRESH_MODE: ${API_GO_SITUATION_REFRESH_MODE:-legacy}
       # Telegram 登录两个 POST（.../telegram-auth/start、.../complete）的执行权。
       # 默认 legacy=NestJS；go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、
       # MONGO_URI 与 SYSTEM_SETTINGS_ENCRYPTION_KEY。待完成请求缓存格式两端
@@ -956,6 +976,15 @@ services:
       # 消费两个队列（并发 1、限速 1/1000ms，共用同一 limiter 键）。go 要求
       # DATABASE_URL、REDIS_HOST 与 SYSTEM_SETTINGS_ENCRYPTION_KEY。
       API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE: ${API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE:-legacy}
+      # 三个爬取队列 worker（crawl4ai / crawl4ai-hot / crawl4ai-normal）的
+      # 执行权。空串与 legacy 等价，非法值在 Nest 与 Go 都启动失败。默认
+      # legacy=三个 Worker、QueueEvents 与 C2 订阅都由 NestJS 创建；go=NestJS
+      # 不再创建这三者，由 Go 消费（共享并发限制器 hot 优先、meta 全局并发、
+      # 队列级 limiter、C2 广播、按队列等级超时、内存压力冷却重排队、副作用
+      # 恰好一次、统一通知中继）。go 要求 DATABASE_URL、REDIS_HOST、
+      # MONGO_URI、CRAWL4AI_BASE_URL、SYSTEM_SETTINGS_ENCRYPTION_KEY，并在
+      # 接线时有非 nil 的 crawlfrontiernode processor。
+      API_GO_CRAWL_WORKER_MODE: ${API_GO_CRAWL_WORKER_MODE:-legacy}
       # ALERT_* 与 BULLMQ_NAMESPACE 与 NestJS 同源同名（同一份默认值），
       # 只在 API_GO_ALERT_WORKER_MODE=go 时被 Go 读取。
       BULLMQ_NAMESPACE: ${BULLMQ_NAMESPACE:-modular}

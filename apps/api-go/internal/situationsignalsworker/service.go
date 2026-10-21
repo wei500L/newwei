@@ -89,6 +89,10 @@ type Service struct {
 	telegram TelegramOwner
 	alerts   AlertEnqueuer
 	eventBus EventPublisher
+	// pollBus hands a Telegram cycle to the process that owns the single-instance
+	// lease (B2). Nil keeps the historical "skip on a foreign lease" behavior; the
+	// production constructor always wires the Redis transport.
+	pollBus  pollHandover
 	orefHTTP *http.Client
 	env      Env
 	logger   func(format string, args ...any)
@@ -96,10 +100,14 @@ type Service struct {
 
 	serviceStartedAt time.Time
 
-	// mu serializes one poll cycle per process in addition to the queue's
-	// concurrency of one. It also guards every mutable field below and the
-	// clear-broadcast application.
-	mu      sync.Mutex
+	// mu guards the Telegram scratch state, the clear-broadcast application and one
+	// Telegram poll cycle per process (in addition to the queue's concurrency of
+	// one).
+	mu sync.Mutex
+	// orefMu guards the OREF scratch state. It is a second lock rather than a
+	// share of mu so the manual refresh can run the Telegram and OREF cycles
+	// concurrently (O1) without the two states interleaving.
+	orefMu  sync.Mutex
 	closing atomic.Bool
 
 	telegramState               telegramState
@@ -140,6 +148,7 @@ func New(opts Options) (*Service, error) {
 		telegram:   opts.Telegram,
 		alerts:     opts.Alerts,
 		dispatcher: dispatcher,
+		handover:   newRedisPollHandover(opts.Redis),
 		httpClient: opts.Oref,
 		env:        opts.Env,
 		logger:     opts.Logger,
@@ -159,6 +168,7 @@ type serviceDeps struct {
 	telegram   TelegramOwner
 	alerts     AlertEnqueuer
 	dispatcher EventPublisher
+	handover   pollHandover
 	httpClient *http.Client
 	env        Env
 	logger     func(format string, args ...any)
@@ -185,6 +195,7 @@ func newService(deps serviceDeps) *Service {
 		telegram:         deps.telegram,
 		alerts:           deps.alerts,
 		eventBus:         deps.dispatcher,
+		pollBus:          deps.handover,
 		orefHTTP:         deps.httpClient,
 		env:              env,
 		logger:           logger,
@@ -201,21 +212,27 @@ func newService(deps serviceDeps) *Service {
 // not fail the job (the NestJS processor has the same posture). The OREF cycle
 // additionally runs under the Redis lease situation-monitor:signals:oref:poll
 // (B1): a process that loses the race skips the cycle entirely.
+//
+// A Telegram cycle that this process may not run because another instance owns
+// the lease is handed over instead of skipped (B2).
 func (s *Service) HandleJob(ctx context.Context, source PollSource) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.closing.Load() {
-		return nil
-	}
-
 	switch source {
 	case SourceTelegram:
-		if err := s.pollTelegram(ctx); err != nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.closing.Load() {
+			return nil
+		}
+		if _, err := s.pollTelegram(ctx, telegramPollAsync); err != nil {
 			s.logf("situationsignalsworker: telegram poll failed: %v", err)
 		}
 		return nil
 	case SourceOref:
+		s.orefMu.Lock()
+		defer s.orefMu.Unlock()
+		if s.closing.Load() {
+			return nil
+		}
 		s.runOrefCycle(ctx)
 		return nil
 	default:
@@ -247,11 +264,12 @@ func (s *Service) runOrefCycle(ctx context.Context) {
 	}
 }
 
-// Run subscribes to the cross-instance Telegram clear broadcast and blocks
-// until ctx is cancelled. The clear broadcast is required because the Go worker
-// holds process-local Telegram state: another instance (or the settings HTTP
-// route) deleting the shared state must also drop this process's connection and
-// scratch state.
+// Run subscribes to the cross-instance Telegram clear broadcast and the poll
+// handover channel (B2) and blocks until ctx is cancelled. The clear broadcast is
+// required because the Go worker holds process-local Telegram state: another
+// instance (or the settings HTTP route) deleting the shared state must also drop
+// this process's connection and scratch state. The handover channel is the one
+// way another instance can ask the lease owner to run a Telegram cycle.
 //
 // OREF alert rule maintenance is not a separate loop: like the NestJS service,
 // it runs from the poll cycle (triggerOrefAlertChecks), behind its own tick
@@ -260,7 +278,7 @@ func (s *Service) Run(ctx context.Context) error {
 	if s.redis == nil {
 		return fmt.Errorf("situationsignalsworker: redis client is required to subscribe to the Telegram clear broadcast")
 	}
-	subscriber := s.redis.Subscribe(ctx, clearBroadcastChannel)
+	subscriber := s.redis.Subscribe(ctx, clearBroadcastChannel, telegramPollChannel)
 	s.pubsubMu.Lock()
 	s.pubsub = subscriber
 	s.pubsubMu.Unlock()
@@ -276,7 +294,7 @@ func (s *Service) Run(ctx context.Context) error {
 	if _, err := subscriber.Receive(ctx); err != nil {
 		return fmt.Errorf("situationsignalsworker: subscribe to Telegram clear broadcast: %w", err)
 	}
-	s.logf("situationsignalsworker: subscribed to %s", clearBroadcastChannel)
+	s.logf("situationsignalsworker: subscribed to %s and %s", clearBroadcastChannel, telegramPollChannel)
 
 	messages := subscriber.Channel()
 	for {
@@ -287,10 +305,12 @@ func (s *Service) Run(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			if message.Channel != clearBroadcastChannel {
-				continue
+			switch message.Channel {
+			case clearBroadcastChannel:
+				s.handleClearBroadcast(ctx, message.Payload)
+			case telegramPollChannel:
+				s.handleTelegramPollRequest(ctx, message.Payload)
 			}
-			s.handleClearBroadcast(ctx, message.Payload)
 		}
 	}
 }

@@ -1,14 +1,17 @@
 package crawlexecution
 
 // This file ports the detail-expansion branch runTask calls
-// (CrawlDetailExpansionService.expandListLikeResultsIfNeeded) for the pipeline
-// crawl path: page-signal assessment, auto-expand decision, link-candidate
-// extraction and scoring, batched expansion crawls, improvement selection and
-// the merge back into the crawl results.
+// (CrawlDetailExpansionService.expandListLikeResultsIfNeeded) for both the
+// pipeline and the BullMQ worker path: page-signal assessment, auto-expand
+// decision, the primary and link-fallback candidate pools, publish-signal
+// enrichment, batched expansion crawls, improvement selection and the merge back
+// into the crawl results.
 //
-// The publish-signal HEAD enrichment, media density and DOM list-risk inputs of
-// CrawlQualityStrategyService are not ported (see the package gaps); the
-// candidate URL scoring and the list-like/low-signal heuristics they feed are.
+// The page signals themselves (publish time, media density, DOM list risk) live
+// in quality.go and the candidate probes in quality_http.go. Every input reaches
+// the four decisions the way NestJS does: publish time and media density can
+// veto a low-signal/ list-like verdict, and the DOM list risk feeds both
+// isListLike and isLowSignal.
 
 import (
 	"context"
@@ -18,7 +21,6 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawloptions"
@@ -44,17 +46,22 @@ type expansionResult struct {
 	RunID     *string
 }
 
-// articleSignal is the subset of CrawlArticleSignal the expansion decision
-// reads in this port.
+// articleSignal is CrawlArticleSignal: the markdown metrics plus the three
+// inputs the detail-expansion decision reads (publish time, media density, DOM
+// list risk).
 type articleSignal struct {
-	WordCount      int
-	ParagraphCount int
-	HeadingCount   int
-	LinkCount      int
-	LinkDensity    float64
-	BulletLines    int
-	Score          float64
-	IsListLike     bool
+	WordCount             int
+	ParagraphCount        int
+	HeadingCount          int
+	LinkCount             int
+	LinkDensity           float64
+	BulletLines           int
+	PublishTimeConfidence float64
+	PublishTimeSource     string
+	MediaDensity          float64
+	DomListRisk           float64
+	Score                 float64
+	IsListLike            bool
 }
 
 // detailExpansionOptions is Required<CrawlDetailExpansionOptions>.
@@ -176,68 +183,6 @@ func normalizePatternList(patterns []string) []string {
 	return unique
 }
 
-// assessArticleSignal is assessArticleMarkdownSignal reduced to the fields the
-// expansion decision needs.
-func assessArticleSignal(article crawl4ai.PipelineArticle) articleSignal {
-	markdown := extractMarkdownResult(article.Markdown)
-	markdownText := ""
-	if markdown.Primary != nil {
-		markdownText = strings.TrimSpace(*markdown.Primary)
-	}
-	if markdownText == "" {
-		return articleSignal{Score: math.Inf(-1)}
-	}
-	words := len(strings.Fields(markdownText))
-	paragraphCount := 0
-	for _, entry := range strings.Split(markdownText, "\n\n") {
-		if strings.TrimSpace(entry) != "" {
-			paragraphCount++
-		}
-	}
-	headingPattern := regexp.MustCompile(`(?m)^#{1,6}\s+`)
-	headings := len(headingPattern.FindAllString(markdownText, -1))
-	linkPattern := regexp.MustCompile(`\]\((https?://|/)`)
-	markdownLinks := len(linkPattern.FindAllString(markdownText, -1))
-	rawURLPattern := regexp.MustCompile(`https?://\S+`)
-	rawURLs := len(rawURLPattern.FindAllString(markdownText, -1))
-	linkCount := markdownLinks + rawURLs
-	linkDensity := 0.0
-	if words > 0 {
-		linkDensity = float64(linkCount) / float64(words)
-	}
-	bullets := 0
-	for _, line := range strings.Split(markdownText, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") || strings.HasPrefix(trimmed, "• ") {
-			bullets++
-		}
-	}
-	linkInventory := countArticleLinks(article.Links)
-	listLikeSignals := (linkCount >= 16 && words <= 1500) ||
-		(bullets >= 10 && linkCount >= 10) ||
-		(linkDensity >= 0.09 && words <= 1200)
-	hasArticleLikeBody := paragraphCount >= 8 && words >= 260 && linkDensity <= 0.22
-	isListLike := listLikeSignals && !hasArticleLikeBody
-	boilerplateRatio := estimateBoilerplateRatio(markdownText)
-	score := math.Min(float64(words), 12000) +
-		float64(minIntValue(paragraphCount, 220))*6 +
-		float64(headings)*3 -
-		float64(linkCount)*6 -
-		float64(bullets)*2 -
-		math.Round(boilerplateRatio*320)
-	_ = linkInventory
-	return articleSignal{
-		WordCount:      words,
-		ParagraphCount: paragraphCount,
-		HeadingCount:   headings,
-		LinkCount:      linkCount,
-		LinkDensity:    linkDensity,
-		BulletLines:    bullets,
-		Score:          score,
-		IsListLike:     isListLike,
-	}
-}
-
 func minIntValue(left, right int) int {
 	if left < right {
 		return left
@@ -259,24 +204,6 @@ func countArticleLinks(raw json.RawMessage) int {
 		total += len(entries)
 	}
 	return total
-}
-
-// isLowSignalAssessment is CrawlQualityStrategyService.isLowSignal for the
-// ported signal subset.
-func isLowSignalAssessment(signal articleSignal, linkInventory int) bool {
-	if signal.IsListLike {
-		return true
-	}
-	if signal.LinkDensity >= 0.14 && signal.WordCount <= 1600 {
-		return true
-	}
-	if signal.LinkCount >= 12 && signal.WordCount <= 520 {
-		return true
-	}
-	if linkInventory >= 40 && signal.WordCount <= 900 {
-		return true
-	}
-	return false
 }
 
 // classifyPageKind is classifyPageKind.
@@ -364,14 +291,16 @@ func (s *Service) expandListLikeResultsIfNeeded(ctx context.Context, input expan
 	if qualityProfile == "" {
 		qualityProfile = "quality_first"
 	}
+	detailOptions := resolveDetailExpansionOptions(input.CrawlOptions)
+	now := s.now()
 
 	assessments := make([]articleSignal, 0, len(input.Successes))
 	lowSignal := make([]articleSignal, 0, len(input.Successes))
 	lowSignalIndexes := map[int]struct{}{}
 	for index, article := range input.Successes {
-		signal := assessArticleSignal(article)
+		signal := assessArticleMarkdownSignal(article, detailOptions.PreferFitMarkdown, now)
 		assessments = append(assessments, signal)
-		if isLowSignalAssessment(signal, countArticleLinks(article.Links)) {
+		if isLowSignal(signal, countArticleLinks(article.Links)) {
 			lowSignal = append(lowSignal, signal)
 			lowSignalIndexes[index] = struct{}{}
 		}
@@ -389,34 +318,91 @@ func (s *Service) expandListLikeResultsIfNeeded(ctx context.Context, input expan
 	}
 	effectiveAllLowSignal := len(effectiveLowSignal) > 0 && len(effectiveLowSignal) == len(assessments)
 
-	detailOptions := resolveDetailExpansionOptions(input.CrawlOptions)
+	// Low-signal aggregates feed the detail-improvement gate exactly like the
+	// page assessment does in NestJS.
+	baseScore := math.Inf(-1)
+	baseWords := 0
+	maxLinkDensity := 0.0
+	minLowSignalWords := math.Inf(1)
+	meanLowSignalWords := 0.0
+	meanLowSignalLinkDensity := 0.0
+	for _, signal := range lowSignal {
+		if signal.Score > baseScore {
+			baseScore = signal.Score
+		}
+		if signal.WordCount > baseWords {
+			baseWords = signal.WordCount
+		}
+		if signal.LinkDensity > maxLinkDensity {
+			maxLinkDensity = signal.LinkDensity
+		}
+		if float64(signal.WordCount) < minLowSignalWords {
+			minLowSignalWords = float64(signal.WordCount)
+		}
+		meanLowSignalWords += float64(signal.WordCount)
+		meanLowSignalLinkDensity += signal.LinkDensity
+	}
+	if len(lowSignal) > 0 {
+		meanLowSignalWords /= float64(len(lowSignal))
+		meanLowSignalLinkDensity /= float64(len(lowSignal))
+	} else {
+		minLowSignalWords = 0
+	}
+
 	existingURLs := map[string]struct{}{}
 	for _, entry := range input.Successes {
 		if normalized := normalizeComparableURL(entry.URL); normalized != "" {
 			existingURLs[normalized] = struct{}{}
 		}
 	}
-	candidateScores := map[string]float64{}
-	candidateOrder := make([]string, 0, 16)
+	// The primary and fallback candidate pools keep insertion order so the
+	// ranking is deterministic (Go map iteration is not).
+	primaryOrder := make([]string, 0, 16)
+	fallbackOrder := make([]string, 0, 16)
+	primaryScores := map[string]float64{}
+	fallbackScores := map[string]float64{}
+	existingURLSkipped := 0
+	fallbackMinPublishConfidence := math.Max(0, detailOptions.MinPublishConfidence-0.2)
 	for index, article := range input.Successes {
 		if _, isLow := lowSignalIndexes[index]; !isLow && !forceFromSeed {
 			continue
 		}
-		baseURL := article.URL
+		baseURL := resolveArticleBaseURL(article)
 		if baseURL == "" {
 			baseURL = input.Task.TargetURL
 		}
 		for _, candidate := range extractDetailLinkCandidates(article, baseURL, detailOptions) {
 			if _, exists := existingURLs[candidate]; exists {
+				existingURLSkipped++
 				continue
 			}
-			next := scoreDetailCandidateURL(candidate, baseURL)
-			current, seen := candidateScores[candidate]
-			if !seen {
-				candidateOrder = append(candidateOrder, candidate)
+			score, ok := scorePrimaryDetailCandidate(candidate, baseURL, detailOptions.MinPublishConfidence)
+			if !ok {
+				continue
 			}
-			if !seen || next > current {
-				candidateScores[candidate] = next
+			current, seen := primaryScores[candidate]
+			if !seen {
+				primaryOrder = append(primaryOrder, candidate)
+			}
+			if !seen || score > current {
+				primaryScores[candidate] = score
+			}
+		}
+		for _, candidate := range extractFallbackDetailLinkCandidates(article, baseURL, detailOptions, fallbackMinPublishConfidence) {
+			if _, exists := existingURLs[candidate]; exists {
+				existingURLSkipped++
+				continue
+			}
+			score, ok := scoreFallbackDetailCandidate(candidate, baseURL, fallbackMinPublishConfidence)
+			if !ok {
+				continue
+			}
+			current, seen := fallbackScores[candidate]
+			if !seen {
+				fallbackOrder = append(fallbackOrder, candidate)
+			}
+			if !seen || score > current {
+				fallbackScores[candidate] = score
 			}
 		}
 	}
@@ -440,18 +426,132 @@ func (s *Service) expandListLikeResultsIfNeeded(ctx context.Context, input expan
 	}
 	minCandidateScore := detailRelevanceToScore(detailOptions.MinRelevanceScore)
 
-	candidates := make([]string, 0, len(candidateScores))
-	for _, candidate := range candidateOrder {
-		if !math.IsInf(candidateScores[candidate], 0) && candidateScores[candidate] >= minCandidateScore {
-			candidates = append(candidates, candidate)
+	// One pool, best score per URL, ordered by score (stable over the
+	// primary-then-fallback insertion order).
+	poolScores := map[string]float64{}
+	poolOrder := make([]string, 0, len(primaryOrder)+len(fallbackOrder))
+	for _, candidate := range primaryOrder {
+		score := primaryScores[candidate]
+		if !isFiniteNumber(score) {
+			continue
+		}
+		if current, seen := poolScores[candidate]; !seen || score > current {
+			poolScores[candidate] = score
+			if !seen {
+				poolOrder = append(poolOrder, candidate)
+			}
 		}
 	}
-	sort.SliceStable(candidates, func(left, right int) bool {
-		return candidateScores[candidates[left]] > candidateScores[candidates[right]]
+	for _, candidate := range fallbackOrder {
+		score := fallbackScores[candidate]
+		if !isFiniteNumber(score) {
+			continue
+		}
+		if current, seen := poolScores[candidate]; !seen || score > current {
+			poolScores[candidate] = score
+			if !seen {
+				poolOrder = append(poolOrder, candidate)
+			}
+		}
+	}
+	pool := make([]candidateEntry, 0, len(poolOrder))
+	for _, candidate := range poolOrder {
+		pool = append(pool, candidateEntry{URL: candidate, Score: poolScores[candidate]})
+	}
+	sort.SliceStable(pool, func(left, right int) bool {
+		return pool[left].Score > pool[right].Score
 	})
+
+	// The strongest candidates are probed once for a publish date; a probe
+	// failure keeps the URL-path confidence (soft failure).
+	topK := resolvePublishSignalTopK(candidateLimit, detailOptions.MaxDetailUrls, len(pool))
+	topURLs := make([]string, 0, topK)
+	for index := 0; index < topK && index < len(pool); index++ {
+		topURLs = append(topURLs, pool[index].URL)
+	}
+	enrichmentSettings := s.publishSignalEnrichmentSettings()
+	enrichment := s.enrichCandidatePublishSignals(ctx, topURLs, input.RequestTimeoutMs, enrichmentSettings)
+	candidateSignals := make(map[string]publishCandidateSignal, len(pool))
+	for _, entry := range pool {
+		var enriched *publishCandidateSignal
+		if value, ok := enrichment.Signals[entry.URL]; ok {
+			copied := value
+			enriched = &copied
+		}
+		candidateSignals[entry.URL] = resolveCandidatePublishSignal(entry.URL, enriched)
+	}
+	publishConfidenceThreshold := clampUnitInterval(detailOptions.MinPublishConfidence)
+	fallbackPublishConfidenceThreshold := math.Max(0, publishConfidenceThreshold-0.15)
+	primaryEntries := make([]candidateEntry, 0, len(primaryOrder))
+	for _, candidate := range primaryOrder {
+		score, seen := primaryScores[candidate]
+		if !seen || !isFiniteNumber(score) {
+			continue
+		}
+		if candidateSignals[candidate].Confidence >= publishConfidenceThreshold {
+			primaryEntries = append(primaryEntries, candidateEntry{URL: candidate, Score: score})
+		}
+	}
+	fallbackEntries := make([]candidateEntry, 0, len(fallbackOrder))
+	for _, candidate := range fallbackOrder {
+		score, seen := fallbackScores[candidate]
+		if !seen || !isFiniteNumber(score) {
+			continue
+		}
+		if candidateSignals[candidate].Confidence >= fallbackPublishConfidenceThreshold {
+			fallbackEntries = append(fallbackEntries, candidateEntry{URL: candidate, Score: score})
+		}
+	}
+	sort.SliceStable(primaryEntries, func(left, right int) bool {
+		return primaryEntries[left].Score > primaryEntries[right].Score
+	})
+	sort.SliceStable(fallbackEntries, func(left, right int) bool {
+		return fallbackEntries[left].Score > fallbackEntries[right].Score
+	})
+	publishConfidenceBuckets := buildDetailCandidateConfidenceBuckets(candidateSignals, poolOrder)
+
+	minimumCandidateCount := resolveMinimumDetailExpansionCandidates(
+		detailOptions.MaxDetailUrls, candidateLimit, effectiveAllLowSignal, qualityProfile)
+	selectedSet := make(map[string]struct{}, candidateLimit)
+	selectedOrder := make([]string, 0, candidateLimit)
+	pushCandidates := func(entries []candidateEntry, threshold float64, targetSize int) int {
+		if targetSize <= 0 {
+			return 0
+		}
+		added := 0
+		for _, entry := range entries {
+			if !isFiniteNumber(entry.Score) || entry.Score < threshold {
+				continue
+			}
+			if _, exists := selectedSet[entry.URL]; exists {
+				continue
+			}
+			selectedSet[entry.URL] = struct{}{}
+			selectedOrder = append(selectedOrder, entry.URL)
+			added++
+			if len(selectedSet) >= targetSize {
+				break
+			}
+		}
+		return added
+	}
+	strictCandidateCount := pushCandidates(primaryEntries, minCandidateScore, candidateLimit)
+	relaxedCandidateCount := 0
+	if len(selectedSet) < minimumCandidateCount {
+		relaxedCandidateCount = pushCandidates(primaryEntries, minCandidateScore-80, minimumCandidateCount)
+	}
+	linkFallbackCandidateCount := 0
+	if len(selectedSet) < minimumCandidateCount {
+		linkFallbackCandidateCount = pushCandidates(fallbackEntries, minCandidateScore-140, minimumCandidateCount)
+	}
+	if len(selectedSet) == 0 && effectiveAllLowSignal && len(fallbackEntries) > 0 {
+		pushCandidates(fallbackEntries, math.Inf(-1), 1)
+	}
+	candidates := selectedOrder
 	if len(candidates) > candidateLimit {
 		candidates = candidates[:candidateLimit]
 	}
+
 	if len(candidates) == 0 {
 		if effectiveAllLowSignal {
 			return nil, fmt.Errorf("crawl markdown is low-signal/list-like and no detail candidate URLs were extracted from the page content")
@@ -513,29 +613,25 @@ func (s *Service) expandListLikeResultsIfNeeded(ctx context.Context, input expan
 		quality articleSignal
 	}
 	improvedByURL := map[string]improvedEntry{}
-	baseScore := math.Inf(-1)
-	baseWords := 0
-	maxLinkDensity := 0.0
-	for _, signal := range lowSignal {
-		if signal.Score > baseScore {
-			baseScore = signal.Score
-		}
-		if signal.WordCount > baseWords {
-			baseWords = signal.WordCount
-		}
-		if signal.LinkDensity > maxLinkDensity {
-			maxLinkDensity = signal.LinkDensity
-		}
-	}
 	for _, article := range expansionSuccesses {
 		if !isLikelyDetailArticleURL(article.URL, input.Task.TargetURL, detailOptions.RequireSameDomain, detailOptions.AllowExternalLinks) {
 			continue
 		}
-		quality := assessArticleSignal(article)
+		quality := assessArticleMarkdownSignal(article, true, now)
 		if !isSignificantDetailImprovement(quality, baseScore, baseWords, maxLinkDensity) {
 			continue
 		}
 		normalized := normalizeComparableURL(article.URL)
+		selectedByExpansionCandidates := false
+		if normalized != "" {
+			_, selectedByExpansionCandidates = selectedSet[normalized]
+		}
+		if !selectedByExpansionCandidates {
+			detailScore := scoreDetailCandidateURL(article.URL, input.Task.TargetURL)
+			if isFiniteNumber(detailScore) && detailScore < minCandidateScore {
+				continue
+			}
+		}
 		key := normalized
 		if key == "" {
 			key = article.URL
@@ -600,6 +696,25 @@ func (s *Service) expandListLikeResultsIfNeeded(ctx context.Context, input expan
 		improvedArticles = append(improvedArticles, entry.article)
 	}
 
+	improvedSampleRows := make([]map[string]any, 0, minIntValue(5, len(improved)))
+	for index, entry := range improved {
+		if index >= 5 {
+			break
+		}
+		improvedSampleRows = append(improvedSampleRows, map[string]any{
+			"url":                   nullableStringValue(stringPtrOrNil(entry.article.URL)),
+			"wordCount":             entry.quality.WordCount,
+			"linkCount":             entry.quality.LinkCount,
+			"linkDensity":           roundTo(entry.quality.LinkDensity, 3),
+			"publishTimeConfidence": roundTo(entry.quality.PublishTimeConfidence, 3),
+			"publishTimeSource":     entry.quality.PublishTimeSource,
+			"mediaDensity":          roundTo(entry.quality.MediaDensity, 4),
+			"domListRisk":           roundTo(entry.quality.DomListRisk, 3),
+			"score":                 roundTo(entry.quality.Score, 2),
+			"isListLike":            entry.quality.IsListLike,
+		})
+	}
+
 	s.writeTaskLog(ctx, taskLogEntry{
 		Queue:   crawlQueueName,
 		JobID:   input.Task.ID,
@@ -616,13 +731,65 @@ func (s *Service) expandListLikeResultsIfNeeded(ctx context.Context, input expan
 			"forcedByLowSignalSeed": forceFromSeed,
 			"totalSuccesses":        len(assessments),
 			"lowSignalResults":      len(effectiveLowSignal),
-			"candidateCount":        len(candidates),
-			"runId":                 nullableStringValue(expansionRunID),
-			"expansionSuccesses":    len(expansionSuccesses),
-			"expansionFailures":     len(expansionFailures),
-			"improvedSuccesses":     len(improvedArticles),
-			"preferredPathSegment":  nullableStringValue(stringPtrOrNil(preferredSegment)),
-			"failureSamples":        failureSamples(expansionFailures, 5),
+			"lowSignalWords": map[string]any{
+				"min": minLowSignalWords,
+				"max": baseWords,
+				"avg": roundTo(meanLowSignalWords, 1),
+			},
+			"lowSignalLinkDensity": map[string]any{
+				"max": roundTo(maxLinkDensity, 3),
+				"avg": roundTo(meanLowSignalLinkDensity, 3),
+			},
+			"qualitySamples":                             qualitySamples(effectiveLowSignal),
+			"improvedSamples":                            improvedSampleRows,
+			"minimumCandidateCount":                      minimumCandidateCount,
+			"primaryCandidatePool":                       len(primaryOrder),
+			"fallbackCandidatePool":                      len(fallbackOrder),
+			"primaryCandidatePoolAfterConfidenceFilter":  len(primaryEntries),
+			"fallbackCandidatePoolAfterConfidenceFilter": len(fallbackEntries),
+			"strictCandidateCount":                       strictCandidateCount,
+			"relaxedCandidateCount":                      relaxedCandidateCount,
+			"linkFallbackCandidateCount":                 linkFallbackCandidateCount,
+			"existingUrlSkipped":                         existingURLSkipped,
+			"publishConfidenceThreshold":                 publishConfidenceThreshold,
+			"fallbackPublishConfidenceThreshold":         fallbackPublishConfidenceThreshold,
+			"publishConfidenceBuckets": map[string]any{
+				"lt04":       publishConfidenceBuckets.LT04,
+				"from04To06": publishConfidenceBuckets.From04To06,
+				"from06To08": publishConfidenceBuckets.From06To08,
+				"gte08":      publishConfidenceBuckets.GTE08,
+			},
+			"headSignalEnrichment": map[string]any{
+				"attempted":              enrichment.Attempted,
+				"succeeded":              enrichment.Succeeded,
+				"failed":                 enrichment.Failed,
+				"topK":                   topK,
+				"skipped":                enrichment.Skipped,
+				"configuredTimeoutMs":    enrichmentSettings.TimeoutMs,
+				"configuredConcurrency":  enrichmentSettings.Concurrency,
+				"configuredMaxReadBytes": enrichmentSettings.MaxReadBytes,
+				"effectiveTimeoutMs":     enrichment.EffectiveTimeoutMs,
+				"effectiveConcurrency":   enrichment.EffectiveConcurrency,
+				"maxReadBytes":           enrichment.MaxReadBytes,
+				"truncatedResponses":     enrichment.TruncatedResponses,
+				"earlyStoppedResponses":  enrichment.EarlyStoppedResponses,
+				"softFailures": map[string]any{
+					"httpStatus":       enrichment.SoftFailures.HTTPStatus,
+					"nonHtml":          enrichment.SoftFailures.NonHTML,
+					"emptyHtml":        enrichment.SoftFailures.EmptyHTML,
+					"networkOrTimeout": enrichment.SoftFailures.NetworkOrTimeout,
+					"noPublishSignal":  enrichment.SoftFailures.NoPublishSignal,
+				},
+				"softFailureCount": enrichment.softFailureCount(),
+			},
+			"candidateCount":       len(candidates),
+			"candidateTotalPool":   len(pool),
+			"runId":                nullableStringValue(expansionRunID),
+			"expansionSuccesses":   len(expansionSuccesses),
+			"expansionFailures":    len(expansionFailures),
+			"improvedSuccesses":    len(improvedArticles),
+			"preferredPathSegment": nullableStringValue(stringPtrOrNil(preferredSegment)),
+			"failureSamples":       failureSamples(expansionFailures, 5),
 		},
 	})
 	if len(improvedArticles) == 0 {
@@ -664,6 +831,216 @@ func (s *Service) expandListLikeResultsIfNeeded(ctx context.Context, input expan
 		Failures:  expansionFailures,
 		RunID:     expansionRunID,
 	}, nil
+}
+
+// candidateEntry is one candidate URL with its relevance score.
+type candidateEntry struct {
+	URL   string
+	Score float64
+}
+
+// isFiniteNumber is Number.isFinite.
+func isFiniteNumber(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+// resolveArticleBaseURL is resolveArticleBaseUrl: the article URL, else the
+// metadata url/sourceUrl.
+func resolveArticleBaseURL(article crawl4ai.PipelineArticle) string {
+	if trimmed := strings.TrimSpace(article.URL); trimmed != "" {
+		return trimmed
+	}
+	if metadata := decodeMetadataMap(article.Metadata); metadata != nil {
+		if value := pickRawString(metadata, "url", "sourceUrl", "source_url"); value != nil {
+			return *value
+		}
+	}
+	return ""
+}
+
+// scorePrimaryDetailCandidate is the primary-pool scoring step: the publish
+// prefilter of extractDetailLinkCandidatesFromArticle, then the URL score.
+func scorePrimaryDetailCandidate(candidate, baseURL string, minPublishConfidence float64) (float64, bool) {
+	if minPublishConfidence > 0 {
+		confidence := estimatePublishTimeConfidenceFromCandidateURL(candidate)
+		if confidence < math.Max(0, minPublishConfidence-0.25) {
+			return 0, false
+		}
+	}
+	return scoreDetailCandidateURL(candidate, baseURL), true
+}
+
+// scoreFallbackDetailCandidate is the link-fallback caller scoring step: the
+// publish prefilter with the relaxed threshold, then the URL score minus the
+// fixed fallback penalty.
+func scoreFallbackDetailCandidate(candidate, baseURL string, minPublishConfidence float64) (float64, bool) {
+	if minPublishConfidence > 0 {
+		confidence := estimatePublishTimeConfidenceFromCandidateURL(candidate)
+		if confidence < math.Max(0, minPublishConfidence-0.25) {
+			return 0, false
+		}
+	}
+	return scoreDetailCandidateURL(candidate, baseURL) - 120, true
+}
+
+// resolveMinimumDetailExpansionCandidates is
+// resolveMinimumDetailExpansionCandidates.
+func resolveMinimumDetailExpansionCandidates(maxDetailUrls, candidateLimit int, allLowSignal bool, qualityProfile string) int {
+	profileBoost := 0
+	if qualityProfile == "quality_first" {
+		profileBoost = 2
+	} else if qualityProfile == "balanced" {
+		profileBoost = 1
+	}
+	baseMinimum := 2
+	if allLowSignal {
+		baseMinimum = 3
+	}
+	desired := baseMinimum + profileBoost
+	return maxIntValue(1, minIntValue(minIntValue(maxDetailUrls, candidateLimit), desired))
+}
+
+// extractFallbackDetailLinkCandidates is
+// extractFallbackDetailLinkCandidatesFromArticle: the link buckets only, with
+// the relaxed fallback URL shape and the publish prefilter.
+func extractFallbackDetailLinkCandidates(
+	article crawl4ai.PipelineArticle,
+	baseURL string,
+	options detailExpansionOptions,
+	minPublishConfidence float64,
+) []string {
+	hrefs := articleLinkHrefs(article)
+	if len(hrefs) == 0 {
+		return nil
+	}
+	base, baseErr := url.Parse(baseURL)
+	scores := map[string]float64{}
+	order := make([]string, 0, len(hrefs))
+	for _, href := range hrefs {
+		resolved := resolveDetailCandidateURL(href, base, baseErr)
+		if resolved == "" {
+			continue
+		}
+		if !isLikelyFallbackDetailArticleURL(resolved, baseURL, options) {
+			continue
+		}
+		if !detailCandidateAllowedByPattern(resolved, options) {
+			continue
+		}
+		if minPublishConfidence > 0 {
+			confidence := estimatePublishTimeConfidenceFromCandidateURL(resolved)
+			if confidence < math.Max(0, minPublishConfidence-0.25) {
+				continue
+			}
+		}
+		score := scoreDetailCandidateURL(resolved, baseURL)
+		if current, seen := scores[resolved]; !seen || score > current {
+			scores[resolved] = score
+			if !seen {
+				order = append(order, resolved)
+			}
+		}
+	}
+	fallback := make([]candidateEntry, 0, len(order))
+	for _, candidate := range order {
+		fallback = append(fallback, candidateEntry{URL: candidate, Score: scores[candidate]})
+	}
+	sort.SliceStable(fallback, func(left, right int) bool {
+		return fallback[left].Score > fallback[right].Score
+	})
+	if len(fallback) > 40 {
+		fallback = fallback[:40]
+	}
+	candidates := make([]string, 0, len(fallback))
+	for _, entry := range fallback {
+		candidates = append(candidates, entry.URL)
+	}
+	return candidates
+}
+
+// detailCandidateAllowedByPattern applies the include/exclude URL patterns.
+func detailCandidateAllowedByPattern(candidate string, options detailExpansionOptions) bool {
+	if urlMatchesAnyPattern(candidate, options.ExcludeURLPatterns) {
+		return false
+	}
+	if len(options.IncludeURLPatterns) > 0 && !urlMatchesAnyPattern(candidate, options.IncludeURLPatterns) {
+		return false
+	}
+	return true
+}
+
+// fallbackBlockedPathPattern is the fallback URL-shape blocklist.
+var fallbackBlockedPathPattern = regexp.MustCompile(
+	`(^|/)(video|videos|photo|photos|gallery|podcast|tag|tags|topic|topics|section|sections|author|authors|archive|latest|live|newsletter|country|special-report|poll-of-polls)(/|$)`)
+
+// isLikelyFallbackDetailArticleURL is isLikelyFallbackDetailArticleUrl: a looser
+// shape than isLikelyDetailArticleUrl, used only to backfill candidates when the
+// strict pool is empty.
+func isLikelyFallbackDetailArticleURL(candidate, baseURL string, options detailExpansionOptions) bool {
+	if isLikelyDetailArticleURL(candidate, baseURL, options.RequireSameDomain, options.AllowExternalLinks) {
+		return true
+	}
+	parsed, err := url.Parse(candidate)
+	if err != nil {
+		return false
+	}
+	base, baseErr := url.Parse(baseURL)
+	if baseErr != nil {
+		return false
+	}
+	sameRootDomain := getRootDomain(parsed.Hostname()) == getRootDomain(base.Hostname())
+	if options.RequireSameDomain && !sameRootDomain {
+		return false
+	}
+	if !options.AllowExternalLinks && !sameRootDomain {
+		return false
+	}
+	segments := splitPathSegments(strings.TrimRight(parsed.Path, "/"))
+	if len(segments) < 2 {
+		return false
+	}
+	segmentsLower := make([]string, len(segments))
+	for index, segment := range segments {
+		segmentsLower[index] = strings.ToLower(segment)
+	}
+	if hasBlockedDetailPathSegments(segmentsLower) {
+		return false
+	}
+	joined := strings.ToLower(strings.Join(segments, "/"))
+	if fallbackBlockedPathPattern.MatchString(joined) {
+		return false
+	}
+	lastSegment := segments[len(segments)-1]
+	lastSegmentLower := strings.ToLower(lastSegment)
+	if len(lastSegment) >= 16 && slugSeparatorPattern.MatchString(lastSegment) &&
+		!isLikelyPathCategoryToken(lastSegmentLower) {
+		return true
+	}
+	if len(segments) >= 2 && len(lastSegment) >= 12 && slugSeparatorPattern.MatchString(lastSegment) &&
+		!isLikelyPathCategoryToken(lastSegmentLower) {
+		return true
+	}
+	return false
+}
+
+// qualitySamples projects up to five low-signal signals for the task log.
+func qualitySamples(signals []articleSignal) []map[string]any {
+	limit := minIntValue(5, len(signals))
+	samples := make([]map[string]any, 0, limit)
+	for _, signal := range signals[:limit] {
+		samples = append(samples, map[string]any{
+			"wordCount":             signal.WordCount,
+			"linkCount":             signal.LinkCount,
+			"linkDensity":           roundTo(signal.LinkDensity, 3),
+			"publishTimeConfidence": roundTo(signal.PublishTimeConfidence, 3),
+			"publishTimeSource":     signal.PublishTimeSource,
+			"mediaDensity":          roundTo(signal.MediaDensity, 4),
+			"domListRisk":           roundTo(signal.DomListRisk, 3),
+			"bulletLines":           signal.BulletLines,
+			"score":                 roundTo(signal.Score, 2),
+		})
+	}
+	return samples
 }
 
 func expansionLogMessage(improved int) string {
@@ -953,12 +1330,12 @@ func estimatePublishTimeConfidenceFromCandidateURL(candidate string) float64 {
 	}
 	path := strings.ToLower(parsed.Path)
 	if match := articleDateSlash.FindStringSubmatch(path); match != nil {
-		if validDateMatch(match) {
+		if _, ok := utcDateMilliseconds(match[1], match[2], match[3]); ok {
 			return 0.82
 		}
 	}
 	if match := articleDateDashed.FindStringSubmatch(path); match != nil {
-		if validDateMatch(match) {
+		if _, ok := utcDateMilliseconds(match[1], match[2], match[3]); ok {
 			return 0.82
 		}
 	}
@@ -979,25 +1356,6 @@ func estimatePublishTimeConfidenceFromCandidateURL(candidate string) float64 {
 		return 0.56
 	}
 	return 0.38
-}
-
-func validDateMatch(match []string) bool {
-	if len(match) < 4 {
-		return false
-	}
-	year, err := strconv.Atoi(match[1])
-	if err != nil {
-		return false
-	}
-	month, err := strconv.Atoi(match[2])
-	if err != nil {
-		return false
-	}
-	day, err := strconv.Atoi(match[3])
-	if err != nil {
-		return false
-	}
-	return year >= 2000 && month >= 1 && month <= 12 && day >= 1 && day <= 31
 }
 
 // extractPrimaryPathSegment is extractPrimaryPathSegment.

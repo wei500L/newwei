@@ -326,6 +326,11 @@ func TestCrawlTaskLifecycleDedup(t *testing.T) {
 	if got := h.activityCount(t); got != 1 {
 		t.Fatalf("activeTaskCount = %d", got)
 	}
+	// The job id embeds Date.now(), and the producer (like the NestJS service)
+	// reports deduplication as "the add returned a different id". Two adds in the
+	// same millisecond therefore look identical even though BullMQ deduplicated
+	// them, so wait for the clock to tick before the second add.
+	time.Sleep(2 * time.Millisecond)
 	// The deduplication key is written under the queue's own `de:` prefix, so a
 	// duplicate is only recognised inside the same queue (same as NestJS).
 	second, err := h.svc.Producer().EnqueueTask(h.ctx, "task-lifecycle-dedup", h.caller.OrgID, crawlqueue.EnqueueOptions{

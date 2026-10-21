@@ -1485,6 +1485,37 @@ const (
 	SituationSignalsWorkerModeGo SituationSignalsWorkerMode = "go"
 )
 
+// SituationRefreshMode controls POST /api/situation-monitor/refresh
+// (API_GO_SITUATION_REFRESH_MODE). The accepted values are exactly "",
+// "legacy" and "go"; an empty value and "legacy" keep the request on the NestJS
+// proxy, and any other value fails startup instead of silently degrading.
+//
+// go requires the two switches that make the ported flow possible at all:
+//
+//	API_GO_SITUATION_SIGNALS_WORKER_MODE=go  the Telegram session may only be
+//	                                        used by the Go lease owner; while
+//	                                        NestJS still holds it, a second
+//	                                        connection would raise
+//	                                        AUTH_KEY_DUPLICATED.
+//	API_GO_NEWS_SOURCE_SCHEDULER_MODE=go    the refresh entry point dispatches
+//	                                        through the Go scheduler under the
+//	                                        shared cron:news-source-scheduler
+//	                                        lease.
+//
+// It also requires JWT_SECRET, DATABASE_URL and REDIS_HOST: the route serves
+// authenticated HTTP, reorders the organization's active news sources, counts
+// CrawlTask/PipelineJob rows and writes the 900 second refresh-run record.
+type SituationRefreshMode string
+
+const (
+	// SituationRefreshModeLegacy proxies POST /refresh to NestJS (default,
+	// including the empty value). Rollback only changes this variable.
+	SituationRefreshModeLegacy SituationRefreshMode = "legacy"
+	// SituationRefreshModeGo serves POST /refresh from Go with the same
+	// authentication chain as NestJS and the same refresh-run record.
+	SituationRefreshModeGo SituationRefreshMode = "go"
+)
+
 // SituationTelegramAuthMode controls the two situation-monitor Telegram login
 // routes (API_GO_SITUATION_TELEGRAM_AUTH_MODE):
 // POST /api/system-settings/situation-monitor/telegram-auth/start and
@@ -1757,21 +1788,51 @@ const (
 
 // CrawlFrontierLlmWorkerMode controls the owner of the two Frontier LLM
 // BullMQ queues (`frontier-llm-judge` and `frontier-llm-learn`). It is
-// independent of every HTTP switch and of the three crawl4ai queue workers,
-// which stay on NestJS. The accepted values are exactly "", "legacy" and "go";
-// the empty value behaves like legacy and an invalid value fails startup.
+// independent of every HTTP switch and of API_GO_CRAWL_WORKER_MODE, which owns
+// the three crawl4ai queue workers separately. The accepted values are exactly
+// "", "legacy" and "go"; the empty value behaves like legacy and an invalid
+// value fails startup.
 //
 // legacy: NestJS CrawlQueueProcessor keeps creating both LLM workers.
-// go: NestJS creates only the three crawl workers and api-go consumes the two
-// LLM queues with concurrency 1 and the shared queue-level limiter
-// (max 1 per 1000ms). Go requires DATABASE_URL, REDIS_HOST and
-// SYSTEM_SETTINGS_ENCRYPTION_KEY (the gateway profile key and the managed
-// governance key are decrypted with it); JWT is not required.
+// go: NestJS creates only the three crawl workers (unless
+// API_GO_CRAWL_WORKER_MODE=go) and api-go consumes the two LLM queues with
+// concurrency 1 and the shared queue-level limiter (max 1 per 1000ms). Go
+// requires DATABASE_URL, REDIS_HOST and SYSTEM_SETTINGS_ENCRYPTION_KEY (the
+// gateway profile key and the managed governance key are decrypted with it);
+// JWT is not required.
 type CrawlFrontierLlmWorkerMode string
 
 const (
 	CrawlFrontierLlmWorkerModeLegacy CrawlFrontierLlmWorkerMode = "legacy"
 	CrawlFrontierLlmWorkerModeGo     CrawlFrontierLlmWorkerMode = "go"
+)
+
+// CrawlWorkerMode controls the owner of the three crawl4ai queue workers
+// (`crawl4ai`, `crawl4ai-hot`, `crawl4ai-normal`). The accepted values are
+// exactly "", "legacy" and "go"; the empty value behaves like legacy and an
+// invalid value fails startup.
+//
+// legacy: NestJS CrawlQueueProcessor creates the three crawl Workers, their
+// QueueEvents listeners and the C2 concurrency subscriber (today's behaviour).
+// go: NestJS creates none of the three, and api-go consumes the queues with
+// the shared in-process concurrency limiter, the queue-level limiter, the meta
+// global concurrency, the C2 broadcast, the memory-pressure cooldown requeue
+// and the exactly-once stalled/completed/failed side effects.
+//
+// The switch is independent of API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE (the two
+// Frontier LLM queues) and of every HTTP switch. go requires DATABASE_URL,
+// REDIS_HOST, MONGO_URI, CRAWL4AI_BASE_URL and SYSTEM_SETTINGS_ENCRYPTION_KEY
+// (the storage settings may hold an encrypted S3 secret for media uploads),
+// and a non-nil FrontierNodeProcessor at wiring time; otherwise startup fails
+// so the queues can never be left without an owner. Switching back needs no
+// data change because the queue and data formats are identical.
+type CrawlWorkerMode string
+
+const (
+	// CrawlWorkerModeLegacy keeps the three crawl queue workers on NestJS.
+	CrawlWorkerModeLegacy CrawlWorkerMode = "legacy"
+	// CrawlWorkerModeGo consumes the three crawl queues in api-go.
+	CrawlWorkerModeGo CrawlWorkerMode = "go"
 )
 
 // AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
@@ -2266,9 +2327,13 @@ type Config struct {
 	// 该模式被读取。
 	AlertWorkerMode AlertWorkerMode
 	// CrawlFrontierLlmWorkerMode 见 CrawlFrontierLlmWorkerMode 常量。默认
-	// legacy。go 需要 MySQL、Redis 与设置加密密钥；三个爬取队列 worker 仍由
-	// NestJS 执行。
+	// legacy。go 需要 MySQL、Redis 与设置加密密钥；三个爬取队列 worker 的归属
+	// 由 API_GO_CRAWL_WORKER_MODE 单独控制。
 	CrawlFrontierLlmWorkerMode CrawlFrontierLlmWorkerMode
+	// CrawlWorkerMode 见 CrawlWorkerMode 常量。默认 legacy。go 需要 MySQL、
+	// Redis、Mongo、CRAWL4AI_BASE_URL 与设置加密密钥，并在接线时要求非 nil 的
+	// crawlfrontiernode processor。
+	CrawlWorkerMode CrawlWorkerMode
 	// 告警队列的 ALERT_* 调参（NestJS EnvService.alertingConfig 的等价物）。
 	AlertQueueConcurrency     int
 	AlertWebhookTimeoutMs     int
@@ -2599,6 +2664,11 @@ type Config struct {
 	// consumer and repeat registration (see SituationSignalsWorkerMode).
 	// Default legacy. Mode go requires MySQL and Redis.
 	SituationSignalsWorkerMode SituationSignalsWorkerMode
+	// SituationRefreshMode controls POST /api/situation-monitor/refresh (see
+	// SituationRefreshMode). Default legacy. Mode go requires JWT, MySQL, Redis
+	// and both prerequisite switches (signals worker and news source
+	// scheduler) set to go.
+	SituationRefreshMode SituationRefreshMode
 	// SituationTelegramAuthMode controls the two Telegram login routes (see
 	// SituationTelegramAuthMode). Default legacy. It is independent from
 	// SituationSettingsMode: only these two POSTs move, the settings CRUD and
@@ -2974,6 +3044,13 @@ type Config struct {
 	CrawlHealthTTLMs   int
 	CrawlSSRFProxyURL  string
 	CrawlJSCodeEnabled bool
+	// CrawlMediaFetchTimeoutMs, CrawlMediaMaxBytes and CrawlMediaMaxPerResult
+	// mirror EnvService.crawl4aiConfig.media (CRAWL_MEDIA_FETCH_TIMEOUT_MS,
+	// CRAWL_MEDIA_MAX_BYTES, CRAWL_MEDIA_MAX_PER_RESULT; defaults 15000,
+	// 2097152 and 6). The Go crawl worker uses them when storeMedia is set.
+	CrawlMediaFetchTimeoutMs int
+	CrawlMediaMaxBytes       int
+	CrawlMediaMaxPerResult   int
 	// NewsSourceInFlightLookbackMs is NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS
 	// (default 21_600_000): the preview's in-flight PipelineJob window.
 	NewsSourceInFlightLookbackMs int
@@ -3520,6 +3597,14 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.CrawlFrontierLlmWorkerMode = CrawlFrontierLlmWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_WORKER_MODE")) {
+	case "", string(CrawlWorkerModeLegacy):
+		cfg.CrawlWorkerMode = CrawlWorkerModeLegacy
+	case string(CrawlWorkerModeGo):
+		cfg.CrawlWorkerMode = CrawlWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_WORKER_MODE must be one of legacy|go")
 	}
 	errs = append(errs, loadAlertingConfig(getenv, &cfg)...)
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_VIEWS_MODE")) {
@@ -4237,6 +4322,17 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_SITUATION_SIGNALS_WORKER_MODE must be one of legacy|go")
 	}
+	// The refresh entry point accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy so an unset deployment keeps POST
+	// /api/situation-monitor/refresh on the NestJS proxy.
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_REFRESH_MODE")) {
+	case "", string(SituationRefreshModeLegacy):
+		cfg.SituationRefreshMode = SituationRefreshModeLegacy
+	case string(SituationRefreshModeGo):
+		cfg.SituationRefreshMode = SituationRefreshModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_REFRESH_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_TELEGRAM_AUTH_MODE")) {
 	case "", string(SituationTelegramAuthModeLegacy):
 		cfg.SituationTelegramAuthMode = SituationTelegramAuthModeLegacy
@@ -4717,6 +4813,9 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	cfg.CrawlHealthTTLMs = intDefault(getenv("CRAWL4AI_HEALTH_CHECK_TTL_MS"), 60_000)
 	cfg.CrawlSSRFProxyURL = strings.TrimSpace(getenv("CRAWL4AI_SSRF_PROXY_URL"))
 	cfg.CrawlJSCodeEnabled = boolDefault(getenv("CRAWL4AI_JSCODE_ENABLED"), true)
+	cfg.CrawlMediaFetchTimeoutMs = intDefault(getenv("CRAWL_MEDIA_FETCH_TIMEOUT_MS"), 15_000)
+	cfg.CrawlMediaMaxBytes = intDefault(getenv("CRAWL_MEDIA_MAX_BYTES"), 2_097_152)
+	cfg.CrawlMediaMaxPerResult = intDefault(getenv("CRAWL_MEDIA_MAX_PER_RESULT"), 6)
 	cfg.NewsSourceInFlightLookbackMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS"), 21_600_000)
 	// The scheduler settings mirror EnvService.newsSourceSchedulerConfig
 	// one-for-one. SourceConcurrency is Go-only: the default 1 keeps exactly
@@ -5296,6 +5395,30 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.SystemSettingsEncryptionKeyRaw == "" {
 			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE=go")
+		}
+	}
+	// The three crawl4ai queue workers write CrawlTask/CrawlResult/PipelineJob/
+	// NewsSource/Notification rows in MySQL, the BullMQ protocol and the crawl
+	// activity/cooldown keys in Redis, CrawlResultContent/TaskLog/media asset
+	// documents in Mongo, request crawl4ai over HTTP and upload stored media to
+	// object storage. The storage settings may hold an encrypted S3 secret, so
+	// the settings key is required as well; the frontier node processor is
+	// checked at wiring time because config cannot see Go values.
+	if cfg.CrawlWorkerMode == CrawlWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_CRAWL_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_CRAWL_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CRAWL_WORKER_MODE=go")
+		}
+		if strings.TrimSpace(cfg.CrawlBaseURL) == "" {
+			errs = append(errs, "CRAWL4AI_BASE_URL is required when API_GO_CRAWL_WORKER_MODE=go")
+		}
+		if strings.TrimSpace(cfg.SettingsEncryptionKeyRaw) == "" {
+			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_CRAWL_WORKER_MODE=go")
 		}
 	}
 	if cfg.AlertWorkerMode == AlertWorkerModeGo {
@@ -6038,6 +6161,23 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.RedisHost == "" {
 			errs = append(errs, "REDIS_HOST is required when API_GO_SITUATION_SIGNALS_WORKER_MODE=go")
+		}
+	}
+	// The refresh takeover serves authenticated HTTP, reorders the
+	// organization's active news sources, counts CrawlTask/PipelineJob rows and
+	// writes the 900 second refresh-run record, so it needs the credentialed
+	// stack plus MySQL and Redis. Two prerequisite switches must already be go:
+	// Telegram sessions may only be used by the Go lease owner (a second
+	// connection raises AUTH_KEY_DUPLICATED), and the immediate dispatch entry
+	// point lives in the Go news source scheduler under the shared
+	// cron:news-source-scheduler lease.
+	if cfg.SituationRefreshMode == SituationRefreshModeGo {
+		appendAuthRequirements(&errs, "API_GO_SITUATION_REFRESH_MODE", cfg)
+		if cfg.SituationSignalsWorkerMode != SituationSignalsWorkerModeGo {
+			errs = append(errs, "API_GO_SITUATION_SIGNALS_WORKER_MODE=go is required when API_GO_SITUATION_REFRESH_MODE=go")
+		}
+		if cfg.NewsSourceSchedulerMode != NewsSourceSchedulerModeGo {
+			errs = append(errs, "API_GO_NEWS_SOURCE_SCHEDULER_MODE=go is required when API_GO_SITUATION_REFRESH_MODE=go")
 		}
 	}
 	// The Telegram login takeover serves authenticated HTTP, stores the pending

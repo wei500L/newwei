@@ -45,10 +45,11 @@ type notificationRelayMessage struct {
 var errNoRedisClient = errors.New("classificationrssops: redis is not configured")
 
 // SetNotificationRelayPublisher installs the optional notification:events:v1
-// publisher. cmd/api calls it only when the Go notifications transport owns the
-// socket, which reproduces the NotificationsService.notify go-mode branch; a nil
-// publisher (the legacy default) keeps publishing disabled. The setter must be
-// called before the service starts handling requests or evaluating summaries.
+// publisher. cmd/api installs it unconditionally so a Go-written notification
+// reaches the browser in both notification socket modes: the NestJS generic
+// subscriber consumes the channel in legacy mode and the api-go transport in go
+// mode. A nil publisher keeps publishing disabled. The setter must be called
+// before the service starts handling requests or evaluating summaries.
 func (s *Service) SetNotificationRelayPublisher(publisher NotificationRelayPublisher) {
 	s.notificationRelayMu.Lock()
 	s.notificationRelayPublisher = publisher

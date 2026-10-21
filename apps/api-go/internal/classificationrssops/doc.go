@@ -36,7 +36,10 @@
 // scheduler uses. EvaluateClassificationQualityAlerts is the
 // getSummary({orgId, window:"1h"}) equivalent, and the optional publisher
 // installed through SetNotificationRelayPublisher publishes the identifiers-only
-// notification:events:v1 message NestJS NotificationsService.notify publishes in
-// API_GO_NOTIFICATIONS_SOCKET_MODE=go. Both additions are inert unless cmd/api
-// installs them, so the legacy route behavior is unchanged.
+// notification:events:v1 message the browser-facing relay consumes. cmd/api now
+// installs it unconditionally: in legacy socket mode the NestJS generic
+// notification subscriber pushes the row, and in go socket mode the api-go
+// notifications transport does, so a notification reaches each connection
+// exactly once without double publishing. Both additions are inert unless
+// cmd/api installs them, so the legacy route behavior is unchanged.
 package classificationrssops

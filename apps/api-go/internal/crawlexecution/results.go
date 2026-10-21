@@ -176,31 +176,6 @@ func memoryStatsOf(response crawl4ai.PipelineResponse) memoryStats {
 	}
 }
 
-// summaryLogData is the data block of the complete-stage task log.
-func summaryLogData(summary Summary) map[string]any {
-	data := map[string]any{
-		"inserted": summary.Inserted,
-		"skipped":  summary.Skipped,
-	}
-	if summary.ReusedResultID != "" {
-		data["reusedResultId"] = summary.ReusedResultID
-	}
-	if summary.RunID != "" {
-		data["runId"] = summary.RunID
-	}
-	if summary.LastFetchedAt != nil {
-		data["lastFetchedAt"] = summary.LastFetchedAt.UTC().Format(time.RFC3339Nano)
-	}
-	if summary.ItemsQueued > 0 || summary.ItemsQueueFailed > 0 {
-		data["itemsQueued"] = summary.ItemsQueued
-		data["itemsQueueFailed"] = summary.ItemsQueueFailed
-	}
-	if summary.RetryableFailures > 0 {
-		data["retryableFailures"] = summary.RetryableFailures
-	}
-	return data
-}
-
 // hashMarkdown is hashMarkdown.
 func hashMarkdown(markdown string) string {
 	sum := sha256.Sum256([]byte(markdown))
@@ -542,8 +517,20 @@ func (s *Service) persistSingleResult(
 		}
 	}
 
+	// Media assets are collected before the content document is written, like
+	// the NestJS store_media stage. Every download/storage failure is swallowed
+	// inside collectMediaAssets, so a media problem never fails the result.
+	stage = "store_media"
+	var media *mediaCollection
+	if shouldStoreMedia {
+		media = normalizeMediaCollection(entry.Article.Media)
+		if media != nil {
+			s.collectMediaAssets(ctx, task, resultID, media)
+		}
+	}
+
 	stage = "store_content"
-	markdownRef, contentErr := s.writeResultContent(ctx, task, resultID, entry, runID, shouldStoreMedia)
+	markdownRef, contentErr := s.writeResultContent(ctx, task, resultID, entry, runID, shouldStoreMedia, media)
 	if contentErr != nil {
 		log.Printf("crawlexecution: failed to persist crawl result entry taskId=%s orgId=%s sourceUrl=%s contentHash=%s stage=%s: %v",
 			task.ID, task.OrgID, entry.SourceURL, entry.Hash, stage, contentErr)
@@ -624,8 +611,9 @@ func (s *Service) selectOrgDedupeWinner(
 }
 
 // writeResultContent upserts the CrawlResultContent document and returns its
-// Mongo ObjectID hex string (the markdownRef). Media binaries/assets are not
-// persisted (see the package gaps); the raw media collection is.
+// Mongo ObjectID hex string (the markdownRef). The normalized media collection
+// is written in the NestJS shape (an absent collection stores null) and the
+// media binaries/assets were already stored by collectMediaAssets.
 func (s *Service) writeResultContent(
 	ctx context.Context,
 	task *taskRow,
@@ -633,6 +621,7 @@ func (s *Service) writeResultContent(
 	entry hashedItem,
 	runID string,
 	shouldStoreMedia bool,
+	media *mediaCollection,
 ) (string, error) {
 	if s.mongo == nil {
 		return "", errNotConfigured("crawlexecution: mongo is not configured")
@@ -653,7 +642,17 @@ func (s *Service) writeResultContent(
 		{Key: "tables", Value: decodeJSONLeaf(entry.Article.Tables, nil)},
 	}
 	if shouldStoreMedia {
-		document = append(document, bson.E{Key: "media", Value: decodeJSONLeaf(entry.Article.Media, nil)})
+		mediaDocument, err := media.bsonDocument()
+		if err != nil {
+			return "", err
+		}
+		if len(mediaDocument) == 0 {
+			// NestJS stores `media ?? null` when shouldStoreMedia is set but the
+			// collection is absent or normalizes to undefined.
+			document = append(document, bson.E{Key: "media", Value: nil})
+		} else {
+			document = append(document, bson.E{Key: "media", Value: mediaDocument})
+		}
 	}
 	now := s.now().UTC().Truncate(time.Millisecond)
 	setOnInsert := bson.D{
@@ -681,8 +680,15 @@ func (s *Service) writeResultContent(
 	return markdownRef, nil
 }
 
-// rollbackPersistedResult deletes the content document and the transient row.
+// rollbackPersistedResult deletes the stored media assets, the content document
+// and the transient row, in the NestJS rollback order.
 func (s *Service) rollbackPersistedResult(ctx context.Context, task *taskRow, resultID string) {
+	if store := newMediaStore(s); store != nil {
+		if err := store.deleteAssetsByResultID(ctx, task, resultID); err != nil {
+			log.Printf("crawlexecution: failed to cleanup crawl media assets during rollback taskId=%s orgId=%s resultId=%s: %v",
+				task.ID, task.OrgID, resultID, err)
+		}
+	}
 	if s.mongo != nil {
 		if _, err := s.mongo.Collection(crawlResultContentsCollection).DeleteOne(ctx, bson.D{{Key: "resultId", Value: resultID}}); err != nil {
 			log.Printf("crawlexecution: failed to cleanup crawl result content during rollback taskId=%s resultId=%s: %v", task.ID, resultID, err)
