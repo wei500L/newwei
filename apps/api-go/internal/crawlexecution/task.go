@@ -154,7 +154,7 @@ func (s *Service) markTaskFailed(ctx context.Context, task *taskRow, status, mes
 		return
 	}
 	log.Printf("crawlexecution: failed to persist crawl task error, retrying truncated taskId=%s: %v", task.ID, err)
-	truncated := truncateVarchar191(message)
+	truncated := truncateVarchar191Text(message)
 	if _, fallbackErr := s.db.ExecContext(ctx,
 		"UPDATE `CrawlTask` SET `status` = ?, `lastError` = ?, `updatedAt` = ? WHERE `id` = ?",
 		status, truncated, now, task.ID); fallbackErr != nil {
@@ -163,15 +163,24 @@ func (s *Service) markTaskFailed(ctx context.Context, task *taskRow, status, mes
 }
 
 // syncSourceQueueCounts is CrawlExecutionResultsService.syncSourceQueueCounts ->
-// NewsSourceOpsSnapshotService.syncQueueCounts. Failures are swallowed with a
-// warning, like the NestJS try/catch.
+// NewsSourceOpsSnapshotService.syncQueueCounts, coalesced per source (O2).
+//
+// Each call used to read the CrawlTask queue counts and rewrite the Redis
+// runtime state inline; a crawl task start/success/failure triggers three of
+// them and concurrent tasks of one source can trigger dozens. The request is now
+// recorded in a per-(org, source) coalescer that refreshes the Redis runtime
+// state (crawlTaskQueuedCount/crawlTaskRunningCount) at most once per second and
+// always refreshes once more after the last change. The MySQL ops snapshot row is
+// not part of this path. Failures are logged and swallowed, like the NestJS
+// try/catch.
 func (s *Service) syncSourceQueueCounts(ctx context.Context, orgID string, sourceID *string) {
-	if sourceID == nil || *sourceID == "" || s.redis == nil || s.db == nil {
+	if sourceID == nil || *sourceID == "" {
 		return
 	}
-	if err := s.writeSourceQueueCounts(ctx, orgID, *sourceID); err != nil {
-		log.Printf("crawlexecution: failed to sync news source queue counts orgId=%s sourceId=%s: %v", orgID, *sourceID, err)
+	if s.snapshots == nil {
+		return
 	}
+	s.snapshots.request(orgID, *sourceID)
 }
 
 func (s *Service) writeSourceQueueCounts(ctx context.Context, orgID, sourceID string) error {
@@ -403,90 +412,6 @@ func clampWindowHours(raw json.RawMessage) (int, bool) {
 	return rounded, true
 }
 
-// markSourceFailureState is CrawlExecutionResultsService.markSourceFailureState.
-// The circuit-breaker math is kept; the circuit-open and auto-disable
-// notifications are not part of the migrated surface (see the package gaps).
-func (s *Service) markSourceFailureState(ctx context.Context, sourceID string, failureAt time.Time) {
-	if s.db == nil || sourceID == "" {
-		return
-	}
-	if err := s.applySourceFailureState(ctx, sourceID, failureAt); err != nil {
-		log.Printf("crawlexecution: failed to update news source failure state sourceId=%s: %v", sourceID, err)
-	}
-}
-
-func (s *Service) applySourceFailureState(ctx context.Context, sourceID string, failureAt time.Time) error {
-	threshold := maxInt(s.cfg.CircuitBreakerThreshold, 0)
-	autoDisableThreshold := 0
-	recoveryDelay := s.cfg.FailureRecoveryDelayMs
-	if recoveryDelay <= 0 {
-		recoveryDelay = 60_000
-	}
-	maxDelay := s.cfg.FailureMaxDelayMs
-	if maxDelay <= 0 {
-		maxDelay = 900_000
-	}
-	circuitBase := s.cfg.CircuitBreakerBaseDelayMs
-	if circuitBase <= 0 {
-		circuitBase = 60_000
-	}
-	circuitMax := s.cfg.CircuitBreakerMaxDelayMs
-	if circuitMax <= 0 {
-		circuitMax = 900_000
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	var consecutiveFailures int64
-	var isActive bool
-	var orgID, name string
-	if err := tx.QueryRowContext(ctx,
-		"SELECT `consecutiveFailures`, `isActive`, `orgId`, `name` FROM `NewsSource` WHERE `id` = ? LIMIT 1",
-		sourceID).Scan(&consecutiveFailures, &isActive, &orgID, &name); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		return err
-	}
-	if !isActive {
-		return nil
-	}
-	nextFailures := consecutiveFailures + 1
-	retryDelay := computeExponentialBackoffDelayMs(recoveryDelay, int(nextFailures), maxDelay)
-	retryAt := failureAt.Add(time.Duration(retryDelay) * time.Millisecond)
-
-	var circuitOpenUntil *time.Time
-	if threshold > 0 && int(nextFailures) >= threshold {
-		circuitAttempt := int(nextFailures) - threshold + 1
-		circuitDelay := computeExponentialBackoffDelayMs(circuitBase, circuitAttempt, circuitMax)
-		value := failureAt.Add(time.Duration(circuitDelay) * time.Millisecond)
-		circuitOpenUntil = &value
-	}
-	nextRunAt := retryAt
-	if circuitOpenUntil != nil && circuitOpenUntil.After(retryAt) {
-		nextRunAt = *circuitOpenUntil
-	}
-	shouldDisable := autoDisableThreshold > 0 && int(nextFailures) >= autoDisableThreshold
-
-	var nextRunValue any = nextRunAt
-	var isActiveValue any = true
-	if shouldDisable {
-		nextRunValue = nil
-		isActiveValue = false
-	}
-	if _, err := tx.ExecContext(ctx,
-		"UPDATE `NewsSource` SET `lastFailureAt` = ?, `consecutiveFailures` = ?, `circuitOpenUntil` = ?, "+
-			"`nextRunAt` = ?, `isActive` = ?, `updatedAt` = ? WHERE `id` = ?",
-		failureAt, nextFailures, nullableTime(circuitOpenUntil), nextRunValue, isActiveValue,
-		s.now().UTC().Truncate(time.Millisecond), sourceID); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
 // computeExponentialBackoffDelayMs is computeExponentialBackoffDelayMs with the
 // same ±25% jitter window.
 func computeExponentialBackoffDelayMs(baseDelayMs, attempt, maxDelayMs int) int {
@@ -498,17 +423,6 @@ func computeExponentialBackoffDelayMs(baseDelayMs, attempt, maxDelayMs int) int 
 	capped := math.Min(exponential, float64(maxDelayMs))
 	jitter := 0.75 + rand.Float64()*0.5
 	return int(math.Round(capped * jitter))
-}
-
-// truncateVarchar191 mirrors the fallback message truncation.
-func truncateVarchar191(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if len([]rune(trimmed)) <= 191 {
-		return trimmed
-	}
-	runes := []rune(trimmed)
-	head := strings.TrimRight(string(runes[:190]), " ")
-	return head + "…"
 }
 
 func fallbackFloat(value, fallback *float64) *float64 {

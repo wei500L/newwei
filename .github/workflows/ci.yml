@@ -579,6 +579,25 @@ jobs:
       - name: MySQL/Redis/Mongo Frontier node execution integration tests
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlfrontiernode/ -run 'TestFrontierNode' -v -timeout 10m
 
+      # CRAWL-WORKER：三个爬取队列（crawl4ai / crawl4ai-hot / crawl4ai-normal）
+      # 由 api-go 消费时的端到端行为（API_GO_CRAWL_WORKER_MODE=go）。crawl4ai 与
+      # 媒体源都用 httptest，对象存储走 mysql provider（不需要真实 S3）；测试
+      # 自行 DROP/CREATE 窄表并使用独立 Mongo 库，所以放在本 job 末尾。
+      # 覆盖：成功路径（CrawlTask/CrawlResult/Mongo 内容与媒体资产/TaskLog/
+      # 通知行 + notification:events:v1/returnvalue/事件流 completed/
+      # crawl:activity 减一）、可重试失败后成功、不可重试直接 failed、最终失败
+      # lastError 截断、内存压力（三队列 limiter 键 + PX、memoryPressureRequeues
+      # 写回、回到 wait、预算耗尽）、B1 两实例只扣一次、B2 并发最终失败计数 +2
+      # 且熔断通知只一条、stalled 改回 queued、legacy 队列为空不启动 worker。
+      - name: CRAWL-WORKER integration tests (crawl queue worker)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlworker/ -run 'TestCrawlWorkerIntegration' -v
+
+      # CRAWL-WORKER 执行路径：crawlexecution.RunQueuedTask 的 B2 并发最终失败
+      # 语义（同一新闻源两路并发最终失败 → consecutiveFailures 连续 +2、熔断
+      # 通知只写一条、且只发 notification:events:v1 不发 legacy 频道）。
+      - name: CRAWL-WORKER integration tests (queued crawl execution)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlexecution/ -run 'TestCrawlExecutionQueuedIntegration' -v
+
   # api-go Go module 依赖清单（go.mod/go.sum）的按需远端再生成。
   #
   # 背景：本仓库约束「生成器不在本机执行」——go.sum 是 go 工具链从

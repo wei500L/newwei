@@ -4,6 +4,7 @@ import { AuthModule } from "../auth/auth.module";
 
 import { AlertNotificationSubscriber } from "./alert-notification.subscriber";
 import { AnalysisNotificationSubscriber } from "./analysis-notification.subscriber";
+import { GenericNotificationSubscriber } from "./generic-notification.subscriber";
 import { NewsSourceNotificationSubscriber } from "./news-source-notification.subscriber";
 import { NotificationRealtimeRelay } from "./notification-realtime.relay";
 import { NotificationDispatcher } from "./notification.dispatcher";
@@ -21,6 +22,7 @@ import { UserDigestNotificationSubscriber } from "./user-digest-notification.sub
     UserDigestNotificationSubscriber,
     AlertNotificationSubscriber,
     AnalysisNotificationSubscriber,
+    GenericNotificationSubscriber,
     NewsSourceNotificationSubscriber,
   ],
   exports: [NotificationsService, NotificationDispatcher]

@@ -1,8 +1,8 @@
 package crawlexecution
 
 // Error classification and the catch-block side effects of runTask:
-// CrawlTask status/lastError, the error TaskLog, the PipelineJob failure update
-// and the news source failure state.
+// CrawlTask status/lastError, the error TaskLog, the PipelineJob failure update,
+// the news source failure state and the failure notification.
 
 import (
 	"context"
@@ -18,21 +18,51 @@ import (
 const maxErrorMessageLength = 4000
 
 // handleRunError is the catch block of runTask.
-func (s *Service) handleRunError(ctx context.Context, task *taskRow, orgID string, sourceID, pipelineJobID *string, runErr error) {
+//
+// The retry context decides whether the task is re-queued (CrawlTask status
+// "queued") or terminated ("failed"). The pipeline path has no retry context, so
+// a retryable error still terminates the task as before; the worker path keeps
+// the job retry BullMQ itself schedules.
+func (s *Service) handleRunError(ctx context.Context, scope runTaskContext, runErr error) {
+	task := scope.Task
+	orgID := scope.OrgID
+	sourceID := scope.SourceID
+	pipelineJobID := scope.PipelineJobID
+
 	message := strings.TrimSpace(runErr.Error())
 	if message == "" {
 		message = "crawl job failed"
 	}
 	normalizedMessage := truncateMessage(message, maxErrorMessageLength)
 	retryable := isRetryableCrawlError(runErr, message)
-	// The pipeline call path passes no retry context, so a retryable error still
-	// terminates the task as failed (the pipeline schedules its own retry).
-	shouldRetry := false
+	shouldRetry := scope.Retry.shouldRetry(retryable)
 	crawlTaskStatus := "failed"
+	if shouldRetry {
+		crawlTaskStatus = "queued"
+	}
+	nextRetryAt := scope.Retry.nextRetryAt(s.now().UTC(), shouldRetry)
 
 	s.markTaskFailed(ctx, task, crawlTaskStatus, normalizedMessage)
 	s.syncSourceQueueCounts(ctx, orgID, sourceID)
 
+	errorLogData := map[string]any{
+		"attempt":        nil,
+		"maxAttempts":    nil,
+		"backoffDelayMs": nil,
+		"retryable":      retryable,
+		"willRetry":      shouldRetry,
+		"nextRetryAt":    nil,
+	}
+	if scope.Retry != nil {
+		errorLogData["attempt"] = scope.Retry.Attempt
+		errorLogData["maxAttempts"] = scope.Retry.MaxAttempts
+		if scope.Retry.BackoffDelayMs != nil {
+			errorLogData["backoffDelayMs"] = *scope.Retry.BackoffDelayMs
+		}
+	}
+	if nextRetryAt != nil {
+		errorLogData["nextRetryAt"] = isoMillisJS(*nextRetryAt)
+	}
 	s.writeTaskLog(ctx, taskLogEntry{
 		Queue:  crawlQueueName,
 		JobID:  task.ID,
@@ -40,43 +70,45 @@ func (s *Service) handleRunError(ctx context.Context, task *taskRow, orgID strin
 		Stage:  "error",
 		Status: "failed",
 		Error:  sanitizeError(runErr),
-		Data: map[string]any{
-			"attempt":        nil,
-			"maxAttempts":    nil,
-			"backoffDelayMs": nil,
-			"retryable":      retryable,
-			"willRetry":      shouldRetry,
-			"nextRetryAt":    nil,
-		},
+		Data:   errorLogData,
 	})
 
 	if pipelineJobID != nil && *pipelineJobID != "" {
-		if err := s.updatePipelineJobFailure(ctx, *pipelineJobID, normalizedMessage, shouldRetry); err != nil {
+		if err := s.updatePipelineJobFailure(ctx, *pipelineJobID, normalizedMessage, shouldRetry, scope.Retry.attemptLogValue()); err != nil {
 			log.Printf("crawlexecution: failed to update pipeline job status for crawl failure pipelineJobId=%s taskId=%s: %v",
 				*pipelineJobID, task.ID, err)
 		}
 	}
+	// The circuit breaker only counts terminal failures: a task BullMQ will
+	// retry has not failed the source yet.
 	if sourceID != nil && *sourceID != "" && pipelineJobID != nil && *pipelineJobID != "" && !shouldRetry {
 		s.markSourceFailureState(ctx, *sourceID, s.now().UTC())
 	}
+	// The failure notification is only sent once the task stops retrying, so a
+	// retried job never notifies twice.
+	if scope.TriggeredByID != "" && !shouldRetry {
+		s.safeNotifyCrawl(ctx, task, FullSummary{Inserted: 0, Skipped: 0},
+			scope.TriggeredByID, notificationStatusFailed, normalizedMessage)
+	}
 }
 
-// updatePipelineJobFailure is pipelineJob.updateMany for the failure status.
-func (s *Service) updatePipelineJobFailure(ctx context.Context, pipelineJobID, message string, shouldRetry bool) error {
+// updatePipelineJobFailure is pipelineJob.updateMany for the failure status. A
+// retried job goes back to "delayed" with no completedAt; a terminal one is
+// "failed" with the completion timestamp.
+func (s *Service) updatePipelineJobFailure(ctx context.Context, pipelineJobID, message string, shouldRetry bool, attempts int) error {
 	if s.db == nil {
 		return errNotConfigured("crawlexecution: mysql is not configured")
 	}
 	now := s.now().UTC().Truncate(time.Millisecond)
 	status := "failed"
 	var completedAt any = now
-	attempts := 0
 	if shouldRetry {
 		status = "delayed"
 		completedAt = nil
 	}
 	_, err := s.db.ExecContext(ctx,
 		"UPDATE `PipelineJob` SET `status` = ?, `completedAt` = ?, `error` = ?, `attempts` = ?, `updatedAt` = ? WHERE `id` = ?",
-		status, completedAt, message, attempts, now, pipelineJobID)
+		status, completedAt, message, maxInt(attempts, 0), now, pipelineJobID)
 	if err != nil {
 		return fmt.Errorf("crawlexecution: update pipeline job: %w", err)
 	}

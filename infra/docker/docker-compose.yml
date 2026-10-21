@@ -606,6 +606,15 @@ services:
       # 消费两个队列（并发 1、限速 1/1000ms，共用同一 limiter 键）。go 要求
       # DATABASE_URL、REDIS_HOST 与 SYSTEM_SETTINGS_ENCRYPTION_KEY。
       API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE: ${API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE:-legacy}
+      # 三个爬取队列 worker（crawl4ai / crawl4ai-hot / crawl4ai-normal）的
+      # 执行权。空串与 legacy 等价，非法值在 Nest 与 Go 都启动失败。默认
+      # legacy=三个 Worker、QueueEvents 与 C2 订阅都由 NestJS 创建；go=NestJS
+      # 不再创建这三者，由 Go 消费（共享并发限制器 hot 优先、meta 全局并发、
+      # 队列级 limiter、C2 广播、按队列等级超时、内存压力冷却重排队、副作用
+      # 恰好一次、统一通知中继）。go 要求 DATABASE_URL、REDIS_HOST、
+      # MONGO_URI、CRAWL4AI_BASE_URL、SYSTEM_SETTINGS_ENCRYPTION_KEY，并在
+      # 接线时有非 nil 的 crawlfrontiernode processor。
+      API_GO_CRAWL_WORKER_MODE: ${API_GO_CRAWL_WORKER_MODE:-legacy}
       # ALERT_* 与 BULLMQ_NAMESPACE 与 NestJS 同源同名（同一份默认值），
       # 只在 API_GO_ALERT_WORKER_MODE=go 时被 Go 读取。
       BULLMQ_NAMESPACE: ${BULLMQ_NAMESPACE:-modular}
@@ -956,6 +965,15 @@ services:
       # 消费两个队列（并发 1、限速 1/1000ms，共用同一 limiter 键）。go 要求
       # DATABASE_URL、REDIS_HOST 与 SYSTEM_SETTINGS_ENCRYPTION_KEY。
       API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE: ${API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE:-legacy}
+      # 三个爬取队列 worker（crawl4ai / crawl4ai-hot / crawl4ai-normal）的
+      # 执行权。空串与 legacy 等价，非法值在 Nest 与 Go 都启动失败。默认
+      # legacy=三个 Worker、QueueEvents 与 C2 订阅都由 NestJS 创建；go=NestJS
+      # 不再创建这三者，由 Go 消费（共享并发限制器 hot 优先、meta 全局并发、
+      # 队列级 limiter、C2 广播、按队列等级超时、内存压力冷却重排队、副作用
+      # 恰好一次、统一通知中继）。go 要求 DATABASE_URL、REDIS_HOST、
+      # MONGO_URI、CRAWL4AI_BASE_URL、SYSTEM_SETTINGS_ENCRYPTION_KEY，并在
+      # 接线时有非 nil 的 crawlfrontiernode processor。
+      API_GO_CRAWL_WORKER_MODE: ${API_GO_CRAWL_WORKER_MODE:-legacy}
       # ALERT_* 与 BULLMQ_NAMESPACE 与 NestJS 同源同名（同一份默认值），
       # 只在 API_GO_ALERT_WORKER_MODE=go 时被 Go 读取。
       BULLMQ_NAMESPACE: ${BULLMQ_NAMESPACE:-modular}

@@ -253,3 +253,32 @@ func numberOrEnv(raw json.RawMessage, fallback float64) float64 {
 	}
 	return fallback
 }
+
+// defaultCrawlImageStorageProvider is
+// DEFAULT_CRAWL_IMAGE_STORAGE_PROVIDER ("mysql").
+const defaultCrawlImageStorageProvider = "mysql"
+
+// CrawlImageStorageProvider resolves the effective `crawl_image_storage`
+// provider, the StorageSettingsService.getCrawlImageStorageProvider branch the
+// crawl media writer needs. It reuses the same cached `storage:settings` read
+// and MySQL fallback as effectiveStorageConfig (the S3_* environment values do
+// not influence the provider). The stored value must be the JSON string
+// "mysql" or "s3" (trimmed, case-insensitive); every other value, including a
+// missing row or a non-string JSON value, falls back to the mysql default,
+// exactly like asProvider plus DEFAULT_CRAWL_IMAGE_STORAGE_PROVIDER.
+func (s *Service) CrawlImageStorageProvider(ctx context.Context) (string, error) {
+	values, err := s.loadStorageSettingValues(ctx)
+	if err != nil {
+		return "", err
+	}
+	stored, ok := jsonString(values.CrawlImageStorage)
+	if !ok {
+		return defaultCrawlImageStorageProvider, nil
+	}
+	switch normalized := strings.ToLower(strings.TrimSpace(stored)); normalized {
+	case "s3", "mysql":
+		return normalized, nil
+	default:
+		return defaultCrawlImageStorageProvider, nil
+	}
+}

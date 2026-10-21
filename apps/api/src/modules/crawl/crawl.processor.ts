@@ -517,42 +517,56 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
-    let configuredConcurrency = Math.max(
-      1,
-      Math.round(this.env.crawl4aiConfig.maxConcurrency ?? 1),
-    );
-    try {
-      const settings = await this.crawlSettings.getSettings();
-      configuredConcurrency = Math.max(1, Math.round(settings.maxConcurrency));
-      await this.applyGlobalConcurrency(configuredConcurrency);
-    } catch (error) {
-      logger.warn(
-        { err: error },
-        "Failed to apply configured crawl queue global concurrency; using worker-local concurrency fallback",
+    // API_GO_CRAWL_WORKER_MODE=go hands the three crawl4ai queues to api-go.
+    // This process then creates no crawl Worker, registers no QueueEvents
+    // listener and subscribes to no C2 broadcast, so every terminal side effect
+    // (including the crawl:activity decrement) has exactly one owner. Legacy
+    // (the default and the unset value) keeps today's behaviour.
+    if (this.env.apiGoCrawlWorkerMode === "go") {
+      logger.info(
+        "Crawl queue workers owned by api-go; NestJS creates no crawl worker, QueueEvents listener or C2 subscriber",
       );
+    } else {
+      let configuredConcurrency = Math.max(
+        1,
+        Math.round(this.env.crawl4aiConfig.maxConcurrency ?? 1),
+      );
+      try {
+        const settings = await this.crawlSettings.getSettings();
+        configuredConcurrency = Math.max(1, Math.round(settings.maxConcurrency));
+        await this.applyGlobalConcurrency(configuredConcurrency);
+      } catch (error) {
+        logger.warn(
+          { err: error },
+          "Failed to apply configured crawl queue global concurrency; using worker-local concurrency fallback",
+        );
+      }
+
+      const concurrency = resolveInitialWorkerConcurrency(
+        configuredConcurrency,
+        this.env.crawl4aiConfig.maxConcurrency ?? 1,
+      );
+      this.globalConcurrencyLimiter.setCapacity(concurrency);
+
+      const includeLegacy = await this.shouldStartLegacyWorker();
+      for (const context of this.queueContexts(includeLegacy)) {
+        const worker = this.createWorker(context, concurrency);
+        this.workers.push({
+          queueClass: context.queueClass,
+          queueName: context.queueName,
+          worker,
+        });
+        this.registerQueueEvents(context);
+      }
+
+      await this.subscribeWorkerConcurrency();
     }
 
-    const concurrency = resolveInitialWorkerConcurrency(
-      configuredConcurrency,
-      this.env.crawl4aiConfig.maxConcurrency ?? 1,
-    );
-    this.globalConcurrencyLimiter.setCapacity(concurrency);
-
-    const includeLegacy = await this.shouldStartLegacyWorker();
-    for (const context of this.queueContexts(includeLegacy)) {
-      const worker = this.createWorker(context, concurrency);
-      this.workers.push({
-        queueClass: context.queueClass,
-        queueName: context.queueName,
-        worker,
-      });
-      this.registerQueueEvents(context);
-    }
-
-    // The two Frontier LLM queues have a single owner. When the Go worker
-    // switch is go this process keeps the three crawl4ai queue workers and
-    // creates no LLM worker, so only api-go claims those jobs. legacy (the
-    // default and unset value) is unchanged.
+    // The two Frontier LLM queues have a single owner, controlled by their own
+    // switch and independent of the three crawl queues above. When the Go
+    // worker switch is go this process creates no LLM worker either, so only
+    // api-go claims those jobs. legacy (the default and unset value) is
+    // unchanged.
     if (this.env.apiGoCrawlFrontierLlmWorkerMode !== "go") {
       this.llmWorkers.push(
         this.createLlmWorker(CRAWL_QUEUE_LLM_JUDGE_NAME, this.llmJudgeQueue),
@@ -560,11 +574,9 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       );
     } else {
       logger.info(
-        "Frontier LLM queue workers owned by api-go; NestJS keeps the three crawl queue workers",
+        "Frontier LLM queue workers owned by api-go",
       );
     }
-
-    await this.subscribeWorkerConcurrency();
   }
 
   /**

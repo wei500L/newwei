@@ -1,0 +1,59 @@
+# BullMQ Lua scripts
+
+These files are the official Lua commands required by the Go crawl4ai queue
+worker in `apps/api-go/internal/crawlworker`. They are embedded at build time
+(`go:embed`); the process never downloads a script at runtime.
+
+- Upstream: `bullmq@5.63.2` (the version locked by `pnpm-lock.yaml`)
+- Source: https://github.com/taskforcesh/bullmq/tree/v5.63.2/src/commands
+- Published package files:
+  https://cdn.jsdelivr.net/npm/bullmq@5.63.2/dist/cjs/scripts/<name>.js
+- License: MIT, Copyright (c) 2018 BullForce Labs AB (see below)
+- Expansion: each committed file is the exact `content` string produced by
+  BullMQ's `ScriptLoader` for the npm `dist/cjs/scripts` build: `@include`
+  directives are inlined once in dependency order and empty lines are removed.
+  The Go runner passes these strings to `EVAL`/`EVALSHA` unchanged.
+
+| Script | Upstream raw SHA-256 | Expanded SHA-256 (committed file) |
+|---|---|---|
+| `moveToActive-11.lua` | `fd27e12203000d2bcbe59b7e7c44f3f6acf7fe3ec63dd92dae1e0a69f2d4a004` | `ee4a8eb48cad650aec886580e128418d44582f68b5202a11dcac48bb3dcae117` |
+| `moveToFinished-14.lua` | `8fac037ff3dd5b7ef16e94817ec93a7e6dcccdc729f11d65d86c5efc41390b7f` | `572920a790ad025386a2b9355de086c1c4ca6658fc15ace7d2c4932365c8c0b3` |
+| `moveJobFromActiveToWait-9.lua` | `89a50590c5621e5bc3a12378aee99796c49323caad4342e8cfd114a7ace85f5a` | `5825f9ec905734a8647a8feef89dc2f4e84f7ad1ecb8497b0c2fc57b7d2ac592` |
+| `retryJob-11.lua` | `fe9558b56d8a0f64fbd13e196a6bc07534ec800a0972e49f45433e31fe47ba3d` | `5c98c7eae068e06d53dd55d468e397fa73e173697519d1ea8857172e8faa4abe` |
+| `moveToDelayed-8.lua` | `30e27887b5b3e8ff5d6fb9c18b9420565f69d60ac1a189c07e76575eb5ffbcdf` | `3140607f9078063c1cd35f984ad4fec26f49240aa037fb0c9f787c50b17660a7` |
+| `moveStalledJobsToWait-8.lua` | `0ccb155a535dee4fce8bad8b3a9ef0c7665bd8be329ff7e9cf1e655dbf845515` | `c77949cefb61af6b82ee423625aa8a9b90d9ec8a0691af0e8609dbb4775ca27e` |
+| `extendLock-2.lua` | `ccb26c4f390625a882819335f1d6077455b9a633e99527028e0f1910b2c1db3f` | `f3c0b3f993871533eabfc85f5fbfc9b1dcb7e1b230c9305e23fc96365f96a1f2` |
+| `updateData-1.lua` | `3640c889d8502c47fca7016a44c7693c0b04aaafb37a06d18ed8fc7b2f60233b` | `33dc385c7749b1c525495725afb5894ee96295c8f61336273496aaed04ed6b2f` |
+
+Version selection follows the file names bullmq@5.63.2 actually ships in
+`dist/cjs/commands/`: `moveToDelayed` is version **8**, `moveJobFromActiveToWait`
+is version **9** and `updateData` is version **1**. The `-N` suffix is the BullMQ
+`numberOfKeys` value: the first N arguments of each `EVAL` call are `KEYS`, the
+remainder are `ARGV`.
+
+`moveToActive`, `moveToFinished`, `retryJob`, `moveStalledJobsToWait` and
+`extendLock` are byte-identical to the copies other Go BullMQ runners in this
+repository vendor, so the digest test pins one set of bytes per upstream file
+regardless of which package consumes them.
+
+## MIT License
+
+Copyright (c) 2018 BullForce Labs AB.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

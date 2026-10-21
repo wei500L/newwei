@@ -2,11 +2,14 @@
 // three crawl4ai queues: crawl4ai-hot, crawl4ai-normal and the legacy crawl4ai
 // queue.
 //
-// NestJS CrawlQueueProcessor remains the only consumer of these queues. This
-// package writes the exact BullMQ v5.63.2 Redis protocol NestJS writes (job
-// hash, wait list / prioritized zset, deduplication key, events stream, meta),
-// and it never starts a worker, a queue event consumer or a janitor. The add
-// scripts are embedded from the locked bullmq@5.63.2 package (see NOTICE).
+// The consumer is NestJS CrawlQueueProcessor, or apps/api-go/internal/crawlworker
+// when API_GO_CRAWL_WORKER_MODE=go (the Go worker runtime added in this batch
+// owns the three queue workers; this package stays producer/control only).
+// Either consumer reads the exact BullMQ v5.63.2 Redis protocol this package
+// writes (job hash, wait list / prioritized zset, deduplication key, events
+// stream, meta), and this package never starts a worker, a queue event consumer
+// or a janitor. The add scripts are embedded from the locked bullmq@5.63.2
+// package (see NOTICE).
 //
 // Ordering and dedup follow crawl-queue.service.ts:
 //   - deduplication.id is crawl-task:{taskId}, task-scoped and queue-class

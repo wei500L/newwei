@@ -1757,21 +1757,51 @@ const (
 
 // CrawlFrontierLlmWorkerMode controls the owner of the two Frontier LLM
 // BullMQ queues (`frontier-llm-judge` and `frontier-llm-learn`). It is
-// independent of every HTTP switch and of the three crawl4ai queue workers,
-// which stay on NestJS. The accepted values are exactly "", "legacy" and "go";
-// the empty value behaves like legacy and an invalid value fails startup.
+// independent of every HTTP switch and of API_GO_CRAWL_WORKER_MODE, which owns
+// the three crawl4ai queue workers separately. The accepted values are exactly
+// "", "legacy" and "go"; the empty value behaves like legacy and an invalid
+// value fails startup.
 //
 // legacy: NestJS CrawlQueueProcessor keeps creating both LLM workers.
-// go: NestJS creates only the three crawl workers and api-go consumes the two
-// LLM queues with concurrency 1 and the shared queue-level limiter
-// (max 1 per 1000ms). Go requires DATABASE_URL, REDIS_HOST and
-// SYSTEM_SETTINGS_ENCRYPTION_KEY (the gateway profile key and the managed
-// governance key are decrypted with it); JWT is not required.
+// go: NestJS creates only the three crawl workers (unless
+// API_GO_CRAWL_WORKER_MODE=go) and api-go consumes the two LLM queues with
+// concurrency 1 and the shared queue-level limiter (max 1 per 1000ms). Go
+// requires DATABASE_URL, REDIS_HOST and SYSTEM_SETTINGS_ENCRYPTION_KEY (the
+// gateway profile key and the managed governance key are decrypted with it);
+// JWT is not required.
 type CrawlFrontierLlmWorkerMode string
 
 const (
 	CrawlFrontierLlmWorkerModeLegacy CrawlFrontierLlmWorkerMode = "legacy"
 	CrawlFrontierLlmWorkerModeGo     CrawlFrontierLlmWorkerMode = "go"
+)
+
+// CrawlWorkerMode controls the owner of the three crawl4ai queue workers
+// (`crawl4ai`, `crawl4ai-hot`, `crawl4ai-normal`). The accepted values are
+// exactly "", "legacy" and "go"; the empty value behaves like legacy and an
+// invalid value fails startup.
+//
+// legacy: NestJS CrawlQueueProcessor creates the three crawl Workers, their
+// QueueEvents listeners and the C2 concurrency subscriber (today's behaviour).
+// go: NestJS creates none of the three, and api-go consumes the queues with
+// the shared in-process concurrency limiter, the queue-level limiter, the meta
+// global concurrency, the C2 broadcast, the memory-pressure cooldown requeue
+// and the exactly-once stalled/completed/failed side effects.
+//
+// The switch is independent of API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE (the two
+// Frontier LLM queues) and of every HTTP switch. go requires DATABASE_URL,
+// REDIS_HOST, MONGO_URI, CRAWL4AI_BASE_URL and SYSTEM_SETTINGS_ENCRYPTION_KEY
+// (the storage settings may hold an encrypted S3 secret for media uploads),
+// and a non-nil FrontierNodeProcessor at wiring time; otherwise startup fails
+// so the queues can never be left without an owner. Switching back needs no
+// data change because the queue and data formats are identical.
+type CrawlWorkerMode string
+
+const (
+	// CrawlWorkerModeLegacy keeps the three crawl queue workers on NestJS.
+	CrawlWorkerModeLegacy CrawlWorkerMode = "legacy"
+	// CrawlWorkerModeGo consumes the three crawl queues in api-go.
+	CrawlWorkerModeGo CrawlWorkerMode = "go"
 )
 
 // AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
@@ -2266,9 +2296,13 @@ type Config struct {
 	// 该模式被读取。
 	AlertWorkerMode AlertWorkerMode
 	// CrawlFrontierLlmWorkerMode 见 CrawlFrontierLlmWorkerMode 常量。默认
-	// legacy。go 需要 MySQL、Redis 与设置加密密钥；三个爬取队列 worker 仍由
-	// NestJS 执行。
+	// legacy。go 需要 MySQL、Redis 与设置加密密钥；三个爬取队列 worker 的归属
+	// 由 API_GO_CRAWL_WORKER_MODE 单独控制。
 	CrawlFrontierLlmWorkerMode CrawlFrontierLlmWorkerMode
+	// CrawlWorkerMode 见 CrawlWorkerMode 常量。默认 legacy。go 需要 MySQL、
+	// Redis、Mongo、CRAWL4AI_BASE_URL 与设置加密密钥，并在接线时要求非 nil 的
+	// crawlfrontiernode processor。
+	CrawlWorkerMode CrawlWorkerMode
 	// 告警队列的 ALERT_* 调参（NestJS EnvService.alertingConfig 的等价物）。
 	AlertQueueConcurrency     int
 	AlertWebhookTimeoutMs     int
@@ -2974,6 +3008,13 @@ type Config struct {
 	CrawlHealthTTLMs   int
 	CrawlSSRFProxyURL  string
 	CrawlJSCodeEnabled bool
+	// CrawlMediaFetchTimeoutMs, CrawlMediaMaxBytes and CrawlMediaMaxPerResult
+	// mirror EnvService.crawl4aiConfig.media (CRAWL_MEDIA_FETCH_TIMEOUT_MS,
+	// CRAWL_MEDIA_MAX_BYTES, CRAWL_MEDIA_MAX_PER_RESULT; defaults 15000,
+	// 2097152 and 6). The Go crawl worker uses them when storeMedia is set.
+	CrawlMediaFetchTimeoutMs int
+	CrawlMediaMaxBytes       int
+	CrawlMediaMaxPerResult   int
 	// NewsSourceInFlightLookbackMs is NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS
 	// (default 21_600_000): the preview's in-flight PipelineJob window.
 	NewsSourceInFlightLookbackMs int
@@ -3520,6 +3561,14 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.CrawlFrontierLlmWorkerMode = CrawlFrontierLlmWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_CRAWL_WORKER_MODE")) {
+	case "", string(CrawlWorkerModeLegacy):
+		cfg.CrawlWorkerMode = CrawlWorkerModeLegacy
+	case string(CrawlWorkerModeGo):
+		cfg.CrawlWorkerMode = CrawlWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_CRAWL_WORKER_MODE must be one of legacy|go")
 	}
 	errs = append(errs, loadAlertingConfig(getenv, &cfg)...)
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_VIEWS_MODE")) {
@@ -4717,6 +4766,9 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	cfg.CrawlHealthTTLMs = intDefault(getenv("CRAWL4AI_HEALTH_CHECK_TTL_MS"), 60_000)
 	cfg.CrawlSSRFProxyURL = strings.TrimSpace(getenv("CRAWL4AI_SSRF_PROXY_URL"))
 	cfg.CrawlJSCodeEnabled = boolDefault(getenv("CRAWL4AI_JSCODE_ENABLED"), true)
+	cfg.CrawlMediaFetchTimeoutMs = intDefault(getenv("CRAWL_MEDIA_FETCH_TIMEOUT_MS"), 15_000)
+	cfg.CrawlMediaMaxBytes = intDefault(getenv("CRAWL_MEDIA_MAX_BYTES"), 2_097_152)
+	cfg.CrawlMediaMaxPerResult = intDefault(getenv("CRAWL_MEDIA_MAX_PER_RESULT"), 6)
 	cfg.NewsSourceInFlightLookbackMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS"), 21_600_000)
 	// The scheduler settings mirror EnvService.newsSourceSchedulerConfig
 	// one-for-one. SourceConcurrency is Go-only: the default 1 keeps exactly
@@ -5296,6 +5348,30 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.SystemSettingsEncryptionKeyRaw == "" {
 			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE=go")
+		}
+	}
+	// The three crawl4ai queue workers write CrawlTask/CrawlResult/PipelineJob/
+	// NewsSource/Notification rows in MySQL, the BullMQ protocol and the crawl
+	// activity/cooldown keys in Redis, CrawlResultContent/TaskLog/media asset
+	// documents in Mongo, request crawl4ai over HTTP and upload stored media to
+	// object storage. The storage settings may hold an encrypted S3 secret, so
+	// the settings key is required as well; the frontier node processor is
+	// checked at wiring time because config cannot see Go values.
+	if cfg.CrawlWorkerMode == CrawlWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_CRAWL_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_CRAWL_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CRAWL_WORKER_MODE=go")
+		}
+		if strings.TrimSpace(cfg.CrawlBaseURL) == "" {
+			errs = append(errs, "CRAWL4AI_BASE_URL is required when API_GO_CRAWL_WORKER_MODE=go")
+		}
+		if strings.TrimSpace(cfg.SettingsEncryptionKeyRaw) == "" {
+			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_CRAWL_WORKER_MODE=go")
 		}
 	}
 	if cfg.AlertWorkerMode == AlertWorkerModeGo {
