@@ -1380,7 +1380,9 @@ func TestFrontierNodeConcurrentMetadataPatches(t *testing.T) {
 		executionGroup.Add(1)
 		go func(index int, nodeID string) {
 			defer executionGroup.Done()
-			executionErrors[index] = workers[index].ProcessQueuedNode(h.ctx, nodeID, testOrgID, 0)
+			if _, err := workers[index].ProcessQueuedNode(h.ctx, nodeID, testOrgID, 0); err != nil {
+				executionErrors[index] = err
+			}
 		}(index, nodeID)
 	}
 	executionGroup.Wait()

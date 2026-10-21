@@ -34,10 +34,9 @@ func testClock() time.Time {
 // testService builds the smallest Service the pure helpers accept: the clock and
 // the crawlfrontierllm recorder surface used for the ISO timestamps.
 func testService() *Service {
-	now := testClock
 	return &Service{
-		now:      func() time.Time { return now },
-		frontier: crawlfrontierllm.New(crawlfrontierllm.Options{Now: func() time.Time { return now }}),
+		now:      testClock,
+		frontier: crawlfrontierllm.New(crawlfrontierllm.Options{Now: testClock}),
 	}
 }
 
