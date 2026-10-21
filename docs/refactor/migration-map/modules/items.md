@@ -2,6 +2,8 @@
 
 2026-10-19条目写/入库限定续核，main91e759b449c4511dc96d86539ea0eb258754d07e：[ITEMS-INGEST-001](../tasks/ITEMS-INGEST-001.md) reserved，[完整提示词](../tasks/ITEMS-INGEST-001.prompt.md)在Ready规划#93发布。仅POST /api/items与五Mutation、RawItem即时/定时补偿、兼容itemPipeline producer和读模型水合，六入口见task；不重迁已合列表/RSS/CSV/查询。确认hydration采用completed-only窄投影的GAP-ITEMS-001，仅修其专用路径；同时改善按item补偿先过滤再限50。后台worker仍Nest，Go写与consumer未实施，不提前计main；下方域表/认领为历史快照。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **7/7**、Query **7/7**、Mutation **4/4**（Go 注册/分母，C 类 0 条）；7 条 HTTP（含 `search-telemetry` 两路，按本表归属）、7 个 Query 与 4 个写 Mutation（建/改/采集入库/翻译）全部注册；剩余 Nest 入口 0 条。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 6/7、Query 6/7、Mutation 0/4），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
 ## 范围与实施状态

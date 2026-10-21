@@ -2,6 +2,8 @@
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **16/16**、Query **—**、Mutation **—**（Go 注册/分母，C 类 0 条）；16 条全部注册（其中 `GET /api/geo/geocode` 与 `GET /api/system-settings/realtime-signals/runtime` 按本表归属计入）；剩余 Nest 入口 0 条（信号 worker/Telegram 登录见 async-runtime）。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 12/16），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 ## 范围与实施状态
 
 自定义 monitor 五路、信号缓存读/反馈七路已接管；地图/时空 HTTP 归看板域。Go 信号服务读取 Telegram/Oref 已有缓存与状态，不代表轮询器或主动同步已迁。

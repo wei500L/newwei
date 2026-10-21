@@ -2,6 +2,8 @@
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **—**、Query **—**、Mutation **—**（Go 注册/分母，不计入主 API 分母）；本批无覆盖数字变化；vector-go 三条独立 HTTP 与上游 Qdrant 切换边界不变，真实请求去向仍未核实。旧行为 `91e759b4`/`3cedce9a` 快照（—（三条独立 HTTP 不计入主 API 分母）），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 ## 范围与实施状态
 
 vector-go 是独立 HTTP 服务，三条契约已实现与注册，真正直连 Qdrant，不经 Nest 代理。AIS relay、AkShare、crawl4ai、model-service 保持独立服务边界。

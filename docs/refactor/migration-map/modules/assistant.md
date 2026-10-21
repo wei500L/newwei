@@ -2,6 +2,8 @@
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **—**、Query **3/3**、Mutation **4/4**（Go 注册/分母，C 类 0 条）；3 个读 root 与 4 个写 root（提交/报告/预测/删除）已注册；本域无主 API HTTP；剩余 Nest root 0 条（worker 执行权见 async-runtime）。旧行为 `91e759b4`/`3cedce9a` 快照（Query 3/3、Mutation 0/4），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 ## 范围与实施状态
 
 assistantRuns、运行能力和经济序列建议三读在 Go；query/report/forecast 请求与历史删除仍为 Nest。不能把“运行能力配置可读”当成模型执行迁完。

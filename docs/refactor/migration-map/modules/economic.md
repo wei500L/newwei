@@ -2,6 +2,8 @@
 
 最近核对：2026-10-19 23:50 MSK（UTC+03:00），经济数据 Go 所有权分支 `refactor/go-economic-data`（基线 `origin/main 91e759b449c4511dc96d86539ea0eb258754d07e`）。该批尚未合入 main，下表“Go 实现”是待合并实现事实。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **3/3**、Query **6/6**、Mutation **3/3**（Go 注册/分母，C 类 0 条）；3 条 AkShare 管理 HTTP 与 3 个调度写 Mutation 已注册；剩余 Nest 入口 0 条（repeatable/consumer 执行权见 async-runtime）。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 0/3、Query 6/6、Mutation 0/3），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 ## 范围与实施状态
 
 经济数据六 Query 是 Go 直接数据库读，本批不重写。新分支增加默认 legacy 的 `API_GO_ECONOMIC_DATA_MODE` 与 `API_GO_ECONOMIC_DATA_WORKER_MODE`：请求开关接管三个 Mutation 与三条 AkShare 管理 HTTP；worker 开关接管目录/重复任务同步与 `akshare-data` 唯一消费。两个开关独立，worker=go 时 Nest 跳过 `ensureCatalog`/`ensureRepeatableJobs` 且不创建 Worker。共享全局经济数据不按 org 过滤，权限检查仍必须存在。

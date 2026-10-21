@@ -2,6 +2,8 @@
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **43/43**、Query **16/16**、Mutation **17/17**（Go 注册/分母，C 类 0 条）；43 条 HTTP 与 16 个 Query 全部注册；17 个 Mutation 中 13 个设置写 + 4 个来源策略写均已注册；剩余 Nest 入口 0 条（GAP-GQL-001 已按 dcbe563b 关闭）。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 39/43、Query 16/16、Mutation 13/17），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 ## 范围与实施状态
 
 最新限定选批（2026-10-18，main90765633）：来源策略四Mutation已认领[SOURCE-POLICY-WRITE-001](../tasks/SOURCE-POLICY-WRITE-001.md) reserved，[提示词](../tasks/SOURCE-POLICY-WRITE-001.prompt.md)在规划#80发布，仍未新增Go业务/注册。完整迁移版本差量、preset、categoryAuthority、DB/cache审计；同时仅补旧13写的路由OR/无效DSN剩余条件，不重迁主体。核心settingswrite/settingscrawl与网关任务隔离；普通main CI39149114456成功。

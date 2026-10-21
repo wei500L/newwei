@@ -2,21 +2,23 @@
 
 [入口](README.md) · [候选队列](BACKLOG.md) · [实现核对范围](AUDIT.md)。本轮源码基线均为 `3cedce9aa3200436aba3596f63b559de5490cec8`（2026-10-18 14:37–14:42 MSK 静态阅读）；PR #70 的候选代码另记 head，不能关闭 main 缺口。稳定 ID 不因任务 merged 而删除。关闭须有实际落地提交、对应入口/分支与证据。
 
+2026-10-21 复核基线 `dcbe563b917f`（#136，整合 #133–#135；普通 CI run 39625284282 `conclusion=success`，无开放 PR）：本页逐条用当前 main 源码重核关闭状态：GAP-NEWS-001 / GAP-CRAWL-001 / GAP-GQL-001 已关闭，GAP-ASYNC-001 范围缩小但未关闭；另按真实代码关闭 GAP-ANALYSIS-001 / GAP-ITEMS-001 / GAP-KG-001 / GAP-RSS-001。`path:line` 均取 `dcbe563b`。关闭只表示“源码缺口的实现/接线已落地”，**不代表已部署、已切流或实网验证**。
+
 ## 当前摘要
 
 | ID | 性质 / 所属域 | 影响范围 | 状态 / 归属 |
 |---|---|---|---|
-| GAP-ANALYSIS-001 | 中断恢复；analysis | BullMQ stalled重排时Mongo仍running，被process认领条件跳过，可能形成队列结束/结果永久running | ANALYSIS-RUNS-001 pr_open（#98，head e9c99ec9）；实现已提交、本批整合分支待合并；未部署/未运行验证 |
-| GAP-ITEMS-001 | 部分实现/水合；items | Go读模型水合只取completed窄快照，丢最新pending/failed及必要字段 | ITEMS-INGEST-001 pr_open（#96，head 761ed72c）；实现已提交、本批整合分支待合并；未部署/未运行验证 |
-| GAP-RSS-001 | 部分实现/共享缓存；items | rssTranslationStatus在LLM profile缓存miss后覆盖完整缓存字段 | RSS-TRANSLATION-001 经#90合入main c70b0373，修共享缓存投影写回；未生产验证 |
-| GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | SOURCE-POLICY-WRITE-001 经#89合入main f1167769；旧13写剩余接线仍按设置写任务跟踪，缺口仍开放 |
-| GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | NEWS-BRIEF-001 pr_open（候选实现，未合 main）；缺口仍开放 |
-| GAP-CRAWL-001 | 部分实现；crawl | 媒体下发及已有REST/GraphQL详情的 S3 URL分支 | STORAGE-MEDIA-001 pr_open（候选实现，未合 main）；缺口仍开放 |
-| GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 主要子链已由 #92–#113 的 21 条 PR 覆盖（四订阅、来源、条目写、归档、经济、告警、采集、设置、态势、导出等），整合分支待合并；未部署验证，整域缺口不关闭 |
-| GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | digest/审计/四订阅/analysis worker/告警 worker/质检 worker/形状回填等已由本批 PR 覆盖，整合分支待合并；itemPipeline worker、Socket.IO 与真实外部服务继续由 NestJS 承担，整域缺口不关闭 |
-| GAP-KG-001 | 部分实现；knowledge | 已迁证据复核队列的固定候选遮挡 | KNOWLEDGE-REVIEW-001 经#89合入main f1167769；未部署验证，缺口仍开放 |
+| GAP-ANALYSIS-001 | 中断恢复；analysis | BullMQ stalled重排时Mongo仍running，被process认领条件跳过，可能形成队列结束/结果永久running | **已关闭**（`dcbe563b`）：`apps/api/src/modules/analysis/analysis.service.ts:156` 的 claim 条件已含 `running`，`:145-160` 以 runToken 围栏终态写；ANALYSIS-RUNS-001 merged（#98 → `240b86b71b94`）；未部署/未运行验证 |
+| GAP-ITEMS-001 | 部分实现/水合；items | Go读模型水合只取completed窄快照，丢最新pending/failed及必要字段 | **已关闭**（`dcbe563b`）：`apps/api-go/internal/itemsreading/readmodel.go:185-198` 改取任意状态最新快照（`ListLatestProcessedSnapshotsAnyStatus`）；ITEMS-INGEST-001 merged（#96 → `bb7cb6f2666c`）；未部署/未运行验证 |
+| GAP-RSS-001 | 部分实现/共享缓存；items | rssTranslationStatus在LLM profile缓存miss后覆盖完整缓存字段 | **已关闭**（`dcbe563b`）：`apps/api-go/internal/itemsreading/translation.go:431-459` 只读 canonical 缓存，miss 时从 DB 返回且不再把窄投影写回；RSS-TRANSLATION-001 merged（#88 → `f85f80200ff7`，经 #90 → `c70b0373990a`）；未生产验证 |
+| GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | **已关闭**（`dcbe563b`）：路由 OR `apps/api-go/cmd/api/main.go:893`、`needsCredentialedGo` `apps/api-go/cmd/api/main.go:1348`、handler 装配 `apps/api-go/cmd/api/main.go:2192-2193` 三处均含 `GraphQLSettingsWriteMode`，无效 DSN 阻断列表见 `apps/api-go/cmd/api/main.go:1080`；SOURCE-POLICY-WRITE-001 merged（#82 → `f293f78053ff`）；独立开关运行证据另记 |
+| GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | **已关闭**（`dcbe563b`）：BRIEF 子开关注入 completer 与 LLM 日志 writer（`apps/api-go/cmd/api/main.go:2236-2243`），生成 `apps/api-go/internal/graphqlread/newsevents/brief.go:69`、写回 `:81`→`:456-482`；NEWS-BRIEF-001 merged（#72 → `e40e9041df6e`）；实网模型未验证 |
+| GAP-CRAWL-001 | 部分实现；crawl | 媒体下发及已有REST/GraphQL详情的 S3 URL分支 | **已关闭**（`dcbe563b`）：`apps/api-go/internal/crawlreadtelemetry/service_media.go:478-540` S3 presign 302、`:605-646` 详情两处构造；GraphQL 存储配置注入 `apps/api-go/cmd/api/main.go:2273-2279`；STORAGE-MEDIA-001 merged（#73 → `f4ac4aa807b6`）；实桶未验证 |
+| GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 范围收窄（`dcbe563b`）：仅剩 5 条 C 类 HTTP（清单指向 [ownership-audit](../cutover/ownership-audit.md)），未注册 Query/Mutation/Subscription 均为 0；无部署验证，整域缺口不关闭 |
+| GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | **未关闭（范围缩小）**（`dcbe563b`）：14/15 队列、21/21 Cron、6/6 namespace、12 个 Redis 桥均有 Go 实现与开关；残留 `itemPipelineDlq` 无消费者、告警规则全量 repeatable 对账、QueueEvents 派生读侧；未做运行时/部署验证 |
+| GAP-KG-001 | 部分实现；knowledge | 已迁证据复核队列的固定候选遮挡 | **已关闭**（`dcbe563b`）：`apps/api-go/internal/graphqlread/settingscrawl/review.go:68-130` keyset 分页直到选满/耗尽，无固定候选上限；KNOWLEDGE-REVIEW-001 merged（#86 → `afd9ba7d1974`）；未部署验证 |
 
-“未迁移”是范围事实，不表示 Nest 有 bug；“缺少外部运行证据”不单独计为源码缺陷。当前没有因本轮文档维护而关闭的业务缺口。
+“未迁移”是范围事实，不表示 Nest 有 bug；“缺少外部运行证据”不单独计为源码缺陷。2026-10-21 的关闭判定全部基于 `dcbe563b` 源码与已合并提交，不因文档维护本身关闭缺口；关闭不等于部署/切流/实网验证。
 
 2026-10-20 本批整合增量：`docs/refactor/migration-map` 的 21 条开放 PR 由 `integration/merge-open-prs-b92-113` 一次性收口（#92–#113，#111 由 #112 取代并关闭）。GAP-ANALYSIS-001、GAP-ITEMS-001 由 reserved 改为 pr_open（#98 head e9c99ec9、#96 head 761ed72c）；GAP-RSS-001、GAP-KG-001、SOURCE-POLICY-WRITE-001 等经 #89/#90 合入的事实回填为 merged，但均未部署/未运行验证，不关闭缺口。本批新增的 worker/Cron/订阅仍按“实现已提交、整合分支待合并”记录，不以 PR CI 代替部署或实网证据。
 
@@ -31,6 +33,8 @@
 - 文件：Nest analysis.processor.ts/analysis.service.ts、必要analysis-result可选字段，Go新analysisqueue/analysisruns；不扩展其他worker。远端普通CI真实Redis/Mongo/worker+SSE fixture须覆盖重排、旧token、已完成不重复；真实模型和部署分别记。
 - 状态reserved、未实施、关闭证据无；须实际main落地、精确head CI/恢复行为证据，生产启用另记。
 
+2026-10-21 复核（`dcbe563b`）：**已关闭**。`apps/api/src/modules/analysis/analysis.service.ts:145-160` 的 claim 条件已为 `status: { $in: ["pending","failed","running"] }`（`:156`），并用本次 attempt 的 runToken 作为终态写围栏（注释明确引用 GAP-ANALYSIS-001）；Go 侧执行链见 `apps/api-go/internal/analysisruns`、`analysisqueue` 与 `apps/api-go/cmd/api/analysis_runs.go:70-155`。ANALYSIS-RUNS-001 经 #114 收口（#98 → `240b86b71b94`）。未做运行/部署验证。
+
 <a id="gap-items-001"></a>
 
 ## GAP-ITEMS-001 · 水合快照误用已完成数据读取
@@ -39,6 +43,8 @@
 - Go `apps/api-go/internal/itemsreading/readmodel.go:loadProcessedSnapshots` 调用 `mongo.go:ListLatestProcessedSnapshots`，后者where固定status=completed，投影不含rawItemId/error/llm/updatedAt等水合字段。Nest `ItemsReadModelService.loadProcessedReadModelSnapshots/buildLatestItemSnapshotPipeline` 在org+item IDs内按createdAt DESC,_id DESC取最新任意状态及完整snapshot，没有completed过滤。
 - 影响：最新pending/failed可能缺失或旧completed替代最新运行状态；仅导出Go私有hydration helper不能完成写后读模型契约。搜索/RSS取completed本身不是此缺口，不改它们的语义。
 - [ITEMS-INGEST-001](tasks/ITEMS-INGEST-001.md) 已 pr_open（#96，head 761ed72c），仅认领hydration专用Mongo聚合/全snapshot、组织和raw双向绑定/缺snapshot unset及新写链调用。允许readmodel.go与独立hydration store/port，不重建全库read-model、不新增后台回填；状态未修，无关闭证据。关闭需实际main实现/对应head验证与最新状态case，生产启用另记。
+
+2026-10-21 复核（`dcbe563b`）：**已关闭**。`apps/api-go/internal/itemsreading/readmodel.go:185-198` 的 `loadProcessedSnapshots` 改用 `ListLatestProcessedSnapshotsAnyStatus`，按 item 取任意状态的最新快照（注释明确新入队 pending 不再被旧 completed 遮蔽），completed-only 的搜索辅助保持不变。ITEMS-INGEST-001 经 #114 收口（#96 → `bb7cb6f2666c`）。未做运行/部署验证。
 
 <a id="gap-kg-001"></a>
 
@@ -50,6 +56,8 @@
 - 允许文件settingscrawl/review.go及新review_support.go、knowledgegraph/review_support.go；不碰来源策略#82的register.go/policy.go。新增人工复核写是GAP-LEGACY-001子范围，ingestion仍属GAP-ASYNC-001，不随队列修复关闭。
 - 状态pr_open（Ready #86，head4d6d24b8），随集成分支 integration/merge-open-prs-b80-87 收口；合并与运行验证证据待回填，不由规划文档关闭。关闭需实际main提交中队列分页/组织/投影分支、该head普通CI和明确算法证据。
 
+2026-10-21 复核（`dcbe563b`）：**已关闭**。`apps/api-go/internal/graphqlread/settingscrawl/review.go:68-73` 把页大小定义为“扫描页”而非总数上限，`:102-130` 的 `selectReviewCandidateIDs` 用 (createdAt,id) keyset 游标持续翻页直到选满 limit 或源耗尽。KNOWLEDGE-REVIEW-001 经 #89 合入（#86 → `afd9ba7d1974`）。
+
 ## GAP-RSS-001 · RSS状态读取用窄投影覆盖完整网关缓存
 
 - 核对main90765633（2026-10-18），入口Query rssTranslationStatus，items.read，原READ+ITEMS_READING；触发llm_gateway:profiles miss而MySQL有完整llm_gateway_profiles设置。
@@ -57,6 +65,8 @@
 - Nest `LlmGatewaySettingsService.loadSettings`（modules/system-settings/llm-gateway-settings.service.ts）在同key读写完整normalized settings，真实completion会消费它。状态读取不应改变实际网关配置；未运行证明生产已触发，不把静态根因推成已发生外网故障。
 - [RSS-TRANSLATION-001](tasks/RSS-TRANSLATION-001.md)仅修此status写回：保留canonical缓存读取，miss从DB投影返回但不回填窄结构，不重做profile CRUD或盲目删缓存。业务translation新root另属GAP-LEGACY-001，不与此具体缺口混计。
 - 核心文件translation.go；与#84 csvexport无文件交集，与#81 profiles/llmlogs核心隔离。状态reserved、main未修、关闭证据无；需实际merge中无损缓存行为及对应CI，真实部署独立核实。
+
+2026-10-21 复核（`dcbe563b`）：**已关闭**。`apps/api-go/internal/itemsreading/translation.go:431-440` 只读 canonical `llm_gateway:profiles` 缓存；miss 时 `:447` 读取 DB 原始值并在 `:459` 返回 normalize 结果，**不再**用窄投影 Set 同一 key（当前唯一缓存写为 `:418` 的 `situation_monitor:settings`）。RSS-TRANSLATION-001 经 #90 合入（#88 → `f85f80200ff7`）。
 
 <a id="gap-gql-001"></a>
 
@@ -73,6 +83,8 @@
 - 主要文件：`cmd/api/main.go`；必要时 `internal/config/config.go`；模型复用见 `graphqlread/{workspace,settingscrawl}/register.go`。前置：先确认 #70 与 #68 的并集落地方式；这些共享文件一次只交给一个执行任务。BL-01 当前须等待或明确接线所有权，不重复认领 13 写。
 - 关闭证据：**无**。需要落地 SHA 中 OR/资源/handler 一致，静态组合核对与该 head 普通 CI；独立开关运行证据另外记，不能由 CI 自动推断。
 
+2026-10-21 复核（`dcbe563b`）：**已关闭**。设置写三处剩余条件已全部含 `API_GO_GRAPHQL_SETTINGS_WRITE_MODE`：`graphqlRouteMode` OR（`apps/api-go/cmd/api/main.go:891-905`，设置在 `:893`）、无效 DSN 阻断列表（`apps/api-go/cmd/api/main.go:1080`）、`needsCredentialedGo`（`apps/api-go/cmd/api/main.go:1348`）；GraphQL handler 装配条件 `apps/api-go/cmd/api/main.go:2192-2193` 亦含 `settingsWriteGo`；开关校验见 `apps/api-go/internal/config/config.go:4592-4598,6048`。SOURCE-POLICY-WRITE-001 经 #89 合入（#82 → `f293f78053ff`）。独立开关的运行/部署证据仍另记，不由本页推断。
+
 <a id="gap-news-001"></a>
 
 ## GAP-NEWS-001 · 事件简报缺少生成与写回
@@ -84,6 +96,8 @@
 - 可复用但不可直接调用：[publicportal/story.go](../../../apps/api-go/internal/publicportal/story.go) `Service.brief` 已实现选源→Complete→JSON 清洗→SaveEventMetadata；`brief`、`completionRequest`、gateway helper 均为包内私有，公共门户语言/组织选择与 GraphQL 参数也不同，不能声称已共享。
 - 主要文件：newsevents `brief.go` / store/model；如抽共享能力，需明确 publicportal/story.go、brief.go、gateway.go 的所有权。MySQL NewsEvent/NewsEventItem/ProcessedArticle、模型配置/密钥、HTTP 模型上游；无须为了这个同步入口迁 BullMQ。前置是确定具名共享模型/客户端边界，BL-02 可独立窗口评估，避开 BL-17 公共门户客户端并行修改。
 - 状态：已分配 [NEWS-BRIEF-001](tasks/NEWS-BRIEF-001.md)（pr_open）；编码窗口在 main 9d0462e1 上给出候选实现（BRIEF 子开关 + Go 选源→模型→校验清洗→`JSON_SET` 写 briefV1 叶子 + best-effort LLM 请求日志），Ready [PR #72](https://github.com/wei500L/newwei/pull/72) head 517a73f9 普通 CI verify/integration 通过，但**尚未合 main**，故缺口仍开放。规划期另核出生成 source 缺 Summary/KeyPoints、结构 schema 差异与 Nest LLM request log 副作用，详见任务/提示词。关闭证据：**无**；需该候选实际 merge SHA 中命中、miss、forceRefresh、无事件/来源、写回与日志分支的落地证据，实网模型验证另记。
+
+2026-10-21 复核（`dcbe563b`）：**已关闭**。`apps/api-go/cmd/api/main.go:2236-2243` 在 `API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE=go` 时注入 `publicportal.NewBriefCompleter`（加密 key/LiteLLM 基址/超时/重试）与 `llmlogs.NewCompletionWriter`；`apps/api-go/internal/graphqlread/newsevents/brief.go:69` 调用生成，`:81` 经 `saveBriefV1`（`:456-482`）以 `JSON_SET(metadata,'$.briefV1',…)` 写回且带 `id + orgId` 条件，写回失败仅记日志并仍返回已生成简报（`:82-85`）；来源结构已携带 Summary/KeyPoints。NEWS-BRIEF-001 经 #77 合入（#72 → `e40e9041df6e`）。真实模型调用仍未验证。
 
 <a id="gap-crawl-001"></a>
 
@@ -99,13 +113,15 @@
 - 同因缺口（规划期复核确认）：`service_media.go`/`buildStoredMediaAsset` 对非 mysql 直接返回、未生成 preview/download URL；它由 REST 详情及 `settingscrawl` 独立构造的 `Query crawlTask` 共同消费，只修下发路由不能闭环。
 - 状态：2026-10-18 已实现，[STORAGE-MEDIA-001](tasks/STORAGE-MEDIA-001.md)（pr_open）交付于 `refactor/go-storage-media`（[Ready PR #73](https://github.com/wei500L/newwei/pull/73)）；PR **未合 main**，本缺口**仍开放**。已交付：媒体路由 S3 presigned 302（按记录自身 storageKey，签名 content-type/disposition/cache-control，配置不完整返回 400）、REST 详情与 `Query crawlTask` 两处注入并各自签名 preview/download、按存储配置 TTL 且修正 env TTL 回退；GAP 同时覆盖详情两处构造。关闭证据：需实际合入 main 的提交 + 该 head 的普通 CI success，以及实桶/MinIO 真实签名下载验证；当前只有 PR/静态契约测试，实桶未执行。
 
+2026-10-21 复核（`dcbe563b`）：**已关闭**。`apps/api-go/internal/crawlreadtelemetry/service_media.go:478-540` 的 `resolveDelivery` 按记录自身 storageKey 调 `CreateObjectReadURL` 生成 presigned URL，handler 于 `:151-153` 返回 302；REST 详情与 `Query crawlTask` 两处构造共用 `attachStoredS3URLs`（`:605-646`）；GraphQL 侧存储配置在 `apps/api-go/cmd/api/main.go:2273-2279` 注入 settingscrawl（注释说明 crawlTask 自建 read service 必须注入，否则 S3 URL 为空）。STORAGE-MEDIA-001 经 #77 合入（#73 → `f4ac4aa807b6`）。实桶/MinIO 下载未验证。
+
 <a id="gap-legacy-001"></a>
 
 ## GAP-LEGACY-001 · 尚无 Go 接管的契约入口
 
 2026-10-19来源子链限定增量（main91e759b4）：GET /api/news-aggregator/source、POST /api/news-aggregator/sources/batch完整范围由[NEWSNOW-SOURCES-001](tasks/NEWSNOW-SOURCES-001.md) reserved，当前仍Nest，Go未实施。包含64来源ID的实际上游/凭据/缓存/必要实时接缝，不把它们当64HTTP。推荐/热点分析与后台预热不认领，不关闭本跨域GAP。审计#92仍开放、未合main；与此子链无核心业务交集。
 
-- 精确范围的唯一事实源：18 个域页的 HTTP/root 表。当前 95 条 HTTP 标为 Nest、6 Query、36 Mutation、4 Subscription 未被 Go 注册；另有 `GET /api/healthz/live` 仍为 shadow，单列为切流状态，不能算新增缺陷。与 274/370 接管口径相容。
+- 精确范围的唯一事实源：18 个域页的 HTTP/root 表。**2026-10-21 更新（`dcbe563b`）**：未被 Go 注册的契约入口只剩 5 条 C 类 HTTP（`GET /api/healthz/live` 仅 shadow 无开关、`POST /api/admin/crawl-frontier/runs`、`POST /api/admin/crawl-frontier/nodes/retry`、`POST /api/admin/crawl-frontier/nodes/:id/retry`、`GET /api/system-settings/vector-service/diagnostics`），Query/Mutation/Subscription 未注册数均为 0；与 365/370、77/77、57/57、4/4 的接管口径相容。逐条证据与处理选项见 [ownership-audit](../cutover/ownership-audit.md)。阶段 6 停 Nest 前必须处理 `healthz/live` 探针，见切流手册。
 - 触发/影响：请求到达 legacy 规则或包含未接管 GraphQL root，业务由 Nest 执行；停掉 Nest 会失去相应功能。Go 并没有把这些入口返回空值来冒充完成。
 - Nest / Go：Nest Controller/Resolver/Service 定位已在域表；Go [legacyproxy](../../../apps/api-go/internal/legacyproxy) 与 [exec/walk.go](../../../apps/api-go/internal/graphqlread/exec/walk.go) 决定回退。未注册 root 在副作用前整份回退。
 - 任务覆盖：工作台 8 写由 WORKSPACE-WRITE-001 / #70 占用，保持 pr_open；Query `items` 由 [ITEMS-LIST-001](tasks/ITEMS-LIST-001.md) 覆盖（pr_open，未合 main，不提前改本页分母）；其余候选见 BACKLOG 各自精确范围、文件和前置，不能领取整个集合。主要共享冲突是 main/config/Registry，其余按域隔离。
@@ -136,6 +152,8 @@
 | 四 Subscription 与 Socket.IO | Nest executor / Redis backplane / WS gateway | Go SSE 不替代 GraphQL/WS；协议升级仍回退 | BL-21；先确定事件生产者/租户与字段权限 |
 
 主要文件与独立交付边界分别保存在 BACKLOG，避免复制全部 worker 清单。状态：未分配；WORKSPACE-WRITE-001 只写交互数据，不覆盖告警扫描/SMTP/Webhook worker。关闭证据：**无**，按链路迁移后逐行缩小范围。
+
+2026-10-21 复核（`dcbe563b`）：**未关闭，范围已缩小**。按本批 T1 审计：BullMQ 15 个队列名中 14 个有 Go 消费者（11 个 worker 开关，go 时 Nest 在创建 Worker 前返回）、21 个 `@Cron/@Interval` 全部有 Go 实现与共享租约、Socket.IO 6/6 namespace 有 Go 路径与开关、12 个 Nest 实际订阅频道均为兼容桥/共享总线。仍属 Nest 独占或未闭环的部分：`itemPipelineDlq` 无消费者（只能靠 Bull Board 人工处理，属运维入口缺口）、告警规则级 repeatable 全量对账只在 Nest（`alerts.service.ts:1284-1301`）、QueueEvents 派生的 Nest 读侧职责（`QueueOrgStatsTracker`、`QueueEventPublisher`、`CrawlQueueEventPublisher`、告警 metric providers）没有独立 Go 开关、`situation-monitor:telegram-clear:v1` 订阅无模式门。加上未做运行时/部署/外部服务验证，本 ID 不关闭；逐条桥的停用条件与残留清单见 [ownership-audit](../cutover/ownership-audit.md)。
 
 ## 观察项与缺少验证（不计入已确认业务缺口）
 
