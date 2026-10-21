@@ -353,9 +353,11 @@ func (s *Service) setPaused(ctx context.Context, actor Actor, queue string, paus
 	if !paused {
 		source, target, argument = keys.Paused, keys.Wait, "resumed"
 	}
-	if _, err := scriptPause.Run(ctx, s.redis, []string{
+	// pause-7.lua has no return value, so a successful call answers a nil reply.
+	// go-redis reports that as redis.Nil, which is success here and not an error.
+	if err := scriptPause.Run(ctx, s.redis, []string{
 		source, target, keys.Meta, keys.Prioritized, keys.Events, keys.Delayed, keys.Marker,
-	}, argument).Result(); err != nil {
+	}, argument).Err(); err != nil && !errors.Is(err, redis.Nil) {
 		return PauseResult{}, err
 	}
 	action := actionQueuePause

@@ -141,7 +141,7 @@ func (s *redisStore) UpsertJobMetaAndCount(ctx context.Context, input UpsertJobM
 	if s == nil || s.commands == nil {
 		return ErrNoRedis
 	}
-	_, err := s.commands.Eval(ctx, upsertAndTransitionScript,
+	err := s.commands.Eval(ctx, upsertAndTransitionScript,
 		[]string{metaKey(input.JobID), countsKey(input.Meta.OrgID)},
 		string(input.Meta.Status),
 		input.Meta.OrgID,
@@ -149,8 +149,8 @@ func (s *redisStore) UpsertJobMetaAndCount(ctx context.Context, input UpsertJobM
 		keepFlag(input.Meta.KeepFailed),
 		strconv.Itoa(metaTTLSeconds),
 		strconv.Itoa(countsTTLSeconds),
-	).Result()
-	if err != nil {
+	).Err()
+	if err := ignoreNilReply(err); err != nil {
 		return fmt.Errorf("queueorgstats: upsert job meta %s: %w", input.JobID, err)
 	}
 	return nil
@@ -162,12 +162,12 @@ func (s *redisStore) TransitionTerminalAndRemove(ctx context.Context, jobID, org
 	if s == nil || s.commands == nil {
 		return ErrNoRedis
 	}
-	_, err := s.commands.Eval(ctx, terminalAndRemoveScript,
+	err := s.commands.Eval(ctx, terminalAndRemoveScript,
 		[]string{metaKey(jobID), countsKey(orgID)},
 		string(status),
 		strconv.Itoa(countsTTLSeconds),
-	).Result()
-	if err != nil {
+	).Err()
+	if err := ignoreNilReply(err); err != nil {
 		return fmt.Errorf("queueorgstats: terminal transition %s: %w", jobID, err)
 	}
 	return nil
@@ -178,14 +178,25 @@ func (s *redisStore) RemoveJob(ctx context.Context, orgID, jobID string) error {
 	if s == nil || s.commands == nil {
 		return ErrNoRedis
 	}
-	_, err := s.commands.Eval(ctx, removeJobScript,
+	err := s.commands.Eval(ctx, removeJobScript,
 		[]string{metaKey(jobID), countsKey(orgID)},
 		strconv.Itoa(countsTTLSeconds),
-	).Result()
-	if err != nil {
+	).Err()
+	if err := ignoreNilReply(err); err != nil {
 		return fmt.Errorf("queueorgstats: remove job meta %s: %w", jobID, err)
 	}
 	return nil
+}
+
+// ignoreNilReply normalizes the answer of a counter script. All three scripts
+// return the previous status, which is Lua false when the meta hash had none;
+// go-redis reports that reply as redis.Nil even though the script ran. Only a
+// real Redis error is reported to the caller.
+func ignoreNilReply(err error) error {
+	if err == nil || errors.Is(err, redis.Nil) {
+		return nil
+	}
+	return err
 }
 
 // Close closes the dedicated blocking connection. The shared command client is

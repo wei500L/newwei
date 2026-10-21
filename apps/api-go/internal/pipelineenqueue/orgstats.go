@@ -2,8 +2,11 @@ package pipelineenqueue
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strconv"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // The queue name and Redis prefix are the existing NestJS protocol values
@@ -35,7 +38,10 @@ func (p *Producer) recordOrgJobCount(ctx context.Context, jobID, orgID string) {
 	if p == nil || p.redis == nil {
 		return
 	}
-	if _, err := p.redis.Eval(
+	// The script answers the previous status, which is Lua false for a job that
+	// has no meta row yet; go-redis reports that reply as redis.Nil. It means the
+	// counter was written, not that the call failed.
+	if err := p.redis.Eval(
 		ctx,
 		upsertJobMetaAndCountScript,
 		[]string{orgMetaKey(jobID), orgCountsKey(orgID)},
@@ -45,7 +51,7 @@ func (p *Producer) recordOrgJobCount(ctx context.Context, jobID, orgID string) {
 		"1", // keepFailed: removeOnFail={age:604800,count:10000}
 		strconv.Itoa(orgMetaTTLSeconds),
 		strconv.Itoa(orgCountsTTLSeconds),
-	).Result(); err != nil {
+	).Err(); err != nil && !errors.Is(err, redis.Nil) {
 		// The NestJS service treats this as a warning: the job was already
 		// accepted by BullMQ and the counter can catch up from later events.
 		log.Printf("pipelineenqueue: org counter update failed jobId=%s orgId=%s: %v", jobID, orgID, err)
