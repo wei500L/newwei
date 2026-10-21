@@ -32,17 +32,17 @@
 
 | 编号 | 项目 | 为什么是 C | 可执行选项（摘要） | 详细 |
 |---|---|---|---|---|
-| C-1 | `GET /api/healthz/live` | 规则固定 `ModeShadow`（`apps/api-go/internal/legacyproxy/proxy.go:135`），无开关；Go handler 已实现但不会被调用（`cmd/api/main.go:2130`） | ① 新增 `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow）＋ exact GET 规则（推荐，需下一小批，本批未实现）；② 直接改 `ModeGo`（失去回退开关）；③ 把 compose healthcheck/Web 等待改指 api-go 的 `/__go/healthz`，停 Nest 后不再暴露 `/live` | §2.2、§6.4 |
-| C-2 | `POST /api/admin/crawl-frontier/runs` | 未迁移写：`WithCrawlFrontierRuns` 只注册 GET 与 `/runs/cancel`（`legacyproxy/crawl_frontier_runs_routes.go`，注释明确写路径留在 NestJS） | ① 后续批次补 Go handler（`internal/crawlfrontierruns.Service.CreateRun` 已存在）＋ exact POST 规则＋独立开关；② 承认停 Nest 后不可用并在 UI 降级；③ 保留 Nest 边车 | §2.2 |
-| C-3 | `POST /api/admin/crawl-frontier/nodes/retry` | 同上（未迁移写） | 同 C-2 | §2.2 |
-| C-4 | `POST /api/admin/crawl-frontier/nodes/:id/retry` | 同上（未迁移写，动态段） | 同 C-2 | §2.2 |
-| C-5 | `GET /api/system-settings/vector-service/diagnostics` | 语义上报告 **Nest 进程内** vector client 计数器，无法平移到 api-go（`internal/infrastructuresettings/doc.go:52-54`） | ① 保持 C 到 Nest 停用；② 在 Go 侧重做一个 vector 客户端计数器；③ 用 `/api/metrics` 替代并下线该入口 | §2.2 |
-| C-6 | `itemPipelineDlq` 消费 | 两侧都只生产、无 `new Worker`；唯一处理入口是 Nest Bull Board | ① 用 Go 的 queue ops/CLI 提供重放（新功能）；② 保留最小 Node Bull Board；③ 接受人工 Redis 处理 | §5.1、§6.2 |
-| C-7 | `GET /docs`（Swagger UI/JSON） | 只有 Nest 提供，Go 只按前缀代理（`proxy.go:146`） | ① 静态导出 OpenAPI 由 Web/ingress 提供；② 仅内网保留 Nest 文档边车；③ 下线在线文档，用仓库内契约清单 | §6.1 |
-| C-8 | `/admin/queues`（Bull Board） | 只有 Nest 提供（`proxy.go:147`），且默认 `BULL_BOARD_ENABLED=false` 时本来就是 404 | ① 独立 Bull Board 进程（连同一 Redis）；② 队列运维改 CLI/Redis 工具，面板下线；③ Nest 边车 | §6.2 |
-| C-9 | 根路径与未匹配 404 | Go 无 catch-all，未命中规则一律代理 Nest；停 Nest 后变 502 | ① 在 api-go/ingress 增加显式 404；② 接受 502；③ 确认无依赖后忽略 | §6.8 |
+| C-1 | `GET /api/healthz/live` | 规则固定 `ModeShadow`（`apps/api-go/internal/legacyproxy/proxy.go:135`），无开关；Go handler 已实现但不会被调用（`cmd/api/main.go:2130`） | ① 新增 `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow）＋ exact GET 规则（推荐，需下一小批，本批未实现）；② 直接改 `ModeGo`（失去回退开关）；③ 把 compose healthcheck/Web 等待改指 api-go 的 `/__go/healthz`，停 Nest 后不再暴露 `/live` | §2 的「C 类与缺口」、§6 的 4 |
+| C-2 | `POST /api/admin/crawl-frontier/runs` | 未迁移写：`WithCrawlFrontierRuns` 只注册 GET 与 `/runs/cancel`（`legacyproxy/crawl_frontier_runs_routes.go`，注释明确写路径留在 NestJS） | ① 后续批次补 Go handler（`internal/crawlfrontierruns.Service.CreateRun` 已存在）＋ exact POST 规则＋独立开关；② 承认停 Nest 后不可用并在 UI 降级；③ 保留 Nest 边车 | §2 的「C 类与缺口」 |
+| C-3 | `POST /api/admin/crawl-frontier/nodes/retry` | 同上（未迁移写） | 同 C-2 | §2 的「C 类与缺口」 |
+| C-4 | `POST /api/admin/crawl-frontier/nodes/:id/retry` | 同上（未迁移写，动态段） | 同 C-2 | §2 的「C 类与缺口」 |
+| C-5 | `GET /api/system-settings/vector-service/diagnostics` | 语义上报告 **Nest 进程内** vector client 计数器，无法平移到 api-go（`internal/infrastructuresettings/doc.go:52-54`） | ① 保持 C 到 Nest 停用；② 在 Go 侧重做一个 vector 客户端计数器；③ 用 `/api/metrics` 替代并下线该入口 | §2 的「C 类与缺口」 |
+| C-6 | `itemPipelineDlq` 消费 | 两侧都只生产、无 `new Worker`；唯一处理入口是 Nest Bull Board | ① 用 Go 的 queue ops/CLI 提供重放（新功能）；② 保留最小 Node Bull Board；③ 接受人工 Redis 处理 | §5 的队列表、§6 的 Bull Board |
+| C-7 | `GET /docs`（Swagger UI/JSON） | 只有 Nest 提供，Go 只按前缀代理（`proxy.go:146`） | ① 静态导出 OpenAPI 由 Web/ingress 提供；② 仅内网保留 Nest 文档边车；③ 下线在线文档，用仓库内契约清单 | §6 的 1 |
+| C-8 | `/admin/queues`（Bull Board） | 只有 Nest 提供（`proxy.go:147`），且默认 `BULL_BOARD_ENABLED=false` 时本来就是 404 | ① 独立 Bull Board 进程（连同一 Redis）；② 队列运维改 CLI/Redis 工具，面板下线；③ Nest 边车 | §6 的 2 |
+| C-9 | 根路径与未匹配 404 | Go 无 catch-all，未命中规则一律代理 Nest；停 Nest 后变 502 | ① 在 api-go/ingress 增加显式 404；② 接受 502；③ 确认无依赖后忽略 | §6 的 8 |
 
-另有 3 项「Nest 进程内派生、无 Go 开关」的读侧职责（QueueEvents 派生的 org stats / GraphQL `queueEvents` / ops 广播 / alerts 指标 provider、告警规则全量 repeatable 对账、News-source RSS seed 的一次性 TTL 迁移），已在 §5.2 与 §5.3 逐条列出，停 Nest 前需要逐一确认替代或保留。
+另有 3 项「Nest 进程内派生、无 Go 开关」的读侧职责（QueueEvents 派生的 org stats / GraphQL `queueEvents` / ops 广播 / alerts 指标 provider、告警规则全量 repeatable 对账、News-source RSS seed 的一次性 TTL 迁移），已在 §5 的 Cron/订阅小节逐条列出，停 Nest 前需要逐一确认替代或保留。
 
 ### 0.3 至今仍然只有 Nest 能承担的项目（汇总）
 
@@ -98,12 +98,12 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 
 ## 2. HTTP 路由执行权（T1.1）
 
-<!-- 合并自 .cutover-parts/t1-http.md；原文，仅调整标题层级。其它入口见 §6。 -->
+<!-- 合并自 T1.1 HTTP 路由审计（task-1 产出）；原文，仅调整标题层级。其它入口见 §6。 -->
 
 
 > 基线：`dcbe563b917fde0927637121a91de2186d6177a4`（分支 `docs/go-cutover-readiness`，worktree `/Users/oo/project/newwei-go-cutover-readiness`）。本文件由 task-1（T1.1）静态审计生成，所有行号均以 HEAD 基线 `dcbe563b` 为准（校正说明见下），未运行任何服务、未执行 `go build/test`、`pnpm` 或 `docker`。
 
-> 行号口径：所有 `file:line` 以 HEAD `dcbe563b` 为准。审计期间工作区存在另一路未提交改动（`apps/api-go/internal/legacyproxy/proxy.go` 增加 legacy 代理计数、`internal/metrics/families.go` 对应指标），它不改变规则/匹配语义；本文 `proxy.go` 行号已按 HEAD 校正（工作区行号在导入区之后约 +1；第 531 行之后约 +33）。若该改动最终合入，合并方需按新 HEAD 平移 `proxy.go` 行号。
+> 行号口径：所有 `file:line` 以 HEAD `dcbe563b` 为准。本批 T5.6 在同一 PR 给 `apps/api-go/internal/legacyproxy/proxy.go` 增加了 legacy 回落计数、`internal/metrics/families.go` 增加了对应指标，它不改变规则/匹配语义；本文 `proxy.go` 行号按基线记录，合并后需按新 HEAD 平移（导入区 +1，`proxyLegacy` 之后约 +33）。
 
 ### 0. 总览
 
@@ -112,8 +112,8 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 - Nest 侧读取的 A 类开关只有 `API_GO_NEWSNOW_SOURCES_MODE`（`apps/api/src/modules/config/config.service.ts:534-539` → `newsnow-source-refresh.subscriber.ts:48`）与 `API_GO_NEWS_SOURCE_OPS_MODE`（`news-source-notification.subscriber.ts:142`）；其余 A 类开关在 `apps/api/src` 无读取分支（部分只在 `env.schema.ts` 声明），详见各表“go 模式下 Nest 行为”列。
 - 分类：**A = 365**（Go 可完全接管且存在 `API_GO_*` 开关，本表按开关=go 的规则表判定）；**B = 0**（HTTP 层没有“仅兼容桥”的路由；Nest 侧兼容桥只在异步/实时职责出现，见 T1.5/T1.3）；**C = 5**（只能由 Nest 提供或 Go 规则缺失）。
 - 方法分布（去重后）：GET 171（含 SSE 1）、POST 120、PUT 37、PATCH 14、DELETE 28；A 类 365 条、C 类 5 条。
-- A 类清单同步写入 `.cutover-parts/routes-a.txt`（365 行，含 `#` 头注释；与该表 A 行一一对应）。
-- 计数边界：370 条只统计 `@Controller` 路由；`/docs`、`/admin/queues`、根路径/404 等非 Controller 入口在 T1.7（`.cutover-parts/t1-other.md`）单列，不计入本表；其中 `/api/healthz/live` 属 Controller 路由，已计入本表 5 条 C。
+- A 类清单同步写入 `apps/api-go/internal/legacyproxy/testdata/nest-routes.txt`（365 行，含 `#` 头注释；与该表 A 行一一对应，作为 T2 测试数据提交）。
+- 计数边界：370 条只统计 `@Controller` 路由；`/docs`、`/admin/queues`、根路径/404 等非 Controller 入口在 T1.7（§6）单列，不计入本表；其中 `/api/healthz/live` 属 Controller 路由，已计入本表 5 条 C。
 - 涉及开关 **77 个**（77 个都有源码默认值；其中 `API_GO_USER_SETTINGS_READ_MODE` 默认空=兼容，其余 A 类开关默认 legacy）。另有兼容路径开关 `API_GO_ONBOARDING_MODE`（默认 shadow，`config.go:3393`），只在读模式为空时决定 onboarding 这条 GET，不计入 77 个。全文开关默认值与 `config.go` 行号逐条对应。
 
 #### 如何枚举与去重
@@ -752,7 +752,7 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 
 ## 3. GraphQL 根字段执行权（T1.2）
 
-<!-- 合并自 .cutover-parts/t1-graphql.md；原文，仅调整标题层级。 -->
+<!-- 合并自 T1.2 GraphQL 审计（task-2 产出）；原文，仅调整标题层级。 -->
 
 
 > 基线：`dcbe563b917fde0927637121a91de2186d6177a4`（worktree `docs/go-cutover-readiness`）。
@@ -1100,14 +1100,14 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 
 ### 行号口径
 
-- 除 `apps/api-go/internal/legacyproxy/proxy.go` 外，本文引用的文件在 worktree 与 `dcbe563b` 一致；`proxy.go` 当前工作区有 Lead 未提交的 metrics 增量（`ServeLegacy`→`proxyLegacy` 等），会导致本地行号较基线 +1。本文 `proxy.go` 行号取自 `git show dcbe563b:apps/api-go/internal/legacyproxy/proxy.go`（`/graphql` 默认规则 145、`WithGraphQLRead` 432、`WithNotificationsSocket` 191、`WithRealtimeSocket` 206、`match` 814）。
+- 除 `apps/api-go/internal/legacyproxy/proxy.go` 外，本文引用的文件在 worktree 与 `dcbe563b` 一致；本批 T5.6 给 `proxy.go` 增加了 legacy 计数（`ServeLegacy`→`proxyLegacy` 等），本地行号较基线 +1。本文 `proxy.go` 行号取自 `git show dcbe563b:apps/api-go/internal/legacyproxy/proxy.go`（`/graphql` 默认规则 145、`WithGraphQLRead` 432、`WithNotificationsSocket` 191、`WithRealtimeSocket` 206、`match` 814）。
 - 其余行号直接来自当前 worktree 文件（与基线一致）。
 
 ---
 
 ## 4. Socket.IO 执行权（T1.3）
 
-<!-- 合并自 .cutover-parts/t1-socketio.md；原文，仅调整标题层级。 -->
+<!-- 合并自 T1.3 Socket.IO 审计（task-2 产出）；原文，仅调整标题层级。 -->
 
 
 > 基线：`dcbe563b917fde0927637121a91de2186d6177a4`（worktree `docs/go-cutover-readiness`）。
@@ -1226,14 +1226,14 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 
 ### 行号口径
 
-- 本文 `legacyproxy/proxy.go` 的行号取自基线 `dcbe563b`（`git show dcbe563b:apps/api-go/internal/legacyproxy/proxy.go`）：`/socket.io/` legacy 规则 145-146、`WithNotificationsSocket` 191-200、`WithRealtimeSocket` 206-215、`match` 814-829。当前 worktree 的 `proxy.go` 有 Lead 未提交的 metrics 增量（`ServeLegacy`→`proxyLegacy`），本地行号会整体 +1，不影响基线引用。
+- 本文 `legacyproxy/proxy.go` 的行号取自基线 `dcbe563b`（`git show dcbe563b:apps/api-go/internal/legacyproxy/proxy.go`）：`/socket.io/` legacy 规则 145-146、`WithNotificationsSocket` 191-200、`WithRealtimeSocket` 206-215、`match` 814-829。本批 T5.6 的 metrics 增量（`ServeLegacy`→`proxyLegacy`）使本地行号整体 +1，不影响基线引用。
 - 其余行号来自当前 worktree 文件（与基线一致；已用 `git diff dcbe563b` 核对 `main.go`/`config.go` 无改动）。
 
 ---
 
 ## 5. 异步执行权：BullMQ worker / Cron / Redis pub-sub（T1.4–T1.6）
 
-<!-- 合并自 .cutover-parts/t1-async.md；原文，仅调整标题层级。 -->
+<!-- 合并自 T1.4–T1.6 异步审计（task-3 产出）；原文，仅调整标题层级。 -->
 
 
 > 审计窗口：2026-10-21；worktree `/Users/oo/project/newwei-go-cutover-readiness`，分支 `docs/go-cutover-readiness`，基线 `dcbe563b`（#136）。全部结论来自当前工作区源码静态阅读；未运行 `go build/test`、`pnpm`、Docker、队列或服务，因此**不声称**任何运行时/部署验证通过。
@@ -1558,10 +1558,10 @@ Nest 业务订阅站点（10 个）：9 个 `subscriber.subscribe(<频道>)` + 1
 
 ## 6. 其它入口：Swagger、Bull Board、healthz、metrics、静态/上传/SSE/长连接/404（T1.7）
 
-<!-- 合并自 .cutover-parts/t1-other.md；原文，仅调整标题层级。 -->
+<!-- 合并自 T1.7 其它入口审计（task-1 产出）；原文，仅调整标题层级。 -->
 
 
-> 基线：`dcbe563b917fde0927637121a91de2186d6177a4`（worktree `/Users/oo/project/newwei-go-cutover-readiness`）。与 `.cutover-parts/t1-http.md` 同一批静态审计；未启动服务、未运行 `go build/test`、`pnpm`、`docker`。所有 `path:line` 以 HEAD 基线 `dcbe563b` 为准。分类沿用 task-1 定义：A=Go 可完全接管且有 `API_GO_*` 开关；B=仅 Nest 兼容桥；C=只能由 Nest 提供。 行号以 HEAD `dcbe563b` 为准；`proxy.go` 的未提交工作区改动已按 HEAD 校正（见 `t1-http.md` §0 行号口径）。
+> 基线：`dcbe563b917fde0927637121a91de2186d6177a4`（worktree `/Users/oo/project/newwei-go-cutover-readiness`）。与 §2 同一批静态审计；未启动服务、未运行 `go build/test`、`pnpm`、`docker`。所有 `path:line` 以 HEAD 基线 `dcbe563b` 为准。分类沿用 task-1 定义：A=Go 可完全接管且有 `API_GO_*` 开关；B=仅 Nest 兼容桥；C=只能由 Nest 提供。 行号以 HEAD `dcbe563b` 为准；`proxy.go` 的本批 metrics 改动已按 HEAD 校正（见 §2 的行号口径）。
 
 ### 0. 结论摘要
 
@@ -1618,7 +1618,7 @@ Nest 业务订阅站点（10 个）：9 个 `subscriber.subscribe(<频道>)` + 1
 - **开关/默认**：无。`API_GO_HEALTHZ_MODE` 只管 `/api/healthz`，不含 `/live`（`proxy.go:411-423` 注释明确）。
 - **切流后影响（重要）**：
   - compose `api` 服务的 healthcheck 就是 `curl -fsS http://localhost:4000/api/healthz/live`（`infra/docker/docker-compose.yml:665`）；Web 启动等待也请求 `${API_BASE_URL}/api/healthz/live`（`docker-compose.yml:1714-1724`）。切到 `API_BASE_URL=http://api-go:4020` 后，这些请求经 Go 代理到 Nest；**阶段 6 停 Nest 前必须改**，否则 api 容器/Web 启动等待全部失败。
-  - 阶段 6 需新增 Go 规则（选项见 `.cutover-parts/t1-http.md` §2.2 C1）：可加 `WithLiveHealthz(mode)` + `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow），或把 `proxy.go:135` 改 `ModeGo`，或把探针直接指向 `/__go/healthz`。
+  - 阶段 6 需新增 Go 规则（选项见 §2 的「C 类与缺口」C1）：可加 `WithLiveHealthz(mode)` + `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow），或把 `proxy.go:135` 改 `ModeGo`，或把探针直接指向 `/__go/healthz`。
 - **C 类处理选项**：
   1. 新增 `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow）与 exact GET Go 规则，阶段 6 前置为 go；保留回退开关（推荐）。
   2. 不加开关，阶段 6 前把 `proxy.go:135` 改为 `ModeGo`，同时把 compose healthcheck/Web 等待改为直接打 `/api/healthz/live`（Go 响应）；失去开关回退。
