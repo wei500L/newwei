@@ -17,6 +17,12 @@ function keepFlagFromRemoveOption(value: unknown): boolean {
 export class QueueOrgStatsTracker implements OnModuleDestroy {
   private readonly logger = createLogger({ name: "queue-org-stats" });
 
+  /**
+   * Whether the six QueueEvents listeners below were attached. In go mode they
+   * are not, so onModuleDestroy skips the matching off() calls.
+   */
+  private listenersRegistered = false;
+
   private readonly handleWaiting = async ({ jobId }: { jobId: string }) => {
     await this.trackTransition(jobId, "waiting");
   };
@@ -46,12 +52,38 @@ export class QueueOrgStatsTracker implements OnModuleDestroy {
     @Inject(PIPELINE_QUEUE) private readonly queue: Queue,
     private readonly stats: QueueOrgStatsService,
   ) {
+    if (!this.trackingEnabled()) {
+      // The ownership note is logged once per process: api-go's queueorgstats
+      // tracker now applies the itemPipeline events under its own lease.
+      this.logger.info(
+        "queue org stats ownership moved to api-go (API_GO_QUEUE_ORG_STATS_MODE=go)"
+      );
+      return;
+    }
+    this.listenersRegistered = true;
     this.events.on("waiting", this.handleWaiting);
     this.events.on("delayed", this.handleDelayed);
     this.events.on("active", this.handleActive);
     this.events.on("completed", this.handleCompleted);
     this.events.on("failed", this.handleFailed);
     this.events.on("removed", this.handleRemoved);
+  }
+
+  /**
+   * API_GO_QUEUE_ORG_STATS_MODE=go means api-go's queueorgstats tracker owns the
+   * `queue:itemPipeline:*` counters (org counters and per-job meta hashes) under
+   * a single-owner Redis lease. This process must then not apply the same
+   * itemPipeline events a second time, because every NestJS instance registers
+   * its own QueueEvents listeners and would double count.
+   *
+   * The variable is read with process.env directly, like the other API_GO_*
+   * ownership switches consumed by both runtimes: it is a deployment-level mode
+   * read by api-go's config loader, not an EnvService setting, so env.schema.ts
+   * is unchanged. The value is judged exactly once, in the constructor; the
+   * mode is a deployment constant and cannot change while the process runs.
+   */
+  private trackingEnabled(): boolean {
+    return process.env.API_GO_QUEUE_ORG_STATS_MODE !== "go";
   }
 
   private async trackTransition(jobId: string, status: TrackedJobStatus) {
@@ -96,6 +128,10 @@ export class QueueOrgStatsTracker implements OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    if (!this.listenersRegistered) {
+      return;
+    }
+    this.listenersRegistered = false;
     this.events.off("waiting", this.handleWaiting);
     this.events.off("delayed", this.handleDelayed);
     this.events.off("active", this.handleActive);

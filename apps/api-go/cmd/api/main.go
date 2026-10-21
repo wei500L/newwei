@@ -224,6 +224,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 	"github.com/wei500L/newwei/apps/api-go/internal/processeditemoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
+	"github.com/wei500L/newwei/apps/api-go/internal/queueorgstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/realtimesocket"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
@@ -1426,7 +1427,10 @@ func run() error {
 	// The crawl maintenance crons and the audit retention purge take their
 	// leases in the shared Redis even when no HTTP takeover is enabled.
 	if !needsRedis && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
-		cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo) {
+		cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo ||
+		// The itemPipeline org-stats tracker reads the queue event stream behind
+		// a Redis lease and needs no JWT or MySQL.
+		cfg.QueueOrgStatsMode == config.QueueOrgStatsModeGo) {
 		needsRedis = true
 	}
 	if needsRedis {
@@ -2805,6 +2809,12 @@ func run() error {
 	// and needs no JWT. The deferred Close stops claiming jobs and drains the
 	// in-flight ones before the shared Redis/Mongo connections close below.
 	var alertWorker *alertworker.Service
+	// The queue org-stats tracker owns the per-organization itemPipeline
+	// counters when API_GO_QUEUE_ORG_STATS_MODE=go. It reads the event stream
+	// behind a Redis lease, so at most one api-go instance applies a
+	// transition. The deferred Close stops the read loop and releases the lease
+	// while the shared Redis client is still open.
+	var queueOrgStats *queueorgstats.Tracker
 	// The situation-monitor signals worker owns the situationMonitorSignals
 	// queue, its repeat schedules, the Telegram/OREF polls and the realtime
 	// event bridge when API_GO_SITUATION_SIGNALS_WORKER_MODE=go. It registers no
@@ -2906,6 +2916,11 @@ func run() error {
 		if alertWorker != nil {
 			if closeErr := alertWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: alert worker close: %v", closeErr)
+			}
+		}
+		if queueOrgStats != nil {
+			if closeErr := queueOrgStats.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: queue org stats close: %v", closeErr)
 			}
 		}
 		// The signals worker stops claiming first, then disconnects the leased
@@ -3211,6 +3226,19 @@ func run() error {
 	// requests keep reaching NestJS, which answers 404.
 	if err := wireQueueOps(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
+	}
+
+	// The tracker starts before the gateway serves so the first transitions of
+	// the switchover window are already applied by api-go.
+	queueOrgStats, err = wireQueueOrgStats(cfg, redisClient, redisOptions)
+	if err != nil {
+		return err
+	}
+	if queueOrgStats != nil {
+		if startErr := queueOrgStats.Start(context.Background()); startErr != nil {
+			return startErr
+		}
+		log.Printf("api-go: itemPipeline org queue stats owned by Go (mode=%s)", cfg.QueueOrgStatsMode)
 	}
 
 	// The signals worker registers its repeat schedules before claiming jobs, so
