@@ -91,6 +91,10 @@ func allGoRules() []Rule {
 	rules = WithStorageDiagnostics(rules, "go")
 	rules = WithUserDigest(rules, "go")
 	rules = WithUserNewsBehavior(rules, "go")
+	// refactor/go-queue-ops: the queue operations console is a Go-only surface
+	// with no NestJS route, so it is never listed in nest-routes.txt. The builder
+	// stays last to keep the shared append point stable for parallel windows.
+	rules = WithQueueOps(rules, "go")
 	return rules
 }
 

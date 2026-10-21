@@ -467,6 +467,48 @@ const (
 	BullmqCleanupModeGo BullmqCleanupMode = "go"
 )
 
+// QueueOpsMode controls the queue operations REST console under
+// /api/admin/queue-ops (API_GO_QUEUE_OPS_MODE). The default is legacy, where no
+// route is registered and the requests reach NestJS, which has no such route and
+// answers 404.
+//
+// go requires JWT_SECRET, DATABASE_URL and REDIS_HOST: every route needs a
+// logged-in caller holding queue.manage who is also a platform administrator
+// (membership and GlobalRoleAssignment are MySQL, the queue state is Redis), and
+// every write appends an AuditLog row.
+//
+// The console is a new Go-only surface, not a port of Bull Board. Bull Board only
+// checks the organization-level queue.manage permission, so any organization
+// manager can read every tenant's job data; this switch upgrades the check to
+// platform administrator.
+type QueueOpsMode string
+
+const (
+	// QueueOpsModeLegacy registers no route; /api/admin/queue-ops stays a 404.
+	QueueOpsModeLegacy QueueOpsMode = "legacy"
+	// QueueOpsModeGo serves the console from api-go.
+	QueueOpsModeGo QueueOpsMode = "go"
+)
+
+// QueueOrgStatsMode controls who maintains the per-organization itemPipeline job
+// counters (API_GO_QUEUE_ORG_STATS_MODE). The default is legacy.
+//
+// NestJS and api-go read the same variable: go stops QueueOrgStatsTracker from
+// registering its QueueEvents listeners, and api-go reads the itemPipeline event
+// stream behind a Redis lease so exactly one instance applies a transition. The
+// Redis keys, fields and TTLs stay unchanged, so the dashboard and GraphQL
+// readers need no change.
+//
+// go requires REDIS_HOST.
+type QueueOrgStatsMode string
+
+const (
+	// QueueOrgStatsModeLegacy leaves the counters with NestJS.
+	QueueOrgStatsModeLegacy QueueOrgStatsMode = "legacy"
+	// QueueOrgStatsModeGo maintains the counters in api-go.
+	QueueOrgStatsModeGo QueueOrgStatsMode = "go"
+)
+
 // ClassificationReviewSeedMode controls who enqueues classification review-seed
 // jobs after an itemPipeline job completes
 // (API_GO_CLASSIFICATION_REVIEW_SEED_MODE). The default is legacy.
@@ -3238,6 +3280,11 @@ type Config struct {
 	PipelineRecoveryWriteMode    PipelineRecoveryWriteMode
 	MetricsMode                  MetricsMode
 	StartupReconcileMode         StartupReconcileMode
+	// QueueOpsMode owns the /api/admin/queue-ops console (HTTP, MySQL, Redis).
+	// QueueOrgStatsMode owns the per-organization itemPipeline counters, which
+	// both NestJS and api-go read (Redis only).
+	QueueOpsMode      QueueOpsMode
+	QueueOrgStatsMode QueueOrgStatsMode
 	// NewsProcessQueueConcurrency mirrors NEWS_PROCESS_QUEUE_CONCURRENCY
 	// (default 8). The clustering recovery worker uses max(1, min(2, value));
 	// the quality worker uses max(1, min(4, value)).
@@ -3824,6 +3871,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.BullmqCleanupMode = BullmqCleanupModeGo
 	default:
 		errs = append(errs, "API_GO_BULLMQ_CLEANUP_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_QUEUE_OPS_MODE")) {
+	case "", string(QueueOpsModeLegacy):
+		cfg.QueueOpsMode = QueueOpsModeLegacy
+	case string(QueueOpsModeGo):
+		cfg.QueueOpsMode = QueueOpsModeGo
+	default:
+		errs = append(errs, "API_GO_QUEUE_OPS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_QUEUE_ORG_STATS_MODE")) {
+	case "", string(QueueOrgStatsModeLegacy):
+		cfg.QueueOrgStatsMode = QueueOrgStatsModeLegacy
+	case string(QueueOrgStatsModeGo):
+		cfg.QueueOrgStatsMode = QueueOrgStatsModeGo
+	default:
+		errs = append(errs, "API_GO_QUEUE_ORG_STATS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_REVIEW_SEED_MODE")) {
 	case "", string(ClassificationReviewSeedModeLegacy):
@@ -5487,6 +5550,12 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// pipeline writes also read and write Mongo.
 	if cfg.BullmqCleanupMode == BullmqCleanupModeGo && cfg.RedisHost == "" {
 		errs = append(errs, "REDIS_HOST is required when API_GO_BULLMQ_CLEANUP_MODE=go")
+	}
+	if cfg.QueueOpsMode == QueueOpsModeGo {
+		appendAuthRequirements(&errs, "API_GO_QUEUE_OPS_MODE", cfg)
+	}
+	if cfg.QueueOrgStatsMode == QueueOrgStatsModeGo && cfg.RedisHost == "" {
+		errs = append(errs, "REDIS_HOST is required when API_GO_QUEUE_ORG_STATS_MODE=go")
 	}
 	if cfg.ClassificationReviewSeedMode == ClassificationReviewSeedModeGo && cfg.RedisHost == "" {
 		errs = append(errs, "REDIS_HOST is required when API_GO_CLASSIFICATION_REVIEW_SEED_MODE=go")

@@ -1031,6 +1031,15 @@ func run() error {
 	// method/path rules, so they cannot be shadowed by the account-security,
 	// login or onboarding rules.
 	rules = legacyproxy.WithAccountData(rules, avatarUploadMode, userDataExportMode)
+	// The queue operations console is a Go-only surface: it owns exact paths
+	// under /api/admin/queue-ops that NestJS never had, so it is registered last
+	// and never widens the migrated route coverage. /admin/queues (Bull Board)
+	// keeps proxying to NestJS and belongs to the go-ops-entrypoints batch.
+	queueOpsMode := ""
+	if cfg.QueueOpsMode == config.QueueOpsModeGo {
+		queueOpsMode = string(legacyproxy.ModeGo)
+	}
+	rules = legacyproxy.WithQueueOps(rules, queueOpsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -1119,6 +1128,7 @@ func run() error {
 				cfg.CrawlMetadataMode == config.CrawlMetadataModeGo ||
 				cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo ||
 				cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo ||
+				cfg.QueueOpsMode == config.QueueOpsModeGo ||
 				cfg.SearchReindexMode == config.SearchReindexModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
 				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
@@ -1362,7 +1372,10 @@ func run() error {
 		newsSourcePreviewGo || crawlWorkflowTrialGo || analysisRunsGo ||
 		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
 		cfg.MetricsMode == config.MetricsModeGo ||
-		graphqlSubscriptionsGo || notificationsSocketGo || realtimeSocketGo
+		graphqlSubscriptionsGo || notificationsSocketGo || realtimeSocketGo ||
+		// This batch: the queue operations console verifies the caller, then
+		// requires both queue.manage and a platform administrator.
+		cfg.QueueOpsMode == config.QueueOpsModeGo
 	var redisClient *redis.Client
 	var redisOptions *redis.Options
 	var authenticator *authhttp.Authenticator
@@ -3191,6 +3204,13 @@ func run() error {
 		if startErr := alertWorker.Start(context.Background()); startErr != nil {
 			return startErr
 		}
+	}
+
+	// The queue operations console registers twelve exact routes under
+	// /api/admin/queue-ops; legacy (the default) registers nothing and the
+	// requests keep reaching NestJS, which answers 404.
+	if err := wireQueueOps(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
 	}
 
 	// The signals worker registers its repeat schedules before claiming jobs, so

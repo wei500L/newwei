@@ -63,9 +63,9 @@ func TestAllGoCutoverConfigLoads(t *testing.T) {
 			t.Errorf("%s = %q, want go; testdata/all-go.env is missing its API_GO_* switch", field.Name, got)
 		}
 	}
-	// The switch matrix documents 130 API_GO_* switches and every one of them
+	// The switch matrix documents 132 API_GO_* switches and every one of them
 	// lands in exactly one *Mode field. Keep the count in sync with config.go.
-	if seen != 130 {
-		t.Fatalf("config has %d string *Mode fields, want 130", seen)
+	if seen != 132 {
+		t.Fatalf("config has %d string *Mode fields, want 132", seen)
 	}
 }
