@@ -446,10 +446,13 @@ func buildBrowserHeaders(
 //
 // Two representation notes: the merged record is projected onto
 // crawloptions.UserAgentGenerator (the typed CrawlUserAgentGeneratorConfig the
-// persistResults document holds), so a non-string leaf and an unknown key are
-// dropped, and the members serialize in that struct's declared order instead of
-// the caller's key order. Nothing in the crawl4ai request reads it: the Go
-// CrawlOptions has no user agent generator field.
+// persistResults document holds), so a non-string leaf is dropped, a string
+// leaf is trimmed, an unknown key is dropped (a record whose known members are
+// therefore all absent becomes undefined, although Nest would return the
+// unknown-key record), and the members serialize in that struct's declared
+// order instead of the caller's key order. None of that reaches the request:
+// the Go CrawlOptions has no user agent generator field, and crawl4ai normalizes
+// the generator to the same four keys anyway.
 func buildUserAgentGenerator(
 	config *crawlfrontierllm.Object,
 	base *crawlfrontierllm.Object,
@@ -851,6 +854,11 @@ func layeredMember(object *crawlfrontierllm.Object, key string) (json.RawMessage
 }
 
 // layeredNumberMember reads a numeric member with `??` and Number() semantics.
+// A non-number leaf is coerced with Number() instead of being passed through
+// like NestJS would (`params.max_depth = config.layeredOptions?.maxDepth ?? 3`
+// copies the raw value); normalizeCrawlSiteProfileConfig guarantees numbers for
+// the layeredOptions/nativeOptions blocks, so this only differs for a profile
+// stored without normalization.
 func layeredNumberMember(object *crawlfrontierllm.Object, key string) (float64, bool) {
 	if _, ok := layeredMember(object, key); !ok {
 		return 0, false
