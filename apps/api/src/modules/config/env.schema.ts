@@ -281,6 +281,31 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The Go realtime Socket.IO transport for the newsnow/quality/ops/queue/
+    // situation-monitor namespaces. Empty string behaves like legacy; go makes
+    // the NestJS situation-monitor dispatcher also publish the event-bridge
+    // channel the Go transport consumes, while /socket.io keeps serving every
+    // namespace the Web build still points at it. An invalid value fails
+    // startup.
+    API_GO_REALTIME_SOCKET_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The classification quality alert evaluation scheduler owner. Empty string
+    // behaves like legacy; go makes the NestJS five-minute scheduler return
+    // before claiming the shared tick gate so api-go owns the evaluation. Both
+    // sides share the tick gate and the per-organization lock. An invalid value
+    // fails startup.
+    API_GO_CLASSIFICATION_QUALITY_ALERT_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // The owner of the `alerts` queue: the scan, the rule evaluation, the
     // external delivery and the in-app notification write. Empty string behaves
     // like legacy. An invalid value fails Nest startup instead of being silently

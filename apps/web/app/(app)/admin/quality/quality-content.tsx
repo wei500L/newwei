@@ -946,6 +946,7 @@ export function QualityContent() {
     setLiveError(null);
 
     const socket = io(`${env.apiRoot}/quality`, {
+      path: env.NEXT_PUBLIC_REALTIME_SOCKET_PATH,
       auth: { token: session.accessToken },
       transports: ["websocket"],
       withCredentials: true,

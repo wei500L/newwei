@@ -401,6 +401,7 @@ services:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
         NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: ${NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:-/socket.io}
+        NEXT_PUBLIC_REALTIME_SOCKET_PATH: ${NEXT_PUBLIC_REALTIME_SOCKET_PATH:-/socket.io}
     restart: unless-stopped
     working_dir: /workspace
     command: >
@@ -438,6 +439,13 @@ services:
       # Telegram 登录两个 POST 的执行权。Nest 只做 schema 校验；go 时这两条
       # 请求由 api-go 处理（Nest 控制器不改，其余 settings 路由不受影响）。
       API_GO_SITUATION_TELEGRAM_AUTH_MODE: ${API_GO_SITUATION_TELEGRAM_AUTH_MODE:-legacy}
+      # 实时 Socket.IO 传输（newsnow/quality/ops/queue/situation-monitor）的执行权。
+      # Nest 也读取它：go 时各 dispatcher 改发 identifiers-only relay，由 api-go 的
+      # 独立 Engine.IO path 推给浏览器。两侧必须看到同一值，否则会 split-brain。
+      API_GO_REALTIME_SOCKET_MODE: ${API_GO_REALTIME_SOCKET_MODE:-legacy}
+      # 分类质检告警评估调度的执行权。Nest 也读取它：go 时 NestJS 每 5 分钟调度
+      # 在领取共享 tick gate 前返回，由 api-go 执行并共用同一组织锁。
+      API_GO_CLASSIFICATION_QUALITY_ALERT_MODE: ${API_GO_CLASSIFICATION_QUALITY_ALERT_MODE:-legacy}
       PRISMA_AUTO_RESOLVE_FAILED_MIGRATIONS: "false"
       AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
       AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
@@ -659,6 +667,7 @@ services:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
         NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: ${NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:-/socket.io}
+        NEXT_PUBLIC_REALTIME_SOCKET_PATH: ${NEXT_PUBLIC_REALTIME_SOCKET_PATH:-/socket.io}
     restart: unless-stopped
     working_dir: /workspace
     command: >
@@ -767,11 +776,22 @@ services:
       # Dedicated Go Socket.IO transport for /notifications. Default legacy
       # leaves every Socket.IO namespace on the NestJS path.
       API_GO_NOTIFICATIONS_SOCKET_MODE: ${API_GO_NOTIFICATIONS_SOCKET_MODE:-legacy}
+      # Realtime Socket.IO transport for the newsnow/quality/ops/queue/
+      # situation-monitor namespaces and the classification quality alert
+      # scheduler. Nest reads both switches too, so the api service must carry
+      # the same values; legacy keeps every namespace on the NestJS path.
+      API_GO_REALTIME_SOCKET_MODE: ${API_GO_REALTIME_SOCKET_MODE:-legacy}
+      API_GO_CLASSIFICATION_QUALITY_ALERT_MODE: ${API_GO_CLASSIFICATION_QUALITY_ALERT_MODE:-legacy}
       WS_MAX_CONNECTIONS_PER_USER: ${WS_MAX_CONNECTIONS_PER_USER:-5}
       WS_MAX_CONNECTIONS_PER_IP: ${WS_MAX_CONNECTIONS_PER_IP:-50}
       WS_CONNECT_RATE_LIMIT_PER_IP: ${WS_CONNECT_RATE_LIMIT_PER_IP:-60}
       WS_CONNECT_RATE_LIMIT_PER_USER: ${WS_CONNECT_RATE_LIMIT_PER_USER:-30}
       WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS: ${WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS:-60}
+      # The /newsnow namespace is relayed from the Socket.IO Redis adapter
+      # broadcast channel, so api-go must see the same adapter switch and key as
+      # the api service. Defaults mirror config.service.ts (enabled, "socket.io").
+      WS_REDIS_ADAPTER_ENABLED: ${WS_REDIS_ADAPTER_ENABLED:-true}
+      WS_REDIS_ADAPTER_KEY: ${WS_REDIS_ADAPTER_KEY:-socket.io}
       GRAPHQL_SUBSCRIPTION_BUS: ${GRAPHQL_SUBSCRIPTION_BUS:-redis}
       DATABASE_URL: mysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD}@mysql:${MYSQL_PORT:-3306}/${MYSQL_DB}
       # The OIDC login unit builds the web callback from NEXTAUTH_URL and the
@@ -1659,6 +1679,7 @@ services:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
         NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: ${NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:-/socket.io}
+        NEXT_PUBLIC_REALTIME_SOCKET_PATH: ${NEXT_PUBLIC_REALTIME_SOCKET_PATH:-/socket.io}
     restart: unless-stopped
     working_dir: /workspace
     # 启动等待使用最终配置的 API base（API_BASE_URL，默认 NestJS），

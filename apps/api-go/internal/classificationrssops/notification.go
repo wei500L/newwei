@@ -2,7 +2,10 @@ package classificationrssops
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"log"
+	"time"
 )
 
 // notificationTypeSystem is the Prisma NotificationType value used by the
@@ -46,10 +49,31 @@ type classificationAlertNotificationData struct {
 	Presentation  notificationPresentation `json:"presentation"`
 }
 
-// writeClassificationAlertNotification inserts one Notification row. NestJS also
-// publishes the row on its realtime dispatcher; Go only persists the row because
-// the dispatcher fan-out lives in the NestJS process, which is still the writer
-// for every other notification type.
+// classificationAlertInsertRow writes one Notification row. It is a package
+// variable so the alert-relay tests can exercise the success and failure paths
+// without MySQL; production always uses the INSERT statement below, which is the
+// exact row NestJS NotificationsService.notify commits.
+var classificationAlertInsertRow = func(
+	ctx context.Context,
+	db *sql.DB,
+	id, orgID string,
+	userID *string,
+	body string,
+	payload []byte,
+	now time.Time,
+) error {
+	_, err := db.ExecContext(ctx, `
+INSERT INTO Notification (id, orgId, userId, type, title, body, data, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, orgID, userID, notificationTypeSystem, classificationAlertTitle, body, payload, now, now)
+	return err
+}
+
+// writeClassificationAlertNotification inserts one Notification row and, when the
+// optional relay hook is installed, publishes its identifiers after the commit.
+// The row is the source of truth: a failed publish is only logged, because the
+// inbox can still re-read it and a realtime event must never turn a summary
+// evaluation into a failure.
 func (s *Service) writeClassificationAlertNotification(
 	ctx context.Context,
 	orgID string,
@@ -68,10 +92,31 @@ func (s *Service) writeClassificationAlertNotification(
 	if err != nil {
 		return err
 	}
-	now := nowMillis()
-	_, err = s.db.ExecContext(ctx, `
-INSERT INTO Notification (id, orgId, userId, type, title, body, data, createdAt, updatedAt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, orgID, userID, notificationTypeSystem, classificationAlertTitle, body, []byte(payload), now, now)
-	return err
+	if err := classificationAlertInsertRow(ctx, s.db, id, orgID, userID, body, payload, nowMillis()); err != nil {
+		return err
+	}
+	s.publishClassificationAlertRelay(ctx, id, orgID, userID)
+	return nil
+}
+
+// publishClassificationAlertRelay mirrors the NotificationsService.notify branch
+// that calls NotificationRealtimeRelay.publish after Prisma commits the row. The
+// hook is nil unless cmd/api installed it for
+// API_GO_NOTIFICATIONS_SOCKET_MODE=go, so legacy notifications mode keeps the
+// in-process NestJS dispatcher as the only realtime path.
+func (s *Service) publishClassificationAlertRelay(ctx context.Context, notificationID, orgID string, userID *string) {
+	s.notificationRelayMu.RLock()
+	publisher := s.notificationRelayPublisher
+	s.notificationRelayMu.RUnlock()
+	if publisher == nil {
+		return
+	}
+	userIDValue := ""
+	if userID != nil {
+		userIDValue = *userID
+	}
+	if err := publisher(ctx, notificationID, orgID, userIDValue); err != nil {
+		log.Printf("classification rss ops: failed to publish notification relay notificationId=%s orgId=%s: %v",
+			notificationID, orgID, err)
+	}
 }

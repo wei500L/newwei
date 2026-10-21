@@ -31,4 +31,12 @@
 // internal/legacyproxy/classification_rss_ops_routes.go. POST
 // /api/admin/quality/classification/reports is deliberately not part of the
 // takeover: it enqueues a BullMQ job and stays on NestJS.
+//
+// The package also owns the write path the Go classification quality alert
+// scheduler uses. EvaluateClassificationQualityAlerts is the
+// getSummary({orgId, window:"1h"}) equivalent, and the optional publisher
+// installed through SetNotificationRelayPublisher publishes the identifiers-only
+// notification:events:v1 message NestJS NotificationsService.notify publishes in
+// API_GO_NOTIFICATIONS_SOCKET_MODE=go. Both additions are inert unless cmd/api
+// installs them, so the legacy route behavior is unchanged.
 package classificationrssops

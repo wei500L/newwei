@@ -92,6 +92,7 @@ export function useNewsnowStream() {
     }
 
     const socket = io(`${env.apiRoot}/newsnow`, {
+      path: env.NEXT_PUBLIC_REALTIME_SOCKET_PATH,
       transports: ["websocket"],
       auth: { token },
       withCredentials: true,

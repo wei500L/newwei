@@ -47,8 +47,16 @@ func wireClassificationRssOps(
 		}
 		*mongoConn = conn
 	}
-	handler := classificationrssops.NewHandler(authenticator,
-		classificationrssops.NewService(db, (*mongoConn).Database(), redisClient))
+	classification := classificationrssops.NewService(db, (*mongoConn).Database(), redisClient)
+	// The manual summary request also evaluates threshold breaches and writes
+	// Notification rows. In notification-socket go mode the NestJS
+	// NotificationsService.notify branch publishes the identifiers-only relay so
+	// the browser receives the alert through the Go notifications transport;
+	// installing the same publisher here keeps that path equivalent.
+	if cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
+		classification.SetNotificationRelayPublisher(classificationrssops.NewRedisNotificationRelayPublisher(redisClient))
+	}
+	handler := classificationrssops.NewHandler(authenticator, classification)
 	policy := cors.New(cfg.CorsOrigin)
 	gateway.RegisterGoHandler(legacyproxy.ClassificationRssOpsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
