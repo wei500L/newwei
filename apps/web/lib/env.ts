@@ -30,6 +30,13 @@ const publicSchema = z.object({
     .string()
     .regex(/^\//, "must start with /")
     .default("/socket.io"),
+  // Engine.IO path for the realtime namespaces (newsnow/quality/ops/queue/
+  // situation-monitor). The default keeps the existing NestJS Socket.IO path;
+  // set it to /socket.io-realtime when the Go transport is enabled.
+  NEXT_PUBLIC_REALTIME_SOCKET_PATH: z
+    .string()
+    .regex(/^\//, "must start with /")
+    .default("/socket.io"),
 });
 
 const serverSchema = z.object({
@@ -43,6 +50,8 @@ const publicParsed = publicSchema.safeParse({
   NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: process.env.NEXT_PUBLIC_GRAPHQL_APQ_ENABLED,
   NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:
     process.env.NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH,
+  NEXT_PUBLIC_REALTIME_SOCKET_PATH:
+    process.env.NEXT_PUBLIC_REALTIME_SOCKET_PATH,
 });
 
 if (!publicParsed.success) {

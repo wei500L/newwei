@@ -281,6 +281,31 @@ export const apiEnvSchema = baseEnvSchema
         z.enum(["legacy", "go"]),
       )
       .default("legacy"),
+    // The Go realtime Socket.IO transport for the newsnow/quality/ops/queue/
+    // situation-monitor namespaces. Empty string behaves like legacy; go makes
+    // the NestJS situation-monitor dispatcher also publish the event-bridge
+    // channel the Go transport consumes, while /socket.io keeps serving every
+    // namespace the Web build still points at it. An invalid value fails
+    // startup.
+    API_GO_REALTIME_SOCKET_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The classification quality alert evaluation scheduler owner. Empty string
+    // behaves like legacy; go makes the NestJS five-minute scheduler return
+    // before claiming the shared tick gate so api-go owns the evaluation. Both
+    // sides share the tick gate and the per-organization lock. An invalid value
+    // fails startup.
+    API_GO_CLASSIFICATION_QUALITY_ALERT_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     // The owner of the `alerts` queue: the scan, the rule evaluation, the
     // external delivery and the in-app notification write. Empty string behaves
     // like legacy. An invalid value fails Nest startup instead of being silently
@@ -340,6 +365,18 @@ export const apiEnvSchema = baseEnvSchema
     // create a Worker; api-go consumes the same queue. An invalid value fails
     // startup instead of being silently stripped.
     API_GO_ASSISTANT_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    // The BullMQ itemPipeline queue consumer owner. Empty behaves like legacy,
+    // where QueueProcessor creates the Worker. When it is go, NestJS keeps the
+    // Queue and QueueEvents (submission, DLQ producer and event forwarding) but
+    // does not create a Worker; api-go consumes the same queue. An invalid
+    // value fails startup instead of being silently stripped.
+    API_GO_ITEM_PIPELINE_WORKER_MODE: z
       .preprocess(
         (value) =>
           typeof value === "string" && value.trim() === "" ? "legacy" : value,
@@ -904,6 +941,27 @@ export const apiEnvSchema = baseEnvSchema
         typeof value === "string" && value.trim() === "" ? undefined : value,
       z.string().url().optional(),
     ),
+    // Situation-monitor Go migration switches. Each switch accepts "" (legacy),
+    // legacy or go and fails Nest startup on any other value (an empty string is
+    // normalized to legacy). The worker switch decides whether NestJS may still
+    // register the repeatable jobs and consume the situationMonitorSignals
+    // queue; the auth switch only controls which process serves the two
+    // telegram-auth POST routes (the api-go legacyproxy owns the route switch,
+    // so NestJS keeps its controller unchanged).
+    API_GO_SITUATION_SIGNALS_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_SITUATION_TELEGRAM_AUTH_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
     SITUATION_MONITOR_TELEGRAM_ENABLED: envBoolean.default(false),
     SITUATION_MONITOR_TELEGRAM_API_ID: z.string().optional(),
     SITUATION_MONITOR_TELEGRAM_API_HASH: z.string().optional(),

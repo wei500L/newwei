@@ -90,6 +90,7 @@ export function useCrawlTaskOpsLive({
     setOpsLiveError(null);
     let hasConnectedOnce = false;
     const socket = io(`${env.apiRoot}/ops`, {
+      path: env.NEXT_PUBLIC_REALTIME_SOCKET_PATH,
       auth: { token: accessToken },
       transports: ["websocket"],
       withCredentials: true,

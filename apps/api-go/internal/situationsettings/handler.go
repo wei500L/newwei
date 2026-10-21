@@ -199,6 +199,14 @@ func (h *Handler) syncEconomicSchedule(ctx context.Context) {
 // writeWithExtras computes externalSnapshotStatus and qualitySummary in
 // parallel (O2) and writes the controller's spread shape.
 func (h *Handler) writeWithExtras(w http.ResponseWriter, r *http.Request, orgID string, settings PublicSettings) {
+	WriteWithExtras(w, r, orgID, settings, h.external, h.quality)
+}
+
+// WriteWithExtras renders the controller's withExternalSnapshotStatus spread
+// (public settings + externalSnapshotStatus + qualitySummary). The Telegram
+// auth complete route reuses it so there is exactly one implementation of the
+// response shape.
+func WriteWithExtras(w http.ResponseWriter, r *http.Request, orgID string, settings PublicSettings, externalProvider ExternalSnapshotProvider, qualityProvider QualitySummaryProvider) {
 	type externalResult struct {
 		value gdeltsnapshot.Summary
 		err   error
@@ -211,19 +219,19 @@ func (h *Handler) writeWithExtras(w http.ResponseWriter, r *http.Request, orgID 
 	qualityCh := make(chan qualityResult, 1)
 
 	go func() {
-		if h.external == nil {
+		if externalProvider == nil {
 			externalCh <- externalResult{err: errNoExternalSnapshotProvider}
 			return
 		}
-		summary, err := h.external.GetStatusSummary(r.Context())
+		summary, err := externalProvider.GetStatusSummary(r.Context())
 		externalCh <- externalResult{value: summary, err: err}
 	}()
 	go func() {
-		if h.quality == nil {
+		if qualityProvider == nil {
 			qualityCh <- qualityResult{}
 			return
 		}
-		summary, err := h.quality.GetQualitySummary(r.Context(), orgID)
+		summary, err := qualityProvider.GetQualitySummary(r.Context(), orgID)
 		qualityCh <- qualityResult{value: summary, err: err}
 	}()
 

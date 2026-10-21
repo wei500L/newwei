@@ -153,7 +153,11 @@ func validateRelayedRow(kind relayKind, event NotificationEvent) bool {
 		switch data.Presentation.Kind {
 		case "news_source_scheduler_backpressure",
 			"news_source_rss_body_missing_spike",
-			"news_source_pipeline_retry_spike":
+			"news_source_pipeline_retry_spike",
+			// Item pipeline circuit-open / auto-disable alerts: org-wide system
+			// rows written by the Go itempipeline worker after a final failure.
+			"news_source_circuit_opened",
+			"news_source_auto_disabled":
 			return true
 		}
 		return false

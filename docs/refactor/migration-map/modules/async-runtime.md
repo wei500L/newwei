@@ -83,6 +83,8 @@ Nest 功能目录：[queue](../../../../apps/api/src/modules/queue)、[audit](..
 
 上表 `NewsSourceSchedulerService` 的 30 秒新闻源调度循环（`API_GO_NEWS_SOURCE_SCHEDULER_MODE`）候选实现见 PR #118，未合 main。
 
+上表 `SituationMonitorSignalsProcessor` 的 BullMQ worker 与重复任务注册（`API_GO_SITUATION_SIGNALS_WORKER_MODE`）候选实现见 PR #129，未合 main。
+
 Outbox 事实源：[audit-log-outbox.service.ts](../../../../apps/api/src/modules/audit/audit-log-outbox.service.ts)、[crawl-cleanup-outbox.service.ts](../../../../apps/api/src/modules/crawl/crawl-cleanup-outbox.service.ts)、[raw-item-outbox.service.ts](../../../../apps/api/src/modules/items/raw-item-outbox.service.ts)、[news-pipeline-outbox.service.ts](../../../../apps/api/src/modules/news-pipeline/news-pipeline-outbox.service.ts)。
 
 主入队边界：QueueService（itemPipeline/DLQ/来源 dispatch）、CrawlTaskService 与 Frontier 执行服务（crawl4ai/judge/learn）、AnalysisService、AssistantService、AlertsService、ArchivePreparationQueueService、AkshareService、SituationMonitorSignals 服务、分类报告服务。按对应模块 root/HTTP 回溯 Queue.add，队列名、payload 和 repeat key 以源码常量为准。

@@ -25,6 +25,13 @@ func mustLoadJerusalem() *time.Location {
 	return location
 }
 
+// OrefDateToUTC converts one OREF wall-clock timestamp exactly like the NestJS
+// oref-date.ts helper. It is the exported entry point for the signals worker,
+// which writes the same history timestamps the read side parses.
+func OrefDateToUTC(dateStr string) string {
+	return orefDateToUTC(dateStr)
+}
+
 // orefDateToUTC mirrors apps/api/src/modules/situation-monitor/signals/oref-date.ts.
 //
 // OREF emits naive "YYYY-MM-DD HH:mm:ss" wall-clock times with no zone. The

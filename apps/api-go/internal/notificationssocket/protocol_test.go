@@ -83,12 +83,14 @@ func TestValidateRelayedRow(t *testing.T) {
 }
 
 func TestValidateRelayedRowNewsSource(t *testing.T) {
-	// The three org-wide news-source alerts written by the Go scheduler/ops
+	// The org-wide news-source alerts written by the Go scheduler/ops/pipeline
 	// takeover must validate only with a NULL userId and a system type.
 	for _, kind := range []string{
 		"news_source_scheduler_backpressure",
 		"news_source_rss_body_missing_spike",
 		"news_source_pipeline_retry_spike",
+		"news_source_circuit_opened",
+		"news_source_auto_disabled",
 	} {
 		event := NotificationEvent{
 			Type: "system",

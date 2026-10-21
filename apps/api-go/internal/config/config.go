@@ -668,6 +668,25 @@ const (
 	ArchivePreparationWorkerModeGo     ArchivePreparationWorkerMode = "go"
 )
 
+// ItemPipelineWorkerMode controls the BullMQ consumer of the itemPipeline
+// queue (API_GO_ITEM_PIPELINE_WORKER_MODE). The default is legacy, where
+// NestJS QueueProcessor creates the Worker. go stops that Worker and lets
+// api-go consume the same queue; it requires DATABASE_URL, REDIS_HOST,
+// MONGO_URI and SYSTEM_SETTINGS_ENCRYPTION_KEY because the pipeline writes
+// MySQL, Mongo, Redis and resolves encrypted gateway/vector secrets.
+//
+// The switch is whole-process: any stage that cannot run in Go keeps the switch
+// on legacy. Switching back needs no data change because the queue and data
+// formats are identical.
+type ItemPipelineWorkerMode string
+
+const (
+	// ItemPipelineWorkerModeLegacy keeps the consumer on NestJS.
+	ItemPipelineWorkerModeLegacy ItemPipelineWorkerMode = "legacy"
+	// ItemPipelineWorkerModeGo consumes itemPipeline in api-go.
+	ItemPipelineWorkerModeGo ItemPipelineWorkerMode = "go"
+)
+
 // NewsIndicatorAssociationCronMode controls the six-hourly news-indicator
 // association refresh. Default legacy. go requires DATABASE_URL and REDIS_HOST:
 // the refresh writes MySQL and the tick gate and organization leases live in
@@ -1440,6 +1459,56 @@ const (
 	SituationSettingsModeGo SituationSettingsMode = "go"
 )
 
+// SituationSignalsWorkerMode controls who consumes the "situationMonitorSignals"
+// BullMQ queue and registers its repeat schedules
+// (API_GO_SITUATION_SIGNALS_WORKER_MODE): the Telegram channel poll and the
+// OREF alerts poll. The accepted values are exactly "", "legacy" and "go"; an
+// empty value and "legacy" both leave consumption and repeat registration to
+// NestJS, and any other value fails startup instead of silently degrading.
+//
+// go requires DATABASE_URL (the settings row and the default OREF alert rules
+// live in MySQL) and REDIS_HOST (queue, cached signal state, single-instance
+// Telegram lease and the realtime event bridge); it needs no JWT because the
+// worker serves no HTTP route. Execution must be exclusive: set this variable
+// to go in the api service first (NestJS then stops creating the Worker and
+// closes its Telegram connection), then in api-go. Rollback is the reverse
+// order and needs no re-login, because the GramJS session string, the Redis
+// state documents and the queue protocol are shared.
+type SituationSignalsWorkerMode string
+
+const (
+	// SituationSignalsWorkerModeLegacy leaves consumption to NestJS (default,
+	// including the empty value).
+	SituationSignalsWorkerModeLegacy SituationSignalsWorkerMode = "legacy"
+	// SituationSignalsWorkerModeGo consumes the queue and registers the repeat
+	// schedules in api-go.
+	SituationSignalsWorkerModeGo SituationSignalsWorkerMode = "go"
+)
+
+// SituationTelegramAuthMode controls the two situation-monitor Telegram login
+// routes (API_GO_SITUATION_TELEGRAM_AUTH_MODE):
+// POST /api/system-settings/situation-monitor/telegram-auth/start and
+// POST /api/system-settings/situation-monitor/telegram-auth/complete. The
+// accepted values are exactly "", "legacy" and "go"; an empty value and
+// "legacy" keep both requests on the NestJS proxy and any other value fails
+// startup.
+//
+// go requires JWT_SECRET, DATABASE_URL and REDIS_HOST (the shared auth chain,
+// the pending-request cache and the four start-rate-limit buckets) plus
+// SYSTEM_SETTINGS_ENCRYPTION_KEY and MONGO_URI (completeAuth writes the
+// encrypted session into the settings row and returns the controller's
+// qualitySummary). Pending requests use the exact NestJS cache document, so a
+// start on one runtime can be completed on the other while the switch flips.
+type SituationTelegramAuthMode string
+
+const (
+	// SituationTelegramAuthModeLegacy proxies both routes to NestJS (default,
+	// including the empty value).
+	SituationTelegramAuthModeLegacy SituationTelegramAuthMode = "legacy"
+	// SituationTelegramAuthModeGo serves both routes from Go.
+	SituationTelegramAuthModeGo SituationTelegramAuthMode = "go"
+)
+
 // GdeltSnapshotMode controls which process owns the 15-minute GDELT external
 // snapshot rebuild (API_GO_GDELT_SNAPSHOT_MODE). The accepted values are exactly
 // "", "legacy" and "go"; any other value fails startup instead of silently
@@ -1857,6 +1926,36 @@ const (
 	NotificationsSocketModeGo     NotificationsSocketMode = "go"
 )
 
+// RealtimeSocketMode controls the dedicated Go Socket.IO transport for the
+// five remaining realtime namespaces (/newsnow, /ops, /quality, /queue and
+// /situation-monitor). The accepted values are exactly "", "legacy" and "go";
+// empty behaves like legacy. go serves the dedicated /socket.io-realtime
+// Engine.IO path only, so /socket.io and every namespace still proxied to
+// NestJS keep their existing transport and the default Web entrypoint.
+//
+// The newsnow namespace is relayed from the Socket.IO Redis adapter, so go
+// mode is rejected when WS_REDIS_ADAPTER_ENABLED=false: without the adapter
+// the NestJS producers never publish the channel Go subscribes to.
+type RealtimeSocketMode string
+
+const (
+	RealtimeSocketModeLegacy RealtimeSocketMode = "legacy"
+	RealtimeSocketModeGo     RealtimeSocketMode = "go"
+)
+
+// ClassificationQualityAlertMode controls the owner of the five-minute
+// classification quality alert evaluation. The accepted values are exactly
+// "", "legacy" and "go"; empty behaves like legacy. In go mode the Go
+// scheduler evaluates every active organization and the NestJS @Interval
+// returns immediately, so both processes share one tick gate and one
+// per-organization lock.
+type ClassificationQualityAlertMode string
+
+const (
+	ClassificationQualityAlertModeLegacy ClassificationQualityAlertMode = "legacy"
+	ClassificationQualityAlertModeGo     ClassificationQualityAlertMode = "go"
+)
+
 // AuthFactorsMode controls the seven authenticated MFA management and
 // organization OIDC configuration HTTP routes migrated by this unit
 // (API_GO_AUTH_FACTORS_MODE).
@@ -2239,6 +2338,14 @@ type Config struct {
 	// the dedicated /socket.io-notifications path. It is independent of every
 	// GraphQL switch and defaults to legacy.
 	NotificationsSocketMode NotificationsSocketMode
+	// RealtimeSocketMode takes over the five remaining realtime namespaces on
+	// the dedicated /socket.io-realtime path. It is independent of every
+	// GraphQL and HTTP switch and defaults to legacy.
+	RealtimeSocketMode RealtimeSocketMode
+	// ClassificationQualityAlertMode controls whether this process runs the
+	// five-minute classification quality alert evaluation. It defaults to
+	// legacy so an unset deployment keeps the NestJS @Interval owner.
+	ClassificationQualityAlertMode ClassificationQualityAlertMode
 	// WebSocket connection caps and connect-window limits share the NestJS
 	// environment names and defaults so the Go path enforces the same policy.
 	WSMaxConnectionsPerUser         int
@@ -2246,6 +2353,11 @@ type Config struct {
 	WSConnectRateLimitPerIP         int
 	WSConnectRateLimitPerUser       int
 	WSConnectRateLimitWindowSeconds int
+	// WSRedisAdapterEnabled and WSRedisAdapterKey mirror the NestJS Socket.IO
+	// Redis adapter configuration. The newsnow namespace is relayed from the
+	// adapter broadcast channel, so Go must know the same switch and key.
+	WSRedisAdapterEnabled bool
+	WSRedisAdapterKey     string
 	// GraphQLNewsEventsMode 只决定六个新闻事件 root 是否登记。默认 legacy。
 	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
 	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
@@ -2483,6 +2595,15 @@ type Config struct {
 	// (see SituationSettingsMode). Default legacy. Mode go requires JWT, MySQL,
 	// Redis, Mongo and the settings-encryption key; it starts no worker.
 	SituationSettingsMode SituationSettingsMode
+	// SituationSignalsWorkerMode controls the situationMonitorSignals queue
+	// consumer and repeat registration (see SituationSignalsWorkerMode).
+	// Default legacy. Mode go requires MySQL and Redis.
+	SituationSignalsWorkerMode SituationSignalsWorkerMode
+	// SituationTelegramAuthMode controls the two Telegram login routes (see
+	// SituationTelegramAuthMode). Default legacy. It is independent from
+	// SituationSettingsMode: only these two POSTs move, the settings CRUD and
+	// DELETE telegram-auth stay on their own switches.
+	SituationTelegramAuthMode SituationTelegramAuthMode
 	// GdeltSnapshotMode 控制 GDELT 外部快照 15 分钟重建的执行权（见
 	// GdeltSnapshotMode）。默认 legacy；go 要求 DATABASE_URL 与 REDIS_HOST。
 	GdeltSnapshotMode GdeltSnapshotMode
@@ -3044,6 +3165,22 @@ type Config struct {
 	// (default 8). The clustering recovery worker uses max(1, min(2, value));
 	// the quality worker uses max(1, min(4, value)).
 	NewsProcessQueueConcurrency int
+	// API_GO_ITEM_PIPELINE_WORKER_MODE. Default legacy; see the mode type.
+	ItemPipelineWorkerMode ItemPipelineWorkerMode
+	// NewsSourceSchedulerFailureRecoveryDelayMs,
+	// NewsSourceSchedulerFailureMaxDelayMs,
+	// NewsSourceSchedulerCircuitBreakerThreshold,
+	// NewsSourceSchedulerCircuitBreakerBaseDelayMs,
+	// NewsSourceSchedulerCircuitBreakerMaxDelayMs and
+	// NewsSourceSchedulerAutoDisableThreshold mirror the
+	// EnvService.newsSourceSchedulerConfig block the item pipeline failure path
+	// reads (defaults 600000, 21600000, 3, 3600000, 86400000, 0).
+	NewsSourceSchedulerFailureRecoveryDelayMs    int
+	NewsSourceSchedulerFailureMaxDelayMs         int
+	NewsSourceSchedulerCircuitBreakerThreshold   float64
+	NewsSourceSchedulerCircuitBreakerBaseDelayMs int
+	NewsSourceSchedulerCircuitBreakerMaxDelayMs  int
+	NewsSourceSchedulerAutoDisableThreshold      float64
 }
 
 // Load 从 getenv 读取并校验配置。
@@ -4002,6 +4139,46 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_NOTIFICATIONS_SOCKET_MODE must be one of legacy|go")
 	}
+	// The realtime transport is intentionally separate from the notifications
+	// transport: one Engine.IO path multiplexes five namespaces, while
+	// /notifications keeps its own path and runtime.
+	switch strings.TrimSpace(getenv("API_GO_REALTIME_SOCKET_MODE")) {
+	case "", string(RealtimeSocketModeLegacy):
+		cfg.RealtimeSocketMode = RealtimeSocketModeLegacy
+	case string(RealtimeSocketModeGo):
+		cfg.RealtimeSocketMode = RealtimeSocketModeGo
+	default:
+		errs = append(errs, "API_GO_REALTIME_SOCKET_MODE must be one of legacy|go")
+	}
+	// The classification quality alert scheduler is a background cron with no
+	// HTTP surface. Empty behaves like legacy.
+	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_QUALITY_ALERT_MODE")) {
+	case "", string(ClassificationQualityAlertModeLegacy):
+		cfg.ClassificationQualityAlertMode = ClassificationQualityAlertModeLegacy
+	case string(ClassificationQualityAlertModeGo):
+		cfg.ClassificationQualityAlertMode = ClassificationQualityAlertModeGo
+	default:
+		errs = append(errs, "API_GO_CLASSIFICATION_QUALITY_ALERT_MODE must be one of legacy|go")
+	}
+	// The Socket.IO Redis adapter configuration must match NestJS exactly:
+	// the newsnow dispatcher publishes into the adapter channel and Go
+	// subscribes to the same key. An invalid boolean is a startup error like
+	// the NestJS env schema, not a silent fallback.
+	cfg.WSRedisAdapterEnabled = true
+	if raw := strings.TrimSpace(getenv("WS_REDIS_ADAPTER_ENABLED")); raw != "" {
+		switch strings.ToLower(raw) {
+		case "true", "1", "yes", "y", "on":
+			cfg.WSRedisAdapterEnabled = true
+		case "false", "0", "no", "n", "off":
+			cfg.WSRedisAdapterEnabled = false
+		default:
+			errs = append(errs, fmt.Sprintf("WS_REDIS_ADAPTER_ENABLED must be a boolean, got %q", raw))
+		}
+	}
+	cfg.WSRedisAdapterKey = strings.TrimSpace(getenv("WS_REDIS_ADAPTER_KEY"))
+	if cfg.WSRedisAdapterKey == "" {
+		cfg.WSRedisAdapterKey = "socket.io"
+	}
 	cfg.WSMaxConnectionsPerUser = 5
 	cfg.WSMaxConnectionsPerIP = 50
 	cfg.WSConnectRateLimitPerIP = 60
@@ -4051,6 +4228,22 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.SituationSettingsMode = SituationSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_SETTINGS_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_SIGNALS_WORKER_MODE")) {
+	case "", string(SituationSignalsWorkerModeLegacy):
+		cfg.SituationSignalsWorkerMode = SituationSignalsWorkerModeLegacy
+	case string(SituationSignalsWorkerModeGo):
+		cfg.SituationSignalsWorkerMode = SituationSignalsWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_SIGNALS_WORKER_MODE must be one of legacy|go")
+	}
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_TELEGRAM_AUTH_MODE")) {
+	case "", string(SituationTelegramAuthModeLegacy):
+		cfg.SituationTelegramAuthMode = SituationTelegramAuthModeLegacy
+	case string(SituationTelegramAuthModeGo):
+		cfg.SituationTelegramAuthMode = SituationTelegramAuthModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_TELEGRAM_AUTH_MODE must be one of legacy|go")
 	}
 	// The GDELT external snapshot scheduler accepts the empty string, legacy
 	// and go. An empty value behaves exactly like legacy so an unset deployment
@@ -4859,6 +5052,14 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	default:
 		errs = append(errs, "API_GO_ARCHIVE_PREPARATION_WORKER_MODE must be one of legacy|go")
 	}
+	switch strings.TrimSpace(getenv("API_GO_ITEM_PIPELINE_WORKER_MODE")) {
+	case "", string(ItemPipelineWorkerModeLegacy):
+		cfg.ItemPipelineWorkerMode = ItemPipelineWorkerModeLegacy
+	case string(ItemPipelineWorkerModeGo):
+		cfg.ItemPipelineWorkerMode = ItemPipelineWorkerModeGo
+	default:
+		errs = append(errs, "API_GO_ITEM_PIPELINE_WORKER_MODE must be one of legacy|go")
+	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE")) {
 	case "", "legacy":
 		cfg.GraphQLNewsIndicatorRefreshMode = "legacy"
@@ -4878,6 +5079,12 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// The clustering recovery worker reads the same process-queue concurrency
 	// the NestJS processor uses and clamps it to max(1, min(2, value)).
 	cfg.NewsProcessQueueConcurrency = intDefault(getenv("NEWS_PROCESS_QUEUE_CONCURRENCY"), 8)
+	cfg.NewsSourceSchedulerFailureRecoveryDelayMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS"), 600_000)
+	cfg.NewsSourceSchedulerFailureMaxDelayMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_FAILURE_MAX_DELAY_MS"), 21_600_000)
+	cfg.NewsSourceSchedulerCircuitBreakerBaseDelayMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS"), 3_600_000)
+	cfg.NewsSourceSchedulerCircuitBreakerMaxDelayMs = intDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS"), 86_400_000)
+	cfg.NewsSourceSchedulerCircuitBreakerThreshold = floatDefault(getenv("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_THRESHOLD"), 3)
+	cfg.NewsSourceSchedulerAutoDisableThreshold = floatDefault(getenv("NEWS_SOURCE_SCHEDULER_AUTO_DISABLE_THRESHOLD"), 0)
 
 	// Go 接管模式的依赖前置校验：不得在依赖缺失时启动一个必然失败的
 	// 「Go 接管端点」——启动即失败，错误只指出缺失的配置项名，不打印值。
@@ -5668,6 +5875,31 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	if cfg.NotificationsSocketMode == NotificationsSocketModeGo {
 		appendAuthRequirements(&errs, "API_GO_NOTIFICATIONS_SOCKET_MODE", cfg)
 	}
+	// The five-namespace realtime transport uses the same JWT/MySQL/Redis
+	// stack and additionally depends on the Redis adapter broadcast channel
+	// for newsnow. Disabling the adapter silently would make Go receive no
+	// newsnow events at all, so the combination is rejected at startup.
+	if cfg.RealtimeSocketMode == RealtimeSocketModeGo {
+		appendAuthRequirements(&errs, "API_GO_REALTIME_SOCKET_MODE", cfg)
+		if !cfg.WSRedisAdapterEnabled {
+			errs = append(errs, "API_GO_REALTIME_SOCKET_MODE=go requires WS_REDIS_ADAPTER_ENABLED=true")
+		}
+	}
+	// The classification quality alert scheduler reads the summary documents
+	// from Mongo, the active organizations and matcher tables from MySQL and the
+	// shared tick gate / organization leases from Redis. It authenticates no
+	// caller, so JWT_SECRET is intentionally not required.
+	if cfg.ClassificationQualityAlertMode == ClassificationQualityAlertModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_CLASSIFICATION_QUALITY_ALERT_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_CLASSIFICATION_QUALITY_ALERT_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_CLASSIFICATION_QUALITY_ALERT_MODE=go")
+		}
+	}
 	// The organization access write takeover needs JWT verification, MySQL and
 	// Redis only. It reads no Mongo collection and starts no worker, so it does
 	// not require MONGO_URI.
@@ -5796,6 +6028,31 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_SITUATION_SETTINGS_MODE=go")
 		}
 	}
+	// The signals worker consumes the migrated queue and writes the shared
+	// Redis state, the single-instance Telegram lease and the event bridge; the
+	// settings row and the default OREF alert rules are MySQL. It serves no HTTP
+	// route, so JWT_SECRET is not a startup requirement.
+	if cfg.SituationSignalsWorkerMode == SituationSignalsWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_SITUATION_SIGNALS_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_SITUATION_SIGNALS_WORKER_MODE=go")
+		}
+	}
+	// The Telegram login takeover serves authenticated HTTP, stores the pending
+	// request in Redis, encrypts the final session into the settings row and
+	// returns the controller's quality summary, so it needs the full stack that
+	// API_GO_SITUATION_SETTINGS_MODE=go already requires.
+	if cfg.SituationTelegramAuthMode == SituationTelegramAuthModeGo {
+		appendAuthRequirements(&errs, "API_GO_SITUATION_TELEGRAM_AUTH_MODE", cfg)
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_SITUATION_TELEGRAM_AUTH_MODE=go")
+		}
+		if cfg.SettingsEncryptionKeyRaw == "" {
+			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_SITUATION_TELEGRAM_AUTH_MODE=go")
+		}
+	}
 	// The manual LLM backfill enqueue route authenticates a human or machine
 	// caller, reads the Mongo failure group, writes its claim and adds a BullMQ
 	// job, so it needs the full stack. The recovery worker consumes the same
@@ -5832,6 +6089,20 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if strings.TrimSpace(cfg.SettingsEncryptionKeyRaw) == "" {
 			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go")
+		}
+	}
+	if cfg.ItemPipelineWorkerMode == ItemPipelineWorkerModeGo {
+		if cfg.DatabaseURL == "" {
+			errs = append(errs, "DATABASE_URL is required when API_GO_ITEM_PIPELINE_WORKER_MODE=go")
+		}
+		if cfg.RedisHost == "" {
+			errs = append(errs, "REDIS_HOST is required when API_GO_ITEM_PIPELINE_WORKER_MODE=go")
+		}
+		if cfg.MongoURI == "" {
+			errs = append(errs, "MONGO_URI is required when API_GO_ITEM_PIPELINE_WORKER_MODE=go")
+		}
+		if strings.TrimSpace(cfg.SettingsEncryptionKeyRaw) == "" {
+			errs = append(errs, "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_ITEM_PIPELINE_WORKER_MODE=go")
 		}
 	}
 	if cfg.GraphQLNewsIndicatorRefreshMode == "go" {

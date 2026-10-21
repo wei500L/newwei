@@ -142,6 +142,8 @@ func (c *Client) completeModel(ctx context.Context, profile gatewayProfile, mode
 				return CompletionResponse{}, parseErr
 			}
 			c.log(ctx, profile, "completion", model, req.OrgID, req.Metadata, latency, response.Usage, nil)
+			latencyMS := float64(latency.Milliseconds())
+			response.LatencyMS = &latencyMS
 			return response, nil
 		}
 		detail := extractUpstreamErrorText(status, raw, callErr)

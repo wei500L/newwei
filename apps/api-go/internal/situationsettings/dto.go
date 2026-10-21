@@ -316,20 +316,26 @@ type UpdateInput struct {
 	TranslationAPITimeoutMS       optionalNumber
 	TranslationAPIMaxRetries      optionalNumber
 	TelegramEnabled               optionalBool
-	TelegramChannelSet            optionalString
-	TelegramMaxFeedItems          optionalNumber
-	TelegramMaxTextChars          optionalNumber
-	TelegramChannelTimeoutMS      optionalNumber
-	TelegramPollCycleTimeoutMS    optionalNumber
-	TelegramStartupDelayMS        optionalNumber
-	TelegramRateLimitMS           optionalNumber
-	TelegramPollIntervalMS        optionalNumber
-	LiveHLSProxyCnnUpstreamURL    optionalString
-	LiveHLSProxyCnnReferer        optionalString
-	LiveHLSProxyCnnAllowedHosts   optionalString
-	LiveHLSProxyCnbcUpstreamURL   optionalString
-	LiveHLSProxyCnbcReferer       optionalString
-	LiveHLSProxyCnbcAllowedHosts  optionalString
+	// The three Telegram credential members are not part of the HTTP PUT DTO.
+	// completeAuth writes them through the same tri-state merge as the NestJS
+	// controller's updateSettings call after a successful login.
+	TelegramAPIID                optionalString
+	TelegramAPIHash              optionalString
+	TelegramSession              optionalString
+	TelegramChannelSet           optionalString
+	TelegramMaxFeedItems         optionalNumber
+	TelegramMaxTextChars         optionalNumber
+	TelegramChannelTimeoutMS     optionalNumber
+	TelegramPollCycleTimeoutMS   optionalNumber
+	TelegramStartupDelayMS       optionalNumber
+	TelegramRateLimitMS          optionalNumber
+	TelegramPollIntervalMS       optionalNumber
+	LiveHLSProxyCnnUpstreamURL   optionalString
+	LiveHLSProxyCnnReferer       optionalString
+	LiveHLSProxyCnnAllowedHosts  optionalString
+	LiveHLSProxyCnbcUpstreamURL  optionalString
+	LiveHLSProxyCnbcReferer      optionalString
+	LiveHLSProxyCnbcAllowedHosts optionalString
 }
 
 // parseUpdateSettings validates the PUT body in the ValidationPipe order.

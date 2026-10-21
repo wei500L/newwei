@@ -63,6 +63,7 @@ export function useSituationMonitorStream(
     }
 
     const socket = io(`${env.apiRoot}/situation-monitor`, {
+      path: env.NEXT_PUBLIC_REALTIME_SOCKET_PATH,
       transports: ["websocket", "polling"],
       auth: { token },
       withCredentials: true,

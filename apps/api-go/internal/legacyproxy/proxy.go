@@ -199,6 +199,21 @@ func WithNotificationsSocket(rules []Rule, mode string) []Rule {
 	})
 }
 
+// WithRealtimeSocket takes over the dedicated Engine.IO path used by the Go
+// five-namespace realtime transport. The path is separate from /socket.io so
+// the Web default build and every NestJS-served namespace stay unchanged; only
+// GET upgrades on exactly /socket.io-realtime are handed to Go.
+func WithRealtimeSocket(rules []Rule, mode string) []Rule {
+	if mode != string(ModeGo) {
+		return rules
+	}
+	return append(rules, Rule{
+		Prefix:  "/socket.io-realtime",
+		Mode:    ModeGo,
+		Methods: map[string]bool{http.MethodGet: true},
+	})
+}
+
 // WithDashboardStats 在 mode 为 go 时接管精确路径 GET /api/dashboard/stats。
 // 同一路径的 OPTIONS 也交给 Go，让浏览器预检不落到 NestJS。
 // 其他方法、/api/dashboard/stats 的子路径、dashboard/stream 和其他图表

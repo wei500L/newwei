@@ -401,6 +401,7 @@ services:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
         NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: ${NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:-/socket.io}
+        NEXT_PUBLIC_REALTIME_SOCKET_PATH: ${NEXT_PUBLIC_REALTIME_SOCKET_PATH:-/socket.io}
     restart: unless-stopped
     working_dir: /workspace
     command: >
@@ -428,6 +429,23 @@ services:
       # /socket.io-notifications 推给浏览器。两侧必须看到同一值，否则会退化成
       # Nest 发本机 socket 而 Web 连 Go 路径（实时通知丢失）。
       API_GO_NOTIFICATIONS_SOCKET_MODE: ${API_GO_NOTIFICATIONS_SOCKET_MODE:-legacy}
+      # 态势信号 worker（队列 situationMonitorSignals：Telegram 频道轮询 + OREF
+      # 警报轮询）的执行权。Nest 也读取它：go 时不再创建 Worker、不注册重复
+      # 任务，重启后也不再持有 Telegram 连接（避免与 Go 同时持有同一会话触发
+      # AUTH_KEY_DUPLICATED）。切换顺序：先把 api 侧改为 go 并重启，再把
+      # api-go 侧改为 go；回退按相反顺序。会话字符串、Redis 状态与队列协议
+      # 两端相同，回退不需要重新登录。
+      API_GO_SITUATION_SIGNALS_WORKER_MODE: ${API_GO_SITUATION_SIGNALS_WORKER_MODE:-legacy}
+      # Telegram 登录两个 POST 的执行权。Nest 只做 schema 校验；go 时这两条
+      # 请求由 api-go 处理（Nest 控制器不改，其余 settings 路由不受影响）。
+      API_GO_SITUATION_TELEGRAM_AUTH_MODE: ${API_GO_SITUATION_TELEGRAM_AUTH_MODE:-legacy}
+      # 实时 Socket.IO 传输（newsnow/quality/ops/queue/situation-monitor）的执行权。
+      # Nest 也读取它：go 时各 dispatcher 改发 identifiers-only relay，由 api-go 的
+      # 独立 Engine.IO path 推给浏览器。两侧必须看到同一值，否则会 split-brain。
+      API_GO_REALTIME_SOCKET_MODE: ${API_GO_REALTIME_SOCKET_MODE:-legacy}
+      # 分类质检告警评估调度的执行权。Nest 也读取它：go 时 NestJS 每 5 分钟调度
+      # 在领取共享 tick gate 前返回，由 api-go 执行并共用同一组织锁。
+      API_GO_CLASSIFICATION_QUALITY_ALERT_MODE: ${API_GO_CLASSIFICATION_QUALITY_ALERT_MODE:-legacy}
       PRISMA_AUTO_RESOLVE_FAILED_MIGRATIONS: "false"
       AKSHARE_ENABLED: ${AKSHARE_ENABLED:-true}
       AKSHARE_HTTP_BASE_URL: ${AKSHARE_HTTP_BASE_URL:-http://akshare:8081}
@@ -497,6 +515,9 @@ services:
       # 归档准备 worker（archivePreparation，并发 1）。Nest 与 Go 同一变量；
       # go 时 Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go。
       API_GO_ARCHIVE_PREPARATION_WORKER_MODE: ${API_GO_ARCHIVE_PREPARATION_WORKER_MODE:-legacy}
+      # 条目流水线 worker（itemPipeline）执行权。Nest 与 Go 同一变量；go 时
+      # Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go，回退相反。
+      API_GO_ITEM_PIPELINE_WORKER_MODE: ${API_GO_ITEM_PIPELINE_WORKER_MODE:-legacy}
       # 分类质量报告创建、队列消费权、流水线运行记录与两条写接口。各开关互相
       # 独立，默认 legacy。worker/清理/复核样本/启动对齐开关 Nest 与 Go 都读：
       # go 时 Nest 不再启动对应的定时器、监听或启动对齐。指标与写接口只需切
@@ -646,6 +667,7 @@ services:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
         NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: ${NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:-/socket.io}
+        NEXT_PUBLIC_REALTIME_SOCKET_PATH: ${NEXT_PUBLIC_REALTIME_SOCKET_PATH:-/socket.io}
     restart: unless-stopped
     working_dir: /workspace
     command: >
@@ -754,11 +776,22 @@ services:
       # Dedicated Go Socket.IO transport for /notifications. Default legacy
       # leaves every Socket.IO namespace on the NestJS path.
       API_GO_NOTIFICATIONS_SOCKET_MODE: ${API_GO_NOTIFICATIONS_SOCKET_MODE:-legacy}
+      # Realtime Socket.IO transport for the newsnow/quality/ops/queue/
+      # situation-monitor namespaces and the classification quality alert
+      # scheduler. Nest reads both switches too, so the api service must carry
+      # the same values; legacy keeps every namespace on the NestJS path.
+      API_GO_REALTIME_SOCKET_MODE: ${API_GO_REALTIME_SOCKET_MODE:-legacy}
+      API_GO_CLASSIFICATION_QUALITY_ALERT_MODE: ${API_GO_CLASSIFICATION_QUALITY_ALERT_MODE:-legacy}
       WS_MAX_CONNECTIONS_PER_USER: ${WS_MAX_CONNECTIONS_PER_USER:-5}
       WS_MAX_CONNECTIONS_PER_IP: ${WS_MAX_CONNECTIONS_PER_IP:-50}
       WS_CONNECT_RATE_LIMIT_PER_IP: ${WS_CONNECT_RATE_LIMIT_PER_IP:-60}
       WS_CONNECT_RATE_LIMIT_PER_USER: ${WS_CONNECT_RATE_LIMIT_PER_USER:-30}
       WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS: ${WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS:-60}
+      # The /newsnow namespace is relayed from the Socket.IO Redis adapter
+      # broadcast channel, so api-go must see the same adapter switch and key as
+      # the api service. Defaults mirror config.service.ts (enabled, "socket.io").
+      WS_REDIS_ADAPTER_ENABLED: ${WS_REDIS_ADAPTER_ENABLED:-true}
+      WS_REDIS_ADAPTER_KEY: ${WS_REDIS_ADAPTER_KEY:-socket.io}
       GRAPHQL_SUBSCRIPTION_BUS: ${GRAPHQL_SUBSCRIPTION_BUS:-redis}
       DATABASE_URL: mysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD}@mysql:${MYSQL_PORT:-3306}/${MYSQL_DB}
       # The OIDC login unit builds the web callback from NEXTAUTH_URL and the
@@ -871,6 +904,9 @@ services:
       # 归档准备 worker（archivePreparation，并发 1）。Nest 与 Go 同一变量；
       # go 时 Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go。
       API_GO_ARCHIVE_PREPARATION_WORKER_MODE: ${API_GO_ARCHIVE_PREPARATION_WORKER_MODE:-legacy}
+      # 条目流水线 worker（itemPipeline）执行权。Nest 与 Go 同一变量；go 时
+      # Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go，回退相反。
+      API_GO_ITEM_PIPELINE_WORKER_MODE: ${API_GO_ITEM_PIPELINE_WORKER_MODE:-legacy}
       # 告警队列（scan / 规则评估 / 站内通知 / 邮件与 Webhook 投递）的执行权。
       # 空串按 legacy 处理；非法值在 Nest 与 Go 都启动失败。默认 legacy=保留
       # NestJS AlertsProcessor；go=Go 消费 alerts 队列，Nest 处理器只保留幂等的
@@ -879,6 +915,41 @@ services:
       # go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 与 SMTP_*（站内通知、邮件
       # 与 Webhook 都由 Go 产生）；模型服务可选，缺失时经济异常规则回退本地检测。
       API_GO_ALERT_WORKER_MODE: ${API_GO_ALERT_WORKER_MODE:-legacy}
+      # 态势信号 worker（situationMonitorSignals：telegram-poll + oref-poll）。
+      # 默认 legacy 仍由 NestJS 消费；go 时 api-go 消费队列（并发 1）、注册
+      # 重复任务并发布 situation-monitor:signals:events:v1 事件桥。go 要求
+      # DATABASE_URL 与 REDIS_HOST，不要求 JWT。Telegram 会话由 Redis 租约
+      # 保证集群内只有一个实例持有 MTProto 连接。切换前先把 api 服务同名
+      # 变量改为 go；回退最后再把 api 侧改回 legacy。
+      API_GO_SITUATION_SIGNALS_WORKER_MODE: ${API_GO_SITUATION_SIGNALS_WORKER_MODE:-legacy}
+      # Telegram 登录两个 POST（.../telegram-auth/start、.../complete）的执行权。
+      # 默认 legacy=NestJS；go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、
+      # MONGO_URI 与 SYSTEM_SETTINGS_ENCRYPTION_KEY。待完成请求缓存格式两端
+      # 相同，切换期间可以由一端发码、另一端完成。
+      API_GO_SITUATION_TELEGRAM_AUTH_MODE: ${API_GO_SITUATION_TELEGRAM_AUTH_MODE:-legacy}
+      # 与 api 服务同名同默认值的态势监控 env。Telegram 凭据优先读 MySQL
+      # 设置行（这里只是 env 回退）；OREF 只从 env 读。默认值必须与 api 服务
+      # 一致，否则 Go 的 env 回退与 Nest 不同。
+      SITUATION_MONITOR_TELEGRAM_ENABLED: ${SITUATION_MONITOR_TELEGRAM_ENABLED:-false}
+      SITUATION_MONITOR_TELEGRAM_API_ID: ${SITUATION_MONITOR_TELEGRAM_API_ID:-}
+      SITUATION_MONITOR_TELEGRAM_API_HASH: ${SITUATION_MONITOR_TELEGRAM_API_HASH:-}
+      SITUATION_MONITOR_TELEGRAM_CHANNEL_SET: ${SITUATION_MONITOR_TELEGRAM_CHANNEL_SET:-full}
+      SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS: ${SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS:-200}
+      SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS: ${SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS:-800}
+      SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS: ${SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS:-15000}
+      SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS: ${SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS:-180000}
+      SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS: ${SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS:-60000}
+      SITUATION_MONITOR_TELEGRAM_RATE_LIMIT_MS: ${SITUATION_MONITOR_TELEGRAM_RATE_LIMIT_MS:-800}
+      SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS: ${SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS:-60000}
+      SITUATION_MONITOR_OREF_ENABLED: ${SITUATION_MONITOR_OREF_ENABLED:-false}
+      SITUATION_MONITOR_OREF_PROXY_AUTH: ${SITUATION_MONITOR_OREF_PROXY_AUTH:-}
+      SITUATION_MONITOR_OREF_ALERTS_URL: ${SITUATION_MONITOR_OREF_ALERTS_URL:-https://www.oref.org.il/WarningMessages/alert/alerts.json}
+      SITUATION_MONITOR_OREF_HISTORY_URL: ${SITUATION_MONITOR_OREF_HISTORY_URL:-https://www.oref.org.il/WarningMessages/alert/History/AlertsHistory.json}
+      SITUATION_MONITOR_OREF_HISTORY_RETENTION_DAYS: ${SITUATION_MONITOR_OREF_HISTORY_RETENTION_DAYS:-7}
+      SITUATION_MONITOR_OREF_HISTORY_MAX_WAVES: ${SITUATION_MONITOR_OREF_HISTORY_MAX_WAVES:-200}
+      SITUATION_MONITOR_OREF_CURL_TIMEOUT_SEC: ${SITUATION_MONITOR_OREF_CURL_TIMEOUT_SEC:-15}
+      SITUATION_MONITOR_OREF_BOOTSTRAP_MAX_RETRIES: ${SITUATION_MONITOR_OREF_BOOTSTRAP_MAX_RETRIES:-3}
+      SITUATION_MONITOR_OREF_POLL_INTERVAL_MS: ${SITUATION_MONITOR_OREF_POLL_INTERVAL_MS:-300000}
       # Frontier LLM 判定/学习队列执行权。空串按 legacy 处理；非法值在 Nest
       # 与 Go 都启动失败。默认 legacy 保留 NestJS 的两个 LLM Worker；go 时
       # Nest 只跳过这两个 worker（三个爬取队列 worker 仍由 Nest 执行），Go
@@ -1608,6 +1679,7 @@ services:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
         NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: ${NEXT_PUBLIC_GRAPHQL_APQ_ENABLED:-true}
         NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: ${NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:-/socket.io}
+        NEXT_PUBLIC_REALTIME_SOCKET_PATH: ${NEXT_PUBLIC_REALTIME_SOCKET_PATH:-/socket.io}
     restart: unless-stopped
     working_dir: /workspace
     # 启动等待使用最终配置的 API base（API_BASE_URL，默认 NestJS），
