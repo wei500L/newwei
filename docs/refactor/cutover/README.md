@@ -7,9 +7,9 @@
 | 文件 | 内容 | 交付物/任务 |
 |---|---|---|
 | [ownership-audit.md](ownership-audit.md) | T1 执行权审计：Nest 全量 HTTP 路由、GraphQL 根字段、Socket.IO namespace、worker/Cron/Redis 订阅者的 A/B/C 分类与 `file:line` 证据 | T1 执行权审计 |
-| [switch-matrix.md](switch-matrix.md) | T3 开关矩阵：130 个 `API_GO_*` 开关的域/类别/Nest 是否读取/依赖/资源/切换顺序/回退问题/风险/阶段 | T3 开关矩阵 |
+| [switch-matrix.md](switch-matrix.md) | T3 开关矩阵：134 个 `API_GO_*` 开关（本批新增 4 个）的域/类别/Nest 是否读取/依赖/资源/切换顺序/回退问题/风险/阶段 | T3 开关矩阵 |
 | [runbook.md](runbook.md) | T5 切流手册：前置检查、阶段 0–6 的改法/验证/回退/行为差异、停 Nest 判定、12 项用户在部署环境亲测清单、legacy 回落观测 | T5 切流手册 |
-| [`infra/docker/api-go-cutover.env.sample`](../../../infra/docker/api-go-cutover.env.sample) | T4 配置样例：130 个开关全 `go` + 资源占位符 + 分阶段中文注释；**不被 compose 默认加载** | T4 配置样例 |
+| [`infra/docker/api-go-cutover.env.sample`](../../../infra/docker/api-go-cutover.env.sample) | T4 配置样例：134 个开关（133 个 `go` + `API_GO_LEGACY_FALLBACK_MODE=reject`）+ 资源占位符 + 分阶段中文注释；**不被 compose 默认加载** | T4 配置样例 |
 | [`infra/docker/docker-compose.api-go-cutover.sample.yml`](../../../infra/docker/docker-compose.api-go-cutover.sample.yml) | T4 配套 compose override 样例：给 api-go 加 `env_file`，并把 59 个未走 `${VAR}` 插值的开关重新声明；**不被默认加载**，必须 `-f` 指定 | T4 配置样例 |
 
 ## 2. 为什么需要三个文件（env 样例 + compose override + runbook）
@@ -23,7 +23,7 @@
 | 完全未注入 | 10 | **不能** | api-go 没有 `env_file`，只能靠 override 注入 |
 
 因此：
-- **`api-go-cutover.env.sample`** 只提供「值」（130 个开关 + 资源占位符），本身只是 env 文件；
+- **`api-go-cutover.env.sample`** 只提供「值」（134 个开关 + 资源占位符），本身只是 env 文件；
 - **`docker-compose.api-go-cutover.sample.yml`** 提供「注入方式」：`env_file` 注入全部值，并用 `${VAR:-legacy}` 重新声明 49 个写死开关 + 10 个未注入开关（共 59 个）；其余 71 个由 base compose 插值；
 - **`runbook.md`** 管顺序、验证与回退。
 
@@ -33,16 +33,16 @@
 
 本批只**新增**样例文件，没有修改 `docker-compose.yml`、`infra/docker/.env.sample`、`config.go` 或任何默认值。不显式使用这些文件时：
 
-- 阶段/开关总数以 `switch-matrix.md` 为准：阶段 1=36、2=60、3=18、4=12、5=3、6=1，合计 130；阶段 0 不翻转开关；
-- 130 个 `API_GO_*` 开关仍按 compose/config 的默认：绝大多数 `legacy`；compose 的 api-go 服务另有 7 个写死 `go`（pilot 既有行为）；
+- 阶段/开关总数以 `switch-matrix.md` 为准：阶段 1=37、2=60、3=18、4=12、5=3、6=4，合计 134（`refactor/go-ops-entrypoints` 追加的 4 个，最终数字由整合窗口重算）；阶段 0 不翻转开关；
+- 134 个 `API_GO_*` 开关（本批分支内）仍按 compose/config 的默认：绝大多数 `legacy`；compose 的 api-go 服务另有 7 个写死 `go`（pilot 既有行为）；
 - Web 仍指向 NestJS：`API_BASE_URL=http://api:4000`、`NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api`；
 - canary 仍关闭（`CANARY_PERCENT=0`）；
 - `api-go` 仍只在 `api-go-pilot` profile 下启动，默认 `docker compose up` 不会启动它；
 - 本批没有新增默认 profile、默认 env_file、默认 include 或默认 `-f`。
 
-**开关总数仍是 130：** `/api/healthz/live` 是 C-1（固定 shadow，无开关，本批不新增），不计入 130；env 样例与 override 的数量都以 `apps/api-go/internal/config/config.go` 的 `getenv("API_GO_*")` 去重 130 为准。
+**开关总数（本批分支）是 134：** `refactor/go-ops-entrypoints` 新增 `API_GO_HEALTHZ_LIVE_MODE`、`API_GO_VECTOR_DIAGNOSTICS_MODE`、`API_GO_DOCS_MODE`、`API_GO_LEGACY_FALLBACK_MODE`；env 样例与 override 的数量都以 `apps/api-go/internal/config/config.go` 的 `getenv("API_GO_*")` 去重为准（分支内 134，最终数字由整合窗口重算）。
 
-**业务切流 ≠ 完全停 Nest：** 130 个开关全 `go` 只能让业务流量完成切流；完全停 Nest 还取决于 C-1–C-9（`/api/healthz/live`、crawl-frontier 写、vector diagnostics、`itemPipelineDlq`、Swagger、Bull Board、根路径 404）的处理决定，以及 `depends_on`/Web 探针的工程变更。详见 runbook §3.6 的 6a/6b 与 §4.2。
+**业务切流 ≠ 完全停 Nest：** 全部开关 `go` 只能让业务流量完成切流；本批已关闭 C-1（`/api/healthz/live`）、C-5（vector diagnostics）、C-7（Swagger）、C-9（根路径/404），完全停 Nest 仍取决于 C-2…C-4（crawl-frontier 写）、C-6（`itemPipelineDlq`）、C-8（Bull Board）的处理决定，以及 `depends_on`/Web 探针的工程变更。详见 runbook 阶段 6 与 §4.2。
 
 ## 4. 用法
 
@@ -111,14 +111,14 @@ docker compose \
 |---|---|
 | 分支 | `docs/go-cutover-readiness` |
 | 基线 | `dcbe563b`（#136） |
-| 开关数 | 130（`apps/api-go/internal/config/config.go` 的 `getenv("API_GO_*")` 去重） |
+| 开关数 | 134（`apps/api-go/internal/config/config.go` 的 `getenv("API_GO_*")` 去重；最终数字由整合窗口重算） |
 | 阶段定义 | BRIEF 的阶段 0–6（runbook §0.3/§3） |
 | 本批执行范围 | 文档、样例与 T2 测试；未运行 go build/test、pnpm、docker、任何服务（Go 测试由 CI 执行） |
 
 ## 6. 维护方式
 
 1. **新增开关时同步三处：** `switch-matrix.md`（逐开关矩阵）、`api-go-cutover.env.sample`（值 + 阶段注释）、`docker-compose.api-go-cutover.sample.yml`（若该开关在 compose 里不是 `${VAR}` 插值，必须加入 59 个重新声明列表；否则 env 不生效）。
-2. **改 compose 的 api-go 块时：** 重新核对「71 插值 / 49 写死 / 10 未注入」的分类与 130 总数，更新 runbook §0.2 与 override 的数量说明。
+2. **改 compose 的 api-go 块时：** 重新核对「71 插值 / 49 写死 / 10 未注入」的分类与开关总数（本批 134），更新 runbook §0.2 与 override 的数量说明。
 3. **legacy 回落指标（已实现）：** `api_go_legacy_proxy_requests_total{route_prefix}` 已由本批 T5.6 落地（`apps/api-go/internal/legacyproxy/proxy.go` + `apps/api-go/internal/metrics/families.go`，含 `cutover_legacy_metric_test.go`）；PromQL 与标签语义见 runbook §4.1/§6。后续改标签/记录点时要同步 runbook 与 `switch-matrix.md`。
 4. **文档事实以基线为准：** 行号会随代码漂移；更新文档时同步替换基线 SHA，并在 runbook §10 记录变更。
 5. **不把未执行写成通过：** 所有命令保持「未在本批执行」标注；真实外部验证只能由用户在部署环境回填（runbook §5）。
@@ -126,8 +126,8 @@ docker compose \
 ## 7. 快速核对（静态，不启动服务）
 
 ```bash
-# 130 个开关全 go、无行尾注释
-grep -cE '^API_GO_[A-Z0-9_]+_MODE=go$' infra/docker/api-go-cutover.env.sample   # 130
+# 134 个开关（133 个 go + reject）、无行尾注释
+grep -cE '^API_GO_[A-Z0-9_]+_MODE=go$' infra/docker/api-go-cutover.env.sample   # 133（134 行中 fallback 为 reject）
 grep -E '^API_GO_[A-Z0-9_]+=' infra/docker/api-go-cutover.env.sample | grep -v '=go$' || echo OK
 
 # 名单与 config.go 完全一致（只取 getenv("...") 的真实开关，避免命中注释）

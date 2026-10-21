@@ -1,6 +1,6 @@
 # API_GO_* 开关矩阵（切流准备）
 
-本文件是「Go 切流准备」批次的开关矩阵交付物：为 `apps/api-go/internal/config/config.go` 中的**全部 130 个 `API_GO_*` 开关**逐行给出域、类别、Nest 是否同读、依赖、资源、切换顺序、回退方式、回退后已知问题、风险与阶段，并汇总 `config.go` 中全部跨开关硬校验。
+本文件是「Go 切流准备」批次的开关矩阵交付物：为 `apps/api-go/internal/config/config.go` 中的**全部 134 个 `API_GO_*` 开关**逐行给出域、类别、Nest 是否同读、依赖、资源、切换顺序、回退方式、回退后已知问题、风险与阶段，并汇总 `config.go` 中全部跨开关硬校验。其中 4 个（C-1/C-5/C-7/C-9）由 `refactor/go-ops-entrypoints` 追加，见「ops-entrypoints」小节。
 
 基线：`origin/main = dcbe563b917fde0927637121a91de2186d6177a4`（#136），分支 `docs/go-cutover-readiness`。所有 `path:line` 均来自该提交；PR 证据只写 PR 号与本文件核对到的正文条目。**本文件是静态阅读结论，不代表任何部署、流量或 CI 通过。**
 
@@ -8,10 +8,10 @@
 
 ### 统计口径
 
-- **130 个开关**：用 `grep -o 'getenv("API_GO_[A-Z0-9_]*")' apps/api-go/internal/config/config.go | sort -u | wc -l` 复核得到 **130**；与 `docs/refactor/cutover/ownership-audit.md`、`infra/docker/api-go-cutover.env.sample` 的开关名单逐行核对**完全一致**（无差异）。清单以 `config.go` 源码为准。
+- **134 个开关**：用 `grep -o 'getenv("API_GO_[A-Z0-9_]*")' apps/api-go/internal/config/config.go | sort -u | wc -l` 复核；本文件在 130 个基线开关上追加本批 4 个（`API_GO_HEALTHZ_LIVE_MODE`、`API_GO_LEGACY_FALLBACK_MODE`、`API_GO_DOCS_MODE`、`API_GO_VECTOR_DIAGNOSTICS_MODE`）。`infra/docker/api-go-cutover.env.sample` 已同步为 134 行；清单以 `config.go` 源码为准。
 - **注册/接线口径，不是部署启用口径**：本矩阵描述「开关设为 `go` 时 Go 做什么、Nest 是否让位」，**不表示任何环境已经启用**。仓库默认仍全部 `legacy`（两个历史单元例外：`API_GO_ONBOARDING_MODE` 默认 `shadow`、`API_GO_USER_SETTINGS_READ_MODE` 默认空串＝兼容），`api-go` 仍在 compose 的 `api-go-pilot` profile 内，`CANARY_PERCENT=0`，Web 默认指向 `api:4000`。
-- **一个开关一行**：共 **130 行**，按迁移地图的 18 个产品域分组（`vector` 域没有 `API_GO_*` 开关，单独说明）。同一开关若同时接管 HTTP 与 GraphQL，类别列写多值。
-- **行数统计**：域表 130 行 + 跨开关校验 8 条 + 阶段总览 6 行 + Top 10 + 回退已知问题汇总 8 条。
+- **一个开关一行**：共 **134 行**，按迁移地图的 18 个产品域分组（`vector` 域没有 `API_GO_*` 开关，单独说明；本批 4 个跨域开关单列在 `ops-entrypoints` 小节）。同一开关若同时接管 HTTP 与 GraphQL，类别列写多值。
+- **行数统计**：域表 130 行 + ops-entrypoints 4 行 + 跨开关校验 8 条 + 阶段总览 6 行 + Top 10 + 回退已知问题汇总 8 条。
 
 ### 如何回退
 
@@ -53,14 +53,14 @@
 | 阶段 | 定义（BRIEF） | 开关数 | 代表开关 | 前置资源 |
 |---|---|---|---|---|
 | 0 | Web 入口指向 api-go，全部开关仍 legacy | 0（不翻转开关） | — | 入口与透明代理可用 |
-| 1 | 只读 HTTP 与 GraphQL 读（Query） | 36 | `API_GO_GRAPHQL_READ_MODE`、`API_GO_ITEMS_READING_MODE`、`API_GO_DASHBOARD_STATS_MODE` | MySQL+Redis+JWT，部分 +Mongo |
+| 1 | 只读 HTTP 与 GraphQL 读（Query） | 37 | `API_GO_GRAPHQL_READ_MODE`、`API_GO_ITEMS_READING_MODE`、`API_GO_DASHBOARD_STATS_MODE`、`API_GO_VECTOR_DIAGNOSTICS_MODE` | MySQL+Redis+JWT，部分 +Mongo |
 | 2 | 写入类 HTTP 与 GraphQL Mutation | 60 | `API_GO_ITEMS_INGEST_MODE`、`API_GO_GRAPHQL_SETTINGS_WRITE_MODE`、`API_GO_CRAWL_TASK_WRITE_MODE` | 同阶段 1，写开关普遍要 Mongo/SSK/SMTP |
 | 3 | Cron / Interval / 启动任务 / 后台调度 | 18 | `API_GO_NEWS_SOURCE_SCHEDULER_MODE`、`API_GO_AUDIT_OUTBOX_MODE`、`API_GO_CRAWL_MAINTENANCE_MODE` | MySQL+Redis，多数 +Mongo |
 | 4 | BullMQ 队列 worker | 12 | `API_GO_ITEM_PIPELINE_WORKER_MODE`、`API_GO_CRAWL_WORKER_MODE`、`API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE` | Redis + 队列依赖（crawl4ai/SMTP/SSK/模型） |
 | 5 | 实时推送（Subscription、两个 Socket.IO 路径、重建 Web） | 3 | `API_GO_GRAPHQL_SUBSCRIPTIONS_MODE`、`API_GO_NOTIFICATIONS_SOCKET_MODE`、`API_GO_REALTIME_SOCKET_MODE` | Redis(+adapter)、WS 反代与 Web 重建 |
-| 6 | 认证版健康检查与收尾 | 1 | `API_GO_HEALTHZ_MODE` | JWT+MySQL+Redis；`/api/healthz/live` 无开关 |
+| 6 | 认证版健康检查与停 Nest 收尾（C-1/C-7/C-9） | 4 | `API_GO_HEALTHZ_MODE`、`API_GO_HEALTHZ_LIVE_MODE`、`API_GO_DOCS_MODE`、`API_GO_LEGACY_FALLBACK_MODE` | JWT+MySQL+Redis；停 Nest 步骤见 runbook 阶段 6 |
 
-合计 **130** 个开关（覆盖全部 `API_GO_*`）。**阶段 0 不涉及任何开关翻转**：`/api/` 前缀仍整体 `legacy`，未接管路径全部回落 NestJS（`legacyproxy/proxy.go:115-173`）。
+合计 **134** 个开关（覆盖全部 `API_GO_*`）。**阶段 0 不涉及任何开关翻转**：`/api/` 前缀仍整体 `legacy`，未接管路径全部回落 NestJS（`legacyproxy/proxy.go:115-173`）。
 
 ### 域 × 阶段分布
 
@@ -83,8 +83,9 @@
 | economic（经济数据与 AkShare） | 2 | 0 | 1 | 0 | 1 | 0 | 0 |
 | archive（归档阅读与准备任务） | 2 | 1 | 0 | 0 | 1 | 0 | 0 |
 | async-runtime（队列、调度、Outbox 与实时传输） | 3 | 1 | 0 | 0 | 0 | 1 | 1 |
+| ops-entrypoints（停 Nest 收尾，本批新增） | 4 | 1 | 0 | 0 | 0 | 0 | 3 |
 
-类别分布（可多选）：HTTP **78**、GraphQL Query **13**、GraphQL Mutation **12**、GraphQL Subscription **1**、worker **12**、Cron **17**、启动任务 **2**、Socket.IO **2**。Nest 同读：**34** 个「是」、**11** 个「仅 schema 声明」、其余 **85** 个 Nest 完全不读。
+类别分布（可多选）：HTTP **82**、GraphQL Query **13**、GraphQL Mutation **12**、GraphQL Subscription **1**、worker **12**、Cron **17**、启动任务 **2**、Socket.IO **2**。Nest 同读：**34** 个「是」、**11** 个「仅 schema 声明」、其余 **89** 个 Nest 完全不读。
 
 ## 按域矩阵
 
@@ -311,6 +312,18 @@
 `vector` 域没有 `API_GO_*` 开关：vector 是独立进程 `apps/vector-go`（三 HTTP + 内部 token + orgId 过滤），与 api-go 的开关矩阵无交集；上游切换属独立部署决策（`DEPENDENCIES.md:104`）。
 
 
+### ops-entrypoints · 停 Nest 收尾（refactor/go-ops-entrypoints 新增 4 个开关）
+
+本小节由 `refactor/go-ops-entrypoints` 追加，对应审计 C-1/C-5/C-7/C-9。四个开关都不属于迁移地图的 18 个产品域，因此单列；它们同样由 `api-go` 独占读取，NestJS 不读，切换只需要重启 `api-go`。
+
+| 开关 | 域 | 类别 | Nest 同读 | 依赖（开关/配置） | 所需资源 | 切换顺序 | 回退方式 | 回退后已知问题 | 风险 | 阶段 | 证据 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `API_GO_HEALTHZ_LIVE_MODE` | ops-entrypoints | HTTP（1 条公开 GET /api/healthz/live，仅 exact GET） | 否 | 无其它开关；POST/HEAD/相似路径继续回落 /api/ legacy | 无（handler 不读数据库、缓存或密钥） | 仅 api-go（Nest 不读该值） | 改回 `shadow` 重启 api-go（**默认值就是 shadow，不是 legacy**） | 回退后 live 恢复「Nest 应答 + Go 差分」；compose api healthcheck 与 Web 启动等待重新依赖 Nest 进程 | 低（纯 handler，默认 shadow 已是现网行为） | 6 | config.go:187/2342/3580/5395-5401；legacyproxy/healthz_live_routes.go；cmd/api/main.go 的规则与 handler 注册 |
+| `API_GO_LEGACY_FALLBACK_MODE` | ops-entrypoints | 网关回落策略（不新增路由） | 否 | `reject` 要求其余全部 `*Mode` 字段为 `go`，由反射校验保证（豁免表只有本开关自身，config.go:6865-6911） | `reject` 无；`proxy` 使用 `LEGACY_API_URL` | 仅 api-go（且必须在阶段 6b、所有开关为 go 之后） | 改回 `proxy` 重启 api-go；**前提是 Nest 仍在运行** | reject 期间被拒绝的请求不会补发/drain，`api_go_legacy_rejected_requests_total{route_prefix}` 保留分布；回退后未迁移路径恢复代理 | 高（在所有开关 go 之前误开会把未迁移入口变成 404，而非代理） | 6 | config.go:201/2346/3590/5406-5410；legacyproxy/proxy.go 的 `proxyLegacy`；metrics/families.go |
+| `API_GO_DOCS_MODE` | ops-entrypoints | HTTP（`/docs`、`/docs/`、`/docs/json` 与 Swagger UI 静态资源） | 否 | 是否实际提供文档由 `SWAGGER_ENABLED` 决定（未设置时 NODE_ENV=production 为 false，否则 true）；false 时返回与 C-9 相同的 404 | 无 | 仅 api-go（Nest 不读该值） | 改回 `legacy` 重启 api-go | 回退后 `/docs` 重新代理 Nest；Go 侧只读嵌入快照，无写入、无缓存数据需要清理。`/docs-yaml` 未实现，见「未核实项」 | 低（公开只读文档） | 6 | config.go:212/2349/3598/5398-5402；internal/apidocs；legacyproxy/docs_routes.go |
+| `API_GO_VECTOR_DIAGNOSTICS_MODE` | settings | HTTP（1 条 GET /api/system-settings/vector-service/diagnostics） | 否 | 与 `API_GO_INFRASTRUCTURE_SETTINGS_MODE` 独立；复用同一 settings 读取与鉴权栈；报告本进程共享的 vector 健康状态 | MySQL+JWT+Redis | 仅 api-go（Nest 不读该值） | 改回 `legacy` 重启 api-go | 回退后诊断回到 Nest 进程内计数器；api-go worker 的共享不可用窗口（B1 修复）不受本开关影响，继续生效 | 低（只读诊断） | 1 | config.go:223/2352/3606/5403；internal/vectorclient/health.go；internal/infrastructuresettings/vector_diagnostics.go；legacyproxy/vector_diagnostics_routes.go |
+
+
 ## 高风险开关 Top 10
 
 排序按「切错的影响面 × 回退代价」，全部为矩阵中 `高` 风险行：
@@ -356,12 +369,13 @@
 
 以下内容本矩阵**没有**证据，不做结论：
 
-1. **`/api/healthz/live` 没有开关**：它在 `DefaultRulesWithWrite` 中固定为 `shadow`（`legacyproxy/proxy.go:135`，`main.go:2130` 注册 Go shadow 执行者），没有任何 `API_GO_*` 能把它改成 `go`。BRIEF 阶段 6 的「`/api/healthz/live` 改 go」当前**不能用开关执行**，只能改代码或新增开关——需要 Lead 决策（列入阶段 6 的前置）。
+1. **`/api/healthz/live` 没有开关（已由 `refactor/go-ops-entrypoints` 关闭）**：本批新增 `API_GO_HEALTHZ_LIVE_MODE`（默认 `shadow`，可 `legacy`/`go`），规则由 `WithHealthzLive` 决定；见 `ops-entrypoints` 小节与 runbook 阶段 6。
 2. **GAPS.md 的开放状态基于旧基线**（`3cedce9a`/`90765633`），与本基线可能不一致：`GAP-NEWS-001`（brief 冷生成/写回）在当前代码已装配 `BriefCompleter`（`main.go:2236-2246`、`graphqlread/newsevents/brief.go:69` 的 `generateBrief` 与 `JSON_SET metadata`）；`GAP-CRAWL-001`（S3 媒体下发）当前已有 `internal/objectstorage` 并在 `crawlreadtelemetry` 注入（`service_media.go:19`、`main.go:2273`）。**是否已修复未核实**，本矩阵不据此关闭任何 GAP。
 3. **部署侧真实取值未核实**：本矩阵只读仓库代码与默认值；compose 是否显式注入某个开关、宿主 `.env` 的实际值、是否已切流均未核实（`VERIFY-DEPLOY-001`）。
 4. **真实外部服务未验证**：SMTP、模型/LiteLLM、crawl4ai、Telegram/OREF、AkShare、Nominatim/OpenSky、S3/MinIO、Elasticsearch 均未实网调用（`VERIFY-EXT-001`）。所有「资源」列只表示启动硬条件。
 5. **无 PR 回退/已知问题描述的开关**：矩阵中该列写「未核实」的行（如 `API_GO_ACCOUNT_SECURITY_MODE`、`API_GO_AUTH_FACTORS_MODE`、`API_GO_PUBLIC_PORTAL_MODE` 等），只能确认「改回 legacy 后请求回 Nest」的通用语义，具体副作用未在 PR 正文中说明。
 6. **`OBS-DATA-001`**：`main.go` 吞掉 `wireDataRuntimeSettings` 错误（GAPS.md:142），当前是否可达未证明；本矩阵不把它写成「九路必然不可用」。
-7. **阶段划分是规划归并**：BRIEF 定义阶段 0–6，本矩阵按「接线的最重动作」把 130 个开关归入 1–6；同一阶段内没有严格先后顺序，阶段内顺序建议见 runbook（T5）。
+7. **阶段划分是规划归并**：BRIEF 定义阶段 0–6，本矩阵按「接线的最重动作」把 134 个开关归入 1–6；同一阶段内没有严格先后顺序，阶段内顺序建议见 runbook（T5）。
 8. **GraphQL root 的字段级权限/租户隔离未逐条复验**：属 T1.2 审计范围；本矩阵只到「root 是否登记/整包回退」粒度。
 9. **`API_GO_GRAPHQL_WORKSPACE_WRITE_MODE` 的历史记录**：`DEPENDENCIES.md:30` 写「main 没有该开关」，那是旧基线快照；当前 `config.go:4570` 与 `main.go:2364` 已存在，本矩阵以代码为准。
+10. **`/docs-yaml` 未实现**：Nest 的 `SwaggerModule.setup("docs", …)` 默认还提供 `/docs-yaml`（YAML 序列化）。本批只提供 `/docs/json`；`API_GO_DOCS_MODE=go` 且 fallback 为 `reject` 时 `/docs-yaml` 返回 404。该差异记录在 runbook 阶段 6 与 PR 描述。

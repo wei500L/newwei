@@ -2,7 +2,7 @@
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
-**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **24/25**、Query **—**、Mutation **—**（Go 注册/分母，**C 类 1 条**：`GET /api/system-settings/vector-service/diagnostics`（依赖 Nest 进程内 vector 客户端计数器））；25 条中 24 条注册（storage 3、归档准备 3、Nomination 3、运行凭据 2、实时信号 3、态势设置 7、vector 4，含按本表归属的 `realtime-signals/runtime`）；仅 vector diagnostics 仍为 Nest。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 15/25），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136；`refactor/go-ops-entrypoints` 追加）**：HTTP **25/25**、Query **—**、Mutation **—**（Go 注册/分母，**C 类 0 条**）；25 条全部注册（storage 3、归档准备 3、Nomination 3、运行凭据 2、实时信号 3、态势设置 7、vector 4，含按本表归属的 `realtime-signals/runtime`）。本批新增 `API_GO_VECTOR_DIAGNOSTICS_MODE`（默认 `legacy`）关闭 C-5：Go 侧以进程级共享 `vectorclient.Health` 输出与 Nest 相同的 17 字段诊断。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 15/25），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
 
 ## 范围与实施状态
 
@@ -58,7 +58,7 @@
 | `DELETE /api/system-settings/vector-service` | settings.manage；handler 平台管理员 | [vector-service-settings.controller.ts](../../../../apps/api/src/modules/system-settings/vector-service-settings.controller.ts) · `reset` | WithInfrastructureSettings |
 | `GET /api/system-settings/vector-service` | settings.manage | [vector-service-settings.controller.ts](../../../../apps/api/src/modules/system-settings/vector-service-settings.controller.ts) · `getSettings` | WithInfrastructureSettings |
 | `PUT /api/system-settings/vector-service` | settings.manage；handler 平台管理员 | [vector-service-settings.controller.ts](../../../../apps/api/src/modules/system-settings/vector-service-settings.controller.ts) · `updateSettings` | WithInfrastructureSettings |
-| `GET /api/system-settings/vector-service/diagnostics` | settings.manage | [vector-service-settings.controller.ts](../../../../apps/api/src/modules/system-settings/vector-service-settings.controller.ts) · `getDiagnostics` | Nest；尚未接管 |
+| `GET /api/system-settings/vector-service/diagnostics` | settings.manage | [vector-service-settings.controller.ts](../../../../apps/api/src/modules/system-settings/vector-service-settings.controller.ts) · `getDiagnostics` | WithVectorDiagnostics（`API_GO_VECTOR_DIAGNOSTICS_MODE`，默认 legacy；报告本进程 vector 客户端状态） |
 
 ## 合并、CI 与历史报告证据
 

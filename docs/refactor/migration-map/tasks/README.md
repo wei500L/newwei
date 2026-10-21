@@ -1,5 +1,7 @@
 # 任务认领与历史恢复索引
 
+2026-10-21 `refactor/go-ops-entrypoints`（本批新增，无独立 task ID）：关闭审计 C-1/C-5/C-7/C-9，新增 `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow）、`API_GO_VECTOR_DIAGNOSTICS_MODE`、`API_GO_DOCS_MODE`、`API_GO_LEGACY_FALLBACK_MODE`（默认 legacy/legacy/proxy），并新增 `api_go_legacy_rejected_requests_total`；范围与回退见 [runbook](../../cutover/runbook.md#阶段-6停-nest-收尾6a--6b--6c)。状态 pr_open，最终 head/普通 CI 在 PR 回填。
+
 2026-10-21 本批回填（以 `origin/main = dcbe563b917f`，即 #136 为准）：下方任务表的全部历史任务均已合入 main，状态回填为 `merged` 并给出 12 位 merge commit；整合收口关系为 #114 → `d42277219bc4`（#92–#113，#111 由 #112 取代并关闭）、#122 → `d6c6c7bb2135`（#115–#118）、#128 → `1ba22e3beb86`（#119–#127）、#132 → `170a95d86752`（#129–#131）、#136 → `dcbe563b917f`（#133–#135）；更早的 #67 → `7fc17faa3dc5`、#77 → `c39f282f1195`、#89 → `f1167769f8c1`、#90 → `c70b0373990a`。每个 SHA 均已用 `git merge-base --is-ancestor <sha> origin/main` 校验可达；PR #38–#55 不在本次合并抓取窗口内，merge SHA **未核实**，见文末说明。**NOTIFICATIONS-SOCKET-001** 亦已合入（#124 → `9eebc5386dec`，经 #128），其上方 2026-10-20 段落为发出时快照。当前无开放迁移 PR；本批没有新增任务 ID 或 task 文件。
 
 2026-10-20 NOTIFICATIONS-SOCKET-001：新增 [通知 Socket.IO 传输](NOTIFICATIONS-SOCKET-001.md)（`refactor/go-notifications-socket`，基线 `d4227721`）。范围为 `/notifications` namespace 的 Engine.IO v4 + Socket.IO v5 WebSocket 子集、独立路径 `/socket.io-notifications`、四类标识符-only relay、B1 本地推送与 B2 行复核；其他 namespace 与 `/socket.io` 保持 NestJS。状态 pr_open，最终 head/普通 CI 在 PR 回填。
