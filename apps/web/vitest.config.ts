@@ -184,6 +184,15 @@ export default defineConfig({
         "components/settings/realtime-signals/use-realtime-signals-settings.ts",
         "components/settings/realtime-signals/use-realtime-signals-diagnostics.ts",
         "lib/realtime-signals-settings-payload.ts",
+        // refactor/go-queue-ops：队列运维控制台的编排层、权限判定、纯函数与
+        // REST 客户端（展示叶子组件未纳入 include，覆盖它们的行为测试在
+        // queue-ops-content.test.tsx 里）。
+        "app/(app)/admin/ops/queue-ops/queue-ops-content.tsx",
+        "app/(app)/admin/ops/queue-ops/queue-ops-access.ts",
+        "app/(app)/admin/ops/queue-ops/queue-ops.helpers.ts",
+        "app/(app)/admin/ops/queue-ops/queue-ops-confirm.ts",
+        "app/(app)/admin/ops/queue-ops/use-queue-ops-data.ts",
+        "lib/queue-ops.ts",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {
