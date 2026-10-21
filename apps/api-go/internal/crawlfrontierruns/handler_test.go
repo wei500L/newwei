@@ -145,6 +145,12 @@ func (s *stubState) query(query string, args []driver.NamedValue) (driver.Rows, 
 		}
 		return &stubRows{columns: []string{"id"}}, nil
 	}
+	// The retry routes look the node up joined with its run. An empty result is
+	// the "node belongs to no organization" case, which the handler answers with
+	// 404 before it ever needs the run columns.
+	if strings.Contains(query, "FROM CrawlFrontierNode n") {
+		return &stubRows{columns: []string{"id", "orgId", "runId", "crawlTaskId"}}, nil
+	}
 	return &stubRows{}, nil
 }
 

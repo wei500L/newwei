@@ -87,6 +87,94 @@ func (l *Lock) WithLock(ctx context.Context, key string, ttl time.Duration, runn
 	return true, runner(ctx)
 }
 
+// WithRenewableLock runs runner while holding the lease and cancels the context
+// handed to runner as soon as the lease can no longer be extended.
+//
+// The difference from WithLock is what happens after a lost lease. WithLock
+// ignores the renewal result, because its callers are one-shot idempotent duties
+// that may finish while another process holds the lease. A long-lived exclusive
+// reader cannot do that: it would keep consuming and writing after a second
+// process owns the same duty. WithRenewableLock therefore watches every renewal
+// and cancels runner when the renewal either fails (Redis error) or returns 0
+// (the owner token no longer matches, so the TTL expired and another process
+// acquired the lease). runner is expected to return promptly after its context
+// is cancelled; the lease is then released through the same token-checked script
+// as WithLock, so a stale owner never deletes the new owner's lease.
+//
+// acquired is false when another process holds the lease; runner is then not
+// called and the returned error is nil.
+func (l *Lock) WithRenewableLock(ctx context.Context, key string, ttl time.Duration, runner func(context.Context) error) (acquired bool, err error) {
+	if l == nil || l.client == nil {
+		return false, errNoClient
+	}
+	if ttl <= 0 {
+		ttl = time.Minute
+	}
+	token, err := newToken()
+	if err != nil {
+		return false, err
+	}
+	lockKey := "lock:" + key
+	stored, err := l.client.SetNX(ctx, lockKey, token, ttl).Result()
+	if err != nil {
+		return false, err
+	}
+	if !stored {
+		return false, nil
+	}
+
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	stopRenew := startGuardedRenewal(l.client, lockKey, token, ttl, cancelRun)
+	defer func() {
+		stopRenew()
+		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer releaseCancel()
+		_ = releaseScript.Run(releaseCtx, l.client, []string{lockKey}, token).Err()
+	}()
+	return true, runner(runCtx)
+}
+
+// startGuardedRenewal keeps the lease alive every max(500ms, ttl/3) and calls
+// onLost once when the lease can no longer be extended. Unlike startRenewal it
+// owns no silent failure mode: the first failed or rejected renewal stops the
+// ticker, so the lease is never extended after it was lost.
+func startGuardedRenewal(client *redis.Client, key, token string, ttl time.Duration, onLost context.CancelFunc) func() {
+	interval := ttl / 3
+	if interval < 500*time.Millisecond {
+		interval = 500 * time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				extended, err := renewScript.Run(renewCtx, client, []string{key}, token,
+					strconv.FormatInt(ttl.Milliseconds(), 10)).Int()
+				cancel()
+				if err != nil || extended == 0 {
+					onLost()
+					return
+				}
+			}
+		}
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			close(stop)
+			<-done
+		})
+	}
+}
+
 // startRenewal keeps the lease alive every max(500ms, ttl/3).
 func startRenewal(client *redis.Client, key, token string, ttl time.Duration) func() {
 	interval := ttl / 3

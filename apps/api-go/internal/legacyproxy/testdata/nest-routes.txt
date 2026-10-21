@@ -372,3 +372,8 @@ GET /api/user-settings/ui/spacetime-timeline
 PUT /api/user-settings/ui/spacetime-timeline
 GET /api/user-settings/ui/war-map
 PUT /api/user-settings/ui/war-map
+GET /api/healthz/live
+GET /api/system-settings/vector-service/diagnostics
+POST /api/admin/crawl-frontier/runs
+POST /api/admin/crawl-frontier/nodes/retry
+POST /api/admin/crawl-frontier/nodes/:id/retry

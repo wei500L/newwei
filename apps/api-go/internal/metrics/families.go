@@ -62,6 +62,15 @@ var (
 		"Requests forwarded to the legacy NestJS API by route prefix.",
 		"route_prefix",
 	)
+	// legacyRejectedRequests counts requests the legacy fallback "reject" mode
+	// refused instead of proxying. It reuses the same bounded route_prefix family
+	// as the proxy counter so an operator can compare "still proxied" with
+	// "already rejected" while NestJS is being stopped.
+	legacyRejectedRequests = defaultRegistry.Counter(
+		"api_go_legacy_rejected_requests_total",
+		"Requests rejected by the legacy fallback reject mode, by route prefix.",
+		"route_prefix",
+	)
 )
 
 // Default returns the process-wide registry.
@@ -127,6 +136,13 @@ func SetPipelineMetric(orgID, metric string, value float64) {
 // routePrefix is the bounded route family computed by legacyproxy.
 func RecordLegacyProxyRequest(routePrefix string) {
 	legacyProxyRequests.Inc(routePrefix)
+}
+
+// RecordLegacyRejectedRequest counts one request the legacy fallback reject mode
+// answered itself. routePrefix is the same bounded route family computed by
+// legacyproxy, so the two counters stay directly comparable.
+func RecordLegacyRejectedRequest(routePrefix string) {
+	legacyRejectedRequests.Inc(routePrefix)
 }
 
 // Render encodes the default registry including the Go runtime/process series.

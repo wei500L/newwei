@@ -1,0 +1,104 @@
+BullMQ Lua scripts (expanded)
+================================
+
+Files in this directory:
+
+  cleanJobsInSet.lua   cleanJobsInSet:3
+  getCounts.lua        getCounts:1
+  getRanges.lua        getRanges:1
+  pause.lua            pause:7
+  promote.lua          promote:9
+  removeJob.lua        removeJob:2
+  reprocessJob.lua     reprocessJob:8
+
+Origin
+------
+
+Extracted from the locked dependency in this repository:
+
+  node_modules/.pnpm/bullmq@5.63.2/node_modules/bullmq/dist/cjs/scripts/*.js
+
+Each file there embeds the fully expanded script (the `--- @include` directives
+of `dist/cjs/commands/*.lua` resolved and de-duplicated at build time) as the
+`content` template literal. The files here are that embedded content copied
+verbatim, so the include expansion and the function ordering are exactly what
+BullMQ 5.63.2 executes against Redis.
+
+The expansion was checked against `dist/cjs/commands/` for every file: the
+`content` literal matches a recursive `--- @include` expansion of
+`commands/<name>.lua`, except that the build inlines each include once. A naive
+recursive expansion therefore duplicates include fragments and must not be used.
+
+The four scripts that bullmqcleanup already vendors (cleanJobsInSet, getCounts,
+getRanges, removeJob) are byte-identical to
+`apps/api-go/internal/bullmqcleanup/scripts/*.lua`; the copies here exist so this
+package is self-contained and can be reviewed against the call sites in one
+directory.
+
+Why the scripts are vendored
+----------------------------
+
+The queue operations console calls the same Redis entry points Bull Board calls
+through BullMQ: Queue.getJobCounts, Queue.getJobs, Queue.clean, Queue.pause,
+Queue.resume, Job.retry, Job.promote and Job.remove. Each of those resolves to
+one of the scripts above. Re-implementing the lock, marker, deduplication and
+event semantics in Go would drift from BullMQ; running the same Lua keeps the
+observable queue state identical to the NestJS process that still runs the
+workers.
+
+The Go call sites pass the same KEYS/ARGV tuples the matching BullMQ JavaScript
+methods build in `classes/scripts.js` of the same version:
+
+  getCounts        keys [prefix]                                    args [state...]
+  getRanges        keys [prefix]                     args [start, end, asc, state...]
+  removeJob        keys [jobKey, repeatKey]           args [jobId, removeChildren, prefix]
+  cleanJobsInSet   keys [setKey, events, repeat]      args [prefix, timestamp, limit, set]
+  reprocessJob     keys [jobKey, events, stateKey,
+                          wait, meta, paused, active,
+                          marker]                       args [jobId, pushCmd, propVal, state]
+  promote          keys [delayed, wait, paused, meta,
+                          prioritized, active, pc,
+                          events, marker]               args [prefix, jobId]
+  pause            keys [srcList, dstList, meta,
+                          prioritized, events,
+                          delayed, marker]              args ['paused' | 'resumed']
+
+`pause:7` is shared by Queue.pause and Queue.resume: pause passes
+KEYS[1]=wait, KEYS[2]=paused and ARGV[1]='paused'; resume swaps the two lists and
+passes 'resumed'.
+
+Licence
+-------
+
+BullMQ is MIT licensed:
+
+  MIT License
+
+  Copyright (c) 2018 BullForce Labs AB.
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+Upgrade note
+------------
+
+When bullmq is upgraded, re-extract every file here from the new
+`dist/cjs/scripts/*.js` and update the version references above. The Go call
+sites must then be re-checked against `classes/scripts.js` and `classes/job.js`.
+The BullMQ error codes the console maps to HTTP statuses live in
+`dist/cjs/enums/error-code.js`; re-read them in the same pass.

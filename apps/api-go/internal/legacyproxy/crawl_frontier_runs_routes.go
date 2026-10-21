@@ -32,11 +32,14 @@ const CrawlFrontierRunsKey = "/api/admin/crawl-frontier#runs"
 // matches the runs/:id rule (id = "cancel") so it returns the same 404 as the
 // NestJS @Get("runs/:id") route.
 //
-// The write queue routes stay on NestJS and are not registered here:
-// POST /runs (createRun enqueues and calls crawl4ai), POST /nodes/retry,
-// POST /nodes/:id/retry, POST /workflow-runs/:runId/replay and
-// POST /workflows/:id/trial-run. The profiles, workflows, workflow-versions
-// and news-sources subtrees belong to their own switches and are not touched.
+// The three write routes (POST /runs, POST /nodes/retry and
+// POST /nodes/:id/retry) are owned by WithCrawlFrontierWrites and
+// API_GO_CRAWL_FRONTIER_WRITES_MODE, never by this switch; creating or retrying
+// a run returns the same run detail as GET /runs/:id, so config.go requires
+// both switches to be go together. POST /workflow-runs/:runId/replay and
+// POST /workflows/:id/trial-run still stay on NestJS and are not registered
+// here. The profiles, workflows, workflow-versions and news-sources subtrees
+// belong to their own switches and are not touched.
 func WithCrawlFrontierRuns(rules []Rule, mode string) []Rule {
 	if mode != string(ModeGo) {
 		return rules

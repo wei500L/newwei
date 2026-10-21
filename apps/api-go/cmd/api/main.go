@@ -32,7 +32,8 @@
 //	         API_GO_DASHBOARD_STREAM_MODE=go 时接管精确 GET /api/dashboard/stream
 //	         （SSE；复用 War Map、K 线和热力图服务，不请求 NestJS）。
 //	         API_GO_HEALTHZ_MODE=go 时接管精确 GET /api/healthz（认证探针）。
-//	         公开 GET /api/healthz/live 保持 shadow，不随该开关变化。
+//	         公开 GET /api/healthz/live 由独立的 API_GO_HEALTHZ_LIVE_MODE
+//	         控制（默认 shadow，可 legacy/go，C-1）。
 //	         Go-批7：API_GO_CONTENT_SUBSCRIPTIONS_MODE、
 //	         API_GO_USER_NEWS_BEHAVIOR_MODE、API_GO_USER_DIGEST_MODE
 //	         各自默认 legacy，只切换对应的精确 HTTP。内部订阅、目录和画像
@@ -218,12 +219,14 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/notificationssocket"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 	"github.com/wei500L/newwei/apps/api-go/internal/processeditemoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
+	"github.com/wei500L/newwei/apps/api-go/internal/queueorgstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/realtimesocket"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
 	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
@@ -231,6 +234,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettingsread"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettingswrite"
+	"github.com/wei500L/newwei/apps/api-go/internal/vectorclient"
 )
 
 func main() {
@@ -657,6 +661,10 @@ func run() error {
 	if cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo {
 		crawlFrontierRunsMode = string(legacyproxy.ModeGo)
 	}
+	crawlFrontierWritesMode := ""
+	if cfg.CrawlFrontierWritesMode == config.CrawlFrontierWritesModeGo {
+		crawlFrontierWritesMode = string(legacyproxy.ModeGo)
+	}
 	rbacMode := ""
 	if cfg.RbacMode == config.RbacModeGo {
 		rbacMode = string(legacyproxy.ModeGo)
@@ -781,6 +789,13 @@ func run() error {
 	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
 		infrastructureSettingsMode = string(legacyproxy.ModeGo)
 	}
+	// C-5: the vector-service diagnostics route is an independent read-only
+	// takeover. Its Go handler needs MySQL, Redis and JWT; the switch itself
+	// only decides who answers the exact GET.
+	vectorDiagnosticsMode := ""
+	if cfg.VectorDiagnosticsMode == config.VectorDiagnosticsModeGo {
+		vectorDiagnosticsMode = string(legacyproxy.ModeGo)
+	}
 	// The storage connection test switch is independent of the infrastructure
 	// settings switch: it only ever takes over the exact POST test route.
 	storageDiagnosticsMode := ""
@@ -844,6 +859,10 @@ func run() error {
 	if cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo {
 		gdeltSnapshotRefreshMode = string(legacyproxy.ModeGo)
 	}
+	// The process-wide vector-service circuit state shared by the search client,
+	// the two upsert clients and the C-5 diagnostics route. One instance per
+	// process mirrors the NestJS VectorClientService counters.
+	vectorServiceHealth := &vectorclient.Health{}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -855,6 +874,9 @@ func run() error {
 	rules = legacyproxy.WithDashboardSpacetimePropagation(rules, spacetimePropagationMode)
 	rules = legacyproxy.WithDashboardStream(rules, streamMode)
 	rules = legacyproxy.WithAuthenticatedHealth(rules, healthzMode)
+	// C-1: the public liveness probe has its own switch; the default stays
+	// shadow, which is the current production behaviour.
+	rules = legacyproxy.WithHealthzLive(rules, string(cfg.HealthzLiveMode))
 	rules = legacyproxy.WithContentSubscriptions(rules, contentSubscriptionsMode)
 	rules = legacyproxy.WithUserNewsBehavior(rules, userNewsBehaviorMode)
 	rules = legacyproxy.WithUserDigest(rules, userDigestMode)
@@ -999,6 +1021,9 @@ func run() error {
 	// llm-gateways :id profile rule because they are longer prefixes.
 	rules = legacyproxy.WithProxyLoadBalancing(rules, proxyLoadBalancingMode)
 	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
+	// C-5: the vector-service diagnostics route. It is independent of the seven
+	// infrastructure settings routes and only owns its exact GET.
+	rules = legacyproxy.WithVectorDiagnostics(rules, vectorDiagnosticsMode)
 	// The storage connection test is registered by its own switch; it never
 	// widens the infrastructure settings route ownership and vice versa.
 	rules = legacyproxy.WithStorageDiagnostics(rules, storageDiagnosticsMode)
@@ -1031,6 +1056,22 @@ func run() error {
 	// method/path rules, so they cannot be shadowed by the account-security,
 	// login or onboarding rules.
 	rules = legacyproxy.WithAccountData(rules, avatarUploadMode, userDataExportMode)
+	// C-7: go replaces the /docs legacy prefix rule with a Go rule; the default
+	// (legacy) leaves the rule table untouched.
+	rules = legacyproxy.WithDocs(rules, string(cfg.DocsMode))
+	// The three crawl frontier write routes are method-scoped exact/segment rules
+	// that never overlap the GET rules above; appended last so parallel cutover
+	// batches stay conflict-free.
+	rules = legacyproxy.WithCrawlFrontierWrites(rules, crawlFrontierWritesMode)
+	// The queue operations console is a Go-only surface: it owns exact paths
+	// under /api/admin/queue-ops that NestJS never had, so it is registered last
+	// and never widens the migrated route coverage. /admin/queues (Bull Board)
+	// keeps proxying to NestJS and belongs to the go-ops-entrypoints batch.
+	queueOpsMode := ""
+	if cfg.QueueOpsMode == config.QueueOpsModeGo {
+		queueOpsMode = string(legacyproxy.ModeGo)
+	}
+	rules = legacyproxy.WithQueueOps(rules, queueOpsMode)
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -1087,6 +1128,7 @@ func run() error {
 				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
 				cfg.CrawlProfilesMode == config.CrawlProfilesModeGo ||
 				cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo ||
+				cfg.CrawlFrontierWritesMode == config.CrawlFrontierWritesModeGo ||
 				cfg.RbacMode == config.RbacModeGo ||
 				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
 				cfg.AdminLogsMode == config.AdminLogsModeGo ||
@@ -1108,6 +1150,9 @@ func run() error {
 				cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo ||
 				cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo ||
 				cfg.StorageDiagnosticsMode == config.StorageDiagnosticsModeGo ||
+				// The vector diagnostics route reads the shared settings row from
+				// MySQL and verifies JWTs against the Redis blacklist.
+				cfg.VectorDiagnosticsMode == config.VectorDiagnosticsModeGo ||
 				cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo ||
 				cfg.AuthFactorsMode == config.AuthFactorsModeGo ||
 				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
@@ -1119,6 +1164,7 @@ func run() error {
 				cfg.CrawlMetadataMode == config.CrawlMetadataModeGo ||
 				cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo ||
 				cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo ||
+				cfg.QueueOpsMode == config.QueueOpsModeGo ||
 				cfg.SearchReindexMode == config.SearchReindexModeGo ||
 				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
 				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
@@ -1341,6 +1387,7 @@ func run() error {
 		adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo ||
 		newsnowClusteringOpsGo || newsnowHottestGo || runtimeSettingsGo || infrastructureSettingsGo ||
 		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
+		cfg.VectorDiagnosticsMode == config.VectorDiagnosticsModeGo ||
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
 		situationSignalsGo || situationInsightsGo || situationSettingsGo || situationTelegramAuthGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
@@ -1362,7 +1409,10 @@ func run() error {
 		newsSourcePreviewGo || crawlWorkflowTrialGo || analysisRunsGo ||
 		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
 		cfg.MetricsMode == config.MetricsModeGo ||
-		graphqlSubscriptionsGo || notificationsSocketGo || realtimeSocketGo
+		graphqlSubscriptionsGo || notificationsSocketGo || realtimeSocketGo ||
+		// This batch: the queue operations console verifies the caller, then
+		// requires both queue.manage and a platform administrator.
+		cfg.QueueOpsMode == config.QueueOpsModeGo
 	var redisClient *redis.Client
 	var redisOptions *redis.Options
 	var authenticator *authhttp.Authenticator
@@ -1413,7 +1463,10 @@ func run() error {
 	// The crawl maintenance crons and the audit retention purge take their
 	// leases in the shared Redis even when no HTTP takeover is enabled.
 	if !needsRedis && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
-		cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo) {
+		cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo ||
+		// The itemPipeline org-stats tracker reads the queue event stream behind
+		// a Redis lease and needs no JWT or MySQL.
+		cfg.QueueOrgStatsMode == config.QueueOrgStatsModeGo) {
 		needsRedis = true
 	}
 	if needsRedis {
@@ -1770,6 +1823,9 @@ func run() error {
 	if err := wireCrawlFrontierRuns(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
+	if err := wireCrawlFrontierWrites(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
 	if err := wireRbac(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
@@ -1785,6 +1841,20 @@ func run() error {
 	}
 
 	if err := wireExceptionIngest(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
+		return err
+	}
+	// C-1/C-7/C-9 wiring. The recorder is built once and shared by the reject
+	// fallback 404 and the Go /docs 404 so both write the same exception event;
+	// it is only built when one of those Go-owned 404 paths is enabled, so the
+	// default (proxy + legacy docs) opens no Mongo connection.
+	var nestNotFoundRecorder nestnotfound.Recorder
+	if cfg.LegacyFallbackMode == config.LegacyFallbackModeReject || cfg.DocsMode == config.DocsModeGo {
+		nestNotFoundRecorder = newNestNotFoundRecorder(cfg, &dashboardMongo, redisClient)
+	}
+	if err := wireLegacyFallback(gateway, cfg, cors.New(cfg.CorsOrigin), nestNotFoundRecorder); err != nil {
+		return err
+	}
+	if err := wireAPIDocs(gateway, cfg, cors.New(cfg.CorsOrigin), nestNotFoundRecorder); err != nil {
 		return err
 	}
 
@@ -1873,6 +1943,9 @@ func run() error {
 		return err
 	}
 	if err := wireInfrastructureSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	if err := wireVectorDiagnostics(gateway, cfg, sharedDB, redisClient, authenticator, vectorServiceHealth); err != nil {
 		return err
 	}
 	if err := wireStorageDiagnostics(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
@@ -2792,6 +2865,12 @@ func run() error {
 	// and needs no JWT. The deferred Close stops claiming jobs and drains the
 	// in-flight ones before the shared Redis/Mongo connections close below.
 	var alertWorker *alertworker.Service
+	// The queue org-stats tracker owns the per-organization itemPipeline
+	// counters when API_GO_QUEUE_ORG_STATS_MODE=go. It reads the event stream
+	// behind a Redis lease, so at most one api-go instance applies a
+	// transition. The deferred Close stops the read loop and releases the lease
+	// while the shared Redis client is still open.
+	var queueOrgStats *queueorgstats.Tracker
 	// The situation-monitor signals worker owns the situationMonitorSignals
 	// queue, its repeat schedules, the Telegram/OREF polls and the realtime
 	// event bridge when API_GO_SITUATION_SIGNALS_WORKER_MODE=go. It registers no
@@ -2893,6 +2972,11 @@ func run() error {
 		if alertWorker != nil {
 			if closeErr := alertWorker.Close(closeCtx); closeErr != nil {
 				log.Printf("api-go: alert worker close: %v", closeErr)
+			}
+		}
+		if queueOrgStats != nil {
+			if closeErr := queueOrgStats.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: queue org stats close: %v", closeErr)
 			}
 		}
 		// The signals worker stops claiming first, then disconnects the leased
@@ -3084,7 +3168,7 @@ func run() error {
 				}
 				dashboardMongo = opened
 			}
-			processedItemOutboxScheduler, err = wireProcessedItemOutbox(cfg, sharedDB, redisClient, dashboardMongo.Database())
+			processedItemOutboxScheduler, err = wireProcessedItemOutbox(cfg, sharedDB, redisClient, dashboardMongo.Database(), vectorServiceHealth)
 			if err != nil {
 				return err
 			}
@@ -3129,7 +3213,7 @@ func run() error {
 			return err
 		}
 	}
-	itemPipelineWorker, err = wireItemPipelineWorker(cfg, sharedDB, redisClient, &dashboardMongo)
+	itemPipelineWorker, err = wireItemPipelineWorker(cfg, sharedDB, redisClient, &dashboardMongo, vectorServiceHealth)
 	if err != nil {
 		return err
 	}
@@ -3191,6 +3275,26 @@ func run() error {
 		if startErr := alertWorker.Start(context.Background()); startErr != nil {
 			return startErr
 		}
+	}
+
+	// The queue operations console registers twelve exact routes under
+	// /api/admin/queue-ops; legacy (the default) registers nothing and the
+	// requests keep reaching NestJS, which answers 404.
+	if err := wireQueueOps(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+
+	// The tracker starts before the gateway serves so the first transitions of
+	// the switchover window are already applied by api-go.
+	queueOrgStats, err = wireQueueOrgStats(cfg, redisClient, redisOptions)
+	if err != nil {
+		return err
+	}
+	if queueOrgStats != nil {
+		if startErr := queueOrgStats.Start(context.Background()); startErr != nil {
+			return startErr
+		}
+		log.Printf("api-go: itemPipeline org queue stats owned by Go (mode=%s)", cfg.QueueOrgStatsMode)
 	}
 
 	// The signals worker registers its repeat schedules before claiming jobs, so

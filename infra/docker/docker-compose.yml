@@ -523,6 +523,12 @@ services:
       # 条目流水线 worker（itemPipeline）执行权。Nest 与 Go 同一变量；go 时
       # Nest 不建 Worker，由 api-go 消费。切换先 api 后 api-go，回退相反。
       API_GO_ITEM_PIPELINE_WORKER_MODE: ${API_GO_ITEM_PIPELINE_WORKER_MODE:-legacy}
+      # 按组织队列统计（Nest 的 queue-org-stats.tracker.ts 直接读该变量）的
+      # 读取权。默认 legacy 保留 NestJS 的 6 个 QueueEvents 监听；go 时 Nest
+      # 不再注册这些监听，由 api-go 的 queueorgstats 读同一条
+      # bull:itemPipeline:events 流并用 Redis 租约保证单实例。切换先 api 侧
+      # 设 go 重启，再 api-go 侧设 go 重启（runbook 4E-2），回退顺序相反。
+      API_GO_QUEUE_ORG_STATS_MODE: ${API_GO_QUEUE_ORG_STATS_MODE:-legacy}
       # 分类质量报告创建、队列消费权、流水线运行记录与两条写接口。各开关互相
       # 独立，默认 legacy。worker/清理/复核样本/启动对齐开关 Nest 与 Go 都读：
       # go 时 Nest 不再启动对应的定时器、监听或启动对齐。指标与写接口只需切
@@ -929,6 +935,17 @@ services:
       # go 要求 DATABASE_URL、REDIS_HOST、MONGO_URI 与 SMTP_*（站内通知、邮件
       # 与 Webhook 都由 Go 产生）；模型服务可选，缺失时经济异常规则回退本地检测。
       API_GO_ALERT_WORKER_MODE: ${API_GO_ALERT_WORKER_MODE:-legacy}
+      # 队列运维控制台与 DLQ 处置（Go-only 界面，路径 /api/admin/queue-ops/*）。
+      # 默认 legacy 不注册任何路由（保持 404）。go 时由 Go 提供队列/任务浏览、
+      # 暂停/恢复、单条与批量重放、DLQ 重放与删除，并把鉴权收紧为平台管理员
+      # + queue.manage；Bull Board 与 /admin/queues 的代理规则不变。
+      # 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST。
+      API_GO_QUEUE_OPS_MODE: ${API_GO_QUEUE_OPS_MODE:-legacy}
+      # 按组织队列统计读取权。Nest 与 Go 同读该变量：go 时 Nest 不再注册
+      # 6 个 QueueEvents 监听，由 api-go 的 queueorgstats 用 Redis 租约单实例
+      # 读同一条 bull:itemPipeline:events 流。切换先 api 侧 go 再 api-go 侧 go，
+      # 回退顺序相反；不消费队列任务本身。
+      API_GO_QUEUE_ORG_STATS_MODE: ${API_GO_QUEUE_ORG_STATS_MODE:-legacy}
       # 态势信号 worker（situationMonitorSignals：telegram-poll + oref-poll）。
       # 默认 legacy 仍由 NestJS 消费；go 时 api-go 消费队列（并发 1）、注册
       # 重复任务并发布 situation-monitor:signals:events:v1 事件桥。go 要求
@@ -1071,6 +1088,11 @@ services:
       # POST /runs、retry、replay、trial-run 仍回 NestJS（入队或调用 crawl4ai）。
       # 回滚只把该变量改回 legacy。不入队，不启动采集 worker。
       API_GO_CRAWL_FRONTIER_RUNS_MODE: ${API_GO_CRAWL_FRONTIER_RUNS_MODE:-legacy}
+      # 采集 Frontier 管理写的 3 条精确规则（创建运行、批量重试、单节点重试）。
+      # 默认 legacy 继续回 NestJS；go 时由 Go 接管，沿用 crawl.write 权限与
+      # POST 201 语义，要求 JWT_SECRET、DATABASE_URL、REDIS_HOST，并强制
+      # API_GO_CRAWL_FRONTIER_RUNS_MODE=go（runDetail 由读 handler 提供）。
+      API_GO_CRAWL_FRONTIER_WRITES_MODE: ${API_GO_CRAWL_FRONTIER_WRITES_MODE:-legacy}
       # LLM 请求日志的列表、CSV 导出与用量汇总（三条精确 GET）。
       # pilot 与样例保持 legacy。改成 go 才由 Go 验签并只读 Mongo
       # llmrequestlogs；导出仍保留 90 天窗口、50000 行上限、公式注入
@@ -1143,6 +1165,23 @@ services:
       # 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST。nodejs_* 进程指标改为
       # go_*/process_*，监控面板需同步调整。回滚只把该变量改回 legacy。
       API_GO_METRICS_MODE: ${API_GO_METRICS_MODE:-legacy}
+      # 停 Nest 收尾的四个运维入口（C-1/C-5/C-7/C-9），都只被 api-go 读取，
+      # 不需要两侧同步。空串一律按各开关默认值处理（见 config.go 的 switch）。
+      # 公开存活探针：默认 shadow（唯一非 legacy 的默认值）——shadow 保持现有
+      # 规则表逐字节不变（Nest 应答 + Go 差分），legacy 关闭该规则，go 由 Go
+      # 只接管精确 GET。回退写回 shadow，不要写 legacy。
+      API_GO_HEALTHZ_LIVE_MODE: ${API_GO_HEALTHZ_LIVE_MODE:-shadow}
+      # Swagger 文档：默认 legacy。go 时从内嵌的 openapi.snapshot.json 与
+      # swagger-ui-dist 资源提供 /docs、/docs/json 与静态资源；是否实际挂载
+      # 仍由 SWAGGER_ENABLED 决定（生产默认 false 时一律 404）。
+      API_GO_DOCS_MODE: ${API_GO_DOCS_MODE:-legacy}
+      # 向量服务诊断（精确 GET）：默认 legacy 回 NestJS；go 时报告本 api-go
+      # 进程内共享 vectorclient.Health 的 17 个字段，要求 JWT、MySQL、Redis。
+      API_GO_VECTOR_DIAGNOSTICS_MODE: ${API_GO_VECTOR_DIAGNOSTICS_MODE:-legacy}
+      # legacy 回落策略：默认 proxy（当前行为）。值域只有 proxy|reject；
+      # reject 时启动校验要求其余 *Mode 全为 go，未命中的请求由 Go 返回 Nest
+      # 等价 404 并计入 api_go_legacy_rejected_requests_total。
+      API_GO_LEGACY_FALLBACK_MODE: ${API_GO_LEGACY_FALLBACK_MODE:-proxy}
       # 启动对齐（TTL 索引 + Elasticsearch ensureIndex）。样例保持 legacy=NestJS
       # onModuleInit。go 时 api-go 启动后异步执行，失败只记录 warn，并用
       # lock:startup:reconcile 保证多副本只执行一次；要求 REDIS_HOST。回退时先把
