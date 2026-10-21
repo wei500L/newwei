@@ -151,11 +151,11 @@ func wireRealtimeSocket(
 // quality alert evaluation. The summary service is the same one the quality
 // worker uses, so the notification rows it writes stay identical.
 //
-// In notification-socket go mode the service also publishes the identifiers-only
-// notification:events:v1 relay after a row is committed; that reproduces the
-// NestJS NotificationsService.notify go-mode branch and lets the alert reach the
-// browser through the Go notifications transport. In legacy mode no relay is
-// installed, exactly like the NestJS dispatcher branch.
+// The service always publishes the identifiers-only notification:events:v1
+// relay after a row is committed, independent of
+// API_GO_NOTIFICATIONS_SOCKET_MODE: the legacy NestJS generic notification
+// subscriber pushes it in legacy socket mode and the api-go notifications
+// transport pushes it in go socket mode, so each connection receives it once.
 func wireClassificationAlert(
 	cfg config.Config,
 	db *sql.DB,
@@ -173,9 +173,7 @@ func wireClassificationAlert(
 		return nil, errClassificationAlertResources
 	}
 	summary := classificationrssops.NewService(db, mongoDatabase, redisClient)
-	if cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
-		summary.SetNotificationRelayPublisher(classificationrssops.NewRedisNotificationRelayPublisher(redisClient))
-	}
+	summary.SetNotificationRelayPublisher(classificationrssops.NewRedisNotificationRelayPublisher(redisClient))
 	return classificationalert.NewScheduler(classificationalert.Options{
 		DB:      db,
 		Redis:   redisClient,
