@@ -28,6 +28,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/alertworker/providers"
 	"github.com/wei500L/newwei/apps/api-go/internal/alertworker/queue"
 	"github.com/wei500L/newwei/apps/api-go/internal/authlogin"
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 )
 
 // Mailer sends one alert email. authlogin.MailSender satisfies it, so the alert
@@ -48,6 +49,11 @@ type Config struct {
 	NotifyPerChannelPSec float64
 	NotifyLimiterTTLMs   int64
 	BullMQNamespace      string
+	// RuleTaskConcurrency is the number of active-rule schedules the startup
+	// reconciliation creates in parallel. It is ALERT_RULE_TASK_CONCURRENCY
+	// (apps/api/src/modules/alerts/alerts.service.ts:117), a NestJS constant and
+	// not an environment setting, so the default is the same 16.
+	RuleTaskConcurrency int
 }
 
 func (c Config) normalized() Config {
@@ -65,6 +71,9 @@ func (c Config) normalized() Config {
 	}
 	if c.BullMQNamespace == "" {
 		c.BullMQNamespace = "modular"
+	}
+	if c.RuleTaskConcurrency < 1 {
+		c.RuleTaskConcurrency = defaultRuleTaskConcurrency
 	}
 	return c
 }
@@ -101,6 +110,10 @@ type Service struct {
 
 	worker   *queue.Worker
 	blocking *redis.Client
+
+	// lease is the Redis lease of the startup rule-schedule reconciliation;
+	// cronlock.Lock implements ruleScheduleLease.
+	lease ruleScheduleLease
 }
 
 // Errors returned by the worker surface.
@@ -165,15 +178,25 @@ func New(opts Options) (*Service, error) {
 		cfg:     cfg,
 		now:     now,
 		logger:  logger,
+		lease:   cronlock.New(opts.Redis),
 	}, nil
 }
 
-// Start adds (or refreshes) the scan schedule and starts the queue consumer.
-// The blocking Redis connection is a dedicated client built from the shared
-// client's options, because a connection blocked on BZPOPMIN cannot run
-// commands.
+// Start adds (or refreshes) the scan schedule, reconciles every active rule's
+// schedule and starts the queue consumer. The blocking Redis connection is a
+// dedicated client built from the shared client's options, because a connection
+// blocked on BZPOPMIN cannot run commands.
 func (s *Service) Start(ctx context.Context) error {
 	if err := s.producer.EnsureScanSchedule(ctx, s.cfg.ScanIntervalMs); err != nil {
+		return err
+	}
+	// The rule schedules must be in place before the worker claims jobs.
+	// AlertsProcessor.onModuleInit awaits scheduleScanJob() and ensureAllSchedules()
+	// in the same order before creating its Worker
+	// (apps/api/src/modules/alerts/alerts.processor.ts:26-32), and a rejected
+	// onModuleInit aborts the NestJS bootstrap: this port keeps that contract
+	// instead of starting a worker whose schedules may be stale.
+	if err := s.ReconcileRuleSchedules(ctx); err != nil {
 		return err
 	}
 	blocking := redis.NewClient(s.redis.Options())
