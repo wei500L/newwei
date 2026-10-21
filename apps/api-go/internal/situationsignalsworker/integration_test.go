@@ -223,17 +223,32 @@ type sitWorkerITLeaseOwner struct {
 }
 
 func (o *sitWorkerITLeaseOwner) WithLease(ctx context.Context, _ telegramclient.Options, fingerprint string, fn func(context.Context, telegramclient.PollClient) error) (bool, error) {
-	owned, err := o.redis.SetNX(ctx, telegramclient.DefaultLeaseKey, o.id, telegramclient.DefaultLeaseTTL).Result()
+	acquired, err := o.redis.SetNX(ctx, telegramclient.DefaultLeaseKey, o.id, telegramclient.DefaultLeaseTTL).Result()
 	if err != nil {
 		return false, err
 	}
+	if !acquired {
+		// Re-entrant like telegramclient.Manager: while this instance owns the lease
+		// key it keeps using the connection instead of treating its own key as a
+		// foreign lease. A nested cycle (the handover request path) therefore runs
+		// here, and only the TTL is renewed.
+		current, getErr := o.redis.Get(ctx, telegramclient.DefaultLeaseKey).Result()
+		if getErr != nil && !errors.Is(getErr, redis.Nil) {
+			return false, getErr
+		}
+		if current != o.id {
+			o.mu.Lock()
+			o.fingerprint = fingerprint
+			o.skipped++
+			o.mu.Unlock()
+			return false, nil
+		}
+		if expireErr := o.redis.Expire(ctx, telegramclient.DefaultLeaseKey, telegramclient.DefaultLeaseTTL).Err(); expireErr != nil {
+			return false, expireErr
+		}
+	}
 	o.mu.Lock()
 	o.fingerprint = fingerprint
-	if !owned {
-		o.skipped++
-		o.mu.Unlock()
-		return false, nil
-	}
 	o.connects++
 	o.mu.Unlock()
 	return true, fn(ctx, o.client)

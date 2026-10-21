@@ -36,6 +36,24 @@ func sitWorkerITWaitSubscriber(t *testing.T, client *redis.Client, channel strin
 	}
 }
 
+// sitWorkerITWaitDoneKeys waits until at least want completion keys exist. The
+// handover is asynchronous (PUBLISH + LPUSH), so the caller must not read the state
+// document before the owner recorded the completion.
+func sitWorkerITWaitDoneKeys(t *testing.T, client *redis.Client, want int) []string {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		keys := sitWorkerITDoneKeys(t, client)
+		if len(keys) >= want {
+			return keys
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("completion keys = %v, want %d within 10s", keys, want)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // sitWorkerITDoneKeys returns the completion keys currently stored.
 func sitWorkerITDoneKeys(t *testing.T, client *redis.Client) []string {
 	t.Helper()
@@ -112,11 +130,13 @@ func TestTelegramPollHandoverIntegration(t *testing.T) {
 	if resolve, fetch, _, _ := callerPoll.stats(); resolve != 0 || fetch != 0 {
 		t.Fatalf("caller polled while it did not own the lease: %d/%d", resolve, fetch)
 	}
+	// The owner serves the request asynchronously, so wait for the completion
+	// record before reading the state document it wrote.
+	doneKeys := sitWorkerITWaitDoneKeys(t, client, 1)
 	sitWorkerITAssertTelegramState(t, client, handle, 22, []string{handle + ":22", handle + ":21"})
 	if connects, _, _ := ownerLease.counts(); connects != 2 {
 		t.Fatalf("owner connects = %d, want the handed-over cycle to run on the owner", connects)
 	}
-	doneKeys := sitWorkerITDoneKeys(t, client)
 	if len(doneKeys) != 1 {
 		t.Fatalf("completion keys = %v, want one record for the queued request", doneKeys)
 	}

@@ -65,11 +65,11 @@ const (
 	// telegramPollWait hands the cycle over and waits for the owner to finish it;
 	// this is the refresh path, whose caller reports the outcome.
 	telegramPollWait
-	// telegramPollRequest is the path that receives a handover request. It never
+	// telegramPollServe is the path that receives a handover request. It never
 	// forwards the request again: every instance subscribes to the channel, so a
 	// forwarded request would fan out without end. A process that does not own the
 	// lease simply leaves the request to the owner.
-	telegramPollRequest
+	telegramPollServe
 )
 
 // telegramCycleOutcome reports how one Telegram cycle ended.
@@ -261,7 +261,7 @@ func (s *Service) handleTelegramPollRequest(ctx context.Context, payload string)
 	outcome := telegramCycleSkipped
 	var pollErr error
 	if !s.closing.Load() {
-		outcome, pollErr = s.pollTelegram(ctx, telegramPollRequest)
+		outcome, pollErr = s.pollTelegram(ctx, telegramPollServe)
 	}
 	lastError := s.telegramState.LastError
 	s.mu.Unlock()

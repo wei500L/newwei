@@ -285,7 +285,7 @@ func (s *Service) pollTelegram(ctx context.Context, mode telegramPollMode) (tele
 		return telegramCycleRefused, nil
 	}
 	if !owned {
-		if mode == telegramPollRequest {
+		if mode == telegramPollServe {
 			// A request received on the handover channel is never forwarded again:
 			// every instance subscribes to that channel, so re-publishing would fan
 			// out without end. Only the lease owner (or a process that just acquired

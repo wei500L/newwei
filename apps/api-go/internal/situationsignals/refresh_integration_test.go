@@ -20,7 +20,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -74,33 +76,67 @@ type refreshITHarness struct {
 	core  *Service
 }
 
-func newRefreshITHarness(t *testing.T) *refreshITHarness {
+// refreshITMySQL creates a throwaway MySQL database for one test. The CI job runs
+// other integration steps against the shared `app` schema, so a dedicated database
+// keeps the three narrow tables (NewsSource/CrawlTask/PipelineJob are real
+// production tables) local to this package and removes any dependency on the order
+// the job steps run in. The pattern is the same as sitWorkerITMySQL in
+// internal/situationsignalsworker.
+func refreshITMySQL(t *testing.T) *sql.DB {
 	t.Helper()
-	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	if databaseURL == "" {
+	baseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if baseURL == "" {
 		t.Skip("DATABASE_URL not set — integration test requires MySQL")
 	}
-	redisAddr := strings.TrimSpace(os.Getenv("API_GO_TEST_REDIS_ADDR"))
-	if redisAddr == "" {
-		t.Skip("API_GO_TEST_REDIS_ADDR not set — integration test requires Redis")
-	}
-	db, err := usersettings.OpenMySQLFromURL(databaseURL)
+	base, err := usersettings.OpenMySQLFromURL(baseURL)
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}
-	if err := db.Ping(); err != nil {
-		t.Fatalf("ping mysql: %v", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	databaseName := "situation_refresh_it_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	if _, err := base.ExecContext(ctx, "CREATE DATABASE `"+databaseName+"`"); err != nil {
+		_ = base.Close()
+		t.Fatalf("create integration database: %v", err)
 	}
-	for _, table := range []string{"NewsSource", "CrawlTask", "PipelineJob"} {
-		if _, err := db.Exec("DROP TABLE IF EXISTS `" + table + "`"); err != nil {
-			t.Fatalf("drop narrow table: %v", err)
-		}
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		_ = base.Close()
+		t.Fatalf("parse DATABASE_URL: %v", err)
 	}
+	parsed.Path = "/" + databaseName
+	db, err := usersettings.OpenMySQLFromURL(parsed.String())
+	if err != nil {
+		_ = base.Close()
+		t.Fatalf("open integration mysql: %v", err)
+	}
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		_ = base.Close()
+		t.Fatalf("ping integration mysql: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_ = db.Close()
+		_, _ = base.ExecContext(cleanupCtx, "DROP DATABASE `"+databaseName+"`")
+		_ = base.Close()
+	})
 	for _, statement := range []string{refreshITNewsSourceSchema, refreshITCrawlTaskSchema, refreshITPipelineJobSchema} {
 		if _, err := db.Exec(statement); err != nil {
 			t.Fatalf("create narrow table: %v", err)
 		}
 	}
+	return db
+}
+
+func newRefreshITHarness(t *testing.T) *refreshITHarness {
+	t.Helper()
+	redisAddr := strings.TrimSpace(os.Getenv("API_GO_TEST_REDIS_ADDR"))
+	if redisAddr == "" {
+		t.Skip("API_GO_TEST_REDIS_ADDR not set — integration test requires Redis")
+	}
+	db := refreshITMySQL(t)
 
 	client := redis.NewClient(&redis.Options{Addr: redisAddr, DB: refreshITRefreshScanRedisDB, Protocol: 2})
 	if err := client.Ping(context.Background()).Err(); err != nil {
@@ -112,10 +148,6 @@ func newRefreshITHarness(t *testing.T) *refreshITHarness {
 	t.Cleanup(func() {
 		_ = client.FlushDB(context.Background()).Err()
 		_ = client.Close()
-		for _, table := range []string{"NewsSource", "CrawlTask", "PipelineJob"} {
-			_, _ = db.Exec("DROP TABLE IF EXISTS `" + table + "`")
-		}
-		_ = db.Close()
 	})
 	return &refreshITHarness{
 		ctx:   context.Background(),
@@ -185,8 +217,9 @@ func (p *refreshITPoller) PollOref(context.Context) error {
 }
 
 // refreshITDispatcher stands in for the news source scheduler pass: it inserts one
-// CrawlTask and two PipelineJob rows for the organization's first source and
-// reports that the pass ran.
+// CrawlTask and three PipelineJob rows for the organization's first source and
+// reports that the pass ran. The refresh reports analysisTaskCount as
+// PipelineJob - CrawlTask, so the expected value is 2.
 type refreshITDispatcher struct {
 	db        *sql.DB
 	orgID     string
@@ -214,7 +247,7 @@ func (d *refreshITDispatcher) RunScheduleOnce(context.Context) (bool, error) {
 		"it-crawl-1", d.orgID, sourceID, string(crawlTaskPending), now); err != nil {
 		return false, err
 	}
-	for index, jobID := range []string{"it-job-1", "it-job-2"} {
+	for index, jobID := range []string{"it-job-1", "it-job-2", "it-job-3"} {
 		if _, err := d.db.Exec(
 			"INSERT INTO PipelineJob (id, orgId, sourceId, status, createdAt) VALUES (?, ?, ?, ?, ?)",
 			jobID, d.orgID, sourceID, string(pipelineJobPending), now.Add(time.Duration(index)*time.Millisecond)); err != nil {
@@ -353,7 +386,7 @@ func TestSituationRefreshIntegrationFullFlow(t *testing.T) {
 	if read.Status != refreshStatusRunning {
 		t.Fatalf("read status = %s, want running while tasks are pending", read.Status)
 	}
-	if read.Progress.CrawlTasks.Pending != 1 || read.Progress.AnalysisTasks.Pending != 2 {
+	if read.Progress.CrawlTasks.Pending != 1 || read.Progress.AnalysisTasks.Pending != 3 {
 		t.Fatalf("read progress = %+v", read.Progress)
 	}
 	if read.Terminal {
