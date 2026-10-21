@@ -228,6 +228,14 @@ func sdlRootFields(t *testing.T) map[string]map[string]bool {
 		}
 		names := make(map[string]bool, len(definition.Fields))
 		for _, field := range definition.Fields {
+			// gqlparser injects the two introspection meta-fields (__schema,
+			// __type) into the Query root while loading the prelude. They are
+			// part of the GraphQL introspection surface, not NestJS SDL roots,
+			// and the Nest resolvers do not declare them, so they must not
+			// count towards the fixture denominator.
+			if strings.HasPrefix(field.Name, "__") {
+				continue
+			}
 			names[field.Name] = true
 		}
 		fields[kind] = names
