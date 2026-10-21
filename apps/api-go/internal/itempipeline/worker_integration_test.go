@@ -284,8 +284,9 @@ func openItemPipelineTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("ping mysql: %v", err)
 	}
 	// The reduced schemas are owned exclusively by this test; the CI step runs
-	// after the other integration steps, so dropping them keeps this schema
-	// exact without touching tables another step still needs.
+	// in the migrated-batch block at the end of the integration job, so
+	// dropping these tables first keeps the schema exact without touching
+	// tables another step still needs.
 	statements := []string{
 		"DROP TABLE IF EXISTS ItemMeta",
 		"DROP TABLE IF EXISTS PipelineJob",
