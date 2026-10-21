@@ -24,9 +24,11 @@ const InfrastructureSettingsKey = "/api/system-settings#infrastructure"
 // rule. An empty or legacy mode adds nothing, so the default deployment is
 // unchanged and rollback only flips this one switch.
 //
-// The routes that stay on NestJS even in go mode include
-// GET /api/system-settings/vector-service/diagnostics (process-local vector
-// counters) and POST /api/admin/settings/storage/test (real S3 calls).
+// The routes that stay outside this switch even in go mode include
+// GET /api/system-settings/vector-service/diagnostics (its own
+// API_GO_VECTOR_DIAGNOSTICS_MODE, see WithVectorDiagnostics) and
+// POST /api/admin/settings/storage/test (real S3 calls, its own
+// API_GO_STORAGE_DIAGNOSTICS_MODE, see WithStorageDiagnostics).
 //
 // The shared rule helper also whitelists OPTIONS for these paths, so CORS
 // preflight is answered by the Go handler instead of reaching NestJS; a

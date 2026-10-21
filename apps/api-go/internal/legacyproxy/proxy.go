@@ -37,8 +37,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
+	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
 )
 
 // Mode 是单条路由规则的流量去向。
@@ -476,6 +478,16 @@ type Gateway struct {
 	goHandlers   map[string]GoHandler
 	proxy        *httputil.ReverseProxy
 	shadowBudget ShadowBudget
+	// legacyFallback is the cutover C-9 switch (API_GO_LEGACY_FALLBACK_MODE).
+	// The zero value proxies to NestJS, so a gateway that never calls
+	// SetLegacyFallback behaves exactly as before.
+	legacyFallback LegacyFallbackMode
+	// corsPolicy answers browser preflights and adds the actual-request CORS
+	// headers to responses the gateway writes itself (reject mode).
+	corsPolicy cors.Policy
+	// notFoundRecorder is the best-effort exception event side channel used by
+	// reject mode. Nil means "do not record".
+	notFoundRecorder nestnotfound.Recorder
 }
 
 // New 构造网关。legacyURL 指向 NestJS apps/api 基址；Go 原生路由随后经
@@ -529,17 +541,30 @@ func (g *Gateway) RegisterGoHandler(prefix string, handler GoHandler) {
 }
 
 // ServeLegacy 把当前请求按原样代理到 NestJS。已接管路径上、缺少预检头的
-// OPTIONS 用它回到原来的代理去向。
+// OPTIONS 用它回到原来的代理去向。legacy fallback 为 reject 时（切流 C-9）
+// 该去向由 proxyLegacy 改写为 Nest 等价的 404，不会触达 NestJS。
 func (g *Gateway) ServeLegacy(w http.ResponseWriter, r *http.Request) {
 	g.proxyLegacy(w, r)
 }
 
-// proxyLegacy is the single exit for every request the gateway forwards to
-// NestJS. The counter feeds the cutover runbook's "legacy fallback is zero"
-// check; route_prefix is a bounded family label (/api/<first segment>,
-// /graphql, /socket.io, ...) rather than the full path so cardinality stays
-// bounded by the top-level route families.
+// proxyLegacy is the single exit for every request whose route resolution ends
+// at NestJS. In the default proxy mode the counter feeds the cutover runbook's
+// "legacy fallback is zero" check; route_prefix is a bounded family label
+// (/api/<first segment>, /graphql, /socket.io, ...) rather than the full path so
+// cardinality stays bounded by the top-level route families.
+//
+// In reject mode (cutover C-9) the same decision point refuses the request
+// instead: it counts the rejection with the same route-family label and writes
+// the NestJS-equivalent 404. Keeping the decision here covers every legacy
+// source at once — the ModeLegacy branch, the unmatched-path fallback
+// Rule{Prefix: path, Mode: ModeLegacy}, the /api/ fallback, /graphql,
+// /socket.io/, /docs, /admin/queues, the canary fallback and any handler that
+// calls ServeLegacy — and guarantees the reverse proxy is never reached.
 func (g *Gateway) proxyLegacy(w http.ResponseWriter, r *http.Request) {
+	if g.legacyFallback == LegacyFallbackReject {
+		g.rejectLegacy(w, r)
+		return
+	}
 	metrics.RecordLegacyProxyRequest(legacyRoutePrefix(r.URL.Path))
 	g.proxy.ServeHTTP(w, r)
 }

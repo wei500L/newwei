@@ -2,7 +2,7 @@
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
-**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **31/32**、Query **—**、Mutation **—**（Go 注册/分母，**C 类 1 条**：`GET /api/healthz/live`（规则固定 shadow，无开关））；32 条中 31 条注册（含按本表归属的 `GET /api/healthz` 与 3 条 `GET /api/llm-logs*`，以及 search-telemetry 两路的归属差异说明）；仅公开存活探针仍为 Nest。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 26/32），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136；`refactor/go-ops-entrypoints` 追加）**：HTTP **32/32**、Query **—**、Mutation **—**（Go 注册/分母，**C 类 0 条**）；32 条中 32 条注册（含按本表归属的 `GET /api/healthz` 与 3 条 `GET /api/llm-logs*`，以及 search-telemetry 两路的归属差异说明）。本批新增 `API_GO_HEALTHZ_LIVE_MODE`（默认 `shadow`）关闭 C-1；`/docs`（C-7）与根路径/404 语义（C-9）不在 370 分母内，也由同批的 `API_GO_DOCS_MODE` 与 `API_GO_LEGACY_FALLBACK_MODE` 关闭（见 [执行权审计 §6](../../cutover/ownership-audit.md)）。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 26/32），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
 
 ## 范围与实施状态
 
@@ -66,7 +66,7 @@ Nest 功能目录：[observability](../../../../apps/api/src/modules/observabili
 | `GET /api/admin/quality/task-logs` | settings.manage | [task-logs.controller.ts](../../../../apps/api/src/modules/observability/task-logs.controller.ts) · `list` | WithQualityOverview |
 | `GET /api/admin/quality/task-logs/summary` | settings.manage | [task-logs.controller.ts](../../../../apps/api/src/modules/observability/task-logs.controller.ts) · `summary` | WithQualityOverview |
 | `GET /api/healthz` | 已认证 | [health.controller.ts](../../../../apps/api/src/modules/health/health.controller.ts) · `getHealth` | WithAuthenticatedHealth |
-| `GET /api/healthz/live` | 公开 | [health.controller.ts](../../../../apps/api/src/modules/health/health.controller.ts) · `getLiveness` | shadow；Nest 响应 |
+| `GET /api/healthz/live` | 公开 | [health.controller.ts](../../../../apps/api/src/modules/health/health.controller.ts) · `getLiveness` | WithHealthzLive（`API_GO_HEALTHZ_LIVE_MODE`，默认 shadow） |
 | `POST /api/internal/observability/exception-events` | 公开；核对内部 token Guard | [internal-exception-events.controller.ts](../../../../apps/api/src/modules/observability/internal-exception-events.controller.ts) · `report` | WithExceptionIngest |
 | `GET /api/llm-logs` | settings.manage | [llm-request-log.controller.ts](../../../../apps/api/src/modules/news-pipeline/llm-request-log.controller.ts) · `list` | WithLlmLogs |
 | `GET /api/llm-logs/export` | settings.manage | [llm-request-log.controller.ts](../../../../apps/api/src/modules/news-pipeline/llm-request-log.controller.ts) · `export` | WithLlmLogs |

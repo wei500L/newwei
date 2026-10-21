@@ -1,9 +1,15 @@
-// Package vectorclient is the write-side client for vector-go. It ports the
-// upsert subset of @modular/vector-client: path, internal-auth header, request
-// body, timeout/retry policy and response validation. The NestJS process-local
-// circuit breaker is intentionally not copied; every outbox delivery reads the
-// effective configuration and makes its own attempt, so a recovered vector
-// service is usable on the next record.
+// Package vectorclient contains the two vector-go clients of the api-go process:
+// the write-side upsert client and the read-side search client. They port the
+// subset of @modular/vector-client the migrated pipeline uses: path, internal-auth
+// header, request body, timeout/retry policy and response validation.
+//
+// Both clients share one process-wide Health (see health.go), which ports the
+// NestJS VectorClientService process-local circuit breaker: a final failure of
+// either operation opens the window for both, a success closes it, and an
+// effective-configuration change (base URL, timeout, retries or token) resets
+// it. The upsert client keeps the upsertOrThrow contract: while the window is
+// open it returns VectorServiceUnavailableError so the caller retries or
+// dead-letters the delivery, exactly like the NestJS outbox.
 package vectorclient
 
 import (
@@ -108,11 +114,32 @@ type Client struct {
 	Sleep func(context.Context, time.Duration) error
 	// Rand is the jitter source. A nil value uses math/rand.
 	Rand func() float64
+	// Health is the process-wide circuit state shared with the search client.
+	// The wiring passes the same *Health to every upsert call site and to the
+	// searcher, so one vector outage is not multiplied by the caller count. A
+	// nil value keeps the pre-Health behaviour: every delivery attempts the
+	// request and no window is recorded.
+	Health *Health
+	// now is the clock used for the shared window. It is deliberately
+	// unexported: production wiring never injects a clock, and tests of this
+	// package set it directly.
+	now func() time.Time
 }
 
 // Upsert ports VectorClientService.upsertOrThrow. Disabled or an empty point
 // set is a successful no-op; an enabled but incomplete configuration is a
 // VectorServiceUnavailableError, exactly like the NestJS client.
+//
+// When Health is set the Upsert also implements the shared circuit window,
+// matching what upsertOrThrow gets from resolveClient + markUnavailable:
+//
+//   - the effective configuration fingerprint is refreshed first, so a token or
+//     endpoint change resets the window exactly like the NestJS client rebuild;
+//   - while the window is open the call returns VectorServiceUnavailableError
+//     ("Vector service is temporarily unavailable") without touching the
+//     network, and the caller retries or dead-letters the delivery;
+//   - a success marks the shared state available; a final failure marks it
+//     unavailable and returns the original error.
 func (c *Client) Upsert(ctx context.Context, cfg Config, request UpsertRequest) error {
 	if !cfg.Enabled || len(request.Points) == 0 {
 		return nil
@@ -122,10 +149,6 @@ func (c *Client) Upsert(ctx context.Context, cfg Config, request UpsertRequest) 
 	if baseURL == "" || token == "" {
 		return &Error{Kind: "VectorServiceUnavailableError", Message: "Vector service enabled but configuration is incomplete"}
 	}
-	body, err := json.Marshal(request)
-	if err != nil {
-		return &Error{Kind: "VectorBadResponseError", Message: "Vector upsert request could not be encoded", Cause: err}
-	}
 	timeoutMs := cfg.TimeoutMs
 	if timeoutMs <= 0 {
 		timeoutMs = defaultTimeoutMs
@@ -134,18 +157,37 @@ func (c *Client) Upsert(ctx context.Context, cfg Config, request UpsertRequest) 
 	if maxRetries < 0 {
 		maxRetries = 0
 	}
+	if c.Health != nil {
+		c.Health.RefreshFingerprint(healthFingerprint(baseURL, timeoutMs, maxRetries, token))
+		if !c.Health.Available(c.currentTime()) {
+			return &Error{Kind: "VectorServiceUnavailableError", Message: "Vector service is temporarily unavailable"}
+		}
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		return &Error{Kind: "VectorBadResponseError", Message: "Vector upsert request could not be encoded", Cause: err}
+	}
 	attempts := maxRetries + 1
 	var last error
 	for attempt := 1; attempt <= attempts; attempt++ {
 		retryable, attemptErr := c.upsertOnce(ctx, baseURL+"/v1/upsert", token, body, time.Duration(timeoutMs)*time.Millisecond)
 		if attemptErr == nil {
+			if c.Health != nil {
+				c.Health.MarkAvailable()
+			}
 			return nil
 		}
 		last = attemptErr
 		if !retryable || attempt >= attempts {
+			if c.Health != nil {
+				c.Health.MarkUnavailable(attemptErr, OperationUpsert, c.currentTime())
+			}
 			return attemptErr
 		}
 		if err := c.sleep(ctx, c.backoff(attempt)); err != nil {
+			// A caller-cancelled retry wait is not a vector-service failure, so
+			// it deliberately does not open the shared window (the search client
+			// treats a cancelled wait the same way).
 			return &Error{Kind: "VectorServiceUnavailableError", Message: "Vector request failed", Cause: err}
 		}
 	}
@@ -153,6 +195,14 @@ func (c *Client) Upsert(ctx context.Context, cfg Config, request UpsertRequest) 
 		return last
 	}
 	return &Error{Kind: "VectorServiceUnavailableError", Message: "Vector request failed"}
+}
+
+// currentTime reads the clock used for the shared window.
+func (c *Client) currentTime() time.Time {
+	if c != nil && c.now != nil {
+		return c.now()
+	}
+	return time.Now()
 }
 
 // upsertOnce performs one attempt. retryable mirrors VectorClient: transport

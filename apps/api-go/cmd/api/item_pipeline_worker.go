@@ -66,11 +66,18 @@ func (r *itemPipelineRuntime) Close(ctx context.Context) error {
 // wireItemPipelineWorker constructs the itemPipeline consumer only when
 // API_GO_ITEM_PIPELINE_WORKER_MODE=go and BULLMQ_WORKERS_ENABLED is not false.
 // The legacy default returns (nil, nil) and claims nothing.
+//
+// health is the process-wide vector circuit state shared with the
+// processed-item outbox scanner; both the immediate-delivery upsert client and
+// the dedupe searcher of this pipeline are wired to it. A nil value is replaced
+// by an empty state so an unwired caller still gets one shared window instead of
+// two independent ones.
 func wireItemPipelineWorker(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
 	mongoConn **dashboardstats.Connection,
+	health *vectorclient.Health,
 ) (*itemPipelineRuntime, error) {
 	if cfg.ItemPipelineWorkerMode != config.ItemPipelineWorkerModeGo {
 		return nil, nil
@@ -90,6 +97,9 @@ func wireItemPipelineWorker(
 		*mongoConn = conn
 	}
 	mongoDatabase := (*mongoConn).Database()
+	if health == nil {
+		health = &vectorclient.Health{}
+	}
 
 	// Shared LLM client: same gateway profile resolution, guardrails, retry
 	// policy and llmrequestlogs writer as the archived/classifier packages.
@@ -140,7 +150,7 @@ func wireItemPipelineWorker(
 		DB:           db,
 		Mongo:        mongoDatabase,
 		VectorConfig: processedItemVectorConfigSource{settings: settings},
-		VectorWriter: &vectorclient.Client{},
+		VectorWriter: &vectorclient.Client{Health: health},
 		BatchSize:    cfg.ProcessedItemOutboxBatchSize,
 		Concurrency:  cfg.ProcessedItemOutboxConcurrency,
 		TickBudget:   time.Duration(cfg.ProcessedItemOutboxTickBudgetMs) * time.Millisecond,
@@ -169,8 +179,9 @@ func wireItemPipelineWorker(
 	})
 
 	searcher := vectorclient.NewSearcher(vectorclient.SearcherOptions{
-		DB:    db,
-		Redis: redisClient,
+		DB:     db,
+		Redis:  redisClient,
+		Health: health,
 		Env: vectorclient.SearcherEnv{
 			Enabled:         cfg.VectorServiceEnabled,
 			FallbackToMongo: cfg.VectorServiceFallbackToMongo,

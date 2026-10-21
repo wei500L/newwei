@@ -12,7 +12,11 @@ package vectorclient
 //     x-internal-token header and the optional x-trace-id header;
 //   - the VectorClient retry policy: transport failures and 5xx are retried with
 //     jittered exponential backoff, 401/403 and non-2xx/bad payloads are final;
-//   - the VectorClientService process-local "temporarily unavailable" window;
+//   - the VectorClientService process-local "temporarily unavailable" window,
+//     implemented by the process-wide Health shared with the upsert client (see
+//     health.go): the effective configuration fingerprint is refreshed first, a
+//     final failure marks the shared window unavailable and a success marks it
+//     available again;
 //   - the VectorSearchResponseSchema validation (collection non-empty, matches
 //     optional-defaulting-to-empty, each id non-empty, the score finite and
 //     createdAtMs a non-negative integer).
@@ -24,9 +28,7 @@ package vectorclient
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -65,12 +67,6 @@ const (
 	searchRetryBaseDelay = 200 * time.Millisecond
 	// searchResponseBodyLimit caps one response body read.
 	searchResponseBodyLimit = 1 << 20
-	// searchUnavailableBackoffCeiling caps the process-local disable window.
-	searchUnavailableBackoffCeiling = 60 * time.Second
-	// searchUnauthorizedBackoff is the minimum disable window after 401/403.
-	searchUnauthorizedBackoff = 5 * time.Minute
-	// searchBadResponseBackoff is the minimum disable window after a bad payload.
-	searchBadResponseBackoff = 60 * time.Second
 	// searchIncompleteWarnInterval rate-limits the incomplete-config warning.
 	searchIncompleteWarnInterval = time.Minute
 	// searchTraceHeader is the optional distributed trace header.
@@ -102,12 +98,15 @@ type SearchClient struct {
 	// MySQL settings read.
 	settingsLoader func(context.Context) (*storedSearchSettings, bool)
 
-	mu                  sync.Mutex
-	consecutiveFailures int
-	unavailableUntil    time.Time
-	lastIncompleteWarn  time.Time
-	fingerprint         string
-	fingerprintSet      bool
+	// health is the process-wide circuit state shared with the upsert client.
+	// It is never nil: NewSearcher substitutes a private zero-value Health when
+	// the caller does not pass one.
+	health *Health
+
+	// warnMu guards the incomplete-configuration warning rate limit. It is not
+	// part of Health because only the search path logs that warning.
+	warnMu             sync.Mutex
+	lastIncompleteWarn time.Time
 }
 
 // Compile-time assertion that the concrete client satisfies the port.
@@ -137,7 +136,11 @@ func NewSearcher(options SearcherOptions) *SearchClient {
 	}
 	options.Env.BaseURL = strings.TrimRight(strings.TrimSpace(options.Env.BaseURL), "/")
 	options.Env.Token = strings.TrimSpace(options.Env.Token)
-	return &SearchClient{options: options, http: &http.Client{}, now: now, random: random}
+	health := options.Health
+	if health == nil {
+		health = &Health{}
+	}
+	return &SearchClient{options: options, http: &http.Client{}, now: now, random: random, health: health}
 }
 
 // searchConfig is the effective vector-service configuration.
@@ -603,79 +606,33 @@ func (s *SearchClient) sleepContext(ctx context.Context, delay time.Duration) er
 	}
 }
 
-// isTemporarilyUnavailable reports the process-local disable window.
+// isTemporarilyUnavailable reports the shared process-wide disable window.
 func (s *SearchClient) isTemporarilyUnavailable() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.now().Before(s.unavailableUntil)
+	return !s.health.Available(s.now())
 }
 
-// markAvailable clears the failure streak.
+// markAvailable clears the shared failure streak and window.
 func (s *SearchClient) markAvailable() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.consecutiveFailures = 0
-	s.unavailableUntil = time.Time{}
+	s.health.MarkAvailable()
 }
 
-// markUnavailable extends the process-local disable window. A 401/403 keeps at
-// least five minutes and a bad payload at least one minute, exactly like
-// VectorClientService.markUnavailable.
+// markUnavailable records the final failure in the shared window. A 401/403
+// keeps at least five minutes and a bad payload at least one minute; the
+// backoff schedule lives in Health.MarkUnavailable.
 func (s *SearchClient) markUnavailable(failure *searchAttemptError) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := s.now()
-	wasAvailable := !now.Before(s.unavailableUntil)
-
-	s.consecutiveFailures++
-	if s.consecutiveFailures > 10 {
-		s.consecutiveFailures = 10
-	}
-	exponent := s.consecutiveFailures - 1
-	if exponent < 0 {
-		exponent = 0
-	}
-	backoff := math.Min(float64(searchUnavailableBackoffCeiling),
-		float64(time.Second)*math.Pow(2, float64(exponent)))
-	if failure != nil && failure.unauthorized {
-		backoff = math.Max(backoff, float64(searchUnauthorizedBackoff))
-	}
-	if failure != nil && failure.badResponse {
-		backoff = math.Max(backoff, float64(searchBadResponseBackoff))
-	}
-	s.unavailableUntil = now.Add(time.Duration(backoff))
-	if wasAvailable {
-		log.Printf("vectorclient: vector request failed; temporarily disabling vector service for %s (consecutive failures: %d)",
-			time.Duration(backoff).String(), s.consecutiveFailures)
-	}
+	s.health.MarkUnavailable(failure, OperationSearch, s.now())
 }
 
-// refreshFingerprint resets the disable window when the connection changes,
-// mirroring the client rebuild of VectorClientService.resolveClient.
+// refreshFingerprint resets the shared window when the effective configuration
+// changes, mirroring the client rebuild of VectorClientService.resolveClient.
 func (s *SearchClient) refreshFingerprint(config searchConfig) {
-	sum := sha256.Sum256([]byte(config.Token))
-	fingerprint := strings.Join([]string{
-		config.BaseURL,
-		strconv.Itoa(config.TimeoutMS),
-		strconv.Itoa(config.MaxRetries),
-		hex.EncodeToString(sum[:])[:16],
-	}, "|")
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.fingerprintSet && s.fingerprint == fingerprint {
-		return
-	}
-	s.fingerprint = fingerprint
-	s.fingerprintSet = true
-	s.consecutiveFailures = 0
-	s.unavailableUntil = time.Time{}
+	s.health.RefreshFingerprint(healthFingerprint(config.BaseURL, config.TimeoutMS, config.MaxRetries, config.Token))
 }
 
 // warnIncompleteOnce logs at most once a minute.
 func (s *SearchClient) warnIncompleteOnce() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.warnMu.Lock()
+	defer s.warnMu.Unlock()
 	now := s.now()
 	if !s.lastIncompleteWarn.IsZero() && now.Sub(s.lastIncompleteWarn) < searchIncompleteWarnInterval {
 		return
