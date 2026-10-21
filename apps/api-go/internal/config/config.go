@@ -1485,6 +1485,37 @@ const (
 	SituationSignalsWorkerModeGo SituationSignalsWorkerMode = "go"
 )
 
+// SituationRefreshMode controls POST /api/situation-monitor/refresh
+// (API_GO_SITUATION_REFRESH_MODE). The accepted values are exactly "",
+// "legacy" and "go"; an empty value and "legacy" keep the request on the NestJS
+// proxy, and any other value fails startup instead of silently degrading.
+//
+// go requires the two switches that make the ported flow possible at all:
+//
+//	API_GO_SITUATION_SIGNALS_WORKER_MODE=go  the Telegram session may only be
+//	                                        used by the Go lease owner; while
+//	                                        NestJS still holds it, a second
+//	                                        connection would raise
+//	                                        AUTH_KEY_DUPLICATED.
+//	API_GO_NEWS_SOURCE_SCHEDULER_MODE=go    the refresh entry point dispatches
+//	                                        through the Go scheduler under the
+//	                                        shared cron:news-source-scheduler
+//	                                        lease.
+//
+// It also requires JWT_SECRET, DATABASE_URL and REDIS_HOST: the route serves
+// authenticated HTTP, reorders the organization's active news sources, counts
+// CrawlTask/PipelineJob rows and writes the 900 second refresh-run record.
+type SituationRefreshMode string
+
+const (
+	// SituationRefreshModeLegacy proxies POST /refresh to NestJS (default,
+	// including the empty value). Rollback only changes this variable.
+	SituationRefreshModeLegacy SituationRefreshMode = "legacy"
+	// SituationRefreshModeGo serves POST /refresh from Go with the same
+	// authentication chain as NestJS and the same refresh-run record.
+	SituationRefreshModeGo SituationRefreshMode = "go"
+)
+
 // SituationTelegramAuthMode controls the two situation-monitor Telegram login
 // routes (API_GO_SITUATION_TELEGRAM_AUTH_MODE):
 // POST /api/system-settings/situation-monitor/telegram-auth/start and
@@ -2633,6 +2664,11 @@ type Config struct {
 	// consumer and repeat registration (see SituationSignalsWorkerMode).
 	// Default legacy. Mode go requires MySQL and Redis.
 	SituationSignalsWorkerMode SituationSignalsWorkerMode
+	// SituationRefreshMode controls POST /api/situation-monitor/refresh (see
+	// SituationRefreshMode). Default legacy. Mode go requires JWT, MySQL, Redis
+	// and both prerequisite switches (signals worker and news source
+	// scheduler) set to go.
+	SituationRefreshMode SituationRefreshMode
 	// SituationTelegramAuthMode controls the two Telegram login routes (see
 	// SituationTelegramAuthMode). Default legacy. It is independent from
 	// SituationSettingsMode: only these two POSTs move, the settings CRUD and
@@ -4285,6 +4321,17 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		cfg.SituationSignalsWorkerMode = SituationSignalsWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_SIGNALS_WORKER_MODE must be one of legacy|go")
+	}
+	// The refresh entry point accepts the empty string, legacy and go. An empty
+	// value behaves exactly like legacy so an unset deployment keeps POST
+	// /api/situation-monitor/refresh on the NestJS proxy.
+	switch strings.TrimSpace(getenv("API_GO_SITUATION_REFRESH_MODE")) {
+	case "", string(SituationRefreshModeLegacy):
+		cfg.SituationRefreshMode = SituationRefreshModeLegacy
+	case string(SituationRefreshModeGo):
+		cfg.SituationRefreshMode = SituationRefreshModeGo
+	default:
+		errs = append(errs, "API_GO_SITUATION_REFRESH_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_TELEGRAM_AUTH_MODE")) {
 	case "", string(SituationTelegramAuthModeLegacy):
@@ -6114,6 +6161,23 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		if cfg.RedisHost == "" {
 			errs = append(errs, "REDIS_HOST is required when API_GO_SITUATION_SIGNALS_WORKER_MODE=go")
+		}
+	}
+	// The refresh takeover serves authenticated HTTP, reorders the
+	// organization's active news sources, counts CrawlTask/PipelineJob rows and
+	// writes the 900 second refresh-run record, so it needs the credentialed
+	// stack plus MySQL and Redis. Two prerequisite switches must already be go:
+	// Telegram sessions may only be used by the Go lease owner (a second
+	// connection raises AUTH_KEY_DUPLICATED), and the immediate dispatch entry
+	// point lives in the Go news source scheduler under the shared
+	// cron:news-source-scheduler lease.
+	if cfg.SituationRefreshMode == SituationRefreshModeGo {
+		appendAuthRequirements(&errs, "API_GO_SITUATION_REFRESH_MODE", cfg)
+		if cfg.SituationSignalsWorkerMode != SituationSignalsWorkerModeGo {
+			errs = append(errs, "API_GO_SITUATION_SIGNALS_WORKER_MODE=go is required when API_GO_SITUATION_REFRESH_MODE=go")
+		}
+		if cfg.NewsSourceSchedulerMode != NewsSourceSchedulerModeGo {
+			errs = append(errs, "API_GO_NEWS_SOURCE_SCHEDULER_MODE=go is required when API_GO_SITUATION_REFRESH_MODE=go")
 		}
 	}
 	// The Telegram login takeover serves authenticated HTTP, stores the pending

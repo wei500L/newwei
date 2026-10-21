@@ -228,14 +228,18 @@ func buildTelegramClientOptions(runtime TelegramRuntimeConfig) (telegramclient.O
 	return options, telegramCredentialsFingerprint(apiID, runtime.APIHash, runtime.Session), nil
 }
 
-// pollTelegram mirrors pollTelegramOnce with the B1 lease fix and the B4 error
-// retention fix.
-func (s *Service) pollTelegram(ctx context.Context) error {
+// pollTelegram mirrors pollTelegramOnce with the B1 lease fix, the B2 poll
+// handover and the B4 error retention fix.
+//
+// The outcome tells the caller whether this process actually ran the cycle, which
+// is what the handover request path needs: only the process that polled may record
+// a completion for the waiting caller.
+func (s *Service) pollTelegram(ctx context.Context, mode telegramPollMode) (telegramCycleOutcome, error) {
 	runtime := s.telegramRuntimeConfig(ctx)
 
 	state, err := s.loadTelegramState(ctx)
 	if err != nil {
-		return err
+		return telegramCycleRefused, err
 	}
 	state.PermanentlyDisabled = s.telegramPermanentlyDisabled
 	s.telegramState = state
@@ -246,19 +250,19 @@ func (s *Service) pollTelegram(ctx context.Context) error {
 
 	if !runtime.Enabled {
 		s.telegramState.LastError = telegramDisabledMessage
-		return nil
+		return telegramCycleRefused, nil
 	}
 	if strings.TrimSpace(runtime.APIID) == "" || strings.TrimSpace(runtime.APIHash) == "" || strings.TrimSpace(runtime.Session) == "" {
 		s.telegramState.LastError = telegramNotConfiguredMessage
-		return nil
+		return telegramCycleRefused, nil
 	}
 	if s.telegramPermanentlyDisabled {
-		return nil
+		return telegramCycleRefused, nil
 	}
 	if runtime.StartupDelayMS > 0 && s.telegramState.LastPollAt == 0 {
 		// The delay is measured from process start, not from the previous poll.
 		if s.now().Sub(s.serviceStartedAt) < time.Duration(runtime.StartupDelayMS)*time.Millisecond {
-			return nil
+			return telegramCycleRefused, nil
 		}
 	}
 
@@ -266,12 +270,11 @@ func (s *Service) pollTelegram(ctx context.Context) error {
 	if err != nil {
 		s.telegramState.LastError = err.Error()
 		s.logf("situationsignalsworker: telegram init failed")
-		return nil
+		return telegramCycleRefused, nil
 	}
 
 	// B1: only the process that wins the Redis lease creates or holds the
-	// MTProto connection. A process without the lease performs no Telegram work
-	// at all in this cycle.
+	// MTProto connection. A process without the lease performs no Telegram work.
 	owned, leaseErr := s.telegram.WithLease(ctx, options, fingerprint, func(callCtx context.Context, client telegramclient.PollClient) error {
 		s.pollTelegramWithClient(callCtx, runtime, client)
 		return nil
@@ -279,19 +282,36 @@ func (s *Service) pollTelegram(ctx context.Context) error {
 	if leaseErr != nil {
 		s.telegramState.LastError = fmt.Sprintf("telegram poll failed: %v", leaseErr)
 		s.logf("situationsignalsworker: telegram poll failed: %v", leaseErr)
-		return nil
+		return telegramCycleRefused, nil
 	}
 	if !owned {
-		s.logf("situationsignalsworker: skipped telegram poll because another instance owns the lease")
-		return nil
+		if mode == telegramPollServe {
+			// A request received on the handover channel is never forwarded again:
+			// every instance subscribes to that channel, so re-publishing would fan
+			// out without end. Only the lease owner (or a process that just acquired
+			// the lease) serves the request, and only it records the completion.
+			s.logf("situationsignalsworker: telegram poll request not served here because this instance does not own the lease; the owner serves it")
+			return telegramCycleSkipped, nil
+		}
+		// B2: the lease owner keeps the MTProto connection, so this cycle must run
+		// there. Publishing the request instead of skipping it keeps the configured
+		// poll frequency independent of which instance the queue picks.
+		return s.handoverTelegramPoll(ctx, runtime, options, fingerprint, mode)
 	}
-	if s.telegramState.PermanentlyDisabled {
-		// AUTH_KEY_DUPLICATED: the session must not be used again. Disconnect
-		// outside WithLease so the manager's call serialization is not re-entered.
-		s.telegramPermanentlyDisabled = true
-		s.disconnectTelegram(ctx)
+	s.completeTelegramOwnedCycle(ctx)
+	return telegramCyclePolled, nil
+}
+
+// completeTelegramOwnedCycle is the post-cycle step of the process that owns the
+// lease: a session invalidated by AUTH_KEY_DUPLICATED must never be used again.
+// The disconnect runs outside WithLease so the manager's call serialization is
+// not re-entered.
+func (s *Service) completeTelegramOwnedCycle(ctx context.Context) {
+	if !s.telegramState.PermanentlyDisabled {
+		return
 	}
-	return nil
+	s.telegramPermanentlyDisabled = true
+	s.disconnectTelegram(ctx)
 }
 
 // pollTelegramWithClient runs one poll cycle over the embedded channel catalog.

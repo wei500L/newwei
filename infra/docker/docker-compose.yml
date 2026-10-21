@@ -436,6 +436,11 @@ services:
       # api-go 侧改为 go；回退按相反顺序。会话字符串、Redis 状态与队列协议
       # 两端相同，回退不需要重新登录。
       API_GO_SITUATION_SIGNALS_WORKER_MODE: ${API_GO_SITUATION_SIGNALS_WORKER_MODE:-legacy}
+      # 态势手动刷新 POST /api/situation-monitor/refresh 的执行权。Nest 只做
+      # schema 校验；go 时该路由由 api-go 处理（要求 api-go 侧同名变量为 go，
+      # 且 API_GO_SITUATION_SIGNALS_WORKER_MODE 与
+      # API_GO_NEWS_SOURCE_SCHEDULER_MODE 已为 go，否则 api-go 启动失败）。
+      API_GO_SITUATION_REFRESH_MODE: ${API_GO_SITUATION_REFRESH_MODE:-legacy}
       # Telegram 登录两个 POST 的执行权。Nest 只做 schema 校验；go 时这两条
       # 请求由 api-go 处理（Nest 控制器不改，其余 settings 路由不受影响）。
       API_GO_SITUATION_TELEGRAM_AUTH_MODE: ${API_GO_SITUATION_TELEGRAM_AUTH_MODE:-legacy}
@@ -931,6 +936,12 @@ services:
       # 保证集群内只有一个实例持有 MTProto 连接。切换前先把 api 服务同名
       # 变量改为 go；回退最后再把 api 侧改回 legacy。
       API_GO_SITUATION_SIGNALS_WORKER_MODE: ${API_GO_SITUATION_SIGNALS_WORKER_MODE:-legacy}
+      # 态势手动刷新 POST /api/situation-monitor/refresh 的执行权。默认 legacy=
+      # 由 NestJS 处理；go 时由 api-go 处理，并要求本服务的
+      # API_GO_SITUATION_SIGNALS_WORKER_MODE 与 API_GO_NEWS_SOURCE_SCHEDULER_MODE
+      # 同为 go（否则启动失败：Telegram 会话只能由 Go 租约持有方使用，调度入口
+      # 在 Go）。刷新记录键/字段/TTL 两端相同，GET refresh-runs 不受影响。
+      API_GO_SITUATION_REFRESH_MODE: ${API_GO_SITUATION_REFRESH_MODE:-legacy}
       # Telegram 登录两个 POST（.../telegram-auth/start、.../complete）的执行权。
       # 默认 legacy=NestJS；go 要求 JWT_SECRET、DATABASE_URL、REDIS_HOST、
       # MONGO_URI 与 SYSTEM_SETTINGS_ENCRYPTION_KEY。待完成请求缓存格式两端

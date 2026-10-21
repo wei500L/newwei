@@ -960,8 +960,20 @@ export const apiEnvSchema = baseEnvSchema
     // register the repeatable jobs and consume the situationMonitorSignals
     // queue; the auth switch only controls which process serves the two
     // telegram-auth POST routes (the api-go legacyproxy owns the route switch,
-    // so NestJS keeps its controller unchanged).
+    // so NestJS keeps its controller unchanged). The refresh switch only moves
+    // POST /api/situation-monitor/refresh: NestJS keeps serving it unchanged
+    // (including its B1 "scheduler busy" blind spot), the api-go legacyproxy
+    // owns the route rule, and api-go additionally requires the worker and
+    // news-source-scheduler switches to be go (a second Telegram connection
+    // would raise AUTH_KEY_DUPLICATED).
     API_GO_SITUATION_SIGNALS_WORKER_MODE: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value.trim() === "" ? "legacy" : value,
+        z.enum(["legacy", "go"]),
+      )
+      .default("legacy"),
+    API_GO_SITUATION_REFRESH_MODE: z
       .preprocess(
         (value) =>
           typeof value === "string" && value.trim() === "" ? "legacy" : value,
