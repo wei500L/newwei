@@ -1025,7 +1025,7 @@ func (s *Service) materializeNativeDiscoveryCandidates(ctx context.Context, inpu
 			DurationMs:    0,
 			InputCount:    len(input.PersistedResults),
 			OutputCount:   createdCount,
-			RejectedCount: rejectedCount,
+			RejectedCount: discoverRejectionTotal(rejectionCounts),
 			SampleURLs:    sampleURLs,
 			Metrics:       metrics,
 		}); err != nil {
