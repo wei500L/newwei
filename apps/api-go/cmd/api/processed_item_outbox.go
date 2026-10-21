@@ -20,11 +20,18 @@ import (
 // when API_GO_PROCESSED_ITEM_OUTBOX_MODE=go and SCHEDULE_ENABLED is not false.
 // It starts no HTTP route, verifies no JWT and leaves immediate delivery plus
 // the in-process NestJS retry untouched.
+//
+// health is the process-wide vector circuit state shared with the itemPipeline
+// worker. The compensation scanner keeps the upsertOrThrow contract: while the
+// shared window is open, vectorclient.Client.Upsert returns
+// VectorServiceUnavailableError and the delivery is retried/dead-lettered
+// instead of hammering vector-go. A nil value is replaced by an empty state.
 func wireProcessedItemOutbox(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
 	mongoDatabase *mongo.Database,
+	health *vectorclient.Health,
 ) (*processeditemoutbox.Scheduler, error) {
 	if cfg.ProcessedItemOutboxMode != config.ProcessedItemOutboxModeGo || !cfg.ScheduleEnabled {
 		return nil, nil
@@ -32,12 +39,15 @@ func wireProcessedItemOutbox(
 	if db == nil || redisClient == nil || mongoDatabase == nil {
 		return nil, fmt.Errorf("api-go: API_GO_PROCESSED_ITEM_OUTBOX_MODE=go requires mysql, redis and mongo")
 	}
+	if health == nil {
+		health = &vectorclient.Health{}
+	}
 	settings := newInfrastructureSettingsService(cfg, db, redisClient)
 	service := processeditemoutbox.NewService(processeditemoutbox.Options{
 		DB:           db,
 		Mongo:        mongoDatabase,
 		VectorConfig: processedItemVectorConfigSource{settings: settings},
-		VectorWriter: &vectorclient.Client{},
+		VectorWriter: &vectorclient.Client{Health: health},
 		BatchSize:    cfg.ProcessedItemOutboxBatchSize,
 		Concurrency:  cfg.ProcessedItemOutboxConcurrency,
 		TickBudget:   time.Duration(cfg.ProcessedItemOutboxTickBudgetMs) * time.Millisecond,

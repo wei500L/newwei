@@ -3,9 +3,12 @@ package legacyproxy
 import (
 	"bufio"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 )
 
 // allGoRules is the rule table the gateway assembles when every API_GO_* switch
@@ -91,6 +94,13 @@ func allGoRules() []Rule {
 	rules = WithStorageDiagnostics(rules, "go")
 	rules = WithUserDigest(rules, "go")
 	rules = WithUserNewsBehavior(rules, "go")
+	// refactor/go-ops-entrypoints (C-1/C-5/C-7): the three takeovers that closed
+	// the operational C items. The order mirrors cmd/api/main.go: the public
+	// liveness probe sits next to the authenticated health route, the vector
+	// diagnostics route next to the settings takeovers, and /docs last.
+	rules = WithHealthzLive(rules, "go")
+	rules = WithVectorDiagnostics(rules, "go")
+	rules = WithDocs(rules, "go")
 	return rules
 }
 
@@ -150,6 +160,9 @@ func TestAllGoCutoverRoutesAreOwnedByGo(t *testing.T) {
 
 // TestAllGoRulesKeepNonMigratedPathsOnLegacy guards the inverse direction: the
 // all-go table must not silently claim paths that still belong to NestJS.
+// /docs is no longer in this list: refactor/go-ops-entrypoints moved it to a
+// Go rule (C-7), including its sub-paths, which the handler answers with the
+// NestJS-equivalent 404 for unknown entries.
 func TestAllGoRulesKeepNonMigratedPathsOnLegacy(t *testing.T) {
 	gateway, err := New("http://legacy.invalid", allGoRules())
 	if err != nil {
@@ -157,12 +170,67 @@ func TestAllGoRulesKeepNonMigratedPathsOnLegacy(t *testing.T) {
 	}
 	for _, probe := range [][2]string{
 		{http.MethodGet, "/admin/queues"},
-		{http.MethodGet, "/docs"},
 		{http.MethodGet, "/api/not-migrated-yet"},
+		{http.MethodGet, "/"},
 	} {
 		rule := gateway.match(probe[0], probe[1])
 		if rule.Mode != ModeLegacy {
 			t.Errorf("%s %s matched mode %q, want legacy until that entry is migrated", probe[0], probe[1], rule.Mode)
 		}
+	}
+	for _, path := range []string{"/docs", "/docs/", "/docs/json", "/docs/swagger-ui.css", "/docsx"} {
+		if rule := gateway.match(http.MethodGet, path); rule.Mode != ModeGo {
+			t.Errorf("GET %s matched mode %q, want go after the C-7 takeover", path, rule.Mode)
+		}
+	}
+}
+
+// TestAllGoRejectModeAnswers404WithoutProxying is the C-9 cutover gate: with
+// every switch go and the legacy fallback in reject mode, a request that still
+// has no Go owner must be answered by the gateway itself (NestJS-equivalent
+// 404) and must never reach the legacy API.
+func TestAllGoRejectModeAnswers404WithoutProxying(t *testing.T) {
+	reached := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached++
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer upstream.Close()
+
+	gateway, err := New(upstream.URL, allGoRules())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	gateway.SetLegacyFallback(string(LegacyFallbackReject), cors.New(""), nil)
+
+	for _, probe := range []struct {
+		method string
+		target string
+	}{
+		{http.MethodGet, "/admin/queues"},
+		{http.MethodGet, "/api/not-migrated-yet"},
+		{http.MethodGet, "/"},
+		{http.MethodGet, "/unknown?x=1"},
+	} {
+		recorder := httptest.NewRecorder()
+		gateway.ServeHTTP(recorder, httptest.NewRequest(probe.method, probe.target, nil))
+		if recorder.Code != http.StatusNotFound {
+			t.Errorf("%s %s status = %d, want 404", probe.method, probe.target, recorder.Code)
+			continue
+		}
+		if got := recorder.Header().Get("x-trace-id"); got == "" {
+			t.Errorf("%s %s missing x-trace-id", probe.method, probe.target)
+		}
+		body := recorder.Body.String()
+		if !strings.Contains(body, `"statusCode":404`) || !strings.Contains(body, `"error":"Not Found"`) {
+			t.Errorf("%s %s body = %s, want the NestJS 404 body", probe.method, probe.target, body)
+		}
+		wantPath := probe.target
+		if !strings.Contains(body, `"path":"`+wantPath+`"`) {
+			t.Errorf("%s %s body = %s, want path %q", probe.method, probe.target, body, wantPath)
+		}
+	}
+	if reached != 0 {
+		t.Fatalf("reject mode forwarded %d requests to the legacy API", reached)
 	}
 }

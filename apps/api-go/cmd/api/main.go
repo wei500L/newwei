@@ -32,7 +32,8 @@
 //	         API_GO_DASHBOARD_STREAM_MODE=go 时接管精确 GET /api/dashboard/stream
 //	         （SSE；复用 War Map、K 线和热力图服务，不请求 NestJS）。
 //	         API_GO_HEALTHZ_MODE=go 时接管精确 GET /api/healthz（认证探针）。
-//	         公开 GET /api/healthz/live 保持 shadow，不随该开关变化。
+//	         公开 GET /api/healthz/live 由独立的 API_GO_HEALTHZ_LIVE_MODE
+//	         控制（默认 shadow，可 legacy/go，C-1）。
 //	         Go-批7：API_GO_CONTENT_SUBSCRIPTIONS_MODE、
 //	         API_GO_USER_NEWS_BEHAVIOR_MODE、API_GO_USER_DIGEST_MODE
 //	         各自默认 legacy，只切换对应的精确 HTTP。内部订阅、目录和画像
@@ -218,6 +219,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/notificationssocket"
@@ -231,6 +233,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettingsread"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettingswrite"
+	"github.com/wei500L/newwei/apps/api-go/internal/vectorclient"
 )
 
 func main() {
@@ -781,6 +784,13 @@ func run() error {
 	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
 		infrastructureSettingsMode = string(legacyproxy.ModeGo)
 	}
+	// C-5: the vector-service diagnostics route is an independent read-only
+	// takeover. Its Go handler needs MySQL, Redis and JWT; the switch itself
+	// only decides who answers the exact GET.
+	vectorDiagnosticsMode := ""
+	if cfg.VectorDiagnosticsMode == config.VectorDiagnosticsModeGo {
+		vectorDiagnosticsMode = string(legacyproxy.ModeGo)
+	}
 	// The storage connection test switch is independent of the infrastructure
 	// settings switch: it only ever takes over the exact POST test route.
 	storageDiagnosticsMode := ""
@@ -844,6 +854,10 @@ func run() error {
 	if cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo {
 		gdeltSnapshotRefreshMode = string(legacyproxy.ModeGo)
 	}
+	// The process-wide vector-service circuit state shared by the search client,
+	// the two upsert clients and the C-5 diagnostics route. One instance per
+	// process mirrors the NestJS VectorClientService counters.
+	vectorServiceHealth := &vectorclient.Health{}
 	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
 	rules = legacyproxy.WithPublicPortal(rules, portalMode)
 	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
@@ -855,6 +869,9 @@ func run() error {
 	rules = legacyproxy.WithDashboardSpacetimePropagation(rules, spacetimePropagationMode)
 	rules = legacyproxy.WithDashboardStream(rules, streamMode)
 	rules = legacyproxy.WithAuthenticatedHealth(rules, healthzMode)
+	// C-1: the public liveness probe has its own switch; the default stays
+	// shadow, which is the current production behaviour.
+	rules = legacyproxy.WithHealthzLive(rules, string(cfg.HealthzLiveMode))
 	rules = legacyproxy.WithContentSubscriptions(rules, contentSubscriptionsMode)
 	rules = legacyproxy.WithUserNewsBehavior(rules, userNewsBehaviorMode)
 	rules = legacyproxy.WithUserDigest(rules, userDigestMode)
@@ -999,6 +1016,9 @@ func run() error {
 	// llm-gateways :id profile rule because they are longer prefixes.
 	rules = legacyproxy.WithProxyLoadBalancing(rules, proxyLoadBalancingMode)
 	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
+	// C-5: the vector-service diagnostics route. It is independent of the seven
+	// infrastructure settings routes and only owns its exact GET.
+	rules = legacyproxy.WithVectorDiagnostics(rules, vectorDiagnosticsMode)
 	// The storage connection test is registered by its own switch; it never
 	// widens the infrastructure settings route ownership and vice versa.
 	rules = legacyproxy.WithStorageDiagnostics(rules, storageDiagnosticsMode)
@@ -1031,6 +1051,9 @@ func run() error {
 	// method/path rules, so they cannot be shadowed by the account-security,
 	// login or onboarding rules.
 	rules = legacyproxy.WithAccountData(rules, avatarUploadMode, userDataExportMode)
+	// C-7: go replaces the /docs legacy prefix rule with a Go rule; the default
+	// (legacy) leaves the rule table untouched.
+	rules = legacyproxy.WithDocs(rules, string(cfg.DocsMode))
 	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
 	if err != nil {
 		return err
@@ -1108,6 +1131,9 @@ func run() error {
 				cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo ||
 				cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo ||
 				cfg.StorageDiagnosticsMode == config.StorageDiagnosticsModeGo ||
+				// The vector diagnostics route reads the shared settings row from
+				// MySQL and verifies JWTs against the Redis blacklist.
+				cfg.VectorDiagnosticsMode == config.VectorDiagnosticsModeGo ||
 				cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo ||
 				cfg.AuthFactorsMode == config.AuthFactorsModeGo ||
 				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
@@ -1341,6 +1367,7 @@ func run() error {
 		adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo ||
 		newsnowClusteringOpsGo || newsnowHottestGo || runtimeSettingsGo || infrastructureSettingsGo ||
 		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
+		cfg.VectorDiagnosticsMode == config.VectorDiagnosticsModeGo ||
 		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
 		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
 		situationSignalsGo || situationInsightsGo || situationSettingsGo || situationTelegramAuthGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
@@ -1787,6 +1814,20 @@ func run() error {
 	if err := wireExceptionIngest(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo); err != nil {
 		return err
 	}
+	// C-1/C-7/C-9 wiring. The recorder is built once and shared by the reject
+	// fallback 404 and the Go /docs 404 so both write the same exception event;
+	// it is only built when one of those Go-owned 404 paths is enabled, so the
+	// default (proxy + legacy docs) opens no Mongo connection.
+	var nestNotFoundRecorder nestnotfound.Recorder
+	if cfg.LegacyFallbackMode == config.LegacyFallbackModeReject || cfg.DocsMode == config.DocsModeGo {
+		nestNotFoundRecorder = newNestNotFoundRecorder(cfg, &dashboardMongo, redisClient)
+	}
+	if err := wireLegacyFallback(gateway, cfg, cors.New(cfg.CorsOrigin), nestNotFoundRecorder); err != nil {
+		return err
+	}
+	if err := wireAPIDocs(gateway, cfg, cors.New(cfg.CorsOrigin), nestNotFoundRecorder); err != nil {
+		return err
+	}
 
 	if err := wireNewsIndicators(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
@@ -1873,6 +1914,9 @@ func run() error {
 		return err
 	}
 	if err := wireInfrastructureSettings(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
+		return err
+	}
+	if err := wireVectorDiagnostics(gateway, cfg, sharedDB, redisClient, authenticator, vectorServiceHealth); err != nil {
 		return err
 	}
 	if err := wireStorageDiagnostics(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
@@ -3084,7 +3128,7 @@ func run() error {
 				}
 				dashboardMongo = opened
 			}
-			processedItemOutboxScheduler, err = wireProcessedItemOutbox(cfg, sharedDB, redisClient, dashboardMongo.Database())
+			processedItemOutboxScheduler, err = wireProcessedItemOutbox(cfg, sharedDB, redisClient, dashboardMongo.Database(), vectorServiceHealth)
 			if err != nil {
 				return err
 			}
@@ -3129,7 +3173,7 @@ func run() error {
 			return err
 		}
 	}
-	itemPipelineWorker, err = wireItemPipelineWorker(cfg, sharedDB, redisClient, &dashboardMongo)
+	itemPipelineWorker, err = wireItemPipelineWorker(cfg, sharedDB, redisClient, &dashboardMongo, vectorServiceHealth)
 	if err != nil {
 		return err
 	}
