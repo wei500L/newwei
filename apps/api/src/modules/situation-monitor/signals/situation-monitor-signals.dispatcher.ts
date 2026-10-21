@@ -24,11 +24,15 @@ type SituationMonitorListener = (
  * the dispatcher-generated ISO-8601 string (`event.timestamp`), so the Go side
  * can reproduce the same ordering without re-deriving it.
  *
- * Loop safety: the bridge is one-way. Only this dispatcher publishes to the
- * channel, the Go subscriber only fans the message out to its local sockets
- * and never calls back into `publish()`, and nothing in this process
- * subscribes to the channel. A message therefore cannot re-enter the
- * dispatcher and duplicate in-process delivery.
+ * Loop safety: the bridge is one-way in each direction and never re-enters
+ * this dispatcher. This dispatcher only publishes (when
+ * `API_GO_REALTIME_SOCKET_MODE=go`); the Go subscriber only fans the message
+ * out to its local sockets and never calls back into `publish()`; and the
+ * in-process consumer, `SituationMonitorSignalsEventsSubscriber` (subscribed
+ * only when `API_GO_SITUATION_SIGNALS_WORKER_MODE=go`), forwards the message
+ * to `SituationMonitorSignalsGateway.emitLocalEvent`, which never publishes
+ * back. A message therefore cannot re-enter the dispatcher and duplicate
+ * in-process delivery.
  *
  * Publication is best effort: Redis failures are logged and never break the
  * in-process listener path.
