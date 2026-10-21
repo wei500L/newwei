@@ -21,15 +21,15 @@
 | `@Cron`/`@Interval` 回调 | 21 | **21** | 0 | 0 |
 | 非装饰器调度 / 启动任务 | 10 | 7 | 1（告警 scan repeat 的幂等注册） | 2 |
 | Redis pub/sub 频道（Nest 实际订阅） | 12 + 1 名义 | 0 | **12**（兼容桥 / 共享总线） | 1（`gqlsub:queueEvents` 名义频道） |
-| 其它入口 | — | `/api/healthz`、`/api/metrics`、`/api/healthz/live`、`/docs`、根路径/404 语义 | — | `/admin/queues`（C-8，属队列运维窗口） |
+| 其它入口 | — | `/api/healthz`、`/api/metrics`、`/api/healthz/live`、`/docs`、根路径/404 语义 | — | `/admin/queues`（C-8 已关闭：面板本身仍由 Nest 提供，运维能力由 Go 的 `/api/admin/queue-ops` 承接） |
 
 要点：
 1. **GraphQL 与 Socket.IO 已全量注册**：138/138 根字段都有 Go 注册点并受开关控制；6/6 namespace 由两条独立 Engine.IO path（`/socket.io-notifications`、`/socket.io-realtime`）承接。
 2. **HTTP 域已无 C 类**：C-1（`/api/healthz/live`）与 C-5（向量诊断）由 `refactor/go-ops-entrypoints` 关闭，C-2/C-3/C-4 三条 crawl-frontier 管理写由 `refactor/go-crawl-frontier-writes` 迁入 Go 并关闭分类；C-7（`/docs`）与 C-9（根路径/404）不在 370 分母内，也已由前者关闭。
-3. **异步侧只剩结构性缺口**：所有有消费者的队列、全部定时回调都有 Go 实现与开关；未迁移的是 DLQ 的**人工消费入口**（Nest Bull Board）与少数 Nest 进程内派生的读侧职责。
-4. **「停掉 Nest」的阻塞面已缩小**：C-1/C-5/C-7/C-9 关闭后，仍只剩 3 条 crawl-frontier 写 HTTP（并行窗口）与 `/admin/queues`（队列运维窗口）。阶段 6 因此拆成「停业务流量（可执行）」与「完全停 Nest（待剩余 C 关闭）」，详见 [runbook](runbook.md)。
+3. **异步侧已无 C 类**：所有有消费者的队列、全部定时回调都有 Go 实现与开关；DLQ 的人工处置入口与 `QueueOrgStatsTracker` 的统计读侧已由 `refactor/go-queue-ops` 承接（`API_GO_QUEUE_OPS_MODE` / `API_GO_QUEUE_ORG_STATS_MODE`），告警规则全量对账也随 `API_GO_ALERT_WORKER_MODE` 在 Go 启动时执行。
+4. **C 类已全部关闭**：C-1/C-5/C-7/C-9 由 `refactor/go-ops-entrypoints`、C-2/C-3/C-4 由 `refactor/go-crawl-frontier-writes`、C-6/C-8 由 `refactor/go-queue-ops` 关闭。停 Nest 仍需要部署侧编排变更（`depends_on`/探针/Web 启动等待）与「是否保留只读边车」的书面决定，见 [runbook](runbook.md) 阶段 6c。
 
-### 0.2 C 类清单（C-2/C-3/C-4 已关闭；其余仍需用户决定，详细选项见各节）
+### 0.2 C 类清单（三批合并后 C-1…C-9 全部关闭；承接地与证据见各行）
 
 | 编号 | 项目 | 为什么是 C | 可执行选项（摘要） | 详细 |
 |---|---|---|---|---|
@@ -51,7 +51,7 @@
 - Bull Board 面板本身仍只在 Nest（`/admin/queues` 前缀代理），但它的运维能力与 DLQ 人工处置已有 Go 替代（`API_GO_QUEUE_OPS_MODE=go` 的 `/api/admin/queue-ops`）；若选择保留面板，Nest 仍需运行，但这已不是 C 类阻塞。
 - ~~交互式 Swagger（`/docs`、`/docs/json`）~~、~~公开存活探针 `/api/healthz/live`~~、~~Nest 进程内计数器的诊断接口~~、~~根路径/未知路径的 Nest 404 语义~~：已由 `refactor/go-ops-entrypoints` 关闭（C-1/C-5/C-7/C-9）。
 
-> 这与「NestJS 的全部业务功能都已经有 Go 实现」的规划前提存在差异：业务执行面确实已全部有 Go 实现，但**运维/诊断面**（Swagger、Bull Board、DLQ 处理、进程内计数器）仍在 Nest；crawl-frontier 的三条管理写（C-2/C-3/C-4）已在本批迁入 Go。本批审计本身没有新增业务迁移，只如实记录；C-2/C-3/C-4 的关闭状态由迁移批次回填。
+> 三批合并后 C-1…C-9 全部关闭：**运维/诊断面**（Swagger、存活探针、向量诊断、根路径/404）迁入 api-go，**队列运维与 DLQ 处置**改由 Go 的 `/api/admin/queue-ops` 承接（Bull Board 面板本身仍只在 Nest，按需保留只读边车）。本文件只如实记录静态结论，不表示任何环境已切换；关闭状态以各行的证据路径为准。
 
 ---
 
@@ -111,7 +111,7 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 - 分类：**A = 368**（Go 可完全接管且存在 `API_GO_*` 开关，本表按开关=go 的规则表判定）；**B = 0**（HTTP 层没有“仅兼容桥”的路由；Nest 侧兼容桥只在异步/实时职责出现，见 T1.5/T1.3）；**C = 2**（只能由 Nest 提供或 Go 规则缺失：C-1 `/api/healthz/live`、C-5 vector diagnostics。原 C-2/C-3/C-4 已由 `refactor/go-crawl-frontier-writes` 迁入 Go）。
 - 方法分布（去重后）：GET 171（含 SSE 1）、POST 120、PUT 37、PATCH 14、DELETE 28；A 类 368 条、C 类 2 条。
 - A 类清单同步写入 `apps/api-go/internal/legacyproxy/testdata/nest-routes.txt`（368 条路由 + 9 行 `#` 头注释，共 377 行；与该表 A 行一一对应，作为 T2 测试数据提交）。
-- 计数边界：370 条只统计 `@Controller` 路由；`/docs`、`/admin/queues`、根路径/404 等非 Controller 入口在 T1.7（§6）单列，不计入本表；其中 `/api/healthz/live` 属 Controller 路由，已计入本表 C 类（本批更新后为 2 条）。
+- 计数边界：370 条只统计 `@Controller` 路由；`/docs`、`/admin/queues`、根路径/404 等非 Controller 入口在 T1.7（§6）单列，不计入本表；其中 `/api/healthz/live` 属 Controller 路由，C-1 关闭后计入 A 类（三批合并后 HTTP 域 C 类为 0 条）。
 - 涉及开关 **78 个**（78 个都有源码默认值；其中 `API_GO_USER_SETTINGS_READ_MODE` 默认空=兼容，其余 A 类开关默认 legacy；本批新增 `API_GO_CRAWL_FRONTIER_WRITES_MODE`）。另有兼容路径开关 `API_GO_ONBOARDING_MODE`（默认 shadow，`config.go:3393`），只在读模式为空时决定 onboarding 这条 GET，不计入 78 个。全文开关默认值与 `config.go` 行号逐条对应。
 
 #### 如何枚举与去重
@@ -642,7 +642,7 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 
 - **真实缺口（C）**：HTTP 域已无 C 类——C-1/C-5 由 `refactor/go-ops-entrypoints` 关闭，C-2/C-3/C-4 由 `refactor/go-crawl-frontier-writes` 关闭；C-7/C-9 不在 370 分母内，也已由 #138 关闭。
 - **有 Go handler 但 legacyproxy 没有对应 go 规则**：未发现。baseline 74 个 HTTP builder 均有对应 `RegisterGoHandler`（逐条见各表“Go 规则/处理器”列）；`/api/healthz/live` 在 baseline 是“handler 已注册但规则 shadow”的特例，本批已补 `WithHealthzLive`。
-- **有规则但 handler 未注册**：未发现。`main.go:848-1041` 的 78 个 `legacyproxy.With*` 调用（75 个 HTTP + GraphQL + 2 个 Socket.IO）全部有对应 handler 注册；两条 socket 路径与 `/graphql` 另有独立注册（`main.go:2689,2706,2728`），不在 HTTP 表内。
+- **有规则但 handler 未注册**：未发现。`main.go:848-1074` 的 82 个 `legacyproxy.With*` 调用（79 个 HTTP + GraphQL + 2 个 Socket.IO）全部有对应 handler 注册；两条 socket 路径与 `/graphql` 另有独立注册（`main.go:2689,2706,2728`），不在 HTTP 表内。
 - **规则存在但方法未覆盖 Nest 路由**：未发现（按 Method 白名单与 Nest 装饰器逐一比对；仅有的额外方法是每个 Go 规则附带的 `OPTIONS`，以及 socket/GraphQL 专用路径）。
 - **可本批最小修复**：无（C-1…C-5 均已落地；C-2/C-3/C-4 属新增 handler，不作为“漏一条规则”）。
 
@@ -656,7 +656,7 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 - 所有开关只按源码默认值记录；部署环境实际 env 值未核实（生产入口仍指向 Nest，compose 仍在 `api-go-pilot` profile）。
 - 个别 handler 包名由 `cmd/api` 注册调用与 import 推断（例如 `internal/newssourcescheduler` 同时承载 ops handler）；未逐行阅读每个 handler 的完整响应实现。
 
-### 附录 A：77 个 builder → main.go 调用 → 开关 → handler 接线（可复核完整性；#138 新增 3 个、#139 新增 1 个 builder）
+### 附录 A：82 个 builder → main.go 调用 → 开关 → handler 接线（可复核完整性；三批共新增 5 个：`WithHealthzLive`、`WithVectorDiagnostics`、`WithDocs`、`WithCrawlFrontierWrites`、`WithQueueOps`）
 
 | builder | main.go 调用行 | 开关（源码默认见 §0） | Go handler 包 | handler 注册证据 |
 |---|---|---|---|---|
@@ -693,12 +693,14 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 | `WithDashboardWarMapLayers` | `cmd/api/main.go:853` | `API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE` | `internal/dashboardwarmap` | `cmd/api/main.go:1639` |
 | `WithDashboardWarMapTransport` | `cmd/api/main.go:852` | `API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE` | `internal/dashboardwarmap` | `cmd/api/main.go:1635` |
 | `WithDataRuntimeSettings` | `cmd/api/main.go:1005` | `API_GO_DATA_RUNTIME_SETTINGS_MODE` | `internal/dataruntimesettings` | `cmd/api/data_runtime_settings.go:89` |
+| `WithDocs` | `cmd/api/main.go:1061` | `API_GO_DOCS_MODE`（默认 legacy；是否实际挂载仍由 `SWAGGER_ENABLED` 决定） | `internal/apidocs` | `cmd/api/apidocs.go:43` |
 | `WithEconomicData` | `cmd/api/main.go:1029` | `API_GO_ECONOMIC_DATA_MODE` | `internal/economicdata` | `cmd/api/economic_data.go:135` |
 | `WithEmailSettings` | `cmd/api/main.go:1010` | `API_GO_EMAIL_SETTINGS_MODE` | `internal/emailsettings` | `cmd/api/settings_diagnostics.go:61` |
 | `WithExceptionIngest` | `cmd/api/main.go:935` | `API_GO_EXCEPTION_INGEST_MODE` | `internal/exceptioningest` | `cmd/api/exception_ingest.go:65` |
 | `WithGdeltSnapshotRefresh` | `cmd/api/main.go:1015` | `API_GO_GDELT_SNAPSHOT_REFRESH_MODE` | `internal/gdeltsnapshot` | `cmd/api/gdelt_snapshot.go:77` |
 | `WithGeocoding` | `cmd/api/main.go:1011` | `API_GO_GEOCODING_MODE` | `internal/geocoding` | `cmd/api/settings_diagnostics.go:102` |
 | `WithGraphQLRead` | `cmd/api/main.go:906` | `API_GO_GRAPHQL_READ_MODE` 等复合条件（见 main.go:891-905） | `internal/graphqlread` | `cmd/api/main.go:2728` |
+| `WithHealthzLive` | `cmd/api/main.go:879` | `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow，可 legacy/go） | `internal/health` | `cmd/api/main.go:2203` |
 | `WithIdentityOnboarding` | `cmd/api/main.go:1025` | `API_GO_IDENTITY_ONBOARDING_MODE` | `internal/identityonboarding` | `cmd/api/identity_onboarding.go:61` |
 | `WithInfrastructureSettings` | `cmd/api/main.go:1001` | `API_GO_INFRASTRUCTURE_SETTINGS_MODE` | `internal/infrastructuresettings` | `cmd/api/infrastructure_settings.go:38` |
 | `WithItemsIngest` | `cmd/api/main.go:990` | `API_GO_ITEMS_INGEST_MODE` | `internal/itemsingest` | `cmd/api/items_ingest.go:70` |
@@ -723,6 +725,7 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 | `WithPlatformGovernanceSettings` | `cmd/api/main.go:986` | `API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE` | `internal/platformgovernance` | `cmd/api/platform_governance_settings.go:60` |
 | `WithProxyLoadBalancing` | `cmd/api/main.go:1000` | `API_GO_PROXY_LOAD_BALANCING_MODE` | `internal/modelaccesssettings` | `cmd/api/proxy_load_balancing.go:66` |
 | `WithPublicPortal` | `cmd/api/main.go:848` | `API_GO_PUBLIC_PORTAL_MODE` | `internal/publicportal` | `cmd/api/main.go:1509` |
+| `WithQueueOps` | `cmd/api/main.go:1074` | `API_GO_QUEUE_OPS_MODE`（默认 legacy；Go 独有 `/api/admin/queue-ops`） | `internal/queueops` | `cmd/api/queue_ops.go:60` |
 | `WithQualityOverview` | `cmd/api/main.go:937` | `API_GO_QUALITY_OVERVIEW_MODE` | `internal/qualityoverview` | `cmd/api/quality_overview.go:46` |
 | `WithRbac` | `cmd/api/main.go:925` | `API_GO_RBAC_MODE` | `internal/rbacapi` | `cmd/api/rbac.go:29` |
 | `WithRealtimeSocket` | `cmd/api/main.go:868` | `API_GO_REALTIME_SOCKET_MODE` | `internal/realtimesocket` | `cmd/api/main.go:2706` |
@@ -738,8 +741,9 @@ grep -oE 'legacyproxy\.With[A-Za-z]+' apps/api-go/cmd/api/main.go | sort -u | wc
 | `WithStorageDiagnostics` | `cmd/api/main.go:1004` | `API_GO_STORAGE_DIAGNOSTICS_MODE` | `internal/infrastructuresettings` | `cmd/api/storage_diagnostics.go:41` |
 | `WithUserDigest` | `cmd/api/main.go:860` | `API_GO_USER_DIGEST_MODE` | `internal/userdigest` | `cmd/api/personal_news.go:107` |
 | `WithUserNewsBehavior` | `cmd/api/main.go:859` | `API_GO_USER_NEWS_BEHAVIOR_MODE` | `internal/newsbehavior` | `cmd/api/personal_news.go:88` |
+| `WithVectorDiagnostics` | `cmd/api/main.go:1026` | `API_GO_VECTOR_DIAGNOSTICS_MODE`（默认 legacy） | `internal/infrastructuresettings` | `cmd/api/vector_diagnostics.go:56` |
 
-> `WithNotificationsSocket` / `WithRealtimeSocket` / `WithGraphQLRead` 不是 HTTP 路由 builder（分别归 T1.3/T1.2），列在此处仅为核对 78 个调用的完整性。`WithAccountData` 一个 builder 承载两条独立开关的 auth 路由。
+> `WithNotificationsSocket` / `WithRealtimeSocket` / `WithGraphQLRead` 不是 HTTP 路由 builder（分别归 T1.3/T1.2），列在此处仅为核对 82 个调用的完整性（79 个 HTTP + 1 GraphQL + 2 Socket.IO）。`WithAccountData` 一个 builder 承载两条独立开关的 auth 路由。
 
 ---
 
@@ -1560,7 +1564,7 @@ Nest 业务订阅站点（10 个）：9 个 `subscriber.subscribe(<频道>)` + 1
 | 入口 | 归属 | 开关 | 停 Nest 后是否可用 |
 |---|---|---|---|
 | `GET /docs`、`/docs/json`、`/docs/*`（Swagger UI/JSON） | **A（本批关闭 C-7）** | `API_GO_DOCS_MODE`（默认 legacy）；Nest 侧仍由 `SWAGGER_ENABLED` 决定是否挂载 | 可用（go 且 SWAGGER_ENABLED 为真时由 api-go 提供；否则 404） |
-| `/admin/queues`、`/admin/queues/*`（Bull Board） | **C**（仅 Nest，且默认不装配） | 无 `API_GO_*`；Nest 用 `BULL_BOARD_ENABLED` | 面板不可用（Go 只按 `/admin/queues` 前缀代理）；**运维能力已由 `API_GO_QUEUE_OPS_MODE=go` 的 `/api/admin/queue-ops` 承接** |
+| `/admin/queues`、`/admin/queues/*`（Bull Board） | **A/B（C-8 已关闭）**：面板仍只在 Nest 且默认不装配；运维能力由 Go 承接 | `API_GO_QUEUE_OPS_MODE`（Go 的 `/api/admin/queue-ops`）；面板本身用 `BULL_BOARD_ENABLED` | 面板不可用（Go 只按 `/admin/queues` 前缀代理）；队列/任务浏览、暂停恢复、重放与 DLQ 处置改用 `/api/admin/queue-ops` |
 | `GET /api/healthz`（认证版就绪探针） | **A** | `API_GO_HEALTHZ_MODE`（默认 legacy） | 可用（Go 接管需 MySQL/Redis/JWT） |
 | `GET /api/healthz/live`（公开存活探针） | **A（本批关闭 C-1）** | `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow，可 legacy/go） | 可用（go 时由 api-go 精确 GET 响应） |
 | `GET /api/metrics`（Prometheus） | **A** | `API_GO_METRICS_MODE`（默认 legacy） | 可用（Go 接管需 MySQL/Redis/JWT） |
@@ -1586,7 +1590,7 @@ Nest 业务订阅站点（10 个）：9 个 `subscriber.subscribe(<频道>)` + 1
 - **全局前缀排除**：`apps/api/src/main.ts:62-67` 排除 `admin/queues` 与 `admin/queues/*path`（`RequestMethod.ALL`），因此 Bull Board 是 `/admin/queues` 而不是 `/api/admin/queues`。
 - **鉴权**：`apps/api/src/modules/queue/bull-board-auth.middleware.ts:9`（`queue.manage`）、`:22-52`（Bearer JWT 验签 + `accessTokenBlacklist` + `getUserProfile` 权限检查；401/403 纯文本）。
 - **开关/默认**：`BULL_BOARD_ENABLED` 默认 `false`（`apps/api/src/modules/config/env.schema.ts:28`；`.env.example:394`）。默认部署根本没有这个 controller/模块，`/admin/queues` 在 Nest 是 404。
-- **Go 侧**：`{Prefix: "/admin/queues", Mode: ModeLegacy}`（`legacyproxy/proxy.go:147`），任意方法原样代理。没有 Go 实现或开关。
+- **Go 侧**：`/admin/queues` 仍是 `{Prefix: "/admin/queues", Mode: ModeLegacy}`（`legacyproxy/proxy.go:147`），任意方法原样代理——该前缀不迁 Go；队列运维的 Go 替代是**另一组路径** `/api/admin/queue-ops/*`（`API_GO_QUEUE_OPS_MODE`），见下方 C-8 落地小节。
 - **切流后影响**：只要 `BULL_BOARD_ENABLED=true` 且 `/admin/queues` 经 api-go 访问，Go 始终代理到 Nest；停 Nest 后 502。若默认 `false`，当前就是 404（Nest）→ 停 Nest 后 502，语义变化需要注意。
 - **C 类处理选项**：
   1. 保留一个独立 Bull Board 进程（Bull Board 自身可用 Express/BullMQAdapter 单独起，连同一 Redis），不依赖 Nest 主应用；需要新服务与新鉴权。
@@ -1688,7 +1692,7 @@ Nest 业务订阅站点（10 个）：9 个 `subscriber.subscribe(<频道>)` + 1
 |---|---|---|
 | T2 HTTP 测试 | `apps/api-go/internal/legacyproxy/cutover_coverage_test.go` + `testdata/nest-routes.txt` | 用 §2 的 368 条 A 类路由断言「全量 go 规则下不回落 `/api/`」；测试数据由本审计生成 |
 | T2 GraphQL 测试 | `apps/api-go/internal/graphqlread/cutover_roots_test.go` + `testdata/nest-graphql-roots.txt` | 用 §3 的 138 个 A 类根字段断言注册：134 个 Query/Mutation 走真实 `contract.Registry`，4 个 Subscription 走「真实构造 + `subscriptionRoots` AST 断言」（见 §7 第 11 条） |
-| T2 配置测试 | `apps/api-go/internal/config/cutover_all_go_test.go` + `testdata/all-go.env` | 断言 131 个开关全 go 时 `config.Load` 通过全部依赖校验 |
+| T2 配置测试 | `apps/api-go/internal/config/cutover_all_go_test.go` + `testdata/all-go.env` | 断言 137 个开关（136 个 go + `API_GO_LEGACY_FALLBACK_MODE=reject`）时 `config.Load` 通过全部依赖校验，且 136 个非豁免 `*Mode` 字段都读到 go |
 | T5.6 legacy 计数 | `apps/api-go/internal/legacyproxy/proxy.go`、`internal/metrics/families.go` | `api_go_legacy_proxy_requests_total{route_prefix}`，供手册判断 legacy 回落是否归零 |
 | T3 开关矩阵 | [switch-matrix.md](switch-matrix.md) | 每个开关的资源/依赖/回退/阶段；C 类相关开关见 §0.2 |
 | T4 配置样例 | `infra/docker/api-go-cutover.env.sample` + `compose` override 样例 | 全量 go 的可复制样例；说明 compose 硬编码与缺失变量 |

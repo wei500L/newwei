@@ -2,7 +2,7 @@
 
 本文件是「Go 切流准备」批次的开关矩阵交付物：为 `apps/api-go/internal/config/config.go` 中的**全部 137 个 `API_GO_*` 开关**逐行给出域、类别、Nest 是否同读、依赖、资源、切换顺序、回退方式、回退后已知问题、风险与阶段，并汇总 `config.go` 中全部跨开关硬校验。三批共追加 7 个：`refactor/go-ops-entrypoints` 4 个（C-1/C-5/C-7/C-9）、`refactor/go-crawl-frontier-writes` 1 个（C-2/C-3/C-4）、`refactor/go-queue-ops` 2 个（C-6/C-8 运维面与统计读侧）。
 
-基线：`origin/main = dcbe563b917fde0927637121a91de2186d6177a4`（#136），分支 `docs/go-cutover-readiness`。所有 `path:line` 均来自该提交；PR 证据只写 PR 号与本文件核对到的正文条目。**本文件是静态阅读结论，不代表任何部署、流量或 CI 通过。** 本文件由 `refactor/go-crawl-frontier-writes`（基线 `origin/main = ed436ead`）追加 `API_GO_CRAWL_FRONTIER_WRITES_MODE` 一行；该开关在 `config.go` 的行号以合并后代码为准，本行证据只写类型名与包路径。
+基线：`origin/main = dcbe563b917fde0927637121a91de2186d6177a4`（#136），分支 `docs/go-cutover-readiness`。所有 `path:line` 均来自该提交；PR 证据只写 PR 号与本文件核对到的正文条目。**本文件是静态阅读结论，不代表任何部署、流量或 CI 通过。** 三批（#138/#139/#140）合并后本文件按合并后的代码与规则重算：逐行 137 条、阶段拆分 37/61/18/14/3/4（=137）、类别与 Nest 同读计数都从合并后的行重新数；新增行的 `config.go` 行号以合并后代码为准，证据列只写类型名与包路径。
 
 ## 阅读说明
 
@@ -10,14 +10,15 @@
 
 - **137 个开关**：用 `grep -o 'getenv("API_GO_[A-Z0-9_]*")' apps/api-go/internal/config/config.go | sort -u | wc -l` 复核得 **137**；本文件在 130 个基线开关上追加三批共 7 个（`API_GO_HEALTHZ_LIVE_MODE`、`API_GO_LEGACY_FALLBACK_MODE`、`API_GO_DOCS_MODE`、`API_GO_VECTOR_DIAGNOSTICS_MODE`、`API_GO_CRAWL_FRONTIER_WRITES_MODE`、`API_GO_QUEUE_OPS_MODE`、`API_GO_QUEUE_ORG_STATS_MODE`）。`infra/docker/api-go-cutover.env.sample` 已同步为 137 行，与 `docs/refactor/cutover/ownership-audit.md`、`config.go` 的名单逐行核对一致。清单以 `config.go` 源码为准。
 - **注册/接线口径，不是部署启用口径**：本矩阵描述「开关设为 `go` 时 Go 做什么、Nest 是否让位」，**不表示任何环境已经启用**。仓库默认仍全部 `legacy`（两个历史单元例外：`API_GO_ONBOARDING_MODE` 默认 `shadow`、`API_GO_USER_SETTINGS_READ_MODE` 默认空串＝兼容；三批新增的 `API_GO_HEALTHZ_LIVE_MODE` 默认 `shadow`、`API_GO_LEGACY_FALLBACK_MODE` 默认 `proxy`），`api-go` 仍在 compose 的 `api-go-pilot` profile 内，`CANARY_PERCENT=0`，Web 默认指向 `api:4000`。
-- **一个开关一行**：共 **137 行**，按迁移地图的 18 个产品域分组（`vector` 域没有 `API_GO_*` 开关，单独说明；`refactor/go-ops-entrypoints` 的 4 个跨域开关单列在 `ops-entrypoints` 小节）。同一开关若同时接管 HTTP 与 GraphQL，类别列写多值。
+- **一个开关一行**：共 **137 行**，按迁移地图的 18 个产品域分组（`vector` 域没有 `API_GO_*` 开关，单独说明；其中 3 个跨域开关单列在 `ops-entrypoints` 小节，`API_GO_VECTOR_DIAGNOSTICS_MODE` 归入 settings 域）。同一开关若同时接管 HTTP 与 GraphQL，类别列写多值。
+- **行数统计（合并后重算）**：域表 134 行（18 个产品域）+ ops-entrypoints 3 行 = 137 行；跨开关校验 9 条 + 阶段总览 6 行 + Top 10 + 回退已知问题汇总。
 
 ### 如何回退
 
 回退一律是**改环境变量 + 重启目标进程**，不需要回滚代码或数据库：
 
 - 只被 `api-go` 读取的开关（HTTP/GraphQL 类，绝大多数）：改回 `legacy` 并重启 `api-go`，请求立即回落 `LEGACY_API_URL`（NestJS）。
-- 被 `api` 与 `api-go` 双端读取的开关（worker/Cron/Outbox/实时桥，见「Nest 同读」列为「是」的 34 个）：**先 `api-go` 回 `legacy` 并排空在途任务，再 `api` 回 `legacy`**；切换时顺序相反（先 `api` 置 `go`，再 `api-go` 置 `go`）。
+- 被 `api` 与 `api-go` 双端读取的开关（worker/Cron/Outbox/实时桥，见「Nest 同读」列为「是」的 35 个）：**先 `api-go` 回 `legacy` 并排空在途任务，再 `api` 回 `legacy`**；切换时顺序相反（先 `api` 置 `go`，再 `api-go` 置 `go`）。
 - 已写入的 MySQL/Mongo 数据、Redis 缓存与队列任务**不回滚**：所有已迁移单元的数据格式与 NestJS 同构，回退后 Nest 直接继续读写（逐条见「回退后已知问题」列与「回退后已知会重现的问题」一节）。
 - 两个历史单元的合法值集合不同：`API_GO_ONBOARDING_MODE` 回退值是 `shadow`（空串也等于 shadow），`API_GO_USER_SETTINGS_READ_MODE` 回退值是空串或 `shadow`；二者都**不接受** `legacy`（非法值启动失败，`config.go:3393-3415`）。
 
@@ -32,7 +33,7 @@
 
 ## 跨开关硬校验（config.go 全量）
 
-`grep -c 'errs = append' config.go` 共 **350** 条（基线 348，本批新增 2 条：值域校验与跨开关校验），其中绝大多数是单开关「值域校验」（`must be one of legacy|go`）与单开关「资源校验」（`X is required when API_GO_...=go`）。**`API_GO_*` 之间**的硬校验共 **9 条**，全部在 `load` 内，命中即 `Load` 返回错误、进程不启动：
+`grep -c 'errs = append' config.go` 共 **358** 条（基线 348；#138 +5、#139 +2、#140 +3 = +10，合并后逐项复核无丢失），其中绝大多数是单开关「值域校验」（`must be one of legacy|go`）与单开关「资源校验」（`X is required when API_GO_...=go`）。**`API_GO_*` 之间**的硬校验共 **9 条**，全部在 `load` 内，命中即 `Load` 返回错误、进程不启动：
 
 | # | 触发条件（全部满足） | 硬校验内容 | 代码位置 | 说明 |
 |---|---|---|---|---|
@@ -75,7 +76,7 @@
 | knowledge（知识图谱、实体情报与影响传播） | 4 | 2 | 1 | 1 | 0 | 0 | 0 |
 | crawl（采集源、模板、画像、工作流与 Frontier） | 15 | 3 | 9 | 1 | 2 | 0 | 0 |
 | situation（态势监控、地理与实时信号） | 10 | 2 | 5 | 2 | 1 | 0 | 0 |
-| settings（设置中心与平台治理） | 12 | 3 | 9 | 0 | 0 | 0 | 0 |
+| settings（设置中心与平台治理） | 13 | 4 | 9 | 0 | 0 | 0 | 0 |
 | model-gateway（模型接入、密钥与 LLM 网关） | 3 | 0 | 3 | 0 | 0 | 0 | 0 |
 | infrastructure-data（基础设施、采集凭据与数据运行） | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
 | observability（日志、异常、质量、遥测与运维） | 15 | 5 | 4 | 4 | 2 | 0 | 0 |
@@ -83,9 +84,9 @@
 | economic（经济数据与 AkShare） | 2 | 0 | 1 | 0 | 1 | 0 | 0 |
 | archive（归档阅读与准备任务） | 2 | 1 | 0 | 0 | 1 | 0 | 0 |
 | async-runtime（队列、调度、Outbox 与实时传输） | 5 | 1 | 0 | 0 | 2 | 1 | 1 |
-| ops-entrypoints（停 Nest 收尾，三批新增） | 4 | 1 | 0 | 0 | 0 | 0 | 3 |
+| ops-entrypoints（停 Nest 收尾，三批新增） | 3 | 0 | 0 | 0 | 0 | 0 | 3 |
 
-类别分布（可多选，按合并后的逐行重算，见下）：HTTP **83**、GraphQL Query **13**、GraphQL Mutation **12**、GraphQL Subscription **1**、worker **13**、Cron **17**、启动任务 **2**、Socket.IO **2**。Nest 同读：**35** 个「是」、**11** 个「仅 schema 声明」、其余 **91** 个 Nest 完全不读。
+类别分布（可多选，按合并后的逐行重算，见下）：HTTP **83**、GraphQL Query **13**、GraphQL Mutation **13**、GraphQL Subscription **1**、worker **13**、Cron **17**、启动任务 **2**、Socket.IO **2**。Nest 同读：**35** 个「是」、**11** 个「仅 schema 声明」、其余 **91** 个 Nest 完全不读。
 
 ## 按域矩阵
 
@@ -193,7 +194,7 @@
 | `API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE` | knowledge | GraphQL Mutation（证据人工复核写，1 个） | 否 | 与知识图谱读开关独立；不读 Mongo、不起 worker | MySQL+JWT+Redis | 仅 api-go（Nest 不读该值） | 改回 legacy 重启 api-go | GAP-KG-001 的队列遮挡修复在 #86 交付（GAPS.md:45-51）；回退后整包回 Nest，已写复核状态不回滚 | 中（人工复核写 + 审计） | 2 | config.go:4614/2604/6060；main.go:894/1225；graphqlread/knowledgereview |
 | `API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE` | knowledge | Cron（5 分钟图谱自动构建：模型校验/消歧 + 事务写图） | 是（knowledge-graph.ingestion.service.ts:135 读取后跳过） | 共享 tick gate/组织锁/游标；模型上游在请求期 | MySQL+Redis | 先 api=go 重启 → 再 api-go=go 重启；回退反向 | 先 api-go 回 legacy → 再 api 回 legacy；数据/队列格式两端相同 | PR #104：回退后 Nest 从当前游标继续，Go 写入的实体/边/证据/游标保留不回滚；K2 权重修复不被撤销 | 高（模型调用 + 图事务写） | 3 | config.go:1739/3557/5358-5361；cmd/api/kg_ingestion.go:63；apps/api/src/modules/knowledge-graph/knowledge-graph.ingestion.service.ts:135 |
 
-### crawl · 采集源、模板、画像、工作流与 Frontier（14 个开关）
+### crawl · 采集源、模板、画像、工作流与 Frontier（15 个开关）
 
 | 开关 | 域 | 类别 | Nest 同读 | 依赖（开关/配置） | 所需资源 | 切换顺序 | 回退方式 | 回退后已知问题 | 风险 | 阶段 | 证据 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -228,7 +229,7 @@
 | `API_GO_GDELT_SNAPSHOT_REFRESH_MODE` | situation | HTTP（1 条 POST external-snapshot/refresh） | 否（只有 Go 读该变量，Nest 继续提供控制器） | 与 GDELT_SNAPSHOT 独立；共享同一重建租约 | MySQL+JWT+Redis | 仅 api-go（Nest 不读该值） | 改回 legacy 重启 api-go | PR #110：流量回退只改本开关，POST 回 Nest，不需重启定时任务所有权；已写快照不回滚 | 中（强刷会触发真实外部抓取） | 2 | config.go:1567/4368/6312；cmd/api/gdelt_snapshot.go:69；legacyproxy/gdelt_snapshot_routes.go:25 |
 | `API_GO_REALTIME_SIGNALS_MODE` | situation | Cron（每分钟实时信号采集：8 个来源 → 一个洞察快照） | 是（realtime-signals.service.ts:120 读取后返回） | 全有或全无：不能把来源集拆到两个进程；共享 tick gate 与组织租约 | MySQL+Redis+Mongo | 先 api=go 重启 → 再 api-go=go 重启；回退反向 | 先 api-go 回 legacy → 再 api 回 legacy；数据/队列格式两端相同 | PR #121：回退到 legacy 后按组织预扣的问题重新出现（每轮共享预扣失效，PR #121:39/60）；额度/令牌/状态在共享 Redis/MySQL，Nest 可直接沿用 | 高（外部 API 额度账本 + 8 来源） | 3 | config.go:1589/4358/6300-6306；cmd/api/realtime_signals.go:34；apps/api/src/modules/realtime-signals/realtime-signals.service.ts:120 |
 
-### settings · 设置中心与平台治理（12 个开关）
+### settings · 设置中心与平台治理（13 个开关）
 
 | 开关 | 域 | 类别 | Nest 同读 | 依赖（开关/配置） | 所需资源 | 切换顺序 | 回退方式 | 回退后已知问题 | 风险 | 阶段 | 证据 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -315,9 +316,9 @@
 `vector` 域没有 `API_GO_*` 开关：vector 是独立进程 `apps/vector-go`（三 HTTP + 内部 token + orgId 过滤），与 api-go 的开关矩阵无交集；上游切换属独立部署决策（`DEPENDENCIES.md:104`）。
 
 
-### ops-entrypoints · 停 Nest 收尾（refactor/go-ops-entrypoints 新增 4 个开关）
+### ops-entrypoints · 停 Nest 收尾（refactor/go-ops-entrypoints 新增 3 个开关 + settings 域的 1 个）
 
-本小节由 `refactor/go-ops-entrypoints` 追加，对应审计 C-1/C-5/C-7/C-9。四个开关都不属于迁移地图的 18 个产品域，因此单列；它们同样由 `api-go` 独占读取，NestJS 不读，切换只需要重启 `api-go`。
+本小节由 `refactor/go-ops-entrypoints` 追加，对应审计 C-1/C-5/C-7/C-9。其中 3 个开关不属于迁移地图的 18 个产品域，因此单列（`API_GO_VECTOR_DIAGNOSTICS_MODE` 属 settings 域，见上方 settings 表）；它们同样由 `api-go` 独占读取，NestJS 不读，切换只需要重启 `api-go`。
 
 | 开关 | 域 | 类别 | Nest 同读 | 依赖（开关/配置） | 所需资源 | 切换顺序 | 回退方式 | 回退后已知问题 | 风险 | 阶段 | 证据 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -378,7 +379,7 @@
 4. **真实外部服务未验证**：SMTP、模型/LiteLLM、crawl4ai、Telegram/OREF、AkShare、Nominatim/OpenSky、S3/MinIO、Elasticsearch 均未实网调用（`VERIFY-EXT-001`）。所有「资源」列只表示启动硬条件。
 5. **无 PR 回退/已知问题描述的开关**：矩阵中该列写「未核实」的行（如 `API_GO_ACCOUNT_SECURITY_MODE`、`API_GO_AUTH_FACTORS_MODE`、`API_GO_PUBLIC_PORTAL_MODE` 等），只能确认「改回 legacy 后请求回 Nest」的通用语义，具体副作用未在 PR 正文中说明。
 6. **`OBS-DATA-001`**：`main.go` 吞掉 `wireDataRuntimeSettings` 错误（GAPS.md:142），当前是否可达未证明；本矩阵不把它写成「九路必然不可用」。
-7. **阶段划分是规划归并**：BRIEF 定义阶段 0–6，本矩阵按「接线的最重动作」把 135 个开关归入 1–6；同一阶段内没有严格先后顺序，阶段内顺序建议见 runbook（T5）。
+7. **阶段划分是规划归并**：BRIEF 定义阶段 0–6，本矩阵按「接线的最重动作」把 137 个开关归入 1–6；同一阶段内没有严格先后顺序，阶段内顺序建议见 runbook（T5）。
 8. **GraphQL root 的字段级权限/租户隔离未逐条复验**：属 T1.2 审计范围；本矩阵只到「root 是否登记/整包回退」粒度。
 9. **`API_GO_GRAPHQL_WORKSPACE_WRITE_MODE` 的历史记录**：`DEPENDENCIES.md:30` 写「main 没有该开关」，那是旧基线快照；当前 `config.go:4570` 与 `main.go:2364` 已存在，本矩阵以代码为准。
 10. **`/docs-yaml` 未实现**：Nest 的 `SwaggerModule.setup("docs", …)` 默认还提供 `/docs-yaml`（YAML 序列化）。本批只提供 `/docs/json`；`API_GO_DOCS_MODE=go` 且 fallback 为 `reject` 时 `/docs-yaml` 返回 404。该差异记录在 runbook 阶段 6 与 PR 描述。
