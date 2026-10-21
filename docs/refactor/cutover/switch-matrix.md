@@ -8,7 +8,7 @@
 
 ### 统计口径
 
-- **130 个开关**：用 `grep -o 'getenv("API_GO_[A-Z0-9_]*")' apps/api-go/internal/config/config.go | sort -u | wc -l` 复核得到 **130**，与 `/tmp/cutover-recon/switches.txt` 逐行 `diff` **完全一致**（无差异、无需更正）。清单以 `config.go` 源码为准。
+- **130 个开关**：用 `grep -o 'getenv("API_GO_[A-Z0-9_]*")' apps/api-go/internal/config/config.go | sort -u | wc -l` 复核得到 **130**；与 `docs/refactor/cutover/ownership-audit.md`、`infra/docker/api-go-cutover.env.sample` 的开关名单逐行核对**完全一致**（无差异）。清单以 `config.go` 源码为准。
 - **注册/接线口径，不是部署启用口径**：本矩阵描述「开关设为 `go` 时 Go 做什么、Nest 是否让位」，**不表示任何环境已经启用**。仓库默认仍全部 `legacy`（两个历史单元例外：`API_GO_ONBOARDING_MODE` 默认 `shadow`、`API_GO_USER_SETTINGS_READ_MODE` 默认空串＝兼容），`api-go` 仍在 compose 的 `api-go-pilot` profile 内，`CANARY_PERCENT=0`，Web 默认指向 `api:4000`。
 - **一个开关一行**：共 **130 行**，按迁移地图的 18 个产品域分组（`vector` 域没有 `API_GO_*` 开关，单独说明）。同一开关若同时接管 HTTP 与 GraphQL，类别列写多值。
 - **行数统计**：域表 130 行 + 跨开关校验 8 条 + 阶段总览 6 行 + Top 10 + 回退已知问题汇总 8 条。
