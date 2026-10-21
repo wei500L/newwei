@@ -461,7 +461,7 @@ docker compose \
 
 **回退：** 先 api-go 回 legacy 并重启，再 api 回 legacy 并重启。耗时 2–6 分钟（两侧重启 + Nest 就绪）。数据风险：同一周期内最多重复执行一次（两侧都可能在切换窗口领取同一 tick），业务应幂等；若发现重复写，按 §7 记录并让业务验收人决定是否人工清理。
 
-### 阶段 4：BullMQ worker（12 个开关）
+### 阶段 4：BullMQ worker（14 个开关；4E 是队列运维与统计，不消费业务队列）
 
 **分组与顺序**（sample 4A–4D，遵循 BRIEF：条目流水线 → 爬取/Frontier LLM → 其余）：
 
@@ -500,6 +500,46 @@ docker compose \
 3. 再把 `api` 侧改回 `legacy` 并重启；Nest 重新创建 Worker，继续消费同一队列。
 4. 观察 failed 不增加。
 耗时估计：普通队列 2–6 分钟；爬取队列 5–30 分钟（取决于 in-flight）。数据风险：任务可能被重试一次（BullMQ 至少一次语义），业务需幂等；**禁止** `DEL bull:<q>:*` 或 flushall。
+
+#### 4E：队列运维控制台与按组织的队列计数（`refactor/go-queue-ops`）
+
+**目标：** 停掉 Nest 之后队列仍然可观察、可处置，组织的 itemPipeline 计数不再失真。两个开关互不依赖，都放在阶段 4 是因为它们替代的运维面（Bull Board、`QueueOrgStatsTracker`）在 Nest 停用后才会消失。
+
+##### 4E-1 `API_GO_QUEUE_OPS_MODE`（队列运维 REST + Web 控制台）
+
+- **是什么**：api-go 新增的 Go 独有接口 `/api/admin/queue-ops/*`（12 条：队列列表与计数、按状态分页 job、job 详情、重试/删除/提升单个 job、批量重试某队列 failed、按状态清理、暂停/恢复队列、itemPipelineDlq 重放与删除）与 `apps/web` 的 `admin/ops/queue-ops` 页面。Nest 从来没有这些路由。
+- **鉴权**：登录 + `queue.manage` + 平台管理员。**这是相对 Bull Board 的有意收紧**：Bull Board 只校验组织级 `queue.manage`（`apps/api/src/modules/queue/bull-board-auth.middleware.ts:22-60`），而该权限是组织级 manager 的默认权限（`packages/config/src/rbac.ts:94`），所以任何组织的 manager 都能看到全部租户的 job 数据。Go 控制台要求平台管理员，平台管理员判定复用 `internal/platformgovernance`。
+- **启用【未执行】**：
+  1. 设 `API_GO_QUEUE_OPS_MODE=go` 并重启 `api-go`（Nest 不读该值，不需要重启 `api`）。
+  2. 用一个**平台管理员并且拥有 `queue.manage`** 的账号打开 `/admin/ops/queue-ops`；入口只在满足条件时显示。
+  3. 验证：队列列表能列出 `bullmqcleanup` 全量清单（含 Bull Board 没有注册的队列与 `itemPipelineDlq`）；计数与 `redis-cli` 的 `LLEN/ZCARD bull:<q>:*` 一致；暂停/恢复/重试/删除各做一次并检查 `AuditLog`（`resource="queue"`，action `job_retry`/`job_delete`/`job_promote`/`queue_retry_failed`/`queue_clean`/`queue_pause`/`queue_resume`/`dlq_replay`/`dlq_delete`）。
+  4. 页面若显示「队列运维需要 api-go 的 API_GO_QUEUE_OPS_MODE=go」，说明请求落到了 Nest 并返回 404，即开关仍为 `legacy` 或请求没经过 api-go。
+- **注意**：`crawl4ai`、`crawl4ai-hot`、`crawl4ai-normal` 三队列的暂停/恢复在本控制台**被拒绝**（HTTP 409），必须继续使用专用接口 `/api/admin/crawl4ai/queue/pause|resume` —— 那三个队列的暂停带自适应并发、meta concurrency 与 C2 广播等附加语义，本批不复制。
+- **回退**：改回 `legacy` 并重启 `api-go`；页面立刻显示提示而不是报错。已执行的队列状态变更（重试/删除/清理/暂停）与 `AuditLog` 行不回滚。
+- **Bull Board**：`/admin/queues` 的代理规则仍归 `refactor/go-ops-entrypoints`，本批不改；Bull Board 模块也不删。
+
+##### 4E-2 `API_GO_QUEUE_ORG_STATS_MODE`（按组织的 itemPipeline 计数）
+
+- **是什么**：把 Nest 的 `QueueOrgStatsTracker`（监听 itemPipeline 的 waiting/delayed/active/completed/failed/removed）迁到 api-go 的 `internal/queueorgstats`。Redis 键名（`queue:itemPipeline:job:<id>:meta`、`queue:itemPipeline:org:<orgId>:counts`）、字段、TTL（7 天 / 30 天）与三段 Lua 与 Nest 完全一致，dashboard 与 GraphQL 读取方不需要改动。
+- **单一所有者**：事件流是 XREAD（不是消费组，每个实例都会收到每条事件），所以 Go 侧用 Redis 租约 `lock:queue:itemPipeline:orgstats` 只让一个实例读取；租约丢失即停止读取，接手者从当前流尾（`$`）继续。相比 Nest 现状（多实例同时 apply，靠 Lua 的相等判断兜底），把「同一状态重复应用」和「滞后实例写回旧状态」的窗口降为单实例无竞争。
+- **切换顺序（必须严格）**：
+  1. `api` 侧设 `go` 并重启 —— Nest 的 tracker 不再注册那 6 个 QueueEvents 监听。
+  2. 确认 Nest 日志无 tracker 错误、`queue-org-stats` 不再出现新事件处理。
+  3. `api-go` 侧设 `go` 并重启 —— Go 抢租约并开始读事件流。
+- **两步之间会漏记**：从 Nest 停止监听到 Go 拿到租约之间产生的事件不会被任何一侧应用，计数可能短暂偏差。偏差会随 meta（7 天）与 counts（30 天）TTL 自然收敛；偏差不可接受时用下面的校正方法。
+- **一次性校正（手工，本批未执行/未验证）**：
+  1. 先把 `api-go` 设为 `go` 并确认租约已被 Go 持有（`GET lock:queue:itemPipeline:orgstats` 有值且 `TTL` 在 30 秒内被持续刷新）。
+  2. 暂停写入侧（`API_GO_ITEM_PIPELINE_WORKER_MODE` 已在 go 时可直接做；否则先停 Nest 的 itemPipeline worker），让 `bull:itemPipeline:wait` 与 `:active` 不再变化。
+  3. 从 `bull:itemPipeline:wait|active|delayed|priorities|completed|failed` 枚举 job id，读每个 job hash 的 `data` 取 `orgId`、按状态归类，然后 `DEL queue:itemPipeline:org:<orgId>:counts` 并用 `HSET queue:itemPipeline:org:<orgId>:counts <status> <n>` 重建，最后 `EXPIRE` 设 30 天。
+  4. 恢复写入侧，观察 dashboard 的队列统计与 `bull:itemPipeline:*` 的实时计数是否一致。
+  5. 注意：`completed`/`failed` 是历史累计计数器（Nest 也是累计语义），重建值只代表当前保留窗口内的任务数，与累计值不可比；只重建 `waiting`/`active`/`delayed` 往往就够了。
+- **回退（反向顺序）**：先把 `api-go` 改回 `legacy` 并重启（释放租约、停止读事件流），再把 `api` 改回 `legacy` 并重启（Nest tracker 重新注册监听）。回退期间的窗口同样会漏记，处置同上。
+
+##### 4E-3 Bull Board 关闭建议
+
+- 若部署里 `BULL_BOARD_ENABLED=true`（默认 `false`，`apps/api/src/modules/config/env.schema.ts:28`），说明 `/admin/queues` 正暴露跨租户的 job 数据与重试/删除操作（B1）。
+- 本批完成后建议：**改用 `/admin/ops/queue-ops`，并把 `BULL_BOARD_ENABLED` 设为 `false`**（或至少限制到内网）。Bull Board 本批不删，仍可临时打开排障，但它不再是被迫依赖。
+- 关闭 Bull Board 只影响 `/admin/queues` 面板本身；`/admin/queues` 的代理规则仍按现状代理到 Nest。
 
 ### 阶段 5：实时推送（3 个开关 + 重建 Web）
 
