@@ -84,11 +84,19 @@ func New(options Options) (*Service, error) {
 	if settings == nil {
 		settings = func(context.Context) crawl4ai.Settings { return crawl4ai.DefaultSettings() }
 	}
+	// The LLM surface is an interface field, so a typed nil *LLMClient would
+	// become a NON-nil interface and HasLlmJudge would report a judge client that
+	// does not exist. NestJS gates the deferred judge on `this.frontierLlm`
+	// presence, so the nil case must be a nil interface here too.
+	var llm crawlfrontierllm.FrontierLLM
+	if options.LLM != nil {
+		llm = options.LLM
+	}
 	frontier := crawlfrontierllm.New(crawlfrontierllm.Options{
 		DB:        options.DB,
 		Redis:     options.Redis,
 		Enqueuer:  options.Enqueuer,
-		LLM:       options.LLM,
+		LLM:       llm,
 		Workflows: options.Workflows,
 		Now:       now,
 	})
