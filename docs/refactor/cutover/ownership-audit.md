@@ -1686,13 +1686,14 @@ Nest 业务订阅站点（10 个）：9 个 `subscriber.subscribe(<频道>)` + 1
 8. 时区：compose 未设置 `TZ`，定时任务的时区对齐未实测。
 9. PR 证据：T3 矩阵中的回退/已知问题来自 PR 描述与提交信息，凡未在描述中明确写的均标「未核实」。
 10. 行号：本文档中的 `proxy.go` 行号按 `dcbe563b` 记录；本批在该文件增加 legacy 计数后工作区行号偏移，合并后需平移。
+11. GraphQL Subscription 的注册可观测性：`graphqlsubscriptions.New` 在包内自建私有 `contract.Registry`（`apps/api-go/internal/graphqlsubscriptions/handler.go:113`）且不导出访问器，所以 T2 测试对这 4 个订阅根采用「真实构造 `New`（内存 stub、不连 Redis/网络）+ 对 `source.go` 的 `subscriptionRoots` 表与 `handler.go` 注册循环做 AST 断言」；Query/Mutation 的 134 个根走真实 `contract.Registry` 断言。限制与理由写在 `apps/api-go/internal/graphqlread/cutover_roots_test.go` 的包注释里。
 
 ## 8. 与其它交付物的衔接
 
 | 交付物 | 位置 | 与本审计的关系 |
 |---|---|---|
 | T2 HTTP 测试 | `apps/api-go/internal/legacyproxy/cutover_coverage_test.go` + `testdata/nest-routes.txt` | 用 §2 的 365 条 A 类路由断言「全量 go 规则下不回落 `/api/`」；测试数据由本审计生成 |
-| T2 GraphQL 测试 | `apps/api-go/internal/graphqlread/cutover_roots_test.go` + `testdata/nest-graphql-roots.txt` | 用 §3 的 138 个 A 类根字段断言 Registry 全部注册 |
+| T2 GraphQL 测试 | `apps/api-go/internal/graphqlread/cutover_roots_test.go` + `testdata/nest-graphql-roots.txt` | 用 §3 的 138 个 A 类根字段断言注册：134 个 Query/Mutation 走真实 `contract.Registry`，4 个 Subscription 走「真实构造 + `subscriptionRoots` AST 断言」（见 §7 第 11 条） |
 | T2 配置测试 | `apps/api-go/internal/config/cutover_all_go_test.go` + `testdata/all-go.env` | 断言 130 个开关全 go 时 `config.Load` 通过全部依赖校验 |
 | T5.6 legacy 计数 | `apps/api-go/internal/legacyproxy/proxy.go`、`internal/metrics/families.go` | `api_go_legacy_proxy_requests_total{route_prefix}`，供手册判断 legacy 回落是否归零 |
 | T3 开关矩阵 | [switch-matrix.md](switch-matrix.md) | 每个开关的资源/依赖/回退/阶段；C 类相关开关见 §0.2 |
