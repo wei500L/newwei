@@ -55,10 +55,11 @@ type Options struct {
 
 	// Exec optionally injects an already-built crawlexecution.Service. The crawl
 	// worker shares the instance it runs ordinary tasks with, so a Frontier
-	// result write stores media through the same object storage reader, feeds
-	// ingestToItems through the same item ingestor and relays notifications
-	// through the same publisher, exactly like the ordinary task path and like
-	// NestJS resultService.persistResults.
+	// result write stores media through the same object storage reader and relays
+	// notifications through the same publisher, exactly like the ordinary task
+	// path and like NestJS resultService.persistResults. The shared service also
+	// carries the item ingestor, but PersistFrontierResults keeps
+	// ingestToItems=false because NestJS persistFrontierResponse never ingests.
 	//
 	// A nil value keeps the package-local construction from DB/Mongo/Redis,
 	// ExecConfig and HTTPClient. That fallback carries no storage reader, no item

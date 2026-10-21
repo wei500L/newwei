@@ -14,9 +14,11 @@ package main
 // implemented by internal/crawlfrontiernode. That processor is built here from
 // the same MySQL/Mongo/Redis handles, the same crawl_client:settings reader, the
 // same workflow compiler and the same crawlexecution.Service the ordinary task
-// path uses, so a Frontier result write stores media, feeds ingestToItems and
-// relays notifications exactly like a normal crawl. A nil processor still fails
-// go mode at startup as a defence in depth.
+// path uses, so a Frontier result write stores media and relays notifications
+// exactly like a normal crawl when the site profile enables storeMedia. The
+// item ingestor travels with the shared service but the Frontier path keeps
+// ingestToItems=false, like NestJS persistFrontierResponse. A nil processor
+// still fails go mode at startup as a defence in depth.
 
 import (
 	"context"
@@ -209,10 +211,12 @@ func wireCrawlWorker(
 
 	// The frontier_node executor. It reuses `execution` as its
 	// crawlexecution.Service, so a Frontier result write uploads media through the
-	// same object storage reader, feeds ingestToItems through the same item
-	// ingestor and relays notifications through the same publisher as a normal
-	// crawl. The package would otherwise build its own service without any of
-	// them and silently drop the media files NestJS stores.
+	// same object storage reader and relays notifications through the same
+	// publisher as a normal crawl. The item ingestor travels with the shared
+	// service too, but the Frontier path keeps ingestToItems=false exactly like
+	// NestJS persistFrontierResponse, so nothing is ingested. The package would
+	// otherwise build its own service without any of them and silently drop the
+	// media files NestJS stores.
 	frontier, err := newCrawlFrontierNodeProcessor(cfg, db, redisClient, mongoDatabase, execution, settings)
 	if err != nil {
 		return nil, err
