@@ -2,6 +2,8 @@
 
 2026-10-19仅占用刷新：NEWSNOW-SOURCES-001已有Ready业务PR #94 OPEN，续核headb33cc1eab4dd56d08e9a802a2670d363a3227462（初head06542a7f后仅traceId修复）；普通CI39296327154运行中，未合main91e759b4。业务task由编码窗口维护，规划仅回填占用/实际共享diff，不把候选实现加入main或重复分配来源接口。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **17/17**、Query **9/9**、Mutation **1/1**（Go 注册/分母，C 类 0 条）；聚合/指标/聚类运维 17 条 HTTP 与 9 个 Query、1 个指标刷新 Mutation 全部注册；剩余 Nest 入口 0 条（ingestion/Cron 执行权见 GAP-ASYNC-001）。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 12/17、Query 9/9、Mutation 0/1），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 2026-10-19本次限定选批（main91e759b4）：仅两公开来源HTTP由[NEWSNOW-SOURCES-001](../tasks/NEWSNOW-SOURCES-001.md) reserved，[完整提示词](../tasks/NEWSNOW-SOURCES-001.prompt.md)已发出。64个元数据ID/41个可达族，包含真实getter、凭据、兼容缓存、实时接缝与并发池优化；尚无Go生产实现/注册，不提前增加本域覆盖。推荐、热点模型、LLM backfill和所有Nest预热/热点Cron保持原所有权。只续核该链，不刷新下方全域历史日期。
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。NEWS-BRIEF-001 编码窗口在 main 9d0462e1 基础上实现候选（Ready [PR #72](https://github.com/wei500L/newwei/pull/72)，head 517a73f9，verify/integration 通过），尚未合 main，见[任务](../tasks/NEWS-BRIEF-001.md)。

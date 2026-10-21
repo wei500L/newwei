@@ -2,6 +2,8 @@
 
 本域限定续核：2026-10-19 Europe/Moscow，`origin/main 91e759b449c4511dc96d86539ea0eb258754d07e`；深度为三Query/搜索CSV/缓存分类与显示/准备生产及Nest消费边界，不把历史全域审查扩为当前验收。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **1/1**、Query **3/3**、Mutation **—**（Go 注册/分母，C 类 0 条）；1 条状态 HTTP 与 3 个归档读 Query 已注册；剩余 Nest root 0 条（准备 worker 执行权见 async-runtime 与 GAP-ASYNC-001）。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 1/1、Query 0/3），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 ## 范围与实施状态
 
 仅 GET 准备运行状态经数据运行开关接管。archiveDigest/archiveCalendar/archiveDetail Query 均未在 Go Registry 注册；前两项读入口会在缺数据时入准备队列。

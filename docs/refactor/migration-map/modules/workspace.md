@@ -2,6 +2,8 @@
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **13/13**、Query **11/11**、Mutation **11/11**（Go 注册/分母，C 类 0 条）；看板 13 条 HTTP 与 11 个 Query（含 `processedItemById` 按本表归属）/11 个 Mutation（通知、看板、告警通道与告警规则）全部注册；剩余 Nest 入口 0 条。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 13/13、Query 10/11、Mutation 0/11），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 ## 范围与实施状态
 
 看板统计、War Map、Spacetime 和 SSE 已实现。GraphQL 通知/看板/情感及四个告警读 root 已注册；alertRules 和全部交互写尚无生产注册。8 个交互写已预留。

@@ -2,6 +2,8 @@
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **24/25**、Query **—**、Mutation **—**（Go 注册/分母，**C 类 1 条**：`GET /api/system-settings/vector-service/diagnostics`（依赖 Nest 进程内 vector 客户端计数器））；25 条中 24 条注册（storage 3、归档准备 3、Nomination 3、运行凭据 2、实时信号 3、态势设置 7、vector 4，含按本表归属的 `realtime-signals/runtime`）；仅 vector diagnostics 仍为 Nest。旧行为 `91e759b4`/`3cedce9a` 快照（HTTP 15/25），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 ## 范围与实施状态
 
 存储/vector 配置及采集运行凭据七路，Nominatim/归档/实时信号等数据运行设置九路已接管；归档 status 是读已有队列状态，不代表归档生产与消费迁移。

@@ -38,6 +38,7 @@ import (
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
+	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 )
 
 // Mode 是单条路由规则的流量去向。
@@ -530,7 +531,39 @@ func (g *Gateway) RegisterGoHandler(prefix string, handler GoHandler) {
 // ServeLegacy 把当前请求按原样代理到 NestJS。已接管路径上、缺少预检头的
 // OPTIONS 用它回到原来的代理去向。
 func (g *Gateway) ServeLegacy(w http.ResponseWriter, r *http.Request) {
+	g.proxyLegacy(w, r)
+}
+
+// proxyLegacy is the single exit for every request the gateway forwards to
+// NestJS. The counter feeds the cutover runbook's "legacy fallback is zero"
+// check; route_prefix is a bounded family label (/api/<first segment>,
+// /graphql, /socket.io, ...) rather than the full path so cardinality stays
+// bounded by the top-level route families.
+func (g *Gateway) proxyLegacy(w http.ResponseWriter, r *http.Request) {
+	metrics.RecordLegacyProxyRequest(legacyRoutePrefix(r.URL.Path))
 	g.proxy.ServeHTTP(w, r)
+}
+
+// legacyRoutePrefix collapses a request path into a bounded route-family label.
+func legacyRoutePrefix(path string) string {
+	if strings.HasPrefix(path, "/api/") {
+		rest := strings.TrimPrefix(path, "/api/")
+		if i := strings.IndexByte(rest, '/'); i >= 0 {
+			rest = rest[:i]
+		}
+		if rest == "" {
+			return "/api"
+		}
+		return "/api/" + rest
+	}
+	trimmed := strings.TrimPrefix(path, "/")
+	if trimmed == "" {
+		return "/"
+	}
+	if i := strings.IndexByte(trimmed, '/'); i >= 0 {
+		trimmed = trimmed[:i]
+	}
+	return "/" + trimmed
 }
 
 // ServeHTTP 按路由表分发。
@@ -558,7 +591,7 @@ func (g *Gateway) ServeHTTPWithShadow(w http.ResponseWriter, r *http.Request, sh
 			"error":      "Not Implemented",
 		})
 	case ModeLegacy:
-		g.proxy.ServeHTTP(w, r)
+		g.proxyLegacy(w, r)
 	case ModeShadow:
 		// shadow：NestJS 仍是响应方；Go 实现异步旁路执行比对。
 		// 主响应不受 Go 侧执行成败/快慢影响（超时即丢弃差分）。
@@ -575,10 +608,10 @@ func (g *Gateway) ServeHTTPWithShadow(w http.ResponseWriter, r *http.Request, sh
 				return
 			}
 			// canary 命中但无实现：回 legacy（fail-safe），不 501 客户端。
-			g.proxy.ServeHTTP(w, r)
+			g.proxyLegacy(w, r)
 			return
 		}
-		g.proxy.ServeHTTP(w, r)
+		g.proxyLegacy(w, r)
 	}
 }
 
@@ -624,7 +657,7 @@ type ShadowBudget struct {
 func (g *Gateway) serveShadow(w http.ResponseWriter, r *http.Request, sh ShadowDispatcher, budget ShadowBudget) {
 	// 只对只读方法差分：写方法双发有副作用，明令禁止。
 	if sh == nil || !isReadonlyMethod(r.Method) {
-		g.proxy.ServeHTTP(w, r)
+		g.proxyLegacy(w, r)
 		return
 	}
 
@@ -632,7 +665,7 @@ func (g *Gateway) serveShadow(w http.ResponseWriter, r *http.Request, sh ShadowD
 	// upgrade——直接纯代理，不做任何捕获。
 	if isUpgradeRequest(r) {
 		sh.ObserveShadow(r, 0, nil, nil, ShadowSkipStreaming)
-		g.proxy.ServeHTTP(w, r)
+		g.proxyLegacy(w, r)
 		return
 	}
 
@@ -655,7 +688,7 @@ func (g *Gateway) serveShadow(w http.ResponseWriter, r *http.Request, sh ShadowD
 		buf, err := io.ReadAll(io.LimitReader(r.Body, maxReq+1))
 		if err != nil {
 			// 读 body 失败不影响主链路：直接代理（差分放弃）。
-			g.proxy.ServeHTTP(w, r)
+			g.proxyLegacy(w, r)
 			return
 		}
 		if int64(len(buf)) > maxReq {
@@ -672,7 +705,7 @@ func (g *Gateway) serveShadow(w http.ResponseWriter, r *http.Request, sh ShadowD
 	}
 
 	capture := newCaptureWriter(w, maxResp)
-	g.proxy.ServeHTTP(capture, r)
+	g.proxyLegacy(capture, r)
 
 	// 差分观察（异步语义由 dispatcher/runner 保证；此处只是提交）。
 	if requestTooLarge {

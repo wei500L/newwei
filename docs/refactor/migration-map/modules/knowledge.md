@@ -2,6 +2,8 @@
 
 最近核对：2026-10-18 14:18 MSK（UTC+03:00），由 13:51 全域核对增量复查 #68；`origin/main 3cedce9aa3200436aba3596f63b559de5490cec8`。返回[地图入口](../README.md) / [规划规则](../PLANNING.md)。
 
+**覆盖更新（2026-10-21，基线 `dcbe563b`，更新至 #136）**：HTTP **—**、Query **11/11**、Mutation **1/1**（Go 注册/分母，C 类 0 条）；11 个读 root（含证据复核队列，按本表归属）与人工复核 Mutation 已注册；本域无主 API HTTP；剩余 Nest root 0 条（ingestion 执行权见 GAP-ASYNC-001）。旧行为 `91e759b4`/`3cedce9a` 快照（Query 11/11、Mutation 0/1），差值即 #92–#136 的注册与接线增量；分子口径为“存在 `API_GO_*` 开关且 Go 规则/处理器/Register 就位”，**不是部署启用**。对账与 C 类清单见 [README 覆盖表](../README.md#注册覆盖) 与 [执行权审计](../../cutover/ownership-audit.md)。
+
 ## 范围与实施状态
 
 图谱六读、冲击与实体影响四读，以及证据复核队列 Query 已注册；证据 review 写未注册。设置 root 归设置中心，避免双计。
