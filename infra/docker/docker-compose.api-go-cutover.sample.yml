@@ -1,0 +1,125 @@
+# ============================================================================
+# api-go 切流 compose override 样例（docker-compose.api-go-cutover.sample.yml）
+# ============================================================================
+#
+# 性质与边界：
+#   1. 不被 docker-compose.yml 默认加载；不传 -f 时对任何服务都没有影响。
+#   2. 本文件做两件事：
+#      (a) 给 api-go 服务加 env_file，注入全部 130 个 API_GO_* 开关与资源占位符；
+#      (b) 把 compose 的 api-go 服务里「不经过 ${VAR} 插值」的 59 个开关用
+#          ${VAR:-legacy} 重新声明，让 env_file / --env-file 的值不被 environment
+#          覆盖掉（Compose 优先级：environment > env_file）。
+#      59 = 49 个写死字面量（7 个 go + 42 个 legacy）+ 10 个完全未注入。
+#      另外 71 个在 base compose 里已经是 ${API_GO_X:-legacy}，无需重复声明。
+#      三个特殊默认值：ONBOARDING_MODE 默认 shadow（不接受 legacy）；
+#      USER_SETTINGS_READ_MODE 默认空（空=兼容语义，不等于 legacy）；
+#      USER_SETTINGS_WRITE_MODE 默认 legacy。
+#   3. 值由 infra/docker/api-go-cutover.env.sample 或部署环境自己的 env 文件提供；
+#      尖括号 <...> 都是占位符，必须替换，严禁把真实密钥写回仓库。
+#   4. 使用方式（仓库根目录执行；两个 --env-file 缺一不可，因为 --env-file
+#      会替代默认 .env；多 --env-file 需要 compose v2.24+，本批未执行验证）：
+#
+#        docker compose \
+#          --env-file infra/docker/.env \
+#          --env-file infra/docker/api-go-cutover.env.sample \
+#          -f infra/docker/docker-compose.yml \
+#          -f infra/docker/docker-compose.api-go-cutover.sample.yml \
+#          --profile api-go-pilot up -d
+#
+#      阶段 0 严格全 legacy：把第二个 --env-file 换成 phase0 环境文件（见 runbook
+#      §3 阶段 0），本 override 不需要改。
+#
+#   5. 默认部署不变：不传上面的 -f/--env-file 时，api-go 仍只在 api-go-pilot
+#      profile 下启动，130 个开关仍按 compose 现有默认（legacy / 7 个固定 go），
+#      Web 仍指向 NestJS，canary 仍为 0。
+#   6. 本 override + env 样例只保证「业务切流」可控；**不保证能完全停 Nest**：
+#      /api/healthz/live 固定 shadow（C1）、crawl-frontier 写、vector diagnostics、
+#      itemPipelineDlq、Bull Board、Swagger 仍需用户决定（runbook §3.6/§4.2）。
+#
+# 数量核对（dcbe563b 的 infra/docker/docker-compose.yml:774-1697）：
+#   - api-go environment 中 API_GO_* 共 120 个：71 个插值、49 个写死；
+#   - 另有 10 个完全没有注入；
+#   - 本文件重新声明 59 个（49 + 10），不是只声明规划窗口临时名单的 30 条（该名单未随仓库提交、缺 19 个，见 runbook §0.2）。
+#
+# 凭据类：compose 的 api-go 块在 dcbe563b 已注入 JWT_SECRET / MONGO_URI /
+# REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_DB / SYSTEM_SETTINGS_ENCRYPTION_KEY
+# （docker-compose.yml:1601-1644）。下面仍显式重列一次，让本 override 自包含、
+# 便于审阅，并保证 env_file 与 --env-file 的值一致。
+#
+services:
+  api-go:
+    env_file:
+      - ./api-go-cutover.env.sample
+    environment:
+      # --- 7 个 compose 固定 go 的开关：重新声明后由 env 控制 ---
+      API_GO_USER_SETTINGS_READ_MODE: ${API_GO_USER_SETTINGS_READ_MODE:-}
+      API_GO_USER_SETTINGS_WRITE_MODE: ${API_GO_USER_SETTINGS_WRITE_MODE:-legacy}
+      API_GO_PUBLIC_PORTAL_MODE: ${API_GO_PUBLIC_PORTAL_MODE:-legacy}
+      API_GO_DASHBOARD_STATS_MODE: ${API_GO_DASHBOARD_STATS_MODE:-legacy}
+      API_GO_DASHBOARD_CHARTS_MODE: ${API_GO_DASHBOARD_CHARTS_MODE:-legacy}
+      API_GO_DASHBOARD_WAR_MAP_MODE: ${API_GO_DASHBOARD_WAR_MAP_MODE:-legacy}
+      API_GO_ONBOARDING_MODE: ${API_GO_ONBOARDING_MODE:-shadow}
+      # --- 42 个 compose 固定 legacy 的开关：重新声明后由 env 控制 ---
+      API_GO_CONTENT_SUBSCRIPTIONS_MODE: ${API_GO_CONTENT_SUBSCRIPTIONS_MODE:-legacy}
+      API_GO_USER_NEWS_BEHAVIOR_MODE: ${API_GO_USER_NEWS_BEHAVIOR_MODE:-legacy}
+      API_GO_USER_DIGEST_MODE: ${API_GO_USER_DIGEST_MODE:-legacy}
+      API_GO_ANALYSIS_VIEWS_MODE: ${API_GO_ANALYSIS_VIEWS_MODE:-legacy}
+      API_GO_ANALYSIS_BOARDS_MODE: ${API_GO_ANALYSIS_BOARDS_MODE:-legacy}
+      API_GO_ANALYSIS_THREADS_MODE: ${API_GO_ANALYSIS_THREADS_MODE:-legacy}
+      API_GO_ANALYSIS_EXPORT_MODE: ${API_GO_ANALYSIS_EXPORT_MODE:-legacy}
+      API_GO_ARCHIVE_READING_MODE: ${API_GO_ARCHIVE_READING_MODE:-legacy}
+      API_GO_SITUATION_MONITORS_MODE: ${API_GO_SITUATION_MONITORS_MODE:-legacy}
+      API_GO_NEWS_SOURCES_MODE: ${API_GO_NEWS_SOURCES_MODE:-legacy}
+      API_GO_CRAWL_WORKFLOWS_MODE: ${API_GO_CRAWL_WORKFLOWS_MODE:-legacy}
+      API_GO_CRAWL_PROFILES_MODE: ${API_GO_CRAWL_PROFILES_MODE:-legacy}
+      API_GO_CRAWL_TEMPLATES_MODE: ${API_GO_CRAWL_TEMPLATES_MODE:-legacy}
+      API_GO_LLM_LOGS_MODE: ${API_GO_LLM_LOGS_MODE:-legacy}
+      API_GO_ADMIN_LOGS_MODE: ${API_GO_ADMIN_LOGS_MODE:-legacy}
+      API_GO_EXCEPTION_INGEST_MODE: ${API_GO_EXCEPTION_INGEST_MODE:-legacy}
+      API_GO_NEWS_INDICATORS_MODE: ${API_GO_NEWS_INDICATORS_MODE:-legacy}
+      API_GO_QUALITY_OVERVIEW_MODE: ${API_GO_QUALITY_OVERVIEW_MODE:-legacy}
+      API_GO_CLASSIFICATION_RSS_OPS_MODE: ${API_GO_CLASSIFICATION_RSS_OPS_MODE:-legacy}
+      API_GO_NEWSNOW_CLUSTERING_OPS_MODE: ${API_GO_NEWSNOW_CLUSTERING_OPS_MODE:-legacy}
+      API_GO_CRAWL_READ_TELEMETRY_MODE: ${API_GO_CRAWL_READ_TELEMETRY_MODE:-legacy}
+      API_GO_CRAWL_METADATA_MODE: ${API_GO_CRAWL_METADATA_MODE:-legacy}
+      API_GO_CRAWL_TASK_WRITE_MODE: ${API_GO_CRAWL_TASK_WRITE_MODE:-legacy}
+      API_GO_CRAWL_QUEUE_OPS_MODE: ${API_GO_CRAWL_QUEUE_OPS_MODE:-legacy}
+      API_GO_RUNTIME_SETTINGS_MODE: ${API_GO_RUNTIME_SETTINGS_MODE:-legacy}
+      API_GO_GRAPHQL_KG_IMPACT_MODE: ${API_GO_GRAPHQL_KG_IMPACT_MODE:-legacy}
+      API_GO_GRAPHQL_WORKSPACE_READ_MODE: ${API_GO_GRAPHQL_WORKSPACE_READ_MODE:-legacy}
+      API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE: ${API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE:-legacy}
+      API_GO_GRAPHQL_CRAWL_METADATA_MODE: ${API_GO_GRAPHQL_CRAWL_METADATA_MODE:-legacy}
+      API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE: ${API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE:-legacy}
+      API_GO_ACCOUNT_SECURITY_MODE: ${API_GO_ACCOUNT_SECURITY_MODE:-legacy}
+      API_GO_AVATAR_UPLOAD_MODE: ${API_GO_AVATAR_UPLOAD_MODE:-legacy}
+      API_GO_USER_DATA_EXPORT_MODE: ${API_GO_USER_DATA_EXPORT_MODE:-legacy}
+      API_GO_ITEMS_READING_MODE: ${API_GO_ITEMS_READING_MODE:-legacy}
+      API_GO_GRAPHQL_ITEMS_LIST_MODE: ${API_GO_GRAPHQL_ITEMS_LIST_MODE:-legacy}
+      API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE: ${API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE:-legacy}
+      API_GO_GRAPHQL_WORKSPACE_WRITE_MODE: ${API_GO_GRAPHQL_WORKSPACE_WRITE_MODE:-legacy}
+      API_GO_GRAPHQL_ALERT_RULES_MODE: ${API_GO_GRAPHQL_ALERT_RULES_MODE:-legacy}
+      API_GO_GRAPHQL_SETTINGS_WRITE_MODE: ${API_GO_GRAPHQL_SETTINGS_WRITE_MODE:-legacy}
+      API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE: ${API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE:-legacy}
+      API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE: ${API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE:-legacy}
+      API_GO_GRAPHQL_RSS_TRANSLATION_MODE: ${API_GO_GRAPHQL_RSS_TRANSLATION_MODE:-legacy}
+      # --- 10 个 compose 未注入的开关：env_file 注入，这里再用 environment 固定优先级 ---
+      API_GO_DASHBOARD_SPACETIME_GEO_MODE: ${API_GO_DASHBOARD_SPACETIME_GEO_MODE:-legacy}
+      API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE: ${API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE:-legacy}
+      API_GO_DASHBOARD_STREAM_MODE: ${API_GO_DASHBOARD_STREAM_MODE:-legacy}
+      API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE: ${API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE:-legacy}
+      API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE: ${API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE:-legacy}
+      API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE: ${API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE:-legacy}
+      API_GO_GRAPHQL_NEWS_EVENTS_MODE: ${API_GO_GRAPHQL_NEWS_EVENTS_MODE:-legacy}
+      API_GO_GRAPHQL_READ_MODE: ${API_GO_GRAPHQL_READ_MODE:-legacy}
+      API_GO_HEALTHZ_MODE: ${API_GO_HEALTHZ_MODE:-legacy}
+      API_GO_RBAC_MODE: ${API_GO_RBAC_MODE:-legacy}
+      # --- 凭据/资源（值仍由 .env / env 样例提供；占位符必须替换）---
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_DB: ${REDIS_DB:-0}
+      SYSTEM_SETTINGS_ENCRYPTION_KEY: ${SYSTEM_SETTINGS_ENCRYPTION_KEY:-}
+# 说明：DATABASE_URL 由 compose 用 MYSQL_* 派生（docker-compose.yml:810），
+# 优先级高于 env_file，因此不需要在这里重复声明；要改 MySQL 请改 MYSQL_*。
