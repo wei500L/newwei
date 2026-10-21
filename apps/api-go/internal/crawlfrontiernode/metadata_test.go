@@ -74,7 +74,8 @@ func TestEstimateFreshnessScorePathDateBands(t *testing.T) {
 	}{
 		{"no date segment", "https://example.com/news/world", 0},
 		{"date without trailing slash", "https://example.com/2025/03/04", 0},
-		{"future date is the freshest band", "https://example.com/2999/01/01/story", 1},
+		{"future 20xx date is the freshest band", "https://example.com/2099/01/01/story", 1},
+		{"non-20xx year is not a date segment", "https://example.com/2999/01/01/story", 0},
 		{"2000 date is the stale band", "https://example.com/2000/01/01/story", 0.1},
 	}
 	for _, testCase := range cases {

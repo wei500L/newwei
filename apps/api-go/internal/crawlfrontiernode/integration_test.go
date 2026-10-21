@@ -717,7 +717,8 @@ func TestFrontierNodeLayeredHappyPath(t *testing.T) {
 		t.Fatalf("node metadata httpStatus = %v (present=%v)", got, ok)
 	}
 	if got, ok := rootMetadata.Number("pendingLlmJudgeJobs"); !ok || got != 0 {
-		t.Fatalf("node metadata pendingLlmJudgeJobs = %v (present=%v)", got, ok)
+		raw, _ := rootMetadata.MarshalJSON()
+		t.Fatalf("node metadata pendingLlmJudgeJobs = %v (present=%v); metadata=%s", got, ok, raw)
 	}
 	if raw, ok := rootMetadata.Raw("crawlError"); !ok || string(raw) != "null" {
 		t.Fatalf("node metadata crawlError = %s (present=%v)", raw, ok)
