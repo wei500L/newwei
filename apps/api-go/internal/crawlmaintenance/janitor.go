@@ -30,7 +30,11 @@ type JanitorConfig struct {
 type activityCounter interface {
 	GetState(ctx context.Context) (crawlqueue.ActivityState, error)
 	EnsureActiveTaskCount(ctx context.Context, db *sql.DB) (int, error)
-	MarkTasksTerminal(ctx context.Context, count int) error
+	// MarkTasksTerminalAtomic is used instead of the pipelined
+	// MarkTasksTerminal: reclaiming stale tasks concurrent with a task being
+	// queued must not lose the increment between HINCRBY and the floor-to-zero
+	// write (same class as the #135 B1 fix in the crawl worker).
+	MarkTasksTerminalAtomic(ctx context.Context, count int) error
 }
 
 // pendingQueueScanner is the crawlqueue pending scan (wait, paused, delayed,
@@ -372,7 +376,7 @@ func (s *JanitorScheduler) failTasks(ctx context.Context, kind string, tasks []s
 			delete(byID, task.ID)
 		}
 	}
-	if err := s.activity.MarkTasksTerminal(ctx, len(ordered)); err != nil {
+	if err := s.activity.MarkTasksTerminalAtomic(ctx, len(ordered)); err != nil {
 		return err
 	}
 	s.writeAuditLogs(ctx, ordered, kind, message)
