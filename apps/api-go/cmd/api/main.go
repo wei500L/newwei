@@ -1493,7 +1493,7 @@ func run() error {
 	// bucket.
 	var graphqlLimiter *policy.Limiter
 	if redisClient != nil {
-		graphqlLimiter = policy.NewLimiter(redisClient, cfg.RateLimitLogin, cfg.RateLimitLoginWindow, cfg.RateLimitFailOpen)
+		graphqlLimiter = policy.NewLimiter(redisClient, cfg.RateLimitLogin, cfg.RateLimitLoginWindow, cfg.RateLimitFailOpen).WithSettingsReader(policy.NewMySQLSettingsReader(sharedDB))
 	}
 	// The HTTP POST and the GraphQL root share one metadata service instance.
 	// It is built once, only when one of the two switches needs it, and reuses
