@@ -252,7 +252,7 @@ Go 侧范围：`internal/{authn,authz,authhttp,cors,httpx,config,legacyproxy,sha
 | 基线 | `dc48abc1`（CI run 39664944449 = success） |
 | 分支 / worktree | `review/go-identity-core` / `/Users/oo/project/newwei-review-identity-core` |
 | 报告提交 | 见本文件所在提交 |
-| 提交 | 16 个修复/文档提交，逐条见 PR 描述 |
+| 提交 | 16 个修复提交 + 2 个报告提交（共 18），逐条 SHA 见 PR 描述 |
 
 **验证口径**：本机只做了静态阅读、`git diff` 逐文件核对与 `gofmt -l`（改动文件全部干净；`internal/health` 的 3 个文件为基线既有问题，已列为 GW-08）。**没有编译、没有运行测试、没有连接任何真实服务**。全部正确性主张都还待普通 CI 验证；精确 head SHA、run 链接与各 job 结论记录在 PR 描述中，`skipped` 不计为通过。
 
