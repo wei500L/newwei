@@ -168,18 +168,39 @@ type retryCandidate struct {
 	CrawlTaskID sql.NullString
 }
 
-// errRunTerminal marks a requeue refused because the owning run is terminal.
+// errRunCanceled marks a requeue refused because the owning run was canceled.
 // The single-node route answers 409; the bulk route reports the id as skipped,
 // which is the same per-item signal NestJS uses for a node that cannot be
 // requeued.
-var errRunTerminal = errors.New("crawl frontier run is terminal")
+var errRunCanceled = errors.New("crawl frontier run is canceled")
+
+// runStatusAllowsNodeRetry reports whether a node of a run with this status may
+// be requeued.
+//
+// Only a canceled run is refused. Cancellation is the explicit stop decision
+// and the cancellation protocol already fanned it out to the run's nodes and to
+// its workflow run, so requeueing one node would revive work the caller
+// stopped.
+//
+// A completed run must stay retryable: refreshRunStatus completes a run as soon
+// as one page succeeded, so a completed run routinely still owns failed nodes,
+// and the admin console offers Retry on exactly those nodes
+// (crawl-frontier-console.tsx gates the action on the node status, not on the
+// run status). Refusing completed runs therefore turned a supported console
+// action into a 409 with no way for the operator to re-crawl a failed page.
+// NestJS refused neither status, and requeueNode rewinds the run to
+// queued/finishedAt NULL in both implementations, which is what makes the retry
+// visible on the run.
+func runStatusAllowsNodeRetry(status RunStatus) bool {
+	return status != RunStatusCanceled
+}
 
 // RetryNode ports retryNode: the node must exist inside the caller's
 // organization (otherwise 404), its run must carry a crawlTaskId (otherwise
 // 400), then the node is requeued and the run detail is returned.
 //
-// B4: a node of a completed or canceled run is refused with 409 instead of
-// resurrecting the run. See requeueNode for the reasoning.
+// Deviating from NestJS on purpose: a node of a canceled run is refused with
+// 409 instead of resurrecting the run. See requeueNode for the reasoning.
 func (s *WriteService) RetryNode(ctx context.Context, orgID, nodeID string) (runDetail, error) {
 	if s == nil || s.frontier == nil || s.reads == nil {
 		return runDetail{}, errors.New("crawlfrontierruns: crawl frontier write service is not configured")
@@ -195,8 +216,8 @@ func (s *WriteService) RetryNode(ctx context.Context, orgID, nodeID string) (run
 		return runDetail{}, newStatus(http.StatusBadRequest, "Crawl frontier run is missing crawlTaskId")
 	}
 	if err := s.requeueNode(ctx, orgID, *candidate); err != nil {
-		if errors.Is(err, errRunTerminal) {
-			return runDetail{}, newStatus(http.StatusConflict, "Crawl frontier run is completed or canceled and cannot be retried")
+		if errors.Is(err, errRunCanceled) {
+			return runDetail{}, newStatus(http.StatusConflict, "Crawl frontier run is canceled and cannot be retried")
 		}
 		return runDetail{}, err
 	}
@@ -248,10 +269,9 @@ func (s *WriteService) RetryNodes(ctx context.Context, orgID string, ids []strin
 			continue
 		}
 		if err := s.requeueNode(ctx, orgID, candidate); err != nil {
-			// B4: a node whose run already reached a terminal status is reported
-			// per item, matching how the bulk response already signals nodes that
-			// cannot be requeued.
-			if errors.Is(err, errRunTerminal) {
+			// A node whose run was canceled is reported per item, matching how the
+			// bulk response already signals nodes that cannot be requeued.
+			if errors.Is(err, errRunCanceled) {
 				result.SkippedIDs = append(result.SkippedIDs, candidate.NodeID)
 				continue
 			}
@@ -349,17 +369,15 @@ func scanRetryCandidates(rows *sql.Rows) ([]retryCandidate, error) {
 // metadata in between cannot have its keys silently overwritten. The node and
 // run status updates commit together; the enqueue happens after the commit.
 //
-// B4 - a node whose run is already completed or canceled is refused with
-// errRunTerminal instead of being requeued. NestJS writes `status:"queued"`,
-// `finishedAt:null` unconditionally, which flips a terminal run back to queued
-// while its other nodes stay canceled/completed; refreshRunStatus then treats it
-// as live again and can end it completed or failed a second time. That
-// contradicts the terminal-run invariant this package already documents and
-// enforces in the cancellation protocol (cancel.go runStatusIsCancelable,
-// `status NOT IN ('completed','canceled')`) and in crawlfrontierllm refresh, and
-// the console only ever offers Retry on failed/skipped nodes, so no supported
-// flow depends on resurrecting a run. The check is read under the same row lock
-// as the update, so a cancel committing concurrently cannot slip past it.
+// B4 - a node whose run was canceled is refused with errRunCanceled instead of
+// being requeued. NestJS writes `status:"queued"`, `finishedAt:null`
+// unconditionally, which revives a run the operator explicitly stopped and, for
+// a canceled run, leaves the cancellation protocol's own fan-out (run nodes and
+// the workflow run are canceled in one transaction) contradicted by a live
+// node. The check is read under the same row lock as the update, so a cancel
+// committing concurrently cannot slip past it. Completed runs stay retryable,
+// which is the NestJS contract and what the admin console expects; see
+// runStatusAllowsNodeRetry.
 //
 // Lock order: the run row is locked before the node row, which is the order the
 // cancellation protocol uses (it locks runs, then updates their nodes). Two
@@ -393,8 +411,8 @@ func (s *WriteService) requeueNode(ctx context.Context, orgID string, candidate 
 		}
 		return err
 	}
-	if !runStatusIsCancelable(RunStatus(runStatus)) {
-		return errRunTerminal
+	if !runStatusAllowsNodeRetry(RunStatus(runStatus)) {
+		return errRunCanceled
 	}
 
 	var (

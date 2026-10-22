@@ -1390,7 +1390,7 @@ func TestFrontierWritesIntegrationRetryNodes(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// B4: terminal runs are refused
+// B4: canceled runs are refused, completed runs stay retryable
 
 // TestFrontierWritesIntegrationRetryTerminalRun is the B4 contract: a node of a
 // canceled run is refused with 409 by the single route, reported as skipped by
@@ -1422,7 +1422,7 @@ func TestFrontierWritesIntegrationRetryTerminalRun(t *testing.T) {
 
 	_, err := h.writes.RetryNode(h.ctx, orgID, nodeID)
 	frontierWritesStatusError(t, err, http.StatusConflict,
-		"Crawl frontier run is completed or canceled and cannot be retried")
+		"Crawl frontier run is canceled and cannot be retried")
 
 	// The refused single retry must not change the run, the node, the workflow
 	// run or the event log, and must not enqueue anything.
@@ -1439,6 +1439,82 @@ func TestFrontierWritesIntegrationRetryTerminalRun(t *testing.T) {
 		t.Fatalf("RetryNodes skipped = %v (count %d), want [%s]", result.SkippedIDs, result.SkippedCount, nodeID)
 	}
 	frontierWritesAssertTerminalState(t, h, runID, nodeID, workflowID)
+}
+
+// TestFrontierWritesIntegrationRetryCompletedRun is the other half of the retry
+// guard: a completed run is NOT terminal for retries. refreshRunStatus completes
+// a run as soon as one page succeeded, so a completed run routinely still owns
+// failed nodes, and the admin console offers Retry on those nodes regardless of
+// the run status. The retry must therefore requeue the node, rewind the run and
+// its workflow run to queued, and enqueue exactly one job.
+func TestFrontierWritesIntegrationRetryCompletedRun(t *testing.T) {
+	h := frontierWritesNewHarness(t)
+	const (
+		orgID      = "org-retry-completed"
+		runID      = "crun-retry-completed"
+		nodeID     = "cnode-retry-completed"
+		taskID     = "ctask-retry-completed"
+		workflowID = "cworkflow-retry-completed"
+	)
+	finishedAt := frontierWritesNow().Add(-time.Minute)
+	runWorkflowID := workflowID
+	runTaskID := taskID
+	frontierWritesSeedRun(t, h.db, frontierWritesRunSeed{
+		ID: runID, OrgID: orgID, WorkflowRunID: &runWorkflowID, CrawlTaskID: &runTaskID,
+		SeedURL: "https://example.com/seed", Status: string(RunStatusCompleted), FinishedAt: &finishedAt,
+	})
+	frontierWritesSeedWorkflowRun(t, h.db, workflowID, orgID, string(RunStatusCompleted), &finishedAt)
+	frontierWritesSeedNode(t, h.db, frontierWritesNodeSeed{
+		ID: nodeID, RunID: runID, OrgID: orgID, PageType: "article", QueueClass: "normal",
+		Status: string(NodeStatusFailed), Depth: 1,
+	})
+
+	detail, err := h.writes.RetryNode(h.ctx, orgID, nodeID)
+	if err != nil {
+		t.Fatalf("RetryNode on a completed run: %v", err)
+	}
+	if detail.ID != runID {
+		t.Fatalf("returned run detail id = %q, want %q", detail.ID, runID)
+	}
+	if detail.Status != RunStatusQueued || detail.FinishedAt != nil {
+		t.Fatalf("returned run = {%q %v}, want the requeued run without finishedAt", detail.Status, detail.FinishedAt)
+	}
+
+	var runStatusValue string
+	var runFinishedAt sql.NullTime
+	if err := h.db.QueryRowContext(h.ctx,
+		"SELECT status, finishedAt FROM CrawlFrontierRun WHERE id = ?", runID).
+		Scan(&runStatusValue, &runFinishedAt); err != nil {
+		t.Fatalf("read CrawlFrontierRun: %v", err)
+	}
+	if runStatusValue != string(RunStatusQueued) || runFinishedAt.Valid {
+		t.Fatalf("completed run = {%q %v}, want {queued NULL}", runStatusValue, runFinishedAt)
+	}
+	var nodeStatus string
+	if err := h.db.QueryRowContext(h.ctx,
+		"SELECT status FROM CrawlFrontierNode WHERE id = ?", nodeID).Scan(&nodeStatus); err != nil {
+		t.Fatalf("read CrawlFrontierNode: %v", err)
+	}
+	if nodeStatus != string(NodeStatusQueued) {
+		t.Fatalf("node status = %q, want queued", nodeStatus)
+	}
+	var workflowStatus string
+	var workflowFinishedAt sql.NullTime
+	if err := h.db.QueryRowContext(h.ctx,
+		"SELECT status, finishedAt FROM CrawlStrategyWorkflowRun WHERE id = ?", workflowID).
+		Scan(&workflowStatus, &workflowFinishedAt); err != nil {
+		t.Fatalf("read CrawlStrategyWorkflowRun: %v", err)
+	}
+	if workflowStatus != string(RunStatusQueued) || workflowFinishedAt.Valid {
+		t.Fatalf("workflow run = {%q %v}, want {queued NULL}", workflowStatus, workflowFinishedAt)
+	}
+	if count := frontierWritesCount(t, h.ctx, h.db,
+		"SELECT COUNT(*) FROM CrawlStrategyWorkflowRunEvent WHERE runId = ? AND eventType = 'frontier_node_requeued'",
+		workflowID); count != 1 {
+		t.Fatalf("frontier_node_requeued events = %d, want 1", count)
+	}
+	frontierWritesAssertSingleJob(t, h.redis, crawlqueue.QueueNormal, nodeID,
+		crawlqueue.PriorityClassNormal, orgID, taskID, runID)
 }
 
 // frontierWritesAssertTerminalState asserts the canceled run and its failed node
@@ -1497,10 +1573,10 @@ func frontierWritesAssertTerminalState(t *testing.T, h *frontierWritesHarness, r
 // writer's committed document and merges on top of it, so the assertion is not a
 // lucky interleaving; the loop only exercises both possible orders.
 //
-// Scope: this models a worker that writes through the locked helper. An unlocked
-// read-modify-write (crawlfrontierllm.UpdateNodeMetadata) can still overwrite the
-// retry keys, so this test does not claim protection against that writer; it
-// proves only that requeueNode no longer merges into a pre-transaction snapshot.
+// Scope: both writers take the node row lock (requeueNode inside its own
+// transaction, the worker through crawlfrontierllm.UpdateNodeMetadataLocked, whose
+// implementation is the same row-locked merge the package's unlocked-looking
+// helper uses), so the merge is serialised rather than merely ordered.
 func TestFrontierWritesIntegrationRetryMetadataMerge(t *testing.T) {
 	h := frontierWritesNewHarness(t)
 	const orgID = "org-retry-metadata"

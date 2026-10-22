@@ -330,20 +330,22 @@ func TestMergeKeywordList(t *testing.T) {
 	}
 }
 
-// TestRunStatusIsCancelableIsTheTerminalPredicate pins the B4 decision: the B4
-// guard reuses the cancellation protocol's terminal predicate, so completed and
-// canceled runs are the only statuses a retry refuses.
-func TestRunStatusIsCancelableIsTheTerminalPredicate(t *testing.T) {
-	for status, live := range map[RunStatus]bool{
+// TestRunStatusAllowsNodeRetry pins the retry guard: only a canceled run
+// refuses a node retry. A completed run stays retryable because refreshRunStatus
+// completes a run as soon as one page succeeded, so completed runs routinely
+// still own failed nodes and the admin console offers Retry on exactly those
+// nodes.
+func TestRunStatusAllowsNodeRetry(t *testing.T) {
+	for status, allowed := range map[RunStatus]bool{
 		RunStatusPending:   true,
 		RunStatusQueued:    true,
 		RunStatusRunning:   true,
 		RunStatusFailed:    true,
-		RunStatusCompleted: false,
+		RunStatusCompleted: true,
 		RunStatusCanceled:  false,
 	} {
-		if got := runStatusIsCancelable(status); got != live {
-			t.Fatalf("runStatusIsCancelable(%q) = %v, want %v", status, got, live)
+		if got := runStatusAllowsNodeRetry(status); got != allowed {
+			t.Fatalf("runStatusAllowsNodeRetry(%q) = %v, want %v", status, got, allowed)
 		}
 	}
 }
