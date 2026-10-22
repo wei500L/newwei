@@ -15,12 +15,27 @@ const (
 	channelPrefix    = "gqlsub:"
 	feedBuffer       = 64
 	busChannelBuffer = 1024
+
+	// busSubscribeTimeout and busUnsubscribeTimeout bound the SUBSCRIBE and
+	// UNSUBSCRIBE round trips issued while subLock is held.
+	busSubscribeTimeout   = 5 * time.Second
+	busUnsubscribeTimeout = 2 * time.Second
 )
 
 var errSubscriptionsClosed = errors.New("graphqlsubscriptions: bus is closed")
 
 type busFeed struct {
 	channel chan FeedEvent
+}
+
+// pubSubConnection is the Redis pub/sub surface the bus needs. *redis.PubSub
+// implements it; tests substitute a fake to exercise subscribe/reconnect
+// bookkeeping without a Redis server.
+type pubSubConnection interface {
+	Subscribe(ctx context.Context, channels ...string) error
+	Unsubscribe(ctx context.Context, channels ...string) error
+	Channel(opts ...redis.ChannelOption) <-chan *redis.Message
+	Close() error
 }
 
 // Bus reads the three existing gqlsub:* Redis channels on one dedicated
@@ -30,12 +45,21 @@ type busFeed struct {
 // a reconnect or a slow subscriber can miss an event instead of replaying it.
 type Bus struct {
 	client *redis.Client
-	pubsub *redis.PubSub
+	pubsub pubSubConnection
 
-	mu      sync.Mutex
-	feeds   map[string]map[string]map[*busFeed]struct{}
-	counts  map[string]int
-	closing bool
+	mu     sync.Mutex
+	feeds  map[string]map[string]map[*busFeed]struct{}
+	counts map[string]int
+	// subscribed records the channels this process actually subscribed on the
+	// current connection. A failed SUBSCRIBE must not leave a live local feed
+	// that never receives messages, so the state is tracked instead of being
+	// inferred from the listener count.
+	subscribed map[string]bool
+	closing    bool
+
+	// subLock serializes the Redis SUBSCRIBE/UNSUBSCRIBE round trips so two
+	// first listeners cannot race into "one subscribed, one assumed subscribed".
+	subLock sync.Mutex
 
 	startOnce sync.Once
 	readerWG  sync.WaitGroup
@@ -46,16 +70,17 @@ type Bus struct {
 // client (a subscribed Redis connection cannot run commands).
 func NewBus(sharedClient *redis.Client) *Bus {
 	return &Bus{
-		client: sharedClient,
-		feeds:  map[string]map[string]map[*busFeed]struct{}{},
-		counts: map[string]int{},
+		client:     sharedClient,
+		feeds:      map[string]map[string]map[*busFeed]struct{}{},
+		counts:     map[string]int{},
+		subscribed: map[string]bool{},
 	}
 }
 
 // Start creates the pub/sub connection and the single message reader. It is
 // safe to call once; a second call is a no-op.
 func (b *Bus) Start(_ context.Context) {
-	if b == nil || b.client == nil {
+	if b == nil || (b.client == nil && b.pubsub == nil) {
 		return
 	}
 	b.mu.Lock()
@@ -65,11 +90,16 @@ func (b *Bus) Start(_ context.Context) {
 	}
 	b.mu.Unlock()
 	b.startOnce.Do(func() {
-		pubsub := b.client.Subscribe(context.Background())
 		b.mu.Lock()
-		b.pubsub = pubsub
-		b.readerWG.Add(1)
+		connection := b.pubsub
 		b.mu.Unlock()
+		if connection == nil {
+			connection = b.client.Subscribe(context.Background())
+			b.mu.Lock()
+			b.pubsub = connection
+			b.mu.Unlock()
+		}
+		b.readerWG.Add(1)
 		go func() {
 			defer b.readerWG.Done()
 			b.readLoop()
@@ -78,10 +108,13 @@ func (b *Bus) Start(_ context.Context) {
 }
 
 func (b *Bus) readLoop() {
-	if b.pubsub == nil {
+	b.mu.Lock()
+	connection := b.pubsub
+	b.mu.Unlock()
+	if connection == nil {
 		return
 	}
-	messages := b.pubsub.Channel(redis.WithChannelSize(busChannelBuffer))
+	messages := connection.Channel(redis.WithChannelSize(busChannelBuffer))
 	for message := range messages {
 		if message == nil {
 			continue
@@ -120,16 +153,25 @@ func (b *Bus) handle(channel string, payload []byte) {
 // Subscribe registers one organization-scoped feed. The Redis SUBSCRIBE is
 // issued for the first local listener of the channel and the last cancellation
 // unsubscribes it again.
+//
+// The local registration and the SUBSCRIBE decision share subLock so a
+// concurrent last-cancellation cannot UNSUBSCRIBE between the decision and the
+// command, and so a failed command stays visible: the flag that records the live
+// subscription is only set before the command and reverted when it fails, which
+// makes the next listener retry instead of assuming a subscription it never
+// issued.
 func (b *Bus) Subscribe(ctx context.Context, root, orgID string) (<-chan FeedEvent, error) {
-	if b == nil || b.client == nil || !validSubscriptionRoot(root) {
+	if b == nil || !validSubscriptionRoot(root) {
 		return nil, errSubscriptionsClosed
 	}
 	channel := channelPrefix + root
 	feed := &busFeed{channel: make(chan FeedEvent, feedBuffer)}
 
+	b.subLock.Lock()
 	b.mu.Lock()
 	if b.closing || b.pubsub == nil {
 		b.mu.Unlock()
+		b.subLock.Unlock()
 		return nil, errSubscriptionsClosed
 	}
 	if b.feeds[channel] == nil {
@@ -139,19 +181,29 @@ func (b *Bus) Subscribe(ctx context.Context, root, orgID string) (<-chan FeedEve
 		b.feeds[channel][orgID] = map[*busFeed]struct{}{}
 	}
 	b.feeds[channel][orgID][feed] = struct{}{}
-	first := b.counts[channel] == 0
 	b.counts[channel]++
+	subscribe := !b.subscribed[channel]
+	if subscribe {
+		b.subscribed[channel] = true
+	}
+	connection := b.pubsub
 	b.mu.Unlock()
 
-	if first {
-		subscribeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := b.pubsub.Subscribe(subscribeCtx, channel)
+	if subscribe {
+		subscribeCtx, cancel := context.WithTimeout(context.Background(), busSubscribeTimeout)
+		err := connection.Subscribe(subscribeCtx, channel)
 		cancel()
 		if err != nil {
+			b.mu.Lock()
+			delete(b.subscribed, channel)
+			b.mu.Unlock()
+			b.subLock.Unlock()
 			b.release(channel, orgID, feed)
 			return nil, err
 		}
 	}
+	b.subLock.Unlock()
+
 	go func() {
 		<-ctx.Done()
 		b.release(channel, orgID, feed)
@@ -160,19 +212,23 @@ func (b *Bus) Subscribe(ctx context.Context, root, orgID string) (<-chan FeedEve
 }
 
 func (b *Bus) release(channel, orgID string, feed *busFeed) {
+	b.subLock.Lock()
 	b.mu.Lock()
 	orgs := b.feeds[channel]
 	if orgs == nil {
 		b.mu.Unlock()
+		b.subLock.Unlock()
 		return
 	}
 	feeds := orgs[orgID]
 	if feeds == nil {
 		b.mu.Unlock()
+		b.subLock.Unlock()
 		return
 	}
 	if _, ok := feeds[feed]; !ok {
 		b.mu.Unlock()
+		b.subLock.Unlock()
 		return
 	}
 	delete(feeds, feed)
@@ -185,17 +241,24 @@ func (b *Bus) release(channel, orgID string, feed *busFeed) {
 		delete(b.counts, channel)
 		delete(b.feeds, channel)
 	}
+	unsubscribe := empty && b.subscribed[channel] && !b.closing
+	if unsubscribe {
+		// The channel is only marked as not subscribed together with the
+		// decision, so the next listener re-issues the SUBSCRIBE.
+		delete(b.subscribed, channel)
+	}
+	connection := b.pubsub
 	close(feed.channel)
-	closing := b.closing
 	b.mu.Unlock()
 
-	if empty && !closing && b.pubsub != nil {
-		unsubscribeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		if err := b.pubsub.Unsubscribe(unsubscribeCtx, channel); err != nil {
+	if unsubscribe && connection != nil {
+		unsubscribeCtx, cancel := context.WithTimeout(context.Background(), busUnsubscribeTimeout)
+		if err := connection.Unsubscribe(unsubscribeCtx, channel); err != nil {
 			log.Printf("graphqlsubscriptions: Redis unsubscribe %s: %v", channel, err)
 		}
 		cancel()
 	}
+	b.subLock.Unlock()
 }
 
 // Close stops new feeds, closes every local feed, closes the pub/sub
@@ -218,10 +281,14 @@ func (b *Bus) Close(ctx context.Context) error {
 		}
 		b.feeds = map[string]map[string]map[*busFeed]struct{}{}
 		b.counts = map[string]int{}
+		b.subscribed = map[string]bool{}
 		b.mu.Unlock()
 	}
-	if b.pubsub != nil {
-		if err := b.pubsub.Close(); err != nil {
+	b.mu.Lock()
+	connection := b.pubsub
+	b.mu.Unlock()
+	if connection != nil {
+		if err := connection.Close(); err != nil {
 			log.Printf("graphqlsubscriptions: Redis pubsub close: %v", err)
 		}
 	}
