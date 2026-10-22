@@ -48,6 +48,11 @@ type contractError struct {
 // writeContractError writes one contract error with a NestJS-equivalent body
 // (statusCode, message, error, optional code/detail, traceId, path, timestamp).
 //
+// `path` is `r.URL.RequestURI()` because GlobalExceptionFilter writes
+// `path: request.url` and Express `req.url` is the request target *including* the
+// query string. Using `r.URL.Path` alone would drop `?query` from every error
+// body of this unit.
+//
 // authhttp exposes writers for every shape this unit needs except the
 // ServiceUnavailableException rendered by the NestJS lock failure (a 503 that
 // still carries `error: "Service Unavailable"`). authhttp is a shared,
@@ -69,7 +74,7 @@ func writeContractError(w http.ResponseWriter, r *http.Request, body contractErr
 		Code:       body.code,
 		Detail:     body.detail,
 		TraceID:    httpx.TraceIDFromContext(r.Context()),
-		Path:       r.URL.Path,
+		Path:       r.URL.RequestURI(),
 		Timestamp:  nestTimestamp(nowMillis()),
 	}
 	w.Header().Set("content-type", "application/json; charset=utf-8")

@@ -47,6 +47,10 @@ type contractError struct {
 // ServiceUnavailableException rendered by the NestJS lock timeout (a 503 that
 // still carries `error: "Service Unavailable"`). authhttp is a shared, read-only
 // package for this batch, so that single shape is produced here.
+//
+// `path` is GlobalExceptionFilter's `request?.url`, which in Express is the
+// path INCLUDING the query string, so r.URL.RequestURI() is used and not
+// r.URL.Path.
 func writeContractError(w http.ResponseWriter, r *http.Request, body contractError) {
 	payload := struct {
 		StatusCode int    `json:"statusCode"`
@@ -64,7 +68,7 @@ func writeContractError(w http.ResponseWriter, r *http.Request, body contractErr
 		Code:       body.code,
 		Detail:     body.detail,
 		TraceID:    httpx.TraceIDFromContext(r.Context()),
-		Path:       r.URL.Path,
+		Path:       r.URL.RequestURI(),
 		Timestamp:  nestTimestamp(nowMillis()),
 	}
 	w.Header().Set("content-type", "application/json; charset=utf-8")
