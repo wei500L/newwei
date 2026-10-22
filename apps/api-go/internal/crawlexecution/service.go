@@ -371,7 +371,7 @@ func (s *Service) runTaskBody(ctx context.Context, scope *runTaskContext) (FullS
 		},
 	})
 
-	persisted, memory, err := s.persistResults(ctx, task, persistedSuccesses, effectiveOptions, run.Response, ingestToItems, orgID)
+	persisted, memory, err := s.persistResults(ctx, task, persistedSuccesses, effectiveOptions, run.Response, ingestToItems, orgID, ingestUserID(task, scope.TriggeredByID))
 	if err != nil {
 		return FullSummary{}, err
 	}
@@ -463,20 +463,33 @@ func (s *Service) completeFrom304Reuse(
 	// history run) would silently never reach the pipeline. The ingest is
 	// idempotent, so re-running it is safe.
 	if ingestToItems && latest.ResultID != "" {
-		s.ingestReusedResult(ctx, orgID, task, latest.ResultID)
+		s.ingestReusedResult(ctx, orgID, task, latest.ResultID, ingestUserID(task, scope.TriggeredByID))
 	}
 	return summary, nil
+}
+
+// ingestUserID is the `triggeredById ?? task.createdById` actor the items ingest
+// runs as: the BullMQ job's triggering user when the job carries one, otherwise
+// the task creator. The pipeline path has no triggeredById, so it keeps the
+// creator.
+func ingestUserID(task *taskRow, triggeredByID string) string {
+	if triggeredByID != "" {
+		return triggeredByID
+	}
+	if task == nil {
+		return ""
+	}
+	return task.CreatedByID
 }
 
 // ingestReusedResult re-runs the items ingest for a reused result. Failures are
 // logged and swallowed, like the NestJS try/catch around
 // createFromCrawlResultsBatch on the 304 path.
-func (s *Service) ingestReusedResult(ctx context.Context, orgID string, task *taskRow, resultID string) {
+func (s *Service) ingestReusedResult(ctx context.Context, orgID string, task *taskRow, resultID, userID string) {
 	if s.items == nil {
 		log.Printf("crawlexecution: items service unavailable; skipping reused crawl result ingest taskId=%s resultId=%s", task.ID, resultID)
 		return
 	}
-	userID := task.CreatedByID
 	if _, err := s.items.CreateFromCrawlResult(ctx, orgID, userID, resultID); err != nil {
 		log.Printf("crawlexecution: failed to ingest reused crawl result taskId=%s resultId=%s: %v", task.ID, resultID, err)
 	}

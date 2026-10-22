@@ -37,6 +37,10 @@ var (
 	bareURLPattern          = regexp.MustCompile(`(?i)^https?://\S+$`)
 	markdownLinkLine        = regexp.MustCompile(`^[-*]\s*\[[^\]]+\]\(\S+\)`)
 	preambleNoisePattern    = regexp.MustCompile(`(?i)^(?:politico pro\s*[⟨<]\d+[⟩>]|menu)$`)
+	// politicoProNoisePattern is isLikelyNoiseLine's politico-pro rule. The bare
+	// "politico pro" line is excluded there and only dropped before the first
+	// heading by isLikelyPreambleNoiseLine.
+	politicoProNoisePattern = regexp.MustCompile(`(?i)^\s*politico pro\s*(?:[⟨<]\d+[⟩>])?\s*$`)
 )
 
 // extractMarkdownResult is extractMarkdownResult.
@@ -538,7 +542,7 @@ func isLikelyPreambleNoiseLine(compact string) bool {
 	if preambleIndexPattern.MatchString(compact) {
 		return true
 	}
-	if normalized == "menu" {
+	if normalized == "menu" || normalized == "politico pro" {
 		return true
 	}
 	if preambleNoisePattern.MatchString(strings.ToLower(compact)) {
@@ -573,6 +577,11 @@ func isLikelyNoiseLine(compact string) bool {
 	}
 	if regexp.MustCompile(`(?i)^\s*\[\s*\]\(https?:\/\/[^)]+\)\s*$`).MatchString(compact) ||
 		isLikelyNavigationLinkLine(compact) {
+		return true
+	}
+	// A "politico pro ⟨n⟩" marker is newsroom chrome wherever it appears; the
+	// bare label is only preamble noise (dropped before the first heading).
+	if politicoProNoisePattern.MatchString(compact) && lower != "politico pro" {
 		return true
 	}
 	if regexp.MustCompile(`(?i)^advertisement$|^sponsored$`).MatchString(compact) {

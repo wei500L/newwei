@@ -169,3 +169,58 @@ func TestURLHelpers(t *testing.T) {
 		t.Fatal("regex pattern must match")
 	}
 }
+
+func TestNormalizeMarkdownCandidateDropsPoliticoProChrome(t *testing.T) {
+	// The bare label is preamble chrome (dropped before the first heading only)
+	// and the counted marker is chrome anywhere; both rules come from the NestJS
+	// normalizer, so the persisted markdown and its content hash stay identical.
+	withPreamble := "politico pro\n\n# Headline\n\nBody paragraph that survives.\n\npolitico pro ⟨3⟩\n\nSecond body paragraph."
+	normalized := normalizeMarkdownCandidate(&withPreamble)
+	if normalized == nil {
+		t.Fatal("normalized is nil")
+	}
+	if strings.Contains(strings.ToLower(*normalized), "⟨3⟩") {
+		t.Fatalf("counted politico pro marker kept: %q", *normalized)
+	}
+	if strings.Contains(*normalized, "politico pro\n") {
+		t.Fatalf("preamble politico pro kept: %q", *normalized)
+	}
+	if !strings.Contains(*normalized, "# Headline") || !strings.Contains(*normalized, "Second body paragraph.") {
+		t.Fatalf("body content lost: %q", *normalized)
+	}
+
+	// Only the preamble rule drops the bare label: after the first heading the
+	// NestJS normalizer keeps it.
+	afterHeading := "# Headline\n\npolitico pro\n\nBody paragraph that survives."
+	inBody := normalizeMarkdownCandidate(&afterHeading)
+	if inBody == nil || !strings.Contains(*inBody, "politico pro") {
+		t.Fatalf("bare label in the body must be kept: %#v", inBody)
+	}
+}
+
+func TestBuildResultLinkAnalysisFallsBackToMetadata(t *testing.T) {
+	direct := crawl4ai.PipelineArticle{Links: json.RawMessage(`{"internal":[{"href":"https://news.example.com/a","intrinsic_score":8}]}`)}
+	directEncoded, err := json.Marshal(buildResultLinkAnalysis(direct))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(directEncoded), `"totalLinks":1`) {
+		t.Fatalf("direct link analysis = %s", directEncoded)
+	}
+
+	metadataOnly := crawl4ai.PipelineArticle{
+		Metadata: json.RawMessage(`{"title":"t","link_summary":{"external":[{"url":"https://other.example.com/b","intrinsic_score":4}]}}`),
+	}
+	metadataEncoded, err := json.Marshal(buildResultLinkAnalysis(metadataOnly))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(metadataEncoded), `"totalLinks":1`) ||
+		!strings.Contains(string(metadataEncoded), "https://other.example.com/b") {
+		t.Fatalf("metadata link analysis = %s", metadataEncoded)
+	}
+
+	if analysis := buildResultLinkAnalysis(crawl4ai.PipelineArticle{Metadata: json.RawMessage(`{"title":"t"}`)}); analysis != nil {
+		t.Fatalf("analysis without any link payload = %#v", analysis)
+	}
+}
