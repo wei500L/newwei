@@ -89,7 +89,7 @@ func (s *SettingsReader) Extraction(ctx context.Context, orgID string) Extractio
 		return defaults
 	}
 	settings := normalizeExtractionSettings(document)
-	s.writeCachedSettings(ctx, cacheKey, extractionSettingsCacheDocument(settings))
+	s.writeCachedSettings(ctx, cacheKey, newExtractionSettingsCacheDocument(settings))
 	return settings
 }
 
@@ -110,7 +110,7 @@ func (s *SettingsReader) Dedupe(ctx context.Context, orgID string) DedupeSetting
 		return defaults
 	}
 	settings := normalizeDedupeSettings(document, defaults)
-	s.writeCachedSettings(ctx, cacheKey, dedupeSettingsCacheDocument(settings))
+	s.writeCachedSettings(ctx, cacheKey, newDedupeSettingsCacheDocument(settings))
 	return settings
 }
 
@@ -170,12 +170,20 @@ func (s *SettingsReader) loadSettingsDocument(ctx context.Context, key string) (
 	return jsonObjectOrEmpty(raw), true
 }
 
+// settingsCacheDocument is one typed settings cache payload. The cache write path
+// takes this interface instead of a schema-less container so the cached document
+// stays a named type (the same shape NestJS serializes into the shared cache
+// keys).
+type settingsCacheDocument interface {
+	encodeSettingsCacheDocument() ([]byte, error)
+}
+
 // writeCachedSettings is the best-effort CacheService.set call.
-func (s *SettingsReader) writeCachedSettings(ctx context.Context, cacheKey string, document any) {
+func (s *SettingsReader) writeCachedSettings(ctx context.Context, cacheKey string, document settingsCacheDocument) {
 	if s == nil || s.redis == nil {
 		return
 	}
-	encoded, err := json.Marshal(document)
+	encoded, err := document.encodeSettingsCacheDocument()
 	if err != nil {
 		return
 	}
@@ -739,66 +747,118 @@ func ResolveDedupeBaseThreshold(
 }
 
 // extractionSettingsCacheDocument is the camelCase document NestJS serializes
-// into the shared newsExtraction:settings:{orgId} cache key.
-func extractionSettingsCacheDocument(settings ExtractionSettings) map[string]any {
-	providers := map[string]any{
-		"clean": settings.Providers.Clean, "entities": settings.Providers.Entities,
-		"sentiment": settings.Providers.Sentiment, "kg": settings.Providers.KG,
-	}
-	return map[string]any{
-		"pipelineMode": string(settings.PipelineMode),
-		"preflightGate": map[string]any{
-			"enabled":            settings.PreflightGate.Enabled,
-			"minWordCount":       settings.PreflightGate.MinWordCount,
-			"minQualityScore":    settings.PreflightGate.MinQualityScore,
-			"rejectBotChallenge": settings.PreflightGate.RejectBotChallenge,
-			"rejectListLike":     settings.PreflightGate.RejectListLike,
-		},
-		"postCleanGate": map[string]any{
-			"enabled":         settings.PostCleanGate.Enabled,
-			"minQualityScore": settings.PostCleanGate.MinQualityScore,
-			"minCleanedChars": settings.PostCleanGate.MinCleanedChars,
-			"requireSummary":  settings.PostCleanGate.RequireSummary,
-		},
-		"capabilities": map[string]any{
-			"entities":  settings.Capabilities.Entities,
-			"sentiment": settings.Capabilities.Sentiment,
-			"kg":        settings.Capabilities.KG,
-		},
-		"providers": providers,
-	}
+// into the shared newsExtraction:settings:{orgId} cache key. The members are
+// named fields so the cached payload is a typed contract instead of a
+// schema-less map.
+type extractionSettingsCacheDocument struct {
+	PipelineMode  string `json:"pipelineMode"`
+	PreflightGate struct {
+		Enabled            bool    `json:"enabled"`
+		MinWordCount       int     `json:"minWordCount"`
+		MinQualityScore    float64 `json:"minQualityScore"`
+		RejectBotChallenge bool    `json:"rejectBotChallenge"`
+		RejectListLike     bool    `json:"rejectListLike"`
+	} `json:"preflightGate"`
+	PostCleanGate struct {
+		Enabled         bool    `json:"enabled"`
+		MinQualityScore float64 `json:"minQualityScore"`
+		MinCleanedChars int     `json:"minCleanedChars"`
+		RequireSummary  bool    `json:"requireSummary"`
+	} `json:"postCleanGate"`
+	Capabilities struct {
+		Entities  bool `json:"entities"`
+		Sentiment bool `json:"sentiment"`
+		KG        bool `json:"kg"`
+	} `json:"capabilities"`
+	Providers struct {
+		Clean     string `json:"clean"`
+		Entities  string `json:"entities"`
+		Sentiment string `json:"sentiment"`
+		KG        string `json:"kg"`
+	} `json:"providers"`
+}
+
+// encodeSettingsCacheDocument implements settingsCacheDocument.
+func (d extractionSettingsCacheDocument) encodeSettingsCacheDocument() ([]byte, error) {
+	return json.Marshal(d)
+}
+
+// newExtractionSettingsCacheDocument builds the typed cache document.
+func newExtractionSettingsCacheDocument(settings ExtractionSettings) extractionSettingsCacheDocument {
+	var document extractionSettingsCacheDocument
+	document.PipelineMode = string(settings.PipelineMode)
+	document.PreflightGate.Enabled = settings.PreflightGate.Enabled
+	document.PreflightGate.MinWordCount = settings.PreflightGate.MinWordCount
+	document.PreflightGate.MinQualityScore = settings.PreflightGate.MinQualityScore
+	document.PreflightGate.RejectBotChallenge = settings.PreflightGate.RejectBotChallenge
+	document.PreflightGate.RejectListLike = settings.PreflightGate.RejectListLike
+	document.PostCleanGate.Enabled = settings.PostCleanGate.Enabled
+	document.PostCleanGate.MinQualityScore = settings.PostCleanGate.MinQualityScore
+	document.PostCleanGate.MinCleanedChars = settings.PostCleanGate.MinCleanedChars
+	document.PostCleanGate.RequireSummary = settings.PostCleanGate.RequireSummary
+	document.Capabilities.Entities = settings.Capabilities.Entities
+	document.Capabilities.Sentiment = settings.Capabilities.Sentiment
+	document.Capabilities.KG = settings.Capabilities.KG
+	document.Providers.Clean = settings.Providers.Clean
+	document.Providers.Entities = settings.Providers.Entities
+	document.Providers.Sentiment = settings.Providers.Sentiment
+	document.Providers.KG = settings.Providers.KG
+	return document
+}
+
+// dedupeSettingsCacheScope is one normalized scoped-threshold entry of the
+// dedupe cache document. Absent scope members stay JSON null like the
+// TypeScript object.
+type dedupeSettingsCacheScope struct {
+	SourceID     *string `json:"sourceId"`
+	Language     *string `json:"language"`
+	CategoryPath *string `json:"categoryPath"`
+	Threshold    float64 `json:"threshold"`
 }
 
 // dedupeSettingsCacheDocument is the camelCase document NestJS serializes into
 // the shared newsDedupe:settings:{orgId} cache key.
-func dedupeSettingsCacheDocument(settings DedupeSettings) map[string]any {
-	scoped := make([]map[string]any, 0, len(settings.ScopedThresholds))
-	for _, entry := range settings.ScopedThresholds {
-		scoped = append(scoped, map[string]any{
-			"sourceId":     optionalStringValue(entry.SourceID),
-			"language":     optionalStringValue(entry.Language),
-			"categoryPath": optionalStringValue(entry.CategoryPath),
-			"threshold":    entry.Threshold,
-		})
-	}
-	return map[string]any{
-		"defaultThreshold":             settings.DefaultThreshold,
-		"scopedThresholds":             scoped,
-		"useEmbeddings":                settings.UseEmbeddings,
-		"llmJudgeInstructions":         optionalStringValue(settings.LLMJudgeInstructions),
-		"llmJudgeModel":                optionalStringValue(settings.LLMJudgeModel),
-		"llmJudgeConcurrency":          settings.LLMJudgeConcurrency,
-		"llmJudgeMaxComparisons":       settings.LLMJudgeMaxComparisons,
-		"llmJudgeCandidateChars":       settings.LLMJudgeCandidateChars,
-		"llmJudgePromptVersion":        settings.LLMJudgePromptVersion,
-		"llmJudgeSystemPromptTemplate": settings.LLMJudgeSystemPrompt,
-		"llmJudgeUserPromptTemplate":   settings.LLMJudgeUserPrompt,
-	}
+type dedupeSettingsCacheDocument struct {
+	DefaultThreshold       float64                    `json:"defaultThreshold"`
+	ScopedThresholds       []dedupeSettingsCacheScope `json:"scopedThresholds"`
+	UseEmbeddings          bool                       `json:"useEmbeddings"`
+	LLMJudgeInstructions   *string                    `json:"llmJudgeInstructions"`
+	LLMJudgeModel          *string                    `json:"llmJudgeModel"`
+	LLMJudgeConcurrency    int                        `json:"llmJudgeConcurrency"`
+	LLMJudgeMaxComparisons int                        `json:"llmJudgeMaxComparisons"`
+	LLMJudgeCandidateChars int                        `json:"llmJudgeCandidateChars"`
+	LLMJudgePromptVersion  string                     `json:"llmJudgePromptVersion"`
+	LLMJudgeSystemPrompt   string                     `json:"llmJudgeSystemPromptTemplate"`
+	LLMJudgeUserPrompt     string                     `json:"llmJudgeUserPromptTemplate"`
 }
 
-func optionalStringValue(value *string) any {
-	if value == nil {
-		return nil
+// encodeSettingsCacheDocument implements settingsCacheDocument.
+func (d dedupeSettingsCacheDocument) encodeSettingsCacheDocument() ([]byte, error) {
+	return json.Marshal(d)
+}
+
+// newDedupeSettingsCacheDocument builds the typed cache document.
+func newDedupeSettingsCacheDocument(settings DedupeSettings) dedupeSettingsCacheDocument {
+	scoped := make([]dedupeSettingsCacheScope, 0, len(settings.ScopedThresholds))
+	for _, entry := range settings.ScopedThresholds {
+		scoped = append(scoped, dedupeSettingsCacheScope{
+			SourceID:     entry.SourceID,
+			Language:     entry.Language,
+			CategoryPath: entry.CategoryPath,
+			Threshold:    entry.Threshold,
+		})
 	}
-	return *value
+	return dedupeSettingsCacheDocument{
+		DefaultThreshold:       settings.DefaultThreshold,
+		ScopedThresholds:       scoped,
+		UseEmbeddings:          settings.UseEmbeddings,
+		LLMJudgeInstructions:   settings.LLMJudgeInstructions,
+		LLMJudgeModel:          settings.LLMJudgeModel,
+		LLMJudgeConcurrency:    settings.LLMJudgeConcurrency,
+		LLMJudgeMaxComparisons: settings.LLMJudgeMaxComparisons,
+		LLMJudgeCandidateChars: settings.LLMJudgeCandidateChars,
+		LLMJudgePromptVersion:  settings.LLMJudgePromptVersion,
+		LLMJudgeSystemPrompt:   settings.LLMJudgeSystemPrompt,
+		LLMJudgeUserPrompt:     settings.LLMJudgeUserPrompt,
+	}
 }

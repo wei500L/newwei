@@ -282,7 +282,7 @@ func TestSettingsCacheDocumentRoundTrip(t *testing.T) {
 		"capabilities": {"sentiment": false},
 		"providers": {"kg": "llm"}
 	}`))
-	encoded, err := json.Marshal(extractionSettingsCacheDocument(extraction))
+	encoded, err := newExtractionSettingsCacheDocument(extraction).encodeSettingsCacheDocument()
 	if err != nil {
 		t.Fatalf("marshal extraction cache doc: %v", err)
 	}
@@ -295,13 +295,71 @@ func TestSettingsCacheDocumentRoundTrip(t *testing.T) {
 		"defaultThreshold": 0.7,
 		"scopedThresholds": [{"sourceId": "s", "threshold": 0.8}]
 	}`), reader.fallbackDedupeSettings())
-	encoded, err = json.Marshal(dedupeSettingsCacheDocument(dedupe))
+	encoded, err = newDedupeSettingsCacheDocument(dedupe).encodeSettingsCacheDocument()
 	if err != nil {
 		t.Fatalf("marshal dedupe cache doc: %v", err)
 	}
 	dedupeRoundTripped := normalizeDedupeSettings(mustDecodeSettings(t, encoded), reader.fallbackDedupeSettings())
 	if !reflect.DeepEqual(dedupeRoundTripped, dedupe) {
 		t.Fatalf("dedupe cache round trip mismatch:\n got %#v\nwant %#v", dedupeRoundTripped, dedupe)
+	}
+}
+
+// TestSettingsCacheDocumentWireShape pins the camelCase member set the shared
+// newsExtraction:settings/newsDedupe:settings Redis keys carry, because NestJS
+// reads the same keys while both workers are running. Absent optional scope
+// members must stay JSON null (not omitted), like the TypeScript object.
+func TestSettingsCacheDocumentWireShape(t *testing.T) {
+	extraction := normalizeExtractionSettings(settingsDocumentFromJSON(t, `{}`))
+	encoded, err := newExtractionSettingsCacheDocument(extraction).encodeSettingsCacheDocument()
+	if err != nil {
+		t.Fatalf("marshal extraction cache doc: %v", err)
+	}
+	wantExtraction := map[string]struct{}{
+		"pipelineMode": {}, "preflightGate": {}, "postCleanGate": {},
+		"capabilities": {}, "providers": {},
+	}
+	document := mustDecodeSettings(t, encoded)
+	for key := range wantExtraction {
+		if _, ok := document[key]; !ok {
+			t.Fatalf("extraction cache document missing %q: %s", key, encoded)
+		}
+	}
+	gate := mustDecodeSettings(t, document["preflightGate"])
+	for _, key := range []string{"enabled", "minWordCount", "minQualityScore", "rejectBotChallenge", "rejectListLike"} {
+		if _, ok := gate[key]; !ok {
+			t.Fatalf("preflightGate missing %q: %s", key, document["preflightGate"])
+		}
+	}
+
+	reader := newTestSettingsReader(0.9)
+	dedupe := normalizeDedupeSettings(settingsDocumentFromJSON(t, `{
+		"scopedThresholds": [{"language": "en", "threshold": 0.8}]
+	}`), reader.fallbackDedupeSettings())
+	encoded, err = newDedupeSettingsCacheDocument(dedupe).encodeSettingsCacheDocument()
+	if err != nil {
+		t.Fatalf("marshal dedupe cache doc: %v", err)
+	}
+	document = mustDecodeSettings(t, encoded)
+	for _, key := range []string{
+		"defaultThreshold", "scopedThresholds", "useEmbeddings", "llmJudgeInstructions",
+		"llmJudgeModel", "llmJudgeConcurrency", "llmJudgeMaxComparisons",
+		"llmJudgeCandidateChars", "llmJudgePromptVersion",
+		"llmJudgeSystemPromptTemplate", "llmJudgeUserPromptTemplate",
+	} {
+		if _, ok := document[key]; !ok {
+			t.Fatalf("dedupe cache document missing %q: %s", key, encoded)
+		}
+	}
+	var scopes []map[string]json.RawMessage
+	if err := json.Unmarshal(document["scopedThresholds"], &scopes); err != nil {
+		t.Fatalf("scopedThresholds is not an array: %v", err)
+	}
+	if len(scopes) != 1 {
+		t.Fatalf("scopedThresholds length = %d", len(scopes))
+	}
+	if string(scopes[0]["sourceId"]) != "null" || string(scopes[0]["categoryPath"]) != "null" {
+		t.Fatalf("absent scope members must be JSON null: %v", scopes[0])
 	}
 }
 
