@@ -520,3 +520,72 @@ func TestStreamReleasesPerConnectionState(t *testing.T) {
 	active, _ := handler.Stats()
 	t.Fatalf("connections did not settle: active=%d goroutines=%d baseline=%d", active, runtime.NumGoroutine(), baseline)
 }
+
+// failingStreamWriter behaves like a browser that stopped reading: the SSE
+// headers and the initial flush succeed, then every frame write fails (what a
+// blocked write looks like once the per-frame deadline expires).
+type failingStreamWriter struct {
+	header http.Header
+	mu     sync.Mutex
+	writes int
+}
+
+func (w *failingStreamWriter) Header() http.Header {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.header == nil {
+		w.header = http.Header{}
+	}
+	return w.header
+}
+
+func (w *failingStreamWriter) WriteHeader(int) {}
+
+func (w *failingStreamWriter) Write([]byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.writes++
+	return 0, io.ErrClosedPipe
+}
+
+func (w *failingStreamWriter) Flush() {}
+
+func (w *failingStreamWriter) Writes() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.writes
+}
+
+// A failed frame write must end the stream instead of leaving the ping loop and
+// the publish ticker parked on a dead client.
+func TestStreamStopsAfterClientWriteFails(t *testing.T) {
+	war := &scriptedWar{}
+	handler := NewHandler(allowAuth{}, war, &staticCandle{}, &scriptedHeat{}, cors.Policy{})
+	handler.SetTimings(10*time.Millisecond, 10*time.Millisecond)
+	writer := &failingStreamWriter{}
+	req := httptest.NewRequest(http.MethodGet, Path, nil)
+
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(writer, req)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream did not stop after the client write failed")
+	}
+	if active, _ := handler.Stats(); active != 0 {
+		t.Fatalf("active = %d after the stream ended, want 0", active)
+	}
+	if writer.Writes() == 0 {
+		t.Fatal("expected at least one failed frame write")
+	}
+	// The shared read must not be retried once the stream is gone.
+	calls := war.Calls()
+	time.Sleep(60 * time.Millisecond)
+	if now := war.Calls(); now != calls {
+		t.Fatalf("queries continued after the stream ended: %d -> %d", calls, now)
+	}
+}
