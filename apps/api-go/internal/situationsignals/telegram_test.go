@@ -88,6 +88,53 @@ func TestTelegramRuntimeConfigDefaultsChannelSet(t *testing.T) {
 	}
 }
 
+// TestTelegramRuntimeConfigChannelSetEnvPrecedence pins the settings-service
+// channelSet resolution: SITUATION_MONITOR_TELEGRAM_CHANNEL_SET has a "full"
+// zod default, so an ABSENT canonical variable shadows the legacy
+// TELEGRAM_CHANNEL_SET alias while an explicitly empty one falls through to it.
+func TestTelegramRuntimeConfigChannelSetEnvPrecedence(t *testing.T) {
+	cases := []struct {
+		name   string
+		env    map[string]string
+		expect string
+	}{
+		{
+			name:   "absent canonical shadows the alias",
+			env:    map[string]string{"TELEGRAM_CHANNEL_SET": "lite"},
+			expect: defaultTelegramChannelSet,
+		},
+		{
+			name: "empty canonical falls through to the alias",
+			env: map[string]string{
+				"SITUATION_MONITOR_TELEGRAM_CHANNEL_SET": "  ",
+				"TELEGRAM_CHANNEL_SET":                   "lite",
+			},
+			expect: "lite",
+		},
+		{
+			name: "canonical wins",
+			env: map[string]string{
+				"SITUATION_MONITOR_TELEGRAM_CHANNEL_SET": "core",
+				"TELEGRAM_CHANNEL_SET":                   "lite",
+			},
+			expect: "core",
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, ops := newMemoryCache()
+			reader := &settingsReader{cache: ops, lookup: envLookup(testCase.env)}
+			runtime, err := reader.telegramRuntimeConfig(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if runtime.ChannelSet != testCase.expect {
+				t.Fatalf("channelSet = %q, want %q", runtime.ChannelSet, testCase.expect)
+			}
+		})
+	}
+}
+
 func TestTelegramRuntimeConfigPrefersStoredValues(t *testing.T) {
 	store, ops := newMemoryCache()
 	store.values[settingsCacheKey] = []byte(`{
