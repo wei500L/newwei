@@ -151,6 +151,8 @@ type fakeStore struct {
 	articles       []ArticleRow
 	loads          int
 	saved          []byte
+	savedOrg       string
+	savedEvent     string
 	articleOrg     string
 	articleEvent   string
 	articleIDs     []string
@@ -210,8 +212,10 @@ func (f *fakeStore) ReferencedArticles(_ context.Context, orgID, eventID string,
 
 func (f *fakeStore) TimelineWindowDays(context.Context, string) int { return 30 }
 
-func (f *fakeStore) SaveEventMetadata(_ context.Context, _, _ string, metadata []byte) error {
-	f.saved = append([]byte(nil), metadata...)
+func (f *fakeStore) SaveBriefV1(_ context.Context, orgID, eventID string, document []byte) error {
+	f.savedOrg = orgID
+	f.savedEvent = eventID
+	f.saved = append([]byte(nil), document...)
 	return nil
 }
 
@@ -303,18 +307,35 @@ func TestStoryBriefColdPathWritesCacheAndFailureIsNotSuccess(t *testing.T) {
 	if store.articleOrg != pub || store.articleEvent != id || !strings.Contains(strings.Join(store.articleIDs, ","), "art-other") {
 		t.Fatalf("article query org=%s event=%s ids=%v", store.articleOrg, store.articleEvent, store.articleIDs)
 	}
+	// The cold path must hand the store only the briefV1 document. A merged
+	// whole-column metadata write would let this unauthenticated GET clobber a
+	// concurrent sibling leaf, so the sibling key must not appear here at all.
 	var saved map[string]any
 	if err := json.Unmarshal(store.saved, &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved["note"] != "keep" {
-		t.Fatalf("metadata lost note: %s", store.saved)
+	if store.savedOrg != pub || store.savedEvent != id {
+		t.Fatalf("brief write scope org=%s event=%s", store.savedOrg, store.savedEvent)
 	}
-	if saved["briefV1"] == nil {
-		t.Fatalf("brief not cached: %s", store.saved)
+	for _, sibling := range []string{"note", "timeline", "briefV1"} {
+		if _, ok := saved[sibling]; ok {
+			t.Fatalf("brief write carried %q: %s", sibling, store.saved)
+		}
+	}
+	if saved["version"] != float64(briefVersion) || saved["language"] != "zh" {
+		t.Fatalf("brief document header = %s", store.saved)
+	}
+	if fingerprint, _ := saved["fingerprint"].(string); fingerprint == "" {
+		t.Fatalf("brief document fingerprint = %s", store.saved)
+	}
+	if _, ok := saved["payload"].(map[string]any); !ok {
+		t.Fatalf("brief document payload = %s", store.saved)
+	}
+	if sources, ok := saved["sources"].([]any); !ok || len(sources) != 1 {
+		t.Fatalf("brief document sources = %s", store.saved)
 	}
 
-	store.event.Metadata = append([]byte(nil), store.saved...)
+	store.event.Metadata = []byte(`{"note":"keep","briefV1":` + string(store.saved) + `}`)
 	if _, err := svc.Story(context.Background(), id); err != nil {
 		t.Fatal(err)
 	}

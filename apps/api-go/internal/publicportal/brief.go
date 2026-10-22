@@ -46,6 +46,31 @@ type briefSourceView struct {
 	PublishedAt *string `json:"publishedAt"`
 }
 
+// briefCacheDocument is the NewsEvent.metadata.briefV1 leaf written after a
+// successful cold-path generation. The field set is the shape the NestJS reader
+// accepts (version, language, fingerprint, generatedAt, sources, payload). It is
+// written as its own leaf so sibling metadata keys are never rewritten.
+type briefCacheDocument struct {
+	Version     int                `json:"version"`
+	Language    string             `json:"language"`
+	Fingerprint string             `json:"fingerprint"`
+	GeneratedAt string             `json:"generatedAt"`
+	Sources     []briefCacheSource `json:"sources"`
+	Payload     map[string]any     `json:"payload"`
+}
+
+// briefCacheSource is one cached brief source. Optional strings are nullable
+// because the reader distinguishes null from the empty string.
+type briefCacheSource struct {
+	Index              int     `json:"index"`
+	URL                string  `json:"url"`
+	SourceLabel        *string `json:"sourceLabel"`
+	Title              *string `json:"title"`
+	PublishedAt        *string `json:"publishedAt"`
+	ProcessedItemID    *string `json:"processedItemId"`
+	ProcessedArticleID *string `json:"processedArticleId"`
+}
+
 type fingerprintBody struct {
 	Version  int                 `json:"version"`
 	Language string              `json:"language"`
@@ -354,20 +379,6 @@ func viewsFromSources(sources []briefSource) []briefSourceView {
 		})
 	}
 	return sourceViews(cached)
-}
-
-func mergeBriefMetadata(current []byte, brief map[string]any) ([]byte, error) {
-	base := map[string]any{}
-	if len(current) > 0 {
-		var decoded any
-		if err := json.Unmarshal(current, &decoded); err == nil {
-			if record, ok := decoded.(map[string]any); ok {
-				base = record
-			}
-		}
-	}
-	base["briefV1"] = brief
-	return json.Marshal(base)
 }
 
 func sanitizeBriefPayload(payload map[string]any, maxSources int) (map[string]any, bool) {

@@ -2,6 +2,7 @@ package publicportal
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"strings"
 	"time"
@@ -211,20 +212,22 @@ func (s *Service) brief(ctx context.Context, orgID string, event *EventDetail, i
 		Payload:     sanitized,
 		Sources:     viewsFromSources(sources),
 	}
-	document := map[string]any{
-		"version":     briefVersion,
-		"language":    language,
-		"fingerprint": fingerprint,
-		"generatedAt": view.GeneratedAt,
-		"sources":     cacheSources(sources),
-		"payload":     sanitized,
-	}
-	merged, err := mergeBriefMetadata(event.Metadata, document)
+	// Only the briefV1 leaf is handed to the store. Building the whole metadata
+	// document here would make this unauthenticated GET a read-modify-write owner
+	// of every other metadata leaf.
+	document, err := json.Marshal(briefCacheDocument{
+		Version:     briefVersion,
+		Language:    language,
+		Fingerprint: fingerprint,
+		GeneratedAt: view.GeneratedAt,
+		Sources:     cacheSources(sources),
+		Payload:     sanitized,
+	})
 	if err != nil {
-		log.Printf("public portal brief cache merge failed")
+		log.Printf("public portal brief cache encode failed")
 		return view, nil
 	}
-	if err := s.store.SaveEventMetadata(ctx, orgID, event.ID, merged); err != nil {
+	if err := s.store.SaveBriefV1(ctx, orgID, event.ID, document); err != nil {
 		log.Printf("public portal brief cache write failed")
 	}
 	return view, nil
@@ -236,30 +239,26 @@ type errString string
 
 func (e errString) Error() string { return string(e) }
 
-func cacheSources(sources []briefSource) []any {
-	out := make([]any, 0, len(sources))
+// cacheSources maps the selected sources to the cached leaf shape. Empty
+// optional strings stay null because the NestJS reader distinguishes null from
+// the empty string.
+func cacheSources(sources []briefSource) []briefCacheSource {
+	out := make([]briefCacheSource, 0, len(sources))
 	for _, source := range sources {
-		var published any
+		var published *string
 		if source.PublishedAt != nil {
-			published = isoTime(*source.PublishedAt)
+			text := isoTime(*source.PublishedAt)
+			published = &text
 		}
-		out = append(out, map[string]any{
-			"index":              source.Index,
-			"url":                source.URL,
-			"sourceLabel":        emptyAsNil(source.SourceLabel),
-			"title":              emptyAsNil(source.Title),
-			"publishedAt":        published,
-			"processedItemId":    emptyAsNil(source.ProcessedItemID),
-			"processedArticleId": emptyAsNil(source.ProcessedArticleID),
+		out = append(out, briefCacheSource{
+			Index:              source.Index,
+			URL:                source.URL,
+			SourceLabel:        optionalString(source.SourceLabel),
+			Title:              optionalString(source.Title),
+			PublishedAt:        published,
+			ProcessedItemID:    optionalString(source.ProcessedItemID),
+			ProcessedArticleID: optionalString(source.ProcessedArticleID),
 		})
 	}
 	return out
-}
-
-func emptyAsNil(value string) any {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	return trimmed
 }
