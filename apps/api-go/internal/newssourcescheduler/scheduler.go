@@ -31,7 +31,12 @@ func NewScheduler(service *Service) *Scheduler {
 	return &Scheduler{service: service, stop: make(chan struct{})}
 }
 
-// Start launches the loop aligned to the next 30-second boundary.
+// Start launches the loop aligned to the next 30-second boundary. The one-time
+// legacy RSS seed cache TTL migration runs first, in the same goroutine: NestJS
+// performs it from onModuleInit, i.e. before the first tick and independently of
+// the tick switches, so the Go owner has to do the same to keep the migration
+// alive once NestJS is gone. It is deliberately not awaited by Start, so a slow
+// scan never delays readiness, and Close cancels it.
 func (s *Scheduler) Start(parent context.Context) {
 	if s == nil || s.service == nil {
 		return
@@ -42,9 +47,25 @@ func (s *Scheduler) Start(parent context.Context) {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
+			s.runLegacyRSSSeedCacheTTLMigration(ctx)
 			s.loop(ctx)
 		}()
 	})
+}
+
+// runLegacyRSSSeedCacheTTLMigration runs the migration under a context that the
+// stop channel cancels, so a stopped scheduler does not keep scanning.
+func (s *Scheduler) runLegacyRSSSeedCacheTTLMigration(ctx context.Context) {
+	migrationCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-s.stop:
+			cancel()
+		case <-migrationCtx.Done():
+		}
+	}()
+	s.service.migrateLegacyRSSSeedCacheTTL(migrationCtx)
 }
 
 // Close stops new ticks and waits for the in-flight tick.

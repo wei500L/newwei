@@ -377,6 +377,20 @@ func (s *Scheduler) listActiveOrgIDs(ctx context.Context) ([]string, error) {
 // readActiveOrgCache decodes the named JSON array.
 func (s *Scheduler) readActiveOrgCache(ctx context.Context) ([]string, bool, error) {
 	raw, err := s.options.RedisClient.Get(ctx, activeOrgCacheKey).Result()
+	return decodeActiveOrgCache(raw, err)
+}
+
+// decodeActiveOrgCache classifies one Redis GET result.
+//
+// A missing key is a miss, not a read failure. The NestJS registry resolves the
+// list through CacheService.wrap, which treats an absent key as "fill it now";
+// reporting redis.Nil as an error instead would skip the fill and send every
+// tick of every migrated scheduler to MySQL while logging a cache failure that
+// never happened.
+func decodeActiveOrgCache(raw string, err error) ([]string, bool, error) {
+	if errors.Is(err, redis.Nil) {
+		return nil, false, nil
+	}
 	if err != nil {
 		return nil, false, err
 	}

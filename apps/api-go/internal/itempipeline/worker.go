@@ -404,7 +404,19 @@ func (w *Worker) process(parent context.Context, job Job) {
 	renewDone := make(chan struct{})
 	go w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
 
-	result, err := w.opts.Processor(jobCtx, job)
+	var (
+		result json.RawMessage
+		err    error
+	)
+	if stalledErr := job.DeferredFailureError(); stalledErr != nil {
+		// The stalled checker already failed this job ("job stalled more than
+		// allowable limit"). Skip the processor and let the failure path below
+		// record the terminal state, so the attempt is not repeated and no
+		// duplicate pipeline side effect is produced.
+		err = stalledErr
+	} else {
+		result, err = w.opts.Processor(jobCtx, job)
+	}
 	close(renewDone)
 	cancelJob(nil)
 

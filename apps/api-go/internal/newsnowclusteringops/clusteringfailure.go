@@ -409,19 +409,22 @@ func (s *Service) assignSignalToEvent(ctx context.Context, orgID string, signal 
 	}
 	if err := insertNewsEventItemTx(ctx, tx, item); err != nil {
 		if isDuplicateEntry(err) {
-			winner, found, lookupErr := findNewsEventItemEventIDTx(ctx, tx, orgID, signal.ProcessedArticleID)
+			// Lost the race against a writer that committed the same
+			// (orgId, processedArticleId) first. Roll this transaction back so a
+			// newly created event never lands without an item, then resolve the
+			// winner with a read outside the transaction: the snapshot of this
+			// transaction predates the winner's commit.
+			_ = tx.Rollback()
+			// The transaction is finished; the deferred rollback must not run again.
+			committed = true
+			winner, found, lookupErr := s.clustering.findNewsEventItemEventID(ctx, orgID, signal.ProcessedArticleID)
 			if lookupErr != nil {
 				return assignResult{}, lookupErr
 			}
-			if err := tx.Commit(); err != nil {
+			if !found {
 				return assignResult{}, err
 			}
-			committed = true
-			winnerID := eventID
-			if found {
-				winnerID = winner
-			}
-			return assignResult{EventID: winnerID, Created: false}, nil
+			return assignResult{EventID: winner, Created: false}, nil
 		}
 		return assignResult{}, err
 	}

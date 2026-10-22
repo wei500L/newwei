@@ -281,3 +281,83 @@ func parseTimeOrZero(value string) time.Time {
 	}
 	return result
 }
+
+// TestLocaleCompareMatchesICURoot pins the facet / suggestion / source ordering
+// tie-break against String.prototype.localeCompare, which is the ICU root
+// collation rather than byte order. A lower-cased byte comparison (the previous
+// approximation) ranks "A" before "a", the opposite of both the root collation and
+// V8's default.
+func TestLocaleCompareMatchesICURoot(t *testing.T) {
+	cases := []struct {
+		left  string
+		right string
+		want  int
+	}{
+		{left: "alpha", right: "alpha", want: 0},
+		{left: "alpha", right: "beta", want: -1},
+		{left: "beta", right: "alpha", want: 1},
+		// Root collation: primary weights fold case, the tertiary weight puts the
+		// lower-case form first.
+		{left: "a", right: "A", want: -1},
+		{left: "A", right: "a", want: 1},
+		{left: "apple", right: "Apple", want: -1},
+		// Letters sort before digits in the root collation.
+		{left: "1", right: "a", want: -1},
+	}
+	for _, testCase := range cases {
+		got := localeCompare(testCase.left, testCase.right)
+		if got != testCase.want {
+			t.Fatalf("localeCompare(%q, %q) = %d, want %d", testCase.left, testCase.right, got, testCase.want)
+		}
+		if reverse := localeCompare(testCase.right, testCase.left); reverse != -testCase.want {
+			t.Fatalf("localeCompare(%q, %q) = %d, want %d", testCase.right, testCase.left, reverse, -testCase.want)
+		}
+	}
+}
+
+// TestBuildSearchTermsSlicesBeforeDeduping pins the stored searchTerms shape: the
+// NestJS writer cuts the flat term stream to its first 240 entries and only then
+// dedupes, so duplicates consume the budget. Deduping while collecting would
+// store up to 240 unique terms instead.
+func TestBuildSearchTermsSlicesBeforeDeduping(t *testing.T) {
+	// 240 repeated parts fill the slice budget, so the trailing unique term is
+	// cut before the dedupe pass even runs. Deduping first would have kept it.
+	parts := make([]string, 0, searchTermsLimit+1)
+	for index := 0; index < searchTermsLimit; index++ {
+		parts = append(parts, "repeat")
+	}
+	parts = append(parts, "tailvalue")
+	terms := buildSearchTerms(parts)
+	if len(terms) != 1 || terms[0] != "repeat" {
+		t.Fatalf("buildSearchTerms() = %v, want only the repeated term inside the budget", terms)
+	}
+
+	// Short input keeps the flatMap order, deduped.
+	got := buildSearchTerms([]string{"Alpha beta", "alpha, gamma", "BETA"})
+	want := []string{"alpha", "beta", "gamma"}
+	if len(got) != len(want) {
+		t.Fatalf("buildSearchTerms() = %v, want %v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("buildSearchTerms() = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestBuildSearchTermsUsesTheNestJSAlphabet keeps the separator set of the
+// NestJS split regex: only ASCII alphanumerics, underscore, latin-extended and CJK
+// are term characters, so Cyrillic, Greek and kana words never reach the stored
+// projection as terms.
+func TestBuildSearchTermsUsesTheNestJSAlphabet(t *testing.T) {
+	got := buildSearchTerms([]string{"Привет мир", "Ελλάδα", "東京タワー", "北京"})
+	want := []string{"東京", "北京"}
+	if len(got) != len(want) {
+		t.Fatalf("buildSearchTerms() = %v, want %v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("buildSearchTerms() = %v, want %v", got, want)
+		}
+	}
+}

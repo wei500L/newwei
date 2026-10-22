@@ -633,6 +633,12 @@ func TestDedupeEvaluateLlmJudgeDuplicateVerdicts(t *testing.T) {
 		{name: "is_duplicate false above threshold", payload: `{"similarity":0.93,"is_duplicate":false}`, wantDup: true},
 		{name: "invalid similarity", payload: `{"similarity":"high","is_duplicate":true}`, wantDup: false},
 		{name: "missing is_duplicate", payload: `{"similarity":0.99}`, wantDup: false},
+		// Out of schema: NewsDedupeJudgeSchema.safeParse rejects the verdict, so
+		// no clamp may promote it into a Duplicate mark.
+		{name: "similarity above one", payload: `{"similarity":1.4,"is_duplicate":true}`, wantDup: false},
+		{name: "similarity below zero", payload: `{"similarity":-0.2,"is_duplicate":true}`, wantDup: false},
+		{name: "malformed rationale", payload: `{"similarity":0.99,"is_duplicate":true,"rationale":7}`, wantDup: false},
+		{name: "over-long rationale", payload: `{"similarity":0.99,"is_duplicate":true,"rationale":"` + strings.Repeat("r", 281) + `"}`, wantDup: false},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

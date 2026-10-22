@@ -75,11 +75,16 @@ type NewsDedupeJudge struct {
 	Rationale   *string
 }
 
-// ParseNewsDedupeJudgeResponse extracts and validates the judge JSON. It returns
-// ok=false when no JSON is found, when the payload is not an object or when a
-// required member has the wrong type; the similarity is clamped to [0,1]
-// (matching the service's Math.min/Math.max) so a slightly out-of-range model
-// answer still participates in threshold resolution.
+// ParseNewsDedupeJudgeResponse extracts and validates the judge JSON exactly
+// like NewsDedupeJudgeSchema.safeParse in the TypeScript service: the whole
+// payload is rejected (ok=false) when any member is out of schema, so the caller
+// treats the verdict as absent instead of acting on a partially valid one.
+//
+// The bounds are part of the verdict contract, not cosmetics: an out-of-range
+// similarity must NOT be clamped into a valid one, because the caller promotes
+// any similarity at or above the threshold to a Duplicate mark on ItemMeta. A
+// clamped 1.4 would therefore mark an item Duplicate where NestJS ignores the
+// reply, and that mark permanently hides the item from the list surfaces.
 func ParseNewsDedupeJudgeResponse(content string) (NewsDedupeJudge, bool) {
 	raw, ok := safeJSONParseFromText(content)
 	if !ok || jsonKind(raw) != "object" {
@@ -94,7 +99,7 @@ func ParseNewsDedupeJudgeResponse(content string) (NewsDedupeJudge, bool) {
 		return NewsDedupeJudge{}, false
 	}
 	similarity, ok := decodeJSONNumber(similarityRaw)
-	if !ok || math.IsNaN(similarity) || math.IsInf(similarity, 0) {
+	if !ok || math.IsNaN(similarity) || math.IsInf(similarity, 0) || similarity < 0 || similarity > 1 {
 		return NewsDedupeJudge{}, false
 	}
 	duplicateRaw, present := object["is_duplicate"]
@@ -102,13 +107,20 @@ func ParseNewsDedupeJudgeResponse(content string) (NewsDedupeJudge, bool) {
 		return NewsDedupeJudge{}, false
 	}
 	judge := NewsDedupeJudge{
-		Similarity:  math.Min(1, math.Max(0, similarity)),
+		Similarity:  similarity,
 		IsDuplicate: bytes.Equal(bytes.TrimSpace(duplicateRaw), []byte("true")),
 	}
-	if rationaleRaw, present := object["rationale"]; present && jsonKind(rationaleRaw) == "string" {
-		rationale, _ := decodeJSONString(rationaleRaw)
-		if utf16Length(rationale) <= 280 {
+	if rationaleRaw, present := object["rationale"]; present {
+		switch jsonKind(rationaleRaw) {
+		case "null":
+		case "string":
+			rationale, ok := decodeJSONString(rationaleRaw)
+			if !ok || utf16Length(rationale) > 280 {
+				return NewsDedupeJudge{}, false
+			}
 			judge.Rationale = stringPointer(rationale)
+		default:
+			return NewsDedupeJudge{}, false
 		}
 	}
 	return judge, true

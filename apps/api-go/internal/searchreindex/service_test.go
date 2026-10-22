@@ -167,13 +167,68 @@ func TestBulkFailureErrorNamesTheItem(t *testing.T) {
 	}
 }
 
-// TestTruncateTextCollapsesWhitespace keeps the sanitized reason on one line.
-func TestTruncateTextCollapsesWhitespace(t *testing.T) {
-	if got := truncateText("a\n  b\tc", 40); got != "a b c" {
-		t.Fatalf("truncateText() = %q, want %q", got, "a b c")
+// TestBulkFailureReasonMatchesNestJS pins the reason text of one failed bulk
+// item: ECMAScript whitespace runs collapse to a single space without trimming
+// the ends, a missing reason takes the fallback, an empty reason stays empty,
+// and the cut is 200 UTF-16 code units with no ellipsis appended.
+func TestBulkFailureReasonMatchesNestJS(t *testing.T) {
+	reason := "a\n  b\tc"
+	if got := bulkErrorReason(&bulkItemError{Reason: &reason}); got != "a b c" {
+		t.Fatalf("bulkErrorReason() = %q, want %q", got, "a b c")
 	}
-	got := truncateText(strings.Repeat("x", 10), 4)
-	if got != "xxxx..." {
-		t.Fatalf("truncateText() = %q, want %q", got, "xxxx...")
+	leading := "  padded  "
+	if got := bulkErrorReason(&bulkItemError{Reason: &leading}); got != " padded " {
+		t.Fatalf("bulkErrorReason() must not trim the ends, got %q", got)
+	}
+	empty := ""
+	if got := bulkErrorReason(&bulkItemError{Reason: &empty}); got != "" {
+		t.Fatalf("bulkErrorReason() of an empty reason = %q, want empty", got)
+	}
+	if got := bulkErrorReason(nil); got != "no reason returned by elasticsearch" {
+		t.Fatalf("bulkErrorReason() of a missing error = %q", got)
+	}
+	long := strings.Repeat("x", 300)
+	if got := bulkErrorReason(&bulkItemError{Reason: &long}); got != strings.Repeat("x", 200) {
+		t.Fatalf("bulkErrorReason() length = %d, want 200: %q", len(got), got)
+	}
+	// An astral character costs two UTF-16 code units, so 100 emoji fill the
+	// 200-unit budget exactly (String#slice counts code units, not runes).
+	astral := strings.Repeat("😀", 150)
+	if got := bulkErrorReason(&bulkItemError{Reason: &astral}); got != strings.Repeat("😀", 100) {
+		t.Fatalf("bulkErrorReason() astral cut = %q", got)
+	}
+}
+
+// TestBulkErrorTypeMatchesNestJS keeps `error?.type?.trim() || "unknown"`: a
+// missing or blank type becomes "unknown" and a present type is never
+// truncated.
+func TestBulkErrorTypeMatchesNestJS(t *testing.T) {
+	if got := bulkErrorType(nil); got != "unknown" {
+		t.Fatalf("bulkErrorType(nil) = %q", got)
+	}
+	blank := "   "
+	if got := bulkErrorType(&bulkItemError{Type: &blank}); got != "unknown" {
+		t.Fatalf("bulkErrorType(blank) = %q", got)
+	}
+	long := strings.Repeat("t", 80)
+	if got := bulkErrorType(&bulkItemError{Type: &long}); got != long {
+		t.Fatalf("bulkErrorType() must not truncate, got %q", got)
+	}
+}
+
+// TestBulkFailureErrorUsesTheNestJSWording keeps the stored job error text
+// identical on both sides, including the leading capital and the reason cut.
+func TestBulkFailureErrorUsesTheNestJSWording(t *testing.T) {
+	reason := "failed to parse field [sortAt]"
+	itemType := "mapper_parsing_exception"
+	failures := []bulkFailure{{
+		itemMetaID: "item-9",
+		errorType:  bulkErrorType(&bulkItemError{Type: &itemType}),
+		reason:     bulkErrorReason(&bulkItemError{Reason: &reason}),
+	}}
+	want := "Elasticsearch bulk index failed for 1 item(s): " +
+		"itemMetaId=item-9 type=mapper_parsing_exception reason=failed to parse field [sortAt]"
+	if got := bulkFailureError(failures).Error(); got != want {
+		t.Fatalf("bulkFailureError() = %q, want %q", got, want)
 	}
 }
