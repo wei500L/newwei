@@ -40,13 +40,22 @@ import (
 // 且 golang-jwt 的错误文本不含 token 原文）。
 var ErrInvalidToken = errors.New("invalid access token")
 
-// ExtractBearerToken 提取 Authorization: Bearer <token> 的 token 部分。
+// ExtractBearerToken extracts the token part of `Authorization: Bearer <token>`.
 //
-// 契约对齐：passport-jwt 的 fromAuthHeaderAsBearerToken 用大小写不敏感
-// 的 /^Bearer\s+(.+)$/i 提取；缺失 header、非 Bearer scheme、空 token
-// 都返回 ""（→ 401 "Unauthorized"）。mtk_ 机器令牌明确拒绝：机器令牌
-// 迁移不在 Go-批3A 范围（NestJS 侧 mtk_ 走独立的机器令牌校验路径），
-// Go 端点只接受 NestJS 签发的 JWT。
+// Contract note (verified, do not repeat the older claim of regex parity):
+// passport-jwt's fromAuthHeaderAsBearerToken splits the header on a single space
+// and requires exactly two parts whose scheme equals "Bearer"
+// case-insensitively; it does not trim the credentials. This function instead
+// tolerates any number of spaces and trims the token, so `Bearer   <jwt>` is
+// extracted here and yields null (→ 401) under passport-jwt. The difference only
+// makes Go more permissive, and any accepted token still has to verify, so the
+// behaviour is kept and locked by jwt_test.go.
+//
+// Both sides reject a missing header, a non-Bearer scheme and an empty token
+// (→ 401 "Unauthorized"). mtk_ machine tokens are rejected on purpose:
+// machine-token migration is outside this batch (NestJS resolves mtk_ in the
+// separate MachineTokenService path wired into jwt-auth.guard.ts), so these
+// endpoints only accept a NestJS-signed JWT.
 func ExtractBearerToken(r *http.Request) string {
 	header := r.Header.Get("Authorization")
 	if len(header) < 7 || !strings.EqualFold(header[:7], "bearer ") {

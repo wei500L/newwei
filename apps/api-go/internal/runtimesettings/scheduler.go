@@ -241,10 +241,28 @@ func (s *Service) readMultiTenantSchedulerSettings(ctx context.Context) (multiTe
 	if !found {
 		return multiTenantSchedulerSettings{Source: SourceDefault, multiTenantSchedulerConcurrency: defaults}, nil
 	}
+	if !objectLikeJSON(raw) {
+		// NestJS's normalizeStoredSettings rejects anything that is not a plain
+		// object (null, array, scalar) with the same 409. json.Unmarshal would
+		// silently accept the JSON literal null and yield the defaults with
+		// source "db", so the shape is checked first.
+		return multiTenantSchedulerSettings{}, invalidMultiTenantSettings()
+	}
 	var stored multiTenantSchedulerStoredValue
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		return multiTenantSchedulerSettings{}, invalidMultiTenantSettings()
 	}
+	normalized, ok := normalizeStoredMultiTenantConcurrency(stored)
+	if !ok {
+		return multiTenantSchedulerSettings{}, invalidMultiTenantSettings()
+	}
+	return multiTenantSchedulerSettings{Source: SourceDB, multiTenantSchedulerConcurrency: normalized}, nil
+}
+
+// normalizeStoredMultiTenantConcurrency validates the fields of a stored
+// document. The second return value is false when any present field is invalid,
+// which fails the whole record (NestJS normalizeStoredSettings returns null).
+func normalizeStoredMultiTenantConcurrency(stored multiTenantSchedulerStoredValue) (multiTenantSchedulerConcurrency, bool) {
 	normalized := multiTenantSchedulerConcurrency{}
 	for _, spec := range multiTenantConcurrencySpecs {
 		value, ok := strictOptionalInt(spec.storedRaw(&stored))
@@ -252,13 +270,13 @@ func (s *Service) readMultiTenantSchedulerSettings(ctx context.Context) (multiTe
 			// Absent keys fall back to the default; present but invalid keys make
 			// the whole record invalid.
 			if present(spec.storedRaw(&stored)) {
-				return multiTenantSchedulerSettings{}, invalidMultiTenantSettings()
+				return multiTenantSchedulerConcurrency{}, false
 			}
 			value = spec.defaultValue
 		}
 		spec.assign(&normalized, value)
 	}
-	return multiTenantSchedulerSettings{Source: SourceDB, multiTenantSchedulerConcurrency: normalized}, nil
+	return normalized, true
 }
 
 // updateMultiTenantSchedulerSettings mirrors updateSettings: full replacement

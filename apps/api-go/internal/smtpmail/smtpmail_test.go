@@ -17,6 +17,7 @@ type smtpFixture struct {
 	reject   string
 	mu       sync.Mutex
 	messages []string
+	mailFrom []string
 	auths    int
 	done     chan struct{}
 }
@@ -55,6 +56,16 @@ func (f *smtpFixture) lastMessage() string {
 	return f.messages[len(f.messages)-1]
 }
 
+// lastMailFrom returns the envelope sender of the most recent MAIL FROM line.
+func (f *smtpFixture) lastMailFrom() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.mailFrom) == 0 {
+		return ""
+	}
+	return f.mailFrom[len(f.mailFrom)-1]
+}
+
 func (f *smtpFixture) serve() {
 	for {
 		conn, err := f.listener.Accept()
@@ -85,6 +96,9 @@ func (f *smtpFixture) handle(conn net.Conn) {
 			f.mu.Unlock()
 			write("235 2.7.0 Authentication successful")
 		case strings.HasPrefix(command, "MAIL FROM"):
+			f.mu.Lock()
+			f.mailFrom = append(f.mailFrom, line)
+			f.mu.Unlock()
 			write("250 2.1.0 OK")
 		case strings.HasPrefix(command, "RCPT TO"):
 			address := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "RCPT TO:"), ">"))
@@ -197,6 +211,65 @@ func TestNewMessageIDShape(t *testing.T) {
 		t.Fatalf("message id = %q", id)
 	}
 	if strings.Count(id, "@") != 1 {
+		t.Fatalf("message id = %q", id)
+	}
+}
+
+// TestEnvelopeAddressExtractsDisplayName pins the nodemailer equivalent of
+// parsing a configured sender: the display name stays in the header, the
+// envelope carries only the mailbox.
+func TestEnvelopeAddressExtractsDisplayName(t *testing.T) {
+	cases := []struct{ input, want string }{
+		{input: "wei500l@163.com", want: "wei500l@163.com"},
+		{input: "  wei500l@163.com  ", want: "wei500l@163.com"},
+		{input: "Wei <wei500l@163.com>", want: "wei500l@163.com"},
+		{input: "Wei < wei500l@163.com >", want: "wei500l@163.com"},
+		{input: "\"Wei, L\" <wei500l@163.com>", want: "wei500l@163.com"},
+		{input: "<wei500l@163.com>", want: "wei500l@163.com"},
+		{input: "Wei <>", want: "Wei <>"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.input, func(t *testing.T) {
+			if got := envelopeAddress(testCase.input); got != testCase.want {
+				t.Fatalf("envelopeAddress(%q) = %q, want %q", testCase.input, got, testCase.want)
+			}
+		})
+	}
+}
+
+// TestSendUsesTheMailboxAsEnvelopeSender covers the SMTP_FROM form the shipped
+// .env sample uses ("Wei <wei500l@163.com>"): MAIL FROM must carry the bare
+// address (a nested angle bracket is a syntax error for a real server) while the
+// From: header keeps the display name.
+func TestSendUsesTheMailboxAsEnvelopeSender(t *testing.T) {
+	fixture := newSMTPFixture(t)
+	config := fixtureConfig(fixture)
+	config.From = "Mailer <mailer@example.com>"
+
+	if _, err := config.Send(context.Background(), Message{
+		To:      "admin@example.com",
+		Subject: "Test email",
+		Text:    "body",
+		HTML:    "<p>body</p>",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := fixture.lastMailFrom(); got != "MAIL FROM:<mailer@example.com>" {
+		t.Fatalf("envelope sender = %q", got)
+	}
+	if message := fixture.lastMessage(); !strings.Contains(message, "From: Mailer <mailer@example.com>") {
+		t.Fatalf("message does not keep the display name:\n%s", message)
+	}
+}
+
+// TestNewMessageIDIgnoresTheDisplayName pins the domain extraction for a
+// display-name sender, which previously produced a "</…@163.com>>" Message-ID.
+func TestNewMessageIDIgnoresTheDisplayName(t *testing.T) {
+	id := NewMessageID("Wei <wei500l@163.com>")
+	if !strings.HasSuffix(id, "@163.com>") || strings.HasSuffix(id, ">>") {
+		t.Fatalf("message id = %q", id)
+	}
+	if strings.Count(id, "<") != 1 || strings.Count(id, ">") != 1 {
 		t.Fatalf("message id = %q", id)
 	}
 }

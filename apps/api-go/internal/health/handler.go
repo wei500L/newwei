@@ -34,11 +34,14 @@ func LiveHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // LiveResult 返回 live 探针的 Result 形状（shadow 差分执行用）。
+//
+// The header and body must be byte-identical to LiveHandler's output: Express
+// res.json sets "application/json; charset=utf-8" and does not append a newline.
 func LiveResult() *ExecResult {
 	return &ExecResult{
 		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       []byte(`{"status":"ok"}` + "\n"),
+		Header:     http.Header{"Content-Type": []string{"application/json; charset=utf-8"}},
+		Body:       []byte(`{"status":"ok"}`),
 	}
 }
 

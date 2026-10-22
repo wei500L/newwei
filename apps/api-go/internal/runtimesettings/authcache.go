@@ -3,7 +3,6 @@ package runtimesettings
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"math"
 )
 
@@ -185,6 +184,14 @@ func (s *Service) getAuthCacheSettings(ctx context.Context) (authCacheSettings, 
 // loadAuthCacheSettings mirrors loadSettings: an absent row returns the raw
 // environment defaults; a present row is spread over the fallback and
 // normalized.
+//
+// A stored value that is not a JSON object (array, string, number, boolean)
+// degrades to the environment defaults instead of failing the request. NestJS
+// spreads the stored value over the fallback (`{ ...fallback, ...value }`), and
+// a spread of any non-object contributes no profileTtlSeconds/lockTtlMs/
+// maxWaitMs/retryDelayMs key, so every field resolves from the fallback and the
+// endpoint still answers 200. Returning an error here would turn a corrupt row
+// into a 500 that NestJS never produced.
 func (s *Service) loadAuthCacheSettings(ctx context.Context) (authCacheSettings, error) {
 	fallback := s.fallbackAuthCacheSettings()
 	raw, found, err := s.loadSetting(ctx, settingKeyAuthProfileCache)
@@ -194,11 +201,21 @@ func (s *Service) loadAuthCacheSettings(ctx context.Context) (authCacheSettings,
 	if !found {
 		return fallback, nil
 	}
+	return storedAuthCacheSettings(raw, fallback), nil
+}
+
+// storedAuthCacheSettings resolves a present SystemSetting.value row. A stored
+// document that is not a JSON object contributes no field to the NestJS spread
+// `{ ...fallback, ...value }`, so every field resolves from the fallback.
+func storedAuthCacheSettings(raw json.RawMessage, fallback authCacheSettings) authCacheSettings {
+	if !objectLikeJSON(raw) {
+		return fallback
+	}
 	var stored authCacheStoredValue
 	if err := json.Unmarshal(raw, &stored); err != nil {
-		return authCacheSettings{}, errors.New("runtimesettings: stored auth profile cache settings are not an object")
+		return fallback
 	}
-	return normalizeStoredAuthCacheSettings(stored, fallback), nil
+	return normalizeStoredAuthCacheSettings(stored, fallback)
 }
 
 // updateAuthCacheSettings mirrors updateSettings: one upsert, a best-effort

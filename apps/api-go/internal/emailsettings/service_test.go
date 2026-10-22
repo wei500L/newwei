@@ -261,3 +261,27 @@ func TestEmailTestDTOValidation(t *testing.T) {
 		t.Fatal("expected a subject length error")
 	}
 }
+
+// TestEmailDTORejectsUnknownProperties pins ValidationPipe's whitelist +
+// forbidNonWhitelisted: a member the DTO does not declare is a 400 instead of
+// being silently ignored.
+func TestEmailDTORejectsUnknownProperties(t *testing.T) {
+	if _, err := parseAuthCodeDTO([]byte(`{"ttlSeconds":300,"cooldownSeconds":60,"maxAttempts":3,"ttl":60}`)); err == nil ||
+		!strings.Contains(err.Error(), "property ttl should not exist") {
+		t.Fatalf("auth-code unknown property error = %v", err)
+	}
+	if _, err := parseAuthCodeDTO([]byte(`{"ttlSeconds":300,"cooldownSeconds":60,"maxAttempts":3}`)); err != nil {
+		t.Fatalf("valid auth-code body = %v", err)
+	}
+	if _, _, err := parseTestDTO([]byte(`{"to":"admin@example.com","extra":true}`)); err == nil ||
+		!strings.Contains(err.Error(), "property extra should not exist") {
+		t.Fatalf("test unknown property error = %v", err)
+	}
+	if _, _, err := parseTestDTO([]byte(`{"to":"admin@example.com"}`)); err != nil {
+		t.Fatalf("valid test body = %v", err)
+	}
+	// `__proto__` is deleted by the ValidationPipe before validation.
+	if _, err := parseAuthCodeDTO([]byte(`{"ttlSeconds":300,"cooldownSeconds":60,"maxAttempts":3,"__proto__":{"x":1}}`)); err != nil {
+		t.Fatalf("__proto__ must be skipped: %v", err)
+	}
+}

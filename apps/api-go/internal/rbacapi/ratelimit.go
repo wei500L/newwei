@@ -1,6 +1,7 @@
 package rbacapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,8 +11,17 @@ import (
 	"time"
 )
 
-// rbacSlidingWindowLua 是 Nest RateLimiterService 的滑动窗口脚本。键是
-// rbac:write:<orgId>:<actorId> 与 :seq，与 NestJS 共享同一桶。
+// sharedRateLimitPrefix is the Redis namespace RateLimiterService.consume
+// prepends to every bucket key
+// (apps/api/src/modules/cache/rate-limiter.service.ts:128, `rate:${key}`).
+// rbacWriteKey must carry it: without the prefix Go counts in a parallel ZSET,
+// so a mixed deployment would allow twice the configured rbacWrite budget and
+// the two implementations would never observe each other's consumption.
+const sharedRateLimitPrefix = "rate:"
+
+// rbacSlidingWindowLua is the RateLimiterService sliding-window script. The keys
+// are the "rate:"-prefixed bucket and its :seq sibling, so Go and NestJS share
+// one ZSET.
 const rbacSlidingWindowLua = `
 local bucket_key = KEYS[1]
 local sequence_key = KEYS[2]
@@ -57,8 +67,16 @@ const (
 	rbacMaxWindowSeconds = 86400
 )
 
+// rbacWriteKey builds the sliding-window bucket key of
+// ActionRateLimitService.enforceRbacWrite (action-rate-limit.service.ts:71)
+// after RateLimiterService has added its own namespace:
+// `rate:rbac:write:<orgId>:<actorId>`.
+func rbacWriteKey(orgID, actorID string) string {
+	return sharedRateLimitPrefix + "rbac:write:" + orgID + ":" + actorID
+}
+
 // EnforceRbacWrite 对齐 action-rate-limit.service.ts 的 enforceRbacWrite
-// （68 行）：键 rbac:write:<orgId>:<actorId>，限额与窗口来自现有 rbacWrite
+// （68 行）：键 rate:rbac:write:<orgId>:<actorId>，限额与窗口来自现有 rbacWrite
 // 桶（Redis rate_limit:settings 优先，否则环境默认）。Redis 失败 fail-closed
 // （与 NestJS failOpen=false 一致）→ 429。
 func (s *Service) EnforceRbacWrite(ctx context.Context, orgID, actorID string) error {
@@ -69,7 +87,7 @@ func (s *Service) EnforceRbacWrite(ctx context.Context, orgID, actorID string) e
 	if limit <= 0 || windowSeconds <= 0 {
 		return nil
 	}
-	key := "rbac:write:" + orgID + ":" + actorID
+	key := rbacWriteKey(orgID, actorID)
 	allowed, err := s.consumeRbac(ctx, key, limit, windowSeconds)
 	if err != nil {
 		return newStatus(429, "Too many RBAC changes were attempted. Please try again later.")
@@ -120,36 +138,61 @@ func (s *Service) rbacWriteBucket(ctx context.Context) (int, int) {
 		clampWindow(envInt("RATE_LIMIT_RBAC_WRITE_WINDOW", 600))
 }
 
+// rbacWriteBucketConfig is the rbacWrite member of the cached
+// `rate_limit:settings` document. The two numbers stay raw JSON because the
+// writer has historically emitted both numbers and numeric strings, and the
+// reader must keep tolerating both.
+type rbacWriteBucketConfig struct {
+	Limit         json.RawMessage `json:"limit"`
+	WindowSeconds json.RawMessage `json:"windowSeconds"`
+}
+
+// rateLimitSettingsDocument is the typed view of the `rate_limit:settings`
+// cache entry this package reads. Only the rbacWrite bucket matters here; the
+// other buckets are ignored exactly like the previous map-based lookup.
+type rateLimitSettingsDocument struct {
+	RbacWrite *rbacWriteBucketConfig `json:"rbacWrite"`
+}
+
+// parseRbacBucket reads the rbacWrite bucket out of the typed document.
 func parseRbacBucket(raw []byte) (int, int, bool) {
-	var body map[string]any
-	if err := json.Unmarshal(raw, &body); err != nil {
+	var document rateLimitSettingsDocument
+	if err := json.Unmarshal(raw, &document); err != nil {
 		return 0, 0, false
 	}
-	bucket, _ := body["rbacWrite"].(map[string]any)
-	if bucket == nil {
+	if document.RbacWrite == nil {
 		return 0, 0, false
 	}
-	limit, okLimit := jsonInt(bucket["limit"])
-	window, okWindow := jsonInt(bucket["windowSeconds"])
+	limit, okLimit := rawJSONInt(document.RbacWrite.Limit)
+	window, okWindow := rawJSONInt(document.RbacWrite.WindowSeconds)
 	if !okLimit || !okWindow {
 		return 0, 0, false
 	}
 	return limit, window, true
 }
 
-func jsonInt(value any) (int, bool) {
-	switch typed := value.(type) {
-	case float64:
-		return int(typed), true
-	case json.Number:
-		parsed, err := typed.Int64()
-		return int(parsed), err == nil
-	case string:
-		parsed, err := strconv.Atoi(typed)
-		return parsed, err == nil
-	default:
+// rawJSONInt is the numeric coercion the cache reader applies to one stored
+// value: a JSON number is truncated toward zero, a JSON string is parsed as a
+// decimal integer, and every other JSON type (null, boolean, object, array) is
+// unusable.
+func rawJSONInt(raw json.RawMessage) (int, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
 		return 0, false
 	}
+	if trimmed[0] == '"' {
+		var text string
+		if err := json.Unmarshal(trimmed, &text); err != nil {
+			return 0, false
+		}
+		parsed, err := strconv.Atoi(strings.TrimSpace(text))
+		return parsed, err == nil
+	}
+	parsed, err := strconv.ParseFloat(string(trimmed), 64)
+	if err != nil {
+		return 0, false
+	}
+	return int(parsed), true
 }
 
 func envInt(name string, fallback int) int {

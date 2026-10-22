@@ -62,6 +62,27 @@ func TestLoginRequestValidationMessages(t *testing.T) {
 	}
 }
 
+// TestMinLengthCountsUTF16CodeUnits locks the JavaScript length rule behind
+// @MinLength: validator.js compares `str.length`, which counts UTF-16 code
+// units, so an astral character (an emoji) counts twice. Counting runes would
+// reject a password NestJS accepts.
+func TestMinLengthCountsUTF16CodeUnits(t *testing.T) {
+	// Four emoji = eight UTF-16 code units: @MinLength(8) passes in NestJS.
+	if _, err := parseLoginRequest([]byte(`{"email":"a@b.com","password":"😀😀😀😀"}`)); err != nil {
+		t.Fatalf("four emoji must satisfy MinLength(8): %v", err)
+	}
+	// Three emoji = six UTF-16 code units: rejected with the same message.
+	_, err := parseLoginRequest([]byte(`{"email":"a@b.com","password":"😀😀😀"}`))
+	if got := errorMessage(t, err); got != "password must be longer than or equal to 8 characters" {
+		t.Fatalf("messages = %q", got)
+	}
+	// The plain-BMP boundary is unchanged: seven ASCII characters are too short.
+	_, err = parseLoginRequest([]byte(`{"email":"a@b.com","password":"1234567"}`))
+	if got := errorMessage(t, err); got != "password must be longer than or equal to 8 characters" {
+		t.Fatalf("messages = %q", got)
+	}
+}
+
 func TestLoginWithCodeKeepsLeadingZeros(t *testing.T) {
 	request, err := parseLoginWithCodeRequest([]byte(`{"email":"a@b.com","code":"00000001"}`))
 	if err != nil {
