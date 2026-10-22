@@ -252,6 +252,17 @@ Go 侧范围：`internal/{authn,authz,authhttp,cors,httpx,config,legacyproxy,sha
 | 基线 | `dc48abc1`（CI run 39664944449 = success） |
 | 分支 / worktree | `review/go-identity-core` / `/Users/oo/project/newwei-review-identity-core` |
 | 报告提交 | 见本文件所在提交 |
-| 提交 | 14 个修复提交，见 PR 描述 |
+| 提交 | 16 个修复/文档提交，逐条见 PR 描述 |
 
-**验证口径**：本机只做了静态阅读、`git diff` 逐文件核对与 `gofmt -l`（改动文件全部干净；`internal/health` 的 3 个文件为基线既有问题，已列为 GW-08）。**没有编译、没有运行测试、没有连接任何真实服务**。全部正确性主张都还有待普通 CI 验证；CI 结论、精确 head SHA 与各 job 结果记录在 PR 描述中，`skipped` 不计为通过。
+**验证口径**：本机只做了静态阅读、`git diff` 逐文件核对与 `gofmt -l`（改动文件全部干净；`internal/health` 的 3 个文件为基线既有问题，已列为 GW-08）。**没有编译、没有运行测试、没有连接任何真实服务**。全部正确性主张都还待普通 CI 验证；精确 head SHA、run 链接与各 job 结论记录在 PR 描述中，`skipped` 不计为通过。
+
+### 7.1 CI 期间发现并修复的问题（本批自己引入的）
+
+第一次 CI（head `b8cbd67a`，run 39819425923）`verify` job 失败，`go test ./...` 报两个测试失败。两者都是本批新代码的问题，已单独提交修复：
+
+| 提交 | 问题 | 性质 |
+|---|---|---|
+| `7e8ba9c6` | RBAC-03 把 `permissionList` 从 `[]any` 改为 `[]json.RawMessage` 后，`json.Unmarshal` 会把 JSON `null` 成功解进 `string` 并留成空串，于是 `MachineAccessToken.permissions` 里的 `null` 项变成一个空的权限名（改动前的 `item.(string)` 会丢弃它，与 NestJS 的 `typeof === "string"` 过滤一致）。补「必须是字符串字面量」前置判断 | 本批引入的行为回归 |
+| `fa5f89db` | GW-01 的测试断言 `traceId` 非空，暴露出 `authhttp.writeError` 只取 context 值、没有 Nest `getCurrentTraceId() ?? ensureTraceId()` 的兜底（同仓 `nestnotfound.Write` 有）。在 TraceMiddleware 之外写出错误时 `traceId` 会是空串 | 本批暴露的契约差异（生产路径不可达，因为根 handler 总经过 TraceMiddleware） |
+
+这次失败也说明：**静态审查无法替代编译与测试**。本批 25 处修复中，只有这 2 处是 CI 能立刻抓到的类型/断言问题，其余全部依赖「按既有惯例逐字模仿」才没有引入编译错误。
