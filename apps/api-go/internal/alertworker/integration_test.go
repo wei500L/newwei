@@ -343,6 +343,16 @@ func TestAlertWorkerIntegration(t *testing.T) {
 		if deliveryError.Valid {
 			t.Fatalf("delivery error = %q, want NULL: a lost occupancy claim must not attempt the send", deliveryError.String)
 		}
+		// The delivery must have been loadable, otherwise the handler returned
+		// before the occupancy claim and the assertions above would pass for the
+		// wrong reason.
+		loaded, err := service.repo.loadDeliveryWithEventAndRule(ctx, db, deliveryID)
+		if err != nil {
+			t.Fatalf("reload delivery: %v", err)
+		}
+		if loaded == nil {
+			t.Fatal("delivery was not loadable with its event and rule; the subtest proved nothing")
+		}
 	})
 
 	t.Run("rate limit key reservation", func(t *testing.T) {
