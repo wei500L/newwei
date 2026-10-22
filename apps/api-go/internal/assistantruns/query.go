@@ -277,6 +277,13 @@ func clipHistoryContent(value string) string {
 	return string(utf16.Decode(units[:queryHistoryMessageMaxChars]))
 }
 
+// utf16Len is JavaScript String#length: UTF-16 code units, not bytes and not
+// runes. The ASSISTANT_STREAM_FLUSH_CHARS threshold and the conversation history
+// character budgets are both defined in those units.
+func utf16Len(value string) int {
+	return len(utf16.Encode([]rune(value)))
+}
+
 // applyQueryHistoryBudget ports applyQueryHistoryCharBudget. The budget is
 // counted in JavaScript string units and filled from the newest message
 // backwards.
@@ -322,6 +329,7 @@ func (s *Service) streamMessages(ctx context.Context, record *runRecord, created
 	}
 	runID := record.ID.Hex()
 	var buffer strings.Builder
+	bufferUnits := 0
 	var summary strings.Builder
 	var lastModel *string
 	lastFlushAt := time.Now()
@@ -332,6 +340,7 @@ func (s *Service) streamMessages(ctx context.Context, record *runRecord, created
 		}
 		chunk := buffer.String()
 		buffer.Reset()
+		bufferUnits = 0
 		summary.WriteString(chunk)
 		lastFlushAt = time.Now()
 		value := chunk
@@ -365,7 +374,12 @@ func (s *Service) streamMessages(ctx context.Context, record *runRecord, created
 			continue
 		}
 		buffer.WriteString(event.Delta)
-		if buffer.Len() >= flushChars || time.Since(lastFlushAt) >= time.Duration(flushMs)*time.Millisecond {
+		// The threshold is compared in JavaScript string units (UTF-16 code
+		// units), not UTF-8 bytes: the source compares `buffer.length`. Chinese
+		// deltas are three bytes per unit, so a byte comparison would flush the
+		// assistantEvents stream about three times as often as NestJS.
+		bufferUnits += utf16Len(event.Delta)
+		if bufferUnits >= flushChars || time.Since(lastFlushAt) >= time.Duration(flushMs)*time.Millisecond {
 			flush()
 		}
 	}
