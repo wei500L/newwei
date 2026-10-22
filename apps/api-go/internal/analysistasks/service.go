@@ -286,6 +286,24 @@ func (input createInput) column(ctx context.Context, q analysiscollab.Querier, o
 	return findFirstColumn(ctx, q, orgID, boardID)
 }
 
+// createTaskPriority ports `priority: input.priority ?? AnalysisTaskPriority.normal`
+// from createTask. The DTO marks priority optional, so class-validator lets an
+// explicit JSON null through (@IsOptional skips the enum check) and the service
+// then falls back to normal. Go must accept that same body instead of rejecting
+// it, otherwise a client that sends `"priority": null` on create gets a 400 that
+// the NestJS controller never returned. An unknown enum value is rejected before
+// this helper runs.
+//
+// The update path intentionally keeps rejecting an explicit null: the source
+// writes it unchecked into a non-null column and fails deep in Prisma, so a clear
+// 400 is the documented Go-side improvement rather than a behavior change.
+func createTaskPriority(body analysiscollab.Body) string {
+	if !body.Has("priority") || body.Null("priority") {
+		return analysiscollab.PriorityNormal
+	}
+	return body.String("priority")
+}
+
 func prepareCreate(ctx context.Context, db analysiscollab.Querier, orgID string, actor analysiscollab.Actor, body analysiscollab.Body) (createInput, error) {
 	title, err := analysiscollab.NormalizeRequired(body.String("title"), 160, "title")
 	if err != nil {
@@ -312,17 +330,11 @@ func prepareCreate(ctx context.Context, db analysiscollab.Querier, orgID string,
 		body:       markdown,
 		dueAt:      dueAt,
 		assigneeID: assigneeID,
-		priority:   analysiscollab.PriorityNormal,
+		priority:   createTaskPriority(body),
 	}
 	if linked != nil {
 		input.linkedType = stringPtr(linked.Type)
 		input.linkedID = stringPtr(linked.ID)
-	}
-	if body.Has("priority") {
-		if body.Null("priority") {
-			return createInput{}, analysiscollab.BadRequest("priority must be one of the following values: low, normal, high, urgent")
-		}
-		input.priority = body.String("priority")
 	}
 	if body.Has("columnId") && !body.Null("columnId") {
 		input.columnID = body.String("columnId")
@@ -351,6 +363,9 @@ func prepareUpdate(ctx context.Context, db analysiscollab.Querier, orgID string,
 	}
 	if body.Has("priority") {
 		if body.Null("priority") {
+			// updateTask does not coalesce: the source assigns the null straight
+			// into a non-null enum column and surfaces a Prisma failure. Answering
+			// the same invalid input with a 400 keeps the field contract explicit.
 			return taskUpdate{}, analysiscollab.BadRequest("priority must be one of the following values: low, normal, high, urgent")
 		}
 		patch.hasPriority = true

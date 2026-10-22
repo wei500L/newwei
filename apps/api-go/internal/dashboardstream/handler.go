@@ -97,6 +97,15 @@ type Handler struct {
 // cannot hold the query (and the entry's waiters) open indefinitely.
 const sharedReadTimeout = 30 * time.Second
 
+// streamWriteTimeout bounds one SSE frame write. A client that stops reading
+// must not pin the handler goroutine (and the shared-read waiters of this
+// connection) forever: the deadline turns the blocked write into an error, and
+// the stream then ends instead of retrying every tick.
+const streamWriteTimeout = 15 * time.Second
+
+// errStreamClosed is returned by streamSink.write once the stream has failed.
+var errStreamClosed = errors.New("dashboardstream: stream is closed")
+
 // NewHandler 使用生产定时器。测试可以改 Interval 和 Ping。
 func NewHandler(auth requestAuth, war WarSource, candles CandleSource, heat HeatSource, policy cors.Policy) *Handler {
 	return &Handler{
@@ -223,12 +232,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	ctx := r.Context()
+	// The stream owns a cancelable view of the request context so one failed
+	// frame write ends the whole handler: the publish ticker, the ping ticker and
+	// any read still waiting on this connection must not outlive a client that
+	// stopped reading.
+	ctx, stopStream := context.WithCancel(r.Context())
+	defer stopStream()
+	sink := &streamSink{
+		writer:  w,
+		flusher: flusher,
+		control: http.NewResponseController(w),
+		stop:    stopStream,
+	}
+	// Clearing the deadline on return lets net/http write the terminating chunk
+	// of the chunked response; a deadline left in the past would truncate it.
+	defer sink.clearDeadline()
+
 	interval, pingEvery := h.timings()
 	h.active.Add(1)
 	defer h.active.Add(-1)
 
-	var writeMu sync.Mutex
 	var inflight atomic.Bool
 	state := &fingerprints{}
 	publish := func(force bool) {
@@ -237,7 +260,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		defer inflight.Store(false)
 		h.cycles.Add(1)
-		h.publish(ctx, &writeMu, w, flusher, identity.OrgID, dashStart, dashEnd, warStart, warEnd, view, state, force, h.tickBucket(interval))
+		h.publish(ctx, sink, identity.OrgID, dashStart, dashEnd, warStart, warEnd, view, state, force, h.tickBucket(interval))
 	}
 
 	var wg sync.WaitGroup
@@ -272,9 +295,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				wg.Wait()
 				return
 			}
-			writeMu.Lock()
-			_ = writeFrame(w, flusher, eventPing, pingPayload(time.Now().UTC()))
-			writeMu.Unlock()
+			// A ping that cannot be written means the client is gone; write
+			// returns the error and stops the stream.
+			_ = sink.write(eventPing, pingPayload(time.Now().UTC()))
 		}
 	}
 }
@@ -287,7 +310,7 @@ type fingerprints struct {
 	geo    string
 }
 
-func (h *Handler) publish(ctx context.Context, mu *sync.Mutex, w http.ResponseWriter, flusher http.Flusher, orgID string, dashStart, dashEnd, warStart, warEnd time.Time, view dashboardwarmap.StreamView, state *fingerprints, force bool, bucket int64) {
+func (h *Handler) publish(ctx context.Context, sink *streamSink, orgID string, dashStart, dashEnd, warStart, warEnd time.Time, view dashboardwarmap.StreamView, state *fingerprints, force bool, bucket int64) {
 	type warResult struct {
 		read warRead
 		err  error
@@ -327,17 +350,12 @@ func (h *Handler) publish(ctx context.Context, mu *sync.Mutex, w http.ResponseWr
 	}
 	if err := firstError(warPart.err, candlePart.err); err != nil {
 		log.Printf("dashboard stream: update failed")
-		mu.Lock()
-		defer mu.Unlock()
 		if ctx.Err() != nil {
 			return
 		}
-		_ = writeFrame(w, flusher, eventStreamError, streamErrorPayload(err))
+		_ = sink.write(eventStreamError, streamErrorPayload(err))
 		return
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
 	if ctx.Err() != nil {
 		return
 	}
@@ -347,7 +365,7 @@ func (h *Handler) publish(ctx context.Context, mu *sync.Mutex, w http.ResponseWr
 		}
 		next := fingerprint(payload)
 		if force || next != *previous {
-			if writeFrame(w, flusher, event, payload) == nil {
+			if sink.write(event, payload) == nil {
 				*previous = next
 			}
 		}
@@ -358,13 +376,67 @@ func (h *Handler) publish(ctx context.Context, mu *sync.Mutex, w http.ResponseWr
 	sendChanged(eventCandlestick, candlePart.body, &state.candle)
 	if heatPart.err != nil || len(heatPart.body) == 0 {
 		if state.geo != unavailableFingerprint {
-			if writeFrame(w, flusher, eventGeoUnavailable, []byte(`{"code":"GEO_HEATMAP_UNAVAILABLE"}`)) == nil {
+			if sink.write(eventGeoUnavailable, []byte(`{"code":"GEO_HEATMAP_UNAVAILABLE"}`)) == nil {
 				state.geo = unavailableFingerprint
 			}
 		}
 		return
 	}
 	sendChanged(eventGeoHeatmap, heatPart.body, &state.geo)
+}
+
+// streamSink serializes the SSE writes of one connection, bounds every write
+// with a deadline, and stops the stream on the first failure.
+//
+// Without it a client that stops reading (suspended laptop, broken NAT) leaves
+// w.Write blocked forever inside the publish goroutine: the ticker keeps
+// running, writeMu is never released, the ping frame can never be written, and
+// the shared-read waiters of this connection stay parked. NestJS has the same
+// unbounded-write shape, so this is a Go-side hardening rather than a
+// behavioural difference the browser can observe: a healthy client never hits
+// the deadline.
+type streamSink struct {
+	mu      sync.Mutex
+	writer  http.ResponseWriter
+	flusher http.Flusher
+	control *http.ResponseController
+	stop    context.CancelFunc
+	failed  bool
+}
+
+// clearDeadline restores "no write deadline" for the final chunk of the
+// response. It is only called after every writer goroutine finished.
+func (s *streamSink) clearDeadline() {
+	if s.control == nil {
+		return
+	}
+	_ = s.control.SetWriteDeadline(time.Time{})
+}
+
+// write sends one SSE frame unless the stream already failed. A failed or
+// timed-out write ends the stream: the error is returned to the caller (which
+// stops publishing) and stop cancels the connection context so the tickers and
+// the ping loop finish too.
+func (s *streamSink) write(event string, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.failed {
+		return errStreamClosed
+	}
+	// Best effort: ResponseController reports ErrNotSupported for writers without
+	// deadline support (httptest.ResponseRecorder), and the frame is still
+	// written; only the bound is missing.
+	if s.control != nil {
+		_ = s.control.SetWriteDeadline(time.Now().Add(streamWriteTimeout))
+	}
+	if err := writeFrame(s.writer, s.flusher, event, data); err != nil {
+		s.failed = true
+		if s.stop != nil {
+			s.stop()
+		}
+		return err
+	}
+	return nil
 }
 
 // tickBucket is the sharing window for one publish round: connections whose

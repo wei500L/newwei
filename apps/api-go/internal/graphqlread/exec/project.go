@@ -11,9 +11,32 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 )
 
+// executionError builds a GraphQL execution error: a failure raised by the GraphQL
+// runtime while resolving the operation (non-null bubbling, scalar or enum
+// coercion, and the executor's own "not implemented" safety nets).
+//
+// These errors must NOT carry extensions.http. NestJS only reaches its
+// GlobalExceptionFilter for errors thrown by resolvers/guards, and Apollo Server 4
+// derives the HTTP status solely from extensions.http
+// (@apollo/server/dist/cjs/requestPipeline.js merges httpFromErrors into the
+// response head; errorNormalize.js then deletes extensions.http). An execution
+// error with no http extension keeps Apollo's default status 200, and Apollo
+// injects code INTERNAL_SERVER_ERROR when the error carries no code
+// (errorNormalize.js). Surrounding an execution error with http.status 500 would
+// therefore answer 500 where Nest answers 200. Failures that DO come from the Nest
+// exception filter (typed contract.Failure: 401/403/404/409/429/5xx) keep
+// extensions.http in engine.go.
+func executionError(message string, path []any) graphError {
+	return graphError{
+		Message:    message,
+		Path:       append([]any{}, path...),
+		Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR"},
+	}
+}
+
 func (e *Engine) project(typ *ast.Type, value reflect.Value, set ast.SelectionSet, doc *ast.QueryDocument, vars map[string]any, path []any, identity contract.Identity) (any, bool, []graphError) {
 	if typ == nil {
-		return nil, true, []graphError{{Message: "Internal server error", Path: append([]any{}, path...)}}
+		return nil, true, []graphError{executionError("Internal server error", path)}
 	}
 	value = derefInterface(value)
 	if typ.Elem != nil {
@@ -21,17 +44,13 @@ func (e *Engine) project(typ *ast.Type, value reflect.Value, set ast.SelectionSe
 	}
 	if !value.IsValid() {
 		if typ.NonNull {
-			return nil, true, []graphError{{
-				Message:    "Cannot return null for non-nullable field",
-				Path:       append([]any{}, path...),
-				Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR", "http": map[string]any{"status": 500}},
-			}}
+			return nil, true, []graphError{executionError("Cannot return null for non-nullable field", path)}
 		}
 		return nil, true, nil
 	}
 	named := e.schema.Types[typ.Name()]
 	if named == nil {
-		return nil, true, []graphError{{Message: "Internal server error", Path: append([]any{}, path...)}}
+		return nil, true, []graphError{executionError("Internal server error", path)}
 	}
 	switch named.Kind {
 	case ast.Scalar, ast.Enum:
@@ -48,11 +67,7 @@ func (e *Engine) projectList(typ *ast.Type, value reflect.Value, set ast.Selecti
 			if value.Kind() == reflect.Slice {
 				return []any{}, false, nil
 			}
-			return nil, true, []graphError{{
-				Message:    "Cannot return null for non-nullable field",
-				Path:       append([]any{}, path...),
-				Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR", "http": map[string]any{"status": 500}},
-			}}
+			return nil, true, []graphError{executionError("Cannot return null for non-nullable field", path)}
 		}
 		return nil, true, nil
 	}
@@ -66,11 +81,7 @@ func (e *Engine) projectList(typ *ast.Type, value reflect.Value, set ast.Selecti
 		value = value.Elem()
 	}
 	if value.Kind() != reflect.Slice && value.Kind() != reflect.Array {
-		return nil, true, []graphError{{
-			Message:    "Expected a list",
-			Path:       append([]any{}, path...),
-			Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR", "http": map[string]any{"status": 500}},
-		}}
+		return nil, true, []graphError{executionError("Expected a list", path)}
 	}
 	out := make([]any, 0, value.Len())
 	var errors []graphError
@@ -90,11 +101,7 @@ func (e *Engine) projectObject(def *ast.Definition, nonNull bool, value reflect.
 	value = concrete(value)
 	if !value.IsValid() {
 		if nonNull {
-			return nil, true, []graphError{{
-				Message:    "Cannot return null for non-nullable field",
-				Path:       append([]any{}, path...),
-				Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR", "http": map[string]any{"status": 500}},
-			}}
+			return nil, true, []graphError{executionError("Cannot return null for non-nullable field", path)}
 		}
 		return nil, true, nil
 	}
@@ -110,11 +117,8 @@ func (e *Engine) projectObject(def *ast.Definition, nonNull bool, value reflect.
 		}
 		fieldDef := def.Fields.ForName(field.Name)
 		if fieldDef == nil {
-			errors = append(errors, graphError{
-				Message:    "Cannot query field \"" + field.Name + "\" on type \"" + def.Name + "\".",
-				Path:       fieldPath,
-				Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR", "http": map[string]any{"status": 500}},
-			})
+			errors = append(errors, executionError(
+				"Cannot query field \""+field.Name+"\" on type \""+def.Name+"\".", fieldPath))
 			nullObject = true
 			continue
 		}
@@ -132,11 +136,8 @@ func (e *Engine) projectObject(def *ast.Definition, nonNull bool, value reflect.
 		}
 		child, ok := fieldValue(value, field.Name)
 		if !ok {
-			errors = append(errors, graphError{
-				Message:    "Field \"" + field.Name + "\" is not implemented on \"" + def.Name + "\"",
-				Path:       fieldPath,
-				Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR", "http": map[string]any{"status": 500}},
-			})
+			errors = append(errors, executionError(
+				"Field \""+field.Name+"\" is not implemented on \""+def.Name+"\"", fieldPath))
 			if fieldDef.Type.NonNull {
 				nullObject = true
 			} else {
@@ -162,11 +163,7 @@ func (e *Engine) projectLeaf(def *ast.Definition, nonNull bool, value reflect.Va
 	value = concrete(value)
 	if !value.IsValid() {
 		if nonNull {
-			return nil, true, []graphError{{
-				Message:    "Cannot return null for non-nullable field",
-				Path:       append([]any{}, path...),
-				Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR", "http": map[string]any{"status": 500}},
-			}}
+			return nil, true, []graphError{executionError("Cannot return null for non-nullable field", path)}
 		}
 		return nil, true, nil
 	}
@@ -174,18 +171,14 @@ func (e *Engine) projectLeaf(def *ast.Definition, nonNull bool, value reflect.Va
 	case "Int":
 		number, ok := contract.AsInt(value.Interface())
 		if !ok {
-			return nil, true, []graphError{{Message: "Int cannot represent non-integer value", Path: append([]any{}, path...)}}
+			return nil, true, []graphError{executionError("Int cannot represent non-integer value", path)}
 		}
 		return number, false, nil
 	case "Float":
 		number, ok := contract.AsFloat(value.Interface())
 		if !ok || math.IsNaN(number) || math.IsInf(number, 0) {
 			if nonNull {
-				return nil, true, []graphError{{
-					Message:    "Float cannot represent non numeric value",
-					Path:       append([]any{}, path...),
-					Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR", "http": map[string]any{"status": 500}},
-				}}
+				return nil, true, []graphError{executionError("Float cannot represent non numeric value", path)}
 			}
 			return nil, true, nil
 		}
@@ -199,13 +192,13 @@ func (e *Engine) projectLeaf(def *ast.Definition, nonNull bool, value reflect.Va
 		}
 		text, ok := contract.AsString(value.Interface())
 		if !ok {
-			return nil, true, []graphError{{Message: "String cannot represent value", Path: append([]any{}, path...)}}
+			return nil, true, []graphError{executionError("String cannot represent value", path)}
 		}
 		return text, false, nil
 	case "Boolean":
 		typed, ok := value.Interface().(bool)
 		if !ok {
-			return nil, true, []graphError{{Message: "Boolean cannot represent value", Path: append([]any{}, path...)}}
+			return nil, true, []graphError{executionError("Boolean cannot represent value", path)}
 		}
 		return typed, false, nil
 	case "DateTime":
@@ -215,27 +208,24 @@ func (e *Engine) projectLeaf(def *ast.Definition, nonNull bool, value reflect.Va
 		case string:
 			return typed, false, nil
 		default:
-			return nil, true, []graphError{{Message: "DateTime cannot represent value", Path: append([]any{}, path...)}}
+			return nil, true, []graphError{executionError("DateTime cannot represent value", path)}
 		}
 	case "JSON":
 		normalized := normalizeJSON(value.Interface())
 		encoded, err := json.Marshal(normalized)
 		if err != nil {
-			return nil, true, []graphError{{Message: "JSON cannot represent value", Path: append([]any{}, path...)}}
+			return nil, true, []graphError{executionError("JSON cannot represent value", path)}
 		}
 		return json.RawMessage(encoded), false, nil
 	default:
 		if def.Kind == ast.Enum {
 			text, ok := contract.AsString(value.Interface())
 			if !ok {
-				return nil, true, []graphError{{Message: "Enum cannot represent value", Path: append([]any{}, path...)}}
+				return nil, true, []graphError{executionError("Enum cannot represent value", path)}
 			}
 			if !enumHas(def, text) {
-				return nil, true, []graphError{{
-					Message:    "Enum \"" + def.Name + "\" cannot represent value: \"" + text + "\"",
-					Path:       append([]any{}, path...),
-					Extensions: map[string]any{"code": "INTERNAL_SERVER_ERROR", "http": map[string]any{"status": 500}},
-				}}
+				return nil, true, []graphError{executionError(
+					"Enum \""+def.Name+"\" cannot represent value: \""+text+"\"", path)}
 			}
 			return text, false, nil
 		}
