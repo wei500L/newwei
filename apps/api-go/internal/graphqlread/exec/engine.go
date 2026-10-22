@@ -474,6 +474,13 @@ func executedRootNames(plan Plan) []string {
 // response cache for this request. forceRefresh skips both. Only query
 // operations are ever cacheable: a mutation must not read or write the cached
 // response, regardless of its operation name or root fields.
+//
+// The rule mirrors isCacheableGraphqlRequest
+// (apps/api/src/graphql/graphql.module.ts): the operation-name allowlist wins,
+// otherwise every direct root field selection must be in the field allowlist.
+// directRootNames counts a root __typename as a root field, which is what the
+// NestJS implementation does; Apollo Client sends __typename by default, so
+// counting it keeps the cache decision identical to Nest for the same document.
 func ResponseCacheable(plan Plan, maxAge int) bool {
 	if maxAge <= 0 {
 		return false
