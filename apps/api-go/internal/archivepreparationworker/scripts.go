@@ -20,6 +20,7 @@ type queueScripts struct {
 	extendLock            *redis.Script
 	moveToFinished        *redis.Script
 	retryJob              *redis.Script
+	moveToDelayed         *redis.Script
 	moveStalledJobsToWait *redis.Script
 }
 
@@ -49,6 +50,9 @@ func loadQueueScripts() (queueScripts, error) {
 		return queueScripts{}, err
 	}
 	if scripts.retryJob, err = load("retryJob-11.lua"); err != nil {
+		return queueScripts{}, err
+	}
+	if scripts.moveToDelayed, err = load("moveToDelayed-8.lua"); err != nil {
 		return queueScripts{}, err
 	}
 	if scripts.moveStalledJobsToWait, err = load("moveStalledJobsToWait-8.lua"); err != nil {

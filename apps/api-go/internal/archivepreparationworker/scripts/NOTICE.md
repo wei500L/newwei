@@ -20,6 +20,7 @@ time (`go:embed`); the process never downloads a script at runtime.
 | `extendLock-2.lua` | `ccb26c4f390625a882819335f1d6077455b9a633e99527028e0f1910b2c1db3f` | `f3c0b3f993871533eabfc85f5fbfc9b1dcb7e1b230c9305e23fc96365f96a1f2` |
 | `moveToFinished-14.lua` | `8fac037ff3dd5b7ef16e94817ec93a7e6dcccdc729f11d65d86c5efc41390b7f` | `572920a790ad025386a2b9355de086c1c4ca6658fc15ace7d2c4932365c8c0b3` |
 | `retryJob-11.lua` | `fe9558b56d8a0f64fbd13e196a6bc07534ec800a0972e49f45433e31fe47ba3d` | `5c98c7eae068e06d53dd55d468e397fa73e173697519d1ea8857172e8faa4abe` |
+| `moveToDelayed-8.lua` | `30e27887b5b3e8ff5d6fb9c18b9420565f69d60ac1a189c07e76575eb5ffbcdf` | `3140607f9078063c1cd35f984ad4fec26f49240aa037fb0c9f787c50b17660a7` |
 | `moveStalledJobsToWait-8.lua` | `0ccb155a535dee4fce8bad8b3a9ef0c7665bd8be329ff7e9cf1e655dbf845515` | `c77949cefb61af6b82ee423625aa8a9b90d9ec8a0691af0e8609dbb4775ca27e` |
 
 The `-N` suffix in each filename is the BullMQ `numberOfKeys` value: the first
