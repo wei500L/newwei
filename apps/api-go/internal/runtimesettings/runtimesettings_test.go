@@ -553,3 +553,98 @@ func TestRateLimitBucketFallback(t *testing.T) {
 		t.Fatalf("configured cache ttl = %d", ttl)
 	}
 }
+
+// TestValidationMessageOrderBottomUp locks the class-validator message order for
+// a single property: TypeScript applies property decorators bottom-up, so
+// `@IsInt() @Min(x) @Max(y)` reports Max, then Min, then IsInt. The expected
+// string is the measured NestJS response for PUT /api/system-settings/audit-log
+// with {"retentionDays":"30"} (docs/refactor/bug-ledger.md).
+func TestValidationMessageOrderBottomUp(t *testing.T) {
+	_, err := parseUpdateAuditLogRetention([]byte(`{"retentionDays":"30"}`))
+	if err == nil {
+		t.Fatal("string retentionDays must be rejected")
+	}
+	want := "retentionDays must not be greater than 3650; " +
+		"retentionDays must not be less than 1; " +
+		"retentionDays must be an integer number"
+	if err.Error() != want {
+		t.Fatalf("message = %q, want %q", err.Error(), want)
+	}
+
+	// A float field reports Max, Min, IsNumber in the same bottom-up order.
+	var problems validationErrors
+	floatField(&problems, json.RawMessage(`"0.5"`), "focusSourceBonus", true, 0, 20, 4)
+	if got := problems.err(); got == nil || got.Error() != "focusSourceBonus must not be greater than 20; focusSourceBonus must not be less than 0; focusSourceBonus must be a number conforming to the specified constraints" {
+		t.Fatalf("float message = %v", got)
+	}
+}
+
+// TestNewsSourceAllowlistEachMessages locks the `each: true` wording of the
+// seedUrlQueryParamAllowlist DTO: element constraints prefix with
+// "each value in <field> " and are reported Matches, MaxLength, IsString.
+func TestNewsSourceAllowlistEachMessages(t *testing.T) {
+	var problems validationErrors
+	stringListField(&problems, json.RawMessage(`["ok",1]`), "seedUrlQueryParamAllowlist", 64, 64)
+	want := "each value in seedUrlQueryParamAllowlist must match /^[a-z0-9_.-]{1,64}$/i regular expression; " +
+		"each value in seedUrlQueryParamAllowlist must be shorter than or equal to 64 characters; " +
+		"each value in seedUrlQueryParamAllowlist must be a string"
+	if got := problems.err(); got == nil || got.Error() != want {
+		t.Fatalf("message = %v, want %q", got, want)
+	}
+
+	// A too-long but string-shaped entry fails Matches and MaxLength only.
+	problems = validationErrors{}
+	long := strings.Repeat("a", 65)
+	stringListField(&problems, json.RawMessage(`["`+long+`"]`), "seedUrlQueryParamAllowlist", 64, 64)
+	want = "each value in seedUrlQueryParamAllowlist must match /^[a-z0-9_.-]{1,64}$/i regular expression; " +
+		"each value in seedUrlQueryParamAllowlist must be shorter than or equal to 64 characters"
+	if got := problems.err(); got == nil || got.Error() != want {
+		t.Fatalf("long entry message = %v, want %q", got, want)
+	}
+
+	// A valid entry reports nothing.
+	problems = validationErrors{}
+	if _, ok := stringListField(&problems, json.RawMessage(`["ID","story"]`), "seedUrlQueryParamAllowlist", 64, 64); !ok {
+		t.Fatalf("valid allowlist rejected: %v", problems.err())
+	}
+}
+
+// TestStoredAuthCacheSettingsDegrades locks the read degradation: NestJS spreads
+// a non-object stored value over the environment fallback, so the endpoint keeps
+// answering with the fallback instead of failing.
+func TestStoredAuthCacheSettingsDegrades(t *testing.T) {
+	fallback := authCacheSettings{ProfileTTLSeconds: 600, LockTTLMs: 5000, MaxWaitMs: 5000, RetryDelayMs: 50}
+	for _, raw := range []string{`null`, `[]`, `"x"`, `3`, `true`} {
+		if got := storedAuthCacheSettings(json.RawMessage(raw), fallback); got != fallback {
+			t.Fatalf("%s: settings = %+v, want fallback", raw, got)
+		}
+	}
+	// A partial object keeps the fallback for the absent fields.
+	got := storedAuthCacheSettings(json.RawMessage(`{"profileTtlSeconds":900}`), fallback)
+	if got.ProfileTTLSeconds != 900 || got.LockTTLMs != 5000 || got.RetryDelayMs != 50 {
+		t.Fatalf("partial object = %+v", got)
+	}
+}
+
+// TestStoredMultiTenantConcurrencyShape locks the stored-document shape rule:
+// anything that is not a plain object fails the whole read (NestJS
+// normalizeStoredSettings returns null for null/array/scalar).
+func TestStoredMultiTenantConcurrencyShape(t *testing.T) {
+	if _, ok := normalizeStoredMultiTenantConcurrency(multiTenantSchedulerStoredValue{}); !ok {
+		t.Fatal("absent fields must fall back to the defaults")
+	}
+
+	for _, raw := range []string{`null`, `[]`, `"x"`, `3`} {
+		if objectLikeJSON(json.RawMessage(raw)) {
+			t.Fatalf("%s must not be treated as an object document", raw)
+		}
+	}
+
+	var stored multiTenantSchedulerStoredValue
+	if err := json.Unmarshal([]byte(`{"newsIndicatorAssociationOrgConcurrency":0}`), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := normalizeStoredMultiTenantConcurrency(stored); ok {
+		t.Fatal("out-of-range stored value must invalidate the whole record")
+	}
+}

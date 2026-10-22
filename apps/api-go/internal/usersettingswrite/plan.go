@@ -59,7 +59,18 @@ func Plan(path string, body []byte) ([]segment, error) {
 		allowed[spec.name] = spec
 	}
 
+	// Message order follows ValidationPipe: whitelist messages
+	// ("property <name> should not exist", in body key order) are collected
+	// before the per-property constraint messages. Same order as
+	// docs/refactor/go-data-runtime-settings.md §4 and
+	// apps/api-go/internal/crawlprofile/validate.go.
 	var messages []string
+	for _, key := range topLevelOrder(body) {
+		if _, ok := allowed[key]; ok {
+			continue
+		}
+		messages = append(messages, "property "+key+" should not exist")
+	}
 	for _, spec := range specs {
 		raw, ok := fields[spec.name]
 		if !ok {
@@ -76,12 +87,6 @@ func Plan(path string, body []byte) ([]segment, error) {
 				messages = append(messages, spec.name+" must be an object")
 			}
 		}
-	}
-	for _, key := range topLevelOrder(body) {
-		if _, ok := allowed[key]; ok {
-			continue
-		}
-		messages = append(messages, "property "+key+" should not exist")
 	}
 	if len(messages) > 0 {
 		return nil, &inputError{Message: strings.Join(messages, "; ")}
