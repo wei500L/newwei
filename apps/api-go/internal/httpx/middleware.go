@@ -77,9 +77,19 @@ func EnsureTraceID(incoming string) string {
 	return hex.EncodeToString(buf)
 }
 
-// WriteJSON 输出 JSON 响应。
+// WriteJSON writes a JSON response with the byte shape Express res.json
+// produces: the serialized document without a trailing newline and the
+// "application/json; charset=utf-8" content type (Express appends the charset to
+// every JSON body; json.NewEncoder's trailing newline has no Express
+// equivalent). The document is marshalled before the status line so a
+// serialization failure cannot leave a half-written response.
 func WriteJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("content-type", "application/json")
+	payload, err := json.Marshal(body)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("content-type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	_, _ = w.Write(payload)
 }
