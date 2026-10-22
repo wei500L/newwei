@@ -46,9 +46,16 @@ func jsNumberFromJSON(raw json.RawMessage) (float64, bool) {
 		case 0:
 			return 0, true
 		case 1:
-			// Number([x]) falls back to Number(String([x])) === Number(String(x)):
-			// recursion reproduces [5] -> 5 and [[5]] -> 5.
-			return jsNumberFromJSON(items[0])
+			// Number([x]) is Number(String([x])) === Number(String(x)):
+			// recursion reproduces [5] -> 5, [[5]] -> 5 and [null] -> 0. A single
+			// boolean is the exception: String([true]) is "true" and
+			// Number("true") is NaN, so recursing (which reads Number(true) === 1)
+			// would invent a value.
+			single := bytes.TrimSpace(items[0])
+			if len(single) > 0 && (single[0] == 't' || single[0] == 'f') {
+				return math.NaN(), true
+			}
+			return jsNumberFromJSON(single)
 		default:
 			// String([1,2]) === "1,2", which Number() cannot parse.
 			return math.NaN(), true
