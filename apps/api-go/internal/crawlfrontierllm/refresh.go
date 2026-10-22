@@ -2,7 +2,9 @@ package crawlfrontierllm
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
@@ -128,31 +130,24 @@ func (s *Service) refreshRunStatus(ctx context.Context, runID string) error {
 	} else {
 		patch.SetNull("rootDiagnosis")
 	}
-	mergedMetadata := mergeObjects(run.Metadata, patch)
-	if mergedMetadata == nil {
-		mergedMetadata = NewObject()
-	}
-	encodedMetadata, err := mergedMetadata.MarshalJSON()
-	if err != nil {
-		return err
-	}
-
 	var finishedAt *time.Time
 	if activeCount == 0 && status != "running" && status != "queued" {
 		value := truncateMillis(s.now())
 		finishedAt = &value
 	}
-	var lastErrorValue any
+	var lastErrorValue sql.NullString
 	if lastError != "" {
-		lastErrorValue = lastError
+		lastErrorValue = sql.NullString{String: lastError, Valid: true}
 	}
-	_, err = s.db.ExecContext(ctx, `
-UPDATE CrawlFrontierRun
-SET status = ?, lastError = ?, metadata = ?, nodeCount = ?, pageCount = ?, articleCount = ?,
-    failedCount = ?, duplicateCount = ?, finishedAt = ?, updatedAt = ?
-WHERE id = ?`,
-		status, lastErrorValue, encodedMetadata, nodeCount, pageCount, articleCount,
-		failedCount, duplicateCount, nullableTimeValue(finishedAt), truncateMillis(s.now()), runID)
+	var finishedAtValue sql.NullTime
+	if finishedAt != nil {
+		finishedAtValue = sql.NullTime{Time: *finishedAt, Valid: true}
+	}
+	mergedMetadata, err := s.writeRunRefreshLocked(ctx, runID, runRefreshUpdate{
+		Status: status, LastError: lastErrorValue, NodeCount: nodeCount, PageCount: pageCount,
+		ArticleCount: articleCount, FailedCount: failedCount, DuplicateCount: duplicateCount,
+		FinishedAt: finishedAtValue, MetadataPatch: patch,
+	})
 	if err != nil {
 		return err
 	}
@@ -231,6 +226,75 @@ WHERE id = ?`,
 	return nil
 }
 
+// runRefreshUpdate is the CrawlFrontierRun projection refreshRunStatus writes.
+// The metadata patch is applied under the row lock by writeRunRefreshLocked, so
+// it is kept apart from the derived counter columns.
+type runRefreshUpdate struct {
+	Status         string
+	LastError      sql.NullString
+	NodeCount      int
+	PageCount      int
+	ArticleCount   int
+	FailedCount    int
+	DuplicateCount int
+	FinishedAt     sql.NullTime
+	MetadataPatch  *Object
+}
+
+// writeRunRefreshLocked writes the run projection and merges the metadata patch
+// in one transaction whose first statement locks the run row (B1).
+//
+// NestJS reads the metadata document at the start of refreshRunStatus and writes
+// the merged result at the end, so every metadata key another writer added in
+// between (the learn chain's llmLifecycle/shadowRunId/shadowEvaluationTriggeredAt,
+// the judge cleanup, a concurrent refresh) is silently dropped. Dropping
+// shadowEvaluationTriggeredAt in particular makes the next terminal lifecycle
+// start a second shadow run. Merging against the locked document closes that
+// window while keeping the same merge semantics and the same single UPDATE for
+// the derived counter columns.
+//
+// The merged document is returned because handleTerminalRunLifecycle evaluates
+// its handledKey/learnQueuedKey guards on it.
+func (s *Service) writeRunRefreshLocked(ctx context.Context, runID string, update runRefreshUpdate) (*Object, error) {
+	if s.db == nil {
+		return nil, errNoDB()
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var raw []byte
+	scanErr := tx.QueryRowContext(ctx,
+		"SELECT metadata FROM CrawlFrontierRun WHERE id = ? FOR UPDATE", runID).Scan(&raw)
+	if scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+		return nil, scanErr
+	}
+	merged := mergeObjects(parseObjectOrNil(raw), update.MetadataPatch)
+	if merged == nil {
+		merged = NewObject()
+	}
+	encoded, err := merged.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE CrawlFrontierRun
+SET status = ?, lastError = ?, metadata = ?, nodeCount = ?, pageCount = ?, articleCount = ?,
+    failedCount = ?, duplicateCount = ?, finishedAt = ?, updatedAt = ?
+WHERE id = ?`,
+		update.Status, update.LastError, encoded, update.NodeCount, update.PageCount,
+		update.ArticleCount, update.FailedCount, update.DuplicateCount, update.FinishedAt,
+		truncateMillis(s.now()), runID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return merged, nil
+}
+
 type terminalSummary struct {
 	Status         string
 	Metadata       *Object
@@ -263,7 +327,10 @@ func (s *Service) handleTerminalRunLifecycle(ctx context.Context, runID string, 
 	if err != nil {
 		return err
 	}
-	runMetadata := objectOrEmpty(summary.Metadata)
+	// The re-read document is the one the lock-protected write just produced, so
+	// the handledKey/learnQueuedKey guards below evaluate the committed metadata
+	// (the NestJS terminal lifecycle reads run.metadata from its own re-read too).
+	runMetadata := objectOrEmpty(run.Metadata)
 	lifecycle := NewObject()
 	if value, ok := runMetadata.Object("llmLifecycle"); ok {
 		lifecycle = value
@@ -463,13 +530,6 @@ func numberLeafOrNull(metadata *Object, key string) json.RawMessage {
 		return numberJSON(value)
 	}
 	return json.RawMessage("null")
-}
-
-func nullableTimeValue(value *time.Time) any {
-	if value == nil {
-		return nil
-	}
-	return truncateMillis(*value)
 }
 
 // refreshAggregate is the pure aggregation refreshRunStatus performs on the
