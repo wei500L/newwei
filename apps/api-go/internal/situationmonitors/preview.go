@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/contentcatalog"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmembed"
+	"github.com/wei500L/newwei/apps/api-go/internal/personalnews"
 )
 
 type previewSuggestion struct {
@@ -121,9 +123,24 @@ func (s *Service) Preview(ctx context.Context, orgID string, input monitorWrite)
 		SuggestedTopics:       topics,
 		SuggestedEntities:     entities,
 		SuggestedLexicalTerms: lexicalSuggestions(rawKeywords, append(append([]any{}, topics...), entities...), rejected.LexicalTerms),
-		ModelInfo:             modelInfo{EmbeddingModel: embeddingModel},
+		ModelInfo:             previewModelInfo(ctx, s.embed, embeddingModel),
 	}
 	return response, nil
+}
+
+// previewModelInfo mirrors NestJS previewMonitor's modelInfo block: the model
+// that actually served the query embedding, plus the rerank model the gateway
+// is configured with. NestJS reports the rerank model even when the rerank call
+// was skipped or failed, so the field reflects configuration, not usage.
+func previewModelInfo(ctx context.Context, gateway modelGateway, embeddingModel string) modelInfo {
+	info := modelInfo{EmbeddingModel: embeddingModel}
+	if gateway == nil {
+		return info
+	}
+	if rerankModel, ok := gateway.RuntimeRerankModel(ctx); ok {
+		info.RerankModel = strings.TrimSpace(rerankModel)
+	}
+	return info
 }
 
 func nonNilStrings(values []string) []string {
@@ -142,12 +159,23 @@ func orderCandidates(merged map[string]scoredCatalog) []scoredCatalog {
 	return out
 }
 
+// sortCandidates orders by score, then by catalog occurrence count. Both sides
+// of a tie are broken deterministically: candidates are collected from a map, so
+// without the kind/normalized tiebreak the response order of equal-scoring
+// suggestions would change between identical requests.
 func sortCandidates(entries []scoredCatalog) {
 	sort.SliceStable(entries, func(i, j int) bool {
-		if entries[i].score == entries[j].score {
-			return entries[i].row.count > entries[j].row.count
+		left, right := entries[i], entries[j]
+		if left.score != right.score {
+			return left.score > right.score
 		}
-		return entries[i].score > entries[j].score
+		if left.row.count != right.row.count {
+			return left.row.count > right.row.count
+		}
+		if left.row.kind != right.row.kind {
+			return left.row.kind < right.row.kind
+		}
+		return left.row.normalized < right.row.normalized
 	})
 }
 
@@ -176,27 +204,31 @@ LIMIT ?`, orgID, previewCandidateLimit)
 	return out, rows.Err()
 }
 
+// taxonomyNames mirrors NestJS loadTaxonomyDisplayNames: the org's stored
+// classification taxonomy merged over the built-in default taxonomy. Reading the
+// SystemSetting row directly would drop the defaults, so a suggestion whose path
+// the org never customized would lose its label. A settings read failure yields
+// no labels, exactly like the NestJS catch block.
 func (s *Service) taxonomyNames(ctx context.Context, orgID string) map[string]string {
-	names := map[string]string{}
 	if s == nil || s.db == nil {
-		return names
+		return map[string]string{}
 	}
-	var raw []byte
-	if err := s.db.QueryRowContext(ctx, "SELECT value FROM SystemSetting WHERE `key` = ?", "news_classification_settings:"+orgID).Scan(&raw); err != nil {
-		return names
+	view, err := contentcatalog.NewService(s.db, nil, nil, nil).LoadTaxonomy(ctx, orgID)
+	if err != nil {
+		return map[string]string{}
 	}
-	record := asObject(raw)
-	nodes, _ := record["taxonomy"].([]any)
-	for _, node := range nodes {
-		item, ok := node.(map[string]any)
-		if !ok {
+	return taxonomyLabels(view)
+}
+
+// taxonomyLabels projects the taxonomy view to path → display name, skipping
+// nodes without a path so a malformed node cannot shadow the raw-path fallback.
+func taxonomyLabels(view personalnews.TaxonomyView) map[string]string {
+	names := make(map[string]string, len(view.ByPath))
+	for path, node := range view.ByPath {
+		if strings.TrimSpace(path) == "" {
 			continue
 		}
-		path := strings.TrimSpace(asString(item["path"]))
-		display := strings.TrimSpace(asString(item["displayName"]))
-		if path != "" && display != "" {
-			names[path] = display
-		}
+		names[path] = node.DisplayName
 	}
 	return names
 }
