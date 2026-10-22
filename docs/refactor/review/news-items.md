@@ -196,7 +196,7 @@ crawl 一侧；队列运维与组织计数（`queueops`、`queueorgstats`、Bull
 - **影响**：①控制台 `newsEvents` 出现 0 items 的重复空事件（同标题、`status=active`，还会被时间线/统计计入）；②败者把空事件 id 当 anchor 传给 bertopic 成员分配（`bertopic.go:185-193`），虽被 `findActiveEvent` 兜住转全 picker，但同簇成员会被打散。
 - **修复**：冲突分支先 `Rollback`（新建空事件永不落库），再用**事务外**读取解析胜者（本事务快照早于胜者提交）；冲突行已消失时返回原始冲突错误，让调用方下一 tick 重试而不是返回不存在的 id。
 - **行为变化**：败者不再返回自己的空事件 id，改为返回胜者 id；极罕见"冲突行已消失"时返回原始冲突错误而非悬空 id。
-- **测试**：`TestIngestionConcurrentAssignOnlyOneWins`（新增"`NewsEvent` 行数 == 1"与"败者返回胜者 id"两条断言）。**注意：该集成断言需在真实 MySQL 上执行**，本机未运行。
+- **测试**：`TestIngestionConcurrentAssignOnlyOneWins`（新增"`NewsEvent` 行数 == 1"与"败者返回胜者 id"两条断言）。该断言需要真实 MySQL，已在 CI 集成 job step 35 上执行并通过（见 §5.4）。
 
 #### W4-01（P2，已修 `12ec9118`）dedupe judge 越界响应被 clamp 成合法判定 → 误标 Duplicate
 
@@ -406,10 +406,21 @@ W6 的摘要投递测试补入 `994dc9e3`：`TestRunTickSecondInstanceSkipsScanA
 
 ### 5.4 验证边界（必须如实说明）
 
-- 本机**未运行** `go build`、`go test`、`pnpm`、Docker 或任何服务；**未连接**真实 MySQL / Redis / Mongo / Elasticsearch / SMTP / LiteLLM。全部结论为静态推导。
-- 唯一验证渠道是现有普通 GitHub Actions CI（`go test ./...` 与既有集成 job）。CI 结果见本 PR 描述。
-- **W3-02 的并发断言（`TestIngestionConcurrentAssignOnlyOneWins` 新增的两条）理论上需真实 MySQL 才能执行**（InnoDB 对未提交冲突行先阻塞再报 1062 的语义是"胜者必已提交"论证的前提）。普通 CI 里该测试是否在集成 job 中运行需按实际 job 结果确认；若只编译不执行，该修复仍属"逻辑已论证、未在真实依赖上执行"。
-- W6-01、W4-01、W5-01、W2-01/02 的修复由纯单测固定，不依赖外部服务。
+- **审查本身是静态的**：本机未运行 `go build`、`go test`、`pnpm`、Docker 或任何服务，未连接真实 MySQL / Redis / Mongo / Elasticsearch / SMTP / LiteLLM，未加载生产流量。全部发现均为静态推导 + 对抗式复核。
+- 验证渠道只有现有普通 GitHub Actions CI。head `1fd508a2` 的 CI run [39819290763](https://github.com/wei500L/newwei/actions/runs/39819290763) conclusion `success`：
+
+| job | 结论 |
+|---|---|
+| `verify` | **success**（`go test ./...`，覆盖本次全部新增单测） |
+| `api-go-user-settings-integration` | **success**（49 个步骤全部 success，见下） |
+| `vector-integration` | **success** |
+| `go-modules-regen` | **skipped**（label 门控，未触发；**不计为通过**） |
+| `contract-baseline-regen` | **skipped**（label 门控，未触发；**不计为通过**） |
+
+- 本次新增的单测均**无 build tag**，因此在 `verify` 的 `go test ./...` 中实际执行：`rsseedttl_test.go`、`activeorgcache_test.go`、`itemsreading/{elasticsearch,handler,query}_test.go`、`userdigest/delivery_scheduler_test.go`、`newspipeline/settings_test.go`、`itempipeline/protocol_test.go`、`searchreindex/service_test.go`，以及各包内追加的用例。
+- **W3-02 的并发断言已在真实 MySQL 上执行并通过**：CI 集成 job 的 step 35「MySQL/Redis/Mongo integration tests (news-event ingestion and assignment)」（`go test -tags=integration ./internal/newseventsingest/ -v`，无 `-run` 过滤）会执行 `TestIngestionConcurrentAssignOnlyOneWins` 及其新增的两条断言（`NewsEvent` 行数 == 1、败者返回胜者 id）。该 step 结论 success，因此"Rollback 后事务外读胜者"的修复不仅有逻辑论证，也有真实依赖上的执行证据。
+- 同样在真实依赖上执行并通过的相关 step：step 40「Item pipeline worker integration tests (MySQL/Redis/Mongo)」（W1-01 涉及的 worker/DLQ/并发终态）、step 41「Full item pipeline chain integration test」、step 31「news-source scheduler integration tests」、step 20「classification quality queue」、step 33「event timeline + sentiment snapshot」、step 29「processed_item outbox」。
+- **仍未验证**：W5-01 的迁移在真实 MySQL + Redis 上的端到端行为（`rsseedttl_test.go` 是纯单测 + fake 端口，CI 的 `TestNewsSourceSchedulerIntegration` 是 `-run` 过滤的既有用例，不覆盖新迁移路径）；W6-01 / W4-01 / W2-01 / W2-02 的修复由纯单测固定，未接真实 ES / Mongo / LiteLLM；W2-04 的 `error` 文本对齐未在真实 ES bulk 失败上验证。
 
 ## 6. 建议的后续审查
 
@@ -487,7 +498,9 @@ W6 的摘要投递测试补入 `994dc9e3`：`TestRunTickSecondInstanceSkipsScanA
 
 ## 9. 验证
 
-- 审查方式：静态阅读 + 对抗式复核，**无运行时验证**。
-- 格式：全部改动文件通过 `gofmt -l`（仓库内另有 20 个**既有的**未格式化文件，均在本次改动范围之外）。
-- 编译与测试：以本 PR 的普通 GitHub Actions CI 为准（`verify` job 的 `go test ./...`，以及既有集成 job）。
-- 未运行、因此不声称通过：真实 MySQL/Redis/Mongo/ES/SMTP/LiteLLM 调用、Docker、前端构建、生产流量、`API_GO_*` 的实际部署取值。
+- 审查方式：静态阅读 + 对抗式复核。本机未运行 build / test / Docker / 服务，未连接任何外部依赖。
+- 格式：全部 40 个改动的 `.go` 文件通过 `gofmt -l`（仓库内另有约 20 个**既有的**未格式化文件，均在本次改动范围之外）。
+- 编译与测试：head `1fd508a2` 的普通 CI run [39819290763](https://github.com/wei500L/newwei/actions/runs/39819290763) conclusion `success`。其中 `verify`（`go test ./...`）success、`api-go-user-settings-integration` success（49 个步骤全部 success）、`vector-integration` success；`go-modules-regen` 与 `contract-baseline-regen` 为 **skipped**（label 门控，不计为通过）。
+- 本次新增单测均无 build tag，在 `verify` 的 `go test ./...` 中实际执行。
+- W3-02 的并发断言在集成 job step 35 的真实 MySQL 上执行并通过（详见 §5.4）。
+- **仍未验证、因此不声称通过**：W5-01 迁移的端到端实栈行为、W6-01/W4-01/W2-01/W2-02 的真实 ES/Mongo/LiteLLM 行为、W2-04 的真实 ES bulk 失败文本、任何生产流量与 `API_GO_*` 的实际部署取值。
