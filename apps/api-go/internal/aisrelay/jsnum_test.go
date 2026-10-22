@@ -181,10 +181,11 @@ func TestParseJSNumberMatchesNumberCoercion(t *testing.T) {
 
 func TestJSToUpperExpandsLigaturesLikeJavaScript(t *testing.T) {
 	cases := []struct {
+		name  string
 		input string
 		want  string
 	}{
-		{"shipping name", "Cargo One", "CARGO ONE"},
+		{"ascii name", "Cargo One", "CARGO ONE"},
 		// JS full uppercase mapping expands these; strings.ToUpper would leave the source
 		// rune alone and the ASCII naval patterns would stop matching.
 		{"sharp s expands to SS", "\u00df", "SS"},
@@ -197,9 +198,11 @@ func TestJSToUpperExpandsLigaturesLikeJavaScript(t *testing.T) {
 		{"greek", "\u03b1\u03b2", "\u0391\u0392"},
 	}
 	for _, testCase := range cases {
-		if got := jsToUpper(testCase.input); got != testCase.want {
-			t.Fatalf("jsToUpper(%q) = %q, want %q", testCase.input, got, testCase.want)
-		}
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := jsToUpper(testCase.input); got != testCase.want {
+				t.Fatalf("jsToUpper(%q) = %q, want %q", testCase.input, got, testCase.want)
+			}
+		})
 	}
 }
 
