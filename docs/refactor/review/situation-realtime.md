@@ -268,5 +268,9 @@
   - `2766c573` `🐛 fix(situation): G-01 G-02 修正 Telegram channelSet 与 OREF 凭据的环境变量优先级`
   - `15b6fdd9` `🐛 fix(situation): W-01 轮询失败与守卫拒绝的错误写入缓存供读侧返回`
   - `e8d9ab20` `🐛 fix(situation): M-01/M-02/M-03/M-05/M-06 修正监控 preview 与 PATCH 的契约差异`
+  - `bc465a5c` `📝 docs(review): 新增态势实时信号经济与归档静态审查报告`
+  - `3e2cc4c7` `✅ test(situation): W-01 集成测试按错误落缓存的语义更新断言`
 - 验证方式：`gofmt -l` 对 `situationsignals`、`situationsignalsworker`、`situationsettings`、`situationmonitors`、`geocoding`、`archivepreparationworker`、`realtimesignals`、`economicdata`、`archivereading` 均无输出；跨文件符号（`persistOrefAlerts`/`persistTelegramState`/`contentcatalog.LoadTaxonomy`/`llmembed.Client.RuntimeRerankModel`/`situationmonitors.NewService`）逐个核对调用点与签名。
 - 明确未做的验证：未运行 `go build`/`go test`/`go vet`/`pnpm`/Docker/服务；未连接真实 Telegram、OREF、OpenSky、AIS relay、Nominatim、AkShare、LiteLLM、MySQL、Redis、Mongo；未验证多实例并发。所有正确性结论以普通 CI 的 `go test ./...` 与集成 job 为准。
+- 普通 CI（`pull_request`，head `3e2cc4c7f50d368c8f6bc9cbe7465e2e5d939a14`，[run 39821049746](https://github.com/wei500L/newwei/actions/runs/39821049746)）：`verify` success、`vector-integration` success、`api-go-user-settings-integration` success；`go-modules-regen` 与 `contract-baseline-regen` 为 label 门控的跳过（skipped，不计为通过）。首次运行 [run 39819032588](https://github.com/wei500L/newwei/actions/runs/39819032588) 在 `api-go-user-settings-integration` 的「situation monitor signals worker 集成测试」失败，原因是既有 `TestSituationSignalsWorkerOrefB3Integration` 断言失败轮询后 alerts 文档逐字节不变，而 W-01 会有意补写 `error`；已按新语义改为结构化比对（保留上次成功的 alerts/计数/时刻 + `error` 存在），该 job 随后通过。这只是 CI 门禁发现的测试断言与新语义不一致，不是产品行为回退。
+
