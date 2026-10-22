@@ -126,9 +126,13 @@ func TestParseNewsDedupeJudgeResponse(t *testing.T) {
 		{name: "valid", content: `{"similarity":0.93,"is_duplicate":true}`, ok: true, similarity: 0.93, isDuplicate: true},
 		{name: "rationale", content: `{"similarity":0.5,"is_duplicate":false,"rationale":"same event"}`, ok: true, similarity: 0.5, rationale: stringPointer("same event")},
 		{name: "null rationale", content: `{"similarity":0.5,"is_duplicate":false,"rationale":null}`, ok: true, similarity: 0.5},
-		{name: "non-string rationale", content: `{"similarity":0.5,"is_duplicate":false,"rationale":1}`, ok: true, similarity: 0.5},
-		{name: "clamps high", content: `{"similarity":1.4,"is_duplicate":false}`, ok: true, similarity: 1},
-		{name: "clamps low", content: `{"similarity":-0.4,"is_duplicate":true}`, ok: true, similarity: 0, isDuplicate: true},
+		// NewsDedupeJudgeSchema.safeParse rejects the whole payload when a member
+		// is out of schema; a clamped similarity must never reach the caller,
+		// because any similarity at or above the threshold becomes a Duplicate
+		// mark that permanently hides the item.
+		{name: "non-string rationale", content: `{"similarity":0.5,"is_duplicate":false,"rationale":1}`},
+		{name: "similarity above one", content: `{"similarity":1.4,"is_duplicate":false}`},
+		{name: "similarity below zero", content: `{"similarity":-0.4,"is_duplicate":true}`},
 		{name: "fenced", content: "```json\n{\"similarity\":0.8,\"is_duplicate\":true}\n```", ok: true, similarity: 0.8, isDuplicate: true},
 		{name: "wrapped", content: `verdict: {"similarity":0.8,"is_duplicate":true} done`, ok: true, similarity: 0.8, isDuplicate: true},
 		{name: "missing similarity", content: `{"is_duplicate":true}`},
@@ -163,8 +167,19 @@ func TestParseNewsDedupeJudgeResponse(t *testing.T) {
 	}
 
 	long := strings.Repeat("r", 281)
-	if judge, ok := ParseNewsDedupeJudgeResponse(`{"similarity":0.9,"is_duplicate":false,"rationale":"` + long + `"}`); !ok || judge.Rationale != nil {
-		t.Fatalf("over-long rationale should be dropped")
+	if _, ok := ParseNewsDedupeJudgeResponse(`{"similarity":0.9,"is_duplicate":false,"rationale":"` + long + `"}`); ok {
+		t.Fatalf("over-long rationale must reject the whole verdict like NewsDedupeJudgeSchema")
+	}
+	// z.string().max(280) counts UTF-16 code units and 280 is still in schema.
+	atLimit := strings.Repeat("r", 280)
+	judge, ok := ParseNewsDedupeJudgeResponse(`{"similarity":0.9,"is_duplicate":false,"rationale":"` + atLimit + `"}`)
+	if !ok || judge.Rationale == nil || len(*judge.Rationale) != 280 {
+		t.Fatalf("280-unit rationale must be accepted")
+	}
+	// A surrogate pair counts as two units, so 141 astral characters exceed 280.
+	astral := strings.Repeat("\U0001F600", 141)
+	if _, ok := ParseNewsDedupeJudgeResponse(`{"similarity":0.9,"is_duplicate":false,"rationale":"` + astral + `"}`); ok {
+		t.Fatalf("rationale length must be measured in UTF-16 code units")
 	}
 }
 
