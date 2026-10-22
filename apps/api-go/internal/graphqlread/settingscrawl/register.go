@@ -371,13 +371,30 @@ func registerCrawlRoots(reg *contract.Registry, crawl *crawlReader) {
 		Permission: permissionCrawlRead,
 		Resolve: contract.Bind(func(ctx contract.Context) (*CrawlTaskModel, error) {
 			id, _ := contract.StringArg(ctx.Args, "id")
-			resultLimit := 20
-			if value, ok := contract.IntArg(ctx.Args, "resultLimit"); ok {
-				resultLimit = value
+			resultLimit, err := crawlTaskResultLimitArg(ctx.Args)
+			if err != nil {
+				return nil, err
 			}
 			return crawl.crawlTask(ctx.Ctx, ctx.Identity, id, resultLimit, stringArgPtr(ctx, "resultSearch"))
 		}),
 	})
+}
+
+// crawlTaskResultLimitArg resolves the crawlTask(resultLimit) argument the way
+// the NestJS DTO does: the argument is optional and defaults to 20, a present
+// value below 1 is rejected by class-validator's @Min(1) before the resolver
+// runs, and a value above 100 is clamped by the resolver because that GraphQL
+// argument declares no @Max (clampResultLimit).
+func crawlTaskResultLimitArg(args map[string]any) (int, error) {
+	const defaultResultLimit = 20
+	value, ok := contract.IntArg(args, "resultLimit")
+	if !ok {
+		return defaultResultLimit, nil
+	}
+	if value < 1 {
+		return 0, badRequest("resultLimit must not be less than 1")
+	}
+	return value, nil
 }
 
 // stringArgPtr returns a pointer for a present string argument and nil for an

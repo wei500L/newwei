@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 )
 
 // This file exercises the exported RunTask path with an in-test database/sql
@@ -329,6 +331,40 @@ func TestRunTaskMissingTask(t *testing.T) {
 	for _, exec := range database.executes {
 		if strings.Contains(exec.query, "`status`") {
 			t.Fatalf("missing task must not be updated: %#v", exec)
+		}
+	}
+}
+
+// recordingItemIngestor records the actor of every crawl-result ingest call.
+type recordingItemIngestor struct {
+	calls []string
+}
+
+func (r *recordingItemIngestor) CreateFromCrawlResult(_ context.Context, orgID, userID, crawlResultID string) (itemsreading.ItemMetaRow, error) {
+	r.calls = append(r.calls, orgID+"|"+userID+"|"+crawlResultID)
+	return itemsreading.ItemMetaRow{}, nil
+}
+
+func TestIngestActorUsesTriggeringUser(t *testing.T) {
+	task := &taskRow{ID: "task-1", OrgID: "org-1", CreatedByID: "creator-1"}
+	if actor := ingestUserID(task, "triggered-1"); actor != "triggered-1" {
+		t.Fatalf("the BullMQ triggeredById must win: %q", actor)
+	}
+	if actor := ingestUserID(task, ""); actor != "creator-1" {
+		t.Fatalf("the pipeline path keeps the task creator: %q", actor)
+	}
+
+	ingestor := &recordingItemIngestor{}
+	service := New(Options{Items: ingestor})
+	service.ingestReusedResult(context.Background(), "org-1", task, "result-1", ingestUserID(task, "triggered-1"))
+	service.ingestReusedResult(context.Background(), "org-1", task, "result-2", ingestUserID(task, ""))
+	want := []string{"org-1|triggered-1|result-1", "org-1|creator-1|result-2"}
+	if len(ingestor.calls) != len(want) {
+		t.Fatalf("ingest calls = %#v", ingestor.calls)
+	}
+	for index, value := range want {
+		if ingestor.calls[index] != value {
+			t.Fatalf("ingest call %d = %q, want %q", index, ingestor.calls[index], value)
 		}
 	}
 }

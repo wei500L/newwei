@@ -312,3 +312,29 @@ func TestCoerceDate(t *testing.T) {
 		t.Fatalf("expected nil, got %v", got)
 	}
 }
+
+// TestValidationJSCodeLengthUsesUTF16 pins MAX_SCRIPT_LENGTH against
+// String.length: a non-ASCII script stays inside the 2000-character budget even
+// when its UTF-8 encoding is longer, exactly like the NestJS validator.
+func TestValidationJSCodeLengthUsesUTF16(t *testing.T) {
+	script, err := json.Marshal(strings.Repeat("中", 1200))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	validation, _ := decode(t, `{"url":"https://example.com","options":{"jsCode":[`+string(script)+`]}}`)
+	if len(validation.Messages) != 0 {
+		t.Fatalf("messages = %v", validation.Messages)
+	}
+	if validation.Input.Options == nil || len(validation.Input.Options.JSCode) != 1 {
+		t.Fatalf("jsCode = %#v", validation.Input.Options)
+	}
+
+	overlong, err := json.Marshal(strings.Repeat("a", 2001))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	validation, _ = decode(t, `{"url":"https://example.com","options":{"jsCode":[`+string(overlong)+`]}}`)
+	if len(validation.Messages) != 1 || validation.Messages[0] != "options.each value in jsCode must be shorter than or equal to 2000 characters" {
+		t.Fatalf("messages = %v", validation.Messages)
+	}
+}

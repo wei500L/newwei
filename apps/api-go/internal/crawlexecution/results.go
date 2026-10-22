@@ -184,7 +184,8 @@ func hashMarkdown(markdown string) string {
 
 // persistResults is CrawlResultService.persistResults for the runTask path. The
 // memory stats are returned separately because the Summary contract the
-// pipeline bridge reads does not carry them.
+// pipeline bridge reads does not carry them. ingestUserID is the actor the
+// items ingest runs as (`triggeredById ?? task.createdById`).
 func (s *Service) persistResults(
 	ctx context.Context,
 	task *taskRow,
@@ -193,6 +194,7 @@ func (s *Service) persistResults(
 	response crawl4ai.PipelineResponse,
 	ingestToItems bool,
 	orgID string,
+	ingestUserID string,
 ) (Summary, memoryStats, error) {
 	runID := response.RunID
 	if len(items) == 0 {
@@ -359,6 +361,10 @@ func (s *Service) persistResults(
 	}
 
 	if ingestToItems {
+		actorID := ingestUserID
+		if actorID == "" {
+			actorID = task.CreatedByID
+		}
 		uniqueIDs := make([]string, 0, len(existingItems)+len(createdResultIDs))
 		seen := map[string]struct{}{}
 		for _, existing := range existingItems {
@@ -380,7 +386,7 @@ func (s *Service) persistResults(
 			itemsQueueFailed += len(uniqueIDs)
 		} else {
 			for _, resultID := range uniqueIDs {
-				if _, ingestErr := s.items.CreateFromCrawlResult(ctx, orgID, task.CreatedByID, resultID); ingestErr != nil {
+				if _, ingestErr := s.items.CreateFromCrawlResult(ctx, orgID, actorID, resultID); ingestErr != nil {
 					itemsQueueFailed++
 					log.Printf("crawlexecution: failed to ingest crawl result taskId=%s crawlResultId=%s: %v", task.ID, resultID, ingestErr)
 					continue
@@ -638,7 +644,7 @@ func (s *Service) writeResultContent(
 		{Key: "metadata", Value: decodeJSONLeaf(entry.Article.Metadata, bson.M{})},
 		{Key: "sourceUrl", Value: entry.SourceURL},
 		{Key: "crawlRunId", Value: nullableRunIDValue(runID)},
-		{Key: "linkAnalysis", Value: buildLinkAnalysis(entry.Article.Links)},
+		{Key: "linkAnalysis", Value: buildResultLinkAnalysis(entry.Article)},
 		{Key: "tables", Value: decodeJSONLeaf(entry.Article.Tables, nil)},
 	}
 	if shouldStoreMedia {
@@ -789,6 +795,29 @@ func coerceDate(raw json.RawMessage) *time.Time {
 		if parsed, err := time.Parse(layout, trimmed); err == nil {
 			utc := parsed.UTC()
 			return &utc
+		}
+	}
+	return nil
+}
+
+// buildResultLinkAnalysis is extractLinkAnalysisFromResult: the item's own link
+// buckets first, then the metadata keys crawl4ai's extractors use when they
+// report the analysis inside metadata instead of a top-level links field.
+func buildResultLinkAnalysis(article crawl4ai.PipelineArticle) any {
+	if analysis := buildLinkAnalysis(article.Links); analysis != nil {
+		return analysis
+	}
+	record := decodeMetadataMap(article.Metadata)
+	if record == nil {
+		return nil
+	}
+	for _, key := range []string{"links", "link_summary", "linkSummary", "linkAnalysis"} {
+		raw, ok := record[key]
+		if !ok || len(raw) == 0 {
+			continue
+		}
+		if analysis := buildLinkAnalysis(raw); analysis != nil {
+			return analysis
 		}
 	}
 	return nil

@@ -1,5 +1,7 @@
 package crawlreadtelemetry
 
+import "encoding/json"
+
 // CrawlTaskStatus is the Prisma CrawlTaskStatus enum as a named string type.
 type CrawlTaskStatus string
 
@@ -104,9 +106,36 @@ type CrawlTaskListResponse struct {
 
 // crawlTaskDetailTask is the detail task: the toView projection followed by the
 // hydrated results. Embedding reproduces the NestJS spread-then-append order.
+//
+// The JSON shape cannot reuse CrawlTaskView as is: toView reserves the
+// memoryStats and lastRunSummary keys and leaves them undefined, so the list
+// projection omits them, while getTask spreads the same keys and then assigns
+// the values it read from the latest "complete" task log. A task without such a
+// log therefore serializes "memoryStats": null and "lastRunSummary": null in the
+// detail response. MarshalJSON reproduces exactly that: the two keys are always
+// present (null when absent) and the hydrated results stay last.
 type crawlTaskDetailTask struct {
 	CrawlTaskView
 	Results []CrawlTaskResult `json:"results"`
+}
+
+// MarshalJSON renders the detail task with the two always-present run keys.
+func (t crawlTaskDetailTask) MarshalJSON() ([]byte, error) {
+	// The outer fields shadow the embedded view's memoryStats / lastRunSummary
+	// (a shallower field wins in encoding/json), which lets the two keys drop
+	// their omitempty for this projection only.
+	type detailJSON struct {
+		CrawlTaskView
+		MemoryStats    *CrawlMemoryStats      `json:"memoryStats"`
+		LastRunSummary *CrawlExecutionSummary `json:"lastRunSummary"`
+		Results        []CrawlTaskResult      `json:"results"`
+	}
+	return json.Marshal(detailJSON{
+		CrawlTaskView:  t.CrawlTaskView,
+		MemoryStats:    t.CrawlTaskView.MemoryStats,
+		LastRunSummary: t.CrawlTaskView.LastRunSummary,
+		Results:        t.Results,
+	})
 }
 
 // CrawlTaskDetailResponse is the GET /api/crawl-tasks/:id payload.

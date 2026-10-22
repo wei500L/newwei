@@ -63,7 +63,10 @@ func (d *Discovery) crawlSettings(ctx context.Context) crawl4ai.Settings {
 }
 
 // DiscoverSitemapCandidates delegates to the existing sitemap chain so the
-// preview and the workflow seed node share one implementation.
+// preview and the workflow seed node share one implementation. The candidates
+// keep the sitemap publish timestamp and the per-document crawl timestamp,
+// which is what CrawlMetadataService.discoverSitemapCandidates returns and what
+// the preview's publishedAt/crawledAt/effectiveAt columns are built from.
 func (d *Discovery) DiscoverSitemapCandidates(ctx context.Context, domain, pattern string, maxURLs *int) ([]DiscoveryCandidate, error) {
 	config, err := normalizeInput(ExtractionInput{
 		Source:  string(SourceSitemap),
@@ -77,15 +80,7 @@ func (d *Discovery) DiscoverSitemapCandidates(ctx context.Context, domain, patte
 	if config.domain == "" {
 		return []DiscoveryCandidate{}, nil
 	}
-	urls, err := d.service.discoverFromSitemaps(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-	candidates := make([]DiscoveryCandidate, 0, len(urls))
-	for _, entry := range urls {
-		candidates = append(candidates, DiscoveryCandidate{URL: entry})
-	}
-	return candidates, nil
+	return d.service.discoverFromSitemapCandidateEntries(ctx, config)
 }
 
 func nowMillis() int64 {

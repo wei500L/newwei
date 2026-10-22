@@ -326,25 +326,34 @@ FROM CrawlFrontierNode WHERE runId = ?`, runID)
 }
 
 // updateRunMetadata is updateRunMetadata: read, merge, write.
+//
+// B1: the read runs under a row lock (export_lock.go withLockedMetadata) instead
+// of the unlocked SELECT/UPDATE pair NestJS uses. One run fans out over many
+// nodes and over the two LLM queues, so the run document has several concurrent
+// writers (every refreshRunStatus, the terminal lifecycle, the judge cleanup and
+// the learn chain). An unlocked merge writes back a whole document read before
+// the other writer's patch, which silently drops the other writer's keys - the
+// dropped key can be shadowEvaluationTriggeredAt, which then lets the next
+// terminal lifecycle start a second shadow run.
 func (s *Service) updateRunMetadata(ctx context.Context, runID string, patch *Object) error {
-	var raw []byte
-	err := s.db.QueryRowContext(ctx, "SELECT metadata FROM CrawlFrontierRun WHERE id = ?", runID).Scan(&raw)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	existing := parseObjectOrNil(raw)
-	merged := mergeObjects(existing, patch)
-	if merged == nil {
-		merged = NewObject()
-	}
-	encoded, err := merged.MarshalJSON()
-	if err != nil {
-		return err
-	}
-	_, err = s.db.ExecContext(ctx,
-		"UPDATE CrawlFrontierRun SET metadata = ?, updatedAt = ? WHERE id = ?",
-		encoded, truncateMillis(time.Now()), runID)
+	_, err := s.mergeRunMetadataLocked(ctx, runID, patch)
 	return err
+}
+
+// mergeRunMetadataLocked merges patch into the run metadata under a row lock and
+// returns the merged document, so a caller that has to hand the post-write
+// document on (refreshRunStatus gives it to the terminal lifecycle) does not
+// merge against a snapshot it read before the lock.
+func (s *Service) mergeRunMetadataLocked(ctx context.Context, runID string, patch *Object) (*Object, error) {
+	if s.db == nil {
+		return nil, errNoDB()
+	}
+	return s.withLockedMetadata(ctx,
+		"SELECT metadata FROM CrawlFrontierRun WHERE id = ? FOR UPDATE",
+		"UPDATE CrawlFrontierRun SET metadata = ?, updatedAt = ? WHERE id = ?",
+		runID,
+		func(*Object) *Object { return patch },
+	)
 }
 
 // updateNodeMetadata is updateNodeMetadata: read, merge, write.
@@ -355,25 +364,20 @@ func (s *Service) updateNodeMetadata(ctx context.Context, nodeID string, patch *
 // updateNodeMetadataFunc mirrors the NestJS functional patch: the merge and any
 // field derived from the existing metadata run against the freshly read
 // document, so a concurrent writer's keys are preserved.
+//
+// B1: the read runs under a row lock, so the callback's derived values (for
+// example the decremented pendingLlmJudgeJobs counter) are computed from the
+// document the update overwrites rather than from a stale snapshot.
 func (s *Service) updateNodeMetadataFunc(ctx context.Context, nodeID string, build func(existing *Object) *Object) error {
-	var raw []byte
-	err := s.db.QueryRowContext(ctx, "SELECT metadata FROM CrawlFrontierNode WHERE id = ?", nodeID).Scan(&raw)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
+	if s.db == nil {
+		return errNoDB()
 	}
-	existing := parseObjectOrNil(raw)
-	patch := build(existing)
-	merged := mergeObjects(existing, patch)
-	if merged == nil {
-		merged = NewObject()
-	}
-	encoded, err := merged.MarshalJSON()
-	if err != nil {
-		return err
-	}
-	_, err = s.db.ExecContext(ctx,
+	_, err := s.withLockedMetadata(ctx,
+		"SELECT metadata FROM CrawlFrontierNode WHERE id = ? FOR UPDATE",
 		"UPDATE CrawlFrontierNode SET metadata = ?, updatedAt = ? WHERE id = ?",
-		encoded, truncateMillis(s.now()), nodeID)
+		nodeID,
+		build,
+	)
 	return err
 }
 

@@ -165,7 +165,10 @@ func (p *Producer) RemoveQueuedJobsForTasks(ctx context.Context, taskIDs map[str
 		}
 	}
 	if result.Removed > 0 {
-		if err := p.activity.MarkTasksTerminal(ctx, result.Removed); err != nil {
+		// B1: same single-script decrement as removeQueuedJobs, so a concurrent
+		// markTaskQueued from another instance cannot be lost between the HINCRBY
+		// and the floor-to-zero write.
+		if err := p.activity.MarkTasksTerminalAtomic(ctx, result.Removed); err != nil {
 			log.Printf("crawlqueue: failed to decrement crawl activity: %v", err)
 		}
 	}

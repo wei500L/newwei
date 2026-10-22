@@ -2,6 +2,7 @@ package crawlexecution
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -183,5 +184,68 @@ func TestAttachHTTPValidationMetadataOnlyTarget(t *testing.T) {
 	}
 	if _, exists := other["httpEtag"]; exists {
 		t.Fatalf("detail article must not receive target validators: %#v", other)
+	}
+}
+
+func TestLatestResultValidationQueryScopesToTask(t *testing.T) {
+	canonical := buildCanonicalURLFingerprint("https://news.example.com/a?utm=1", []string{"id"})
+	if canonical == nil {
+		t.Fatal("canonical is nil")
+	}
+	query, args := buildLatestResultValidationQuery("task-1", "https://news.example.com/a?utm=1", canonical)
+	if !strings.Contains(query, "`taskId` = ? AND (") {
+		t.Fatalf("taskId must be ANDed with the matcher group: %q", query)
+	}
+	if strings.Count(query, " OR ") != 2 {
+		t.Fatalf("matcher group = %q", query)
+	}
+	if len(args) != 4 {
+		t.Fatalf("args = %#v", args)
+	}
+	if args[0] != "task-1" || args[1] != canonical.Fingerprint || args[2] != canonical.CanonicalURL ||
+		args[3] != "https://news.example.com/a?utm=1" {
+		t.Fatalf("args = %#v", args)
+	}
+
+	// No matcher (an empty target URL and no canonical form) keeps the NestJS
+	// "return null without querying" branch.
+	if emptyQuery, emptyArgs := buildLatestResultValidationQuery("task-1", "", nil); emptyQuery != "" || emptyArgs != nil {
+		t.Fatalf("empty matchers = %q %#v", emptyQuery, emptyArgs)
+	}
+}
+
+func TestFindLatestResultValidationStateUsesTaskScopedQuery(t *testing.T) {
+	database := &fakeDatabase{
+		result: []driver.Value{
+			"result-1",
+			time.Date(2026, 10, 19, 8, 0, 0, 0, time.UTC),
+			[]byte(`{"httpEtag":"\"abc\"","httpLastModified":"Wed, 21 Oct 2026 07:28:00 GMT"}`),
+		},
+	}
+	db := openFakeDB(t, database)
+	service := New(Options{
+		DB:  db,
+		Now: func() time.Time { return time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC) },
+	})
+	task := &taskRow{ID: "task-1", TargetURL: "https://news.example.com/a"}
+	state, err := service.findLatestResultHTTPValidationState(context.Background(), task, []string{"id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state == nil || state.ResultID != "result-1" || state.ETag == nil || *state.ETag != `"abc"` {
+		t.Fatalf("state = %#v", state)
+	}
+	scoped := false
+	for _, query := range database.queried {
+		if !strings.Contains(query, "FROM `CrawlResult`") {
+			continue
+		}
+		if !strings.Contains(query, "`taskId` = ? AND (") {
+			t.Fatalf("CrawlResult validation query is not task-scoped: %q", query)
+		}
+		scoped = true
+	}
+	if !scoped {
+		t.Fatalf("no CrawlResult validation query recorded: %#v", database.queried)
 	}
 }
