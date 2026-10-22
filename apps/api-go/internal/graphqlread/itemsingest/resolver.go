@@ -163,22 +163,7 @@ func (r *resolver) ingestCrawlTaskResultsToItems(ctx contract.Context) (CrawlIng
 	if !ok {
 		return CrawlIngestBatchModel{}, mapError(itemsingest.NewFailure(http.StatusBadRequest, "taskId must be a string"))
 	}
-	options := itemsingest.IngestBatchOptions{}
-	if value, state := contract.Lookup(ctx.Args, "after"); state == contract.ArgValue {
-		if text, ok := value.(string); ok {
-			options.After = &text
-		}
-	}
-	if value, state := contract.Lookup(ctx.Args, "limit"); state == contract.ArgValue {
-		if number, ok := value.(float64); ok {
-			options.Limit = &number
-		}
-	}
-	if value, state := contract.Lookup(ctx.Args, "onlyMissing"); state == contract.ArgValue {
-		if flag, ok := value.(bool); ok {
-			options.OnlyMissing = &flag
-		}
-	}
+	options := parseIngestBatchOptions(ctx.Args)
 	summary, err := r.svc.IngestCrawlTaskResults(ctx.Ctx, orgID, userID, taskID, options)
 	if err != nil {
 		return CrawlIngestBatchModel{}, mapError(err)
