@@ -3,6 +3,8 @@ package newssourcescheduler
 import (
 	"context"
 	"encoding/json"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
@@ -51,6 +53,21 @@ type fakeRepo struct {
 	syncQueueCalls int
 	refreshCalls   int
 	upsertCalls    int
+
+	// sourceConfigs backs the legacy RSS seed cache TTL migration.
+	sourceConfigs    map[string][]byte
+	configListCalls  int
+	configReplaceErr error
+	// configConflicts makes the first N conditional updates report "no rows" as
+	// if a concurrent edit had already changed the config.
+	configConflicts int
+	configUpdates   []sourceConfigUpdate
+}
+
+// sourceConfigUpdate is one accepted conditional config write.
+type sourceConfigUpdate struct {
+	ID   string
+	Next []byte
 }
 
 func newFakeRepo() *fakeRepo {
@@ -59,7 +76,51 @@ func newFakeRepo() *fakeRepo {
 		pipelineFailed: map[string]string{},
 		taskFailed:     map[string]string{},
 		taskStatus:     map[string]string{},
+		sourceConfigs:  map[string][]byte{},
 	}
+}
+
+// ListSourceConfigs returns the fake config rows in id order so the migration
+// scan is deterministic.
+func (r *fakeRepo) ListSourceConfigs(_ context.Context) ([]sourceConfigRow, error) {
+	r.configListCalls++
+	ids := make([]string, 0, len(r.sourceConfigs))
+	for id := range r.sourceConfigs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]sourceConfigRow, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, sourceConfigRow{ID: id, Config: append([]byte(nil), r.sourceConfigs[id]...)})
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) LoadSourceConfig(_ context.Context, sourceID string) ([]byte, bool, error) {
+	config, ok := r.sourceConfigs[sourceID]
+	if !ok {
+		return nil, false, nil
+	}
+	return append([]byte(nil), config...), true, nil
+}
+
+// ReplaceSourceConfigIfUnchanged enforces the same conditional write the MySQL
+// port issues: a mismatched (or already-consumed) expectation updates nothing.
+func (r *fakeRepo) ReplaceSourceConfigIfUnchanged(_ context.Context, sourceID string, expected, next []byte, _ time.Time) (int64, error) {
+	if r.configReplaceErr != nil {
+		return 0, r.configReplaceErr
+	}
+	if r.configConflicts > 0 {
+		r.configConflicts--
+		return 0, nil
+	}
+	current, ok := r.sourceConfigs[sourceID]
+	if !ok || string(current) != string(expected) {
+		return 0, nil
+	}
+	r.sourceConfigs[sourceID] = append([]byte(nil), next...)
+	r.configUpdates = append(r.configUpdates, sourceConfigUpdate{ID: sourceID, Next: append([]byte(nil), next...)})
+	return 1, nil
 }
 
 func (r *fakeRepo) LoadSource(_ context.Context, id string) (*source, error) {
@@ -234,10 +295,11 @@ func (r *fakeRepo) InsertNotification(_ context.Context, input notificationInser
 
 // fakeCache is the Redis port fake.
 type fakeCache struct {
-	values    map[string]string
-	ttls      map[string]time.Duration
-	incrs     map[string]int64
-	published []publishedMessage
+	values           map[string]string
+	ttls             map[string]time.Duration
+	incrs            map[string]int64
+	published        []publishedMessage
+	delByPrefixCalls []string
 }
 
 type publishedMessage struct {
@@ -295,6 +357,20 @@ func (c *fakeCache) Del(_ context.Context, keys ...string) error {
 		delete(c.values, key)
 	}
 	return nil
+}
+
+// DelByPrefix mirrors CacheService.delByPrefix over the in-memory map and records
+// the prefixes the RSS seed TTL migration cleared.
+func (c *fakeCache) DelByPrefix(_ context.Context, prefix string) (int, error) {
+	c.delByPrefixCalls = append(c.delByPrefixCalls, prefix)
+	deleted := 0
+	for key := range c.values {
+		if strings.HasPrefix(key, prefix) {
+			delete(c.values, key)
+			deleted++
+		}
+	}
+	return deleted, nil
 }
 
 func (c *fakeCache) Incr(_ context.Context, key string) (int64, error) {
