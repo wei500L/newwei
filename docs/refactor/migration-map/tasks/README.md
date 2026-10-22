@@ -1,5 +1,7 @@
 # 任务认领与历史恢复索引
 
+2026-10-22 `refactor/go-ais-relay`（pr_open，无独立 task ID；基线 `origin/main dc48abc1`，worktree `/Users/oo/project/newwei-go-ais-relay`）：Go AIS relay 端口——Node `apps/ais-relay` 迁为 `apps/api-go/internal/aisrelay` + `apps/api-go/cmd/ais-relay`（同环境变量、同 HTTP 路径、同 JSON 契约），新增 `infra/docker/ais-relay-go.Dockerfile` 与 `go-pilot` profile 的 pilot 服务 `ais-relay-go`（宿主 `3005` → 容器 `3004`）。不改变默认开关：`REALTIME_SIGNALS_AIS_BASE_URL` 仍指向 Node `http://ais-relay:3004`，Node 版保留、本批不新增开关。PR 待创建，最终 head/普通 CI 在 PR 回填。
+
 2026-10-21 Go 队列运维批：main `ed436ead`（#137 已合入），无开放迁移 PR。本批三个并行窗口之一 `refactor/go-queue-ops`（worktree `/Users/oo/project/newwei-go-queue-ops`）承接 `docs/refactor/cutover/ownership-audit.md` 的 **C-6**（`itemPipelineDlq` 人工处理）、**C-8**（Bull Board 运维面）与 §6 的「QueueEvents 派生读侧（统计部分）」「告警规则全量 repeatable 对账」两项残留职责；另外两个窗口 `refactor/go-ops-entrypoints` 与 `refactor/go-crawl-frontier-writes` 同批进行，共享文件按「只追加」约定并行（config.go 连续块、all-go.env 末尾、`allGoRules()` 末尾、`cmd/api/main.go` 最少调用行、cutover 文档与 env 样例）。本批不新建 task ID/task 文件；未合并前状态保持 `pr_open`，HEAD、普通 CI 与集成 job 结论在 PR 回填。
 
 2026-10-21 `refactor/go-ops-entrypoints`（本批新增，无独立 task ID）：关闭审计 C-1/C-5/C-7/C-9，新增 `API_GO_HEALTHZ_LIVE_MODE`（默认 shadow）、`API_GO_VECTOR_DIAGNOSTICS_MODE`、`API_GO_DOCS_MODE`、`API_GO_LEGACY_FALLBACK_MODE`（默认 legacy/legacy/proxy），并新增 `api_go_legacy_rejected_requests_total`；范围与回退见 [runbook](../../cutover/runbook.md#阶段-6停-nest-收尾6a--6b--6c)。状态 pr_open，最终 head/普通 CI 在 PR 回填。
