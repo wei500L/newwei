@@ -68,9 +68,11 @@ func (s *Service) discoverFromSitemapCandidateEntries(ctx context.Context, confi
 	urls := collected.slice(config.maxURLs)
 	candidates := make([]DiscoveryCandidate, 0, len(urls))
 	for _, entry := range urls {
+		publishedAtTs, crawledAtTs := collected.timestamps(entry)
 		candidates = append(candidates, DiscoveryCandidate{
 			URL:           entry,
-			PublishedAtTs: collected.timestamp(entry),
+			PublishedAtTs: publishedAtTs,
+			CrawledAtTs:   crawledAtTs,
 		})
 	}
 	return candidates, nil
@@ -118,6 +120,11 @@ func (s *Service) extractFromSitemapPayload(
 	if !ok {
 		return
 	}
+	// One crawl timestamp per sitemap document, exactly like the source's
+	// `const crawledAtTs = Date.now()` right after the payload is parsed. The
+	// candidate merge keeps the larger value, so a URL repeated across
+	// documents ends up with the timestamp of the last document that listed it.
+	crawledAtTs := nowMillis()
 
 	for _, entry := range payload.URLs {
 		if collected.len() >= config.maxURLs {
@@ -137,7 +144,7 @@ func (s *Service) extractFromSitemapPayload(
 				continue
 			}
 		}
-		collected.addWithTimestamp(normalized, resolveSitemapEntryPublishedAt(entry))
+		collected.addWithTimestamps(normalized, resolveSitemapEntryPublishedAt(entry), &crawledAtTs)
 	}
 
 	for _, child := range payload.ChildSitemaps {
@@ -412,42 +419,58 @@ func parseSitemapTimestamp(value string) *int64 {
 	return nil
 }
 
-// orderedURLSet keeps first-seen insertion order while dropping duplicates.
-// The optional timestamp map carries the sitemap publish date for the callers
-// that need CrawlDiscoveryCandidate parity; URL-only callers never read it.
+// orderedURLSet keeps first-seen insertion order while dropping duplicates and
+// merging the timestamps of a repeated URL, which is what the source's
+// Map + mergeDiscoveryCandidates pair does: a URL listed in two sitemaps keeps
+// the larger publishedAtTs and the larger crawledAtTs.
 type orderedURLSet struct {
-	seen       map[string]bool
-	values     []string
-	timestamps map[string]*int64
+	seen    map[string]bool
+	values  []string
+	entries map[string]discoveredURLTimestamps
+}
+
+// discoveredURLTimestamps is the per-URL signal pair mergeDiscoveryCandidates
+// keeps for the callers that need CrawlDiscoveryCandidate parity.
+type discoveredURLTimestamps struct {
+	publishedAtTs *int64
+	crawledAtTs   *int64
 }
 
 func newOrderedURLSet() *orderedURLSet {
 	return &orderedURLSet{seen: map[string]bool{}}
 }
 
-func (s *orderedURLSet) add(value string) {
-	s.addWithTimestamp(value, nil)
-}
-
-func (s *orderedURLSet) addWithTimestamp(value string, publishedAtTs *int64) {
+func (s *orderedURLSet) addWithTimestamps(value string, publishedAtTs, crawledAtTs *int64) {
 	if s.seen[value] {
+		existing := s.entries[value]
+		existing.publishedAtTs = resolveBetterTimestamp(existing.publishedAtTs, publishedAtTs)
+		existing.crawledAtTs = resolveBetterTimestamp(existing.crawledAtTs, crawledAtTs)
+		if s.entries == nil {
+			s.entries = map[string]discoveredURLTimestamps{}
+		}
+		s.entries[value] = existing
 		return
 	}
 	s.seen[value] = true
 	s.values = append(s.values, value)
-	if publishedAtTs != nil {
-		if s.timestamps == nil {
-			s.timestamps = map[string]*int64{}
+	if publishedAtTs != nil || crawledAtTs != nil {
+		if s.entries == nil {
+			s.entries = map[string]discoveredURLTimestamps{}
 		}
-		s.timestamps[value] = publishedAtTs
+		s.entries[value] = discoveredURLTimestamps{
+			publishedAtTs: publishedAtTs,
+			crawledAtTs:   crawledAtTs,
+		}
 	}
 }
 
-func (s *orderedURLSet) timestamp(value string) *int64 {
-	if s.timestamps == nil {
-		return nil
+// timestamps returns the merged publish/crawl timestamps for one discovered URL.
+func (s *orderedURLSet) timestamps(value string) (*int64, *int64) {
+	if s.entries == nil {
+		return nil, nil
 	}
-	return s.timestamps[value]
+	entry := s.entries[value]
+	return entry.publishedAtTs, entry.crawledAtTs
 }
 
 func (s *orderedURLSet) len() int { return len(s.values) }
