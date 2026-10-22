@@ -161,10 +161,16 @@ func TestParseJSNumberMatchesNumberCoercion(t *testing.T) {
 		{"nan literal", "NaN", 0, false},
 		{"garbage", "abc", 0, false},
 		{"trailing garbage", "3004abc", 0, false},
+		// Go's strconv accepts digit separators as literal syntax; JS number literals have
+		// none, so Number("1_000") is NaN.
 		{"separator", "1_000", 0, false},
+		{"hex separator", "0x1_0", 0, false},
+		{"exponent separator", "1e1_0", 0, false},
 		// Go accepts hex float literals, JavaScript does not: Number("0x1p-2") is NaN.
 		{"go only hex float", "0x1p-2", 0, false},
 		{"negative hex is nan in js", "-0x10", 0, false},
+		// Overflowing literals are not finite in JS either (Number("1e400") is Infinity).
+		{"overflow", "1e400", 0, false},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

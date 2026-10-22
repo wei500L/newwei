@@ -101,8 +101,9 @@ func jsTrim(value string) string {
 //
 // Recognised forms mirror StringNumericLiteral: optional surrounding JS
 // whitespace, an optional sign, decimal and exponent notation, and the 0x/0b/0o
-// integer prefixes. A Go-only form such as the hex float "0x1p-2" is rejected
-// explicitly because JS yields NaN for it.
+// integer prefixes. Two Go-only forms are rejected explicitly because JS yields NaN for
+// them: the hex float "0x1p-2", and digit separators ("1_000", "0x1_0"), which
+// strconv.ParseFloat and ParseUint accept as Go literal syntax.
 func parseJSNumber(value string) (float64, bool) {
 	trimmed := jsTrim(value)
 	if trimmed == "" {
@@ -112,6 +113,11 @@ func parseJSNumber(value string) (float64, bool) {
 	}
 	switch trimmed {
 	case "Infinity", "+Infinity", "-Infinity", "NaN":
+		return 0, false
+	}
+	// JS number literals have no digit separators, so "1_000" is NaN there while
+	// strconv would read it as 1000.
+	if strings.ContainsRune(trimmed, '_') {
 		return 0, false
 	}
 	if len(trimmed) > 2 && trimmed[0] == '0' {
