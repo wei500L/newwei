@@ -522,8 +522,9 @@ func ssrfProxy(value string) string {
 	return trimmed
 }
 
-// buildJSCodePayload mirrors normalizeJsCode: jsCode is dropped when the feature
-// is disabled, the whitelist validator runs when it is present, and a single
+// buildJSCodePayload mirrors normalizeJsCode: the entries are trimmed and the
+// blank ones dropped first, jsCode is then dropped entirely when the feature is
+// disabled, the whitelist validator runs on the normalized list, and a single
 // script is sent as a string while several are sent as an array.
 func buildJSCodePayload(scripts []string, enabled bool) (json.RawMessage, error) {
 	if len(scripts) == 0 {
@@ -532,21 +533,25 @@ func buildJSCodePayload(scripts []string, enabled bool) (json.RawMessage, error)
 	if !enabled {
 		return nil, nil
 	}
-	if blocked := validateJSCodeArray(scripts); len(blocked) > 0 {
+	normalized := normalizeJSCodeList(scripts)
+	if len(normalized) == 0 {
+		return nil, nil
+	}
+	if blocked := validateJSCodeArray(normalized); len(blocked) > 0 {
 		shown := blocked
 		if len(shown) > 5 {
 			shown = shown[:5]
 		}
 		return nil, newError(400, "jsCode contains blocked patterns: "+strings.Join(shown, "; ")+". Only safe DOM operations are allowed.")
 	}
-	if len(scripts) == 1 {
-		encoded, err := json.Marshal(scripts[0])
+	if len(normalized) == 1 {
+		encoded, err := json.Marshal(normalized[0])
 		if err != nil {
 			return nil, err
 		}
 		return encoded, nil
 	}
-	encoded, err := json.Marshal(scripts)
+	encoded, err := json.Marshal(normalized)
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package crawl4ai
 import (
 	"regexp"
 	"strings"
+	"unicode/utf16"
 )
 
 // This file ports apps/api/src/modules/crawl/validators/js-code.validator.ts.
@@ -93,13 +94,35 @@ func validateJSCodeArray(scripts []string) []string {
 	return blocked
 }
 
+// normalizeJSCodeList is normalizeJsCode's trim/filter step in the NestJS
+// client: every entry is trimmed with String.prototype.trim semantics and the
+// blank ones are dropped before the array-size and per-script limits apply, so
+// the payload carries exactly the strings NestJS would send.
+func normalizeJSCodeList(scripts []string) []string {
+	normalized := make([]string, 0, len(scripts))
+	for _, script := range scripts {
+		trimmed := trimJSSpace(script)
+		if trimmed == "" {
+			continue
+		}
+		normalized = append(normalized, trimmed)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
 func validateJSCode(code string) []string {
-	trimmed := strings.TrimSpace(code)
+	trimmed := trimJSSpace(code)
 	if trimmed == "" {
 		return nil
 	}
 	blocked := []string{}
-	if len(trimmed) > maxJSScriptLength {
+	// String.prototype.length counts UTF-16 code units, so the limit must too: a
+	// byte count would reject a script NestJS accepts as soon as it contains
+	// non-ASCII text (a CJK comment is three bytes but one unit per character).
+	if utf16Length(trimmed) > maxJSScriptLength {
 		blocked = append(blocked, "Script exceeds maximum length of "+itoa(maxJSScriptLength)+" characters")
 	}
 	withoutComments := jsMultiLineComment.ReplaceAllString(jsSingleLineComment.ReplaceAllString(trimmed, ""), "")
@@ -112,4 +135,34 @@ func validateJSCode(code string) []string {
 		return nil
 	}
 	return blocked
+}
+
+// trimJSSpace is String.prototype.trim: ECMAScript WhiteSpace plus
+// LineTerminator, which is not Go's unicode.IsSpace set (JavaScript trims U+FEFF
+// and keeps U+0085).
+func trimJSSpace(value string) string {
+	return strings.TrimFunc(value, isJSSpace)
+}
+
+// isJSSpace reports whether the rune is an ECMAScript WhiteSpace or
+// LineTerminator code point.
+func isJSSpace(value rune) bool {
+	switch value {
+	case '\t', '\n', '\v', '\f', '\r', ' ',
+		'\u00a0', // NO-BREAK SPACE
+		'\u1680', // OGHAM SPACE MARK
+		'\u2028', // LINE SEPARATOR
+		'\u2029', // PARAGRAPH SEPARATOR
+		'\u202f', // NARROW NO-BREAK SPACE
+		'\u205f', // MEDIUM MATHEMATICAL SPACE
+		'\u3000', // IDEOGRAPHIC SPACE
+		'\ufeff': // ZERO WIDTH NO-BREAK SPACE
+		return true
+	}
+	return value >= '\u2000' && value <= '\u200a'
+}
+
+// utf16Length is String.prototype.length in code units.
+func utf16Length(value string) int {
+	return len(utf16.Encode([]rune(value)))
 }
