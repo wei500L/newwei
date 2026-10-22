@@ -131,8 +131,11 @@ func TestValidateUpdateDraftRequiresDefinitionAndFlagsNullName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("null name should pass the DTO layer: %v", err)
 	}
-	if !input.NameIsNull || input.NamePresent {
-		t.Fatalf("null name flags = present:%v null:%v", input.NamePresent, input.NameIsNull)
+	// A JSON null keeps both flags set: NamePresent records that the key was
+	// supplied (so the service overwrite path runs) and NameIsNull tells the
+	// service to reproduce the NestJS null.trim() TypeError as a 500.
+	if !input.NameIsNull || !input.NamePresent {
+		t.Fatalf("null name flags = present:%v null:%v, want both true", input.NamePresent, input.NameIsNull)
 	}
 
 	// A blank name passes @IsNotEmpty ("   " is non-empty) and must be caught by

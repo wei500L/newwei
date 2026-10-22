@@ -21,8 +21,14 @@ func TestEmptyIfNoSnapshotKeepsRuntime(t *testing.T) {
 		BackpressureCount24h:    4,
 	}
 	got := emptyIfNoSnapshot(opsSummary{Runtime: runtime})
-	if got.LatestJob != nil || got.LatestCrawlTask != nil || got.LatestArticle != nil {
-		t.Fatalf("latest rows = %#v, want nulls", got)
+	// emptyOps renders the three latest rows as the JSON literal null, which is
+	// what the list response carries; only the runtime block must survive.
+	for name, value := range map[string]json.RawMessage{
+		"latestJob": got.LatestJob, "latestCrawlTask": got.LatestCrawlTask, "latestArticle": got.LatestArticle,
+	} {
+		if string(value) != "null" {
+			t.Fatalf("%s = %s, want null", name, value)
+		}
 	}
 	if got.Stats24h.SuccessRate != nil || got.Stats24h.AvgDurationMs != nil {
 		t.Fatalf("stats24h = %#v, want the empty summary", got.Stats24h)
