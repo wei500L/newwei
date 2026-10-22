@@ -20,6 +20,8 @@ Nest 功能目录：[situation-monitor](../../../../apps/api/src/modules/situati
 
 当前认领：未发现本域开放 PR；旧 worktree 不自动视为活动任务，后续按[认领核对记录](../tasks/README.md)增量检查。
 
+Go 版 AIS relay 迁移（reserved/in_progress，分支 `refactor/go-ais-relay`，基线 `origin/main dc48abc1`）：Node `apps/ais-relay` 的契约等价实现落在 `apps/api-go/internal/aisrelay` + `apps/api-go/cmd/ais-relay`（同环境变量、同 `GET /healthz/live` / `GET /health` / `GET /ais/snapshot` 路径、同 JSON 形状），并新增镜像 `infra/docker/ais-relay-go.Dockerfile` 与 `go-pilot` profile 的 pilot 服务 `ais-relay-go`（宿主 `3005` → 容器 `3004`，健康检查 `/ais-relay healthcheck`）。**不改变默认切换**：`REALTIME_SIGNALS_AIS_BASE_URL` 仍指向 Node `http://ais-relay:3004`，本批不删 Node 版、不新增开关，回滚只需把该变量指回 Node 服务；本条不计入本页 HTTP 覆盖统计。
+
 ## HTTP 开关、实现与生产接线
 
 所有新迁移单元接受空串/legacy/go、空串视为 legacy、非法值启动失败；用户 UI 读历史兼容模式是例外。启动依赖以 [config.Load](../../../../apps/api-go/internal/config/config.go) 的对应校验为准，不能用配置样例代替启动校验。普通认证接管通常要求 JWT_SECRET、DATABASE_URL、REDIS_HOST；读取 Mongo 的域还要求 MONGO_URI。

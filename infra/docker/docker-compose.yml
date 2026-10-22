@@ -388,6 +388,53 @@ services:
       retries: 20
       start_period: 120s
 
+  # ais-relay-go: Go pilot of the AIS relay — the contract-equivalent port of
+  # the Node apps/ais-relay (code in apps/api-go/internal/aisrelay and
+  # apps/api-go/cmd/ais-relay; same env vars, same HTTP paths, same JSON).
+  # Independent go-pilot profile — a default deployment does not start this
+  # service, the Node `ais-relay` above stays the source of truth: api and
+  # api-go read REALTIME_SIGNALS_AIS_BASE_URL=http://ais-relay:3004 from
+  # infra/docker/.env.
+  # Switch: point REALTIME_SIGNALS_AIS_BASE_URL at http://ais-relay-go:3004.
+  # Rollback: point it back at http://ais-relay:3004. The Node relay keeps
+  # running; nothing is deleted and there is no data migration.
+  # Host port 3005 (the Node service keeps 3004); the container-internal port
+  # is the same 3004, so one infra/docker/.env drives both services and they
+  # can run in parallel.
+  # Healthcheck uses the binary's own healthcheck subcommand: the image has
+  # no node and no curl.
+  ais-relay-go:
+    <<: *app-hardening
+    profiles: ["go-pilot"]
+    build:
+      context: ../..
+      dockerfile: infra/docker/ais-relay-go.Dockerfile
+      args:
+        GO_IMAGE: ${AIS_RELAY_GO_IMAGE:-golang:1.27}
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      # AISSTREAM_API_KEY (required), AIS_RELAY_SHARED_SECRET, AISSTREAM_URL,
+      # AIS_RELAY_PORT and the AIS_RELAY_HEALTH_* thresholds all come from the
+      # shared env_file above, exactly like the Node service.
+      PORT: 3004
+      AIS_RELAY_HOST: "0.0.0.0"
+    dns:
+      - ${DOCKER_DNS_1:-223.5.5.5}
+      - ${DOCKER_DNS_2:-114.114.114.114}
+    ports:
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:${AIS_RELAY_GO_HOST_PORT:-3005}:3004"
+    logging: *json-file-logging
+    healthcheck:
+      # distroless has neither node nor curl: the binary probes itself against
+      # http://127.0.0.1:$PORT/healthz/live.
+      test: ["CMD", "/ais-relay", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
   api:
     <<: *app-hardening
     build:
