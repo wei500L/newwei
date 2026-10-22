@@ -20,6 +20,10 @@ import (
 // links, so an unbounded read would be a memory risk without adding fidelity.
 const maxResponseBytes = 32 << 20
 
+// healthCheckFailedMessage is the NestJS `crawl4ai health check failed` text. It
+// carries no status, so the crawl worker classifies it by its message hints.
+const healthCheckFailedMessage = "crawl4ai health check failed"
+
 // maxIdleConnsPerHost keeps the keep-alive pool at least as large as the
 // discovery chain's widest fan-out (deep discovery pageConcurrency <= 6, list
 // discovery listPageConcurrency <= 5, head fetches <= 5). The pool is shared by
@@ -48,13 +52,16 @@ type Client struct {
 	options    Options
 	httpClient *http.Client
 
-	// mu also serializes the health probe: concurrent crawls that arrive after
-	// the TTL expires wait for the single in-flight probe instead of each
-	// issuing their own GET /health. The TTL and failure semantics are
-	// unchanged (O3).
+	// mu guards the health state. A crawl that arrives after the TTL expires
+	// waits for the single in-flight probe (probe) instead of issuing its own
+	// GET /health; the wait is context-aware, so a canceled attempt or a
+	// shutting-down worker never blocks behind a hung probe.
 	mu              sync.Mutex
 	lastHealthCheck int64
 	hasHealthCheck  bool
+	// probe is non-nil while one health probe is in flight and is closed when
+	// that probe finishes.
+	probe chan struct{}
 }
 
 // New builds a client. An empty BaseURL yields a client whose Crawl calls fail
@@ -180,19 +187,58 @@ func resolveRequestTimeout(override int, settings Settings) int {
 // ensureHealthy mirrors ensureHealthy: GET /health at most once per
 // healthCheckTtlMs per process, with concurrent probes merged into one. A failed
 // probe fails the crawl with the NestJS message and no status.
+//
+// Only the probe owner blocks on the network: the other callers wait for it on a
+// channel they can also abandon when their own context ends. Holding a mutex
+// across the HTTP request would serialize every concurrent crawl behind a single
+// /health call and make that wait non-cancelable, which the worker contract needs
+// (a canceled attempt must return instead of leaving its job active for longer
+// than the shutdown deadline).
 func (c *Client) ensureHealthy(ctx context.Context, settings Settings) error {
 	ttl := settings.HealthCheckTTLMs
 	if ttl <= 0 {
 		ttl = DefaultSettings().HealthCheckTTLMs
 	}
-	now := c.now()
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.hasHealthCheck && now-c.lastHealthCheck < int64(ttl) {
-		return nil
+	for {
+		startedAt := c.now()
+		c.mu.Lock()
+		if c.hasHealthCheck && startedAt-c.lastHealthCheck < int64(ttl) {
+			c.mu.Unlock()
+			return nil
+		}
+		if c.probe == nil {
+			c.probe = make(chan struct{})
+			c.mu.Unlock()
+			err := c.probeHealth(ctx, settings)
+			c.mu.Lock()
+			if err == nil {
+				// The TTL starts when the probe was issued, like the NestJS
+				// `const now = Date.now()` captured before the request.
+				c.lastHealthCheck = startedAt
+				c.hasHealthCheck = true
+			}
+			finished := c.probe
+			c.probe = nil
+			c.mu.Unlock()
+			close(finished)
+			return err
+		}
+		finished := c.probe
+		c.mu.Unlock()
+		select {
+		case <-finished:
+			// Re-check the TTL: the probe that just finished either refreshed it
+			// (this caller then returns without a request of its own) or failed,
+			// in which case this caller probes on its turn, exactly like the
+			// per-request probe of the NestJS client.
+		case <-ctx.Done():
+			return newError(0, healthCheckFailedMessage)
+		}
 	}
+}
 
+// probeHealth performs one GET /health.
+func (c *Client) probeHealth(ctx context.Context, settings Settings) error {
 	healthTimeoutMs := settings.RequestTimeoutNormalMs
 	if healthTimeoutMs <= 0 {
 		healthTimeoutMs = DefaultSettings().RequestTimeoutNormalMs
@@ -202,21 +248,18 @@ func (c *Client) ensureHealthy(ctx context.Context, settings Settings) error {
 	defer cancel()
 	request, err := http.NewRequestWithContext(healthCtx, http.MethodGet, c.options.BaseURL+"/health", nil)
 	if err != nil {
-		return newError(0, "crawl4ai health check failed")
+		return newError(0, healthCheckFailedMessage)
 	}
 	c.applyHeaders(request)
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return newError(0, "crawl4ai health check failed")
+		return newError(0, healthCheckFailedMessage)
 	}
 	defer func() { _ = response.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return newError(0, "crawl4ai health check failed")
+		return newError(0, healthCheckFailedMessage)
 	}
-
-	c.lastHealthCheck = now
-	c.hasHealthCheck = true
 	return nil
 }
 
