@@ -58,21 +58,23 @@ func (s *Service) pollOref(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// B1: the cached documents are the data source. A failed poll is never
-	// persisted (B3), so a process-local error survives the refresh until the
-	// next successful poll clears it.
+	// B1: the cached documents are the data source. A failed poll keeps the last
+	// successfully polled alerts, history and counters (B3) and only records the
+	// error marker in the alerts document (recordOrefError), because the read
+	// side (internal/situationsignals) rebuilds the HTTP response from Redis and
+	// the error would otherwise never reach the client.
 	if state.LastError == "" {
 		state.LastError = s.orefState.LastError
 	}
 	s.orefState = state
 
 	if !s.env.OrefEnabled {
-		s.orefState.LastError = orefDisabledMessage
+		s.recordOrefError(ctx, orefDisabledMessage)
 		return nil
 	}
 	proxyAuth := strings.TrimSpace(s.env.OrefProxyAuth)
 	if proxyAuth == "" {
-		s.orefState.LastError = orefNotConfiguredText
+		s.recordOrefError(ctx, orefNotConfiguredText)
 		return nil
 	}
 
@@ -84,14 +86,14 @@ func (s *Service) pollOref(ctx context.Context) error {
 
 	body, err := s.fetchOref(ctx, s.env.OrefAlertsURL, proxyAuth, maxOrefAlertsResponseBytes)
 	if err != nil {
-		s.orefState.LastError = redactOrefError(err.Error())
+		s.recordOrefError(ctx, redactOrefError(err.Error()))
 		s.logf("situationsignalsworker: OREF poll failed: %s", s.orefState.LastError)
 		return nil
 	}
 	alerts, err := parseOrefAlertsResponse(body)
 	if err != nil {
 		// B3: a non-empty body that is not JSON is a failure, not "no alerts".
-		s.orefState.LastError = redactOrefError(err.Error())
+		s.recordOrefError(ctx, redactOrefError(err.Error()))
 		s.logf("situationsignalsworker: OREF poll failed: %s", s.orefState.LastError)
 		return nil
 	}
@@ -135,10 +137,27 @@ func (s *Service) pollOref(ctx context.Context) error {
 		// NestJS runs the alert-rule maintenance inside pollOrefOnce's try, so a
 		// failure there is recorded in lastError after the cache documents and the
 		// event have already been written.
-		s.orefState.LastError = redactOrefError(err.Error())
+		s.recordOrefError(ctx, redactOrefError(err.Error()))
 		s.logf("situationsignalsworker: OREF alert rule maintenance failed: %s", s.orefState.LastError)
 	}
 	return nil
+}
+
+// recordOrefError stores one poll error in the scratch state and mirrors it into
+// the cached alerts document.
+//
+// The alerts document is the only source internal/situationsignals uses for
+// GET /oref-alerts and GET /oref-history, so an error that stays in process
+// memory is invisible over HTTP after the read route moved to Go, while NestJS
+// served the same error from its in-process state. The write keeps the last
+// successfully polled alerts, counters and poll instant, so readers keep serving
+// the last good data and learn why it is stale. The history and metrics
+// documents are deliberately not touched: they describe the last successful poll
+// and back the OREF alert-rule metrics (B3).
+func (s *Service) recordOrefError(ctx context.Context, message string) {
+	s.orefState.LastError = message
+	s.persistOrefAlerts(ctx, s.orefState, strings.TrimSpace(s.env.OrefProxyAuth) != "",
+		orefDocumentTimestamp(s.orefState.LastPollAt, s.now()))
 }
 
 // orefDocumentTimestamp mirrors the NestJS persisted `timestamp` expression:

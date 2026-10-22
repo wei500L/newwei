@@ -123,11 +123,12 @@ func parseGeoDTO(body []byte, probe bool) (string, string, error) {
 
 	var query string
 	isString := json.Unmarshal(raw.Query, &query) == nil
-	// class-validator applies @MaxLength, @MinLength and @IsString bottom-up.
-	if !probe && (!isString || len(query) > 200) {
+	// class-validator applies @MaxLength, @MinLength and @IsString bottom-up, and
+	// @MaxLength counts UTF-16 code units (`String.prototype.length`), not bytes.
+	if !probe && (!isString || jsStringLength(query) > maxGeocodeQueryLength) {
 		problems.Add("query must be shorter than or equal to 200 characters")
 	}
-	if !isString || len(query) < 1 {
+	if !isString || jsStringLength(query) < 1 {
 		problems.Add("query must be longer than or equal to 1 characters")
 	}
 	if !isString {

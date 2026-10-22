@@ -47,9 +47,11 @@
 // empty alert list and then persisted the empty list, published an empty
 // realtime update and skipped the previous alerts. Go treats a non-2xx
 // response, an oversized body and an unparseable non-empty body as a failed
-// poll: the previous alerts/history/counters are kept, no event is published,
-// no alert rule is evaluated and the cached documents are not overwritten.
-// The empty body, "[]" and "null" still mean "no active alerts".
+// poll: the previous alerts/history/counters are kept, no event is published
+// and no alert rule is evaluated. Only the alerts document is rewritten, with
+// the error marker added (the history and metrics documents stay untouched), so
+// the HTTP read path can report why the served data is stale. The empty body,
+// "[]" and "null" still mean "no active alerts".
 //
 // # B4: a failed Telegram channel keeps its error
 //

@@ -2,11 +2,12 @@
 // BullMQ queue.
 //
 // It reproduces the BullMQ 5.63.2 subset ArchivePreparationProcessor relies on:
-// moveToActive, per-job lock renewal, completed/failed finish, immediate retry,
-// stalled recovery, paused queues, delayed promotion and the queue retention
-// options. The Redis state machine is the official vendored Lua code in
-// scripts/. Job data is JSON and job options/command arguments are MessagePack,
-// so the existing NestJS producer and this runner consume each other's jobs.
+// moveToActive, per-job lock renewal, completed/failed finish, retry with the
+// configured backoff delay (moveToDelayed) or immediately (retryJob), stalled
+// recovery, paused queues, delayed promotion and the queue retention options.
+// The Redis state machine is the official vendored Lua code in scripts/. Job
+// data is JSON and job options/command arguments are MessagePack, so the
+// existing NestJS producer and this runner consume each other's jobs.
 //
 // Exactly one runtime owns the queue: API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go
 // makes NestJS skip creating its Worker and this runner claim jobs. Concurrency
@@ -19,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -74,7 +76,15 @@ type JobOptions struct {
 	Attempts         int             `json:"attempts"`
 	RemoveOnComplete json.RawMessage `json:"removeOnComplete"`
 	RemoveOnFail     json.RawMessage `json:"removeOnFail"`
+	Backoff          json.RawMessage `json:"backoff"`
 	LIFO             bool            `json:"lifo"`
+}
+
+// Backoff is BullMQ's backoff option. A finite number is normalized to the
+// "fixed" strategy exactly like Backoffs.normalize.
+type Backoff struct {
+	Type  string
+	Delay int64
 }
 
 // Job is one job fetched from the active list. Token is the lock token held by
@@ -110,6 +120,53 @@ func (j Job) FinalFailure() bool {
 		return true
 	}
 	return j.AttemptsMade+1 >= j.Attempts()
+}
+
+// RetryDelayMs is Job.shouldRetryJob's Backoffs.calculate for the attempt that
+// just failed. BullMQ passes attemptsMade+1, so the exponential strategy is
+// round(2^attemptsMade * delay) and the fixed strategy ignores the attempt.
+// Zero means "retry immediately" (the retryJob path); BullMQ takes the
+// moveToDelayed path only when the delay is positive.
+func (j Job) RetryDelayMs() int64 {
+	backoff, ok := decodeBackoff(j.Opts.Backoff)
+	if !ok || backoff.Delay <= 0 {
+		return 0
+	}
+	switch backoff.Type {
+	case "fixed":
+		return backoff.Delay
+	case "exponential":
+		scale := math.Pow(2, float64(j.AttemptsMade))
+		if math.IsInf(scale, 0) {
+			return 0
+		}
+		return int64(math.Round(scale * float64(backoff.Delay)))
+	default:
+		// BullMQ throws for an unknown strategy without a queue-level custom
+		// one; the closest safe behavior is an immediate retry.
+		return 0
+	}
+}
+
+// decodeBackoff reads either the {type, delay} object or the bare number form
+// BullMQ accepts (normalized to "fixed").
+func decodeBackoff(raw json.RawMessage) (Backoff, bool) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return Backoff{}, false
+	}
+	var delay float64
+	if err := json.Unmarshal(raw, &delay); err == nil {
+		return Backoff{Type: "fixed", Delay: int64(delay)}, true
+	}
+	var object struct {
+		Type  string  `json:"type"`
+		Delay float64 `json:"delay"`
+	}
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return Backoff{}, false
+	}
+	return Backoff{Type: object.Type, Delay: int64(object.Delay)}, true
 }
 
 // KeepOnComplete is the worker keepJobs value for a successful finish. When the

@@ -667,6 +667,35 @@ func sitWorkerITLoadOrefMetrics(t *testing.T, client *redis.Client) orefMetricsD
 	return document
 }
 
+// sitWorkerITAssertOrefFailureDocument checks the alerts document after a failed
+// poll: the last good alerts, counters and poll instant survive and only the
+// error marker is added, because the read routes rebuild the HTTP response from
+// this document. The history and metrics documents are compared byte for byte by
+// the caller.
+func sitWorkerITAssertOrefFailureDocument(t *testing.T, client *redis.Client, before orefAlertsDocument) orefAlertsDocument {
+	t.Helper()
+	after := sitWorkerITLoadOrefAlerts(t, client)
+	if len(after.Alerts) != len(before.Alerts) {
+		t.Fatalf("alerts document alerts = %d, want %d", len(after.Alerts), len(before.Alerts))
+	}
+	for index, want := range before.Alerts {
+		if got := string(after.Alerts[index]); got != string(want) {
+			t.Fatalf("alerts document alert[%d] = %s, want %s", index, got, want)
+		}
+	}
+	if after.HistoryCount24h != before.HistoryCount24h || after.TotalHistoryCount != before.TotalHistoryCount {
+		t.Fatalf("alerts document counts = %d/%d, want %d/%d",
+			after.HistoryCount24h, after.TotalHistoryCount, before.HistoryCount24h, before.TotalHistoryCount)
+	}
+	if after.Timestamp != before.Timestamp {
+		t.Fatalf("alerts document timestamp = %q, want %q", after.Timestamp, before.Timestamp)
+	}
+	if after.Error == nil || strings.TrimSpace(*after.Error) == "" {
+		t.Fatalf("alerts document error is missing after a failed poll: %+v", after)
+	}
+	return after
+}
+
 // TestSituationSignalsWorkerOrefB3Integration covers B3 plus the A6 event
 // bridge: a non-2xx response or a 200 HTML error page is a failed poll that must
 // keep the previous alerts/history/metrics documents and publish no event, while
@@ -844,16 +873,20 @@ func TestSituationSignalsWorkerOrefB3Integration(t *testing.T) {
 		t.Fatalf("metrics document = %+v", metricsDocument)
 	}
 
-	// (c) HTTP 200 with an HTML error page: a failed poll keeps every document
-	// and publishes no event (B3).
-	alertsBefore := sitWorkerITRedisString(t, client, orefAlertsCacheKey)
+	// (c) HTTP 200 with an HTML error page: a failed poll publishes no event and
+	// keeps the last good alerts, history and metrics. The alerts document is
+	// rewritten only to carry the error marker, because the read routes
+	// (internal/situationsignals) rebuild the HTTP response from Redis and would
+	// otherwise never report why the served data is stale.
+	alertsBefore := sitWorkerITLoadOrefAlerts(t, client)
 	historyBefore := sitWorkerITRedisString(t, client, orefHistoryCacheKey)
 	metricsBefore := sitWorkerITRedisString(t, client, orefMetricsCacheKey)
 	upstream.setAlerts("<html><body>Bad Gateway</body></html>", http.StatusOK)
 	runCycle()
 	sitWorkerITAssertNoMessage(t, subscription)
-	if got := sitWorkerITRedisString(t, client, orefAlertsCacheKey); got != alertsBefore {
-		t.Fatalf("alerts document changed after an invalid 200 body:\n%s\n%s", alertsBefore, got)
+	failedDocument := sitWorkerITAssertOrefFailureDocument(t, client, alertsBefore)
+	if !strings.Contains(*failedDocument.Error, "invalid JSON body") {
+		t.Fatalf("alerts document error = %q", *failedDocument.Error)
 	}
 	if got := sitWorkerITRedisString(t, client, orefHistoryCacheKey); got != historyBefore {
 		t.Fatalf("history document changed after an invalid 200 body")
@@ -866,8 +899,9 @@ func TestSituationSignalsWorkerOrefB3Integration(t *testing.T) {
 	upstream.setAlerts("<html><body>Internal Server Error</body></html>", http.StatusInternalServerError)
 	runCycle()
 	sitWorkerITAssertNoMessage(t, subscription)
-	if got := sitWorkerITRedisString(t, client, orefAlertsCacheKey); got != alertsBefore {
-		t.Fatalf("alerts document changed after an HTTP 500")
+	serverErrorDocument := sitWorkerITAssertOrefFailureDocument(t, client, alertsBefore)
+	if *serverErrorDocument.Error == *failedDocument.Error {
+		t.Fatalf("alerts document error did not change with the upstream failure: %q", *serverErrorDocument.Error)
 	}
 	if got := sitWorkerITRedisString(t, client, orefHistoryCacheKey); got != historyBefore {
 		t.Fatalf("history document changed after an HTTP 500")

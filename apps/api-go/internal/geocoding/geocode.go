@@ -139,10 +139,12 @@ type Hit struct {
 	CountryCodeAlpha2 string
 }
 
-// Client is the Nominatim client. It is safe for concurrent use except for the
-// deliberately unsynchronised 30 second identity cache, which only trades a
-// duplicate DB read for a data race-free single value; callers are HTTP handlers
-// and the worst case is one extra read.
+// Client is the Nominatim client. Its cache, Redis script and HTTP client are
+// safe for concurrent use. The 30 second identity cache (ident/identAt) is a
+// best-effort cache, not a synchronised one: concurrent readers may race benignly
+// on those two fields, and the worst case is one extra settings read or an
+// identity that stays cached slightly longer than 30 seconds. Callers are HTTP
+// handlers, so this is deliberately left lock-free.
 type Client struct {
 	cache   Cache
 	redis   *redis.Client
@@ -608,9 +610,47 @@ func NormalizeQuery(value string) string { return normalizeGeocodeQuery(value) }
 
 func normalizeGeocodeQuery(value string) string {
 	value = strings.Join(strings.Fields(value), " ")
-	runes := []rune(value)
-	if len(runes) > 200 {
-		value = string(runes[:200])
+	return truncateJSLength(value, maxGeocodeQueryLength)
+}
+
+// maxGeocodeQueryLength is the @MaxLength(200) of GeoGeocodeDto and the
+// `slice(0, 200)` of GeocodingService.normalizeQuery.
+const maxGeocodeQueryLength = 200
+
+// jsStringLength is String.prototype.length: the number of UTF-16 code units,
+// which is what class-validator's @MaxLength counts. Counting bytes or runes
+// instead would reject or accept different queries than NestJS for any
+// non-ASCII text (200 bytes is only ~66 CJK characters).
+func jsStringLength(value string) int {
+	units := 0
+	for _, r := range value {
+		if r > 0xFFFF {
+			units += 2
+			continue
+		}
+		units++
+	}
+	return units
+}
+
+// truncateJSLength reproduces String.prototype.slice(0, limit) measured in
+// UTF-16 code units. Unlike JavaScript it never ends between the two halves of a
+// surrogate pair: a lone surrogate cannot be encoded back to UTF-8, so the cut
+// happens before the pair and the result is at most `limit` code units.
+func truncateJSLength(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	units := 0
+	for index, r := range value {
+		width := 1
+		if r > 0xFFFF {
+			width = 2
+		}
+		if units+width > limit {
+			return value[:index]
+		}
+		units += width
 	}
 	return value
 }
