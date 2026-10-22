@@ -360,7 +360,7 @@ func (h *Handler) publish(ctx context.Context, sink *streamSink, orgID string, d
 		return
 	}
 	sendChanged := func(event string, payload []byte, previous *string) {
-		if ctx.Err() {
+		if ctx.Err() != nil {
 			return
 		}
 		next := fingerprint(payload)
