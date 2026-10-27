@@ -2,6 +2,8 @@
 
 你在 `wei500L/newwei` 仓库执行 **GO-CUTOVER-PREREQS-001**。目标是补齐 #148 整合报告确认的四项真实缺口，让下一批可以把仓库默认后端改为 Go。本批保持默认运行链与所有迁移开关不变；只做源码、静态审查与普通 GitHub Actions CI，不部署、不连接真实外部服务。
 
+规划记录发布于 Ready PR **#149**（`codex/plan-go-cutover-next`）。如果该规划尚未合入 main，先从 PR #149 只读取得本任务和最新阶段说明；业务分支仍从最新 main 创建，可带入本任务 `.md` 供交付回填，不要求合并整个规划分支，也不因 main 暂缺任务文件而重复派发或停工。
+
 ## 1. 先恢复当前事实
 
 先读 `AGENTS.md`、`docs/refactor/migration-map/{README,PLANNING,GAPS}.md`、`tasks/README.md` 与本任务 `.md`；再读 #148 PR 描述 §7、五份 `docs/refactor/review/*.md` 的整合更正与删 Nest 前事项。历史报告里被划掉的“未迁”结论不能重新作为缺口。

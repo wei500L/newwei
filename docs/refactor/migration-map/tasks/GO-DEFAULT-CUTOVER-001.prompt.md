@@ -2,6 +2,8 @@
 
 你在 `wei500L/newwei` 执行 **GO-DEFAULT-CUTOVER-001**。这是“全部后端转 Go、只做静态审查 + 普通 CI、不部署”的默认切换批次。交付的是仓库新默认与可审查的回退路径；不操作生产、不连接真实外部服务。本批保留 Node 后端源码及迁移双轨结构，删除工作等本批合入后另派。
 
+规划记录发布于 Ready PR **#149**（`codex/plan-go-cutover-next`）。如规划记录尚未进入 main，从该 PR 只读取得本任务与阶段说明；仅前置业务修补必须真实合入 main，不要求为读规划而合并整个规划分支。可带入本任务 `.md` 供交付回填，不能因此省略前置业务核实。
+
 ## 1. 开工依赖
 
 先读 `AGENTS.md`、迁移地图 `README.md` / `PLANNING.md` / `GAPS.md`、任务索引、本任务，以及 `GO-CUTOVER-PREREQS-001.md`。再读 cutover 三份审计/矩阵/手册及 #148 §7、五份 review 的整合更正。
