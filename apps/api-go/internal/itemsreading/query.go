@@ -8,7 +8,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 )
 
 // MaxPaginationOffset is the largest offset the database pagination layer
@@ -493,20 +497,31 @@ func buildFacetOptions(target map[string]int) []FacetOption {
 	return options
 }
 
-// localeCompare approximates JavaScript String.prototype.localeCompare with the
-// default locale: a case-insensitive primary comparison with a byte-wise
-// tie-break. Facet values and suggestion values are short ASCII-ish labels, for
-// which this matches the ICU ordering used by NestJS.
+// facetValueCollator is the ICU root collator used for the localeCompare
+// tie-breaks below. It is the same root UCA collation that
+// internal/newsnowhottest, internal/newssourcescheduler and
+// internal/newspipeline use for String.prototype.localeCompare; one shared value
+// guarded by a mutex avoids rebuilding the collation tables per comparison
+// (collate.Collator is not safe for concurrent use).
+var (
+	facetValueCollatorMu sync.Mutex
+	facetValueCollator   = collate.New(language.Und)
+)
+
+// localeCompare is a.localeCompare(b) under the default ICU root collation.
+//
+// NestJS orders every facet, suggestion, candidate and source list with
+// String.prototype.localeCompare, which is not byte order: punctuation, case and
+// non-ASCII text collate by UCA primary/secondary/tertiary weights. Comparing
+// the raw or lower-cased bytes would order e.g. "a-b" versus "ab" and "A" versus
+// "a" differently, so the sort keys would diverge from NestJS on the same rows.
 func localeCompare(left, right string) int {
 	if left == right {
 		return 0
 	}
-	lowerLeft := strings.ToLower(left)
-	lowerRight := strings.ToLower(right)
-	if lowerLeft != lowerRight {
-		return strings.Compare(lowerLeft, lowerRight)
-	}
-	return strings.Compare(left, right)
+	facetValueCollatorMu.Lock()
+	defer facetValueCollatorMu.Unlock()
+	return facetValueCollator.CompareString(left, right)
 }
 
 // DedupeItemMetaIDs ports dedupeItemMetaIds: trim, drop blanks, preserve the

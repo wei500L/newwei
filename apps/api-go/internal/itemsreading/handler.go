@@ -156,12 +156,18 @@ func decodePermissionList(raw []byte) []string {
 }
 
 // rawBearer extracts the bearer token.
+//
+// The scheme is compared case-insensitively because the NestJS guard uses
+// passport-jwt's ExtractJwt.fromAuthHeaderAsBearerToken, whose extractor regex is
+// /^Bearer\s+(.+)$/i. Rejecting "bearer …" here would answer 401 where NestJS
+// answers 200, so the comparison mirrors that regex's leading "Bearer " part
+// with the same case folding.
 func rawBearer(r *http.Request) string {
 	header := r.Header.Get("Authorization")
-	if !strings.HasPrefix(header, "Bearer ") {
+	if len(header) < 7 || !strings.EqualFold(header[:7], "bearer ") {
 		return ""
 	}
-	return strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	return strings.TrimSpace(header[7:])
 }
 
 // serveList handles GET /api/items.
@@ -212,6 +218,18 @@ func sortStrings(values []string) {
 	sort.Strings(values)
 }
 
+// List query validation messages. They are the class-validator defaults of
+// ListItemsDto: a repeated parameter arrives as an array and fails the same
+// per-property constraint as a malformed single value, so both cases share the
+// message (a repeated "search" is "search must be a string", never a
+// number-string complaint).
+const (
+	listPageMessage     = "page must be a number string"
+	listPageSizeMessage = "pageSize must be a number string"
+	listSearchMessage   = "search must be a string"
+	listOrderByMessage  = "orderBy must be one of the following values: CREATED_DESC, PUBLISHED_DESC"
+)
+
 // parseListQuery validates the ListItemsDto contract: only page, pageSize,
 // search and orderBy are accepted, each at most once, page/pageSize must be
 // number strings, and orderBy must be one of the two whitelisted values.
@@ -225,21 +243,25 @@ func parseListQuery(r *http.Request) (ListQuery, []string) {
 			failures = append(failures, "property "+key+" should not exist")
 			continue
 		}
-		if len(list) > 1 {
-			failures = append(failures, key+" must be a number string")
+		// A repeated parameter is an array in the NestJS Express request and
+		// therefore fails its own constraint; report that constraint's message.
+		if len(list) != 1 {
+			if message, ok := listPropertyMessage(key); ok {
+				failures = append(failures, message)
+			}
 			continue
 		}
 		value := list[0]
 		switch key {
 		case "page":
 			if !isNumericString(value) {
-				failures = append(failures, "page must be a number string")
+				failures = append(failures, listPageMessage)
 				continue
 			}
 			query.Page = value
 		case "pageSize":
 			if !isNumericString(value) {
-				failures = append(failures, "pageSize must be a number string")
+				failures = append(failures, listPageSizeMessage)
 				continue
 			}
 			query.PageSize = value
@@ -247,7 +269,7 @@ func parseListQuery(r *http.Request) (ListQuery, []string) {
 			query.Search = value
 		case "orderBy":
 			if value != string(ItemsOrderByCreatedDesc) && value != string(ItemsOrderByPublishedDesc) {
-				failures = append(failures, "orderBy must be one of the following values: CREATED_DESC, PUBLISHED_DESC")
+				failures = append(failures, listOrderByMessage)
 				continue
 			}
 			query.OrderBy = value
@@ -257,6 +279,23 @@ func parseListQuery(r *http.Request) (ListQuery, []string) {
 		sortStrings(failures)
 	}
 	return query, failures
+}
+
+// listPropertyMessage returns the single-property failure message of one
+// whitelisted ListItemsDto field.
+func listPropertyMessage(key string) (string, bool) {
+	switch key {
+	case "page":
+		return listPageMessage, true
+	case "pageSize":
+		return listPageSizeMessage, true
+	case "search":
+		return listSearchMessage, true
+	case "orderBy":
+		return listOrderByMessage, true
+	default:
+		return "", false
+	}
 }
 
 // writeServiceError maps service failures onto the REST contract.

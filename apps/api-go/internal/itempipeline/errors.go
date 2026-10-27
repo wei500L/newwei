@@ -101,6 +101,35 @@ func (e *TransientError) Unwrap() error {
 // Name returns the QueueTransientError marker.
 func (e *TransientError) Name() string { return "QueueTransientError" }
 
+// UnrecoverableError is BullMQ's UnrecoverableError: the attempt failed for a
+// reason no retry can fix, so the worker moves the job straight to the failed
+// set even when the job still has attempts left. ClassifyQueueError reports it as
+// permanent with the "unrecoverable" reason, the same classification the NestJS
+// handler produces when it wraps a permanent error before throwing.
+type UnrecoverableError struct {
+	Message string
+	Cause   error
+}
+
+// Error implements error.
+func (e *UnrecoverableError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
+}
+
+// Unwrap exposes the cause.
+func (e *UnrecoverableError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
+// Name returns the BullMQ class name classified as permanent.
+func (e *UnrecoverableError) Name() string { return "UnrecoverableError" }
+
 const defaultErrorMessage = "Unknown error"
 
 var systemTransientCodes = map[string]bool{

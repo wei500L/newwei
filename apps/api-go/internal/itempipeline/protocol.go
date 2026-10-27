@@ -232,6 +232,23 @@ func (j Job) FinalFailure() bool {
 	return j.AttemptsMade+1 >= j.Attempts()
 }
 
+// DeferredFailureError returns the terminal failure the stalled checker already
+// recorded for this job, or nil when the job may run.
+//
+// BullMQ's moveStalledJobsToWait writes `defa` and puts the job back on the wait
+// list once its stall counter exceeds maxStalledCount; the reference worker then
+// raises UnrecoverableError instead of calling the processor, so a job that
+// repeatedly kills its worker is failed once (and dead-lettered) instead of being
+// re-executed forever. The item pipeline must not run the pipeline body in that
+// case: it would repeat the LLM, vector and outbox side effects for an attempt
+// BullMQ has already decided is terminal.
+func (j Job) DeferredFailureError() error {
+	if j.DeferredFailure == "" {
+		return nil
+	}
+	return &UnrecoverableError{Message: j.DeferredFailure}
+}
+
 // KeepOnComplete is the worker keepJobs value for a successful finish. When the
 // job has no removeOnComplete option the BullMQ worker falls back to keeping
 // the job (count -1), not to removing it.

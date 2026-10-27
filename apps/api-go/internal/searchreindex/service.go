@@ -188,11 +188,13 @@ func (s *Service) reindexOrg(ctx context.Context, orgID string, onProgress func(
 
 // bulkFailureError builds the job error text: the itemMetaId, the Elasticsearch
 // error type and a short reason. Credentials and document bodies are never
-// included.
+// included. The wording (including the leading capital) is byte-identical to
+// ItemsElasticsearchService.reindexOrg so a job written by either side reads the
+// same through the polling GET.
 func bulkFailureError(failures []bulkFailure) error {
 	first := failures[0]
 	return fmt.Errorf(
-		"elasticsearch bulk index failed for %d item(s): itemMetaId=%s type=%s reason=%s",
+		"Elasticsearch bulk index failed for %d item(s): itemMetaId=%s type=%s reason=%s",
 		len(failures), first.itemMetaID, first.errorType, first.reason,
 	)
 }

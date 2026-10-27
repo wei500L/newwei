@@ -119,7 +119,11 @@ type Store interface {
 	// TimelineWindowDays 对齐 news event settings 的 max(backfill, lookback)。
 	// 缺省或读失败时为 30，不让设置查询打垮详情。
 	TimelineWindowDays(ctx context.Context, orgID string) int
-	SaveEventMetadata(ctx context.Context, orgID, eventID string, metadata []byte) error
+	// SaveBriefV1 writes the generated brief as the metadata.briefV1 leaf only.
+	// The public detail route is unauthenticated, so this write must never own
+	// the whole metadata column: another generator writing a sibling leaf
+	// concurrently would lose its update to a read-modify-write.
+	SaveBriefV1(ctx context.Context, orgID, eventID string, document []byte) error
 	// GatewaySettings 读取模型网关 profile 与 proxy governance 的原始 JSON。
 	// 没有对应行时该侧为 nil。
 	GatewaySettings(ctx context.Context) (profiles, governance []byte, err error)
@@ -525,11 +529,22 @@ func (s *MySQLStore) TimelineWindowDays(ctx context.Context, orgID string) int {
 	return lookback
 }
 
-func (s *MySQLStore) SaveEventMetadata(ctx context.Context, orgID, eventID string, metadata []byte) error {
-	_, err := s.db.ExecContext(ctx,
-		"UPDATE NewsEvent SET metadata = ?, updatedAt = ? WHERE id = ? AND orgId = ?",
-		metadata, time.Now().UTC().Truncate(time.Millisecond), eventID, orgID,
-	)
+// SaveBriefV1 writes only the briefV1 leaf with MySQL JSON_SET, the same
+// statement shape internal/graphqlread/newsevents uses for the GraphQL brief
+// write. Sibling metadata leaves survive, and a null or non-object column is
+// treated as an empty object exactly like the NestJS mergeMetadata. The UPDATE
+// is scoped to id plus orgId and runs after the model call, so no transaction or
+// row lock is held during the network request.
+func (s *MySQLStore) SaveBriefV1(ctx context.Context, orgID, eventID string, document []byte) error {
+	const query = `
+UPDATE NewsEvent
+SET metadata = JSON_SET(
+      CASE WHEN JSON_TYPE(metadata) = 'OBJECT' THEN metadata ELSE JSON_OBJECT() END,
+      '$.briefV1', CAST(? AS JSON)),
+    updatedAt = ?
+WHERE id = ? AND orgId = ?`
+	_, err := s.db.ExecContext(ctx, query,
+		string(document), time.Now().UTC().Truncate(time.Millisecond), eventID, orgID)
 	return err
 }
 
