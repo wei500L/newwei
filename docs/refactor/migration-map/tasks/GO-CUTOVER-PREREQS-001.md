@@ -123,23 +123,27 @@ Swagger 兼容性：页面的样式表与脚本全部是 `./docs/…` 相对路�
 
 复核方式：逐项读改动路径的类型/GraphQL 契约、控制流与错误、租户与权限、SSE/WS 生命周期；每个疑点先尝试推翻。以下为成立项与处置。
 
-1. **（已修）代理 WebSocket 的重复安全头**。`httputil.ReverseProxy.handleUpgradeResponse` 先 `rc.Hijack()` 再 `copyHeader(rw.Header(), res.Header)`。若在 `Hijack` 里触发安全头 hook，默认值会进入随后被上游覆盖的 header map，发出两套同名头。处置：hook 增加 `headersOwned` 参数，`Hijack` 传 false；安全中间件据此跳过，metrics 仍记录 101。证据：`internal/httpx/writer.go` 的 `hijackOnlyWriter.Hijack` / `flushHijackWriter.Hijack`，`internal/httpx/security.go` 的 hook，测试 `writer_test.go` 的 *UnownedHeaders* 用例。
-2. **（成立，记为残留）部分 handler 自写 500 不产生异常事件**。`internal/crawlprofile/handler.go:352`、`internal/adminlogs/handler.go:391`、`internal/newsnowsources/handler.go:152`、`internal/llmlogs/handler.go:236`、`internal/newsindicator/handler.go:127`、`internal/newssourcescheduler/handler.go:184`、`internal/exceptioningest/handler.go:168`、`internal/qualityoverview/handler.go:214`、`internal/crawlstrategyruns/handler.go:227`、`internal/situationmonitors/handler.go:240`、`internal/crawlfrontierruns/handler.go:447`、`internal/crawltemplate/handler.go:227`、`internal/newsbackfilljobs/handler.go:145`、`internal/crawlworkflow/handler.go:399`、`internal/situationsignals/handler.go:357`、`internal/newssources/handler.go:482`、`internal/newsnowclusteringops/handler.go:513`、`internal/rbacapi/handler.go:423`、`internal/itemsingest/handler.go` 的 marshal 分支等仍用 `http.Error`。它们只在这些 handler 自己的 JSON 序列化失败（不可达的固定结构）时触发。不是本批引入，本批不改，列为残留。
-3. **（成立，已确认安全）`MetricsMiddleware` 与 `SecurityHeadersMiddleware` 的嵌套顺序**。外层是 `SecurityHeadersMiddleware`，因此它在 trace 头之后、且在 metrics 的 hook 之外运行；两个 hook 各自独立触发，互不影响。`Wrap` 的 `applied` 标志是每个包装实例独立的，嵌套两层不会互相吞掉（`internal/httpx/writer.go` 的 `hookWriter.fire`）。
-4. **（成立，已确认安全）`IdentityScope` 的 context 传递**。`handler.go` 里 `gateway.ServeHTTPWithShadow(w, r, disp)` 使用外层传入的 `r`；`IdentityScope` 用 `r.WithContext(...)` 生成新的 `r` 再交给 `next`，所以 `authhttp.Authenticate` 拿到的 `r` 已带 identity box。`AuthScope` 在 trace 之外、`SecurityHeaders` 之外，即使 trace 包装失败也不影响归属。
-5. **（成立，已确认安全）租户边界**。指标 `pipeline_metric_value` 的 `org_id` 取自 `rule.OrgID`（数据库行），异常事件的 `orgId` 取自 `authhttp.SetVerifiedIdentity` 写入的已验证身份；两者都不来自请求。`itemsingest.authorize` 新增的 `SetVerifiedIdentity(r, identity)` 只在机器令牌解析成功后执行，且 `identity` 来自 token 行。
-6. **（成立，已确认安全）SSE/WS 生命周期**。`dashboardstream` 断言 `http.Flusher`；`Wrap` 只在底层具备时才暴露，所以断言结论与不加包装时一致。`http.NewResponseController(w)` 在 `dashboardstream` 里对包装后的 writer 使用，靠 `Unwrap` 找到真实 writer；`writer_test.go` 的 `TestWrapUnwrapReachesTheRealWriter` 固定这一点。
-7. **（成立，已确认安全）GraphQL 200+errors**。`Execute` 在 `nullData` 时 `statusFromErrors(errors, http.StatusOK)`，resolver 的 `contract.Failure{Status:500}` 会带 `extensions.http.status=500`，因此部分场景 HTTP 可能是 500 而非 200；但 `recordResolverError` 在 `errors` 收集处无条件调用，与最终状态无关，所以两种情形都记录。测试 `TestQueryResolverFailureIsRecordedWithA200Response` 固定 200 情形。
-8. **（成立，已确认安全）不重复记录**。legacy 转发由 `exec.KindLegacy` 分支处理，不进入 `recordResolverError`（测试 `TestUnregisteredFieldRecordsNothing`）；反代响应完全不经过 `authhttp`。
-9. **（成立，记为限制）`body-parser` 的 413 vs Go 的 500**。Nest 的 body-parser 抛 413，但 `RoutesResolver.mapExternalException` 只映射 `SyntaxError` / `URIError`，所以 413 作为非 HttpException 由 `GlobalExceptionFilter` 渲染成 500 masked。Go 侧复用 `authhttp.WritePayloadTooLarge`（已有注释与 smoke run 36270657639 证据），与该行为一致；本批未改为 413。
-10. **（成立，已确认安全）`parseCreateBody` 的读法**。`http.MaxBytesReader(nil, ...)` 的第一个参数为 nil 时不会尝试 `requestTooLarge()` 标记，只返回 `*http.MaxBytesError`；`errors.As` 分支因此是唯一判定点。`defer limited.Close()` 关闭的是包装器，底层 body 由 net/http 负责。
+1. **（已修）代理 WebSocket 的重复安全头**。`httputil.ReverseProxy.handleUpgradeResponse` 先 `rc.Hijack()` 再 `copyHeader(rw.Header(), res.Header)`。若在 `Hijack` 里触发安全头 hook，默认值会进入随后被上游覆盖的 header map，发出两套同名头。处置：hook 增加 `headersOwned` 参数，`Hijack` 传 false；安全中间件据此跳过。证据：`internal/httpx/writer.go` 的 `hijackOnlyWriter.Hijack` / `flushHijackWriter.Hijack`，`internal/httpx/security.go` 的 hook，测试 `writer_test.go` 的 `TestWrapHijackWithoutWriteHeaderReportsUnownedHeaders`。
+
+2. **（已修）未命中路径的路由标签无界**。网关最初对所有请求都写 `RouteFamily(path)`，于是 `/wp-admin`、随机 token 等未命中路径各建一条 `http_request_duration_seconds` 序列，与 Nest 的 `unmatched` 语义不符。处置：新增 `matchRule` 区分“有规则命中”与“回退”，只有命中才写路由族，未命中保持 `unmatched`。`match` 签名与返回值不变，既有调用点与测试不受影响。已知差异（记录在 `ServeHTTPWithShadow` 注释）：`/api/` 前缀下 Nest 无控制器服务的路径，Nest 记 `unmatched` 而 Go 记 `/api/<首段>`——该族是既有 `api_go_legacy_proxy_requests_total` 的口径，保留它才能让同一路由在切流前后可比。证据：`internal/legacyproxy/proxy.go` 的 `matchRule` / `ServeHTTPWithShadow`，测试 `internal/legacyproxy/route_label_test.go`。
+
+3. **（已修）hijack 连接写入耗时直方图**。Express 对交给 Socket.IO 适配器的连接不触发 `res` 的 `finish`，Nest 的直方图因此没有 upgrade 样本；最初实现在 socket 生命周期结束时记一条等于整段连接时长的观测，会污染延迟分位。处置：`Wrap` 改为返回 `Response{Writer, Done, Hijacked}`，指标中间件在 `Hijacked()` 为真时直接返回；安全头 hook 与 `headersOwned` 语义不变。证据：`internal/httpx/writer.go` 的 `hookWriter.hijacked` / `markHijacked`，`internal/httpx/metricsmiddleware.go`，测试 `TestMetricsMiddlewareSkipsHijackedConnections`。
+4. **（成立，记为残留）部分 handler 自写 500 不产生异常事件**。`internal/crawlprofile/handler.go:352`、`internal/adminlogs/handler.go:391`、`internal/newsnowsources/handler.go:152`、`internal/llmlogs/handler.go:236`、`internal/newsindicator/handler.go:127`、`internal/newssourcescheduler/handler.go:184`、`internal/exceptioningest/handler.go:168`、`internal/qualityoverview/handler.go:214`、`internal/crawlstrategyruns/handler.go:227`、`internal/situationmonitors/handler.go:240`、`internal/crawlfrontierruns/handler.go:447`、`internal/crawltemplate/handler.go:227`、`internal/newsbackfilljobs/handler.go:145`、`internal/crawlworkflow/handler.go:399`、`internal/situationsignals/handler.go:357`、`internal/newssources/handler.go:482`、`internal/newsnowclusteringops/handler.go:513`、`internal/rbacapi/handler.go:423`、`internal/itemsingest/handler.go` 的 marshal 分支等仍用 `http.Error`。它们只在这些 handler 自己的 JSON 序列化失败（不可达的固定结构）时触发。不是本批引入，本批不改，列为残留。
+5. **（成立，已确认安全）`MetricsMiddleware` 与 `SecurityHeadersMiddleware` 的嵌套顺序**。外层是 `SecurityHeadersMiddleware`，因此它在 trace 头之后、且在 metrics 的 hook 之外运行；两个 hook 各自独立触发，互不影响。`Wrap` 的 `applied` 标志是每个包装实例独立的，嵌套两层不会互相吞掉（`internal/httpx/writer.go` 的 `hookWriter.fire`）。
+6. **（成立，已确认安全）`IdentityScope` 的 context 传递**。`handler.go` 里 `gateway.ServeHTTPWithShadow(w, r, disp)` 使用外层传入的 `r`；`IdentityScope` 用 `r.WithContext(...)` 生成新的 `r` 再交给 `next`，所以 `authhttp.Authenticate` 拿到的 `r` 已带 identity box。`AuthScope` 在 trace 之外、`SecurityHeaders` 之外，即使 trace 包装失败也不影响归属。
+7. **（成立，已确认安全）租户边界**。指标 `pipeline_metric_value` 的 `org_id` 取自 `rule.OrgID`（数据库行），异常事件的 `orgId` 取自 `authhttp.SetVerifiedIdentity` 写入的已验证身份；两者都不来自请求。`itemsingest.authorize` 新增的 `SetVerifiedIdentity(r, identity)` 只在机器令牌解析成功后执行，且 `identity` 来自 token 行。
+8. **（成立，已确认安全）SSE/WS 生命周期**。`dashboardstream` 断言 `http.Flusher`；`Wrap` 只在底层具备时才暴露，所以断言结论与不加包装时一致。`http.NewResponseController(w)` 在 `dashboardstream` 里对包装后的 writer 使用，靠 `Unwrap` 找到真实 writer；`writer_test.go` 的 `TestWrapUnwrapReachesTheRealWriter` 固定这一点。
+9. **（成立，已确认安全）GraphQL 200+errors**。`Execute` 在 `nullData` 时 `statusFromErrors(errors, http.StatusOK)`，resolver 的 `contract.Failure{Status:500}` 会带 `extensions.http.status=500`，因此部分场景 HTTP 可能是 500 而非 200；但 `recordResolverError` 在 `errors` 收集处无条件调用，与最终状态无关，所以两种情形都记录。测试 `TestQueryResolverFailureIsRecordedWithA200Response` 固定 200 情形。
+10. **（成立，已确认安全）不重复记录**。legacy 转发由 `exec.KindLegacy` 分支处理，不进入 `recordResolverError`（测试 `TestUnregisteredFieldRecordsNothing`）；反代响应完全不经过 `authhttp`。
+11. **（成立，记为限制）`body-parser` 的 413 vs Go 的 500**。Nest 的 body-parser 抛 413，但 `RoutesResolver.mapExternalException` 只映射 `SyntaxError` / `URIError`，所以 413 作为非 HttpException 由 `GlobalExceptionFilter` 渲染成 500 masked。Go 侧复用 `authhttp.WritePayloadTooLarge`（已有注释与 smoke run 36270657639 证据），与该行为一致；本批未改为 413。
+12. **（成立，已确认安全）`parseCreateBody` 的读法**。`http.MaxBytesReader(nil, ...)` 的第一个参数为 nil 时不会尝试 `requestTooLarge()` 标记，只返回 `*http.MaxBytesError`；`errors.As` 分支因此是唯一判定点。`defer limited.Close()` 关闭的是包装器，底层 body 由 net/http 负责。
 
 类型/契约复核：新增的 `metrics` 定型入口只用字符串常量，无 `any` 业务载荷；`exec.ResolverError` 与 `authhttp.ExceptionRecorder` 均为具名结构/函数类型；`exceptioningest.ExceptionEvent` 复用既有强类型；`WriteJSON` 未改。GraphQL `data/errors/extensions` 未改（`response.go` 未动）。
 
 ## 未覆盖项与残留
 
 - **未部署、未承接真实流量、未连接真实外部服务**。ES/vector/LiteLLM/pipeline 指标与异常写入只用进程内 httptest / fake driver 验证生产调用路径，不代表真实集群、真实模型或真实 Mongo 已通。
-- 自写 500 的 handler（见审查第 2 条）不产生异常事件。
+- 自写 500 的 handler（见审查第 4 条）不产生异常事件。
 - 未记录 `unknown` kind；无 stack。
 - `Cross-Origin-Embedder-Policy` 有意不发送（与 Nest 一致）。
 - `/docs` 的 `connect-src` 未显式声明，依赖 `default-src 'self'`；若将来页面改用绝对 API 地址，需同步评估。
@@ -153,5 +157,5 @@ Swagger 兼容性：页面的样式表与脚本全部是 `./docs/…` 相对路�
   1. 本 PR 合入 main，并在该 merge SHA 上有普通 CI 三主要 job success；
   2. 复核 `httpx.SecurityHeadersMiddleware` 在最终 main 的根链位置未被其他并行改动覆盖；
   3. 复核 `authhttp.SetExceptionRecorder` 与 `graphqlread.Options.ErrorRecorder` 的装配点在最终 main 仍存在；
-  4. 若要关闭 GAP-EXCEPTION-WIRING-001，需先决定第 2 条残留（自写 500）是否纳入下一批。
+  4. 若要关闭 GAP-EXCEPTION-WIRING-001，需先决定第 4 条残留（自写 500）是否纳入下一批。
 - 本机未安装依赖、未运行 build/test/pnpm/Docker/服务；验证由既有普通 CI（`.github/workflows/ci.yml` 的 verify / vector-integration / api-go-user-settings-integration）执行。本批未新增 workflow。
