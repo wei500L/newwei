@@ -12,9 +12,11 @@
 
 ## 普通 CI
 
-- 基线事实（编码前）：main `8e978360` 的 [run 40524559427](https://github.com/wei500L/newwei/actions/runs/40524559427) `conclusion=success`，verify / vector-integration / api-go-user-settings-integration 三个主要 job success，两个 regen job skipped（skipped 不算通过）。
-- 编码前另见 `cc3782c0` / `f15f598d` / `2a42bd30` / `5e44fae1` 数个 cancelled 或 failure 的 run，原因是 runner 内存预算（见 `ci.yml` 顶部注释与 `8e978360`、`5e44fae1` 的提交说明），与源码无关；这些 run 不能视为通过，也不作为本批基线。
-- 本批 head 与逐 job 结果：交付时以实际推送后的 run 回填。
+- 基线事实（编码前）：main `bdbb581a`（本分支起点）的 [run 40527760690](https://github.com/wei500L/newwei/actions/runs/40527760690) `conclusion=success`；前一 head `8e978360` 的 [run 40524559427](https://github.com/wei500L/newwei/actions/runs/40524559427) 亦 success。两者三个主要 job 均 success，两个 regen job skipped（skipped 不算通过）。
+- 编码前另见 `cc3782c0` / `f15f598d` / `2a42bd30` / `5e44fae1` 数个 cancelled 或 failure 的 run，原因是 runner 内存预算（见 `ci.yml` 顶部注释与 `8e978360`、`5e44fae1` 的提交说明），与源码无关；这些 run 不视为通过，也不作为本批基线。
+- **本批最终 head `896ad1e8` 的 [run 40538923975 attempt 2](https://github.com/wei500L/newwei/actions/runs/40538923975) `conclusion=success`**：verify success、vector-integration success、api-go-user-settings-integration success；`go-modules-regen` 与 `contract-baseline-regen` skipped（不算通过）。
+- Attempt 1 的 verify 失败在 `apps/web` 的 `queue-ops-content.test.tsx > disables delete for active jobs and explains why`（`Unable to find role="button" and name "job-active"`），该路径本批完全未改（`git diff origin/main -- apps/web` 为空），同 head 的 main 基线 run 通过；attempt 2 同一 head 通过，判定为该既有用例的时序抖动，不是本批引入。
+- 更早的 head `8e8a96a1` [run 40535159460](https://github.com/wei500L/newwei/actions/runs/40535159460) verify 失败，暴露的是本批新增测试自身的错误假设（非空根返回 500、operationName 未传、重复注册 root、指标标签来源、traceId 需经中间件）。已在 `896ad1e8` 修正为对真实契约的断言，未改动被测实现。
 
 ## 范围与所有权
 
