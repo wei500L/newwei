@@ -2,6 +2,16 @@
 
 本文件是用户长期偏好的稳定入口。适用后端迁移规划、执行提示词、进度更新；代码事实仍以最新 main 为准。返回[入口](README.md)。
 
+## 2026-10-27 阶段更新：全部转 Go，仍只做静态审查与 CI
+
+用户提供的上一轮交接明确目标为“后端全部转成 Go、静态审查加 CI、不上生产”，本轮告知六批已合并并要求继续提示词。#148 已核实落地后，按此目标推进，不重新派发六批审查或整合。
+
+- 先执行 [GO-CUTOVER-PREREQS-001](tasks/GO-CUTOVER-PREREQS-001.md)，关闭整合报告中四项真实横切缺口；默认维持当前状态。
+- 后执行 [GO-DEFAULT-CUTOVER-001](tasks/GO-DEFAULT-CUTOVER-001.md)，有意把仓库默认改成全业务 go / fallback reject、Web 与 vector/AIS 指向 Go，并处理迁移/索引工具职责。**仅该阶段是下方长期偏好第 1、2 条中“默认保留 Nest / legacy”的例外**；已有显式 legacy/shadow 合法值与完整回退继续保留，canary 仍为 0。
+- 前置实际合入与普通 CI 通过后才能启动默认切换；默认切换合入后才规划删 Node 后端、双轨代码和迁移契约/CI 基线。本轮只写规划，不改业务/默认，不执行后续任务。
+- 无真实部署、真实流量或外部服务验收要求；运行证据不足应如实记录，不能成为擅自上生产的理由。Node Prisma/seed/index 工具可独立保留，是否转 Go 另定。
+- 编码仍独立 worktree、Ready PR、不合并、不 auto-merge；本机不安装/运行 build/test/Docker/服务。普通 CI 记录精确 head，额外 runner smoke 不代替普通 CI。
+
 ## 新对话恢复与增量刷新
 
 1. 读 README、本文件、[任务索引](tasks/README.md)、[缺口摘要](GAPS.md#当前摘要)与[候选队列](BACKLOG.md)；不得只看历史聊天/旧工作目录。

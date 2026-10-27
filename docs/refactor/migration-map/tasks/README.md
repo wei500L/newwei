@@ -1,5 +1,16 @@
 # 任务认领与历史恢复索引
 
+## 2026-10-27 当前增量
+
+基线 `origin/main = f15f598d4358b4c9823054ef5a355618e1480a4e`。#142–#147 已由 [#148](https://github.com/wei500L/newwei/pull/148) 合入（实际 main merge `0a48babea69700c7f9cd1bf2262f25d414469527`），六个源 head 已逐一验证祖先关系；下方关于 AIS 仍 pr_open 的段落仅为历史快照。没有新的整合任务，也没有启动编码窗口。
+
+| 任务 | 状态 / 提示词 | 文件所有权与前置 |
+|---|---|---|
+| [GO-CUTOVER-PREREQS-001](GO-CUTOVER-PREREQS-001.md) | **reserved**；[提示词已发出](GO-CUTOVER-PREREQS-001.prompt.md)，未核实执行器/编码 PR | Go main/httpx/metrics/异常/GraphQL/条目创建体、必要指标调用点；保持默认；分支 `codex/go-cutover-prereqs` |
+| [GO-DEFAULT-CUTOVER-001](GO-DEFAULT-CUTOVER-001.md) | **planned**；[提示词预先给出](GO-DEFAULT-CUTOVER-001.prompt.md)，有前置，尚不认领编码文件 | 前一任务实际合入与普通 CI 通过后再认领 config/compose/env/Web/启动工具；分支 `codex/go-default-cutover` |
+
+这两份规划由 `codex/plan-go-cutover-next` 发布。历史 50+ worktree 的存在不代表仍活跃；本次未修改或清理它们。编码窗口更新自己的 task 和 PR；规划窗口集中回填共享地图。下一检查点是前置任务 PR 的实际范围与精确 head 普通 CI，不是部署观察。
+
 2026-10-22 `refactor/go-ais-relay`（pr_open，无独立 task ID；基线 `origin/main dc48abc1`，worktree `/Users/oo/project/newwei-go-ais-relay`）：Go AIS relay 端口——Node `apps/ais-relay` 迁为 `apps/api-go/internal/aisrelay` + `apps/api-go/cmd/ais-relay`（同环境变量、同 HTTP 路径、同 JSON 契约），新增 `infra/docker/ais-relay-go.Dockerfile` 与 `go-pilot` profile 的 pilot 服务 `ais-relay-go`（宿主 `3005` → 容器 `3004`）。不改变默认开关：`REALTIME_SIGNALS_AIS_BASE_URL` 仍指向 Node `http://ais-relay:3004`，Node 版保留、本批不新增开关。PR 待创建，最终 head/普通 CI 在 PR 回填。
 
 2026-10-21 Go 队列运维批：main `ed436ead`（#137 已合入），无开放迁移 PR。本批三个并行窗口之一 `refactor/go-queue-ops`（worktree `/Users/oo/project/newwei-go-queue-ops`）承接 `docs/refactor/cutover/ownership-audit.md` 的 **C-6**（`itemPipelineDlq` 人工处理）、**C-8**（Bull Board 运维面）与 §6 的「QueueEvents 派生读侧（统计部分）」「告警规则全量 repeatable 对账」两项残留职责；另外两个窗口 `refactor/go-ops-entrypoints` 与 `refactor/go-crawl-frontier-writes` 同批进行，共享文件按「只追加」约定并行（config.go 连续块、all-go.env 末尾、`allGoRules()` 末尾、`cmd/api/main.go` 最少调用行、cutover 文档与 env 样例）。本批不新建 task ID/task 文件；未合并前状态保持 `pr_open`，HEAD、普通 CI 与集成 job 结论在 PR 回填。

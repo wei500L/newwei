@@ -1,6 +1,15 @@
 # 后端迁移地图
 
-**当前状态摘要（基线 `dcbe563b`，2026-10-21）**
+## 2026-10-27 增量与下一批
+
+- 本次只核对 `origin/main = f15f598d4358b4c9823054ef5a355618e1480a4e` 的合并、下一批相关源码与默认链，未重建全域覆盖数，也未全文重审五域。下方 `dcbe563b` 统计保留为历史快照。
+- [#148](https://github.com/wei500L/newwei/pull/148) 实际 merge `0a48babea69700c7f9cd1bf2262f25d414469527` 已包含 #142–#147（五域审查修复 + AIS relay Go）；六个源 head 均已验证为 main 祖先。当前无开放 PR（本规划发布前快照），不再派整合任务。main 后续三次提交为新增/扩充 self-hosted smoke，以及把既有 workflow 的 runs-on 切到自托管 runner，未改相关业务源码。
+- 整合 head `79220a477cc8dad7df387fa67442c3bcd5d6a49e` 的[普通 CI](https://github.com/wei500L/newwei/actions/runs/40513400923) attempt 2 三个主要 job success，两个 regen skipped。最新 main 的[普通 CI](https://github.com/wei500L/newwei/actions/runs/40518886959) 在本次核对时 queued；上一 head `cc3782c0` 的 run 40518448341 已 cancelled，Self-hosted Smoke success 不代替普通 CI。不得把其他 head 的结果算作最新 main 通过。
+- **下一步先补四项，再改默认**：[GO-CUTOVER-PREREQS-001](tasks/GO-CUTOVER-PREREQS-001.md) 已 reserved，含安全头、三类指标的生产接线、REST/GraphQL 异常事件、`POST /api/items` 请求体契约；[提示词](tasks/GO-CUTOVER-PREREQS-001.prompt.md)。四项根因见 [GAPS](GAPS.md#2026-10-27-切默认前增量)。不是重迁队列/DLQ/NewsNow/brief/outbox。
+- 后继 [GO-DEFAULT-CUTOVER-001](tasks/GO-DEFAULT-CUTOVER-001.md) planned，[提示词](tasks/GO-DEFAULT-CUTOVER-001.prompt.md) 已备好，须等前置合入与 CI 后再执行：config + Web + 三项 Go 服务 + migration/index 工具职责 + 显式 legacy 回退作为一条链完成。两任务串行，不并开抢共享接线。
+- 当前默认仍指 Nest / Node vector / Node AIS；本规划没有修改默认或业务代码。目标为仓库默认转 Go，保留 Node 回退代码，后续再删；**只做静态审查与普通 CI，不部署、不连接真实外部服务**。Prisma/seed 可继续作为 Node 工具，不能声称工具链已全 Go。
+
+**历史状态摘要（基线 `dcbe563b`，2026-10-21；现行增量以上方为准）**
 
 - 基线：`origin/main = dcbe563b917f`（#136 整合 #133–#135）；上一版地图基线的 `91e759b4` 已成历史，见 [HISTORY.md](HISTORY.md)。
 - 开放 PR：无（`gh pr list --state open` 为空）。
