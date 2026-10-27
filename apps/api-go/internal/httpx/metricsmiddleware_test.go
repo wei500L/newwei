@@ -42,53 +42,59 @@ func TestMetricsMiddlewareRecordsOneObservationPerRequest(t *testing.T) {
 		method     string
 		path       string
 		handler    http.HandlerFunc
-		wantRoute  string
+		label      string
 		wantStatus int
 	}{
 		{
 			name:   "success",
 			method: http.MethodGet,
 			path:   "/api/items?page=2&search=climate",
+			label:  "/api/items",
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			},
-			wantRoute:  "/api/items",
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:   "error status is the written one",
 			method: http.MethodPost,
 			path:   "/api/items",
+			label:  "/api/items",
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)
 			},
-			wantRoute:  "/api/items",
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:   "implicit 200",
 			method: http.MethodGet,
 			path:   "/graphql",
+			label:  "/graphql",
 			handler: func(http.ResponseWriter, *http.Request) {
 			},
-			wantRoute:  "/graphql",
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:   "path parameter does not become a label",
 			method: http.MethodGet,
 			path:   "/api/items/507f1f77bcf86cd799439011",
+			label:  "/api/items",
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNotFound)
 			},
-			wantRoute:  "/api/items",
 			wantStatus: http.StatusNotFound,
 		},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			var observations []HTTPObservation
-			handler := MetricsMiddleware(testCase.handler, func(observation HTTPObservation) {
+			// The label is recorded by the gateway while it matches its route table; this
+			// stand-in records one the way realgateway does.
+			inner := func(w http.ResponseWriter, r *http.Request) {
+				SetRouteLabel(r.Context(), testCase.label)
+				testCase.handler(w, r)
+			}
+			handler := MetricsMiddleware(http.HandlerFunc(inner), func(observation HTTPObservation) {
 				observations = append(observations, observation)
 			})
 			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(testCase.method, testCase.path, nil))
@@ -99,8 +105,8 @@ func TestMetricsMiddlewareRecordsOneObservationPerRequest(t *testing.T) {
 			if got.Method != testCase.method {
 				t.Errorf("method = %q, want %q", got.Method, testCase.method)
 			}
-			if got.Route != testCase.wantRoute {
-				t.Errorf("route = %q, want %q", got.Route, testCase.wantRoute)
+			if got.Route != testCase.label {
+				t.Errorf("route = %q, want %q", got.Route, testCase.label)
 			}
 			if got.StatusCode != testCase.wantStatus {
 				t.Errorf("status = %d, want %d", got.StatusCode, testCase.wantStatus)

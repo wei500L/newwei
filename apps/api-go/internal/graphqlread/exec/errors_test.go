@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
+
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/schema"
 )
 
@@ -17,16 +20,40 @@ func (r *recordingErrorRecorder) record(failure ResolverError) {
 	r.failures = append(r.failures, failure)
 }
 
-// newErrorTestEngine builds an engine over the real SDL with one registered query
-// root whose resolver behaviour the caller supplies.
-func newErrorTestEngine(t *testing.T, permission string, resolve func(contract.Context) (any, error)) (*Engine, *recordingErrorRecorder) {
+// execTestSchema loads the real SDL once.
+func execTestSchema(t *testing.T) *ast.Schema {
 	t.Helper()
 	loaded, err := schema.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
+	return loaded
+}
+
+// nullableChannel is the model projected under AlertChannelModel; its fields match
+// the SDL so a successful resolve projects without execution errors.
+type nullableChannel struct {
+	ID        string    `graphql:"id"`
+	Name      string    `graphql:"name"`
+	Type      string    `graphql:"type"`
+	Target    string    `graphql:"target"`
+	IsActive  bool      `graphql:"isActive"`
+	CreatedAt timeValue `graphql:"createdAt"`
+	UpdatedAt timeValue `graphql:"updatedAt"`
+}
+
+// timeValue is a DateTime-shaped leaf the projector can render.
+type timeValue string
+
+// newEngine builds an engine over the real SDL with one registered query root whose
+// resolver behaviour the caller supplies. The root is a non-null list of non-null
+// objects, which is the shape alertChannels has, so a resolver failure nulls the
+// whole data field and the response status follows the failure.
+func newEngine(t *testing.T, permission string, resolve contract.Resolver) (*Engine, *recordingErrorRecorder) {
+	t.Helper()
+	loaded := execTestSchema(t)
 	reg := contract.NewRegistry()
-	reg.RegisterType("AlertChannelModel", alertChannel{})
+	reg.RegisterType("AlertChannelModel", nullableChannel{})
 	reg.RegisterRoot(contract.Root{
 		Name:       "alertChannels",
 		Permission: permission,
@@ -38,24 +65,38 @@ func newErrorTestEngine(t *testing.T, permission string, resolve func(contract.C
 	return engine, recorder
 }
 
-// TestQueryResolverFailureIsRecordedWithA200Response is the case a status-code
-// check cannot detect: a nullable root field fails, the executor keeps HTTP 200 and
-// returns data plus errors, and the failure must still be recorded.
-func TestQueryResolverFailureIsRecordedWithA200Response(t *testing.T) {
-	engine, recorder := newErrorTestEngine(t, "alerts.read",
-		func(contract.Context) (any, error) {
-			return nil, &contract.Failure{Message: "upstream exploded", Status: http.StatusInternalServerError}
-		})
-	plan := engine.PlanDocument(`query AlertList { alertChannels { id } }`, nil, nil)
+// identityWith returns the prepare hook for one permission set.
+func identityWith(permissions ...string) func(context.Context, string, string) (contract.Identity, error) {
+	granted := make(map[string]bool, len(permissions))
+	for _, permission := range permissions {
+		granted[permission] = true
+	}
+	return func(context.Context, string, string) (contract.Identity, error) {
+		return contract.Identity{UserID: "user-1", OrgID: "org-1", Permissions: granted}, nil
+	}
+}
+
+// TestResolverFailureIsRecordedRegardlessOfTheHttpStatus is the core contract for
+// GAP-EXCEPTION-WIRING-001: the event is produced from the failure, not from the HTTP
+// status. alertChannels is a non-null root, so a resolver error bubbles to data: null
+// and the response carries the failure's status; the recording must happen either way.
+func TestResolverFailureIsRecordedRegardlessOfTheHttpStatus(t *testing.T) {
+	engine, recorder := newEngine(t, "alerts.read", func(contract.Context) (any, error) {
+		return nil, &contract.Failure{Message: "upstream exploded", Status: http.StatusInternalServerError}
+	})
+	// operationName is only populated when the client sends one, so the test supplies
+	// the same value a named operation carries.
+	alertsOperation := "Alerts"
+	plan := engine.PlanDocument(`query Alerts { alertChannels { id } }`, &alertsOperation, nil)
 	if plan.Kind != KindExecute {
 		t.Fatalf("plan kind = %s, want execute", plan.Kind)
 	}
-	prepare := func(context.Context, string, string) (contract.Identity, error) {
-		return contract.Identity{UserID: "user-1", OrgID: "org-1", Permissions: map[string]bool{"alerts.read": true}}, nil
-	}
-	result := engine.Execute(context.Background(), plan, prepare, nil, false, 0, "v1", "trace-1")
-	if result.Status != http.StatusOK {
-		t.Fatalf("http status = %d, want 200 (the executor keeps data+errors at 200)", result.Status)
+	result := engine.Execute(context.Background(), plan, identityWith("alerts.read"), nil, false, 0, "v1", "trace-1")
+
+	// A non-null root failure nulls data, and the executor reports the failure's own
+	// status rather than hiding it at 200.
+	if result.Status != http.StatusInternalServerError {
+		t.Fatalf("http status = %d, want 500 for a non-null root failure", result.Status)
 	}
 	if len(recorder.failures) != 1 {
 		t.Fatalf("recorded %d failures, want 1", len(recorder.failures))
@@ -67,8 +108,8 @@ func TestQueryResolverFailureIsRecordedWithA200Response(t *testing.T) {
 	if got.Operation != "alertChannels" {
 		t.Errorf("operation = %q, want alertChannels", got.Operation)
 	}
-	if got.OperationName != "AlertList" {
-		t.Errorf("operationName = %q, want AlertList", got.OperationName)
+	if got.OperationName != "Alerts" {
+		t.Errorf("operationName = %q, want Alerts", got.OperationName)
 	}
 	if got.Message != "Internal server error" {
 		t.Errorf("message = %q, want the masked message", got.Message)
@@ -79,27 +120,23 @@ func TestQueryResolverFailureIsRecordedWithA200Response(t *testing.T) {
 	if got.TraceID != "trace-1" {
 		t.Errorf("traceId = %q, want trace-1", got.TraceID)
 	}
-	if got.ErrorName == "" {
-		t.Error("errorName must be populated")
+	if got.ErrorName != "Error" {
+		t.Errorf("errorName = %q, want the base value for an untyped 500", got.ErrorName)
 	}
 }
 
 // TestPermissionFailureIsRecordedAsForbidden proves a guard rejection — the Go
-// counterpart of GqlPermissionsGuard throwing ForbiddenException — is recorded with
-// the client's status and the verified identity.
+// counterpart of GqlPermissionsGuard throwing ForbiddenException — is recorded with the
+// caller's identity and the guard's status.
 func TestPermissionFailureIsRecordedAsForbidden(t *testing.T) {
-	engine, recorder := newErrorTestEngine(t, "alerts.read",
-		func(contract.Context) (any, error) {
-			t.Fatal("the resolver must not run when the permission check fails")
-			return nil, nil
-		})
+	engine, recorder := newEngine(t, "alerts.read", func(contract.Context) (any, error) {
+		t.Fatal("the resolver must not run when the permission check fails")
+		return nil, nil
+	})
 	plan := engine.PlanDocument(`{ alertChannels { id } }`, nil, nil)
-	prepare := func(context.Context, string, string) (contract.Identity, error) {
-		return contract.Identity{UserID: "user-1", OrgID: "org-1", Permissions: map[string]bool{}}, nil
-	}
-	result := engine.Execute(context.Background(), plan, prepare, nil, false, 0, "v1", "trace-2")
-	if result.Status != http.StatusOK {
-		t.Fatalf("http status = %d, want 200", result.Status)
+	result := engine.Execute(context.Background(), plan, identityWith(), nil, false, 0, "v1", "trace-2")
+	if result.Status != http.StatusForbidden {
+		t.Fatalf("http status = %d, want 403", result.Status)
 	}
 	if len(recorder.failures) != 1 {
 		t.Fatalf("recorded %d failures, want 1", len(recorder.failures))
@@ -116,12 +153,13 @@ func TestPermissionFailureIsRecordedAsForbidden(t *testing.T) {
 	}
 }
 
-// TestRateLimitRejectionIsRecorded proves a limiter rejection from the prepare hook
-// — the counterpart of GraphqlRateLimitGuard — is recorded too, with no identity
-// because the rejection happened before authentication.
+// TestRateLimitRejectionIsRecorded proves a limiter rejection from the prepare hook —
+// the counterpart of GraphqlRateLimitGuard — is recorded, with no identity because the
+// rejection happened before authentication.
 func TestRateLimitRejectionIsRecorded(t *testing.T) {
-	engine, recorder := newErrorTestEngine(t, "alerts.read",
-		func(contract.Context) (any, error) { return []alertChannel{}, nil })
+	engine, recorder := newEngine(t, "alerts.read", func(contract.Context) (any, error) {
+		return []nullableChannel{}, nil
+	})
 	plan := engine.PlanDocument(`{ alertChannels { id } }`, nil, nil)
 	prepare := func(context.Context, string, string) (contract.Identity, error) {
 		return contract.Identity{}, &contract.Failure{
@@ -145,13 +183,10 @@ func TestRateLimitRejectionIsRecorded(t *testing.T) {
 	}
 }
 
-// TestMutationResolverFailureIsRecorded covers the mutation path, which records
-// through its own loop.
+// TestMutationResolverFailureIsRecorded covers the mutation loop, which records
+// separately from the query loop.
 func TestMutationResolverFailureIsRecorded(t *testing.T) {
-	loaded, err := schema.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	loaded := execTestSchema(t)
 	reg := contract.NewRegistry()
 	reg.RegisterMutation(contract.Root{
 		Name:       "markAllNotificationsRead",
@@ -163,41 +198,31 @@ func TestMutationResolverFailureIsRecorded(t *testing.T) {
 	engine := New(loaded, reg, 8, 2000, nil)
 	recorder := &recordingErrorRecorder{}
 	engine.SetErrorRecorder(recorder.record)
-	plan := engine.PlanDocument(`mutation MarkRead { markAllNotificationsRead }`, nil, nil)
+	markReadOperation := "MarkRead"
+	plan := engine.PlanDocument(`mutation MarkRead { markAllNotificationsRead }`, &markReadOperation, nil)
 	if plan.Kind != KindExecute {
 		t.Fatalf("plan kind = %s, want execute", plan.Kind)
 	}
-	prepare := func(context.Context, string, string) (contract.Identity, error) {
-		return contract.Identity{UserID: "u", OrgID: "o", Permissions: map[string]bool{"notifications.write": true}}, nil
-	}
-	engine.Execute(context.Background(), plan, prepare, nil, false, 0, "v1", "trace-4")
+	engine.Execute(context.Background(), plan, identityWith("notifications.write"), nil, false, 0, "v1", "trace-4")
 	if len(recorder.failures) != 1 {
 		t.Fatalf("recorded %d failures, want 1", len(recorder.failures))
 	}
-	if got := recorder.failures[0]; got.StatusCode != http.StatusConflict || got.ErrorName != "ConflictException" {
+	got := recorder.failures[0]
+	if got.StatusCode != http.StatusConflict || got.ErrorName != "ConflictException" {
 		t.Fatalf("recorded %+v, want a 409 ConflictException", got)
+	}
+	if got.Operation != "markAllNotificationsRead" || got.OperationName != "MarkRead" {
+		t.Fatalf("operation/operationName = (%q, %q)", got.Operation, got.OperationName)
 	}
 }
 
 // TestProtocolRejectionsRecordNothing is the other half of the contract: a parse
-// error, a validation error and an ambiguous operation never reach a resolver, so
-// NestJS's filter never sees them and nothing is recorded.
+// error, a validation error and an ambiguous operation are answered before any resolver
+// exists, so NestJS's filter never sees them and nothing may be recorded.
 func TestProtocolRejectionsRecordNothing(t *testing.T) {
-	loaded, err := schema.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	reg := contract.NewRegistry()
-	reg.RegisterType("AlertChannelModel", alertChannel{})
-	reg.RegisterRoot(contract.Root{
-		Name:       "alertChannels",
-		Permission: "alerts.read",
-		Resolve:    func(contract.Context) (any, error) { return []alertChannel{}, nil },
+	engine, recorder := newEngine(t, "alerts.read", func(contract.Context) (any, error) {
+		return []nullableChannel{}, nil
 	})
-	engine := New(loaded, reg, 8, 2000, nil)
-	recorder := &recordingErrorRecorder{}
-	engine.SetErrorRecorder(recorder.record)
-
 	for _, document := range []string{
 		`{ alertChannels `,
 		`{ notARootField }`,
@@ -212,14 +237,11 @@ func TestProtocolRejectionsRecordNothing(t *testing.T) {
 	}
 }
 
-// TestUnregisteredFieldRecordsNothing proves a document the gateway forwards to
-// NestJS produces no Go event: NestJS answers it and its filter records any
-// failure, so a Go event here would be a duplicate of a legacy response.
+// TestUnregisteredFieldRecordsNothing proves a document the gateway hands to NestJS
+// produces no Go event: NestJS answers it and its own filter records any failure, so a
+// Go event here would duplicate a legacy response.
 func TestUnregisteredFieldRecordsNothing(t *testing.T) {
-	loaded, err := schema.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	loaded := execTestSchema(t)
 	engine := New(loaded, contract.NewRegistry(), 8, 2000, nil)
 	recorder := &recordingErrorRecorder{}
 	engine.SetErrorRecorder(recorder.record)
@@ -231,20 +253,20 @@ func TestUnregisteredFieldRecordsNothing(t *testing.T) {
 	}
 }
 
-// TestNilRecorderIsSafe proves the default (no Mongo, no recorder) path cannot
-// panic or change a response.
+// TestNilRecorderIsSafe proves the default (no Mongo, no recorder) path cannot panic or
+// change a response.
 func TestNilRecorderIsSafe(t *testing.T) {
-	engine, _ := newErrorTestEngine(t, "alerts.read",
-		func(contract.Context) (any, error) {
-			return nil, errors.New("boom")
-		})
+	engine, _ := newEngine(t, "alerts.read", func(contract.Context) (any, error) {
+		return nil, errors.New("boom")
+	})
 	engine.SetErrorRecorder(nil)
 	plan := engine.PlanDocument(`{ alertChannels { id } }`, nil, nil)
-	prepare := func(context.Context, string, string) (contract.Identity, error) {
-		return contract.Identity{UserID: "u", OrgID: "o", Permissions: map[string]bool{"alerts.read": true}}, nil
+	result := engine.Execute(context.Background(), plan, identityWith("alerts.read"), nil, false, 0, "v1", "trace")
+	// An untyped resolver error is masked exactly like the NestJS production filter.
+	if result.Status != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", result.Status)
 	}
-	result := engine.Execute(context.Background(), plan, prepare, nil, false, 0, "v1", "trace")
-	if result.Status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", result.Status)
+	if !strings.Contains(string(result.Body), "Internal server error") {
+		t.Fatalf("body = %s, want the masked message", result.Body)
 	}
 }

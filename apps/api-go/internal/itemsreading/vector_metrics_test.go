@@ -63,16 +63,18 @@ func TestVectorRecallRecordsTheFailureEvent(t *testing.T) {
 	}
 }
 
-// TestVectorHardFailRecordsBeforeSurfacingItsTypedError proves the hard-fail branch
-// is recorded as well: NestJS throws its ServiceUnavailableException inside the
-// loader, so it reaches the same recording catch.
+// TestVectorHardFailRecordsBeforeSurfacingItsTypedError proves the hard-fail outcome is
+// recorded as well.
+//
+// The reachable trigger for the typed error is an unavailable vector service while
+// ITEMS_VECTOR_HARD_FAIL_ENABLED is on; reaching it through RecallIDs needs a working
+// embedding call (a MySQL profile row), so this drives decodeCandidateResult — the exact
+// production decode step RecallIDs calls — with the typed error the loader produces.
+// NestJS throws its ServiceUnavailableException inside the loader and reaches the same
+// recording catch, so both sides count the sample before surfacing the 503.
 func TestVectorHardFailRecordsBeforeSurfacingItsTypedError(t *testing.T) {
-	recall := &vectorRecall{
-		embedder: llmembed.NewClient(nil),
-		hardFail: true,
-	}
 	before := vectorFailureCount(t)
-	_, err := recall.RecallIDs(context.Background(), "org-1", "a query long enough to run")
+	_, err := decodeCandidateResult(nil, &ItemVectorUnavailableError{Message: vectorUnavailableIndexMessage})
 	var unavailable *ItemVectorUnavailableError
 	if !errors.As(err, &unavailable) {
 		t.Fatalf("error = %v, want *ItemVectorUnavailableError", err)
