@@ -291,6 +291,14 @@
   - `internal/crawlmaintenance/ -run 'TestCrawlMaintenance'`（`ci.yml:482`）覆盖 LD-01。
 - 精确 head SHA 与各 job 结论见 PR 描述（CI 完成后回填）。
 
+### 8.1 整合批次验证（2026-10-27）
+
+原上列 CI 记录（源 PR head 上的普通 CI）保留为历史证据，**不构成整合 head 的验证**。本批由整合分支 `integration/go-review-b142-147-4` 把 #142–#147 六个 head 以普通 merge commit 合入后，统一推送一次并只以**整合 head** 的普通 CI 为准；该精确 head 与 `verify` / `vector-integration` / `api-go-user-settings-integration` 三个 job 的结论记录在整合 PR 描述中，`go-modules-regen` 与 `contract-baseline-regen` 为 label 门控跳过，不计为通过。
+
+整合后对本报告的相关复核：合入未改动 `crawl4ai`、`crawlexecution`、`crawlworker`、`crawlfrontier*`、`newssources` 的文件内容（六个 head 之间这些路径无交集），`ci.yml` 未改，第 8 节列出的既有步骤与 `-run` 过滤不变。因此本报告的测试覆盖主张在整合 head 上仍然成立，但**是否实际通过只能以整合 head 的 CI 为准**，本报告不作断言。
+
+本机在整合批次仍只做静态阅读、`git diff --check`、`gofmt -l`；未运行 `go build`/`go test`/`go vet`/`pnpm`/Docker。
+
 ## 9. 后续建议
 
 1. 专项批：EX-05（`tables` 规范化 1:1 移植）、WF-02（工作流列表批量查询 + MySQL 集成测试）、FN-03/NS-02（sitemap 诊断与快照回填，需跨包接口）、WQ-06（`userAgentGenerator`/geolocation payload）。

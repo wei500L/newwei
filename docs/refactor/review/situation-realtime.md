@@ -274,3 +274,20 @@
 - 明确未做的验证：未运行 `go build`/`go test`/`go vet`/`pnpm`/Docker/服务；未连接真实 Telegram、OREF、OpenSky、AIS relay、Nominatim、AkShare、LiteLLM、MySQL、Redis、Mongo；未验证多实例并发。所有正确性结论以普通 CI 的 `go test ./...` 与集成 job 为准。
 - 普通 CI（`pull_request`，head `3e2cc4c7f50d368c8f6bc9cbe7465e2e5d939a14`，[run 39821049746](https://github.com/wei500L/newwei/actions/runs/39821049746)）：`verify` success、`vector-integration` success、`api-go-user-settings-integration` success；`go-modules-regen` 与 `contract-baseline-regen` 为 label 门控的跳过（skipped，不计为通过）。首次运行 [run 39819032588](https://github.com/wei500L/newwei/actions/runs/39819032588) 在 `api-go-user-settings-integration` 的「situation monitor signals worker 集成测试」失败，原因是既有 `TestSituationSignalsWorkerOrefB3Integration` 断言失败轮询后 alerts 文档逐字节不变，而 W-01 会有意补写 `error`；已按新语义改为结构化比对（保留上次成功的 alerts/计数/时刻 + `error` 存在），该 job 随后通过。这只是 CI 门禁发现的测试断言与新语义不一致，不是产品行为回退。
 
+### 7.1 整合批次验证与实时链路复核（2026-10-27）
+
+上述 CI 记录（源 PR head `3e2cc4c7` 的 run 39821049746）保留为审查期历史证据，**不能替代整合 head 的验证**。整合分支 `integration/go-review-b142-147-4` 以普通 merge commit 合入 #142–#147 的六个核实 head 后统一推送，只以**整合 head** 的普通 CI 为准；精确 head、run 链接与逐 job 结论记录在整合 PR 描述中，`go-modules-regen` / `contract-baseline-regen` 为 skipped，不计为通过。
+
+**§6 第 10 条（事件桥与 namespace 必须同批）的整合复核**——本条与 #146 的实时传输改动直接相邻，逐环节核对如下：
+
+| 环节 | 生产侧 | 消费侧 | 开关 |
+|---|---|---|---|
+| 态势事件桥 | `situationsignalsworker/events.go` 的 `NewRedisEventPublisher` 发到 `situation-monitor:signals:events:v1`（`RealtimeEventsChannel`），信封 `{version:1,type,payload,timestamp}` | `realtimeevents/situation.go` 订阅同一频道（`DefaultBridgeChannel` 同值），只接受 `situation:telegram.update` / `situation:oref.update`，其余类型与畸形载荷丢弃 | 生产 `API_GO_SITUATION_SIGNALS_WORKER_MODE`、消费 `API_GO_REALTIME_SOCKET_MODE` |
+| 组织归属 | 桥消息本身**不带 `orgId`** | 由 `SituationAugmenter`（`internal/situationsignals.RealtimeAugmenter`）按用户/组织补充载荷后才推送 | — |
+| 错误缓存（W-01 修复） | `recordOrefError` 把失败写进 **Redis alerts 文档**的 `error` 字段，同时保留上次成功的 alerts/计数/时刻 | `situationsignals` 的 HTTP 读侧从同一文档读 `error` | 两侧同一 key，不依赖进程内存 |
+
+因此「订阅侧存在」确实不等于发布链完成：桥频道两端都要 `go`。**§6 第 10 条的判断成立**，整合未改变该结论。
+
+另有一处与 #142 相邻的降级语义核对：`realtimesignals/ais.go` 的 `aisRelayReasonCodes` 与 `aisrelay/types.go` 的 `ReasonCodes` 是同一组 6 个值（`ais_upstream_disconnected`、`_no_messages_after_connect`、`_stalled`、`ais_position_reports_not_retained`、`_mostly_ignored`、`ais_payload_parse_errors`），与 Nest 的 `realtime-signals-runtime.dto.ts` 白名单一致；调用方打 `/ais/snapshot`、relay 侧同名路由，鉴权都是可选 `Authorization: Bearer <shared secret>`，且两端在未配置 secret 时都放行。**默认仍指向 Node**（`REALTIME_SIGNALS_AIS_BASE_URL=http://ais-relay:3004`），Go relay 只在 `go-pilot` profile 下启动。
+
+本节只读源码；未运行 build/test/Docker，未连接 Telegram/OREF/AIS/Redis/MySQL/Mongo，未做双实例并发实测。

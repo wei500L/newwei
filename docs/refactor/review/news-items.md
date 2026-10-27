@@ -48,7 +48,7 @@ crawl 一侧；队列运维与组织计数（`queueops`、`queueorgstats`、Bull
 | DLQ 入队 `queue.processor.ts:323-351` | `dlq.go:24-189` | 同上 | 全文 | 一致 |
 | 立即投递 `news-pipeline-outbox.service.ts:198-235,325-352` | `processeditemoutbox/deliver_export.go:14-20` → `service.go:185-256` | 随 worker 开关 | 全文 | 一致，共用 CAS claim，无双投 |
 | 5 分钟补偿重放 `news-pipeline.service.ts:191-200` | `processeditemoutbox/scheduler.go:53-145` | `API_GO_PROCESSED_ITEM_OUTBOX_MODE` | 全文 | 一致；Go 额外加 Redis 租约 |
-| QueueEvents → GraphQL 订阅 / Socket.IO `queue-event.publisher.ts` | **未迁移（Nest 独占）** | 无开关 | 全文 | 无 Go 对照实现，见 §7 |
+| QueueEvents → GraphQL 订阅 / Socket.IO `queue-event.publisher.ts` | `graphqlsubscriptions/queue.go`（`QueueObserver`，单条 XREAD `bull:itemPipeline:events`）+ `graphqlsubscriptions/source.go`（`queueEvents` root）+ `realtimeevents/queues.go`（`/queue`、`/ops`、`/quality` 三个 namespace 的 `queue:event`/`ops:event`/`quality:event`）+ `queueorgstats`（org 级计数） | `API_GO_GRAPHQL_SUBSCRIPTIONS_MODE`、`API_GO_REALTIME_SOCKET_MODE`、`API_GO_QUEUE_ORG_STATS_MODE` | 整合后全文 | **本条原结论「未迁移（Nest 独占）」已过期，见 §7.1 更正**；四段链路（root 注册 / 事件源 / Socket.IO 广播 / org 计数）分别有 Go 实现，但分属三个不同开关 |
 | pipeline replay / rollback `pipeline-recovery.service.ts:132-249` | `pipelinerecovery/writes.go:250-310`（范围外，仅核入队参数） | `API_GO_PIPELINE_RECOVERY_WRITE_MODE` | 重点 | 入队侧一致 |
 
 ### 2.2 新闻事件聚类、时间线与迁移任务
@@ -104,7 +104,7 @@ crawl 一侧；队列运维与组织计数（`queueops`、`queueorgstats`、Bull
 | `news-source-ops.controller.ts:18-44` + `news-source-dispatch.controller.ts:16-24`（4 条 POST） | `newssourcescheduler/handler.go:44-96`、`ops.go:30-343` | `API_GO_NEWS_SOURCE_OPS_MODE` | 全文 | 一致（含 404/409/201、去重 201） |
 | `@Cron("*/30 * * * * *")` `news-source.scheduler.service.ts:266-299` | `newssourcescheduler/scheduler.go:129-148` | `API_GO_NEWS_SOURCE_SCHEDULER_MODE` | 重点 | 锁 key/TTL/续租一致（疑点被推翻，§4.4） |
 | **`onModuleInit` → RSS seed TTL 一次性迁移** `:244-246,3471-3645` | **新增** `newssourcescheduler/rsseedttl.go`（挂 `scheduler.go:35-68`） | `API_GO_NEWS_SOURCE_SCHEDULER_MODE` | 全文 | **W5-01 已修**（原先完全缺失） |
-| `newsnow-source-warm` / `newsnow-hottest-analysis` / `newsnow-recommended` / `newsnow-domestic-opinion-index` | 仍全在 Nest | — | 抽样 | 未迁，删 Nest 前须处理（§7） |
+| `newsnow-source-warm` / `newsnow-hottest-analysis` | `newsnowhottest/scheduler.go`（hottest，10 分钟，tick gate + 组织锁）、`newsnowhottest/scheduler.go` 的 `WarmScheduler`（source-warm，1 分钟，`lock:cron:newsnow-source-warm`），由 `cmd/api/newsnow_hottest.go` 装配 | `API_GO_NEWSNOW_BACKGROUND_MODE`（默认 legacy） | 接线全文 | **本条原结论「仍全在 Nest」已过期，见 §7.1 更正**。Nest 侧确实只有这**两个** `@Cron`；`newsnow-recommended` 与 `newsnow-domestic-opinion-index` 是**读服务而非独立调度器**（`getRecommendedFeed` 由 controller 调用；`persistSnapshots` 由 hottest 分析在 `:1178` 调用），原文「四个调度器」计数有误 |
 | `news-indicator.controller.ts`（3 条） | `newsindicator/handler.go:44-84` | `API_GO_NEWS_INDICATORS_MODE` | 全文 | 一致 |
 | `news-indicator.resolver.ts`（2 query + refresh mutation） | `graphqlread/newsindicators/*`、`newsindicator/*` | 同上 + `API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE` | 重点（数学全文） | 数学逐段等价（§4.5）；W5-04 |
 | `@Cron("0 */6 * * *")` `news-indicator-association.ingestion.service.ts:35-128` | `newsbackfilljobs/association_scheduler.go:17-233`（只读） | `API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE` | 全文 | 一致 |
@@ -441,13 +441,77 @@ W6 的摘要投递测试补入 `994dc9e3`：`TestRunTickSecondInstanceSkipsScanA
 
 ### 7.1 仍只有 Nest 实现、删除后会直接缺失的能力
 
+> **2026-10-27 整合复核更正**：本表原 5 条中第 1、2（部分）、3、4、5 条的「Nest 独占」判断**在 `dc48abc1` 基线即不成立**，已在 §7.6 逐条更正。保留下表原文作为审查期快照，但**不得**再据其作为缺失证据。当前真实状态见 §7.6。
+
 | # | 能力 | 证据 | 后果 |
 |---|---|---|---|
-| 1 | **队列事件实时链路**：`queue-event.publisher.ts` + `queue.gateway.ts` + `dashboard.resolver.ts` + `queue-org-stats.tracker.ts` | Nest 独占，无 Go 对照实现 | 删 Nest 会一并失去 `queueEvents` GraphQL 订阅、Socket.IO 广播与 org 级队列计数追踪 —— **即使 `API_GO_ITEM_PIPELINE_WORKER_MODE=go` 也一样** |
-| 2 | **`QueueService.stats` 与 Bull Board 管理面板** | `queue.service.ts:224-257` | dashboard 队列面板无数据源 |
-| 3 | **`itemPipelineDlq` 无消费者** | Go 只生产 DLQ（`itempipeline/dlq.go`），重放入口 `pipelineenqueue.EnqueueReplay` 无 Nest 对照 | 失败作业只进不出，积压无上限保护 |
-| 4 | **四个 newsnow 调度器**：`newsnow-source-warm`（每分钟预热，`lock:cron:newsnow-source-warm`）、`newsnow-hottest-analysis`、`newsnow-recommended`、`newsnow-domestic-opinion-index` | 文档明示仍留在 Nest | 删 Nest 后来源预热与热点/推荐/舆情指数停摆 |
-| 5 | **`news-event-brief` 的 GraphQL root**（`API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE`）等一批 root | Go 侧未就位 | 删除后 404 |
+| 1 | ~~**队列事件实时链路**：`queue-event.publisher.ts` + `queue.gateway.ts` + `dashboard.resolver.ts` + `queue-org-stats.tracker.ts`~~ | ~~Nest 独占，无 Go 对照实现~~ | ~~删 Nest 会一并失去 `queueEvents`…~~ → **有 Go 实现，见 §7.6.1** |
+| 2 | **`QueueService.stats` 与 Bull Board 管理面板** | `queue.service.ts:224-257` | **部分更正**：Bull Board 面板本身未移植（仍代理回 Nest），但队列计数与 DLQ 处置已有 Go 替代入口（`API_GO_QUEUE_OPS_MODE` 的 `/api/admin/queue-ops` + Web 页 `/admin/ops/queue-ops`）。见 §7.6.2 |
+| 3 | ~~**`itemPipelineDlq` 无消费者**~~ | ~~Go 只生产 DLQ~~ | **更正**：Go 的 `queueops/dlq.go` 提供 DLQ 的检查 / replay / delete 三条运维路径（`POST /api/admin/queue-ops/dlq/replay|delete`），replay 走官方 `Job.retry` 脚本并带 `replay-<dlqJobId>` 去重。DLQ **仍无自动消费者**（这是设计：死信需人工处置），但不是「只进不出」 |
+| 4 | ~~**四个 newsnow 调度器**~~ | ~~文档明示仍留在 Nest~~ | **更正**：Nest 只有**两个** `@Cron`（source-warm 每分钟、hottest-analysis 每 10 分钟），Go 均已实现，由 `API_GO_NEWSNOW_BACKGROUND_MODE` 控制。另两个名字是读服务不是调度器。见 §7.6.3 |
+| 5 | ~~**`news-event-brief` 的 GraphQL root**~~ | ~~Go 侧未就位~~ | **更正**：`graphqlread/newsevents/brief.go` 已实现完整冷生成/写回，`API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE` 默认 `legacy` 是**未启用**而非未实现。见 §7.6.4 |
+
+### 7.6 整合复核更正（2026-10-27）
+
+> 本节只更正「当前事实」表述。原 §7.1 的核查时点仍是 `dc48abc1`，但**同一基线**的源码已包含这些实现，因此这些条目属于报告错误而非基线变化。核对基线：整合分支 `integration/go-review-b142-147-4` 在合入 #142–#147 之后的 head。
+
+#### 7.6.1 `queueEvents` 四段链路：分别核对，不能互相代替
+
+任务要求把「GraphQL root 注册」「实际事件源」「Socket.IO 广播」「组织计数」四件事分开核对。逐项结论：
+
+| 环节 | Go 实现 | 开关（默认） | 核实要点 |
+|---|---|---|---|
+| GraphQL `queueEvents` root 注册 | `graphqlsubscriptions/source.go` 的 `subscriptionRoots` 含 `{name:"queueEvents", permission:"queue.manage"}`；`compositeSource.Subscribe` 路由到 `QueueObserver` 而非 Redis bus | `API_GO_GRAPHQL_SUBSCRIPTIONS_MODE`（legacy） | 权限是 `queue.manage`；`queueEvents` **不走** `gqlsub:*` Redis 频道，因为 Nest 的 `queue-event.publisher.ts` 明确说明「republishing would deliver each job once per instance」 |
+| 实际事件源 | `graphqlsubscriptions/queue.go` 的 `QueueObserver`：单条 XREAD `bull:itemPipeline:events`（`$` 起始、`block=1s`、`count=100`），只读 stream + job hash + `queue:pipeline:jobctx:<jobId>` 缓存，**无 XREADGROUP / ACK / mutate** | 同上 | 与 Nest 的 `QueueEvents` 读同一 stream，不是竞争消费者；`reviewSeed` 复用同一 XREAD 循环（`observer_accessor.go`、`nest_residual_duties.go` 的 `shared reader`），避免开第二条循环 |
+| Socket.IO 广播 | `realtimeevents/queues.go` 的 `handleQueueEntry` → `sink.PublishOrg(NamespaceQueue, orgID, "queue:event", …)`，另有 `/ops` 的 `ops:event`、`/quality` 的 `quality:event` | `API_GO_REALTIME_SOCKET_MODE`（legacy） | 需要 `orgId` 解析成功才推送（`orgResolvers`），解析不到即静默跳过（与 Nest 的 debug log 同语义） |
+| 组织级队列计数 | `queueorgstats` 的 `Tracker`（单 owner Redis 租约 + XREAD `bull:itemPipeline:events` + 与 Nest 逐字节相同的三段 Lua） | `API_GO_QUEUE_ORG_STATS_MODE`（legacy） | `cmd/api/queue_org_stats.go` 的 `wireQueueOrgStats` 需要**两条**连接（共享命令客户端 + 独立阻塞连接），`main.go` 在非 nil 时 `Start`、共享 Redis 关闭前 `Close` |
+
+**结论**：四段都有 Go 实现，但**默认全部 legacy**，且分属三个开关。因此「订阅侧存在」不等于「发布链已完成」——发布侧是 BullMQ 自身写 `bull:itemPipeline:events`（`itempipeline` worker 或 Nest worker 都会写），消费侧才是 Go 的 XREAD。**删 Nest 前必须同时**：`API_GO_ITEM_PIPELINE_WORKER_MODE=go`（保证 stream 仍有写入者）、`API_GO_GRAPHQL_SUBSCRIPTIONS_MODE=go`（订阅）、`API_GO_REALTIME_SOCKET_MODE=go`（Socket.IO）、`API_GO_QUEUE_ORG_STATS_MODE=go`（计数）。任一保持 legacy 都会有一个环节仍由 Nest 承担。
+
+未验证项：Go 的 `queueEvents` 与 Nest 在**同一时刻**对同一 job 的载荷是否逐字节一致，本批只做了源码对照（`buildQueueEventPayload` vs `QueueEventPayload`），没有双端并发实测。
+
+#### 7.6.2 Bull Board：面板未移植 ≠ 能力未交付
+
+Bull Board `/admin/queues` 本身仍由 Nest 提供（代理回 Nest），这一点不变。但**替代能力已经交付且是用户既定选择**：
+
+- Go 队列运维接口：`/api/admin/queue-ops` 的 12 条路由（queues / jobs / jobs/detail / retry / delete / promote / retry-failed / clean / pause / resume / dlq/replay / dlq/delete），`API_GO_QUEUE_OPS_MODE`（默认 legacy）。
+- Web 页面：`apps/web/app/(app)/admin/ops/queue-ops/`（含 DLQ 面板、job 详情模态、队列面板），客户端协议在 `apps/web/lib/queue-ops.ts`。
+- 权限差异（有意，且是收紧）：Bull Board 只校验组织级 `queue.manage`，导致任一组织管理员可读所有租户的 job 数据；Go 控制台要求 `queue.manage` **且**平台管理员（`internal/queueops/doc.go` 记录该审计发现 B1）。
+- 明确不移植的部分：crawl4ai 三队列的 pause/resume 在 Go 控制台返回 409 并指向 `/api/admin/crawl4ai/queue/pause|resume`，因为原生 BullMQ 暂停会绕过自适应并发状态机与 C2 广播。
+
+**因此不应再要求用户在「Bull Board」与「Go 控制台」之间作选择**：选择已定（Go 接口 + Web 页面）。Swagger 同理已选静态 OpenAPI（`internal/apidocs` 用 `go:embed openapi.snapshot.json`，并有逐字节比对测试 `assets_test.go`）。剩余事项只是把 `API_GO_QUEUE_OPS_MODE` 置 `go` 并让访问者切到新页面。
+
+#### 7.6.3 NewsNow 调度器：只有两个，且都有 Go 实现
+
+`apps/api/src/modules/news-aggregator/` 下只有两个带 `@Cron` 的类：
+
+| Nest 类 | 周期 | Go 实现 | 开关 |
+|---|---|---|---|
+| `newsnow-source-warm.scheduler.service.ts` | `EVERY_MINUTE` | `newsnowhottest.WarmScheduler`（`lock:cron:newsnow-source-warm`，55s TTL） | `API_GO_NEWSNOW_BACKGROUND_MODE` |
+| `newsnow-hottest-analysis.scheduler.service.ts` | `EVERY_10_MINUTES` | `newsnowhottest.Scheduler`（`cron:newsnow-hottest-analysis:tick-gate` + `lock:cron:newsnow-hottest-analysis:org:<id>`，8 分钟） | 同上 |
+
+`newsnow-recommended.service.ts` 与 `newsnow-domestic-opinion-index.service.ts` **没有 `@Cron`/`@Interval`**：前者由 `news-aggregator.controller.ts` 的请求路径调用 `getRecommendedFeed`，后者由 hottest 分析在 `newsnow-hottest-analysis.service.ts:1178` 调用 `persistSnapshots`。所以原文「四个调度器仍留 Nest」既高估了调度器数量，也误判了实现状态。Go 侧 `newsnowhottest/recommended.go` 与 `domestic.go` 对应这两个服务，`Start(cfg)` 只在 `NewsnowBackgroundMode==go` 时启动两个调度器，`Close` 逆序停止。
+
+#### 7.6.4 `newsEventBrief`：已实现，默认未启用
+
+- Go：`graphqlread/newsevents/brief.go` 的 `newsEventBrief` 做选源 → 缓存指纹比对 → （miss 或 `forceRefresh`）调用模型 → 校验清洗 → `JSON_SET(metadata, '$.briefV1', …)` 写回（带 `id + orgId` 条件，写回失败只记日志仍返回已生成内容）；模型配置复用 `llm_gateway_profiles` 与 `litellm_proxy_governance`，日志 best effort 写 `llmrequestlogs`。
+- 开关：`API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE`，默认 `legacy`。`go` 需要 `API_GO_GRAPHQL_READ_MODE=go` **且** `API_GO_GRAPHQL_NEWS_EVENTS_MODE=go`，否则启动失败（不静默打开父开关）。`legacy` 时只登记其余五个新闻事件 root，含 `newsEventBrief` 的文档**整包**回 Nest。
+- `migration-map/GAPS.md` 的 GAP-NEWS-001 已在 `dcbe563b` 标注「已关闭」，原文引用旧地图作缺失证据属过期引用。
+
+#### 7.6.5 队列计数、DLQ 运维、NewsNow 后台、`newsEventBrief`：四条原文「未迁」的现行结论
+
+| 原文「未迁」项 | 现行状态 | 证据 | 与「完整可用」的差距 |
+|---|---|---|---|
+| 队列计数 | Go 已实现 | `queueorgstats.Tracker` + `wireQueueOrgStats` + `main.go` Start/Close；集成测试 `TestQueueOrgStatsIntegration`（单 owner 租约 + Nest Lua 逐字节） | 默认 legacy；未在真实多实例下验证租约切换时延 |
+| DLQ 运维 | Go 已实现 | `queueops/dlq.go`（inspect/replay/delete）、`queueops/handler_test.go`、`dlq_test.go`；Web `queue-ops-dlq-panel.tsx` | 默认 legacy；DLQ 无自动消费者（设计如此，需人工处置） |
+| NewsNow 后台 | Go 已实现（两个 Cron） | `cmd/api/newsnow_hottest.go` 的 `newNewsnowHottestUnit`/`Start`/`Close`；`newsnowhottest/scheduler.go` | 默认 legacy（`API_GO_NEWSNOW_BACKGROUND_MODE`）；未接真实模型/真实源 |
+| `newsEventBrief` | Go 已实现 | `graphqlread/newsevents/brief.go`、`register.go`、`publicportal.NewBriefCompleter` 注入 | 默认 legacy；**真实模型调用未验证** |
+
+**统一结论**：这四项不是「未迁」，而是「已实现但默认未启用」。把它们继续当作缺失证据会误导下一批的任务分配。
+
+#### 7.6.6 本节限制
+
+只读源码 + `grep`/`git show`；未运行 `go build`/`go test`/`pnpm`/Docker，未连接 Redis/MySQL/Mongo，未做双端并发实测。上述「已实现」= 代码与接线存在且可静态追踪，**不等于**已在真实环境验证。
 
 ### 7.2 开关与执行所有权（源码默认 ≠ 部署值）
 
@@ -477,10 +541,12 @@ W6 的摘要投递测试补入 `994dc9e3`：`TestRunTickSecondInstanceSkipsScanA
 
 ### 7.5 只有 Nest 才写的数据
 
-1. **`newsEventSourcePolicySyncStatus` 与来源策略读写**（未审查）。
-2. **`queueEvents` / org 级队列计数追踪**（§7.1 第 1 项）。
-3. **newsnow 四调度器写出的热点/推荐/舆情指数快照**（§7.1 第 4 项）。
-4. **Nest 侧 `news-event-brief.service.ts` 的整列 metadata 写**：W6-01 修复后 Go 只写叶子，但混合版本期 Nest 仍会整列覆盖。**必须在切流完成后才彻底消除。**
+> **2026-10-27 整合复核更正**：原第 2、3 项的 Go 侧写入已存在（见 §7.6）。第 1、4 项仍然成立。
+
+1. **`newsEventSourcePolicySyncStatus` 与来源策略读写**（未审查）。**仍成立**：本批未核对来源策略同步状态的两端写入者。
+2. ~~**`queueEvents` / org 级队列计数追踪**（§7.1 第 1 项）~~ → **更正**：Go 的 `queueorgstats` 已写组织级计数（`API_GO_QUEUE_ORG_STATS_MODE`），`queueEvents` 本身是**读侧**派生（读 `bull:itemPipeline:events`），不是独立数据写入。
+3. ~~**newsnow 四调度器写出的热点/推荐/舆情指数快照**（§7.1 第 4 项）~~ → **更正**：Go 的 `newsnowhottest` 写热点分析结果、舆情指数快照（`domestic.go` 的 `INSERT INTO NewsnowDomesticOpinionIndexSnapshot`）并由 `service.go` 的 `Start(cfg)` 驱动；「推荐」是读路径，不写快照。开关 `API_GO_NEWSNOW_BACKGROUND_MODE`。
+4. **Nest 侧 `news-event-brief.service.ts` 的整列 metadata 写**：W6-01 修复后 Go 只写叶子，但混合版本期 Nest 仍会整列覆盖。**必须在切流完成后才彻底消除**。**仍成立**。
 
 ## 8. 改动文件清单
 
@@ -504,3 +570,11 @@ W6 的摘要投递测试补入 `994dc9e3`：`TestRunTickSecondInstanceSkipsScanA
 - 本次新增单测均无 build tag，在 `verify` 的 `go test ./...` 中实际执行。
 - W3-02 的并发断言在集成 job step 35 的真实 MySQL 上执行并通过（详见 §5.4）。
 - **仍未验证、因此不声称通过**：W5-01 迁移的端到端实栈行为、W6-01/W4-01/W2-01/W2-02 的真实 ES/Mongo/LiteLLM 行为、W2-04 的真实 ES bulk 失败文本、任何生产流量与 `API_GO_*` 的实际部署取值。
+
+### 9.1 整合批次验证（2026-10-27）
+
+上述 CI 记录（源 PR head `1fd508a2` 的 run 39819290763）保留为审查期历史证据，**不能替代整合 head 的验证**。本批由 `integration/go-review-b142-147-4` 以普通 merge commit 合入 #142–#147 的六个核实 head，统一推送后以**整合 head** 的普通 CI 为唯一通过依据；精确 head、run 链接与逐 job 结论记录在整合 PR 描述中。`go-modules-regen` / `contract-baseline-regen` 仍为 skipped（label 门控），不计为通过。
+
+整合对本章的影响：六个 head 之间在本报告的源码路径上无交集，`ci.yml` 未改；合入 #145（`authn`/`authhttp`）与 #146（`graphqlread/exec`、`graphqlread/itemsingest`）后复核了与 §7.3 相关的两处跨批行为（`bearer` scheme 大小写、`ingestCrawlTaskResultsToItems` 的参数解析），未发现本报告已修项被回退。**是否实际通过以整合 head 的 CI 为准。**
+
+本机在整合批次仍只做静态阅读、`git diff --check`、`gofmt -l`；未运行 build/test/Docker，未连接外部依赖。

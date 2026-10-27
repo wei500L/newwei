@@ -559,3 +559,21 @@
   `api-go-user-settings-integration` job 中既有的 `./internal/alertworker/ -run 'TestAlertWorkerIntegration'`
   覆盖 R3-01 的新增子测试）。**本批未新增 workflow，未修改 CI 步骤**。
 - CI 结论、精确 head SHA 与 run 链接见 PR 描述；skipped 不算通过。
+
+### 8.1 整合批次验证与跨模块复核（2026-10-27）
+
+本节保留原验证记录（源 PR head）作为历史证据，**不能替代整合 head 的验证**。整合分支 `integration/go-review-b142-147-4` 以普通 merge commit 合入 #142–#147 的六个核实 head 后统一推送一次，只以**整合 head** 的普通 CI 为准；精确 head、run 链接与逐 job 结论记录在整合 PR 描述中。`go-modules-regen` / `contract-baseline-regen` 为 skipped（label 门控），不计为通过。
+
+**合入后本窗口 `cmd/api/main.go` 的唯一改动**（来自 #146 的 R1-02）复核：`graphqlLimiter` 现在带 `.WithSettingsReader(policy.NewMySQLSettingsReader(sharedDB))`。该行在 `redisClient != nil` 分支内，`NewMySQLSettingsReader(nil)` 是安全的（`LoginBucket` 对 nil `db` 返回「无配置值」，`BudgetFor` 因此回落环境默认），所以 `sharedDB == nil`（纯代理启动）不会 panic，也不会因缺库改行为。`BudgetFor` 的解析顺序是 Redis 文档 → MySQL `rate_limit_login` 行 → 环境默认，与 Nest 的 `rate-limit-config.service.ts` 同序；失败一律报 miss，不 fail-open 放宽。
+
+**其余与 #146 相邻的接线复核**：
+
+| 检查点 | 结论 |
+|---|---|
+| `queueEvents` 订阅是否被整合破坏 | 未破坏。`subscriptions.Options.Queue` 仍可为 nil，`New` 会自建 `NewRedisQueueObserver(redisOptions, redis)`；`compositeSource` 仍把 `alertEvents`/`analysisEvents`/`assistantEvents` 走 Redis bus、`queueEvents` 走 observer |
+| 同一进程是否出现两条 XREAD 循环 | 未出现。#146 引入的 `observer_accessor.go` 让 `classificationreviewseed` 复用 runtime 的 observer（`nest_residual_duties.go` 的 `shared reader` 分支），只有 runtime 未启用时才自建并自持 |
+| SSE 取消生命周期 | #146 的 R2-01 把 `dashboardstream` 的写超时/取消改为 `context.WithCancel` + `http.NewResponseController` 的写 deadline，`defer sink.clearDeadline()` 保证终止块可写；未与 #143 的任何文件重叠 |
+| 订阅总线重连 | `bus.go` 新增 `pubSubConnection` 接口、`subscribed` 状态与 `subLock`，SUBSCRIBE/UNSUBSCRIBE 各带 5s/2s 超时；#143 未触及该包 |
+| 告警投递 CAS（R3-01/R5 系列） | #143 未触及 `alertworker`；两批无文件重叠 |
+
+本节只读源码，未运行 build/vet/test/pnpm/Docker，未连接 Redis/MySQL/Mongo，未做浏览器连接实测。

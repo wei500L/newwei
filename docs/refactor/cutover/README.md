@@ -115,6 +115,10 @@ docker compose \
 | 阶段定义 | BRIEF 的阶段 0–6（runbook §0.3/§3） |
 | 本批执行范围 | 文档、样例与 T2 测试；未运行 go build/test、pnpm、docker、任何服务（Go 测试由 CI 执行） |
 
+> **2026-10-27 整合复核状态（`integration/go-review-b142-147-4`，合入 #142–#147 后）**：本目录的阶段划分、`137` 个开关计数与「默认全部 legacy」的结论**未变化**——整合批次没有新增或删除任何 `API_GO_*` 开关（`config.go` 的 `getenv("API_GO_*")` 去重前后都是 137），也没有改 `infra/docker/api-go-cutover.env.sample`、`docker-compose.api-go-cutover.sample.yml`、`docker-compose.yml` 的任何默认值或 profile。本目录其余内容仍是 `dcbe563b` 基线上的交付，未在本批重新验证。
+>
+> 与本目录相关、本批已更正的过期事实只涉及**报告**而非开关矩阵：`docs/refactor/review/identity-core.md` §6 原称 5 条 HTTP「仍由 Nest 独占」（实际 C-1…C-5 都已关闭，缺的只是默认未启用）与「审计 outbox 的消费方仍在 Nest」（实际 `wireAuditOutbox` 已接线）已在该报告 §8 更正；`news-items.md` §7.1 原列的四项「未迁」已在同报告 §7.6 逐条更正（含「Bull Board 面板未移植 ≠ 未交付替代能力」）。上述更正对应的开关在本文件 §3 与 `switch-matrix.md` 里的默认值表述本来就是正确的，因此不改。
+
 ## 6. 维护方式
 
 1. **新增开关时同步三处：** `switch-matrix.md`（逐开关矩阵）、`api-go-cutover.env.sample`（值 + 阶段注释）、`docker-compose.api-go-cutover.sample.yml`（若该开关在 compose 里不是 `${VAR}` 插值，必须加入 59 个重新声明列表；否则 env 不生效）。

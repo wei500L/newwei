@@ -239,9 +239,9 @@ Go 侧范围：`internal/{authn,authz,authhttp,cors,httpx,config,legacyproxy,sha
 5. **`cookieParser()` 没有 Go 对应**。Nest 在入口装 `cookie-parser@^1.4.6`；Go 侧 `grep -rn "r.Cookie(" apps/api-go` 零命中，即没有任何 Go handler 读取 cookie。因此切流本身不会丢失 Go 已实现的能力，但必须确认**没有残留的 Nest 路由依赖 `req.cookies`**（OIDC state、refresh 若依赖 cookie 则切流后会失效）。
 6. **`@PermissionsAll`（all 模式）在执行器层没有表示**。Go 的 `graphqlread/contract.Root` 只有 `Permission`（单个）与 `AnyPermissions`（any）与 `AllowAuthenticated`，all 语义完全靠各域在 resolver 内联 `requireAll`。新增 GraphQL 写字段时若忘记内联，就会**静默降级为「仅认证」**（本批已确认现有 3 个字段都逐一内联，见 4.1 第 8 条）。删除 Nest 前建议把 all 模式提升为 `contract.Root` 的一等字段。
 7. **`itemsingest` 的 1MB 请求体上限**（§5.2 第 1 条）与 Nest 的 10mb 不一致；停 Nest 前若该路由的大请求只走 Nest，切流后会开始 413。
-8. **仍由 Nest 独占的 5 条 HTTP**（`ownership-audit.md` §2 C 类）：`GET /api/healthz/live` 在规则上固定 shadow、`POST /api/admin/crawl-frontier/runs`、`POST /api/admin/crawl-frontier/nodes/retry`、`POST /api/admin/crawl-frontier/nodes/:id/retry`、`GET /api/system-settings/vector-service/diagnostics`。本批核对了前者的 Go 实现与契约（GW-02 已修）；后四条不在本窗口。
+8. ~~**仍由 Nest 独占的 5 条 HTTP**（`ownership-audit.md` §2 C 类）~~ → **本条已在 2026-10-27 整合复核中更正，见 §8.1。这 5 条都有 Go handler 与开关，缺的只是「默认未启用」。**原文写于 `dc48abc1` 基线，与本文件同一基线；`ownership-audit.md` 页首与 §2.1 当时已记「C-1…C-5 全部关闭」，本行未同步，属本报告的表述错误，不是代码缺口。
 9. **`API_GO_IDENTITY_ONBOARDING_MODE` 没有 shadow 状态**：这意味着这 14 条路由当前只有「Nest 全权」或「Go 全权」两种状态，没有安全差分窗口。切流前应补齐 `API_GO_IDENTITY_ONBOARDING_MODE=go` 的集成验证，而不是依赖 shadow 观察。
-10. **审计 outbox 的消费方仍在 Nest**（`ownership-audit.md` 的 GAP-ASYNC-001 范围内）。Go 只是 producer；停 Nest 前必须确认 `API_GO_AUDIT_OUTBOX_MODE=go` 且 Go 侧消费者已接管。
+10. ~~**审计 outbox 的消费方仍在 Nest**~~ → **本条已在 2026-10-27 整合复核中更正，见 §8.2。**Go 侧 `cmd/api/audit_outbox.go` 的 `wireAuditOutbox` 已在 `cmd/api/main.go` 接线并有消费者实现；原文「Go 只是 producer」与同基线源码矛盾。
 11. **兜底代理与 `LEGACY_API_URL`**：`API_GO_LEGACY_FALLBACK_MODE=reject` 才是不触达 Nest 的形态，其启动校验已要求全部 `*Mode=go`（4.4 第 24 条）。停 Nest 前必须切到 `reject`，否则反向代理目标会变成 502（`legacyproxy` 的 `ErrorHandler` 会写 502）。
 12. **组织级平台设置写权限（SET-01）**：两侧一致地允许任一组织管理员修改全平台设置。这不是切流阻塞，但是在「Nest 删掉、只有 Go」之后仍然存在的授权面；建议在停 Nest 前决定是否收紧并同期改 Web 导航。
 
@@ -266,3 +266,54 @@ Go 侧范围：`internal/{authn,authz,authhttp,cors,httpx,config,legacyproxy,sha
 | `fa5f89db` | GW-01 的测试断言 `traceId` 非空，暴露出 `authhttp.writeError` 只取 context 值、没有 Nest `getCurrentTraceId() ?? ensureTraceId()` 的兜底（同仓 `nestnotfound.Write` 有）。在 TraceMiddleware 之外写出错误时 `traceId` 会是空串 | 本批暴露的契约差异（生产路径不可达，因为根 handler 总经过 TraceMiddleware） |
 
 这次失败也说明：**静态审查无法替代编译与测试**。本批 25 处修复中，只有这 2 处是 CI 能立刻抓到的类型/断言问题，其余全部依赖「按既有惯例逐字模仿」才没有引入编译错误。
+
+## 8. 整合复核更正（2026-10-27）
+
+> **本节性质**：§1–§7 是 `dc48abc1` 基线上的原审查交付，保留原核查基线、审查深度与历史证据。本节只更正**已核实为错误或已过期**的「当前事实」表述，并补做整合后的接线核对；它不是对全文的重新审查，也不能据此认为其余条目已被重新验证。核对基线为整合分支 `integration/go-review-b142-147-4` 在合入 #142–#147 之后的 head。
+>
+> 更正原因：§6 的两条结论与**同一基线**的源码矛盾。§3/§4 的发现本身不受影响（它们是「Go 与 Nest 的行为差异」判断，与是否接线无关），因此本节不重述这些条目。
+
+### 8.1 §6 第 8 条：五条 HTTP 并非 Nest 独占（现行结论：Go 已实现、默认未启用）
+
+原文把 `GET /api/healthz/live`、三条 crawl-frontier 写入口、vector diagnostics 列为「仍由 Nest 独占」。**该结论错误**：这五条在当前基线都有 Go handler、`legacyproxy` 精确规则与独立开关，`ownership-audit.md` 在同一基线已标 C-1…C-5 全部关闭（该文件页首「计数更新」段与 §2.1）。缺的只是**默认值仍不指向 Go**，不是实现缺失。
+
+| 路由 | Go handler | 规则注册 | 开关与源码默认 | 启用条件 |
+|---|---|---|---|---|
+| `GET /api/healthz/live` | `internal/health.LiveHandler`（`cmd/api/main.go` 的 `RegisterGoHandler("/api/healthz/live", …)`） | `legacyproxy.WithHealthzLive`（`legacyproxy/healthz_live_routes.go`，exact GET） | `API_GO_HEALTHZ_LIVE_MODE`，默认 **`shadow`**（`config.go` 的 `switch`，空串与 `shadow` 同支） | `=go` 由 Go 响应；`shadow` 保持 Nest 响应的差分观察；`legacy` 纯代理 |
+| `POST /api/admin/crawl-frontier/runs` | `internal/crawlfrontierruns` 的 `handler_write.go`（创建 run 复用 `crawlfrontierllm.CreateFrontierRunFromProfile`） | `legacyproxy.WithCrawlFrontierWrites`（`crawl_frontier_writes_routes.go`，exact POST） | `API_GO_CRAWL_FRONTIER_WRITES_MODE`，默认 `legacy` | `=go` **且** `API_GO_CRAWL_FRONTIER_RUNS_MODE=go`（否则启动失败，不静默打开父开关） |
+| `POST /api/admin/crawl-frontier/nodes/retry` | 同上 `handler_write.go` | 同上 exact POST | 同上 | 同上 |
+| `POST /api/admin/crawl-frontier/nodes/:id/retry` | 同上（动态段） | 同上 one-segment POST | 同上 | 同上 |
+| `GET /api/system-settings/vector-service/diagnostics` | `internal/infrastructuresettings` 的 `vector_diagnostics.go`（进程级共享 `vectorclient.Health`，输出同 17 字段） | `legacyproxy.WithVectorDiagnostics`（`vector_diagnostics_routes.go`） | `API_GO_VECTOR_DIAGNOSTICS_MODE`，默认 `legacy` | `=go` 由 Go 报**本进程**状态；多实例之间数字可能不同（与 Nest 的进程内语义一致） |
+
+四条权限与语义复核（只读源码）：三条 crawl-frontier 写入口沿用 `crawl.write`，`WithCrawlFrontierRuns` 的读规则与写规则分属两个开关，写开关打开不会连带读规则；vector diagnostics 需要已认证身份 + 平台管理员门（`wireVectorDiagnostics` 的 `db`/`redis`/`authenticator` 三个依赖缺一即启动失败），不是匿名入口。
+
+**因此正确的「删 Nest 前」表述是**：这五条**不需要迁移**，只需在部署时把四个开关置 `go`（`API_GO_HEALTHZ_LIVE_MODE` 还多一个 `shadow`→`go` 的过渡步）。
+
+> 与 §2 入口清单的一致性：§2 该行的「开关（默认）」列已写 `legacy`/`shadow`，与本节一致；§6 第 8 条的「仍由 Nest 独占」是同一报告内的孤立表述，已按本节更正。
+
+### 8.2 §6 第 10 条：审计 outbox 的 Go 消费者已实现并接线
+
+原文写「Go 只是 producer」。**该结论错误**，同基线即不成立：
+
+- 消费者：`internal/auditoutbox` 有完整 `Scheduler`（`scheduler.go` 的 `Start`/`Close`/`loop`/`runTick`）、`processCandidate` → `deliver` → `writeAuditLog`，含 `(orgId, actorId, resource, action, createdAt)` 去重恒等式、`attempts`/`dead` 阈值、`round(30000 * 2^… * jitter)` 退避与 Redis 续租；测试 `scheduler_test.go` 覆盖租约占用、租户不匹配判死、去重命中、claim 失败不写、退避与死信、Close 后不再领取。
+- 接线：`cmd/api/audit_outbox.go` 的 `wireAuditOutbox` 在 `API_GO_AUDIT_OUTBOX_MODE != go` 时返回 `nil, nil`；`go` 时要求 `db` 与 `redisClient` 非空（否则启动失败），并且**还有第二道门 `SCHEDULE_ENABLED`**——`SCHEDULE_ENABLED=false` 时只打一行日志不启动。`cmd/api/main.go` 调用该 wire 并在非 nil 时 `Start(context.Background())`，`Close` 在共享 Redis 关闭之前执行。
+- 生产端：各域 producer 写 `AuditOutbox` 行（本文件 §2 已核）。
+
+**正确的剩余事项**是配置而非实现：`API_GO_AUDIT_OUTBOX_MODE=go` **且** `SCHEDULE_ENABLED=true`，两者缺一则 Go 不消费。`SCHEDULE_ENABLED=false` 时 Nest 的审计 outbox 定时器同样停摆（该变量是两端共读的全局调度门），因此这不是 Go 独有的缺口，但停 Nest 前必须确认部署没有用 `SCHEDULE_ENABLED=false` 关掉整批后台任务。
+
+### 8.3 §6 第 6 条（`@PermissionsAll`）与 §5.2 第 1 条（`itemsingest` 1MB）复核结果
+
+这两条**成立，不是过期结论**，此处只补当前实现的准确边界：
+
+1. **all-permission 语义仍靠 resolver 内联**。`graphqlread/contract.Root` 至今没有一等 `AllPermissions` 字段；`graphqlread/itemsingest/register.go` 的三个写 root 仍注册为 `AllowAuthenticated: true`，权限由各自 resolver 第一段的 `requireAll(...)` 兑现（映射成 `requiredPermissions` + `permissionsMode=all`）。**因此「执行器没有 all 字段」本身不构成越权**——现有三个入口都逐条内联了检查。真实风险是**新增** GraphQL 写字段时遗漏内联，属未来准入约束，不是现行 bug。
+2. **`itemsingest` 的 1MB 上限仍在**（`internal/itemsingest/handler.go`）。本批未改，属真实契约差异：`>1MB` 的请求在 Go 返回 413、在 Nest 返回 200/400。整合批次未触及该文件，故该条保持「待修」。
+
+### 8.4 与 SET-01 相关的现行判断（不作收紧）
+
+§3.2 的 SET-01（17 条全局设置写只要求组织级 `settings.manage`）**仍然成立且仍是两侧一致**：本批核对了 `runtimesettings` 的权限判定与 `packages/config/src/rbac.ts` 的内置 `admin` 角色权限集，结论不变。**整合批次不收紧**：收紧需同期修改 `apps/web` 设置导航与页面门禁（否则非平台管理员的后台页面整片 403），属跨端产品变更。该条保留为下一阶段的候选事项，不列为本次整合回归。
+
+### 8.5 本节核对方法与限制
+
+- 只读源码 + `git show dc48abc1:…` 对比；未运行 `go build`/`go test`/`pnpm`/Docker，未连接 MySQL/Redis/Mongo/SMTP/OIDC/S3。
+- 未重新核对原报告 §3 的 63 条发现（它们不是本节的更正对象）。
+- 五条路由的「启用条件」来自 `config.go` 的 `switch` 与 `wire*` 的早退条件，不是部署实测；**没有任何证据表明这些开关在生产是 `go`**。
