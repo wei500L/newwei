@@ -3508,11 +3508,19 @@ func itemsListEnv(extra map[string]string) func(string) string {
 	typ := reflect.TypeOf(Config{})
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		if strings.HasSuffix(field.Name, "Mode") && field.Type.Kind() == reflect.String {
-			if _, exempt := legacyRejectExemptModes[field.Name]; exempt {
-				continue
-			}
-			legacy[modeSwitchEnvName(field.Name)] = "legacy"
+		if !strings.HasSuffix(field.Name, "Mode") || field.Type.Kind() != reflect.String {
+			continue
+		}
+		if _, exempt := legacyRejectExemptModes[field.Name]; exempt {
+			continue
+		}
+		name := modeSwitchEnvName(field.Name)
+		switch name {
+		// These two accept shadow|go rather than legacy.
+		case "API_GO_ONBOARDING_MODE", "API_GO_USER_SETTINGS_READ_MODE":
+			legacy[name] = "shadow"
+		default:
+			legacy[name] = "legacy"
 		}
 	}
 	return func(key string) string {
@@ -3520,6 +3528,9 @@ func itemsListEnv(extra map[string]string) func(string) string {
 			return value
 		}
 		if strings.HasPrefix(key, "API_GO_") && strings.HasSuffix(key, "_MODE") {
+			if key == "API_GO_LEGACY_FALLBACK_MODE" {
+				return "proxy"
+			}
 			if value, ok := legacy[key]; ok {
 				return value
 			}

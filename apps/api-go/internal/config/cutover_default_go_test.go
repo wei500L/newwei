@@ -61,13 +61,25 @@ func loadWithDefaults(t *testing.T, overrides map[string]string) (Config, error)
 //
 // Wrapping them keeps each test focused on its own switch while leaving the
 // repository default under test in cutover_default_go_test.go, where it belongs.
+//
+// Three switches do not accept "legacy" and must keep a value their parser
+// accepts: onboarding and user-settings-read take shadow|go, and the fallback
+// takes proxy|reject. They get their rollback value instead (shadow / shadow /
+// proxy), which is what a pre-cutover deployment effectively ran.
 func legacyUnset(fn func(string) string) func(string) string {
 	return func(key string) string {
 		value := fn(key)
-		if value == "" && strings.HasPrefix(key, "API_GO_") && strings.HasSuffix(key, "_MODE") {
+		if value != "" || !strings.HasPrefix(key, "API_GO_") || !strings.HasSuffix(key, "_MODE") {
+			return value
+		}
+		switch key {
+		case "API_GO_ONBOARDING_MODE", "API_GO_USER_SETTINGS_READ_MODE":
+			return "shadow"
+		case "API_GO_LEGACY_FALLBACK_MODE":
+			return "proxy"
+		default:
 			return "legacy"
 		}
-		return value
 	}
 }
 
@@ -110,23 +122,33 @@ func legacyOverlayLoad(t *testing.T, fn func(string) string) (Config, error) {
 	})
 }
 
-// legacyEnv returns an environment where every non-exempt switch is explicitly
-// legacy and the fallback is proxy, and no resource is set.
+// legacyEnv returns an environment where every non-exempt switch is on its
+// rollback value and no resource is set.
 //
 // This reproduces what an empty environment meant before the cutover. Tests that
 // assert "switch X = go fails without DATABASE_URL" need exactly this: only the
 // switch under test is go, so the startup error names that switch and no other.
+//
+// onboarding and user-settings-read accept shadow|go (not legacy) and the
+// fallback accepts proxy|reject, so those three take their rollback spelling.
 func legacyEnv(t *testing.T) map[string]string {
 	t.Helper()
 	env := map[string]string{}
 	typ := reflect.TypeOf(Config{})
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		if strings.HasSuffix(field.Name, "Mode") && field.Type.Kind() == reflect.String {
-			if _, exempt := legacyRejectExemptModes[field.Name]; exempt {
-				continue
-			}
-			env[modeSwitchEnvName(field.Name)] = "legacy"
+		if !strings.HasSuffix(field.Name, "Mode") || field.Type.Kind() != reflect.String {
+			continue
+		}
+		if _, exempt := legacyRejectExemptModes[field.Name]; exempt {
+			continue
+		}
+		name := modeSwitchEnvName(field.Name)
+		switch name {
+		case "API_GO_ONBOARDING_MODE", "API_GO_USER_SETTINGS_READ_MODE":
+			env[name] = "shadow"
+		default:
+			env[name] = "legacy"
 		}
 	}
 	env["API_GO_LEGACY_FALLBACK_MODE"] = "proxy"
