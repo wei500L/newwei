@@ -14,6 +14,12 @@ env:
   HUSKY: "0"
   CI: "true"
   NEXT_BUILD_SKIP_QUALITY_CHECKS: "true"
+  # 自托管 runner 内存预算（德国服务器 7.8G，其中约 3.8G 被生产容器占用）。
+  # turbo 默认并发 10，17 个 lint/typecheck/build 任务同时启动会打满 swap
+  # 并触发内核 OOM-killer（实测 kill 掉 compile/node）。并发降到 2 并给
+  # 每个 Node 进程设堆上限，保证峰值落在可用内存内。
+  TURBO_CONCURRENCY: "2"
+  NODE_OPTIONS: "--max-old-space-size=2048"
   NEXTAUTH_URL: http://localhost:3000
   API_BASE_URL: http://localhost:4000
   NEXT_PUBLIC_API_BASE_URL: http://localhost:4000/api
