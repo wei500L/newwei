@@ -53,10 +53,11 @@ func TestWrapPreservesHijackForUpgrade(t *testing.T) {
 	probe := newHijackProbe()
 	var hookStatus int
 	headersOwned := true
-	wrapped, ensure := Wrap(probe, func(status int, owned bool) {
+	response := Wrap(probe, func(status int, owned bool) {
 		hookStatus = status
 		headersOwned = owned
 	})
+	wrapped := response.Writer
 	if _, ok := wrapped.(http.Flusher); !ok {
 		t.Fatal("wrapped writer lost http.Flusher")
 	}
@@ -72,7 +73,7 @@ func TestWrapPreservesHijackForUpgrade(t *testing.T) {
 		t.Fatalf("hijack: %v", err)
 	}
 	_ = conn.Close()
-	ensure()
+	response.Done()
 	if !probe.hijacked {
 		t.Fatal("the underlying writer was not hijacked")
 	}
@@ -92,11 +93,11 @@ func TestWrapHijackWithoutWriteHeaderReportsUnownedHeaders(t *testing.T) {
 	probe := newHijackProbe()
 	var hookStatus int
 	headersOwned := true
-	wrapped, ensure := Wrap(probe, func(status int, owned bool) {
+	response := Wrap(probe, func(status int, owned bool) {
 		hookStatus = status
 		headersOwned = owned
 	})
-	hijacker, ok := wrapped.(http.Hijacker)
+	hijacker, ok := response.Writer.(http.Hijacker)
 	if !ok {
 		t.Fatal("wrapped writer lost http.Hijacker")
 	}
@@ -106,12 +107,15 @@ func TestWrapHijackWithoutWriteHeaderReportsUnownedHeaders(t *testing.T) {
 		t.Fatalf("hijack: %v", err)
 	}
 	_ = conn.Close()
-	ensure()
+	response.Done()
 	if hookStatus != http.StatusSwitchingProtocols {
 		t.Fatalf("hook status = %d, want 101", hookStatus)
 	}
 	if headersOwned {
 		t.Fatal("a proxy-hijacked upgrade must report headers as not owned")
+	}
+	if !response.Hijacked() {
+		t.Fatal("the response was not reported as hijacked")
 	}
 }
 
@@ -122,7 +126,8 @@ func TestWrapDoesNotInventCapabilities(t *testing.T) {
 	// httptest.ResponseRecorder implements neither Flush-through-assertion nor
 	// Hijack in a way this test wants to rely on, so use a bare writer.
 	bare := &bareWriter{header: http.Header{}}
-	wrapped, _ := Wrap(bare, func(int, bool) {})
+	response := Wrap(bare, func(int, bool) {})
+	wrapped := response.Writer
 	if _, ok := wrapped.(http.Flusher); ok {
 		t.Error("Wrap advertised http.Flusher on a non-flushing writer")
 	}
@@ -155,11 +160,12 @@ func TestWrapRunsTheHookOnceAtTheFirstCommit(t *testing.T) {
 	t.Run("WriteHeader then Write", func(t *testing.T) {
 		probe := newHijackProbe()
 		calls := 0
-		wrapped, ensure := Wrap(probe, func(int, bool) { calls++ })
+		response := Wrap(probe, func(int, bool) { calls++ })
+		wrapped := response.Writer
 		wrapped.WriteHeader(http.StatusCreated)
 		_, _ = wrapped.Write([]byte("x"))
 		wrapped.(http.Flusher).Flush()
-		ensure()
+		response.Done()
 		if calls != 1 {
 			t.Fatalf("hook ran %d times, want 1", calls)
 		}
@@ -167,9 +173,10 @@ func TestWrapRunsTheHookOnceAtTheFirstCommit(t *testing.T) {
 	t.Run("bare Write", func(t *testing.T) {
 		probe := newHijackProbe()
 		var status int
-		wrapped, ensure := Wrap(probe, func(code int, _ bool) { status = code })
+		response := Wrap(probe, func(code int, _ bool) { status = code })
+		wrapped := response.Writer
 		_, _ = wrapped.Write([]byte("x"))
-		ensure()
+		response.Done()
 		if status != http.StatusOK {
 			t.Fatalf("hook status = %d, want 200", status)
 		}
@@ -177,9 +184,10 @@ func TestWrapRunsTheHookOnceAtTheFirstCommit(t *testing.T) {
 	t.Run("Flush before headers", func(t *testing.T) {
 		probe := newHijackProbe()
 		var status int
-		wrapped, ensure := Wrap(probe, func(code int, _ bool) { status = code })
+		response := Wrap(probe, func(code int, _ bool) { status = code })
+		wrapped := response.Writer
 		wrapped.(http.Flusher).Flush()
-		ensure()
+		response.Done()
 		if status != http.StatusOK {
 			t.Fatalf("hook status = %d, want 200", status)
 		}
@@ -187,8 +195,8 @@ func TestWrapRunsTheHookOnceAtTheFirstCommit(t *testing.T) {
 	t.Run("nothing written", func(t *testing.T) {
 		probe := newHijackProbe()
 		var status int
-		_, ensure := Wrap(probe, func(code int, _ bool) { status = code })
-		ensure()
+		response := Wrap(probe, func(code int, _ bool) { status = code })
+		response.Done()
 		if status != http.StatusOK {
 			t.Fatalf("hook status = %d, want 200", status)
 		}
@@ -200,7 +208,8 @@ func TestWrapRunsTheHookOnceAtTheFirstCommit(t *testing.T) {
 // after every frame.
 func TestWrapUnwrapReachesTheRealWriter(t *testing.T) {
 	probe := &deadlineProbe{hijackProbe: newHijackProbe()}
-	wrapped, _ := Wrap(probe, func(int, bool) {})
+	response := Wrap(probe, func(int, bool) {})
+	wrapped := response.Writer
 	controller := http.NewResponseController(wrapped)
 	if err := controller.SetWriteDeadline(time.Now().Add(time.Minute)); err != nil {
 		t.Fatalf("SetWriteDeadline through the wrapper: %v", err)

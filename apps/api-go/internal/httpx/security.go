@@ -122,13 +122,13 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 		// headersOwned=false means a protocol upgrade the reverse proxy hijacked before
 		// copying the upstream head: that response's headers belong to NestJS, which
 		// already sent its own helmet values.
-		wrapped, ensure := Wrap(w, func(_ int, headersOwned bool) {
+		response := Wrap(w, func(_ int, headersOwned bool) {
 			if !headersOwned {
 				return
 			}
 			ApplySecurityHeaders(w.Header())
 		})
-		next.ServeHTTP(wrapped, r)
-		ensure()
+		next.ServeHTTP(response.Writer, r)
+		response.Done()
 	})
 }

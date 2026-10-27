@@ -195,3 +195,38 @@ func TestMetricsMiddlewareKeepsStreamingObservable(t *testing.T) {
 		t.Fatal("the SSE response produced no observation")
 	}
 }
+
+// TestMetricsMiddlewareSkipsHijackedConnections proves a protocol upgrade records no
+// latency sample, because Express never emits res "finish" for a connection a
+// Socket.IO adapter took over. Recording one would add a series NestJS never had with
+// a socket-lifetime duration.
+func TestMetricsMiddlewareSkipsHijackedConnections(t *testing.T) {
+	probe := newHijackProbe()
+	var observations int
+	handler := MetricsMiddleware(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			SetRouteLabel(r.Context(), "/socket.io")
+			hijacker, ok := w.(http.Hijacker)
+			if !ok {
+				t.Error("the upgrade handler lost http.Hijacker")
+				return
+			}
+			// coder/websocket's Accept sequence.
+			w.WriteHeader(http.StatusSwitchingProtocols)
+			conn, _, err := hijacker.Hijack()
+			if err != nil {
+				t.Errorf("hijack: %v", err)
+				return
+			}
+			_ = conn.Close()
+		}),
+		func(HTTPObservation) { observations++ },
+	)
+	handler.ServeHTTP(probe, httptest.NewRequest(http.MethodGet, "/socket.io/?EIO=4", nil))
+	if observations != 0 {
+		t.Fatalf("a hijacked connection produced %d observations, want 0", observations)
+	}
+	if !probe.hijacked {
+		t.Fatal("the connection was not hijacked")
+	}
+}
