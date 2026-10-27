@@ -221,6 +221,70 @@ func TestHandlerRequiresPlatformAdmin(t *testing.T) {
 	}
 }
 
+// consoleRoutes is the routing table of the console: all twelve paths with the
+// method each one serves. The authorization test below walks it so a route that
+// is added to the dispatcher without the shared authorize() chain fails here
+// instead of shipping an unauthenticated queue operation.
+var consoleRoutes = []struct {
+	name   string
+	method string
+	path   string
+}{
+	{"list queues", http.MethodGet, pathQueues},
+	{"list jobs", http.MethodGet, pathJobs},
+	{"job detail", http.MethodGet, pathJobDetail},
+	{"retry", http.MethodPost, pathJobRetry},
+	{"delete", http.MethodPost, pathJobDelete},
+	{"promote", http.MethodPost, pathJobPromote},
+	{"retry failed", http.MethodPost, pathRetryFailed},
+	{"clean", http.MethodPost, pathClean},
+	{"pause", http.MethodPost, pathPause},
+	{"resume", http.MethodPost, pathResume},
+	{"dlq replay", http.MethodPost, pathDLQReplay},
+	{"dlq delete", http.MethodPost, pathDLQDelete},
+}
+
+// TestHandlerAuthorizationCoversEveryRoute pins the B1 tightening on every route:
+// authentication (401), then queue.manage (403), then platform administrator
+// (403). Bull Board only checked queue.manage, so any route that skipped the
+// platform gate would let an organization manager mutate every tenant's queue.
+//
+// The requests carry a body that is not valid JSON on purpose: authorization runs
+// before the body is decoded, so a status of 400 here would mean the handler
+// parsed attacker-controlled input before deciding whether the caller may act.
+func TestHandlerAuthorizationCoversEveryRoute(t *testing.T) {
+	const malformedBody = `{`
+
+	notAdmin := newTestHandler(t, []string{queueManagePermission}, false)
+	missingPermission := newTestHandler(t, []string{"items.read"}, true)
+
+	for _, route := range consoleRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			anonymous := call(newTestHandler(t, []string{queueManagePermission}, true),
+				route.method, route.path, "", malformedBody)
+			if anonymous.Code != http.StatusUnauthorized {
+				t.Fatalf("anonymous status = %d, want 401 (body %s)", anonymous.Code, anonymous.Body.String())
+			}
+
+			unprivileged := call(missingPermission, route.method, route.path, mintToken(t), malformedBody)
+			if unprivileged.Code != http.StatusForbidden {
+				t.Fatalf("missing queue.manage status = %d, want 403 (body %s)", unprivileged.Code, unprivileged.Body.String())
+			}
+			if decoded := decodeError(t, unprivileged); decoded.Code != "INSUFFICIENT_PERMISSIONS" {
+				t.Fatalf("missing queue.manage code = %q", decoded.Code)
+			}
+
+			manager := call(notAdmin, route.method, route.path, mintToken(t), malformedBody)
+			if manager.Code != http.StatusForbidden {
+				t.Fatalf("non-admin status = %d, want 403 (body %s)", manager.Code, manager.Body.String())
+			}
+			if decoded := decodeError(t, manager); !strings.Contains(decoded.Message, "Platform admin") {
+				t.Fatalf("non-admin message = %q", decoded.Message)
+			}
+		})
+	}
+}
+
 func TestHandlerUnknownPathIsNotFound(t *testing.T) {
 	handler := newTestHandler(t, []string{queueManagePermission}, true)
 	for _, target := range []string{

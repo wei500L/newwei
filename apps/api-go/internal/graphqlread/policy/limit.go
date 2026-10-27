@@ -50,10 +50,19 @@ redis.call('EXPIRE', sequence_key, ttl_seconds)
 return {1, active + 1}
 `
 
+// stringGetter is the single Redis read the budget lookup needs. *redis.Client
+// satisfies it; tests substitute redis.NewStringResult so the cache-hit, cache-miss
+// and cache-error branches stay unit-testable without a Redis server.
+type stringGetter interface {
+	Get(ctx context.Context, key string) *redis.StringCmd
+}
+
 // Limiter shares Nest's graphql bucket. The in-memory circuit is per process,
 // matching Nest's per-process breaker around the same Redis script.
 type Limiter struct {
 	redis            *redis.Client
+	settingsCache    stringGetter
+	settings         RateLimitSettingsReader
 	fallbackLimit    int
 	fallbackWindow   int
 	evalTimeout      time.Duration
@@ -80,7 +89,7 @@ func NewLimiter(client *redis.Client, fallbackLimit, fallbackWindow int, failOpe
 	if fallbackWindow <= 0 {
 		fallbackWindow = 60
 	}
-	return &Limiter{
+	limiter := &Limiter{
 		redis:            client,
 		fallbackLimit:    fallbackLimit,
 		fallbackWindow:   fallbackWindow,
@@ -93,6 +102,22 @@ func NewLimiter(client *redis.Client, fallbackLimit, fallbackWindow int, failOpe
 		cleanupThreshold: 1000,
 		state:            "closed",
 	}
+	// Only store a typed non-nil value: a nil *redis.Client in the interface would
+	// panic on Get instead of reporting a cache miss.
+	if client != nil {
+		limiter.settingsCache = client
+	}
+	return limiter
+}
+
+// WithSettingsReader attaches the MySQL fallback used when the shared Redis
+// document is missing. A nil reader keeps the Redis-then-environment order.
+func (l *Limiter) WithSettingsReader(reader RateLimitSettingsReader) *Limiter {
+	if l == nil {
+		return nil
+	}
+	l.settings = reader
+	return l
 }
 
 // Budget is max(login.limit*30, 120) over the login window.
@@ -101,21 +126,32 @@ type Budget struct {
 	WindowSeconds int
 }
 
-// BudgetFor returns the GraphQL budget from Redis rate_limit:settings, then
-// the caller-supplied fallback (env defaults).
+// BudgetFor returns the GraphQL budget from the shared Redis document, then the
+// admin-configured SystemSetting row, then the caller-supplied fallback (env
+// defaults).
+//
+// NestJS resolves the same value in RateLimitConfigService
+// (apps/api/src/modules/system-settings/rate-limit-config.service.ts):
+// getRateLimitSettings reads the rate_limit:settings cache, reloads the
+// rate_limit_login SystemSetting row when that cache misses, and only then falls
+// back to the environment. Without the row lookup this limiter silently enforced
+// the environment default whenever the shared document had expired, so an
+// administrator's lower limit was not applied. This path deliberately does not
+// write the document back: a partial write would loosen every other bucket for
+// the other readers of the same key (same reason as
+// internal/authlogin/ratelimit.go).
 func (l *Limiter) BudgetFor(ctx context.Context) Budget {
 	if l == nil {
 		return Budget{Limit: 150, WindowSeconds: 60}
 	}
 	limit := l.fallbackLimit
 	window := l.fallbackWindow
-	if l != nil && l.redis != nil {
-		if raw, err := l.redis.Get(ctx, "rate_limit:settings").Bytes(); err == nil {
-			if parsedLimit, parsedWindow, ok := loginBucket(raw); ok {
-				limit = parsedLimit
-				window = parsedWindow
-			}
-		}
+	if parsedLimit, parsedWindow, ok := l.loginBucketFromCache(ctx); ok {
+		limit = parsedLimit
+		window = parsedWindow
+	} else if parsedLimit, parsedWindow, ok := l.loginBucketFromDatabase(ctx); ok {
+		limit = parsedLimit
+		window = parsedWindow
 	}
 	if limit < 1 {
 		limit = 1
@@ -134,6 +170,37 @@ func (l *Limiter) BudgetFor(ctx context.Context) Budget {
 		graphqlLimit = 120
 	}
 	return Budget{Limit: graphqlLimit, WindowSeconds: window}
+}
+
+// loginBucketFromCache reads the shared Redis document. A missing client, a
+// transport error, an expired document and a document without a usable login
+// bucket all report a miss so the caller can fall back to the database.
+func (l *Limiter) loginBucketFromCache(ctx context.Context) (int, int, bool) {
+	if l.settingsCache == nil {
+		return 0, 0, false
+	}
+	raw, err := l.settingsCache.Get(ctx, rateLimitSettingsCacheKey).Bytes()
+	if err != nil {
+		return 0, 0, false
+	}
+	return loginBucket(raw)
+}
+
+// loginBucketFromDatabase reads the SystemSetting row that NestJS loads when its
+// own cache misses. The read is bounded by settingsReadTimeout and every failure
+// (no reader, no row, SQL error, unparsable value) reports a miss so the budget
+// falls back to the environment defaults instead of failing open.
+func (l *Limiter) loginBucketFromDatabase(ctx context.Context) (int, int, bool) {
+	if l.settings == nil {
+		return 0, 0, false
+	}
+	readCtx, cancel := context.WithTimeout(ctx, settingsReadTimeout)
+	defer cancel()
+	limit, window, ok, err := l.settings.LoginBucket(readCtx)
+	if err != nil || !ok {
+		return 0, 0, false
+	}
+	return limit, window, true
 }
 
 func loginBucket(raw []byte) (int, int, bool) {

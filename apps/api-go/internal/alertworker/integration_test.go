@@ -279,6 +279,82 @@ func TestAlertWorkerIntegration(t *testing.T) {
 		}
 	})
 
+	// A delivery whose occupancy claim loses must not be sent again. The row left
+	// `pending` between the worker's read and the worker's conditional update
+	// (an overlapping retry of the same attempt, or a second consumer after a
+	// stalled recovery). AlertsService.occupyDeliveryForSend returns
+	// `updated.count === 1` for that case and skips the send; the port has to do
+	// the same, otherwise the external channel fires twice.
+	//
+	// The interleaving is deterministic: a competing transaction owns the row and
+	// settles it as sent without committing, so the worker's plain SELECT still
+	// reads the committed `pending` row while its UPDATE blocks on the row lock.
+	// Committing makes that UPDATE re-evaluate its WHERE clause and match nothing.
+	t.Run("a delivery that lost the send CAS is not sent again", func(t *testing.T) {
+		eventID := "event-it-occupy"
+		deliveryID := "delivery-it-occupy"
+		if _, err := db.ExecContext(ctx,
+			"INSERT INTO `AlertEvent` (`id`, `ruleId`, `triggeredAt`, `metricValue`, `changePercent`, `severity`, `status`, `message`, `context`, `createdAt`)"+
+				" VALUES (?, ?, ?, ?, NULL, 'high', 'pending', 'boom', NULL, NOW(3))",
+			eventID, itRuleID, time.Now().UTC(), "1.5"); err != nil {
+			t.Fatalf("insert event: %v", err)
+		}
+		snapshot := []byte(`{"id":"` + itChannelID + `","type":"email","target":"ops@example.com","name":"ops","config":{}}`)
+		if _, err := db.ExecContext(ctx,
+			"INSERT INTO `AlertDelivery` (`id`, `eventId`, `channelId`, `channelType`, `targetSnapshot`, `status`, `createdAt`)"+
+				" VALUES (?, ?, ?, 'email', ?, 'pending', NOW(3))", deliveryID, eventID, itChannelID, snapshot); err != nil {
+			t.Fatalf("insert delivery: %v", err)
+		}
+
+		competing, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatalf("begin competing transaction: %v", err)
+		}
+		if _, err := competing.ExecContext(ctx,
+			"UPDATE `AlertDelivery` SET `status` = 'sent', `sentAt` = NOW(3) WHERE `id` = ?", deliveryID); err != nil {
+			_ = competing.Rollback()
+			t.Fatalf("occupy delivery in the competing transaction: %v", err)
+		}
+
+		attempts := 4
+		job := queue.Job{ID: "delivery-it-occupy", AttemptsMade: 0, Opts: queue.JobOptions{Attempts: &attempts}}
+		payload := queue.DeliverJobData{Type: queue.JobTypeDeliver, DeliveryID: deliveryID, OrgID: itOrgID}
+		done := make(chan error, 1)
+		go func() {
+			done <- service.HandleDeliveryJob(ctx, job, payload, queue.JobHandle{})
+		}()
+		time.Sleep(500 * time.Millisecond)
+		if err := competing.Commit(); err != nil {
+			t.Fatalf("commit competing transaction: %v", err)
+		}
+		if err := <-done; err != nil {
+			t.Fatalf("handle delivery: %v", err)
+		}
+
+		var status string
+		var deliveryError sql.NullString
+		if err := db.QueryRowContext(ctx,
+			"SELECT `status`, `error` FROM `AlertDelivery` WHERE `id` = ?", deliveryID).Scan(&status, &deliveryError); err != nil {
+			t.Fatalf("read delivery: %v", err)
+		}
+		if status != DeliveryStatusSent {
+			t.Fatalf("delivery status = %q, want the competing attempt's sent status", status)
+		}
+		if deliveryError.Valid {
+			t.Fatalf("delivery error = %q, want NULL: a lost occupancy claim must not attempt the send", deliveryError.String)
+		}
+		// The delivery must have been loadable, otherwise the handler returned
+		// before the occupancy claim and the assertions above would pass for the
+		// wrong reason.
+		loaded, err := service.repo.loadDeliveryWithEventAndRule(ctx, db, deliveryID)
+		if err != nil {
+			t.Fatalf("reload delivery: %v", err)
+		}
+		if loaded == nil {
+			t.Fatal("delivery was not loadable with its event and rule; the subtest proved nothing")
+		}
+	})
+
 	t.Run("rate limit key reservation", func(t *testing.T) {
 		throttle := NewThrottle(redisClient, ThrottleConfig{
 			GlobalPerSecond:     1,
