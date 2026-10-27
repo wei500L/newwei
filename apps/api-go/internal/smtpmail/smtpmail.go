@@ -58,17 +58,37 @@ type Result struct {
 	Rejected  []string
 }
 
+// envelopeAddress extracts the RFC 5321 mailbox from a configured address that
+// may carry a display name ("Wei <wei@example.com>"): the value inside the last
+// angle-bracket pair, otherwise the trimmed input. It mirrors what nodemailer's
+// address parser hands to MAIL FROM/RCPT TO, so a display-name SMTP_FROM keeps
+// producing a valid envelope sender instead of `MAIL FROM:<Wei <addr>>`.
+func envelopeAddress(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if open := strings.LastIndexByte(trimmed, '<'); open >= 0 {
+		if close := strings.IndexByte(trimmed[open:], '>'); close > 1 {
+			inner := strings.TrimSpace(trimmed[open+1 : open+close])
+			if inner != "" {
+				return inner
+			}
+		}
+	}
+	return trimmed
+}
+
 // NewMessageID builds a Message-ID header value of the shape nodemailer
 // produces: <random@domain-of-sender>. The domain falls back to the host name
-// when the sender address has no domain.
+// when the sender address has no domain; a display-name sender is reduced to its
+// mailbox first so the domain never picks up the closing angle bracket.
 func NewMessageID(from string) string {
 	var buf [12]byte
 	if _, err := rand.Read(buf[:]); err != nil {
 		return "<" + strconv.FormatInt(time.Now().UnixNano(), 36) + "@modular-api>"
 	}
 	domain := "modular-api"
-	if at := strings.LastIndex(from, "@"); at >= 0 && at+1 < len(from) {
-		if trimmed := strings.TrimSpace(from[at+1:]); trimmed != "" {
+	address := envelopeAddress(from)
+	if at := strings.LastIndex(address, "@"); at >= 0 && at+1 < len(address) {
+		if trimmed := strings.TrimSpace(address[at+1:]); trimmed != "" {
 			domain = trimmed
 		}
 	}
@@ -110,17 +130,26 @@ func (c Config) Send(ctx context.Context, msg Message) (Result, error) {
 	}
 	defer closeAll()
 
-	from := strings.TrimSpace(msg.From)
-	if from == "" {
-		from = strings.TrimSpace(c.From)
+	// headerFrom keeps the raw configured value for the From: header (a display
+	// name is legal there), while envelopeFrom is the bare mailbox MAIL FROM
+	// carries. nodemailer parses the same value the same way, so
+	// `SMTP_FROM="Wei <addr>"` — the form infra/docker/.env.sample ships — must
+	// reach the SMTP envelope as `addr` and not as `Wei <addr>`.
+	headerFrom := strings.TrimSpace(msg.From)
+	if headerFrom == "" {
+		headerFrom = strings.TrimSpace(c.From)
 	}
-	if from == "" {
-		from = c.User
+	if headerFrom == "" {
+		headerFrom = strings.TrimSpace(c.User)
 	}
-	if from == "" {
+	if headerFrom == "" {
 		return result, fmt.Errorf("smtpmail: sender is not configured")
 	}
-	to := strings.TrimSpace(msg.To)
+	envelopeFrom := envelopeAddress(headerFrom)
+	if envelopeFrom == "" {
+		return result, fmt.Errorf("smtpmail: sender is not configured")
+	}
+	to := envelopeAddress(msg.To)
 	if to == "" {
 		return result, fmt.Errorf("smtpmail: recipient is empty")
 	}
@@ -138,7 +167,7 @@ func (c Config) Send(ctx context.Context, msg Message) (Result, error) {
 			}
 		}
 	}
-	if err := client.Mail(from); err != nil {
+	if err := client.Mail(envelopeFrom); err != nil {
 		return result, err
 	}
 	if err := client.Rcpt(to); err != nil {
@@ -156,7 +185,7 @@ func (c Config) Send(ctx context.Context, msg Message) (Result, error) {
 		_ = writer.Close()
 		return result, err
 	}
-	if _, err := writer.Write(buildMessage(from, to, msg)); err != nil {
+	if _, err := writer.Write(buildMessage(headerFrom, to, msg)); err != nil {
 		_ = writer.Close()
 		return result, err
 	}

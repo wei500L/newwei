@@ -126,6 +126,15 @@ func (s *Service) primaryMembershipOrgID(ctx context.Context, userID string) (st
 // then one transaction replaces the password hash, consumes every unused reset
 // token of the user and revokes every live refresh token. A partial commit would
 // leave the old password usable or an old session alive.
+//
+// The single-use guarantee is the CONDITIONAL claim on the token row, not the
+// pre-check: two concurrent requests carrying the same token both read the row
+// as unused, so only the caller whose `UPDATE ... WHERE tokenHash = ? AND
+// usedAt IS NULL` affects exactly one row may rotate the password. The loser
+// rolls back and answers the same 401 an expired token gets. Nest performs the
+// same read-then-write without the claim, so both callers there rotate the
+// password and both answer {ok:true} (last writer wins) — this is a Nest defect
+// that Go deliberately fixes.
 func (s *Service) resetPassword(ctx context.Context, token, password string, ipAddress *string) (okResult, error) {
 	if s.db == nil {
 		return okResult{}, errNoDatabase
@@ -148,7 +157,9 @@ func (s *Service) resetPassword(ctx context.Context, token, password string, ipA
 	}
 
 	trimmedPassword := strings.TrimSpace(password)
-	if len([]rune(trimmedPassword)) < minPasswordLength {
+	// PasswordResetService compares `params.password.trim().length` — the
+	// JavaScript string length (UTF-16 code units), not the rune count.
+	if jsStringLength(trimmedPassword) < minPasswordLength {
 		return okResult{}, badRequest(passwordTooShortMessage)
 	}
 	passwordHash, err := hashPassword(trimmedPassword)
@@ -162,6 +173,27 @@ func (s *Service) resetPassword(ctx context.Context, token, password string, ipA
 		return okResult{}, dbWrap(err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// Claim the token first: exactly one caller can consume it, even when the
+	// pre-check above ran in several requests at once. The expiry predicate is
+	// repeated so a token that expired between the read and this claim cannot be
+	// claimed either.
+	claim, err := tx.ExecContext(ctx,
+		"UPDATE `PasswordResetToken` SET `usedAt` = ? WHERE `tokenHash` = ? AND `usedAt` IS NULL "+
+			"AND `expiresAt` > ?",
+		now, tokenHash, now)
+	if err != nil {
+		return okResult{}, dbWrap(err)
+	}
+	claimed, err := claim.RowsAffected()
+	if err != nil {
+		return okResult{}, dbWrap(err)
+	}
+	if claimed != 1 {
+		// Another request consumed the token (or it expired) after the pre-check:
+		// this caller must not rotate the password.
+		return okResult{}, unauthorized(passwordResetTokenMessage)
+	}
 
 	if _, err := tx.ExecContext(ctx,
 		"UPDATE `User` SET `passwordHash` = ?, `updatedAt` = ? WHERE `id` = ?",

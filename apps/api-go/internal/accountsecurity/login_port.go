@@ -378,10 +378,19 @@ func (l *LoginStore) AddAccessBlacklist(ctx context.Context, jti string, ttlSeco
 	return l.svc.blacklistSet(ctx, "access-token:blacklist:"+jti, ttlSeconds)
 }
 
-// jsTruthyText reproduces Boolean(JSON.parse(value)): false/null/0/""/[] are
-// false, every other JSON value is true. Invalid JSON is an error, matching the
-// NestJS parse failure.
+// jsTruthyText reproduces Boolean(JSON.parse(value)) for a blacklist value.
+//
+// The falsy set in JavaScript is exactly false, null, 0 and "" — arrays and
+// objects are truthy however many members they have, so "[]" and "{}" mean
+// *revoked*. Reading them as "not revoked" would fail open on a revoked token.
+// An empty stored value never reaches JSON.parse in NestJS (`value ?
+// JSON.parse(value) : null` short circuits) and is therefore "not revoked", not
+// a parse failure; any other non-JSON value is an error, which the caller turns
+// into the same fail-closed 500 a JSON.parse throw produces.
 func jsTruthyText(value string) (bool, error) {
+	if value == "" {
+		return false, nil
+	}
 	var parsed any
 	if err := json.Unmarshal([]byte(value), &parsed); err != nil {
 		return false, err
@@ -396,9 +405,11 @@ func jsTruthyText(value string) (bool, error) {
 	case float64:
 		return typed != 0, nil
 	case []any:
-		return len(typed) > 0, nil
+		// Boolean([]) is true in JavaScript, even for an empty array.
+		return true, nil
 	case map[string]any:
-		return len(typed) > 0, nil
+		// Boolean({}) is true in JavaScript, even for an empty object.
+		return true, nil
 	default:
 		return true, nil
 	}

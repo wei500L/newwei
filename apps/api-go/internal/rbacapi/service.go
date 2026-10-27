@@ -93,14 +93,28 @@ WHERE t.tokenHash = ?`, hex.EncodeToString(sum[:]),
 	return authhttp.NewIdentity("machine:"+id, orgID, permissionList(permissions)), nil
 }
 
+// permissionList keeps only the string entries of the MachineAccessToken
+// permissions document. The tokens are decoded as raw JSON so a non-string
+// element is dropped instead of failing the whole document, and no untyped
+// container carries the business values.
+//
+// The token must also BE a JSON string literal: json.Unmarshal accepts a JSON
+// null into a string and leaves it empty, so without the prefix check a null
+// element would become an empty permission name rather than being dropped like
+// every other non-string element (which is what NestJS's `typeof === "string"`
+// filter does).
 func permissionList(raw []byte) []string {
-	var parsed []any
+	var parsed []json.RawMessage
 	if json.Unmarshal(raw, &parsed) != nil {
 		return nil
 	}
 	out := make([]string, 0, len(parsed))
 	for _, item := range parsed {
-		if text, ok := item.(string); ok {
+		trimmed := strings.TrimSpace(string(item))
+		if trimmed == "" || trimmed[0] != '"' {
+			continue
+		}
+		if text, ok := jsString(item); ok {
 			out = append(out, text)
 		}
 	}

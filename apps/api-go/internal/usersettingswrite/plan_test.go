@@ -41,7 +41,7 @@ func TestPlanWrongTypeAndUnknownFieldAreDistinct(t *testing.T) {
 	}{
 		{"wrong type", `{"settings":[]}`, "settings must be an object"},
 		{"unknown field", `{"extra":1}`, "property extra should not exist"},
-		{"both, property error then whitelist", `{"settings":"x","extra":1}`, "settings must be an object; property extra should not exist"},
+		{"both, whitelist then property error", `{"settings":"x","extra":1}`, "property extra should not exist; settings must be an object"},
 		{"unknown field order", `{"zzz":1,"aaa":2}`, "property zzz should not exist; property aaa should not exist"},
 	}
 	for _, tc := range cases {

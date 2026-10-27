@@ -149,27 +149,64 @@ func (r *avatarPresignRequest) setField(name string, value json.RawMessage) bool
 	return true
 }
 
-// parseAvatarPresignRequest validates only the DTO shape that class-validator
-// rejects before the controller body runs: the object form, the whitelist, the
-// string type of contentType and the numeric token of contentLength. The
-// accept-list and the 1..2MB range stay in the service so the storage
-// configuration is checked first, exactly like StorageService.
+// avatarContentTypeValues is the @IsIn allow-list of AvatarPresignRequestDto, in
+// the decorator's own order.
+var avatarContentTypeValues = []string{"image/jpeg", "image/png", "image/webp"}
+
+// isAllowedAvatarContentType reports whether contentType is in that allow-list.
+func isAllowedAvatarContentType(value string) bool {
+	for _, allowed := range avatarContentTypeValues {
+		if value == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// parseAvatarPresignRequest reproduces every decorator of
+// AvatarPresignRequestDto, because the global ValidationPipe runs before the
+// controller body: the object form, the whitelist, @IsString/@IsIn on
+// contentType and @IsInt/@Min(1)/@Max(2MB) on contentLength. The accept-list and
+// the range therefore answer the class-validator messages, not the
+// StorageService ones (those are unreachable over HTTP for the same reason they
+// are unreachable in NestJS; the service keeps them as a second line of
+// defence).
+//
+// A property with several decorators reports them bottom-up, which is why
+// contentType reports @IsIn before @IsString and contentLength reports @Max,
+// @Min, @IsInt in that order.
 func parseAvatarPresignRequest(body []byte) (string, float64, error) {
 	request := avatarPresignRequest{}
 	unknown, err := decodeObject(body, &request)
 	if err != nil {
 		return "", 0, err
 	}
-	problems := make([]string, 0, 2+len(unknown))
+	problems := make([]string, 0, 5+len(unknown))
 	for _, name := range unknown {
 		problems = append(problems, "property "+name+" should not exist")
 	}
-	contentType, ok := jsonString(request.ContentType)
-	if !ok {
+	contentType, typeIsString := jsonString(request.ContentType)
+	if !typeIsString || !isAllowedAvatarContentType(contentType) {
+		problems = append(problems, "contentType must be one of the following values: "+
+			strings.Join(avatarContentTypeValues, ", "))
+	}
+	if !typeIsString {
 		problems = append(problems, "contentType must be a string")
 	}
-	contentLength, lengthOK := jsonNumber(request.ContentLength)
-	if !lengthOK {
+	contentLength, lengthIsNumber := jsonNumber(request.ContentLength)
+	// NaN is unreachable from JSON, but @IsInt/@Min/@Max all treat it as a
+	// number that fails, so it is handled explicitly instead of by comparison
+	// (every comparison with NaN is false). An out-of-range literal stays
+	// Infinity, exactly like JSON.parse.
+	lengthIsNaN := lengthIsNumber && math.IsNaN(contentLength)
+	lengthIsInfinite := lengthIsNumber && math.IsInf(contentLength, 0)
+	if !lengthIsNumber || lengthIsNaN || contentLength > MaxAvatarBytes {
+		problems = append(problems, "contentLength must not be greater than "+strconv.Itoa(MaxAvatarBytes))
+	}
+	if !lengthIsNumber || lengthIsNaN || contentLength < 1 {
+		problems = append(problems, "contentLength must not be less than 1")
+	}
+	if !lengthIsNumber || lengthIsNaN || lengthIsInfinite || math.Trunc(contentLength) != contentLength {
 		problems = append(problems, "contentLength must be an integer number")
 	}
 	if len(problems) > 0 {

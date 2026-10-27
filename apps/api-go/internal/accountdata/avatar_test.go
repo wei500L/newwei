@@ -79,8 +79,10 @@ func TestCreateAvatarUploadURLValidationOrderAndMessages(t *testing.T) {
 		contentLength float64
 		wantMessage   string
 	}{
-		// Configuration wins over an unsupported type: StorageService refreshes
-		// the client before it looks at the DTO values.
+		// Service-layer order: StorageService refreshes the client before it
+		// looks at the values. Over HTTP the DTO phase answers an unsupported
+		// type or out-of-range size first, exactly like the NestJS
+		// ValidationPipe; see TestParseAvatarPresignRequestClassValidatorMessages.
 		{"config before type", incomplete, "image/gif", 1024, "Storage configuration is incomplete"},
 		{"unsupported type", avatarTestConfig(), "image/gif", 1024, "Unsupported avatar content type"},
 		{"jpeg is accepted", avatarTestConfig(), "image/jpeg", 1024, ""},
@@ -107,6 +109,103 @@ func TestCreateAvatarUploadURLValidationOrderAndMessages(t *testing.T) {
 			}
 			if coded.message != tc.wantMessage {
 				t.Fatalf("message = %q, want %q", coded.message, tc.wantMessage)
+			}
+		})
+	}
+}
+
+// TestParseAvatarPresignRequestClassValidatorMessages pins the DTO phase. The
+// global ValidationPipe validates AvatarPresignRequestDto before the controller
+// body runs, so @IsIn/@IsInt/@Min/@Max answer first and the StorageService
+// messages asserted above are unreachable over HTTP in NestJS and here.
+func TestParseAvatarPresignRequestClassValidatorMessages(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "accepted png",
+			body: `{"contentType":"image/png","contentLength":1024}`,
+		},
+		{
+			name: "accepted jpeg at the size limit",
+			body: `{"contentType":"image/jpeg","contentLength":2097152}`,
+		},
+		{
+			name: "unsupported type",
+			body: `{"contentType":"image/gif","contentLength":1024}`,
+			want: "contentType must be one of the following values: image/jpeg, image/png, image/webp",
+		},
+		{
+			name: "non-string type reports IsIn then IsString",
+			body: `{"contentType":7,"contentLength":1024}`,
+			want: "contentType must be one of the following values: image/jpeg, image/png, image/webp; " +
+				"contentType must be a string",
+		},
+		{
+			name: "missing type",
+			body: `{"contentLength":1024}`,
+			want: "contentType must be one of the following values: image/jpeg, image/png, image/webp; " +
+				"contentType must be a string",
+		},
+		{
+			name: "zero size",
+			body: `{"contentType":"image/png","contentLength":0}`,
+			want: "contentLength must not be less than 1",
+		},
+		{
+			name: "negative size",
+			body: `{"contentType":"image/png","contentLength":-1}`,
+			want: "contentLength must not be less than 1",
+		},
+		{
+			name: "fractional size",
+			body: `{"contentType":"image/png","contentLength":1.5}`,
+			want: "contentLength must be an integer number",
+		},
+		{
+			name: "too large",
+			body: `{"contentType":"image/png","contentLength":2097153}`,
+			want: "contentLength must not be greater than 2097152",
+		},
+		{
+			name: "string size fails Max, Min and IsInt bottom-up",
+			body: `{"contentType":"image/png","contentLength":"1024"}`,
+			want: "contentLength must not be greater than 2097152; " +
+				"contentLength must not be less than 1; contentLength must be an integer number",
+		},
+		{
+			name: "missing size fails Max, Min and IsInt bottom-up",
+			body: `{"contentType":"image/png"}`,
+			want: "contentLength must not be greater than 2097152; " +
+				"contentLength must not be less than 1; contentLength must be an integer number",
+		},
+		{
+			name: "unknown member is reported first",
+			body: `{"contentType":"image/gif","contentLength":1024,"extra":1}`,
+			want: "property extra should not exist; " +
+				"contentType must be one of the following values: image/jpeg, image/png, image/webp",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			contentType, contentLength, err := parseAvatarPresignRequest([]byte(tc.body))
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("err = %v, want success", err)
+				}
+				if contentType == "" || contentLength <= 0 {
+					t.Fatalf("contentType = %q, contentLength = %v", contentType, contentLength)
+				}
+				return
+			}
+			var coded *httpError
+			if !errors.As(err, &coded) || coded.status != 400 {
+				t.Fatalf("err = %v, want 400", err)
+			}
+			if coded.message != tc.want {
+				t.Fatalf("message = %q, want %q", coded.message, tc.want)
 			}
 		})
 	}

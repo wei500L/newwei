@@ -1,6 +1,7 @@
 package emailsettings
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
 	"net/mail"
@@ -18,13 +19,78 @@ type rawAuthCodeDTO struct {
 	MaxAttempts     json.RawMessage `json:"maxAttempts"`
 }
 
-// parseAuthCodeDTO validates UpdateAuthEmailCodeSettingsDto. class-validator
-// applies @Max, @Min and @IsInt bottom-up, so a failing number reports in that
-// order; a non-number fails all three and reports three messages.
+// authCodeDTOFields are the members the DTO declares; every other member is
+// rejected by the ValidationPipe's whitelist + forbidNonWhitelisted.
+var authCodeDTOFields = []string{"ttlSeconds", "cooldownSeconds", "maxAttempts"}
+
+// testDTOFields are the members EmailTestDto declares.
+var testDTOFields = []string{"to", "subject"}
+
+// objectMemberNames returns the top-level members of a JSON object body in
+// document order (first occurrence wins, like Object.keys after JSON.parse), or
+// nil when the body is not an object.
+func objectMemberNames(body []byte) []string {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(trimmed))
+	if _, err := decoder.Token(); err != nil {
+		return nil
+	}
+	seen := make(map[string]bool, 8)
+	names := make([]string, 0, 8)
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return names
+		}
+		name, ok := token.(string)
+		if !ok {
+			return names
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return names
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	return names
+}
+
+// unknownPropertyMessages reproduces ValidationExecutor's whitelist error for
+// every body member without validation metadata. `__proto__` is skipped because
+// the ValidationPipe deletes it before validation.
+func unknownPropertyMessages(body []byte, allowed []string) []string {
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, name := range allowed {
+		allowedSet[name] = true
+	}
+	var messages []string
+	for _, name := range objectMemberNames(body) {
+		if name == "__proto__" || allowedSet[name] {
+			continue
+		}
+		messages = append(messages, "property "+name+" should not exist")
+	}
+	return messages
+}
+
+// parseAuthCodeDTO validates UpdateAuthEmailCodeSettingsDto. Unknown members are
+// reported first (the ordering the sibling settings packages use), then
+// class-validator's bottom-up @Max, @Min and @IsInt constraints, so a failing
+// number reports in that order.
 func parseAuthCodeDTO(body []byte) (AuthCodeSettings, error) {
 	var raw rawAuthCodeDTO
 	_ = json.Unmarshal(body, &raw)
 	var problems settingshttp.ValidationErrors
+	for _, message := range unknownPropertyMessages(body, authCodeDTOFields) {
+		problems.Add(message)
+	}
 
 	ttl := integerField(&problems, raw.TTLSeconds, "ttlSeconds", minTTLSeconds, maxTTLSeconds)
 	cooldown := integerField(&problems, raw.CooldownSeconds, "cooldownSeconds", minCooldownSeconds, maxCooldownSeconds)
@@ -68,6 +134,9 @@ func parseTestDTO(body []byte) (to, subject string, err error) {
 	var raw rawTestDTO
 	_ = json.Unmarshal(body, &raw)
 	var problems settingshttp.ValidationErrors
+	for _, message := range unknownPropertyMessages(body, testDTOFields) {
+		problems.Add(message)
+	}
 
 	if value, present := optionalString(&problems, raw.To, "to", 320, true); present {
 		to = value

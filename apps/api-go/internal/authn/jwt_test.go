@@ -11,8 +11,12 @@
 //   - 过期（exp 过去）与 nbf 未到（两者 NestJS 均拒绝）；
 //   - jti 缺失按 NestJS 当前语义放行（JTI 为空，blacklist 由调用方跳过）；
 //   - sub / orgId 缺失拒绝；
+//   - exp 早于现在 1 秒即拒绝（leeway 0，与 jsonwebtoken 默认一致）与 iat
+//     在未来仍放行（jsonwebtoken 不校验 iat，golang-jwt 仅在有 WithIssuedAt
+//     时校验）；
 //   - Bearer 提取：缺失 header、非 Bearer scheme、mtk_ 机器令牌拒绝，
-//     小写 bearer 与多空格容忍（passport-jwt 正则语义）。
+//     小写 bearer 与多空格容忍（此处比 passport-jwt 宽松，见
+//     ExtractBearerToken 的契约说明）。
 package authn
 
 import (
@@ -84,6 +88,15 @@ func TestVerifyTable(t *testing.T) {
 		{"missing-issuer", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), nil, "iss"), true, ""},
 		{"wrong-audience", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), map[string]any{"aud": otherAudience}), true, ""},
 		{"expired", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), map[string]any{"exp": time.Now().Add(-time.Minute).Unix()}), true, ""},
+		// Locks the zero-clock-skew contract: jsonwebtoken's default
+		// clockTolerance is 0, so a token that expired one second ago is already
+		// invalid. A non-zero leeway here would be a divergence from NestJS.
+		{"expired-one-second-ago", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), map[string]any{"exp": time.Now().Add(-time.Second).Unix()}), true, ""},
+		// Locks the "iat is not a validation input" contract: jsonwebtoken never
+		// compares iat with the current time, so a token minted with a future iat
+		// (clock skew between API instances) must still verify. golang-jwt only
+		// checks iat when WithIssuedAt is supplied, which the verifier does not.
+		{"iat-in-future", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), map[string]any{"iat": time.Now().Add(time.Hour).Unix()}), false, "jti-authn-1"},
 		{"nbf-in-future", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), map[string]any{"nbf": time.Now().Add(time.Hour).Unix()}), true, ""},
 		{"missing-sub", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), map[string]any{"sub": nil}), true, ""},
 		{"missing-orgid", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), map[string]any{"orgId": nil}), true, ""},
