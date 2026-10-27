@@ -5,9 +5,9 @@
 - 来源：[#148](https://github.com/wei500L/newwei/pull/148) §7 第 1–4 项；四个稳定缺口见 [GAPS](../GAPS.md#2026-10-27-切默认前增量)。
 - 执行提示词：[GO-CUTOVER-PREREQS-001.prompt.md](GO-CUTOVER-PREREQS-001.prompt.md)。
 - 编码分支：`codex/go-cutover-prereqs`；建议 worktree：`/Users/oo/project/newwei-go-cutover-prereqs`，尚未创建。
-- 记录发布分支：`codex/plan-go-cutover-next`；编码 PR / head / merge SHA：无。
+- 记录已推送：`codex/plan-go-cutover-next` / [Ready 规划 PR #149](https://github.com/wei500L/newwei/pull/149)；编码 PR / head / merge SHA：无。规划 PR 的 CI 不能替代后续业务 PR 的 CI。
 - 前置事实：#142–#147 的六个源 head 已逐一验证为 `origin/main` 祖先；#148 实际 merge 为 `0a48babea69700c7f9cd1bf2262f25d414469527`。
-- 普通 CI：整合 head `79220a477cc8dad7df387fa67442c3bcd5d6a49e` 的 [run 40513400923](https://github.com/wei500L/newwei/actions/runs/40513400923) attempt 2 三个主要 job success，两个 regen job skipped；最新 main 的 [run 40518886959](https://github.com/wei500L/newwei/actions/runs/40518886959) 在核对时 queued，不能视为通过。前一 head `cc3782c0` 的 run 40518448341 已 cancelled，其 Self-hosted Smoke success 不代替普通 CI。`f15f598d` 仅把既有 workflow 的 runs-on 改为自托管 runner，未改本任务相关源码。
+- 普通 CI：整合 head `79220a477cc8dad7df387fa67442c3bcd5d6a49e` 的 [run 40513400923](https://github.com/wei500L/newwei/actions/runs/40513400923) attempt 2 三个主要 job success，两个 regen job skipped；最新 main 的 [run 40518886959](https://github.com/wei500L/newwei/actions/runs/40518886959) 在 2026-10-27 17:21 MSK 交付复核时 **cancelled**（verify failure、vector-integration success、api-go-user-settings-integration cancelled），失败原因未证实，不能视为通过。前一 head `cc3782c0` 的 run 40518448341 亦 cancelled，其 Self-hosted Smoke success 不代替普通 CI。`f15f598d` 仅改 workflow 的 runs-on；不能据此断言失败由 runner 引起。
 - 默认 / 部署 / 流量：本任务保持默认配置；未部署，真实流量与外部服务未验证。
 
 ## 范围与所有权

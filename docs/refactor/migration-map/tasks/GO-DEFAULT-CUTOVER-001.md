@@ -5,7 +5,7 @@
 - 执行提示词：[GO-DEFAULT-CUTOVER-001.prompt.md](GO-DEFAULT-CUTOVER-001.prompt.md)。
 - 前置：[GO-CUTOVER-PREREQS-001](GO-CUTOVER-PREREQS-001.md) 四项实际合入、对应源码复核与普通 CI 通过。
 - 编码分支：`codex/go-default-cutover`；建议 worktree：`/Users/oo/project/newwei-go-default-cutover`，尚未创建。
-- 编码 PR / head / merge SHA / CI：无；规划记录发布分支 `codex/plan-go-cutover-next`。
+- 编码 PR / head / merge SHA / CI：无；规划记录已推送至 `codex/plan-go-cutover-next` / [Ready 规划 PR #149](https://github.com/wei500L/newwei/pull/149)。
 - 来源：用户贴出的“全部转 Go、静态审查 + CI、不上生产”阶段 3；前六批与整合 #148 已 merged。
 - 默认 / 部署：本规划没有切任何默认值；后续任务只改变仓库配置，不操作真实部署或 `.env`。
 

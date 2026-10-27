@@ -8,7 +8,7 @@
 
 执行 `git fetch origin main`，读取最新 `origin/main`、开放 PR、main 最近普通 CI 与 `git worktree list`。规划基线 `f15f598d4358b4c9823054ef5a355618e1480a4e` 已包含 #148（实际 merge `0a48babea69700c7f9cd1bf2262f25d414469527`）、两次 runner smoke 提交和一次既有 workflow 转自托管 runner 的提交。#142–#147 已合并，不要再次整合这六批。
 
-规划时 main 的普通 CI run 40518886959 queued；先取得该 SHA 的真实结果。前一 head `cc3782c0` 的普通 CI run 40518448341 已 cancelled，额外 Self-hosted Smoke success 不代替普通 CI。#148 整合 head `79220a47` 的 run 40513400923 attempt 2 三个主要 job success，只证明那个 head。已知 `realtimesocket` 关停测试曾在 attempt 1 命中基线竞态，不得通过删用例、降低断言或无限重跑掩盖失败；出现失败先判断与本批的因果关系。沿用现有普通 CI，不顺手修改 runner/调度配置。
+交付复核（2026-10-27 17:21 MSK）时 main 普通 CI run 40518886959 已 **cancelled**，verify failure、vector-integration success、api-go-user-settings-integration cancelled，根因尚未证实；先读取精确 head/job 的失败原因，区分环境问题、既有问题与本批改动，不宣称基线全绿。前一 head `cc3782c0` 的普通 CI run 40518448341 亦 cancelled，额外 Self-hosted Smoke success 不代替普通 CI。#148 整合 head `79220a47` 的 run 40513400923 attempt 2 三个主要 job success，只证明那个 head。已知 `realtimesocket` 关停测试曾在 attempt 1 命中基线竞态，不得通过删用例、降低断言或无限重跑掩盖失败；不能未经日志核实就认定本次也属该竞态或 runner 变更。沿用现有普通 CI，不顺手修改 runner/调度配置。
 
 从最新 main 创建/复用本任务独立 worktree，分支 `codex/go-cutover-prereqs`。若已有对应 PR/认领，继续已有任务；与其他窗口共享文件冲突时先核对范围。忽略无关工作区噪声，不碰其他会话的改动。
 

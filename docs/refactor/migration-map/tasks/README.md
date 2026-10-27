@@ -9,7 +9,7 @@
 | [GO-CUTOVER-PREREQS-001](GO-CUTOVER-PREREQS-001.md) | **reserved**；[提示词已发出](GO-CUTOVER-PREREQS-001.prompt.md)，未核实执行器/编码 PR | Go main/httpx/metrics/异常/GraphQL/条目创建体、必要指标调用点；保持默认；分支 `codex/go-cutover-prereqs` |
 | [GO-DEFAULT-CUTOVER-001](GO-DEFAULT-CUTOVER-001.md) | **planned**；[提示词预先给出](GO-DEFAULT-CUTOVER-001.prompt.md)，有前置，尚不认领编码文件 | 前一任务实际合入与普通 CI 通过后再认领 config/compose/env/Web/启动工具；分支 `codex/go-default-cutover` |
 
-这两份规划由 `codex/plan-go-cutover-next` 发布。历史 50+ worktree 的存在不代表仍活跃；本次未修改或清理它们。编码窗口更新自己的 task 和 PR；规划窗口集中回填共享地图。下一检查点是前置任务 PR 的实际范围与精确 head 普通 CI，不是部署观察。
+这两份规划已由 `codex/plan-go-cutover-next` / [Ready 规划 PR #149](https://github.com/wei500L/newwei/pull/149) 发布，业务未实施。历史 50+ worktree 的存在不代表仍活跃；本次未修改或清理它们。编码窗口更新自己的 task 和 PR；规划窗口集中回填共享地图。下一检查点是 main run 40518886959 的失败原因、前置任务 PR 的实际范围与精确 head 普通 CI，不是部署观察。
 
 2026-10-22 `refactor/go-ais-relay`（pr_open，无独立 task ID；基线 `origin/main dc48abc1`，worktree `/Users/oo/project/newwei-go-ais-relay`）：Go AIS relay 端口——Node `apps/ais-relay` 迁为 `apps/api-go/internal/aisrelay` + `apps/api-go/cmd/ais-relay`（同环境变量、同 HTTP 路径、同 JSON 契约），新增 `infra/docker/ais-relay-go.Dockerfile` 与 `go-pilot` profile 的 pilot 服务 `ais-relay-go`（宿主 `3005` → 容器 `3004`）。不改变默认开关：`REALTIME_SIGNALS_AIS_BASE_URL` 仍指向 Node `http://ais-relay:3004`，Node 版保留、本批不新增开关。PR 待创建，最终 head/普通 CI 在 PR 回填。
 
