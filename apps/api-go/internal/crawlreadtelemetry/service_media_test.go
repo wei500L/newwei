@@ -1,8 +1,13 @@
 package crawlreadtelemetry
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -135,7 +140,8 @@ func TestBuildContentDisposition(t *testing.T) {
 	}
 }
 
-// TestBuildAssetFileName covers the kind-id-extension shape.
+// TestBuildAssetFileName covers the kind-id-extension shape. The content type
+// argument is the already-resolved type, exactly like the NestJS callers.
 func TestBuildAssetFileName(t *testing.T) {
 	cases := []struct {
 		kind, id, contentType, format, want string
@@ -148,10 +154,51 @@ func TestBuildAssetFileName(t *testing.T) {
 		{"file", "asset-6", "", "", "file-asset-6"},
 	}
 	for _, tc := range cases {
-		got := buildAssetFileName(tc.kind, tc.id, sql.NullString{String: tc.contentType, Valid: tc.contentType != ""}, sql.NullString{String: tc.format, Valid: tc.format != ""})
+		got := buildAssetFileName(tc.kind, tc.id, tc.contentType, tc.format)
 		if got != tc.want {
 			t.Fatalf("buildAssetFileName(%q, %q, %q, %q) = %q, want %q", tc.kind, tc.id, tc.contentType, tc.format, got, tc.want)
 		}
+	}
+}
+
+// TestResolveDeliveryFileNameUsesResolvedContentType pins the aliased stored
+// value case: NestJS resolves "jpg" to image/jpeg before picking the extension,
+// so the delivered file name must end in .jpg instead of falling back to the
+// format column.
+func TestResolveDeliveryFileNameUsesResolvedContentType(t *testing.T) {
+	service := &Service{jwtSecret: testJWTSecret}
+	record := crawlMediaDeliveryRecord{
+		ID:          "asset-7",
+		Provider:    string(CrawlImageStorageProviderMySQL),
+		Kind:        "image",
+		ContentType: sql.NullString{String: "jpg", Valid: true},
+		JoinedBlob:  []byte{0x89, 0x50},
+	}
+	payload, err := service.resolveDelivery(context.Background(), record, CrawlMediaAccessModeDownload)
+	if err != nil {
+		t.Fatalf("resolveDelivery: %v", err)
+	}
+	if payload == nil || payload.FileName != "image-asset-7.jpg" {
+		t.Fatalf("file name = %+v", payload)
+	}
+	if payload.ContentType != "image/jpeg" {
+		t.Fatalf("content type = %q", payload.ContentType)
+	}
+}
+
+// TestStringPtrFromNullKeepsEmptyString pins the NestJS `?? undefined`
+// projection: a present empty column value stays "", only NULL becomes null.
+func TestStringPtrFromNullKeepsEmptyString(t *testing.T) {
+	if got := stringPtrFromNull(sql.NullString{}); got != nil {
+		t.Fatalf("NULL = %v, want nil", *got)
+	}
+	empty := stringPtrFromNull(sql.NullString{String: "", Valid: true})
+	if empty == nil || *empty != "" {
+		t.Fatalf("empty string = %v, want pointer to \"\"", empty)
+	}
+	value := stringPtrFromNull(sql.NullString{String: "kept", Valid: true})
+	if value == nil || *value != "kept" {
+		t.Fatalf("present value = %v", value)
 	}
 }
 
@@ -353,5 +400,59 @@ func TestCrawlTableCellDecodesScalars(t *testing.T) {
 	}
 	if string(encoded) != `"v"` {
 		t.Fatalf("cell = %s, want \"v\"", encoded)
+	}
+}
+
+// TestResolveMediaAccessKeepsRawOrgQueryValue pins the NestJS lookup contract of
+// the public media route: the HMAC scope is trimmed before it is hashed, but the
+// CrawlMediaAsset row is looked up by the RAW `org` query value. A padded scope
+// that still verifies must not widen the database match.
+func TestResolveMediaAccessKeepsRawOrgQueryValue(t *testing.T) {
+	service := &Service{jwtSecret: testJWTSecret}
+	handler := NewHandler(nil, service)
+
+	expiresAtMs := time.Now().UnixMilli() + 60_000
+	signature := service.signAssetAccess("asset-1", CrawlMediaAccessModePreview, expiresAtMs, "org-1", "user-1")
+	query := url.Values{
+		"exp":  {strconv.FormatInt(expiresAtMs, 10)},
+		"org":  {" org-1 "},
+		"user": {"user-1"},
+		"sig":  {signature},
+	}
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/crawl-media-assets/asset-1/preview?"+query.Encode(),
+		nil,
+	)
+	mode, lookupOrg, err := handler.resolveMediaAccess("asset-1", "preview", request)
+	if err != nil {
+		t.Fatalf("resolveMediaAccess: %v", err)
+	}
+	if mode != CrawlMediaAccessModePreview {
+		t.Fatalf("mode = %q", mode)
+	}
+	if lookupOrg != " org-1 " {
+		t.Fatalf("lookup org = %q, want the raw query value", lookupOrg)
+	}
+}
+
+// TestResolveMediaAccessRejections pins the mode check order and the signature
+// failure mapping onto the media route statuses.
+func TestResolveMediaAccessRejections(t *testing.T) {
+	service := &Service{jwtSecret: testJWTSecret}
+	handler := NewHandler(nil, service)
+	request := httptest.NewRequest(http.MethodGet, "/api/crawl-media-assets/asset-1/inline", nil)
+
+	_, _, err := handler.resolveMediaAccess("asset-1", "inline", request)
+	var typed *statusError
+	if !errors.As(err, &typed) || typed.status != http.StatusNotFound ||
+		typed.message != "Unsupported crawl media access mode" {
+		t.Fatalf("unsupported mode error = %v", err)
+	}
+
+	_, _, err = handler.resolveMediaAccess("asset-1", "preview", request)
+	if !errors.As(err, &typed) || typed.status != http.StatusBadRequest ||
+		typed.message != "Missing signature" {
+		t.Fatalf("missing signature error = %v", err)
 	}
 }

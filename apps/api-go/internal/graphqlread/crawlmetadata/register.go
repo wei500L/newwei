@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	metadatasvc "github.com/wei500L/newwei/apps/api-go/internal/crawlmetadata"
@@ -117,6 +118,19 @@ func (r *Reader) CrawlMetadata(ctx context.Context, input map[string]any) ([]Res
 	extraction.ExtractOpenGraph = boolArg(input, "extractOpenGraph")
 	extraction.ExtractStandardMeta = boolArg(input, "extractStandardMeta")
 
+	// The GraphQL input type carries the same class-validator bounds as the REST
+	// DTO (@Min(1) on maxUrls and concurrency), so an out-of-range value is a
+	// BAD_REQUEST field error rather than a silently clamped request. The message
+	// order follows the input type's declaration order and the two messages are
+	// joined with "; ", exactly how ValidationPipe renders them through the
+	// global exception filter.
+	if problems := metadataBoundsProblems(extraction); len(problems) > 0 {
+		return nil, &contract.Failure{
+			Message: strings.Join(problems, "; "),
+			Status:  http.StatusBadRequest,
+		}
+	}
+
 	results, err := r.service.Extract(ctx, extraction)
 	if err != nil {
 		// NestJS raises BadRequestException for the two input failures and the
@@ -129,6 +143,20 @@ func (r *Reader) CrawlMetadata(ctx context.Context, input map[string]any) ([]Res
 		return nil, err
 	}
 	return toGraphResults(results), nil
+}
+
+// metadataBoundsProblems returns the class-validator @Min(1) failures of the two
+// bounded integer inputs. maxUrls is declared before concurrency on the input
+// type, which fixes the order of the joined message.
+func metadataBoundsProblems(input metadatasvc.ExtractionInput) []string {
+	problems := make([]string, 0, 2)
+	if input.MaxURLs != nil && *input.MaxURLs < 1 {
+		problems = append(problems, "maxUrls must not be less than 1")
+	}
+	if input.Concurrency != nil && *input.Concurrency < 1 {
+		problems = append(problems, "concurrency must not be less than 1")
+	}
+	return problems
 }
 
 // boolArg reports a present boolean and nil for absent or null.

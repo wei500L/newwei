@@ -39,25 +39,15 @@ import (
 
 // UpdateRunMetadataLocked merges patch into CrawlFrontierRun.metadata under a
 // row lock, so concurrent completions in the same run cannot drop each other's
-// keys.
+// keys. It shares store.go updateRunMetadata's implementation, which means every
+// metadata write in this package is locked.
 func (s *Service) UpdateRunMetadataLocked(ctx context.Context, runID string, patch *Object) error {
-	if s.db == nil {
-		return errNoDB()
-	}
-	if patch == nil {
-		return nil
-	}
-	return s.withLockedMetadata(ctx,
-		"SELECT metadata FROM CrawlFrontierRun WHERE id = ? FOR UPDATE",
-		"UPDATE CrawlFrontierRun SET metadata = ?, updatedAt = ? WHERE id = ?",
-		runID,
-		func(*Object) *Object { return patch },
-	)
+	return s.updateRunMetadata(ctx, runID, patch)
 }
 
 // UpdateNodeMetadataLocked is the node counterpart of UpdateRunMetadataLocked.
 func (s *Service) UpdateNodeMetadataLocked(ctx context.Context, nodeID string, patch *Object) error {
-	return s.UpdateNodeMetadataFuncLocked(ctx, nodeID, func(*Object) *Object { return patch })
+	return s.updateNodeMetadata(ctx, nodeID, patch)
 }
 
 // UpdateNodeMetadataFuncLocked is the functional (existing-metadata aware) form.
@@ -65,32 +55,32 @@ func (s *Service) UpdateNodeMetadataLocked(ctx context.Context, nodeID string, p
 // `patch(existing)` callback, so derived fields such as a decremented
 // pendingLlmJudgeJobs counter stay correct under concurrency.
 func (s *Service) UpdateNodeMetadataFuncLocked(ctx context.Context, nodeID string, build func(existing *Object) *Object) error {
-	if s.db == nil {
-		return errNoDB()
-	}
-	return s.withLockedMetadata(ctx,
-		"SELECT metadata FROM CrawlFrontierNode WHERE id = ? FOR UPDATE",
-		"UPDATE CrawlFrontierNode SET metadata = ?, updatedAt = ? WHERE id = ?",
-		nodeID,
-		build,
-	)
+	return s.updateNodeMetadataFunc(ctx, nodeID, build)
 }
 
 // withLockedMetadata runs the SELECT ... FOR UPDATE, the merge and the UPDATE in
-// one transaction. A missing row keeps the NestJS no-op behaviour (Prisma would
-// throw P2025, but every call site passes an id read in the same request, and
-// the existing unlocked helpers already return nil for a missing row).
-func (s *Service) withLockedMetadata(ctx context.Context, selectSQL, updateSQL, id string, build func(existing *Object) *Object) error {
+// one transaction and returns the merged document. The returned document is what
+// refreshRunStatus hands to the terminal lifecycle, so the lifecycle evaluates
+// the same metadata the lock-protected write produced instead of a snapshot read
+// before the lock.
+//
+// A missing row keeps the NestJS no-op behaviour (Prisma would throw P2025, but
+// every call site passes an id read in the same request, and the unlocked helper
+// this replaced already returned nil for a missing row).
+func (s *Service) withLockedMetadata(ctx context.Context, selectSQL, updateSQL, id string, build func(existing *Object) *Object) (*Object, error) {
+	if s.db == nil {
+		return nil, errNoDB()
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("crawlfrontierllm: begin metadata transaction: %w", err)
+		return nil, fmt.Errorf("crawlfrontierllm: begin metadata transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	var raw []byte
 	scanErr := tx.QueryRowContext(ctx, selectSQL, id).Scan(&raw)
 	if scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
-		return scanErr
+		return nil, scanErr
 	}
 	existing := parseObjectOrNil(raw)
 	patch := build(existing)
@@ -100,12 +90,15 @@ func (s *Service) withLockedMetadata(ctx context.Context, selectSQL, updateSQL, 
 	}
 	encoded, err := merged.MarshalJSON()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, updateSQL, encoded, truncateMillis(s.now()), id); err != nil {
-		return err
+		return nil, err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return merged, nil
 }
 
 // errNoDB is the shared missing-handle error.

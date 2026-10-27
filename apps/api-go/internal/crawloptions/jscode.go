@@ -80,7 +80,10 @@ func ValidateJSCode(code string) []string {
 		return nil
 	}
 	blocked := make([]string, 0)
-	if len(trimmed) > MaxScriptLength {
+	// MAX_SCRIPT_LENGTH is compared against String.length, i.e. UTF-16 code
+	// units, so a non-ASCII script keeps the same budget as it has in the
+	// NestJS validator (len() would count UTF-8 bytes and reject early).
+	if utf16Length(trimmed) > MaxScriptLength {
 		blocked = append(blocked,
 			fmt.Sprintf("Script exceeds maximum length of %d characters", MaxScriptLength))
 	}

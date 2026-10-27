@@ -124,7 +124,9 @@ func (s *Service) applyRuntimeStates(ctx context.Context, sources []sourceRow, s
 }
 
 // emptyIfNoSnapshot keeps the snapshot-shaped zero value (null latest rows) so
-// the runtime block can be attached to a source without a snapshot row.
+// the runtime block can be attached to a source without a snapshot row. Both
+// applyRuntimeStates and the list projection use it, so a snapshot-less source
+// never loses the counters the scheduler wrote into Redis.
 func emptyIfNoSnapshot(summary opsSummary) opsSummary {
 	if summary.LatestJob == nil {
 		empty := emptyOps()

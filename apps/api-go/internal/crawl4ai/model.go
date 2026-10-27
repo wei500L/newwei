@@ -2,6 +2,7 @@ package crawl4ai
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 )
 
@@ -267,8 +268,13 @@ func newError(status int, message string) *Error {
 
 // StatusOf returns the HTTP status carried by err, or 0 when err is not a
 // classified crawl4ai error.
+//
+// It unwraps with errors.As on purpose: the execution service and the crawl
+// worker wrap client errors with %w for context and retry telemetry, and the
+// retryable-status decision must still see the upstream status.
 func StatusOf(err error) int {
-	if typed, ok := err.(*Error); ok {
+	var typed *Error
+	if errors.As(err, &typed) && typed != nil {
 		return typed.Status
 	}
 	return 0
