@@ -11,7 +11,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  smoke:
+  # 验证无服务的常规 job：工具链安装、缓存、checkout 是否可用。
+  basic:
     runs-on: [self-hosted, linux, build-server]
     timeout-minutes: 15
     steps:
@@ -58,5 +59,46 @@ jobs:
           pnpm --version
           git --version
 
-      - name: Post-setup disk
-        run: df -h "$GITHUB_WORKSPACE"
+  # 验证 CI 真实依赖的 Docker 服务容器路径：GitHub 会把 services
+  # 起成同网桥内的容器并映射到宿主机端口，宿主机若已占用同端口则 job 失败。
+  services:
+    runs-on: [self-hosted, linux, build-server]
+    timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      qdrant:
+        image: qdrant/qdrant:v1.10.1
+        ports:
+          - 6333:6333
+    steps:
+      - name: Service containers reachable on host ports
+        run: |
+          docker ps --format '{{.Names}}\t{{.Ports}}'
+          echo "--- redis ---"
+          docker run --rm --network host redis:7.2 redis-cli -h 127.0.0.1 ping
+          echo "--- qdrant ---"
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:6333/healthz >/dev/null 2>&1; then
+              echo "qdrant healthy after ${i}s"; break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:6333/healthz && echo
+
+      - name: Docker build path
+        run: |
+          mkdir -p /tmp/dockerfile-probe
+          printf 'FROM alpine:3.20\nRUN echo self-hosted-docker-ok\n' \
+            > /tmp/dockerfile-probe/Dockerfile
+          docker build -t probe:self-hosted /tmp/dockerfile-probe
+          docker run --rm probe:self-hosted
+          docker rmi probe:self-hosted
+          rm -rf /tmp/dockerfile-probe
