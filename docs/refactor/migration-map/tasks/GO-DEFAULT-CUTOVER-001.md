@@ -1,6 +1,6 @@
 # GO-DEFAULT-CUTOVER-001 · 仓库默认运行链切到 Go
 
-- 状态：`pr_open`；本批已实现并推送 Ready PR（head/CI 见 PR 与下方回填段）。
+- 状态：`pr_open`；Ready PR [#151](https://github.com/wei500L/newwei/pull/151)，最终 head `c3af4125f0ef1a179fb3e64520ef657c4d581fc3`，普通 CI [run 40572641944](https://github.com/wei500L/newwei/actions/runs/40572641944) `success`（`verify` / `vector-integration` / `api-go-user-settings-integration` 均 success，两个 regen job skipped 不计通过）。未合并。
 - 规划基线：`f15f598d4358b4c9823054ef5a355618e1480a4e`；开工实际基线 `origin/main = 385c887e8cda2df6a3fadd2109c6641ae62cb6ee`（#150 合入后）。
 - 前置：[GO-CUTOVER-PREREQS-001](GO-CUTOVER-PREREQS-001.md) 四项已合入 main。
 - 执行提示词：[GO-DEFAULT-CUTOVER-001.prompt.md](GO-DEFAULT-CUTOVER-001.prompt.md)（在规划 PR #149）。
@@ -39,9 +39,10 @@
 
 ## 验证
 
-- 本机：只做静态阅读、diff 与 `gofmt`；未部署、未连真实外部服务。
-- 远端：普通 GitHub Actions CI 在精确 head 上验证（run / 逐 job 在 PR 回填，skipped 不算通过）。
-- 保留 Node 与 Go 对照测试、契约漂移门禁与既有集成 job；未删除 Nest，未改 CI runner/调度。
+- 本机：静态阅读与 diff、`gofmt`、`go vet ./...`；`go test ./internal/config/` 通过。未部署、未连真实外部服务、未用 Docker。
+  - `internal/alertworker` / `crawl4ai` / `crawlexecution` 在本机失败：本机 DNS 把 `*.invalid` 与 `example.com` 解析到 198.18.0.x（代理保留段）。已用 `git stash` 在改动前的树上复现同样失败，与本批无关；CI 上通过。
+- 远端：普通 CI 在精确 head `c3af4125` 上 success（见上）。保留 Node/Go 对照测试、契约漂移门禁与既有集成 job；未删除 Nest，未改 CI runner/调度。
+- 新增门禁：`testdata/default-resources.env`（只给资源、不给任何 mode）+ `TestDefaultConfigIsAllGoWithoutAnyModeSwitch`；`TestAllGoFixtureStillDetectsMissingSwitch` 改为校验 fixture 键完整性；`TestAllGoFixtureMatchesOmittedSwitches` 要求显式写全与全部省略解析一致。Web 侧 `env-connection-defaults.test.ts` 断言从裸 base 派生 API/GraphQL/两个传输路径。
 
 ## 回退
 
