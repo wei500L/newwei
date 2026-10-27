@@ -1,0 +1,62 @@
+name: Self-hosted Smoke
+
+# 仅手动触发。不要挂 pull_request / push：
+# 仓库为 public，自托管 runner 执行工作流代码时拥有宿主机权限，
+# 若允许 fork PR 触发会构成远程代码执行通道。
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: self-hosted-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, linux, build-server]
+    timeout-minutes: 15
+    steps:
+      - name: Host identity
+        run: |
+          echo "hostname: $(hostname)"
+          uname -a
+          echo "runner: ${RUNNER_NAME}"
+          echo "workspace: ${GITHUB_WORKSPACE}"
+
+      - name: Resource budget
+        run: |
+          echo "--- cpu ---"; nproc
+          echo "--- memory ---"; free -h
+          echo "--- disk ---"; df -h "$GITHUB_WORKSPACE"
+
+      - name: Docker availability
+        run: |
+          docker version --format '{{.Server.Version}}'
+          docker compose version
+
+      - name: Toolchain baseline (pre-setup)
+        run: |
+          for b in git node pnpm go docker; do
+            printf '%-6s ' "$b"
+            command -v "$b" >/dev/null && "$b" --version 2>&1 | head -1 || echo "absent"
+          done
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Toolchain after setup
+        run: |
+          node --version
+          pnpm --version
+          git --version
+
+      - name: Post-setup disk
+        run: df -h "$GITHUB_WORKSPACE"
