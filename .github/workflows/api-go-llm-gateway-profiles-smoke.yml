@@ -88,7 +88,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'api-go-llm-gateway-profiles-smoke')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, build-server]
     timeout-minutes: 60
     permissions:
       contents: read

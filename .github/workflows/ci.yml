@@ -27,7 +27,7 @@ env:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, build-server]
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -142,7 +142,7 @@ jobs:
   # NestJS vector 与 vector-go 的契约差分。本机禁 Docker——验证全部在
   # GitHub Actions Linux runner 完成。
   vector-integration:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, build-server]
     timeout-minutes: 20
     services:
       qdrant:
@@ -268,7 +268,7 @@ jobs:
   # api-go 的远端真实 MySQL/Redis 集成测试（Go-批3A 起含 authz 授权
   # 重推导 + authn blacklist 的真实栈验证）。
   api-go-user-settings-integration:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, build-server]
     timeout-minutes: 25
     services:
       mysql:
@@ -672,7 +672,7 @@ jobs:
   # fail-on-drift 语义。
   go-modules-regen:
     if: contains(github.event.pull_request.labels.*.name, 'go-modules-regen')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, build-server]
     timeout-minutes: 10
     permissions:
       contents: write
@@ -727,7 +727,7 @@ jobs:
   # drift gate 保持 fail-on-drift 语义不变。
   contract-baseline-regen:
     if: contains(github.event.pull_request.labels.*.name, 'contract-regen')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, build-server]
     timeout-minutes: 15
     permissions:
       contents: write

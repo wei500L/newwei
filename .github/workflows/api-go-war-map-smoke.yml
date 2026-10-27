@@ -51,7 +51,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'api-go-war-map-smoke')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, build-server]
     timeout-minutes: 35
     services:
       mysql:

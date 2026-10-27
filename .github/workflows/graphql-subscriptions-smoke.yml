@@ -82,7 +82,7 @@ env:
 
 jobs:
   graphql-subscriptions-smoke:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, build-server]
     timeout-minutes: 35
     services:
       mysql:
