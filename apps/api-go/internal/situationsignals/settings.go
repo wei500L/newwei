@@ -250,10 +250,7 @@ func (s *settingsReader) telegramRuntimeConfig(ctx context.Context) (telegramRun
 		}
 	}
 	if channelSet == "" {
-		channelSet = s.stringEnv("SITUATION_MONITOR_TELEGRAM_CHANNEL_SET", "TELEGRAM_CHANNEL_SET")
-	}
-	if channelSet == "" {
-		channelSet = defaultTelegramChannelSet
+		channelSet = s.telegramChannelSetEnv()
 	}
 
 	return telegramRuntime{
@@ -263,6 +260,35 @@ func (s *settingsReader) telegramRuntimeConfig(ctx context.Context) (telegramRun
 		Session:    session,
 		ChannelSet: channelSet,
 	}, nil
+}
+
+// telegramChannelSetEnv mirrors the channelSet read of the settings service
+// (SituationMonitorSettingsService.resolveTelegramEnvDefaults through
+// readStringEnv over the validated configuration).
+//
+// SITUATION_MONITOR_TELEGRAM_CHANNEL_SET carries a "full" default in the zod
+// schema, so the validated value is always defined and an ABSENT canonical
+// variable shadows the legacy TELEGRAM_CHANNEL_SET alias: the effective channel
+// set is "full", not the alias. Only an explicitly empty canonical value falls
+// through to the alias. situationsettings.channelSetEnv and
+// situationsignalsworker.readChannelSetEnv encode the same rule.
+func (s *settingsReader) telegramChannelSetEnv() string {
+	if s == nil || s.lookup == nil {
+		return defaultTelegramChannelSet
+	}
+	canonical, ok := s.lookup("SITUATION_MONITOR_TELEGRAM_CHANNEL_SET")
+	if !ok {
+		return defaultTelegramChannelSet
+	}
+	if trimmed := strings.TrimSpace(canonical); trimmed != "" {
+		return trimmed
+	}
+	if alias, ok := s.lookup("TELEGRAM_CHANNEL_SET"); ok {
+		if trimmed := strings.TrimSpace(alias); trimmed != "" {
+			return trimmed
+		}
+	}
+	return defaultTelegramChannelSet
 }
 
 // telegramRefreshReadiness is the four booleans GET /catalog needs.
@@ -279,7 +305,7 @@ func (s *settingsReader) refreshReadiness(ctx context.Context) (telegramRefreshR
 	if err != nil {
 		return telegramRefreshReadiness{}, false, err
 	}
-	orefConfigured := s.stringEnv("SITUATION_MONITOR_OREF_PROXY_AUTH", "OREF_PROXY_AUTH") != ""
+	orefConfigured := s.orefProxyAuthConfiguredForCatalog()
 	return telegramRefreshReadiness{
 		Enabled:  runtime.Enabled,
 		HasAPIID: runtime.APIID != "",
@@ -296,8 +322,36 @@ func (s *settingsReader) orefEnabled() bool {
 
 // orefConfigured reports whether the OREF proxy credential is present. Credential
 // material is never returned, only its presence.
+//
+// This is the signals-service read (isOrefConfigured -> the service's own
+// readStringEnv): the first variable with a non-empty trimmed value wins, so an
+// explicitly empty SITUATION_MONITOR_OREF_PROXY_AUTH falls through to the legacy
+// OREF_PROXY_AUTH alias. It is what the OREF alert/history endpoints report.
 func (s *settingsReader) orefConfigured() bool {
 	return s.stringEnv("SITUATION_MONITOR_OREF_PROXY_AUTH", "OREF_PROXY_AUTH") != ""
+}
+
+// orefProxyAuthConfiguredForCatalog mirrors the orefConfigured member of
+// SituationMonitorSettingsService.getPublicSettings, which GET
+// /situation-monitor/catalog reads:
+//
+//	normalizeString(env.get("SITUATION_MONITOR_OREF_PROXY_AUTH") ?? env.get("OREF_PROXY_AUTH"))
+//
+// The nullish coalescing happens before the trim, so an explicitly empty
+// canonical variable SHADOWS the legacy alias instead of falling through to it.
+// The settings handler resolves the same value through
+// situationsettings.Env.OrefProxyAuth.
+func (s *settingsReader) orefProxyAuthConfiguredForCatalog() bool {
+	if s == nil || s.lookup == nil {
+		return false
+	}
+	if value, ok := s.lookup("SITUATION_MONITOR_OREF_PROXY_AUTH"); ok {
+		return strings.TrimSpace(value) != ""
+	}
+	if value, ok := s.lookup("OREF_PROXY_AUTH"); ok {
+		return strings.TrimSpace(value) != ""
+	}
+	return false
 }
 
 // liveHLSProxyConfig is the response shape of GET /live-hls-proxy-config. It

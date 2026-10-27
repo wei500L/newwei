@@ -232,7 +232,11 @@ func TestPollOrefB3KeepsLastGoodState(t *testing.T) {
 			upstream.setAlerts(`[{"id":"a","data":["x"]}]`, http.StatusOK)
 			worker.handleJob(t, SourceOref)
 
-			alertsBefore, _ := worker.store.raw(orefAlertsCacheKey)
+			rawBefore, _ := worker.store.raw(orefAlertsCacheKey)
+			var alertsBefore orefAlertsDocument
+			if err := json.Unmarshal([]byte(rawBefore), &alertsBefore); err != nil {
+				t.Fatalf("decode alerts document: %v", err)
+			}
 			historyBefore, _ := worker.store.raw(orefHistoryCacheKey)
 			metricsBefore, _ := worker.store.raw(orefMetricsCacheKey)
 			eventsBefore := len(worker.publisher.snapshot())
@@ -241,8 +245,25 @@ func TestPollOrefB3KeepsLastGoodState(t *testing.T) {
 			worker.clock.advance(time.Minute)
 			worker.handleJob(t, SourceOref)
 
-			if got, _ := worker.store.raw(orefAlertsCacheKey); got != alertsBefore {
-				t.Fatalf("alerts document was overwritten: %s", got)
+			// B3: the last good alerts, counters and poll instant survive; only the
+			// error marker is added so the HTTP read path can report the failure.
+			rawAfter, _ := worker.store.raw(orefAlertsCacheKey)
+			var alertsAfter orefAlertsDocument
+			if err := json.Unmarshal([]byte(rawAfter), &alertsAfter); err != nil {
+				t.Fatalf("decode alerts document: %v", err)
+			}
+			if !reflect.DeepEqual(alertsAfter.Alerts, alertsBefore.Alerts) {
+				t.Fatalf("cached alerts changed: %s", rawAfter)
+			}
+			if alertsAfter.HistoryCount24h != alertsBefore.HistoryCount24h ||
+				alertsAfter.TotalHistoryCount != alertsBefore.TotalHistoryCount {
+				t.Fatalf("cached counters changed: %s", rawAfter)
+			}
+			if alertsAfter.Timestamp != alertsBefore.Timestamp {
+				t.Fatalf("cached timestamp = %s, want %s", alertsAfter.Timestamp, alertsBefore.Timestamp)
+			}
+			if alertsAfter.Error == nil || !strings.Contains(*alertsAfter.Error, "OREF") {
+				t.Fatalf("cached error = %v, want the poll failure", alertsAfter.Error)
 			}
 			if got, _ := worker.store.raw(orefHistoryCacheKey); got != historyBefore {
 				t.Fatalf("history document was overwritten: %s", got)
@@ -444,13 +465,18 @@ func TestPollOrefHistoryTailTruncates(t *testing.T) {
 	}
 }
 
-// TestPollOrefDisabledAndNotConfigured covers the two early-return messages.
+// TestPollOrefDisabledAndNotConfigured covers the two early-return messages and
+// the error marker they persist: GET /oref-alerts and GET /oref-history are
+// rebuilt from the cached alerts document, so the message has to reach Redis.
 func TestPollOrefDisabledAndNotConfigured(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		worker := newTestWorker(t, testWorkerOptions{env: testEnv()})
 		worker.handleJob(t, SourceOref)
 		if worker.service.orefState.LastError != orefDisabledMessage {
 			t.Fatalf("lastError = %q", worker.service.orefState.LastError)
+		}
+		if document := cachedOrefAlertsDocument(t, worker); document.Error == nil || *document.Error != orefDisabledMessage {
+			t.Fatalf("cached error = %v, want %q", document.Error, orefDisabledMessage)
 		}
 	})
 
@@ -462,7 +488,25 @@ func TestPollOrefDisabledAndNotConfigured(t *testing.T) {
 		if worker.service.orefState.LastError != orefNotConfiguredText {
 			t.Fatalf("lastError = %q", worker.service.orefState.LastError)
 		}
+		if document := cachedOrefAlertsDocument(t, worker); document.Error == nil || *document.Error != orefNotConfiguredText {
+			t.Fatalf("cached error = %v, want %q", document.Error, orefNotConfiguredText)
+		}
 	})
+}
+
+// cachedOrefAlertsDocument decodes the cached alerts document, the only source
+// internal/situationsignals renders the two OREF HTTP responses from.
+func cachedOrefAlertsDocument(t *testing.T, worker *testWorker) orefAlertsDocument {
+	t.Helper()
+	raw, ok := worker.store.raw(orefAlertsCacheKey)
+	if !ok {
+		t.Fatal("alerts document was not written")
+	}
+	var document orefAlertsDocument
+	if err := json.Unmarshal([]byte(raw), &document); err != nil {
+		t.Fatalf("decode alerts document: %v", err)
+	}
+	return document
 }
 
 // TestPollOrefSkipsWhenAnotherInstanceHoldsTheLock covers the OREF B1 lease.

@@ -28,8 +28,13 @@ func (s *Service) resolveLocation(ctx context.Context, input *locationInput) *lo
 	if name == "" {
 		return nil
 	}
-	country := contentsubscriptions.NormalizeCountryAlpha2(input.Country)
-	if country == "" {
+	// NestJS uses `input.countryCodeAlpha2 ?? extractCountryCodeFromText(name)`:
+	// a client-supplied country wins even when it does not resolve, so the name is
+	// only parsed when the field is absent.
+	country := ""
+	if input.Country != "" {
+		country = contentsubscriptions.NormalizeCountryAlpha2(input.Country)
+	} else {
 		country = countryFromText(name)
 	}
 	geocoded := s.geocode(ctx, name, country)
@@ -69,6 +74,12 @@ func countryFromText(name string) string {
 			return false
 		}
 	}) {
+		// NestJS extractCountryCodeFromText ignores short tokens that are not
+		// uppercase, so a lowercase preposition ("de", "in") is never read as a
+		// country code.
+		if utf16Len(token) <= 3 && token != strings.ToUpper(token) {
+			continue
+		}
 		if code := contentsubscriptions.NormalizeCountryAlpha2(token); code != "" {
 			return code
 		}

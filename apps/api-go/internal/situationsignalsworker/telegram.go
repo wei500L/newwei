@@ -249,11 +249,11 @@ func (s *Service) pollTelegram(ctx context.Context, mode telegramPollMode) (tele
 	s.syncTelegramStateWithRuntime(ctx, runtime.ChannelSet)
 
 	if !runtime.Enabled {
-		s.telegramState.LastError = telegramDisabledMessage
+		s.recordTelegramGuardError(ctx, telegramDisabledMessage)
 		return telegramCycleRefused, nil
 	}
 	if strings.TrimSpace(runtime.APIID) == "" || strings.TrimSpace(runtime.APIHash) == "" || strings.TrimSpace(runtime.Session) == "" {
-		s.telegramState.LastError = telegramNotConfiguredMessage
+		s.recordTelegramGuardError(ctx, telegramNotConfiguredMessage)
 		return telegramCycleRefused, nil
 	}
 	if s.telegramPermanentlyDisabled {
@@ -268,7 +268,7 @@ func (s *Service) pollTelegram(ctx context.Context, mode telegramPollMode) (tele
 
 	options, fingerprint, err := buildTelegramClientOptions(runtime)
 	if err != nil {
-		s.telegramState.LastError = err.Error()
+		s.recordTelegramGuardError(ctx, err.Error())
 		s.logf("situationsignalsworker: telegram init failed")
 		return telegramCycleRefused, nil
 	}
@@ -300,6 +300,20 @@ func (s *Service) pollTelegram(ctx context.Context, mode telegramPollMode) (tele
 	}
 	s.completeTelegramOwnedCycle(ctx)
 	return telegramCyclePolled, nil
+}
+
+// recordTelegramGuardError stores a runtime-guard error and mirrors it into the
+// cached state document.
+//
+// GET /telegram-feed is served by internal/situationsignals, which rebuilds the
+// response from the cached document only. NestJS rendered the same message from
+// its in-process state, so a guard error that is kept in memory alone would
+// never reach the "Telegram polling is disabled / credentials are not
+// configured" banner after the read route moved to Go. Only the error marker is
+// written: the cached feed items, cursors and poll instant are preserved.
+func (s *Service) recordTelegramGuardError(ctx context.Context, message string) {
+	s.telegramState.LastError = message
+	s.persistTelegramState(ctx, s.telegramState)
 }
 
 // completeTelegramOwnedCycle is the post-cycle step of the process that owns the

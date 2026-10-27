@@ -46,6 +46,54 @@ func TestNormalizeQueryCollapsesAndTruncates(t *testing.T) {
 	}
 }
 
+// NestJS slices and validates by UTF-16 code unit, so a 200 character CJK query
+// (600 bytes) must survive normalization unchanged.
+func TestNormalizeQueryTruncatesByUTF16CodeUnits(t *testing.T) {
+	cjk := strings.Repeat("中", 250)
+	got := NormalizeQuery(cjk)
+	if jsStringLength(got) != 200 || len([]rune(got)) != 200 {
+		t.Fatalf("cjk length units=%d runes=%d", jsStringLength(got), len([]rune(got)))
+	}
+
+	// Each emoji is two UTF-16 code units, so 150 of them exceed the limit while
+	// 100 of them fit exactly.
+	emoji := strings.Repeat("😀", 150)
+	truncated := NormalizeQuery(emoji)
+	if jsStringLength(truncated) != 200 {
+		t.Fatalf("emoji length units=%d", jsStringLength(truncated))
+	}
+	for _, r := range truncated {
+		if r == 0xFFFD {
+			t.Fatalf("truncation split a surrogate pair: %q", truncated)
+		}
+	}
+	if got := NormalizeQuery(strings.Repeat("😀", 100)); jsStringLength(got) != 200 || len([]rune(got)) != 100 {
+		t.Fatalf("exact-fit emoji runes=%d", len([]rune(got)))
+	}
+}
+
+func TestParseGeoDTOValidatesLengthInUTF16CodeUnits(t *testing.T) {
+	cjk200 := strings.Repeat("中", 200)
+	query, country, err := parseGeoDTO([]byte(`{"query":"`+cjk200+`"}`), false)
+	if err != nil {
+		t.Fatalf("200 CJK characters must be accepted: %v", err)
+	}
+	if query != cjk200 || country != "" {
+		t.Fatalf("query length = %d", len(query))
+	}
+
+	if _, _, err := parseGeoDTO([]byte(`{"query":"`+strings.Repeat("a", 201)+`"}`), false); err == nil {
+		t.Fatal("201 characters must be rejected")
+	}
+	if _, _, err := parseGeoDTO([]byte(`{"query":"`+strings.Repeat("😀", 101)+`"}`), false); err == nil {
+		t.Fatal("202 UTF-16 code units must be rejected")
+	}
+	// The administrator probe DTO has no @MaxLength, so a long query is accepted.
+	if _, _, err := parseGeoDTO([]byte(`{"query":"`+strings.Repeat("中", 300)+`"}`), true); err != nil {
+		t.Fatalf("probe must not enforce @MaxLength: %v", err)
+	}
+}
+
 func TestGeocodePositiveCacheAndBounds(t *testing.T) {
 	var hits atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
