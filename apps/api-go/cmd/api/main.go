@@ -219,6 +219,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
@@ -1857,6 +1858,15 @@ func run() error {
 	if err := wireAPIDocs(gateway, cfg, cors.New(cfg.CorsOrigin), nestNotFoundRecorder); err != nil {
 		return err
 	}
+	// The REST and GraphQL exception side channel. It is installed here, before
+	// any handler can answer, and is independent of every API_GO_* switch: a
+	// failure NestJS would have recorded must still be recorded once Go answers it.
+	// The service is built on first use, so the default all-proxy configuration
+	// opens no extra Mongo client.
+	exceptions := newExceptionRecorder(cfg, &dashboardMongo, redisClient)
+	if exceptions != nil {
+		authhttp.SetExceptionRecorder(exceptions.rest)
+	}
 
 	if err := wireNewsIndicators(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
@@ -2555,6 +2565,7 @@ func run() error {
 			ComplexityLimit: cfg.GraphQLComplexity,
 			CacheEnabled:    cfg.GraphQLCacheEnabled,
 			CacheTTL:        cfg.GraphQLCacheTTL,
+			ErrorRecorder:   exceptions.graphql,
 		})
 		if handlerErr != nil {
 			return handlerErr
@@ -3084,6 +3095,12 @@ func run() error {
 				log.Printf("api-go: redis client close: %v", err)
 			}
 		}
+		// Drain the exception side channel before the shared Mongo client closes:
+		// the inserts run in their own goroutines and would otherwise fail silently
+		// on a closed connection.
+		if exceptions != nil {
+			exceptions.wait(closeCtx, exceptionRecordTimeout)
+		}
 		if dashboardMongo != nil {
 			if err := dashboardMongo.Disconnect(closeCtx); err != nil {
 				log.Printf("api-go: mongo client close failed")
@@ -3364,9 +3381,31 @@ func run() error {
 		}
 	}
 
-	handler := httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gateway.ServeHTTPWithShadow(w, r, disp)
-	}))
+	// The security defaults run outside the trace middleware so they also cover
+	// the trace headers' own response and every Go-written error; see
+	// httpx.SecurityHeadersMiddleware for why they fill in rather than overwrite.
+	//
+	// The metrics middleware wraps everything for the same reason: it observes
+	// proxied, shadowed, Go-served and rejected requests once each, so
+	// http_request_duration_seconds has one series per route rather than one per
+	// execution path. Its route label is recorded by the gateway while it matches
+	// the route table.
+	// IdentityScope installs the per-request box the error exits read the verified
+	// identity from; see authhttp.SetVerifiedIdentity. It sits outside the trace
+	// middleware so even a failure of the trace wrapper can be attributed.
+	handler := authhttp.IdentityScope(httpx.SecurityHeadersMiddleware(httpx.MetricsMiddleware(
+		httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gateway.ServeHTTPWithShadow(w, r, disp)
+		})),
+		func(observation httpx.HTTPObservation) {
+			metrics.RecordHTTPRequestMetric(metrics.HTTPRequestInput{
+				Method:     observation.Method,
+				Route:      observation.Route,
+				StatusCode: observation.StatusCode,
+				DurationMS: float64(observation.Duration.Microseconds()) / 1000,
+			})
+		},
+	)))
 	server := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
 		Handler:           handler,

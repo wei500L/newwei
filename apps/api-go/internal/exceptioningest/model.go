@@ -5,14 +5,23 @@ import (
 	"time"
 )
 
-// exceptionEventKind mirrors the ExceptionEventKind enum used by the Nest
-// normalizers.
-type exceptionEventKind string
+// ExceptionEventKind is the ExceptionEventKind enum of the Nest exception
+// service: "http", "graphql" or "unknown". It stays a string type so the stored
+// documents keep the exact values the Nest normalizers write.
+type ExceptionEventKind string
 
+// The three kinds the Nest normalizers produce.
 const (
-	kindHTTP    exceptionEventKind = "http"
-	kindGraphQL exceptionEventKind = "graphql"
-	kindUnknown exceptionEventKind = "unknown"
+	// KindHTTP is the event kind GlobalExceptionFilter records for an HTTP
+	// exception. It is exported so the process-wide recorder can build the same
+	// event the two migrated POST endpoints accept.
+	KindHTTP ExceptionEventKind = "http"
+	// KindGraphQL is the event kind GlobalExceptionFilter records for a GraphQL
+	// resolver exception.
+	KindGraphQL ExceptionEventKind = "graphql"
+	// KindUnknown is the fallback kind for an exception raised outside an HTTP or
+	// GraphQL host.
+	KindUnknown ExceptionEventKind = "unknown"
 )
 
 // ExceptionEvent is the normalized, strongly-typed report both endpoints build
@@ -22,7 +31,7 @@ const (
 type ExceptionEvent struct {
 	OrgID         string
 	UserID        string
-	Kind          exceptionEventKind
+	Kind          ExceptionEventKind
 	TraceID       string
 	Timestamp     time.Time
 	StatusCode    *int
@@ -43,7 +52,7 @@ type eventDocument struct {
 	ID            string             `bson:"id"`
 	OrgID         string             `bson:"orgId,omitempty"`
 	UserID        string             `bson:"userId,omitempty"`
-	Kind          exceptionEventKind `bson:"kind"`
+	Kind          ExceptionEventKind `bson:"kind"`
 	TraceID       string             `bson:"traceId"`
 	Timestamp     time.Time          `bson:"timestamp"`
 	StatusCode    *int               `bson:"statusCode,omitempty"`

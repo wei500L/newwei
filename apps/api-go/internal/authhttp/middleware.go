@@ -102,11 +102,16 @@ func (a *Authenticator) Identify(r *http.Request) (*Identity, *AuthFailure) {
 		log.Printf("authz: database error: %v", err)
 		return nil, &AuthFailure{Status: http.StatusServiceUnavailable, Message: "Internal server error"}
 	}
-	return &Identity{
+	identity := &Identity{
 		UserID:      authorization.UserID,
 		OrgID:       authorization.OrgID,
 		permissions: authorization.Permissions,
-	}, nil
+	}
+	// GraphQL failures are recorded by the executor, but the identity it reports
+	// comes from this chain; publishing it here keeps one source of truth for
+	// orgId/userId.
+	SetVerifiedIdentity(r, identity)
+	return identity, nil
 }
 
 // PermissionSet copies the derived permission names. The map is safe for the
@@ -178,9 +183,14 @@ func (a *Authenticator) Authenticate(w http.ResponseWriter, r *http.Request) *Id
 		return nil
 	}
 
-	return &Identity{
+	identity := &Identity{
 		UserID:      authorization.UserID,
 		OrgID:       authorization.OrgID,
 		permissions: authorization.Permissions,
 	}
+	// Publish the verified identity so a failure written later in the same request
+	// (a permission check, a validation error, a service error) is attributed to
+	// this tenant in the exception event.
+	SetVerifiedIdentity(r, identity)
+	return identity
 }

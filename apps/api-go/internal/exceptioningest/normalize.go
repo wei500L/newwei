@@ -201,20 +201,20 @@ func upperMethod(method string) string {
 }
 
 // normalizeKind maps anything outside the enum to "unknown" without trimming.
-func normalizeKind(raw json.RawMessage) exceptionEventKind {
+func normalizeKind(raw json.RawMessage) ExceptionEventKind {
 	text, ok := jsonString(raw)
 	if !ok {
-		return kindUnknown
+		return KindUnknown
 	}
-	switch exceptionEventKind(text) {
-	case kindHTTP:
-		return kindHTTP
-	case kindGraphQL:
-		return kindGraphQL
-	case kindUnknown:
-		return kindUnknown
+	switch ExceptionEventKind(text) {
+	case KindHTTP:
+		return KindHTTP
+	case KindGraphQL:
+		return KindGraphQL
+	case KindUnknown:
+		return KindUnknown
 	default:
-		return kindUnknown
+		return KindUnknown
 	}
 }
 
