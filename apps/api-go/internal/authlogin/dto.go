@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode/utf16"
 )
 
 // This file reproduces the global ValidationPipe (whitelist + forbidNonWhitelisted
@@ -118,16 +119,28 @@ func stringConstraint(v *validationErrors, raw json.RawMessage, field string) (s
 	return text, true
 }
 
-// minLengthConstraint validates @MinLength on a code point count. class-validator
-// guards the call with `typeof value === "string"`, so a non-string fails here
-// too without ever reaching validator.js.
+// minLengthConstraint validates @MinLength with validator.js's length rule.
+// class-validator guards the call with `typeof value === "string"`, so a
+// non-string fails here too without ever reaching validator.js. The comparison
+// uses the JavaScript string length (UTF-16 code units, see jsStringLength),
+// not the rune count: validator.js's isLength compares `str.length` directly.
 func minLengthConstraint(v *validationErrors, raw json.RawMessage, field string, min int) bool {
 	text, ok := decodeJSONString(raw)
-	if !ok || len([]rune(text)) < min {
+	if !ok || jsStringLength(text) < min {
 		v.add(field + " must be longer than or equal to " + itoa(min) + " characters")
 		return false
 	}
 	return true
+}
+
+// jsStringLength returns what JavaScript reports as `value.length`: the number
+// of UTF-16 code units. Every BMP character counts once and every astral
+// character (an emoji, for example) counts twice, which is exactly what
+// validator.js's isLength and the service-level `password.trim().length`
+// checks compare against. Counting runes instead would accept three emoji
+// (six UTF-16 units) as an eight-character password, which NestJS rejects.
+func jsStringLength(text string) int {
+	return len(utf16.Encode([]rune(text)))
 }
 
 // matchesDigitsConstraint validates @Matches(/^\d{8}$/) on the raw string.

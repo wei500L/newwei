@@ -192,3 +192,37 @@ func TestNormalizeCrawlOptionsRejectsProxyAndForcesDiscoveryFlags(t *testing.T) 
 		t.Fatalf("wait until = %v", options.WaitUntil)
 	}
 }
+
+// TestDiscoverSitemapCandidatesMergeTimestamps pins the CrawlDiscoveryCandidate
+// shape the preview and the workflow seed node consume: sitemap discovery keeps
+// the publish timestamp of a repeated URL (the larger one wins, like the
+// source's mergeDiscoveryCandidates) and stamps every candidate with the
+// per-document crawl timestamp.
+func TestDiscoverSitemapCandidatesMergeTimestamps(t *testing.T) {
+	repeated := siteOrigin + "/2024/01/02/first-story"
+	routes := newSiteRoutes()
+	routes.set(siteOrigin+"/sitemap.xml", textResponse(http.StatusOK, nil,
+		`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`+
+			`<url><loc>`+repeated+`</loc></url>`+
+			`<url><loc>`+repeated+`</loc><lastmod>2024-01-02T03:04:05Z</lastmod></url>`+
+			`</urlset>`))
+	service, _, _ := newDiscoveryService(t, routes)
+	discovery := NewDiscovery(service, nil, nil)
+
+	candidates, err := discovery.DiscoverSitemapCandidates(context.Background(), siteOrigin, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+	if candidates[0].URL != repeated {
+		t.Fatalf("url = %s", candidates[0].URL)
+	}
+	if candidates[0].PublishedAtTs == nil || *candidates[0].PublishedAtTs != 1704164645000 {
+		t.Fatalf("publishedAtTs = %v", candidates[0].PublishedAtTs)
+	}
+	if candidates[0].CrawledAtTs == nil {
+		t.Fatal("missing crawledAtTs")
+	}
+}

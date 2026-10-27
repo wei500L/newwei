@@ -198,7 +198,7 @@ func (s *Service) ScanPendingLlmBackfills(ctx context.Context, deps LlmBackfillD
 // and the manual route rejects processing groups. There was no recovery path.
 //
 // Rule (new, Go-owned while the worker switch is go): a group is recovered when
-// status=processing, lastAttemptAt is at or before now-15m (the existing
+// status=processing, lastAttemptAt is strictly older than now-15m (the existing
 // AUTO_BACKFILL_RETRY_AFTER_MS window), and either activeJobId is empty or that
 // job is in none of the BullMQ wait/active/delayed/prioritized/paused/
 // waiting-children states. The conditional update repeats status=processing and

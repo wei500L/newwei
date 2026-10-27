@@ -52,13 +52,20 @@ type monitorWrite struct {
 	Enabled          *bool
 }
 
+// set records that the key was present in the PATCH body (NestJS: value !==
+// undefined); null records that it was present as JSON null. NestJS validates
+// these fields with @IsOptional(), which skips null, so a null field keeps the
+// stored value — but its presence still trips the system_sync read-only guard,
+// which tests `patch.field !== undefined`.
 type optionalString struct {
 	set   bool
+	null  bool
 	value string
 }
 
 type optionalStrings struct {
 	set   bool
+	null  bool
 	value []string
 }
 
@@ -120,28 +127,29 @@ func mergePatch(row monitorRow, patch monitorPatch) monitorWrite {
 			Country: row.LocationCountry.String,
 		}
 	}
-	if patch.Name.set {
+	// A null field keeps the stored value (see optionalString/optionalStrings).
+	if patch.Name.set && !patch.Name.null {
 		write.Name = patch.Name.value
 	}
-	if patch.RawKeywords.set {
+	if patch.RawKeywords.set && !patch.RawKeywords.null {
 		write.RawKeywords = patch.RawKeywords.value
 	}
-	if patch.ApprovedTopics.set {
+	if patch.ApprovedTopics.set && !patch.ApprovedTopics.null {
 		write.ApprovedTopics = patch.ApprovedTopics.value
 	}
-	if patch.ApprovedEntities.set {
+	if patch.ApprovedEntities.set && !patch.ApprovedEntities.null {
 		write.ApprovedEntities = patch.ApprovedEntities.value
 	}
-	if patch.ApprovedLexical.set {
+	if patch.ApprovedLexical.set && !patch.ApprovedLexical.null {
 		write.ApprovedLexical = patch.ApprovedLexical.value
 	}
-	if patch.RejectedTopics.set {
+	if patch.RejectedTopics.set && !patch.RejectedTopics.null {
 		write.RejectedTopics = patch.RejectedTopics.value
 	}
-	if patch.RejectedEntities.set {
+	if patch.RejectedEntities.set && !patch.RejectedEntities.null {
 		write.RejectedEntities = patch.RejectedEntities.value
 	}
-	if patch.RejectedLexical.set {
+	if patch.RejectedLexical.set && !patch.RejectedLexical.null {
 		write.RejectedLexical = patch.RejectedLexical.value
 	}
 	if patch.Color.set {
@@ -232,11 +240,7 @@ func validateCreate(body []byte, preview bool) (monitorWrite, error) {
 	write.RawKeywords = keywords
 	write.ApprovedTopics, messages = takeOptionalStrings(fields, "approvedTopics", maxApprovedSuggestions, messages)
 	write.ApprovedEntities, messages = takeOptionalStrings(fields, "approvedEntities", maxApprovedSuggestions, messages)
-	if raw, ok := fields.values["approvedLexicalTerms"]; ok {
-		values, extra := requireStringArray(map[string]json.RawMessage{"approvedLexicalTerms": raw}, "approvedLexicalTerms", maxApprovedTerms, true)
-		messages = append(messages, extra...)
-		write.ApprovedLexical = values
-	}
+	write.ApprovedLexical, messages = takeOptionalStrings(fields, "approvedLexicalTerms", maxApprovedTerms, messages)
 	write.RejectedTopics, messages = takeOptionalStrings(fields, "rejectedTopics", maxApprovedSuggestions, messages)
 	write.RejectedEntities, messages = takeOptionalStrings(fields, "rejectedEntities", maxApprovedSuggestions, messages)
 	write.RejectedLexical, messages = takeOptionalStrings(fields, "rejectedLexicalTerms", maxApprovedTerms, messages)
@@ -274,17 +278,27 @@ func validateUpdate(body []byte) (monitorPatch, error) {
 	}
 	var patch monitorPatch
 	var messages []string
+	// A JSON null keeps the stored value on PATCH: NestJS validates these fields
+	// with @IsOptional(), which skips null, so `patch.name ?? existing.name`
+	// resolves to the existing column. Only color and location treat null as
+	// "clear", matching the NestJS patch merge.
 	if raw, ok := fields.values["name"]; ok {
 		patch.Name.set = true
-		if message := stringValue("name", raw, 64, true, &patch.Name.value); message != "" {
+		if isJSONNull(raw) {
+			patch.Name.null = true
+		} else if message := stringValue("name", raw, 64, true, &patch.Name.value); message != "" {
 			messages = append(messages, message)
 		}
 	}
 	if raw, ok := fields.values["rawKeywords"]; ok {
 		patch.RawKeywords.set = true
-		values, extra := stringArrayValue("rawKeywords", raw, maxKeywords)
-		messages = append(messages, extra...)
-		patch.RawKeywords.value = values
+		if isJSONNull(raw) {
+			patch.RawKeywords.null = true
+		} else {
+			values, extra := stringArrayValue("rawKeywords", raw, maxKeywords)
+			messages = append(messages, extra...)
+			patch.RawKeywords.value = values
+		}
 	}
 	patch.ApprovedTopics, messages = takePatchStrings(fields, "approvedTopics", maxApprovedSuggestions, messages)
 	patch.ApprovedEntities, messages = takePatchStrings(fields, "approvedEntities", maxApprovedSuggestions, messages)
@@ -292,7 +306,7 @@ func validateUpdate(body []byte) (monitorPatch, error) {
 	patch.RejectedTopics, messages = takePatchStrings(fields, "rejectedTopics", maxApprovedSuggestions, messages)
 	patch.RejectedEntities, messages = takePatchStrings(fields, "rejectedEntities", maxApprovedSuggestions, messages)
 	patch.RejectedLexical, messages = takePatchStrings(fields, "rejectedLexicalTerms", maxApprovedTerms, messages)
-	if raw, ok := fields.values["enabled"]; ok {
+	if raw, ok := fields.values["enabled"]; ok && !isJSONNull(raw) {
 		patch.Enabled.set = true
 		value, message := boolValue("enabled", raw)
 		if message != "" {
@@ -302,7 +316,7 @@ func validateUpdate(body []byte) (monitorPatch, error) {
 	}
 	if raw, ok := fields.values["color"]; ok {
 		patch.Color.set = true
-		if string(bytes.TrimSpace(raw)) != "null" {
+		if !isJSONNull(raw) {
 			if message := stringValue("color", raw, 16, true, &patch.Color.value); message != "" {
 				messages = append(messages, message)
 			}
@@ -310,7 +324,7 @@ func validateUpdate(body []byte) (monitorPatch, error) {
 	}
 	if raw, ok := fields.values["location"]; ok {
 		patch.Location.set = true
-		if string(bytes.TrimSpace(raw)) != "null" {
+		if !isJSONNull(raw) {
 			loc, message := locationValue(raw)
 			if message != "" {
 				messages = append(messages, message)
@@ -371,6 +385,13 @@ func unknownMessages(fields objectFields, allowed map[string]bool) []string {
 		}
 	}
 	return messages
+}
+
+// isJSONNull reports whether a raw JSON value is the null literal. NestJS marks
+// optional DTO fields with @IsOptional(), which skips null, so PATCH fields other
+// than color/location keep their stored value instead of being decoded.
+func isJSONNull(raw json.RawMessage) bool {
+	return string(bytes.TrimSpace(raw)) == "null"
 }
 
 func requireString(fields objectFields, name string, max int, dest *string) string {
@@ -453,8 +474,8 @@ func takePatchStrings(fields objectFields, name string, max int, messages []stri
 	if !ok {
 		return optionalStrings{}, messages
 	}
-	if string(bytes.TrimSpace(raw)) == "null" {
-		return optionalStrings{set: true}, append(messages, name+" must be an array")
+	if isJSONNull(raw) {
+		return optionalStrings{set: true, null: true}, messages
 	}
 	values, extra := stringArrayValue(name, raw, max)
 	return optionalStrings{set: true, value: values}, append(messages, extra...)

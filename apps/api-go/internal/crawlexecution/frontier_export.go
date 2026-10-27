@@ -153,7 +153,7 @@ func (s *Service) PersistFrontierResults(
 	if row == nil {
 		return Summary{}, errNotConfigured("crawlexecution: crawl task is required")
 	}
-	summary, _, err := s.persistResults(ctx, row, items, options, crawl4ai.PipelineResponse{RunID: runID}, false, orgID)
+	summary, _, err := s.persistResults(ctx, row, items, options, crawl4ai.PipelineResponse{RunID: runID}, false, orgID, "")
 	if err != nil {
 		return Summary{}, err
 	}

@@ -147,17 +147,20 @@ func (r *resolver) items(ctx contract.Context) (ItemConnectionModel, error) {
 	}, nil
 }
 
-// convertHighlights converts the domain highlight map into the GraphQL list,
-// keeping each non-empty field entry exactly like the NestJS toItemModel.
-func convertHighlights(raw map[string][]string) []ItemSearchHighlightModel {
+// convertHighlights projects the domain highlight slice onto the GraphQL list.
+//
+// The order is preserved verbatim: NestJS renders Object.entries(hit.highlight),
+// so the Elasticsearch member order is the wire order. Ranging over a map here
+// would make the same response come back in a different order on every request.
+func convertHighlights(raw []itemsdomain.ItemSearchHighlight) []ItemSearchHighlightModel {
 	out := make([]ItemSearchHighlightModel, 0, len(raw))
-	for field, snippets := range raw {
-		if len(snippets) == 0 {
+	for _, highlight := range raw {
+		if len(highlight.Snippets) == 0 {
 			continue
 		}
-		copied := make([]string, len(snippets))
-		copy(copied, snippets)
-		out = append(out, ItemSearchHighlightModel{Field: field, Snippets: copied})
+		snippets := make([]string, len(highlight.Snippets))
+		copy(snippets, highlight.Snippets)
+		out = append(out, ItemSearchHighlightModel{Field: highlight.Field, Snippets: snippets})
 	}
 	return out
 }

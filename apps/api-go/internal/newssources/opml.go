@@ -408,7 +408,7 @@ func normalizeLanguage(value string) string {
 	if strings.HasPrefix(lower, "en") {
 		return "en"
 	}
-	if len(lower) <= 12 {
+	if utf16Length(lower) <= 12 {
 		return lower
 	}
 	return "zh"

@@ -42,31 +42,26 @@ func (c *LLMClient) JudgeCandidates(ctx context.Context, input JudgeInput) (Judg
 	if assist == nil || len(input.Candidates) == 0 {
 		return JudgeResult{
 			Candidates: input.Candidates,
-			Diagnostics: diagnosticsObject(map[string]any{
-				"llmJudgeEnabled":   false,
-				"llmJudgeAttempted": false,
-			}, nil),
+			Diagnostics: judgeSkipDiagnostics(judgeSkip{
+				Enabled: false, Attempted: false,
+			}),
 		}, nil
 	}
 	if c.isCircuitOpen("judge") {
 		return JudgeResult{
 			Candidates: input.Candidates,
-			Diagnostics: diagnosticsObject(map[string]any{
-				"llmJudgeEnabled":     true,
-				"llmJudgeAttempted":   false,
-				"llmJudgeCircuitOpen": true,
-			}, []string{"llm_judge_circuit_open"}),
+			Diagnostics: judgeSkipDiagnostics(judgeSkip{
+				Attempted: false, CircuitOpen: true, WarningFlags: []string{"llm_judge_circuit_open"},
+			}),
 		}, nil
 	}
 	budget := ResolveCandidateBudget(assist, input.ParentPageType)
 	if budget <= 0 {
 		return JudgeResult{
 			Candidates: input.Candidates,
-			Diagnostics: diagnosticsObject(map[string]any{
-				"llmJudgeEnabled":   true,
-				"llmJudgeAttempted": false,
-				"llmJudgeBudget":    0,
-			}, nil),
+			Diagnostics: judgeSkipDiagnostics(judgeSkip{
+				Attempted: false, Budget: &budget,
+			}),
 		}, nil
 	}
 
@@ -84,19 +79,21 @@ func (c *LLMClient) JudgeCandidates(ctx context.Context, input JudgeInput) (Judg
 		reranked = results
 		rerankApplied = true
 	}
-	if budget > len(reranked) {
-		budget = len(reranked)
+	// candidateBudget stays the configured value: it is what NestJS reports as
+	// llmJudgeBudget in the diagnostics for every branch below, even when the
+	// page holds fewer candidates than the budget. Only the slice length is
+	// clamped to the candidate count.
+	candidateBudget := budget
+	if candidateBudget > len(reranked) {
+		candidateBudget = len(reranked)
 	}
-	candidatesForJudge := reranked[:budget]
+	candidatesForJudge := reranked[:candidateBudget]
 	if len(candidatesForJudge) == 0 {
 		return JudgeResult{
 			Candidates: reranked,
-			Diagnostics: diagnosticsObject(map[string]any{
-				"llmJudgeEnabled":   true,
-				"llmJudgeAttempted": false,
-				"llmJudgeBudget":    budget,
-				"llmRerankApplied":  rerankApplied,
-			}, nil),
+			Diagnostics: judgeSkipDiagnostics(judgeSkip{
+				Attempted: false, Budget: &budget, RerankApplied: &rerankApplied,
+			}),
 		}, nil
 	}
 
@@ -244,32 +241,40 @@ func parseFailedJudgeResult(reranked []Candidate, budget int, rerankApplied bool
 	return JudgeResult{Candidates: reranked, Diagnostics: diagnostics}
 }
 
-func diagnosticsObject(values map[string]any, warningFlags []string) *Object {
+// judgeSkip is one of judgeCandidates' early exits before the model call.
+// llmJudgeEnabled is always true except for the "assist disabled or no
+// candidates" exit, so it is spelled out only there.
+type judgeSkip struct {
+	Enabled       bool
+	Attempted     bool
+	CircuitOpen   bool
+	Budget        *int
+	RerankApplied *bool
+	WarningFlags  []string
+}
+
+// judgeSkipDiagnostics builds the diagnostics object of an early exit in the
+// exact key order NestJS builds it, which is why the fields are typed instead of
+// assembled from a map.
+func judgeSkipDiagnostics(skip judgeSkip) *Object {
 	object := NewObject()
-	// The four early branches have a fixed key order; rebuild it explicitly so
-	// map iteration cannot reorder the diagnostics.
-	switch {
-	case values["llmJudgeCircuitOpen"] == true:
-		object.SetBool("llmJudgeEnabled", true)
-		object.SetBool("llmJudgeAttempted", false)
+	object.SetBool("llmJudgeEnabled", skip.Enabled || skip.CircuitOpen || skip.Budget != nil)
+	object.SetBool("llmJudgeAttempted", skip.Attempted)
+	if skip.CircuitOpen {
 		object.SetBool("llmJudgeCircuitOpen", true)
-		object.Set("warningFlags", warningFlags)
+		object.Set("warningFlags", skip.WarningFlags)
 		return object
 	}
-	enabled, _ := values["llmJudgeEnabled"].(bool)
-	attempted, _ := values["llmJudgeAttempted"].(bool)
-	object.SetBool("llmJudgeEnabled", enabled)
-	object.SetBool("llmJudgeAttempted", attempted)
-	if budget, ok := values["llmJudgeBudget"]; ok {
-		object.Set("llmJudgeBudget", budget)
+	if skip.Budget != nil {
+		object.SetNumber("llmJudgeBudget", float64(*skip.Budget))
 	}
-	if applied, ok := values["llmRerankApplied"]; ok {
-		object.Set("llmRerankApplied", applied)
+	if skip.RerankApplied != nil {
+		object.SetBool("llmRerankApplied", *skip.RerankApplied)
 	}
-	if warningFlags == nil {
+	if skip.WarningFlags == nil {
 		object.Set("warningFlags", []string{})
 	} else {
-		object.Set("warningFlags", warningFlags)
+		object.Set("warningFlags", skip.WarningFlags)
 	}
 	return object
 }

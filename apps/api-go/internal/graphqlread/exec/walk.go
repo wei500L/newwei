@@ -494,6 +494,13 @@ func isCompositeField(schema *ast.Schema, def *ast.FieldDefinition) bool {
 	return named.Kind == ast.Object || named.Kind == ast.Interface || named.Kind == ast.Union
 }
 
+// directRootNames lists the top-level field selections of an operation exactly as
+// the NestJS response-cache whitelist sees them. getRootFieldNames
+// (apps/api/src/graphql/graphql.module.ts) collects every selection of kind FIELD
+// without any meta-field filter, so a root __typename counts as a root field, is
+// absent from CACHEABLE_ROOT_FIELDS, and therefore makes the document
+// non-cacheable. Fragment spreads are not of kind FIELD and are ignored there, so
+// they are ignored here too.
 func directRootNames(op *ast.OperationDefinition) []string {
 	if op == nil {
 		return nil
@@ -501,7 +508,7 @@ func directRootNames(op *ast.OperationDefinition) []string {
 	names := make([]string, 0)
 	for _, selection := range op.SelectionSet {
 		field, ok := selection.(*ast.Field)
-		if !ok || field.Name == "__typename" {
+		if !ok {
 			continue
 		}
 		names = append(names, field.Name)

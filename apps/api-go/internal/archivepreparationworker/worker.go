@@ -390,6 +390,12 @@ func (w *Worker) process(parent context.Context, job Job) {
 		return
 	}
 	if !job.FinalFailure() {
+		// BullMQ honours opts.backoff: a positive delay takes the moveToDelayed
+		// path and only a zero delay retries immediately.
+		if delay := job.RetryDelayMs(); delay > 0 {
+			w.retryLater(finishCtx, job, err, delay)
+			return
+		}
 		w.retryJob(finishCtx, job, err)
 		return
 	}
@@ -535,6 +541,47 @@ func (w *Worker) retryJob(ctx context.Context, job Job, cause error) {
 	}
 	if code := toInt64(result); code < 0 {
 		w.opts.Logger("archivepreparationworker: retry %s rejected with BullMQ code %d", job.ID, code)
+	}
+}
+
+// retryLater is Job.moveToFailed with a backoff delay: moveToDelayed-8 keeps the
+// attempt counter increment (skipAttempt "0") and parks the job in the delayed
+// set, so the retry fires after opts.backoff instead of immediately.
+func (w *Worker) retryLater(ctx context.Context, job Job, cause error, delayMs int64) {
+	reason := cause.Error()
+	fields, err := pack([]string{
+		"failedReason", reason,
+		"stacktrace", stacktraceJSON(reason),
+	})
+	if err != nil {
+		w.opts.Logger("archivepreparationworker: pack delayed retry fields for %s: %v", job.ID, err)
+		return
+	}
+	result, err := w.scripts.moveToDelayed.Run(ctx, w.client,
+		[]string{
+			w.keys.Marker,
+			w.keys.Active,
+			w.keys.Prioritized,
+			w.keys.Delayed,
+			w.keys.Job(job.ID),
+			w.keys.Events,
+			w.keys.Meta,
+			w.keys.Stalled,
+		},
+		w.keys.Base,
+		time.Now().UnixMilli(),
+		job.ID,
+		job.Token,
+		delayMs,
+		"0",
+		fields,
+	).Result()
+	if err != nil {
+		w.opts.Logger("archivepreparationworker: delay retry %s: %v", job.ID, err)
+		return
+	}
+	if code := toInt64(result); code < 0 {
+		w.opts.Logger("archivepreparationworker: delay retry %s rejected with BullMQ code %d", job.ID, code)
 	}
 }
 

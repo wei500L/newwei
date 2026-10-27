@@ -301,10 +301,10 @@ func buildWorkflowFromProfile(profile profileBridgeInput, config *profileBridgeC
 				}
 			}
 			definition.Nodes[index].Config = rawOf(map[string]any{
-				"keepTopK":  keepTopK,
-				"minScore":  minScore,
-				"maxPages":  maxPages,
-				"maxDepth":  maxDepth,
+				"keepTopK": keepTopK,
+				"minScore": minScore,
+				"maxPages": maxPages,
+				"maxDepth": maxDepth,
 			})
 		case "persist-result":
 			selectTopK := float64(20)

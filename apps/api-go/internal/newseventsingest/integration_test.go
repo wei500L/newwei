@@ -1048,16 +1048,32 @@ func TestIngestionConcurrentAssignOnlyOneWins(t *testing.T) {
 	if created != 1 {
 		t.Fatalf("created = %d, want exactly 1", created)
 	}
-	// Exactly one NewsEventItem holds the article. The losing callers may report
-	// their own event id: like the NestJS `winner?.eventId ?? eventId` fallback,
-	// the in-transaction lookup uses the transaction snapshot and therefore does
-	// not always see the winner's committed row. That empty event is committed by
-	// both implementations; the article itself belongs to exactly one event.
+	// Exactly one NewsEventItem holds the article, and it belongs to the event the
+	// winner reported.
 	items := fixture.itemsOf(t, orgID)
 	if len(items) != 1 {
 		t.Fatalf("items = %d, want 1", len(items))
 	}
 	if items[0].EventID != winnerEventID {
 		t.Fatalf("winner event = %q, stored item event = %q", winnerEventID, items[0].EventID)
+	}
+	// A losing caller must not publish the event it created: the duplicate branch
+	// rolls its transaction back before resolving the winner, so nothing but the
+	// winner's event reaches the table and no empty "orphan" event is left behind
+	// (W3-02).
+	var eventCount int
+	if err := fixture.db.QueryRow("SELECT COUNT(*) FROM `NewsEvent` WHERE `orgId` = ?", orgID).Scan(&eventCount); err != nil {
+		t.Fatalf("count events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("events = %d, want exactly 1 (losers left orphan events)", eventCount)
+	}
+	for index, result := range results {
+		if result.Created {
+			continue
+		}
+		if result.EventID != winnerEventID {
+			t.Fatalf("loser %d reported event %q, want the winner %q", index, result.EventID, winnerEventID)
+		}
 	}
 }

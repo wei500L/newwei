@@ -121,26 +121,15 @@ func (h *Handler) serveMediaAsset(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, newStatusError(http.StatusNotFound, "Cannot "+r.Method+" "+r.URL.Path))
 		return
 	}
-	assetID, modeRaw := parts[0], parts[1]
+	assetID := parts[0]
 
-	mode := CrawlMediaAccessMode(modeRaw)
-	if mode != CrawlMediaAccessModePreview && mode != CrawlMediaAccessModeDownload {
-		writeServiceError(w, r, newStatusError(http.StatusNotFound, "Unsupported crawl media access mode"))
+	mode, lookupOrgID, err := h.resolveMediaAccess(assetID, parts[1], r)
+	if err != nil {
+		writeServiceError(w, r, err)
 		return
 	}
 
-	expiresRaw, _ := querySingle(r, "exp")
-	orgRaw, _ := querySingle(r, "org")
-	userRaw, _ := querySingle(r, "user")
-	signature, _ := querySingle(r, "sig")
-
-	if reason := h.svc.verifySignedAssetAccess(assetID, mode, expiresRaw, orgRaw, userRaw, signature); reason != "" {
-		writeServiceError(w, r, newStatusError(http.StatusBadRequest, reason))
-		return
-	}
-
-	orgID := normalizeAccessScopeValue(orgRaw)
-	payload, err := h.svc.getAssetDeliveryPayload(r.Context(), assetID, mode, orgID)
+	payload, err := h.svc.getAssetDeliveryPayload(r.Context(), assetID, mode, lookupOrgID)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
@@ -175,6 +164,35 @@ func (h *Handler) serveMediaAsset(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", buildContentDisposition(disposition, payload.FileName))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(payload.Data)
+}
+
+// resolveMediaAccess validates the :mode path segment and the HMAC signature of
+// one media request and returns the mode plus the organisation id the
+// CrawlMediaAsset row is looked up by.
+//
+// The signature scope is normalized (trimmed and bounded to 191 characters)
+// before it is hashed, but the row lookup reproduces the NestJS controller
+// exactly: it hands the RAW `org` query value to getAssetDeliveryPayload. A
+// padded value that still verifies therefore cannot widen the database match to
+// the trimmed scope, which is what NestJS answers with a 404.
+func (h *Handler) resolveMediaAccess(
+	assetID, modeRaw string,
+	r *http.Request,
+) (CrawlMediaAccessMode, string, error) {
+	mode := CrawlMediaAccessMode(modeRaw)
+	if mode != CrawlMediaAccessModePreview && mode != CrawlMediaAccessModeDownload {
+		return mode, "", newStatusError(http.StatusNotFound, "Unsupported crawl media access mode")
+	}
+
+	expiresRaw, _ := querySingle(r, "exp")
+	orgRaw, _ := querySingle(r, "org")
+	userRaw, _ := querySingle(r, "user")
+	signature, _ := querySingle(r, "sig")
+
+	if reason := h.svc.verifySignedAssetAccess(assetID, mode, expiresRaw, orgRaw, userRaw, signature); reason != "" {
+		return mode, "", newStatusError(http.StatusBadRequest, reason)
+	}
+	return mode, orgRaw, nil
 }
 
 // verifySignedAssetAccess mirrors verifySignedAssetAccess. It returns the exact
@@ -359,13 +377,13 @@ func isInlinePreviewContentType(contentType string) bool {
 	return inlinePreviewContentTypes[contentType]
 }
 
-// pickExtension chooses the file extension for a content type or format,
+// pickExtension chooses the file extension for a content type or format value,
 // mirroring pickExtension.
-func pickExtension(value sql.NullString) string {
-	if !value.Valid {
+func pickExtension(value string) string {
+	if value == "" {
 		return ""
 	}
-	normalized := strings.ToLower(value.String)
+	normalized := strings.ToLower(value)
 	switch {
 	case strings.Contains(normalized, "jpeg"):
 		return "jpg"
@@ -388,8 +406,11 @@ func pickExtension(value sql.NullString) string {
 	}
 }
 
-// buildAssetFileName mirrors buildAssetFileName: "<kind>-<id>[.<ext>]".
-func buildAssetFileName(kind, id string, contentType, format sql.NullString) string {
+// buildAssetFileName mirrors buildAssetFileName: "<kind>-<id>[.<ext>]". It
+// receives the RESOLVED content type, exactly like the NestJS callers, so an
+// aliased stored value ("jpg", "audio/mp3") still selects the same extension the
+// NestJS service picks after normalizeContentType.
+func buildAssetFileName(kind, id, contentType, format string) string {
 	extension := pickExtension(contentType)
 	if extension == "" {
 		extension = pickExtension(format)
@@ -399,6 +420,14 @@ func buildAssetFileName(kind, id string, contentType, format sql.NullString) str
 		suffix = "." + extension
 	}
 	return kind + "-" + id + suffix
+}
+
+// optionalString unwraps a nullable SQL text column into "" for NULL.
+func optionalString(value sql.NullString) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }
 
 // buildContentDisposition renders a sanitized Content-Disposition header value.
@@ -482,7 +511,7 @@ func (s *Service) resolveDelivery(
 ) (*crawlMediaDeliveryPayload, error) {
 	resolvedType := resolveDeliveryContentType(record.ContentType)
 	inlineSafe := isInlinePreviewContentType(resolvedType)
-	fileName := buildAssetFileName(record.Kind, record.ID, record.ContentType, record.Format)
+	fileName := buildAssetFileName(record.Kind, record.ID, resolvedType, optionalString(record.Format))
 
 	if CrawlImageStorageProvider(record.Provider) == CrawlImageStorageProviderMySQL {
 		// Prefer the joined CrawlMediaBlob payload, then the legacy inline blob.
@@ -632,15 +661,13 @@ func (s *Service) buildStoredMediaAsset(
 		Format:          stringPtrFromNull(row.Format),
 		Metadata:        objectJSONOrNull(row.MetadataJSON),
 	}
-	if row.StorageKey.Valid && row.StorageKey.String != "" {
-		asset.StorageKey = &row.StorageKey.String
-	}
+	asset.StorageKey = stringPtrFromNull(row.StorageKey)
 
 	switch asset.StorageProvider {
 	case CrawlImageStorageProviderS3:
 		// The S3 URL is minted from the record's own object key; a signing or
 		// configuration failure leaves the URL unset and the asset intact.
-		fileName := buildAssetFileName(row.Kind, row.ID, row.ContentType, row.Format)
+		fileName := buildAssetFileName(row.Kind, row.ID, contentType, optionalString(row.Format))
 		attachStoredS3URLs(ctx, storageClient, &asset, row, contentType, inlineSafe, fileName, ttlSeconds)
 		return asset
 	case CrawlImageStorageProviderMySQL:
@@ -666,10 +693,12 @@ func intPtrFromNull(value sql.NullInt64) *int {
 	return &converted
 }
 
-// stringPtrFromNull converts a nullable SQL string into a JSON pointer. An
-// empty string stays nil so the key is omitted, matching `?? undefined`.
+// stringPtrFromNull converts a nullable SQL string into a JSON pointer. A
+// present empty string stays an empty string: toView and toCrawlStoredAsset copy
+// the raw column value, so "" is serialized instead of null. Only a NULL column
+// becomes nil.
 func stringPtrFromNull(value sql.NullString) *string {
-	if !value.Valid || value.String == "" {
+	if !value.Valid {
 		return nil
 	}
 	converted := value.String

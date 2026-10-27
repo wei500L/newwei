@@ -68,6 +68,65 @@ func TestPollTelegramEarlyReturns(t *testing.T) {
 	})
 }
 
+// TestPollTelegramGuardErrorsAreCached pins the guard errors behind the
+// GET /telegram-feed `error` field. internal/situationsignals rebuilds that
+// response from the cached state document only (NestJS rendered it from process
+// memory), so a message kept in memory alone would never reach the client.
+func TestPollTelegramGuardErrorsAreCached(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		worker := newTestWorker(t, testWorkerOptions{env: testEnv()})
+		effective := defaultEffectiveSettings(t)
+		effective.TelegramEnabled = false
+		worker.settings.set(effective)
+
+		worker.handleJob(t, SourceTelegram)
+		if document := cachedTelegramStateDocument(t, worker); document.LastError == nil ||
+			*document.LastError != telegramDisabledMessage {
+			t.Fatalf("cached error = %v, want %q", document.LastError, telegramDisabledMessage)
+		}
+	})
+
+	t.Run("missing credentials", func(t *testing.T) {
+		worker := newTestWorker(t, testWorkerOptions{env: testEnv()})
+		effective := defaultEffectiveSettings(t)
+		effective.TelegramSession = ""
+		worker.settings.set(effective)
+
+		worker.handleJob(t, SourceTelegram)
+		if document := cachedTelegramStateDocument(t, worker); document.LastError == nil ||
+			*document.LastError != telegramNotConfiguredMessage {
+			t.Fatalf("cached error = %v, want %q", document.LastError, telegramNotConfiguredMessage)
+		}
+	})
+
+	t.Run("incomplete credentials", func(t *testing.T) {
+		worker := newTestWorker(t, testWorkerOptions{env: testEnv()})
+		effective := defaultEffectiveSettings(t)
+		effective.TelegramAPIID = "not-a-number"
+		worker.settings.set(effective)
+
+		worker.handleJob(t, SourceTelegram)
+		if document := cachedTelegramStateDocument(t, worker); document.LastError == nil ||
+			*document.LastError != telegramIncompleteMessage {
+			t.Fatalf("cached error = %v, want %q", document.LastError, telegramIncompleteMessage)
+		}
+	})
+}
+
+// cachedTelegramStateDocument decodes the cached Telegram state document.
+func cachedTelegramStateDocument(t *testing.T, worker *testWorker) telegramStateDocument {
+	t.Helper()
+	raw, ok := worker.store.raw(telegramStateCacheKey)
+	if !ok {
+		t.Fatal("telegram state document was not written")
+	}
+	var document telegramStateDocument
+	if err := json.Unmarshal([]byte(raw), &document); err != nil {
+		t.Fatalf("decode telegram state document: %v", err)
+	}
+	return document
+}
+
 // TestPollTelegramHappyPath pins the poll cycle: message filtering, cursor,
 // state persistence and the realtime event payload.
 func TestPollTelegramHappyPath(t *testing.T) {

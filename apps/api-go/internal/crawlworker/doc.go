@@ -21,6 +21,14 @@
 // consumer. During a switchover both processes may briefly claim jobs, and the
 // BullMQ job lock admits one owner per attempt.
 //
+// One caveat of a mixed rollout: a legacy API_GO_CRAWL_WORKER_MODE instance still
+// registers its QueueEvents readers, and those readers decrement crawl:activity
+// for every completed/failed event regardless of which process executed the job.
+// A job finished here is therefore decremented twice while such an instance
+// exists (this worker inline + that reader). The counter self-heals through
+// ensureActiveTaskCount, and the window closes as soon as every instance runs in
+// go mode; switching all instances in one restart avoids it entirely.
+//
 // # Concurrency (A1)
 //
 // The initial concurrency is the crawl client setting maxConcurrency (the

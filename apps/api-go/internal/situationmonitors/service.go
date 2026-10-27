@@ -9,11 +9,20 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/llmembed"
 )
 
+// modelGateway is the slice of *llmembed.Client the monitor write and preview
+// paths use. It is an interface only so unit tests can drive ranking, rerank and
+// the reported model names without a model gateway.
+type modelGateway interface {
+	Embed(ctx context.Context, orgID string, texts []string) ([][]float64, string, error)
+	Rerank(ctx context.Context, orgID, query string, documents []string) ([]llmembed.Hit, error)
+	RuntimeRerankModel(ctx context.Context) (string, bool)
+}
+
 // Service 写同一张 SituationMonitorMonitor。监控 HTTP 的遗留迁移会尝试
 // embedding；失败时向量为空，请求仍然成功。订阅路径自己的迁移不从这里替换。
 type Service struct {
 	db         *sql.DB
-	embed      *llmembed.Client
+	embed      modelGateway
 	httpClient *http.Client
 }
 

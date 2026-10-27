@@ -184,6 +184,42 @@ func TestRefreshReadinessBooleans(t *testing.T) {
 	}
 }
 
+// TestCatalogOrefConfiguredShadowing pins the difference between the two OREF
+// credential reads: GET /catalog reports the settings-service value (an
+// explicitly empty SITUATION_MONITOR_OREF_PROXY_AUTH shadows the legacy
+// OREF_PROXY_AUTH alias) while the OREF endpoints report the signals-service
+// value (the first non-empty variable wins).
+func TestCatalogOrefConfiguredShadowing(t *testing.T) {
+	shadowed := &settingsReader{lookup: envLookup(map[string]string{
+		"SITUATION_MONITOR_OREF_PROXY_AUTH": "",
+		"OREF_PROXY_AUTH":                   "legacy-secret",
+	})}
+	if shadowed.orefProxyAuthConfiguredForCatalog() {
+		t.Fatal("catalog must treat an empty canonical variable as unconfigured")
+	}
+	if !shadowed.orefConfigured() {
+		t.Fatal("the OREF endpoints fall through to the legacy alias")
+	}
+
+	viaAlias := &settingsReader{lookup: envLookup(map[string]string{
+		"OREF_PROXY_AUTH": "legacy-secret",
+	})}
+	if !viaAlias.orefProxyAuthConfiguredForCatalog() {
+		t.Fatal("an absent canonical variable falls back to the alias")
+	}
+
+	viaCanonical := &settingsReader{lookup: envLookup(map[string]string{
+		"SITUATION_MONITOR_OREF_PROXY_AUTH": " canonical-secret ",
+	})}
+	if !viaCanonical.orefProxyAuthConfiguredForCatalog() {
+		t.Fatal("a set canonical variable is configured")
+	}
+
+	if (&settingsReader{}).orefProxyAuthConfiguredForCatalog() {
+		t.Fatal("a reader without a lookup is unconfigured")
+	}
+}
+
 func TestBooleanEnv(t *testing.T) {
 	cases := map[string]bool{
 		"true": true, "TRUE": true, "1": true, "yes": true, "on": true,

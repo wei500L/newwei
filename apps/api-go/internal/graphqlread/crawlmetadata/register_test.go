@@ -144,3 +144,46 @@ func TestToGraphResultsMapsEveryOptionalToNull(t *testing.T) {
 		t.Fatal("a nil keyword slice must project as GraphQL null")
 	}
 }
+
+// TestCrawlMetadataInputBounds pins the @Min(1) constraints of the GraphQL input
+// type: an out-of-range maxUrls or concurrency is a BAD_REQUEST field error with
+// the class-validator message, not a silently clamped request. The messages are
+// joined with "; " in the input type's declaration order.
+func TestCrawlMetadataInputBounds(t *testing.T) {
+	reader := New(metadatasvc.NewService(nil, nil))
+	cases := []struct {
+		name  string
+		input map[string]any
+		want  string
+	}{
+		{
+			name:  "maxUrls below one",
+			input: map[string]any{"domain": "example.com", "maxUrls": float64(0)},
+			want:  "maxUrls must not be less than 1",
+		},
+		{
+			name:  "negative maxUrls",
+			input: map[string]any{"domain": "example.com", "maxUrls": float64(-5)},
+			want:  "maxUrls must not be less than 1",
+		},
+		{
+			name:  "concurrency below one",
+			input: map[string]any{"domain": "example.com", "concurrency": float64(0)},
+			want:  "concurrency must not be less than 1",
+		},
+		{
+			name:  "both below one",
+			input: map[string]any{"domain": "example.com", "concurrency": float64(0), "maxUrls": float64(0)},
+			want:  "maxUrls must not be less than 1; concurrency must not be less than 1",
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := reader.CrawlMetadata(context.Background(), testCase.input)
+			failure, ok := err.(*contract.Failure)
+			if !ok || failure.Status != 400 || failure.Message != testCase.want {
+				t.Fatalf("error = %#v, want %q", err, testCase.want)
+			}
+		})
+	}
+}

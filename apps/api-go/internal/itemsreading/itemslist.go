@@ -148,13 +148,15 @@ type ItemsListQuery struct {
 }
 
 // ItemListEdge is one connection edge before the GraphQL adapter projects it.
-// SearchHighlights is nil when the page had no highlights for the row.
+// SearchHighlights is nil when the page had no highlights for the row; when it is
+// present the slice order is the Elasticsearch highlight member order, which the
+// adapter must preserve because the GraphQL list is ordered.
 type ItemListEdge struct {
 	Cursor           string
 	Row              ItemMetaRow
 	RelevanceScore   *float64
 	RankOffset       *int
-	SearchHighlights map[string][]string
+	SearchHighlights []ItemSearchHighlight
 }
 
 // ItemConnectionResult is the items connection payload.
@@ -169,7 +171,7 @@ type ItemConnectionResult struct {
 type rankedEdge struct {
 	RelevanceScore   *float64
 	RankOffset       *int
-	SearchHighlights map[string][]string
+	SearchHighlights []ItemSearchHighlight
 }
 
 // pageRows is one resolved page: the rows in display order plus the ranking

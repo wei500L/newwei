@@ -40,6 +40,9 @@ type contractError struct {
 
 // writeContractError writes one contract error with a NestJS-equivalent body
 // (statusCode, message, error, traceId, path, timestamp).
+//
+// `path` is GlobalExceptionFilter's `request?.url`, which in Express is the path
+// INCLUDING the query string, so r.URL.RequestURI() is used and not r.URL.Path.
 func writeContractError(w http.ResponseWriter, r *http.Request, body contractError) {
 	payload := struct {
 		StatusCode int    `json:"statusCode"`
@@ -53,7 +56,7 @@ func writeContractError(w http.ResponseWriter, r *http.Request, body contractErr
 		Message:    body.message,
 		Error:      body.errorName,
 		TraceID:    httpx.TraceIDFromContext(r.Context()),
-		Path:       r.URL.Path,
+		Path:       r.URL.RequestURI(),
 		Timestamp:  nestTimestamp(nowMillis()),
 	}
 	w.Header().Set("content-type", "application/json; charset=utf-8")

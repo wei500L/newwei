@@ -616,6 +616,86 @@ func discoverFixedDecimal(value float64, digits int) string {
 	return strconv.FormatFloat(crawlfrontierllm.RoundToFixed(value, digits), 'f', digits, 64)
 }
 
+// extractFrontierNodeCandidates ports CrawlFrontierService.extractCandidates
+// (crawl-frontier.service.ts 3508-3545), the wrapper discoverChildNodes calls
+// instead of the layered extractCandidates above.
+//
+// The wrapper is what stamps the discovery provenance onto every candidate the
+// node chain stores: sourceTier, freshnessBucket, the synthetic-list marking
+// (syntheticList/syntheticListLabel) and the discoveryPath/frontierPath pair.
+// It also rewrites the extraction diagnostics — the selected counter, the
+// synthetic_list_activated warning flag and the syntheticListActivated member —
+// and replaces the candidate embedded in every decision trace with the stamped
+// one, so the persisted node metadata, the deferred judge payload and the
+// workflow trace all carry the same object. The layered extractCandidates stays
+// provenance free because the seed branch and the judge share it.
+func (s *Service) extractFrontierNodeCandidates(
+	node *crawlfrontierllm.NodeRecord,
+	config *crawlfrontierllm.Object,
+	results []crawl4ai.PipelineArticle,
+) candidateExtraction {
+	extraction := s.extractCandidates(node, config, results)
+	candidates, syntheticListActivated := s.applyCandidateDiscoveryMetadata(node, config, extraction.Candidates)
+
+	// const candidateByUrl = new Map(withDiscoveryMetadata.candidates.map(
+	//   candidate => [candidate.url, candidate]));
+	// decisions: extraction.decisions.map(decision => ({...decision,
+	//   candidate: candidateByUrl.get(decision.candidate.url) ?? decision.candidate}))
+	// A url-filter decision names a raw href that never became a candidate, so it
+	// keeps its own object.
+	candidateByURL := make(map[string]crawlfrontierllm.Candidate, len(candidates))
+	for _, candidate := range candidates {
+		candidateByURL[candidate.URL] = candidate
+	}
+	decisions := make([]crawlfrontierllm.CandidateDecision, len(extraction.Decisions))
+	for index, decision := range extraction.Decisions {
+		if candidate, ok := candidateByURL[decision.Candidate.URL]; ok {
+			decision.Candidate = candidate
+		}
+		decisions[index] = decision
+	}
+
+	// The diagnostics object keeps the extraction key order; the three members
+	// the wrapper recomputes are replaced in place, which Object.Set does.
+	diagnostics := extraction.Diagnostics
+	if diagnostics == nil {
+		diagnostics = crawlfrontierllm.NewObject()
+	} else {
+		diagnostics = diagnostics.Clone()
+	}
+	candidateStats, ok := diagnostics.Object("candidateStats")
+	if !ok || candidateStats == nil {
+		candidateStats = crawlfrontierllm.NewObject()
+	} else {
+		candidateStats = candidateStats.Clone()
+	}
+	candidateStats.SetNumber("selected", float64(len(candidates)))
+	diagnostics.Set("candidateStats", candidateStats)
+
+	// uniqueStringList(
+	//   extraction.diagnostics.warningFlags,
+	//   syntheticListActivated ? ["synthetic_list_activated"] : undefined) ?? []
+	var syntheticFlags []string
+	if syntheticListActivated {
+		syntheticFlags = []string{"synthetic_list_activated"}
+	}
+	warningFlags := crawlfrontierllm.UniqueStringList(
+		crawlfrontierllm.ObjectStrings(diagnostics, "warningFlags"),
+		syntheticFlags,
+	)
+	if warningFlags == nil {
+		warningFlags = []string{}
+	}
+	diagnostics.Set("warningFlags", warningFlags)
+	diagnostics.SetBool("syntheticListActivated", syntheticListActivated)
+
+	return candidateExtraction{
+		Candidates:  candidates,
+		Decisions:   decisions,
+		Diagnostics: diagnostics,
+	}
+}
+
 // discoverChildNodes ports crawl-frontier.service.ts discoverChildNodes
 // (2980-3034): resolve the workflow run, extract the candidates, record the
 // extraction decisions, then either hand the candidates to the deferred LLM
@@ -629,7 +709,7 @@ func (s *Service) discoverChildNodes(ctx context.Context, input discoverChildNod
 	if input.Profile != nil {
 		config = input.Profile.Config
 	}
-	extraction := s.extractCandidates(input.Node, config, input.Results)
+	extraction := s.extractFrontierNodeCandidates(input.Node, config, input.Results)
 	if err := s.recordExtractionCandidateDecisions(ctx, workflowRunID, input.Node.ID, extraction.Decisions); err != nil {
 		return nil, err
 	}
@@ -819,14 +899,30 @@ type sitemapSeedResult struct {
 // forwarded:
 //   - RequestTimeoutMs: crawlmetadata uses the shared settings timeout
 //     (normalize.go:61-64) and has no per-call override;
-//   - DiscoveryMode: the Go sitemap chain always tries robots.txt and then the
-//     default sitemap paths (sitemap.go:170-183) and does not branch on the mode;
+//   - DiscoveryMode: the Go sitemap chain always reads robots.txt and then the
+//     default sitemap paths (sitemap.go:170-183) and does not branch on the
+//     mode, so `robots`, `sitemap_only` and `common_paths` behave alike here
+//     (`common_paths` skips the robots probe in NestJS). The `disabled` mode is
+//     the one value that changes the outcome completely, so it is honored below
+//     before any fetch;
 //   - the remaining CrawlSitemapDiscoveryDiagnostics fields (seedMethod,
 //     robotsUrl, robotsDiscoveredSitemaps, attemptedSitemaps, fetchedSitemaps,
 //     parsedSitemaps) are not tracked, so the diagnostics carry only
 //     discoveryMode (the requested mode, as NestJS records it) and
 //     candidateCount. seedMethod therefore stays null downstream.
 func (s *Service) discoverSitemapSeeds(ctx context.Context, input sitemapSeedInput) (*sitemapSeedResult, error) {
+	// `discoveryMode === "disabled"` is a hard off switch in NestJS:
+	// CrawlMetadataService.resolveSitemapSeedUrls returns no seed URL at all, so
+	// the run discovers no seed candidate and creates no seed node. The Go sitemap
+	// chain (internal/crawlmetadata) has no mode parameter, so the switch is
+	// honored here — before any fetch — and the diagnostics keep the requested
+	// mode with a zero count, exactly like the NestJS early return.
+	if input.DiscoveryMode == "disabled" {
+		diagnostics := crawlfrontierllm.NewObject()
+		diagnostics.SetString("discoveryMode", input.DiscoveryMode)
+		diagnostics.SetNumber("candidateCount", 0)
+		return &sitemapSeedResult{Candidates: []crawlmetadata.DiscoveryCandidate{}, Diagnostics: diagnostics}, nil
+	}
 	if s.metadata == nil {
 		return &sitemapSeedResult{}, nil
 	}

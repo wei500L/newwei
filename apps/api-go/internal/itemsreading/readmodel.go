@@ -6,11 +6,14 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
+
+// searchTermsLimit is the NestJS slice(0, 240) budget on the stored searchTerms
+// stream.
+const searchTermsLimit = 240
 
 // readModelService builds and reads the Mongo itemreadmodels projection. It
 // ports ItemsReadModelService: hydration is organization scoped everywhere, the
@@ -609,24 +612,36 @@ func lowerStrings(values []string) []string {
 
 // buildSearchTerms ports the searchTerms derivation: lowercase, split on any
 // character outside [a-z0-9_ latin-extended CJK], keep terms of at least two
-// characters, dedupe and cap at 240.
+// characters, cut the flat term stream to its first 240 entries and then dedupe.
+//
+// The order matters: NestJS slices the flatMap result before Array.from(new
+// Set(...)), so duplicates inside the first 240 occurrences consume the budget
+// and the stored array can hold fewer than 240 unique terms. Deduping while
+// collecting would keep up to 240 unique terms and store a different array.
 func buildSearchTerms(parts []string) []string {
-	terms := make([]string, 0, 64)
-	seen := make(map[string]struct{}, 64)
+	stream := make([]string, 0, 64)
 	for _, part := range parts {
 		for _, term := range splitSearchTerms(strings.ToLower(part)) {
 			if len(term) < 2 {
 				continue
 			}
-			if _, ok := seen[term]; ok {
-				continue
-			}
-			seen[term] = struct{}{}
-			terms = append(terms, term)
-			if len(terms) >= 240 {
-				return terms
+			stream = append(stream, term)
+			if len(stream) >= searchTermsLimit {
+				break
 			}
 		}
+		if len(stream) >= searchTermsLimit {
+			break
+		}
+	}
+	seen := make(map[string]struct{}, len(stream))
+	terms := make([]string, 0, len(stream))
+	for _, term := range stream {
+		if _, ok := seen[term]; ok {
+			continue
+		}
+		seen[term] = struct{}{}
+		terms = append(terms, term)
 	}
 	return terms
 }
@@ -654,7 +669,11 @@ func splitSearchTerms(value string) []string {
 }
 
 // isSearchTermRune reports whether a rune belongs to the allowed search-term
-// alphabet (a-z0-9_, latin extended, CJK).
+// alphabet of the NestJS split regex: ASCII letters and digits, underscore,
+// latin-extended (U+00C0-U+024F) and CJK (U+4E00-U+9FFF). Every other rune —
+// including Cyrillic, Greek, kana and half-width forms — is a separator there, so
+// it must be a separator here too or the stored projection would carry terms the
+// NestJS writer never produces.
 func isSearchTermRune(r rune) bool {
 	if r >= 'a' && r <= 'z' {
 		return true
@@ -668,10 +687,7 @@ func isSearchTermRune(r rune) bool {
 	if r >= 0x00C0 && r <= 0x024F {
 		return true
 	}
-	if r >= 0x4E00 && r <= 0x9FFF {
-		return true
-	}
-	return unicode.IsLetter(r) && r > 0x024F && r < 0x4E00
+	return r >= 0x4E00 && r <= 0x9FFF
 }
 
 // normalizeURLDomain ports normalizeUrlDomain.

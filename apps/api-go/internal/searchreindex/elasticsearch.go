@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 // Elasticsearch environment defaults mirror apps/api/src/modules/config/
@@ -80,10 +82,12 @@ type bulkItemResult struct {
 	Error  *bulkItemError `json:"error"`
 }
 
-// bulkItemError is the per-item failure detail.
+// bulkItemError is the per-item failure detail. The members are pointers so an
+// absent member can be told apart from an empty string, which is what the
+// NestJS `?? "no reason returned…"` fallback distinguishes.
 type bulkItemError struct {
-	Type   string `json:"type"`
-	Reason string `json:"reason"`
+	Type   *string `json:"type"`
+	Reason *string `json:"reason"`
 }
 
 // bulkFailure is the sanitized description of one failed document. It never
@@ -387,30 +391,61 @@ func httpFailure(operation string, status int) error {
 	return fmt.Errorf("elasticsearch %s failed with status %d", operation, status)
 }
 
-// bulkErrorType names the per-item error type, defaulting to "unknown".
+// bulkReasonMaxUnits is the NestJS `.slice(0, 200)` budget on the per-item
+// reason, counted in UTF-16 code units because that is what String#slice uses.
+const bulkReasonMaxUnits = 200
+
+// bulkErrorType is `result.error?.type?.trim() || "unknown"`. NestJS never
+// truncates the type, so neither does this port.
 func bulkErrorType(failure *bulkItemError) string {
-	if failure == nil || strings.TrimSpace(failure.Type) == "" {
+	if failure == nil || failure.Type == nil {
 		return "unknown"
 	}
-	return truncateText(failure.Type, 60)
+	if trimmed := strings.TrimSpace(*failure.Type); trimmed != "" {
+		return trimmed
+	}
+	return "unknown"
 }
 
-// bulkErrorReason shortens the per-item reason and strips line breaks.
+// bulkErrorReason is
+// `(result.error?.reason ?? "no reason returned by elasticsearch").replace(/\s+/g,
+// " ").slice(0, 200)`. An empty reason string is kept as empty (only a missing
+// reason takes the fallback), the whitespace runs of the ECMAScript \s class
+// collapse to one space, and the result is cut to 200 UTF-16 code units — no
+// ellipsis is appended, because the NestJS text has none.
 func bulkErrorReason(failure *bulkItemError) string {
-	if failure == nil || strings.TrimSpace(failure.Reason) == "" {
-		return "no reason returned by elasticsearch"
+	reason := "no reason returned by elasticsearch"
+	if failure != nil && failure.Reason != nil {
+		reason = *failure.Reason
 	}
-	return truncateText(failure.Reason, 200)
+	return sliceUTF16(collapseJSSpace(reason), bulkReasonMaxUnits)
 }
 
-// truncateText collapses whitespace and cuts the text to limit runes.
-func truncateText(value string, limit int) string {
-	normalized := strings.Join(strings.Fields(value), " ")
-	runes := []rune(normalized)
-	if len(runes) <= limit {
-		return normalized
+// jsSpaceRunPattern matches one run of ECMAScript whitespace characters
+// (String.prototype.replace(/\s+/g, …)).
+var jsSpaceRunPattern = regexp.MustCompile(
+	`[\t\n\v\f\r \x{00a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}]+`,
+)
+
+// collapseJSSpace replaces every ECMAScript whitespace run with one space
+// without trimming the ends, matching String.prototype.replace(/\s+/g, " ").
+func collapseJSSpace(value string) string {
+	return jsSpaceRunPattern.ReplaceAllString(value, " ")
+}
+
+// sliceUTF16 cuts a string to at most units UTF-16 code units, mirroring
+// String.prototype.slice. A cut that lands inside a surrogate pair drops the
+// unpaired half, which the JSON encoder then renders as U+FFFD instead of
+// emitting a lone surrogate.
+func sliceUTF16(value string, units int) string {
+	if units <= 0 {
+		return ""
 	}
-	return string(runes[:limit]) + "..."
+	encoded := utf16.Encode([]rune(value))
+	if len(encoded) <= units {
+		return value
+	}
+	return string(utf16.Decode(encoded[:units]))
 }
 
 // drainAndClose releases the connection of a response that is not read fully.

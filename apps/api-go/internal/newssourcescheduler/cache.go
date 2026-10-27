@@ -32,6 +32,9 @@ type cacheStore interface {
 	SetMany(ctx context.Context, entries []cacheEntry) error
 	SetIfAbsent(ctx context.Context, key, value string, ttl time.Duration) (bool, error)
 	Del(ctx context.Context, keys ...string) error
+	// DelByPrefix is CacheService.delByPrefix: SCAN + DEL, reporting how many
+	// keys were removed. Only the RSS seed cache TTL migration uses it.
+	DelByPrefix(ctx context.Context, prefix string) (int, error)
 	Incr(ctx context.Context, key string) (int64, error)
 	IncrMany(ctx context.Context, keys []string) ([]int64, error)
 	Expire(ctx context.Context, key string, ttl time.Duration) error
@@ -52,6 +55,9 @@ type redisCache struct {
 func newRedisCache(client *redis.Client) *redisCache {
 	return &redisCache{client: client}
 }
+
+// delByPrefixScanCount is the default CacheService.delByPrefix scanCount.
+const delByPrefixScanCount = 500
 
 // lockReleaseScript and lockRenewScript compare the owner token first, exactly
 // like CacheService.releaseLock and CacheService.extendLock.
@@ -127,6 +133,35 @@ func (c *redisCache) Del(ctx context.Context, keys ...string) error {
 		return nil
 	}
 	return c.client.Del(ctx, keys...).Err()
+}
+
+// DelByPrefix is CacheService.delByPrefix: a non-blocking SCAN loop with the
+// same MATCH pattern, COUNT and per-page DEL batching.
+func (c *redisCache) DelByPrefix(ctx context.Context, prefix string) (int, error) {
+	trimmed := trimJS(prefix)
+	if trimmed == "" {
+		return 0, nil
+	}
+	match := trimmed + "*"
+	var cursor uint64
+	deleted := 0
+	for {
+		keys, next, err := c.client.Scan(ctx, cursor, match, delByPrefixScanCount).Result()
+		if err != nil {
+			return deleted, err
+		}
+		if len(keys) > 0 {
+			removed, delErr := c.client.Del(ctx, keys...).Result()
+			if delErr != nil {
+				return deleted, delErr
+			}
+			deleted += int(removed)
+		}
+		cursor = next
+		if cursor == 0 {
+			return deleted, nil
+		}
+	}
 }
 
 func (c *redisCache) Incr(ctx context.Context, key string) (int64, error) {

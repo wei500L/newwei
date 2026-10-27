@@ -1,6 +1,7 @@
 package crawlfrontierllm
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/url"
 	"strings"
@@ -12,7 +13,7 @@ import (
 // the upstream gateway only consumes them; the validators implement the same
 // constraints the Zod safeParse enforced.
 
-const judgeResponseSchema = `{"type":"object","properties":{"decisions":{"type":"array","maxItems":48,"items":{"type":"object","properties":{"url":{"type":"string","format":"uri"},"action":{"type":"string","enum":["expand","fetch","drop"]},"pageType":{"type":"string","enum":["home","category","list","article"]},"confidence":{"type":"number","minimum":0,"maximum":1},"reason":{"type":["string","null"],"maxLength":280},"clusterLabel":{"type":["string","null"],"maxLength":120},"localeHint":{"type":["string","null"],"maxLength":32},"selectorHints":{"type":"array","minItems":1,"maxItems":5,"items":{"type":"string","minLength":1,"maxLength":120}}},"required":["url","action","pageType","confidence"],"additionalProperties":false},"default":[]},"rationale":{"type":["string","null"],"maxLength":320}},"required":["decisions"],"additionalProperties":false}`
+const judgeResponseSchema = `{"type":"object","properties":{"decisions":{"type":"array","maxItems":48,"items":{"type":"object","properties":{"url":{"type":"string","format":"uri"},"action":{"type":"string","enum":["expand","fetch","drop"]},"pageType":{"type":"string","enum":["home","category","list","article"]},"confidence":{"type":"number","minimum":0,"maximum":1},"reason":{"type":["string","null"],"maxLength":280},"clusterLabel":{"type":["string","null"],"maxLength":120},"localeHint":{"type":["string","null"],"maxLength":32},"selectorHints":{"type":"array","maxItems":5,"items":{"type":"string","minLength":1,"maxLength":120}}},"required":["url","action","pageType","confidence"],"additionalProperties":false},"default":[]},"rationale":{"type":["string","null"],"maxLength":320}},"required":["decisions"],"additionalProperties":false}`
 
 const learnResponseSchema = `{"type":"object","properties":{"confidence":{"type":"number","minimum":0,"maximum":1},"rationale":{"type":["string","null"],"maxLength":400},"profilePatch":{"type":"object","properties":{"seedDiscovery":{"type":"object","properties":{"strategy":{"type":"string","enum":["auto","seed_first","frontier_first","frontier_only"]},"mode":{"type":"string","enum":["robots","common_paths","sitemap_only","disabled"]},"freshnessWindowHours":{"type":"integer","minimum":1,"maximum":8760},"maxSeedUrls":{"type":"integer","minimum":1,"maximum":500},"topologyBudgetPages":{"type":"integer","minimum":1,"maximum":100},"topologyBudgetDepth":{"type":"integer","minimum":1,"maximum":8},"qualityThresholds":{"type":"object","properties":{"minCandidates":{"type":"integer","minimum":1,"maximum":200},"minArticleRatio":{"type":"number","minimum":0,"maximum":1},"maxNoiseRatio":{"type":"number","minimum":0,"maximum":1},"minFreshRatio":{"type":"number","minimum":0,"maximum":1}},"additionalProperties":false}},"additionalProperties":false},"urlPatterns":{"type":"object","properties":{"home":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"category":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"list":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"article":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"exclude":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}}},"additionalProperties":false},"pageTypeSignals":{"type":"object","properties":{"home":{"type":"object","properties":{"patterns":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"keywords":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}}},"additionalProperties":false},"category":{"type":"object","properties":{"patterns":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"keywords":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}}},"additionalProperties":false},"list":{"type":"object","properties":{"patterns":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"keywords":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}}},"additionalProperties":false},"article":{"type":"object","properties":{"patterns":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"keywords":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}}},"additionalProperties":false},"deny":{"type":"object","properties":{"patterns":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"keywords":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}}},"additionalProperties":false}},"additionalProperties":false},"localeScope":{"type":"object","properties":{"locale":{"type":"string","minLength":1,"maxLength":16},"acceptLanguages":{"type":"array","maxItems":8,"items":{"type":"string","minLength":1}},"denyUrlPatterns":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"denyHostPatterns":{"type":"array","maxItems":12,"items":{"type":"string","minLength":1}}},"additionalProperties":false},"domLinkScopes":{"type":"array","maxItems":16,"items":{"type":"string","minLength":1}},"domLinkExcludeSelectors":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"priorityKeywords":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"denyKeywords":{"type":"array","maxItems":24,"items":{"type":"string","minLength":1}},"sourceTier":{"type":"string","enum":["tier1","tier2","tier3"]}},"additionalProperties":false}},"required":["confidence"],"additionalProperties":false}`
 
@@ -186,6 +187,38 @@ func validateJudgeResponse(raw json.RawMessage) (*judgeResponse, bool) {
 	return out, true
 }
 
+// decodeSelectorHints mirrors
+// z.array(z.string().min(1).max(120)).max(5).optional(): an EMPTY array is
+// valid (the Zod array has no min length), a non-string or empty entry is not,
+// and more than five entries invalidate the response. Rejecting the empty array
+// used to discard the whole judge response - every decision in it - whenever the
+// model spelled "no hints" as [] instead of omitting the key.
+func decodeSelectorHints(raw json.RawMessage) ([]string, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) < 2 || trimmed[0] != '[' {
+		return nil, false
+	}
+	var entries []json.RawMessage
+	if err := json.Unmarshal(trimmed, &entries); err != nil {
+		return nil, false
+	}
+	if len(entries) > 5 {
+		return nil, false
+	}
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		var text string
+		if err := json.Unmarshal(entry, &text); err != nil {
+			return nil, false
+		}
+		if text == "" || runeLen(text) > 120 {
+			return nil, false
+		}
+		out = append(out, text)
+	}
+	return out, true
+}
+
 func validateJudgeDecision(raw json.RawMessage) (judgeDecision, bool) {
 	object, ok := ParseObject(raw)
 	if !ok {
@@ -224,14 +257,9 @@ func validateJudgeDecision(raw json.RawMessage) (judgeDecision, bool) {
 		return judgeDecision{}, false
 	}
 	if hintsRaw, present := object.Raw("selectorHints"); present && !isEmptyJSON(hintsRaw) {
-		hints, ok := decodeStringArray(hintsRaw)
-		if !ok || len(hints) == 0 || len(hints) > 5 {
+		hints, ok := decodeSelectorHints(hintsRaw)
+		if !ok {
 			return judgeDecision{}, false
-		}
-		for _, hint := range hints {
-			if runeLen(hint) > 120 {
-				return judgeDecision{}, false
-			}
 		}
 		decision.SelectorHints = hints
 	}
@@ -299,20 +327,29 @@ func sanitizeProfilePatch(patch *Object) (*Object, bool) {
 			}
 			cleanSeed.SetString("mode", text)
 		}
-		intFields := map[string][2]float64{
-			"freshnessWindowHours": {1, 8760},
-			"maxSeedUrls":          {1, 500},
-			"topologyBudgetPages":  {1, 100},
-			"topologyBudgetDepth":  {1, 8},
+		// Declaration order, not a map: the sanitized patch is serialised into
+		// the profile config, so its key order has to be deterministic and match
+		// the Zod schema's field order.
+		intFields := []struct {
+			key string
+			min float64
+			max float64
+		}{
+			{"freshnessWindowHours", 1, 8760},
+			{"maxSeedUrls", 1, 500},
+			{"topologyBudgetPages", 1, 100},
+			{"topologyBudgetDepth", 1, 8},
 		}
-		for key, bounds := range intFields {
-			if value, present := seed.Raw(key); present && !isEmptyJSON(value) {
-				number, ok := toFiniteNumber(value)
-				if !ok || number != roundToFixed(number, 0) || number < bounds[0] || number > bounds[1] {
-					return nil, false
-				}
-				cleanSeed.SetNumber(key, number)
+		for _, field := range intFields {
+			value, present := seed.Raw(field.key)
+			if !present || isEmptyJSON(value) {
+				continue
 			}
+			number, ok := toFiniteNumber(value)
+			if !ok || number != roundToFixed(number, 0) || number < field.min || number > field.max {
+				return nil, false
+			}
+			cleanSeed.SetNumber(field.key, number)
 		}
 		if value, present := seed.Raw("qualityThresholds"); present && !isEmptyJSON(value) {
 			thresholds, ok := ParseObject(value)
@@ -399,32 +436,48 @@ func sanitizeProfilePatch(patch *Object) (*Object, bool) {
 			}
 			clean.SetString("locale", text)
 		}
-		lists := map[string]int{"acceptLanguages": 8, "denyUrlPatterns": 24, "denyHostPatterns": 12}
-		for key, limit := range lists {
-			if value, present := locale.Raw(key); present && !isEmptyJSON(value) {
-				list, ok := decodeStringArray(value)
-				if !ok || len(list) > limit {
-					return nil, false
-				}
-				clean.Set(key, list)
+		// Declaration order, not a map, for the same reason as the seed integers
+		// above.
+		localeLists := []struct {
+			key   string
+			limit int
+		}{
+			{"acceptLanguages", 8},
+			{"denyUrlPatterns", 24},
+			{"denyHostPatterns", 12},
+		}
+		for _, field := range localeLists {
+			value, present := locale.Raw(field.key)
+			if !present || isEmptyJSON(value) {
+				continue
 			}
+			list, ok := decodeStringArray(value)
+			if !ok || len(list) > field.limit {
+				return nil, false
+			}
+			clean.Set(field.key, list)
 		}
 		out.SetRaw("localeScope", mustJSON(clean))
 	}
-	lists := map[string]int{
-		"domLinkScopes":           16,
-		"domLinkExcludeSelectors": 24,
-		"priorityKeywords":        24,
-		"denyKeywords":            24,
+	patchLists := []struct {
+		key   string
+		limit int
+	}{
+		{"domLinkScopes", 16},
+		{"domLinkExcludeSelectors", 24},
+		{"priorityKeywords", 24},
+		{"denyKeywords", 24},
 	}
-	for key, limit := range lists {
-		if value, present := patch.Raw(key); present && !isEmptyJSON(value) {
-			list, ok := decodeStringArray(value)
-			if !ok || len(list) > limit {
-				return nil, false
-			}
-			out.Set(key, list)
+	for _, field := range patchLists {
+		value, present := patch.Raw(field.key)
+		if !present || isEmptyJSON(value) {
+			continue
 		}
+		list, ok := decodeStringArray(value)
+		if !ok || len(list) > field.limit {
+			return nil, false
+		}
+		out.Set(field.key, list)
 	}
 	if value, present := patch.Raw("sourceTier"); present && !isEmptyJSON(value) {
 		text, ok := jsonStringValue(value)

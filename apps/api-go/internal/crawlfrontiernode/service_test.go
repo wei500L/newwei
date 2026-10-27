@@ -125,14 +125,14 @@ func TestCrawl4aiErrorStatusSurvivesErrorsAs(t *testing.T) {
 	if throughWrap.Status != 503 {
 		t.Fatalf("wrapped status = %d, want 503", throughWrap.Status)
 	}
-	// crawl4ai.StatusOf is a plain type assertion, not errors.As: it only sees
-	// the error at the top of the chain, which is the second reason the node
-	// chain returns the client error unchanged.
+	// crawl4ai.StatusOf unwraps with errors.As, so it keeps returning the HTTP
+	// status even when a caller adds a message prefix: a wrapped 503 stays
+	// retryable instead of silently turning into a permanent failure.
 	if got := crawl4ai.StatusOf(clientErr); got != 503 {
 		t.Fatalf("StatusOf(clientErr) = %d, want 503", got)
 	}
-	if got := crawl4ai.StatusOf(wrapped); got != 0 {
-		t.Fatalf("StatusOf(wrapped) = %d, want 0 (documented limitation)", got)
+	if got := crawl4ai.StatusOf(wrapped); got != 503 {
+		t.Fatalf("StatusOf(wrapped) = %d, want 503", got)
 	}
 }
 

@@ -63,9 +63,19 @@ type errorBody struct {
 
 // writeError 写出契约错误（content-type 与 NestJS Express res.json 一致）。
 func writeError(w http.ResponseWriter, r *http.Request, body errorBody) {
+	// GlobalExceptionFilter computes `getCurrentTraceId() ?? ensureTraceId()`, so
+	// an error written outside TraceMiddleware still carries a generated id
+	// instead of an empty string. nestnotfound.Write has the same fallback.
 	traceID := httpx.TraceIDFromContext(r.Context())
+	if traceID == "" {
+		traceID = httpx.EnsureTraceID(r.Header.Get("x-trace-id"))
+	}
 	body.TraceID = traceID
-	body.Path = r.URL.Path
+	// path is Express request.url: the escaped path *and* the query string, so a
+	// 401 on /api/auth/x?a=1 reports "/api/auth/x?a=1". RequestURI is the only
+	// accessor that keeps both parts (URL.Path drops the query and decodes the
+	// path, which also differs from Express's raw url).
+	body.Path = r.URL.RequestURI()
 	body.Timestamp = nestTimestamp()
 	w.Header().Set("content-type", "application/json; charset=utf-8")
 	w.WriteHeader(body.StatusCode)

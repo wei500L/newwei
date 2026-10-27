@@ -6,9 +6,10 @@
 //   - key：`access-token:blacklist:<jti>`；
 //   - 写入：仅 logout——value 是 JSON.stringify(true) 即字面量 "true"，
 //     TTL 为该 token 剩余寿命秒数（auth.service.ts logout → add）；
-//   - 读取：GET → JSON.parse → Boolean()——即 JSON false/null/0/""/[]
-//     为未撤销，其余真值为已撤销；NestJS 只写真值，这里完整复刻 JS
-//     truthiness 以保持等价；
+//   - 读取：GET → `value ? JSON.parse(value) : null` → Boolean()——false /
+//     null / 0 / "" 为未撤销，其余真值（包括 [] 与 {}：JS 中数组与对象恒为
+//     真）为已撤销；存成空字符串的 value 在 NestJS 里被三元的短路跳过解析
+//     并当作 null，故此处同样按未撤销处理；
 //   - value 非法 JSON：NestJS JSON.parse 抛错 → 请求 500（fail-closed），
 //     Go 同样返回错误由调用方 fail-closed；
 //   - jti 为空：NestJS has() 直接返回 false 不触 Redis——Go 在调用方
@@ -76,10 +77,18 @@ func (b *RedisBlacklist) Revoked(ctx context.Context, jti string) (bool, error) 
 	return revoked, nil
 }
 
-// jsTruthyJSON 复刻 NestJS 的 Boolean(JSON.parse(value))：JSON 字面量
-// false/null/0/""/[] 为假，其余（true/非零数字/非空串/对象）为真。
-// value 不是合法 JSON 时返回错误（等价 NestJS JSON.parse 抛错 → 500）。
+// jsTruthyJSON reproduces NestJS's Boolean(JSON.parse(value)) for the value
+// CacheService.get returns. The falsy set is exactly false, null, 0 and "" —
+// arrays and objects are truthy in JavaScript no matter how many members they
+// have, so "[]" and "{}" mean *revoked* here. An empty stored value never
+// reaches JSON.parse in NestJS (`value ? JSON.parse(value) : null` short
+// circuits) and is therefore "not revoked", not a parse failure. Any other
+// non-JSON value is an error, which the caller turns into the same fail-closed
+// 500 that a JSON.parse throw produces in NestJS.
 func jsTruthyJSON(value string) (bool, error) {
+	if value == "" {
+		return false, nil
+	}
 	var parsed any
 	if err := json.Unmarshal([]byte(value), &parsed); err != nil {
 		return false, fmt.Errorf("blacklist value is not valid JSON: %w", err)
@@ -94,9 +103,11 @@ func jsTruthyJSON(value string) (bool, error) {
 	case float64:
 		return v != 0, nil
 	case []any:
-		return len(v) > 0, nil
+		// Boolean([]) is true in JavaScript, even for an empty array.
+		return true, nil
 	case map[string]any:
-		return len(v) > 0, nil
+		// Boolean({}) is true in JavaScript, even for an empty object.
+		return true, nil
 	default:
 		return true, nil
 	}

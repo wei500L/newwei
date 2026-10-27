@@ -63,14 +63,20 @@ type roleJSON struct {
 	Permissions []rolePermissionJSON `json:"permissions"`
 }
 
-// userJSON 对齐 Prisma User 的全部标量字段（listMembers 的 include user
-// 返回整行，包含 passwordHash——与 NestJS 现状一致，仅管理员可读）。
+// userJSON 对齐 Prisma User 的标量字段（listMembers 的 include user 返回整行）。
+//
+// passwordHash is deliberately NOT serialized: the NestJS controller returns the
+// raw Prisma User row, so GET /api/rbac/members used to hand every member's
+// bcrypt hash to any caller holding users.read (the built-in analyst role has
+// it). The column is still scanned into PasswordHash so the row shape matches,
+// but json:"-" keeps it out of every response body. This is an intentional
+// behaviour change from NestJS — see the review report.
 type userJSON struct {
 	ID            string    `json:"id"`
 	Email         string    `json:"email"`
 	EmailVerified *nestTime `json:"emailVerified"`
 	PendingEmail  *string   `json:"pendingEmail"`
-	PasswordHash  string    `json:"passwordHash"`
+	PasswordHash  string    `json:"-"`
 	FirstName     string    `json:"firstName"`
 	LastName      string    `json:"lastName"`
 	AvatarURL     *string   `json:"avatarUrl"`

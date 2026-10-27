@@ -57,6 +57,33 @@ func (s *Service) getConditionalRequestSettings(ctx context.Context) conditional
 	}
 }
 
+// buildLatestResultValidationQuery is the SQL form of
+// crawlResult.findFirst({where:{taskId, OR:[matchers]}}). The task filter is a
+// conjunction over the matcher group: only this task's own results may become
+// the reuse/conditional-validation base. Keeping taskId inside the OR would let
+// another task's (or another organisation's) row with the same URL win, which
+// would reuse a foreign result and send its validators as If-None-Match.
+func buildLatestResultValidationQuery(taskID, normalizedTarget string, canonical *canonicalURL) (string, []any) {
+	matchers := make([]string, 0, 3)
+	args := make([]any, 0, 4)
+	if canonical != nil {
+		matchers = append(matchers, "`sourceUrlFingerprint` = ?")
+		args = append(args, canonical.Fingerprint)
+		matchers = append(matchers, "`sourceUrl` = ?")
+		args = append(args, canonical.CanonicalURL)
+	}
+	if normalizedTarget != "" {
+		matchers = append(matchers, "`sourceUrl` = ?")
+		args = append(args, normalizedTarget)
+	}
+	if len(matchers) == 0 {
+		return "", nil
+	}
+	query := "SELECT `id`, `fetchedAt`, `metadata` FROM `CrawlResult` WHERE `taskId` = ? AND (" +
+		strings.Join(matchers, " OR ") + ") ORDER BY `fetchedAt` DESC LIMIT 1"
+	return query, append([]any{taskID}, args...)
+}
+
 // findLatestResultHTTPValidationState is
 // findLatestResultHttpValidationState: the newest CrawlResult of this task
 // matched by canonical fingerprint/canonical URL/raw target URL.
@@ -67,25 +94,10 @@ func (s *Service) findLatestResultHTTPValidationState(ctx context.Context, task 
 	normalizedTarget := strings.TrimSpace(task.TargetURL)
 	canonical := buildCanonicalURLFingerprint(normalizedTarget, allowlist)
 
-	conditions := make([]string, 0, 3)
-	args := make([]any, 0, 5)
-	args = append(args, task.ID)
-	conditions = append(conditions, "`taskId` = ?")
-	if canonical != nil {
-		conditions = append(conditions, "`sourceUrlFingerprint` = ?")
-		args = append(args, canonical.Fingerprint)
-		conditions = append(conditions, "`sourceUrl` = ?")
-		args = append(args, canonical.CanonicalURL)
-	}
-	if normalizedTarget != "" {
-		conditions = append(conditions, "`sourceUrl` = ?")
-		args = append(args, normalizedTarget)
-	}
-	if len(conditions) == 1 {
+	query, args := buildLatestResultValidationQuery(task.ID, normalizedTarget, canonical)
+	if query == "" {
 		return nil, nil
 	}
-	query := "SELECT `id`, `fetchedAt`, `metadata` FROM `CrawlResult` WHERE " +
-		strings.Join(conditions, " OR ") + " ORDER BY `fetchedAt` DESC LIMIT 1"
 	var resultID string
 	var fetchedAt time.Time
 	var metadataRaw sql.NullString

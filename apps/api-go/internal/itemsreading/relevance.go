@@ -418,7 +418,7 @@ func buildRelevanceDocument(title string, summary string, topics []string, entit
 // id list or a blank query yields no highlights, and any Elasticsearch failure
 // degrades to no highlights instead of failing the query. Rerank failures are
 // deliberately not swallowed the same way.
-func (s *Service) loadSearchHighlights(ctx context.Context, orgID string, search string, ids []string) map[string]map[string][]string {
+func (s *Service) loadSearchHighlights(ctx context.Context, orgID string, search string, ids []string) map[string][]ItemSearchHighlight {
 	if s.search.elastic == nil || len(ids) == 0 || strings.TrimSpace(search) == "" {
 		return nil
 	}
@@ -430,7 +430,7 @@ func (s *Service) loadSearchHighlights(ctx context.Context, orgID string, search
 	for _, id := range ids {
 		idSet[id] = struct{}{}
 	}
-	out := make(map[string]map[string][]string)
+	out := make(map[string][]ItemSearchHighlight)
 	for _, hit := range hits {
 		if _, ok := idSet[hit.ID]; !ok {
 			continue

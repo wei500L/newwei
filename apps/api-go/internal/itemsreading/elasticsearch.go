@@ -65,17 +65,33 @@ var itemFieldAliases = map[string]string{
 	"id":          "externalId",
 }
 
+// ItemSearchHighlight is one highlighted field with up to three snippets.
+//
+// The field order of the containing slice is the order the field appears in the
+// Elasticsearch `highlight` object. That order is part of the response contract:
+// NestJS builds the GraphQL `searchHighlights` list from
+// Object.entries(hit.highlight), i.e. the JSON member order, so a Go map (whose
+// iteration order is randomized per call) would emit a different list order on
+// every request for the same hit.
+type ItemSearchHighlight struct {
+	// Field is the highlighted field name (title, summary, sourceName, topics,
+	// entities or searchText).
+	Field string
+	// Snippets holds at most three non-empty snippets for that field.
+	Snippets []string
+}
+
 // ItemSearchHit is one Elasticsearch hit: the organization-scoped itemMetaId,
-// the relevance score, and the highlight snippets per field (each field capped
-// at three snippets). It is the Go port of the NestJS ItemSearchHit interface.
+// the relevance score, and the highlight fields. It is the Go port of the
+// NestJS ItemSearchHit interface.
 type ItemSearchHit struct {
 	// ID is the hit's _source.itemMetaId; empty ids are dropped by Search.
 	ID string
 	// Score is _score, or 0 when Elasticsearch did not return a number.
 	Score float64
-	// Highlights holds up to three snippets per highlighted field; it is nil
-	// when the hit carried no usable highlight block.
-	Highlights map[string][]string
+	// Highlights holds the highlighted fields in response order; it is nil when
+	// the hit carried no usable highlight block.
+	Highlights []ItemSearchHighlight
 }
 
 // elasticSearcher is the raw net/http Elasticsearch client for item search. It
@@ -407,20 +423,37 @@ func isWordByte(value byte) bool {
 }
 
 // extractHighlights ports extractHighlights: a non-object block is empty, a
-// non-array field is skipped, non-string snippets are skipped, and each field
-// keeps at most three snippets. Fields with no kept snippet are omitted.
-func extractHighlights(raw json.RawMessage) map[string][]string {
+// non-array field is skipped, non-string snippets are skipped, each field keeps
+// at most three snippets and fields with no kept snippet are omitted.
+//
+// The object is walked in document order instead of being unmarshalled into a
+// map, because the resulting slice is rendered as the ordered GraphQL
+// `searchHighlights` list and NestJS preserves the Elasticsearch member order.
+func extractHighlights(raw json.RawMessage) []ItemSearchHighlight {
 	if len(raw) == 0 {
 		return nil
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
 		return nil
 	}
-	out := make(map[string][]string, len(fields))
-	for field, value := range fields {
+	out := make([]ItemSearchHighlight, 0, 4)
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return out
+		}
+		field, ok := key.(string)
+		if !ok {
+			return out
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return out
+		}
 		var snippets []json.RawMessage
 		if err := json.Unmarshal(value, &snippets); err != nil {
+			// A non-array value is skipped, like the NestJS Array.isArray guard.
 			continue
 		}
 		normalized := make([]string, 0, elasticsearchMaxHighlightSnippets)
@@ -435,7 +468,7 @@ func extractHighlights(raw json.RawMessage) map[string][]string {
 			normalized = append(normalized, text)
 		}
 		if len(normalized) > 0 {
-			out[field] = normalized
+			out = append(out, ItemSearchHighlight{Field: field, Snippets: normalized})
 		}
 	}
 	if len(out) == 0 {

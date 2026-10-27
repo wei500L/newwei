@@ -110,8 +110,8 @@ func (s *Service) MarkRunStatusResetFinishedAt(ctx context.Context, runID, statu
 	return err
 }
 
-// UpdateRunMetadata is updateRunMetadata. Callers that can race with another
-// worker on the same run must use UpdateRunMetadataLocked instead (B1).
+// UpdateRunMetadata is updateRunMetadata. The merge runs under a row lock (B1),
+// so it is interchangeable with UpdateRunMetadataLocked.
 func (s *Service) UpdateRunMetadata(ctx context.Context, runID string, patch *Object) error {
 	return s.updateRunMetadata(ctx, runID, patch)
 }

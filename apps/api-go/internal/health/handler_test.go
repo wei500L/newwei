@@ -55,6 +55,19 @@ func TestLiveResultMatchesHandlerOutput(t *testing.T) {
 		t.Errorf("LiveResult status = %d, handler = %d", result.StatusCode, rec.Code)
 	}
 
+	// Byte-exact: Express res.json emits the document without a trailing
+	// newline, and the shadow differ falls back to byte comparison for any
+	// non-JSON response, so a one-byte drift would be reported as a real diff.
+	if got, want := rec.Body.String(), string(result.Body); got != want {
+		t.Errorf("handler body = %q, LiveResult body = %q", got, want)
+	}
+	if got, want := rec.Header().Get("content-type"), result.Header.Get("Content-Type"); got != want {
+		t.Errorf("handler content-type = %q, LiveResult content-type = %q", got, want)
+	}
+	if got := rec.Header().Get("content-type"); got != "application/json; charset=utf-8" {
+		t.Errorf("content-type = %q, want application/json; charset=utf-8", got)
+	}
+
 	var handlerBody, resultBody map[string]string
 	if err := json.Unmarshal(rec.Body.Bytes(), &handlerBody); err != nil {
 		t.Fatalf("handler body: %v", err)

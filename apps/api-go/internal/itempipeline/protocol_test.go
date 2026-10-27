@@ -61,3 +61,46 @@ func TestJobFromFlatReadsCompressedFields(t *testing.T) {
 		t.Fatalf("raw data = %s", string(job.Data))
 	}
 }
+
+// A job the stalled checker already failed must be terminal on its next claim:
+// the worker fails it without running the processor even though attempts remain.
+func TestDeferredFailureIsTerminalWithoutRunningTheProcessor(t *testing.T) {
+	job := Job{
+		ID:              "job-1",
+		DeferredFailure: "job stalled more than allowable limit",
+		AttemptsMade:    0,
+	}
+	job.Opts.Attempts = 5
+
+	stalledErr := job.DeferredFailureError()
+	if stalledErr == nil {
+		t.Fatal("a job with a deferred failure must be terminal")
+	}
+
+	classified := ClassifyQueueError(stalledErr)
+	if classified.Kind != ErrorKindPermanent {
+		t.Fatalf("kind = %q, want permanent", classified.Kind)
+	}
+	if classified.Reason != "unrecoverable" {
+		t.Fatalf("reason = %q, want unrecoverable", classified.Reason)
+	}
+	if classified.Error.Name != "UnrecoverableError" {
+		t.Fatalf("serialized name = %q, want UnrecoverableError", classified.Error.Name)
+	}
+	if classified.Error.Message != "job stalled more than allowable limit" {
+		t.Fatalf("serialized message = %q", classified.Error.Message)
+	}
+
+	failure := DecodeFailure(job, stalledErr)
+	if !failure.Permanent || !failure.FinalFailure {
+		t.Fatalf("failure = %+v, want permanent final failure", failure)
+	}
+	if failure.AttemptsMade != 1 || failure.RemainingAttempts != 4 {
+		t.Fatalf("failure attempts = %+v, want attemptsMade 1 and 4 remaining", failure)
+	}
+
+	// A healthy job has no terminal failure: the processor must run.
+	if err := (Job{Opts: JobOptions{Attempts: 5}}).DeferredFailureError(); err != nil {
+		t.Fatalf("healthy job reported terminal failure: %v", err)
+	}
+}

@@ -562,3 +562,77 @@ func containsString(values []string, needle string) bool {
 	}
 	return false
 }
+
+// TestFrontierLlmRunMetadataLockedMergeIntegration pins the B1 wiring: every
+// metadata read-modify-write in this package merges against the row-locked
+// document. Refresh, the terminal lifecycle, the judge and the learn chain all
+// write the same CrawlFrontierRun/CrawlFrontierNode row, so an unlocked merge
+// writes back a snapshot that predates the other writer's patch and drops its
+// keys. Sixteen concurrent merges must therefore keep all sixteen keys and count
+// the pending judge slots down to zero.
+func TestFrontierLlmRunMetadataLockedMergeIntegration(t *testing.T) {
+	h := newLLMHarness(t)
+	h.insertProfile("profile-1", "org-1", "Example", `{"llmAssist":{"enabled":true}}`, "")
+	h.insertJudgeRun("org-1", "run-1", "", "profile-1")
+	h.startLLM(`{"decisions":[]}`, http.StatusOK)
+	h.buildService()
+	const pending = 16
+	if _, err := h.db.Exec("UPDATE CrawlFrontierNode SET metadata = ? WHERE id = 'node-root'",
+		[]byte(fmt.Sprintf(`{"pendingLlmJudgeJobs":%d}`, pending))); err != nil {
+		t.Fatalf("seed node metadata: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, pending*2)
+	for index := 0; index < pending; index++ {
+		wg.Add(2)
+		go func(index int) {
+			defer wg.Done()
+			patch := NewObject()
+			patch.SetNumber("runWriter"+itoaInt(index), float64(index))
+			if err := h.service.UpdateRunMetadataLocked(context.Background(), "run-1", patch); err != nil {
+				errs <- err
+			}
+		}(index)
+		go func(index int) {
+			defer wg.Done()
+			if err := h.service.UpdateNodeMetadataFuncLocked(context.Background(), "node-root",
+				func(existing *Object) *Object {
+					patch := NewObject()
+					patch.SetNumber("nodeWriter"+itoaInt(index), float64(index))
+					patch.SetNumber("pendingLlmJudgeJobs", float64(maxInt(0, ResolvePendingLlmJudgeJobs(existing)-1)))
+					return patch
+				}); err != nil {
+				errs <- err
+			}
+		}(index)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent metadata merge: %v", err)
+	}
+
+	var rawRun []byte
+	if err := h.db.QueryRow("SELECT metadata FROM CrawlFrontierRun WHERE id = 'run-1'").Scan(&rawRun); err != nil {
+		t.Fatalf("read run metadata: %v", err)
+	}
+	runMetadata, ok := ParseObject(rawRun)
+	if !ok {
+		t.Fatalf("run metadata is not an object: %s", rawRun)
+	}
+	for index := 0; index < pending; index++ {
+		if _, ok := runMetadata.Number("runWriter" + itoaInt(index)); !ok {
+			t.Fatalf("run metadata lost runWriter%d: %s", index, rawRun)
+		}
+	}
+	nodeMetadata := h.nodeMetadata("node-root")
+	for index := 0; index < pending; index++ {
+		if _, ok := nodeMetadata.Number("nodeWriter" + itoaInt(index)); !ok {
+			t.Fatalf("node metadata lost nodeWriter%d", index)
+		}
+	}
+	if remaining := ResolvePendingLlmJudgeJobs(nodeMetadata); remaining != 0 {
+		t.Fatalf("pendingLlmJudgeJobs = %v, want 0 after %d decrements", remaining, pending)
+	}
+}

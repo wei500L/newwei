@@ -173,6 +173,12 @@ type repository interface {
 	UpsertOpsSnapshot(ctx context.Context, orgID, sourceID string, latestJob, latestCrawlTask, latestArticle, stats24h json.RawMessage, now time.Time) error
 	// notifications
 	InsertNotification(ctx context.Context, input notificationInsert) (string, time.Time, error)
+	// one-time legacy RSS seed cache TTL migration (rsseedttl.go). These read and
+	// write NewsSource.config without an org predicate because the migration is
+	// global, exactly like the NestJS prisma.newsSource.findMany scan.
+	ListSourceConfigs(ctx context.Context) ([]sourceConfigRow, error)
+	LoadSourceConfig(ctx context.Context, sourceID string) ([]byte, bool, error)
+	ReplaceSourceConfigIfUnchanged(ctx context.Context, sourceID string, expected, next []byte, now time.Time) (int64, error)
 }
 
 // mysqlRepository is the production repository.
@@ -866,6 +872,52 @@ func (r *mysqlRepository) InsertNotification(ctx context.Context, input notifica
 		return "", time.Time{}, err
 	}
 	return id, now, nil
+}
+
+// ListSourceConfigs is prisma.newsSource.findMany({select:{id,config}}): every
+// source of every organization, unordered like the Prisma statement.
+func (r *mysqlRepository) ListSourceConfigs(ctx context.Context) ([]sourceConfigRow, error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT id, config FROM NewsSource")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]sourceConfigRow, 0, 64)
+	for rows.Next() {
+		var row sourceConfigRow
+		if err := rows.Scan(&row.ID, &row.Config); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// LoadSourceConfig re-reads one config after a lost optimistic update.
+func (r *mysqlRepository) LoadSourceConfig(ctx context.Context, sourceID string) ([]byte, bool, error) {
+	var config []byte
+	err := r.db.QueryRowContext(ctx, "SELECT config FROM NewsSource WHERE id = ?", sourceID).Scan(&config)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return append([]byte(nil), config...), true, nil
+}
+
+// ReplaceSourceConfigIfUnchanged is prisma.newsSource.updateMany({where:{id,
+// config:{equals: expected}}, data:{config, updatedAt}}). The CAST keeps the
+// comparison structural (MySQL compares JSON objects key-order independently),
+// so a concurrent edit that only reorders keys still counts as a lost race.
+func (r *mysqlRepository) ReplaceSourceConfigIfUnchanged(ctx context.Context, sourceID string, expected, next []byte, now time.Time) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		"UPDATE NewsSource SET config = CAST(? AS JSON), updatedAt = ? WHERE id = ? AND config = CAST(? AS JSON)",
+		string(next), now.UTC().Truncate(time.Millisecond), sourceID, string(expected))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // withTransaction runs fn inside a transaction, rolling back on error.

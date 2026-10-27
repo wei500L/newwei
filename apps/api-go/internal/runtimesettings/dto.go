@@ -81,10 +81,18 @@ func numberField(v *validationErrors, raw json.RawMessage, field string, require
 
 // addIntegerMessages appends the three class-validator default messages an
 // integer property produces when its value is absent, null or not a number.
+//
+// Order is the decorator bottom-up order class-validator preserves (Max, Min,
+// IsInt): TypeScript applies property decorators bottom-up, so a DTO written as
+// `@IsInt() @Min(x) @Max(y)` reports `Max, Min, IsInt`. Measured on the real
+// stack for UpdateAuditLogRetentionDto (docs/refactor/bug-ledger.md):
+//
+//	retentionDays must not be greater than 3650; retentionDays must not be less
+//	than 1; retentionDays must be an integer number
 func addIntegerMessages(v *validationErrors, field string, min, max int) {
-	v.add(field + " must be an integer number")
-	v.add(fmt.Sprintf("%s must not be less than %d", field, min))
 	v.add(fmt.Sprintf("%s must not be greater than %d", field, max))
+	v.add(fmt.Sprintf("%s must not be less than %d", field, min))
+	v.add(field + " must be an integer number")
 }
 
 // integerConstraint evaluates @IsInt/@Min/@Max independently, exactly like
@@ -101,16 +109,17 @@ func integerConstraint(v *validationErrors, raw json.RawMessage, field string, m
 		}
 	}
 	integerOK := isNumber && jsIsInteger(value)
-	if !integerOK {
-		v.add(field + " must be an integer number")
-	}
 	minOK := isNumber && value >= float64(min)
+	maxOK := isNumber && value <= float64(max)
+	// Bottom-up decorator order (Max, Min, IsInt), see addIntegerMessages.
+	if !maxOK {
+		v.add(fmt.Sprintf("%s must not be greater than %d", field, max))
+	}
 	if !minOK {
 		v.add(fmt.Sprintf("%s must not be less than %d", field, min))
 	}
-	maxOK := isNumber && value <= float64(max)
-	if !maxOK {
-		v.add(fmt.Sprintf("%s must not be greater than %d", field, max))
+	if !integerOK {
+		v.add(field + " must be an integer number")
 	}
 	if !integerOK || !minOK || !maxOK {
 		return 0, false
@@ -138,16 +147,18 @@ func floatField(v *validationErrors, raw json.RawMessage, field string, required
 		}
 	}
 	numberOK := isNumber && !math.IsNaN(value) && !math.IsInf(value, 0) && hasAtMostDecimals(value, maxDecimals)
-	if !numberOK {
-		v.add(field + " must be a number conforming to the specified constraints")
-	}
 	minOK := isNumber && value >= min
+	maxOK := isNumber && value <= max
+	// Bottom-up decorator order (Max, Min, IsNumber), the float equivalent of
+	// addIntegerMessages.
+	if !maxOK {
+		v.add(fmt.Sprintf("%s must not be greater than %d", field, int(max)))
+	}
 	if !minOK {
 		v.add(fmt.Sprintf("%s must not be less than %d", field, int(min)))
 	}
-	maxOK := isNumber && value <= max
-	if !maxOK {
-		v.add(fmt.Sprintf("%s must not be greater than %d", field, int(max)))
+	if !numberOK {
+		v.add(field + " must be a number conforming to the specified constraints")
 	}
 	if !numberOK || !minOK || !maxOK {
 		return 0, false
@@ -156,11 +167,11 @@ func floatField(v *validationErrors, raw json.RawMessage, field string, required
 }
 
 // addFloatMessages appends the default messages a numeric property produces for
-// an absent or null value.
+// an absent or null value, in the bottom-up decorator order (Max, Min, IsNumber).
 func addFloatMessages(v *validationErrors, field string, min, max float64) {
-	v.add(field + " must be a number conforming to the specified constraints")
-	v.add(fmt.Sprintf("%s must not be less than %d", field, int(min)))
 	v.add(fmt.Sprintf("%s must not be greater than %d", field, int(max)))
+	v.add(fmt.Sprintf("%s must not be less than %d", field, int(min)))
+	v.add(field + " must be a number conforming to the specified constraints")
 }
 
 // parseJSONFloat parses a raw JSON number token into a float64. The raw token
@@ -255,12 +266,14 @@ func enumField(v *validationErrors, raw json.RawMessage, field string, allowed [
 
 // stringListField validates @IsArray/@ArrayMaxSize/@IsString(each)/
 // @MaxLength(64, each)/@Matches(each) and returns the raw entries in order.
+//
+// Messages follow class-validator: the element constraints (declared with
+// `each: true`) prefix their message with "each value in <field> " and are
+// reported in bottom-up decorator order (Matches, MaxLength, IsString), before
+// the whole-array constraints (ArrayMaxSize, IsArray). One message per failed
+// constraint, regardless of how many elements fail it.
 func stringListField(v *validationErrors, raw json.RawMessage, field string, maxItems, maxLength int) ([]string, bool) {
-	if !present(raw) {
-		v.add(field + " must be an array")
-		return nil, false
-	}
-	if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte{'['}) {
+	if !present(raw) || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte{'['}) {
 		v.add(field + " must be an array")
 		return nil, false
 	}
@@ -269,30 +282,51 @@ func stringListField(v *validationErrors, raw json.RawMessage, field string, max
 		v.add(field + " must be an array")
 		return nil, false
 	}
-	if len(items) > maxItems {
-		v.add(fmt.Sprintf("%s must contain not more than %d elements", field, maxItems))
-		return nil, false
-	}
+
+	each := "each value in " + field + " "
+	matchesFailed := false
+	maxLengthFailed := false
+	isStringFailed := false
 	out := make([]string, 0, len(items))
 	for _, item := range items {
-		if !bytes.HasPrefix(bytes.TrimSpace(item), []byte{'"'}) {
-			v.add(field + " must be an array")
-			return nil, false
+		trimmed := bytes.TrimSpace(item)
+		if !bytes.HasPrefix(trimmed, []byte{'"'}) {
+			// A non-string element fails all three element constraints.
+			matchesFailed = true
+			maxLengthFailed = true
+			isStringFailed = true
+			continue
 		}
 		var text string
-		if err := json.Unmarshal(bytes.TrimSpace(item), &text); err != nil {
-			v.add(field + " must be an array")
-			return nil, false
-		}
-		if len([]rune(text)) > maxLength {
-			v.add(fmt.Sprintf("%s must be shorter than or equal to %d characters", field, maxLength))
-			return nil, false
-		}
-		if !queryParamAllowlistEntry(text) {
-			v.add(fmt.Sprintf("%s must match %s regular expression", field, queryParamAllowlistPattern))
-			return nil, false
+		if err := json.Unmarshal(trimmed, &text); err != nil {
+			matchesFailed = true
+			maxLengthFailed = true
+			isStringFailed = true
+			continue
 		}
 		out = append(out, text)
+		if len([]rune(text)) > maxLength {
+			maxLengthFailed = true
+		}
+		if len([]rune(text)) > maxLength || !queryParamAllowlistEntry(text) {
+			matchesFailed = true
+		}
+	}
+
+	if matchesFailed {
+		v.add(each + "must match " + queryParamAllowlistPattern + " regular expression")
+	}
+	if maxLengthFailed {
+		v.add(fmt.Sprintf("each value in %s must be shorter than or equal to %d characters", field, maxLength))
+	}
+	if isStringFailed {
+		v.add(each + "must be a string")
+	}
+	if len(items) > maxItems {
+		v.add(fmt.Sprintf("%s must contain not more than %d elements", field, maxItems))
+	}
+	if matchesFailed || maxLengthFailed || isStringFailed || len(items) > maxItems {
+		return nil, false
 	}
 	return out, true
 }

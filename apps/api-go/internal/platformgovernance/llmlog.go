@@ -395,10 +395,11 @@ func (s *Service) resetLlmLogSettingsUnlocked(ctx context.Context, orgID, actorI
 	return defaults, nil
 }
 
-// resetLlmLogMetadataPolicy takes the settings lock once and applies the default
-// metadata whitelist through the UNLOCKED merge, never updateLlmLogSettings: a
-// second acquisition would open a second connection and wait on itself until
-// GET_LOCK times out.
+// resetLlmLogMetadataPolicy applies the default metadata whitelist through the
+// public update path, which takes the settings lock exactly once and runs the
+// merge in updateLlmLogSettingsUnlocked. There is therefore no nested GET_LOCK
+// that could wait on itself, and the coalesced merge keeps retentionDays and
+// the brief thresholds, matching updateSettingsUnlocked in NestJS.
 func (s *Service) resetLlmLogMetadataPolicy(ctx context.Context, orgID, actorID string) (LlmRequestLogSettingsResponse, error) {
 	keys, err := json.Marshal(append([]string{}, defaultLlmLogMetadataKeys...))
 	if err != nil {

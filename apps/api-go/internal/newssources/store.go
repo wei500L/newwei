@@ -129,11 +129,10 @@ func (s *Service) List(ctx context.Context, orgID string, query listQuery) (map[
 	}
 	items := make([]listItem, 0, len(sources))
 	for _, source := range sources {
-		summary := summaries[source.ID]
-		if summary.LatestJob == nil {
-			summary = emptyOps()
-		}
-		items = append(items, source.listItem(summary))
+		// Keep the runtime block that applyRuntimeStates attached: a source
+		// without an ops snapshot row still reports its queued/running counts
+		// and backpressure state, exactly like the NestJS list.
+		items = append(items, source.listItem(emptyIfNoSnapshot(summaries[source.ID])))
 	}
 	return map[string]any{
 		"sources":  items,

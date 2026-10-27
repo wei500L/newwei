@@ -91,13 +91,13 @@ func parseListQuery(values map[string][]string) (listQuery, error) {
 		}
 	}
 	if raw, ok := values["search"]; ok {
-		if len(raw[0]) > 200 {
+		if utf16Length(raw[0]) > 200 {
 			messages = append(messages, "search must be shorter than or equal to 200 characters")
 		}
 		query.Search = strings.TrimSpace(raw[0])
 	}
 	if raw, ok := values["group"]; ok {
-		if len(raw[0]) > 191 {
+		if utf16Length(raw[0]) > 191 {
 			messages = append(messages, "group must be shorter than or equal to 191 characters")
 		}
 		query.GroupSet = true
@@ -246,7 +246,7 @@ func parseUpdate(ctx context.Context, body []byte) (updateInput, error) {
 		input.Name = strings.TrimSpace(text)
 		if !ok || strings.TrimSpace(text) == "" {
 			messages = append(messages, "name should not be empty")
-		} else if len(text) > 200 {
+		} else if utf16Length(text) > 200 {
 			messages = append(messages, "name must be shorter than or equal to 200 characters")
 		} else if input.Name == "" {
 			messages = append(messages, "name is required")
@@ -255,7 +255,7 @@ func parseUpdate(ctx context.Context, body []byte) (updateInput, error) {
 	if raw, ok := fields["url"]; ok {
 		text, ok := jsonString(raw)
 		input.URLSet = true
-		if !ok || len(text) > 2048 {
+		if !ok || utf16Length(text) > 2048 {
 			messages = append(messages, "url must be a URL address")
 		} else if reason := validateSSRFSync(strings.TrimSpace(text)); reason != "" {
 			messages = append(messages, reason)
@@ -413,7 +413,7 @@ func parseIDs(body []byte, group bool, active bool) (ids []string, groupValue *s
 	ids = make([]string, 0, len(parsed))
 	for _, item := range parsed {
 		text, ok := item.(string)
-		if !ok || len(text) > 191 {
+		if !ok || utf16Length(text) > 191 {
 			return nil, nil, false, false, &inputError{Message: "each value in ids must be a string"}
 		}
 		ids = append(ids, text)
@@ -427,7 +427,7 @@ func parseIDs(body []byte, group bool, active bool) (ids []string, groupValue *s
 			return ids, nil, true, false, nil
 		}
 		text, ok := jsonString(raw)
-		if !ok || len(text) > 191 {
+		if !ok || utf16Length(text) > 191 {
 			return nil, nil, false, false, &inputError{Message: "group must be shorter than or equal to 191 characters"}
 		}
 		return ids, trimmedOrNil(text), true, false, nil
@@ -496,7 +496,7 @@ func requiredString(fields map[string]json.RawMessage, key string, max int, mess
 		*messages = append(*messages, "name should not be empty")
 		return "", false
 	}
-	if len(text) > max {
+	if utf16Length(text) > max {
 		*messages = append(*messages, key+" must be shorter than or equal to "+itoa(max)+" characters")
 		return "", false
 	}
@@ -512,7 +512,7 @@ func optionalString(fields map[string]json.RawMessage, key string, max int, mess
 		return "", true, true
 	}
 	text, ok := jsonString(raw)
-	if !ok || len(text) > max {
+	if !ok || utf16Length(text) > max {
 		*messages = append(*messages, key+" must be shorter than or equal to "+itoa(max)+" characters")
 		return "", true, false
 	}
@@ -581,4 +581,20 @@ func itoa(value int) string {
 		value /= 10
 	}
 	return string(buf[i:])
+}
+
+// utf16Length is the JavaScript string length class-validator's MaxLength
+// compares against: UTF-16 code units, not UTF-8 bytes. A name or group made of
+// CJK characters is three bytes per rune but one code unit, so a byte length
+// would reject values NestJS accepted.
+func utf16Length(value string) int {
+	length := 0
+	for _, char := range value {
+		if char > 0xFFFF {
+			length += 2
+			continue
+		}
+		length++
+	}
+	return length
 }

@@ -228,17 +228,19 @@ func (s *Service) applyDeliverySchedule(
 
 // occupyDeliveryForSend is the port of occupyDeliveryForSend: an already
 // sending row is ours, otherwise a pending row is claimed with CAS.
+//
+// The conditional update result is the second half of the contract: a pending
+// row that another attempt transitioned between the read and the update (a
+// retried job overlapping its previous attempt, or two consumers after a
+// stalled recovery) must not be sent a second time. AlertsService
+// occupyDeliveryForSend returns `updated.count === 1` for exactly this reason.
 func (s *Service) occupyDeliveryForSend(ctx context.Context, delivery *DeliveryRow) (bool, error) {
 	if delivery.Status == DeliveryStatusSending {
 		return true, nil
 	}
-	err := s.transitionDelivery(ctx, delivery.ID, []string{DeliveryStatusPending}, deliveryStatusUpdate{
+	return s.transitionDeliveryCAS(ctx, delivery.ID, []string{DeliveryStatusPending}, deliveryStatusUpdate{
 		Status: DeliveryStatusSending,
 	})
-	if err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // transitionDeliveryOnError mirrors the catch block: the delivery becomes
@@ -249,8 +251,9 @@ func (s *Service) transitionDeliveryOnError(ctx context.Context, delivery *Deliv
 	status := DeliveryStatusPending
 	// B1: BullMQ increments atm only after an attempt fails, so during the last
 	// attempt attemptsMade is N-1 and `attemptsMade + 1 >= attempts` is the
-	// correct last-attempt test. The NestJS code compares attemptsMade >= attempts
-	// and therefore never marks the final failure.
+	// correct last-attempt test. AlertsService.handleDeliveryJob carries the same
+	// test (alerts.service.ts `job.attemptsMade + 1 >= (job.opts.attempts ?? 1)`),
+	// so both consumers mark the final failure identically.
 	if finalAttempt(attemptsMade, attempts) {
 		status = DeliveryStatusFailed
 	}
@@ -275,8 +278,14 @@ func finalAttempt(attemptsMade, attempts int) bool {
 }
 
 func (s *Service) transitionDelivery(ctx context.Context, deliveryID string, from []string, update deliveryStatusUpdate) error {
-	_, err := s.repo.transitionDeliveryStatus(ctx, s.db, deliveryID, from, update)
+	_, err := s.transitionDeliveryCAS(ctx, deliveryID, from, update)
 	return err
+}
+
+// transitionDeliveryCAS is transitionDelivery with the "did this row match"
+// verdict of the conditional UPDATE, which the occupancy claim needs.
+func (s *Service) transitionDeliveryCAS(ctx context.Context, deliveryID string, from []string, update deliveryStatusUpdate) (bool, error) {
+	return s.repo.transitionDeliveryStatus(ctx, s.db, deliveryID, from, update)
 }
 
 // parseDeliveryChannel decodes the targetSnapshot channel object.

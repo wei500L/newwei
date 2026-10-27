@@ -102,8 +102,10 @@ func writeServiceUnavailable(w http.ResponseWriter, r *http.Request) {
 		Message:    "Internal server error",
 		Error:      "Service Unavailable",
 		TraceID:    httpx.TraceIDFromContext(r.Context()),
-		Path:       r.URL.Path,
-		Timestamp:  nestTimestamp(),
+		// GlobalExceptionFilter writes `path: request.url`, which in Express is the
+		// path *and* the query string; RequestURI reproduces that.
+		Path:      r.URL.RequestURI(),
+		Timestamp: nestTimestamp(),
 	}
 	w.Header().Set("content-type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusServiceUnavailable)

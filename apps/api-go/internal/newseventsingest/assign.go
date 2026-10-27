@@ -373,21 +373,27 @@ func (a *assigner) persistAssignment(ctx context.Context, orgID string, signal N
 	}
 	if err := insertNewsEventItemTx(ctx, tx, item); err != nil {
 		if isDuplicateEntry(err) {
-			// Lost the race: resolve the ACTUAL event that holds the article (the
-			// winner's event), never the one created in this transaction.
-			winner, found, lookupErr := findNewsEventItemTx(ctx, tx, orgID, signal.ProcessedArticleID)
+			// Lost the race against a writer that committed the same
+			// (orgId, processedArticleId) first. Roll this transaction back so the
+			// event created above never lands — a committed active event with no
+			// item is an empty duplicate in the console. The winner is then
+			// resolved with a read outside the transaction, because the snapshot
+			// of this transaction predates the winner's commit and an
+			// in-transaction lookup therefore cannot see it.
+			_ = tx.Rollback()
+			// The transaction is finished; the deferred rollback must not run again.
+			committed = true
+			winner, found, lookupErr := a.store.findNewsEventItem(ctx, orgID, signal.ProcessedArticleID)
 			if lookupErr != nil {
 				return AssignResult{}, lookupErr
 			}
-			if err := tx.Commit(); err != nil {
+			if !found {
+				// The conflicting row is gone again; report the original conflict so
+				// the caller retries on the next tick instead of publishing an event
+				// id that no longer exists.
 				return AssignResult{}, err
 			}
-			committed = true
-			winnerID := eventID
-			if found {
-				winnerID = winner
-			}
-			return AssignResult{EventID: winnerID, Created: false}, nil
+			return AssignResult{EventID: winner, Created: false}, nil
 		}
 		return AssignResult{}, err
 	}

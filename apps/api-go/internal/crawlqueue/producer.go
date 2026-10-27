@@ -252,7 +252,11 @@ func (p *Producer) RemoveQueuedJobs(ctx context.Context, taskID string) (int, er
 		}
 	}
 	if removed > 0 {
-		if err := p.activity.MarkTasksTerminal(ctx, removed); err != nil {
+		// B1: the terminal decrement is one Lua script. The removed count was read
+		// from a page of job ids, so a producer on another instance can increment
+		// the same counter while this batch is applied; a pipelined HINCRBY plus a
+		// separate floor-to-zero HSET could drop that increment.
+		if err := p.activity.MarkTasksTerminalAtomic(ctx, removed); err != nil {
 			log.Printf("crawlqueue: failed to decrement crawl activity: %v", err)
 		}
 	}

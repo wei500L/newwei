@@ -108,3 +108,46 @@ func TestResetPasswordRejectsShortPasswordAfterTokenCheck(t *testing.T) {
 		t.Fatal("a rejected password must not write anything")
 	}
 }
+
+// TestResetPasswordClaimsTokenExactlyOnce locks the single-use invariant of the
+// reset token: two concurrent requests carrying the same token both pass the
+// pre-check, so only the caller whose conditional claim affects one row may
+// rotate the password. The fake store answers the claim with 0 affected rows,
+// which is exactly what the loser observes after the winner committed.
+func TestResetPasswordClaimsTokenExactlyOnce(t *testing.T) {
+	state := &fakeState{}
+	resetQueryHandler(state, time.Now().Add(time.Hour).UTC())
+	state.execHandler = func(query string, _ []driver.NamedValue) (driver.Result, error) {
+		if strings.Contains(query, "UPDATE `PasswordResetToken` SET `usedAt` = ? WHERE `tokenHash` = ?") {
+			return fakeResult{rows: 0}, nil
+		}
+		return fakeResult{rows: 1}, nil
+	}
+
+	_, err := resetService(state).resetPassword(context.Background(), "tok", "new-password", nil)
+	if got := errorMessage(t, err); got != passwordResetTokenMessage {
+		t.Fatalf("messages = %q", got)
+	}
+	commits, rollbacks := state.txCounts()
+	if commits != 0 || rollbacks != 1 {
+		t.Fatalf("commits = %d, rollbacks = %d, want 0/1", commits, rollbacks)
+	}
+
+	// The claim must be the ONLY write: a losing caller rotates no password and
+	// revokes no session.
+	statements := state.executedStatements()
+	if len(statements) != 1 {
+		t.Fatalf("statements = %v, want only the claim", statements)
+	}
+	claim := statements[0]
+	for _, want := range []string{
+		"UPDATE `PasswordResetToken` SET `usedAt`",
+		"WHERE `tokenHash` = ?",
+		"`usedAt` IS NULL",
+		"`expiresAt` > ?",
+	} {
+		if !strings.Contains(claim, want) {
+			t.Fatalf("claim %q is missing %q", claim, want)
+		}
+	}
+}

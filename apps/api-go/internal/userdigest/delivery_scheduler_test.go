@@ -267,6 +267,66 @@ func TestBuildDigestEmailFallbacksAndEscaping(t *testing.T) {
 	}
 }
 
+// A tick runs at most once per interval cluster-wide. The second scheduler
+// instance loses the SET NX tick gate and must not even scan for due schedules.
+func TestRunTickSecondInstanceSkipsScanAndSend(t *testing.T) {
+	now := time.Date(2026, 10, 18, 6, 30, 0, 0, time.UTC)
+	record := testDueRecord(now)
+	repo := newFakeDeliveryRepository(&record)
+	store := &fakeDeliveryStore{}
+	generator := &fakeDigestGenerator{digest: testDigest(now, 1)}
+	mail := &fakeMailPort{}
+	scheduler := newTestScheduler(repo, store, generator, mail, &fakeDeliveryNotifier{}, 4, now)
+
+	if err := scheduler.runTick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(mail.messages) != 1 || repo.listCalls != 1 || generator.calls != 1 {
+		t.Fatalf("first tick mails=%d scans=%d generations=%d", len(mail.messages), repo.listCalls, generator.calls)
+	}
+
+	if err := scheduler.runTick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(mail.messages) != 1 || repo.listCalls != 1 || generator.calls != 1 {
+		t.Fatalf("second tick duplicated work: mails=%d scans=%d generations=%d",
+			len(mail.messages), repo.listCalls, generator.calls)
+	}
+}
+
+// The organization lease is the second, independent guard. A tick that does win
+// the gate (for example because the previous interval's gate already expired)
+// must not run an organization whose previous run still holds the lease, and it
+// must not release a lease it does not own.
+func TestRunTickSkipsOrgLeasedByAnotherInstance(t *testing.T) {
+	now := time.Date(2026, 10, 18, 6, 30, 0, 0, time.UTC)
+	record := testDueRecord(now)
+	repo := newFakeDeliveryRepository(&record)
+	store := &fakeDeliveryStore{}
+	leaseKey := deliveryOrgLockKeyPrefix + "org1"
+	const foreignToken = "other-instance-token"
+	if err := store.Set(context.Background(), leaseKey, foreignToken, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	generator := &fakeDigestGenerator{digest: testDigest(now, 1)}
+	mail := &fakeMailPort{}
+	scheduler := newTestScheduler(repo, store, generator, mail, &fakeDeliveryNotifier{}, 4, now)
+
+	if err := scheduler.runTick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(mail.messages) != 0 || generator.calls != 0 {
+		t.Fatalf("leased org ran: mails=%d generations=%d", len(mail.messages), generator.calls)
+	}
+	value, found, err := store.Get(context.Background(), leaseKey)
+	if err != nil || !found || value != foreignToken {
+		t.Fatalf("foreign lease value=%q found=%v err=%v", value, found, err)
+	}
+	if stored := repo.records[record.ID]; !stored.NextRunAt.Equal(record.NextRunAt) {
+		t.Fatalf("leased org rewrote nextRunAt: %s", stored.NextRunAt)
+	}
+}
+
 // ---- fakes ----
 
 type fakeDeliveryRepository struct {
