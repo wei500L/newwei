@@ -7,26 +7,23 @@ import (
 
 // TestEventTimelineSentimentModesDefaultToLegacy pins the default and the
 // empty-string behaviour of both switches.
-func TestEventTimelineSentimentModesDefaultToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
+func TestEventTimelineSentimentModesDefaultToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.NewsEventsTimelineMode != NewsEventsTimelineModeGo {
+		t.Fatalf("timeline mode = %s, want go", cfg.NewsEventsTimelineMode)
 	}
-	if cfg.NewsEventsTimelineMode != NewsEventsTimelineModeLegacy {
-		t.Fatalf("timeline mode = %s, want legacy", cfg.NewsEventsTimelineMode)
-	}
-	if cfg.SentimentSnapshotMode != SentimentSnapshotModeLegacy {
-		t.Fatalf("sentiment mode = %s, want legacy", cfg.SentimentSnapshotMode)
+	if cfg.SentimentSnapshotMode != SentimentSnapshotModeGo {
+		t.Fatalf("sentiment mode = %s, want go", cfg.SentimentSnapshotMode)
 	}
 	for _, empty := range []string{"", "  "} {
-		cfg, err := Load(func(key string) string {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			switch key {
 			case "API_GO_NEWS_EVENTS_TIMELINE_MODE", "API_GO_SENTIMENT_SNAPSHOT_MODE":
 				return empty
 			default:
 				return ""
 			}
-		})
+		}))
 		if err != nil {
 			t.Fatalf("empty mode %q: %v", empty, err)
 		}
@@ -47,12 +44,12 @@ func TestEventTimelineSentimentModesRejectInvalid(t *testing.T) {
 		{"API_GO_SENTIMENT_SNAPSHOT_MODE", "canary"},
 		{"API_GO_SENTIMENT_SNAPSHOT_MODE", "on"},
 	} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == testCase.key {
 				return testCase.invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), testCase.key+" must be one of legacy|go") {
 			t.Fatalf("%s=%q: %v", testCase.key, testCase.invalid, err)
 		}
@@ -73,7 +70,7 @@ func TestEventTimelineSentimentGoRequiresMySQLRedisMongo(t *testing.T) {
 			"REDIS_HOST":   "REDIS_HOST is required when " + modeKey + "=go",
 			"MONGO_URI":    "MONGO_URI is required when " + modeKey + "=go",
 		} {
-			_, err := Load(func(key string) string {
+			_, err := Load(legacyUnset(func(key string) string {
 				if key == modeKey {
 					return "go"
 				}
@@ -81,18 +78,18 @@ func TestEventTimelineSentimentGoRequiresMySQLRedisMongo(t *testing.T) {
 					return ""
 				}
 				return full[key]
-			})
+			}))
 			if err == nil || !strings.Contains(err.Error(), expected) {
 				t.Fatalf("%s missing %s: %v", modeKey, missing, err)
 			}
 		}
 
-		cfg, err := Load(func(key string) string {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			if key == modeKey {
 				return "go"
 			}
 			return full[key]
-		})
+		}))
 		if err != nil {
 			t.Fatalf("%s=go must not require JWT: %v", modeKey, err)
 		}

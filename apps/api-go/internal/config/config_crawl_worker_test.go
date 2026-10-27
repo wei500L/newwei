@@ -6,13 +6,13 @@ import (
 )
 
 func TestCrawlWorkerModeDefaults(t *testing.T) {
-	for _, value := range []string{"", "legacy"} {
-		cfg, err := Load(func(key string) string {
+	for _, value := range []string{"legacy", "  legacy  "} {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_CRAWL_WORKER_MODE" {
 				return value
 			}
 			return ""
-		})
+		}))
 		if err != nil {
 			t.Fatalf("Load(%q) error = %v", value, err)
 		}
@@ -23,12 +23,12 @@ func TestCrawlWorkerModeDefaults(t *testing.T) {
 }
 
 func TestCrawlWorkerModeRejectsInvalidValue(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_WORKER_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_WORKER_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode error = %v", err)
 	}
@@ -54,7 +54,7 @@ func TestCrawlWorkerModeGoRequiresEveryDependency(t *testing.T) {
 	}
 	for _, tc := range missing {
 		t.Run(tc.key, func(t *testing.T) {
-			_, err := Load(func(key string) string {
+			_, err := Load(legacyUnset(func(key string) string {
 				if key == "API_GO_CRAWL_WORKER_MODE" {
 					return "go"
 				}
@@ -62,19 +62,19 @@ func TestCrawlWorkerModeGoRequiresEveryDependency(t *testing.T) {
 					return ""
 				}
 				return deps[key]
-			})
+			}))
 			if err == nil || !strings.Contains(err.Error(), tc.expected) {
 				t.Fatalf("missing %q in %v", tc.expected, err)
 			}
 		})
 	}
 
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_WORKER_MODE" {
 			return "go"
 		}
 		return deps[key]
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -84,10 +84,7 @@ func TestCrawlWorkerModeGoRequiresEveryDependency(t *testing.T) {
 }
 
 func TestCrawlWorkerMediaDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	cfg := loadDefaults(t)
 	if cfg.CrawlMediaFetchTimeoutMs != 15_000 {
 		t.Errorf("media fetch timeout = %d", cfg.CrawlMediaFetchTimeoutMs)
 	}

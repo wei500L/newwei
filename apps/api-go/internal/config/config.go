@@ -1,7 +1,11 @@
-// Package config 加载 api-go 网关的环境变量。
+// Package config loads the api-go gateway environment.
 //
-// api-go 是 Strangler Fig 网关：默认把全部流量反向代理到 NestJS（LEGACY_API_URL），
-// 已迁移路由逐步切到 Go 原生 handler（legacy → shadow → canary → go 四态）。
+// api-go is a Strangler Fig gateway. The repository default is now fully
+// migrated: every API_GO_*_MODE switch takes go and API_GO_LEGACY_FALLBACK_MODE
+// takes reject, so unmatched routes answer the NestJS global-exception-filter
+// 404 instead of being proxied. Each migrated route still keeps the four-state
+// legacy -> shadow -> canary -> go routing table, and an explicit legacy switch
+// set (with fallback=proxy) restores the NestJS proxy.
 package config
 
 import (
@@ -33,13 +37,13 @@ const (
 type OnboardingMode string
 
 const (
-	// OnboardingModeShadow 是默认值：onboarding GET 保持 Go-批2A/2B 的
-	// shadow 语义（NestJS 响应 + Go 差分，legacy-approved 身份）——
-	// 直接手工启动 api-go 的旧行为不变。
+	// OnboardingModeShadow keeps the Go-批2A/2B shadow semantics for the
+	// onboarding GET (NestJS answers, Go diffs). It is now an explicit
+	// rollback-only value: the unset/empty switch takes the go branch.
 	OnboardingModeShadow OnboardingMode = "shadow"
-	// OnboardingModeGo 是 Go-批3A 的真实接管：onboarding GET 由 Go 独立
-	// 鉴权（JWT 验签 + Redis blacklist + MySQL RBAC）并全响应。仅在
-	// pilot profile（compose）/ 远端 smoke 显式启用。
+	// OnboardingModeGo is the default: the onboarding GET is authenticated by
+	// Go itself (JWT verification + Redis blacklist + MySQL RBAC) and answers
+	// in full. Set API_GO_ONBOARDING_MODE=shadow to roll back.
 	OnboardingModeGo OnboardingMode = "go"
 )
 
@@ -73,7 +77,7 @@ const (
 )
 
 // PublicPortalMode 是公开首页、频道和故事详情的接管开关
-// （API_GO_PUBLIC_PORTAL_MODE）。默认 legacy。
+// （API_GO_PUBLIC_PORTAL_MODE）。默认 go。
 type PublicPortalMode string
 
 const (
@@ -85,7 +89,7 @@ const (
 )
 
 // DashboardStatsMode 是 GET /api/dashboard/stats 的接管开关
-// （API_GO_DASHBOARD_STATS_MODE）。默认 legacy。只这一条精确 GET。
+// （API_GO_DASHBOARD_STATS_MODE）。默认 go。只这一条精确 GET。
 type DashboardStatsMode string
 
 const (
@@ -97,7 +101,7 @@ const (
 )
 
 // DashboardChartsMode 是三个只读图表 GET 的接管开关
-// （API_GO_DASHBOARD_CHARTS_MODE）。默认 legacy。与 stats 开关互不影响。
+// （API_GO_DASHBOARD_CHARTS_MODE）。默认 go。与 stats 开关互不影响。
 type DashboardChartsMode string
 
 const (
@@ -110,7 +114,7 @@ const (
 )
 
 // DashboardWarMapMode 是 war-map events 与 news-markers 的接管开关
-// （API_GO_DASHBOARD_WAR_MAP_MODE）。默认 legacy。与 stats、charts 互不影响。
+// （API_GO_DASHBOARD_WAR_MAP_MODE）。默认 go。与 stats、charts 互不影响。
 type DashboardWarMapMode string
 
 const (
@@ -122,7 +126,7 @@ const (
 )
 
 // DashboardWarMapTransportMode 只控制 GET /api/dashboard/war-map/transport-detail。
-// 与 events/news-markers、layers 开关互不影响。默认 legacy。
+// 与 events/news-markers、layers 开关互不影响。默认 go。
 type DashboardWarMapTransportMode string
 
 const (
@@ -131,7 +135,7 @@ const (
 )
 
 // DashboardWarMapLayersMode 只控制 GET /api/dashboard/war-map/layers。
-// 与 events/news-markers、transport-detail 开关互不影响。默认 legacy。
+// 与 events/news-markers、transport-detail 开关互不影响。默认 go。
 type DashboardWarMapLayersMode string
 
 const (
@@ -140,7 +144,7 @@ const (
 )
 
 // DashboardSpacetimeGeoMode 只控制热力图总览和下钻两条精确 GET。
-// 与传播图开关互不影响。默认 legacy。
+// 与传播图开关互不影响。默认 go。
 type DashboardSpacetimeGeoMode string
 
 const (
@@ -149,7 +153,7 @@ const (
 )
 
 // DashboardSpacetimePropagationMode 只控制传播图总览和下钻两条精确 GET。
-// 与热力图开关互不影响。默认 legacy。
+// 与热力图开关互不影响。默认 go。
 type DashboardSpacetimePropagationMode string
 
 const (
@@ -157,7 +161,7 @@ const (
 	DashboardSpacetimePropagationModeGo     DashboardSpacetimePropagationMode = "go"
 )
 
-// DashboardStreamMode 只控制 GET /api/dashboard/stream。默认 legacy。
+// DashboardStreamMode 只控制 GET /api/dashboard/stream。默认 go。
 // 与图表、War Map、Spacetime 的 HTTP 开关互不影响；go 时复用那些服务，
 // 但不因此改写它们的路由。
 type DashboardStreamMode string
@@ -167,7 +171,7 @@ const (
 	DashboardStreamModeGo     DashboardStreamMode = "go"
 )
 
-// HealthzMode 只控制认证版 GET /api/healthz。默认 legacy。
+// HealthzMode 只控制认证版 GET /api/healthz。默认 go。
 // 不改变公开 GET /api/healthz/live。
 type HealthzMode string
 
@@ -177,13 +181,12 @@ const (
 )
 
 // HealthzLiveMode controls the public liveness probe GET /api/healthz/live.
-// Default shadow.
+// Default go.
 //
-// This is the only migration switch whose default is shadow instead of legacy:
-// the route already runs in shadow today (NestJS answers, Go diffs), so a
-// default of legacy would silently change the current production behaviour into
-// "no Go observation". shadow keeps the existing rule table byte for byte;
-// legacy and go only change who answers the exact GET.
+// The web container gates its startup on this route, so the default has to be
+// answered by Go: shadow would still be answered by NestJS and legacy would
+// forward to it. shadow and legacy remain available for an explicit rollback
+// and only change who answers the exact GET.
 type HealthzLiveMode string
 
 const (
@@ -193,11 +196,15 @@ const (
 )
 
 // LegacyFallbackMode controls what the gateway does with a request that would
-// otherwise be forwarded to the NestJS API. Default proxy (current behaviour).
+// otherwise be forwarded to the NestJS API. Default reject: the repository no
+// longer runs NestJS by default, so an unmatched route must fail loudly instead
+// of silently reaching a backend that is not part of the default stack.
 //
 // reject is only accepted when every other API_GO_*_MODE switch reads "go": the
 // gateway then answers the NestJS global-exception-filter 404 itself and never
-// opens a connection to the legacy API. See validateLegacyRejectModes.
+// opens a connection to the legacy API. See validateLegacyRejectModes. Set
+// API_GO_LEGACY_FALLBACK_MODE=proxy together with the full legacy switch set to
+// route unmatched requests back to NestJS.
 type LegacyFallbackMode string
 
 const (
@@ -206,7 +213,7 @@ const (
 )
 
 // DocsMode controls GET /docs, GET /docs/json and the Swagger UI static assets.
-// Default legacy. go serves the embedded OpenAPI contract snapshot from the
+// Default go. go serves the embedded OpenAPI contract snapshot from the
 // api-go process; whether the page is available at all still follows the
 // NestJS SWAGGER_ENABLED rule (see internal/apidocs).
 type DocsMode string
@@ -217,7 +224,7 @@ const (
 )
 
 // VectorDiagnosticsMode controls the exact GET
-// /api/system-settings/vector-service/diagnostics. Default legacy.
+// /api/system-settings/vector-service/diagnostics. Default go.
 // go reports the vector client runtime state of the api-go process that served
 // the request; it needs JWT, MySQL and Redis (the shared settings read path).
 type VectorDiagnosticsMode string
@@ -227,7 +234,7 @@ const (
 	VectorDiagnosticsModeGo     VectorDiagnosticsMode = "go"
 )
 
-// NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 legacy。
+// NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 go。
 // 不接管 GET /api/admin/news-sources/:id/preview，也不启动采集。
 type NewsSourcesMode string
 
@@ -237,7 +244,7 @@ const (
 )
 
 // NewsSourceSchedulerMode controls the 30-second news source cron only. It
-// defaults to legacy. Go requires MySQL and Redis. The NestJS @Cron returns
+// defaults to go. Go requires MySQL and Redis. The NestJS @Cron returns
 // before taking the shared lock when this is go.
 type NewsSourceSchedulerMode string
 
@@ -247,7 +254,7 @@ const (
 )
 
 // NewsSourceOpsMode controls only the four POST /api/admin/news-sources/:id/{dispatch,cancel-queued,clear-inflight,retry-latest}
-// routes. It defaults to legacy. Go requires JWT, MySQL and Redis.
+// routes. It defaults to go. Go requires JWT, MySQL and Redis.
 type NewsSourceOpsMode string
 
 const (
@@ -255,7 +262,7 @@ const (
 	NewsSourceOpsModeGo     NewsSourceOpsMode = "go"
 )
 
-// CrawlWorkflowsMode 只控制采集策略工作流的编辑接口。默认 legacy。
+// CrawlWorkflowsMode 只控制采集策略工作流的编辑接口。默认 go。
 // go 只接管列表、详情、创建、草稿、发布、版本、对比、节点 schema 和两条
 // bridge；trial-run、replay、workflow-runs、profiles 列表/创建/预览/回滚，
 // 以及 runs 与 nodes 仍回 NestJS。不启动采集，不入队。
@@ -266,7 +273,7 @@ const (
 	CrawlWorkflowsModeGo     CrawlWorkflowsMode = "go"
 )
 
-// CrawlProfilesMode 只控制采集站点画像的编辑接口。默认 legacy。
+// CrawlProfilesMode 只控制采集站点画像的编辑接口。默认 go。
 // go 只接管列表、匹配、预览、创建、详情、更新、版本列表与回滚这 8 条；
 // runs、nodes、workflows 与 workflow-bridge 仍回 NestJS。不启用 shadow，
 // 不启动采集，不入队。
@@ -277,7 +284,7 @@ const (
 	CrawlProfilesModeGo     CrawlProfilesMode = "go"
 )
 
-// RbacMode 只控制组织访问控制的六条 HTTP（/api/rbac/*）。默认 legacy。
+// RbacMode 只控制组织访问控制的六条 HTTP（/api/rbac/*）。默认 go。
 // go 时只接管 permissions、roles（GET/POST）、assign、members、audit-logs；
 // 其他方法与更长路径仍回 NestJS，也不新增 updateRole 的 HTTP。
 type RbacMode string
@@ -288,7 +295,7 @@ const (
 )
 
 // CrawlTemplatesMode 只控制采集模板（admin/crawl-templates）的 4 条编辑
-// 接口。默认 legacy。go 只接管列表、创建、更新、删除这 4 条；
+// 接口。默认 go。go 只接管列表、创建、更新、删除这 4 条；
 // crawl-tasks、crawl4ai 队列与 metadata 仍回 NestJS。不启用 shadow，
 // 不启动采集，不入队。
 type CrawlTemplatesMode string
@@ -300,7 +307,7 @@ const (
 
 // CrawlFrontierRunsMode controls the eleven crawl frontier run monitoring and
 // cancellation HTTP routes under /api/admin/crawl-frontier
-// (API_GO_CRAWL_FRONTIER_RUNS_MODE). It defaults to legacy and accepts only
+// (API_GO_CRAWL_FRONTIER_RUNS_MODE). It defaults to go and accepts only
 // "", "legacy" and "go".
 //
 // Go mode takes over exactly these routes:
@@ -333,7 +340,7 @@ const (
 
 // CrawlFrontierWritesMode controls the three crawl frontier write HTTP routes
 // under /api/admin/crawl-frontier (API_GO_CRAWL_FRONTIER_WRITES_MODE). It
-// defaults to legacy and accepts only "", "legacy" and "go".
+// defaults to go and accepts only "", "legacy" and "go".
 //
 // Go mode takes over exactly these routes:
 //
@@ -357,7 +364,7 @@ const (
 
 // LlmLogsMode 只控制 LLM 请求日志的列表、CSV 导出与用量汇总这 3 条只读
 // GET（/api/llm-logs、/api/llm-logs/export、/api/llm-logs/summary）。
-// 默认 legacy。go 只接管这三条精确 GET；其他方法与更长路径仍回 NestJS。
+// 默认 go。go 只接管这三条精确 GET；其他方法与更长路径仍回 NestJS。
 // /api/system-settings/llm-request-logs 始终留在 NestJS（它会改 Mongo TTL
 // 索引）。不启用 shadow，不调用模型服务，不启动 worker。
 type LlmLogsMode string
@@ -367,7 +374,7 @@ const (
 	LlmLogsModeGo     LlmLogsMode = "go"
 )
 
-// AdminLogsMode 只控制管理端日志与异常读取的 7 条 GET。默认 legacy。
+// AdminLogsMode 只控制管理端日志与异常读取的 7 条 GET。默认 go。
 // go 只接管下面这 7 条精确路径，且只匹配 GET；其他方法、更长路径、
 // /api/admin/quality/、/api/observability/ 与 /api/metrics 仍回 NestJS。
 // 不启用 shadow，不改前端，不改 canary。
@@ -384,7 +391,7 @@ const (
 //	POST /api/observability/exception-events/client
 //	POST /api/internal/observability/exception-events
 //
-// Default legacy. go takes over exactly those two paths; the seven admin log
+// Default go. go takes over exactly those two paths; the seven admin log
 // and error read GETs stay on their own API_GO_ADMIN_LOGS_MODE switch. Similar
 // paths, other methods and every /api/observability/ read route keep falling
 // through to NestJS. Shadow is never enabled, no worker is started and the
@@ -398,7 +405,7 @@ const (
 )
 
 // NewsIndicatorsMode 只控制新闻指标关联分析的 3 条 HTTP 与 2 个 GraphQL 只读
-// query。默认 legacy。go 时接管
+// query。默认 go。go 时接管
 //
 //	GET  /api/news-indicator/associations
 //	GET  /api/news-indicator/associations/:id
@@ -416,7 +423,7 @@ const (
 	NewsIndicatorsModeGo     NewsIndicatorsMode = "go"
 )
 
-// QualityOverviewMode 只控制管理端质量面板的 5 条 GET。默认 legacy。
+// QualityOverviewMode 只控制管理端质量面板的 5 条 GET。默认 go。
 // go 只接管下面这 5 条精确路径，且只匹配 GET：
 // admin/quality 的 news-sources、pipeline、overview、task-logs、
 // task-logs/summary。新闻源质量与流水线质量复用 MySQL
@@ -433,7 +440,7 @@ const (
 
 // ClassificationRssOpsMode controls the classification quality workbench (7
 // HTTP endpoints), the RSS chain diagnostics (4 endpoints) and the RSS
-// translation daily metrics (1 endpoint). The default is legacy.
+// translation daily metrics (1 endpoint). The default is go.
 //
 // When the mode is go, Go owns exactly these 13 route rules and nothing else:
 //
@@ -466,7 +473,7 @@ const (
 )
 
 // ClassificationReportsMode controls only POST
-// /api/admin/quality/classification/reports. The default is legacy.
+// /api/admin/quality/classification/reports. The default is go.
 //
 // In go mode Go creates the ClassificationReportJob document and enqueues the
 // "classification_quality" BullMQ job that builds the report. The GET
@@ -487,7 +494,7 @@ const (
 )
 
 // ClassificationQualityWorkerMode controls who consumes the
-// "classification_quality" BullMQ queue. The default is legacy.
+// "classification_quality" BullMQ queue. The default is go.
 //
 // The switch is read by both runtimes: NestJS skips creating its
 // ClassificationQualityProcessor Worker when it is go (the Queue itself stays,
@@ -511,7 +518,7 @@ const (
 )
 
 // PipelineRecoveryMode controls GET /api/admin/quality/pipeline/runs. The
-// default is legacy.
+// default is go.
 //
 // go requires JWT_SECRET, DATABASE_URL and MONGO_URI: ItemMeta comes from MySQL,
 // ProcessedItem and TaskLog from Mongo, and the route keeps settings.manage.
@@ -529,7 +536,7 @@ const (
 )
 
 // BullmqCleanupMode controls ownership of the retained-job cleanup for every
-// tracked business queue (API_GO_BULLMQ_CLEANUP_MODE). The default is legacy.
+// tracked business queue (API_GO_BULLMQ_CLEANUP_MODE). The default is go.
 //
 // go stops the per-process NestJS timers and lets api-go run one leased cycle
 // (lock:cron:bullmq-retained-cleanup) immediately after start and then hourly.
@@ -544,7 +551,7 @@ const (
 )
 
 // QueueOpsMode controls the queue operations REST console under
-// /api/admin/queue-ops (API_GO_QUEUE_OPS_MODE). The default is legacy, where no
+// /api/admin/queue-ops (API_GO_QUEUE_OPS_MODE). The default is go, where no
 // route is registered and the requests reach NestJS, which has no such route and
 // answers 404.
 //
@@ -567,7 +574,7 @@ const (
 )
 
 // QueueOrgStatsMode controls who maintains the per-organization itemPipeline job
-// counters (API_GO_QUEUE_ORG_STATS_MODE). The default is legacy.
+// counters (API_GO_QUEUE_ORG_STATS_MODE). The default is go.
 //
 // NestJS and api-go read the same variable: go stops QueueOrgStatsTracker from
 // registering its QueueEvents listeners, and api-go reads the itemPipeline event
@@ -587,7 +594,7 @@ const (
 
 // ClassificationReviewSeedMode controls who enqueues classification review-seed
 // jobs after an itemPipeline job completes
-// (API_GO_CLASSIFICATION_REVIEW_SEED_MODE). The default is legacy.
+// (API_GO_CLASSIFICATION_REVIEW_SEED_MODE). The default is go.
 //
 // go attaches the consumer to api-go's single itemPipeline events reader and
 // stops the NestJS listener. The review-seed job id is stable per organization
@@ -604,7 +611,7 @@ const (
 
 // PipelineRecoveryWriteMode controls POST
 // /api/admin/quality/pipeline/replay and /rollback
-// (API_GO_PIPELINE_RECOVERY_WRITE_MODE). The default is legacy.
+// (API_GO_PIPELINE_RECOVERY_WRITE_MODE). The default is go.
 //
 // go requires JWT_SECRET, DATABASE_URL, MONGO_URI and REDIS_HOST. It is
 // independent of PipelineRecoveryMode, which still owns the runs read.
@@ -649,7 +656,7 @@ const (
 )
 
 // NewsnowClusteringOpsMode controls the nine NewsNow local-computation and
-// news-event clustering failure HTTP endpoints. It defaults to legacy. In go
+// news-event clustering failure HTTP endpoints. It defaults to go. In go
 // mode it takes over exactly these nine routes and nothing else:
 //
 //	GET  /api/news-aggregator/metadata                       (public)
@@ -685,7 +692,7 @@ const (
 //	GET  /api/news-aggregator/source
 //	POST /api/news-aggregator/sources/batch
 //
-// It defaults to legacy. In go mode Go performs the real upstream fetch for all
+// It defaults to go. In go mode Go performs the real upstream fetch for all
 // 64 registry ids, reads the global runtime-secret row from MySQL, writes the
 // compatible fresh/stale Redis cache and publishes the source-refresh relay for
 // the NestJS socket subscriber. It requires DATABASE_URL and REDIS_HOST only:
@@ -708,7 +715,7 @@ const (
 //	GET /api/news-aggregator/hottest-analysis
 //	GET /api/news-aggregator/recommended
 //
-// It defaults to legacy. In go mode Go builds the global hottest snapshot,
+// It defaults to go. In go mode Go builds the global hottest snapshot,
 // projects it per organization, optionally auto-imports items when the caller
 // holds items.write, scores the recommended feed and writes the same Redis
 // documents and locks as NestJS. It requires JWT_SECRET, DATABASE_URL,
@@ -730,7 +737,7 @@ const (
 //	NewsnowSourceWarmScheduler        every minute
 //
 // Both NestJS and Go read it. When it is go the NestJS Cron callbacks return
-// before claiming the tick gate or taking the lock. It defaults to legacy and
+// before claiming the tick gate or taking the lock. It defaults to go and
 // requires DATABASE_URL, REDIS_HOST and MONGO_URI (the hottest refresh writes
 // projections and domestic opinion snapshots); no JWT is involved.
 type NewsnowBackgroundMode string
@@ -746,10 +753,10 @@ const (
 //
 //	POST /api/system-settings/news-events/clustering/failures/:groupId/llm-backfill
 //
-// Default legacy. go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
+// Default go. go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
 // MONGO_URI, and adds one BullMQ job to the shared
 // news_event_clustering_recovery queue. It does not start the worker: the
-// consumer has its own switch. The default (empty or legacy) leaves the route
+// consumer has its own switch. An explicit legacy leaves the route
 // on NestJS.
 type NewsClusteringLlmBackfillMode string
 
@@ -760,7 +767,7 @@ const (
 
 // NewsClusteringRecoveryWorkerMode controls the BullMQ consumer of the
 // news_event_clustering_recovery queue, its five-minute pending scan and the
-// stale-processing recovery rule (R1). Default legacy. go requires
+// stale-processing recovery rule (R1). Default go. go requires
 // DATABASE_URL, REDIS_HOST and MONGO_URI; it serves no HTTP request, so
 // JWT_SECRET is not a startup condition. NestJS reads the same variable and
 // creates no Worker and runs no scan tick while it is go, so the queue never
@@ -773,7 +780,7 @@ const (
 )
 
 // ArchivePreparationWorkerMode controls the BullMQ consumer of the
-// archivePreparation queue. Default legacy. go requires MySQL, Redis, Mongo and
+// archivePreparation queue. Default go. go requires MySQL, Redis, Mongo and
 // SYSTEM_SETTINGS_ENCRYPTION_KEY: the worker reads processed articles and cache
 // rows from MySQL, the state record and caches from Redis, ProcessedItem display
 // signals from Mongo, and decrypts gateway profile api keys. NestJS reads the
@@ -787,7 +794,7 @@ const (
 )
 
 // ItemPipelineWorkerMode controls the BullMQ consumer of the itemPipeline
-// queue (API_GO_ITEM_PIPELINE_WORKER_MODE). The default is legacy, where
+// queue (API_GO_ITEM_PIPELINE_WORKER_MODE). The default is go, where
 // NestJS QueueProcessor creates the Worker. go stops that Worker and lets
 // api-go consume the same queue; it requires DATABASE_URL, REDIS_HOST,
 // MONGO_URI and SYSTEM_SETTINGS_ENCRYPTION_KEY because the pipeline writes
@@ -806,7 +813,7 @@ const (
 )
 
 // NewsIndicatorAssociationCronMode controls the six-hourly news-indicator
-// association refresh. Default legacy. go requires DATABASE_URL and REDIS_HOST:
+// association refresh. Default go. go requires DATABASE_URL and REDIS_HOST:
 // the refresh writes MySQL and the tick gate and organization leases live in
 // Redis, so the cron does not need JWT_SECRET or MONGO_URI. NestJS reads the same
 // variable and returns before claiming the tick gate while it is go.
@@ -818,7 +825,7 @@ const (
 )
 
 // CrawlReadTelemetryMode controls the seven crawl read/media/telemetry HTTP
-// endpoints migrated by this unit. It defaults to legacy.
+// endpoints migrated by this unit. It defaults to go.
 //
 //	go mode takes over exactly these seven routes:
 //	  GET  /api/crawl-tasks
@@ -887,7 +894,7 @@ const (
 //	CrawlQualityTaskSnapshotService.refreshRecentSnapshots every five minutes
 //
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
-// startup instead of silently degrading. legacy (the default) keeps every
+// startup instead of silently degrading. legacy keeps every
 // NestJS @Cron callback. go starts the Go schedulers and makes NestJS return
 // from the five callbacks before taking any lock. It requires DATABASE_URL,
 // REDIS_HOST and MONGO_URI because the janitor writes TaskLog documents, the
@@ -925,8 +932,8 @@ const (
 //
 //	POST /api/crawl-tasks/metadata
 //
-// The accepted values are exactly "", "legacy" and "go"; the empty value and
-// "legacy" both keep the route on the NestJS proxy, and any other value fails
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes the go branch and
+// "legacy" keeps the route on the NestJS proxy, and any other value fails
 // startup instead of silently degrading. go mode takes over exactly this POST
 // plus its CORS preflight and answers 201 {orgId,total,results}; every other
 // method and the neighbouring crawl task routes keep falling back to NestJS.
@@ -947,8 +954,8 @@ const (
 //
 //	GET /api/admin/news-sources/:id/preview
 //
-// The accepted values are exactly "", "legacy" and "go"; the empty value and
-// "legacy" both keep the route on the NestJS proxy, and any other value fails
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes the go branch and
+// "legacy" keeps the route on the NestJS proxy, and any other value fails
 // startup. go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST; crawl4ai
 // stays optional (deep discovery then reports SEED_DEEP_CRAWL4AI_UNAVAILABLE
 // and list discovery falls back to raw HTML, exactly like NestJS). The entry is
@@ -966,8 +973,8 @@ const (
 //	POST /api/admin/crawl-frontier/workflows/:id/trial-run
 //	POST /api/admin/crawl-frontier/workflow-runs/:runId/replay
 //
-// The accepted values are exactly "", "legacy" and "go"; the empty value and
-// "legacy" both keep the two routes on the NestJS proxy, and any other value
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes the go branch and
+// "legacy" keeps the two routes on the NestJS proxy, and any other value
 // fails startup. go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
 // crawl4ai stays optional in the same way as the preview. The entries write the
 // crawl-strategy run records and start no queue, worker or timer.
@@ -984,8 +991,8 @@ const (
 //	POST /api/admin/search/reindex
 //	GET  /api/admin/search/reindex/:jobId
 //
-// The accepted values are exactly "", "legacy" and "go"; the empty value and
-// "legacy" both keep both routes on the NestJS proxy, and any other value fails
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes the go branch and
+// "legacy" keeps both routes on the NestJS proxy, and any other value fails
 // startup instead of silently degrading. go mode takes over only these two
 // routes: every other method, the trailing-slash path and longer paths keep
 // falling back to NestJS. It requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
@@ -1012,8 +1019,8 @@ const (
 // (API_GO_INFRASTRUCTURE_SETTINGS_MODE): the three vector-service routes, the
 // two storage settings routes and the two news-source runtime secret routes.
 //
-// The accepted values are exactly "", "legacy" and "go"; an empty value and
-// "legacy" both keep every request on the NestJS proxy, and any other value
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes the go branch and
+// "legacy" keeps every request on the NestJS proxy, and any other value
 // fails startup instead of silently degrading. go mode requires JWT_SECRET,
 // DATABASE_URL and REDIS_HOST; it never requires MONGO_URI (this unit reads and
 // writes MySQL and Redis only), never enables shadow or canary traffic and
@@ -1039,8 +1046,8 @@ const (
 //
 //	POST /api/admin/settings/storage/test
 //
-// The accepted values are exactly "", "legacy" and "go"; an empty value and
-// "legacy" both keep the route on the NestJS proxy, and any other value fails
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes the go branch and
+// "legacy" keeps the route on the NestJS proxy, and any other value fails
 // startup instead of silently degrading.
 //
 // The switch is deliberately independent of API_GO_INFRASTRUCTURE_SETTINGS_MODE
@@ -1072,8 +1079,8 @@ const (
 // DELETE /api/auth/machine-tokens/:tokenId and
 // POST /api/auth/machine-tokens/:tokenId/rotate.
 //
-// The accepted values are exactly "", "legacy" and "go"; an empty value and
-// "legacy" both keep every request on the NestJS proxy, and any other value
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes the go branch and
+// "legacy" keeps every request on the NestJS proxy, and any other value
 // fails startup instead of silently degrading. go mode requires JWT_SECRET,
 // DATABASE_URL and REDIS_HOST (the shared appendAuthRequirements check); it
 // never requires MONGO_URI because this unit reads and writes MySQL and Redis
@@ -1128,7 +1135,7 @@ const (
 // RuntimeSettingsMode controls the eighteen platform runtime and governance
 // settings HTTP routes under /api/system-settings (API_GO_RUNTIME_SETTINGS_MODE).
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
-// startup instead of silently degrading. The default is legacy.
+// startup instead of silently degrading. The default is go.
 type RuntimeSettingsMode string
 
 const (
@@ -1150,8 +1157,8 @@ const (
 // preparation settings, the archive preparation operational status and the
 // Nominatim identity settings.
 //
-// The accepted values are exactly "", "legacy" and "go"; an empty value and
-// "legacy" both keep every request on the NestJS proxy, and any other value
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes the go branch and
+// "legacy" keeps every request on the NestJS proxy, and any other value
 // fails startup instead of silently degrading. go mode requires JWT_SECRET,
 // DATABASE_URL and REDIS_HOST; it never requires MONGO_URI (this unit reads and
 // writes MySQL and Redis only), never enables shadow or canary traffic and never
@@ -1180,7 +1187,7 @@ const (
 // POST /api/system-settings/email/test.
 //
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
-// startup instead of silently degrading. The default is legacy. go requires
+// startup instead of silently degrading. The default is go. go requires
 // JWT_SECRET, DATABASE_URL, REDIS_HOST and the SMTP_* transport, because the
 // status route performs a real SMTP verify and the test route sends a real
 // message.
@@ -1202,7 +1209,7 @@ const (
 // POST /api/system-settings/geo/nominatim/test (settings.manage).
 //
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
-// startup. The default is legacy. go requires JWT_SECRET, DATABASE_URL and
+// startup. The default is go. go requires JWT_SECRET, DATABASE_URL and
 // REDIS_HOST; it does not require Mongo and contacts Nominatim only inside a
 // request.
 type GeocodingMode string
@@ -1222,7 +1229,7 @@ const (
 // GET /api/system-settings/realtime-signals/runtime.
 //
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
-// startup. The default is legacy. go requires JWT_SECRET, DATABASE_URL,
+// startup. The default is go. go requires JWT_SECRET, DATABASE_URL,
 // REDIS_HOST and MONGO_URI, because the realtime diagnostics read the
 // processeditems collection and the assistant safety probe talks to LiteLLM.
 type RuntimeDiagnosticsMode string
@@ -1307,7 +1314,7 @@ type DataRuntimeSettingsEnv struct {
 // (API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE). The accepted values are exactly
 // "", "legacy" and "go"; any other value fails startup with the fixed text
 // "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be one of legacy|go" instead
-// of silently degrading. The default is legacy.
+// of silently degrading. The default is go.
 type PlatformGovernanceSettingsMode string
 
 const (
@@ -1347,7 +1354,7 @@ const (
 // requires JWT_SECRET, DATABASE_URL and REDIS_HOST only: it reads no Mongo
 // collection, calls no model upstream and starts no worker. The accepted values
 // are exactly "", "legacy" and "go"; any other value fails startup instead of
-// silently degrading. The default is legacy.
+// silently degrading. The default is go.
 type ModelAccessSettingsMode string
 
 const (
@@ -1364,7 +1371,7 @@ const (
 )
 
 // ItemsReadingMode controls the two item reading REST routes and the five item
-// reading GraphQL roots (API_GO_ITEMS_READING_MODE). Default legacy.
+// reading GraphQL roots (API_GO_ITEMS_READING_MODE). Default go.
 type ItemsReadingMode string
 
 const (
@@ -1378,7 +1385,7 @@ const (
 )
 
 // ItemsIngestMode controls the write side of the items domain: the exact
-// POST /api/items and the five item/crawl mutations. It defaults to legacy and
+// POST /api/items and the five item/crawl mutations. It defaults to go and
 // is independent of every read switch. Go requires JWT, MySQL, Redis and Mongo,
 // and starts no background scheduler; immediate raw_item delivery is part of
 // each request.
@@ -1423,7 +1430,7 @@ const (
 // configuration-control routes under /api/system-settings/llm-gateways
 // (API_GO_LLM_GATEWAY_PROFILES_MODE). Accepted values are exactly "", "legacy"
 // and "go"; any other value fails startup instead of silently degrading. The
-// default is legacy. Mode go reuses the shared auth requirements (JWT_SECRET,
+// default is go. Mode go reuses the shared auth requirements (JWT_SECRET,
 // DATABASE_URL, REDIS_HOST) and never requires Mongo or a live model upstream.
 type LLMGatewayProfilesMode string
 
@@ -1487,7 +1494,7 @@ const (
 // DATABASE_URL and REDIS_HOST only: it reads no Mongo collection, calls no model
 // upstream and starts no worker. The accepted values are exactly "", "legacy"
 // and "go"; any other value fails startup instead of silently degrading. The
-// default is legacy.
+// default is go.
 type ProxyLoadBalancingMode string
 
 const (
@@ -1503,7 +1510,7 @@ const (
 	ProxyLoadBalancingModeGo ProxyLoadBalancingMode = "go"
 )
 
-// SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 legacy。
+// SituationMonitorsMode 只控制态势监控自定义监控的五条 HTTP。默认 go。
 // 不接管 insights、catalog、feedback、refresh、telegram、oref、HLS，
 // 也不接管已迁走的 /api/user-settings/ui/situation-monitor。
 type SituationMonitorsMode string
@@ -1516,7 +1523,7 @@ const (
 // SituationSignalsMode controls the seven situation monitor signal read and
 // feedback HTTP routes (API_GO_SITUATION_MONITOR_SIGNALS_MODE). The accepted
 // values are exactly "", "legacy" and "go"; any other value fails startup
-// instead of silently degrading. The default is legacy.
+// instead of silently degrading. The default is go.
 type SituationSignalsMode string
 
 const (
@@ -1536,7 +1543,7 @@ const (
 
 // SituationInsightsMode controls GET /api/situation-monitor/insights
 // (API_GO_SITUATION_INSIGHTS_MODE). The accepted values are exactly "",
-// "legacy" and "go"; any other value fails startup. The default is legacy.
+// "legacy" and "go"; any other value fails startup. The default is go.
 // The go mode needs JWT, MySQL, Redis and Mongo because the route reads
 // ProcessedItem/RawItem, the settings envelope, the external snapshot, the
 // realtime insight snapshot and the monitor rules.
@@ -1557,8 +1564,8 @@ const (
 // /api/system-settings/situation-monitor and DELETE
 // /api/system-settings/situation-monitor/telegram-auth.
 //
-// The accepted values are exactly "", "legacy" and "go"; an empty value and
-// "legacy" both keep every request on the NestJS proxy, and any other value
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes the go branch and
+// "legacy" keeps every request on the NestJS proxy, and any other value
 // fails startup instead of silently degrading. go mode requires JWT_SECRET,
 // DATABASE_URL, REDIS_HOST, MONGO_URI (the quality summary runs the insights
 // pipeline) and a non-empty SYSTEM_SETTINGS_ENCRYPTION_KEY (the write path
@@ -1580,9 +1587,10 @@ const (
 // SituationSignalsWorkerMode controls who consumes the "situationMonitorSignals"
 // BullMQ queue and registers its repeat schedules
 // (API_GO_SITUATION_SIGNALS_WORKER_MODE): the Telegram channel poll and the
-// OREF alerts poll. The accepted values are exactly "", "legacy" and "go"; an
-// empty value and "legacy" both leave consumption and repeat registration to
-// NestJS, and any other value fails startup instead of silently degrading.
+// OREF alerts poll. The accepted values are exactly "", "legacy" and "go"; the
+// empty value takes the go branch, "legacy" leaves consumption and repeat
+// registration to NestJS, and any other value fails startup instead of
+// silently degrading.
 //
 // go requires DATABASE_URL (the settings row and the default OREF alert rules
 // live in MySQL) and REDIS_HOST (queue, cached signal state, single-instance
@@ -1605,7 +1613,7 @@ const (
 
 // SituationRefreshMode controls POST /api/situation-monitor/refresh
 // (API_GO_SITUATION_REFRESH_MODE). The accepted values are exactly "",
-// "legacy" and "go"; an empty value and "legacy" keep the request on the NestJS
+// "legacy" and "go"; the empty value takes the go branch and "legacy" keeps the request on the NestJS
 // proxy, and any other value fails startup instead of silently degrading.
 //
 // go requires the two switches that make the ported flow possible at all:
@@ -1638,8 +1646,8 @@ const (
 // routes (API_GO_SITUATION_TELEGRAM_AUTH_MODE):
 // POST /api/system-settings/situation-monitor/telegram-auth/start and
 // POST /api/system-settings/situation-monitor/telegram-auth/complete. The
-// accepted values are exactly "", "legacy" and "go"; an empty value and
-// "legacy" keep both requests on the NestJS proxy and any other value fails
+// accepted values are exactly "", "legacy" and "go"; the empty value takes the go branch and
+// "legacy" keeps both requests on the NestJS proxy and any other value fails
 // startup.
 //
 // go requires JWT_SECRET, DATABASE_URL and REDIS_HOST (the shared auth chain,
@@ -1661,7 +1669,7 @@ const (
 // GdeltSnapshotMode controls which process owns the 15-minute GDELT external
 // snapshot rebuild (API_GO_GDELT_SNAPSHOT_MODE). The accepted values are exactly
 // "", "legacy" and "go"; any other value fails startup instead of silently
-// degrading. The default is legacy, which keeps the NestJS @Cron callback and
+// degrading. The default is go, which keeps the NestJS @Cron callback and
 // its Redis lease.
 type GdeltSnapshotMode string
 
@@ -1681,7 +1689,7 @@ const (
 // POST /api/system-settings/situation-monitor/external-snapshot/refresh
 // (API_GO_GDELT_SNAPSHOT_REFRESH_MODE). Only Go reads this variable; NestJS
 // keeps serving the controller route. The accepted values are again "",
-// "legacy" and "go", and the default is legacy.
+// "legacy" and "go", and the default is go.
 type GdeltSnapshotRefreshMode string
 
 const (
@@ -1697,7 +1705,7 @@ const (
 // RealtimeSignalsMode controls which process owns the realtime signal collection
 // cron, RealtimeSignalsService.refreshScheduled (API_GO_REALTIME_SIGNALS_MODE).
 // The accepted values are exactly "", "legacy" and "go"; any other value fails
-// startup instead of silently degrading. The default is legacy, which keeps the
+// startup instead of silently degrading. The default is go, which keeps the
 // NestJS @Cron callback and its shared Redis tick gate.
 //
 // Execution ownership is all-or-nothing: the eight sources feed one insight
@@ -1718,7 +1726,7 @@ const (
 	RealtimeSignalsModeGo RealtimeSignalsMode = "go"
 )
 
-// ContentSubscriptionsMode 只控制内容订阅 7 条精确 HTTP。默认 legacy。
+// ContentSubscriptionsMode 只控制内容订阅 7 条精确 HTTP。默认 go。
 // 不决定摘要服务能否在进程内调用 Go 订阅查询。
 type ContentSubscriptionsMode string
 
@@ -1728,7 +1736,7 @@ const (
 )
 
 // UserNewsBehaviorMode 只控制行为记录、画像读取和清空 3 条精确 HTTP。
-// 默认 legacy。推荐在订阅 HTTP 为 go 时仍直接调用 Go 画像服务。
+// 默认 go。推荐在订阅 HTTP 为 go 时仍直接调用 Go 画像服务。
 type UserNewsBehaviorMode string
 
 const (
@@ -1737,7 +1745,7 @@ const (
 )
 
 // UserDigestMode 只控制摘要偏好、每日摘要和投递设置 5 条精确 HTTP。
-// 默认 legacy。不启动邮件调度。
+// 默认 go。不启动邮件调度。
 type UserDigestMode string
 
 const (
@@ -1747,7 +1755,7 @@ const (
 
 // UserDigestDeliveryMode controls the background daily-digest delivery owner.
 // It is independent of the five HTTP switches. The accepted values are exactly
-// "", "legacy" and "go"; the empty value behaves like legacy.
+// "", "legacy" and "go"; the empty value takes the go branch.
 //
 // legacy: the NestJS Cron keeps owning delivery and no Go scheduler or NestJS
 // digest subscriber starts.
@@ -1765,7 +1773,7 @@ const (
 
 // AuditOutboxMode controls the AuditLogOutbox replay owner. It is independent
 // of every HTTP switch. The accepted values are exactly "", "legacy" and "go";
-// the empty value behaves like legacy.
+// the empty value takes the go branch.
 //
 // legacy: the NestJS @Cron keeps owning the per-minute replay and no Go
 // scheduler starts.
@@ -1804,7 +1812,7 @@ const (
 
 // SentimentSnapshotMode controls which process owns the hourly sentiment
 // snapshot rebuild (API_GO_SENTIMENT_SNAPSHOT_MODE). The accepted values are
-// again "", "legacy" and "go", and the default is legacy.
+// again "", "legacy" and "go", and the default is go.
 //
 // It is independent of NewsEventsTimelineMode. Go requires DATABASE_URL,
 // REDIS_HOST and MONGO_URI, but not JWT_SECRET: the unit serves no HTTP route
@@ -1864,7 +1872,7 @@ const (
 // NewsEventsIngestionMode controls the owner of the news-event ingestion Cron
 // (API_GO_NEWS_EVENTS_INGESTION_MODE). It is independent of every HTTP switch
 // and of the GraphQL read switches. The accepted values are exactly "",
-// "legacy" and "go"; the empty value behaves like legacy and an invalid value
+// "legacy" and "go"; the empty value takes the go branch and an invalid value
 // fails startup.
 //
 // legacy: NewsEventsIngestionService.ingestRecentProcessedArticles keeps
@@ -1908,7 +1916,7 @@ const (
 // BullMQ queues (`frontier-llm-judge` and `frontier-llm-learn`). It is
 // independent of every HTTP switch and of API_GO_CRAWL_WORKER_MODE, which owns
 // the three crawl4ai queue workers separately. The accepted values are exactly
-// "", "legacy" and "go"; the empty value behaves like legacy and an invalid
+// "", "legacy" and "go"; the empty value takes the go branch and an invalid
 // value fails startup.
 //
 // legacy: NestJS CrawlQueueProcessor keeps creating both LLM workers.
@@ -1927,7 +1935,7 @@ const (
 
 // CrawlWorkerMode controls the owner of the three crawl4ai queue workers
 // (`crawl4ai`, `crawl4ai-hot`, `crawl4ai-normal`). The accepted values are
-// exactly "", "legacy" and "go"; the empty value behaves like legacy and an
+// exactly "", "legacy" and "go"; the empty value takes the go branch and an
 // invalid value fails startup.
 //
 // legacy: NestJS CrawlQueueProcessor creates the three crawl Workers, their
@@ -1953,7 +1961,7 @@ const (
 	CrawlWorkerModeGo CrawlWorkerMode = "go"
 )
 
-// AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 legacy。
+// AnalysisViewsMode 只控制 5 条保存视图 HTTP。默认 go。
 type AnalysisViewsMode string
 
 const (
@@ -1961,7 +1969,7 @@ const (
 	AnalysisViewsModeGo     AnalysisViewsMode = "go"
 )
 
-// AnalysisBoardsMode 只控制 13 条看板、列和任务 HTTP。默认 legacy。
+// AnalysisBoardsMode 只控制 13 条看板、列和任务 HTTP。默认 go。
 // 不决定讨论服务能否直接读任务或视图。
 type AnalysisBoardsMode string
 
@@ -1970,7 +1978,7 @@ const (
 	AnalysisBoardsModeGo     AnalysisBoardsMode = "go"
 )
 
-// AnalysisThreadsMode 只控制 5 条笔记和评论 HTTP。默认 legacy。
+// AnalysisThreadsMode 只控制 5 条笔记和评论 HTTP。默认 go。
 // 不决定看板详情能否直接数评论，也不决定删除视图/任务时能否清理讨论。
 type AnalysisThreadsMode string
 
@@ -1986,15 +1994,15 @@ const (
 //	POST /api/analysis/exports/events
 //
 // The accepted values are exactly "", "legacy" and "go"; the empty value
-// behaves like legacy, so an unset deployment keeps both exports on NestJS.
-// The third export route, POST /api/analysis/exports/search, stays on NestJS
-// because its headlines mode prepares archive digests. Go requires JWT, MySQL,
-// Redis and Mongo: the item candidates are ranked through the shared search
-// scope, the read-model projection lives in Mongo and the behavior profile is
-// read from MySQL/Redis. The unit initializes the item reading service, the
-// personalization provider and the news-event reader on its own, so it works
-// even while the other item/analysis/GraphQL switches are legacy. Rolling back
-// only means setting this variable back to legacy.
+// takes the go branch. The third export route, POST
+// /api/analysis/exports/search, stays on NestJS because its headlines mode
+// prepares archive digests. Go requires JWT, MySQL, Redis and Mongo: the
+// item candidates are ranked through the shared search scope, the
+// read-model projection lives in Mongo and the behavior profile is read
+// from MySQL/Redis. The unit initializes the item reading service, the
+// personalization provider and the news-event reader on its own, so it
+// works even while the other item/analysis/GraphQL switches are legacy.
+// Rolling back only means setting this variable back to legacy.
 type AnalysisExportMode string
 
 const (
@@ -2011,7 +2019,7 @@ const (
 //	POST /api/analysis/exports/search
 //
 // The accepted values are exactly "", "legacy" and "go"; the empty value
-// behaves like legacy. Go needs the credentialed JWT/MySQL/Redis stack and
+// takes the go branch. Go needs the credentialed JWT/MySQL/Redis stack and
 // Mongo (display eligibility and model attempt logs). The switch is independent
 // of API_GO_GRAPHQL_READ_MODE and API_GO_ANALYSIS_EXPORT_MODE: turning it on
 // alone assembles the GraphQL handler and the search export. The archive
@@ -2033,7 +2041,7 @@ const (
 //
 // It owns only those three roots and is independent of the GraphQL read switch,
 // the analysis CSV export switch and the three collaboration HTTP switches. The
-// empty value behaves like legacy. Go mode verifies JWTs, re-derives the
+// empty value takes the go branch. Go mode verifies JWTs, re-derives the
 // organization from MySQL membership, inserts the pending result into Mongo and
 // adds the BullMQ job to Redis. It does not claim that a worker is running: the
 // separate API_GO_ANALYSIS_WORKER_MODE owns consumption.
@@ -2045,10 +2053,10 @@ const (
 )
 
 // AnalysisWorkerMode controls the owner of the analysis BullMQ consumer
-// (API_GO_ANALYSIS_WORKER_MODE). The empty value behaves like legacy, which
-// keeps the NestJS AnalysisProcessor. In go mode the NestJS processor returns
-// before creating its Worker and this process consumes the same queue, so it
-// can process jobs produced by the legacy NestJS mutations as well.
+// (API_GO_ANALYSIS_WORKER_MODE). The empty value takes the go branch, so this
+// process consumes the queue. In go mode the NestJS processor returns before
+// creating its Worker, so the same queue is consumed by this process and it can
+// process jobs produced by the legacy NestJS mutations as well.
 //
 // The worker needs MySQL, Redis, Mongo and GRAPHQL_SUBSCRIPTION_BUS=redis, but
 // no JWT_SECRET and no GraphQL read/write switch. BULLMQ_WORKERS_ENABLED=false
@@ -2077,7 +2085,7 @@ type AnalysisPromptOverrides struct {
 // GraphQLSubscriptionsMode controls the four realtime Subscription roots
 // (alertEvents, analysisEvents, assistantEvents, queueEvents) on an exact GET
 // /graphql graphql-transport-ws upgrade. The accepted values are exactly "",
-// "legacy" and "go"; empty behaves like legacy.
+// "legacy" and "go"; empty takes the go branch.
 //
 // go owns only legal upgrade requests. HTTP GET/POST/OPTIONS continue through
 // the existing GraphQL read/write switches, other subprotocols and longer paths
@@ -2108,7 +2116,7 @@ const (
 // RealtimeSocketMode controls the dedicated Go Socket.IO transport for the
 // five remaining realtime namespaces (/newsnow, /ops, /quality, /queue and
 // /situation-monitor). The accepted values are exactly "", "legacy" and "go";
-// empty behaves like legacy. go serves the dedicated /socket.io-realtime
+// empty takes the go branch. go serves the dedicated /socket.io-realtime
 // Engine.IO path only, so /socket.io and every namespace still proxied to
 // NestJS keep their existing transport and the default Web entrypoint.
 //
@@ -2124,7 +2132,7 @@ const (
 
 // ClassificationQualityAlertMode controls the owner of the five-minute
 // classification quality alert evaluation. The accepted values are exactly
-// "", "legacy" and "go"; empty behaves like legacy. In go mode the Go
+// "", "legacy" and "go"; empty takes the go branch. In go mode the Go
 // scheduler evaluates every active organization and the NestJS @Interval
 // returns immediately, so both processes share one tick gate and one
 // per-organization lock.
@@ -2139,9 +2147,9 @@ const (
 // organization OIDC configuration HTTP routes migrated by this unit
 // (API_GO_AUTH_FACTORS_MODE).
 //
-// The accepted values are exactly "", "legacy" and "go"; an empty value and
-// "legacy" both keep every request on the NestJS proxy, and any other value
-// fails startup instead of silently degrading. The default is always legacy.
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes
+// the go branch, "legacy" keeps every request on the NestJS proxy, and any
+// other value fails startup instead of silently degrading.
 //
 // go mode takes over exactly these seven routes:
 //
@@ -2179,10 +2187,9 @@ const (
 // enrollment start/complete pair), password recovery (forgot/reset) and the
 // authenticated email-change chain (send-verification/verify-email).
 //
-// The accepted values are exactly "", "legacy" and "go"; an empty value and
-// "legacy" both keep every one of the eleven requests on the NestJS proxy, and
-// any other value fails startup instead of silently degrading. The default is
-// always legacy.
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes
+// the go branch, "legacy" keeps every one of the eleven requests on the NestJS
+// proxy, and any other value fails startup instead of silently degrading.
 //
 // go mode takes over exactly these eleven routes:
 //
@@ -2230,9 +2237,9 @@ const (
 //	GET  /api/auth/oidc/callback
 //	POST /api/auth/sso/handoff/exchange
 //
-// The accepted values are exactly "", "legacy" and "go"; an empty value and
-// "legacy" keep all three requests on the NestJS proxy, and any other value
-// fails startup instead of silently degrading. The default is always legacy.
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes
+// the go branch, "legacy" keeps all three requests on the NestJS proxy, and any
+// other value fails startup instead of silently degrading.
 //
 // go mode requires JWT_SECRET, DATABASE_URL and REDIS_HOST because it reuses the
 // migrated trusted-login core (JWT signing, MySQL session/membership state and
@@ -2257,9 +2264,9 @@ const (
 // registration-application routes migrated by this unit
 // (API_GO_IDENTITY_ONBOARDING_MODE).
 //
-// The accepted values are exactly "", "legacy" and "go"; an empty value and
-// "legacy" both keep every request on the NestJS proxy, and any other value
-// fails startup instead of silently degrading. The default is always legacy.
+// The accepted values are exactly "", "legacy" and "go"; the empty value takes
+// the go branch, "legacy" keeps every request on the NestJS proxy, and any
+// other value fails startup instead of silently degrading.
 //
 // go mode takes over exactly these fourteen routes:
 //
@@ -2363,57 +2370,55 @@ type Config struct {
 	// 数据库）。值本身不进入日志/healthz/错误文本。
 	DatabaseURL string
 
-	// OnboardingMode 见 OnboardingMode 常量（默认 shadow）。
+	// OnboardingMode 见 OnboardingMode 常量（默认 go）。
 	OnboardingMode OnboardingMode
 
-	// UserSettingsReadMode 见 UserSettingsReadMode 常量。未设置（空）时
-	// 保持既有行为：API_GO_ONBOARDING_MODE 继续控制 onboarding，RSS/
-	// Spacetime 保持 Shadow，War Map/NewsNow/Situation Monitor 保持
-	// Legacy（Go-批3B 之前的部署不变）。设置为 go 时六个 GET 统一由 Go
-	// 接管（优先级高于 API_GO_ONBOARDING_MODE）。非法值启动失败。
+	// UserSettingsReadMode 见 UserSettingsReadMode 常量。默认 go：六个 GET
+	// 统一由 Go 接管（优先级高于 API_GO_ONBOARDING_MODE）。显式 shadow 时
+	// 六个 GET 全部由 NestJS 响应并做差分，供回退使用。非法值启动失败。
 	UserSettingsReadMode UserSettingsReadMode
 
-	// UserSettingsWriteMode 见 UserSettingsWriteMode 常量。默认 legacy。
+	// UserSettingsWriteMode 见 UserSettingsWriteMode 常量。默认 go。
 	// go 要求 UserSettingsReadMode 同为 go，并因此具备 JWT/数据库/Redis。
 	UserSettingsWriteMode UserSettingsWriteMode
 
-	// PublicPortalMode 见 PublicPortalMode 常量。默认 legacy。
+	// PublicPortalMode 见 PublicPortalMode 常量。默认 go。
 	// go 只要求 DATABASE_URL（匿名读），不要求 JWT/Redis。
 	PublicPortalMode PublicPortalMode
 
-	// DashboardStatsMode 见 DashboardStatsMode 常量。默认 legacy。
+	// DashboardStatsMode 见 DashboardStatsMode 常量。默认 go。
 	// go 要求 JWT、MySQL、Redis 与 MONGO_URI。URI 不进入日志或错误文本。
 	DashboardStatsMode DashboardStatsMode
-	// DashboardChartsMode 见 DashboardChartsMode 常量。默认 legacy。
+	// DashboardChartsMode 见 DashboardChartsMode 常量。默认 go。
 	// go 要求 JWT、MySQL、Redis，不要求 Mongo。与 stats 开关独立。
 	DashboardChartsMode DashboardChartsMode
-	// DashboardWarMapMode 见 DashboardWarMapMode 常量。默认 legacy。
+	// DashboardWarMapMode 见 DashboardWarMapMode 常量。默认 go。
 	// go 要求 JWT、MySQL、Redis、MONGO_URI。与 stats、charts 开关独立。
 	DashboardWarMapMode DashboardWarMapMode
-	// 下面两个开关各自只接管一条 War Map GET，默认 legacy。
+	// 下面两个开关各自只接管一条 War Map GET，默认 go。
 	DashboardWarMapTransportMode DashboardWarMapTransportMode
 	DashboardWarMapLayersMode    DashboardWarMapLayersMode
-	// 热力图与传播图各自一对 GET。默认 legacy，互不影响。
+	// 热力图与传播图各自一对 GET。默认 go，互不影响。
 	DashboardSpacetimeGeoMode         DashboardSpacetimeGeoMode
 	DashboardSpacetimePropagationMode DashboardSpacetimePropagationMode
-	// DashboardStreamMode 见 DashboardStreamMode。默认 legacy。
+	// DashboardStreamMode 见 DashboardStreamMode。默认 go。
 	// go 要求 JWT、MySQL、Redis、MONGO_URI。不要求 crawl4ai 或 LLM。
 	DashboardStreamMode DashboardStreamMode
-	// HealthzMode 见 HealthzMode。默认 legacy。
+	// HealthzMode 见 HealthzMode。默认 go。
 	// go 只要求 JWT、MySQL、Redis，用来验签。Mongo、crawl4ai、SSRF 和 LLM
 	// 不是启动条件，只在认证请求到达时探测。
 	HealthzMode HealthzMode
-	// HealthzLiveMode 见 HealthzLiveMode。默认 shadow（唯一例外，见类型注释）。
+	// HealthzLiveMode 见 HealthzLiveMode。默认 go（Web 启动等待该路由）。
 	// 纯 handler，无外部依赖。
 	HealthzLiveMode HealthzLiveMode
-	// LegacyFallbackMode 见 LegacyFallbackMode。默认 proxy。
-	// reject 要求所有其他 *Mode 开关都为 go，且允许 LEGACY_API_URL 留空
-	//（空值仍按默认地址填充，但 reject 不会建立任何上游连接）。
+	// LegacyFallbackMode 见 LegacyFallbackMode。默认 reject。
+	// reject 要求所有其他 *Mode 开关都为 go，且不会打开到 NestJS 的连接；
+	// 显式 proxy 回退仍校验 LEGACY_API_URL。
 	LegacyFallbackMode LegacyFallbackMode
-	// DocsMode 见 DocsMode。默认 legacy。go 不需要额外资源；是否实际提供
+	// DocsMode 见 DocsMode。默认 go。go 不需要额外资源；是否实际提供
 	// 文档由 SWAGGER_ENABLED 决定。
 	DocsMode DocsMode
-	// VectorDiagnosticsMode 见 VectorDiagnosticsMode。默认 legacy。
+	// VectorDiagnosticsMode 见 VectorDiagnosticsMode。默认 go。
 	// go 需要 JWT、MySQL 与 Redis。
 	VectorDiagnosticsMode VectorDiagnosticsMode
 	// 三个个人内容域的 HTTP 开关，彼此独立，默认都是 legacy。
@@ -2422,17 +2427,17 @@ type Config struct {
 	ContentSubscriptionsMode ContentSubscriptionsMode
 	UserNewsBehaviorMode     UserNewsBehaviorMode
 	UserDigestMode           UserDigestMode
-	// UserDigestDeliveryMode 见 UserDigestDeliveryMode 常量。默认 legacy。
+	// UserDigestDeliveryMode 见 UserDigestDeliveryMode 常量。默认 go。
 	// 与五个 HTTP 开关独立；go 需要 MySQL、Redis、Mongo 和 SMTP，不要求 JWT。
 	UserDigestDeliveryMode UserDigestDeliveryMode
-	// AuditOutboxMode 见 AuditOutboxMode 常量。默认 legacy。
+	// AuditOutboxMode 见 AuditOutboxMode 常量。默认 go。
 	// 与所有 HTTP 开关独立；go 只要求 MySQL 与 Redis，不要求 JWT、Mongo 或 SMTP。
 	AuditOutboxMode AuditOutboxMode
-	// NewsEventsTimelineMode 见 NewsEventsTimelineMode 常量。默认 legacy。
+	// NewsEventsTimelineMode 见 NewsEventsTimelineMode 常量。默认 go。
 	// 与所有 HTTP / GraphQL 开关独立；go 需要 MySQL、Redis 与 Mongo，
 	// 不要求 JWT。与 NestJS 共用 tick gate 与组织锁的键名。
 	NewsEventsTimelineMode NewsEventsTimelineMode
-	// SentimentSnapshotMode 见 SentimentSnapshotMode 常量。默认 legacy。
+	// SentimentSnapshotMode 见 SentimentSnapshotMode 常量。默认 go。
 	// 与 NewsEventsTimelineMode 独立；go 需要 MySQL、Redis 与 Mongo，
 	// 不要求 JWT。与 NestJS 共用 tick gate 与组织锁的键名。
 	SentimentSnapshotMode SentimentSnapshotMode
@@ -2445,7 +2450,7 @@ type Config struct {
 	// legacy。与所有 HTTP / GraphQL 读开关独立；go 需要 MySQL 和 Redis，不
 	// 要求 JWT、Mongo 或任何接管的 HTTP 开关。
 	KnowledgeGraphIngestionMode KnowledgeGraphIngestionMode
-	// NewsEventsIngestionMode 见 NewsEventsIngestionMode 常量。默认 legacy。
+	// NewsEventsIngestionMode 见 NewsEventsIngestionMode 常量。默认 go。
 	// 与所有 HTTP / GraphQL 读开关独立；go 需要 MySQL、Redis 和 Mongo，不要求
 	// JWT，也不要求任何接管的 HTTP 开关。
 	NewsEventsIngestionMode NewsEventsIngestionMode
@@ -2453,7 +2458,7 @@ type Config struct {
 	// processedAt 上界（now - settleMs）。默认 120000 毫秒。它让「processedAt 较
 	// 早、但事务提交较晚」的文章不会因为游标越过而被永久跳过。
 	NewsEventsIngestionSettleMs int64
-	// AlertWorkerMode 见 AlertWorkerMode 常量。默认 legacy。
+	// AlertWorkerMode 见 AlertWorkerMode 常量。默认 go。
 	// go 需要 MySQL、Redis、Mongo 与 SMTP；ALERT_* 与 BULLMQ_NAMESPACE 只在
 	// 该模式被读取。
 	AlertWorkerMode AlertWorkerMode
@@ -2461,7 +2466,7 @@ type Config struct {
 	// legacy。go 需要 MySQL、Redis 与设置加密密钥；三个爬取队列 worker 的归属
 	// 由 API_GO_CRAWL_WORKER_MODE 单独控制。
 	CrawlFrontierLlmWorkerMode CrawlFrontierLlmWorkerMode
-	// CrawlWorkerMode 见 CrawlWorkerMode 常量。默认 legacy。go 需要 MySQL、
+	// CrawlWorkerMode 见 CrawlWorkerMode 常量。默认 go。go 需要 MySQL、
 	// Redis、Mongo、CRAWL4AI_BASE_URL 与设置加密密钥，并在接线时要求非 nil 的
 	// crawlfrontiernode processor。
 	CrawlWorkerMode CrawlWorkerMode
@@ -2520,11 +2525,11 @@ type Config struct {
 	// require redis because they publish/consume the existing gqlsub:*
 	// channels; legacy accepts redis or local with unchanged NestJS semantics.
 	GraphQLSubscriptionBus string
-	// GraphQLReadMode 控制精确 /graphql 的已迁移 query。默认 legacy。
+	// GraphQLReadMode 控制精确 /graphql 的已迁移 query。默认 go。
 	// go 只执行本轮 16 个 query；mutation、subscription、未迁移 query 仍代理 NestJS。
 	GraphQLReadMode string
 	// GraphQLSubscriptionsMode controls the four realtime subscriptions on an
-	// exact GET /graphql WebSocket upgrade. It defaults to legacy. go takes
+	// exact GET /graphql WebSocket upgrade. It defaults to go. go takes
 	// over graphql-transport-ws upgrade requests only: HTTP GET/POST/OPTIONS
 	// keep their existing read/write switch behavior, other upgrades and longer
 	// paths keep proxying to NestJS. It is independent of every read and write
@@ -2532,15 +2537,15 @@ type Config struct {
 	GraphQLSubscriptionsMode GraphQLSubscriptionsMode
 	// NotificationsSocketMode takes over only the /notifications namespace on
 	// the dedicated /socket.io-notifications path. It is independent of every
-	// GraphQL switch and defaults to legacy.
+	// GraphQL switch and defaults to go.
 	NotificationsSocketMode NotificationsSocketMode
 	// RealtimeSocketMode takes over the five remaining realtime namespaces on
 	// the dedicated /socket.io-realtime path. It is independent of every
-	// GraphQL and HTTP switch and defaults to legacy.
+	// GraphQL and HTTP switch and defaults to go.
 	RealtimeSocketMode RealtimeSocketMode
 	// ClassificationQualityAlertMode controls whether this process runs the
 	// five-minute classification quality alert evaluation. It defaults to
-	// legacy so an unset deployment keeps the NestJS @Interval owner.
+	// legacy.
 	ClassificationQualityAlertMode ClassificationQualityAlertMode
 	// WebSocket connection caps and connect-window limits share the NestJS
 	// environment names and defaults so the Go path enforces the same policy.
@@ -2554,7 +2559,7 @@ type Config struct {
 	// adapter broadcast channel, so Go must know the same switch and key.
 	WSRedisAdapterEnabled bool
 	WSRedisAdapterKey     string
-	// GraphQLNewsEventsMode 只决定六个新闻事件 root 是否登记。默认 legacy。
+	// GraphQLNewsEventsMode 只决定六个新闻事件 root 是否登记。默认 go。
 	// 读查询为 legacy 时不另挂 /graphql。两个都是 go 才登记；新闻事件为 legacy
 	// 时，含这六个 root 的文档整包回 NestJS。回滚只改这个变量。
 	GraphQLNewsEventsMode string
@@ -2566,16 +2571,16 @@ type Config struct {
 	// Go 单 root 默认接管）。回滚只改这个变量；旧 briefV1 缓存保持兼容。
 	GraphQLNewsEventBriefMode string
 	// NewsIndicatorsMode 只控制新闻指标关联分析的 3 条 HTTP 与 2 个 GraphQL
-	// 只读 query。默认 legacy。go 要求 JWT、MySQL、Redis。不要求 Mongo，
+	// 只读 query。默认 go。go 要求 JWT、MySQL、Redis。不要求 Mongo，
 	// 不调用 AkShare，也不启动调度。
 	NewsIndicatorsMode NewsIndicatorsMode
 	// GraphQLKgImpactMode 只决定知识图谱冲击传导与实体共现/相关图这 4 个
-	// 只读 root 是否登记。默认 legacy。读查询为 legacy 时不另挂 /graphql。
+	// 只读 root 是否登记。默认 go。读查询为 legacy 时不另挂 /graphql。
 	// 两个都是 go 才登记；本开关为 legacy 时，含这 4 个 root 的文档整包回
 	// NestJS。回滚只改这个变量。
 	GraphQLKgImpactMode string
 	// GraphQLKnowledgeGraphMode 只决定知识图谱与实体 360 情报的六个 root
-	// 是否登记。默认 legacy。读查询为 legacy 时不另挂 /graphql。两个都是
+	// 是否登记。默认 go。读查询为 legacy 时不另挂 /graphql。两个都是
 	// go 才登记；知识图谱为 legacy 时，含这六个 root 的文档整包回 NestJS。
 	// 回滚只改这个变量。
 	GraphQLKnowledgeGraphMode string
@@ -2592,7 +2597,7 @@ type Config struct {
 	// source policy, source policy sync status, knowledge-graph evidence review
 	// queue and crawl task read roots are registered into the Go GraphQL
 	// executor. The accepted values are exactly "", "legacy" and "go"; the empty
-	// value behaves like legacy. The roots are registered only when both
+	// value takes the go branch. The roots are registered only when both
 	// API_GO_GRAPHQL_READ_MODE and this switch are go; while this switch is
 	// legacy, any document selecting one of those roots falls back to NestJS as
 	// a whole, so the production web entry keeps serving through NestJS.
@@ -2600,7 +2605,7 @@ type Config struct {
 	GraphQLSettingsCrawlReadMode string
 	// GraphQLCrawlMetadataMode only decides whether the crawlMetadata root is
 	// registered into the Go GraphQL executor. The accepted values are exactly
-	// "", "legacy" and "go"; the empty value behaves like legacy. The root is
+	// "", "legacy" and "go"; the empty value takes the go branch. The root is
 	// registered only when both API_GO_GRAPHQL_READ_MODE and this switch are go;
 	// while this switch is legacy, any document that selects crawlMetadata
 	// falls back to NestJS as a whole. Go requires
@@ -2610,7 +2615,7 @@ type Config struct {
 	GraphQLCrawlMetadataMode string
 	// ItemsReadingMode decides whether the two item reading REST routes and the
 	// five item reading GraphQL roots are served by Go. The accepted values are
-	// exactly "", "legacy" and "go"; the empty value behaves like legacy, so an
+	// exactly "", "legacy" and "go"; the empty value takes the go branch, so an
 	// unset deployment keeps serving through NestJS. Go requires JWT, MySQL,
 	// Redis and Mongo (the read model and the processed/raw collections live in
 	// Mongo). The five GraphQL roots are registered only when both
@@ -2619,7 +2624,7 @@ type Config struct {
 	// variable back to legacy.
 	ItemsReadingMode ItemsReadingMode
 	// ItemsIngestMode controls POST /api/items and the five write mutations.
-	// Defaults to legacy. go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
+	// Defaults to go. go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
 	// MONGO_URI, and registers no read root.
 	ItemsIngestMode ItemsIngestMode
 	// RawItemOutboxMode controls the scheduled raw_item replay. Defaults to
@@ -2627,7 +2632,7 @@ type Config struct {
 	// HTTP/GraphQL switch. It is independent of ItemsIngestMode.
 	RawItemOutboxMode RawItemOutboxMode
 	// ProcessedItemOutboxMode controls the processed_item compensation owner.
-	// Defaults to legacy; go requires DATABASE_URL, REDIS_HOST and MONGO_URI
+	// Defaults to go; go requires DATABASE_URL, REDIS_HOST and MONGO_URI
 	// but no JWT or HTTP/GraphQL switch.
 	ProcessedItemOutboxMode ProcessedItemOutboxMode
 	// ProcessedItemOutboxTickBudgetMs bounds one Go scan tick. It must stay
@@ -2639,7 +2644,7 @@ type Config struct {
 	ProcessedItemOutboxBatchSize int
 	// GraphQLItemsListMode only decides whether the items connection root
 	// (items(after, filters, first, orderBy, page, rankingMode, search)) is
-	// registered into the Go GraphQL executor. It defaults to legacy. The
+	// registered into the Go GraphQL executor. It defaults to go. The
 	// accepted values are exactly "", "legacy" and "go"; an empty value behaves
 	// like legacy. Go requires API_GO_GRAPHQL_READ_MODE=go and
 	// API_GO_ITEMS_READING_MODE=go, because the root reuses the item reading
@@ -2655,7 +2660,7 @@ type Config struct {
 	// independent of API_GO_GRAPHQL_READ_MODE: with the read switch legacy only
 	// these mutations are taken over, and queries keep serving through NestJS.
 	// The accepted values are exactly "", "legacy" and "go"; the empty value
-	// behaves like legacy. While this switch is legacy, any document that
+	// takes the go branch. While this switch is legacy, any document that
 	// selects one of those mutations falls back to NestJS as a whole, so the
 	// production web entry keeps serving through NestJS. Rolling back only
 	// means setting this variable back to legacy.
@@ -2668,7 +2673,7 @@ type Config struct {
 	// API_GO_GRAPHQL_READ_MODE: with the read switch legacy only these
 	// mutations are taken over, and queries keep serving through NestJS. The
 	// accepted values are exactly "", "legacy" and "go"; the empty value
-	// behaves like legacy. While this switch is legacy, any document that
+	// takes the go branch. While this switch is legacy, any document that
 	// selects one of those mutations falls back to NestJS as a whole, so the
 	// production web entry keeps serving through NestJS. The takeover needs
 	// JWT verification, MySQL and Redis only: it reads no Mongo collection,
@@ -2682,7 +2687,7 @@ type Config struct {
 	// it backfills the organization's missing default rules, schedules them and
 	// enqueues one evaluation each, so the read and the three writes must move
 	// as one unit. The accepted values are exactly "", "legacy" and "go"; the
-	// empty value behaves like legacy. While this switch is legacy, every
+	// empty value takes the go branch. While this switch is legacy, every
 	// document selecting one of those roots falls back to NestJS as a whole.
 	// Go requires JWT verification, MySQL and Redis (the queue writes go
 	// through the shared Redis client with the same REDIS_DB as NestJS); it
@@ -2700,7 +2705,7 @@ type Config struct {
 	// is independent of every read switch: with the settings/crawl read switch
 	// legacy, only these mutations are taken over and the twenty read roots
 	// keep serving through NestJS. The accepted values are exactly "",
-	// "legacy" and "go"; the empty value behaves like legacy. While this switch
+	// "legacy" and "go"; the empty value takes the go branch. While this switch
 	// is legacy, any document that selects one of those mutations falls back to
 	// NestJS as a whole, so the production web entry keeps serving through
 	// NestJS. Rolling back only means setting this variable back to legacy.
@@ -2726,7 +2731,7 @@ type Config struct {
 	// switches: with the knowledge-graph read switch legacy, only this mutation
 	// is taken over and the eleven knowledge-graph read roots keep serving
 	// through NestJS. The accepted values are exactly "", "legacy" and "go";
-	// the empty value behaves like legacy. While this switch is legacy, any
+	// the empty value takes the go branch. While this switch is legacy, any
 	// document that selects the mutation falls back to NestJS as a whole, so
 	// the production web entry keeps serving through NestJS. The takeover needs
 	// JWT verification, MySQL and Redis only: it reads no Mongo collection and
@@ -2735,7 +2740,7 @@ type Config struct {
 	GraphQLKnowledgeReviewMode string
 	// GraphQLRssTranslationMode only decides whether the translateRssItems
 	// mutation is registered into the Go GraphQL executor. It is independent
-	// of every read switch and every other write switch: an empty or legacy
+	// of every read switch and every other write switch: an explicit legacy
 	// value keeps the mutation, with its DeepLX/LLM, cache, metrics and model
 	// log side effects, on NestJS. The accepted values are exactly "",
 	// "legacy" and "go". Go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and
@@ -2753,7 +2758,7 @@ type Config struct {
 	// GraphQL executor. It is independent of every read switch and of the
 	// worker switch: with the read switch legacy only these mutations are taken
 	// over, and queries keep serving through NestJS. The accepted values are
-	// exactly "", "legacy" and "go"; the empty value behaves like legacy. Go
+	// exactly "", "legacy" and "go"; the empty value takes the go branch. Go
 	// needs JWT, MySQL, Redis and Mongo (assistantruns live in Mongo, the queue
 	// and subscription bus in Redis) but starts no worker. Rolling back only
 	// means setting this variable back to legacy.
@@ -2776,79 +2781,79 @@ type Config struct {
 	AssistantStreamFlushChars int
 	// AssistantStreamFlushMs mirrors ASSISTANT_STREAM_FLUSH_MS (default 250).
 	AssistantStreamFlushMs int
-	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 legacy。
+	// SituationMonitorsMode 只控制自定义监控五条 HTTP。默认 go。
 	// go 要求 JWT、MySQL、Redis。模型和 Nominatim 不是启动条件。
 	SituationMonitorsMode SituationMonitorsMode
 	// SituationSignalsMode controls the seven situation monitor signal read and
-	// feedback routes (see SituationSignalsMode). Default legacy. Mode go
+	// feedback routes (see SituationSignalsMode). Default go. Mode go
 	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI; it starts no
 	// worker and never issues a Telegram or OREF upstream request.
 	SituationSignalsMode SituationSignalsMode
 	// SituationInsightsMode controls GET /api/situation-monitor/insights.
-	// Default legacy. Mode go requires JWT, MySQL, Redis and Mongo.
+	// Default go. Mode go requires JWT, MySQL, Redis and Mongo.
 	SituationInsightsMode SituationInsightsMode
 	// SituationSettingsMode controls the four situation-monitor settings routes
-	// (see SituationSettingsMode). Default legacy. Mode go requires JWT, MySQL,
+	// (see SituationSettingsMode). Default go. Mode go requires JWT, MySQL,
 	// Redis, Mongo and the settings-encryption key; it starts no worker.
 	SituationSettingsMode SituationSettingsMode
 	// SituationSignalsWorkerMode controls the situationMonitorSignals queue
 	// consumer and repeat registration (see SituationSignalsWorkerMode).
-	// Default legacy. Mode go requires MySQL and Redis.
+	// Default go. Mode go requires MySQL and Redis.
 	SituationSignalsWorkerMode SituationSignalsWorkerMode
 	// SituationRefreshMode controls POST /api/situation-monitor/refresh (see
-	// SituationRefreshMode). Default legacy. Mode go requires JWT, MySQL, Redis
+	// SituationRefreshMode). Default go. Mode go requires JWT, MySQL, Redis
 	// and both prerequisite switches (signals worker and news source
 	// scheduler) set to go.
 	SituationRefreshMode SituationRefreshMode
 	// SituationTelegramAuthMode controls the two Telegram login routes (see
-	// SituationTelegramAuthMode). Default legacy. It is independent from
+	// SituationTelegramAuthMode). Default go. It is independent from
 	// SituationSettingsMode: only these two POSTs move, the settings CRUD and
 	// DELETE telegram-auth stay on their own switches.
 	SituationTelegramAuthMode SituationTelegramAuthMode
 	// GdeltSnapshotMode 控制 GDELT 外部快照 15 分钟重建的执行权（见
-	// GdeltSnapshotMode）。默认 legacy；go 要求 DATABASE_URL 与 REDIS_HOST。
+	// GdeltSnapshotMode）。默认 go；go 要求 DATABASE_URL 与 REDIS_HOST。
 	GdeltSnapshotMode GdeltSnapshotMode
 	// GdeltSnapshotRefreshMode 控制强制刷新 POST 的入口执行权（见
-	// GdeltSnapshotRefreshMode）。默认 legacy；go 要求 JWT、MySQL、Redis。
+	// GdeltSnapshotRefreshMode）。默认 go；go 要求 JWT、MySQL、Redis。
 	// 与 GdeltSnapshotMode 相互独立。
 	GdeltSnapshotRefreshMode GdeltSnapshotRefreshMode
 	// RealtimeSignalsMode 控制实时信号采集 Cron 的执行权（见
-	// RealtimeSignalsMode）。默认 legacy；go 要求 MySQL、Redis 与 Mongo，
+	// RealtimeSignalsMode）。默认 go；go 要求 MySQL、Redis 与 Mongo，
 	// 不需要 JWT，也不注册任何 HTTP 路由。
 	RealtimeSignalsMode RealtimeSignalsMode
 	// SituationMonitorGdeltEnabled 是 SITUATION_MONITOR_GDELT_ENABLED，默认
 	// true。为 false 时定时重建与强制刷新都直接返回，与 isGdeltEnabled 一致。
 	SituationMonitorGdeltEnabled bool
-	// NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 legacy。
+	// NewsSourcesMode 只控制新闻源管理台十五条 HTTP。默认 go。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	NewsSourcesMode NewsSourcesMode
-	// CrawlWorkflowsMode 只控制采集策略工作流编辑接口。默认 legacy。
+	// CrawlWorkflowsMode 只控制采集策略工作流编辑接口。默认 go。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	CrawlWorkflowsMode CrawlWorkflowsMode
-	// CrawlProfilesMode 只控制采集站点画像编辑接口。默认 legacy。
+	// CrawlProfilesMode 只控制采集站点画像编辑接口。默认 go。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	CrawlProfilesMode CrawlProfilesMode
 	// CrawlFrontierRunsMode controls the eleven crawl frontier run
-	// monitoring and cancellation HTTP routes. It defaults to legacy. Go
+	// monitoring and cancellation HTTP routes. It defaults to go. Go
 	// requires JWT, MySQL and Redis, does not require Mongo, and never
 	// starts a crawl worker or enqueues a job.
 	CrawlFrontierRunsMode CrawlFrontierRunsMode
 	// CrawlFrontierWritesMode controls the three crawl frontier write HTTP
-	// routes. It defaults to legacy. Go requires JWT, MySQL and Redis plus
+	// routes. It defaults to go. Go requires JWT, MySQL and Redis plus
 	// API_GO_CRAWL_FRONTIER_RUNS_MODE=go, does not require Mongo, and starts
 	// no background worker.
 	CrawlFrontierWritesMode CrawlFrontierWritesMode
-	// RbacMode 只控制组织访问控制六条 HTTP。默认 legacy。
+	// RbacMode 只控制组织访问控制六条 HTTP。默认 go。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动任何 worker。
 	RbacMode RbacMode
-	// CrawlTemplatesMode 只控制采集模板编辑接口。默认 legacy。
+	// CrawlTemplatesMode 只控制采集模板编辑接口。默认 go。
 	// go 要求 JWT、MySQL、Redis。不要求 Mongo，也不启动采集 worker。
 	CrawlTemplatesMode CrawlTemplatesMode
 	// LlmLogsMode 只控制 LLM 请求日志的列表、CSV 导出与用量汇总。默认
 	// legacy。go 要求 JWT、MySQL、Redis 与 Mongo（读 llmrequestlogs）。
 	// 不启动 worker，不调用模型服务。
 	LlmLogsMode LlmLogsMode
-	// AdminLogsMode 只控制管理端日志与异常读取的 7 条 GET。默认 legacy。
+	// AdminLogsMode 只控制管理端日志与异常读取的 7 条 GET。默认 go。
 	// go 要求 JWT、MySQL、Redis、Mongo（tasklogs 与 exceptionevents 都在
 	// Mongo，审计日志在 MySQL）。不启用 shadow，不启动任何 worker。
 	AdminLogsMode AdminLogsMode
@@ -2858,7 +2863,7 @@ type Config struct {
 	// into the existing exceptionevents collection). Shadow is never enabled
 	// and no worker is started.
 	ExceptionIngestMode ExceptionIngestMode
-	// QualityOverviewMode 只控制管理端质量面板的 5 条 GET。默认 legacy。
+	// QualityOverviewMode 只控制管理端质量面板的 5 条 GET。默认 go。
 	// go 要求 JWT、MySQL、Redis、Mongo（processeditems 与 tasklogs 都在
 	// Mongo；新闻源/流水线快照与 outbox 在 MySQL）。不启用 shadow，不启动
 	// 任何 worker。
@@ -2870,7 +2875,7 @@ type Config struct {
 	// never enabled and no worker is started.
 	ClassificationRssOpsMode ClassificationRssOpsMode
 	// NewsnowClusteringOpsMode controls the nine NewsNow local-computation and
-	// news-event clustering failure endpoints. Defaults to legacy. go requires
+	// news-event clustering failure endpoints. Defaults to go. go requires
 	// JWT, MySQL, Redis and Mongo: NewsNow metadata/resolve/ordering read Redis
 	// and Mongo, the domestic opinion index reads MySQL and Mongo, and the
 	// clustering failure endpoints read and write the Mongo
@@ -2878,28 +2883,28 @@ type Config struct {
 	// call and no queue delivery happens in this mode, and no worker is started.
 	NewsnowClusteringOpsMode NewsnowClusteringOpsMode
 	// NewsnowSourcesMode controls the two public NewsNow source fetch
-	// endpoints. Defaults to legacy. go requires DATABASE_URL and REDIS_HOST;
+	// endpoints. Defaults to go. go requires DATABASE_URL and REDIS_HOST;
 	// it needs no JWT, Mongo or queue and starts no worker.
 	NewsnowSourcesMode NewsnowSourcesMode
 	// NewsnowHottestMode controls GET /api/news-aggregator/hottest-analysis and
-	// GET /api/news-aggregator/recommended. Defaults to legacy. go requires JWT,
+	// GET /api/news-aggregator/recommended. Defaults to go. go requires JWT,
 	// MySQL, Redis, Mongo and the existing model gateway configuration.
 	NewsnowHottestMode NewsnowHottestMode
 	// NewsnowBackgroundMode controls the two NewsNow schedulers. Defaults to
 	// legacy. go requires MySQL, Redis and Mongo and is read by NestJS too.
 	NewsnowBackgroundMode NewsnowBackgroundMode
 	// CrawlReadTelemetryMode controls the seven crawl read/media/telemetry
-	// endpoints migrated by this unit. It defaults to legacy. go mode
+	// endpoints migrated by this unit. It defaults to go. go mode
 	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
 	// live in Mongo; crawl tasks, media assets and quality snapshots live in
 	// MySQL). No shadow, no canary and no worker.
-	// endpoints migrated by this unit. It defaults to legacy. go mode
+	// endpoints migrated by this unit. It defaults to go. go mode
 	// requires JWT, MySQL, Redis and Mongo (crawlresultcontents and tasklogs
 	// live in Mongo; crawl tasks, media assets and quality snapshots live in
 	// MySQL). No shadow, no canary and no worker.
 	CrawlReadTelemetryMode CrawlReadTelemetryMode
 	// CrawlMetadataMode controls POST /api/crawl-tasks/metadata (see
-	// CrawlMetadataMode). Default legacy. go requires JWT_SECRET, DATABASE_URL
+	// CrawlMetadataMode). Default go. go requires JWT_SECRET, DATABASE_URL
 	// and REDIS_HOST; it does not require Mongo, S3, crawl4ai or STORAGE_MODE,
 	// and it starts no worker, queue or business database write.
 	CrawlMetadataMode CrawlMetadataMode
@@ -2909,16 +2914,16 @@ type Config struct {
 	// worker and no scheduled job.
 	CrawlTaskWriteMode CrawlTaskWriteMode
 	// CrawlQueueOpsMode controls the four crawl4ai queue administration routes
-	// (see CrawlQueueOpsMode). Default legacy. go requires JWT_SECRET,
+	// (see CrawlQueueOpsMode). Default go. go requires JWT_SECRET,
 	// DATABASE_URL and REDIS_HOST; it only reads queue meta/counts and writes
 	// the queue control keys.
 	CrawlQueueOpsMode CrawlQueueOpsMode
 	// CrawlMaintenanceMode controls the four crawl maintenance crons (see
-	// CrawlMaintenanceMode). Default legacy. go requires DATABASE_URL,
+	// CrawlMaintenanceMode). Default go. go requires DATABASE_URL,
 	// REDIS_HOST and MONGO_URI and starts no HTTP route.
 	CrawlMaintenanceMode CrawlMaintenanceMode
 	// AuditLogRetentionMode controls the daily audit log retention purge (see
-	// AuditLogRetentionMode). Default legacy. go requires DATABASE_URL and
+	// AuditLogRetentionMode). Default go. go requires DATABASE_URL and
 	// REDIS_HOST.
 	AuditLogRetentionMode AuditLogRetentionMode
 	// CrawlTaskJanitor* mirror the NestJS CRAWL_TASK_JANITOR_* environment. The
@@ -2938,35 +2943,35 @@ type Config struct {
 	CrawlMaxRetries     int
 	CrawlRetryBackoffMs int
 	// NewsSourcePreviewMode controls GET /api/admin/news-sources/:id/preview
-	// (see NewsSourcePreviewMode). Default legacy. go requires JWT_SECRET,
+	// (see NewsSourcePreviewMode). Default go. go requires JWT_SECRET,
 	// DATABASE_URL and REDIS_HOST; crawl4ai stays optional.
 	NewsSourcePreviewMode NewsSourcePreviewMode
 	// CrawlWorkflowTrialMode controls the crawl-strategy trial-run and replay
-	// entries (see CrawlWorkflowTrialMode). Default legacy. go requires
+	// entries (see CrawlWorkflowTrialMode). Default go. go requires
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; crawl4ai stays optional.
 	CrawlWorkflowTrialMode CrawlWorkflowTrialMode
 	// NewsSourceSchedulerMode 控制新闻源 30 秒定时调度的执行权（见
-	// NewsSourceSchedulerMode）。默认 legacy；go 要求 DATABASE_URL 与
+	// NewsSourceSchedulerMode）。默认 go；go 要求 DATABASE_URL 与
 	// REDIS_HOST。ScheduleEnabled 仍是总开关，false 时该循环不执行。
 	NewsSourceSchedulerMode NewsSourceSchedulerMode
 	// NewsSourceOpsMode 控制四条新闻源运维 POST 的执行权（见
-	// NewsSourceOpsMode）。默认 legacy；go 要求 JWT、MySQL 与 Redis。
+	// NewsSourceOpsMode）。默认 go；go 要求 JWT、MySQL 与 Redis。
 	NewsSourceOpsMode NewsSourceOpsMode
 	// NewsSourceScheduler 是 NEWS_SOURCE_SCHEDULER_* 的数值与开关配置，
 	// 与 NestJS EnvService.newsSourceSchedulerConfig 同名同默认值；另加
 	// Go 专用的 SourceConcurrency。
 	NewsSourceScheduler NewsSourceSchedulerSettings
 	// SearchReindexMode controls the two search index rebuild routes (see
-	// SearchReindexMode). Default legacy. go requires JWT_SECRET, DATABASE_URL,
+	// SearchReindexMode). Default go. go requires JWT_SECRET, DATABASE_URL,
 	// REDIS_HOST and MONGO_URI; Elasticsearch stays optional at startup.
 	SearchReindexMode SearchReindexMode
 	// RuntimeSettingsMode controls the eighteen runtime/governance settings
-	// routes (see RuntimeSettingsMode). Default legacy. Mode go requires
+	// routes (see RuntimeSettingsMode). Default go. Mode go requires
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
 	// does not start any worker or scheduled job.
 	RuntimeSettingsMode RuntimeSettingsMode
 	// PlatformGovernanceSettingsMode controls the sixteen platform governance
-	// settings routes (see PlatformGovernanceSettingsMode). Default legacy.
+	// settings routes (see PlatformGovernanceSettingsMode). Default go.
 	// Mode go requires JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI; it
 	// starts no worker or scheduled job.
 	PlatformGovernanceSettingsMode PlatformGovernanceSettingsMode
@@ -3008,16 +3013,16 @@ type Config struct {
 
 	// InfrastructureSettingsMode controls the seven infrastructure connection
 	// and crawl-credential settings routes (see InfrastructureSettingsMode).
-	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
+	// Default go. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
 	// it does not require Mongo and does not start any worker or scheduled job.
 	InfrastructureSettingsMode InfrastructureSettingsMode
 	// StorageDiagnosticsMode controls the single storage connection test route
-	// (see StorageDiagnosticsMode). Default legacy. Mode go requires JWT_SECRET,
+	// (see StorageDiagnosticsMode). Default go. Mode go requires JWT_SECRET,
 	// DATABASE_URL and REDIS_HOST; it does not require Mongo, does not require
 	// any other takeover switch and performs no startup probe.
 	StorageDiagnosticsMode StorageDiagnosticsMode
 	// DataRuntimeSettingsMode controls the nine data runtime settings and
-	// archive status routes (see DataRuntimeSettingsMode). Default legacy. Mode
+	// archive status routes (see DataRuntimeSettingsMode). Default go. Mode
 	// go requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
 	// Mongo and does not start any worker or scheduled job.
 	DataRuntimeSettingsMode DataRuntimeSettingsMode
@@ -3025,16 +3030,16 @@ type Config struct {
 	// independent of the RealtimeSignals*/Nominatim* fields below.
 	DataRuntimeSettings DataRuntimeSettingsEnv
 	// EmailSettingsMode controls the three email settings routes (see
-	// EmailSettingsMode). Default legacy. Mode go requires JWT_SECRET,
+	// EmailSettingsMode). Default go. Mode go requires JWT_SECRET,
 	// DATABASE_URL, REDIS_HOST and the SMTP_* transport; it does not require
 	// Mongo and starts no worker.
 	EmailSettingsMode EmailSettingsMode
 	// GeocodingMode controls the two geocoding routes (see GeocodingMode).
-	// Default legacy. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
+	// Default go. Mode go requires JWT_SECRET, DATABASE_URL and REDIS_HOST;
 	// it does not require Mongo and performs no startup network probe.
 	GeocodingMode GeocodingMode
 	// RuntimeDiagnosticsMode controls the assistant safety and realtime signal
-	// diagnostics (see RuntimeDiagnosticsMode). Default legacy. Mode go requires
+	// diagnostics (see RuntimeDiagnosticsMode). Default go. Mode go requires
 	// JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI; it starts no worker and
 	// performs no startup network probe.
 	RuntimeDiagnosticsMode RuntimeDiagnosticsMode
@@ -3044,26 +3049,26 @@ type Config struct {
 	// not require Mongo and does not start any worker or scheduled job.
 	AuthFactorsMode AuthFactorsMode
 	// AccountSecurityMode controls the eight authenticated account, session and
-	// machine-token routes (see AccountSecurityMode). Default legacy. Mode go
+	// machine-token routes (see AccountSecurityMode). Default go. Mode go
 	// requires JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require
 	// Mongo and does not start any worker or scheduled job.
 	AccountSecurityMode AccountSecurityMode
 	// AvatarUploadMode controls POST /api/auth/avatar/presigned-url (see
-	// AvatarUploadMode). Default legacy. Mode go requires JWT_SECRET,
+	// AvatarUploadMode). Default go. Mode go requires JWT_SECRET,
 	// DATABASE_URL and REDIS_HOST; it does not require Mongo and never
 	// contacts S3 at startup.
 	AvatarUploadMode AvatarUploadMode
 	// UserDataExportMode controls GET /api/auth/data-export (see
-	// UserDataExportMode). Default legacy. Mode go requires JWT_SECRET,
+	// UserDataExportMode). Default go. Mode go requires JWT_SECRET,
 	// DATABASE_URL, REDIS_HOST and MONGO_URI.
 	UserDataExportMode UserDataExportMode
 	// AuthLoginMode controls the eleven POST /api/auth login, session, email-code
-	// and password-recovery routes (see AuthLoginMode). Default legacy. Mode go
+	// and password-recovery routes (see AuthLoginMode). Default go. Mode go
 	// requires JWT_SECRET, DATABASE_URL, REDIS_HOST and the SMTP_* transport; it
 	// does not require Mongo and does not start any worker or scheduled job.
 	AuthLoginMode AuthLoginMode
 	// OIDCLoginMode controls the three public organization SSO login entries
-	// (see OIDCLoginMode). Default legacy. Mode go requires JWT_SECRET,
+	// (see OIDCLoginMode). Default go. Mode go requires JWT_SECRET,
 	// DATABASE_URL and REDIS_HOST; API_BASE_URL is validated per request.
 	OIDCLoginMode OIDCLoginMode
 	// APIBaseURL is the untrimmed API_BASE_URL used only to build the IdP
@@ -3128,7 +3133,7 @@ type Config struct {
 	// The economic-data request and worker switches are independent. The
 	// request switch only registers the three mutations and admin HTTP routes;
 	// the worker switch owns catalog/repeat synchronization and the queue
-	// consumer. Both default to legacy.
+	// consumer. Both default to go.
 	EconomicDataMode           EconomicDataMode
 	EconomicDataWorkerMode     EconomicDataWorkerMode
 	AkshareEnabled             bool
@@ -3245,7 +3250,7 @@ type Config struct {
 	// LLMGatewayProfilesMode 控制 LLM 网关 profile 的七条配置/激活路由。默认
 	// legacy；go 复用 appendAuthRequirements，不要求 Mongo 或真实模型上游。
 	LLMGatewayProfilesMode LLMGatewayProfilesMode
-	// LLMGatewayOpsMode 控制 LLM 网关治理与真实探测的十二条路由。默认 legacy；
+	// LLMGatewayOpsMode 控制 LLM 网关治理与真实探测的十二条路由。默认 go；
 	// go 复用 appendAuthRequirements 并额外要求 MONGO_URI（每次真实探测都写
 	// llmrequestlogs）。LITELLM_MASTER_KEY 与
 	// SYSTEM_SETTINGS_ENCRYPTION_KEY 是请求时语义，不是启动前置。
@@ -3319,14 +3324,14 @@ type Config struct {
 	CanaryPercent int // 0=legacy 等价；100=go 等价；中间按 orgId 稳定哈希分流
 
 	// ModelAccessSettingsMode controls the ten model access settings routes (see
-	// ModelAccessSettingsMode). Default legacy. Mode go requires JWT_SECRET,
+	// ModelAccessSettingsMode). Default go. Mode go requires JWT_SECRET,
 	// DATABASE_URL and REDIS_HOST; it does not require Mongo and starts no worker
 	// or scheduled job. LITELLM_CONFIG_INTERNAL_TOKEN and
 	// SYSTEM_SETTINGS_ENCRYPTION_KEY keep their runtime semantics and are never
 	// startup requirements.
 	ModelAccessSettingsMode ModelAccessSettingsMode
 	// ProxyLoadBalancingMode controls the four LiteLLM proxy load balancing
-	// routes (see ProxyLoadBalancingMode). Default legacy. Mode go requires
+	// routes (see ProxyLoadBalancingMode). Default go. Mode go requires
 	// JWT_SECRET, DATABASE_URL and REDIS_HOST; it does not require Mongo and
 	// starts no worker or scheduled job. It is independent of
 	// ModelAccessSettingsMode: the Go service reuses the existing OpenAI key
@@ -3344,30 +3349,30 @@ type Config struct {
 	LiteLLMConfigInternalTokenRaw  string
 	SystemSettingsEncryptionKeyRaw string
 	NodeEnvRaw                     string
-	// API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE. Default legacy; see the mode
+	// API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE. Default go; see the mode
 	// type for the route and requirements.
 	NewsClusteringLlmBackfillMode NewsClusteringLlmBackfillMode
-	// API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE. Default legacy; see the mode
+	// API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE. Default go; see the mode
 	// type for the consumer, its scan and the R1 recovery rule.
 	NewsClusteringRecoveryWorkerMode NewsClusteringRecoveryWorkerMode
-	// API_GO_ARCHIVE_PREPARATION_WORKER_MODE. Default legacy; see the mode type
+	// API_GO_ARCHIVE_PREPARATION_WORKER_MODE. Default go; see the mode type
 	// for the consumer and its required connections.
 	ArchivePreparationWorkerMode ArchivePreparationWorkerMode
-	// API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE. Default legacy. go registers
+	// API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE. Default go. go registers
 	// the refreshNewsIndicatorAssociations mutation; it requires JWT_SECRET,
 	// DATABASE_URL and REDIS_HOST. It is a string like the other GraphQL write
 	// switches.
 	GraphQLNewsIndicatorRefreshMode string
-	// API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE. Default legacy; see the mode
+	// API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE. Default go; see the mode
 	// type for the six-hour refresh.
 	NewsIndicatorAssociationCronMode NewsIndicatorAssociationCronMode
 	// ClassificationReportsMode controls the report creation POST; the worker
 	// mode controls queue consumption; the pipeline recovery mode controls the
-	// runs read. All three default to legacy and are independent.
+	// runs read. All three default to go and are independent.
 	ClassificationReportsMode       ClassificationReportsMode
 	ClassificationQualityWorkerMode ClassificationQualityWorkerMode
 	PipelineRecoveryMode            PipelineRecoveryMode
-	// The five residual-duty switches. All default to legacy, accept only "",
+	// The five residual-duty switches. All default to go, accept only "",
 	// "legacy" and "go", and fail startup on any other value.
 	BullmqCleanupMode            BullmqCleanupMode
 	ClassificationReviewSeedMode ClassificationReviewSeedMode
@@ -3383,7 +3388,7 @@ type Config struct {
 	// (default 8). The clustering recovery worker uses max(1, min(2, value));
 	// the quality worker uses max(1, min(4, value)).
 	NewsProcessQueueConcurrency int
-	// API_GO_ITEM_PIPELINE_WORKER_MODE. Default legacy; see the mode type.
+	// API_GO_ITEM_PIPELINE_WORKER_MODE. Default go; see the mode type.
 	ItemPipelineWorkerMode ItemPipelineWorkerMode
 	// NewsSourceSchedulerFailureRecoveryDelayMs,
 	// NewsSourceSchedulerFailureMaxDelayMs,
@@ -3529,28 +3534,24 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// character, so both processes agree on the value.
 	cfg.ScheduleEnabled = getenv("SCHEDULE_ENABLED") != "false"
 
-	// onboarding 迁移单元的路由模式：默认 shadow（手工启动的旧行为）；
+	// onboarding 迁移单元的路由模式：默认 go（省略变量即由 Go 接管）；
 	// 非法值启动失败（不静默降级）。
 	switch strings.TrimSpace(getenv("API_GO_ONBOARDING_MODE")) {
-	case "":
-		cfg.OnboardingMode = OnboardingModeShadow
 	case string(OnboardingModeShadow):
 		cfg.OnboardingMode = OnboardingModeShadow
-	case string(OnboardingModeGo):
+	case "", string(OnboardingModeGo):
 		cfg.OnboardingMode = OnboardingModeGo
 	default:
 		errs = append(errs, "API_GO_ONBOARDING_MODE must be one of shadow|go")
 	}
 
-	// user-settings 六个只读 GET 的统一读模式（Go-批3B）：默认空 = 兼容
-	//（API_GO_ONBOARDING_MODE 继续控制 onboarding，其余端点旧去向不变）；
+	// user-settings 六个只读 GET 的统一读模式（Go-批3B）：默认 go
+	//（省略变量即六个 GET 全部由 Go 接管）；shadow 为显式回退。
 	// 非法值启动失败。
 	switch strings.TrimSpace(getenv("API_GO_USER_SETTINGS_READ_MODE")) {
-	case "":
-		cfg.UserSettingsReadMode = ""
 	case string(UserSettingsReadModeShadow):
 		cfg.UserSettingsReadMode = UserSettingsReadModeShadow
-	case string(UserSettingsReadModeGo):
+	case "", string(UserSettingsReadModeGo):
 		cfg.UserSettingsReadMode = UserSettingsReadModeGo
 	default:
 		errs = append(errs, "API_GO_USER_SETTINGS_READ_MODE must be one of shadow|go")
@@ -3559,9 +3560,9 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// 六个 PUT 的写接管（Go-批3C）。未设置 = legacy。go 必须搭配读模式
 	// go，否则写成功后的 envelope 无法走同一套 Go 读构建。
 	switch strings.TrimSpace(getenv("API_GO_USER_SETTINGS_WRITE_MODE")) {
-	case "", string(UserSettingsWriteModeLegacy):
+	case string(UserSettingsWriteModeLegacy):
 		cfg.UserSettingsWriteMode = UserSettingsWriteModeLegacy
-	case string(UserSettingsWriteModeGo):
+	case "", string(UserSettingsWriteModeGo):
 		cfg.UserSettingsWriteMode = UserSettingsWriteModeGo
 	default:
 		errs = append(errs, "API_GO_USER_SETTINGS_WRITE_MODE must be one of legacy|go")
@@ -3572,175 +3573,175 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	}
 
 	switch strings.TrimSpace(getenv("API_GO_PUBLIC_PORTAL_MODE")) {
-	case "", string(PublicPortalModeLegacy):
+	case string(PublicPortalModeLegacy):
 		cfg.PublicPortalMode = PublicPortalModeLegacy
-	case string(PublicPortalModeGo):
+	case "", string(PublicPortalModeGo):
 		cfg.PublicPortalMode = PublicPortalModeGo
 	default:
 		errs = append(errs, "API_GO_PUBLIC_PORTAL_MODE must be one of legacy|go")
 	}
 
 	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_STATS_MODE")) {
-	case "", string(DashboardStatsModeLegacy):
+	case string(DashboardStatsModeLegacy):
 		cfg.DashboardStatsMode = DashboardStatsModeLegacy
-	case string(DashboardStatsModeGo):
+	case "", string(DashboardStatsModeGo):
 		cfg.DashboardStatsMode = DashboardStatsModeGo
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_STATS_MODE must be one of legacy|go")
 	}
 
 	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_CHARTS_MODE")) {
-	case "", string(DashboardChartsModeLegacy):
+	case string(DashboardChartsModeLegacy):
 		cfg.DashboardChartsMode = DashboardChartsModeLegacy
-	case string(DashboardChartsModeGo):
+	case "", string(DashboardChartsModeGo):
 		cfg.DashboardChartsMode = DashboardChartsModeGo
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_CHARTS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_WAR_MAP_MODE")) {
-	case "", string(DashboardWarMapModeLegacy):
+	case string(DashboardWarMapModeLegacy):
 		cfg.DashboardWarMapMode = DashboardWarMapModeLegacy
-	case string(DashboardWarMapModeGo):
+	case "", string(DashboardWarMapModeGo):
 		cfg.DashboardWarMapMode = DashboardWarMapModeGo
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_WAR_MAP_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE")) {
-	case "", string(DashboardWarMapTransportModeLegacy):
+	case string(DashboardWarMapTransportModeLegacy):
 		cfg.DashboardWarMapTransportMode = DashboardWarMapTransportModeLegacy
-	case string(DashboardWarMapTransportModeGo):
+	case "", string(DashboardWarMapTransportModeGo):
 		cfg.DashboardWarMapTransportMode = DashboardWarMapTransportModeGo
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE")) {
-	case "", string(DashboardWarMapLayersModeLegacy):
+	case string(DashboardWarMapLayersModeLegacy):
 		cfg.DashboardWarMapLayersMode = DashboardWarMapLayersModeLegacy
-	case string(DashboardWarMapLayersModeGo):
+	case "", string(DashboardWarMapLayersModeGo):
 		cfg.DashboardWarMapLayersMode = DashboardWarMapLayersModeGo
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_SPACETIME_GEO_MODE")) {
-	case "", string(DashboardSpacetimeGeoModeLegacy):
+	case string(DashboardSpacetimeGeoModeLegacy):
 		cfg.DashboardSpacetimeGeoMode = DashboardSpacetimeGeoModeLegacy
-	case string(DashboardSpacetimeGeoModeGo):
+	case "", string(DashboardSpacetimeGeoModeGo):
 		cfg.DashboardSpacetimeGeoMode = DashboardSpacetimeGeoModeGo
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_SPACETIME_GEO_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE")) {
-	case "", string(DashboardSpacetimePropagationModeLegacy):
+	case string(DashboardSpacetimePropagationModeLegacy):
 		cfg.DashboardSpacetimePropagationMode = DashboardSpacetimePropagationModeLegacy
-	case string(DashboardSpacetimePropagationModeGo):
+	case "", string(DashboardSpacetimePropagationModeGo):
 		cfg.DashboardSpacetimePropagationMode = DashboardSpacetimePropagationModeGo
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_DASHBOARD_STREAM_MODE")) {
-	case "", string(DashboardStreamModeLegacy):
+	case string(DashboardStreamModeLegacy):
 		cfg.DashboardStreamMode = DashboardStreamModeLegacy
-	case string(DashboardStreamModeGo):
+	case "", string(DashboardStreamModeGo):
 		cfg.DashboardStreamMode = DashboardStreamModeGo
 	default:
 		errs = append(errs, "API_GO_DASHBOARD_STREAM_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_HEALTHZ_MODE")) {
-	case "", string(HealthzModeLegacy):
+	case string(HealthzModeLegacy):
 		cfg.HealthzMode = HealthzModeLegacy
-	case string(HealthzModeGo):
+	case "", string(HealthzModeGo):
 		cfg.HealthzMode = HealthzModeGo
 	default:
 		errs = append(errs, "API_GO_HEALTHZ_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_HEALTHZ_LIVE_MODE")) {
-	case "", string(HealthzLiveModeShadow):
+	case string(HealthzLiveModeShadow):
 		cfg.HealthzLiveMode = HealthzLiveModeShadow
 	case string(HealthzLiveModeLegacy):
 		cfg.HealthzLiveMode = HealthzLiveModeLegacy
-	case string(HealthzLiveModeGo):
+	case "", string(HealthzLiveModeGo):
 		cfg.HealthzLiveMode = HealthzLiveModeGo
 	default:
 		errs = append(errs, "API_GO_HEALTHZ_LIVE_MODE must be one of shadow|legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_LEGACY_FALLBACK_MODE")) {
-	case "", string(LegacyFallbackModeProxy):
+	case string(LegacyFallbackModeProxy):
 		cfg.LegacyFallbackMode = LegacyFallbackModeProxy
-	case string(LegacyFallbackModeReject):
+	case "", string(LegacyFallbackModeReject):
 		cfg.LegacyFallbackMode = LegacyFallbackModeReject
 	default:
 		errs = append(errs, "API_GO_LEGACY_FALLBACK_MODE must be one of proxy|reject")
 	}
 	switch strings.TrimSpace(getenv("API_GO_DOCS_MODE")) {
-	case "", string(DocsModeLegacy):
+	case string(DocsModeLegacy):
 		cfg.DocsMode = DocsModeLegacy
-	case string(DocsModeGo):
+	case "", string(DocsModeGo):
 		cfg.DocsMode = DocsModeGo
 	default:
 		errs = append(errs, "API_GO_DOCS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_VECTOR_DIAGNOSTICS_MODE")) {
-	case "", string(VectorDiagnosticsModeLegacy):
+	case string(VectorDiagnosticsModeLegacy):
 		cfg.VectorDiagnosticsMode = VectorDiagnosticsModeLegacy
-	case string(VectorDiagnosticsModeGo):
+	case "", string(VectorDiagnosticsModeGo):
 		cfg.VectorDiagnosticsMode = VectorDiagnosticsModeGo
 	default:
 		errs = append(errs, "API_GO_VECTOR_DIAGNOSTICS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CONTENT_SUBSCRIPTIONS_MODE")) {
-	case "", string(ContentSubscriptionsModeLegacy):
+	case string(ContentSubscriptionsModeLegacy):
 		cfg.ContentSubscriptionsMode = ContentSubscriptionsModeLegacy
-	case string(ContentSubscriptionsModeGo):
+	case "", string(ContentSubscriptionsModeGo):
 		cfg.ContentSubscriptionsMode = ContentSubscriptionsModeGo
 	default:
 		errs = append(errs, "API_GO_CONTENT_SUBSCRIPTIONS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_USER_NEWS_BEHAVIOR_MODE")) {
-	case "", string(UserNewsBehaviorModeLegacy):
+	case string(UserNewsBehaviorModeLegacy):
 		cfg.UserNewsBehaviorMode = UserNewsBehaviorModeLegacy
-	case string(UserNewsBehaviorModeGo):
+	case "", string(UserNewsBehaviorModeGo):
 		cfg.UserNewsBehaviorMode = UserNewsBehaviorModeGo
 	default:
 		errs = append(errs, "API_GO_USER_NEWS_BEHAVIOR_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_USER_DIGEST_MODE")) {
-	case "", string(UserDigestModeLegacy):
+	case string(UserDigestModeLegacy):
 		cfg.UserDigestMode = UserDigestModeLegacy
-	case string(UserDigestModeGo):
+	case "", string(UserDigestModeGo):
 		cfg.UserDigestMode = UserDigestModeGo
 	default:
 		errs = append(errs, "API_GO_USER_DIGEST_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_USER_DIGEST_DELIVERY_MODE")) {
-	case "", string(UserDigestDeliveryModeLegacy):
+	case string(UserDigestDeliveryModeLegacy):
 		cfg.UserDigestDeliveryMode = UserDigestDeliveryModeLegacy
-	case string(UserDigestDeliveryModeGo):
+	case "", string(UserDigestDeliveryModeGo):
 		cfg.UserDigestDeliveryMode = UserDigestDeliveryModeGo
 	default:
 		errs = append(errs, "API_GO_USER_DIGEST_DELIVERY_MODE must be one of legacy|go")
 	}
-	// The audit-log outbox replay owner. Empty behaves like legacy; an invalid
+	// The audit-log outbox replay owner. Empty takes the go branch; an invalid
 	// value fails startup instead of being silently downgraded.
 	switch strings.TrimSpace(getenv("API_GO_AUDIT_OUTBOX_MODE")) {
-	case "", string(AuditOutboxModeLegacy):
+	case string(AuditOutboxModeLegacy):
 		cfg.AuditOutboxMode = AuditOutboxModeLegacy
-	case string(AuditOutboxModeGo):
+	case "", string(AuditOutboxModeGo):
 		cfg.AuditOutboxMode = AuditOutboxModeGo
 	default:
 		errs = append(errs, "API_GO_AUDIT_OUTBOX_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE")) {
-	case "", string(KnowledgeGraphIngestionModeLegacy):
+	case string(KnowledgeGraphIngestionModeLegacy):
 		cfg.KnowledgeGraphIngestionMode = KnowledgeGraphIngestionModeLegacy
-	case string(KnowledgeGraphIngestionModeGo):
+	case "", string(KnowledgeGraphIngestionModeGo):
 		cfg.KnowledgeGraphIngestionMode = KnowledgeGraphIngestionModeGo
 	default:
 		errs = append(errs, "API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWS_EVENTS_INGESTION_MODE")) {
-	case "", string(NewsEventsIngestionModeLegacy):
+	case string(NewsEventsIngestionModeLegacy):
 		cfg.NewsEventsIngestionMode = NewsEventsIngestionModeLegacy
-	case string(NewsEventsIngestionModeGo):
+	case "", string(NewsEventsIngestionModeGo):
 		cfg.NewsEventsIngestionMode = NewsEventsIngestionModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_EVENTS_INGESTION_MODE must be one of legacy|go")
@@ -3758,146 +3759,145 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 	}
 	switch strings.TrimSpace(getenv("API_GO_ALERT_WORKER_MODE")) {
-	case "", string(AlertWorkerModeLegacy):
+	case string(AlertWorkerModeLegacy):
 		cfg.AlertWorkerMode = AlertWorkerModeLegacy
-	case string(AlertWorkerModeGo):
+	case "", string(AlertWorkerModeGo):
 		cfg.AlertWorkerMode = AlertWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_ALERT_WORKER_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE")) {
-	case "", string(CrawlFrontierLlmWorkerModeLegacy):
+	case string(CrawlFrontierLlmWorkerModeLegacy):
 		cfg.CrawlFrontierLlmWorkerMode = CrawlFrontierLlmWorkerModeLegacy
-	case string(CrawlFrontierLlmWorkerModeGo):
+	case "", string(CrawlFrontierLlmWorkerModeGo):
 		cfg.CrawlFrontierLlmWorkerMode = CrawlFrontierLlmWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_WORKER_MODE")) {
-	case "", string(CrawlWorkerModeLegacy):
+	case string(CrawlWorkerModeLegacy):
 		cfg.CrawlWorkerMode = CrawlWorkerModeLegacy
-	case string(CrawlWorkerModeGo):
+	case "", string(CrawlWorkerModeGo):
 		cfg.CrawlWorkerMode = CrawlWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_WORKER_MODE must be one of legacy|go")
 	}
 	errs = append(errs, loadAlertingConfig(getenv, &cfg)...)
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_VIEWS_MODE")) {
-	case "", string(AnalysisViewsModeLegacy):
+	case string(AnalysisViewsModeLegacy):
 		cfg.AnalysisViewsMode = AnalysisViewsModeLegacy
-	case string(AnalysisViewsModeGo):
+	case "", string(AnalysisViewsModeGo):
 		cfg.AnalysisViewsMode = AnalysisViewsModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_VIEWS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_BOARDS_MODE")) {
-	case "", string(AnalysisBoardsModeLegacy):
+	case string(AnalysisBoardsModeLegacy):
 		cfg.AnalysisBoardsMode = AnalysisBoardsModeLegacy
-	case string(AnalysisBoardsModeGo):
+	case "", string(AnalysisBoardsModeGo):
 		cfg.AnalysisBoardsMode = AnalysisBoardsModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_BOARDS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ANALYSIS_THREADS_MODE")) {
-	case "", string(AnalysisThreadsModeLegacy):
+	case string(AnalysisThreadsModeLegacy):
 		cfg.AnalysisThreadsMode = AnalysisThreadsModeLegacy
-	case string(AnalysisThreadsModeGo):
+	case "", string(AnalysisThreadsModeGo):
 		cfg.AnalysisThreadsMode = AnalysisThreadsModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_THREADS_MODE must be one of legacy|go")
 	}
 	// The CSV export switch accepts the empty string, legacy and go. An empty
-	// value behaves exactly like legacy, so an unset deployment keeps both
-	// export POST routes on NestJS. The failure names the variable and echoes
-	// the rejected value so an operator can see which deployment value was
+	// value takes the go branch. The failure names the variable and echoes the
+	// rejected value so an operator can see which deployment value was
 	// refused.
 	analysisExportRaw := strings.TrimSpace(getenv("API_GO_ANALYSIS_EXPORT_MODE"))
 	switch analysisExportRaw {
-	case "", string(AnalysisExportModeLegacy):
+	case string(AnalysisExportModeLegacy):
 		cfg.AnalysisExportMode = AnalysisExportModeLegacy
-	case string(AnalysisExportModeGo):
+	case "", string(AnalysisExportModeGo):
 		cfg.AnalysisExportMode = AnalysisExportModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_EXPORT_MODE must be one of legacy|go, got "+strconv.Quote(analysisExportRaw))
 	}
 	switch archiveReadingRaw := strings.TrimSpace(getenv("API_GO_ARCHIVE_READING_MODE")); archiveReadingRaw {
-	case "", string(ArchiveReadingModeLegacy):
+	case string(ArchiveReadingModeLegacy):
 		cfg.ArchiveReadingMode = ArchiveReadingModeLegacy
-	case string(ArchiveReadingModeGo):
+	case "", string(ArchiveReadingModeGo):
 		cfg.ArchiveReadingMode = ArchiveReadingModeGo
 	default:
 		errs = append(errs, "API_GO_ARCHIVE_READING_MODE must be one of legacy|go, got "+strconv.Quote(archiveReadingRaw))
 	}
 	analysisRunsRaw := strings.TrimSpace(getenv("API_GO_ANALYSIS_RUNS_MODE"))
 	switch analysisRunsRaw {
-	case "", string(AnalysisRunsModeLegacy):
+	case string(AnalysisRunsModeLegacy):
 		cfg.AnalysisRunsMode = AnalysisRunsModeLegacy
-	case string(AnalysisRunsModeGo):
+	case "", string(AnalysisRunsModeGo):
 		cfg.AnalysisRunsMode = AnalysisRunsModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_RUNS_MODE must be one of legacy|go, got "+strconv.Quote(analysisRunsRaw))
 	}
 	analysisWorkerRaw := strings.TrimSpace(getenv("API_GO_ANALYSIS_WORKER_MODE"))
 	switch analysisWorkerRaw {
-	case "", string(AnalysisWorkerModeLegacy):
+	case string(AnalysisWorkerModeLegacy):
 		cfg.AnalysisWorkerMode = AnalysisWorkerModeLegacy
-	case string(AnalysisWorkerModeGo):
+	case "", string(AnalysisWorkerModeGo):
 		cfg.AnalysisWorkerMode = AnalysisWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_ANALYSIS_WORKER_MODE must be one of legacy|go, got "+strconv.Quote(analysisWorkerRaw))
 	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_MONITORS_MODE")) {
-	case "", string(SituationMonitorsModeLegacy):
+	case string(SituationMonitorsModeLegacy):
 		cfg.SituationMonitorsMode = SituationMonitorsModeLegacy
-	case string(SituationMonitorsModeGo):
+	case "", string(SituationMonitorsModeGo):
 		cfg.SituationMonitorsMode = SituationMonitorsModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_MONITORS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCES_MODE")) {
-	case "", string(NewsSourcesModeLegacy):
+	case string(NewsSourcesModeLegacy):
 		cfg.NewsSourcesMode = NewsSourcesModeLegacy
-	case string(NewsSourcesModeGo):
+	case "", string(NewsSourcesModeGo):
 		cfg.NewsSourcesMode = NewsSourcesModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_SOURCES_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCE_SCHEDULER_MODE")) {
-	case "", string(NewsSourceSchedulerModeLegacy):
+	case string(NewsSourceSchedulerModeLegacy):
 		cfg.NewsSourceSchedulerMode = NewsSourceSchedulerModeLegacy
-	case string(NewsSourceSchedulerModeGo):
+	case "", string(NewsSourceSchedulerModeGo):
 		cfg.NewsSourceSchedulerMode = NewsSourceSchedulerModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_SOURCE_SCHEDULER_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCE_OPS_MODE")) {
-	case "", string(NewsSourceOpsModeLegacy):
+	case string(NewsSourceOpsModeLegacy):
 		cfg.NewsSourceOpsMode = NewsSourceOpsModeLegacy
-	case string(NewsSourceOpsModeGo):
+	case "", string(NewsSourceOpsModeGo):
 		cfg.NewsSourceOpsMode = NewsSourceOpsModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_SOURCE_OPS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_WORKFLOWS_MODE")) {
-	case "", string(CrawlWorkflowsModeLegacy):
+	case string(CrawlWorkflowsModeLegacy):
 		cfg.CrawlWorkflowsMode = CrawlWorkflowsModeLegacy
-	case string(CrawlWorkflowsModeGo):
+	case "", string(CrawlWorkflowsModeGo):
 		cfg.CrawlWorkflowsMode = CrawlWorkflowsModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_WORKFLOWS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_PROFILES_MODE")) {
-	case "", string(CrawlProfilesModeLegacy):
+	case string(CrawlProfilesModeLegacy):
 		cfg.CrawlProfilesMode = CrawlProfilesModeLegacy
-	case string(CrawlProfilesModeGo):
+	case "", string(CrawlProfilesModeGo):
 		cfg.CrawlProfilesMode = CrawlProfilesModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_PROFILES_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_FRONTIER_RUNS_MODE")) {
-	case "", string(CrawlFrontierRunsModeLegacy):
+	case string(CrawlFrontierRunsModeLegacy):
 		cfg.CrawlFrontierRunsMode = CrawlFrontierRunsModeLegacy
-	case string(CrawlFrontierRunsModeGo):
+	case "", string(CrawlFrontierRunsModeGo):
 		cfg.CrawlFrontierRunsMode = CrawlFrontierRunsModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_FRONTIER_RUNS_MODE must be one of legacy|go")
@@ -3907,9 +3907,9 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// two detail payload definitions during cutover. Same pattern as the
 	// user-settings read/write pair above.
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_FRONTIER_WRITES_MODE")) {
-	case "", string(CrawlFrontierWritesModeLegacy):
+	case string(CrawlFrontierWritesModeLegacy):
 		cfg.CrawlFrontierWritesMode = CrawlFrontierWritesModeLegacy
-	case string(CrawlFrontierWritesModeGo):
+	case "", string(CrawlFrontierWritesModeGo):
 		cfg.CrawlFrontierWritesMode = CrawlFrontierWritesModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_FRONTIER_WRITES_MODE must be one of legacy|go")
@@ -3919,147 +3919,147 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		errs = append(errs, "API_GO_CRAWL_FRONTIER_WRITES_MODE=go requires API_GO_CRAWL_FRONTIER_RUNS_MODE=go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_RBAC_MODE")) {
-	case "", string(RbacModeLegacy):
+	case string(RbacModeLegacy):
 		cfg.RbacMode = RbacModeLegacy
-	case string(RbacModeGo):
+	case "", string(RbacModeGo):
 		cfg.RbacMode = RbacModeGo
 	default:
 		errs = append(errs, "API_GO_RBAC_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_TEMPLATES_MODE")) {
-	case "", string(CrawlTemplatesModeLegacy):
+	case string(CrawlTemplatesModeLegacy):
 		cfg.CrawlTemplatesMode = CrawlTemplatesModeLegacy
-	case string(CrawlTemplatesModeGo):
+	case "", string(CrawlTemplatesModeGo):
 		cfg.CrawlTemplatesMode = CrawlTemplatesModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_TEMPLATES_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_LLM_LOGS_MODE")) {
-	case "", string(LlmLogsModeLegacy):
+	case string(LlmLogsModeLegacy):
 		cfg.LlmLogsMode = LlmLogsModeLegacy
-	case string(LlmLogsModeGo):
+	case "", string(LlmLogsModeGo):
 		cfg.LlmLogsMode = LlmLogsModeGo
 	default:
 		errs = append(errs, "API_GO_LLM_LOGS_MODE must be one of legacy|go")
 	}
 
 	switch strings.TrimSpace(getenv("API_GO_ADMIN_LOGS_MODE")) {
-	case "", string(AdminLogsModeLegacy):
+	case string(AdminLogsModeLegacy):
 		cfg.AdminLogsMode = AdminLogsModeLegacy
-	case string(AdminLogsModeGo):
+	case "", string(AdminLogsModeGo):
 		cfg.AdminLogsMode = AdminLogsModeGo
 	default:
 		errs = append(errs, "API_GO_ADMIN_LOGS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_EXCEPTION_INGEST_MODE")) {
-	case "", string(ExceptionIngestModeLegacy):
+	case string(ExceptionIngestModeLegacy):
 		cfg.ExceptionIngestMode = ExceptionIngestModeLegacy
-	case string(ExceptionIngestModeGo):
+	case "", string(ExceptionIngestModeGo):
 		cfg.ExceptionIngestMode = ExceptionIngestModeGo
 	default:
 		errs = append(errs, "API_GO_EXCEPTION_INGEST_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWS_INDICATORS_MODE")) {
-	case "", string(NewsIndicatorsModeLegacy):
+	case string(NewsIndicatorsModeLegacy):
 		cfg.NewsIndicatorsMode = NewsIndicatorsModeLegacy
-	case string(NewsIndicatorsModeGo):
+	case "", string(NewsIndicatorsModeGo):
 		cfg.NewsIndicatorsMode = NewsIndicatorsModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_INDICATORS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_QUALITY_OVERVIEW_MODE")) {
-	case "", string(QualityOverviewModeLegacy):
+	case string(QualityOverviewModeLegacy):
 		cfg.QualityOverviewMode = QualityOverviewModeLegacy
-	case string(QualityOverviewModeGo):
+	case "", string(QualityOverviewModeGo):
 		cfg.QualityOverviewMode = QualityOverviewModeGo
 	default:
 		errs = append(errs, "API_GO_QUALITY_OVERVIEW_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_RSS_OPS_MODE")) {
-	case "", string(ClassificationRssOpsModeLegacy):
+	case string(ClassificationRssOpsModeLegacy):
 		cfg.ClassificationRssOpsMode = ClassificationRssOpsModeLegacy
-	case string(ClassificationRssOpsModeGo):
+	case "", string(ClassificationRssOpsModeGo):
 		cfg.ClassificationRssOpsMode = ClassificationRssOpsModeGo
 	default:
 		errs = append(errs, "API_GO_CLASSIFICATION_RSS_OPS_MODE must be one of legacy|go")
 	}
 
 	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_REPORTS_MODE")) {
-	case "", string(ClassificationReportsModeLegacy):
+	case string(ClassificationReportsModeLegacy):
 		cfg.ClassificationReportsMode = ClassificationReportsModeLegacy
-	case string(ClassificationReportsModeGo):
+	case "", string(ClassificationReportsModeGo):
 		cfg.ClassificationReportsMode = ClassificationReportsModeGo
 	default:
 		errs = append(errs, "API_GO_CLASSIFICATION_REPORTS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_QUALITY_WORKER_MODE")) {
-	case "", string(ClassificationQualityWorkerModeLegacy):
+	case string(ClassificationQualityWorkerModeLegacy):
 		cfg.ClassificationQualityWorkerMode = ClassificationQualityWorkerModeLegacy
-	case string(ClassificationQualityWorkerModeGo):
+	case "", string(ClassificationQualityWorkerModeGo):
 		cfg.ClassificationQualityWorkerMode = ClassificationQualityWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_CLASSIFICATION_QUALITY_WORKER_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_PIPELINE_RECOVERY_MODE")) {
-	case "", string(PipelineRecoveryModeLegacy):
+	case string(PipelineRecoveryModeLegacy):
 		cfg.PipelineRecoveryMode = PipelineRecoveryModeLegacy
-	case string(PipelineRecoveryModeGo):
+	case "", string(PipelineRecoveryModeGo):
 		cfg.PipelineRecoveryMode = PipelineRecoveryModeGo
 	default:
 		errs = append(errs, "API_GO_PIPELINE_RECOVERY_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_BULLMQ_CLEANUP_MODE")) {
-	case "", string(BullmqCleanupModeLegacy):
+	case string(BullmqCleanupModeLegacy):
 		cfg.BullmqCleanupMode = BullmqCleanupModeLegacy
-	case string(BullmqCleanupModeGo):
+	case "", string(BullmqCleanupModeGo):
 		cfg.BullmqCleanupMode = BullmqCleanupModeGo
 	default:
 		errs = append(errs, "API_GO_BULLMQ_CLEANUP_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_QUEUE_OPS_MODE")) {
-	case "", string(QueueOpsModeLegacy):
+	case string(QueueOpsModeLegacy):
 		cfg.QueueOpsMode = QueueOpsModeLegacy
-	case string(QueueOpsModeGo):
+	case "", string(QueueOpsModeGo):
 		cfg.QueueOpsMode = QueueOpsModeGo
 	default:
 		errs = append(errs, "API_GO_QUEUE_OPS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_QUEUE_ORG_STATS_MODE")) {
-	case "", string(QueueOrgStatsModeLegacy):
+	case string(QueueOrgStatsModeLegacy):
 		cfg.QueueOrgStatsMode = QueueOrgStatsModeLegacy
-	case string(QueueOrgStatsModeGo):
+	case "", string(QueueOrgStatsModeGo):
 		cfg.QueueOrgStatsMode = QueueOrgStatsModeGo
 	default:
 		errs = append(errs, "API_GO_QUEUE_ORG_STATS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_REVIEW_SEED_MODE")) {
-	case "", string(ClassificationReviewSeedModeLegacy):
+	case string(ClassificationReviewSeedModeLegacy):
 		cfg.ClassificationReviewSeedMode = ClassificationReviewSeedModeLegacy
-	case string(ClassificationReviewSeedModeGo):
+	case "", string(ClassificationReviewSeedModeGo):
 		cfg.ClassificationReviewSeedMode = ClassificationReviewSeedModeGo
 	default:
 		errs = append(errs, "API_GO_CLASSIFICATION_REVIEW_SEED_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_PIPELINE_RECOVERY_WRITE_MODE")) {
-	case "", string(PipelineRecoveryWriteModeLegacy):
+	case string(PipelineRecoveryWriteModeLegacy):
 		cfg.PipelineRecoveryWriteMode = PipelineRecoveryWriteModeLegacy
-	case string(PipelineRecoveryWriteModeGo):
+	case "", string(PipelineRecoveryWriteModeGo):
 		cfg.PipelineRecoveryWriteMode = PipelineRecoveryWriteModeGo
 	default:
 		errs = append(errs, "API_GO_PIPELINE_RECOVERY_WRITE_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_METRICS_MODE")) {
-	case "", string(MetricsModeLegacy):
+	case string(MetricsModeLegacy):
 		cfg.MetricsMode = MetricsModeLegacy
-	case string(MetricsModeGo):
+	case "", string(MetricsModeGo):
 		cfg.MetricsMode = MetricsModeGo
 	default:
 		errs = append(errs, "API_GO_METRICS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_STARTUP_RECONCILE_MODE")) {
-	case "", string(StartupReconcileModeLegacy):
+	case string(StartupReconcileModeLegacy):
 		cfg.StartupReconcileMode = StartupReconcileModeLegacy
-	case string(StartupReconcileModeGo):
+	case "", string(StartupReconcileModeGo):
 		cfg.StartupReconcileMode = StartupReconcileModeGo
 	default:
 		errs = append(errs, "API_GO_STARTUP_RECONCILE_MODE must be one of legacy|go")
@@ -4073,41 +4073,41 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_CLUSTERING_OPS_MODE")) {
-	case "", string(NewsnowClusteringOpsModeLegacy):
+	case string(NewsnowClusteringOpsModeLegacy):
 		cfg.NewsnowClusteringOpsMode = NewsnowClusteringOpsModeLegacy
-	case string(NewsnowClusteringOpsModeGo):
+	case "", string(NewsnowClusteringOpsModeGo):
 		cfg.NewsnowClusteringOpsMode = NewsnowClusteringOpsModeGo
 	default:
 		errs = append(errs, "API_GO_NEWSNOW_CLUSTERING_OPS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_HOTTEST_MODE")) {
-	case "", string(NewsnowHottestModeLegacy):
+	case string(NewsnowHottestModeLegacy):
 		cfg.NewsnowHottestMode = NewsnowHottestModeLegacy
-	case string(NewsnowHottestModeGo):
+	case "", string(NewsnowHottestModeGo):
 		cfg.NewsnowHottestMode = NewsnowHottestModeGo
 	default:
 		errs = append(errs, "API_GO_NEWSNOW_HOTTEST_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_BACKGROUND_MODE")) {
-	case "", string(NewsnowBackgroundModeLegacy):
+	case string(NewsnowBackgroundModeLegacy):
 		cfg.NewsnowBackgroundMode = NewsnowBackgroundModeLegacy
-	case string(NewsnowBackgroundModeGo):
+	case "", string(NewsnowBackgroundModeGo):
 		cfg.NewsnowBackgroundMode = NewsnowBackgroundModeGo
 	default:
 		errs = append(errs, "API_GO_NEWSNOW_BACKGROUND_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWSNOW_SOURCES_MODE")) {
-	case "", string(NewsnowSourcesModeLegacy):
+	case string(NewsnowSourcesModeLegacy):
 		cfg.NewsnowSourcesMode = NewsnowSourcesModeLegacy
-	case string(NewsnowSourcesModeGo):
+	case "", string(NewsnowSourcesModeGo):
 		cfg.NewsnowSourcesMode = NewsnowSourcesModeGo
 	default:
 		errs = append(errs, "API_GO_NEWSNOW_SOURCES_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_READ_TELEMETRY_MODE")) {
-	case "", string(CrawlReadTelemetryModeLegacy):
+	case string(CrawlReadTelemetryModeLegacy):
 		cfg.CrawlReadTelemetryMode = CrawlReadTelemetryModeLegacy
-	case string(CrawlReadTelemetryModeGo):
+	case "", string(CrawlReadTelemetryModeGo):
 		cfg.CrawlReadTelemetryMode = CrawlReadTelemetryModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_READ_TELEMETRY_MODE must be one of legacy|go")
@@ -4115,44 +4115,44 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// The metadata preview switch accepts exactly "", "legacy" and "go"; any
 	// other value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_METADATA_MODE")) {
-	case "", string(CrawlMetadataModeLegacy):
+	case string(CrawlMetadataModeLegacy):
 		cfg.CrawlMetadataMode = CrawlMetadataModeLegacy
-	case string(CrawlMetadataModeGo):
+	case "", string(CrawlMetadataModeGo):
 		cfg.CrawlMetadataMode = CrawlMetadataModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_METADATA_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_TASK_WRITE_MODE")) {
-	case "", string(CrawlTaskWriteModeLegacy):
+	case string(CrawlTaskWriteModeLegacy):
 		cfg.CrawlTaskWriteMode = CrawlTaskWriteModeLegacy
-	case string(CrawlTaskWriteModeGo):
+	case "", string(CrawlTaskWriteModeGo):
 		cfg.CrawlTaskWriteMode = CrawlTaskWriteModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_TASK_WRITE_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_QUEUE_OPS_MODE")) {
-	case "", string(CrawlQueueOpsModeLegacy):
+	case string(CrawlQueueOpsModeLegacy):
 		cfg.CrawlQueueOpsMode = CrawlQueueOpsModeLegacy
-	case string(CrawlQueueOpsModeGo):
+	case "", string(CrawlQueueOpsModeGo):
 		cfg.CrawlQueueOpsMode = CrawlQueueOpsModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_QUEUE_OPS_MODE must be one of legacy|go")
 	}
 	// The four crawl maintenance crons and the audit retention purge are two
 	// independent ownership switches. They accept the empty string, legacy and
-	// go; an empty value behaves exactly like legacy.
+	// go; an empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_MAINTENANCE_MODE")) {
-	case "", string(CrawlMaintenanceModeLegacy):
+	case string(CrawlMaintenanceModeLegacy):
 		cfg.CrawlMaintenanceMode = CrawlMaintenanceModeLegacy
-	case string(CrawlMaintenanceModeGo):
+	case "", string(CrawlMaintenanceModeGo):
 		cfg.CrawlMaintenanceMode = CrawlMaintenanceModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_MAINTENANCE_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_AUDIT_LOG_RETENTION_MODE")) {
-	case "", string(AuditLogRetentionModeLegacy):
+	case string(AuditLogRetentionModeLegacy):
 		cfg.AuditLogRetentionMode = AuditLogRetentionModeLegacy
-	case string(AuditLogRetentionModeGo):
+	case "", string(AuditLogRetentionModeGo):
 		cfg.AuditLogRetentionMode = AuditLogRetentionModeGo
 	default:
 		errs = append(errs, "API_GO_AUDIT_LOG_RETENTION_MODE must be one of legacy|go")
@@ -4169,9 +4169,9 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// The news-source preview switch accepts exactly "", "legacy" and "go"; any
 	// other value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_NEWS_SOURCE_PREVIEW_MODE")) {
-	case "", string(NewsSourcePreviewModeLegacy):
+	case string(NewsSourcePreviewModeLegacy):
 		cfg.NewsSourcePreviewMode = NewsSourcePreviewModeLegacy
-	case string(NewsSourcePreviewModeGo):
+	case "", string(NewsSourcePreviewModeGo):
 		cfg.NewsSourcePreviewMode = NewsSourcePreviewModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_SOURCE_PREVIEW_MODE must be one of legacy|go")
@@ -4179,9 +4179,9 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// The crawl-strategy trial/replay switch accepts exactly "", "legacy" and
 	// "go"; any other value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_CRAWL_WORKFLOW_TRIAL_MODE")) {
-	case "", string(CrawlWorkflowTrialModeLegacy):
+	case string(CrawlWorkflowTrialModeLegacy):
 		cfg.CrawlWorkflowTrialMode = CrawlWorkflowTrialModeLegacy
-	case string(CrawlWorkflowTrialModeGo):
+	case "", string(CrawlWorkflowTrialModeGo):
 		cfg.CrawlWorkflowTrialMode = CrawlWorkflowTrialModeGo
 	default:
 		errs = append(errs, "API_GO_CRAWL_WORKFLOW_TRIAL_MODE must be one of legacy|go")
@@ -4189,49 +4189,49 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// The search reindex switch accepts exactly "", "legacy" and "go"; any other
 	// value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_SEARCH_REINDEX_MODE")) {
-	case "", string(SearchReindexModeLegacy):
+	case string(SearchReindexModeLegacy):
 		cfg.SearchReindexMode = SearchReindexModeLegacy
-	case string(SearchReindexModeGo):
+	case "", string(SearchReindexModeGo):
 		cfg.SearchReindexMode = SearchReindexModeGo
 	default:
 		errs = append(errs, "API_GO_SEARCH_REINDEX_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_RUNTIME_SETTINGS_MODE")) {
-	case "", string(RuntimeSettingsModeLegacy):
+	case string(RuntimeSettingsModeLegacy):
 		cfg.RuntimeSettingsMode = RuntimeSettingsModeLegacy
-	case string(RuntimeSettingsModeGo):
+	case "", string(RuntimeSettingsModeGo):
 		cfg.RuntimeSettingsMode = RuntimeSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_DATA_RUNTIME_SETTINGS_MODE")) {
-	case "", string(DataRuntimeSettingsModeLegacy):
+	case string(DataRuntimeSettingsModeLegacy):
 		cfg.DataRuntimeSettingsMode = DataRuntimeSettingsModeLegacy
-	case string(DataRuntimeSettingsModeGo):
+	case "", string(DataRuntimeSettingsModeGo):
 		cfg.DataRuntimeSettingsMode = DataRuntimeSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_DATA_RUNTIME_SETTINGS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_EMAIL_SETTINGS_MODE")) {
-	case "", string(EmailSettingsModeLegacy):
+	case string(EmailSettingsModeLegacy):
 		cfg.EmailSettingsMode = EmailSettingsModeLegacy
-	case string(EmailSettingsModeGo):
+	case "", string(EmailSettingsModeGo):
 		cfg.EmailSettingsMode = EmailSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_EMAIL_SETTINGS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GEOCODING_MODE")) {
-	case "", string(GeocodingModeLegacy):
+	case string(GeocodingModeLegacy):
 		cfg.GeocodingMode = GeocodingModeLegacy
-	case string(GeocodingModeGo):
+	case "", string(GeocodingModeGo):
 		cfg.GeocodingMode = GeocodingModeGo
 	default:
 		errs = append(errs, "API_GO_GEOCODING_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_RUNTIME_DIAGNOSTICS_MODE")) {
-	case "", string(RuntimeDiagnosticsModeLegacy):
+	case string(RuntimeDiagnosticsModeLegacy):
 		cfg.RuntimeDiagnosticsMode = RuntimeDiagnosticsModeLegacy
-	case string(RuntimeDiagnosticsModeGo):
+	case "", string(RuntimeDiagnosticsModeGo):
 		cfg.RuntimeDiagnosticsMode = RuntimeDiagnosticsModeGo
 	default:
 		errs = append(errs, "API_GO_RUNTIME_DIAGNOSTICS_MODE must be one of legacy|go")
@@ -4239,9 +4239,9 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// The platform governance switch accepts exactly "", "legacy" and "go"; any
 	// other value must fail startup with this exact text.
 	switch strings.TrimSpace(getenv("API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE")) {
-	case "", string(PlatformGovernanceSettingsModeLegacy):
+	case string(PlatformGovernanceSettingsModeLegacy):
 		cfg.PlatformGovernanceSettingsMode = PlatformGovernanceSettingsModeLegacy
-	case string(PlatformGovernanceSettingsModeGo):
+	case "", string(PlatformGovernanceSettingsModeGo):
 		cfg.PlatformGovernanceSettingsMode = PlatformGovernanceSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be one of legacy|go")
@@ -4255,20 +4255,19 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		errs = append(errs, governanceErrs...)
 	}
 	// Model access settings accepts the empty string, legacy and go. An empty
-	// value behaves exactly like legacy so an unset deployment keeps the NestJS
-	// path.
+	// value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_MODEL_ACCESS_SETTINGS_MODE")) {
-	case "", string(ModelAccessSettingsModeLegacy):
+	case string(ModelAccessSettingsModeLegacy):
 		cfg.ModelAccessSettingsMode = ModelAccessSettingsModeLegacy
-	case string(ModelAccessSettingsModeGo):
+	case "", string(ModelAccessSettingsModeGo):
 		cfg.ModelAccessSettingsMode = ModelAccessSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_MODEL_ACCESS_SETTINGS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_LLM_GATEWAY_PROFILES_MODE")) {
-	case "", string(LLMGatewayProfilesModeLegacy):
+	case string(LLMGatewayProfilesModeLegacy):
 		cfg.LLMGatewayProfilesMode = LLMGatewayProfilesModeLegacy
-	case string(LLMGatewayProfilesModeGo):
+	case "", string(LLMGatewayProfilesModeGo):
 		cfg.LLMGatewayProfilesMode = LLMGatewayProfilesModeGo
 	default:
 		errs = append(errs, "API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go")
@@ -4277,28 +4276,28 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// switch: either one can be go on its own. The empty value behaves exactly
 	// like legacy.
 	switch strings.TrimSpace(getenv("API_GO_LLM_GATEWAY_OPS_MODE")) {
-	case "", string(LLMGatewayOpsModeLegacy):
+	case string(LLMGatewayOpsModeLegacy):
 		cfg.LLMGatewayOpsMode = LLMGatewayOpsModeLegacy
-	case string(LLMGatewayOpsModeGo):
+	case "", string(LLMGatewayOpsModeGo):
 		cfg.LLMGatewayOpsMode = LLMGatewayOpsModeGo
 	default:
 		errs = append(errs, "API_GO_LLM_GATEWAY_OPS_MODE must be one of legacy|go")
 	}
 	// Proxy load balancing accepts the empty string, legacy and go. An empty
-	// value behaves exactly like legacy so an unset deployment keeps the NestJS
-	// path. It is parsed independently of the model access switch.
+	// value takes the go branch. It is parsed independently of the model
+	// access switch.
 	switch strings.TrimSpace(getenv("API_GO_PROXY_LOAD_BALANCING_MODE")) {
-	case "", string(ProxyLoadBalancingModeLegacy):
+	case string(ProxyLoadBalancingModeLegacy):
 		cfg.ProxyLoadBalancingMode = ProxyLoadBalancingModeLegacy
-	case string(ProxyLoadBalancingModeGo):
+	case "", string(ProxyLoadBalancingModeGo):
 		cfg.ProxyLoadBalancingMode = ProxyLoadBalancingModeGo
 	default:
 		errs = append(errs, "API_GO_PROXY_LOAD_BALANCING_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_INFRASTRUCTURE_SETTINGS_MODE")) {
-	case "", string(InfrastructureSettingsModeLegacy):
+	case string(InfrastructureSettingsModeLegacy):
 		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeLegacy
-	case string(InfrastructureSettingsModeGo):
+	case "", string(InfrastructureSettingsModeGo):
 		cfg.InfrastructureSettingsMode = InfrastructureSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go")
@@ -4306,31 +4305,30 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// The storage connection test switch is parsed independently of the
 	// infrastructure settings switch: the diagnostics route can be taken over
 	// while the seven configuration routes stay on NestJS, and the other way
-	// around. An empty value behaves exactly like legacy.
+	// around. The empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_STORAGE_DIAGNOSTICS_MODE")) {
-	case "", string(StorageDiagnosticsModeLegacy):
+	case string(StorageDiagnosticsModeLegacy):
 		cfg.StorageDiagnosticsMode = StorageDiagnosticsModeLegacy
-	case string(StorageDiagnosticsModeGo):
+	case "", string(StorageDiagnosticsModeGo):
 		cfg.StorageDiagnosticsMode = StorageDiagnosticsModeGo
 	default:
 		errs = append(errs, "API_GO_STORAGE_DIAGNOSTICS_MODE must be one of legacy|go")
 	}
 	// The authenticated MFA management and organization OIDC configuration
-	// switch accepts the empty string, legacy and go. An empty value behaves
-	// exactly like legacy, so an unset deployment keeps serving all seven
-	// routes through NestJS.
+	// switch accepts the empty string, legacy and go. The empty value takes the
+	// go branch.
 	switch strings.TrimSpace(getenv("API_GO_AUTH_FACTORS_MODE")) {
-	case "", string(AuthFactorsModeLegacy):
+	case string(AuthFactorsModeLegacy):
 		cfg.AuthFactorsMode = AuthFactorsModeLegacy
-	case string(AuthFactorsModeGo):
+	case "", string(AuthFactorsModeGo):
 		cfg.AuthFactorsMode = AuthFactorsModeGo
 	default:
 		errs = append(errs, "API_GO_AUTH_FACTORS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ACCOUNT_SECURITY_MODE")) {
-	case "", string(AccountSecurityModeLegacy):
+	case string(AccountSecurityModeLegacy):
 		cfg.AccountSecurityMode = AccountSecurityModeLegacy
-	case string(AccountSecurityModeGo):
+	case "", string(AccountSecurityModeGo):
 		cfg.AccountSecurityMode = AccountSecurityModeGo
 	default:
 		errs = append(errs, "API_GO_ACCOUNT_SECURITY_MODE must be one of legacy|go")
@@ -4339,69 +4337,65 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// accepts the empty string, legacy and go; an empty value keeps the route
 	// on NestJS.
 	switch strings.TrimSpace(getenv("API_GO_AVATAR_UPLOAD_MODE")) {
-	case "", string(AvatarUploadModeLegacy):
+	case string(AvatarUploadModeLegacy):
 		cfg.AvatarUploadMode = AvatarUploadModeLegacy
-	case string(AvatarUploadModeGo):
+	case "", string(AvatarUploadModeGo):
 		cfg.AvatarUploadMode = AvatarUploadModeGo
 	default:
 		errs = append(errs, "API_GO_AVATAR_UPLOAD_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_USER_DATA_EXPORT_MODE")) {
-	case "", string(UserDataExportModeLegacy):
+	case string(UserDataExportModeLegacy):
 		cfg.UserDataExportMode = UserDataExportModeLegacy
-	case string(UserDataExportModeGo):
+	case "", string(UserDataExportModeGo):
 		cfg.UserDataExportMode = UserDataExportModeGo
 	default:
 		errs = append(errs, "API_GO_USER_DATA_EXPORT_MODE must be one of legacy|go")
 	}
 	// The login/session/email-code switch accepts the empty string, legacy and
-	// go. An empty value behaves exactly like legacy, so an unset deployment
-	// keeps serving all eleven routes through NestJS.
+	// go. An empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_AUTH_LOGIN_MODE")) {
-	case "", string(AuthLoginModeLegacy):
+	case string(AuthLoginModeLegacy):
 		cfg.AuthLoginMode = AuthLoginModeLegacy
-	case string(AuthLoginModeGo):
+	case "", string(AuthLoginModeGo):
 		cfg.AuthLoginMode = AuthLoginModeGo
 	default:
 		errs = append(errs, "API_GO_AUTH_LOGIN_MODE must be one of legacy|go")
 	}
 	// The OIDC login switch accepts the empty string, legacy and go. An empty
-	// value behaves exactly like legacy, so an unset deployment keeps all three
-	// SSO routes on NestJS.
+	// value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_OIDC_LOGIN_MODE")) {
-	case "", string(OIDCLoginModeLegacy):
+	case string(OIDCLoginModeLegacy):
 		cfg.OIDCLoginMode = OIDCLoginModeLegacy
-	case string(OIDCLoginModeGo):
+	case "", string(OIDCLoginModeGo):
 		cfg.OIDCLoginMode = OIDCLoginModeGo
 	default:
 		errs = append(errs, "API_GO_OIDC_LOGIN_MODE must be one of legacy|go")
 	}
 	// The registration/invitation switch accepts the empty string, legacy and
-	// go. An empty value behaves exactly like legacy, so an unset deployment
-	// keeps serving all fourteen routes through NestJS.
+	// go. An empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_IDENTITY_ONBOARDING_MODE")) {
-	case "", string(IdentityOnboardingModeLegacy):
+	case string(IdentityOnboardingModeLegacy):
 		cfg.IdentityOnboardingMode = IdentityOnboardingModeLegacy
-	case string(IdentityOnboardingModeGo):
+	case "", string(IdentityOnboardingModeGo):
 		cfg.IdentityOnboardingMode = IdentityOnboardingModeGo
 	default:
 		errs = append(errs, "API_GO_IDENTITY_ONBOARDING_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_READ_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLReadMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLReadMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_READ_MODE must be one of legacy|go")
 	}
 	// The realtime subscription transport is an independent switch. An empty
-	// value behaves like legacy so an unset deployment keeps upgrade requests
-	// on the legacy proxy.
+	// value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_SUBSCRIPTIONS_MODE")) {
-	case "", string(GraphQLSubscriptionsModeLegacy):
+	case string(GraphQLSubscriptionsModeLegacy):
 		cfg.GraphQLSubscriptionsMode = GraphQLSubscriptionsModeLegacy
-	case string(GraphQLSubscriptionsModeGo):
+	case "", string(GraphQLSubscriptionsModeGo):
 		cfg.GraphQLSubscriptionsMode = GraphQLSubscriptionsModeGo
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SUBSCRIPTIONS_MODE must be one of legacy|go")
@@ -4422,11 +4416,11 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	}
 	// The notifications Socket.IO transport is independent of the GraphQL WS
 	// executor: it has its own path, namespace and Redis relay. An empty value
-	// behaves like legacy.
+	// takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_NOTIFICATIONS_SOCKET_MODE")) {
-	case "", string(NotificationsSocketModeLegacy):
+	case string(NotificationsSocketModeLegacy):
 		cfg.NotificationsSocketMode = NotificationsSocketModeLegacy
-	case string(NotificationsSocketModeGo):
+	case "", string(NotificationsSocketModeGo):
 		cfg.NotificationsSocketMode = NotificationsSocketModeGo
 	default:
 		errs = append(errs, "API_GO_NOTIFICATIONS_SOCKET_MODE must be one of legacy|go")
@@ -4435,19 +4429,19 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// transport: one Engine.IO path multiplexes five namespaces, while
 	// /notifications keeps its own path and runtime.
 	switch strings.TrimSpace(getenv("API_GO_REALTIME_SOCKET_MODE")) {
-	case "", string(RealtimeSocketModeLegacy):
+	case string(RealtimeSocketModeLegacy):
 		cfg.RealtimeSocketMode = RealtimeSocketModeLegacy
-	case string(RealtimeSocketModeGo):
+	case "", string(RealtimeSocketModeGo):
 		cfg.RealtimeSocketMode = RealtimeSocketModeGo
 	default:
 		errs = append(errs, "API_GO_REALTIME_SOCKET_MODE must be one of legacy|go")
 	}
 	// The classification quality alert scheduler is a background cron with no
-	// HTTP surface. Empty behaves like legacy.
+	// HTTP surface. Empty takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_CLASSIFICATION_QUALITY_ALERT_MODE")) {
-	case "", string(ClassificationQualityAlertModeLegacy):
+	case string(ClassificationQualityAlertModeLegacy):
 		cfg.ClassificationQualityAlertMode = ClassificationQualityAlertModeLegacy
-	case string(ClassificationQualityAlertModeGo):
+	case "", string(ClassificationQualityAlertModeGo):
 		cfg.ClassificationQualityAlertMode = ClassificationQualityAlertModeGo
 	default:
 		errs = append(errs, "API_GO_CLASSIFICATION_QUALITY_ALERT_MODE must be one of legacy|go")
@@ -4494,78 +4488,74 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		}
 		*target = value
 	}
-	// The situation monitor signals switch accepts the empty string, legacy and
-	// go. An empty value behaves exactly like legacy so an unset deployment
-	// keeps the NestJS path for all seven routes.
+	// The situation monitor signals switch accepts the empty string, legacy
+	// and go. An empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_MONITOR_SIGNALS_MODE")) {
-	case "", string(SituationSignalsModeLegacy):
+	case string(SituationSignalsModeLegacy):
 		cfg.SituationSignalsMode = SituationSignalsModeLegacy
-	case string(SituationSignalsModeGo):
+	case "", string(SituationSignalsModeGo):
 		cfg.SituationSignalsMode = SituationSignalsModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_MONITOR_SIGNALS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_INSIGHTS_MODE")) {
-	case "", string(SituationInsightsModeLegacy):
+	case string(SituationInsightsModeLegacy):
 		cfg.SituationInsightsMode = SituationInsightsModeLegacy
-	case string(SituationInsightsModeGo):
+	case "", string(SituationInsightsModeGo):
 		cfg.SituationInsightsMode = SituationInsightsModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_INSIGHTS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_SETTINGS_MODE")) {
-	case "", string(SituationSettingsModeLegacy):
+	case string(SituationSettingsModeLegacy):
 		cfg.SituationSettingsMode = SituationSettingsModeLegacy
-	case string(SituationSettingsModeGo):
+	case "", string(SituationSettingsModeGo):
 		cfg.SituationSettingsMode = SituationSettingsModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_SETTINGS_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_SIGNALS_WORKER_MODE")) {
-	case "", string(SituationSignalsWorkerModeLegacy):
+	case string(SituationSignalsWorkerModeLegacy):
 		cfg.SituationSignalsWorkerMode = SituationSignalsWorkerModeLegacy
-	case string(SituationSignalsWorkerModeGo):
+	case "", string(SituationSignalsWorkerModeGo):
 		cfg.SituationSignalsWorkerMode = SituationSignalsWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_SIGNALS_WORKER_MODE must be one of legacy|go")
 	}
-	// The refresh entry point accepts the empty string, legacy and go. An empty
-	// value behaves exactly like legacy so an unset deployment keeps POST
-	// /api/situation-monitor/refresh on the NestJS proxy.
+	// The refresh entry point accepts the empty string, legacy and go. An
+	// empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_REFRESH_MODE")) {
-	case "", string(SituationRefreshModeLegacy):
+	case string(SituationRefreshModeLegacy):
 		cfg.SituationRefreshMode = SituationRefreshModeLegacy
-	case string(SituationRefreshModeGo):
+	case "", string(SituationRefreshModeGo):
 		cfg.SituationRefreshMode = SituationRefreshModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_REFRESH_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_SITUATION_TELEGRAM_AUTH_MODE")) {
-	case "", string(SituationTelegramAuthModeLegacy):
+	case string(SituationTelegramAuthModeLegacy):
 		cfg.SituationTelegramAuthMode = SituationTelegramAuthModeLegacy
-	case string(SituationTelegramAuthModeGo):
+	case "", string(SituationTelegramAuthModeGo):
 		cfg.SituationTelegramAuthMode = SituationTelegramAuthModeGo
 	default:
 		errs = append(errs, "API_GO_SITUATION_TELEGRAM_AUTH_MODE must be one of legacy|go")
 	}
 	// The GDELT external snapshot scheduler accepts the empty string, legacy
-	// and go. An empty value behaves exactly like legacy so an unset deployment
-	// keeps the NestJS @Cron ownership.
+	// and go. An empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GDELT_SNAPSHOT_MODE")) {
-	case "", string(GdeltSnapshotModeLegacy):
+	case string(GdeltSnapshotModeLegacy):
 		cfg.GdeltSnapshotMode = GdeltSnapshotModeLegacy
-	case string(GdeltSnapshotModeGo):
+	case "", string(GdeltSnapshotModeGo):
 		cfg.GdeltSnapshotMode = GdeltSnapshotModeGo
 	default:
 		errs = append(errs, "API_GO_GDELT_SNAPSHOT_MODE must be one of legacy|go")
 	}
-	// The realtime signal collector accepts the empty string, legacy and go. An
-	// empty value behaves exactly like legacy so an unset deployment keeps the
-	// NestJS @Cron ownership.
+	// The realtime signal collector accepts the empty string, legacy and go.
+	// An empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_REALTIME_SIGNALS_MODE")) {
-	case "", string(RealtimeSignalsModeLegacy):
+	case string(RealtimeSignalsModeLegacy):
 		cfg.RealtimeSignalsMode = RealtimeSignalsModeLegacy
-	case string(RealtimeSignalsModeGo):
+	case "", string(RealtimeSignalsModeGo):
 		cfg.RealtimeSignalsMode = RealtimeSignalsModeGo
 	default:
 		errs = append(errs, "API_GO_REALTIME_SIGNALS_MODE must be one of legacy|go")
@@ -4573,20 +4563,19 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// The forced-refresh entry switch is read by Go only; while it is legacy the
 	// route stays on NestJS.
 	switch strings.TrimSpace(getenv("API_GO_GDELT_SNAPSHOT_REFRESH_MODE")) {
-	case "", string(GdeltSnapshotRefreshModeLegacy):
+	case string(GdeltSnapshotRefreshModeLegacy):
 		cfg.GdeltSnapshotRefreshMode = GdeltSnapshotRefreshModeLegacy
-	case string(GdeltSnapshotRefreshModeGo):
+	case "", string(GdeltSnapshotRefreshModeGo):
 		cfg.GdeltSnapshotRefreshMode = GdeltSnapshotRefreshModeGo
 	default:
 		errs = append(errs, "API_GO_GDELT_SNAPSHOT_REFRESH_MODE must be one of legacy|go")
 	}
-	// The news-event timeline rebuild accepts the empty string, legacy and go. An
-	// empty value behaves exactly like legacy so an unset deployment keeps the
-	// NestJS @Cron ownership.
+	// The news-event timeline rebuild accepts the empty string, legacy and go.
+	// An empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_NEWS_EVENTS_TIMELINE_MODE")) {
-	case "", string(NewsEventsTimelineModeLegacy):
+	case string(NewsEventsTimelineModeLegacy):
 		cfg.NewsEventsTimelineMode = NewsEventsTimelineModeLegacy
-	case string(NewsEventsTimelineModeGo):
+	case "", string(NewsEventsTimelineModeGo):
 		cfg.NewsEventsTimelineMode = NewsEventsTimelineModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_EVENTS_TIMELINE_MODE must be one of legacy|go")
@@ -4594,9 +4583,9 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// The sentiment snapshot rebuild is an independent switch with the same
 	// accepted values.
 	switch strings.TrimSpace(getenv("API_GO_SENTIMENT_SNAPSHOT_MODE")) {
-	case "", string(SentimentSnapshotModeLegacy):
+	case string(SentimentSnapshotModeLegacy):
 		cfg.SentimentSnapshotMode = SentimentSnapshotModeLegacy
-	case string(SentimentSnapshotModeGo):
+	case "", string(SentimentSnapshotModeGo):
 		cfg.SentimentSnapshotMode = SentimentSnapshotModeGo
 	default:
 		errs = append(errs, "API_GO_SENTIMENT_SNAPSHOT_MODE must be one of legacy|go")
@@ -4605,20 +4594,19 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	// isGdeltEnabled does. The Go default matches the NestJS schema default.
 	cfg.SituationMonitorGdeltEnabled = boolDefault(getenv("SITUATION_MONITOR_GDELT_ENABLED"), true)
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_EVENTS_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLNewsEventsMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLNewsEventsMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENTS_MODE must be one of legacy|go")
 	}
 	// The news-event brief sub-switch accepts the empty string, legacy and go.
-	// An empty value behaves exactly like legacy, so an unset deployment keeps
-	// the whole newsEventBrief operation on NestJS.
+	// An empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLNewsEventBriefMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLNewsEventBriefMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE must be one of legacy|go")
@@ -4629,93 +4617,89 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 		errs = append(errs, "API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE=go requires API_GO_GRAPHQL_READ_MODE=go and API_GO_GRAPHQL_NEWS_EVENTS_MODE=go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KG_IMPACT_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLKgImpactMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLKgImpactMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_KG_IMPACT_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLKnowledgeGraphMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLKnowledgeGraphMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE must be one of legacy|go")
 	}
 	// The workspace switch accepts the empty string, legacy and go. An empty
-	// value behaves exactly like legacy so an unset deployment keeps the
-	// NestJS path.
+	// value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_WORKSPACE_READ_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLWorkspaceReadMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLWorkspaceReadMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_WORKSPACE_READ_MODE must be one of legacy|go")
 	}
 	// The settings/crawl switch accepts the empty string, legacy and go. An
-	// empty value behaves exactly like legacy, so an unset deployment keeps
-	// serving all twenty roots through NestJS.
+	// empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLSettingsCrawlReadMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLSettingsCrawlReadMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE must be one of legacy|go")
 	}
 	// The metadata GraphQL switch accepts the empty string, legacy and go. An
-	// empty value behaves exactly like legacy so an unset deployment keeps
-	// serving crawlMetadata through NestJS.
+	// empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_CRAWL_METADATA_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLCrawlMetadataMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLCrawlMetadataMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_CRAWL_METADATA_MODE must be one of legacy|go")
 	}
-	// The item reading switch accepts the empty string, legacy and go. An empty
-	// value behaves exactly like legacy so an unset deployment keeps serving
-	// both REST routes and all five GraphQL roots through NestJS.
+	// The item reading switch accepts the empty string, legacy and go. An
+	// empty value takes the go branch.
 	itemsReadingRaw := strings.TrimSpace(getenv("API_GO_ITEMS_READING_MODE"))
 	switch itemsReadingRaw {
-	case "", string(ItemsReadingModeLegacy):
+	case string(ItemsReadingModeLegacy):
 		cfg.ItemsReadingMode = ItemsReadingModeLegacy
-	case string(ItemsReadingModeGo):
+	case "", string(ItemsReadingModeGo):
 		cfg.ItemsReadingMode = ItemsReadingModeGo
 	default:
 		// The failure names the variable and echoes the rejected value so an
 		// operator can see which deployment value was refused.
 		errs = append(errs, "API_GO_ITEMS_READING_MODE must be one of legacy|go, got "+strconv.Quote(itemsReadingRaw))
 	}
-	// The items ingest switch. Empty behaves like legacy; an invalid value
+	// The items ingest switch. Empty takes the go branch; an invalid value
 	// fails startup instead of silently downgrading.
 	switch strings.TrimSpace(getenv("API_GO_ITEMS_INGEST_MODE")) {
-	case "", string(ItemsIngestModeLegacy):
+	case string(ItemsIngestModeLegacy):
 		cfg.ItemsIngestMode = ItemsIngestModeLegacy
-	case string(ItemsIngestModeGo):
+	case "", string(ItemsIngestModeGo):
 		cfg.ItemsIngestMode = ItemsIngestModeGo
 	default:
 		errs = append(errs, "API_GO_ITEMS_INGEST_MODE must be one of legacy|go")
 	}
 	// The raw_item replay owner is independent of the write switch.
 	switch strings.TrimSpace(getenv("API_GO_RAW_ITEM_OUTBOX_MODE")) {
-	case "", string(RawItemOutboxModeLegacy):
+	case string(RawItemOutboxModeLegacy):
 		cfg.RawItemOutboxMode = RawItemOutboxModeLegacy
-	case string(RawItemOutboxModeGo):
+	case "", string(RawItemOutboxModeGo):
 		cfg.RawItemOutboxMode = RawItemOutboxModeGo
 	default:
 		errs = append(errs, "API_GO_RAW_ITEM_OUTBOX_MODE must be one of legacy|go")
 	}
 	// The processed_item compensation owner is independent of the write and
-	// read switches. Empty behaves like legacy; an invalid value fails startup.
+	// read switches. Empty takes the go branch; an invalid value fails startup.
 	switch strings.TrimSpace(getenv("API_GO_PROCESSED_ITEM_OUTBOX_MODE")) {
-	case "", string(ProcessedItemOutboxModeLegacy):
+	case string(ProcessedItemOutboxModeLegacy):
 		cfg.ProcessedItemOutboxMode = ProcessedItemOutboxModeLegacy
-	case string(ProcessedItemOutboxModeGo):
+	case "", string(ProcessedItemOutboxModeGo):
 		cfg.ProcessedItemOutboxMode = ProcessedItemOutboxModeGo
 	default:
 		errs = append(errs, "API_GO_PROCESSED_ITEM_OUTBOX_MODE must be one of legacy|go")
@@ -4747,109 +4731,100 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 			cfg.ProcessedItemOutboxBatchSize = value
 		}
 	}
-	// The cross-process scheduling stop switch uses the exact NestJS
-	// `!== "false"` comparison.
-	// The items list switch accepts the empty string, legacy and go. An empty
-	// value behaves exactly like legacy, so an unset deployment keeps the items
-	// connection root on NestJS.
+	// The cross-process scheduling stop switch uses the exact NestJS `!==
+	// "false"` comparison. The items list switch accepts the empty string,
+	// legacy and go. An empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_ITEMS_LIST_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLItemsListMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLItemsListMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_ITEMS_LIST_MODE must be one of legacy|go")
 	}
-	// The organization access write switch accepts the empty string, legacy and
-	// go. An empty value behaves exactly like legacy, so an unset deployment
-	// keeps every mutation on NestJS.
+	// The organization access write switch accepts the empty string, legacy
+	// and go. An empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLOrgAccessWriteMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLOrgAccessWriteMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE must be one of legacy|go")
 	}
 	// The workspace write switch accepts the empty string, legacy and go. An
-	// empty value behaves exactly like legacy, so an unset deployment keeps
-	// these eight mutations on NestJS.
+	// empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_WORKSPACE_WRITE_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLWorkspaceWriteMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLWorkspaceWriteMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE must be one of legacy|go")
 	}
 	// The alert rule switch accepts the empty string, legacy and go. An empty
-	// value behaves exactly like legacy, so an unset deployment keeps alertRules
-	// and the three rule mutations on NestJS.
+	// value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_ALERT_RULES_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLAlertRulesMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLAlertRulesMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_ALERT_RULES_MODE must be one of legacy|go")
 	}
 	// The settings write switch accepts the empty string, legacy and go. An
-	// empty value behaves exactly like legacy, so an unset deployment keeps
-	// every settings mutation on NestJS.
+	// empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_SETTINGS_WRITE_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLSettingsWriteMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLSettingsWriteMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SETTINGS_WRITE_MODE must be one of legacy|go")
 	}
 	// The source-policy write switch accepts the empty string, legacy and go.
-	// An empty value behaves exactly like legacy, so an unset deployment keeps
-	// all four version mutations on NestJS.
+	// An empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLSourcePolicyWriteMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLSourcePolicyWriteMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE must be one of legacy|go")
 	}
 	// The knowledge-graph evidence review switch accepts the empty string,
-	// legacy and go. An empty value behaves exactly like legacy, so an unset
+	// legacy and go. An empty value takes the go branch, so an unset
 	// deployment keeps the mutation on NestJS.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLKnowledgeReviewMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLKnowledgeReviewMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE must be one of legacy|go")
 	}
 	// The RSS translation switch accepts the empty string, legacy and go. An
-	// empty value behaves exactly like legacy, so an unset deployment keeps
-	// translateRssItems, including its cache/metrics/model-log side effects, on
-	// NestJS.
+	// empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_RSS_TRANSLATION_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLRssTranslationMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLRssTranslationMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_RSS_TRANSLATION_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ECONOMIC_DATA_MODE")) {
-	case "", string(EconomicDataModeLegacy):
+	case string(EconomicDataModeLegacy):
 		cfg.EconomicDataMode = EconomicDataModeLegacy
-	case string(EconomicDataModeGo):
+	case "", string(EconomicDataModeGo):
 		cfg.EconomicDataMode = EconomicDataModeGo
 	default:
 		errs = append(errs, "API_GO_ECONOMIC_DATA_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ECONOMIC_DATA_WORKER_MODE")) {
-	case "", string(EconomicDataWorkerModeLegacy):
+	case string(EconomicDataWorkerModeLegacy):
 		cfg.EconomicDataWorkerMode = EconomicDataWorkerModeLegacy
-	case string(EconomicDataWorkerModeGo):
+	case "", string(EconomicDataWorkerModeGo):
 		cfg.EconomicDataWorkerMode = EconomicDataWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_ECONOMIC_DATA_WORKER_MODE must be one of legacy|go")
@@ -4873,23 +4848,21 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	cfg.AkshareSkipUnchangedLatest = boolDefault(getenv("AKSHARE_SKIP_UNCHANGED_LATEST_POINTS"), false)
 
 	// The assistant write switch accepts the empty string, legacy and go. An
-	// empty value behaves exactly like legacy, so an unset deployment keeps the
-	// four mutations on NestJS.
+	// empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_ASSISTANT_WRITE_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLAssistantWriteMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLAssistantWriteMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_ASSISTANT_WRITE_MODE must be one of legacy|go")
 	}
 	// The assistant worker switch accepts the empty string, legacy and go. An
-	// empty value behaves exactly like legacy, so an unset deployment keeps the
-	// NestJS Worker.
+	// empty value takes the go branch.
 	switch strings.TrimSpace(getenv("API_GO_ASSISTANT_WORKER_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.AssistantWorkerMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.AssistantWorkerMode = "go"
 	default:
 		errs = append(errs, "API_GO_ASSISTANT_WORKER_MODE must be one of legacy|go")
@@ -5330,54 +5303,54 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	}
 
 	// The four news backfill switches accept exactly "", "legacy" and "go".
-	// An empty value behaves like legacy; any other value fails startup. The
+	// An empty value takes the go branch; any other value fails startup. The
 	// manual enqueue route and the GraphQL mutation are request switches, while
 	// the worker and the six-hour cron switches are also read by NestJS so the
 	// two runtimes never own the same background chain.
 	switch strings.TrimSpace(getenv("API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE")) {
-	case "", string(NewsClusteringLlmBackfillModeLegacy):
+	case string(NewsClusteringLlmBackfillModeLegacy):
 		cfg.NewsClusteringLlmBackfillMode = NewsClusteringLlmBackfillModeLegacy
-	case string(NewsClusteringLlmBackfillModeGo):
+	case "", string(NewsClusteringLlmBackfillModeGo):
 		cfg.NewsClusteringLlmBackfillMode = NewsClusteringLlmBackfillModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE")) {
-	case "", string(NewsClusteringRecoveryWorkerModeLegacy):
+	case string(NewsClusteringRecoveryWorkerModeLegacy):
 		cfg.NewsClusteringRecoveryWorkerMode = NewsClusteringRecoveryWorkerModeLegacy
-	case string(NewsClusteringRecoveryWorkerModeGo):
+	case "", string(NewsClusteringRecoveryWorkerModeGo):
 		cfg.NewsClusteringRecoveryWorkerMode = NewsClusteringRecoveryWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ARCHIVE_PREPARATION_WORKER_MODE")) {
-	case "", string(ArchivePreparationWorkerModeLegacy):
+	case string(ArchivePreparationWorkerModeLegacy):
 		cfg.ArchivePreparationWorkerMode = ArchivePreparationWorkerModeLegacy
-	case string(ArchivePreparationWorkerModeGo):
+	case "", string(ArchivePreparationWorkerModeGo):
 		cfg.ArchivePreparationWorkerMode = ArchivePreparationWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_ARCHIVE_PREPARATION_WORKER_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_ITEM_PIPELINE_WORKER_MODE")) {
-	case "", string(ItemPipelineWorkerModeLegacy):
+	case string(ItemPipelineWorkerModeLegacy):
 		cfg.ItemPipelineWorkerMode = ItemPipelineWorkerModeLegacy
-	case string(ItemPipelineWorkerModeGo):
+	case "", string(ItemPipelineWorkerModeGo):
 		cfg.ItemPipelineWorkerMode = ItemPipelineWorkerModeGo
 	default:
 		errs = append(errs, "API_GO_ITEM_PIPELINE_WORKER_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE")) {
-	case "", "legacy":
+	case "legacy":
 		cfg.GraphQLNewsIndicatorRefreshMode = "legacy"
-	case "go":
+	case "", "go":
 		cfg.GraphQLNewsIndicatorRefreshMode = "go"
 	default:
 		errs = append(errs, "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE must be one of legacy|go")
 	}
 	switch strings.TrimSpace(getenv("API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE")) {
-	case "", string(NewsIndicatorAssociationCronModeLegacy):
+	case string(NewsIndicatorAssociationCronModeLegacy):
 		cfg.NewsIndicatorAssociationCronMode = NewsIndicatorAssociationCronModeLegacy
-	case string(NewsIndicatorAssociationCronModeGo):
+	case "", string(NewsIndicatorAssociationCronModeGo):
 		cfg.NewsIndicatorAssociationCronMode = NewsIndicatorAssociationCronModeGo
 	default:
 		errs = append(errs, "API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE must be one of legacy|go")

@@ -1,6 +1,8 @@
-# api-go —— 主后端 Go 网关（Strangler Fig）
+# api-go —— 主后端 Go 网关（仓库默认）
 
-NestJS `apps/api` 的渐进替代入口。默认全部流量反向代理到 NestJS（`LEGACY_API_URL`，默认 `http://localhost:4000`）；已迁移路由按四态路由表分流。详细语义见 `docs/refactor/api-go-four-mode.md`。
+NestJS `apps/api` 的渐进替代入口，**现在就是仓库默认后端**：136 个业务 `API_GO_*_MODE` 未设置时取 `go`，`API_GO_LEGACY_FALLBACK_MODE` 未设置时取 `reject`——未被任何规则匹配的请求直接按 NestJS 全局异常过滤器的 404 响应，不会暗中转发给 NestJS。NestJS `apps/api` 只作为显式回退保留（compose 的 `legacy-node` profile、`pnpm dev:legacy`）。
+
+下文各段保留迁移批次的历史说明（"默认 legacy"是当时的事实），当前默认以 `config.go` 的解析分支与 `docs/refactor/cutover/` 为准。回退见 `infra/docker/legacy-rollback.override.yml` 与 `infra/docker/legacy-rollback.env.sample`；四态路由表语义见 `docs/refactor/api-go-four-mode.md`。
 
 Go-批3B 起，**user-settings 六个只读 GET** 在 pilot 中由统一 Go handler 接管（`API_GO_USER_SETTINGS_READ_MODE=go`）。Go-批3C 起，**同一六个 PUT** 在 `API_GO_USER_SETTINGS_WRITE_MODE=go` 时由 Go 写入现有 `UserSetting` 并重读返回；该变量默认 `legacy`，且 `go` 要求读模式同为 `go`。登录、refresh、logout、MFA、OIDC、机器令牌仍是 NestJS。
 
@@ -46,12 +48,28 @@ B1 是有意变化：Go 的每次 tick 在 `PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS
 ## 运行
 
 ```bash
-PORT=4020 LEGACY_API_URL=http://localhost:4000 go run ./cmd/api
-curl http://localhost:4020/__go/healthz     # routes/shadow/canary/onboarding/userSettingsRead/userSettingsWrite
-curl http://localhost:4020/api/healthz/live # shadow 态：NestJS 响应 + Go 异步差分
+# 仓库默认配置（只给资源、不给开关）：全部业务路由由 Go 接管，fallback=reject
+pnpm --filter @modular/api-go run dev
+# 等价于
+go run ./cmd/api
+
+# 宿主开发时的资源与地址（按需覆盖）
+PORT=4020 DATABASE_URL=mysql://user:pass@127.0.0.1:3306/app \
+  REDIS_HOST=127.0.0.1 MONGO_URI=mongodb://127.0.0.1:27017/app \
+  JWT_SECRET=... go run ./cmd/api
+
+curl http://localhost:4020/api/healthz/live # 默认 go：由 Go 直接响应（Web 启动等待它）
+curl http://localhost:4020/api/healthz      # 认证探针：需登录或机器令牌
 ```
 
-手工裸启（`API_GO_USER_SETTINGS_READ_MODE` 未设、`API_GO_ONBOARDING_MODE=shadow`）行为与批2C 完全一致——onboarding/rss/spacetime 仍是 shadow 差分，war-map/newsnow/situation-monitor 保持 legacy，无 JWT/Redis 依赖。
+回退到纯代理（NestJS 承载全部业务路由）需要**显式**给出旧值——省略变量不再等于 legacy：
+
+```bash
+API_GO_LEGACY_FALLBACK_MODE=proxy \
+  + 136 个业务开关逐个设为 legacy（见 infra/docker/legacy-rollback.env.sample）
+```
+
+只设 `API_GO_LEGACY_FALLBACK_MODE=proxy` 而业务开关仍为默认 `go` 时，代理模式不会生效在任何已接管路由上。
 
 ## 生产容器与真实入口（Go-批2C）
 

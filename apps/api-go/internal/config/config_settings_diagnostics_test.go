@@ -45,19 +45,16 @@ func settingsDiagnosticsEnv(extra map[string]string, smtp bool) func(string) str
 	}
 }
 
-func TestSettingsDiagnosticsModesDefaultLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
+func TestSettingsDiagnosticsModesDefaultGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.EmailSettingsMode != EmailSettingsModeGo {
+		t.Fatalf("EmailSettingsMode = %q, want go", cfg.EmailSettingsMode)
 	}
-	if cfg.EmailSettingsMode != EmailSettingsModeLegacy {
-		t.Fatalf("EmailSettingsMode = %q, want legacy", cfg.EmailSettingsMode)
+	if cfg.GeocodingMode != GeocodingModeGo {
+		t.Fatalf("GeocodingMode = %q, want go", cfg.GeocodingMode)
 	}
-	if cfg.GeocodingMode != GeocodingModeLegacy {
-		t.Fatalf("GeocodingMode = %q, want legacy", cfg.GeocodingMode)
-	}
-	if cfg.RuntimeDiagnosticsMode != RuntimeDiagnosticsModeLegacy {
-		t.Fatalf("RuntimeDiagnosticsMode = %q, want legacy", cfg.RuntimeDiagnosticsMode)
+	if cfg.RuntimeDiagnosticsMode != RuntimeDiagnosticsModeGo {
+		t.Fatalf("RuntimeDiagnosticsMode = %q, want go", cfg.RuntimeDiagnosticsMode)
 	}
 }
 

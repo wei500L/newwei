@@ -5,18 +5,15 @@ import (
 	"testing"
 )
 
-func TestGraphQLSourcePolicyWriteModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLSourcePolicyWriteMode != "legacy" {
+func TestGraphQLSourcePolicyWriteModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLSourcePolicyWriteMode != "go" {
 		t.Fatalf("mode = %q", cfg.GraphQLSourcePolicyWriteMode)
 	}
 }
 
 func TestGraphQLSourcePolicyWriteModeAcceptsGoWithoutMongo(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE":
 			return "go"
@@ -28,7 +25,7 @@ func TestGraphQLSourcePolicyWriteModeAcceptsGoWithoutMongo(t *testing.T) {
 			return "127.0.0.1"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,12 +41,12 @@ func TestGraphQLSourcePolicyWriteModeAcceptsGoWithoutMongo(t *testing.T) {
 }
 
 func TestGraphQLSourcePolicyWriteModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE" {
 			return "on"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("invalid value was accepted")
 	}
@@ -59,12 +56,12 @@ func TestGraphQLSourcePolicyWriteModeRejectsInvalid(t *testing.T) {
 }
 
 func TestGraphQLSourcePolicyWriteModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_SOURCE_POLICY_WRITE_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("go without credentials was accepted")
 	}

@@ -5,26 +5,23 @@ import (
 	"testing"
 )
 
-func TestAccountDataModesDefaultToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.AvatarUploadMode != AvatarUploadModeLegacy {
+func TestAccountDataModesDefaultToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.AvatarUploadMode != AvatarUploadModeGo {
 		t.Fatalf("avatar mode = %s", cfg.AvatarUploadMode)
 	}
-	if cfg.UserDataExportMode != UserDataExportModeLegacy {
+	if cfg.UserDataExportMode != UserDataExportModeGo {
 		t.Fatalf("export mode = %s", cfg.UserDataExportMode)
 	}
-	for _, value := range []string{"", "legacy"} {
-		cfg, err := Load(func(key string) string {
+	for _, value := range []string{"legacy", "  legacy  "} {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			switch key {
 			case "API_GO_AVATAR_UPLOAD_MODE", "API_GO_USER_DATA_EXPORT_MODE":
 				return value
 			default:
 				return ""
 			}
-		})
+		}))
 		if err != nil {
 			t.Fatalf("%q: %v", value, err)
 		}
@@ -56,7 +53,7 @@ func TestAccountDataModesRejectInvalid(t *testing.T) {
 
 func TestAccountDataModeRequirements(t *testing.T) {
 	// Avatar upload: JWT + MySQL + Redis, no Mongo.
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_AVATAR_UPLOAD_MODE":
 			return "go"
@@ -67,11 +64,11 @@ func TestAccountDataModeRequirements(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_AVATAR_UPLOAD_MODE=go") {
 		t.Fatalf("avatar missing redis: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_AVATAR_UPLOAD_MODE":
 			return "go"
@@ -84,7 +81,7 @@ func TestAccountDataModeRequirements(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("avatar should not require Mongo: %v", err)
 	}
@@ -93,7 +90,7 @@ func TestAccountDataModeRequirements(t *testing.T) {
 	}
 
 	// Data export additionally needs Mongo.
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_USER_DATA_EXPORT_MODE":
 			return "go"
@@ -106,11 +103,11 @@ func TestAccountDataModeRequirements(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_USER_DATA_EXPORT_MODE=go") {
 		t.Fatalf("export missing mongo: %v", err)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_USER_DATA_EXPORT_MODE":
 			return "go"
@@ -125,7 +122,7 @@ func TestAccountDataModeRequirements(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("export requirements: %v", err)
 	}

@@ -210,19 +210,21 @@ pnpm db:seed
 
 - Web 登录页：http://localhost:3000/login
 - Web Crawl4AI 监控页：http://localhost:3000/admin/ops/crawl-monitor
-- API 存活探针：http://localhost:4000/api/healthz/live（公开，仅返回进程状态）
-- API 就绪探针：http://localhost:4000/api/healthz（需登录或机器令牌，返回依赖详情与版本）
-- Swagger UI：http://localhost:4000/docs
-- GraphQL Playground（开发环境）：http://localhost:4000/graphql
-- Bull Board 队列仪表盘：http://localhost:4000/admin/queues（默认关闭，需 `BULL_BOARD_ENABLED=true`）
+- API 存活探针：http://localhost:4020/api/healthz/live（公开，仅返回进程状态；由 Go 直接响应）
+- API 就绪探针：http://localhost:4020/api/healthz（需登录或机器令牌，返回依赖详情与版本）
+- Swagger UI：http://localhost:4020/docs
+- GraphQL Playground（开发环境）：http://localhost:4020/graphql
+- Bull Board 队列仪表盘：NestJS 的 http://localhost:4000/admin/queues（默认关闭，需 `BULL_BOARD_ENABLED=true` 与 legacy-node profile）；Go 侧的队列运维面在 http://localhost:4020/api/admin/queue-ops
 - Crawl4AI Dashboard：http://localhost:8082/dashboard/
 - LiteLLM Proxy（宿主机端口）：http://localhost:4001
 - MinIO S3 Endpoint：http://localhost:9000
+
+回退到 NestJS 链后，上面 4020 的四个入口改回 4000（`pnpm dev:legacy` 或 `--profile legacy-node`）。
 - MinIO Console：http://localhost:9001
 
 ### 方式 B：API/Web 本地跑，依赖用 Docker
 
-此方式适合更快的热更新与调试（API/Web/Vector 跑在宿主机，MySQL/Mongo/Redis/Qdrant/MinIO/Crawl4AI/LiteLLM 等跑在 Docker）。
+此方式适合更快的热更新与调试（Go 后端与 Web 跑在宿主机，MySQL/Mongo/Redis/Qdrant/MinIO/Crawl4AI/LiteLLM 等跑在 Docker）。
 
 ```bash
 cp .env.example .env
@@ -232,12 +234,19 @@ cp infra/docker/.env.sample infra/docker/.env
 pnpm install
 pnpm --filter infra-scripts run env:check
 
-# 只起依赖服务，避免与宿主机的 api/web/vector 端口冲突
+# 只起依赖服务，避免与宿主机的 api-go/web/vector-go 端口冲突
 pnpm docker:up -d mysql mongo redis qdrant minio minio-init crawl4ai litellm akshare model-service
 
+# 迁移与 Mongo 索引仍是 Node 工具职责（不是服务）
 pnpm db:migrate
 pnpm db:seed
+pnpm mongo:indexes
+
+# 默认链：api-go(:4020) + vector-go + web(:3000)
 pnpm dev
+
+# 回退到 NestJS 链：
+# pnpm dev:legacy
 ```
 
 补充说明：
@@ -258,13 +267,15 @@ pnpm dev
 
 | 命令                                                       | 说明                                                                                |
 | ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `pnpm dev`                                                 | Turbo 并行启动 `apps/api`、`apps/ais-relay`、`apps/web`、`apps/vector` 的开发服务器 |
+| `pnpm dev`                                                 | Turbo 并行启动 `apps/api-go`、`apps/vector-go`、`apps/web` 的开发服务器（仓库默认链） |
+| `pnpm dev:legacy`                                          | 回退用：并行启动 `apps/api`、`apps/vector`、`apps/ais-relay`、`apps/web`             |
+| `pnpm dev:ais-relay`                                       | 单独启动 Go AIS relay（`apps/api-go/cmd/ais-relay`）                                 |
 | `pnpm build`                                               | Turbo 构建所有包                                                                    |
 | `pnpm lint` / `pnpm typecheck`                             | 汇总执行 lint 与类型检查（无测试套件，验证依赖静态审查）                            |
-| `pnpm db:migrate`                                          | 通过 `packages/db` 执行 Prisma 迁移                                                 |
+| `pnpm db:migrate`                                          | 通过 `packages/db` 执行 Prisma 迁移（仍是 Node 工具职责）                           |
 | `pnpm db:seed`                                             | 根据 `.env` 的 `SEED_*` 初始化组织、角色与管理员账号                                |
 | `pnpm mongo:indexes`                                       | 显式补齐 Mongo 运行时索引（当前包含 `ProcessedItem` 与 `TaskLog` 热路径索引）       |
-| `pnpm docker:up` / `pnpm docker:logs` / `pnpm docker:down` | 本地完整栈（Docker Compose）                                                        |
+| `pnpm docker:up` / `pnpm docker:logs` / `pnpm docker:down` | 本地完整栈（Docker Compose；默认 api-go / vector-go / ais-relay-go）                |
 | `pnpm codegen`                                             | 运行 GraphQL Code Generator（转发 `apps/web` 的 `generate`，schema 取自 `apps/api/schema.gql` 快照） |
 
 ## 项目结构

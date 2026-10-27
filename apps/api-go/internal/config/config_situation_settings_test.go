@@ -5,20 +5,17 @@ import (
 	"testing"
 )
 
-func TestSituationSettingsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SituationSettingsMode != SituationSettingsModeLegacy {
+func TestSituationSettingsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.SituationSettingsMode != SituationSettingsModeGo {
 		t.Fatalf("mode = %s", cfg.SituationSettingsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_SITUATION_SETTINGS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,12 +26,12 @@ func TestSituationSettingsModeDefaultsToLegacy(t *testing.T) {
 
 func TestSituationSettingsModeRejectsInvalid(t *testing.T) {
 	for _, invalid := range []string{"shadow", "canary", "Go"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_SITUATION_SETTINGS_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_SITUATION_SETTINGS_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -42,7 +39,7 @@ func TestSituationSettingsModeRejectsInvalid(t *testing.T) {
 }
 
 func TestSituationSettingsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_SITUATION_SETTINGS_MODE":
 			return "go"
@@ -53,12 +50,12 @@ func TestSituationSettingsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_SITUATION_SETTINGS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
 
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_SITUATION_SETTINGS_MODE":
 			return "go"
@@ -73,12 +70,12 @@ func TestSituationSettingsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_SITUATION_SETTINGS_MODE=go") {
 		t.Fatalf("missing mongo: %v", err)
 	}
 
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_SITUATION_SETTINGS_MODE":
 			return "go"
@@ -93,12 +90,12 @@ func TestSituationSettingsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "SYSTEM_SETTINGS_ENCRYPTION_KEY is required when API_GO_SITUATION_SETTINGS_MODE=go") {
 		t.Fatalf("missing encryption key: %v", err)
 	}
 
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_SITUATION_SETTINGS_MODE":
 			return "go"
@@ -115,7 +112,7 @@ func TestSituationSettingsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("complete go stack: %v", err)
 	}
@@ -127,12 +124,12 @@ func TestSituationSettingsModeGoRequiresCredentials(t *testing.T) {
 // A legacy deployment keeps main's behavior even when the new mode's
 // dependencies are absent.
 func TestSituationSettingsLegacyNeedsNoExtraDependencies(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_SITUATION_SETTINGS_MODE" {
 			return ""
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}

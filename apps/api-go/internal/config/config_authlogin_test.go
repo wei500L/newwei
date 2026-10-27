@@ -7,21 +7,18 @@ import (
 
 // TestAuthLoginModeDefaultsToLegacy locks the default, the empty value and the
 // explicitly accepted legacy spelling.
-func TestAuthLoginModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.AuthLoginMode != AuthLoginModeLegacy {
+func TestAuthLoginModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.AuthLoginMode != AuthLoginModeGo {
 		t.Fatalf("mode = %s", cfg.AuthLoginMode)
 	}
-	for _, accepted := range []string{"", "legacy", "  legacy  "} {
-		cfg, err := Load(func(key string) string {
+	for _, accepted := range []string{"legacy", "  legacy  "} {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_AUTH_LOGIN_MODE" {
 				return accepted
 			}
 			return ""
-		})
+		}))
 		if err != nil {
 			t.Fatalf("accepted %q: %v", accepted, err)
 		}
@@ -35,12 +32,12 @@ func TestAuthLoginModeDefaultsToLegacy(t *testing.T) {
 // are not accepted by this unit, so a typo cannot silently degrade to NestJS.
 func TestAuthLoginModeRejectsInvalid(t *testing.T) {
 	for _, invalid := range []string{"shadow", "canary", "Go", "true", "1"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_AUTH_LOGIN_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_AUTH_LOGIN_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -53,7 +50,7 @@ func TestAuthLoginModeRejectsInvalid(t *testing.T) {
 func TestAuthLoginModeGoRequiresCredentialsAndSMTP(t *testing.T) {
 	values := map[string]string{"API_GO_AUTH_LOGIN_MODE": "go"}
 	load := func() (Config, error) {
-		return Load(func(key string) string { return values[key] })
+		return Load(legacyUnset(func(key string) string { return values[key] }))
 	}
 
 	_, err := load()
@@ -108,10 +105,7 @@ func TestAuthLoginModeGoRequiresCredentialsAndSMTP(t *testing.T) {
 // TestAuthLoginDefaults locks the login-chain environment defaults the service
 // falls back to when no SystemSetting row exists.
 func TestAuthLoginDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := loadDefaults(t)
 	if cfg.JWTAccessExpiresIn != "15m" || cfg.JWTRefreshExpiresIn != "7d" {
 		t.Fatalf("jwt lifetimes = %q / %q", cfg.JWTAccessExpiresIn, cfg.JWTRefreshExpiresIn)
 	}

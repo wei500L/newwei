@@ -7,15 +7,12 @@ import (
 
 // TestCrawlDiscoveryModesDefaultToLegacy pins the default: unset and explicit
 // legacy both keep the preview GET and the trial/replay POSTs on NestJS.
-func TestCrawlDiscoveryModesDefaultToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NewsSourcePreviewMode != NewsSourcePreviewModeLegacy {
+func TestCrawlDiscoveryModesDefaultToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.NewsSourcePreviewMode != NewsSourcePreviewModeGo {
 		t.Fatalf("preview mode = %s", cfg.NewsSourcePreviewMode)
 	}
-	if cfg.CrawlWorkflowTrialMode != CrawlWorkflowTrialModeLegacy {
+	if cfg.CrawlWorkflowTrialMode != CrawlWorkflowTrialModeGo {
 		t.Fatalf("trial mode = %s", cfg.CrawlWorkflowTrialMode)
 	}
 	if !cfg.CrawlJSCodeEnabled {
@@ -27,21 +24,21 @@ func TestCrawlDiscoveryModesDefaultToLegacy(t *testing.T) {
 }
 
 func TestCrawlDiscoveryModesRejectInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWS_SOURCE_PREVIEW_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWS_SOURCE_PREVIEW_MODE must be one of legacy|go") {
 		t.Fatalf("invalid preview mode: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_WORKFLOW_TRIAL_MODE" {
 			return "canary"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_WORKFLOW_TRIAL_MODE must be one of legacy|go") {
 		t.Fatalf("invalid trial mode: %v", err)
 	}
@@ -51,21 +48,21 @@ func TestCrawlDiscoveryModesRejectInvalid(t *testing.T) {
 // boundary: both entries need JWT/MySQL/Redis and must not require crawl4ai,
 // matching NestJS where an unconfigured client degrades gracefully.
 func TestCrawlDiscoveryModesRequireCredentialsWithoutCrawl4ai(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWS_SOURCE_PREVIEW_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required when API_GO_NEWS_SOURCE_PREVIEW_MODE=go") {
 		t.Fatalf("missing credentials: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_WORKFLOW_TRIAL_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required when API_GO_CRAWL_WORKFLOW_TRIAL_MODE=go") {
 		t.Fatalf("missing credentials: %v", err)
 	}

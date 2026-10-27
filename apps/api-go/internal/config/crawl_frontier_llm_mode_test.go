@@ -29,7 +29,7 @@ func TestCrawlFrontierLlmWorkerMode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(func(key string) string {
+			cfg, err := Load(legacyUnset(func(key string) string {
 				if value, ok := tc.extraEnv[key]; ok {
 					return value
 				}
@@ -37,7 +37,7 @@ func TestCrawlFrontierLlmWorkerMode(t *testing.T) {
 					return tc.mode
 				}
 				return ""
-			})
+			}))
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("want error, got cfg %+v", cfg)

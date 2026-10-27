@@ -5,23 +5,20 @@ import (
 	"testing"
 )
 
-func TestGraphQLWorkspaceWriteModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLWorkspaceWriteMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+func TestGraphQLWorkspaceWriteModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLWorkspaceWriteMode != "go" || cfg.GraphQLReadMode != "go" {
 		t.Fatalf("write=%q read=%q", cfg.GraphQLWorkspaceWriteMode, cfg.GraphQLReadMode)
 	}
 }
 
 func TestGraphQLWorkspaceWriteModeAcceptsExplicitLegacyAndGo(t *testing.T) {
-	legacy, err := Load(func(key string) string {
+	legacy, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +26,7 @@ func TestGraphQLWorkspaceWriteModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 		t.Fatalf("explicit legacy = %q", legacy.GraphQLWorkspaceWriteMode)
 	}
 
-	goMode, err := Load(func(key string) string {
+	goMode, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE":
 			return "go"
@@ -41,7 +38,7 @@ func TestGraphQLWorkspaceWriteModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 			return "127.0.0.1"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,12 +55,12 @@ func TestGraphQLWorkspaceWriteModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 }
 
 func TestGraphQLWorkspaceWriteModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE" {
 			return "on"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("invalid value was accepted")
 	}
@@ -73,12 +70,12 @@ func TestGraphQLWorkspaceWriteModeRejectsInvalid(t *testing.T) {
 }
 
 func TestGraphQLWorkspaceWriteModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_WORKSPACE_WRITE_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("go without credentials was accepted")
 	}

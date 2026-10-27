@@ -28,14 +28,11 @@ func TestQualityOpsModesRejectInvalidValues(t *testing.T) {
 
 // TestQualityOpsModesDefaultToLegacy locks the default of every switch, including
 // the empty-string spelling.
-func TestQualityOpsModesDefaultToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ClassificationReportsMode != ClassificationReportsModeLegacy ||
-		cfg.ClassificationQualityWorkerMode != ClassificationQualityWorkerModeLegacy ||
-		cfg.PipelineRecoveryMode != PipelineRecoveryModeLegacy {
+func TestQualityOpsModesDefaultToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.ClassificationReportsMode != ClassificationReportsModeGo ||
+		cfg.ClassificationQualityWorkerMode != ClassificationQualityWorkerModeGo ||
+		cfg.PipelineRecoveryMode != PipelineRecoveryModeGo {
 		t.Fatalf("defaults = %q/%q/%q",
 			cfg.ClassificationReportsMode,
 			cfg.ClassificationQualityWorkerMode,
@@ -46,12 +43,12 @@ func TestQualityOpsModesDefaultToLegacy(t *testing.T) {
 // TestClassificationReportsGoRequiresFullStack verifies the credentialed
 // requirements of the report creation takeover.
 func TestClassificationReportsGoRequiresFullStack(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CLASSIFICATION_REPORTS_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("go without credentials must fail")
 	}
@@ -70,7 +67,7 @@ func TestClassificationReportsGoRequiresFullStack(t *testing.T) {
 // TestClassificationQualityWorkerGoNeedsNoJWT locks the worker requirements: it
 // consumes the shared queue and never authenticates a caller.
 func TestClassificationQualityWorkerGoNeedsNoJWT(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CLASSIFICATION_QUALITY_WORKER_MODE":
 			return "go"
@@ -83,7 +80,7 @@ func TestClassificationQualityWorkerGoNeedsNoJWT(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,12 +91,12 @@ func TestClassificationQualityWorkerGoNeedsNoJWT(t *testing.T) {
 		t.Fatalf("reports mode = %q, want legacy", cfg.ClassificationReportsMode)
 	}
 
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CLASSIFICATION_QUALITY_WORKER_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("worker go without its resources must fail")
 	}
@@ -120,7 +117,7 @@ func TestClassificationQualityWorkerGoNeedsNoJWT(t *testing.T) {
 // TestPipelineRecoveryGoNeedsJWTMySQLAndMongo verifies the runs read requirements
 // and that Redis is not one of them.
 func TestPipelineRecoveryGoNeedsJWTMySQLAndMongo(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_PIPELINE_RECOVERY_MODE":
 			return "go"
@@ -133,7 +130,7 @@ func TestPipelineRecoveryGoNeedsJWTMySQLAndMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,12 +138,12 @@ func TestPipelineRecoveryGoNeedsJWTMySQLAndMongo(t *testing.T) {
 		t.Fatalf("pipeline recovery mode = %q", cfg.PipelineRecoveryMode)
 	}
 
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		if key == "API_GO_PIPELINE_RECOVERY_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("pipeline recovery go without its resources must fail")
 	}
@@ -177,12 +174,12 @@ func TestQualityWorkerConcurrency(t *testing.T) {
 
 // TestNewsProcessQueueConcurrencyParsing locks the positive-integer validation.
 func TestNewsProcessQueueConcurrencyParsing(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "NEWS_PROCESS_QUEUE_CONCURRENCY" {
 			return "3"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,12 +188,12 @@ func TestNewsProcessQueueConcurrencyParsing(t *testing.T) {
 	}
 
 	for _, invalid := range []string{"0", "-1", "many"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "NEWS_PROCESS_QUEUE_CONCURRENCY" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "NEWS_PROCESS_QUEUE_CONCURRENCY must be a positive integer") {
 			t.Fatalf("value %q error = %v", invalid, err)
 		}

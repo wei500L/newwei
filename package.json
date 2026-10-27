@@ -8,7 +8,9 @@
   },
   "scripts": {
     "prepare": "husky install",
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo run dev --parallel --filter=@modular/api-go --filter=@modular/vector-go --filter=@modular/web",
+    "dev:legacy": "turbo run dev --parallel --filter=@modular/api --filter=@modular/vector --filter=@modular/ais-relay --filter=@modular/web",
+    "dev:ais-relay": "pnpm --filter @modular/api-go run dev:ais-relay",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

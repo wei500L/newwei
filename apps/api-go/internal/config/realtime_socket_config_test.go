@@ -5,15 +5,12 @@ import "testing"
 // TestRealtimeSocketDefaults pins the legacy defaults so an unset deployment
 // keeps the NestJS transport and the shared adapter configuration.
 func TestRealtimeSocketDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+	cfg := loadDefaults(t)
+	if cfg.RealtimeSocketMode != RealtimeSocketModeGo {
+		t.Fatalf("RealtimeSocketMode = %q, want go", cfg.RealtimeSocketMode)
 	}
-	if cfg.RealtimeSocketMode != RealtimeSocketModeLegacy {
-		t.Fatalf("RealtimeSocketMode = %q, want legacy", cfg.RealtimeSocketMode)
-	}
-	if cfg.ClassificationQualityAlertMode != ClassificationQualityAlertModeLegacy {
-		t.Fatalf("ClassificationQualityAlertMode = %q, want legacy", cfg.ClassificationQualityAlertMode)
+	if cfg.ClassificationQualityAlertMode != ClassificationQualityAlertModeGo {
+		t.Fatalf("ClassificationQualityAlertMode = %q, want go", cfg.ClassificationQualityAlertMode)
 	}
 	if !cfg.WSRedisAdapterEnabled {
 		t.Fatal("WSRedisAdapterEnabled must default to true like the NestJS env schema")
@@ -24,23 +21,23 @@ func TestRealtimeSocketDefaults(t *testing.T) {
 }
 
 func TestRealtimeSocketRejectsInvalidMode(t *testing.T) {
-	if _, err := Load(func(key string) string {
+	if _, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_REALTIME_SOCKET_MODE" {
 			return "yes"
 		}
 		return ""
-	}); err == nil {
+	})); err == nil {
 		t.Fatal("Load() should reject an invalid realtime socket mode")
 	}
 }
 
 func TestRealtimeSocketGoRequiresAuth(t *testing.T) {
-	if _, err := Load(func(key string) string {
+	if _, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_REALTIME_SOCKET_MODE" {
 			return "go"
 		}
 		return ""
-	}); err == nil {
+	})); err == nil {
 		t.Fatal("Load() should require JWT/DATABASE_URL/REDIS_HOST in go mode")
 	}
 }
@@ -81,23 +78,23 @@ func TestRealtimeSocketGoRequiresRedisAdapter(t *testing.T) {
 }
 
 func TestClassificationQualityAlertModeParsing(t *testing.T) {
-	if _, err := Load(func(key string) string {
+	if _, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CLASSIFICATION_QUALITY_ALERT_MODE" {
 			return "yes"
 		}
 		return ""
-	}); err == nil {
+	})); err == nil {
 		t.Fatal("Load() should reject an invalid classification quality alert mode")
 	}
-	if _, err := Load(func(key string) string {
+	if _, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CLASSIFICATION_QUALITY_ALERT_MODE" {
 			return "go"
 		}
 		return ""
-	}); err == nil {
+	})); err == nil {
 		t.Fatal("Load() should require JWT/DATABASE_URL/REDIS_HOST in go mode")
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CLASSIFICATION_QUALITY_ALERT_MODE":
 			return "go"
@@ -112,7 +109,7 @@ func TestClassificationQualityAlertModeParsing(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -121,7 +118,7 @@ func TestClassificationQualityAlertModeParsing(t *testing.T) {
 	}
 	// The scheduler needs Mongo for the summary documents; a missing MONGO_URI
 	// must fail startup instead of degrading to a permanently failing cron.
-	if _, err := Load(func(key string) string {
+	if _, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CLASSIFICATION_QUALITY_ALERT_MODE":
 			return "go"
@@ -134,19 +131,19 @@ func TestClassificationQualityAlertModeParsing(t *testing.T) {
 		default:
 			return ""
 		}
-	}); err == nil {
+	})); err == nil {
 		t.Fatal("Load() should require MONGO_URI when the classification alert scheduler is go")
 	}
 }
 
 func TestWSRedisAdapterConfigParsing(t *testing.T) {
 	for _, value := range []string{"false", "0", "no", "n", "off"} {
-		cfg, err := Load(func(key string) string {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			if key == "WS_REDIS_ADAPTER_ENABLED" {
 				return value
 			}
 			return ""
-		})
+		}))
 		if err != nil {
 			t.Fatalf("Load(WS_REDIS_ADAPTER_ENABLED=%q) error = %v", value, err)
 		}
@@ -154,7 +151,7 @@ func TestWSRedisAdapterConfigParsing(t *testing.T) {
 			t.Fatalf("WS_REDIS_ADAPTER_ENABLED=%q parsed as true", value)
 		}
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "WS_REDIS_ADAPTER_ENABLED":
 			return "on"
@@ -163,19 +160,19 @@ func TestWSRedisAdapterConfigParsing(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 	if !cfg.WSRedisAdapterEnabled || cfg.WSRedisAdapterKey != "custom-key" {
 		t.Fatalf("unexpected adapter config: enabled=%t key=%q", cfg.WSRedisAdapterEnabled, cfg.WSRedisAdapterKey)
 	}
-	if _, err := Load(func(key string) string {
+	if _, err := Load(legacyUnset(func(key string) string {
 		if key == "WS_REDIS_ADAPTER_ENABLED" {
 			return "maybe"
 		}
 		return ""
-	}); err == nil {
+	})); err == nil {
 		t.Fatal("Load() should reject a non-boolean WS_REDIS_ADAPTER_ENABLED")
 	}
 }

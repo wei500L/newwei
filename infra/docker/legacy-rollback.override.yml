@@ -1,0 +1,162 @@
+# ============================================================================
+# 显式 legacy 回退 override（legacy-rollback.override.yml）
+# ============================================================================
+#
+# 用途：把默认的全 Go 运行链整体切回 NestJS。这是与
+# infra/docker/legacy-rollback.env.sample 配套的编排侧一半；两者必须一起使用。
+#
+# 为什么需要一整个文件，而不是改一个地址：
+#   默认链是 api-go + vector-go + ais-relay-go + Web→api-go + 两个 Go
+#   Socket.IO 路径 + fallback=reject。回退如果只把 Web 指回 http://api:4000，
+#   而 Node 后端没有启动、开关仍是 go，就会出现「Web 等一个不存在的服务」；
+#   如果只打开 legacy-node profile 而不改开关，则 Go 与 Nest 同时持有
+#   worker/cron，产生双份通知、双份爬取与重复计数。所以四类东西必须一起翻：
+#     1. 服务集合（Node 三服务启动，Go 三服务停止）；
+#     2. 依赖图（Web 等 api 健康，不再等 api-go）；
+#     3. 地址（Web 的服务端/浏览器地址、vector、AIS）；
+#     4. 开关（137 项显式 legacy + fallback=proxy，见 env 样例）。
+#
+# 使用（仓库根目录）：
+#   docker compose \
+#     --env-file infra/docker/.env \
+#     --env-file infra/docker/legacy-rollback.env.sample \
+#     -f infra/docker/docker-compose.yml \
+#     -f infra/docker/legacy-rollback.override.yml \
+#     --profile legacy-node up -d
+#
+# 恢复默认（全 Go）：
+#   docker compose -f infra/docker/docker-compose.yml up -d
+#   （不带本 override、不带 legacy-node profile 即可；见文件末尾的顺序说明）
+#
+# 数据：不迁移、不重建、不重置。两侧共用同一 MySQL/Redis/Mongo 与同一组 key。
+# ============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Node 后端：恢复默认启动。基础 compose 把它们放进 legacy-node profile，
+  # override 无法移除 profile 字段，所以必须同时传 --profile legacy-node。
+  # 这里只做显式说明与依赖修正。
+  # ---------------------------------------------------------------------------
+  api:
+    environment:
+      # Nest 侧读到的开关必须是 legacy，否则它会在 Go 已经停掉后仍然
+      # 「让出」执行权（例如 Worker 在创建前退出），导致两边都不消费。
+      API_GO_NOTIFICATIONS_SOCKET_MODE: legacy
+      API_GO_SITUATION_SIGNALS_WORKER_MODE: legacy
+      API_GO_SITUATION_REFRESH_MODE: legacy
+      API_GO_SITUATION_TELEGRAM_AUTH_MODE: legacy
+      API_GO_REALTIME_SOCKET_MODE: legacy
+      API_GO_CLASSIFICATION_QUALITY_ALERT_MODE: legacy
+    depends_on:
+      # 回退期间 Nest 仍需要自己的数据库与队列。
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+
+  vector:
+    environment:
+      # The Node vector service serves the same contract on container port 4010.
+      PORT: 4010
+
+  ais-relay:
+    environment:
+      PORT: 3004
+
+  # ---------------------------------------------------------------------------
+  # Go 后端：停止。基础 compose 让它们默认启动，override 用 replicas: 0 关掉，
+  # 避免与 Nest 同时持有 Socket.IO 命名空间、worker 与 cron。
+  # ---------------------------------------------------------------------------
+  api-go:
+    deploy:
+      replicas: 0
+
+  vector-go:
+    deploy:
+      replicas: 0
+
+  ais-relay-go:
+    deploy:
+      replicas: 0
+
+  # ---------------------------------------------------------------------------
+  # 一次性工具：回退不需要重新迁移或重建索引（schema 未变），但保留服务定义，
+  # 避免 override 让它们以「默认启动」的身份参与依赖图时缺少定义。
+  # ---------------------------------------------------------------------------
+  migrate:
+    deploy:
+      replicas: 0
+
+  mongo-indexes:
+    deploy:
+      replicas: 0
+
+  # ---------------------------------------------------------------------------
+  # Web：服务端与浏览器地址指回 NestJS，两个 Socket.IO 路径回到 /socket.io。
+  # 浏览器地址是构建期内联值——改这里需要以同一 build arg 重建镜像。
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      args:
+        API_BASE_URL: http://api:4000
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
+        NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: /socket.io
+        NEXT_PUBLIC_REALTIME_SOCKET_PATH: /socket.io
+    environment:
+      API_BASE_URL: http://api:4000
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # LiteLLM 的配置回调回到 NestJS 的 internal 端点。
+  # ---------------------------------------------------------------------------
+  litellm:
+    environment:
+      LITELLM_CONFIG_API_BASE: ${LITELLM_CONFIG_API_BASE:-http://api:4000/api}
+    depends_on:
+      api:
+        condition: service_healthy
+
+# ============================================================================
+# 执行权交还顺序（异步所有权，避免双 worker / 双 cron / 重复通知与爬取）
+# ============================================================================
+#
+# 第二道门（与 API_GO_* 开关独立，回退时必须一起考虑；不要为了「全开」而无视
+# 用户显式关闭）：
+#   - SCHEDULE_ENABLED：false 时 Nest 与 Go 都停止定时链（Cron / repeat /
+#     outbox 扫描）。回退后仍为 false 时，Nest 不会恢复 Cron——这是用户显式
+#     关闭，不是回退失败。
+#   - BULLMQ_WORKERS_ENABLED：false 时两侧都不创建 Worker。
+#   - WS_REDIS_ADAPTER_ENABLED：false 与 API_GO_REALTIME_SOCKET_MODE=go 冲突，
+#     config.go 会启动失败（Go 收不到 newsnow 转发）。回退到 legacy 后该组合
+#     才合法；反过来从回退恢复全 Go 时必须同时置 true。
+#   - GRAPHQL_SUBSCRIPTION_BUS：必须是 redis（Go 订阅执行器与 Nest 生产者共用
+#     频道）。local 仅在不启用 Go 订阅执行器时合法。
+# 这些变量与开关不是同一层：改开关不会覆盖它们，改它们也不能代替开关。
+#
+# 停 Go → 起 Nest（本 override 的方向）：
+#   1. 先把 api-go 缩到 0（或直接 down 掉 api-go），确认 Go 侧不再有 worker/cron：
+#      BullMQ 消费者、Socket.IO 命名空间、Cron/Interval 调度全部随进程退出。
+#      Go 侧没有 Nest 无法消费的独有队列，因此不需要排空。
+#   2. 再起 Node 三服务（--profile legacy-node）：Nest 重新创建 Worker、注册
+#      Cron 与 repeat 任务、接管 Socket.IO。开关此时已是 legacy，Nest 不会
+#      「让出」执行权。
+#   3. 最后切 Web 地址与路径（override 已包含）。Web 启动等待 /api/healthz/live
+#      由 Nest 回答。
+#
+# 恢复默认（Nest → Go）时顺序相反：
+#   1. 先把 137 个开关改回默认（去掉本 override 与 legacy env 样例），重启
+#      api-go，确认 Go 接管 worker/cron 与 Socket.IO；
+#   2. 再停 Node 三服务（去掉 --profile legacy-node）；
+#   3. 最后切 Web 地址与两个 Socket.IO 路径。
+#
+# 两侧共用同一 Redis（队列、锁、tick gate、Socket.IO adapter 频道）与同一
+# MySQL/Mongo，因此切换窗口内不会出现两套持久状态；关键是不要让两个进程
+# 同时认为自己持有同一个执行权。
+#
+# 持久化设置：vector_service / model_service 等 SystemSetting 行优先于 env。
+# 如果数据库里已经存了指向旧服务的 baseUrl，回退/前进都要检查这些行；本批
+# 不批量改数据库，也不静默覆盖用户已有配置。

@@ -5,23 +5,20 @@ import (
 	"testing"
 )
 
-func TestGraphQLKnowledgeReviewModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLKnowledgeReviewMode != "legacy" {
+func TestGraphQLKnowledgeReviewModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLKnowledgeReviewMode != "go" {
 		t.Fatalf("mode = %q", cfg.GraphQLKnowledgeReviewMode)
 	}
 }
 
 func TestGraphQLKnowledgeReviewModeAcceptsExplicitLegacyAndGo(t *testing.T) {
-	legacy, err := Load(func(key string) string {
+	legacy, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +26,7 @@ func TestGraphQLKnowledgeReviewModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 		t.Fatalf("explicit legacy = %q", legacy.GraphQLKnowledgeReviewMode)
 	}
 
-	goMode, err := Load(func(key string) string {
+	goMode, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE":
 			return "go"
@@ -41,7 +38,7 @@ func TestGraphQLKnowledgeReviewModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 			return "127.0.0.1"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,12 +56,12 @@ func TestGraphQLKnowledgeReviewModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 }
 
 func TestGraphQLKnowledgeReviewModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE" {
 			return "on"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("invalid value was accepted")
 	}
@@ -74,12 +71,12 @@ func TestGraphQLKnowledgeReviewModeRejectsInvalid(t *testing.T) {
 }
 
 func TestGraphQLKnowledgeReviewModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_KNOWLEDGE_REVIEW_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("go without credentials was accepted")
 	}
