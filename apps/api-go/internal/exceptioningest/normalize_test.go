@@ -25,7 +25,7 @@ func TestNormalizeClientReportTracePriority(t *testing.T) {
 	if event.TraceID != "header-trace" {
 		t.Fatalf("trace id = %q, want header-trace", event.TraceID)
 	}
-	if event.Kind != kindGraphQL {
+	if event.Kind != KindGraphQL {
 		t.Fatalf("kind = %q", event.Kind)
 	}
 	if event.Method != "GET" {
@@ -90,11 +90,11 @@ func TestNormalizeClientReportStatusCodeRange(t *testing.T) {
 
 func TestNormalizeClientReportKindFallback(t *testing.T) {
 	event, _ := normalizeClientReport([]byte(`{"message":"ok","kind":" HTTP "}`), "")
-	if event.Kind != kindUnknown {
+	if event.Kind != KindUnknown {
 		t.Fatalf("kind = %q, want unknown", event.Kind)
 	}
 	event, _ = normalizeClientReport([]byte(`{"message":"ok","kind":"http"}`), "")
-	if event.Kind != kindHTTP {
+	if event.Kind != KindHTTP {
 		t.Fatalf("kind = %q, want http", event.Kind)
 	}
 }
