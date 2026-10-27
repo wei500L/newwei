@@ -6,21 +6,23 @@ import (
 )
 
 // API_GO_REALTIME_SIGNALS_MODE is a background-only switch: the empty value is
-// legacy, any value other than legacy/go fails startup, and go requires the
+// go, any value other than legacy/go fails startup, and go requires the
 // three data stores but no JWT because the collector serves no route.
 func TestRealtimeSignalsModeParsing(t *testing.T) {
-	for _, empty := range []string{"", "  "} {
+	// An explicit legacy value takes the rollback branch; the empty value now
+	// resolves to go, which the defaults test covers.
+	for _, legacy := range []string{"legacy", "  legacy  "} {
 		cfg, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_REALTIME_SIGNALS_MODE" {
-				return empty
+				return legacy
 			}
 			return ""
 		}))
 		if err != nil {
-			t.Fatalf("empty mode %q: %v", empty, err)
+			t.Fatalf("legacy mode %q: %v", legacy, err)
 		}
 		if cfg.RealtimeSignalsMode != RealtimeSignalsModeLegacy {
-			t.Fatalf("empty mode %q parsed as %s", empty, cfg.RealtimeSignalsMode)
+			t.Fatalf("legacy mode %q parsed as %s", legacy, cfg.RealtimeSignalsMode)
 		}
 	}
 }

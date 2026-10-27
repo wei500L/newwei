@@ -11,11 +11,18 @@ func graphqlSubscriptionsEnv(overrides map[string]string) func(string) string {
 		"DATABASE_URL": "mysql://root:secret@localhost:3306/app",
 		"REDIS_HOST":   "localhost",
 	}
+	legacyBaseline := legacyEnvForKeys()
 	return func(key string) string {
+		// An explicitly named key wins, including an explicit "" -- that is how the
+		// default-branch cases reach the parser. Everything else falls back to the
+		// legacy baseline so unrelated switches do not demand the go stack.
 		if value, ok := overrides[key]; ok {
 			return value
 		}
-		return base[key]
+		if value, ok := base[key]; ok {
+			return value
+		}
+		return legacyBaseline(key)
 	}
 }
 
@@ -65,6 +72,8 @@ func TestGraphQLSubscriptionsLegacyAcceptsLocalBus(t *testing.T) {
 }
 
 func TestGraphQLSubscriptionsEmptyIsGo(t *testing.T) {
+	// "" resolves to the go default. The switch is set explicitly to "" here, and
+	// the fixture supplies the credentialed stack that go mode requires.
 	cfg, err := Load(graphqlSubscriptionsEnv(map[string]string{
 		"API_GO_GRAPHQL_SUBSCRIPTIONS_MODE": "",
 	}))

@@ -35,7 +35,7 @@ func TestNewsnowHottestModesAcceptGo(t *testing.T) {
 			return ""
 		}
 	}
-	cfg, err := Load(env)
+	cfg, err := Load(legacyUnset(env))
 	if err != nil {
 		t.Fatal(err)
 	}

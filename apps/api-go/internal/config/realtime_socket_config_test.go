@@ -59,7 +59,7 @@ func TestRealtimeSocketGoRequiresRedisAdapter(t *testing.T) {
 			return ""
 		}
 	}
-	if _, err := Load(authOnly); err == nil {
+	if _, err := Load(legacyUnset(authOnly)); err == nil {
 		t.Fatal("go mode must reject WS_REDIS_ADAPTER_ENABLED=false")
 	}
 	enabled := func(key string) string {
@@ -68,7 +68,7 @@ func TestRealtimeSocketGoRequiresRedisAdapter(t *testing.T) {
 		}
 		return authOnly(key)
 	}
-	cfg, err := Load(enabled)
+	cfg, err := Load(legacyUnset(enabled))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}

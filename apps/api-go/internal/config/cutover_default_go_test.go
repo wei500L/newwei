@@ -27,6 +27,39 @@ func defaultResources(t *testing.T) map[string]string {
 	return readResourceFixture(t, "testdata/default-resources.env")
 }
 
+// loadDefaultsWithoutEncryptionKey resolves the default configuration with
+// SYSTEM_SETTINGS_ENCRYPTION_KEY removed.
+//
+// The default fixture carries a placeholder key because several go modes require
+// one at startup. Tests that assert what happens when it is unset need this
+// variant, otherwise the placeholder would satisfy the assertion.
+// The three modes that require the key are pinned to legacy for this variant, so
+// the assertion is about the unset key rather than about a mode that cannot start
+// without one.
+func loadDefaultsWithoutEncryptionKey(t *testing.T) Config {
+	t.Helper()
+	env := defaultResources(t)
+	delete(env, "SYSTEM_SETTINGS_ENCRYPTION_KEY")
+	for _, key := range []string{
+		"API_GO_ARCHIVE_PREPARATION_WORKER_MODE",
+		"API_GO_CRAWL_FRONTIER_LLM_WORKER_MODE",
+		"API_GO_CRAWL_WORKER_MODE",
+		"API_GO_ITEM_PIPELINE_WORKER_MODE",
+		"API_GO_SITUATION_SETTINGS_MODE",
+		"API_GO_SITUATION_TELEGRAM_AUTH_MODE",
+	} {
+		env[key] = "legacy"
+	}
+	// reject mode requires every switch to be go, so rolling those three back
+	// means the fallback has to be proxy for this variant.
+	env["API_GO_LEGACY_FALLBACK_MODE"] = "proxy"
+	cfg, err := Load(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("config.Load rejected the default resources without an encryption key: %v", err)
+	}
+	return cfg
+}
+
 // loadDefaults resolves the configuration from the placeholder resources only,
 // i.e. every API_GO_*_MODE switch keeps its default value.
 func loadDefaults(t *testing.T) Config {
@@ -50,8 +83,8 @@ func loadWithDefaults(t *testing.T, overrides map[string]string) (Config, error)
 	return Load(func(key string) string { return env[key] })
 }
 
-// legacyUnset wraps a test's environment function so that unset *Mode keys read
-// as legacy instead of taking the go default.
+// legacyUnset wraps a fixture so that *Mode keys it does not name read as their
+// rollback value instead of the go default.
 //
 // Many switch tests were written against "empty environment = all legacy": they
 // pin the switch under test and let every other switch fall through to "". That
@@ -59,17 +92,25 @@ func loadWithDefaults(t *testing.T, overrides map[string]string) (Config, error)
 // the cutover "" means go, so those fixtures would start requiring the full
 // credentialed stack and assert the wrong branch.
 //
-// Wrapping them keeps each test focused on its own switch while leaving the
-// repository default under test in cutover_default_go_test.go, where it belongs.
-//
-// Three switches do not accept "legacy" and must keep a value their parser
-// accepts: onboarding and user-settings-read take shadow|go, and the fallback
-// takes proxy|reject. They get their rollback value instead (shadow / shadow /
-// proxy), which is what a pre-cutover deployment effectively ran.
-func legacyUnset(fn func(string) string) func(string) string {
+// named lists the keys the fixture answers itself, including an explicit "". Those
+// are passed through untouched so a test that asserts the default branch still
+// reaches the parser. Everything else falls back to the rollback value.
+// onboarding and user-settings-read accept shadow|go, and the fallback accepts
+// proxy|reject, so those three take their rollback spelling.
+func legacyUnset(fn func(string) string, named ...string) func(string) string {
+	owned := make(map[string]struct{}, len(named))
+	for _, key := range named {
+		owned[key] = struct{}{}
+	}
 	return func(key string) string {
 		value := fn(key)
-		if value != "" || !strings.HasPrefix(key, "API_GO_") || !strings.HasSuffix(key, "_MODE") {
+		if !strings.HasPrefix(key, "API_GO_") || !strings.HasSuffix(key, "_MODE") {
+			return value
+		}
+		if _, ok := owned[key]; ok {
+			return value
+		}
+		if value != "" {
 			return value
 		}
 		switch key {
@@ -122,6 +163,35 @@ func legacyOverlayLoad(t *testing.T, fn func(string) string) (Config, error) {
 	})
 }
 
+// legacyEnvForKeys returns a getenv function that puts every non-exempt switch
+// on its rollback value and leaves resources unset.
+//
+// Test fixtures use it to keep the switches they do not name on the rollback
+// configuration, so a fixture that pins one switch does not have to satisfy the
+// go stack required by all the others.
+func legacyEnvForKeys() func(string) string {
+	env := map[string]string{}
+	typ := reflect.TypeOf(Config{})
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if !strings.HasSuffix(field.Name, "Mode") || field.Type.Kind() != reflect.String {
+			continue
+		}
+		if _, exempt := legacyRejectExemptModes[field.Name]; exempt {
+			continue
+		}
+		name := modeSwitchEnvName(field.Name)
+		switch name {
+		case "API_GO_ONBOARDING_MODE", "API_GO_USER_SETTINGS_READ_MODE":
+			env[name] = "shadow"
+		default:
+			env[name] = "legacy"
+		}
+	}
+	env["API_GO_LEGACY_FALLBACK_MODE"] = "proxy"
+	return func(key string) string { return env[key] }
+}
+
 // legacyEnv returns an environment where every non-exempt switch is on its
 // rollback value and no resource is set.
 //
@@ -154,7 +224,6 @@ func legacyEnv(t *testing.T) map[string]string {
 	env["API_GO_LEGACY_FALLBACK_MODE"] = "proxy"
 	return env
 }
-
 // TestDefaultConfigIsAllGoWithoutAnyModeSwitch is the repository-default gate.
 //
 // testdata/default-resources.env holds only connection and secret placeholders:

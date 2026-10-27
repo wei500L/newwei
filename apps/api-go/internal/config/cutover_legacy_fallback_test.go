@@ -78,7 +78,8 @@ func TestOpsEntrypointModesAcceptValidValues(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			cfg, err := Load(func(key string) string { return testCase.env[key] })
+			// Unnamed switches keep the rollback baseline so only this case is go.
+			cfg, err := Load(legacyUnset(func(key string) string { return testCase.env[key] }))
 			if err != nil {
 				t.Fatalf("Load rejected a valid value: %v", err)
 			}

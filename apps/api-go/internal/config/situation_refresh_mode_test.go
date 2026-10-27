@@ -24,7 +24,7 @@ func situationRefreshEnv(overrides map[string]string) func(string) string {
 		}
 		values[key] = value
 	}
-	return func(key string) string { return values[key] }
+	return legacyUnset(func(key string) string { return values[key] })
 }
 
 func TestLoadSituationRefreshModeDefaultsToGo(t *testing.T) {

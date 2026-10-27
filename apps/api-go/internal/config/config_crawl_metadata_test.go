@@ -129,7 +129,7 @@ func TestGraphQLCrawlMetadataModeRequiresReadPilot(t *testing.T) {
 			return ""
 		}
 	}
-	if _, err := Load(base); err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go") {
+	if _, err := Load(legacyUnset(base)); err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go") {
 		t.Fatalf("mongo comes from the parent read pilot: %v", err)
 	}
 	cfg, err := Load(legacyUnset(func(key string) string {

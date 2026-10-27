@@ -15,21 +15,23 @@ func TestEventTimelineSentimentModesDefaultToGo(t *testing.T) {
 	if cfg.SentimentSnapshotMode != SentimentSnapshotModeGo {
 		t.Fatalf("sentiment mode = %s, want go", cfg.SentimentSnapshotMode)
 	}
-	for _, empty := range []string{"", "  "} {
+	// An explicit legacy value takes the rollback branch. The empty value now
+	// resolves to go, which loadDefaults above already covers.
+	for _, legacy := range []string{"legacy", "  legacy  "} {
 		cfg, err := Load(legacyUnset(func(key string) string {
 			switch key {
 			case "API_GO_NEWS_EVENTS_TIMELINE_MODE", "API_GO_SENTIMENT_SNAPSHOT_MODE":
-				return empty
+				return legacy
 			default:
 				return ""
 			}
 		}))
 		if err != nil {
-			t.Fatalf("empty mode %q: %v", empty, err)
+			t.Fatalf("legacy mode %q: %v", legacy, err)
 		}
 		if cfg.NewsEventsTimelineMode != NewsEventsTimelineModeLegacy ||
 			cfg.SentimentSnapshotMode != SentimentSnapshotModeLegacy {
-			t.Fatalf("empty mode %q parsed as %s/%s", empty,
+			t.Fatalf("legacy mode %q parsed as %s/%s", legacy,
 				cfg.NewsEventsTimelineMode, cfg.SentimentSnapshotMode)
 		}
 	}

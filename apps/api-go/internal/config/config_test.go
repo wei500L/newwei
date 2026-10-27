@@ -9,10 +9,7 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	cfg := loadDefaults(t)
 	if cfg.Port != 4020 {
 		t.Errorf("Port = %d, want 4020", cfg.Port)
 	}
@@ -62,10 +59,7 @@ func TestLoadAcceptsExplicitConfig(t *testing.T) {
 }
 
 func TestShadowDefaultsGuardResourceBudget(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	cfg := loadDefaults(t)
 	if cfg.ShadowTimeoutMs <= 0 || cfg.ShadowMaxRequestBodyByte <= 0 || cfg.ShadowMaxInflight <= 0 || cfg.ShadowMaxPerMin <= 0 {
 		t.Errorf("shadow budget defaults must be positive: %+v", cfg)
 	}
@@ -195,10 +189,8 @@ func TestUserSettingsReadMode(t *testing.T) {
 		wantError bool
 	}{
 		// Before the cutover "" kept the per-endpoint compat behaviour. It now
-		// takes the go branch, which is what the default deployment relies on.
-		{"empty takes go", "", map[string]string{
-			"JWT_SECRET": "s", "DATABASE_URL": "mysql://u:p@h:3306/db", "REDIS_HOST": "h",
-		}, "go", false},
+		// takes the go branch (asserted by loadDefaults below); here the explicit
+		// shadow spelling selects the rollback branch.
 		{"shadow accepted", "shadow", nil, "shadow", false},
 		{"go accepted with deps", "go", map[string]string{
 			"JWT_SECRET": "s", "DATABASE_URL": "mysql://u:p@h:3306/db", "REDIS_HOST": "h",
@@ -206,6 +198,13 @@ func TestUserSettingsReadMode(t *testing.T) {
 		{"go without deps fails", "go", nil, "", true},
 		{"invalid value rejected", "bogus", nil, "", true},
 	}
+
+	// The unset value resolves to go, which needs the credentialed stack.
+	defaults := loadDefaults(t)
+	if defaults.UserSettingsReadMode != UserSettingsReadModeGo {
+		t.Fatalf("UserSettingsReadMode default = %q, want go", defaults.UserSettingsReadMode)
+	}
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, err := Load(legacyUnset(func(key string) string {
@@ -1974,7 +1973,7 @@ type platformGovernanceEnvEntry struct {
 // the go-mode startup validation always requires, plus the caller's platform
 // governance overrides.
 func platformGovernanceEnv(overrides ...platformGovernanceEnvEntry) func(string) string {
-	return func(key string) string {
+	return legacyUnset(func(key string) string {
 		for _, entry := range overrides {
 			if entry.key == key {
 				return entry.value
@@ -1992,7 +1991,7 @@ func platformGovernanceEnv(overrides ...platformGovernanceEnvEntry) func(string)
 		default:
 			return ""
 		}
-	}
+	})
 }
 
 func TestPlatformGovernanceSettingsModeDefaultsToGo(t *testing.T) {
@@ -2012,7 +2011,7 @@ func TestPlatformGovernanceSettingsModeAcceptsExplicitValues(t *testing.T) {
 		{"go", PlatformGovernanceSettingsModeGo},
 	} {
 		env := platformGovernanceEnv(platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", tc.raw})
-		cfg, err := Load(env)
+		cfg, err := Load(legacyUnset(env))
 		if err != nil {
 			t.Fatalf("Load(%q) error = %v", tc.raw, err)
 		}
@@ -2040,7 +2039,7 @@ func TestPlatformGovernanceSettingsModeGoRequiresMongo(t *testing.T) {
 		platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", "go"},
 		platformGovernanceEnvEntry{"MONGO_URI", ""},
 	)
-	_, err := Load(env)
+	_, err := Load(legacyUnset(env))
 	if err == nil {
 		t.Fatal("Load() should require MONGO_URI in go mode")
 	}
@@ -2050,10 +2049,7 @@ func TestPlatformGovernanceSettingsModeGoRequiresMongo(t *testing.T) {
 }
 
 func TestPlatformGovernanceDefaultsMatchNestSchema(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	cfg := loadDefaults(t)
 	if !cfg.PlatformGovernanceAssistantGuardrailsEnabled {
 		t.Error("ASSISTANT_GUARDRAILS_ENABLED default = false, want true")
 	}
@@ -2072,8 +2068,8 @@ func TestPlatformGovernanceDefaultsMatchNestSchema(t *testing.T) {
 	if cfg.PlatformGovernanceTaskLogRetentionDays != 14 {
 		t.Errorf("TASK_LOG_RETENTION_DAYS default = %d, want 14", cfg.PlatformGovernanceTaskLogRetentionDays)
 	}
-	if cfg.PlatformGovernanceEncryptionKeyRaw != "" {
-		t.Errorf("SYSTEM_SETTINGS_ENCRYPTION_KEY default = %q, want empty", cfg.PlatformGovernanceEncryptionKeyRaw)
+	if keyCfg := loadDefaultsWithoutEncryptionKey(t); keyCfg.PlatformGovernanceEncryptionKeyRaw != "" {
+		t.Errorf("SYSTEM_SETTINGS_ENCRYPTION_KEY default = %q, want empty", keyCfg.PlatformGovernanceEncryptionKeyRaw)
 	}
 }
 
@@ -2134,7 +2130,7 @@ func TestPlatformGovernanceDefaultsRejectInvalidValuesInGoMode(t *testing.T) {
 			platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", "go"},
 			platformGovernanceEnvEntry{tc.key, tc.value},
 		)
-		if _, err := Load(env); err == nil {
+		if _, err := Load(legacyUnset(env)); err == nil {
 			t.Fatalf("Load() should reject %s=%q in go mode", tc.key, tc.value)
 		}
 	}
@@ -2302,8 +2298,8 @@ func TestInfrastructureSettingsEnvDefaults(t *testing.T) {
 	if cfg.S3Region != "us-east-1" || cfg.S3ForcePathStyle || cfg.S3PresignedURLTTLSeconds != 300 {
 		t.Fatalf("s3 scalars = %q %v %d", cfg.S3Region, cfg.S3ForcePathStyle, cfg.S3PresignedURLTTLSeconds)
 	}
-	if cfg.SettingsEncryptionKeyPresent || cfg.SettingsEncryptionKeyRaw != "" {
-		t.Fatalf("encryption key presence = %v %q", cfg.SettingsEncryptionKeyPresent, cfg.SettingsEncryptionKeyRaw)
+	if keyCfg := loadDefaultsWithoutEncryptionKey(t); keyCfg.SettingsEncryptionKeyPresent || keyCfg.SettingsEncryptionKeyRaw != "" {
+		t.Fatalf("encryption key presence = %v %q", keyCfg.SettingsEncryptionKeyPresent, keyCfg.SettingsEncryptionKeyRaw)
 	}
 
 	cfg, err := Load(legacyUnset(func(key string) string {
@@ -2352,11 +2348,18 @@ func TestInfrastructureSettingsEnvDefaults(t *testing.T) {
 
 // modelAccessEnv builds a getenv function that answers from a map.
 func modelAccessEnv(values map[string]string) func(string) string {
-	return func(key string) string { return values[key] }
+	return legacyUnset(func(key string) string { return values[key] })
 }
 
 // TestModelAccessSettingsModeVocabulary pins the switch's accepted values and the
 // exact error text, mirroring the other migration switches.
+func TestModelAccessSettingsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeGo {
+		t.Fatalf("model access mode = %q, want go", cfg.ModelAccessSettingsMode)
+	}
+}
+
 func TestModelAccessSettingsModeVocabulary(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -2364,7 +2367,9 @@ func TestModelAccessSettingsModeVocabulary(t *testing.T) {
 		want    ModelAccessSettingsMode
 		wantErr bool
 	}{
-		{name: "unset defaults to legacy", value: "", want: ModelAccessSettingsModeLegacy},
+		// The unset value is covered by TestModelAccessSettingsModeDefaultsToGo:
+		// this fixture starts from the legacy baseline, so "" here would test the
+		// baseline rather than the default.
 		{name: "explicit legacy", value: "legacy", want: ModelAccessSettingsModeLegacy},
 		{name: "go", value: "go", want: ModelAccessSettingsModeGo},
 		{name: "whitespace tolerated", value: "  go  ", want: ModelAccessSettingsModeGo},
@@ -2444,6 +2449,13 @@ func TestModelAccessSettingsGoAcceptsTheAuthStack(t *testing.T) {
 
 // TestProxyLoadBalancingModeVocabulary pins the switch's accepted values and the
 // exact error text, mirroring the other migration switches.
+func TestProxyLoadBalancingModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeGo {
+		t.Fatalf("proxy load balancing mode = %q, want go", cfg.ProxyLoadBalancingMode)
+	}
+}
+
 func TestProxyLoadBalancingModeVocabulary(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -2451,7 +2463,7 @@ func TestProxyLoadBalancingModeVocabulary(t *testing.T) {
 		want    ProxyLoadBalancingMode
 		wantErr bool
 	}{
-		{name: "unset defaults to legacy", value: "", want: ProxyLoadBalancingModeLegacy},
+		// Unset is covered by the defaults test; this fixture uses the legacy baseline.
 		{name: "explicit legacy", value: "legacy", want: ProxyLoadBalancingModeLegacy},
 		{name: "go", value: "go", want: ProxyLoadBalancingModeGo},
 		{name: "whitespace tolerated", value: "  go  ", want: ProxyLoadBalancingModeGo},
@@ -3740,12 +3752,12 @@ func TestNewsBackfillSwitchesAcceptExplicitLegacy(t *testing.T) {
 		"API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE",
 	}
 	for _, key := range keys {
-		cfg, err := Load(func(name string) string {
+		cfg, err := Load(legacyUnset(func(name string) string {
 			if name == key {
 				return "legacy"
 			}
 			return ""
-		})
+		}))
 		if err != nil {
 			t.Fatalf("%s=legacy: %v", key, err)
 		}
@@ -3959,20 +3971,22 @@ func TestGdeltSnapshotModesDefaultToGo(t *testing.T) {
 	if !cfg.SituationMonitorGdeltEnabled {
 		t.Fatal("SITUATION_MONITOR_GDELT_ENABLED default = false, want true")
 	}
-	for _, empty := range []string{"", "  "} {
+	// An explicit legacy value takes the rollback branch; the empty value now
+	// resolves to go, which loadDefaults covers.
+	for _, legacy := range []string{"legacy", "  legacy  "} {
 		cfg, err := Load(legacyUnset(func(key string) string {
 			switch key {
 			case "API_GO_GDELT_SNAPSHOT_MODE", "API_GO_GDELT_SNAPSHOT_REFRESH_MODE":
-				return empty
+				return legacy
 			default:
 				return ""
 			}
 		}))
 		if err != nil {
-			t.Fatalf("empty mode %q: %v", empty, err)
+			t.Fatalf("legacy mode %q: %v", legacy, err)
 		}
 		if cfg.GdeltSnapshotMode != GdeltSnapshotModeLegacy || cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
-			t.Fatalf("empty mode %q parsed as %s/%s", empty, cfg.GdeltSnapshotMode, cfg.GdeltSnapshotRefreshMode)
+			t.Fatalf("legacy mode %q parsed as %s/%s", legacy, cfg.GdeltSnapshotMode, cfg.GdeltSnapshotRefreshMode)
 		}
 	}
 }
@@ -4251,13 +4265,12 @@ func TestNewsSourceSchedulerDefaults(t *testing.T) {
 // TestNewsSourceSwitchesTrimWhitespace covers the trimming rule: a whitespace-only
 // value collapses to the empty string, which now selects the go default.
 func TestNewsSourceSwitchesTrimWhitespace(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_SOURCE_SCHEDULER_MODE", "API_GO_NEWS_SOURCE_OPS_MODE":
-			return "   "
-		}
-		return ""
-	}))
+	// Start from the resource fixture so the go default has what it needs, then
+	// give both switches a whitespace-only value.
+	env := defaultResources(t)
+	env["API_GO_NEWS_SOURCE_SCHEDULER_MODE"] = "   "
+	env["API_GO_NEWS_SOURCE_OPS_MODE"] = "   "
+	cfg, err := Load(func(key string) string { return env[key] })
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}

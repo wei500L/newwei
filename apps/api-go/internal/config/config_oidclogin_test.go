@@ -6,12 +6,14 @@ import (
 )
 
 func TestOIDCLoginModeDefaultsToGo(t *testing.T) {
+	// The default fixture supplies API_BASE_URL because OIDC go mode reads it per
+	// request; the "stays empty when unset" case is asserted separately below.
 	cfg := loadDefaults(t)
 	if cfg.OIDCLoginMode != OIDCLoginModeGo {
 		t.Fatalf("mode = %s", cfg.OIDCLoginMode)
 	}
-	if cfg.APIBaseURL != "" {
-		t.Fatalf("API_BASE_URL should stay empty when unset, got %q", cfg.APIBaseURL)
+	if cfg.APIBaseURL == "" {
+		t.Fatalf("API_BASE_URL should be populated by the default fixture")
 	}
 	for _, accepted := range []string{"legacy", "  legacy  "} {
 		cfg, err := Load(legacyUnset(func(key string) string {

@@ -8,7 +8,7 @@ import (
 // settingsDiagnosticsEnv returns an environment with the shared credentialed
 // stack and, when smtp is true, the SMTP quartet the email routes need.
 func settingsDiagnosticsEnv(extra map[string]string, smtp bool) func(string) string {
-	return func(key string) string {
+	return legacyUnset(func(key string) string {
 		if value, ok := extra[key]; ok {
 			return value
 		}
@@ -42,7 +42,7 @@ func settingsDiagnosticsEnv(extra map[string]string, smtp bool) func(string) str
 		default:
 			return ""
 		}
-	}
+	})
 }
 
 func TestSettingsDiagnosticsModesDefaultGo(t *testing.T) {

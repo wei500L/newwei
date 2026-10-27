@@ -81,7 +81,7 @@ func TestCrawlDiscoveryModesRequireCredentialsWithoutCrawl4ai(t *testing.T) {
 			return ""
 		}
 	}
-	cfg, err := Load(base)
+	cfg, err := Load(legacyUnset(base))
 	if err != nil {
 		t.Fatal(err)
 	}
