@@ -224,6 +224,7 @@ func legacyEnv(t *testing.T) map[string]string {
 	env["API_GO_LEGACY_FALLBACK_MODE"] = "proxy"
 	return env
 }
+
 // TestDefaultConfigIsAllGoWithoutAnyModeSwitch is the repository-default gate.
 //
 // testdata/default-resources.env holds only connection and secret placeholders:
