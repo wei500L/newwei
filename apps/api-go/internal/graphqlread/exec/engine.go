@@ -51,6 +51,8 @@ type Engine struct {
 	depthLimit      int
 	complexityLimit int
 	resolverCalls   *atomic.Int64
+	// errorRecorder receives every resolver/guard failure. Nil disables recording.
+	errorRecorder ErrorRecorder
 }
 
 // New returns an engine. depthLimit and complexityLimit use the Nest defaults
@@ -238,6 +240,11 @@ func (e *Engine) Execute(ctx context.Context, plan Plan, prepare PrepareRoot, ca
 		}
 		identity, err := prepare(ctx, field.Key, field.Name)
 		if err != nil {
+			// A rejection here is the rate limiter or the authentication chain, so it
+			// is a resolver-level failure for recording purposes: NestJS's
+			// GraphqlRateLimitGuard and GqlAuthGuard throw out of the field resolver
+			// and the filter records them.
+			e.recordResolverError(err, field.Name, plan.OperationName, traceID, contract.Identity{})
 			errors = append(errors, fieldFailure(err, field, traceID))
 			if fieldNonNull(field.Field) {
 				nullData = true
@@ -247,6 +254,7 @@ func (e *Engine) Execute(ctx context.Context, plan Plan, prepare PrepareRoot, ca
 			continue
 		}
 		if permErr := authorizeRoot(root, identity); permErr != nil {
+			e.recordResolverError(permErr, field.Name, plan.OperationName, traceID, identity)
 			errors = append(errors, fieldFailure(permErr, field, traceID))
 			if fieldNonNull(field.Field) {
 				nullData = true
@@ -285,6 +293,7 @@ func (e *Engine) Execute(ctx context.Context, plan Plan, prepare PrepareRoot, ca
 		})
 		fieldPath := []any{item.field.Key}
 		if err != nil {
+			e.recordResolverError(err, item.field.Name, plan.OperationName, traceID, item.identity)
 			errors = append(errors, fieldFailure(err, item.field, traceID))
 			if fieldNonNull(item.field.Field) {
 				nullData = true
@@ -365,6 +374,11 @@ func (e *Engine) executeMutation(ctx context.Context, plan Plan, prepare Prepare
 		}
 		identity, err := prepare(ctx, field.Key, field.Name)
 		if err != nil {
+			// Rate limiter or authentication rejection, as in the query path.
+			e.recordResolverError(err, field.Name, plan.OperationName, traceID, contract.Identity{})
+			// The rate limiter or the authentication chain rejected the field; the
+			// NestJS guards throw out of the resolver, so the filter records it.
+			e.recordResolverError(err, field.Name, plan.OperationName, traceID, contract.Identity{})
 			errors = append(errors, fieldFailure(err, field, traceID))
 			if fieldNonNull(field.Field) {
 				nullData = true
@@ -374,6 +388,7 @@ func (e *Engine) executeMutation(ctx context.Context, plan Plan, prepare Prepare
 			continue
 		}
 		if permErr := authorizeRoot(root, identity); permErr != nil {
+			e.recordResolverError(permErr, field.Name, plan.OperationName, traceID, identity)
 			errors = append(errors, fieldFailure(permErr, field, traceID))
 			if fieldNonNull(field.Field) {
 				nullData = true
@@ -395,6 +410,7 @@ func (e *Engine) executeMutation(ctx context.Context, plan Plan, prepare Prepare
 			Selection: selection,
 		})
 		if err != nil {
+			e.recordResolverError(err, field.Name, plan.OperationName, traceID, identity)
 			errors = append(errors, fieldFailure(err, field, traceID))
 			if fieldNonNull(field.Field) {
 				nullData = true

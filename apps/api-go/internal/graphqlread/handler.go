@@ -56,6 +56,10 @@ type Options struct {
 	ComplexityLimit int
 	CacheEnabled    bool
 	CacheTTL        int
+	// ErrorRecorder receives every resolver/guard failure so it can be stored in
+	// the shared exceptionevents collection. Nil disables recording; the executor
+	// never changes its response because of it.
+	ErrorRecorder exec.ErrorRecorder
 }
 
 // NewHandler loads the embedded SDL and builds the executor.
@@ -71,8 +75,10 @@ func NewHandler(opts Options) (*Handler, error) {
 	if opts.CacheTTL <= 0 {
 		opts.CacheTTL = 30
 	}
+	engine := exec.New(loaded, opts.Registry, opts.DepthLimit, opts.ComplexityLimit, calls)
+	engine.SetErrorRecorder(opts.ErrorRecorder)
 	return &Handler{
-		engine:        exec.New(loaded, opts.Registry, opts.DepthLimit, opts.ComplexityLimit, calls),
+		engine:        engine,
 		apq:           transport.NewAPQCache(opts.APQ),
 		apqEnabled:    opts.APQEnabled,
 		limiter:       opts.Limiter,

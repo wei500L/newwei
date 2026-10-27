@@ -7,6 +7,12 @@ import (
 
 // exceptionEventKind mirrors the ExceptionEventKind enum used by the Nest
 // normalizers.
+// ExceptionEventKind is the ExceptionEventKind enum of the Nest exception
+// service: "http", "graphql" or "unknown".
+type ExceptionEventKind = exceptionEventKind
+
+// exceptionEventKind is the underlying string type kept unexported so the
+// constants stay the single source of the allowed values.
 type exceptionEventKind string
 
 const (
@@ -14,6 +20,15 @@ const (
 	kindGraphQL exceptionEventKind = "graphql"
 	kindUnknown exceptionEventKind = "unknown"
 )
+
+// KindHTTP is the event kind GlobalExceptionFilter records for an HTTP exception,
+// exposed so the process-wide recorder can build the same event the two migrated
+// POST endpoints accept.
+const KindHTTP ExceptionEventKind = kindHTTP
+
+// KindGraphQL is the event kind GlobalExceptionFilter records for a GraphQL
+// resolver exception.
+const KindGraphQL ExceptionEventKind = kindGraphQL
 
 // ExceptionEvent is the normalized, strongly-typed report both endpoints build
 // before writing. Empty optional strings are omitted from the stored document,

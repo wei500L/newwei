@@ -570,26 +570,9 @@ func (g *Gateway) proxyLegacy(w http.ResponseWriter, r *http.Request) {
 }
 
 // legacyRoutePrefix collapses a request path into a bounded route-family label.
-func legacyRoutePrefix(path string) string {
-	if strings.HasPrefix(path, "/api/") {
-		rest := strings.TrimPrefix(path, "/api/")
-		if i := strings.IndexByte(rest, '/'); i >= 0 {
-			rest = rest[:i]
-		}
-		if rest == "" {
-			return "/api"
-		}
-		return "/api/" + rest
-	}
-	trimmed := strings.TrimPrefix(path, "/")
-	if trimmed == "" {
-		return "/"
-	}
-	if i := strings.IndexByte(trimmed, '/'); i >= 0 {
-		trimmed = trimmed[:i]
-	}
-	return "/" + trimmed
-}
+// The implementation lives in httpx.RouteFamily so the legacy-proxy counter and
+// the http_request_duration_seconds route label cannot drift apart.
+func legacyRoutePrefix(path string) string { return httpx.RouteFamily(path) }
 
 // ServeHTTP 按路由表分发。
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -599,6 +582,12 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // ServeHTTPWithShadow 分发并在 shadow 路由上执行差分。
 func (g *Gateway) ServeHTTPWithShadow(w http.ResponseWriter, r *http.Request, sh ShadowDispatcher) {
 	rule := g.match(r.Method, r.URL.Path)
+	// Record the bounded route label while the route-table decision is in hand;
+	// the outer metrics middleware reads it back after ServeHTTP returns. The
+	// label is legacyRoutePrefix's family, which is the same value the legacy
+	// proxy counter uses, so a route keeps one http_request_duration_seconds
+	// series across the cutover from the NestJS proxy to its Go handler.
+	httpx.SetRouteLabel(r.Context(), legacyRoutePrefix(r.URL.Path))
 	switch rule.Mode {
 	case ModeGo:
 		key := rule.Prefix
