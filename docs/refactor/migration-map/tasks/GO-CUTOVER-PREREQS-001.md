@@ -14,7 +14,8 @@
 
 - 基线事实（编码前）：main `bdbb581a`（本分支起点）的 [run 40527760690](https://github.com/wei500L/newwei/actions/runs/40527760690) `conclusion=success`；前一 head `8e978360` 的 [run 40524559427](https://github.com/wei500L/newwei/actions/runs/40524559427) 亦 success。两者三个主要 job 均 success，两个 regen job skipped（skipped 不算通过）。
 - 编码前另见 `cc3782c0` / `f15f598d` / `2a42bd30` / `5e44fae1` 数个 cancelled 或 failure 的 run，原因是 runner 内存预算（见 `ci.yml` 顶部注释与 `8e978360`、`5e44fae1` 的提交说明），与源码无关；这些 run 不视为通过，也不作为本批基线。
-- **本批最终 head `3b487e58`（HEAD，仅文档回填）的 [run 40544141107 attempt 2](https://github.com/wei500L/newwei/actions/runs/40544141107) `conclusion=success`**：verify success、vector-integration success、api-go-user-settings-integration success；`go-modules-regen` 与 `contract-baseline-regen` skipped（不算通过）。
+- **本批最终 head `4a1d0c76`（HEAD，仅文档回填）的 [run 40548683554 attempt 1](https://github.com/wei500L/newwei/actions/runs/40548683554) `conclusion=success`**：verify success、vector-integration success、api-go-user-settings-integration success；`go-modules-regen` 与 `contract-baseline-regen` skipped（不算通过）。
+- 文档 head `3b487e58` 的 [run 40544141107 attempt 2](https://github.com/wei500L/newwei/actions/runs/40544141107) 亦 `conclusion=success`（三主要 job success、两个 regen job skipped）。：verify success、vector-integration success、api-go-user-settings-integration success；`go-modules-regen` 与 `contract-baseline-regen` skipped（不算通过）。
 - 代码 head `896ad1e8` 的 [run 40538923975 attempt 2](https://github.com/wei500L/newwei/actions/runs/40538923975) 亦 `conclusion=success`，三主要 job success、两个 regen job skipped。
 - 两次 verify attempt 1 都失败在**同一个未改动的 `apps/web` 测试文件**，每次抖动到不同用例：
   - `896ad1e8`：`disables delete for active jobs and explains why`（找不到 `job-active`）；
