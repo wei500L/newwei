@@ -101,3 +101,37 @@ pnpm docker:smoke:ais-relay-startup
 - 把 relay 上游固定到一个“连上但不发消息”的本地 WebSocket mock
 - 验证 relay `/health` 进入 `ais_upstream_no_messages_after_connect`
 - 同时验证容器 health 仍然基于 `/healthz/live`，不会卡住 `api` 启动
+
+## Go 版
+
+Go 版 AIS relay 是 Node 版 `apps/ais-relay` 的**契约等价实现**：同一组环境变量、同样的 HTTP 路径、同样的 JSON 形状，区别只是运行时不再需要 Node。
+
+- 代码位置：实现 `apps/api-go/internal/aisrelay`，命令入口 `apps/api-go/cmd/ais-relay`（与 api-go 同一个 Go module `github.com/wei500L/newwei/apps/api-go`）。
+- 镜像定义：`infra/docker/ais-relay-go.Dockerfile`；运行阶段是 distroless 静态镜像，镜像内只有 `ais-relay` 一个二进制（无 node、无 npm、无 pnpm）。
+- 环境变量与 Node 版同名同义：`AISSTREAM_API_KEY`（必填，缺失时进程启动即非零退出）、`AISSTREAM_URL`（及旧别名 `AIS_RELAY_UPSTREAM_URL`）、`AIS_RELAY_SHARED_SECRET`（及旧别名 `RELAY_SHARED_SECRET`）、`AIS_RELAY_PORT` / `PORT`（默认 `3004`）、`AIS_RELAY_HOST` / `HOST`（默认 `0.0.0.0`）、`AIS_RELAY_HEALTH_*` 阈值，以及 `AIS_SNAPSHOT_INTERVAL_MS`、`AIS_UPSTREAM_*`、`AIS_MAX_*` 等调优项。
+- HTTP 契约与 Node 版一致：`GET /healthz/live`（容器探针）、`GET /health`（`status: ok | degraded` 与 `diagnostics`）、`GET /ais/snapshot`（`Authorization: Bearer <AIS_RELAY_SHARED_SECRET>`，`candidates=true` 时带 `candidateReports`）。
+- 容器健康检查：`ais-relay healthcheck`（镜像与 compose 的 healthcheck 命令都用这个子命令，与 `api-go healthcheck` 一致），即对 `http://127.0.0.1:$PORT/healthz/live` 发 HTTP GET，HTTP `200` 退出 `0`，其余非 `0`。
+
+### 运行（docker compose）
+
+Go 版在 `go-pilot` profile 下，默认部署不会启动：
+
+```bash
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml \
+  --profile go-pilot build ais-relay-go
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml \
+  --profile go-pilot up -d ais-relay-go
+```
+
+- 服务名：`ais-relay-go`；profile：`go-pilot`。
+- 端口：宿主 `127.0.0.1:3005` → 容器 `3004`（默认 `${DOCKER_PUBLISH_HOST:-127.0.0.1}:${AIS_RELAY_GO_HOST_PORT:-3005}:3004`，宿主端口可用 `AIS_RELAY_GO_HOST_PORT` 覆盖）。Node 版 `ais-relay` 仍占宿主 `3004`，两个版本可并行运行。
+- 容器内监听端口与 Node 版相同（`3004`），因此同一份 `infra/docker/.env` 同时驱动两个服务：`AISSTREAM_API_KEY`、`AIS_RELAY_SHARED_SECRET`、`AISSTREAM_URL` 与健康阈值都直接复用，没有新增变量名，也没有 `.env` 或密钥写进镜像。
+
+### 切换到 Go 版与回滚
+
+`apps/api-go`（以及 NestJS `apps/api`）通过 `REALTIME_SIGNALS_AIS_BASE_URL` 选择 relay 实现，默认仍指向 Node 版：
+
+- 切换到 Go 版：把 `REALTIME_SIGNALS_AIS_BASE_URL` 改为 `http://ais-relay-go:3004`（同一 compose 网络内的服务名 + 容器端口），然后重启调用方（`api-go` 或 `api`，取决于当前哪一侧在采集 AIS 信号）。
+- 回滚：把 `REALTIME_SIGNALS_AIS_BASE_URL` 改回 `http://ais-relay:3004`，重启调用方即可。relay 本身无持久化状态，不需要数据迁移，也不需要停掉或删除 Node 版。
+
+本批不改变默认值：`infra/docker/.env` 的 `REALTIME_SIGNALS_AIS_BASE_URL` 仍是 Node 版 `http://ais-relay:3004`，Node 版 `apps/ais-relay` 与 `infra/docker/ais-relay.Dockerfile` 保持不变，也没有新增任何功能开关。
