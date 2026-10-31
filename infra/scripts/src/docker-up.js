@@ -672,7 +672,7 @@ const validatePrismaSchemaForDockerUp = (
   composeBaseArgs,
   cwd,
   envFile,
-  service = "api",
+  service = "migrate",
 ) => {
   const repoRoot = path.resolve(cwd, "../..");
   const prismaCliPackage = resolvePrismaCliPackageForDockerUp(repoRoot);
@@ -853,7 +853,7 @@ const main = () => {
 
   const upServices = resolveUpServices(upArgs, services);
 
-  const nodeWorkspaceServices = ["api", "vector", "web", "migrate", "mongo-indexes"];
+  const nodeWorkspaceServices = ["web", "migrate", "mongo-indexes"];
   const shouldValidatePnpmLockfile = nodeWorkspaceServices.some((serviceName) =>
     upServices.has(serviceName),
   );
@@ -861,23 +861,21 @@ const main = () => {
     ensurePnpmLockfileForDockerUp(repoRoot);
   }
 
-  // The api service is only started under the legacy-node profile now, so the
-  // Prisma preflight can no longer key off it. The default stack still needs the
-  // check: the migrate and mongo-indexes tool services run Prisma/Node tooling
-  // before api-go starts, and a broken schema must fail here rather than inside
-  // a one-shot container.
+  // The migrate and mongo-indexes tool services run Prisma/Node tooling before
+  // api-go starts, and a broken schema must fail here rather than inside a
+  // one-shot container.
   const prismaToolServices = ["migrate", "mongo-indexes"];
-  const shouldValidatePrisma =
-    upServices.has("api") ||
-    prismaToolServices.some((serviceName) => upServices.has(serviceName));
+  const shouldValidatePrisma = prismaToolServices.some((serviceName) =>
+    upServices.has(serviceName),
+  );
 
   if (shouldValidatePrisma) {
     log("Validating Prisma migration identifiers...");
     validateMigrationIdentifiersForDockerUp(repoRoot);
     // Build the tool image instead of the api image: it uses the same
     // runtime.Dockerfile and workspace, so `prisma validate` runs against the
-    // same schema, and it keeps the preflight independent of the Node backend.
-    const preflightService = upServices.has("migrate") ? "migrate" : "api";
+    // same schema, and it keeps the preflight independent of any backend.
+    const preflightService = upServices.has("migrate") ? "migrate" : "mongo-indexes";
     const preflightImageRef = `${projectName}-${preflightService}:latest`;
     if (!dockerImageExists(preflightImageRef, scriptsDir)) {
       log(
