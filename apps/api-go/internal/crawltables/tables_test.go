@@ -84,7 +84,7 @@ func TestNormalizeDataRecordsKeepsInputColumnOrder(t *testing.T) {
 	if table.RowCount != 2 || table.ColumnCount != 3 {
 		t.Fatalf("dimensions = %d x %d", table.RowCount, table.ColumnCount)
 	}
-	if got := mustJSON(t, table.Rows); got != `[[1,2,null],[3,null,true]]` {
+	if got := mustJSON(t, table.Rows); got != `[[1,2,null],[null,3,true]]` {
 		t.Fatalf("rows = %s", got)
 	}
 	if got := mustJSON(t, table.DataFrame.Rows); got != `[{"a":2,"b":1,"c":null},{"a":3,"b":null,"c":true}]` {
