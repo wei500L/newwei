@@ -622,6 +622,9 @@ importers:
       '@modular/utils':
         specifier: workspace:*
         version: link:../../packages/utils
+      bullmq:
+        specifier: 5.63.2
+        version: 5.63.2
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1

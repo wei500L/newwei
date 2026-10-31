@@ -1,6 +1,9 @@
 const path = require('node:path');
 
-const defaultSchemaPath = path.resolve(__dirname, '../api/schema.gql');
+// The GraphQL SDL is owned by the Go runtime (apps/api-go embeds and serves it).
+// During the Node retirement transition the CI job "Contract copies in sync"
+// still asserts this file is byte-identical to the Nest generator output.
+const defaultSchemaPath = path.resolve(__dirname, '../api-go/internal/graphqlread/schema/schema.gql');
 const schemaUrl = process.env.GRAPHQL_SCHEMA_URL || defaultSchemaPath;
 
 /** @type {import('@graphql-codegen/cli').CodegenConfig} */

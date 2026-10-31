@@ -1,10 +1,12 @@
 // BullMQ 5.63.2 interoperability fixture for the situation-monitor Telegram
 // poll scheduler.
 //
-// The Go integration test runs this through Node's stdin from apps/api so the
-// ESM import of `bullmq` resolves from the locked workspace dependency. It
-// proves that Node can read the JobScheduler and jobs api-go writes, and that
-// api-go can remove a scheduler Node writes.
+// The Go integration test runs this through Node's stdin with the process
+// working directory set to the @modular/infra-scripts tool package, so the ESM
+// import of `bullmq` (pinned 5.63.2) resolves from that dedicated fixture
+// tool's locked dependency instead of the retired Node API app. It proves that
+// Node can read the JobScheduler and jobs api-go writes, and that api-go can
+// remove a scheduler Node writes.
 //
 // Modes (FIXTURE_MODE):
 //   inspect - print queue.getJobSchedulers() and the pending jobs.

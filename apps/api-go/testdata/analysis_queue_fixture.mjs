@@ -1,7 +1,9 @@
 // BullMQ 5.63.2 interoperability fixture for the analysis queue.
 //
-// It is run by the Go integration test through Node's stdin so the ESM import
-// of `bullmq` resolves from the locked workspace dependency. The fixture is
+// It is run by the Go integration test through Node's stdin with the process
+// working directory set to the @modular/infra-scripts tool package, so the ESM
+// import of `bullmq` (pinned 5.63.2) resolves from that dedicated fixture
+// tool's locked dependency instead of the retired Node API app. The fixture is
 // intentionally thin: it proves that the Node implementation and the Go runner
 // share the same Redis state machine, job options and MessagePack payloads.
 //

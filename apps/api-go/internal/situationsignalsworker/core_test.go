@@ -1,13 +1,9 @@
 package situationsignalsworker
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 	"time"
 
@@ -432,25 +428,33 @@ func TestLoadTelegramChannels(t *testing.T) {
 	}
 }
 
-// TestTelegramChannelsMatchesNest verifies the embedded catalog is a verbatim
-// copy of the NestJS asset. The repository checkout is required; a module-only
-// checkout skips the comparison.
-func TestTelegramChannelsMatchesNest(t *testing.T) {
-	_, sourceFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Skip("runtime.Caller unavailable")
-	}
-	nestPath := filepath.Join(filepath.Dir(sourceFile), "..", "..", "..", "api", "src", "modules", "situation-monitor", "signals", "telegram-channels.json")
-	nestBytes, err := os.ReadFile(nestPath)
-	if err != nil {
-		t.Skipf("NestJS channel catalog not available at %s: %v", nestPath, err)
-	}
-	embedded, err := telegramChannelsAsset.ReadFile(telegramChannelsFileName)
+// TestTelegramChannelsEmbeddedCatalogValid verifies the embedded curated
+// Telegram channel catalog parses and carries the expected shape. The
+// byte-for-byte comparison with the legacy Nest asset is now a CI transition
+// guard (the "Contract copies in sync" step), so this test does not read
+// apps/api and keeps compiling after that directory is removed.
+func TestTelegramChannelsEmbeddedCatalogValid(t *testing.T) {
+	raw, err := telegramChannelsAsset.ReadFile(telegramChannelsFileName)
 	if err != nil {
 		t.Fatalf("read embedded catalog: %v", err)
 	}
-	if !bytes.Equal(nestBytes, embedded) {
-		t.Fatalf("telegram-channels.json drifted from the NestJS asset")
+	if len(raw) == 0 {
+		t.Fatal("embedded telegram catalog is empty")
+	}
+	var catalog struct {
+		Version  int `json:"version"`
+		Channels map[string][]struct {
+			Handle string `json:"handle"`
+		} `json:"channels"`
+	}
+	if err := json.Unmarshal(raw, &catalog); err != nil {
+		t.Fatalf("embedded telegram catalog is not JSON: %v", err)
+	}
+	if catalog.Version == 0 {
+		t.Fatal("embedded telegram catalog has no version")
+	}
+	if len(catalog.Channels) == 0 {
+		t.Fatal("embedded telegram catalog has no channel sets")
 	}
 }
 

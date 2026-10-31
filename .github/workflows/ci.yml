@@ -131,6 +131,30 @@ jobs:
           pnpm --filter @modular/api run generate:schema
           git diff --exit-code apps/api/schema.gql
 
+      # Transition guard: while the legacy Nest app still exists, the Go-owned
+      # contract copies (SDL, OpenAPI snapshot, auth matrix, curated Telegram
+      # channel catalog) must stay byte-identical to the Nest generator output.
+      # This preserves drift detection during the migration without making the
+      # Go tests read the soon-to-be-deleted apps/api tree. Removed in
+      # GO-NODE-RETIRE-001.
+      - name: Contract copies in sync (transition)
+        run: |
+          cmp apps/api-go/internal/graphqlread/schema/schema.gql apps/api/schema.gql
+          cmp apps/api-go/internal/apidocs/openapi.snapshot.json apps/api/tests/contract/openapi.snapshot.json
+          cmp apps/api-go/contracts/auth-matrix.json apps/api/tests/contract/auth-matrix.json
+          cmp apps/api-go/contracts/auth-matrix.md apps/api/tests/contract/auth-matrix.md
+          cmp apps/api-go/internal/situationsignalsworker/telegram-channels.json apps/api/src/modules/situation-monitor/signals/telegram-channels.json
+          echo "Go-owned contract copies match the Nest generator output"
+
+      # Independent Go contract gate: reconciles the static OpenAPI + auth-matrix
+      # artifacts against the REAL all-go route table (allGoRules), so a route
+      # added/omitted/misclassified relative to Go registration fails here
+      # instead of passing as a self-comparison of two static files.
+      - name: Go contract gate (OpenAPI/auth-matrix vs Go registration)
+        run: |
+          cd apps/api-go
+          go test ./internal/legacyproxy/ -run 'TestEveryDocumentedHTTPOperationIsOwnedByGo|TestHTTPContractArtifactsAgree|TestAuthMatrixPermissionStructure' -v
+
       - name: Go tests (api-go gateway + vector-go pilot)
         run: pnpm --filter @modular/api-go --filter @modular/vector-go test
 
@@ -343,7 +367,7 @@ jobs:
           cache: pnpm
 
       - name: Install locked Node BullMQ fixture dependencies
-        run: pnpm install --frozen-lockfile --filter @modular/api...
+        run: pnpm install --frozen-lockfile --filter @modular/infra-scripts...
 
       - name: Go modules (download with committed go.sum)
         run: cd apps/api-go && go mod download
@@ -771,6 +795,18 @@ jobs:
           pnpm --filter @modular/api run contract:auth-matrix:generate
           pnpm --filter @modular/api run generate:schema
 
+      # Mirror the regenerated Nest artifacts into the Go-owned contract copies
+      # that the Go runtime and Go contract gate consume, so a maintainer who
+      # intentionally changes contract semantics also updates the Go-side facts
+      # in the same regenerated commit (prevents a stale Go copy after apps/api
+      # removal in step 3).
+      - name: Sync Go-owned contract copies
+        run: |
+          cp apps/api/schema.gql apps/api-go/internal/graphqlread/schema/schema.gql
+          cp apps/api/tests/contract/openapi.snapshot.json apps/api-go/internal/apidocs/openapi.snapshot.json
+          cp apps/api/tests/contract/auth-matrix.json apps/api-go/contracts/auth-matrix.json
+          cp apps/api/tests/contract/auth-matrix.md apps/api-go/contracts/auth-matrix.md
+
       - name: Commit regenerated artifacts (if changed)
         run: |
           git config user.name "contract-regen[bot]"
@@ -779,7 +815,7 @@ jobs:
             echo "contract artifacts already in sync — nothing to commit"
             exit 0
           fi
-          git add apps/api/tests/contract apps/api/schema.gql
+          git add apps/api/tests/contract apps/api/schema.gql apps/api-go/internal/graphqlread/schema/schema.gql apps/api-go/internal/apidocs/openapi.snapshot.json apps/api-go/contracts/auth-matrix.json apps/api-go/contracts/auth-matrix.md
           git commit -m "🔧 chore(contract): 远端再生成契约基线（OpenAPI 快照/鉴权矩阵/GraphQL SDL）"
           git push origin HEAD:${{ github.head_ref }}
           echo "committed regenerated artifacts"
