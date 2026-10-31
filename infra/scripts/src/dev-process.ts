@@ -62,6 +62,17 @@ function isProcessGroupAlive(pid: number): boolean {
   }
 }
 
+function toProcessEnv(env: Record<string, string>): NodeJS.ProcessEnv {
+  const nodeEnv = env.NODE_ENV;
+  return {
+    ...env,
+    NODE_ENV:
+      nodeEnv === "production" || nodeEnv === "test"
+        ? nodeEnv
+        : "development",
+  };
+}
+
 function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   const pid = child.pid;
   if (!pid) {
@@ -105,7 +116,7 @@ export function runChildren(
         // Next's ProcessEnv augmentation makes NODE_ENV required; the child
         // would inherit it from `.env` normally, but keep a safe default for
         // direct callers/tests that do not provide it.
-        env: { NODE_ENV: "development", ...spawnOptions.env },
+        env: toProcessEnv(spawnOptions.env),
       }));
   const signalSource = options.signalSource ?? process;
   const killTimeoutMs = options.killTimeoutMs ?? 65_000;
