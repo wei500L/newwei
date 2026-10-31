@@ -50,8 +50,12 @@ RUN DATABASE_URL=mysql://root:secret@mysql:3306/app \
     MYSQL_PASSWORD=secret \
     MYSQL_DB=app \
     pnpm --filter @modular/db run prisma:generate
-RUN pnpm --filter @modular/api run generate:schema
-RUN pnpm exec turbo run build --env-mode=loose --filter=@modular/ais-relay --filter=@modular/api --filter=@modular/vector --filter=@modular/web
+# The NestJS SDL generator and the three former Node backends are gone. The Web
+# codegen reads the committed Go-owned SDL (apps/api-go/internal/graphqlread/
+# schema/schema.gql), so building @modular/web (plus its workspace deps) is all
+# this shared Node image needs to produce. The one-shot Prisma/Mongo tool
+# services run their tsx CLIs directly from source.
+RUN pnpm exec turbo run build --env-mode=loose --filter=@modular/web
 
 FROM ${NODE_IMAGE} AS runtime
 
