@@ -1,5 +1,13 @@
 # 后端迁移地图
 
+## 2026-10-31 #151 合并后：默认 Go 已落地，进入退役三步
+
+- 最新核对 main：`fcf1e5334acb0350ea36535c48c4131df7c9698a`，[#151](https://github.com/wei500L/newwei/pull/151) 已实际 merged，包含后续本地配置修补；源 head `e48a25725603e2d7a02088b696599dbf28b0131b` 已验证为 main 祖先。[源 head 普通 CI 41199618477](https://github.com/wei500L/newwei/actions/runs/41199618477) 三主要 job success；[merge CI 41200907795](https://github.com/wei500L/newwei/actions/runs/41200907795) 在核对时尚未完成，skipped 不算通过。
+- 仓库默认已是 Go：根示例 API 4020、新 Socket.IO 路径，137 个迁移 mode 为 go/reject；本地 `dev.mts` 读取根环境并按进程配置端口；compose 默认 Go 服务。Node 后端和显式 legacy 回退仍保留，尚未进入源码删除；没有部署或真实流量/外部服务验证。
+- [GO-DEFAULT-CUTOVER-001](tasks/GO-DEFAULT-CUTOVER-001.md) 按实际 merge 标 `merged`，原跟进提示词已完成，不再重复派。GAP-DEV-CONFIG-001 的已派缺口按源码修补关闭，异常事件残留另记，不能因此统一关闭全部 GAP。
+- 退役分三步**串行**：[契约/工具迁出](tasks/GO-CONTRACT-TOOLING-001.md) reserved（[提示词](tasks/GO-CONTRACT-TOOLING-001.prompt.md)）；[Go 去迁移分流](tasks/GO-ONLY-RUNTIME-001.md) planned（[提示词](tasks/GO-ONLY-RUNTIME-001.prompt.md)）；[删 Node 与 CI 收尾](tasks/GO-NODE-RETIRE-001.md) planned（[提示词](tasks/GO-NODE-RETIRE-001.prompt.md)）。后两项提示词预先提供，必须等各自前置实际合入与 CI，不能并开共享文件。
+- 本次只核默认补修与退役依赖，不重算覆盖数、不全文重审领域；规划发布仍用 PR #149，只维护文档，不直接实施退役业务。下方各时间段按历史快照理解。
+
 ## 2026-10-31 完成核对与继续提示词
 
 - main 已核实为 `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`（[#150](https://github.com/wei500L/newwei/pull/150) 实际 merge）；前置修补主体已合入。源 head `4f21c025` 的普通 CI 40551203359 三主要 job success；main CI 40557202479 失败在队列运维 Web 测试、两个集成 success，不能称 main 全绿。

@@ -1,5 +1,12 @@
 # 已确认缺口与待核对事项
 
+## 2026-10-31 #151 合并后的增量
+
+- 基线：`fcf1e5334acb0350ea36535c48c4131df7c9698a`，#151 最终 head `e48a2572` 为 main 祖先；源 CI 41199618477 三主 job success，merge CI 41200907795 核对时尚未完成。
+- **GAP-DEV-CONFIG-001 已关闭（源码/配置层）**：根 `.env.example:63-73` 已用 4020 与两个新 Socket.IO 路径，模式清单 go/reject；宿主 vector/AIS 为4010/3004；`infra/scripts/src/dev.mts` + `dev-config.ts` + `dev-process.ts` 负责根环境、独立端口、Go/legacy/AIS 计划和生命周期；`cutover_env_example_test.go` / `dev-runtime.test.ts` / `env-connection-defaults.test.ts` 进入源 head 成功 CI。本轮未再运行这些测试，未部署/实测启动或真实外部调用。
+- GAP-EXCEPTION-WIRING-001 仍是主体已合入、部分自写 500/unknown/stack 未完整覆盖；#151 未声称修复该残留。不能用默认切换 merged 替代异常覆盖证据。
+- 新退役范围用三个具体 task 管理：契约/工具独立、Go 去迁移分流、Node/CI 删除。它们是已授权架构收尾，不机械新增业务缺陷 ID；保留的 Prisma/seed/Node 协议工具不是待删 HTTP 后端。
+
 ## 2026-10-31 完成核对与本地默认链缺口
 
 main 基线 `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`；默认切换候选单独取 #151/head `b97e181aa7248175ed3c91daf9a258dba6289f96`，不能混计。下方 2026-10-27 的 open 清单为原缺口事实，现行增量如下：

@@ -1,5 +1,17 @@
 # 任务认领与历史恢复索引
 
+## 2026-10-31 #151 合并后任务
+
+main `fcf1e5334acb0350ea36535c48c4131df7c9698a` 已包含 #151 最终 `e48a2572`；普通 CI 源 head success、merge head 尚未完成，结果分别记录。GO-DEFAULT-CUTOVER-001 标 `merged`；下方旧段落的 #151 OPEN/跟进提示词待修是历史快照。
+
+| 任务 | 当前状态 / 提示词 | 文件所有权与前置 |
+|---|---|---|
+| [GO-CONTRACT-TOOLING-001](GO-CONTRACT-TOOLING-001.md) | **reserved**；[提示词已发出](GO-CONTRACT-TOOLING-001.prompt.md)，无编码证据 | 契约/生成/工具/fixture/现有 CI 必要增量；保留旧 app 与分流层 |
+| [GO-ONLY-RUNTIME-001](GO-ONLY-RUNTIME-001.md) | **planned**；[提示词预先提供](GO-ONLY-RUNTIME-001.prompt.md)，未占用编码文件 | 前一项实际合入与 CI 后，Go main/config/路由/GraphQL/worker 门控收口 |
+| [GO-NODE-RETIRE-001](GO-NODE-RETIRE-001.md) | **planned**；[提示词预先提供](GO-NODE-RETIRE-001.prompt.md)，未占用编码文件 | 前两项实际合入与 CI 后，删三 Node app，完成锁文件/编排/本地启动/CI 收尾 |
+
+三项不并开；规划 PR #149 正常 merge 最新 main，保留 #151 实际交付 task 记录。新业务 worktree/PR 均尚未创建，不操作其他聊天、不清理历史 worktree。后两项不能凭前置 PR Ready 提前开工。
+
 ## 2026-10-31 当前状态
 
 main = `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`，下方 2026-10-27 的 reserved/planned 为发出时历史快照。
