@@ -1,5 +1,13 @@
 # 已确认缺口与待核对事项
 
+## 2026-11-01 源码退役完成后的边界
+
+main `e04fc4d8bb54596afd302a309ebc852c7676d958` 已含 #152 / #153 / #154；三个退役 task 已 merged，各最终源 head 三个普通 CI 主 job success，最新 merge CI 尚未完成，证据见 [收口记录](GO-MIGRATION-CLOSEOUT.md)。Node 后端、迁移 mode、shadow/canary 与 Nest 反代已删除；`legacyproxy` 旧包名下是实际纯 Go 路由器，不能再按目录名派“删除反代”任务。
+
+不统一关闭未处理的业务问题：GAP-EXCEPTION-WIRING-001 的部分自写 500/unknown/stack 仍残留；GAP-ASYNC-001 的真实多实例与外部运行证据仍缺。冻结的鉴权/OpenAPI 历史预期已与实际 Go 路由覆盖和权限结构对照，但不等于对所有权限行为做运行期验证。Prisma/seed/Node 工具是明确保留范围，不登记为源码迁移缺口。
+
+本轮未部署、未实网或本机运行测试，不重算全域覆盖，不把历史文档/注释当活跃依赖。后续先读最新 main CI 与本页稳定 GAP，不重新派发三项已合入任务。
+
 ## 2026-10-31 #151 合并后的增量
 
 - 基线：`fcf1e5334acb0350ea36535c48c4131df7c9698a`，#151 最终 head `e48a2572` 为 main 祖先；源 CI 41199618477 三主 job success，merge CI 41200907795 核对时尚未完成。
@@ -123,7 +131,7 @@ main 基线 `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`；默认切换候选单�
 
 - 入口：Query `newsEventBrief(eventId, language, maxSources, forceRefresh)`，items.read；总读和新闻事件子模式均 go。
 - 触发/影响：存在可访问事件且有有效来源；briefV1 缺失、语言/指纹失配或 `forceRefresh=true` 时固定字段错误 `Internal server error`，无法生成新简报。事件不存在/无来源返回 null 是合法结果，不算缺口。命中有效缓存可返回简报。
-- Nest：[news-events.resolver.ts](../../../apps/api/src/graphql/resolvers/news-events.resolver.ts) → [NewsEventBriefService.getBrief](../../../apps/api/src/modules/news-events/news-event-brief.service.ts) → `generateBriefWithLlm`，清洗引用并合并 `metadata.briefV1`；写缓存失败记录 warning，仍返回已生成内容。
+- Nest（原核对基线 `3cedce9a` 历史源码）：[news-events.resolver.ts](https://github.com/wei500L/newwei/blob/3cedce9aa3200436aba3596f63b559de5490cec8/apps/api/src/graphql/resolvers/news-events.resolver.ts) → [NewsEventBriefService.getBrief](https://github.com/wei500L/newwei/blob/3cedce9aa3200436aba3596f63b559de5490cec8/apps/api/src/modules/news-events/news-event-brief.service.ts) → `generateBriefWithLlm`，清洗引用并合并 `metadata.briefV1`；写缓存失败记录 warning，仍返回已生成内容。
 - Go：[newsevents/brief.go](../../../apps/api-go/internal/graphqlread/newsevents/brief.go) `newsEventBrief` 18–59，loadEvent/loadItems、选源/指纹与缓存命中已实现，末尾固定报错；没有模型调用/metadata 更新。注册在 [register.go](../../../apps/api-go/internal/graphqlread/newsevents/register.go)。核对 SHA 如页首。
 - 可复用但不可直接调用：[publicportal/story.go](../../../apps/api-go/internal/publicportal/story.go) `Service.brief` 已实现选源→Complete→JSON 清洗→SaveEventMetadata；`brief`、`completionRequest`、gateway helper 均为包内私有，公共门户语言/组织选择与 GraphQL 参数也不同，不能声称已共享。
 - 主要文件：newsevents `brief.go` / store/model；如抽共享能力，需明确 publicportal/story.go、brief.go、gateway.go 的所有权。MySQL NewsEvent/NewsEventItem/ProcessedArticle、模型配置/密钥、HTTP 模型上游；无须为了这个同步入口迁 BullMQ。前置是确定具名共享模型/客户端边界，BL-02 可独立窗口评估，避开 BL-17 公共门户客户端并行修改。
@@ -138,7 +146,7 @@ main 基线 `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`；默认切换候选单�
 - 入口：`GET /api/crawl-media-assets/:assetId/:mode`，mode 为 preview/download；公开路由使用 HMAC 的 exp/org/user/sig 授权，不由公开二字推断可越租户。
 - 同因缺口（本次一并交付）：`GET /api/crawl-tasks/:id` 与 `Query crawlTask` 的 `mediaAssets` 对 S3 记录同样不生成 preview/download URL，且 REST 与 GraphQL 各有独立构造器，必须同时注入存储能力。
 - 触发/用户影响：`API_GO_CRAWL_READ_TELEMETRY_MODE=go`；签名有效、orgId 匹配且资产 provider 为 s3，有合法 storageKey/存储配置，Go 仍返回 404。任务详情返回的媒体 URL 可能因此失效。
-- Nest：[CrawlMediaAssetService.getAssetDeliveryPayload](../../../apps/api/src/modules/crawl/crawl-media-asset.service.ts) 433–520，MySQL blob 与 S3 分支分开，S3 调 storage.createObjectReadUrl，附 content-type/disposition/cache-control；[controller](../../../apps/api/src/modules/crawl/crawl-media-asset.controller.ts) 对 redirectUrl 重定向。
+- Nest（原核对基线 `3cedce9a` 历史源码）：[CrawlMediaAssetService.getAssetDeliveryPayload](https://github.com/wei500L/newwei/blob/3cedce9aa3200436aba3596f63b559de5490cec8/apps/api/src/modules/crawl/crawl-media-asset.service.ts) 433–520，MySQL blob 与 S3 分支分开，S3 调 storage.createObjectReadUrl，附 content-type/disposition/cache-control；[controller](https://github.com/wei500L/newwei/blob/3cedce9aa3200436aba3596f63b559de5490cec8/apps/api/src/modules/crawl/crawl-media-asset.controller.ts) 对 redirectUrl 重定向。
 - Go：[service_media.go](../../../apps/api-go/internal/crawlreadtelemetry/service_media.go) `getAssetDeliveryPayload` 456–515，MySQL joined blob/legacy blob 已实现；非 MySQL 末尾固定 `(nil,nil)`。`serveMediaAsset` 151 将 nil 映射为 404，虽有 RedirectURL 分支却没有 S3 生产者。核对 SHA 如页首。
 - 主要文件：crawlreadtelemetry/service_media.go、模型/构造与 `cmd/api/crawl_read_telemetry.go`；读取存储配置/解密可能涉及 infrastructuresettings/storage.go，当前该包只提供配置管理，不能当现成 S3 对象客户端。S3/Nest StorageService 是外部对象边界；不需要迁 crawl worker 才可补读。
 - 前置/冲突：明确 S3 配置优先级、endpoint/path-style/publicBaseURL/TTL 与租户签名；BL-03 与 BL-15 的存储配置辅助函数串行。原 #50 已 merged，未迁的是剩余 S3 分支，不重新分配整个 7 路批次。

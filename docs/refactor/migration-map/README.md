@@ -1,5 +1,13 @@
 # 后端迁移地图
 
+## 2026-11-01 收口：三项退役任务均已合入
+
+- 最新源码基线 `e04fc4d8bb54596afd302a309ebc852c7676d958`：#152 契约/工具迁出、#153 Go 独立运行、#154 三个 Node 后端删除均 merged，源 head 已逐个核实 main 祖先关系；各源普通 CI 三主要 job success。完整 SHA、run 与验证边界见 [收口记录](GO-MIGRATION-CLOSEOUT.md)。
+- main 已无 `apps/api` / `apps/vector` / `apps/ais-relay` 和 shadow/canary 实现；`legacyproxy` 只是保留旧包名的纯 Go 路由器，不再向 Nest 转发。默认开发/编排/构建/CI 已使用 Go；Prisma/seed、Web 与必要 Node 工具按原范围保留。
+- 最新 main [普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 核对时尚未完成；源 PR 成功不替代 merge head。源码退役目标已落地，最终 merge CI 结果仍独立记录。
+- 原三份提示词已完成，不再重复派发或按下方 reserved/planned 快照占用。GAP-EXCEPTION-WIRING-001 残留和真实多实例/外部验证边界继续保留；没有部署、真实流量或实网验证。
+- 本次只回填已核事实，不重算全域覆盖、不全文重审业务。规划 PR #149 发布本记录；下方旧日期/统计/默认/任务状态均为历史快照。
+
 ## 2026-10-31 #151 合并后：默认 Go 已落地，进入退役三步
 
 - 最新核对 main：`fcf1e5334acb0350ea36535c48c4131df7c9698a`，[#151](https://github.com/wei500L/newwei/pull/151) 已实际 merged，包含后续本地配置修补；源 head `e48a25725603e2d7a02088b696599dbf28b0131b` 已验证为 main 祖先。[源 head 普通 CI 41199618477](https://github.com/wei500L/newwei/actions/runs/41199618477) 三主要 job success；[merge CI 41200907795](https://github.com/wei500L/newwei/actions/runs/41200907795) 在核对时尚未完成，skipped 不算通过。

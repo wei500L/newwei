@@ -1,6 +1,7 @@
 # GO-CONTRACT-TOOLING-001 · 契约与运维工具迁出待删 Node 后端
 
-- 状态：`pr_open`；编码 worktree/分支已创建，Ready PR [#152](https://github.com/wei500L/newwei/pull/152)（未合并、未部署）。
+- 状态：`merged`；2026-11-01 核实 [#152](https://github.com/wei500L/newwei/pull/152) 实际 merge `f22e36ae6fabf72c501ae2ad573eb3323fa0db35`，最终源 head `eff23a09f59b67220496be6cb1f50a0537e6ea82` 已是 main 祖先；[普通 CI 41205126554](https://github.com/wei500L/newwei/actions/runs/41205126554) 三主 job success，两个 regen skipped。原交付快照保留，未部署。
+- 后继 #153/#154 亦已合入，去向与最终 main 验证见 [收口记录](../GO-MIGRATION-CLOSEOUT.md)；原“有意保留到第三步”的旧目录已在 #154 删除，不再按历史清单重复迁出。
 - 基线：`origin/main fcf1e5334acb0350ea36535c48c4131df7c9698a`（#151 实际 merge）。
 - 分支：`codex/go-contract-tooling`；worktree `/Users/oo/project/newwei-go-contract-tooling`。
 - 提示词：[GO-CONTRACT-TOOLING-001.prompt.md](GO-CONTRACT-TOOLING-001.prompt.md)；规划发布 PR #149。

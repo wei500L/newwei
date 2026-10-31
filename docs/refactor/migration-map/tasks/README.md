@@ -1,5 +1,17 @@
 # 任务认领与历史恢复索引
 
+## 2026-11-01 三步已完成
+
+核对 main `e04fc4d8bb54596afd302a309ebc852c7676d958`。以下源 head 均为 main 祖先，三个普通 CI 主 job 均 success，regen skipped 不算通过；最新 main CI 41242463081 尚未完成，单独记录。详情见 [收口记录](../GO-MIGRATION-CLOSEOUT.md)。
+
+| 任务 | 状态 / 实际 merge | 最终源 head / CI |
+|---|---|---|
+| [GO-CONTRACT-TOOLING-001](GO-CONTRACT-TOOLING-001.md) | **merged**；#152 → `f22e36ae6fab` | `eff23a09f59b` / run 41205126554 success |
+| [GO-ONLY-RUNTIME-001](GO-ONLY-RUNTIME-001.md) | **merged**；#153 → `e72440e186ac` | `fd571dac7a09` / run 41213872179 success |
+| [GO-NODE-RETIRE-001](GO-NODE-RETIRE-001.md) | **merged**；#154 → `e04fc4d8bb54` | `44caf2e8e977` / run 41221870780 success |
+
+原提示词均已执行，不再占用待执行范围；保留历史 worktree/源分支，不自动清理。下方 reserved/planned/in_progress/pr_open 是原阶段快照；当前状态以上表为准。规划 PR #149 回填文档，不包含未派发的新业务任务。
+
 ## 2026-10-31 #151 合并后任务
 
 main `fcf1e5334acb0350ea36535c48c4131df7c9698a` 已包含 #151 最终 `e48a2572`；普通 CI 源 head success、merge head 尚未完成，结果分别记录。GO-DEFAULT-CUTOVER-001 标 `merged`；下方旧段落的 #151 OPEN/跟进提示词待修是历史快照。
