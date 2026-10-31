@@ -1,6 +1,6 @@
 # GO-CONTRACT-TOOLING-001 · 契约与运维工具迁出待删 Node 后端
 
-- 状态：`pr_open`；编码 worktree/分支已创建，Ready PR 见下方链接（未合并、未部署）。
+- 状态：`pr_open`；编码 worktree/分支已创建，Ready PR [#152](https://github.com/wei500L/newwei/pull/152)（未合并、未部署）。
 - 基线：`origin/main fcf1e5334acb0350ea36535c48c4131df7c9698a`（#151 实际 merge）。
 - 分支：`codex/go-contract-tooling`；worktree `/Users/oo/project/newwei-go-contract-tooling`。
 - 提示词：[GO-CONTRACT-TOOLING-001.prompt.md](GO-CONTRACT-TOOLING-001.prompt.md)；规划发布 PR #149。
