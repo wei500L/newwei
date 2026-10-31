@@ -7,44 +7,20 @@ import (
 
 // TestCrawlMetadataStaysLegacyByDefault pins that an unset, empty or legacy
 // switch adds no rule at all.
-func TestCrawlMetadataStaysLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlMetadata(rules, "")
-	rules = WithCrawlMetadata(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct{ method, path string }{
-		{http.MethodPost, "/api/crawl-tasks/metadata"},
-		{http.MethodOptions, "/api/crawl-tasks/metadata"},
-		{http.MethodGet, "/api/crawl-tasks/metadata"},
-		{http.MethodPost, "/api/crawl-tasks"},
-		{http.MethodPost, "/api/crawl-tasks/task-1/retry"},
-		{http.MethodDelete, "/api/crawl-tasks/task-1"},
-	} {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
 
 // TestCrawlMetadataGoOwnsOnlyTheExactPost pins the exact takeover boundary: the
 // POST and its CORS preflight, and nothing else.
 func TestCrawlMetadataGoOwnsOnlyTheExactPost(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlMetadata(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithCrawlMetadata(rules)
+	gateway := New(rules)
 
 	post := gateway.match(http.MethodPost, "/api/crawl-tasks/metadata")
-	if post.Mode != ModeGo || !post.Exact || post.HandlerKey != CrawlMetadataKey {
+	if post.Prefix == "" || !post.Exact || post.HandlerKey != CrawlMetadataKey {
 		t.Fatalf("POST rule = %+v", post)
 	}
 	options := gateway.match(http.MethodOptions, "/api/crawl-tasks/metadata")
-	if options.Mode != ModeGo || !options.Exact || options.HandlerKey != CrawlMetadataKey {
+	if options.Prefix == "" || !options.Exact || options.HandlerKey != CrawlMetadataKey {
 		t.Fatalf("OPTIONS rule = %+v", options)
 	}
 
@@ -62,8 +38,8 @@ func TestCrawlMetadataGoOwnsOnlyTheExactPost(t *testing.T) {
 		{http.MethodDelete, "/api/crawl-tasks/task-1"},
 		{http.MethodPost, "/api/admin/crawl4ai/queue/pause"},
 	} {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
@@ -72,15 +48,12 @@ func TestCrawlMetadataGoOwnsOnlyTheExactPost(t *testing.T) {
 // GET /api/crawl-tasks/:id rule keeps owning GET /api/crawl-tasks/metadata when
 // the crawl read telemetry switch is on.
 func TestCrawlMetadataDoesNotChangeCrawlTaskDetailOwnership(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlReadTelemetry(rules, string(ModeGo))
-	rules = WithCrawlMetadata(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithCrawlReadTelemetry(rules)
+	rules = WithCrawlMetadata(rules)
+	gateway := New(rules)
 	got := gateway.match(http.MethodGet, "/api/crawl-tasks/metadata")
-	if got.Mode != ModeGo || got.HandlerKey != CrawlReadTelemetryKey {
+	if got.Prefix == "" || got.HandlerKey != CrawlReadTelemetryKey {
 		t.Fatalf("GET ownership = %+v", got)
 	}
 	if post := gateway.match(http.MethodPost, "/api/crawl-tasks/metadata"); post.HandlerKey != CrawlMetadataKey {

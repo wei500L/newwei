@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -10,44 +9,14 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
-	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/exceptioningest"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
 )
 
 // legacyRejectRecordTimeout bounds one best-effort exception event insert, so a
 // slow or unreachable Mongo cannot keep the recorder goroutine alive for long.
 const legacyRejectRecordTimeout = 5 * time.Second
-
-// wireLegacyFallback installs the cutover C-9 legacy fallback mode on the
-// gateway (API_GO_LEGACY_FALLBACK_MODE).
-//
-// Only reject mode does any work. The default proxy mode — including the empty
-// string — returns immediately and must not change the process: rollback has to
-// be a pure configuration change. The CORS policy and the exception recorder are
-// built by main.go, which also serves the Go /docs 404 (C-7), so both Go-owned
-// 404 paths write the same headers and the same exception event.
-//
-// In reject mode every former NestJS destination answers the NestJS-equivalent
-// 404 (internal/nestnotfound) instead of being proxied.
-func wireLegacyFallback(
-	gateway *legacyproxy.Gateway,
-	cfg config.Config,
-	policy cors.Policy,
-	recorder nestnotfound.Recorder,
-) error {
-	if cfg.LegacyFallbackMode != config.LegacyFallbackModeReject {
-		return nil
-	}
-	if gateway == nil {
-		return fmt.Errorf("api-go: legacy fallback reject mode requires a gateway")
-	}
-	gateway.SetLegacyFallback(string(cfg.LegacyFallbackMode), policy, recorder)
-	log.Printf("api-go: legacy fallback mode=%s", cfg.LegacyFallbackMode)
-	return nil
-}
 
 // newNestNotFoundRecorder returns the asynchronous exception event writer used
 // by the Go-owned 404 paths (C-9 reject mode and the C-7 docs routes), or nil

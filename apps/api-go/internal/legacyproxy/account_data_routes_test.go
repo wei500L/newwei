@@ -6,55 +6,47 @@ import (
 )
 
 // TestWithAccountDataRoutes pins the exact method/path ownership and proves the
-// neighbouring auth rules cannot shadow the two new entries.
+// neighbouring auth rules cannot shadow the two entries.
 func TestWithAccountDataRoutes(t *testing.T) {
-	rules := DefaultRulesWithWrite("", "", "")
-	rules = WithAccountSecurity(rules, string(ModeGo))
-	rules = WithAccountData(rules, string(ModeGo), string(ModeGo))
-	gateway := &Gateway{rules: rules}
+	gateway := New(WithAccountData(WithAccountSecurity(BaseRules())))
 
 	cases := []struct {
-		method   string
-		path     string
-		wantKey  string
-		wantMode Mode
+		method  string
+		path    string
+		wantKey string
 	}{
-		{http.MethodPost, "/api/auth/avatar/presigned-url", AvatarUploadKey, ModeGo},
-		{http.MethodGet, "/api/auth/data-export", UserDataExportKey, ModeGo},
-		{http.MethodOptions, "/api/auth/avatar/presigned-url", AvatarUploadKey, ModeGo},
-		{http.MethodOptions, "/api/auth/data-export", UserDataExportKey, ModeGo},
-		// Similar paths and other methods keep falling back to /api/.
-		{http.MethodGet, "/api/auth/avatar/presigned-url", "/api/", ModeLegacy},
-		{http.MethodPost, "/api/auth/data-export", "/api/", ModeLegacy},
-		{http.MethodPost, "/api/auth/avatar/presigned-url/extra", "/api/", ModeLegacy},
-		{http.MethodGet, "/api/auth/data-export/extra", "/api/", ModeLegacy},
-		{http.MethodGet, "/api/auth/avatar", "/api/", ModeLegacy},
+		{http.MethodPost, "/api/auth/avatar/presigned-url", AvatarUploadKey},
+		{http.MethodGet, "/api/auth/data-export", UserDataExportKey},
+		{http.MethodOptions, "/api/auth/avatar/presigned-url", AvatarUploadKey},
+		{http.MethodOptions, "/api/auth/data-export", UserDataExportKey},
 		// The neighbouring account-security rules still own their own paths.
-		{http.MethodGet, "/api/auth/me", AccountSecurityKey, ModeGo},
+		{http.MethodGet, "/api/auth/me", AccountSecurityKey},
 	}
 	for _, tc := range cases {
-		rule := gateway.match(tc.method, tc.path)
-		if rule.Mode != tc.wantMode {
-			t.Errorf("%s %s mode = %q, want %q", tc.method, tc.path, rule.Mode, tc.wantMode)
+		rule, matched := gateway.matchRule(tc.method, tc.path)
+		if !matched {
+			t.Errorf("%s %s matched nothing, want %q", tc.method, tc.path, tc.wantKey)
+			continue
 		}
+		key := rule.Prefix
 		if rule.HandlerKey != "" {
-			if rule.HandlerKey != tc.wantKey {
-				t.Errorf("%s %s key = %q, want %q", tc.method, tc.path, rule.HandlerKey, tc.wantKey)
-			}
-		} else if rule.Prefix != tc.wantKey {
-			t.Errorf("%s %s prefix = %q, want %q", tc.method, tc.path, rule.Prefix, tc.wantKey)
+			key = rule.HandlerKey
+		}
+		if key != tc.wantKey {
+			t.Errorf("%s %s key = %q, want %q", tc.method, tc.path, key, tc.wantKey)
 		}
 	}
-}
 
-// TestWithAccountDataLegacyAddsNothing proves the default deployment is
-// untouched: empty and legacy modes register no rule.
-func TestWithAccountDataLegacyAddsNothing(t *testing.T) {
-	base := DefaultRulesWithWrite("", "", "")
-	for _, mode := range []string{"", string(ModeLegacy)} {
-		rules := WithAccountData(base, mode, mode)
-		if len(rules) != len(base) {
-			t.Fatalf("mode %q added %d rules", mode, len(rules)-len(base))
+	// Similar paths and other methods are not claimed.
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/auth/avatar/presigned-url"},
+		{http.MethodPost, "/api/auth/data-export"},
+		{http.MethodPost, "/api/auth/avatar/presigned-url/extra"},
+		{http.MethodGet, "/api/auth/data-export/extra"},
+		{http.MethodGet, "/api/auth/avatar"},
+	} {
+		if _, matched := gateway.matchRule(tc.method, tc.path); matched {
+			t.Errorf("%s %s unexpectedly matched", tc.method, tc.path)
 		}
 	}
 }

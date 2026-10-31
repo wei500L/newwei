@@ -79,9 +79,6 @@ func wireItemPipelineWorker(
 	mongoConn **dashboardstats.Connection,
 	health *vectorclient.Health,
 ) (*itemPipelineRuntime, error) {
-	if cfg.ItemPipelineWorkerMode != config.ItemPipelineWorkerModeGo {
-		return nil, nil
-	}
 	if !cfg.BullMQWorkersEnabled {
 		log.Printf("api-go: item pipeline worker requested by API_GO_ITEM_PIPELINE_WORKER_MODE=go but BULLMQ_WORKERS_ENABLED=false; no consumer started")
 		return nil, nil

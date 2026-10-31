@@ -15,17 +15,15 @@ env:
   CI: "true"
   NEXT_BUILD_SKIP_QUALITY_CHECKS: "true"
   # 自托管 runner 内存预算（德国服务器 7.8G，其中生产容器常驻约 2.1G）。
-  # 实测两个内存大户：apps/api 的 typescript-eslint 类型感知 lint 峰值
-  # 超 1.5G 堆（堆上限给 1.5G 会直接 "JavaScript heap out of memory"），
-  # 以及 Go 编译器单包峰值约 3.5G。默认 turbo 并发 10 + Go 默认 -p=NumCPU
+  # 实测 Go 编译器单包峰值约 3.5G。默认 turbo 并发 10 + Go 默认 -p=NumCPU
   # 会把物理内存和 swap 一起打满并触发内核 OOM-killer。
-  # 取舍：Node 堆给 3G（够 lint），Go 编译串行（-p=1），turbo 并发 2。
+  # 取舍：Node 堆给 3G（够 Web lint/typecheck），Go 编译串行（-p=1），turbo 并发 2。
   TURBO_CONCURRENCY: "2"
   NODE_OPTIONS: "--max-old-space-size=3072"
   GOFLAGS: "-p=1"
   NEXTAUTH_URL: http://localhost:3000
-  API_BASE_URL: http://localhost:4000
-  NEXT_PUBLIC_API_BASE_URL: http://localhost:4000/api
+  API_BASE_URL: http://localhost:4020
+  NEXT_PUBLIC_API_BASE_URL: http://localhost:4020/api
   NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: "true"
   DATABASE_URL: mysql://root:secret@127.0.0.1:3306/app
   MYSQL_HOST: 127.0.0.1
@@ -81,9 +79,16 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
 
-      - name: GraphQL codegen drift check
+      # The committed Go SDL (apps/api-go/internal/graphqlread/schema/schema.gql)
+      # is the single contract source for both the Go executor and the Web client.
+      # Regenerate the Web client twice in independent cold processes, require
+      # byte-identical output, then require it to match the committed file.
+      - name: Web GraphQL codegen determinism (Go SDL source)
         run: |
           pnpm --filter @modular/web run generate
+          cp apps/web/graphql/generated.ts "$RUNNER_TEMP/generated-run1.ts"
+          pnpm --filter @modular/web run generate
+          cmp "$RUNNER_TEMP/generated-run1.ts" apps/web/graphql/generated.ts
           git diff --exit-code apps/web/graphql/generated.ts
 
       - name: Lint
@@ -95,43 +100,33 @@ jobs:
       - name: Web component tests with coverage
         run: pnpm --filter @modular/web test -- --coverage
 
-      - name: Vector unit tests
-        run: pnpm --filter @modular/vector test
+      # The retired Nest unit suites (@modular/api test / @modular/vector test)
+      # and the Nest SDL/OpenAPI/auth-matrix generators are gone with apps/api.
+      # The business constraints they guarded are now enforced by Go single-end
+      # checks:
+      #   * route ownership + auth-matrix permission structure -> "Go contract
+      #     gate" below (TestEveryDocumentedHTTPOperationIsOwnedByGo /
+      #     TestHTTPContractArtifactsAgree / TestAuthMatrixPermissionStructure);
+      #   * SEC-01 (vector-service settings platform-admin boundary) and API-01
+      #     (onboarding items.read) -> the Go unit tests run by "Go tests" below
+      #     (internal/infrastructuresettings, internal/usersettings, ...);
+      #   * HTTP authn/authz + rate-limit behaviour -> the integration job's
+      #     TestAuthZMySQLIntegration and the per-domain integration steps;
+      #   * GraphQL SDL root coverage vs registration -> internal/graphqlread
+      #     cutover_roots tests (also part of "Go tests").
+      # The pure-implementation Nest unit tests were retired with their code; no
+      # security or routing regression was dropped.
 
-      - name: API unit tests (SEC-01 / API-01 regression + route scanner)
-        run: pnpm --filter @modular/api test
-
-      - name: OpenAPI contract snapshot determinism + drift check
+      # Independent Go contract gate: reconciles the static OpenAPI + auth-matrix
+      # artifacts against the REAL all-go route table (allGoRules), so a route
+      # added/omitted/misclassified relative to Go registration fails here
+      # instead of passing as a self-comparison of two static files.
+      - name: Go contract gate (OpenAPI/auth-matrix vs Go registration)
         run: |
-          # CI-01：同一命令在两个互相独立的冷 Node 进程各生成一次（--output
-          # 导向临时文件，不动已提交基线），比对 SHA-256，再与已提交快照
-          # 逐字节比对。任一不同即失败——无 retry，不掩盖非确定性。
-          pnpm --filter @modular/api run contract:openapi:snapshot -- --output "$RUNNER_TEMP/openapi-snapshot-run1.json"
-          pnpm --filter @modular/api run contract:openapi:snapshot -- --output "$RUNNER_TEMP/openapi-snapshot-run2.json"
-          SHA1=$(sha256sum "$RUNNER_TEMP/openapi-snapshot-run1.json" | cut -d' ' -f1)
-          SHA2=$(sha256sum "$RUNNER_TEMP/openapi-snapshot-run2.json" | cut -d' ' -f1)
-          echo "cold-process run1 sha256: $SHA1"
-          echo "cold-process run2 sha256: $SHA2"
-          if [ "$SHA1" != "$SHA2" ]; then
-            echo "::error::OpenAPI snapshot not deterministic across cold processes ($SHA1 vs $SHA2)"
-            exit 1
-          fi
-          if ! cmp -s "$RUNNER_TEMP/openapi-snapshot-run1.json" apps/api/tests/contract/openapi.snapshot.json; then
-            echo "::error::OpenAPI snapshot drifted from committed baseline"
-            diff "$RUNNER_TEMP/openapi-snapshot-run1.json" apps/api/tests/contract/openapi.snapshot.json | head -200 || true
-            exit 1
-          fi
-          echo "deterministic across cold processes and byte-identical to committed snapshot"
+          cd apps/api-go
+          go test ./internal/legacyproxy/ -run 'TestEveryDocumentedHTTPOperationIsOwnedByGo|TestHTTPContractArtifactsAgree|TestAuthMatrixPermissionStructure' -v
 
-      - name: Auth matrix drift check (fail-closed)
-        run: pnpm --filter @modular/api run contract:auth-matrix:check
-
-      - name: GraphQL SDL drift check
-        run: |
-          pnpm --filter @modular/api run generate:schema
-          git diff --exit-code apps/api/schema.gql
-
-      - name: Go tests (api-go gateway + vector-go pilot)
+      - name: Go tests (api-go gateway + vector-go)
         run: pnpm --filter @modular/api-go --filter @modular/vector-go test
 
       - name: Compose image pin check
@@ -145,19 +140,19 @@ jobs:
           artifact-name: sbom-cyclonedx.json
 
       - name: Build
-        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/ais-relay --filter=@modular/api --filter=@modular/vector --filter=@modular/web --filter=@modular/api-go --filter=@modular/vector-go
+        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/web --filter=@modular/api-go --filter=@modular/vector-go
 
-  # vector-go 远端集成（任务 F / roadmap M2 余项 3）：真实 Qdrant +
-  # NestJS vector 与 vector-go 的契约差分。本机禁 Docker——验证全部在
-  # GitHub Actions Linux runner 完成。
+  # vector-go 远端集成：真实 Qdrant 上的 Go 单端契约检查。覆盖 GET /healthz、
+  # POST /v1/upsert、POST /v1/search、x-internal-token 鉴权、orgId 过滤和错误
+  # 返回；预期来自已保存契约（httpapi 对齐 Nest 的行为）的独立断言，不与同一次
+  # Go 请求结果自比。不再启动 NestJS vector，也不再做 Nest↔Go 差分。
   vector-integration:
     runs-on: [self-hosted, linux, build-server]
     timeout-minutes: 20
     services:
       qdrant:
         # 与 infra/docker/docker-compose.yml 的 qdrant 服务同版本。
-        # 注：qdrant 镜像无 shell 工具，health-cmd 无法用 curl/wget——
-        # 就绪等待由「Start services」步骤的宿主侧循环完成。
+        # qdrant 镜像无 shell 工具，就绪等待由宿主侧循环完成。
         image: qdrant/qdrant:v1.10.1
         ports:
           - 6333:6333
@@ -166,22 +161,11 @@ jobs:
       CI: "true"
       QDRANT_URL: http://localhost:6333
       QDRANT_API_KEY: ""
-      VECTOR_INTEGRATION: "1"
-      VECTOR_INTEGRATION_TOKEN: integration-internal-token
       VECTOR_INTERNAL_TOKEN: integration-internal-token
       VECTOR_COLLECTION_PREFIX: integration_processed
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -189,85 +173,24 @@ jobs:
           go-version-file: apps/vector-go/go.mod
           cache: false
 
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      - name: Generate Prisma client
-        run: pnpm --filter db run prisma:generate
-
-      - name: Build workspace deps (utils) + vector (NestJS)
-        run: pnpm exec turbo run build --env-mode=loose --filter=@modular/vector --filter=@modular/utils
-
-      - name: Build vector-go binary
-        run: cd apps/vector-go && go build -o /tmp/vector-go-bin ./main.go
-
-      - name: Start NestJS vector + vector-go against real Qdrant
+      - name: Wait for Qdrant
         run: |
-          # Qdrant 就绪等待（服务容器无 health 探针，宿主侧循环探测）。
           for i in $(seq 1 60); do
             if curl -fsS http://localhost:6333/healthz >/dev/null 2>&1; then
               echo "qdrant healthy"
-              break
-            fi
-            if [ "$i" = 60 ]; then
-              echo "qdrant failed to become healthy"
-              exit 1
+              exit 0
             fi
             sleep 2
           done
-
-          # NestJS vector（:4010）
-          PORT=4010 \
-          NODE_ENV=test \
-          QDRANT_URL=http://localhost:6333 \
-          QDRANT_API_KEY= \
-          VECTOR_INTERNAL_TOKEN=integration-internal-token \
-          VECTOR_COLLECTION_PREFIX=integration_processed \
-          node apps/vector/dist/main.js > /tmp/vector-nestjs.log 2>&1 &
-          echo $! > /tmp/vector-nestjs.pid
-
-          # vector-go（:4012）
-          PORT=4012 \
-          NODE_ENV=test \
-          QDRANT_URL=http://localhost:6333 \
-          QDRANT_API_KEY= \
-          VECTOR_INTERNAL_TOKEN=integration-internal-token \
-          VECTOR_COLLECTION_PREFIX=integration_processed \
-          /tmp/vector-go-bin > /tmp/vector-go.log 2>&1 &
-          echo $! > /tmp/vector-go.pid
-
-          # 等待两侧健康（最多 60s）。
-          for i in $(seq 1 60); do
-            nest_ok=$(curl -fsS http://localhost:4010/healthz >/dev/null 2>&1 && echo ok || echo no)
-            go_ok=$(curl -fsS http://localhost:4012/healthz >/dev/null 2>&1 && echo ok || echo no)
-            if [ "$nest_ok" = ok ] && [ "$go_ok" = ok ]; then
-              echo "both vector services healthy"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "vector services failed to become healthy"
-          echo "=== nestjs log ==="; cat /tmp/vector-nestjs.log || true
-          echo "=== go log ==="; cat /tmp/vector-go.log || true
+          echo "qdrant failed to become healthy"
           exit 1
 
-      - name: Contract diff — NestJS vector vs vector-go (real Qdrant)
-        run: |
-          VECTOR_NESTJS_URL=http://localhost:4010 \
-          VECTOR_GO_URL=http://localhost:4012 \
-          pnpm --filter @modular/vector test -- src/integration/vector-go-diff.test.ts
-
-      - name: Dump service logs on failure
-        if: failure()
-        run: |
-          echo "=== nestjs log ==="; cat /tmp/vector-nestjs.log || true
-          echo "=== go log ==="; cat /tmp/vector-go.log || true
-
-      - name: Stop services
-        if: always()
-        run: |
-          kill $(cat /tmp/vector-nestjs.pid) 2>/dev/null || true
-          kill $(cat /tmp/vector-go.pid) 2>/dev/null || true
+      # Real Qdrant, Go single-end. The test drives the exact httpapi handler that
+      # main.go serves against the live Qdrant service and asserts the saved
+      # contract: /healthz shape, /v1/upsert 201, /v1/search 201 with orgId
+      # isolation, internal-token 401s and 400 validation errors.
+      - name: vector-go single-end contract test (real Qdrant)
+        run: cd apps/vector-go && go test -tags=integration -count=1 -v -run TestVectorContractIntegration .
 
   # Go-批2A/2B：user-settings 只读 shadow（onboarding / rss-reader /
   # spacetime-timeline 三个 GET 共用同一 repository）的真实 MySQL 数据
@@ -331,8 +254,8 @@ jobs:
           go-version-file: apps/api-go/go.mod
           cache: false
 
-      # 使用仓库已锁定的 bullmq 5.63.2 做双向协议验证。只安装 api 的
-      # workspace 依赖，node fixture 从 apps/api 目录读取同一 lockfile。
+      # 使用仓库已锁定的 bullmq 5.63.2 做双向协议验证。只安装协议夹具/工具包
+      # @modular/infra-scripts 的依赖；node fixture 从该 workspace 读取同一 lockfile。
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
@@ -343,7 +266,7 @@ jobs:
           cache: pnpm
 
       - name: Install locked Node BullMQ fixture dependencies
-        run: pnpm install --frozen-lockfile --filter @modular/api...
+        run: pnpm install --frozen-lockfile --filter @modular/infra-scripts...
 
       - name: Go modules (download with committed go.sum)
         run: cd apps/api-go && go mod download
@@ -724,16 +647,17 @@ jobs:
         run: |
           echo "::notice::go.mod/go.sum 已远端生成并提交。请从 PR 移除 go-modules-regen label，恢复漂移门禁语义。"
 
-  # 契约基线一次性远端再生成（专用远端生成提交方案）。
+  # Web GraphQL 客户端一次性远端再生成（Go SDL 为权威源）。
   #
-  # 背景：本仓库约束「生成器不在本机执行」——生成物（OpenAPI 快照 /
-  # 鉴权矩阵 / GraphQL SDL）的更新必须走远端。本 job 仅在 PR 带有
-  # contract-regen label 时运行：检出 PR head → 运行三个生成器 →
-  # 有差异则提交回 PR 分支（触发新一轮完整 CI）。
+  # 背景：契约权威现由 Go 拥有——apps/api-go/internal/graphqlread/schema/schema.gql
+  # 是唯一 SDL；OpenAPI 快照与鉴权矩阵是冻结的历史预期，由 Go 契约门禁对照真实
+  # 路由注册发现漂移，不再由 Nest 扫描生成。唯一仍需再生成的产物是
+  # apps/web/graphql/generated.ts。
   #
-  # ⚠️ 该 label 等价于「跳过漂移门禁一次」——只应由维护者在有意变更
-  # 契约语义时添加，再生成完成后必须移除。平时 verify job 的三个
-  # drift gate 保持 fail-on-drift 语义不变。
+  # 本 job 仅在 PR 带 contract-regen label 时运行：检出 PR head → 从已提交的
+  # Go SDL 重新生成 Web 客户端 → 有差异则提交回 PR 分支（触发新一轮完整 CI）。
+  # ⚠️ 再生成完成后必须移除 label。平时 verify 的 Web codegen 确定性/漂移门禁
+  # 保持 fail-on-drift 语义不变。
   contract-baseline-regen:
     if: contains(github.event.pull_request.labels.*.name, 'contract-regen')
     runs-on: [self-hosted, linux, build-server]
@@ -762,28 +686,22 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Generate Prisma client
-        run: pnpm --filter db run prisma:generate
+      - name: Regenerate Web GraphQL client from Go SDL
+        run: pnpm --filter @modular/web run generate
 
-      - name: Regenerate contract artifacts
-        run: |
-          pnpm --filter @modular/api run contract:openapi:snapshot
-          pnpm --filter @modular/api run contract:auth-matrix:generate
-          pnpm --filter @modular/api run generate:schema
-
-      - name: Commit regenerated artifacts (if changed)
+      - name: Commit regenerated client (if changed)
         run: |
           git config user.name "contract-regen[bot]"
           git config user.email "actions@github.com"
-          if git diff --quiet; then
-            echo "contract artifacts already in sync — nothing to commit"
+          if [ -z "$(git status --porcelain -- apps/web/graphql/generated.ts)" ]; then
+            echo "generated.ts already in sync — nothing to commit"
             exit 0
           fi
-          git add apps/api/tests/contract apps/api/schema.gql
-          git commit -m "🔧 chore(contract): 远端再生成契约基线（OpenAPI 快照/鉴权矩阵/GraphQL SDL）"
+          git add apps/web/graphql/generated.ts
+          git commit -m "🔧 chore(contract): 从 Go SDL 远端再生成 Web GraphQL 客户端"
           git push origin HEAD:${{ github.head_ref }}
-          echo "committed regenerated artifacts"
+          echo "committed regenerated Web GraphQL client"
 
       - name: Remind to remove the label
         run: |
-          echo "::notice::契约基线已再生成并提交。请从 PR 移除 contract-regen label，恢复漂移门禁语义。"
+          echo "::notice::Web GraphQL 客户端已从 Go SDL 再生成并提交。请从 PR 移除 contract-regen label，恢复漂移门禁语义。"

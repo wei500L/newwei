@@ -34,9 +34,6 @@ func wireClassificationRssOps(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	if cfg.ClassificationRssOpsMode != config.ClassificationRssOpsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: classification/rss ops go takeover requires mysql, jwt, and redis")
 	}
@@ -63,11 +60,11 @@ func wireClassificationRssOps(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: classification/rss ops takeover mode=%s", cfg.ClassificationRssOpsMode)
+	log.Printf("api-go: classification/rss ops takeover mode=%s", "go")
 	return nil
 }

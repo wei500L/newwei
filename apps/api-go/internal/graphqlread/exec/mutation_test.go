@@ -29,7 +29,7 @@ func TestMutationRootsPlanToExecuteOnlyWhenRegistered(t *testing.T) {
 	engine := New(loaded, reg, 8, 2000, nil)
 
 	const createOrg = `mutation { createOrg(input: { name: "Acme", slug: "acme-corp" }) { id name slug } }`
-	if got := engine.PlanDocument(createOrg, nil, nil); got.Kind != KindLegacy {
+	if got := engine.PlanDocument(createOrg, nil, nil); got.Kind != KindProtocol {
 		t.Fatalf("unregistered mutation kind %s body %s", got.Kind, got.Result.Body)
 	}
 
@@ -49,7 +49,7 @@ func TestMutationRootsPlanToExecuteOnlyWhenRegistered(t *testing.T) {
 		`query { me { id } }`,
 		`query { roles { id } }`,
 	} {
-		if got := engine.PlanDocument(doc, nil, nil); got.Kind != KindLegacy {
+		if got := engine.PlanDocument(doc, nil, nil); got.Kind != KindProtocol {
 			t.Fatalf("%s kind %s body %s", doc, got.Kind, got.Result.Body)
 		}
 	}
@@ -80,7 +80,7 @@ func TestWorkspaceWriteRootsPlanToExecuteOnlyWhenRegistered(t *testing.T) {
 		`mutation { updateAlertEventStatus(input: { eventId: "e", status: confirmed }) { id deliveries { id channelName } } }`,
 	}
 	for _, doc := range documents {
-		if got := engine.PlanDocument(doc, nil, nil); got.Kind != KindLegacy {
+		if got := engine.PlanDocument(doc, nil, nil); got.Kind != KindProtocol {
 			t.Fatalf("unregistered %s kind %s body %s", doc, got.Kind, got.Result.Body)
 		}
 	}
@@ -106,7 +106,7 @@ func TestWorkspaceWriteRootsPlanToExecuteOnlyWhenRegistered(t *testing.T) {
 		`query { alertChannels { id } }`,
 		`query { alertEvents { id } }`,
 	} {
-		if got := engine.PlanDocument(doc, nil, nil); got.Kind != KindLegacy {
+		if got := engine.PlanDocument(doc, nil, nil); got.Kind != KindProtocol {
 			t.Fatalf("mixed or read-only %s kind %s body %s", doc, got.Kind, got.Result.Body)
 		}
 	}

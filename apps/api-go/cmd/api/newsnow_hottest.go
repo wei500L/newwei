@@ -58,8 +58,8 @@ func newNewsnowHottestUnit(
 	mongoConn **dashboardstats.Connection,
 	sources *newsnowsources.Service,
 ) (*newsnowHottestUnit, error) {
-	hottestGo := cfg.NewsnowHottestMode == config.NewsnowHottestModeGo
-	backgroundGo := cfg.NewsnowBackgroundMode == config.NewsnowBackgroundModeGo
+	hottestGo := true
+	backgroundGo := true
 	if !hottestGo && !backgroundGo {
 		return nil, nil
 	}
@@ -124,12 +124,12 @@ func newNewsnowHottestUnit(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)
 		})
-		log.Printf("api-go: newsnow hottest reading takeover mode=%s", cfg.NewsnowHottestMode)
+		log.Printf("api-go: newsnow hottest reading takeover mode=%s", "go")
 	}
 
 	unit.registry = newsnowhottest.NewActiveSourceRegistry()
@@ -153,7 +153,7 @@ func newNewsnowHottestUnit(
 
 // Start launches the schedulers when the background switch is go.
 func (u *newsnowHottestUnit) Start(cfg config.Config) {
-	if u == nil || cfg.NewsnowBackgroundMode != config.NewsnowBackgroundModeGo {
+	if u == nil {
 		return
 	}
 	if u.scheduler != nil {

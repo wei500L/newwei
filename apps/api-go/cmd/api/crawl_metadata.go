@@ -22,9 +22,6 @@ func wireCrawlMetadata(
 	service *crawlmetadata.Service,
 	authenticator *authhttp.Authenticator,
 ) error {
-	if cfg.CrawlMetadataMode != config.CrawlMetadataModeGo {
-		return nil
-	}
 	if service == nil || authenticator == nil {
 		return fmt.Errorf("api-go: crawl metadata go takeover requires mysql, jwt, and redis")
 	}
@@ -35,11 +32,11 @@ func wireCrawlMetadata(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: crawl metadata takeover mode=%s", cfg.CrawlMetadataMode)
+	log.Printf("api-go: crawl metadata takeover mode=%s", "go")
 	return nil
 }

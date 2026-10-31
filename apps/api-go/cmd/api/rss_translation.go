@@ -34,9 +34,6 @@ func registerGraphQLRssTranslation(
 	redisClient *redis.Client,
 	mongoDatabase *mongo.Database,
 ) error {
-	if cfg.GraphQLRssTranslationMode != "go" {
-		return nil
-	}
 	if reg == nil {
 		return fmt.Errorf("api-go: API_GO_GRAPHQL_RSS_TRANSLATION_MODE=go requires a GraphQL registry")
 	}

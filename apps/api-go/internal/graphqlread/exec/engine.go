@@ -21,8 +21,6 @@ import (
 )
 
 const (
-	// KindLegacy means the original HTTP request must be proxied unchanged.
-	KindLegacy = "legacy"
 	// KindProtocol means Body is a complete GraphQL HTTP response and no
 	// resolver ran.
 	KindProtocol = "protocol"
@@ -110,8 +108,12 @@ func (e *Engine) PlanDocument(query string, operationName *string, rawVariables 
 	supported := op != nil && e.rootDefinition(op) != nil && e.operationSupported(doc, op)
 	if len(validation) > 0 {
 		if selectionErr == nil && op != nil && !supported {
-			plan.Kind = KindLegacy
+			// The document is schema-invalid for an operation the Go executor
+			// does not own. Reject it as a whole instead of forwarding it to
+			// NestJS; no resolver runs.
+			plan.Kind = KindProtocol
 			plan.Op = op
+			plan.Result = operationNotSupported()
 			return plan
 		}
 		plan.Kind = KindProtocol
@@ -126,20 +128,24 @@ func (e *Engine) PlanDocument(query string, operationName *string, rawVariables 
 		return plan
 	}
 	if e.rootDefinition(op) == nil {
-		plan.Kind = KindLegacy
+		// An unregistered root is rejected before any resolver runs. Registering
+		// the document for APQ is side-effect-free and does not execute anything.
+		plan.Kind = KindProtocol
 		plan.RegisterDocument = true
 		plan.Validated = true
 		plan.Op = op
+		plan.Result = operationNotSupported()
 		return plan
 	}
 	depth := e.depthErrors(doc)
 	if !supported {
-		plan.Kind = KindLegacy
+		// The root exists but a selected field or return type is not owned by
+		// the Go executor. Reject the whole operation, never partially execute.
+		plan.Kind = KindProtocol
 		plan.Op = op
-		if len(depth) == 0 {
-			plan.RegisterDocument = true
-			plan.Validated = true
-		}
+		plan.RegisterDocument = true
+		plan.Validated = true
+		plan.Result = operationNotSupported()
 		return plan
 	}
 	if len(depth) > 0 {

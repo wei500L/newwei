@@ -5,30 +5,29 @@ import (
 	"testing"
 )
 
-func TestWithEconomicDataLegacyAddsNothing(t *testing.T) {
-	rules := []Rule{{Prefix: "/api/", Mode: ModeLegacy}}
-	got := WithEconomicData(rules, "")
-	if len(got) != len(rules) {
-		t.Fatalf("legacy mode added %d rules", len(got)-len(rules))
-	}
-}
-
+// TestWithEconomicDataExactPaths locks the three exact AkShare routes and the
+// method scoping.
 func TestWithEconomicDataExactPaths(t *testing.T) {
-	rules := WithEconomicData([]Rule{{Prefix: "/api/", Mode: ModeLegacy}}, string(ModeGo))
+	gateway := New(WithEconomicData(BaseRules()))
 	want := map[string]string{
 		"/api/admin/akshare/version": http.MethodGet,
 		"/api/admin/akshare/status":  http.MethodGet,
 		"/api/admin/akshare/upgrade": http.MethodPost,
 	}
-	for _, rule := range rules {
-		if method, ok := want[rule.Prefix]; ok {
-			if rule.Mode != ModeGo || !rule.Exact || !rule.Methods[method] {
-				t.Fatalf("rule %s = %+v", rule.Prefix, rule)
-			}
-			delete(want, rule.Prefix)
+	for path, method := range want {
+		rule, matched := gateway.matchRule(method, path)
+		if !matched || rule.HandlerKey != EconomicDataKey || !rule.Exact || !rule.Methods[method] {
+			t.Fatalf("%s %s = %+v matched=%v", method, path, rule, matched)
 		}
 	}
-	if len(want) != 0 {
-		t.Fatalf("missing rules: %v", want)
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/admin/akshare/upgrade"},
+		{http.MethodPost, "/api/admin/akshare/status"},
+		{http.MethodGet, "/api/admin/akshare/version/extra"},
+		{http.MethodGet, "/api/admin/akshare/version/"},
+	} {
+		if _, matched := gateway.matchRule(tc.method, tc.path); matched {
+			t.Fatalf("%s %s unexpectedly matched a Go rule", tc.method, tc.path)
+		}
 	}
 }

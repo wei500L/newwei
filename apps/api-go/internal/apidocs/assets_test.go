@@ -8,23 +8,6 @@ import (
 	"testing"
 )
 
-// contractFixturePath is the NestJS-generated OpenAPI snapshot the embedded copy
-// must mirror. Go tests run with the package directory as the working
-// directory, so the relative path resolves inside the repository.
-const contractFixturePath = "../../../api/tests/contract/openapi.snapshot.json"
-
-// TestEmbeddedSnapshotIsByteIdenticalToTheContractFixture locks the vendored
-// copy: a regenerated NestJS snapshot must be copied again, not reformatted.
-func TestEmbeddedSnapshotIsByteIdenticalToTheContractFixture(t *testing.T) {
-	want, err := os.ReadFile(contractFixturePath)
-	if err != nil {
-		t.Fatalf("read %s: %v", contractFixturePath, err)
-	}
-	if !bytes.Equal(openapiSnapshot, want) {
-		t.Fatalf("embedded snapshot differs from %s (%d vs %d bytes)", contractFixturePath, len(openapiSnapshot), len(want))
-	}
-}
-
 // TestEmbeddedSnapshotKeepsTheDocumentContract locks the OpenAPI version and
 // the info.completeness block that must survive the copy unchanged.
 func TestEmbeddedSnapshotKeepsTheDocumentContract(t *testing.T) {

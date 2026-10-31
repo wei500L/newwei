@@ -27,9 +27,6 @@ import (
 // worker or scheduler and performs no startup network probe: the SMTP connection
 // is established per message, inside the request that needs it.
 func wireAuthLogin(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.AuthLoginMode != config.AuthLoginModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: auth login go takeover requires mysql, redis, and jwt")
 	}
@@ -81,11 +78,11 @@ func wireAuthLogin(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, 
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: auth login takeover mode=%s", cfg.AuthLoginMode)
+	log.Printf("api-go: auth login takeover mode=%s", "go")
 	return nil
 }

@@ -1,9 +1,15 @@
-// Package schema embeds the NestJS GraphQL SDL and loads it with gqlparser.
+// Package schema embeds the GraphQL SDL that both the Go runtime and the Web
+// codegen consume, and loads it with gqlparser.
 //
-// apps/api/schema.gql is the authority. The copy in this directory is checked
-// byte-for-byte against that file by TestEmbeddedSchemaMatchesAPI. A reduced
-// schema is not used for validation: unimplemented fields stay in the SDL and
-// fail closed at ownership time instead of being reported as unknown.
+// The embedded schema.gql in this directory is the authoritative SDL for the
+// Go runtime: the GraphQL executor, the root-coverage gate and the Web codegen
+// (apps/web/codegen.cjs) all read it. It was copied byte-for-byte from the
+// Nest generator output at the migration baseline; see PROVENANCE.md for the
+// source SHA and generation boundary, and the CI "Contract copies in sync"
+// step that keeps the copy equal to the Nest generator while the legacy app
+// still exists. A reduced schema is not used for validation: unimplemented
+// fields stay in the SDL and fail closed at ownership time instead of being
+// reported as unknown.
 package schema
 
 import (

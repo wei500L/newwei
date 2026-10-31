@@ -16,9 +16,6 @@ import (
 )
 
 func wireNewsSources(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.NewsSourcesMode != config.NewsSourcesModeGo {
-		return nil
-	}
 	if db == nil || authenticator == nil || redisClient == nil {
 		return fmt.Errorf("api-go: news sources go takeover requires mysql, jwt, and redis")
 	}
@@ -29,11 +26,11 @@ func wireNewsSources(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: news sources takeover mode=%s", cfg.NewsSourcesMode)
+	log.Printf("api-go: news sources takeover mode=%s", "go")
 	return nil
 }

@@ -28,9 +28,6 @@ func wireQualityOverview(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	if cfg.QualityOverviewMode != config.QualityOverviewModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: quality overview go takeover requires mysql, jwt, and redis")
 	}
@@ -48,11 +45,11 @@ func wireQualityOverview(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: quality overview takeover mode=%s", cfg.QualityOverviewMode)
+	log.Printf("api-go: quality overview takeover mode=%s", "go")
 	return nil
 }

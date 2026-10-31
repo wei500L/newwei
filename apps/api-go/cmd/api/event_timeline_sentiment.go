@@ -46,8 +46,8 @@ func wireEventTimelineSentiment(
 	graphqlMongo **dashboardstats.Connection,
 	dashboardMongo **dashboardstats.Connection,
 ) (*eventTimelineSentimentUnit, error) {
-	timelineOwnedByGo := cfg.NewsEventsTimelineMode == config.NewsEventsTimelineModeGo
-	sentimentOwnedByGo := cfg.SentimentSnapshotMode == config.SentimentSnapshotModeGo
+	timelineOwnedByGo := true
+	sentimentOwnedByGo := true
 	if !timelineOwnedByGo && !sentimentOwnedByGo {
 		return nil, nil
 	}
@@ -103,11 +103,11 @@ func (u *eventTimelineSentimentUnit) Start(cfg config.Config) {
 	if u == nil {
 		return
 	}
-	if u.timeline != nil && cfg.NewsEventsTimelineMode == config.NewsEventsTimelineModeGo {
+	if u.timeline != nil {
 		u.timeline.Start(context.Background())
 		log.Printf("api-go: news-event timeline rebuild scheduler started (interval=10m)")
 	}
-	if u.sentiment != nil && cfg.SentimentSnapshotMode == config.SentimentSnapshotModeGo {
+	if u.sentiment != nil {
 		u.sentiment.Start(context.Background())
 		log.Printf("api-go: sentiment snapshot scheduler started (interval=1h)")
 	}

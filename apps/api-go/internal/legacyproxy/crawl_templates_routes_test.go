@@ -40,32 +40,14 @@ func crawlTemplateNestRoutes() []struct{ method, path string } {
 	}
 }
 
-func TestCrawlTemplatesStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlTemplates(rules, "")
-	rules = WithCrawlTemplates(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(crawlTemplateRoutes(), crawlTemplateNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestCrawlTemplatesGoOwnsRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlTemplates(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithCrawlTemplates(rules)
+	gateway := New(rules)
 	for _, tc := range crawlTemplateRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		key := got.Prefix
 		if got.HandlerKey != "" {
@@ -97,22 +79,19 @@ func TestCrawlTemplatesGoOwnsRoutes(t *testing.T) {
 	}
 	// 预检 OPTIONS 由 Go 路由回答。
 	for _, tc := range crawlTemplateRoutes() {
-		if got := gateway.match(http.MethodOptions, tc.path); got.Mode != ModeGo {
-			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Mode)
+		if got := gateway.match(http.MethodOptions, tc.path); got.Prefix == "" {
+			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Prefix)
 		}
 	}
 }
 
 func TestCrawlTemplatesUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlTemplates(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithCrawlTemplates(rules)
+	gateway := New(rules)
 	for _, tc := range crawlTemplateNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }

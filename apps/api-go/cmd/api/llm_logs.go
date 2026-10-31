@@ -26,9 +26,6 @@ func wireLlmLogs(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	if cfg.LlmLogsMode != config.LlmLogsModeGo {
-		return nil
-	}
 	if db == nil || authenticator == nil {
 		return fmt.Errorf("api-go: llm logs go takeover requires mysql, jwt, and redis")
 	}
@@ -46,11 +43,11 @@ func wireLlmLogs(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: llm request logs takeover mode=%s", cfg.LlmLogsMode)
+	log.Printf("api-go: llm request logs takeover mode=%s", "go")
 	return nil
 }

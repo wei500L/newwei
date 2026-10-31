@@ -10,11 +10,11 @@ import {
 } from "./dev-config";
 import { runChildren } from "./dev-process";
 
-const MODES: readonly DevMode[] = ["go", "legacy", "ais-relay"];
+const MODES: readonly DevMode[] = ["go", "ais-relay"];
 
 function parseMode(value: string | undefined): DevMode {
   const mode = value ?? "go";
-  if (mode !== "go" && mode !== "legacy" && mode !== "ais-relay") {
+  if (mode !== "go" && mode !== "ais-relay") {
     throw new Error(
       `unknown dev mode ${JSON.stringify(value)}; expected one of ${MODES.join("|")}`,
     );

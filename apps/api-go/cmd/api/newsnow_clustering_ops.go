@@ -32,9 +32,6 @@ func wireNewsnowClusteringOps(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	if cfg.NewsnowClusteringOpsMode != config.NewsnowClusteringOpsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: newsnow clustering ops go takeover requires mysql, jwt, and redis")
 	}
@@ -64,12 +61,12 @@ func wireNewsnowClusteringOps(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: newsnow clustering ops takeover mode=%s", cfg.NewsnowClusteringOpsMode)
+	log.Printf("api-go: newsnow clustering ops takeover mode=%s", "go")
 	return nil
 }
 

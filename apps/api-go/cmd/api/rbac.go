@@ -18,9 +18,6 @@ import (
 // wireRbac 只在开关为 go 时注册组织访问控制六条 HTTP 的 handler；
 // legacy（含空串）不注册，全部路径回落 NestJS。
 func wireRbac(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.RbacMode != config.RbacModeGo {
-		return nil
-	}
 	if db == nil || authenticator == nil || redisClient == nil {
 		return fmt.Errorf("api-go: rbac go takeover requires mysql, jwt, and redis")
 	}
@@ -31,11 +28,11 @@ func wireRbac(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redis
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: rbac takeover mode=%s", cfg.RbacMode)
+	log.Printf("api-go: rbac takeover mode=%s", "go")
 	return nil
 }
