@@ -149,7 +149,6 @@ func run() error {
 	// reverse proxy, no legacy/shadow/canary mode and no migration-mode gating;
 	// the gateway always serves the full Go route table.
 	economicDataGo := true
-	economicDataWorkerGo := true
 	archiveReadingGo := true
 	graphqlSubscriptionsGo := true
 	notificationsSocketGo := true
@@ -216,8 +215,6 @@ func run() error {
 	spacetimePropagationGo := true
 	streamGo := true
 	healthzGo := true
-	personalNewsGo := true
-	analysisGo := true
 	// user-settings、dashboard、stream、认证版 healthz、个人内容和分析工作台共用 JWT/Redis/MySQL 鉴权栈。
 	graphqlReadGo := true
 	// 组织、角色与成员管理的 8 个 mutation 由独立开关控制，与读开关解耦：
@@ -248,23 +245,9 @@ func run() error {
 	// may be enabled in a different process.
 	graphqlAssistantWriteGo := true
 	assistantWorkerGo := true
-	situationMonitorsGo := true
-	newsSourcesGo := true
-	crawlWorkflowsGo := true
-	crawlProfilesGo := true
-	crawlFrontierRunsGo := true
-	rbacGo := true
-	crawlTemplatesGo := true
-	llmLogsGo := true
-	adminLogsGo := true
-	newsIndicatorsGo := true
-	qualityOverviewGo := true
-	newsnowClusteringOpsGo := true
 	// The two authenticated hot reads and the two background owners are separate
 	// switches. The HTTP unit needs the credentialed stack; the background unit
 	// needs only MySQL, Redis and Mongo.
-	newsnowHottestGo := true
-	newsnowBackgroundGo := true
 	crawlReadTelemetryGo := true
 	crawlMetadataGo := true
 	// The crawl task lifecycle writes and the queue administration routes are
@@ -275,8 +258,6 @@ func run() error {
 	// The two crawl discovery entries are independent switches: the preview GET
 	// and the crawl-strategy trial/replay POSTs share the crawl4ai client and the
 	// metadata Service but never gate each other.
-	newsSourcePreviewGo := true
-	crawlWorkflowTrialGo := true
 	// The metadata GraphQL root is a child of the read pilot; it can only be
 	// registered when the read executor itself is assembled.
 	graphqlCrawlMetadataGo := graphqlReadGo
@@ -292,55 +273,30 @@ func run() error {
 	// The analysis CSV export unit is independent of the item reading switch:
 	// it builds its own item and news-event readers and only owns the two exact
 	// POST export routes.
-	analysisExportGo := true
 	// The three analysis run mutations are an independent GraphQL write unit.
 	// The worker owner is separate: it needs no JWT and no GraphQL switch.
 	analysisRunsGo := true
 	analysisWorkerGo := true
-	searchReindexGo := true
-	runtimeSettingsGo := true
-	llmGatewayProfilesGo := true
 	// The governance/diagnostics group is an independent switch, but it always
 	// reuses the shared JWT/Redis/MySQL stack: the twelve routes verify tokens
 	// themselves and read the governance envelope from Redis.
-	llmGatewayOpsGo := true
-	infrastructureSettingsGo := true
 	// The storage connection test needs the credentialed stack (JWT, Redis
 	// blacklist, MySQL membership re-derivation) but no Mongo.
 	storageDiagnosticsGo := true
-	dataRuntimeSettingsGo := true
-	emailSettingsGo := true
-	geocodingGo := true
-	runtimeDiagnosticsGo := true
-	authFactorsGo := true
-	accountSecurityGo := true
-	authLoginGo := true
-	identityOnboardingGo := true
-	oidcLoginGo := true
-	classificationRssOpsGo := true
 	// The situation monitor signals takeover needs the same credentialed stack
 	// (JWT verification, Redis revocation list, MySQL membership re-derivation)
 	// as the other migrated domains, so it participates in the shared assembly.
-	situationSignalsGo := true
 	// The insights takeover needs the same credentialed stack plus Mongo.
-	situationInsightsGo := true
 	// The settings takeover needs the credentialed stack plus Mongo (quality
 	// summary) and the settings encryption key.
-	situationSettingsGo := true
 	// The Telegram login takeover serves the two authenticated POSTs, writes the
 	// encrypted session into the settings row and returns the controller's
 	// quality summary, so it joins the credentialed assembly below.
-	situationTelegramAuthGo := true
 	// The signals worker consumes the situationMonitorSignals queue and
 	// registers its repeat schedules. It serves no HTTP route and needs no JWT;
 	// it needs the shared Redis (queue, cached signal state, Telegram lease and
 	// the realtime event bridge) and MySQL (settings row and default OREF
 	// alert rules). Legacy default constructs nothing.
-	situationSignalsWorkerGo := true
-	platformGovernanceGo := true
-	modelAccessSettingsGo := true
-	proxyLoadBalancingGo := true
-	exceptionIngestGo := true
 	// 平行批次追加的模式全部保留（#53 frontier、#54 platform governance、#55
 	// infrastructure、#56 model access、#57 situation monitor signals、#58 items
 	// reading、#59 llm gateway profiles、#60 account security、#61 data runtime、
