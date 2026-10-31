@@ -297,7 +297,7 @@ func TestSituationMonitorsGeocodingIntegration(t *testing.T) {
 		_, _ = db.ExecContext(context.Background(), "DELETE FROM `SystemSetting` WHERE `key` = ?", "geo_nominatim_identity")
 	})
 	if _, err := db.ExecContext(ctx,
-		"INSERT INTO `SystemSetting` (`key`, `value`, `isPublic`, `updatedAt`) VALUES (?, ?, 0, NOW(3))",
+		"INSERT INTO `SystemSetting` (`key`, `value`, `isPublic`, `createdAt`, `updatedAt`) VALUES (?, ?, 0, NOW(3), NOW(3))",
 		"geo_nominatim_identity", `{"userAgent":"Monitor Agent","email":"monitor@example.test"}`); err != nil {
 		t.Fatalf("insert identity setting: %v", err)
 	}
