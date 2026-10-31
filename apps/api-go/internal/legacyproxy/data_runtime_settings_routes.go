@@ -37,10 +37,7 @@ const DataRuntimeSettingsKey = "/api/system-settings#data-runtime"
 // switch (WithSituationSettings) and the remaining situation-monitor sub-paths
 // (telegram-auth/start, telegram-auth/complete, external-snapshot/refresh) stay
 // on NestJS there as well.
-func WithDataRuntimeSettings(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithDataRuntimeSettings(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, DataRuntimeSettingsKey, "/api/system-settings/realtime-signals",
 		http.MethodGet, http.MethodPut, http.MethodDelete)
 	rules = appendExactKeyed(rules, DataRuntimeSettingsKey, "/api/system-settings/archive-preparation",

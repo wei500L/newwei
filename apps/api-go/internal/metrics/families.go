@@ -53,24 +53,6 @@ var (
 		"Latest pipeline metric value by slug.",
 		"org_id", "metric",
 	)
-	// legacyProxyRequests counts every request the Strangler gateway forwards to
-	// NestJS. The cutover runbook uses it to prove that the legacy fallback has
-	// drained before Nest is stopped. It is additive to the NestJS-compatible
-	// families above: dashboards that only read nodejs_*/http_* are unaffected.
-	legacyProxyRequests = defaultRegistry.Counter(
-		"api_go_legacy_proxy_requests_total",
-		"Requests forwarded to the legacy NestJS API by route prefix.",
-		"route_prefix",
-	)
-	// legacyRejectedRequests counts requests the legacy fallback "reject" mode
-	// refused instead of proxying. It reuses the same bounded route_prefix family
-	// as the proxy counter so an operator can compare "still proxied" with
-	// "already rejected" while NestJS is being stopped.
-	legacyRejectedRequests = defaultRegistry.Counter(
-		"api_go_legacy_rejected_requests_total",
-		"Requests rejected by the legacy fallback reject mode, by route prefix.",
-		"route_prefix",
-	)
 )
 
 // Default returns the process-wide registry.
@@ -130,19 +112,6 @@ func SetPipelineMetric(orgID, metric string, value float64) {
 		return
 	}
 	pipelineMetrics.Set(value, orgID, metric)
-}
-
-// RecordLegacyProxyRequest counts one request the gateway forwarded to NestJS.
-// routePrefix is the bounded route family computed by legacyproxy.
-func RecordLegacyProxyRequest(routePrefix string) {
-	legacyProxyRequests.Inc(routePrefix)
-}
-
-// RecordLegacyRejectedRequest counts one request the legacy fallback reject mode
-// answered itself. routePrefix is the same bounded route family computed by
-// legacyproxy, so the two counters stay directly comparable.
-func RecordLegacyRejectedRequest(routePrefix string) {
-	legacyRejectedRequests.Inc(routePrefix)
 }
 
 // Render encodes the default registry including the Go runtime/process series.

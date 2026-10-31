@@ -20,9 +20,6 @@ import (
 // default legacy and the empty string) registers nothing, so the routes keep
 // flowing through the NestJS proxy and rollback is a single variable change.
 func wireRuntimeSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.RuntimeSettingsMode != config.RuntimeSettingsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: runtime settings go takeover requires mysql, redis, and jwt")
 	}
@@ -47,11 +44,11 @@ func wireRuntimeSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sq
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: runtime settings takeover mode=%s", cfg.RuntimeSettingsMode)
+	log.Printf("api-go: runtime settings takeover mode=%s", "go")
 	return nil
 }

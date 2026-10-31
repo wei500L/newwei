@@ -25,9 +25,6 @@ import (
 // carries the same headers and side-channel event as every other unmatched
 // route.
 func wireAPIDocs(gateway *legacyproxy.Gateway, cfg config.Config, policy cors.Policy, recorder nestnotfound.Recorder) error {
-	if cfg.DocsMode != config.DocsModeGo {
-		return nil
-	}
 	if gateway == nil {
 		return fmt.Errorf("api-go: docs takeover requires a gateway")
 	}
@@ -41,6 +38,6 @@ func wireAPIDocs(gateway *legacyproxy.Gateway, cfg config.Config, policy cors.Po
 		Recorder: recorder,
 	})
 	gateway.RegisterGoHandler(legacyproxy.DocsHandlerKey, handler.ServeHTTP)
-	log.Printf("api-go: docs takeover mode=%s enabled=%t", cfg.DocsMode, enabled)
+	log.Printf("api-go: docs takeover mode=%s enabled=%t", "go", enabled)
 	return nil
 }

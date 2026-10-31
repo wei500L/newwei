@@ -43,9 +43,6 @@ type situationSignalsWorkerRuntime struct {
 // returns nil in legacy mode. Nothing is claimed and no MTProto connection is
 // dialed before Start.
 func wireSituationSignalsWorker(cfg config.Config, db *sql.DB, redisClient *redis.Client) (*situationSignalsWorkerRuntime, error) {
-	if cfg.SituationSignalsWorkerMode != config.SituationSignalsWorkerModeGo {
-		return nil, nil
-	}
 	if db == nil || redisClient == nil {
 		return nil, fmt.Errorf("api-go: API_GO_SITUATION_SIGNALS_WORKER_MODE=go requires mysql and redis")
 	}
@@ -145,7 +142,7 @@ func (r *situationSignalsWorkerRuntime) Start(ctx context.Context) error {
 		close(r.done)
 	}()
 	log.Printf("api-go: situation signals worker enabled mode=%s (telegram=%t interval=%dms orefInterval=%dms)",
-		config.SituationSignalsWorkerModeGo, r.sched.TelegramEnabled, r.sched.TelegramIntervalMS, r.sched.OrefIntervalMS)
+		"go", r.sched.TelegramEnabled, r.sched.TelegramIntervalMS, r.sched.OrefIntervalMS)
 	return nil
 }
 

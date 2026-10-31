@@ -27,10 +27,7 @@ const CrawlReadTelemetryKey = "/__go/crawl-read-telemetry"
 // DELETE /api/crawl-tasks/:id plus POST /api/crawl-tasks/:id/retry never match.
 // /api/admin/crawl4ai/queue* is not registered here at all and stays on NestJS.
 // An empty or legacy mode adds no rules.
-func WithCrawlReadTelemetry(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithCrawlReadTelemetry(rules []Rule) []Rule {
 	// The media asset path has two dynamic segments (:assetId/:mode).
 	rules = appendSegmentRule(rules, CrawlReadTelemetryKey, "/api/crawl-media-assets/", false, true, "",
 		http.MethodGet)

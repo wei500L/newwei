@@ -48,7 +48,6 @@ func (stubDriver) Open(string) (driver.Conn, error) { return nil, errStubNoConne
 // wireCrawlWorker fail startup instead of claiming frontier_node jobs.
 func TestCrawlFrontierNodeProcessorBuiltForGoMode(t *testing.T) {
 	cfg := config.Config{
-		CrawlWorkerMode:     config.CrawlWorkerModeGo,
 		CrawlBaseURL:        "http://crawl4ai.test:11235",
 		CrawlTimeoutMs:      120_000,
 		CrawlHealthTTLMs:    60_000,

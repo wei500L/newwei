@@ -34,9 +34,6 @@ func wireCrawlReadTelemetry(
 	storageConfig objectstorage.ConfigReader,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	if cfg.CrawlReadTelemetryMode != config.CrawlReadTelemetryModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil || cfg.JWTSecret == "" {
 		return fmt.Errorf("api-go: crawl read telemetry go takeover requires mysql, jwt, and redis")
 	}
@@ -57,11 +54,11 @@ func wireCrawlReadTelemetry(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: crawl read telemetry takeover mode=%s", cfg.CrawlReadTelemetryMode)
+	log.Printf("api-go: crawl read telemetry takeover mode=%s", "go")
 	return nil
 }

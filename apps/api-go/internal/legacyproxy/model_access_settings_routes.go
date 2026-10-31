@@ -39,10 +39,7 @@ const ModelAccessSettingsKey = "/api/system-settings#model-access"
 // whitelisted on each taken-over path so CORS preflight is answered by the Go
 // handler rather than reaching NestJS; unlisted methods (HEAD, PATCH, ...) keep
 // falling back.
-func WithModelAccessSettings(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithModelAccessSettings(rules []Rule) []Rule {
 	base := "/api/system-settings"
 	internal := "/api/internal/litellm"
 

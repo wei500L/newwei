@@ -35,10 +35,7 @@ const LLMGatewayOpsKey = "/api/system-settings/llm-gateways#ops"
 // activation paths or the bare :id item, which stay owned by
 // WithLLMGatewayProfiles. An empty or legacy mode adds nothing, so the default
 // deployment is unchanged and rollback only flips this one switch.
-func WithLLMGatewayOps(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithLLMGatewayOps(rules []Rule) []Rule {
 	base := "/api/system-settings/llm-gateways"
 
 	rules = appendExactKeyed(rules, LLMGatewayOpsKey, base+"/proxy-governance",

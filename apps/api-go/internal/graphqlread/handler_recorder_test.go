@@ -27,8 +27,8 @@ type channelRow struct {
 type timeValue string
 
 // newRecorderHandler builds the real handler over a registry with exactly one
-// registered query root, plus a legacy sink the caller inspects.
-func newRecorderHandler(t *testing.T, resolve contract.Resolver, recorder exec.ErrorRecorder) (*Handler, *int) {
+// registered query root.
+func newRecorderHandler(t *testing.T, resolve contract.Resolver, recorder exec.ErrorRecorder) *Handler {
 	t.Helper()
 	reg := contract.NewRegistry()
 	reg.RegisterType("AlertChannelModel", channelRow{})
@@ -37,19 +37,14 @@ func newRecorderHandler(t *testing.T, resolve contract.Resolver, recorder exec.E
 		Permission: "alerts.read",
 		Resolve:    resolve,
 	})
-	forwarded := 0
 	handler, err := NewHandler(Options{
-		Registry: reg,
-		Legacy: func(w http.ResponseWriter, _ *http.Request) {
-			forwarded++
-			w.WriteHeader(http.StatusOK)
-		},
+		Registry:      reg,
 		ErrorRecorder: recorder,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return handler, &forwarded
+	return handler
 }
 
 // post runs one GraphQL document through the handler the way cmd/api mounts it: inside
@@ -75,7 +70,7 @@ func post(handler *Handler, document string) *httptest.ResponseRecorder {
 // failure either way, which is what makes this work for HTTP 200 resolver errors too.
 func TestHandlerRecordsResolverFailuresRegardlessOfTheHttpStatus(t *testing.T) {
 	var recorded []exec.ResolverError
-	handler, _ := newRecorderHandler(t, func(contract.Context) (any, error) {
+	handler := newRecorderHandler(t, func(contract.Context) (any, error) {
 		t.Error("the resolver must not run without an authenticator")
 		return nil, nil
 	}, func(failure exec.ResolverError) { recorded = append(recorded, failure) })
@@ -109,21 +104,24 @@ func TestHandlerRecordsResolverFailuresRegardlessOfTheHttpStatus(t *testing.T) {
 	}
 }
 
-// TestHandlerForwardsUnregisteredDocumentsWithoutRecording proves a document the
-// gateway hands to NestJS records nothing: NestJS answers it and its own filter records
-// any failure, so a Go event would duplicate a legacy response.
-func TestHandlerForwardsUnregisteredDocumentsWithoutRecording(t *testing.T) {
+// TestHandlerRejectsUnregisteredDocumentsWithoutRecording proves a document the
+// Go executor does not own is rejected as a GraphQL protocol error before any
+// resolver runs, so no resolver failure is recorded.
+func TestHandlerRejectsUnregisteredDocumentsWithoutRecording(t *testing.T) {
 	var recorded []exec.ResolverError
-	handler, forwarded := newRecorderHandler(t, func(contract.Context) (any, error) {
+	handler := newRecorderHandler(t, func(contract.Context) (any, error) {
 		return []channelRow{}, nil
 	}, func(failure exec.ResolverError) { recorded = append(recorded, failure) })
 
-	post(handler, `{"query":"{ alertRules { id } }"}`)
-	if *forwarded != 1 {
-		t.Fatalf("forwarded %d times, want 1", *forwarded)
+	recorder := post(handler, `{"query":"{ alertRules { id } }"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), "Operation is not supported") {
+		t.Fatalf("body = %s, want the not-supported rejection", recorder.Body.String())
 	}
 	if len(recorded) != 0 {
-		t.Fatalf("a legacy document recorded %d events", len(recorded))
+		t.Fatalf("a rejected document recorded %d events", len(recorded))
 	}
 }
 
@@ -132,16 +130,13 @@ func TestHandlerForwardsUnregisteredDocumentsWithoutRecording(t *testing.T) {
 // through its exception filter.
 func TestHandlerProtocolRejectionRecordsNothing(t *testing.T) {
 	var recorded []exec.ResolverError
-	handler, forwarded := newRecorderHandler(t, func(contract.Context) (any, error) {
+	handler := newRecorderHandler(t, func(contract.Context) (any, error) {
 		return []channelRow{}, nil
 	}, func(failure exec.ResolverError) { recorded = append(recorded, failure) })
 
 	recorder := post(handler, `{"query":"{ alertChannels "}`)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", recorder.Code)
-	}
-	if *forwarded != 0 {
-		t.Fatalf("a malformed document was forwarded %d times", *forwarded)
 	}
 	if len(recorded) != 0 {
 		t.Fatalf("a parse error recorded %d events, want 0", len(recorded))

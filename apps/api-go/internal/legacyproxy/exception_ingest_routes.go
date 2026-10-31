@@ -21,10 +21,7 @@ const (
 // other methods keep falling through to NestJS; Go never answers its own 404.
 // The default (empty / legacy) appends no rules, and the seven admin log read
 // GETs stay on their own API_GO_ADMIN_LOGS_MODE switch.
-func WithExceptionIngest(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithExceptionIngest(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, ExceptionIngestClientKey,
 		"/api/observability/exception-events/client", http.MethodPost)
 	return appendExactKeyed(rules, ExceptionIngestInternalKey,

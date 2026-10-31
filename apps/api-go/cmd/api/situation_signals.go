@@ -34,9 +34,6 @@ func wireSituationSignals(
 	mongoConn **dashboardstats.Connection,
 	authenticator *authhttp.Authenticator,
 ) error {
-	if cfg.SituationSignalsMode != config.SituationSignalsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: situation monitor signals go takeover requires mysql, redis, and jwt")
 	}
@@ -61,11 +58,11 @@ func wireSituationSignals(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: situation monitor signals takeover mode=%s", cfg.SituationSignalsMode)
+	log.Printf("api-go: situation monitor signals takeover mode=%s", "go")
 	return nil
 }

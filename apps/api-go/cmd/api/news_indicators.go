@@ -25,9 +25,6 @@ func wireNewsIndicators(
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
 ) error {
-	if cfg.NewsIndicatorsMode != config.NewsIndicatorsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: news indicators go takeover requires mysql, jwt, and redis")
 	}
@@ -38,11 +35,11 @@ func wireNewsIndicators(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: news indicator associations takeover mode=%s", cfg.NewsIndicatorsMode)
+	log.Printf("api-go: news indicator associations takeover mode=%s", "go")
 	return nil
 }

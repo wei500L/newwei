@@ -57,9 +57,6 @@ func wireNewsEventsIngestion(
 	redisClient *redis.Client,
 	mongoDatabase *mongo.Database,
 ) (*newsEventsIngestionRuntime, error) {
-	if cfg.NewsEventsIngestionMode != config.NewsEventsIngestionModeGo {
-		return nil, nil
-	}
 	if db == nil {
 		return nil, fmt.Errorf("api-go: API_GO_NEWS_EVENTS_INGESTION_MODE=go requires mysql")
 	}

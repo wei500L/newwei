@@ -40,8 +40,8 @@ func wireCrawlDiscovery(
 	metadataService *crawlmetadata.Service,
 	authenticator *authhttp.Authenticator,
 ) error {
-	previewGo := cfg.NewsSourcePreviewMode == config.NewsSourcePreviewModeGo
-	trialGo := cfg.CrawlWorkflowTrialMode == config.CrawlWorkflowTrialModeGo
+	previewGo := true
+	trialGo := true
 	if !previewGo && !trialGo {
 		return nil
 	}
@@ -77,12 +77,12 @@ func wireCrawlDiscovery(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)
 		})
-		log.Printf("api-go: news source preview takeover mode=%s", cfg.NewsSourcePreviewMode)
+		log.Printf("api-go: news source preview takeover mode=%s", "go")
 	}
 
 	if trialGo {
@@ -92,12 +92,12 @@ func wireCrawlDiscovery(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)
 		})
-		log.Printf("api-go: crawl workflow trial/replay takeover mode=%s", cfg.CrawlWorkflowTrialMode)
+		log.Printf("api-go: crawl workflow trial/replay takeover mode=%s", "go")
 	}
 	return nil
 }

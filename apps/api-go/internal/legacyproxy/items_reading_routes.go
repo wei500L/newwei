@@ -17,10 +17,7 @@ const ItemsReadingKey = "/api/items"
 // stay on NestJS, so the un-migrated methods are never answered with a Go 405.
 // The five migrated GraphQL roots are decided by API_GO_GRAPHQL_READ_MODE and
 // API_GO_ITEMS_READING_MODE inside the /graphql executor, not by this table.
-func WithItemsReading(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithItemsReading(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, ItemsReadingKey, "/api/items", http.MethodGet)
 	return appendSegmentRule(rules, ItemsReadingKey, "/api/items/", true, false, "", http.MethodGet)
 }

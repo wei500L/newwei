@@ -41,15 +41,15 @@ func TestPlanRoutesWholeOperation(t *testing.T) {
 		t.Fatalf("owned query kind %s", owned.Kind)
 	}
 	mixed := engine.PlanDocument(`query { alertChannels { id } alertRules { id } }`, nil, nil)
-	if mixed.Kind != KindLegacy {
+	if mixed.Kind != KindProtocol {
 		t.Fatalf("mixed query kind %s", mixed.Kind)
 	}
 	skipped := engine.PlanDocument(`query { alertRules @skip(if: true) { id } alertChannels { id } }`, nil, nil)
-	if skipped.Kind != KindLegacy {
+	if skipped.Kind != KindProtocol {
 		t.Fatalf("@skip on an unmigrated field kind %s", skipped.Kind)
 	}
 	mutation := engine.PlanDocument(`mutation { markAllNotificationsRead }`, nil, nil)
-	if mutation.Kind != KindLegacy {
+	if mutation.Kind != KindProtocol {
 		t.Fatalf("mutation kind %s", mutation.Kind)
 	}
 	name := "Moved"
@@ -59,12 +59,43 @@ func TestPlanRoutesWholeOperation(t *testing.T) {
 	}
 	other := "Other"
 	selectedMutation := engine.PlanDocument(`query Moved { alertChannels { id } } mutation Other { markAllNotificationsRead }`, &other, nil)
-	if selectedMutation.Kind != KindLegacy {
+	if selectedMutation.Kind != KindProtocol {
 		t.Fatalf("selected mutation kind %s", selectedMutation.Kind)
 	}
 	ambiguous := engine.PlanDocument(`query A { alertChannels { id } } query B { alertChannels { name } }`, nil, nil)
 	if ambiguous.Kind != KindProtocol || !strings.Contains(string(ambiguous.Result.Body), "Must provide operation name") {
 		t.Fatalf("ambiguous body %s", ambiguous.Result.Body)
+	}
+}
+
+// TestUnregisteredOperationsRejectWithGraphQLError pins the whole-operation
+// rejection: a document the Go executor does not own is answered with HTTP 200
+// and an errors entry, never forwarded to the NestJS executor.
+func TestUnregisteredOperationsRejectWithGraphQLError(t *testing.T) {
+	loaded, err := schema.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := contract.NewRegistry()
+	engine := New(loaded, reg, 8, 2000, nil)
+
+	for _, query := range []string{
+		`query { alertRules { id } }`,
+		`mutation { markAllNotificationsRead }`,
+		`query { alertRules { id } alertChannels { id } }`,
+		`query { newsEvents { id } }`,
+	} {
+		plan := engine.PlanDocument(query, nil, nil)
+		if plan.Kind != KindProtocol {
+			t.Fatalf("%s kind = %s, want protocol", query, plan.Kind)
+		}
+		if plan.Result.Status != 200 {
+			t.Fatalf("%s status = %d, want 200", query, plan.Result.Status)
+		}
+		body := string(plan.Result.Body)
+		if !strings.Contains(body, `"errors"`) || !strings.Contains(body, "Operation is not supported") {
+			t.Fatalf("%s body = %s, want a GraphQL not-supported error", query, body)
+		}
 	}
 }
 
@@ -106,7 +137,7 @@ func TestRegisteredRootsExecuteAndUnregisteredDocumentsStayLegacy(t *testing.T) 
 		`query { newsEvents { id } }`,
 		`query { alertChannels { id } alertRules { id } }`,
 	} {
-		if got := engine.PlanDocument(query, nil, nil); got.Kind != KindLegacy {
+		if got := engine.PlanDocument(query, nil, nil); got.Kind != KindProtocol {
 			t.Fatalf("%s kind %s", query, got.Kind)
 		}
 	}
@@ -114,7 +145,7 @@ func TestRegisteredRootsExecuteAndUnregisteredDocumentsStayLegacy(t *testing.T) 
 	// API_GO_GRAPHQL_READ_MODE=go 且 API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy：
 	// 不登记新闻事件 root。只含 newsEvents 的文档整包回 Nest，上面的 16 个 query 仍由 Go 执行。
 	newsOnly := engine.PlanDocument(`query { newsEvents { id } }`, nil, nil)
-	if newsOnly.Kind != KindLegacy {
+	if newsOnly.Kind != KindProtocol {
 		t.Fatalf("news events legacy mode kind %s", newsOnly.Kind)
 	}
 
@@ -154,7 +185,7 @@ func TestNewsEventsRootsExecuteOnlyWhenRegistered(t *testing.T) {
 		t.Fatalf("both modes go kind %s body %s", got.Kind, got.Result.Body)
 	}
 	mixed := engine.PlanDocument(`query { newsEvents { id } newsEventSourcePolicySyncStatus { degraded } }`, nil, nil)
-	if mixed.Kind != KindLegacy {
+	if mixed.Kind != KindProtocol {
 		t.Fatalf("source policy mix kind %s", mixed.Kind)
 	}
 	pilot := engine.PlanDocument(`query { alertChannels { id } }`, nil, nil)
@@ -183,7 +214,7 @@ func TestKnowledgeGraphRootsExecuteOnlyWhenRegistered(t *testing.T) {
 	}`
 
 	legacyEngine := New(loaded, reg, 8, 2000, nil)
-	if got := legacyEngine.PlanDocument(six, nil, nil); got.Kind != KindLegacy {
+	if got := legacyEngine.PlanDocument(six, nil, nil); got.Kind != KindProtocol {
 		t.Fatalf("knowledge graph legacy mode kind %s body %s", got.Kind, got.Result.Body)
 	}
 
@@ -201,7 +232,7 @@ func TestKnowledgeGraphRootsExecuteOnlyWhenRegistered(t *testing.T) {
 		`query { getPolicyEventImpact(input: { policyName: "rate" }) { scenario } }`,
 		`query { knowledgeGraphSettings { enabled } }`,
 	} {
-		if got := goEngine.PlanDocument(query, nil, nil); got.Kind != KindLegacy {
+		if got := goEngine.PlanDocument(query, nil, nil); got.Kind != KindProtocol {
 			t.Fatalf("%s kind %s body %s", query, got.Kind, got.Result.Body)
 		}
 	}
@@ -247,7 +278,7 @@ func TestWorkspaceRootsExecuteOnlyWhenRegistered(t *testing.T) {
 	}`
 
 	legacyEngine := New(loaded, reg, 8, 2000, nil)
-	if got := legacyEngine.PlanDocument(twelve, nil, nil); got.Kind != KindLegacy {
+	if got := legacyEngine.PlanDocument(twelve, nil, nil); got.Kind != KindProtocol {
 		t.Fatalf("workspace legacy mode kind %s body %s", got.Kind, got.Result.Body)
 	}
 
@@ -263,7 +294,7 @@ func TestWorkspaceRootsExecuteOnlyWhenRegistered(t *testing.T) {
 		`query { me { id } alertRules { id } }`,
 		`query { newsEvents { id } }`,
 	} {
-		if got := goEngine.PlanDocument(query, nil, nil); got.Kind != KindLegacy {
+		if got := goEngine.PlanDocument(query, nil, nil); got.Kind != KindProtocol {
 			t.Fatalf("%s kind %s body %s", query, got.Kind, got.Result.Body)
 		}
 	}
@@ -369,7 +400,7 @@ func TestSettingsCrawlRootsPlanToExecute(t *testing.T) {
 	}
 	for _, query := range legacy {
 		plan := engine.PlanDocument(query, nil, nil)
-		if plan.Kind != KindLegacy {
+		if plan.Kind != KindProtocol {
 			t.Fatalf("query %s planned as %s", query, plan.Kind)
 		}
 	}
@@ -377,7 +408,7 @@ func TestSettingsCrawlRootsPlanToExecute(t *testing.T) {
 	// A document mixing a migrated root with an unregistered one must fall back
 	// as a whole, so a partial ownership never runs.
 	mixed := engine.PlanDocument(`query { rateLimitSettings { login { limit } } crawlMetadata(input: { url: "https://example.com" }) { url } }`, nil, nil)
-	if mixed.Kind != KindLegacy {
+	if mixed.Kind != KindProtocol {
 		t.Fatalf("mixed document planned as %s", mixed.Kind)
 	}
 }

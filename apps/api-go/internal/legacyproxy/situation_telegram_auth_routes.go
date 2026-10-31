@@ -17,10 +17,7 @@ const SituationTelegramAuthKey = "/api/system-settings/situation-monitor#telegra
 // same prefix (including the DELETE owned by API_GO_SITUATION_SETTINGS_MODE and
 // POST external-snapshot/refresh) keeps its existing owner. The default (empty
 // or legacy) adds no rule at all.
-func WithSituationTelegramAuth(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithSituationTelegramAuth(rules []Rule) []Rule {
 	base := "/api/system-settings/situation-monitor/telegram-auth"
 	rules = appendExactKeyed(rules, SituationTelegramAuthKey, base+"/start", http.MethodPost)
 	return appendExactKeyed(rules, SituationTelegramAuthKey, base+"/complete", http.MethodPost)

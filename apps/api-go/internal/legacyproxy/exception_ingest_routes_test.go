@@ -26,32 +26,14 @@ func exceptionIngestNestRoutes() []struct{ method, path string } {
 	}
 }
 
-func TestExceptionIngestStaysLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithExceptionIngest(rules, "")
-	rules = WithExceptionIngest(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(exceptionIngestRoutes(), exceptionIngestNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestExceptionIngestGoOwnsTwoPosts(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithExceptionIngest(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithExceptionIngest(rules)
+	gateway := New(rules)
 	for _, tc := range exceptionIngestRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if !got.Exact {
 			t.Fatalf("%s %s was not exact: %+v", tc.method, tc.path, got)
@@ -61,22 +43,19 @@ func TestExceptionIngestGoOwnsTwoPosts(t *testing.T) {
 		"/api/observability/exception-events/client",
 		"/api/internal/observability/exception-events",
 	} {
-		if got := gateway.match(http.MethodOptions, path); got.Mode != ModeGo {
-			t.Fatalf("OPTIONS %s mode=%s, want go", path, got.Mode)
+		if got := gateway.match(http.MethodOptions, path); got.Prefix == "" {
+			t.Fatalf("OPTIONS %s mode=%s, want go", path, got.Prefix)
 		}
 	}
 }
 
 func TestExceptionIngestUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithExceptionIngest(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithExceptionIngest(rules)
+	gateway := New(rules)
 	for _, tc := range exceptionIngestNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }

@@ -49,8 +49,8 @@ func wireNewsSourceScheduler(
 	crawlTaskService *crawltaskwrite.Service,
 	mongoConn **dashboardstats.Connection,
 ) (*newssourcescheduler.Scheduler, error) {
-	schedulerGo := cfg.NewsSourceSchedulerMode == config.NewsSourceSchedulerModeGo
-	opsGo := cfg.NewsSourceOpsMode == config.NewsSourceOpsModeGo
+	schedulerGo := true
+	opsGo := true
 	if !schedulerGo && !opsGo {
 		return nil, nil
 	}
@@ -128,18 +128,18 @@ func wireNewsSourceScheduler(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)
 		})
-		log.Printf("api-go: news source operations takeover mode=%s", cfg.NewsSourceOpsMode)
+		log.Printf("api-go: news source operations takeover mode=%s", "go")
 	}
 	if !schedulerGo {
 		return nil, nil
 	}
 	log.Printf("api-go: news source scheduler enabled mode=%s concurrency=%d",
-		cfg.NewsSourceSchedulerMode, cfg.NewsSourceScheduler.SourceConcurrency)
+		"go", cfg.NewsSourceScheduler.SourceConcurrency)
 	return newssourcescheduler.NewScheduler(service), nil
 }
 

@@ -32,10 +32,7 @@ const NewsnowClusteringOpsKey = "/api/news-aggregator/metadata"
 // paths such as /api/news-aggregator/sources, and every unlisted method stay on
 // NestJS; Go never answers with its own 404. The default (empty or legacy)
 // appends no rule at all.
-func WithNewsnowClusteringOps(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithNewsnowClusteringOps(rules []Rule) []Rule {
 	// NewsNow local computation: metadata, URL reverse lookup, personalized
 	// source ordering and the domestic opinion index. None of them fetch an
 	// external source, so all four can be served by Go.

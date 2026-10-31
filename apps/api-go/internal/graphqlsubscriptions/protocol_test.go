@@ -23,7 +23,7 @@ func TestHandshakeProjectionAndCancel(t *testing.T) {
 		order:      &order,
 	}
 	limiter := &fakeLimiter{allowed: true, order: &order}
-	runtime := newTestRuntime(t, source, auth, limiter, "", 2*time.Second)
+	runtime := newTestRuntime(t, source, auth, limiter, 2*time.Second)
 	server := httptest.NewServer(runtime)
 	t.Cleanup(server.Close)
 
@@ -95,7 +95,7 @@ func TestFourSubscriptionPermissions(t *testing.T) {
 		t.Run(test.root+" allowed", func(t *testing.T) {
 			source := newFakeSource()
 			auth := &fakeAuth{identities: map[string]*authhttp.Identity{"token": alertIdentity(test.permission)}}
-			runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, "", 2*time.Second)
+			runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, 2*time.Second)
 			server := httptest.NewServer(runtime)
 			t.Cleanup(server.Close)
 			conn := dialTestConnection(t, server.URL)
@@ -111,7 +111,7 @@ func TestFourSubscriptionPermissions(t *testing.T) {
 		t.Run(test.root+" denied", func(t *testing.T) {
 			source := newFakeSource()
 			auth := &fakeAuth{identities: map[string]*authhttp.Identity{"token": alertIdentity(test.denied)}}
-			runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, "", 2*time.Second)
+			runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, 2*time.Second)
 			server := httptest.NewServer(runtime)
 			t.Cleanup(server.Close)
 			conn := dialTestConnection(t, server.URL)
@@ -158,7 +158,7 @@ func TestOrganizationIsolation(t *testing.T) {
 		"a": authhttp.NewIdentity("user-a", "org-a", []string{"alerts.read"}),
 		"b": authhttp.NewIdentity("user-b", "org-b", []string{"alerts.read"}),
 	}}
-	runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, "", 2*time.Second)
+	runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, 2*time.Second)
 	server := httptest.NewServer(runtime)
 	t.Cleanup(server.Close)
 
@@ -201,7 +201,7 @@ func TestOrganizationIsolation(t *testing.T) {
 func TestCancelAndIdReuseIgnoreLateEvents(t *testing.T) {
 	source := newFakeSource()
 	auth := &fakeAuth{identities: map[string]*authhttp.Identity{"token": alertIdentity("alerts.read")}}
-	runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, "", 2*time.Second)
+	runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, 2*time.Second)
 	server := httptest.NewServer(runtime)
 	t.Cleanup(server.Close)
 
@@ -243,7 +243,7 @@ func TestProtocolCloseCodes(t *testing.T) {
 	newServer := func(t *testing.T, timeout time.Duration) (*fakeSource, *httptest.Server) {
 		source := newFakeSource()
 		auth := &fakeAuth{identities: map[string]*authhttp.Identity{"token": alertIdentity("alerts.read")}}
-		runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, "", timeout)
+		runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, timeout)
 		server := httptest.NewServer(runtime)
 		t.Cleanup(server.Close)
 		return source, server
@@ -313,7 +313,7 @@ func TestPingPongAndUnauthorizedOperation(t *testing.T) {
 		order:      &order,
 	}
 	limiter := &fakeLimiter{allowed: true, order: &order}
-	runtime := newTestRuntime(t, source, auth, limiter, "", 2*time.Second)
+	runtime := newTestRuntime(t, source, auth, limiter, 2*time.Second)
 	server := httptest.NewServer(runtime)
 	t.Cleanup(server.Close)
 
@@ -354,7 +354,7 @@ func TestPingPongAndUnauthorizedOperation(t *testing.T) {
 func TestInvalidDocumentIsProtocolErrorAndConnectionSurvives(t *testing.T) {
 	source := newFakeSource()
 	auth := &fakeAuth{identities: map[string]*authhttp.Identity{"token": alertIdentity("alerts.read")}}
-	runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, "", 2*time.Second)
+	runtime := newTestRuntime(t, source, auth, &fakeLimiter{allowed: true}, 2*time.Second)
 	server := httptest.NewServer(runtime)
 	t.Cleanup(server.Close)
 

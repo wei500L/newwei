@@ -237,19 +237,19 @@ func TestProtocolRejectionsRecordNothing(t *testing.T) {
 	}
 }
 
-// TestUnregisteredFieldRecordsNothing proves a document the gateway hands to NestJS
-// produces no Go event: NestJS answers it and its own filter records any failure, so a
-// Go event here would duplicate a legacy response.
+// TestUnregisteredFieldRecordsNothing proves a document the Go gateway rejects
+// produces no Go callback event, and no resolver failure is recorded: the
+// whole-operation rejection happens before any resolver runs.
 func TestUnregisteredFieldRecordsNothing(t *testing.T) {
 	loaded := execTestSchema(t)
 	engine := New(loaded, contract.NewRegistry(), 8, 2000, nil)
 	recorder := &recordingErrorRecorder{}
 	engine.SetErrorRecorder(recorder.record)
-	if plan := engine.PlanDocument(`{ alertRules { id } }`, nil, nil); plan.Kind != KindLegacy {
-		t.Fatalf("plan kind = %s, want legacy", plan.Kind)
+	if plan := engine.PlanDocument(`{ alertRules { id } }`, nil, nil); plan.Kind != KindProtocol {
+		t.Fatalf("plan kind = %s, want protocol", plan.Kind)
 	}
 	if len(recorder.failures) != 0 {
-		t.Fatalf("a legacy document recorded %d failures, want 0", len(recorder.failures))
+		t.Fatalf("a rejected document recorded %d failures, want 0", len(recorder.failures))
 	}
 }
 

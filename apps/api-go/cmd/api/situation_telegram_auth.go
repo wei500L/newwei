@@ -41,9 +41,6 @@ func wireSituationTelegramAuth(
 	mongoConn **dashboardstats.Connection,
 	authenticator *authhttp.Authenticator,
 ) error {
-	if cfg.SituationTelegramAuthMode != config.SituationTelegramAuthModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: situation Telegram auth takeover requires mysql, redis, and jwt")
 	}
@@ -93,12 +90,12 @@ func wireSituationTelegramAuth(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: situation-monitor Telegram auth takeover mode=%s", cfg.SituationTelegramAuthMode)
+	log.Printf("api-go: situation-monitor Telegram auth takeover mode=%s", "go")
 	return nil
 }
 

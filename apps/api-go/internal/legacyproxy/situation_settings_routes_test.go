@@ -46,32 +46,14 @@ func situationSettingsNestRoutes() []situationSettingsRoute {
 	}
 }
 
-func TestSituationSettingsStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithSituationSettings(rules, "")
-	rules = WithSituationSettings(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(situationSettingsGoRoutes(), situationSettingsNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestSituationSettingsGoOwnsFourEntries(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithSituationSettings(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithSituationSettings(rules)
+	gateway := New(rules)
 	for _, tc := range situationSettingsGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if !got.Exact {
 			t.Fatalf("%s %s must be exact: %+v", tc.method, tc.path, got)
@@ -83,15 +65,12 @@ func TestSituationSettingsGoOwnsFourEntries(t *testing.T) {
 }
 
 func TestSituationSettingsExcludedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithSituationSettings(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithSituationSettings(rules)
+	gateway := New(rules)
 	for _, tc := range situationSettingsNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
@@ -100,15 +79,12 @@ func TestSituationSettingsExcludedRoutesStayNest(t *testing.T) {
 // over the legacy /api/ fallback while the neighbouring units keep their own
 // attribution.
 func TestSituationSettingsCoexistsWithOtherSwitches(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithSituationSettings(rules, string(ModeGo))
-	rules = WithDataRuntimeSettings(rules, string(ModeGo))
-	rules = WithPlatformGovernanceSettings(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := gateway.match(http.MethodGet, "/api/system-settings/situation-monitor"); got.Mode != ModeGo ||
+	rules := BaseRules()
+	rules = WithSituationSettings(rules)
+	rules = WithDataRuntimeSettings(rules)
+	rules = WithPlatformGovernanceSettings(rules)
+	gateway := New(rules)
+	if got := gateway.match(http.MethodGet, "/api/system-settings/situation-monitor"); got.Prefix == "" ||
 		got.HandlerKey != SituationSettingsKey {
 		t.Fatalf("situation settings attribution = %+v", got)
 	}

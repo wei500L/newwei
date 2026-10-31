@@ -14,9 +14,6 @@ import (
 )
 
 func wireSituationMonitors(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, authenticator *authhttp.Authenticator) error {
-	if cfg.SituationMonitorsMode != config.SituationMonitorsModeGo {
-		return nil
-	}
 	if db == nil || authenticator == nil {
 		return fmt.Errorf("api-go: situation monitors go takeover requires mysql, jwt, and redis")
 	}
@@ -27,11 +24,11 @@ func wireSituationMonitors(gateway *legacyproxy.Gateway, cfg config.Config, db *
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: situation monitors takeover mode=%s", cfg.SituationMonitorsMode)
+	log.Printf("api-go: situation monitors takeover mode=%s", "go")
 	return nil
 }

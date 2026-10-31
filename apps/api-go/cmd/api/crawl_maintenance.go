@@ -96,8 +96,8 @@ func wireCrawlMaintenance(
 	redisClient *redis.Client,
 	mongoConn **dashboardstats.Connection,
 ) (*crawlMaintenanceRuntime, error) {
-	maintenanceGo := cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo
-	auditGo := cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo
+	maintenanceGo := true
+	auditGo := true
 	if !maintenanceGo && !auditGo {
 		return nil, nil
 	}

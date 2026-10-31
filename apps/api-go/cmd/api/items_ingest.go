@@ -48,7 +48,7 @@ func wireRawItemOutboxScheduler(
 	service *itemsingest.Service,
 	redisClient *redis.Client,
 ) *itemsingest.OutboxScheduler {
-	if cfg.RawItemOutboxMode != config.RawItemOutboxModeGo || !cfg.ScheduleEnabled {
+	if !cfg.ScheduleEnabled {
 		return nil
 	}
 	if service == nil || redisClient == nil {
@@ -72,7 +72,7 @@ func registerItemsIngestHandler(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		if r.Method == http.MethodPost {
@@ -83,18 +83,17 @@ func registerItemsIngestHandler(
 			readHandler.ServeHTTP(w, r)
 			return
 		}
-		gateway.ServeLegacy(w, r)
+		gateway.Reject(w, r)
 	})
 }
 
 // validateItemsIngestResources fails startup instead of silently leaving a nil
 // service in front of a go switch.
 func validateItemsIngestResources(cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.ItemsIngestMode == config.ItemsIngestModeGo && authenticator == nil {
+	if authenticator == nil {
 		return fmt.Errorf("api-go: API_GO_ITEMS_INGEST_MODE=go requires the JWT authenticator")
 	}
-	if (cfg.ItemsIngestMode == config.ItemsIngestModeGo || cfg.RawItemOutboxMode == config.RawItemOutboxModeGo) &&
-		(db == nil || redisClient == nil) {
+	if db == nil || redisClient == nil {
 		return fmt.Errorf("api-go: items ingest/outbox go mode requires mysql and redis")
 	}
 	return nil

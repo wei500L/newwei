@@ -29,13 +29,6 @@ const (
 	closeTooManyInit  websocket.StatusCode = 4429
 )
 
-type operationKind int
-
-const (
-	operationLocal operationKind = iota
-	operationLegacy
-)
-
 type closeRequest struct {
 	code   websocket.StatusCode
 	reason string
@@ -44,10 +37,8 @@ type closeRequest struct {
 type operation struct {
 	id         string
 	generation uint64
-	kind       operationKind
 	cancel     context.CancelFunc
 	plan       exec.SubscriptionPlan
-	payload    json.RawMessage
 }
 
 type clientMessage struct {
@@ -92,9 +83,6 @@ type connection struct {
 	closeReq   chan closeRequest
 	closeOnce  sync.Once
 	writerDone chan struct{}
-
-	legacyMu sync.Mutex
-	legacy   *legacyUpstream
 }
 
 func newConnection(runtime *Runtime, ws *websocket.Conn, ctx context.Context, cancel context.CancelFunc, request *http.Request) *connection {
@@ -190,13 +178,6 @@ func (c *connection) cleanup() {
 	for _, op := range ops {
 		op.cancel()
 	}
-	c.legacyMu.Lock()
-	upstream := c.legacy
-	c.legacy = nil
-	c.legacyMu.Unlock()
-	if upstream != nil {
-		upstream.close()
-	}
 	select {
 	case <-c.writerDone:
 	case <-time.After(2 * time.Second):
@@ -282,13 +263,15 @@ func (c *connection) handleSubscribe(message clientMessage) {
 		}
 	}
 	if invalidVariables {
-		c.startLegacyOperation(message.ID, message.Payload)
+		// A non-object variables value is a GraphQL user-input error. Reject it
+		// locally as next(errors) followed by complete; it is never forwarded to
+		// the NestJS graphql-ws upstream.
+		c.sendServer(serverMessage{Type: "next", ID: message.ID, Payload: invalidVariablesPayload()})
+		c.sendServer(serverMessage{Type: "complete", ID: message.ID})
 		return
 	}
 	plan := c.runtime.engine.PlanSubscription(query, payload.OperationName, variables)
 	switch plan.Kind {
-	case exec.KindLegacy:
-		c.startLegacyOperation(message.ID, message.Payload)
 	case exec.KindProtocol:
 		c.sendServer(serverMessage{Type: "next", ID: message.ID, Payload: plan.Result.Body})
 		c.sendServer(serverMessage{Type: "complete", ID: message.ID})
@@ -297,7 +280,9 @@ func (c *connection) handleSubscribe(message clientMessage) {
 	case exec.KindExecute:
 		c.startLocalOperation(message.ID, plan)
 	default:
-		c.startLegacyOperation(message.ID, message.Payload)
+		// A plan the Go executor does not recognise is an operation-level error;
+		// it is never forwarded to the NestJS upstream.
+		c.sendServer(serverMessage{Type: "error", ID: message.ID, Payload: internalErrorArray()})
 	}
 }
 
@@ -324,7 +309,7 @@ func (c *connection) startLocalOperation(id string, plan exec.SubscriptionPlan) 
 		return
 	}
 	c.generation++
-	op := &operation{id: id, generation: c.generation, kind: operationLocal, cancel: cancel, plan: plan}
+	op := &operation{id: id, generation: c.generation, cancel: cancel, plan: plan}
 	c.ops[id] = op
 	c.mu.Unlock()
 	go c.runLocalOperation(ctx, op)
@@ -411,123 +396,10 @@ func (c *connection) syntheticRequest() *http.Request {
 	return request
 }
 
-func (c *connection) startLegacyOperation(id string, payload json.RawMessage) {
-	ctx, cancel := context.WithCancel(c.ctx)
-	c.mu.Lock()
-	if c.closing {
-		c.mu.Unlock()
-		cancel()
-		return
-	}
-	c.generation++
-	op := &operation{id: id, generation: c.generation, kind: operationLegacy, cancel: cancel, payload: payload}
-	c.ops[id] = op
-	c.mu.Unlock()
-	go func() {
-		upstream, err := c.ensureLegacy(ctx)
-		if err != nil {
-			c.failLegacyLocalOperation(op)
-			return
-		}
-		if !c.operationCurrent(op) {
-			return
-		}
-		if _, err := upstream.subscribe(ctx, op.id, op.generation, payload); err != nil {
-			c.failLegacyLocalOperation(op)
-			return
-		}
-		if !c.operationCurrent(op) {
-			upstream.complete(op.id)
-		}
-	}()
-}
-
-func (c *connection) ensureLegacy(ctx context.Context) (*legacyUpstream, error) {
-	c.legacyMu.Lock()
-	defer c.legacyMu.Unlock()
-	if c.legacy != nil {
-		select {
-		case <-c.legacy.closed:
-			c.legacy = nil
-		default:
-			return c.legacy, nil
-		}
-	}
-	upstream, err := dialLegacy(ctx, c.runtime.options.LegacyURL, c.initPayloadCopy(), legacyHandlers{
-		onMessage: c.handleLegacyMessage,
-		onFailure: c.failLegacyOperation,
-	})
-	if err != nil {
-		return nil, err
-	}
-	c.legacy = upstream
-	return upstream, nil
-}
-
-func (c *connection) failLegacyLocalOperation(op *operation) {
-	c.failLegacyOperation(&legacyOperation{downstreamID: op.id, generation: op.generation})
-}
-
-func (c *connection) handleLegacyMessage(op *legacyOperation, messageType string, payload json.RawMessage) {
-	data, err := json.Marshal(serverMessage{Type: messageType, ID: op.downstreamID, Payload: payload})
-	if err != nil {
-		return
-	}
-	c.mu.Lock()
-	current := c.ops[op.downstreamID]
-	matches := current != nil && current.generation == op.generation && current.kind == operationLegacy
-	if !matches {
-		c.mu.Unlock()
-		return
-	}
-	// Queue and remove under the same lock so a client complete followed by an
-	// id reuse cannot receive this late upstream frame.
-	queued := false
-	select {
-	case c.out <- data:
-		queued = true
-	default:
-	}
-	if messageType == "complete" || messageType == "error" {
-		delete(c.ops, op.downstreamID)
-	}
-	c.mu.Unlock()
-	if !queued {
-		c.forceClose()
-		return
-	}
-	if messageType == "complete" || messageType == "error" {
-		current.cancel()
-	}
-}
-
-// failLegacyOperation ends only the operations owned by the failed upstream
-// connection with an error message; it never fabricates a successful result
-// and never replays a mutation.
-func (c *connection) failLegacyOperation(op *legacyOperation) {
-	data, err := json.Marshal(serverMessage{Type: "error", ID: op.downstreamID, Payload: internalErrorPayload()})
-	if err != nil {
-		return
-	}
-	c.mu.Lock()
-	current := c.ops[op.downstreamID]
-	matches := current != nil && current.generation == op.generation && current.kind == operationLegacy
-	if !matches {
-		c.mu.Unlock()
-		return
-	}
-	queued := false
-	select {
-	case c.out <- data:
-		queued = true
-	default:
-	}
-	delete(c.ops, op.downstreamID)
-	c.mu.Unlock()
-	if !queued {
-		c.forceClose()
-	}
-	current.cancel()
+// invalidVariablesPayload is the graphql-js BAD_USER_INPUT result returned when
+// a subscribe payload carries a non-object variables value.
+func invalidVariablesPayload() json.RawMessage {
+	return json.RawMessage(`{"errors":[{"message":"Variables must be an object","extensions":{"code":"BAD_USER_INPUT","http":{"status":400}}}]}`)
 }
 
 func (c *connection) completeOperation(id string) {
@@ -541,14 +413,6 @@ func (c *connection) completeOperation(id string) {
 		return
 	}
 	op.cancel()
-	if op.kind == operationLegacy {
-		c.legacyMu.Lock()
-		upstream := c.legacy
-		c.legacyMu.Unlock()
-		if upstream != nil {
-			upstream.complete(id)
-		}
-	}
 }
 
 // finishOperation completes a local operation after its source ended. The

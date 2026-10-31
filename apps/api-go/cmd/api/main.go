@@ -1,163 +1,30 @@
-// api-go 是主后端的 Go 网关（Strangler Fig，见 docs/refactor/go-migration-adr.md）。
+// api-go 是主后端的 Go 运行时（GO-ONLY-RUNTIME-001 起不再代理到 NestJS）。
 //
-// 默认全部流量反向代理到 NestJS apps/api（LEGACY_API_URL，默认
-// http://localhost:4000）。已迁移路由按四态路由表分流：
+// 进程直接拥有全部已实现 HTTP/GraphQL/Socket.IO 入口与异步执行：路由表由
+// legacyproxy.AllRoutes() 组装，命中的请求交给已注册的 Go handler；未命中的
+// 方法/路径由 gateway 以 Nest 等价的 404 返回（CORS/trace/异常记录保留），
+// 不存在反向代理、shadow 旁路比对或 canary 分流，也不再有 API_GO_*_MODE
+// 迁移开关。
 //
-//	legacy — 反向代理（当前事实源）
-//	shadow — NestJS 响应 + Go 实现异步差分（/api/healthz/live 与
-//	         user-settings 只读 GET：rss-reader / spacetime-timeline；
-//	         onboarding 在 shadow 模式下亦然）
-//	canary — 已验证身份的稳定哈希小比例真实流量切 Go（CANARY_PERCENT）
-//	go     — Go 原生 handler（/__go/healthz 自省；以及
-//	         API_GO_USER_SETTINGS_READ_MODE=go 时的六个
-//	         GET /api/user-settings/ui/*——Go-批3B：onboarding/rss-reader/
-//	         spacetime-timeline/war-map/newsnow/situation-monitor 全部由
-//	         统一 handler Go 接管：Go 独立 JWT 验签 + Redis blacklist +
-//	         MySQL RBAC + 独立响应，不依赖 NestJS 200。兼容：
-//	         API_GO_ONBOARDING_MODE=go（批3A，readMode 未设时）只接管
-//	         onboarding）
-//	         API_GO_PUBLIC_PORTAL_MODE=go 时另接管四个匿名 GET：
-//	         /api/public-portal/home、/api/public-portal/channels/:topic、
-//	         /api/public-portal/stories/id/:id 与 stories/slug/:slug
-//	         （后三个都是恰好一个路径段）。
-//	         API_GO_DASHBOARD_STATS_MODE=go 时另接管精确路径
-//	         GET /api/dashboard/stats（MySQL + Mongo + Redis 只读）。
-//	         API_GO_DASHBOARD_CHARTS_MODE=go 时另接管三个精确 GET：
-//	         sector-heatmap、financial-candlestick、war-map/geojson。
-//	         API_GO_DASHBOARD_WAR_MAP_MODE=go 时另接管两个精确 GET：
-//	         war-map/events 与 war-map/news-markers。
-//	         API_GO_DASHBOARD_SPACETIME_GEO_MODE=go 时接管热力图总览与下钻。
-//	         API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=go 时接管传播图总览与下钻。
-//	         这两个开关互不影响。
-//	         API_GO_DASHBOARD_STREAM_MODE=go 时接管精确 GET /api/dashboard/stream
-//	         （SSE；复用 War Map、K 线和热力图服务，不请求 NestJS）。
-//	         API_GO_HEALTHZ_MODE=go 时接管精确 GET /api/healthz（认证探针）。
-//	         公开 GET /api/healthz/live 由独立的 API_GO_HEALTHZ_LIVE_MODE
-//	         控制（默认 shadow，可 legacy/go，C-1）。
-//	         Go-批7：API_GO_CONTENT_SUBSCRIPTIONS_MODE、
-//	         API_GO_USER_NEWS_BEHAVIOR_MODE、API_GO_USER_DIGEST_MODE
-//	         各自默认 legacy，只切换对应的精确 HTTP。内部订阅、目录和画像
-//	         调用不看另外两个 HTTP 开关。每日摘要邮件 Cron 由独立
-//	         API_GO_USER_DIGEST_DELIVERY_MODE 控制，默认 legacy 仍由 NestJS
-//	         消费；该开关为 go 时 Go 每分钟执行投递链。
-//	         API_GO_NEWS_SOURCES_MODE=go 时接管新闻源管理台十五条读写路由。
-//	         GET /api/admin/news-sources/:id/preview 仍回 NestJS。
-//	         回滚只把 API_GO_NEWS_SOURCES_MODE 改回 legacy。不入队，不启动采集。
-//	         API_GO_NEWSNOW_SOURCES_MODE=go 时接管两条公开来源获取路由
-//	         （GET /api/news-aggregator/source 与
-//	         POST /api/news-aggregator/sources/batch）：Go 真实请求上游、
-//	         写兼容 fresh/stale 缓存与刷新锁，并向
-//	         newsnow:source-refresh:v1 发布来源增量供 Nest 订阅转发。
-//	         只要求 DATABASE_URL/REDIS_HOST；预热与热点 Cron 仍归 Nest。
-//	         回滚只把该变量改回 legacy。不启动调度、不入队。
-//	         API_GO_CRAWL_WORKFLOWS_MODE=go 时接管采集策略工作流编辑接口
-//	         （node-schemas、列表、详情、创建、草稿、发布、版本、对比与
-//	         两条 bridge）。trial-run、replay、workflow-runs、profiles
-//	         列表/创建/预览/回滚、runs、nodes 仍回 NestJS。
-//	         回滚只把 API_GO_CRAWL_WORKFLOWS_MODE 改回 legacy。不入队，
-//	         不启动采集 worker。
-//	         API_GO_CRAWL_PROFILES_MODE=go 时接管采集站点画像的 8 条编辑
-//	         接口（列表、匹配、预览、创建、详情、更新、版本、回滚）。
-//	         runs、nodes、workflows 与 workflow-bridge 仍回 NestJS。
-//	         回滚只把 API_GO_CRAWL_PROFILES_MODE 改回 legacy。不启用
-//	         shadow，不入队，不启动采集 worker。
-//	         API_GO_LLM_LOGS_MODE=go 时接管 LLM 请求日志的三条精确 GET：
-//	         GET /api/llm-logs（列表）、GET /api/llm-logs/export（CSV）、
-//	         GET /api/llm-logs/summary（用量汇总）。三条都要求
-//	         settings.manage，orgId 由 membership/机器令牌重推导。导出保留
-//	         90 天窗口、50000 行上限、公式注入防护与 MySQL 导出审计。
-//	         /api/system-settings/llm-request-logs 会改 Mongo TTL 索引，不在
-//	         这个开关里，仍回 NestJS。回滚只把 API_GO_LLM_LOGS_MODE 改回
-//	         legacy。不启用 shadow，不调用模型服务，不启动 worker。
+// 保留的第二道门（与入口所有权无关，独立控制后台执行）：
+//   - SCHEDULE_ENABLED：跨进程调度/定时/Cron/Outbox 回放总开关；
+//   - BULLMQ_WORKERS_ENABLED：BullMQ 队列 worker 总开关；
+//   - WS_REDIS_ADAPTER_ENABLED / GRAPHQL_SUBSCRIPTION_BUS：实时多实例总线。
 //
-//	         API_GO_ADMIN_LOGS_MODE=go 时接管管理端日志与异常读取的 7 条
-//	         精确 GET：admin/logs 的 task、task/summary、errors、
-//	         errors/summary、audit，以及 admin/errors 与 admin/errors/stats。
-//	         admin/quality/（含 quality/task-logs）、observability/、metrics
-//	         与异常上报 POST 仍回 NestJS。回滚只把 API_GO_ADMIN_LOGS_MODE
-//	         改回 legacy。不启用 shadow，不改前端，不改 canary。
-//
-//	         API_GO_EXCEPTION_INGEST_MODE=go takes over the two
-//	         exception-report POSTs: POST /api/observability/exception-events/client
-//	         (AllowAuthenticated plus the existing user/IP sliding-window
-//	         buckets) and POST /api/internal/observability/exception-events
-//	         (LITELLM_CONFIG_INTERNAL_TOKEN). Both write one document into the
-//	         existing exceptionevents collection; the client endpoint never
-//	         persists a stack and always takes orgId/userId from the
-//	         server-side identity. The seven read GETs stay on
-//	         API_GO_ADMIN_LOGS_MODE. Rollback only sets
-//	         API_GO_EXCEPTION_INGEST_MODE back to legacy; no shadow or worker
-//	         is started.
-//
-//	         API_GO_QUALITY_OVERVIEW_MODE=go 时接管管理端质量面板的 5 条
-//	         精确 GET：admin/quality 的 news-sources、pipeline、overview、
-//	         task-logs 与 task-logs/summary。新闻源质量与流水线质量复用
-//	         MySQL ObservabilitySnapshot 表与 Redis 分布式锁键（与 Nest 共享
-//	         60 秒快照）；流水线 quality 与任务日志的 failureTypes.errorName
-//	         一样做敏感信息脱敏。admin/quality/classification/* 与
-//	         admin/quality/pipeline/runs|replay|rollback 仍回 NestJS。回滚只把
-//	         API_GO_QUALITY_OVERVIEW_MODE 改回 legacy。不启用 shadow，
-//	         不改前端，不改 canary。
-//
-//	         API_GO_AUTH_FACTORS_MODE=go 时接管已认证 MFA 管理与组织 OIDC
-//	         配置的 7 条精确路由：GET /api/auth/mfa、
-//	         POST /api/auth/mfa/enroll|verify-enroll|disable|recovery/rotate、
-//	         GET/PUT /api/auth/admin/oidc-config。人类走 JWT 验签 + Redis
-//	         blacklist + MySQL membership/权限重推导，机器令牌沿用 mtk_ 查库
-//	         路径。四条 MFA 写要求真实人类 User（机器身份 403），GET mfa 对
-//	         机器身份仍返回空状态；OIDC 是租户设置，按 settings.manage 判定，
-//	         不套全局平台管理员门禁。四条 MFA 写共用每用户 MySQL 会话锁
-//	         （Nest/Go 同名互通）。go 要求 JWT_SECRET、DATABASE_URL、
-//	         REDIS_HOST，不要求 Mongo。login/refresh/logout/me/
-//	         change-password/machine-tokens、公开 MFA 登录与强制 enrollment
-//	         挑战，以及 OIDC start/callback/handoff 仍回 NestJS。回滚只把
-//	         API_GO_AUTH_FACTORS_MODE 改回 legacy。不访问身份提供方、不签发
-//	         token、不启用 shadow、不改 canary。
-//
-//	         API_GO_CLASSIFICATION_REPORTS_MODE=go 时接管精确路由
-//	         POST /api/admin/quality/classification/reports：Go 写
-//	         ClassificationReportJob 并入队 classification_quality（任务名与
-//	         jobId 都是 classification-quality-report:<jobId>，attempts=3、
-//	         指数退避 2000ms、removeOnComplete=true、
-//	         removeOnFail={age:7d,count:10000}）；GET /reports/:jobId 仍由
-//	         API_GO_CLASSIFICATION_RSS_OPS_MODE 决定。回滚只把该开关改回 legacy。
-//	         API_GO_CLASSIFICATION_QUALITY_WORKER_MODE=go 时由 Go 消费
-//	         classification_quality（报告生成与评审种子写入），NestJS 的
-//	         processor 不再建 Worker（Queue 保留，流水线仍会生产评审种子任务），
-//	         执行权互斥。并发 max(1,min(4,NEWS_PROCESS_QUEUE_CONCURRENCY))，
-//	         未配置为 2。回滚时先关 Go worker，再由 NestJS 继续消费同格式任务。
-//	         API_GO_PIPELINE_RECOVERY_MODE=go 时接管精确 GET
-//	         /api/admin/quality/pipeline/runs（MySQL ItemMeta + Mongo
-//	         processeditems/tasklogs）。replay/rollback 依赖条目流水线生产者
-//	         （#96 pipelineenqueue），main 上尚不存在，继续由 NestJS 服务。
-//	         三个开关都默认 legacy，互不影响。
-//
-// 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
-// API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
-// API_GO_DASHBOARD_STATS_MODE=legacy 把 stats 交回 NestJS；
-// API_GO_PUBLIC_PORTAL_MODE=legacy 把公开页交回 NestJS；
-// API_GO_USER_SETTINGS_READ_MODE=shadow（或未设——回到
-// API_GO_ONBOARDING_MODE 控制；或路由表单条规则改回 legacy，或
-// CANARY_PERCENT=0）——无数据迁移耦合。
-//
-// canary 信任边界（重要）：当前分流的 orgId 取自未验签的 JWT payload
-// claim，不是经过认证的组织身份。在 Go 侧对全部受保护路由完成真实
-// JWT 验签与 org membership 重推导之前，canary 不得承载业务流量
-// （fail-safe 一律回 legacy）。当前没有任何路由处于 ModeCanary，
-// canary 仅作为待鉴权基础设施接入的分流组件存在。
+// 真实资源（DATABASE_URL/REDIS/JWT/Mongo/SMTP/加密密钥等）与鉴权/租户校验
+// 仍然生效。Node 后端源码暂留（第三步 GO-NODE-RETIRE-001 删除）；Go 不再
+// 支持 mode 回退，Node 只能作为独立旧链启动。
 package main
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -175,7 +42,6 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/authn"
 	"github.com/wei500L/newwei/apps/api-go/internal/authz"
-	"github.com/wei500L/newwei/apps/api-go/internal/canary"
 	"github.com/wei500L/newwei/apps/api-go/internal/classificationalert"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
@@ -220,7 +86,6 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
-	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/notificationssocket"
@@ -229,8 +94,6 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/queueorgstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/realtimesocket"
-	"github.com/wei500L/newwei/apps/api-go/internal/shadow"
-	"github.com/wei500L/newwei/apps/api-go/internal/shadowidentity"
 	"github.com/wei500L/newwei/apps/api-go/internal/userdigest"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettingsread"
@@ -276,811 +139,27 @@ func runHealthcheck() int {
 	return 0
 }
 
-// dispatcher 装配 shadow runner 与 canary router，实现网关的旁路接口。
-type dispatcher struct {
-	shadowRunner *shadow.Runner
-	canaryRouter *canary.Router
-	// shadowUnits 是显式的 shadow 路由分发表（替代逐路由硬编码 if）。
-	// 每个单元声明：精确 path、允许的 method、是否要求 legacy 200、
-	// executant。四个单元的规模——刻意不做成注册框架。
-	shadowUnits []shadowUnit
-}
-
-// shadowUnit 是一个 shadow 差分单元的接线声明。
-type shadowUnit struct {
-	// Path 精确匹配（不做前缀匹配——/api/user-settings/ui/onboarding-x
-	// 不得误入）。
-	Path string
-	// Methods 允许进入差分的方法白名单（写方法绝不双发；双层强制之一）。
-	Methods map[string]bool
-	// RequireLegacyOK 要求 NestJS 返回 200 才执行（legacy-approved
-	// shadow identity 的前提；公开探针不需要）。
-	RequireLegacyOK bool
-	// Executant Go 侧差分执行者。
-	Executant shadow.Executant
-}
-
-// ObserveShadow 实现网关的差分观察接口。reason 非空时主链路已判定无法
-// 差分（请求/响应超预算或流式响应）——只记账，不执行 Go 实现。
-func (d *dispatcher) ObserveShadow(r *http.Request, legacyStatus int, legacyHeader http.Header, legacyBody []byte, reason legacyproxy.ShadowSkipReason) {
-	switch legacyproxy.ShadowSkipReason(reason) {
-	case legacyproxy.ShadowSkipRequestTooLarge,
-		legacyproxy.ShadowSkipResponseTooLarge,
-		legacyproxy.ShadowSkipStreaming:
-		d.shadowRunner.ObserveSkip(shadow.SkipReason(reason))
-		return
-	}
-
-	// 差分可执行：按 shadow 单元表精确分发（path + method + legacy 语义
-	// 全部匹配才执行，否则静默跳过——该路由不在 shadow 单元表里）。
-	for _, unit := range d.shadowUnits {
-		if r.URL.Path != unit.Path {
-			continue
-		}
-		if !unit.Methods[strings.ToUpper(r.Method)] {
-			return
-		}
-		if unit.RequireLegacyOK && legacyStatus != http.StatusOK {
-			// legacy 未认可身份（401/403/404/5xx 等）→ Go 零执行、零
-			// 数据库查询。
-			return
-		}
-		d.shadowRunner.ObserveResult(
-			httpx.TraceIDFromContext(r.Context()),
-			r,
-			legacyStatus,
-			legacyHeader,
-			legacyBody,
-			unit.Executant,
-		)
-		return
-	}
-}
-
-// CanaryRoute 实现网关的 canary 分流接口。
-//
-// 信任边界：orgId claim 未验签。canaryRouter 的 fail-safe 语义（无 token/
-// 非 JWT/无 claim → legacy）防的是「无法解析」，防不了「伪造」——伪造的
-// orgId 可以选择自己这条请求进哪个实现。因此该接口只可用于：
-//  1. 两个实现共享同一鉴权语义的路由（当前仅差分验证过的只读端点）；
-//  2. 或在 Go 侧完成验签后（迁移序 5）再启用。
-//
-// 当前没有任何路由处于 ModeCanary。
-func (d *dispatcher) CanaryRoute(r *http.Request) bool {
-	return d.canaryRouter.Route(r.Header.Get("Authorization")) == canary.ModeGo
-}
-
-// healthLiveExecutant 是 GET /api/healthz/live 的 Go 实现（shadow 差分执行者）。
-type healthLiveExecutant struct{}
-
-func (healthLiveExecutant) Execute(_ context.Context, _ *http.Request, _ []byte) *shadow.Result {
-	result := health.LiveResult()
-	return &shadow.Result{
-		StatusCode: result.StatusCode,
-		Header:     result.Header,
-		Body:       result.Body,
-	}
-}
-
-// userSettingsExecutant 是六个 user-settings 只读 GET 共享的 Go shadow
-// 差分执行者（Go-批2A 起步，批2B/3B 扩展——全部端点信任边界与失败语义
-// 完全相同，流程只写一次，各端点注入固定 key 的查询与响应构建）。
-//
-// 信任边界：身份来自 legacy-approved shadow identity——只有 legacy 已
-// 返回 200 时才允许从（未验签的）Bearer JWT payload 读取 sub/orgId，
-// 并只用于本次只读查询。这不是「Go 已验证身份」：shadow 模式是回滚
-// 兼容路径，Go 独立鉴权由 usersettingsread.Handler 承载（go 模式）。
-// permissions claim 不读取。任何失败（payload 解析、数据库不可达、JSON
-// 异常）都只返回通用错误 Result（503 + 通用错误体），由 runner 记入
-// 差分——不影响客户端已收到的 NestJS 响应。token/orgId/userId 不进入
-// 任何日志或差分正文。
-type userSettingsExecutant struct {
-	// repo 为 nil 表示未配置数据库：跳过（零查询），以通用错误 Result
-	// 记入差分缺失——不影响客户端。
-	repo usersettings.Repository
-	// query 是该端点固定 key 的只读查询（编译期固定 SettingKey，
-	// 不来自 URL/query/body/header）。
-	query func(ctx context.Context, orgID, userID string) (usersettings.Record, error)
-	// build 由数据库记录构建完整响应体（各端点自己的 normalization）。
-	build func(record usersettings.Record) any
-}
-
-func (e userSettingsExecutant) Execute(ctx context.Context, r *http.Request, _ []byte) *shadow.Result {
-	if e.repo == nil {
-		return shadowErrorResult()
-	}
-	identity := shadowidentity.LegacyApprovedIdentity(r, http.StatusOK)
-	if identity == nil {
-		// dispatcher 已在 legacy 非 200 时拦截；这里的 nil 只可能来自
-		// token 缺失/损坏——同样零数据库查询。
-		return shadowErrorResult()
-	}
-
-	record, err := e.query(ctx, identity.OrgID, identity.UserID)
-	if err != nil {
-		// 详细错误只进服务端日志（repo 已保证不含凭据），差分结果只给
-		// 通用错误体。
-		log.Printf("shadow: user-settings query failed: %v", err)
-		return shadowErrorResult()
-	}
-
-	body, err := json.Marshal(e.build(record))
-	if err != nil {
-		return shadowErrorResult()
-	}
-	body = append(body, '\n')
-	return &shadow.Result{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}, "Cache-Control": []string{"no-store"}},
-		Body:       body,
-	}
-}
-
-// userSettingsShadowUnits 是 user-settings 只读 GET 的 shadow 单元表：
-// 精确 path（不做前缀匹配）+ 仅 GET + RequireLegacyOK（legacy 200 是
-// 身份前提）。query 闭包绑定各自端点的 repository 语义方法（key 是
-// usersettings 包内的编译期常量）。五个单 key 端点共用
-// userSettingsExecutant 流程（表驱动接线）；situation-monitor 是三记录
-// 聚合形态，单独 executant（Go-批3B）。
-func userSettingsShadowUnits(repo usersettings.Repository) []shadowUnit {
-	singleKeyUnits := []struct {
-		path  string
-		query func(ctx context.Context, orgID, userID string) (usersettings.Record, error)
-		build func(record usersettings.Record) any
-	}{
-		{"/api/user-settings/ui/onboarding",
-			func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
-				return repo.FindOnboarding(ctx, orgID, userID)
-			},
-			func(record usersettings.Record) any { return usersettings.BuildOnboardingResponse(record) }},
-		{"/api/user-settings/ui/rss-reader",
-			func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
-				return repo.FindRSSReader(ctx, orgID, userID)
-			},
-			func(record usersettings.Record) any { return usersettings.BuildRSSReaderResponse(record) }},
-		{"/api/user-settings/ui/spacetime-timeline",
-			func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
-				return repo.FindSpacetimeTimeline(ctx, orgID, userID)
-			},
-			func(record usersettings.Record) any { return usersettings.BuildSpacetimeTimelineResponse(record) }},
-		{"/api/user-settings/ui/war-map",
-			func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
-				return repo.FindWarMap(ctx, orgID, userID)
-			},
-			func(record usersettings.Record) any { return usersettings.BuildWarMapResponse(record) }},
-		{"/api/user-settings/ui/newsnow",
-			func(ctx context.Context, orgID, userID string) (usersettings.Record, error) {
-				return repo.FindNewsnow(ctx, orgID, userID)
-			},
-			func(record usersettings.Record) any { return usersettings.BuildNewsnowResponse(record) }},
-	}
-	units := make([]shadowUnit, 0, len(singleKeyUnits)+1)
-	for _, unit := range singleKeyUnits {
-		units = append(units, shadowUnit{
-			Path:            unit.path,
-			Methods:         map[string]bool{http.MethodGet: true},
-			RequireLegacyOK: true, // 受保护端点：legacy 200 是身份前提
-			Executant: userSettingsExecutant{
-				repo:  repo,
-				query: unit.query,
-				build: unit.build,
-			},
-		})
-	}
-	// situation-monitor：一次三 key 聚合查询（Go-批3B）。
-	units = append(units, shadowUnit{
-		Path:            "/api/user-settings/ui/situation-monitor",
-		Methods:         map[string]bool{http.MethodGet: true},
-		RequireLegacyOK: true,
-		Executant:       situationMonitorExecutant{repo: repo},
-	})
-	return units
-}
-
-// situationMonitorExecutant 是 situation-monitor GET 的 shadow 差分执行者
-// （三记录聚合形态——userSettingsExecutant 是单记录形态，不强行复用）。
-type situationMonitorExecutant struct {
-	repo usersettings.Repository
-}
-
-func (e situationMonitorExecutant) Execute(ctx context.Context, r *http.Request, _ []byte) *shadow.Result {
-	if e.repo == nil {
-		return shadowErrorResult()
-	}
-	identity := shadowidentity.LegacyApprovedIdentity(r, http.StatusOK)
-	if identity == nil {
-		return shadowErrorResult()
-	}
-	records, err := e.repo.FindSituationMonitor(ctx, identity.OrgID, identity.UserID)
-	if err != nil {
-		log.Printf("shadow: situation-monitor query failed: %v", err)
-		return shadowErrorResult()
-	}
-	body, err := json.Marshal(usersettings.BuildSituationMonitorResponse(records))
-	if err != nil {
-		return shadowErrorResult()
-	}
-	body = append(body, '\n')
-	return &shadow.Result{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}, "Cache-Control": []string{"no-store"}},
-		Body:       body,
-	}
-}
-
-// shadowErrorResult 是 Go 侧执行失败的通用差分结果（不含任何身份/凭据/
-// 业务数据；进入差分记录成为「执行缺失」信号）。
-func shadowErrorResult() *shadow.Result {
-	return &shadow.Result{
-		StatusCode: http.StatusServiceUnavailable,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       []byte(`{"statusCode":503,"message":"user-settings shadow execution unavailable"}` + "\n"),
-	}
-}
-
 func run() error {
 	cfg, err := config.LoadFromOS()
 	if err != nil {
 		return err
 	}
 
-	// onboarding 迁移单元的路由模式（API_GO_ONBOARDING_MODE）：
-	// shadow（默认，旧行为）或 go（Go-批3A 真实接管）。
-	onboardingMode := legacyproxy.ModeShadow
-	if cfg.OnboardingMode == config.OnboardingModeGo {
-		onboardingMode = legacyproxy.ModeGo
-	}
-	// user-settings 六个只读 GET 的统一读模式（API_GO_USER_SETTINGS_READ_MODE，
-	// Go-批3B）：空 = 兼容旧行为（onboardingMode 单独控制 onboarding）；
-	// go = 六个 GET 全部 Go 接管；shadow = 六个 GET 全部 shadow。
-	// 配置层已校验合法值。
-	readMode := ""
-	switch cfg.UserSettingsReadMode {
-	case config.UserSettingsReadModeGo:
-		readMode = string(legacyproxy.ModeGo)
-	case config.UserSettingsReadModeShadow:
-		readMode = string(legacyproxy.ModeShadow)
-	}
-
-	writeMode := ""
-	if cfg.UserSettingsWriteMode == config.UserSettingsWriteModeGo {
-		writeMode = string(legacyproxy.ModeGo)
-	}
-	portalMode := ""
-	if cfg.PublicPortalMode == config.PublicPortalModeGo {
-		portalMode = string(legacyproxy.ModeGo)
-	}
-	dashboardMode := ""
-	if cfg.DashboardStatsMode == config.DashboardStatsModeGo {
-		dashboardMode = string(legacyproxy.ModeGo)
-	}
-	chartsMode := ""
-	if cfg.DashboardChartsMode == config.DashboardChartsModeGo {
-		chartsMode = string(legacyproxy.ModeGo)
-	}
-	warMapMode := ""
-	if cfg.DashboardWarMapMode == config.DashboardWarMapModeGo {
-		warMapMode = string(legacyproxy.ModeGo)
-	}
-	transportMode := ""
-	if cfg.DashboardWarMapTransportMode == config.DashboardWarMapTransportModeGo {
-		transportMode = string(legacyproxy.ModeGo)
-	}
-	layersMode := ""
-	if cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo {
-		layersMode = string(legacyproxy.ModeGo)
-	}
-	spacetimeGeoMode := ""
-	if cfg.DashboardSpacetimeGeoMode == config.DashboardSpacetimeGeoModeGo {
-		spacetimeGeoMode = string(legacyproxy.ModeGo)
-	}
-	spacetimePropagationMode := ""
-	if cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo {
-		spacetimePropagationMode = string(legacyproxy.ModeGo)
-	}
-	streamMode := ""
-	if cfg.DashboardStreamMode == config.DashboardStreamModeGo {
-		streamMode = string(legacyproxy.ModeGo)
-	}
-	healthzMode := ""
-	if cfg.HealthzMode == config.HealthzModeGo {
-		healthzMode = string(legacyproxy.ModeGo)
-	}
-	contentSubscriptionsMode := ""
-	if cfg.ContentSubscriptionsMode == config.ContentSubscriptionsModeGo {
-		contentSubscriptionsMode = string(legacyproxy.ModeGo)
-	}
-	userNewsBehaviorMode := ""
-	if cfg.UserNewsBehaviorMode == config.UserNewsBehaviorModeGo {
-		userNewsBehaviorMode = string(legacyproxy.ModeGo)
-	}
-	userDigestMode := ""
-	if cfg.UserDigestMode == config.UserDigestModeGo {
-		userDigestMode = string(legacyproxy.ModeGo)
-	}
-	analysisViewsMode := ""
-	if cfg.AnalysisViewsMode == config.AnalysisViewsModeGo {
-		analysisViewsMode = string(legacyproxy.ModeGo)
-	}
-	analysisBoardsMode := ""
-	if cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo {
-		analysisBoardsMode = string(legacyproxy.ModeGo)
-	}
-	analysisThreadsMode := ""
-	if cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo {
-		analysisThreadsMode = string(legacyproxy.ModeGo)
-	}
-	// The CSV export switch only ever adds the two exact POST export rules; it
-	// shares no path with the collaboration units above.
-	analysisExportMode := ""
-	if cfg.AnalysisExportMode == config.AnalysisExportModeGo {
-		analysisExportMode = string(legacyproxy.ModeGo)
-	}
-	archiveReadingMode := ""
-	if cfg.ArchiveReadingMode == config.ArchiveReadingModeGo {
-		archiveReadingMode = string(legacyproxy.ModeGo)
-	}
-	archiveReadingGo := cfg.ArchiveReadingMode == config.ArchiveReadingModeGo
-	situationMonitorsMode := ""
-	if cfg.SituationMonitorsMode == config.SituationMonitorsModeGo {
-		situationMonitorsMode = string(legacyproxy.ModeGo)
-	}
-	situationSignalsMode := ""
-	if cfg.SituationSignalsMode == config.SituationSignalsModeGo {
-		situationSignalsMode = string(legacyproxy.ModeGo)
-	}
-	// The refresh POST is its own switch: its rule is exact and method-scoped, so
-	// it never shadows the refresh-runs read route or the settings rules.
-	situationRefreshMode := ""
-	if cfg.SituationRefreshMode == config.SituationRefreshModeGo {
-		situationRefreshMode = string(legacyproxy.ModeGo)
-	}
-	situationInsightsMode := ""
-	if cfg.SituationInsightsMode == config.SituationInsightsModeGo {
-		situationInsightsMode = string(legacyproxy.ModeGo)
-	}
-	newsSourcesMode := ""
-	if cfg.NewsSourcesMode == config.NewsSourcesModeGo {
-		newsSourcesMode = string(legacyproxy.ModeGo)
-	}
-	// The four dispatch/cancel/clear/retry POSTs are their own switch: they are
-	// method- and tail-scoped, so they never shadow the news-sources CRUD rules
-	// or the GET :id/preview rule.
-	newsSourceOpsMode := ""
-	if cfg.NewsSourceOpsMode == config.NewsSourceOpsModeGo {
-		newsSourceOpsMode = string(legacyproxy.ModeGo)
-	}
-	crawlWorkflowsMode := ""
-	if cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo {
-		crawlWorkflowsMode = string(legacyproxy.ModeGo)
-	}
-	crawlProfilesMode := ""
-	if cfg.CrawlProfilesMode == config.CrawlProfilesModeGo {
-		crawlProfilesMode = string(legacyproxy.ModeGo)
-	}
-	crawlFrontierRunsMode := ""
-	if cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo {
-		crawlFrontierRunsMode = string(legacyproxy.ModeGo)
-	}
-	crawlFrontierWritesMode := ""
-	if cfg.CrawlFrontierWritesMode == config.CrawlFrontierWritesModeGo {
-		crawlFrontierWritesMode = string(legacyproxy.ModeGo)
-	}
-	rbacMode := ""
-	if cfg.RbacMode == config.RbacModeGo {
-		rbacMode = string(legacyproxy.ModeGo)
-	}
-	crawlTemplatesMode := ""
-	if cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo {
-		crawlTemplatesMode = string(legacyproxy.ModeGo)
-	}
-	llmLogsMode := ""
-	if cfg.LlmLogsMode == config.LlmLogsModeGo {
-		llmLogsMode = string(legacyproxy.ModeGo)
-	}
-
-	adminLogsMode := ""
-	if cfg.AdminLogsMode == config.AdminLogsModeGo {
-		adminLogsMode = string(legacyproxy.ModeGo)
-	}
-	exceptionIngestMode := ""
-	if cfg.ExceptionIngestMode == config.ExceptionIngestModeGo {
-		exceptionIngestMode = string(legacyproxy.ModeGo)
-	}
-	newsIndicatorsMode := ""
-	if cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
-		newsIndicatorsMode = string(legacyproxy.ModeGo)
-	}
-	qualityOverviewMode := ""
-	if cfg.QualityOverviewMode == config.QualityOverviewModeGo {
-		qualityOverviewMode = string(legacyproxy.ModeGo)
-	}
-	classificationRssOpsMode := ""
-	if cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo {
-		classificationRssOpsMode = string(legacyproxy.ModeGo)
-	}
-	newsnowClusteringOpsMode := ""
-	if cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo {
-		newsnowClusteringOpsMode = string(legacyproxy.ModeGo)
-	}
-	// The two public source fetch routes are an independent switch: they need
-	// only MySQL and Redis, and their ownership does not overlap the nine
-	// local-computation/clustering routes above.
-	newsnowSourcesMode := ""
-	if cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo {
-		newsnowSourcesMode = string(legacyproxy.ModeGo)
-	}
-	// The two authenticated hot reads have their own switch, independent of the
-	// public source fetch routes and the background owners.
-	newsnowHottestMode := ""
-	if cfg.NewsnowHottestMode == config.NewsnowHottestModeGo {
-		newsnowHottestMode = string(legacyproxy.ModeGo)
-	}
-	newsClusteringLlmBackfillMode := ""
-	if cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo {
-		newsClusteringLlmBackfillMode = string(legacyproxy.ModeGo)
-	}
-	crawlReadTelemetryMode := ""
-	if cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo {
-		crawlReadTelemetryMode = string(legacyproxy.ModeGo)
-	}
-	crawlMetadataMode := ""
-	if cfg.CrawlMetadataMode == config.CrawlMetadataModeGo {
-		crawlMetadataMode = string(legacyproxy.ModeGo)
-	}
-	crawlTaskWriteMode := ""
-	if cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo {
-		crawlTaskWriteMode = string(legacyproxy.ModeGo)
-	}
-	crawlQueueOpsMode := ""
-	if cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo {
-		crawlQueueOpsMode = string(legacyproxy.ModeGo)
-	}
-	newsSourcePreviewMode := ""
-	if cfg.NewsSourcePreviewMode == config.NewsSourcePreviewModeGo {
-		newsSourcePreviewMode = string(legacyproxy.ModeGo)
-	}
-	crawlWorkflowTrialMode := ""
-	if cfg.CrawlWorkflowTrialMode == config.CrawlWorkflowTrialModeGo {
-		crawlWorkflowTrialMode = string(legacyproxy.ModeGo)
-	}
-	searchReindexMode := ""
-	if cfg.SearchReindexMode == config.SearchReindexModeGo {
-		searchReindexMode = string(legacyproxy.ModeGo)
-	}
-	runtimeSettingsMode := ""
-	if cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo {
-		runtimeSettingsMode = string(legacyproxy.ModeGo)
-	}
-	itemsReadingMode := ""
-	if cfg.ItemsReadingMode == config.ItemsReadingModeGo {
-		itemsReadingMode = string(legacyproxy.ModeGo)
-	}
-	itemsIngestMode := ""
-	if cfg.ItemsIngestMode == config.ItemsIngestModeGo {
-		itemsIngestMode = string(legacyproxy.ModeGo)
-	}
-	platformGovernanceSettingsMode := ""
-	if cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo {
-		platformGovernanceSettingsMode = string(legacyproxy.ModeGo)
-	}
-	situationSettingsMode := ""
-	if cfg.SituationSettingsMode == config.SituationSettingsModeGo {
-		situationSettingsMode = string(legacyproxy.ModeGo)
-	}
-	modelAccessSettingsMode := ""
-	if cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo {
-		modelAccessSettingsMode = string(legacyproxy.ModeGo)
-	}
-	llmGatewayProfilesMode := ""
-	if cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo {
-		llmGatewayProfilesMode = string(legacyproxy.ModeGo)
-	}
-	// The governance/diagnostics group is an independent switch: it can be go
-	// while the seven profile routes stay on NestJS, and vice versa.
-	llmGatewayOpsMode := ""
-	if cfg.LLMGatewayOpsMode == config.LLMGatewayOpsModeGo {
-		llmGatewayOpsMode = string(legacyproxy.ModeGo)
-	}
-	proxyLoadBalancingMode := ""
-	if cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo {
-		proxyLoadBalancingMode = string(legacyproxy.ModeGo)
-	}
-	infrastructureSettingsMode := ""
-	if cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo {
-		infrastructureSettingsMode = string(legacyproxy.ModeGo)
-	}
-	// C-5: the vector-service diagnostics route is an independent read-only
-	// takeover. Its Go handler needs MySQL, Redis and JWT; the switch itself
-	// only decides who answers the exact GET.
-	vectorDiagnosticsMode := ""
-	if cfg.VectorDiagnosticsMode == config.VectorDiagnosticsModeGo {
-		vectorDiagnosticsMode = string(legacyproxy.ModeGo)
-	}
-	// The storage connection test switch is independent of the infrastructure
-	// settings switch: it only ever takes over the exact POST test route.
-	storageDiagnosticsMode := ""
-	if cfg.StorageDiagnosticsMode == config.StorageDiagnosticsModeGo {
-		storageDiagnosticsMode = string(legacyproxy.ModeGo)
-	}
-	dataRuntimeSettingsMode := ""
-	if cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo {
-		dataRuntimeSettingsMode = string(legacyproxy.ModeGo)
-	}
-	emailSettingsMode := ""
-	if cfg.EmailSettingsMode == config.EmailSettingsModeGo {
-		emailSettingsMode = string(legacyproxy.ModeGo)
-	}
-	geocodingMode := ""
-	if cfg.GeocodingMode == config.GeocodingModeGo {
-		geocodingMode = string(legacyproxy.ModeGo)
-	}
-	runtimeDiagnosticsMode := ""
-	if cfg.RuntimeDiagnosticsMode == config.RuntimeDiagnosticsModeGo {
-		runtimeDiagnosticsMode = string(legacyproxy.ModeGo)
-	}
-	authFactorsMode := ""
-	if cfg.AuthFactorsMode == config.AuthFactorsModeGo {
-		authFactorsMode = string(legacyproxy.ModeGo)
-	}
-	accountSecurityMode := ""
-	if cfg.AccountSecurityMode == config.AccountSecurityModeGo {
-		accountSecurityMode = string(legacyproxy.ModeGo)
-	}
-	avatarUploadMode := ""
-	if cfg.AvatarUploadMode == config.AvatarUploadModeGo {
-		avatarUploadMode = string(legacyproxy.ModeGo)
-	}
-	userDataExportMode := ""
-	if cfg.UserDataExportMode == config.UserDataExportModeGo {
-		userDataExportMode = string(legacyproxy.ModeGo)
-	}
-	authLoginMode := ""
-	if cfg.AuthLoginMode == config.AuthLoginModeGo {
-		authLoginMode = string(legacyproxy.ModeGo)
-	}
-	identityOnboardingMode := ""
-	if cfg.IdentityOnboardingMode == config.IdentityOnboardingModeGo {
-		identityOnboardingMode = string(legacyproxy.ModeGo)
-	}
-	oidcLoginMode := ""
-	if cfg.OIDCLoginMode == config.OIDCLoginModeGo {
-		oidcLoginMode = string(legacyproxy.ModeGo)
-	}
-	economicDataGo := cfg.EconomicDataMode == config.EconomicDataModeGo
-	economicDataRouteMode := ""
-	if economicDataGo {
-		economicDataRouteMode = string(legacyproxy.ModeGo)
-	}
-	economicDataWorkerGo := cfg.EconomicDataWorkerMode == config.EconomicDataWorkerModeGo
-	// The GDELT external snapshot entry has its own switch: it can be go while
-	// the scheduler stays on NestJS and vice versa. Both executions share the
-	// Redis rebuild lease, so a mixed deployment still rebuilds at most once.
-	gdeltSnapshotRefreshMode := ""
-	if cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo {
-		gdeltSnapshotRefreshMode = string(legacyproxy.ModeGo)
-	}
+	// Go-only runtime: api-go owns every entrypoint directly. There is no Nest
+	// reverse proxy, no legacy/shadow/canary mode and no migration-mode gating;
+	// the gateway always serves the full Go route table.
+	economicDataGo := true
+	archiveReadingGo := true
+	graphqlSubscriptionsGo := true
+	notificationsSocketGo := true
+	realtimeSocketGo := true
+	classificationAlertGo := true
 	// The process-wide vector-service circuit state shared by the search client,
 	// the two upsert clients and the C-5 diagnostics route. One instance per
 	// process mirrors the NestJS VectorClientService counters.
 	vectorServiceHealth := &vectorclient.Health{}
-	rules := legacyproxy.DefaultRulesWithWrite(onboardingMode, readMode, writeMode)
-	rules = legacyproxy.WithPublicPortal(rules, portalMode)
-	rules = legacyproxy.WithDashboardStats(rules, dashboardMode)
-	rules = legacyproxy.WithDashboardCharts(rules, chartsMode)
-	rules = legacyproxy.WithDashboardWarMap(rules, warMapMode)
-	rules = legacyproxy.WithDashboardWarMapTransport(rules, transportMode)
-	rules = legacyproxy.WithDashboardWarMapLayers(rules, layersMode)
-	rules = legacyproxy.WithDashboardSpacetimeGeo(rules, spacetimeGeoMode)
-	rules = legacyproxy.WithDashboardSpacetimePropagation(rules, spacetimePropagationMode)
-	rules = legacyproxy.WithDashboardStream(rules, streamMode)
-	rules = legacyproxy.WithAuthenticatedHealth(rules, healthzMode)
-	// C-1: the public liveness probe has its own switch; the default stays
-	// shadow, which is the current production behaviour.
-	rules = legacyproxy.WithHealthzLive(rules, string(cfg.HealthzLiveMode))
-	rules = legacyproxy.WithContentSubscriptions(rules, contentSubscriptionsMode)
-	rules = legacyproxy.WithUserNewsBehavior(rules, userNewsBehaviorMode)
-	rules = legacyproxy.WithUserDigest(rules, userDigestMode)
-	if cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
-		rules = legacyproxy.WithNotificationsSocket(rules, string(legacyproxy.ModeGo))
-	}
-	// The five-namespace realtime transport owns only its dedicated Engine.IO
-	// path; /socket.io keeps proxying to NestJS so the default Web build and
-	// every not-yet-migrated namespace are untouched.
-	if cfg.RealtimeSocketMode == config.RealtimeSocketModeGo {
-		rules = legacyproxy.WithRealtimeSocket(rules, string(legacyproxy.ModeGo))
-	}
-	rules = legacyproxy.WithAnalysisViews(rules, analysisViewsMode)
-	rules = legacyproxy.WithAnalysisBoards(rules, analysisBoardsMode)
-	rules = legacyproxy.WithAnalysisThreads(rules, analysisThreadsMode)
-	rules = legacyproxy.WithAnalysisExport(rules, analysisExportMode)
-	// The archive reading switch owns only the exact search export route; the
-	// three GraphQL roots are registered with the shared GraphQL handler.
-	rules = legacyproxy.WithArchiveReadingSearch(rules, archiveReadingMode)
-	// /graphql is routed to the Go handler when the read switch or any of the
-	// organization/workspace/settings/source-policy/knowledge-review/RSS
-	// translation write
-	// switch is go. The registered roots and their own switches decide which
-	// documents actually execute in Go; everything else is still proxied to
-	// NestJS.
-	// Realtime GraphQL subscriptions own only legal graphql-transport-ws
-	// upgrades on exact /graphql. They are independent of the HTTP read/write
-	// switches: non-upgrade methods keep following those switches and every
-	// non-local operation is forwarded whole to NestJS.
-	graphqlSubscriptionsGo := cfg.GraphQLSubscriptionsMode == config.GraphQLSubscriptionsModeGo
-	notificationsSocketGo := cfg.NotificationsSocketMode == config.NotificationsSocketModeGo
-	realtimeSocketGo := cfg.RealtimeSocketMode == config.RealtimeSocketModeGo
-	classificationAlertGo := cfg.ClassificationQualityAlertMode == config.ClassificationQualityAlertModeGo
-	graphqlRouteMode := ""
-	if cfg.GraphQLReadMode == "go" || cfg.GraphQLOrgAccessWriteMode == "go" || cfg.GraphQLWorkspaceWriteMode == "go" ||
-		cfg.GraphQLSettingsWriteMode == "go" || cfg.GraphQLSourcePolicyWriteMode == "go" ||
-		cfg.GraphQLKnowledgeReviewMode == "go" || cfg.GraphQLRssTranslationMode == "go" ||
-		cfg.ItemsIngestMode == config.ItemsIngestModeGo ||
-		archiveReadingGo ||
-		economicDataGo ||
-		cfg.GraphQLAlertRulesMode == "go" ||
-		cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo ||
-		cfg.GraphQLNewsIndicatorRefreshMode == "go" ||
-		cfg.GraphQLAssistantWriteMode == "go" ||
-		cfg.AnalysisRunsMode == config.AnalysisRunsModeGo ||
-		graphqlSubscriptionsGo {
-		graphqlRouteMode = string(legacyproxy.ModeGo)
-	}
-	rules = legacyproxy.WithGraphQLRead(rules, graphqlRouteMode)
-	rules = legacyproxy.WithSituationMonitors(rules, situationMonitorsMode)
-	rules = legacyproxy.WithSituationSignals(rules, situationSignalsMode)
-	// The refresh POST keeps its own switch so a signals or insights rollout
-	// never moves it, and rolling refresh back leaves the seven read routes alone.
-	rules = legacyproxy.WithSituationRefresh(rules, situationRefreshMode)
-	rules = legacyproxy.WithSituationInsights(rules, situationInsightsMode)
-	// The four situation-monitor settings entries are an independent switch.
-	// Their exact paths never overlap the signals, insights or monitors rules.
-	rules = legacyproxy.WithSituationSettings(rules, situationSettingsMode)
-	// The two Telegram login POSTs are a separate switch from the settings
-	// CRUD above; the rules are exact and method-scoped so the shared prefix
-	// keeps one owner per method.
-	rules = legacyproxy.WithSituationTelegramAuth(rules, string(cfg.SituationTelegramAuthMode))
-	rules = legacyproxy.WithNewsSources(rules, newsSourcesMode)
-	rules = legacyproxy.WithNewsSourceOps(rules, newsSourceOpsMode)
-	rules = legacyproxy.WithCrawlWorkflows(rules, crawlWorkflowsMode)
-	rules = legacyproxy.WithCrawlProfiles(rules, crawlProfilesMode)
-	rules = legacyproxy.WithCrawlFrontierRuns(rules, crawlFrontierRunsMode)
-	rules = legacyproxy.WithRbac(rules, rbacMode)
-	rules = legacyproxy.WithCrawlTemplates(rules, crawlTemplatesMode)
-	rules = legacyproxy.WithCrawlMetadata(rules, crawlMetadataMode)
-	rules = legacyproxy.WithNewsSourcePreview(rules, newsSourcePreviewMode)
-	rules = legacyproxy.WithCrawlWorkflowTrial(rules, crawlWorkflowTrialMode)
-	rules = legacyproxy.WithLlmLogs(rules, llmLogsMode)
-	rules = legacyproxy.WithAdminLogs(rules, adminLogsMode)
-	// The exception ingest takeover is registered next to the admin logs
-	// takeover. The two switches are independent and their paths do not
-	// overlap, so both may be go at the same time.
-	rules = legacyproxy.WithExceptionIngest(rules, exceptionIngestMode)
-	rules = legacyproxy.WithNewsIndicators(rules, newsIndicatorsMode)
-	rules = legacyproxy.WithQualityOverview(rules, qualityOverviewMode)
-	rules = legacyproxy.WithClassificationRssOps(rules, classificationRssOpsMode)
-	// The report creation POST and the pipeline recovery runs read are their own
-	// switches: each only owns one route, and neither widens the classification
-	// read takeover above.
-	reportsMode := ""
-	if cfg.ClassificationReportsMode == config.ClassificationReportsModeGo {
-		reportsMode = string(legacyproxy.ModeGo)
-	}
-	rules = legacyproxy.WithClassificationReports(rules, reportsMode)
-	pipelineRecoveryMode := ""
-	if cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo {
-		pipelineRecoveryMode = string(legacyproxy.ModeGo)
-	}
-	rules = legacyproxy.WithPipelineRecovery(rules, pipelineRecoveryMode)
-	// The two pipeline recovery writes and the metrics scrape are independent
-	// ownership switches. They register exact, method-scoped rules so no other
-	// method or path moves with them.
-	pipelineRecoveryWriteMode := ""
-	if cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo {
-		pipelineRecoveryWriteMode = string(legacyproxy.ModeGo)
-	}
-	rules = legacyproxy.WithPipelineRecoveryWrite(rules, pipelineRecoveryWriteMode)
-	metricsRouteMode := ""
-	if cfg.MetricsMode == config.MetricsModeGo {
-		metricsRouteMode = string(legacyproxy.ModeGo)
-	}
-	rules = legacyproxy.WithMetrics(rules, metricsRouteMode)
-	rules = legacyproxy.WithNewsnowClusteringOps(rules, newsnowClusteringOpsMode)
-	// The two public source fetch routes. Registered after the local-computation
-	// rules; the two rule sets share no path.
-	rules = legacyproxy.WithNewsnowSources(rules, newsnowSourcesMode)
-	// The two authenticated hot reads. Exact paths; they never intersect the
-	// public source rules or the metadata/resolve rules.
-	rules = legacyproxy.WithNewsnowHottest(rules, newsnowHottestMode)
-	// The manual LLM backfill route has its own switch. It is registered next
-	// to the nine-route clustering takeover but never widens it.
-	rules = legacyproxy.WithNewsClusteringLlmBackfill(rules, newsClusteringLlmBackfillMode)
-	rules = legacyproxy.WithCrawlReadTelemetry(rules, crawlReadTelemetryMode)
-	// The lifecycle write routes and the queue administration routes are two
-	// independent switches. Their rules are method-scoped, so they coexist with
-	// the GET-only crawl read rules on the same prefixes.
-	rules = legacyproxy.WithCrawlTaskWrite(rules, crawlTaskWriteMode)
-	rules = legacyproxy.WithCrawlQueueOps(rules, crawlQueueOpsMode)
-	rules = legacyproxy.WithSearchReindex(rules, searchReindexMode)
-	rules = legacyproxy.WithRuntimeSettings(rules, runtimeSettingsMode)
-	// The platform governance settings group is registered alongside the runtime
-	// settings group. The two switches are independent and their paths do not
-	// overlap, so both may be go at the same time.
-	rules = legacyproxy.WithPlatformGovernanceSettings(rules, platformGovernanceSettingsMode)
-	rules = legacyproxy.WithItemsReading(rules, itemsReadingMode)
-	// POST /api/items is a separate exact rule from the two reading GETs and
-	// shares their handler key; the registered dispatcher below splits methods.
-	rules = legacyproxy.WithItemsIngest(rules, itemsIngestMode)
-	rules = legacyproxy.WithModelAccessSettings(rules, modelAccessSettingsMode)
-	rules = legacyproxy.WithLLMGatewayProfiles(rules, llmGatewayProfilesMode)
-	// The governance/diagnostics rules are exact/one-segment rules whose prefixes
-	// are longer than the profile dynamic rule, so they win naturally when both
-	// switches are go and are ignored entirely when this switch is legacy.
-	rules = legacyproxy.WithLLMGatewayOps(rules, llmGatewayOpsMode)
-	// The proxy load balancing group is independent of the model access group:
-	// only its four routes are registered, and its exact rules win over the
-	// llm-gateways :id profile rule because they are longer prefixes.
-	rules = legacyproxy.WithProxyLoadBalancing(rules, proxyLoadBalancingMode)
-	rules = legacyproxy.WithInfrastructureSettings(rules, infrastructureSettingsMode)
-	// C-5: the vector-service diagnostics route. It is independent of the seven
-	// infrastructure settings routes and only owns its exact GET.
-	rules = legacyproxy.WithVectorDiagnostics(rules, vectorDiagnosticsMode)
-	// The storage connection test is registered by its own switch; it never
-	// widens the infrastructure settings route ownership and vice versa.
-	rules = legacyproxy.WithStorageDiagnostics(rules, storageDiagnosticsMode)
-	rules = legacyproxy.WithDataRuntimeSettings(rules, dataRuntimeSettingsMode)
-	// The three settings-diagnostics groups are independent switches with
-	// exact paths that never overlap an existing rule; the matcher's
-	// longest-prefix rule also keeps them ahead of the platform governance
-	// /assistant-safety and data runtime /realtime-signals rules.
-	rules = legacyproxy.WithEmailSettings(rules, emailSettingsMode)
-	rules = legacyproxy.WithGeocoding(rules, geocodingMode)
-	rules = legacyproxy.WithRuntimeDiagnostics(rules, runtimeDiagnosticsMode)
-	// The forced GDELT snapshot refresh is one exact POST with its own switch.
-	// The scheduler switch is independent and shares only the Redis lease.
-	rules = legacyproxy.WithGdeltSnapshotRefresh(rules, gdeltSnapshotRefreshMode)
-	rules = legacyproxy.WithAuthFactors(rules, authFactorsMode)
-	rules = legacyproxy.WithAccountSecurity(rules, accountSecurityMode)
-	// The login/session/email-code unit owns eleven exact POST paths under
-	// /api/auth. It is registered after the two neighbouring auth units; the
-	// three rule sets share no path, so the order between them is irrelevant.
-	rules = legacyproxy.WithAuthLogin(rules, authLoginMode)
-	// The registration/invitation unit owns fourteen exact or one-segment paths
-	// under /api/auth. It shares no path with the three neighbouring auth units,
-	// so the order between them is irrelevant.
-	rules = legacyproxy.WithIdentityOnboarding(rules, identityOnboardingMode)
-	// The three public organization-SSO entries are an independent auth unit
-	// with its own switch; no OIDC configuration CRUD is registered here.
-	rules = legacyproxy.WithOIDCLogin(rules, oidcLoginMode)
-	rules = legacyproxy.WithEconomicData(rules, economicDataRouteMode)
-	// The two remaining identity entries have independent switches and exact
-	// method/path rules, so they cannot be shadowed by the account-security,
-	// login or onboarding rules.
-	rules = legacyproxy.WithAccountData(rules, avatarUploadMode, userDataExportMode)
-	// C-7: go replaces the /docs legacy prefix rule with a Go rule; the default
-	// (legacy) leaves the rule table untouched.
-	rules = legacyproxy.WithDocs(rules, string(cfg.DocsMode))
-	// The three crawl frontier write routes are method-scoped exact/segment rules
-	// that never overlap the GET rules above; appended last so parallel cutover
-	// batches stay conflict-free.
-	rules = legacyproxy.WithCrawlFrontierWrites(rules, crawlFrontierWritesMode)
-	// The queue operations console is a Go-only surface: it owns exact paths
-	// under /api/admin/queue-ops that NestJS never had, so it is registered last
-	// and never widens the migrated route coverage. /admin/queues (Bull Board)
-	// keeps proxying to NestJS and belongs to the go-ops-entrypoints batch.
-	queueOpsMode := ""
-	if cfg.QueueOpsMode == config.QueueOpsModeGo {
-		queueOpsMode = string(legacyproxy.ModeGo)
-	}
-	rules = legacyproxy.WithQueueOps(rules, queueOpsMode)
-	gateway, err := legacyproxy.New(cfg.LegacyAPIURL, rules)
-	if err != nil {
-		return err
-	}
-	gateway.SetShadowBudget(legacyproxy.ShadowBudget{
-		MaxRequestBodyByte:     cfg.ShadowMaxRequestBodyByte,
-		MaxResponseCaptureByte: cfg.ShadowMaxResponseCaptureByte,
-	})
+	rules := legacyproxy.AllRoutes()
+	gateway := legacyproxy.New(rules)
 
 	// user-settings shadow 的数据库能力（非阻断）：无 DATABASE_URL 时不配置，
 	// 网关照常启动代理；差分执行时发现未配置即跳过（不查询、不失败上抛）。
@@ -1094,114 +173,9 @@ func run() error {
 	if cfg.DatabaseURL != "" {
 		db, err := usersettings.OpenMySQLFromURL(cfg.DatabaseURL)
 		if err != nil {
-			// DSN 无效不阻断启动：网关继续纯代理，shadow 单元执行时跳过
-			//（错误不含 DSN 原文）。go 接管模式（两变量任一）下直接启动
-			// 失败——Go 接管端点不得带病启动。
-			if cfg.OnboardingMode == config.OnboardingModeGo ||
-				cfg.UserSettingsReadMode == config.UserSettingsReadModeGo ||
-				cfg.PublicPortalMode == config.PublicPortalModeGo ||
-				cfg.DashboardStatsMode == config.DashboardStatsModeGo ||
-				cfg.DashboardChartsMode == config.DashboardChartsModeGo ||
-				cfg.DashboardWarMapMode == config.DashboardWarMapModeGo ||
-				cfg.DashboardWarMapTransportMode == config.DashboardWarMapTransportModeGo ||
-				cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo ||
-				cfg.DashboardSpacetimeGeoMode == config.DashboardSpacetimeGeoModeGo ||
-				cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo ||
-				cfg.DashboardStreamMode == config.DashboardStreamModeGo ||
-				cfg.HealthzMode == config.HealthzModeGo ||
-				cfg.ContentSubscriptionsMode == config.ContentSubscriptionsModeGo ||
-				cfg.UserNewsBehaviorMode == config.UserNewsBehaviorModeGo ||
-				cfg.UserDigestMode == config.UserDigestModeGo ||
-				cfg.AnalysisViewsMode == config.AnalysisViewsModeGo ||
-				cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo ||
-				cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo ||
-				cfg.GraphQLReadMode == "go" ||
-				cfg.GraphQLOrgAccessWriteMode == "go" ||
-				cfg.GraphQLWorkspaceWriteMode == "go" ||
-				cfg.GraphQLAlertRulesMode == "go" ||
-				cfg.GraphQLSettingsWriteMode == "go" ||
-				cfg.GraphQLSourcePolicyWriteMode == "go" ||
-				cfg.GraphQLRssTranslationMode == "go" ||
-				cfg.GraphQLAssistantWriteMode == "go" ||
-				cfg.AssistantWorkerMode == "go" ||
-				cfg.SituationMonitorsMode == config.SituationMonitorsModeGo ||
-				cfg.NewsSourcesMode == config.NewsSourcesModeGo ||
-				cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo ||
-				cfg.CrawlProfilesMode == config.CrawlProfilesModeGo ||
-				cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo ||
-				cfg.CrawlFrontierWritesMode == config.CrawlFrontierWritesModeGo ||
-				cfg.RbacMode == config.RbacModeGo ||
-				cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo ||
-				cfg.AdminLogsMode == config.AdminLogsModeGo ||
-				cfg.QualityOverviewMode == config.QualityOverviewModeGo ||
-				cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo ||
-				cfg.ClassificationReportsMode == config.ClassificationReportsModeGo ||
-				cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
-				cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
-				cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
-				cfg.MetricsMode == config.MetricsModeGo ||
-				cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo ||
-				cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo ||
-				cfg.NewsClusteringRecoveryWorkerMode == config.NewsClusteringRecoveryWorkerModeGo ||
-				cfg.ArchivePreparationWorkerMode == config.ArchivePreparationWorkerModeGo ||
-				cfg.GraphQLNewsIndicatorRefreshMode == "go" ||
-				cfg.NewsIndicatorAssociationCronMode == config.NewsIndicatorAssociationCronModeGo ||
-				cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo ||
-				cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo ||
-				cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo ||
-				cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo ||
-				cfg.StorageDiagnosticsMode == config.StorageDiagnosticsModeGo ||
-				// The vector diagnostics route reads the shared settings row from
-				// MySQL and verifies JWTs against the Redis blacklist.
-				cfg.VectorDiagnosticsMode == config.VectorDiagnosticsModeGo ||
-				cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo ||
-				cfg.AuthFactorsMode == config.AuthFactorsModeGo ||
-				cfg.AccountSecurityMode == config.AccountSecurityModeGo ||
-				cfg.AuthLoginMode == config.AuthLoginModeGo ||
-				cfg.IdentityOnboardingMode == config.IdentityOnboardingModeGo ||
-				cfg.OIDCLoginMode == config.OIDCLoginModeGo ||
-				cfg.LlmLogsMode == config.LlmLogsModeGo ||
-				cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo ||
-				cfg.CrawlMetadataMode == config.CrawlMetadataModeGo ||
-				cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo ||
-				cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo ||
-				cfg.QueueOpsMode == config.QueueOpsModeGo ||
-				cfg.SearchReindexMode == config.SearchReindexModeGo ||
-				cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo ||
-				cfg.ItemsReadingMode == config.ItemsReadingModeGo ||
-				cfg.ExceptionIngestMode == config.ExceptionIngestModeGo ||
-				cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo ||
-				cfg.AnalysisExportMode == config.AnalysisExportModeGo ||
-				cfg.ArchiveReadingMode == config.ArchiveReadingModeGo ||
-				cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
-				cfg.SituationSettingsMode == config.SituationSettingsModeGo ||
-				cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
-				cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo ||
-				cfg.AnalysisRunsMode == config.AnalysisRunsModeGo ||
-				cfg.AnalysisWorkerMode == config.AnalysisWorkerModeGo ||
-				cfg.GraphQLKnowledgeReviewMode == "go" ||
-				cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo ||
-				cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
-				cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
-				cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo ||
-				cfg.ItemsIngestMode == config.ItemsIngestModeGo ||
-				cfg.RawItemOutboxMode == config.RawItemOutboxModeGo ||
-				cfg.ProcessedItemOutboxMode == config.ProcessedItemOutboxModeGo ||
-				cfg.EconomicDataMode == config.EconomicDataModeGo ||
-				cfg.EconomicDataWorkerMode == config.EconomicDataWorkerModeGo ||
-				cfg.EmailSettingsMode == config.EmailSettingsModeGo ||
-				cfg.GeocodingMode == config.GeocodingModeGo ||
-				cfg.RuntimeDiagnosticsMode == config.RuntimeDiagnosticsModeGo ||
-				graphqlSubscriptionsGo ||
-				realtimeSocketGo ||
-				classificationAlertGo ||
-				cfg.CrawlWorkerMode == config.CrawlWorkerModeGo ||
-				cfg.NotificationsSocketMode == config.NotificationsSocketModeGo {
-				return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
-			}
-			log.Printf("api-go: user-settings shadow database not initialized (invalid DATABASE_URL): %v", err)
-			userSettingsDBStatus = "invalid"
-		} else {
+			return fmt.Errorf("api-go: go takeover requires a valid DATABASE_URL: %w", err)
+		}
+		{
 			// sql.Open 是惰性初始化：只代表 DSN 成功解析为 driver 配置，
 			// 不证明数据库可连接。连接性由真实查询按需建立（失败只影响
 			// shadow 差分，不影响 legacy 响应）——不引入启动 Ping/探针/
@@ -1216,8 +190,7 @@ func run() error {
 	// The crawl maintenance and audit retention ownership switches write MySQL;
 	// an unusable DATABASE_URL must fail startup instead of silently degrading to
 	// a process with no pool.
-	if sharedDB == nil && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
-		cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo) {
+	if sharedDB == nil {
 		return fmt.Errorf("api-go: API_GO_CRAWL_MAINTENANCE_MODE/API_GO_AUDIT_LOG_RETENTION_MODE=go requires a usable DATABASE_URL")
 	}
 
@@ -1232,146 +205,98 @@ func run() error {
 	// 分支——但路由表只在 readMode 空时把 onboarding 切 go，此时其余五
 	// 端点仍 shadow/legacy，handler 对未接管路径不会被路由命中）。
 	// 两者都非 go 时完全不装配（零额外连接、旧行为不变）。
-	goTakeover := cfg.OnboardingMode == config.OnboardingModeGo ||
-		cfg.UserSettingsReadMode == config.UserSettingsReadModeGo
-	dashboardGo := cfg.DashboardStatsMode == config.DashboardStatsModeGo
-	chartsGo := cfg.DashboardChartsMode == config.DashboardChartsModeGo
-	warMapGo := cfg.DashboardWarMapMode == config.DashboardWarMapModeGo
-	transportGo := cfg.DashboardWarMapTransportMode == config.DashboardWarMapTransportModeGo
-	layersGo := cfg.DashboardWarMapLayersMode == config.DashboardWarMapLayersModeGo
-	spacetimeGeoGo := cfg.DashboardSpacetimeGeoMode == config.DashboardSpacetimeGeoModeGo
-	spacetimePropagationGo := cfg.DashboardSpacetimePropagationMode == config.DashboardSpacetimePropagationModeGo
-	streamGo := cfg.DashboardStreamMode == config.DashboardStreamModeGo
-	healthzGo := cfg.HealthzMode == config.HealthzModeGo
-	personalNewsGo := cfg.ContentSubscriptionsMode == config.ContentSubscriptionsModeGo ||
-		cfg.UserNewsBehaviorMode == config.UserNewsBehaviorModeGo ||
-		cfg.UserDigestMode == config.UserDigestModeGo
-	analysisGo := cfg.AnalysisViewsMode == config.AnalysisViewsModeGo ||
-		cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo ||
-		cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo
+	goTakeover := true
+	dashboardGo := true
+	chartsGo := true
+	warMapGo := true
+	transportGo := true
+	layersGo := true
+	spacetimeGeoGo := true
+	spacetimePropagationGo := true
+	streamGo := true
+	healthzGo := true
 	// user-settings、dashboard、stream、认证版 healthz、个人内容和分析工作台共用 JWT/Redis/MySQL 鉴权栈。
-	graphqlReadGo := cfg.GraphQLReadMode == "go"
+	graphqlReadGo := true
 	// 组织、角色与成员管理的 8 个 mutation 由独立开关控制，与读开关解耦：
 	// 只开写入时 queries 仍走 NestJS，也不需要 Mongo。
-	graphqlOrgAccessWriteGo := cfg.GraphQLOrgAccessWriteMode == "go"
+	graphqlOrgAccessWriteGo := true
 	// 工作台交互写入的 8 个 mutation（通知、看板、告警渠道与告警状态）同样由
 	// 独立开关控制，与读开关解耦；复用 workspace/alerts/history 的模型不要求
 	// Mongo、模型网关或队列。
-	graphqlWorkspaceWriteGo := cfg.GraphQLWorkspaceWriteMode == "go"
+	graphqlWorkspaceWriteGo := true
 	// The alert rule unit is independent of the read switch: alertRules itself
 	// writes (default backfill + schedule + evaluation), so the read root and
 	// the three rule mutations move together behind one switch.
-	graphqlAlertRulesGo := cfg.GraphQLAlertRulesMode == "go"
+	graphqlAlertRulesGo := true
 	// The source-policy version switch is independent of the read switch and of
 	// every other write switch. It needs only the credentialed
 	// JWT/MySQL/Redis stack.
-	sourcePolicyWriteGo := cfg.GraphQLSourcePolicyWriteMode == "go"
+	sourcePolicyWriteGo := true
 	// 知识图谱证据人工复核的单个 mutation 由独立开关控制，与全部读开关解耦：
 	// 只开写入时图谱十个只读 root 仍走 NestJS，也不需要 Mongo。它复用
 	// knowledgegraph 的设置缓存端口与 settingscrawl 的复核投影模型。
-	graphqlKnowledgeReviewGo := cfg.GraphQLKnowledgeReviewMode == "go"
+	graphqlKnowledgeReviewGo := true
 	// The RSS translation write switch is independent of the read switches and
 	// the other write switches; it needs MySQL, Redis and Mongo and registers
 	// only the translateRssItems mutation.
-	graphqlRssTranslationGo := cfg.GraphQLRssTranslationMode == "go"
+	graphqlRssTranslationGo := true
 	// The assistant write takeover registers only the four assistant mutations.
 	// It is independent of every read switch; the worker switch is separate and
 	// may be enabled in a different process.
-	graphqlAssistantWriteGo := cfg.GraphQLAssistantWriteMode == "go"
-	assistantWorkerGo := cfg.AssistantWorkerMode == "go"
-	situationMonitorsGo := cfg.SituationMonitorsMode == config.SituationMonitorsModeGo
-	newsSourcesGo := cfg.NewsSourcesMode == config.NewsSourcesModeGo
-	crawlWorkflowsGo := cfg.CrawlWorkflowsMode == config.CrawlWorkflowsModeGo
-	crawlProfilesGo := cfg.CrawlProfilesMode == config.CrawlProfilesModeGo
-	crawlFrontierRunsGo := cfg.CrawlFrontierRunsMode == config.CrawlFrontierRunsModeGo
-	rbacGo := cfg.RbacMode == config.RbacModeGo
-	crawlTemplatesGo := cfg.CrawlTemplatesMode == config.CrawlTemplatesModeGo
-	llmLogsGo := cfg.LlmLogsMode == config.LlmLogsModeGo
-	adminLogsGo := cfg.AdminLogsMode == config.AdminLogsModeGo
-	newsIndicatorsGo := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
-	qualityOverviewGo := cfg.QualityOverviewMode == config.QualityOverviewModeGo
-	newsnowClusteringOpsGo := cfg.NewsnowClusteringOpsMode == config.NewsnowClusteringOpsModeGo
+	graphqlAssistantWriteGo := true
+	assistantWorkerGo := true
 	// The two authenticated hot reads and the two background owners are separate
 	// switches. The HTTP unit needs the credentialed stack; the background unit
 	// needs only MySQL, Redis and Mongo.
-	newsnowHottestGo := cfg.NewsnowHottestMode == config.NewsnowHottestModeGo
-	newsnowBackgroundGo := cfg.NewsnowBackgroundMode == config.NewsnowBackgroundModeGo
-	crawlReadTelemetryGo := cfg.CrawlReadTelemetryMode == config.CrawlReadTelemetryModeGo
-	crawlMetadataGo := cfg.CrawlMetadataMode == config.CrawlMetadataModeGo
+	crawlReadTelemetryGo := true
+	crawlMetadataGo := true
 	// The crawl task lifecycle writes and the queue administration routes are
 	// independent switches; both reuse the credentialed JWT/MySQL/Redis stack
 	// and the shared BullMQ producer.
-	crawlTaskWriteGo := cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo
-	crawlQueueOpsGo := cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo
+	crawlTaskWriteGo := true
+	crawlQueueOpsGo := true
 	// The two crawl discovery entries are independent switches: the preview GET
 	// and the crawl-strategy trial/replay POSTs share the crawl4ai client and the
 	// metadata Service but never gate each other.
-	newsSourcePreviewGo := cfg.NewsSourcePreviewMode == config.NewsSourcePreviewModeGo
-	crawlWorkflowTrialGo := cfg.CrawlWorkflowTrialMode == config.CrawlWorkflowTrialModeGo
 	// The metadata GraphQL root is a child of the read pilot; it can only be
 	// registered when the read executor itself is assembled.
-	graphqlCrawlMetadataGo := graphqlReadGo && cfg.GraphQLCrawlMetadataMode == "go"
-	itemsReadingGo := cfg.ItemsReadingMode == config.ItemsReadingModeGo
+	graphqlCrawlMetadataGo := graphqlReadGo
+	itemsReadingGo := true
 	// The write switch is independent of every read switch. The raw_item
 	// scheduled-replay switch is independent of both write ownership and the
 	// other background owners.
-	itemsIngestGo := cfg.ItemsIngestMode == config.ItemsIngestModeGo
-	rawItemOutboxGo := cfg.RawItemOutboxMode == config.RawItemOutboxModeGo
+	itemsIngestGo := true
+	rawItemOutboxGo := true
 	// The processed_item compensation owner is independent of the item write
 	// and raw_item replay switches.
-	processedItemOutboxGo := cfg.ProcessedItemOutboxMode == config.ProcessedItemOutboxModeGo
+	processedItemOutboxGo := true
 	// The analysis CSV export unit is independent of the item reading switch:
 	// it builds its own item and news-event readers and only owns the two exact
 	// POST export routes.
-	analysisExportGo := cfg.AnalysisExportMode == config.AnalysisExportModeGo
 	// The three analysis run mutations are an independent GraphQL write unit.
 	// The worker owner is separate: it needs no JWT and no GraphQL switch.
-	analysisRunsGo := cfg.AnalysisRunsMode == config.AnalysisRunsModeGo
-	analysisWorkerGo := cfg.AnalysisWorkerMode == config.AnalysisWorkerModeGo
-	searchReindexGo := cfg.SearchReindexMode == config.SearchReindexModeGo
-	runtimeSettingsGo := cfg.RuntimeSettingsMode == config.RuntimeSettingsModeGo
-	llmGatewayProfilesGo := cfg.LLMGatewayProfilesMode == config.LLMGatewayProfilesModeGo
+	analysisRunsGo := true
+	analysisWorkerGo := true
 	// The governance/diagnostics group is an independent switch, but it always
 	// reuses the shared JWT/Redis/MySQL stack: the twelve routes verify tokens
 	// themselves and read the governance envelope from Redis.
-	llmGatewayOpsGo := cfg.LLMGatewayOpsMode == config.LLMGatewayOpsModeGo
-	infrastructureSettingsGo := cfg.InfrastructureSettingsMode == config.InfrastructureSettingsModeGo
 	// The storage connection test needs the credentialed stack (JWT, Redis
 	// blacklist, MySQL membership re-derivation) but no Mongo.
-	storageDiagnosticsGo := cfg.StorageDiagnosticsMode == config.StorageDiagnosticsModeGo
-	dataRuntimeSettingsGo := cfg.DataRuntimeSettingsMode == config.DataRuntimeSettingsModeGo
-	emailSettingsGo := cfg.EmailSettingsMode == config.EmailSettingsModeGo
-	geocodingGo := cfg.GeocodingMode == config.GeocodingModeGo
-	runtimeDiagnosticsGo := cfg.RuntimeDiagnosticsMode == config.RuntimeDiagnosticsModeGo
-	authFactorsGo := cfg.AuthFactorsMode == config.AuthFactorsModeGo
-	accountSecurityGo := cfg.AccountSecurityMode == config.AccountSecurityModeGo
-	authLoginGo := cfg.AuthLoginMode == config.AuthLoginModeGo
-	identityOnboardingGo := cfg.IdentityOnboardingMode == config.IdentityOnboardingModeGo
-	oidcLoginGo := cfg.OIDCLoginMode == config.OIDCLoginModeGo
-	classificationRssOpsGo := cfg.ClassificationRssOpsMode == config.ClassificationRssOpsModeGo
+	storageDiagnosticsGo := true
 	// The situation monitor signals takeover needs the same credentialed stack
 	// (JWT verification, Redis revocation list, MySQL membership re-derivation)
 	// as the other migrated domains, so it participates in the shared assembly.
-	situationSignalsGo := cfg.SituationSignalsMode == config.SituationSignalsModeGo
 	// The insights takeover needs the same credentialed stack plus Mongo.
-	situationInsightsGo := cfg.SituationInsightsMode == config.SituationInsightsModeGo
 	// The settings takeover needs the credentialed stack plus Mongo (quality
 	// summary) and the settings encryption key.
-	situationSettingsGo := cfg.SituationSettingsMode == config.SituationSettingsModeGo
 	// The Telegram login takeover serves the two authenticated POSTs, writes the
 	// encrypted session into the settings row and returns the controller's
 	// quality summary, so it joins the credentialed assembly below.
-	situationTelegramAuthGo := cfg.SituationTelegramAuthMode == config.SituationTelegramAuthModeGo
 	// The signals worker consumes the situationMonitorSignals queue and
 	// registers its repeat schedules. It serves no HTTP route and needs no JWT;
 	// it needs the shared Redis (queue, cached signal state, Telegram lease and
 	// the realtime event bridge) and MySQL (settings row and default OREF
 	// alert rules). Legacy default constructs nothing.
-	situationSignalsWorkerGo := cfg.SituationSignalsWorkerMode == config.SituationSignalsWorkerModeGo
-	platformGovernanceGo := cfg.PlatformGovernanceSettingsMode == config.PlatformGovernanceSettingsModeGo
-	modelAccessSettingsGo := cfg.ModelAccessSettingsMode == config.ModelAccessSettingsModeGo
-	proxyLoadBalancingGo := cfg.ProxyLoadBalancingMode == config.ProxyLoadBalancingModeGo
-	exceptionIngestGo := cfg.ExceptionIngestMode == config.ExceptionIngestModeGo
 	// 平行批次追加的模式全部保留（#53 frontier、#54 platform governance、#55
 	// infrastructure、#56 model access、#57 situation monitor signals、#58 items
 	// reading、#59 llm gateway profiles、#60 account security、#61 data runtime、
@@ -1380,40 +305,7 @@ func run() error {
 	// 任一变量改成本批所需值都不影响其他批次接线。
 	// 任一批次为 go 都需要凭据装配（JWT/Redis/MySQL）。多行 OR 便于并行批次
 	// 各自就近追加，减少单行改写造成的合并冲突。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo ||
-		transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo ||
-		streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo ||
-		situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo ||
-		crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo ||
-		adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo ||
-		newsnowClusteringOpsGo || newsnowHottestGo || runtimeSettingsGo || infrastructureSettingsGo ||
-		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
-		cfg.VectorDiagnosticsMode == config.VectorDiagnosticsModeGo ||
-		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
-		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
-		situationSignalsGo || situationInsightsGo || situationSettingsGo || situationTelegramAuthGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
-		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
-		graphqlWorkspaceWriteGo || graphqlAlertRulesGo || cfg.GraphQLSettingsWriteMode == "go" ||
-		sourcePolicyWriteGo ||
-		graphqlKnowledgeReviewGo ||
-		graphqlRssTranslationGo ||
-		graphqlAssistantWriteGo ||
-		identityOnboardingGo || oidcLoginGo ||
-		searchReindexGo || proxyLoadBalancingGo || analysisExportGo || itemsIngestGo || archiveReadingGo || economicDataGo ||
-		crawlTaskWriteGo || crawlQueueOpsGo ||
-		emailSettingsGo || geocodingGo || runtimeDiagnosticsGo ||
-		// This batch's HTTP entries: report creation and the runs read both
-		// verify the caller. The queue worker does not (see needsRedis).
-		cfg.ClassificationReportsMode == config.ClassificationReportsModeGo ||
-		cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo ||
-		cfg.GdeltSnapshotRefreshMode == config.GdeltSnapshotRefreshModeGo ||
-		newsSourcePreviewGo || crawlWorkflowTrialGo || analysisRunsGo ||
-		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
-		cfg.MetricsMode == config.MetricsModeGo ||
-		graphqlSubscriptionsGo || notificationsSocketGo || realtimeSocketGo ||
-		// This batch: the queue operations console verifies the caller, then
-		// requires both queue.manage and a platform administrator.
-		cfg.QueueOpsMode == config.QueueOpsModeGo
+	needsCredentialedGo := true
 	var redisClient *redis.Client
 	var redisOptions *redis.Options
 	var authenticator *authhttp.Authenticator
@@ -1432,44 +324,7 @@ func run() error {
 	// without authenticating a caller, the GDELT snapshot scheduler shares its
 	// rebuild lease in Redis, and the analysis worker consumes its queue while
 	// writing Mongo/MySQL without JWT.
-	needsRedis := needsCredentialedGo ||
-		cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo ||
-		cfg.AuditOutboxMode == config.AuditOutboxModeGo ||
-		cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo ||
-		newsnowBackgroundGo ||
-		rawItemOutboxGo ||
-		processedItemOutboxGo ||
-		economicDataWorkerGo ||
-		cfg.KnowledgeGraphIngestionMode == config.KnowledgeGraphIngestionModeGo ||
-		cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo ||
-		assistantWorkerGo ||
-		cfg.GdeltSnapshotMode == config.GdeltSnapshotModeGo ||
-		cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo ||
-		cfg.ArchivePreparationWorkerMode == config.ArchivePreparationWorkerModeGo ||
-		cfg.ItemPipelineWorkerMode == config.ItemPipelineWorkerModeGo ||
-		cfg.CrawlWorkerMode == config.CrawlWorkerModeGo ||
-		analysisWorkerGo ||
-		notificationsSocketGo ||
-		realtimeSocketGo ||
-		classificationAlertGo ||
-		cfg.BullmqCleanupMode == config.BullmqCleanupModeGo ||
-		cfg.ClassificationReviewSeedMode == config.ClassificationReviewSeedModeGo ||
-		cfg.PipelineRecoveryWriteMode == config.PipelineRecoveryWriteModeGo ||
-		cfg.MetricsMode == config.MetricsModeGo ||
-		cfg.StartupReconcileMode == config.StartupReconcileModeGo ||
-		// The signals worker owns the shared queue, the cached signal state,
-		// the single-instance Telegram lease and the event bridge, so it needs
-		// the shared Redis client even with every HTTP switch on legacy.
-		situationSignalsWorkerGo
-	// The crawl maintenance crons and the audit retention purge take their
-	// leases in the shared Redis even when no HTTP takeover is enabled.
-	if !needsRedis && (cfg.CrawlMaintenanceMode == config.CrawlMaintenanceModeGo ||
-		cfg.AuditLogRetentionMode == config.AuditLogRetentionModeGo ||
-		// The itemPipeline org-stats tracker reads the queue event stream behind
-		// a Redis lease and needs no JWT or MySQL.
-		cfg.QueueOrgStatsMode == config.QueueOrgStatsModeGo) {
-		needsRedis = true
-	}
+	needsRedis := true
 	if needsRedis {
 		// The blocking BullMQ XREAD reader and the queue jobctx cache share
 		// this exact Redis configuration but use dedicated connections.
@@ -1486,7 +341,7 @@ func run() error {
 	gdeltSnapshot := newGdeltSnapshotUnit(cfg, sharedDB, redisClient)
 	if gdeltSnapshot != nil {
 		log.Printf("api-go: situation-monitor GDELT snapshot unit configured (scheduler=%s, refresh=%s)",
-			cfg.GdeltSnapshotMode, cfg.GdeltSnapshotRefreshMode)
+			"go", "go")
 	}
 
 	// HTTP GraphQL and the WebSocket executor share one limiter instance so
@@ -1516,12 +371,12 @@ func run() error {
 	if goTakeover {
 		readHandler := usersettingsread.NewHandler(authenticator, userSettingsRepo)
 		var writeHandler *usersettingswrite.Handler
-		if cfg.UserSettingsWriteMode == config.UserSettingsWriteModeGo {
+		if true {
 			if settingsMySQL == nil {
 				return fmt.Errorf("api-go: user-settings write takeover requires a mysql repository")
 			}
 			writeHandler = usersettingswrite.NewHandler(authenticator, settingsMySQL)
-			log.Printf("api-go: user-settings PUT write takeover enabled (readMode=%s)", cfg.UserSettingsReadMode)
+			log.Printf("api-go: user-settings PUT write takeover enabled (readMode=%s)", "go")
 		}
 		// 同一 prefix 只能注册一个 handler。CORS 在鉴权之前：有效预检直接
 		// 204；实际 GET/PUT（含 401/400/500）先写上来源头再进入原 handler。
@@ -1533,7 +388,7 @@ func run() error {
 					return
 				}
 				if r.Method == http.MethodOptions {
-					gateway.ServeLegacy(w, r)
+					gateway.Reject(w, r)
 					return
 				}
 				if writeHandler != nil && r.Method == http.MethodPut {
@@ -1544,12 +399,12 @@ func run() error {
 			})
 		}
 		log.Printf("api-go: user-settings read GET(s) under go takeover (JWT verify + Redis blacklist + MySQL RBAC; issuer=%s, readMode=%s, onboardingMode=%s)",
-			cfg.JWTIssuer, cfg.UserSettingsReadMode, cfg.OnboardingMode)
+			cfg.JWTIssuer, "go", "go")
 	}
 
 	// 公开首页、频道和故事详情：匿名，不走 JWT/RBAC。只在显式 go 模式
 	// 注册。详情冷路径读取与 Nest 相同的 gateway profile 和加密凭据。
-	if cfg.PublicPortalMode == config.PublicPortalModeGo {
+	if true {
 		if sharedDB == nil {
 			return fmt.Errorf("api-go: public portal go takeover requires mysql")
 		}
@@ -1585,7 +440,7 @@ func run() error {
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			statsHandler.ServeHTTP(w, r)
@@ -1610,7 +465,7 @@ func run() error {
 						return
 					}
 					if r.Method == http.MethodOptions {
-						gateway.ServeLegacy(w, r)
+						gateway.Reject(w, r)
 						return
 					}
 					chartsHandler.ServeHTTP(w, r)
@@ -1673,7 +528,7 @@ func run() error {
 					return
 				}
 				if r.Method == http.MethodOptions {
-					gateway.ServeLegacy(w, r)
+					gateway.Reject(w, r)
 					return
 				}
 				warHandler.ServeHTTP(w, r)
@@ -1724,7 +579,7 @@ func run() error {
 					return
 				}
 				if r.Method == http.MethodOptions {
-					gateway.ServeLegacy(w, r)
+					gateway.Reject(w, r)
 					return
 				}
 				spacetimeHandler.ServeHTTP(w, r)
@@ -1757,7 +612,7 @@ func run() error {
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			streamHandler.ServeHTTP(w, r)
@@ -1848,13 +703,8 @@ func run() error {
 	// fallback 404 and the Go /docs 404 so both write the same exception event;
 	// it is only built when one of those Go-owned 404 paths is enabled, so the
 	// default (proxy + legacy docs) opens no Mongo connection.
-	var nestNotFoundRecorder nestnotfound.Recorder
-	if cfg.LegacyFallbackMode == config.LegacyFallbackModeReject || cfg.DocsMode == config.DocsModeGo {
-		nestNotFoundRecorder = newNestNotFoundRecorder(cfg, &dashboardMongo, redisClient)
-	}
-	if err := wireLegacyFallback(gateway, cfg, cors.New(cfg.CorsOrigin), nestNotFoundRecorder); err != nil {
-		return err
-	}
+	nestNotFoundRecorder := newNestNotFoundRecorder(cfg, &dashboardMongo, redisClient)
+	gateway.SetNotFound(cors.New(cfg.CorsOrigin), nestNotFoundRecorder)
 	if err := wireAPIDocs(gateway, cfg, cors.New(cfg.CorsOrigin), nestNotFoundRecorder); err != nil {
 		return err
 	}
@@ -1918,7 +768,7 @@ func run() error {
 	// no state, no connection and no S3 client: every request resolves its own
 	// snapshot through the shared storage:settings cache.
 	var storageConfigReader objectstorage.ConfigReader
-	if crawlReadTelemetryGo || (graphqlReadGo && cfg.GraphQLSettingsCrawlReadMode == "go") || storageDiagnosticsGo {
+	if crawlReadTelemetryGo || graphqlReadGo || storageDiagnosticsGo {
 		storageConfigReader = newInfrastructureSettingsService(cfg, sharedDB, redisClient)
 	}
 	if err := wireCrawlReadTelemetry(gateway, cfg, sharedDB, redisClient, authenticator, storageConfigReader, &dashboardMongo); err != nil {
@@ -2030,181 +880,19 @@ func run() error {
 		return err
 	}
 
-	// shadow 单元表：路由表中处于 ModeGo 的端点不再是 shadow 差分单元
-	//（ModeGo 规则也不会进入 serveShadow——双重收口，保证 go 接管的
-	// GET 不再增加 shadow.executed）。readMode=go 时六个端点全部过滤；
-	// readMode 空且 onboardingMode=go 时只过滤 onboarding；其余保持
-	// 既有 shadow/legacy 去向。
-	settingsUnits := userSettingsShadowUnits(userSettingsRepo)
-	goPaths := make(map[string]bool, len(usersettingsread.Paths))
-	for _, rule := range gateway.Rules() {
-		if rule.Mode == legacyproxy.ModeGo {
-			goPaths[rule.Prefix] = true
-		}
-	}
-	if len(goPaths) > 0 {
-		filtered := make([]shadowUnit, 0, len(settingsUnits))
-		for _, unit := range settingsUnits {
-			if !goPaths[unit.Path] {
-				filtered = append(filtered, unit)
-			}
-		}
-		settingsUnits = filtered
-	}
-
-	disp := &dispatcher{
-		shadowUnits: append([]shadowUnit{
-			{
-				Path:            "/api/healthz/live",
-				Methods:         map[string]bool{http.MethodGet: true},
-				RequireLegacyOK: false, // 公开探针：无需 legacy 认可身份
-				Executant:       healthLiveExecutant{},
-			},
-		}, settingsUnits...),
-		shadowRunner: shadow.NewRunner(shadow.Budget{
-			TimeoutMs:            cfg.ShadowTimeoutMs,
-			MaxRequestBodyByte:   cfg.ShadowMaxRequestBodyByte,
-			MaxInflight:          cfg.ShadowMaxInflight,
-			MaxPerMin:            cfg.ShadowMaxPerMin,
-			DebugBodyLog:         cfg.ShadowDebugBodyLog,
-			DebugBodyLogMaxBytes: cfg.ShadowDebugBodyLogMaxBytes,
-		}),
-		// 生产装配不开 AllowUnverifiedIdentity：未验签 orgId claim 不得
-		// 作为受保护路由的分流依据。CANARY_PERCENT 因此当前只是预留——
-		// 没有任何路由处于 ModeCanary（见 DefaultRules）。
-		canaryRouter: canary.NewRouter(canary.Options{Percent: cfg.CanaryPercent}),
-	}
-
-	// /__go/healthz：网关存活探针 + 路由表与 shadow/canary 状态自省。
-	// user-settings shadow 状态只报配置类别（unconfigured/invalid/configured
-	// ——configured 表示 DSN 已解析为 driver 配置，不承诺可连接），不含
-	// DSN/host/凭据/数据库错误详情。onboardingMode 如实展示当前模式
-	//（shadow/go）。字段名 userSettingsShadow 覆盖三个只读 GET 共用的
-	// 同一 repository（全仓唯一消费者是本文件与 README，无外部契约）。
+	// /__go/healthz：网关存活探针 + 路由表自省。只渲染稳定的进程事实
+	//（路由数量、流式计数器、存储配置类别），不输出任何迁移模式值。
 	gateway.SetGoHandler(func(w http.ResponseWriter, _ *http.Request) {
-		routes := make([]map[string]string, 0, len(gateway.Rules()))
-		for _, rule := range gateway.Rules() {
-			entry := map[string]string{"prefix": rule.Prefix, "mode": string(rule.Mode)}
-			if rule.Exact || rule.OneSegment {
-				if rule.OneSegment {
-					entry["match"] = "one-segment"
-				} else {
-					entry["match"] = "exact"
-				}
-				methods := make([]string, 0, len(rule.Methods))
-				for method := range rule.Methods {
-					methods = append(methods, method)
-				}
-				sort.Strings(methods)
-				entry["methods"] = strings.Join(methods, ",")
-			}
-			routes = append(routes, entry)
-		}
 		streamActive, streamCycles := int64(0), int64(0)
 		if streamHandler != nil {
 			streamActive, streamCycles = streamHandler.Stats()
 		}
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{
-			"ok":     true,
-			"routes": routes,
-			"shadow": disp.shadowRunner.Stats(),
-			"canary": map[string]int{"percent": disp.canaryRouter.Percent()},
-			"onboarding": map[string]any{
-				"mode": string(cfg.OnboardingMode),
-			},
-			// user-settings 统一读模式（Go-批3B）：空 = 兼容旧配置
-			//（onboardingMode 单独控制）；shadow/go 如实展示。
-			"userSettingsRead": map[string]any{
-				"mode":     string(cfg.UserSettingsReadMode),
-				"database": userSettingsDBStatus,
-			},
-			// 写模式只展示 legacy|go，不含 DSN/密钥。
-			"userSettingsWrite": map[string]any{
-				"mode": string(cfg.UserSettingsWriteMode),
-			},
-			// 公开首页、频道和两个故事详情。legacy 时这些 GET 仍代理 NestJS。
-			"publicPortal": map[string]any{
-				"mode":     string(cfg.PublicPortalMode),
-				"database": userSettingsDBStatus,
-			},
-			// dashboard stats。legacy 时该 GET 仍代理 NestJS。不含 Mongo URI。
-			"dashboardStats": map[string]any{
-				"mode": string(cfg.DashboardStatsMode),
-			},
-			// 三个图表 GET。legacy 时仍代理 NestJS。不含数据库地址。
-			"dashboardCharts": map[string]any{
-				"mode": string(cfg.DashboardChartsMode),
-			},
-			"dashboardWarMap": map[string]any{
-				"mode": string(cfg.DashboardWarMapMode),
-			},
-			"dashboardWarMapTransport": map[string]any{
-				"mode": string(cfg.DashboardWarMapTransportMode),
-			},
-			"dashboardWarMapLayers": map[string]any{
-				"mode": string(cfg.DashboardWarMapLayersMode),
-			},
-			"dashboardSpacetimeGeo": map[string]any{
-				"mode": string(cfg.DashboardSpacetimeGeoMode),
-			},
-			"dashboardSpacetimePropagation": map[string]any{
-				"mode": string(cfg.DashboardSpacetimePropagationMode),
-			},
-			"dashboardStream": map[string]any{
-				"mode":   string(cfg.DashboardStreamMode),
-				"active": streamActive,
-				"cycles": streamCycles,
-			},
-			"healthz": map[string]any{
-				"mode": string(cfg.HealthzMode),
-			},
-			// NewsNow 本地计算与聚类失败管理的 9 条 HTTP。legacy 时全部
-			// 回落 NestJS；不含连接串与密钥。
-			"newsnowClusteringOps": map[string]any{
-				"mode": string(cfg.NewsnowClusteringOpsMode),
-			},
-			// The news-event clustering LLM backfill chain and the six-hourly
-			// news-indicator association refresh. The four switches are
-			// independent; the worker switch also stops the NestJS consumer.
-			"newsBackfillJobs": map[string]any{
-				"llmBackfillMode":                  string(cfg.NewsClusteringLlmBackfillMode),
-				"recoveryWorkerMode":               string(cfg.NewsClusteringRecoveryWorkerMode),
-				"graphqlNewsIndicatorRefreshMode":  cfg.GraphQLNewsIndicatorRefreshMode,
-				"newsIndicatorAssociationCronMode": string(cfg.NewsIndicatorAssociationCronMode),
-			},
-			// 账户资料、会话退出与机器令牌的 8 条 HTTP。legacy 时全部回落
-			// NestJS；不含连接串、密码、hash 与令牌。
-			"accountSecurity": map[string]any{
-				"mode": string(cfg.AccountSecurityMode),
-			},
-			// 存储连接诊断（POST /api/admin/settings/storage/test）的独立开关。
-			// legacy 时该路由回落 NestJS；不含任何凭据、bucket 或签名 URL。
-			"storageDiagnostics": map[string]any{
-				"mode": string(cfg.StorageDiagnosticsMode),
-			},
-			// 登录、会话刷新、验证码登录、公共 MFA challenge、密码找回与
-			// 邮箱变更 11 条 HTTP。legacy 时全部回落 NestJS；不含连接串、
-			// 密码、令牌与密钥。
-			"authLogin": map[string]any{
-				"mode": string(cfg.AuthLoginMode),
-			},
-			// 注册申请、审批、邀请与入组 14 条 HTTP。legacy 时全部回落
-			// NestJS；不含连接串、令牌、hash 与邮件凭据。
-			"identityOnboarding": map[string]any{
-				"mode": string(cfg.IdentityOnboardingMode),
-			},
-			// The three public organization-SSO HTTP entries. While legacy they
-			// all fall back to NestJS; this diagnostic contains no IdP URL,
-			// client secret, state, handoff token or session token.
-			"oidcLogin": map[string]any{
-				"mode": string(cfg.OIDCLoginMode),
-			},
-			// Background daily-digest delivery ownership. legacy keeps the
-			// NestJS Cron; go moves the tick, org lease, SMTP delivery and
-			// digest notification relay to this process.
-			"userDigestDelivery": map[string]any{
-				"mode": string(cfg.UserDigestDeliveryMode),
-			},
+			"ok":           true,
+			"routeCount":   len(gateway.Rules()),
+			"streamActive": streamActive,
+			"streamCycles": streamCycles,
+			"database":     userSettingsDBStatus,
 		})
 	})
 
@@ -2272,10 +960,8 @@ func run() error {
 	// the exact /graphql Go handler; write-only combinations must not require
 	// Mongo or initialize any read-only Mongo service (the RSS translation write
 	// is the exception: it requires Mongo itself).
-	settingsWriteGo := cfg.GraphQLSettingsWriteMode == "go"
-	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || graphqlAlertRulesGo || settingsWriteGo ||
-		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || itemsIngestGo || archiveReadingGo || economicDataGo || crawlTaskWriteGo ||
-		cfg.GraphQLNewsIndicatorRefreshMode == "go" || graphqlAssistantWriteGo || analysisRunsGo {
+	settingsWriteGo := true
+	if true {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -2289,8 +975,8 @@ func run() error {
 		// The workspace identity/organization/RBAC/dashboard/queue/sentiment/
 		// processed-item roots are opt-in through their own switch; when it is
 		// legacy, any document selecting one of them stays on NestJS.
-		workspaceGo := cfg.GraphQLWorkspaceReadMode == "go"
-		settingsCrawlGo := cfg.GraphQLSettingsCrawlReadMode == "go"
+		workspaceGo := true
+		settingsCrawlGo := true
 		if graphqlReadGo {
 			mongoDatabase := dashboardMongo
 			if mongoDatabase == nil {
@@ -2307,14 +993,14 @@ func run() error {
 			alerts.Register(reg, sharedDB)
 			history.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
 			economic.Register(reg, sharedDB)
-			newsEventsGo := cfg.GraphQLNewsEventsMode == "go"
+			newsEventsGo := true
 			if newsEventsGo {
 				briefOptions := newsevents.Options{}
 				// The newsEventBrief sub-switch is exact: when it is legacy
 				// the root is not registered, so a document selecting it falls
 				// back to NestJS as a whole, while the other five roots keep
 				// serving from Go.
-				if cfg.GraphQLNewsEventBriefMode == "go" {
+				if true {
 					briefOptions.BriefEnabled = true
 					briefOptions.Brief = publicportal.NewBriefCompleter(publicportal.NewMySQLStore(sharedDB), publicportal.GatewayEnv{
 						EncryptionKey: cfg.SettingsEncryptionKey,
@@ -2327,15 +1013,15 @@ func run() error {
 				}
 				newsevents.Register(reg, sharedDB, mongoDatabase.Database(), redisClient, briefOptions)
 			}
-			newsIndicatorsRead := cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo
+			newsIndicatorsRead := true
 			if newsIndicatorsRead {
 				newsindicators.Register(reg, sharedDB)
 			}
-			kgImpactGo := cfg.GraphQLKgImpactMode == "go"
+			kgImpactGo := true
 			if kgImpactGo {
 				kgimpact.Register(reg, sharedDB, mongoDatabase.Database(), redisClient)
 			}
-			knowledgeGraphGo := cfg.GraphQLKnowledgeGraphMode == "go"
+			knowledgeGraphGo := true
 			if knowledgeGraphGo {
 				knowledgegraph.Register(reg, sharedDB, redisClient)
 			}
@@ -2383,7 +1069,7 @@ func run() error {
 				// The items connection root is opt-in through its own
 				// sub-switch on top of the two parents; while it is legacy, any
 				// document selecting items stays on NestJS.
-				if cfg.GraphQLItemsListMode == "go" {
+				if true {
 					itemsgraphql.RegisterList(reg, itemReadService)
 				}
 			}
@@ -2486,7 +1172,7 @@ func run() error {
 		// It is independent of the news-indicator read switch: when only this
 		// switch is go the two read queries stay on NestJS while this mutation
 		// is served by Go.
-		if cfg.GraphQLNewsIndicatorRefreshMode == "go" {
+		if true {
 			newsindicatorwrite.Register(reg, sharedDB, redisClient)
 		}
 		// The four source-policy mutations return the policy models and two
@@ -2557,7 +1243,6 @@ func run() error {
 			Authenticator:   authenticator,
 			Limiter:         graphqlLimiter,
 			Cache:           policy.NewResponseCache(redisClient),
-			Legacy:          gateway.ServeLegacy,
 			CORS:            cors.New(cfg.CorsOrigin),
 			TrustProxy:      cfg.TrustProxy,
 			APQEnabled:      cfg.GraphQLAPQEnabled,
@@ -2574,8 +1259,8 @@ func run() error {
 		gateway.RegisterGoHandler(graphqlread.StatsPath, graphqlHandler.ServeStats)
 		if graphqlReadGo {
 			log.Printf("api-go: GraphQL read pilot under go (16 queries; mutations and other queries stay on NestJS)")
-			if cfg.GraphQLNewsEventsMode == "go" {
-				if cfg.GraphQLNewsEventBriefMode == "go" {
+			if true {
+				if true {
 					log.Printf("api-go: GraphQL news-event reads registered (newsEvents, newsEvent, newsEventBrief, newsEventReferencedArticles, topicGroups, eventGroups)")
 				} else {
 					log.Printf("api-go: GraphQL news-event reads registered (newsEvents, newsEvent, newsEventReferencedArticles, topicGroups, eventGroups); newsEventBrief stays on NestJS (API_GO_GRAPHQL_NEWS_EVENT_BRIEF_MODE=legacy)")
@@ -2583,17 +1268,17 @@ func run() error {
 			} else {
 				log.Printf("api-go: GraphQL news-event reads not registered (API_GO_GRAPHQL_NEWS_EVENTS_MODE=legacy)")
 			}
-			if cfg.NewsIndicatorsMode == config.NewsIndicatorsModeGo {
+			if true {
 				log.Printf("api-go: GraphQL news-indicator reads registered (newsIndicatorAssociations, newsIndicatorAssociation)")
 			} else {
 				log.Printf("api-go: GraphQL news-indicator reads not registered (API_GO_NEWS_INDICATORS_MODE=legacy)")
 			}
-			if cfg.GraphQLKgImpactMode == "go" {
+			if true {
 				log.Printf("api-go: GraphQL knowledge-graph impact reads registered (getExecutiveChangeImpact, getCommodityMoveImpact, getPolicyEventImpact, getEntityImpactGraph)")
 			} else {
 				log.Printf("api-go: GraphQL knowledge-graph impact reads not registered (API_GO_GRAPHQL_KG_IMPACT_MODE=legacy)")
 			}
-			if cfg.GraphQLKnowledgeGraphMode == "go" {
+			if true {
 				log.Printf("api-go: GraphQL knowledge-graph reads registered (getKnowledgeGraphSubgraph, articleEntityLinks, knowledgeGraphEdgeEvidence, entityIntelligenceCard, entityIntelligenceEvidence, knowledgeEntityByName)")
 			} else {
 				log.Printf("api-go: GraphQL knowledge-graph reads not registered (API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE=legacy)")
@@ -2605,7 +1290,7 @@ func run() error {
 			}
 			if itemsReadingGo {
 				log.Printf("api-go: GraphQL item reading roots registered (item, itemFacets, rssSources, rssTranslationStatus, searchSuggestions)")
-				if cfg.GraphQLItemsListMode == "go" {
+				if true {
 					log.Printf("api-go: GraphQL items list registered (items connection; page/after cursors, CREATED_DESC/PUBLISHED_DESC/PERSONALIZED, relevance rerank)")
 				} else {
 					log.Printf("api-go: GraphQL items list not registered (API_GO_GRAPHQL_ITEMS_LIST_MODE=legacy)")
@@ -2618,7 +1303,7 @@ func run() error {
 			} else {
 				log.Printf("api-go: GraphQL crawl metadata root not registered (API_GO_GRAPHQL_CRAWL_METADATA_MODE=legacy)")
 			}
-			if cfg.GraphQLSettingsCrawlReadMode == "go" {
+			if true {
 				log.Printf("api-go: GraphQL settings/crawl reads registered (rateLimitSettings, entityImpactGraphSettings, knowledgeGraphSettings, newsEventSettings, newsEventSourcePolicy, newsEventSourcePolicyPresets, newsEventSourcePolicyRevisionDiff, newsClassificationSettings, classificationQualitySettings, newsDedupeSettings, newsIndicatorSettings, authCacheSettings, crawlClientSettings, auditLogRetention, newsExtractionSettings, newsPromptConfig, newsEventSourcePolicySyncStatus, knowledgeGraphEvidenceReviewQueue, crawlTasks, crawlTask)")
 			} else {
 				log.Printf("api-go: GraphQL settings/crawl reads not registered (API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE=legacy)")
@@ -2706,7 +1391,7 @@ func run() error {
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			itemsReadingHandler.ServeHTTP(w, r)
@@ -2808,7 +1493,7 @@ func run() error {
 	// other exact /graphql request keeps the Go read handler or the legacy
 	// proxy. Registering this entrypoint is independent of the read switch.
 	if graphqlHandler != nil || graphqlSubscriptions != nil {
-		entrypoint := graphqlEntrypoint(graphqlSubscriptions, graphqlHandler, gateway.ServeLegacy)
+		entrypoint := graphqlEntrypoint(graphqlSubscriptions, graphqlHandler)
 		gateway.RegisterGoHandler(graphqlread.Path, func(w http.ResponseWriter, r *http.Request) {
 			if economicDataGo {
 				r = r.WithContext(economicdata.WithRequestIP(r.Context(), economicRequestIP(r)))
@@ -3202,7 +1887,7 @@ func run() error {
 	}
 	if kgIngestion != nil {
 		kgIngestion.scheduler.Start(context.Background())
-		log.Printf("api-go: knowledge graph ingestion scheduler enabled mode=%s", cfg.KnowledgeGraphIngestionMode)
+		log.Printf("api-go: knowledge graph ingestion scheduler enabled mode=%s", "go")
 	}
 	newsEventsIngestion, err = wireNewsEventsIngestion(cfg, sharedDB, redisClient, sharedKGIngestionMongo(dashboardMongo, graphqlMongo))
 	if err != nil {
@@ -3210,7 +1895,7 @@ func run() error {
 	}
 	if newsEventsIngestion != nil {
 		newsEventsIngestion.scheduler.Start(context.Background())
-		log.Printf("api-go: news event ingestion scheduler enabled mode=%s", cfg.NewsEventsIngestionMode)
+		log.Printf("api-go: news event ingestion scheduler enabled mode=%s", "go")
 	}
 	newsBackfill, err = wireNewsBackfillJobs(gateway, cfg, sharedDB, redisClient, authenticator, &dashboardMongo)
 	if err != nil {
@@ -3265,16 +1950,16 @@ func run() error {
 	if crawlMaintenance != nil {
 		crawlMaintenance.Start(context.Background())
 		log.Printf("api-go: crawl maintenance owned by Go (maintenance=%s, auditRetention=%s)",
-			string(cfg.CrawlMaintenanceMode), string(cfg.AuditLogRetentionMode))
+			string("go"), string("go"))
 	}
 
 	// The realtime signal collector needs Mongo for the transport track writes.
 	// Reuse an already-open handle when another unit opened one; otherwise open
 	// the same database this process uses elsewhere and let the teardown close it.
-	if cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo && (sharedDB == nil || redisClient == nil) {
+	if sharedDB == nil || redisClient == nil {
 		return fmt.Errorf("api-go: API_GO_REALTIME_SIGNALS_MODE=go requires mysql and redis")
 	}
-	if cfg.RealtimeSignalsMode == config.RealtimeSignalsModeGo && dashboardMongo == nil {
+	if dashboardMongo == nil {
 		opened, openErr := dashboardstats.Open(cfg.MongoURI)
 		if openErr != nil {
 			return fmt.Errorf("api-go: API_GO_REALTIME_SIGNALS_MODE=go requires a valid MONGO_URI")
@@ -3311,7 +1996,7 @@ func run() error {
 		if startErr := queueOrgStats.Start(context.Background()); startErr != nil {
 			return startErr
 		}
-		log.Printf("api-go: itemPipeline org queue stats owned by Go (mode=%s)", cfg.QueueOrgStatsMode)
+		log.Printf("api-go: itemPipeline org queue stats owned by Go (mode=%s)", "go")
 	}
 
 	// The signals worker registers its repeat schedules before claiming jobs, so
@@ -3395,7 +2080,7 @@ func run() error {
 	// middleware so even a failure of the trace wrapper can be attributed.
 	handler := authhttp.IdentityScope(httpx.SecurityHeadersMiddleware(httpx.MetricsMiddleware(
 		httpx.TraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			gateway.ServeHTTPWithShadow(w, r, disp)
+			gateway.ServeHTTP(w, r)
 		})),
 		func(observation httpx.HTTPObservation) {
 			metrics.RecordHTTPRequestMetric(metrics.HTTPRequestInput{
@@ -3417,10 +2102,7 @@ func run() error {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		log.Printf(
-			"api-go: listening on %s (legacy=%s, canary=%d%%)",
-			server.Addr, cfg.LegacyAPIURL, cfg.CanaryPercent,
-		)
+		log.Printf("api-go: listening on %s", server.Addr)
 		serverErr <- server.ListenAndServe()
 	}()
 

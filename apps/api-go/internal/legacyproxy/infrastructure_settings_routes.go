@@ -33,10 +33,7 @@ const InfrastructureSettingsKey = "/api/system-settings#infrastructure"
 // The shared rule helper also whitelists OPTIONS for these paths, so CORS
 // preflight is answered by the Go handler instead of reaching NestJS; a
 // non-preflight OPTIONS request is sent back to the proxy by the wiring.
-func WithInfrastructureSettings(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithInfrastructureSettings(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, InfrastructureSettingsKey, "/api/system-settings/vector-service",
 		http.MethodGet, http.MethodPut, http.MethodDelete)
 	rules = appendExactKeyed(rules, InfrastructureSettingsKey, "/api/system-settings/news-source-runtime-secrets",

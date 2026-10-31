@@ -11,9 +11,6 @@ const ItemsIngestKey = "/api/items"
 // WithItemsIngest takes over exactly POST /api/items when mode is go. GET,
 // OPTIONS and longer paths are controlled by WithItemsReading or stay on
 // NestJS.
-func WithItemsIngest(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithItemsIngest(rules []Rule) []Rule {
 	return appendExactKeyed(rules, ItemsIngestKey, "/api/items", http.MethodPost)
 }

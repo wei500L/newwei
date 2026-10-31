@@ -54,33 +54,16 @@ func infrastructureSettingsNestRoutes() []struct{ method, path string } {
 
 // TestInfrastructureSettingsStayLegacyByDefault locks the default and the
 // explicit legacy value.
-func TestInfrastructureSettingsStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithInfrastructureSettings(rules, "")
-	rules = WithInfrastructureSettings(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(infrastructureSettingsGoRoutes(), infrastructureSettingsNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
 
 // TestInfrastructureSettingsGoOwnsRoutes locks the seven exact rules.
 func TestInfrastructureSettingsGoOwnsRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithInfrastructureSettings(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithInfrastructureSettings(rules)
+	gateway := New(rules)
 	for _, tc := range infrastructureSettingsGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if !got.Exact {
 			t.Fatalf("%s %s must be an exact rule: %+v", tc.method, tc.path, got)
@@ -93,15 +76,12 @@ func TestInfrastructureSettingsGoOwnsRoutes(t *testing.T) {
 
 // TestInfrastructureSettingsUnmigratedRoutesStayNest locks every fallback.
 func TestInfrastructureSettingsUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithInfrastructureSettings(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithInfrastructureSettings(rules)
+	gateway := New(rules)
 	for _, tc := range infrastructureSettingsNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
@@ -109,17 +89,14 @@ func TestInfrastructureSettingsUnmigratedRoutesStayNest(t *testing.T) {
 // TestInfrastructureSettingsCoexistsWithRuntimeSettings locks rule attribution
 // when both switches are go.
 func TestInfrastructureSettingsCoexistsWithRuntimeSettings(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithRuntimeSettings(rules, string(ModeGo))
-	rules = WithInfrastructureSettings(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithRuntimeSettings(rules)
+	rules = WithInfrastructureSettings(rules)
+	gateway := New(rules)
 	// The runtime settings switch must not have taken the new routes over.
 	for _, tc := range infrastructureSettingsGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != InfrastructureSettingsKey {
+		if got.Prefix == "" || got.HandlerKey != InfrastructureSettingsKey {
 			t.Fatalf("%s %s = %+v", tc.method, tc.path, got)
 		}
 	}
@@ -130,7 +107,7 @@ func TestInfrastructureSettingsCoexistsWithRuntimeSettings(t *testing.T) {
 		{http.MethodGet, "/api/system-settings/news-source-scheduler"},
 	} {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != RuntimeSettingsKey {
+		if got.Prefix == "" || got.HandlerKey != RuntimeSettingsKey {
 			t.Fatalf("%s %s = %+v", tc.method, tc.path, got)
 		}
 	}

@@ -1,2791 +1,336 @@
 package config
 
 import (
+	"bufio"
 	"math"
-	"reflect"
-	"strconv"
+	"os"
 	"strings"
 	"testing"
 )
+
+// readEnvFixture parses a KEY=VALUE fixture. Blank lines and lines starting with
+// '#' are ignored; values are never defaulted here.
+func readEnvFixture(t *testing.T, path string) map[string]string {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	defer file.Close()
+
+	env := map[string]string{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			t.Fatalf("invalid fixture line %q in %s", line, path)
+		}
+		env[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan %s: %v", path, err)
+	}
+	return env
+}
+
+// defaultResources returns the connection and secret placeholders the gateway
+// needs at startup. The Go-only runtime validates every migrated unit's
+// resources unconditionally, so this fixture supplies all of them.
+func defaultResources(t *testing.T) map[string]string {
+	t.Helper()
+	return readEnvFixture(t, "testdata/default-resources.env")
+}
+
+// resourceEnv layers the test overrides on top of the placeholder resources. An
+// empty override removes the key, which is how a missing resource is simulated.
+func resourceEnv(t *testing.T, overrides map[string]string) func(string) string {
+	t.Helper()
+	env := defaultResources(t)
+	for key, value := range overrides {
+		if value == "" {
+			delete(env, key)
+			continue
+		}
+		env[key] = value
+	}
+	return func(key string) string { return env[key] }
+}
+
+func loadDefaults(t *testing.T) Config {
+	t.Helper()
+	cfg, err := Load(resourceEnv(t, nil))
+	if err != nil {
+		t.Fatalf("config.Load rejected the default resource fixture: %v", err)
+	}
+	return cfg
+}
+
+func loadWith(t *testing.T, overrides map[string]string) (Config, error) {
+	t.Helper()
+	return Load(resourceEnv(t, overrides))
+}
+
+// loadMissing loads the default fixture with the named resource variables removed.
+func loadMissing(t *testing.T, keys ...string) (Config, error) {
+	t.Helper()
+	env := defaultResources(t)
+	for _, key := range keys {
+		delete(env, key)
+	}
+	return Load(func(key string) string { return env[key] })
+}
 
 func TestLoadDefaults(t *testing.T) {
 	cfg := loadDefaults(t)
 	if cfg.Port != 4020 {
 		t.Errorf("Port = %d, want 4020", cfg.Port)
 	}
-	if cfg.LegacyAPIURL != "http://localhost:4000" {
-		t.Errorf("LegacyAPIURL = %q, want default", cfg.LegacyAPIURL)
-	}
-}
-
-func TestLoadRejectsRelativeLegacyURL(t *testing.T) {
-	if _, err := Load(legacyUnset(func(key string) string {
-		if key == "LEGACY_API_URL" {
-			return "localhost:4000"
-		}
-		return ""
-	})); err == nil {
-		t.Fatal("Load() should reject a non-absolute LEGACY_API_URL")
+	if !cfg.ScheduleEnabled {
+		t.Error("ScheduleEnabled should default to true")
 	}
 }
 
 func TestLoadRejectsInvalidPort(t *testing.T) {
-	if _, err := Load(legacyUnset(func(key string) string {
-		if key == "PORT" {
-			return "-1"
-		}
-		return ""
-	})); err == nil {
+	if _, err := loadWith(t, map[string]string{"PORT": "-1"}); err == nil {
 		t.Fatal("Load() should reject PORT=-1")
 	}
 }
 
 func TestLoadAcceptsExplicitConfig(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "PORT":
-			return "8080"
-		case "LEGACY_API_URL":
-			return "http://api:4000"
-		}
-		return ""
-	}))
+	cfg, err := loadWith(t, map[string]string{"PORT": "8080"})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.Port != 8080 || cfg.LegacyAPIURL != "http://api:4000" {
+	if cfg.Port != 8080 {
 		t.Errorf("unexpected config: %+v", cfg)
 	}
 }
 
-func TestShadowDefaultsGuardResourceBudget(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.ShadowTimeoutMs <= 0 || cfg.ShadowMaxRequestBodyByte <= 0 || cfg.ShadowMaxInflight <= 0 || cfg.ShadowMaxPerMin <= 0 {
-		t.Errorf("shadow budget defaults must be positive: %+v", cfg)
-	}
-	// 请求体与响应捕获必须是两个独立预算（命名与语义都不共享）。
-	if cfg.ShadowMaxResponseCaptureByte <= 0 {
-		t.Errorf("ShadowMaxResponseCaptureByte default = %d, want positive", cfg.ShadowMaxResponseCaptureByte)
-	}
-	// 差分正文默认不记录（只记 hash）。
-	if cfg.ShadowDebugBodyLog {
-		t.Error("ShadowDebugBodyLog default must be false")
-	}
-	if cfg.ShadowDebugBodyLogMaxBytes <= 0 {
-		t.Errorf("ShadowDebugBodyLogMaxBytes default = %d, want positive", cfg.ShadowDebugBodyLogMaxBytes)
-	}
-	if cfg.CanaryPercent != 0 {
-		t.Errorf("CanaryPercent default = %d, want 0 (canary 必须显式开启)", cfg.CanaryPercent)
-	}
-}
-
-func TestLoadAcceptsIndependentShadowBudgets(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "SHADOW_MAX_REQUEST_BODY_BYTES":
-			return "4096"
-		case "SHADOW_MAX_RESPONSE_CAPTURE_BYTES":
-			return "8192"
-		}
-		return ""
-	}))
+func TestScheduleEnabledParsing(t *testing.T) {
+	cfg, err := loadWith(t, map[string]string{"SCHEDULE_ENABLED": "false"})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.ShadowMaxRequestBodyByte != 4096 {
-		t.Errorf("ShadowMaxRequestBodyByte = %d, want 4096", cfg.ShadowMaxRequestBodyByte)
-	}
-	if cfg.ShadowMaxResponseCaptureByte != 8192 {
-		t.Errorf("ShadowMaxResponseCaptureByte = %d, want 8192", cfg.ShadowMaxResponseCaptureByte)
+	if cfg.ScheduleEnabled {
+		t.Error("SCHEDULE_ENABLED=false must disable scheduling")
 	}
 }
 
-func TestLoadRejectsInvalidShadowBudgets(t *testing.T) {
-	for _, key := range []string{"SHADOW_MAX_REQUEST_BODY_BYTES", "SHADOW_MAX_RESPONSE_CAPTURE_BYTES"} {
-		if _, err := Load(func(k string) string {
-			if k == key {
-				return "-1"
-			}
-			return ""
-		}); err == nil {
-			t.Fatalf("Load() should reject %s=-1", key)
-		}
-	}
-}
-
-func TestLoadDebugBodyLogFlag(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "SHADOW_DEBUG_BODY_LOG" {
-			return "true"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if !cfg.ShadowDebugBodyLog {
-		t.Error("SHADOW_DEBUG_BODY_LOG=true must enable debug body logging")
-	}
-
-	for _, raw := range []string{"maybe", "yes-maybe"} {
-		if _, err := Load(legacyUnset(func(key string) string {
-			if key == "SHADOW_DEBUG_BODY_LOG" {
-				return raw
-			}
-			return ""
-		})); err == nil {
-			t.Fatalf("Load() should reject SHADOW_DEBUG_BODY_LOG=%q", raw)
-		}
-	}
-}
-
-func TestLoadRejectsInvalidCanaryPercent(t *testing.T) {
-	for _, raw := range []string{"-1", "101", "abc"} {
-		if _, err := Load(legacyUnset(func(key string) string {
-			if key == "CANARY_PERCENT" {
-				return raw
-			}
-			return ""
-		})); err == nil {
-			t.Fatalf("Load() should reject CANARY_PERCENT=%q", raw)
-		}
-	}
-}
-
-func TestLoadAcceptsCanaryBounds(t *testing.T) {
-	for _, raw := range []string{"0", "1", "50", "100"} {
-		cfg, err := Load(legacyUnset(func(key string) string {
-			if key == "CANARY_PERCENT" {
-				return raw
-			}
-			return ""
-		}))
-		if err != nil {
-			t.Fatalf("Load(CANARY_PERCENT=%q) error = %v", raw, err)
-		}
-		if got := cfg.CanaryPercent; got != mustAtoi(t, raw) {
-			t.Errorf("CANARY_PERCENT=%q → %d, want %d", raw, got, mustAtoi(t, raw))
-		}
-	}
-}
-
-func mustAtoi(t *testing.T, raw string) int {
-	t.Helper()
-	value, err := strconv.Atoi(raw)
-	if err != nil {
-		t.Fatalf("bad fixture %q: %v", raw, err)
-	}
-	return value
-}
-
-// Go-批3B：API_GO_USER_SETTINGS_READ_MODE 的三值语义（空=兼容旧行为、
-// shadow/go 合法、非法值启动失败）+ go 模式的依赖前置校验（合并表格）。
-func TestUserSettingsReadMode(t *testing.T) {
+// TestRequiredResourcesAreValidatedUnconditionally asserts that a Go-only
+// deployment refuses to start when any migrated unit's backing resource is
+// absent. The requirement messages are no longer scoped to a migration switch.
+func TestRequiredResourcesAreValidatedUnconditionally(t *testing.T) {
 	cases := []struct {
-		name      string
-		readMode  string
-		extraEnv  map[string]string
-		wantMode  string
-		wantError bool
+		key  string
+		want string
 	}{
-		// Before the cutover "" kept the per-endpoint compat behaviour. It now
-		// takes the go branch (asserted by loadDefaults below); here the explicit
-		// shadow spelling selects the rollback branch.
-		{"shadow accepted", "shadow", nil, "shadow", false},
-		{"go accepted with deps", "go", map[string]string{
-			"JWT_SECRET": "s", "DATABASE_URL": "mysql://u:p@h:3306/db", "REDIS_HOST": "h",
-		}, "go", false},
-		{"go without deps fails", "go", nil, "", true},
-		{"invalid value rejected", "bogus", nil, "", true},
-	}
-
-	// The unset value resolves to go, which needs the credentialed stack.
-	defaults := loadDefaults(t)
-	if defaults.UserSettingsReadMode != UserSettingsReadModeGo {
-		t.Fatalf("UserSettingsReadMode default = %q, want go", defaults.UserSettingsReadMode)
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(legacyUnset(func(key string) string {
-				if v, ok := tc.extraEnv[key]; ok {
-					return v
-				}
-				if key == "API_GO_USER_SETTINGS_READ_MODE" {
-					return tc.readMode
-				}
-				return ""
-			}))
-			if tc.wantError {
-				if err == nil {
-					t.Fatalf("want error, got cfg %+v", cfg)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-			if string(cfg.UserSettingsReadMode) != tc.wantMode {
-				t.Errorf("UserSettingsReadMode = %q, want %q", cfg.UserSettingsReadMode, tc.wantMode)
-			}
-			// The write switch is pinned to its legacy baseline by legacyUnset;
-			// this test is about the read switch only.
-			if cfg.UserSettingsWriteMode != UserSettingsWriteModeLegacy {
-				t.Errorf("UserSettingsWriteMode = %q, want legacy baseline", cfg.UserSettingsWriteMode)
-			}
-		})
-	}
-}
-
-func TestUserSettingsWriteMode(t *testing.T) {
-	deps := map[string]string{
-		"JWT_SECRET": "s", "DATABASE_URL": "mysql://u:p@h:3306/db", "REDIS_HOST": "h",
-	}
-	cases := []struct {
-		name      string
-		writeMode string
-		readMode  string
-		withDeps  bool
-		wantError bool
-	}{
-		{"default legacy", "", "", false, false},
-		{"explicit legacy", "legacy", "", false, false},
-		{"go requires read go", "go", "shadow", true, true},
-		{"go requires read go when read unset", "go", "", true, true},
-		{"go with read go", "go", "go", true, false},
-		{"go with read go but missing deps", "go", "go", false, true},
-		{"invalid", "both", "go", true, true},
+		{"JWT_SECRET", "JWT_SECRET is required"},
+		{"DATABASE_URL", "DATABASE_URL is required"},
+		{"REDIS_HOST", "REDIS_HOST is required"},
+		{"MONGO_URI", "MONGO_URI is required"},
+		{"SMTP_HOST", "SMTP_HOST is required"},
+		{"SMTP_PORT", "SMTP_PORT is required"},
+		{"SMTP_USER", "SMTP_USER is required"},
+		{"SMTP_PASS", "SMTP_PASS is required"},
+		{"SYSTEM_SETTINGS_ENCRYPTION_KEY", "SYSTEM_SETTINGS_ENCRYPTION_KEY is required"},
+		{"CRAWL4AI_BASE_URL", "CRAWL4AI_BASE_URL is required"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(legacyUnset(func(key string) string {
-				if tc.withDeps {
-					if v, ok := deps[key]; ok {
-						return v
-					}
-				}
-				switch key {
-				case "API_GO_USER_SETTINGS_WRITE_MODE":
-					return tc.writeMode
-				case "API_GO_USER_SETTINGS_READ_MODE":
-					return tc.readMode
-				default:
-					return ""
-				}
-			}))
-			if tc.wantError {
-				if err == nil {
-					t.Fatalf("want error, got %+v", cfg.UserSettingsWriteMode)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := UserSettingsWriteModeLegacy
-			if tc.writeMode == "go" {
-				want = UserSettingsWriteModeGo
-			}
-			if cfg.UserSettingsWriteMode != want {
-				t.Fatalf("write mode = %q, want %q", cfg.UserSettingsWriteMode, want)
-			}
-		})
-	}
-}
-
-func TestPublicPortalMode(t *testing.T) {
-	// The baseline is the explicit rollback configuration; this test is about
-	// the switches staying independent, not about the default.
-	cfg, err := legacyOverlayLoad(t, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.PublicPortalMode != PublicPortalModeLegacy {
-		t.Fatalf("mode = %q, want legacy", cfg.PublicPortalMode)
-	}
-	if _, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_PUBLIC_PORTAL_MODE" {
-			return "go"
-		}
-		return ""
-	})); err == nil {
-		t.Fatal("go mode without DATABASE_URL should fail")
-	}
-	cfg, err = legacyOverlayLoad(t, func(key string) string {
-		switch key {
-		case "API_GO_PUBLIC_PORTAL_MODE":
-			return "go"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.PublicPortalMode != PublicPortalModeGo {
-		t.Fatalf("mode = %q, want go", cfg.PublicPortalMode)
-	}
-}
-
-func TestDashboardStatsMode(t *testing.T) {
-	cfg, err := legacyOverlayLoad(t, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DashboardStatsMode != DashboardStatsModeLegacy {
-		t.Fatalf("mode = %q, want legacy", cfg.DashboardStatsMode)
-	}
-	secret := "s3cret-password"
-	err = func() error {
-		_, loadErr := legacyOverlayLoad(t, func(key string) string {
-			if key == "API_GO_DASHBOARD_STATS_MODE" {
-				return "go"
-			}
-			if key == "MONGO_URI" {
-				return "mongodb://user:" + secret + "@mongo:27017/app"
-			}
-			return ""
-		})
-		return loadErr
-	}()
-	if err == nil {
-		t.Fatal("go mode without jwt/mysql/redis should fail")
-	}
-	if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "mongo:27017") {
-		t.Fatalf("startup error leaked mongo target: %v", err)
-	}
-	cfg, err = legacyOverlayLoad(t, func(key string) string {
-		switch key {
-		case "API_GO_DASHBOARD_STATS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "test-secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://user:" + secret + "@mongo:27017/app"
-		default:
-			return ""
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DashboardStatsMode != DashboardStatsModeGo {
-		t.Fatalf("mode = %q, want go", cfg.DashboardStatsMode)
-	}
-}
-
-func TestDashboardChartsModeIsIndependentOfStats(t *testing.T) {
-	cfg, err := legacyOverlayLoad(t, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DashboardChartsMode != DashboardChartsModeLegacy {
-		t.Fatalf("mode = %q, want legacy", cfg.DashboardChartsMode)
-	}
-	secret := "charts-jwt-secret"
-	_, err = legacyOverlayLoad(t, func(key string) string {
-		switch key {
-		case "API_GO_DASHBOARD_CHARTS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return secret
-		default:
-			return ""
-		}
-	})
-	if err == nil || strings.Contains(err.Error(), secret) {
-		t.Fatalf("go mode without mysql/redis should fail without leaking the secret: %v", err)
-	}
-	_, err = legacyOverlayLoad(t, func(key string) string {
-		if key == "API_GO_DASHBOARD_CHARTS_MODE" {
-			return "pilot"
-		}
-		return ""
-	})
-	if err == nil || !strings.Contains(err.Error(), "API_GO_DASHBOARD_CHARTS_MODE") {
-		t.Fatalf("invalid mode = %v", err)
-	}
-	cfg, err = legacyOverlayLoad(t, func(key string) string {
-		switch key {
-		case "API_GO_DASHBOARD_CHARTS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "test-secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DashboardChartsMode != DashboardChartsModeGo {
-		t.Fatalf("mode = %q, want go", cfg.DashboardChartsMode)
-	}
-	if cfg.DashboardStatsMode != DashboardStatsModeLegacy {
-		t.Fatalf("stats mode = %q, want legacy", cfg.DashboardStatsMode)
-	}
-	if cfg.DashboardWarMapMode != DashboardWarMapModeLegacy {
-		t.Fatalf("war map mode = %q, want legacy", cfg.DashboardWarMapMode)
-	}
-}
-
-func TestDashboardWarMapModeRequiresMongo(t *testing.T) {
-	secret := "war-map-secret"
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_DASHBOARD_WAR_MAP_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return secret
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), "MONGO_URI") {
-		t.Fatalf("missing mongo: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_DASHBOARD_WAR_MAP_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return secret
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://mongo:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DashboardWarMapMode != DashboardWarMapModeGo || cfg.DashboardChartsMode != DashboardChartsModeLegacy {
-		t.Fatalf("war=%s charts=%s", cfg.DashboardWarMapMode, cfg.DashboardChartsMode)
-	}
-	if cfg.DashboardWarMapTransportMode != DashboardWarMapTransportModeLegacy || cfg.DashboardWarMapLayersMode != DashboardWarMapLayersModeLegacy {
-		t.Fatalf("transport=%s layers=%s", cfg.DashboardWarMapTransportMode, cfg.DashboardWarMapLayersMode)
-	}
-}
-
-func TestWarMapTransportAndLayersModesAreIndependent(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI") || strings.Contains(err.Error(), "API_GO_DASHBOARD_WAR_MAP_MODE") {
-		t.Fatalf("transport mongo: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://mongo:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DashboardWarMapLayersMode != DashboardWarMapLayersModeGo || cfg.DashboardWarMapMode != DashboardWarMapModeLegacy || cfg.DashboardWarMapTransportMode != DashboardWarMapTransportModeLegacy {
-		t.Fatalf("layers=%s war=%s transport=%s", cfg.DashboardWarMapLayersMode, cfg.DashboardWarMapMode, cfg.DashboardWarMapTransportMode)
-	}
-}
-
-func TestSpacetimeModesAreIndependent(t *testing.T) {
-	cfg, err := legacyOverlayLoad(t, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DashboardSpacetimeGeoMode != DashboardSpacetimeGeoModeLegacy || cfg.DashboardSpacetimePropagationMode != DashboardSpacetimePropagationModeLegacy {
-		t.Fatalf("geo=%s propagation=%s", cfg.DashboardSpacetimeGeoMode, cfg.DashboardSpacetimePropagationMode)
-	}
-	_, err = legacyOverlayLoad(t, func(key string) string {
-		if key == "API_GO_DASHBOARD_SPACETIME_GEO_MODE" {
-			return "go"
-		}
-		return ""
-	})
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_DASHBOARD_SPACETIME_GEO_MODE=go") || strings.Contains(err.Error(), "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE") {
-		t.Fatalf("geo dependencies: %v", err)
-	}
-	cfg, err = legacyOverlayLoad(t, func(key string) string {
-		switch key {
-		case "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://mongo:27017/app"
-		default:
-			return ""
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DashboardSpacetimePropagationMode != DashboardSpacetimePropagationModeGo || cfg.DashboardSpacetimeGeoMode != DashboardSpacetimeGeoModeLegacy || cfg.DashboardWarMapMode != DashboardWarMapModeLegacy {
-		t.Fatalf("propagation=%s geo=%s war=%s", cfg.DashboardSpacetimePropagationMode, cfg.DashboardSpacetimeGeoMode, cfg.DashboardWarMapMode)
-	}
-}
-
-func TestStreamAndHealthzModesAreIndependent(t *testing.T) {
-	cfg, err := legacyOverlayLoad(t, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DashboardStreamMode != DashboardStreamModeLegacy || cfg.HealthzMode != HealthzModeLegacy {
-		t.Fatalf("stream=%s healthz=%s", cfg.DashboardStreamMode, cfg.HealthzMode)
-	}
-	if !cfg.ItemsSearchRerankEnabled || cfg.CrawlHealthTTLMs != 60_000 {
-		t.Fatalf("rerank=%v ttl=%d", cfg.ItemsSearchRerankEnabled, cfg.CrawlHealthTTLMs)
-	}
-	_, err = legacyOverlayLoad(t, func(key string) string {
-		if key == "API_GO_DASHBOARD_STREAM_MODE" {
-			return "go"
-		}
-		return ""
-	})
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_DASHBOARD_STREAM_MODE=go") {
-		t.Fatalf("stream dependencies: %v", err)
-	}
-	_, err = legacyOverlayLoad(t, func(key string) string {
-		switch key {
-		case "API_GO_HEALTHZ_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg, err = legacyOverlayLoad(t, func(key string) string {
-		switch key {
-		case "API_GO_DASHBOARD_STREAM_MODE":
-			return "go"
-		case "API_GO_HEALTHZ_MODE":
-			return "legacy"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://mongo:27017/app"
-		default:
-			return ""
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DashboardStreamMode != DashboardStreamModeGo || cfg.HealthzMode != HealthzModeLegacy || cfg.DashboardSpacetimeGeoMode != DashboardSpacetimeGeoModeLegacy {
-		t.Fatalf("stream=%s healthz=%s geo=%s", cfg.DashboardStreamMode, cfg.HealthzMode, cfg.DashboardSpacetimeGeoMode)
-	}
-	if _, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_HEALTHZ_MODE" {
-			return "shadow"
-		}
-		return ""
-	})); err == nil || !strings.Contains(err.Error(), "API_GO_HEALTHZ_MODE") {
-		t.Fatalf("invalid healthz mode: %v", err)
-	}
-}
-
-func TestPersonalNewsModesAreIndependent(t *testing.T) {
-	cfg, err := legacyOverlayLoad(t, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ContentSubscriptionsMode != ContentSubscriptionsModeLegacy ||
-		cfg.UserNewsBehaviorMode != UserNewsBehaviorModeLegacy ||
-		cfg.UserDigestMode != UserDigestModeLegacy {
-		t.Fatalf("subs=%s behavior=%s digest=%s", cfg.ContentSubscriptionsMode, cfg.UserNewsBehaviorMode, cfg.UserDigestMode)
-	}
-	_, err = legacyOverlayLoad(t, func(key string) string {
-		if key == "API_GO_USER_NEWS_BEHAVIOR_MODE" {
-			return "go"
-		}
-		return ""
-	})
-	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_USER_NEWS_BEHAVIOR_MODE=go") || strings.Contains(err.Error(), "MONGO_URI") {
-		t.Fatalf("behavior dependencies: %v", err)
-	}
-	_, err = legacyOverlayLoad(t, func(key string) string {
-		switch key {
-		case "API_GO_CONTENT_SUBSCRIPTIONS_MODE":
-			return "go"
-		case "JWT_SECRET", "DATABASE_URL", "REDIS_HOST":
-			return "set"
-		default:
-			return ""
-		}
-	})
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_CONTENT_SUBSCRIPTIONS_MODE=go") {
-		t.Fatalf("subscription dependencies: %v", err)
-	}
-	cfg, err = legacyOverlayLoad(t, func(key string) string {
-		switch key {
-		case "API_GO_USER_DIGEST_MODE":
-			return "go"
-		case "API_GO_CONTENT_SUBSCRIPTIONS_MODE", "API_GO_USER_NEWS_BEHAVIOR_MODE":
-			return "legacy"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://mongo:27017/app"
-		default:
-			return ""
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.UserDigestMode != UserDigestModeGo || cfg.ContentSubscriptionsMode != ContentSubscriptionsModeLegacy || cfg.UserNewsBehaviorMode != UserNewsBehaviorModeLegacy {
-		t.Fatalf("digest=%s subs=%s behavior=%s", cfg.UserDigestMode, cfg.ContentSubscriptionsMode, cfg.UserNewsBehaviorMode)
-	}
-}
-
-func TestGraphQLReadModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.GraphQLReadMode != "go" {
-		t.Fatalf("GraphQLReadMode = %q, want go", cfg.GraphQLReadMode)
-	}
-}
-
-func TestNewsSourcesModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.NewsSourcesMode != NewsSourcesModeGo {
-		t.Fatalf("mode = %s", cfg.NewsSourcesMode)
-	}
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_NEWS_SOURCES_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWS_SOURCES_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-	_, err = Load(legacyUnset(func(key string) string {
-		if key == "API_GO_NEWS_SOURCES_MODE" {
-			return "go"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_NEWS_SOURCES_MODE=go") {
-		t.Fatalf("go dependencies: %v", err)
-	}
-}
-
-func TestSituationMonitorsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.SituationMonitorsMode != SituationMonitorsModeGo {
-		t.Fatalf("mode = %s", cfg.SituationMonitorsMode)
-	}
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_SITUATION_MONITORS_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_SITUATION_MONITORS_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-	_, err = Load(legacyUnset(func(key string) string {
-		if key == "API_GO_SITUATION_MONITORS_MODE" {
-			return "go"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_SITUATION_MONITORS_MODE=go") {
-		t.Fatalf("go dependencies: %v", err)
-	}
-}
-
-func TestGraphQLReadModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_READ_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_READ_MODE must be one of legacy|go") {
-		t.Fatalf("Load() error = %v", err)
-	}
-}
-
-func TestGraphQLNewsEventsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.GraphQLNewsEventsMode != "go" || cfg.GraphQLReadMode != "go" {
-		t.Fatalf("news=%q read=%q", cfg.GraphQLNewsEventsMode, cfg.GraphQLReadMode)
-	}
-}
-
-func TestGraphQLNewsEventsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_NEWS_EVENTS_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_NEWS_EVENTS_MODE must be one of legacy|go") {
-		t.Fatalf("Load() error = %v", err)
-	}
-}
-
-func TestGraphQLNewsEventsModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_NEWS_EVENTS_MODE" {
-			return "go"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLReadMode != "legacy" || cfg.GraphQLNewsEventsMode != "go" {
-		t.Fatalf("read=%q news=%q", cfg.GraphQLReadMode, cfg.GraphQLNewsEventsMode)
-	}
-}
-
-func TestGraphQLBothGoStillRequireMongoFromReadMode(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_GRAPHQL_READ_MODE", "API_GO_GRAPHQL_NEWS_EVENTS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go") {
-		t.Fatalf("Load() error = %v", err)
-	}
-}
-
-func TestGraphQLKnowledgeGraphModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.GraphQLKnowledgeGraphMode != "go" {
-		t.Fatalf("knowledge graph mode = %q", cfg.GraphQLKnowledgeGraphMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLKnowledgeGraphMode != "legacy" {
-		t.Fatalf("explicit legacy = %q", cfg.GraphQLKnowledgeGraphMode)
-	}
-}
-
-func TestGraphQLKnowledgeGraphModeRejectsInvalid(t *testing.T) {
-	for _, value := range []string{"shadow", "on", "GO"} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE" {
-				return value
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE must be one of legacy|go") {
-			t.Fatalf("%q Load() error = %v", value, err)
-		}
-	}
-}
-
-func TestGraphQLKnowledgeGraphModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE" {
-			return "go"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLReadMode != "legacy" || cfg.GraphQLKnowledgeGraphMode != "go" {
-		t.Fatalf("read=%q knowledge=%q", cfg.GraphQLReadMode, cfg.GraphQLKnowledgeGraphMode)
-	}
-}
-
-func TestGraphQLKnowledgeGraphBothGoStillRequireMongoFromReadMode(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_GRAPHQL_READ_MODE", "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go") {
-		t.Fatalf("Load() error = %v", err)
-	}
-}
-
-func TestCrawlWorkflowsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.CrawlWorkflowsMode != CrawlWorkflowsModeGo {
-		t.Fatalf("mode = %s", cfg.CrawlWorkflowsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CRAWL_WORKFLOWS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlWorkflowsMode != CrawlWorkflowsModeLegacy {
-		t.Fatalf("mode = %s", cfg.CrawlWorkflowsMode)
-	}
-}
-
-func TestCrawlWorkflowsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CRAWL_WORKFLOWS_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_WORKFLOWS_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-func TestCrawlWorkflowsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_WORKFLOWS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CRAWL_WORKFLOWS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_WORKFLOWS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlWorkflowsMode != CrawlWorkflowsModeGo {
-		t.Fatalf("mode = %s", cfg.CrawlWorkflowsMode)
-	}
-}
-
-func TestCrawlProfilesModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.CrawlProfilesMode != CrawlProfilesModeGo {
-		t.Fatalf("mode = %s", cfg.CrawlProfilesMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CRAWL_PROFILES_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlProfilesMode != CrawlProfilesModeLegacy {
-		t.Fatalf("mode = %s", cfg.CrawlProfilesMode)
-	}
-}
-
-func TestCrawlProfilesModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CRAWL_PROFILES_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_PROFILES_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-func TestCrawlProfilesModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_PROFILES_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CRAWL_PROFILES_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_PROFILES_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlProfilesMode != CrawlProfilesModeGo {
-		t.Fatalf("mode = %s", cfg.CrawlProfilesMode)
-	}
-}
-
-func TestCrawlTemplatesModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.CrawlTemplatesMode != CrawlTemplatesModeGo {
-		t.Fatalf("mode = %s", cfg.CrawlTemplatesMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CRAWL_TEMPLATES_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlTemplatesMode != CrawlTemplatesModeLegacy {
-		t.Fatalf("mode = %s", cfg.CrawlTemplatesMode)
-	}
-}
-
-func TestCrawlTemplatesModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CRAWL_TEMPLATES_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_TEMPLATES_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-func TestCrawlTemplatesModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_TEMPLATES_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CRAWL_TEMPLATES_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_TEMPLATES_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlTemplatesMode != CrawlTemplatesModeGo {
-		t.Fatalf("mode = %s", cfg.CrawlTemplatesMode)
-	}
-}
-
-func TestAdminLogsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.AdminLogsMode != AdminLogsModeGo {
-		t.Fatalf("mode = %s", cfg.AdminLogsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_ADMIN_LOGS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.AdminLogsMode != AdminLogsModeLegacy {
-		t.Fatalf("mode = %s", cfg.AdminLogsMode)
-	}
-}
-
-func TestAdminLogsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_ADMIN_LOGS_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_ADMIN_LOGS_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-func TestAdminLogsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_ADMIN_LOGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_ADMIN_LOGS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-	_, err = Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_ADMIN_LOGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_ADMIN_LOGS_MODE=go") {
-		t.Fatalf("missing mongo: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_ADMIN_LOGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.AdminLogsMode != AdminLogsModeGo {
-		t.Fatalf("mode = %s", cfg.AdminLogsMode)
-	}
-}
-
-func TestQualityOverviewModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.QualityOverviewMode != QualityOverviewModeGo {
-		t.Fatalf("mode = %s", cfg.QualityOverviewMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_QUALITY_OVERVIEW_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.QualityOverviewMode != QualityOverviewModeLegacy {
-		t.Fatalf("mode = %s", cfg.QualityOverviewMode)
-	}
-}
-
-func TestQualityOverviewModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_QUALITY_OVERVIEW_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_QUALITY_OVERVIEW_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-func TestQualityOverviewModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_QUALITY_OVERVIEW_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_QUALITY_OVERVIEW_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-	_, err = Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_QUALITY_OVERVIEW_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_QUALITY_OVERVIEW_MODE=go") {
-		t.Fatalf("missing mongo: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_QUALITY_OVERVIEW_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.QualityOverviewMode != QualityOverviewModeGo {
-		t.Fatalf("mode = %s", cfg.QualityOverviewMode)
-	}
-}
-
-func TestCrawlReadTelemetryModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.CrawlReadTelemetryMode != CrawlReadTelemetryModeGo {
-		t.Fatalf("mode = %s", cfg.CrawlReadTelemetryMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CRAWL_READ_TELEMETRY_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlReadTelemetryMode != CrawlReadTelemetryModeLegacy {
-		t.Fatalf("mode = %s", cfg.CrawlReadTelemetryMode)
-	}
-}
-
-func TestCrawlReadTelemetryModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CRAWL_READ_TELEMETRY_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_READ_TELEMETRY_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-func TestCrawlReadTelemetryModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_READ_TELEMETRY_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-	_, err = Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_READ_TELEMETRY_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go") {
-		t.Fatalf("missing mongo: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_READ_TELEMETRY_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlReadTelemetryMode != CrawlReadTelemetryModeGo {
-		t.Fatalf("mode = %s", cfg.CrawlReadTelemetryMode)
-	}
-}
-
-// TestNewsnowClusteringOpsModeDefaultsToLegacy pins the default: an unset
-// variable and the explicit "legacy" value both keep the nine routes on NestJS.
-func TestNewsnowClusteringOpsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.NewsnowClusteringOpsMode != NewsnowClusteringOpsModeGo {
-		t.Fatalf("mode = %s", cfg.NewsnowClusteringOpsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_NEWSNOW_CLUSTERING_OPS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NewsnowClusteringOpsMode != NewsnowClusteringOpsModeLegacy {
-		t.Fatalf("mode = %s", cfg.NewsnowClusteringOpsMode)
-	}
-}
-
-// TestNewsnowClusteringOpsModeRejectsInvalid forbids shadow: this batch has no
-// shadow execution and any unknown value must fail startup instead of silently
-// downgrading to legacy.
-func TestNewsnowClusteringOpsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_NEWSNOW_CLUSTERING_OPS_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWSNOW_CLUSTERING_OPS_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-// TestNewsnowClusteringOpsModeGoRequiresCredentials walks the go-mode
-// preconditions one missing variable at a time: Redis, then Mongo, then the
-// fully satisfied configuration.
-func TestNewsnowClusteringOpsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWSNOW_CLUSTERING_OPS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_NEWSNOW_CLUSTERING_OPS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-	_, err = Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWSNOW_CLUSTERING_OPS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_NEWSNOW_CLUSTERING_OPS_MODE=go") {
-		t.Fatalf("missing mongo: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWSNOW_CLUSTERING_OPS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NewsnowClusteringOpsMode != NewsnowClusteringOpsModeGo {
-		t.Fatalf("mode = %s", cfg.NewsnowClusteringOpsMode)
-	}
-}
-
-// TestClassificationRssOpsModeDefaultsToLegacy asserts that the switch is
-// legacy both when the variable is unset and when it is explicitly "legacy".
-func TestClassificationRssOpsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.ClassificationRssOpsMode != ClassificationRssOpsModeGo {
-		t.Fatalf("mode = %s", cfg.ClassificationRssOpsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CLASSIFICATION_RSS_OPS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ClassificationRssOpsMode != ClassificationRssOpsModeLegacy {
-		t.Fatalf("mode = %s", cfg.ClassificationRssOpsMode)
-	}
-}
-
-// TestClassificationRssOpsModeRejectsInvalid asserts that any value other than
-// the empty string, legacy or go fails startup with the variable name in the
-// error text.
-func TestClassificationRssOpsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CLASSIFICATION_RSS_OPS_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_CLASSIFICATION_RSS_OPS_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-// TestClassificationRssOpsModeGoRequiresCredentials asserts the go mode needs
-// JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI, and that supplying all
-// four resolves the mode to go.
-func TestClassificationRssOpsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CLASSIFICATION_RSS_OPS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CLASSIFICATION_RSS_OPS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-	_, err = Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CLASSIFICATION_RSS_OPS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_CLASSIFICATION_RSS_OPS_MODE=go") {
-		t.Fatalf("missing mongo: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CLASSIFICATION_RSS_OPS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ClassificationRssOpsMode != ClassificationRssOpsModeGo {
-		t.Fatalf("mode = %s", cfg.ClassificationRssOpsMode)
-	}
-}
-
-func TestLlmLogsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.LlmLogsMode != LlmLogsModeGo {
-		t.Fatalf("mode = %s", cfg.LlmLogsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_LLM_LOGS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.LlmLogsMode != LlmLogsModeLegacy {
-		t.Fatalf("mode = %s", cfg.LlmLogsMode)
-	}
-}
-
-func TestLlmLogsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_LLM_LOGS_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_LLM_LOGS_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-func TestLlmLogsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_LLM_LOGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_LLM_LOGS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-	_, err = Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_LLM_LOGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_LLM_LOGS_MODE=go") {
-		t.Fatalf("missing mongo: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_LLM_LOGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.LlmLogsMode != LlmLogsModeGo {
-		t.Fatalf("mode = %s", cfg.LlmLogsMode)
-	}
-}
-
-func TestNewsIndicatorsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.NewsIndicatorsMode != NewsIndicatorsModeGo {
-		t.Fatalf("mode = %s", cfg.NewsIndicatorsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_NEWS_INDICATORS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NewsIndicatorsMode != NewsIndicatorsModeLegacy {
-		t.Fatalf("mode = %s", cfg.NewsIndicatorsMode)
-	}
-}
-
-func TestNewsIndicatorsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_NEWS_INDICATORS_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWS_INDICATORS_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-func TestNewsIndicatorsModeGoRequiresCredentialsButNotMongo(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_INDICATORS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_NEWS_INDICATORS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_INDICATORS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NewsIndicatorsMode != NewsIndicatorsModeGo {
-		t.Fatalf("mode = %s", cfg.NewsIndicatorsMode)
-	}
-	if cfg.GraphQLReadMode != "legacy" {
-		t.Fatalf("read mode = %s, want legacy", cfg.GraphQLReadMode)
-	}
-}
-
-func TestNewsIndicatorsModeGoDoesNotRequireMongo(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_INDICATORS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatalf("news indicators go must not require MONGO_URI: %v", err)
-	}
-}
-
-func TestGraphQLKgImpactModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.GraphQLKgImpactMode != "go" || cfg.GraphQLReadMode != "go" {
-		t.Fatalf("kg=%q read=%q", cfg.GraphQLKgImpactMode, cfg.GraphQLReadMode)
-	}
-}
-
-func TestGraphQLKgImpactModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_KG_IMPACT_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_KG_IMPACT_MODE must be one of legacy|go") {
-		t.Fatalf("Load() error = %v", err)
-	}
-}
-
-func TestGraphQLKgImpactModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_KG_IMPACT_MODE" {
-			return "go"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLReadMode != "legacy" || cfg.GraphQLKgImpactMode != "go" {
-		t.Fatalf("read=%q kg=%q", cfg.GraphQLReadMode, cfg.GraphQLKgImpactMode)
-	}
-}
-
-func TestGraphQLWorkspaceReadModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.GraphQLWorkspaceReadMode != "go" || cfg.GraphQLReadMode != "go" {
-		t.Fatalf("workspace=%q read=%q", cfg.GraphQLWorkspaceReadMode, cfg.GraphQLReadMode)
-	}
-}
-
-func TestGraphQLWorkspaceReadModeAcceptsExplicitLegacyAndGo(t *testing.T) {
-	legacy, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if legacy.GraphQLWorkspaceReadMode != "legacy" {
-		t.Fatalf("explicit legacy = %q", legacy.GraphQLWorkspaceReadMode)
-	}
-	goMode, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
-			return "go"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if goMode.GraphQLWorkspaceReadMode != "go" {
-		t.Fatalf("go = %q", goMode.GraphQLWorkspaceReadMode)
-	}
-}
-
-func TestGraphQLWorkspaceReadModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_WORKSPACE_READ_MODE must be one of legacy|go") {
-		t.Fatalf("Load() error = %v", err)
-	}
-}
-
-func TestGraphQLWorkspaceReadModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
-			return "go"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLReadMode != "legacy" || cfg.GraphQLWorkspaceReadMode != "go" {
-		t.Fatalf("read=%q workspace=%q", cfg.GraphQLReadMode, cfg.GraphQLWorkspaceReadMode)
-	}
-}
-
-func TestGraphQLSettingsCrawlReadModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.GraphQLSettingsCrawlReadMode != "go" || cfg.GraphQLReadMode != "go" {
-		t.Fatalf("settingsCrawl=%q read=%q", cfg.GraphQLSettingsCrawlReadMode, cfg.GraphQLReadMode)
-	}
-}
-
-func TestGraphQLSettingsCrawlReadModeAcceptsExplicitLegacyAndGo(t *testing.T) {
-	legacy, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if legacy.GraphQLSettingsCrawlReadMode != "legacy" {
-		t.Fatalf("explicit legacy = %q", legacy.GraphQLSettingsCrawlReadMode)
-	}
-	goMode, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
-			return "go"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if goMode.GraphQLSettingsCrawlReadMode != "go" {
-		t.Fatalf("go = %q", goMode.GraphQLSettingsCrawlReadMode)
-	}
-}
-
-func TestGraphQLSettingsCrawlReadModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE must be one of legacy|go") {
-		t.Fatalf("Load() error = %v", err)
-	}
-}
-
-func TestGraphQLSettingsCrawlReadModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
-			return "go"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLReadMode != "legacy" || cfg.GraphQLSettingsCrawlReadMode != "go" {
-		t.Fatalf("read=%q settingsCrawl=%q", cfg.GraphQLReadMode, cfg.GraphQLSettingsCrawlReadMode)
-	}
-}
-
-func TestRuntimeSettingsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.RuntimeSettingsMode != RuntimeSettingsModeGo {
-		t.Fatalf("mode = %s", cfg.RuntimeSettingsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_RUNTIME_SETTINGS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.RuntimeSettingsMode != RuntimeSettingsModeLegacy {
-		t.Fatalf("mode = %s", cfg.RuntimeSettingsMode)
-	}
-}
-
-func TestRuntimeSettingsModeRejectsInvalid(t *testing.T) {
-	// shadow and canary are explicitly not accepted: this unit is
-	// legacy-or-go only, so a typo in the switch fails startup.
-	for _, invalid := range []string{"shadow", "canary", "Go"} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == "API_GO_RUNTIME_SETTINGS_MODE" {
-				return invalid
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go") {
-			t.Fatalf("invalid mode %q: %v", invalid, err)
-		}
-	}
-}
-
-func TestRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_RUNTIME_SETTINGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_RUNTIME_SETTINGS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-
-	// Mongo is not a startup dependency of this unit.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_RUNTIME_SETTINGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.RuntimeSettingsMode != RuntimeSettingsModeGo {
-		t.Fatalf("mode = %s", cfg.RuntimeSettingsMode)
-	}
-}
-
-// platformGovernanceEnvEntry is one environment override for the
-// platformGovernanceEnv getenv seam.
-type platformGovernanceEnvEntry struct {
-	key   string
-	value string
-}
-
-// platformGovernanceEnv returns a getenv seam that serves the four credentials
-// the go-mode startup validation always requires, plus the caller's platform
-// governance overrides.
-func platformGovernanceEnv(overrides ...platformGovernanceEnvEntry) func(string) string {
-	return legacyUnset(func(key string) string {
-		for _, entry := range overrides {
-			if entry.key == key {
-				return entry.value
-			}
-		}
-		switch key {
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	})
-}
-
-func TestPlatformGovernanceSettingsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.PlatformGovernanceSettingsMode != PlatformGovernanceSettingsModeGo {
-		t.Fatalf("mode = %q, want go", cfg.PlatformGovernanceSettingsMode)
-	}
-}
-
-func TestPlatformGovernanceSettingsModeAcceptsExplicitValues(t *testing.T) {
-	for _, tc := range []struct {
-		raw  string
-		want PlatformGovernanceSettingsMode
-	}{
-		{"", PlatformGovernanceSettingsModeLegacy},
-		{"legacy", PlatformGovernanceSettingsModeLegacy},
-		{"go", PlatformGovernanceSettingsModeGo},
-	} {
-		env := platformGovernanceEnv(platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", tc.raw})
-		cfg, err := Load(legacyUnset(env))
-		if err != nil {
-			t.Fatalf("Load(%q) error = %v", tc.raw, err)
-		}
-		if cfg.PlatformGovernanceSettingsMode != tc.want {
-			t.Fatalf("mode for %q = %q, want %q", tc.raw, cfg.PlatformGovernanceSettingsMode, tc.want)
-		}
-	}
-}
-
-func TestPlatformGovernanceSettingsModeRejectsInvalid(t *testing.T) {
-	for _, raw := range []string{"GO", "shadow", "canary", "true"} {
-		_, err := Load(platformGovernanceEnv(platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", raw}))
+		_, err := loadMissing(t, tc.key)
 		if err == nil {
-			t.Fatalf("Load() should reject mode %q", raw)
+			t.Errorf("missing %s must fail startup", tc.key)
+			continue
 		}
-		want := "API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE must be one of legacy|go"
-		if err.Error() != want {
-			t.Fatalf("error = %q, want %q", err.Error(), want)
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("missing %s error %q does not contain %q", tc.key, err, tc.want)
 		}
 	}
 }
 
-func TestPlatformGovernanceSettingsModeGoRequiresMongo(t *testing.T) {
-	env := platformGovernanceEnv(
-		platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", "go"},
-		platformGovernanceEnvEntry{"MONGO_URI", ""},
-	)
-	_, err := Load(legacyUnset(env))
-	if err == nil {
-		t.Fatal("Load() should require MONGO_URI in go mode")
+func TestGraphQLSubscriptionBusMustBeRedis(t *testing.T) {
+	if _, err := loadWith(t, map[string]string{"GRAPHQL_SUBSCRIPTION_BUS": "local"}); err == nil || !strings.Contains(err.Error(), "GRAPHQL_SUBSCRIPTION_BUS must be redis") {
+		t.Fatalf("Load() error = %v, want redis-bus rejection", err)
 	}
-	if !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE=go") {
-		t.Fatalf("error = %v", err)
+	if _, err := loadWith(t, map[string]string{"GRAPHQL_SUBSCRIPTION_BUS": "memory"}); err == nil || !strings.Contains(err.Error(), "GRAPHQL_SUBSCRIPTION_BUS must be one of redis|local") {
+		t.Fatalf("Load() error = %v, want bus vocabulary rejection", err)
 	}
 }
 
-func TestPlatformGovernanceDefaultsMatchNestSchema(t *testing.T) {
+func TestAuthLoginDefaults(t *testing.T) {
 	cfg := loadDefaults(t)
-	if !cfg.PlatformGovernanceAssistantGuardrailsEnabled {
-		t.Error("ASSISTANT_GUARDRAILS_ENABLED default = false, want true")
+	if cfg.JWTAccessExpiresIn != "15m" || cfg.JWTRefreshExpiresIn != "7d" {
+		t.Fatalf("jwt lifetimes = %q / %q", cfg.JWTAccessExpiresIn, cfg.JWTRefreshExpiresIn)
 	}
-	if cfg.PlatformGovernanceAssistantGuardrailsRaw != "openai-moderation-pre" {
-		t.Errorf("ASSISTANT_GUARDRAILS default = %q", cfg.PlatformGovernanceAssistantGuardrailsRaw)
+	if cfg.AuthRefreshGraceSeconds != 10 || cfg.AuthMfaChallengeMaxAttempts != 5 {
+		t.Fatalf("grace/attempts = %d / %d", cfg.AuthRefreshGraceSeconds, cfg.AuthMfaChallengeMaxAttempts)
 	}
-	if cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour != 30 {
-		t.Errorf("ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR default = %d, want 30", cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour)
+	if cfg.AuthEmailCodeTTLSeconds != 300 || cfg.AuthEmailCodeCooldownSeconds != 90 || cfg.AuthEmailCodeMaxAttempts != 3 {
+		t.Fatalf("email code defaults = %d / %d / %d",
+			cfg.AuthEmailCodeTTLSeconds, cfg.AuthEmailCodeCooldownSeconds, cfg.AuthEmailCodeMaxAttempts)
 	}
-	if cfg.PlatformGovernanceAssistantOrgMaxInFlight != 2 {
-		t.Errorf("ASSISTANT_ORG_MAX_IN_FLIGHT default = %d, want 2", cfg.PlatformGovernanceAssistantOrgMaxInFlight)
+	if cfg.NextAuthURL != "http://localhost:3000" {
+		t.Fatalf("nextauth url = %q", cfg.NextAuthURL)
 	}
-	if cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget != 2_000_000 {
-		t.Errorf("ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET default = %d, want 2000000", cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget)
+	if !cfg.SMTP.Secure || cfg.SMTP.Pool {
+		t.Fatalf("smtp defaults = %+v", cfg.SMTP)
 	}
-	if cfg.PlatformGovernanceTaskLogRetentionDays != 14 {
-		t.Errorf("TASK_LOG_RETENTION_DAYS default = %d, want 14", cfg.PlatformGovernanceTaskLogRetentionDays)
-	}
-	if keyCfg := loadDefaultsWithoutEncryptionKey(t); keyCfg.PlatformGovernanceEncryptionKeyRaw != "" {
-		t.Errorf("SYSTEM_SETTINGS_ENCRYPTION_KEY default = %q, want empty", keyCfg.PlatformGovernanceEncryptionKeyRaw)
+	if cfg.SMTP.ConnectionTimeoutMs != 10_000 || cfg.SMTP.GreetingTimeoutMs != 10_000 || cfg.SMTP.SocketTimeoutMs != 30_000 {
+		t.Fatalf("smtp timeouts = %+v", cfg.SMTP)
 	}
 }
 
-func TestPlatformGovernanceDefaultsAcceptValidValues(t *testing.T) {
-	cfg, err := Load(platformGovernanceEnv(
-		platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", "go"},
-		platformGovernanceEnvEntry{"ASSISTANT_GUARDRAILS_ENABLED", "off"},
-		platformGovernanceEnvEntry{"ASSISTANT_GUARDRAILS", " openai-moderation-pre , custom "},
-		platformGovernanceEnvEntry{"ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR", " 100 "},
-		platformGovernanceEnvEntry{"ASSISTANT_ORG_MAX_IN_FLIGHT", "0x64"},
-		platformGovernanceEnvEntry{"ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET", "1e6"},
-		platformGovernanceEnvEntry{"TASK_LOG_RETENTION_DAYS", "30"},
-		platformGovernanceEnvEntry{"SYSTEM_SETTINGS_ENCRYPTION_KEY", "  "},
-	))
+func TestCrawlMaintenanceJanitorEnvOverrides(t *testing.T) {
+	cfg, err := loadWith(t, map[string]string{
+		"CRAWL_TASK_JANITOR_ENABLED":          "false",
+		"CRAWL_TASK_RUNNING_TIMEOUT_MS":       "9000",
+		"CRAWL_TASK_QUEUED_TIMEOUT_MS":        "12345",
+		"CRAWL_TASK_JANITOR_BATCH_SIZE":       "7",
+		"CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT": "99",
+		"CRAWL_TASK_JANITOR_LOCK_TTL_MS":      "60000",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CrawlTaskJanitorEnabled ||
+		cfg.CrawlTaskRunningTimeoutMs != 9000 ||
+		cfg.CrawlTaskQueuedTimeoutMs != 12345 ||
+		cfg.CrawlTaskJanitorBatchSize != 7 ||
+		cfg.CrawlTaskJanitorQueueScanLimit != 99 ||
+		cfg.CrawlTaskJanitorLockTTLMs != 60000 {
+		t.Fatalf("janitor overrides = %+v", cfg)
+	}
+}
+
+func TestCrawlWorkerMediaDefaults(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.CrawlMediaFetchTimeoutMs != 15_000 {
+		t.Errorf("media fetch timeout = %d", cfg.CrawlMediaFetchTimeoutMs)
+	}
+	if cfg.CrawlMediaMaxBytes != 2_097_152 {
+		t.Errorf("media max bytes = %d", cfg.CrawlMediaMaxBytes)
+	}
+	if cfg.CrawlMediaMaxPerResult != 6 {
+		t.Errorf("media max per result = %d", cfg.CrawlMediaMaxPerResult)
+	}
+}
+
+func TestCrawl4aiEnvironmentDefaults(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.CrawlMaxConcurrency != 3 || cfg.CrawlMaxRetries != 3 || cfg.CrawlRetryBackoffMs != 5000 {
+		t.Fatalf("defaults = %d/%d/%d", cfg.CrawlMaxConcurrency, cfg.CrawlMaxRetries, cfg.CrawlRetryBackoffMs)
+	}
+	cfg, err := loadWith(t, map[string]string{
+		"CRAWL4AI_MAX_CONCURRENCY":  "7",
+		"CRAWL4AI_MAX_RETRIES":      "4",
+		"CRAWL4AI_RETRY_BACKOFF_MS": "900",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CrawlMaxConcurrency != 7 || cfg.CrawlMaxRetries != 4 || cfg.CrawlRetryBackoffMs != 900 {
+		t.Fatalf("env values = %d/%d/%d", cfg.CrawlMaxConcurrency, cfg.CrawlMaxRetries, cfg.CrawlRetryBackoffMs)
+	}
+}
+
+func TestItemPipelineFailureConfigDefaults(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.NewsSourceSchedulerFailureRecoveryDelayMs != 600_000 {
+		t.Errorf("failure recovery delay = %d", cfg.NewsSourceSchedulerFailureRecoveryDelayMs)
+	}
+	if cfg.NewsSourceSchedulerFailureMaxDelayMs != 21_600_000 {
+		t.Errorf("failure max delay = %d", cfg.NewsSourceSchedulerFailureMaxDelayMs)
+	}
+	if cfg.NewsSourceSchedulerCircuitBreakerThreshold != 3 {
+		t.Errorf("circuit breaker threshold = %v", cfg.NewsSourceSchedulerCircuitBreakerThreshold)
+	}
+	if cfg.NewsSourceSchedulerCircuitBreakerBaseDelayMs != 3_600_000 {
+		t.Errorf("circuit breaker base delay = %d", cfg.NewsSourceSchedulerCircuitBreakerBaseDelayMs)
+	}
+	if cfg.NewsSourceSchedulerCircuitBreakerMaxDelayMs != 86_400_000 {
+		t.Errorf("circuit breaker max delay = %d", cfg.NewsSourceSchedulerCircuitBreakerMaxDelayMs)
+	}
+	if cfg.NewsSourceSchedulerAutoDisableThreshold != 0 {
+		t.Errorf("auto disable threshold = %v", cfg.NewsSourceSchedulerAutoDisableThreshold)
+	}
+}
+
+func TestNewsEventsIngestionSettleWindowParsing(t *testing.T) {
+	cfg, err := loadWith(t, map[string]string{"NEWS_EVENTS_INGESTION_SETTLE_MS": "0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NewsEventsIngestionSettleMs != 0 {
+		t.Fatalf("settle = %d, want 0", cfg.NewsEventsIngestionSettleMs)
+	}
+
+	cfg, err = loadWith(t, map[string]string{"NEWS_EVENTS_INGESTION_SETTLE_MS": " 45000 "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NewsEventsIngestionSettleMs != 45_000 {
+		t.Fatalf("settle = %d, want 45000", cfg.NewsEventsIngestionSettleMs)
+	}
+
+	for _, invalid := range []string{"-1", "soon", "1.5"} {
+		_, err := loadWith(t, map[string]string{"NEWS_EVENTS_INGESTION_SETTLE_MS": invalid})
+		if err == nil || !strings.Contains(err.Error(), "NEWS_EVENTS_INGESTION_SETTLE_MS must be a non-negative integer") {
+			t.Fatalf("%q => %v", invalid, err)
+		}
+	}
+}
+
+func TestQualityWorkerConcurrency(t *testing.T) {
+	cases := map[int]int{0: 2, 1: 1, 2: 2, 3: 3, 4: 4, 8: 4, 64: 4}
+	for configured, want := range cases {
+		cfg := Config{NewsProcessQueueConcurrency: configured}
+		if got := cfg.QualityWorkerConcurrency(); got != want {
+			t.Fatalf("configured=%d concurrency=%d, want %d", configured, got, want)
+		}
+	}
+}
+
+func TestNewsProcessQueueConcurrencyParsing(t *testing.T) {
+	cfg, err := loadWith(t, map[string]string{"NEWS_PROCESS_QUEUE_CONCURRENCY": "3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NewsProcessQueueConcurrency != 3 || cfg.QualityWorkerConcurrency() != 3 {
+		t.Fatalf("configured = %d", cfg.NewsProcessQueueConcurrency)
+	}
+
+	for _, invalid := range []string{"0", "-1", "many"} {
+		_, err := loadWith(t, map[string]string{"NEWS_PROCESS_QUEUE_CONCURRENCY": invalid})
+		if err == nil || !strings.Contains(err.Error(), "NEWS_PROCESS_QUEUE_CONCURRENCY must be a positive integer") {
+			t.Fatalf("value %q error = %v", invalid, err)
+		}
+	}
+}
+
+func TestNotificationsSocketRejectsInvalidLimits(t *testing.T) {
+	if _, err := loadWith(t, map[string]string{"WS_CONNECT_RATE_LIMIT_PER_IP": "0"}); err == nil {
+		t.Fatal("Load() should reject non-positive WS limits")
+	}
+}
+
+func TestWSRedisAdapterConfigParsing(t *testing.T) {
+	cfg, err := loadWith(t, map[string]string{"WS_REDIS_ADAPTER_ENABLED": "on", "WS_REDIS_ADAPTER_KEY": "custom-key"})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.PlatformGovernanceAssistantGuardrailsEnabled {
-		t.Error("ASSISTANT_GUARDRAILS_ENABLED=off should be false")
+	if !cfg.WSRedisAdapterEnabled || cfg.WSRedisAdapterKey != "custom-key" {
+		t.Fatalf("unexpected adapter config: enabled=%t key=%q", cfg.WSRedisAdapterEnabled, cfg.WSRedisAdapterKey)
 	}
-	if cfg.PlatformGovernanceAssistantGuardrailsRaw != " openai-moderation-pre , custom " {
-		t.Errorf("ASSISTANT_GUARDRAILS raw = %q", cfg.PlatformGovernanceAssistantGuardrailsRaw)
-	}
-	if cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour != 100 {
-		t.Errorf("submit limit = %d, want 100", cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour)
-	}
-	// Number("0x64") === 100.
-	if cfg.PlatformGovernanceAssistantOrgMaxInFlight != 100 {
-		t.Errorf("max in flight = %d, want 100", cfg.PlatformGovernanceAssistantOrgMaxInFlight)
-	}
-	if cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget != 1_000_000 {
-		t.Errorf("monthly budget = %d, want 1000000", cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget)
-	}
-	if cfg.PlatformGovernanceTaskLogRetentionDays != 30 {
-		t.Errorf("retention days = %d, want 30", cfg.PlatformGovernanceTaskLogRetentionDays)
-	}
-	// The key keeps its whitespace: present-but-empty must stay distinguishable.
-	if cfg.PlatformGovernanceEncryptionKeyRaw != "  " {
-		t.Errorf("encryption key raw = %q, want two spaces", cfg.PlatformGovernanceEncryptionKeyRaw)
-	}
-}
-
-func TestPlatformGovernanceDefaultsRejectInvalidValuesInGoMode(t *testing.T) {
-	for _, tc := range []struct {
-		key   string
-		value string
-	}{
-		{"ASSISTANT_GUARDRAILS_ENABLED", "maybe"},
-		{"ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR", "abc"},
-		{"ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR", "1.5"},
-		{"ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR", "10001"},
-		{"ASSISTANT_ORG_MAX_IN_FLIGHT", "-1"},
-		{"ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET", "1000000000001"},
-		{"TASK_LOG_RETENTION_DAYS", "0"},
-		{"TASK_LOG_RETENTION_DAYS", "nan"},
-	} {
-		env := platformGovernanceEnv(
-			platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", "go"},
-			platformGovernanceEnvEntry{tc.key, tc.value},
-		)
-		if _, err := Load(legacyUnset(env)); err == nil {
-			t.Fatalf("Load() should reject %s=%q in go mode", tc.key, tc.value)
-		}
-	}
-}
-
-func TestPlatformGovernanceDefaultsIgnoredInLegacyMode(t *testing.T) {
-	// Invalid values must not break a legacy deployment: behaviour stays
-	// identical to main until the switch is flipped to go.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "TASK_LOG_RETENTION_DAYS":
-			return "not-a-number"
-		case "ASSISTANT_GUARDRAILS_ENABLED":
-			return "maybe"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
+	if cfg, err := loadWith(t, map[string]string{"WS_REDIS_ADAPTER_KEY": ""}); err != nil {
 		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.PlatformGovernanceSettingsMode != PlatformGovernanceSettingsModeLegacy {
-		t.Fatalf("mode = %q", cfg.PlatformGovernanceSettingsMode)
-	}
-	if cfg.PlatformGovernanceTaskLogRetentionDays != 14 {
-		t.Errorf("retention days = %d, want the 14 fallback", cfg.PlatformGovernanceTaskLogRetentionDays)
-	}
-	if !cfg.PlatformGovernanceAssistantGuardrailsEnabled {
-		t.Error("invalid boolean should fall back to true in legacy mode")
-	}
-}
-
-func TestJSEnvNumberSemantics(t *testing.T) {
-	nanValues := []string{"nan", "inf", "1_000", "0x1p3", "0x", "1,5", "  12 3 ", "0x1g"}
-	for _, raw := range nanValues {
-		if got := jsEnvNumber(raw); !math.IsNaN(got) {
-			t.Errorf("jsEnvNumber(%q) = %v, want NaN", raw, got)
-		}
-	}
-	if got := jsEnvNumber("Infinity"); !math.IsInf(got, 1) {
-		t.Errorf("jsEnvNumber(Infinity) = %v, want +Inf", got)
-	}
-	if got := jsEnvNumber("INFINITY"); !math.IsInf(got, 1) {
-		t.Errorf("jsEnvNumber(INFINITY) = %v, want +Inf", got)
-	}
-	if got := jsEnvNumber("-Infinity"); !math.IsInf(got, -1) {
-		t.Errorf("jsEnvNumber(-Infinity) = %v, want -Inf", got)
-	}
-	for _, tc := range []struct {
-		raw  string
-		want float64
-	}{
-		{"", 0},
-		{"   ", 0},
-		{"30", 30},
-		{" 30 ", 30},
-		{"+30", 30},
-		{"-30", -30},
-		{".5", 0.5},
-		{"5.", 5},
-		{"1e3", 1000},
-		{"1E+3", 1000},
-		{"0x1f", 31},
-		{"0X1F", 31},
-		{"0o17", 15},
-		{"0b101", 5},
-	} {
-		if got := jsEnvNumber(tc.raw); got != tc.want {
-			t.Errorf("jsEnvNumber(%q) = %v, want %v", tc.raw, got, tc.want)
-		}
-	}
-}
-
-func TestInfrastructureSettingsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.InfrastructureSettingsMode != InfrastructureSettingsModeGo {
-		t.Fatalf("mode = %s", cfg.InfrastructureSettingsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_INFRASTRUCTURE_SETTINGS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.InfrastructureSettingsMode != InfrastructureSettingsModeLegacy {
-		t.Fatalf("mode = %s", cfg.InfrastructureSettingsMode)
-	}
-}
-
-func TestInfrastructureSettingsModeRejectsInvalid(t *testing.T) {
-	// shadow and canary are explicitly not accepted: this unit is
-	// legacy-or-go only, so a typo in the switch fails startup.
-	for _, invalid := range []string{"shadow", "canary", "Go"} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == "API_GO_INFRASTRUCTURE_SETTINGS_MODE" {
-				return invalid
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go") {
-			t.Fatalf("invalid mode %q: %v", invalid, err)
-		}
-	}
-}
-
-func TestInfrastructureSettingsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_INFRASTRUCTURE_SETTINGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_INFRASTRUCTURE_SETTINGS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-
-	// Mongo, the encryption key and the vector/S3 upstreams are not startup
-	// requirements of this unit: an encryption key that is missing or invalid
-	// is handled per read/write by the documented fallback and 400 contracts.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_INFRASTRUCTURE_SETTINGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatalf("go mode must not require Mongo or an encryption key: %v", err)
-	}
-	if cfg.InfrastructureSettingsMode != InfrastructureSettingsModeGo {
-		t.Fatalf("mode = %s", cfg.InfrastructureSettingsMode)
-	}
-}
-
-func TestInfrastructureSettingsEnvDefaults(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.VectorServiceEnabled || !cfg.VectorServiceFallbackToMongo {
-		t.Fatalf("vector booleans = %v %v", cfg.VectorServiceEnabled, cfg.VectorServiceFallbackToMongo)
-	}
-	if cfg.VectorServiceBaseURL != "" || cfg.VectorInternalToken != "" {
-		t.Fatalf("vector url/token = %q %q", cfg.VectorServiceBaseURL, cfg.VectorInternalToken)
-	}
-	if cfg.VectorServiceTimeoutMs != 5000 || cfg.VectorServiceMaxRetries != 2 {
-		t.Fatalf("vector timings = %d %d", cfg.VectorServiceTimeoutMs, cfg.VectorServiceMaxRetries)
-	}
-	if cfg.S3AccessKeyID != "" || cfg.S3SecretAccessKey != "" || cfg.S3Bucket != "" || cfg.S3Endpoint != "" {
-		t.Fatalf("s3 defaults = %+v", cfg)
-	}
-	if cfg.S3Region != "us-east-1" || cfg.S3ForcePathStyle || cfg.S3PresignedURLTTLSeconds != 300 {
-		t.Fatalf("s3 scalars = %q %v %d", cfg.S3Region, cfg.S3ForcePathStyle, cfg.S3PresignedURLTTLSeconds)
-	}
-	if keyCfg := loadDefaultsWithoutEncryptionKey(t); keyCfg.SettingsEncryptionKeyPresent || keyCfg.SettingsEncryptionKeyRaw != "" {
-		t.Fatalf("encryption key presence = %v %q", keyCfg.SettingsEncryptionKeyPresent, keyCfg.SettingsEncryptionKeyRaw)
-	}
-
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "VECTOR_SERVICE_ENABLED":
-			return " Yes "
-		case "VECTOR_SERVICE_FALLBACK_TO_MONGO":
-			return "off"
-		case "VECTOR_SERVICE_TIMEOUT_MS":
-			return "9000"
-		case "VECTOR_SERVICE_MAX_RETRIES":
-			return "0"
-		case "S3_FORCE_PATH_STYLE":
-			return "true"
-		case "S3_PRESIGNED_URL_TTL_SECONDS":
-			return "600"
-		case "SYSTEM_SETTINGS_ENCRYPTION_KEY":
-			return "not-a-real-key"
-		case "NODE_ENV":
-			return "production"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.VectorServiceEnabled || cfg.VectorServiceFallbackToMongo {
-		t.Fatalf("vector booleans = %v %v", cfg.VectorServiceEnabled, cfg.VectorServiceFallbackToMongo)
-	}
-	if cfg.VectorServiceTimeoutMs != 9000 || cfg.VectorServiceMaxRetries != 0 {
-		t.Fatalf("vector timings = %d %d", cfg.VectorServiceTimeoutMs, cfg.VectorServiceMaxRetries)
-	}
-	if !cfg.S3ForcePathStyle || cfg.S3PresignedURLTTLSeconds != 600 {
-		t.Fatalf("s3 scalars = %v %d", cfg.S3ForcePathStyle, cfg.S3PresignedURLTTLSeconds)
-	}
-	// The raw (untrimmed) value decides presence, mirroring the NestJS
-	// `if (!raw)` test performed before the key is decoded.
-	if !cfg.SettingsEncryptionKeyPresent || cfg.SettingsEncryptionKeyRaw != "not-a-real-key" {
-		t.Fatalf("encryption key presence = %v %q", cfg.SettingsEncryptionKeyPresent, cfg.SettingsEncryptionKeyRaw)
-	}
-	if cfg.NodeEnv != "production" {
-		t.Fatalf("node env = %q", cfg.NodeEnv)
-	}
-}
-
-// modelAccessEnv builds a getenv function that answers from a map.
-func modelAccessEnv(values map[string]string) func(string) string {
-	return legacyUnset(func(key string) string { return values[key] })
-}
-
-// TestModelAccessSettingsModeVocabulary pins the switch's accepted values and the
-// exact error text, mirroring the other migration switches.
-func TestModelAccessSettingsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeGo {
-		t.Fatalf("model access mode = %q, want go", cfg.ModelAccessSettingsMode)
-	}
-}
-
-func TestModelAccessSettingsModeVocabulary(t *testing.T) {
-	cases := []struct {
-		name    string
-		value   string
-		want    ModelAccessSettingsMode
-		wantErr bool
-	}{
-		// The unset value is covered by TestModelAccessSettingsModeDefaultsToGo:
-		// this fixture starts from the legacy baseline, so "" here would test the
-		// baseline rather than the default.
-		{name: "explicit legacy", value: "legacy", want: ModelAccessSettingsModeLegacy},
-		{name: "go", value: "go", want: ModelAccessSettingsModeGo},
-		{name: "whitespace tolerated", value: "  go  ", want: ModelAccessSettingsModeGo},
-		{name: "shadow is rejected", value: "shadow", wantErr: true},
-		{name: "canary is rejected", value: "canary", wantErr: true},
-	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			env := map[string]string{
-				"API_GO_MODEL_ACCESS_SETTINGS_MODE": testCase.value,
-				// go mode requires the auth stack, which is not what this test is
-				// about; supplying it keeps the mode the only variable.
-				"JWT_SECRET":   "secret",
-				"DATABASE_URL": "mysql://root:secret@127.0.0.1:3306/app",
-				"REDIS_HOST":   "127.0.0.1",
-			}
-			cfg, err := Load(modelAccessEnv(env))
-			if testCase.wantErr {
-				if err == nil {
-					t.Fatalf("expected an error")
-				}
-				if !strings.Contains(err.Error(), "API_GO_MODEL_ACCESS_SETTINGS_MODE must be one of legacy|go") {
-					t.Fatalf("error = %q", err.Error())
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if cfg.ModelAccessSettingsMode != testCase.want {
-				t.Fatalf("mode = %q, want %q", cfg.ModelAccessSettingsMode, testCase.want)
-			}
-		})
-	}
-}
-
-// TestModelAccessSettingsGoRequiresAuthStack proves the startup requirements.
-func TestModelAccessSettingsGoRequiresAuthStack(t *testing.T) {
-	_, err := Load(modelAccessEnv(map[string]string{"API_GO_MODEL_ACCESS_SETTINGS_MODE": "go"}))
-	if err == nil {
-		t.Fatalf("go mode without the auth stack must fail startup")
-	}
-	for _, want := range []string{
-		"JWT_SECRET is required when API_GO_MODEL_ACCESS_SETTINGS_MODE=go",
-		"DATABASE_URL is required when API_GO_MODEL_ACCESS_SETTINGS_MODE=go",
-		"REDIS_HOST is required when API_GO_MODEL_ACCESS_SETTINGS_MODE=go",
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error %q is missing %q", err.Error(), want)
-		}
-	}
-	if strings.Contains(err.Error(), "MONGO_URI is required when API_GO_MODEL_ACCESS_SETTINGS_MODE=go") {
-		t.Fatalf("this batch reads no Mongo collection: %q", err.Error())
-	}
-	// The encryption key and the internal token are never startup requirements.
-	if strings.Contains(err.Error(), "SYSTEM_SETTINGS_ENCRYPTION_KEY") || strings.Contains(err.Error(), "LITELLM_CONFIG_INTERNAL_TOKEN") {
-		t.Fatalf("runtime-only secrets must not block startup: %q", err.Error())
-	}
-}
-
-// TestModelAccessSettingsGoAcceptsTheAuthStack proves go mode starts with the auth
-// stack and without either runtime secret.
-func TestModelAccessSettingsGoAcceptsTheAuthStack(t *testing.T) {
-	cfg, err := Load(modelAccessEnv(map[string]string{
-		"API_GO_MODEL_ACCESS_SETTINGS_MODE": "go",
-		"JWT_SECRET":                        "secret",
-		"DATABASE_URL":                      "mysql://root:secret@127.0.0.1:3306/app",
-		"REDIS_HOST":                        "127.0.0.1",
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeGo {
-		t.Fatalf("mode = %q", cfg.ModelAccessSettingsMode)
-	}
-}
-
-// TestProxyLoadBalancingModeVocabulary pins the switch's accepted values and the
-// exact error text, mirroring the other migration switches.
-func TestProxyLoadBalancingModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeGo {
-		t.Fatalf("proxy load balancing mode = %q, want go", cfg.ProxyLoadBalancingMode)
-	}
-}
-
-func TestProxyLoadBalancingModeVocabulary(t *testing.T) {
-	cases := []struct {
-		name    string
-		value   string
-		want    ProxyLoadBalancingMode
-		wantErr bool
-	}{
-		// Unset is covered by the defaults test; this fixture uses the legacy baseline.
-		{name: "explicit legacy", value: "legacy", want: ProxyLoadBalancingModeLegacy},
-		{name: "go", value: "go", want: ProxyLoadBalancingModeGo},
-		{name: "whitespace tolerated", value: "  go  ", want: ProxyLoadBalancingModeGo},
-		{name: "shadow is rejected", value: "shadow", wantErr: true},
-		{name: "canary is rejected", value: "canary", wantErr: true},
-	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			env := map[string]string{
-				"API_GO_PROXY_LOAD_BALANCING_MODE": testCase.value,
-				// go mode requires the auth stack, which is not what this test is
-				// about; supplying it keeps the mode the only variable.
-				"JWT_SECRET":   "secret",
-				"DATABASE_URL": "mysql://root:secret@127.0.0.1:3306/app",
-				"REDIS_HOST":   "127.0.0.1",
-			}
-			cfg, err := Load(modelAccessEnv(env))
-			if testCase.wantErr {
-				if err == nil {
-					t.Fatalf("expected an error")
-				}
-				if !strings.Contains(err.Error(), "API_GO_PROXY_LOAD_BALANCING_MODE must be one of legacy|go") {
-					t.Fatalf("error = %q", err.Error())
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if cfg.ProxyLoadBalancingMode != testCase.want {
-				t.Fatalf("mode = %q, want %q", cfg.ProxyLoadBalancingMode, testCase.want)
-			}
-		})
-	}
-}
-
-// TestProxyLoadBalancingGoRequiresAuthStack proves the startup requirements and,
-// in particular, that unrelated model-service variables are never evaluated by
-// this switch.
-func TestProxyLoadBalancingGoRequiresAuthStack(t *testing.T) {
-	_, err := Load(modelAccessEnv(map[string]string{"API_GO_PROXY_LOAD_BALANCING_MODE": "go"}))
-	if err == nil {
-		t.Fatalf("go mode without the auth stack must fail startup")
-	}
-	for _, want := range []string{
-		"JWT_SECRET is required when API_GO_PROXY_LOAD_BALANCING_MODE=go",
-		"DATABASE_URL is required when API_GO_PROXY_LOAD_BALANCING_MODE=go",
-		"REDIS_HOST is required when API_GO_PROXY_LOAD_BALANCING_MODE=go",
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error %q is missing %q", err.Error(), want)
-		}
-	}
-	if strings.Contains(err.Error(), "MONGO_URI") {
-		t.Fatalf("this batch reads no Mongo collection: %q", err.Error())
-	}
-	// The encryption key and the internal token are never startup requirements.
-	if strings.Contains(err.Error(), "SYSTEM_SETTINGS_ENCRYPTION_KEY") || strings.Contains(err.Error(), "LITELLM_CONFIG_INTERNAL_TOKEN") {
-		t.Fatalf("runtime-only secrets must not block startup: %q", err.Error())
-	}
-
-	// An invalid MODEL_SERVICE_* value must not block this switch: the load
-	// balancing takeover never evaluates the model-service configuration.
-	cfg, err := Load(modelAccessEnv(map[string]string{
-		"API_GO_PROXY_LOAD_BALANCING_MODE": "go",
-		"MODEL_SERVICE_TIMEOUT_MS":         "not-a-number",
-		"JWT_SECRET":                       "secret",
-		"DATABASE_URL":                     "mysql://root:secret@127.0.0.1:3306/app",
-		"REDIS_HOST":                       "127.0.0.1",
-	}))
-	if err != nil {
-		t.Fatalf("unrelated model service variables must not fail this switch: %v", err)
-	}
-	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeGo {
-		t.Fatalf("mode = %q", cfg.ProxyLoadBalancingMode)
-	}
-}
-
-// TestProxyLoadBalancingSwitchIsIndependentOfModelAccess proves the two switches
-// neither imply nor require each other.
-func TestProxyLoadBalancingSwitchIsIndependentOfModelAccess(t *testing.T) {
-	authStack := map[string]string{
-		"JWT_SECRET":   "secret",
-		"DATABASE_URL": "mysql://root:secret@127.0.0.1:3306/app",
-		"REDIS_HOST":   "127.0.0.1",
-	}
-	lbOnly := map[string]string{"API_GO_PROXY_LOAD_BALANCING_MODE": "go"}
-	for key, value := range authStack {
-		lbOnly[key] = value
-	}
-	cfg, err := Load(modelAccessEnv(lbOnly))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeGo {
-		t.Fatalf("proxy load balancing mode = %q", cfg.ProxyLoadBalancingMode)
-	}
-	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeLegacy {
-		t.Fatalf("model access mode = %q, want legacy", cfg.ModelAccessSettingsMode)
-	}
-
-	modelAccessOnly := map[string]string{"API_GO_MODEL_ACCESS_SETTINGS_MODE": "go"}
-	for key, value := range authStack {
-		modelAccessOnly[key] = value
-	}
-	cfg, err = Load(modelAccessEnv(modelAccessOnly))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeLegacy {
-		t.Fatalf("proxy load balancing mode = %q, want legacy", cfg.ProxyLoadBalancingMode)
-	}
-	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeGo {
-		t.Fatalf("model access mode = %q", cfg.ModelAccessSettingsMode)
-	}
-}
-
-// TestModelAccessSettingsRawEnvIsCapturedUntrimmed proves the raw reads.
-func TestModelAccessSettingsRawEnvIsCapturedUntrimmed(t *testing.T) {
-	cfg, err := Load(modelAccessEnv(map[string]string{
-		"MODEL_SERVICE_ENABLED":          " yes ",
-		"MODEL_SERVICE_BASE_URL":         " http://model-service:8090 ",
-		"MODEL_SERVICE_INTERNAL_TOKEN":   " tok ",
-		"MODEL_SERVICE_TIMEOUT_MS":       "12000",
-		"MODEL_SERVICE_MAX_RETRIES":      "3",
-		"LITELLM_CONFIG_INTERNAL_TOKEN":  " litellm-token ",
-		"SYSTEM_SETTINGS_ENCRYPTION_KEY": " key ",
-		"NODE_ENV":                       "production",
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.ModelServiceEnabledRaw != " yes " {
-		t.Fatalf("ModelServiceEnabledRaw = %q", cfg.ModelServiceEnabledRaw)
-	}
-	if cfg.ModelServiceBaseURLRaw != " http://model-service:8090 " {
-		t.Fatalf("ModelServiceBaseURLRaw = %q", cfg.ModelServiceBaseURLRaw)
-	}
-	if cfg.ModelServiceInternalTokenRaw != " tok " {
-		t.Fatalf("ModelServiceInternalTokenRaw = %q", cfg.ModelServiceInternalTokenRaw)
-	}
-	if cfg.ModelServiceTimeoutMsRaw != "12000" || cfg.ModelServiceMaxRetriesRaw != "3" {
-		t.Fatalf("numeric raw values = %q / %q", cfg.ModelServiceTimeoutMsRaw, cfg.ModelServiceMaxRetriesRaw)
-	}
-	if cfg.LiteLLMConfigInternalTokenRaw != " litellm-token " {
-		t.Fatalf("LiteLLMConfigInternalTokenRaw = %q", cfg.LiteLLMConfigInternalTokenRaw)
-	}
-	if cfg.NodeEnvRaw != "production" {
-		t.Fatalf("NodeEnvRaw = %q", cfg.NodeEnvRaw)
-	}
-	// The pre-existing trimmed field keeps its own semantics.
-	if cfg.SettingsEncryptionKey != "key" {
-		t.Fatalf("SettingsEncryptionKey = %q, want the trimmed value", cfg.SettingsEncryptionKey)
-	}
-	if cfg.SystemSettingsEncryptionKeyRaw != " key " {
-		t.Fatalf("SystemSettingsEncryptionKeyRaw = %q, want the raw value", cfg.SystemSettingsEncryptionKeyRaw)
-	}
-}
-
-// TestLegacyModeIgnoresInvalidModelAccessValues proves a legacy deployment is
-// unaffected by the new environment handling.
-func TestLegacyModeIgnoresInvalidModelAccessValues(t *testing.T) {
-	for _, mode := range []string{"legacy", "  legacy  "} {
-		cfg, err := Load(modelAccessEnv(map[string]string{
-			"API_GO_MODEL_ACCESS_SETTINGS_MODE": mode,
-			"MODEL_SERVICE_ENABLED":             "maybe",
-			"MODEL_SERVICE_TIMEOUT_MS":          "abc",
-		}))
-		if err != nil {
-			t.Fatalf("legacy mode must not validate the new values: %v", err)
-		}
-		if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeLegacy {
-			t.Fatalf("mode = %q", cfg.ModelAccessSettingsMode)
-		}
-	}
-}
-
-func TestCrawlFrontierRunsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.CrawlFrontierRunsMode != CrawlFrontierRunsModeGo {
-		t.Fatalf("mode = %s", cfg.CrawlFrontierRunsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CRAWL_FRONTIER_RUNS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlFrontierRunsMode != CrawlFrontierRunsModeLegacy {
-		t.Fatalf("mode = %s", cfg.CrawlFrontierRunsMode)
-	}
-}
-
-func TestCrawlFrontierRunsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_CRAWL_FRONTIER_RUNS_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_FRONTIER_RUNS_MODE must be one of legacy|go") {
-		t.Fatalf("invalid mode: %v", err)
-	}
-}
-
-func TestCrawlFrontierRunsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_FRONTIER_RUNS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CRAWL_FRONTIER_RUNS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-
-	// Mongo is not a startup dependency of this unit.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_CRAWL_FRONTIER_RUNS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlFrontierRunsMode != CrawlFrontierRunsModeGo {
-		t.Fatalf("mode = %s", cfg.CrawlFrontierRunsMode)
-	}
-}
-
-func TestDataRuntimeSettingsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.DataRuntimeSettingsMode != DataRuntimeSettingsModeGo {
-		t.Fatalf("mode = %s", cfg.DataRuntimeSettingsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_DATA_RUNTIME_SETTINGS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DataRuntimeSettingsMode != DataRuntimeSettingsModeLegacy {
-		t.Fatalf("mode = %s", cfg.DataRuntimeSettingsMode)
-	}
-}
-
-func TestDataRuntimeSettingsModeRejectsInvalid(t *testing.T) {
-	// shadow and canary are explicitly not accepted: this unit is legacy-or-go
-	// only, so a typo in the switch fails startup.
-	for _, invalid := range []string{"shadow", "canary", "Go"} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == "API_GO_DATA_RUNTIME_SETTINGS_MODE" {
-				return invalid
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), "API_GO_DATA_RUNTIME_SETTINGS_MODE must be one of legacy|go") {
-			t.Fatalf("invalid mode %q: %v", invalid, err)
-		}
-	}
-}
-
-func TestDataRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_DATA_RUNTIME_SETTINGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_DATA_RUNTIME_SETTINGS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-
-	// Mongo and the encryption key are not startup requirements of this unit: a
-	// missing or invalid key is handled per read and write by the documented
-	// fallback and 400 contracts.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_DATA_RUNTIME_SETTINGS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatalf("go mode must not require Mongo or an encryption key: %v", err)
-	}
-	if cfg.DataRuntimeSettingsMode != DataRuntimeSettingsModeGo {
-		t.Fatalf("mode = %s", cfg.DataRuntimeSettingsMode)
+	} else if cfg.WSRedisAdapterKey != "socket.io" {
+		t.Fatalf("default adapter key = %q, want socket.io", cfg.WSRedisAdapterKey)
+	}
+	if _, err := loadWith(t, map[string]string{"WS_REDIS_ADAPTER_ENABLED": "maybe"}); err == nil || !strings.Contains(err.Error(), "WS_REDIS_ADAPTER_ENABLED must be a boolean") {
+		t.Fatalf("Load() error = %v, want boolean rejection", err)
 	}
 }
 
@@ -2815,58 +360,27 @@ func TestDataRuntimeSettingsEnvDefaults(t *testing.T) {
 		env.RealtimePredictionShiftThreshold != 5 || env.RealtimePredictionNewsThreshold != 3 {
 		t.Fatalf("threshold defaults = %+v", env)
 	}
-	if env.RealtimeOpenskyClientID != "" || env.RealtimeOpenskyClientSecret != "" ||
-		env.RealtimeAisBaseURL != "" || env.RealtimeAisSharedSecret != "" ||
-		env.RealtimeAcledOauthUsername != "" || env.RealtimeAcledOauthPassword != "" ||
-		env.RealtimeAcledOauthClientID != "" || env.RealtimeCloudflareAPIToken != "" ||
-		env.RealtimeWingbitsAPIKey != "" || env.RealtimePolymarketProxyURL != "" {
-		t.Fatalf("optional strings must default to empty: %+v", env)
-	}
 	if env.NominatimUserAgentDefault != "modular-api" || env.NominatimEmailDefault != "" {
 		t.Fatalf("nominatim defaults = %+v", env)
 	}
 }
 
 func TestDataRuntimeSettingsEnvPassThrough(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "REALTIME_SIGNALS_ENABLED":
-			return " off "
-		case "REALTIME_SIGNALS_REQUEST_TIMEOUT_MS":
-			return "9000"
-		case "REALTIME_SIGNALS_MAX_RETRIES":
-			return "0"
-		// The OpenSky schema defaults win, so the ADSB aliases never apply.
-		case "REALTIME_SIGNALS_OPENSKY_ENABLED":
-			return ""
-		case "REALTIME_SIGNALS_ADSB_ENABLED":
-			return "false"
-		case "REALTIME_SIGNALS_ADSB_INTERVAL_SEC":
-			return "45"
-		case "REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC":
-			return "120"
-		case "REALTIME_SIGNALS_AIS_BASE_URL":
-			return ""
-		case "REALTIME_SIGNALS_RELAY_BASE_URL":
-			return "https://relay.example"
-		case "REALTIME_SIGNALS_AIS_SHARED_SECRET":
-			return ""
-		case "AIS_RELAY_SHARED_SECRET":
-			return "relay-secret"
-		case "REALTIME_SIGNALS_KEYWORD_SPIKE_MULTIPLIER":
-			return "2.5"
-		case "REALTIME_SIGNALS_PREDICTION_SHIFT_THRESHOLD":
-			return "4.5"
-		case "REALTIME_SIGNALS_POLYMARKET_PROXY_URL":
-			return "https://proxy.example"
-		case "GEO_NOMINATIM_USER_AGENT":
-			return "custom-agent"
-		case "GEO_NOMINATIM_EMAIL":
-			return "geocoder@example.com"
-		default:
-			return ""
-		}
-	}))
+	cfg, err := loadWith(t, map[string]string{
+		"REALTIME_SIGNALS_ENABLED":                    " off ",
+		"REALTIME_SIGNALS_REQUEST_TIMEOUT_MS":         "9000",
+		"REALTIME_SIGNALS_MAX_RETRIES":                "0",
+		"REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC":       "120",
+		"REALTIME_SIGNALS_ADSB_ENABLED":               "false",
+		"REALTIME_SIGNALS_ADSB_INTERVAL_SEC":          "45",
+		"REALTIME_SIGNALS_RELAY_BASE_URL":             "https://relay.example",
+		"AIS_RELAY_SHARED_SECRET":                     "relay-secret",
+		"REALTIME_SIGNALS_KEYWORD_SPIKE_MULTIPLIER":   "2.5",
+		"REALTIME_SIGNALS_PREDICTION_SHIFT_THRESHOLD": "4.5",
+		"REALTIME_SIGNALS_POLYMARKET_PROXY_URL":       "https://proxy.example",
+		"GEO_NOMINATIM_USER_AGENT":                    "custom-agent",
+		"GEO_NOMINATIM_EMAIL":                         "geocoder@example.com",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2874,8 +388,6 @@ func TestDataRuntimeSettingsEnvPassThrough(t *testing.T) {
 	if env.RealtimeEnabled || env.RealtimeRequestTimeoutMs != 9000 || env.RealtimeMaxRetries != 0 {
 		t.Fatalf("realtime scalars = %+v", env)
 	}
-	// ADSB_ENABLED=false and ADSB_INTERVAL_SEC=45 are unreachable because the
-	// OpenSky names keep their schema defaults.
 	if !env.RealtimeOpenskyEnabled || env.RealtimeOpenskyIntervalSec != 120 {
 		t.Fatalf("opensky precedence = %+v", env)
 	}
@@ -2893,486 +405,281 @@ func TestDataRuntimeSettingsEnvPassThrough(t *testing.T) {
 	}
 }
 
-func TestAuthFactorsModeDefaultsToGo(t *testing.T) {
+func TestAlertingConfigDefaultsAndBounds(t *testing.T) {
 	cfg := loadDefaults(t)
-	if cfg.AuthFactorsMode != AuthFactorsModeGo {
-		t.Fatalf("mode = %s", cfg.AuthFactorsMode)
-	}
-	// An explicit legacy value (with surrounding whitespace trimmed) selects the
-	// rollback branch. The empty string no longer belongs here: it now takes the
-	// go default, which is covered by loadDefaults above.
-	for _, accepted := range []string{"legacy", "  legacy  "} {
-		cfg, err := legacyOverlayLoad(t, func(key string) string {
-			if key == "API_GO_AUTH_FACTORS_MODE" {
-				return accepted
-			}
-			return ""
-		})
-		if err != nil {
-			t.Fatalf("accepted %q: %v", accepted, err)
-		}
-		if cfg.AuthFactorsMode != AuthFactorsModeLegacy {
-			t.Fatalf("accepted %q mode = %s", accepted, cfg.AuthFactorsMode)
-		}
-	}
-}
-
-func TestAuthFactorsModeRejectsInvalid(t *testing.T) {
-	// shadow and canary are explicitly not accepted: this unit is
-	// legacy-or-go only, so a typo in the switch fails startup instead of
-	// silently degrading to the NestJS proxy.
-	for _, invalid := range []string{"shadow", "canary", "Go", "true", "1"} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == "API_GO_AUTH_FACTORS_MODE" {
-				return invalid
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), "API_GO_AUTH_FACTORS_MODE must be one of legacy|go") {
-			t.Fatalf("invalid mode %q: %v", invalid, err)
-		}
-	}
-}
-
-func TestAuthFactorsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_AUTH_FACTORS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_AUTH_FACTORS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
+	if cfg.AlertQueueConcurrency != 4 ||
+		cfg.AlertWebhookTimeoutMs != 5_000 ||
+		cfg.AlertScanIntervalMs != 300_000 ||
+		cfg.AlertNotifyGlobalPerSec != 10 ||
+		cfg.AlertNotifyEmailPerSec != 2 ||
+		cfg.AlertNotifyWebhookPerSec != 10 ||
+		cfg.AlertNotifyPerChannelPSec != 2 ||
+		cfg.AlertNotifyLimiterTTLMs != 60_000 ||
+		cfg.BullMQNamespace != "modular" {
+		t.Fatalf("alerting defaults = %+v", cfg)
 	}
 
-	// Mongo is not a startup dependency of this unit: it reads and writes MySQL
-	// and Redis only. The settings-encryption key stays optional too, because a
-	// missing or invalid key is handled per write by the documented policy.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_AUTH_FACTORS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
+	cfg, err := loadWith(t, map[string]string{
+		"ALERT_QUEUE_CONCURRENCY":             "8",
+		"ALERT_WEBHOOK_TIMEOUT_MS":            "2500",
+		"ALERT_SCAN_INTERVAL_MS":              "60000",
+		"ALERT_NOTIFY_GLOBAL_PER_SECOND":      "0",
+		"ALERT_NOTIFY_EMAIL_PER_SECOND":       "1",
+		"ALERT_NOTIFY_WEBHOOK_PER_SECOND":     "3",
+		"ALERT_NOTIFY_PER_CHANNEL_PER_SECOND": "4",
+		"ALERT_NOTIFY_LIMITER_TTL_MS":         "120000",
+		"BULLMQ_NAMESPACE":                    "custom",
+	})
 	if err != nil {
-		t.Fatalf("go mode must not require Mongo or an encryption key: %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.AuthFactorsMode != AuthFactorsModeGo {
-		t.Fatalf("mode = %s", cfg.AuthFactorsMode)
-	}
-}
-
-func TestAccountSecurityModeDefaultsToGo(t *testing.T) {
-	// Unset and the empty string both mean legacy: the default deployment keeps
-	// every request on the NestJS proxy.
-	cfg := loadDefaults(t)
-	if cfg.AccountSecurityMode != AccountSecurityModeGo {
-		t.Fatalf("mode = %s", cfg.AccountSecurityMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_ACCOUNT_SECURITY_MODE" {
-			return ""
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.AccountSecurityMode != AccountSecurityModeLegacy {
-		t.Fatalf("empty mode = %s", cfg.AccountSecurityMode)
-	}
-	cfg, err = Load(legacyUnset(func(key string) string {
-		if key == "API_GO_ACCOUNT_SECURITY_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.AccountSecurityMode != AccountSecurityModeLegacy {
-		t.Fatalf("legacy mode = %s", cfg.AccountSecurityMode)
-	}
-}
-
-func TestAccountSecurityModeRejectsInvalid(t *testing.T) {
-	// Only legacy and go are accepted; shadow/canary and any typo fail startup
-	// with the exact error text.
-	for _, invalid := range []string{"shadow", "canary", "Go", "GO "} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == "API_GO_ACCOUNT_SECURITY_MODE" {
-				return invalid
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), "API_GO_ACCOUNT_SECURITY_MODE must be one of legacy|go") {
-			t.Fatalf("invalid mode %q: %v", invalid, err)
-		}
-	}
-}
-
-func TestAccountSecurityModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_ACCOUNT_SECURITY_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_ACCOUNT_SECURITY_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
+	if cfg.AlertQueueConcurrency != 8 ||
+		cfg.AlertWebhookTimeoutMs != 2_500 ||
+		cfg.AlertScanIntervalMs != 60_000 ||
+		cfg.AlertNotifyGlobalPerSec != 0 ||
+		cfg.AlertNotifyEmailPerSec != 1 ||
+		cfg.AlertNotifyWebhookPerSec != 3 ||
+		cfg.AlertNotifyPerChannelPSec != 4 ||
+		cfg.AlertNotifyLimiterTTLMs != 120_000 ||
+		cfg.BullMQNamespace != "custom" {
+		t.Fatalf("alerting values = %+v", cfg)
 	}
 
-	// Mongo is deliberately not a startup dependency of this unit: it reads and
-	// writes MySQL and Redis only.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_ACCOUNT_SECURITY_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatalf("go mode must not require Mongo: %v", err)
-	}
-	if cfg.AccountSecurityMode != AccountSecurityModeGo {
-		t.Fatalf("mode = %s", cfg.AccountSecurityMode)
-	}
-}
-
-func TestSituationSignalsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.SituationSignalsMode != SituationSignalsModeGo {
-		t.Fatalf("mode = %s", cfg.SituationSignalsMode)
-	}
-	// The empty string is explicitly legacy, not "unset but different".
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_SITUATION_MONITOR_SIGNALS_MODE" {
-			return ""
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SituationSignalsMode != SituationSignalsModeLegacy {
-		t.Fatalf("mode = %s", cfg.SituationSignalsMode)
-	}
-	cfg, err = Load(legacyUnset(func(key string) string {
-		if key == "API_GO_SITUATION_MONITOR_SIGNALS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SituationSignalsMode != SituationSignalsModeLegacy {
-		t.Fatalf("mode = %s", cfg.SituationSignalsMode)
-	}
-}
-
-func TestSituationSignalsModeRejectsInvalid(t *testing.T) {
-	// shadow and canary are explicitly not accepted: this unit is
-	// legacy-or-go only, so a typo in the switch fails startup.
-	for _, invalid := range []string{"shadow", "canary", "Go", "true", "go\tshadow"} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == "API_GO_SITUATION_MONITOR_SIGNALS_MODE" {
-				return invalid
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), "API_GO_SITUATION_MONITOR_SIGNALS_MODE must be one of legacy|go") {
-			t.Fatalf("invalid mode %q: %v", invalid, err)
-		}
-	}
-}
-
-func TestSituationSignalsModeGoRequiresCredentials(t *testing.T) {
-	full := map[string]string{
-		"API_GO_SITUATION_MONITOR_SIGNALS_MODE": "go",
-		"JWT_SECRET":                            "secret",
-		"DATABASE_URL":                          "mysql://user:pass@127.0.0.1:3306/app",
-		"REDIS_HOST":                            "redis",
-		"MONGO_URI":                             "mongodb://127.0.0.1:27017/app",
-	}
-	for missing, expected := range map[string]string{
-		"JWT_SECRET":   "JWT_SECRET is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go",
-		"DATABASE_URL": "DATABASE_URL is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go",
-		"REDIS_HOST":   "REDIS_HOST is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go",
-		"MONGO_URI":    "MONGO_URI is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go",
+	for _, key := range []string{
+		"ALERT_QUEUE_CONCURRENCY",
+		"ALERT_WEBHOOK_TIMEOUT_MS",
+		"ALERT_SCAN_INTERVAL_MS",
+		"ALERT_NOTIFY_LIMITER_TTL_MS",
 	} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == missing {
-				return ""
-			}
-			return full[key]
-		}))
-		if err == nil || !strings.Contains(err.Error(), expected) {
-			t.Fatalf("missing %s: %v", missing, err)
+		if _, err := loadWith(t, map[string]string{key: "0"}); err == nil {
+			t.Errorf("%s=0 must be rejected", key)
 		}
 	}
-
-	cfg, err := Load(legacyUnset(func(key string) string { return full[key] }))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SituationSignalsMode != SituationSignalsModeGo {
-		t.Fatalf("mode = %s", cfg.SituationSignalsMode)
+	if _, err := loadWith(t, map[string]string{"ALERT_NOTIFY_GLOBAL_PER_SECOND": "-1"}); err == nil {
+		t.Error("negative per-second rate must be rejected")
 	}
 }
 
-func TestSituationSignalsModeIsIndependentOfSituationMonitorsMode(t *testing.T) {
-	// The monitors switch owns the five /monitors** routes; the signals switch
-	// owns seven different paths. Neither one may turn the other on.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_SITUATION_MONITOR_SIGNALS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
+func TestNewsSourceSchedulerSourceConcurrency(t *testing.T) {
+	for raw, want := range map[string]int{"0": 1, "-2": 1, "4": 4} {
+		cfg, err := loadWith(t, map[string]string{"NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY": raw})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
 		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SituationMonitorsMode != SituationMonitorsModeLegacy {
-		t.Fatalf("monitors mode = %s", cfg.SituationMonitorsMode)
-	}
-	if cfg.SituationSignalsMode != SituationSignalsModeGo {
-		t.Fatalf("signals mode = %s", cfg.SituationSignalsMode)
-	}
-
-	cfg, err = Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_SITUATION_MONITORS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
+		if cfg.NewsSourceScheduler.SourceConcurrency != want {
+			t.Errorf("NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY=%q source concurrency = %d, want %d",
+				raw, cfg.NewsSourceScheduler.SourceConcurrency, want)
 		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SituationSignalsMode != SituationSignalsModeLegacy {
-		t.Fatalf("signals mode = %s", cfg.SituationSignalsMode)
 	}
 }
 
-func TestItemsReadingModeAcceptsExplicitLegacyGoAndEmptyString(t *testing.T) {
-	legacy, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_ITEMS_READING_MODE" {
-			return "legacy"
+func TestAnalysisPromptEmptyStringIsConfigured(t *testing.T) {
+	lookup := func(key string) (string, bool) {
+		if key == "ANALYSIS_PROMPT_CORRELATION_SYSTEM" {
+			return "", true
 		}
-		return ""
-	}))
+		return "", false
+	}
+	cfg, err := load(resourceEnv(t, nil), lookup)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("load: %v", err)
 	}
-	if legacy.ItemsReadingMode != ItemsReadingModeLegacy {
-		t.Fatalf("explicit legacy = %q", legacy.ItemsReadingMode)
+	if cfg.AnalysisPrompts.CorrelationSystem == nil {
+		t.Fatal("an explicitly empty prompt must be reported as configured")
 	}
-	empty, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_ITEMS_READING_MODE" {
-			return ""
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if empty.ItemsReadingMode != ItemsReadingModeLegacy {
-		t.Fatalf("empty string = %q", empty.ItemsReadingMode)
-	}
-	goMode, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_ITEMS_READING_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://root:secret@localhost:3306/app"
-		case "REDIS_HOST":
-			return "localhost"
-		case "MONGO_URI":
-			return "mongodb://localhost:27017/app"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if goMode.ItemsReadingMode != ItemsReadingModeGo {
-		t.Fatalf("go = %q", goMode.ItemsReadingMode)
+	if *cfg.AnalysisPrompts.CorrelationSystem != "" {
+		t.Fatalf("prompt = %q, want empty", *cfg.AnalysisPrompts.CorrelationSystem)
 	}
 }
 
-func TestItemsReadingModeRejectsInvalid(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_ITEMS_READING_MODE" {
-			return "shadow"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "API_GO_ITEMS_READING_MODE must be one of legacy|go") {
-		t.Fatalf("Load() error = %v", err)
-	}
-	// The failure must echo the rejected value so the operator can see which
-	// deployment value was refused.
-	if !strings.Contains(err.Error(), `got "shadow"`) {
-		t.Fatalf("Load() error must include the illegal value: %v", err)
-	}
-}
-
-func TestItemsReadingModeGoRequiresMongo(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_ITEMS_READING_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://root:secret@localhost:3306/app"
-		case "REDIS_HOST":
-			return "localhost"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_ITEMS_READING_MODE=go") {
-		t.Fatalf("Load() error = %v", err)
-	}
-}
-
-func TestItemsReadingModeGoDoesNotRequireCredentialsUntilGo(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_ITEMS_READING_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
+func TestAnalysisFlushBoundsClamp(t *testing.T) {
+	cfg, err := loadWith(t, map[string]string{
+		"ANALYSIS_STREAM_FLUSH_CHARS": "0",
+		"ANALYSIS_STREAM_FLUSH_MS":    "-5",
+	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("load: %v", err)
 	}
-	if cfg.ItemsReadingMode != ItemsReadingModeLegacy {
-		t.Fatalf("legacy = %q", cfg.ItemsReadingMode)
+	if cfg.AnalysisStreamFlushChars != 1 {
+		t.Fatalf("flushChars = %d, want 1", cfg.AnalysisStreamFlushChars)
+	}
+	if cfg.AnalysisStreamFlushMs != 0 {
+		t.Fatalf("flushMs = %d, want 0", cfg.AnalysisStreamFlushMs)
 	}
 }
 
-func TestLLMGatewayProfilesModeDefaultsToGo(t *testing.T) {
+func TestBullMQWorkersEnabledDefaultsTrue(t *testing.T) {
 	cfg := loadDefaults(t)
-	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeGo {
-		t.Fatalf("mode = %s", cfg.LLMGatewayProfilesMode)
+	if !cfg.BullMQWorkersEnabled {
+		t.Fatal("BULLMQ_WORKERS_ENABLED should default to true")
 	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_LLM_GATEWAY_PROFILES_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
+	disabled, err := loadWith(t, map[string]string{"BULLMQ_WORKERS_ENABLED": "false"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("load: %v", err)
 	}
-	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeLegacy {
-		t.Fatalf("mode = %s", cfg.LLMGatewayProfilesMode)
+	if disabled.BullMQWorkersEnabled {
+		t.Fatal("BULLMQ_WORKERS_ENABLED=false was ignored")
 	}
 }
 
-func TestLLMGatewayProfilesModeRejectsInvalid(t *testing.T) {
-	// shadow and canary are explicitly not accepted: this unit is
-	// legacy-or-go only, so a typo in the switch fails startup.
-	for _, invalid := range []string{"shadow", "canary", "Go"} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == "API_GO_LLM_GATEWAY_PROFILES_MODE" {
-				return invalid
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), "API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go") {
-			t.Fatalf("invalid mode %q: %v", invalid, err)
+func TestPlatformGovernanceDefaultsMatchNestSchema(t *testing.T) {
+	cfg := loadDefaults(t)
+	if !cfg.PlatformGovernanceAssistantGuardrailsEnabled {
+		t.Error("ASSISTANT_GUARDRAILS_ENABLED default = false, want true")
+	}
+	if cfg.PlatformGovernanceAssistantGuardrailsRaw != "openai-moderation-pre" {
+		t.Errorf("ASSISTANT_GUARDRAILS default = %q", cfg.PlatformGovernanceAssistantGuardrailsRaw)
+	}
+	if cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour != 30 {
+		t.Errorf("ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR default = %d, want 30", cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour)
+	}
+	if cfg.PlatformGovernanceAssistantOrgMaxInFlight != 2 {
+		t.Errorf("ASSISTANT_ORG_MAX_IN_FLIGHT default = %d, want 2", cfg.PlatformGovernanceAssistantOrgMaxInFlight)
+	}
+	if cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget != 2_000_000 {
+		t.Errorf("ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET default = %d, want 2000000", cfg.PlatformGovernanceAssistantOrgMonthlyTokenBudget)
+	}
+	if cfg.PlatformGovernanceTaskLogRetentionDays != 14 {
+		t.Errorf("TASK_LOG_RETENTION_DAYS default = %d, want 14", cfg.PlatformGovernanceTaskLogRetentionDays)
+	}
+}
+
+func TestJSEnvNumberSemantics(t *testing.T) {
+	nanValues := []string{"nan", "inf", "1_000", "0x1p3", "0x", "1,5", "  12 3 ", "0x1g"}
+	for _, raw := range nanValues {
+		if got := jsEnvNumber(raw); !math.IsNaN(got) {
+			t.Errorf("jsEnvNumber(%q) = %v, want NaN", raw, got)
+		}
+	}
+	if got := jsEnvNumber("Infinity"); !math.IsInf(got, 1) {
+		t.Errorf("jsEnvNumber(Infinity) = %v, want +Inf", got)
+	}
+	if got := jsEnvNumber("-Infinity"); !math.IsInf(got, -1) {
+		t.Errorf("jsEnvNumber(-Infinity) = %v, want -Inf", got)
+	}
+	for _, tc := range []struct {
+		raw  string
+		want float64
+	}{
+		{"", 0},
+		{"   ", 0},
+		{"30", 30},
+		{" 30 ", 30},
+		{"+30", 30},
+		{"-30", -30},
+		{".5", 0.5},
+		{"5.", 5},
+		{"1e3", 1000},
+		{"1E+3", 1000},
+		{"0x1f", 31},
+		{"0X1F", 31},
+		{"0o17", 15},
+		{"0b101", 5},
+	} {
+		if got := jsEnvNumber(tc.raw); got != tc.want {
+			t.Errorf("jsEnvNumber(%q) = %v, want %v", tc.raw, got, tc.want)
 		}
 	}
 }
 
-func TestLLMGatewayProfilesModeGoRequiresCredentialsButNotMongo(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_LLM_GATEWAY_PROFILES_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
+func TestResourceFixtureIsPlaceholdersOnly(t *testing.T) {
+	raw, err := os.ReadFile("testdata/default-resources.env")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	text := strings.ToLower(string(raw))
+	for _, forbidden := range []string{"sk-", "-----begin", "akia"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("testdata/default-resources.env contains something that looks like a real credential: %q", forbidden)
 		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_LLM_GATEWAY_PROFILES_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
+	}
+}
+
+func TestInfrastructureSettingsEnvDefaults(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.VectorServiceEnabled || !cfg.VectorServiceFallbackToMongo {
+		t.Fatalf("vector booleans = %v %v", cfg.VectorServiceEnabled, cfg.VectorServiceFallbackToMongo)
+	}
+	if cfg.VectorServiceBaseURL != "" || cfg.VectorInternalToken != "" {
+		t.Fatalf("vector url/token = %q %q", cfg.VectorServiceBaseURL, cfg.VectorInternalToken)
+	}
+	if cfg.VectorServiceTimeoutMs != 5000 || cfg.VectorServiceMaxRetries != 2 {
+		t.Fatalf("vector timings = %d %d", cfg.VectorServiceTimeoutMs, cfg.VectorServiceMaxRetries)
+	}
+	if cfg.S3AccessKeyID != "" || cfg.S3SecretAccessKey != "" || cfg.S3Bucket != "" || cfg.S3Endpoint != "" {
+		t.Fatalf("s3 defaults = %+v", cfg)
+	}
+	if cfg.S3Region != "us-east-1" || cfg.S3ForcePathStyle || cfg.S3PresignedURLTTLSeconds != 300 {
+		t.Fatalf("s3 scalars = %q %v %d", cfg.S3Region, cfg.S3ForcePathStyle, cfg.S3PresignedURLTTLSeconds)
 	}
 
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_LLM_GATEWAY_PROFILES_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
+	cfg, err := loadWith(t, map[string]string{
+		"VECTOR_SERVICE_ENABLED":           " Yes ",
+		"VECTOR_SERVICE_FALLBACK_TO_MONGO": "off",
+		"VECTOR_SERVICE_TIMEOUT_MS":        "9000",
+		"VECTOR_SERVICE_MAX_RETRIES":       "0",
+		"S3_FORCE_PATH_STYLE":              "true",
+		"S3_PRESIGNED_URL_TTL_SECONDS":     "600",
+		"SYSTEM_SETTINGS_ENCRYPTION_KEY":   "not-a-real-key",
+		"NODE_ENV":                         "production",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeGo {
-		t.Fatalf("mode = %s", cfg.LLMGatewayProfilesMode)
+	if !cfg.VectorServiceEnabled || cfg.VectorServiceFallbackToMongo {
+		t.Fatalf("vector booleans = %v %v", cfg.VectorServiceEnabled, cfg.VectorServiceFallbackToMongo)
 	}
-	// Mongo and a model upstream are not startup dependencies of this unit.
-	if cfg.MongoURI != "" {
-		t.Fatalf("mongo uri = %q", cfg.MongoURI)
+	if cfg.VectorServiceTimeoutMs != 9000 || cfg.VectorServiceMaxRetries != 0 {
+		t.Fatalf("vector timings = %d %d", cfg.VectorServiceTimeoutMs, cfg.VectorServiceMaxRetries)
+	}
+	if !cfg.S3ForcePathStyle || cfg.S3PresignedURLTTLSeconds != 600 {
+		t.Fatalf("s3 scalars = %v %d", cfg.S3ForcePathStyle, cfg.S3PresignedURLTTLSeconds)
+	}
+	if !cfg.SettingsEncryptionKeyPresent || cfg.SettingsEncryptionKeyRaw != "not-a-real-key" {
+		t.Fatalf("encryption key presence = %v %q", cfg.SettingsEncryptionKeyPresent, cfg.SettingsEncryptionKeyRaw)
+	}
+	if cfg.NodeEnv != "production" {
+		t.Fatalf("node env = %q", cfg.NodeEnv)
+	}
+}
+
+func TestModelAccessRawEnvIsCapturedUntrimmed(t *testing.T) {
+	cfg, err := loadWith(t, map[string]string{
+		"MODEL_SERVICE_ENABLED":          " yes ",
+		"MODEL_SERVICE_BASE_URL":         " http://model-service:8090 ",
+		"MODEL_SERVICE_INTERNAL_TOKEN":   " tok ",
+		"MODEL_SERVICE_TIMEOUT_MS":       "12000",
+		"MODEL_SERVICE_MAX_RETRIES":      "3",
+		"LITELLM_CONFIG_INTERNAL_TOKEN":  " litellm-token ",
+		"SYSTEM_SETTINGS_ENCRYPTION_KEY": " key ",
+		"NODE_ENV":                       "production",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModelServiceEnabledRaw != " yes " {
+		t.Fatalf("ModelServiceEnabledRaw = %q", cfg.ModelServiceEnabledRaw)
+	}
+	if cfg.ModelServiceBaseURLRaw != " http://model-service:8090 " {
+		t.Fatalf("ModelServiceBaseURLRaw = %q", cfg.ModelServiceBaseURLRaw)
+	}
+	if cfg.ModelServiceInternalTokenRaw != " tok " {
+		t.Fatalf("ModelServiceInternalTokenRaw = %q", cfg.ModelServiceInternalTokenRaw)
+	}
+	if cfg.ModelServiceTimeoutMsRaw != "12000" || cfg.ModelServiceMaxRetriesRaw != "3" {
+		t.Fatalf("numeric raw values = %q / %q", cfg.ModelServiceTimeoutMsRaw, cfg.ModelServiceMaxRetriesRaw)
+	}
+	if cfg.LiteLLMConfigInternalTokenRaw != " litellm-token " {
+		t.Fatalf("LiteLLMConfigInternalTokenRaw = %q", cfg.LiteLLMConfigInternalTokenRaw)
+	}
+	if cfg.NodeEnvRaw != "production" {
+		t.Fatalf("NodeEnvRaw = %q", cfg.NodeEnvRaw)
+	}
+	if cfg.SettingsEncryptionKey != "key" {
+		t.Fatalf("SettingsEncryptionKey = %q, want the trimmed value", cfg.SettingsEncryptionKey)
+	}
+	if cfg.SystemSettingsEncryptionKeyRaw != " key " {
+		t.Fatalf("SystemSettingsEncryptionKeyRaw = %q, want the raw value", cfg.SystemSettingsEncryptionKeyRaw)
 	}
 }
 
@@ -3408,14 +715,7 @@ func TestLLMGatewayProfileEnvProjectionDefaults(t *testing.T) {
 }
 
 func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
-	// LITELLM_MAX_TOKENS has a schema default in NestJS, so setting only
-	// LITELLM_MAX_OUTPUT_TOKENS can never win. The Go projection must agree.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "LITELLM_MAX_OUTPUT_TOKENS" {
-			return "777"
-		}
-		return ""
-	}))
+	cfg, err := loadWith(t, map[string]string{"LITELLM_MAX_OUTPUT_TOKENS": "777"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3423,13 +723,7 @@ func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
 		t.Fatalf("maxOutputTokens = %d, want the MAX_TOKENS schema default", cfg.LLMGatewayMaxOutputTokens)
 	}
 
-	// The same rule applies to LITELLM_MAX_RETRIES.
-	cfg, err = Load(legacyUnset(func(key string) string {
-		if key == "LITELLM_MAX_RETRIES" {
-			return "9"
-		}
-		return ""
-	}))
+	cfg, err = loadWith(t, map[string]string{"LITELLM_MAX_RETRIES": "9"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3437,30 +731,17 @@ func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
 		t.Fatalf("maxRetries = %d, want the RETRY_ATTEMPTS schema default", cfg.LLMGatewayMaxRetries)
 	}
 
-	cfg, err = Load(legacyUnset(func(key string) string {
-		switch key {
-		case "LITELLM_API_URL":
-			return "http://primary:1"
-		case "LITELLM_API_BASE":
-			return "http://secondary:2"
-		case "LITELLM_MAX_TOKENS":
-			return "4096"
-		case "LITELLM_RETRY_ATTEMPTS":
-			return "5"
-		case "LITELLM_TEMPERATURE":
-			return "1.25"
-		case "LITELLM_TOP_P":
-			return "0.25"
-		case "LITELLM_MODEL":
-			return "openai/gpt-4o"
-		case "LITELLM_FALLBACK_MODELS":
-			return " a , ,b, a "
-		case "NODE_ENV":
-			return "production"
-		default:
-			return ""
-		}
-	}))
+	cfg, err = loadWith(t, map[string]string{
+		"LITELLM_API_URL":         "http://primary:1",
+		"LITELLM_API_BASE":        "http://secondary:2",
+		"LITELLM_MAX_TOKENS":      "4096",
+		"LITELLM_RETRY_ATTEMPTS":  "5",
+		"LITELLM_TEMPERATURE":     "1.25",
+		"LITELLM_TOP_P":           "0.25",
+		"LITELLM_MODEL":           "openai/gpt-4o",
+		"LITELLM_FALLBACK_MODELS": " a , ,b, a ",
+		"NODE_ENV":                "production",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3476,1078 +757,10 @@ func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
 	if cfg.LLMGatewayModel != "openai/gpt-4o" {
 		t.Fatalf("model = %q", cfg.LLMGatewayModel)
 	}
-	// The env projection keeps the literal comma split (trim + drop empty, no
-	// de-duplication); de-duplication only happens when a profile list is
-	// normalized.
 	if strings.Join(cfg.LLMGatewayFallbackModels, ",") != "a,b,a" {
 		t.Fatalf("fallbackModels = %v", cfg.LLMGatewayFallbackModels)
 	}
 	if !cfg.NodeEnvProduction {
 		t.Fatal("NODE_ENV=production must be reported")
-	}
-}
-
-func TestLLMGatewaySettingsEncryptionKeyKeepsRawValue(t *testing.T) {
-	// The NestJS presence check is a JavaScript truthiness test on the raw
-	// value, so a whitespace-only key must count as present-but-invalid and the
-	// raw value must survive the config load.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "SYSTEM_SETTINGS_ENCRYPTION_KEY" {
-			return "   "
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.LLMGatewaySettingsEncryptionKey != "   " {
-		t.Fatalf("key = %q, want the raw value", cfg.LLMGatewaySettingsEncryptionKey)
-	}
-}
-
-// itemsListEnv is the minimal credentialed environment of the two parent
-// switches (GraphQL read + items reading), including the Mongo requirement the
-// items reading switch already implies.
-// itemsListEnv builds a fixture for the items-list switch tests.
-//
-// Unset *Mode keys resolve to legacy on purpose: these tests are about the
-// parent/child dependency rules between the items-list, GraphQL-read and
-// items-reading switches, so every switch they do not name has to stay on the
-// rollback configuration. Returning "" would now select the go default and
-// change what the test is exercising.
-func itemsListEnv(extra map[string]string) func(string) string {
-	legacy := map[string]string{}
-	typ := reflect.TypeOf(Config{})
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		if !strings.HasSuffix(field.Name, "Mode") || field.Type.Kind() != reflect.String {
-			continue
-		}
-		if _, exempt := legacyRejectExemptModes[field.Name]; exempt {
-			continue
-		}
-		name := modeSwitchEnvName(field.Name)
-		switch name {
-		// These two accept shadow|go rather than legacy.
-		case "API_GO_ONBOARDING_MODE", "API_GO_USER_SETTINGS_READ_MODE":
-			legacy[name] = "shadow"
-		default:
-			legacy[name] = "legacy"
-		}
-	}
-	return func(key string) string {
-		if value, ok := extra[key]; ok {
-			return value
-		}
-		if strings.HasPrefix(key, "API_GO_") && strings.HasSuffix(key, "_MODE") {
-			if key == "API_GO_LEGACY_FALLBACK_MODE" {
-				return "proxy"
-			}
-			if value, ok := legacy[key]; ok {
-				return value
-			}
-			return "legacy"
-		}
-		switch key {
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	}
-}
-
-// TestGraphQLItemsListModeSwitch pins the independent sub-switch: empty and
-// legacy keep the root on NestJS, an invalid value fails Load, and go requires
-// both parent switches instead of silently enabling them.
-func TestGraphQLItemsListModeSwitch(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.GraphQLItemsListMode != "go" {
-		t.Fatalf("default items list mode = %q", cfg.GraphQLItemsListMode)
-	}
-
-	for _, raw := range []string{"legacy"} {
-		cfg, err := Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": raw}))
-		if err != nil {
-			t.Fatalf("Load(%q) error = %v", raw, err)
-		}
-		if cfg.GraphQLItemsListMode != "legacy" {
-			t.Fatalf("mode for %q = %q", raw, cfg.GraphQLItemsListMode)
-		}
-	}
-
-	// An empty value now selects the go default, which the parent switches in
-	// itemsListEnv (legacy) do not satisfy.
-	if _, err := Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": ""})); err == nil ||
-		!strings.Contains(err.Error(), "requires API_GO_GRAPHQL_READ_MODE=go") {
-		t.Fatalf("empty value must follow the go default and fail the parent check: %v", err)
-	}
-
-	if _, err := Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": "shadow"})); err == nil {
-		t.Fatal("Load() must reject an invalid API_GO_GRAPHQL_ITEMS_LIST_MODE")
-	}
-
-	_, err := Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": "go"}))
-	if err == nil || !strings.Contains(err.Error(), "requires API_GO_GRAPHQL_READ_MODE=go") {
-		t.Fatalf("missing read parent error = %v", err)
-	}
-
-	_, err = Load(itemsListEnv(map[string]string{
-		"API_GO_GRAPHQL_ITEMS_LIST_MODE": "go",
-		"API_GO_GRAPHQL_READ_MODE":       "go",
-	}))
-	if err == nil || !strings.Contains(err.Error(), "requires API_GO_ITEMS_READING_MODE=go") {
-		t.Fatalf("missing items-reading parent error = %v", err)
-	}
-	cfg, err = Load(itemsListEnv(map[string]string{
-		"API_GO_GRAPHQL_ITEMS_LIST_MODE": "go",
-		"API_GO_GRAPHQL_READ_MODE":       "go",
-		"API_GO_ITEMS_READING_MODE":      "go",
-	}))
-	if err != nil {
-		t.Fatalf("Load() with both parents error = %v", err)
-	}
-	if cfg.GraphQLItemsListMode != "go" {
-		t.Fatalf("items list mode = %q", cfg.GraphQLItemsListMode)
-	}
-}
-
-func TestStorageDiagnosticsModeDefaultsToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.StorageDiagnosticsMode != StorageDiagnosticsModeGo {
-		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
-	}
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_STORAGE_DIAGNOSTICS_MODE" {
-			return "legacy"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.StorageDiagnosticsMode != StorageDiagnosticsModeLegacy {
-		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
-	}
-}
-
-func TestStorageDiagnosticsModeRejectsInvalid(t *testing.T) {
-	// shadow and canary are not accepted: the switch is legacy-or-go only, so a
-	// typo fails startup instead of silently degrading.
-	for _, invalid := range []string{"shadow", "canary", "Go", "test"} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == "API_GO_STORAGE_DIAGNOSTICS_MODE" {
-				return invalid
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), "API_GO_STORAGE_DIAGNOSTICS_MODE must be one of legacy|go") {
-			t.Fatalf("invalid mode %q: %v", invalid, err)
-		}
-	}
-}
-
-func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
-	// Redis is required.
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_STORAGE_DIAGNOSTICS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_STORAGE_DIAGNOSTICS_MODE=go") {
-		t.Fatalf("missing redis: %v", err)
-	}
-
-	// Mongo and every other takeover switch are not startup requirements, and
-	// the switches stay independent of each other.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_STORAGE_DIAGNOSTICS_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatalf("go mode must not require Mongo or another switch: %v", err)
-	}
-	if cfg.StorageDiagnosticsMode != StorageDiagnosticsModeGo {
-		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
-	}
-	if cfg.InfrastructureSettingsMode != InfrastructureSettingsModeLegacy ||
-		cfg.CrawlReadTelemetryMode != CrawlReadTelemetryModeLegacy {
-		t.Fatalf("storage diagnostics must not enable other takeovers: infra=%s crawl=%s",
-			cfg.InfrastructureSettingsMode, cfg.CrawlReadTelemetryMode)
-	}
-
-	// The reverse: the diagnostics switch stays legacy when only the other
-	// switches are go.
-	cfg, err = Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_INFRASTRUCTURE_SETTINGS_MODE", "API_GO_CRAWL_READ_TELEMETRY_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.StorageDiagnosticsMode != StorageDiagnosticsModeLegacy {
-		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
-	}
-}
-
-func TestNewsBackfillSwitchesDefaultToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.NewsClusteringLlmBackfillMode != NewsClusteringLlmBackfillModeGo {
-		t.Fatalf("llm backfill mode = %s", cfg.NewsClusteringLlmBackfillMode)
-	}
-	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeGo {
-		t.Fatalf("recovery worker mode = %s", cfg.NewsClusteringRecoveryWorkerMode)
-	}
-	if cfg.GraphQLNewsIndicatorRefreshMode != "go" {
-		t.Fatalf("graphql refresh mode = %s", cfg.GraphQLNewsIndicatorRefreshMode)
-	}
-	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeGo {
-		t.Fatalf("association cron mode = %s", cfg.NewsIndicatorAssociationCronMode)
-	}
-	if cfg.NewsProcessQueueConcurrency != 8 {
-		t.Fatalf("process queue concurrency = %d", cfg.NewsProcessQueueConcurrency)
-	}
-}
-
-func TestNewsBackfillSwitchesAcceptExplicitLegacy(t *testing.T) {
-	keys := []string{
-		"API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE",
-		"API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE",
-		"API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE",
-		"API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE",
-	}
-	for _, key := range keys {
-		cfg, err := Load(legacyUnset(func(name string) string {
-			if name == key {
-				return "legacy"
-			}
-			return ""
-		}))
-		if err != nil {
-			t.Fatalf("%s=legacy: %v", key, err)
-		}
-		_ = cfg
-	}
-}
-
-func TestNewsBackfillSwitchesRejectInvalid(t *testing.T) {
-	keys := []string{
-		"API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE",
-		"API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE",
-		"API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE",
-		"API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE",
-	}
-	for _, key := range keys {
-		for _, invalid := range []string{"shadow", "Go", "on"} {
-			_, err := Load(func(name string) string {
-				if name == key {
-					return invalid
-				}
-				return ""
-			})
-			if err == nil || !strings.Contains(err.Error(), key+" must be one of legacy|go") {
-				t.Fatalf("%s=%q: %v", key, invalid, err)
-			}
-		}
-	}
-}
-
-func TestNewsClusteringLlmBackfillModeGoRequiresFullStack(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE=go") {
-		t.Fatalf("missing mongo: %v", err)
-	}
-
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.NewsClusteringLlmBackfillMode != NewsClusteringLlmBackfillModeGo {
-		t.Fatalf("mode = %s", cfg.NewsClusteringLlmBackfillMode)
-	}
-	// The worker and cron switches stay legacy and independently owned.
-	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeLegacy {
-		t.Fatalf("worker mode = %s", cfg.NewsClusteringRecoveryWorkerMode)
-	}
-	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeLegacy {
-		t.Fatalf("cron mode = %s", cfg.NewsIndicatorAssociationCronMode)
-	}
-}
-
-func TestNewsClusteringRecoveryWorkerModeGoDoesNotRequireJWT(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE":
-			return "go"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go") {
-		t.Fatalf("missing mongo: %v", err)
-	}
-
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE":
-			return "go"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "MONGO_URI":
-			return "mongodb://127.0.0.1:27017/app"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeGo {
-		t.Fatalf("mode = %s", cfg.NewsClusteringRecoveryWorkerMode)
-	}
-}
-
-func TestNewsIndicatorAssociationCronModeGoRequiresMySQLAndRedisOnly(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE":
-			return "go"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required when API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE=go") {
-		t.Fatalf("missing mysql: %v", err)
-	}
-
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE":
-			return "go"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeGo {
-		t.Fatalf("mode = %s", cfg.NewsIndicatorAssociationCronMode)
-	}
-}
-
-func TestGraphQLNewsIndicatorRefreshModeGoRequiresAuthStack(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE":
-			return "go"
-		default:
-			return ""
-		}
-	}))
-	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE=go") {
-		t.Fatalf("missing jwt: %v", err)
-	}
-
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE":
-			return "go"
-		case "JWT_SECRET":
-			return "secret"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.GraphQLNewsIndicatorRefreshMode != "go" {
-		t.Fatalf("mode = %s", cfg.GraphQLNewsIndicatorRefreshMode)
-	}
-}
-
-func TestNewsProcessQueueConcurrencyEnv(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		if key == "NEWS_PROCESS_QUEUE_CONCURRENCY" {
-			return "1"
-		}
-		return ""
-	}))
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.NewsProcessQueueConcurrency != 1 {
-		t.Fatalf("concurrency = %d", cfg.NewsProcessQueueConcurrency)
-	}
-}
-
-func TestGdeltSnapshotModesDefaultToGo(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.GdeltSnapshotMode != GdeltSnapshotModeGo {
-		t.Fatalf("scheduler mode = %s", cfg.GdeltSnapshotMode)
-	}
-	if cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeGo {
-		t.Fatalf("refresh mode = %s", cfg.GdeltSnapshotRefreshMode)
-	}
-	// SITUATION_MONITOR_GDELT_ENABLED defaults to true in the NestJS schema too.
-	if !cfg.SituationMonitorGdeltEnabled {
-		t.Fatal("SITUATION_MONITOR_GDELT_ENABLED default = false, want true")
-	}
-	// An explicit legacy value takes the rollback branch; the empty value now
-	// resolves to go, which loadDefaults covers.
-	for _, legacy := range []string{"legacy", "  legacy  "} {
-		cfg, err := Load(legacyUnset(func(key string) string {
-			switch key {
-			case "API_GO_GDELT_SNAPSHOT_MODE", "API_GO_GDELT_SNAPSHOT_REFRESH_MODE":
-				return legacy
-			default:
-				return ""
-			}
-		}))
-		if err != nil {
-			t.Fatalf("legacy mode %q: %v", legacy, err)
-		}
-		if cfg.GdeltSnapshotMode != GdeltSnapshotModeLegacy || cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
-			t.Fatalf("legacy mode %q parsed as %s/%s", legacy, cfg.GdeltSnapshotMode, cfg.GdeltSnapshotRefreshMode)
-		}
-	}
-}
-
-func TestGdeltSnapshotModesRejectInvalid(t *testing.T) {
-	for _, testCase := range []struct{ key, invalid string }{
-		{"API_GO_GDELT_SNAPSHOT_MODE", "shadow"},
-		{"API_GO_GDELT_SNAPSHOT_MODE", "Go"},
-		{"API_GO_GDELT_SNAPSHOT_REFRESH_MODE", "canary"},
-		{"API_GO_GDELT_SNAPSHOT_REFRESH_MODE", "true"},
-	} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == testCase.key {
-				return testCase.invalid
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), testCase.key+" must be one of legacy|go") {
-			t.Fatalf("%s=%q: %v", testCase.key, testCase.invalid, err)
-		}
-	}
-}
-
-func TestGdeltSnapshotSchedulerGoRequiresMySQLAndRedisOnly(t *testing.T) {
-	full := map[string]string{
-		"API_GO_GDELT_SNAPSHOT_MODE": "go",
-		"DATABASE_URL":               "mysql://user:pass@127.0.0.1:3306/app",
-		"REDIS_HOST":                 "redis",
-	}
-	for missing, expected := range map[string]string{
-		"DATABASE_URL": "DATABASE_URL is required when API_GO_GDELT_SNAPSHOT_MODE=go",
-		"REDIS_HOST":   "REDIS_HOST is required when API_GO_GDELT_SNAPSHOT_MODE=go",
-	} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == missing {
-				return ""
-			}
-			return full[key]
-		}))
-		if err == nil || !strings.Contains(err.Error(), expected) {
-			t.Fatalf("missing %s: %v", missing, err)
-		}
-	}
-	// The scheduler serves no route, so a missing JWT secret is not a startup
-	// condition.
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_GDELT_SNAPSHOT_MODE":
-			return "go"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatalf("scheduler go must not require JWT: %v", err)
-	}
-	if cfg.GdeltSnapshotMode != GdeltSnapshotModeGo {
-		t.Fatalf("mode = %s", cfg.GdeltSnapshotMode)
-	}
-}
-
-func TestGdeltSnapshotRefreshGoRequiresCredentialedStack(t *testing.T) {
-	full := map[string]string{
-		"API_GO_GDELT_SNAPSHOT_REFRESH_MODE": "go",
-		"JWT_SECRET":                         "secret",
-		"DATABASE_URL":                       "mysql://user:pass@127.0.0.1:3306/app",
-		"REDIS_HOST":                         "redis",
-	}
-	for missing, expected := range map[string]string{
-		"JWT_SECRET":   "JWT_SECRET is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
-		"DATABASE_URL": "DATABASE_URL is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
-		"REDIS_HOST":   "REDIS_HOST is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
-	} {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == missing {
-				return ""
-			}
-			return full[key]
-		}))
-		if err == nil || !strings.Contains(err.Error(), expected) {
-			t.Fatalf("missing %s: %v", missing, err)
-		}
-	}
-}
-
-func TestGdeltSnapshotSwitchesAreIndependentAndReadTheEnabledFlag(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_GDELT_SNAPSHOT_MODE":
-			return "go"
-		case "DATABASE_URL":
-			return "mysql://user:pass@127.0.0.1:3306/app"
-		case "REDIS_HOST":
-			return "redis"
-		case "SITUATION_MONITOR_GDELT_ENABLED":
-			return "off"
-		default:
-			return ""
-		}
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GdeltSnapshotMode != GdeltSnapshotModeGo {
-		t.Fatalf("scheduler mode = %s", cfg.GdeltSnapshotMode)
-	}
-	// The refresh switch never follows the scheduler switch, and the scheduler
-	// switch never enables the HTTP entry.
-	if cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
-		t.Fatalf("refresh mode = %s, want legacy", cfg.GdeltSnapshotRefreshMode)
-	}
-	if cfg.SituationMonitorGdeltEnabled {
-		t.Fatal("SITUATION_MONITOR_GDELT_ENABLED=off parsed as enabled")
-	}
-}
-
-func TestAlertWorkerMode(t *testing.T) {
-	deps := map[string]string{
-		"DATABASE_URL": "mysql://u:p@h:3306/db",
-		"REDIS_HOST":   "h",
-		"MONGO_URI":    "mongodb://h:27017/db",
-		"SMTP_HOST":    "smtp",
-		"SMTP_PORT":    "587",
-		"SMTP_USER":    "u",
-		"SMTP_PASS":    "p",
-	}
-	cases := []struct {
-		name      string
-		mode      string
-		extraEnv  map[string]string
-		wantMode  string
-		wantError bool
-	}{
-		{"empty is legacy", "", nil, "legacy", false},
-		{"legacy accepted", "legacy", nil, "legacy", false},
-		{"go accepted with deps", "go", deps, "go", false},
-		{"go without deps fails", "go", nil, "", true},
-		{"go without mongo fails", "go", map[string]string{
-			"DATABASE_URL": deps["DATABASE_URL"], "REDIS_HOST": deps["REDIS_HOST"],
-			"SMTP_HOST": deps["SMTP_HOST"], "SMTP_PORT": deps["SMTP_PORT"],
-			"SMTP_USER": deps["SMTP_USER"], "SMTP_PASS": deps["SMTP_PASS"],
-		}, "", true},
-		{"go without smtp fails", "go", map[string]string{
-			"DATABASE_URL": deps["DATABASE_URL"], "REDIS_HOST": deps["REDIS_HOST"],
-			"MONGO_URI": deps["MONGO_URI"],
-		}, "", true},
-		{"invalid value rejected", "shadow", nil, "", true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(legacyUnset(func(key string) string {
-				if v, ok := tc.extraEnv[key]; ok {
-					return v
-				}
-				if key == "API_GO_ALERT_WORKER_MODE" {
-					return tc.mode
-				}
-				return ""
-			}))
-			if tc.wantError {
-				if err == nil {
-					t.Fatalf("want error, got cfg %+v", cfg)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-			if string(cfg.AlertWorkerMode) != tc.wantMode {
-				t.Errorf("AlertWorkerMode = %q, want %q", cfg.AlertWorkerMode, tc.wantMode)
-			}
-		})
-	}
-}
-
-func TestAlertingConfigDefaultsAndBounds(t *testing.T) {
-	cfg, err := Load(legacyUnset(func(key string) string { return "" }))
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.AlertQueueConcurrency != 4 ||
-		cfg.AlertWebhookTimeoutMs != 5_000 ||
-		cfg.AlertScanIntervalMs != 300_000 ||
-		cfg.AlertNotifyGlobalPerSec != 10 ||
-		cfg.AlertNotifyEmailPerSec != 2 ||
-		cfg.AlertNotifyWebhookPerSec != 10 ||
-		cfg.AlertNotifyPerChannelPSec != 2 ||
-		cfg.AlertNotifyLimiterTTLMs != 60_000 ||
-		cfg.BullMQNamespace != "modular" {
-		t.Fatalf("alerting defaults = %+v", cfg)
-	}
-
-	env := map[string]string{
-		"ALERT_QUEUE_CONCURRENCY":             "8",
-		"ALERT_WEBHOOK_TIMEOUT_MS":            "2500",
-		"ALERT_SCAN_INTERVAL_MS":              "60000",
-		"ALERT_NOTIFY_GLOBAL_PER_SECOND":      "0",
-		"ALERT_NOTIFY_EMAIL_PER_SECOND":       "1",
-		"ALERT_NOTIFY_WEBHOOK_PER_SECOND":     "3",
-		"ALERT_NOTIFY_PER_CHANNEL_PER_SECOND": "4",
-		"ALERT_NOTIFY_LIMITER_TTL_MS":         "120000",
-		"BULLMQ_NAMESPACE":                    "custom",
-	}
-	cfg, err = Load(legacyUnset(func(key string) string { return env[key] }))
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.AlertQueueConcurrency != 8 ||
-		cfg.AlertWebhookTimeoutMs != 2_500 ||
-		cfg.AlertScanIntervalMs != 60_000 ||
-		cfg.AlertNotifyGlobalPerSec != 0 ||
-		cfg.AlertNotifyEmailPerSec != 1 ||
-		cfg.AlertNotifyWebhookPerSec != 3 ||
-		cfg.AlertNotifyPerChannelPSec != 4 ||
-		cfg.AlertNotifyLimiterTTLMs != 120_000 ||
-		cfg.BullMQNamespace != "custom" {
-		t.Fatalf("alerting values = %+v", cfg)
-	}
-
-	for _, key := range []string{
-		"ALERT_QUEUE_CONCURRENCY",
-		"ALERT_WEBHOOK_TIMEOUT_MS",
-		"ALERT_SCAN_INTERVAL_MS",
-		"ALERT_NOTIFY_LIMITER_TTL_MS",
-	} {
-		_, err := Load(func(name string) string {
-			if name == key {
-				return "0"
-			}
-			return ""
-		})
-		if err == nil {
-			t.Errorf("%s=0 must be rejected", key)
-		}
-	}
-	if _, err := Load(func(name string) string {
-		if name == "ALERT_NOTIFY_GLOBAL_PER_SECOND" {
-			return "-1"
-		}
-		return ""
-	}); err == nil {
-		t.Error("negative per-second rate must be rejected")
-	}
-}
-
-func TestNewsSourceSchedulerDefaults(t *testing.T) {
-	cfg := loadDefaults(t)
-	if cfg.NewsSourceSchedulerMode != NewsSourceSchedulerModeGo ||
-		cfg.NewsSourceOpsMode != NewsSourceOpsModeGo {
-		t.Fatalf("modes = %q/%q, want go", cfg.NewsSourceSchedulerMode, cfg.NewsSourceOpsMode)
-	}
-	scheduler := cfg.NewsSourceScheduler
-	if !scheduler.Enabled ||
-		scheduler.BatchSize != 20 ||
-		scheduler.LockTTLMs != 120_000 ||
-		scheduler.InFlightLookbackMs != 21_600_000 ||
-		scheduler.InFlightRescheduleDelayMs != 300_000 ||
-		scheduler.JitterMaxMs != 60_000 ||
-		scheduler.MaxEnqueuePerTick != 100 ||
-		scheduler.BackpressureMaxPendingJobs != 100 ||
-		scheduler.BackpressureDelayMs != 300_000 ||
-		scheduler.FailureRecoveryDelayMs != 600_000 ||
-		scheduler.FailureMaxDelayMs != 21_600_000 ||
-		scheduler.CircuitBreakerThreshold != 3 ||
-		scheduler.CircuitBreakerBaseDelayMs != 3_600_000 ||
-		scheduler.CircuitBreakerMaxDelayMs != 86_400_000 ||
-		scheduler.SourceConcurrency != 1 {
-		t.Fatalf("scheduler defaults = %+v", scheduler)
-	}
-}
-
-// TestNewsSourceSwitchesTrimWhitespace covers the trimming rule: a whitespace-only
-// value collapses to the empty string, which now selects the go default.
-func TestNewsSourceSwitchesTrimWhitespace(t *testing.T) {
-	// Start from the resource fixture so the go default has what it needs, then
-	// give both switches a whitespace-only value.
-	env := defaultResources(t)
-	env["API_GO_NEWS_SOURCE_SCHEDULER_MODE"] = "   "
-	env["API_GO_NEWS_SOURCE_OPS_MODE"] = "   "
-	cfg, err := Load(func(key string) string { return env[key] })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.NewsSourceSchedulerMode != NewsSourceSchedulerModeGo ||
-		cfg.NewsSourceOpsMode != NewsSourceOpsModeGo {
-		t.Fatalf("modes = %q/%q, want go", cfg.NewsSourceSchedulerMode, cfg.NewsSourceOpsMode)
-	}
-}
-
-func TestNewsSourceSwitchesRejectInvalidValues(t *testing.T) {
-	for _, key := range []string{
-		"API_GO_NEWS_SOURCE_SCHEDULER_MODE",
-		"API_GO_NEWS_SOURCE_OPS_MODE",
-	} {
-		_, err := Load(func(name string) string {
-			if name == key {
-				return "canary"
-			}
-			return ""
-		})
-		if err == nil {
-			t.Fatalf("%s=canary must be rejected", key)
-		}
-		if !strings.Contains(err.Error(), key) {
-			t.Fatalf("%s error = %q, want the variable name", key, err)
-		}
-	}
-}
-
-func TestNewsSourceSchedulerSourceConcurrency(t *testing.T) {
-	for _, tc := range []struct {
-		raw  string
-		want int
-	}{
-		{"0", 1},
-		{"-2", 1},
-		{"4", 4},
-	} {
-		cfg, err := Load(legacyUnset(func(key string) string {
-			if key == "NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY" {
-				return tc.raw
-			}
-			return ""
-		}))
-		if err != nil {
-			t.Fatalf("Load() error = %v", err)
-		}
-		if cfg.NewsSourceScheduler.SourceConcurrency != tc.want {
-			t.Errorf("NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY=%q source concurrency = %d, want %d",
-				tc.raw, cfg.NewsSourceScheduler.SourceConcurrency, tc.want)
-		}
-	}
-}
-
-func TestNewsSourceSwitchesRequireTheirDependencies(t *testing.T) {
-	_, err := Load(legacyUnset(func(key string) string {
-		if key == "API_GO_NEWS_SOURCE_SCHEDULER_MODE" {
-			return "go"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
-		t.Fatalf("scheduler go error = %v, want a DATABASE_URL requirement", err)
-	}
-
-	_, err = Load(legacyUnset(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_SOURCE_OPS_MODE":
-			return "go"
-		case "DATABASE_URL":
-			return "mysql://user:pass@localhost:3306/db"
-		case "REDIS_HOST":
-			return "localhost"
-		}
-		return ""
-	}))
-	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET") {
-		t.Fatalf("ops go error = %v, want a JWT_SECRET requirement", err)
-	}
-}
-
-// TestResidualDutyModes pins the five switches: default legacy, explicit
-// legacy, go, and an invalid value that fails startup. A go value also honours
-// its resource requirements.
-func TestResidualDutyModes(t *testing.T) {
-	names := []struct {
-		key   string
-		apply func(*Config) string
-	}{
-		{"API_GO_BULLMQ_CLEANUP_MODE", func(cfg *Config) string { return string(cfg.BullmqCleanupMode) }},
-		{"API_GO_CLASSIFICATION_REVIEW_SEED_MODE", func(cfg *Config) string { return string(cfg.ClassificationReviewSeedMode) }},
-		{"API_GO_PIPELINE_RECOVERY_WRITE_MODE", func(cfg *Config) string { return string(cfg.PipelineRecoveryWriteMode) }},
-		{"API_GO_METRICS_MODE", func(cfg *Config) string { return string(cfg.MetricsMode) }},
-		{"API_GO_STARTUP_RECONCILE_MODE", func(cfg *Config) string { return string(cfg.StartupReconcileMode) }},
-	}
-	fullEnv := map[string]string{
-		"JWT_SECRET":   "secret",
-		"DATABASE_URL": "mysql://user:pass@127.0.0.1:3306/app",
-		"REDIS_HOST":   "127.0.0.1",
-		"MONGO_URI":    "mongodb://127.0.0.1:27017/app",
-	}
-	for _, name := range names {
-		name := name
-		t.Run(name.key+" default", func(t *testing.T) {
-			cfg := loadDefaults(t)
-			if got := name.apply(&cfg); got != "go" {
-				t.Fatalf("%s default = %q, want go", name.key, got)
-			}
-		})
-		t.Run(name.key+" legacy", func(t *testing.T) {
-			cfg, err := legacyOverlayLoad(t, func(key string) string {
-				if key == name.key {
-					return "legacy"
-				}
-				return ""
-			})
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-			if got := name.apply(&cfg); got != "legacy" {
-				t.Fatalf("%s = %q, want legacy", name.key, got)
-			}
-		})
-		t.Run(name.key+" go", func(t *testing.T) {
-			cfg, err := Load(legacyUnset(func(key string) string {
-				if key == name.key {
-					return "go"
-				}
-				return fullEnv[key]
-			}))
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-			if got := name.apply(&cfg); got != "go" {
-				t.Fatalf("%s = %q, want go", name.key, got)
-			}
-		})
-		t.Run(name.key+" invalid", func(t *testing.T) {
-			_, err := Load(legacyUnset(func(key string) string {
-				if key == name.key {
-					return "on"
-				}
-				return ""
-			}))
-			if err == nil || !strings.Contains(err.Error(), name.key+" must be one of legacy|go") {
-				t.Fatalf("Load() error = %v", err)
-			}
-		})
-	}
-}
-
-// TestResidualDutyModesRequireResources pins the startup requirements each go
-// mode declares: Redis for the three background units, the credentialed stack
-// for the two HTTP units, and Mongo for the pipeline writes.
-func TestResidualDutyModesRequireResources(t *testing.T) {
-	cases := []struct {
-		key  string
-		want string
-	}{
-		{"API_GO_BULLMQ_CLEANUP_MODE", "REDIS_HOST is required when API_GO_BULLMQ_CLEANUP_MODE=go"},
-		{"API_GO_CLASSIFICATION_REVIEW_SEED_MODE", "REDIS_HOST is required when API_GO_CLASSIFICATION_REVIEW_SEED_MODE=go"},
-		{"API_GO_PIPELINE_RECOVERY_WRITE_MODE", "JWT_SECRET is required when API_GO_PIPELINE_RECOVERY_WRITE_MODE=go"},
-		{"API_GO_METRICS_MODE", "JWT_SECRET is required when API_GO_METRICS_MODE=go"},
-		{"API_GO_STARTUP_RECONCILE_MODE", "REDIS_HOST is required when API_GO_STARTUP_RECONCILE_MODE=go"},
-	}
-	for _, tc := range cases {
-		_, err := Load(legacyUnset(func(key string) string {
-			if key == tc.key {
-				return "go"
-			}
-			return ""
-		}))
-		if err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Fatalf("%s error = %v, want %q", tc.key, err, tc.want)
-		}
-	}
-}
-
-func TestSituationSignalsWorkerMode(t *testing.T) {
-	deps := map[string]string{
-		"DATABASE_URL": "mysql://u:p@h:3306/db",
-		"REDIS_HOST":   "h",
-	}
-	cases := []struct {
-		name      string
-		raw       string
-		withDeps  bool
-		wantError bool
-	}{
-		{"default legacy", "", false, false},
-		{"explicit legacy", "legacy", false, false},
-		{"go requires deps", "go", false, true},
-		{"go with deps", "go", true, false},
-		{"invalid", "both", true, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(legacyUnset(func(key string) string {
-				if tc.withDeps {
-					if v, ok := deps[key]; ok {
-						return v
-					}
-				}
-				if key == "API_GO_SITUATION_SIGNALS_WORKER_MODE" {
-					return tc.raw
-				}
-				return ""
-			}))
-			if tc.wantError {
-				if err == nil {
-					t.Fatalf("want error, got %+v", cfg.SituationSignalsWorkerMode)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := SituationSignalsWorkerModeLegacy
-			if tc.raw == "go" {
-				want = SituationSignalsWorkerModeGo
-			}
-			if cfg.SituationSignalsWorkerMode != want {
-				t.Fatalf("mode = %q, want %q", cfg.SituationSignalsWorkerMode, want)
-			}
-		})
-	}
-}
-
-func TestSituationTelegramAuthMode(t *testing.T) {
-	deps := map[string]string{
-		"JWT_SECRET":                     "s",
-		"DATABASE_URL":                   "mysql://u:p@h:3306/db",
-		"REDIS_HOST":                     "h",
-		"MONGO_URI":                      "mongodb://h:27017/db",
-		"SYSTEM_SETTINGS_ENCRYPTION_KEY": "k",
-	}
-	cases := []struct {
-		name      string
-		raw       string
-		withDeps  bool
-		wantError bool
-	}{
-		{"default legacy", "", false, false},
-		{"explicit legacy", "legacy", false, false},
-		{"go requires deps", "go", false, true},
-		{"go with deps", "go", true, false},
-		{"invalid", "yes", true, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(legacyUnset(func(key string) string {
-				if tc.withDeps {
-					if v, ok := deps[key]; ok {
-						return v
-					}
-				}
-				if key == "API_GO_SITUATION_TELEGRAM_AUTH_MODE" {
-					return tc.raw
-				}
-				return ""
-			}))
-			if tc.wantError {
-				if err == nil {
-					t.Fatalf("want error, got %+v", cfg.SituationTelegramAuthMode)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := SituationTelegramAuthModeLegacy
-			if tc.raw == "go" {
-				want = SituationTelegramAuthModeGo
-			}
-			if cfg.SituationTelegramAuthMode != want {
-				t.Fatalf("mode = %q, want %q", cfg.SituationTelegramAuthMode, want)
-			}
-		})
 	}
 }

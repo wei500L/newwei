@@ -11,6 +11,7 @@ const (
 	codeBadUserInput        = "BAD_USER_INPUT"
 	codeBadRequest          = "BAD_REQUEST"
 	codeOperationResolution = "OPERATION_RESOLUTION_FAILURE"
+	codeNotSupported        = "OPERATION_NOT_SUPPORTED"
 	codePersistedNotFound   = "PERSISTED_QUERY_NOT_FOUND"
 	codePersistedNotSupport = "PERSISTED_QUERY_NOT_SUPPORTED"
 	codeQueryTooComplex     = "QUERY_TOO_COMPLEX"
@@ -133,6 +134,21 @@ func operationResolution(message string) Result {
 		Extensions: map[string]any{
 			"code": codeOperationResolution,
 			"http": map[string]any{"status": 400},
+		},
+	})
+}
+
+// operationNotSupported is the whole-operation rejection for a document whose
+// selected root, selected field, or operation kind the Go executor does not
+// own. It is a complete GraphQL HTTP response (status 200, errors only) so an
+// unregistered root is rejected before any resolver, mutation, enqueue or
+// external call runs; the runtime never falls back to the NestJS executor.
+func operationNotSupported() Result {
+	return protocolResult(http.StatusOK, nil, graphError{
+		Message: "Operation is not supported by the Go GraphQL executor",
+		Extensions: map[string]any{
+			"code": codeNotSupported,
+			"http": map[string]any{"status": http.StatusOK},
 		},
 	})
 }

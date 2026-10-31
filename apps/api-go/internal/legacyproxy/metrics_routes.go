@@ -12,9 +12,6 @@ const MetricsKey = "/api/metrics"
 // it for the CORS preflight.
 //
 // Default (empty or legacy) appends nothing.
-func WithMetrics(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithMetrics(rules []Rule) []Rule {
 	return appendExactKeyed(rules, MetricsKey, "/api/metrics", http.MethodGet)
 }

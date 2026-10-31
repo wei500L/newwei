@@ -33,7 +33,7 @@ func wireProcessedItemOutbox(
 	mongoDatabase *mongo.Database,
 	health *vectorclient.Health,
 ) (*processeditemoutbox.Scheduler, error) {
-	if cfg.ProcessedItemOutboxMode != config.ProcessedItemOutboxModeGo || !cfg.ScheduleEnabled {
+	if !cfg.ScheduleEnabled {
 		return nil, nil
 	}
 	if db == nil || redisClient == nil || mongoDatabase == nil {
