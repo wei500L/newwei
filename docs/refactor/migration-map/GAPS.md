@@ -1,8 +1,19 @@
 # 已确认缺口与待核对事项
 
+## 2026-11-01 当前源码功能缺口选批
+
+核对 main `e04fc4d8bb54596afd302a309ebc852c7676d958`；其普通 CI 41242463081 已完成，三个主要 job success、两个 regen skipped。以下两项当前实现仍有缺口，分别 reserved；没有编码交付证据，不提前关闭。其它历史 GAP 不随本次迁移收口统一关闭。
+
+| 稳定 ID / 原复核 | 当前源码证据与用户影响 | 交付范围 |
+|---|---|---|
+| `GAP-CRAWL-TABLES-001` / [EX-05](../review/crawl.md) | `internal/crawlexecution/results.go:648` 原样保存顶层 tables，缺少归一化和 media.tables 提取；读侧与 UI 期待完整维度/列/行/dataFrame 模型 | [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md)：输入到 Mongo、REST/GraphQL、采集详情 UI |
+| `GAP-MONITOR-GEOCODING-001` / [M-04](../review/situation-realtime.md) | `internal/situationmonitors/location.go` 的 geocode 固定公网 URL/UA，`cmd/api/situation_monitors.go:20` 未注入已有 geocoding client；监控地点解析绕过配置、缓存与全局限速 | [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md)：共享客户端生产接线、preview/create/update、Web 链路 |
+
+上表 Go 路径均相对 `apps/api-go/`，定位以本次核对 SHA 为准。旧 Nest 表格规则从删除前固定提交读取；不恢复 Node app，不批量改历史数据库或访问真实外部服务。
+
 ## 2026-11-01 源码退役完成后的边界
 
-main `e04fc4d8bb54596afd302a309ebc852c7676d958` 已含 #152 / #153 / #154；三个退役 task 已 merged，各最终源 head 三个普通 CI 主 job success，最新 merge CI 尚未完成，证据见 [收口记录](GO-MIGRATION-CLOSEOUT.md)。Node 后端、迁移 mode、shadow/canary 与 Nest 反代已删除；`legacyproxy` 旧包名下是实际纯 Go 路由器，不能再按目录名派“删除反代”任务。
+main `e04fc4d8bb54596afd302a309ebc852c7676d958` 已含 #152 / #153 / #154；三个退役 task 已 merged，各最终源 head 及最新 merge head 的三个普通 CI 主 job 均 success，两个 regen skipped，证据见 [收口记录](GO-MIGRATION-CLOSEOUT.md)。Node 后端、迁移 mode、shadow/canary 与 Nest 反代已删除；`legacyproxy` 旧包名下是实际纯 Go 路由器，不能再按目录名派“删除反代”任务。
 
 不统一关闭未处理的业务问题：GAP-EXCEPTION-WIRING-001 的部分自写 500/unknown/stack 仍残留；GAP-ASYNC-001 的真实多实例与外部运行证据仍缺。冻结的鉴权/OpenAPI 历史预期已与实际 Go 路由覆盖和权限结构对照，但不等于对所有权限行为做运行期验证。Prisma/seed/Node 工具是明确保留范围，不登记为源码迁移缺口。
 

@@ -12,7 +12,7 @@
 
 三个源 CI 的 `verify`、`vector-integration`、`api-go-user-settings-integration` 均 success；两个 label 门控 regen job skipped，不算通过。#152 / #153 的 main merge CI（41206440581 / 41217516053）也已 success。
 
-**最新 main merge CI**：[41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081)，head `e04fc4d8`。本次交接核对时尚未完成，不能把三个源 PR 的结果算作该 merge head 通过。下一次只需读取该 run 的真实结果；若失败，按精确 job/步骤分析，不重派已合入的三项任务。
+**最新 main merge CI**：[41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081)，精确 head `e04fc4d8bb54596afd302a309ebc852c7676d958`，2026-11-01 后续核对已 completed/success：verify、vector-integration、api-go-user-settings-integration 均 success；go-modules-regen、contract-baseline-regen skipped。这是 merge head 的独立证据，不以源 PR CI 代替。
 
 ## 已静态确认的当前事实
 
@@ -32,4 +32,4 @@
 - 本次仅静态源码/配置/任务与 GitHub 证据核对；本机未安装或运行 build/test/lint/typecheck/vet/Docker/服务，没有修改业务或真实 `.env`。
 - 规划 PR #149 尚未合并，负责发布本记录和任务事实回填；旧 main 迁移地图的 dcbe563b 覆盖数是历史快照，不应继续当作当前默认或任务占用。
 
-下一检查点只有：最新 merge SHA 的普通 CI 结果与规划文档是否进入 main。其它已知问题保留稳定 ID，用户选择后再按实际触发与完整范围派发，不机械再发一轮“迁移”。
+最新 merge SHA 的普通 CI 结果已回填；规划文档仍由 #149 发布。用户后续要求继续提示词，已根据当前源码预留 [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md) 与 [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md)，下一检查点是两项实际编码 PR/head/普通 CI，不重新派发三项退役，也不自动部署。

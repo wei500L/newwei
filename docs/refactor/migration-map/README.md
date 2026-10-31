@@ -1,10 +1,19 @@
 # 后端迁移地图
 
+## 2026-11-01 下一批：两个现存功能缺口
+
+最终 main `e04fc4d8` 的[普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 已完成：verify、vector-integration、api-go-user-settings-integration 均 success，两个 regen skipped。用户要求继续提示词，本轮核对实际源码后预留两条完整功能链，可分两个编码窗口执行：
+
+- [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md)：采集表格归一化、保存、REST/GraphQL 读取与详情 UI；[执行提示词](tasks/CRAWL-TABLE-NORMALIZATION-001.prompt.md)。
+- [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md)：监控 preview/create/update 接入系统配置、共享缓存与限速，贯通现有 UI；[执行提示词](tasks/MONITOR-GEOCODING-001.prompt.md)。
+
+两项均 reserved，尚无编码 PR/head/CI；文件所有权见 task 与[索引](tasks/README.md)。共享 main/CI 的本轮必要增量只归地理编码任务，表格任务使用既有采集 CI。不重派迁移退役，不新增部署或 Node 工具 Go 化任务；规划 PR #149 发布本轮文档。
+
 ## 2026-11-01 收口：三项退役任务均已合入
 
 - 最新源码基线 `e04fc4d8bb54596afd302a309ebc852c7676d958`：#152 契约/工具迁出、#153 Go 独立运行、#154 三个 Node 后端删除均 merged，源 head 已逐个核实 main 祖先关系；各源普通 CI 三主要 job success。完整 SHA、run 与验证边界见 [收口记录](GO-MIGRATION-CLOSEOUT.md)。
 - main 已无 `apps/api` / `apps/vector` / `apps/ais-relay` 和 shadow/canary 实现；`legacyproxy` 只是保留旧包名的纯 Go 路由器，不再向 Nest 转发。默认开发/编排/构建/CI 已使用 Go；Prisma/seed、Web 与必要 Node 工具按原范围保留。
-- 最新 main [普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 核对时尚未完成；源 PR 成功不替代 merge head。源码退役目标已落地，最终 merge CI 结果仍独立记录。
+- 最新 main [普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 已完成，精确 merge head `e04fc4d8` 三主要 job success，两个 regen skipped；源码退役与该 merge head 的 CI 分别有证据，未部署/实网验证。
 - 原三份提示词已完成，不再重复派发或按下方 reserved/planned 快照占用。GAP-EXCEPTION-WIRING-001 残留和真实多实例/外部验证边界继续保留；没有部署、真实流量或实网验证。
 - 本次只回填已核事实，不重算全域覆盖、不全文重审业务。规划 PR #149 发布本记录；下方旧日期/统计/默认/任务状态均为历史快照。
 

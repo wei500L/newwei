@@ -1,8 +1,19 @@
 # 任务认领与历史恢复索引
 
+## 2026-11-01 功能修复提示词
+
+基线 main `e04fc4d8bb54596afd302a309ebc852c7676d958`；普通 CI 41242463081 三主 job success，两个 regen skipped。发出前再次核对开放 PR，仅规划 PR #149；本轮没有创建业务 worktree/PR。两项已 reserved，尚无编码 head/CI，可分窗口执行；开工仍须刷新 main 和认领。
+
+| 任务 / 提示词 | 状态 / 分支建议 | 独占范围与并行边界 |
+|---|---|---|
+| [CRAWL-TABLE-NORMALIZATION-001](CRAWL-TABLE-NORMALIZATION-001.md) / [提示词](CRAWL-TABLE-NORMALIZATION-001.prompt.md) | **reserved**；`codex/fix-crawl-tables` | 采集表格输入、保存、读侧/GraphQL 投影与采集详情 UI/测试；不改 main/config/CI/语言资源 |
+| [MONITOR-GEOCODING-001](MONITOR-GEOCODING-001.md) / [提示词](MONITOR-GEOCODING-001.prompt.md) | **reserved**；`codex/fix-monitor-geocoding` | situationmonitors、必要 geocoding、该 main wiring、监控/既有设置 UI 与必要集成覆盖；不触及采集域 |
+
+编码窗口只更新自身 task/PR，不改共享索引/GAPS。main/CI 的本轮必要增量只归地理编码任务；发现越界需求先协调。规划文档在 #149 发布，不能把整条规划分支合入业务分支。以下各日期段落仍保留历史选批与执行事实。
+
 ## 2026-11-01 三步已完成
 
-核对 main `e04fc4d8bb54596afd302a309ebc852c7676d958`。以下源 head 均为 main 祖先，三个普通 CI 主 job 均 success，regen skipped 不算通过；最新 main CI 41242463081 尚未完成，单独记录。详情见 [收口记录](../GO-MIGRATION-CLOSEOUT.md)。
+核对 main `e04fc4d8bb54596afd302a309ebc852c7676d958`。以下源 head 均为 main 祖先，三个普通 CI 主 job 均 success，regen skipped 不算通过；最新 main CI 41242463081 亦已完成，三个主 job success，独立记录。详情见 [收口记录](../GO-MIGRATION-CLOSEOUT.md)。
 
 | 任务 | 状态 / 实际 merge | 最终源 head / CI |
 |---|---|---|
@@ -10,7 +21,7 @@
 | [GO-ONLY-RUNTIME-001](GO-ONLY-RUNTIME-001.md) | **merged**；#153 → `e72440e186ac` | `fd571dac7a09` / run 41213872179 success |
 | [GO-NODE-RETIRE-001](GO-NODE-RETIRE-001.md) | **merged**；#154 → `e04fc4d8bb54` | `44caf2e8e977` / run 41221870780 success |
 
-原提示词均已执行，不再占用待执行范围；保留历史 worktree/源分支，不自动清理。下方 reserved/planned/in_progress/pr_open 是原阶段快照；当前状态以上表为准。规划 PR #149 回填文档，不包含未派发的新业务任务。
+原三份提示词均已执行，不再占用待执行范围；保留历史 worktree/源分支，不自动清理。下方 reserved/planned/in_progress/pr_open 是原阶段快照；三项退役状态以上表为准，新功能认领见本页最上方。
 
 ## 2026-10-31 #151 合并后任务
 
