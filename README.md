@@ -38,9 +38,6 @@ flowchart TB
       web["apps/web\nNext.js 15 控制台与门户"]
       apiGo["apps/api-go\nGo 网关（REST + GraphQL + WebSocket，仓库默认）"]
       vectorGo["apps/vector-go\nGo 向量服务（Qdrant 适配层，仓库默认）"]
-      api["apps/api\nNestJS 11 API（显式 legacy 回退）"]
-      aisRelay["apps/ais-relay\nAISStream 聚合 relay（显式 legacy 回退）"]
-      vector["apps/vector\n向量服务（显式 legacy 回退）"]
     end
 
     subgraph packages["packages/*（共享包）"]
@@ -96,18 +93,18 @@ flowchart LR
   api --> s3["MinIO / S3\n:9000 :9001"]
 ```
 
-> NestJS `apps/api:4000`、Node `apps/vector:4010` 与 Node `apps/ais-relay:3004` 只在显式 legacy 回退（`pnpm dev:legacy` 或 compose `legacy-node` profile）时启动，不再属于默认链。
+> 仓库已移除 NestJS `apps/api`、Node `apps/vector` 与 Node `apps/ais-relay`。默认与唯一的运行时链即 `apps/api-go`（REST + GraphQL + WebSocket + worker）+ `apps/vector-go` + `apps/web`，AIS relay 由 `apps/api-go/cmd/ais-relay` 提供。回退旧后端依靠正常版本回滚，不再保留并行 Node 服务。
 
 ## 功能特性
 
-以下能力均可在代码中对应到 `apps/api-go/cmd/api`（默认）或 `apps/api/src/modules/*`（legacy）与 `apps/web/app/*` 的实现。
+以下能力均可在代码中对应到 `apps/api-go/cmd/api`（唯一后端）与 `apps/web/app/*` 的实现。
 
 ### 📊 新闻管道系统（采集、清洗、结构化、去重）
 
 - 新闻源聚合与预置源：`news-aggregator`（多站点适配器 + NewsNow 实时分发）
 - 抓取编排与结果存档：`crawl`（任务、重试、质量指标、媒体抓取、OPML/RSS 工具链）
 - LLM 清洗与结构化：`news-pipeline`（LiteLLM OpenAI-compatible 接口，支持摘要、要点、主题、实体等结构化产物）
-- 语义去重与检索：对接 `apps/vector`（Qdrant）并提供回填脚本 `pnpm --filter @modular/api run vector:backfill`
+- 语义去重与检索：对接 `apps/vector-go`（Qdrant）；向量回填等一次性工具由 Go 侧/共享 Mongo 工具承担，Node `vector:backfill` 已随 `apps/api` 退役
 
 ## 采集策略
 
@@ -174,7 +171,7 @@ flowchart LR
 ### 技术栈（来自 `package.json` 与代码依赖）
 
 - 前端：Next.js 15（App Router）、React 19、TypeScript、Tailwind CSS、Ant Design、Apollo Client、GraphQL Code Generator、ECharts、Three.js、TanStack Query、Zustand、NextAuth（Auth.js）
-- 后端：Go 1.x（`apps/api-go` / `apps/vector-go` / `apps/api-go/cmd/ais-relay`，仓库默认）、NestJS 11（`apps/api` 显式 legacy 回退）、GraphQL（Apollo / code-first）、OpenAPI/Swagger、Prisma（MySQL）、Mongoose（MongoDB）、BullMQ（Redis）、Socket.IO
+- 后端：Go 1.x（`apps/api-go` / `apps/vector-go` / `apps/api-go/cmd/ais-relay`，仓库默认且唯一后端）、GraphQL（Apollo / code-first）、OpenAPI/Swagger、Prisma（MySQL）、Mongoose（MongoDB）、BullMQ（Redis）、Socket.IO
 - AI/数据：LiteLLM Proxy（OpenAI-compatible 网关）、Qdrant（向量检索）、向量服务（独立内网鉴权）
 - 工具链：pnpm workspace、Turborepo、ESLint + Prettier、Commitlint（Conventional Commits）
 
@@ -219,12 +216,12 @@ pnpm db:seed
 - API 就绪探针：http://localhost:4020/api/healthz（需登录或机器令牌，返回依赖详情与版本）
 - Swagger UI：http://localhost:4020/docs
 - GraphQL Playground（开发环境）：http://localhost:4020/graphql
-- Bull Board 队列仪表盘：NestJS 的 http://localhost:4000/admin/queues（默认关闭，需 `BULL_BOARD_ENABLED=true` 与 legacy-node profile）；Go 侧的队列运维面在 http://localhost:4020/api/admin/queue-ops
+- 队列运维面：http://localhost:4020/api/admin/queue-ops（Go 侧；Bull Board 随 NestJS 一并移除）
 - Crawl4AI Dashboard：http://localhost:8082/dashboard/
 - LiteLLM Proxy（宿主机端口）：http://localhost:4001
 - MinIO S3 Endpoint：http://localhost:9000
 
-回退到 NestJS 链后，上面 4020 的四个入口改回 4000（`pnpm dev:legacy` 或 `--profile legacy-node`）。
+（NestJS 回退链与并行 Node 后端已移除；旧后端回退依靠正常版本回滚。）
 - MinIO Console：http://localhost:9001
 
 ### 方式 B：API/Web 本地跑，依赖用 Docker
@@ -248,24 +245,23 @@ pnpm db:migrate
 pnpm db:seed
 pnpm mongo:indexes
 
-# 默认链：api-go(:4020) + vector-go + web(:3000)
+# 默认（也是唯一）链：api-go(:4020) + vector-go + web(:3000)
 pnpm dev
 
-# 回退到 NestJS 链：
-# pnpm dev:legacy
+# AIS relay 单独启动（Go）：
+# pnpm dev:ais-relay
 ```
 
-`pnpm dev` / `pnpm dev:legacy` / `pnpm dev:ais-relay` 统一由 `infra/scripts/src/dev.mts` 启动。启动器从**仓库根目录**（不是当前 cwd）读取 `.env`，按 dotenv 约定让调用者已导出的环境变量优先；`go`/`legacy` 的开关与地址分别从 `infra/docker/api-go-cutover.env.sample` / `legacy-rollback.env.sample` 读取。随后分别为每个子进程设置自己的 `PORT`，不会把一个全局 `PORT` 注入所有服务。Go 进程不会自己读取根 `.env`，这是本启动器存在的原因；直接 `pnpm --filter @modular/api-go run dev` 或 `go run` 时需要调用者自己提供环境。`pnpm dev` 也不经过 Turbo，因此不存在 Turbo 的 envMode 过滤；如果手工执行 `turbo run dev`，需要显式加 `--env-mode=loose` 才能带上资源变量。
+`pnpm dev` / `pnpm dev:ais-relay` 统一由 `infra/scripts/src/dev.mts` 启动。启动器从**仓库根目录**（不是当前 cwd）读取 `.env`，按 dotenv 约定让调用者已导出的环境变量优先；从本地常量派生 API/vector/AIS/web 的调用地址与两个 Go Socket.IO 路径（不再读取任何迁移开关样例）。随后分别为每个子进程设置自己的 `PORT`，不会把一个全局 `PORT` 注入所有服务。Go 进程不会自己读取根 `.env`，这是本启动器存在的原因；直接 `pnpm --filter @modular/api-go run dev` 或 `go run` 时需要调用者自己提供环境。`pnpm dev` 也不经过 Turbo，因此不存在 Turbo 的 envMode 过滤；如果手工执行 `turbo run dev`，需要显式加 `--env-mode=loose` 才能带上资源变量。
 
 | 命令 | 实际启动 | 监听端口 | 调用地址 |
 | --- | --- | --- | --- |
 | `pnpm dev` | api-go + vector-go + web | 4020 / 4010 / 3000 | API `http://localhost:4020/api`，通知 `/socket.io-notifications`，实时 `/socket.io-realtime`，vector `http://localhost:4010`，AIS `http://localhost:3004` |
-| `pnpm dev:legacy` | Nest `api` + Node `vector` + Node `ais-relay` + web | 4000 / 4010 / 3004 / 3000 | API `http://localhost:4000/api`，两个 Socket.IO 路径 `/socket.io`，vector `http://localhost:4010`，AIS `http://localhost:3004` |
 | `pnpm dev:ais-relay` | Go `api-go/cmd/ais-relay` | 3004 | API 侧 `REALTIME_SIGNALS_AIS_BASE_URL` 指向 `http://localhost:3004` |
 
 资源要求：根 `.env` 至少要有 `JWT_SECRET`、`NEXTAUTH_SECRET`、`DATABASE_URL`（或 `MYSQL_HOST`/`MYSQL_PORT`/`MYSQL_USER`/`MYSQL_PASSWORD`/`MYSQL_DB` 全套，密码必须非空）、`MONGO_URI`、`REDIS_HOST`、`SYSTEM_SETTINGS_ENCRYPTION_KEY`；Go 默认还要求 `AISSTREAM_API_KEY`（仅 `pnpm dev:ais-relay`）和 `VECTOR_INTERNAL_TOKEN`（本地可用 `dev-token`）。`pnpm dev` 只在 `MYSQL_HOST`/`MYSQL_USER`/`MYSQL_PASSWORD`/`MYSQL_DB` 都齐全且 `DATABASE_URL` 为空时按 Nest/Prisma 的契约派生连接串；缺字段就留空，由 api-go 自己的启动校验失败，不会填假值。
 
-`pnpm dev` 与 `pnpm dev:legacy` 是互斥的两条链，不要同时运行；它们都会占用 3000/4010（legacy 还占用 4000/3004），同时启动会端口冲突。启动器只负责环境加载与进程生命周期，不执行迁移、seed、Docker、真实外部探测或任何写配置动作。
+`pnpm dev` 是唯一的本地后端链；`pnpm dev:ais-relay` 只单独启动 Go AIS relay。启动器只负责环境加载与进程生命周期，不执行迁移、seed、Docker、真实外部探测或任何写配置动作。
 
 补充说明：
 
@@ -286,7 +282,6 @@ pnpm dev
 | 命令                                                       | 说明                                                                                |
 | ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm dev`                                                 | 启动器并行启动 `apps/api-go`、`apps/vector-go`、`apps/web` 的开发服务器（仓库默认链，读取根 `.env`） |
-| `pnpm dev:legacy`                                          | 回退用：启动器并行启动 `apps/api`、`apps/vector`、`apps/ais-relay`、`apps/web`，并切回 legacy 开关/地址 |
 | `pnpm dev:ais-relay`                                       | 单独启动 Go AIS relay（`apps/api-go/cmd/ais-relay`，默认 :3004）                    |
 | `pnpm build`                                               | Turbo 构建所有包                                                                    |
 | `pnpm lint` / `pnpm typecheck`                             | 汇总执行 lint 与类型检查（无测试套件，验证依赖静态审查）                            |
@@ -294,7 +289,7 @@ pnpm dev
 | `pnpm db:seed`                                             | 根据 `.env` 的 `SEED_*` 初始化组织、角色与管理员账号                                |
 | `pnpm mongo:indexes`                                       | 显式补齐 Mongo 运行时索引（当前包含 `ProcessedItem` 与 `TaskLog` 热路径索引）       |
 | `pnpm docker:up` / `pnpm docker:logs` / `pnpm docker:down` | 本地完整栈（Docker Compose；默认 api-go / vector-go / ais-relay-go）                |
-| `pnpm codegen`                                             | 运行 GraphQL Code Generator（转发 `apps/web` 的 `generate`，schema 取自 `apps/api/schema.gql` 快照） |
+| `pnpm codegen`                                             | 运行 GraphQL Code Generator（转发 `apps/web` 的 `generate`，schema 取自 Go 权威 SDL `apps/api-go/internal/graphqlread/schema/schema.gql`） |
 
 ## 项目结构
 
@@ -303,12 +298,9 @@ pnpm dev
 ```text
 .
 ├─ apps/
-│  ├─ api-go/              Go 网关（REST / GraphQL / WS，仓库默认）
+│  ├─ api-go/              Go 网关（REST / GraphQL / WS / worker，仓库默认且唯一后端）
 │  ├─ vector-go/           Go 向量服务（Qdrant 适配层，仓库默认）
-│  ├─ api/                 NestJS API（显式 legacy 回退）
-│  ├─ web/                 Next.js 控制台与门户（App Router）
-│  ├─ vector/              向量服务（显式 legacy 回退）
-│  └─ ais-relay/           AISStream relay（显式 legacy 回退）
+│  └─ web/                 Next.js 控制台与门户（App Router）
 ├─ packages/
 │  ├─ config/              ESLint/TSConfig/Prettier/Commitlint 预设 + RBAC 种子
 │  ├─ db/                  Prisma schema、迁移、seed 脚本
@@ -330,13 +322,12 @@ pnpm dev
 
 关键入口文件：
 
-- `apps/api-go/cmd/api/main.go`：仓库默认 Go 网关入口（REST / GraphQL / WebSocket / worker 接线）
-- `apps/vector-go/main.go`：仓库默认 Go 向量服务入口
-- `apps/api/src/main.ts`：NestJS legacy API 入口（仅显式回退）
-- `apps/api/src/graphql/graphql.module.ts`：GraphQL code-first 生成 `apps/api/schema.gql`，并配置复杂度/深度限制
-- `apps/ais-relay/src/index.ts`：Node AISStream relay（显式 legacy 回退）
+- `apps/api-go/cmd/api/main.go`：Go 网关入口（REST / GraphQL / WebSocket / worker 接线）
+- `apps/api-go/internal/graphqlread/schema/schema.gql`：权威 GraphQL SDL（Go 执行器 + Web codegen 共用）
+- `apps/vector-go/main.go`：Go 向量服务入口
+- `apps/api-go/cmd/ais-relay`：Go AIS relay 入口
 - `apps/web/app/`：Next.js App Router 路由组（`(app)` 控制台、`(portal)` 门户、`(reader)` 阅读器、`(auth)` 登录）
-- `infra/scripts/src/dev.mts`：`pnpm dev` / `dev:legacy` / `dev:ais-relay` 的最小环境加载与进程启动器
+- `infra/scripts/src/dev.mts`：`pnpm dev` / `dev:ais-relay` 的最小环境加载与进程启动器
 - `infra/docker/docker-compose.yml`：本地完整栈服务定义与端口映射
 - `config/news-pipeline.config.yaml`：新闻清洗管道配置（本地）
 - `config/news-pipeline.config.docker.yaml`：新闻清洗管道配置（Docker）
@@ -345,9 +336,9 @@ pnpm dev
 
 ### 环境变量文件分层
 
-- 根目录 `.env`：主配置来源；`pnpm dev` / `pnpm dev:legacy` / `pnpm dev:ais-relay` 由 `infra/scripts/src/dev.mts` 从仓库根读取，Web 的 `next.config.mjs` 也会读取；同时用于 `pnpm db:migrate` / `pnpm db:seed` 等宿主机脚本
-- `apps/api/.env`、`apps/web/.env`：可选覆盖层；仅在你需要给单个应用覆盖根目录 `.env` 的值时再创建
-- `infra/docker/.env`：用于 Docker Compose（服务间访问使用容器域名如 `mysql`、`redis`、`api`）
+- 根目录 `.env`：主配置来源；`pnpm dev` / `pnpm dev:ais-relay` 由 `infra/scripts/src/dev.mts` 从仓库根读取，Web 的 `next.config.mjs` 也会读取；同时用于 `pnpm db:migrate` / `pnpm db:seed` 等宿主机脚本
+- `apps/web/.env`：可选覆盖层；仅在你需要给单个应用覆盖根目录 `.env` 的值时再创建
+- `infra/docker/.env`：用于 Docker Compose（服务间访问使用容器域名如 `mysql`、`redis`、`api-go`）
 
 数据源约定：
 
@@ -367,8 +358,11 @@ pnpm --filter infra-scripts run env:check
 - 数据库：`DATABASE_URL`（可选，宿主机优先）、`MYSQL_*`、`MONGO_URI`、`REDIS_*`
 - 登录与会话：`JWT_SECRET`、`NEXTAUTH_SECRET`、`NEXTAUTH_URL`。`NEXTAUTH_SECRET` 只在运行时注入（compose `env_file`），不要作为 Docker build ARG，以免进入 `docker history`
 - Web ↔ API：`NEXT_PUBLIC_API_BASE_URL`（浏览器访问 API）、`API_BASE_URL`（服务端访问 API，可选）
-- API 默认链（仓库默认）：`API_GO_HOST_PORT`（Docker 宿主发布端口，默认 4020）、`API_BASE_URL=http://localhost:4020`（宿主）/`http://api-go:4020`（容器）、`NEXT_PUBLIC_API_BASE_URL=http://localhost:4020/api`、两个 Go Socket.IO 路径、`API_GO_LEGACY_FALLBACK_MODE=reject`；全部 136 个业务开关默认 `go`。本地 `pnpm dev` 与完整回退见上方「方式 B」和 `infra/docker/legacy-rollback.env.sample`
-- 本地开发端口（仅 `pnpm dev` 启动器）：`DEV_GO_API_PORT`（默认 4020）、`DEV_LEGACY_API_PORT`（默认 4000）、`DEV_VECTOR_PORT`（默认 4010）、`DEV_WEB_PORT`（默认 3000）；`AIS_RELAY_PORT`（默认 3004）同时用于 `pnpm dev:ais-relay`。启动器会把每个值只注入对应子进程的 `PORT`，并根据实际端口派生 API/vector/AIS 地址与 `NEXTAUTH_URL`/`CORS_ORIGIN`
+- 后端链（唯一）：`API_GO_HOST_PORT`（Docker 宿主发布端口，默认 4020）、`API_BASE_URL=http://localhost:4020`（宿主）/`http://api-go:4020`（容器）、`NEXT_PUBLIC_API_BASE_URL=http://localhost:4020/api`、两个 Go Socket.IO 路径。Go 运行时不再读取任何 `API_GO_*_MODE` / legacy / shadow / canary 字段；保留的真实执行门是 `SCHEDULE_ENABLED` / `BULLMQ_WORKERS_ENABLED` / `WS_REDIS_ADAPTER_ENABLED` / `GRAPHQL_SUBSCRIPTION_BUS`
+- 本地开发端口（仅 `pnpm dev` 启动器）：`DEV_GO_API_PORT`（默认 4020）、`DEV_VECTOR_PORT`（默认 4010）、`DEV_WEB_PORT`（默认 3000）；`AIS_RELAY_PORT`（默认 3004）同时用于 `pnpm dev:ais-relay`。启动器会把每个值只注入对应子进程的 `PORT`，并根据实际端口派生 API/vector/AIS 地址与 `NEXTAUTH_URL`/`CORS_ORIGIN`
+
+> 说明：下面按功能列出的 `API_GO_*_MODE` 开关是迁移批次的历史记录，**现已失效**——Go 运行时始终拥有这些行为，不再读取任何 mode 开关；保留这些段落仅作迁移基线历史（默认值、回退说明均不再适用）。
+
 - NewsNow 热点与推荐（Go）：`API_GO_NEWSNOW_HOTTEST_MODE`（默认 `legacy`；`go` 时 `GET /api/news-aggregator/hottest-analysis` 与 `GET /api/news-aggregator/recommended` 由 Go 计算并返回，要求 `JWT_SECRET`/`DATABASE_URL`/`REDIS_HOST`/`MONGO_URI` 与既有 LiteLLM 网关配置；有 `items.write` 的调用者会触发自动导入）、`API_GO_NEWSNOW_BACKGROUND_MODE`（默认 `legacy`；`go` 时 Go 运行每 10 分钟热点分析与每分钟来源预热，NestJS 两个 Cron 在领取时间片/加锁前返回；要求 `DATABASE_URL`/`REDIS_HOST`/`MONGO_URI`，Nest 与 Go 都读取）。两侧共用同一组 `newsnow:hottest:*` 缓存、`lock:` 锁和 `cron:newsnow-*` 时间片，可互读；切换先 api 后 api-go，回滚按相反顺序。注意：来源预热读取的是当前进程中活跃的 socket 来源集合（NewsNow WebSocket 仍由 NestJS 承载时 Go 侧集合为空），因此 `API_GO_NEWSNOW_BACKGROUND_MODE=go` 应随 WebSocket 推送一并切换
 - 新闻事件聚类补救与指标关联刷新（四个独立开关，默认 `legacy`，只接受空串/`legacy`/`go`，非法值启动失败）：`API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE`（手动 LLM 补救入队）、`API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE`（BullMQ worker、每 5 分钟扫描与卡住分组回收；Nest 也读取，`go` 时 Nest 不创建 Worker 且扫描定时任务在加锁前返回）、`API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE`（`refreshNewsIndicatorAssociations` mutation）、`API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE`（每 6 小时刷新；Nest 也读取，`go` 时在领取时间片前返回）。切换 worker 执行权先改 `api` 再改 `api-go`，回退按相反顺序；队列任务格式两边一致，已写入数据不回滚
 - 归档准备 worker：`API_GO_ARCHIVE_PREPARATION_WORKER_MODE`（默认 `legacy`，只接受空串/`legacy`/`go`，非法值启动失败）。`go` 时 Go 消费 `archivePreparation` 队列（并发 1），Nest 的 `ArchivePreparationProcessor` 不创建 Worker、不注册 failed 监听；要求 `DATABASE_URL`、`REDIS_HOST`、`MONGO_URI` 与 `SYSTEM_SETTINGS_ENCRYPTION_KEY`。切换先改 `api` 再改 `api-go`，回退按相反顺序；队列任务、分类结果与 `archive:preparation:status:*` 记录格式两边一致。Go 修复了无法补齐展示信号的文章导致同一任务无限重扫的问题（任务内延续扫描游标）
@@ -394,7 +388,7 @@ pnpm --filter infra-scripts run env:check
 - LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MASTER_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`。Docker 栈中 `LITELLM_MASTER_KEY` 必填（`openssl rand -hex 32`），空值时代理直接退出
 - Docker 端口绑定：`DOCKER_PUBLISH_HOST`（默认 `127.0.0.1`，仅本机可达；需要局域网访问时设为 `0.0.0.0`）
 - 向量：`VECTOR_SERVICE_ENABLED`、`VECTOR_SERVICE_BASE_URL`、`VECTOR_INTERNAL_TOKEN`、`QDRANT_URL`
-- 实时信号：`REALTIME_SIGNALS_AIS_BASE_URL`、`REALTIME_SIGNALS_AIS_SHARED_SECRET`（AIS relay 访问地址与 Bearer 鉴权），`AISSTREAM_API_KEY`、`AIS_RELAY_SHARED_SECRET`、`AIS_RELAY_PORT`、`AISSTREAM_URL`、`AIS_RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS`、`AIS_RELAY_HEALTH_STALE_MESSAGES_MS`（本仓库内置 `apps/ais-relay` 服务，上游覆盖与降级阈值），`REALTIME_SIGNALS_OPENSKY_BASE_URL`、`REALTIME_SIGNALS_OPENSKY_TOKEN_URL`、`REALTIME_SIGNALS_OPENSKY_CLIENT_ID`、`REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET`（OpenSky 飞行数据源），`REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET`、`REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_DAY_START_HKT`、`REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT`、`REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT`、`REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT`（OpenSky credits 预算与香港时间日夜调度），以及 `REALTIME_SIGNALS_ACLED_USERNAME`、`REALTIME_SIGNALS_ACLED_PASSWORD`、`REALTIME_SIGNALS_ACLED_CLIENT_ID`（自动刷新 ACLED token）
+- 实时信号：`REALTIME_SIGNALS_AIS_BASE_URL`、`REALTIME_SIGNALS_AIS_SHARED_SECRET`（AIS relay 访问地址与 Bearer 鉴权），`AISSTREAM_API_KEY`、`AIS_RELAY_SHARED_SECRET`、`AIS_RELAY_PORT`、`AISSTREAM_URL`、`AIS_RELAY_HEALTH_NO_MESSAGES_AFTER_CONNECT_MS`、`AIS_RELAY_HEALTH_STALE_MESSAGES_MS`（AIS relay 上游覆盖与降级阈值；实现为 Go `apps/api-go/cmd/ais-relay`），`REALTIME_SIGNALS_OPENSKY_BASE_URL`、`REALTIME_SIGNALS_OPENSKY_TOKEN_URL`、`REALTIME_SIGNALS_OPENSKY_CLIENT_ID`、`REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET`（OpenSky 飞行数据源），`REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET`、`REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_DAY_START_HKT`、`REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT`、`REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT`、`REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT`（OpenSky credits 预算与香港时间日夜调度），以及 `REALTIME_SIGNALS_ACLED_USERNAME`、`REALTIME_SIGNALS_ACLED_PASSWORD`、`REALTIME_SIGNALS_ACLED_CLIENT_ID`（自动刷新 ACLED token）
 - 助手安全：`ASSISTANT_GUARDRAILS_ENABLED`、`ASSISTANT_GUARDRAILS`
 - 助手额度：`ASSISTANT_ORG_SUBMIT_LIMIT_PER_HOUR`、`ASSISTANT_ORG_MAX_IN_FLIGHT`、`ASSISTANT_ORG_MONTHLY_TOKEN_BUDGET`
 - 助手执行权（提交/删除 Mutation）：`API_GO_GRAPHQL_ASSISTANT_WRITE_MODE`（`legacy` 默认；`go` 时四个 assistant Mutation 由 Go 执行，要求 JWT/MySQL/Redis/Mongo；回滚改回 `legacy`）
@@ -407,7 +401,7 @@ pnpm --filter infra-scripts run env:check
 
 ## AIS Relay
 
-仓库默认 AIS relay 是 `apps/api-go/cmd/ais-relay`（compose 服务 `ais-relay-go`，容器端口 3004、宿主发布 3005）。Node `apps/ais-relay` 只保留为显式 legacy 回退（`legacy-node` profile）。如果只想构建或排障默认 Go relay：
+仓库 AIS relay 是 `apps/api-go/cmd/ais-relay`（compose 服务 `ais-relay-go`，容器端口 3004、宿主发布 3005）。如果只想构建或排障 Go relay：
 
 ```bash
 docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml build ais-relay-go
@@ -423,15 +417,14 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml u
 - `/health` 的 HTTP 200 不代表运行态健康，真正状态看响应体里的 `status`；`degraded` 仍表示上游或解析质量问题，但不再阻塞 `api` 启动。
 - 如果需要做确定性 smoke test，可以用 `AISSTREAM_URL` 把上游切到本地 mock WebSocket。
 
-详细接口、降级原因码和环境变量说明见 [apps/api-go/cmd/ais-relay](./apps/api-go/cmd/ais-relay) 与 [apps/ais-relay/README.md](./apps/ais-relay/README.md)（后者是 legacy Node 版本）。
+详细接口、降级原因码和环境变量说明见 [apps/api-go/cmd/ais-relay](./apps/api-go/cmd/ais-relay)。
 
 ## api-go 主入口（Go-批2C · 批3A 起 onboarding 真实接管 · 批3B 起 user-settings 只读域接管）
 
-`apps/api-go` 是主后端的 Go 网关（Strangler Fig），**现在是仓库默认后端**：136 个业务 `API_GO_*_MODE` 默认 `go`，`API_GO_LEGACY_FALLBACK_MODE` 默认 `reject`，未匹配路由直接按 NestJS 全局异常过滤器的 404 响应，不会暗中转发 NestJS。NestJS `apps/api`、Node `apps/vector`、Node `apps/ais-relay` 只保留为显式 legacy 回退。
+`apps/api-go` 是唯一后端（Go 网关，REST + GraphQL + WebSocket + worker）。NestJS `apps/api`、Node `apps/vector`、Node `apps/ais-relay` 已删除；Go 运行时不再读取任何 `API_GO_*_MODE`，未匹配路由返回普通 404。
 
 ```text
-默认（全 Go）：Web → api-go:4020（本地 pnpm dev / Docker api-go:4020）
-回退（显式）：  Web → api:4000（pnpm dev:legacy 或 compose legacy-node profile）
+唯一链：Web → api-go:4020（本地 pnpm dev / Docker api-go:4020）
 ```
 
 ### Docker 默认启动（无需 profile）
@@ -440,9 +433,9 @@ docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml u
 docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up -d api-go
 ```
 
-api-go 容器（distroless nonroot，端口 4020，healthcheck 为 `/api-go healthcheck` 子命令）启动前等待一次性的 `migrate` 与 `mongo-indexes` 服务成功，并依赖同一真实 MySQL / Redis / Mongo；`LEGACY_API_URL=http://api:4000` 只在显式 proxy 回退时使用。`CANARY_PERCENT=0`，`SHADOW_DEBUG_BODY_LOG=false`。
+api-go 容器（distroless nonroot，端口 4020，healthcheck 为 `/api-go healthcheck` 子命令）启动前等待一次性的 `migrate` 与 `mongo-indexes` 服务成功，并依赖同一真实 MySQL / Redis / Mongo。
 
-### 切流（历史阶段的操作路径）
+### 切流（历史阶段记录；并行 Node 已移除）
 
 ```text
 Web → api-go:4020 → NestJS api:4000（仅 legacy / shadow 单元）
@@ -453,13 +446,13 @@ Web → api-go:4020 → NestJS api:4000（仅 legacy / shadow 单元）
 1. 服务端：`infra/docker/.env` 中 `API_BASE_URL=http://api-go:4020`，然后 `docker compose ... up -d web`（运行期变量，无需重建镜像；web 启动等待会自动探测 `http://api-go:4020/api/healthz/live`）。
 2. 浏览器端：`NEXT_PUBLIC_API_BASE_URL=http://<host>:4020/api`（构建期内联——需以该构建参数重建 web 镜像）。
 
-### 回滚到 NestJS
+### 回滚
 
-完整回退必须同时改服务集合、地址、Socket.IO 路径和 137 项开关：本地用 `pnpm dev:legacy`；容器用 `infra/docker/legacy-rollback.override.yml` + `infra/docker/legacy-rollback.env.sample` + `--profile legacy-node`（三件一起用）。只把 `API_BASE_URL` 指回 NestJS 或只打开 profile 都会留下分叉。写入仍是原来的 `UserSetting` 表和八个 key，没有第二份存储。
+旧 Node 后端与 legacy override 已删除；回退依赖正常版本回滚（重新部署上一版 Go 镜像 / Git 版本）。不再保留 `pnpm dev:legacy`、`legacy-node` profile 或 `legacy-rollback.*`。
 
 ### 流量去向（默认）
 
-默认由 api-go 处理全部已迁移业务路由；`API_GO_LEGACY_FALLBACK_MODE=reject` 对未匹配路由返回 NestJS 全局异常过滤器形状的 404。两个 Socket.IO 路径分别由 Go 的 `/socket.io-notifications` 与 `/socket.io-realtime` 提供，Web 构建值必须与 `API_GO_NOTIFICATIONS_SOCKET_MODE=go` / `API_GO_REALTIME_SOCKET_MODE=go` 一致。canary 未激活（`CANARY_PERCENT` 固定 0）。
+默认由 api-go 处理全部业务路由，未匹配路由返回普通 404。两个 Socket.IO 路径分别由 Go 的 `/socket.io-notifications` 与 `/socket.io-realtime` 提供，Web 构建值必须与之一致。
 
 ### Go 侧依赖与实时事件桥
 
@@ -536,10 +529,8 @@ api-go 执行信号 worker 时通过 Redis 发布 `situation-monitor:signals:eve
 ### GraphQL Schema 与 Codegen
 
 ```bash
-# 从运行中的 API 拉取 schema（或使用 apps/api/schema.gql 文件）
-pnpm --filter @modular/api run generate:schema
-
-# Web 端生成 types/hooks（默认使用 apps/api/schema.gql；Docker 下可设置 GRAPHQL_SCHEMA_URL）
+# Go 权威 SDL 已提交：apps/api-go/internal/graphqlread/schema/schema.gql
+# Web 端生成 types/hooks（默认使用该 Go SDL；Docker/CI 下可设置 GRAPHQL_SCHEMA_URL）
 pnpm --filter @modular/web run generate
 ```
 
@@ -557,10 +548,9 @@ pnpm docker:down
 端口速查（默认绑定 `127.0.0.1`，浏览器仍用 `http://localhost:<port>`）：
 
 - `3000`：Web
-- `4020`：Go API Gateway（api-go，仓库默认）
-- `4000`：NestJS API（仅 `legacy-node` profile / `pnpm dev:legacy`）
-- `4011`：Go Vector Service 的宿主发布端口（容器内 4010；legacy Node vector 使用 4010）
-- `3005`：Go AIS relay 的宿主发布端口（容器内 3004；legacy Node relay 使用 3004）
+- `4020`：Go API Gateway（api-go）
+- `4011`：Go Vector Service 的宿主发布端口（容器内 4010）
+- `3005`：Go AIS relay 的宿主发布端口（容器内 3004）
 - `3306`：MySQL
 - `27017`：MongoDB
 - `6379`：Redis

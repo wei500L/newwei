@@ -1,8 +1,8 @@
-# api-go —— 主后端 Go 网关（仓库默认）
+# api-go —— 主后端 Go 网关（仓库唯一后端）
 
-NestJS `apps/api` 的渐进替代入口，**现在就是仓库默认后端**：136 个业务 `API_GO_*_MODE` 未设置时取 `go`，`API_GO_LEGACY_FALLBACK_MODE` 未设置时取 `reject`——未被任何规则匹配的请求直接按 NestJS 全局异常过滤器的 404 响应，不会暗中转发给 NestJS。NestJS `apps/api` 只作为显式回退保留（compose 的 `legacy-node` profile、`pnpm dev:legacy`）。
+本服务是仓库**唯一**的 HTTP 网关：NestJS `apps/api` 已随 GO-NODE-RETIRE-001 删除，所有业务路由都由 Go 直接响应，未匹配路由返回普通 404。Go 运行时**不再读取任何 `API_GO_*_MODE` 开关**——每个迁移单元始终启用；保留的运行时执行门是 `SCHEDULE_ENABLED` / `BULLMQ_WORKERS_ENABLED` / `WS_REDIS_ADAPTER_ENABLED` / `GRAPHQL_SUBSCRIPTION_BUS`。
 
-下文各段保留迁移批次的历史说明（"默认 legacy"是当时的事实），当前默认以 `config.go` 的解析分支与 `docs/refactor/cutover/` 为准。回退见 `infra/docker/legacy-rollback.override.yml` 与 `infra/docker/legacy-rollback.env.sample`；四态路由表语义见 `docs/refactor/api-go-four-mode.md`。
+下文各段保留迁移批次的历史说明（"默认 legacy"、"切换/回滚开关"是当时的事实；删除 Node 后端后这些 mode 开关已失效）。当前行为以 `config.go` 与 `docs/refactor/cutover/` 的语义为准；回退旧后端依靠正常版本回滚，不再保留并行 Node 服务或 legacy override。
 
 Go-批3B 起，**user-settings 六个只读 GET** 在 pilot 中由统一 Go handler 接管（`API_GO_USER_SETTINGS_READ_MODE=go`）。Go-批3C 起，**同一六个 PUT** 在 `API_GO_USER_SETTINGS_WRITE_MODE=go` 时由 Go 写入现有 `UserSetting` 并重读返回；该变量默认 `legacy`，且 `go` 要求读模式同为 `go`。登录、refresh、logout、MFA、OIDC、机器令牌仍是 NestJS。
 
@@ -64,16 +64,7 @@ curl http://localhost:4020/api/healthz      # 认证探针：需登录或机器�
 
 > 以上直接命令不会读取仓库根 `.env`。正常本地开发从仓库根执行 `pnpm dev`（`infra/scripts/src/dev.mts` 负责加载 `.env`、派生 `DATABASE_URL`、注入每个子进程的 `PORT` 并转发信号）；只有直接 `go run` 时才需要自行导出这些变量。
 
-回退到纯代理（NestJS 承载全部业务路由）需要**显式**给出旧值——省略变量不再等于 legacy：
-
-```bash
-API_GO_LEGACY_FALLBACK_MODE=proxy \
-  + 134 个业务开关逐个设为 legacy，另把 API_GO_ONBOARDING_MODE 与
-    API_GO_USER_SETTINGS_READ_MODE 设为各自合法的 shadow
-    （完整清单见 infra/docker/legacy-rollback.env.sample）
-```
-
-只设 `API_GO_LEGACY_FALLBACK_MODE=proxy` 而业务开关仍为默认 `go` 时，代理模式不会生效在任何已接管路由上。
+旧 NestJS 后端与 `API_GO_*_MODE` 回退已随 GO-NODE-RETIRE-001 删除；回退旧行为依靠正常版本回滚，不再有 proxy / legacy / shadow 开关。
 
 ## 生产容器与真实入口（Go-批2C）
 

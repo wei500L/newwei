@@ -19,7 +19,7 @@ import { runChildren } from "../../../infra/scripts/src/dev-process";
  * tests feed that file into the same resolver the `pnpm dev` CLI uses and assert
  * the resolved child environments, ports and addresses -- not source text. The
  * process-lifecycle cases use local `node -e` children only; they never start
- * Go, Nest, Docker or any network service.
+ * Go, Docker or any network service.
  */
 
 const repoRoot = path.resolve(process.cwd(), "../..");
@@ -50,17 +50,11 @@ describe("local dev launcher configuration", () => {
     ).toBe("/tmp/example/newwei");
   });
 
-  it("keeps the shipped .env.example on the all-Go default", () => {
+  it("keeps the shipped .env.example duplicate-free and free of migration modes", () => {
     expect(findDuplicateEnvKeys(exampleText)).toEqual([]);
-    const modes = modeEntries(exampleEnv);
-    expect(modes.API_GO_LEGACY_FALLBACK_MODE).toBe("reject");
-    for (const [key, value] of Object.entries(modes)) {
-      if (key === "API_GO_LEGACY_FALLBACK_MODE") {
-        continue;
-      }
-      expect(value, key).toBe("go");
-    }
-    expect(exampleEnv.CANARY_PERCENT).toBe("0");
+    // The Go gateway no longer reads any API_GO_*_MODE switch, so the shipped
+    // sample must not carry any.
+    expect(modeEntries(exampleEnv)).toEqual({});
     expect(exampleEnv.API_BASE_URL).toBe("http://localhost:4020");
     expect(exampleEnv.NEXT_PUBLIC_API_BASE_URL).toBe(
       "http://localhost:4020/api",
@@ -75,28 +69,6 @@ describe("local dev launcher configuration", () => {
     expect(exampleEnv.REALTIME_SIGNALS_AIS_BASE_URL).toBe(
       "http://localhost:3004",
     );
-  });
-
-  it("keeps both checked-in mode samples complete and duplicate-free", () => {
-    const goSampleText = readFileSync(
-      path.join(repoRoot, "infra", "docker", "api-go-cutover.env.sample"),
-      "utf8",
-    );
-    const legacySampleText = readFileSync(
-      path.join(repoRoot, "infra", "docker", "legacy-rollback.env.sample"),
-      "utf8",
-    );
-    expect(findDuplicateEnvKeys(goSampleText)).toEqual([]);
-    expect(findDuplicateEnvKeys(legacySampleText)).toEqual([]);
-
-    const goModes = modeEntries(parseEnvText(goSampleText));
-    const legacyModes = modeEntries(parseEnvText(legacySampleText));
-    expect(Object.keys(goModes)).toHaveLength(137);
-    expect(Object.keys(legacyModes)).toHaveLength(137);
-    expect(goModes.API_GO_LEGACY_FALLBACK_MODE).toBe("reject");
-    expect(legacyModes.API_GO_LEGACY_FALLBACK_MODE).toBe("proxy");
-    expect(legacyModes.API_GO_ONBOARDING_MODE).toBe("shadow");
-    expect(legacyModes.API_GO_USER_SETTINGS_READ_MODE).toBe("shadow");
   });
 
   it("starts only the Go chain on independent ports and derives DATABASE_URL", () => {
@@ -131,15 +103,9 @@ describe("local dev launcher configuration", () => {
     expect(apiGo.env.REALTIME_SIGNALS_AIS_BASE_URL).toBe(
       "http://localhost:3004",
     );
-
-    for (const [key, value] of Object.entries(modeEntries(apiGo.env))) {
-      expect(value, key).toBe(
-        key === "API_GO_LEGACY_FALLBACK_MODE" ? "reject" : "go",
-      );
-    }
   });
 
-  it("lets an explicitly exported variable win over .env and the mode overlay", () => {
+  it("lets an explicitly exported variable win over .env", () => {
     const plan = buildDevPlan({
       mode: "go",
       repoRoot,
@@ -192,49 +158,6 @@ describe("local dev launcher configuration", () => {
     expect(web.env.NEXTAUTH_URL).toBe("http://localhost:3100");
     expect(apiGo.env.CORS_ORIGIN).toBe("http://localhost:3100");
     expect(web.args).toEqual(["run", "dev", "--", "--port", "3100"]);
-  });
-
-  it("switches the whole process set and every switch for dev:legacy", () => {
-    const plan = buildDevPlan({
-      mode: "legacy",
-      repoRoot,
-      fileEnv: exampleEnv,
-      processEnv: {},
-    });
-
-    expect(plan.children.map((child) => child.name)).toEqual([
-      "api",
-      "vector",
-      "ais-relay",
-      "web",
-    ]);
-    const [api, vector, aisRelay, web] = plan.children;
-    if (!api || !vector || !aisRelay || !web) {
-      throw new Error("expected four legacy-chain children");
-    }
-    expect(api.env.PORT).toBe("4000");
-    expect(vector.env.PORT).toBe("4010");
-    expect(aisRelay.env.PORT).toBe("3004");
-    expect(web.env.PORT).toBe("3000");
-    expect(api.env.API_BASE_URL).toBe("http://localhost:4000");
-    expect(web.env.NEXT_PUBLIC_API_BASE_URL).toBe(
-      "http://localhost:4000/api",
-    );
-    expect(web.env.NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH).toBe("/socket.io");
-    expect(web.env.NEXT_PUBLIC_REALTIME_SOCKET_PATH).toBe("/socket.io");
-
-    const modes = modeEntries(api.env);
-    expect(modes.API_GO_LEGACY_FALLBACK_MODE).toBe("proxy");
-    expect(modes.API_GO_ONBOARDING_MODE).toBe("shadow");
-    expect(modes.API_GO_USER_SETTINGS_READ_MODE).toBe("shadow");
-    const legacyModes = Object.entries(modes).filter(
-      ([key, value]) =>
-        key !== "API_GO_LEGACY_FALLBACK_MODE" &&
-        key !== "API_GO_ONBOARDING_MODE" &&
-        key !== "API_GO_USER_SETTINGS_READ_MODE" &&
-        value === "legacy",
-    );
-    expect(legacyModes).toHaveLength(134);
   });
 
   it("starts only the Go AIS relay on the port the API will call", () => {

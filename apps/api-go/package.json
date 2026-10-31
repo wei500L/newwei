@@ -2,7 +2,7 @@
   "name": "@modular/api-go",
   "version": "0.1.0",
   "private": true,
-  "description": "Primary Go backend gateway (the repository default; NestJS app stays available under the legacy-node profile)",
+  "description": "Primary Go backend gateway (the repository's only backend; the former NestJS app has been removed)",
   "scripts": {
     "build": "go build ./...",
     "dev": "go run ./cmd/api",

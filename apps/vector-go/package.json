@@ -2,7 +2,7 @@
   "name": "@modular/vector-go",
   "version": "0.1.0",
   "private": true,
-  "description": "Go vector service (contract-equivalent port of apps/vector; the repository default)",
+  "description": "Go vector service (the repository's only vector backend; the former Node apps/vector has been removed)",
   "scripts": {
     "build": "go build ./...",
     "dev": "go run .",
