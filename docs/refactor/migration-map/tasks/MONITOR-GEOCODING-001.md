@@ -1,6 +1,6 @@
 # MONITOR-GEOCODING-001 · 监控地点解析接入系统地理编码
 
-- 状态：`in_progress`；2026-11-01 已提供[执行提示词](MONITOR-GEOCODING-001.prompt.md)，独立 worktree 实现中，待 PR/head/CI 证据。
+- 状态：`pr_open`；[PR #156](https://github.com/wei500L/newwei/pull/156) 已创建 Ready，实现 head `26e40a78601200c8e43ef7e917388ebb3df11f2b`；普通 CI 以该 PR 最终 head 的 run 为准。
 - 缺口：`GAP-MONITOR-GEOCODING-001`，对应[态势复核 M-04](../../review/situation-realtime.md)。
 - 核对基线：main `e04fc4d8bb54596afd302a309ebc852c7676d958`；[普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 三主 job success，两个 regen skipped。开工重新 fetch 并检查认领。
 - 分支建议：`codex/fix-monitor-geocoding`；已创建独立工作树 `/Users/oo/project/newwei-monitor-geocoding`（基于 `e04fc4d8`），本机仅静态审查与 gofmt。

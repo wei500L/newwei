@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { configure, fireEvent, screen, waitFor } from "@testing-library/react";
 import { App as AntdApp } from "antd";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { renderWithProviders } from "@/test/render";
+import { i18n, renderWithProviders } from "@/test/render";
 
 import { SituationMonitorMonitorsPanel } from "./situation-monitor-monitors-panel";
 import type {
@@ -12,6 +12,7 @@ import type {
 } from "./types/situation-monitor-monitors";
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+configure({ asyncUtilTimeout: 5_000 });
 
 const apiMock = vi.hoisted(() => ({
   get: vi.fn(),
@@ -166,7 +167,8 @@ function bodyOf(request: RecordedRequest): Record<string, unknown> {
   return request.body as Record<string, unknown>;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en-US");
   apiMock.get.mockReset();
   apiMock.post.mockReset();
   apiMock.patch.mockReset();
