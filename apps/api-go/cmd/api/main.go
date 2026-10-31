@@ -661,7 +661,7 @@ func run() error {
 	if err := wireAnalysisExport(gateway, cfg, sharedDB, redisClient, &dashboardMongo); err != nil {
 		return err
 	}
-	if err := wireSituationMonitors(gateway, cfg, sharedDB, authenticator); err != nil {
+	if err := wireSituationMonitors(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
 	if err := gdeltSnapshot.RegisterRoute(gateway, cfg, sharedDB, authenticator); err != nil {

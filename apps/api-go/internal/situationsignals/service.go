@@ -29,9 +29,11 @@ type Service struct {
 
 // NewService wires the service. The monitor adapter reuses the existing
 // situationmonitors implementation so the legacy migration and row
-// normalization cannot drift from the monitors HTTP contract.
+// normalization cannot drift from the monitors HTTP contract. This adapter is
+// read-only (LoadEnabledMonitors), so it deliberately passes no location
+// resolver; the monitor HTTP wiring owns the shared geocoding client.
 func NewService(db *sql.DB, redisClient *redis.Client, mongoDatabase *mongo.Database, settings *settingsReader) *Service {
-	monitors := situationmonitors.NewService(db)
+	monitors := situationmonitors.NewService(db, nil)
 	return &Service{
 		db:    db,
 		cache: redisCacheOps(redisClient),

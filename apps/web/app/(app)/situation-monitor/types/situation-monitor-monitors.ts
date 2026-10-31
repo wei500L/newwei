@@ -54,10 +54,10 @@ export interface SituationMonitorLocation {
   lat: number;
   lng: number;
   bounds?: {
-    north: number;
-    south: number;
-    east: number;
-    west: number;
+    minLat: number;
+    maxLat: number;
+    minLng: number;
+    maxLng: number;
   };
   countryCodeAlpha2?: string;
 }

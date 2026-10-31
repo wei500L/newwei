@@ -124,7 +124,7 @@ func TestGeocodePositiveCacheAndBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again == nil || again.Lat != 52.5 {
+	if again == nil || again.Lat != 52.5 || again.CountryCodeAlpha2 != "DE" {
 		t.Fatalf("cached hit = %+v", again)
 	}
 	if hits.Load() != 1 {
