@@ -365,6 +365,59 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     expect(screen.getByText("Release notes")).toBeInTheDocument();
   });
 
+  it("tables：真实归一化 dataFrame 形状驱动列顺序、单元格与前五预览", async () => {
+    // rows 为空、仅 dataFrame 有数据：预览必须来自 dataFrame（证明归一化后
+    // 的 dataFrame 而不是 headers×rows 兜底被使用），列顺序取 dataFrame.columns。
+    const dataFrameRows = [
+      { Region: "EastRegion", Revenue: 111, Note: "note-alpha" },
+      { Region: "WestRegion", Revenue: 222, Note: "note-beta" },
+      { Region: "NorthRegion", Revenue: 333, Note: "note-gamma" },
+      { Region: "SouthRegion", Revenue: 444, Note: "note-delta" },
+      { Region: "CentralRegion", Revenue: 555, Note: "note-epsilon" },
+      { Region: "ExtraRegion", Revenue: 666, Note: "note-zeta" },
+    ];
+    renderCrawlTaskDetail({
+      permissions: FULL_PERMISSIONS,
+      task: buildCrawlTaskDetailTask({
+        results: [
+          {
+            id: "r1",
+            tables: [
+              {
+                id: "t-real",
+                caption: "Revenue",
+                headers: ["Region", "Revenue", "Note"],
+                rows: [],
+                rowCount: 6,
+                columnCount: 3,
+                dataFrame: {
+                  columns: ["Region", "Revenue", "Note"],
+                  rows: dataFrameRows,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(await screen.findByText("Tables")).toBeInTheDocument();
+    expect(screen.getByText("Revenue")).toBeInTheDocument();
+    expect(screen.getByText("6 × 3")).toBeInTheDocument();
+    // 列顺序来自 dataFrame.columns（Region → Revenue → Note）
+    expect(screen.getByText("Region:")).toBeInTheDocument();
+    expect(screen.getByText("Revenue:")).toBeInTheDocument();
+    expect(screen.getByText("Note:")).toBeInTheDocument();
+    // dataFrame 单元格值：首行 EastRegion/111/note-alpha
+    expect(screen.getByText("EastRegion")).toBeInTheDocument();
+    expect(screen.getByText("111")).toBeInTheDocument();
+    expect(screen.getByText("note-alpha")).toBeInTheDocument();
+    // 前五行预览 + 剩余 1 行
+    expect(screen.getByText("Row 5")).toBeInTheDocument();
+    expect(screen.queryByText("Row 6")).not.toBeInTheDocument();
+    expect(screen.getByText("5 shown, 1 more")).toBeInTheDocument();
+  });
+
   it("result metadata 与源链接展示", async () => {
     renderCrawlTaskDetail({
       permissions: FULL_PERMISSIONS,
