@@ -215,7 +215,9 @@ describe("SituationMonitorMonitorsPanel 地点解析与保存契约", () => {
 
     expect(await screen.findByText("Location resolved.")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByLabelText("Location (optional)")).toHaveValue("Taipei");
+      expect(screen.getByLabelText("Location (optional)")).toHaveValue(
+        "Taipei",
+      );
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
