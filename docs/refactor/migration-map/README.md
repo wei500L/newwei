@@ -14,6 +14,9 @@
 
 先读本页 → [PLANNING](PLANNING.md) → [当前任务](tasks/README.md) + [缺口摘要](GAPS.md#当前摘要) → [候选队列](BACKLOG.md) → 候选域与源码。[实现核对深度](AUDIT.md)、[开关/执行所有权/复用入口](DEPENDENCIES.md)、[证据](EVIDENCE.md)按需展开。Nest 暂时保留。
 
+
+> **增量（GO-ONLY-RUNTIME-001，2026-10-31，分支 `codex/go-only-runtime`）**：`apps/api-go` 已移除 legacy/shadow/canary 反向代理、迁移 `API_GO_*_MODE` 开关与 GraphQL 整包 operation 回退，改为纯 Go 路由（`legacyproxy.AllRoutes()` + 命中 handler，未命中 Nest 等价 404）；删除 `internal/{canary,shadow,shadowidentity}` 与迁移指标；保留 `SCHEDULE_ENABLED`/`BULLMQ_WORKERS_ENABLED`/`WS_REDIS_ADAPTER_ENABLED`/`GRAPHQL_SUBSCRIPTION_BUS` 第二道门与资源/鉴权校验。Node 源码与对照 CI 留待第三步。下文覆盖统计为历史口径，不代表本批后的开关状态（已无 mode 开关）。
+
 ## 注册覆盖
 
 HTTP/Query/Mutation 为“生产 Go 接管注册 / Nest 契约入口”，不是功能完成率或启用比例；`—` 为无此类主 API 入口。HTTP 以 METHOD+完整路径去重（全局前缀 `/api` 已拼入），SSE 算一条；四订阅与传输见域页。vector-go 三条独立 HTTP 不并入主 API 分母。
