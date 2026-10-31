@@ -1,6 +1,6 @@
 # CRAWL-TABLE-NORMALIZATION-001 · 采集表格保存与展示闭环
 
-- 状态：`pr_open`；2026-11-01 由编码窗口交付 Ready [PR #155](https://github.com/wei500L/newwei/pull/155)，未合 main、不启用 auto-merge。业务提交 head `ef7970bc`；最终 head 与普通 CI 以 PR 为准（后续仅文档/task 回填提交）。
+- 状态：`pr_open`；2026-11-01 由编码窗口交付 Ready [PR #155](https://github.com/wei500L/newwei/pull/155)，未合 main、不启用 auto-merge。业务/代码 head `8ef0d031b8ac4f53e8d4fc73d9863a5ecdd69fc2`，普通 CI [41248815858](https://github.com/wei500L/newwei/actions/runs/41248815858) 中 `verify`/`vector-integration`/`api-go-user-settings-integration` 三个主 job success，`go-modules-regen`/`contract-baseline-regen` skipped（skipped 不算通过）。本文件回填提交仅改 docs，最终 head 与对应 CI 以 PR 为准。
 - 缺口：`GAP-CRAWL-TABLES-001`，对应[采集复核 EX-05](../../review/crawl.md)。这是 Go 上的功能修复，不重做迁移退役。
 - 核对基线：main `e04fc4d8bb54596afd302a309ebc852c7676d958`；[普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 三主 job success，两个 regen skipped。开工已 fetch origin/main 并核对开放 PR #149（规划）与 worktree，无本任务业务占用。
 - 分支：`codex/fix-crawl-tables`；worktree `/Users/oo/project/newwei-crawl-tables`，从 `e04fc4d8` 创建。未复用其他认领工作树。
@@ -18,7 +18,7 @@
 
 - 本机：仅只读静态检查、`gofmt -l`（干净）、`git diff --check`；**未**运行 go build/test/vet、pnpm、lint/typecheck、Docker 或服务（按任务约束）。
 - 测试：`internal/crawltables/tables_test.go`（规则 + BSON 往返幂等 + 历史 raw 升级）；扩展 `TestCrawlExecutionQueuedIntegrationTablesPersist`（命中既有 `-run 'TestCrawlExecutionQueuedIntegration'`：成功写表、未存媒体仍保留 media.tables、二次运行去重不重写、API 投影）；Web `task-detail-results.test.tsx`。
-- 普通 CI 结果待 PR #155 精确 head 回填；skipped 不算通过，CI fixture 不等于真实 crawl4ai/网站验证。
+- 普通 CI：代码 head `8ef0d031` 的 [run 41248815858](https://github.com/wei500L/newwei/actions/runs/41248815858) 中 `verify`（lint/typecheck/Web coverage/Go contract gate/Go tests（api-go+vector-go）/build）、`vector-integration`、`api-go-user-settings-integration`（含 `-run 'TestCrawlExecutionQueuedIntegration'` 新增场景）全部 success；两个 regen job skipped。skipped 不算通过，CI fixture 不等于真实 crawl4ai/网站验证。
 - 未部署、未调用真实 crawl4ai/外部服务、未做真实站点采集。
 
 ## 所有权与并行边界
