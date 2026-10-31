@@ -8,12 +8,12 @@ import (
 // TestUserDigestDeliveryModeRejectsInvalidValue locks the cross-process switch
 // contract: only "", "legacy" and "go" are accepted.
 func TestUserDigestDeliveryModeRejectsInvalidValue(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_USER_DIGEST_DELIVERY_MODE" {
 			return "sometimes"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_USER_DIGEST_DELIVERY_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode error = %v", err)
 	}
@@ -22,7 +22,7 @@ func TestUserDigestDeliveryModeRejectsInvalidValue(t *testing.T) {
 // TestUserDigestDeliveryModeOnlyNeedsDeliveryResources verifies delivery-only
 // can run while every HTTP switch and JWT_SECRET are absent.
 func TestUserDigestDeliveryModeOnlyNeedsDeliveryResources(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_USER_DIGEST_DELIVERY_MODE":
 			return "go"
@@ -43,7 +43,7 @@ func TestUserDigestDeliveryModeOnlyNeedsDeliveryResources(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,12 +60,9 @@ func TestUserDigestDeliveryModeOnlyNeedsDeliveryResources(t *testing.T) {
 
 // TestUserDigestDeliveryModeEmptyIsLegacy covers the documented empty-string
 // compatibility.
-func TestUserDigestDeliveryModeEmptyIsLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.UserDigestDeliveryMode != UserDigestDeliveryModeLegacy {
-		t.Fatalf("UserDigestDeliveryMode = %q, want legacy", cfg.UserDigestDeliveryMode)
+func TestUserDigestDeliveryModeEmptyIsGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.UserDigestDeliveryMode != UserDigestDeliveryModeGo {
+		t.Fatalf("UserDigestDeliveryMode = %q, want go", cfg.UserDigestDeliveryMode)
 	}
 }

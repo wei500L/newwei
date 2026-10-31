@@ -23,20 +23,20 @@ const envBoolean = z.preprocess((value) => {
 const publicSchema = z.object({
   NEXT_PUBLIC_API_BASE_URL: z.string().url(),
   NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: envBoolean.default(true),
-  // Engine.IO path for the notifications namespace. The default keeps the
-  // existing NestJS Socket.IO path; set it to /socket.io-notifications when the
-  // Go transport is enabled.
+  // Engine.IO path for the notifications namespace. The default is the Go
+  // transport path, which matches API_GO_NOTIFICATIONS_SOCKET_MODE=go. A legacy
+  // rollback restores /socket.io together with that switch.
   NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: z
     .string()
     .regex(/^\//, "must start with /")
-    .default("/socket.io"),
+    .default("/socket.io-notifications"),
   // Engine.IO path for the realtime namespaces (newsnow/quality/ops/queue/
-  // situation-monitor). The default keeps the existing NestJS Socket.IO path;
-  // set it to /socket.io-realtime when the Go transport is enabled.
+  // situation-monitor). The default is the Go transport path, matching
+  // API_GO_REALTIME_SOCKET_MODE=go. A legacy rollback restores /socket.io.
   NEXT_PUBLIC_REALTIME_SOCKET_PATH: z
     .string()
     .regex(/^\//, "must start with /")
-    .default("/socket.io"),
+    .default("/socket.io-realtime"),
 });
 
 const serverSchema = z.object({

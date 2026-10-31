@@ -8,13 +8,10 @@ import (
 // TestNewsEventsIngestionModeDefaultsToLegacy locks the cross-process switch
 // contract: an unset value keeps the NestJS Cron in charge, and the settle
 // window falls back to 120000 ms.
-func TestNewsEventsIngestionModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NewsEventsIngestionMode != NewsEventsIngestionModeLegacy {
-		t.Fatalf("NewsEventsIngestionMode = %q, want legacy", cfg.NewsEventsIngestionMode)
+func TestNewsEventsIngestionModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.NewsEventsIngestionMode != NewsEventsIngestionModeGo {
+		t.Fatalf("NewsEventsIngestionMode = %q, want go", cfg.NewsEventsIngestionMode)
 	}
 	if cfg.NewsEventsIngestionSettleMs != 120_000 {
 		t.Fatalf("NewsEventsIngestionSettleMs = %d, want 120000", cfg.NewsEventsIngestionSettleMs)
@@ -24,12 +21,12 @@ func TestNewsEventsIngestionModeDefaultsToLegacy(t *testing.T) {
 // TestNewsEventsIngestionModeRejectsInvalidValue verifies only "", "legacy" and
 // "go" are accepted.
 func TestNewsEventsIngestionModeRejectsInvalidValue(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWS_EVENTS_INGESTION_MODE" {
 			return "on"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWS_EVENTS_INGESTION_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode error = %v", err)
 	}
@@ -37,14 +34,14 @@ func TestNewsEventsIngestionModeRejectsInvalidValue(t *testing.T) {
 
 // TestNewsEventsIngestionModeAcceptsEmptyStringAsLegacy verifies the documented
 // three-value vocabulary.
-func TestNewsEventsIngestionModeAcceptsEmptyStringAsLegacy(t *testing.T) {
-	for _, value := range []string{"", "legacy"} {
-		cfg, err := Load(func(key string) string {
+func TestNewsEventsIngestionModeAcceptsExplicitLegacy(t *testing.T) {
+	for _, value := range []string{"legacy", "  legacy  "} {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_NEWS_EVENTS_INGESTION_MODE" {
 				return value
 			}
 			return ""
-		})
+		}))
 		if err != nil {
 			t.Fatalf("%q: %v", value, err)
 		}
@@ -57,12 +54,12 @@ func TestNewsEventsIngestionModeAcceptsEmptyStringAsLegacy(t *testing.T) {
 // TestNewsEventsIngestionModeRequiresMySQLRedisAndMongo verifies go mode fails
 // startup without its three storage backends but needs no JWT.
 func TestNewsEventsIngestionModeRequiresMySQLRedisAndMongo(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWS_EVENTS_INGESTION_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected startup validation error")
 	}
@@ -81,7 +78,7 @@ func TestNewsEventsIngestionModeRequiresMySQLRedisAndMongo(t *testing.T) {
 // TestNewsEventsIngestionModeGoWithoutJWT verifies the background unit runs with
 // every HTTP credential absent.
 func TestNewsEventsIngestionModeGoWithoutJWT(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_EVENTS_INGESTION_MODE":
 			return "go"
@@ -94,7 +91,7 @@ func TestNewsEventsIngestionModeGoWithoutJWT(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,12 +106,12 @@ func TestNewsEventsIngestionModeGoWithoutJWT(t *testing.T) {
 // TestNewsEventsIngestionSettleWindowParsing locks the settle configuration:
 // zero is accepted, a negative value and a non-integer fail startup.
 func TestNewsEventsIngestionSettleWindowParsing(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "NEWS_EVENTS_INGESTION_SETTLE_MS" {
 			return "0"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,12 +119,12 @@ func TestNewsEventsIngestionSettleWindowParsing(t *testing.T) {
 		t.Fatalf("settle = %d, want 0", cfg.NewsEventsIngestionSettleMs)
 	}
 
-	cfg, err = Load(func(key string) string {
+	cfg, err = Load(legacyUnset(func(key string) string {
 		if key == "NEWS_EVENTS_INGESTION_SETTLE_MS" {
 			return " 45000 "
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,12 +133,12 @@ func TestNewsEventsIngestionSettleWindowParsing(t *testing.T) {
 	}
 
 	for _, invalid := range []string{"-1", "soon", "1.5"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "NEWS_EVENTS_INGESTION_SETTLE_MS" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "NEWS_EVENTS_INGESTION_SETTLE_MS must be a non-negative integer") {
 			t.Fatalf("%q => %v", invalid, err)
 		}

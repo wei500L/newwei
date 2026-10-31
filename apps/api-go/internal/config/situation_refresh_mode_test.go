@@ -24,16 +24,13 @@ func situationRefreshEnv(overrides map[string]string) func(string) string {
 		}
 		values[key] = value
 	}
-	return func(key string) string { return values[key] }
+	return legacyUnset(func(key string) string { return values[key] })
 }
 
-func TestLoadSituationRefreshModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.SituationRefreshMode != SituationRefreshModeLegacy {
-		t.Fatalf("SituationRefreshMode = %q, want legacy", cfg.SituationRefreshMode)
+func TestLoadSituationRefreshModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.SituationRefreshMode != SituationRefreshModeGo {
+		t.Fatalf("SituationRefreshMode = %q, want go", cfg.SituationRefreshMode)
 	}
 }
 

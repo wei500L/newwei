@@ -12,20 +12,31 @@ func baseAnalysisEnv(overrides map[string]string) func(string) string {
 		"REDIS_HOST":           "127.0.0.1",
 		"MONGO_URI":            "mongodb://127.0.0.1:27017/app",
 		"ANALYSIS_MAX_RETRIES": "4",
+		// The analysis tests assert the rollback and takeover branches of the
+		// two analysis switches; every other switch keeps the legacy baseline
+		// so that the assertions describe only what these tests set.
+		"API_GO_LEGACY_FALLBACK_MODE": "proxy",
 	}
 	for key, value := range overrides {
 		values[key] = value
 	}
-	return func(key string) string { return values[key] }
+	return legacyUnset(func(key string) string { return values[key] })
 }
 
-func TestAnalysisRunsModeDefaultsToLegacyAndAcceptsGo(t *testing.T) {
+// TestAnalysisRunsModeDefaultsAndAcceptsGo pins the two analysis switches: the
+// default is go, and the base fixture (which starts from the legacy baseline)
+// still accepts explicit values.
+func TestAnalysisRunsModeDefaultsAndAcceptsGo(t *testing.T) {
+	defaults := loadDefaults(t)
+	if defaults.AnalysisRunsMode != AnalysisRunsModeGo || defaults.AnalysisWorkerMode != AnalysisWorkerModeGo {
+		t.Fatalf("default modes = %q/%q, want go/go", defaults.AnalysisRunsMode, defaults.AnalysisWorkerMode)
+	}
 	cfg, err := Load(baseAnalysisEnv(nil))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	if cfg.AnalysisRunsMode != AnalysisRunsModeLegacy || cfg.AnalysisWorkerMode != AnalysisWorkerModeLegacy {
-		t.Fatalf("default modes = %q/%q", cfg.AnalysisRunsMode, cfg.AnalysisWorkerMode)
+		t.Fatalf("legacy baseline modes = %q/%q", cfg.AnalysisRunsMode, cfg.AnalysisWorkerMode)
 	}
 	if cfg.AnalysisMaxRetries != 4 || cfg.AnalysisQueueConcurrency != 2 {
 		t.Fatalf("analysis defaults = retries %d concurrency %d", cfg.AnalysisMaxRetries, cfg.AnalysisQueueConcurrency)

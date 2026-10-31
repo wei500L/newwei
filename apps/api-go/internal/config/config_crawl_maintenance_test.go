@@ -7,16 +7,13 @@ import (
 
 // TestCrawlMaintenanceModeDefaultsToLegacy locks the default ownership: both
 // switches default to legacy and the janitor keeps the NestJS defaults.
-func TestCrawlMaintenanceModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
+func TestCrawlMaintenanceModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.CrawlMaintenanceMode != CrawlMaintenanceModeGo {
+		t.Fatalf("CrawlMaintenanceMode = %q, want go", cfg.CrawlMaintenanceMode)
 	}
-	if cfg.CrawlMaintenanceMode != CrawlMaintenanceModeLegacy {
-		t.Fatalf("CrawlMaintenanceMode = %q, want legacy", cfg.CrawlMaintenanceMode)
-	}
-	if cfg.AuditLogRetentionMode != AuditLogRetentionModeLegacy {
-		t.Fatalf("AuditLogRetentionMode = %q, want legacy", cfg.AuditLogRetentionMode)
+	if cfg.AuditLogRetentionMode != AuditLogRetentionModeGo {
+		t.Fatalf("AuditLogRetentionMode = %q, want go", cfg.AuditLogRetentionMode)
 	}
 	if !cfg.CrawlTaskJanitorEnabled {
 		t.Fatal("CrawlTaskJanitorEnabled = false, want true by default")
@@ -33,7 +30,7 @@ func TestCrawlMaintenanceModeDefaultsToLegacy(t *testing.T) {
 // TestCrawlMaintenanceModeAcceptsGo verifies the two independent switches and
 // the resources they require.
 func TestCrawlMaintenanceModeAcceptsGo(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_MAINTENANCE_MODE":
 			return "go"
@@ -48,7 +45,7 @@ func TestCrawlMaintenanceModeAcceptsGo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,12 +57,12 @@ func TestCrawlMaintenanceModeAcceptsGo(t *testing.T) {
 
 // TestCrawlMaintenanceModeRejectsInvalidValue locks the startup failure.
 func TestCrawlMaintenanceModeRejectsInvalidValue(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_MAINTENANCE_MODE" {
 			return "sometimes"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_MAINTENANCE_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode error = %v", err)
 	}
@@ -73,12 +70,12 @@ func TestCrawlMaintenanceModeRejectsInvalidValue(t *testing.T) {
 
 // TestAuditLogRetentionModeRejectsInvalidValue locks the second switch.
 func TestAuditLogRetentionModeRejectsInvalidValue(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_AUDIT_LOG_RETENTION_MODE" {
 			return "enabled"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_AUDIT_LOG_RETENTION_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode error = %v", err)
 	}
@@ -86,7 +83,7 @@ func TestAuditLogRetentionModeRejectsInvalidValue(t *testing.T) {
 
 // TestCrawlMaintenanceModeRequiresMongo names the third dependency.
 func TestCrawlMaintenanceModeRequiresMongo(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_MAINTENANCE_MODE":
 			return "go"
@@ -97,7 +94,7 @@ func TestCrawlMaintenanceModeRequiresMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_CRAWL_MAINTENANCE_MODE=go") {
 		t.Fatalf("missing mongo error = %v", err)
 	}
@@ -106,7 +103,7 @@ func TestCrawlMaintenanceModeRequiresMongo(t *testing.T) {
 // TestAuditLogRetentionModeNeedsNoMongo verifies the purge only needs MySQL and
 // Redis.
 func TestAuditLogRetentionModeNeedsNoMongo(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_AUDIT_LOG_RETENTION_MODE":
 			return "go"
@@ -117,7 +114,7 @@ func TestAuditLogRetentionModeNeedsNoMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +126,7 @@ func TestAuditLogRetentionModeNeedsNoMongo(t *testing.T) {
 // TestCrawlMaintenanceJanitorEnvOverrides verifies the Go janitor reads the
 // same environment the NestJS schema exposes.
 func TestCrawlMaintenanceJanitorEnvOverrides(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "CRAWL_TASK_JANITOR_ENABLED":
 			return "false"
@@ -146,7 +143,7 @@ func TestCrawlMaintenanceJanitorEnvOverrides(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}

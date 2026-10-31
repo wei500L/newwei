@@ -1,7 +1,6 @@
 # GO-DEFAULT-CUTOVER-001 · 仓库默认运行链切到 Go
 
-- 状态：`pr_open`；2026-10-31 复核 Ready PR [#151](https://github.com/wei500L/newwei/pull/151)，当前 head `b97e181aa7248175ed3c91daf9a258dba6289f96`，普通 CI [run 40576119903](https://github.com/wei500L/newwei/actions/runs/40576119903) `success`（三个主要 job success，两个 regen skipped）；未合并，尚有本地默认链缺口，不能视为完整交付。
-- 继续提示词：[GO-DEFAULT-CUTOVER-001.followup.prompt.md](GO-DEFAULT-CUTOVER-001.followup.prompt.md)（2026-10-31 已发出，继续现有 #151/原 worktree，不新增并行任务）。原规划提示词作为历史范围保留。
+- 状态：`pr_open`；Ready PR [#151](https://github.com/wei500L/newwei/pull/151)，实现 head `b15df1c2d57fd77621a33fe0c73abe268264779b`，普通 CI [run 41198396244](https://github.com/wei500L/newwei/actions/runs/41198396244) `success`（`verify` / `vector-integration` / `api-go-user-settings-integration` 均 success，两个 regen job skipped 不计通过）；未合并。
 - 规划基线：`f15f598d4358b4c9823054ef5a355618e1480a4e`；开工实际基线 `origin/main = 385c887e8cda2df6a3fadd2109c6641ae62cb6ee`（#150 合入后）。
 - 前置：[GO-CUTOVER-PREREQS-001](GO-CUTOVER-PREREQS-001.md) 四项已合入 main。
 - 执行提示词：[GO-DEFAULT-CUTOVER-001.prompt.md](GO-DEFAULT-CUTOVER-001.prompt.md)（在规划 PR #149）。
@@ -36,21 +35,27 @@
 
 ## 范围与所有权
 
-占用 `apps/api-go/internal/config`、`cmd/api` 最小接线、`apps/web/lib/env.ts` 与连接测试、`infra/docker/*`（compose、env 样例、override、runtime.Dockerfile）、`infra/scripts/src/docker-up.js`、根 `package.json` 与 Go 应用的 `package.json`、README / AGENTS / 本任务。未触碰 `apps/api`、`apps/vector`、`apps/ais-relay` 业务代码。
+占用 `apps/api-go/internal/config`、`cmd/api` 最小接线、`apps/web/lib/env.ts` 与连接测试、`infra/docker/*`（compose、env 样例、override、runtime.Dockerfile）、`infra/scripts/src/docker-up.js` 与新增的 `infra/scripts/src/dev*.ts/mts`、根 `package.json` 与 Go 应用的 `package.json`、README / AGENTS / 本任务。未触碰 `apps/api`、`apps/vector`、`apps/ais-relay` 业务代码。
 
 ## 验证
 
-- 本机：静态阅读与 diff、`gofmt`、`go vet ./...`；`go test ./internal/config/` 通过。未部署、未连真实外部服务、未用 Docker。
-  - `internal/alertworker` / `crawl4ai` / `crawlexecution` 在本机失败：本机 DNS 把 `*.invalid` 与 `example.com` 解析到 198.18.0.x（代理保留段）。已用 `git stash` 在改动前的树上复现同样失败，与本批无关；CI 上通过。
-- 远端：普通 CI 在精确 head `c3af4125` 上 success（见上）。保留 Node/Go 对照测试、契约漂移门禁与既有集成 job；未删除 Nest，未改 CI runner/调度。
-- 新增门禁：`testdata/default-resources.env`（只给资源、不给任何 mode）+ `TestDefaultConfigIsAllGoWithoutAnyModeSwitch`；`TestAllGoFixtureStillDetectsMissingSwitch` 改为校验 fixture 键完整性；`TestAllGoFixtureMatchesOmittedSwitches` 要求显式写全与全部省略解析一致。Web 侧 `env-connection-defaults.test.ts` 断言从裸 base 派生 API/GraphQL/两个传输路径。
+- 原 #151 交付记录（历史，本轮不重复声称）：本机曾做静态阅读、diff、`gofmt`、`go vet ./...` 与 `go test ./internal/config/`；远端普通 CI 曾在当时 head `c3af4125` 成功（旧 head 结果不作为本轮新 head 的证据）。`internal/alertworker` / `crawl4ai` / `crawlexecution` 的本机 DNS 失败已用改动前树复现，与本批无关。
+- 本轮 follow-up（2026-10-31）：只做静态阅读、diff 与 `gofmt`；**未运行** build/test/lint/typecheck/Go vet/Docker/服务，未部署、未连真实外部服务。新 head 的普通 CI 逐 job 结果以 PR 描述回填。
+- 现有门禁保留：`testdata/default-resources.env`（只给资源、不给任何 mode）+ `TestDefaultConfigIsAllGoWithoutAnyModeSwitch`；`TestAllGoFixtureStillDetectsMissingSwitch` 校验 fixture 键完整性；`TestAllGoFixtureMatchesOmittedSwitches` 要求显式写全与全部省略一致。新增门禁见下方 follow-up 段落。
 
 ## 回退
 
 显式回退 = `infra/docker/legacy-rollback.override.yml` + `infra/docker/legacy-rollback.env.sample` + `--profile legacy-node`，三件一起用；本地开发用 `pnpm dev:legacy`。执行权交还顺序（含 `SCHEDULE_ENABLED` / `BULLMQ_WORKERS_ENABLED` / `WS_REDIS_ADAPTER_ENABLED` / `GRAPHQL_SUBSCRIPTION_BUS` 第二道门）写在 override 文件末尾。
 
-## 下一阶段
+## 后续补齐（2026-10-31，GO-DEFAULT-CUTOVER-001 follow-up）
 
-先关闭 [GAP-DEV-CONFIG-001](../GAPS.md#2026-10-31-完成核对与本地默认链缺口)：根示例仍给 Web 4000/旧 Socket.IO 路径与旧 mode；Go dev 进程环境加载、宿主监听端口和 dev:legacy 必须闭合。原 `c3af4125` 与当前 `b97e181a` 的 CI 成功不替代补修后的精确 head。main merge `385c887e` 的 CI 失败在队列运维 Web 测试，两项集成成功；#151 已含相关等待调整。异常记录残留不在本地配置补修中伪称关闭。
+- **根示例与新默认一致**：`.env.example` 的 API base 改为 `http://localhost:4020` / 浏览器 `http://localhost:4020/api`，两个 Socket.IO 路径改为 `/socket.io-notifications`、`/socket.io-realtime`；根示例补齐 137 个 `API_GO_*_MODE` 的完整清单（136 个业务 `go` + `API_GO_LEGACY_FALLBACK_MODE=reject`），并显式给出 `CANARY_PERCENT=0`。宿主 vector/AIS 地址改为 Go 本地监听端口 `4010`/`3004`；Docker 的宿主映射说明仍保留在注释与 `infra/docker/.env.sample`。
+- **环境加载与生命周期**：新增 `infra/scripts/src/dev.mts` + `dev-config.ts` + `dev-process.ts`。启动器从模块 URL 推导仓库根并读取根 `.env`（不依赖 cwd），优先级为“调用者进程环境 > 模式 overlay > `.env`”；`go`/`legacy` 的开关与地址来自 `api-go-cutover.env.sample` / `legacy-rollback.env.sample`，每个子进程获得独立 `PORT`；`DATABASE_URL` 为空且 `MYSQL_*` 完整时按 Nest/Prisma 契约派生，不完整则留给 api-go 自身启动校验失败。SIGINT/SIGTERM/SIGHUP 转给子进程组，非零退出码原样返回；不执行迁移、seed、Docker 或网络探测。
+- **三条本地链**：`pnpm dev` = api-go(:4020)+vector-go(:4010)+web(:3000)；`pnpm dev:ais-relay` = Go AIS relay(:3004)；`pnpm dev:legacy` = Nest api(:4000)+Node vector(:4010)+Node AIS(:3004)+web(:3000)，并切回两个 `/socket.io` 路径、vector/AIS 本地地址、134 个业务 legacy + onboarding/user-settings-read 的合法 shadow + fallback=proxy。
+- **回退配置修正**：`infra/docker/legacy-rollback.env.sample` 的 onboarding / user-settings-read 由不存在的 `legacy` 改为 `shadow`；`legacy-rollback.override.yml` 中 Web 构建参数、vector/AIS/API 地址与 `LITELLM_CONFIG_API_BASE` 改为回退字面量，`web`/`litellm` 的 `depends_on` 用 Compose `!override` 替换，避免被 `infra/docker/.env` 的 Go 默认值或已停的 api-go 依赖覆盖；`infra/docker/.env.sample` 的 `LITELLM_CONFIG_API_BASE` 改指 `http://api-go:4020/api`；`docker-compose.yml` 删除 api-go 内重复的 `API_GO_HEALTHZ_LIVE_MODE` YAML 键（137 个开关仍唯一）。
+- **测试**：新增 `apps/api-go/internal/config/cutover_env_example_test.go`（真实根示例 + 占位资源解析为 all-go/reject；回退样例与 config 开关集合逐项对齐、重复键失败），以及 `apps/web/lib/dev-runtime.test.ts`（真实示例输入、显式覆盖、独立端口、Go/legacy/ais-relay 三条计划、退出码与 SIGTERM 进程组转发）；扩展 `env-connection-defaults.test.ts` 从根示例派生 REST/GraphQL/Socket.IO 地址。
+- **验证边界**：本轮仍只做静态阅读、diff 与 `gofmt`；未运行 build/test/lint/typecheck/Go vet/Docker/服务，未部署、未连真实外部服务。新 head 的普通 CI 结果见 PR 描述回填；旧 head 的成功不替代新 head。
+
+## 下一阶段
 
 本批合入后才规划删除 `apps/api` / `apps/vector` / `apps/ais-relay` 与 legacyproxy/shadow/canary，并迁移 GraphQL SDL / OpenAPI / 鉴权快照、生成链与 CI 基线。本批不提前删除。

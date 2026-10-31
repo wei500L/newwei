@@ -7,15 +7,12 @@ import (
 
 // TestNewsnowHottestModesDefaultToLegacy pins the empty-string compatibility:
 // both switches keep the current NestJS owners.
-func TestNewsnowHottestModesDefaultToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NewsnowHottestMode != NewsnowHottestModeLegacy {
+func TestNewsnowHottestModesDefaultToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.NewsnowHottestMode != NewsnowHottestModeGo {
 		t.Fatalf("hottest mode = %s", cfg.NewsnowHottestMode)
 	}
-	if cfg.NewsnowBackgroundMode != NewsnowBackgroundModeLegacy {
+	if cfg.NewsnowBackgroundMode != NewsnowBackgroundModeGo {
 		t.Fatalf("background mode = %s", cfg.NewsnowBackgroundMode)
 	}
 }
@@ -38,7 +35,7 @@ func TestNewsnowHottestModesAcceptGo(t *testing.T) {
 			return ""
 		}
 	}
-	cfg, err := Load(env)
+	cfg, err := Load(legacyUnset(env))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,12 +43,12 @@ func TestNewsnowHottestModesAcceptGo(t *testing.T) {
 		t.Fatalf("hottest mode = %s", cfg.NewsnowHottestMode)
 	}
 
-	cfg, err = Load(func(key string) string {
+	cfg, err = Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWSNOW_BACKGROUND_MODE" {
 			return "go"
 		}
 		return env(key)
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,22 +59,22 @@ func TestNewsnowHottestModesAcceptGo(t *testing.T) {
 
 // TestNewsnowHottestModesRejectInvalid fails startup for any third value.
 func TestNewsnowHottestModesRejectInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWSNOW_HOTTEST_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWSNOW_HOTTEST_MODE must be one of legacy|go") {
 		t.Fatalf("invalid hottest mode: %v", err)
 	}
 
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWSNOW_BACKGROUND_MODE" {
 			return "canary"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWSNOW_BACKGROUND_MODE must be one of legacy|go") {
 		t.Fatalf("invalid background mode: %v", err)
 	}
@@ -85,12 +82,12 @@ func TestNewsnowHottestModesRejectInvalid(t *testing.T) {
 
 // TestNewsnowHottestModeRequiresFullStack requires JWT, MySQL, Redis and Mongo.
 func TestNewsnowHottestModeRequiresFullStack(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWSNOW_HOTTEST_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected startup error")
 	}
@@ -109,12 +106,12 @@ func TestNewsnowHottestModeRequiresFullStack(t *testing.T) {
 // TestNewsnowBackgroundModeRequiresStores keeps the background owner free of
 // JWT while requiring its three stores.
 func TestNewsnowBackgroundModeRequiresStores(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWSNOW_BACKGROUND_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected startup error")
 	}

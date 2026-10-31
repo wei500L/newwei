@@ -41,9 +41,15 @@ func readEnvFixture(t *testing.T, path string) map[string]string {
 // TestAllGoCutoverConfigLoads is the T2 cutover gate for config.Load: the
 // all-go fixture (every API_GO_* switch = go plus placeholder resources, and
 // API_GO_LEGACY_FALLBACK_MODE=reject) must pass every cross-switch and resource
-// validation, and every *Mode field must actually read "go". If a future switch
-// is added without updating testdata/all-go.env, the field keeps its legacy
-// default and this test fails.
+// validation, and every *Mode field must actually read "go".
+//
+// The fixture's completeness used to be enforced indirectly: an omitted switch
+// fell back to legacy and this assertion caught it. After the cutover the default
+// is also go, so omission would be invisible here; completeness is therefore
+// asserted directly against the fixture text in
+// TestAllGoFixtureStillDetectsMissingSwitch (cutover_default_go_test.go), and
+// the repository default itself is asserted with no switches set in
+// TestDefaultConfigIsAllGoWithoutAnyModeSwitch.
 //
 // API_GO_LEGACY_FALLBACK_MODE is the single exception: its accepted values are
 // proxy and reject, so it can never read "go". tests in
@@ -68,7 +74,7 @@ func TestAllGoCutoverConfigLoads(t *testing.T) {
 		}
 		seen++
 		if got := value.Field(i).String(); got != "go" {
-			t.Errorf("%s = %q, want go; testdata/all-go.env is missing its API_GO_* switch", field.Name, got)
+			t.Errorf("%s = %q, want go; the fixture names it but the value did not resolve", field.Name, got)
 		}
 	}
 	// The switch matrix documents 137 API_GO_* switches (130 before the three

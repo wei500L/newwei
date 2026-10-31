@@ -5,12 +5,9 @@ import (
 	"testing"
 )
 
-func TestAssistantSwitchesDefaultToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLAssistantWriteMode != "legacy" || cfg.AssistantWorkerMode != "legacy" {
+func TestAssistantSwitchesDefaultToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLAssistantWriteMode != "go" || cfg.AssistantWorkerMode != "go" {
 		t.Fatalf("write=%q worker=%q", cfg.GraphQLAssistantWriteMode, cfg.AssistantWorkerMode)
 	}
 	if cfg.AssistantQueueConcurrency != 2 || cfg.AssistantMaxRetries != 3 ||
@@ -21,13 +18,13 @@ func TestAssistantSwitchesDefaultToLegacy(t *testing.T) {
 }
 
 func TestAssistantSwitchesAcceptExplicitLegacyAndGo(t *testing.T) {
-	legacy, err := Load(func(key string) string {
+	legacy, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_ASSISTANT_WRITE_MODE", "API_GO_ASSISTANT_WORKER_MODE":
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +32,7 @@ func TestAssistantSwitchesAcceptExplicitLegacyAndGo(t *testing.T) {
 		t.Fatalf("legacy = %q/%q", legacy.GraphQLAssistantWriteMode, legacy.AssistantWorkerMode)
 	}
 
-	goMode, err := Load(func(key string) string {
+	goMode, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_ASSISTANT_WRITE_MODE", "API_GO_ASSISTANT_WORKER_MODE":
 			return "go"
@@ -49,7 +46,7 @@ func TestAssistantSwitchesAcceptExplicitLegacyAndGo(t *testing.T) {
 			return "mongodb://localhost:27017/app"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,12 +57,12 @@ func TestAssistantSwitchesAcceptExplicitLegacyAndGo(t *testing.T) {
 
 func TestAssistantSwitchesRejectInvalid(t *testing.T) {
 	for _, name := range []string{"API_GO_GRAPHQL_ASSISTANT_WRITE_MODE", "API_GO_ASSISTANT_WORKER_MODE"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == name {
 				return "on"
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), name) {
 			t.Fatalf("%s invalid value was accepted: %v", name, err)
 		}
@@ -73,12 +70,12 @@ func TestAssistantSwitchesRejectInvalid(t *testing.T) {
 }
 
 func TestAssistantWriteModeRequiresCredentialsAndMongo(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_ASSISTANT_WRITE_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("go without credentials was accepted")
 	}
@@ -90,12 +87,12 @@ func TestAssistantWriteModeRequiresCredentialsAndMongo(t *testing.T) {
 }
 
 func TestAssistantWorkerModeRequiresDataStoresButNotJWT(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ASSISTANT_WORKER_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("go without data stores was accepted")
 	}

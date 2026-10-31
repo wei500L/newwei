@@ -2,16 +2,14 @@ package config
 
 import (
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 )
 
 func TestLoadDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	cfg := loadDefaults(t)
 	if cfg.Port != 4020 {
 		t.Errorf("Port = %d, want 4020", cfg.Port)
 	}
@@ -21,29 +19,29 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadRejectsRelativeLegacyURL(t *testing.T) {
-	if _, err := Load(func(key string) string {
+	if _, err := Load(legacyUnset(func(key string) string {
 		if key == "LEGACY_API_URL" {
 			return "localhost:4000"
 		}
 		return ""
-	}); err == nil {
+	})); err == nil {
 		t.Fatal("Load() should reject a non-absolute LEGACY_API_URL")
 	}
 }
 
 func TestLoadRejectsInvalidPort(t *testing.T) {
-	if _, err := Load(func(key string) string {
+	if _, err := Load(legacyUnset(func(key string) string {
 		if key == "PORT" {
 			return "-1"
 		}
 		return ""
-	}); err == nil {
+	})); err == nil {
 		t.Fatal("Load() should reject PORT=-1")
 	}
 }
 
 func TestLoadAcceptsExplicitConfig(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "PORT":
 			return "8080"
@@ -51,7 +49,7 @@ func TestLoadAcceptsExplicitConfig(t *testing.T) {
 			return "http://api:4000"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -61,10 +59,7 @@ func TestLoadAcceptsExplicitConfig(t *testing.T) {
 }
 
 func TestShadowDefaultsGuardResourceBudget(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	cfg := loadDefaults(t)
 	if cfg.ShadowTimeoutMs <= 0 || cfg.ShadowMaxRequestBodyByte <= 0 || cfg.ShadowMaxInflight <= 0 || cfg.ShadowMaxPerMin <= 0 {
 		t.Errorf("shadow budget defaults must be positive: %+v", cfg)
 	}
@@ -85,7 +80,7 @@ func TestShadowDefaultsGuardResourceBudget(t *testing.T) {
 }
 
 func TestLoadAcceptsIndependentShadowBudgets(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "SHADOW_MAX_REQUEST_BODY_BYTES":
 			return "4096"
@@ -93,7 +88,7 @@ func TestLoadAcceptsIndependentShadowBudgets(t *testing.T) {
 			return "8192"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -119,12 +114,12 @@ func TestLoadRejectsInvalidShadowBudgets(t *testing.T) {
 }
 
 func TestLoadDebugBodyLogFlag(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "SHADOW_DEBUG_BODY_LOG" {
 			return "true"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -133,12 +128,12 @@ func TestLoadDebugBodyLogFlag(t *testing.T) {
 	}
 
 	for _, raw := range []string{"maybe", "yes-maybe"} {
-		if _, err := Load(func(key string) string {
+		if _, err := Load(legacyUnset(func(key string) string {
 			if key == "SHADOW_DEBUG_BODY_LOG" {
 				return raw
 			}
 			return ""
-		}); err == nil {
+		})); err == nil {
 			t.Fatalf("Load() should reject SHADOW_DEBUG_BODY_LOG=%q", raw)
 		}
 	}
@@ -146,12 +141,12 @@ func TestLoadDebugBodyLogFlag(t *testing.T) {
 
 func TestLoadRejectsInvalidCanaryPercent(t *testing.T) {
 	for _, raw := range []string{"-1", "101", "abc"} {
-		if _, err := Load(func(key string) string {
+		if _, err := Load(legacyUnset(func(key string) string {
 			if key == "CANARY_PERCENT" {
 				return raw
 			}
 			return ""
-		}); err == nil {
+		})); err == nil {
 			t.Fatalf("Load() should reject CANARY_PERCENT=%q", raw)
 		}
 	}
@@ -159,12 +154,12 @@ func TestLoadRejectsInvalidCanaryPercent(t *testing.T) {
 
 func TestLoadAcceptsCanaryBounds(t *testing.T) {
 	for _, raw := range []string{"0", "1", "50", "100"} {
-		cfg, err := Load(func(key string) string {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			if key == "CANARY_PERCENT" {
 				return raw
 			}
 			return ""
-		})
+		}))
 		if err != nil {
 			t.Fatalf("Load(CANARY_PERCENT=%q) error = %v", raw, err)
 		}
@@ -193,7 +188,9 @@ func TestUserSettingsReadMode(t *testing.T) {
 		wantMode  string
 		wantError bool
 	}{
-		{"empty keeps compat", "", nil, "", false},
+		// Before the cutover "" kept the per-endpoint compat behaviour. It now
+		// takes the go branch (asserted by loadDefaults below); here the explicit
+		// shadow spelling selects the rollback branch.
 		{"shadow accepted", "shadow", nil, "shadow", false},
 		{"go accepted with deps", "go", map[string]string{
 			"JWT_SECRET": "s", "DATABASE_URL": "mysql://u:p@h:3306/db", "REDIS_HOST": "h",
@@ -201,9 +198,16 @@ func TestUserSettingsReadMode(t *testing.T) {
 		{"go without deps fails", "go", nil, "", true},
 		{"invalid value rejected", "bogus", nil, "", true},
 	}
+
+	// The unset value resolves to go, which needs the credentialed stack.
+	defaults := loadDefaults(t)
+	if defaults.UserSettingsReadMode != UserSettingsReadModeGo {
+		t.Fatalf("UserSettingsReadMode default = %q, want go", defaults.UserSettingsReadMode)
+	}
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(func(key string) string {
+			cfg, err := Load(legacyUnset(func(key string) string {
 				if v, ok := tc.extraEnv[key]; ok {
 					return v
 				}
@@ -211,7 +215,7 @@ func TestUserSettingsReadMode(t *testing.T) {
 					return tc.readMode
 				}
 				return ""
-			})
+			}))
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("want error, got cfg %+v", cfg)
@@ -224,8 +228,10 @@ func TestUserSettingsReadMode(t *testing.T) {
 			if string(cfg.UserSettingsReadMode) != tc.wantMode {
 				t.Errorf("UserSettingsReadMode = %q, want %q", cfg.UserSettingsReadMode, tc.wantMode)
 			}
+			// The write switch is pinned to its legacy baseline by legacyUnset;
+			// this test is about the read switch only.
 			if cfg.UserSettingsWriteMode != UserSettingsWriteModeLegacy {
-				t.Errorf("UserSettingsWriteMode = %q, want legacy by default", cfg.UserSettingsWriteMode)
+				t.Errorf("UserSettingsWriteMode = %q, want legacy baseline", cfg.UserSettingsWriteMode)
 			}
 		})
 	}
@@ -252,7 +258,7 @@ func TestUserSettingsWriteMode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(func(key string) string {
+			cfg, err := Load(legacyUnset(func(key string) string {
 				if tc.withDeps {
 					if v, ok := deps[key]; ok {
 						return v
@@ -266,7 +272,7 @@ func TestUserSettingsWriteMode(t *testing.T) {
 				default:
 					return ""
 				}
-			})
+			}))
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("want error, got %+v", cfg.UserSettingsWriteMode)
@@ -288,22 +294,24 @@ func TestUserSettingsWriteMode(t *testing.T) {
 }
 
 func TestPublicPortalMode(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
+	// The baseline is the explicit rollback configuration; this test is about
+	// the switches staying independent, not about the default.
+	cfg, err := legacyOverlayLoad(t, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.PublicPortalMode != PublicPortalModeLegacy {
 		t.Fatalf("mode = %q, want legacy", cfg.PublicPortalMode)
 	}
-	if _, err := Load(func(key string) string {
+	if _, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_PUBLIC_PORTAL_MODE" {
 			return "go"
 		}
 		return ""
-	}); err == nil {
+	})); err == nil {
 		t.Fatal("go mode without DATABASE_URL should fail")
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err = legacyOverlayLoad(t, func(key string) string {
 		switch key {
 		case "API_GO_PUBLIC_PORTAL_MODE":
 			return "go"
@@ -322,7 +330,7 @@ func TestPublicPortalMode(t *testing.T) {
 }
 
 func TestDashboardStatsMode(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
+	cfg, err := legacyOverlayLoad(t, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +339,7 @@ func TestDashboardStatsMode(t *testing.T) {
 	}
 	secret := "s3cret-password"
 	err = func() error {
-		_, loadErr := Load(func(key string) string {
+		_, loadErr := legacyOverlayLoad(t, func(key string) string {
 			if key == "API_GO_DASHBOARD_STATS_MODE" {
 				return "go"
 			}
@@ -348,7 +356,7 @@ func TestDashboardStatsMode(t *testing.T) {
 	if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "mongo:27017") {
 		t.Fatalf("startup error leaked mongo target: %v", err)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err = legacyOverlayLoad(t, func(key string) string {
 		switch key {
 		case "API_GO_DASHBOARD_STATS_MODE":
 			return "go"
@@ -373,7 +381,7 @@ func TestDashboardStatsMode(t *testing.T) {
 }
 
 func TestDashboardChartsModeIsIndependentOfStats(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
+	cfg, err := legacyOverlayLoad(t, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +389,7 @@ func TestDashboardChartsModeIsIndependentOfStats(t *testing.T) {
 		t.Fatalf("mode = %q, want legacy", cfg.DashboardChartsMode)
 	}
 	secret := "charts-jwt-secret"
-	_, err = Load(func(key string) string {
+	_, err = legacyOverlayLoad(t, func(key string) string {
 		switch key {
 		case "API_GO_DASHBOARD_CHARTS_MODE":
 			return "go"
@@ -394,7 +402,7 @@ func TestDashboardChartsModeIsIndependentOfStats(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), secret) {
 		t.Fatalf("go mode without mysql/redis should fail without leaking the secret: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = legacyOverlayLoad(t, func(key string) string {
 		if key == "API_GO_DASHBOARD_CHARTS_MODE" {
 			return "pilot"
 		}
@@ -403,7 +411,7 @@ func TestDashboardChartsModeIsIndependentOfStats(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "API_GO_DASHBOARD_CHARTS_MODE") {
 		t.Fatalf("invalid mode = %v", err)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err = legacyOverlayLoad(t, func(key string) string {
 		switch key {
 		case "API_GO_DASHBOARD_CHARTS_MODE":
 			return "go"
@@ -433,7 +441,7 @@ func TestDashboardChartsModeIsIndependentOfStats(t *testing.T) {
 
 func TestDashboardWarMapModeRequiresMongo(t *testing.T) {
 	secret := "war-map-secret"
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_DASHBOARD_WAR_MAP_MODE":
 			return "go"
@@ -446,11 +454,11 @@ func TestDashboardWarMapModeRequiresMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), "MONGO_URI") {
 		t.Fatalf("missing mongo: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_DASHBOARD_WAR_MAP_MODE":
 			return "go"
@@ -465,7 +473,7 @@ func TestDashboardWarMapModeRequiresMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +486,7 @@ func TestDashboardWarMapModeRequiresMongo(t *testing.T) {
 }
 
 func TestWarMapTransportAndLayersModesAreIndependent(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE":
 			return "go"
@@ -491,11 +499,11 @@ func TestWarMapTransportAndLayersModesAreIndependent(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI") || strings.Contains(err.Error(), "API_GO_DASHBOARD_WAR_MAP_MODE") {
 		t.Fatalf("transport mongo: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE":
 			return "go"
@@ -510,7 +518,7 @@ func TestWarMapTransportAndLayersModesAreIndependent(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -520,14 +528,14 @@ func TestWarMapTransportAndLayersModesAreIndependent(t *testing.T) {
 }
 
 func TestSpacetimeModesAreIndependent(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
+	cfg, err := legacyOverlayLoad(t, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.DashboardSpacetimeGeoMode != DashboardSpacetimeGeoModeLegacy || cfg.DashboardSpacetimePropagationMode != DashboardSpacetimePropagationModeLegacy {
 		t.Fatalf("geo=%s propagation=%s", cfg.DashboardSpacetimeGeoMode, cfg.DashboardSpacetimePropagationMode)
 	}
-	_, err = Load(func(key string) string {
+	_, err = legacyOverlayLoad(t, func(key string) string {
 		if key == "API_GO_DASHBOARD_SPACETIME_GEO_MODE" {
 			return "go"
 		}
@@ -536,7 +544,7 @@ func TestSpacetimeModesAreIndependent(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_DASHBOARD_SPACETIME_GEO_MODE=go") || strings.Contains(err.Error(), "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE") {
 		t.Fatalf("geo dependencies: %v", err)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err = legacyOverlayLoad(t, func(key string) string {
 		switch key {
 		case "API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE":
 			return "go"
@@ -561,7 +569,7 @@ func TestSpacetimeModesAreIndependent(t *testing.T) {
 }
 
 func TestStreamAndHealthzModesAreIndependent(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
+	cfg, err := legacyOverlayLoad(t, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -571,7 +579,7 @@ func TestStreamAndHealthzModesAreIndependent(t *testing.T) {
 	if !cfg.ItemsSearchRerankEnabled || cfg.CrawlHealthTTLMs != 60_000 {
 		t.Fatalf("rerank=%v ttl=%d", cfg.ItemsSearchRerankEnabled, cfg.CrawlHealthTTLMs)
 	}
-	_, err = Load(func(key string) string {
+	_, err = legacyOverlayLoad(t, func(key string) string {
 		if key == "API_GO_DASHBOARD_STREAM_MODE" {
 			return "go"
 		}
@@ -580,7 +588,7 @@ func TestStreamAndHealthzModesAreIndependent(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_DASHBOARD_STREAM_MODE=go") {
 		t.Fatalf("stream dependencies: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = legacyOverlayLoad(t, func(key string) string {
 		switch key {
 		case "API_GO_HEALTHZ_MODE":
 			return "go"
@@ -597,7 +605,7 @@ func TestStreamAndHealthzModesAreIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err = legacyOverlayLoad(t, func(key string) string {
 		switch key {
 		case "API_GO_DASHBOARD_STREAM_MODE":
 			return "go"
@@ -621,18 +629,18 @@ func TestStreamAndHealthzModesAreIndependent(t *testing.T) {
 	if cfg.DashboardStreamMode != DashboardStreamModeGo || cfg.HealthzMode != HealthzModeLegacy || cfg.DashboardSpacetimeGeoMode != DashboardSpacetimeGeoModeLegacy {
 		t.Fatalf("stream=%s healthz=%s geo=%s", cfg.DashboardStreamMode, cfg.HealthzMode, cfg.DashboardSpacetimeGeoMode)
 	}
-	if _, err := Load(func(key string) string {
+	if _, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_HEALTHZ_MODE" {
 			return "shadow"
 		}
 		return ""
-	}); err == nil || !strings.Contains(err.Error(), "API_GO_HEALTHZ_MODE") {
+	})); err == nil || !strings.Contains(err.Error(), "API_GO_HEALTHZ_MODE") {
 		t.Fatalf("invalid healthz mode: %v", err)
 	}
 }
 
 func TestPersonalNewsModesAreIndependent(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
+	cfg, err := legacyOverlayLoad(t, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -641,7 +649,7 @@ func TestPersonalNewsModesAreIndependent(t *testing.T) {
 		cfg.UserDigestMode != UserDigestModeLegacy {
 		t.Fatalf("subs=%s behavior=%s digest=%s", cfg.ContentSubscriptionsMode, cfg.UserNewsBehaviorMode, cfg.UserDigestMode)
 	}
-	_, err = Load(func(key string) string {
+	_, err = legacyOverlayLoad(t, func(key string) string {
 		if key == "API_GO_USER_NEWS_BEHAVIOR_MODE" {
 			return "go"
 		}
@@ -650,7 +658,7 @@ func TestPersonalNewsModesAreIndependent(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_USER_NEWS_BEHAVIOR_MODE=go") || strings.Contains(err.Error(), "MONGO_URI") {
 		t.Fatalf("behavior dependencies: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = legacyOverlayLoad(t, func(key string) string {
 		switch key {
 		case "API_GO_CONTENT_SUBSCRIPTIONS_MODE":
 			return "go"
@@ -663,7 +671,7 @@ func TestPersonalNewsModesAreIndependent(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_CONTENT_SUBSCRIPTIONS_MODE=go") {
 		t.Fatalf("subscription dependencies: %v", err)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err = legacyOverlayLoad(t, func(key string) string {
 		switch key {
 		case "API_GO_USER_DIGEST_MODE":
 			return "go"
@@ -689,113 +697,101 @@ func TestPersonalNewsModesAreIndependent(t *testing.T) {
 	}
 }
 
-func TestGraphQLReadModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLReadMode != "legacy" {
-		t.Fatalf("GraphQLReadMode = %q, want legacy", cfg.GraphQLReadMode)
+func TestGraphQLReadModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLReadMode != "go" {
+		t.Fatalf("GraphQLReadMode = %q, want go", cfg.GraphQLReadMode)
 	}
 }
 
-func TestNewsSourcesModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NewsSourcesMode != NewsSourcesModeLegacy {
+func TestNewsSourcesModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.NewsSourcesMode != NewsSourcesModeGo {
 		t.Fatalf("mode = %s", cfg.NewsSourcesMode)
 	}
-	_, err = Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWS_SOURCES_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWS_SOURCES_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWS_SOURCES_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_NEWS_SOURCES_MODE=go") {
 		t.Fatalf("go dependencies: %v", err)
 	}
 }
 
-func TestSituationMonitorsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SituationMonitorsMode != SituationMonitorsModeLegacy {
+func TestSituationMonitorsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.SituationMonitorsMode != SituationMonitorsModeGo {
 		t.Fatalf("mode = %s", cfg.SituationMonitorsMode)
 	}
-	_, err = Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_SITUATION_MONITORS_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_SITUATION_MONITORS_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		if key == "API_GO_SITUATION_MONITORS_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_SITUATION_MONITORS_MODE=go") {
 		t.Fatalf("go dependencies: %v", err)
 	}
 }
 
 func TestGraphQLReadModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_READ_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_READ_MODE must be one of legacy|go") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
-func TestGraphQLNewsEventsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLNewsEventsMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+func TestGraphQLNewsEventsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLNewsEventsMode != "go" || cfg.GraphQLReadMode != "go" {
 		t.Fatalf("news=%q read=%q", cfg.GraphQLNewsEventsMode, cfg.GraphQLReadMode)
 	}
 }
 
 func TestGraphQLNewsEventsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_NEWS_EVENTS_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_NEWS_EVENTS_MODE must be one of legacy|go") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestGraphQLNewsEventsModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_NEWS_EVENTS_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -805,7 +801,7 @@ func TestGraphQLNewsEventsModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *te
 }
 
 func TestGraphQLBothGoStillRequireMongoFromReadMode(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_READ_MODE", "API_GO_GRAPHQL_NEWS_EVENTS_MODE":
 			return "go"
@@ -818,26 +814,23 @@ func TestGraphQLBothGoStillRequireMongoFromReadMode(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
-func TestGraphQLKnowledgeGraphModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLKnowledgeGraphMode != "legacy" {
+func TestGraphQLKnowledgeGraphModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLKnowledgeGraphMode != "go" {
 		t.Fatalf("knowledge graph mode = %q", cfg.GraphQLKnowledgeGraphMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -848,12 +841,12 @@ func TestGraphQLKnowledgeGraphModeDefaultsToLegacy(t *testing.T) {
 
 func TestGraphQLKnowledgeGraphModeRejectsInvalid(t *testing.T) {
 	for _, value := range []string{"shadow", "on", "GO"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE" {
 				return value
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE must be one of legacy|go") {
 			t.Fatalf("%q Load() error = %v", value, err)
 		}
@@ -861,12 +854,12 @@ func TestGraphQLKnowledgeGraphModeRejectsInvalid(t *testing.T) {
 }
 
 func TestGraphQLKnowledgeGraphModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -876,7 +869,7 @@ func TestGraphQLKnowledgeGraphModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t
 }
 
 func TestGraphQLKnowledgeGraphBothGoStillRequireMongoFromReadMode(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_READ_MODE", "API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE":
 			return "go"
@@ -889,26 +882,23 @@ func TestGraphQLKnowledgeGraphBothGoStillRequireMongoFromReadMode(t *testing.T) 
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_GRAPHQL_READ_MODE=go") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
-func TestCrawlWorkflowsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlWorkflowsMode != CrawlWorkflowsModeLegacy {
+func TestCrawlWorkflowsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.CrawlWorkflowsMode != CrawlWorkflowsModeGo {
 		t.Fatalf("mode = %s", cfg.CrawlWorkflowsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_WORKFLOWS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -918,19 +908,19 @@ func TestCrawlWorkflowsModeDefaultsToLegacy(t *testing.T) {
 }
 
 func TestCrawlWorkflowsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_WORKFLOWS_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_WORKFLOWS_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
 }
 
 func TestCrawlWorkflowsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_WORKFLOWS_MODE":
 			return "go"
@@ -941,11 +931,11 @@ func TestCrawlWorkflowsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CRAWL_WORKFLOWS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_WORKFLOWS_MODE":
 			return "go"
@@ -958,7 +948,7 @@ func TestCrawlWorkflowsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -967,20 +957,17 @@ func TestCrawlWorkflowsModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestCrawlProfilesModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlProfilesMode != CrawlProfilesModeLegacy {
+func TestCrawlProfilesModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.CrawlProfilesMode != CrawlProfilesModeGo {
 		t.Fatalf("mode = %s", cfg.CrawlProfilesMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_PROFILES_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -990,19 +977,19 @@ func TestCrawlProfilesModeDefaultsToLegacy(t *testing.T) {
 }
 
 func TestCrawlProfilesModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_PROFILES_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_PROFILES_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
 }
 
 func TestCrawlProfilesModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_PROFILES_MODE":
 			return "go"
@@ -1013,11 +1000,11 @@ func TestCrawlProfilesModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CRAWL_PROFILES_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_PROFILES_MODE":
 			return "go"
@@ -1030,7 +1017,7 @@ func TestCrawlProfilesModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1039,20 +1026,17 @@ func TestCrawlProfilesModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestCrawlTemplatesModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlTemplatesMode != CrawlTemplatesModeLegacy {
+func TestCrawlTemplatesModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.CrawlTemplatesMode != CrawlTemplatesModeGo {
 		t.Fatalf("mode = %s", cfg.CrawlTemplatesMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_TEMPLATES_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1062,19 +1046,19 @@ func TestCrawlTemplatesModeDefaultsToLegacy(t *testing.T) {
 }
 
 func TestCrawlTemplatesModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_TEMPLATES_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_TEMPLATES_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
 }
 
 func TestCrawlTemplatesModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_TEMPLATES_MODE":
 			return "go"
@@ -1085,11 +1069,11 @@ func TestCrawlTemplatesModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CRAWL_TEMPLATES_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_TEMPLATES_MODE":
 			return "go"
@@ -1102,7 +1086,7 @@ func TestCrawlTemplatesModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1111,20 +1095,17 @@ func TestCrawlTemplatesModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestAdminLogsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.AdminLogsMode != AdminLogsModeLegacy {
+func TestAdminLogsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.AdminLogsMode != AdminLogsModeGo {
 		t.Fatalf("mode = %s", cfg.AdminLogsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ADMIN_LOGS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1134,19 +1115,19 @@ func TestAdminLogsModeDefaultsToLegacy(t *testing.T) {
 }
 
 func TestAdminLogsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ADMIN_LOGS_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_ADMIN_LOGS_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
 }
 
 func TestAdminLogsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ADMIN_LOGS_MODE":
 			return "go"
@@ -1157,11 +1138,11 @@ func TestAdminLogsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_ADMIN_LOGS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ADMIN_LOGS_MODE":
 			return "go"
@@ -1174,11 +1155,11 @@ func TestAdminLogsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_ADMIN_LOGS_MODE=go") {
 		t.Fatalf("missing mongo: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ADMIN_LOGS_MODE":
 			return "go"
@@ -1193,7 +1174,7 @@ func TestAdminLogsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1202,20 +1183,17 @@ func TestAdminLogsModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestQualityOverviewModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.QualityOverviewMode != QualityOverviewModeLegacy {
+func TestQualityOverviewModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.QualityOverviewMode != QualityOverviewModeGo {
 		t.Fatalf("mode = %s", cfg.QualityOverviewMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_QUALITY_OVERVIEW_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1225,19 +1203,19 @@ func TestQualityOverviewModeDefaultsToLegacy(t *testing.T) {
 }
 
 func TestQualityOverviewModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_QUALITY_OVERVIEW_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_QUALITY_OVERVIEW_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
 }
 
 func TestQualityOverviewModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_QUALITY_OVERVIEW_MODE":
 			return "go"
@@ -1248,11 +1226,11 @@ func TestQualityOverviewModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_QUALITY_OVERVIEW_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_QUALITY_OVERVIEW_MODE":
 			return "go"
@@ -1265,11 +1243,11 @@ func TestQualityOverviewModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_QUALITY_OVERVIEW_MODE=go") {
 		t.Fatalf("missing mongo: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_QUALITY_OVERVIEW_MODE":
 			return "go"
@@ -1284,7 +1262,7 @@ func TestQualityOverviewModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1293,20 +1271,17 @@ func TestQualityOverviewModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestCrawlReadTelemetryModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlReadTelemetryMode != CrawlReadTelemetryModeLegacy {
+func TestCrawlReadTelemetryModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.CrawlReadTelemetryMode != CrawlReadTelemetryModeGo {
 		t.Fatalf("mode = %s", cfg.CrawlReadTelemetryMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_READ_TELEMETRY_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1316,19 +1291,19 @@ func TestCrawlReadTelemetryModeDefaultsToLegacy(t *testing.T) {
 }
 
 func TestCrawlReadTelemetryModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_READ_TELEMETRY_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_READ_TELEMETRY_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
 }
 
 func TestCrawlReadTelemetryModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_READ_TELEMETRY_MODE":
 			return "go"
@@ -1339,11 +1314,11 @@ func TestCrawlReadTelemetryModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_READ_TELEMETRY_MODE":
 			return "go"
@@ -1356,11 +1331,11 @@ func TestCrawlReadTelemetryModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_CRAWL_READ_TELEMETRY_MODE=go") {
 		t.Fatalf("missing mongo: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_READ_TELEMETRY_MODE":
 			return "go"
@@ -1375,7 +1350,7 @@ func TestCrawlReadTelemetryModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1386,20 +1361,17 @@ func TestCrawlReadTelemetryModeGoRequiresCredentials(t *testing.T) {
 
 // TestNewsnowClusteringOpsModeDefaultsToLegacy pins the default: an unset
 // variable and the explicit "legacy" value both keep the nine routes on NestJS.
-func TestNewsnowClusteringOpsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NewsnowClusteringOpsMode != NewsnowClusteringOpsModeLegacy {
+func TestNewsnowClusteringOpsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.NewsnowClusteringOpsMode != NewsnowClusteringOpsModeGo {
 		t.Fatalf("mode = %s", cfg.NewsnowClusteringOpsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWSNOW_CLUSTERING_OPS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1412,12 +1384,12 @@ func TestNewsnowClusteringOpsModeDefaultsToLegacy(t *testing.T) {
 // shadow execution and any unknown value must fail startup instead of silently
 // downgrading to legacy.
 func TestNewsnowClusteringOpsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWSNOW_CLUSTERING_OPS_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWSNOW_CLUSTERING_OPS_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
@@ -1427,7 +1399,7 @@ func TestNewsnowClusteringOpsModeRejectsInvalid(t *testing.T) {
 // preconditions one missing variable at a time: Redis, then Mongo, then the
 // fully satisfied configuration.
 func TestNewsnowClusteringOpsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWSNOW_CLUSTERING_OPS_MODE":
 			return "go"
@@ -1438,11 +1410,11 @@ func TestNewsnowClusteringOpsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_NEWSNOW_CLUSTERING_OPS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWSNOW_CLUSTERING_OPS_MODE":
 			return "go"
@@ -1455,11 +1427,11 @@ func TestNewsnowClusteringOpsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_NEWSNOW_CLUSTERING_OPS_MODE=go") {
 		t.Fatalf("missing mongo: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWSNOW_CLUSTERING_OPS_MODE":
 			return "go"
@@ -1474,7 +1446,7 @@ func TestNewsnowClusteringOpsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1485,20 +1457,17 @@ func TestNewsnowClusteringOpsModeGoRequiresCredentials(t *testing.T) {
 
 // TestClassificationRssOpsModeDefaultsToLegacy asserts that the switch is
 // legacy both when the variable is unset and when it is explicitly "legacy".
-func TestClassificationRssOpsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ClassificationRssOpsMode != ClassificationRssOpsModeLegacy {
+func TestClassificationRssOpsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.ClassificationRssOpsMode != ClassificationRssOpsModeGo {
 		t.Fatalf("mode = %s", cfg.ClassificationRssOpsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CLASSIFICATION_RSS_OPS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1511,12 +1480,12 @@ func TestClassificationRssOpsModeDefaultsToLegacy(t *testing.T) {
 // the empty string, legacy or go fails startup with the variable name in the
 // error text.
 func TestClassificationRssOpsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CLASSIFICATION_RSS_OPS_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_CLASSIFICATION_RSS_OPS_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
@@ -1526,7 +1495,7 @@ func TestClassificationRssOpsModeRejectsInvalid(t *testing.T) {
 // JWT_SECRET, DATABASE_URL, REDIS_HOST and MONGO_URI, and that supplying all
 // four resolves the mode to go.
 func TestClassificationRssOpsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CLASSIFICATION_RSS_OPS_MODE":
 			return "go"
@@ -1537,11 +1506,11 @@ func TestClassificationRssOpsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CLASSIFICATION_RSS_OPS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CLASSIFICATION_RSS_OPS_MODE":
 			return "go"
@@ -1554,11 +1523,11 @@ func TestClassificationRssOpsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_CLASSIFICATION_RSS_OPS_MODE=go") {
 		t.Fatalf("missing mongo: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CLASSIFICATION_RSS_OPS_MODE":
 			return "go"
@@ -1573,7 +1542,7 @@ func TestClassificationRssOpsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1582,20 +1551,17 @@ func TestClassificationRssOpsModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestLlmLogsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.LlmLogsMode != LlmLogsModeLegacy {
+func TestLlmLogsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.LlmLogsMode != LlmLogsModeGo {
 		t.Fatalf("mode = %s", cfg.LlmLogsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_LLM_LOGS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1605,19 +1571,19 @@ func TestLlmLogsModeDefaultsToLegacy(t *testing.T) {
 }
 
 func TestLlmLogsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_LLM_LOGS_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_LLM_LOGS_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
 }
 
 func TestLlmLogsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_LLM_LOGS_MODE":
 			return "go"
@@ -1628,11 +1594,11 @@ func TestLlmLogsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_LLM_LOGS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_LLM_LOGS_MODE":
 			return "go"
@@ -1645,11 +1611,11 @@ func TestLlmLogsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_LLM_LOGS_MODE=go") {
 		t.Fatalf("missing mongo: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_LLM_LOGS_MODE":
 			return "go"
@@ -1664,7 +1630,7 @@ func TestLlmLogsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1673,20 +1639,17 @@ func TestLlmLogsModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestNewsIndicatorsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NewsIndicatorsMode != NewsIndicatorsModeLegacy {
+func TestNewsIndicatorsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.NewsIndicatorsMode != NewsIndicatorsModeGo {
 		t.Fatalf("mode = %s", cfg.NewsIndicatorsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWS_INDICATORS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1696,19 +1659,19 @@ func TestNewsIndicatorsModeDefaultsToLegacy(t *testing.T) {
 }
 
 func TestNewsIndicatorsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWS_INDICATORS_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_NEWS_INDICATORS_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
 }
 
 func TestNewsIndicatorsModeGoRequiresCredentialsButNotMongo(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_INDICATORS_MODE":
 			return "go"
@@ -1719,11 +1682,11 @@ func TestNewsIndicatorsModeGoRequiresCredentialsButNotMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_NEWS_INDICATORS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_INDICATORS_MODE":
 			return "go"
@@ -1736,7 +1699,7 @@ func TestNewsIndicatorsModeGoRequiresCredentialsButNotMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1749,7 +1712,7 @@ func TestNewsIndicatorsModeGoRequiresCredentialsButNotMongo(t *testing.T) {
 }
 
 func TestNewsIndicatorsModeGoDoesNotRequireMongo(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_INDICATORS_MODE":
 			return "go"
@@ -1762,41 +1725,38 @@ func TestNewsIndicatorsModeGoDoesNotRequireMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("news indicators go must not require MONGO_URI: %v", err)
 	}
 }
 
-func TestGraphQLKgImpactModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLKgImpactMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+func TestGraphQLKgImpactModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLKgImpactMode != "go" || cfg.GraphQLReadMode != "go" {
 		t.Fatalf("kg=%q read=%q", cfg.GraphQLKgImpactMode, cfg.GraphQLReadMode)
 	}
 }
 
 func TestGraphQLKgImpactModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_KG_IMPACT_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_KG_IMPACT_MODE must be one of legacy|go") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestGraphQLKgImpactModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_KG_IMPACT_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1805,35 +1765,32 @@ func TestGraphQLKgImpactModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *test
 	}
 }
 
-func TestGraphQLWorkspaceReadModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLWorkspaceReadMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+func TestGraphQLWorkspaceReadModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLWorkspaceReadMode != "go" || cfg.GraphQLReadMode != "go" {
 		t.Fatalf("workspace=%q read=%q", cfg.GraphQLWorkspaceReadMode, cfg.GraphQLReadMode)
 	}
 }
 
 func TestGraphQLWorkspaceReadModeAcceptsExplicitLegacyAndGo(t *testing.T) {
-	legacy, err := Load(func(key string) string {
+	legacy, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if legacy.GraphQLWorkspaceReadMode != "legacy" {
 		t.Fatalf("explicit legacy = %q", legacy.GraphQLWorkspaceReadMode)
 	}
-	goMode, err := Load(func(key string) string {
+	goMode, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1843,24 +1800,24 @@ func TestGraphQLWorkspaceReadModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 }
 
 func TestGraphQLWorkspaceReadModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_WORKSPACE_READ_MODE must be one of legacy|go") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestGraphQLWorkspaceReadModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_WORKSPACE_READ_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1869,35 +1826,32 @@ func TestGraphQLWorkspaceReadModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t 
 	}
 }
 
-func TestGraphQLSettingsCrawlReadModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLSettingsCrawlReadMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+func TestGraphQLSettingsCrawlReadModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLSettingsCrawlReadMode != "go" || cfg.GraphQLReadMode != "go" {
 		t.Fatalf("settingsCrawl=%q read=%q", cfg.GraphQLSettingsCrawlReadMode, cfg.GraphQLReadMode)
 	}
 }
 
 func TestGraphQLSettingsCrawlReadModeAcceptsExplicitLegacyAndGo(t *testing.T) {
-	legacy, err := Load(func(key string) string {
+	legacy, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if legacy.GraphQLSettingsCrawlReadMode != "legacy" {
 		t.Fatalf("explicit legacy = %q", legacy.GraphQLSettingsCrawlReadMode)
 	}
-	goMode, err := Load(func(key string) string {
+	goMode, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1907,24 +1861,24 @@ func TestGraphQLSettingsCrawlReadModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 }
 
 func TestGraphQLSettingsCrawlReadModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE must be one of legacy|go") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestGraphQLSettingsCrawlReadModeGoDoesNotRequireCredentialsUntilReadModeIsGo(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_SETTINGS_CRAWL_READ_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1933,20 +1887,17 @@ func TestGraphQLSettingsCrawlReadModeGoDoesNotRequireCredentialsUntilReadModeIsG
 	}
 }
 
-func TestRuntimeSettingsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.RuntimeSettingsMode != RuntimeSettingsModeLegacy {
+func TestRuntimeSettingsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.RuntimeSettingsMode != RuntimeSettingsModeGo {
 		t.Fatalf("mode = %s", cfg.RuntimeSettingsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_RUNTIME_SETTINGS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1959,12 +1910,12 @@ func TestRuntimeSettingsModeRejectsInvalid(t *testing.T) {
 	// shadow and canary are explicitly not accepted: this unit is
 	// legacy-or-go only, so a typo in the switch fails startup.
 	for _, invalid := range []string{"shadow", "canary", "Go"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_RUNTIME_SETTINGS_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_RUNTIME_SETTINGS_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -1972,7 +1923,7 @@ func TestRuntimeSettingsModeRejectsInvalid(t *testing.T) {
 }
 
 func TestRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_RUNTIME_SETTINGS_MODE":
 			return "go"
@@ -1983,13 +1934,13 @@ func TestRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_RUNTIME_SETTINGS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
 
 	// Mongo is not a startup dependency of this unit.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_RUNTIME_SETTINGS_MODE":
 			return "go"
@@ -2002,7 +1953,7 @@ func TestRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2022,7 +1973,7 @@ type platformGovernanceEnvEntry struct {
 // the go-mode startup validation always requires, plus the caller's platform
 // governance overrides.
 func platformGovernanceEnv(overrides ...platformGovernanceEnvEntry) func(string) string {
-	return func(key string) string {
+	return legacyUnset(func(key string) string {
 		for _, entry := range overrides {
 			if entry.key == key {
 				return entry.value
@@ -2040,16 +1991,13 @@ func platformGovernanceEnv(overrides ...platformGovernanceEnvEntry) func(string)
 		default:
 			return ""
 		}
-	}
+	})
 }
 
-func TestPlatformGovernanceSettingsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.PlatformGovernanceSettingsMode != PlatformGovernanceSettingsModeLegacy {
-		t.Fatalf("mode = %q, want legacy", cfg.PlatformGovernanceSettingsMode)
+func TestPlatformGovernanceSettingsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.PlatformGovernanceSettingsMode != PlatformGovernanceSettingsModeGo {
+		t.Fatalf("mode = %q, want go", cfg.PlatformGovernanceSettingsMode)
 	}
 }
 
@@ -2063,7 +2011,7 @@ func TestPlatformGovernanceSettingsModeAcceptsExplicitValues(t *testing.T) {
 		{"go", PlatformGovernanceSettingsModeGo},
 	} {
 		env := platformGovernanceEnv(platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", tc.raw})
-		cfg, err := Load(env)
+		cfg, err := Load(legacyUnset(env))
 		if err != nil {
 			t.Fatalf("Load(%q) error = %v", tc.raw, err)
 		}
@@ -2091,7 +2039,7 @@ func TestPlatformGovernanceSettingsModeGoRequiresMongo(t *testing.T) {
 		platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", "go"},
 		platformGovernanceEnvEntry{"MONGO_URI", ""},
 	)
-	_, err := Load(env)
+	_, err := Load(legacyUnset(env))
 	if err == nil {
 		t.Fatal("Load() should require MONGO_URI in go mode")
 	}
@@ -2101,10 +2049,7 @@ func TestPlatformGovernanceSettingsModeGoRequiresMongo(t *testing.T) {
 }
 
 func TestPlatformGovernanceDefaultsMatchNestSchema(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	cfg := loadDefaults(t)
 	if !cfg.PlatformGovernanceAssistantGuardrailsEnabled {
 		t.Error("ASSISTANT_GUARDRAILS_ENABLED default = false, want true")
 	}
@@ -2123,8 +2068,8 @@ func TestPlatformGovernanceDefaultsMatchNestSchema(t *testing.T) {
 	if cfg.PlatformGovernanceTaskLogRetentionDays != 14 {
 		t.Errorf("TASK_LOG_RETENTION_DAYS default = %d, want 14", cfg.PlatformGovernanceTaskLogRetentionDays)
 	}
-	if cfg.PlatformGovernanceEncryptionKeyRaw != "" {
-		t.Errorf("SYSTEM_SETTINGS_ENCRYPTION_KEY default = %q, want empty", cfg.PlatformGovernanceEncryptionKeyRaw)
+	if keyCfg := loadDefaultsWithoutEncryptionKey(t); keyCfg.PlatformGovernanceEncryptionKeyRaw != "" {
+		t.Errorf("SYSTEM_SETTINGS_ENCRYPTION_KEY default = %q, want empty", keyCfg.PlatformGovernanceEncryptionKeyRaw)
 	}
 }
 
@@ -2185,7 +2130,7 @@ func TestPlatformGovernanceDefaultsRejectInvalidValuesInGoMode(t *testing.T) {
 			platformGovernanceEnvEntry{"API_GO_PLATFORM_GOVERNANCE_SETTINGS_MODE", "go"},
 			platformGovernanceEnvEntry{tc.key, tc.value},
 		)
-		if _, err := Load(env); err == nil {
+		if _, err := Load(legacyUnset(env)); err == nil {
 			t.Fatalf("Load() should reject %s=%q in go mode", tc.key, tc.value)
 		}
 	}
@@ -2194,7 +2139,7 @@ func TestPlatformGovernanceDefaultsRejectInvalidValuesInGoMode(t *testing.T) {
 func TestPlatformGovernanceDefaultsIgnoredInLegacyMode(t *testing.T) {
 	// Invalid values must not break a legacy deployment: behaviour stays
 	// identical to main until the switch is flipped to go.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "TASK_LOG_RETENTION_DAYS":
 			return "not-a-number"
@@ -2203,7 +2148,7 @@ func TestPlatformGovernanceDefaultsIgnoredInLegacyMode(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -2259,20 +2204,17 @@ func TestJSEnvNumberSemantics(t *testing.T) {
 	}
 }
 
-func TestInfrastructureSettingsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.InfrastructureSettingsMode != InfrastructureSettingsModeLegacy {
+func TestInfrastructureSettingsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.InfrastructureSettingsMode != InfrastructureSettingsModeGo {
 		t.Fatalf("mode = %s", cfg.InfrastructureSettingsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_INFRASTRUCTURE_SETTINGS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2285,12 +2227,12 @@ func TestInfrastructureSettingsModeRejectsInvalid(t *testing.T) {
 	// shadow and canary are explicitly not accepted: this unit is
 	// legacy-or-go only, so a typo in the switch fails startup.
 	for _, invalid := range []string{"shadow", "canary", "Go"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_INFRASTRUCTURE_SETTINGS_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_INFRASTRUCTURE_SETTINGS_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -2298,7 +2240,7 @@ func TestInfrastructureSettingsModeRejectsInvalid(t *testing.T) {
 }
 
 func TestInfrastructureSettingsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_INFRASTRUCTURE_SETTINGS_MODE":
 			return "go"
@@ -2309,7 +2251,7 @@ func TestInfrastructureSettingsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_INFRASTRUCTURE_SETTINGS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
@@ -2317,7 +2259,7 @@ func TestInfrastructureSettingsModeGoRequiresCredentials(t *testing.T) {
 	// Mongo, the encryption key and the vector/S3 upstreams are not startup
 	// requirements of this unit: an encryption key that is missing or invalid
 	// is handled per read/write by the documented fallback and 400 contracts.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_INFRASTRUCTURE_SETTINGS_MODE":
 			return "go"
@@ -2330,7 +2272,7 @@ func TestInfrastructureSettingsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("go mode must not require Mongo or an encryption key: %v", err)
 	}
@@ -2340,10 +2282,7 @@ func TestInfrastructureSettingsModeGoRequiresCredentials(t *testing.T) {
 }
 
 func TestInfrastructureSettingsEnvDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := loadDefaults(t)
 	if cfg.VectorServiceEnabled || !cfg.VectorServiceFallbackToMongo {
 		t.Fatalf("vector booleans = %v %v", cfg.VectorServiceEnabled, cfg.VectorServiceFallbackToMongo)
 	}
@@ -2359,11 +2298,11 @@ func TestInfrastructureSettingsEnvDefaults(t *testing.T) {
 	if cfg.S3Region != "us-east-1" || cfg.S3ForcePathStyle || cfg.S3PresignedURLTTLSeconds != 300 {
 		t.Fatalf("s3 scalars = %q %v %d", cfg.S3Region, cfg.S3ForcePathStyle, cfg.S3PresignedURLTTLSeconds)
 	}
-	if cfg.SettingsEncryptionKeyPresent || cfg.SettingsEncryptionKeyRaw != "" {
-		t.Fatalf("encryption key presence = %v %q", cfg.SettingsEncryptionKeyPresent, cfg.SettingsEncryptionKeyRaw)
+	if keyCfg := loadDefaultsWithoutEncryptionKey(t); keyCfg.SettingsEncryptionKeyPresent || keyCfg.SettingsEncryptionKeyRaw != "" {
+		t.Fatalf("encryption key presence = %v %q", keyCfg.SettingsEncryptionKeyPresent, keyCfg.SettingsEncryptionKeyRaw)
 	}
 
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "VECTOR_SERVICE_ENABLED":
 			return " Yes "
@@ -2384,7 +2323,7 @@ func TestInfrastructureSettingsEnvDefaults(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2409,11 +2348,18 @@ func TestInfrastructureSettingsEnvDefaults(t *testing.T) {
 
 // modelAccessEnv builds a getenv function that answers from a map.
 func modelAccessEnv(values map[string]string) func(string) string {
-	return func(key string) string { return values[key] }
+	return legacyUnset(func(key string) string { return values[key] })
 }
 
 // TestModelAccessSettingsModeVocabulary pins the switch's accepted values and the
 // exact error text, mirroring the other migration switches.
+func TestModelAccessSettingsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.ModelAccessSettingsMode != ModelAccessSettingsModeGo {
+		t.Fatalf("model access mode = %q, want go", cfg.ModelAccessSettingsMode)
+	}
+}
+
 func TestModelAccessSettingsModeVocabulary(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -2421,7 +2367,9 @@ func TestModelAccessSettingsModeVocabulary(t *testing.T) {
 		want    ModelAccessSettingsMode
 		wantErr bool
 	}{
-		{name: "unset defaults to legacy", value: "", want: ModelAccessSettingsModeLegacy},
+		// The unset value is covered by TestModelAccessSettingsModeDefaultsToGo:
+		// this fixture starts from the legacy baseline, so "" here would test the
+		// baseline rather than the default.
 		{name: "explicit legacy", value: "legacy", want: ModelAccessSettingsModeLegacy},
 		{name: "go", value: "go", want: ModelAccessSettingsModeGo},
 		{name: "whitespace tolerated", value: "  go  ", want: ModelAccessSettingsModeGo},
@@ -2501,6 +2449,13 @@ func TestModelAccessSettingsGoAcceptsTheAuthStack(t *testing.T) {
 
 // TestProxyLoadBalancingModeVocabulary pins the switch's accepted values and the
 // exact error text, mirroring the other migration switches.
+func TestProxyLoadBalancingModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.ProxyLoadBalancingMode != ProxyLoadBalancingModeGo {
+		t.Fatalf("proxy load balancing mode = %q, want go", cfg.ProxyLoadBalancingMode)
+	}
+}
+
 func TestProxyLoadBalancingModeVocabulary(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -2508,7 +2463,7 @@ func TestProxyLoadBalancingModeVocabulary(t *testing.T) {
 		want    ProxyLoadBalancingMode
 		wantErr bool
 	}{
-		{name: "unset defaults to legacy", value: "", want: ProxyLoadBalancingModeLegacy},
+		// Unset is covered by the defaults test; this fixture uses the legacy baseline.
 		{name: "explicit legacy", value: "legacy", want: ProxyLoadBalancingModeLegacy},
 		{name: "go", value: "go", want: ProxyLoadBalancingModeGo},
 		{name: "whitespace tolerated", value: "  go  ", want: ProxyLoadBalancingModeGo},
@@ -2671,7 +2626,7 @@ func TestModelAccessSettingsRawEnvIsCapturedUntrimmed(t *testing.T) {
 // TestLegacyModeIgnoresInvalidModelAccessValues proves a legacy deployment is
 // unaffected by the new environment handling.
 func TestLegacyModeIgnoresInvalidModelAccessValues(t *testing.T) {
-	for _, mode := range []string{"", "legacy"} {
+	for _, mode := range []string{"legacy", "  legacy  "} {
 		cfg, err := Load(modelAccessEnv(map[string]string{
 			"API_GO_MODEL_ACCESS_SETTINGS_MODE": mode,
 			"MODEL_SERVICE_ENABLED":             "maybe",
@@ -2686,20 +2641,17 @@ func TestLegacyModeIgnoresInvalidModelAccessValues(t *testing.T) {
 	}
 }
 
-func TestCrawlFrontierRunsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CrawlFrontierRunsMode != CrawlFrontierRunsModeLegacy {
+func TestCrawlFrontierRunsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.CrawlFrontierRunsMode != CrawlFrontierRunsModeGo {
 		t.Fatalf("mode = %s", cfg.CrawlFrontierRunsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_FRONTIER_RUNS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2709,19 +2661,19 @@ func TestCrawlFrontierRunsModeDefaultsToLegacy(t *testing.T) {
 }
 
 func TestCrawlFrontierRunsModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_CRAWL_FRONTIER_RUNS_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_CRAWL_FRONTIER_RUNS_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode: %v", err)
 	}
 }
 
 func TestCrawlFrontierRunsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_FRONTIER_RUNS_MODE":
 			return "go"
@@ -2732,13 +2684,13 @@ func TestCrawlFrontierRunsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_CRAWL_FRONTIER_RUNS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
 
 	// Mongo is not a startup dependency of this unit.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_CRAWL_FRONTIER_RUNS_MODE":
 			return "go"
@@ -2751,7 +2703,7 @@ func TestCrawlFrontierRunsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2760,20 +2712,17 @@ func TestCrawlFrontierRunsModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestDataRuntimeSettingsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.DataRuntimeSettingsMode != DataRuntimeSettingsModeLegacy {
+func TestDataRuntimeSettingsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.DataRuntimeSettingsMode != DataRuntimeSettingsModeGo {
 		t.Fatalf("mode = %s", cfg.DataRuntimeSettingsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_DATA_RUNTIME_SETTINGS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2786,12 +2735,12 @@ func TestDataRuntimeSettingsModeRejectsInvalid(t *testing.T) {
 	// shadow and canary are explicitly not accepted: this unit is legacy-or-go
 	// only, so a typo in the switch fails startup.
 	for _, invalid := range []string{"shadow", "canary", "Go"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_DATA_RUNTIME_SETTINGS_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_DATA_RUNTIME_SETTINGS_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -2799,7 +2748,7 @@ func TestDataRuntimeSettingsModeRejectsInvalid(t *testing.T) {
 }
 
 func TestDataRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_DATA_RUNTIME_SETTINGS_MODE":
 			return "go"
@@ -2810,7 +2759,7 @@ func TestDataRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_DATA_RUNTIME_SETTINGS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
@@ -2818,7 +2767,7 @@ func TestDataRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
 	// Mongo and the encryption key are not startup requirements of this unit: a
 	// missing or invalid key is handled per read and write by the documented
 	// fallback and 400 contracts.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_DATA_RUNTIME_SETTINGS_MODE":
 			return "go"
@@ -2831,7 +2780,7 @@ func TestDataRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("go mode must not require Mongo or an encryption key: %v", err)
 	}
@@ -2841,10 +2790,7 @@ func TestDataRuntimeSettingsModeGoRequiresCredentials(t *testing.T) {
 }
 
 func TestDataRuntimeSettingsEnvDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := loadDefaults(t)
 	env := cfg.DataRuntimeSettings
 	if !env.RealtimeEnabled || env.RealtimeRequestTimeoutMs != 12_000 || env.RealtimeMaxRetries != 2 {
 		t.Fatalf("realtime scalars = %+v", env)
@@ -2882,7 +2828,7 @@ func TestDataRuntimeSettingsEnvDefaults(t *testing.T) {
 }
 
 func TestDataRuntimeSettingsEnvPassThrough(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "REALTIME_SIGNALS_ENABLED":
 			return " off "
@@ -2920,7 +2866,7 @@ func TestDataRuntimeSettingsEnvPassThrough(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2947,17 +2893,16 @@ func TestDataRuntimeSettingsEnvPassThrough(t *testing.T) {
 	}
 }
 
-func TestAuthFactorsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.AuthFactorsMode != AuthFactorsModeLegacy {
+func TestAuthFactorsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.AuthFactorsMode != AuthFactorsModeGo {
 		t.Fatalf("mode = %s", cfg.AuthFactorsMode)
 	}
-	// The empty string is explicitly accepted and behaves like legacy.
-	for _, accepted := range []string{"", "legacy", "  legacy  "} {
-		cfg, err = Load(func(key string) string {
+	// An explicit legacy value (with surrounding whitespace trimmed) selects the
+	// rollback branch. The empty string no longer belongs here: it now takes the
+	// go default, which is covered by loadDefaults above.
+	for _, accepted := range []string{"legacy", "  legacy  "} {
+		cfg, err := legacyOverlayLoad(t, func(key string) string {
 			if key == "API_GO_AUTH_FACTORS_MODE" {
 				return accepted
 			}
@@ -2977,12 +2922,12 @@ func TestAuthFactorsModeRejectsInvalid(t *testing.T) {
 	// legacy-or-go only, so a typo in the switch fails startup instead of
 	// silently degrading to the NestJS proxy.
 	for _, invalid := range []string{"shadow", "canary", "Go", "true", "1"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_AUTH_FACTORS_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_AUTH_FACTORS_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -2990,7 +2935,7 @@ func TestAuthFactorsModeRejectsInvalid(t *testing.T) {
 }
 
 func TestAuthFactorsModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_AUTH_FACTORS_MODE":
 			return "go"
@@ -3001,7 +2946,7 @@ func TestAuthFactorsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_AUTH_FACTORS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
@@ -3009,7 +2954,7 @@ func TestAuthFactorsModeGoRequiresCredentials(t *testing.T) {
 	// Mongo is not a startup dependency of this unit: it reads and writes MySQL
 	// and Redis only. The settings-encryption key stays optional too, because a
 	// missing or invalid key is handled per write by the documented policy.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_AUTH_FACTORS_MODE":
 			return "go"
@@ -3022,7 +2967,7 @@ func TestAuthFactorsModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("go mode must not require Mongo or an encryption key: %v", err)
 	}
@@ -3031,34 +2976,31 @@ func TestAuthFactorsModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestAccountSecurityModeDefaultsToLegacy(t *testing.T) {
+func TestAccountSecurityModeDefaultsToGo(t *testing.T) {
 	// Unset and the empty string both mean legacy: the default deployment keeps
 	// every request on the NestJS proxy.
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.AccountSecurityMode != AccountSecurityModeLegacy {
+	cfg := loadDefaults(t)
+	if cfg.AccountSecurityMode != AccountSecurityModeGo {
 		t.Fatalf("mode = %s", cfg.AccountSecurityMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ACCOUNT_SECURITY_MODE" {
 			return ""
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.AccountSecurityMode != AccountSecurityModeLegacy {
 		t.Fatalf("empty mode = %s", cfg.AccountSecurityMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err = Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ACCOUNT_SECURITY_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3071,12 +3013,12 @@ func TestAccountSecurityModeRejectsInvalid(t *testing.T) {
 	// Only legacy and go are accepted; shadow/canary and any typo fail startup
 	// with the exact error text.
 	for _, invalid := range []string{"shadow", "canary", "Go", "GO "} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_ACCOUNT_SECURITY_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_ACCOUNT_SECURITY_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -3084,7 +3026,7 @@ func TestAccountSecurityModeRejectsInvalid(t *testing.T) {
 }
 
 func TestAccountSecurityModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ACCOUNT_SECURITY_MODE":
 			return "go"
@@ -3095,14 +3037,14 @@ func TestAccountSecurityModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_ACCOUNT_SECURITY_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
 
 	// Mongo is deliberately not a startup dependency of this unit: it reads and
 	// writes MySQL and Redis only.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ACCOUNT_SECURITY_MODE":
 			return "go"
@@ -3115,7 +3057,7 @@ func TestAccountSecurityModeGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("go mode must not require Mongo: %v", err)
 	}
@@ -3124,33 +3066,30 @@ func TestAccountSecurityModeGoRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestSituationSignalsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SituationSignalsMode != SituationSignalsModeLegacy {
+func TestSituationSignalsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.SituationSignalsMode != SituationSignalsModeGo {
 		t.Fatalf("mode = %s", cfg.SituationSignalsMode)
 	}
 	// The empty string is explicitly legacy, not "unset but different".
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_SITUATION_MONITOR_SIGNALS_MODE" {
 			return ""
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.SituationSignalsMode != SituationSignalsModeLegacy {
 		t.Fatalf("mode = %s", cfg.SituationSignalsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err = Load(legacyUnset(func(key string) string {
 		if key == "API_GO_SITUATION_MONITOR_SIGNALS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3163,12 +3102,12 @@ func TestSituationSignalsModeRejectsInvalid(t *testing.T) {
 	// shadow and canary are explicitly not accepted: this unit is
 	// legacy-or-go only, so a typo in the switch fails startup.
 	for _, invalid := range []string{"shadow", "canary", "Go", "true", "go\tshadow"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_SITUATION_MONITOR_SIGNALS_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_SITUATION_MONITOR_SIGNALS_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -3189,18 +3128,18 @@ func TestSituationSignalsModeGoRequiresCredentials(t *testing.T) {
 		"REDIS_HOST":   "REDIS_HOST is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go",
 		"MONGO_URI":    "MONGO_URI is required when API_GO_SITUATION_MONITOR_SIGNALS_MODE=go",
 	} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == missing {
 				return ""
 			}
 			return full[key]
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), expected) {
 			t.Fatalf("missing %s: %v", missing, err)
 		}
 	}
 
-	cfg, err := Load(func(key string) string { return full[key] })
+	cfg, err := Load(legacyUnset(func(key string) string { return full[key] }))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3212,7 +3151,7 @@ func TestSituationSignalsModeGoRequiresCredentials(t *testing.T) {
 func TestSituationSignalsModeIsIndependentOfSituationMonitorsMode(t *testing.T) {
 	// The monitors switch owns the five /monitors** routes; the signals switch
 	// owns seven different paths. Neither one may turn the other on.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_SITUATION_MONITOR_SIGNALS_MODE":
 			return "go"
@@ -3227,7 +3166,7 @@ func TestSituationSignalsModeIsIndependentOfSituationMonitorsMode(t *testing.T) 
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3238,7 +3177,7 @@ func TestSituationSignalsModeIsIndependentOfSituationMonitorsMode(t *testing.T) 
 		t.Fatalf("signals mode = %s", cfg.SituationSignalsMode)
 	}
 
-	cfg, err = Load(func(key string) string {
+	cfg, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_SITUATION_MONITORS_MODE":
 			return "go"
@@ -3251,7 +3190,7 @@ func TestSituationSignalsModeIsIndependentOfSituationMonitorsMode(t *testing.T) 
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3261,31 +3200,31 @@ func TestSituationSignalsModeIsIndependentOfSituationMonitorsMode(t *testing.T) 
 }
 
 func TestItemsReadingModeAcceptsExplicitLegacyGoAndEmptyString(t *testing.T) {
-	legacy, err := Load(func(key string) string {
+	legacy, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ITEMS_READING_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if legacy.ItemsReadingMode != ItemsReadingModeLegacy {
 		t.Fatalf("explicit legacy = %q", legacy.ItemsReadingMode)
 	}
-	empty, err := Load(func(key string) string {
+	empty, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ITEMS_READING_MODE" {
 			return ""
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if empty.ItemsReadingMode != ItemsReadingModeLegacy {
 		t.Fatalf("empty string = %q", empty.ItemsReadingMode)
 	}
-	goMode, err := Load(func(key string) string {
+	goMode, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ITEMS_READING_MODE":
 			return "go"
@@ -3299,7 +3238,7 @@ func TestItemsReadingModeAcceptsExplicitLegacyGoAndEmptyString(t *testing.T) {
 			return "mongodb://localhost:27017/app"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3309,12 +3248,12 @@ func TestItemsReadingModeAcceptsExplicitLegacyGoAndEmptyString(t *testing.T) {
 }
 
 func TestItemsReadingModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ITEMS_READING_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_ITEMS_READING_MODE must be one of legacy|go") {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -3326,7 +3265,7 @@ func TestItemsReadingModeRejectsInvalid(t *testing.T) {
 }
 
 func TestItemsReadingModeGoRequiresMongo(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ITEMS_READING_MODE":
 			return "go"
@@ -3338,19 +3277,19 @@ func TestItemsReadingModeGoRequiresMongo(t *testing.T) {
 			return "localhost"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_ITEMS_READING_MODE=go") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestItemsReadingModeGoDoesNotRequireCredentialsUntilGo(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ITEMS_READING_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3359,20 +3298,17 @@ func TestItemsReadingModeGoDoesNotRequireCredentialsUntilGo(t *testing.T) {
 	}
 }
 
-func TestLLMGatewayProfilesModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeLegacy {
+func TestLLMGatewayProfilesModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.LLMGatewayProfilesMode != LLMGatewayProfilesModeGo {
 		t.Fatalf("mode = %s", cfg.LLMGatewayProfilesMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_LLM_GATEWAY_PROFILES_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3385,12 +3321,12 @@ func TestLLMGatewayProfilesModeRejectsInvalid(t *testing.T) {
 	// shadow and canary are explicitly not accepted: this unit is
 	// legacy-or-go only, so a typo in the switch fails startup.
 	for _, invalid := range []string{"shadow", "canary", "Go"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_LLM_GATEWAY_PROFILES_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_LLM_GATEWAY_PROFILES_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -3398,7 +3334,7 @@ func TestLLMGatewayProfilesModeRejectsInvalid(t *testing.T) {
 }
 
 func TestLLMGatewayProfilesModeGoRequiresCredentialsButNotMongo(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_LLM_GATEWAY_PROFILES_MODE":
 			return "go"
@@ -3409,12 +3345,12 @@ func TestLLMGatewayProfilesModeGoRequiresCredentialsButNotMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_LLM_GATEWAY_PROFILES_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
 
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_LLM_GATEWAY_PROFILES_MODE":
 			return "go"
@@ -3427,7 +3363,7 @@ func TestLLMGatewayProfilesModeGoRequiresCredentialsButNotMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3441,10 +3377,7 @@ func TestLLMGatewayProfilesModeGoRequiresCredentialsButNotMongo(t *testing.T) {
 }
 
 func TestLLMGatewayProfileEnvProjectionDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := loadDefaults(t)
 	if cfg.LLMGatewayModel != "openai/gpt-4o-mini" {
 		t.Fatalf("model = %q", cfg.LLMGatewayModel)
 	}
@@ -3477,12 +3410,12 @@ func TestLLMGatewayProfileEnvProjectionDefaults(t *testing.T) {
 func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
 	// LITELLM_MAX_TOKENS has a schema default in NestJS, so setting only
 	// LITELLM_MAX_OUTPUT_TOKENS can never win. The Go projection must agree.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "LITELLM_MAX_OUTPUT_TOKENS" {
 			return "777"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3491,12 +3424,12 @@ func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
 	}
 
 	// The same rule applies to LITELLM_MAX_RETRIES.
-	cfg, err = Load(func(key string) string {
+	cfg, err = Load(legacyUnset(func(key string) string {
 		if key == "LITELLM_MAX_RETRIES" {
 			return "9"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3504,7 +3437,7 @@ func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
 		t.Fatalf("maxRetries = %d, want the RETRY_ATTEMPTS schema default", cfg.LLMGatewayMaxRetries)
 	}
 
-	cfg, err = Load(func(key string) string {
+	cfg, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "LITELLM_API_URL":
 			return "http://primary:1"
@@ -3527,7 +3460,7 @@ func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3558,12 +3491,12 @@ func TestLLMGatewaySettingsEncryptionKeyKeepsRawValue(t *testing.T) {
 	// The NestJS presence check is a JavaScript truthiness test on the raw
 	// value, so a whitespace-only key must count as present-but-invalid and the
 	// raw value must survive the config load.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "SYSTEM_SETTINGS_ENCRYPTION_KEY" {
 			return "   "
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3575,10 +3508,45 @@ func TestLLMGatewaySettingsEncryptionKeyKeepsRawValue(t *testing.T) {
 // itemsListEnv is the minimal credentialed environment of the two parent
 // switches (GraphQL read + items reading), including the Mongo requirement the
 // items reading switch already implies.
+// itemsListEnv builds a fixture for the items-list switch tests.
+//
+// Unset *Mode keys resolve to legacy on purpose: these tests are about the
+// parent/child dependency rules between the items-list, GraphQL-read and
+// items-reading switches, so every switch they do not name has to stay on the
+// rollback configuration. Returning "" would now select the go default and
+// change what the test is exercising.
 func itemsListEnv(extra map[string]string) func(string) string {
+	legacy := map[string]string{}
+	typ := reflect.TypeOf(Config{})
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if !strings.HasSuffix(field.Name, "Mode") || field.Type.Kind() != reflect.String {
+			continue
+		}
+		if _, exempt := legacyRejectExemptModes[field.Name]; exempt {
+			continue
+		}
+		name := modeSwitchEnvName(field.Name)
+		switch name {
+		// These two accept shadow|go rather than legacy.
+		case "API_GO_ONBOARDING_MODE", "API_GO_USER_SETTINGS_READ_MODE":
+			legacy[name] = "shadow"
+		default:
+			legacy[name] = "legacy"
+		}
+	}
 	return func(key string) string {
 		if value, ok := extra[key]; ok {
 			return value
+		}
+		if strings.HasPrefix(key, "API_GO_") && strings.HasSuffix(key, "_MODE") {
+			if key == "API_GO_LEGACY_FALLBACK_MODE" {
+				return "proxy"
+			}
+			if value, ok := legacy[key]; ok {
+				return value
+			}
+			return "legacy"
 		}
 		switch key {
 		case "JWT_SECRET":
@@ -3599,16 +3567,13 @@ func itemsListEnv(extra map[string]string) func(string) string {
 // legacy keep the root on NestJS, an invalid value fails Load, and go requires
 // both parent switches instead of silently enabling them.
 func TestGraphQLItemsListModeSwitch(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLItemsListMode != "legacy" {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLItemsListMode != "go" {
 		t.Fatalf("default items list mode = %q", cfg.GraphQLItemsListMode)
 	}
 
-	for _, raw := range []string{"", "legacy"} {
-		cfg, err = Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": raw}))
+	for _, raw := range []string{"legacy"} {
+		cfg, err := Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": raw}))
 		if err != nil {
 			t.Fatalf("Load(%q) error = %v", raw, err)
 		}
@@ -3617,11 +3582,18 @@ func TestGraphQLItemsListModeSwitch(t *testing.T) {
 		}
 	}
 
+	// An empty value now selects the go default, which the parent switches in
+	// itemsListEnv (legacy) do not satisfy.
+	if _, err := Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": ""})); err == nil ||
+		!strings.Contains(err.Error(), "requires API_GO_GRAPHQL_READ_MODE=go") {
+		t.Fatalf("empty value must follow the go default and fail the parent check: %v", err)
+	}
+
 	if _, err := Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": "shadow"})); err == nil {
 		t.Fatal("Load() must reject an invalid API_GO_GRAPHQL_ITEMS_LIST_MODE")
 	}
 
-	_, err = Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": "go"}))
+	_, err := Load(itemsListEnv(map[string]string{"API_GO_GRAPHQL_ITEMS_LIST_MODE": "go"}))
 	if err == nil || !strings.Contains(err.Error(), "requires API_GO_GRAPHQL_READ_MODE=go") {
 		t.Fatalf("missing read parent error = %v", err)
 	}
@@ -3633,7 +3605,6 @@ func TestGraphQLItemsListModeSwitch(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "requires API_GO_ITEMS_READING_MODE=go") {
 		t.Fatalf("missing items-reading parent error = %v", err)
 	}
-
 	cfg, err = Load(itemsListEnv(map[string]string{
 		"API_GO_GRAPHQL_ITEMS_LIST_MODE": "go",
 		"API_GO_GRAPHQL_READ_MODE":       "go",
@@ -3647,20 +3618,17 @@ func TestGraphQLItemsListModeSwitch(t *testing.T) {
 	}
 }
 
-func TestStorageDiagnosticsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.StorageDiagnosticsMode != StorageDiagnosticsModeLegacy {
+func TestStorageDiagnosticsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.StorageDiagnosticsMode != StorageDiagnosticsModeGo {
 		t.Fatalf("mode = %s", cfg.StorageDiagnosticsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_STORAGE_DIAGNOSTICS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3673,12 +3641,12 @@ func TestStorageDiagnosticsModeRejectsInvalid(t *testing.T) {
 	// shadow and canary are not accepted: the switch is legacy-or-go only, so a
 	// typo fails startup instead of silently degrading.
 	for _, invalid := range []string{"shadow", "canary", "Go", "test"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_STORAGE_DIAGNOSTICS_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_STORAGE_DIAGNOSTICS_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -3687,7 +3655,7 @@ func TestStorageDiagnosticsModeRejectsInvalid(t *testing.T) {
 
 func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
 	// Redis is required.
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_STORAGE_DIAGNOSTICS_MODE":
 			return "go"
@@ -3698,14 +3666,14 @@ func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_HOST is required when API_GO_STORAGE_DIAGNOSTICS_MODE=go") {
 		t.Fatalf("missing redis: %v", err)
 	}
 
 	// Mongo and every other takeover switch are not startup requirements, and
 	// the switches stay independent of each other.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_STORAGE_DIAGNOSTICS_MODE":
 			return "go"
@@ -3718,7 +3686,7 @@ func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("go mode must not require Mongo or another switch: %v", err)
 	}
@@ -3733,7 +3701,7 @@ func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
 
 	// The reverse: the diagnostics switch stays legacy when only the other
 	// switches are go.
-	cfg, err = Load(func(key string) string {
+	cfg, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_INFRASTRUCTURE_SETTINGS_MODE", "API_GO_CRAWL_READ_TELEMETRY_MODE":
 			return "go"
@@ -3748,7 +3716,7 @@ func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3757,21 +3725,18 @@ func TestStorageDiagnosticsModeGoRequiresCredentialsOnly(t *testing.T) {
 	}
 }
 
-func TestNewsBackfillSwitchesDefaultToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.NewsClusteringLlmBackfillMode != NewsClusteringLlmBackfillModeLegacy {
+func TestNewsBackfillSwitchesDefaultToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.NewsClusteringLlmBackfillMode != NewsClusteringLlmBackfillModeGo {
 		t.Fatalf("llm backfill mode = %s", cfg.NewsClusteringLlmBackfillMode)
 	}
-	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeLegacy {
+	if cfg.NewsClusteringRecoveryWorkerMode != NewsClusteringRecoveryWorkerModeGo {
 		t.Fatalf("recovery worker mode = %s", cfg.NewsClusteringRecoveryWorkerMode)
 	}
-	if cfg.GraphQLNewsIndicatorRefreshMode != "legacy" {
+	if cfg.GraphQLNewsIndicatorRefreshMode != "go" {
 		t.Fatalf("graphql refresh mode = %s", cfg.GraphQLNewsIndicatorRefreshMode)
 	}
-	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeLegacy {
+	if cfg.NewsIndicatorAssociationCronMode != NewsIndicatorAssociationCronModeGo {
 		t.Fatalf("association cron mode = %s", cfg.NewsIndicatorAssociationCronMode)
 	}
 	if cfg.NewsProcessQueueConcurrency != 8 {
@@ -3779,7 +3744,7 @@ func TestNewsBackfillSwitchesDefaultToLegacy(t *testing.T) {
 	}
 }
 
-func TestNewsBackfillSwitchesAcceptEmptyAndExplicitLegacy(t *testing.T) {
+func TestNewsBackfillSwitchesAcceptExplicitLegacy(t *testing.T) {
 	keys := []string{
 		"API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE",
 		"API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE",
@@ -3787,12 +3752,12 @@ func TestNewsBackfillSwitchesAcceptEmptyAndExplicitLegacy(t *testing.T) {
 		"API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE",
 	}
 	for _, key := range keys {
-		cfg, err := Load(func(name string) string {
+		cfg, err := Load(legacyUnset(func(name string) string {
 			if name == key {
 				return "legacy"
 			}
 			return ""
-		})
+		}))
 		if err != nil {
 			t.Fatalf("%s=legacy: %v", key, err)
 		}
@@ -3823,7 +3788,7 @@ func TestNewsBackfillSwitchesRejectInvalid(t *testing.T) {
 }
 
 func TestNewsClusteringLlmBackfillModeGoRequiresFullStack(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE":
 			return "go"
@@ -3836,12 +3801,12 @@ func TestNewsClusteringLlmBackfillModeGoRequiresFullStack(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE=go") {
 		t.Fatalf("missing mongo: %v", err)
 	}
 
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_CLUSTERING_LLM_BACKFILL_MODE":
 			return "go"
@@ -3856,7 +3821,7 @@ func TestNewsClusteringLlmBackfillModeGoRequiresFullStack(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -3873,7 +3838,7 @@ func TestNewsClusteringLlmBackfillModeGoRequiresFullStack(t *testing.T) {
 }
 
 func TestNewsClusteringRecoveryWorkerModeGoDoesNotRequireJWT(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE":
 			return "go"
@@ -3884,12 +3849,12 @@ func TestNewsClusteringRecoveryWorkerModeGoDoesNotRequireJWT(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE=go") {
 		t.Fatalf("missing mongo: %v", err)
 	}
 
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_CLUSTERING_RECOVERY_WORKER_MODE":
 			return "go"
@@ -3902,7 +3867,7 @@ func TestNewsClusteringRecoveryWorkerModeGoDoesNotRequireJWT(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -3912,19 +3877,19 @@ func TestNewsClusteringRecoveryWorkerModeGoDoesNotRequireJWT(t *testing.T) {
 }
 
 func TestNewsIndicatorAssociationCronModeGoRequiresMySQLAndRedisOnly(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE":
 			return "go"
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required when API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE=go") {
 		t.Fatalf("missing mysql: %v", err)
 	}
 
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_INDICATOR_ASSOCIATION_CRON_MODE":
 			return "go"
@@ -3935,7 +3900,7 @@ func TestNewsIndicatorAssociationCronModeGoRequiresMySQLAndRedisOnly(t *testing.
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -3945,19 +3910,19 @@ func TestNewsIndicatorAssociationCronModeGoRequiresMySQLAndRedisOnly(t *testing.
 }
 
 func TestGraphQLNewsIndicatorRefreshModeGoRequiresAuthStack(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE":
 			return "go"
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE=go") {
 		t.Fatalf("missing jwt: %v", err)
 	}
 
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_NEWS_INDICATOR_REFRESH_MODE":
 			return "go"
@@ -3970,7 +3935,7 @@ func TestGraphQLNewsIndicatorRefreshModeGoRequiresAuthStack(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -3980,12 +3945,12 @@ func TestGraphQLNewsIndicatorRefreshModeGoRequiresAuthStack(t *testing.T) {
 }
 
 func TestNewsProcessQueueConcurrencyEnv(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "NEWS_PROCESS_QUEUE_CONCURRENCY" {
 			return "1"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -3994,35 +3959,34 @@ func TestNewsProcessQueueConcurrencyEnv(t *testing.T) {
 	}
 }
 
-func TestGdeltSnapshotModesDefaultToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GdeltSnapshotMode != GdeltSnapshotModeLegacy {
+func TestGdeltSnapshotModesDefaultToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GdeltSnapshotMode != GdeltSnapshotModeGo {
 		t.Fatalf("scheduler mode = %s", cfg.GdeltSnapshotMode)
 	}
-	if cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
+	if cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeGo {
 		t.Fatalf("refresh mode = %s", cfg.GdeltSnapshotRefreshMode)
 	}
 	// SITUATION_MONITOR_GDELT_ENABLED defaults to true in the NestJS schema too.
 	if !cfg.SituationMonitorGdeltEnabled {
 		t.Fatal("SITUATION_MONITOR_GDELT_ENABLED default = false, want true")
 	}
-	for _, empty := range []string{"", "  "} {
-		cfg, err := Load(func(key string) string {
+	// An explicit legacy value takes the rollback branch; the empty value now
+	// resolves to go, which loadDefaults covers.
+	for _, legacy := range []string{"legacy", "  legacy  "} {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			switch key {
 			case "API_GO_GDELT_SNAPSHOT_MODE", "API_GO_GDELT_SNAPSHOT_REFRESH_MODE":
-				return empty
+				return legacy
 			default:
 				return ""
 			}
-		})
+		}))
 		if err != nil {
-			t.Fatalf("empty mode %q: %v", empty, err)
+			t.Fatalf("legacy mode %q: %v", legacy, err)
 		}
 		if cfg.GdeltSnapshotMode != GdeltSnapshotModeLegacy || cfg.GdeltSnapshotRefreshMode != GdeltSnapshotRefreshModeLegacy {
-			t.Fatalf("empty mode %q parsed as %s/%s", empty, cfg.GdeltSnapshotMode, cfg.GdeltSnapshotRefreshMode)
+			t.Fatalf("legacy mode %q parsed as %s/%s", legacy, cfg.GdeltSnapshotMode, cfg.GdeltSnapshotRefreshMode)
 		}
 	}
 }
@@ -4034,12 +3998,12 @@ func TestGdeltSnapshotModesRejectInvalid(t *testing.T) {
 		{"API_GO_GDELT_SNAPSHOT_REFRESH_MODE", "canary"},
 		{"API_GO_GDELT_SNAPSHOT_REFRESH_MODE", "true"},
 	} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == testCase.key {
 				return testCase.invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), testCase.key+" must be one of legacy|go") {
 			t.Fatalf("%s=%q: %v", testCase.key, testCase.invalid, err)
 		}
@@ -4056,19 +4020,19 @@ func TestGdeltSnapshotSchedulerGoRequiresMySQLAndRedisOnly(t *testing.T) {
 		"DATABASE_URL": "DATABASE_URL is required when API_GO_GDELT_SNAPSHOT_MODE=go",
 		"REDIS_HOST":   "REDIS_HOST is required when API_GO_GDELT_SNAPSHOT_MODE=go",
 	} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == missing {
 				return ""
 			}
 			return full[key]
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), expected) {
 			t.Fatalf("missing %s: %v", missing, err)
 		}
 	}
 	// The scheduler serves no route, so a missing JWT secret is not a startup
 	// condition.
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GDELT_SNAPSHOT_MODE":
 			return "go"
@@ -4079,7 +4043,7 @@ func TestGdeltSnapshotSchedulerGoRequiresMySQLAndRedisOnly(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("scheduler go must not require JWT: %v", err)
 	}
@@ -4100,12 +4064,12 @@ func TestGdeltSnapshotRefreshGoRequiresCredentialedStack(t *testing.T) {
 		"DATABASE_URL": "DATABASE_URL is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
 		"REDIS_HOST":   "REDIS_HOST is required when API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go",
 	} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == missing {
 				return ""
 			}
 			return full[key]
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), expected) {
 			t.Fatalf("missing %s: %v", missing, err)
 		}
@@ -4113,7 +4077,7 @@ func TestGdeltSnapshotRefreshGoRequiresCredentialedStack(t *testing.T) {
 }
 
 func TestGdeltSnapshotSwitchesAreIndependentAndReadTheEnabledFlag(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GDELT_SNAPSHOT_MODE":
 			return "go"
@@ -4126,7 +4090,7 @@ func TestGdeltSnapshotSwitchesAreIndependentAndReadTheEnabledFlag(t *testing.T) 
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4177,7 +4141,7 @@ func TestAlertWorkerMode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(func(key string) string {
+			cfg, err := Load(legacyUnset(func(key string) string {
 				if v, ok := tc.extraEnv[key]; ok {
 					return v
 				}
@@ -4185,7 +4149,7 @@ func TestAlertWorkerMode(t *testing.T) {
 					return tc.mode
 				}
 				return ""
-			})
+			}))
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("want error, got cfg %+v", cfg)
@@ -4203,7 +4167,7 @@ func TestAlertWorkerMode(t *testing.T) {
 }
 
 func TestAlertingConfigDefaultsAndBounds(t *testing.T) {
-	cfg, err := Load(func(key string) string { return "" })
+	cfg, err := Load(legacyUnset(func(key string) string { return "" }))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -4230,7 +4194,7 @@ func TestAlertingConfigDefaultsAndBounds(t *testing.T) {
 		"ALERT_NOTIFY_LIMITER_TTL_MS":         "120000",
 		"BULLMQ_NAMESPACE":                    "custom",
 	}
-	cfg, err = Load(func(key string) string { return env[key] })
+	cfg, err = Load(legacyUnset(func(key string) string { return env[key] }))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -4273,13 +4237,10 @@ func TestAlertingConfigDefaultsAndBounds(t *testing.T) {
 }
 
 func TestNewsSourceSchedulerDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.NewsSourceSchedulerMode != NewsSourceSchedulerModeLegacy ||
-		cfg.NewsSourceOpsMode != NewsSourceOpsModeLegacy {
-		t.Fatalf("modes = %q/%q, want legacy", cfg.NewsSourceSchedulerMode, cfg.NewsSourceOpsMode)
+	cfg := loadDefaults(t)
+	if cfg.NewsSourceSchedulerMode != NewsSourceSchedulerModeGo ||
+		cfg.NewsSourceOpsMode != NewsSourceOpsModeGo {
+		t.Fatalf("modes = %q/%q, want go", cfg.NewsSourceSchedulerMode, cfg.NewsSourceOpsMode)
 	}
 	scheduler := cfg.NewsSourceScheduler
 	if !scheduler.Enabled ||
@@ -4301,20 +4262,21 @@ func TestNewsSourceSchedulerDefaults(t *testing.T) {
 	}
 }
 
-func TestNewsSourceSwitchesParseEmptyAsLegacy(t *testing.T) {
-	cfg, err := Load(func(key string) string {
-		switch key {
-		case "API_GO_NEWS_SOURCE_SCHEDULER_MODE", "API_GO_NEWS_SOURCE_OPS_MODE":
-			return "   "
-		}
-		return ""
-	})
+// TestNewsSourceSwitchesTrimWhitespace covers the trimming rule: a whitespace-only
+// value collapses to the empty string, which now selects the go default.
+func TestNewsSourceSwitchesTrimWhitespace(t *testing.T) {
+	// Start from the resource fixture so the go default has what it needs, then
+	// give both switches a whitespace-only value.
+	env := defaultResources(t)
+	env["API_GO_NEWS_SOURCE_SCHEDULER_MODE"] = "   "
+	env["API_GO_NEWS_SOURCE_OPS_MODE"] = "   "
+	cfg, err := Load(func(key string) string { return env[key] })
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.NewsSourceSchedulerMode != NewsSourceSchedulerModeLegacy ||
-		cfg.NewsSourceOpsMode != NewsSourceOpsModeLegacy {
-		t.Fatalf("modes = %q/%q, want legacy", cfg.NewsSourceSchedulerMode, cfg.NewsSourceOpsMode)
+	if cfg.NewsSourceSchedulerMode != NewsSourceSchedulerModeGo ||
+		cfg.NewsSourceOpsMode != NewsSourceOpsModeGo {
+		t.Fatalf("modes = %q/%q, want go", cfg.NewsSourceSchedulerMode, cfg.NewsSourceOpsMode)
 	}
 }
 
@@ -4347,12 +4309,12 @@ func TestNewsSourceSchedulerSourceConcurrency(t *testing.T) {
 		{"-2", 1},
 		{"4", 4},
 	} {
-		cfg, err := Load(func(key string) string {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			if key == "NEWS_SOURCE_SCHEDULER_SOURCE_CONCURRENCY" {
 				return tc.raw
 			}
 			return ""
-		})
+		}))
 		if err != nil {
 			t.Fatalf("Load() error = %v", err)
 		}
@@ -4364,17 +4326,17 @@ func TestNewsSourceSchedulerSourceConcurrency(t *testing.T) {
 }
 
 func TestNewsSourceSwitchesRequireTheirDependencies(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_NEWS_SOURCE_SCHEDULER_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
 		t.Fatalf("scheduler go error = %v, want a DATABASE_URL requirement", err)
 	}
 
-	_, err = Load(func(key string) string {
+	_, err = Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_NEWS_SOURCE_OPS_MODE":
 			return "go"
@@ -4384,7 +4346,7 @@ func TestNewsSourceSwitchesRequireTheirDependencies(t *testing.T) {
 			return "localhost"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET") {
 		t.Fatalf("ops go error = %v, want a JWT_SECRET requirement", err)
 	}
@@ -4413,16 +4375,13 @@ func TestResidualDutyModes(t *testing.T) {
 	for _, name := range names {
 		name := name
 		t.Run(name.key+" default", func(t *testing.T) {
-			cfg, err := Load(func(string) string { return "" })
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-			if got := name.apply(&cfg); got != "legacy" {
-				t.Fatalf("%s default = %q, want legacy", name.key, got)
+			cfg := loadDefaults(t)
+			if got := name.apply(&cfg); got != "go" {
+				t.Fatalf("%s default = %q, want go", name.key, got)
 			}
 		})
 		t.Run(name.key+" legacy", func(t *testing.T) {
-			cfg, err := Load(func(key string) string {
+			cfg, err := legacyOverlayLoad(t, func(key string) string {
 				if key == name.key {
 					return "legacy"
 				}
@@ -4436,12 +4395,12 @@ func TestResidualDutyModes(t *testing.T) {
 			}
 		})
 		t.Run(name.key+" go", func(t *testing.T) {
-			cfg, err := Load(func(key string) string {
+			cfg, err := Load(legacyUnset(func(key string) string {
 				if key == name.key {
 					return "go"
 				}
 				return fullEnv[key]
-			})
+			}))
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
@@ -4450,12 +4409,12 @@ func TestResidualDutyModes(t *testing.T) {
 			}
 		})
 		t.Run(name.key+" invalid", func(t *testing.T) {
-			_, err := Load(func(key string) string {
+			_, err := Load(legacyUnset(func(key string) string {
 				if key == name.key {
 					return "on"
 				}
 				return ""
-			})
+			}))
 			if err == nil || !strings.Contains(err.Error(), name.key+" must be one of legacy|go") {
 				t.Fatalf("Load() error = %v", err)
 			}
@@ -4478,12 +4437,12 @@ func TestResidualDutyModesRequireResources(t *testing.T) {
 		{"API_GO_STARTUP_RECONCILE_MODE", "REDIS_HOST is required when API_GO_STARTUP_RECONCILE_MODE=go"},
 	}
 	for _, tc := range cases {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == tc.key {
 				return "go"
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s error = %v, want %q", tc.key, err, tc.want)
 		}
@@ -4509,7 +4468,7 @@ func TestSituationSignalsWorkerMode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(func(key string) string {
+			cfg, err := Load(legacyUnset(func(key string) string {
 				if tc.withDeps {
 					if v, ok := deps[key]; ok {
 						return v
@@ -4519,7 +4478,7 @@ func TestSituationSignalsWorkerMode(t *testing.T) {
 					return tc.raw
 				}
 				return ""
-			})
+			}))
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("want error, got %+v", cfg.SituationSignalsWorkerMode)
@@ -4562,7 +4521,7 @@ func TestSituationTelegramAuthMode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Load(func(key string) string {
+			cfg, err := Load(legacyUnset(func(key string) string {
 				if tc.withDeps {
 					if v, ok := deps[key]; ok {
 						return v
@@ -4572,7 +4531,7 @@ func TestSituationTelegramAuthMode(t *testing.T) {
 					return tc.raw
 				}
 				return ""
-			})
+			}))
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("want error, got %+v", cfg.SituationTelegramAuthMode)

@@ -5,23 +5,20 @@ import (
 	"testing"
 )
 
-func TestGraphQLAlertRulesModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLAlertRulesMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+func TestGraphQLAlertRulesModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLAlertRulesMode != "go" || cfg.GraphQLReadMode != "go" {
 		t.Fatalf("alertRules=%q read=%q", cfg.GraphQLAlertRulesMode, cfg.GraphQLReadMode)
 	}
 }
 
 func TestGraphQLAlertRulesModeAcceptsExplicitLegacyAndGo(t *testing.T) {
-	legacy, err := Load(func(key string) string {
+	legacy, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_ALERT_RULES_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +26,7 @@ func TestGraphQLAlertRulesModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 		t.Fatalf("explicit legacy = %q", legacy.GraphQLAlertRulesMode)
 	}
 
-	goMode, err := Load(func(key string) string {
+	goMode, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_ALERT_RULES_MODE":
 			return "go"
@@ -41,7 +38,7 @@ func TestGraphQLAlertRulesModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 			return "127.0.0.1"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +55,7 @@ func TestGraphQLAlertRulesModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 }
 
 func TestGraphQLAlertRulesModeWhitespaceIsTrimmed(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_ALERT_RULES_MODE":
 			return "  go  "
@@ -70,7 +67,7 @@ func TestGraphQLAlertRulesModeWhitespaceIsTrimmed(t *testing.T) {
 			return "127.0.0.1"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,12 +77,12 @@ func TestGraphQLAlertRulesModeWhitespaceIsTrimmed(t *testing.T) {
 }
 
 func TestGraphQLAlertRulesModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_ALERT_RULES_MODE" {
 			return "on"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("invalid value was accepted")
 	}
@@ -95,12 +92,12 @@ func TestGraphQLAlertRulesModeRejectsInvalid(t *testing.T) {
 }
 
 func TestGraphQLAlertRulesModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_ALERT_RULES_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("go without credentials was accepted")
 	}

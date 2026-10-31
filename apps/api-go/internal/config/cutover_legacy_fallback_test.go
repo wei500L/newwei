@@ -5,25 +5,25 @@ import (
 	"testing"
 )
 
-// TestOpsEntrypointModesDefaultPreserveCurrentBehaviour pins the defaults of
-// the C-1/C-5/C-7/C-9 batch. HealthzLiveMode is the documented exception: the
-// route already runs in shadow, so shadow (not legacy) is the no-change default.
-func TestOpsEntrypointModesDefaultPreserveCurrentBehaviour(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load defaults: %v", err)
+// TestOpsEntrypointModesDefaultToGo pins the repository defaults of the
+// C-1/C-5/C-7/C-9 batch. The cutover flipped every one of them: healthz/live
+// used to be the shadow exception because NestJS still answered it, but the web
+// container now gates its startup on Go answering that route, and the fallback
+// is reject so an unmatched route fails loudly instead of reaching a backend the
+// default stack no longer runs.
+func TestOpsEntrypointModesDefaultToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.HealthzLiveMode != HealthzLiveModeGo {
+		t.Errorf("HealthzLiveMode = %q, want go", cfg.HealthzLiveMode)
 	}
-	if cfg.HealthzLiveMode != HealthzLiveModeShadow {
-		t.Errorf("HealthzLiveMode = %q, want shadow", cfg.HealthzLiveMode)
+	if cfg.LegacyFallbackMode != LegacyFallbackModeReject {
+		t.Errorf("LegacyFallbackMode = %q, want reject", cfg.LegacyFallbackMode)
 	}
-	if cfg.LegacyFallbackMode != LegacyFallbackModeProxy {
-		t.Errorf("LegacyFallbackMode = %q, want proxy", cfg.LegacyFallbackMode)
+	if cfg.DocsMode != DocsModeGo {
+		t.Errorf("DocsMode = %q, want go", cfg.DocsMode)
 	}
-	if cfg.DocsMode != DocsModeLegacy {
-		t.Errorf("DocsMode = %q, want legacy", cfg.DocsMode)
-	}
-	if cfg.VectorDiagnosticsMode != VectorDiagnosticsModeLegacy {
-		t.Errorf("VectorDiagnosticsMode = %q, want legacy", cfg.VectorDiagnosticsMode)
+	if cfg.VectorDiagnosticsMode != VectorDiagnosticsModeGo {
+		t.Errorf("VectorDiagnosticsMode = %q, want go", cfg.VectorDiagnosticsMode)
 	}
 }
 
@@ -78,7 +78,8 @@ func TestOpsEntrypointModesAcceptValidValues(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			cfg, err := Load(func(key string) string { return testCase.env[key] })
+			// Unnamed switches keep the rollback baseline so only this case is go.
+			cfg, err := Load(legacyUnset(func(key string) string { return testCase.env[key] }))
 			if err != nil {
 				t.Fatalf("Load rejected a valid value: %v", err)
 			}
@@ -122,29 +123,31 @@ func TestOpsEntrypointModesRejectInvalidValues(t *testing.T) {
 	}
 }
 
-// TestLegacyRejectRequiresEveryModeGo uses the shared all-go fixture, which
-// already sets API_GO_LEGACY_FALLBACK_MODE=reject, then flips one switch at a
-// time. The aggregated error must name every unsatisfied switch.
+// TestLegacyRejectRequiresEveryModeGo starts from the default configuration
+// (which is now reject with every switch go) and flips one switch at a time.
+// This is the meaningful form after the cutover: the reject rule has to hold for
+// the defaults, not only for an explicit all-go fixture. The aggregated error
+// must name every unsatisfied switch.
 func TestLegacyRejectRequiresEveryModeGo(t *testing.T) {
-	loadFixture := func(t *testing.T, mutate func(map[string]string)) (Config, error) {
+	loadDefaults := func(t *testing.T, mutate func(map[string]string)) (Config, error) {
 		t.Helper()
-		env := readEnvFixture(t, "testdata/all-go.env")
+		env := defaultResources(t)
 		if mutate != nil {
 			mutate(env)
 		}
 		return Load(func(key string) string { return env[key] })
 	}
 
-	cfg, err := loadFixture(t, nil)
+	cfg, err := loadDefaults(t, nil)
 	if err != nil {
-		t.Fatalf("all-go fixture with reject must load: %v", err)
+		t.Fatalf("the default configuration must load with reject: %v", err)
 	}
 	if cfg.LegacyFallbackMode != LegacyFallbackModeReject {
 		t.Fatalf("LegacyFallbackMode = %q, want reject", cfg.LegacyFallbackMode)
 	}
 
 	// A single legacy HTTP switch blocks reject mode.
-	_, err = loadFixture(t, func(env map[string]string) { env["API_GO_DOCS_MODE"] = "legacy" })
+	_, err = loadDefaults(t, func(env map[string]string) { env["API_GO_DOCS_MODE"] = "legacy" })
 	if err == nil {
 		t.Fatal("reject mode accepted API_GO_DOCS_MODE=legacy")
 	}
@@ -156,7 +159,7 @@ func TestLegacyRejectRequiresEveryModeGo(t *testing.T) {
 	}
 
 	// healthz/live must be go as well: shadow is not enough.
-	_, err = loadFixture(t, func(env map[string]string) { env["API_GO_HEALTHZ_LIVE_MODE"] = "shadow" })
+	_, err = loadDefaults(t, func(env map[string]string) { env["API_GO_HEALTHZ_LIVE_MODE"] = "shadow" })
 	if err == nil {
 		t.Fatal("reject mode accepted API_GO_HEALTHZ_LIVE_MODE=shadow")
 	}
@@ -165,7 +168,7 @@ func TestLegacyRejectRequiresEveryModeGo(t *testing.T) {
 	}
 
 	// The aggregated error lists every unsatisfied switch in one message.
-	_, err = loadFixture(t, func(env map[string]string) {
+	_, err = loadDefaults(t, func(env map[string]string) {
 		env["API_GO_DOCS_MODE"] = "legacy"
 		env["API_GO_VECTOR_DIAGNOSTICS_MODE"] = "legacy"
 	})
@@ -181,9 +184,10 @@ func TestLegacyRejectRequiresEveryModeGo(t *testing.T) {
 
 // TestLegacyRejectAllowsEmptyLegacyAPIURL pins the documented difference from
 // proxy mode: reject never opens an upstream connection, so an operator may drop
-// LEGACY_API_URL. The loader still fills the historical default.
+// LEGACY_API_URL. The loader still fills the historical default, which keeps the
+// URL validation satisfied without contacting it.
 func TestLegacyRejectAllowsEmptyLegacyAPIURL(t *testing.T) {
-	env := readEnvFixture(t, "testdata/all-go.env")
+	env := defaultResources(t)
 	delete(env, "LEGACY_API_URL")
 	cfg, err := Load(func(key string) string { return env[key] })
 	if err != nil {

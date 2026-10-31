@@ -5,24 +5,23 @@ import (
 	"testing"
 )
 
-func TestOIDCLoginModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.OIDCLoginMode != OIDCLoginModeLegacy {
+func TestOIDCLoginModeDefaultsToGo(t *testing.T) {
+	// The default fixture supplies API_BASE_URL because OIDC go mode reads it per
+	// request; the "stays empty when unset" case is asserted separately below.
+	cfg := loadDefaults(t)
+	if cfg.OIDCLoginMode != OIDCLoginModeGo {
 		t.Fatalf("mode = %s", cfg.OIDCLoginMode)
 	}
-	if cfg.APIBaseURL != "" {
-		t.Fatalf("API_BASE_URL should stay empty when unset, got %q", cfg.APIBaseURL)
+	if cfg.APIBaseURL == "" {
+		t.Fatalf("API_BASE_URL should be populated by the default fixture")
 	}
-	for _, accepted := range []string{"", "legacy", "  legacy  "} {
-		cfg, err := Load(func(key string) string {
+	for _, accepted := range []string{"legacy", "  legacy  "} {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_OIDC_LOGIN_MODE" {
 				return accepted
 			}
 			return ""
-		})
+		}))
 		if err != nil {
 			t.Fatalf("accepted %q: %v", accepted, err)
 		}
@@ -34,12 +33,12 @@ func TestOIDCLoginModeDefaultsToLegacy(t *testing.T) {
 
 func TestOIDCLoginModeRejectsInvalid(t *testing.T) {
 	for _, invalid := range []string{"shadow", "canary", "Go", "true", "1"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_OIDC_LOGIN_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_OIDC_LOGIN_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -49,7 +48,7 @@ func TestOIDCLoginModeRejectsInvalid(t *testing.T) {
 func TestOIDCLoginModeGoRequiresCredentialsOnly(t *testing.T) {
 	values := map[string]string{"API_GO_OIDC_LOGIN_MODE": "go"}
 	load := func() (Config, error) {
-		return Load(func(key string) string { return values[key] })
+		return Load(legacyUnset(func(key string) string { return values[key] }))
 	}
 
 	_, err := load()

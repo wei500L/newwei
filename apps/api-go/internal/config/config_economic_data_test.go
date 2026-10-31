@@ -5,15 +5,12 @@ import (
 	"testing"
 )
 
-func TestEconomicDataModesDefaultToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.EconomicDataMode != EconomicDataModeLegacy {
+func TestEconomicDataModesDefaultToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.EconomicDataMode != EconomicDataModeGo {
 		t.Fatalf("EconomicDataMode = %q", cfg.EconomicDataMode)
 	}
-	if cfg.EconomicDataWorkerMode != EconomicDataWorkerModeLegacy {
+	if cfg.EconomicDataWorkerMode != EconomicDataWorkerModeGo {
 		t.Fatalf("EconomicDataWorkerMode = %q", cfg.EconomicDataWorkerMode)
 	}
 	if !cfg.AkshareEnabled || cfg.AkshareBaseURL != "http://localhost:8081" {
@@ -38,16 +35,16 @@ func TestEconomicDataModesRejectInvalidValues(t *testing.T) {
 }
 
 func TestEconomicDataRequestGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ECONOMIC_DATA_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET is required when API_GO_ECONOMIC_DATA_MODE=go") {
 		t.Fatalf("missing request credentials: %v", err)
 	}
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ECONOMIC_DATA_MODE":
 			return "go"
@@ -60,7 +57,7 @@ func TestEconomicDataRequestGoRequiresCredentials(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("request go should not require Mongo: %v", err)
 	}
@@ -70,7 +67,7 @@ func TestEconomicDataRequestGoRequiresCredentials(t *testing.T) {
 }
 
 func TestEconomicDataWorkerGoDoesNotRequireJWT(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ECONOMIC_DATA_WORKER_MODE":
 			return "go"
@@ -83,7 +80,7 @@ func TestEconomicDataWorkerGoDoesNotRequireJWT(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("worker go should not require JWT: %v", err)
 	}
@@ -96,7 +93,7 @@ func TestEconomicDataWorkerGoDoesNotRequireJWT(t *testing.T) {
 }
 
 func TestEconomicDataWorkerGoRequiresMongo(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ECONOMIC_DATA_WORKER_MODE":
 			return "go"
@@ -107,7 +104,7 @@ func TestEconomicDataWorkerGoRequiresMongo(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "MONGO_URI is required when API_GO_ECONOMIC_DATA_WORKER_MODE=go") {
 		t.Fatalf("missing worker Mongo: %v", err)
 	}

@@ -668,7 +668,12 @@ const resolveMysqlConnectionStringForDockerUp = (envFile) => {
   return `mysql://${mergedEnv.MYSQL_USER}:${encodeURIComponent(mergedEnv.MYSQL_PASSWORD)}@${mergedEnv.MYSQL_HOST}:${mergedEnv.MYSQL_PORT}/${mergedEnv.MYSQL_DB}`;
 };
 
-const validatePrismaSchemaForDockerUp = (composeBaseArgs, cwd, envFile) => {
+const validatePrismaSchemaForDockerUp = (
+  composeBaseArgs,
+  cwd,
+  envFile,
+  service = "api",
+) => {
   const repoRoot = path.resolve(cwd, "../..");
   const prismaCliPackage = resolvePrismaCliPackageForDockerUp(repoRoot);
   const databaseUrl = resolveMysqlConnectionStringForDockerUp(envFile);
@@ -691,7 +696,7 @@ const validatePrismaSchemaForDockerUp = (composeBaseArgs, cwd, envFile) => {
     "--no-deps",
     "--entrypoint",
     "sh",
-    "api",
+    service,
     "-ec",
     checkScript,
   ];
@@ -848,7 +853,7 @@ const main = () => {
 
   const upServices = resolveUpServices(upArgs, services);
 
-  const nodeWorkspaceServices = ["api", "vector", "web"];
+  const nodeWorkspaceServices = ["api", "vector", "web", "migrate", "mongo-indexes"];
   const shouldValidatePnpmLockfile = nodeWorkspaceServices.some((serviceName) =>
     upServices.has(serviceName),
   );
@@ -856,18 +861,37 @@ const main = () => {
     ensurePnpmLockfileForDockerUp(repoRoot);
   }
 
-  if (upServices.has("api")) {
+  // The api service is only started under the legacy-node profile now, so the
+  // Prisma preflight can no longer key off it. The default stack still needs the
+  // check: the migrate and mongo-indexes tool services run Prisma/Node tooling
+  // before api-go starts, and a broken schema must fail here rather than inside
+  // a one-shot container.
+  const prismaToolServices = ["migrate", "mongo-indexes"];
+  const shouldValidatePrisma =
+    upServices.has("api") ||
+    prismaToolServices.some((serviceName) => upServices.has(serviceName));
+
+  if (shouldValidatePrisma) {
     log("Validating Prisma migration identifiers...");
     validateMigrationIdentifiersForDockerUp(repoRoot);
-    const apiImageRef = `${projectName}-api:latest`;
-    if (!dockerImageExists(apiImageRef, scriptsDir)) {
+    // Build the tool image instead of the api image: it uses the same
+    // runtime.Dockerfile and workspace, so `prisma validate` runs against the
+    // same schema, and it keeps the preflight independent of the Node backend.
+    const preflightService = upServices.has("migrate") ? "migrate" : "api";
+    const preflightImageRef = `${projectName}-${preflightService}:latest`;
+    if (!dockerImageExists(preflightImageRef, scriptsDir)) {
       log(
-        "API image is missing; building api image for Prisma schema preflight...",
+        `Service image ${preflightImageRef} is missing; building ${preflightService} image for Prisma schema preflight...`,
       );
-      run("docker", [...composeBaseArgs, "build", "api"], scriptsDir);
+      run("docker", [...composeBaseArgs, "build", preflightService], scriptsDir);
     }
     log("Validating Prisma schema syntax...");
-    validatePrismaSchemaForDockerUp(composeBaseArgs, scriptsDir, envFile);
+    validatePrismaSchemaForDockerUp(
+      composeBaseArgs,
+      scriptsDir,
+      envFile,
+      preflightService,
+    );
   }
 
   if (upServices.has("redis")) {
