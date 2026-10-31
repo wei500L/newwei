@@ -31,11 +31,13 @@
 5. 详细“旧入口→新入口→真实消费者→验证”、邮件模板与 vendor Lua 审计、剩余旧目录依赖见
    [contract-tooling-inventory.md](../../contract-tooling-inventory.md)。
 
-## 验证（本机只静态）
+## 验证
 
-- 未安装、未运行 build/test/lint/typecheck/vet/Docker/服务；未部署、未连真实外部依赖。
-- 已做：diff、必要 `gofmt`、只读静态反证复核。
-- 普通 CI 精确 head/逐 job 结果以 PR 最终 head 为准（见 PR）。
+- 本机只静态：diff、必要 `gofmt`、只读静态反证复核；未装/未跑 build/test/lint/typecheck/vet/Docker/服务，未部署、未连真实外部依赖。
+- 实现 head `edfb341fde79e7ff31277bc6a3d89b7ceb6c9e1d` 普通 CI [run 41203871729](https://github.com/wei500L/newwei/actions/runs/41203871729)：
+  `verify` success、`api-go-user-settings-integration` success（含 BullMQ Node↔Go 夹具、Go 契约门禁、`pnpm install --frozen-lockfile --filter @modular/infra-scripts...`）、
+  `vector-integration` success；`go-modules-regen`、`contract-baseline-regen` skipped（skipped 不算通过）。
+- 实现过程中 `verify` 首跑在 Lint 步骤因 `packages/mongo` eslint `array-type` 失败（已修并重跑通过）；另据只读反证修复了独立 compose `mongo-indexes` 服务仍指 `@modular/api` 的遗漏。
 
 ## 排除项
 
