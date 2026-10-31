@@ -41,10 +41,7 @@ const IdentityOnboardingKey = "/api/auth#identity-onboarding"
 // whitelists OPTIONS for these paths, so CORS preflight is answered by the Go
 // handler instead of reaching NestJS; a non-preflight OPTIONS request is sent
 // back to the proxy by the wiring.
-func WithIdentityOnboarding(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithIdentityOnboarding(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, IdentityOnboardingKey, "/api/auth/admin/invites",
 		http.MethodGet, http.MethodPost)
 	rules = appendSegmentRule(rules, IdentityOnboardingKey, "/api/auth/admin/invites/", true, false, "/resend",

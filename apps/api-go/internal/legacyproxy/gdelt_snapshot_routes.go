@@ -22,9 +22,6 @@ const GdeltSnapshotKey = "/api/system-settings/situation-monitor/external-snapsh
 // never enables the HTTP entry and vice versa. Both executions share the Redis
 // rebuild lease, so the route can safely be served by Go while NestJS still owns
 // the schedule.
-func WithGdeltSnapshotRefresh(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithGdeltSnapshotRefresh(rules []Rule) []Rule {
 	return appendExactKeyed(rules, GdeltSnapshotKey, GdeltSnapshotKey, http.MethodPost)
 }

@@ -5,17 +5,16 @@ import (
 	"testing"
 )
 
-func TestWithNotificationsSocketOnlyAddsInGoMode(t *testing.T) {
-	base := DefaultRulesWithWrite("", "", "")
-	if got := WithNotificationsSocket(base, "legacy"); len(got) != len(base) {
-		t.Fatalf("legacy mode added %d rules", len(got)-len(base))
-	}
-	rules := WithNotificationsSocket(base, string(ModeGo))
+// TestWithNotificationsSocketAppendsOneRule pins the rule: exactly one GET-only
+// rule for the dedicated /socket.io-notifications path.
+func TestWithNotificationsSocketAppendsOneRule(t *testing.T) {
+	base := BaseRules()
+	rules := WithNotificationsSocket(base)
 	if len(rules) != len(base)+1 {
-		t.Fatalf("go mode added %d rules, want 1", len(rules)-len(base))
+		t.Fatalf("added %d rules, want 1", len(rules)-len(base))
 	}
 	rule := rules[len(rules)-1]
-	if rule.Prefix != "/socket.io-notifications" || rule.Mode != ModeGo {
+	if rule.Prefix != "/socket.io-notifications" {
 		t.Fatalf("unexpected rule: %#v", rule)
 	}
 	if !rule.matchesPath("/socket.io-notifications/") {

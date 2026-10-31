@@ -43,10 +43,7 @@ const RuntimeSettingsKey = "/api/system-settings"
 //
 // The shared rule helpers also whitelist OPTIONS for the taken-over paths, so
 // CORS preflight is answered by the Go handler instead of reaching NestJS.
-func WithRuntimeSettings(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithRuntimeSettings(rules []Rule) []Rule {
 	base := "/api/system-settings"
 
 	// Static collection and singleton endpoints. Each exact path only accepts

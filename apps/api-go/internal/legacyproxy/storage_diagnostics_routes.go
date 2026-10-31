@@ -22,10 +22,7 @@ const StorageDiagnosticsKey = "/api/admin/settings/storage#test"
 // The route intentionally stays off WithInfrastructureSettings: enabling the
 // seven configuration routes must not silently enable the real S3 calls, and
 // enabling the diagnostics must not take over any configuration route.
-func WithStorageDiagnostics(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithStorageDiagnostics(rules []Rule) []Rule {
 	return appendExactKeyed(rules, StorageDiagnosticsKey, "/api/admin/settings/storage/test",
 		http.MethodPost)
 }

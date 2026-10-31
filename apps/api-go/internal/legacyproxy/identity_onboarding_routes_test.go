@@ -71,33 +71,16 @@ func identityOnboardingNestRoutes() []struct{ method, path string } {
 
 // TestIdentityOnboardingStaysLegacyByDefault locks the default, the empty value
 // and the explicit legacy value.
-func TestIdentityOnboardingStaysLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithIdentityOnboarding(rules, "")
-	rules = WithIdentityOnboarding(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(identityOnboardingGoRoutes(), identityOnboardingNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
 
 // TestIdentityOnboardingGoOwnsRoutes locks the route shapes and the handler key.
 func TestIdentityOnboardingGoOwnsRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithIdentityOnboarding(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithIdentityOnboarding(rules)
+	gateway := New(rules)
 	for _, tc := range identityOnboardingGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if got.HandlerKey != IdentityOnboardingKey {
 			t.Fatalf("%s %s key=%s", tc.method, tc.path, got.HandlerKey)
@@ -113,15 +96,12 @@ func TestIdentityOnboardingGoOwnsRoutes(t *testing.T) {
 // TestIdentityOnboardingUnmigratedRoutesStayNest locks every fallback, including
 // the longer paths that share the invitation and application prefixes.
 func TestIdentityOnboardingUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithIdentityOnboarding(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithIdentityOnboarding(rules)
+	gateway := New(rules)
 	for _, tc := range identityOnboardingNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
@@ -130,18 +110,15 @@ func TestIdentityOnboardingUnmigratedRoutesStayNest(t *testing.T) {
 // four auth switches are go: no unit may claim another unit's path and the four
 // registration keys stay distinct.
 func TestIdentityOnboardingCoexistsWithAuthUnits(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAuthLogin(rules, string(ModeGo))
-	rules = WithAuthFactors(rules, string(ModeGo))
-	rules = WithAccountSecurity(rules, string(ModeGo))
-	rules = WithIdentityOnboarding(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithAuthLogin(rules)
+	rules = WithAuthFactors(rules)
+	rules = WithAccountSecurity(rules)
+	rules = WithIdentityOnboarding(rules)
+	gateway := New(rules)
 	for _, tc := range identityOnboardingGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != IdentityOnboardingKey {
+		if got.Prefix == "" || got.HandlerKey != IdentityOnboardingKey {
 			t.Fatalf("%s %s = %+v", tc.method, tc.path, got)
 		}
 	}

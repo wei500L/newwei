@@ -5,36 +5,12 @@ import (
 	"testing"
 )
 
-func TestAnalysisRoutesStayLegacyUntilGo(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAnalysisViews(rules, "")
-	rules = WithAnalysisBoards(rules, "legacy")
-	rules = WithAnalysisThreads(rules, "shadow")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{
-		"/api/analysis/views",
-		"/api/analysis/boards/board/tasks",
-		"/api/analysis/threads/item/item-1",
-		"/api/analysis/exports/search",
-	} {
-		if got := gateway.match(http.MethodPost, path); got.Mode != ModeLegacy {
-			t.Fatalf("POST %s mode=%s, want legacy", path, got.Mode)
-		}
-	}
-}
-
 func TestAnalysisRoutesMatchMethodAndShape(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAnalysisViews(rules, string(ModeGo))
-	rules = WithAnalysisBoards(rules, string(ModeGo))
-	rules = WithAnalysisThreads(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithAnalysisViews(rules)
+	rules = WithAnalysisBoards(rules)
+	rules = WithAnalysisThreads(rules)
+	gateway := New(rules)
 
 	goCases := []struct {
 		method string
@@ -66,8 +42,8 @@ func TestAnalysisRoutesMatchMethodAndShape(t *testing.T) {
 	}
 	for _, tc := range goCases {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		key := got.Prefix
 		if got.HandlerKey != "" {
@@ -97,8 +73,8 @@ func TestAnalysisRoutesMatchMethodAndShape(t *testing.T) {
 		{http.MethodPatch, "/api/analysis/tasks/task-1/move"},
 	}
 	for _, tc := range legacyCases {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }

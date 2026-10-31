@@ -37,9 +37,6 @@ func wireVectorDiagnostics(
 	authenticator *authhttp.Authenticator,
 	health *vectorclient.Health,
 ) error {
-	if cfg.VectorDiagnosticsMode != config.VectorDiagnosticsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: vector diagnostics go takeover requires mysql, redis, and jwt")
 	}
@@ -59,11 +56,11 @@ func wireVectorDiagnostics(
 		}
 		if r.Method == http.MethodOptions {
 			// A non-preflight OPTIONS keeps the previous proxy destination.
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: vector service diagnostics takeover mode=%s", cfg.VectorDiagnosticsMode)
+	log.Printf("api-go: vector service diagnostics takeover mode=%s", "go")
 	return nil
 }

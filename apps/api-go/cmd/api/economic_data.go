@@ -85,8 +85,8 @@ func wireEconomicData(
 	authenticator *authhttp.Authenticator,
 	mongo **dashboardstats.Connection,
 ) (*economicdata.Service, *economicRuntime, error) {
-	requestGo := cfg.EconomicDataMode == config.EconomicDataModeGo
-	workerGo := cfg.EconomicDataWorkerMode == config.EconomicDataWorkerModeGo
+	requestGo := true
+	workerGo := true
 	if !requestGo && !workerGo {
 		return nil, nil, nil
 	}
@@ -137,7 +137,7 @@ func wireEconomicData(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)

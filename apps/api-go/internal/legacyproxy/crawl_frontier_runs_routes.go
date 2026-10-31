@@ -40,10 +40,7 @@ const CrawlFrontierRunsKey = "/api/admin/crawl-frontier#runs"
 // POST /workflows/:id/trial-run still stay on NestJS and are not registered
 // here. The profiles, workflows, workflow-versions and news-sources subtrees
 // belong to their own switches and are not touched.
-func WithCrawlFrontierRuns(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithCrawlFrontierRuns(rules []Rule) []Rule {
 	base := "/api/admin/crawl-frontier"
 	runsPath := base + "/runs"
 	runsPrefix := runsPath + "/"
@@ -62,7 +59,6 @@ func WithCrawlFrontierRuns(rules []Rule, mode string) []Rule {
 	// segment (the Nest route has no trailing "/explanation").
 	rules = append(rules, Rule{
 		Prefix:      runsPrefix,
-		Mode:        ModeGo,
 		OneSegment:  true,
 		Tail:        "/workflow-candidates",
 		TailSegment: true,
@@ -83,7 +79,6 @@ func WithCrawlFrontierRuns(rules []Rule, mode string) []Rule {
 	// workflow-runs/:runId/candidates/:candidateId/explanation.
 	rules = append(rules, Rule{
 		Prefix:      workflowRunsPrefix,
-		Mode:        ModeGo,
 		OneSegment:  true,
 		Tail:        "/candidates",
 		TailSegment: true,

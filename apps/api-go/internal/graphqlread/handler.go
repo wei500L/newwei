@@ -21,7 +21,7 @@ const Path = "/graphql"
 // StatsPath exposes execution counters for the pilot smoke. It is not a public API.
 const StatsPath = "/__go/graphql-read-stats"
 
-// Handler is the Go GraphQL read entry. It decides legacy vs execute before any resolver runs.
+// Handler is the Go GraphQL read entry. It decides whether Go owns an operation before any resolver runs.
 type Handler struct {
 	engine         *exec.Engine
 	apq            *transport.APQCache
@@ -31,12 +31,10 @@ type Handler struct {
 	cacheEnabled   bool
 	cacheTTL       int
 	auth           *authhttp.Authenticator
-	legacy         func(http.ResponseWriter, *http.Request)
 	cors           cors.Policy
 	trustProxy     string
 	schemaVersion  string
 	resolverCalls  *atomic.Int64
-	legacyForwards atomic.Int64
 	protocolWrites atomic.Int64
 	goResponses    atomic.Int64
 }
@@ -47,7 +45,6 @@ type Options struct {
 	Authenticator   *authhttp.Authenticator
 	Limiter         *policy.Limiter
 	Cache           *policy.ResponseCache
-	Legacy          func(http.ResponseWriter, *http.Request)
 	CORS            cors.Policy
 	TrustProxy      string
 	APQEnabled      bool
@@ -86,7 +83,6 @@ func NewHandler(opts Options) (*Handler, error) {
 		cacheEnabled:  opts.CacheEnabled,
 		cacheTTL:      opts.CacheTTL,
 		auth:          opts.Authenticator,
-		legacy:        opts.Legacy,
 		cors:          opts.CORS,
 		trustProxy:    opts.TrustProxy,
 		schemaVersion: schema.Version,
@@ -104,7 +100,6 @@ func (h *Handler) Close() {
 // Stats is the smoke counter snapshot.
 type Stats struct {
 	ResolverCalls  int64 `json:"resolverCalls"`
-	LegacyForwards int64 `json:"legacyForwards"`
 	ProtocolWrites int64 `json:"protocolWrites"`
 	GoResponses    int64 `json:"goResponses"`
 }
@@ -116,7 +111,6 @@ func (h *Handler) Snapshot() Stats {
 	}
 	return Stats{
 		ResolverCalls:  h.resolverCalls.Load(),
-		LegacyForwards: h.legacyForwards.Load(),
 		ProtocolWrites: h.protocolWrites.Load(),
 		GoResponses:    h.goResponses.Load(),
 	}
@@ -130,18 +124,18 @@ func (h *Handler) ServeStats(w http.ResponseWriter, _ *http.Request) {
 // ServeHTTP dispatches one exact /graphql request.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if isUpgrade(r) {
-		h.forward(w, r)
+		h.writeProtocol(w, r, exec.BadRequest("WebSocket upgrades are not handled by the Go GraphQL read handler"))
 		return
 	}
 	if r.Method == http.MethodOptions {
 		if h.cors.FinishOptions(w, r) {
 			return
 		}
-		h.forward(w, r)
+		h.writeProtocol(w, r, exec.BadRequest("OPTIONS is not supported by the Go GraphQL read handler"))
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
-		h.forward(w, r)
+		h.writeProtocol(w, r, exec.BadRequest("GraphQL requests must use GET or POST"))
 		return
 	}
 	body, tooBig, err := readLimitedBody(r)
@@ -158,8 +152,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if isMultipart(r) || (r.Method == http.MethodPost && isJSONArray(body)) {
-		h.forward(w, r)
+	if isMultipart(r) {
+		// Multipart uploads were previously forwarded to NestJS. The Go runtime
+		// does not implement them, so reject instead of proxying the operation.
+		h.writeProtocol(w, r, exec.BadRequest("Multipart GraphQL requests are not supported by the Go GraphQL executor"))
+		return
+	}
+	if r.Method == http.MethodPost && isJSONArray(body) {
+		// Batched (JSON array) requests are not handled locally; reject rather
+		// than forwarding a whole batch to NestJS.
+		h.writeProtocol(w, r, exec.BadRequest("Batched GraphQL requests are not supported by the Go GraphQL executor"))
 		return
 	}
 	if csrfBlocked(r) {
@@ -182,11 +184,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	plan := h.engine.PlanDocument(query, opName, req.Variables)
 	switch plan.Kind {
-	case exec.KindLegacy:
-		if plan.RegisterDocument && persistHash != "" {
-			h.apq.Put(persistHash, query)
-		}
-		h.forward(w, r)
 	case exec.KindProtocol:
 		if plan.RegisterDocument && persistHash != "" {
 			h.apq.Put(persistHash, query)
@@ -233,7 +230,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.goResponses.Add(1)
 		h.writeResult(w, r, result)
 	default:
-		h.forward(w, r)
+		// Any other plan kind is not owned by the Go executor. Reject it as a
+		// protocol error instead of proxying the operation to NestJS.
+		h.writeProtocol(w, r, exec.BadRequest("Operation is not supported by the Go GraphQL executor"))
 	}
 }
 
@@ -266,15 +265,6 @@ func (h *Handler) resolveAPQ(req graphRequest) (string, string, *exec.Result) {
 		return "", "", &result
 	}
 	return req.Query, req.Persisted.Hash, nil
-}
-
-func (h *Handler) forward(w http.ResponseWriter, r *http.Request) {
-	h.legacyForwards.Add(1)
-	if h.legacy != nil {
-		h.legacy(w, r)
-		return
-	}
-	http.Error(w, "legacy upstream unavailable", http.StatusBadGateway)
 }
 
 func (h *Handler) writeProtocol(w http.ResponseWriter, r *http.Request, result exec.Result) {

@@ -39,9 +39,6 @@ func wireQueueOps(
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
 ) error {
-	if cfg.QueueOpsMode != config.QueueOpsModeGo {
-		return nil
-	}
 	if gateway == nil || db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: API_GO_QUEUE_OPS_MODE=go requires mysql, redis, and jwt")
 	}
@@ -62,7 +59,7 @@ func wireQueueOps(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)

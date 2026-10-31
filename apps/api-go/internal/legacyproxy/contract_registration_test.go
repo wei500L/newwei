@@ -14,7 +14,7 @@ import (
 // directory (go test runs with the package dir as the working directory). They
 // are the OpenAPI route/permission snapshot and the auth matrix: historical
 // Nest-generated expectations that this gate reconciles against the real Go
-// route table assembled by allGoRules.
+// route table assembled by AllRoutes.
 const (
 	openAPISnapshotRelPath = "../apidocs/openapi.snapshot.json"
 	authMatrixRelPath      = "../../contracts/auth-matrix.json"
@@ -166,26 +166,23 @@ func TestHTTPContractArtifactsAgree(t *testing.T) {
 }
 
 // TestEveryDocumentedHTTPOperationIsOwnedByGo is the sustainable Go contract
-// gate: every operation in both static artifacts must match a ModeGo rule in the
-// all-go route table assembled by allGoRules (the same table cmd/api/main.go
-// builds), and must not fall through to the generic /api/ legacy rule. This
-// finds routes that were added/omitted/misclassified relative to the real Go
-// registration instead of comparing two hand-maintained tables to each other.
+// gate: every operation in both static artifacts must match a declared rule in
+// the AllRoutes table (the same table cmd/api/main.go builds), and must not fall
+// through to a generic catch-all. This finds routes that were added/omitted/
+// misclassified relative to the real Go registration instead of comparing two
+// hand-maintained tables to each other.
 func TestEveryDocumentedHTTPOperationIsOwnedByGo(t *testing.T) {
-	gateway, err := New("http://legacy.invalid", allGoRules())
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	gateway := New(AllRoutes())
 
 	var failures []string
 	check := func(method, path, source string) {
-		rule := gateway.match(method, concretePath(path))
-		if rule.Mode != ModeGo {
-			failures = append(failures, fmt.Sprintf("%s %s (%s) matched mode %q via rule %q, want go", method, path, source, rule.Mode, rule.Prefix))
+		rule, matched := gateway.matchRule(method, concretePath(path))
+		if !matched {
+			failures = append(failures, fmt.Sprintf("%s %s (%s) matched no Go rule", method, path, source))
 			return
 		}
 		if rule.Prefix == "/api/" {
-			failures = append(failures, fmt.Sprintf("%s %s (%s) matched the generic /api/ fallback with go; expected an exact migration rule", method, path, source))
+			failures = append(failures, fmt.Sprintf("%s %s (%s) matched the generic /api/ catch-all; expected a declared Go rule", method, path, source))
 		}
 	}
 

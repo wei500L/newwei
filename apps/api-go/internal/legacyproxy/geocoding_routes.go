@@ -16,10 +16,7 @@ const GeocodingKey = "/api/geo#geocoding"
 // GET/PUT rule for /api/system-settings/geo/nominatim, so the exact match wins
 // regardless of registration order. Other methods, the trailing-slash forms and
 // longer paths keep falling back to NestJS.
-func WithGeocoding(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithGeocoding(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, GeocodingKey, "/api/geo/geocode", http.MethodPost)
 	return appendExactKeyed(rules, GeocodingKey, "/api/system-settings/geo/nominatim/test", http.MethodPost)
 }

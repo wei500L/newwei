@@ -15,55 +15,52 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsindicators"
 )
 
-func TestHandlerExecutesRegisteredAndForwardsUnregistered(t *testing.T) {
+const notSupportedMessage = "Operation is not supported by the Go GraphQL executor"
+
+func postBody(t *testing.T, handler *Handler, body string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "http://gateway/graphql", strings.NewReader(body))
+	req.Header.Set("content-type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec.Code, rec.Body.String()
+}
+
+func TestHandlerExecutesRegisteredAndRejectsUnregistered(t *testing.T) {
 	reg := contract.NewRegistry()
 	alerts.Register(reg, nil)
 	history.Register(reg, nil, nil, nil)
 	economic.Register(reg, nil)
-	var forwarded int
-	handler, err := NewHandler(Options{
-		Registry: reg,
-		Legacy: func(w http.ResponseWriter, _ *http.Request) {
-			forwarded++
-			w.Header().Set("content-type", "application/json")
-			_, _ = w.Write([]byte(`{"upstream":"nest"}`))
-		},
-	})
+	handler, err := NewHandler(Options{Registry: reg})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	post := func(body string) (int, string) {
-		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "http://gateway/graphql", strings.NewReader(body))
-		req.Header.Set("content-type", "application/json")
-		rec := httptest.NewRecorder()
-		before := forwarded
-		handler.ServeHTTP(rec, req)
-		if forwarded != before && strings.Contains(rec.Body.String(), `"upstream":"nest"`) {
-			return rec.Code, "forwarded"
-		}
-		if forwarded != before {
-			t.Fatalf("legacy called but body = %s", rec.Body.String())
-		}
-		return rec.Code, rec.Body.String()
-	}
-
-	if _, body := post(`{"query":"{ alertChannels { id } }"}`); body == "forwarded" || strings.Contains(body, "take must be a non-negative integer") {
-		t.Fatalf("registered query was not executed by Go: %s", body)
+	if _, body := postBody(t, handler, `{"query":"{ alertChannels { id } }"}`); strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("registered query was rejected by Go: %s", body)
 	}
 	for _, body := range []string{
 		`{"query":"{ alertRules { id } }"}`,
 		`{"query":"mutation { markAllNotificationsRead }"}`,
 		`{"query":"{ newsEvents { id } }"}`,
 		`{"query":"{ alertChannels { id } alertRules { id } }"}`,
-		`[{"query":"{ alertChannels { id } }"}]`,
 	} {
-		if _, got := post(body); got != "forwarded" {
-			t.Fatalf("body %s was not forwarded: %s", body, got)
+		code, got := postBody(t, handler, body)
+		if code != http.StatusOK {
+			t.Fatalf("body %s status = %d, want 200 protocol rejection: %s", body, code, got)
+		}
+		if !strings.Contains(got, notSupportedMessage) {
+			t.Fatalf("body %s was not rejected with a GraphQL error: %s", body, got)
 		}
 	}
-	if _, body := post(`{"query":"{ notifications(limit: -1) { id } }"}`); body == "forwarded" || strings.Contains(body, "take must be a non-negative integer") {
+
+	// A batched (JSON array) request is not handled locally and must not be
+	// forwarded to NestJS; it is rejected as a protocol error.
+	if code, got := postBody(t, handler, `[{"query":"{ alertChannels { id } }"}]`); code != http.StatusBadRequest || !strings.Contains(got, `"errors"`) {
+		t.Fatalf("batch request = %d %s, want 400 GraphQL errors", code, got)
+	}
+
+	if _, body := postBody(t, handler, `{"query":"{ notifications(limit: -1) { id } }"}`); strings.Contains(body, "take must be a non-negative integer") {
 		t.Fatalf("negative notification limit = %s", body)
 	}
 }
@@ -73,45 +70,28 @@ func TestKnowledgeGraphRegistrationChangesOnlyThoseDocuments(t *testing.T) {
 	alerts.Register(reg, nil)
 	history.Register(reg, nil, nil, nil)
 	economic.Register(reg, nil)
-	var forwarded int
-	handler, err := NewHandler(Options{
-		Registry: reg,
-		Legacy: func(w http.ResponseWriter, _ *http.Request) {
-			forwarded++
-			w.Header().Set("content-type", "application/json")
-			_, _ = w.Write([]byte(`{"upstream":"nest"}`))
-		},
-	})
+	handler, err := NewHandler(Options{Registry: reg})
 	if err != nil {
 		t.Fatal(err)
 	}
-	post := func(body string) (bool, string) {
-		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "http://gateway/graphql", strings.NewReader(body))
-		req.Header.Set("content-type", "application/json")
-		rec := httptest.NewRecorder()
-		before := forwarded
-		handler.ServeHTTP(rec, req)
-		return forwarded != before, rec.Body.String()
-	}
 
 	legacyDocument := `{"query":"{ getKnowledgeGraphSubgraph(input: { seedName: \"600519\" }) { seed { id } } }"}`
-	if wasForwarded, _ := post(legacyDocument); !wasForwarded {
-		t.Fatal("knowledge graph legacy mode did not forward")
+	if _, body := postBody(t, handler, legacyDocument); !strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("unregistered knowledge graph document was not rejected: %s", body)
 	}
 
 	knowledgegraph.Register(reg, nil, nil)
-	if wasForwarded, _ := post(legacyDocument); wasForwarded {
-		t.Fatal("knowledge graph go mode was forwarded")
+	if _, body := postBody(t, handler, legacyDocument); strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("registered knowledge graph document was rejected: %s", body)
 	}
-	if wasForwarded, body := post(`{"query":"{ getKnowledgeGraphSubgraph(input: { seedName: \"600519\" }) { seed { id } } getEntityImpactGraph { nodes { id } } }"}`); !wasForwarded {
-		t.Fatalf("mixed impact document was executed by Go: %s", body)
+	if _, body := postBody(t, handler, `{"query":"{ getKnowledgeGraphSubgraph(input: { seedName: \"600519\" }) { seed { id } } getEntityImpactGraph { nodes { id } } }"}`); !strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("mixed impact document was not rejected: %s", body)
 	}
-	if wasForwarded, _ := post(`{"query":"{ entityIntelligenceCard(input: { entityId: \"x\" }) { entity { id } } knowledgeGraphEvidenceReviewQueue { id } }"}`); !wasForwarded {
-		t.Fatal("review queue mix was executed by Go")
+	if _, body := postBody(t, handler, `{"query":"{ entityIntelligenceCard(input: { entityId: \"x\" }) { entity { id } } knowledgeGraphEvidenceReviewQueue { id } }"}`); !strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("review queue mix was not rejected: %s", body)
 	}
-	if wasForwarded, _ := post(`{"query":"{ alertChannels { id } }"}`); wasForwarded {
-		t.Fatal("alertChannels was forwarded")
+	if _, body := postBody(t, handler, `{"query":"{ alertChannels { id } }"}`); strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("alertChannels was rejected: %s", body)
 	}
 }
 
@@ -121,38 +101,18 @@ func TestNewsEventsRegistrationChangesOnlyThoseDocuments(t *testing.T) {
 	history.Register(reg, nil, nil, nil)
 	economic.Register(reg, nil)
 	newsevents.Register(reg, nil, nil, nil, newsevents.Options{BriefEnabled: true})
-	var forwarded int
-	handler, err := NewHandler(Options{
-		Registry: reg,
-		Legacy: func(w http.ResponseWriter, _ *http.Request) {
-			forwarded++
-			w.Header().Set("content-type", "application/json")
-			_, _ = w.Write([]byte(`{"upstream":"nest"}`))
-		},
-	})
+	handler, err := NewHandler(Options{Registry: reg})
 	if err != nil {
 		t.Fatal(err)
 	}
-	post := func(body string) string {
-		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "http://gateway/graphql", strings.NewReader(body))
-		req.Header.Set("content-type", "application/json")
-		rec := httptest.NewRecorder()
-		before := forwarded
-		handler.ServeHTTP(rec, req)
-		if forwarded != before {
-			return "forwarded"
-		}
-		return rec.Body.String()
+	if _, body := postBody(t, handler, `{"query":"{ newsEvents { id } }"}`); strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("registered newsEvents was rejected: %s", body)
 	}
-	if got := post(`{"query":"{ newsEvents { id } }"}`); got == "forwarded" {
-		t.Fatal("registered newsEvents was forwarded")
+	if _, body := postBody(t, handler, `{"query":"{ alertChannels { id } }"}`); strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("alertChannels was rejected: %s", body)
 	}
-	if got := post(`{"query":"{ alertChannels { id } }"}`); got == "forwarded" {
-		t.Fatal("alertChannels was forwarded")
-	}
-	if got := post(`{"query":"{ newsEvents { id } newsEventSourcePolicySyncStatus { degraded } }"}`); got != "forwarded" {
-		t.Fatalf("mixed source-policy document = %s", got)
+	if _, body := postBody(t, handler, `{"query":"{ newsEvents { id } newsEventSourcePolicySyncStatus { degraded } }"}`); !strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("mixed source-policy document was not rejected: %s", body)
 	}
 }
 
@@ -162,40 +122,20 @@ func TestNewsIndicatorRegistrationChangesOnlyThoseDocuments(t *testing.T) {
 	history.Register(reg, nil, nil, nil)
 	economic.Register(reg, nil)
 	newsindicators.Register(reg, nil)
-	var forwarded int
-	handler, err := NewHandler(Options{
-		Registry: reg,
-		Legacy: func(w http.ResponseWriter, _ *http.Request) {
-			forwarded++
-			w.Header().Set("content-type", "application/json")
-			_, _ = w.Write([]byte(`{"upstream":"nest"}`))
-		},
-	})
+	handler, err := NewHandler(Options{Registry: reg})
 	if err != nil {
 		t.Fatal(err)
 	}
-	post := func(body string) string {
-		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "http://gateway/graphql", strings.NewReader(body))
-		req.Header.Set("content-type", "application/json")
-		rec := httptest.NewRecorder()
-		before := forwarded
-		handler.ServeHTTP(rec, req)
-		if forwarded != before {
-			return "forwarded"
-		}
-		return rec.Body.String()
+	if _, body := postBody(t, handler, `{"query":"{ newsIndicatorAssociations { id } }"}`); strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("registered newsIndicatorAssociations was rejected: %s", body)
 	}
-	if got := post(`{"query":"{ newsIndicatorAssociations { id } }"}`); got == "forwarded" {
-		t.Fatal("registered newsIndicatorAssociations was forwarded")
+	if _, body := postBody(t, handler, `{"query":"{ newsIndicatorAssociation(id: \"assoc-1\") { id } }"}`); strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("registered newsIndicatorAssociation was rejected: %s", body)
 	}
-	if got := post(`{"query":"{ newsIndicatorAssociation(id: \"assoc-1\") { id } }"}`); got == "forwarded" {
-		t.Fatal("registered newsIndicatorAssociation was forwarded")
+	if _, body := postBody(t, handler, `{"query":"{ newsIndicatorSettings { enabled } }"}`); !strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("unregistered newsIndicatorSettings was not rejected: %s", body)
 	}
-	if got := post(`{"query":"{ newsIndicatorSettings { enabled } }"}`); got != "forwarded" {
-		t.Fatalf("unregistered newsIndicatorSettings = %s", got)
-	}
-	if got := post(`{"query":"{ newsIndicatorAssociations { id } newsIndicatorSettings { enabled } }"}`); got != "forwarded" {
-		t.Fatalf("mixed settings document = %s", got)
+	if _, body := postBody(t, handler, `{"query":"{ newsIndicatorAssociations { id } newsIndicatorSettings { enabled } }"}`); !strings.Contains(body, notSupportedMessage) {
+		t.Fatalf("mixed settings document was not rejected: %s", body)
 	}
 }

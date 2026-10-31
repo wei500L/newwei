@@ -33,48 +33,31 @@ func emailLegacyRoutes() []routeCase {
 }
 
 func TestEmailSettingsRoutes(t *testing.T) {
-	legacyRules := WithEmailSettings(DefaultRules(ModeShadow, ""), "legacy")
-	legacyGateway, err := New("http://legacy:4000", legacyRules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(emailGoRoutes(), emailLegacyRoutes()...) {
-		if got := legacyGateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("legacy: %s %s mode=%s", tc.method, tc.path, got.Mode)
-		}
-	}
-
-	rules := WithEmailSettings(DefaultRules(ModeShadow, ""), string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := WithEmailSettings(BaseRules())
+	gateway := New(rules)
 	for _, tc := range emailGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || !got.Exact || got.HandlerKey != EmailSettingsKey {
+		if got.Prefix == "" || !got.Exact || got.HandlerKey != EmailSettingsKey {
 			t.Fatalf("go: %s %s => %+v", tc.method, tc.path, got)
 		}
 	}
 	for _, tc := range emailLegacyRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("fallback: %s %s mode=%s", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("fallback: %s %s mode=%s", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
 
 func TestGeocodingRoutes(t *testing.T) {
-	rules := WithGeocoding(DefaultRules(ModeShadow, ""), string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := WithGeocoding(BaseRules())
+	gateway := New(rules)
 	for _, tc := range []routeCase{
 		{http.MethodPost, "/api/geo/geocode"},
 		{http.MethodPost, "/api/system-settings/geo/nominatim/test"},
 		{http.MethodOptions, "/api/geo/geocode"},
 	} {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != GeocodingKey {
+		if got.Prefix == "" || got.HandlerKey != GeocodingKey {
 			t.Fatalf("%s %s => %+v", tc.method, tc.path, got)
 		}
 	}
@@ -86,21 +69,18 @@ func TestGeocodingRoutes(t *testing.T) {
 		{http.MethodPost, "/api/system-settings/geo/nominatim/test/"},
 		{http.MethodPost, "/api/geo/geocode/extra"},
 	} {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
 
 func TestRuntimeDiagnosticsRoutesWinOverNeighbouringGroups(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithPlatformGovernanceSettings(rules, string(ModeGo))
-	rules = WithDataRuntimeSettings(rules, string(ModeGo))
-	rules = WithRuntimeDiagnostics(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithPlatformGovernanceSettings(rules)
+	rules = WithDataRuntimeSettings(rules)
+	rules = WithRuntimeDiagnostics(rules)
+	gateway := New(rules)
 	overlaps := []struct {
 		path string
 		key  string
@@ -112,11 +92,11 @@ func TestRuntimeDiagnosticsRoutesWinOverNeighbouringGroups(t *testing.T) {
 	}
 	for _, tc := range overlaps {
 		got := gateway.match(http.MethodGet, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != tc.key {
-			t.Fatalf("%s => mode=%s key=%s, want go/%s", tc.path, got.Mode, got.HandlerKey, tc.key)
+		if got.Prefix == "" || got.HandlerKey != tc.key {
+			t.Fatalf("%s => mode=%s key=%s, want go/%s", tc.path, got.Prefix, got.HandlerKey, tc.key)
 		}
 	}
-	if got := gateway.match(http.MethodPost, "/api/system-settings/assistant-safety/diagnostics"); got.Mode != ModeLegacy {
-		t.Fatalf("POST diagnostics mode=%s, want legacy", got.Mode)
+	if got := gateway.match(http.MethodPost, "/api/system-settings/assistant-safety/diagnostics"); got.Prefix != "" {
+		t.Fatalf("POST diagnostics mode=%s, want legacy", got.Prefix)
 	}
 }

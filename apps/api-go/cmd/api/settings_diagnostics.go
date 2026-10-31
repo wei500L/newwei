@@ -28,9 +28,6 @@ import (
 // needs the shared MySQL/Redis/JWT stack and the SMTP_* configuration; it starts
 // no worker and opens no second pool.
 func wireEmailSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.EmailSettingsMode != config.EmailSettingsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: email settings go takeover requires mysql, redis, and jwt")
 	}
@@ -63,12 +60,12 @@ func wireEmailSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: email settings takeover mode=%s", cfg.EmailSettingsMode)
+	log.Printf("api-go: email settings takeover mode=%s", "go")
 	return nil
 }
 
@@ -76,9 +73,6 @@ func wireEmailSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.
 // API_GO_GEOCODING_MODE=go. It shares the geo:geocode:v1 cache, the
 // rate:geocode:nominatim limiter and the geo_nominatim_identity row with NestJS.
 func wireGeocoding(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.GeocodingMode != config.GeocodingModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: geocoding go takeover requires mysql, redis, and jwt")
 	}
@@ -104,12 +98,12 @@ func wireGeocoding(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, 
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: geocoding takeover mode=%s", cfg.GeocodingMode)
+	log.Printf("api-go: geocoding takeover mode=%s", "go")
 	return nil
 }
 
@@ -126,9 +120,6 @@ func wireRuntimeDiagnostics(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	if cfg.RuntimeDiagnosticsMode != config.RuntimeDiagnosticsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: runtime diagnostics go takeover requires mysql, redis, and jwt")
 	}
@@ -164,12 +155,12 @@ func wireRuntimeDiagnostics(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: runtime diagnostics takeover mode=%s", cfg.RuntimeDiagnosticsMode)
+	log.Printf("api-go: runtime diagnostics takeover mode=%s", "go")
 	return nil
 }
 

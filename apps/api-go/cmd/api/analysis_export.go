@@ -43,9 +43,6 @@ func wireAnalysisExport(
 	redisClient *redis.Client,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	if cfg.AnalysisExportMode != config.AnalysisExportModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil {
 		return fmt.Errorf("api-go: analysis export go takeover requires mysql, jwt, and redis")
 	}
@@ -83,7 +80,7 @@ func wireAnalysisExport(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)

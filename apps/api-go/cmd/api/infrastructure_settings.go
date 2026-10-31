@@ -26,9 +26,6 @@ import (
 // client and performs no startup network probe: the settings routes only read
 // and write configuration.
 func wireInfrastructureSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.InfrastructureSettingsMode != config.InfrastructureSettingsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: infrastructure settings go takeover requires mysql, redis, and jwt")
 	}
@@ -40,11 +37,11 @@ func wireInfrastructureSettings(gateway *legacyproxy.Gateway, cfg config.Config,
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: infrastructure settings takeover mode=%s", cfg.InfrastructureSettingsMode)
+	log.Printf("api-go: infrastructure settings takeover mode=%s", "go")
 	return nil
 }

@@ -34,10 +34,7 @@ const ClassificationRssOpsKey = "/api/admin/quality/classification"
 // enqueues a BullMQ job, so it keeps falling back to NestJS. The same applies to
 // unlisted methods and longer paths — Go never answers with its own 404.
 // Default (empty or legacy) appends nothing.
-func WithClassificationRssOps(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithClassificationRssOps(rules []Rule) []Rule {
 	qualityBase := "/api/admin/quality/classification"
 	diagBase := "/api/system-settings/rss-diagnostics"
 

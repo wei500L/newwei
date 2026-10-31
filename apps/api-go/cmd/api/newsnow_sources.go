@@ -44,9 +44,6 @@ func wireNewsnowSources(
 	db *sql.DB,
 	redisClient *redis.Client,
 ) (*newsnowsources.Service, error) {
-	if cfg.NewsnowSourcesMode != config.NewsnowSourcesModeGo {
-		return nil, nil
-	}
 	if db == nil || redisClient == nil {
 		return nil, fmt.Errorf("api-go: newsnow sources go takeover requires mysql and redis")
 	}
@@ -66,11 +63,11 @@ func wireNewsnowSources(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: newsnow source fetch takeover mode=%s", cfg.NewsnowSourcesMode)
+	log.Printf("api-go: newsnow source fetch takeover mode=%s", "go")
 	return service, nil
 }

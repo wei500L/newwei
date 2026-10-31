@@ -67,33 +67,16 @@ func authFactorsNestRoutes() []struct{ method, path string } {
 
 // TestAuthFactorsStayLegacyByDefault locks the default, the empty value and the
 // explicit legacy value.
-func TestAuthFactorsStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAuthFactors(rules, "")
-	rules = WithAuthFactors(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(authFactorsGoRoutes(), authFactorsNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
 
 // TestAuthFactorsGoOwnsRoutes locks the seven exact rules and their handler key.
 func TestAuthFactorsGoOwnsRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAuthFactors(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithAuthFactors(rules)
+	gateway := New(rules)
 	for _, tc := range authFactorsGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if !got.Exact {
 			t.Fatalf("%s %s must be an exact rule: %+v", tc.method, tc.path, got)
@@ -107,15 +90,12 @@ func TestAuthFactorsGoOwnsRoutes(t *testing.T) {
 // TestAuthFactorsUnmigratedRoutesStayNest locks every fallback, including the
 // public MFA challenges and the OIDC login chain.
 func TestAuthFactorsUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAuthFactors(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithAuthFactors(rules)
+	gateway := New(rules)
 	for _, tc := range authFactorsNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
@@ -124,22 +104,19 @@ func TestAuthFactorsUnmigratedRoutesStayNest(t *testing.T) {
 // both switches are go: neither switch may claim the other's routes, and the
 // auth-factors key stays distinct from every other unit's key.
 func TestAuthFactorsCoexistWithInfrastructureSettings(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithInfrastructureSettings(rules, string(ModeGo))
-	rules = WithAuthFactors(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithInfrastructureSettings(rules)
+	rules = WithAuthFactors(rules)
+	gateway := New(rules)
 	for _, tc := range authFactorsGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != AuthFactorsKey {
+		if got.Prefix == "" || got.HandlerKey != AuthFactorsKey {
 			t.Fatalf("%s %s = %+v", tc.method, tc.path, got)
 		}
 	}
 	for _, tc := range infrastructureSettingsGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != InfrastructureSettingsKey {
+		if got.Prefix == "" || got.HandlerKey != InfrastructureSettingsKey {
 			t.Fatalf("%s %s = %+v", tc.method, tc.path, got)
 		}
 	}

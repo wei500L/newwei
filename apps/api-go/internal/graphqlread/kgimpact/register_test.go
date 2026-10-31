@@ -23,7 +23,7 @@ func TestKgImpactRootsStayLegacyWhenUnregistered(t *testing.T) {
 		t.Fatal(err)
 	}
 	engine := exec.New(loaded, contract.NewRegistry(), 8, 2000, nil)
-	if got := engine.PlanDocument(kgImpactRootsQuery, nil, nil); got.Kind != exec.KindLegacy {
+	if got := engine.PlanDocument(kgImpactRootsQuery, nil, nil); got.Kind != exec.KindProtocol {
 		t.Fatalf("legacy mode kind = %s", got.Kind)
 	}
 }
@@ -42,7 +42,7 @@ func TestKgImpactRootsExecuteWhenRegistered(t *testing.T) {
 		t.Fatalf("go mode kind = %s body %s", got.Kind, got.Result.Body)
 	}
 	mixed := engine.PlanDocument(`query { getExecutiveChangeImpact(input: { companyName: "Acme" }) { scenario } knowledgeGraphEvidenceReviewQueue { id } }`, nil, nil)
-	if mixed.Kind != exec.KindLegacy {
+	if mixed.Kind != exec.KindProtocol {
 		t.Fatalf("mixed document kind = %s", mixed.Kind)
 	}
 }

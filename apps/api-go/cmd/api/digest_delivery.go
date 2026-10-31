@@ -26,9 +26,6 @@ func wireDigestDelivery(
 	redisClient *redis.Client,
 	digestService *userdigest.Service,
 ) (*userdigest.DeliveryScheduler, error) {
-	if cfg.UserDigestDeliveryMode != config.UserDigestDeliveryModeGo {
-		return nil, nil
-	}
 	if db == nil || redisClient == nil || digestService == nil {
 		return nil, fmt.Errorf("api-go: user digest delivery go mode requires mysql, redis, and the digest service")
 	}
@@ -55,6 +52,6 @@ func wireDigestDelivery(
 		Settings:       runtimesettings.NewService(db, redisClient, runtimesettings.Config{}),
 		ConsoleBaseURL: cfg.NextAuthURL,
 	})
-	log.Printf("api-go: user digest delivery scheduler enabled mode=%s", cfg.UserDigestDeliveryMode)
+	log.Printf("api-go: user digest delivery scheduler enabled mode=%s", "go")
 	return scheduler, nil
 }

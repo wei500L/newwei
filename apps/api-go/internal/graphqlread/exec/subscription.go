@@ -14,11 +14,13 @@ import (
 )
 
 // SubscriptionPlan is the ownership decision for one graphql-transport-ws
-// subscribe payload. KindLegacy means the payload must be forwarded to the
-// NestJS graphql-ws upstream as a whole; the local executor never runs a
-// partially supported operation. KindProtocol is a local pre-execution failure
-// (variable coercion) that graphql-ws reports as a next(result) followed by
-// complete, not as a connection close.
+// subscribe payload. KindSubscriptionError means the payload names an operation
+// the local executor does not own (a non-subscription operation, an
+// unregistered root, or an unsupported selected field); the WS layer reports it
+// as an operation-level error and never forwards it to NestJS.
+// KindProtocol is a local pre-execution failure (variable coercion) that
+// graphql-ws reports as a next(result) followed by complete, not as a
+// connection close.
 type SubscriptionPlan struct {
 	Kind          string
 	Result        Result
@@ -36,10 +38,12 @@ type SubscriptionPlan struct {
 // payload is fully implemented by the local Subscription registry.
 //
 // Parse errors, unknown or ambiguous operations, non-subscription operations,
-// validation failures, unsupported roots and unsupported selected fields all
-// return KindLegacy so the caller forwards the original operation payload to
-// NestJS. That preserves the exact NestJS errors for documents this executor
-// does not own and avoids a half-local/half-remote operation.
+// validation failures, unsupported roots and unsupported selected fields are
+// reported as operation-level errors. A non-subscription operation, an
+// unregistered root, or an unsupported selected field is a
+// KindSubscriptionError so the WS layer reports the error and never forwards
+// the payload to NestJS; the local executor never runs a partially supported
+// operation.
 func (e *Engine) PlanSubscription(query string, operationName *string, rawVariables map[string]any) SubscriptionPlan {
 	plan := SubscriptionPlan{Query: query, RawVariables: rawVariables}
 	if operationName != nil {
@@ -70,7 +74,8 @@ func (e *Engine) PlanSubscription(query string, operationName *string, rawVariab
 	}
 	plan.Op = op
 	if op.Operation != ast.Subscription || e.schema.Subscription == nil {
-		plan.Kind = KindLegacy
+		plan.Kind = KindSubscriptionError
+		plan.Result = operationNotSupported()
 		return plan
 	}
 	coerced, err := validator.VariableValues(e.schema, op, rawVariables)
@@ -84,21 +89,25 @@ func (e *Engine) PlanSubscription(query string, operationName *string, rawVariab
 	plan.Variables = coerced
 	fields := collectFields(e.schema, e.schema.Subscription, op.SelectionSet, doc, coerced, map[string]bool{})
 	if len(fields) != 1 {
-		plan.Kind = KindLegacy
+		plan.Kind = KindSubscriptionError
+		plan.Result = operationNotSupported()
 		return plan
 	}
 	field := fields[0]
 	if field.Name == "__typename" {
-		plan.Kind = KindLegacy
+		plan.Kind = KindSubscriptionError
+		plan.Result = operationNotSupported()
 		return plan
 	}
 	if _, ok := e.reg.Subscription(field.Name); !ok {
-		plan.Kind = KindLegacy
+		plan.Kind = KindSubscriptionError
+		plan.Result = operationNotSupported()
 		return plan
 	}
 	fieldDef := e.schema.Subscription.Fields.ForName(field.Name)
 	if fieldDef == nil || !e.typeSupported(fieldDef.Type, field.Selections, doc, map[string]bool{}) {
-		plan.Kind = KindLegacy
+		plan.Kind = KindSubscriptionError
+		plan.Result = operationNotSupported()
 		return plan
 	}
 	plan.Root = e.schema.Subscription

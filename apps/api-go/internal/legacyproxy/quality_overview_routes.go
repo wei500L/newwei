@@ -22,10 +22,7 @@ const QualityOverviewKey = "/api/admin/quality"
 // /api/admin/quality/classification/*（classification-quality.controller.ts）
 // 都不被 /api/admin/quality/pipeline 或 /api/admin/quality/task-logs 吃掉。
 // 默认（空 / legacy）不追加规则。
-func WithQualityOverview(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithQualityOverview(rules []Rule) []Rule {
 	// 更长的路径先登记，语义上更具体；五条互不遮蔽（都是 Exact）。
 	rules = appendExactKeyed(rules, QualityOverviewKey, "/api/admin/quality/task-logs/summary", http.MethodGet)
 	rules = appendExactKeyed(rules, QualityOverviewKey, "/api/admin/quality/task-logs", http.MethodGet)

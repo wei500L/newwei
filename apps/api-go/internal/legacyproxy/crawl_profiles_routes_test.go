@@ -58,32 +58,14 @@ func crawlProfileNestRoutes() []struct{ method, path string } {
 	}
 }
 
-func TestCrawlProfilesStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlProfiles(rules, "")
-	rules = WithCrawlProfiles(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(crawlProfileRoutes(), crawlProfileNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestCrawlProfilesGoOwnsRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlProfiles(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithCrawlProfiles(rules)
+	gateway := New(rules)
 	for _, tc := range crawlProfileRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		key := got.Prefix
 		if got.HandlerKey != "" {
@@ -120,86 +102,44 @@ func TestCrawlProfilesGoOwnsRoutes(t *testing.T) {
 	}
 	// 预检 OPTIONS 由 Go 路由回答。
 	for _, tc := range crawlProfileRoutes() {
-		if got := gateway.match(http.MethodOptions, tc.path); got.Mode != ModeGo {
-			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Mode)
+		if got := gateway.match(http.MethodOptions, tc.path); got.Prefix == "" {
+			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Prefix)
 		}
 	}
 }
 
 func TestCrawlProfilesUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlProfiles(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithCrawlProfiles(rules)
+	gateway := New(rules)
 	for _, tc := range crawlProfileNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
 
-// 两个开关互不影响：画像开关只加画像规则，不吞工作流与 bridge。
+// 两个开关互不影响：画像路由归画像键，工作流与 bridge 归工作流键。
 func TestCrawlProfilesIndependentFromWorkflows(t *testing.T) {
-	// profiles=go、workflows=legacy：8 条画像路由接管；workflows 与
-	// workflow-bridge 仍回 Nest。
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlWorkflows(rules, "")
-	rules = WithCrawlProfiles(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithCrawlWorkflows(rules)
+	rules = WithCrawlProfiles(rules)
+	gateway := New(rules)
 	for _, tc := range crawlProfileRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		got := gateway.match(tc.method, tc.path)
+		if got.Prefix == "" || got.HandlerKey != CrawlProfilesKey {
+			t.Fatalf("%s %s rule=%+v, want profiles key", tc.method, tc.path, got)
 		}
 	}
+	// workflow routes and the profile workflow-bridge stay on the workflows key.
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/api/admin/crawl-frontier/profiles/profile-1/workflow-bridge"},
 		{http.MethodGet, "/api/admin/crawl-frontier/workflows"},
 		{http.MethodPost, "/api/admin/crawl-frontier/workflows/workflow-1/trial-run"},
 	} {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-
-	// profiles=legacy、workflows=go：bridge 归工作流键；画像路由回落。
-	rules = DefaultRules(ModeShadow, "")
-	rules = WithCrawlWorkflows(rules, string(ModeGo))
-	rules = WithCrawlProfiles(rules, string(ModeLegacy))
-	gateway, err = New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range crawlProfileRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-	bridge := gateway.match(http.MethodGet, "/api/admin/crawl-frontier/profiles/profile-1/workflow-bridge")
-	if bridge.Mode != ModeGo || bridge.HandlerKey != CrawlWorkflowsKey {
-		t.Fatalf("bridge rule=%+v, want workflows key", bridge)
-	}
-
-	// 两个都是 go：bridge 归工作流键，画像路由归画像键。
-	rules = DefaultRules(ModeShadow, "")
-	rules = WithCrawlWorkflows(rules, string(ModeGo))
-	rules = WithCrawlProfiles(rules, string(ModeGo))
-	gateway, err = New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range crawlProfileRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != CrawlProfilesKey {
-			t.Fatalf("%s %s rule=%+v, want profiles key", tc.method, tc.path, got)
+		if got.Prefix == "" || got.HandlerKey != CrawlWorkflowsKey {
+			t.Fatalf("%s %s rule=%+v, want workflows key", tc.method, tc.path, got)
 		}
-	}
-	bridge = gateway.match(http.MethodGet, "/api/admin/crawl-frontier/profiles/profile-1/workflow-bridge")
-	if bridge.Mode != ModeGo || bridge.HandlerKey != CrawlWorkflowsKey {
-		t.Fatalf("bridge rule=%+v, want workflows key", bridge)
 	}
 }

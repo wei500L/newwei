@@ -1,858 +1,143 @@
-// Package legacyproxy 是 Strangler Fig 网关的路由与反向代理层。
+// Package legacyproxy is the Go HTTP router for the api-go process.
 //
-// 路由表按单元声明四态（对齐 docs/refactor/go-migration-adr.md §4）：
+// The package is a durable Go router rather than a Strangler Fig gateway: the
+// process owns every migrated HTTP entrypoint directly and never forwards a
+// request to another backend. There is no reverse proxy, no shadow comparison
+// and no canary split. A request either matches a declared Go route (and is
+// dispatched to its registered handler) or it is rejected with the NestJS
+// unmatched-route 404 contract rendered by internal/nestnotfound, so an unknown
+// path can never leak to a stopped backend or surface as a 502.
 //
-//	legacy（默认）— 全量反向代理到 NestJS apps/api
-//	shadow         — 仍由 NestJS 执行，请求异步复制到 Go 实现比对（仅记录差异）
-//	canary         — 按已验证身份的稳定哈希小比例真实流量切 Go，其余 legacy
-//	go             — Go 原生 handler 全量接管
+// Route tables are declared as an ordered list of Rule values. Matching keeps
+// the semantics the migration relied on:
 //
-// 匹配方式（Go-批3A 起）：通用 fallback 规则按前缀匹配（任意方法）；
-// 迁移单元按 exact path + method 白名单匹配——不匹配的 method 与相似
-// 路径回落更短的通用规则。写模式 legacy 时 PUT 回落 /api/；写模式 go
-// 时同一路径的 PUT 命中独立的 exact+PUT 规则（Go-批3C）。
+//   - a rule with Exact matches the concrete path exactly;
+//   - a rule with OneSegment/TwoSegments matches a fixed prefix followed by one
+//     or two non-empty dynamic segments (optionally a fixed Tail);
+//   - every other rule matches by prefix;
+//   - a rule with a non-empty Methods whitelist only matches those methods;
+//   - the most specific (longest Prefix) rule wins; ties keep declaration order.
 //
-// 四态实现：
-//   - shadow：客户端响应始终来自 NestJS（直通 + 有界旁录，客户端无需
-//     等待捕获完成）；只对只读方法（GET/HEAD/OPTIONS）生效，请求体与
-//     响应捕获是独立预算；流式/SSE/升级请求默认不进入差分。
-//   - canary：orgId 稳定哈希分桶（见 internal/canary）。注意：当前分流
-//     依据是未验签的 JWT payload claim——在 Go 侧完成真实 JWT 验签与
-//     membership 重推导之前，受保护路由不得依赖它进入 Go（fail-safe
-//     回 legacy）；当前没有路由处于 ModeCanary。
-//   - 回滚：路由表单条规则改回 ModeLegacy（或 CANARY_PERCENT=0），
-//     纯配置变更，无代码回滚。
-//
-// 新增迁移 = 在 DefaultRules 中把对应单元改为目标模式，并注册 goHandlers。
+// Handlers are registered by key (RegisterGoHandler) and looked up by the
+// matched rule's HandlerKey (falling back to Prefix). The gateway also owns the
+// bounded HTTP route label used by the metrics histogram and the CORS policy and
+// exception recorder used by the unmatched-route 404.
 package legacyproxy
 
 import (
-	"bytes"
-	"fmt"
-	"io"
-	"mime"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"sort"
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
-	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
 )
 
-// Mode 是单条路由规则的流量去向。
-type Mode string
-
-const (
-	ModeLegacy Mode = "legacy"
-	ModeShadow Mode = "shadow"
-	ModeCanary Mode = "canary"
-	ModeGo     Mode = "go"
-)
-
-// Rule 声明一个路由单元的流量去向。
+// Rule declares one Go-owned route.
 //
-// 匹配语义（Go-批3A 起迁移单元支持 method + exact-path）：
-//   - Exact=false（默认）：前缀匹配——通用 fallback 规则的既有语义；
-//   - Exact=true：路径完全相等——迁移单元的精确边界（/…/onboarding-x
-//     等相似路径不得误命中）；
-//   - Methods 非空：方法白名单——不匹配的方法不命中本规则，回落到更短
-//     的通用规则（写模式 legacy 时 PUT /…/onboarding 回落 /api/）；
-//     Methods 为空 = 任意方法（fallback 语义）。
+// Prefix is the fixed path (or fixed leading path for dynamic rules). Exact
+// requires the whole path to equal Prefix. OneSegment/TwoSegments require one
+// or two non-empty dynamic segments after Prefix. Tail is an optional fixed
+// suffix after the dynamic segment(s). TailSegment (used with OneSegment)
+// expresses <dynamic><Tail>/<dynamic>; TailSuffix appends a fixed suffix to the
+// last dynamic segment. HandlerKey overrides the handler lookup key when the
+// static prefix differs from the registration key (for example a trailing slash
+// on a dynamic prefix). Methods is a method whitelist; empty means any method.
 type Rule struct {
-	Prefix string
-	Mode   Mode
-	// Exact 要求路径与 Prefix 完全相等（迁移单元）。
-	Exact bool
-	// OneSegment 要求 Prefix 之后恰好一个非空路径段，且段内不再有 /。
-	OneSegment bool
-	// TwoSegments 要求 Prefix 之后恰好两个非空路径段。与 OneSegment 互斥。
+	Prefix      string
+	Exact       bool
+	OneSegment  bool
 	TwoSegments bool
-	// Tail 是动态段之后必须精确接上的后缀，以 / 开头，例如 /columns/reorder。
-	// 空表示路径在动态段结束。更长的路径不匹配。
-	Tail string
-	// TailSegment 要求动态段与 Tail 之间恰好一个动态段、Tail 之后再接
-	// 恰好一个动态段（形如 /…/:id/rollback/:version）。与 OneSegment 联用，
-	// Tail 是中间固定段（以 / 开头）。crawl-profiles 的回滚路由与
-	// crawl-frontier runs 的候选解释路由使用。
+	Tail        string
 	TailSegment bool
-	// TailSuffix is an optional fixed suffix appended to the last dynamic
-	// segment of a TailSegment rule (for example /explanation in
-	// /runs/:id/workflow-candidates/:candidateId/explanation). It is empty
-	// for every rule that ends on the dynamic segment.
-	TailSuffix string
-	// HandlerKey 是 RegisterGoHandler 的查找键。空则使用 Prefix。
-	// 动态路径的 Prefix 含尾部斜杠，键则用稳定的静态前缀，避免把任务路由
-	// 注册到看板处理器上。
-	HandlerKey string
-	// Methods 是允许的方法白名单（大写 HTTP method；nil/空 = 全部）。
-	Methods map[string]bool
+	TailSuffix  string
+	HandlerKey  string
+	Methods     map[string]bool
 }
 
-// DefaultRules 是当前的路由表（写模式 legacy——六个 PUT 仍回落 /api/）。
-// 见 DefaultRulesWithWrite。
-func DefaultRules(onboardingMode Mode, readMode string) []Rule {
-	return DefaultRulesWithWrite(onboardingMode, readMode, "")
-}
-
-// DefaultRulesWithWrite 是当前的路由表。onboardingMode 是 onboarding
-// 单元的模式（API_GO_ONBOARDING_MODE）；readMode 是六个只读 GET 的统一
-// 模式（API_GO_USER_SETTINGS_READ_MODE）；writeMode 是六个 PUT 的写接管
-// （API_GO_USER_SETTINGS_WRITE_MODE——仅 "go" 为六个精确路径 PUT 增加
-// ModeGo 规则；空/legacy 不增加，PUT 继续回落 /api/ 由 NestJS 处理）。
-//
-// 迁移单元：
-//   - 序 2：GET /api/healthz/live —— shadow（公开探针，首个单元）；
-//   - 序 5（Go-批3A/3B）：GET /api/user-settings/ui/{六个端点} ——
-//     exact path + 仅 GET；
-//   - Go-批3C：同一六个路径的 PUT 在 writeMode=go 时 exact + 仅 PUT。
-//     读写模式均为 go 时，再为这六个路径增加 exact + 仅 OPTIONS，让
-//     浏览器预检到达 Go handler。POST/HEAD/相似路径，以及没有预检头的
-//     OPTIONS，仍回落 /api/ legacy。
-//
-// 注意三个无 /api 前缀的挂载点（契约清单 §0）：/graphql、/socket.io、
-// /admin/queues（Bull Board）。代理层必须与 REST 前缀分别声明。
-func DefaultRulesWithWrite(onboardingMode Mode, readMode, writeMode string) []Rule {
-	if onboardingMode != ModeGo {
-		onboardingMode = ModeShadow
-	}
-	getOnly := map[string]bool{http.MethodGet: true}
-
-	// 六个 user-settings 只读 GET 的模式（Go-批3B 统一读模式）。
-	settingsMode := func(defaultMode Mode) Mode {
-		switch readMode {
-		case string(ModeGo):
-			return ModeGo
-		case string(ModeShadow):
-			return ModeShadow
-		default:
-			return defaultMode
-		}
-	}
-
-	rules := []Rule{
-		{Prefix: "/api/", Mode: ModeLegacy},
-		{Prefix: "/api/healthz/live", Mode: ModeShadow, Exact: true, Methods: getOnly},
-		// 兼容模式（readMode 空）：onboarding 由 onboardingMode 决定，
-		// rss/spacetime 保持 shadow，三个新端点保持 legacy。
-		{Prefix: "/api/user-settings/ui/onboarding", Mode: settingsMode(onboardingMode), Exact: true, Methods: getOnly},
-		{Prefix: "/api/user-settings/ui/rss-reader", Mode: settingsMode(ModeShadow), Exact: true, Methods: getOnly},
-		{Prefix: "/api/user-settings/ui/spacetime-timeline", Mode: settingsMode(ModeShadow), Exact: true, Methods: getOnly},
-		{Prefix: "/api/user-settings/ui/war-map", Mode: settingsMode(ModeLegacy), Exact: true, Methods: getOnly},
-		{Prefix: "/api/user-settings/ui/newsnow", Mode: settingsMode(ModeLegacy), Exact: true, Methods: getOnly},
-		{Prefix: "/api/user-settings/ui/situation-monitor", Mode: settingsMode(ModeLegacy), Exact: true, Methods: getOnly},
-		{Prefix: "/graphql", Mode: ModeLegacy},
-		{Prefix: "/socket.io/", Mode: ModeLegacy},
-		{Prefix: "/docs", Mode: ModeLegacy},
-		{Prefix: "/admin/queues", Mode: ModeLegacy},
-		{Prefix: "/__go/healthz", Mode: ModeGo},
-	}
-	// 写接管是另一组 exact+PUT 规则，不把 PUT 并进 GET 白名单——GET
-	// 继续走读模式，其他方法仍回落 /api/。OPTIONS 单独成组：只有读写都
-	// 是 go 时，浏览器预检才由 Go 回答；写模式 legacy 时预检仍代理 NestJS。
-	if writeMode == string(ModeGo) {
-		putOnly := map[string]bool{http.MethodPut: true}
-		optionsOnly := map[string]bool{http.MethodOptions: true}
-		for _, path := range []string{
-			"/api/user-settings/ui/onboarding",
-			"/api/user-settings/ui/rss-reader",
-			"/api/user-settings/ui/spacetime-timeline",
-			"/api/user-settings/ui/war-map",
-			"/api/user-settings/ui/newsnow",
-			"/api/user-settings/ui/situation-monitor",
-		} {
-			rules = append(rules, Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: putOnly})
-			rules = append(rules, Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: optionsOnly})
-		}
-	}
-	return rules
-}
-
-// WithPublicPortal 在 mode 为 go 时追加公开首页、频道和两个故事详情。
-// 默认（空 / legacy）不追加：这些 GET 继续回落 /api/ 由 NestJS 处理。
-// 频道与两条故事规则都只匹配一个路径段。更长的路径和非 GET 不在此列。
-func WithPublicPortal(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	getOnly := map[string]bool{http.MethodGet: true}
-	return append(rules,
-		Rule{Prefix: "/api/public-portal/home", Mode: ModeGo, Exact: true, Methods: getOnly},
-		Rule{Prefix: "/api/public-portal/channels/", Mode: ModeGo, OneSegment: true, Methods: getOnly},
-		Rule{Prefix: "/api/public-portal/stories/id/", Mode: ModeGo, OneSegment: true, Methods: getOnly},
-		Rule{Prefix: "/api/public-portal/stories/slug/", Mode: ModeGo, OneSegment: true, Methods: getOnly},
-	)
-}
-
-// WithNotificationsSocket takes over the dedicated Engine.IO path used by the
-// Go notifications transport. It is separate from /socket.io so the other
-// Socket.IO namespaces keep their NestJS transport. Non-GET requests and the
-// default /socket.io path are untouched.
-func WithNotificationsSocket(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	return append(rules, Rule{
-		Prefix:  "/socket.io-notifications",
-		Mode:    ModeGo,
-		Methods: map[string]bool{http.MethodGet: true},
-	})
-}
-
-// WithRealtimeSocket takes over the dedicated Engine.IO path used by the Go
-// five-namespace realtime transport. The path is separate from /socket.io so
-// the Web default build and every NestJS-served namespace stay unchanged; only
-// GET upgrades on exactly /socket.io-realtime are handed to Go.
-func WithRealtimeSocket(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	return append(rules, Rule{
-		Prefix:  "/socket.io-realtime",
-		Mode:    ModeGo,
-		Methods: map[string]bool{http.MethodGet: true},
-	})
-}
-
-// WithDashboardStats 在 mode 为 go 时接管精确路径 GET /api/dashboard/stats。
-// 同一路径的 OPTIONS 也交给 Go，让浏览器预检不落到 NestJS。
-// 其他方法、/api/dashboard/stats 的子路径、dashboard/stream 和其他图表
-// 不在此列，继续回落 /api/。默认（空 / legacy）不追加规则。
-func WithDashboardStats(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	path := "/api/dashboard/stats"
-	return append(rules,
-		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodGet: true}},
-		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodOptions: true}},
-	)
-}
-
-// WithDashboardCharts 在 mode 为 go 时接管三个精确 GET：
-// sector-heatmap、financial-candlestick、war-map/geojson。
-// 同一路径的 OPTIONS 交给 Go。其他方法、war-map 的其余子路径、
-// spacetime、stream 和 stats 不在此列。默认（空 / legacy）不追加规则。
-// 与 WithDashboardStats 互相独立。
-func WithDashboardCharts(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	getOnly := map[string]bool{http.MethodGet: true}
-	optionsOnly := map[string]bool{http.MethodOptions: true}
-	for _, path := range []string{
-		"/api/dashboard/sector-heatmap",
-		"/api/dashboard/financial-candlestick",
-		"/api/dashboard/war-map/geojson",
-	} {
-		rules = append(rules,
-			Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: getOnly},
-			Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: optionsOnly},
-		)
-	}
-	return rules
-}
-
-// WithDashboardWarMap 在 mode 为 go 时接管两个精确 GET：
-// war-map/events 与 war-map/news-markers。同一路径的 OPTIONS 交给 Go。
-// layers、transport-detail、spacetime、stream、stats 和三个图表不在此列。
-// 默认（空 / legacy）不追加规则。与 stats、charts 开关互相独立。
-func WithDashboardWarMap(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	getOnly := map[string]bool{http.MethodGet: true}
-	optionsOnly := map[string]bool{http.MethodOptions: true}
-	for _, path := range []string{
-		"/api/dashboard/war-map/events",
-		"/api/dashboard/war-map/news-markers",
-	} {
-		rules = append(rules,
-			Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: getOnly},
-			Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: optionsOnly},
-		)
-	}
-	return rules
-}
-
-// WithDashboardWarMapTransport 只在 mode 为 go 时接管 transport-detail 的精确 GET
-// 和同一路径的 OPTIONS。不改变 events、news-markers 或 layers。
-func WithDashboardWarMapTransport(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	return appendExactGET(rules, "/api/dashboard/war-map/transport-detail")
-}
-
-// WithDashboardWarMapLayers 只在 mode 为 go 时接管 layers 的精确 GET 和同一路径的 OPTIONS。
-// 不改变 events、news-markers 或 transport-detail。
-func WithDashboardWarMapLayers(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	return appendExactGET(rules, "/api/dashboard/war-map/layers")
-}
-
-// WithDashboardSpacetimeGeo 只在 mode 为 go 时接管热力图总览和下钻的精确 GET，
-// 以及同一路径上符合 CORS 预检的 OPTIONS。传播图、stats、图表、War Map 和 stream 不变。
-func WithDashboardSpacetimeGeo(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	rules = appendExactGET(rules, "/api/dashboard/spacetime/geo-heatmap")
-	return appendExactGET(rules, "/api/dashboard/spacetime/geo-heatmap/articles")
-}
-
-// WithDashboardSpacetimePropagation 只在 mode 为 go 时接管传播图总览和下钻的精确 GET，
-// 以及同一路径上符合 CORS 预检的 OPTIONS。热力图不受这个开关影响。
-func WithDashboardSpacetimePropagation(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	rules = appendExactGET(rules, "/api/dashboard/spacetime/propagation")
-	return appendExactGET(rules, "/api/dashboard/spacetime/propagation/articles")
-}
-
-// WithDashboardStream 只在 mode 为 go 时接管精确 GET /api/dashboard/stream，
-// 以及同一路径上符合 CORS 预检的 OPTIONS。其他方法和更长路径仍回 NestJS。
-func WithDashboardStream(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	return appendExactGET(rules, "/api/dashboard/stream")
-}
-
-// NewsSourcesKey 是新闻源管理台十五条路由的处理器注册键。
-// 静态段（options、groups、opml、batch）是更长的精确路径，不能落到 :id。
-const NewsSourcesKey = "/api/admin/news-sources"
-
-// WithNewsSources 只在 mode 为 go 时接管新闻源管理台的十五条读写路由。
-// GET :id/preview、更长路径和其他方法仍回 NestJS。
-func WithNewsSources(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	base := "/api/admin/news-sources"
-	rules = appendExactKeyed(rules, NewsSourcesKey, base, http.MethodGet, http.MethodPost)
-	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/options", http.MethodGet)
-	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/groups", http.MethodGet)
-	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/opml-presets", http.MethodGet)
-	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch/frequency", http.MethodPost)
-	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/opml/preview", http.MethodPost)
-	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/opml/import", http.MethodPost)
-	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch/group", http.MethodPatch)
-	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch/active", http.MethodPatch)
-	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch", http.MethodDelete)
-	rules = appendSegmentRule(rules, NewsSourcesKey, base+"/", true, false, "", http.MethodPatch, http.MethodDelete)
-	rules = appendSegmentRule(rules, NewsSourcesKey, base+"/", true, false, "/run", http.MethodPost)
-	return appendSegmentRule(rules, NewsSourcesKey, base+"/", true, false, "/schedule", http.MethodPost)
-}
-
-// SituationMonitorsKey 是态势监控自定义监控五条路由的处理器注册键。
-// POST /monitors/preview 是更长的精确路径，不能落到 monitors/:id。
-const SituationMonitorsKey = "/api/situation-monitor/monitors"
-
-// WithSituationMonitors 只在 mode 为 go 时接管自定义监控闭环的五条路由。
-// GET/POST 集合与 POST preview 是精确路径。PATCH/DELETE 恰好一个路径段。
-// insights、catalog、feedback、refresh、telegram、oref、HLS 不在此列。
-func WithSituationMonitors(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	rules = appendExactKeyed(rules, SituationMonitorsKey, "/api/situation-monitor/monitors",
-		http.MethodGet, http.MethodPost)
-	rules = appendExactKeyed(rules, SituationMonitorsKey, "/api/situation-monitor/monitors/preview",
-		http.MethodPost)
-	return appendSegmentRule(rules, SituationMonitorsKey, "/api/situation-monitor/monitors/", true, false, "",
-		http.MethodPatch, http.MethodDelete)
-}
-
-// WithContentSubscriptions 只在 mode 为 go 时接管内容订阅的 7 条精确路由。
-// 每种方法单独成组。更长路径、未列出的方法仍回落 /api/。OPTIONS 交给 Go 做预检。
-func WithContentSubscriptions(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	rules = appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions")
-	rules = appendExactMethods(rules, http.MethodPost, "/api/user-content-subscriptions/batch-upsert")
-	rules = appendExactMethods(rules, http.MethodPost, "/api/user-content-subscriptions/batch-delete")
-	rules = appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions/catalog")
-	rules = appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions/recommendations")
-	rules = appendExactMethods(rules, http.MethodPost, "/api/user-content-subscriptions/catalog/lookup")
-	return appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions/related-topics")
-}
-
-// WithUserNewsBehavior 只在 mode 为 go 时接管行为记录、画像读取和清空。
-// POST 根路径、GET/DELETE profile。其他方法仍回落 NestJS。
-func WithUserNewsBehavior(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	rules = appendExactMethods(rules, http.MethodPost, "/api/user-news-behavior")
-	rules = appendExactMethods(rules, http.MethodGet, "/api/user-news-behavior/profile")
-	return appendExactMethods(rules, http.MethodDelete, "/api/user-news-behavior/profile")
-}
-
-// WithUserDigest 只在 mode 为 go 时接管摘要偏好、投递设置和每日摘要。
-// GET /api/user-digest 是精确路径，不包含 /preference 或 /delivery。
-func WithUserDigest(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	rules = appendExactMethods(rules, http.MethodGet, "/api/user-digest/preference")
-	rules = appendExactMethods(rules, http.MethodPut, "/api/user-digest/preference")
-	rules = appendExactMethods(rules, http.MethodGet, "/api/user-digest/delivery")
-	rules = appendExactMethods(rules, http.MethodPut, "/api/user-digest/delivery")
-	return appendExactMethods(rules, http.MethodGet, "/api/user-digest")
-}
-
-// WithAuthenticatedHealth 只在 mode 为 go 时接管精确 GET /api/healthz。
-// 不接管 OPTIONS，也不接管 /api/healthz/live。
-func WithAuthenticatedHealth(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	return append(rules, Rule{
-		Prefix:  "/api/healthz",
-		Mode:    ModeGo,
-		Exact:   true,
-		Methods: map[string]bool{http.MethodGet: true},
-	})
-}
-
-// WithGraphQLRead inserts exact GET/POST/OPTIONS rules for /graphql ahead of
-// the legacy prefix so only those methods can reach the Go handler. Upgrade
-// requests are still delivered to that handler, which proxies them. Longer
-// paths keep the prefix legacy rule. An empty or legacy mode adds nothing.
-//
-// The caller passes ModeGo when either the GraphQL read switch or the
-// organization access write switch is go: the switch only decides whether
-// /graphql can reach the Go handler at all, while the registered roots and
-// their own switches decide which documents actually execute in Go.
-func WithGraphQLRead(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
-	getOnly := map[string]bool{http.MethodGet: true}
-	exact := []Rule{
-		{Prefix: "/graphql", Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodGet: true}},
-		{Prefix: "/graphql", Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodPost: true}},
-		{Prefix: "/graphql", Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodOptions: true}},
-		{Prefix: "/__go/graphql-read-stats", Mode: ModeGo, Exact: true, Methods: getOnly},
-	}
-	out := make([]Rule, 0, len(rules)+len(exact))
-	inserted := false
-	for _, rule := range rules {
-		if !inserted && rule.Prefix == "/graphql" && !rule.Exact {
-			out = append(out, exact...)
-			inserted = true
-		}
-		out = append(out, rule)
-	}
-	if !inserted {
-		out = append(out, exact...)
-	}
-	return out
-}
-
-func appendExactGET(rules []Rule, path string) []Rule {
-	return appendExactMethods(rules, http.MethodGet, path)
-}
-
-func appendExactMethods(rules []Rule, method, path string) []Rule {
-	return append(rules,
-		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: map[string]bool{method: true}},
-		Rule{Prefix: path, Mode: ModeGo, Exact: true, Methods: map[string]bool{http.MethodOptions: true}},
-	)
-}
-
-// GoHandler 是已迁移到 Go 的原生处理器（按前缀注册）。
+// GoHandler is a native Go request handler registered on the gateway.
 type GoHandler func(w http.ResponseWriter, r *http.Request)
 
-// Gateway 是 Strangler 网关。
+// Gateway routes every request to a registered Go handler and rejects the rest.
 type Gateway struct {
-	rules        []Rule
-	goHandlers   map[string]GoHandler
-	proxy        *httputil.ReverseProxy
-	shadowBudget ShadowBudget
-	// legacyFallback is the cutover C-9 switch (API_GO_LEGACY_FALLBACK_MODE).
-	// The zero value proxies to NestJS, so a gateway that never calls
-	// SetLegacyFallback behaves exactly as before.
-	legacyFallback LegacyFallbackMode
+	rules      []Rule
+	goHandlers map[string]GoHandler
 	// corsPolicy answers browser preflights and adds the actual-request CORS
-	// headers to responses the gateway writes itself (reject mode).
+	// headers to the unmatched-route 404 the gateway writes itself.
 	corsPolicy cors.Policy
-	// notFoundRecorder is the best-effort exception event side channel used by
-	// reject mode. Nil means "do not record".
+	// notFoundRecorder is the best-effort exception event side channel used when
+	// no Go route matches. Nil means "do not record".
 	notFoundRecorder nestnotfound.Recorder
 }
 
-// New 构造网关。legacyURL 指向 NestJS apps/api 基址；Go 原生路由随后经
-// RegisterGoHandler 注入。shadowBudget 为零值时按 1 MiB 保守默认。
-func New(legacyURL string, rules []Rule) (*Gateway, error) {
-	target, err := url.ParseRequestURI(legacyURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid legacy API URL %q: %w", legacyURL, err)
-	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-		req.Host = target.Host
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		httpx.WriteJSON(w, http.StatusBadGateway, map[string]any{
-			"statusCode": 502,
-			"message":    "Bad Gateway",
-			"error":      "Bad Gateway",
-			"traceId":    httpx.TraceIDFromContext(r.Context()),
-			"path":       r.URL.Path,
-		})
-	}
+// New builds the router from an ordered route table. Go handlers are injected
+// afterwards with RegisterGoHandler / SetGoHandler.
+func New(rules []Rule) *Gateway {
 	return &Gateway{
-		rules:        rules,
-		goHandlers:   make(map[string]GoHandler),
-		proxy:        proxy,
-		shadowBudget: ShadowBudget{MaxRequestBodyByte: 1 << 20, MaxResponseCaptureByte: 1 << 20},
-	}, nil
-}
-
-// SetShadowBudget 注入 shadow 捕获预算（请求体/响应捕获独立上限）。
-func (g *Gateway) SetShadowBudget(budget ShadowBudget) {
-	if budget.MaxRequestBodyByte > 0 {
-		g.shadowBudget.MaxRequestBodyByte = budget.MaxRequestBodyByte
-	}
-	if budget.MaxResponseCaptureByte > 0 {
-		g.shadowBudget.MaxResponseCaptureByte = budget.MaxResponseCaptureByte
+		rules:      rules,
+		goHandlers: make(map[string]GoHandler),
 	}
 }
 
-// SetGoHandler 注入单一 Go 原生路由处理器（保留以兼容 /__go/healthz）。
+// SetNotFound installs the CORS policy and the best-effort exception recorder
+// used to answer a request no Go route claims. The gateway must not be serving
+// requests while this runs: cmd/api wires it once before the listener starts.
+func (g *Gateway) SetNotFound(policy cors.Policy, record nestnotfound.Recorder) {
+	g.corsPolicy = policy
+	g.notFoundRecorder = record
+}
+
+// SetGoHandler registers the process introspection handler at /__go/healthz.
 func (g *Gateway) SetGoHandler(handler GoHandler) {
 	g.goHandlers["/__go/healthz"] = handler
 }
 
-// RegisterGoHandler 按前缀注册 Go 原生处理器。
+// RegisterGoHandler registers a native Go handler under a lookup key.
 func (g *Gateway) RegisterGoHandler(prefix string, handler GoHandler) {
 	g.goHandlers[prefix] = handler
 }
 
-// ServeLegacy 把当前请求按原样代理到 NestJS。已接管路径上、缺少预检头的
-// OPTIONS 用它回到原来的代理去向。legacy fallback 为 reject 时（切流 C-9）
-// 该去向由 proxyLegacy 改写为 Nest 等价的 404，不会触达 NestJS。
-func (g *Gateway) ServeLegacy(w http.ResponseWriter, r *http.Request) {
-	g.proxyLegacy(w, r)
+// Reject answers a request that must not be served as a matched Go route with
+// the NestJS unmatched-route 404 contract. It is the single exit for a method
+// the registered handler does not own and for a path no rule claims. CORS is
+// answered first; no backend is ever contacted.
+func (g *Gateway) Reject(w http.ResponseWriter, r *http.Request) {
+	nestnotfound.Write(w, r, g.corsPolicy, g.notFoundRecorder)
 }
 
-// proxyLegacy is the single exit for every request whose route resolution ends
-// at NestJS. In the default proxy mode the counter feeds the cutover runbook's
-// "legacy fallback is zero" check; route_prefix is a bounded family label
-// (/api/<first segment>, /graphql, /socket.io, ...) rather than the full path so
-// cardinality stays bounded by the top-level route families.
-//
-// In reject mode (cutover C-9) the same decision point refuses the request
-// instead: it counts the rejection with the same route-family label and writes
-// the NestJS-equivalent 404. Keeping the decision here covers every legacy
-// source at once — the ModeLegacy branch, the unmatched-path fallback
-// Rule{Prefix: path, Mode: ModeLegacy}, the /api/ fallback, /graphql,
-// /socket.io/, /docs, /admin/queues, the canary fallback and any handler that
-// calls ServeLegacy — and guarantees the reverse proxy is never reached.
-func (g *Gateway) proxyLegacy(w http.ResponseWriter, r *http.Request) {
-	if g.legacyFallback == LegacyFallbackReject {
-		g.rejectLegacy(w, r)
-		return
-	}
-	metrics.RecordLegacyProxyRequest(legacyRoutePrefix(r.URL.Path))
-	g.proxy.ServeHTTP(w, r)
-}
-
-// legacyRoutePrefix collapses a request path into a bounded route-family label.
-// The implementation lives in httpx.RouteFamily so the legacy-proxy counter and
-// the http_request_duration_seconds route label cannot drift apart.
-func legacyRoutePrefix(path string) string { return httpx.RouteFamily(path) }
-
-// ServeHTTP 按路由表分发。
+// ServeHTTP matches the request against the route table and dispatches to the
+// registered Go handler. A request that no rule claims, or whose matched rule
+// has no handler, is answered with the NestJS unmatched-route 404.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	g.ServeHTTPWithShadow(w, r, nil)
-}
-
-// ServeHTTPWithShadow 分发并在 shadow 路由上执行差分。
-func (g *Gateway) ServeHTTPWithShadow(w http.ResponseWriter, r *http.Request, sh ShadowDispatcher) {
 	rule, matched := g.matchRule(r.Method, r.URL.Path)
-	// Record the bounded route label while the route-table decision is in hand; the
-	// outer metrics middleware reads it back after ServeHTTP returns.
-	//
-	// A request no rule claimed reports the NestJS "unmatched" literal, which is the
-	// label NestJS gives a req.route-less request: a scanned or unknown path then
-	// cannot create a series. A request that did match reports the bounded family, the
-	// same value api_go_legacy_proxy_requests_total already uses, so one route keeps a
-	// single http_request_duration_seconds series while it moves from the NestJS proxy
-	// to a Go handler.
-	//
-	// Known difference: for a path under /api/ that no NestJS controller serves, NestJS
-	// also reports "unmatched", while this gateway reports the /api/<first-segment>
-	// family because its rule table matches by prefix. That family is the accepted
-	// bounded label of the existing legacy-proxy counter, so the two processes stay
-	// comparable route by route rather than path by path.
 	if matched {
+		// Record the bounded route label while the route-table decision is in
+		// hand; the outer metrics middleware reads it back after ServeHTTP
+		// returns. An unmatched request keeps the NestJS "unmatched" literal
+		// (the metric middleware default) so a scanned path cannot create a
+		// series.
 		httpx.SetRouteLabel(r.Context(), httpx.RouteFamily(r.URL.Path))
-	}
-	switch rule.Mode {
-	case ModeGo:
 		key := rule.Prefix
 		if rule.HandlerKey != "" {
 			key = rule.HandlerKey
 		}
-		handler := g.matchGoHandler(key)
-		if handler != nil {
+		if handler := g.matchGoHandler(key); handler != nil {
 			handler(w, r)
 			return
 		}
-		httpx.WriteJSON(w, http.StatusNotImplemented, map[string]any{
-			"statusCode": 501,
-			"message":    "go route has no handler",
-			"error":      "Not Implemented",
-		})
-	case ModeLegacy:
-		g.proxyLegacy(w, r)
-	case ModeShadow:
-		// shadow：NestJS 仍是响应方；Go 实现异步旁路执行比对。
-		// 主响应不受 Go 侧执行成败/快慢影响（超时即丢弃差分）。
-		g.serveShadow(w, r, sh, g.shadowBudget)
-	case ModeCanary:
-		if sh != nil && sh.CanaryRoute(r) {
-			key := rule.Prefix
-			if rule.HandlerKey != "" {
-				key = rule.HandlerKey
-			}
-			handler := g.matchGoHandler(key)
-			if handler != nil {
-				handler(w, r)
-				return
-			}
-			// canary 命中但无实现：回 legacy（fail-safe），不 501 客户端。
-			g.proxyLegacy(w, r)
-			return
-		}
-		g.proxyLegacy(w, r)
 	}
-}
-
-// ShadowDispatcher 是 shadow/canary 的网关侧依赖（由上层装配注入，
-// 保持 legacyproxy 不直接依赖具体 shadow runner / canary router）。
-type ShadowDispatcher interface {
-	// ObserveShadow 提交一次 shadow 观察。reason 非空表示主链路（捕获
-	// 阶段）已判定无法差分——只记账（runner.ObserveSkip），不执行；
-	// reason 为空时 legacyStatus/Header/Body 是完整捕获的响应。
-	ObserveShadow(r *http.Request, legacyStatus int, legacyHeader http.Header, legacyBody []byte, reason ShadowSkipReason)
-	// CanaryRoute 报告该请求是否进入 go 实现（orgId 稳定哈希 + 比例）。
-	CanaryRoute(r *http.Request) bool
-}
-
-// ShadowSkipReason 是捕获阶段判定的差分跳过原因（与 shadow 包的
-// SkipReason 值一致；字符串常量避免包间循环依赖）。
-type ShadowSkipReason string
-
-const (
-	// ShadowSkipRequestTooLarge 差分可重放的请求体超过预算（请求仍完整转发）。
-	ShadowSkipRequestTooLarge ShadowSkipReason = "request-too-large"
-	// ShadowSkipResponseTooLarge 响应体超过捕获预算（主响应完整流式透传）。
-	ShadowSkipResponseTooLarge ShadowSkipReason = "response-too-large"
-	// ShadowSkipStreaming 流式响应（SSE/事件流）无法整体差分（主响应流式透传）。
-	ShadowSkipStreaming ShadowSkipReason = "streaming-skipped"
-)
-
-// ShadowBudget 是 serveShadow 的资源边界（由上层从 config 传入）。
-type ShadowBudget struct {
-	// MaxRequestBodyByte 差分可重放的请求体上限；超过后请求仍完整转发
-	//（MultiReader 回放已读前缀），只是放弃差分。
-	MaxRequestBodyByte int64
-	// MaxResponseCaptureByte 响应差分缓存上限；超过后停止捕获继续透传。
-	MaxResponseCaptureByte int64
-}
-
-// serveShadow：代理到 NestJS，同时以有界旁路捕获响应用于差分。
-//
-// 捕获方式是「直通 + 有界旁录」：captureWriter 把每个字节即时写给客户端
-// （保留流式/分块语义），同时最多旁录 MaxResponseCaptureByte 字节；超限
-// 或检测到 SSE 流式响应时停止旁录、只透传。客户端永远不需要等待捕获
-// 完成，差分失败/超限/超时都不影响主响应。
-func (g *Gateway) serveShadow(w http.ResponseWriter, r *http.Request, sh ShadowDispatcher, budget ShadowBudget) {
-	// 只对只读方法差分：写方法双发有副作用，明令禁止。
-	if sh == nil || !isReadonlyMethod(r.Method) {
-		g.proxyLegacy(w, r)
-		return
-	}
-
-	// WebSocket/协议升级请求：差分无意义且 stdlib ReverseProxy 本就不支持
-	// upgrade——直接纯代理，不做任何捕获。
-	if isUpgradeRequest(r) {
-		sh.ObserveShadow(r, 0, nil, nil, ShadowSkipStreaming)
-		g.proxyLegacy(w, r)
-		return
-	}
-
-	// 差分预算兜底（零值时按 1 MiB 保守处理）。
-	maxReq := budget.MaxRequestBodyByte
-	if maxReq <= 0 {
-		maxReq = 1 << 20
-	}
-	maxResp := budget.MaxResponseCaptureByte
-	if maxResp <= 0 {
-		maxResp = 1 << 20
-	}
-
-	// 读取请求体（差分执行需要重放）。读上限 maxReq+1：多读 1 字节用于
-	// 判定超限；超限时用 MultiReader 把已读前缀与未读尾部拼回——请求
-	// 仍完整转发给上游，只是放弃差分。
-	var requestBody []byte
-	requestTooLarge := false
-	if r.Body != nil {
-		buf, err := io.ReadAll(io.LimitReader(r.Body, maxReq+1))
-		if err != nil {
-			// 读 body 失败不影响主链路：直接代理（差分放弃）。
-			g.proxyLegacy(w, r)
-			return
-		}
-		if int64(len(buf)) > maxReq {
-			requestTooLarge = true
-			// 已读前缀 + 未读剩余部分拼回原始流。
-			r.Body = struct {
-				io.Reader
-				io.Closer
-			}{io.MultiReader(bytes.NewReader(buf), r.Body), r.Body}
-		} else {
-			requestBody = buf
-			r.Body = io.NopCloser(bytes.NewReader(buf))
-		}
-	}
-
-	capture := newCaptureWriter(w, maxResp)
-	g.proxyLegacy(capture, r)
-
-	// 差分观察（异步语义由 dispatcher/runner 保证；此处只是提交）。
-	if requestTooLarge {
-		sh.ObserveShadow(r, 0, nil, nil, ShadowSkipRequestTooLarge)
-		return
-	}
-	if capture.streaming {
-		sh.ObserveShadow(r, 0, nil, nil, ShadowSkipStreaming)
-		return
-	}
-	if capture.overLimit {
-		sh.ObserveShadow(r, 0, nil, nil, ShadowSkipResponseTooLarge)
-		return
-	}
-	sh.ObserveShadow(cloneRequestForShadow(r, requestBody), capture.status, capture.header, capture.body.Bytes(), "")
-}
-
-// isUpgradeRequest 判定协议升级请求（WebSocket、h2c 等）：任何非空
-// Upgrade 头都按升级处理——差分对升级握手无意义。
-func isUpgradeRequest(r *http.Request) bool {
-	return strings.TrimSpace(r.Header.Get("Upgrade")) != ""
-}
-
-// captureWriter 直通式捕获器：上游写入的每个字节即时转发给客户端，
-// 同时有界旁录用于差分。这保留了对客户端的流式/分块/Flush 语义——
-// 与「先整包缓冲再回放」相反。
-type captureWriter struct {
-	dst       http.ResponseWriter // 真实客户端
-	header    http.Header         // 捕获的响应头（发给客户端的镜像）
-	status    int
-	body      bytes.Buffer // 有界旁录
-	maxBytes  int64
-	overLimit bool // 响应超过旁录预算（已停止捕获，继续透传）
-	streaming bool // SSE/事件流（已停止捕获，继续透传）
-}
-
-func newCaptureWriter(dst http.ResponseWriter, maxBytes int64) *captureWriter {
-	return &captureWriter{dst: dst, header: http.Header{}, maxBytes: maxBytes}
-}
-
-func (c *captureWriter) Header() http.Header { return c.header }
-
-func (c *captureWriter) WriteHeader(status int) {
-	c.status = status
-	// 响应头先转发给客户端（流式语义的关键：客户端立即收到头）。
-	for key, values := range c.header {
-		for _, value := range values {
-			c.dst.Header().Add(key, value)
-		}
-	}
-	c.dst.WriteHeader(status)
-	// SSE/事件流：响应本身就是无边界的持续推送，无法整体差分——
-	// 停止旁录，纯透传。
-	if mediaType := headerMediaType(c.header.Get("Content-Type")); mediaType == "text/event-stream" {
-		c.streaming = true
-	}
-}
-
-func (c *captureWriter) Write(p []byte) (int, error) {
-	if c.status == 0 {
-		c.WriteHeader(http.StatusOK)
-	}
-	n, err := c.dst.Write(p) // 先透传客户端
-	if err != nil {
-		return n, err
-	}
-	if c.streaming || c.overLimit {
-		return n, nil
-	}
-	if int64(c.body.Len())+int64(len(p)) > c.maxBytes {
-		// 超过旁录预算：丢弃差分（调用方记 response-too-large），
-		// 客户端不受影响。
-		c.overLimit = true
-		c.body.Reset()
-		return n, nil
-	}
-	c.body.Write(p)
-	return n, nil
-}
-
-// Flush 转发客户端 Flush（ReverseProxy 对 chunked 响应会调用）。
-func (c *captureWriter) Flush() {
-	if flusher, ok := c.dst.(http.Flusher); ok {
-		flusher.Flush()
-	}
-}
-
-// headerMediaType 解析 Content-Type 的 media type（解析失败返回原值小写）。
-func headerMediaType(contentType string) string {
-	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		return strings.ToLower(strings.TrimSpace(contentType))
-	}
-	return mediaType
-}
-
-func cloneRequestForShadow(r *http.Request, body []byte) *http.Request {
-	shadowRequest := r.Clone(r.Context())
-	if body != nil {
-		shadowRequest.Body = io.NopCloser(bytes.NewReader(body))
-	} else {
-		shadowRequest.Body = nil
-	}
-	return shadowRequest
-}
-
-func isReadonlyMethod(method string) bool {
-	switch strings.ToUpper(method) {
-	case http.MethodGet, http.MethodHead, http.MethodOptions:
-		return true
-	default:
-		return false
-	}
+	g.Reject(w, r)
 }
 
 func (g *Gateway) matchGoHandler(prefix string) GoHandler {
-	// 前缀完全匹配（路由表 prefix = handler 注册键）。
+	// Exact handler-key match first (route table HandlerKey = registration key).
 	if handler, ok := g.goHandlers[prefix]; ok {
 		return handler
 	}
-	// 兼容旧 SetGoHandler（/__go/healthz 之外的 go 路由按最长注册前缀匹配）。
+	// Compatibility for dynamic prefixes: the longest registered key that is a
+	// prefix of the rule key wins, so a board handler never answers a task
+	// route.
 	keys := make([]string, 0, len(g.goHandlers))
 	for key := range g.goHandlers {
 		keys = append(keys, key)
@@ -866,21 +151,15 @@ func (g *Gateway) matchGoHandler(prefix string) GoHandler {
 	return nil
 }
 
-// match 返回命中的规则：先按 Prefix 长度降序（更具体优先），每条规则
-// 要求路径匹配（Exact=完全相等；否则前缀）且方法在白名单内（白名单为
-// 空 = 任意方法）。未命中任何规则的路径（如根路径 /）交给 NestJS——
-// 它是当前的事实源。
+// match returns the rule that claims method+path (or the zero Rule when none).
 func (g *Gateway) match(method, path string) Rule {
 	rule, _ := g.matchRule(method, path)
 	return rule
 }
 
-// matchRule is match plus whether a declared rule actually matched.
-//
-// The fallback Rule{Prefix: path, Mode: ModeLegacy} that match returns for an
-// unclaimed request is indistinguishable from a real rule by its fields alone, and
-// the metrics label needs the difference: an unclaimed path must be reported with
-// the bounded "unmatched" literal rather than as its own path-derived family.
+// matchRule is match plus whether a declared rule actually matched. The metrics
+// route label needs the difference: an unclaimed path is reported with the
+// bounded "unmatched" literal rather than a path-derived family.
 func (g *Gateway) matchRule(method, path string) (Rule, bool) {
 	method = strings.ToUpper(method)
 	sorted := make([]Rule, len(g.rules))
@@ -897,7 +176,7 @@ func (g *Gateway) matchRule(method, path string) (Rule, bool) {
 		}
 		return rule, true
 	}
-	return Rule{Prefix: path, Mode: ModeLegacy}, false
+	return Rule{}, false
 }
 
 func (rule Rule) matchesPath(path string) bool {
@@ -911,17 +190,14 @@ func (rule Rule) matchesPath(path string) bool {
 				return false
 			}
 			if rule.TailSegment {
-				// 中间固定段 + 末尾动态段：<动态>/<Tail>/<动态>。取最后
-				// 一个 <Tail>/ 出现位置，保证动态段本身不含 Tail 时也正确。
+				// <dynamic>/<Tail>/<dynamic>: take the last <Tail>/ occurrence so
+				// a dynamic segment that itself contains Tail still matches.
 				marker := rule.Tail + "/"
 				idx := strings.LastIndex(rest, marker)
 				if idx <= 0 {
 					return false
 				}
 				tailSegment := rest[idx+len(marker):]
-				// An optional fixed suffix makes the rule end on
-				// <dynamic>/<Tail>/<dynamic><TailSuffix> instead of the
-				// dynamic segment itself.
 				if rule.TailSuffix != "" {
 					if !strings.HasSuffix(tailSegment, rule.TailSuffix) {
 						return false
@@ -954,9 +230,222 @@ func (rule Rule) matchesPath(path string) bool {
 	return strings.HasPrefix(path, rule.Prefix)
 }
 
-// Rules 导出当前路由表（供 /__go/healthz 展示与测试断言）。
+// Rules exports a copy of the current route table.
 func (g *Gateway) Rules() []Rule {
 	out := make([]Rule, len(g.rules))
 	copy(out, g.rules)
 	return out
+}
+
+func appendExactGET(rules []Rule, path string) []Rule {
+	return appendExactMethods(rules, http.MethodGet, path)
+}
+
+// appendExactMethods appends an exact rule for method plus the matching OPTIONS
+// rule, so a browser preflight reaches the Go handler.
+func appendExactMethods(rules []Rule, method, path string) []Rule {
+	return append(rules,
+		Rule{Prefix: path, Exact: true, Methods: map[string]bool{method: true}},
+		Rule{Prefix: path, Exact: true, Methods: map[string]bool{http.MethodOptions: true}},
+	)
+}
+
+// userSettingsReadPaths are the six user-settings read GET exact paths. The PUT
+// and OPTIONS rules share the same paths.
+var userSettingsReadPaths = []string{
+	"/api/user-settings/ui/onboarding",
+	"/api/user-settings/ui/rss-reader",
+	"/api/user-settings/ui/spacetime-timeline",
+	"/api/user-settings/ui/war-map",
+	"/api/user-settings/ui/newsnow",
+	"/api/user-settings/ui/situation-monitor",
+}
+
+// BaseRules is the always-on route table every Go-only deployment serves: the
+// six user-settings GET/PUT/OPTIONS routes and the process introspection probe.
+// Every other unit is appended by its own builder through AllRoutes.
+func BaseRules() []Rule {
+	getOnly := map[string]bool{http.MethodGet: true}
+	putOnly := map[string]bool{http.MethodPut: true}
+	optionsOnly := map[string]bool{http.MethodOptions: true}
+	rules := []Rule{{Prefix: "/__go/healthz"}}
+	for _, path := range userSettingsReadPaths {
+		rules = append(rules,
+			Rule{Prefix: path, Exact: true, Methods: getOnly},
+			Rule{Prefix: path, Exact: true, Methods: putOnly},
+			Rule{Prefix: path, Exact: true, Methods: optionsOnly},
+		)
+	}
+	return rules
+}
+
+// WithPublicPortal appends the public home, channel and two story-detail reads.
+func WithPublicPortal(rules []Rule) []Rule {
+	getOnly := map[string]bool{http.MethodGet: true}
+	return append(rules,
+		Rule{Prefix: "/api/public-portal/home", Exact: true, Methods: getOnly},
+		Rule{Prefix: "/api/public-portal/channels/", OneSegment: true, Methods: getOnly},
+		Rule{Prefix: "/api/public-portal/stories/id/", OneSegment: true, Methods: getOnly},
+		Rule{Prefix: "/api/public-portal/stories/slug/", OneSegment: true, Methods: getOnly},
+	)
+}
+
+// WithNotificationsSocket appends the dedicated Engine.IO path used by the Go
+// notifications transport (GET upgrades only). It is separate from /socket.io.
+func WithNotificationsSocket(rules []Rule) []Rule {
+	return append(rules, Rule{
+		Prefix:  "/socket.io-notifications",
+		Methods: map[string]bool{http.MethodGet: true},
+	})
+}
+
+// WithRealtimeSocket appends the dedicated Engine.IO path used by the Go
+// five-namespace realtime transport (GET upgrades only).
+func WithRealtimeSocket(rules []Rule) []Rule {
+	return append(rules, Rule{
+		Prefix:  "/socket.io-realtime",
+		Methods: map[string]bool{http.MethodGet: true},
+	})
+}
+
+// WithDashboardStats appends the exact GET /api/dashboard/stats (and OPTIONS).
+func WithDashboardStats(rules []Rule) []Rule {
+	return appendExactGET(rules, "/api/dashboard/stats")
+}
+
+// WithDashboardCharts appends the three exact chart GETs (and OPTIONS).
+func WithDashboardCharts(rules []Rule) []Rule {
+	for _, path := range []string{
+		"/api/dashboard/sector-heatmap",
+		"/api/dashboard/financial-candlestick",
+		"/api/dashboard/war-map/geojson",
+	} {
+		rules = appendExactGET(rules, path)
+	}
+	return rules
+}
+
+// WithDashboardWarMap appends the two exact war-map GETs (and OPTIONS).
+func WithDashboardWarMap(rules []Rule) []Rule {
+	for _, path := range []string{
+		"/api/dashboard/war-map/events",
+		"/api/dashboard/war-map/news-markers",
+	} {
+		rules = appendExactGET(rules, path)
+	}
+	return rules
+}
+
+// WithDashboardWarMapTransport appends the exact transport-detail GET (OPTIONS).
+func WithDashboardWarMapTransport(rules []Rule) []Rule {
+	return appendExactGET(rules, "/api/dashboard/war-map/transport-detail")
+}
+
+// WithDashboardWarMapLayers appends the exact layers GET (OPTIONS).
+func WithDashboardWarMapLayers(rules []Rule) []Rule {
+	return appendExactGET(rules, "/api/dashboard/war-map/layers")
+}
+
+// WithDashboardSpacetimeGeo appends the geo-heatmap overview and drill-down GETs.
+func WithDashboardSpacetimeGeo(rules []Rule) []Rule {
+	rules = appendExactGET(rules, "/api/dashboard/spacetime/geo-heatmap")
+	return appendExactGET(rules, "/api/dashboard/spacetime/geo-heatmap/articles")
+}
+
+// WithDashboardSpacetimePropagation appends the propagation overview and
+// drill-down GETs.
+func WithDashboardSpacetimePropagation(rules []Rule) []Rule {
+	rules = appendExactGET(rules, "/api/dashboard/spacetime/propagation")
+	return appendExactGET(rules, "/api/dashboard/spacetime/propagation/articles")
+}
+
+// WithDashboardStream appends the exact SSE GET /api/dashboard/stream (OPTIONS).
+func WithDashboardStream(rules []Rule) []Rule {
+	return appendExactGET(rules, "/api/dashboard/stream")
+}
+
+// NewsSourcesKey is the handler registration key of the news-source admin routes.
+const NewsSourcesKey = "/api/admin/news-sources"
+
+// WithNewsSources appends the fifteen news-source admin read/write routes. GET
+// :id/preview and longer paths are excluded.
+func WithNewsSources(rules []Rule) []Rule {
+	base := "/api/admin/news-sources"
+	rules = appendExactKeyed(rules, NewsSourcesKey, base, http.MethodGet, http.MethodPost)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/options", http.MethodGet)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/groups", http.MethodGet)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/opml-presets", http.MethodGet)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch/frequency", http.MethodPost)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/opml/preview", http.MethodPost)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/opml/import", http.MethodPost)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch/group", http.MethodPatch)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch/active", http.MethodPatch)
+	rules = appendExactKeyed(rules, NewsSourcesKey, base+"/batch", http.MethodDelete)
+	rules = appendSegmentRule(rules, NewsSourcesKey, base+"/", true, false, "", http.MethodPatch, http.MethodDelete)
+	rules = appendSegmentRule(rules, NewsSourcesKey, base+"/", true, false, "/run", http.MethodPost)
+	return appendSegmentRule(rules, NewsSourcesKey, base+"/", true, false, "/schedule", http.MethodPost)
+}
+
+// SituationMonitorsKey is the handler registration key of the situation
+// monitor custom-monitor routes.
+const SituationMonitorsKey = "/api/situation-monitor/monitors"
+
+// WithSituationMonitors appends the five custom-monitor routes.
+func WithSituationMonitors(rules []Rule) []Rule {
+	rules = appendExactKeyed(rules, SituationMonitorsKey, "/api/situation-monitor/monitors",
+		http.MethodGet, http.MethodPost)
+	rules = appendExactKeyed(rules, SituationMonitorsKey, "/api/situation-monitor/monitors/preview",
+		http.MethodPost)
+	return appendSegmentRule(rules, SituationMonitorsKey, "/api/situation-monitor/monitors/", true, false, "",
+		http.MethodPatch, http.MethodDelete)
+}
+
+// WithContentSubscriptions appends the seven exact content-subscription routes.
+func WithContentSubscriptions(rules []Rule) []Rule {
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions")
+	rules = appendExactMethods(rules, http.MethodPost, "/api/user-content-subscriptions/batch-upsert")
+	rules = appendExactMethods(rules, http.MethodPost, "/api/user-content-subscriptions/batch-delete")
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions/catalog")
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions/recommendations")
+	rules = appendExactMethods(rules, http.MethodPost, "/api/user-content-subscriptions/catalog/lookup")
+	return appendExactMethods(rules, http.MethodGet, "/api/user-content-subscriptions/related-topics")
+}
+
+// WithUserNewsBehavior appends the behavior record, profile read and clear routes.
+func WithUserNewsBehavior(rules []Rule) []Rule {
+	rules = appendExactMethods(rules, http.MethodPost, "/api/user-news-behavior")
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-news-behavior/profile")
+	return appendExactMethods(rules, http.MethodDelete, "/api/user-news-behavior/profile")
+}
+
+// WithUserDigest appends the digest preference, delivery and daily-digest routes.
+func WithUserDigest(rules []Rule) []Rule {
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-digest/preference")
+	rules = appendExactMethods(rules, http.MethodPut, "/api/user-digest/preference")
+	rules = appendExactMethods(rules, http.MethodGet, "/api/user-digest/delivery")
+	rules = appendExactMethods(rules, http.MethodPut, "/api/user-digest/delivery")
+	return appendExactMethods(rules, http.MethodGet, "/api/user-digest")
+}
+
+// WithAuthenticatedHealth appends the exact authenticated GET /api/healthz.
+func WithAuthenticatedHealth(rules []Rule) []Rule {
+	return append(rules, Rule{
+		Prefix:  "/api/healthz",
+		Exact:   true,
+		Methods: map[string]bool{http.MethodGet: true},
+	})
+}
+
+// WithGraphQLRead appends the exact /graphql GET/POST/OPTIONS rules and the
+// GraphQL read-stats introspection GET. The registered roots decide which
+// documents execute; an unregistered root is rejected by the handler before any
+// side effect (there is no whole-operation fallback).
+func WithGraphQLRead(rules []Rule) []Rule {
+	getOnly := map[string]bool{http.MethodGet: true}
+	return append(rules,
+		Rule{Prefix: "/graphql", Exact: true, Methods: map[string]bool{http.MethodGet: true}},
+		Rule{Prefix: "/graphql", Exact: true, Methods: map[string]bool{http.MethodPost: true}},
+		Rule{Prefix: "/graphql", Exact: true, Methods: map[string]bool{http.MethodOptions: true}},
+		Rule{Prefix: "/__go/graphql-read-stats", Exact: true, Methods: getOnly},
+	)
 }

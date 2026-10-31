@@ -28,9 +28,6 @@ import (
 // ordinary authhttp chain but keeps its own authenticator because the machine
 // (mtk_) token path and the verified jti/exp metadata are specific to this unit.
 func wireAccountSecurity(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client) error {
-	if cfg.AccountSecurityMode != config.AccountSecurityModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil {
 		return fmt.Errorf("api-go: account security go takeover requires mysql and redis")
 	}
@@ -67,11 +64,11 @@ func wireAccountSecurity(gateway *legacyproxy.Gateway, cfg config.Config, db *sq
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: account security takeover mode=%s", cfg.AccountSecurityMode)
+	log.Printf("api-go: account security takeover mode=%s", "go")
 	return nil
 }

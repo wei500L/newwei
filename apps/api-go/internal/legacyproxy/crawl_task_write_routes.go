@@ -21,10 +21,7 @@ const CrawlTaskWriteKey = "/__go/crawl-task-write"
 // requests; rule order between methods is irrelevant.
 //
 // An empty or legacy mode adds no rules.
-func WithCrawlTaskWrite(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithCrawlTaskWrite(rules []Rule) []Rule {
 	// The retry rule is more specific than the bare :id rule, so it is
 	// registered first; the router also matches the longest prefix, but keeping
 	// the longer rule first mirrors the other units.

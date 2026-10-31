@@ -102,9 +102,6 @@ func wireAssistantRuns(
 // startAssistantWorker starts the BullMQ consumer when the worker switch is go.
 // Returning nil leaves the queue to the NestJS AssistantProcessor.
 func startAssistantWorker(cfg config.Config, service *assistantruns.Service, redisClient *redis.Client) *assistantqueue.Worker {
-	if cfg.AssistantWorkerMode != "go" {
-		return nil
-	}
 	if service == nil || redisClient == nil {
 		log.Printf("api-go: assistant worker not started (service or redis is missing)")
 		return nil

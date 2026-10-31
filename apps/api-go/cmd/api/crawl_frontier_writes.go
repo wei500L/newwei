@@ -27,9 +27,6 @@ import (
 // detail. The producer is built here because createRun and the two retry routes
 // enqueue crawl jobs, exactly like the NestJS service they replace.
 func wireCrawlFrontierWrites(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.CrawlFrontierWritesMode != config.CrawlFrontierWritesModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: crawl frontier writes go takeover requires mysql, jwt, and redis")
 	}
@@ -55,11 +52,11 @@ func wireCrawlFrontierWrites(gateway *legacyproxy.Gateway, cfg config.Config, db
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: crawl frontier writes takeover mode=%s", cfg.CrawlFrontierWritesMode)
+	log.Printf("api-go: crawl frontier writes takeover mode=%s", "go")
 	return nil
 }
