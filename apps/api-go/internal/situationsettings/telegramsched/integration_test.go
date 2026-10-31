@@ -345,7 +345,7 @@ func runNodeFixture(t *testing.T, mode string, environment map[string]string) st
 		t.Fatalf("read fixture: %v", err)
 	}
 	command := exec.Command(nodePath, "--input-type=module")
-	command.Dir = filepath.Join(root, "apps/api")
+	command.Dir = filepath.Join(root, "infra/scripts")
 	command.Stdin = bytes.NewReader(fixture)
 	env := append(os.Environ(), "FIXTURE_MODE="+mode)
 	for key, value := range environment {
