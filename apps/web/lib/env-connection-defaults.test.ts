@@ -1,4 +1,9 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { parseEnvText } from "../../../infra/scripts/src/dev-config";
 
 /**
  * Behavioural cover for the web-side connection defaults.
@@ -69,5 +74,29 @@ describe("web connection defaults", () => {
 
     expect(env.NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH).toBe("/socket.io");
     expect(env.NEXT_PUBLIC_REALTIME_SOCKET_PATH).toBe("/socket.io");
+  });
+
+  it("uses the shipped root .env.example values end to end", async () => {
+    const example = parseEnvText(
+      readFileSync(
+        fileURLToPath(new URL("../../../.env.example", import.meta.url)),
+        "utf8",
+      ),
+    );
+    const { env } = await loadEnvModule({
+      NEXT_PUBLIC_API_BASE_URL: example.NEXT_PUBLIC_API_BASE_URL,
+      NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:
+        example.NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH,
+      NEXT_PUBLIC_REALTIME_SOCKET_PATH:
+        example.NEXT_PUBLIC_REALTIME_SOCKET_PATH,
+    });
+
+    expect(env.apiBaseUrl).toBe("http://localhost:4020/api");
+    expect(env.apiRoot).toBe("http://localhost:4020");
+    expect(env.graphqlUrl).toBe("http://localhost:4020/graphql");
+    expect(env.NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH).toBe(
+      "/socket.io-notifications",
+    );
+    expect(env.NEXT_PUBLIC_REALTIME_SOCKET_PATH).toBe("/socket.io-realtime");
   });
 });

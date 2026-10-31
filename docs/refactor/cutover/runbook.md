@@ -5,7 +5,7 @@
 > - **重要（GO-DEFAULT-CUTOVER-001 之后）**：仓库默认已经是全 Go + `reject`，本手册描述的“从 legacy 逐步切到 go”的阶段编排成为**历史演练路径**。默认部署不再需要任何阶段切换；只需要回退时才用 `infra/docker/legacy-rollback.override.yml` + `infra/docker/legacy-rollback.env.sample`。分阶段演练仍可按本手册执行，但每个阶段都要显式写出开关值（省略变量现在是 go，不再等于 legacy）。
 > - 基线：`docs/go-cutover-readiness` 的原始基线是 `dcbe563b`（#136）；三批迁移（#138/#139/#140）合并后本手册按 `integration/merge-open-prs-b138-140` 的口径复核开关总数与阶段拆分，行号仍以各节标注的基线为准。
 > - 事实来源：`apps/api-go/internal/config/config.go`（137 个 `API_GO_*` 开关与全部启动校验）、`apps/api-go/cmd/api/main.go`（路由表、Registry、worker 接线）、`apps/api-go/internal/legacyproxy/`（回落规则）、`infra/docker/docker-compose.yml`、`infra/docker/.env.sample`、`docs/refactor/go-*.md`、`docs/refactor/bug-ledger.md`。行号均来自 `dcbe563b`。
-> - 配套交付：`infra/docker/api-go-cutover.env.sample`（137 个开关：136 个 `go` + `API_GO_LEGACY_FALLBACK_MODE=reject` 的清单，现在与仓库默认一致）、`infra/docker/legacy-rollback.env.sample`（137 个开关：136 个 `legacy` + `proxy`，显式回退）、`infra/docker/legacy-rollback.override.yml`（回退编排：服务集合、依赖、地址、路径）、`docs/refactor/cutover/switch-matrix.md`（逐开关矩阵，T3）、`docs/refactor/cutover/ownership-audit.md`（执行权审计，T1）、`docs/refactor/cutover/README.md`。**开关总数 137（三批共新增 7 个：#138 的 `API_GO_HEALTHZ_LIVE_MODE`/`API_GO_VECTOR_DIAGNOSTICS_MODE`/`API_GO_DOCS_MODE`/`API_GO_LEGACY_FALLBACK_MODE`、#139 的 `API_GO_CRAWL_FRONTIER_WRITES_MODE`、#140 的 `API_GO_QUEUE_OPS_MODE`/`API_GO_QUEUE_ORG_STATS_MODE`）；阶段拆分 37+61+18+14+3+4=137。**
+> - 配套交付：`infra/docker/api-go-cutover.env.sample`（137 个开关：136 个 `go` + `API_GO_LEGACY_FALLBACK_MODE=reject` 的清单，现在与仓库默认一致）、`infra/docker/legacy-rollback.env.sample`（137 个开关：134 个 `legacy` + 2 个合法 `shadow`（onboarding / user-settings-read）+ `proxy`，显式回退）、`infra/docker/legacy-rollback.override.yml`（回退编排：服务集合、依赖、地址、路径）、`docs/refactor/cutover/switch-matrix.md`（逐开关矩阵，T3）、`docs/refactor/cutover/ownership-audit.md`（执行权审计，T1）、`docs/refactor/cutover/README.md`。**开关总数 137（三批共新增 7 个：#138 的 `API_GO_HEALTHZ_LIVE_MODE`/`API_GO_VECTOR_DIAGNOSTICS_MODE`/`API_GO_DOCS_MODE`/`API_GO_LEGACY_FALLBACK_MODE`、#139 的 `API_GO_CRAWL_FRONTIER_WRITES_MODE`、#140 的 `API_GO_QUEUE_OPS_MODE`/`API_GO_QUEUE_ORG_STATS_MODE`）；阶段拆分 37+61+18+14+3+4=137。**
 > - 本手册与 T3 矩阵的阶段归属如不一致，**以 `switch-matrix.md` 为准**；本手册用于演练编排与验证方法。
 
 ---
@@ -40,12 +40,12 @@
 - 原来固定 `legacy` 的 42 个现在默认为 `go`，同样可被 env 改回；
 - 原来未注入的 10 个（`API_GO_DASHBOARD_SPACETIME_GEO_MODE`、`API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE`、`API_GO_DASHBOARD_STREAM_MODE`、`API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE`、`API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE`、`API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE`、`API_GO_GRAPHQL_NEWS_EVENTS_MODE`、`API_GO_GRAPHQL_READ_MODE`、`API_GO_HEALTHZ_MODE`、`API_GO_RBAC_MODE`）现在显式出现，避免 compose 与 `config.go` 的默认悄悄分叉。
 
-**结论：** 137 个开关都能通过 `.env` / `--env-file` 逐项控制，`docker-compose.api-go-cutover.sample.yml` 因此不再需要重新声明 59 项，只保留 env_file 注入与凭据显式声明。回退走 `legacy-rollback.env.sample`（136 legacy + proxy）与 `legacy-rollback.override.yml`：
+**结论：** 137 个开关都能通过 `.env` / `--env-file` 逐项控制，`docker-compose.api-go-cutover.sample.yml` 因此不再需要重新声明 59 项，只保留 env_file 注入与凭据显式声明。回退走 `legacy-rollback.env.sample`（134 legacy + 2 合法 shadow + proxy）与 `legacy-rollback.override.yml`：
 
 ```
 infra/docker/api-go-cutover.env.sample                    # 全 Go 终态清单（= 仓库默认）
 infra/docker/docker-compose.api-go-cutover.sample.yml     # 注入方式（env_file + 凭据）
-infra/docker/legacy-rollback.env.sample                   # 显式回退清单（136 legacy + proxy）
+infra/docker/legacy-rollback.env.sample                   # 显式回退清单（134 legacy + 2 shadow + proxy）
 infra/docker/legacy-rollback.override.yml                 # 显式回退编排
 ```
 

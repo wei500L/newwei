@@ -1209,9 +1209,9 @@ services:
       API_GO_METRICS_MODE: ${API_GO_METRICS_MODE:-go}
       # 停 Nest 收尾的四个运维入口（C-1/C-5/C-7/C-9），都只被 api-go 读取，
       # 不需要两侧同步。空串一律按各开关默认值处理（见 config.go 的 switch）。
-      # 公开存活探针：默认 shadow（唯一非 legacy 的默认值）——shadow 保持现有
-      # 规则表逐字节不变（Nest 应答 + Go 差分），legacy 关闭该规则，go 由 Go
-      # 只接管精确 GET。回退写回 shadow，不要写 legacy。
+      # 公开存活探针：默认 go——由 Go 直接响应 Web 启动等待的
+      # GET /api/healthz/live；shadow 只作为显式回退（Nest 应答 + Go 差分），
+      # legacy 关闭该规则。回退写回 shadow，不要写 legacy。
       API_GO_HEALTHZ_LIVE_MODE: ${API_GO_HEALTHZ_LIVE_MODE:-go}
       # Swagger 文档：默认 go。go 时从内嵌的 openapi.snapshot.json 与
       # swagger-ui-dist 资源提供 /docs、/docs/json 与静态资源；是否实际挂载
@@ -1750,12 +1750,11 @@ services:
       # 继续由 NestJS 处理；go=Go 处理，要求 JWT、MySQL、Redis，与定时任务共用
       # 同一把锁。与上面的定时开关相互独立。
       API_GO_GDELT_SNAPSHOT_REFRESH_MODE: ${API_GO_GDELT_SNAPSHOT_REFRESH_MODE:-go}
-      # 以下七项此前完全未注入，依赖 config.go 的默认值。默认切 go 后必须显式
+      # 以下各项此前完全未注入，依赖 config.go 的默认值。默认切 go 后必须显式
       # 出现，否则同一份 compose 在 .env 覆盖时会出现「Go 侧 go、Nest 侧 legacy」
-      # 的分叉。全部可插值，回退时逐个改 legacy。
+      # 的分叉。全部可插值，回退时逐个改 legacy。API_GO_HEALTHZ_LIVE_MODE 已在
+      # 上方 C-1 组声明，这里不再重复。
       API_GO_HEALTHZ_MODE: ${API_GO_HEALTHZ_MODE:-go}
-      # Web 启动等待 GET /api/healthz/live 由 Go 直接响应（不再 shadow 回 Nest）。
-      API_GO_HEALTHZ_LIVE_MODE: ${API_GO_HEALTHZ_LIVE_MODE:-go}
       API_GO_RBAC_MODE: ${API_GO_RBAC_MODE:-go}
       API_GO_GRAPHQL_READ_MODE: ${API_GO_GRAPHQL_READ_MODE:-go}
       API_GO_GRAPHQL_NEWS_EVENTS_MODE: ${API_GO_GRAPHQL_NEWS_EVENTS_MODE:-go}

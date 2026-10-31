@@ -14,7 +14,7 @@
 #     1. 服务集合（Node 三服务启动，Go 三服务停止）；
 #     2. 依赖图（Web 等 api 健康，不再等 api-go）；
 #     3. 地址（Web 的服务端/浏览器地址、vector、AIS）；
-#     4. 开关（137 项显式 legacy + fallback=proxy，见 env 样例）。
+#     4. 开关（137 项显式回退值：134 legacy + 2 shadow + fallback=proxy，见 env 样例）。
 #
 # 使用（仓库根目录）：
 #   docker compose \
@@ -47,6 +47,14 @@ services:
       API_GO_SITUATION_TELEGRAM_AUTH_MODE: legacy
       API_GO_REALTIME_SOCKET_MODE: legacy
       API_GO_CLASSIFICATION_QUALITY_ALERT_MODE: legacy
+      # The Node vector/AIS services replace the stopped Go containers. These
+      # must be literals: infra/docker/.env points at vector-go/ais-relay-go by
+      # default, and a ${VAR:-default} would keep the Go hostnames.
+      VECTOR_SERVICE_BASE_URL: http://vector:4010
+      REALTIME_SIGNALS_AIS_BASE_URL: http://ais-relay:3004
+      # OIDC redirect builder in NestJS reads API_BASE_URL; env_file .env still
+      # carries the Go default.
+      API_BASE_URL: http://api:4000
     depends_on:
       # 回退期间 Nest 仍需要自己的数据库与队列。
       mysql:
@@ -101,22 +109,32 @@ services:
     build:
       args:
         API_BASE_URL: http://api:4000
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api}
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:4000/api
         NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: /socket.io
         NEXT_PUBLIC_REALTIME_SOCKET_PATH: /socket.io
     environment:
       API_BASE_URL: http://api:4000
-    depends_on:
+    # Replace (not merge) the base depends_on map: base web waits for api-go,
+    # which this override scales to zero. Requires Compose's !override tag
+    # (Compose v2.24.4+); without it the stopped api-go dependency would keep
+    # the rollback Web unfinishable.
+    depends_on: !override
       api:
         condition: service_healthy
 
   # ---------------------------------------------------------------------------
-  # LiteLLM 的配置回调回到 NestJS 的 internal 端点。
+  # LiteLLM 的配置回调回到 NestJS 的 internal 端点。这里必须写死回退值：
+  # 基础 infra/docker/.env 已把该变量指向 api-go:4020，`${VAR:-default}` 不会
+  # 覆盖已存在的值，会让回退后的 LiteLLM 仍请求 Go 网关。
   # ---------------------------------------------------------------------------
   litellm:
     environment:
-      LITELLM_CONFIG_API_BASE: ${LITELLM_CONFIG_API_BASE:-http://api:4000/api}
-    depends_on:
+      LITELLM_CONFIG_API_BASE: http://api:4000/api
+    depends_on: !override
+      redis:
+        condition: service_healthy
+      litellm-postgres:
+        condition: service_healthy
       api:
         condition: service_healthy
 

@@ -62,11 +62,15 @@ curl http://localhost:4020/api/healthz/live # 默认 go：由 Go 直接响应（
 curl http://localhost:4020/api/healthz      # 认证探针：需登录或机器令牌
 ```
 
+> 以上直接命令不会读取仓库根 `.env`。正常本地开发从仓库根执行 `pnpm dev`（`infra/scripts/src/dev.mts` 负责加载 `.env`、派生 `DATABASE_URL`、注入每个子进程的 `PORT` 并转发信号）；只有直接 `go run` 时才需要自行导出这些变量。
+
 回退到纯代理（NestJS 承载全部业务路由）需要**显式**给出旧值——省略变量不再等于 legacy：
 
 ```bash
 API_GO_LEGACY_FALLBACK_MODE=proxy \
-  + 136 个业务开关逐个设为 legacy（见 infra/docker/legacy-rollback.env.sample）
+  + 134 个业务开关逐个设为 legacy，另把 API_GO_ONBOARDING_MODE 与
+    API_GO_USER_SETTINGS_READ_MODE 设为各自合法的 shadow
+    （完整清单见 infra/docker/legacy-rollback.env.sample）
 ```
 
 只设 `API_GO_LEGACY_FALLBACK_MODE=proxy` 而业务开关仍为默认 `go` 时，代理模式不会生效在任何已接管路由上。
