@@ -4,9 +4,9 @@
 - 前置：[GO-CONTRACT-TOOLING-001](GO-CONTRACT-TOOLING-001.md) 已合入 main：PR #152 → merge `f22e36ae6fabf72c501ae2ad573eb3323fa0db35`，普通 CI（verify / vector-integration / api-go-user-settings-integration）success，两个 regen job skipped。
 - 基线：`origin/main = f22e36ae`；规划基线 `fcf1e533` 的 #150/#151 已在 main。
 - 分支 / worktree：`codex/go-only-runtime` / `/Users/oo/project/newwei-go-only-runtime`。
-- 实现 head：`7a627429aec1b6cce41fa831dfa4533da6ad45b6`（首个代码提交）；后续文档/修复提交另行回填。
+- 实现 head（代码）：`91bfc6cca...`（分支 `codex/go-only-runtime`；首个代码提交 `7a627429`，其后 `cf8013d4` go vet 冗余布尔、`e4a8a3a4` 未使用变量、`91bfc6cc` 测试修正）。本文档为唯一后续提交，不改代码。
 - PR：[#153](https://github.com/wei500L/newwei/pull/153)（Ready，不合并、不 auto-merge）。
-- 普通 CI：run `41208423266`；逐 job 结论见 PR「Checks」与后续回填。
+- 普通 CI（代码 head `91bfc6cc`，run `41210516276`）：**verify success**（Lint/go vet、Typecheck、Web component tests + coverage、Vector unit tests、API unit tests、OpenAPI/Auth/SDL drift、Go contract gate、Go tests、Build 全部通过）；`api-go-user-settings-integration` success；`vector-integration` 在自托管 runner 队列 pending（同一分支更早 head `7a627429`/`3cc4a9e7`/`e4a8a3a4` 的 vector-integration 均 success；非代码失败）；`contract-baseline-regen`/`go-modules-regen`/两条 smoke skipped（skipped 不算通过）。
 - 规划任务 PR #149 未合并：本批只读取得需求，未合并规划分支代替业务前置。
 
 ## 交付内容
