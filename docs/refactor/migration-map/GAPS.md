@@ -1,5 +1,15 @@
 # 已确认缺口与待核对事项
 
+## 2026-10-31 完成核对与本地默认链缺口
+
+main 基线 `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`；默认切换候选单独取 #151/head `b97e181aa7248175ed3c91daf9a258dba6289f96`，不能混计。下方 2026-10-27 的 open 清单为原缺口事实，现行增量如下：
+
+- GAP-HTTP-HEADERS-001 / GAP-METRICS-WIRING-001 / GAP-ITEMS-BODY-001：**源码修复已合入 #150**。证据：main 根链 `cmd/api/main.go:3396`；`internal/metrics/producers.go` 与实际 ES/模型/provider 调用；`internal/itemsingest/handler.go:334` 的 `createBodyLimit=10<<20`。源 head 普通 CI 40551203359 三主要 job success；merge CI 40557202479 Web 测试失败，两个集成 success。未部署，真实服务未知。
+- GAP-EXCEPTION-WIRING-001：**主体已合入，范围收窄但未完整关闭**。`cmd/api/main.go:1868,2568` 安装 REST/GraphQL recorder；`internal/crawlprofile/handler.go:349-352` 等序列化失败分支仍直接 `http.Error`，unknown/stack 亦不完整。按 #150 实际交付保留残留，不因 task=merged 删去。
+- **GAP-DEV-CONFIG-001（open，GO-DEFAULT-CUTOVER-001 内继续，不新建任务）**：#151 根 `.env.example:57-65` 仍给 API 4000/旧 Socket.IO，`:70,103-119` 等仍显式 shadow/legacy；Web `next.config.mjs:4` 读根 `.env`，`lib/env.ts:48-54` 尊重显式值，因此示例覆盖新默认。根命令改为 go run 后，还需闭合 Go 的 OS 环境来源、vector/AIS 进程监听 4010/3004 与示例 4011/3005 的区别、dev:legacy 的完整显式回退。前者已静态确认，启动环境与端口组合须按生产入口进一步核实，未运行服务复现。
+
+修补范围、排除与验证见 [继续提示词](tasks/GO-DEFAULT-CUTOVER-001.followup.prompt.md)。#151 当前 CI success 不覆盖这处示例遗漏，不能用旧 head 的通过关闭新缺口；本轮仅维护规划，不实施修复。
+
 ## 2026-10-27 切默认前增量
 
 本节核对基线 `f15f598d4358b4c9823054ef5a355618e1480a4e`。#148 已合入，五份 review 的原审查深度保留；本节只核以下根因与旧残留的整合更正，不冒充全仓复审。`cc3782c0..f15f598d` 仅改 workflow 的 runner，以下源码定位未变。

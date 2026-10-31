@@ -1,5 +1,13 @@
 # 后端迁移地图
 
+## 2026-10-31 完成核对与继续提示词
+
+- main 已核实为 `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`（[#150](https://github.com/wei500L/newwei/pull/150) 实际 merge）；前置修补主体已合入。源 head `4f21c025` 的普通 CI 40551203359 三主要 job success；main CI 40557202479 失败在队列运维 Web 测试、两个集成 success，不能称 main 全绿。
+- 默认切 Go [#151](https://github.com/wei500L/newwei/pull/151) 仍 OPEN/Ready，head `b97e181aa7248175ed3c91daf9a258dba6289f96`，[普通 CI 40576119903](https://github.com/wei500L/newwei/actions/runs/40576119903) 三主要 job success、两个 regen skipped。当前 main 默认尚未切 Go；#151 的实现不能提前算入 main。
+- 已确认本地开发示例与新默认不一致，见 [GAP-DEV-CONFIG-001](GAPS.md#2026-10-31-完成核对与本地默认链缺口)。[继续提示词](tasks/GO-DEFAULT-CUTOVER-001.followup.prompt.md) 已发出：在原 worktree 更新 #151，补根示例、Go 环境来源、端口与 dev:legacy；不新开重复任务，不直接实施业务。
+- #150 异常记录仍有自写 500/unknown/stack 残留，不重新派四项整批，也不伪称异常覆盖完整。删除 Node 后端、双轨结构与迁移契约/CI 继续等 #151 补齐并合入后再派。
+- 本次只核相关增量与配置链，不重算全域注册覆盖、不冒充全文复审；不部署、不连接真实服务，未修改真实 `.env`。
+
 ## 2026-10-27 增量与下一批
 
 - 本次只核对 `origin/main = f15f598d4358b4c9823054ef5a355618e1480a4e` 的合并、下一批相关源码与默认链，未重建全域覆盖数，也未全文重审五域。下方 `dcbe563b` 统计保留为历史快照。

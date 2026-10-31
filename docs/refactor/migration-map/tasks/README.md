@@ -1,5 +1,16 @@
 # 任务认领与历史恢复索引
 
+## 2026-10-31 当前状态
+
+main = `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`，下方 2026-10-27 的 reserved/planned 为发出时历史快照。
+
+| 任务 | 当前状态 / 证据 | 下一步与所有权 |
+|---|---|---|
+| [GO-CUTOVER-PREREQS-001](GO-CUTOVER-PREREQS-001.md) | **merged**；#150 → `385c887e`；源 head CI success，merge CI Web 测试失败 | 主体已落地，异常记录仍有残留；不重派整批 |
+| [GO-DEFAULT-CUTOVER-001](GO-DEFAULT-CUTOVER-001.md) | **pr_open**；Ready #151/head `b97e181a`，普通 CI 40576119903 success | [继续提示词已发出](GO-DEFAULT-CUTOVER-001.followup.prompt.md)；仅原 `codex/go-default-cutover` / `/Users/oo/project/newwei-go-default-cutover` 继续，补本地配置链，不另开冲突任务 |
+
+规划 PR #149 保持发布入口；本轮在规划分支正常 merge main，并保留 #150 实际交付 task，解决两边新增同名任务文档造成的冲突。未在业务 worktree 改代码或向其他聊天派发消息。下一检查点：#151 新 head 的实际 env/启动链修复与普通 CI；合并和删除阶段仍需分别核实。
+
 ## 2026-10-27 当前增量
 
 基线 `origin/main = f15f598d4358b4c9823054ef5a355618e1480a4e`。#142–#147 已由 [#148](https://github.com/wei500L/newwei/pull/148) 合入（实际 main merge `0a48babea69700c7f9cd1bf2262f25d414469527`），六个源 head 已逐一验证祖先关系；下方关于 AIS 仍 pr_open 的段落仅为历史快照。没有新的整合任务，也没有启动编码窗口。
