@@ -40,8 +40,8 @@ OpenAPI 与鉴权矩阵中的每个 `METHOD + 完整路径`（`{param}`/`:param`
   的 `exclude: scripts` 排除），避免把大量未类型检查的脚本迁入严格包后引入无关类型改动；
   同时 `@modular/mongo` 的 `lint`/`typecheck` 仍只覆盖 `src`。`tsx` 为仓库根 devDependency，
   Docker 运行时镜像的 `pnpm install`（非 `--prod`）已包含；`runtime.Dockerfile` 无需额外构建步骤。
-- 根 `package.json` 四条命令与 `infra/docker/docker-compose.yml` 的 `mongo-indexes` 步骤已改指
-  `@modular/mongo`。
+- 根 `package.json` 四条命令、`infra/docker/docker-compose.yml` 的 `api` 服务内联索引步骤与独立
+  `mongo-indexes` 服务均已改指 `@modular/mongo`。
 - Prisma migrate/seed 与共享 Mongo 包继续为 Node，本批不改 DDL、不执行真实索引/回填/seed。
 - 未纳入根命令、仍与 Nest 内部实现耦合的工具（`economic:fetch`→Nest `AkshareService`、
   `knowledge-graph:reviews:reconcile`→Nest `AppModule`、`fingerprint:backfill`→

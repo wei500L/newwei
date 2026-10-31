@@ -144,10 +144,11 @@ async function main() {
     })
       .sort({ _id: 1 })
       .lean()
-      .cursor<BackfillProcessedItemDoc>();
+      .cursor();
 
     try {
-      for await (const doc of cursor) {
+      for await (const raw of cursor) {
+        const doc = raw as BackfillProcessedItemDoc;
         if (typeof maxDocs === "number" && scanned >= maxDocs) {
           break;
         }

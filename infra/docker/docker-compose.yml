@@ -1824,9 +1824,9 @@ services:
         condition: service_healthy
     logging: *json-file-logging
 
-  # mongo-indexes: one-shot Mongo index build, the second step the NestJS api
-  # command line used to run. Kept as Node tooling for the same reason as
-  # migrate; the Go services assume the indexes exist.
+  # mongo-indexes: one-shot Mongo index build. Runs the shared @modular/mongo
+  # index tool (no NestJS application module); the Go services assume the
+  # indexes exist.
   mongo-indexes:
     <<: *app-hardening
     build:
@@ -1840,7 +1840,7 @@ services:
     command: >
       sh -ec "
       echo '[mongo-indexes] ensuring mongo indexes...';
-      pnpm --filter @modular/api run mongo:indexes
+      pnpm --filter @modular/mongo run mongo:indexes
       "
     env_file:
       - ./.env
