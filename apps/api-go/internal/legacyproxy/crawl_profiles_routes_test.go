@@ -124,6 +124,7 @@ func TestCrawlProfilesIndependentFromWorkflows(t *testing.T) {
 	rules := BaseRules()
 	rules = WithCrawlWorkflows(rules)
 	rules = WithCrawlProfiles(rules)
+	rules = WithCrawlWorkflowTrial(rules)
 	gateway := New(rules)
 	for _, tc := range crawlProfileRoutes() {
 		got := gateway.match(tc.method, tc.path)
@@ -135,11 +136,15 @@ func TestCrawlProfilesIndependentFromWorkflows(t *testing.T) {
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/api/admin/crawl-frontier/profiles/profile-1/workflow-bridge"},
 		{http.MethodGet, "/api/admin/crawl-frontier/workflows"},
-		{http.MethodPost, "/api/admin/crawl-frontier/workflows/workflow-1/trial-run"},
 	} {
 		got := gateway.match(tc.method, tc.path)
 		if got.Prefix == "" || got.HandlerKey != CrawlWorkflowsKey {
 			t.Fatalf("%s %s rule=%+v, want workflows key", tc.method, tc.path, got)
 		}
+	}
+	// The trial-run POST is owned by its own switch/handler key, independent of
+	// the profiles and workflows keys.
+	if got := gateway.match(http.MethodPost, "/api/admin/crawl-frontier/workflows/workflow-1/trial-run"); got.Prefix == "" || got.HandlerKey != CrawlWorkflowTrialKey {
+		t.Fatalf("POST trial-run rule=%+v, want workflow-trial key", got)
 	}
 }
