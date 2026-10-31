@@ -570,26 +570,9 @@ func (g *Gateway) proxyLegacy(w http.ResponseWriter, r *http.Request) {
 }
 
 // legacyRoutePrefix collapses a request path into a bounded route-family label.
-func legacyRoutePrefix(path string) string {
-	if strings.HasPrefix(path, "/api/") {
-		rest := strings.TrimPrefix(path, "/api/")
-		if i := strings.IndexByte(rest, '/'); i >= 0 {
-			rest = rest[:i]
-		}
-		if rest == "" {
-			return "/api"
-		}
-		return "/api/" + rest
-	}
-	trimmed := strings.TrimPrefix(path, "/")
-	if trimmed == "" {
-		return "/"
-	}
-	if i := strings.IndexByte(trimmed, '/'); i >= 0 {
-		trimmed = trimmed[:i]
-	}
-	return "/" + trimmed
-}
+// The implementation lives in httpx.RouteFamily so the legacy-proxy counter and
+// the http_request_duration_seconds route label cannot drift apart.
+func legacyRoutePrefix(path string) string { return httpx.RouteFamily(path) }
 
 // ServeHTTP 按路由表分发。
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -598,7 +581,25 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // ServeHTTPWithShadow 分发并在 shadow 路由上执行差分。
 func (g *Gateway) ServeHTTPWithShadow(w http.ResponseWriter, r *http.Request, sh ShadowDispatcher) {
-	rule := g.match(r.Method, r.URL.Path)
+	rule, matched := g.matchRule(r.Method, r.URL.Path)
+	// Record the bounded route label while the route-table decision is in hand; the
+	// outer metrics middleware reads it back after ServeHTTP returns.
+	//
+	// A request no rule claimed reports the NestJS "unmatched" literal, which is the
+	// label NestJS gives a req.route-less request: a scanned or unknown path then
+	// cannot create a series. A request that did match reports the bounded family, the
+	// same value api_go_legacy_proxy_requests_total already uses, so one route keeps a
+	// single http_request_duration_seconds series while it moves from the NestJS proxy
+	// to a Go handler.
+	//
+	// Known difference: for a path under /api/ that no NestJS controller serves, NestJS
+	// also reports "unmatched", while this gateway reports the /api/<first-segment>
+	// family because its rule table matches by prefix. That family is the accepted
+	// bounded label of the existing legacy-proxy counter, so the two processes stay
+	// comparable route by route rather than path by path.
+	if matched {
+		httpx.SetRouteLabel(r.Context(), httpx.RouteFamily(r.URL.Path))
+	}
 	switch rule.Mode {
 	case ModeGo:
 		key := rule.Prefix
@@ -870,6 +871,17 @@ func (g *Gateway) matchGoHandler(prefix string) GoHandler {
 // 空 = 任意方法）。未命中任何规则的路径（如根路径 /）交给 NestJS——
 // 它是当前的事实源。
 func (g *Gateway) match(method, path string) Rule {
+	rule, _ := g.matchRule(method, path)
+	return rule
+}
+
+// matchRule is match plus whether a declared rule actually matched.
+//
+// The fallback Rule{Prefix: path, Mode: ModeLegacy} that match returns for an
+// unclaimed request is indistinguishable from a real rule by its fields alone, and
+// the metrics label needs the difference: an unclaimed path must be reported with
+// the bounded "unmatched" literal rather than as its own path-derived family.
+func (g *Gateway) matchRule(method, path string) (Rule, bool) {
 	method = strings.ToUpper(method)
 	sorted := make([]Rule, len(g.rules))
 	copy(sorted, g.rules)
@@ -883,9 +895,9 @@ func (g *Gateway) match(method, path string) Rule {
 		if len(rule.Methods) > 0 && !rule.Methods[method] {
 			continue
 		}
-		return rule
+		return rule, true
 	}
-	return Rule{Prefix: path, Mode: ModeLegacy}
+	return Rule{Prefix: path, Mode: ModeLegacy}, false
 }
 
 func (rule Rule) matchesPath(path string) bool {
