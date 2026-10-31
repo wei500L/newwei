@@ -1,5 +1,37 @@
 # 已确认缺口与待核对事项
 
+## 2026-10-31 #151 合并后的增量
+
+- 基线：`fcf1e5334acb0350ea36535c48c4131df7c9698a`，#151 最终 head `e48a2572` 为 main 祖先；源 CI 41199618477 三主 job success，merge CI 41200907795 核对时尚未完成。
+- **GAP-DEV-CONFIG-001 已关闭（源码/配置层）**：根 `.env.example:63-73` 已用 4020 与两个新 Socket.IO 路径，模式清单 go/reject；宿主 vector/AIS 为4010/3004；`infra/scripts/src/dev.mts` + `dev-config.ts` + `dev-process.ts` 负责根环境、独立端口、Go/legacy/AIS 计划和生命周期；`cutover_env_example_test.go` / `dev-runtime.test.ts` / `env-connection-defaults.test.ts` 进入源 head 成功 CI。本轮未再运行这些测试，未部署/实测启动或真实外部调用。
+- GAP-EXCEPTION-WIRING-001 仍是主体已合入、部分自写 500/unknown/stack 未完整覆盖；#151 未声称修复该残留。不能用默认切换 merged 替代异常覆盖证据。
+- 新退役范围用三个具体 task 管理：契约/工具独立、Go 去迁移分流、Node/CI 删除。它们是已授权架构收尾，不机械新增业务缺陷 ID；保留的 Prisma/seed/Node 协议工具不是待删 HTTP 后端。
+
+## 2026-10-31 完成核对与本地默认链缺口
+
+main 基线 `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`；默认切换候选单独取 #151/head `b97e181aa7248175ed3c91daf9a258dba6289f96`，不能混计。下方 2026-10-27 的 open 清单为原缺口事实，现行增量如下：
+
+- GAP-HTTP-HEADERS-001 / GAP-METRICS-WIRING-001 / GAP-ITEMS-BODY-001：**源码修复已合入 #150**。证据：main 根链 `cmd/api/main.go:3396`；`internal/metrics/producers.go` 与实际 ES/模型/provider 调用；`internal/itemsingest/handler.go:334` 的 `createBodyLimit=10<<20`。源 head 普通 CI 40551203359 三主要 job success；merge CI 40557202479 Web 测试失败，两个集成 success。未部署，真实服务未知。
+- GAP-EXCEPTION-WIRING-001：**主体已合入，范围收窄但未完整关闭**。`cmd/api/main.go:1868,2568` 安装 REST/GraphQL recorder；`internal/crawlprofile/handler.go:349-352` 等序列化失败分支仍直接 `http.Error`，unknown/stack 亦不完整。按 #150 实际交付保留残留，不因 task=merged 删去。
+- **GAP-DEV-CONFIG-001（open，GO-DEFAULT-CUTOVER-001 内继续，不新建任务）**：#151 根 `.env.example:57-65` 仍给 API 4000/旧 Socket.IO，`:70,103-119` 等仍显式 shadow/legacy；Web `next.config.mjs:4` 读根 `.env`，`lib/env.ts:48-54` 尊重显式值，因此示例覆盖新默认。根命令改为 go run 后，还需闭合 Go 的 OS 环境来源、vector/AIS 进程监听 4010/3004 与示例 4011/3005 的区别、dev:legacy 的完整显式回退。前者已静态确认，启动环境与端口组合须按生产入口进一步核实，未运行服务复现。
+
+修补范围、排除与验证见 [继续提示词](tasks/GO-DEFAULT-CUTOVER-001.followup.prompt.md)。#151 当前 CI success 不覆盖这处示例遗漏，不能用旧 head 的通过关闭新缺口；本轮仅维护规划，不实施修复。
+
+## 2026-10-27 切默认前增量
+
+本节核对基线 `f15f598d4358b4c9823054ef5a355618e1480a4e`。#148 已合入，五份 review 的原审查深度保留；本节只核以下根因与旧残留的整合更正，不冒充全仓复审。`cc3782c0..f15f598d` 仅改 workflow 的 runner，以下源码定位未变。
+
+| 稳定 ID | 触发 / 当前源码证据 | 影响与状态 |
+|---|---|---|
+| GAP-HTTP-HEADERS-001 | Nest `apps/api/src/main.ts:107` 使用 helmet；Go `apps/api-go/cmd/api/main.go:3367` 根链只有 trace，媒体局部头不能替代全局策略 | Go 直接响应缺既有安全头；**open**，归 GO-CUTOVER-PREREQS-001；需兼容 Swagger/CORS/媒体策略 |
+| GAP-METRICS-WIRING-001 | Go `internal/metrics/families.go:104,116,128` 有三类记录函数但无非测试调用；Nest main、ES/search、LiteLLM、pipeline metric provider 有生产调用 | HTTP histogram、integration counter、pipeline gauge 无真实数据；**open**，同任务；不能只修 HTTP 就关闭 |
+| GAP-EXCEPTION-WIRING-001 | Nest `common/filters/global-exception.filter.ts` 处理 http/graphql；Go `cmd/api/legacy_fallback.go:newNestNotFoundRecorder` 仅给 reject/docs 404 | 自有 REST/GraphQL 错误缺既有异常集合接线；**open**，同任务；GraphQL 200+errors 不能靠 HTTP 状态侦测 |
+| GAP-ITEMS-BODY-001 | Go `internal/itemsingest/handler.go:150-151` 1MiB parser，`:246-268` 把解析错误写 400；Nest `main.ts:110-117` JSON 10mb | 合法大创建体提前失败；**open**，同任务。真实入口是 `POST /api/items`（Go `Path`、Nest `items.controller.ts:28-30`），纠正 #148 §7 的 `/api/items/ingest` 与当前“413”表述 |
+
+缺口来源是 [#148 §7](https://github.com/wei500L/newwei/pull/148)，以上实现/错误码已按当前源码再核；完成标准与允许路径见 [任务](tasks/GO-CUTOVER-PREREQS-001.md) / [提示词](tasks/GO-CUTOVER-PREREQS-001.prompt.md)。修复 PR 开放不等于 main 缺口关闭；必须记录实际落地 SHA 和普通 CI。后继 GO-DEFAULT-CUTOVER-001 在四项关闭后执行，不预先改开关。
+
+旧 GAP-LEGACY-001 / GAP-ASYNC-001 的下方历史范围已过期：五条 C 类 HTTP、队列计数/事件派生读、告警 repeat 对账、NewsNow 后台、brief、审计 outbox 已有 Go 实现接线；DLQ 人工 inspect/replay/delete 是既定设计，不要求自动消费者。定位见 `cutover/ownership-audit.md` 与 `review/{identity-core,news-items,workspace-runtime}.md` 整合更正。默认未启用、真实多实例/外部服务未验证应分开记录，不重新派“未迁”整批，也不据此宣称运行验收完成。
+
 [入口](README.md) · [候选队列](BACKLOG.md) · [实现核对范围](AUDIT.md)。本轮源码基线均为 `3cedce9aa3200436aba3596f63b559de5490cec8`（2026-10-18 14:37–14:42 MSK 静态阅读）；PR #70 的候选代码另记 head，不能关闭 main 缺口。稳定 ID 不因任务 merged 而删除。关闭须有实际落地提交、对应入口/分支与证据。
 
 2026-10-21 复核基线 `dcbe563b917f`（#136，整合 #133–#135；普通 CI run 39625284282 `conclusion=success`，无开放 PR）：本页逐条用当前 main 源码重核关闭状态：GAP-NEWS-001 / GAP-CRAWL-001 / GAP-GQL-001 已关闭，GAP-ASYNC-001 范围缩小但未关闭；另按真实代码关闭 GAP-ANALYSIS-001 / GAP-ITEMS-001 / GAP-KG-001 / GAP-RSS-001。`path:line` 均取 `dcbe563b`。关闭只表示“源码缺口的实现/接线已落地”，**不代表已部署、已切流或实网验证**。
@@ -14,8 +46,8 @@
 | GAP-GQL-001 | 接线；settings / GraphQL 公共运行时 | 设置 13 写单独启用 | **已关闭**（`dcbe563b`）：路由 OR `apps/api-go/cmd/api/main.go:893`、`needsCredentialedGo` `apps/api-go/cmd/api/main.go:1348`、handler 装配 `apps/api-go/cmd/api/main.go:2192-2193` 三处均含 `GraphQLSettingsWriteMode`，无效 DSN 阻断列表见 `apps/api-go/cmd/api/main.go:1080`；SOURCE-POLICY-WRITE-001 merged（#82 → `f293f78053ff`）；独立开关运行证据另记 |
 | GAP-NEWS-001 | 部分实现；news | Query `newsEventBrief` 冷生成/forceRefresh | **已关闭**（`dcbe563b`）：BRIEF 子开关注入 completer 与 LLM 日志 writer（`apps/api-go/cmd/api/main.go:2236-2243`），生成 `apps/api-go/internal/graphqlread/newsevents/brief.go:69`、写回 `:81`→`:456-482`；NEWS-BRIEF-001 merged（#72 → `e40e9041df6e`）；实网模型未验证 |
 | GAP-CRAWL-001 | 部分实现；crawl | 媒体下发及已有REST/GraphQL详情的 S3 URL分支 | **已关闭**（`dcbe563b`）：`apps/api-go/internal/crawlreadtelemetry/service_media.go:478-540` S3 presign 302、`:605-646` 详情两处构造；GraphQL 存储配置注入 `apps/api-go/cmd/api/main.go:2273-2279`；STORAGE-MEDIA-001 merged（#73 → `f4ac4aa807b6`）；实桶未验证 |
-| GAP-LEGACY-001 | 未迁移入口；跨域 | 域页精确清单中的 Nest HTTP/root | 范围收窄（`dcbe563b`）：仅剩 5 条 C 类 HTTP（清单指向 [ownership-audit](../cutover/ownership-audit.md)），未注册 Query/Mutation/Subscription 均为 0；无部署验证，整域缺口不关闭 |
-| GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | **未关闭（范围缩小）**（`dcbe563b`）：14/15 队列、21/21 Cron、6/6 namespace、12 个 Redis 桥均有 Go 实现与开关；残留 `itemPipelineDlq` 无消费者、告警规则全量 repeatable 对账、QueueEvents 派生读侧；未做运行时/部署验证 |
+| GAP-LEGACY-001 | 未迁移入口；跨域 | 原五条 C 类 HTTP/root | **原列举入口的源码/注册缺口已关闭**（2026-10-27，`f15f598d`）：#138/#139 经 #141 已接线，#148 整合更正复核；默认仍 legacy/shadow。新横切缺口另见上方四 ID，不能与部署/流量合并统计 |
+| GAP-ASYNC-001 | Nest 执行依赖；跨域 | 已迁读取/配置背后的生成、消费、调度、订阅 | **原列举源码残留已解除，运行证据仍未完成**（2026-10-27，`f15f598d`）：queueops 人工 DLQ 路径、alertworker/reconcile、QueueObserver/queueorgstats 等已实现接线；不把人工 DLQ 设计当缺消费者。实际执行权取值、真实多实例/外部验证仍未知，见整合更正 |
 | GAP-KG-001 | 部分实现；knowledge | 已迁证据复核队列的固定候选遮挡 | **已关闭**（`dcbe563b`）：`apps/api-go/internal/graphqlread/settingscrawl/review.go:68-130` keyset 分页直到选满/耗尽，无固定候选上限；KNOWLEDGE-REVIEW-001 merged（#86 → `afd9ba7d1974`）；未部署验证 |
 
 “未迁移”是范围事实，不表示 Nest 有 bug；“缺少外部运行证据”不单独计为源码缺陷。2026-10-21 的关闭判定全部基于 `dcbe563b` 源码与已合并提交，不因文档维护本身关闭缺口；关闭不等于部署/切流/实网验证。
