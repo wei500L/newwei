@@ -404,10 +404,11 @@ describe("CrawlTaskDetail results（搜索 / limit / variants / media / tables /
     expect(await screen.findByText("Tables")).toBeInTheDocument();
     expect(screen.getByText("Revenue")).toBeInTheDocument();
     expect(screen.getByText("6 × 3")).toBeInTheDocument();
-    // 列顺序来自 dataFrame.columns（Region → Revenue → Note）
-    expect(screen.getByText("Region:")).toBeInTheDocument();
-    expect(screen.getByText("Revenue:")).toBeInTheDocument();
-    expect(screen.getByText("Note:")).toBeInTheDocument();
+    // 列顺序来自 dataFrame.columns（Region → Revenue → Note）：每行预览都渲染
+    // 这三个列名，5 行预览即各出现 5 次。
+    expect(screen.getAllByText("Region:")).toHaveLength(5);
+    expect(screen.getAllByText("Revenue:")).toHaveLength(5);
+    expect(screen.getAllByText("Note:")).toHaveLength(5);
     // dataFrame 单元格值：首行 EastRegion/111/note-alpha
     expect(screen.getByText("EastRegion")).toBeInTheDocument();
     expect(screen.getByText("111")).toBeInTheDocument();
