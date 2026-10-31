@@ -1,6 +1,6 @@
 # GO-DEFAULT-CUTOVER-001 · 仓库默认运行链切到 Go
 
-- 状态：`pr_open`；Ready PR [#151](https://github.com/wei500L/newwei/pull/151)，最终 head 以本轮提交后的回填为准（前一 head `b97e181aa7248175ed3c91daf9a258dba6289f96`）；未合并。
+- 状态：`pr_open`；Ready PR [#151](https://github.com/wei500L/newwei/pull/151)，实现 head `b15df1c2d57fd77621a33fe0c73abe268264779b`，普通 CI [run 41198396244](https://github.com/wei500L/newwei/actions/runs/41198396244) `success`（`verify` / `vector-integration` / `api-go-user-settings-integration` 均 success，两个 regen job skipped 不计通过）；未合并。
 - 规划基线：`f15f598d4358b4c9823054ef5a355618e1480a4e`；开工实际基线 `origin/main = 385c887e8cda2df6a3fadd2109c6641ae62cb6ee`（#150 合入后）。
 - 前置：[GO-CUTOVER-PREREQS-001](GO-CUTOVER-PREREQS-001.md) 四项已合入 main。
 - 执行提示词：[GO-DEFAULT-CUTOVER-001.prompt.md](GO-DEFAULT-CUTOVER-001.prompt.md)（在规划 PR #149）。
