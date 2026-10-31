@@ -3,11 +3,14 @@ FROM ${NODE_IMAGE} AS builder
 
 ARG NPM_REGISTRY=https://registry.npmjs.org
 ARG NEXTAUTH_URL=http://localhost:3000
-ARG API_BASE_URL=http://api:4000
-ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api
+# Defaults describe the repository default (Go gateway). NEXT_PUBLIC_* values are
+# inlined into the client bundle at build time, so they must be passed as build
+# args when they change; NEXTAUTH_SECRET stays runtime-only and is never an ARG.
+ARG API_BASE_URL=http://api-go:4020
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4020/api
 ARG NEXT_PUBLIC_GRAPHQL_APQ_ENABLED=true
-ARG NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH=/socket.io
-ARG NEXT_PUBLIC_REALTIME_SOCKET_PATH=/socket.io
+ARG NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH=/socket.io-notifications
+ARG NEXT_PUBLIC_REALTIME_SOCKET_PATH=/socket.io-realtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

@@ -5,20 +5,17 @@ import (
 	"testing"
 )
 
-func TestSituationInsightsModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SituationInsightsMode != SituationInsightsModeLegacy {
+func TestSituationInsightsModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.SituationInsightsMode != SituationInsightsModeGo {
 		t.Fatalf("mode = %s", cfg.SituationInsightsMode)
 	}
-	cfg, err = Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_SITUATION_INSIGHTS_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,12 +26,12 @@ func TestSituationInsightsModeDefaultsToLegacy(t *testing.T) {
 
 func TestSituationInsightsModeRejectsInvalid(t *testing.T) {
 	for _, invalid := range []string{"shadow", "canary", "Go", "true", "go\tshadow"} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_SITUATION_INSIGHTS_MODE" {
 				return invalid
 			}
 			return ""
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), "API_GO_SITUATION_INSIGHTS_MODE must be one of legacy|go") {
 			t.Fatalf("invalid mode %q: %v", invalid, err)
 		}
@@ -55,17 +52,17 @@ func TestSituationInsightsModeGoRequiresCredentials(t *testing.T) {
 		"REDIS_HOST":   "REDIS_HOST is required when API_GO_SITUATION_INSIGHTS_MODE=go",
 		"MONGO_URI":    "MONGO_URI is required when API_GO_SITUATION_INSIGHTS_MODE=go",
 	} {
-		_, err := Load(func(key string) string {
+		_, err := Load(legacyUnset(func(key string) string {
 			if key == missing {
 				return ""
 			}
 			return full[key]
-		})
+		}))
 		if err == nil || !strings.Contains(err.Error(), expected) {
 			t.Fatalf("missing %s: %v", missing, err)
 		}
 	}
-	cfg, err := Load(func(key string) string { return full[key] })
+	cfg, err := Load(legacyUnset(func(key string) string { return full[key] }))
 	if err != nil {
 		t.Fatal(err)
 	}

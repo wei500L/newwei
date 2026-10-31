@@ -8,7 +8,9 @@
   },
   "scripts": {
     "prepare": "husky install",
-    "dev": "turbo run dev --parallel",
+    "dev": "tsx infra/scripts/src/dev.mts",
+    "dev:legacy": "tsx infra/scripts/src/dev.mts legacy",
+    "dev:ais-relay": "tsx infra/scripts/src/dev.mts ais-relay",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

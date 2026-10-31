@@ -311,8 +311,27 @@ async function selectFirstQueue(): Promise<void> {
   await screen.findByRole("tab", { name: "Waiting" });
 }
 
+/**
+ * Switch the job-state tab and wait for the refetch it triggers.
+ *
+ * Every "dangerous action" test switches state and then looks for a row from the
+ * new state. Without waiting for the request that the switch issues, the row
+ * lookup races the refetch; on a loaded CI runner that race loses even with the
+ * default timeout. Waiting on the request parameters here removes the race, and
+ * the row assertions keep their normal semantics.
+ */
 async function switchJobState(label: string): Promise<void> {
   fireEvent.click(screen.getByRole("tab", { name: label }));
+  await waitFor(() =>
+    expect(apiMock.get).toHaveBeenCalledWith(
+      QUEUE_OPS_ENDPOINTS.jobs,
+      expect.objectContaining({
+        params: expect.objectContaining({
+          state: label.toLowerCase(),
+        }),
+      }),
+    ),
+  );
 }
 
 /** 从 Modal 内的元素向上找到 antd 弹窗容器，避免依赖 rc-dialog 的 role 落点。 */
@@ -324,8 +343,18 @@ function requireClosestModal(element: Element | null): HTMLElement {
   return modal;
 }
 
+/**
+ * Open the job-detail modal for one row.
+ *
+ * The row can only appear after the state switch triggers a refetch, and the
+ * whole suite runs in parallel on CI, so the default 1s Testing Library timeout
+ * is not enough headroom for the round trip (list request → render → row). The
+ * lookup therefore gets a longer budget; the assertion itself is unchanged.
+ */
 async function openJobDetail(jobId: string): Promise<HTMLElement> {
-  fireEvent.click(await screen.findByRole("button", { name: jobId }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: jobId }, { timeout: 10_000 }),
+  );
   const dataBlock = await screen.findByTestId("queue-ops-job-data");
   return requireClosestModal(dataBlock);
 }

@@ -5,23 +5,20 @@ import (
 	"testing"
 )
 
-func TestGraphQLOrgAccessWriteModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GraphQLOrgAccessWriteMode != "legacy" || cfg.GraphQLReadMode != "legacy" {
+func TestGraphQLOrgAccessWriteModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.GraphQLOrgAccessWriteMode != "go" || cfg.GraphQLReadMode != "go" {
 		t.Fatalf("write=%q read=%q", cfg.GraphQLOrgAccessWriteMode, cfg.GraphQLReadMode)
 	}
 }
 
 func TestGraphQLOrgAccessWriteModeAcceptsExplicitLegacyAndGo(t *testing.T) {
-	legacy, err := Load(func(key string) string {
+	legacy, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE" {
 			return "legacy"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +26,7 @@ func TestGraphQLOrgAccessWriteModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 		t.Fatalf("explicit legacy = %q", legacy.GraphQLOrgAccessWriteMode)
 	}
 
-	goMode, err := Load(func(key string) string {
+	goMode, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE":
 			return "go"
@@ -41,7 +38,7 @@ func TestGraphQLOrgAccessWriteModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 			return "127.0.0.1"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,24 +55,24 @@ func TestGraphQLOrgAccessWriteModeAcceptsExplicitLegacyAndGo(t *testing.T) {
 }
 
 func TestGraphQLOrgAccessWriteModeRejectsInvalid(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE" {
 			return "shadow"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE must be one of legacy|go") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestGraphQLOrgAccessWriteModeGoRequiresCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("Load() accepted go without credentials")
 	}
@@ -91,7 +88,7 @@ func TestGraphQLOrgAccessWriteModeGoRequiresCredentials(t *testing.T) {
 }
 
 func TestGraphQLOrgAccessWriteModeGoDoesNotRequireMongo(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_GRAPHQL_ORG_ACCESS_WRITE_MODE":
 			return "go"
@@ -103,7 +100,7 @@ func TestGraphQLOrgAccessWriteModeGoDoesNotRequireMongo(t *testing.T) {
 			return "127.0.0.1"
 		}
 		return ""
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}

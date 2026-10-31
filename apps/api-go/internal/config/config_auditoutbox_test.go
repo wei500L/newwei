@@ -8,12 +8,12 @@ import (
 // TestAuditOutboxModeRejectsInvalidValue locks the cross-process switch
 // contract: only "", "legacy" and "go" are accepted.
 func TestAuditOutboxModeRejectsInvalidValue(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_AUDIT_OUTBOX_MODE" {
 			return "sometimes"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_AUDIT_OUTBOX_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode error = %v", err)
 	}
@@ -21,13 +21,10 @@ func TestAuditOutboxModeRejectsInvalidValue(t *testing.T) {
 
 // TestAuditOutboxModeEmptyIsLegacy covers the documented empty-string
 // compatibility and the default-on schedule switch.
-func TestAuditOutboxModeEmptyIsLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.AuditOutboxMode != AuditOutboxModeLegacy {
-		t.Fatalf("AuditOutboxMode = %q, want legacy", cfg.AuditOutboxMode)
+func TestAuditOutboxModeEmptyIsGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.AuditOutboxMode != AuditOutboxModeGo {
+		t.Fatalf("AuditOutboxMode = %q, want go", cfg.AuditOutboxMode)
 	}
 	if !cfg.ScheduleEnabled {
 		t.Fatal("ScheduleEnabled = false, want true when SCHEDULE_ENABLED is unset")
@@ -37,7 +34,7 @@ func TestAuditOutboxModeEmptyIsLegacy(t *testing.T) {
 // TestAuditOutboxModeOnlyNeedsMySQLAndRedis verifies the background owner can
 // run while JWT, Mongo, SMTP and every HTTP switch stay unconfigured.
 func TestAuditOutboxModeOnlyNeedsMySQLAndRedis(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_AUDIT_OUTBOX_MODE":
 			return "go"
@@ -50,7 +47,7 @@ func TestAuditOutboxModeOnlyNeedsMySQLAndRedis(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,12 +64,12 @@ func TestAuditOutboxModeOnlyNeedsMySQLAndRedis(t *testing.T) {
 
 // TestAuditOutboxModeRequiresResources names each missing startup dependency.
 func TestAuditOutboxModeRequiresResources(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_AUDIT_OUTBOX_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected missing DATABASE_URL to fail startup")
 	}

@@ -11,21 +11,25 @@ func graphqlSubscriptionsEnv(overrides map[string]string) func(string) string {
 		"DATABASE_URL": "mysql://root:secret@localhost:3306/app",
 		"REDIS_HOST":   "localhost",
 	}
+	legacyBaseline := legacyEnvForKeys()
 	return func(key string) string {
+		// An explicitly named key wins, including an explicit "" -- that is how the
+		// default-branch cases reach the parser. Everything else falls back to the
+		// legacy baseline so unrelated switches do not demand the go stack.
 		if value, ok := overrides[key]; ok {
 			return value
 		}
-		return base[key]
+		if value, ok := base[key]; ok {
+			return value
+		}
+		return legacyBaseline(key)
 	}
 }
 
 func TestGraphQLSubscriptionsDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.GraphQLSubscriptionsMode != GraphQLSubscriptionsModeLegacy {
-		t.Errorf("GraphQLSubscriptionsMode = %q, want legacy", cfg.GraphQLSubscriptionsMode)
+	cfg := loadDefaults(t)
+	if cfg.GraphQLSubscriptionsMode != GraphQLSubscriptionsModeGo {
+		t.Errorf("GraphQLSubscriptionsMode = %q, want go", cfg.GraphQLSubscriptionsMode)
 	}
 	if cfg.GraphQLSubscriptionBus != "redis" {
 		t.Errorf("GraphQLSubscriptionBus = %q, want redis", cfg.GraphQLSubscriptionBus)
@@ -67,15 +71,17 @@ func TestGraphQLSubscriptionsLegacyAcceptsLocalBus(t *testing.T) {
 	}
 }
 
-func TestGraphQLSubscriptionsEmptyIsLegacy(t *testing.T) {
+func TestGraphQLSubscriptionsEmptyIsGo(t *testing.T) {
+	// "" resolves to the go default. The switch is set explicitly to "" here, and
+	// the fixture supplies the credentialed stack that go mode requires.
 	cfg, err := Load(graphqlSubscriptionsEnv(map[string]string{
 		"API_GO_GRAPHQL_SUBSCRIPTIONS_MODE": "",
 	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.GraphQLSubscriptionsMode != GraphQLSubscriptionsModeLegacy {
-		t.Errorf("GraphQLSubscriptionsMode = %q, want legacy", cfg.GraphQLSubscriptionsMode)
+	if cfg.GraphQLSubscriptionsMode != GraphQLSubscriptionsModeGo {
+		t.Errorf("GraphQLSubscriptionsMode = %q, want go", cfg.GraphQLSubscriptionsMode)
 	}
 }
 
@@ -98,12 +104,12 @@ func TestGraphQLSubscriptionsRejectsUnknownBus(t *testing.T) {
 }
 
 func TestGraphQLSubscriptionsGoNeedsCredentials(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_GRAPHQL_SUBSCRIPTIONS_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("Load() should reject go without JWT/DATABASE_URL/REDIS_HOST")
 	}

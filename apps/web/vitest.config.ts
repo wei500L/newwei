@@ -12,6 +12,10 @@ export default defineConfig({
     env: {
       NEXT_PUBLIC_API_BASE_URL: "http://localhost:4000/api",
       NEXT_PUBLIC_GRAPHQL_APQ_ENABLED: "true",
+      // Pin both Engine.IO paths so the transport assertions do not depend on
+      // the env.ts defaults (which now point at the Go transports).
+      NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: "/socket.io",
+      NEXT_PUBLIC_REALTIME_SOCKET_PATH: "/socket.io",
     },
     coverage: {
       provider: "v8",

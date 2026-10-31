@@ -5,14 +5,14 @@ import (
 	"testing"
 )
 
-func TestItemPipelineWorkerModeDefaultsToLegacy(t *testing.T) {
-	for _, value := range []string{"", "legacy"} {
-		cfg, err := Load(func(key string) string {
+func TestItemPipelineWorkerModeAcceptsExplicitLegacy(t *testing.T) {
+	for _, value := range []string{"legacy", "  legacy  "} {
+		cfg, err := Load(legacyUnset(func(key string) string {
 			if key == "API_GO_ITEM_PIPELINE_WORKER_MODE" {
 				return value
 			}
 			return ""
-		})
+		}))
 		if err != nil {
 			t.Fatalf("Load(%q) error = %v", value, err)
 		}
@@ -23,24 +23,24 @@ func TestItemPipelineWorkerModeDefaultsToLegacy(t *testing.T) {
 }
 
 func TestItemPipelineWorkerModeRejectsInvalidValue(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ITEM_PIPELINE_WORKER_MODE" {
 			return "all"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_ITEM_PIPELINE_WORKER_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode error = %v", err)
 	}
 }
 
 func TestItemPipelineWorkerModeGoRequiresConnectionsAndKey(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_ITEM_PIPELINE_WORKER_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("go without connections must fail")
 	}
@@ -55,7 +55,7 @@ func TestItemPipelineWorkerModeGoRequiresConnectionsAndKey(t *testing.T) {
 		}
 	}
 
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_ITEM_PIPELINE_WORKER_MODE":
 			return "go"
@@ -70,7 +70,7 @@ func TestItemPipelineWorkerModeGoRequiresConnectionsAndKey(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -80,10 +80,7 @@ func TestItemPipelineWorkerModeGoRequiresConnectionsAndKey(t *testing.T) {
 }
 
 func TestItemPipelineFailureConfigDefaults(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	cfg := loadDefaults(t)
 	if cfg.NewsSourceSchedulerFailureRecoveryDelayMs != 600_000 {
 		t.Errorf("failure recovery delay = %d", cfg.NewsSourceSchedulerFailureRecoveryDelayMs)
 	}

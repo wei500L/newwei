@@ -7,25 +7,22 @@ import (
 
 // TestKnowledgeGraphIngestionModeDefaultsToLegacy locks the cross-process
 // switch contract: an unset value must keep the NestJS cron in charge.
-func TestKnowledgeGraphIngestionModeDefaultsToLegacy(t *testing.T) {
-	cfg, err := Load(func(string) string { return "" })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.KnowledgeGraphIngestionMode != KnowledgeGraphIngestionModeLegacy {
-		t.Fatalf("KnowledgeGraphIngestionMode = %q, want legacy", cfg.KnowledgeGraphIngestionMode)
+func TestKnowledgeGraphIngestionModeDefaultsToGo(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.KnowledgeGraphIngestionMode != KnowledgeGraphIngestionModeGo {
+		t.Fatalf("KnowledgeGraphIngestionMode = %q, want go", cfg.KnowledgeGraphIngestionMode)
 	}
 }
 
 // TestKnowledgeGraphIngestionModeRejectsInvalidValue verifies only "",
 // "legacy" and "go" are accepted.
 func TestKnowledgeGraphIngestionModeRejectsInvalidValue(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE" {
 			return "sometimes"
 		}
 		return ""
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE must be one of legacy|go") {
 		t.Fatalf("invalid mode error = %v", err)
 	}
@@ -35,7 +32,7 @@ func TestKnowledgeGraphIngestionModeRejectsInvalidValue(t *testing.T) {
 // run while every HTTP switch and JWT_SECRET are absent. Mongo stays optional
 // because the LLM request log is best effort.
 func TestKnowledgeGraphIngestionModeOnlyNeedsMySQLAndRedis(t *testing.T) {
-	cfg, err := Load(func(key string) string {
+	cfg, err := Load(legacyUnset(func(key string) string {
 		switch key {
 		case "API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE":
 			return "go"
@@ -46,7 +43,7 @@ func TestKnowledgeGraphIngestionModeOnlyNeedsMySQLAndRedis(t *testing.T) {
 		default:
 			return ""
 		}
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,12 +58,12 @@ func TestKnowledgeGraphIngestionModeOnlyNeedsMySQLAndRedis(t *testing.T) {
 // TestKnowledgeGraphIngestionModeRequiresMySQLAndRedis verifies go mode fails
 // startup without its storage backends.
 func TestKnowledgeGraphIngestionModeRequiresMySQLAndRedis(t *testing.T) {
-	_, err := Load(func(key string) string {
+	_, err := Load(legacyUnset(func(key string) string {
 		if key == "API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE" {
 			return "go"
 		}
 		return ""
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected startup validation error")
 	}
