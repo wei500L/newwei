@@ -21,7 +21,7 @@
      表校验 OpenAPI + 鉴权矩阵的 `METHOD+path` 注册归属，并校验鉴权矩阵四态权限结构。
 2. **运维工具不再经 Nest 应用模块**：`ensure-mongo-indexes` / `prune-mongo-indexes` /
    `backfill-processed-item-has-location` / `backfill-raw-item-comparable-urls` 迁到
-   `@modular/mongo` 的 `src/cli`（编译到 `dist/cli`），根命令与 compose `mongo-indexes` 改指
+   `@modular/mongo` 的 `cli/`（tsx 直接运行，与旧 apps/api/scripts 一样不纳入 tsc/eslint 类型检查），根命令与 compose `mongo-indexes` 改指
    `@modular/mongo`。
 3. **协议夹具独立解析锁定依赖**：BullMQ 集成夹具的 Node 解析 cwd 从 `apps/api` 改到
    `@modular/infra-scripts`，精确复用 `bullmq@5.63.2`（lockfile importer 补齐），CI 集成 job 安装

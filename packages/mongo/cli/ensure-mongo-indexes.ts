@@ -14,7 +14,7 @@ import {
   TaskLogModel,
   connectMongo,
   disconnectMongo,
-} from "../index";
+} from "../src/index";
 
 async function main() {
   await connectMongo();

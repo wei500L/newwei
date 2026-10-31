@@ -14,7 +14,7 @@ import {
   RawItemModel,
   connectMongo,
   disconnectMongo,
-} from "../index";
+} from "../src/index";
 
 type IndexKey = Record<string, 1 | -1 | "text">;
 

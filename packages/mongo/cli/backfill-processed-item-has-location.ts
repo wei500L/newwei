@@ -15,7 +15,7 @@ import {
   connectMongo,
   disconnectMongo,
   processedItemHasLocation,
-} from "../index";
+} from "../src/index";
 
 const logger = createLogger({ name: "processed-item-location-backfill" });
 const DEFAULT_SINCE_HOURS = 24 * 7;
@@ -115,7 +115,7 @@ async function main() {
   let unchanged = 0;
   let pendingUpdates = 0;
   let modified = 0;
-  let batch: Array<{ _id: Types.ObjectId; hasLocation: boolean }> = [];
+  let batch: { _id: Types.ObjectId; hasLocation: boolean }[] = [];
 
   const flushBatch = async () => {
     if (dryRun || batch.length === 0) {

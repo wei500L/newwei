@@ -11,10 +11,10 @@
     "build": "rimraf dist && tsc -p tsconfig.build.json",
     "lint": "node ../../tools/check-no-source-artifacts.js src && eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
-    "mongo:indexes": "node dist/cli/ensure-mongo-indexes.js",
-    "mongo:indexes:prune": "node dist/cli/prune-mongo-indexes.js",
-    "processed-item-location:backfill": "node dist/cli/backfill-processed-item-has-location.js",
-    "raw-item-urls:backfill": "node dist/cli/backfill-raw-item-comparable-urls.js"
+    "mongo:indexes": "tsx cli/ensure-mongo-indexes.ts",
+    "mongo:indexes:prune": "tsx cli/prune-mongo-indexes.ts",
+    "processed-item-location:backfill": "tsx cli/backfill-processed-item-has-location.ts",
+    "raw-item-urls:backfill": "tsx cli/backfill-raw-item-comparable-urls.ts"
   },
   "dependencies": {
     "@modular/utils": "workspace:*",

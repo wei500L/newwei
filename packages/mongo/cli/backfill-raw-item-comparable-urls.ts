@@ -11,7 +11,7 @@ import {
   buildComparableUrlVariants,
   connectMongo,
   disconnectMongo,
-} from "../index";
+} from "../src/index";
 
 const logger = createLogger({ name: "raw-item-comparable-url-backfill" });
 

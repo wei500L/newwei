@@ -30,15 +30,18 @@ OpenAPI 与鉴权矩阵中的每个 `METHOD + 完整路径`（`{param}`/`:param`
 
 | 能力 | 旧入口 | 新入口 | 真实消费者 | 验证 |
 |---|---|---|---|---|
-| Mongo 运行时索引补齐 | `pnpm --filter @modular/api run mongo:indexes`（`apps/api/scripts/ensure-mongo-indexes.ts`） | `@modular/mongo` `mongo:indexes`（`packages/mongo/src/cli/ensure-mongo-indexes.ts`，编译到 `dist/cli`） | 根 `pnpm mongo:indexes`；compose `api` 服务启动前 | `build`/`typecheck`/`lint` 覆盖；行为保留（RawItem sync，其余 createIndexes） |
+| Mongo 运行时索引补齐 | `pnpm --filter @modular/api run mongo:indexes`（`apps/api/scripts/ensure-mongo-indexes.ts`） | `@modular/mongo` `mongo:indexes`（`packages/mongo/cli/ensure-mongo-indexes.ts`） | 根 `pnpm mongo:indexes`；compose `api` 服务启动前 | 行为保留（RawItem sync，其余 createIndexes）；`tsx` 直接运行 |
 | Mongo 旧索引清理 | `…@modular/api run mongo:indexes:prune` | `@modular/mongo` `mongo:indexes:prune`（`prune-mongo-indexes.ts`） | 根 `pnpm mongo:indexes:prune` | 行为保留（精确 name+key、key 不匹配保留、Namespace/IndexNotFound 幂等） |
 | processed-item hasLocation 回填 | `…@modular/api run processed-item-location:backfill` | `@modular/mongo` `processed-item-location:backfill`（`backfill-processed-item-has-location.ts`） | 根 `pnpm mongo:backfill:processed-item-location` | 参数/默认值/dry-run/org 范围/批量写/失败退出保留；去 zod 后等价校验 |
 | raw-item 可比 URL 回填 | `…@modular/api run raw-item-urls:backfill` | `@modular/mongo` `raw-item-urls:backfill`（`backfill-raw-item-comparable-urls.ts`） | 根 `pnpm mongo:backfill:raw-item-urls` | 参数/dry-run/resume 游标/批量写/失败退出保留 |
 
+- 工具源码放在 `packages/mongo/cli/*.ts`（**不在 `src` 内**），用 `tsx` 直接运行：与旧
+  `apps/api/scripts` 一样不纳入 tsc 类型检查与 eslint（旧脚本目录本就被 `tsconfig.build`
+  的 `exclude: scripts` 排除），避免把大量未类型检查的脚本迁入严格包后引入无关类型改动；
+  同时 `@modular/mongo` 的 `lint`/`typecheck` 仍只覆盖 `src`。`tsx` 为仓库根 devDependency，
+  Docker 运行时镜像的 `pnpm install`（非 `--prod`）已包含；`runtime.Dockerfile` 无需额外构建步骤。
 - 根 `package.json` 四条命令与 `infra/docker/docker-compose.yml` 的 `mongo-indexes` 步骤已改指
-  `@modular/mongo`；`runtime.Dockerfile` 经 `turbo run build`（`dependsOn ^build`）产出
-  `packages/mongo/dist/cli/*.js`，`node dist/cli/*.js` 可在镜像内运行。运行这些命令前需先构建
-  `@modular/mongo`（Docker/CI 已构建；本地 `pnpm mongo:indexes` 前先 `pnpm --filter @modular/mongo build`）。
+  `@modular/mongo`。
 - Prisma migrate/seed 与共享 Mongo 包继续为 Node，本批不改 DDL、不执行真实索引/回填/seed。
 - 未纳入根命令、仍与 Nest 内部实现耦合的工具（`economic:fetch`→Nest `AkshareService`、
   `knowledge-graph:reviews:reconcile`→Nest `AppModule`、`fingerprint:backfill`→
