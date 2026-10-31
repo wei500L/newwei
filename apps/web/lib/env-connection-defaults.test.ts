@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { parseEnvText } from "../../../infra/scripts/src/dev-config";
@@ -77,10 +77,7 @@ describe("web connection defaults", () => {
 
   it("uses the shipped root .env.example values end to end", async () => {
     const example = parseEnvText(
-      readFileSync(
-        fileURLToPath(new URL("../../../.env.example", import.meta.url)),
-        "utf8",
-      ),
+      readFileSync(path.resolve(process.cwd(), "../../.env.example"), "utf8"),
     );
     const { env } = await loadEnvModule({
       NEXT_PUBLIC_API_BASE_URL: example.NEXT_PUBLIC_API_BASE_URL,

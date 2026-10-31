@@ -22,7 +22,7 @@ import { runChildren } from "../../../infra/scripts/src/dev-process";
  * Go, Nest, Docker or any network service.
  */
 
-const repoRoot = resolveRepoRootFromModuleUrl(import.meta.url);
+const repoRoot = path.resolve(process.cwd(), "../..");
 const examplePath = path.join(repoRoot, ".env.example");
 const exampleText = readFileSync(examplePath, "utf8");
 const exampleEnv = parseEnvText(exampleText);
