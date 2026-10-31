@@ -90,11 +90,10 @@ func registerItemsIngestHandler(
 // validateItemsIngestResources fails startup instead of silently leaving a nil
 // service in front of a go switch.
 func validateItemsIngestResources(cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if true && authenticator == nil {
+	if authenticator == nil {
 		return fmt.Errorf("api-go: API_GO_ITEMS_INGEST_MODE=go requires the JWT authenticator")
 	}
-	if (true || true) &&
-		(db == nil || redisClient == nil) {
+	if db == nil || redisClient == nil {
 		return fmt.Errorf("api-go: items ingest/outbox go mode requires mysql and redis")
 	}
 	return nil

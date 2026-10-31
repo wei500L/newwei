@@ -103,11 +103,11 @@ func (u *eventTimelineSentimentUnit) Start(cfg config.Config) {
 	if u == nil {
 		return
 	}
-	if u.timeline != nil && true {
+	if u.timeline != nil {
 		u.timeline.Start(context.Background())
 		log.Printf("api-go: news-event timeline rebuild scheduler started (interval=10m)")
 	}
-	if u.sentiment != nil && true {
+	if u.sentiment != nil {
 		u.sentiment.Start(context.Background())
 		log.Printf("api-go: sentiment snapshot scheduler started (interval=1h)")
 	}

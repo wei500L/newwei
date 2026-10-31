@@ -1,150 +1,19 @@
-// api-go 是主后端的 Go 网关（Strangler Fig，见 docs/refactor/go-migration-adr.md）。
+// api-go 是主后端的 Go 运行时（GO-ONLY-RUNTIME-001 起不再代理到 NestJS）。
 //
-// 默认全部流量反向代理到 NestJS apps/api（LEGACY_API_URL，默认
-// http://localhost:4000）。已迁移路由按四态路由表分流：
+// 进程直接拥有全部已实现 HTTP/GraphQL/Socket.IO 入口与异步执行：路由表由
+// legacyproxy.AllRoutes() 组装，命中的请求交给已注册的 Go handler；未命中的
+// 方法/路径由 gateway 以 Nest 等价的 404 返回（CORS/trace/异常记录保留），
+// 不存在反向代理、shadow 旁路比对或 canary 分流，也不再有 API_GO_*_MODE
+// 迁移开关。
 //
-//	legacy — 反向代理（当前事实源）
-//	shadow — NestJS 响应 + Go 实现异步差分（/api/healthz/live 与
-//	         user-settings 只读 GET：rss-reader / spacetime-timeline；
-//	         onboarding 在 shadow 模式下亦然）
-//	canary — 已验证身份的稳定哈希小比例真实流量切 Go（CANARY_PERCENT）
-//	go     — Go 原生 handler（/__go/healthz 自省；以及
-//	         API_GO_USER_SETTINGS_READ_MODE=go 时的六个
-//	         GET /api/user-settings/ui/*——Go-批3B：onboarding/rss-reader/
-//	         spacetime-timeline/war-map/newsnow/situation-monitor 全部由
-//	         统一 handler Go 接管：Go 独立 JWT 验签 + Redis blacklist +
-//	         MySQL RBAC + 独立响应，不依赖 NestJS 200。兼容：
-//	         API_GO_ONBOARDING_MODE=go（批3A，readMode 未设时）只接管
-//	         onboarding）
-//	         API_GO_PUBLIC_PORTAL_MODE=go 时另接管四个匿名 GET：
-//	         /api/public-portal/home、/api/public-portal/channels/:topic、
-//	         /api/public-portal/stories/id/:id 与 stories/slug/:slug
-//	         （后三个都是恰好一个路径段）。
-//	         API_GO_DASHBOARD_STATS_MODE=go 时另接管精确路径
-//	         GET /api/dashboard/stats（MySQL + Mongo + Redis 只读）。
-//	         API_GO_DASHBOARD_CHARTS_MODE=go 时另接管三个精确 GET：
-//	         sector-heatmap、financial-candlestick、war-map/geojson。
-//	         API_GO_DASHBOARD_WAR_MAP_MODE=go 时另接管两个精确 GET：
-//	         war-map/events 与 war-map/news-markers。
-//	         API_GO_DASHBOARD_SPACETIME_GEO_MODE=go 时接管热力图总览与下钻。
-//	         API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE=go 时接管传播图总览与下钻。
-//	         这两个开关互不影响。
-//	         API_GO_DASHBOARD_STREAM_MODE=go 时接管精确 GET /api/dashboard/stream
-//	         （SSE；复用 War Map、K 线和热力图服务，不请求 NestJS）。
-//	         API_GO_HEALTHZ_MODE=go 时接管精确 GET /api/healthz（认证探针）。
-//	         公开 GET /api/healthz/live 由独立的 API_GO_HEALTHZ_LIVE_MODE
-//	         控制（默认 shadow，可 legacy/go，C-1）。
-//	         Go-批7：API_GO_CONTENT_SUBSCRIPTIONS_MODE、
-//	         API_GO_USER_NEWS_BEHAVIOR_MODE、API_GO_USER_DIGEST_MODE
-//	         各自默认 legacy，只切换对应的精确 HTTP。内部订阅、目录和画像
-//	         调用不看另外两个 HTTP 开关。每日摘要邮件 Cron 由独立
-//	         API_GO_USER_DIGEST_DELIVERY_MODE 控制，默认 legacy 仍由 NestJS
-//	         消费；该开关为 go 时 Go 每分钟执行投递链。
-//	         API_GO_NEWS_SOURCES_MODE=go 时接管新闻源管理台十五条读写路由。
-//	         GET /api/admin/news-sources/:id/preview 仍回 NestJS。
-//	         回滚只把 API_GO_NEWS_SOURCES_MODE 改回 legacy。不入队，不启动采集。
-//	         API_GO_NEWSNOW_SOURCES_MODE=go 时接管两条公开来源获取路由
-//	         （GET /api/news-aggregator/source 与
-//	         POST /api/news-aggregator/sources/batch）：Go 真实请求上游、
-//	         写兼容 fresh/stale 缓存与刷新锁，并向
-//	         newsnow:source-refresh:v1 发布来源增量供 Nest 订阅转发。
-//	         只要求 DATABASE_URL/REDIS_HOST；预热与热点 Cron 仍归 Nest。
-//	         回滚只把该变量改回 legacy。不启动调度、不入队。
-//	         API_GO_CRAWL_WORKFLOWS_MODE=go 时接管采集策略工作流编辑接口
-//	         （node-schemas、列表、详情、创建、草稿、发布、版本、对比与
-//	         两条 bridge）。trial-run、replay、workflow-runs、profiles
-//	         列表/创建/预览/回滚、runs、nodes 仍回 NestJS。
-//	         回滚只把 API_GO_CRAWL_WORKFLOWS_MODE 改回 legacy。不入队，
-//	         不启动采集 worker。
-//	         API_GO_CRAWL_PROFILES_MODE=go 时接管采集站点画像的 8 条编辑
-//	         接口（列表、匹配、预览、创建、详情、更新、版本、回滚）。
-//	         runs、nodes、workflows 与 workflow-bridge 仍回 NestJS。
-//	         回滚只把 API_GO_CRAWL_PROFILES_MODE 改回 legacy。不启用
-//	         shadow，不入队，不启动采集 worker。
-//	         API_GO_LLM_LOGS_MODE=go 时接管 LLM 请求日志的三条精确 GET：
-//	         GET /api/llm-logs（列表）、GET /api/llm-logs/export（CSV）、
-//	         GET /api/llm-logs/summary（用量汇总）。三条都要求
-//	         settings.manage，orgId 由 membership/机器令牌重推导。导出保留
-//	         90 天窗口、50000 行上限、公式注入防护与 MySQL 导出审计。
-//	         /api/system-settings/llm-request-logs 会改 Mongo TTL 索引，不在
-//	         这个开关里，仍回 NestJS。回滚只把 API_GO_LLM_LOGS_MODE 改回
-//	         legacy。不启用 shadow，不调用模型服务，不启动 worker。
+// 保留的第二道门（与入口所有权无关，独立控制后台执行）：
+//   - SCHEDULE_ENABLED：跨进程调度/定时/Cron/Outbox 回放总开关；
+//   - BULLMQ_WORKERS_ENABLED：BullMQ 队列 worker 总开关；
+//   - WS_REDIS_ADAPTER_ENABLED / GRAPHQL_SUBSCRIPTION_BUS：实时多实例总线。
 //
-//	         API_GO_ADMIN_LOGS_MODE=go 时接管管理端日志与异常读取的 7 条
-//	         精确 GET：admin/logs 的 task、task/summary、errors、
-//	         errors/summary、audit，以及 admin/errors 与 admin/errors/stats。
-//	         admin/quality/（含 quality/task-logs）、observability/、metrics
-//	         与异常上报 POST 仍回 NestJS。回滚只把 API_GO_ADMIN_LOGS_MODE
-//	         改回 legacy。不启用 shadow，不改前端，不改 canary。
-//
-//	         API_GO_EXCEPTION_INGEST_MODE=go takes over the two
-//	         exception-report POSTs: POST /api/observability/exception-events/client
-//	         (AllowAuthenticated plus the existing user/IP sliding-window
-//	         buckets) and POST /api/internal/observability/exception-events
-//	         (LITELLM_CONFIG_INTERNAL_TOKEN). Both write one document into the
-//	         existing exceptionevents collection; the client endpoint never
-//	         persists a stack and always takes orgId/userId from the
-//	         server-side identity. The seven read GETs stay on
-//	         API_GO_ADMIN_LOGS_MODE. Rollback only sets
-//	         API_GO_EXCEPTION_INGEST_MODE back to legacy; no shadow or worker
-//	         is started.
-//
-//	         API_GO_QUALITY_OVERVIEW_MODE=go 时接管管理端质量面板的 5 条
-//	         精确 GET：admin/quality 的 news-sources、pipeline、overview、
-//	         task-logs 与 task-logs/summary。新闻源质量与流水线质量复用
-//	         MySQL ObservabilitySnapshot 表与 Redis 分布式锁键（与 Nest 共享
-//	         60 秒快照）；流水线 quality 与任务日志的 failureTypes.errorName
-//	         一样做敏感信息脱敏。admin/quality/classification/* 与
-//	         admin/quality/pipeline/runs|replay|rollback 仍回 NestJS。回滚只把
-//	         API_GO_QUALITY_OVERVIEW_MODE 改回 legacy。不启用 shadow，
-//	         不改前端，不改 canary。
-//
-//	         API_GO_AUTH_FACTORS_MODE=go 时接管已认证 MFA 管理与组织 OIDC
-//	         配置的 7 条精确路由：GET /api/auth/mfa、
-//	         POST /api/auth/mfa/enroll|verify-enroll|disable|recovery/rotate、
-//	         GET/PUT /api/auth/admin/oidc-config。人类走 JWT 验签 + Redis
-//	         blacklist + MySQL membership/权限重推导，机器令牌沿用 mtk_ 查库
-//	         路径。四条 MFA 写要求真实人类 User（机器身份 403），GET mfa 对
-//	         机器身份仍返回空状态；OIDC 是租户设置，按 settings.manage 判定，
-//	         不套全局平台管理员门禁。四条 MFA 写共用每用户 MySQL 会话锁
-//	         （Nest/Go 同名互通）。go 要求 JWT_SECRET、DATABASE_URL、
-//	         REDIS_HOST，不要求 Mongo。login/refresh/logout/me/
-//	         change-password/machine-tokens、公开 MFA 登录与强制 enrollment
-//	         挑战，以及 OIDC start/callback/handoff 仍回 NestJS。回滚只把
-//	         API_GO_AUTH_FACTORS_MODE 改回 legacy。不访问身份提供方、不签发
-//	         token、不启用 shadow、不改 canary。
-//
-//	         API_GO_CLASSIFICATION_REPORTS_MODE=go 时接管精确路由
-//	         POST /api/admin/quality/classification/reports：Go 写
-//	         ClassificationReportJob 并入队 classification_quality（任务名与
-//	         jobId 都是 classification-quality-report:<jobId>，attempts=3、
-//	         指数退避 2000ms、removeOnComplete=true、
-//	         removeOnFail={age:7d,count:10000}）；GET /reports/:jobId 仍由
-//	         API_GO_CLASSIFICATION_RSS_OPS_MODE 决定。回滚只把该开关改回 legacy。
-//	         API_GO_CLASSIFICATION_QUALITY_WORKER_MODE=go 时由 Go 消费
-//	         classification_quality（报告生成与评审种子写入），NestJS 的
-//	         processor 不再建 Worker（Queue 保留，流水线仍会生产评审种子任务），
-//	         执行权互斥。并发 max(1,min(4,NEWS_PROCESS_QUEUE_CONCURRENCY))，
-//	         未配置为 2。回滚时先关 Go worker，再由 NestJS 继续消费同格式任务。
-//	         API_GO_PIPELINE_RECOVERY_MODE=go 时接管精确 GET
-//	         /api/admin/quality/pipeline/runs（MySQL ItemMeta + Mongo
-//	         processeditems/tasklogs）。replay/rollback 依赖条目流水线生产者
-//	         （#96 pipelineenqueue），main 上尚不存在，继续由 NestJS 服务。
-//	         三个开关都默认 legacy，互不影响。
-//
-// 回滚：API_GO_DASHBOARD_WAR_MAP_MODE=legacy 把这两个 GET 交回 NestJS；
-// API_GO_DASHBOARD_CHARTS_MODE=legacy 把三个图表交回 NestJS；
-// API_GO_DASHBOARD_STATS_MODE=legacy 把 stats 交回 NestJS；
-// API_GO_PUBLIC_PORTAL_MODE=legacy 把公开页交回 NestJS；
-// API_GO_USER_SETTINGS_READ_MODE=shadow（或未设——回到
-// API_GO_ONBOARDING_MODE 控制；或路由表单条规则改回 legacy，或
-// CANARY_PERCENT=0）——无数据迁移耦合。
-//
-// canary 信任边界（重要）：当前分流的 orgId 取自未验签的 JWT payload
-// claim，不是经过认证的组织身份。在 Go 侧对全部受保护路由完成真实
-// JWT 验签与 org membership 重推导之前，canary 不得承载业务流量
-// （fail-safe 一律回 legacy）。当前没有任何路由处于 ModeCanary，
-// canary 仅作为待鉴权基础设施接入的分流组件存在。
+// 真实资源（DATABASE_URL/REDIS/JWT/Mongo/SMTP/加密密钥等）与鉴权/租户校验
+// 仍然生效。Node 后端源码暂留（第三步 GO-NODE-RETIRE-001 删除）；Go 不再
+// 支持 mode 回退，Node 只能作为独立旧链启动。
 package main
 
 import (
@@ -337,8 +206,7 @@ func run() error {
 	// 分支——但路由表只在 readMode 空时把 onboarding 切 go，此时其余五
 	// 端点仍 shadow/legacy，handler 对未接管路径不会被路由命中）。
 	// 两者都非 go 时完全不装配（零额外连接、旧行为不变）。
-	goTakeover := true ||
-		true
+	goTakeover := true
 	dashboardGo := true
 	chartsGo := true
 	warMapGo := true
@@ -348,12 +216,8 @@ func run() error {
 	spacetimePropagationGo := true
 	streamGo := true
 	healthzGo := true
-	personalNewsGo := true ||
-		true ||
-		true
-	analysisGo := true ||
-		true ||
-		true
+	personalNewsGo := true
+	analysisGo := true
 	// user-settings、dashboard、stream、认证版 healthz、个人内容和分析工作台共用 JWT/Redis/MySQL 鉴权栈。
 	graphqlReadGo := true
 	// 组织、角色与成员管理的 8 个 mutation 由独立开关控制，与读开关解耦：
@@ -415,7 +279,7 @@ func run() error {
 	crawlWorkflowTrialGo := true
 	// The metadata GraphQL root is a child of the read pilot; it can only be
 	// registered when the read executor itself is assembled.
-	graphqlCrawlMetadataGo := graphqlReadGo && true
+	graphqlCrawlMetadataGo := graphqlReadGo
 	itemsReadingGo := true
 	// The write switch is independent of every read switch. The raw_item
 	// scheduled-replay switch is independent of both write ownership and the
@@ -485,40 +349,7 @@ func run() error {
 	// 任一变量改成本批所需值都不影响其他批次接线。
 	// 任一批次为 go 都需要凭据装配（JWT/Redis/MySQL）。多行 OR 便于并行批次
 	// 各自就近追加，减少单行改写造成的合并冲突。
-	needsCredentialedGo := goTakeover || dashboardGo || chartsGo || warMapGo ||
-		transportGo || layersGo || spacetimeGeoGo || spacetimePropagationGo ||
-		streamGo || healthzGo || personalNewsGo || analysisGo || graphqlReadGo ||
-		situationMonitorsGo || newsSourcesGo || crawlWorkflowsGo ||
-		crawlProfilesGo || crawlFrontierRunsGo || rbacGo || crawlTemplatesGo ||
-		adminLogsGo || llmLogsGo || newsIndicatorsGo || qualityOverviewGo ||
-		newsnowClusteringOpsGo || newsnowHottestGo || runtimeSettingsGo || infrastructureSettingsGo ||
-		storageDiagnosticsGo || dataRuntimeSettingsGo || accountSecurityGo ||
-		true ||
-		crawlReadTelemetryGo || crawlMetadataGo || classificationRssOpsGo ||
-		platformGovernanceGo || modelAccessSettingsGo || exceptionIngestGo ||
-		situationSignalsGo || situationInsightsGo || situationSettingsGo || situationTelegramAuthGo || itemsReadingGo || llmGatewayProfilesGo || llmGatewayOpsGo ||
-		authFactorsGo || authLoginGo || graphqlOrgAccessWriteGo ||
-		graphqlWorkspaceWriteGo || graphqlAlertRulesGo || true ||
-		sourcePolicyWriteGo ||
-		graphqlKnowledgeReviewGo ||
-		graphqlRssTranslationGo ||
-		graphqlAssistantWriteGo ||
-		identityOnboardingGo || oidcLoginGo ||
-		searchReindexGo || proxyLoadBalancingGo || analysisExportGo || itemsIngestGo || archiveReadingGo || economicDataGo ||
-		crawlTaskWriteGo || crawlQueueOpsGo ||
-		emailSettingsGo || geocodingGo || runtimeDiagnosticsGo ||
-		// This batch's HTTP entries: report creation and the runs read both
-		// verify the caller. The queue worker does not (see needsRedis).
-		true ||
-		true ||
-		true ||
-		newsSourcePreviewGo || crawlWorkflowTrialGo || analysisRunsGo ||
-		true ||
-		true ||
-		graphqlSubscriptionsGo || notificationsSocketGo || realtimeSocketGo ||
-		// This batch: the queue operations console verifies the caller, then
-		// requires both queue.manage and a platform administrator.
-		true
+	needsCredentialedGo := true
 	var redisClient *redis.Client
 	var redisOptions *redis.Options
 	var authenticator *authhttp.Authenticator
@@ -537,35 +368,7 @@ func run() error {
 	// without authenticating a caller, the GDELT snapshot scheduler shares its
 	// rebuild lease in Redis, and the analysis worker consumes its queue while
 	// writing Mongo/MySQL without JWT.
-	needsRedis := needsCredentialedGo ||
-		true ||
-		true ||
-		true ||
-		newsnowBackgroundGo ||
-		rawItemOutboxGo ||
-		processedItemOutboxGo ||
-		economicDataWorkerGo ||
-		true ||
-		true ||
-		assistantWorkerGo ||
-		true ||
-		true ||
-		true ||
-		true ||
-		true ||
-		analysisWorkerGo ||
-		notificationsSocketGo ||
-		realtimeSocketGo ||
-		classificationAlertGo ||
-		true ||
-		true ||
-		true ||
-		true ||
-		true ||
-		// The signals worker owns the shared queue, the cached signal state,
-		// the single-instance Telegram lease and the event bridge, so it needs
-		// the shared Redis client even with every HTTP switch on legacy.
-		situationSignalsWorkerGo
+	needsRedis := true
 	if needsRedis {
 		// The blocking BullMQ XREAD reader and the queue jobctx cache share
 		// this exact Redis configuration but use dedicated connections.
@@ -1009,7 +812,7 @@ func run() error {
 	// no state, no connection and no S3 client: every request resolves its own
 	// snapshot through the shared storage:settings cache.
 	var storageConfigReader objectstorage.ConfigReader
-	if crawlReadTelemetryGo || (graphqlReadGo && true) || storageDiagnosticsGo {
+	if crawlReadTelemetryGo || graphqlReadGo || storageDiagnosticsGo {
 		storageConfigReader = newInfrastructureSettingsService(cfg, sharedDB, redisClient)
 	}
 	if err := wireCrawlReadTelemetry(gateway, cfg, sharedDB, redisClient, authenticator, storageConfigReader, &dashboardMongo); err != nil {
@@ -1202,9 +1005,7 @@ func run() error {
 	// Mongo or initialize any read-only Mongo service (the RSS translation write
 	// is the exception: it requires Mongo itself).
 	settingsWriteGo := true
-	if graphqlReadGo || graphqlOrgAccessWriteGo || graphqlWorkspaceWriteGo || graphqlAlertRulesGo || settingsWriteGo ||
-		sourcePolicyWriteGo || graphqlKnowledgeReviewGo || graphqlRssTranslationGo || itemsIngestGo || archiveReadingGo || economicDataGo || crawlTaskWriteGo ||
-		true || graphqlAssistantWriteGo || analysisRunsGo {
+	if true {
 		if sharedDB == nil || authenticator == nil || redisClient == nil {
 			return fmt.Errorf("api-go: GraphQL go execution requires mysql, jwt, and redis")
 		}
@@ -2199,10 +2000,10 @@ func run() error {
 	// The realtime signal collector needs Mongo for the transport track writes.
 	// Reuse an already-open handle when another unit opened one; otherwise open
 	// the same database this process uses elsewhere and let the teardown close it.
-	if true && (sharedDB == nil || redisClient == nil) {
+	if sharedDB == nil || redisClient == nil {
 		return fmt.Errorf("api-go: API_GO_REALTIME_SIGNALS_MODE=go requires mysql and redis")
 	}
-	if true && dashboardMongo == nil {
+	if dashboardMongo == nil {
 		opened, openErr := dashboardstats.Open(cfg.MongoURI)
 		if openErr != nil {
 			return fmt.Errorf("api-go: API_GO_REALTIME_SIGNALS_MODE=go requires a valid MONGO_URI")
