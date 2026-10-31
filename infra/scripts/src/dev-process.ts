@@ -99,7 +99,14 @@ export function runChildren(
 ): Promise<number> {
   const spawnImpl: SpawnImpl =
     options.spawnImpl ??
-    ((command, args, spawnOptions) => spawn(command, args, spawnOptions));
+    ((command, args, spawnOptions) =>
+      spawn(command, args, {
+        ...spawnOptions,
+        // Next's ProcessEnv augmentation makes NODE_ENV required; the child
+        // would inherit it from `.env` normally, but keep a safe default for
+        // direct callers/tests that do not provide it.
+        env: { NODE_ENV: "development", ...spawnOptions.env },
+      }));
   const signalSource = options.signalSource ?? process;
   const killTimeoutMs = options.killTimeoutMs ?? 65_000;
 
