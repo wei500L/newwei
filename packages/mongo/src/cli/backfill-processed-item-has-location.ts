@@ -8,7 +8,7 @@
 // non-empty trimmed --org-id, and --dry-run for a read-only pass. Any invalid
 // value fails with "Invalid CLI arguments" and a non-zero exit code.
 import { createLogger } from "@modular/utils";
-import { Types } from "mongoose";
+import type { Types } from "mongoose";
 
 import {
   ProcessedItemModel,
