@@ -1,15 +1,17 @@
 # 任务认领与历史恢复索引
 
-## 2026-11-01 功能修复提示词
+## 2026-11-01 两项功能修复已完成
 
-基线 main `e04fc4d8bb54596afd302a309ebc852c7676d958`；普通 CI 41242463081 三主 job success，两个 regen skipped。发出前再次核对开放 PR，仅规划 PR #149；本轮没有创建业务 worktree/PR。两项已 reserved，尚无编码 head/CI，可分窗口执行；开工仍须刷新 main 和认领。
+核对 main `2e63645d60446d28241ca022ee10caa752a2cb3e`，两个最终源 head 均为其祖先；开放 PR 仅规划 #149。以下 task 均 merged，不再按原 reserved/pr_open 占用。保留历史 worktree/分支，不清理或重派原提示词。
 
-| 任务 / 提示词 | 状态 / 分支建议 | 独占范围与并行边界 |
+| 任务 | 实际 merge / 最终源 head | 普通 CI |
 |---|---|---|
-| [CRAWL-TABLE-NORMALIZATION-001](CRAWL-TABLE-NORMALIZATION-001.md) / [提示词](CRAWL-TABLE-NORMALIZATION-001.prompt.md) | **reserved**；`codex/fix-crawl-tables` | 采集表格输入、保存、读侧/GraphQL 投影与采集详情 UI/测试；不改 main/config/CI/语言资源 |
-| [MONITOR-GEOCODING-001](MONITOR-GEOCODING-001.md) / [提示词](MONITOR-GEOCODING-001.prompt.md) | **reserved**；`codex/fix-monitor-geocoding` | situationmonitors、必要 geocoding、该 main wiring、监控/既有设置 UI 与必要集成覆盖；不触及采集域 |
+| [CRAWL-TABLE-NORMALIZATION-001](CRAWL-TABLE-NORMALIZATION-001.md) | [#155](https://github.com/wei500L/newwei/pull/155) → `2e63645d6044` / `6da27a40a552` | [41249733335](https://github.com/wei500L/newwei/actions/runs/41249733335) 三主 job success |
+| [MONITOR-GEOCODING-001](MONITOR-GEOCODING-001.md) | [#156](https://github.com/wei500L/newwei/pull/156) → `fc9f823a34ba` / `3b06403823be` | [41251389520](https://github.com/wei500L/newwei/actions/runs/41251389520) 三主 job success |
 
-编码窗口只更新自身 task/PR，不改共享索引/GAPS。main/CI 的本轮必要增量只归地理编码任务；发现越界需求先协调。规划文档在 #149 发布，不能把整条规划分支合入业务分支。以下各日期段落仍保留历史选批与执行事实。
+两个源 CI 的 regen skipped 不算通过；最终 main [CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 核对时尚未完成，中间 merge run 41286940726 cancelled。已合并、源 CI、最终 merge CI 与真实运行证据分开记录。
+
+规划分支正常 merge 最新 main，保留编码窗口实际交付的 task，再回填完成状态与共享地图；不实施业务、不创建新编码窗口或新任务。以下日期段落保留历史事实，当前状态以本节和独立 task 为准。
 
 ## 2026-11-01 三步已完成
 

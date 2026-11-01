@@ -1,13 +1,15 @@
 # 后端迁移地图
 
-## 2026-11-01 下一批：两个现存功能缺口
+## 2026-11-01 两项功能修复均已合入
 
-最终 main `e04fc4d8` 的[普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 已完成：verify、vector-integration、api-go-user-settings-integration 均 success，两个 regen skipped。用户要求继续提示词，本轮核对实际源码后预留两条完整功能链，可分两个编码窗口执行：
+当前 main `2e63645d60446d28241ca022ee10caa752a2cb3e`，已核对 GitHub 实际 merge 与两个最终源 head 的祖先关系：
 
-- [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md)：采集表格归一化、保存、REST/GraphQL 读取与详情 UI；[执行提示词](tasks/CRAWL-TABLE-NORMALIZATION-001.prompt.md)。
-- [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md)：监控 preview/create/update 接入系统配置、共享缓存与限速，贯通现有 UI；[执行提示词](tasks/MONITOR-GEOCODING-001.prompt.md)。
+- [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md)：[#155](https://github.com/wei500L/newwei/pull/155) → `2e63645d6044`，表格归一化、Mongo 保存、历史 raw 读取兼容与详情 UI 行为覆盖已落地；最终源 head `6da27a40a552` 的[普通 CI 41249733335](https://github.com/wei500L/newwei/actions/runs/41249733335) 三主 job success。
+- [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md)：[#156](https://github.com/wei500L/newwei/pull/156) → `fc9f823a34ba`，共享配置/缓存/限速的生产接线与监控预览、创建、更新、Web 行为覆盖已落地；最终源 head `3b06403823be` 的[普通 CI 41251389520](https://github.com/wei500L/newwei/actions/runs/41251389520) 三主 job success。
+- 两个源 CI 的 regen job 均 skipped，不算通过。最新 main [CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 在本次核对时尚未完成，不能以源 PR 成功替代；中间 merge `fc9f823a` 的 run 41286940726 cancelled。
+- 两 task 标 merged，两个 GAP 按源码范围关闭，原[提示词](tasks/README.md)已执行，不再占用/重复派发。编码窗口的交付记录予以保留；共享地图由规划 PR #149 回填。
 
-两项均 reserved，尚无编码 PR/head/CI；文件所有权见 task 与[索引](tasks/README.md)。共享 main/CI 的本轮必要增量只归地理编码任务，表格任务使用既有采集 CI。不重派迁移退役，不新增部署或 Node 工具 Go 化任务；规划 PR #149 发布本轮文档。
+本轮只做相关生产接线、UI/CI 去向和 GitHub 证据的静态核对，不冒充全量业务审查；未部署、未实网验证、不重算覆盖数。下一检查点是最终 main CI 与规划文档回填，不自动新增业务、部署或工具 Go 化任务。
 
 ## 2026-11-01 收口：三项退役任务均已合入
 

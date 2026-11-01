@@ -32,4 +32,4 @@
 - 本次仅静态源码/配置/任务与 GitHub 证据核对；本机未安装或运行 build/test/lint/typecheck/vet/Docker/服务，没有修改业务或真实 `.env`。
 - 规划 PR #149 尚未合并，负责发布本记录和任务事实回填；旧 main 迁移地图的 dcbe563b 覆盖数是历史快照，不应继续当作当前默认或任务占用。
 
-最新 merge SHA 的普通 CI 结果已回填；规划文档仍由 #149 发布。用户后续要求继续提示词，已根据当前源码预留 [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md) 与 [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md)，下一检查点是两项实际编码 PR/head/普通 CI，不重新派发三项退役，也不自动部署。
+原退役 merge `e04fc4d8` 的普通 CI 结果已回填。后续 [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md) / [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md) 已分别由 #155 / #156 合入当前 main `2e63645d`，两个最终源 head 普通 CI 三主 job success；当前 main CI 41286944654 核对时尚未完成。下一检查点是该 run 的结果与规划 PR #149 文档回填，不重派已完成任务，也不自动部署。

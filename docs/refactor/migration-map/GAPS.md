@@ -1,15 +1,15 @@
 # 已确认缺口与待核对事项
 
-## 2026-11-01 当前源码功能缺口选批
+## 2026-11-01 两项功能缺口按源码范围关闭
 
-核对 main `e04fc4d8bb54596afd302a309ebc852c7676d958`；其普通 CI 41242463081 已完成，三个主要 job success、两个 regen skipped。以下两项当前实现仍有缺口，分别 reserved；没有编码交付证据，不提前关闭。其它历史 GAP 不随本次迁移收口统一关闭。
+核对 main `2e63645d60446d28241ca022ee10caa752a2cb3e`：#155 / #156 已实际合入，两个最终源 head 为 main 祖先，源普通 CI 三主 job 均 success、两个 regen skipped。最新 main CI 41286944654 尚未完成，不把源成功算作 merge head 成功；本次仅关闭下列两个源码缺口，不统一关闭历史 GAP 或真实运行观察项。
 
-| 稳定 ID / 原复核 | 当前源码证据与用户影响 | 交付范围 |
+| 稳定 ID / 原复核 | 当前关闭证据（路径相对 apps/api-go，定位基于本次 main） | 任务 / 实际 merge |
 |---|---|---|
-| `GAP-CRAWL-TABLES-001` / [EX-05](../review/crawl.md) | `internal/crawlexecution/results.go:648` 原样保存顶层 tables，缺少归一化和 media.tables 提取；读侧与 UI 期待完整维度/列/行/dataFrame 模型 | [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md)：输入到 Mongo、REST/GraphQL、采集详情 UI |
-| `GAP-MONITOR-GEOCODING-001` / [M-04](../review/situation-realtime.md) | `internal/situationmonitors/location.go` 的 geocode 固定公网 URL/UA，`cmd/api/situation_monitors.go:20` 未注入已有 geocoding client；监控地点解析绕过配置、缓存与全局限速 | [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md)：共享客户端生产接线、preview/create/update、Web 链路 |
+| `GAP-CRAWL-TABLES-001` / [EX-05](../review/crawl.md) | **源码关闭**：`internal/crawlexecution/results.go:642-669` 接入 NormalizeFromArticle + EncodeBSON；`internal/crawlreadtelemetry/service_crawl.go:581` 用 FromStored 读取兼容；`internal/crawltables` 共用模型/规则，Web 与已有采集集成覆盖实际输出 | [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md)，#155 → `2e63645d6044` |
+| `GAP-MONITOR-GEOCODING-001` / [M-04](../review/situation-realtime.md) | **源码关闭**：`cmd/api/situation_monitors.go:22` 注入 newGeocodingClient；`cmd/api/main.go:664` 传入 Redis；`internal/situationmonitors/location.go:129` 委托共享 Geocode，复用配置/缓存/限速；CI `ci.yml:321` 执行监控集成，Web 覆盖预览后创建/编辑/无命中 | [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md)，#156 → `fc9f823a34ba` |
 
-上表 Go 路径均相对 `apps/api-go/`，定位以本次核对 SHA 为准。旧 Nest 表格规则从删除前固定提交读取；不恢复 Node app，不批量改历史数据库或访问真实外部服务。
+原 raw 保存/硬编码公网请求是修复前事实，保留在 task/历史复核中。未批量回填数据库、未部署或调用真实 crawl4ai/Nominatim/LLM；fixture 与 CI 数据库验证不代替实网。下一检查点为最终 merge CI，不重新派发两项已合入任务。
 
 ## 2026-11-01 源码退役完成后的边界
 
