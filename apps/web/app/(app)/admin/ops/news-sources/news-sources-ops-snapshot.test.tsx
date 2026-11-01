@@ -3,9 +3,10 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { i18n, renderWithProviders } from "@/test/render";
 
-import { mapNewsSourceRecord } from "./news-sources.helpers";
 import { NewsSourcesTable } from "./news-sources-table";
+import { mapNewsSourceRecord } from "./news-sources.helpers";
 import type {
+  CrawlTemplateRecord,
   NewsSourceApiRecord,
   NewsSourceRecord,
 } from "./news-sources.types";
@@ -96,6 +97,9 @@ const backfilledApiRecord: NewsSourceApiRecord = {
   },
 };
 
+const voidMock = vi.fn();
+const asyncMock = vi.fn(async () => undefined);
+
 function TableHarness({ records }: { records: NewsSourceRecord[] }) {
   return (
     <NewsSourcesTable
@@ -109,36 +113,36 @@ function TableHarness({ records }: { records: NewsSourceRecord[] }) {
       sourcePage={1}
       sourcePageSize={10}
       sourceTotal={records.length}
-      setSourcePage={() => {}}
-      setSourcePageSize={() => {}}
+      setSourcePage={voidMock}
+      setSourcePageSize={voidMock}
       searchInput=""
-      setSearchInput={() => {}}
+      setSearchInput={voidMock}
       selectedSourceIds={[]}
-      setSelectedSourceIds={() => {}}
+      setSelectedSourceIds={voidMock}
       selectedSources={[]}
       uniqueGroups={[]}
-      templateMap={new Map()}
+      templateMap={new Map<string, CrawlTemplateRecord>()}
       siteTypeOptions={[{ value: "general", label: "General" }]}
       resolveRssAdaptiveObservability={() => null}
-      dispatchingSourceIds={new Set()}
-      opsLoadingSourceIds={new Set()}
-      setOpsLoadingSourceIds={() => {}}
+      dispatchingSourceIds={new Set<string>()}
+      opsLoadingSourceIds={new Set<string>()}
+      setOpsLoadingSourceIds={voidMock}
       batchRunLoading={false}
-      setBatchRunLoading={() => {}}
+      setBatchRunLoading={voidMock}
       batchToggleLoading={false}
-      setBatchToggleLoading={() => {}}
+      setBatchToggleLoading={voidMock}
       batchGroupLoading={false}
-      setBatchGroupLoading={() => {}}
+      setBatchGroupLoading={voidMock}
       scheduleLoading={false}
       apiClient={{} as never}
       loadSources={async () => true}
-      loadGroups={async () => {}}
+      loadGroups={asyncMock}
       messageApi={{} as never}
-      handleRunNow={async () => {}}
-      openEdit={() => {}}
-      handlePreview={async () => {}}
-      openSchedule={() => {}}
-      openBatchSchedule={() => {}}
+      handleRunNow={asyncMock}
+      openEdit={voidMock}
+      handlePreview={asyncMock}
+      openSchedule={voidMock}
+      openBatchSchedule={voidMock}
     />
   );
 }
