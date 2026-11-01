@@ -1,15 +1,17 @@
 # 任务认领与历史恢复索引
 
-## 2026-11-01 Frontier 与新闻源后续提示词
+## 2026-11-01 Frontier 与新闻源任务已完成
 
-基线 main `a8cb0028d38f7237a2586d0d4e5d4571435aebca`，#149 已 merged；发出前再次核对开放 PR 为空，两个建议业务分支不存在，未创建编码 worktree/PR。下面两项 reserved，尚无编码 head/CI，可分窗口执行，开工仍须刷新认领。
+当前 main `9ebce09c4fb72f9318443266b295c9501364de3f`，以下两个源 head 均为其祖先；两 task merged，不再按原 reserved 占用/重派。保留已执行提示词和历史 worktree/分支，不自动清理。
 
-| 任务 / 提示词 | 分支建议 | 文件所有权与边界 |
+| 任务 | 实际 merge / 最终源 head | 普通 CI |
 |---|---|---|
-| [FRONTIER-SITEMAP-001](FRONTIER-SITEMAP-001.md) / [提示词](FRONTIER-SITEMAP-001.prompt.md) | `codex/fix-frontier-sitemap-discovery` | crawlmetadata/crawlfrontiernode、Frontier Web、既有 Frontier CI 必要增量；保留其它 discovery 调用面，不改 main/config/scheduler |
-| [NEWS-SOURCE-SNAPSHOTS-001](NEWS-SOURCE-SNAPSHOTS-001.md) / [提示词](NEWS-SOURCE-SNAPSHOTS-001.prompt.md) | `codex/fix-news-source-snapshots` | newssources/newssourcescheduler 快照能力、news_sources wiring、新闻源 Web；既有 scheduler 集成选择器，不改 CI 或 discovery.go |
+| [FRONTIER-SITEMAP-001](FRONTIER-SITEMAP-001.md) | [#158](https://github.com/wei500L/newwei/pull/158) → `9e66e7f56acd` / `4dd76f7339ea` | [41314336961](https://github.com/wei500L/newwei/actions/runs/41314336961) 三主 job success |
+| [NEWS-SOURCE-SNAPSHOTS-001](NEWS-SOURCE-SNAPSHOTS-001.md) | [#159](https://github.com/wei500L/newwei/pull/159) → `9ebce09c4fb7` / `d97821f79c1e` | [41315818788](https://github.com/wei500L/newwei/actions/runs/41315818788) 三主 job success |
 
-共享地图/索引与语言资源不由编码窗口修改；各自只维护 task/PR。规划分支 `codex/plan-go-functional-next` 发布本轮文档；未合 main 时只取自身 task/prompt，不整条合并。当前 main CI 41307901088 尚未完成，前一业务 merge 2e63645d 的 CI 41286944654 三主 job success、两个 regen skipped，分别记录。
+最终 main [CI 41317912036](https://github.com/wei500L/newwei/actions/runs/41317912036) 三主 job success，两个 regen skipped，不算通过；中间 merge CI 41317901968 cancelled。此前 a8cb0028 的 CI 41307901088 后续已 success。
+
+规划 #157 仍 OPEN/Ready，本次正常 merge 最新 main 后回填两个业务 PR 未带入的 task 记录与共享地图。当前没有新业务认领/提示词，不自动合并文档或开启下一批；以下日期段落保留历史事实，当前状态以本节与独立 task 为准。
 
 ## 2026-11-01 两项功能修复已完成
 

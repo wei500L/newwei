@@ -2,13 +2,13 @@
 
 本文件是用户长期偏好的稳定入口。适用后端迁移规划、执行提示词、进度更新；代码事实仍以最新 main 为准。返回[入口](README.md)。
 
-## 2026-11-01 本轮后续选批
+## 2026-11-01 本轮功能任务完成回填
 
-用户再次要求继续提示词。核对 main `a8cb0028`、规划 #149 已合入与开放 PR 为空，再按当前源码选取 FN-03 / NS-02，分别登记 `FRONTIER-SITEMAP-001` / `NEWS-SOURCE-SNAPSHOTS-001`，不按旧 BACKLOG 的未迁状态派发已完成入口。
+用户询问是否均已合并后，核对 main `9ebce09c` 与 GitHub：Frontier sitemap #158、新闻源快照 #159 均 merged，两个最终源 head 是 main 祖先，源普通 CI 与最终 main CI 41317912036 的三主 job 均 success，两个 regen skipped 不算通过；中间 merge CI cancelled 单独记录。
 
-两项可分窗口执行：Frontier 任务仅 crawlmetadata/crawlfrontiernode、Frontier UI 和既有 CI 必要增量；快照任务仅 newssources/newssourcescheduler 的快照能力、相应生产接线/新闻源 UI，集成测试命中现有 scheduler 选择器。新增 sitemap API 保留旧调用面，双方不改 scheduler/discovery.go 或共享语言资源；快照补齐不启动 cron/worker、不派发采集或做全库回填。编码窗口仅回填自身 task/PR，规划窗口维护共享地图。
+`FRONTIER-SITEMAP-001` / `NEWS-SOURCE-SNAPSHOTS-001` 标 merged，FN-03 / NS-02 对应的两个稳定 GAP 按源码范围关闭，不按原 reserved 提示词重复派发。编码 PR 未提交自身 task 页，本次由规划窗口按实际交付补记；规划分支正常 merge main，业务代码与 main 保持一致，仅维护文档。
 
-上一业务 merge `2e63645d` 的普通 CI 41286944654 已 success；当前 main 的文档 merge CI 41307901088 尚未完成，结果分开记录。本轮不重算全域覆盖、不部署、不改业务或创建新聊天。
+规划 #157 仍 OPEN/Ready，和两项业务 PR 的完成分别记录，不因用户询问状态自动合并。下一检查点为文档回填进入 main；未创建新编码窗口/任务、未清理历史工作树、未部署或实网验证，不重算覆盖数。
 
 ## 2026-11-01 两项功能修复完成回填
 

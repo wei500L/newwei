@@ -1,13 +1,14 @@
 # 后端迁移地图
 
-## 2026-11-01 下一批：站点地图发现与缺失快照
+## 2026-11-01 站点地图与快照任务均已合入
 
-当前 main `a8cb0028d38f7237a2586d0d4e5d4571435aebca` 已合入规划 #149；与上一业务 merge `2e63645d` 相比仅文档变化，后者普通 CI 41286944654 三主 job success，两个 regen skipped。当前 main [CI 41307901088](https://github.com/wei500L/newwei/actions/runs/41307901088) 核对时仍在进行，不冒称通过。
+当前 main `9ebce09c4fb72f9318443266b295c9501364de3f`；两个最终源 head 均已验证为其祖先。业务任务已完成，规划文档 #157 仍 OPEN/Ready，不能称所有 PR 均已合并。
 
-- [FRONTIER-SITEMAP-001](tasks/FRONTIER-SITEMAP-001.md)：模式/逐次超时、候选与完整诊断落地到 Frontier UI；对应 FN-03；[执行提示词](tasks/FRONTIER-SITEMAP-001.prompt.md)。
-- [NEWS-SOURCE-SNAPSHOTS-001](tasks/NEWS-SOURCE-SNAPSHOTS-001.md)：新闻源列表为当前页缺失快照补齐、重读并呈现真实活动/统计；对应 NS-02；[执行提示词](tasks/NEWS-SOURCE-SNAPSHOTS-001.prompt.md)。
+- [FRONTIER-SITEMAP-001](tasks/FRONTIER-SITEMAP-001.md)：[#158](https://github.com/wei500L/newwei/pull/158) → `9e66e7f56acd`；最终源 head `4dd76f7339ea`，[普通 CI 41314336961](https://github.com/wei500L/newwei/actions/runs/41314336961) 三主 job success。模式/逐次超时、完整 sitemap 诊断、种子落地与 Frontier UI 已接通。
+- [NEWS-SOURCE-SNAPSHOTS-001](tasks/NEWS-SOURCE-SNAPSHOTS-001.md)：[#159](https://github.com/wei500L/newwei/pull/159) → `9ebce09c4fb7`；最终源 head `d97821f79c1e`，[普通 CI 41315818788](https://github.com/wei500L/newwei/actions/runs/41315818788) 三主 job success。当前页缺失快照的生成/重读、生产注入和统计展示已落地。
+- 最终 main [CI 41317912036](https://github.com/wei500L/newwei/actions/runs/41317912036) 精确 head 为上述完整 SHA，verify、vector-integration、api-go-user-settings-integration 均 success；两个 regen skipped，不算通过。中间 merge 9e66e7f5 的 run 41317901968 cancelled，不冒称通过；较早文档 merge a8cb0028 的 run 41307901088 后续已 success。
 
-两项 reserved，尚无编码 PR/head/CI，可分窗口执行；文件边界见 [任务索引](tasks/README.md)。规划分支 `codex/plan-go-functional-next` 发布本轮文档：Frontier 拥有必要的既有 CI 增量，快照任务只用现有 scheduler 选择器；不创建编码窗口、不实施业务、不重派 #155/#156。
+两 task 标 merged，对应两个 GAP 按源码范围关闭，原提示词已执行，不再保留 reserved 占用。仅静态复核相关实现/接线与实际 CI 步骤，不冒充全域重审、部署或实网验收；下一检查点为规划 [PR #157](https://github.com/wei500L/newwei/pull/157) 的文档回填，不自动合并、创建新任务或部署。
 
 ## 2026-11-01 两项功能修复均已合入
 
