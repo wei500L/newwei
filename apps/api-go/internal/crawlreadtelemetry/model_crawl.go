@@ -1,6 +1,10 @@
 package crawlreadtelemetry
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/crawltables"
+)
 
 // CrawlTaskStatus is the Prisma CrawlTaskStatus enum as a named string type.
 type CrawlTaskStatus string
@@ -214,46 +218,20 @@ type CrawlLinkAnalysis struct {
 	LowQualityLinks []CrawlLinkAnalysisLink   `json:"lowQualityLinks" bson:"lowQualityLinks"`
 }
 
-// CrawlTableCell is one schema-less table cell (string, number, boolean or
-// null). The raw JSON value is preserved verbatim.
-type CrawlTableCell RawJSON
-
-// MarshalJSON renders the stored cell value.
-func (c CrawlTableCell) MarshalJSON() ([]byte, error) {
-	return RawJSON(c).MarshalJSON()
-}
-
-// UnmarshalBSONValue decodes a BSON cell into its relaxed JSON form.
-func (c *CrawlTableCell) UnmarshalBSONValue(valueType byte, data []byte) error {
-	var raw RawJSON
-	if err := raw.UnmarshalBSONValue(valueType, data); err != nil {
-		return err
-	}
-	*c = CrawlTableCell(raw)
-	return nil
-}
-
-// CrawlResultTableRecord is one data-frame row keyed by column name.
-type CrawlResultTableRecord map[string]CrawlTableCell
-
-// CrawlResultTableDataFrame is the tabular view of a crawled table.
-type CrawlResultTableDataFrame struct {
-	Columns []string                 `json:"columns" bson:"columns"`
-	Rows    []CrawlResultTableRecord `json:"rows" bson:"rows"`
-}
-
-// CrawlResultTable mirrors the CrawlResultTable interface stored in Mongo.
-type CrawlResultTable struct {
-	ID          string                    `json:"id" bson:"id"`
-	Caption     *string                   `json:"caption,omitempty" bson:"caption"`
-	Headers     []string                  `json:"headers" bson:"headers"`
-	Rows        [][]CrawlTableCell        `json:"rows" bson:"rows"`
-	RowCount    int                       `json:"rowCount" bson:"rowCount"`
-	ColumnCount int                       `json:"columnCount" bson:"columnCount"`
-	Source      *string                   `json:"source,omitempty" bson:"source"`
-	Metadata    RawJSON                   `json:"metadata,omitempty" bson:"metadata"`
-	DataFrame   CrawlResultTableDataFrame `json:"dataFrame" bson:"dataFrame"`
-}
+// The crawl result table model is owned by internal/crawltables so the writer
+// (crawlexecution) and this reader share exactly one normalization contract.
+// These aliases keep the existing exported names used by the REST handler and
+// the GraphQL settingscrawl projection.
+type (
+	// CrawlTableCell is one schema-less table cell.
+	CrawlTableCell = crawltables.Cell
+	// CrawlResultTableRecord is one data-frame row keyed by column name.
+	CrawlResultTableRecord = crawltables.Record
+	// CrawlResultTableDataFrame is the tabular view of a crawled table.
+	CrawlResultTableDataFrame = crawltables.DataFrame
+	// CrawlResultTable mirrors the CrawlResultTable interface stored in Mongo.
+	CrawlResultTable = crawltables.Table
+)
 
 // CrawlStoredMediaAsset is one signed media asset attached to a crawl result.
 // Optional fields are omitted when unset, matching JSON.stringify dropping
