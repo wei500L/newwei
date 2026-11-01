@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// identityOnboardingGoRoutes lists the fourteen taken-over routes plus the CORS
+// identityOnboardingGoRoutes lists the sixteen taken-over routes plus the CORS
 // preflight the shared rule helper whitelists.
 func identityOnboardingGoRoutes() []struct{ method, path string } {
 	return []struct{ method, path string }{
@@ -18,6 +18,8 @@ func identityOnboardingGoRoutes() []struct{ method, path string } {
 		{http.MethodPost, "/api/auth/admin/registration-applications/app_1/reject-join"},
 		{http.MethodPost, "/api/auth/admin/registration-applications/app_1/approve-org"},
 		{http.MethodPost, "/api/auth/admin/registration-applications/app_1/reject-org"},
+		{http.MethodPost, "/api/auth/admin/registration-applications/app_1/recover-org"},
+		{http.MethodPost, "/api/auth/admin/registration-applications/app_1/resend-invite"},
 		{http.MethodPost, "/api/auth/register/applications"},
 		{http.MethodPost, "/api/auth/register/join-applications"},
 		{http.MethodGet, "/api/auth/invitations/token-value"},

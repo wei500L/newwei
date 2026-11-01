@@ -62,25 +62,42 @@ func (s *service) createOrgForActor(ctx context.Context, actorID, rawName, rawSl
 // mapping in OrgService.createOrg.
 func (s *service) insertOrg(ctx context.Context, actorID, name, slug string, description *string) (workspace.OrgModel, error) {
 	now := nowMillis()
-	orgID, err := newRowID()
-	if err != nil {
-		return workspace.OrgModel{}, err
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return workspace.OrgModel{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO Org (id, name, slug, description, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, 1, ?, ?)",
-		orgID, name, slug, sqlNullableString(description), now, now); err != nil {
-		return workspace.OrgModel{}, slugConflict(err)
-	}
-
-	permissions, err := loadAllPermissions(ctx, tx)
+	orgID, _, _, err := insertOrgTx(ctx, tx, actorID, name, slug, description, now)
 	if err != nil {
 		return workspace.OrgModel{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return workspace.OrgModel{}, slugConflict(err)
+	}
+	return orgModel(orgID, name, slug, description, true, now, now), nil
+}
+
+// insertOrgTx is the statement body of the organization bootstrap. It runs on
+// the caller's executor so the shared GraphQL createOrg mutation keeps owning
+// its transaction, while the identity onboarding approval can run the same
+// bootstrap inside a wider transaction that also records the application
+// association and the invitation. It never commits and never invalidates the
+// active organization cache; the caller owns both.
+func insertOrgTx(ctx context.Context, exec dbtx, actorID, name, slug string, description *string, now time.Time) (orgID, adminRoleID string, warnings []bootstrapWarning, err error) {
+	orgID, err = newRowID()
+	if err != nil {
+		return "", "", nil, err
+	}
+	if _, err := exec.ExecContext(ctx,
+		"INSERT INTO Org (id, name, slug, description, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, 1, ?, ?)",
+		orgID, name, slug, sqlNullableString(description), now, now); err != nil {
+		return "", "", nil, slugConflict(err)
+	}
+
+	permissions, err := loadAllPermissions(ctx, exec)
+	if err != nil {
+		return "", "", nil, err
 	}
 	permissionIDByName := make(map[string]string, len(permissions))
 	allPermissionIDs := make([]string, 0, len(permissions))
@@ -89,17 +106,17 @@ func (s *service) insertOrg(ctx context.Context, actorID, name, slug string, des
 		allPermissionIDs = append(allPermissionIDs, permission.ID)
 	}
 
-	warnings := make([]bootstrapWarning, 0)
-	adminRoleID := ""
+	warnings = make([]bootstrapWarning, 0)
+	adminRoleID = ""
 	for _, roleDef := range defaultRoles {
 		roleID, err := newRowID()
 		if err != nil {
-			return workspace.OrgModel{}, err
+			return "", "", nil, err
 		}
-		if _, err := tx.ExecContext(ctx,
+		if _, err := exec.ExecContext(ctx,
 			"INSERT INTO Role (id, name, description, isSystem, orgId) VALUES (?, ?, ?, ?, ?)",
 			roleID, roleDef.Name, roleDef.Description, boolValue(roleDef.IsSystem), orgID); err != nil {
-			return workspace.OrgModel{}, slugConflict(err)
+			return "", "", nil, slugConflict(err)
 		}
 		missing := make([]string, 0)
 		for _, permissionName := range roleDef.Permissions {
@@ -126,12 +143,12 @@ func (s *service) insertOrg(ctx context.Context, actorID, name, slug string, des
 		for _, permissionID := range permissionIDs {
 			linkID, err := newRowID()
 			if err != nil {
-				return workspace.OrgModel{}, err
+				return "", "", nil, err
 			}
-			if _, err := tx.ExecContext(ctx,
+			if _, err := exec.ExecContext(ctx,
 				"INSERT INTO RolePermission (id, roleId, permissionId) VALUES (?, ?, ?)",
 				linkID, roleID, permissionID); err != nil {
-				return workspace.OrgModel{}, slugConflict(err)
+				return "", "", nil, slugConflict(err)
 			}
 		}
 		if roleDef.Name == systemAdminRoleName {
@@ -140,33 +157,30 @@ func (s *service) insertOrg(ctx context.Context, actorID, name, slug string, des
 	}
 	if adminRoleID == "" {
 		// Unreachable: the loop above always creates the admin role.
-		return workspace.OrgModel{}, errMirroredServerError
+		return "", "", nil, errMirroredServerError
 	}
 
 	membershipID, err := newRowID()
 	if err != nil {
-		return workspace.OrgModel{}, err
+		return "", "", nil, err
 	}
-	if _, err := tx.ExecContext(ctx,
+	if _, err := exec.ExecContext(ctx,
 		"INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt) VALUES (?, ?, ?, ?, 1, ?)",
 		membershipID, actorID, orgID, adminRoleID, now); err != nil {
-		return workspace.OrgModel{}, slugConflict(err)
+		return "", "", nil, slugConflict(err)
 	}
-	if _, err := tx.ExecContext(ctx,
+	if _, err := exec.ExecContext(ctx,
 		"INSERT INTO MembershipRole (membershipId, orgId, roleId, createdAt) VALUES (?, ?, ?, ?)",
 		membershipID, orgID, adminRoleID, now); err != nil {
-		return workspace.OrgModel{}, slugConflict(err)
+		return "", "", nil, slugConflict(err)
 	}
 
-	writeAuditLogBestEffort(ctx, tx, orgID, actorID, "org", "create", orgCreateAudit{
+	writeAuditLogBestEffort(ctx, exec, orgID, actorID, "org", "create", orgCreateAudit{
 		Slug:              slug,
 		Name:              name,
 		BootstrapWarnings: warnings,
 	})
-	if err := tx.Commit(); err != nil {
-		return workspace.OrgModel{}, slugConflict(err)
-	}
-	return orgModel(orgID, name, slug, description, true, now, now), nil
+	return orgID, adminRoleID, warnings, nil
 }
 
 // slugConflict maps a duplicate-key error to the NestJS P2002 response and

@@ -55,6 +55,12 @@ import { createApiClient } from '@/lib/api-client';
 import { captureClientError } from '@/lib/client-telemetry';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
+import {
+  ApplicationsPanel,
+  type RecoverOrgInput,
+  type RegistrationApplicationItem,
+} from './applications-panel';
+
 interface PermissionListItem {
   id: string;
   name: string;
@@ -100,19 +106,6 @@ interface InviteListItem {
   status: string;
   expiresAt: string;
   createdAt: string;
-}
-
-interface RegistrationApplicationItem {
-  id: string;
-  type: 'new_org' | 'join_org';
-  status: 'pending' | 'approved' | 'rejected';
-  email: string;
-  firstName: string;
-  lastName: string;
-  requestedOrgName?: string | null;
-  requestedOrgSlug?: string | null;
-  decisionReason?: string | null;
-  org?: { id: string; name: string; slug: string } | null;
 }
 
 interface AccessSettingsMetaData {
@@ -192,6 +185,45 @@ type UserStatusFilter = 'all' | 'active' | 'inactive';
 
 const USERS_PAGE_SIZE = 200;
 const LOGIN_RECORD_LIMIT = 20;
+
+// Extract a human-readable message from an API failure (axios error shape) so
+// the recovery/resend actions can surface the server's explanation.
+function extractApiErrorMessage(error: unknown, fallback: string): string {
+  if (typeof error === 'object' && error !== null) {
+    const response = (error as { response?: { data?: unknown } }).response;
+    const data = response?.data;
+
+    if (typeof data === 'string' && data.trim().length > 0) {
+      return data.trim();
+    }
+
+    if (data && typeof data === 'object') {
+      const message = (data as { message?: unknown }).message;
+      if (typeof message === 'string' && message.trim().length > 0) {
+        return message.trim();
+      }
+      if (Array.isArray(message)) {
+        const parts = message.filter(
+          (item): item is string =>
+            typeof item === 'string' && item.trim().length > 0,
+        );
+        if (parts.length > 0) {
+          return parts.join(', ');
+        }
+      }
+      const detail = (data as { detail?: unknown }).detail;
+      if (typeof detail === 'string' && detail.trim().length > 0) {
+        return detail.trim();
+      }
+    }
+
+    if (error instanceof Error && error.message.trim().length > 0) {
+      return error.message.trim();
+    }
+  }
+
+  return fallback;
+}
 
 const ACCESS_SETTINGS_META_QUERY = gql`
   query AccessSettingsMetaRuntime {
@@ -396,8 +428,12 @@ export function AccessSettingsContent() {
   const [createInviteForm] = Form.useForm<CreateInviteFormValues>();
   const [approveJoinTarget, setApproveJoinTarget] =
     useState<RegistrationApplicationItem | null>(null);
+  const [resendingApplicationIds, setResendingApplicationIds] = useState<string[]>(
+    [],
+  );
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const usersRequestIdRef = useRef(0);
+  const resendingApplicationIdsRef = useRef<Set<string>>(new Set());
 
   const sessionPermissions = session?.permissions ?? [];
   const canViewSettings = sessionPermissions.includes('settings.manage');
@@ -845,6 +881,55 @@ export function AccessSettingsContent() {
     }
   };
 
+  const handleRecoverOrg = async (
+    application: RegistrationApplicationItem,
+    input: RecoverOrgInput,
+  ) => {
+    try {
+      await apiClient.post(
+        `auth/admin/registration-applications/${application.id}/recover-org`,
+        input,
+      );
+      await reloadAdminIdentityData();
+      messageApi.success('Organization application recovered');
+    } catch (error) {
+      captureClientError('Failed to recover organization application', error);
+      messageApi.error(
+        extractApiErrorMessage(error, 'Failed to recover organization application'),
+      );
+    }
+  };
+
+  const handleResendOrgInvite = async (
+    application: RegistrationApplicationItem,
+  ) => {
+    // Guard against duplicate submits before the pending flag re-renders the row.
+    if (resendingApplicationIdsRef.current.has(application.id)) {
+      return;
+    }
+    resendingApplicationIdsRef.current.add(application.id);
+    setResendingApplicationIds((previous) => [...previous, application.id]);
+
+    try {
+      await apiClient.post(
+        `auth/admin/registration-applications/${application.id}/resend-invite`,
+        {},
+      );
+      await reloadAdminIdentityData();
+      messageApi.success('Invite resent');
+    } catch (error) {
+      captureClientError('Failed to resend organization invite', error);
+      messageApi.error(
+        extractApiErrorMessage(error, 'Failed to resend organization invite'),
+      );
+    } finally {
+      resendingApplicationIdsRef.current.delete(application.id);
+      setResendingApplicationIds((previous) =>
+        previous.filter((id) => id !== application.id),
+      );
+    }
+  };
+
   const sections = [
     {
       key: 'members',
@@ -901,10 +986,13 @@ export function AccessSettingsContent() {
           applications={applications}
           loading={adminFlowsLoading}
           canManagePlatform={Boolean(session?.user?.globalRoles?.includes('platform_admin'))}
+          pendingResendApplicationIds={resendingApplicationIds}
           onApproveJoin={setApproveJoinTarget}
           onRejectJoin={(application) => void handleRejectApplication(application, 'join')}
           onApproveOrg={(application) => void handleApproveOrgApplication(application)}
           onRejectOrg={(application) => void handleRejectApplication(application, 'org')}
+          onRecoverOrg={handleRecoverOrg}
+          onResendOrgInvite={handleResendOrgInvite}
         />
       ),
     },
@@ -2149,95 +2237,6 @@ function InvitesPanel({
           },
         ]}
       />
-    </Space>
-  );
-}
-
-function ApplicationsPanel({
-  applications,
-  loading,
-  canManagePlatform,
-  onApproveJoin,
-  onRejectJoin,
-  onApproveOrg,
-  onRejectOrg,
-}: {
-  applications: {
-    orgApplications: RegistrationApplicationItem[];
-    platformApplications: RegistrationApplicationItem[];
-  };
-  loading: boolean;
-  canManagePlatform: boolean;
-  onApproveJoin: (application: RegistrationApplicationItem) => void;
-  onRejectJoin: (application: RegistrationApplicationItem) => void;
-  onApproveOrg: (application: RegistrationApplicationItem) => void;
-  onRejectOrg: (application: RegistrationApplicationItem) => void;
-}) {
-  return (
-    <Space direction="vertical" size="large" style={{ display: 'flex' }}>
-      <Card size="small" title="Join requests">
-        <Table
-          rowKey="id"
-          loading={loading}
-          dataSource={applications.orgApplications}
-          pagination={false}
-          columns={[
-            { title: 'Email', dataIndex: 'email', key: 'email' },
-            { title: 'Name', key: 'name', render: (_, row) => `${row.firstName} ${row.lastName}` },
-            { title: 'Status', dataIndex: 'status', key: 'status' },
-            {
-              title: 'Actions',
-              key: 'actions',
-              render: (_, row) => (
-                <Space>
-                  <Button size="small" onClick={() => onApproveJoin(row)}>
-                    Approve
-                  </Button>
-                  <Button size="small" danger onClick={() => onRejectJoin(row)}>
-                    Reject
-                  </Button>
-                </Space>
-              ),
-            },
-          ]}
-          locale={{ emptyText: <Empty description="No join requests" /> }}
-        />
-      </Card>
-
-      {canManagePlatform ? (
-        <Card size="small" title="New organization requests">
-          <Table
-            rowKey="id"
-            loading={loading}
-            dataSource={applications.platformApplications}
-            pagination={false}
-            columns={[
-              { title: 'Email', dataIndex: 'email', key: 'email' },
-              {
-                title: 'Organization',
-                key: 'org',
-                render: (_, row) => `${row.requestedOrgName ?? '-'} (${row.requestedOrgSlug ?? '-'})`,
-              },
-              { title: 'Status', dataIndex: 'status', key: 'status' },
-              {
-                title: 'Actions',
-                key: 'actions',
-                render: (_, row) => (
-                  <Space>
-                    <Button size="small" onClick={() => onApproveOrg(row)}>
-                      Approve
-                    </Button>
-                    <Button size="small" danger onClick={() => onRejectOrg(row)}>
-                      Reject
-                    </Button>
-                  </Space>
-                ),
-              },
-            ]}
-            locale={{ emptyText: <Empty description="No organization requests" /> }}
-          />
-        </Card>
-      ) : null}
     </Space>
   );
 }
