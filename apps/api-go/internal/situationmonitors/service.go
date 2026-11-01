@@ -3,8 +3,6 @@ package situationmonitors
 import (
 	"context"
 	"database/sql"
-	"net/http"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/llmembed"
 )
@@ -21,16 +19,20 @@ type modelGateway interface {
 // Service 写同一张 SituationMonitorMonitor。监控 HTTP 的遗留迁移会尝试
 // embedding；失败时向量为空，请求仍然成功。订阅路径自己的迁移不从这里替换。
 type Service struct {
-	db         *sql.DB
-	embed      modelGateway
-	httpClient *http.Client
+	db       *sql.DB
+	embed    modelGateway
+	geocoder LocationGeocoder
 }
 
-func NewService(db *sql.DB) *Service {
+// NewService wires the monitor store, the model gateway and the shared
+// geocoder. The HTTP preview/create/update paths must pass a production
+// *geocoding.Client; read-only projections may pass nil because List never
+// resolves a location.
+func NewService(db *sql.DB, geocoder LocationGeocoder) *Service {
 	return &Service{
-		db:         db,
-		embed:      llmembed.NewClient(db),
-		httpClient: &http.Client{Timeout: 3 * time.Second},
+		db:       db,
+		embed:    llmembed.NewClient(db),
+		geocoder: geocoder,
 	}
 }
 
