@@ -412,3 +412,69 @@ func TestEconomicQueueIntegrationCancelAndDrain(t *testing.T) {
 		t.Fatalf("wait = %d after drain, want 1 unclaimed job preserved", got)
 	}
 }
+
+func TestEconomicQueueIntegrationLockRenewal(t *testing.T) {
+	ctx := context.Background()
+	fixture := newQueueFixture(t)
+	jobID, err := fixture.producer.AddManual(ctx, JobData{DataItemID: "slug-renew"})
+	if err != nil {
+		t.Fatalf("add manual: %v", err)
+	}
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var processed atomic.Int64
+	// A long handler keeps the job active past LockDuration; the renewal
+	// goroutine must keep the lock alive so the stalled checker never reclaims
+	// it and the handler runs exactly once.
+	worker := fixture.worker(t, func(handlerCtx context.Context, _ Job) error {
+		processed.Add(1)
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+			return nil
+		case <-handlerCtx.Done():
+			return handlerCtx.Err()
+		}
+	}, WorkerOptions{Concurrency: 1, LockDuration: 150 * time.Millisecond, StalledInterval: time.Hour, PollInterval: 10 * time.Millisecond})
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	go worker.Run(runCtx)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker never started the job")
+	}
+
+	// Stay busy for well over the lock duration; several renewals must happen.
+	time.Sleep(400 * time.Millisecond)
+	fixture.drainStalledPass(t, worker)
+	if got := fixture.client.LLen(ctx, fixture.keys.active()).Val(); got != 1 {
+		t.Fatalf("active = %d while a long job holds a renewed lock, want 1", got)
+	}
+	if got := fixture.client.LLen(ctx, fixture.keys.wait()).Val(); got != 0 {
+		t.Fatalf("wait = %d, want 0 (renewed lock must not be recovered)", got)
+	}
+	if ttl := fixture.client.PTTL(ctx, fixture.keys.lock(jobID)).Val(); ttl <= 0 {
+		t.Fatalf("lock ttl = %v, want a positive remaining ttl after renewal", ttl)
+	}
+
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for fixture.client.LLen(ctx, fixture.keys.active()).Val() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("long job never finished after release")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancelRun()
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelClose()
+	if err := worker.Close(closeCtx); err != nil {
+		t.Fatalf("worker close: %v", err)
+	}
+	if got := processed.Load(); got != 1 {
+		t.Fatalf("handler ran %d times, want exactly 1 (no duplicate reclaim)", got)
+	}
+}
