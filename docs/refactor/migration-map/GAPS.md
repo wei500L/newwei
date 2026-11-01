@@ -1,5 +1,16 @@
 # 已确认缺口与待核对事项
 
+## 2026-11-01 当前选批：队列与审批恢复
+
+基于 main `9ebce09c4fb72f9318443266b295c9501364de3f` 当前源码复核，两项均 reserved，尚无新实现/CI；原“只记录”原因不作为永久不修理由，用户已要求编写相应功能修复任务。
+
+| 稳定 ID / 原复核 | 当前根因与影响 | 任务 |
+|---|---|---|
+| `GAP-ECONOMIC-QUEUE-001` / [EA-02、EA-03、EA-补-A1](../review/situation-realtime.md) | `apps/api-go/internal/economicqueue/worker.go:78` 直接 wait→active，缺 paused 判定/原子领取与 stalled 恢复；producer/promoteDue 直接写 wait，ScheduleNextRepeat 无 repeat 存活守卫。暂停后新/到期任务可能被消费，崩溃 active 遗留或在途任务复活已删调度 | [ECONOMIC-QUEUE-RECOVERY-001](tasks/ECONOMIC-QUEUE-RECOVERY-001.md) |
+| `GAP-ORG-APPROVAL-001` / [IDENT-03](../review/identity-core.md) | `apps/api-go/internal/identityonboarding/application_store.go:62,105` pending-only + 提前 approved；`application.go:325-378` 组织创建后无可靠申请关联；`invite.go:42-56` 保存邀请后投递出错，申请尚未 linkGeneratedInvite，留下难以续办的半完成状态 | [ORG-APPROVAL-RECOVERY-001](tasks/ORG-APPROVAL-RECOVERY-001.md) |
+
+新任务分别贯通真实协议/持久化与现有 UI，不把入队视为任务完成、发信失败视为数据库回滚。既有租户/平台角色、普通邀请角色限制、业务执行门与必要事务保持；不新增生产修复脚本、全库回填或真实服务验证。
+
 ## 2026-11-01 Frontier 与快照缺口按源码范围关闭
 
 核对 main `9ebce09c4fb72f9318443266b295c9501364de3f`；#158 / #159 已合入，两个最终源 head 可达。两个源普通 CI 与最终 main CI 41317912036 的三主 job 均 success，两个 regen skipped。以下两个源码缺口关闭，原报告与 task 的缺失行为保留为修复前证据；不统一关闭其它历史 GAP 或实网观察项。

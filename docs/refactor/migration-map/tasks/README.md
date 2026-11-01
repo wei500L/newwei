@@ -1,5 +1,16 @@
 # 任务认领与历史恢复索引
 
+## 2026-11-01 经济队列与组织审批提示词
+
+基线 main `9ebce09c4fb72f9318443266b295c9501364de3f`，普通 CI 41317912036 三主 job success、两个 regen skipped。发出前核对开放 PR 仅规划 #157、两个建议业务分支/任务 ID 无既有占用；未创建编码 worktree/PR。两项 reserved，可分窗口执行；开工仍需刷新 main/CI/认领。
+
+| 任务 / 提示词 | 分支建议 | 独占范围与共享增量 |
+|---|---|---|
+| [ECONOMIC-QUEUE-RECOVERY-001](ECONOMIC-QUEUE-RECOVERY-001.md) / [提示词](ECONOMIC-QUEUE-RECOVERY-001.prompt.md) | `codex/fix-economic-queue-recovery` | economicqueue/必要 economicdata、economic_data wiring、经济/必要 queue-ops UI；CI 在既有 queue-ops 注释块之前追加自身步骤 |
+| [ORG-APPROVAL-RECOVERY-001](ORG-APPROVAL-RECOVERY-001.md) / [提示词](ORG-APPROVAL-RECOVERY-001.prompt.md) | `codex/fix-org-approval-recovery` | identityonboarding/必要 orgaccesswrite bootstrap、审批 REST/契约、access-settings UI、必要 schema；CI 在 user-settings 步骤后追加自身块 |
+
+不改对方业务/CI 新增块；第二个合并者正常 merge main 保留并集，共享语言资源仅追加自身键。编码窗口只维护自身 task/PR，规划 #157 维护共享地图；未合 main 时只取自身 task/prompt，不合并整条规划分支。下方完成任务和历史记录继续保留，不重新占用。
+
 ## 2026-11-01 Frontier 与新闻源任务已完成
 
 当前 main `9ebce09c4fb72f9318443266b295c9501364de3f`，以下两个源 head 均为其祖先；两 task merged，不再按原 reserved 占用/重派。保留已执行提示词和历史 worktree/分支，不自动清理。

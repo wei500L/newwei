@@ -1,5 +1,14 @@
 # 后端迁移地图
 
+## 2026-11-01 下一批：经济队列可靠性与组织审批恢复
+
+用户要求开始编写上一轮建议的两项提示词。核对 main `9ebce09c4fb72f9318443266b295c9501364de3f`，普通 CI 41317912036 三主 job success，两个 regen skipped；开放 PR 只有本轮规划 #157，无对应新业务认领。
+
+- [ECONOMIC-QUEUE-RECOVERY-001](tasks/ECONOMIC-QUEUE-RECOVERY-001.md)：暂停语义、崩溃后 stalled 恢复、锁/终态所有权与相关 repeat 推进，贯通现有经济数据/队列 UI；[执行提示词](tasks/ECONOMIC-QUEUE-RECOVERY-001.prompt.md)。
+- [ORG-APPROVAL-RECOVERY-001](tasks/ORG-APPROVAL-RECOVERY-001.md)：申请/组织/邀请可靠关联、投递失败续办、平台管理员受控重发和历史半完成记录的 UI 恢复；[执行提示词](tasks/ORG-APPROVAL-RECOVERY-001.prompt.md)。
+
+两项 reserved，尚无编码 worktree/PR/head/CI，可分窗口执行；各自源码/UI 与 CI 新增块边界见 [任务索引](tasks/README.md)。只发布规划，不创建聊天/业务分支或实施代码；#155/#156/#158/#159 继续 merged，不重派。全局设置权限等其它建议未自动认领。
+
 ## 2026-11-01 站点地图与快照任务均已合入
 
 当前 main `9ebce09c4fb72f9318443266b295c9501364de3f`；两个最终源 head 均已验证为其祖先。业务任务已完成，规划文档 #157 仍 OPEN/Ready，不能称所有 PR 均已合并。
