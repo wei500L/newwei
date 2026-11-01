@@ -465,6 +465,48 @@ func parseAcceptInviteRequest(body []byte) (acceptInviteRequest, error) {
 	return request, nil
 }
 
+// ---- RecoverOrgApplicationDto ----
+
+// recoverOrgRequest is the optional body of the platform recovery action.
+// targetOrgId explicitly binds an orphaned organization; reason is recorded in
+// the audit trail. Both are optional so the server can create a fresh
+// organization when the requested slug is still free.
+type recoverOrgRequest struct {
+	TargetOrgID *string
+	Reason      *string
+}
+
+func parseRecoverOrgRequest(body []byte) (recoverOrgRequest, error) {
+	var request recoverOrgRequest
+	var targetOrgIDRaw, reasonRaw json.RawMessage
+	unknown, err := decodeObject(body, func(name string, value json.RawMessage) bool {
+		switch name {
+		case "targetOrgId":
+			targetOrgIDRaw = value
+		case "reason":
+			reasonRaw = value
+		default:
+			return false
+		}
+		return true
+	})
+	if err != nil {
+		return request, err
+	}
+	var problems validationErrors
+	for _, name := range unknown {
+		problems.add("property " + name + " should not exist")
+	}
+	targetOrgID, _ := optionalStringConstraint(&problems, targetOrgIDRaw, "targetOrgId")
+	reason, _ := optionalStringConstraint(&problems, reasonRaw, "reason")
+	if err := problems.err(); err != nil {
+		return request, err
+	}
+	request.TargetOrgID = targetOrgID
+	request.Reason = reason
+	return request, nil
+}
+
 // itoa renders a small non-negative integer without pulling strconv into the
 // validation helpers.
 func itoa(value int) string {

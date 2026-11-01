@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/redis/go-redis/v9"
 
@@ -34,13 +35,15 @@ type CreateOrgParams struct {
 	Description *string
 }
 
-// CreatedOrg is the created organization's identity. The approval path only
-// needs these three values: the invite is reloaded from MySQL with its
-// relations, and the response is the application scalar.
+// CreatedOrg is the created organization's identity. AdminRoleID is the
+// default administrator role created by the bootstrap; the approval path needs
+// it to issue the controlled invitation without re-deriving the role. It is
+// only populated by CreateOrgInTx; the plain CreateOrg path leaves it empty.
 type CreatedOrg struct {
-	ID   string
-	Name string
-	Slug string
+	ID          string
+	Name        string
+	Slug        string
+	AdminRoleID string
 }
 
 // OrgBootstrap reuses the shared MySQL pool and Redis client. It holds no
@@ -66,6 +69,45 @@ func (b *OrgBootstrap) CreateOrg(ctx context.Context, params CreateOrgParams) (C
 		return CreatedOrg{}, err
 	}
 	return CreatedOrg{ID: org.ID, Name: org.Name, Slug: org.Slug}, nil
+}
+
+// CreateOrgInTx runs the same organization bootstrap on the caller's
+// transaction so the identity onboarding approval can atomically create the
+// organization, record the application → organization association and save the
+// invitation in one commit. It performs the identical validation as
+// createOrgForActor, returns the default admin role id, never commits and never
+// touches Redis: the caller commits and then calls InvalidateActiveOrgs.
+func (b *OrgBootstrap) CreateOrgInTx(ctx context.Context, tx *sql.Tx, params CreateOrgParams) (CreatedOrg, error) {
+	if b == nil || b.db == nil || tx == nil {
+		return CreatedOrg{}, errDatabaseUnavailable
+	}
+	name := jsTrim(params.Name)
+	slug := strings.ToLower(jsTrim(params.Slug))
+	description := trimmedOptional(params.Description)
+	if name == "" {
+		return CreatedOrg{}, badRequest("Organization name is required")
+	}
+	if slug == "" {
+		return CreatedOrg{}, badRequest("Organization slug is required")
+	}
+	if !slugPattern.MatchString(slug) {
+		return CreatedOrg{}, badRequest("Invalid organization slug")
+	}
+	orgID, adminRoleID, _, err := insertOrgTx(ctx, tx, params.ActorID, name, slug, description, nowMillis())
+	if err != nil {
+		return CreatedOrg{}, err
+	}
+	return CreatedOrg{ID: orgID, Name: name, Slug: slug, AdminRoleID: adminRoleID}, nil
+}
+
+// InvalidateActiveOrgs drops the cached active organization list. Callers that
+// commit CreateOrgInTx invoke it after the commit, mirroring the invalidation
+// createOrgForActor performs for the plain mutation path.
+func (b *OrgBootstrap) InvalidateActiveOrgs(ctx context.Context) error {
+	if b == nil {
+		return nil
+	}
+	return (&service{db: b.db, redis: b.redis}).invalidateActiveOrgs(ctx)
 }
 
 // StatusOf maps an error raised by CreateOrg onto the HTTP status and message
