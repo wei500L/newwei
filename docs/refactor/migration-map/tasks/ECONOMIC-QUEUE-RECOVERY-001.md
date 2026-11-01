@@ -15,5 +15,9 @@
 
 ## 交付记录
 
-- PR / head / 普通 CI：见 PR 与最终回填（Ready，不合并、不 auto-merge）。
+- PR：https://github.com/wei500L/newwei/pull/161（Ready，不合并、不 auto-merge），分支 `codex/fix-economic-queue-recovery`。
+- 实现提交 head：`82a3d75e7ee06d856678343f6861f4bf0cb31d09`。
+- 普通 CI：[run 41328268414](https://github.com/wei500L/newwei/actions/runs/41328268414) 在该 head `conclusion=success`（`verify` / `vector-integration` / `api-go-user-settings-integration` 均 success，`go-modules-regen` 与 `contract-baseline-regen` 两个 regen skipped——skipped 不算通过）。`verify` 的 Lint / Typecheck / Web component tests with coverage / Go tests (api-go gateway + vector-go) 均 success。
+- 新增经济队列集成步骤实际执行并 PASS（非 skipped）：`TestEconomicQueueIntegrationNodeInterop`（Node↔Go 双向）、`TestEconomicQueueIntegrationPauseAndResume`、`TestEconomicQueueIntegrationLockOwnership`、`TestEconomicQueueIntegrationStalledExceededFails`、`TestEconomicQueueIntegrationRepeatGuard`、`TestEconomicQueueIntegrationRepeatFailureKeepsSchedule`、`TestEconomicQueueIntegrationCancelAndDrain`。
+- 说明：本回填提交为文档增量，其后的精确 head 与普通 CI 见 PR 最新记录。
 - 验证边界：本机未运行 build/test/lint/typecheck/vet/Docker/服务；结论以精确 head 普通 CI 的 Go 单元、Web coverage 与新增集成为准；skipped 不算通过；源 CI 不代替 merge CI。未验证真实供应商、生产 Redis 或多实例部署行为。
