@@ -1,12 +1,31 @@
 # 后端迁移地图
 
+## 2026-11-01 下一批：经济队列可靠性与组织审批恢复
+
+用户要求开始编写上一轮建议的两项提示词。核对 main `9ebce09c4fb72f9318443266b295c9501364de3f`，普通 CI 41317912036 三主 job success，两个 regen skipped；开放 PR 只有本轮规划 #157，无对应新业务认领。
+
+- [ECONOMIC-QUEUE-RECOVERY-001](tasks/ECONOMIC-QUEUE-RECOVERY-001.md)：暂停语义、崩溃后 stalled 恢复、锁/终态所有权与相关 repeat 推进，贯通现有经济数据/队列 UI；[执行提示词](tasks/ECONOMIC-QUEUE-RECOVERY-001.prompt.md)。
+- [ORG-APPROVAL-RECOVERY-001](tasks/ORG-APPROVAL-RECOVERY-001.md)：申请/组织/邀请可靠关联、投递失败续办、平台管理员受控重发和历史半完成记录的 UI 恢复；[执行提示词](tasks/ORG-APPROVAL-RECOVERY-001.prompt.md)。
+
+两项 reserved，尚无编码 worktree/PR/head/CI，可分窗口执行；各自源码/UI 与 CI 新增块边界见 [任务索引](tasks/README.md)。只发布规划，不创建聊天/业务分支或实施代码；#155/#156/#158/#159 继续 merged，不重派。全局设置权限等其它建议未自动认领。
+
+## 2026-11-01 站点地图与快照任务均已合入
+
+当前 main `9ebce09c4fb72f9318443266b295c9501364de3f`；两个最终源 head 均已验证为其祖先。业务任务已完成，规划文档 #157 仍 OPEN/Ready，不能称所有 PR 均已合并。
+
+- [FRONTIER-SITEMAP-001](tasks/FRONTIER-SITEMAP-001.md)：[#158](https://github.com/wei500L/newwei/pull/158) → `9e66e7f56acd`；最终源 head `4dd76f7339ea`，[普通 CI 41314336961](https://github.com/wei500L/newwei/actions/runs/41314336961) 三主 job success。模式/逐次超时、完整 sitemap 诊断、种子落地与 Frontier UI 已接通。
+- [NEWS-SOURCE-SNAPSHOTS-001](tasks/NEWS-SOURCE-SNAPSHOTS-001.md)：[#159](https://github.com/wei500L/newwei/pull/159) → `9ebce09c4fb7`；最终源 head `d97821f79c1e`，[普通 CI 41315818788](https://github.com/wei500L/newwei/actions/runs/41315818788) 三主 job success。当前页缺失快照的生成/重读、生产注入和统计展示已落地。
+- 最终 main [CI 41317912036](https://github.com/wei500L/newwei/actions/runs/41317912036) 精确 head 为上述完整 SHA，verify、vector-integration、api-go-user-settings-integration 均 success；两个 regen skipped，不算通过。中间 merge 9e66e7f5 的 run 41317901968 cancelled，不冒称通过；较早文档 merge a8cb0028 的 run 41307901088 后续已 success。
+
+两 task 标 merged，对应两个 GAP 按源码范围关闭，原提示词已执行，不再保留 reserved 占用。仅静态复核相关实现/接线与实际 CI 步骤，不冒充全域重审、部署或实网验收；下一检查点为规划 [PR #157](https://github.com/wei500L/newwei/pull/157) 的文档回填，不自动合并、创建新任务或部署。
+
 ## 2026-11-01 两项功能修复均已合入
 
 当前 main `2e63645d60446d28241ca022ee10caa752a2cb3e`，已核对 GitHub 实际 merge 与两个最终源 head 的祖先关系：
 
 - [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md)：[#155](https://github.com/wei500L/newwei/pull/155) → `2e63645d6044`，表格归一化、Mongo 保存、历史 raw 读取兼容与详情 UI 行为覆盖已落地；最终源 head `6da27a40a552` 的[普通 CI 41249733335](https://github.com/wei500L/newwei/actions/runs/41249733335) 三主 job success。
 - [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md)：[#156](https://github.com/wei500L/newwei/pull/156) → `fc9f823a34ba`，共享配置/缓存/限速的生产接线与监控预览、创建、更新、Web 行为覆盖已落地；最终源 head `3b06403823be` 的[普通 CI 41251389520](https://github.com/wei500L/newwei/actions/runs/41251389520) 三主 job success。
-- 两个源 CI 的 regen job 均 skipped，不算通过。最新 main [CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 在本次核对时尚未完成，不能以源 PR 成功替代；中间 merge `fc9f823a` 的 run 41286940726 cancelled。
+- 两个源 CI 的 regen job 均 skipped，不算通过。业务 merge `2e63645d` 的[CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 后续核对已 completed/success，三主 job success，两个 regen skipped；中间 merge `fc9f823a` 的 run 41286940726 cancelled。当前 main CI 另见本页最上方。
 - 两 task 标 merged，两个 GAP 按源码范围关闭，原[提示词](tasks/README.md)已执行，不再占用/重复派发。编码窗口的交付记录予以保留；共享地图由规划 PR #149 回填。
 
 本轮只做相关生产接线、UI/CI 去向和 GitHub 证据的静态核对，不冒充全量业务审查；未部署、未实网验证、不重算覆盖数。下一检查点是最终 main CI 与规划文档回填，不自动新增业务、部署或工具 Go 化任务。

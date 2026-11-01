@@ -1,5 +1,29 @@
 # 任务认领与历史恢复索引
 
+## 2026-11-01 经济队列与组织审批提示词
+
+基线 main `9ebce09c4fb72f9318443266b295c9501364de3f`，普通 CI 41317912036 三主 job success、两个 regen skipped。发出前核对开放 PR 仅规划 #157、两个建议业务分支/任务 ID 无既有占用；未创建编码 worktree/PR。两项 reserved，可分窗口执行；开工仍需刷新 main/CI/认领。
+
+| 任务 / 提示词 | 分支建议 | 独占范围与共享增量 |
+|---|---|---|
+| [ECONOMIC-QUEUE-RECOVERY-001](ECONOMIC-QUEUE-RECOVERY-001.md) / [提示词](ECONOMIC-QUEUE-RECOVERY-001.prompt.md) | `codex/fix-economic-queue-recovery` | economicqueue/必要 economicdata、economic_data wiring、经济/必要 queue-ops UI；CI 在既有 queue-ops 注释块之前追加自身步骤 |
+| [ORG-APPROVAL-RECOVERY-001](ORG-APPROVAL-RECOVERY-001.md) / [提示词](ORG-APPROVAL-RECOVERY-001.prompt.md) | `codex/fix-org-approval-recovery` | identityonboarding/必要 orgaccesswrite bootstrap、审批 REST/契约、access-settings UI、必要 schema；CI 在 user-settings 步骤后追加自身块 |
+
+不改对方业务/CI 新增块；第二个合并者正常 merge main 保留并集，共享语言资源仅追加自身键。编码窗口只维护自身 task/PR，规划 #157 维护共享地图；未合 main 时只取自身 task/prompt，不合并整条规划分支。下方完成任务和历史记录继续保留，不重新占用。
+
+## 2026-11-01 Frontier 与新闻源任务已完成
+
+当前 main `9ebce09c4fb72f9318443266b295c9501364de3f`，以下两个源 head 均为其祖先；两 task merged，不再按原 reserved 占用/重派。保留已执行提示词和历史 worktree/分支，不自动清理。
+
+| 任务 | 实际 merge / 最终源 head | 普通 CI |
+|---|---|---|
+| [FRONTIER-SITEMAP-001](FRONTIER-SITEMAP-001.md) | [#158](https://github.com/wei500L/newwei/pull/158) → `9e66e7f56acd` / `4dd76f7339ea` | [41314336961](https://github.com/wei500L/newwei/actions/runs/41314336961) 三主 job success |
+| [NEWS-SOURCE-SNAPSHOTS-001](NEWS-SOURCE-SNAPSHOTS-001.md) | [#159](https://github.com/wei500L/newwei/pull/159) → `9ebce09c4fb7` / `d97821f79c1e` | [41315818788](https://github.com/wei500L/newwei/actions/runs/41315818788) 三主 job success |
+
+最终 main [CI 41317912036](https://github.com/wei500L/newwei/actions/runs/41317912036) 三主 job success，两个 regen skipped，不算通过；中间 merge CI 41317901968 cancelled。此前 a8cb0028 的 CI 41307901088 后续已 success。
+
+规划 #157 仍 OPEN/Ready，本次正常 merge 最新 main 后回填两个业务 PR 未带入的 task 记录与共享地图。当前没有新业务认领/提示词，不自动合并文档或开启下一批；以下日期段落保留历史事实，当前状态以本节与独立 task 为准。
+
 ## 2026-11-01 两项功能修复已完成
 
 核对 main `2e63645d60446d28241ca022ee10caa752a2cb3e`，两个最终源 head 均为其祖先；开放 PR 仅规划 #149。以下 task 均 merged，不再按原 reserved/pr_open 占用。保留历史 worktree/分支，不清理或重派原提示词。
@@ -9,7 +33,7 @@
 | [CRAWL-TABLE-NORMALIZATION-001](CRAWL-TABLE-NORMALIZATION-001.md) | [#155](https://github.com/wei500L/newwei/pull/155) → `2e63645d6044` / `6da27a40a552` | [41249733335](https://github.com/wei500L/newwei/actions/runs/41249733335) 三主 job success |
 | [MONITOR-GEOCODING-001](MONITOR-GEOCODING-001.md) | [#156](https://github.com/wei500L/newwei/pull/156) → `fc9f823a34ba` / `3b06403823be` | [41251389520](https://github.com/wei500L/newwei/actions/runs/41251389520) 三主 job success |
 
-两个源 CI 的 regen skipped 不算通过；最终 main [CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 核对时尚未完成，中间 merge run 41286940726 cancelled。已合并、源 CI、最终 merge CI 与真实运行证据分开记录。
+两个源 CI 的 regen skipped 不算通过；业务 merge `2e63645d` 的[CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 后续核对已 completed/success，三主 job success、两个 regen skipped；中间 merge run 41286940726 cancelled。当前 main CI 另见本页最上方，真实运行未验证。
 
 规划分支正常 merge 最新 main，保留编码窗口实际交付的 task，再回填完成状态与共享地图；不实施业务、不创建新编码窗口或新任务。以下日期段落保留历史事实，当前状态以本节和独立 task 为准。
 

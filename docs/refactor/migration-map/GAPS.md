@@ -1,8 +1,30 @@
 # 已确认缺口与待核对事项
 
+## 2026-11-01 当前选批：队列与审批恢复
+
+基于 main `9ebce09c4fb72f9318443266b295c9501364de3f` 当前源码复核，两项均 reserved，尚无新实现/CI；原“只记录”原因不作为永久不修理由，用户已要求编写相应功能修复任务。
+
+| 稳定 ID / 原复核 | 当前根因与影响 | 任务 |
+|---|---|---|
+| `GAP-ECONOMIC-QUEUE-001` / [EA-02、EA-03、EA-补-A1](../review/situation-realtime.md) | `apps/api-go/internal/economicqueue/worker.go:78` 直接 wait→active，缺 paused 判定/原子领取与 stalled 恢复；producer/promoteDue 直接写 wait，ScheduleNextRepeat 无 repeat 存活守卫。暂停后新/到期任务可能被消费，崩溃 active 遗留或在途任务复活已删调度 | [ECONOMIC-QUEUE-RECOVERY-001](tasks/ECONOMIC-QUEUE-RECOVERY-001.md) |
+| `GAP-ORG-APPROVAL-001` / [IDENT-03](../review/identity-core.md) | `apps/api-go/internal/identityonboarding/application_store.go:62,105` pending-only + 提前 approved；`application.go:325-378` 组织创建后无可靠申请关联；`invite.go:42-56` 保存邀请后投递出错，申请尚未 linkGeneratedInvite，留下难以续办的半完成状态 | [ORG-APPROVAL-RECOVERY-001](tasks/ORG-APPROVAL-RECOVERY-001.md) |
+
+新任务分别贯通真实协议/持久化与现有 UI，不把入队视为任务完成、发信失败视为数据库回滚。既有租户/平台角色、普通邀请角色限制、业务执行门与必要事务保持；不新增生产修复脚本、全库回填或真实服务验证。
+
+## 2026-11-01 Frontier 与快照缺口按源码范围关闭
+
+核对 main `9ebce09c4fb72f9318443266b295c9501364de3f`；#158 / #159 已合入，两个最终源 head 可达。两个源普通 CI 与最终 main CI 41317912036 的三主 job 均 success，两个 regen skipped。以下两个源码缺口关闭，原报告与 task 的缺失行为保留为修复前证据；不统一关闭其它历史 GAP 或实网观察项。
+
+| 稳定 ID / 原复核 | 当前关闭证据（定位基于本次 main，Go 路径相对 apps/api-go） | 任务 / 实际 merge |
+|---|---|---|
+| `GAP-FRONTIER-SITEMAP-001` / [FN-03](../review/crawl.md) | `internal/crawlmetadata/sitemap_discovery.go:133` 接入具名参数/结果与完整诊断；`internal/crawlfrontiernode/discover.go:902` 传递模式/逐次 timeout，`:841,860` 落地诊断；非 disabled 的 TestFrontierNodeSitemapSeedMaterialization 命中既有集成，Web 控制台展示诊断投影 | [FRONTIER-SITEMAP-001](tasks/FRONTIER-SITEMAP-001.md)，#158 → `9e66e7f56acd` |
+| `GAP-SOURCE-SNAPSHOTS-001` / [NS-02](../review/crawl.md) | `internal/newssources/store.go:176` 仅补当前 org/页缺失行并重读；`cmd/api/news_sources.go:29` 生产注入既有快照能力；runtime 装配保留，既有 scheduler 集成覆盖补齐/重读/空页/错误，Web 覆盖活动/统计与 runtime 同时展示 | [NEWS-SOURCE-SNAPSHOTS-001](tasks/NEWS-SOURCE-SNAPSHOTS-001.md)，#159 → `9ebce09c4fb7` |
+
+只读复核相关模式/配置传递、快照范围与生产接线、返回/UI/CI 去向，不冒充完整代码重审。CI 使用受控 HTTP transport 与 CI 数据库，不等同真实站点/采集验证；未部署、未执行全库回填。规划 #157 仍开放，不改变业务与 GAP 完成事实。
+
 ## 2026-11-01 两项功能缺口按源码范围关闭
 
-核对 main `2e63645d60446d28241ca022ee10caa752a2cb3e`：#155 / #156 已实际合入，两个最终源 head 为 main 祖先，源普通 CI 三主 job 均 success、两个 regen skipped。最新 main CI 41286944654 尚未完成，不把源成功算作 merge head 成功；本次仅关闭下列两个源码缺口，不统一关闭历史 GAP 或真实运行观察项。
+核对业务 merge `2e63645d60446d28241ca022ee10caa752a2cb3e`：#155 / #156 已合入，两个最终源 head 为 main 祖先；源 CI 及该业务 merge CI 41286944654 均已 completed/success，三主 job success、两个 regen skipped。本节仅关闭下列两个源码缺口，不统一关闭历史 GAP 或真实运行观察项。
 
 | 稳定 ID / 原复核 | 当前关闭证据（路径相对 apps/api-go，定位基于本次 main） | 任务 / 实际 merge |
 |---|---|---|

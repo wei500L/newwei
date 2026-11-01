@@ -2,9 +2,27 @@
 
 本文件是用户长期偏好的稳定入口。适用后端迁移规划、执行提示词、进度更新；代码事实仍以最新 main 为准。返回[入口](README.md)。
 
+## 2026-11-01 队列与审批恢复选批
+
+用户在剩余事项建议后要求开始写提示词。本轮仅预留 `ECONOMIC-QUEUE-RECOVERY-001` / `ORG-APPROVAL-RECOVERY-001` 两条完整功能链，main `9ebce09c` 与普通 CI 41317912036 事实不变；新任务不能因已有 main CI success 提前声称自身实现或验证完成。
+
+两项可分窗口执行，经济任务负责 economicqueue/economicdata 与经济 UI，审批任务负责 identityonboarding/必要组织 bootstrap 与审批 UI。共享 CI 仅追加两个独立步骤：审批在现有 user-settings MySQL/Redis 步骤之后、ITEMS-INGEST 注释之前；经济在现有 queue-ops 注释块之前。各自不改对方步骤，第二个合并者正常 merge 最新 main 保留并集，不新建 workflow；语言资源只追加自身 namespace，不整体重排。
+
+审批恢复允许为真实可用链路做最小状态/REST/UI 与必要 schema 增量：持久可信关联、事务边界和投递结果明确，历史恢复需平台管理员显式确认及服务端校验，不能按 slug 猜绑、简单回 pending 或只留人工 SQL 说明。经济任务仅补已确认 BullMQ 暂停/恢复/所有权与相关 repeat 缺口，不造通用锁/重试框架，不扩展全部历史 P3。
+
+编码窗口仅维护自身 task/PR，共享地图由规划 #157 发布；本机不运行安装/构建/测试/迁移/服务，普通 CI 实际执行新集成。其它建议未自动认领，不部署或调用真实邮件/经济供应商。
+
+## 2026-11-01 本轮功能任务完成回填
+
+用户询问是否均已合并后，核对 main `9ebce09c` 与 GitHub：Frontier sitemap #158、新闻源快照 #159 均 merged，两个最终源 head 是 main 祖先，源普通 CI 与最终 main CI 41317912036 的三主 job 均 success，两个 regen skipped 不算通过；中间 merge CI cancelled 单独记录。
+
+`FRONTIER-SITEMAP-001` / `NEWS-SOURCE-SNAPSHOTS-001` 标 merged，FN-03 / NS-02 对应的两个稳定 GAP 按源码范围关闭，不按原 reserved 提示词重复派发。编码 PR 未提交自身 task 页，本次由规划窗口按实际交付补记；规划分支正常 merge main，业务代码与 main 保持一致，仅维护文档。
+
+规划 #157 仍 OPEN/Ready，和两项业务 PR 的完成分别记录，不因用户询问状态自动合并。下一检查点为文档回填进入 main；未创建新编码窗口/任务、未清理历史工作树、未部署或实网验证，不重算覆盖数。
+
 ## 2026-11-01 两项功能修复完成回填
 
-用户告知任务完成后，核对 main `2e63645d`、GitHub merge 与生产接线：EX-05 表格修复 #155、M-04 监控地理编码 #156 均已合入，两个最终源 head 的普通 CI 三主 job success，regen skipped 不算通过；最终 main CI 41286944654 尚未完成，单独记录。
+用户告知任务完成后，核对 main `2e63645d`、GitHub merge 与生产接线：EX-05 表格修复 #155、M-04 监控地理编码 #156 均已合入，两个最终源 head 及业务 merge CI 41286944654 的三主 job 均 success，regen skipped 不算通过；当前 main CI 另记。
 
 `CRAWL-TABLE-NORMALIZATION-001` / `MONITOR-GEOCODING-001` 均 merged，对应两个 GAP 按源码范围关闭，原文件占用释放，不按旧 reserved/pr_open 或历史提示词重复派发。编码窗口实际交付记录予以保留，规划分支正常 merge main 后回填共享地图；未清理历史工作树、未创建新窗口或新业务任务。
 
