@@ -62,9 +62,24 @@ func (s *Service) discoverFromSitemapCandidates(ctx context.Context, config norm
 // same depth-first walk, but every page URL keeps the publish timestamp the
 // sitemap carried. The news-source scheduler needs the timestamp for its
 // freshness window and for the effective-time sort; the URL-only discovery
-// paths keep their existing projection.
+// paths keep their existing projection. It keeps the historical default mode
+// ("robots") and records no diagnostics.
 func (s *Service) discoverFromSitemapCandidateEntries(ctx context.Context, config normalizedConfig) ([]DiscoveryCandidate, error) {
-	collected := s.walkSitemaps(ctx, config)
+	return s.discoverFromSitemapCandidateEntriesWithDiagnostics(ctx, config, SitemapDiscoveryModeRobots, nil), nil
+}
+
+// discoverFromSitemapCandidateEntriesWithDiagnostics runs the depth-first walk
+// in the requested discovery mode and, when diagnostics is non-nil, records the
+// seed method, the attempted/fetched/parsed sitemaps and every collected
+// timestamp. CandidateCount is filled by the caller because the source sets it
+// after the walk returns.
+func (s *Service) discoverFromSitemapCandidateEntriesWithDiagnostics(
+	ctx context.Context,
+	config normalizedConfig,
+	mode SitemapDiscoveryMode,
+	diagnostics *SitemapDiscoveryDiagnostics,
+) []DiscoveryCandidate {
+	collected := s.walkSitemapsInMode(ctx, config, mode, diagnostics)
 	urls := collected.slice(config.maxURLs)
 	candidates := make([]DiscoveryCandidate, 0, len(urls))
 	for _, entry := range urls {
@@ -75,17 +90,32 @@ func (s *Service) discoverFromSitemapCandidateEntries(ctx context.Context, confi
 			CrawledAtTs:   crawledAtTs,
 		})
 	}
-	return candidates, nil
+	return candidates
 }
 
-// walkSitemaps runs the shared depth-first sitemap traversal and returns the
-// first-seen URL set with the timestamps recorded alongside it.
+// walkSitemaps runs the shared depth-first sitemap traversal with the historical
+// default mode and returns the first-seen URL set with the timestamps recorded
+// alongside it.
 func (s *Service) walkSitemaps(ctx context.Context, config normalizedConfig) *orderedURLSet {
+	return s.walkSitemapsInMode(ctx, config, SitemapDiscoveryModeRobots, nil)
+}
+
+// walkSitemapsInMode is the depth-first traversal with an explicit discovery
+// mode and optional diagnostics. The attempted/fetched/parsed counters are
+// recorded at the same points the NestJS source records them: a seed sitemap is
+// attempted before its fetch, a fetched seed sitemap is recorded on success, and
+// a child sitemap is only recorded once its fetch succeeds.
+func (s *Service) walkSitemapsInMode(
+	ctx context.Context,
+	config normalizedConfig,
+	mode SitemapDiscoveryMode,
+	diagnostics *SitemapDiscoveryDiagnostics,
+) *orderedURLSet {
 	collected := newOrderedURLSet()
 	if config.domain == "" {
 		return collected
 	}
-	seeds := s.resolveSitemapSeedURLs(ctx, config.domain, config.requestTimeoutMs)
+	seeds := s.resolveSitemapSeedURLs(ctx, config.domain, config.requestTimeoutMs, mode, diagnostics)
 
 	visited := map[string]bool{}
 	for _, sitemapURL := range seeds {
@@ -96,11 +126,17 @@ func (s *Service) walkSitemaps(ctx context.Context, config normalizedConfig) *or
 			continue
 		}
 		visited[sitemapURL] = true
+		if diagnostics != nil {
+			diagnostics.AttemptedSitemaps = append(diagnostics.AttemptedSitemaps, sitemapURL)
+		}
 		xmlBody, ok := s.fetchMaybe(ctx, sitemapURL, config.requestTimeoutMs)
 		if !ok {
 			continue
 		}
-		s.extractFromSitemapPayload(ctx, sitemapURL, xmlBody, config, collected, visited)
+		if diagnostics != nil {
+			diagnostics.FetchedSitemaps = append(diagnostics.FetchedSitemaps, sitemapURL)
+		}
+		s.extractFromSitemapPayload(ctx, sitemapURL, xmlBody, config, collected, visited, diagnostics)
 	}
 	return collected
 }
@@ -115,10 +151,17 @@ func (s *Service) extractFromSitemapPayload(
 	config normalizedConfig,
 	collected *orderedURLSet,
 	visited map[string]bool,
+	diagnostics *SitemapDiscoveryDiagnostics,
 ) {
 	payload, ok := s.parseSitemapPayload(ctx, sitemapURL, xmlBody)
 	if !ok {
 		return
+	}
+	// One parsed document, one parsedSitemaps increment. A fetched but malformed
+	// sitemap stays in fetchedSitemaps without being counted here, exactly like
+	// the source's `if (!parsed) return; diagnostics.parsedSitemaps += 1`.
+	if diagnostics != nil {
+		diagnostics.ParsedSitemaps++
 	}
 	// One crawl timestamp per sitemap document, exactly like the source's
 	// `const crawledAtTs = Date.now()` right after the payload is parsed. The
@@ -166,19 +209,50 @@ func (s *Service) extractFromSitemapPayload(
 		if !ok {
 			continue
 		}
-		s.extractFromSitemapPayload(ctx, normalized, xmlChild, config, collected, visited)
+		// A child sitemap is only recorded as attempted+fetched once its fetch
+		// succeeds. This matches the source, which pushes both lists inside the
+		// `if (xmlChild)` branch rather than before the request.
+		if diagnostics != nil {
+			diagnostics.AttemptedSitemaps = append(diagnostics.AttemptedSitemaps, normalized)
+			diagnostics.FetchedSitemaps = append(diagnostics.FetchedSitemaps, normalized)
+		}
+		s.extractFromSitemapPayload(ctx, normalized, xmlChild, config, collected, visited, diagnostics)
 	}
 }
 
-// resolveSitemapSeedURLs mirrors resolveSitemapSeedUrls for the default robots
-// discovery mode: robots.txt Sitemap lines win, and the ordered common paths are
-// tried only when robots.txt yields none. A later fetch failure never appends
+// resolveSitemapSeedURLs mirrors resolveSitemapSeedUrls. "robots" and
+// "sitemap_only" both read robots.txt and fall back to the ordered common paths
+// when robots declares no sitemap; "common_paths" skips the robots probe
+// entirely (it still reports the robots URL in the diagnostics, as the source
+// does); "disabled" returns no seed at all. A later fetch failure never appends
 // the common paths to an already discovered list.
-func (s *Service) resolveSitemapSeedURLs(ctx context.Context, origin string, timeoutMs int) []string {
+func (s *Service) resolveSitemapSeedURLs(
+	ctx context.Context,
+	origin string,
+	timeoutMs int,
+	mode SitemapDiscoveryMode,
+	diagnostics *SitemapDiscoveryDiagnostics,
+) []string {
+	if mode == SitemapDiscoveryModeDisabled {
+		return nil
+	}
 	robotsURL := joinURL(origin, "robots.txt")
-	discovered := s.discoverRobotsSitemapURLs(ctx, robotsURL, timeoutMs)
+	if diagnostics != nil {
+		diagnostics.RobotsURL = robotsURL
+	}
+	var discovered []string
+	if mode == SitemapDiscoveryModeRobots || mode == SitemapDiscoveryModeSitemapOnly {
+		discovered = s.discoverRobotsSitemapURLs(ctx, robotsURL, timeoutMs)
+	}
 	if len(discovered) > 0 {
+		if diagnostics != nil {
+			diagnostics.SeedMethod = SitemapSeedMethodRobots
+			diagnostics.RobotsDiscoveredSitemaps = append(diagnostics.RobotsDiscoveredSitemaps, discovered...)
+		}
 		return discovered
+	}
+	if diagnostics != nil {
+		diagnostics.SeedMethod = SitemapSeedMethodCommonPaths
 	}
 	seeds := make([]string, 0, len(defaultSitemapSeeds))
 	for _, seed := range defaultSitemapSeeds {

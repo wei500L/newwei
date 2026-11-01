@@ -6,13 +6,13 @@ package crawlfrontiernode
 //     wrapper (crawl-frontier.service.ts 3508-3545) that stamps the discovery
 //     provenance (sourceTier/freshnessBucket/synthetic-list paths) onto the
 //     candidates the node chain persists;
-//   - the `seedDiscovery.mode = "disabled"` gate of discoverSitemapSeeds, which
-//     is the one sitemap discovery mode the Go crawler chain cannot express
-//     (crawl-metadata.service.ts 2361-2400).
+//   - discoverSitemapSeeds' diagnostics conversion and its unconfigured
+//     metadata seam, which exercise the accurate empty diagnostics shape for the
+//     disabled/robots modes without a sitemap service.
 //
 // Both run without MySQL/Redis/Mongo: the extraction is a pure function of the
-// crawl4ai result links plus the profile config, and the disabled gate answers
-// before the sitemap service is touched.
+// crawl4ai result links plus the profile config, and the unconfigured sitemap
+// seam answers with the typed empty diagnostics before any fetch.
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawl4ai"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlmetadata"
 )
 
 // discoverTestNode is the depth-0 home node the extraction fixtures run on.
@@ -209,46 +210,83 @@ func TestExtractFrontierNodeCandidatesWithoutSyntheticList(t *testing.T) {
 	}
 }
 
-func TestDiscoverSitemapSeedsHonorsDisabledMode(t *testing.T) {
+func TestDiscoverSitemapSeedsDiagnosticsShapeWithoutMetadata(t *testing.T) {
 	service := testService()
-	// testService has no sitemap discovery service, so only the disabled gate can
-	// produce a diagnostics document here.
-	result, err := service.discoverSitemapSeeds(context.Background(), sitemapSeedInput{
-		Domain:        "https://example.com",
-		MaxURLs:       10,
-		DiscoveryMode: "disabled",
+	// testService has no sitemap discovery service, so this exercises the
+	// unconfigured seam: every mode must still return the accurate empty
+	// diagnostics shape rather than a nil document.
+	cases := []struct {
+		mode       string
+		wantMode   string
+		wantMethod string
+	}{
+		{mode: "disabled", wantMode: "disabled", wantMethod: "none"},
+		{mode: "robots", wantMode: "robots", wantMethod: "none"},
+		// An unknown value normalizes to the historical robots default.
+		{mode: "bogus", wantMode: "robots", wantMethod: "none"},
+	}
+	for _, tc := range cases {
+		result, err := service.discoverSitemapSeeds(context.Background(), sitemapSeedInput{
+			Domain: "https://example.com", MaxURLs: 10, DiscoveryMode: tc.mode,
+		})
+		if err != nil {
+			t.Fatalf("%s: discover sitemap seeds: %v", tc.mode, err)
+		}
+		if result == nil || result.Candidates == nil || len(result.Candidates) != 0 {
+			t.Fatalf("%s: candidates = %v, want the empty array", tc.mode, result)
+		}
+		diagnostics := result.Diagnostics
+		if diagnostics == nil {
+			t.Fatalf("%s: no diagnostics", tc.mode)
+		}
+		if mode, _ := diagnostics.String("discoveryMode"); mode != tc.wantMode {
+			t.Fatalf("%s: discoveryMode = %q, want %q", tc.mode, mode, tc.wantMode)
+		}
+		if method, _ := diagnostics.String("seedMethod"); method != tc.wantMethod {
+			t.Fatalf("%s: seedMethod = %q, want %q", tc.mode, method, tc.wantMethod)
+		}
+		if count, ok := diagnostics.Number("candidateCount"); !ok || count != 0 {
+			t.Fatalf("%s: candidateCount = %v (present=%v), want 0", tc.mode, count, ok)
+		}
+		for _, key := range []string{"robotsDiscoveredSitemaps", "attemptedSitemaps", "fetchedSitemaps"} {
+			if values, ok := diagnostics.StringsKeepEmpty(key); !ok || len(values) != 0 {
+				t.Fatalf("%s: %s = %v (present=%v), want []", tc.mode, key, values, ok)
+			}
+		}
+		if parsed, ok := diagnostics.Number("parsedSitemaps"); !ok || parsed != 0 {
+			t.Fatalf("%s: parsedSitemaps = %v (present=%v), want 0", tc.mode, parsed, ok)
+		}
+	}
+}
+
+func TestSitemapDiagnosticsObjectKeyShape(t *testing.T) {
+	object := sitemapDiagnosticsObject(crawlmetadata.SitemapDiscoveryDiagnostics{
+		DiscoveryMode:            crawlmetadata.SitemapDiscoveryModeRobots,
+		SeedMethod:               crawlmetadata.SitemapSeedMethodRobots,
+		RobotsURL:                "https://example.com/robots.txt",
+		RobotsDiscoveredSitemaps: []string{"https://example.com/sitemap.xml"},
+		AttemptedSitemaps:        []string{"https://example.com/sitemap.xml"},
+		FetchedSitemaps:          []string{"https://example.com/sitemap.xml"},
+		ParsedSitemaps:           1,
+		CandidateCount:           2,
 	})
+	raw, err := object.MarshalJSON()
 	if err != nil {
-		t.Fatalf("discover sitemap seeds: %v", err)
+		t.Fatalf("marshal: %v", err)
 	}
-	if result == nil {
-		t.Fatal("disabled mode returned no result")
-	}
-	if result.Candidates == nil || len(result.Candidates) != 0 {
-		t.Fatalf("disabled mode candidates = %v, want the empty array", result.Candidates)
-	}
-	if result.Diagnostics == nil {
-		t.Fatal("disabled mode returned no diagnostics")
-	}
-	if mode, _ := result.Diagnostics.String("discoveryMode"); mode != "disabled" {
-		t.Fatalf("diagnostics discoveryMode = %q, want disabled", mode)
-	}
-	if count, ok := result.Diagnostics.Number("candidateCount"); !ok || count != 0 {
-		t.Fatalf("diagnostics candidateCount = %v (present=%v), want 0", count, ok)
+	want := `{"discoveryMode":"robots","seedMethod":"robots","robotsUrl":"https://example.com/robots.txt","robotsDiscoveredSitemaps":["https://example.com/sitemap.xml"],"attemptedSitemaps":["https://example.com/sitemap.xml"],"fetchedSitemaps":["https://example.com/sitemap.xml"],"parsedSitemaps":1,"candidateCount":2}`
+	if string(raw) != want {
+		t.Fatalf("diagnostics object = %s", raw)
 	}
 
-	// A discovery mode that is not disabled goes on to the sitemap service, which
-	// answers with the bare empty result when it is not configured. The difference
-	// is what proves the gate runs before any fetch.
-	robots, err := service.discoverSitemapSeeds(context.Background(), sitemapSeedInput{
-		Domain:        "https://example.com",
-		MaxURLs:       10,
-		DiscoveryMode: "robots",
-	})
+	// An absent robotsUrl is omitted and the empty lists serialize as [].
+	empty := sitemapDiagnosticsObject(crawlmetadata.NewSitemapDiscoveryDiagnostics(crawlmetadata.SitemapDiscoveryModeDisabled))
+	emptyRaw, err := empty.MarshalJSON()
 	if err != nil {
-		t.Fatalf("discover sitemap seeds (robots): %v", err)
+		t.Fatalf("marshal empty: %v", err)
 	}
-	if robots == nil || robots.Diagnostics != nil {
-		t.Fatalf("robots mode diagnostics = %v, want the unconfigured empty result", robots)
+	emptyWant := `{"discoveryMode":"disabled","seedMethod":"none","robotsDiscoveredSitemaps":[],"attemptedSitemaps":[],"fetchedSitemaps":[],"parsedSitemaps":0,"candidateCount":0}`
+	if string(emptyRaw) != emptyWant {
+		t.Fatalf("empty diagnostics object = %s", emptyRaw)
 	}
 }
