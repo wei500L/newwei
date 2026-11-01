@@ -1,6 +1,8 @@
 # GO-DEFAULT-CUTOVER-001 · 仓库默认运行链切到 Go
 
-- 状态：`pr_open`；Ready PR [#151](https://github.com/wei500L/newwei/pull/151)，实现 head `b15df1c2d57fd77621a33fe0c73abe268264779b`，普通 CI [run 41198396244](https://github.com/wei500L/newwei/actions/runs/41198396244) `success`（`verify` / `vector-integration` / `api-go-user-settings-integration` 均 success，两个 regen job skipped 不计通过）；未合并。
+- 状态：`merged`；[PR #151](https://github.com/wei500L/newwei/pull/151) 于 2026-10-31 实际合入 main，merge `fcf1e5334acb0350ea36535c48c4131df7c9698a`；最终源 head `e48a25725603e2d7a02088b696599dbf28b0131b` 已验证祖先关系。
+- 最终源 head [普通 CI 41199618477](https://github.com/wei500L/newwei/actions/runs/41199618477) 三主要 job success，两个 regen skipped；[merge CI 41200907795](https://github.com/wei500L/newwei/actions/runs/41200907795) 核对时尚未完成，不能称 merge head 已通过。下方实现 head/源交付记录保留为历史。
+- 原跟进提示词已执行并包含在实际 merge 内，不再重复派发；GAP-DEV-CONFIG-001 源码/配置层关闭，真实运行/部署仍未核实。
 - 规划基线：`f15f598d4358b4c9823054ef5a355618e1480a4e`；开工实际基线 `origin/main = 385c887e8cda2df6a3fadd2109c6641ae62cb6ee`（#150 合入后）。
 - 前置：[GO-CUTOVER-PREREQS-001](GO-CUTOVER-PREREQS-001.md) 四项已合入 main。
 - 执行提示词：[GO-DEFAULT-CUTOVER-001.prompt.md](GO-DEFAULT-CUTOVER-001.prompt.md)（在规划 PR #149）。
@@ -58,4 +60,4 @@
 
 ## 下一阶段
 
-本批合入后才规划删除 `apps/api` / `apps/vector` / `apps/ais-relay` 与 legacyproxy/shadow/canary，并迁移 GraphQL SDL / OpenAPI / 鉴权快照、生成链与 CI 基线。本批不提前删除。
+本批已合入，下一阶段按 [GO-CONTRACT-TOOLING-001](GO-CONTRACT-TOOLING-001.md) → [GO-ONLY-RUNTIME-001](GO-ONLY-RUNTIME-001.md) → [GO-NODE-RETIRE-001](GO-NODE-RETIRE-001.md) 串行执行。先保留契约/工具/协议夹具与有效 Go 验证，再移除分流，最后删三个 Node app 并完成构建/CI；#151 自身未做这些删除。

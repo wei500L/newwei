@@ -1,6 +1,7 @@
 # GO-CUTOVER-PREREQS-001 · 补齐 Go 切默认前的横切能力
 
-- 状态：`pr_open`；编码已完成并推送，等待普通 CI 与复核。
+- 状态：`merged`；2026-10-31 复核 [PR #150](https://github.com/wei500L/newwei/pull/150) 已于 2026-10-27 合入，实际 merge `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`。原交付内容保留，缺口完整性与 task 合并状态分开记录。
+- 当前证据：源 head `4f21c0255545f1709a469b7c6c16708a8f25e2ab` 的 [普通 CI 40551203359](https://github.com/wei500L/newwei/actions/runs/40551203359) 三主要 job success；merge SHA 的 [普通 CI 40557202479](https://github.com/wei500L/newwei/actions/runs/40557202479) verify 因队列运维 Web 测试失败，两个集成 success。自写 500/unknown/stack 异常记录残留仍保留，不因 merged 宣称全部关闭。以下旧 head/CI 是原交付快照。
 - 规划基线：`f15f598d4358b4c9823054ef5a355618e1480a4e`；编码起点：`origin/main` = `bdbb581ac949dcdf43e7137c7624b6a8b04e8b31`（2026-10-27）。
 - 来源：[#148](https://github.com/wei500L/newwei/pull/148) §7 第 1–4 项；四个稳定缺口见 [GAPS](../GAPS.md#2026-10-27-切默认前增量)。
 - 执行提示词：[GO-CUTOVER-PREREQS-001.prompt.md](GO-CUTOVER-PREREQS-001.prompt.md)（随规划 PR #149 提供，本分支只带入任务 `.md`）。

@@ -1,6 +1,50 @@
 # 后端迁移地图
 
-**当前状态摘要（基线 `dcbe563b`，2026-10-21）**
+## 2026-11-01 两项功能修复均已合入
+
+当前 main `2e63645d60446d28241ca022ee10caa752a2cb3e`，已核对 GitHub 实际 merge 与两个最终源 head 的祖先关系：
+
+- [CRAWL-TABLE-NORMALIZATION-001](tasks/CRAWL-TABLE-NORMALIZATION-001.md)：[#155](https://github.com/wei500L/newwei/pull/155) → `2e63645d6044`，表格归一化、Mongo 保存、历史 raw 读取兼容与详情 UI 行为覆盖已落地；最终源 head `6da27a40a552` 的[普通 CI 41249733335](https://github.com/wei500L/newwei/actions/runs/41249733335) 三主 job success。
+- [MONITOR-GEOCODING-001](tasks/MONITOR-GEOCODING-001.md)：[#156](https://github.com/wei500L/newwei/pull/156) → `fc9f823a34ba`，共享配置/缓存/限速的生产接线与监控预览、创建、更新、Web 行为覆盖已落地；最终源 head `3b06403823be` 的[普通 CI 41251389520](https://github.com/wei500L/newwei/actions/runs/41251389520) 三主 job success。
+- 两个源 CI 的 regen job 均 skipped，不算通过。最新 main [CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 在本次核对时尚未完成，不能以源 PR 成功替代；中间 merge `fc9f823a` 的 run 41286940726 cancelled。
+- 两 task 标 merged，两个 GAP 按源码范围关闭，原[提示词](tasks/README.md)已执行，不再占用/重复派发。编码窗口的交付记录予以保留；共享地图由规划 PR #149 回填。
+
+本轮只做相关生产接线、UI/CI 去向和 GitHub 证据的静态核对，不冒充全量业务审查；未部署、未实网验证、不重算覆盖数。下一检查点是最终 main CI 与规划文档回填，不自动新增业务、部署或工具 Go 化任务。
+
+## 2026-11-01 收口：三项退役任务均已合入
+
+- 最新源码基线 `e04fc4d8bb54596afd302a309ebc852c7676d958`：#152 契约/工具迁出、#153 Go 独立运行、#154 三个 Node 后端删除均 merged，源 head 已逐个核实 main 祖先关系；各源普通 CI 三主要 job success。完整 SHA、run 与验证边界见 [收口记录](GO-MIGRATION-CLOSEOUT.md)。
+- main 已无 `apps/api` / `apps/vector` / `apps/ais-relay` 和 shadow/canary 实现；`legacyproxy` 只是保留旧包名的纯 Go 路由器，不再向 Nest 转发。默认开发/编排/构建/CI 已使用 Go；Prisma/seed、Web 与必要 Node 工具按原范围保留。
+- 最新 main [普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 已完成，精确 merge head `e04fc4d8` 三主要 job success，两个 regen skipped；源码退役与该 merge head 的 CI 分别有证据，未部署/实网验证。
+- 原三份提示词已完成，不再重复派发或按下方 reserved/planned 快照占用。GAP-EXCEPTION-WIRING-001 残留和真实多实例/外部验证边界继续保留；没有部署、真实流量或实网验证。
+- 本次只回填已核事实，不重算全域覆盖、不全文重审业务。规划 PR #149 发布本记录；下方旧日期/统计/默认/任务状态均为历史快照。
+
+## 2026-10-31 #151 合并后：默认 Go 已落地，进入退役三步
+
+- 最新核对 main：`fcf1e5334acb0350ea36535c48c4131df7c9698a`，[#151](https://github.com/wei500L/newwei/pull/151) 已实际 merged，包含后续本地配置修补；源 head `e48a25725603e2d7a02088b696599dbf28b0131b` 已验证为 main 祖先。[源 head 普通 CI 41199618477](https://github.com/wei500L/newwei/actions/runs/41199618477) 三主要 job success；[merge CI 41200907795](https://github.com/wei500L/newwei/actions/runs/41200907795) 在核对时尚未完成，skipped 不算通过。
+- 仓库默认已是 Go：根示例 API 4020、新 Socket.IO 路径，137 个迁移 mode 为 go/reject；本地 `dev.mts` 读取根环境并按进程配置端口；compose 默认 Go 服务。Node 后端和显式 legacy 回退仍保留，尚未进入源码删除；没有部署或真实流量/外部服务验证。
+- [GO-DEFAULT-CUTOVER-001](tasks/GO-DEFAULT-CUTOVER-001.md) 按实际 merge 标 `merged`，原跟进提示词已完成，不再重复派。GAP-DEV-CONFIG-001 的已派缺口按源码修补关闭，异常事件残留另记，不能因此统一关闭全部 GAP。
+- 退役分三步**串行**：[契约/工具迁出](tasks/GO-CONTRACT-TOOLING-001.md) reserved（[提示词](tasks/GO-CONTRACT-TOOLING-001.prompt.md)）；[Go 去迁移分流](tasks/GO-ONLY-RUNTIME-001.md) planned（[提示词](tasks/GO-ONLY-RUNTIME-001.prompt.md)）；[删 Node 与 CI 收尾](tasks/GO-NODE-RETIRE-001.md) planned（[提示词](tasks/GO-NODE-RETIRE-001.prompt.md)）。后两项提示词预先提供，必须等各自前置实际合入与 CI，不能并开共享文件。
+- 本次只核默认补修与退役依赖，不重算覆盖数、不全文重审领域；规划发布仍用 PR #149，只维护文档，不直接实施退役业务。下方各时间段按历史快照理解。
+
+## 2026-10-31 完成核对与继续提示词
+
+- main 已核实为 `385c887e8cda2df6a3fadd2109c6641ae62cb6ee`（[#150](https://github.com/wei500L/newwei/pull/150) 实际 merge）；前置修补主体已合入。源 head `4f21c025` 的普通 CI 40551203359 三主要 job success；main CI 40557202479 失败在队列运维 Web 测试、两个集成 success，不能称 main 全绿。
+- 默认切 Go [#151](https://github.com/wei500L/newwei/pull/151) 仍 OPEN/Ready，head `b97e181aa7248175ed3c91daf9a258dba6289f96`，[普通 CI 40576119903](https://github.com/wei500L/newwei/actions/runs/40576119903) 三主要 job success、两个 regen skipped。当前 main 默认尚未切 Go；#151 的实现不能提前算入 main。
+- 已确认本地开发示例与新默认不一致，见 [GAP-DEV-CONFIG-001](GAPS.md#2026-10-31-完成核对与本地默认链缺口)。[继续提示词](tasks/GO-DEFAULT-CUTOVER-001.followup.prompt.md) 已发出：在原 worktree 更新 #151，补根示例、Go 环境来源、端口与 dev:legacy；不新开重复任务，不直接实施业务。
+- #150 异常记录仍有自写 500/unknown/stack 残留，不重新派四项整批，也不伪称异常覆盖完整。删除 Node 后端、双轨结构与迁移契约/CI 继续等 #151 补齐并合入后再派。
+- 本次只核相关增量与配置链，不重算全域注册覆盖、不冒充全文复审；不部署、不连接真实服务，未修改真实 `.env`。
+
+## 2026-10-27 增量与下一批
+
+- 本次只核对 `origin/main = f15f598d4358b4c9823054ef5a355618e1480a4e` 的合并、下一批相关源码与默认链，未重建全域覆盖数，也未全文重审五域。下方 `dcbe563b` 统计保留为历史快照。
+- [#148](https://github.com/wei500L/newwei/pull/148) 实际 merge `0a48babea69700c7f9cd1bf2262f25d414469527` 已包含 #142–#147（五域审查修复 + AIS relay Go）；六个源 head 均已验证为 main 祖先。当前无开放 PR（本规划发布前快照），不再派整合任务。main 后续三次提交为新增/扩充 self-hosted smoke，以及把既有 workflow 的 runs-on 切到自托管 runner，未改相关业务源码。
+- 整合 head `79220a477cc8dad7df387fa67442c3bcd5d6a49e` 的[普通 CI](https://github.com/wei500L/newwei/actions/runs/40513400923) attempt 2 三个主要 job success，两个 regen skipped。最新 main 的[普通 CI](https://github.com/wei500L/newwei/actions/runs/40518886959) 在 2026-10-27 17:21 MSK 交付复核时 **cancelled**（verify failure、vector-integration success、api-go-user-settings-integration cancelled）；原因未证实，下一编码窗口先查精确 head/job。上一 head `cc3782c0` 的 run 40518448341 亦 cancelled，Self-hosted Smoke success 不代替普通 CI。不得把其他 head 的结果算作最新 main 通过。
+- **下一步先补四项，再改默认**：[GO-CUTOVER-PREREQS-001](tasks/GO-CUTOVER-PREREQS-001.md) 已 reserved，含安全头、三类指标的生产接线、REST/GraphQL 异常事件、`POST /api/items` 请求体契约；[提示词](tasks/GO-CUTOVER-PREREQS-001.prompt.md)。四项根因见 [GAPS](GAPS.md#2026-10-27-切默认前增量)。不是重迁队列/DLQ/NewsNow/brief/outbox。
+- 后继 [GO-DEFAULT-CUTOVER-001](tasks/GO-DEFAULT-CUTOVER-001.md) planned，[提示词](tasks/GO-DEFAULT-CUTOVER-001.prompt.md) 已备好，须等前置合入与 CI 后再执行：config + Web + 三项 Go 服务 + migration/index 工具职责 + 显式 legacy 回退作为一条链完成。两任务串行，不并开抢共享接线。
+- 当前默认仍指 Nest / Node vector / Node AIS；本规划没有修改默认或业务代码。目标为仓库默认转 Go，保留 Node 回退代码，后续再删；**只做静态审查与普通 CI，不部署、不连接真实外部服务**。Prisma/seed 可继续作为 Node 工具，不能声称工具链已全 Go。
+
+**历史状态摘要（基线 `dcbe563b`，2026-10-21；现行增量以上方为准）**
 
 - 基线：`origin/main = dcbe563b917f`（#136 整合 #133–#135）；上一版地图基线的 `91e759b4` 已成历史，见 [HISTORY.md](HISTORY.md)。
 - 开放 PR：无（`gh pr list --state open` 为空）。

@@ -1,6 +1,7 @@
 # GO-ONLY-RUNTIME-001 · Go 运行时移除迁移分流
 
-- 状态：`in_progress`（2026-10-31，本批实施；Ready PR 见下，未合并）。
+- 状态：`merged`；2026-11-01 核实 [#153](https://github.com/wei500L/newwei/pull/153) 实际 merge `e72440e186acbdf671be904cc98d1dd2f9858cbf`，最终源 head `fd571dac7a09630985af85c12c7b1aa45f5c6773` 已是 main 祖先；[普通 CI 41213872179](https://github.com/wei500L/newwei/actions/runs/41213872179) 三主 job success，两个 regen skipped。下方 pending/Ready 为原交付快照。
+- 后继 #154 已合入，当前 `legacyproxy` 是纯 Go 路由器，仅保留旧包名；完整落地/CI/保留边界见 [收口记录](../GO-MIGRATION-CLOSEOUT.md)，不再派同一分流删除任务。
 - 前置：[GO-CONTRACT-TOOLING-001](GO-CONTRACT-TOOLING-001.md) 已合入 main：PR #152 → merge `f22e36ae6fabf72c501ae2ad573eb3323fa0db35`，普通 CI（verify / vector-integration / api-go-user-settings-integration）success，两个 regen job skipped。
 - 基线：`origin/main = f22e36ae`；规划基线 `fcf1e533` 的 #150/#151 已在 main。
 - 分支 / worktree：`codex/go-only-runtime` / `/Users/oo/project/newwei-go-only-runtime`。

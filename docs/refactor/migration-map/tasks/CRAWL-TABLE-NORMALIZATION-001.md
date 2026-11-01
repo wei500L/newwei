@@ -1,6 +1,7 @@
 # CRAWL-TABLE-NORMALIZATION-001 · 采集表格保存与展示闭环
 
-- 状态：`pr_open`；2026-11-01 由编码窗口交付 Ready [PR #155](https://github.com/wei500L/newwei/pull/155)，未合 main、不启用 auto-merge。业务/代码 head `8ef0d031b8ac4f53e8d4fc73d9863a5ecdd69fc2`，普通 CI [41248815858](https://github.com/wei500L/newwei/actions/runs/41248815858) 中 `verify`/`vector-integration`/`api-go-user-settings-integration` 三个主 job success，`go-modules-regen`/`contract-baseline-regen` skipped（skipped 不算通过）。本文件回填提交仅改 docs，最终 head 与对应 CI 以 PR 为准。
+- 状态：`merged`；2026-11-01 核实 [#155](https://github.com/wei500L/newwei/pull/155) 实际 merge `2e63645d60446d28241ca022ee10caa752a2cb3e`；最终源 head `6da27a40a5520b47f6daba042e4caff56c2d495d` 已是 main 祖先，[源 head 普通 CI 41249733335](https://github.com/wei500L/newwei/actions/runs/41249733335) 三主 job success，两个 regen skipped。此前代码 head `8ef0d031` 的 run 41248815858 亦 success；不再按原 pr_open 重派。
+- 最新 main [CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 核对时尚未完成，源 head 不替代 merge head；`GAP-CRAWL-TABLES-001` 按本 task 的源码范围关闭，未部署/实网验证。
 - 缺口：`GAP-CRAWL-TABLES-001`，对应[采集复核 EX-05](../../review/crawl.md)。这是 Go 上的功能修复，不重做迁移退役。
 - 核对基线：main `e04fc4d8bb54596afd302a309ebc852c7676d958`；[普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 三主 job success，两个 regen skipped。开工已 fetch origin/main 并核对开放 PR #149（规划）与 worktree，无本任务业务占用。
 - 分支：`codex/fix-crawl-tables`；worktree `/Users/oo/project/newwei-crawl-tables`，从 `e04fc4d8` 创建。未复用其他认领工作树。
