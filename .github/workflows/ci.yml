@@ -545,9 +545,13 @@ jobs:
       # run 已取消、不可重试失败（节点 failed、run lastError、错误文本契约）、
       # crawl4ai 503（errors.As 取 *crawl4ai.Error.Status）、hot 降级 normal，
       # 以及 B1（同一 run 两个节点并发完成时元数据补丁都保留）。crawl4ai 由本进程
-      # httptest 提供；种子发现分支的集成用例把站点配置固定为 frontier_only，只断言
-      # seed_branch_skipped，不访问外部站点（crawlmetadata 没有可注入的 transport，
-      # sitemap 抓取本身未在本步骤覆盖）。不连接真实 crawl4ai，也没有用生产数据比对
+      # httptest 提供。种子发现新增非 disabled 的 sitemap 成功场景
+      # （TestFrontierNodeSitemapSeedMaterialization）：向 Service 注入一个以进程内
+      # stub transport 构造的 crawlmetadata.Discovery（仅替换 sitemap/robots 的 HTTP
+      # 传输，逐跳 SSRF/重定向校验仍走 fetchWithStatus），真实执行 robots→sitemap
+      # 抓取、候选物化为 queued 子节点，并断言 seedMethod/完整 sitemap 诊断进入
+      # 节点与 run 元数据及读侧投影；沿用的 frontier_only 用例仍只断言
+      # seed_branch_skipped。不连接真实 crawl4ai/真实站点，也没有用生产数据比对
       # 结果；本包只交付库，不消费队列、不新增开关。
       - name: MySQL/Redis/Mongo Frontier node execution integration tests
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/crawlfrontiernode/ -run 'TestFrontierNode' -v -timeout 10m

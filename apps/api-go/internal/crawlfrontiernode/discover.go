@@ -873,7 +873,8 @@ func (s *Service) discoverSeedNodes(ctx context.Context, input discoverSeedNodes
 
 // sitemapSeedInput is discoverSitemap's argument object
 // (crawl-metadata.service.ts 243): {domain, maxUrls, requestTimeoutMs?,
-// freshnessCutoffTs?, discoveryMode?}.
+// freshnessCutoffTs?, discoveryMode?}. The seed branch never passes a pattern,
+// so the field is not part of this object.
 type sitemapSeedInput struct {
 	Domain            string
 	MaxURLs           int
@@ -891,54 +892,69 @@ type sitemapSeedResult struct {
 }
 
 // discoverSitemapSeeds is the sitemap discovery entry point of this slice. It
-// wraps crawlmetadata.Discovery.DiscoverSitemapSeedCandidates
-// (crawlmetadata/discover_seed.go:16), which is the only Go path that returns the
-// publish timestamps the seed freshness window and the candidate metadata need.
-//
-// Three NestJS inputs have no Go equivalent yet, so they are accepted but not
-// forwarded:
-//   - RequestTimeoutMs: crawlmetadata uses the shared settings timeout
-//     (normalize.go:61-64) and has no per-call override;
-//   - DiscoveryMode: the Go sitemap chain always reads robots.txt and then the
-//     default sitemap paths (sitemap.go:170-183) and does not branch on the
-//     mode, so `robots`, `sitemap_only` and `common_paths` behave alike here
-//     (`common_paths` skips the robots probe in NestJS). The `disabled` mode is
-//     the one value that changes the outcome completely, so it is honored below
-//     before any fetch;
-//   - the remaining CrawlSitemapDiscoveryDiagnostics fields (seedMethod,
-//     robotsUrl, robotsDiscoveredSitemaps, attemptedSitemaps, fetchedSitemaps,
-//     parsedSitemaps) are not tracked, so the diagnostics carry only
-//     discoveryMode (the requested mode, as NestJS records it) and
-//     candidateCount. seedMethod therefore stays null downstream.
+// forwards the profile's discovery mode, the run's max seed URLs, the per-run
+// request timeout and the freshness cutoff to
+// crawlmetadata.Discovery.DiscoverSitemapCandidatesForSeed, which runs the real
+// robots/common-path walk and records the full diagnostics. This wrapper only
+// converts the typed diagnostics into the ordered metadata object the seed
+// materializer, the deferred judge payload and the run/node read projection
+// store.
 func (s *Service) discoverSitemapSeeds(ctx context.Context, input sitemapSeedInput) (*sitemapSeedResult, error) {
-	// `discoveryMode === "disabled"` is a hard off switch in NestJS:
-	// CrawlMetadataService.resolveSitemapSeedUrls returns no seed URL at all, so
-	// the run discovers no seed candidate and creates no seed node. The Go sitemap
-	// chain (internal/crawlmetadata) has no mode parameter, so the switch is
-	// honored here — before any fetch — and the diagnostics keep the requested
-	// mode with a zero count, exactly like the NestJS early return.
-	if input.DiscoveryMode == "disabled" {
-		diagnostics := crawlfrontierllm.NewObject()
-		diagnostics.SetString("discoveryMode", input.DiscoveryMode)
-		diagnostics.SetNumber("candidateCount", 0)
-		return &sitemapSeedResult{Candidates: []crawlmetadata.DiscoveryCandidate{}, Diagnostics: diagnostics}, nil
-	}
+	mode := crawlmetadata.NormalizeSitemapDiscoveryMode(input.DiscoveryMode)
 	if s.metadata == nil {
-		return &sitemapSeedResult{}, nil
+		// Only the package's DB-free tests reach this branch. Return the same
+		// accurate empty shape the real entry point produces.
+		return &sitemapSeedResult{
+			Candidates:  []crawlmetadata.DiscoveryCandidate{},
+			Diagnostics: sitemapDiagnosticsObject(crawlmetadata.NewSitemapDiscoveryDiagnostics(mode)),
+		}, nil
 	}
 	maxURLs := input.MaxURLs
 	freshnessCutoffTs := input.FreshnessCutoffTs
-	candidates, err := s.metadata.DiscoverSitemapSeedCandidates(ctx, input.Domain, "", &maxURLs, &freshnessCutoffTs)
+	result, err := s.metadata.DiscoverSitemapCandidatesForSeed(ctx, crawlmetadata.SitemapDiscoveryOptions{
+		Domain:            input.Domain,
+		MaxURLs:           &maxURLs,
+		RequestTimeoutMs:  input.RequestTimeoutMs,
+		FreshnessCutoffTs: &freshnessCutoffTs,
+		DiscoveryMode:     mode,
+	})
 	if err != nil {
 		return nil, err
 	}
+	candidates := result.Candidates
 	if candidates == nil {
 		candidates = []crawlmetadata.DiscoveryCandidate{}
 	}
-	diagnostics := crawlfrontierllm.NewObject()
-	diagnostics.SetString("discoveryMode", input.DiscoveryMode)
-	diagnostics.SetNumber("candidateCount", float64(len(candidates)))
-	return &sitemapSeedResult{Candidates: candidates, Diagnostics: diagnostics}, nil
+	return &sitemapSeedResult{Candidates: candidates, Diagnostics: sitemapDiagnosticsObject(result.Diagnostics)}, nil
+}
+
+// sitemapDiagnosticsObject renders SitemapDiscoveryDiagnostics as the ordered
+// metadata object stored on the node and run. The key order and optional
+// robotsUrl follow the NestJS diagnostic literal so the persisted JSON and the
+// Web console match the old behaviour. The slice fields are always written so an
+// empty list serializes as [] rather than null.
+func sitemapDiagnosticsObject(diagnostics crawlmetadata.SitemapDiscoveryDiagnostics) *crawlfrontierllm.Object {
+	object := crawlfrontierllm.NewObjectFromPairs(
+		"discoveryMode", string(diagnostics.DiscoveryMode),
+		"seedMethod", string(diagnostics.SeedMethod),
+	)
+	if diagnostics.RobotsURL != "" {
+		object.SetString("robotsUrl", diagnostics.RobotsURL)
+	}
+	object.Set("robotsDiscoveredSitemaps", stringSliceOrEmpty(diagnostics.RobotsDiscoveredSitemaps))
+	object.Set("attemptedSitemaps", stringSliceOrEmpty(diagnostics.AttemptedSitemaps))
+	object.Set("fetchedSitemaps", stringSliceOrEmpty(diagnostics.FetchedSitemaps))
+	object.SetNumber("parsedSitemaps", float64(diagnostics.ParsedSitemaps))
+	object.SetNumber("candidateCount", float64(diagnostics.CandidateCount))
+	return object
+}
+
+// stringSliceOrEmpty keeps a diagnostics list non-nil so it serializes as [].
+func stringSliceOrEmpty(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 // shouldQueueLlmJudge ports crawl-frontier.service.ts shouldQueueLlmJudge
