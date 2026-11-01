@@ -1,5 +1,16 @@
 # 任务认领与历史恢复索引
 
+## 2026-11-01 Frontier 与新闻源后续提示词
+
+基线 main `a8cb0028d38f7237a2586d0d4e5d4571435aebca`，#149 已 merged；发出前再次核对开放 PR 为空，两个建议业务分支不存在，未创建编码 worktree/PR。下面两项 reserved，尚无编码 head/CI，可分窗口执行，开工仍须刷新认领。
+
+| 任务 / 提示词 | 分支建议 | 文件所有权与边界 |
+|---|---|---|
+| [FRONTIER-SITEMAP-001](FRONTIER-SITEMAP-001.md) / [提示词](FRONTIER-SITEMAP-001.prompt.md) | `codex/fix-frontier-sitemap-discovery` | crawlmetadata/crawlfrontiernode、Frontier Web、既有 Frontier CI 必要增量；保留其它 discovery 调用面，不改 main/config/scheduler |
+| [NEWS-SOURCE-SNAPSHOTS-001](NEWS-SOURCE-SNAPSHOTS-001.md) / [提示词](NEWS-SOURCE-SNAPSHOTS-001.prompt.md) | `codex/fix-news-source-snapshots` | newssources/newssourcescheduler 快照能力、news_sources wiring、新闻源 Web；既有 scheduler 集成选择器，不改 CI 或 discovery.go |
+
+共享地图/索引与语言资源不由编码窗口修改；各自只维护 task/PR。规划分支 `codex/plan-go-functional-next` 发布本轮文档；未合 main 时只取自身 task/prompt，不整条合并。当前 main CI 41307901088 尚未完成，前一业务 merge 2e63645d 的 CI 41286944654 三主 job success、两个 regen skipped，分别记录。
+
 ## 2026-11-01 两项功能修复已完成
 
 核对 main `2e63645d60446d28241ca022ee10caa752a2cb3e`，两个最终源 head 均为其祖先；开放 PR 仅规划 #149。以下 task 均 merged，不再按原 reserved/pr_open 占用。保留历史 worktree/分支，不清理或重派原提示词。
@@ -9,7 +20,7 @@
 | [CRAWL-TABLE-NORMALIZATION-001](CRAWL-TABLE-NORMALIZATION-001.md) | [#155](https://github.com/wei500L/newwei/pull/155) → `2e63645d6044` / `6da27a40a552` | [41249733335](https://github.com/wei500L/newwei/actions/runs/41249733335) 三主 job success |
 | [MONITOR-GEOCODING-001](MONITOR-GEOCODING-001.md) | [#156](https://github.com/wei500L/newwei/pull/156) → `fc9f823a34ba` / `3b06403823be` | [41251389520](https://github.com/wei500L/newwei/actions/runs/41251389520) 三主 job success |
 
-两个源 CI 的 regen skipped 不算通过；最终 main [CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 核对时尚未完成，中间 merge run 41286940726 cancelled。已合并、源 CI、最终 merge CI 与真实运行证据分开记录。
+两个源 CI 的 regen skipped 不算通过；业务 merge `2e63645d` 的[CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 后续核对已 completed/success，三主 job success、两个 regen skipped；中间 merge run 41286940726 cancelled。当前 main CI 另见本页最上方，真实运行未验证。
 
 规划分支正常 merge 最新 main，保留编码窗口实际交付的 task，再回填完成状态与共享地图；不实施业务、不创建新编码窗口或新任务。以下日期段落保留历史事实，当前状态以本节和独立 task 为准。
 

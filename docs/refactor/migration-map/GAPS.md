@@ -1,8 +1,19 @@
 # 已确认缺口与待核对事项
 
+## 2026-11-01 当前源码新增选批
+
+核对 main `a8cb0028d38f7237a2586d0d4e5d4571435aebca`；上一批表格与地理编码缺口仍按源码范围关闭。以下两项经当前实现与删除前固定源码对读确认，均 reserved，尚无实现交付证据。
+
+| 稳定 ID / 原复核 | 当前根因 / 用户影响 | 任务 |
+|---|---|---|
+| `GAP-FRONTIER-SITEMAP-001` / [FN-03](../review/crawl.md) | `apps/api-go/internal/crawlfrontiernode/discover.go:913` 忽略本次 RequestTimeoutMs，除 disabled 外模式共走默认链，只有两字段诊断；`crawlmetadata/discover_seed.go:16` 缺相应参数/完整结果，运行 seedMethod 为空 | [FRONTIER-SITEMAP-001](tasks/FRONTIER-SITEMAP-001.md)：参数到发现/种子/诊断持久化和 Web |
+| `GAP-SOURCE-SNAPSHOTS-001` / [NS-02](../review/crawl.md) | `apps/api-go/internal/newssources/store.go:123-142` 缺快照时只给空 summary；`cmd/api/news_sources.go:22` 未注入已有 `newssourcescheduler/snapshot.go:245` 的刷新能力，已有任务/文章的来源仍显示缺失活动/零统计 | [NEWS-SOURCE-SNAPSHOTS-001](tasks/NEWS-SOURCE-SNAPSHOTS-001.md)：当前 org/页补齐缺失行、重读、runtime 与 UI |
+
+源依据固定在 `e72440e1` 的 `modules/crawl/crawl-metadata.service.ts` / `news-source.service.ts`，路径与符号详见 task。两项不是新迁移 mode 或重迁整域；旧报告里“本机无 build/test 不修”的约束不阻止通过普通 CI 交付。现有安全/租户、HTTP 缓存和调度职责保持，不添加无关框架或真实服务验证任务。
+
 ## 2026-11-01 两项功能缺口按源码范围关闭
 
-核对 main `2e63645d60446d28241ca022ee10caa752a2cb3e`：#155 / #156 已实际合入，两个最终源 head 为 main 祖先，源普通 CI 三主 job 均 success、两个 regen skipped。最新 main CI 41286944654 尚未完成，不把源成功算作 merge head 成功；本次仅关闭下列两个源码缺口，不统一关闭历史 GAP 或真实运行观察项。
+核对业务 merge `2e63645d60446d28241ca022ee10caa752a2cb3e`：#155 / #156 已合入，两个最终源 head 为 main 祖先；源 CI 及该业务 merge CI 41286944654 均已 completed/success，三主 job success、两个 regen skipped。本节仅关闭下列两个源码缺口，不统一关闭历史 GAP 或真实运行观察项。
 
 | 稳定 ID / 原复核 | 当前关闭证据（路径相对 apps/api-go，定位基于本次 main） | 任务 / 实际 merge |
 |---|---|---|

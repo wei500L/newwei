@@ -2,9 +2,17 @@
 
 本文件是用户长期偏好的稳定入口。适用后端迁移规划、执行提示词、进度更新；代码事实仍以最新 main 为准。返回[入口](README.md)。
 
+## 2026-11-01 本轮后续选批
+
+用户再次要求继续提示词。核对 main `a8cb0028`、规划 #149 已合入与开放 PR 为空，再按当前源码选取 FN-03 / NS-02，分别登记 `FRONTIER-SITEMAP-001` / `NEWS-SOURCE-SNAPSHOTS-001`，不按旧 BACKLOG 的未迁状态派发已完成入口。
+
+两项可分窗口执行：Frontier 任务仅 crawlmetadata/crawlfrontiernode、Frontier UI 和既有 CI 必要增量；快照任务仅 newssources/newssourcescheduler 的快照能力、相应生产接线/新闻源 UI，集成测试命中现有 scheduler 选择器。新增 sitemap API 保留旧调用面，双方不改 scheduler/discovery.go 或共享语言资源；快照补齐不启动 cron/worker、不派发采集或做全库回填。编码窗口仅回填自身 task/PR，规划窗口维护共享地图。
+
+上一业务 merge `2e63645d` 的普通 CI 41286944654 已 success；当前 main 的文档 merge CI 41307901088 尚未完成，结果分开记录。本轮不重算全域覆盖、不部署、不改业务或创建新聊天。
+
 ## 2026-11-01 两项功能修复完成回填
 
-用户告知任务完成后，核对 main `2e63645d`、GitHub merge 与生产接线：EX-05 表格修复 #155、M-04 监控地理编码 #156 均已合入，两个最终源 head 的普通 CI 三主 job success，regen skipped 不算通过；最终 main CI 41286944654 尚未完成，单独记录。
+用户告知任务完成后，核对 main `2e63645d`、GitHub merge 与生产接线：EX-05 表格修复 #155、M-04 监控地理编码 #156 均已合入，两个最终源 head 及业务 merge CI 41286944654 的三主 job 均 success，regen skipped 不算通过；当前 main CI 另记。
 
 `CRAWL-TABLE-NORMALIZATION-001` / `MONITOR-GEOCODING-001` 均 merged，对应两个 GAP 按源码范围关闭，原文件占用释放，不按旧 reserved/pr_open 或历史提示词重复派发。编码窗口实际交付记录予以保留，规划分支正常 merge main 后回填共享地图；未清理历史工作树、未创建新窗口或新业务任务。
 
