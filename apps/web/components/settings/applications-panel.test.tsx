@@ -101,7 +101,7 @@ describe('ApplicationsPanel', () => {
 
   it('shows the delivery failure reason and resends at most once while pending', async () => {
     const user = userEvent.setup();
-    let resolveResend: () => void = () => {};
+    let resolveResend: (() => void) | undefined;
     const onResendOrgInvite = vi.fn(
       () =>
         new Promise<void>((resolve) => {
@@ -148,7 +148,7 @@ describe('ApplicationsPanel', () => {
     fireEvent.click(pendingButton);
     expect(onResendOrgInvite).toHaveBeenCalledTimes(1);
 
-    resolveResend();
+    resolveResend?.();
   });
 
   it('opens the recover modal and submits the entered target org id and reason', async () => {
