@@ -143,7 +143,9 @@ describe('ApplicationsPanel', () => {
         pendingResendApplicationIds={['app-failed']}
       />,
     );
-    const pendingButton = screen.getByRole('button', { name: 'Resend invite' });
+    // antd prefixes the accessible name with "loading" while the button spins,
+    // so match the stable part of the name.
+    const pendingButton = screen.getByRole('button', { name: /Resend invite/ });
     expect(pendingButton).toBeDisabled();
     fireEvent.click(pendingButton);
     expect(onResendOrgInvite).toHaveBeenCalledTimes(1);
