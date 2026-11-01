@@ -504,6 +504,17 @@ jobs:
       - name: Full item pipeline chain integration test (MySQL/Mongo + fake LLM)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/newspipeline/ -run 'TestFullPipelineChainIntegration' -v -timeout 10m
 
+      # ECONOMIC-QUEUE-RECOVERY-001 · 经济数据 akshare-data 队列：真实 Redis 7.2 +
+      # vendored BullMQ 5.63.2 官方脚本。覆盖暂停期间手工/到期任务不被领、恢复后
+      # 正常消费；有效锁不误收、过期 active 受限恢复、超限进入可观察 failed；旧
+      # token 不能提交终态；重复扫描/多 worker 不重复推进 repeat；删除调度后在途
+      # 不复活；取消/排空可结束。另用仓库锁定的 Node BullMQ 夹具双向验证生产方/
+      # 消费方协议。不访问真实 AkShare/FRED/Finnhub/Yahoo。
+      - name: Redis economic akshare-data queue integration tests (BullMQ script protocol)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/economicqueue/ -run 'TestEconomicQueueIntegration' -v -timeout 10m
+        env:
+          API_GO_TEST_REDIS_ADDR: 127.0.0.1:6379
+
       # refactor/go-queue-ops · 队列运维接口：真实 Redis 7.2 + vendored BullMQ
       # 5.63.2 官方脚本。覆盖队列列表的 counts/paused/并发度（一次 pipeline）、
       # failed job 用 reprocessJob 回到 wait、删除 delayed job 产生 removed 事件、
