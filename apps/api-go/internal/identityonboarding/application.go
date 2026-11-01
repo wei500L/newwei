@@ -586,7 +586,7 @@ func (s *Service) recoverMissingAssociation(ctx context.Context, actorID string,
 	if requestedSlug == "" || application.RequestedOrgName == nil || *application.RequestedOrgName == "" {
 		return applicationScalar{}, badRequest("Organization details are incomplete")
 	}
-	existing, found, err := loadOrgBySlug(ctx, s.db, requestedSlug)
+	_, found, err := loadOrgBySlug(ctx, s.db, requestedSlug)
 	if err != nil {
 		return applicationScalar{}, err
 	}
