@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -76,21 +75,7 @@ func wireGeocoding(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, 
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: geocoding go takeover requires mysql, redis, and jwt")
 	}
-	client := geocoding.NewClient(
-		geocoding.RedisCache{Client: redisClient},
-		redisClient,
-		geocoding.SQLSettingsReader{DB: db},
-		geocoding.Config{
-			BaseURL:        cfg.NominatimBaseURL,
-			UserAgent:      cfg.NominatimUserAgent,
-			Email:          cfg.NominatimEmail,
-			AcceptLanguage: cfg.NominatimAcceptLanguage,
-			Timeout:        durationMillis(cfg.GeocodeTimeoutMs),
-			CacheTTL:       durationSeconds(cfg.GeocodeCacheTTLSeconds),
-			NegativeTTL:    durationSeconds(cfg.GeocodeNegativeTTLSeconds),
-			RatePerSecond:  cfg.GeocodeRatePerSecond,
-		},
-	)
+	client := newGeocodingClient(cfg, db, redisClient)
 	handler := geocoding.NewHandler(platformgovernance.NewAuthenticator(authenticator, db), client)
 	policy := cors.New(cfg.CorsOrigin)
 	gateway.RegisterGoHandler(legacyproxy.GeocodingKey, func(w http.ResponseWriter, r *http.Request) {
@@ -242,12 +227,4 @@ func newDataRuntimeSettingsService(cfg config.Config, db *sql.DB, redisClient *r
 		EncryptionKeyPresent: cfg.SettingsEncryptionKeyPresent,
 		NodeEnv:              cfg.NodeEnv,
 	})
-}
-
-func durationMillis(value int) time.Duration {
-	return time.Duration(value) * time.Millisecond
-}
-
-func durationSeconds(value int) time.Duration {
-	return time.Duration(value) * time.Second
 }

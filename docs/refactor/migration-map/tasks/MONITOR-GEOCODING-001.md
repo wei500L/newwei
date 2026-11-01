@@ -1,9 +1,9 @@
 # MONITOR-GEOCODING-001 · 监控地点解析接入系统地理编码
 
-- 状态：`reserved`；2026-11-01 已提供[执行提示词](MONITOR-GEOCODING-001.prompt.md)，尚无编码 PR/head/CI 证据。
+- 状态：`pr_open`；[PR #156](https://github.com/wei500L/newwei/pull/156) 已创建 Ready，实现 head `26e40a78601200c8e43ef7e917388ebb3df11f2b`；普通 CI 以该 PR 最终 head 的 run 为准。
 - 缺口：`GAP-MONITOR-GEOCODING-001`，对应[态势复核 M-04](../../review/situation-realtime.md)。
 - 核对基线：main `e04fc4d8bb54596afd302a309ebc852c7676d958`；[普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 三主 job success，两个 regen skipped。开工重新 fetch 并检查认领。
-- 分支建议：`codex/fix-monitor-geocoding`；复用匹配的独立工作树，否则创建。当前尚未创建该业务 worktree。
+- 分支建议：`codex/fix-monitor-geocoding`；已创建独立工作树 `/Users/oo/project/newwei-monitor-geocoding`（基于 `e04fc4d8`），本机仅静态审查与 gofmt。
 - 根因证据：`apps/api-go/internal/situationmonitors/location.go` 的 `geocode` 直接请求固定 Nominatim URL/UA；`service.go` 自建 HTTP client；`cmd/api/situation_monitors.go:20` 未注入已有共享 geocoder。系统配置、Redis 正/负缓存及全局限速均被绕过。
 - 可复用实现：`internal/geocoding/geocode.go` 的 `Client.Geocode`、`RedisCache`、`SQLSettingsReader`；生产配置参考 `cmd/api/settings_diagnostics.go` 的 `wireGeocoding`，使用现有 `Nominatim*` / `Geocode*` config。
 - 产品链：系统 User-Agent/email 设置及环境 BaseURL 等配置 → 共享缓存/限速的地点解析 → 监控 preview/create/update → 持久化与 Web 编辑/展示。不是新增地理编码产品或给监控增加设置管理权限。

@@ -26,6 +26,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawl4ai"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawltables"
 )
 
 // crawlResultContentsCollection is Mongoose's pluralized CrawlResultContent
@@ -633,6 +634,19 @@ func (s *Service) writeResultContent(
 		return "", errNotConfigured("crawlexecution: mongo is not configured")
 	}
 	collection := s.mongo.Collection(crawlResultContentsCollection)
+	// Normalize the top-level `tables` and `media.tables` payloads before they
+	// reach Mongo: crawl4ai hands back raw table shapes, while the read model and
+	// the web detail page expect the normalized CrawlResultTable shape. Media
+	// extraction is independent of binary media storage so tables survive even
+	// when shouldStoreMedia is false.
+	tables, err := crawltables.NormalizeFromArticle(entry.Article.Tables, entry.Article.Media)
+	if err != nil {
+		return "", fmt.Errorf("crawlexecution: normalize crawl result tables: %w", err)
+	}
+	tablesDocument, err := crawltables.EncodeBSON(tables)
+	if err != nil {
+		return "", fmt.Errorf("crawlexecution: encode crawl result tables: %w", err)
+	}
 	document := bson.D{
 		{Key: "taskId", Value: task.ID},
 		{Key: "resultId", Value: resultID},
@@ -645,7 +659,13 @@ func (s *Service) writeResultContent(
 		{Key: "sourceUrl", Value: entry.SourceURL},
 		{Key: "crawlRunId", Value: nullableRunIDValue(runID)},
 		{Key: "linkAnalysis", Value: buildResultLinkAnalysis(entry.Article)},
-		{Key: "tables", Value: decodeJSONLeaf(entry.Article.Tables, nil)},
+	}
+	if tablesDocument == nil {
+		// An absent/invalid table payload stores JSON/BSON null, matching the
+		// NestJS `tables ?? null` contract.
+		document = append(document, bson.E{Key: "tables", Value: nil})
+	} else {
+		document = append(document, bson.E{Key: "tables", Value: tablesDocument})
 	}
 	if shouldStoreMedia {
 		mediaDocument, err := media.bsonDocument()
@@ -666,7 +686,7 @@ func (s *Service) writeResultContent(
 		{Key: "updatedAt", Value: now},
 	}
 	setOnInsert = append(setOnInsert, document...)
-	_, err := collection.UpdateOne(ctx,
+	_, err = collection.UpdateOne(ctx,
 		bson.D{{Key: "resultId", Value: resultID}},
 		bson.D{{Key: "$setOnInsert", Value: setOnInsert}},
 		options.UpdateOne().SetUpsert(true))

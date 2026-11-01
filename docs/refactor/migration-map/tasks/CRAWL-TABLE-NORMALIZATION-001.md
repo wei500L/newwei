@@ -1,16 +1,28 @@
 # CRAWL-TABLE-NORMALIZATION-001 · 采集表格保存与展示闭环
 
-- 状态：`reserved`；2026-11-01 已提供[执行提示词](CRAWL-TABLE-NORMALIZATION-001.prompt.md)，尚无编码 PR/head/CI 证据。
+- 状态：`pr_open`；2026-11-01 由编码窗口交付 Ready [PR #155](https://github.com/wei500L/newwei/pull/155)，未合 main、不启用 auto-merge。业务/代码 head `8ef0d031b8ac4f53e8d4fc73d9863a5ecdd69fc2`，普通 CI [41248815858](https://github.com/wei500L/newwei/actions/runs/41248815858) 中 `verify`/`vector-integration`/`api-go-user-settings-integration` 三个主 job success，`go-modules-regen`/`contract-baseline-regen` skipped（skipped 不算通过）。本文件回填提交仅改 docs，最终 head 与对应 CI 以 PR 为准。
 - 缺口：`GAP-CRAWL-TABLES-001`，对应[采集复核 EX-05](../../review/crawl.md)。这是 Go 上的功能修复，不重做迁移退役。
-- 核对基线：main `e04fc4d8bb54596afd302a309ebc852c7676d958`；[普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 三主 job success，两个 regen skipped。开工重新 fetch 并检查认领。
-- 分支建议：`codex/fix-crawl-tables`；复用匹配的独立工作树，否则创建。当前尚未创建该业务 worktree。
-- 根因证据：`apps/api-go/internal/crawlexecution/results.go:648` 直接保存 `entry.Article.Tables`，没有形成读侧与 UI 所需的完整表格模型，也没有合并 `media.tables`。旧实现依据固定在 [e72440e1 的 crawl-result.service.ts](https://github.com/wei500L/newwei/blob/e72440e186acbdf671be904cc98d1dd2f9858cbf/apps/api/src/modules/crawl/crawl-result.service.ts#L2166)，不恢复已删除 Node app。
+- 核对基线：main `e04fc4d8bb54596afd302a309ebc852c7676d958`；[普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 三主 job success，两个 regen skipped。开工已 fetch origin/main 并核对开放 PR #149（规划）与 worktree，无本任务业务占用。
+- 分支：`codex/fix-crawl-tables`；worktree `/Users/oo/project/newwei-crawl-tables`，从 `e04fc4d8` 创建。未复用其他认领工作树。
+- 根因证据：`apps/api-go/internal/crawlexecution/results.go:648`（修复前）直接保存 `entry.Article.Tables`，没有形成读侧与 UI 所需的完整表格模型，也没有合并 `media.tables`。旧实现行为依据固定在 [e72440e1 的 crawl-result.service.ts](https://github.com/wei500L/newwei/blob/e72440e186acbdf671be904cc98d1dd2f9858cbf/apps/api/src/modules/crawl/crawl-result.service.ts#L2166)。
 - 产品链：crawl4ai 结果 → 表格归一化 → `crawlresultcontents` → REST `GET /api/crawl-tasks/:id` 与 GraphQL `crawlTask`/`crawlTasks` → 采集详情表格区。
-- 所有权：`internal/crawlexecution`、必要的 `internal/crawl4ai` 表格输入、`internal/crawlreadtelemetry` 与 `internal/graphqlread/settingscrawl` 表格投影、Web `app/(app)/crawl/[taskId]` 的表格组件/行为测试；均位于现有 Go/Web app。可新增采集域内部共用的具名表格模型/归一化文件。
-- 并行边界：可与 `MONITOR-GEOCODING-001` 分窗口执行。这里不改 Go main/config/geocoding/态势监控、CI workflow、共享地图/索引或语言资源；如发现确需越界，先记录具体调用证据并协调所有权。
 
-验收重点：顶层 `tables` 与 `media.tables` 顺序合并；`rows`/`data` 两种输入、表头去重/宽度对齐、单元格与元信息、`dataFrame` 生成；规范化 JSON/BSON 能被现有读侧正确解码；REST/GraphQL 与 UI 的 ID、标题、维度、列顺序、值和行预览一致。媒体不落盘时仍提取表格；无表格/无效输入维持既有空值契约。历史规范化数据继续可读，历史 raw 数据读取兼容按实际证据实现，不进行数据库批量回填。
+## 交付范围（实现/接线）
 
-不改变内容 hash、去重、`$setOnInsert`、任务生命周期、媒体下载策略、队列协议、读写鉴权/租户边界或 GraphQL SDL。使用现有普通 CI 的 Go 采集集成和 Web coverage；本机仅静态审查和必要格式化，不安装/运行 build/test/lint/typecheck/vet/Docker/服务。
+- 新增 `apps/api-go/internal/crawltables`：共享具名强类型 `Table`/`DataFrame`/`Record`/`Cell` 及 `NormalizeFromArticle`（顶层 `tables` + `media.tables` 顺序合并、rows/data、表头规则、单元格标量/结构、维度与 dataFrame）、`EncodeBSON`、`FromStored`（历史 raw 读取兼容，规则幂等）。
+- `crawlexecution/results.go` `writeResultContent` 写入归一化结果（无表 `null`）；内容 hash、org/task 去重、`$setOnInsert`、媒体写入与入库副作用顺序不变。
+- `crawlreadtelemetry` 复用共享模型别名；`crawlResultContentDoc.Tables` 改为 `StoredTable` 并在 `attachResultContent` 用 `FromStored` 投影，orgId 过滤不变；GraphQL `settingscrawl` tables JSON 标量沿用。未改 SDL/接口签名。
+- Web `task-detail-results.test.tsx` 增加真实 dataFrame 形状行为断言；未改既有布局/文案/设置。
 
-编码窗口只更新自己的 task 与 PR，交付 Ready PR、精确 head、普通 CI 结果与链接、静态审查 `file:line`、未验证边界。正常提交/push，不合并/auto-merge，不把 CI 的 crawl4ai fixture 当作真实网站采集验证。
+## 验证
+
+- 本机：仅只读静态检查、`gofmt -l`（干净）、`git diff --check`；**未**运行 go build/test/vet、pnpm、lint/typecheck、Docker 或服务（按任务约束）。
+- 测试：`internal/crawltables/tables_test.go`（规则 + BSON 往返幂等 + 历史 raw 升级）；扩展 `TestCrawlExecutionQueuedIntegrationTablesPersist`（命中既有 `-run 'TestCrawlExecutionQueuedIntegration'`：成功写表、未存媒体仍保留 media.tables、二次运行去重不重写、API 投影）；Web `task-detail-results.test.tsx`。
+- 普通 CI：代码 head `8ef0d031` 的 [run 41248815858](https://github.com/wei500L/newwei/actions/runs/41248815858) 中 `verify`（lint/typecheck/Web coverage/Go contract gate/Go tests（api-go+vector-go）/build）、`vector-integration`、`api-go-user-settings-integration`（含 `-run 'TestCrawlExecutionQueuedIntegration'` 新增场景）全部 success；两个 regen job skipped。skipped 不算通过，CI fixture 不等于真实 crawl4ai/网站验证。
+- 未部署、未调用真实 crawl4ai/外部服务、未做真实站点采集。
+
+## 所有权与并行边界
+
+- 主要修改 `internal/crawlexecution`、新增 `internal/crawltables`、读侧 `internal/crawlreadtelemetry` 表格投影、Web `app/(app)/crawl/[taskId]` 表格行为测试。
+- 未改 `cmd/api/main.go`、config、geocoding、态势监控、`.github/workflows/ci.yml` 或共享语言资源；另一窗口 `MONITOR-GEOCODING-001` 不受影响。
+- 只更新本 task 与 PR，不改共享 README/GAPS/统计/认领索引；未新增迁移 mode、锁、重试框架、包依赖、批量回填或专用 smoke workflow。

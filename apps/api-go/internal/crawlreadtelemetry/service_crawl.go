@@ -14,6 +14,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/crawltables"
 )
 
 // defaultResultLimit mirrors `clampResultLimit(limit, fallback = 20)`: an absent
@@ -79,7 +81,10 @@ type crawlResultContentDoc struct {
 	LinkAnalysis          *CrawlLinkAnalysis      `bson:"linkAnalysis"`
 	Media                 CrawlMediaCollection    `bson:"media"`
 	MediaAssets           []CrawlStoredMediaAsset `bson:"mediaAssets"`
-	Tables                []CrawlResultTable      `bson:"tables"`
+	// Tables decodes into the stored superset so a document written before table
+	// normalization can be upgraded on read; attachResultContent projects the
+	// normalized []CrawlResultTable.
+	Tables []crawltables.StoredTable `bson:"tables"`
 }
 
 // latestCompleteLogData is the data block of the newest "complete" task log.
@@ -573,7 +578,7 @@ func (s *Service) attachResultContent(
 			FitMarkdown:           nonEmptyString(document.FitMarkdown),
 			LinkAnalysis:          document.LinkAnalysis,
 			Media:                 document.Media,
-			Tables:                document.Tables,
+			Tables:                crawltables.FromStored(document.Tables),
 		}
 		if result.FetchedAt.Valid {
 			hydratedResult.FetchedAt = JSTime{Time: result.FetchedAt.Time}

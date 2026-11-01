@@ -31,11 +31,13 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/classificationrssops"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawltables"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 )
 
@@ -575,6 +577,211 @@ func newQueuedIntegrationCrawl4ai(t *testing.T) *httptest.Server {
 		}
 		writer.WriteHeader(http.StatusBadRequest)
 		_, _ = writer.Write([]byte(`{"message":"target rejected by the upstream policy"}`))
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// TestCrawlExecutionQueuedIntegrationTablesPersist exercises the full crawl table
+// product chain: crawl4ai result -> normalization -> crawlresultcontents ->
+// Mongo BSON round trip -> the read-model projection the REST/GraphQL detail
+// path applies. Binary media storage is disabled on the task, so the media.tables
+// payload must still be extracted. The content hash / $setOnInsert dedupe must
+// keep a second run from rewriting the stored tables.
+func TestCrawlExecutionQueuedIntegrationTablesPersist(t *testing.T) {
+	db := openQueuedIntegrationDB(t)
+	redisClient := openQueuedIntegrationRedis(t)
+	database := openQueuedIntegrationMongo(t)
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	seedQueuedIntegrationSource(t, db, now)
+	const taskID = "crawl-task-queued-tables"
+	const pipelineJobID = "pipeline-job-queued-tables"
+	seedQueuedIntegrationTask(t, db, now, taskID, pipelineJobID)
+
+	server := newQueuedIntegrationCrawl4aiTables(t)
+	service := New(Options{
+		DB:    db,
+		Mongo: database,
+		Redis: redisClient,
+		Config: Config{
+			CrawlBaseURL:          server.URL,
+			CrawlTimeoutMs:        15_000,
+			CrawlHealthCheckTTLMs: 60_000,
+		},
+		Now: func() time.Time { return now },
+	})
+
+	summary, err := service.RunQueuedTask(context.Background(),
+		queuedIntegrationOrgID, taskID, "",
+		RunOptions{Attempt: 1, MaxAttempts: 1, RequestTimeoutMs: 15_000})
+	if err != nil {
+		t.Fatalf("RunQueuedTask: %v", err)
+	}
+	if summary.Inserted != 1 {
+		t.Fatalf("inserted = %d, want 1", summary.Inserted)
+	}
+
+	// The CrawlResult row keeps its content hash and receives the markdownRef of
+	// the content document.
+	var contentHash, markdownRef string
+	if err := db.QueryRowContext(context.Background(),
+		"SELECT `contentHash`, `markdownRef` FROM `CrawlResult` WHERE `taskId` = ?", taskID).
+		Scan(&contentHash, &markdownRef); err != nil {
+		t.Fatalf("read crawl result row: %v", err)
+	}
+	if contentHash == "" || markdownRef == "" {
+		t.Fatalf("contentHash=%q markdownRef=%q", contentHash, markdownRef)
+	}
+
+	collection := database.Collection(crawlResultContentsCollection)
+	var document struct {
+		TaskID   string                    `bson:"taskId"`
+		ResultID string                    `bson:"resultId"`
+		Markdown string                    `bson:"markdown"`
+		Tables   []crawltables.StoredTable `bson:"tables"`
+		Media    bson.RawValue             `bson:"media"`
+	}
+	if err := collection.FindOne(context.Background(), bson.D{{Key: "taskId", Value: taskID}}).Decode(&document); err != nil {
+		t.Fatalf("read crawl result content: %v", err)
+	}
+	if document.Media.Type != 0 {
+		t.Fatalf("media must be omitted when storeMedia is false, got type %v", document.Media.Type)
+	}
+	if len(document.Tables) != 2 {
+		t.Fatalf("stored tables = %d, want 2", len(document.Tables))
+	}
+
+	tables := crawltables.FromStored(document.Tables)
+	if len(tables) != 2 {
+		t.Fatalf("projected tables = %d, want 2", len(tables))
+	}
+	first := tables[0]
+	if first.Headers[0] != "Name" || first.Headers[1] != "Price" || first.Headers[2] != "Price_1" {
+		t.Fatalf("first headers = %#v", first.Headers)
+	}
+	if first.RowCount != 2 || first.ColumnCount != 3 || first.ID != "table-1" {
+		t.Fatalf("first table = %+v", first)
+	}
+	if string(first.Rows[0][0]) != `" Widget "` || string(first.Rows[1][2]) != `"{\"x\":1}"` {
+		t.Fatalf("first rows = %s", mustJSONBytes(t, first.Rows))
+	}
+	second := tables[1]
+	if second.ID != "table-2" || strings.Join(second.Headers, ",") != "Region,Revenue" {
+		t.Fatalf("second table = %+v", second)
+	}
+	if got := mustJSONBytes(t, second.Rows); got != `[["East",10],["West",12.5]]` {
+		t.Fatalf("second rows = %s", got)
+	}
+	if strings.Join(second.DataFrame.Columns, ",") != "Region,Revenue" {
+		t.Fatalf("second dataFrame columns = %#v", second.DataFrame.Columns)
+	}
+
+	// The JSON projection decodes exactly into the shape the web detail page
+	// expects (task-detail-types.ts CrawlResultTable).
+	projected := mustJSONBytes(t, tables)
+	var apiTables []struct {
+		ID          string              `json:"id"`
+		Headers     []string            `json:"headers"`
+		Rows        [][]json.RawMessage `json:"rows"`
+		RowCount    int                 `json:"rowCount"`
+		ColumnCount int                 `json:"columnCount"`
+		DataFrame   struct {
+			Columns []string                     `json:"columns"`
+			Rows    []map[string]json.RawMessage `json:"rows"`
+		} `json:"dataFrame"`
+	}
+	if err := json.Unmarshal([]byte(projected), &apiTables); err != nil {
+		t.Fatalf("decode API projection %s: %v", projected, err)
+	}
+	if len(apiTables) != 2 {
+		t.Fatalf("api tables = %d", len(apiTables))
+	}
+	if apiTables[0].ID != "table-1" || apiTables[0].ColumnCount != 3 || apiTables[0].RowCount != 2 {
+		t.Fatalf("api first table = %+v", apiTables[0])
+	}
+	if strings.Join(apiTables[0].DataFrame.Columns, ",") != "Name,Price,Price_1" {
+		t.Fatalf("api first dataFrame columns = %#v", apiTables[0].DataFrame.Columns)
+	}
+	if string(apiTables[0].Rows[1][1]) != `null` {
+		t.Fatalf("api first row[1][1] = %s", apiTables[0].Rows[1][1])
+	}
+
+	// A second run must reuse the stored result instead of rewriting it.
+	secondRun, err := service.RunQueuedTask(context.Background(),
+		queuedIntegrationOrgID, taskID, "",
+		RunOptions{Attempt: 1, MaxAttempts: 1, RequestTimeoutMs: 15_000})
+	if err != nil {
+		t.Fatalf("second RunQueuedTask: %v", err)
+	}
+	if secondRun.Inserted != 0 || secondRun.Skipped < 1 {
+		t.Fatalf("second run inserted=%d skipped=%d, want inserted=0 skipped>=1", secondRun.Inserted, secondRun.Skipped)
+	}
+	count, err := collection.CountDocuments(context.Background(), bson.D{{Key: "taskId", Value: taskID}})
+	if err != nil {
+		t.Fatalf("count content documents: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("content documents = %d, want 1", count)
+	}
+	var after struct {
+		Tables []crawltables.StoredTable `bson:"tables"`
+	}
+	if err := collection.FindOne(context.Background(), bson.D{{Key: "taskId", Value: taskID}}).Decode(&after); err != nil {
+		t.Fatalf("re-read crawl result content: %v", err)
+	}
+	if got := mustJSONBytes(t, crawltables.FromStored(after.Tables)); got != mustJSONBytes(t, tables) {
+		t.Fatalf("tables changed after the dedupe run: %s", got)
+	}
+}
+
+// mustJSONBytes marshals value to JSON for assertions.
+func mustJSONBytes(t *testing.T, value any) string {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return string(encoded)
+}
+
+// newQueuedIntegrationCrawl4aiTables starts a fake crawl4ai that returns one
+// successful result with a top-level `tables` array (with a duplicated header,
+// a stringified object cell and a null) and a `media.tables` array using the
+// object-record `data` form. Binary media is not stored by the task, which proves
+// media.tables survives without media persistence.
+func newQueuedIntegrationCrawl4aiTables(t *testing.T) *httptest.Server {
+	t.Helper()
+	body := strings.Repeat("The crawl table integration test needs a long enough article body to stay above the low-signal fallback threshold. ", 20)
+	response := fmt.Sprintf(`{
+		"runId":"run-tables-1",
+		"serverMemoryMb":100.5,
+		"peakMemoryMb":200.25,
+		"memoryEfficiency":50.125,
+		"results":[{
+			"url":%q,
+			"success":true,
+			"statusCode":200,
+			"publishedAt":"2026-10-21T10:00:00Z",
+			"markdown":{"raw_markdown":"# Table story\n\n%s"},
+			"metadata":{"title":"Table story","statusCode":200},
+			"media":{"images":[{"src":"https://example.com/a.png"}],"tables":[
+				{"headers":["Region","Revenue"],"data":[{"Region":"East","Revenue":10},{"Region":"West","Revenue":12.5}]}
+			]},
+			"tables":[{"headers":["Name","Price","Price"],"rows":[[" Widget ","9.99","a"],[true,null,{"x":1}]]}]
+		}]
+	}`, queuedIntegrationTarget, body)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("content-type", "application/json")
+		if strings.HasSuffix(request.URL.Path, "/health") {
+			_, _ = writer.Write([]byte("{}"))
+			return
+		}
+		if !strings.HasSuffix(request.URL.Path, "/crawl") {
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = writer.Write([]byte(response))
 	}))
 	t.Cleanup(server.Close)
 	return server

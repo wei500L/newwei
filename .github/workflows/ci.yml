@@ -313,6 +313,13 @@ jobs:
       - name: Settings diagnostics integration tests (email settings + geocoding + realtime diagnostics)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/emailsettings/ ./internal/geocoding/ ./internal/runtimediagnostics/ -run 'Integration' -v
 
+      # MONITOR-GEOCODING-001：监控 preview/create/update 通过真实 MySQL/Redis
+      # 和进程内 httptest Nominatim 验证共享客户端接线、缓存/限流与租户隔离；
+      # 不访问公网 Nominatim/真实 LLM。本包重建自己的监控表，共享 SystemSetting/
+      # UserSetting 使用 IF NOT EXISTS，仍单独一步避免与其他包的 fixture 交叉。
+      - name: MySQL/Redis integration tests (situation monitor geocoding wiring)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/situationmonitors/ -run 'Integration' -v
+
       # The insights lane has no Mongo service in this job. Its Mongo reads are
       # covered by unit-level query construction/fakes; this step exercises the
       # cache envelope, TTL and lock against the real Redis service above.
