@@ -54,6 +54,7 @@
 | UI-10A | [UI-10A-js-color-sources-events.md](UI-10A-js-color-sources-events.md) | `.ts` 里的 JS 色源（图谱 / 状态 / 情感 / 图表兜底）对齐纸墨；`/events` 列表行去玻璃 | UI-9 全部合入 |
 | UI-10B | [UI-10B-crawl-frontier-quality.md](UI-10B-crawl-frontier-quality.md) | workflow-studio 四层嵌套、crawl-frontier 彩色 Tag 与英文表单、质量页 `window.prompt` | UI-9 全部合入 |
 | UI-10C | [UI-10C-residual-i18n-polish.md](UI-10C-residual-i18n-polish.md) | 分析看板 / 邀请与 SSO / NewsNow 头部文案；大圆角、小字号、图标按钮 aria-label | UI-9 全部合入 |
+| UI-11 | [UI-11-details-title-time-reading.md](UI-11-details-title-time-reading.md) | 细节：标签页标题、时间统一走应用时区、正文行宽、favicon、不生效的 `[var()]/NN` 类 | UI-10 全部合入 |
 
 ```
 UI-0 ─┬→ UI-1 ─────────┬→ UI-3A ┐
@@ -69,6 +70,7 @@ UI-8 → UI-9A → ┬ UI-9B ┬ UI-9C ┬ UI-9D
 UI-9 → ┬ UI-10A
        ├ UI-10B   （三者并行，文件互不相交）
        └ UI-10C
+UI-10 → UI-11
 ```
 
 可以并行的组合：UI-1、UI-2A、UI-2B 三者并行（都在 UI-0 合入后开工）；UI-3A、UI-3B、UI-3C 三者并行，它们改的目录互不相交。
