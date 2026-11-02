@@ -1774,6 +1774,14 @@ func run() error {
 				log.Printf("api-go: residual duties close: %v", closeErr)
 			}
 		}
+		// The economic-data worker stops claiming, drains in-flight fetches
+		// (keeping their locks renewed) and closes its dedicated Redis client
+		// before the shared Redis handle closes.
+		if economicRuntime != nil {
+			if closeErr := economicRuntime.Close(closeCtx); closeErr != nil {
+				log.Printf("api-go: economic-data worker close: %v", closeErr)
+			}
+		}
 		// go 模式下 onboarding 鉴权栈持有的 Redis 连接随进程收口。
 		if redisClient != nil {
 			if err := redisClient.Close(); err != nil {
