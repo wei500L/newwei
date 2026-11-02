@@ -51,6 +51,9 @@
 | UI-9E | [UI-9E-admin-crawl.md](UI-9E-admin-crawl.md) | admin + crawl：整页大卡、多层嵌套、窄屏、主按钮、i18n | UI-9A |
 | UI-9F | [UI-9F-settings-shared-components.md](UI-9F-settings-shared-components.md) | components/：settings 面板去卡中卡、共享组件去玻璃 | UI-9A |
 | UI-9G | [UI-9G-remaining-pages.md](UI-9G-remaining-pages.md) | 登录 / 门户 / 助手 / 图谱 / 欢迎 / 安全 / 个人 / 实体 / 订阅 | UI-9A |
+| UI-10A | [UI-10A-js-color-sources-events.md](UI-10A-js-color-sources-events.md) | `.ts` 里的 JS 色源（图谱 / 状态 / 情感 / 图表兜底）对齐纸墨；`/events` 列表行去玻璃 | UI-9 全部合入 |
+| UI-10B | [UI-10B-crawl-frontier-quality.md](UI-10B-crawl-frontier-quality.md) | workflow-studio 四层嵌套、crawl-frontier 彩色 Tag 与英文表单、质量页 `window.prompt` | UI-9 全部合入 |
+| UI-10C | [UI-10C-residual-i18n-polish.md](UI-10C-residual-i18n-polish.md) | 分析看板 / 邀请与 SSO / NewsNow 头部文案；大圆角、小字号、图标按钮 aria-label | UI-9 全部合入 |
 
 ```
 UI-0 ─┬→ UI-1 ─────────┬→ UI-3A ┐
@@ -63,6 +66,9 @@ UI-6 + UI-7 → ┬ UI-8A
               └ UI-8C
 UI-8 → UI-9A → ┬ UI-9B ┬ UI-9C ┬ UI-9D
                 ├ UI-9E ┼ UI-9F ┴ UI-9G   （六者并行，目录互不相交）
+UI-9 → ┬ UI-10A
+       ├ UI-10B   （三者并行，文件互不相交）
+       └ UI-10C
 ```
 
 可以并行的组合：UI-1、UI-2A、UI-2B 三者并行（都在 UI-0 合入后开工）；UI-3A、UI-3B、UI-3C 三者并行，它们改的目录互不相交。
