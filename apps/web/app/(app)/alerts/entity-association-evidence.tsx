@@ -71,7 +71,7 @@ export function EntityAssociationEvidence({
     <Space direction="vertical" size={10} style={{ width: "100%" }}>
       <Space size={[6, 6]} wrap>
         {seedName ? <Tag>{seedName}</Tag> : null}
-        {seedType ? <Tag color="blue">{seedType}</Tag> : null}
+        {seedType ? <Tag>{seedType}</Tag> : null}
       </Space>
 
       {sourceEventId ? (
@@ -102,7 +102,7 @@ export function EntityAssociationEvidence({
         </Typography.Text>
       )}
 
-      <Divider style={{ margin: "8px 0" }} />
+      <Divider />
       <Typography.Text type="secondary">
         {t("alerts.center.evidence.targets")}
       </Typography.Text>
@@ -127,10 +127,10 @@ export function EntityAssociationEvidence({
               <Space direction="vertical" size={0} style={{ width: "100%" }}>
                 <Space size="small" wrap>
                   <Typography.Text>{name}</Typography.Text>
-                  {type ? <Tag color="blue">{type}</Tag> : null}
+                  {type ? <Tag>{type}</Tag> : null}
                   {relationType ? <Tag>{relationType}</Tag> : null}
                   {typeof score === "number" ? (
-                    <Tag color="orange">{`score ${score.toFixed(3)}`}</Tag>
+                    <Tag>{`score ${score.toFixed(3)}`}</Tag>
                   ) : null}
                 </Space>
                 <Typography.Text type="secondary">

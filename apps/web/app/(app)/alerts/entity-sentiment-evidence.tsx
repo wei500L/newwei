@@ -150,9 +150,9 @@ export function EntitySentimentEvidence({
     <Space direction="vertical" size={10} style={{ width: "100%" }}>
       <Space size={[6, 6]} wrap>
         {entityName ? <Tag>{entityName}</Tag> : null}
-        {entityType ? <Tag color="blue">{entityType}</Tag> : null}
+        {entityType ? <Tag>{entityType}</Tag> : null}
         {typeof z === "number" ? (
-          <Tag color={z >= 3 ? "red" : z >= 2 ? "orange" : "green"}>{`z ${z.toFixed(3)}`}</Tag>
+          <Tag color={z >= 3 ? "error" : z >= 2 ? "warning" : "success"}>{`z ${z.toFixed(3)}`}</Tag>
         ) : null}
         {typeof minEntityConfidence === "number" ? (
           <Tag>{`minConf ${minEntityConfidence.toFixed(2)}`}</Tag>
@@ -227,7 +227,7 @@ export function EntitySentimentEvidence({
 
       {evidenceItems.length > 0 ? (
         <>
-          <Divider style={{ margin: "8px 0" }} />
+          <Divider />
           <Typography.Text type="secondary">
             {t("alerts.center.evidence.evidenceItems")}
           </Typography.Text>

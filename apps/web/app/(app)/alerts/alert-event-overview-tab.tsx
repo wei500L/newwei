@@ -22,9 +22,9 @@ import {
  */
 
 const severityColor: Record<string, string> = {
-  low: "green",
-  medium: "orange",
-  high: "red",
+  low: "default",
+  medium: "warning",
+  high: "error",
 };
 
 export interface AlertEventOverviewTabProps {
@@ -215,7 +215,7 @@ export function AlertEventOverviewTab({
       </DetailRow>
       <DetailRow label={t("alerts.center.detail.status")}>
         <Space>
-          <Tag color={severityColor[selectedEvent.severity] ?? "blue"}>
+          <Tag color={severityColor[selectedEvent.severity] ?? "default"}>
             {selectedEvent.severity}
           </Tag>
           <Tag>{selectedEvent.status}</Tag>
@@ -223,7 +223,7 @@ export function AlertEventOverviewTab({
       </DetailRow>
       <DetailRow label={t("alerts.center.detail.message")}>
         <Typography.Paragraph
-          style={{ marginBottom: 4 }}
+          className="!mb-1"
           ellipsis={expandMessage ? false : { rows: 3 }}
         >
           {selectedEvent.message ?? t("alerts.events.triggered")}

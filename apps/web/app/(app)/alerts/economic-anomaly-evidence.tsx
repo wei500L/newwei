@@ -68,17 +68,17 @@ export function EconomicAnomalyEvidence({
   const scoreColor =
     typeof score === "number"
       ? score >= 3
-        ? "red"
+        ? "error"
         : score >= 2
-          ? "orange"
-          : "green"
+          ? "warning"
+          : "success"
       : "default";
 
   return (
     <Space direction="vertical" size={8} style={{ width: "100%" }}>
       <Space size={[6, 6]} wrap>
         {itemName ? <Tag>{itemName}</Tag> : null}
-        {modelKind ? <Tag color="blue">{modelKind}</Tag> : null}
+        {modelKind ? <Tag>{modelKind}</Tag> : null}
         {typeof score === "number" ? (
           <Tag color={scoreColor}>{`score ${score.toFixed(3)}`}</Tag>
         ) : null}
@@ -111,7 +111,7 @@ export function EconomicAnomalyEvidence({
             </Descriptions.Item>
           </Descriptions>
           {canRenderCiRange ? (
-            <Card size="small" style={{ marginTop: 8 }}>
+            <Card size="small">
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <Typography.Text type="secondary">
                   {t("alerts.center.evidence.ciVisualization")}

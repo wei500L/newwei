@@ -28,9 +28,9 @@ import {
  */
 
 const severityColor: Record<string, string> = {
-  low: "green",
-  medium: "orange",
-  high: "red",
+  low: "default",
+  medium: "warning",
+  high: "error",
 };
 
 const eventStatusBadge: Record<
@@ -180,7 +180,7 @@ export function AlertEventRow({
             >
               <Space size="small" wrap>
                 <Badge status={eventStatusBadge[event.status] ?? "default"} />
-                <Tag color={severityColor[event.severity] ?? "blue"}>
+                <Tag color={severityColor[event.severity] ?? "default"}>
                   {event.severity}
                 </Tag>
                 <Tag>{event.status}</Tag>
@@ -199,7 +199,8 @@ export function AlertEventRow({
               <Space
                 direction="vertical"
                 size={2}
-                style={{ width: "100%", marginTop: 6 }}
+                className="!mt-2"
+                style={{ width: "100%" }}
               >
                 <Space size="small" wrap>
                   <Typography.Text strong className="font-mono">{event.metricValue}</Typography.Text>
@@ -223,7 +224,7 @@ export function AlertEventRow({
                 </Typography.Text>
                 <Typography.Paragraph
                   type="secondary"
-                  style={{ marginBottom: 0 }}
+                  className="!mb-0"
                   ellipsis={{ rows: 2 }}
                 >
                   {event.message ?? t("alerts.events.triggered")}

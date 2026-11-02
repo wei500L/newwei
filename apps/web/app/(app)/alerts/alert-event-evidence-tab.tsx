@@ -127,7 +127,7 @@ export function AlertEventEvidenceTab({
                     >
                       {item.event.ruleName ?? item.event.id}
                     </Button>
-                    <Tag color="blue">
+                    <Tag>
                       {item.reason === "same_rule"
                         ? t("alerts.center.analysis.sameRule")
                         : t("alerts.center.analysis.sameMetric")}
@@ -155,7 +155,7 @@ export function AlertEventEvidenceTab({
         size="small"
         title={t("alerts.center.analysis.ruleTrendTitle")}
       >
-        <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+        <Row gutter={[12, 12]} className="!mb-3">
           <Col xs={24} sm={8}>
             <Statistic
               title={t("alerts.center.analysis.totalTriggers")}

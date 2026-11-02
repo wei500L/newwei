@@ -302,7 +302,7 @@ export function AlertCenterFilters({
         ]}
       />
 
-      <Divider style={{ margin: "12px 0" }} />
+      <Divider className="!my-3" />
 
       <Space wrap size={[8, 8]}>
         <Typography.Text type="secondary">

@@ -87,7 +87,7 @@ export function AlertEventListToolbar({
           </Typography.Text>
           {hiddenSelectedCount > 0 ? (
             <>
-              <Tag color="gold">
+              <Tag>
                 {t("alerts.center.batch.hiddenSelected", {
                   count: hiddenSelectedCount,
                 })}

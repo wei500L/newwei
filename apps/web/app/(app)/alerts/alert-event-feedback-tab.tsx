@@ -69,7 +69,7 @@ export function AlertEventFeedbackTab({
         <Space direction="vertical" size={8} style={{ width: "100%" }}>
           <Space size="small" wrap>
             {reviewStatus ? (
-              <Tag color={reviewStatus === "confirmed" ? "green" : "default"}>
+              <Tag color={reviewStatus === "confirmed" ? "success" : "default"}>
                 {reviewStatus}
               </Tag>
             ) : (

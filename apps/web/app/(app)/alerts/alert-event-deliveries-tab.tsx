@@ -13,10 +13,10 @@ import type { AlertEventItem } from "./alert-center-list-model";
  */
 
 const deliveryStatusColor: Record<string, string> = {
-  pending: "orange",
-  sending: "blue",
-  sent: "green",
-  failed: "red",
+  pending: "warning",
+  sending: "processing",
+  sent: "success",
+  failed: "error",
 };
 
 export interface AlertEventDeliveriesTabProps {

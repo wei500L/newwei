@@ -167,13 +167,13 @@ export function RealtimeSignalEvidence({
     <Space direction="vertical" size={10} style={{ width: "100%" }}>
       <Space size={[6, 6]} wrap>
         {source ? (
-          <Tag color="blue">
+          <Tag>
             {t("alerts.center.evidence.realtime.source")}
             : {source}
           </Tag>
         ) : null}
         {stale ? (
-          <Tag color="red">
+          <Tag color="warning">
             {t("alerts.center.evidence.realtime.stale")}
           </Tag>
         ) : null}
@@ -181,9 +181,9 @@ export function RealtimeSignalEvidence({
           <Tag
             color={
               snapshotFreshness === "fresh"
-                ? "green"
+                ? "success"
                 : snapshotFreshness === "stale"
-                  ? "orange"
+                  ? "warning"
                   : "default"
             }
           >
@@ -192,7 +192,7 @@ export function RealtimeSignalEvidence({
           </Tag>
         ) : null}
         {snapshotRetainedPrevious ? (
-          <Tag color="gold">
+          <Tag color="warning">
             {t("alerts.center.evidence.realtime.snapshotRetainedPrevious")}
           </Tag>
         ) : null}
@@ -242,7 +242,7 @@ export function RealtimeSignalEvidence({
           <Typography.Text type="secondary">
             {t("alerts.center.evidence.realtime.countryCodes")}
           </Typography.Text>
-          <div style={{ marginTop: 6 }}>
+          <div className="mt-2">
             <Space size={[6, 6]} wrap>
               {countryCodes.map((code) => (
                 <Tag key={code}>{code}</Tag>
@@ -254,7 +254,7 @@ export function RealtimeSignalEvidence({
 
       {tensions.length > 0 ? (
         <>
-          <Divider style={{ margin: "8px 0" }} />
+          <Divider />
           <Typography.Text type="secondary">
             {t("alerts.center.evidence.realtime.tensions")}
           </Typography.Text>
@@ -290,7 +290,7 @@ export function RealtimeSignalEvidence({
 
       {leads.length > 0 ? (
         <>
-          <Divider style={{ margin: "8px 0" }} />
+          <Divider />
           <Typography.Text type="secondary">
             {t("alerts.center.evidence.realtime.leads")}
           </Typography.Text>
@@ -324,7 +324,7 @@ export function RealtimeSignalEvidence({
 
       {spikes.length > 0 ? (
         <>
-          <Divider style={{ margin: "8px 0" }} />
+          <Divider />
           <Typography.Text type="secondary">
             {t("alerts.center.evidence.realtime.spikes")}
           </Typography.Text>
@@ -346,7 +346,7 @@ export function RealtimeSignalEvidence({
                       <Tag>{`count ${count}`}</Tag>
                     ) : null}
                     {typeof multiplier === "number" ? (
-                      <Tag color="gold">{`${multiplier.toFixed(2)}x`}</Tag>
+                      <Tag>{`${multiplier.toFixed(2)}x`}</Tag>
                     ) : null}
                   </Space>
                 </List.Item>
