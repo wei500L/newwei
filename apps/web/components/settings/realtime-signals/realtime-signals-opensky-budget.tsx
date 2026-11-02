@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Card,
   Col,
   Descriptions,
   Row,
@@ -12,6 +11,8 @@ import {
 } from "antd";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+
+import { SectionHeader } from "@/components/section-header";
 
 import {
   buildOpenskyBudgetView,
@@ -78,10 +79,10 @@ export function RealtimeSignalsOpenskyBudgetPanel({
   );
 
   return (
-    <Card
-      size="small"
-      title={t("systemSettings.realtimeSignals.runtime.openskyBudget.title")}
-    >
+    <section className="flex flex-col gap-3">
+      <SectionHeader
+        title={t("systemSettings.realtimeSignals.runtime.openskyBudget.title")}
+      />
       <Space direction="vertical" size="middle" style={{ display: "flex" }}>
         <Space wrap size={[8, 8]}>
           <Tag color="geekblue">
@@ -115,17 +116,17 @@ export function RealtimeSignalsOpenskyBudgetPanel({
 
         <Row gutter={[12, 12]}>
           <Col xs={24} sm={12} lg={6}>
-            <Card size="small">
+            <div className="surface-inset">
               <Statistic
                 title={t(
                   "systemSettings.realtimeSignals.runtime.openskyBudget.dailyBudget",
                 )}
                 value={openskyBudget?.dailyBudget ?? "—"}
               />
-            </Card>
+            </div>
           </Col>
           <Col xs={24} sm={12} lg={6}>
-            <Card size="small">
+            <div className="surface-inset">
               <Statistic
                 title={t(
                   "systemSettings.realtimeSignals.runtime.openskyBudget.usedCredits",
@@ -137,10 +138,10 @@ export function RealtimeSignalsOpenskyBudgetPanel({
                     : undefined
                 }
               />
-            </Card>
+            </div>
           </Col>
           <Col xs={24} sm={12} lg={6}>
-            <Card size="small">
+            <div className="surface-inset">
               <Statistic
                 title={t(
                   "systemSettings.realtimeSignals.runtime.openskyBudget.remainingCredits",
@@ -152,17 +153,17 @@ export function RealtimeSignalsOpenskyBudgetPanel({
                     : undefined
                 }
               />
-            </Card>
+            </div>
           </Col>
           <Col xs={24} sm={12} lg={6}>
-            <Card size="small">
+            <div className="surface-inset">
               <Statistic
                 title={t(
                   "systemSettings.realtimeSignals.runtime.openskyBudget.currentPeriod",
                 )}
                 value={periodLabel}
               />
-            </Card>
+            </div>
           </Col>
         </Row>
 
@@ -230,6 +231,6 @@ export function RealtimeSignalsOpenskyBudgetPanel({
           scroll={{ x: "max-content" }}
         />
       </Space>
-    </Card>
+    </section>
   );
 }

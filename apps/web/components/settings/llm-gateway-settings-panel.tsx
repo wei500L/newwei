@@ -1,7 +1,9 @@
 "use client";
 
-import { Alert, Button, Card, Space, Tag, Typography } from "antd";
+import { Alert, Button, Space, Tag, Typography } from "antd";
 import type { ReactElement } from "react";
+
+import { SectionHeader } from "@/components/section-header";
 
 import { LlmGatewayEmbeddingRerankPanel } from "./llm-gateway/llm-gateway-embedding-rerank-panel";
 import { LlmGatewayProfileModals } from "./llm-gateway/llm-gateway-profile-modals";
@@ -90,14 +92,14 @@ export function LlmGatewaySettingsPanel(): ReactElement {
   } = g;
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Space direction="vertical" size="middle" style={{ display: "flex" }}>
     <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
       {t("settings.llmGateway.description")}
     </Typography.Paragraph>
 
-    <Card size="small" title={t("settings.llmGateway.guardrails.title")}>
+    <section className="flex flex-col gap-3">
+      <SectionHeader title={t("settings.llmGateway.guardrails.title")} />
       <Space direction="vertical" size="small" style={{ display: "flex" }}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
           {t("settings.llmGateway.guardrails.scope")}
@@ -117,9 +119,10 @@ export function LlmGatewaySettingsPanel(): ReactElement {
           }
         />
 
-        <Typography.Text strong>
-          {t("settings.llmGateway.guardrails.setup.title")}
-        </Typography.Text>
+        <SectionHeader
+          as="h3"
+          title={t("settings.llmGateway.guardrails.setup.title")}
+        />
         <ul style={{ margin: 0, paddingLeft: 18 }}>
           <li>
             <Typography.Text type="secondary">
@@ -150,9 +153,10 @@ export function LlmGatewaySettingsPanel(): ReactElement {
           {t("settings.llmGateway.guardrails.notes")}
         </Typography.Paragraph>
       </Space>
-    </Card>
+    </section>
 
-    <Card size="small" title={t("settings.llmGateway.proxyStatus.title")}>
+    <section className="flex flex-col gap-3">
+      <SectionHeader title={t("settings.llmGateway.proxyStatus.title")} />
       {statusProfile ? (
         <Space
           direction="vertical"
@@ -613,14 +617,13 @@ export function LlmGatewaySettingsPanel(): ReactElement {
           {t("settings.llmGateway.proxyStatus.empty")}
         </Typography.Text>
       )}
-    </Card>
+    </section>
 
         <LlmGatewayEmbeddingRerankPanel s={s} />
         <LlmGatewayProfilesPanel s={s} />
-      </Space>
       <LlmGatewayProfileModals s={s} g={g} />
       <LlmGatewayProxyGovernancePanel s={s} g={g} />
       <LlmGatewayProxyLbPanel s={s} lb={lb} />
-    </>
+    </div>
   );
 }

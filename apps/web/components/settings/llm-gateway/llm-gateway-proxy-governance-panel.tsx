@@ -21,6 +21,7 @@ import type { GlobalToken } from "antd/es/theme/interface";
 import type { TFunction } from "i18next";
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 
+import { SectionHeader } from "@/components/section-header";
 import { captureClientError } from "@/lib/client-telemetry";
 
 import {
@@ -1427,13 +1428,13 @@ export function LlmGatewayProxyGovernancePanel({
                   </Typography.Text>
                 </div>
               </div>
-              <Card
-                size="small"
-                type="inner"
-                title={t(
-                  "settings.llmGateway.proxyGovernance.observed.budgetPressure",
-                )}
-              >
+              <div className="surface-inset flex flex-col gap-2">
+                <SectionHeader
+                  as="h3"
+                  title={t(
+                    "settings.llmGateway.proxyGovernance.observed.budgetPressure",
+                  )}
+                />
                 <Space
                   direction="vertical"
                   size="small"
@@ -1532,7 +1533,7 @@ export function LlmGatewayProxyGovernancePanel({
                     />
                   </div>
                 </Space>
-              </Card>
+              </div>
               <Typography.Text type="secondary">
                 {t(
                   "settings.llmGateway.proxyGovernance.observed.dayDetails",

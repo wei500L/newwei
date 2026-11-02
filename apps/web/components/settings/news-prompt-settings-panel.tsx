@@ -2,7 +2,6 @@
 
 import {
   Button,
-  Card,
   Form,
   Input,
   Spin,
@@ -13,6 +12,7 @@ import {
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import {
   TokenEstimateExtra,
   TotalTokenEstimateText,
@@ -71,28 +71,19 @@ export function NewsPromptSettingsPanel() {
 
   if (loading && !data?.newsPromptConfig) {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
-      >
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "0.5rem" }}>
+      <Typography.Paragraph type="secondary" className="m-0">
         {t("settings.newsPrompts.description")}
       </Typography.Paragraph>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.5rem",
-          marginBottom: "1rem",
-        }}
-      >
+      <div className="flex flex-wrap gap-2">
         {PLACEHOLDER_TOKENS.map((token) => (
           <Tag key={token}>{token}</Tag>
         ))}
@@ -111,11 +102,8 @@ export function NewsPromptSettingsPanel() {
           <Input placeholder={t("settings.newsPrompts.placeholders.version")} />
         </Form.Item>
 
-        <Card
-          size="small"
-          title={t("settings.newsPrompts.cleaningTitle")}
-          style={{ marginBottom: "1rem" }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsPrompts.cleaningTitle")} rule />
           <Form.Item
             label={t("settings.newsPrompts.fields.systemTemplate")}
             name="systemPromptTemplate"
@@ -154,13 +142,10 @@ export function NewsPromptSettingsPanel() {
             systemName="systemPromptTemplate"
             userName="userPromptTemplate"
           />
-        </Card>
+        </section>
 
-        <Card
-          size="small"
-          title={t("settings.newsPrompts.entityTitle")}
-          style={{ marginBottom: "1rem" }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsPrompts.entityTitle")} rule />
           <Typography.Paragraph type="secondary">
             {STAGE_PLACEHOLDER_TOKENS.map((token) => (
               <Tag key={`entity-${token}`}>{token}</Tag>
@@ -184,13 +169,10 @@ export function NewsPromptSettingsPanel() {
             systemName="entitySystemPromptTemplate"
             userName="entityUserPromptTemplate"
           />
-        </Card>
+        </section>
 
-        <Card
-          size="small"
-          title={t("settings.newsPrompts.sentimentTitle")}
-          style={{ marginBottom: "1rem" }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsPrompts.sentimentTitle")} rule />
           <Typography.Paragraph type="secondary">
             {STAGE_PLACEHOLDER_TOKENS.map((token) => (
               <Tag key={`sentiment-${token}`}>{token}</Tag>
@@ -214,13 +196,10 @@ export function NewsPromptSettingsPanel() {
             systemName="sentimentSystemPromptTemplate"
             userName="sentimentUserPromptTemplate"
           />
-        </Card>
+        </section>
 
-        <Card
-          size="small"
-          title={t("settings.newsPrompts.kgTitle")}
-          style={{ marginBottom: "1rem" }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsPrompts.kgTitle")} rule />
           <Typography.Paragraph type="secondary">
             {STAGE_PLACEHOLDER_TOKENS.map((token) => (
               <Tag key={`kg-${token}`}>{token}</Tag>
@@ -244,13 +223,13 @@ export function NewsPromptSettingsPanel() {
             systemName="kgSystemPromptTemplate"
             userName="kgUserPromptTemplate"
           />
-        </Card>
+        </section>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
             {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
-    </>
+    </div>
   );
 }

@@ -3,7 +3,6 @@
 import {
   Alert,
   Button,
-  Card,
   Descriptions,
   Divider,
   Form,
@@ -21,6 +20,7 @@ import { useSession } from 'next-auth/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { SectionHeader } from '@/components/section-header';
 import { createApiClient } from '@/lib/api-client';
 import { extractApiError } from '@/lib/api-error';
 import { captureClientError } from '@/lib/client-telemetry';
@@ -561,16 +561,16 @@ export function NewsnowPersonalizationSettingsPanel() {
 
   if (loading && settings === null) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: '1rem' }}>
+      <Typography.Paragraph type="secondary" className="m-0">
         {t('systemSettings.newsnowPersonalization.description')}
       </Typography.Paragraph>
 
@@ -579,11 +579,10 @@ export function NewsnowPersonalizationSettingsPanel() {
         showIcon
         message={t('systemSettings.newsnowPersonalization.notice.title')}
         description={t('systemSettings.newsnowPersonalization.notice.body')}
-        style={{ marginBottom: '1rem' }}
       />
 
       {errorMessage ? (
-        <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: '1rem' }} />
+        <Alert type="error" showIcon message={errorMessage} />
       ) : null}
       {isSettingsDirty ? (
         <Alert
@@ -591,11 +590,10 @@ export function NewsnowPersonalizationSettingsPanel() {
           showIcon
           message={t('systemSettings.newsnowPersonalization.unsaved.title')}
           description={t('systemSettings.newsnowPersonalization.unsaved.description')}
-          style={{ marginBottom: '1rem' }}
         />
       ) : null}
 
-      <Space direction="vertical" size="small" style={{ display: 'flex', marginBottom: '1rem' }}>
+      <Space direction="vertical" size="small" style={{ display: 'flex' }}>
         <Space wrap>
           <Typography.Text>
             {t('systemSettings.newsnowPersonalization.status.label')}
@@ -748,7 +746,6 @@ export function NewsnowPersonalizationSettingsPanel() {
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
           gap: 12,
-          marginBottom: '1rem',
         }}
       >
         {behaviorDimensions.map((section) => {
@@ -758,14 +755,10 @@ export function NewsnowPersonalizationSettingsPanel() {
               | undefined,
           );
           return (
-            <Card
-              key={section.key}
-              size="small"
-              title={`${section.label} · ${t(
+            <div key={section.key} className="surface-inset flex flex-col gap-2">
+              <p className="kicker m-0">{`${section.label} · ${t(
                 'systemSettings.newsnowPersonalization.behaviorProfile.sections.combined',
-              )}`}
-              loading={behaviorProfileLoading}
-            >
+              )}`}</p>
               {entries.length > 0 ? (
                 <Space direction="vertical" size={6} style={{ width: '100%' }}>
                   {entries.map(([key, value]) => (
@@ -793,7 +786,7 @@ export function NewsnowPersonalizationSettingsPanel() {
                   {t('systemSettings.newsnowPersonalization.behaviorProfile.empty')}
                 </Typography.Text>
               )}
-            </Card>
+            </div>
           );
         })}
       </div>
@@ -802,7 +795,6 @@ export function NewsnowPersonalizationSettingsPanel() {
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
           gap: 12,
-          marginBottom: '1rem',
         }}
       >
         {behaviorDimensions.map((section) => {
@@ -813,12 +805,8 @@ export function NewsnowPersonalizationSettingsPanel() {
             behaviorProfile?.negative?.[section.key as keyof NonNullable<UserNewsBehaviorProfileResponse['negative']>],
           );
           return (
-            <Card
-              key={`polarity-${section.key}`}
-              size="small"
-              title={section.label}
-              loading={behaviorProfileLoading}
-            >
+            <div key={`polarity-${section.key}`} className="surface-inset flex flex-col gap-2">
+              <p className="kicker m-0">{section.label}</p>
               <Space direction="vertical" size={10} style={{ width: '100%' }}>
                 <div>
                   <Typography.Text strong>
@@ -869,18 +857,18 @@ export function NewsnowPersonalizationSettingsPanel() {
                   )}
                 </div>
               </Space>
-            </Card>
+            </div>
           );
         })}
       </div>
       {(behaviorProfile?.bands ?? []).length > 0 ? (
-        <Card
-          size="small"
-          title={t(
-            'systemSettings.newsnowPersonalization.behaviorProfile.decayTitle',
-          )}
-          style={{ marginBottom: '1rem' }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader
+            title={t(
+              'systemSettings.newsnowPersonalization.behaviorProfile.decayTitle',
+            )}
+            rule
+          />
           <Space wrap size={[8, 8]}>
             {behaviorProfile?.meta?.decayPolicy?.halfLifeDays ? (
               <Tag color="blue">
@@ -904,7 +892,7 @@ export function NewsnowPersonalizationSettingsPanel() {
               </Tag>
             ))}
           </Space>
-        </Card>
+        </section>
       ) : null}
 
       <Form
@@ -1268,6 +1256,6 @@ export function NewsnowPersonalizationSettingsPanel() {
           </Space>
         </Form.Item>
       </Form>
-    </>
+    </div>
   );
 }

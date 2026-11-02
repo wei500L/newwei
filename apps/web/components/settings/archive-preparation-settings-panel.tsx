@@ -1,10 +1,11 @@
 "use client";
 
-import { Alert, Button, Card, Form, InputNumber, Modal, Space, Spin, Tag, Typography, message } from "antd";
+import { Alert, Button, Form, InputNumber, Modal, Space, Spin, Tag, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -175,34 +176,35 @@ export function ArchivePreparationSettingsPanel() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="m-0">
         {t("systemSettings.archivePreparation.description")}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
-        style={{ marginBottom: "1rem" }}
         message={t("systemSettings.archivePreparation.notice.title")}
         description={t("systemSettings.archivePreparation.notice.body")}
       />
 
       {errorMessage ? (
-        <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: "1rem" }} />
+        <Alert type="error" showIcon message={errorMessage} />
       ) : null}
 
-      <Card
-        title={t("systemSettings.archivePreparation.cardTitle")}
-        extra={
+      <section className="flex flex-col gap-3">
+        <SectionHeader
+          title={t("systemSettings.archivePreparation.cardTitle")}
+          rule
+          extra={
           <Space>
             <Typography.Text type="secondary">
               {t(`systemSettings.archivePreparation.source.${settings.source}`, {
@@ -217,7 +219,7 @@ export function ArchivePreparationSettingsPanel() {
             </Button>
           </Space>
         }
-      >
+        />
         <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={EMPTY_SETTINGS}>
           <Space wrap style={{ display: "flex" }}>
             <Form.Item
@@ -274,12 +276,13 @@ export function ArchivePreparationSettingsPanel() {
             </Button>
           </Space>
         </Form>
-      </Card>
+      </section>
 
-      <Card
-        title={t("systemSettings.archivePreparation.ops.title")}
-        style={{ marginTop: "1rem" }}
-        extra={
+      <section className="flex flex-col gap-3">
+        <SectionHeader
+          title={t("systemSettings.archivePreparation.ops.title")}
+          rule
+          extra={
           opsStatus ? (
             <Typography.Text type="secondary">
               {t("systemSettings.archivePreparation.ops.updatedAt", {
@@ -288,8 +291,8 @@ export function ArchivePreparationSettingsPanel() {
             </Typography.Text>
           ) : null
         }
-      >
-        <Space wrap size={[8, 8]} style={{ marginBottom: "1rem" }}>
+        />
+        <Space wrap size={[8, 8]}>
           <Tag color={opsStatus && opsStatus.pending > 0 ? "processing" : "green"}>
             {t("systemSettings.archivePreparation.ops.pending", {
               count: opsStatus?.pending ?? 0,
@@ -321,7 +324,6 @@ export function ArchivePreparationSettingsPanel() {
           <Alert
             type="warning"
             showIcon
-            style={{ marginBottom: "1rem" }}
             message={t("systemSettings.archivePreparation.ops.latestFailure")}
             description={opsStatus.recentStatuses.find((item) => item.state === "FAILED")?.errorMessage}
           />
@@ -366,7 +368,7 @@ export function ArchivePreparationSettingsPanel() {
             ))
           )}
         </div>
-      </Card>
-    </>
+      </section>
+    </div>
   );
 }

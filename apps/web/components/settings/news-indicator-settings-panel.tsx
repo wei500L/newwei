@@ -147,7 +147,7 @@ export function NewsIndicatorSettingsPanel() {
 
   if (loading && !data?.newsIndicatorSettings) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );

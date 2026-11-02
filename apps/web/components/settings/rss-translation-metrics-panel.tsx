@@ -1,13 +1,15 @@
 "use client";
 
-import { Alert, Button, Card, Col, Empty, Row, Select, Space, Statistic, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Col, Row, Select, Space, Statistic, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
+import { SectionHeader } from "@/components/section-header";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
@@ -426,50 +428,46 @@ export function RssTranslationMetricsPanel() {
   );
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Card
-        title={t("settings.rssTranslationMetrics.title")}
-        extra={
-          <Space wrap>
-            <Select
-              style={{ width: 150 }}
-              value={days}
-              options={[
-                { value: 7, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 7 }) },
-                { value: 14, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 14 }) },
-                { value: 30, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 30 }) }
-              ]}
-              onChange={(value) => setDays(Number(value))}
-            />
-            <Select
-              style={{ width: 160 }}
-              value={providerFilter}
-              onChange={(value) => setProviderFilter(value as ProviderFilter)}
-              options={[
-                { value: "all", label: t("settings.rssTranslationMetrics.filters.providers.all") },
-                { value: "deeplx", label: t("settings.rssTranslationMetrics.filters.providers.deeplx") },
-                { value: "llm", label: t("settings.rssTranslationMetrics.filters.providers.llm") }
-              ]}
-            />
-            <Select
-              style={{ width: 180 }}
-              value={targetLanguageFilter}
-              onChange={(value) => setTargetLanguageFilter(String(value))}
-              options={[
-                { value: "all", label: t("settings.rssTranslationMetrics.filters.languages.all") },
-                ...RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS.map((option) => ({
-                  value: option.value,
-                  label: option.label
-                }))
-              ]}
-            />
-            <Button onClick={() => void loadMetrics()} loading={loading}>
-              {t("common.refresh")}
-            </Button>
-          </Space>
-        }
-      >
+      <section className="flex flex-col gap-3">
+        <Space wrap>
+          <Select
+            style={{ width: 150 }}
+            value={days}
+            options={[
+              { value: 7, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 7 }) },
+              { value: 14, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 14 }) },
+              { value: 30, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 30 }) }
+            ]}
+            onChange={(value) => setDays(Number(value))}
+          />
+          <Select
+            style={{ width: 160 }}
+            value={providerFilter}
+            onChange={(value) => setProviderFilter(value as ProviderFilter)}
+            options={[
+              { value: "all", label: t("settings.rssTranslationMetrics.filters.providers.all") },
+              { value: "deeplx", label: t("settings.rssTranslationMetrics.filters.providers.deeplx") },
+              { value: "llm", label: t("settings.rssTranslationMetrics.filters.providers.llm") }
+            ]}
+          />
+          <Select
+            style={{ width: 180 }}
+            value={targetLanguageFilter}
+            onChange={(value) => setTargetLanguageFilter(String(value))}
+            options={[
+              { value: "all", label: t("settings.rssTranslationMetrics.filters.languages.all") },
+              ...RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS.map((option) => ({
+                value: option.value,
+                label: option.label
+              }))
+            ]}
+          />
+          <Button onClick={() => void loadMetrics()} loading={loading}>
+            {t("common.refresh")}
+          </Button>
+        </Space>
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           {errorMessage ? <Alert type="error" showIcon message={errorMessage} /> : null}
 
@@ -527,39 +525,40 @@ export function RssTranslationMetricsPanel() {
 
           <Row gutter={[12, 12]}>
             <Col xs={24} xl={12}>
-              <Card
-                size="small"
-                title={t("settings.rssTranslationMetrics.charts.volume")}
-              >
+              <div className="surface-inset flex flex-col gap-2">
+                <p className="kicker m-0">
+                  {t("settings.rssTranslationMetrics.charts.volume")}
+                </p>
                 {volumeChartOption ? (
                   <DashboardChart option={volumeChartOption} theme={echartsTheme} height={300} />
                 ) : (
-                  <Empty
+                  <ChartEmptyState
                     description={t("settings.rssTranslationMetrics.charts.empty")}
                   />
                 )}
-              </Card>
+              </div>
             </Col>
             <Col xs={24} xl={12}>
-              <Card
-                size="small"
-                title={t("settings.rssTranslationMetrics.charts.quality")}
-              >
+              <div className="surface-inset flex flex-col gap-2">
+                <p className="kicker m-0">
+                  {t("settings.rssTranslationMetrics.charts.quality")}
+                </p>
                 {qualityChartOption ? (
                   <DashboardChart option={qualityChartOption} theme={echartsTheme} height={300} />
                 ) : (
-                  <Empty
+                  <ChartEmptyState
                     description={t("settings.rssTranslationMetrics.charts.empty")}
                   />
                 )}
-              </Card>
+              </div>
             </Col>
           </Row>
 
-          <div>
-            <Typography.Text strong>
-              {t("settings.rssTranslationMetrics.table.title")}
-            </Typography.Text>
+          <div className="flex flex-col gap-2">
+            <SectionHeader
+              as="h3"
+              title={t("settings.rssTranslationMetrics.table.title")}
+            />
             <Table<RssTranslationMetricsDailyRow>
               style={{ marginTop: 8 }}
               rowKey={(row) => `${row.date}:${row.provider}:${row.targetLanguage}`}
@@ -589,7 +588,7 @@ export function RssTranslationMetricsPanel() {
             })}
           </Typography.Text>
         </Space>
-      </Card>
-    </>
+      </section>
+    </div>
   );
 }

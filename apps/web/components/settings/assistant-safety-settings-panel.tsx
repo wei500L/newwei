@@ -1,10 +1,11 @@
 "use client";
 
-import { Alert, Button, Card, Descriptions, Divider, Form, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tag, Typography, message, theme } from "antd";
+import { Alert, Button, Descriptions, Divider, Form, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tag, Typography, message, theme } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -560,25 +561,25 @@ export function AssistantSafetySettingsPanel() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Card
-        size="small"
-        title={t("settings.assistantSafety.title")}
-        extra={
-          <Space wrap>
-            {sourceTag}
-            {enabledTag}
-          </Space>
-        }
-      >
+      <section className="flex flex-col gap-3">
+        <SectionHeader
+          title={t("settings.assistantSafety.title")}
+          extra={
+            <Space wrap>
+              {sourceTag}
+              {enabledTag}
+            </Space>
+          }
+        />
         <Space direction="vertical" size="middle" style={{ display: "flex" }}>
           <Alert
             type="info"
@@ -1133,18 +1134,17 @@ export function AssistantSafetySettingsPanel() {
             </Space>
           </Form>
         </Space>
-      </Card>
+      </section>
 
-      <Card
-        size="small"
-        title={t("settings.assistantSafety.quota.title")}
-        extra={
-          <Tag color={quota.enabled ? "green" : "default"}>
-            {quota.enabled ? t("common.enabled") : t("common.disabled")}
-          </Tag>
-        }
-        style={{ marginTop: 16 }}
-      >
+      <section className="flex flex-col gap-3">
+        <SectionHeader
+          title={t("settings.assistantSafety.quota.title")}
+          extra={
+            <Tag color={quota.enabled ? "green" : "default"}>
+              {quota.enabled ? t("common.enabled") : t("common.disabled")}
+            </Tag>
+          }
+        />
         <Space direction="vertical" size="middle" style={{ display: "flex" }}>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
             {t("settings.assistantSafety.quota.description")}
@@ -1216,7 +1216,7 @@ export function AssistantSafetySettingsPanel() {
             </Space>
           </Form>
         </Space>
-      </Card>
-    </>
+      </section>
+    </div>
   );
 }

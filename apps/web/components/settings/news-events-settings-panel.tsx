@@ -4,7 +4,6 @@ import { gql, useMutation, useQuery } from "@apollo/client";
 import {
   Alert,
   Button,
-  Card,
   Descriptions,
   Form,
   InputNumber,
@@ -23,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
+import { SectionHeader } from "@/components/section-header";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -687,18 +687,16 @@ export function NewsEventsSettingsPanel() {
 
   if (loading && !data?.newsEventSettings) {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
-      >
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="m-0">
         {t("settings.newsEvents.description")}
       </Typography.Paragraph>
 
@@ -707,7 +705,6 @@ export function NewsEventsSettingsPanel() {
         showIcon
         message={t("settings.newsEvents.notice.title")}
         description={t("settings.newsEvents.notice.body")}
-        style={{ marginBottom: "1rem" }}
       />
 
       {error ? (
@@ -716,7 +713,6 @@ export function NewsEventsSettingsPanel() {
           showIcon
           message={t("settings.newsEvents.messages.loadFailed")}
           description={error.message}
-          style={{ marginBottom: "1rem" }}
         />
       ) : null}
 
@@ -1306,11 +1302,11 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
       </Form>
 
-      <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
-        {t("settings.newsEvents.sections.clusteringQueue")}
-      </Typography.Title>
-
-      <Card>
+      <section className="flex flex-col gap-3">
+        <SectionHeader
+          title={t("settings.newsEvents.sections.clusteringQueue")}
+          rule
+        />
         <Space direction="vertical" size="middle" style={{ display: "flex" }}>
           <Descriptions
             size="small"
@@ -1406,7 +1402,7 @@ export function NewsEventsSettingsPanel() {
             }}
           />
         </Space>
-      </Card>
-    </>
+      </section>
+    </div>
   );
 }

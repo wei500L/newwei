@@ -4,7 +4,6 @@ import { ArrowLeftOutlined, InfoCircleOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
-  Card,
   Form,
   Input,
   InputNumber,
@@ -792,20 +791,16 @@ export function SituationMonitorSettingsPanel() {
 
   if (loading && !loadedOnce) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Space
-        direction="vertical"
-        size="middle"
-        style={{ display: "flex", marginBottom: "1rem" }}
-      >
+      <div className="flex flex-col gap-3">
         <Space wrap>
           <Button
             icon={<ArrowLeftOutlined />}
@@ -825,7 +820,10 @@ export function SituationMonitorSettingsPanel() {
           description={t("systemSettings.situationMonitor.readiness.description")}
         />
 
-        <Card size="small" title={t("systemSettings.situationMonitor.readiness.providers")}>
+        <div className="surface-inset flex flex-col gap-2">
+          <p className="kicker m-0">
+            {t("systemSettings.situationMonitor.readiness.providers")}
+          </p>
           <Space direction="vertical" size="small" style={{ display: "flex" }}>
             <Space wrap>
               <Typography.Text strong>Telegram</Typography.Text>
@@ -864,12 +862,12 @@ export function SituationMonitorSettingsPanel() {
               </Button>
             </Space>
           </Space>
-        </Card>
+        </div>
 
-        <Card
-          size="small"
-          title={t("systemSettings.situationMonitor.snapshot.title")}
-        >
+        <div className="surface-inset flex flex-col gap-2">
+          <p className="kicker m-0">
+            {t("systemSettings.situationMonitor.snapshot.title")}
+          </p>
           <Space direction="vertical" size="small" style={{ display: "flex" }}>
             <Space wrap>
               <Typography.Text strong>GDELT</Typography.Text>
@@ -970,12 +968,12 @@ export function SituationMonitorSettingsPanel() {
               </Button>
             </Space>
           </Space>
-        </Card>
+        </div>
 
-        <Card
-          size="small"
-          title={t("systemSettings.situationMonitor.quality.title")}
-        >
+        <div className="surface-inset flex flex-col gap-2">
+          <p className="kicker m-0">
+            {t("systemSettings.situationMonitor.quality.title")}
+          </p>
           {!qualitySummary ? (
             <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.quality.empty")}
@@ -1029,10 +1027,10 @@ export function SituationMonitorSettingsPanel() {
               </Typography.Text>
             </Space>
           )}
-        </Card>
-      </Space>
+        </div>
+      </div>
 
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="m-0">
         {t("systemSettings.situationMonitor.description")}
       </Typography.Paragraph>
 
@@ -1041,12 +1039,11 @@ export function SituationMonitorSettingsPanel() {
         showIcon
         message={t("systemSettings.situationMonitor.notice.title")}
         description={t("systemSettings.situationMonitor.notice.body")}
-        style={{ marginBottom: "1rem" }}
       />
 
-      {errorMessage ? <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: "1rem" }} /> : null}
+      {errorMessage ? <Alert type="error" showIcon message={errorMessage} /> : null}
 
-      <Space direction="vertical" size="small" style={{ display: "flex", marginBottom: "1rem" }}>
+      <Space direction="vertical" size="small" style={{ display: "flex" }}>
         <Space wrap>
           <Typography.Text>{t("systemSettings.situationMonitor.status.label")}</Typography.Text>
           <Tag color={sourceColor}>{sourceLabel}</Tag>
@@ -1531,6 +1528,6 @@ export function SituationMonitorSettingsPanel() {
           </Button>
         </Space>
       </Form>
-    </>
+    </div>
   );
 }

@@ -3,7 +3,6 @@
 import {
   Alert,
   Button,
-  Card,
   Form,
   InputNumber,
   Spin,
@@ -14,6 +13,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import { NumberRangeExtra } from "@/components/settings/form-field-feedback";
 import { UnitInputNumber } from "@/components/settings/unit-input-number";
 import {
@@ -38,7 +38,8 @@ function RateLimitFieldGroup({
   const { t } = useTranslation();
 
   return (
-    <Card size="small" style={{ marginBottom: "1rem" }} title={title}>
+    <section className="flex flex-col gap-3">
+      <SectionHeader title={title} rule />
       <Typography.Paragraph type="secondary">
         {description}
       </Typography.Paragraph>
@@ -97,7 +98,7 @@ function RateLimitFieldGroup({
           <UnitInputNumber min={5} max={86_400} unit="s" />
         </Form.Item>
       </div>
-    </Card>
+    </section>
   );
 }
 
@@ -131,9 +132,7 @@ export function RateLimitSettingsPanel() {
 
   if (loading && !data?.rateLimitSettings) {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
-      >
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );

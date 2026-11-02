@@ -237,9 +237,7 @@ export function NewsClassificationSettingsPanel() {
 
   if (loading && !data?.newsClassificationSettings) {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
-      >
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );

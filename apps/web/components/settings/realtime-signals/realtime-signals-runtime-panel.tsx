@@ -3,7 +3,6 @@
 import {
   Alert,
   Button,
-  Card,
   Col,
   Row,
   Space,
@@ -13,6 +12,8 @@ import {
   Typography,
 } from "antd";
 import { useTranslation } from "react-i18next";
+
+import { SectionHeader } from "@/components/section-header";
 
 import { RealtimeSignalsMarkerReadiness, RealtimeSignalsInsights } from "./realtime-signals-marker-readiness";
 import { RealtimeSignalsOpenskyBudgetPanel } from "./realtime-signals-opensky-budget";
@@ -73,11 +74,11 @@ export function RealtimeSignalsRuntimePanel({
     [];
 
   return (
-    <Card
-      size="small"
-      title={t("systemSettings.realtimeSignals.runtime.title")}
-      extra={
-        <Space wrap>
+    <section className="flex flex-col gap-3">
+      <SectionHeader
+        title={t("systemSettings.realtimeSignals.runtime.title")}
+        extra={
+          <Space wrap>
           {diagnostics ? (
             <Tag color={runtimeSettingsSourceColor}>
               {t("systemSettings.realtimeSignals.runtime.settingsSource")}
@@ -94,10 +95,9 @@ export function RealtimeSignalsRuntimePanel({
           <Button onClick={onRefresh} loading={loading}>
             {t("common.refresh")}
           </Button>
-        </Space>
-      }
-      style={{ marginBottom: "1rem" }}
-    >
+          </Space>
+        }
+      />
       {error ? (
         <Alert
           type="error"
@@ -108,7 +108,6 @@ export function RealtimeSignalsRuntimePanel({
               {t("common.retry")}
             </Button>
           }
-          style={{ marginBottom: "1rem" }}
         />
       ) : null}
 
@@ -116,7 +115,6 @@ export function RealtimeSignalsRuntimePanel({
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: "1rem" }}
           message={t(
             "systemSettings.realtimeSignals.runtime.settingsSourceUnknown.title",
           )}
@@ -130,7 +128,6 @@ export function RealtimeSignalsRuntimePanel({
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: "1rem" }}
           message={t("systemSettings.realtimeSignals.runtime.issues", {
             count: runtimeIssues.length,
           })}
@@ -154,7 +151,6 @@ export function RealtimeSignalsRuntimePanel({
         <Alert
           type="info"
           showIcon
-          style={{ marginBottom: "1rem" }}
           message={t("systemSettings.realtimeSignals.runtime.warnings")}
           description={
             <Space wrap size={[8, 8]}>
@@ -176,7 +172,7 @@ export function RealtimeSignalsRuntimePanel({
         <Space direction="vertical" size="large" style={{ display: "flex" }}>
           <Row gutter={[12, 12]}>
             <Col xs={24} sm={12} lg={6}>
-              <Card size="small">
+              <div className="surface-inset">
                 <Statistic
                   title={t(
                     "systemSettings.realtimeSignals.runtime.summary.healthy",
@@ -187,20 +183,20 @@ export function RealtimeSignalsRuntimePanel({
                   }
                   suffix={`/ ${diagnostics.sources.length}`}
                 />
-              </Card>
+              </div>
             </Col>
             <Col xs={24} sm={12} lg={6}>
-              <Card size="small">
+              <div className="surface-inset">
                 <Statistic
                   title={t(
                     "systemSettings.realtimeSignals.runtime.summary.issues",
                   )}
                   value={runtimeIssues.length}
                 />
-              </Card>
+              </div>
             </Col>
             <Col xs={24} sm={12} lg={6}>
-              <Card size="small">
+              <div className="surface-inset">
                 <Statistic
                   title={t(
                     "systemSettings.realtimeSignals.runtime.summary.markerReadiness",
@@ -211,17 +207,17 @@ export function RealtimeSignalsRuntimePanel({
                       : t("common.unavailable")
                   }
                 />
-              </Card>
+              </div>
             </Col>
             <Col xs={24} sm={12} lg={6}>
-              <Card size="small">
+              <div className="surface-inset">
                 <Statistic
                   title={t(
                     "systemSettings.realtimeSignals.runtime.summary.pizzint",
                   )}
                   value={diagnostics.insight.pizzint?.defcon ?? "—"}
                 />
-              </Card>
+              </div>
             </Col>
           </Row>
 
@@ -250,13 +246,7 @@ export function RealtimeSignalsRuntimePanel({
           </Row>
         </Space>
       ) : loading ? (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            padding: "1rem 0",
-          }}
-        >
+        <div className="flex justify-center py-4">
           <Spin />
         </div>
       ) : (
@@ -264,6 +254,6 @@ export function RealtimeSignalsRuntimePanel({
           {t("systemSettings.realtimeSignals.runtime.empty")}
         </Typography.Text>
       )}
-    </Card>
+    </section>
   );
 }

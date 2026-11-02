@@ -43,9 +43,7 @@ export function AuthCacheSettingsPanel() {
 
   if (loading && !data?.authCacheSettings) {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
-      >
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );

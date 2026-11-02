@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Card, Col, Descriptions, Row, Statistic } from "antd";
+import { Alert, Col, Descriptions, Row, Statistic } from "antd";
 import { useTranslation } from "react-i18next";
 
 import type { RealtimeSignalsRuntimeDiagnosticsResponse } from "./realtime-signals-types";
@@ -101,34 +101,34 @@ export function RealtimeSignalsInsights({ insight }: RealtimeSignalsInsightsProp
   return (
     <Row gutter={[12, 12]}>
       <Col xs={24} sm={8}>
-        <Card size="small">
+        <div className="surface-inset">
           <Statistic
             title={t(
               "systemSettings.realtimeSignals.runtime.insight.keywordSpikes",
             )}
             value={insight.keywordSpikes.length}
           />
-        </Card>
+        </div>
       </Col>
       <Col xs={24} sm={8}>
-        <Card size="small">
+        <div className="surface-inset">
           <Statistic
             title={t(
               "systemSettings.realtimeSignals.runtime.insight.predictionLeads",
             )}
             value={insight.predictionLeads.length}
           />
-        </Card>
+        </div>
       </Col>
       <Col xs={24} sm={8}>
-        <Card size="small">
+        <div className="surface-inset">
           <Statistic
             title={t(
               "systemSettings.realtimeSignals.runtime.insight.tensions",
             )}
             value={insight.tensions.length}
           />
-        </Card>
+        </div>
       </Col>
     </Row>
   );

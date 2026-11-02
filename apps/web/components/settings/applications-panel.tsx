@@ -2,7 +2,6 @@
 
 import {
   Button,
-  Card,
   Empty,
   Form,
   Input,
@@ -14,6 +13,8 @@ import {
   type TableColumnsType,
 } from 'antd';
 import { useEffect, useState } from 'react';
+
+import { SectionHeader } from '@/components/section-header';
 
 export interface ApprovalProgress {
   orgCreated: boolean;
@@ -310,8 +311,9 @@ export function ApplicationsPanel({
   ];
 
   return (
-    <Space direction="vertical" size="large" style={{ display: 'flex' }}>
-      <Card size="small" title="Join requests">
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-3">
+        <SectionHeader title="Join requests" rule />
         <Table
           scroll={{ x: "max-content" }}
           rowKey="id"
@@ -343,10 +345,11 @@ export function ApplicationsPanel({
           ]}
           locale={{ emptyText: <Empty description="No join requests" /> }}
         />
-      </Card>
+      </section>
 
       {canManagePlatform ? (
-        <Card size="small" title="New organization requests">
+        <section className="flex flex-col gap-3">
+          <SectionHeader title="New organization requests" rule />
           <Table
             scroll={{ x: "max-content" }}
             rowKey="id"
@@ -358,7 +361,7 @@ export function ApplicationsPanel({
               emptyText: <Empty description="No organization requests" />,
             }}
           />
-        </Card>
+        </section>
       ) : null}
 
       <Modal
@@ -395,6 +398,6 @@ export function ApplicationsPanel({
           </Form.Item>
         </Form>
       </Modal>
-    </Space>
+    </div>
   );
 }

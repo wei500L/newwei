@@ -1,10 +1,11 @@
 "use client";
 
-import { Alert, Button, Card, Descriptions, Form, Input, InputNumber, Modal, Space, Spin, Switch, Tag, Typography, message } from "antd";
+import { Alert, Button, Descriptions, Form, Input, InputNumber, Modal, Space, Spin, Switch, Tag, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -228,16 +229,16 @@ export function VectorServiceSettingsPanel() {
 
   if (loading && settings === EMPTY_SETTINGS) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="m-0">
         {t("systemSettings.vectorService.description")}
       </Typography.Paragraph>
 
@@ -246,14 +247,13 @@ export function VectorServiceSettingsPanel() {
         showIcon
         message={t("systemSettings.vectorService.notice.title")}
         description={t("systemSettings.vectorService.notice.body")}
-        style={{ marginBottom: "1rem" }}
       />
 
       {errorMessage ? (
-        <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: "1rem" }} />
+        <Alert type="error" showIcon message={errorMessage} />
       ) : null}
 
-      <Space direction="vertical" size="small" style={{ display: "flex", marginBottom: "1rem" }}>
+      <Space direction="vertical" size="small" style={{ display: "flex" }}>
         <Space wrap>
           <Typography.Text>{t("systemSettings.vectorService.status.label")}</Typography.Text>
           <Tag color={sourceColor}>{sourceLabel}</Tag>
@@ -267,11 +267,8 @@ export function VectorServiceSettingsPanel() {
       </Space>
 
       {diagnostics ? (
-        <Card
-          size="small"
-          title={t("systemSettings.vectorService.diagnostics.title")}
-          style={{ marginBottom: "1rem" }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("systemSettings.vectorService.diagnostics.title")} rule />
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
             <Space wrap>
               <Tag color={diagnostics.configured ? "green" : "orange"}>
@@ -344,7 +341,7 @@ export function VectorServiceSettingsPanel() {
               </Descriptions.Item>
             </Descriptions>
           </Space>
-        </Card>
+        </section>
       ) : null}
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
@@ -456,6 +453,6 @@ export function VectorServiceSettingsPanel() {
           </Button>
         </Space>
       </Form>
-    </>
+    </div>
   );
 }

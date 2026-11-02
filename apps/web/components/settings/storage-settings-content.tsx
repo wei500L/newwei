@@ -165,9 +165,7 @@ export function StorageSettingsContent() {
 
   if (status === "loading") {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
-      >
+      <div className="flex justify-center py-10">
         <Spin size="large" />
       </div>
     );

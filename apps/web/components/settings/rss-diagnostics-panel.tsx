@@ -3,7 +3,6 @@
 import {
   Alert,
   Button,
-  Card,
   Col,
   InputNumber,
   Row,
@@ -20,7 +19,9 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
+import { SectionHeader } from "@/components/section-header";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
@@ -412,13 +413,10 @@ export function RssDiagnosticsPanel() {
   );
 
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Card>
+      <section className="flex flex-col gap-3">
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <Typography.Title level={5} style={{ margin: 0 }}>
-            {t("settings.rssDiagnostics.title")}
-          </Typography.Title>
           <Typography.Text type="secondary">
             {t("settings.rssDiagnostics.description")}
           </Typography.Text>
@@ -507,12 +505,10 @@ export function RssDiagnosticsPanel() {
 
               <Row gutter={[12, 12]}>
                 <Col xs={24} md={12}>
-                  <Card
-                    size="small"
-                    title={t(
-                      "settings.rssDiagnostics.cards.processedCoverage",
-                    )}
-                  >
+                  <div className="surface-inset flex flex-col gap-2">
+                    <p className="kicker m-0">
+                      {t("settings.rssDiagnostics.cards.processedCoverage")}
+                    </p>
                     <Space direction="vertical" size={4}>
                       <Typography.Text>
                         {t("settings.rssDiagnostics.cards.totalCompleted", {
@@ -528,13 +524,13 @@ export function RssDiagnosticsPanel() {
                         {formatPercent(chain.processedCoverage.missingRate)}
                       </Typography.Text>
                     </Space>
-                  </Card>
+                  </div>
                 </Col>
                 <Col xs={24} md={12}>
-                  <Card
-                    size="small"
-                    title={t("settings.rssDiagnostics.cards.articleCoverage")}
-                  >
+                  <div className="surface-inset flex flex-col gap-2">
+                    <p className="kicker m-0">
+                      {t("settings.rssDiagnostics.cards.articleCoverage")}
+                    </p>
                     <Space direction="vertical" size={4}>
                       <Typography.Text>
                         {t("settings.rssDiagnostics.cards.totalArticle", {
@@ -553,50 +549,52 @@ export function RssDiagnosticsPanel() {
                         {formatPercent(chain.articleCoverage.missingRate)}
                       </Typography.Text>
                     </Space>
-                  </Card>
+                  </div>
                 </Col>
               </Row>
 
               <Row gutter={[12, 12]}>
                 <Col xs={24} md={12}>
-                  <Card
-                    size="small"
-                    title={t("settings.rssDiagnostics.charts.visibility")}
-                  >
+                  <div className="surface-inset flex flex-col gap-2">
+                    <p className="kicker m-0">
+                      {t("settings.rssDiagnostics.charts.visibility")}
+                    </p>
                     {visibilityChartOption ? (
                       <DashboardChart
                         option={visibilityChartOption}
                         theme={echartsTheme}
                         height={280}
                       />
-                    ) : null}
-                  </Card>
+                    ) : (
+                      <ChartEmptyState description={t("dashboard.dataEmpty")} />
+                    )}
+                  </div>
                 </Col>
                 <Col xs={24} md={12}>
-                  <Card
-                    size="small"
-                    title={t("settings.rssDiagnostics.charts.pipeline")}
-                  >
+                  <div className="surface-inset flex flex-col gap-2">
+                    <p className="kicker m-0">
+                      {t("settings.rssDiagnostics.charts.pipeline")}
+                    </p>
                     {pipelineChartOption ? (
                       <DashboardChart
                         option={pipelineChartOption}
                         theme={echartsTheme}
                         height={280}
                       />
-                    ) : null}
-                  </Card>
+                    ) : (
+                      <ChartEmptyState description={t("dashboard.dataEmpty")} />
+                    )}
+                  </div>
                 </Col>
               </Row>
             </>
           )}
         </Space>
-      </Card>
+      </section>
 
-      <Card>
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t("settings.rssDiagnostics.backfill.title")} />
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <Typography.Title level={5} style={{ margin: 0 }}>
-            {t("settings.rssDiagnostics.backfill.title")}
-          </Typography.Title>
           <Space wrap>
             <Space>
               <Typography.Text>
@@ -655,11 +653,10 @@ export function RssDiagnosticsPanel() {
             />
           ) : null}
         </Space>
-      </Card>
+      </section>
 
-      <Card
-        title={t("settings.rssDiagnostics.table.title")}
-      >
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t("settings.rssDiagnostics.table.title")} />
         <Table<RssDiagnosticsSourceRow>
           size="small"
           loading={loading}
@@ -669,10 +666,10 @@ export function RssDiagnosticsPanel() {
           pagination={{ pageSize: 20, showSizeChanger: true }}
           scroll={{ x: 1200 }}
         />
-      </Card>
+      </section>
 
       {chain ? (
-        <Card size="small">
+        <div className="surface-inset">
           <Space direction="vertical" size={4}>
             <Typography.Text type="secondary">
               {t("settings.rssDiagnostics.meta.generatedAt", {
@@ -690,8 +687,8 @@ export function RssDiagnosticsPanel() {
               })}
             </Typography.Text>
           </Space>
-        </Card>
+        </div>
       ) : null}
-    </Space>
+    </div>
   );
 }

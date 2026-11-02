@@ -8,7 +8,6 @@ import {
 import {
   Alert,
   Button,
-  Card,
   Modal,
   Select,
   Switch,
@@ -21,6 +20,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import {
   EconomicDataFrequency,
   useEconomicDataRefreshPresetStatusQuery,
@@ -599,15 +599,14 @@ export function AkshareGatewaySettingsPanel() {
   );
 
   return (
-    <>
+    <div className="flex flex-col gap-4">
       {contextHolder}
-      <Typography.Paragraph type="secondary">
+      <Typography.Paragraph type="secondary" className="m-0">
         {t("systemSettings.akshare.description")}
       </Typography.Paragraph>
 
       {errorMessage ? (
         <Alert
-          style={{ marginBottom: "1rem" }}
           type="error"
           message={errorMessage}
           showIcon
@@ -616,26 +615,14 @@ export function AkshareGatewaySettingsPanel() {
 
       {upgradeDisabledReason ? (
         <Alert
-          style={{ marginBottom: "1rem" }}
           type="warning"
           message={upgradeDisabledReason}
           showIcon
         />
       ) : null}
 
-      <Card
-        size="small"
-        title={t("systemSettings.akshare.title")}
-        style={{ marginBottom: "1rem" }}
-      >
-        <div
-          style={{
-            display: "flex",
-            gap: "0.75rem",
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Typography.Text>{t("systemSettings.akshare.label")}</Typography.Text>
           <Tag color="blue">{currentVersion}</Tag>
           <Typography.Text type="secondary">
@@ -672,10 +659,7 @@ export function AkshareGatewaySettingsPanel() {
           </Button>
         </div>
         {status?.requestId ? (
-          <Typography.Paragraph
-            type="secondary"
-            style={{ marginTop: "0.75rem", marginBottom: 0 }}
-          >
+          <Typography.Paragraph type="secondary" className="m-0">
             {t("systemSettings.akshare.request", {
               requestId: status.requestId,
               before: status.beforeVersion ?? null,
@@ -684,25 +668,19 @@ export function AkshareGatewaySettingsPanel() {
           </Typography.Paragraph>
         ) : null}
         {status?.error ? (
-          <Typography.Paragraph
-            type="danger"
-            style={{ marginTop: "0.75rem", marginBottom: 0 }}
-          >
+          <Typography.Paragraph type="danger" className="m-0">
             {status.error}
           </Typography.Paragraph>
         ) : null}
-      </Card>
+      </section>
 
-      <Card
-        size="small"
-        title={t("systemSettings.akshare.manualRefresh.title")}
-      >
-        <Typography.Paragraph type="secondary">
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t("systemSettings.akshare.manualRefresh.title")} />
+        <Typography.Paragraph type="secondary" className="m-0">
           {t("systemSettings.akshare.manualRefresh.description")}
         </Typography.Paragraph>
         {!canManageEconomicData ? (
           <Alert
-            style={{ marginBottom: "1rem" }}
             type="warning"
             showIcon
             message={t(
@@ -710,16 +688,9 @@ export function AkshareGatewaySettingsPanel() {
             )}
           />
         ) : null}
-        <div
-          style={{
-            display: "flex",
-            gap: "0.75rem",
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
+        <div className="flex flex-wrap items-center gap-3">
           <div style={{ minWidth: 280, flex: "1 1 320px" }}>
-            <Typography.Text style={{ display: "block", marginBottom: 8 }}>
+            <Typography.Text className="block">
               {t("systemSettings.akshare.manualRefresh.fields.preset")}
             </Typography.Text>
             <Select
@@ -753,13 +724,13 @@ export function AkshareGatewaySettingsPanel() {
           </Button>
         </div>
         {selectedPreset ? (
-          <div style={{ marginTop: "1rem" }}>
-            <Typography.Text strong>
-              {t("systemSettings.akshare.manualRefresh.summary.title")}
-            </Typography.Text>
+          <div className="flex flex-col gap-3">
+            <SectionHeader
+              as="h3"
+              title={t("systemSettings.akshare.manualRefresh.summary.title")}
+            />
             {presetStatusError ? (
               <Alert
-                style={{ marginTop: "0.75rem" }}
                 type="error"
                 showIcon
                 message={
@@ -775,38 +746,37 @@ export function AkshareGatewaySettingsPanel() {
                   display: "grid",
                   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
                   gap: "0.75rem",
-                  marginTop: "0.75rem",
                 }}
               >
-                <Card size="small">
+                <div className="surface-inset flex flex-col gap-1">
                   <Typography.Text type="secondary">
                     {t(
                       "systemSettings.akshare.manualRefresh.summary.totalItems",
                     )}
                   </Typography.Text>
-                  <div>{presetStatus?.totalItems ?? "-"}</div>
-                </Card>
-                <Card size="small">
+                  <div className="font-mono">{presetStatus?.totalItems ?? "-"}</div>
+                </div>
+                <div className="surface-inset flex flex-col gap-1">
                   <Typography.Text type="secondary">
                     {t(
                       "systemSettings.akshare.manualRefresh.summary.enabledItems",
                     )}
                   </Typography.Text>
-                  <div>{presetStatus?.enabledItems ?? "-"}</div>
-                </Card>
-                <Card size="small">
+                  <div className="font-mono">{presetStatus?.enabledItems ?? "-"}</div>
+                </div>
+                <div className="surface-inset flex flex-col gap-1">
                   <Typography.Text type="secondary">
                     {t(
                       "systemSettings.akshare.manualRefresh.summary.lastRunAt",
                     )}
                   </Typography.Text>
-                  <div>
+                  <div className="font-mono">
                     {presetStatusLoading
                       ? t("common.loading")
                       : formattedPresetLastRunAt}
                   </div>
-                </Card>
-                <Card size="small">
+                </div>
+                <div className="surface-inset flex flex-col gap-1">
                   <Typography.Text type="secondary">
                     {t(
                       "systemSettings.akshare.manualRefresh.summary.lastStatus",
@@ -815,12 +785,11 @@ export function AkshareGatewaySettingsPanel() {
                   <div>
                     <Tag color={presetStatusColor}>{presetStatusLabel}</Tag>
                   </div>
-                </Card>
+                </div>
               </div>
             )}
             {presetStatus?.lastError ? (
               <Alert
-                style={{ marginTop: "0.75rem" }}
                 type="warning"
                 showIcon
                 message={t(
@@ -830,23 +799,19 @@ export function AkshareGatewaySettingsPanel() {
               />
             ) : null}
             {statusPolling ? (
-              <Typography.Paragraph
-                type="secondary"
-                style={{ marginTop: "0.75rem", marginBottom: 0 }}
-              >
+              <Typography.Paragraph type="secondary" className="m-0">
                 {t("systemSettings.akshare.manualRefresh.summary.polling")}
               </Typography.Paragraph>
             ) : null}
           </div>
         ) : null}
-      </Card>
+      </section>
 
       {canManageEconomicData ? (
-        <Card
-          size="small"
-          title={t("systemSettings.akshare.providers.title")}
-          style={{ marginTop: "1rem" }}
-          extra={
+        <section className="flex flex-col gap-3">
+          <SectionHeader
+            title={t("systemSettings.akshare.providers.title")}
+            extra={
             <Button
               onClick={() => {
                 void refetchFetchConfigs();
@@ -857,8 +822,8 @@ export function AkshareGatewaySettingsPanel() {
               {t("common.refresh")}
             </Button>
           }
-        >
-          <Typography.Paragraph type="secondary">
+          />
+          <Typography.Paragraph type="secondary" className="m-0">
             {t("systemSettings.akshare.providers.description")}
           </Typography.Paragraph>
           <Table
@@ -993,8 +958,8 @@ export function AkshareGatewaySettingsPanel() {
               },
             ]}
           />
-        </Card>
+        </section>
       ) : null}
-    </>
+    </div>
   );
 }

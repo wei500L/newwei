@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Col, Divider, Row, Space, Statistic, Tag, Typography } from "antd";
+import { Col, Divider, Row, Space, Statistic, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -74,10 +74,10 @@ export function RealtimeSignalsOverview({
     .length;
 
   return (
-    <>
-      <Row gutter={[12, 12]} style={{ marginBottom: "1rem" }}>
+    <div className="flex flex-col gap-6">
+      <Row gutter={[12, 12]}>
         <Col xs={24} sm={12} lg={6}>
-          <Card size="small">
+          <div className="surface-inset">
             <Statistic
               title={t(
                 "systemSettings.realtimeSignals.overview.enabledSources",
@@ -85,20 +85,20 @@ export function RealtimeSignalsOverview({
               value={enabledSourceCount}
               suffix={`/ ${sourceStatusRows.length}`}
             />
-          </Card>
+          </div>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card size="small">
+          <div className="surface-inset">
             <Statistic
               title={t(
                 "systemSettings.realtimeSignals.overview.disabledSources",
               )}
               value={disabledSourceCount}
             />
-          </Card>
+          </div>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card size="small">
+          <div className="surface-inset">
             <Statistic
               title={t(
                 "systemSettings.realtimeSignals.overview.fastestInterval",
@@ -106,10 +106,10 @@ export function RealtimeSignalsOverview({
               value={fastestEnabledInterval ?? "—"}
               suffix={fastestEnabledInterval ? "sec" : undefined}
             />
-          </Card>
+          </div>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card size="small">
+          <div className="surface-inset">
             <Statistic
               title={t(
                 "systemSettings.realtimeSignals.overview.configuredSecrets",
@@ -117,14 +117,14 @@ export function RealtimeSignalsOverview({
               value={configuredSecretCount}
               suffix={`/ ${secretStatusRows.length}`}
             />
-          </Card>
+          </div>
         </Col>
       </Row>
 
       <Space
         direction="vertical"
         size="small"
-        style={{ display: "flex", marginBottom: "1rem" }}
+        style={{ display: "flex" }}
       >
         <Space wrap>
           <Typography.Text>
@@ -286,6 +286,6 @@ export function RealtimeSignalsOverview({
           ))}
         </Space>
       </Space>
-    </>
+    </div>
   );
 }

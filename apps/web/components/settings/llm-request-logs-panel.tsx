@@ -3,10 +3,8 @@
 import {
   Alert,
   Button,
-  Card,
   Col,
   DatePicker,
-  Empty,
   Form,
   Input,
   InputNumber,
@@ -31,7 +29,9 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
+import { SectionHeader } from "@/components/section-header";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useCsvExport } from "@/hooks/use-csv-export";
 import { createApiClient } from "@/lib/api-client";
@@ -1565,9 +1565,7 @@ export function LlmRequestLogsPanel() {
 
   if ((settingsLoading || isLoading) && logs.items.length === 0) {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
-      >
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
@@ -1600,9 +1598,9 @@ export function LlmRequestLogsPanel() {
   ].filter((value): value is string => Boolean(value));
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="m-0">
         {t("systemSettings.llmRequestLogs.description")}
       </Typography.Paragraph>
 
@@ -1611,7 +1609,6 @@ export function LlmRequestLogsPanel() {
           type="error"
           showIcon
           message={settingsErrorMessage}
-          style={{ marginBottom: "1rem" }}
         />
       ) : null}
 
@@ -1619,7 +1616,6 @@ export function LlmRequestLogsPanel() {
         <Alert
           type="info"
           showIcon
-          style={{ marginBottom: "1rem" }}
           message="Deep-linked crawl frontier context"
           description={
             <Space wrap>
@@ -1636,18 +1632,12 @@ export function LlmRequestLogsPanel() {
         />
       ) : null}
 
-      <Card
-        size="small"
-        title={t("systemSettings.llmRequestLogs.retention.title")}
-        style={{ marginBottom: "1rem" }}
-      >
-        <Typography.Paragraph
-          type="secondary"
-          style={{ marginBottom: "0.75rem" }}
-        >
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t("systemSettings.llmRequestLogs.retention.title")} />
+        <Typography.Paragraph type="secondary" className="m-0">
           {t("systemSettings.llmRequestLogs.retention.description")}
         </Typography.Paragraph>
-        <Space wrap style={{ marginBottom: "0.75rem" }}>
+        <Space wrap>
           <Typography.Text>
             {t("systemSettings.llmRequestLogs.retention.status.label")}
           </Typography.Text>
@@ -2017,20 +2007,14 @@ export function LlmRequestLogsPanel() {
             </Button>
           </Space>
         </Form>
-      </Card>
+      </section>
 
-      <Card
-        size="small"
-        title={t("systemSettings.llmRequestLogs.metadataPolicy.title")}
-        style={{ marginBottom: "1rem" }}
-      >
-        <Typography.Paragraph
-          type="secondary"
-          style={{ marginBottom: "0.75rem" }}
-        >
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t("systemSettings.llmRequestLogs.metadataPolicy.title")} />
+        <Typography.Paragraph type="secondary" className="m-0">
           {t("systemSettings.llmRequestLogs.metadataPolicy.description")}
         </Typography.Paragraph>
-        <Space wrap style={{ marginBottom: "0.75rem" }}>
+        <Space wrap>
           <Typography.Text>
             {t("systemSettings.llmRequestLogs.metadataPolicy.source")}
           </Typography.Text>
@@ -2053,17 +2037,11 @@ export function LlmRequestLogsPanel() {
           </Tag>
         </Space>
 
-        <Typography.Text strong>
-          {t("systemSettings.llmRequestLogs.metadataPolicy.prefixesTitle")}
-        </Typography.Text>
-        <Space
-          wrap
-          style={{
-            display: "flex",
-            marginTop: "0.5rem",
-            marginBottom: "0.75rem",
-          }}
-        >
+        <SectionHeader
+          as="h3"
+          title={t("systemSettings.llmRequestLogs.metadataPolicy.prefixesTitle")}
+        />
+        <Space wrap>
           {effectiveMetadataPolicy.allowedTopLevelPrefixes.length > 0 ? (
             effectiveMetadataPolicy.allowedTopLevelPrefixes.map((prefix) => (
               <Tag key={prefix}>{prefix}</Tag>
@@ -2075,10 +2053,11 @@ export function LlmRequestLogsPanel() {
           )}
         </Space>
 
-        <Typography.Text strong>
-          {t("systemSettings.llmRequestLogs.metadataPolicy.keysPreviewTitle")}
-        </Typography.Text>
-        <Space wrap style={{ display: "flex", marginTop: "0.5rem" }}>
+        <SectionHeader
+          as="h3"
+          title={t("systemSettings.llmRequestLogs.metadataPolicy.keysPreviewTitle")}
+        />
+        <Space wrap>
           {metadataPreviewKeys.length > 0 ? (
             metadataPreviewKeys.map((key) => <Tag key={key}>{key}</Tag>)
           ) : (
@@ -2094,13 +2073,12 @@ export function LlmRequestLogsPanel() {
             })}
           </Typography.Text>
         ) : null}
-      </Card>
+      </section>
 
       <Space
         wrap
         style={{
           display: "flex",
-          marginBottom: "1rem",
           alignItems: "flex-end",
         }}
       >
@@ -2224,15 +2202,11 @@ export function LlmRequestLogsPanel() {
           type="error"
           showIcon
           message={errorMessage}
-          style={{ marginBottom: "1rem" }}
         />
       ) : null}
 
-      <Card
-        size="small"
-        title={t("systemSettings.llmRequestLogs.summary.title")}
-        style={{ marginBottom: "1rem" }}
-      >
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t("systemSettings.llmRequestLogs.summary.title")} />
         <Row gutter={[16, 16]}>
           <Col xs={24} sm={12} md={6}>
             <Statistic
@@ -2333,7 +2307,6 @@ export function LlmRequestLogsPanel() {
             type="warning"
             showIcon
             message={briefMetricsErrorMessage}
-            style={{ marginTop: "0.75rem" }}
           />
         ) : null}
         {showBriefMetrics && briefThresholdWarnings.length > 0 ? (
@@ -2350,17 +2323,13 @@ export function LlmRequestLogsPanel() {
                 ))}
               </Space>
             }
-            style={{ marginTop: "0.75rem" }}
           />
         ) : null}
         {showBriefMetrics ? (
-          <Card
-            size="small"
-            style={{ marginTop: "0.75rem" }}
-            title={t(
-              "systemSettings.llmRequestLogs.summary.briefErrorTrend.title",
-            )}
-          >
+          <div className="surface-inset flex flex-col gap-2">
+            <p className="kicker m-0">
+              {t("systemSettings.llmRequestLogs.summary.briefErrorTrend.title")}
+            </p>
             {briefErrorTrendChartOption ? (
               <DashboardChart
                 option={briefErrorTrendChartOption}
@@ -2368,19 +2337,19 @@ export function LlmRequestLogsPanel() {
                 height={260}
               />
             ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              <ChartEmptyState
                 description={t(
                   "systemSettings.llmRequestLogs.summary.briefErrorTrend.empty",
                 )}
               />
             )}
-          </Card>
+          </div>
         ) : null}
-        <div style={{ marginTop: "0.75rem" }}>
-          <Typography.Text strong>
-            {t("systemSettings.llmRequestLogs.summary.topErrors.title")}
-          </Typography.Text>
+        <div className="flex flex-col gap-2">
+          <SectionHeader
+            as="h3"
+            title={t("systemSettings.llmRequestLogs.summary.topErrors.title")}
+          />
           {summary.topErrors.length === 0 ? (
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
               {t("systemSettings.llmRequestLogs.summary.topErrors.empty")}
@@ -2407,7 +2376,7 @@ export function LlmRequestLogsPanel() {
             />
           )}
         </div>
-      </Card>
+      </section>
 
       <Table<LlmRequestLogRow>
         rowKey={(row) => row.id}
@@ -2431,12 +2400,12 @@ export function LlmRequestLogsPanel() {
         }}
       />
 
-      <Row gutter={[16, 16]} style={{ marginTop: "1rem" }}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card
-            size="small"
-            title={t("systemSettings.llmRequestLogs.summary.byModel.title")}
-          >
+          <div className="surface-inset flex flex-col gap-2">
+            <p className="kicker m-0">
+              {t("systemSettings.llmRequestLogs.summary.byModel.title")}
+            </p>
             <Table<LlmUsageSummaryByModelRow>
               rowKey={(row) => row.model}
               size="small"
@@ -2450,13 +2419,13 @@ export function LlmRequestLogsPanel() {
               }}
               scroll={{ x: "max-content" }}
             />
-          </Card>
+          </div>
         </Col>
         <Col xs={24} lg={12}>
-          <Card
-            size="small"
-            title={t("systemSettings.llmRequestLogs.summary.byDay.title")}
-          >
+          <div className="surface-inset flex flex-col gap-2">
+            <p className="kicker m-0">
+              {t("systemSettings.llmRequestLogs.summary.byDay.title")}
+            </p>
             <Table<LlmUsageSummaryByDayRow>
               rowKey={(row) => row.date}
               size="small"
@@ -2470,9 +2439,9 @@ export function LlmRequestLogsPanel() {
               }}
               scroll={{ x: "max-content" }}
             />
-          </Card>
+          </div>
         </Col>
       </Row>
-    </>
+    </div>
   );
 }

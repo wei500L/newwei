@@ -5,7 +5,6 @@ import { gql, useMutation, useQuery } from "@apollo/client";
 import {
   Alert,
   Button,
-  Card,
   Divider,
   Empty,
   Form,
@@ -22,6 +21,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import { captureClientError } from "@/lib/client-telemetry";
 
 interface NewsDedupeScopedThresholdModel {
@@ -408,16 +408,16 @@ export function NewsDedupeSettingsPanel() {
 
   if (loading && !data?.newsDedupeSettings) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="m-0">
         {t("settings.newsDedupe.description")}
       </Typography.Paragraph>
 
@@ -426,7 +426,6 @@ export function NewsDedupeSettingsPanel() {
         showIcon
         message={t("settings.newsDedupe.notice.title")}
         description={t("settings.newsDedupe.notice.body")}
-        style={{ marginBottom: "1rem" }}
       />
 
       {error ? (
@@ -435,16 +434,12 @@ export function NewsDedupeSettingsPanel() {
           showIcon
           message={t("settings.newsDedupe.messages.loadFailed")}
           description={error.message}
-          style={{ marginBottom: "1rem" }}
         />
       ) : null}
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
-        <Card
-          size="small"
-          title={t("settings.newsDedupe.sections.mode")}
-          style={{ marginBottom: "1rem" }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsDedupe.sections.mode")} rule />
           <Form.Item
             label={t("settings.newsDedupe.fields.useEmbeddings")}
             name="useEmbeddings"
@@ -535,13 +530,10 @@ export function NewsDedupeSettingsPanel() {
               )
             }
           </Form.Item>
-        </Card>
+        </section>
 
-        <Card
-          size="small"
-          title={t("settings.newsDedupe.sections.overrides")}
-          style={{ marginBottom: "1rem" }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsDedupe.sections.overrides")} rule />
           <Form.Item
             label={t("settings.newsDedupe.fields.defaultThreshold")}
             name="defaultThreshold"
@@ -661,18 +653,18 @@ export function NewsDedupeSettingsPanel() {
               </>
             )}
           </Form.List>
-        </Card>
+        </section>
 
-        <Card
-          size="small"
-          title={t("settings.newsDedupe.sections.preview")}
-          extra={
-            <Button onClick={handleCopyJson} disabled={loading}>
-              {t("settings.newsDedupe.actions.copyJson")}
-            </Button>
-          }
-          style={{ marginBottom: "1rem" }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader
+            title={t("settings.newsDedupe.sections.preview")}
+            rule
+            extra={
+              <Button onClick={handleCopyJson} disabled={loading}>
+                {t("settings.newsDedupe.actions.copyJson")}
+              </Button>
+            }
+          />
           {normalizedPreview.length > 0 ? (
             <Table
               size="small"
@@ -711,14 +703,11 @@ export function NewsDedupeSettingsPanel() {
           ) : (
             <Empty description={t("settings.newsDedupe.preview.empty")} />
           )}
-        </Card>
+        </section>
 
-        <Card
-          size="small"
-          title={t("settings.newsDedupe.sections.tester")}
-          style={{ marginBottom: "1rem" }}
-        >
-          <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsDedupe.sections.tester")} rule />
+          <Typography.Paragraph type="secondary" className="m-0">
             {t("settings.newsDedupe.tester.hint")}
           </Typography.Paragraph>
 
@@ -787,7 +776,7 @@ export function NewsDedupeSettingsPanel() {
               </Tag>
             </Space>
           </Space>
-        </Card>
+        </section>
 
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving} disabled={loading}>
@@ -795,6 +784,6 @@ export function NewsDedupeSettingsPanel() {
           </Button>
         </Form.Item>
       </Form>
-    </>
+    </div>
   );
 }

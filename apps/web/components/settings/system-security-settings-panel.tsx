@@ -1,10 +1,11 @@
 "use client";
 
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Spin, Switch, Tag, Typography, message } from "antd";
+import { Alert, Button, Form, Input, Modal, Select, Space, Spin, Switch, Tag, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -259,26 +260,26 @@ export function SystemSecuritySettingsPanel() {
 
   if (loading && settings === EMPTY_SETTINGS) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="m-0">
         {t("systemSettings.security.description")}
       </Typography.Paragraph>
 
       {topAlert}
 
       {errorMessage ? (
-        <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: "1rem" }} />
+        <Alert type="error" showIcon message={errorMessage} />
       ) : null}
 
-      <Card size="small" style={{ marginBottom: "1rem" }}>
+      <div className="surface-inset">
         <Space wrap>
           <Typography.Text>{t("systemSettings.security.status.label")}</Typography.Text>
           {encryptionTag}
@@ -287,7 +288,7 @@ export function SystemSecuritySettingsPanel() {
             MFA policy: {settings.mfaPolicy}
           </Tag>
         </Space>
-      </Card>
+      </div>
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
@@ -314,11 +315,8 @@ export function SystemSecuritySettingsPanel() {
         </Button>
       </Form>
 
-      <Card
-        size="small"
-        title="OIDC single sign-on"
-        style={{ marginTop: "1.5rem" }}
-      >
+      <section className="flex flex-col gap-3">
+        <SectionHeader title="OIDC single sign-on" rule />
         <Typography.Paragraph type="secondary">
           Configure a generic OIDC provider for the current organization.
         </Typography.Paragraph>
@@ -389,7 +387,7 @@ export function SystemSecuritySettingsPanel() {
             Save OIDC configuration
           </Button>
         </Form>
-      </Card>
-    </>
+      </section>
+    </div>
   );
 }

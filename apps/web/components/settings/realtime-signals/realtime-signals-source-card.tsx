@@ -2,7 +2,6 @@
 
 import {
   Alert,
-  Card,
   Col,
   Space,
   Tag,
@@ -10,6 +9,7 @@ import {
 } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import {
   formatAisRuntimeReason,
   formatRealtimeSignalErrorCode,
@@ -76,11 +76,11 @@ export function RealtimeSignalsSourceCard({
 
   return (
     <Col xs={24} lg={12}>
-      <Card
-        size="small"
-        title={sourceName}
-        extra={
-          <Space wrap size={[8, 8]}>
+      <div className="surface-inset flex flex-col gap-2">
+        <SectionHeader
+          title={sourceName}
+          extra={
+            <Space wrap size={[8, 8]}>
             {row.source === "unrest" && acledApiDisabled ? (
               <Tag color="gold">
                 {t(
@@ -111,9 +111,9 @@ export function RealtimeSignalsSourceCard({
                 )}
               </Tag>
             ) : null}
-          </Space>
-        }
-      >
+            </Space>
+          }
+        />
         <Space direction="vertical" size="small" style={{ display: "flex" }}>
           <Space wrap size={[8, 8]}>
             <Typography.Text strong>
@@ -371,7 +371,7 @@ export function RealtimeSignalsSourceCard({
             />
           ) : null}
         </Space>
-      </Card>
+      </div>
     </Col>
   );
 }

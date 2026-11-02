@@ -1037,9 +1037,7 @@ export function AccessSettingsContent() {
 
   if (status === 'loading' || (!metaData && metaLoading && canReadAccessMetadata)) {
     return (
-      <div
-        style={{ display: 'flex', justifyContent: 'center', marginTop: '3rem' }}
-      >
+      <div className="flex justify-center py-10">
         <Spin size="large" />
       </div>
     );
@@ -1148,7 +1146,7 @@ export function AccessSettingsContent() {
           ref={(node) => {
             sectionRefs.current[section.key] = node;
           }}
-          className={`settings-section-shell scroll-mt-28 rounded-[28px] p-5 ${
+          className={`settings-section-shell scroll-mt-28 rounded-lg p-5 ${
             selectedPanel === section.key ? 'settings-section-shell--active' : ''
           }`}
         >

@@ -2,7 +2,6 @@
 
 import {
   Button,
-  Card,
   Form,
   InputNumber,
   Select,
@@ -15,6 +14,7 @@ import {
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import {
   useNewsExtractionSettingsQuery,
   useUpdateNewsExtractionSettingsMutation,
@@ -57,26 +57,21 @@ export function NewsExtractionSettingsPanel() {
 
   if (loading && !data?.newsExtractionSettings) {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
-      >
+      <div className="flex justify-center py-10">
         <Spin />
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+      <Typography.Paragraph type="secondary" className="m-0">
         {t("settings.newsExtraction.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
-        <Card
-          size="small"
-          title={t("settings.newsExtraction.pipelineTitle")}
-          style={{ marginBottom: 16 }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsExtraction.pipelineTitle")} rule />
           <Form.Item
             name="pipelineMode"
             label={t("settings.newsExtraction.fields.pipelineMode")}
@@ -94,14 +89,11 @@ export function NewsExtractionSettingsPanel() {
               ]}
             />
           </Form.Item>
-        </Card>
+        </section>
 
-        <Card
-          size="small"
-          title={t("settings.newsExtraction.preflightTitle")}
-          style={{ marginBottom: 16 }}
-        >
-          <Space size={24} wrap style={{ display: "flex", marginBottom: 16 }}>
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsExtraction.preflightTitle")} rule />
+          <Space size={24} wrap style={{ display: "flex" }}>
             <Form.Item
               name={["preflightGate", "enabled"]}
               label={t("settings.newsExtraction.fields.enabled")}
@@ -141,14 +133,11 @@ export function NewsExtractionSettingsPanel() {
               style={{ width: "100%" }}
             />
           </Form.Item>
-        </Card>
+        </section>
 
-        <Card
-          size="small"
-          title={t("settings.newsExtraction.postCleanTitle")}
-          style={{ marginBottom: 16 }}
-        >
-          <Space size={24} wrap style={{ display: "flex", marginBottom: 16 }}>
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsExtraction.postCleanTitle")} rule />
+          <Space size={24} wrap style={{ display: "flex" }}>
             <Form.Item
               name={["postCleanGate", "enabled"]}
               label={t("settings.newsExtraction.fields.enabled")}
@@ -181,13 +170,10 @@ export function NewsExtractionSettingsPanel() {
           >
             <InputNumber min={0} max={100000} style={{ width: "100%" }} />
           </Form.Item>
-        </Card>
+        </section>
 
-        <Card
-          size="small"
-          title={t("settings.newsExtraction.capabilitiesTitle")}
-          style={{ marginBottom: 16 }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsExtraction.capabilitiesTitle")} rule />
           <Space size={24} wrap style={{ display: "flex" }}>
             <Form.Item
               name={["capabilities", "entities"]}
@@ -211,13 +197,10 @@ export function NewsExtractionSettingsPanel() {
               <Switch />
             </Form.Item>
           </Space>
-        </Card>
+        </section>
 
-        <Card
-          size="small"
-          title={t("settings.newsExtraction.providersTitle")}
-          style={{ marginBottom: 16 }}
-        >
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t("settings.newsExtraction.providersTitle")} rule />
           <Typography.Paragraph type="secondary">
             {t("settings.newsExtraction.providersHint")}
           </Typography.Paragraph>
@@ -245,14 +228,14 @@ export function NewsExtractionSettingsPanel() {
           >
             <Select options={[{ label: "LLM", value: "llm" }]} />
           </Form.Item>
-        </Card>
+        </section>
 
-        <Form.Item style={{ marginBottom: 0 }}>
+        <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
             {t("common.saveChanges")}
           </Button>
         </Form.Item>
       </Form>
-    </>
+    </div>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
-import { Alert, Card, Form, Select, Space, Tag, Typography } from "antd";
+import { Alert, Form, Select, Space, Tag, Typography } from "antd";
 import type { ReactElement } from "react";
+
+import { SectionHeader } from "@/components/section-header";
 
 import {
   FOLLOW_COMPLETION_KEY,
@@ -32,11 +34,9 @@ export function LlmGatewayEmbeddingRerankPanel({
   } = s;
 
   return (
-    <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-    <Card
-      size="small"
-      title={t("settings.llmGateway.embeddingActive.title")}
-    >
+    <div className="flex flex-col gap-6">
+    <section className="flex flex-col gap-3">
+      <SectionHeader title={t("settings.llmGateway.embeddingActive.title")} rule />
       <Space direction="vertical" size="small" style={{ display: "flex" }}>
         <Typography.Text type="secondary">
           {t("settings.llmGateway.embeddingActive.hint")}
@@ -250,12 +250,10 @@ export function LlmGatewayEmbeddingRerankPanel({
           />
         ) : null}
       </Space>
-    </Card>
+    </section>
 
-    <Card
-      size="small"
-      title={t("settings.llmGateway.rerankActive.title")}
-    >
+    <section className="flex flex-col gap-3">
+      <SectionHeader title={t("settings.llmGateway.rerankActive.title")} rule />
       <Space direction="vertical" size="small" style={{ display: "flex" }}>
         <Typography.Text type="secondary">
           {t("settings.llmGateway.rerankActive.hint")}
@@ -453,7 +451,7 @@ export function LlmGatewayEmbeddingRerankPanel({
           />
         ) : null}
       </Space>
-    </Card>
-    </Space>
+    </section>
+    </div>
   );
 }
