@@ -41,6 +41,9 @@
 | UI-5 | [UI-5-dark-mode-color-cleanup.md](UI-5-dark-mode-color-cleanup.md) | 暗色与硬编码颜色清理 | UI-4 |
 | UI-6 | [UI-6-signature-pages.md](UI-6-signature-pages.md) | 招牌页面：Today 头版 / Dashboard 概览 / 登录 | UI-5 |
 | UI-7 | [UI-7-optional-antd-ssr-registry.md](UI-7-optional-antd-ssr-registry.md) | 可选：antd SSR 样式注册（要新增依赖） | **用户确认后**才执行 |
+| UI-8A | [UI-8A-global-leaks.md](UI-8A-global-leaks.md) | 补漏：antd 静态提示跟主题、图表纸墨配色、slate/gray 色阶变暖 | UI-0~7 全部合入 |
+| UI-8B | [UI-8B-newsnow-newshub.md](UI-8B-newsnow-newshub.md) | 补漏：NewsNow 模块与 News Hub 去玻璃/霓虹，修亮色不可见 | UI-0~7 全部合入 |
+| UI-8C | [UI-8C-legacy-css-families.md](UI-8C-legacy-css-families.md) | 补漏：globals/CSS Module 遗留样式族、events-archive、24 个表格滚动等 | UI-0~7 全部合入 |
 
 ```
 UI-0 ─┬→ UI-1 ─────────┬→ UI-3A ┐
@@ -48,6 +51,9 @@ UI-0 ─┬→ UI-1 ─────────┬→ UI-3A ┐
       └→ UI-2B ─┬→ UI-3B ───────┼→ UI-4 → UI-5 → UI-6
                 └→ UI-3C ───────┘
 UI-7 独立
+UI-6 + UI-7 → ┬ UI-8A
+              ├ UI-8B   （三者并行，文件互不相交）
+              └ UI-8C
 ```
 
 可以并行的组合：UI-1、UI-2A、UI-2B 三者并行（都在 UI-0 合入后开工）；UI-3A、UI-3B、UI-3C 三者并行，它们改的目录互不相交。
