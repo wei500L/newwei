@@ -1326,11 +1326,11 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
           <Card
             title={t("dashboard.charts.spacetimeGeoHeatmap.title")}
-            className="glass-card sm-panel-card h-viz-4xl"
+            className="glass-card sm-panel-card min-h-viz-md"
             variant="borderless"
           >
             <div className="flex flex-col gap-2 h-full">
@@ -1394,7 +1394,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
           </Card>
         </div>
 
-        <div className="xl:col-span-1">
+        <div className="lg:col-span-2 2xl:col-span-1">
           <Card
             title={t("dashboard.charts.spacetimeTimeline.title")}
             extra={
@@ -1420,7 +1420,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                 </Tooltip>
               ) : null
             }
-            className="glass-card sm-panel-card h-viz-4xl"
+            className="glass-card sm-panel-card min-h-viz-md"
             variant="borderless"
           >
             <div className="h-full flex flex-col gap-3">
@@ -1434,7 +1434,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                     options={eventOptions}
                     loading={eventsLoading}
                     onChange={(value) => setSelectedEventId(value)}
-                    style={{ minWidth: 280 }}
+                    className="w-full"
                     placeholder={t(
                       "dashboard.charts.spacetimeTimeline.eventPlaceholder",
                     )}
@@ -1903,8 +1903,8 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
           <Card
             title={t("dashboard.charts.spacetimePropagation.title")}
             className="glass-card"
@@ -1922,7 +1922,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
           </Card>
         </div>
 
-        <div className="xl:col-span-1">
+        <div className="lg:col-span-2 2xl:col-span-1">
           <Card
             title={t("dashboard.charts.knowledgeGraph3d.title")}
             className="glass-card"

@@ -406,8 +406,8 @@ export function KnowledgeGraph() {
   return (
     <>
       {contextHolder}
-      <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "0.75rem" }}>
-        <div style={{ maxWidth: 360, width: "100%" }}>
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <div className="w-full sm:w-72">
           <Space.Compact style={{ width: "100%" }}>
             <Input
               value={seedDraft}
@@ -434,20 +434,20 @@ export function KnowledgeGraph() {
             </Text>
           ) : null}
         </div>
-        <Space size="middle">
-          <div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="w-full max-w-[10rem]">
             <Text type="secondary">
               {t("dashboard.charts.knowledgeGraphDepth")}: {maxDepth}
             </Text>
-            <Slider min={1} max={5} step={1} value={maxDepth} onChange={(value) => setMaxDepth(value)} style={{ width: 160 }} />
+            <Slider min={1} max={5} step={1} value={maxDepth} onChange={(value) => setMaxDepth(value)} className="w-full" />
           </div>
-          <div>
+          <div className="w-full max-w-[10rem]">
             <Text type="secondary">
               {t("dashboard.charts.knowledgeGraphMaxNodes")}: {maxNodes}
             </Text>
-            <Slider min={50} max={500} step={25} value={maxNodes} onChange={(value) => setMaxNodes(value)} style={{ width: 160 }} />
+            <Slider min={50} max={500} step={25} value={maxNodes} onChange={(value) => setMaxNodes(value)} className="w-full" />
           </div>
-        </Space>
+        </div>
         <Link href={explorerHref}>
           <Button>{t("pages.knowledgeGraph.actions.openExplorer")}</Button>
         </Link>

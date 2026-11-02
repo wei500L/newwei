@@ -471,7 +471,7 @@ export function SectorHeatmap() {
   }
 
   return (
-    <div className="flex h-viz-md flex-col gap-2 transition-all duration-300">
+    <div className="flex h-full min-h-viz-md flex-col gap-2 transition-all duration-300">
       {showStaleErrorBanner ? (
         <div className="px-2">
           <RequestErrorBanner

@@ -706,7 +706,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
         >
           {t("dashboard.charts.knowledgeGraphReflow")}
         </Button>
-        <Space size="middle">
+        <Space wrap size="middle">
           <div>
             <Text type="secondary">
               {t("dashboard.charts.knowledgeGraphDepth")}: {maxDepth}

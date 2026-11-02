@@ -175,11 +175,11 @@ export function DashboardEditor({
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Card title={t("dashboard.editor.layoutTitle")} extra={<TimeRangeControls />}>
         <Space direction="vertical" style={{ width: "100%" }} size="small">
-          <Space wrap>
+          <div className="flex flex-wrap items-center gap-3">
             <Input
               id="dashboard-editor-name"
               name="dashboardEditorName"
-              style={{ width: 220 }}
+              className="w-full sm:w-80"
               value={name}
               placeholder={t("dashboard.editor.fields.name")}
               onChange={(e) => setMeta({ name: e.target.value })}
@@ -187,7 +187,7 @@ export function DashboardEditor({
             <Input
               id="dashboard-editor-slug"
               name="dashboardEditorSlug"
-              style={{ width: 200 }}
+              className="w-full sm:w-80"
               value={slug}
               placeholder={t("dashboard.editor.fields.slug")}
               onChange={(e) => setMeta({ slug: e.target.value })}
@@ -195,7 +195,7 @@ export function DashboardEditor({
             <Input
               id="dashboard-editor-description"
               name="dashboardEditorDescription"
-              style={{ width: 320 }}
+              className="w-full sm:w-80"
               value={description}
               placeholder={t("dashboard.editor.fields.description")}
               onChange={(e) => setMeta({ description: e.target.value })}
@@ -274,7 +274,7 @@ export function DashboardEditor({
               ) : null}
               <Button onClick={() => reset()}>{t("common.reset")}</Button>
             </Space>
-          </Space>
+          </div>
         </Space>
         <Space wrap>
           <Button onClick={() => handleAddWidget("line")}>{t("dashboard.editor.add.line")}</Button>

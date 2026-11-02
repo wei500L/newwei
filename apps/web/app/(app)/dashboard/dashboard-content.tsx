@@ -63,19 +63,19 @@ function DashboardSkeleton({ className, rows = 6 }: DashboardSkeletonProps) {
 function SpacetimeVizSkeleton() {
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
           <DashboardSkeleton className="h-viz-4xl" rows={10} />
         </div>
-        <div className="xl:col-span-1">
+        <div className="lg:col-span-2 2xl:col-span-1">
           <DashboardSkeleton className="h-viz-4xl" rows={10} />
         </div>
       </div>
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
           <DashboardSkeleton className="h-viz-lg" rows={8} />
         </div>
-        <div className="xl:col-span-1">
+        <div className="lg:col-span-2 2xl:col-span-1">
           <DashboardSkeleton className="h-viz-2xl" rows={8} />
         </div>
       </div>
@@ -277,7 +277,7 @@ function DashboardStreamStatusLine({
   }, [streamState.error]);
 
   return (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+    <div className="flex flex-wrap items-center gap-2 min-w-0 text-xs text-muted-foreground font-mono">
       <span
         className={`h-2 w-2 rounded-full ${streamStatusMeta.dotClass} ${streamStatusMeta.pulse ? "animate-pulse" : ""}`}
         aria-hidden="true"
@@ -612,7 +612,7 @@ export function DashboardContent() {
         {/* Hero / Market Pulse */}
         <div className="relative">
           {heroAccessState.kind === "forbidden" ? (
-            <div className="mb-6 content-card p-6">
+            <div className="content-card p-6">
               <ChartEmptyState
                 className="h-auto"
                 variant="permission"
@@ -621,7 +621,7 @@ export function DashboardContent() {
               />
             </div>
           ) : heroError && !heroHasData ? (
-            <div className="mb-6 content-card p-6">
+            <div className="content-card p-6">
               <RequestErrorBanner
                 presentation="center"
                 error={heroError}
@@ -666,9 +666,9 @@ export function DashboardContent() {
         ) : null}
 
         {/* Charts Section - Immersive Map & Analytics */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
           {/* Indicator Map - Dominant Central Feature */}
-          <div className="xl:col-span-2 flex flex-col gap-3">
+          <div className="lg:col-span-2 flex flex-col gap-3">
             <SectionHeader
               rule
               kicker="WAR MAP"
@@ -689,21 +689,21 @@ export function DashboardContent() {
           {/* Sector Heatmap - Side Panel */}
           <Card
             title={t("dashboard.charts.sectorHeatmap")}
-            className="content-card h-viz-3xl"
+            className="content-card h-viz-3xl lg:col-span-2 2xl:col-span-1"
           >
             <SectorHeatmap />
           </Card>
         </div>
 
         {/* Financial Candlestick & Sentiment */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <div className="xl:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
             <GlobalSentimentTrend
               loading={heroLoading}
               data={heroData?.market ?? []}
             />
           </div>
-          <div className="xl:col-span-1">
+          <div className="lg:col-span-2 2xl:col-span-1">
             <Card className="content-card h-full">
               <FinancialCandlestick />
             </Card>
@@ -741,10 +741,7 @@ export function DashboardContent() {
         {showSystemStats && (
           <div>
             {!canManageQueue ? (
-              <div
-                className="mb-6"
-                style={{ height: QUEUE_STATS_CARD_MIN_HEIGHT }}
-              >
+              <div style={{ height: QUEUE_STATS_CARD_MIN_HEIGHT }}>
                 <ChartEmptyState
                   title={t("common.accessDenied")}
                   description={t("common.accessDeniedDescription")}
@@ -752,7 +749,7 @@ export function DashboardContent() {
                 />
               </div>
             ) : (
-              <Row gutter={[20, 20]} className="mb-6" align="stretch">
+              <Row gutter={[20, 20]} align="stretch">
                 <Col xs={24} md={12} lg={8} className="flex">
                   <Card
                     className="content-card flex-1 flex flex-col justify-center"
@@ -890,7 +887,7 @@ export function DashboardContent() {
       </div>
 
       {/* Right Column: Data Board & Intelligence */}
-      <div className="flex w-full flex-col gap-6 xl:sticky xl:top-0 xl:h-fit xl:w-[340px] xl:flex-shrink-0 2xl:w-[400px]">
+      <div className="flex w-full flex-col gap-6 xl:sticky xl:top-0 xl:h-fit xl:max-h-[calc(100dvh-var(--top-nav-height)-48px)] xl:overflow-y-auto rail-scrollbar xl:w-[340px] xl:flex-shrink-0 2xl:w-[400px]">
         <DashboardAnalysisFeedProvider>
           {/* Live News Feed */}
           {/* 600：侧栏信息流高度，宽屏专用 */}
