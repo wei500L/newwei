@@ -2151,6 +2151,7 @@ export function QualityContent() {
                   dataSource={pipeline?.llmModels ?? []}
                   pagination={{ pageSize: 10, showSizeChanger: false }}
                   size={screens.md ? "middle" : "small"}
+                  scroll={{ x: "max-content" }}
                 />
               </Card>
 
@@ -2246,6 +2247,7 @@ export function QualityContent() {
                           title={() =>
                             t("quality.taskLogs.summary.title")
                           }
+                          scroll={{ x: "max-content" }}
                         />
                       ) : null}
                     </Space>
@@ -2260,6 +2262,7 @@ export function QualityContent() {
                     locale={{
                       emptyText: t("adminLogs.task.summary.empty"),
                     }}
+                    scroll={{ x: "max-content" }}
                   />
                 </Space>
               </Card>
@@ -2307,6 +2310,7 @@ export function QualityContent() {
                       dataSource={sources.topFailingSources}
                       pagination={{ pageSize: 5, showSizeChanger: false }}
                       size={screens.md ? "middle" : "small"}
+                      scroll={{ x: "max-content" }}
                     />
                   </Space>
                 ) : (
@@ -2497,6 +2501,7 @@ export function QualityContent() {
                         dataSource={classification.methodDistribution}
                         pagination={false}
                         size={screens.md ? "middle" : "small"}
+                        scroll={{ x: "max-content" }}
                       />
                     </>
                   ) : (
@@ -2520,6 +2525,7 @@ export function QualityContent() {
                       dataSource={classification?.confidenceHistogram ?? []}
                       pagination={false}
                       size={screens.md ? "middle" : "small"}
+                      scroll={{ x: "max-content" }}
                     />
                   </Card>
                 </Col>
@@ -2535,6 +2541,7 @@ export function QualityContent() {
                       dataSource={classification?.confidenceTrend ?? []}
                       pagination={{ pageSize: 10, showSizeChanger: false }}
                       size={screens.md ? "middle" : "small"}
+                      scroll={{ x: "max-content" }}
                     />
                   </Card>
                 </Col>
@@ -2693,6 +2700,7 @@ export function QualityContent() {
                       title={() =>
                         t("quality.classification.sourceCategory.title")
                       }
+                      scroll={{ x: "max-content" }}
                     />
                   </Space>
                 ) : (
@@ -2787,6 +2795,7 @@ export function QualityContent() {
                     }}
                     pagination={{ pageSize: 10, showSizeChanger: false }}
                     size={screens.md ? "middle" : "small"}
+                    scroll={{ x: "max-content" }}
                   />
                 </Space>
               </Card>
@@ -2802,6 +2811,7 @@ export function QualityContent() {
                   dataSource={classification?.lowConfidenceSources ?? []}
                   pagination={false}
                   size={screens.md ? "middle" : "small"}
+                  scroll={{ x: "max-content" }}
                 />
               </Card>
 
@@ -2828,6 +2838,7 @@ export function QualityContent() {
                       dataSource={classificationSourceItems}
                       pagination={{ pageSize: 10, showSizeChanger: false }}
                       size={screens.md ? "middle" : "small"}
+                      scroll={{ x: "max-content" }}
                     />
                     <Space>
                       <Button

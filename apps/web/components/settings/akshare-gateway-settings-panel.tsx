@@ -991,6 +991,7 @@ export function AkshareGatewaySettingsPanel() {
                 ),
               },
             ]}
+            scroll={{ x: "max-content" }}
           />
         </Card>
       ) : null}

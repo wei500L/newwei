@@ -95,6 +95,7 @@ export function SituationMonitorMarketsPanel(props: SharedProps) {
                   },
                 ]}
                 dataSource={(marketsSnapshot.indices ?? []).slice(0, 4)}
+                scroll={{ x: "max-content" }}
               />
               <Divider style={{ margin: "12px 0" }} />
               <Table
@@ -133,6 +134,7 @@ export function SituationMonitorMarketsPanel(props: SharedProps) {
                   },
                 ]}
                 dataSource={(marketsSnapshot.commodities ?? []).slice(0, 3)}
+                scroll={{ x: "max-content" }}
               />
             </>
           ) : !marketsSnapshot.hasFinnhubApiKey ? null : (
@@ -214,6 +216,7 @@ export function SituationMonitorCryptoPanel(props: SharedProps) {
             },
           ]}
           dataSource={cryptoSnapshot}
+          scroll={{ x: "max-content" }}
         />
       ) : (
         <Typography.Text type="secondary">

@@ -1640,7 +1640,7 @@ export function CrawlFrontierConsole() {
                   className="content-card"
                   extra={canManage ? <Button type="primary" onClick={openCreateProfile}>{t("crawlFrontier.console.actions.newProfile")}</Button> : null}
                 >
-                  <Table rowKey="id" columns={profileColumns} dataSource={profiles} loading={loadingProfiles} pagination={{ pageSize: 10 }} />
+                  <Table rowKey="id" columns={profileColumns} dataSource={profiles} loading={loadingProfiles} pagination={{ pageSize: 10 }} scroll={{ x: "max-content" }} />
                 </Card>
               </Space>
             ),
@@ -1691,7 +1691,7 @@ export function CrawlFrontierConsole() {
                   </Space>
                 </Card>
                 <Card className="content-card">
-                  <Table rowKey="id" columns={runColumns} dataSource={runs} loading={loadingRuns} pagination={{ pageSize: 10 }} rowSelection={canManage ? { selectedRowKeys: selectedRunIds, onChange: (keys) => setSelectedRunIds(keys.map((key) => String(key))), getCheckboxProps: (record) => ({ disabled: record.status === "completed" || record.status === "canceled" }) } : undefined} />
+                  <Table rowKey="id" columns={runColumns} dataSource={runs} loading={loadingRuns} pagination={{ pageSize: 10 }} rowSelection={canManage ? { selectedRowKeys: selectedRunIds, onChange: (keys) => setSelectedRunIds(keys.map((key) => String(key))), getCheckboxProps: (record) => ({ disabled: record.status === "completed" || record.status === "canceled" }) } : undefined} scroll={{ x: "max-content" }} />
                 </Card>
               </Space>
             ),
@@ -1947,7 +1947,7 @@ export function CrawlFrontierConsole() {
           { title: "Created", key: "createdAt", width: 180, render: (_, record) => formatDateTime(record.createdAt) },
           { title: "Summary", key: "summary", render: (_, record) => <Space wrap>{summarizeProfileConfig(asRecord(record.config) ?? {}).map((entry) => <Tag key={`${record.id}-${entry}`}>{entry}</Tag>)}</Space> },
           { title: "Actions", key: "actions", width: 120, render: (_, record) => currentVersionProfile ? <Button size="small" danger onClick={() => void rollbackVersion(currentVersionProfile.id, record.version)}>Rollback</Button> : null },
-        ]} />
+        ]} scroll={{ x: "max-content" }} />
       </Modal>
 
       <Modal open={runModalOpen} title={t("crawlFrontier.console.modals.createRun")} onCancel={() => setRunModalOpen(false)} onOk={() => void runForm.submit()} okButtonProps={{ loading: saving, disabled: !canManage }}>
@@ -2206,6 +2206,7 @@ export function CrawlFrontierConsole() {
                               dataSource={selectedWorkflowRun.candidates}
                               pagination={{ pageSize: 8 }}
                               size="small"
+                              scroll={{ x: "max-content" }}
                             />
                           </Card>
                           <Card size="small" title={t("crawlFrontier.console.runDrawer.workflow.systemEventsTitle")}>
@@ -2275,7 +2276,7 @@ export function CrawlFrontierConsole() {
                         {selectedNodeIds.length > 0 ? <Button onClick={() => void bulkRetryNodes()}>{t("crawlFrontier.console.runDrawer.nodes.retrySelected")}</Button> : null}
                       </Space>
                     </Card>
-                    <Table<NodeTreeRow> rowKey="id" columns={nodeColumns} dataSource={selectedNodesTree} pagination={{ pageSize: 20 }} rowSelection={canManage ? { selectedRowKeys: selectedNodeIds, onChange: (keys) => setSelectedNodeIds(keys.map((key) => String(key))), getCheckboxProps: (record) => ({ disabled: record.status !== "failed" && record.status !== "skipped" }) } : undefined} />
+                    <Table<NodeTreeRow> rowKey="id" columns={nodeColumns} dataSource={selectedNodesTree} pagination={{ pageSize: 20 }} rowSelection={canManage ? { selectedRowKeys: selectedNodeIds, onChange: (keys) => setSelectedNodeIds(keys.map((key) => String(key))), getCheckboxProps: (record) => ({ disabled: record.status !== "failed" && record.status !== "skipped" }) } : undefined} scroll={{ x: "max-content" }} />
                   </Space>
                 ),
               },

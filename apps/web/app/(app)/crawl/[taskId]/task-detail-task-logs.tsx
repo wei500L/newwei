@@ -159,6 +159,7 @@ export function TaskDetailTaskLogs({
             </pre>
           ),
         }}
+        scroll={{ x: "max-content" }}
       />
     </Card>
   );

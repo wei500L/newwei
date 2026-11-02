@@ -2448,6 +2448,7 @@ export function LlmRequestLogsPanel() {
                   "systemSettings.llmRequestLogs.summary.byModel.empty",
                 ),
               }}
+              scroll={{ x: "max-content" }}
             />
           </Card>
         </Col>
@@ -2467,6 +2468,7 @@ export function LlmRequestLogsPanel() {
                   "systemSettings.llmRequestLogs.summary.byDay.empty",
                 ),
               }}
+              scroll={{ x: "max-content" }}
             />
           </Card>
         </Col>

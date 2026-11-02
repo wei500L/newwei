@@ -2324,6 +2324,7 @@ export function NewsSourcesModals({
                   },
                 },
               ]}
+              scroll={{ x: "max-content" }}
             />
           ) : (
             <Typography.Text type="secondary">
@@ -2746,6 +2747,7 @@ export function NewsSourcesModals({
               columns={previewColumns}
               dataSource={previewData.candidates}
               pagination={{ pageSize: screens.md ? 10 : 5 }}
+              scroll={{ x: "max-content" }}
             />
           </Space>
         ) : (

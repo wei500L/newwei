@@ -491,6 +491,7 @@ export function OrgAdminContent() {
                 ),
               },
             ]}
+            scroll={{ x: "max-content" }}
           />
         )}
         </Card>

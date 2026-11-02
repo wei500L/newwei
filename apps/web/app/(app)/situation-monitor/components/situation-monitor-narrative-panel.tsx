@@ -600,6 +600,7 @@ export function SituationMonitorNarrativePanel(
           expandable={narrativeExpandable}
           dataSource={data?.narrative?.fringeToMainstream ?? []}
           pagination={{ pageSize: 6, hideOnSinglePage: true }}
+          scroll={{ x: "max-content" }}
         />
       </div>
       <div className="mt-5">
@@ -613,6 +614,7 @@ export function SituationMonitorNarrativePanel(
           expandable={narrativeExpandable}
           dataSource={data?.narrative?.emergingFringe ?? []}
           pagination={{ pageSize: 6, hideOnSinglePage: true }}
+          scroll={{ x: "max-content" }}
         />
       </div>
       <div className="mt-5">
@@ -626,6 +628,7 @@ export function SituationMonitorNarrativePanel(
           expandable={narrativeExpandable}
           dataSource={data?.narrative?.narrativeWatch ?? []}
           pagination={{ pageSize: 6, hideOnSinglePage: true }}
+          scroll={{ x: "max-content" }}
         />
       </div>
       <div className="mt-5">
@@ -639,6 +642,7 @@ export function SituationMonitorNarrativePanel(
           expandable={narrativeExpandable}
           dataSource={data?.narrative?.disinfoSignals ?? []}
           pagination={{ pageSize: 6, hideOnSinglePage: true }}
+          scroll={{ x: "max-content" }}
         />
       </div>
     </Card>
@@ -693,6 +697,7 @@ export function SituationMonitorMainCharacterPanel(props: {
         columns={mainCharacterColumns}
         dataSource={data?.mainCharacter?.characters ?? []}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
       />
     </Card>
   );

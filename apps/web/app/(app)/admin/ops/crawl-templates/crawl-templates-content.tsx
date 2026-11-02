@@ -736,6 +736,7 @@ export function CrawlTemplatesContent() {
               pageSize: screens.md ? 10 : 5,
               showSizeChanger: screens.md,
             }}
+            scroll={{ x: "max-content" }}
           />
         </Space>
         </Card>

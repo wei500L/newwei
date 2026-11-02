@@ -701,6 +701,7 @@ export function SituationMonitorCorrelationPanel(
               pageSize: screens.lg ? 6 : 4,
               hideOnSinglePage: true,
             }}
+            scroll={{ x: "max-content" }}
           />
         </Col>
         <Col span={24}>
@@ -719,6 +720,7 @@ export function SituationMonitorCorrelationPanel(
               pageSize: screens.lg ? 6 : 4,
               hideOnSinglePage: true,
             }}
+            scroll={{ x: "max-content" }}
           />
         </Col>
         <Col span={24}>
@@ -737,6 +739,7 @@ export function SituationMonitorCorrelationPanel(
               pageSize: screens.lg ? 6 : 4,
               hideOnSinglePage: true,
             }}
+            scroll={{ x: "max-content" }}
           />
         </Col>
         <Col span={24}>
@@ -755,6 +758,7 @@ export function SituationMonitorCorrelationPanel(
               pageSize: screens.lg ? 6 : 4,
               hideOnSinglePage: true,
             }}
+            scroll={{ x: "max-content" }}
           />
         </Col>
       </Row>

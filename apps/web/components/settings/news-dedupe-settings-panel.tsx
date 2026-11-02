@@ -706,6 +706,7 @@ export function NewsDedupeSettingsPanel() {
                   render: (value: number) => <Tag color="geekblue">{formatThreshold(value)}</Tag>
                 }
               ]}
+              scroll={{ x: "max-content" }}
             />
           ) : (
             <Empty description={t("settings.newsDedupe.preview.empty")} />

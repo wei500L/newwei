@@ -102,6 +102,7 @@ export function SituationMonitorFedPanel(props: SituationMonitorFedPanelProps) {
                 },
               ]}
               dataSource={fedSnapshot.indicators}
+              scroll={{ x: "max-content" }}
             />
           ) : !fedSnapshot.hasFredApiKey ? null : (
             <Typography.Text type="secondary">

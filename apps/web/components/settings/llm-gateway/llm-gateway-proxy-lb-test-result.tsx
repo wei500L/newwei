@@ -98,6 +98,7 @@ export function LlmGatewayProxyLbTestResult({
             render: (value: number) => `${value}%`,
           },
         ]}
+        scroll={{ x: "max-content" }}
       />
 
       <Typography.Text type="secondary">
@@ -133,6 +134,7 @@ export function LlmGatewayProxyLbTestResult({
             render: (value: number) => `${value}%`,
           },
         ]}
+        scroll={{ x: "max-content" }}
       />
 
       {result.callIdSamples?.length ? (

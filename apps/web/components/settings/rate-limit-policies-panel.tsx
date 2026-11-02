@@ -333,6 +333,7 @@ export function RateLimitPoliciesPanel() {
           columns={columns}
           loading={loading}
           pagination={{ pageSize: 8 }}
+          scroll={{ x: "max-content" }}
         />
       )}
 

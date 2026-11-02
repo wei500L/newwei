@@ -227,6 +227,7 @@ export function RealtimeSignalsOpenskyBudgetPanel({
           columns={openskyBudgetColumns}
           dataSource={openskyBudget?.recentDays ?? []}
           rowKey="dateHkt"
+          scroll={{ x: "max-content" }}
         />
       </Space>
     </Card>

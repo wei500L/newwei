@@ -278,6 +278,7 @@ export function LlmGatewayProfilesPanel({
       columns={columns}
       pagination={false}
       locale={{ emptyText: t("common.empty") }}
+      scroll={{ x: "max-content" }}
     />
     </Space>
   );

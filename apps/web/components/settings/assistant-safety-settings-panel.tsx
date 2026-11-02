@@ -823,6 +823,7 @@ export function AssistantSafetySettingsPanel() {
                 )
               }
             ]}
+            scroll={{ x: "max-content" }}
           />
 
           <Divider style={{ margin: "8px 0" }} />
@@ -1044,6 +1045,7 @@ export function AssistantSafetySettingsPanel() {
                       render: (value: string) => <Typography.Text code>{value}</Typography.Text>
                     }
                   ]}
+                  scroll={{ x: "max-content" }}
                 />
               </>
             ) : null}

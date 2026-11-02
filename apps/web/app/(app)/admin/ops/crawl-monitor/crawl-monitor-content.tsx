@@ -2692,6 +2692,7 @@ export function CrawlMonitorContent({
                           ),
                         },
                       ]}
+                      scroll={{ x: "max-content" }}
                     />
                   </Card>
 
@@ -2729,6 +2730,7 @@ export function CrawlMonitorContent({
                       dataSource={completedRequestRows}
                       columns={completedRequestColumns}
                       onRow={requestRowProps}
+                      scroll={{ x: "max-content" }}
                     />
                   </Card>
                 </Space>
@@ -2753,6 +2755,7 @@ export function CrawlMonitorContent({
                       item,
                     }))}
                     columns={browserColumns}
+                    scroll={{ x: "max-content" }}
                   />
                 </Space>
               ),
@@ -2782,6 +2785,7 @@ export function CrawlMonitorContent({
                     pagination={{ pageSize: 12 }}
                     dataSource={endpointStatRows}
                     columns={endpointColumns}
+                    scroll={{ x: "max-content" }}
                   />
                 </Space>
               ),

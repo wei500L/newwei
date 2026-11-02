@@ -416,6 +416,7 @@ export function KnowledgeGraphReviewPanel() {
           onRow={(record) => ({
             onClick: () => openDetails(record)
           })}
+          scroll={{ x: "max-content" }}
         />
       )}
 
@@ -529,6 +530,7 @@ export function KnowledgeGraphReviewPanel() {
                       },
                       { title: t("settings.knowledgeGraphReview.details.columns.error"), dataIndex: "error", key: "error" }
                     ]}
+                    scroll={{ x: "max-content" }}
                   />
                 </>
               );

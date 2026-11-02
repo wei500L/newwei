@@ -1289,6 +1289,7 @@ export function AdminLogsContent() {
                         locale={{
                           emptyText: t("adminLogs.task.summary.empty"),
                         }}
+                        scroll={{ x: "max-content" }}
                       />
                     </Space>
                   ) : null}

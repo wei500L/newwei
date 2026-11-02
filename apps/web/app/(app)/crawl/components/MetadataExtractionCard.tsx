@@ -386,6 +386,7 @@ export function MetadataExtractionCard({
           loading={loading}
           pagination={false}
           locale={{ emptyText: t("crawl.metadata.empty") }}
+          scroll={{ x: "max-content" }}
         />
       )}
     </Card>

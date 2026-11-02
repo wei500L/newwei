@@ -89,6 +89,7 @@ export function SituationMonitorLeadersPanel(
         dataSource={(data?.leaders ?? []).filter(
           (leader) => leader.matchCount > 0,
         )}
+        scroll={{ x: "max-content" }}
       />
     </Card>
   );

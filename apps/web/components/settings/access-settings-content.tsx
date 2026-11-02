@@ -2236,6 +2236,7 @@ function InvitesPanel({
             ),
           },
         ]}
+        scroll={{ x: "max-content" }}
       />
     </Space>
   );

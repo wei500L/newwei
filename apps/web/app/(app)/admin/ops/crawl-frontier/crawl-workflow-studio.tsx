@@ -2113,6 +2113,7 @@ function WorkflowStudioInner({
                       dataSource={trialResult.candidates}
                       pagination={{ pageSize: 8 }}
                       size="small"
+                      scroll={{ x: "max-content" }}
                     />
                   </Card>
                   <Card

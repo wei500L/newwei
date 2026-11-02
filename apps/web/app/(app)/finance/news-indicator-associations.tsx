@@ -754,6 +754,7 @@ export function NewsIndicatorAssociations() {
               dataSource={associations}
               pagination={false}
               size="small"
+              scroll={{ x: "max-content" }}
             />
           )}
         </div>
