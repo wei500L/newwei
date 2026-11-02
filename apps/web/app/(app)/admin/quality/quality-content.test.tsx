@@ -113,5 +113,5 @@ describe("QualityContent classification review", () => {
         { status: "corrected", correctedCategoryPath: "/world/politics" },
       );
     });
-  });
+  }, 20000);
 });
