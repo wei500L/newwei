@@ -22,6 +22,8 @@
 
 **规则**：DOM 元素的颜色优先走这些 token 类，**不要**写 `text-[#xxx]` / `bg-[rgba(...)]` 硬编码。
 
+> **FE-UI 批8A**：`slate` / `gray` 已重映射为暖纸—墨色阶；新代码仍应优先用语义 token（`text-muted-foreground`、`border-border` 等），不要新增 slate 类。
+
 ### 1.2 用 JS 常量 token（canvas / SVG 属性 / inline style / antd theme）
 这些上下文**不解析 `var()`**，颜色必须是 JS 字符串。已集中在 `lib/`：
 

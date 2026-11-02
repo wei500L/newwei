@@ -3,33 +3,35 @@
  *
  * 这些颜色以 JS 常量存在——图表渲染进 <canvas>，无法解析 CSS 变量 var()。
  * 集中于此以消除各图表组件内的硬编码碎片（审计 W6：图表色散落各组件、
- * 脱离设计 token）。值与迁移前完全一致，收敛本身零视觉变化。
+ * 脱离设计 token）。
+ *
+ * FE-UI 批8A：对齐情报编辑台纸墨色板（README §3.2）。
  *
  * 供 echart 主题注册（smart-light / smart-dark）与其它自定义图表复用。
  */
 
-/** smart-light 主题系列色（8 色轮转）。 */
+/** smart-light 系列色：墨蓝、琥珀、青绿、朱红、靛紫、橄榄、赭黄、石墨。低饱和，适合纸底。 */
 export const CHART_SERIES_LIGHT: string[] = [
-  "#0050b3", // Primary (Deep Blue)
-  "#faad14", // Secondary (Tech Gold)
-  "#13c2c2", // Accent (Cyan)
-  "#eb2f96", // Magenta
-  "#722ed1", // Purple
-  "#52c41a", // Green
-  "#fadb14", // Yellow
-  "#fa8c16", // Orange
+  "#1f3b7b", // 墨蓝（= --primary）
+  "#b45309", // 琥珀（= --accent）
+  "#0f766e", // 青绿
+  "#b91c1c", // 朱红（= --destructive）
+  "#5b4b8a", // 靛紫
+  "#4d7c0f", // 橄榄
+  "#a16207", // 赭黄
+  "#5a6270", // 石墨（= --muted-foreground）
 ];
 
-/** smart-dark 主题系列色（8 色轮转）。 */
+/** smart-dark 系列色：同色相提亮，保证深墨底上可读。 */
 export const CHART_SERIES_DARK: string[] = [
-  "#2563eb", // Vibrant Blue
-  "#d48806", // Gold
-  "#13a8a8", // Cyan
-  "#cb2b83", // Magenta
-  "#642ab5", // Purple
-  "#49aa19", // Green
-  "#d8bd14", // Yellow
-  "#d87a16", // Orange
+  "#8fb0ff", // 墨蓝（= 暗色 --primary）
+  "#f59e0b", // 琥珀（= 暗色 --accent）
+  "#2dd4bf", // 青绿
+  "#f87171", // 朱红（= 暗色 --destructive）
+  "#a78bfa", // 靛紫
+  "#a3e635", // 橄榄
+  "#facc15", // 赭黄
+  "#9aa3af", // 石墨（= 暗色 --muted-foreground）
 ];
 
 // ---------------------------------------------------------------------------
@@ -37,49 +39,32 @@ export const CHART_SERIES_DARK: string[] = [
 //
 // 同样以 JS 常量存在——这些值直接喂给 echarts.registerTheme 的主题对象，
 // 渲染进 <canvas>，无法解析 CSS 变量 var()。集中于此以消除 echart.client.tsx
-// 里散落的硬编码文本/边框色（审计 W6）。值与迁移前逐字符一致，零视觉变化。
+// 里散落的硬编码文本/边框色（审计 W6）。
+// FE-UI 批8A：对齐纸墨 token（README §3.2）。
 // ---------------------------------------------------------------------------
 
-/** smart-light tooltip 背景（半透明白）。 */
-export const CHART_LIGHT_TOOLTIP_BG = "rgba(255, 255, 255, 0.95)";
-
-/** smart-light 主题文本/边框色（tooltip 正文 / 标题 / 图例 / 坐标轴标签 / 轴线）。 */
+export const CHART_LIGHT_TOOLTIP_BG = "rgba(255, 253, 249, 0.98)"; // --surface
 export const CHART_LIGHT_TEXT_COLORS = {
-  primary: "#1f2937", // tooltip 正文
-  title: "#111827", // 标题
-  secondary: "#4b5563", // 图例
-  tertiary: "#6b7280", // 坐标轴标签
-  border: "#e5e7eb", // 坐标轴线 / tooltip 边框
+  primary: "#161b26",   // --foreground
+  title: "#161b26",
+  secondary: "#4a5261", // --secondary-foreground
+  tertiary: "#5a6270",  // --muted-foreground
+  border: "#e3dfd6",    // --border
 } as const;
 
-/** smart-dark tooltip 背景（半透明深蓝）。 */
-export const CHART_DARK_TOOLTIP_BG = "rgba(15, 23, 42, 0.95)";
-
-/** smart-dark tooltip / 坐标轴线边框色（半透明白）。 */
-export const CHART_DARK_TOOLTIP_BORDER = "rgba(255, 255, 255, 0.1)";
-
-/** smart-dark 主题文本色（tooltip 正文 / 标题 / 类目轴标签 / 图例·数值轴标签）。 */
+export const CHART_DARK_TOOLTIP_BG = "rgba(20, 26, 34, 0.98)"; // 暗色 --surface #141a22
+export const CHART_DARK_TOOLTIP_BORDER = "rgba(232, 228, 218, 0.12)";
 export const CHART_DARK_TEXT_COLORS = {
-  primary: "#e2e8f0", // tooltip 正文
-  title: "#f3f4f6", // 标题
-  secondary: "#cbd5e1", // 类目轴标签
-  tertiary: "#9ca3af", // 图例 / 数值轴标签
+  primary: "#e8e4da",   // 暗色 --foreground
+  title: "#e8e4da",
+  secondary: "#c9ced6", // 暗色 --secondary-foreground
+  tertiary: "#9aa3af",  // 暗色 --muted-foreground
 } as const;
 
 // ---------------------------------------------------------------------------
 // 各仪表盘图表的专属数据色（itemStyle / sparkline color 等 JS 上下文）。
 // ---------------------------------------------------------------------------
 
-/** economic-long：GDP 柱状图色。 */
-export const ECONOMIC_CHART_COLORS = {
-  gdp: "#0958d9",
-} as const;
-
-/** economic-medium：经济涨跌柱色（正=绿 / 负=红）。 */
-export const ECONOMIC_CHANGE_COLORS = {
-  positive: "#389e0d",
-  negative: "#cf1322",
-} as const;
-
-/** market-pulse：「资源稀缺度」指标色（Cyan）。 */
-export const MARKET_PULSE_COLOR = "#13c2c2";
+export const ECONOMIC_CHART_COLORS = { gdp: "#1f3b7b" } as const;
+export const ECONOMIC_CHANGE_COLORS = { positive: "#1b9e77", negative: "#d95f02" } as const; // = --bullish / --bearish
+export const MARKET_PULSE_COLOR = "#0f766e";

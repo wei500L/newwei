@@ -75,6 +75,35 @@ const config: Config = {
         },
         'muted-foreground': 'var(--muted-foreground)',
         'border-strong': 'var(--border-strong)',
+        // FE-UI 批8A：slate/gray 重映射为暖纸—墨色阶（README §3.2）。
+        // 浅端 = 纸色 token，深端 = 墨色 token；存量 800+ 处冷灰类一次性变暖。
+        // 必须写 hex（Tailwind 3 的 /opacity 修饰符无法作用于 var()）。
+        slate: {
+          50: '#faf8f3',
+          100: '#f0ede6', // --surface-muted
+          200: '#e3dfd6', // --border
+          300: '#cfc9bc',
+          400: '#9b978e',
+          500: '#6b707a',
+          600: '#5a6270', // --muted-foreground
+          700: '#3a414d',
+          800: '#232a35',
+          900: '#161b26', // --foreground / 暗色卡片
+          950: '#0d1117', // 暗色 --background
+        },
+        gray: {
+          50: '#faf8f3',
+          100: '#f0ede6',
+          200: '#e3dfd6',
+          300: '#cfc9bc',
+          400: '#9b978e',
+          500: '#6b707a',
+          600: '#5a6270',
+          700: '#3a414d',
+          800: '#232a35',
+          900: '#161b26',
+          950: '#0d1117',
+        },
       },
       borderRadius: {
         sm: '4px',
