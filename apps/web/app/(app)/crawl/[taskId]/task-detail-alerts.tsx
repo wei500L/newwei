@@ -41,7 +41,6 @@ export function TaskDetailAlerts({
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: 16 }}
           message={t("crawl.proxy.unsupportedLegacyTitle")}
           description={formatPolicyIssues(proxyIssues, t)}
         />
@@ -50,7 +49,6 @@ export function TaskDetailAlerts({
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: 16 }}
           message={t("crawl.liveUpdates.alertTitle")}
           description={
             <Space direction="vertical" size={4}>
@@ -69,7 +67,6 @@ export function TaskDetailAlerts({
           type={backfill.notice.type}
           showIcon
           closable
-          style={{ marginBottom: 16 }}
           message={backfill.notice.message}
           description={backfill.notice.description}
           onClose={backfill.dismissNotice}
@@ -85,7 +82,6 @@ export function TaskDetailAlerts({
                 : "warning"
           }
           showIcon
-          style={{ marginBottom: 16 }}
           message={t("crawl.detail.latestError")}
           description={
             <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
@@ -98,7 +94,6 @@ export function TaskDetailAlerts({
         <Alert
           type="info"
           showIcon
-          style={{ marginBottom: 16 }}
           message={t("crawl.runtimeGuide.title")}
           description={
             <Space direction="vertical" size={2}>
@@ -112,7 +107,7 @@ export function TaskDetailAlerts({
                 <summary>
                   {t("crawl.runtimeGuide.stepsTitle")}
                 </summary>
-                <Space direction="vertical" size={2} style={{ marginTop: 6 }}>
+                <Space direction="vertical" size={2} className="!mt-2">
                   <Typography.Text type="secondary">
                     {`1. ${t("crawl.runtimeGuide.step1")}`}
                   </Typography.Text>
@@ -129,7 +124,6 @@ export function TaskDetailAlerts({
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: 16 }}
           message={t("crawl.runtimeGuide.displayIssueTitle")}
           description={
             <Space direction="vertical" size={2}>
@@ -147,7 +141,6 @@ export function TaskDetailAlerts({
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: 16 }}
           message={t("crawl.runtimeGuide.timeoutIssueTitle")}
           description={
             <Space direction="vertical" size={2}>

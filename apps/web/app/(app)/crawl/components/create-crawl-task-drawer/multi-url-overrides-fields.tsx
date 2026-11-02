@@ -21,7 +21,7 @@ export function MultiUrlOverridesFields({
   const { t } = useTranslation();
   return (
     <>
-      <Typography.Text strong style={{ marginBottom: 8, display: "block" }}>
+      <Typography.Text strong style={{ display: "block" }} className="!mb-2">
         {t("crawl.multiUrl.dynamicOverrides")}
       </Typography.Text>
       <Form.List name={[field.name, "options", "jsCode"]}>

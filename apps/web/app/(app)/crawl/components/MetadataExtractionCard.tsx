@@ -72,7 +72,7 @@ export function MetadataExtractionCard({
       key: "status",
       width: 120,
       render: (_: unknown, record) => (
-        <Tag color={record.status === "success" ? "green" : "red"}>
+        <Tag color={record.status === "success" ? "success" : "error"}>
           {t(`crawl.metadata.status.${record.status}`, {
             defaultValue: record.status.toUpperCase(),
           })}
@@ -136,7 +136,7 @@ export function MetadataExtractionCard({
             {primaryMeta.length > 0 ? (
               <Space wrap>
                 {primaryMeta.map((tag) => (
-                  <Tag key={`${record.url}-meta-${tag.name}`} color="blue">
+                  <Tag key={`${record.url}-meta-${tag.name}`}>
                     {tag.name}: {tag.value}
                   </Tag>
                 ))}
@@ -149,7 +149,7 @@ export function MetadataExtractionCard({
             {primaryOg.length > 0 ? (
               <Space wrap>
                 {primaryOg.map((tag) => (
-                  <Tag key={`${record.url}-og-${tag.name}`} color="purple">
+                  <Tag key={`${record.url}-og-${tag.name}`}>
                     {tag.name}: {tag.value}
                   </Tag>
                 ))}
@@ -160,7 +160,7 @@ export function MetadataExtractionCard({
               </Typography.Text>
             )}
             {record.jsonLd.length > 0 ? (
-              <Tag color="geekblue">
+              <Tag>
                 {t("crawl.metadata.jsonLdCount", {
                   count: record.jsonLd.length,
                 })}
@@ -201,7 +201,7 @@ export function MetadataExtractionCard({
         form={form}
         onFinish={onSubmit}
         initialValues={{ source: "sitemap", maxUrls: 10 }}
-        style={{ marginTop: 16 }}
+        className="!mt-4"
       >
         <Space
           align={screens.md ? "end" : "start"}
@@ -320,7 +320,7 @@ export function MetadataExtractionCard({
       </Form>
       {!screens.md ? (
         <List
-          style={{ marginTop: 16 }}
+          className="!mt-4"
           dataSource={results}
           loading={loading}
           locale={{ emptyText: t("crawl.metadata.empty") }}
@@ -334,14 +334,14 @@ export function MetadataExtractionCard({
                     </Typography.Link>
                     <Space>
                       <Tag
-                        color={record.status === "success" ? "green" : "red"}
+                        color={record.status === "success" ? "success" : "error"}
                       >
                         {t(`crawl.metadata.status.${record.status}`, {
                           defaultValue: record.status.toUpperCase(),
                         })}
                       </Tag>
                       {record.relevanceScore != null && (
-                        <Tag color="blue">
+                        <Tag>
                           {t("crawl.metadata.columns.score")}:{" "}
                           {record.relevanceScore.toFixed(2)}
                         </Tag>
@@ -377,7 +377,7 @@ export function MetadataExtractionCard({
         />
       ) : (
         <Table<MetadataResultRow>
-          style={{ marginTop: 16 }}
+          className="!mt-4"
           rowKey={(record) =>
             `${record.url}-${record.fetchedAt ?? record.status}`
           }

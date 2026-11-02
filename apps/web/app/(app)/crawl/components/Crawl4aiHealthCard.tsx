@@ -12,7 +12,6 @@ import {
   Tag,
   Typography,
 } from "antd";
-import dayjs from "dayjs";
 import {
   type CSSProperties,
   type ReactNode,
@@ -30,6 +29,7 @@ import {
   parseCrawl4aiSsrfProxyRuntimeState,
   type Crawl4aiSsrfProxyRuntimeState,
 } from "@/lib/crawl4ai-ssrf-proxy";
+import { formatClock, resolveLocale } from "@/lib/i18n";
 
 type HealthStatus = "loading" | "healthy" | "unreachable";
 
@@ -279,7 +279,8 @@ export function Crawl4aiHealthCard({
   className,
   style,
 }: Crawl4aiHealthCardProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const [status, setStatus] = useState<HealthStatus>("loading");
   const [snapshot, setSnapshot] = useState<Crawl4aiHealthSnapshot | null>(null);
   const [runtime, setRuntime] = useState<Crawl4aiRuntimeSnapshot | null>(null);
@@ -485,26 +486,26 @@ export function Crawl4aiHealthCard({
 
   const statusTag =
     status === "healthy" ? (
-      <Tag color="green">
+      <Tag color="success">
         {t("crawl.monitor.quickStatus.healthy")}
       </Tag>
     ) : status === "unreachable" ? (
-      <Tag color="red">
+      <Tag color="error">
         {t("crawl.monitor.quickStatus.unreachable")}
       </Tag>
     ) : (
-      <Tag color="blue">
+      <Tag color="processing">
         {t("common.loading")}
       </Tag>
     );
 
   const headedTag =
     runtime?.headedOk === true ? (
-      <Tag color="green">
+      <Tag color="success">
         {t("crawl.monitor.runtime.headedOk")}
       </Tag>
     ) : runtime?.headedOk === false ? (
-      <Tag color="red">
+      <Tag color="error">
         {t("crawl.monitor.runtime.headedFailed")}
       </Tag>
     ) : null;
@@ -512,22 +513,22 @@ export function Crawl4aiHealthCard({
   const ssrfProxyStatus = getCrawl4aiSsrfProxyStatus(runtime?.ssrfProxy);
   const ssrfProxyTag =
     ssrfProxyStatus === "healthy" ? (
-      <Tag color="green">
+      <Tag color="success">
         {t("crawl.monitor.runtime.ssrfProxyOk")}
       </Tag>
     ) : ssrfProxyStatus === "failing" ? (
-      <Tag color="red">
+      <Tag color="error">
         {t("crawl.monitor.runtime.ssrfProxyFailed")}
       </Tag>
     ) : ssrfProxyStatus === "disabled" ? (
-      <Tag color="orange">
+      <Tag>
         {t("crawl.monitor.runtime.ssrfProxyDisabled")}
       </Tag>
     ) : null;
 
   const updatedText = snapshot?.receivedAt
     ? t("crawl.monitor.quickStatus.updatedAt", {
-        time: dayjs(snapshot.receivedAt).format("HH:mm:ss"),
+        time: formatClock(snapshot.receivedAt, locale),
       })
     : null;
   const runtimeHeadedReason =
@@ -582,7 +583,7 @@ export function Crawl4aiHealthCard({
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: 12 }}
+          className="!mb-3"
           message={t("crawl.monitor.quickStatus.unreachable")}
           description={
             <Space direction="vertical" size={6} style={{ width: "100%" }}>
@@ -648,7 +649,7 @@ export function Crawl4aiHealthCard({
       </Row>
 
       {status === "healthy" && runtime ? (
-        <Space direction="vertical" size={4} style={{ marginTop: 12 }}>
+        <Space direction="vertical" size={4} className="!mt-3">
           <Typography.Text type="secondary">
             {t("crawl.monitor.runtime.summary", {
               headless: runtime.headlessOk ? "OK" : "FAILED",
@@ -737,7 +738,8 @@ export function Crawl4aiHealthCard({
       ) : status === "healthy" && runtimeError ? (
         <Typography.Text
           type="secondary"
-          style={{ marginTop: 12, display: "block", whiteSpace: "pre-wrap" }}
+          style={{ display: "block", whiteSpace: "pre-wrap" }}
+          className="!mt-3"
         >
           {runtimeError}
         </Typography.Text>

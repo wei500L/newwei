@@ -240,7 +240,7 @@ export function VirtualScrollFields() {
     <Card
       title={t("crawl.virtualScroll.title")}
       size="small"
-      style={{ marginBottom: 16 }}
+      className="!mb-4"
       extra={
         <Typography.Link
           href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/advanced/virtual-scroll.md"
@@ -251,7 +251,7 @@ export function VirtualScrollFields() {
         </Typography.Link>
       }
     >
-      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+      <Typography.Paragraph type="secondary" className="!mt-0">
         {t("crawl.virtualScroll.description")}
       </Typography.Paragraph>
       <Form.Item

@@ -22,7 +22,7 @@ export function BrowserIdentityFields() {
     <Card
       title={t("crawl.browser.identity.title")}
       size="small"
-      style={{ marginBottom: 16 }}
+      className="!mb-4"
       extra={
         <Typography.Link
           href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/browser-crawler-config.md"
@@ -33,7 +33,7 @@ export function BrowserIdentityFields() {
         </Typography.Link>
       }
     >
-      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+      <Typography.Paragraph type="secondary" className="!mt-0">
         {t("crawl.browser.identity.description")}
       </Typography.Paragraph>
       <Form.Item
@@ -211,7 +211,7 @@ export function BrowserIdentityFields() {
           </Form.Item>
         </Space>
       </Form.Item>
-      <Typography.Title level={5} style={{ marginTop: 16 }}>
+      <Typography.Title level={5} className="!mt-4">
         {t("crawl.browser.headers.title")}
       </Typography.Title>
       <BrowserHeadersCookiesFields />

@@ -29,7 +29,7 @@ export function StoredMediaSection({
     <Card
       size="small"
       title={t("crawl.detail.media.storedTitle")}
-      style={{ marginTop: 12 }}
+      className="!mt-3"
     >
       <List
         size="small"
@@ -58,7 +58,7 @@ export function StoredMediaSection({
                     ).toUpperCase()}{" "}
                     • {formatBytes(asset.bytes)}
                   </Typography.Text>
-                  <Typography.Paragraph style={{ marginBottom: 4 }}>
+                  <Typography.Paragraph className="!mb-1">
                     {asset.desc ?? asset.sourceUrl}
                   </Typography.Paragraph>
                   {missingStoredAccess ? (

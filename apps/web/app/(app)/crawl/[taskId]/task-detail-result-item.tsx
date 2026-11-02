@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next";
 import { formatDateTime, type SupportedLocale } from "@/lib/i18n";
 
 import type { CrawlResultActionController } from "./hooks/use-crawl-result-actions";
-import { markdownPreviewStyle, safeParseJson } from "./task-detail-formatters";
+import { safeParseJson } from "./task-detail-formatters";
 import { MediaSection } from "./task-detail-media-section";
 import { StoredMediaSection } from "./task-detail-stored-media-section";
 import { TablesSection } from "./task-detail-tables-section";
@@ -25,11 +25,11 @@ import type {
 
 const itemStatusColors: Record<string, string> = {
   draft: "default",
-  pending: "gold",
-  processing: "blue",
-  completed: "green",
-  failed: "red",
-  duplicate: "purple",
+  pending: "warning",
+  processing: "processing",
+  completed: "success",
+  failed: "error",
+  duplicate: "default",
 };
 
 interface ResultItemProps {
@@ -85,8 +85,7 @@ export function TaskDetailResultItem({
   ].filter((entry) => entry.content && entry.content.length > 0);
   const defaultContent = (
     <pre
-      className="markdown-preview"
-      style={{ ...markdownPreviewStyle, marginTop: 8 }}
+      className="markdown-preview mt-2"
     >
       {result.markdown}
     </pre>
@@ -95,14 +94,13 @@ export function TaskDetailResultItem({
     variantEntries.length > 1 ? (
       <Tabs
         size="small"
-        style={{ marginTop: 8 }}
+        className="!mt-2"
         items={variantEntries.map((entry) => ({
           key: entry.key,
           label: entry.label,
           children: (
             <pre
-              className="markdown-preview"
-              style={{ ...markdownPreviewStyle, marginTop: 8 }}
+              className="markdown-preview mt-2"
             >
               {entry.content}
             </pre>

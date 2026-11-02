@@ -29,7 +29,7 @@ export function TablesSection({ tables }: { tables: CrawlResultTable[] | null })
     <Card
       size="small"
       title={t("crawl.detail.tables.title")}
-      style={{ marginTop: 12 }}
+      className="!mt-3"
       extra={
         <Typography.Link href={tableDocsUrl} target="_blank" rel="noreferrer">
           {t("crawl.detail.tables.releaseNotes")}
@@ -71,7 +71,7 @@ export function TablesSection({ tables }: { tables: CrawlResultTable[] | null })
                 <List
                   dataSource={previewRows}
                   size="small"
-                  style={{ marginTop: 8 }}
+                  className="!mt-2"
                   renderItem={(item, i) => (
                     <List.Item>
                       <List.Item.Meta
@@ -103,7 +103,7 @@ export function TablesSection({ tables }: { tables: CrawlResultTable[] | null })
                   dataSource={previewRows}
                   size="small"
                   pagination={false}
-                  style={{ marginTop: 8 }}
+                  className="!mt-2"
                   scroll={{ x: true }}
                 />
               )}

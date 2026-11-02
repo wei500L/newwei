@@ -20,9 +20,9 @@ export function LinkPreviewFields() {
     <Card
       size="small"
       title={t("crawl.links.title")}
-      style={{ marginBottom: 16 }}
+      className="!mb-4"
     >
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+      <Typography.Paragraph type="secondary" className="!mb-3">
         {t("crawl.links.description")}
       </Typography.Paragraph>
       <Form.Item

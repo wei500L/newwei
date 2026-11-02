@@ -22,15 +22,15 @@ export function OptimizationFields() {
     <Card
       title={t("crawl.optimization.title")}
       size="small"
-      style={{ marginBottom: 16 }}
+      className="!mb-4"
     >
-      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+      <Typography.Paragraph type="secondary" className="!mt-0">
         {t("crawl.optimization.description")}
       </Typography.Paragraph>
       <Alert
         type="info"
         showIcon
-        style={{ marginBottom: 12 }}
+        className="!mb-3"
         message={t("crawl.optimization.noLlmTitle")}
         description={t("crawl.optimization.noLlmDescription")}
       />

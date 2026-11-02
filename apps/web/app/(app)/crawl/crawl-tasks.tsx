@@ -79,12 +79,12 @@ import type { CreateCrawlTaskFormValues, MetadataFormValues } from "./types";
 const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
 
 const statusColors: Record<CrawlTaskStatus, string> = {
-  pending: "gold",
-  queued: "cyan",
-  running: "blue",
-  completed: "green",
-  failed: "red",
-  paused: "purple",
+  pending: "warning",
+  queued: "processing",
+  running: "processing",
+  completed: "success",
+  failed: "error",
+  paused: "default",
 };
 const MIN_CRAWL_REQUEST_TIMEOUT_MS = 5_000;
 const MAX_CRAWL_REQUEST_TIMEOUT_MS = 900_000;
@@ -1444,7 +1444,7 @@ export function CrawlTasksView() {
             <Alert
               type="info"
               showIcon
-              style={{ marginBottom: 0 }}
+              className="!mb-0"
               message={t("crawl.filter.sourceId", {
                 id: sourceIdFilter,
               })}
@@ -1462,7 +1462,7 @@ export function CrawlTasksView() {
             <Alert
               type="error"
               showIcon
-              style={{ marginBottom: 0 }}
+              className="!mb-0"
               message={t("common.failed")}
               description={tasksError}
             />
@@ -1471,7 +1471,7 @@ export function CrawlTasksView() {
             <Alert
               type="error"
               showIcon
-              style={{ marginBottom: 0 }}
+              className="!mb-0"
               message={t("crawl.liveUpdates.alertTitle")}
               description={
                 <Space direction="vertical" size={4}>
@@ -1491,11 +1491,11 @@ export function CrawlTasksView() {
                 <Tag
                   color={
                     opsLiveError
-                      ? "red"
+                      ? "error"
                       : opsLiveStatus === "connected"
-                        ? "green"
+                        ? "success"
                         : opsLiveStatus === "connecting"
-                          ? "blue"
+                          ? "processing"
                           : undefined
                   }
                 >
@@ -1606,7 +1606,7 @@ export function CrawlTasksView() {
                   {t("crawl.ops.queueStatus")}
                 </Typography.Text>
                 <Space wrap size={[8, 8]}>
-                  <Tag color={queueStats?.paused ? "volcano" : "green"}>
+                  <Tag color={queueStats?.paused ? undefined : "processing"}>
                     {queueStats?.paused
                       ? t("crawl.ops.paused")
                       : t("crawl.ops.running")}
@@ -1947,7 +1947,7 @@ export function CrawlTasksView() {
               label: t("crawl.tasks.settingsSection"),
               children: (
                 <>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+          <Typography.Paragraph type="secondary" className="!mb-4">
             {t("settings.crawlClient.description")}
           </Typography.Paragraph>
           {crawlClientSettingsLoading &&
@@ -2340,7 +2340,7 @@ export function CrawlTasksView() {
                 <Col xs={24}>
                   <Typography.Paragraph
                     type="secondary"
-                    style={{ marginTop: -8, marginBottom: 8 }}
+                    className="!-mt-2 !mb-2"
                   >
                     {adaptiveConcurrencyEnabled
                       ? t("settings.crawlClient.hints.adaptiveEnabled")
@@ -2515,7 +2515,7 @@ export function CrawlTasksView() {
                   </>
                 ) : null}
               </Row>
-              <Form.Item style={{ marginBottom: 0 }}>
+              <Form.Item className="!mb-0">
                 <Button
                   htmlType="submit"
                   loading={crawlClientSettingsSaving}

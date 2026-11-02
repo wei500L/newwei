@@ -13,7 +13,7 @@ export function TableExtractionFields() {
     <Card
       size="small"
       title={t("crawl.tables.title")}
-      style={{ marginBottom: 16 }}
+      className="!mb-4"
       extra={
         <Typography.Link
           href="https://github.com/unclecode/crawl4ai/blob/main/docs/blog/release-v0.7.3.md"
@@ -24,7 +24,7 @@ export function TableExtractionFields() {
         </Typography.Link>
       }
     >
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("crawl.tables.description")}
       </Typography.Paragraph>
       <Form.Item

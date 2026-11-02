@@ -45,7 +45,7 @@ export function BrowserHeadersCookiesFields() {
 
   return (
     <>
-      <Space style={{ marginBottom: 8 }}>
+      <Space className="!mb-2">
         <Button size="small" onClick={applyAutoBrowserHeaders}>
           {t("crawl.browser.headers.autoFillSecCh")}
         </Button>
@@ -92,7 +92,7 @@ export function BrowserHeadersCookiesFields() {
           </Space>
         )}
       </Form.List>
-      <Typography.Title level={5} style={{ marginTop: 24 }}>
+      <Typography.Title level={5} className="!mt-6">
         {t("crawl.browser.cookies.title")}
       </Typography.Title>
       <Form.List name="browserCookies">

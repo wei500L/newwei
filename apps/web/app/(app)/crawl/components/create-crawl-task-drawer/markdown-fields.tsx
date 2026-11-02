@@ -45,7 +45,7 @@ export function MarkdownFields() {
       <Alert
         type="info"
         showIcon
-        style={{ marginBottom: 16 }}
+        className="!mb-4"
         message={t("crawl.markdown.ragReadyTitle")}
         description={t("crawl.markdown.ragReadyHint")}
       />
@@ -237,10 +237,10 @@ export function MarkdownFields() {
           maxLength={32}
         />
       </Form.Item>
-      <Typography.Title level={5} style={{ marginTop: 24 }}>
+      <Typography.Title level={5} className="!mt-6">
         {t("crawl.markdown.customStrategy.title")}
       </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+      <Typography.Paragraph type="secondary" className="!mb-2">
         {t("crawl.markdown.customStrategy.description")}{" "}
         <Typography.Link
           href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/markdown-generation.md#custom-strategies"
@@ -255,7 +255,7 @@ export function MarkdownFields() {
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: 12 }}
+          className="!mb-3"
           message={t("crawl.markdown.customStrategy.validation.noLlmExtraction")}
           description={t(
             "crawl.markdown.customStrategy.validation.noLlmExtractionHint",
@@ -322,7 +322,7 @@ export function MarkdownFields() {
       <Card
         size="small"
         title={t("crawl.markdown.clean.title")}
-        style={{ marginBottom: 16 }}
+        className="!mb-4"
         extra={
           <Typography.Link
             href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/core/content-selection.md"
@@ -333,7 +333,7 @@ export function MarkdownFields() {
           </Typography.Link>
         }
       >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        <Typography.Paragraph type="secondary" className="!mb-4">
           {t("crawl.markdown.clean.description")}{" "}
           <Typography.Link
             href="https://github.com/unclecode/crawl4ai/blob/main/docs/examples/quickstart.ipynb"

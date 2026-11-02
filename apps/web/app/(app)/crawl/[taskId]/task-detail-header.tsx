@@ -18,12 +18,12 @@ import type { OpsLiveStatus } from "./hooks/use-crawl-task-ops-live";
 import type { CrawlTaskDetailTask } from "./task-detail-types";
 
 const statusColors: Record<CrawlTaskStatus, string> = {
-  pending: "gold",
-  queued: "cyan",
-  running: "blue",
-  completed: "green",
-  failed: "red",
-  paused: "purple",
+  pending: "warning",
+  queued: "processing",
+  running: "processing",
+  completed: "success",
+  failed: "error",
+  paused: "default",
 };
 
 interface TaskDetailHeaderProps {
@@ -71,11 +71,11 @@ export function TaskDetailHeader({
             className="m-0"
             color={
               liveError
-                ? "red"
+                ? "error"
                 : liveStatus === "connected"
-                  ? "green"
+                  ? "success"
                   : liveStatus === "connecting"
-                    ? "blue"
+                    ? "processing"
                     : undefined
             }
           >

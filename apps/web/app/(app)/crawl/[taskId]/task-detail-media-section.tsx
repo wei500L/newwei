@@ -38,7 +38,7 @@ export function MediaSection({ media }: { media: CrawlMediaCollection | null }) 
     <Card
       size="small"
       title={t("crawl.detail.media.title")}
-      style={{ marginTop: 12 }}
+      className="!mt-3"
       extra={
         <Typography.Link href={mediaDocsUrl} target="_blank" rel="noreferrer">
           {t("common.docs")}
@@ -57,7 +57,7 @@ export function MediaSection({ media }: { media: CrawlMediaCollection | null }) 
               <List
                 size="small"
                 split={false}
-                style={{ marginTop: 8 }}
+                className="!mt-2"
                 dataSource={preview}
                 renderItem={(item, index) => (
                   <List.Item key={`${kind}-${index}-${item.src ?? "media"}`}>
@@ -73,7 +73,7 @@ export function MediaSection({ media }: { media: CrawlMediaCollection | null }) 
                           </Typography.Text>
                         ) : null}
                         {item.desc ? (
-                          <Typography.Paragraph style={{ marginBottom: 4 }}>
+                          <Typography.Paragraph className="!mb-1">
                             {item.desc}
                           </Typography.Paragraph>
                         ) : null}
@@ -195,7 +195,7 @@ function renderSourceList(
       <Typography.Text type="secondary">
         {t("crawl.detail.media.sources", { label, count: sources.length })}
       </Typography.Text>
-      <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
+      <ul style={{ padding: 0 }} className="mt-1 ml-4">
         {sources.slice(0, 4).map((source, index) => (
           <li key={`${label}-${index}`}>
             <code>{source.srcset ?? source.src}</code>

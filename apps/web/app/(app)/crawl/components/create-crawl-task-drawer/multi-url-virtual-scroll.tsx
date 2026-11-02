@@ -32,7 +32,7 @@ export function MultiUrlVirtualScrollFields({
   const form = Form.useFormInstance<CreateCrawlTaskFormValues>();
   return (
     <>
-      <Typography.Text strong style={{ marginBottom: 8, display: "block" }}>
+      <Typography.Text strong style={{ display: "block" }} className="!mb-2">
         {t("crawl.virtualScroll.title")}
       </Typography.Text>
       <Form.Item

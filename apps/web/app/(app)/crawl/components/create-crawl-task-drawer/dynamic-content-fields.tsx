@@ -53,9 +53,9 @@ export function DynamicContentFields() {
       <Card
         title={t("crawl.settings.politeness.title")}
         size="small"
-        style={{ marginBottom: 16 }}
+        className="!mb-4"
       >
-        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        <Typography.Paragraph type="secondary" className="!mt-0">
           {t("crawl.settings.politeness.description")}
         </Typography.Paragraph>
         <Form.Item
@@ -102,7 +102,7 @@ export function DynamicContentFields() {
       <Card
         title={t("crawl.dynamic.title")}
         size="small"
-        style={{ marginBottom: 16 }}
+        className="!mb-4"
         extra={
           <Typography.Link
             href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/advanced/session-management.md"
@@ -113,7 +113,7 @@ export function DynamicContentFields() {
           </Typography.Link>
         }
       >
-        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        <Typography.Paragraph type="secondary" className="!mt-0">
           {t("crawl.dynamic.description")}
         </Typography.Paragraph>
         <Form.List name="jsCode">

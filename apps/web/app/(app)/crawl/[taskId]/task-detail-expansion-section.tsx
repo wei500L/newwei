@@ -286,7 +286,7 @@ export function TaskDetailExpansionSection({
                   <Alert
                     type="warning"
                     showIcon
-                    style={{ marginTop: 8 }}
+                    className="!mt-2"
                     message={t("crawl.detail.expansion.softFailureMessage", {
                       count: expansionHeadSignalSummary.softFailureCount,
                     })}
@@ -302,7 +302,7 @@ export function TaskDetailExpansionSection({
                   <Alert
                     type="warning"
                     showIcon
-                    style={{ marginTop: 8 }}
+                    className="!mt-2"
                     message={t(
                       "crawl.detail.expansion.urlPathFallbackMessage",
                       {

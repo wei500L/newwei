@@ -30,35 +30,35 @@ export function TaskDetailStrategyCard({ config, strategy }: StrategyCardProps) 
   const tags = [];
   if (config?.scanFullPage) {
     tags.push(
-      <Tag key="scanFullPage" color="blue">
+      <Tag key="scanFullPage">
         {t("crawl.settings.scanFullPage")}
       </Tag>,
     );
   }
   if (virtualScroll) {
     tags.push(
-      <Tag key="virtualScroll" color="cyan">
+      <Tag key="virtualScroll">
         {t("crawl.virtualScroll.title")}
       </Tag>,
     );
   }
   if (qualitySummary) {
     tags.push(
-      <Tag key="qualityProfile" color="purple">
+      <Tag key="qualityProfile">
         {qualitySummary}
       </Tag>,
     );
   }
   if (pageTypeSummary) {
     tags.push(
-      <Tag key="pageTypeHint" color="magenta">
+      <Tag key="pageTypeHint">
         {pageTypeSummary}
       </Tag>,
     );
   }
   if (strategy.autoExpandDetails) {
     tags.push(
-      <Tag key="autoExpandDetails" color="green">
+      <Tag key="autoExpandDetails">
         {t("crawl.settings.autoExpandDetails")}
       </Tag>,
     );
@@ -78,7 +78,7 @@ export function TaskDetailStrategyCard({ config, strategy }: StrategyCardProps) 
       </Space>
       <Typography.Paragraph
         type="secondary"
-        style={{ marginBottom: 0, marginTop: 8 }}
+        className="!mb-0 !mt-2"
       >
         {t("crawl.detail.strategy.noLlmHint")}
       </Typography.Paragraph>

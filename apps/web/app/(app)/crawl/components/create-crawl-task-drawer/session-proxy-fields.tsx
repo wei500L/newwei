@@ -33,7 +33,7 @@ export function SessionProxyFields() {
       <Card
         title={t("crawl.session.title")}
         size="small"
-        style={{ marginBottom: 16 }}
+        className="!mb-4"
         extra={
           <Typography.Link
             href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/advanced/session-management.md"
@@ -44,7 +44,7 @@ export function SessionProxyFields() {
           </Typography.Link>
         }
       >
-        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        <Typography.Paragraph type="secondary" className="!mt-0">
           {t("crawl.session.description")}
         </Typography.Paragraph>
         <Form.Item
@@ -69,7 +69,7 @@ export function SessionProxyFields() {
           />
         </Form.Item>
       </Card>
-      <Card title={t("crawl.proxy.title")} size="small" style={{ marginBottom: 16 }}>
+      <Card title={t("crawl.proxy.title")} size="small" className="!mb-4">
         <Alert
           type={proxyIssues.length > 0 ? "error" : "warning"}
           showIcon

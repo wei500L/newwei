@@ -16,10 +16,10 @@ import { markdownPreviewStyle } from "./task-detail-formatters";
 import type { TaskLogRecord, TaskLogStatus } from "./task-detail-types";
 
 const taskLogStatusColors: Record<TaskLogStatus, string> = {
-  pending: "gold",
-  processing: "blue",
-  completed: "green",
-  failed: "red",
+  pending: "warning",
+  processing: "processing",
+  completed: "success",
+  failed: "error",
 };
 
 interface TaskLogsProps {
@@ -124,7 +124,7 @@ export function TaskDetailTaskLogs({
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: 12 }}
+          className="!mb-3"
           message={t("common.error.unexpected")}
           description={
             <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
@@ -148,8 +148,8 @@ export function TaskDetailTaskLogs({
           rowExpandable: (record) => Boolean(record.data || record.error),
           expandedRowRender: (record) => (
             <pre
-              className="markdown-preview"
-              style={{ ...markdownPreviewStyle, margin: 0 }}
+              className="markdown-preview m-0"
+              style={{ ...markdownPreviewStyle }}
             >
               {JSON.stringify(
                 { data: record.data ?? null, error: record.error ?? null },

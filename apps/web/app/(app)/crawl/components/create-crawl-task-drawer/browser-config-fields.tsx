@@ -45,7 +45,7 @@ export function BrowserConfigFields() {
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: 16 }}
+          className="!mb-4"
           message={t("crawl.browser.headedWarningTitle")}
           description={
             <Space direction="vertical" size={2}>
@@ -123,7 +123,7 @@ export function BrowserConfigFields() {
               href="https://github.com/unclecode/crawl4ai/blob/main/docs/md_v2/advanced/identity-based-crawling.md"
               target="_blank"
               rel="noreferrer"
-              style={{ marginLeft: 4 }}
+              className="!ml-1"
             >
               {t("crawl.browser.managedLink")}
             </Typography.Link>

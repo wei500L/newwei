@@ -26,7 +26,7 @@ export function ScanStrategyAlert() {
 
   return (
     <Alert
-      style={{ marginBottom: 16 }}
+      className="!mb-4"
       showIcon
       type={
         scanStrategyMode === "full_page"

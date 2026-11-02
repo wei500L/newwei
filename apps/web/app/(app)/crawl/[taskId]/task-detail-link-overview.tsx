@@ -66,7 +66,8 @@ export function TaskDetailLinkOverview({
         <>
           <Typography.Text
             strong
-            style={{ display: "block", marginTop: 16 }}
+            style={{ display: "block" }}
+            className="!mt-4"
           >
             {t("crawl.links.buckets")}
           </Typography.Text>

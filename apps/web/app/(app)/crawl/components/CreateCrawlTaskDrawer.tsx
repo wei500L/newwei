@@ -85,7 +85,7 @@ export function CreateCrawlTaskDrawer({
           { title: t("crawl.steps.basic") },
           { title: t("crawl.steps.advanced") },
         ]}
-        style={{ marginBottom: 24 }}
+        className="!mb-6"
       />
 
       <Form
@@ -127,7 +127,7 @@ export function CreateCrawlTaskDrawer({
           {currentStep > 0 && (
             <Button onClick={handlePrev}>{t("common.previous")}</Button>
           )}
-          <div style={{ marginLeft: "auto" }}>
+          <div className="ml-auto">
             {currentStep < 2 && (
               <Button type="primary" onClick={handleNext}>
                 {t("common.next")}
