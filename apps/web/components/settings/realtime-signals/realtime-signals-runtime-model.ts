@@ -1,3 +1,4 @@
+import { formatTimestamp, type SupportedLocale } from "@/lib/i18n";
 import {
   buildAisRuntimeFeedbackAlert,
   isOutagesRateLimited,
@@ -146,11 +147,11 @@ export function runtimeFreshnessColor(
 ) {
   switch (freshness) {
     case "fresh":
-      return "green";
+      return "success";
     case "stale":
-      return "orange";
+      return "warning";
     default:
-      return "default";
+      return undefined;
   }
 }
 
@@ -159,26 +160,26 @@ export function openskyBudgetDegradationColor(
 ) {
   switch (degradation) {
     case "warning":
-      return "gold";
+      return "warning";
     case "critical":
-      return "orange";
+      return "error";
     case "exhausted":
-      return "red";
+      return "error";
     default:
-      return "green";
+      return "success";
   }
 }
 
 export function runtimeStatusColor(status: RealtimeSignalRuntimeStatus) {
   return status === "ok"
-    ? "green"
+    ? "success"
     : status === "error"
-      ? "red"
+      ? "error"
       : status === "stale"
-        ? "orange"
+        ? "warning"
         : status === "not_configured"
-          ? "gold"
-          : "default";
+          ? "warning"
+          : undefined;
 }
 
 export function runtimeStatusLabel(
@@ -207,7 +208,8 @@ export function formatPercentValue(value: number | undefined) {
 
 export function formatTimestampValue(
   t: RealtimeSignalsTranslate,
-  value?: string,
+  value: string | undefined,
+  locale: SupportedLocale,
 ) {
   if (!value) {
     return t("systemSettings.realtimeSignals.status.notConfigured");
@@ -216,7 +218,7 @@ export function formatTimestampValue(
   if (!Number.isFinite(parsed)) {
     return value;
   }
-  return new Date(parsed).toLocaleString();
+  return formatTimestamp(parsed, locale) || value;
 }
 
 export function formatOpenskyRuntimeReason(

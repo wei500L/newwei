@@ -49,6 +49,7 @@ import {
   getCrawlConfigPolicyIssueTranslationKey,
 } from "@/lib/crawl-config-policy";
 import { WORKFLOW_CANVAS_GRID_COLOR } from "@/lib/graph-tokens";
+import { formatTimestamp, resolveLocale } from "@/lib/i18n";
 
 import {
   buildWorkflowCandidateTraceChain,
@@ -333,7 +334,8 @@ function WorkflowStudioInner({
   canManage: boolean;
   selectedWorkflowIdHint?: string | null;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
   const token = session?.accessToken;
   const apiClient = useMemo(
@@ -1564,7 +1566,7 @@ function WorkflowStudioInner({
                               ) : null}
                             </Space>
                             <Typography.Text type="secondary">
-                              {new Date(run.createdAt).toLocaleString()}
+                              {formatTimestamp(new Date(run.createdAt), locale)}
                             </Typography.Text>
                           </Space>
                         </div>
@@ -2115,7 +2117,7 @@ function WorkflowStudioInner({
                               </Space>
                               <Typography.Text>{event.message}</Typography.Text>
                               <Typography.Text type="secondary">
-                                {new Date(event.timestamp).toLocaleString()}
+                                {formatTimestamp(new Date(event.timestamp), locale)}
                               </Typography.Text>
                               {(event.beforeCount !== null &&
                                 event.beforeCount !== undefined) ||
@@ -2301,7 +2303,7 @@ function WorkflowStudioInner({
                               <Tag>{step.rejectedReason}</Tag>
                             ) : null}
                             <Typography.Text type="secondary">
-                              {new Date(entry.timestamp).toLocaleString()}
+                              {formatTimestamp(new Date(entry.timestamp), locale)}
                             </Typography.Text>
                           </Space>
                           <Typography.Text>{entry.message}</Typography.Text>

@@ -35,6 +35,7 @@ import {
   getCrawl4aiSsrfProxyStatus,
   parseCrawl4aiSsrfProxyRuntimeState,
 } from "@/lib/crawl4ai-ssrf-proxy";
+import { formatClock, resolveLocale, type SupportedLocale } from "@/lib/i18n";
 
 interface CrawlMonitorContentProps {
   dashboardUrl: string;
@@ -246,12 +247,13 @@ async function fetchRuntimeProbeJson() {
   return JSON.parse(rawText) as unknown;
 }
 
-function formatReceivedAt(ts: number): string {
-  return dayjs(ts).format("HH:mm:ss");
+function formatReceivedAt(ts: number, locale: SupportedLocale): string {
+  return formatClock(ts, locale);
 }
 
 function normalizeTimelineSeries(
   input: unknown,
+  locale: SupportedLocale,
 ): { labels: string[]; values: number[] } | null {
   if (!input) return null;
 
@@ -279,9 +281,9 @@ function normalizeTimelineSeries(
       const parsedValues = values.map((v) => asNumber(v) ?? 0);
       const labels = timestamps.map((t) => {
         const s = asString(t);
-        if (s) return dayjs(s).format("HH:mm:ss");
+        if (s) return formatClock(s, locale);
         const n = asNumber(t);
-        if (typeof n === "number") return dayjs(n * 1000).format("HH:mm:ss");
+        if (typeof n === "number") return formatClock(n * 1000, locale);
         return "";
       });
       return { labels, values: parsedValues };
@@ -298,9 +300,9 @@ function normalizeTimelineSeries(
         const ts = getRecordValue(point, ["timestamp", "t", "x"]);
         const label = (() => {
           const s = asString(ts);
-          if (s) return dayjs(s).format("HH:mm:ss");
+          if (s) return formatClock(s, locale);
           const n = asNumber(ts);
-          if (typeof n === "number") return dayjs(n * 1000).format("HH:mm:ss");
+          if (typeof n === "number") return formatClock(n * 1000, locale);
           return "";
         })();
         labels.push(label);
@@ -315,7 +317,10 @@ function normalizeTimelineSeries(
   return null;
 }
 
-function normalizeBrowserTimelineSeries(input: unknown): {
+function normalizeBrowserTimelineSeries(
+  input: unknown,
+  locale: SupportedLocale,
+): {
   labels: string[];
   permanent: number[];
   hot: number[];
@@ -334,9 +339,9 @@ function normalizeBrowserTimelineSeries(input: unknown): {
       const ts = getRecordValue(entry, ["timestamp", "t", "x"]);
       const label = (() => {
         const s = asString(ts);
-        if (s) return dayjs(s).format("HH:mm:ss");
+        if (s) return formatClock(s, locale);
         const n = asNumber(ts);
-        if (typeof n === "number") return dayjs(n * 1000).format("HH:mm:ss");
+        if (typeof n === "number") return formatClock(n * 1000, locale);
         return "";
       })();
 
@@ -365,9 +370,9 @@ function normalizeBrowserTimelineSeries(input: unknown): {
     ) {
       const labels = timestamps.map((t) => {
         const s = asString(t);
-        if (s) return dayjs(s).format("HH:mm:ss");
+        if (s) return formatClock(s, locale);
         const n = asNumber(t);
-        if (typeof n === "number") return dayjs(n * 1000).format("HH:mm:ss");
+        if (typeof n === "number") return formatClock(n * 1000, locale);
         return "";
       });
       return {
@@ -398,9 +403,9 @@ function normalizeBrowserTimelineSeries(input: unknown): {
       ) {
         const labels = timestamps.map((t) => {
           const s = asString(t);
-          if (s) return dayjs(s).format("HH:mm:ss");
+          if (s) return formatClock(s, locale);
           const n = asNumber(t);
-          if (typeof n === "number") return dayjs(n * 1000).format("HH:mm:ss");
+          if (typeof n === "number") return formatClock(n * 1000, locale);
           return "";
         });
         return {
@@ -413,7 +418,7 @@ function normalizeBrowserTimelineSeries(input: unknown): {
     }
   }
 
-  const series = normalizeTimelineSeries(input);
+  const series = normalizeTimelineSeries(input, locale);
   if (series) {
     return {
       labels: series.labels,
@@ -695,7 +700,8 @@ function normalizeMonitorError(raw: string): MonitorErrorInfo {
 export function CrawlMonitorContent({
   dashboardUrl,
 }: CrawlMonitorContentProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session, status } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canView =
@@ -1464,22 +1470,22 @@ export function CrawlMonitorContent({
 
   const memorySeries = useMemo(() => {
     const raw = isRecord(timeline) ? readPath(timeline, ["memory"]) : undefined;
-    return normalizeTimelineSeries(raw);
-  }, [timeline]);
+    return normalizeTimelineSeries(raw, locale);
+  }, [timeline, locale]);
 
   const requestSeries = useMemo(() => {
     const raw = isRecord(timeline)
       ? readPath(timeline, ["requests"])
       : undefined;
-    return normalizeTimelineSeries(raw);
-  }, [timeline]);
+    return normalizeTimelineSeries(raw, locale);
+  }, [timeline, locale]);
 
   const browserSeries = useMemo(() => {
     const raw = isRecord(timeline)
       ? readPath(timeline, ["browsers"])
       : undefined;
-    return normalizeBrowserTimelineSeries(raw);
-  }, [timeline]);
+    return normalizeBrowserTimelineSeries(raw, locale);
+  }, [timeline, locale]);
 
   const connectionTag = (() => {
     if (mode === "polling") {
@@ -1615,7 +1621,7 @@ export function CrawlMonitorContent({
   );
 
   const receivedAtLabel = monitor?.receivedAt
-    ? formatReceivedAt(monitor.receivedAt)
+    ? formatReceivedAt(monitor.receivedAt, locale)
     : "-";
 
   const completedRequestColumns: ColumnsType<{ key: string; item: unknown }> = [

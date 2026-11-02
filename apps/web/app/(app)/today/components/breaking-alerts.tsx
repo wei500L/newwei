@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import dayjs from "@/lib/dayjs";
+import { formatClock, resolveLocale } from "@/lib/i18n";
 
 const BREAKING_ALERTS_QUERY = gql`
   query BreakingAlerts($windowDays: Int, $status: NewsEventStatus) {
@@ -50,7 +51,8 @@ function isBreakingAlert(event: NewsEvent): boolean {
 }
 
 export function BreakingAlerts() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const [expanded, setExpanded] = useState(false);
 
   const { data } = useQuery<{ newsEvents: NewsEvent[] }>(BREAKING_ALERTS_QUERY, {
@@ -80,7 +82,7 @@ export function BreakingAlerts() {
             {alert.title || t("pages.today.breakingAlert")}
           </span>
           <span className="shrink-0 font-mono text-xs text-muted-foreground">
-            {alert.lastAt ? dayjs(alert.lastAt).format("HH:mm") : ""}
+            {alert.lastAt ? formatClock(alert.lastAt, locale) : ""}
           </span>
         </div>
       ))}

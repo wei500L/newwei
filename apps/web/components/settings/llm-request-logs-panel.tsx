@@ -37,6 +37,7 @@ import { useCsvExport } from "@/hooks/use-csv-export";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateForFilename } from "@/lib/data-export";
+import { formatTimestamp, resolveLocale, type SupportedLocale } from "@/lib/i18n";
 
 type LlmRequestType =
   | "completion"
@@ -391,12 +392,12 @@ const EMPTY_SETTINGS: LlmRequestLogSettingsResponse = {
   briefConsecutiveDaysThreshold: DEFAULT_BRIEF_CONSECUTIVE_DAYS_THRESHOLD,
 };
 
-function formatDateTime(raw: string): string {
+function formatDateTime(raw: string, locale: SupportedLocale): string {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) {
     return "-";
   }
-  return parsed.toLocaleString();
+  return formatTimestamp(parsed, locale);
 }
 
 function formatTokens(value: number | null): string {
@@ -458,7 +459,8 @@ function buildMetadataPolicyFromSettings(
 }
 
 export function LlmRequestLogsPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { echartsTheme, colors } = useChartTheme();
   const { data: session } = useSession();
   const router = useRouter();
@@ -1156,7 +1158,7 @@ export function LlmRequestLogsPanel() {
         dataIndex: "createdAt",
         key: "createdAt",
         width: 190,
-        render: (value: string) => formatDateTime(value),
+        render: (value: string) => formatDateTime(value, locale),
       },
       {
         title: t("systemSettings.llmRequestLogs.table.model"),
@@ -1237,7 +1239,7 @@ export function LlmRequestLogsPanel() {
         render: (value: string | null) => value ?? "-",
       },
     ],
-    [t],
+    [t, locale],
   );
 
   const byModelColumns = useMemo<ColumnsType<LlmUsageSummaryByModelRow>>(

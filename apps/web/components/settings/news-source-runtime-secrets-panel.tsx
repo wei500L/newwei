@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatTimestamp, resolveLocale } from "@/lib/i18n";
 import {
   filterRuntimeSecretSources,
   findExistingRuntimeSecretRow,
@@ -127,7 +128,8 @@ function toRows(entries: RuntimeSecretPublicEntry[]): SecretRow[] {
 }
 
 export function NewsSourceRuntimeSecretsPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -828,7 +830,7 @@ export function NewsSourceRuntimeSecretsPanel() {
           if (Number.isNaN(updatedAt.valueOf())) {
             return record.updatedAt;
           }
-          return updatedAt.toLocaleString();
+          return formatTimestamp(updatedAt, locale);
         }
       },
       {
@@ -847,7 +849,7 @@ export function NewsSourceRuntimeSecretsPanel() {
         )
       }
     ],
-    [handleRemoveRow, keyOptionsBySourceId, sourceCatalog, sourceOptions, t, updateRow]
+    [handleRemoveRow, keyOptionsBySourceId, sourceCatalog, sourceOptions, t, updateRow, locale]
   );
 
   if (loading && rows.length === 0) {

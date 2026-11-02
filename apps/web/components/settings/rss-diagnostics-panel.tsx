@@ -26,6 +26,7 @@ import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatTimestamp, resolveLocale, type SupportedLocale } from "@/lib/i18n";
 
 interface RssDiagnosticsChainResponse {
   generatedAt: string;
@@ -131,7 +132,7 @@ function formatPercent(value: number): string {
   return `${(safe * 100).toFixed(1)}%`;
 }
 
-function formatDateTime(value?: string | null): string {
+function formatDateTime(value: string | null | undefined, locale: SupportedLocale): string {
   if (!value) {
     return "-";
   }
@@ -139,23 +140,12 @@ function formatDateTime(value?: string | null): string {
   if (!Number.isFinite(parsed.getTime())) {
     return "-";
   }
-  return parsed.toLocaleString();
-}
-
-function visibilityColor(
-  visibility: SourceVisibility,
-): "green" | "gold" | "default" {
-  if (visibility === "processed") {
-    return "green";
-  }
-  if (visibility === "article_fallback") {
-    return "gold";
-  }
-  return "default";
+  return formatTimestamp(parsed, locale);
 }
 
 export function RssDiagnosticsPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { echartsTheme, colors } = useChartTheme();
   const { data: session } = useSession();
   const apiClient = useMemo(
@@ -330,7 +320,7 @@ export function RssDiagnosticsPanel() {
         key: "visibility",
         width: 170,
         render: (value: SourceVisibility) => (
-          <Tag color={visibilityColor(value)}>
+          <Tag>
             {value === "processed"
               ? t("settings.rssDiagnostics.visibility.processed")
               : value === "article_fallback"
@@ -375,7 +365,7 @@ export function RssDiagnosticsPanel() {
           return (
             <Space size={4} wrap>
               {issues.map((issue) => (
-                <Tag key={issue} color="gold">
+                <Tag key={issue}>
                   {issue}
                 </Tag>
               ))}
@@ -689,17 +679,17 @@ export function RssDiagnosticsPanel() {
           <Space direction="vertical" size={4}>
             <Typography.Text type="secondary">
               {t("settings.rssDiagnostics.meta.generatedAt", {
-                value: formatDateTime(chain.generatedAt),
+                value: formatDateTime(chain.generatedAt, locale),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("settings.rssDiagnostics.meta.pipelineLatest", {
-                value: formatDateTime(chain.pipelineJobs.latestCreatedAt),
+                value: formatDateTime(chain.pipelineJobs.latestCreatedAt, locale),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("settings.rssDiagnostics.meta.crawlResultLatest", {
-                value: formatDateTime(chain.crawlResults.latestFetchedAt),
+                value: formatDateTime(chain.crawlResults.latestFetchedAt, locale),
               })}
             </Typography.Text>
           </Space>

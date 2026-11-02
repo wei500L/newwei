@@ -166,3 +166,16 @@ export function formatRelativeTime(
   }
   return rtf.format(Math.round(diffMs / (365 * 24 * 60 * 60 * 1000)), "year");
 }
+
+/** 完整时间：2026-11-02 14:05（列表、表格、详情的时间列） */
+export function formatTimestamp(value: string | number | Date, locale: SupportedLocale): string {
+  return formatDateTime(value, locale, {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
+
+/** 只要时分：14:05（图表轴、实时流、今日内的条目） */
+export function formatClock(value: string | number | Date, locale: SupportedLocale): string {
+  return formatDateTime(value, locale, { hour: "2-digit", minute: "2-digit", hour12: false });
+}

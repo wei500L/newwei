@@ -38,6 +38,7 @@ import {
   useEntityIntelligenceEvidenceQuery,
 } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
+import { formatTimestamp, resolveLocale } from "@/lib/i18n";
 import {
   buildKnowledgeGraphExplorerHref,
   formatKnowledgeGraphLabel,
@@ -103,7 +104,8 @@ function getSentimentColor(value: number | null | undefined) {
 export function EntityIntelligenceCard({
   entityId,
 }: EntityIntelligenceCardProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, status: sessionStatus } = useSession();
@@ -239,14 +241,14 @@ export function EntityIntelligenceCard({
         title={card.entity.name}
         meta={
           <>
-            <Tag color="blue">
+            <Tag>
               {t(`pages.knowledgeGraph.nodeTypes.${card.entity.type}`, {
                 defaultValue: formatKnowledgeGraphLabel(card.entity.type),
               })}
             </Tag>
             <span className="font-mono">
               {t("entities.intelligence.generatedAt")}{" "}
-              {dayjs(card.generatedAt).format("YYYY-MM-DD HH:mm")}
+              {formatTimestamp(card.generatedAt, locale)}
             </span>
             {card.aliases.length > 0
               ? card.aliases.slice(0, 8).map((alias) => (
@@ -366,7 +368,7 @@ export function EntityIntelligenceCard({
                       <Space wrap>
                         <Text strong>{relationship.neighbor.name}</Text>
                         <Tag>{formatKnowledgeGraphLabel(relationship.edge.type)}</Tag>
-                        <Tag color={relationship.direction === "outgoing" ? "blue" : "purple"}>
+                        <Tag>
                           {relationship.direction}
                         </Tag>
                       </Space>
@@ -475,7 +477,7 @@ export function EntityIntelligenceCard({
                         description={
                           <Space direction="vertical" size={2}>
                             <Text type="secondary">
-                              {dayjs(event.lastAt).format("YYYY-MM-DD HH:mm")} · {event.itemCount}
+                              {formatTimestamp(event.lastAt, locale)} · {event.itemCount}
                             </Text>
                             {event.summary ? (
                               <Paragraph ellipsis={{ rows: 2 }} className="!mb-0">
@@ -514,7 +516,7 @@ export function EntityIntelligenceCard({
                             <Space direction="vertical" size={2}>
                               <Text type="secondary">
                                 {entry.article.sourceLabel ?? "-"} ·{" "}
-                                {dayjs(entry.article.crawlAt).format("YYYY-MM-DD HH:mm")}
+                                {formatTimestamp(entry.article.crawlAt, locale)}
                               </Text>
                               {entry.article.summary ? (
                                 <Paragraph ellipsis={{ rows: 2 }} className="!mb-0">

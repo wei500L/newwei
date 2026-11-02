@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { ChartEmptyState } from '@/components/chart-empty-state';
 import { RequestErrorBanner } from '@/components/request-error-banner';
 import { SectionHeader } from '@/components/section-header';
+import { formatTimestamp, resolveLocale, type SupportedLocale } from '@/lib/i18n';
 import {
   getSessionHiddenBehaviorKeys,
   hideSessionBehaviorKey,
@@ -24,14 +25,17 @@ import {
 
 import { NewsnowBoardContainer } from './newsnow-board-container';
 
-function formatPublishedAt(value?: number | string | null) {
+function formatPublishedAt(
+  value: number | string | null | undefined,
+  locale: SupportedLocale,
+) {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return new Date(value).toLocaleString();
+    return formatTimestamp(value, locale) || '刚刚';
   }
   if (typeof value === 'string' && value.trim().length > 0) {
     const parsed = new Date(value);
     if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleString();
+      return formatTimestamp(parsed, locale);
     }
     return value;
   }
@@ -44,7 +48,8 @@ function scorePercent(score: number) {
 
 function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const trackedRef = useRef(false);
 
@@ -218,7 +223,7 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]">
-            <span>{formatPublishedAt(item.pubDate)}</span>
+            <span>{formatPublishedAt(item.pubDate, locale)}</span>
             <span>{t("newsnow.recommended.sourceLabel", { source: item.sourceId })}</span>
             {item.topics.slice(0, 3).map((topic) => (
               <span
@@ -266,7 +271,8 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
 }
 
 export function NewsnowRecommendedFeed() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data, isLoading, isError, error, refetch } = useNewsnowRecommended();
   const [hiddenItemIds, setHiddenItemIds] = useState<Set<string>>(
     () => new Set(getSessionHiddenBehaviorKeys('newsnowItems')),
@@ -311,7 +317,7 @@ export function NewsnowRecommendedFeed() {
           data?.generatedAt ? (
             <span className="text-xs text-[var(--muted-foreground)]">
               {t("newsnow.recommended.generatedAt", {
-                time: formatPublishedAt(data.generatedAt),
+                time: formatPublishedAt(data.generatedAt, locale),
               })}
             </span>
           ) : null

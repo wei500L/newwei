@@ -25,6 +25,7 @@ import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navi
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatTimestamp, resolveLocale, type SupportedLocale } from "@/lib/i18n";
 import {
   applySituationMonitorSecretFields,
   SITUATION_MONITOR_SECRET_FIELD_NAMES,
@@ -330,7 +331,7 @@ function getProviderReadinessMeta(
   }
 }
 
-function formatSnapshotDate(value: string | null): string {
+function formatSnapshotDate(value: string | null, locale: SupportedLocale): string {
   if (!value) {
     return "--";
   }
@@ -338,7 +339,7 @@ function formatSnapshotDate(value: string | null): string {
   if (Number.isNaN(parsed.valueOf())) {
     return value;
   }
-  return parsed.toLocaleString();
+  return formatTimestamp(parsed, locale) || value;
 }
 
 function formatMetricValue(value: number | null, suffix = ""): string {
@@ -349,7 +350,8 @@ function formatMetricValue(value: number | null, suffix = ""): string {
 }
 
 export function SituationMonitorSettingsPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const router = useRouter();
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
@@ -892,22 +894,22 @@ export function SituationMonitorSettingsPanel() {
             </Space>
             <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.snapshot.generatedAt", {
-                time: formatSnapshotDate(externalSnapshotStatus.generatedAt),
+                time: formatSnapshotDate(externalSnapshotStatus.generatedAt, locale),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.snapshot.lastFullSuccess", {
-                time: formatSnapshotDate(externalSnapshotStatus.lastFullSuccessAt),
+                time: formatSnapshotDate(externalSnapshotStatus.lastFullSuccessAt, locale),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.snapshot.lastNonSuccess", {
-                time: formatSnapshotDate(externalSnapshotStatus.lastNonSuccessAt),
+                time: formatSnapshotDate(externalSnapshotStatus.lastNonSuccessAt, locale),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
               {t("systemSettings.situationMonitor.snapshot.nextScheduled", {
-                time: formatSnapshotDate(externalSnapshotStatus.nextScheduledAt),
+                time: formatSnapshotDate(externalSnapshotStatus.nextScheduledAt, locale),
               })}
             </Typography.Text>
             <Typography.Text type="secondary">
@@ -1004,7 +1006,7 @@ export function SituationMonitorSettingsPanel() {
               </Space>
               <Typography.Text type="secondary">
                 {t("systemSettings.situationMonitor.quality.generatedAt", {
-                  time: formatSnapshotDate(qualitySummary.generatedAt),
+                  time: formatSnapshotDate(qualitySummary.generatedAt, locale),
                 })}
               </Typography.Text>
               <Typography.Text type="secondary">

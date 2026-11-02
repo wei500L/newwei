@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { AnalysisType } from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
-import dayjs from "@/lib/dayjs";
+import { formatClock, resolveLocale } from "@/lib/i18n";
 
 import { useDashboardAnalysisFeed } from "../analysis-feed-context";
 
@@ -40,7 +40,8 @@ function getAnalysisTypeClassName(type: AnalysisType): string {
 }
 
 export function AnalysisStream() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const {
     authenticated,
     canReadAnalysis,
@@ -190,7 +191,7 @@ export function AnalysisStream() {
             {/* Timestamp & Type Line */}
             <div className="flex items-center gap-2 mb-1 opacity-60 text-xs">
               <span className="text-muted-foreground">
-                [{dayjs(item.createdAt).format("HH:mm:ss")}]
+                [{formatClock(item.createdAt, locale)}]
               </span>
               <span className={getAnalysisTypeClassName(item.type)}>
                 {getAnalysisTypeLabel(item.type)}

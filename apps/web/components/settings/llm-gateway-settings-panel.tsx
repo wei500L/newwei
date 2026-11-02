@@ -4,6 +4,7 @@ import { Alert, Button, Space, Tag, Typography } from "antd";
 import type { ReactElement } from "react";
 
 import { SectionHeader } from "@/components/section-header";
+import { formatTimestamp, resolveLocale } from "@/lib/i18n";
 
 import { LlmGatewayEmbeddingRerankPanel } from "./llm-gateway/llm-gateway-embedding-rerank-panel";
 import { LlmGatewayProfileModals } from "./llm-gateway/llm-gateway-profile-modals";
@@ -25,6 +26,8 @@ import { useLlmGatewaySettings } from "./llm-gateway/use-llm-gateway-settings";
 
 export function LlmGatewaySettingsPanel(): ReactElement {
   const s = useLlmGatewaySettings();
+  const { i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const g = useLlmGatewayProxyGovernance({
     t: s.t,
     token: s.token,
@@ -246,7 +249,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
 
               <Typography.Text type="secondary">
                 {t("settings.llmGateway.proxyStatus.checkedAt", {
-                  time: new Date(proxyHealth.checkedAt).toLocaleString(),
+                  time: formatTimestamp(new Date(proxyHealth.checkedAt), locale),
                 })}
               </Typography.Text>
 
@@ -467,9 +470,10 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                       {t(
                         "settings.llmGateway.proxyGovernance.summary.syncedAt",
                         {
-                          value: new Date(
-                            proxyGovernanceSettings.lastSyncedAt,
-                          ).toLocaleString(),
+                          value: formatTimestamp(
+                            new Date(proxyGovernanceSettings.lastSyncedAt),
+                            locale,
+                          ),
                         },
                       )}
                     </Typography.Text>
@@ -530,9 +534,10 @@ export function LlmGatewaySettingsPanel(): ReactElement {
               </Space>
               <Typography.Text type="secondary">
                 {t("settings.llmGateway.proxyModelInfo.checkedAt", {
-                  time: new Date(
-                    statusProfileProxyModelInfo.checkedAt,
-                  ).toLocaleString(),
+                  time: formatTimestamp(
+                    new Date(statusProfileProxyModelInfo.checkedAt),
+                    locale,
+                  ),
                 })}
               </Typography.Text>
             </Space>
@@ -587,9 +592,10 @@ export function LlmGatewaySettingsPanel(): ReactElement {
               </Space>
               <Typography.Text type="secondary">
                 {t("settings.llmGateway.proxyLbTest.checkedAt", {
-                  time: new Date(
-                    statusProfileProxyLbTest.checkedAt,
-                  ).toLocaleString(),
+                  time: formatTimestamp(
+                    new Date(statusProfileProxyLbTest.checkedAt),
+                    locale,
+                  ),
                 })}
               </Typography.Text>
             </Space>

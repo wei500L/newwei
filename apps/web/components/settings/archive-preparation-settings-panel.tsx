@@ -9,6 +9,7 @@ import { SectionHeader } from "@/components/section-header";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatTimestamp, resolveLocale } from "@/lib/i18n";
 
 interface ArchivePreparationSettingsResponse {
   source: "default" | "db";
@@ -53,7 +54,8 @@ const EMPTY_SETTINGS: ArchivePreparationSettingsResponse = {
 };
 
 export function ArchivePreparationSettingsPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm<ArchivePreparationFormValues>();
@@ -286,7 +288,7 @@ export function ArchivePreparationSettingsPanel() {
           opsStatus ? (
             <Typography.Text type="secondary">
               {t("systemSettings.archivePreparation.ops.updatedAt", {
-                value: new Date(opsStatus.updatedAt).toLocaleString(),
+                value: formatTimestamp(new Date(opsStatus.updatedAt), locale),
               })}
             </Typography.Text>
           ) : null
@@ -356,7 +358,7 @@ export function ArchivePreparationSettingsPanel() {
                     </Typography.Text>
                   </Space>
                   <Typography.Text type="secondary">
-                    {new Date(item.updatedAt).toLocaleString()}
+                    {formatTimestamp(new Date(item.updatedAt), locale)}
                   </Typography.Text>
                 </div>
                 {item.errorMessage ? (

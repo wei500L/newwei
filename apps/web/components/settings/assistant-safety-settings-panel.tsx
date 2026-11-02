@@ -9,6 +9,7 @@ import { SectionHeader } from "@/components/section-header";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatTimestamp, resolveLocale } from "@/lib/i18n";
 
 type AssistantSafetySettingsSource = "env" | "db";
 type OpenAiKeysSettingsSource = "none" | "db";
@@ -135,7 +136,8 @@ const MAX_OPENAI_KEYS = 100;
 const OPENAI_MODERATION_FREE_CALLS_PER_DAY = 5000;
 
 export function AssistantSafetySettingsPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { token } = theme.useToken();
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
@@ -610,7 +612,7 @@ export function AssistantSafetySettingsPanel() {
             {diagnostics?.checkedAt ? (
               <Typography.Text type="secondary">
                 {t("settings.assistantSafety.diagnostics.lastChecked", {
-                  time: new Date(diagnostics.checkedAt).toLocaleString()
+                  time: formatTimestamp(new Date(diagnostics.checkedAt), locale)
                 })}
               </Typography.Text>
             ) : null}
@@ -1059,7 +1061,7 @@ export function AssistantSafetySettingsPanel() {
                 <Typography.Text type="secondary">
                   {" "}
                   ({t("settings.assistantSafety.openaiKeys.applied.at")}{" "}
-                  {new Date(openaiKeys.appliedAt).toLocaleString()})
+                  {formatTimestamp(new Date(openaiKeys.appliedAt), locale)})
                 </Typography.Text>
               ) : null}
             </Typography.Text>
@@ -1151,7 +1153,7 @@ export function AssistantSafetySettingsPanel() {
           </Typography.Paragraph>
           <Descriptions size="small" column={1} bordered>
             <Descriptions.Item label={t("settings.assistantSafety.quota.usage.monthStart")}>
-              {new Date(quota.usage.monthStart).toLocaleString()}
+              {formatTimestamp(new Date(quota.usage.monthStart), locale)}
             </Descriptions.Item>
             <Descriptions.Item label={t("settings.assistantSafety.quota.usage.totalTokens")}>
               {quota.usage.totalTokens.toLocaleString()}

@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
+import { resolveLocale } from "@/lib/i18n";
 
 import { buildSourceStatusRows } from "./realtime-signals/realtime-signals-constants";
 import { RealtimeSignalsOverview } from "./realtime-signals/realtime-signals-overview";
@@ -28,7 +29,8 @@ import { useRealtimeSignalsSettings } from "./realtime-signals/use-realtime-sign
  * - Save/Reset 由 useRealtimeSignalsSettings 的 handler 层门禁互斥（FE-RT-02）。
  */
 export function RealtimeSignalsSettingsPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm<RealtimeSignalsSettingsFormValues>();
@@ -53,7 +55,7 @@ export function RealtimeSignalsSettingsPanel() {
   const openskySourceName = t(
     "systemSettings.realtimeSignals.sources.opensky",
   );
-  const formatTimestamp = (value?: string) => formatTimestampValue(t, value);
+  const formatTimestamp = (value?: string) => formatTimestampValue(t, value, locale);
 
   const sourceStatusRows = useMemo(
     () =>

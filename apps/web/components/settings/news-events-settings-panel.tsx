@@ -26,6 +26,7 @@ import { SectionHeader } from "@/components/section-header";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatTimestamp, resolveLocale } from "@/lib/i18n";
 import {
   TIMELINE_PRESET_VALUES,
   detectClosestTimelinePreset,
@@ -230,7 +231,8 @@ const UPDATE_NEWS_EVENT_SETTINGS_MUTATION = gql`
 `;
 
 export function NewsEventsSettingsPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
   const [form] = Form.useForm<FormValues>();
   const [messageApi, contextHolder] = message.useMessage();
@@ -497,11 +499,11 @@ export function NewsEventsSettingsPanel() {
       return {
         color: "default",
         text: t("settings.newsEvents.clusteringQueue.automation.after", {
-          time: nextRetryAt.toLocaleString(),
+          time: formatTimestamp(nextRetryAt, locale),
         }),
       };
     },
-    [automationEnabled, llmBackfillReady, recoveryAutomation, t],
+    [automationEnabled, llmBackfillReady, recoveryAutomation, t, locale],
   );
 
   const handleLlmBackfill = useCallback(
@@ -1340,7 +1342,7 @@ export function NewsEventsSettingsPanel() {
                 key: "latestFailureAt",
                 label: t("settings.newsEvents.clusteringQueue.overview.latest"),
                 children: failureOverview?.latestFailureAt ? (
-                  new Date(failureOverview.latestFailureAt).toLocaleString()
+                  formatTimestamp(new Date(failureOverview.latestFailureAt), locale)
                 ) : (
                   <Typography.Text type="secondary">-</Typography.Text>
                 ),

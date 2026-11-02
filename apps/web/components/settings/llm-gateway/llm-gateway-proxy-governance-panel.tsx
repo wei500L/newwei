@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactElement } from "re
 
 import { SectionHeader } from "@/components/section-header";
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatTimestamp, resolveLocale } from "@/lib/i18n";
 
 import {
   useLlmGatewayGovernanceView,
@@ -681,6 +682,8 @@ export function LlmGatewayProxyGovernancePanel({
   g: LlmGatewayProxyGovernanceController;
 }): ReactElement {
   const { t, screens } = s;
+  const { i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const {
     proxyGovernanceOpen,
     setProxyGovernanceOpen,
@@ -915,9 +918,10 @@ export function LlmGatewayProxyGovernancePanel({
                       {t(
                         "settings.llmGateway.proxyGovernance.status.syncedAt",
                         {
-                          value: new Date(
-                            proxyGovernanceSettings.lastSyncedAt,
-                          ).toLocaleString(),
+                          value: formatTimestamp(
+                            new Date(proxyGovernanceSettings.lastSyncedAt),
+                            locale,
+                          ),
                         },
                       )}
                     </Typography.Text>
@@ -1236,9 +1240,10 @@ export function LlmGatewayProxyGovernancePanel({
                     {t(
                       "settings.llmGateway.proxyGovernance.preflight.checkedAt",
                       {
-                        value: new Date(
-                          proxyGovernancePreflight.health.checkedAt,
-                        ).toLocaleString(),
+                        value: formatTimestamp(
+                          new Date(proxyGovernancePreflight.health.checkedAt),
+                          locale,
+                        ),
                       },
                     )}
                   </Tag>
