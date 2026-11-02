@@ -276,6 +276,19 @@ export function AppProviders({ children }: PropsWithChildren) {
     };
   }, [themeMode]);
 
+  // antd 静态方法（message / notification / Modal.confirm）渲染在 React 树外，
+  // 读不到上面的 <ConfigProvider>。用 holderRender 把同一份主题注入进去，
+  // 否则约 70 个文件里的静态 message 会显示 antd 默认蓝和白底（暗色下尤其明显）。
+  useEffect(() => {
+    ConfigProvider.config({
+      holderRender: (children) => (
+        <ConfigProvider locale={antdLocale} theme={antdTheme}>
+          {children}
+        </ConfigProvider>
+      ),
+    });
+  }, [antdLocale, antdTheme]);
+
   return (
     <I18nextProvider i18n={i18nInstance}>
       <ConfigProvider
@@ -291,7 +304,19 @@ export function AppProviders({ children }: PropsWithChildren) {
               <ForbiddenNotice />
               <ApolloAuthSync />
               <SessionErrorListener />
-              <Toaster position="top-right" theme={themeMode} richColors />
+              <Toaster
+                position="top-right"
+                theme={themeMode}
+                toastOptions={{
+                  style: {
+                    background: "var(--surface)",
+                    color: "var(--foreground)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "6px",
+                    boxShadow: "var(--shadow-surface)",
+                  },
+                }}
+              />
               {children}
             </QueryClientProvider>
           </ApolloProvider>
