@@ -178,7 +178,7 @@ export default function LoginPage() {
         if (!active) {
           return;
         }
-        setEnrollmentError("Unable to start MFA enrollment");
+        setEnrollmentError(t("auth.mfa.enrollmentStartFailed"));
       })
       .finally(() => {
         if (active) {
@@ -189,7 +189,7 @@ export default function LoginPage() {
     return () => {
       active = false;
     };
-  }, [apiClient, enrollmentChallengeId, enrollmentForm]);
+  }, [apiClient, enrollmentChallengeId, enrollmentForm, t]);
 
   const redirectAfterLogin = () => {
     // Sanitize callbackUrl to a same-origin path to prevent open redirect (CWE-601):
@@ -388,7 +388,7 @@ export default function LoginPage() {
         setEnrollmentLocked(true);
         setEnrollmentError(t("auth.login.error.tooManyMfaAttempts"));
       } else {
-        setEnrollmentError("Invalid MFA verification code");
+        setEnrollmentError(t("auth.mfa.invalidEnrollmentCode"));
       }
     } finally {
       setEnrollmentLoading(false);
@@ -399,7 +399,7 @@ export default function LoginPage() {
     const orgId =
       passwordForm.getFieldValue("orgId") ?? codeForm.getFieldValue("orgId");
     if (!orgId || !String(orgId).trim()) {
-      messageApi.error("Organization is required for SSO");
+      messageApi.error(t("auth.login.ssoOrgRequired"));
       return;
     }
     window.location.assign(
@@ -412,11 +412,14 @@ export default function LoginPage() {
   return (
     <div className="auth-card">
       {contextHolder}
-      <Title level={3} className="!mb-2 font-serif">
+      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+      <Title level={3} className="!m-0 font-serif">
         {t("auth.login.title")}
       </Title>
       <Text type="secondary">{t("auth.login.subtitle")}</Text>
-      <div className="mt-2 flex flex-wrap gap-3">
+      </div>
+      <div className="flex flex-wrap gap-3">
         <Button
           type="link"
           onClick={() => router.push("/register")}
@@ -433,7 +436,7 @@ export default function LoginPage() {
         </Button>
       </div>
       {sessionExpired || logoutFailed ? (
-        <div className="mt-6 flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           {sessionExpired ? (
             <Alert
               type="warning"
@@ -450,8 +453,9 @@ export default function LoginPage() {
           ) : null}
         </div>
       ) : null}
+      {!mfaChallengeId && !enrollmentChallengeId ? (
+      <div className="flex flex-col gap-4">
       <Tabs
-        style={{ marginTop: "1rem" }}
         items={[
           {
             key: "password",
@@ -612,22 +616,25 @@ export default function LoginPage() {
           },
         ]}
       />
-      <Button block style={{ marginTop: "0.75rem" }} onClick={handleSsoLogin}>
-        Continue with SSO
+      <Button block onClick={handleSsoLogin}>
+        {t("auth.login.sso")}
       </Button>
+      </div>
+      ) : null}
       {mfaChallengeId ? (
-        <div style={{ marginTop: "1rem" }}>
+        <div className="flex flex-col gap-4">
           <Alert
             type="info"
             showIcon
-            message="Multi-factor authentication required"
-            style={{ marginBottom: "0.75rem" }}
+            message={t("auth.mfa.requiredMessage")}
           />
           <Form form={mfaForm} layout="vertical" onFinish={onVerifyMfa}>
             <Form.Item
-              label="Authenticator code or recovery code"
+              label={t("auth.mfa.codeLabel")}
               name="code"
-              rules={[{ required: true, message: "Enter your MFA code" }]}
+              rules={[
+                { required: true, message: t("auth.mfa.codeRequired") },
+              ]}
             >
               <Input size="large" disabled={mfaLocked} />
             </Form.Item>
@@ -644,23 +651,22 @@ export default function LoginPage() {
                 loading={mfaLoading}
                 disabled={mfaLocked}
               >
-                Verify and continue
+                {t("auth.mfa.verify")}
               </Button>
             </Form.Item>
           </Form>
         </div>
       ) : null}
       {enrollmentChallengeId ? (
-        <div style={{ marginTop: "1rem" }}>
+        <div className="flex flex-col gap-4">
           <Alert
             type="info"
             showIcon
-            message="Multi-factor authentication setup required"
-            description="Scan or copy this secret into your authenticator app, then enter the generated code to finish signing in."
-            style={{ marginBottom: "0.75rem" }}
+            message={t("auth.mfa.enrollmentRequiredMessage")}
+            description={t("auth.mfa.enrollmentDescription")}
           />
           {enrollmentLoading && !enrollmentSetup ? (
-            <Text type="secondary">Preparing authenticator setup...</Text>
+            <Text type="secondary">{t("auth.mfa.preparingSetup")}</Text>
           ) : null}
           {enrollmentSetup ? (
             <>
@@ -673,20 +679,14 @@ export default function LoginPage() {
             </>
           ) : null}
           {enrollmentError ? (
-            <Alert
-              type="error"
-              showIcon
-              message={enrollmentError}
-              style={{ marginBottom: "0.75rem" }}
-            />
+            <Alert type="error" showIcon message={enrollmentError} />
           ) : null}
           {pendingRecoveryCodes && pendingEnrollmentLogin ? (
-            <div>
+            <div className="flex flex-col gap-4">
               <Alert
                 type="success"
                 showIcon
-                message="Save these recovery codes before continuing"
-                style={{ marginBottom: "0.75rem" }}
+                message={t("auth.mfa.saveRecoveryCodes")}
               />
               <Typography.Paragraph copyable>
                 {pendingRecoveryCodes.join(", ")}
@@ -696,7 +696,7 @@ export default function LoginPage() {
                 block
                 onClick={() => void signInWithHandoff(pendingEnrollmentLogin)}
               >
-                Continue
+                {t("auth.mfa.continue")}
               </Button>
             </div>
           ) : (
@@ -706,10 +706,13 @@ export default function LoginPage() {
               onFinish={onVerifyEnrollment}
             >
               <Form.Item
-                label="Authenticator code"
+                label={t("auth.mfa.authenticatorCodeLabel")}
                 name="code"
                 rules={[
-                  { required: true, message: "Enter your authenticator code" },
+                  {
+                    required: true,
+                    message: t("auth.mfa.authenticatorCodeRequired"),
+                  },
                 ]}
               >
                 <Input size="large" disabled={enrollmentLocked} />
@@ -722,13 +725,14 @@ export default function LoginPage() {
                   loading={enrollmentLoading}
                   disabled={enrollmentLocked}
                 >
-                  Verify and continue
+                  {t("auth.mfa.verify")}
                 </Button>
               </Form.Item>
             </Form>
           )}
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

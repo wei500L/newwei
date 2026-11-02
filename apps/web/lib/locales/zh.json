@@ -157,7 +157,24 @@
         "sendSuccess": "若邮箱可用，验证码已发送。",
         "sendFailed": "发送验证码失败，请稍后重试。",
         "submit": "验证码登录"
-      }
+      },
+      "sso": "使用单点登录（SSO）继续",
+      "ssoOrgRequired": "请输入组织标识后再使用单点登录"
+    },
+    "mfa": {
+      "requiredMessage": "需要进行多因素验证",
+      "codeLabel": "身份验证器代码或恢复码",
+      "codeRequired": "请输入 MFA 验证码",
+      "verify": "验证并继续",
+      "enrollmentRequiredMessage": "需要设置多因素验证",
+      "enrollmentDescription": "将此密钥扫描或复制到身份验证器应用，然后输入生成的验证码完成登录。",
+      "preparingSetup": "正在准备身份验证器设置…",
+      "saveRecoveryCodes": "继续前请保存这些恢复码",
+      "continue": "继续",
+      "authenticatorCodeLabel": "身份验证器代码",
+      "authenticatorCodeRequired": "请输入身份验证器代码",
+      "enrollmentStartFailed": "无法启动 MFA 设置",
+      "invalidEnrollmentCode": "MFA 验证码无效"
     },
     "register": {
       "title": "注册",
@@ -8420,6 +8437,24 @@
     }
   },
   "analysis": {
+    "createTask": {
+      "title": "创建分析任务",
+      "board": "看板",
+      "column": "列",
+      "taskTitle": "标题",
+      "details": "详情",
+      "priority": "优先级",
+      "assignee": "负责人",
+      "priorityLow": "低",
+      "priorityNormal": "普通",
+      "priorityHigh": "高",
+      "priorityUrgent": "紧急",
+      "createButton": "创建任务",
+      "createSuccess": "任务已创建。",
+      "createFailed": "创建任务失败。",
+      "loadBoardsFailed": "加载分析看板失败。",
+      "loadColumnsFailed": "加载看板列失败。"
+    },
     "streamError": "分析流错误：{{error}}",
     "runPermissionRequired": "你可以查看结果，但没有权限运行新的分析。",
     "correlation": {
@@ -11130,7 +11165,7 @@
   "search": {
     "recent": "最近搜索",
     "searchFor": "搜索",
-    "placeholder": "搜索新闻、话题或事件...",
+    "placeholder": "搜索新闻、话题或事件，按回车开始…",
     "feedback": {
       "minChars": "还需输入 {{remaining}} 个字符后开始搜索",
       "debouncing": "正在等待你完成输入…",
@@ -11163,7 +11198,8 @@
       "from": "起始日期",
       "to": "结束日期",
       "source": "按来源过滤",
-      "phrase": "精确短语匹配"
+      "phrase": "精确短语匹配",
+      "helpLabel": "查看高级检索语法"
     }
   },
   "crawlFrontier": {

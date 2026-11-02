@@ -157,7 +157,24 @@
         "sendSuccess": "If the email is eligible, a code has been sent.",
         "sendFailed": "Failed to send verification code. Please try again.",
         "submit": "Sign in with code"
-      }
+      },
+      "sso": "Continue with SSO",
+      "ssoOrgRequired": "Enter an organization slug to continue with SSO"
+    },
+    "mfa": {
+      "requiredMessage": "Multi-factor authentication required",
+      "codeLabel": "Authenticator code or recovery code",
+      "codeRequired": "Enter your MFA code",
+      "verify": "Verify and continue",
+      "enrollmentRequiredMessage": "Multi-factor authentication setup required",
+      "enrollmentDescription": "Scan or copy this secret into your authenticator app, then enter the generated code to finish signing in.",
+      "preparingSetup": "Preparing authenticator setup...",
+      "saveRecoveryCodes": "Save these recovery codes before continuing",
+      "continue": "Continue",
+      "authenticatorCodeLabel": "Authenticator code",
+      "authenticatorCodeRequired": "Enter your authenticator code",
+      "enrollmentStartFailed": "Unable to start MFA enrollment",
+      "invalidEnrollmentCode": "Invalid MFA verification code"
     },
     "register": {
       "title": "Register",
@@ -8420,6 +8437,24 @@
     }
   },
   "analysis": {
+    "createTask": {
+      "title": "Create analysis task",
+      "board": "Board",
+      "column": "Column",
+      "taskTitle": "Title",
+      "details": "Details",
+      "priority": "Priority",
+      "assignee": "Assignee",
+      "priorityLow": "Low",
+      "priorityNormal": "Normal",
+      "priorityHigh": "High",
+      "priorityUrgent": "Urgent",
+      "createButton": "Create task",
+      "createSuccess": "Task created.",
+      "createFailed": "Failed to create task.",
+      "loadBoardsFailed": "Failed to load analysis boards.",
+      "loadColumnsFailed": "Failed to load board columns."
+    },
     "streamError": "Analysis stream error: {{error}}",
     "correlation": {
       "title": "Correlation analysis",
@@ -11130,7 +11165,7 @@
   "search": {
     "recent": "Recent Searches",
     "searchFor": "Search for",
-    "placeholder": "Search news, topics, or events...",
+    "placeholder": "Search news, topics, or events, press Enter…",
     "feedback": {
       "minChars": "Type {{remaining}} more character(s) to search",
       "debouncing": "Waiting for you to finish typing...",
@@ -11163,7 +11198,8 @@
       "from": "Start date",
       "to": "End date",
       "source": "Filter by source",
-      "phrase": "Exact phrase match"
+      "phrase": "Exact phrase match",
+      "helpLabel": "Show advanced search syntax"
     }
   },
   "crawlFrontier": {

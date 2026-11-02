@@ -49,14 +49,14 @@ function PortalHeader(props: {
           {props.secondaryHref && props.secondaryLabel ? (
             <Link
               href={props.secondaryHref}
-              className="rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] transition hover:border-[var(--border-strong)]"
+              className="rounded border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] transition hover:border-[var(--border-strong)]"
             >
               {props.secondaryLabel}
             </Link>
           ) : null}
           <Link
             href={props.ctaHref}
-            className="rounded-full bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-[var(--background)] transition hover:opacity-90"
+            className="rounded bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-[var(--background)] transition hover:opacity-90"
           >
             {props.ctaLabel}
           </Link>
@@ -97,7 +97,7 @@ export function PortalStoryCard(props: {
   return (
     <article className={baseClassName}>
       <StoryMeta story={props.story} />
-      <h2 className="mt-3 text-balance text-2xl font-semibold tracking-tight text-[var(--foreground)] sm:text-3xl">
+      <h2 className="mt-3 text-balance text-2xl font-serif font-semibold tracking-tight text-[var(--foreground)] sm:text-3xl">
         <Link href={`/article/${props.story.slug}`} className="hover:underline">
           {props.story.title}
         </Link>
@@ -108,13 +108,13 @@ export function PortalStoryCard(props: {
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <Link
           href={`/article/${props.story.slug}`}
-          className="rounded-full bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-[var(--background)] transition hover:opacity-90"
+          className="rounded bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-[var(--background)] transition hover:opacity-90"
         >
           Read story
         </Link>
         <Link
           href={`/channel/${props.story.topicSlug}`}
-          className="rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] transition hover:border-[var(--border-strong)]"
+          className="rounded border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] transition hover:border-[var(--border-strong)]"
         >
           More on {props.story.topic}
         </Link>
@@ -132,7 +132,7 @@ function TopicLinks({ channels }: { channels: PublicPortalHomeResponse["channels
     <section aria-labelledby="portal-topics" className="mt-10">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+          <p className="kicker">
             Channels
           </p>
           <h2
@@ -233,7 +233,7 @@ export function PortalHomeView(props: {
           </p>
         </div>
         <div className="content-card p-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+          <p className="kicker">
             Why this exists
           </p>
           <ul className="mt-4 space-y-3 text-sm leading-7 text-muted-foreground">
@@ -254,7 +254,7 @@ export function PortalHomeView(props: {
 
       <section aria-labelledby="portal-latest" className="mt-10">
         <div className="mb-5">
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+          <p className="kicker">
             Latest stories
           </p>
           <h2
@@ -342,7 +342,7 @@ export function PortalStoryDetailView(props: {
           {brief ? (
             <div className="mt-8 grid gap-5">
               <section className="content-card p-6">
-                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                <p className="kicker">
                   TL;DR
                 </p>
                 <p className="mt-3 text-base leading-8 text-slate-700 dark:text-slate-300">
@@ -400,7 +400,7 @@ export function PortalStoryDetailView(props: {
               <h2 className="text-lg font-semibold text-[var(--foreground)]">Related stories</h2>
               <div className="mt-4 space-y-3">
                 {payload.relatedStories.map((story) => (
-                  <div key={story.id} className="rounded-lg border border-[var(--border)] p-4">
+                  <div key={story.id} className="hairline-b pb-3">
                     <Link
                       href={`/article/${story.slug}`}
                       className="font-medium text-[var(--foreground)] hover:underline"
