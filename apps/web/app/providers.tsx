@@ -258,6 +258,25 @@ export function AppProviders({ children }: PropsWithChildren) {
         fontFamily:
           "var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         colorBorder,
+        // FE-UI 批9A：antd 预设色种子（Tag color="blue" 等）改为纸墨低饱和版本；
+        // 状态色对齐 --bullish / --accent / --destructive / --primary。
+        colorSuccess: "#1b9e77",
+        colorWarning: "#b45309",
+        colorError: "#b91c1c",
+        colorInfo: "#1f3b7b",
+        blue: "#2f5597",
+        geekblue: "#3b4f8f",
+        purple: "#5b4b8a",
+        cyan: "#0f766e",
+        green: "#2f7d5b",
+        red: "#b91c1c",
+        volcano: "#c2410c",
+        orange: "#b45309",
+        gold: "#a16207",
+        yellow: "#a16207",
+        lime: "#4d7c0f",
+        magenta: "#9f1239",
+        pink: "#9f1239",
       },
       components: {
         Card: { borderRadiusLG: 10, colorBgContainer, boxShadow: cardShadow, headerFontSize: 15 },
