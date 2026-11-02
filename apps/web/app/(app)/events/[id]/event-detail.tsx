@@ -758,7 +758,6 @@ export function EventDetail({ eventId }: { eventId: string }) {
           const tag = (
             <Tag
               key={`cite-${idx}`}
-              color="blue"
               style={processedItemId || url ? { cursor: "pointer" } : undefined}
               onClick={() => {
                 setHighlightedSourceIndex(idx);
@@ -1371,14 +1370,14 @@ export function EventDetail({ eventId }: { eventId: string }) {
                             {representativeTopics
                               .slice(0, 6)
                               .map((entry, idx) => (
-                                <Tag key={`rep-topic-${idx}`} color="geekblue">
+                                <Tag key={`rep-topic-${idx}`}>
                                   {entry}
                                 </Tag>
                               ))}
                             {representativeEntities
                               .slice(0, 6)
                               .map((entry, idx) => (
-                                <Tag key={`rep-entity-${idx}`} color="purple">
+                                <Tag key={`rep-entity-${idx}`}>
                                   {entry}
                                 </Tag>
                               ))}
@@ -1517,7 +1516,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                         </Tag>
                                       ) : null}
                                       {entry.categoryPath ? (
-                                        <Tag color="geekblue">
+                                        <Tag>
                                           {entry.categoryPath}
                                         </Tag>
                                       ) : null}
@@ -1670,10 +1669,10 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                   </Typography.Text>
                                   <Tag color="default">{item.assignedBy}</Tag>
                                   {similarity ? (
-                                    <Tag color="blue">{similarity}</Tag>
+                                    <Tag>{similarity}</Tag>
                                   ) : null}
                                   {sourceLabel ? (
-                                    <Tag color="geekblue">{sourceLabel}</Tag>
+                                    <Tag>{sourceLabel}</Tag>
                                   ) : null}
                                 </Space>
                               }
@@ -1777,7 +1776,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                 </a>
               ) : null}
               {selectedMarkdownFallbackUsed ? (
-                <Tag color="orange">
+                <Tag>
                   {t("items.detail.markdownFallback")}
                 </Tag>
               ) : null}
@@ -1805,12 +1804,12 @@ export function EventDetail({ eventId }: { eventId: string }) {
 
             <Space wrap size={[6, 6]}>
               {selectedTopics.slice(0, 8).map((entry, idx) => (
-                <Tag key={`sel-topic-${idx}`} color="geekblue">
+                <Tag key={`sel-topic-${idx}`}>
                   {entry}
                 </Tag>
               ))}
               {selectedEntities.slice(0, 8).map((entry, idx) => (
-                <Tag key={`sel-entity-${idx}`} color="purple">
+                <Tag key={`sel-entity-${idx}`}>
                   {entry}
                 </Tag>
               ))}
