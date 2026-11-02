@@ -20,6 +20,8 @@
       },
       "title": "欢迎回来",
       "subtitle": "登录后继续",
+      "registerLink": "注册账号",
+      "forgotLink": "忘记密码？",
       "sessionExpired": "登录已过期，请重新登录。",
       "fields": {
         "email": {
@@ -94,6 +96,12 @@
         "password": "新密码"
       },
       "submit": "重置密码"
+    },
+    "invite": {
+      "title": "接受邀请"
+    },
+    "sso": {
+      "title": "单点登录"
     },
     "logoutFailed": "退出失败",
     "logoutThisDevice": "退出当前设备",
@@ -656,7 +664,16 @@
     "hide": "隐藏",
     "notInterested": "不感兴趣",
     "no": "否",
-    "yes": "是"
+    "yes": "是",
+    "pageError": {
+      "title": "页面出错了",
+      "description": "这一页加载时发生错误，可以重试；问题持续请联系管理员。"
+    },
+    "notFound": {
+      "title": "找不到这个页面",
+      "description": "链接可能已失效，或你没有访问权限。",
+      "goHome": "回到今日简报"
+    }
   },
   "orgSwitcher": {
     "error": {

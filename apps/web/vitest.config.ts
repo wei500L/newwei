@@ -197,6 +197,10 @@ export default defineConfig({
         "app/(app)/admin/ops/queue-ops/queue-ops-confirm.ts",
         "app/(app)/admin/ops/queue-ops/use-queue-ops-data.ts",
         "lib/queue-ops.ts",
+        // FE-UI 批1：页面原语（PageHeader / SectionHeader / FilterBar）
+        "components/page-header.tsx",
+        "components/section-header.tsx",
+        "components/filter-bar.tsx",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {

@@ -120,3 +120,63 @@ App Shell（TopNav / ActionRail / 移动 Drawer）的尺寸、状态色与动效
 - ❌ 浅色 slate 类无 `dark:` 变体
 - ❌ 把颜色/尺寸移进 Tailwind 任意类的 `${}` 插值（破坏 JIT）
 - ❌ 为已有基元（glass-card / antd Tag）再造 wrapper 组件
+
+## 9. 页面原语（FE-UI 批1）
+
+统一页头、区块标题与筛选栏，避免全站出现多种写法。三个原语都在 `apps/web/components/`：
+
+| 原语 | 文件 | 用途 |
+|------|------|------|
+| `PageHeader` | `components/page-header.tsx` | 每个业务页面顶部的唯一标题区（kicker + 衬线 h1 + 说明 + meta + 右侧操作 + 详情页返回链接） |
+| `SectionHeader` | `components/section-header.tsx` | 卡片/区块内部的二级标题，替代散落的 `<Typography.Title level={4\|5}>` 与 `Card title` |
+| `FilterBar` / `FilterBar.Item` | `components/filter-bar.tsx` | 列表页筛选与工具栏，自动换行，窄屏控件占满整行 |
+
+**硬性约定**：
+
+- 每个 `(app)` 页面的**第一个子元素必须是 `<PageHeader>`**；`kicker` 用所属导航组的文案 `t("nav.groups.xxx")`（`today` / `situation` / `research` / `workspace` / `admin`）。
+- 页面根容器统一用 `<div className="flex flex-col gap-6">`（间距节奏见 §3/§2）。
+- 区块标题用 `<SectionHeader>`，**不要**再用 `Typography.Title level={4|5}` 或 `Card title` 当区块标题；需要强调时加 `rule`（`.section-rule`）。
+- 筛选栏用 `<FilterBar>`；放进去的 antd 控件（`Select` / `Input` / `DatePicker` 等）**必须**加 `className="w-full"`，让它占满 `FilterBar.Item` 的宽度。
+- 原语本身**不含任何文案**——标题、kicker、说明、按钮文案都由调用方传入并走 `t("...")`。
+- `PageHeader` 不依赖 antd（服务端安全组件，无 hooks、无 `"use client"`），RSC 页面与客户端组件都能直接 import。
+
+**最小示例**：
+
+```tsx
+import { Button, Input, Select } from "antd";
+
+import { FilterBar } from "@/components/filter-bar";
+import { PageHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
+
+export default function EventsPage() {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        kicker={t("nav.groups.situation")}
+        title={t("events.title")}
+        description={t("events.description")}
+        actions={<Button onClick={refresh}>{t("common.refresh")}</Button>}
+      />
+
+      <FilterBar actions={<Button onClick={reset}>{t("common.reset")}</Button>}>
+        <FilterBar.Item label={t("events.filter.status")} width="sm">
+          <Select className="w-full" options={statusOptions} />
+        </FilterBar.Item>
+        <FilterBar.Item label={t("events.filter.source")} width="md">
+          <Input className="w-full" />
+        </FilterBar.Item>
+      </FilterBar>
+
+      <section className="content-card p-4">
+        <SectionHeader
+          title={t("events.list.title")}
+          extra={<span>{t("common.totalCount", { count })}</span>}
+        />
+        {/* 列表内容 */}
+      </section>
+    </div>
+  );
+}
+```

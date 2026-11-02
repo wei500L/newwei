@@ -20,6 +20,8 @@
       },
       "title": "Welcome back",
       "subtitle": "Sign in to continue",
+      "registerLink": "Create account",
+      "forgotLink": "Forgot password?",
       "sessionExpired": "Your session has expired. Please sign in again.",
       "fields": {
         "email": {
@@ -94,6 +96,12 @@
         "password": "New password"
       },
       "submit": "Reset password"
+    },
+    "invite": {
+      "title": "Accept invitation"
+    },
+    "sso": {
+      "title": "Single sign-on"
     },
     "logoutFailed": "Sign out failed",
     "logoutThisDevice": "Sign out this device",
@@ -656,7 +664,16 @@
     "hide": "Hide",
     "notInterested": "Not interested",
     "no": "No",
-    "yes": "Yes"
+    "yes": "Yes",
+    "pageError": {
+      "title": "Something went wrong",
+      "description": "This page failed to load. Try again, or contact an administrator if it keeps happening."
+    },
+    "notFound": {
+      "title": "Page not found",
+      "description": "The link may be broken, or you may not have access.",
+      "goHome": "Back to daily briefing"
+    }
   },
   "orgSwitcher": {
     "error": {
