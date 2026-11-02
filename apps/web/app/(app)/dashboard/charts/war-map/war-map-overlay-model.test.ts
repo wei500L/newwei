@@ -243,10 +243,10 @@ describe("War Map overlay model（FE-批4B characterization）", () => {
   });
 
   describe("severityTagColor", () => {
-    it("high/medium/low 映射 red/gold/blue", () => {
-      expect(severityTagColor("high")).toBe("red");
-      expect(severityTagColor("medium")).toBe("gold");
-      expect(severityTagColor("low")).toBe("blue");
+    it("high/medium/low 映射 error/warning/default", () => {
+      expect(severityTagColor("high")).toBe("error");
+      expect(severityTagColor("medium")).toBe("warning");
+      expect(severityTagColor("low")).toBe("default");
     });
   });
 });
