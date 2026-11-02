@@ -142,9 +142,7 @@ export function CommandBar() {
 
   return (
     <div
-      className={`relative z-50 w-full min-w-0 max-w-[440px] transition-[max-width,filter] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-[560px] 2xl:max-w-[640px] ${
-        focused ? "2xl:max-w-[700px]" : ""
-      }`}
+      className="relative z-50 w-full min-w-0 transition-[filter] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
     >
       <div
         className={`command-bar-shell ${isActive ? "command-bar-shell--active" : ""}`}

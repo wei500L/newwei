@@ -172,11 +172,11 @@ export function AlertEventRow({
             onClick={() => onSelectEvent(event.id)}
           >
             <div
-              className="rounded-lg border p-3 transition-colors"
-              style={{
-                borderColor: isSelected ? "#93c5fd" : "#e2e8f0",
-                background: isSelected ? "rgba(239,246,255,0.8)" : "#fff",
-              }}
+              className={`rounded border p-3 transition-colors ${
+                isSelected
+                  ? "border-[var(--primary)] bg-[var(--surface-muted)]"
+                  : "border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)]"
+              }`}
             >
               <Space size="small" wrap>
                 <Badge status={eventStatusBadge[event.status] ?? "default"} />

@@ -57,7 +57,7 @@ export default function WelcomePage() {
   };
 
   return (
-    <main
+    <section
       id="welcome-main"
       className="mx-auto flex w-full max-w-5xl flex-col gap-8"
       aria-labelledby="welcome-title"
@@ -154,6 +154,6 @@ export default function WelcomePage() {
           );
         })}
       </section>
-    </main>
+    </section>
   );
 }

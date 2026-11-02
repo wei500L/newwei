@@ -32,7 +32,7 @@ export default function RegisterPage() {
   return (
     <div className="auth-card">
       {contextHolder}
-      <Typography.Title level={3}>{t("auth.register.title")}</Typography.Title>
+      <Typography.Title level={3} className="!mb-2 font-serif">{t("auth.register.title")}</Typography.Title>
       <Typography.Paragraph type="secondary">
         {t("auth.register.subtitle")}
       </Typography.Paragraph>

@@ -4,6 +4,7 @@ import { Alert, Button, Form, Input, Spin, Typography, message } from "antd";
 import { useParams, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
@@ -18,6 +19,7 @@ interface InvitePayload {
 }
 
 export default function InvitePage() {
+  const { t } = useTranslation();
   const params = useParams<{ token: string }>();
   const token = Array.isArray(params?.token) ? params.token[0] : params?.token;
   const apiClient = useMemo(() => createApiClient(), []);
@@ -46,7 +48,7 @@ export default function InvitePage() {
 
   if (loading) {
     return (
-      <div className="auth-card">
+      <div className="auth-card flex min-h-[200px] items-center justify-center">
         <Spin />
       </div>
     );
@@ -55,7 +57,7 @@ export default function InvitePage() {
   return (
     <div className="auth-card">
       {contextHolder}
-      <Typography.Title level={3}>Accept invitation</Typography.Title>
+      <Typography.Title level={3}>{t("auth.invite.title")}</Typography.Title>
       {invite ? (
         <Alert
           type="info"

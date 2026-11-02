@@ -357,7 +357,7 @@ export default function ReaderPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#fafafa]">
+      <div className="min-h-screen bg-[var(--background)]">
         <div className="max-w-3xl mx-auto px-6 py-10">
           <Skeleton active paragraph={{ rows: 10 }} />
         </div>
@@ -448,7 +448,7 @@ export default function ReaderPage() {
         {/* Expanded Toolbar */}
         {showToolbar && (
           <div className="border-t border-gray-200/50 dark:border-gray-800/50 bg-white/60 dark:bg-black/60">
-            <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-6">
+            <div className="max-w-3xl mx-auto px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">
                   {t("reader.font")}

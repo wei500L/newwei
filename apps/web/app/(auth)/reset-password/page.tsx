@@ -19,7 +19,7 @@ export default function ResetPasswordPage() {
   return (
     <div className="auth-card">
       {contextHolder}
-      <Typography.Title level={3}>{t("auth.reset.title")}</Typography.Title>
+      <Typography.Title level={3} className="!mb-2 font-serif">{t("auth.reset.title")}</Typography.Title>
       {!token ? <Alert type="error" showIcon message={t("auth.reset.missingToken")} /> : null}
       <Form
         layout="vertical"

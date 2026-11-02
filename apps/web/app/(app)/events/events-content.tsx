@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
 import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useTheme } from "@/hooks/use-theme";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
@@ -524,14 +525,21 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
             </Button>
           </div>
 
-          {error ? (
-            <Typography.Text type="danger">
-              {t("pages.events.loadFailed")}{" "}
-              {t("common.serviceUnavailable")}
-            </Typography.Text>
+          {error && resolvedData ? (
+            <RequestErrorBanner
+              error={error}
+              onRetry={() => void refetch()}
+              showCachedDataHint
+            />
           ) : null}
 
-          {loading && !resolvedData ? (
+          {error && !resolvedData ? (
+            <RequestErrorBanner
+              error={error}
+              onRetry={() => void refetch()}
+              actionLoading={loading}
+            />
+          ) : loading && !resolvedData ? (
             <Skeleton active paragraph={{ rows: 6 }} />
           ) : sortedEvents.length === 0 ? (
             <Empty

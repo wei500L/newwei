@@ -87,7 +87,7 @@ function useMainScrollbarClass(): string {
   if (isEdgeToEdge) {
     return "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
   }
-  return "scrollbar-thin scrollbar-thumb-slate-200/80 hover:scrollbar-thumb-slate-300/90 scrollbar-track-transparent";
+  return "rail-scrollbar";
 }
 
 /**
@@ -170,7 +170,7 @@ function AppShell({ children }: PropsWithChildren) {
 
   return (
     <div
-      className="flex flex-col h-screen overflow-hidden"
+      className="flex h-screen flex-col overflow-hidden supports-[height:100dvh]:h-[100dvh]"
       style={resolveShellTickerStyle(showTickerTape)}
     >
       {contextHolder}

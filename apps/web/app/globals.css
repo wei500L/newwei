@@ -999,7 +999,10 @@
     position: sticky;
     top: 8px;
     max-height: calc(
-      100vh - var(--top-nav-height, 4rem) - var(--ticker-height, 0px) - 32px
+      100vh - var(--top-nav-height, 4rem) - var(--ticker-height, 0px) - 48px
+    );
+    max-height: calc(
+      100dvh - var(--top-nav-height, 4rem) - var(--ticker-height, 0px) - 48px
     );
     overflow: auto;
     padding-right: 4px;
@@ -1955,6 +1958,7 @@
 
   .auth-layout {
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1971,6 +1975,11 @@
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
     padding: 32px;
+  }
+
+  @media (max-width: 480px) {
+    .auth-layout { padding: 16px; }
+    .auth-card { padding: 20px; }
   }
 
   .auth-card .ant-typography {

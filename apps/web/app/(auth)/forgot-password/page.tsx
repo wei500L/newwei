@@ -16,7 +16,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="auth-card">
       {contextHolder}
-      <Typography.Title level={3}>{t("auth.forgot.title")}</Typography.Title>
+      <Typography.Title level={3} className="!mb-2 font-serif">{t("auth.forgot.title")}</Typography.Title>
       <Typography.Paragraph type="secondary">
         {t("auth.forgot.subtitle")}
       </Typography.Paragraph>

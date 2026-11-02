@@ -27,7 +27,7 @@ export function TodayContent() {
   }, []);
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="flex flex-col gap-6 pb-10">
       {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -41,25 +41,26 @@ export function TodayContent() {
       </div>
 
       {/* Bento Grid Layout */}
-      <div className="aura-bento-grid">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Top: Alerts (Full Width) */}
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-12">
           <BreakingAlerts />
         </div>
 
-        {/* Left: Headlines + User Digest (2 cols) */}
-        <div className="col-span-2 space-y-4">
+        {/* Left: Headlines + User Digest (7 cols) */}
+        <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
           <Headlines />
           <UserDigestPanel />
         </div>
 
-        {/* Right: Hot Topics + Feed (2 cols) */}
-        <div className="col-span-2 space-y-4 h-full flex flex-col">
+        {/* Right: Hot Topics + Feed (5 cols) */}
+        <div className="flex min-w-0 flex-col gap-6 lg:col-span-5">
           <HotTopics />
-          <AuraBentoCard squish={false} className="p-4 min-h-viz-3xl flex-1 flex flex-col">
+          <AuraBentoCard squish={false} className="flex min-h-viz-3xl flex-1 flex-col p-4">
             <Typography.Title level={5}>{t("pages.today.latestFeed")}</Typography.Title>
             <div className="flex-1 overflow-y-auto rail-scrollbar">
               <ItemsView
+                surface="none"
                 initialView="feed"
                 emptyStateVariant="today"
                 sortMode="publishedDesc"

@@ -34,8 +34,8 @@ export default function NewsHubPage() {
   return (
     // shell 是页面级 padding 的唯一所有者（默认档 p-4 md:p-6）；本页只
     // 叠加纵向节奏。article 宽度档修复原先 1200px+px-4 的双重容器约束。
-    <PageContainer contentWidth="article" className="py-6 md:py-8">
-      <header className="mb-6 rounded-2xl border border-white/10 bg-[linear-gradient(120deg,rgba(15,23,42,0.92),rgba(2,6,23,0.85))] p-5 text-zinc-100 shadow-[0_26px_70px_-42px_rgba(15,23,42,0.9)]">
+    <PageContainer contentWidth="article" className="flex flex-col gap-6">
+      <header className="rounded-2xl border border-white/10 bg-[linear-gradient(120deg,rgba(15,23,42,0.92),rgba(2,6,23,0.85))] p-5 text-zinc-100 shadow-[0_26px_70px_-42px_rgba(15,23,42,0.9)]">
         <h1 className="mb-2 text-2xl font-semibold text-inherit">
           News Hub
         </h1>

@@ -228,7 +228,7 @@ export function NotificationCenter({
 
   const content = useMemo(() => {
     return (
-      <div style={{ width: 380 }}>
+      <div className="w-[min(380px,calc(100vw-24px))]">
         <Space
           align="center"
           style={{
@@ -288,15 +288,7 @@ export function NotificationCenter({
                 return (
                   <List.Item
                     key={item.id}
-                    style={{
-                      cursor: "pointer",
-                      background: isUnread
-                        ? "rgba(24,144,255,0.06)"
-                        : undefined,
-                      borderRadius: 4,
-                      paddingLeft: 12,
-                      paddingRight: 12,
-                    }}
+                    className={`cursor-pointer rounded px-3 ${isUnread ? "bg-[var(--surface-muted)]" : ""}`}
                     onClick={() => void markOneAsRead(item.id)}
                   >
                     <List.Item.Meta

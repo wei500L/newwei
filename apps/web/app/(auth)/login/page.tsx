@@ -412,43 +412,44 @@ export default function LoginPage() {
   return (
     <div className="auth-card">
       {contextHolder}
-      <Title level={3} style={{ marginBottom: "0.5rem" }}>
+      <Title level={3} className="!mb-2 font-serif">
         {t("auth.login.title")}
       </Title>
       <Text type="secondary">{t("auth.login.subtitle")}</Text>
-      <div style={{ marginTop: "0.5rem" }}>
+      <div className="mt-2 flex flex-wrap gap-3">
         <Button
           type="link"
           onClick={() => router.push("/register")}
-          style={{ paddingInline: 0 }}
+          className="!px-0"
         >
-          Register
+          {t("auth.login.registerLink")}
         </Button>
         <Button
           type="link"
           onClick={() => router.push("/forgot-password")}
-          style={{ paddingInline: 0, marginLeft: 12 }}
+          className="!px-0"
         >
-          Forgot password?
+          {t("auth.login.forgotLink")}
         </Button>
       </div>
-      <div style={{ marginTop: "1.5rem" }}>
-        {sessionExpired ? (
-          <Alert
-            type="warning"
-            message={t("auth.login.sessionExpired")}
-            showIcon
-          />
-        ) : null}
-        {logoutFailed ? (
-          <Alert
-            type="warning"
-            message={t("auth.logoutFailed")}
-            showIcon
-            style={{ marginTop: "0.75rem" }}
-          />
-        ) : null}
-      </div>
+      {sessionExpired || logoutFailed ? (
+        <div className="mt-6 flex flex-col gap-3">
+          {sessionExpired ? (
+            <Alert
+              type="warning"
+              message={t("auth.login.sessionExpired")}
+              showIcon
+            />
+          ) : null}
+          {logoutFailed ? (
+            <Alert
+              type="warning"
+              message={t("auth.logoutFailed")}
+              showIcon
+            />
+          ) : null}
+        </div>
+      ) : null}
       <Tabs
         style={{ marginTop: "1rem" }}
         items={[

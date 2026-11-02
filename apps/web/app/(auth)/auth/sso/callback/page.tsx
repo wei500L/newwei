@@ -4,12 +4,14 @@ import { Alert, Button, Form, Input, Spin, Typography } from "antd";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { createApiClient, syncApiSessionCache } from "@/lib/api-client";
 import type { BackendLoginResponse } from "@/lib/auth";
 import { classifyRequestError } from "@/lib/request-error";
 
 export default function SsoCallbackPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
   const handoffToken = searchParams.get("handoffToken");
@@ -195,7 +197,7 @@ export default function SsoCallbackPage() {
 
   return (
     <div className="auth-card">
-      <Typography.Title level={3}>Single sign-on</Typography.Title>
+      <Typography.Title level={3}>{t("auth.sso.title")}</Typography.Title>
       {loading ? <Spin /> : null}
       {error ? <Alert type="error" showIcon message={error} /> : null}
       {challengeError ? (

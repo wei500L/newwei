@@ -97,7 +97,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
       {/* Main Navbar Layer */}
       <header
         ref={headerRef}
-        className={`relative flex h-16 shrink-0 items-center ${headerSpacingClassName} glass`}
+        className={`relative flex h-[var(--top-nav-height)] shrink-0 items-center ${headerSpacingClassName} glass`}
       >
         <TopNavBrand
           onOpenMenu={() => setMobileNavOpen(true)}

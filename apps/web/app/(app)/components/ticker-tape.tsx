@@ -106,15 +106,15 @@ export function TickerTape() {
 
     return (
       <div
-        className="w-full bg-white/85 border-b border-[var(--border)] h-8 flex items-center overflow-hidden relative select-none"
+        className="relative flex h-[var(--ticker-height)] w-full select-none items-center overflow-hidden border-b border-[var(--border)] bg-[var(--ticker-bg)] text-[var(--ticker-fg)]"
         title={titleParts.join(" · ")}
       >
-        <div className="absolute left-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-r from-white to-transparent" />
-        <div className="absolute right-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-l from-white to-transparent" />
+        <div className="absolute left-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-r from-[var(--ticker-bg)] to-transparent" />
+        <div className="absolute right-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-l from-[var(--ticker-bg)] to-transparent" />
         <div className="flex items-center gap-2 px-8 text-xs">
-          {loading ? <LoadingOutlined className="text-slate-400" aria-hidden /> : null}
+          {loading ? <LoadingOutlined className="text-[var(--ticker-muted)]" aria-hidden /> : null}
           <span
-            className={error ? "text-red-600" : "text-slate-500"}
+            className={error ? "text-[var(--destructive)]" : "text-[var(--ticker-muted)]"}
             title={errorMessage ?? undefined}
           >
             {message}
@@ -126,22 +126,22 @@ export function TickerTape() {
 
   return (
     <div
-      className="w-full bg-white/85 border-b border-[var(--border)] h-8 flex items-center overflow-hidden relative select-none"
+      className="relative flex h-[var(--ticker-height)] w-full select-none items-center overflow-hidden border-b border-[var(--border)] bg-[var(--ticker-bg)] text-[var(--ticker-fg)]"
       title={`${bucketTitle} · Range ${range} · ${windowLabel}`}
     >
-       <div className="absolute left-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-r from-white to-transparent" />
-       <div className="absolute right-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-l from-white to-transparent" />
+       <div className="absolute left-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-r from-[var(--ticker-bg)] to-transparent" />
+       <div className="absolute right-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-l from-[var(--ticker-bg)] to-transparent" />
 
        <div className="animate-ticker flex whitespace-nowrap items-center gap-8 pl-8">
           {[...items, ...items, ...items].map((item, i) => (
              <div key={`${item?.label ?? "metric"}-${i}`} className="flex items-center gap-2 text-xs">
-                <span className="text-slate-500 font-semibold">{item.label}</span>
-                <span className="text-slate-700">
+                <span className="font-semibold uppercase tracking-wider text-[var(--ticker-muted)] text-[11px]">{item.label}</span>
+                <span className="font-mono tabular-nums text-[var(--ticker-fg)]">
                   {typeof item.value === "number" ? item.value.toFixed(2) : "--"}
-                  {item.unit ? <span className="text-slate-400 ml-1">{item.unit}</span> : null}
+                  {item.unit ? <span className="text-[var(--ticker-muted)] ml-1">{item.unit}</span> : null}
                 </span>
-                <span className={`${item.trend > 0 ? 'text-[var(--bullish)]' : item.trend < 0 ? 'text-[var(--bearish)]' : 'text-slate-400'} flex items-center`}>
-                   {item.trend > 0 ? <ArrowUpOutlined style={{fontSize: 10}}/> : item.trend < 0 ? <ArrowDownOutlined style={{fontSize: 10}}/> : null}
+                <span className={`${item.trend > 0 ? 'text-[var(--bullish)]' : item.trend < 0 ? 'text-[var(--bearish)]' : 'text-[var(--ticker-muted)]'} flex items-center`}>
+                   {item.trend > 0 ? <ArrowUpOutlined className="text-[10px]"/> : item.trend < 0 ? <ArrowDownOutlined className="text-[10px]"/> : null}
                    <span className="ml-1">{Math.abs(item.trend).toFixed(2)}%</span>
                 </span>
              </div>

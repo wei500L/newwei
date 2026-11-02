@@ -877,6 +877,8 @@ interface ItemsViewProps {
   onSearchSuggestionStatusChange?: (status: SearchSuggestionStatus) => void;
   hideSearchControl?: boolean;
   hideQuickNav?: boolean;
+  /** 外层表面：card=自带纸面卡片（独立页面默认）；none=无外壳，由宿主提供容器 */
+  surface?: "card" | "none";
 }
 
 interface ParsedItem {
@@ -937,6 +939,7 @@ export function ItemsView({
   onSearchSuggestionStatusChange,
   hideSearchControl = false,
   hideQuickNav = false,
+  surface = "card",
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -2467,12 +2470,16 @@ export function ItemsView({
       : t("items.filters.button");
   const excludeDuplicatesEnabled = displayFilters.excludeDuplicates === true;
 
+  const surfaceClassName =
+    surface === "none"
+      ? ""
+      : "content-card p-4 md:p-6";
   const containerClassName = layoutState.isReaderPreset
-    ? "content-card items-reader-shell"
-    : "content-card";
+    ? `${surfaceClassName} items-reader-shell`.trim()
+    : surfaceClassName;
 
   return (
-    <div className={containerClassName} style={{ padding: "24px" }}>
+    <div className={containerClassName || undefined}>
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
         {!hideQuickNav ? (
           <div className="flex flex-wrap items-center gap-2">
