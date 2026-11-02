@@ -269,6 +269,7 @@ pnpm dev
 - Docker 方式下建议保持 `infra/docker/.env` 中的 `CRAWL4AI_SSRF_PROXY_URL=http://127.0.0.1:18080`。这会让 Crawl4AI worker 在实际抓取时通过本地 SSRF 代理完成 DNS 解析和内网地址阻断，而不是只依赖 API 入口处的预检。
 - Web 管理页 `http://localhost:3000/admin/ops/crawl-monitor` 与抓取任务页内置的 Crawl4AI 状态卡会显示 `SSRF proxy OK / FAILED / OFF`。如果这里显示 `OFF`，说明部署没有启用 worker 侧 DNS rebinding 防护。
 - `situation-monitor` / `realtime-signals` 在本地 Docker、WSL、双栈 DNS/出口不稳定环境中访问 `api.gdeltproject.org` 失败时，会只对该主机做一次 IPv4 重试；这不是全局网络策略，详见 [docs/gdelt-ipv4-fallback.md](./docs/gdelt-ipv4-fallback.md)。
+- 3D 地球旁车有两个上游额度冲突，默认都留空（详见 `.env.example` 的「3D 地球（gods-eye-view 旁车）」小节）：**OpenSky**（`GLOBE_OPENSKY_*`）——后端 realtimesignals 有每日额度账本 `REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET`，GEV 不认这份账本，共用同一账号会抢额度；留空时 GEV 自动改用免密钥的 adsb.lol，只有拿到第二个 OpenSky 账号时再填。**AISStream**（`GLOBE_AISSTREAM_API_KEY`）——同一个密钥再开一条 websocket 连接可能被上游限流；留空时船舶图层显示「需要密钥」，愿意尝试时可填与 ais-relay-go 相同的 key。
 - 生产环境建议在首次部署或引入新索引后显式执行一次 `pnpm mongo:indexes`，避免在关闭 `autoIndex` 的环境里漏掉 `ProcessedItem` 或 `TaskLog` 的新索引。
 
 ### 种子数据（首次必填）
