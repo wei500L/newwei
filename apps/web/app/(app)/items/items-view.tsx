@@ -877,6 +877,8 @@ interface ItemsViewProps {
   onSearchSuggestionStatusChange?: (status: SearchSuggestionStatus) => void;
   hideSearchControl?: boolean;
   hideQuickNav?: boolean;
+  /** 是否渲染分析工作台工具栏。嵌入到已有工具栏的页面（/search）或首页（/today）时传 false。默认 true。 */
+  showAnalysisToolbar?: boolean;
   /** 外层表面：card=自带纸面卡片（独立页面默认）；none=无外壳，由宿主提供容器 */
   surface?: "card" | "none";
 }
@@ -939,6 +941,7 @@ export function ItemsView({
   onSearchSuggestionStatusChange,
   hideSearchControl = false,
   hideQuickNav = false,
+  showAnalysisToolbar = true,
   surface = "card",
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
@@ -2479,6 +2482,7 @@ export function ItemsView({
       ? `${surfaceClassName} items-reader-shell`.trim()
       : surfaceClassName;
   const rootClassName = `${containerClassName} flex flex-col gap-6`.trim();
+  const hideFacetRail = surface === "none" && layoutState.isReaderPreset;
 
   return (
     <div className={rootClassName}>
@@ -2499,15 +2503,19 @@ export function ItemsView({
           </div>
         ) : null}
 
-        <AnalysisToolbar
-          surface="items"
-          exportTarget="items"
-          queryString={searchParams.toString()}
-          savedViewId={savedViewId}
-        />
+        {showAnalysisToolbar ? (
+          <>
+            <AnalysisToolbar
+              surface="items"
+              exportTarget="items"
+              queryString={searchParams.toString()}
+              savedViewId={savedViewId}
+            />
 
-        {savedViewId ? (
-          <AnnotationPanel subjectType="saved_view" subjectId={savedViewId} />
+            {savedViewId ? (
+              <AnnotationPanel subjectType="saved_view" subjectId={savedViewId} />
+            ) : null}
+          </>
         ) : null}
 
         {/* Header Controls */}
@@ -2633,7 +2641,7 @@ export function ItemsView({
                   />
                 </Space>
               </Tooltip>
-              {!screens.lg && (
+              {!screens.lg && !hideFacetRail && (
                 <Button onClick={() => setShowFilters(true)}>
                   {filterButtonLabel}
                 </Button>
@@ -2710,7 +2718,7 @@ export function ItemsView({
 
         {/* Main Layout */}
         <Row gutter={24} align="top">
-          {screens.lg && (
+          {screens.lg && !hideFacetRail && (
             <Col flex="300px">
               <div
                 className={

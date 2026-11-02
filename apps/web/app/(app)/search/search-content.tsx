@@ -926,6 +926,7 @@ export function SearchContent() {
           emptyStateVariant="search"
           filterBehavior="layered"
           hideSearchControl
+          showAnalysisToolbar={false}
         />
       ) : (
         <Card

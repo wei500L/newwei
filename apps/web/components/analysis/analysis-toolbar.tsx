@@ -8,7 +8,6 @@ import {
   ShareAltOutlined,
 } from "@ant-design/icons";
 import {
-  Alert,
   Button,
   Form,
   Input,
@@ -16,6 +15,7 @@ import {
   Select,
   Space,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
@@ -242,11 +242,10 @@ export function AnalysisToolbar({
       {contextHolder}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
-          <Space wrap size={[8, 8]}>
-            <Typography.Text strong>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <Typography.Text strong className="text-sm font-semibold">
               {t("analysis.toolbar.title")}
             </Typography.Text>
-            <span className="kicker">{surface}</span>
             {savedView ? (
               <Tag>
                 {savedView.visibility === "org_shared"
@@ -254,36 +253,22 @@ export function AnalysisToolbar({
                   : t("analysis.toolbar.private")}
               </Tag>
             ) : null}
-            {savedView && savedView.canEdit ? (
-              <Tag color="processing">
-                {t("analysis.toolbar.editable")}
-              </Tag>
-            ) : null}
-          </Space>
-          <Typography.Paragraph
-            type="secondary"
-            className="!mb-0 !mt-2"
-          >
-            {savedView
-              ? savedView.description ||
-                t("analysis.toolbar.savedDescription")
-              : t("analysis.toolbar.unsavedDescription")}
-          </Typography.Paragraph>
+          </div>
+          {savedView ? (
+            <Typography.Paragraph
+              type="secondary"
+              className="!mb-0 !mt-2"
+            >
+              {savedView.description ||
+                t("analysis.toolbar.savedDescription")}
+            </Typography.Paragraph>
+          ) : null}
           {savedView ? (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {t("analysis.toolbar.updatedBy", {
                 name: formatAnalysisActorName(savedView.updatedBy),
               })}
             </Typography.Text>
-          ) : null}
-          {!canWrite ? (
-            <Alert
-              className="!mt-3"
-              type="info"
-              showIcon
-              message={t("analysis.toolbar.permissionTitle")}
-              description={t("analysis.toolbar.permissionDescription")}
-            />
           ) : null}
         </div>
 
@@ -310,25 +295,41 @@ export function AnalysisToolbar({
               buttonText={t("analysis.toolbar.createTask")}
             />
           ) : null}
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={() => void handleExport()}
-            loading={exporting}
-            disabled={!canWrite}
+          <Tooltip
+            title={
+              !canWrite ? t("analysis.toolbar.permissionDescription") : undefined
+            }
           >
-            {t("analysis.toolbar.export")}
-          </Button>
-          <Button
-            type="primary"
-            icon={savedView ? <CopyOutlined /> : <SaveOutlined />}
-            onClick={openSaveModal}
-            disabled={!canWrite}
-            loading={loadingView}
+            <span className="inline-block">
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={() => void handleExport()}
+                loading={exporting}
+                disabled={!canWrite}
+              >
+                {t("analysis.toolbar.export")}
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip
+            title={
+              !canWrite ? t("analysis.toolbar.permissionDescription") : undefined
+            }
           >
-            {savedView?.id && savedView.canEdit
-              ? t("analysis.toolbar.update")
-              : t("analysis.toolbar.save")}
-          </Button>
+            <span className="inline-block">
+              <Button
+                type="primary"
+                icon={savedView ? <CopyOutlined /> : <SaveOutlined />}
+                onClick={openSaveModal}
+                disabled={!canWrite}
+                loading={loadingView}
+              >
+                {savedView?.id && savedView.canEdit
+                  ? t("analysis.toolbar.update")
+                  : t("analysis.toolbar.save")}
+              </Button>
+            </span>
+          </Tooltip>
         </Space>
       </div>
 

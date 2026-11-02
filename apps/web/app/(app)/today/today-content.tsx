@@ -86,6 +86,8 @@ export function TodayContent() {
           sortMode="publishedDesc"
           experiencePreset="reader"
           density="compact"
+          hideQuickNav
+          showAnalysisToolbar={false}
           initialFilters={{
             dateRange: todayDateRange
           }}
