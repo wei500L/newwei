@@ -58,6 +58,8 @@
 | UI-12A | [UI-12A-tail-components.md](UI-12A-tail-components.md) | `components/**`：Tag 颜色、颜色映射、裸 Empty、内联 margin 按 §3.6 收尾 | UI-11 合入 |
 | UI-12B | [UI-12B-tail-admin-crawl.md](UI-12B-tail-admin-crawl.md) | `admin/**`、`crawl/**`：同上 | UI-11 合入 |
 | UI-12C | [UI-12C-tail-app-pages.md](UI-12C-tail-app-pages.md) | 其余 `app/**` 页面：同上 | UI-11 合入 |
+| UI-13A | [UI-13A-feed-chrome-today.md](UI-13A-feed-chrome-today.md) | 信息流外壳减负：搜索页双工具栏、Today 底部检索控制台、三重分隔线、摘要侧栏 Tag 墙 | UI-12 合入 |
+| UI-13B | [UI-13B-kpi-hues-assistant.md](UI-13B-kpi-hues-assistant.md) | KpiStrip 原语与迁移、剩余冷色相色阶收敛、助手页与市场脉搏细节 | UI-12 合入 |
 
 ```
 UI-0 ─┬→ UI-1 ─────────┬→ UI-3A ┐
@@ -76,6 +78,8 @@ UI-9 → ┬ UI-10A
 UI-10 → UI-11 → ┬ UI-12A
                ├ UI-12B   （三者并行，目录互不相交）
                └ UI-12C
+UI-12 → ┬ UI-13A
+        └ UI-13B   （两者并行，文件互不相交）
 ```
 
 可以并行的组合：UI-1、UI-2A、UI-2B 三者并行（都在 UI-0 合入后开工）；UI-3A、UI-3B、UI-3C 三者并行，它们改的目录互不相交。
