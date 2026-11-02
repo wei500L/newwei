@@ -10,6 +10,7 @@
     "prepare": "husky install",
     "dev": "tsx infra/scripts/src/dev.mts",
     "dev:ais-relay": "tsx infra/scripts/src/dev.mts ais-relay",
+    "globe:vendor": "tsx infra/scripts/src/globe-vendor.mts",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
@@ -47,10 +48,10 @@
     "typescript": "^5.4.5"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx}": [
+    "{,!(vendor)/**/}*.{ts,tsx,js,jsx}": [
       "eslint --fix"
     ],
-    "*.{ts,tsx,js,jsx,json,md,yml,yaml}": [
+    "{,!(vendor)/**/}*.{ts,tsx,js,jsx,json,md,yml,yaml}": [
       "prettier --write --no-error-on-unmatched-pattern"
     ]
   },

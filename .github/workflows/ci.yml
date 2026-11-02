@@ -100,6 +100,11 @@ jobs:
       - name: Web component tests with coverage
         run: pnpm --filter @modular/web test -- --coverage
 
+      # 从 apps/web 里对 @gev/* 的引用出发追踪 vendor 源码，禁止间接碰到 .vue
+      # 或 Vue 强耦合模块（G0 起生效，G2 之后每次新增 GEV 引用都靠它守住边界）。
+      - name: Web globe import whitelist check
+        run: pnpm --filter @modular/web globe:check-imports
+
       # The retired Nest unit suites (@modular/api test / @modular/vector test)
       # and the Nest SDL/OpenAPI/auth-matrix generators are gone with apps/api.
       # The business constraints they guarded are now enforced by Go single-end
@@ -141,6 +146,53 @@ jobs:
 
       - name: Build
         run: pnpm exec turbo run build --env-mode=loose --filter=@modular/web --filter=@modular/api-go --filter=@modular/vector-go
+
+  # vendor/gods-eye-view 快照自身的校验：只在快照目录有变化时运行。用
+  # dorny/paths-filter 判断变更（本仓库此前没有路径过滤写法，故引入该 action）。
+  # 快照是上游源码的镜像，独立安装它自己的 npm 依赖并跑上游的边界检查/格式检查。
+  #
+  # 先不跑它的全量单元测试：上游 test 依赖 git fixture（需要在仓库历史里构造
+  # 提交），耗时也较长，且与本批改动无关。G6 需要给 vendor 打补丁时，再按需把
+  # 被补丁模块对应的测试文件加进来。
+  globe-vendor:
+    runs-on: [self-hosted, linux, build-server]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect gods-eye-view vendor changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            vendor:
+              - 'vendor/gods-eye-view/**'
+
+      - name: Setup Node.js
+        if: steps.filter.outputs.vendor == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # --ignore-scripts：上游依赖的 postinstall 一律不执行，只装文件。
+      - name: Install vendor dependencies
+        if: steps.filter.outputs.vendor == 'true'
+        working-directory: vendor/gods-eye-view
+        run: npm ci --ignore-scripts
+
+      - name: Check vendor import boundaries
+        if: steps.filter.outputs.vendor == 'true'
+        working-directory: vendor/gods-eye-view
+        run: npm run check:boundaries
+
+      - name: Check vendor formatting
+        if: steps.filter.outputs.vendor == 'true'
+        working-directory: vendor/gods-eye-view
+        run: npm run format:check
 
   # vector-go 远端集成：真实 Qdrant 上的 Go 单端契约检查。覆盖 GET /healthz、
   # POST /v1/upsert、POST /v1/search、x-internal-token 鉴权、orgId 过滤和错误

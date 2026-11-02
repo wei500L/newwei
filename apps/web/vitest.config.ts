@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./test/setup.ts"],
-    include: ["**/*.test.{ts,tsx}"],
+    include: ["**/*.test.{ts,tsx}", "scripts/globe-check-imports.test.mjs"],
     css: false,
     restoreMocks: true,
     clearMocks: true,
