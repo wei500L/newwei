@@ -7,7 +7,6 @@ import {
   Card,
   Collapse,
   Descriptions,
-  Empty,
   Form,
   Input,
   InputNumber,
@@ -23,6 +22,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { SectionHeader } from "@/components/section-header";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
   type KnowledgeGraphImpactAnalysisModel,
   type Query,
@@ -359,7 +359,7 @@ export function KnowledgeGraphImpactContent() {
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <div>
             <SectionHeader title={t("knowledgeGraph.impact.title")} className="mb-2" />
-            <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            <Paragraph type="secondary" className="!mb-0">
               {t("knowledgeGraph.impact.description")}
             </Paragraph>
           </div>
@@ -475,7 +475,8 @@ export function KnowledgeGraphImpactContent() {
 
       {!analysis && !loading ? (
         <Card className="content-card">
-          <Empty
+          <ChartEmptyState
+            presentation="banner"
             description={t("knowledgeGraph.impact.empty")}
           />
         </Card>
@@ -569,14 +570,14 @@ export function KnowledgeGraphImpactContent() {
                       >
                         <Space direction="vertical" size={4}>
                           <Space wrap>
-                            <Tag color="blue">#{index + 1}</Tag>
+                            <Tag>#{index + 1}</Tag>
                             <Tag>{candidate.kind}</Tag>
-                            <Tag color="geekblue">
+                            <Tag>
                               {t("knowledgeGraph.impact.candidate.score")}{" "}
                               {candidate.score.toFixed(3)}
                             </Tag>
                           </Space>
-                          <Title level={5} style={{ margin: 0 }}>
+                          <Title level={5} className="!m-0">
                             {candidate.entity.name}
                           </Title>
                           <Text type="secondary">{candidate.entity.type}</Text>

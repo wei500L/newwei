@@ -8,7 +8,6 @@ import {
 import {
   Button,
   Card,
-  Empty,
   List,
   Popconfirm,
   Segmented,
@@ -23,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { SectionHeader } from "@/components/section-header";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
   buildSavedViewHref,
   formatAnalysisActorName,
@@ -160,8 +160,8 @@ export function AnalysisLibrary() {
 
       <Card className="content-card" loading={loading}>
         {views.length === 0 ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          <ChartEmptyState
+            presentation="banner"
             description={t("analysis.library.empty")}
           />
         ) : (
@@ -207,8 +207,8 @@ export function AnalysisLibrary() {
                   title={
                     <Space wrap size={[8, 8]}>
                       <Typography.Text strong>{view.title}</Typography.Text>
-                      <Tag color="blue">{view.surface}</Tag>
-                      <Tag color={view.visibility === "org_shared" ? "gold" : "default"}>
+                      <Tag>{view.surface}</Tag>
+                      <Tag>
                         {view.visibility}
                       </Tag>
                     </Space>

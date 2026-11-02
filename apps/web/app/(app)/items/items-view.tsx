@@ -2125,7 +2125,7 @@ export function ItemsView({
 
           return (
             <Tooltip title={tooltip}>
-              <Tag color="blue">{formatted}</Tag>
+              <Tag>{formatted}</Tag>
             </Tooltip>
           );
         },
@@ -2160,7 +2160,7 @@ export function ItemsView({
 
           return (
             <Tooltip title={tooltip}>
-              <Tag color="gold">
+              <Tag>
                 {label} {formatted}
               </Tag>
             </Tooltip>

@@ -99,11 +99,11 @@ export function FinancialCard({ item }: FinancialCardProps) {
           )}
         </Space>
         {chartOption && (
-          <div style={{ height: 60, marginTop: 16 }}>
+          <div style={{ height: 60 }}>
             <DashboardChart option={chartOption} height={60} />
           </div>
         )}
-        <div style={{ marginTop: "auto" }}>
+        <div>
           <Button
             type="link"
             size="small"

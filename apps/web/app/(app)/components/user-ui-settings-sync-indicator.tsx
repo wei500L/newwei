@@ -32,14 +32,14 @@ function resolveOverallState(statuses: UserUiSyncSectionStatus[]): OverallState 
 function renderStateTag(state: UserUiSyncSectionStatus["state"], t: TFunction) {
   switch (state) {
     case "error":
-      return <Tag color="red">{tText(t, "common.syncError", { defaultValue: "ERROR" })}</Tag>;
+      return <Tag color="error">{tText(t, "common.syncError", { defaultValue: "ERROR" })}</Tag>;
     case "syncing":
       return <Tag color="processing">{tText(t, "common.syncing", { defaultValue: "SYNCING" })}</Tag>;
     case "loading":
       return <Tag color="processing">{tText(t, "common.loading", { defaultValue: "LOADING" })}</Tag>;
     case "idle":
     default:
-      return <Tag color="green">{tText(t, "common.synced", { defaultValue: "SYNCED" })}</Tag>;
+      return <Tag color="success">{tText(t, "common.synced", { defaultValue: "SYNCED" })}</Tag>;
   }
 }
 

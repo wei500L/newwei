@@ -49,13 +49,13 @@ import {
 type NotificationItem = NotificationMessage;
 
 const typeColor: Record<NotificationType, string> = {
-  [NotificationType.CrawlCompleted]: "green",
-  [NotificationType.CrawlFailed]: "red",
-  [NotificationType.AnalysisCompleted]: "blue",
-  [NotificationType.AnalysisFailed]: "red",
-  [NotificationType.OrgInvite]: "purple",
-  [NotificationType.AlertTriggered]: "orange",
-  [NotificationType.System]: "geekblue",
+  [NotificationType.CrawlCompleted]: "success",
+  [NotificationType.CrawlFailed]: "error",
+  [NotificationType.AnalysisCompleted]: "success",
+  [NotificationType.AnalysisFailed]: "error",
+  [NotificationType.OrgInvite]: "default",
+  [NotificationType.AlertTriggered]: "warning",
+  [NotificationType.System]: "default",
 };
 
 const MAX_ITEMS = 30;
@@ -317,7 +317,7 @@ export function NotificationCenter({
                         <div>
                           {presentation.body ? (
                             <Typography.Paragraph
-                              style={{ marginBottom: 6 }}
+                              className="!mb-2"
                               ellipsis={{ rows: 2, expandable: false }}
                             >
                               {presentation.body}

@@ -1,7 +1,7 @@
 "use client";
 
 import { gql, useMutation, useQuery } from "@apollo/client";
-import { Button, Card, Drawer, Empty, Input, List, Select, Skeleton, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Card, Drawer, Input, List, Select, Skeleton, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -402,7 +402,7 @@ export function NewsIndicatorAssociations() {
         key: "scope",
         render: (_value: unknown, record) => (
           <Space wrap size={[6, 6]}>
-            <Tag color={record.scopeType === "entity" ? "purple" : "blue"}>{getScopeTypeLabel(t, record.scopeType)}</Tag>
+            <Tag>{getScopeTypeLabel(t, record.scopeType)}</Tag>
             {record.scopeKeyType ? <Tag>{record.scopeKeyType}</Tag> : null}
             <Typography.Text>{record.scopeKey}</Typography.Text>
           </Space>
@@ -476,7 +476,7 @@ export function NewsIndicatorAssociations() {
           }
           return (
             <Space direction="vertical" size={0}>
-              <Tag color={run.status === "completed" ? "green" : run.status === "failed" ? "red" : "default"}>
+              <Tag color={run.status === "completed" ? "success" : run.status === "failed" ? "error" : "default"}>
                 {getBacktestStatusLabel(t, run.status)}
               </Tag>
               {summary ? (
@@ -806,13 +806,13 @@ function AssociationDetailsView({ association, locale }: { association: Associat
     <div className="flex flex-col gap-3">
       <Space direction="vertical" size={6}>
         <Space wrap size={[6, 6]}>
-          <Tag color={association.scopeType === "entity" ? "purple" : "blue"}>{getScopeTypeLabel(t, association.scopeType)}</Tag>
+          <Tag>{getScopeTypeLabel(t, association.scopeType)}</Tag>
           <Typography.Text strong>{association.scopeKey}</Typography.Text>
           {association.scopeKeyType ? <Tag>{association.scopeKeyType}</Tag> : null}
         </Space>
         <Space wrap size={[6, 6]}>
           <Tag>{getFeatureMetricLabel(t, association.featureMetric)}</Tag>
-          <Tag color="geekblue">{indicator.slug}</Tag>
+          <Tag>{indicator.slug}</Tag>
           {indicator.defaultUnit ? (
             <Tag>{normalizeUnit(indicator.defaultUnit) ?? indicator.defaultUnit}</Tag>
           ) : null}
@@ -845,12 +845,12 @@ function AssociationDetailsView({ association, locale }: { association: Associat
       </Space>
 
       <Card size="small" className="content-card">
-        <Typography.Title level={5} style={{ marginTop: 0 }}>
+        <Typography.Title level={5} className="!mt-0">
           {t("pages.newsIndicator.drawer.backtests")}
         </Typography.Title>
         {backtests.length === 0 ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          <ChartEmptyState
+            presentation="banner"
             description={t("pages.newsIndicator.drawer.backtestsEmpty")}
           />
         ) : (
@@ -863,7 +863,7 @@ function AssociationDetailsView({ association, locale }: { association: Associat
                   <List.Item.Meta
                     title={
                       <Space wrap size={[6, 6]}>
-                        <Tag color={run.status === "completed" ? "green" : run.status === "failed" ? "red" : "default"}>
+                        <Tag color={run.status === "completed" ? "success" : run.status === "failed" ? "error" : "default"}>
                           {getBacktestStatusLabel(t, run.status)}
                         </Tag>
                         <Typography.Text type="secondary">

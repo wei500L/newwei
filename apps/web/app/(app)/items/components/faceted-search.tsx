@@ -401,7 +401,7 @@ export function FacetedSearch({
     <div className="surface-inset h-full">
       <Space direction="vertical" style={{ width: "100%" }} size="middle">
         <div className="flex items-center justify-between gap-3">
-          <Typography.Title level={5} style={{ margin: 0 }}>
+          <Typography.Title level={5} className="!m-0">
             {t("items.filters.title")}
           </Typography.Title>
           {hasActiveFilters ? (
@@ -428,7 +428,6 @@ export function FacetedSearch({
                     <Tag
                       className="items-compact-tag"
                       key={item.key}
-                      color="blue"
                     >
                       {item.label}: {item.count}
                     </Tag>

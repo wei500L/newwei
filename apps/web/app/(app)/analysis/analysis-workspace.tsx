@@ -98,9 +98,9 @@ interface ColumnFormValues {
 
 const PRIORITY_COLORS: Record<AnalysisTaskPriority, string> = {
   low: "default",
-  normal: "blue",
-  high: "orange",
-  urgent: "red",
+  normal: "default",
+  high: "warning",
+  urgent: "error",
 };
 
 function priorityColor(priority: AnalysisTaskPriority) {
@@ -205,7 +205,7 @@ function SortableTaskCard({
         ) : null}
         {linkedHref ? (
           <Link href={linkedHref} onClick={(event) => event.stopPropagation()}>
-            <Tag color="geekblue">
+            <Tag>
               {task.linkedSubjectType ? subjectLabels[task.linkedSubjectType] : null}
             </Tag>
           </Link>
@@ -862,7 +862,7 @@ export function AnalysisWorkspace() {
             >
               <Space wrap>
                 <Tag color={column.color ?? "default"}>{column.title}</Tag>
-                {column.isDone ? <Tag color="green">{t("analysis.workspace.columnDone")}</Tag> : null}
+                {column.isDone ? <Tag color="success">{t("analysis.workspace.columnDone")}</Tag> : null}
                 <Typography.Text type="secondary">
                   {t("analysis.workspace.tasksCount", { count: column.tasks.length })}
                 </Typography.Text>

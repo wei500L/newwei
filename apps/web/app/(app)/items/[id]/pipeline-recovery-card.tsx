@@ -65,13 +65,13 @@ interface PipelineRecoveryCardProps {
 
 function getStatusColor(status: string) {
   if (status === "completed") {
-    return "green";
+    return "success";
   }
   if (status === "failed") {
-    return "red";
+    return "error";
   }
   if (status === "processing") {
-    return "blue";
+    return "processing";
   }
   return "default";
 }

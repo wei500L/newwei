@@ -229,15 +229,15 @@ function normalizeStageMetaEntry(
 
 function getStageStatusColor(status: StageStatus): string {
   if (status === "completed") {
-    return "green";
+    return "success";
   }
   if (status === "skipped") {
     return "default";
   }
   if (status === "rejected") {
-    return "orange";
+    return "error";
   }
-  return "red";
+  return "error";
 }
 
 type ContentTypeValue = "news_fact" | "opinion" | "analysis" | "mixed";
@@ -1238,8 +1238,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         <Typography.Title
           level={4}
           ellipsis={{ rows: 2 }}
-          style={{ margin: 0 }}
-          className="font-serif"
+          className="font-serif !m-0"
         >
           {displayTitle}
         </Typography.Title>
@@ -1388,7 +1387,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               <div>
                 <Typography.Paragraph
                   ellipsis={summaryExpanded ? false : { rows: 3 }}
-                  style={{ lineHeight: 1.8, marginBottom: 0 }}
+                  className="!mb-0"
+                  style={{ lineHeight: 1.8 }}
                 >
                   {displaySummary}
                 </Typography.Paragraph>
@@ -1492,7 +1492,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 label={t("items.detail.fields.processedStatus")}
               >
                 {processedStatus ? (
-                  <Tag color="geekblue">{processedStatus}</Tag>
+                  <Tag>{processedStatus}</Tag>
                 ) : (
                   t("common.notAvailable")
                 )}
@@ -1603,7 +1603,6 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                       return (
                         <Space key={`topic-${topic}`} size={4}>
                           <Tag
-                            color="blue"
                             className="cursor-pointer"
                             role="button"
                             tabIndex={0}
@@ -1666,7 +1665,6 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                       return (
                         <Space key={`entity-${entity}`} size={4}>
                           <Tag
-                            color="purple"
                             className="cursor-pointer"
                             role="button"
                             tabIndex={0}
@@ -1739,7 +1737,6 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                             size={4}
                           >
                             <Tag
-                              color="geekblue"
                               className="cursor-pointer"
                               role="button"
                               tabIndex={0}
@@ -1800,7 +1797,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         <Card className="content-card" title={t("items.detail.stageMetaTitle")}>
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             <Space wrap size={[8, 8]}>
-              <Tag color="green">
+              <Tag color="success">
                 {t("items.detail.stages.summary.completed")}:{" "}
                 {stageCounts.completed}
               </Tag>
@@ -1811,13 +1808,13 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 </Tag>
               ) : null}
               {stageCounts.rejected > 0 ? (
-                <Tag color="orange">
+                <Tag color="error">
                   {t("items.detail.stages.summary.rejected")}:{" "}
                   {stageCounts.rejected}
                 </Tag>
               ) : null}
               {stageCounts.failed > 0 ? (
-                <Tag color="red">
+                <Tag color="error">
                   {t("items.detail.stages.summary.failed")}:{" "}
                   {stageCounts.failed}
                 </Tag>

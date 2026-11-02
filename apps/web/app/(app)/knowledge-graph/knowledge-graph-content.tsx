@@ -15,7 +15,6 @@ import {
   Card,
   Descriptions,
   Drawer,
-  Empty,
   Input,
   List,
   Select,
@@ -521,7 +520,7 @@ export function KnowledgeGraphContent() {
     <Space direction="vertical" size="middle" className="w-full">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <Title level={5} style={{ margin: 0 }}>
+          <Title level={5} className="!m-0">
             {selectedNode.name}
           </Title>
           <Text type="secondary">
@@ -530,7 +529,7 @@ export function KnowledgeGraphContent() {
             })}
           </Text>
         </div>
-        <Tag color="blue">
+        <Tag>
           {t("pages.knowledgeGraph.details.degree")}:{" "}
           {graphData?.degreeMap.get(selectedNode.id) ?? 0}
         </Tag>
@@ -589,8 +588,8 @@ export function KnowledgeGraphContent() {
           </pre>
         </Card>
       ) : (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        <ChartEmptyState
+          presentation="banner"
           description={t("pages.knowledgeGraph.details.noProperties")}
         />
       )}
@@ -599,7 +598,7 @@ export function KnowledgeGraphContent() {
     <Space direction="vertical" size="middle" className="w-full">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <Title level={5} style={{ margin: 0 }}>
+          <Title level={5} className="!m-0">
             {selectedEdgeDisplay.sourceName} → {selectedEdgeDisplay.targetName}
           </Title>
           <Text type="secondary">
@@ -609,11 +608,11 @@ export function KnowledgeGraphContent() {
           </Text>
         </div>
         <Space direction="vertical" size={4}>
-          <Tag color="green">
+          <Tag>
             {t("pages.knowledgeGraph.details.confidence")}:{" "}
             {formatNullableNumber(selectedEdgeDisplay.confidence)}
           </Tag>
-          <Tag color="purple">
+          <Tag>
             {t("pages.knowledgeGraph.details.weight")}:{" "}
             {formatNullableNumber(selectedEdgeDisplay.weight)}
           </Tag>
@@ -638,7 +637,7 @@ export function KnowledgeGraphContent() {
         </Card>
       ) : null}
       <div className="flex items-center justify-between gap-3">
-        <Title level={5} style={{ margin: 0 }}>
+        <Title level={5} className="!m-0">
           {t("pages.knowledgeGraph.details.evidenceTitle")}
         </Title>
         <Button
@@ -699,13 +698,13 @@ export function KnowledgeGraphContent() {
                     </div>
                     <Space size={4} wrap>
                       {typeof item.confidence === "number" ? (
-                        <Tag color="blue">
+                        <Tag>
                           {t("pages.knowledgeGraph.details.evidenceConfidence")}{" "}
                           {item.confidence.toFixed(2)}
                         </Tag>
                       ) : null}
-                      {validationOutcome ? <Tag color="green">{validationOutcome}</Tag> : null}
-                      {reviewStatus ? <Tag color="gold">{reviewStatus}</Tag> : null}
+                      {validationOutcome ? <Tag>{validationOutcome}</Tag> : null}
+                      {reviewStatus ? <Tag>{reviewStatus}</Tag> : null}
                     </Space>
                   </div>
                   {quote ? (
@@ -733,17 +732,14 @@ export function KnowledgeGraphContent() {
           }}
         />
       ) : (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        <ChartEmptyState
+          presentation="banner"
           description={t("pages.knowledgeGraph.details.noEvidence")}
         />
       )}
     </Space>
   ) : (
-    <Empty
-      image={Empty.PRESENTED_IMAGE_SIMPLE}
-      description={t("pages.knowledgeGraph.details.empty")}
-    />
+    <ChartEmptyState description={t("pages.knowledgeGraph.details.empty")} />
   );
 
   if (sessionStatus === "loading") {
@@ -811,7 +807,7 @@ export function KnowledgeGraphContent() {
           }
         />
         <Space wrap>
-          <Tag color="geekblue">
+          <Tag>
             {t("pages.knowledgeGraph.meta.scope")}:{" "}
             {routeState.seedName || t("pages.knowledgeGraph.meta.scopeEmpty")}
           </Tag>
@@ -820,7 +816,7 @@ export function KnowledgeGraphContent() {
             {t("pages.knowledgeGraph.meta.notRangeFiltered")}
           </Tag>
           {routeState.relationTypes.length > 0 ? (
-            <Tag color="purple">
+            <Tag>
               {t("pages.knowledgeGraph.meta.relationCount")}:{" "}
               {routeState.relationTypes.length}
             </Tag>
@@ -859,10 +855,10 @@ export function KnowledgeGraphContent() {
           <div className="content-card border border-[var(--border)] p-4">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <Space wrap>
-                <Tag color="blue">
+                <Tag>
                   {t("pages.knowledgeGraph.meta.nodes")}: {graph?.metadata.totalNodes ?? 0}
                 </Tag>
-                <Tag color="cyan">
+                <Tag>
                   {t("pages.knowledgeGraph.meta.edges")}: {graph?.metadata.totalEdges ?? 0}
                 </Tag>
                 <Tag color="default">
