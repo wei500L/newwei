@@ -1254,7 +1254,7 @@ export const NewsnowCard = memo(function NewsnowCard({
               ) : null}
               {(sortMode === "personalized" || sortMode === "smart") &&
               affinityScore > 0 ? (
-                <span className="rounded-full bg-fuchsia-500/10 border border-fuchsia-500/20 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-600 dark:text-fuchsia-400">
+                <span className="rounded-full bg-[var(--secondary)] border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--secondary-foreground)]">
                   偏好 {Math.round(affinityScore)}
                 </span>
               ) : null}
