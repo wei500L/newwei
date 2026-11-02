@@ -197,7 +197,7 @@ export default function SsoCallbackPage() {
 
   return (
     <div className="auth-card">
-      <Typography.Title level={3}>{t("auth.sso.title")}</Typography.Title>
+      <Typography.Title level={3} className="!mb-2 font-serif">{t("auth.sso.title")}</Typography.Title>
       {loading ? <Spin /> : null}
       {error ? <Alert type="error" showIcon message={error} /> : null}
       {challengeError ? (

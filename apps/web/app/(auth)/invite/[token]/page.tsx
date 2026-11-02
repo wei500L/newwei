@@ -57,7 +57,7 @@ export default function InvitePage() {
   return (
     <div className="auth-card">
       {contextHolder}
-      <Typography.Title level={3}>{t("auth.invite.title")}</Typography.Title>
+      <Typography.Title level={3} className="!mb-2 font-serif">{t("auth.invite.title")}</Typography.Title>
       {invite ? (
         <Alert
           type="info"
