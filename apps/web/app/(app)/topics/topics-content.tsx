@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 
 import { NewsCard } from '@/app/(app)/items/components/news-card';
 import { ArticlePublishedTime } from '@/components/article-published-time';
+import { FilterBar } from '@/components/filter-bar';
 import { PageHeader } from '@/components/page-header';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
@@ -334,9 +335,16 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
   let content: ReactNode;
   if (loading && sortedGroups.length === 0 && sortedEventGroups.length === 0) {
     content = (
-      <Card className="content-card">
-        <Skeleton active paragraph={{ rows: 6 }} />
-      </Card>
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t("nav.groups.situation")}
+          title={t("pages.topics.title")}
+          description={t("pages.topics.subtitle")}
+        />
+        <Card className="content-card">
+          <Skeleton active paragraph={{ rows: 6 }} />
+        </Card>
+      </div>
     );
   } else {
     content = (
@@ -347,54 +355,33 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
           description={t("pages.topics.subtitle")}
         />
 
-        <Card
-          size="small"
-          className={`content-card ${isDesktopStickyFilter ? 'sticky top-2 z-10' : ''}`}
-          styles={{
-            body: {
-              padding: isDesktopStickyFilter ? '12px 16px' : '14px 16px'
-            }
-          }}
-        >
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('pages.topics.filters.windowLabel')}
-                </Typography.Text>
-                <Select
-                  size="small"
-                  value={windowDays}
-                  options={windowOptions}
-                  onChange={(value) => updateFilters({ windowDays: value })}
-                  style={isDesktopStickyFilter ? { minWidth: 132 } : { width: '100%' }}
-                />
-              </div>
-
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('pages.topics.filters.groupLabel')}
-                </Typography.Text>
-                <Select
-                  size="small"
-                  value={minGroupSize}
-                  options={groupSizeOptions}
-                  onChange={(value) => updateFilters({ minGroupSize: value })}
-                  style={isDesktopStickyFilter ? { minWidth: 152 } : { width: '100%' }}
-                />
-              </div>
-            </div>
-
-            <Button
-              size="small"
-              onClick={() => void refetch()}
-              loading={loading}
-              className="self-start lg:self-auto"
-            >
+        <FilterBar
+          className={isDesktopStickyFilter ? 'sticky top-2 z-10' : ''}
+          actions={
+            <Button size="small" onClick={() => void refetch()} loading={loading}>
               {t('common.refresh')}
             </Button>
-          </div>
-        </Card>
+          }
+        >
+          <FilterBar.Item label={t('pages.topics.filters.windowLabel')} width="sm">
+            <Select
+              size="small"
+              className="w-full"
+              value={windowDays}
+              options={windowOptions}
+              onChange={(value) => updateFilters({ windowDays: value })}
+            />
+          </FilterBar.Item>
+          <FilterBar.Item label={t('pages.topics.filters.groupLabel')} width="sm">
+            <Select
+              size="small"
+              className="w-full"
+              value={minGroupSize}
+              options={groupSizeOptions}
+              onChange={(value) => updateFilters({ minGroupSize: value })}
+            />
+          </FilterBar.Item>
+        </FilterBar>
 
         <Card className="content-card">
           {error ? (
@@ -474,12 +461,12 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                     </Tooltip>
                                     <Space wrap size={[6, 6]}>
                                       {topicPreview.visible.map((topic) => (
-                                        <Tag key={`event-topic-${group.eventId}-${topic}`} color="blue">
-                                          {topic}
+                                        <Tag key={`event-topic-${group.eventId}-${topic}`}>
+                                          #{topic}
                                         </Tag>
                                       ))}
                                       {topicPreview.hiddenCount > 0 ? (
-                                        <Tag color="blue">
+                                        <Tag>
                                           {t('pages.topics.list.moreTag', {
                                             count: topicPreview.hiddenCount
                                           })}
@@ -487,12 +474,12 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                       ) : null}
 
                                       {entityPreview.visible.map((entity) => (
-                                        <Tag key={`event-entity-${group.eventId}-${entity}`} color="purple">
-                                          {entity}
+                                        <Tag key={`event-entity-${group.eventId}-${entity}`}>
+                                          @{entity}
                                         </Tag>
                                       ))}
                                       {entityPreview.hiddenCount > 0 ? (
-                                        <Tag color="purple">
+                                        <Tag>
                                           {t('pages.topics.list.moreTag', {
                                             count: entityPreview.hiddenCount
                                           })}
@@ -500,12 +487,12 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                       ) : null}
 
                                       {sourcePreview.visible.map((source) => (
-                                        <Tag key={`event-source-${group.eventId}-${source}`} color="geekblue">
+                                        <Tag key={`event-source-${group.eventId}-${source}`}>
                                           {source}
                                         </Tag>
                                       ))}
                                       {sourcePreview.hiddenCount > 0 ? (
-                                        <Tag color="geekblue">
+                                        <Tag>
                                           {t('pages.topics.list.moreTag', {
                                             count: sourcePreview.hiddenCount
                                           })}
@@ -579,12 +566,12 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                     {sourcePreview.visible.length > 0 ? (
                                       <Space wrap size={[6, 6]}>
                                         {sourcePreview.visible.map((source) => (
-                                          <Tag key={`topic-source-${group.topic}-${source}`} color="geekblue">
+                                          <Tag key={`topic-source-${group.topic}-${source}`}>
                                             {source}
                                           </Tag>
                                         ))}
                                         {sourcePreview.hiddenCount > 0 ? (
-                                          <Tag color="geekblue">
+                                          <Tag>
                                             {t('pages.topics.list.moreTag', {
                                               count: sourcePreview.hiddenCount
                                             })}
@@ -645,12 +632,12 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
               {(selectedEventTopics.length > 0 || selectedEventEntities.length > 0) && (
                 <Space wrap size={[6, 6]}>
                   {selectedEventTopics.map((topic) => (
-                    <Tag key={`detail-topic-${selectedEvent.eventId}-${topic}`} color="blue">
+                    <Tag key={`detail-topic-${selectedEvent.eventId}-${topic}`}>
                       {topic}
                     </Tag>
                   ))}
                   {selectedEventEntities.map((entity) => (
-                    <Tag key={`detail-entity-${selectedEvent.eventId}-${entity}`} color="purple">
+                    <Tag key={`detail-entity-${selectedEvent.eventId}-${entity}`}>
                       {entity}
                     </Tag>
                   ))}
@@ -659,7 +646,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
               {selectedEventSources.length > 0 && (
                 <Space wrap size={[6, 6]}>
                   {selectedEventSources.map((source) => (
-                    <Tag key={`detail-source-${selectedEvent.eventId}-${source}`} color="geekblue">
+                    <Tag key={`detail-source-${selectedEvent.eventId}-${source}`}>
                       {source}
                     </Tag>
                   ))}
@@ -697,7 +684,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                       title={
                         <Space size="small" wrap>
                           <Typography.Text strong className="line-clamp-2">{item.title ?? selectedEventTitle}</Typography.Text>
-                          {item.source ? <Tag color="geekblue">{item.source}</Tag> : null}
+                          {item.source ? <Tag>{item.source}</Tag> : null}
                         </Space>
                       }
                       description={
@@ -756,7 +743,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
             {selectedTopicSources.length > 0 ? (
               <Space wrap size={[6, 6]}>
                 {selectedTopicSources.map((source) => (
-                  <Tag key={`topic-detail-source-${selectedTopic.topic}-${source}`} color="geekblue">
+                  <Tag key={`topic-detail-source-${selectedTopic.topic}-${source}`}>
                     {source}
                   </Tag>
                 ))}

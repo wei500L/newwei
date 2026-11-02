@@ -122,9 +122,9 @@ export const VERTICAL_FALLBACK_LABEL: Record<ArchiveVertical, string> = {
 };
 
 export const MATCH_ORIGIN_TAG_COLOR: Record<ArchiveMatchOrigin, string> = {
-  LEXICAL: 'blue',
-  SEMANTIC: 'purple',
-  HYBRID: 'geekblue',
+  LEXICAL: 'default',
+  SEMANTIC: 'default',
+  HYBRID: 'default',
 };
 
 export const DEFAULT_REGION: ArchiveRegion = 'APAC';
@@ -134,44 +134,44 @@ export const MIN_ARCHIVE_SEARCH_QUERY_LENGTH = 2;
 
 const ARCHIVE_VERTICAL_TONES: Record<ArchiveVertical, ArchiveVerticalTone> = {
   EAST_SEA: {
-    accentDotClassName: 'bg-sky-500 dark:bg-sky-300',
-    accentBarClassName: 'bg-[var(--primary)]',
-    actionClassName:
-      'text-sky-700 hover:bg-sky-500/12 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-400/12 dark:hover:text-sky-100',
-    titlePillClassName:
-      'bg-sky-500/10 text-sky-700 ring-sky-500/20 dark:bg-sky-400/15 dark:text-sky-200 dark:ring-sky-400/30',
-  },
-  SOUTH_SEA: {
-    accentDotClassName: 'bg-cyan-500 dark:bg-cyan-300',
-    accentBarClassName: 'bg-[var(--primary)]',
-    actionClassName:
-      'text-cyan-700 hover:bg-cyan-500/12 hover:text-cyan-800 dark:text-cyan-300 dark:hover:bg-cyan-400/12 dark:hover:text-cyan-100',
-    titlePillClassName:
-      'bg-cyan-500/10 text-cyan-700 ring-cyan-500/20 dark:bg-cyan-400/15 dark:text-cyan-200 dark:ring-cyan-400/30',
-  },
-  WEST_FRONT: {
-    accentDotClassName: 'bg-violet-500 dark:bg-violet-300',
-    accentBarClassName: 'bg-[var(--primary)]',
-    actionClassName:
-      'text-violet-700 hover:bg-violet-500/12 hover:text-violet-800 dark:text-violet-300 dark:hover:bg-violet-400/12 dark:hover:text-violet-100',
-    titlePillClassName:
-      'bg-violet-500/10 text-violet-700 ring-violet-500/20 dark:bg-violet-400/15 dark:text-violet-200 dark:ring-violet-400/30',
-  },
-  FOREIGN_AFFAIRS: {
-    accentDotClassName: 'bg-amber-500 dark:bg-amber-300',
-    accentBarClassName: 'bg-[var(--accent)]',
-    actionClassName:
-      'text-amber-700 hover:bg-amber-500/12 hover:text-amber-800 dark:text-amber-300 dark:hover:bg-amber-400/12 dark:hover:text-amber-100',
-    titlePillClassName:
-      'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:bg-amber-400/15 dark:text-amber-200 dark:ring-amber-400/30',
-  },
-  DOMESTIC_AFFAIRS: {
-    accentDotClassName: 'bg-emerald-500 dark:bg-emerald-300',
+    accentDotClassName: 'bg-[var(--muted-foreground)]',
     accentBarClassName: 'bg-[var(--border-strong)]',
     actionClassName:
-      'text-emerald-700 hover:bg-emerald-500/12 hover:text-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-400/12 dark:hover:text-emerald-100',
+      'text-[var(--foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]',
     titlePillClassName:
-      'bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:bg-emerald-400/15 dark:text-emerald-200 dark:ring-emerald-400/30',
+      'bg-[var(--secondary)] text-[var(--foreground)] ring-[var(--border)]',
+  },
+  SOUTH_SEA: {
+    accentDotClassName: 'bg-[var(--muted-foreground)]',
+    accentBarClassName: 'bg-[var(--border-strong)]',
+    actionClassName:
+      'text-[var(--foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]',
+    titlePillClassName:
+      'bg-[var(--secondary)] text-[var(--foreground)] ring-[var(--border)]',
+  },
+  WEST_FRONT: {
+    accentDotClassName: 'bg-[var(--muted-foreground)]',
+    accentBarClassName: 'bg-[var(--border-strong)]',
+    actionClassName:
+      'text-[var(--foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]',
+    titlePillClassName:
+      'bg-[var(--secondary)] text-[var(--foreground)] ring-[var(--border)]',
+  },
+  FOREIGN_AFFAIRS: {
+    accentDotClassName: 'bg-[var(--muted-foreground)]',
+    accentBarClassName: 'bg-[var(--border-strong)]',
+    actionClassName:
+      'text-[var(--foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]',
+    titlePillClassName:
+      'bg-[var(--secondary)] text-[var(--foreground)] ring-[var(--border)]',
+  },
+  DOMESTIC_AFFAIRS: {
+    accentDotClassName: 'bg-[var(--muted-foreground)]',
+    accentBarClassName: 'bg-[var(--border-strong)]',
+    actionClassName:
+      'text-[var(--foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]',
+    titlePillClassName:
+      'bg-[var(--secondary)] text-[var(--foreground)] ring-[var(--border)]',
   },
 };
 

@@ -27,6 +27,7 @@ import { AnnotationPanel } from "@/components/analysis/annotation-panel";
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import { PageHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import {
   useNewsEventBriefQuery,
   useProcessedItemByIdQuery,
@@ -870,7 +871,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
         />
 
         <Space wrap size={[6, 6]}>
-          <Tag color={event.status === "active" ? "green" : "default"}>
+          <Tag color={event.status === "active" ? "processing" : "default"}>
             {statusLabel}
           </Tag>
           <Tag>
@@ -878,15 +879,14 @@ export function EventDetail({ eventId }: { eventId: string }) {
             {event.itemCount}
           </Tag>
           {isFutureEvent ? (
-            <Tag color="cyan" icon={<CalendarOutlined />}>
+            <Tag icon={<CalendarOutlined />}>
               {t("pages.events.fields.futureEvent")}
             </Tag>
           ) : null}
-          {language ? <Tag color="blue">{language}</Tag> : null}
-          {topic ? <Tag color="geekblue">{topic}</Tag> : null}
+          {language ? <Tag>{language}</Tag> : null}
+          {topic ? <Tag>{topic}</Tag> : null}
           {entity ? (
             <Tag
-              color="purple"
               style={{ cursor: "pointer" }}
               onClick={() =>
                 router.push(`/events?entity=${encodeURIComponent(entity)}`)
@@ -1082,76 +1082,52 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       />
                     ) : (
                       <div className="flex flex-col gap-4">
-                        <Card
-                          size="small"
-                          className="content-card"
-                          title={t("pages.events.detail.detailedSummary")}
-                        >
+                        <section className="flex flex-col gap-3 hairline-b pb-4 last:border-b-0">
+                          <SectionHeader title={t("pages.events.detail.detailedSummary")} />
                           {renderDetailedSummary(brief.detailedSummary)}
-                        </Card>
+                        </section>
 
-                        <Card
-                          size="small"
-                          className="content-card"
-                          title={t("pages.events.detail.tldr")}
-                        >
+                        <section className="flex flex-col gap-3 hairline-b pb-4 last:border-b-0">
+                          <SectionHeader title={t("pages.events.detail.tldr")} />
                           <Typography.Paragraph style={{ marginBottom: 0 }}>
                             {brief.tldr}
                           </Typography.Paragraph>
-                        </Card>
+                        </section>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                          <Card
-                            size="small"
-                            className="content-card"
-                            title={t("pages.events.detail.keyPoints")}
-                          >
+                          <section className="flex flex-col gap-3 hairline-b pb-4 last:border-b-0">
+                            <SectionHeader title={t("pages.events.detail.keyPoints")} />
                             {renderPointList(brief.keyPoints)}
-                          </Card>
-                          <Card
-                            size="small"
-                            className="content-card"
-                            title={t("pages.events.detail.whyMatters")}
-                          >
+                          </section>
+                          <section className="flex flex-col gap-3 hairline-b pb-4 last:border-b-0">
+                            <SectionHeader title={t("pages.events.detail.whyMatters")} />
                             {renderPointList(brief.whyItMatters)}
-                          </Card>
+                          </section>
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                          <Card
-                            size="small"
-                            className="content-card"
-                            title={t("pages.events.detail.latestUpdate")}
-                          >
+                          <section className="flex flex-col gap-3 hairline-b pb-4 last:border-b-0">
+                            <SectionHeader title={t("pages.events.detail.latestUpdate")} />
                             {brief.latestUpdate
                               ? renderPointList([brief.latestUpdate])
                               : renderPointList([])}
-                          </Card>
-                          <Card
-                            size="small"
-                            className="content-card"
-                            title={t("pages.events.detail.watch")}
-                          >
+                          </section>
+                          <section className="flex flex-col gap-3 hairline-b pb-4 last:border-b-0">
+                            <SectionHeader title={t("pages.events.detail.watch")} />
                             {renderPointList(brief.whatToWatch)}
-                          </Card>
+                          </section>
                         </div>
 
                         {brief.comparison ? (
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                            <Card
-                              size="small"
-                              className="content-card"
-                              title={t("pages.events.detail.consensus")}
-                            >
+                            <section className="flex flex-col gap-3 hairline-b pb-4 last:border-b-0">
+                              <SectionHeader title={t("pages.events.detail.consensus")} />
                               {renderPointList(brief.comparison.consensus)}
-                            </Card>
-                            <Card
-                              size="small"
-                              className="content-card"
-                              title={t("pages.events.detail.divergence")}
-                            >
+                            </section>
+                            <section className="flex flex-col gap-3 hairline-b pb-4 last:border-b-0">
+                              <SectionHeader title={t("pages.events.detail.divergence")} />
                               {renderPointList(brief.comparison.divergence)}
-                            </Card>
+                            </section>
                           </div>
                         ) : null}
 
@@ -1164,11 +1140,8 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           />
                         ) : null}
 
-                        <Card
-                          size="small"
-                          className="content-card"
-                          title={t("pages.events.detail.sourcesTitle")}
-                        >
+                        <section className="flex flex-col gap-3 hairline-b pb-4 last:border-b-0">
+                          <SectionHeader title={t("pages.events.detail.sourcesTitle")} />
                           <List
                             size="small"
                             dataSource={brief.sources}
@@ -1309,7 +1282,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                               );
                             }}
                           />
-                        </Card>
+                        </section>
                       </div>
                     )}
                   </div>

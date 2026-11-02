@@ -1,6 +1,5 @@
 "use client";
 
-import { CalendarOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
 import { Button, Card, Empty, List, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -628,16 +627,10 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                             <Typography.Text strong className="line-clamp-2 text-base font-semibold">
                               {title}
                             </Typography.Text>
-                            <Tag>{itemCountLabel}: {event.itemCount}</Tag>
-                            <Tag color={event.status === "active" ? "green" : "default"}>{eventStatusLabel}</Tag>
+                            <Tag color={event.status === "active" ? "processing" : "default"}>{eventStatusLabel}</Tag>
                             {event.breaking ? (
-                              <Tag color="volcano">
+                              <Tag color="error">
                                 {t("pages.events.fields.breaking")}
-                              </Tag>
-                            ) : null}
-                            {isFutureEvent ? (
-                              <Tag color="cyan" icon={<CalendarOutlined />}>
-                                {futureEventLabel}
                               </Tag>
                             ) : null}
                           </div>
@@ -658,27 +651,25 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                               minWidth={136}
                               progressSize={[120, 5]}
                             />
-                            <Tag>
-                              {sourcesLabel}: {event.sourceEvidence.uniqueSourceCount}
-                            </Tag>
-                            <Tag>
-                              {sourceTypeLabel}: {event.sourceType}
-                            </Tag>
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 font-mono text-xs text-muted-foreground">
+                            <span>{itemCountLabel}: {event.itemCount}</span>
+                            {isFutureEvent ? <span>{futureEventLabel}</span> : null}
+                            <span>{sourcesLabel}: {event.sourceEvidence.uniqueSourceCount}</span>
+                            <span>{sourceTypeLabel}: {event.sourceType}</span>
                             {event.sourceEvidence.corroborated ? (
-                              <Tag color="success">
-                                {t("pages.events.fields.corroborated")}
-                              </Tag>
+                              <span>{t("pages.events.fields.corroborated")}</span>
                             ) : null}
-                            {language ? <Tag color="blue">{language}</Tag> : null}
-                            {topic ? <Tag color="geekblue">{topic}</Tag> : null}
+                            {language ? <span>{language}</span> : null}
+                            {topic ? <span>{topic}</span> : null}
                             {entity ? (
-                              <Tag
-                                color="purple"
-                                style={{ cursor: "pointer" }}
+                              <button
+                                type="button"
+                                className="font-mono text-xs text-muted-foreground underline-offset-4 hover:text-[var(--foreground)] hover:underline"
                                 onClick={() => updateFilters({ entity: entityFilter === entity ? null : entity })}
                               >
                                 {entity}
-                              </Tag>
+                              </button>
                             ) : null}
                           </div>
                         </div>

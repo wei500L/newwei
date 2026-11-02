@@ -42,7 +42,6 @@ import {
   VERTICAL_SECTIONS,
   type ArchiveClassificationDetail,
   type ArchiveEventItem,
-  type ArchiveMatchOrigin,
   type ArchiveRegion,
   resolveArchiveClassificationI18nKeys,
   resolveArchiveClassificationSignals,
@@ -232,15 +231,6 @@ const WEIGHT_LABEL_KEY: Record<
   5: "FIVE",
 };
 const SEARCH_DEBOUNCE_MS = 300;
-const MATCH_ORIGIN_BADGE_CLASS_NAME: Record<ArchiveMatchOrigin, string> = {
-  LEXICAL:
-    "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/15 dark:text-sky-200",
-  SEMANTIC:
-    "border-violet-500/20 bg-violet-500/10 text-violet-700 dark:border-violet-400/30 dark:bg-violet-400/15 dark:text-violet-200",
-  HYBRID:
-    "border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-700 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/15 dark:text-fuchsia-200",
-};
-
 const weightToEnum = (value: number): ArchiveWeight | null => {
   if (value === 1) return "ONE";
   if (value === 2) return "TWO";
@@ -1023,7 +1013,7 @@ export function EventsArchiveContent() {
         }
       />
 
-      <Card className="content-card !overflow-hidden">
+      <section className="flex flex-col gap-6">
         <div className="flex flex-col gap-5">
           <section className="archive-toolbar">
             <div className="archive-toolbar__region-rail">
@@ -1066,6 +1056,7 @@ export function EventsArchiveContent() {
                   <div className="archive-toolbar__date-controls">
                     <Button
                       icon={<LeftOutlined />}
+                      aria-label={t("common.previous")}
                       onClick={() => updateUrl({ date: prevDateParam })}
                     />
                     <div className="min-w-0 flex-1 sm:flex-none sm:min-w-[188px]">
@@ -1101,6 +1092,7 @@ export function EventsArchiveContent() {
                     </div>
                     <Button
                       icon={<RightOutlined />}
+                      aria-label={t("common.next")}
                       onClick={() => updateUrl({ date: nextDateParam })}
                       disabled={!canGoNext}
                     />
@@ -1250,7 +1242,7 @@ export function EventsArchiveContent() {
                 <section key={section.key} className="flex flex-col gap-3">
                   <div className="flex items-center gap-2.5">
                     <span className="h-px flex-1 bg-[var(--border)]" />
-                    <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--muted-foreground)]">
+                    <Typography.Text className="kicker">
                       {sectionLabels[section.key as keyof typeof sectionLabels]}
                     </Typography.Text>
                     <span className="h-px flex-1 bg-[var(--border)]" />
@@ -1289,7 +1281,7 @@ export function EventsArchiveContent() {
                                   </span>
                                 </div>
                               </div>
-                              <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[11px] font-semibold text-[var(--muted-foreground)]">
+                              <span className="inline-flex min-w-[2.25rem] items-center justify-center px-2 py-1 font-mono text-xs text-muted-foreground">
                                 {group?.totalCount ?? 0}
                               </span>
                             </div>
@@ -1383,7 +1375,7 @@ export function EventsArchiveContent() {
                                             </span>
                                           </Typography.Paragraph>
                                           <div className="flex flex-wrap items-center gap-2">
-                                            <span className="inline-flex rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/15 dark:text-amber-200">
+                                            <span className="font-mono text-xs text-muted-foreground">
                                               {resolveArchiveWeightStars(
                                                 item.weight,
                                               )}
@@ -1396,13 +1388,13 @@ export function EventsArchiveContent() {
                                             {item.matchOrigin &&
                                             matchOriginLabel ? (
                                               <span
-                                                className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${MATCH_ORIGIN_BADGE_CLASS_NAME[item.matchOrigin]}`}
+                                                className="kicker"
                                               >
                                                 {matchOriginLabel}
                                               </span>
                                             ) : null}
                                             {relevancePercent !== null ? (
-                                              <span className="inline-flex rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-700 dark:border-cyan-400/30 dark:bg-cyan-400/15 dark:text-cyan-200">
+                                              <span className="font-mono text-xs text-muted-foreground">
                                                 {t(
                                                   "pages.eventsArchive.relevanceTag",
                                                   {
@@ -1412,7 +1404,7 @@ export function EventsArchiveContent() {
                                               </span>
                                             ) : null}
                                             {item.sourceLabel ? (
-                                              <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]">
+                                              <span className="kicker">
                                                 {item.sourceLabel}
                                               </span>
                                             ) : null}
@@ -1424,7 +1416,7 @@ export function EventsArchiveContent() {
                                                 .map((keyword) => (
                                                   <span
                                                     key={`${item.processedArticleId}-${keyword}`}
-                                                    className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]"
+                                                    className="kicker"
                                                   >
                                                     {renderHighlightedText(
                                                       keyword,
@@ -1481,7 +1473,7 @@ export function EventsArchiveContent() {
             </div>
           )}
         </div>
-      </Card>
+      </section>
 
       <Drawer
         title={t("pages.eventsArchive.detail.title")}
@@ -1546,19 +1538,19 @@ export function EventsArchiveContent() {
                         {regionLabels[detailClassification.region] ??
                           detailClassification.region}
                       </span>
-                      <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]">
+                      <span className="kicker">
                         {`taxonomy ${detailClassification.taxonomyVersion}`}
                       </span>
-                      <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]">
+                      <span className="kicker">
                         {`pipeline ${detailClassification.pipelineVersion}`}
                       </span>
-                      <span className="inline-flex rounded-full border border-amber-300/80 bg-amber-50/80 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                      <span className="kicker">
                         {t(detailClassification.decisionReasonI18nKey, {
                           defaultValue: detailClassification.decisionReason,
                         })}
                       </span>
                       {detailClassification.isStale ? (
-                        <span className="inline-flex rounded-full border border-rose-300/80 bg-rose-50/80 px-2.5 py-1 text-[11px] font-medium text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                        <span className="kicker">
                           {t("pages.eventsArchive.detail.classificationStale")}
                         </span>
                       ) : null}
@@ -1576,7 +1568,7 @@ export function EventsArchiveContent() {
                             {visibleClassificationStaleReasons.map((reason) => (
                               <span
                                 key={reason}
-                                className="inline-flex rounded-full border border-amber-300/80 bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:border-amber-400/30 dark:text-amber-200"
+                                className="kicker"
                               >
                                 {t(reason, { defaultValue: reason })}
                               </span>
@@ -1588,7 +1580,7 @@ export function EventsArchiveContent() {
 
                     <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
                       <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-                        <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
+                        <Typography.Text className="kicker">
                           {t("pages.eventsArchive.detail.embeddingModel")}
                         </Typography.Text>
                         <Typography.Paragraph className="!mb-0 mt-1 break-all text-sm text-[var(--muted-foreground)]">
@@ -1596,7 +1588,7 @@ export function EventsArchiveContent() {
                         </Typography.Paragraph>
                       </div>
                       <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-                        <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
+                        <Typography.Text className="kicker">
                           {t("pages.eventsArchive.detail.rerankModel")}
                         </Typography.Text>
                         <Typography.Paragraph className="!mb-0 mt-1 break-all text-sm text-[var(--muted-foreground)]">
@@ -1610,7 +1602,7 @@ export function EventsArchiveContent() {
                         {visibleClassificationSignals.map((signal) => (
                           <span
                             key={signal}
-                            className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]"
+                            className="kicker"
                           >
                             {signal}
                           </span>
@@ -1630,7 +1622,7 @@ export function EventsArchiveContent() {
                           >
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <span
-                                className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${tone.titlePillClassName}`}
+                                className="kicker"
                               >
                                 {verticalLabels[entry.vertical]}
                               </span>
@@ -1679,7 +1671,7 @@ export function EventsArchiveContent() {
                                   key={`${entry.vertical}-${metric.key}`}
                                   className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2"
                                 >
-                                  <Typography.Text className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
+                                  <Typography.Text className="kicker block">
                                     {metric.label}
                                   </Typography.Text>
                                   <Typography.Text className="text-sm font-medium text-[var(--muted-foreground)]">
@@ -1808,7 +1800,7 @@ export function EventsArchiveContent() {
                         ) : null}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           {article.sourceLabel ? (
-                            <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]">
+                            <span className="kicker">
                               {article.sourceLabel}
                             </span>
                           ) : null}

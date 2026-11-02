@@ -744,7 +744,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
           </Button>
         </Space>
         <Space wrap size={[6, 6]}>
-          <Tag color={event.status === "active" ? "green" : "default"}>
+          <Tag color={event.status === "active" ? "processing" : "default"}>
             {statusLabel}
           </Tag>
           <Tag>
@@ -752,15 +752,14 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
             {event.itemCount}
           </Tag>
           {isFutureEvent ? (
-            <Tag color="cyan" icon={<CalendarOutlined />}>
+            <Tag icon={<CalendarOutlined />}>
               {t("pages.events.fields.futureEvent")}
             </Tag>
           ) : null}
-          {language ? <Tag color="blue">{language}</Tag> : null}
-          {topic ? <Tag color="geekblue">{topic}</Tag> : null}
+          {language ? <Tag>{language}</Tag> : null}
+          {topic ? <Tag>{topic}</Tag> : null}
           {entity ? (
             <Tag
-              color="purple"
               style={{ cursor: "pointer" }}
               onClick={() =>
                 router.push(`/events?entity=${encodeURIComponent(entity)}`)

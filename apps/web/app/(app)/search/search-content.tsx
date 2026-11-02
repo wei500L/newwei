@@ -1,15 +1,12 @@
 "use client";
 
-import {
-  BulbOutlined,
-  CalendarOutlined,
-  HistoryOutlined,
-} from "@ant-design/icons";
+import { CalendarOutlined, HistoryOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
 import {
   Alert,
   Button,
   Card,
+  Collapse,
   DatePicker,
   Empty,
   Segmented,
@@ -771,83 +768,65 @@ export function SearchContent() {
         </Space>
       </Card>
 
-      <Alert
-        type="info"
-        showIcon
-        message={t("pages.search.noticeTitle")}
-        description={t("pages.search.noticeDescription")}
-      />
-
-      <Alert
-        type="success"
-        showIcon
-        icon={<BulbOutlined />}
-        message={t("pages.search.featuresTitle")}
-        description={
-          <Space direction="vertical" size={6}>
-            <Space wrap size={[8, 8]}>
-              <Tag color="processing">
-                {t("pages.search.featureServerSuggestions")}
-                {suggestionStatus ? ` (${suggestionStatus.total})` : ""}
-              </Tag>
-              <Tag color="geekblue">
-                {t("pages.search.featureSemanticSuggestions")}
-              </Tag>
-              {suggestionStatus?.loading ? (
-                <Tag color="blue">
-                  {t("pages.search.featureSuggestionsLoading")}
-                </Tag>
-              ) : null}
-              <Tag color="cyan">
-                {t("pages.search.featureLocalHistory")}
-              </Tag>
-              {shouldShowHotTopics ? (
-                <Tag color="gold">
-                  {t("pages.search.featureHotTopics")}
-                </Tag>
-              ) : null}
-              {hasSemanticSuggestions ? (
-                <Tag color="green">
-                  {t("pages.search.featureSemanticReady")}
-                </Tag>
-              ) : hasSuggestionPrefix ? (
-                <Tag>
-                  {t("pages.search.featureSemanticPending")}
-                </Tag>
-              ) : null}
-              {!suggestionStatus?.loading &&
-              hasSuggestionPrefix &&
-              suggestionStatus?.total === 0 ? (
-                <Tag>
-                  {t("pages.search.featureSuggestionsEmpty")}
-                </Tag>
-              ) : null}
-              {hasSemanticSuggestions ? (
-                <Tag color="volcano">
-                  {t("pages.search.featureSemanticBreakdown", {
-                    semantic: suggestionStatus?.semanticCount ?? 0,
-                    hybrid: suggestionStatus?.hybridCount ?? 0,
-                  })}
-                </Tag>
-              ) : null}
-              {activeRankingMode === "relevance" ? (
-                <Tag color="purple">
-                  {t("pages.search.featureRankingRelevance")}
-                </Tag>
-              ) : null}
-              {activeRankingMode === "recency" ? (
-                <Tag color="orange">
-                  {t("pages.search.featureRankingRecency")}
-                </Tag>
-              ) : null}
-            </Space>
-            <Typography.Text>
-              {shouldShowHotTopics
-                ? t("pages.search.modeIdleHint")
-                : t("pages.search.modeActiveHint")}
-            </Typography.Text>
-          </Space>
-        }
+      <Collapse
+        ghost
+        size="small"
+        items={[
+          {
+            key: "help",
+            label: t("pages.search.help.title"),
+            children: (
+              <div className="flex flex-col gap-2">
+                <Typography.Text type="secondary">
+                  {t("pages.search.noticeDescription")}
+                </Typography.Text>
+                <Space wrap size={[8, 8]}>
+                  <Tag>
+                    {t("pages.search.featureServerSuggestions")}
+                    {suggestionStatus ? ` (${suggestionStatus.total})` : ""}
+                  </Tag>
+                  <Tag>{t("pages.search.featureSemanticSuggestions")}</Tag>
+                  {suggestionStatus?.loading ? (
+                    <Tag>{t("pages.search.featureSuggestionsLoading")}</Tag>
+                  ) : null}
+                  <Tag>{t("pages.search.featureLocalHistory")}</Tag>
+                  {shouldShowHotTopics ? (
+                    <Tag>{t("pages.search.featureHotTopics")}</Tag>
+                  ) : null}
+                  {hasSemanticSuggestions ? (
+                    <Tag>{t("pages.search.featureSemanticReady")}</Tag>
+                  ) : hasSuggestionPrefix ? (
+                    <Tag>{t("pages.search.featureSemanticPending")}</Tag>
+                  ) : null}
+                  {!suggestionStatus?.loading &&
+                  hasSuggestionPrefix &&
+                  suggestionStatus?.total === 0 ? (
+                    <Tag>{t("pages.search.featureSuggestionsEmpty")}</Tag>
+                  ) : null}
+                  {hasSemanticSuggestions ? (
+                    <Tag>
+                      {t("pages.search.featureSemanticBreakdown", {
+                        semantic: suggestionStatus?.semanticCount ?? 0,
+                        hybrid: suggestionStatus?.hybridCount ?? 0,
+                      })}
+                    </Tag>
+                  ) : null}
+                  {activeRankingMode === "relevance" ? (
+                    <Tag>{t("pages.search.featureRankingRelevance")}</Tag>
+                  ) : null}
+                  {activeRankingMode === "recency" ? (
+                    <Tag>{t("pages.search.featureRankingRecency")}</Tag>
+                  ) : null}
+                </Space>
+                <Typography.Text>
+                  {shouldShowHotTopics
+                    ? t("pages.search.modeIdleHint")
+                    : t("pages.search.modeActiveHint")}
+                </Typography.Text>
+              </div>
+            ),
+          },
+        ]}
       />
 
       {!shouldShowHotTopics && recentSearches.length > 0 ? (

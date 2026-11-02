@@ -2322,6 +2322,9 @@
       "title": "Search",
       "subtitle": "Search across processed items and historical headlines.",
       "searchPlaceholder": "Search news, topics, entities, or historical headlines...",
+      "help": {
+        "title": "Search help"
+      },
       "noticeTitle": "Search scope",
       "noticeDescription": "Searches titles, summaries, topics, entities, locations, and external IDs.",
       "featuresTitle": "Active search capabilities",

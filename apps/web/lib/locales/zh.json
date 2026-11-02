@@ -2322,6 +2322,9 @@
       "title": "搜索",
       "subtitle": "检索已处理内容与历史头条。",
       "searchPlaceholder": "搜索新闻、主题、实体或历史头条...",
+      "help": {
+        "title": "搜索帮助"
+      },
       "noticeTitle": "检索范围",
       "noticeDescription": "支持标题、摘要、专题、实体、地点与外部 ID 的检索。",
       "featuresTitle": "当前启用功能",
