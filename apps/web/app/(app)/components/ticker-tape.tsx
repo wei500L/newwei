@@ -97,7 +97,7 @@ export function TickerTape() {
             ? t("dashboard.ticker.unavailable")
             : t("dashboard.ticker.empty");
     const errorMessage = error ? (error instanceof Error ? error.message : String(error)) : null;
-    const titleParts = [`Range ${range}`, windowLabel];
+    const titleParts = [t("ticker.range", { range }), windowLabel];
     if (accessState.kind === "forbidden") {
       titleParts.unshift(t("common.accessDenied"));
     } else if (hasData) {
@@ -127,7 +127,7 @@ export function TickerTape() {
   return (
     <div
       className="relative flex h-[var(--ticker-height)] w-full select-none items-center overflow-hidden border-b border-[var(--border)] bg-[var(--ticker-bg)] text-[var(--ticker-fg)]"
-      title={`${bucketTitle} · Range ${range} · ${windowLabel}`}
+      title={`${bucketTitle} · ${t("ticker.range", { range })} · ${windowLabel}`}
     >
        <div className="absolute left-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-r from-[var(--ticker-bg)] to-transparent" />
        <div className="absolute right-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-l from-[var(--ticker-bg)] to-transparent" />
@@ -142,7 +142,7 @@ export function TickerTape() {
                 </span>
                 <span className={`${item.trend > 0 ? 'text-[var(--bullish)]' : item.trend < 0 ? 'text-[var(--bearish)]' : 'text-[var(--ticker-muted)]'} flex items-center`}>
                    {item.trend > 0 ? <ArrowUpOutlined className="text-[10px]"/> : item.trend < 0 ? <ArrowDownOutlined className="text-[10px]"/> : null}
-                   <span className="ml-1">{Math.abs(item.trend).toFixed(2)}%</span>
+                   <span className="ml-1 font-mono tabular-nums">{Math.abs(item.trend).toFixed(2)}%</span>
                 </span>
              </div>
           ))}

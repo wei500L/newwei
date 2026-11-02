@@ -46,8 +46,8 @@ export function SystemDefcon() {
   return (
     <div className="flex h-8 items-center border-l border-[var(--border)] px-4">
       <Tooltip title={tooltip}>
-        <div className="flex cursor-help items-center gap-3 rounded-full border border-[var(--border)] bg-white/70 px-3 py-1.5 shadow-[0_6px_18px_rgba(15,23,42,0.05)]">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+        <div className="flex cursor-help items-center gap-3 rounded-full border border-[var(--border)] bg-surface px-3 py-1.5">
+          <span className="kicker">
             {t("dashboard.systemStatus.title")}
           </span>
           <SystemHealthMeter

@@ -57,7 +57,7 @@ export function MobileNavDrawer({ open, onClose, className }: MobileNavDrawerPro
                   className={`
                     nav-item ${navItemStateClass(isActive, "strong")}
                     flex min-h-[var(--rail-item-size)] w-full items-center gap-3
-                    rounded-xl px-3 py-2 text-left
+                    rounded-lg px-3 py-2 text-left
                   `}
                 >
                   <span className="text-lg shrink-0" aria-hidden>

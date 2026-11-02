@@ -55,7 +55,7 @@ export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
       <div
         className={`
         flex flex-col items-center py-4 w-[var(--shell-rail-width)]
-        glass-panel rounded-2xl border border-[var(--border)] shadow-panel
+        rounded-lg border border-[var(--border)] bg-surface
         ${scrollableRailClass}
       `}
       >

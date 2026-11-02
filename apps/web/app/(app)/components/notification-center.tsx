@@ -288,8 +288,19 @@ export function NotificationCenter({
                 return (
                   <List.Item
                     key={item.id}
+                    role="button"
+                    tabIndex={0}
                     className={`cursor-pointer rounded px-3 ${isUnread ? "bg-[var(--surface-muted)]" : ""}`}
                     onClick={() => void markOneAsRead(item.id)}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) {
+                        return;
+                      }
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        void markOneAsRead(item.id);
+                      }
+                    }}
                   >
                     <List.Item.Meta
                       title={

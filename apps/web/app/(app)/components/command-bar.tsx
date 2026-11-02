@@ -148,15 +148,12 @@ export function CommandBar() {
         className={`command-bar-shell ${isActive ? "command-bar-shell--active" : ""}`}
       >
         <div
-          className={`
-            relative flex h-11 items-center rounded-[inherit] px-3.5 backdrop-blur-xl
-            transition-[background-color,border-color,box-shadow] duration-300
-            ${
-              isActive
-                ? "border border-[var(--command-bar-border-active)] bg-[var(--command-bar-surface-active)] shadow-[0_14px_36px_-22px_rgba(15,23,42,0.65)] dark:shadow-[0_16px_38px_-20px_rgba(2,6,23,0.9)]"
-                : "border border-[var(--command-bar-border)] bg-[var(--command-bar-surface)] shadow-[0_12px_30px_-25px_rgba(15,23,42,0.65)] hover:border-[var(--command-bar-border-hover)]"
-            }
-          `}
+          className="
+            relative flex h-11 items-center rounded-[inherit] px-3.5
+            border border-[var(--border)] bg-surface
+            transition-colors duration-300
+            focus-within:border-[var(--ring)]
+          "
         >
           {loading ? (
             <LoadingOutlined className="mr-2.5 animate-spin text-base text-[var(--primary)]" />
@@ -239,6 +236,8 @@ export function CommandBar() {
                 return (
                   <div
                     key={edge.node.id}
+                    role="option"
+                    tabIndex={-1}
                     onClick={() => handleSelect(edge.node.id)}
                     className="command-bar-result-row group flex cursor-pointer items-center justify-between border-b border-[var(--border)]/60 px-4 py-3 last:border-0 hover:bg-slate-50/90 dark:hover:bg-slate-800/70"
                     style={{ animationDelay: `${80 + index * 30}ms` }}

@@ -390,11 +390,11 @@ export default function ReaderPage() {
       className={`min-h-screen ${currentTheme.bg} ${currentTheme.text} transition-colors duration-300`}
     >
       {/* Floating Toolbar */}
-      <header className="sticky top-0 z-50 border-b border-gray-200/50 dark:border-gray-800/50 bg-white/80 dark:bg-black/80 backdrop-blur-md">
+      <header className="sticky top-0 z-50 border-b border-[var(--border)] bg-[var(--background)]">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
           <Link
             href="/items"
-            className="text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors flex items-center gap-1"
+            className="text-sm text-muted-foreground hover:text-[var(--foreground)] transition-colors flex items-center gap-1"
           >
             <ArrowLeftOutlined /> {t("reader.back")}
           </Link>
@@ -447,21 +447,21 @@ export default function ReaderPage() {
 
         {/* Expanded Toolbar */}
         {showToolbar && (
-          <div className="border-t border-gray-200/50 dark:border-gray-800/50 bg-white/60 dark:bg-black/60">
+          <div className="border-t border-[var(--border)] bg-[var(--background)]">
             <div className="max-w-3xl mx-auto px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   {t("reader.font")}
                 </span>
-                <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5">
+                <div className="flex rounded-lg bg-[var(--surface-muted)] p-0.5">
                   {(["sans", "serif", "mono"] as FontFamily[]).map((f) => (
                     <button
                       key={f}
                       onClick={() => setFontFamily(f)}
                       className={`px-3 py-1 text-xs rounded-md transition-colors ${
                         fontFamily === f
-                          ? "bg-white dark:bg-gray-700 shadow-sm"
-                          : "text-gray-500 hover:text-gray-700"
+                          ? "bg-surface shadow-sm"
+                          : "text-muted-foreground hover:text-[var(--foreground)]"
                       }`}
                     >
                       {t(`reader.fontFamily.${f}`)}
@@ -471,18 +471,18 @@ export default function ReaderPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   {t("reader.size")}
                 </span>
-                <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5">
+                <div className="flex rounded-lg bg-[var(--surface-muted)] p-0.5">
                   {(["small", "medium", "large"] as FontSize[]).map((s) => (
                     <button
                       key={s}
                       onClick={() => setFontSize(s)}
                       className={`px-3 py-1 text-xs rounded-md transition-colors ${
                         fontSize === s
-                          ? "bg-white dark:bg-gray-700 shadow-sm"
-                          : "text-gray-500 hover:text-gray-700"
+                          ? "bg-surface shadow-sm"
+                          : "text-muted-foreground hover:text-[var(--foreground)]"
                       }`}
                     >
                       {t(`reader.fontSize.${s}`)}
@@ -496,15 +496,15 @@ export default function ReaderPage() {
       </header>
 
       {/* Progress Bar */}
-      <div className="fixed top-0 left-0 right-0 h-0.5 bg-gray-200 dark:bg-gray-800 z-[60]">
-        <div className="h-full bg-blue-500 w-0" id="reading-progress" />
+      <div className="fixed top-0 left-0 right-0 h-0.5 bg-[var(--border)] z-[60]">
+        <div className="h-full bg-[var(--primary)] w-0" id="reading-progress" />
       </div>
 
       {/* Article Content */}
       <article
         className={`max-w-3xl mx-auto px-6 py-10 ${fontFamilyClasses[fontFamily]} ${fontSizeClasses[fontSize]}`}
       >
-        <div className="mb-6 rounded-lg border border-gray-200/70 bg-white/70 p-4 dark:border-gray-700 dark:bg-black/40">
+        <div className="surface-inset mb-6">
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
             <Space wrap>
               <Typography.Text strong>
@@ -609,7 +609,7 @@ export default function ReaderPage() {
             {displayTitle}
           </h1>
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
             {source ? <span>{source}</span> : null}
             <span>
               {t("items.time.published")}: {publishedTime.primaryText}
@@ -636,7 +636,7 @@ export default function ReaderPage() {
             imgClassName="rounded-xl"
           />
           {source ? (
-            <p className="mt-2 text-xs text-gray-500">
+            <p className="mt-2 text-xs text-muted-foreground">
               {t("reader.coverCaption", { source })}
             </p>
           ) : null}
@@ -644,7 +644,7 @@ export default function ReaderPage() {
 
         {/* Summary */}
         {resolvedSummary && (
-          <div className="bg-slate-100/70 dark:bg-slate-800/40 rounded-lg p-4 mb-6">
+          <div className="surface-inset mb-6">
             <h3 className="text-sm font-semibold mb-2">
               {t("reader.summary")}
             </h3>
@@ -656,20 +656,20 @@ export default function ReaderPage() {
 
         {/* AI Insights */}
         {aiInsights.hasData ? (
-          <section className="mb-6 rounded-xl border border-violet-200/60 bg-violet-50/70 p-4 dark:border-violet-400/30 dark:bg-violet-950/20">
+          <section className="surface-inset mb-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-violet-900 dark:text-violet-200">
+              <h3 className="kicker">
                 {t("reader.aiInsights.title")}
               </h3>
               <div className="flex flex-wrap items-center gap-1">
                 {aiInsights.sentimentLabel ? (
-                  <span className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] text-violet-800 dark:bg-violet-900/40 dark:text-violet-100">
+                  <span className="rounded bg-surface px-1.5 py-0.5 text-[11px] text-muted-foreground">
                     {t("reader.aiInsights.sentiment")}:{" "}
                     {aiInsights.sentimentLabel}
                   </span>
                 ) : null}
                 {typeof aiInsights.qualityScore === "number" ? (
-                  <span className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] text-violet-800 dark:bg-violet-900/40 dark:text-violet-100">
+                  <span className="rounded bg-surface px-1.5 py-0.5 text-[11px] text-muted-foreground">
                     {t("reader.aiInsights.quality")}:{" "}
                     {Math.round(aiInsights.qualityScore * 100)}%
                   </span>
@@ -677,7 +677,7 @@ export default function ReaderPage() {
                 {item?.processed?.eventId ? (
                   <Link
                     href={`/events/${item.processed.eventId}`}
-                    className="rounded bg-white/80 px-1.5 py-0.5 text-[11px] text-violet-700 underline-offset-2 hover:underline dark:bg-violet-900/40 dark:text-violet-100"
+                    className="rounded bg-surface px-1.5 py-0.5 text-[11px] text-[var(--primary)] underline-offset-2 hover:underline"
                   >
                     {t("reader.aiInsights.event")}
                   </Link>
@@ -687,14 +687,14 @@ export default function ReaderPage() {
 
             {aiInsights.timeline.length > 0 ? (
               <div className="mt-3">
-                <p className="mb-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+                <p className="kicker mb-1">
                   {t("reader.aiInsights.timeline")}
                 </p>
                 <ol className="space-y-1">
                   {aiInsights.timeline.map((point, index) => (
                     <li
                       key={`${point.label}-${point.detail}-${index}`}
-                      className="rounded bg-white/70 px-2 py-1 text-xs text-violet-900 dark:bg-violet-900/30 dark:text-violet-100"
+                      className="rounded bg-surface px-2 py-1 text-xs text-[var(--foreground)]"
                     >
                       <span className="font-medium">{point.label}：</span>
                       {point.detail}
@@ -705,15 +705,15 @@ export default function ReaderPage() {
             ) : null}
 
             {aiInsights.controversies.length > 0 ? (
-              <div className="mt-3 rounded border border-rose-300/50 bg-rose-50/85 p-2 dark:border-rose-400/30 dark:bg-rose-950/25">
-                <p className="mb-1 text-xs font-medium text-rose-700 dark:text-rose-300">
+              <div className="mt-3 rounded border border-[var(--destructive)]/30 bg-surface p-2">
+                <p className="kicker mb-1">
                   {t("reader.aiInsights.controversy")}
                 </p>
                 <ul className="space-y-1">
                   {aiInsights.controversies.map((signal, index) => (
                     <li
                       key={`${signal}-${index}`}
-                      className="text-xs text-rose-800 dark:text-rose-100"
+                      className="text-xs text-[var(--foreground)]"
                     >
                       • {signal}
                     </li>
@@ -724,14 +724,14 @@ export default function ReaderPage() {
 
             {aiInsights.actors.length > 0 ? (
               <div className="mt-3">
-                <p className="mb-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+                <p className="kicker mb-1">
                   {t("reader.aiInsights.actors")}
                 </p>
                 <div className="flex flex-wrap gap-1">
                   {aiInsights.actors.map((actor) => (
                     <span
                       key={`${actor.name}-${actor.type}`}
-                      className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] text-violet-800 dark:bg-violet-900/40 dark:text-violet-100"
+                      className="rounded bg-surface px-1.5 py-0.5 text-[11px] text-muted-foreground"
                     >
                       {actor.name} · {actor.type}
                       {typeof actor.confidence === "number"
@@ -745,14 +745,14 @@ export default function ReaderPage() {
 
             {aiInsights.relations.length > 0 ? (
               <div className="mt-3">
-                <p className="mb-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+                <p className="kicker mb-1">
                   {t("reader.aiInsights.relations")}
                 </p>
                 <div className="space-y-1">
                   {aiInsights.relations.map((relation, index) => (
                     <div
                       key={`${relation.subject}-${relation.predicate}-${relation.object}-${index}`}
-                      className="rounded bg-white/70 px-2 py-1 text-xs text-violet-900 dark:bg-violet-900/30 dark:text-violet-100"
+                      className="rounded bg-surface px-2 py-1 text-xs text-[var(--foreground)]"
                     >
                       {relation.subject} → {relation.predicate} →{" "}
                       {relation.object}
@@ -769,17 +769,17 @@ export default function ReaderPage() {
 
         {/* Key Points */}
         {resolvedKeyPoints.length > 0 && (
-          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-6">
-            <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">
+          <div className="surface-inset mb-6">
+            <h3 className="kicker mb-2">
               {t("reader.keyPoints")}
             </h3>
             <ul className="space-y-1">
               {resolvedKeyPoints.map((point: string, index: number) => (
                 <li
                   key={index}
-                  className="text-sm text-blue-800 dark:text-blue-200 flex gap-2"
+                  className="text-sm flex gap-2"
                 >
-                  <span className="text-blue-400">•</span>
+                  <span className="text-muted-foreground">•</span>
                   {point}
                 </li>
               ))}
@@ -789,7 +789,7 @@ export default function ReaderPage() {
 
         {/* Main Content */}
         {hasContent ? (
-          <div className="prose dark:prose-invert mx-auto max-w-measure leading-relaxed">
+          <div className="article-body mx-auto max-w-measure">
             <MarkdownViewer markdown={articleContent!} />
           </div>
         ) : (
@@ -803,7 +803,7 @@ export default function ReaderPage() {
                   href={originalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-500 hover:underline"
+                  className="text-[var(--primary)] hover:underline"
                 >
                   {t("reader.viewOriginal")}
                 </a>
@@ -813,7 +813,7 @@ export default function ReaderPage() {
         )}
 
         {/* Footer */}
-        <footer className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-800">
+        <footer className="mt-12 pt-8 border-t border-[var(--border)]">
           <Space>
             <Link href={`/items/${id}`}>
               <Button type="default">{t("reader.viewDetails")}</Button>

@@ -27,7 +27,7 @@
   --shell-rail-width: 4.5rem;      /* 桌面导航 rail 宽度 */
   --rail-item-size: 2.75rem;       /* 导航项高（h-11，≥44px 触控目标），rail/drawer 共用 */
   --rail-item-gap: 0.375rem;       /* rail 组内项间距（gap-1.5） */
-  --rail-item-radius: 0.75rem;     /* 导航项圆角（rounded-xl） */
+  --rail-item-radius: var(--radius);     /* 导航项圆角（6px，与控件/卡片一致） */
   --nav-drawer-width: 20rem;       /* 移动导航 Drawer 宽度（320px） */
   --nav-item-fg: var(--muted-foreground);
   --nav-item-strong-fg: var(--foreground);
@@ -974,12 +974,10 @@
     z-index: -1;
   }
 
+  /* FE-UI 批9A：命令栏聚焦时的渐变光晕与脉冲阴影属于旧玻璃拟态，
+     与纸墨外壳冲突，移除（保留 focus-within 边框高亮）。 */
   .command-bar-shell.command-bar-shell--active::before {
-    opacity: 1;
-  }
-
-  .command-bar-shell.command-bar-shell--active {
-    animation: command-bar-shell-glow 3s ease-in-out infinite;
+    opacity: 0;
   }
 
   #command-bar-query {
@@ -1442,4 +1440,23 @@
       transition-duration: 0.01ms !important;
     }
   }
+}
+
+@layer components {
+  /* FE-UI 批9A：阅读正文排版（替代未安装的 @tailwindcss/typography 的 prose）。 */
+  .article-body { font-size: 17px; line-height: 1.8; color: var(--foreground); }
+  .article-body > * + * { margin-top: 1em; }
+  .article-body h2, .article-body h3 { font-family: var(--font-serif); font-weight: 600; line-height: 1.35; margin-top: 1.8em; }
+  .article-body h2 { font-size: 1.35em; }
+  .article-body h3 { font-size: 1.15em; }
+  .article-body a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+  .article-body blockquote { border-left: 2px solid var(--border-strong); padding-left: 1em; color: var(--muted-foreground); }
+  .article-body ul, .article-body ol { padding-left: 1.4em; }
+  .article-body ul { list-style: disc; }
+  .article-body ol { list-style: decimal; }
+  .article-body img { max-width: 100%; height: auto; border-radius: var(--radius); }
+  .article-body pre, .article-body code { font-family: var(--font-mono); font-size: 0.88em; background: var(--surface-muted); border-radius: 4px; }
+  .article-body pre { padding: 12px 14px; overflow-x: auto; }
+  .article-body code { padding: 0.1em 0.35em; }
+  .article-body hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
 }

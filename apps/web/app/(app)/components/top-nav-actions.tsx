@@ -65,12 +65,14 @@ export function TopNavActions({ layout }: TopNavActionsProps) {
           </div>
         }
       >
-        <Button
-          type="text"
-          icon={<SwapOutlined />}
-          aria-label={t("orgSwitcher.switch")}
-          className="hidden xl:inline-flex h-8 w-8 items-center justify-center p-0"
-        />
+        <Tooltip title={t("orgSwitcher.switch")}>
+          <Button
+            type="text"
+            icon={<SwapOutlined />}
+            aria-label={t("orgSwitcher.switch")}
+            className="hidden xl:inline-flex h-8 w-8 items-center justify-center p-0"
+          />
+        </Tooltip>
       </Popover>
     );
   };
@@ -101,14 +103,16 @@ export function TopNavActions({ layout }: TopNavActionsProps) {
         </Button>
       ) : null}
       {layout.crawlButton === "compact" ? (
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          size="small"
-          onClick={() => router.push(newCrawlHref)}
-          aria-label={startNewCrawlLabel}
-          className="hidden shadow-none xl:inline-flex !px-2"
-        />
+        <Tooltip title={startNewCrawlLabel}>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            size="small"
+            onClick={() => router.push(newCrawlHref)}
+            aria-label={startNewCrawlLabel}
+            className="hidden shadow-none xl:inline-flex !px-2"
+          />
+        </Tooltip>
       ) : null}
 
       <div className="flex min-w-0 items-center gap-1 sm:gap-2">

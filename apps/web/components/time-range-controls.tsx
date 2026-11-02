@@ -118,24 +118,22 @@ export function TimeRangeControls({
 
   return (
     <Space direction="vertical" size={6} style={{ width: "100%" }}>
-      <Space
-        direction="horizontal"
-        size="middle"
-        style={{ width: "100%", justifyContent: "space-between" }}
-      >
-        <Segmented
-          options={presets}
-          value={range !== "custom" ? range : undefined}
-          onChange={handlePresetChange}
-          size="middle"
-        />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="max-w-full overflow-x-auto">
+          <Segmented
+            options={presets}
+            value={range !== "custom" ? range : undefined}
+            onChange={handlePresetChange}
+            size="middle"
+          />
+        </div>
         <DatePicker.RangePicker
           id={{ start: "dashboard-range-start", end: "dashboard-range-end" }}
           value={[toDashboardZonedTime(start), toDashboardZonedTime(end)]}
           allowEmpty={[false, false]}
           onChange={handleCustomChange}
         />
-      </Space>
+      </div>
 
       <Space size={8} wrap align="center">
         <Tooltip title={aggregationHint}>

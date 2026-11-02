@@ -705,6 +705,7 @@
     "no": "No",
     "yes": "Yes",
     "pageError": {
+      "kicker": "Error",
       "title": "Something went wrong",
       "description": "This page failed to load. Try again, or contact an administrator if it keeps happening."
     },
@@ -726,6 +727,9 @@
     "placeholder": "Select an organization",
     "notFound": "No organizations available",
     "switch": "Switch organization"
+  },
+  "ticker": {
+    "range": "Range {{range}}"
   },
   "dashboard": {
     "admin": {
