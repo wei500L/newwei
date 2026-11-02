@@ -141,6 +141,7 @@ export function DynamicContentFields() {
                     type="link"
                     danger
                     icon={<MinusCircleOutlined />}
+                    aria-label={t("common.delete")}
                     onClick={() => remove(field.name)}
                   />
                 </Space>

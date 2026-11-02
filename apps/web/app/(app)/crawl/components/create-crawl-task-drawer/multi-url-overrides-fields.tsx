@@ -45,6 +45,7 @@ export function MultiUrlOverridesFields({
                   type="link"
                   danger
                   icon={<MinusCircleOutlined />}
+                  aria-label={t("common.delete")}
                   onClick={() => removeJs(jsField.name)}
                 />
               </Space>

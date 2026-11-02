@@ -6245,6 +6245,12 @@
         "execute": "执行回填",
         "dryRunSummary": "试运行完成。",
         "executeSummary": "回填完成。",
+        "summary": {
+          "scanned": "扫描 {{value}}",
+          "matched": "匹配 {{value}}",
+          "updated": "更新 {{value}}",
+          "unresolved": "未解决 {{value}}"
+        },
         "unresolved": {
           "processedItemId": "已处理项目 ID",
           "itemMetaId": "项目元数据 ID",
@@ -6756,6 +6762,10 @@
     },
     "llmRequestLogs": {
       "description": "查看集中式 LLM 网关请求日志，用于成本追踪、调试排查和用量分析。",
+      "pinnedContext": {
+        "title": "来自抓取 frontier 的深链上下文",
+        "clear": "清除上下文"
+      },
       "errors": {
         "loadFailed": "加载 LLM 请求日志失败。",
         "summaryFailed": "加载用量汇总失败。",
@@ -6858,7 +6868,10 @@
         "featureAll": "全部功能",
         "featureNewsEventBrief": "事件详细摘要",
         "requestTypeAll": "全部请求类型",
-        "statusAll": "全部状态"
+        "statusAll": "全部状态",
+        "profilePlaceholder": "Profile ID",
+        "runPlaceholder": "Run ID",
+        "nodePlaceholder": "Node ID"
       },
       "status": {
         "success": "成功",
@@ -8682,6 +8695,9 @@
     "editTitle": "编辑标题"
   },
   "crawl": {
+    "tasks": {
+      "settingsSection": "抓取设置"
+    },
     "templates": {
       "selectTitle": "选择一个模板开始",
       "general": "通用",
@@ -8858,6 +8874,15 @@
         "warningTitle": "轮询失败"
       },
       "overview": {
+        "cpu": "CPU",
+        "memory": "内存",
+        "uptime": "运行时长（秒）",
+        "permanent": "常驻",
+        "hot": "热",
+        "cold": "冷",
+        "ok": "正常",
+        "failed": "失败",
+        "off": "关闭",
         "container": "容器",
         "pool": "浏览器池",
         "requests": "请求",
@@ -11335,6 +11360,9 @@
         "maxPages": "最大页数"
       },
       "trial": {
+        "workflow": "工作流",
+        "candidates": "候选",
+        "selected": "已选",
         "cards": {
           "stepTimeline": "步骤时间线",
           "candidateFlow": "候选流转",

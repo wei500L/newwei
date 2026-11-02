@@ -6245,6 +6245,12 @@
         "execute": "Execute Backfill",
         "dryRunSummary": "Dry-run finished.",
         "executeSummary": "Backfill finished.",
+        "summary": {
+          "scanned": "scanned {{value}}",
+          "matched": "matched {{value}}",
+          "updated": "updated {{value}}",
+          "unresolved": "unresolved {{value}}"
+        },
         "unresolved": {
           "processedItemId": "Processed Item ID",
           "itemMetaId": "Item Meta ID",
@@ -6756,6 +6762,10 @@
     },
     "llmRequestLogs": {
       "description": "View centralized LLM gateway request logs for cost tracking, debugging, and usage analysis.",
+      "pinnedContext": {
+        "title": "Deep-linked crawl frontier context",
+        "clear": "Clear context"
+      },
       "errors": {
         "loadFailed": "Failed to load LLM request logs.",
         "summaryFailed": "Failed to load usage summary.",
@@ -6859,6 +6869,10 @@
         "featureNewsEventBrief": "Event detailed summary",
         "requestTypeAll": "All request types",
         "statusAll": "All statuses"
+    ,
+        "profilePlaceholder": "Profile ID",
+        "runPlaceholder": "Run ID",
+        "nodePlaceholder": "Node ID"
       },
       "status": {
         "success": "Success",
@@ -8682,6 +8696,9 @@
     "editTitle": "Edit title"
   },
   "crawl": {
+    "tasks": {
+      "settingsSection": "Crawl settings"
+    },
     "templates": {
       "selectTitle": "Select a template to start",
       "general": "General",
@@ -8858,6 +8875,15 @@
         "warningTitle": "Polling failed"
       },
       "overview": {
+        "cpu": "CPU",
+        "memory": "Memory",
+        "uptime": "Uptime (s)",
+        "permanent": "Permanent",
+        "hot": "Hot",
+        "cold": "Cold",
+        "ok": "OK",
+        "failed": "FAILED",
+        "off": "OFF",
         "container": "Container",
         "pool": "Browser pool",
         "requests": "Requests",
@@ -11335,6 +11361,9 @@
         "maxPages": "Max Pages"
       },
       "trial": {
+        "workflow": "Workflow",
+        "candidates": "Candidates",
+        "selected": "Selected",
         "cards": {
           "stepTimeline": "Step Timeline",
           "candidateFlow": "Candidate Flow",
