@@ -248,7 +248,7 @@ export function AnalysisToolbar({
             </Typography.Text>
             <span className="kicker">{surface}</span>
             {savedView ? (
-              <Tag color={savedView.visibility === "org_shared" ? "gold" : "default"}>
+              <Tag>
                 {savedView.visibility === "org_shared"
                   ? t("analysis.toolbar.shared")
                   : t("analysis.toolbar.private")}
@@ -262,7 +262,7 @@ export function AnalysisToolbar({
           </Space>
           <Typography.Paragraph
             type="secondary"
-            style={{ marginBottom: 0, marginTop: 8 }}
+            className="!mb-0 !mt-2"
           >
             {savedView
               ? savedView.description ||
@@ -278,7 +278,7 @@ export function AnalysisToolbar({
           ) : null}
           {!canWrite ? (
             <Alert
-              style={{ marginTop: 12 }}
+              className="!mt-3"
               type="info"
               showIcon
               message={t("analysis.toolbar.permissionTitle")}

@@ -10,7 +10,6 @@ import {
   Alert,
   Button,
   Card,
-  Empty,
   Form,
   Input,
   List,
@@ -25,6 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { CreateAnalysisTaskButton } from "@/components/analysis/create-analysis-task-button";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import {
   formatAnalysisActorName,
@@ -218,7 +218,7 @@ export function AnnotationPanel({
             {t("analysis.annotations.noteTitle")}
           </Typography.Text>
           {canWrite ? (
-            <Space direction="vertical" size="small" style={{ width: "100%", marginTop: 12 }}>
+            <Space direction="vertical" size="small" className="!mt-3" style={{ width: "100%" }}>
               <Input.TextArea
                 value={noteDraft}
                 onChange={(event) => setNoteDraft(event.target.value)}
@@ -248,12 +248,12 @@ export function AnnotationPanel({
               </Space>
             </Space>
           ) : thread?.noteMarkdown ? (
-            <div style={{ marginTop: 12 }}>
+            <div className="mt-3">
               <MarkdownViewer markdown={thread.noteMarkdown} />
             </div>
           ) : (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            <ChartEmptyState
+              presentation="banner"
               description={t("analysis.annotations.noteEmpty")}
             />
           )}
@@ -266,7 +266,7 @@ export function AnnotationPanel({
             </Typography.Text>
             <Tag>{thread?.comments.length ?? 0}</Tag>
           </Space>
-          <div style={{ marginTop: 12 }}>
+          <div className="mt-3">
             {thread?.comments.length ? (
               <List
                 itemLayout="vertical"
@@ -357,14 +357,14 @@ export function AnnotationPanel({
                 }}
               />
             ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              <ChartEmptyState
+                presentation="banner"
                 description={t("analysis.annotations.commentsEmpty")}
               />
             )}
           </div>
           {canWrite ? (
-            <Form layout="vertical" style={{ marginTop: 16 }}>
+            <Form layout="vertical" className="!mt-4">
               <Form.Item
                 label={t("analysis.annotations.newComment")}
               >
