@@ -17,7 +17,7 @@ import { UserDigestPanel } from "./user-digest-panel";
 export function TodayContent() {
   const { t, i18n } = useTranslation();
   usePageTitle(t("nav.main.today"));
-  const [todayLabel, setTodayLabel] = useState<string>("Today");
+  const [todayLabel, setTodayLabel] = useState<string>("");
   const [todayDateRange, setTodayDateRange] = useState<
     [ReturnType<typeof dayjs>, ReturnType<typeof dayjs>] | undefined
   >(undefined);
@@ -41,7 +41,7 @@ export function TodayContent() {
       <header className="flex flex-col gap-2">
         <p className="kicker m-0">{t("pages.today.kicker")}</p>
         <h1
-          className="m-0 font-serif text-3xl font-semibold leading-tight tracking-tight md:text-4xl"
+          className="m-0 min-h-[1.25em] font-serif text-3xl font-semibold leading-tight tracking-tight md:text-4xl"
           suppressHydrationWarning
         >
           {todayLabel}

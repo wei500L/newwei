@@ -1,7 +1,7 @@
 "use client";
 
 import { MoreOutlined } from "@ant-design/icons";
-import { Alert, Button, Dropdown, Form, InputNumber, List, Modal, Select, Space, Switch, Tag, TimePicker, Typography, message } from "antd";
+import { Alert, Button, Dropdown, Form, InputNumber, List, Modal, Select, Switch, TimePicker, Typography, message } from "antd";
 import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -131,21 +131,6 @@ function getSupportedTimezones() {
   } catch {
     return ["UTC"];
   }
-}
-
-function formatSigned(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return null;
-  }
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(3)}`;
-}
-
-function percent(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return null;
-  }
-  return `${Math.round(value * 100)}%`;
 }
 
 export function UserDigestPanel() {
@@ -292,17 +277,6 @@ export function UserDigestPanel() {
   const events = digest?.events ?? [];
   const generatedAt = digest?.generatedAt ?? null;
 
-  const preferenceSummary = useMemo(() => {
-    const focusBits: string[] = [];
-    if (preference.focusTopics.length > 0) {
-      focusBits.push(`${t("pages.digest.focusTopics")}: ${preference.focusTopics.length}`);
-    }
-    if (preference.focusEntities.length > 0) {
-      focusBits.push(`${t("pages.digest.focusEntities")}: ${preference.focusEntities.length}`);
-    }
-    return focusBits.length > 0 ? focusBits.join(" · ") : null;
-  }, [preference.focusEntities.length, preference.focusTopics.length, t]);
-
   const loading = loadingPreference || loadingDigest || loadingDelivery;
   const deliveryStatusLabel =
     delivery.lastStatus === "sent"
@@ -373,59 +347,11 @@ export function UserDigestPanel() {
         >
           {digest ? (
           <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <Tag color={delivery.enabled ? "success" : "default"}>
-                {delivery.enabled
-                  ? t("pages.digest.delivery.enabled")
-                  : t("pages.digest.delivery.disabled")}
-              </Tag>
-            </div>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-              <dt className="text-muted-foreground">{t("pages.digest.window")}</dt>
-              <dd className="m-0 font-mono">{digest.preference.windowDays}d</dd>
-              <dt className="text-muted-foreground">{t("pages.digest.maxEvents")}</dt>
-              <dd className="m-0 font-mono">{digest.preference.maxEvents}</dd>
-              <dt className="text-muted-foreground">
-                {t("pages.digest.preferences.includeIndicators")}
-              </dt>
-              <dd className="m-0">
-                {digest.preference.includeIndicators
-                  ? t("pages.digest.indicatorsOn")
-                  : t("pages.digest.indicatorsOff")}
-              </dd>
-              {preferenceSummary ? (
-                <>
-                  <dt className="text-muted-foreground">{t("pages.digest.focusTopics")}</dt>
-                  <dd className="m-0 font-mono">{preferenceSummary}</dd>
-                </>
-              ) : null}
-              {generatedAt ? (
-                <>
-                  <dt className="text-muted-foreground">{t("pages.digest.generatedAt")}</dt>
-                  <dd className="m-0 font-mono">
-                    {formatDateTime(generatedAt, locale, { dateStyle: "medium", timeStyle: "short" })}
-                  </dd>
-                </>
-              ) : null}
-              {delivery.enabled ? (
-                <>
-                  <dt className="text-muted-foreground">{t("pages.digest.delivery.schedule")}</dt>
-                  <dd className="m-0 font-mono">
-                    {delivery.time} · {delivery.timezone}
-                  </dd>
-                </>
-              ) : null}
-              <dt className="text-muted-foreground">{t("pages.digest.delivery.title")}</dt>
-              <dd className="m-0 font-mono">{deliveryStatusLabel}</dd>
-              {delivery.nextRunAt ? (
-                <>
-                  <dt className="text-muted-foreground">{t("pages.digest.delivery.nextRunAt")}</dt>
-                  <dd className="m-0 font-mono">
-                    {formatDateTime(delivery.nextRunAt, locale, { dateStyle: "medium", timeStyle: "short" })}
-                  </dd>
-                </>
-              ) : null}
-            </dl>
+            <p className="m-0 font-mono text-xs text-muted-foreground">
+              {digest.preference.windowDays}d · {t("pages.digest.maxEvents")} {digest.preference.maxEvents}
+              {generatedAt ? ` · ${formatDateTime(generatedAt, locale, { dateStyle: "medium", timeStyle: "short" })}` : ""}
+              {` · ${deliveryStatusLabel}`}
+            </p>
 
             {!delivery.emailVerified ? (
               <Alert
@@ -481,64 +407,32 @@ export function UserDigestPanel() {
                   const url = safeHttpUrl(event.representativeUrl ?? undefined);
                   const topic = event.primaryTopic?.trim() ?? "";
                   const entity = event.primaryEntity?.trim() ?? "";
-                  const topicSentiment = event.topicSentiment ?? null;
-                  const entitySentiment = event.entitySentiment ?? null;
-                  const associations = event.indicatorAssociations ?? [];
 
                   return (
-                    <List.Item
-                      key={event.eventId}
-                      extra={
-                        url ? (
-                          <a href={url} target="_blank" rel="noreferrer">
-                            {t("pages.digest.openSource")}
-                          </a>
-                        ) : null
-                      }
-                    >
+                    <List.Item key={event.eventId}>
                       <List.Item.Meta
-                        title={
-                          <Space wrap size={[6, 6]}>
-                            <Typography.Text strong>{title}</Typography.Text>
-                            <Tag>{t("pages.digest.items")}: {event.itemCount}</Tag>
-                            {topic ? <Tag>{topic}</Tag> : null}
-                            {entity ? <Tag>{entity}</Tag> : null}
-                            <Tag>
-                              {formatDateTime(event.lastAt, locale, { dateStyle: "medium" })}
-                            </Tag>
-                          </Space>
-                        }
+                        title={<span className="text-sm font-semibold">{title}</span>}
                         description={
-                          <div className="flex flex-col gap-2">
+                          <div className="flex flex-col gap-1">
+                            <p className="m-0 font-mono text-xs text-muted-foreground">
+                              {[
+                                `${t("pages.digest.items")} ${event.itemCount}`,
+                                topic || null,
+                                entity || null,
+                                formatDateTime(event.lastAt, locale, { dateStyle: "medium" }),
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                            {url ? (
+                              <a href={url} target="_blank" rel="noreferrer" className="text-xs">
+                                {t("pages.digest.openSource")}
+                              </a>
+                            ) : null}
                             {event.summary ? (
-                              <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} className="!mb-0">
+                              <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} className="!mb-0 text-sm">
                                 {event.summary}
                               </Typography.Paragraph>
-                            ) : null}
-
-                            <Space wrap size={[6, 6]}>
-                              {topicSentiment ? (
-                                <Tag>
-                                  {t("pages.digest.topicSentiment")}:{" "}
-                                  {formatSigned(topicSentiment.avgScore) ?? "-"} / {percent(topicSentiment.negativeRatio) ?? "-"}
-                                </Tag>
-                              ) : null}
-                              {entitySentiment ? (
-                                <Tag>
-                                  {t("pages.digest.entitySentiment")}:{" "}
-                                  {formatSigned(entitySentiment.avgScore) ?? "-"} / {percent(entitySentiment.negativeRatio) ?? "-"}
-                                </Tag>
-                              ) : null}
-                            </Space>
-
-                            {associations.length > 0 ? (
-                              <Space wrap size={[6, 6]}>
-                                {associations.slice(0, 4).map((assoc) => (
-                                  <Tag key={`${event.eventId}-${assoc.indicatorSlug}`}>
-                                    {assoc.indicatorDisplayName} ({formatSigned(assoc.correlation) ?? "-"}, {assoc.lagDays}d)
-                                  </Tag>
-                                ))}
-                              </Space>
                             ) : null}
                           </div>
                         }

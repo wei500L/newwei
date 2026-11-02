@@ -137,9 +137,9 @@ export function Headlines() {
           {heroPublished.relativeText ? <span>· {heroPublished.relativeText}</span> : null}
         </p>
 
-        <h2 className="m-0 font-serif text-2xl font-semibold leading-snug line-clamp-3 group-hover:underline underline-offset-4">
+        <h3 className="m-0 font-serif text-2xl font-semibold leading-snug line-clamp-3 group-hover:underline underline-offset-4">
           {heroItem.title}
-        </h2>
+        </h3>
 
         {heroItem.processedPreview?.summary ? (
           <p className="m-0 text-sm text-muted-foreground line-clamp-2">
@@ -168,27 +168,25 @@ export function Headlines() {
                 className="flex cursor-pointer items-start gap-3 py-3"
               >
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <h3 className="m-0 text-[15px] font-semibold leading-snug line-clamp-2">
+                  <h4 className="m-0 text-[15px] font-semibold leading-snug line-clamp-2">
                     {item.title}
-                  </h3>
+                  </h4>
                   <p className="m-0 font-mono text-xs text-muted-foreground">
                     {itemSource ? `${itemSource} · ` : ""}
                     {itemPublished.primaryText}
+                    {itemPublished.relativeText ? ` · ${itemPublished.relativeText}` : ""}
                   </p>
-                  {itemPublished.relativeText ? (
-                    <p className="m-0 font-mono text-xs text-muted-foreground">
-                      {itemPublished.relativeText}
-                    </p>
-                  ) : null}
                 </div>
-                <NewsImage
-                  src={itemThumbnail}
-                  alt={item.title}
-                  aspectRatio="square"
-                  fallback="initials"
-                  fallbackText={itemSource ?? item.title}
-                  className="w-12 shrink-0"
-                />
+                {itemThumbnail ? (
+                  <NewsImage
+                    src={itemThumbnail}
+                    alt={item.title}
+                    aspectRatio="square"
+                    fallback="initials"
+                    fallbackText={itemSource ?? item.title}
+                    className="w-12 shrink-0"
+                  />
+                ) : null}
               </Link>
             );
           })}
