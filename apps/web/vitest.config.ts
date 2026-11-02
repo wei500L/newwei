@@ -208,6 +208,8 @@ export default defineConfig({
         "app/(app)/news-hub/news-hub-page-header.tsx",
         // FE-UI 批6：Today 突发条（3 条折叠 / 展开 / 空态）
         "app/(app)/today/components/breaking-alerts.tsx",
+        // FE-UI 批8B：News Hub 三栏导读入口
+        "app/(app)/news-hub/news-hub-pillars.tsx",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {

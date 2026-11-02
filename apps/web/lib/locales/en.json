@@ -1,4 +1,42 @@
 {
+  "newsnow": {
+    "search": {
+      "title": "Search sources",
+      "placeholder": "Search by source name or keyword...",
+      "focus": "Follow",
+      "unfocus": "Unfollow",
+      "empty": "No matching sources found"
+    },
+    "column": {
+      "loadErrorSubtitle": "Unable to load news source data. Please try again later."
+    },
+    "actions": {
+      "original": "Original",
+      "event": "Event",
+      "item": "Deep read",
+      "more": "More actions",
+      "duplicate": "{{count}} sources on same topic"
+    }
+  },
+  "newsHub": {
+    "pillars": {
+      "newsnow": {
+        "title": "NewsNow live board",
+        "description": "Track cross-source heat changes in real time and spot topics that are gaining traction.",
+        "cta": "Open live board"
+      },
+      "items": {
+        "title": "Items deep reads",
+        "description": "Review structured summaries, topics, entities and quality scores to triage deep reads quickly.",
+        "cta": "Open deep reads"
+      },
+      "events": {
+        "title": "Events timeline",
+        "description": "Revisit timelines, credibility and cross-source evidence by event cluster, avoiding single-article noise.",
+        "cta": "Open events"
+      }
+    }
+  },
   "auth": {
     "masthead": "MODULAR · INTELLIGENCE DESK",
     "sessionExpiredRedirect": "Session expired. Redirecting to sign-in…",

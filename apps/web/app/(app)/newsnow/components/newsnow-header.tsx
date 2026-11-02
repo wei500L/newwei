@@ -26,32 +26,25 @@ import { NewsnowBoardContainer } from "./newsnow-board-container";
 import { NewsnowSearch } from "./newsnow-search";
 
 const controlShellClassName =
-  "rounded-[22px] border border-slate-200/75 bg-white/78 px-3 py-2.5 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.85)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.055] dark:shadow-[0_20px_48px_-34px_rgba(0,0,0,0.9)]";
+  "rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2.5";
 
-const controlLabelClassName =
-  "px-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-zinc-500";
+const controlLabelClassName = "kicker px-1";
 
 const realtimeToneClassNames = {
   active: {
-    shell:
-      "border-emerald-200/80 bg-emerald-50/85 text-emerald-900 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100",
-    dot: "bg-emerald-500",
-    badge:
-      "bg-emerald-500/12 text-emerald-700 ring-1 ring-emerald-500/15 dark:bg-emerald-400/15 dark:text-emerald-100 dark:ring-emerald-400/20",
+    shell: "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)]",
+    dot: "bg-[var(--bullish)]",
+    badge: "border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]",
   },
   idle: {
-    shell:
-      "border-slate-200/80 bg-slate-50/90 text-slate-700 dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-200",
-    dot: "bg-emerald-400",
-    badge:
-      "bg-white/80 text-slate-600 ring-1 ring-slate-200/70 dark:bg-white/10 dark:text-zinc-300 dark:ring-white/10",
+    shell: "border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]",
+    dot: "bg-[var(--muted-foreground)]",
+    badge: "border border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]",
   },
   offline: {
-    shell:
-      "border-amber-200/80 bg-amber-50/90 text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-100",
-    dot: "bg-amber-500",
-    badge:
-      "bg-amber-500/12 text-amber-700 ring-1 ring-amber-500/15 dark:bg-amber-400/15 dark:text-amber-100 dark:ring-amber-400/20",
+    shell: "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)]",
+    dot: "bg-[var(--accent)]",
+    badge: "border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)]",
   },
 } as const;
 
@@ -150,10 +143,10 @@ export function NewsnowHeader() {
   }, [apiClient, messageApi]);
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(248,250,252,0.92)_100%)] shadow-[0_8px_24px_-18px_rgba(15,23,42,0.18)] backdrop-blur-md dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(7,10,17,0.96)_0%,rgba(6,9,15,0.94)_100%)] dark:shadow-[0_8px_24px_-18px_rgba(0,0,0,0.9)]">
+    <header className="sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--background)]">
       {contextHolder}
       <NewsnowBoardContainer spacing="header" className="flex flex-col gap-3">
-        <div className="glass-panel rounded-[26px] border border-white/40 px-3 py-2.5 shadow-[0_18px_42px_-30px_rgba(15,23,42,0.72)] dark:border-white/10 dark:bg-white/[0.04] md:px-4">
+        <div className="content-card px-3 py-2.5 md:px-4">
           <div className="flex items-center gap-3">
             <nav className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {tabs.map((tab) => (
@@ -161,10 +154,10 @@ export function NewsnowHeader() {
                   key={tab.key}
                   href={tab.href}
                   aria-current={tab.isActive ? "page" : undefined}
-                  className={`group inline-flex shrink-0 items-center rounded-2xl px-3 py-2 text-sm font-medium tracking-[0.01em] transition-[color,background-color,box-shadow,border-color,transform] duration-200 ${
+                  className={`group inline-flex shrink-0 items-center rounded px-3 py-2 text-sm font-medium tracking-[0.01em] transition-colors duration-200 ${
                     tab.isActive
-                      ? "bg-slate-950 text-white shadow-[0_16px_30px_-22px_rgba(15,23,42,0.9)] dark:bg-white dark:text-slate-950"
-                      : "text-slate-600 hover:bg-slate-900/6 hover:text-slate-950 dark:text-zinc-400 dark:hover:bg-white/8 dark:hover:text-zinc-100"
+                      ? "border-b-2 border-[var(--foreground)] text-[var(--foreground)]"
+                      : "border-b-2 border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                   }`}
                 >
                   <span className="truncate">{tab.name}</span>
@@ -176,7 +169,7 @@ export function NewsnowHeader() {
               <div className="hidden shrink-0 items-center gap-1 xl:flex">
                 {NEWSNOW_UTILITY_LINKS.map((link) => (
                   <Link key={link.href} href={link.href}>
-                    <span className="inline-flex rounded-xl px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-900/6 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/8 dark:hover:text-zinc-100">
+                    <span className="inline-flex rounded px-2.5 py-1.5 text-xs font-medium text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]">
                       {link.label}
                     </span>
                   </Link>
@@ -187,9 +180,10 @@ export function NewsnowHeader() {
             {visibility.showDesktopSearch ? (
               <Button
                 type="default"
+                size="small"
                 icon={<SearchOutlined />}
                 onClick={() => setIsSearchOpen(true)}
-                className="hidden items-center rounded-2xl border-slate-300/70 bg-white/82 text-slate-700 shadow-[0_12px_24px_-24px_rgba(15,23,42,0.9)] hover:border-slate-400/75 hover:text-slate-900 dark:border-white/15 dark:bg-white/[0.06] dark:text-zinc-200 dark:hover:border-white/25 dark:hover:bg-white/[0.1] dark:hover:text-zinc-100 md:inline-flex"
+                className="hidden items-center md:inline-flex"
               >
                 搜索
               </Button>
@@ -197,7 +191,7 @@ export function NewsnowHeader() {
           </div>
         </div>
 
-        <div className="glass-panel rounded-[26px] border border-white/40 px-3 py-3 shadow-[0_20px_44px_-30px_rgba(15,23,42,0.76)] dark:border-white/10 dark:bg-white/[0.04] md:px-4 md:py-3.5">
+        <div className="content-card px-3 py-3 md:px-4 md:py-3.5">
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div className="flex min-w-0 flex-col gap-2.5 md:flex-row md:flex-wrap md:items-stretch">
@@ -231,7 +225,7 @@ export function NewsnowHeader() {
                       </div>
                     </Tooltip>
 
-                    <div className="hidden h-7 w-px bg-slate-200/85 dark:bg-white/10 sm:block" />
+                    <div className="hidden h-7 w-px bg-[var(--border)] sm:block" />
 
                     <Tooltip title="调整列表密度：紧凑优先信息量，舒适优先可读性。">
                       <div className="inline-flex min-w-0 items-center gap-2">
@@ -255,9 +249,10 @@ export function NewsnowHeader() {
                 {visibility.showInlineSearch ? (
                   <Button
                     type="default"
+                    size="small"
                     icon={<SearchOutlined />}
                     onClick={() => setIsSearchOpen(true)}
-                    className="inline-flex w-full items-center justify-center rounded-2xl border-slate-300/70 bg-white/82 text-slate-700 shadow-[0_12px_24px_-24px_rgba(15,23,42,0.9)] hover:border-slate-400/75 hover:text-slate-900 dark:border-white/15 dark:bg-white/[0.06] dark:text-zinc-200 dark:hover:border-white/25 dark:hover:bg-white/[0.1] dark:hover:text-zinc-100 sm:w-auto"
+                    className="inline-flex w-full items-center justify-center sm:w-auto"
                   >
                     搜索
                   </Button>
@@ -271,7 +266,7 @@ export function NewsnowHeader() {
               >
                 <Tooltip title={realtimeSummary.tooltip}>
                   <div
-                    className={`inline-flex items-center gap-2 rounded-[20px] border px-3 py-2 text-sm shadow-[0_12px_24px_-24px_rgba(15,23,42,0.7)] ${realtimeTone.shell}`}
+                    className={`inline-flex items-center gap-2 rounded border px-3 py-2 text-sm ${realtimeTone.shell}`}
                   >
                     <span
                       className={`h-2 w-2 rounded-full ${realtimeTone.dot} ${
@@ -280,7 +275,7 @@ export function NewsnowHeader() {
                     />
                     <span className="font-medium">{realtimeSummary.label}</span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${realtimeTone.badge}`}
+                      className={`rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums ${realtimeTone.badge}`}
                     >
                       {realtimeSummary.detail}
                     </span>
@@ -289,10 +284,8 @@ export function NewsnowHeader() {
 
                 {personalizationState.showSummary ? (
                   <Tooltip title="根据本地偏好与行为画像计算个性化排序。重置本地偏好不会清空服务端行为画像。">
-                    <div className="inline-flex items-center gap-2 rounded-[20px] border border-sky-200/80 bg-sky-50/85 px-3 py-2 text-sm text-sky-950 shadow-[0_12px_24px_-24px_rgba(15,23,42,0.7)] dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700 dark:text-sky-200">
-                        个性化
-                      </span>
+                    <div className="inline-flex items-center gap-2 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--foreground)]">
+                      <span className="kicker">个性化</span>
                       <span className="font-medium">{personalizationState.summaryText}</span>
                     </div>
                   </Tooltip>
@@ -306,10 +299,10 @@ export function NewsnowHeader() {
                     onClick={() =>
                       setIsPersonalizationPanelOpen((current) => !current)
                     }
-                    className={`rounded-xl font-medium ${
+                    className={`rounded font-medium ${
                       personalizationState.showPanel
-                        ? "border-slate-300/75 bg-white/85 text-slate-900 dark:border-white/15 dark:bg-white/[0.08] dark:text-zinc-100"
-                        : "text-slate-600 hover:text-slate-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+                        ? "border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)]"
+                        : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                     }`}
                   >
                     {personalizationState.showPanel ? "收起偏好" : "管理偏好"}
@@ -319,13 +312,13 @@ export function NewsnowHeader() {
             </div>
 
             {personalizationState.showPanel ? (
-              <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/78 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-white/10 dark:bg-white/[0.045]">
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                    <p className="text-sm font-semibold text-[var(--foreground)]">
                       个性化排序管理
                     </p>
-                    <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">
+                    <p className="text-xs leading-5 text-[var(--muted-foreground)]">
                       根据本地偏好与行为画像计算个性化排序。重置本地偏好不会清空服务端行为画像。
                     </p>
                   </div>

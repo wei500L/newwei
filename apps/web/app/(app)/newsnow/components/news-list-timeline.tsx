@@ -2,6 +2,7 @@
 
 import { MoreOutlined } from "@ant-design/icons";
 import { Button, Dropdown, type MenuProps } from "antd";
+import { useTranslation } from "react-i18next";
 
 import { useIsMobile } from "../hooks/use-is-mobile";
 import type { NewsItem } from "../hooks/use-news-sources";
@@ -68,6 +69,7 @@ export function NewsListTimeline({
   actionAvailabilityByItemId,
   densityMode = "compact",
 }: NewsListTimelineProps) {
+  const { t } = useTranslation();
   const { getRelativeTime } = useRelativeTime();
   const isMobile = useIsMobile();
   const freshSet = new Set(freshItemIds ?? []);
@@ -86,9 +88,13 @@ export function NewsListTimeline({
           hasItem: false,
         };
         const actionMenuItems: MenuProps["items"] = [
-          { key: "original", label: "原文" },
-          ...(availability.hasEvent ? [{ key: "event", label: "事件" }] : []),
-          ...(availability.hasItem ? [{ key: "item", label: "深读" }] : []),
+          { key: "original", label: t("newsnow.actions.original") },
+          ...(availability.hasEvent
+            ? [{ key: "event", label: t("newsnow.actions.event") }]
+            : []),
+          ...(availability.hasItem
+            ? [{ key: "item", label: t("newsnow.actions.item") }]
+            : []),
         ];
 
         const openOriginalFromMenu = () => {
@@ -136,7 +142,7 @@ export function NewsListTimeline({
                     size="small"
                     icon={<MoreOutlined />}
                     className="text-[var(--secondary-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
-                    aria-label="更多操作"
+                    aria-label={t("newsnow.actions.more")}
                   />
                 </Dropdown>
               ) : null}
@@ -146,12 +152,12 @@ export function NewsListTimeline({
               target="_blank"
               rel="noopener noreferrer"
               title={item.extra?.hover}
-              className={`block overflow-hidden rounded-xl px-2 py-1.5 text-[var(--foreground)] font-medium transition-colors duration-150 hover:bg-[var(--secondary)]/60 visited:text-[var(--secondary-foreground)] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${
+              className={`block overflow-hidden rounded px-2 py-1.5 text-[var(--foreground)] font-medium transition-colors duration-150 hover:bg-[var(--secondary)]/60 visited:text-[var(--secondary-foreground)] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${
                 isComfortable
                   ? "text-sm leading-[1.45]"
                   : "text-[13px] leading-[1.4]"
               } ${
-                isFresh ? "animate-[pulse_1.8s_ease-in-out_1] bg-sky-500/5 ring-1 ring-sky-500/20" : ""
+                isFresh ? "animate-[pulse_1.8s_ease-in-out_1] bg-[var(--secondary)] ring-1 ring-[var(--accent)]" : ""
               }`}
               onClick={() => {
                 onOpenOriginal?.(item);
@@ -161,13 +167,13 @@ export function NewsListTimeline({
             </a>
             <div className="mt-1 flex items-center gap-1.5 px-2 text-[10px]">
               {isFresh ? (
-                <span className="rounded-[4px] bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 font-bold text-sky-600 dark:text-sky-400">
+                <span className="rounded-sm border border-[var(--border)] px-1.5 py-0.5 font-bold text-[var(--accent)]">
                   NEW
                 </span>
               ) : null}
               {dedupeMeta ? (
-                <span className="rounded-[4px] bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-600 dark:text-amber-400">
-                  同题 {dedupeMeta.groupSize} 源
+                <span className="rounded-sm border border-[var(--border)] px-1.5 py-0.5 font-semibold text-[var(--muted-foreground)]">
+                  {t("newsnow.actions.duplicate", { count: dedupeMeta.groupSize })}
                 </span>
               ) : null}
             </div>
@@ -182,7 +188,7 @@ export function NewsListTimeline({
                     onOpenOriginal?.(item);
                   }}
                 >
-                  原文
+                  {t("newsnow.actions.original")}
                 </a>
                 {availability.hasEvent ? (
                   <button
@@ -192,7 +198,7 @@ export function NewsListTimeline({
                       onOpenEvent?.(item);
                     }}
                   >
-                    事件
+                    {t("newsnow.actions.event")}
                   </button>
                 ) : null}
                 {availability.hasItem ? (
@@ -203,7 +209,7 @@ export function NewsListTimeline({
                       onOpenItem?.(item);
                     }}
                   >
-                    深读
+                    {t("newsnow.actions.item")}
                   </button>
                 ) : null}
               </div>

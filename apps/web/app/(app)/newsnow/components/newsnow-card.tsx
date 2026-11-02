@@ -87,7 +87,7 @@ const colorMap: Record<string, string> = {
   red: "bg-red-400",
   green: "bg-green-400",
   orange: "bg-orange-400",
-  gray: "bg-zinc-400",
+  gray: "bg-slate-400",
   indigo: "bg-indigo-400",
   emerald: "bg-emerald-400",
   teal: "bg-teal-400",
@@ -1287,7 +1287,7 @@ export const NewsnowCard = memo(function NewsnowCard({
           </div>
         </div>
         <div
-          className="ml-3 inline-flex shrink-0 items-center gap-1 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/50 backdrop-blur-md px-1 py-1 shadow-sm"
+          className="ml-3 inline-flex shrink-0 items-center gap-1 rounded border border-[var(--border)] bg-[var(--secondary)] px-1 py-1 shadow-sm"
         >
           <Tooltip title="刷新">
             <Button
@@ -1398,9 +1398,7 @@ export const NewsnowCard = memo(function NewsnowCard({
 
       <div
         className={`relative z-10 mx-3 mb-3 flex-1 overflow-y-auto rounded-[calc(var(--radius-lg)-2px)] border border-[var(--border)] px-2.5 py-2.5 shadow-inner [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
-          isDragging
-            ? "bg-white/25 dark:bg-black/20 backdrop-blur-0"
-            : "bg-white/40 dark:bg-black/20 backdrop-blur-sm"
+          isDragging ? "bg-transparent" : "bg-transparent"
         }`}
       >
         {cardListContent}

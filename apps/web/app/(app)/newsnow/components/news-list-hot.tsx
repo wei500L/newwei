@@ -3,6 +3,7 @@
 import { MoreOutlined } from "@ant-design/icons";
 import { Button, Dropdown, type MenuProps } from "antd";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useIsMobile } from "../hooks/use-is-mobile";
 import type { NewsItem, NewsnowAnalyzedItem } from "../hooks/use-news-sources";
@@ -24,16 +25,10 @@ interface NewsListHotProps {
 }
 
 function getRankClass(index: number) {
-  switch (index) {
-    case 0:
-      return "bg-gradient-to-b from-amber-400 to-orange-500 text-white shadow-sm ring-1 ring-orange-500/20";
-    case 1:
-      return "bg-gradient-to-b from-slate-300 to-slate-400 text-slate-800 shadow-sm ring-1 ring-slate-400/20";
-    case 2:
-      return "bg-gradient-to-b from-orange-300 to-orange-400 text-orange-900 shadow-sm ring-1 ring-orange-400/20";
-    default:
-      return "bg-[var(--secondary)] text-[var(--secondary-foreground)] border border-[var(--border)]";
+  if (index < 3) {
+    return "bg-[var(--foreground)] text-[var(--background)]";
   }
+  return "text-[var(--muted-foreground)]";
 }
 
 function DiffBadge({ diff }: { diff: number }) {
@@ -110,6 +105,7 @@ export function NewsListHot({
   analysisByItemId,
   densityMode = "compact",
 }: NewsListHotProps) {
+  const { t } = useTranslation();
   const isMobile = useIsMobile();
   const freshSet = new Set(freshItemIds ?? []);
   const isComfortable = densityMode === "comfortable";
@@ -127,9 +123,13 @@ export function NewsListHot({
           hasItem: false,
         };
         const actionMenuItems: MenuProps["items"] = [
-          { key: "original", label: "原文" },
-          ...(availability.hasEvent ? [{ key: "event", label: "事件" }] : []),
-          ...(availability.hasItem ? [{ key: "item", label: "深读" }] : []),
+          { key: "original", label: t("newsnow.actions.original") },
+          ...(availability.hasEvent
+            ? [{ key: "event", label: t("newsnow.actions.event") }]
+            : []),
+          ...(availability.hasItem
+            ? [{ key: "item", label: t("newsnow.actions.item") }]
+            : []),
         ];
 
         const openOriginalFromMenu = () => {
@@ -149,15 +149,15 @@ export function NewsListHot({
                 target="_blank"
                 rel="noopener noreferrer"
                 title={item.extra?.hover}
-                className={`relative grid min-h-[52px] flex-1 grid-cols-[24px_minmax(0,1fr)] items-start gap-3 rounded-xl px-2 py-2 text-[var(--foreground)] transition-colors duration-150 hover:bg-[var(--secondary)]/60 visited:text-[var(--secondary-foreground)] ${
-                  isFresh ? "animate-[pulse_1.8s_ease-in-out_1] bg-sky-500/5 ring-1 ring-sky-500/20" : ""
+                className={`relative grid min-h-[52px] flex-1 grid-cols-[24px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-2 text-[var(--foreground)] transition-colors duration-150 hover:bg-[var(--secondary)]/60 visited:text-[var(--secondary-foreground)] ${
+                  isFresh ? "animate-[pulse_1.8s_ease-in-out_1] bg-[var(--secondary)] ring-1 ring-[var(--accent)]" : ""
                 }`}
                 onClick={() => {
                   onOpenOriginal?.(item);
                 }}
               >
                 <span
-                  className={`mt-[1px] flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] text-xs font-bold leading-none ${getRankClass(index)}`}
+                  className={`mt-[1px] flex h-6 w-6 shrink-0 items-center justify-center rounded-sm font-mono text-xs font-bold tabular-nums leading-none ${getRankClass(index)}`}
                 >
                   {index + 1}
                 </span>
@@ -179,30 +179,30 @@ export function NewsListHot({
                   </span>
                   <span className="mt-1 flex items-center gap-1.5 text-[10px]">
                     {isFresh ? (
-                      <span className="rounded-[4px] bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 font-bold text-sky-600 dark:text-sky-400">
+                      <span className="rounded-sm border border-[var(--border)] px-1.5 py-0.5 font-bold text-[var(--accent)]">
                         NEW
                       </span>
                     ) : null}
                     {dedupeMeta ? (
-                      <span className="rounded-[4px] bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-600 dark:text-amber-400">
-                        同题 {dedupeMeta.groupSize} 源
+                      <span className="rounded-sm border border-[var(--border)] px-1.5 py-0.5 font-semibold text-[var(--muted-foreground)]">
+                        {t("newsnow.actions.duplicate", { count: dedupeMeta.groupSize })}
                       </span>
                     ) : null}
                     {analysisBadges.map((badge) => {
                       const className =
                         badge.tone === "emerald"
-                          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                          ? "border-[var(--border)] text-[var(--accent)]"
                           : badge.tone === "amber"
-                            ? "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-300"
+                            ? "border-[var(--border)] text-[var(--accent)]"
                             : badge.tone === "violet"
-                              ? "border-violet-500/20 bg-violet-500/10 text-violet-600 dark:text-violet-300"
+                              ? "border-[var(--border)] text-[var(--muted-foreground)]"
                               : badge.tone === "sky"
-                                ? "border-sky-500/20 bg-sky-500/10 text-sky-600 dark:text-sky-300"
+                                ? "border-[var(--border)] text-[var(--accent)]"
                                 : "border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)]";
                       return (
                         <span
                           key={badge.key}
-                          className={`rounded-[4px] border px-1.5 py-0.5 font-medium ${className}`}
+                          className={`rounded-sm border px-1.5 py-0.5 font-medium ${className}`}
                         >
                           {badge.label}
                         </span>
@@ -236,7 +236,7 @@ export function NewsListHot({
                     size="small"
                     icon={<MoreOutlined />}
                     className="mt-1 text-[var(--secondary-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
-                    aria-label="更多操作"
+                    aria-label={t("newsnow.actions.more")}
                   />
                 </Dropdown>
               ) : null}
@@ -252,7 +252,7 @@ export function NewsListHot({
                     onOpenOriginal?.(item);
                   }}
                 >
-                  原文
+                  {t("newsnow.actions.original")}
                 </a>
                 {availability.hasEvent ? (
                   <button
@@ -262,7 +262,7 @@ export function NewsListHot({
                       onOpenEvent?.(item);
                     }}
                   >
-                    事件
+                    {t("newsnow.actions.event")}
                   </button>
                 ) : null}
                 {availability.hasItem ? (
@@ -273,7 +273,7 @@ export function NewsListHot({
                       onOpenItem?.(item);
                     }}
                   >
-                    深读
+                    {t("newsnow.actions.item")}
                   </button>
                 ) : null}
               </div>

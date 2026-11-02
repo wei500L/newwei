@@ -186,16 +186,16 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
   return (
     <div
       ref={rootRef}
-      className="glass-panel rounded-[24px] border border-white/40 px-5 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.72)] dark:border-white/10 dark:bg-white/[0.04]"
+      className="content-card px-5 py-4"
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-zinc-400">
+          <div className="kicker flex flex-wrap items-center gap-2">
             <span>{item.sourceName}</span>
-            <span className="rounded-full bg-slate-900 px-2 py-1 text-[10px] tracking-[0.08em] text-white dark:bg-white dark:text-slate-950">
+            <span className="rounded-full bg-[var(--foreground)] px-2 py-1 font-mono text-[10px] tracking-[0.08em] tabular-nums text-[var(--background)]">
               推荐 {Math.round(item.score * 100)}
             </span>
-            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[10px] tracking-[0.08em] text-emerald-700 dark:text-emerald-300">
+            <span className="rounded-full border border-[var(--border)] px-2 py-1 text-[10px] tracking-[0.08em] text-[var(--accent)]">
               {item.reasonLabel}
             </span>
           </div>
@@ -204,19 +204,19 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
             <button
               type="button"
               onClick={handleOpenOriginal}
-              className="text-left text-lg font-semibold leading-8 text-slate-900 transition-colors hover:text-[var(--primary)] dark:text-zinc-100"
+              className="text-left text-lg font-semibold leading-8 text-[var(--foreground)] transition-colors hover:text-[var(--primary)]"
             >
               {item.title}
             </button>
           </div>
 
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]">
             <span>{formatPublishedAt(item.pubDate)}</span>
             <span>来源 {item.sourceId}</span>
             {item.topics.slice(0, 3).map((topic) => (
               <span
                 key={topic}
-                className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-700 dark:text-sky-300"
+                className="rounded-full border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--accent)]"
               >
                 {topic}
               </span>
@@ -224,7 +224,7 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
             {item.entities.slice(0, 2).map((entity) => (
               <span
                 key={entity}
-                className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-1 text-[11px] text-violet-700 dark:text-violet-300"
+                className="rounded-full border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--muted-foreground)]"
               >
                 {entity}
               </span>
@@ -234,7 +234,7 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
 
         <div className="flex shrink-0 flex-col items-stretch gap-2 md:max-w-[240px] lg:w-[240px]">
           <Tooltip title={scoreSummary}>
-            <div className="rounded-[18px] border border-slate-200/70 bg-white/75 px-3 py-2 text-xs text-slate-600 shadow-[0_12px_24px_-28px_rgba(15,23,42,0.75)] dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300">
+            <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 font-mono text-xs tabular-nums text-[var(--muted-foreground)]">
               综合分 {Math.round(item.score * 100)}
             </div>
           </Tooltip>
@@ -274,7 +274,7 @@ export function NewsnowRecommendedFeed() {
   if (isLoading) {
     return (
       <NewsnowBoardContainer spacing="content">
-        <div className="glass-panel rounded-[26px] border border-white/40 px-5 py-5 dark:border-white/10 dark:bg-white/[0.04]">
+        <div className="content-card px-5 py-5">
           <Skeleton active paragraph={{ rows: 8 }} />
         </div>
       </NewsnowBoardContainer>
@@ -299,14 +299,14 @@ export function NewsnowRecommendedFeed() {
     <NewsnowBoardContainer spacing="content">
       <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500 dark:text-zinc-500">
+          <p className="kicker">
             NewsNow Recommended
           </p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-[0.01em] text-slate-950 dark:text-zinc-100">
+          <h2 className="mt-1 font-serif text-xl font-semibold text-[var(--foreground)]">
             跨源个性化文章流
           </h2>
         </div>
-        <div className="text-xs text-slate-500 dark:text-zinc-400">
+        <div className="text-xs text-[var(--muted-foreground)]">
           {data?.generatedAt
             ? `生成于 ${formatPublishedAt(data.generatedAt)}`
             : null}
@@ -324,7 +324,7 @@ export function NewsnowRecommendedFeed() {
       ) : null}
 
       {items.length === 0 ? (
-        <div className="glass-panel rounded-[26px] border border-white/40 px-5 py-10 text-center dark:border-white/10 dark:bg-white/[0.04]">
+        <div className="content-card px-5 py-10 text-center">
           <Empty description="继续浏览热点与深读，推荐流会逐步变准。" />
         </div>
       ) : (

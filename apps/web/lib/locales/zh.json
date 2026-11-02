@@ -1,4 +1,42 @@
 {
+  "newsnow": {
+    "search": {
+      "title": "搜索新闻源",
+      "placeholder": "输入源名称或关键词...",
+      "focus": "关注",
+      "unfocus": "取消关注",
+      "empty": "没有找到匹配的源"
+    },
+    "column": {
+      "loadErrorSubtitle": "无法获取新闻源数据，请稍后重试"
+    },
+    "actions": {
+      "original": "原文",
+      "event": "事件",
+      "item": "深读",
+      "more": "更多操作",
+      "duplicate": "同题 {{count}} 源"
+    }
+  },
+  "newsHub": {
+    "pillars": {
+      "newsnow": {
+        "title": "NewsNow 实时热榜",
+        "description": "高频追踪跨源热度变化，识别正在发酵的话题。",
+        "cta": "进入热榜"
+      },
+      "items": {
+        "title": "Items 深度文章",
+        "description": "查看结构化摘要、主题、实体与质量评分，快速完成深读筛选。",
+        "cta": "进入深读"
+      },
+      "events": {
+        "title": "Events 事件脉络",
+        "description": "按事件聚类回看时间线、可信度和跨源证据，避免单篇噪音误导。",
+        "cta": "进入事件"
+      }
+    }
+  },
   "auth": {
     "masthead": "MODULAR · 情报编辑台",
     "sessionExpiredRedirect": "会话已过期，正在跳转登录…",

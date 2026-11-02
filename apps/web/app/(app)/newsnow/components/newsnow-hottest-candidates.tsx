@@ -73,15 +73,13 @@ function ProtectedStateCard({
 }) {
   return (
     <NewsnowBoardContainer spacing="section" className="block">
-      <div className="glass-panel rounded-[26px] border border-white/10 px-4 py-4 shadow-[0_20px_48px_-32px_rgba(15,23,42,0.65)] md:px-5">
+      <div className="content-card px-4 py-4 md:px-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--secondary-foreground)]/70">
-              Hottest Analysis
-            </p>
+            <p className="kicker">Hottest Analysis</p>
             <h2 className="mt-1 text-lg font-semibold text-[var(--foreground)]">热点候选</h2>
           </div>
-          <div className="text-xs text-[var(--secondary-foreground)]">热点分析增强</div>
+          <div className="text-xs text-[var(--muted-foreground)]">热点分析增强</div>
         </div>
         <ChartEmptyState
           title={title}
@@ -124,40 +122,38 @@ function DomesticOpinionPanel({
   }
 
   return (
-    <section className="mb-4 rounded-[26px] border border-white/10 bg-[linear-gradient(135deg,rgba(14,28,46,0.92),rgba(18,46,42,0.78))] px-4 py-4 shadow-[0_22px_52px_-34px_rgba(15,23,42,0.72)] md:px-5">
+    <section className="mb-4 content-card px-4 py-4 md:px-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-200/70">
-            Domestic Pulse
-          </p>
+          <p className="kicker">Domestic Pulse</p>
           <h2 className="mt-1 text-lg font-semibold text-[var(--foreground)]">国内舆情指数</h2>
-          <div className="mt-1 text-xs text-[var(--secondary-foreground)]/72">
+          <div className="mt-1 text-xs text-[var(--muted-foreground)]">
             当前口径基于现有热榜与新闻管道规则算法，未使用{' '}
-            <span className="font-mono text-[11px] text-emerald-100/80">embedding</span> /{' '}
-            <span className="font-mono text-[11px] text-emerald-100/80">rerank</span>
+            <span className="font-mono text-[11px] text-[var(--muted-foreground)]">embedding</span> /{' '}
+            <span className="font-mono text-[11px] text-[var(--muted-foreground)]">rerank</span>
           </div>
         </div>
-        <div className="text-xs text-emerald-100/70">热榜底座 + 新闻管道补强</div>
+        <div className="text-xs text-[var(--muted-foreground)]">热榜底座 + 新闻管道补强</div>
       </div>
 
       {isLoading ? (
-        <div className="mt-4 rounded-2xl border border-white/10 bg-black/10 p-4">
+        <div className="mt-4 rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4">
           <Skeleton active paragraph={{ rows: 3 }} title={{ width: '45%' }} />
         </div>
       ) : isError ? (
-        <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/5 p-4 text-sm text-rose-200">
+        <div className="mt-4 rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--destructive)]">
           国内舆情指数暂时不可用，热点候选仍会继续刷新。
         </div>
       ) : !hasContent ? (
-        <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm text-amber-50/90">
+        <div className="mt-4 rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--muted-foreground)]">
           {formatDomesticOpinionEmptyDescription(domesticOpinion)}
         </div>
       ) : latest ? (
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
-          <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
+          <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <div className="text-[40px] font-semibold leading-none text-[var(--foreground)]">
+                <div className="font-mono text-[40px] font-semibold leading-none tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.indexValue)}
                 </div>
                 <div className="mt-2 text-xs text-[var(--secondary-foreground)]/85">
@@ -169,7 +165,7 @@ function DomesticOpinionPanel({
                   })}
                 </div>
               </div>
-              <div className="min-w-[220px] rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div className="min-w-[220px] rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
                 <svg
                   aria-label="国内舆情指数趋势"
                   viewBox="0 0 220 60"
@@ -198,54 +194,54 @@ function DomesticOpinionPanel({
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-[var(--secondary-foreground)]/85 md:grid-cols-4">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Attention</div>
-                <div className="mt-1 text-base font-semibold text-[var(--foreground)]">
+                <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.attentionScore)}
                 </div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Breadth</div>
-                <div className="mt-1 text-base font-semibold text-[var(--foreground)]">
+                <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.breadthScore)}
                 </div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Freshness</div>
-                <div className="mt-1 text-base font-semibold text-[var(--foreground)]">
+                <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.freshnessScore)}
                 </div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Pressure</div>
-                <div className="mt-1 text-base font-semibold text-[var(--foreground)]">
+                <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.sentimentPressure)}
                 </div>
               </div>
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-[var(--secondary-foreground)]/85 md:grid-cols-3">
-              <div className="rounded-2xl border border-sky-400/15 bg-sky-500/5 px-3 py-2">
+              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Hotlist</div>
-                <div className="mt-1 text-base font-semibold text-[var(--foreground)]">
+                <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latestNewsnow?.indexValue ?? 0)}
                 </div>
                 <div className="mt-1 text-[11px] opacity-75">
                   候选 {latestNewsnow?.candidateCount ?? 0}
                 </div>
               </div>
-              <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/5 px-3 py-2">
+              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Pipeline</div>
-                <div className="mt-1 text-base font-semibold text-[var(--foreground)]">
+                <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latestPipeline?.indexValue ?? 0)}
                 </div>
                 <div className="mt-1 text-[11px] opacity-75">
                   样本 {latestPipeline?.articleCount ?? 0} · 来源 {latestPipeline?.sourceCount ?? 0}
                 </div>
               </div>
-              <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 px-3 py-2">
+              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Pipeline Pressure</div>
-                <div className="mt-1 text-base font-semibold text-[var(--foreground)]">
+                <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latestPipeline?.sentimentPressure ?? 0)}
                 </div>
                 <div className="mt-1 text-[11px] opacity-75">新闻管道负面压力</div>
@@ -253,7 +249,7 @@ function DomesticOpinionPanel({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
+          <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4">
             <div>
               <div className="text-xs font-medium text-[var(--secondary-foreground)]/80">
                 高频关键词
@@ -265,7 +261,7 @@ function DomesticOpinionPanel({
                 {newsnowKeywords.slice(0, 6).map((keyword) => (
                   <span
                     key={keyword.keyword}
-                    className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] text-emerald-100"
+                    className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] text-[var(--accent)]"
                   >
                     {keyword.keyword} {keyword.weight.toFixed(2)}
                   </span>
@@ -284,7 +280,7 @@ function DomesticOpinionPanel({
                 {pipelineKeywords.slice(0, 6).map((keyword) => (
                   <span
                     key={`pipeline-${keyword.keyword}`}
-                    className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2.5 py-1 text-[11px] text-sky-100"
+                    className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] text-[var(--muted-foreground)]"
                   >
                     {keyword.keyword} {keyword.weight.toFixed(2)}
                   </span>
@@ -305,12 +301,12 @@ function DomesticOpinionPanel({
                 {(domesticOpinion?.topCandidates ?? []).slice(0, 4).map((candidate) => (
                   <div
                     key={candidate.label}
-                    className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2"
+                    className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2"
                   >
                     <div className="text-sm font-medium text-[var(--foreground)]">
                       {candidate.label}
                     </div>
-                    <div className="mt-1 text-[11px] text-[var(--secondary-foreground)]/75">
+                    <div className="mt-1 font-mono text-[11px] tabular-nums text-[var(--secondary-foreground)]/75">
                       评分 {formatPercent(candidate.candidateScore)} · 跨源 {candidate.sourceCount}
                     </div>
                   </div>
@@ -389,7 +385,7 @@ export function NewsnowHottestCandidates({
 
   return (
     <NewsnowBoardContainer spacing="section" className="block">
-      <div className="glass-panel rounded-[26px] border border-white/10 px-4 py-4 shadow-[0_20px_48px_-32px_rgba(15,23,42,0.65)] md:px-5">
+      <div className="content-card px-4 py-4 md:px-5">
         <DomesticOpinionPanel
           domesticOpinion={domesticOpinion}
           isLoading={
@@ -400,24 +396,22 @@ export function NewsnowHottestCandidates({
         />
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--secondary-foreground)]/70">
-              Hottest Analysis
-            </p>
+            <p className="kicker">Hottest Analysis</p>
             <h2 className="mt-1 text-lg font-semibold text-[var(--foreground)]">热点候选</h2>
           </div>
-          <div className="text-xs text-[var(--secondary-foreground)]">跨源聚类 / 热度 / 新鲜度</div>
+          <div className="text-xs text-[var(--muted-foreground)]">跨源聚类 / 热度 / 新鲜度</div>
         </div>
 
         {showLoading ? (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="rounded-2xl border border-white/10 bg-black/10 p-4">
+              <div key={index} className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4">
                 <Skeleton active paragraph={{ rows: 4 }} title={{ width: '60%' }} />
               </div>
             ))}
           </div>
         ) : isError ? (
-          <div className="rounded-2xl border border-rose-400/20 bg-rose-500/5 p-4 text-sm text-rose-200">
+          <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--destructive)]">
             热点分析暂时不可用，页面仍可继续浏览原始热榜。
           </div>
         ) : topCandidates.length === 0 ? (
@@ -436,16 +430,16 @@ export function NewsnowHottestCandidates({
             {topCandidates.map((candidate) => (
               <article
                 key={candidate.candidateId}
-                className="rounded-2xl border border-white/10 bg-[linear-gradient(145deg,rgba(10,18,40,0.88),rgba(7,14,30,0.68))] p-4"
+                className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4"
               >
-                <div className="flex flex-wrap items-center gap-2 text-[10px] text-[var(--secondary-foreground)]/80">
-                  <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2 py-0.5 text-sky-300">
+                <div className="flex flex-wrap items-center gap-2 text-[10px] text-[var(--muted-foreground)]">
+                  <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 font-mono tabular-nums">
                     评分 {formatPercent(candidate.candidateScore)}
                   </span>
-                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-amber-300">
+                  <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 font-mono tabular-nums">
                     跨源 {candidate.sourceCount}
                   </span>
-                  <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-emerald-300">
+                  <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 font-mono tabular-nums">
                     新鲜 {formatPercent(candidate.freshnessScore)}
                   </span>
                 </div>
@@ -453,7 +447,7 @@ export function NewsnowHottestCandidates({
                   {candidate.label}
                 </h3>
                 {candidate.summary ? (
-                  <p className="mt-2 line-clamp-3 text-xs leading-5 text-[var(--secondary-foreground)]/90">
+                  <p className="mt-2 line-clamp-3 text-xs leading-5 text-[var(--muted-foreground)]">
                     {candidate.summary}
                   </p>
                 ) : null}
@@ -461,7 +455,7 @@ export function NewsnowHottestCandidates({
                   {candidate.themes.slice(0, 3).map((theme) => (
                     <span
                       key={theme}
-                      className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-0.5 text-violet-200"
+                      className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[var(--muted-foreground)]"
                     >
                       {theme}
                     </span>
@@ -469,13 +463,13 @@ export function NewsnowHottestCandidates({
                   {candidate.entities.slice(0, 3).map((entity) => (
                     <span
                       key={entity}
-                      className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[var(--secondary-foreground)]"
+                      className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[var(--secondary-foreground)]"
                     >
                       {entity}
                     </span>
                   ))}
                 </div>
-                <div className="mt-3 text-[11px] text-[var(--secondary-foreground)]/80">
+                <div className="mt-3 font-mono text-[11px] tabular-nums text-[var(--muted-foreground)]">
                   {candidate.itemRefs
                     .slice(0, 3)
                     .map((item) => `${item.sourceId} · ${item.title}`)

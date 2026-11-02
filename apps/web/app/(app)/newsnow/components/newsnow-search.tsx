@@ -88,30 +88,17 @@ export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
 
   return (
     <Modal
-      title="搜索新闻源"
+      title={t("newsnow.search.title")}
       open={isOpen}
       onCancel={onClose}
       footer={null}
-      width={620}
-      className="[&_.ant-modal-close]:text-zinc-400 [&_.ant-modal-close:hover]:bg-white/10 [&_.ant-modal-close:hover]:text-zinc-100 [&_.ant-modal-title]:text-zinc-100"
-      styles={{
-        content: {
-          background:
-            "linear-gradient(180deg, rgba(10,14,22,0.98) 0%, rgba(7,11,18,0.98) 100%)",
-          border: "1px solid rgba(255,255,255,0.09)",
-          boxShadow: "0 28px 70px -42px rgba(0,0,0,0.95)",
-        },
-        header: {
-          background: "transparent",
-          borderBottom: "1px solid rgba(255,255,255,0.09)",
-        },
-        body: { padding: "0 0 14px" },
-      }}
+      width="min(620px, calc(100vw - 32px))"
+      styles={{ body: { padding: "0 0 14px" } }}
     >
-      <div className="[&_.ant-input]:bg-transparent [&_.ant-input]:text-zinc-100 [&_.ant-input-affix-wrapper-focused]:border-blue-400/60 [&_.ant-input-affix-wrapper-focused]:shadow-none [&_.ant-input-affix-wrapper:hover]:border-white/20 [&_.ant-input-affix-wrapper]:border-white/10 [&_.ant-input-affix-wrapper]:bg-black/35 [&_.ant-input-clear-icon]:text-zinc-500 [&_.ant-input-prefix]:text-zinc-500 [&_.ant-list-empty-text]:text-zinc-500">
-        <div className="border-b border-white/10 px-4 py-2">
+      <div>
+        <div className="border-b border-[var(--border)] px-4 py-2">
           <Input
-            placeholder="输入源名称或关键词..."
+            placeholder={t("newsnow.search.placeholder")}
             prefix={<SearchOutlined />}
             allowClear
             value={searchText}
@@ -138,8 +125,8 @@ export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
                 <List.Item
                   role="button"
                   tabIndex={0}
-                  aria-label={`${isFocused ? "取消关注" : "关注"} ${source.name}`}
-                  className="!border-none cursor-pointer rounded-md px-2 py-2 transition-colors hover:bg-white/10"
+                  aria-label={`${isFocused ? t("newsnow.search.unfocus") : t("newsnow.search.focus")} ${source.name}`}
+                  className="!border-none cursor-pointer rounded-md px-2 py-2 transition-colors hover:bg-[var(--secondary)]"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") toggleFocus(id);
                   }}
@@ -148,7 +135,7 @@ export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
                   <div className="flex w-full items-center justify-between">
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-zinc-100">
+                        <span className="font-medium text-[var(--foreground)]">
                           {source.name}
                         </span>
                         <Tag
@@ -159,23 +146,23 @@ export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
                         </Tag>
                       </div>
                       {source.title && (
-                        <span className="text-xs text-zinc-400">
+                        <span className="text-xs text-[var(--muted-foreground)]">
                           {source.title}
                         </span>
                       )}
                     </div>
                     <div className="text-lg">
                       {isFocused ? (
-                        <StarFilled className="text-yellow-500" />
+                        <StarFilled className="text-[var(--accent)]" />
                       ) : (
-                        <StarOutlined className="text-zinc-500" />
+                        <StarOutlined className="text-[var(--muted-foreground)]" />
                       )}
                     </div>
                   </div>
                 </List.Item>
               );
             }}
-            locale={{ emptyText: "没有找到匹配的源" }}
+            locale={{ emptyText: t("newsnow.search.empty") }}
           />
         </div>
       </div>

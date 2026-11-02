@@ -4,9 +4,9 @@ import { StarOutlined } from "@ant-design/icons";
 import { Skeleton, Empty, Button, Result, Alert, Space } from "antd";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 import { usePendingAction } from "@/hooks/use-pending-action";
-import { useTheme } from "@/hooks/use-theme";
 
 import { NewsnowBoardContainer } from "../components/newsnow-board-container";
 import { NewsnowColumn } from "../components/newsnow-column";
@@ -26,14 +26,14 @@ import { useNewsnowStore } from "../store/newsnow-store";
 
 function NewsnowAttribution() {
   return (
-    <NewsnowBoardContainer spacing="footer" className="text-center text-xs text-slate-500 dark:text-zinc-500">
+    <NewsnowBoardContainer spacing="footer" className="text-center text-xs text-[var(--muted-foreground)]">
       <p className="leading-6">
         本页面基于{" "}
         <a
           href="https://github.com/ourongxing/newsnow"
           target="_blank"
           rel="noreferrer noopener"
-          className="text-slate-700 underline-offset-2 hover:text-slate-900 hover:underline dark:text-zinc-300 dark:hover:text-zinc-100"
+          className="text-[var(--secondary-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline"
         >
           ourongxing/newsnow
         </a>{" "}
@@ -42,7 +42,7 @@ function NewsnowAttribution() {
           href="/licenses/newsnow-mit.txt"
           target="_blank"
           rel="noreferrer noopener"
-          className="text-slate-700 underline-offset-2 hover:text-slate-900 hover:underline dark:text-zinc-300 dark:hover:text-zinc-100"
+          className="text-[var(--secondary-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline"
         >
           MIT License
         </a>
@@ -59,7 +59,7 @@ function NewsnowSourcesSkeleton() {
         {[...Array(10)].map((_, i) => (
           <div
             key={i}
-            className="h-[430px] rounded-[24px] sm:h-[470px] md:h-viz-3xl glass-panel p-5"
+            className="h-[430px] content-card sm:h-[470px] md:h-viz-3xl p-5"
           >
             <Skeleton active paragraph={{ rows: 10 }} />
           </div>
@@ -70,7 +70,7 @@ function NewsnowSourcesSkeleton() {
 }
 
 export default function NewsnowColumnPage() {
-  const { isDark } = useTheme();
+  const { t } = useTranslation();
   useNewsnowUiSync();
   useNewsnowStream();
   const params = useParams<{ column?: string | string[] }>();
@@ -211,21 +211,10 @@ export default function NewsnowColumnPage() {
   }, [metadata?.sources, primeFeedback]);
 
   const frameClass = "min-h-full relative overflow-hidden";
-  const frameStyle = isDark
-    ? {
-        backgroundColor: "var(--background)",
-        backgroundImage:
-          "radial-gradient(1100px 420px at 8% -12%, var(--aura-color-1), transparent 62%), radial-gradient(960px 360px at 96% -14%, var(--aura-color-2), transparent 62%)",
-      }
-    : {
-        backgroundColor: "var(--background)",
-        backgroundImage:
-          "radial-gradient(960px 380px at 8% -12%, var(--aura-color-1), transparent 62%), radial-gradient(900px 360px at 96% -14%, var(--aura-color-2), transparent 62%)",
-      };
 
   if (isLoading) {
     return (
-      <div className={frameClass} style={frameStyle}>
+      <div className={frameClass}>
         <NewsnowHeader />
         <NewsnowSourcesSkeleton />
         <NewsnowAttribution />
@@ -235,15 +224,15 @@ export default function NewsnowColumnPage() {
 
   if (isError) {
     return (
-      <div className={frameClass} style={frameStyle}>
+      <div className={frameClass}>
         <NewsnowHeader />
         <div className="flex min-h-[65vh] items-center justify-center p-8 relative z-10">
           <Result
             status="error"
             title={<span className="text-[var(--foreground)] font-serif font-semibold">加载失败</span>}
-            subTitle={<span className="text-[var(--secondary-foreground)]">无法获取新闻源数据，请稍后重试</span>}
+            subTitle={<span className="text-[var(--secondary-foreground)]">{t("newsnow.column.loadErrorSubtitle")}</span>}
             extra={
-              <Button type="primary" onClick={() => refetch()} className="glass-panel border-none shadow-sm text-primary-foreground font-semibold">
+              <Button type="primary" onClick={() => refetch()} className="font-semibold">
                 重试
               </Button>
             }
@@ -256,7 +245,7 @@ export default function NewsnowColumnPage() {
 
   if (resolvedColumnKey === "focus" && sourceIds.length === 0) {
     return (
-      <div className={frameClass} style={frameStyle}>
+      <div className={frameClass}>
         <NewsnowHeader />
         <div className="flex min-h-[65vh] items-center justify-center p-8 text-center relative z-10">
           <Empty
@@ -283,7 +272,7 @@ export default function NewsnowColumnPage() {
   }
 
   return (
-    <div className={frameClass} style={frameStyle}>
+    <div className={frameClass}>
       <div className="relative z-10">
         <NewsnowHeader />
         {visibleRealtimeUnread > 0 ? (
@@ -291,7 +280,7 @@ export default function NewsnowColumnPage() {
             <Alert
               showIcon
               type="info"
-              className="glass-panel border-none shadow-sm"
+              className="border-none"
               message={<span className="font-semibold text-[var(--foreground)]">实时推送到达 {visibleRealtimeUnread} 条新内容</span>}
               description={
                 <div className="space-y-1 mt-1 text-[var(--secondary-foreground)]">
@@ -319,7 +308,7 @@ export default function NewsnowColumnPage() {
                   <Button
                     size="small"
                     loading={refreshingSources}
-                    className="font-medium bg-[var(--primary)] text-white border-none shadow-md hover:brightness-110 active:scale-95 transition-all"
+                    className="font-medium bg-[var(--primary)] text-[var(--primary-foreground)] border-none shadow-md hover:brightness-110 active:scale-95 transition-all"
                     onClick={() => void runPrimeSources(sourceIds)}
                   >
                     立即刷新
@@ -338,7 +327,7 @@ export default function NewsnowColumnPage() {
               showIcon
               closable
               type="warning"
-              className="glass-panel border-none shadow-sm"
+              className="border-none"
               message={
                 <span className="font-semibold">{primeFeedbackSummary.message}</span>
               }
@@ -367,7 +356,7 @@ export default function NewsnowColumnPage() {
             <Alert
               showIcon
               type="warning"
-              className="glass-panel border-none shadow-sm"
+              className="border-none"
               message={<span className="font-semibold">实时连接不可用</span>}
               description={<span className="opacity-80">{realtimeConnectionError}</span>}
             />
