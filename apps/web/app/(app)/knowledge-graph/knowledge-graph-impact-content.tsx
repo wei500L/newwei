@@ -21,8 +21,8 @@ import { useSession } from "next-auth/react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { SectionHeader } from "@/components/section-header";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { SectionHeader } from "@/components/section-header";
 import {
   type KnowledgeGraphImpactAnalysisModel,
   type Query,

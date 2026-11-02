@@ -31,12 +31,12 @@ import { useTranslation } from "react-i18next";
 import { ItemsView } from "@/app/(app)/items/items-view";
 import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
 import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
   EnhancedSearchBox,
   type SearchSuggestionStatus,
 } from "@/components/enhanced-search-box";
 import { PageHeader } from "@/components/page-header";
-import { ChartEmptyState } from "@/components/chart-empty-state";
 import { useItemFacetsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import { parseSearchHistory, SEARCH_HISTORY_KEY } from "@/lib/search-history";
