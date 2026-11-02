@@ -1,9 +1,10 @@
 "use client";
 
 import { PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Select, Space, message } from "antd";
+import { Button, Col, Form, Input, Modal, Row, Select, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   formatAnalysisActorName,
@@ -38,22 +39,25 @@ interface TaskFormValues {
   assigneeId?: string | null;
 }
 
-const PRIORITY_OPTIONS: { value: AnalysisTaskPriority; label: string }[] = [
-  { value: "low", label: "Low" },
-  { value: "normal", label: "Normal" },
-  { value: "high", label: "High" },
-  { value: "urgent", label: "Urgent" },
-];
-
 export function CreateAnalysisTaskButton({
   subjectType,
   subjectId,
   defaultTitle,
-  buttonText = "Create task",
+  buttonText,
   size = "middle",
 }: CreateAnalysisTaskButtonProps) {
   const { data: session } = useSession();
+  const { t } = useTranslation();
   const [messageApi, contextHolder] = message.useMessage();
+  const priorityOptions = useMemo(
+    () => [
+      { value: "low" as AnalysisTaskPriority, label: t("analysis.createTask.priorityLow") },
+      { value: "normal" as AnalysisTaskPriority, label: t("analysis.createTask.priorityNormal") },
+      { value: "high" as AnalysisTaskPriority, label: t("analysis.createTask.priorityHigh") },
+      { value: "urgent" as AnalysisTaskPriority, label: t("analysis.createTask.priorityUrgent") },
+    ],
+    [t],
+  );
   const [form] = Form.useForm<TaskFormValues>();
   const [open, setOpen] = useState(false);
   const [boards, setBoards] = useState<AnalysisBoardSummary[]>([]);
@@ -84,11 +88,11 @@ export function CreateAnalysisTaskButton({
       }
     } catch (error) {
       captureClientError("Failed to load analysis boards for task creation", error);
-      messageApi.error("Failed to load analysis boards.");
+      messageApi.error(t("analysis.createTask.loadBoardsFailed"));
     } finally {
       setLoading(false);
     }
-  }, [accessToken, apiClient, form, messageApi]);
+  }, [accessToken, apiClient, form, messageApi, t]);
 
   const loadBoard = useCallback(
     async (boardId?: string) => {
@@ -104,10 +108,10 @@ export function CreateAnalysisTaskButton({
         form.setFieldValue("columnId", response.data.columns[0]?.id);
       } catch (error) {
         captureClientError("Failed to load analysis board columns", error);
-        messageApi.error("Failed to load board columns.");
+        messageApi.error(t("analysis.createTask.loadColumnsFailed"));
       }
     },
-    [apiClient, form, messageApi],
+    [apiClient, form, messageApi, t],
   );
 
   const loadMembers = useCallback(async () => {
@@ -161,17 +165,17 @@ export function CreateAnalysisTaskButton({
       });
       setOpen(false);
       form.resetFields();
-      messageApi.success("Task created.");
+      messageApi.success(t("analysis.createTask.createSuccess"));
     } catch (error) {
       if (typeof error === "object" && error && "errorFields" in error) {
         return;
       }
       captureClientError("Failed to create analysis task from subject", error);
-      messageApi.error("Failed to create task.");
+      messageApi.error(t("analysis.createTask.createFailed"));
     } finally {
       setSaving(false);
     }
-  }, [apiClient, form, messageApi, subjectId, subjectType]);
+  }, [apiClient, form, messageApi, subjectId, subjectType, t]);
 
   return (
     <>
@@ -182,23 +186,23 @@ export function CreateAnalysisTaskButton({
         disabled={!canWrite}
         onClick={() => setOpen(true)}
       >
-        {buttonText}
+        {buttonText ?? t("analysis.createTask.createButton")}
       </Button>
       <Modal
         open={open}
-        title="Create analysis task"
+        title={t("analysis.createTask.title")}
         onOk={() => void handleSubmit()}
         confirmLoading={saving}
         onCancel={() => setOpen(false)}
       >
         <Form form={form} layout="vertical" initialValues={{ priority: "normal" }}>
-          <Form.Item name="boardId" label="Board" rules={[{ required: true }]}>
+          <Form.Item name="boardId" label={t("analysis.createTask.board")} rules={[{ required: true }]}>
             <Select
               loading={loading}
               options={boards.map((board) => ({ value: board.id, label: board.title }))}
             />
           </Form.Item>
-          <Form.Item name="columnId" label="Column" rules={[{ required: true }]}>
+          <Form.Item name="columnId" label={t("analysis.createTask.column")} rules={[{ required: true }]}>
             <Select
               options={boardDetail?.columns.map((column) => ({
                 value: column.id,
@@ -206,26 +210,30 @@ export function CreateAnalysisTaskButton({
               }))}
             />
           </Form.Item>
-          <Form.Item name="title" label="Title" rules={[{ required: true }]}>
+          <Form.Item name="title" label={t("analysis.createTask.taskTitle")} rules={[{ required: true }]}>
             <Input maxLength={160} />
           </Form.Item>
-          <Form.Item name="bodyMarkdown" label="Details">
+          <Form.Item name="bodyMarkdown" label={t("analysis.createTask.details")}>
             <Input.TextArea rows={3} maxLength={10000} />
           </Form.Item>
-          <Space style={{ width: "100%" }} align="start">
-            <Form.Item name="priority" label="Priority" style={{ minWidth: 160 }}>
-              <Select options={PRIORITY_OPTIONS} />
-            </Form.Item>
-            <Form.Item name="assigneeId" label="Assignee" style={{ minWidth: 240 }}>
-              <Select
-                allowClear
-                options={members.map((member) => ({
-                  value: member.id,
-                  label: formatAnalysisActorName(member),
-                }))}
-              />
-            </Form.Item>
-          </Space>
+          <Row gutter={12}>
+            <Col xs={24} md={10}>
+              <Form.Item name="priority" label={t("analysis.createTask.priority")}>
+                <Select options={priorityOptions} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={14}>
+              <Form.Item name="assigneeId" label={t("analysis.createTask.assignee")}>
+                <Select
+                  allowClear
+                  options={members.map((member) => ({
+                    value: member.id,
+                    label: formatAnalysisActorName(member),
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
         </Form>
       </Modal>
     </>

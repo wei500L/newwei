@@ -1,7 +1,7 @@
 "use client";
 
 import { FileImageOutlined } from "@ant-design/icons";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type NewsImageAspectRatio = "video" | "fourThree" | "square" | "cinema";
 type NewsImageFallback = "gradient" | "initials" | "icon";
@@ -12,13 +12,6 @@ const ASPECT_RATIO_CLASS: Record<NewsImageAspectRatio, string> = {
   square: "aspect-square",
   cinema: "aspect-[21/9]"
 };
-
-const GRADIENT_CLASSES = [
-  "from-slate-700 via-slate-600 to-slate-800",
-  "from-blue-700 via-indigo-600 to-slate-800",
-  "from-emerald-700 via-teal-600 to-slate-800",
-  "from-amber-700 via-orange-600 to-slate-800"
-] as const;
 
 export interface NewsImageProps {
   src?: string | null;
@@ -45,20 +38,6 @@ function resolveInitial(value?: string): string | null {
   return normalized.charAt(0).toUpperCase();
 }
 
-function pickGradientClass(seed?: string): string {
-  if (!seed) {
-    return GRADIENT_CLASSES[0];
-  }
-
-  let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
-  }
-
-  const gradientIndex = hash % GRADIENT_CLASSES.length;
-  return GRADIENT_CLASSES[gradientIndex] ?? GRADIENT_CLASSES[0];
-}
-
 export function NewsImage({
   src,
   alt,
@@ -82,7 +61,6 @@ export function NewsImage({
   const shouldRenderImage = Boolean(normalizedSrc && !hasError);
   const shouldShowSkeleton = Boolean(showSkeleton && shouldRenderImage && !isLoaded);
   const fallbackInitial = resolveInitial(fallbackText);
-  const gradientClass = useMemo(() => pickGradientClass(fallbackText), [fallbackText]);
   const wrapperClassName = `${ASPECT_RATIO_CLASS[aspectRatio]} relative w-full overflow-hidden rounded-lg ${
     className ?? ""
   }`.trim();
@@ -93,11 +71,17 @@ export function NewsImage({
   return (
     <div className={wrapperClassName}>
       {fallback === "gradient" ? (
-        <div className={`absolute inset-0 bg-gradient-to-br ${gradientClass}`} />
+        <div className="absolute inset-0 flex items-center justify-center bg-surface-muted">
+          {fallbackInitial ? (
+            <span className="font-serif text-2xl text-muted-foreground">{fallbackInitial}</span>
+          ) : (
+            <FileImageOutlined className="text-base text-muted-foreground" />
+          )}
+        </div>
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+        <div className="absolute inset-0 flex items-center justify-center bg-surface-muted text-muted-foreground">
           {fallback === "initials" && fallbackInitial ? (
-            <span className="text-lg font-semibold tracking-wide">{fallbackInitial}</span>
+            <span className="font-serif text-2xl text-muted-foreground">{fallbackInitial}</span>
           ) : (
             <FileImageOutlined className="text-base" />
           )}

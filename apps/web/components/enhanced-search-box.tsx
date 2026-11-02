@@ -12,7 +12,7 @@ import {
   TagsOutlined
 } from "@ant-design/icons";
 import { gql, useLazyQuery } from "@apollo/client";
-import { AutoComplete, Button, Input, Popover, Tag } from "antd";
+import { AutoComplete, Button, Input, Popover, Tag, Tooltip } from "antd";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -380,13 +380,13 @@ export function EnhancedSearchBox({
   const suggestionTypeIcon = useCallback((type: SearchSuggestionType) => {
     switch (type) {
       case SearchSuggestionType.Topic:
-        return <TagsOutlined className="text-[12px] text-blue-500" />;
+        return <TagsOutlined className="text-[12px] text-muted-foreground" />;
       case SearchSuggestionType.Region:
-        return <GlobalOutlined className="text-[12px] text-cyan-500" />;
+        return <GlobalOutlined className="text-[12px] text-muted-foreground" />;
       case SearchSuggestionType.Sentiment:
-        return <SmileOutlined className="text-[12px] text-purple-500" />;
+        return <SmileOutlined className="text-[12px] text-muted-foreground" />;
       case SearchSuggestionType.Source:
-        return <ReadOutlined className="text-[12px] text-orange-500" />;
+        return <ReadOutlined className="text-[12px] text-muted-foreground" />;
       default:
         return null;
     }
@@ -549,7 +549,7 @@ export function EnhancedSearchBox({
                 <Tag className="text-[10px]" bordered={false}>
                   {suggestionTypeLabel(suggestion.type)}
                 </Tag>
-                <Tag className="text-[10px]" bordered={false} color="geekblue">
+                <Tag className="text-[10px]" bordered={false}>
                   {suggestionOriginLabel(suggestion.origin)}
                 </Tag>
               </span>
@@ -739,34 +739,37 @@ export function EnhancedSearchBox({
               t("search.placeholder")
             }
             allowClear
-            className="pl-10 pr-20 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:border-gray-300 focus:border-blue-500 transition-all rounded-lg"
+            className="pl-10 pr-20 bg-surface border-gray-200 dark:border-gray-700 hover:border-gray-300 focus:border-[var(--ring)] transition-all rounded-lg"
             size="large"
             onPressEnter={() => handleSearch(inputValue)}
             suffix={
               <div className="flex items-center gap-1">
-                <Popover content={syntaxHelpContent} placement="bottomRight" trigger="click">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<QuestionCircleOutlined />}
-                    className="text-gray-400 hover:text-gray-600"
-                  />
-                </Popover>
+                <Tooltip title={t("search.syntax.helpLabel")}>
+                  <Popover content={syntaxHelpContent} placement="bottomRight" trigger="click">
+                    <Button
+                      type="text"
+                      size="small"
+                      aria-label={t("search.syntax.helpLabel")}
+                      icon={<QuestionCircleOutlined />}
+                      className="text-gray-400 hover:text-gray-600"
+                    />
+                  </Popover>
+                </Tooltip>
 
                 {(parsedQuery.topic || parsedQuery.region || parsedQuery.sentiment) && (
                   <div className="flex gap-1">
                     {parsedQuery.topic && (
-                      <Tag color="blue" className="text-xs">
+                      <Tag className="text-xs">
                         topic
                       </Tag>
                     )}
                     {parsedQuery.region && (
-                      <Tag color="green" className="text-xs">
+                      <Tag className="text-xs">
                         region
                       </Tag>
                     )}
                     {parsedQuery.sentiment && (
-                      <Tag color="purple" className="text-xs">
+                      <Tag className="text-xs">
                         sentiment
                       </Tag>
                     )}
@@ -777,9 +780,6 @@ export function EnhancedSearchBox({
           />
         </AutoComplete>
 
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1 text-[10px] text-gray-400 pointer-events-none opacity-0 group-focus-within:opacity-100 transition-opacity">
-          <kbd className="border rounded px-1 bg-gray-100 dark:bg-gray-800">Enter</kbd>
-        </div>
       </div>
       {suggestionFeedbackMessage ? (
         <div

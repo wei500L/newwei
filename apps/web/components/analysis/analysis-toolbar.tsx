@@ -238,7 +238,7 @@ export function AnalysisToolbar({
   }, [messageApi, pathname, sanitizedQueryString, savedViewId, t]);
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-white/70 p-4 shadow-sm">
+    <div className="content-card p-4">
       {contextHolder}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
@@ -246,7 +246,7 @@ export function AnalysisToolbar({
             <Typography.Text strong>
               {t("analysis.toolbar.title")}
             </Typography.Text>
-            <Tag color="blue">{surface}</Tag>
+            <span className="kicker">{surface}</span>
             {savedView ? (
               <Tag color={savedView.visibility === "org_shared" ? "gold" : "default"}>
                 {savedView.visibility === "org_shared"

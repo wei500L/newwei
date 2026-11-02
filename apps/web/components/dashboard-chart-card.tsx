@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Empty } from "antd";
+import { Card } from "antd";
 import type { EChartsCoreOption } from "echarts";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -103,7 +103,7 @@ export function DashboardChartCard({
         />
       ) : (
         <div className="flex min-h-viz-sm items-center justify-center">
-          <Empty
+          <ChartEmptyState
             description={
               emptyDescription ?? t("dashboard.dataEmpty")
             }
