@@ -1,10 +1,14 @@
 'use client';
 
 import { DislikeOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Skeleton, Tooltip } from 'antd';
+import { Alert, Button, Skeleton, Tooltip } from 'antd';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
+import { ChartEmptyState } from '@/components/chart-empty-state';
+import { RequestErrorBanner } from '@/components/request-error-banner';
+import { SectionHeader } from '@/components/section-header';
 import {
   getSessionHiddenBehaviorKeys,
   hideSessionBehaviorKey,
@@ -40,6 +44,7 @@ function scorePercent(score: number) {
 
 function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
   const router = useRouter();
+  const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const trackedRef = useRef(false);
 
@@ -175,12 +180,12 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
   const scoreSummary = useMemo(
     () =>
       [
-        `内容 ${scorePercent(item.scoreBreakdown.content)}`,
-        `协同 ${scorePercent(item.scoreBreakdown.collaborative)}`,
-        `来源 ${scorePercent(item.scoreBreakdown.source)}`,
-        `热度 ${scorePercent(item.scoreBreakdown.hotness)}`,
+        `${t("newsnow.recommended.breakdown.content")} ${scorePercent(item.scoreBreakdown.content)}`,
+        `${t("newsnow.recommended.breakdown.collaborative")} ${scorePercent(item.scoreBreakdown.collaborative)}`,
+        `${t("newsnow.recommended.breakdown.source")} ${scorePercent(item.scoreBreakdown.source)}`,
+        `${t("newsnow.recommended.breakdown.hotness")} ${scorePercent(item.scoreBreakdown.hotness)}`,
       ].join(' · '),
-    [item.scoreBreakdown],
+    [item.scoreBreakdown, t],
   );
 
   return (
@@ -193,7 +198,9 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
           <div className="kicker flex flex-wrap items-center gap-2">
             <span>{item.sourceName}</span>
             <span className="rounded-full bg-[var(--foreground)] px-2 py-1 font-mono text-[10px] tracking-[0.08em] tabular-nums text-[var(--background)]">
-              推荐 {Math.round(item.score * 100)}
+              {t("newsnow.recommended.recommendScore", {
+                score: Math.round(item.score * 100),
+              })}
             </span>
             <span className="rounded-full border border-[var(--border)] px-2 py-1 text-[10px] tracking-[0.08em] text-[var(--accent)]">
               {item.reasonLabel}
@@ -212,7 +219,7 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]">
             <span>{formatPublishedAt(item.pubDate)}</span>
-            <span>来源 {item.sourceId}</span>
+            <span>{t("newsnow.recommended.sourceLabel", { source: item.sourceId })}</span>
             {item.topics.slice(0, 3).map((topic) => (
               <span
                 key={topic}
@@ -235,18 +242,22 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
         <div className="flex shrink-0 flex-col items-stretch gap-2 md:max-w-[240px] lg:w-[240px]">
           <Tooltip title={scoreSummary}>
             <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 font-mono text-xs tabular-nums text-[var(--muted-foreground)]">
-              综合分 {Math.round(item.score * 100)}
+              {t("newsnow.recommended.combinedScore", {
+                score: Math.round(item.score * 100),
+              })}
             </div>
           </Tooltip>
-          <Button onClick={handleOpenOriginal}>原文</Button>
+          <Button onClick={handleOpenOriginal}>
+            {t("newsnow.actions.original")}
+          </Button>
           <Button disabled={!item.matchedEventId} onClick={handleOpenEvent}>
-            事件
+            {t("newsnow.actions.event")}
           </Button>
           <Button disabled={!item.matchedItemId} onClick={handleOpenItem}>
-            深读
+            {t("newsnow.actions.item")}
           </Button>
           <Button icon={<DislikeOutlined />} onClick={handleNotInterested}>
-            不感兴趣
+            {t("newsnow.recommended.notInterested")}
           </Button>
         </div>
       </div>
@@ -255,6 +266,7 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
 }
 
 export function NewsnowRecommendedFeed() {
+  const { t } = useTranslation();
   const { data, isLoading, isError, error, refetch } = useNewsnowRecommended();
   const [hiddenItemIds, setHiddenItemIds] = useState<Set<string>>(
     () => new Set(getSessionHiddenBehaviorKeys('newsnowItems')),
@@ -284,48 +296,43 @@ export function NewsnowRecommendedFeed() {
   if (isError) {
     return (
       <NewsnowBoardContainer spacing="content">
-        <Alert
-          showIcon
-          type="error"
-          message="推荐流加载失败"
-          description={error instanceof Error ? error.message : '请稍后重试。'}
-          action={<Button onClick={() => void refetch()}>重试</Button>}
-        />
+        <RequestErrorBanner error={error} onRetry={() => void refetch()} />
       </NewsnowBoardContainer>
     );
   }
 
   return (
     <NewsnowBoardContainer spacing="content">
-      <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="kicker">
-            NewsNow Recommended
-          </p>
-          <h2 className="mt-1 font-serif text-xl font-semibold text-[var(--foreground)]">
-            跨源个性化文章流
-          </h2>
-        </div>
-        <div className="text-xs text-[var(--muted-foreground)]">
-          {data?.generatedAt
-            ? `生成于 ${formatPublishedAt(data.generatedAt)}`
-            : null}
-        </div>
-      </div>
+      <SectionHeader
+        className="mb-5"
+        kicker="NewsNow Recommended"
+        title={t("newsnow.recommended.title")}
+        extra={
+          data?.generatedAt ? (
+            <span className="text-xs text-[var(--muted-foreground)]">
+              {t("newsnow.recommended.generatedAt", {
+                time: formatPublishedAt(data.generatedAt),
+              })}
+            </span>
+          ) : null
+        }
+      />
 
       {data?.degraded ? (
         <Alert
           showIcon
           type="warning"
           className="mb-4"
-          message="推荐流已降级"
-          description="当前部分排序信号不可用，结果已回退到可用偏好与热点信号。"
+          message={t("newsnow.recommended.degradedTitle")}
+          description={t("newsnow.recommended.degradedDescription")}
         />
       ) : null}
 
       {items.length === 0 ? (
-        <div className="content-card px-5 py-10 text-center">
-          <Empty description="继续浏览热点与深读，推荐流会逐步变准。" />
+        <div className="content-card px-5 py-10">
+          <ChartEmptyState
+            description={t("newsnow.recommended.emptyDescription")}
+          />
         </div>
       ) : (
         <div className="flex flex-col gap-4">

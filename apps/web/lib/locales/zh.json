@@ -8,7 +8,21 @@
       "empty": "没有找到匹配的源"
     },
     "column": {
-      "loadErrorSubtitle": "无法获取新闻源数据，请稍后重试"
+      "loadErrorSubtitle": "无法获取新闻源数据，请稍后重试",
+      "primeRequestFailedTitle": "当前栏目刷新失败",
+      "primeRequestFailedDescription": "新闻源刷新请求未完成，页面继续显示已有缓存内容。请稍后重试。",
+      "primeTransientFail": "{{count}} 个来源暂时刷新失败，当前继续显示缓存内容{{names}}。",
+      "primeUnsupportedFail": "{{count}} 个来源不支持批量刷新，将在卡片加载时单独补取{{names}}。",
+      "primePartialTitle": "部分来源未完成刷新",
+      "primeSkippedTitle": "部分来源跳过批量刷新",
+      "noFocusTitle": "还没有关注的源",
+      "noFocusDescription": "点击搜索按钮或在其他列中点击星标来关注新闻源",
+      "realtimeReached": "实时推送到达 {{count}} 条新内容",
+      "realtimeDescription": "已检测到数据源更新。你可以立即刷新当前栏目并清空未读计数。",
+      "refreshNow": "立即刷新",
+      "markRead": "标记已读",
+      "retryFailedSources": "重试失败源",
+      "realtimeUnavailable": "实时连接不可用"
     },
     "actions": {
       "original": "原文",
@@ -16,6 +30,53 @@
       "item": "深读",
       "more": "更多操作",
       "duplicate": "同题 {{count}} 源"
+    },
+    "card": {
+      "new": "新 {{count}}",
+      "realtime": "实时 {{count}}",
+      "folded": "已折叠 {{count}}",
+      "combined": "综合 {{score}}",
+      "affinity": "偏好 {{score}}",
+      "visible": "可见 {{count}}",
+      "nextRefresh": "下次刷新 {{time}}",
+      "updated": "{{time}}更新",
+      "fetchFailed": "获取失败",
+      "dormantTitle": "可见时自动加载",
+      "dormantDescription": "只会预取首屏和当前进入视口的新闻源，减少后台与首屏请求放大。",
+      "loading": "加载中...",
+      "dragging": "拖动中",
+      "refreshTooltip": "刷新",
+      "viewEvents": "查看关联事件",
+      "dragDisabled": "智能排序中已禁用拖动",
+      "dragReorder": "拖动排序",
+      "dragAria": "拖动重新排序",
+      "infoNoEventOpenedItem": "未匹配到事件，已打开深读",
+      "parseFailedOpenedOriginal": "解析失败，已打开原文",
+      "noEventOpenedOriginal": "暂未匹配到事件，已打开原文",
+      "infoNoItemOpenedEvent": "未匹配到深读，已打开事件",
+      "noItemOpenedOriginal": "暂未匹配到深读，已打开原文",
+      "combinedScoreDetail": "综合分 {{score}}",
+      "affinityDetail": "偏好贡献 {{contribution}} = {{score}} × {{weight}}%",
+      "behaviorDetail": "行为贡献 {{contribution}} = {{score}} × {{weight}}%",
+      "negativeDetail": "负向扣分 {{score}}",
+      "focusDetail": "关注加分 {{score}}"
+    },
+    "recommended": {
+      "title": "跨源个性化文章流",
+      "generatedAt": "生成于 {{time}}",
+      "breakdown": {
+        "content": "内容",
+        "collaborative": "协同",
+        "source": "来源",
+        "hotness": "热度"
+      },
+      "recommendScore": "推荐 {{score}}",
+      "sourceLabel": "来源 {{source}}",
+      "combinedScore": "综合分 {{score}}",
+      "notInterested": "不感兴趣",
+      "degradedTitle": "推荐流已降级",
+      "degradedDescription": "当前部分排序信号不可用，结果已回退到可用偏好与热点信号。",
+      "emptyDescription": "继续浏览热点与深读，推荐流会逐步变准。"
     }
   },
   "newsHub": {

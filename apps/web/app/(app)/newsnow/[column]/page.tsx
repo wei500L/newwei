@@ -1,11 +1,12 @@
 "use client";
 
-import { StarOutlined } from "@ant-design/icons";
-import { Skeleton, Empty, Button, Result, Alert, Space } from "antd";
+import { Skeleton, Button, Alert, Space } from "antd";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DataStateBoundary } from "@/components/data-state-boundary";
 import { usePendingAction } from "@/hooks/use-pending-action";
 
 import { NewsnowBoardContainer } from "../components/newsnow-board-container";
@@ -79,7 +80,13 @@ export default function NewsnowColumnPage() {
     ? (columnParam[0] ?? "hottest")
     : (columnParam ?? "hottest");
   const normalizedColumnKey = columnKey.toLowerCase();
-  const { data: metadata, isLoading, isError, refetch } = useNewsMetadata();
+  const {
+    data: metadata,
+    isLoading,
+    isError,
+    error: metadataError,
+    refetch,
+  } = useNewsMetadata();
   const {
     focusSources,
     visibleSourceIds,
@@ -177,9 +184,8 @@ export default function NewsnowColumnPage() {
 
     if (primeFeedback.requestFailed) {
       return {
-        message: "当前栏目刷新失败",
-        description:
-          "新闻源刷新请求未完成，页面继续显示已有缓存内容。请稍后重试。",
+        message: t("newsnow.column.primeRequestFailedTitle"),
+        description: t("newsnow.column.primeRequestFailedDescription"),
       };
     }
 
@@ -187,28 +193,30 @@ export default function NewsnowColumnPage() {
     if (primeFeedback.transientSourceIds.length > 0) {
       const names = resolveSourceNames(primeFeedback.transientSourceIds);
       details.push(
-        `${primeFeedback.transientSourceIds.length} 个来源暂时刷新失败，当前继续显示缓存内容${
-          names ? `：${names}` : ""
-        }。`,
+        t("newsnow.column.primeTransientFail", {
+          count: primeFeedback.transientSourceIds.length,
+          names: names ? `：${names}` : "",
+        }),
       );
     }
     if (primeFeedback.unsupportedSourceIds.length > 0) {
       const names = resolveSourceNames(primeFeedback.unsupportedSourceIds);
       details.push(
-        `${primeFeedback.unsupportedSourceIds.length} 个来源不支持批量刷新，将在卡片加载时单独补取${
-          names ? `：${names}` : ""
-        }。`,
+        t("newsnow.column.primeUnsupportedFail", {
+          count: primeFeedback.unsupportedSourceIds.length,
+          names: names ? `：${names}` : "",
+        }),
       );
     }
 
     return {
       message:
         primeFeedback.transientSourceIds.length > 0
-          ? "部分来源未完成刷新"
-          : "部分来源跳过批量刷新",
+          ? t("newsnow.column.primePartialTitle")
+          : t("newsnow.column.primeSkippedTitle"),
       description: details.join(" "),
     };
-  }, [metadata?.sources, primeFeedback]);
+  }, [metadata?.sources, primeFeedback, t]);
 
   const frameClass = "min-h-full relative overflow-hidden";
 
@@ -226,16 +234,11 @@ export default function NewsnowColumnPage() {
     return (
       <div className={frameClass}>
         <NewsnowHeader />
-        <div className="flex min-h-[65vh] items-center justify-center p-8 relative z-10">
-          <Result
-            status="error"
-            title={<span className="text-[var(--foreground)] font-serif font-semibold">加载失败</span>}
-            subTitle={<span className="text-[var(--secondary-foreground)]">{t("newsnow.column.loadErrorSubtitle")}</span>}
-            extra={
-              <Button type="primary" onClick={() => refetch()} className="font-semibold">
-                重试
-              </Button>
-            }
+        <div className="flex min-h-[65vh] w-full items-center justify-center p-8 relative z-10">
+          <DataStateBoundary
+            className="w-full"
+            state={{ kind: "blockingError", error: metadataError }}
+            onRetry={() => refetch()}
           />
         </div>
         <NewsnowAttribution />
@@ -248,22 +251,11 @@ export default function NewsnowColumnPage() {
       <div className={frameClass}>
         <NewsnowHeader />
         <div className="flex min-h-[65vh] items-center justify-center p-8 text-center relative z-10">
-          <Empty
-            image={
-              <StarOutlined
-                className="text-6xl text-[var(--secondary-foreground)] opacity-40"
-              />
-            }
-            description={
-              <div className="space-y-1">
-                <p className="text-lg font-medium font-serif tracking-tight text-[var(--foreground)]">
-                  还没有关注的源
-                </p>
-                <p className="text-[var(--secondary-foreground)] opacity-70">
-                  点击搜索按钮或在其他列中点击星标来关注新闻源
-                </p>
-              </div>
-            }
+          <ChartEmptyState
+            variant="empty"
+            title={t("newsnow.column.noFocusTitle")}
+            description={t("newsnow.column.noFocusDescription")}
+            className="min-h-[40vh]"
           />
         </div>
         <NewsnowAttribution />
@@ -281,10 +273,10 @@ export default function NewsnowColumnPage() {
               showIcon
               type="info"
               className="border-none"
-              message={<span className="font-semibold text-[var(--foreground)]">实时推送到达 {visibleRealtimeUnread} 条新内容</span>}
+              message={<span className="font-semibold text-[var(--foreground)]">{t("newsnow.column.realtimeReached", { count: visibleRealtimeUnread })}</span>}
               description={
                 <div className="space-y-1 mt-1 text-[var(--secondary-foreground)]">
-                  <p>已检测到数据源更新。你可以立即刷新当前栏目并清空未读计数。</p>
+                  <p>{t("newsnow.column.realtimeDescription")}</p>
                   {visibleRealtimeHighlights.length > 0 ? (
                     <ul className="list-disc pl-5 opacity-90">
                       {visibleRealtimeHighlights.map((entry) => {
@@ -306,15 +298,15 @@ export default function NewsnowColumnPage() {
               action={
                 <Space>
                   <Button
+                    type="primary"
                     size="small"
                     loading={refreshingSources}
-                    className="font-medium bg-[var(--primary)] text-[var(--primary-foreground)] border-none shadow-md hover:brightness-110 active:scale-95 transition-all"
                     onClick={() => void runPrimeSources(sourceIds)}
                   >
-                    立即刷新
+                    {t("newsnow.column.refreshNow")}
                   </Button>
                   <Button size="small" type="text" className="font-medium text-[var(--secondary-foreground)] hover:text-[var(--foreground)]" onClick={() => clearAllLiveUnread()}>
-                    标记已读
+                    {t("newsnow.column.markRead")}
                   </Button>
                 </Space>
               }
@@ -344,7 +336,7 @@ export default function NewsnowColumnPage() {
                       void runPrimeSources(primeFeedback.transientSourceIds)
                     }
                   >
-                    重试失败源
+                    {t("newsnow.column.retryFailedSources")}
                   </Button>
                 ) : undefined
               }
@@ -357,7 +349,7 @@ export default function NewsnowColumnPage() {
               showIcon
               type="warning"
               className="border-none"
-              message={<span className="font-semibold">实时连接不可用</span>}
+              message={<span className="font-semibold">{t("newsnow.column.realtimeUnavailable")}</span>}
               description={<span className="opacity-80">{realtimeConnectionError}</span>}
             />
           </NewsnowBoardContainer>

@@ -83,15 +83,15 @@ interface NewsnowCardProps {
 
 const colorMap: Record<string, string> = {
   slate: "bg-slate-400",
-  blue: "bg-blue-400",
-  red: "bg-red-400",
-  green: "bg-green-400",
-  orange: "bg-orange-400",
+  blue: "bg-[var(--primary)]",
+  red: "bg-[var(--destructive)]",
+  green: "bg-[var(--bullish)]",
+  orange: "bg-[var(--accent)]",
   gray: "bg-slate-400",
-  indigo: "bg-indigo-400",
-  emerald: "bg-emerald-400",
-  teal: "bg-teal-400",
-  yellow: "bg-amber-400",
+  indigo: "bg-[var(--primary)]",
+  emerald: "bg-[var(--bullish)]",
+  teal: "bg-[var(--primary)]",
+  yellow: "bg-[var(--accent)]",
 };
 
 const accentRgbMap: Record<string, string> = {
@@ -405,7 +405,7 @@ export const NewsnowCard = memo(function NewsnowCard({
   const accentRgb = accentRgbMap[source.color] || "111 155 255";
   const cardStyle: CSSProperties = {
     ...style,
-    height: "clamp(380px, 56vh, 620px)",
+    maxHeight: "clamp(380px, 56vh, 620px)",
     ["--newsnow-card-accent-rgb" as string]: accentRgb,
     ["--newsnow-hover-x" as string]: "50%",
     ["--newsnow-hover-y" as string]: "120px",
@@ -855,7 +855,7 @@ export const NewsnowCard = memo(function NewsnowCard({
           return;
         }
         if (resolved.matched && resolved.itemId) {
-          message.info("未匹配到事件，已打开深读");
+          message.info(t("newsnow.card.infoNoEventOpenedItem"));
           trackSourceInteraction(id, "open_item");
           void trackUserNewsBehavior({
             type: "open_item",
@@ -868,12 +868,12 @@ export const NewsnowCard = memo(function NewsnowCard({
           return;
         }
       } catch {
-        message.warning("解析失败，已打开原文");
+        message.warning(t("newsnow.card.parseFailedOpenedOriginal"));
         openOriginal(item);
         return;
       }
 
-      message.info("暂未匹配到事件，已打开原文");
+      message.info(t("newsnow.card.noEventOpenedOriginal"));
       openOriginal(item);
     },
     [
@@ -886,6 +886,7 @@ export const NewsnowCard = memo(function NewsnowCard({
       router,
       sourceBehaviorKey,
       trackSourceInteraction,
+      t,
     ],
   );
 
@@ -921,7 +922,7 @@ export const NewsnowCard = memo(function NewsnowCard({
           return;
         }
         if (resolved.matched && resolved.eventId) {
-          message.info("未匹配到深读，已打开事件");
+          message.info(t("newsnow.card.infoNoItemOpenedEvent"));
           trackSourceInteraction(id, "open_event");
           void trackUserNewsBehavior({
             type: "open_event",
@@ -934,12 +935,12 @@ export const NewsnowCard = memo(function NewsnowCard({
           return;
         }
       } catch {
-        message.warning("解析失败，已打开原文");
+        message.warning(t("newsnow.card.parseFailedOpenedOriginal"));
         openOriginal(item);
         return;
       }
 
-      message.info("暂未匹配到深读，已打开原文");
+      message.info(t("newsnow.card.noItemOpenedOriginal"));
       openOriginal(item);
     },
     [
@@ -952,6 +953,7 @@ export const NewsnowCard = memo(function NewsnowCard({
       router,
       sourceBehaviorKey,
       trackSourceInteraction,
+      t,
     ],
   );
 
@@ -969,12 +971,12 @@ export const NewsnowCard = memo(function NewsnowCard({
   }, [clearLiveUnread, id, refresh, trackSourceInteraction]);
 
   const updatedText = data?.updatedTime
-    ? `${getRelativeTime(data.updatedTime)}更新`
+    ? t("newsnow.card.updated", { time: getRelativeTime(data.updatedTime) })
     : isError
-      ? "获取失败"
+      ? t("newsnow.card.fetchFailed")
       : isDormant
-        ? "进入视口时加载"
-        : "加载中...";
+        ? t("newsnow.card.dormantTitle")
+        : t("newsnow.card.loading");
   const freshness = useMemo(
     () =>
       resolveNewsFreshnessState({
@@ -1009,7 +1011,7 @@ export const NewsnowCard = memo(function NewsnowCard({
       return (
         <div className="flex h-full items-center justify-center p-4 text-center">
           <span className="rounded-full border border-[var(--border)] bg-[var(--secondary)]/70 px-3 py-1 text-[11px] font-medium text-[var(--secondary-foreground)]">
-            拖动中
+            {t("newsnow.card.dragging")}
           </span>
         </div>
       );
@@ -1027,10 +1029,10 @@ export const NewsnowCard = memo(function NewsnowCard({
       return (
         <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
           <p className="text-sm font-medium text-[var(--foreground)]">
-            可见时自动加载
+            {t("newsnow.card.dormantTitle")}
           </p>
           <p className="max-w-[18rem] text-xs text-[var(--secondary-foreground)]">
-            只会预取首屏和当前进入视口的新闻源，减少后台与首屏请求放大。
+            {t("newsnow.card.dormantDescription")}
           </p>
         </div>
       );
@@ -1065,7 +1067,7 @@ export const NewsnowCard = memo(function NewsnowCard({
               void handleRefresh();
             }}
           >
-            重试
+            {t("common.retry")}
           </Button>
         </div>
       );
@@ -1100,7 +1102,7 @@ export const NewsnowCard = memo(function NewsnowCard({
 
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-        <p className="text-xs font-medium text-[var(--secondary-foreground)]">暂无数据</p>
+        <p className="text-xs font-medium text-[var(--secondary-foreground)]">{t("common.empty")}</p>
         {needsRuntimeSecret ? (
           <a
             href={runtimeSecretsSettingsHref}
@@ -1134,7 +1136,17 @@ export const NewsnowCard = memo(function NewsnowCard({
     sourceErrorMessage,
     sourceErrorTitle,
     trackOriginalOpen,
+    t,
   ]);
+
+  const unreadBadgeLabel =
+    unreadCount > 0 && realtimeUnreadCount > 0
+      ? `${t("newsnow.card.new", { count: unreadCount })} · ${t("newsnow.card.realtime", { count: realtimeUnreadCount })}`
+      : unreadCount > 0
+        ? t("newsnow.card.new", { count: unreadCount })
+        : realtimeUnreadCount > 0
+          ? t("newsnow.card.realtime", { count: realtimeUnreadCount })
+          : null;
 
   if (isSourceHidden) {
     return null;
@@ -1145,7 +1157,7 @@ export const NewsnowCard = memo(function NewsnowCard({
       ref={setArticleNodeRef}
       onMouseMove={isAnyCardDragging ? undefined : handleMouseMove}
       style={cardStyle}
-      className={`relative isolate group flex min-h-[380px] flex-col overflow-hidden rounded-[var(--radius-lg)] glass-panel will-change-transform transition-[transform,box-shadow,opacity] duration-300 motion-reduce:transition-none active:scale-[0.99] ${
+      className={`relative isolate group flex flex-col overflow-hidden rounded-[var(--radius-lg)] glass-panel will-change-transform transition-[transform,box-shadow,opacity] duration-300 motion-reduce:transition-none active:scale-[0.99] ${
         dragDisabled || isAnyCardDragging ? "" : "hover:-translate-y-1"
       } ${isDragging ? "cursor-grabbing" : ""}`}
     >
@@ -1189,11 +1201,11 @@ export const NewsnowCard = memo(function NewsnowCard({
           </a>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="truncate text-base font-bold tracking-wide text-[var(--foreground)] font-serif">
+              <h3 className="truncate text-base font-bold tracking-wide text-[var(--foreground)]">
                 {source.name}
               </h3>
               {source.title ? (
-                <span className="truncate rounded-md bg-[var(--secondary)] px-2 py-0.5 text-[10px] font-medium text-[var(--secondary-foreground)] border border-[var(--border)]">
+                <span className="truncate rounded-md bg-[var(--secondary)] px-2 py-0.5 text-xs font-medium text-[var(--secondary-foreground)] border border-[var(--border)]">
                   {source.title}
                 </span>
               ) : null}
@@ -1201,25 +1213,28 @@ export const NewsnowCard = memo(function NewsnowCard({
             <p className="truncate text-xs text-[var(--secondary-foreground)]/80 mt-0.5 font-medium">
               {updatedText}
             </p>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
+              {unreadBadgeLabel ? (
+                <span className="rounded-full border border-[var(--border)] px-2 py-0.5 font-sans text-xs font-semibold text-[var(--accent)]">
+                  {unreadBadgeLabel}
+                </span>
+              ) : null}
+              {data?.updatedTime && freshness.level === "stale" ? (
+                <span className="rounded-full border border-[var(--border)] px-2 py-0.5 font-sans text-xs font-semibold text-[var(--destructive)]">
+                  {t("common.freshnessStale")}
+                  {freshnessDelayLabel ? ` ${freshnessDelayLabel}` : ""}
+                </span>
+              ) : null}
               {duplicateItemsCount > 0 ? (
-                <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                  同题 {duplicateItemsCount}
+                <span>
+                  {t("newsnow.actions.duplicate", {
+                    count: duplicateItemsCount,
+                  })}
                 </span>
               ) : null}
               {hideCrossSourceDuplicates && hiddenDuplicatesCount > 0 ? (
-                <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                  已折叠 {hiddenDuplicatesCount}
-                </span>
-              ) : null}
-              {unreadCount > 0 ? (
-                <span className="animate-pulse rounded-full bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 text-[10px] font-semibold text-sky-600 dark:text-sky-400">
-                  新 {unreadCount}
-                </span>
-              ) : null}
-              {realtimeUnreadCount > 0 ? (
-                <span className="rounded-full bg-[var(--primary)]/10 border border-[var(--primary)]/20 px-2 py-0.5 text-[10px] font-semibold text-[var(--primary)]">
-                  推送 {realtimeUnreadCount}
+                <span>
+                  {t("newsnow.card.folded", { count: hiddenDuplicatesCount })}
                 </span>
               ) : null}
               {(sortMode === "personalized" || sortMode === "smart") &&
@@ -1227,60 +1242,91 @@ export const NewsnowCard = memo(function NewsnowCard({
                 <Tooltip
                   title={
                     <div className="space-y-0.5 text-xs leading-5">
-                      <div>综合分 {personalizedScoreDetail?.combinedScore.toFixed(2)}</div>
                       <div>
-                        偏好贡献 {personalizedScoreDetail?.affinityContribution.toFixed(2)}
-                        {" = "}
-                        {personalizedScoreDetail?.affinityScore.toFixed(2)} ×{" "}
-                        {((personalizedScoreDetail?.affinityWeight ?? 0) * 100).toFixed(0)}%
+                        {t("newsnow.card.combinedScoreDetail", {
+                          score:
+                            personalizedScoreDetail?.combinedScore.toFixed(2) ??
+                            "0.00",
+                        })}
                       </div>
                       <div>
-                        行为贡献 {personalizedScoreDetail?.behaviorContribution.toFixed(2)}
-                        {" = "}
-                        {personalizedScoreDetail?.behaviorScore.toFixed(2)} ×{" "}
-                        {((personalizedScoreDetail?.behaviorWeight ?? 0) * 100).toFixed(0)}%
+                        {t("newsnow.card.affinityDetail", {
+                          contribution:
+                            personalizedScoreDetail?.affinityContribution.toFixed(
+                              2,
+                            ) ?? "0.00",
+                          score:
+                            personalizedScoreDetail?.affinityScore.toFixed(2) ??
+                            "0.00",
+                          weight: (
+                            (personalizedScoreDetail?.affinityWeight ?? 0) * 100
+                          ).toFixed(0),
+                        })}
                       </div>
                       <div>
-                        负向扣分 {personalizedScoreDetail?.negativeContribution.toFixed(2)}
+                        {t("newsnow.card.behaviorDetail", {
+                          contribution:
+                            personalizedScoreDetail?.behaviorContribution.toFixed(
+                              2,
+                            ) ?? "0.00",
+                          score:
+                            personalizedScoreDetail?.behaviorScore.toFixed(2) ??
+                            "0.00",
+                          weight: (
+                            (personalizedScoreDetail?.behaviorWeight ?? 0) * 100
+                          ).toFixed(0),
+                        })}
                       </div>
-                      <div>关注加分 {personalizedScoreDetail?.focusBonus.toFixed(2)}</div>
+                      <div>
+                        {t("newsnow.card.negativeDetail", {
+                          score:
+                            personalizedScoreDetail?.negativeContribution.toFixed(
+                              2,
+                            ) ?? "0.00",
+                        })}
+                      </div>
+                      <div>
+                        {t("newsnow.card.focusDetail", {
+                          score:
+                            personalizedScoreDetail?.focusBonus.toFixed(2) ??
+                            "0.00",
+                        })}
+                      </div>
                     </div>
                   }
                 >
-                  <span className="cursor-help rounded-full bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 text-[10px] font-semibold text-violet-600 dark:text-violet-400">
-                    综合 {Math.round(personalizedCombinedScore)}
+                  <span className="cursor-help">
+                    {t("newsnow.card.combined", {
+                      score: Math.round(personalizedCombinedScore),
+                    })}
                   </span>
                 </Tooltip>
               ) : null}
               {(sortMode === "personalized" || sortMode === "smart") &&
               affinityScore > 0 ? (
-                <span className="rounded-full bg-[var(--secondary)] border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--secondary-foreground)]">
-                  偏好 {Math.round(affinityScore)}
+                <span>
+                  {t("newsnow.card.affinity", {
+                    score: Math.round(affinityScore),
+                  })}
                 </span>
               ) : null}
               {hideCrossSourceDuplicates && visibleItemsCount > 0 ? (
-                <span className="rounded-full bg-[var(--secondary)] border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--secondary-foreground)]">
-                  可见 {visibleItemsCount}
+                <span>
+                  {t("newsnow.card.visible", { count: visibleItemsCount })}
                 </span>
               ) : null}
               {nextRefreshLabel ? (
-                <span className="rounded-full bg-[var(--secondary)] border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--secondary-foreground)]">
-                  下次刷新 {nextRefreshLabel}
+                <span>
+                  {t("newsnow.card.nextRefresh", { time: nextRefreshLabel })}
                 </span>
               ) : null}
               {data?.updatedTime && freshness.level === "fresh" ? (
-                <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                  {t("common.freshnessFresh")}
-                </span>
+                <span>{t("common.freshnessFresh")}</span>
               ) : null}
               {data?.updatedTime && freshness.level === "aging" ? (
-                <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                  {t("common.freshnessWarm")} {freshnessDelayLabel}
-                </span>
-              ) : null}
-              {data?.updatedTime && freshness.level === "stale" ? (
-                <span className="rounded-full bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
-                  {t("common.freshnessStale")} {freshnessDelayLabel}
+                <span>
+                  {t("common.freshnessWarm")}
+                  {freshnessDelayLabel ? ` ${freshnessDelayLabel}` : ""}
                 </span>
               ) : null}
             </div>
@@ -1289,7 +1335,7 @@ export const NewsnowCard = memo(function NewsnowCard({
         <div
           className="ml-3 inline-flex shrink-0 items-center gap-1 rounded border border-[var(--border)] bg-[var(--secondary)] px-1 py-1 shadow-sm"
         >
-          <Tooltip title="刷新">
+          <Tooltip title={t("newsnow.card.refreshTooltip")}>
             <Button
               type="text"
               size="small"
@@ -1301,7 +1347,7 @@ export const NewsnowCard = memo(function NewsnowCard({
               className="h-7 w-7 text-[var(--secondary-foreground)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
             />
           </Tooltip>
-          <Tooltip title={isFocused ? "取消关注" : "关注"}>
+          <Tooltip title={t(isFocused ? "newsnow.search.unfocus" : "newsnow.search.focus")}>
             <Button
               type="text"
               size="small"
@@ -1316,14 +1362,14 @@ export const NewsnowCard = memo(function NewsnowCard({
               className="h-7 w-7 text-[var(--secondary-foreground)] hover:bg-[var(--background)] hover:text-amber-500"
             />
           </Tooltip>
-          <Tooltip title="查看关联事件">
+          <Tooltip title={t("newsnow.card.viewEvents")}>
             <Button
               type="text"
               size="small"
               onClick={handleOpenEventsHub}
               className="h-7 px-2 text-[var(--secondary-foreground)] font-medium hover:bg-[var(--background)] hover:text-[var(--foreground)]"
             >
-              事件
+              {t("newsnow.actions.event")}
               {prefetchedEventIds.length > 0 ? ` ${prefetchedEventIds.length}` : ""}
             </Button>
           </Tooltip>
@@ -1362,12 +1408,12 @@ export const NewsnowCard = memo(function NewsnowCard({
               aria-label={t("common.actions")}
             />
           </Dropdown>
-          <Tooltip title={dragDisabled ? "智能排序中已禁用拖动" : "拖动排序"}>
+          <Tooltip title={t(dragDisabled ? "newsnow.card.dragDisabled" : "newsnow.card.dragReorder")}>
             <button
               type="button"
               {...(!dragDisabled ? attributes : {})}
               {...(!dragDisabled ? listeners : {})}
-              aria-label="拖动重新排序"
+              aria-label={t("newsnow.card.dragAria")}
               aria-pressed={isDragging}
               disabled={dragDisabled}
               className={`relative inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
@@ -1397,7 +1443,7 @@ export const NewsnowCard = memo(function NewsnowCard({
       </div>
 
       <div
-        className={`relative z-10 mx-3 mb-3 flex-1 overflow-y-auto rounded-[calc(var(--radius-lg)-2px)] border border-[var(--border)] px-2.5 py-2.5 shadow-inner [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
+        className={`relative z-10 mx-3 mb-3 flex-1 overflow-y-auto rounded-[calc(var(--radius-lg)-2px)] border border-[var(--border)] px-2.5 py-2.5 shadow-inner rail-scrollbar ${
           isDragging ? "bg-transparent" : "bg-transparent"
         }`}
       >

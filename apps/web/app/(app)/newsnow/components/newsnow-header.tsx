@@ -26,7 +26,7 @@ import { NewsnowBoardContainer } from "./newsnow-board-container";
 import { NewsnowSearch } from "./newsnow-search";
 
 const controlShellClassName =
-  "rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2.5";
+  "rounded bg-[var(--surface-muted)] px-3 py-2.5";
 
 const controlLabelClassName = "kicker px-1";
 
@@ -312,7 +312,7 @@ export function NewsnowHeader() {
             </div>
 
             {personalizationState.showPanel ? (
-              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+              <div className="rounded-lg bg-[var(--surface-muted)] p-3">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="space-y-1">
                     <p className="text-sm font-semibold text-[var(--foreground)]">

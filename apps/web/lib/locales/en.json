@@ -8,7 +8,21 @@
       "empty": "No matching sources found"
     },
     "column": {
-      "loadErrorSubtitle": "Unable to load news source data. Please try again later."
+      "loadErrorSubtitle": "Unable to load news source data. Please try again later.",
+      "primeRequestFailedTitle": "Failed to refresh this column",
+      "primeRequestFailedDescription": "The source refresh request did not complete. Cached content stays visible. Please try again later.",
+      "primeTransientFail": "{{count}} sources failed to refresh; showing cached content{{names}}.",
+      "primeUnsupportedFail": "{{count}} sources do not support batch refresh and will load individually with their cards{{names}}.",
+      "primePartialTitle": "Some sources did not refresh",
+      "primeSkippedTitle": "Some sources skipped batch refresh",
+      "noFocusTitle": "No followed sources yet",
+      "noFocusDescription": "Use the search button or star a source in another column to follow it",
+      "realtimeReached": "{{count}} new live items arrived",
+      "realtimeDescription": "Data source updates detected. Refresh this column now to clear the unread count.",
+      "refreshNow": "Refresh now",
+      "markRead": "Mark as read",
+      "retryFailedSources": "Retry failed sources",
+      "realtimeUnavailable": "Live connection unavailable"
     },
     "actions": {
       "original": "Original",
@@ -16,6 +30,53 @@
       "item": "Deep read",
       "more": "More actions",
       "duplicate": "{{count}} sources on same topic"
+    },
+    "card": {
+      "new": "New {{count}}",
+      "realtime": "Live {{count}}",
+      "folded": "{{count}} folded",
+      "combined": "Score {{score}}",
+      "affinity": "Affinity {{score}}",
+      "visible": "Visible {{count}}",
+      "nextRefresh": "Next refresh {{time}}",
+      "updated": "Updated {{time}}",
+      "fetchFailed": "Fetch failed",
+      "dormantTitle": "Loads when visible",
+      "dormantDescription": "Only prefetches the first screen and in-view sources to reduce background and initial requests.",
+      "loading": "Loading...",
+      "dragging": "Dragging",
+      "refreshTooltip": "Refresh",
+      "viewEvents": "View related events",
+      "dragDisabled": "Dragging disabled while smart sorting",
+      "dragReorder": "Drag to reorder",
+      "dragAria": "Drag to reorder",
+      "infoNoEventOpenedItem": "No event matched; opened deep read",
+      "parseFailedOpenedOriginal": "Parsing failed; opened original",
+      "noEventOpenedOriginal": "No event matched yet; opened original",
+      "infoNoItemOpenedEvent": "No deep read matched; opened event",
+      "noItemOpenedOriginal": "No deep read matched yet; opened original",
+      "combinedScoreDetail": "Combined {{score}}",
+      "affinityDetail": "Affinity contribution {{contribution}} = {{score}} × {{weight}}%",
+      "behaviorDetail": "Behavior contribution {{contribution}} = {{score}} × {{weight}}%",
+      "negativeDetail": "Negative penalty {{score}}",
+      "focusDetail": "Focus bonus {{score}}"
+    },
+    "recommended": {
+      "title": "Cross-source personalized feed",
+      "generatedAt": "Generated {{time}}",
+      "breakdown": {
+        "content": "Content",
+        "collaborative": "Collaborative",
+        "source": "Source",
+        "hotness": "Hotness"
+      },
+      "recommendScore": "Recommended {{score}}",
+      "sourceLabel": "Source {{source}}",
+      "combinedScore": "Combined {{score}}",
+      "notInterested": "Not interested",
+      "degradedTitle": "Recommendation feed degraded",
+      "degradedDescription": "Some ranking signals are unavailable; results fell back to available preference and hotness signals.",
+      "emptyDescription": "Keep browsing hot topics and deep reads; recommendations will improve over time."
     }
   },
   "newsHub": {

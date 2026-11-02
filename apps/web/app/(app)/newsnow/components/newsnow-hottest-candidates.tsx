@@ -3,6 +3,7 @@
 import { Skeleton } from 'antd';
 
 import { ChartEmptyState } from '@/components/chart-empty-state';
+import { SectionHeader } from '@/components/section-header';
 import { classifyRequestError } from '@/lib/request-error';
 
 import type {
@@ -74,13 +75,16 @@ function ProtectedStateCard({
   return (
     <NewsnowBoardContainer spacing="section" className="block">
       <div className="content-card px-4 py-4 md:px-5">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="kicker">Hottest Analysis</p>
-            <h2 className="mt-1 text-lg font-semibold text-[var(--foreground)]">热点候选</h2>
-          </div>
-          <div className="text-xs text-[var(--muted-foreground)]">热点分析增强</div>
-        </div>
+        <SectionHeader
+          className="mb-3"
+          kicker="Hottest Analysis"
+          title="热点候选"
+          extra={
+            <span className="text-xs text-[var(--muted-foreground)]">
+              热点分析增强
+            </span>
+          }
+        />
         <ChartEmptyState
           title={title}
           description={description}
@@ -137,20 +141,20 @@ function DomesticOpinionPanel({
       </div>
 
       {isLoading ? (
-        <div className="mt-4 rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+        <div className="mt-4 rounded bg-[var(--surface-muted)] p-4">
           <Skeleton active paragraph={{ rows: 3 }} title={{ width: '45%' }} />
         </div>
       ) : isError ? (
-        <div className="mt-4 rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--destructive)]">
+        <div className="mt-4 rounded bg-[var(--surface-muted)] p-4 text-sm text-[var(--destructive)]">
           国内舆情指数暂时不可用，热点候选仍会继续刷新。
         </div>
       ) : !hasContent ? (
-        <div className="mt-4 rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--muted-foreground)]">
+        <div className="mt-4 rounded bg-[var(--surface-muted)] p-4 text-sm text-[var(--muted-foreground)]">
           {formatDomesticOpinionEmptyDescription(domesticOpinion)}
         </div>
       ) : latest ? (
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
-          <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+          <div className="rounded bg-[var(--surface-muted)] p-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <div className="font-mono text-[40px] font-semibold leading-none tabular-nums text-[var(--foreground)]">
@@ -165,7 +169,7 @@ function DomesticOpinionPanel({
                   })}
                 </div>
               </div>
-              <div className="min-w-[220px] rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+              <div className="min-w-[220px] rounded bg-[var(--surface-muted)] px-3 py-2">
                 <svg
                   aria-label="国内舆情指数趋势"
                   viewBox="0 0 220 60"
@@ -194,25 +198,25 @@ function DomesticOpinionPanel({
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-[var(--secondary-foreground)]/85 md:grid-cols-4">
-              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+              <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Attention</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.attentionScore)}
                 </div>
               </div>
-              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+              <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Breadth</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.breadthScore)}
                 </div>
               </div>
-              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+              <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Freshness</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.freshnessScore)}
                 </div>
               </div>
-              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+              <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Pressure</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.sentimentPressure)}
@@ -221,7 +225,7 @@ function DomesticOpinionPanel({
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-[var(--secondary-foreground)]/85 md:grid-cols-3">
-              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+              <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Hotlist</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latestNewsnow?.indexValue ?? 0)}
@@ -230,7 +234,7 @@ function DomesticOpinionPanel({
                   候选 {latestNewsnow?.candidateCount ?? 0}
                 </div>
               </div>
-              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+              <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Pipeline</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latestPipeline?.indexValue ?? 0)}
@@ -239,7 +243,7 @@ function DomesticOpinionPanel({
                   样本 {latestPipeline?.articleCount ?? 0} · 来源 {latestPipeline?.sourceCount ?? 0}
                 </div>
               </div>
-              <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+              <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Pipeline Pressure</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latestPipeline?.sentimentPressure ?? 0)}
@@ -249,7 +253,7 @@ function DomesticOpinionPanel({
             </div>
           </div>
 
-          <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+          <div className="rounded bg-[var(--surface-muted)] p-4">
             <div>
               <div className="text-xs font-medium text-[var(--secondary-foreground)]/80">
                 高频关键词
@@ -301,7 +305,7 @@ function DomesticOpinionPanel({
                 {(domesticOpinion?.topCandidates ?? []).slice(0, 4).map((candidate) => (
                   <div
                     key={candidate.label}
-                    className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2"
+                    className="rounded bg-[var(--surface-muted)] px-3 py-2"
                   >
                     <div className="text-sm font-medium text-[var(--foreground)]">
                       {candidate.label}
@@ -394,24 +398,27 @@ export function NewsnowHottestCandidates({
           }
           isError={isDomesticOpinionError}
         />
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="kicker">Hottest Analysis</p>
-            <h2 className="mt-1 text-lg font-semibold text-[var(--foreground)]">热点候选</h2>
-          </div>
-          <div className="text-xs text-[var(--muted-foreground)]">跨源聚类 / 热度 / 新鲜度</div>
-        </div>
+        <SectionHeader
+          className="mb-3"
+          kicker="Hottest Analysis"
+          title="热点候选"
+          extra={
+            <span className="text-xs text-[var(--muted-foreground)]">
+              跨源聚类 / 热度 / 新鲜度
+            </span>
+          }
+        />
 
         {showLoading ? (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+              <div key={index} className="rounded bg-[var(--surface-muted)] p-4">
                 <Skeleton active paragraph={{ rows: 4 }} title={{ width: '60%' }} />
               </div>
             ))}
           </div>
         ) : isError ? (
-          <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--destructive)]">
+          <div className="rounded bg-[var(--surface-muted)] p-4 text-sm text-[var(--destructive)]">
             热点分析暂时不可用，页面仍可继续浏览原始热榜。
           </div>
         ) : topCandidates.length === 0 ? (

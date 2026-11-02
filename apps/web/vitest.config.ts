@@ -212,6 +212,8 @@ export default defineConfig({
         "app/(app)/news-hub/news-hub-pillars.tsx",
         // FE-UI 批9B：K 线卡片 bare 模式（避免卡中卡）
         "app/(app)/dashboard/components/candlestick-card.tsx",
+        // FE-UI 批9D：NewsNow 热榜列表操作行键盘可达
+        "app/(app)/newsnow/components/news-list-hot.tsx",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {

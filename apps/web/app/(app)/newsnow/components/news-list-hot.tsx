@@ -242,7 +242,7 @@ export function NewsListHot({
               ) : null}
             </div>
             {!isMobile ? (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-1.5 pl-[36px] text-xs text-[var(--secondary-foreground)] opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
+              <div className="absolute right-2 top-1/2 flex -translate-y-1/2 flex-wrap items-center gap-x-3 gap-y-1 rounded bg-[var(--surface)] px-2 py-1 text-xs text-[var(--secondary-foreground)] opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto">
                 <a
                   href={href}
                   target="_blank"
