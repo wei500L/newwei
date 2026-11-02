@@ -119,10 +119,10 @@ export function CreateCrawlTaskDrawer({
 
         <div
           style={{
-            marginTop: 24,
             display: "flex",
             justifyContent: "space-between",
           }}
+          className="mt-6"
         >
           {currentStep > 0 && (
             <Button onClick={handlePrev}>{t("common.previous")}</Button>

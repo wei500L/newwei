@@ -1956,9 +1956,8 @@ export function CrawlTasksView() {
               style={{
                 display: "flex",
                 justifyContent: "center",
-                marginTop: "0.5rem",
-                marginBottom: "0.5rem",
               }}
+              className="my-2"
             >
               <Spin />
             </div>
