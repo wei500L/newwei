@@ -2,43 +2,13 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  --admin-metric-border: rgba(148, 163, 184, 0.38);
-  --admin-metric-bg-start: rgba(255, 255, 255, 0.95);
-  --admin-metric-bg-end: rgba(248, 250, 252, 0.92);
-  --admin-metric-accent-glow: rgba(47, 108, 229, 0.08);
-  --admin-metric-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
-  --admin-surface-inset-highlight: rgba(255, 255, 255, 0.7);
-  --admin-section-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-  --admin-icon-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
-  --admin-link-border: rgba(148, 163, 184, 0.32);
-  --admin-link-bg-start: rgba(255, 255, 255, 0.96);
-  --admin-link-bg-end: rgba(248, 250, 252, 0.9);
-  --admin-link-shadow: 0 8px 18px rgba(15, 23, 42, 0.07);
-  --admin-link-shadow-hover: 0 14px 30px rgba(15, 23, 42, 0.14);
-  --admin-collapse-border: rgba(148, 163, 184, 0.36);
-  --admin-collapse-bg-start: rgba(255, 255, 255, 0.96);
-  --admin-collapse-bg-end: rgba(248, 250, 252, 0.9);
-  --admin-collapse-content-border: rgba(148, 163, 184, 0.24);
-}
-
-:global(.dark) .adminShell {
-  --admin-metric-border: rgba(71, 85, 105, 0.75);
-  --admin-metric-bg-start: rgba(15, 23, 42, 0.86);
-  --admin-metric-bg-end: rgba(15, 23, 42, 0.68);
-  --admin-metric-accent-glow: rgba(59, 130, 246, 0.2);
-  --admin-metric-shadow: 0 10px 26px rgba(2, 6, 23, 0.45);
-  --admin-surface-inset-highlight: rgba(255, 255, 255, 0.06);
-  --admin-section-shadow: 0 14px 28px rgba(2, 6, 23, 0.44);
-  --admin-icon-shadow: 0 6px 14px rgba(2, 6, 23, 0.34);
-  --admin-link-border: rgba(71, 85, 105, 0.72);
-  --admin-link-bg-start: rgba(15, 23, 42, 0.83);
-  --admin-link-bg-end: rgba(15, 23, 42, 0.66);
-  --admin-link-shadow: 0 10px 22px rgba(2, 6, 23, 0.32);
-  --admin-link-shadow-hover: 0 16px 32px rgba(2, 6, 23, 0.54);
-  --admin-collapse-border: rgba(71, 85, 105, 0.72);
-  --admin-collapse-bg-start: rgba(15, 23, 42, 0.83);
-  --admin-collapse-bg-end: rgba(15, 23, 42, 0.66);
-  --admin-collapse-content-border: rgba(71, 85, 105, 0.45);
+  --admin-metric-border: var(--border);
+  --admin-metric-shadow: var(--shadow-surface);
+  --admin-link-border: var(--border);
+  --admin-link-shadow: var(--shadow-surface);
+  --admin-link-shadow-hover: var(--shadow-surface);
+  --admin-collapse-border: var(--border);
+  --admin-collapse-content-border: var(--border);
 }
 
 .metricsRail {
@@ -48,15 +18,9 @@
 }
 
 .metricCard {
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--admin-metric-border);
-  background:
-    linear-gradient(
-      180deg,
-      var(--admin-metric-bg-start),
-      var(--admin-metric-bg-end)
-    ),
-    radial-gradient(circle at 8% 0%, var(--admin-metric-accent-glow), transparent 56%);
+  background: var(--surface-muted);
   padding: 0.85rem 1rem;
   box-shadow: var(--admin-metric-shadow);
 }
@@ -116,10 +80,6 @@
 .mobileGroupLabel,
 .mobileGroupBody {
   --tone-border: rgba(148, 163, 184, 0.44);
-  --tone-bg-start: rgba(248, 250, 252, 0.94);
-  --tone-bg-mid: rgba(255, 255, 255, 0.92);
-  --tone-bg-end: rgba(241, 245, 249, 0.88);
-  --tone-accent-glow: rgba(148, 163, 184, 0.22);
   --tone-icon-bg: rgba(241, 245, 249, 0.96);
   --tone-icon-border: rgba(148, 163, 184, 0.45);
   --tone-icon-fg: var(--foreground);
@@ -132,34 +92,11 @@
 .groupSection {
   position: relative;
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--tone-border);
-  background: linear-gradient(
-    140deg,
-    var(--tone-bg-start) 0%,
-    var(--tone-bg-mid) 56%,
-    var(--tone-bg-end) 100%
-  );
+  background: var(--surface);
   padding: 1rem;
-  box-shadow:
-    inset 0 1px 0 var(--admin-surface-inset-highlight),
-    var(--admin-section-shadow);
-}
-
-.groupSection::after {
-  content: "";
-  position: absolute;
-  right: -70px;
-  top: -76px;
-  width: 180px;
-  height: 180px;
-  border-radius: 9999px;
-  background: radial-gradient(
-    circle,
-    var(--tone-accent-glow) 0%,
-    transparent 72%
-  );
-  pointer-events: none;
+  box-shadow: var(--shadow-surface);
 }
 
 .groupHeader {
@@ -192,7 +129,7 @@
   border-radius: 0.7rem;
   border: 1px solid var(--tone-icon-border);
   background: var(--tone-icon-bg);
-  box-shadow: var(--admin-icon-shadow);
+  box-shadow: none;
 }
 
 .groupIconShellCompact {
@@ -264,11 +201,7 @@
   height: 100%;
   border-radius: var(--radius-lg);
   border: 1px solid var(--admin-link-border);
-  background: linear-gradient(
-    180deg,
-    var(--admin-link-bg-start),
-    var(--admin-link-bg-end)
-  );
+  background: var(--surface);
   padding: 1rem;
   box-shadow: var(--admin-link-shadow);
   transition:
@@ -382,11 +315,7 @@
   overflow: hidden;
   border: 1px solid var(--admin-collapse-border);
   border-radius: var(--radius-lg) !important;
-  background: linear-gradient(
-    180deg,
-    var(--admin-collapse-bg-start),
-    var(--admin-collapse-bg-end)
-  );
+  background: var(--surface);
 }
 
 .adminCollapse :global(.ant-collapse-header) {
@@ -407,10 +336,6 @@
 .mobileGroupLabel[data-tone="operations"],
 .mobileGroupBody[data-tone="operations"] {
   --tone-border: rgba(14, 165, 233, 0.45);
-  --tone-bg-start: rgba(240, 249, 255, 0.96);
-  --tone-bg-mid: rgba(255, 255, 255, 0.95);
-  --tone-bg-end: rgba(224, 242, 254, 0.88);
-  --tone-accent-glow: rgba(14, 165, 233, 0.28);
   --tone-icon-bg: rgba(224, 242, 254, 0.96);
   --tone-icon-border: rgba(125, 211, 252, 0.68);
   --tone-icon-fg: #075985;
@@ -424,10 +349,6 @@
 .mobileGroupLabel[data-tone="monitoring"],
 .mobileGroupBody[data-tone="monitoring"] {
   --tone-border: rgba(16, 185, 129, 0.44);
-  --tone-bg-start: rgba(236, 253, 245, 0.96);
-  --tone-bg-mid: rgba(255, 255, 255, 0.95);
-  --tone-bg-end: rgba(209, 250, 229, 0.86);
-  --tone-accent-glow: rgba(16, 185, 129, 0.27);
   --tone-icon-bg: rgba(209, 250, 229, 0.96);
   --tone-icon-border: rgba(110, 231, 183, 0.7);
   --tone-icon-fg: #065f46;
@@ -441,10 +362,6 @@
 .mobileGroupLabel[data-tone="governance"],
 .mobileGroupBody[data-tone="governance"] {
   --tone-border: rgba(245, 158, 11, 0.43);
-  --tone-bg-start: rgba(255, 251, 235, 0.96);
-  --tone-bg-mid: rgba(255, 255, 255, 0.94);
-  --tone-bg-end: rgba(254, 243, 199, 0.84);
-  --tone-accent-glow: rgba(245, 158, 11, 0.25);
   --tone-icon-bg: rgba(254, 243, 199, 0.96);
   --tone-icon-border: rgba(252, 211, 77, 0.72);
   --tone-icon-fg: #92400e;
@@ -458,10 +375,6 @@
 .mobileGroupLabel[data-tone="platform"],
 .mobileGroupBody[data-tone="platform"] {
   --tone-border: rgba(148, 163, 184, 0.46);
-  --tone-bg-start: rgba(248, 250, 252, 0.95);
-  --tone-bg-mid: rgba(255, 255, 255, 0.94);
-  --tone-bg-end: rgba(226, 232, 240, 0.87);
-  --tone-accent-glow: rgba(100, 116, 139, 0.23);
   --tone-icon-bg: rgba(226, 232, 240, 0.95);
   --tone-icon-border: rgba(148, 163, 184, 0.72);
   --tone-icon-fg: var(--secondary-foreground);
@@ -475,10 +388,6 @@
 :global(.dark) .mobileGroupLabel[data-tone="operations"],
 :global(.dark) .mobileGroupBody[data-tone="operations"] {
   --tone-border: rgba(56, 189, 248, 0.38);
-  --tone-bg-start: rgba(8, 47, 73, 0.46);
-  --tone-bg-mid: rgba(15, 23, 42, 0.82);
-  --tone-bg-end: rgba(2, 132, 199, 0.12);
-  --tone-accent-glow: rgba(56, 189, 248, 0.32);
   --tone-icon-bg: rgba(56, 189, 248, 0.18);
   --tone-icon-border: rgba(125, 211, 252, 0.38);
   --tone-icon-fg: #e0f2fe;
@@ -492,10 +401,6 @@
 :global(.dark) .mobileGroupLabel[data-tone="monitoring"],
 :global(.dark) .mobileGroupBody[data-tone="monitoring"] {
   --tone-border: rgba(52, 211, 153, 0.38);
-  --tone-bg-start: rgba(6, 78, 59, 0.42);
-  --tone-bg-mid: rgba(15, 23, 42, 0.82);
-  --tone-bg-end: rgba(16, 185, 129, 0.11);
-  --tone-accent-glow: rgba(52, 211, 153, 0.29);
   --tone-icon-bg: rgba(52, 211, 153, 0.17);
   --tone-icon-border: rgba(110, 231, 183, 0.36);
   --tone-icon-fg: #d1fae5;
@@ -509,10 +414,6 @@
 :global(.dark) .mobileGroupLabel[data-tone="governance"],
 :global(.dark) .mobileGroupBody[data-tone="governance"] {
   --tone-border: rgba(251, 191, 36, 0.38);
-  --tone-bg-start: rgba(120, 53, 15, 0.36);
-  --tone-bg-mid: rgba(15, 23, 42, 0.82);
-  --tone-bg-end: rgba(217, 119, 6, 0.11);
-  --tone-accent-glow: rgba(251, 191, 36, 0.25);
   --tone-icon-bg: rgba(251, 191, 36, 0.17);
   --tone-icon-border: rgba(252, 211, 77, 0.36);
   --tone-icon-fg: #fef3c7;
@@ -526,10 +427,6 @@
 :global(.dark) .mobileGroupLabel[data-tone="platform"],
 :global(.dark) .mobileGroupBody[data-tone="platform"] {
   --tone-border: rgba(148, 163, 184, 0.38);
-  --tone-bg-start: rgba(30, 41, 59, 0.86);
-  --tone-bg-mid: rgba(15, 23, 42, 0.84);
-  --tone-bg-end: rgba(71, 85, 105, 0.14);
-  --tone-accent-glow: rgba(148, 163, 184, 0.2);
   --tone-icon-bg: rgba(148, 163, 184, 0.16);
   --tone-icon-border: rgba(148, 163, 184, 0.34);
   --tone-icon-fg: var(--foreground);
