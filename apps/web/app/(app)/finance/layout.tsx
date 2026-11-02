@@ -4,7 +4,7 @@ import { FinanceNav } from "./finance-nav";
 
 export default function FinanceLayout({ children }: { children: ReactNode }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="flex flex-col gap-6">
       <FinanceNav />
       {children}
     </div>

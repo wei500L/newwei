@@ -1661,14 +1661,14 @@ export function CrawlFrontierConsole() {
             label: t("crawlFrontier.console.tabs.runs"),
             children: (
               <Space direction="vertical" size="large" style={{ width: "100%" }}>
-                <Card className="content-card" size="small" style={{ position: "sticky", top: 16, zIndex: 2 }}>
+                <Card className="content-card md:sticky md:top-0 md:z-[2]" size="small">
                   <Row gutter={[16, 16]}>
-                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.runStats.totalRuns")} value={runStats.total} /></Col>
-                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.stats.active")} value={runStats.active} /></Col>
-                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.runStats.failed")} value={runStats.failed} /></Col>
-                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.runStats.challenge")} value={runStats.challenge} /></Col>
-                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.runStats.pendingLlm")} value={runStats.pendingLlm} /></Col>
-                    <Col xs={24} md={4}><Statistic title={t("crawlFrontier.console.runStats.seedFirst")} value={runStats.seedFirst} /></Col>
+                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.totalRuns")} value={runStats.total} /></Col>
+                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.stats.active")} value={runStats.active} /></Col>
+                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.failed")} value={runStats.failed} /></Col>
+                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.challenge")} value={runStats.challenge} /></Col>
+                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.pendingLlm")} value={runStats.pendingLlm} /></Col>
+                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.seedFirst")} value={runStats.seedFirst} /></Col>
                   </Row>
                   <Space wrap style={{ display: "flex", marginTop: 16, alignItems: "flex-end" }}>
                     <Input.Search

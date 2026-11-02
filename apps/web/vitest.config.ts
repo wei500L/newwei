@@ -201,6 +201,8 @@ export default defineConfig({
         "components/page-header.tsx",
         "components/section-header.tsx",
         "components/filter-bar.tsx",
+        // FE-UI 批2B：子导航激活项解析
+        "lib/resolve-active-route.ts",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {

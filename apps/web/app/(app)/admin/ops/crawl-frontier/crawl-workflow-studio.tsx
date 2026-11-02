@@ -46,6 +46,7 @@ import {
   findUnsupportedWorkflowProxyIssues,
   getCrawlConfigPolicyIssueTranslationKey,
 } from "@/lib/crawl-config-policy";
+import { WORKFLOW_CANVAS_GRID_COLOR } from "@/lib/graph-tokens";
 
 import {
   buildWorkflowCandidateTraceChain,
@@ -271,11 +272,11 @@ function nodeToCanvasNode(
       ),
     },
     style: {
-      borderRadius: 14,
-      border: "1px solid #d9d9d9",
-      background: "#fffdf8",
+      borderRadius: 6,
+      border: "1px solid var(--border)",
+      background: "var(--surface)",
       padding: 10,
-      boxShadow: "0 10px 24px rgba(15, 23, 42, 0.06)",
+      boxShadow: "var(--shadow-surface)",
     },
   };
 }
@@ -1592,42 +1593,37 @@ function WorkflowStudioInner({
               <Card
                 size="small"
                 title={t("crawlFrontier.workflowStudio.sections.canvas")}
-                bodyStyle={{ padding: 0, height: 720, background: "#f8fafc" }}
+                styles={{ body: { padding: 0 } }}
               >
-                {definition ? (
-                  <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onConnect={onConnect}
-                    onNodeClick={(_, node) => {
-                      syncDefinition();
-                      setSelectedNodeId(node.id);
-                    }}
-                    onPaneClick={() => syncDefinition()}
-                    fitView
-                  >
-                    <Background color="#dbe4f0" gap={18} />
-                    <MiniMap />
-                    <Controls />
-                  </ReactFlow>
-                ) : (
-                  <div
-                    style={{
-                      height: 720,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Empty
-                      description={t(
-                        "crawlFrontier.workflowStudio.empty.createToEdit",
-                      )}
-                    />
-                  </div>
-                )}
+                <div className="h-[min(720px,70dvh)] bg-[var(--surface-muted)]">
+                  {definition ? (
+                    <ReactFlow
+                      nodes={nodes}
+                      edges={edges}
+                      onNodesChange={onNodesChange}
+                      onEdgesChange={onEdgesChange}
+                      onConnect={onConnect}
+                      onNodeClick={(_, node) => {
+                        syncDefinition();
+                        setSelectedNodeId(node.id);
+                      }}
+                      onPaneClick={() => syncDefinition()}
+                      fitView
+                    >
+                      <Background color={WORKFLOW_CANVAS_GRID_COLOR} gap={18} />
+                      <MiniMap />
+                      <Controls />
+                    </ReactFlow>
+                  ) : (
+                    <div className="flex h-full items-center justify-center">
+                      <Empty
+                        description={t(
+                          "crawlFrontier.workflowStudio.empty.createToEdit",
+                        )}
+                      />
+                    </div>
+                  )}
+                </div>
               </Card>
             </Col>
             <Col xs={24} xl={7}>

@@ -4,6 +4,8 @@ import { Tabs } from "antd";
 import { usePathname, useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
+import { resolveActiveRouteKey } from "@/lib/resolve-active-route";
+
 const financeRoutes: {
   key: string;
   labelKey: string;
@@ -19,11 +21,9 @@ export function FinanceNav() {
   const pathname = usePathname();
   const router = useRouter();
 
-  const activeItem =
-    financeRoutes.find(
-      (route) => pathname === route.key || pathname.startsWith(`${route.key}/`)
-    ) ?? financeRoutes[0];
-  const activeKey = activeItem?.key ?? financeRoutes[0]!.key;
+  const activeKey =
+    resolveActiveRouteKey(pathname, financeRoutes.map((route) => route.key)) ??
+    financeRoutes[0]!.key;
 
   return (
     <Tabs

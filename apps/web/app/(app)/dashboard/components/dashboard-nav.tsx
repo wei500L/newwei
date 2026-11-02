@@ -4,6 +4,8 @@ import { Tabs } from "antd";
 import { usePathname, useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
+import { resolveActiveRouteKey } from "@/lib/resolve-active-route";
+
 const dashboardRoutes = [
   { key: "/dashboard", labelKey: "dashboard.tabs.overview" },
   { key: "/dashboard/key-monitor", labelKey: "dashboard.tabs.keyMonitor" },
@@ -22,11 +24,9 @@ export function DashboardNav() {
   if (dashboardRoutes.length === 0) {
     return null;
   }
-  const activeItem =
-    dashboardRoutes.find(
-      (route) => pathname === route.key || pathname.startsWith(`${route.key}/`),
-    ) ?? dashboardRoutes[0];
-  const activeKey = activeItem?.key ?? dashboardRoutes[0]!.key;
+  const activeKey =
+    resolveActiveRouteKey(pathname, dashboardRoutes.map((route) => route.key)) ??
+    dashboardRoutes[0]!.key;
 
   return (
     <Tabs

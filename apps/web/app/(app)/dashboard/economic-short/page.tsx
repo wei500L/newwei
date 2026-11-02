@@ -271,7 +271,7 @@ export default function EconomicShortPage() {
             <Col xs={24} lg={12}>
               <Card
                 title={t("dashboard.economicShort.cards.fxHeatmap")}
-                className="content-card"
+                className="content-card h-full"
                 extra={chartMeta}
               >
                 {heatmapData.some(
@@ -279,20 +279,24 @@ export default function EconomicShortPage() {
                 ) ? (
                   <DashboardChart option={heatmapOption} height={320} />
                 ) : (
-                  <Empty description={t("dashboard.economicShort.heatmap.empty")} />
+                  <div className="flex min-h-viz-sm items-center justify-center">
+                    <Empty description={t("dashboard.economicShort.heatmap.empty")} />
+                  </div>
                 )}
               </Card>
             </Col>
             <Col xs={24} lg={12}>
               <Card
                 title={t("dashboard.economicShort.cards.cryptoPrices")}
-                className="content-card"
+                className="content-card h-full"
                 extra={chartMeta}
               >
                 {btcValues.length > 0 ? (
                   <DashboardChart option={cryptoOption} height={320} />
                 ) : (
-                  <Empty description={t("dashboard.economicShort.crypto.empty")} />
+                  <div className="flex min-h-viz-sm items-center justify-center">
+                    <Empty description={t("dashboard.economicShort.crypto.empty")} />
+                  </div>
                 )}
               </Card>
             </Col>

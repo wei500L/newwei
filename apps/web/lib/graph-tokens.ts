@@ -38,3 +38,6 @@ export const ENTITY_IMPACT_GRAPH_COLORS = {
 
 /** 实体影响图未知类别的兜底色。 */
 export const ENTITY_IMPACT_GRAPH_DEFAULT_COLOR = "#64748b";
+
+/** 工作流画布网格线颜色（Background 组件的 SVG 网格线）。 */
+export const WORKFLOW_CANVAS_GRID_COLOR = "#d9d4c9";

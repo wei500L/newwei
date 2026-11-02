@@ -533,7 +533,7 @@ export function DashboardContent() {
   const heroPermissionDescription = t("dashboard.hero.permissionRequired");
 
   return (
-    <div className="flex gap-6 h-full items-start">
+    <div className="flex h-full flex-col items-stretch gap-6 xl:flex-row xl:items-start">
       <LiveAlertsToasts />
 
       {/* Center Column: Market Feed & Visuals */}
@@ -732,7 +732,7 @@ export function DashboardContent() {
 
         {/* System Stats (Hidden by default) */}
         {showSystemStats && (
-          <div className="animate-in fade-in slide-in-from-top-4 duration-300">
+          <div>
             {!canManageQueue ? (
               <div
                 className="mb-6"
@@ -883,10 +883,11 @@ export function DashboardContent() {
       </div>
 
       {/* Right Column: Data Board & Intelligence */}
-      <div className="w-[340px] 2xl:w-[400px] flex-shrink-0 flex flex-col gap-6 hidden xl:flex sticky top-0 h-fit">
+      <div className="flex w-full flex-col gap-6 xl:sticky xl:top-0 xl:h-fit xl:w-[340px] xl:flex-shrink-0 2xl:w-[400px]">
         <DashboardAnalysisFeedProvider>
           {/* Live News Feed */}
-          <div className="h-[600px]">
+          {/* 600：侧栏信息流高度，宽屏专用 */}
+          <div className="h-viz-3xl xl:h-[600px]">
             <AnalysisStream />
           </div>
 

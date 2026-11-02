@@ -4,7 +4,7 @@ import { DashboardNav } from "./components/dashboard-nav";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="flex flex-col gap-6">
       <DashboardNav />
       {children}
     </div>

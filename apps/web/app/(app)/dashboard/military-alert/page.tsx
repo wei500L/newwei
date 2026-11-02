@@ -177,11 +177,13 @@ export default function MilitaryAlertPage() {
         <>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.militaryAlert.cards.metalRadar")} className="content-card" extra={chartMeta}>
+              <Card title={t("dashboard.militaryAlert.cards.metalRadar")} className="content-card h-full" extra={chartMeta}>
                 {radarValues.length > 0 ? (
                   <DashboardChart option={radarOption} height={360} />
                 ) : (
-                  <Empty description={t("dashboard.militaryAlert.empty.metalRadar")} />
+                  <div className="flex min-h-viz-sm items-center justify-center">
+                    <Empty description={t("dashboard.militaryAlert.empty.metalRadar")} />
+                  </div>
                 )}
                 <List
                   dataSource={alertItems}
@@ -235,11 +237,13 @@ export default function MilitaryAlertPage() {
               </Card>
             </Col>
             <Col xs={24} lg={12}>
-              <Card title={t("dashboard.militaryAlert.cards.agriAlert")} className="content-card" extra={chartMeta}>
+              <Card title={t("dashboard.militaryAlert.cards.agriAlert")} className="content-card h-full" extra={chartMeta}>
                 {hasAgData ? (
                   <DashboardChart option={agOption} height={360} />
                 ) : (
-                  <Empty description={t("dashboard.militaryAlert.empty.agri")} />
+                  <div className="flex min-h-viz-sm items-center justify-center">
+                    <Empty description={t("dashboard.militaryAlert.empty.agri")} />
+                  </div>
                 )}
               </Card>
             </Col>

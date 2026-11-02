@@ -64,22 +64,29 @@ export function DashboardChartCard({
   const isRenderable = Boolean(option && hasSeries(option));
 
   return (
-    <Card title={title} className={className} extra={extra}>
+    <Card
+      title={title}
+      className={`h-full ${className ?? ""}`.trim()}
+      extra={extra}
+      styles={{ body: { height: "100%" } }}
+    >
       {state === "error" ? (
-        <ChartEmptyState
-          variant="error"
-          title={t("dashboard.dataAbnormal")}
-          description={
-            errorDescription ??
-            t("common.serviceUnavailable")
-          }
-          actionLabel={
-            onRetry
-              ? t("dashboard.actions.retryFetch")
-              : undefined
-          }
-          onAction={onRetry}
-        />
+        <div className="flex min-h-viz-sm items-center justify-center">
+          <ChartEmptyState
+            variant="error"
+            title={t("dashboard.dataAbnormal")}
+            description={
+              errorDescription ??
+              t("common.serviceUnavailable")
+            }
+            actionLabel={
+              onRetry
+                ? t("dashboard.actions.retryFetch")
+                : undefined
+            }
+            onAction={onRetry}
+          />
+        </div>
       ) : isRenderable && option ? (
         <DashboardChart
           option={option}
@@ -95,11 +102,13 @@ export function DashboardChartCard({
           exportBackgroundColor={exportBackgroundColor}
         />
       ) : (
-        <Empty
-          description={
-            emptyDescription ?? t("dashboard.dataEmpty")
-          }
-        />
+        <div className="flex min-h-viz-sm items-center justify-center">
+          <Empty
+            description={
+              emptyDescription ?? t("dashboard.dataEmpty")
+            }
+          />
+        </div>
       )}
     </Card>
   );
