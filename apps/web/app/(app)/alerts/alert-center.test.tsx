@@ -134,8 +134,11 @@ function detailCard(): HTMLElement {
   return screen.getByText("Evidence Details").closest(".ant-card") as HTMLElement;
 }
 
-function statCard(title: string): HTMLElement {
-  return screen.getByText(title).closest(".ant-card") as HTMLElement;
+/** KPI 指标条中某个 label 对应的数值（KpiStrip 的 <dd>）。 */
+function statValue(label: string): HTMLElement {
+  const labelNode = screen.getByText(label);
+  const item = labelNode.closest("div") as HTMLElement;
+  return item.querySelector("dd") as HTMLElement;
 }
 
 /**
@@ -434,10 +437,10 @@ describe("Alert Center 数据状态（迁移前行为）", () => {
     });
 
     await waitFor(() => expect(eventRows(view.container)).toHaveLength(3));
-    expect(within(statCard("Total alerts")).getByText("3")).toBeInTheDocument();
-    expect(within(statCard("Pending")).getByText("1")).toBeInTheDocument();
-    expect(within(statCard("Confirmed")).getByText("1")).toBeInTheDocument();
-    expect(within(statCard("Ignored")).getByText("1")).toBeInTheDocument();
+    expect(statValue("Total alerts")).toHaveTextContent("3");
+    expect(statValue("Pending")).toHaveTextContent("1");
+    expect(statValue("Confirmed")).toHaveTextContent("1");
+    expect(statValue("Ignored")).toHaveTextContent("1");
   });
 });
 

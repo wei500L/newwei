@@ -33,6 +33,7 @@ import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { FilterBar } from "@/components/filter-bar";
+import { KpiStrip } from "@/components/kpi-strip";
 import { PageHeader } from "@/components/page-header";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -1669,14 +1670,42 @@ export function CrawlFrontierConsole() {
             children: (
               <Space direction="vertical" size="large" style={{ width: "100%" }}>
                 <Card className="content-card md:sticky md:top-0 md:z-[2]" size="small">
-                  <Row gutter={[16, 16]}>
-                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.totalRuns")} value={runStats.total} /></Col>
-                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.stats.active")} value={runStats.active} /></Col>
-                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.failed")} value={runStats.failed} /></Col>
-                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.challenge")} value={runStats.challenge} /></Col>
-                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.pendingLlm")} value={runStats.pendingLlm} /></Col>
-                    <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.seedFirst")} value={runStats.seedFirst} /></Col>
-                  </Row>
+                  <KpiStrip
+                    bare
+                    items={[
+                      {
+                        key: "totalRuns",
+                        label: t("crawlFrontier.console.runStats.totalRuns"),
+                        value: runStats.total,
+                      },
+                      {
+                        key: "active",
+                        label: t("crawlFrontier.console.stats.active"),
+                        value: runStats.active,
+                      },
+                      {
+                        key: "failed",
+                        label: t("crawlFrontier.console.runStats.failed"),
+                        value: runStats.failed,
+                        tone: runStats.failed > 0 ? "danger" : undefined,
+                      },
+                      {
+                        key: "challenge",
+                        label: t("crawlFrontier.console.runStats.challenge"),
+                        value: runStats.challenge,
+                      },
+                      {
+                        key: "pendingLlm",
+                        label: t("crawlFrontier.console.runStats.pendingLlm"),
+                        value: runStats.pendingLlm,
+                      },
+                      {
+                        key: "seedFirst",
+                        label: t("crawlFrontier.console.runStats.seedFirst"),
+                        value: runStats.seedFirst,
+                      },
+                    ]}
+                  />
                   <FilterBar
                     className="mt-4"
                     actions={

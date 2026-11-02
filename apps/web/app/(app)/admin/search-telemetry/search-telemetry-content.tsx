@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Card, Col, DatePicker, Row, Space, Statistic, Table } from "antd";
+import { Alert, Card, Col, DatePicker, Row, Space, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { Dayjs } from "dayjs";
 import type { EChartsOption } from "echarts";
@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DataStateBoundary } from "@/components/data-state-boundary";
 import { DashboardChart } from "@/components/echart";
+import { KpiStrip } from "@/components/kpi-strip";
 import { PageHeader } from "@/components/page-header";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
@@ -258,31 +259,32 @@ export function SearchTelemetryContent() {
             <Alert type="error" showIcon message={errorMessage} />
           ) : null}
 
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <Statistic
-              title={t("admin.searchTelemetry.metrics.totalEvents")}
-              value={summary.totals.totalEvents}
-              loading={loading}
-            />
-            <div className="md:border-l md:border-[var(--border)] md:pl-4">
-              <Statistic
-                title={t("admin.searchTelemetry.metrics.activeDays")}
-                value={summary.daily.length}
-                loading={loading}
-              />
-            </div>
-            <div className="md:border-l md:border-[var(--border)] md:pl-4">
-              <Statistic
-                title={t("admin.searchTelemetry.metrics.averageDaily")}
-                value={
-                  summary.daily.length > 0
-                    ? (summary.totals.totalEvents / summary.daily.length).toFixed(1)
-                    : 0
-                }
-                loading={loading}
-              />
-            </div>
-          </div>
+          <KpiStrip
+            bare
+            items={[
+              {
+                key: "totalEvents",
+                label: t("admin.searchTelemetry.metrics.totalEvents"),
+                value: loading ? "—" : summary.totals.totalEvents,
+              },
+              {
+                key: "activeDays",
+                label: t("admin.searchTelemetry.metrics.activeDays"),
+                value: loading ? "—" : summary.daily.length,
+              },
+              {
+                key: "averageDaily",
+                label: t("admin.searchTelemetry.metrics.averageDaily"),
+                value: loading
+                  ? "—"
+                  : summary.daily.length > 0
+                    ? (
+                        summary.totals.totalEvents / summary.daily.length
+                      ).toFixed(1)
+                    : 0,
+              },
+            ]}
+          />
         </Space>
       </Card>
 

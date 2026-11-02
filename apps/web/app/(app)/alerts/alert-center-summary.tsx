@@ -1,11 +1,12 @@
 "use client";
 
-import { Alert, Button, Card, Col, Row, Statistic, Typography } from "antd";
+import { Alert, Button, Card, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
+import { KpiStrip } from "@/components/kpi-strip";
 
 import type { AlertStats, AlertTrendPoint } from "./alert-center.utils";
 
@@ -75,49 +76,38 @@ export function AlertCenterSummary({
         />
       ) : null}
 
-      <Row gutter={[12, 12]}>
-        <Col xs={12} sm={8} xl={4}>
-          <Card size="small" className="content-card">
-            <Statistic
-              title={t("alerts.center.stats.total")}
-              value={stats.total}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} xl={4}>
-          <Card size="small" className="content-card">
-            <Statistic
-              title={t("alerts.center.stats.pending")}
-              value={stats.pending}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} xl={4}>
-          <Card size="small" className="content-card">
-            <Statistic
-              title={t("alerts.center.stats.confirmed")}
-              value={stats.confirmed}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} xl={4}>
-          <Card size="small" className="content-card">
-            <Statistic
-              title={t("alerts.center.stats.ignored")}
-              value={stats.ignored}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8} xl={8}>
-          <Card size="small" className="content-card">
-            <Statistic
-              title={t("alerts.center.stats.falsePositiveRate")}
-              value={falsePositivePercent ?? "--"}
-              suffix={falsePositivePercent !== null ? "%" : undefined}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <KpiStrip
+        items={[
+          {
+            key: "total",
+            label: t("alerts.center.stats.total"),
+            value: stats.total,
+          },
+          {
+            key: "pending",
+            label: t("alerts.center.stats.pending"),
+            value: stats.pending,
+            tone: stats.pending > 0 ? "warning" : undefined,
+          },
+          {
+            key: "confirmed",
+            label: t("alerts.center.stats.confirmed"),
+            value: stats.confirmed,
+          },
+          {
+            key: "ignored",
+            label: t("alerts.center.stats.ignored"),
+            value: stats.ignored,
+          },
+          {
+            key: "falsePositiveRate",
+            label: t("alerts.center.stats.falsePositiveRate"),
+            value: falsePositivePercent ?? "--",
+            suffix: falsePositivePercent !== null ? "%" : undefined,
+          },
+        ]}
+      />
+
 
       <Card
         className="content-card"

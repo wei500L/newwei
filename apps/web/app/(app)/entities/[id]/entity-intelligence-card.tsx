@@ -18,7 +18,6 @@ import {
   Segmented,
   Skeleton,
   Space,
-  Statistic,
   Tag,
   Tooltip,
   Typography,
@@ -31,6 +30,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { KpiStrip } from "@/components/kpi-strip";
 import { PageHeader } from "@/components/page-header";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import {
@@ -284,32 +284,30 @@ export function EntityIntelligenceCard({
         />
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="content-card">
-          <Statistic
-            title={t("entities.intelligence.relationships")}
-            value={card.metrics.relationshipCount}
-          />
-        </Card>
-        <Card className="content-card">
-          <Statistic
-            title={t("entities.intelligence.mentions")}
-            value={card.metrics.mentionedArticleCount}
-          />
-        </Card>
-        <Card className="content-card">
-          <Statistic
-            title={t("entities.intelligence.events")}
-            value={card.metrics.recentEventCount}
-          />
-        </Card>
-        <Card className="content-card">
-          <Statistic
-            title={t("entities.intelligence.negativeRatio")}
-            value={formatPercent(card.metrics.negativeRatio)}
-          />
-        </Card>
-      </div>
+      <KpiStrip
+        items={[
+          {
+            key: "relationships",
+            label: t("entities.intelligence.relationships"),
+            value: card.metrics.relationshipCount,
+          },
+          {
+            key: "mentions",
+            label: t("entities.intelligence.mentions"),
+            value: card.metrics.mentionedArticleCount,
+          },
+          {
+            key: "events",
+            label: t("entities.intelligence.events"),
+            value: card.metrics.recentEventCount,
+          },
+          {
+            key: "negativeRatio",
+            label: t("entities.intelligence.negativeRatio"),
+            value: formatPercent(card.metrics.negativeRatio),
+          },
+        ]}
+      />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
         <Space direction="vertical" size="large" className="w-full">
