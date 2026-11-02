@@ -32,7 +32,7 @@ function PortalHeader(props: {
   secondaryLabel?: string;
 }) {
   return (
-    <header className="border-b border-[var(--border)] bg-[var(--surface)] backdrop-blur">
+    <header className="border-b border-[var(--border)] bg-[var(--surface)]">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
         <div>
           <Link
