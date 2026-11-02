@@ -37,6 +37,7 @@ import { buildAdminLogsHref } from "@/lib/admin-logs";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { env } from "@/lib/env";
+import { formatTimestamp, resolveLocale } from "@/lib/i18n";
 import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
 
 const REALTIME_SOCKET_TIMEOUT_MS = 10_000;
@@ -393,7 +394,8 @@ function extractErrorSummary(error: unknown): string | null {
 }
 
 export function QualityContent() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { token } = theme.useToken();
   const { data: session, status } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
@@ -1152,10 +1154,10 @@ export function QualityContent() {
   ];
 
   const taskLogStatusColors: Record<TaskLogStatus, string> = {
-    pending: "gold",
-    processing: "blue",
-    completed: "green",
-    failed: "red",
+    pending: "warning",
+    processing: "processing",
+    completed: "success",
+    failed: "error",
   };
 
   const taskLogColumns: ColumnsType<TaskLogRecord> = [
@@ -1168,7 +1170,7 @@ export function QualityContent() {
         const parsed = new Date(value);
         return (
           <Typography.Text type="secondary">
-            {Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()}
+            {Number.isNaN(parsed.getTime()) ? value : formatTimestamp(parsed, locale)}
           </Typography.Text>
         );
       },
@@ -1266,7 +1268,7 @@ export function QualityContent() {
       title: t("quality.taskLogs.summary.columns.error"),
       dataIndex: "errorName",
       key: "errorName",
-      render: (value: string) => <Tag color="red">{value}</Tag>,
+      render: (value: string) => <Tag color="error">{value}</Tag>,
     },
     {
       title: t("quality.taskLogs.summary.columns.count"),
@@ -1318,7 +1320,7 @@ export function QualityContent() {
       key: "circuitOpenUntil",
       render: (value: string | null) =>
         value ? (
-          <Tag color="orange">
+          <Tag color="warning">
             {t("quality.sources.circuitOpen")}
           </Tag>
         ) : (
@@ -1345,7 +1347,7 @@ export function QualityContent() {
       dataIndex: "group",
       key: "group",
       render: (value: "llm_embedding_rerank" | "rule_fallback") => (
-        <Tag color={value === "llm_embedding_rerank" ? "blue" : "gold"}>
+        <Tag>
           {value === "llm_embedding_rerank"
             ? "LLM + Embedding + Rerank"
             : "Rule / Fallback"}
@@ -1409,7 +1411,7 @@ export function QualityContent() {
       key: "bucketStart",
       render: (value: string) => {
         const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+        return Number.isNaN(parsed.getTime()) ? value : formatTimestamp(parsed, locale);
       },
     },
     {
@@ -1516,7 +1518,7 @@ export function QualityContent() {
       width: 180,
       render: (value: string) => {
         const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+        return Number.isNaN(parsed.getTime()) ? value : formatTimestamp(parsed, locale);
       },
     },
     {
@@ -1607,10 +1609,10 @@ export function QualityContent() {
     ClassificationReviewItem["status"],
     string
   > = {
-    pending: "gold",
-    approved: "green",
-    rejected: "red",
-    corrected: "blue",
+    pending: "warning",
+    approved: "success",
+    rejected: "error",
+    corrected: "success",
   };
 
   const classificationReviewColumns: ColumnsType<ClassificationReviewItem> = [
@@ -1621,7 +1623,7 @@ export function QualityContent() {
       width: 180,
       render: (value: string) => {
         const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+        return Number.isNaN(parsed.getTime()) ? value : formatTimestamp(parsed, locale);
       },
     },
     {
@@ -1756,7 +1758,7 @@ export function QualityContent() {
             <Space direction="vertical" size={2} style={{ width: "100%" }}>
               <Space wrap>
                 <Tag>{liveLastEvent.source}</Tag>
-                <Tag color="blue">{liveLastEvent.event}</Tag>
+                <Tag>{liveLastEvent.event}</Tag>
               </Space>
               {liveLastEvent.jobId ? (
                 <Typography.Text
@@ -1768,7 +1770,7 @@ export function QualityContent() {
                 </Typography.Text>
               ) : null}
               <Typography.Text type="secondary">
-                {new Date(liveLastEvent.timestamp).toLocaleString()}
+                {formatTimestamp(new Date(liveLastEvent.timestamp), locale)}
               </Typography.Text>
             </Space>
           ) : (
@@ -1778,7 +1780,7 @@ export function QualityContent() {
           )}
         </Space>
 
-        <Divider style={{ margin: "4px 0" }} />
+        <Divider className="!my-1" />
 
         <Space direction="vertical" size={6} style={{ width: "100%" }}>
           <Typography.Text type="secondary">
@@ -1860,7 +1862,7 @@ export function QualityContent() {
             lastUpdatedAt ? (
               <span>
                 {t("quality.updatedAt", {
-                  time: new Date(lastUpdatedAt).toLocaleString(),
+                  time: formatTimestamp(new Date(lastUpdatedAt), locale),
                 })}
               </span>
             ) : undefined
@@ -1927,11 +1929,11 @@ export function QualityContent() {
                       style={{ cursor: "pointer" }}
                       color={
                         liveError
-                          ? "red"
+                          ? "error"
                           : liveStatus === "connected"
-                            ? "green"
+                            ? "success"
                             : liveStatus === "connecting"
-                              ? "blue"
+                              ? "processing"
                               : undefined
                       }
                     >
@@ -2086,7 +2088,7 @@ export function QualityContent() {
                         <Tag
                           color={
                             pipeline.outbox.totals.failed > 0
-                              ? "red"
+                              ? "error"
                               : "default"
                           }
                         >
@@ -2096,7 +2098,7 @@ export function QualityContent() {
                         <Tag
                           color={
                             pipeline.outbox.totals.dead > 0
-                              ? "volcano"
+                              ? "error"
                               : "default"
                           }
                         >
@@ -2106,7 +2108,7 @@ export function QualityContent() {
                         <Tag
                           color={
                             pipeline.outbox.totals.staleProcessing > 0
-                              ? "orange"
+                              ? "warning"
                               : "default"
                           }
                         >
@@ -2178,7 +2180,7 @@ export function QualityContent() {
                 >
                   <Typography.Paragraph
                     type="secondary"
-                    style={{ marginBottom: 0 }}
+                    className="!mb-0"
                   >
                     {t("adminLogs.task.summaryCardDescription")}
                   </Typography.Paragraph>
@@ -2452,8 +2454,8 @@ export function QualityContent() {
                           <Tag
                             color={
                               classification.sampling.classifiedItems.truncated
-                                ? "orange"
-                                : "green"
+                                ? "warning"
+                                : "success"
                             }
                           >
                             items coverage{" "}
@@ -2466,8 +2468,8 @@ export function QualityContent() {
                           <Tag
                             color={
                               classification.sampling.latencyLogs.truncated
-                                ? "orange"
-                                : "green"
+                                ? "warning"
+                                : "success"
                             }
                           >
                             latency logs coverage{" "}
@@ -2480,8 +2482,8 @@ export function QualityContent() {
                           <Tag
                             color={
                               classification.sampling.gateLogs.truncated
-                                ? "orange"
-                                : "green"
+                                ? "warning"
+                                : "success"
                             }
                           >
                             gate logs coverage{" "}
@@ -2613,7 +2615,7 @@ export function QualityContent() {
                       <Tag
                         color={
                           classification.categoryGate.reject > 0
-                            ? "red"
+                            ? "error"
                             : "default"
                         }
                       >
@@ -2622,7 +2624,7 @@ export function QualityContent() {
                       <Tag
                         color={
                           classification.categoryGate.penalized > 0
-                            ? "orange"
+                            ? "warning"
                             : "default"
                         }
                       >
@@ -2632,7 +2634,7 @@ export function QualityContent() {
                       {classification.alertStatus.map((alert) => (
                         <Tag
                           key={alert.stage}
-                          color={alert.triggered ? "red" : "green"}
+                          color={alert.triggered ? "error" : "success"}
                         >
                           {alert.stage} p95 {alert.p95Ms ?? "-"} /{" "}
                           {alert.thresholdMs} ms
@@ -2641,7 +2643,7 @@ export function QualityContent() {
                       {classification.gateAlertStatus.map((alert) => (
                         <Tag
                           key={`gate-${alert.metric}`}
-                          color={alert.triggered ? "red" : "green"}
+                          color={alert.triggered ? "error" : "success"}
                         >
                           {alert.metric} {toPercent(alert.value) ?? 0}% /{" "}
                           {toPercent(alert.threshold) ?? 0}%
