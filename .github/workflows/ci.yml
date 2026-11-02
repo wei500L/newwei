@@ -273,6 +273,14 @@ jobs:
 
       - name: MySQL/Redis integration tests (user-settings repository + authz RBAC + authn blacklist)
         run: cd apps/api-go && go test -tags=integration -count=1 ./internal/usersettings/ ./internal/authz/ -run 'TestUserSettingsMySQLIntegration|TestAuthZMySQLIntegration' -v
+      # ORG-APPROVAL-RECOVERY-001: real MySQL/Redis validation of the
+      # new-organization approval persistence, failure resume and controlled
+      # platform-admin resend. The SMTP boundary is a failing fake MailSender
+      # inside the test process; no real mail is sent.
+      - name: MySQL/Redis integration tests (organization approval recovery)
+        run: cd apps/api-go && go test -tags=integration -count=1 ./internal/identityonboarding/ -run 'TestOrgApprovalRecoveryIntegration' -v
+        env:
+          API_GO_TEST_REDIS_ADDR: 127.0.0.1:6379
       # ITEMS-INGEST-001: the itemPipeline producer is validated against the
       # real Redis 7.2 service above with the same fixed BullMQ 5.63.2 Lua the
       # NestJS producer uses. This proves the Redis wire protocol only; it does

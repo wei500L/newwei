@@ -16,7 +16,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 )
 
-// wireIdentityOnboarding registers the fourteen registration, invitation and
+// wireIdentityOnboarding registers the sixteen registration, invitation and
 // registration-application routes only when
 // API_GO_IDENTITY_ONBOARDING_MODE=go. Every other value (including the default
 // legacy and the empty string) registers nothing, so the routes keep flowing

@@ -1,4 +1,4 @@
-// Package identityonboarding serves the fourteen registration, invitation and
+// Package identityonboarding serves the sixteen registration, invitation and
 // registration-application HTTP routes migrated from
 // apps/api/src/modules/auth:
 //
@@ -11,6 +11,8 @@
 //	POST /api/auth/admin/registration-applications/:id/reject-join
 //	POST /api/auth/admin/registration-applications/:id/approve-org
 //	POST /api/auth/admin/registration-applications/:id/reject-org
+//	POST /api/auth/admin/registration-applications/:id/recover-org
+//	POST /api/auth/admin/registration-applications/:id/resend-invite
 //	POST /api/auth/register/applications
 //	POST /api/auth/register/join-applications
 //	GET  /api/auth/invitations/:token
@@ -39,6 +41,9 @@
 //     from /me.
 //
 // No route signs a session, starts a worker, sends a queued message or contacts
-// an identity provider. Mail is delivered synchronously through SMTP; a delivery
-// failure is returned to the caller after the database write has committed.
+// an identity provider. Mail is delivered synchronously through SMTP after the
+// approval database stage commits; a delivery failure is recorded in the
+// approval progress instead of being returned as a rollback, so the console can
+// distinguish a committed approval from a failed delivery and offer an explicit
+// resend.
 package identityonboarding

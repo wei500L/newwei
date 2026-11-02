@@ -2,7 +2,7 @@ package legacyproxy
 
 import "net/http"
 
-// IdentityOnboardingKey is the handler registration key for the fourteen
+// IdentityOnboardingKey is the handler registration key for the sixteen
 // registration, invitation and registration-application routes. A single key is
 // enough because the handler dispatches on the request path and method itself.
 //
@@ -11,7 +11,7 @@ import "net/http"
 // the four rule sets own disjoint paths and must never share a registration.
 const IdentityOnboardingKey = "/api/auth#identity-onboarding"
 
-// WithIdentityOnboarding takes over exactly these fourteen routes when mode is
+// WithIdentityOnboarding takes over exactly these sixteen routes when mode is
 // go:
 //
 //	GET  /api/auth/admin/invites
@@ -23,6 +23,8 @@ const IdentityOnboardingKey = "/api/auth#identity-onboarding"
 //	POST /api/auth/admin/registration-applications/:id/reject-join
 //	POST /api/auth/admin/registration-applications/:id/approve-org
 //	POST /api/auth/admin/registration-applications/:id/reject-org
+//	POST /api/auth/admin/registration-applications/:id/recover-org
+//	POST /api/auth/admin/registration-applications/:id/resend-invite
 //	POST /api/auth/register/applications
 //	POST /api/auth/register/join-applications
 //	GET  /api/auth/invitations/:token
@@ -50,7 +52,7 @@ func WithIdentityOnboarding(rules []Rule) []Rule {
 		http.MethodPost)
 	rules = appendExactKeyed(rules, IdentityOnboardingKey, "/api/auth/admin/registration-applications",
 		http.MethodGet)
-	for _, suffix := range []string{"/approve-join", "/reject-join", "/approve-org", "/reject-org"} {
+	for _, suffix := range []string{"/approve-join", "/reject-join", "/approve-org", "/reject-org", "/recover-org", "/resend-invite"} {
 		rules = appendSegmentRule(rules, IdentityOnboardingKey,
 			"/api/auth/admin/registration-applications/", true, false, suffix, http.MethodPost)
 	}

@@ -317,23 +317,24 @@ type applicationRecord struct {
 }
 
 type applicationScalar struct {
-	ID                   string          `json:"id"`
-	Type                 string          `json:"type"`
-	Status               string          `json:"status"`
-	Email                string          `json:"email"`
-	FirstName            string          `json:"firstName"`
-	LastName             string          `json:"lastName"`
-	OrgID                *string         `json:"orgId"`
-	RequestedOrgName     *string         `json:"requestedOrgName"`
-	RequestedOrgSlug     *string         `json:"requestedOrgSlug"`
-	RequestedDescription *string         `json:"requestedDescription"`
-	DecisionReason       *string         `json:"decisionReason"`
-	GeneratedInviteID    *string         `json:"generatedInviteId"`
-	ReviewedByID         *string         `json:"reviewedById"`
-	ReviewedAt           *timestamp      `json:"reviewedAt"`
-	Metadata             json.RawMessage `json:"metadata"`
-	CreatedAt            timestamp       `json:"createdAt"`
-	UpdatedAt            timestamp       `json:"updatedAt"`
+	ID                   string                `json:"id"`
+	Type                 string                `json:"type"`
+	Status               string                `json:"status"`
+	Email                string                `json:"email"`
+	FirstName            string                `json:"firstName"`
+	LastName             string                `json:"lastName"`
+	OrgID                *string               `json:"orgId"`
+	RequestedOrgName     *string               `json:"requestedOrgName"`
+	RequestedOrgSlug     *string               `json:"requestedOrgSlug"`
+	RequestedDescription *string               `json:"requestedDescription"`
+	DecisionReason       *string               `json:"decisionReason"`
+	GeneratedInviteID    *string               `json:"generatedInviteId"`
+	ReviewedByID         *string               `json:"reviewedById"`
+	ReviewedAt           *timestamp            `json:"reviewedAt"`
+	Metadata             json.RawMessage       `json:"metadata"`
+	ApprovalProgress     *approvalProgressView `json:"approvalProgress,omitempty"`
+	CreatedAt            timestamp             `json:"createdAt"`
+	UpdatedAt            timestamp             `json:"updatedAt"`
 }
 
 func (a applicationRecord) scalar() applicationScalar {
@@ -353,6 +354,7 @@ func (a applicationRecord) scalar() applicationScalar {
 		ReviewedByID:         a.ReviewedByID,
 		ReviewedAt:           stampPtr(a.ReviewedAt),
 		Metadata:             a.Metadata,
+		ApprovalProgress:     buildProgressView(a, nil),
 		CreatedAt:            stamp(a.CreatedAt),
 		UpdatedAt:            stamp(a.UpdatedAt),
 	}
