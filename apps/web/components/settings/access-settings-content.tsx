@@ -1308,8 +1308,9 @@ function CreateRoleCard({
   };
 
   return (
-    <Card size="small" title={t('settings.roles.createTitle')}>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: '1rem' }}>
+    <section className="flex flex-col gap-3">
+      <SectionHeader title={t('settings.roles.createTitle')} rule />
+      <Typography.Paragraph type="secondary" className="m-0">
         {t('settings.roles.createDescription')}
       </Typography.Paragraph>
       <Form
@@ -1380,7 +1381,7 @@ function CreateRoleCard({
           </Button>
         </div>
       </Form>
-    </Card>
+    </section>
   );
 }
 
