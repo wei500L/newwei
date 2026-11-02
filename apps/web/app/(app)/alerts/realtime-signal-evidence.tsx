@@ -274,12 +274,12 @@ export function RealtimeSignalEvidence({
                   <Space size={[8, 8]} wrap>
                     <Typography.Text>{label}</Typography.Text>
                     {typeof score === "number" ? (
-                      <Tag color="orange">{`score ${score.toFixed(2)}`}</Tag>
+                      <Tag>{`${t("alerts.center.evidence.realtime.score")} ${score.toFixed(2)}`}</Tag>
                     ) : null}
                     {typeof changePercent === "number" ? (
                       <Tag>{`${changePercent.toFixed(2)}%`}</Tag>
                     ) : null}
-                    {trend ? <Tag color="blue">{trend}</Tag> : null}
+                    {trend ? <Tag>{trend}</Tag> : null}
                   </Space>
                 </List.Item>
               );
@@ -309,10 +309,10 @@ export function RealtimeSignalEvidence({
                   <Space size={[8, 8]} wrap>
                     <Typography.Text>{title}</Typography.Text>
                     {typeof shift === "number" ? (
-                      <Tag color="purple">{`shift ${shift.toFixed(2)}`}</Tag>
+                      <Tag>{`${t("alerts.center.evidence.realtime.shift")} ${shift.toFixed(2)}`}</Tag>
                     ) : null}
                     {typeof confidence === "number" ? (
-                      <Tag>{`conf ${confidence.toFixed(2)}`}</Tag>
+                      <Tag>{`${t("alerts.center.evidence.realtime.conf")} ${confidence.toFixed(2)}`}</Tag>
                     ) : null}
                   </Space>
                 </List.Item>

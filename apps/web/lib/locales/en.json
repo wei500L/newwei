@@ -242,6 +242,9 @@
         "realtime": {
           "source": "Source",
           "stale": "Stale snapshot",
+          "score": "score",
+          "shift": "shift",
+          "conf": "conf",
           "maxStaleMinutes": "Max stale {{minutes}} min",
           "latestTimestamp": "Latest point {{time}}",
           "snapshotFreshness": "Snapshot",

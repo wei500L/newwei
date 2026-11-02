@@ -242,6 +242,9 @@
         "realtime": {
           "source": "来源",
           "stale": "过期快照",
+          "score": "分数",
+          "shift": "偏移",
+          "conf": "置信度",
           "maxStaleMinutes": "最大过期 {{minutes}} 分钟",
           "latestTimestamp": "最新时间点 {{time}}",
           "snapshotFreshness": "快照状态",

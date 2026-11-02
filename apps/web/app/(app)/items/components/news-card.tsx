@@ -32,6 +32,8 @@ const VIEW_EXPOSURE_DWELL_MS = 1200;
 
 export type NewsCardVariant = "default" | "reader";
 export type NewsCardDensity = "compact" | "comfortable";
+/** card=网格卡片外壳；list=列表行外壳（hairline 分隔，避免卡中卡） */
+export type NewsCardLayout = "card" | "list";
 
 export interface NewsCardProps {
   item: {
@@ -68,6 +70,7 @@ export interface NewsCardProps {
   };
   variant?: NewsCardVariant;
   density?: NewsCardDensity;
+  layout?: NewsCardLayout;
 }
 
 function estimateReadingTime(summary?: string): number {
@@ -96,7 +99,7 @@ function renderHighlightSnippet(snippet: string) {
       }
       state.nodes.push(
         state.active ? (
-          <mark key={index} className="rounded bg-amber-100 px-0.5 text-amber-900">
+          <mark key={index} className="rounded bg-[var(--secondary)] px-0.5 text-[var(--foreground)]">
             {part}
           </mark>
         ) : (
@@ -113,11 +116,13 @@ function NewsCardComponent({
   item,
   variant = "default",
   density = "compact",
+  layout = "card",
 }: NewsCardProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
 
   const isReaderVariant = variant === "reader";
+  const isListLayout = layout === "list";
 
   const openLabel = t("items.detail.openItem");
   const readOriginalLabel = t("items.detail.readOriginal");
@@ -169,7 +174,7 @@ function NewsCardComponent({
     typeof item.duplicateOf === "string" ? item.duplicateOf.trim() : "";
   const primaryItemHref = primaryItemId ? `/items/${primaryItemId}` : null;
   const eventHref = item.eventId ? `/events/${item.eventId}` : null;
-  const cardRef = useRef<HTMLDivElement | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
   const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasTrackedViewRef = useRef(false);
   const [isHidden, setIsHidden] = useState(() =>
@@ -403,7 +408,7 @@ function NewsCardComponent({
           lineHeight: isReaderVariant ? 1.45 : 1.4,
           marginBottom: isReaderVariant ? 10 : 8,
         }}
-        className="hover:text-blue-500 transition-colors"
+        className="hover:text-[var(--primary)] transition-colors"
       >
         <Link href={itemHref} className="text-inherit" onClick={handleOpenItem}>
           {item.title}
@@ -422,7 +427,7 @@ function NewsCardComponent({
       ) : null}
 
       {highlightSnippets.length > 0 ? (
-        <div className="mb-3 flex flex-col gap-1 rounded-md border border-amber-200 bg-amber-50/70 p-2 text-xs leading-5 text-gray-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+        <div className="mb-3 flex flex-col gap-1 border-l-2 border-[var(--accent)] pl-3 text-xs leading-5 text-muted-foreground">
           {highlightSnippets.map((snippet, index) => (
             <div key={`${item.id}-highlight-${index}`}>
               {renderHighlightSnippet(snippet)}
@@ -438,7 +443,7 @@ function NewsCardComponent({
             className="inline-block"
             onClick={handleOpenEvent}
           >
-            <Tag color="geekblue" className="cursor-pointer">
+            <Tag className="cursor-pointer">
               {t("items.partOfEvent")}
             </Tag>
           </Link>
@@ -467,12 +472,7 @@ function NewsCardComponent({
                     : t("pages.rss.translation.originalHint")
               }
             >
-              <Tag
-                color={
-                  item.rssTranslationState === "translated" ? "cyan" : "default"
-                }
-                className="m-0"
-              >
+              <Tag className="m-0">
                 {item.rssTranslationState === "translated"
                   ? translatedLabel
                   : originalLabel}
@@ -504,29 +504,15 @@ function NewsCardComponent({
           type="text"
           size="small"
           icon={<InfoCircleOutlined className="text-muted-foreground" />}
+          aria-label={t("items.metrics.title")}
         />
       </Popover>
     </div>
   );
 
-  return (
-    <div ref={cardRef} className="h-full">
-      <Card
-        hoverable
-        className={
-          isReaderVariant ? "glass-card items-feed-card-reader" : "glass-card"
-        }
-        style={{ height: "100%", display: "flex", flexDirection: "column" }}
-        styles={{
-          body: {
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            padding: isReaderVariant ? "18px" : "16px",
-          },
-        }}
-      >
-        {isCompactDensity ? (
+  const body = (
+    <>
+      {isCompactDensity ? (
           <div className="mb-3 flex items-start gap-3">
             <div className="w-24 shrink-0">{imageBlock}</div>
             <div className="min-w-0 flex-1">
@@ -613,7 +599,7 @@ function NewsCardComponent({
             ) : null}
 
             <Button
-              type="primary"
+              type="link"
               size="small"
               href={itemHref}
               onClick={handleOpenItem}
@@ -635,6 +621,35 @@ function NewsCardComponent({
             ) : null}
           </Space>
         </div>
+    </>
+  );
+
+  if (isListLayout) {
+    return (
+      <article ref={(node) => { cardRef.current = node; }} className="hairline-b py-4 last:border-b-0">
+        <div className="flex h-full flex-col">{body}</div>
+      </article>
+    );
+  }
+
+  return (
+    <div ref={(node) => { cardRef.current = node; }} className="h-full">
+      <Card
+        hoverable
+        className={
+          isReaderVariant ? "glass-card items-feed-card-reader" : "glass-card"
+        }
+        style={{ height: "100%", display: "flex", flexDirection: "column" }}
+        styles={{
+          body: {
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            padding: isReaderVariant ? "18px" : "16px",
+          },
+        }}
+      >
+        {body}
       </Card>
     </div>
   );

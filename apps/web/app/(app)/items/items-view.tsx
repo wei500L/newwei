@@ -108,7 +108,7 @@ function ItemsTableLoadingSkeleton({ rows }: { rows: number }) {
   const safeRows = Math.max(1, rows);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white/70">
+    <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-surface">
       <div className="flex h-[56px] items-center gap-4 border-b border-[var(--border)] px-4">
         <Skeleton.Input active size="small" style={{ width: 180 }} />
         <Skeleton.Input active size="small" style={{ width: 260 }} />
@@ -118,7 +118,7 @@ function ItemsTableLoadingSkeleton({ rows }: { rows: number }) {
         {Array.from({ length: safeRows }).map((_, idx) => (
           <div key={idx} className="flex h-[56px] items-center gap-4 px-4">
             <Skeleton.Input active size="small" style={{ width: 140 }} />
-            <Skeleton.Input active size="small" style={{ width: 420 }} />
+            <Skeleton.Input active size="small" className="w-full max-w-[420px]" />
             <Skeleton.Input active size="small" style={{ width: 160 }} />
             <div className="ml-auto">
               <Skeleton.Button active size="small" style={{ width: 72 }} />
@@ -184,7 +184,7 @@ function ItemsFeedLoadingSkeleton({ count }: { count: number }) {
 
 function ItemsGridLoadingSkeleton({ count }: { count: number }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: Math.max(1, count) }).map((_, idx) => (
         <ItemsCardLoadingSkeleton key={idx} compact />
       ))}
@@ -2220,7 +2220,7 @@ export function ItemsView({
         );
 
       return (
-        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        <div className="flex w-full flex-col gap-3">
           {skeleton}
           {showDelayHint ? (
             <ChartEmptyState
@@ -2230,7 +2230,7 @@ export function ItemsView({
               description={t("common.loadingDelayed")}
             />
           ) : null}
-        </Space>
+        </div>
       );
     }
 
@@ -2241,10 +2241,10 @@ export function ItemsView({
         onRetry: () => refetch(),
       });
       return (
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <div className="flex w-full flex-col gap-3">
           {rerankUnavailableBanner}
           <ChartEmptyState className="h-auto" {...emptyState} />
-        </Space>
+        </div>
       );
     }
 
@@ -2283,19 +2283,19 @@ export function ItemsView({
 
     const shouldShowErrorBanner = Boolean(error && pageData.length > 0);
     const errorBanner = shouldShowErrorBanner ? (
-      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+      <div className="flex w-full flex-col gap-3">
         {rerankUnavailableBanner}
         <RequestErrorBanner
           error={error}
           onRetry={() => void refetch()}
           showCachedDataHint
         />
-      </Space>
+      </div>
     ) : null;
 
     if (view === "list") {
       return (
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <div className="flex w-full flex-col gap-3">
           {errorBanner}
           <div ref={listTableContainerRef} className="w-full">
             <Table
@@ -2315,19 +2315,19 @@ export function ItemsView({
               onChange={handleTableChange}
             />
           </div>
-        </Space>
+        </div>
       );
     }
 
     if (view === "grid") {
       return (
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <div className="flex w-full flex-col gap-3">
           {errorBanner}
           <List
             className={
               layoutState.isReaderPreset ? "items-reader-feed-list" : undefined
             }
-            grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
+            grid={{ gutter: 16, xs: 1, sm: 1, md: 2, lg: 2, xl: 3, xxl: 3 }}
             dataSource={pageData}
             rowKey="id"
             pagination={{
@@ -2349,13 +2349,14 @@ export function ItemsView({
                   <NewsCard
                     variant={layoutState.isReaderPreset ? "reader" : "default"}
                     density={layoutState.density}
+                    layout="card"
                     item={item}
                   />
                 )}
               </List.Item>
             )}
           />
-        </Space>
+        </div>
       );
     }
 
@@ -2364,6 +2365,7 @@ export function ItemsView({
         <NewsCard
           variant={layoutState.isReaderPreset ? "reader" : "default"}
           density={layoutState.density}
+          layout="list"
           item={item}
         />
       );
@@ -2385,7 +2387,7 @@ export function ItemsView({
       if (shouldVirtualizeFeed) {
         const virtualRows = feedVirtualizer.getVirtualItems();
         return (
-          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+          <div className="flex w-full flex-col gap-3">
             {errorBanner}
             <div
               ref={feedListRef}
@@ -2427,12 +2429,12 @@ export function ItemsView({
               </div>
             </div>
             {pagination}
-          </Space>
+          </div>
         );
       }
 
       return (
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <div className="flex w-full flex-col gap-3">
           {errorBanner}
           <List
             className={
@@ -2457,7 +2459,7 @@ export function ItemsView({
               </List.Item>
             )}
           />
-        </Space>
+        </div>
       );
     }
 
@@ -2470,18 +2472,17 @@ export function ItemsView({
       : t("items.filters.button");
   const excludeDuplicatesEnabled = displayFilters.excludeDuplicates === true;
 
-  const surfaceClassName =
-    surface === "none"
-      ? ""
-      : "content-card p-4 md:p-6";
-  const containerClassName = layoutState.isReaderPreset
-    ? `${surfaceClassName} items-reader-shell`.trim()
-    : surfaceClassName;
+  const useCardSurface = surface !== "none" && view !== "grid";
+  const surfaceClassName = useCardSurface ? "content-card p-4 md:p-6" : "";
+  const containerClassName =
+    useCardSurface && layoutState.isReaderPreset
+      ? `${surfaceClassName} items-reader-shell`.trim()
+      : surfaceClassName;
+  const rootClassName = `${containerClassName} flex flex-col gap-6`.trim();
 
   return (
-    <div className={containerClassName || undefined}>
-      <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        {!hideQuickNav ? (
+    <div className={rootClassName}>
+      {!hideQuickNav ? (
           <div className="flex flex-wrap items-center gap-2">
             <Button size="small" onClick={() => router.push("/news-hub")}>
               {t("items.quickNav.hub")}
@@ -2661,7 +2662,6 @@ export function ItemsView({
               <Tooltip title={search}>
                 <Tag
                   className="text-xs max-w-[320px] truncate"
-                  color="geekblue"
                   closable
                   onClose={() => handleSearch("")}
                 >
@@ -2671,7 +2671,7 @@ export function ItemsView({
             ) : null}
             {filterSummary.text ? (
               <Tooltip title={filterSummary.text}>
-                <Tag className="text-xs" color="purple">
+                <Tag className="text-xs">
                   {t("items.stats.filters")}: {filterSummary.text}
                 </Tag>
               </Tooltip>
@@ -2692,7 +2692,7 @@ export function ItemsView({
               </Tag>
             ) : null}
             {rssTranslationStats ? (
-              <Tag className="text-xs" color="cyan">
+              <Tag className="text-xs">
                 {t("pages.rss.translation.translatedCount", {
                   count: rssTranslationStats.translated,
                 })}
@@ -2739,7 +2739,6 @@ export function ItemsView({
             {renderContent()}
           </Col>
         </Row>
-      </Space>
 
       <Drawer
         title={t("items.filters.title")}

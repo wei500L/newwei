@@ -202,7 +202,7 @@ export function AlertEventRow({
                 style={{ width: "100%", marginTop: 6 }}
               >
                 <Space size="small" wrap>
-                  <Typography.Text strong>{event.metricValue}</Typography.Text>
+                  <Typography.Text strong className="font-mono">{event.metricValue}</Typography.Text>
                   <Typography.Text type="secondary">
                     {t("alerts.events.evidence", {
                       source:

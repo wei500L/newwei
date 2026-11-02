@@ -33,6 +33,7 @@ import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import { NewsImage } from "@/components/news-image";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useItemQuery } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -1042,7 +1043,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   }
 
   if (error) {
-    return <Typography.Text type="danger">{error.message}</Typography.Text>;
+    return <RequestErrorBanner error={error} />;
   }
 
   if (!item) {
@@ -1081,7 +1082,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         <Space size={8} wrap>
           <span>{t("items.detail.payloadMarkdown")}</span>
           {markdownFallbackUsed ? (
-            <Tag color="orange">{t("items.detail.markdownFallback")}</Tag>
+            <Tag>{t("items.detail.markdownFallback")}</Tag>
           ) : null}
         </Space>
       ),
@@ -1243,9 +1244,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           {displayTitle}
         </Typography.Title>
         <Space size={[8, 8]} wrap>
-          <Tag color="blue">{item.status}</Tag>
+          <Tag>{item.status}</Tag>
           {hasNonChineseContent ? (
-            <Tag color="orange">
+            <Tag>
               {t("items.detail.originalLanguage", {
                 language: languageLabel,
               })}
@@ -1256,14 +1257,14 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               title={
                 <div className="text-xs">
                   <div>{t("items.metrics.quality.tooltip")}</div>
-                  {llm?.model ? <div>Model: {llm.model}</div> : null}
+                  {llm?.model ? <div>{t("items.metrics.model")}: {llm.model}</div> : null}
                   {llm?.promptVersion ? (
-                    <div>Prompt: {llm.promptVersion}</div>
+                    <div>{t("items.metrics.prompt")}: {llm.promptVersion}</div>
                   ) : null}
                 </div>
               }
             >
-              <Tag color="purple">
+              <Tag>
                 {t("items.detail.fields.quality")}: {qualityScoreLabel}
               </Tag>
             </Tooltip>
@@ -1273,11 +1274,11 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               title={
                 <div className="text-xs">
                   <div>{t("items.metrics.duplicate.tooltip")}</div>
-                  {duplicateOf ? <div>Duplicate of: {duplicateOf}</div> : null}
+                  {duplicateOf ? <div>{t("items.detail.fields.duplicateOf")}: {duplicateOf}</div> : null}
                 </div>
               }
             >
-              <Tag color="gold">
+              <Tag>
                 {duplicateOf
                   ? t("items.duplicate.duplicate")
                   : t("items.duplicate.similarity")}{" "}
@@ -1287,7 +1288,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           ) : null}
           {markdownFallbackUsed ? (
             <Tooltip title={t("items.detail.markdownFallbackTooltip")}>
-              <Tag color="orange">{t("items.detail.markdownFallback")}</Tag>
+              <Tag>{t("items.detail.markdownFallback")}</Tag>
             </Tooltip>
           ) : null}
         </Space>
@@ -1311,18 +1312,18 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             <Tooltip
               title={
                 <div className="text-xs">
-                  {llm?.model ? <div>Model: {llm.model}</div> : null}
+                  {llm?.model ? <div>{t("items.metrics.model")}: {llm.model}</div> : null}
                   {llm?.promptVersion ? (
-                    <div>Prompt: {llm.promptVersion}</div>
+                    <div>{t("items.metrics.prompt")}: {llm.promptVersion}</div>
                   ) : null}
                   {typeof llm?.totalTokens === "number" ? (
-                    <div>Tokens: {Math.round(llm.totalTokens)}</div>
+                    <div>{t("items.detail.fields.tokens")}: <span className="font-mono">{Math.round(llm.totalTokens)}</span></div>
                   ) : null}
                   {typeof llm?.latencyMs === "number" ? (
-                    <div>Latency: {Math.round(llm.latencyMs)} ms</div>
+                    <div>{t("items.detail.fields.latency")}: <span className="font-mono">{Math.round(llm.latencyMs)} ms</span></div>
                   ) : null}
                   {typeof llm?.costUsd === "number" ? (
-                    <div>Cost: ${llm.costUsd.toFixed(4)}</div>
+                    <div>{t("items.detail.fields.cost")}: <span className="font-mono">${llm.costUsd.toFixed(4)}</span></div>
                   ) : null}
                 </div>
               }
@@ -1330,7 +1331,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               <Space size={4}>
                 <InfoCircleOutlined className="text-slate-400" />
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  LLM: {llmSummary}
+                  {t("items.detail.fields.llmModel")}: {llmSummary}
                 </Typography.Text>
               </Space>
             </Tooltip>
@@ -1376,8 +1377,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         aspectRatio="video"
         fallback="gradient"
         fallbackText={source ?? displayTitle}
-        className="w-full rounded-xl"
-        imgClassName="rounded-xl"
+        className="w-full rounded-lg"
+        imgClassName="rounded-lg"
       />
 
       <Card className="content-card" title={t("items.detail.summaryTitle")}>
@@ -1483,7 +1484,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 {item.meta?.externalId ?? t("common.notAvailable")}
               </Descriptions.Item>
               <Descriptions.Item label={t("items.detail.fields.status")}>
-                <Tag color="blue">{item.status}</Tag>
+                <Tag>{item.status}</Tag>
               </Descriptions.Item>
               <Descriptions.Item
                 label={t("items.detail.fields.processedStatus")}
@@ -1840,17 +1841,13 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
             <Row gutter={[12, 12]}>
               {stageEntries.map((entry) => (
                 <Col key={entry.key} xs={24} md={12} xl={8}>
-                  <Card
-                    size="small"
-                    title={
-                      <Space size={8} wrap>
-                        <span>{entry.label}</span>
-                        <Tag color={getStageStatusColor(entry.status)}>
-                          {stageStatusLabels[entry.status]}
-                        </Tag>
-                      </Space>
-                    }
-                  >
+                  <div className="surface-inset flex flex-col gap-2">
+                    <Space size={8} wrap>
+                      <span>{entry.label}</span>
+                      <Tag color={getStageStatusColor(entry.status)}>
+                        {stageStatusLabels[entry.status]}
+                      </Tag>
+                    </Space>
                     <Space
                       direction="vertical"
                       size="small"
@@ -1884,40 +1881,40 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                           label={t("items.detail.fields.tokens")}
                         >
                           {typeof entry.totalTokens === "number"
-                            ? Math.round(entry.totalTokens).toString()
+                            ? <span className="font-mono">{Math.round(entry.totalTokens).toString()}</span>
                             : t("common.notAvailable")}
                         </Descriptions.Item>
                         <Descriptions.Item
                           label={t("items.detail.fields.promptTokens")}
                         >
                           {typeof entry.promptTokens === "number"
-                            ? Math.round(entry.promptTokens).toString()
+                            ? <span className="font-mono">{Math.round(entry.promptTokens).toString()}</span>
                             : t("common.notAvailable")}
                         </Descriptions.Item>
                         <Descriptions.Item
                           label={t("items.detail.fields.completionTokens")}
                         >
                           {typeof entry.completionTokens === "number"
-                            ? Math.round(entry.completionTokens).toString()
+                            ? <span className="font-mono">{Math.round(entry.completionTokens).toString()}</span>
                             : t("common.notAvailable")}
                         </Descriptions.Item>
                         <Descriptions.Item
                           label={t("items.detail.fields.latency")}
                         >
                           {typeof entry.latencyMs === "number"
-                            ? `${Math.round(entry.latencyMs)} ms`
+                            ? <span className="font-mono">{`${Math.round(entry.latencyMs)} ms`}</span>
                             : t("common.notAvailable")}
                         </Descriptions.Item>
                         <Descriptions.Item
                           label={t("items.detail.fields.cost")}
                         >
                           {typeof entry.costUsd === "number"
-                            ? `$${entry.costUsd.toFixed(4)}`
+                            ? <span className="font-mono">{`$${entry.costUsd.toFixed(4)}`}</span>
                             : t("common.notAvailable")}
                         </Descriptions.Item>
                       </Descriptions>
                     </Space>
-                  </Card>
+                  </div>
                 </Col>
               ))}
             </Row>

@@ -2,7 +2,6 @@
 
 import {
   Button,
-  Card,
   Checkbox,
   Collapse,
   DatePicker,
@@ -399,7 +398,7 @@ export function FacetedSearch({
   };
 
   return (
-    <Card className="h-full" styles={{ body: { padding: "12px" } }}>
+    <div className="surface-inset h-full">
       <Space direction="vertical" style={{ width: "100%" }} size="middle">
         <div className="flex items-center justify-between gap-3">
           <Typography.Title level={5} style={{ margin: 0 }}>
@@ -479,6 +478,6 @@ export function FacetedSearch({
           </Typography.Text>
         )}
       </Space>
-    </Card>
+    </div>
   );
 }

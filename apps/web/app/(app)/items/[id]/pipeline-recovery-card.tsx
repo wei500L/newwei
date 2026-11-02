@@ -251,7 +251,7 @@ export function PipelineRecoveryCard({
             }}
             renderItem={(run) => (
               <List.Item key={run.jobId || run.processedItemId}>
-                <Card className="w-full" size="small">
+                <div className="surface-inset w-full">
                   <Space
                     direction="vertical"
                     size="middle"
@@ -320,7 +320,7 @@ export function PipelineRecoveryCard({
                       />
                     ) : null}
                   </Space>
-                </Card>
+                </div>
               </List.Item>
             )}
           />

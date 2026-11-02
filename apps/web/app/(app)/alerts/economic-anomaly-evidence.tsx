@@ -172,9 +172,9 @@ export function EconomicAnomalyEvidence({
                   </Tooltip>
                 </div>
                 <Space size={[8, 8]} wrap>
-                  <Tag color="blue">{`CI [${lower.toFixed(3)}, ${upper.toFixed(3)}]`}</Tag>
-                  <Tag>{`expected ${expected.toFixed(3)}`}</Tag>
-                  <Tag color="red">{`observed ${observed.toFixed(3)}`}</Tag>
+                  <Tag>{`${t("alerts.center.evidence.ci")} [${lower.toFixed(3)}, ${upper.toFixed(3)}]`}</Tag>
+                  <Tag>{`${t("alerts.center.evidence.expected")} ${expected.toFixed(3)}`}</Tag>
+                  <Tag>{`${t("alerts.center.evidence.observed")} ${observed.toFixed(3)}`}</Tag>
                 </Space>
               </Space>
             </Card>
