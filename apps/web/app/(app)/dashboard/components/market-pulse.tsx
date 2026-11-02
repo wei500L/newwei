@@ -87,13 +87,13 @@ const MetricValue = ({ value, suffix, hasData }: { value: number | string, suffi
   const flashClass = flash === "up"
     ? "bg-emerald-500/10 text-[var(--bullish)]"
     : flash === "down"
-      ? "bg-orange-500/10 text-[var(--bearish)]"
+      ? "bg-[#d95f02]/10 text-[var(--bearish)]"
       : "";
 
   return (
-    <span className={`font-mono text-3xl font-semibold tracking-tight transition-all duration-500 px-1 rounded-md tabular-nums ${flash ? flashClass : hasData ? "text-[var(--foreground)]" : "text-secondary-foreground/30"}`}>
+    <span className={`font-mono text-3xl font-semibold tracking-tight transition-all duration-500 px-1 rounded-md tabular-nums ${flash ? flashClass : hasData ? "text-[var(--foreground)]" : "text-muted-foreground"}`}>
       {typeof value === 'number' ? value.toFixed(1) : value}
-      {suffix && <span className="text-sm ml-1.5 text-secondary-foreground/50 font-medium">{suffix}</span>}
+      {suffix && <span className="text-sm ml-1.5 text-muted-foreground font-medium">{suffix}</span>}
     </span>
   );
 };
@@ -321,7 +321,7 @@ export function MarketPulse({
 
   if (loading) {
     return (
-      <div className="mb-6">
+      <div>
         <div className="content-card grid grid-cols-2 overflow-hidden p-0 md:grid-cols-4">
           {[0, 1, 2, 3].map((index) => (
             <div key={index} className={`px-5 py-4 ${pulseCellBorder(index)}`.trim()}>
@@ -335,7 +335,7 @@ export function MarketPulse({
 
   if (allMissing) {
     return (
-      <div className="mb-6 content-card p-6">
+      <div className="content-card p-6">
         <ChartEmptyState title={emptyTitle} description={emptyDescription} />
       </div>
     );
@@ -361,7 +361,7 @@ export function MarketPulse({
   })();
 
   return (
-    <div className="mb-6 flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
         <span className="kicker">
           {range} ·{" "}
@@ -449,9 +449,9 @@ export function MarketPulse({
                             : t("dashboard.hero.trendVsPreviousPoint")
                         }
                       >
-                        <div className={`flex items-center text-[11px] font-black px-2 py-0.5 rounded-full ${trendClass} border border-[var(--border)]`}>
+                        <div className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 font-mono text-xs font-medium ${trendClass}`}>
                           <Icon className="text-[11px]" />
-                          <span className="ml-1 tracking-tight">{trendLabel}</span>
+                          <span>{trendLabel}</span>
                         </div>
                       </Tooltip>
                     );
@@ -463,7 +463,7 @@ export function MarketPulse({
                     <Sparkline data={metric.data} color={metric.color} />
                   ) : (
                     <div className="h-[40px] flex items-end">
-                      <Typography.Text className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground italic">
+                      <Typography.Text className="text-xs text-muted-foreground">
                         {metric.hasData
                           ? t("dashboard.hero.insufficientData")
                           : notAvailableLabel}

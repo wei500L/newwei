@@ -28,8 +28,10 @@ import {
   Select,
   Space,
   Spin,
+  Tag,
   Typography,
 } from 'antd';
+import type { TagProps } from 'antd';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
 import debounce from 'lodash/debounce';
 import { useSession } from 'next-auth/react';
@@ -249,33 +251,33 @@ const ASSISTANT_ECONOMIC_SERIES_SUGGESTIONS = gql`
   }
 `;
 
-const getStatusChipClass = (status: AssistantRunStatus): string => {
+const getStatusTagColor = (status: AssistantRunStatus): TagProps['color'] => {
   switch (status) {
     case 'pending':
-      return 'bg-slate-100 text-slate-600 ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60';
+      return undefined;
     case 'running':
-      return 'bg-sky-100 text-sky-700 ring-sky-300/60 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-400/40';
+      return 'processing';
     case 'completed':
-      return 'bg-emerald-100 text-emerald-700 ring-emerald-300/60 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/40';
+      return 'success';
     case 'failed':
-      return 'bg-rose-100 text-rose-700 ring-rose-300/60 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-400/40';
+      return 'error';
     default:
-      return 'bg-slate-100 text-slate-600 ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60';
+      return undefined;
   }
 };
 
 const getStatusRailClass = (status: AssistantRunStatus): string => {
   switch (status) {
     case 'pending':
-      return 'bg-slate-400/70 dark:bg-slate-500/70';
+      return 'bg-slate-300 dark:bg-slate-600';
     case 'running':
-      return 'bg-sky-500';
+      return 'bg-[var(--primary)]';
     case 'completed':
-      return 'bg-emerald-500';
+      return 'bg-[var(--bullish)]';
     case 'failed':
-      return 'bg-rose-500';
+      return 'bg-[var(--destructive)]';
     default:
-      return 'bg-slate-400/70';
+      return 'bg-slate-300 dark:bg-slate-600';
   }
 };
 
@@ -1019,8 +1021,8 @@ export function AssistantContent() {
                 aria-pressed={selected}
                 className={`group relative mb-2 w-full overflow-hidden rounded-md border px-3 py-2.5 text-left transition-all last:mb-0 ${
                   selected
-                    ? 'border-sky-200/80 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.12)] dark:border-sky-400/50 dark:bg-slate-900/85 dark:shadow-[0_10px_30px_rgba(2,6,23,0.55)]'
-                    : 'border-transparent bg-white/55 hover:border-slate-200/80 hover:bg-white/80 dark:bg-slate-900/45 dark:hover:border-slate-600/70 dark:hover:bg-slate-900/72'
+                    ? 'border-[var(--border-strong)] bg-[var(--surface)]'
+                    : 'border-transparent bg-transparent hover:bg-slate-100/70 dark:hover:bg-slate-800/60'
                 }`}
                 onClick={() => {
                   setActiveRunId(run.id);
@@ -1055,18 +1057,14 @@ export function AssistantContent() {
                 />
                 <div className="ml-2 w-full">
                   <Space size={6} wrap className="!mb-2">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${getStatusChipClass(run.status)}`}
-                    >
+                    <Tag color={getStatusTagColor(run.status)} className="m-0">
                       {getStatusLabel(run.status)}
-                    </span>
-                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60">
-                      {getTypeLabel(run.type)}
-                    </span>
+                    </Tag>
+                    <Tag className="m-0">{getTypeLabel(run.type)}</Tag>
                     {blocked ? (
-                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-300/60 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/40">
+                      <Tag color="warning" className="m-0">
                         {t('assistant.blocked.tag')}
-                      </span>
+                      </Tag>
                     ) : null}
                   </Space>
 
@@ -1195,21 +1193,20 @@ export function AssistantContent() {
                       {t('assistant.chat.conversationTitle')}
                     </span>
                     {activeRun ? (
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-inset ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60">
-                        {getTypeLabel(activeRun.type)}
-                      </span>
+                      <Tag className="m-0">{getTypeLabel(activeRun.type)}</Tag>
                     ) : null}
                     {activeRun ? (
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${getStatusChipClass(activeRun.status)}`}
+                      <Tag
+                        color={getStatusTagColor(activeRun.status)}
+                        className="m-0"
                       >
                         {getStatusLabel(activeRun.status)}
-                      </span>
+                      </Tag>
                     ) : null}
                     {activeBlocked ? (
-                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-300/60 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/40">
+                      <Tag color="warning" className="m-0">
                         {t('assistant.blocked.tag')}
-                      </span>
+                      </Tag>
                     ) : null}
                   </Space>
                   <Space size={8} wrap>
@@ -1265,10 +1262,10 @@ export function AssistantContent() {
                           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs text-white dark:bg-slate-700">
                             <RobotOutlined />
                           </div>
-                          <span className="text-[15px] font-bold text-slate-900 dark:text-slate-100">
+                          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                             {t('assistant.chat.assistantLabel')}
                           </span>
-                          {activeIsStreaming ? <Spin size="small" className="text-sky-600" /> : null}
+                          {activeIsStreaming ? <Spin size="small" /> : null}
                         </Space>
 
                         <MarkdownViewer
@@ -1281,36 +1278,28 @@ export function AssistantContent() {
 
                         {hasActiveModelInfo ? (
                           <div className={styles.modelInfoCard}>
-                            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                            <p className="kicker m-0">
                               {t('assistant.chat.modelInfoTitle')}
-                            </span>
-                            <Space wrap className="!mt-3">
-                              {activeModelInfo?.llmModel ? (
-                                <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/70 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/40">
-                                  {t('assistant.chat.modelLabel')}: {activeModelInfo.llmModel}
-                                </span>
-                              ) : null}
-                              {activeModelInfo?.forecastModel ? (
-                                <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200/70 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-400/40">
-                                  {t('assistant.chat.forecastModelLabel')}:{' '}
-                                  {activeModelInfo.forecastModel}
-                                </span>
-                              ) : null}
-                              {activeModelInfo?.modelServiceUsed !== null ? (
-                                <span
-                                  className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold ring-1 ${
-                                    activeModelInfo?.modelServiceUsed
-                                      ? 'bg-white text-emerald-700 ring-emerald-200/70 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/40'
-                                      : 'bg-white text-slate-600 ring-slate-200/70 dark:bg-slate-700/40 dark:text-slate-300 dark:ring-slate-500/60'
-                                  }`}
-                                >
-                                  {t('assistant.chat.modelServiceLabel')}:{' '}
-                                  {activeModelInfo?.modelServiceUsed
-                                    ? t('assistant.chat.modelServiceUsed')
-                                    : t('assistant.chat.modelServiceNotUsed')}
-                                </span>
-                              ) : null}
-                            </Space>
+                            </p>
+                            <p className="m-0 mt-2 font-mono text-xs text-muted-foreground">
+                              {[
+                                activeModelInfo?.llmModel
+                                  ? `${t('assistant.chat.modelLabel')} · ${activeModelInfo.llmModel}`
+                                  : null,
+                                activeModelInfo?.forecastModel
+                                  ? `${t('assistant.chat.forecastModelLabel')} · ${activeModelInfo.forecastModel}`
+                                  : null,
+                                activeModelInfo?.modelServiceUsed !== null
+                                  ? `${t('assistant.chat.modelServiceLabel')} · ${
+                                      activeModelInfo?.modelServiceUsed
+                                        ? t('assistant.chat.modelServiceUsed')
+                                        : t('assistant.chat.modelServiceNotUsed')
+                                    }`
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join('  ·  ')}
+                            </p>
                           </div>
                         ) : null}
 
