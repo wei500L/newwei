@@ -285,7 +285,9 @@ export function SystemSecuritySettingsPanel() {
           {encryptionTag}
           {keyStatusTag}
           <Tag color={settings.mfaPolicy === "off" ? "default" : "blue"}>
-            MFA policy: {settings.mfaPolicy}
+            {t("systemSettings.security.mfaPolicyTag", {
+              policy: settings.mfaPolicy,
+            })}
           </Tag>
         </Space>
       </div>
@@ -300,12 +302,12 @@ export function SystemSecuritySettingsPanel() {
           <Switch />
         </Form.Item>
 
-        <Form.Item label="MFA policy" name="mfaPolicy">
+        <Form.Item label={t("systemSettings.security.fields.mfaPolicy")} name="mfaPolicy">
           <Select
             options={[
-              { value: "off", label: "Off" },
-              { value: "admins_only", label: "Admins only" },
-              { value: "all_users", label: "All users" },
+              { value: "off", label: t("systemSettings.security.mfaOptions.off") },
+              { value: "admins_only", label: t("systemSettings.security.mfaOptions.adminsOnly") },
+              { value: "all_users", label: t("systemSettings.security.mfaOptions.allUsers") },
             ]}
           />
         </Form.Item>
@@ -316,48 +318,50 @@ export function SystemSecuritySettingsPanel() {
       </Form>
 
       <section className="flex flex-col gap-3">
-        <SectionHeader title="OIDC single sign-on" rule />
+        <SectionHeader title={t("systemSettings.security.oidc.title")} rule />
         <Typography.Paragraph type="secondary">
-          Configure a generic OIDC provider for the current organization.
+          {t("systemSettings.security.oidc.description")}
         </Typography.Paragraph>
         <Alert
           type={oidcConfig.enabled ? "success" : "info"}
           showIcon
           style={{ marginBottom: "1rem" }}
-          message={
+          message={t(
             oidcConfig.enabled
-              ? `OIDC enabled${oidcConfig.hasClientSecret ? "" : " (missing client secret)"}`
-              : "OIDC disabled"
-          }
+              ? oidcConfig.hasClientSecret
+                ? "systemSettings.security.oidc.status.enabled"
+                : "systemSettings.security.oidc.status.enabledMissingSecret"
+              : "systemSettings.security.oidc.status.disabled",
+          )}
         />
         <Form form={oidcForm} layout="vertical" onFinish={handleOidcSubmit}>
-          <Form.Item name="enabled" valuePropName="checked" label="Enable OIDC">
+          <Form.Item name="enabled" valuePropName="checked" label={t("systemSettings.security.oidc.fields.enabled")}>
             <Switch />
           </Form.Item>
-          <Form.Item label="Issuer URL" name="issuerUrl" rules={[{ required: true }]}>
+          <Form.Item label={t("systemSettings.security.oidc.fields.issuerUrl")} name="issuerUrl" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item label="Discovery URL" name="discoveryUrl">
+          <Form.Item label={t("systemSettings.security.oidc.fields.discoveryUrl")} name="discoveryUrl">
             <Input />
           </Form.Item>
-          <Form.Item label="Client ID" name="clientId" rules={[{ required: true }]}>
+          <Form.Item label={t("systemSettings.security.oidc.fields.clientId")} name="clientId" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
           <Form.Item
-            label={oidcConfig.hasClientSecret ? "Client secret (leave blank to keep current)" : "Client secret"}
+            label={t(oidcConfig.hasClientSecret ? "systemSettings.security.oidc.fields.clientSecretKeep" : "systemSettings.security.oidc.fields.clientSecret")}
             name="clientSecret"
           >
             <Input.Password />
           </Form.Item>
-          <Form.Item label="Scopes" name="scopes">
+          <Form.Item label={t("systemSettings.security.oidc.fields.scopes")} name="scopes">
             <Select
               mode="tags"
               tokenSeparators={[",", " "]}
-              placeholder="openid email profile"
+              placeholder={t("systemSettings.security.oidc.scopesPlaceholder")}
             />
           </Form.Item>
           <Form.Item
-            label="Require verified email"
+            label={t("systemSettings.security.oidc.fields.requireEmailVerified")}
             name="requireEmailVerified"
             valuePropName="checked"
           >
@@ -375,16 +379,16 @@ export function SystemSecuritySettingsPanel() {
                   type="warning"
                   showIcon
                   style={{ marginBottom: "1rem" }}
-                  message="Unverified IdP email claims will be accepted for this organization."
+                  message={t("systemSettings.security.oidc.unverifiedEmailWarning")}
                 />
               ) : null
             }
           </Form.Item>
-          <Form.Item label="Button label" name="buttonLabel">
+          <Form.Item label={t("systemSettings.security.oidc.fields.buttonLabel")} name="buttonLabel">
             <Input />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={savingOidc}>
-            Save OIDC configuration
+            {t("systemSettings.security.oidc.save")}
           </Button>
         </Form>
       </section>

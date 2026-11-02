@@ -85,11 +85,11 @@ export function RealtimeSignalsOpenskyBudgetPanel({
       />
       <Space direction="vertical" size="middle" style={{ display: "flex" }}>
         <Space wrap size={[8, 8]}>
-          <Tag color="geekblue">
+          <Tag>
             {t("systemSettings.realtimeSignals.runtime.openskyBudget.date")}:{" "}
             {openskyBudget?.dateHkt ?? "—"}
           </Tag>
-          <Tag color="purple">
+          <Tag>
             {t(
               "systemSettings.realtimeSignals.runtime.openskyBudget.timezone",
             )}
@@ -106,7 +106,7 @@ export function RealtimeSignalsOpenskyBudgetPanel({
             : {degradationLabel}
           </Tag>
           {openskyBudget?.allModeBlocked ? (
-            <Tag color="magenta">
+            <Tag color="warning">
               {t(
                 "systemSettings.realtimeSignals.runtime.openskyBudget.allModeBlocked",
               )}

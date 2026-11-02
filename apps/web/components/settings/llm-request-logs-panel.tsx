@@ -1170,7 +1170,7 @@ export function LlmRequestLogsPanel() {
         key: "feature",
         width: 180,
         render: (value: string | null) =>
-          value ? <Tag color="blue">{value}</Tag> : "-",
+          value ? <Tag>{value}</Tag> : "-",
       },
       {
         title: t("systemSettings.llmRequestLogs.table.requestType"),
@@ -1616,16 +1616,16 @@ export function LlmRequestLogsPanel() {
         <Alert
           type="info"
           showIcon
-          message="Deep-linked crawl frontier context"
+          message={t("systemSettings.llmRequestLogs.pinnedContext.title")}
           description={
             <Space wrap>
               {pinnedContextTags.map((tag) => (
-                <Tag key={tag} color="blue">
+                <Tag key={tag}>
                   {tag}
                 </Tag>
               ))}
               <Button size="small" onClick={handleReset}>
-                Clear context
+                {t("systemSettings.llmRequestLogs.pinnedContext.clear")}
               </Button>
             </Space>
           }
@@ -1642,36 +1642,36 @@ export function LlmRequestLogsPanel() {
             {t("systemSettings.llmRequestLogs.retention.status.label")}
           </Typography.Text>
           <Tag color={sourceColor}>{sourceLabel}</Tag>
-          <Tag color="geekblue">
+          <span className="font-mono text-xs text-muted-foreground">
             {t("systemSettings.llmRequestLogs.retention.status.currentDays", {
               days: settings.retentionDays,
             })}
-          </Tag>
-          <Tag color="cyan">
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
             {t(
               "systemSettings.llmRequestLogs.retention.status.currentKeyCount",
               {
                 count: settings.metadataAllowedTopLevelKeys.length,
               },
             )}
-          </Tag>
-          <Tag color="purple">
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
             {t(
               "systemSettings.llmRequestLogs.retention.status.currentPrefixCount",
               {
                 count: settings.metadataAllowedTopLevelPrefixes.length,
               },
             )}
-          </Tag>
-          <Tag color="gold">
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
             {t(
               "systemSettings.llmRequestLogs.retention.status.currentBriefErrorRateThreshold",
               {
                 value: (effectiveBriefErrorRateThreshold * 100).toFixed(2),
               },
             )}
-          </Tag>
-          <Tag color="orange">
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
             {t(
               "systemSettings.llmRequestLogs.retention.status.currentBriefInvalidJsonRatioThreshold",
               {
@@ -1680,15 +1680,15 @@ export function LlmRequestLogsPanel() {
                 ),
               },
             )}
-          </Tag>
-          <Tag color="red">
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
             {t(
               "systemSettings.llmRequestLogs.retention.status.currentBriefConsecutiveDaysThreshold",
               {
                 days: effectiveBriefConsecutiveDaysThreshold,
               },
             )}
-          </Tag>
+          </span>
         </Space>
         <Form
           layout="vertical"
@@ -2025,16 +2025,16 @@ export function LlmRequestLogsPanel() {
           >
             {metadataPolicySourceLabel}
           </Tag>
-          <Tag color="cyan">
+          <span className="font-mono text-xs text-muted-foreground">
             {t("systemSettings.llmRequestLogs.metadataPolicy.keysCount", {
               count: effectiveMetadataPolicy.keyCount,
             })}
-          </Tag>
-          <Tag color="purple">
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
             {t("systemSettings.llmRequestLogs.metadataPolicy.prefixesCount", {
               count: effectiveMetadataPolicy.prefixCount,
             })}
-          </Tag>
+          </span>
         </Space>
 
         <SectionHeader
@@ -2100,21 +2100,21 @@ export function LlmRequestLogsPanel() {
           allowClear
           value={profileFilter}
           onChange={(event) => setProfileFilter(event.target.value)}
-          placeholder="Profile ID"
+          placeholder={t("systemSettings.llmRequestLogs.filters.profilePlaceholder")}
           style={{ minWidth: 180 }}
         />
         <Input
           allowClear
           value={runFilter}
           onChange={(event) => setRunFilter(event.target.value)}
-          placeholder="Run ID"
+          placeholder={t("systemSettings.llmRequestLogs.filters.runPlaceholder")}
           style={{ minWidth: 180 }}
         />
         <Input
           allowClear
           value={nodeFilter}
           onChange={(event) => setNodeFilter(event.target.value)}
-          placeholder="Node ID"
+          placeholder={t("systemSettings.llmRequestLogs.filters.nodePlaceholder")}
           style={{ minWidth: 180 }}
         />
         <Select<"all" | LlmRequestType>
@@ -2164,7 +2164,7 @@ export function LlmRequestLogsPanel() {
           allowClear
           style={{ minWidth: 280 }}
         />
-        <Button type="primary" onClick={handleSearch} loading={isLoading}>
+        <Button onClick={handleSearch} loading={isLoading}>
           {t("common.refresh")}
         </Button>
         <Button

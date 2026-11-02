@@ -470,7 +470,7 @@ export function useLlmGatewayProxyGovernance(
             {t("settings.llmGateway.proxyGovernance.reset.modal.content")}
           </Typography.Text>
           <Space wrap>
-            <Tag color="geekblue">
+            <Tag>
               {t("settings.llmGateway.proxyGovernance.reset.targetProfile", {
                 value:
                   proxyGovernanceSettings?.targetProfileName ??
@@ -478,13 +478,13 @@ export function useLlmGatewayProxyGovernance(
                   governanceNoneLabel,
               })}
             </Tag>
-            <Tag color="blue">
+            <Tag>
               {t("settings.llmGateway.proxyGovernance.reset.team", {
                 value:
                   proxyGovernanceSettings?.managedTeamId ?? governanceNoneLabel,
               })}
             </Tag>
-            <Tag color="purple">
+            <Tag>
               {t("settings.llmGateway.proxyGovernance.reset.key", {
                 value:
                   proxyGovernanceSettings?.managedRuntimeKeyAlias ??
@@ -557,7 +557,7 @@ export function useLlmGatewayProxyGovernance(
             {t("settings.llmGateway.proxyGovernance.rotate.confirm")}
           </Typography.Text>
           <Space wrap>
-            <Tag color="geekblue">
+            <Tag>
               {t("settings.llmGateway.proxyGovernance.rotate.targetProfile", {
                 value:
                   selectedGovernanceProfile?.name ??
@@ -566,13 +566,13 @@ export function useLlmGatewayProxyGovernance(
                   governanceNoneLabel,
               })}
             </Tag>
-            <Tag color="blue">
+            <Tag>
               {t("settings.llmGateway.proxyGovernance.rotate.team", {
                 value:
                   proxyGovernanceSettings?.managedTeamId ?? governanceNoneLabel,
               })}
             </Tag>
-            <Tag color="purple">
+            <Tag>
               {t("settings.llmGateway.proxyGovernance.rotate.key", {
                 value:
                   proxyGovernanceSettings?.managedRuntimeKeyAlias ??
@@ -850,14 +850,14 @@ export function LlmGatewayProxyGovernancePanel({
                         },
                       )}
                     </Tag>
-                    <Tag color="blue">
+                    <Tag>
                       {t("settings.llmGateway.proxyGovernance.status.team", {
                         value:
                           proxyGovernanceSettings.managedTeamId ??
                           governanceNoneLabel,
                       })}
                     </Tag>
-                    <Tag color="purple">
+                    <Tag>
                       {t("settings.llmGateway.proxyGovernance.status.key", {
                         value:
                           proxyGovernanceSettings.managedRuntimeKeyAlias ??
@@ -1311,7 +1311,7 @@ export function LlmGatewayProxyGovernancePanel({
                 {t("settings.llmGateway.proxyGovernance.observed.hint")}
               </Typography.Text>
               <Space wrap>
-                <Tag color="blue">
+                <Tag>
                   {t(
                     "settings.llmGateway.proxyGovernance.observed.daySpend",
                     {
@@ -1322,7 +1322,7 @@ export function LlmGatewayProxyGovernancePanel({
                     },
                   )}
                 </Tag>
-                <Tag color="orange">
+                <Tag>
                   {t(
                     "settings.llmGateway.proxyGovernance.observed.dayDirect",
                     {
@@ -1332,7 +1332,7 @@ export function LlmGatewayProxyGovernancePanel({
                     },
                   )}
                 </Tag>
-                <Tag color="purple">
+                <Tag>
                   {t(
                     "settings.llmGateway.proxyGovernance.observed.monthSpend",
                     {
@@ -1343,7 +1343,7 @@ export function LlmGatewayProxyGovernancePanel({
                     },
                   )}
                 </Tag>
-                <Tag color="orange">
+                <Tag>
                   {t(
                     "settings.llmGateway.proxyGovernance.observed.monthDirect",
                     {

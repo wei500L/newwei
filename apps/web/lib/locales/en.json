@@ -4364,6 +4364,61 @@
     }
   },
   "settings": {
+    "applications": {
+      "joinRequests": "Join requests",
+      "newOrgRequests": "New organization requests",
+      "emptyJoin": "No join requests",
+      "emptyOrg": "No organization requests",
+      "inviteStatus": "Invite: {{status}}",
+      "columns": {
+        "email": "Email",
+        "name": "Name",
+        "organization": "Organization",
+        "status": "Status",
+        "progress": "Progress",
+        "actions": "Actions"
+      },
+      "actions": {
+        "approve": "Approve",
+        "reject": "Reject",
+        "recover": "Recover",
+        "resend": "Resend invite"
+      },
+      "recoverModal": {
+        "title": "Recover application",
+        "titleNamed": "Recover {{name}}",
+        "description": "Leave the target organization ID empty to let the server create the organization when the requested slug is free. Only enter an ID to adopt an orphaned organization that already exists; the server verifies the target before linking it.",
+        "targetOrgId": "Target organization ID (optional)",
+        "reason": "Reason (optional)",
+        "placeholder": "org_..."
+      }
+    },
+    "invites": {
+      "createTitle": "Create invite",
+      "email": "Email",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "primaryRole": "Primary role",
+      "roleBundle": "Role bundle",
+      "send": "Send invite",
+      "columns": {
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "expires": "Expires",
+        "actions": "Actions"
+      },
+      "actions": {
+        "resend": "Resend",
+        "revoke": "Revoke"
+      }
+    },
+    "approveJoin": {
+      "title": "Approve join request",
+      "titleNamed": "Approve {{email}}",
+      "primaryRole": "Primary role",
+      "roleBundle": "Role bundle"
+    },
     "security": {
       "title": "Account security",
       "description": "Manage your authenticator app and recovery codes.",
@@ -7128,8 +7183,38 @@
         "keyMissing": "Env key missing",
         "keyInvalid": "Env key invalid"
       },
+      "mfaPolicyTag": "MFA policy: {{policy}}",
+      "mfaOptions": {
+        "off": "Off",
+        "adminsOnly": "Admins only",
+        "allUsers": "All users"
+      },
+      "oidc": {
+        "title": "OIDC single sign-on",
+        "description": "Configure a generic OIDC provider for the current organization.",
+        "status": {
+          "enabled": "OIDC enabled",
+          "enabledMissingSecret": "OIDC enabled (missing client secret)",
+          "disabled": "OIDC disabled"
+        },
+        "fields": {
+          "enabled": "Enable OIDC",
+          "issuerUrl": "Issuer URL",
+          "discoveryUrl": "Discovery URL",
+          "clientId": "Client ID",
+          "clientSecret": "Client secret",
+          "clientSecretKeep": "Client secret (leave blank to keep current)",
+          "scopes": "Scopes",
+          "requireEmailVerified": "Require verified email",
+          "buttonLabel": "Button label"
+        },
+        "unverifiedEmailWarning": "Unverified IdP email claims will be accepted for this organization.",
+        "save": "Save OIDC configuration",
+        "scopesPlaceholder": "openid email profile"
+      },
       "fields": {
-        "secretEncryptionEnabled": "Encrypt stored secrets"
+        "secretEncryptionEnabled": "Encrypt stored secrets",
+        "mfaPolicy": "MFA policy"
       },
       "hints": {
         "secretEncryptionEnabled": "When SYSTEM_SETTINGS_ENCRYPTION_KEY is set, secrets are encrypted by default. Keep this enabled (recommended); disabling stores new secrets in plaintext. Existing records are not migrated automatically."

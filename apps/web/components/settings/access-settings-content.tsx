@@ -29,6 +29,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PageHeader } from '@/components/page-header';
+import { SectionHeader } from '@/components/section-header';
 import {
   canViewLoginHistory,
   getAssignableRoles,
@@ -2170,35 +2171,37 @@ function InvitesPanel({
   onCreate: (values: CreateInviteFormValues) => Promise<void>;
   onInviteAction: (inviteId: string, action: 'resend' | 'revoke') => Promise<void>;
 }) {
+  const { t } = useTranslation();
   return (
-    <Space direction="vertical" size="large" style={{ display: 'flex' }}>
-      <Card size="small" title="Create invite">
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t('settings.invites.createTitle')} rule />
         <Form form={form} layout="vertical" onFinish={(values) => void onCreate(values)}>
-          <Form.Item label="Email" name="email" rules={[{ required: true }]}>
+          <Form.Item label={t('settings.invites.email')} name="email" rules={[{ required: true }]}>
             <Input size="large" />
           </Form.Item>
-          <Form.Item label="First name" name="firstName">
+          <Form.Item label={t('settings.invites.firstName')} name="firstName">
             <Input />
           </Form.Item>
-          <Form.Item label="Last name" name="lastName">
+          <Form.Item label={t('settings.invites.lastName')} name="lastName">
             <Input />
           </Form.Item>
-          <Form.Item label="Primary role" name="primaryRoleId" rules={[{ required: true }]}>
+          <Form.Item label={t('settings.invites.primaryRole')} name="primaryRoleId" rules={[{ required: true }]}>
             <Select
               options={roles.map((role) => ({ value: role.id, label: role.name }))}
             />
           </Form.Item>
-          <Form.Item label="Role bundle" name="roleIds" rules={[{ required: true }]}>
+          <Form.Item label={t('settings.invites.roleBundle')} name="roleIds" rules={[{ required: true }]}>
             <Select
               mode="multiple"
               options={roles.map((role) => ({ value: role.id, label: role.name }))}
             />
           </Form.Item>
           <Button type="primary" htmlType="submit">
-            Send invite
+            {t('settings.invites.send')}
           </Button>
         </Form>
-      </Card>
+      </section>
 
       <Table
         rowKey="id"
@@ -2206,29 +2209,29 @@ function InvitesPanel({
         dataSource={invites}
         pagination={false}
         columns={[
-          { title: 'Email', dataIndex: 'email', key: 'email' },
+          { title: t('settings.invites.columns.email'), dataIndex: 'email', key: 'email' },
           {
-            title: 'Role',
+            title: t('settings.invites.columns.role'),
             key: 'primaryRole',
             render: (_, invite) => invite.primaryRole?.name ?? invite.primaryRoleId,
           },
-          { title: 'Status', dataIndex: 'status', key: 'status' },
+          { title: t('settings.invites.columns.status'), dataIndex: 'status', key: 'status' },
           {
-            title: 'Expires',
+            title: t('settings.invites.columns.expires'),
             dataIndex: 'expiresAt',
             key: 'expiresAt',
             render: (value: string) => value,
           },
           {
-            title: 'Actions',
+            title: t('settings.invites.columns.actions'),
             key: 'actions',
             render: (_, invite) => (
               <Space>
                 <Button size="small" onClick={() => void onInviteAction(invite.id, 'resend')}>
-                  Resend
+                  {t('settings.invites.actions.resend')}
                 </Button>
                 <Button size="small" danger onClick={() => void onInviteAction(invite.id, 'revoke')}>
-                  Revoke
+                  {t('settings.invites.actions.revoke')}
                 </Button>
               </Space>
             ),
@@ -2236,7 +2239,7 @@ function InvitesPanel({
         ]}
         scroll={{ x: "max-content" }}
       />
-    </Space>
+    </div>
   );
 }
 
@@ -2256,6 +2259,7 @@ function ApproveJoinApplicationModal({
     input: { primaryRoleId: string; roleIds: string[] },
   ) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [form] = Form.useForm<{ primaryRoleId: string; roleIds: string[] }>();
 
   useEffect(() => {
@@ -2277,7 +2281,7 @@ function ApproveJoinApplicationModal({
   return (
     <Modal
       open={open}
-      title={application ? `Approve ${application.email}` : 'Approve join request'}
+      title={application ? t('settings.approveJoin.titleNamed', { email: application.email }) : t('settings.approveJoin.title')}
       onCancel={onClose}
       onOk={() => void form.submit()}
     >
@@ -2291,10 +2295,10 @@ function ApproveJoinApplicationModal({
           void onApprove(application, values);
         }}
       >
-        <Form.Item label="Primary role" name="primaryRoleId" rules={[{ required: true }]}>
+        <Form.Item label={t('settings.approveJoin.primaryRole')} name="primaryRoleId" rules={[{ required: true }]}>
           <Select options={roles.map((role) => ({ value: role.id, label: role.name }))} />
         </Form.Item>
-        <Form.Item label="Role bundle" name="roleIds" rules={[{ required: true }]}>
+        <Form.Item label={t('settings.approveJoin.roleBundle')} name="roleIds" rules={[{ required: true }]}>
           <Select
             mode="multiple"
             options={roles.map((role) => ({ value: role.id, label: role.name }))}

@@ -963,7 +963,7 @@ export function AssistantSafetySettingsPanel() {
               ) : null}
 
               <Space wrap>
-                <Button type="primary" onClick={() => void handleAppendOpenAiKeys()} loading={savingKeys}>
+                <Button onClick={() => void handleAppendOpenAiKeys()} loading={savingKeys}>
                   {t("settings.assistantSafety.openaiKeys.actions.append")}
                 </Button>
                 <Button danger onClick={() => void handleReplaceOpenAiKeys()} loading={savingKeys}>

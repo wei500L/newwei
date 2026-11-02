@@ -4364,6 +4364,61 @@
     }
   },
   "settings": {
+    "applications": {
+      "joinRequests": "加入申请",
+      "newOrgRequests": "新组织申请",
+      "emptyJoin": "暂无加入申请",
+      "emptyOrg": "暂无组织申请",
+      "inviteStatus": "邀请：{{status}}",
+      "columns": {
+        "email": "邮箱",
+        "name": "姓名",
+        "organization": "组织",
+        "status": "状态",
+        "progress": "进度",
+        "actions": "操作"
+      },
+      "actions": {
+        "approve": "通过",
+        "reject": "拒绝",
+        "recover": "恢复",
+        "resend": "重发邀请"
+      },
+      "recoverModal": {
+        "title": "恢复申请",
+        "titleNamed": "恢复 {{name}}",
+        "description": "留空目标组织 ID，服务器会在请求的 slug 可用时创建组织。仅当需要接管已存在的孤立组织时才填写 ID；服务器会在关联前校验目标组织。",
+        "targetOrgId": "目标组织 ID（可选）",
+        "reason": "原因（可选）",
+        "placeholder": "org_..."
+      }
+    },
+    "invites": {
+      "createTitle": "创建邀请",
+      "email": "邮箱",
+      "firstName": "名",
+      "lastName": "姓",
+      "primaryRole": "主角色",
+      "roleBundle": "角色组合",
+      "send": "发送邀请",
+      "columns": {
+        "email": "邮箱",
+        "role": "角色",
+        "status": "状态",
+        "expires": "过期时间",
+        "actions": "操作"
+      },
+      "actions": {
+        "resend": "重发",
+        "revoke": "撤销"
+      }
+    },
+    "approveJoin": {
+      "title": "通过加入申请",
+      "titleNamed": "通过 {{email}}",
+      "primaryRole": "主角色",
+      "roleBundle": "角色组合"
+    },
     "security": {
       "title": "账号安全",
       "description": "管理身份验证器与恢复码。",
@@ -7127,8 +7182,38 @@
         "keyMissing": "环境密钥未配置",
         "keyInvalid": "环境密钥无效"
       },
+      "mfaPolicyTag": "MFA 策略：{{policy}}",
+      "mfaOptions": {
+        "off": "关闭",
+        "adminsOnly": "仅管理员",
+        "allUsers": "所有用户"
+      },
+      "oidc": {
+        "title": "OIDC 单点登录",
+        "description": "为当前组织配置通用 OIDC 提供方。",
+        "status": {
+          "enabled": "OIDC 已启用",
+          "enabledMissingSecret": "OIDC 已启用（缺少客户端密钥）",
+          "disabled": "OIDC 已禁用"
+        },
+        "fields": {
+          "enabled": "启用 OIDC",
+          "issuerUrl": "Issuer URL",
+          "discoveryUrl": "Discovery URL",
+          "clientId": "Client ID",
+          "clientSecret": "Client secret",
+          "clientSecretKeep": "Client secret（留空保持不变）",
+          "scopes": "Scopes",
+          "requireEmailVerified": "要求已验证邮箱",
+          "buttonLabel": "按钮文案"
+        },
+        "unverifiedEmailWarning": "此组织将接受未验证的 IdP 邮箱声明。",
+        "save": "保存 OIDC 配置",
+        "scopesPlaceholder": "openid email profile"
+      },
       "fields": {
-        "secretEncryptionEnabled": "加密存储密钥/Token"
+        "secretEncryptionEnabled": "加密存储密钥/Token",
+        "mfaPolicy": "MFA 策略"
       },
       "hints": {
         "secretEncryptionEnabled": "配置了 SYSTEM_SETTINGS_ENCRYPTION_KEY 时，密钥默认加密存储。建议保持开启；关闭后新写入的密钥将以明文存储。历史数据不会自动迁移。"

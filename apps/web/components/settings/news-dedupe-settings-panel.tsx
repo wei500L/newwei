@@ -695,7 +695,7 @@ export function NewsDedupeSettingsPanel() {
                   dataIndex: "threshold",
                   key: "threshold",
                   width: 140,
-                  render: (value: number) => <Tag color="geekblue">{formatThreshold(value)}</Tag>
+                  render: (value: number) => <Tag>{formatThreshold(value)}</Tag>
                 }
               ]}
               scroll={{ x: "max-content" }}

@@ -871,7 +871,7 @@ export function NewsnowPersonalizationSettingsPanel() {
           />
           <Space wrap size={[8, 8]}>
             {behaviorProfile?.meta?.decayPolicy?.halfLifeDays ? (
-              <Tag color="blue">
+              <Tag>
                 {t(
                   'systemSettings.newsnowPersonalization.behaviorProfile.decayPolicy',
                   {

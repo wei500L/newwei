@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
+import { FilterBar } from "@/components/filter-bar";
 import { SectionHeader } from "@/components/section-header";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
@@ -431,43 +432,52 @@ export function RssTranslationMetricsPanel() {
     <div className="flex flex-col gap-6">
       {contextHolder}
       <section className="flex flex-col gap-3">
-        <Space wrap>
-          <Select
-            style={{ width: 150 }}
-            value={days}
-            options={[
-              { value: 7, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 7 }) },
-              { value: 14, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 14 }) },
-              { value: 30, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 30 }) }
-            ]}
-            onChange={(value) => setDays(Number(value))}
-          />
-          <Select
-            style={{ width: 160 }}
-            value={providerFilter}
-            onChange={(value) => setProviderFilter(value as ProviderFilter)}
-            options={[
-              { value: "all", label: t("settings.rssTranslationMetrics.filters.providers.all") },
-              { value: "deeplx", label: t("settings.rssTranslationMetrics.filters.providers.deeplx") },
-              { value: "llm", label: t("settings.rssTranslationMetrics.filters.providers.llm") }
-            ]}
-          />
-          <Select
-            style={{ width: 180 }}
-            value={targetLanguageFilter}
-            onChange={(value) => setTargetLanguageFilter(String(value))}
-            options={[
-              { value: "all", label: t("settings.rssTranslationMetrics.filters.languages.all") },
-              ...RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS.map((option) => ({
-                value: option.value,
-                label: option.label
-              }))
-            ]}
-          />
-          <Button onClick={() => void loadMetrics()} loading={loading}>
-            {t("common.refresh")}
-          </Button>
-        </Space>
+        <FilterBar
+          actions={
+            <Button onClick={() => void loadMetrics()} loading={loading}>
+              {t("common.refresh")}
+            </Button>
+          }
+        >
+          <FilterBar.Item width="sm">
+            <Select
+              className="w-full"
+              value={days}
+              options={[
+                { value: 7, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 7 }) },
+                { value: 14, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 14 }) },
+                { value: 30, label: t("settings.rssTranslationMetrics.filters.lastDays", { days: 30 }) }
+              ]}
+              onChange={(value) => setDays(Number(value))}
+            />
+          </FilterBar.Item>
+          <FilterBar.Item width="md">
+            <Select
+              className="w-full"
+              value={providerFilter}
+              onChange={(value) => setProviderFilter(value as ProviderFilter)}
+              options={[
+                { value: "all", label: t("settings.rssTranslationMetrics.filters.providers.all") },
+                { value: "deeplx", label: t("settings.rssTranslationMetrics.filters.providers.deeplx") },
+                { value: "llm", label: t("settings.rssTranslationMetrics.filters.providers.llm") }
+              ]}
+            />
+          </FilterBar.Item>
+          <FilterBar.Item width="lg">
+            <Select
+              className="w-full"
+              value={targetLanguageFilter}
+              onChange={(value) => setTargetLanguageFilter(String(value))}
+              options={[
+                { value: "all", label: t("settings.rssTranslationMetrics.filters.languages.all") },
+                ...RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label
+                }))
+              ]}
+            />
+          </FilterBar.Item>
+        </FilterBar>
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           {errorMessage ? <Alert type="error" showIcon message={errorMessage} /> : null}
 

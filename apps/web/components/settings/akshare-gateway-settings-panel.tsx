@@ -624,7 +624,7 @@ export function AkshareGatewaySettingsPanel() {
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <Typography.Text>{t("systemSettings.akshare.label")}</Typography.Text>
-          <Tag color="blue">{currentVersion}</Tag>
+          <Tag>{currentVersion}</Tag>
           <Typography.Text type="secondary">
             {t("systemSettings.akshare.python", { version: pythonVersion })}
           </Typography.Text>
@@ -853,7 +853,7 @@ export function AkshareGatewaySettingsPanel() {
                 key: "providerKind",
                 width: 120,
                 render: (value: string) => (
-                  <Tag color="blue">{value.toUpperCase()}</Tag>
+                  <Tag>{value.toUpperCase()}</Tag>
                 ),
               },
               {

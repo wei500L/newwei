@@ -13,6 +13,7 @@ import {
   type TableColumnsType,
 } from 'antd';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { SectionHeader } from '@/components/section-header';
 
@@ -187,6 +188,7 @@ export function ApplicationsPanel({
   onRecoverOrg,
   onResendOrgInvite,
 }: ApplicationsPanelProps) {
+  const { t } = useTranslation();
   const [recoverTarget, setRecoverTarget] =
     useState<RegistrationApplicationItem | null>(null);
   const [recoverForm] = Form.useForm<RecoverOrgFormValues>();
@@ -222,15 +224,15 @@ export function ApplicationsPanel({
   };
 
   const platformColumns: TableColumnsType<RegistrationApplicationItem> = [
-    { title: 'Email', dataIndex: 'email', key: 'email' },
+    { title: t('settings.applications.columns.email'), dataIndex: 'email', key: 'email' },
     {
-      title: 'Organization',
+      title: t('settings.applications.columns.organization'),
       key: 'org',
       render: (_, row) =>
         `${row.requestedOrgName ?? '-'} (${row.requestedOrgSlug ?? '-'})`,
     },
     {
-      title: 'Status',
+      title: t('settings.applications.columns.status'),
       dataIndex: 'status',
       key: 'status',
       render: (status: RegistrationApplicationItem['status']) => (
@@ -238,7 +240,7 @@ export function ApplicationsPanel({
       ),
     },
     {
-      title: 'Progress',
+      title: t('settings.applications.columns.progress'),
       key: 'progress',
       render: (_, row) => {
         const stage = getPlatformApplicationStage(row);
@@ -252,7 +254,7 @@ export function ApplicationsPanel({
             ) : null}
             {stage.inviteStatus ? (
               <Typography.Text type="secondary">
-                Invite: {stage.inviteStatus}
+                {t('settings.applications.inviteStatus', { status: stage.inviteStatus })}
               </Typography.Text>
             ) : null}
           </Space>
@@ -260,7 +262,7 @@ export function ApplicationsPanel({
       },
     },
     {
-      title: 'Actions',
+      title: t('settings.applications.columns.actions'),
       key: 'actions',
       render: (_, row) => {
         const stage = getPlatformApplicationStage(row);
@@ -269,10 +271,10 @@ export function ApplicationsPanel({
           return (
             <Space>
               <Button size="small" onClick={() => onApproveOrg(row)}>
-                Approve
+                {t('settings.applications.actions.approve')}
               </Button>
               <Button size="small" danger onClick={() => onRejectOrg(row)}>
-                Reject
+                {t('settings.applications.actions.reject')}
               </Button>
             </Space>
           );
@@ -281,7 +283,7 @@ export function ApplicationsPanel({
         if (stage.kind === 'needs-recovery') {
           return (
             <Button size="small" onClick={() => setRecoverTarget(row)}>
-              Recover
+              {t('settings.applications.actions.recover')}
             </Button>
           );
         }
@@ -300,7 +302,7 @@ export function ApplicationsPanel({
                 void onResendOrgInvite(row);
               }}
             >
-              Resend invite
+              {t('settings.applications.actions.resend')}
             </Button>
           );
         }
@@ -313,7 +315,7 @@ export function ApplicationsPanel({
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
-        <SectionHeader title="Join requests" rule />
+        <SectionHeader title={t('settings.applications.joinRequests')} rule />
         <Table
           scroll={{ x: "max-content" }}
           rowKey="id"
@@ -321,35 +323,35 @@ export function ApplicationsPanel({
           dataSource={applications.orgApplications}
           pagination={false}
           columns={[
-            { title: 'Email', dataIndex: 'email', key: 'email' },
+            { title: t('settings.applications.columns.email'), dataIndex: 'email', key: 'email' },
             {
-              title: 'Name',
+              title: t('settings.applications.columns.name'),
               key: 'name',
               render: (_, row) => `${row.firstName} ${row.lastName}`,
             },
-            { title: 'Status', dataIndex: 'status', key: 'status' },
+            { title: t('settings.applications.columns.status'), dataIndex: 'status', key: 'status' },
             {
-              title: 'Actions',
+              title: t('settings.applications.columns.actions'),
               key: 'actions',
               render: (_, row) => (
                 <Space>
                   <Button size="small" onClick={() => onApproveJoin(row)}>
-                    Approve
+                    {t('settings.applications.actions.approve')}
                   </Button>
                   <Button size="small" danger onClick={() => onRejectJoin(row)}>
-                    Reject
+                    {t('settings.applications.actions.reject')}
                   </Button>
                 </Space>
               ),
             },
           ]}
-          locale={{ emptyText: <Empty description="No join requests" /> }}
+          locale={{ emptyText: <Empty description={t('settings.applications.emptyJoin')} /> }}
         />
       </section>
 
       {canManagePlatform ? (
         <section className="flex flex-col gap-3">
-          <SectionHeader title="New organization requests" rule />
+          <SectionHeader title={t('settings.applications.newOrgRequests')} rule />
           <Table
             scroll={{ x: "max-content" }}
             rowKey="id"
@@ -358,7 +360,7 @@ export function ApplicationsPanel({
             pagination={false}
             columns={platformColumns}
             locale={{
-              emptyText: <Empty description="No organization requests" />,
+              emptyText: <Empty description={t('settings.applications.emptyOrg')} />,
             }}
           />
         </section>
@@ -368,10 +370,12 @@ export function ApplicationsPanel({
         open={Boolean(recoverTarget)}
         title={
           recoverTarget
-            ? `Recover ${recoverTarget.requestedOrgName ?? recoverTarget.email}`
-            : 'Recover application'
+            ? t('settings.applications.recoverModal.titleNamed', {
+                name: recoverTarget.requestedOrgName ?? recoverTarget.email,
+              })
+            : t('settings.applications.recoverModal.title')
         }
-        okText="Recover"
+        okText={t('settings.applications.actions.recover')}
         confirmLoading={recovering}
         onOk={() => void handleRecoverSubmit()}
         onCancel={() => {
@@ -382,18 +386,15 @@ export function ApplicationsPanel({
       >
         <Form form={recoverForm} layout="vertical">
           <Typography.Paragraph type="secondary">
-            Leave the target organization ID empty to let the server create the
-            organization when the requested slug is free. Only enter an ID to
-            adopt an orphaned organization that already exists; the server
-            verifies the target before linking it.
+            {t('settings.applications.recoverModal.description')}
           </Typography.Paragraph>
           <Form.Item
-            label="Target organization ID (optional)"
+            label={t('settings.applications.recoverModal.targetOrgId')}
             name="targetOrgId"
           >
-            <Input placeholder="org_..." allowClear />
+            <Input placeholder={t('settings.applications.recoverModal.placeholder')} allowClear />
           </Form.Item>
-          <Form.Item label="Reason (optional)" name="reason">
+          <Form.Item label={t('settings.applications.recoverModal.reason')} name="reason">
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>

@@ -1310,7 +1310,7 @@ export function NewsEventsSettingsPanel() {
         <Space direction="vertical" size="middle" style={{ display: "flex" }}>
           <Descriptions
             size="small"
-            column={2}
+            column={{ xs: 1, md: 2 }}
             items={[
               {
                 key: "pendingCount",

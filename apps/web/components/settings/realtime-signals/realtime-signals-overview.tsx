@@ -137,28 +137,28 @@ export function RealtimeSignalsOverview({
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.openskyBaseUrl")}
           </Typography.Text>
-          <Tag color="geekblue">
+          <Tag>
             {settings.openskyBaseUrl ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.openskyTokenUrl")}
           </Typography.Text>
-          <Tag color="geekblue">
+          <Tag>
             {settings.openskyTokenUrl ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.aisRelayBaseUrl")}
           </Typography.Text>
-          <Tag color="geekblue">
+          <Tag>
             {settings.aisRelayBaseUrl ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.openskyClientId")}
           </Typography.Text>
-          <Tag color="geekblue">
+          <Tag>
             {settings.openskyClientId ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
@@ -168,7 +168,7 @@ export function RealtimeSignalsOverview({
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.polymarketProxyUrl")}
           </Typography.Text>
-          <Tag color="geekblue">
+          <Tag>
             {settings.polymarketProxyUrl ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
@@ -190,7 +190,7 @@ export function RealtimeSignalsOverview({
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.acledOauthUsername")}
           </Typography.Text>
-          <Tag color="geekblue">
+          <Tag>
             {settings.acledOauthUsername ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
@@ -200,7 +200,7 @@ export function RealtimeSignalsOverview({
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.acledOauthClientId")}
           </Typography.Text>
-          <Tag color="geekblue">
+          <Tag>
             {settings.acledOauthClientId || "acled"}
           </Tag>
           <Tag
@@ -230,7 +230,7 @@ export function RealtimeSignalsOverview({
                   "systemSettings.realtimeSignals.status.acledAccessTokenExpiresAt",
                 )}
               </Typography.Text>
-              <Tag color="geekblue">
+              <Tag>
                 {formatTimestamp(settings.acledAccessTokenExpiresAt)}
               </Tag>
               <Typography.Text type="secondary">
@@ -238,7 +238,7 @@ export function RealtimeSignalsOverview({
                   "systemSettings.realtimeSignals.status.acledAccessTokenRefreshedAt",
                 )}
               </Typography.Text>
-              <Tag color="geekblue">
+              <Tag>
                 {formatTimestamp(settings.acledAccessTokenRefreshedAt)}
               </Tag>
               <Typography.Text type="secondary">
@@ -246,7 +246,7 @@ export function RealtimeSignalsOverview({
                   "systemSettings.realtimeSignals.status.acledAccessTokenLastAttemptAt",
                 )}
               </Typography.Text>
-              <Tag color="geekblue">
+              <Tag>
                 {formatTimestamp(settings.acledAccessTokenLastAttemptAt)}
               </Tag>
             </Space>

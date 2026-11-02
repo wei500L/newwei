@@ -633,10 +633,26 @@ export function RssDiagnosticsPanel() {
               }
               description={
                 <Space direction="vertical" size={0}>
-                  <Typography.Text>{`scanned=${backfillResult.scanned}`}</Typography.Text>
-                  <Typography.Text>{`matched=${backfillResult.matched}`}</Typography.Text>
-                  <Typography.Text>{`updated=${backfillResult.updated}`}</Typography.Text>
-                  <Typography.Text>{`unresolved=${backfillResult.unresolved}`}</Typography.Text>
+                  <Typography.Text className="font-mono">
+                    {t("settings.rssDiagnostics.backfill.summary.scanned", {
+                      value: backfillResult.scanned,
+                    })}
+                  </Typography.Text>
+                  <Typography.Text className="font-mono">
+                    {t("settings.rssDiagnostics.backfill.summary.matched", {
+                      value: backfillResult.matched,
+                    })}
+                  </Typography.Text>
+                  <Typography.Text className="font-mono">
+                    {t("settings.rssDiagnostics.backfill.summary.updated", {
+                      value: backfillResult.updated,
+                    })}
+                  </Typography.Text>
+                  <Typography.Text className="font-mono">
+                    {t("settings.rssDiagnostics.backfill.summary.unresolved", {
+                      value: backfillResult.unresolved,
+                    })}
+                  </Typography.Text>
                 </Space>
               }
             />

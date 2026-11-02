@@ -828,14 +828,14 @@ export function SituationMonitorSettingsPanel() {
             <Space wrap>
               <Typography.Text strong>Telegram</Typography.Text>
               <Tag color={telegramReadinessMeta.color}>{telegramReadinessMeta.label}</Tag>
-              <Tag color="blue">{telegramApiIdSourceLabel}</Tag>
-              <Tag color="blue">{telegramApiHashSourceLabel}</Tag>
-              <Tag color="blue">{telegramSessionSourceLabel}</Tag>
+              <Tag>{telegramApiIdSourceLabel}</Tag>
+              <Tag>{telegramApiHashSourceLabel}</Tag>
+              <Tag>{telegramSessionSourceLabel}</Tag>
             </Space>
             <Space wrap>
               <Typography.Text strong>OREF</Typography.Text>
               <Tag color={orefReadinessMeta.color}>{orefReadinessMeta.label}</Tag>
-              <Tag color="blue">
+              <Tag>
                 {settings.orefProxyAuthSource === "env"
                   ? t("systemSettings.situationMonitor.status.apiKeySources.env")
                   : t("systemSettings.situationMonitor.status.apiKeySources.none")}
@@ -849,12 +849,12 @@ export function SituationMonitorSettingsPanel() {
             <Space wrap>
               <Typography.Text strong>Finnhub</Typography.Text>
               <Tag color={finnhubReadinessMeta.color}>{finnhubReadinessMeta.label}</Tag>
-              <Tag color="blue">{finnhubKeySourceLabel}</Tag>
+              <Tag>{finnhubKeySourceLabel}</Tag>
             </Space>
             <Space wrap>
               <Typography.Text strong>FRED</Typography.Text>
               <Tag color={fredReadinessMeta.color}>{fredReadinessMeta.label}</Tag>
-              <Tag color="blue">{fredKeySourceLabel}</Tag>
+              <Tag>{fredKeySourceLabel}</Tag>
             </Space>
             <Space wrap>
               <Button href={newsSourceSchedulerHref}>
@@ -875,7 +875,7 @@ export function SituationMonitorSettingsPanel() {
                 {externalSnapshotStatus.status.toUpperCase()}
               </Tag>
               {externalSnapshotStatus.stale ? (
-                <Tag color="volcano">
+                <Tag color="warning">
                   {t("systemSettings.situationMonitor.snapshot.stale")}
                 </Tag>
               ) : null}
@@ -981,17 +981,17 @@ export function SituationMonitorSettingsPanel() {
           ) : (
             <Space direction="vertical" size="small" style={{ display: "flex" }}>
               <Space wrap>
-                <Tag color="geekblue">
+                <Tag>
                   {t("systemSettings.situationMonitor.quality.articles", {
                     count: qualitySummary.articleCount,
                   })}
                 </Tag>
-                <Tag color="cyan">
+                <Tag>
                   {t("systemSettings.situationMonitor.quality.clusters", {
                     count: qualitySummary.clusterCount,
                   })}
                 </Tag>
-                <Tag color="green">
+                <Tag>
                   {t("systemSettings.situationMonitor.quality.mixed", {
                     count: qualitySummary.mixedSourceClusterCount,
                   })}
@@ -1061,14 +1061,14 @@ export function SituationMonitorSettingsPanel() {
             {t("systemSettings.situationMonitor.status.translationApiKeySource")}
           </Typography.Text>
           <Tag color={settings.hasTranslationApiKey ? "blue" : "default"}>{translationKeySourceLabel}</Tag>
-          <Tag color="geekblue">{settings.translationApiBaseUrl}</Tag>
+          <Tag>{settings.translationApiBaseUrl}</Tag>
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">
             {t("systemSettings.situationMonitor.status.translationFallbackApi")}
           </Typography.Text>
           <Tag color={fallbackEnabledColor}>{fallbackEnabledLabel}</Tag>
-          <Tag color="geekblue">
+          <Tag>
             {settings.translationFallbackApiBaseUrl || t("systemSettings.situationMonitor.status.notConfigured")}
           </Tag>
         </Space>
@@ -1081,8 +1081,8 @@ export function SituationMonitorSettingsPanel() {
               ? t("systemSettings.situationMonitor.status.configured")
               : t("systemSettings.situationMonitor.status.notConfigured")}
           </Tag>
-          <Tag color="blue">{liveHlsProxyCnnSourceLabel}</Tag>
-          <Tag color="geekblue">
+          <Tag>{liveHlsProxyCnnSourceLabel}</Tag>
+          <Tag>
             {settings.liveHlsProxyCnnUpstreamUrl || t("systemSettings.situationMonitor.status.notConfigured")}
           </Tag>
         </Space>
@@ -1095,8 +1095,8 @@ export function SituationMonitorSettingsPanel() {
               ? t("systemSettings.situationMonitor.status.configured")
               : t("systemSettings.situationMonitor.status.notConfigured")}
           </Tag>
-          <Tag color="blue">{liveHlsProxyCnbcSourceLabel}</Tag>
-          <Tag color="geekblue">
+          <Tag>{liveHlsProxyCnbcSourceLabel}</Tag>
+          <Tag>
             {settings.liveHlsProxyCnbcUpstreamUrl || t("systemSettings.situationMonitor.status.notConfigured")}
           </Tag>
         </Space>
@@ -1122,7 +1122,7 @@ export function SituationMonitorSettingsPanel() {
         <Space wrap>
           <Typography.Text type="secondary">{t("systemSettings.situationMonitor.status.telegramSessionSource")}</Typography.Text>
           <Tag color={settings.hasTelegramSession ? "blue" : "default"}>{telegramSessionSourceLabel}</Tag>
-          <Tag color="geekblue">{settings.telegramChannelSet}</Tag>
+          <Tag>{settings.telegramChannelSet}</Tag>
           <Tag>{t("systemSettings.situationMonitor.status.telegramPollInterval", { ms: settings.telegramPollIntervalMs })}</Tag>
         </Space>
       </Space>
