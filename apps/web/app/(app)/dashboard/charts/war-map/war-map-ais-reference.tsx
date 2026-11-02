@@ -108,10 +108,10 @@ export function AisControlsCard({
               <Button
                 type="link"
                 size="small"
-                className={resolveOverlayButtonClassName({
+                className={`${resolveOverlayButtonClassName({
                   tone: "link",
-                })}
-                style={{ padding: 0, height: "auto", marginTop: 8 }}
+                })} !mt-2`}
+                style={{ padding: 0, height: "auto" }}
                 onClick={() => ais.onModeChange("all")}
               >
                 {t("dashboard.charts.warMap.overlay.aisShowAllAction")}
@@ -126,10 +126,10 @@ export function AisControlsCard({
               <Button
                 type="link"
                 size="small"
-                className={resolveOverlayButtonClassName({
+                className={`${resolveOverlayButtonClassName({
                   tone: "link",
-                })}
-                style={{ padding: 0, height: "auto", marginTop: 8 }}
+                })} !mt-2`}
+                style={{ padding: 0, height: "auto" }}
                 onClick={() => ais.onModeChange("all")}
               >
                 {t("dashboard.charts.warMap.overlay.aisShowAllAction")}
@@ -169,7 +169,7 @@ export function AisControlsCard({
             </Tooltip>
             {aisStatusReason ? (
               <Tooltip title={aisStatusReason}>
-                <Tag color="volcano" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+                <Tag color="warning" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                   {t("dashboard.charts.warMap.stats.aisIssue")}
                 </Tag>
               </Tooltip>
@@ -183,14 +183,14 @@ export function AisControlsCard({
                 ) : null
               }
             >
-              <Tag color="cyan" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+              <Tag className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                 {aisPresentation.aisEffectiveModeLabel}
               </Tag>
             </Tooltip>
             {ais.mode === "all" ? (
               <Tooltip title={aisHighlightCandidatesHint}>
                 <Tag
-                  color={ais.highlightCandidates ? "orange" : "default"}
+                  color={ais.highlightCandidates ? "success" : "default"}
                   className={
                     ais.highlightCandidates
                       ? OVERLAY_STATUS_TAG_CLASS_NAME
@@ -213,7 +213,7 @@ export function AisControlsCard({
                   ) : null
                 }
               >
-                <Tag color="blue" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+                <Tag className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                   {t("dashboard.charts.warMap.stats.aisTrackedVessels")}:{" "}
                   {aisPresentation.aisRelayVesselCount}
                 </Tag>
@@ -232,7 +232,7 @@ export function AisControlsCard({
                 <Tag
                   color={
                     aisPresentation.aisFreshness === "stale"
-                      ? "gold"
+                      ? "warning"
                       : "default"
                   }
                   className={
@@ -256,7 +256,7 @@ export function AisControlsCard({
                   ) : null
                 }
               >
-                <Tag color="geekblue" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+                <Tag className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                   {aisPresentation.aisPrimaryCountLabel}:{" "}
                   {aisPresentation.aisPrimaryCountValue}
                 </Tag>
@@ -273,7 +273,7 @@ export function AisControlsCard({
                   ) : null
                 }
               >
-                <Tag color="orange" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+                <Tag className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                   {aisPresentation.aisHighlightCountLabel}:{" "}
                   {ais.highlightedCandidateCount}
                 </Tag>
@@ -289,7 +289,7 @@ export function AisControlsCard({
                   ) : null
                 }
               >
-                <Tag color="orange" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+                <Tag className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                   {t("dashboard.charts.warMap.stats.aisDisruptions")}:{" "}
                   {aisPresentation.aisDisruptionsCount}
                 </Tag>
@@ -298,14 +298,14 @@ export function AisControlsCard({
             {ais.effectiveMode === "all" &&
             aisPresentation.aisAllModeDegraded ? (
               <Tooltip title={aisPresentation.aisAllModeDegradedLabel}>
-                <Tag color="magenta" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+                <Tag color="warning" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                   {t("dashboard.charts.warMap.stats.aisAllUnavailable")}
                 </Tag>
               </Tooltip>
             ) : null}
             {aisPresentation.aisViewportEmptyStateActive &&
             aisPresentation.aisViewportEmptyStateLabel ? (
-              <Tag color="gold" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+              <Tag color="warning" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                 {aisPresentation.aisViewportEmptyStateLabel}
               </Tag>
             ) : null}

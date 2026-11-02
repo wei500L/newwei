@@ -740,8 +740,8 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       </div>
 
       {settings ? (
-        <Space size="small" wrap style={{ marginBottom: "0.75rem" }}>
-          <Tag color="blue">
+        <Space size="small" wrap className="!mb-3">
+          <Tag>
             {t("settings.knowledgeGraph.fields.minEdgeConfidence")}:{" "}
             {Number(settings.minEdgeConfidence ?? 0).toFixed(2)}
           </Tag>
@@ -755,12 +755,12 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
             </Tag>
           ) : null}
           {settings.multiModelValidationEnabled ? (
-            <Tag color="green">
+            <Tag>
               {t("settings.knowledgeGraph.fields.multiModelValidationEnabled")}
             </Tag>
           ) : null}
           {settings.entityDisambiguationEnabled ? (
-            <Tag color="geekblue">
+            <Tag>
               {t("settings.knowledgeGraph.fields.entityDisambiguationEnabled")}
             </Tag>
           ) : null}
@@ -795,7 +795,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
           <div ref={containerRef} className="h-[380px] w-full" />
           {selectedNode ? (
             <div className="absolute top-2 right-2 bg-surface border border-[var(--border)] rounded-md px-3 py-2 shadow-[var(--shadow-surface)]">
-              <div style={{ fontWeight: 600, marginBottom: 2 }}>
+              <div className="mb-0.5" style={{ fontWeight: 600 }}>
                 {selectedNode.name}
               </div>
               <div className="text-xs text-muted-foreground">

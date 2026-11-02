@@ -202,11 +202,11 @@ export interface WarMapSelectableOption<T extends string> {
 export function severityTagColor(severity: WarMapEventSeverity): string {
   switch (severity) {
     case "high":
-      return "red";
+      return "error";
     case "medium":
-      return "gold";
+      return "warning";
     case "low":
     default:
-      return "blue";
+      return "default";
   }
 }

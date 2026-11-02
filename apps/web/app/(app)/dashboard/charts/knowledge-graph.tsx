@@ -455,8 +455,8 @@ export function KnowledgeGraph() {
       </div>
 
       {seedName ? (
-        <Space size="small" wrap style={{ marginBottom: "0.75rem" }}>
-          <Tag color="geekblue" className="text-xs">
+        <Space size="small" wrap className="!mb-3">
+          <Tag className="text-xs">
             {t("dashboard.charts.knowledgeGraphSeedLabel")}: {seedName}
           </Tag>
           {loading ? (
@@ -468,11 +468,11 @@ export function KnowledgeGraph() {
       ) : null}
 
       {settings ? (
-        <Space size="small" wrap style={{ marginBottom: "0.75rem" }}>
+        <Space size="small" wrap className="!mb-3">
           <Tag color="default" className="text-xs">
             {t("dashboard.charts.knowledgeGraphNotRangeFiltered")}
           </Tag>
-          <Tag color="blue">
+          <Tag>
             {t("settings.knowledgeGraph.fields.minEdgeConfidence")}:{" "}
             {Number(settings.minEdgeConfidence ?? 0).toFixed(2)}
           </Tag>
@@ -483,10 +483,10 @@ export function KnowledgeGraph() {
             </Tag>
           ) : null}
           {settings.multiModelValidationEnabled ? (
-            <Tag color="green">{t("settings.knowledgeGraph.fields.multiModelValidationEnabled")}</Tag>
+            <Tag>{t("settings.knowledgeGraph.fields.multiModelValidationEnabled")}</Tag>
           ) : null}
           {settings.entityDisambiguationEnabled ? (
-            <Tag color="geekblue">{t("settings.knowledgeGraph.fields.entityDisambiguationEnabled")}</Tag>
+            <Tag>{t("settings.knowledgeGraph.fields.entityDisambiguationEnabled")}</Tag>
           ) : null}
           {degradationStats.filteredNodes > 0 || degradationStats.filteredEdges > 0 ? (
             <Tooltip
@@ -498,7 +498,7 @@ export function KnowledgeGraph() {
               })}
             >
               <Tag
-                color="orange"
+                color="warning"
                 icon={<WarningOutlined />}
                 className="text-xs cursor-help"
               >

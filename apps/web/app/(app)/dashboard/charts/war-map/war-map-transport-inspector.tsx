@@ -37,7 +37,7 @@ export function TransportInspectorContent({
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
       <Space size={[6, 6]} wrap>
-        <Tag color="blue" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+        <Tag className={OVERLAY_STATUS_TAG_CLASS_NAME}>
           {kind === "flight"
             ? (item.displayCategoryZh ??
               item.displayCategory ??
@@ -56,7 +56,7 @@ export function TransportInspectorContent({
           </Tag>
         ) : null}
         {kind === "vessel" && item.isMilitaryCandidate ? (
-          <Tag color="red" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+          <Tag className={OVERLAY_STATUS_TAG_CLASS_NAME}>
             {t("dashboard.charts.warMap.legend.aisMilitary")}
           </Tag>
         ) : null}

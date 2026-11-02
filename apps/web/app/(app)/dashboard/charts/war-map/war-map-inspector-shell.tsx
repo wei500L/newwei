@@ -93,15 +93,7 @@ export function InspectorPanelShellHeader({
             {inspectorKindLabel(selectedInspector, t)}
           </Typography.Text>
           <Space size={[6, 6]} wrap>
-            <Tag
-              color={
-                selectedInspector.kind === "event" ||
-                selectedInspector.kind === "event-cluster"
-                  ? "gold"
-                  : "green"
-              }
-              className={OVERLAY_STATUS_TAG_CLASS_NAME}
-            >
+            <Tag className={OVERLAY_STATUS_TAG_CLASS_NAME}>
               {inspectorKindTagLabel(selectedInspector, t)}
             </Tag>
             {"count" in selectedInspector ? (

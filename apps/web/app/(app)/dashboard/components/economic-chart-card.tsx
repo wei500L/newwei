@@ -127,7 +127,8 @@ export function EconomicChartCard({
         {description ? (
           <Typography.Paragraph
             type="secondary"
-            style={{ fontSize: 12, marginBottom: 0, fontWeight: "normal" }}
+            className="!mb-0"
+            style={{ fontSize: 12, fontWeight: "normal" }}
           >
             {description}
           </Typography.Paragraph>

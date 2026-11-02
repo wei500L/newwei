@@ -967,7 +967,7 @@ export function EntityImpactGraph() {
             {t("dashboard.charts.entityGraph.window")}
             : {windowLabel}
           </Tag>
-          <Tag color="geekblue" className="text-xs">
+          <Tag className="text-xs">
             {t("dashboard.charts.entityGraph.aggregation")}
           </Tag>
           {degradationStats.filteredLinks > 0 ? (
@@ -978,7 +978,7 @@ export function EntityImpactGraph() {
               })}
             >
               <Tag
-                color="orange"
+                color="warning"
                 icon={<WarningOutlined />}
                 className="text-xs cursor-help"
               >

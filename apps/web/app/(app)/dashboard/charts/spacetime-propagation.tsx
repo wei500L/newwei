@@ -681,8 +681,8 @@ export function SpacetimePropagation({
         onClose={() => setDrawerOpen(false)}
         width="min(520px, 100vw)"
       >
-        <Space size="small" wrap style={{ marginBottom: 12 }}>
-          {selectedSource ? <Tag color="blue">{selectedSource}</Tag> : null}
+        <Space size="small" wrap className="!mb-3">
+          {selectedSource ? <Tag>{selectedSource}</Tag> : null}
           {cursorStartIso && cursorEndIso ? (
             <Tag>
               {t("dashboard.charts.spacetimePropagation.window")}:{" "}
@@ -756,7 +756,7 @@ export function SpacetimePropagation({
                           description={
                             <Space direction="vertical" size={2}>
                               <Space size="small" wrap>
-                                {article.sourceLabel ? <Tag color="geekblue">{article.sourceLabel}</Tag> : null}
+                                {article.sourceLabel ? <Tag>{article.sourceLabel}</Tag> : null}
                                 {renderSentimentTag(article.sentiment)}
                               </Space>
                               <ArticlePublishedTime

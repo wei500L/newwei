@@ -523,14 +523,15 @@ function AnomalyForm({ onSubmit, loading, disabled }: AnomalyFormProps) {
               {fields.map(({ key, name, ...restField }) => (
                 <Space
                   key={key}
-                  style={{ display: "flex", marginBottom: 8 }}
+                  className="!mb-2"
+                  style={{ display: "flex" }}
                   align="baseline"
                 >
                   <Form.Item
                     {...restField}
                     name={[name, "timestamp"]}
                     rules={[{ required: true }]}
-                    style={{ marginBottom: 0 }}
+                    className="!mb-0"
                   >
                     <DatePicker
                       showTime
@@ -542,7 +543,7 @@ function AnomalyForm({ onSubmit, loading, disabled }: AnomalyFormProps) {
                     {...restField}
                     name={[name, "value"]}
                     rules={[{ required: true }]}
-                    style={{ marginBottom: 0 }}
+                    className="!mb-0"
                   >
                     <InputNumber
                       placeholder={t("analysis.anomaly.placeholders.value")}

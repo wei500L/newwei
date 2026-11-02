@@ -251,7 +251,7 @@ export default function EconomicShortPage() {
                 title={t("dashboard.economicShort.cards.indexCandlestick")}
                 extra={chartMeta}
               >
-                <div style={{ marginBottom: 12 }}>
+                <div className="mb-3">
                   <Select
                     value={activeIndex}
                     onChange={setActiveIndex}

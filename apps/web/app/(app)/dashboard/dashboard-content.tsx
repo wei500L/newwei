@@ -28,8 +28,8 @@ import { SectionHeader } from "@/components/section-header";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { formatDashboardDate } from "@/lib/dashboard-time";
-import dayjs from "@/lib/dayjs";
 import { useHeroMetrics } from "@/lib/hero-metrics";
+import { formatClock, formatTimestamp, resolveLocale } from "@/lib/i18n";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import { useTimedValueDeduper } from "@/lib/use-realtime-helpers";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
@@ -204,7 +204,8 @@ function DashboardStreamStatusLine({
   range,
   streamState,
 }: DashboardStreamStatusLineProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const lastStreamStatusRef = useRef<DashboardStreamStatus | null>(null);
 
   const streamStatusMeta = useMemo(() => {
@@ -255,17 +256,17 @@ function DashboardStreamStatusLine({
   }, [accessToken, streamState.status, t]);
 
   const lastUpdateLabel = streamState.lastUpdateAt
-    ? dayjs(streamState.lastUpdateAt).format("HH:mm:ss")
+    ? formatClock(streamState.lastUpdateAt, locale)
     : "--";
   const lastUpdateTitle = streamState.lastUpdateAt
-    ? dayjs(streamState.lastUpdateAt).format("YYYY-MM-DD HH:mm:ss")
+    ? formatTimestamp(streamState.lastUpdateAt, locale)
     : undefined;
 
   const lastMessageLabel = streamState.lastMessageAt
-    ? dayjs(streamState.lastMessageAt).format("HH:mm:ss")
+    ? formatClock(streamState.lastMessageAt, locale)
     : "--";
   const lastMessageTitle = streamState.lastMessageAt
-    ? dayjs(streamState.lastMessageAt).format("YYYY-MM-DD HH:mm:ss")
+    ? formatTimestamp(streamState.lastMessageAt, locale)
     : undefined;
 
   const errorPreview = useMemo(() => {
@@ -796,7 +797,7 @@ export function DashboardContent() {
                     title={
                       <Space size="small" align="center">
                         <span>{t("dashboard.queue.snapshot")}</span>
-                        <Tag color={queueLive ? "green" : "default"}>
+                        <Tag color={queueLive ? "success" : "default"}>
                           {queueLive
                             ? t("dashboard.queue.live")
                             : t("dashboard.queue.offline")}

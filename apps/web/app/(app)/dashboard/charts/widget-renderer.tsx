@@ -344,7 +344,7 @@ export function WidgetRenderer({
             Unit: {seriesUnit}
           </Tag>
         ) : null}
-        <Tag color="geekblue" className="text-xs">
+        <Tag className="text-xs">
           Aggregation: {activeGranularityLabel}
         </Tag>
       </Space>

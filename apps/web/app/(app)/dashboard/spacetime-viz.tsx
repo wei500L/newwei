@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   Drawer,
-  Empty,
   InputNumber,
   List,
   Segmented,
@@ -1412,10 +1411,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                     },
                   )}
                 >
-                  <Tag
-                    color={timelineDegradedCritical ? "error" : "warning"}
-                    style={{ marginInlineEnd: 0 }}
-                  >
+                  <Tag color={timelineDegradedCritical ? "error" : "warning"}>
                     {t("dashboard.charts.spacetimeTimeline.degradedBadge")}
                   </Tag>
                 </Tooltip>
@@ -1474,7 +1470,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                         },
                       )}
                     >
-                      <Tag color="gold">
+                      <Tag color="warning">
                         {t(
                           "dashboard.charts.spacetimeTimeline.orgEnforcedTag",
                         )}
@@ -1851,7 +1847,8 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                       {cursorEntry?.summary ? (
                         <Typography.Paragraph
                           type="secondary"
-                          style={{ margin: 0, whiteSpace: "pre-wrap" }}
+                          className="!m-0"
+                          style={{ whiteSpace: "pre-wrap" }}
                         >
                           {cursorEntry.summary}
                         </Typography.Paragraph>
@@ -1927,20 +1924,17 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
         width="min(560px, 100vw)"
       >
         {!selectedTimelineEntry ? (
-          <Empty
-            description={t("dashboard.dataEmpty")}
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
+          <ChartEmptyState description={t("dashboard.dataEmpty")} />
         ) : (
           <div className="flex flex-col gap-3">
             <Space wrap size="small">
-              <Tag color="purple">
+              <Tag>
                 {formatDateTime(selectedTimelineEntry.bucketStart, locale, {
                   dateStyle: "medium",
                 })}
               </Tag>
               {selectedTimelineEntry.aggregatedCount > 1 ? (
-                <Tag color="blue">
+                <Tag>
                   {t("dashboard.charts.spacetimeTimeline.aggregatedBuckets", {
                     count: selectedTimelineEntry.aggregatedCount,
                   })}
@@ -1956,7 +1950,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
             </Space>
 
             {selectedTimelineEntry.summary ? (
-              <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+              <Typography.Paragraph type="secondary" className="!m-0">
                 {selectedTimelineEntry.summary}
               </Typography.Paragraph>
             ) : null}
@@ -2002,7 +1996,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                         description={
                           <Space direction="vertical" size={2}>
                             <Space size="small" wrap>
-                              <Tag color="geekblue">
+                              <Tag>
                                 {article.sourceLabel ||
                                   t("common.notAvailable")}
                               </Tag>

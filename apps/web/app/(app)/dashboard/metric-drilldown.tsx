@@ -26,6 +26,7 @@ import { captureClientError } from "@/lib/client-telemetry";
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
+import { formatTimestamp, resolveLocale } from "@/lib/i18n";
 import { classifyMapLoadError, type MapLoadErrorPresentation } from "@/lib/map/map-load-error";
 import { createDeckMapRuntime, setDeckOverlayProps } from "@/lib/map/map-runtime";
 import { resolveMapStyleUrl } from "@/lib/map/map-style";
@@ -112,7 +113,8 @@ function resolveGeoFillColor(
 }
 
 export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDownProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
   const { isDark } = useTheme();
   const chartTheme = useChartTheme();
@@ -635,7 +637,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                 {unitLabel}: {seriesUnit}
               </Tag>
             ) : null}
-            <Tag color="geekblue" className="text-xs">
+            <Tag className="text-xs">
               {granularityTagText}
             </Tag>
           </div>
@@ -801,7 +803,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                               </div>
                             </div>
                             <span className="ml-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
-                              {dayjs(event.triggeredAt).format("MMM D, HH:mm")}
+                              {formatTimestamp(event.triggeredAt, locale)}
                             </span>
                           </div>
                           <Tag className="mt-2 mr-0" color={statusColor[event.status] ?? "default"}>

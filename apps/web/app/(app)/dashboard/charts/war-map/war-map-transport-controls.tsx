@@ -102,7 +102,7 @@ export function TransportSection({
                   ) : null
                 }
               >
-                <Tag color="geekblue" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+                <Tag className={OVERLAY_STATUS_TAG_CLASS_NAME}>
                   {flightsPresentation.flightsSourceBadgeLabel}
                 </Tag>
               </Tooltip>
@@ -121,20 +121,20 @@ export function TransportSection({
                 <Tag
                   color={
                     flightsPresentation.flightsFreshness === "stale"
-                      ? "orange"
+                      ? "warning"
                       : flightsPresentation.flightsFreshness === "zoom_required"
-                        ? "purple"
+                        ? "default"
                         : flightsPresentation.flightsFreshness ===
                             "budget_limited"
-                          ? "magenta"
+                          ? "warning"
                           : flightsPresentation.flightsFreshness ===
                               "not_configured"
-                            ? "red"
+                            ? "error"
                             : flightsPresentation.flightsFreshness === "missing"
                               ? "default"
                               : flightsPresentation.flightsTruncated
-                                ? "gold"
-                                : "cyan"
+                                ? "warning"
+                                : "success"
                   }
                   className={OVERLAY_STATUS_TAG_CLASS_NAME}
                 >

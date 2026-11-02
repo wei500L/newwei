@@ -290,7 +290,7 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
   );
   const actualGranularityLabel = formatGranularityLabel(actualGranularity);
   const granularityColor =
-    actualGranularity === UiTimeGranularity.Unknown ? "default" : "geekblue";
+    actualGranularity === UiTimeGranularity.Unknown ? "default" : "default";
   const granularityTagText = `${t("dashboard.sentiment.aggregationLabel")}: ${actualGranularityLabel}`;
 
   return (
@@ -301,7 +301,7 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
       extra={
         <Space size={6} wrap>
           {isFallbackMode ? (
-            <Tag color="gold" className="text-xs">
+            <Tag color="warning" className="text-xs">
               {t("dashboard.sentiment.fallbackSeries")}
             </Tag>
           ) : null}

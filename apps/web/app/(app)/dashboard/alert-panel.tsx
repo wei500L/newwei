@@ -16,9 +16,9 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { useTimedValueDeduper } from "@/lib/use-realtime-helpers";
 
 const severityColor: Record<string, string> = {
-  low: "green",
-  medium: "orange",
-  high: "red"
+  low: "default",
+  medium: "warning",
+  high: "error"
 };
 
 const eventStatusBadge: Record<string, "success" | "processing" | "error" | "default"> = {
@@ -164,7 +164,7 @@ export function AlertPanel() {
                           timeZoneName: "short",
                         })}
                       </Typography.Text>
-                      <Tag color={severityColor[event.severity] ?? "blue"}>{event.severity}</Tag>
+                      <Tag color={severityColor[event.severity] ?? "default"}>{event.severity}</Tag>
                     </Space>
                   }
                   description={

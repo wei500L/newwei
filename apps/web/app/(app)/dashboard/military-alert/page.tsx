@@ -202,14 +202,14 @@ export default function MilitaryAlertPage() {
                               <Badge
                                 color="red"
                                 text={t("dashboard.militaryAlert.badges.daily")}
-                                style={{ marginLeft: 8 }}
+                                className="!ml-2"
                               />
                             )}
                             {item.sameDirection && (
                               <Badge
                                 color="orange"
                                 text={t("dashboard.militaryAlert.badges.threeDay")}
-                                style={{ marginLeft: 8 }}
+                                className="!ml-2"
                               />
                             )}
                           </span>

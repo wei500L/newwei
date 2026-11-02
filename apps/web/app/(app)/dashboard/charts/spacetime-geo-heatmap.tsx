@@ -1009,10 +1009,10 @@ export function SpacetimeGeoHeatmap({
         }}
         width="min(520px, 100vw)"
       >
-        <Space size="small" wrap style={{ marginBottom: 12 }}>
+        <Space size="small" wrap className="!mb-3">
           {selectedPoint?.id ? <Tag>id: {selectedPoint.id}</Tag> : null}
           {drilldownBucketStart ? (
-            <Tag color="purple">
+            <Tag>
               {t("dashboard.charts.spacetimeGeoHeatmap.bucket")}
               : {formatDateTime(drilldownBucketStart, locale, { dateStyle: "medium" })}
             </Tag>
@@ -1095,7 +1095,7 @@ export function SpacetimeGeoHeatmap({
                             <Space direction="vertical" size={2}>
                               <Space size="small" wrap>
                                 {article.sourceLabel ? (
-                                  <Tag color="blue">{article.sourceLabel}</Tag>
+                                  <Tag>{article.sourceLabel}</Tag>
                                 ) : null}
                                 {article.sentiment ? <Tag>{article.sentiment}</Tag> : null}
                               </Space>

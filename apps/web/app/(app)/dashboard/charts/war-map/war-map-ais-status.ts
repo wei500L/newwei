@@ -96,14 +96,14 @@ const aisSnapshotExact = aisSnapshotUpdatedAt
   : null;
 const aisHasIssue = Boolean(aisResolvedStatusReason);
 const aisSourceStatusColor = !aisConfigured
-  ? "red"
+  ? "error"
   : aisHasIssue
-      ? "volcano"
+      ? "warning"
       : !aisConnected
-        ? "gold"
+        ? "warning"
       : aisFreshness === "stale"
-        ? "gold"
-        : "cyan";
+        ? "warning"
+        : "success";
 const aisSourceStatusLabel = !aisConfigured
   ? t("dashboard.charts.warMap.stats.aisNotConfigured")
   : aisHasIssue
