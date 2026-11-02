@@ -1,7 +1,7 @@
 "use client";
 
 import { SearchOutlined, WarningOutlined } from "@ant-design/icons";
-import { Alert, Button, Drawer, Input, Skeleton, Slider, Space, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Drawer, Input, Skeleton, Slider, Space, Tag, Tooltip, Typography, message } from "antd";
 import type { EChartsOption } from "echarts";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -11,6 +11,7 @@ import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useGetKnowledgeGraphSubgraphQuery, useKnowledgeGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { usePendingAction } from "@/hooks/use-pending-action";
@@ -512,25 +513,15 @@ export function KnowledgeGraph() {
       ) : null}
 
       {error ? (
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal")}
-          description={error.message}
-          action={
-            <Button
-              size="small"
-              loading={refreshingGraph}
-              disabled={refreshingGraph}
-              onClick={() => {
-                void refreshGraph();
-              }}
-            >
-              {t("dashboard.actions.retryFetch")}
-            </Button>
-          }
-          style={{ marginBottom: "0.75rem" }}
-        />
+        <div className="mb-3">
+          <RequestErrorBanner
+            error={error}
+            onRetry={() => {
+              void refreshGraph();
+            }}
+            actionLoading={refreshingGraph}
+          />
+        </div>
       ) : null}
 
       {!seedName ? (

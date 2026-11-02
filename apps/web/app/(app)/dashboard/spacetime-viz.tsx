@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -1665,20 +1666,13 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
               {eventLoading ? (
                 <Skeleton active paragraph={{ rows: 7 }} />
               ) : eventError ? (
-                <div className="flex flex-col gap-2">
-                  <Typography.Text type="danger">
-                    {t("dashboard.dataAbnormal")}
-                  </Typography.Text>
-                  <Button
-                    loading={refreshingEvent}
-                    disabled={refreshingEvent}
-                    onClick={() => {
-                      void refreshEvent();
-                    }}
-                  >
-                    {t("dashboard.actions.retryFetch")}
-                  </Button>
-                </div>
+                <RequestErrorBanner
+                  error={eventError}
+                  onRetry={() => {
+                    void refreshEvent();
+                  }}
+                  actionLoading={refreshingEvent}
+                />
               ) : !event ? (
                 <ChartEmptyState
                   title={t("dashboard.charts.spacetimeTimeline.emptyTitle")}

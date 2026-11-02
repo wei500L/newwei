@@ -2,7 +2,6 @@
 
 import { SearchOutlined } from "@ant-design/icons";
 import {
-  Alert,
   Button,
   Input,
   Skeleton,
@@ -18,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import {
   useGetKnowledgeGraphSubgraphQuery,
   useKnowledgeGraphSettingsQuery,
@@ -768,25 +768,15 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       ) : null}
 
       {error ? (
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal")}
-          description={error.message}
-          action={
-            <Button
-              size="small"
-              loading={refreshingGraph}
-              disabled={refreshingGraph}
-              onClick={() => {
-                void refreshGraph();
-              }}
-            >
-              {t("dashboard.actions.retryFetch")}
-            </Button>
-          }
-          style={{ marginBottom: "0.75rem" }}
-        />
+        <div className="mb-3">
+          <RequestErrorBanner
+            error={error}
+            onRetry={() => {
+              void refreshGraph();
+            }}
+            actionLoading={refreshingGraph}
+          />
+        </div>
       ) : null}
 
       {!seedName ? (

@@ -687,12 +687,14 @@ export function DashboardContent() {
           </div>
 
           {/* Sector Heatmap - Side Panel */}
-          <Card
-            title={t("dashboard.charts.sectorHeatmap")}
-            className="content-card h-viz-3xl lg:col-span-2 2xl:col-span-1"
-          >
-            <SectorHeatmap />
-          </Card>
+          <div className="lg:col-span-2 2xl:col-span-1 flex flex-col gap-3">
+            <SectionHeader title={t("dashboard.charts.sectorHeatmap")} />
+            <div className="content-card h-viz-3xl overflow-hidden flex flex-col">
+              <div className="min-h-0 flex flex-1">
+                <SectorHeatmap />
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Financial Candlestick & Sentiment */}
@@ -899,7 +901,7 @@ export function DashboardContent() {
           <div ref={analysisPanelRef}>
             <Card
               title={t("dashboard.panels.aiAnalysis")}
-              className={`content-card flex-1 border-none shadow-sm min-h-viz-md${
+              className={`content-card flex-1 min-h-viz-md${
                 isAnalysisFocused ? " ring-1 ring-[var(--primary)]" : ""
               }`}
             >
@@ -911,7 +913,7 @@ export function DashboardContent() {
         {/* Alerts */}
         <Card
           title={t("dashboard.panels.smartAlerts")}
-          className="content-card flex-1 border-none shadow-sm min-h-[200px]"
+          className="content-card flex-1 min-h-[200px]"
         >
           <AlertPanel />
         </Card>

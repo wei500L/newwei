@@ -4,7 +4,6 @@ import {
   Badge,
   Card,
   Col,
-  Empty,
   List,
   Row,
   Skeleton,
@@ -14,6 +13,7 @@ import type { CallbackDataParams } from "echarts/types/dist/shared";
 import { useTranslation } from "react-i18next";
 
 import { ChartDataMeta } from "@/components/chart-data-meta";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { ChartStateBanner } from "@/components/chart-state-banner";
 import { DashboardChart } from "@/components/echart";
 import { PageHeader } from "@/components/page-header";
@@ -184,9 +184,10 @@ export default function MilitaryAlertPage() {
                 {radarValues.length > 0 ? (
                   <DashboardChart option={radarOption} height={360} />
                 ) : (
-                  <div className="flex min-h-viz-sm items-center justify-center">
-                    <Empty description={t("dashboard.militaryAlert.empty.metalRadar")} />
-                  </div>
+                  <ChartEmptyState
+                    className="min-h-viz-sm"
+                    description={t("dashboard.militaryAlert.empty.metalRadar")}
+                  />
                 )}
                 <List
                   dataSource={alertItems}
@@ -244,9 +245,10 @@ export default function MilitaryAlertPage() {
                 {hasAgData ? (
                   <DashboardChart option={agOption} height={360} />
                 ) : (
-                  <div className="flex min-h-viz-sm items-center justify-center">
-                    <Empty description={t("dashboard.militaryAlert.empty.agri")} />
-                  </div>
+                  <ChartEmptyState
+                    className="min-h-viz-sm"
+                    description={t("dashboard.militaryAlert.empty.agri")}
+                  />
                 )}
               </Card>
             </Col>

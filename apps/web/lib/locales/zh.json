@@ -2047,6 +2047,15 @@
       "stable": "数据在历史范围内保持稳定。",
       "label": "洞察"
     },
+    "economic": {
+      "vsPrev": "较上期",
+      "insightAboveAverage": "当前值较历史均值高 {{percent}}%。",
+      "insightBelowAverage": "当前值较历史均值低 {{percent}}%。",
+      "insightUpVsPrev": "最新值较上一点上升 {{percent}}%。",
+      "insightDownVsPrev": "最新值较上一点下降 {{percent}}%。",
+      "insightNotEnoughData": "数据不足，无法判断趋势。",
+      "insightStable": "序列在近期均值附近保持稳定。"
+    },
     "analysisStream": {
       "title": "分析流",
       "updates": "{{count}} 条更新",

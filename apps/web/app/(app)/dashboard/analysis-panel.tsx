@@ -4,7 +4,6 @@ import { MinusCircleOutlined, PlusOutlined, QuestionCircleOutlined } from "@ant-
 import {
   App,
   Button,
-  Card,
   DatePicker,
   Form,
   Input,
@@ -20,6 +19,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { SectionHeader } from "@/components/section-header";
 import {
   AnalysisType,
   type AnomalyAnalysisInput,
@@ -110,7 +110,7 @@ export function AnalysisPanel() {
   }
 
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <div className="flex w-full flex-col gap-4">
       {authenticated && !canRunAnalysis ? (
         <ChartEmptyState
           presentation="banner"
@@ -119,7 +119,8 @@ export function AnalysisPanel() {
           description={t("analysis.runPermissionRequired")}
         />
       ) : null}
-      <Card title={t("analysis.correlation.title")}>
+      <section className="flex flex-col gap-3 hairline-b pb-4">
+        <SectionHeader title={t("analysis.correlation.title")} />
         <CorrelationForm
           disabled={!canRunAnalysis}
           loading={savingCorr}
@@ -142,8 +143,9 @@ export function AnalysisPanel() {
             }
           }}
         />
-      </Card>
-      <Card title={t("analysis.anomaly.title")}>
+      </section>
+      <section className="flex flex-col gap-3 hairline-b pb-4">
+        <SectionHeader title={t("analysis.anomaly.title")} />
         <AnomalyForm
           disabled={!canRunAnalysis}
           loading={savingAnomaly}
@@ -166,8 +168,9 @@ export function AnalysisPanel() {
             }
           }}
         />
-      </Card>
-      <Card title={t("analysis.results.title")}>
+      </section>
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t("analysis.results.title")} />
         {error ? (
           <ChartEmptyState
             presentation="banner"
@@ -229,8 +232,8 @@ export function AnalysisPanel() {
             )}
           />
         )}
-      </Card>
-    </Space>
+      </section>
+    </div>
   );
 }
 

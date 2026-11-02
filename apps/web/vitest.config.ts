@@ -210,6 +210,8 @@ export default defineConfig({
         "app/(app)/today/components/breaking-alerts.tsx",
         // FE-UI 批8B：News Hub 三栏导读入口
         "app/(app)/news-hub/news-hub-pillars.tsx",
+        // FE-UI 批9B：K 线卡片 bare 模式（避免卡中卡）
+        "app/(app)/dashboard/components/candlestick-card.tsx",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {

@@ -2047,6 +2047,15 @@
       "stable": "Data remains stable within historical range.",
       "label": "Insight"
     },
+    "economic": {
+      "vsPrev": "vs prev",
+      "insightAboveAverage": "Current value is {{percent}}% above historical average.",
+      "insightBelowAverage": "Current value is {{percent}}% below historical average.",
+      "insightUpVsPrev": "Latest value changed {{percent}}% up vs previous point.",
+      "insightDownVsPrev": "Latest value changed {{percent}}% down vs previous point.",
+      "insightNotEnoughData": "Not enough data to infer a trend.",
+      "insightStable": "Series is stable around its recent mean."
+    },
     "analysisStream": {
       "title": "Analysis Stream",
       "updates": "{{count}} updates",

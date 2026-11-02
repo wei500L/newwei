@@ -92,15 +92,21 @@ export function EconomicChartCard({
       insight?.message ??
       (() => {
         if (diffFromAvg !== null && Math.abs(diffFromAvg) > 20) {
-          return `Current value is ${Math.abs(diffFromAvg).toFixed(1)}% ${diffFromAvg > 0 ? "above" : "below"} historical average.`;
+          const percent = Math.abs(diffFromAvg).toFixed(1);
+          return diffFromAvg > 0
+            ? t("dashboard.economic.insightAboveAverage", { percent })
+            : t("dashboard.economic.insightBelowAverage", { percent });
         }
         if (percentChange !== null && Math.abs(percentChange) > 5) {
-          return `Latest value changed ${Math.abs(percentChange).toFixed(1)}% ${percentChange > 0 ? "up" : "down"} vs previous point.`;
+          const percent = Math.abs(percentChange).toFixed(1);
+          return percentChange > 0
+            ? t("dashboard.economic.insightUpVsPrev", { percent })
+            : t("dashboard.economic.insightDownVsPrev", { percent });
         }
         if (sorted.length < 2) {
-          return "Not enough data to infer a trend.";
+          return t("dashboard.economic.insightNotEnoughData");
         }
-        return "Series is stable around its recent mean.";
+        return t("dashboard.economic.insightStable");
       })();
 
     return {
@@ -110,56 +116,72 @@ export function EconomicChartCard({
       unit,
       insight: message
     };
-  }, [insights, seriesMap, series]);
+  }, [insights, seriesMap, series, t]);
 
   return (
-    <Card 
-      className="content-card" 
-      style={{ marginBottom: 16 }}
-      title={
-        <Flex justify="space-between" align="start" style={{ width: '100%' }}>
-          <div>
-            <Typography.Text strong style={{ fontSize: 16 }}>{title}</Typography.Text>
-            {description && (
-              <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0, fontWeight: 'normal' }}>
-                {description}
-              </Typography.Paragraph>
-            )}
-          </div>
-          {stats || meta ? (
-            <Flex vertical align="end" gap={4}>
-              {meta ? <div>{meta}</div> : null}
-              {stats ? (
-                <>
-                  <Statistic 
-                    value={stats.currentValue} 
-                    precision={2} 
-                    suffix={<span style={{ fontSize: 14, color: token.colorTextSecondary }}>{stats.unit}</span>}
-                    valueStyle={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2 }}
-                  />
-                  <Flex gap={4} align="center">
-                    {stats.percentChange !== null ? (
-                      <>
-                        <Typography.Text
-                          type={stats.percentChange > 0 ? "success" : stats.percentChange < 0 ? "danger" : "secondary"}
-                          style={{ fontSize: 12, fontWeight: 500 }}
-                        >
-                          {stats.percentChange > 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                          {Math.abs(stats.percentChange).toFixed(2)}%
-                        </Typography.Text>
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>vs prev</Typography.Text>
-                      </>
-                    ) : (
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>--</Typography.Text>
-                    )}
-                  </Flex>
-                </>
-              ) : null}
-            </Flex>
-          ) : null}
-        </Flex>
-      }
+    <Card
+      className="content-card"
+      title={title}
     >
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        {description ? (
+          <Typography.Paragraph
+            type="secondary"
+            style={{ fontSize: 12, marginBottom: 0, fontWeight: "normal" }}
+          >
+            {description}
+          </Typography.Paragraph>
+        ) : null}
+        {stats || meta ? (
+          <Flex align="baseline" wrap gap={12}>
+            {meta ? <div>{meta}</div> : null}
+            {stats ? (
+              <>
+                <Statistic
+                  value={stats.currentValue}
+                  precision={2}
+                  suffix={
+                    <span style={{ fontSize: 14, color: token.colorTextSecondary }}>
+                      {stats.unit}
+                    </span>
+                  }
+                  valueStyle={{ fontSize: 20, fontWeight: 600, lineHeight: 1.2 }}
+                />
+                <Flex gap={4} align="center">
+                  {stats.percentChange !== null ? (
+                    <>
+                      <Typography.Text
+                        type={
+                          stats.percentChange > 0
+                            ? "success"
+                            : stats.percentChange < 0
+                              ? "danger"
+                              : "secondary"
+                        }
+                        style={{ fontSize: 12, fontWeight: 500 }}
+                      >
+                        {stats.percentChange > 0 ? (
+                          <ArrowUpOutlined />
+                        ) : (
+                          <ArrowDownOutlined />
+                        )}
+                        {Math.abs(stats.percentChange).toFixed(2)}%
+                      </Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {t("dashboard.economic.vsPrev")}
+                      </Typography.Text>
+                    </>
+                  ) : (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      --
+                    </Typography.Text>
+                  )}
+                </Flex>
+              </>
+            ) : null}
+          </Flex>
+        ) : null}
+      </div>
       {hasSeries ? (
         <>
           <DashboardChart

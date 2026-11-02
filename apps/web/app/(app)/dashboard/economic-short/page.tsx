@@ -3,7 +3,6 @@
 import {
   Card,
   Col,
-  Empty,
   Row,
   Skeleton,
   Select,
@@ -13,6 +12,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartDataMeta } from "@/components/chart-data-meta";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { ChartStateBanner } from "@/components/chart-state-banner";
 import { DashboardChart } from "@/components/echart";
 import { PageHeader } from "@/components/page-header";
@@ -265,6 +265,7 @@ export default function EconomicShortPage() {
                 <CandlestickCard
                   title={activeIndexLabel}
                   group={seriesMap[activeIndex]}
+                  bare
                 />
               </Card>
             </Col>
@@ -281,9 +282,10 @@ export default function EconomicShortPage() {
                 ) ? (
                   <DashboardChart option={heatmapOption} height={320} />
                 ) : (
-                  <div className="flex min-h-viz-sm items-center justify-center">
-                    <Empty description={t("dashboard.economicShort.heatmap.empty")} />
-                  </div>
+                  <ChartEmptyState
+                    className="min-h-viz-sm"
+                    description={t("dashboard.economicShort.heatmap.empty")}
+                  />
                 )}
               </Card>
             </Col>
@@ -296,9 +298,10 @@ export default function EconomicShortPage() {
                 {btcValues.length > 0 ? (
                   <DashboardChart option={cryptoOption} height={320} />
                 ) : (
-                  <div className="flex min-h-viz-sm items-center justify-center">
-                    <Empty description={t("dashboard.economicShort.crypto.empty")} />
-                  </div>
+                  <ChartEmptyState
+                    className="min-h-viz-sm"
+                    description={t("dashboard.economicShort.crypto.empty")}
+                  />
                 )}
               </Card>
             </Col>

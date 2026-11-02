@@ -1,9 +1,10 @@
 "use client";
 
-import { Card, Empty, Typography, theme } from "antd";
+import { Card, theme } from "antd";
 import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import type { EconomicSeriesGroup } from "@/hooks/useEconomicData";
@@ -18,6 +19,8 @@ export interface CandlestickCardProps {
   height?: number;
   meta?: ReactNode;
   chartLazy?: boolean;
+  /** FE-UI 批9B：为 true 时只渲染内容，不渲染 Card 外壳（避免卡中卡）。 */
+  bare?: boolean;
 }
 
 export function CandlestickCard({
@@ -26,6 +29,7 @@ export function CandlestickCard({
   height = 336,
   meta,
   chartLazy = true,
+  bare = false,
 }: CandlestickCardProps) {
   const { t, i18n } = useTranslation();
   const { token } = theme.useToken();
@@ -44,23 +48,29 @@ export function CandlestickCard({
     [candlestick, chartTheme, group?.unit, locale, title],
   );
 
+  const content =
+    candlestick.length > 0 ? (
+      <DashboardChart
+        option={option}
+        height={height}
+        lazy={chartLazy}
+        theme={chartTheme.echartsTheme}
+      />
+    ) : (
+      <ChartEmptyState
+        className="min-h-viz-sm"
+        description={t("dashboard.charts.noCandlestick")}
+      />
+    );
+
+  if (bare) {
+    return <div className="w-full">{content}</div>;
+  }
+
   return (
     <Card
       className="content-card"
-      title={
-        <Typography.Text
-          strong
-          style={{
-            color: token.colorTextHeading,
-            fontSize: 17,
-            fontWeight: 800,
-            lineHeight: 1.2,
-            letterSpacing: "0.01em",
-          }}
-        >
-          {title}
-        </Typography.Text>
-      }
+      title={title}
       extra={meta ? <div className="text-right">{meta}</div> : undefined}
       styles={{
         header: {
@@ -75,16 +85,7 @@ export function CandlestickCard({
         },
       }}
     >
-      {candlestick.length > 0 ? (
-        <DashboardChart
-          option={option}
-          height={height}
-          lazy={chartLazy}
-          theme={chartTheme.echartsTheme}
-        />
-      ) : (
-        <Empty description={t("dashboard.charts.noCandlestick")} />
-      )}
+      {content}
     </Card>
   );
 }
