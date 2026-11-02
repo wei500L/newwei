@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import {
   ONBOARDING_MODE_QUERY_KEY,
   ONBOARDING_TOUR_QUERY_KEY,
@@ -24,6 +25,7 @@ const STEP_ROUTES: Record<OnboardingStepKey, string> = {
 export default function WelcomePage() {
   const router = useRouter();
   const { t } = useTranslation();
+  usePageTitle(t("pages.welcome.title"));
   const { settings, completeOnboarding, dismissOnboarding } = useOnboarding();
   const completedCount = ONBOARDING_STEPS.filter((step) => settings.checklist[step]).length;
   const progress = Math.round((completedCount / ONBOARDING_STEPS.length) * 100);

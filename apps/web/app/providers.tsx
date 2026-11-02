@@ -26,6 +26,7 @@ import {
 import { getApolloClient } from "@/lib/apollo-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
+import { setSiteTitle } from "@/lib/document-title";
 import { resolveLocale, type SupportedLocale } from "@/lib/i18n";
 import {
   changeLanguage,
@@ -186,7 +187,7 @@ export function AppProviders({ children }: PropsWithChildren) {
     dayjs.locale(locale === "zh-CN" ? "zh-cn" : "en");
     if (typeof document !== "undefined") {
       document.documentElement.lang = locale;
-      document.title = i18nInstance.t("metadata.title");
+      setSiteTitle(i18nInstance.t("metadata.title"));
       const metaDescription = document.querySelector("meta[name=\"description\"]");
       if (metaDescription) {
         metaDescription.setAttribute(

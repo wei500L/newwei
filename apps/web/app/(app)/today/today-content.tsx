@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { ItemsView } from "@/app/(app)/items/items-view";
 import { SectionHeader } from "@/components/section-header";
+import { usePageTitle } from "@/hooks/use-page-title";
 import dayjs from "@/lib/dayjs";
 import { resolveLocale } from "@/lib/i18n";
 
@@ -15,6 +16,7 @@ import { UserDigestPanel } from "./user-digest-panel";
 
 export function TodayContent() {
   const { t, i18n } = useTranslation();
+  usePageTitle(t("nav.main.today"));
   const [todayLabel, setTodayLabel] = useState<string>("Today");
   const [todayDateRange, setTodayDateRange] = useState<
     [ReturnType<typeof dayjs>, ReturnType<typeof dayjs>] | undefined

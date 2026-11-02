@@ -214,6 +214,10 @@ export default defineConfig({
         "app/(app)/dashboard/components/candlestick-card.tsx",
         // FE-UI 批9D：NewsNow 热榜列表操作行键盘可达
         "app/(app)/newsnow/components/news-list-hot.tsx",
+        // FE-UI 批11：标签页标题（页面名 · 站点名）
+        "lib/document-title.ts",
+        "hooks/use-page-title.ts",
+        "components/page-title-sync.tsx",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {

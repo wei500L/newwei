@@ -2,6 +2,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { PageHeader } from "@/components/page-header";
+import { setSiteTitle } from "@/lib/document-title";
 import { renderWithProviders } from "@/test/render";
 
 describe("PageHeader", () => {
@@ -35,5 +36,13 @@ describe("PageHeader", () => {
     expect(header?.querySelectorAll("h1")).toHaveLength(1);
     expect(header?.querySelectorAll("p")).toHaveLength(0);
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("sets the document title to page name plus site name", () => {
+    const { unmount } = renderWithProviders(<PageHeader title="告警" />);
+    setSiteTitle("站点");
+    expect(document.title).toBe("告警 · 站点");
+    unmount();
+    expect(document.title).toBe("站点");
   });
 });

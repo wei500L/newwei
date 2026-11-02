@@ -12,8 +12,8 @@ import { AppProviders } from "./providers";
 import { SessionProviders } from "./session-provider";
 
 export const metadata = {
-  title: "Modular Admin",
-  description: "Operator dashboard",
+  title: "Modular 情报台",
+  description: "新闻与信号情报编辑台",
 };
 
 const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var key='theme';var root=document.documentElement;var stored=window.localStorage.getItem(key);var theme=(stored==='light'||stored==='dark')?stored:(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');root.classList.toggle('dark',theme==='dark');root.style.colorScheme=theme;}catch(_){}})();`;

@@ -331,8 +331,8 @@
     "logout": "退出登录"
   },
   "metadata": {
-    "title": "Modular 管理台",
-    "description": "运维控制台"
+    "title": "Modular 情报台",
+    "description": "新闻与信号情报编辑台"
   },
   "alerts": {
     "live": {

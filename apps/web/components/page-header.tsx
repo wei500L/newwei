@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PageTitleSync } from "@/components/page-title-sync";
+
 export interface PageHeaderBack {
   href: string;
   label: string;
@@ -44,6 +46,7 @@ export function PageHeader({
     <header
       className={`flex flex-col gap-3 ${rule ? "hairline-b pb-4" : ""} ${className}`.trim()}
     >
+      {typeof title === "string" ? <PageTitleSync title={title} /> : null}
       {back ? (
         <Link
           href={back.href}
