@@ -1,13 +1,14 @@
 "use client";
 
-import { Alert, Button, Empty, Form, InputNumber, List, Modal, Select, Space, Spin, Switch, Tag, TimePicker, Typography, message } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
+import { Alert, Button, Dropdown, Form, InputNumber, List, Modal, Select, Space, Switch, Tag, TimePicker, Typography, message } from "antd";
 import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { EmptyDigestSvg } from "@/components/empty-digest-svg";
+import { DataStateBoundary, type DataStateBoundaryState } from "@/components/data-state-boundary";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -303,14 +304,6 @@ export function UserDigestPanel() {
   }, [preference.focusEntities.length, preference.focusTopics.length, t]);
 
   const loading = loadingPreference || loadingDigest || loadingDelivery;
-  const deliveryStatusColor =
-    delivery.lastStatus === "sent"
-      ? "green"
-      : delivery.lastStatus === "failed"
-        ? "red"
-        : delivery.lastStatus === "empty_notified"
-          ? "gold"
-          : "default";
   const deliveryStatusLabel =
     delivery.lastStatus === "sent"
       ? t("pages.digest.deliveryStatus.sent")
@@ -320,73 +313,119 @@ export function UserDigestPanel() {
           ? t("pages.digest.deliveryStatus.empty")
           : t("pages.digest.deliveryStatus.idle");
 
+  const digestState: DataStateBoundaryState =
+    loading && !digest
+      ? { kind: "initialLoading" }
+      : errorMessage
+        ? {
+            kind: "blockingError",
+            error: errorMessage,
+            errorStateOverride: {
+              variant: "error",
+              title: t("common.requestFailed"),
+              description: errorMessage,
+            },
+          }
+        : loading
+          ? { kind: "refreshing" }
+          : digest
+            ? { kind: "ready" }
+            : { kind: "empty" };
+
   return (
     <>
       {contextHolder}
-      <div className="flex flex-col">
-        <div className="mb-4 flex items-center justify-end">
-          <Space>
-            <Button onClick={() => loadDigest()} loading={loadingDigest} size="small">
-              {t("common.refresh")}
-            </Button>
-            <Button onClick={() => router.push('/subscriptions?tab=content')} size="small">
-              {t("pages.digest.manageSubscriptions")}
-            </Button>
-            <Button onClick={handleOpenDeliveryModal} disabled={loadingDelivery} size="small">
-              {t("pages.digest.delivery.customize")}
-            </Button>
-            <Button onClick={handleOpenModal} disabled={loadingPreference} size="small">
-              {t("pages.digest.customize")}
-            </Button>
-          </Space>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-end gap-2">
+          <Button onClick={handleOpenModal} disabled={loadingPreference} size="small" type="primary">
+            {t("pages.digest.customize")}
+          </Button>
+          <Dropdown
+            trigger={["click"]}
+            menu={{
+              items: [
+                {
+                  key: "refresh",
+                  label: t("common.refresh"),
+                  disabled: loadingDigest,
+                  onClick: () => void loadDigest(),
+                },
+                {
+                  key: "subscriptions",
+                  label: t("pages.digest.manageSubscriptions"),
+                  onClick: () => router.push("/subscriptions?tab=content"),
+                },
+                {
+                  key: "delivery",
+                  label: t("pages.digest.delivery.customize"),
+                  disabled: loadingDelivery,
+                  onClick: handleOpenDeliveryModal,
+                },
+              ],
+            }}
+          >
+            <Button size="small" icon={<MoreOutlined />} aria-label={t("common.more")} />
+          </Dropdown>
         </div>
-        {loading && !digest ? (
-          <div className="flex min-h-viz-xs items-center justify-center">
-            <Spin />
-          </div>
-        ) : errorMessage ? (
-          <Typography.Text type="danger">{errorMessage}</Typography.Text>
-        ) : digest ? (
+        <DataStateBoundary
+          state={digestState}
+          emptyDescription={t("pages.digest.empty")}
+        >
+          {digest ? (
           <div className="flex flex-col gap-3">
-            <Space wrap size={[8, 8]}>
-              <Tag>
-                {t("pages.digest.window")}: {digest.preference.windowDays}d
-              </Tag>
-              <Tag>
-                {t("pages.digest.maxEvents")}: {digest.preference.maxEvents}
-              </Tag>
-              {digest.preference.includeIndicators ? (
-                <Tag color="green">
-                  {t("pages.digest.indicatorsOn")}
-                </Tag>
-              ) : (
-                <Tag color="default">{t("pages.digest.indicatorsOff")}</Tag>
-              )}
-              {preferenceSummary ? <Tag>{preferenceSummary}</Tag> : null}
-              {generatedAt ? (
-                <Tag>
-                  {t("pages.digest.generatedAt")}:{" "}
-                  {formatDateTime(generatedAt, locale, { dateStyle: "medium", timeStyle: "short" })}
-                </Tag>
-              ) : null}
-              <Tag color={delivery.enabled ? "blue" : "default"}>
+            <div className="flex items-center gap-2">
+              <Tag color={delivery.enabled ? "success" : "default"}>
                 {delivery.enabled
                   ? t("pages.digest.delivery.enabled")
                   : t("pages.digest.delivery.disabled")}
               </Tag>
+            </div>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+              <dt className="text-muted-foreground">{t("pages.digest.window")}</dt>
+              <dd className="m-0 font-mono">{digest.preference.windowDays}d</dd>
+              <dt className="text-muted-foreground">{t("pages.digest.maxEvents")}</dt>
+              <dd className="m-0 font-mono">{digest.preference.maxEvents}</dd>
+              <dt className="text-muted-foreground">
+                {t("pages.digest.preferences.includeIndicators")}
+              </dt>
+              <dd className="m-0">
+                {digest.preference.includeIndicators
+                  ? t("pages.digest.indicatorsOn")
+                  : t("pages.digest.indicatorsOff")}
+              </dd>
+              {preferenceSummary ? (
+                <>
+                  <dt className="text-muted-foreground">{t("pages.digest.focusTopics")}</dt>
+                  <dd className="m-0 font-mono">{preferenceSummary}</dd>
+                </>
+              ) : null}
+              {generatedAt ? (
+                <>
+                  <dt className="text-muted-foreground">{t("pages.digest.generatedAt")}</dt>
+                  <dd className="m-0 font-mono">
+                    {formatDateTime(generatedAt, locale, { dateStyle: "medium", timeStyle: "short" })}
+                  </dd>
+                </>
+              ) : null}
               {delivery.enabled ? (
-                <Tag>
-                  {t("pages.digest.delivery.schedule")}: {delivery.time} · {delivery.timezone}
-                </Tag>
+                <>
+                  <dt className="text-muted-foreground">{t("pages.digest.delivery.schedule")}</dt>
+                  <dd className="m-0 font-mono">
+                    {delivery.time} · {delivery.timezone}
+                  </dd>
+                </>
               ) : null}
-              <Tag color={deliveryStatusColor}>{deliveryStatusLabel}</Tag>
+              <dt className="text-muted-foreground">{t("pages.digest.delivery.title")}</dt>
+              <dd className="m-0 font-mono">{deliveryStatusLabel}</dd>
               {delivery.nextRunAt ? (
-                <Tag>
-                  {t("pages.digest.delivery.nextRunAt")}:{" "}
-                  {formatDateTime(delivery.nextRunAt, locale, { dateStyle: "medium", timeStyle: "short" })}
-                </Tag>
+                <>
+                  <dt className="text-muted-foreground">{t("pages.digest.delivery.nextRunAt")}</dt>
+                  <dd className="m-0 font-mono">
+                    {formatDateTime(delivery.nextRunAt, locale, { dateStyle: "medium", timeStyle: "short" })}
+                  </dd>
+                </>
               ) : null}
-            </Space>
+            </dl>
 
             {!delivery.emailVerified ? (
               <Alert
@@ -419,14 +458,17 @@ export function UserDigestPanel() {
             ) : null}
 
             {events.length === 0 ? (
-              <Empty
-                image={<EmptyDigestSvg />}
-                description={t("pages.digest.empty")}
-              >
-                <Button type="primary" onClick={() => router.push("/events")}>
-                  {t("pages.digest.emptyCta")}
-                </Button>
-              </Empty>
+              <DataStateBoundary
+                state={{ kind: "empty" }}
+                emptyDescription={
+                  <div className="flex flex-col items-center gap-2">
+                    <span>{t("pages.digest.empty")}</span>
+                    <Button size="small" onClick={() => router.push("/events")}>
+                      {t("pages.digest.emptyCta")}
+                    </Button>
+                  </div>
+                }
+              />
             ) : (
               <List
                 dataSource={events}
@@ -459,8 +501,8 @@ export function UserDigestPanel() {
                           <Space wrap size={[6, 6]}>
                             <Typography.Text strong>{title}</Typography.Text>
                             <Tag>{t("pages.digest.items")}: {event.itemCount}</Tag>
-                            {topic ? <Tag color="geekblue">{topic}</Tag> : null}
-                            {entity ? <Tag color="purple">{entity}</Tag> : null}
+                            {topic ? <Tag>{topic}</Tag> : null}
+                            {entity ? <Tag>{entity}</Tag> : null}
                             <Tag>
                               {formatDateTime(event.lastAt, locale, { dateStyle: "medium" })}
                             </Tag>
@@ -476,13 +518,13 @@ export function UserDigestPanel() {
 
                             <Space wrap size={[6, 6]}>
                               {topicSentiment ? (
-                                <Tag color="blue">
+                                <Tag>
                                   {t("pages.digest.topicSentiment")}:{" "}
                                   {formatSigned(topicSentiment.avgScore) ?? "-"} / {percent(topicSentiment.negativeRatio) ?? "-"}
                                 </Tag>
                               ) : null}
                               {entitySentiment ? (
-                                <Tag color="purple">
+                                <Tag>
                                   {t("pages.digest.entitySentiment")}:{" "}
                                   {formatSigned(entitySentiment.avgScore) ?? "-"} / {percent(entitySentiment.negativeRatio) ?? "-"}
                                 </Tag>
@@ -492,7 +534,7 @@ export function UserDigestPanel() {
                             {associations.length > 0 ? (
                               <Space wrap size={[6, 6]}>
                                 {associations.slice(0, 4).map((assoc) => (
-                                  <Tag key={`${event.eventId}-${assoc.indicatorSlug}`} color="green">
+                                  <Tag key={`${event.eventId}-${assoc.indicatorSlug}`}>
                                     {assoc.indicatorDisplayName} ({formatSigned(assoc.correlation) ?? "-"}, {assoc.lagDays}d)
                                   </Tag>
                                 ))}
@@ -507,14 +549,8 @@ export function UserDigestPanel() {
               />
             )}
           </div>
-        ) : (
-          <div className="py-6 flex justify-center">
-            <Empty
-              image={<EmptyDigestSvg />}
-              description={t("pages.digest.empty")}
-            />
-          </div>
-        )}
+          ) : null}
+        </DataStateBoundary>
       </div>
 
       <Modal

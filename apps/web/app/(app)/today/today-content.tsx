@@ -66,7 +66,7 @@ export function TodayContent() {
           <HotTopics />
           <section className="flex flex-col gap-4 border-t border-[var(--border)] pt-6">
             <SectionHeader
-              kicker="MY DIGEST"
+              kicker={t("pages.today.kickers.myDigest")}
               title={t("pages.today.myDigest")}
             />
             <UserDigestPanel />
@@ -76,7 +76,7 @@ export function TodayContent() {
 
       {/* 最新信息流（全宽） */}
       <section className="flex flex-col gap-3">
-        <SectionHeader rule kicker="LATEST" title={t("pages.today.latestFeed")} />
+        <SectionHeader rule kicker={t("pages.today.kickers.latest")} title={t("pages.today.latestFeed")} />
         <ItemsView
           surface="none"
           initialView="feed"

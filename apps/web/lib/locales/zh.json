@@ -2177,15 +2177,27 @@
       "kicker": "每日简报 · DAILY BRIEFING",
       "breaking": "突发",
       "moreBreaking": "还有 {{count}} 条",
-      "headlines": "头条",
+      "headlines": {
+        "title": "头条",
+        "empty": "暂无今日头条。"
+      },
       "myDigest": "我的摘要",
       "noAlerts": "暂无突发预警",
       "marketsStable": "市场运行平稳",
       "breakingAlert": "突发预警",
       "alertsDisclaimer": "仅供参考 • AI 生成预警",
       "headline": "头条",
-      "hotTopics": "热点话题",
-      "latestFeed": "最新动态"
+      "hotTopics": {
+        "title": "热点话题",
+        "empty": "暂无热点话题。"
+      },
+      "latestFeed": "最新动态",
+      "kickers": {
+        "headlines": "Headlines",
+        "hotTopics": "Hot Topics",
+        "myDigest": "My Digest",
+        "latest": "Latest"
+      }
     },
     "map": {
       "title": "区域信号态势图",

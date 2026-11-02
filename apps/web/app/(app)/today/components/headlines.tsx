@@ -2,11 +2,13 @@
 
 import { useQuery , gql } from "@apollo/client";
 import { Skeleton } from "antd";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useTranslation } from "react-i18next";
 
 import { resolveArticlePublishedTime } from "@/components/article-published-time";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { NewsImage } from "@/components/news-image";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { SectionHeader } from "@/components/section-header";
 import dayjs from "@/lib/dayjs";
 import { resolveLocale } from "@/lib/i18n";
@@ -52,10 +54,9 @@ interface HeadlineItem {
 
 export function Headlines() {
   const { t, i18n } = useTranslation();
-  const router = useRouter();
   const locale = resolveLocale(i18n.language);
 
-  const { data, loading } = useQuery<{ items: { edges: { node: HeadlineItem }[] } }>(HEADLINES_QUERY, {
+  const { data, loading, error } = useQuery<{ items: { edges: { node: HeadlineItem }[] } }>(HEADLINES_QUERY, {
     variables: {
       first: 4,
       filters: {
@@ -77,14 +78,28 @@ export function Headlines() {
   if (loading) {
     return (
       <section className="flex flex-col gap-3">
-        <SectionHeader kicker="HEADLINES" title={t("pages.today.headlines")} />
+        <SectionHeader kicker={t("pages.today.kickers.headlines")} title={t("pages.today.headlines.title")} />
         <Skeleton active paragraph={{ rows: 6 }} />
       </section>
     );
   }
 
+  if (error) {
+    return (
+      <section className="flex flex-col gap-3">
+        <SectionHeader kicker={t("pages.today.kickers.headlines")} title={t("pages.today.headlines.title")} />
+        <RequestErrorBanner error={error} presentation="center" className="h-auto py-6" />
+      </section>
+    );
+  }
+
   if (!heroItem) {
-    return null;
+    return (
+      <section className="flex flex-col gap-3">
+        <SectionHeader kicker={t("pages.today.kickers.headlines")} title={t("pages.today.headlines.title")} />
+        <ChartEmptyState className="h-auto py-6" description={t("pages.today.headlines.empty")} />
+      </section>
+    );
   }
 
   const heroThumbnail = safeHttpUrl(heroItem.rawPreview?.thumbnail);
@@ -98,12 +113,12 @@ export function Headlines() {
 
   return (
     <section className="flex flex-col gap-3">
-      <SectionHeader kicker="HEADLINES" title={t("pages.today.headlines")} />
+      <SectionHeader kicker={t("pages.today.kickers.headlines")} title={t("pages.today.headlines.title")} />
 
       {/* 头条：图文分离 */}
-      <div
+      <Link
+        href={`/items/${heroItem.id}`}
         className="group flex cursor-pointer flex-col gap-2"
-        onClick={() => router.push(`/items/${heroItem.id}`)}
       >
         {heroThumbnail ? (
           <NewsImage
@@ -131,7 +146,7 @@ export function Headlines() {
             {heroItem.processedPreview.summary}
           </p>
         ) : null}
-      </div>
+      </Link>
 
       {/* 次条：无图，右侧缩略图 */}
       {subItems.length > 0 ? (
@@ -147,10 +162,10 @@ export function Headlines() {
             const itemSource = item.rawPreview?.sourceName;
 
             return (
-              <div
+              <Link
                 key={item.id}
+                href={`/items/${item.id}`}
                 className="flex cursor-pointer items-start gap-3 py-3"
-                onClick={() => router.push(`/items/${item.id}`)}
               >
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <h3 className="m-0 text-[15px] font-semibold leading-snug line-clamp-2">
@@ -174,7 +189,7 @@ export function Headlines() {
                   fallbackText={itemSource ?? item.title}
                   className="w-12 shrink-0"
                 />
-              </div>
+              </Link>
             );
           })}
         </div>

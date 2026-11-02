@@ -15,7 +15,7 @@ export default async function TodayPage() {
   return (
     <OnboardingPageVisit
       step="today"
-      title="Daily briefing"
+      title="每日简报 · Daily briefing"
       description="This page is the fastest way to understand what changed today before you branch into deeper views."
     >
       <TodayContent />

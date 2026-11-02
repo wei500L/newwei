@@ -2177,15 +2177,27 @@
       "kicker": "Daily Briefing",
       "breaking": "Breaking",
       "moreBreaking": "{{count}} more",
-      "headlines": "Headlines",
+      "headlines": {
+        "title": "Headlines",
+        "empty": "No headlines yet today."
+      },
       "myDigest": "My Digest",
       "noAlerts": "No breaking alerts",
       "marketsStable": "Markets are stable",
       "breakingAlert": "Breaking Alert",
       "alertsDisclaimer": "For reference only • AI-generated alerts",
       "headline": "Headline",
-      "hotTopics": "Hot Topics",
-      "latestFeed": "Latest Feed"
+      "hotTopics": {
+        "title": "Hot Topics",
+        "empty": "No hot topics yet."
+      },
+      "latestFeed": "Latest Feed",
+      "kickers": {
+        "headlines": "Headlines",
+        "hotTopics": "Hot Topics",
+        "myDigest": "My Digest",
+        "latest": "Latest"
+      }
     },
     "map": {
       "title": "Regional Signals Map",

@@ -2,9 +2,11 @@
 
 import { useQuery , gql } from "@apollo/client";
 import { Skeleton } from "antd";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { SectionHeader } from "@/components/section-header";
 
 const HOT_TOPICS_QUERY = gql`
@@ -25,9 +27,8 @@ interface TopicFacet {
 
 export function HotTopics() {
   const { t } = useTranslation();
-  const router = useRouter();
 
-  const { data, loading } = useQuery<{ itemFacets: { topics: TopicFacet[] } }>(HOT_TOPICS_QUERY, {
+  const { data, loading, error } = useQuery<{ itemFacets: { topics: TopicFacet[] } }>(HOT_TOPICS_QUERY, {
     fetchPolicy: "cache-first"
   });
 
@@ -36,25 +37,39 @@ export function HotTopics() {
   if (loading) {
     return (
       <section className="flex flex-col gap-3">
-        <SectionHeader kicker="HOT TOPICS" title={t("pages.today.hotTopics")} />
+        <SectionHeader kicker={t("pages.today.kickers.hotTopics")} title={t("pages.today.hotTopics.title")} />
         <Skeleton active paragraph={{ rows: 4 }} />
       </section>
     );
   }
 
+  if (error) {
+    return (
+      <section className="flex flex-col gap-3">
+        <SectionHeader kicker={t("pages.today.kickers.hotTopics")} title={t("pages.today.hotTopics.title")} />
+        <RequestErrorBanner error={error} presentation="center" className="h-auto py-6" />
+      </section>
+    );
+  }
+
   if (topics.length === 0) {
-    return null;
+    return (
+      <section className="flex flex-col gap-3">
+        <SectionHeader kicker={t("pages.today.kickers.hotTopics")} title={t("pages.today.hotTopics.title")} />
+        <ChartEmptyState className="h-auto py-6" description={t("pages.today.hotTopics.empty")} />
+      </section>
+    );
   }
 
   return (
     <section className="flex flex-col gap-3">
-      <SectionHeader kicker="HOT TOPICS" title={t("pages.today.hotTopics")} />
+      <SectionHeader kicker={t("pages.today.kickers.hotTopics")} title={t("pages.today.hotTopics.title")} />
       <div className="flex flex-col divide-y divide-[var(--border)]">
         {topics.map((topic, index) => (
-          <div
+          <Link
             key={topic.value}
+            href={`/search?topic=${encodeURIComponent(topic.value)}`}
             className="group flex cursor-pointer items-baseline gap-3 py-2"
-            onClick={() => router.push(`/search?topic=${encodeURIComponent(topic.value)}`)}
           >
             <span className="w-5 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
               {String(index + 1).padStart(2, "0")}
@@ -65,7 +80,7 @@ export function HotTopics() {
             <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
               {topic.count}
             </span>
-          </div>
+          </Link>
         ))}
       </div>
     </section>
