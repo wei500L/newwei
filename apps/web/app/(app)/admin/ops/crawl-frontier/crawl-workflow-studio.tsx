@@ -2218,13 +2218,13 @@ function WorkflowStudioInner({
                   buildWorkflowCandidateTraceChain(candidateDrawer);
                 return (
                   <Descriptions size="small" column={2} bordered>
-                    <Descriptions.Item label="Total score delta">
+                    <Descriptions.Item label={t("crawlFrontier.workflowStudio.labels.totalScoreDelta")}>
                       {summary.totalScoreDelta.toFixed(2)}
                     </Descriptions.Item>
-                    <Descriptions.Item label="Total freshness delta">
+                    <Descriptions.Item label={t("crawlFrontier.workflowStudio.labels.totalFreshnessDelta")}>
                       {summary.totalFreshnessDelta.toFixed(2)}
                     </Descriptions.Item>
-                    <Descriptions.Item label="Changed fields" span={2}>
+                    <Descriptions.Item label={t("crawlFrontier.workflowStudio.labels.changedFields")} span={2}>
                       <Space wrap>
                         {summary.changedFields.map((field) => (
                           <Tag key={`field-${field}`}>{field}</Tag>
@@ -2232,7 +2232,7 @@ function WorkflowStudioInner({
                         {summary.changedFields.length === 0 ? "-" : null}
                       </Space>
                     </Descriptions.Item>
-                    <Descriptions.Item label="Rule hits" span={2}>
+                    <Descriptions.Item label={t("crawlFrontier.workflowStudio.labels.ruleHits")} span={2}>
                       <Space wrap>
                         {summary.ruleHits.map((rule) => (
                           <Tag key={`rule-${rule}`}>
@@ -2242,7 +2242,7 @@ function WorkflowStudioInner({
                         {summary.ruleHits.length === 0 ? "-" : null}
                       </Space>
                     </Descriptions.Item>
-                    <Descriptions.Item label="Step chain" span={2}>
+                    <Descriptions.Item label={t("crawlFrontier.workflowStudio.labels.stepChain")} span={2}>
                       <Space wrap size={[4, 4]}>
                         {traceChain.map((step) => (
                           <Tag

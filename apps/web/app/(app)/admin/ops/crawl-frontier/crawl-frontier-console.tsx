@@ -1816,16 +1816,16 @@ export function CrawlFrontierConsole() {
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
                     <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.seedDiscovery")}>
                       <Row gutter={[16, 16]}>
-                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "strategy"]} label="Strategy"><Select disabled={profileRawMode} options={["auto", "seed_first", "frontier_first", "frontier_only"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "mode"]} label="Discovery mode"><Select disabled={profileRawMode} options={["robots", "common_paths", "sitemap_only", "disabled"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "freshnessWindowHours"]} label="Freshness hours"><InputNumber min={1} max={24 * 365} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "maxSeedUrls"]} label="Max seed URLs"><InputNumber min={1} max={500} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "topologyBudgetPages"]} label="Topology pages"><InputNumber min={1} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "topologyBudgetDepth"]} label="Topology depth"><InputNumber min={1} max={8} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "qualityThresholds", "minCandidates"]} label="Min candidates"><InputNumber min={1} max={200} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "qualityThresholds", "minArticleRatio"]} label="Min article ratio"><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "qualityThresholds", "maxNoiseRatio"]} label="Max noise ratio"><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "qualityThresholds", "minFreshRatio"]} label="Min fresh ratio"><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "strategy"]} label={t("crawlFrontier.console.profileForm.strategy")}><Select disabled={profileRawMode} options={["auto", "seed_first", "frontier_first", "frontier_only"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "mode"]} label={t("crawlFrontier.console.profileForm.mode")}><Select disabled={profileRawMode} options={["robots", "common_paths", "sitemap_only", "disabled"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "freshnessWindowHours"]} label={t("crawlFrontier.console.profileForm.freshnessWindowHours")}><InputNumber min={1} max={24 * 365} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "maxSeedUrls"]} label={t("crawlFrontier.console.profileForm.maxSeedUrls")}><InputNumber min={1} max={500} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "topologyBudgetPages"]} label={t("crawlFrontier.console.profileForm.topologyBudgetPages")}><InputNumber min={1} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "topologyBudgetDepth"]} label={t("crawlFrontier.console.profileForm.topologyBudgetDepth")}><InputNumber min={1} max={8} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "qualityThresholds", "minCandidates"]} label={t("crawlFrontier.console.profileForm.minCandidates")}><InputNumber min={1} max={200} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "qualityThresholds", "minArticleRatio"]} label={t("crawlFrontier.console.profileForm.minArticleRatio")}><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "qualityThresholds", "maxNoiseRatio"]} label={t("crawlFrontier.console.profileForm.maxNoiseRatio")}><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "seedDiscovery", "qualityThresholds", "minFreshRatio"]} label={t("crawlFrontier.console.profileForm.minFreshRatio")}><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                       </Row>
                     </Card>
                     <Row gutter={[16, 16]}>
@@ -1835,11 +1835,11 @@ export function CrawlFrontierConsole() {
                           title={t("crawlFrontier.profile.strategy.layeredFrontier")}
                         >
                           <Row gutter={[16, 16]}>
-                            <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "maxDepth"]} label="Max depth"><InputNumber min={1} max={8} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                            <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "maxPages"]} label="Max pages"><InputNumber min={1} max={500} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                            <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "maxChildrenPerNode"]} label="Max children"><InputNumber min={1} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                            <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "scoreThreshold"]} label="Score threshold"><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                            <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "paginationKeepCount"]} label="Pagination pages"><InputNumber min={1} max={20} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                            <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "maxDepth"]} label={t("crawlFrontier.console.profileForm.maxDepth")}><InputNumber min={1} max={8} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                            <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "maxPages"]} label={t("crawlFrontier.console.profileForm.maxPages")}><InputNumber min={1} max={500} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                            <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "maxChildrenPerNode"]} label={t("crawlFrontier.console.profileForm.maxChildrenPerNode")}><InputNumber min={1} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                            <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "scoreThreshold"]} label={t("crawlFrontier.console.profileForm.scoreThreshold")}><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                            <Col xs={24} md={6}><Form.Item name={["config", "layeredOptions", "paginationKeepCount"]} label={t("crawlFrontier.console.profileForm.paginationKeepCount")}><InputNumber min={1} max={20} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                           </Row>
                         </Card>
                       </Col>
@@ -1849,12 +1849,12 @@ export function CrawlFrontierConsole() {
                           title={t("crawlFrontier.profile.strategy.nativeDeepCrawl")}
                         >
                           <Row gutter={[16, 16]}>
-                            <Col xs={24} md={8}><Form.Item name={["config", "nativeOptions", "deepCrawlStrategy", "type"]} label="Strategy"><Select disabled={profileRawMode} options={["auto", "BFSDeepCrawlStrategy", "BestFirstCrawlingStrategy"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
-                            <Col xs={24} md={8}><Form.Item name={["config", "nativeOptions", "fallbackToLayered"]} valuePropName="checked" label="Fallback"><Switch disabled={profileRawMode} /></Form.Item></Col>
+                            <Col xs={24} md={8}><Form.Item name={["config", "nativeOptions", "deepCrawlStrategy", "type"]} label={t("crawlFrontier.console.profileForm.type")}><Select disabled={profileRawMode} options={["auto", "BFSDeepCrawlStrategy", "BestFirstCrawlingStrategy"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+                            <Col xs={24} md={8}><Form.Item name={["config", "nativeOptions", "fallbackToLayered"]} valuePropName="checked" label={t("crawlFrontier.console.profileForm.fallbackToLayered")}><Switch disabled={profileRawMode} /></Form.Item></Col>
                             <Col xs={24} md={4}><Form.Item name={["config", "nativeOptions", "minAcceptedResults"]} label={t("crawlFrontier.profile.strategy.minAcceptedResults")}><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                            <Col xs={24} md={4}><Form.Item name={["config", "nativeOptions", "minArticleResults"]} label="Min article"><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                            <Col xs={24} md={6}><Form.Item name={["config", "nativeOptions", "deepCrawlStrategy", "params", "max_depth"]} label="Native max depth"><InputNumber min={1} max={8} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                            <Col xs={24} md={6}><Form.Item name={["config", "nativeOptions", "deepCrawlStrategy", "params", "max_pages"]} label="Native max pages"><InputNumber min={1} max={500} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                            <Col xs={24} md={4}><Form.Item name={["config", "nativeOptions", "minArticleResults"]} label={t("crawlFrontier.console.profileForm.minArticleResults")}><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                            <Col xs={24} md={6}><Form.Item name={["config", "nativeOptions", "deepCrawlStrategy", "params", "max_depth"]} label={t("crawlFrontier.console.profileForm.max_depth")}><InputNumber min={1} max={8} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                            <Col xs={24} md={6}><Form.Item name={["config", "nativeOptions", "deepCrawlStrategy", "params", "max_pages"]} label={t("crawlFrontier.console.profileForm.max_pages")}><InputNumber min={1} max={500} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                           </Row>
                         </Card>
                       </Col>
@@ -1869,40 +1869,40 @@ export function CrawlFrontierConsole() {
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
                     <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.llmAssist")}>
                       <Row gutter={[16, 16]}>
-                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "enabled"]} valuePropName="checked" label="Enabled"><Switch disabled={profileRawMode} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "recallMode"]} label="Recall mode"><Select disabled={profileRawMode} options={["high_recall", "balanced", "low_cost"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "minJudgeConfidence"]} label="Min confidence"><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "shadowEvaluationRuns"]} label="Shadow runs"><InputNumber min={1} max={10} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "candidateBudgetByPageType", "home"]} label="Home budget"><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "candidateBudgetByPageType", "category"]} label="Category budget"><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "candidateBudgetByPageType", "list"]} label="List budget"><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "candidateBudgetByPageType", "article"]} label="Article budget"><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={8}><Form.Item name={["config", "llmAssist", "autoPublishThresholds", "minArticleLift"]} label="Auto-publish article lift"><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={8}><Form.Item name={["config", "llmAssist", "autoPublishThresholds", "minNoiseReduction"]} label="Auto-publish noise reduction"><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                        <Col xs={24} md={8}><Form.Item name={["config", "llmAssist", "autoPublishThresholds", "minJudgeConfidence"]} label="Auto-publish confidence"><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "enabled"]} valuePropName="checked" label={t("crawlFrontier.console.profileForm.enabled")}><Switch disabled={profileRawMode} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "recallMode"]} label={t("crawlFrontier.console.profileForm.recallMode")}><Select disabled={profileRawMode} options={["high_recall", "balanced", "low_cost"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "minJudgeConfidence"]} label={t("crawlFrontier.console.profileForm.llmAssist.minJudgeConfidence")}><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "shadowEvaluationRuns"]} label={t("crawlFrontier.console.profileForm.shadowEvaluationRuns")}><InputNumber min={1} max={10} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "candidateBudgetByPageType", "home"]} label={t("crawlFrontier.console.profileForm.home")}><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "candidateBudgetByPageType", "category"]} label={t("crawlFrontier.console.profileForm.category")}><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "candidateBudgetByPageType", "list"]} label={t("crawlFrontier.console.profileForm.list")}><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={6}><Form.Item name={["config", "llmAssist", "candidateBudgetByPageType", "article"]} label={t("crawlFrontier.console.profileForm.article")}><InputNumber min={0} max={100} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={8}><Form.Item name={["config", "llmAssist", "autoPublishThresholds", "minArticleLift"]} label={t("crawlFrontier.console.profileForm.minArticleLift")}><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={8}><Form.Item name={["config", "llmAssist", "autoPublishThresholds", "minNoiseReduction"]} label={t("crawlFrontier.console.profileForm.minNoiseReduction")}><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                        <Col xs={24} md={8}><Form.Item name={["config", "llmAssist", "autoPublishThresholds", "minJudgeConfidence"]} label={t("crawlFrontier.console.profileForm.autoPublishThresholds.minJudgeConfidence")}><InputNumber min={0} max={1} step={0.05} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                       </Row>
                     </Card>
                     <Row gutter={[16, 16]}>
                       <Col xs={24} lg={12}>
                         <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.localeHostScope")}>
                           <Row gutter={[16, 16]}>
-                            <Col xs={24} md={8}><Form.Item name={["config", "hostScope"]} label="Host scope"><Select disabled={profileRawMode} options={["registrable_domain", "strict_hosts"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+                            <Col xs={24} md={8}><Form.Item name={["config", "hostScope"]} label={t("crawlFrontier.console.profileForm.hostScope")}><Select disabled={profileRawMode} options={["registrable_domain", "strict_hosts"].map((value) => ({ label: value, value }))} /></Form.Item></Col>
                             <Col xs={24} md={8}><Form.Item name={["config", "localeScope", "locale"]} label={t("crawlFrontier.console.profileEditor.fields.preferredLocale")}><Input disabled={profileRawMode} placeholder={t("crawlFrontier.console.placeholders.locale")} /></Form.Item></Col>
-                            <Col xs={24} md={8}><Form.Item name={["config", "localeScope", "acceptLanguages"]} label="Accept-Language"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
-                            <Col xs={24}><Form.Item name={["config", "allowedHosts"]} label="Allowed hosts"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
-                            <Col xs={24}><Form.Item name={["config", "allowedDomains"]} label="Allowed domains"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
-                            <Col xs={24}><Form.Item name={["config", "blockedDomains"]} label="Blocked domains"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
-                            <Col xs={24}><Form.Item name={["config", "localeScope", "denyUrlPatterns"]} label="Locale deny URL patterns"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
-                            <Col xs={24}><Form.Item name={["config", "localeScope", "denyHostPatterns"]} label="Locale deny host patterns"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
+                            <Col xs={24} md={8}><Form.Item name={["config", "localeScope", "acceptLanguages"]} label={t("crawlFrontier.console.profileForm.acceptLanguages")}><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
+                            <Col xs={24}><Form.Item name={["config", "allowedHosts"]} label={t("crawlFrontier.console.profileForm.allowedHosts")}><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
+                            <Col xs={24}><Form.Item name={["config", "allowedDomains"]} label={t("crawlFrontier.console.profileForm.allowedDomains")}><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
+                            <Col xs={24}><Form.Item name={["config", "blockedDomains"]} label={t("crawlFrontier.console.profileForm.blockedDomains")}><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
+                            <Col xs={24}><Form.Item name={["config", "localeScope", "denyUrlPatterns"]} label={t("crawlFrontier.console.profileForm.denyUrlPatterns")}><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
+                            <Col xs={24}><Form.Item name={["config", "localeScope", "denyHostPatterns"]} label={t("crawlFrontier.console.profileForm.denyHostPatterns")}><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item></Col>
                           </Row>
                         </Card>
                       </Col>
                       <Col xs={24} lg={12}>
                         <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.domScopesKeywords")}>
-                          <Form.Item name={["config", "domLinkScopes"]} label="Link scopes"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
-                          <Form.Item name={["config", "domLinkExcludeSelectors"]} label="Exclude selectors"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
-                          <Form.Item name={["config", "priorityKeywords"]} label="Priority keywords"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
-                          <Form.Item name={["config", "denyKeywords"]} label="Deny keywords"><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
+                          <Form.Item name={["config", "domLinkScopes"]} label={t("crawlFrontier.console.profileForm.domLinkScopes")}><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
+                          <Form.Item name={["config", "domLinkExcludeSelectors"]} label={t("crawlFrontier.console.profileForm.domLinkExcludeSelectors")}><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
+                          <Form.Item name={["config", "priorityKeywords"]} label={t("crawlFrontier.console.profileForm.priorityKeywords")}><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
+                          <Form.Item name={["config", "denyKeywords"]} label={t("crawlFrontier.console.profileForm.denyKeywords")}><Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} /></Form.Item>
                         </Card>
                       </Col>
                     </Row>
@@ -1931,10 +1931,10 @@ export function CrawlFrontierConsole() {
                           <Col xs={24} lg={12} key={`signal-${key}`}>
                             <div className="surface-inset">
                               <div className="kicker mb-2">{`${key} signals`}</div>
-                              <Form.Item name={["config", "pageTypeSignals", key, "patterns"]} label="Patterns">
+                              <Form.Item name={["config", "pageTypeSignals", key, "patterns"]} label={t("crawlFrontier.console.profileForm.patterns")}>
                                 <Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} />
                               </Form.Item>
-                              <Form.Item name={["config", "pageTypeSignals", key, "keywords"]} label="Keywords">
+                              <Form.Item name={["config", "pageTypeSignals", key, "keywords"]} label={t("crawlFrontier.console.profileForm.keywords")}>
                                 <Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} />
                               </Form.Item>
                             </div>
@@ -1944,9 +1944,9 @@ export function CrawlFrontierConsole() {
                           <div className="surface-inset">
                             <div className="kicker mb-2">{t("crawlFrontier.console.profileEditor.cards.freshnessRules")}</div>
                             <Row gutter={[16, 16]}>
-                              <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "recentHours"]} label="Recent hours"><InputNumber min={1} max={24 * 30} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                              <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "weekHours"]} label="Week hours"><InputNumber min={1} max={24 * 90} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
-                              <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "monthHours"]} label="Month hours"><InputNumber min={1} max={24 * 365} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                              <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "recentHours"]} label={t("crawlFrontier.console.profileForm.recentHours")}><InputNumber min={1} max={24 * 30} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                              <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "weekHours"]} label={t("crawlFrontier.console.profileForm.weekHours")}><InputNumber min={1} max={24 * 90} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
+                              <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "monthHours"]} label={t("crawlFrontier.console.profileForm.monthHours")}><InputNumber min={1} max={24 * 365} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                             </Row>
                           </div>
                         </Col>
@@ -1958,7 +1958,7 @@ export function CrawlFrontierConsole() {
                           <Typography.Text strong>Raw JSON mode</Typography.Text>
                           <Switch checked={profileRawMode} onChange={(checked) => void handleProfileRawModeChange(checked)} />
                         </Space>
-                        <Form.Item name="configJson" label="Config JSON">
+                        <Form.Item name="configJson" label={t("crawlFrontier.console.profileForm.configJson")}>
                           <Input.TextArea rows={18} spellCheck={false} disabled={!profileRawMode} />
                         </Form.Item>
                         <Collapse items={[{ key: "preview", label: "Resolved config preview", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(resolvedProfileConfig.config ?? {})}</Typography.Paragraph> }]} />
@@ -2048,17 +2048,17 @@ export function CrawlFrontierConsole() {
                     </Row>
                     <Card size="small" title={t("crawlFrontier.console.runDrawer.overview.coverageDiagnostics")}>
                       <Descriptions size="small" column={1} bordered>
-                        <Descriptions.Item label="Coverage by type">{formatCountSummary(selectedRunSummary?.coverageByPageType)}</Descriptions.Item>
-                        <Descriptions.Item label="Coverage by depth">{formatCountSummary(selectedRunSummary?.coverageByDepth)}</Descriptions.Item>
-                        <Descriptions.Item label="Candidate stats">{formatCountSummary(selectedRunSummary?.candidateStats)}</Descriptions.Item>
-                        <Descriptions.Item label="Rejection counts">{formatCountSummary(selectedRunSummary?.rejectionCounts)}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.coverageByType")}>{formatCountSummary(selectedRunSummary?.coverageByPageType)}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.coverageByDepth")}>{formatCountSummary(selectedRunSummary?.coverageByDepth)}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.candidateStats")}>{formatCountSummary(selectedRunSummary?.candidateStats)}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.rejectionCounts")}>{formatCountSummary(selectedRunSummary?.rejectionCounts)}</Descriptions.Item>
                         <Descriptions.Item label={t("crawlFrontier.run.nativeAcceptedSelected")}>
                           {asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) !== null ||
                           asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) !== null
                             ? `${asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? 0} ${t("crawlFrontier.run.acceptedLabel")} / ${asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? 0} ${t("crawlFrontier.run.selectedLabel")}`
                             : "-"}
                         </Descriptions.Item>
-                        <Descriptions.Item label="Judge summary">
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.judgeSummary")}>
                           {formatCountSummary(asRecord(selectedRunSummary?.judgeSummary)?.methods)}
                           {asNumber(asRecord(selectedRunSummary?.judgeSummary)?.averageConfidence) !== null ? ` · avg ${formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.averageConfidence)}` : ""}
                         </Descriptions.Item>
@@ -2066,7 +2066,7 @@ export function CrawlFrontierConsole() {
                     </Card>
                     <Card size="small" title={t("crawlFrontier.console.runDrawer.overview.rootDiagnosis")}>
                       <Collapse items={[
-                        { key: "structured", label: "Structured diagnosis", children: <Descriptions size="small" column={2}><Descriptions.Item label="Failure kind">{selectedRunDiagnostics?.failureKind ?? "-"}</Descriptions.Item><Descriptions.Item label="Last error">{selectedRun.lastError ?? "-"}</Descriptions.Item><Descriptions.Item label="Started at">{formatDateTime(selectedRun.startedAt)}</Descriptions.Item><Descriptions.Item label="Finished at">{formatDateTime(selectedRun.finishedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.run.nativeAccepted")}>{asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.run.nativeSelected")}>{asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? "-"}</Descriptions.Item></Descriptions> },
+                        { key: "structured", label: "Structured diagnosis", children: <Descriptions size="small" column={2}><Descriptions.Item label={t("crawlFrontier.console.labels.failureKind")}>{selectedRunDiagnostics?.failureKind ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.lastError")}>{selectedRun.lastError ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.startedAt")}>{formatDateTime(selectedRun.startedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.finishedAt")}>{formatDateTime(selectedRun.finishedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.run.nativeAccepted")}>{asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.run.nativeSelected")}>{asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? "-"}</Descriptions.Item></Descriptions> },
                         { key: "json", label: "Root diagnosis JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedRunRootDiagnosis)}</Typography.Paragraph> },
                       ]} />
                     </Card>
@@ -2179,18 +2179,18 @@ export function CrawlFrontierConsole() {
                         bordered
                         style={{ marginTop: 16 }}
                       >
-                        <Descriptions.Item label="Workflow">
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.workflow")}>
                           {selectedWorkflowRun.workflow?.name ?? "Legacy bridge"}
                         </Descriptions.Item>
-                        <Descriptions.Item label="Version">
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.version")}>
                           {selectedWorkflowRun.workflowVersion
                             ? `v${selectedWorkflowRun.workflowVersion.version}`
                             : "-"}
                         </Descriptions.Item>
-                        <Descriptions.Item label="Origin">
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.origin")}>
                           {selectedWorkflowRun.workflowOrigin}
                         </Descriptions.Item>
-                        <Descriptions.Item label="Run kind">
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.runKind")}>
                           {selectedWorkflowRun.runKind}
                         </Descriptions.Item>
                       </Descriptions>
@@ -2320,10 +2320,10 @@ export function CrawlFrontierConsole() {
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
                     <Card size="small" title={t("crawlFrontier.console.runDrawer.llm.lifecycle")}>
                       <Descriptions size="small" column={2} bordered>
-                        <Descriptions.Item label="Run role">{selectedRunDiagnostics?.runRole ?? "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Pending judge jobs">{selectedRunSummary?.pendingLlmJudgeJobs ?? 0}</Descriptions.Item>
-                        <Descriptions.Item label="Judge count">{formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.count, 0)}</Descriptions.Item>
-                        <Descriptions.Item label="Avg confidence">{formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.averageConfidence)}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.runRole")}>{selectedRunDiagnostics?.runRole ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.pendingJudgeJobs")}>{selectedRunSummary?.pendingLlmJudgeJobs ?? 0}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.judgeCount")}>{formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.count, 0)}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.avgConfidence")}>{formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.averageConfidence)}</Descriptions.Item>
                       </Descriptions>
                       <Space wrap size={[4, 4]} style={{ marginTop: 12 }}>{(selectedRunSummary?.warningFlags ?? []).filter((flag) => flag.startsWith("llm_")).map((flag) => <Tag key={flag} color="warning">{flag}</Tag>)}</Space>
                       {canViewLogLinks ? (
@@ -2335,8 +2335,8 @@ export function CrawlFrontierConsole() {
                     </Card>
                     <Card size="small" title={t("crawlFrontier.console.runDrawer.llm.shadowProfile")}>
                       <Descriptions size="small" column={2} bordered>
-                        <Descriptions.Item label="Shadow profile">{asString(asRecord(selectedRunSummary?.shadowSummary)?.profileId) ?? "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Published profile">{asString(asRecord(selectedRunSummary?.shadowSummary)?.publishedProfileId) ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.shadowProfile")}>{asString(asRecord(selectedRunSummary?.shadowSummary)?.profileId) ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.publishedProfile")}>{asString(asRecord(selectedRunSummary?.shadowSummary)?.publishedProfileId) ?? "-"}</Descriptions.Item>
                       </Descriptions>
                       <Collapse style={{ marginTop: 12 }} items={[{ key: "shadowComparison", label: "Shadow comparison", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(asRecord(selectedRunSummary?.shadowSummary)?.comparison)}</Typography.Paragraph> }]} />
                     </Card>
@@ -2350,16 +2350,16 @@ export function CrawlFrontierConsole() {
                   <Space direction="vertical" size="large" style={{ width: "100%" }}>
                     <Card size="small" title={t("crawlFrontier.console.runDrawer.diagnostics.seedSummary")}>
                       <Descriptions size="small" column={2} bordered>
-                        <Descriptions.Item label="Strategy">{asString(asRecord(selectedRunSummary?.seedSummary)?.strategy) ?? "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Method">{asString(asRecord(selectedRunSummary?.seedSummary)?.method) ?? "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Origin">{asString(asRecord(selectedRunSummary?.seedSummary)?.origin) ?? "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Discovery mode">{asString(asRecord(selectedRunSummary?.seedSummary)?.discoveryMode) ?? "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Fallback">{asString(asRecord(selectedRunSummary?.seedSummary)?.fallbackStage) ?? "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Seed yield">{formatCountSummary(asRecord(asRecord(selectedRunSummary?.seedSummary)?.yield))}</Descriptions.Item>
-                        <Descriptions.Item label="Seed quality">{stringifyJson(asRecord(asRecord(selectedRunSummary?.seedSummary)?.quality))}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.strategy")}>{asString(asRecord(selectedRunSummary?.seedSummary)?.strategy) ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.method")}>{asString(asRecord(selectedRunSummary?.seedSummary)?.method) ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.origin")}>{asString(asRecord(selectedRunSummary?.seedSummary)?.origin) ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.discoveryMode")}>{asString(asRecord(selectedRunSummary?.seedSummary)?.discoveryMode) ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.fallback")}>{asString(asRecord(selectedRunSummary?.seedSummary)?.fallbackStage) ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.seedYield")}>{formatCountSummary(asRecord(asRecord(selectedRunSummary?.seedSummary)?.yield))}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.seedQuality")}>{stringifyJson(asRecord(asRecord(selectedRunSummary?.seedSummary)?.quality))}</Descriptions.Item>
                       </Descriptions>
                     </Card>
-                    <Card size="small" title="Sitemap discovery">
+                    <Card size="small" title={t("crawlFrontier.console.labels.sitemapDiscovery")}>
                       <Descriptions size="small" column={2} bordered>
                         {buildSitemapDiagnosticRows(asRecord(asRecord(selectedRunSummary?.seedSummary)?.diagnostics)).map((row) => (
                           <Descriptions.Item key={row.key} label={row.label}>{row.value}</Descriptions.Item>
@@ -2462,13 +2462,13 @@ export function CrawlFrontierConsole() {
                 );
                 return (
                   <Descriptions size="small" column={2} bordered>
-                    <Descriptions.Item label="Total score delta">
+                    <Descriptions.Item label={t("crawlFrontier.console.labels.totalScoreDelta")}>
                       {formatNumber(traceSummary.totalScoreDelta)}
                     </Descriptions.Item>
-                    <Descriptions.Item label="Total freshness delta">
+                    <Descriptions.Item label={t("crawlFrontier.console.labels.totalFreshnessDelta")}>
                       {formatNumber(traceSummary.totalFreshnessDelta)}
                     </Descriptions.Item>
-                    <Descriptions.Item label="Changed fields" span={2}>
+                    <Descriptions.Item label={t("crawlFrontier.console.labels.changedFields")} span={2}>
                       <Space wrap>
                         {traceSummary.changedFields.map((field) => (
                           <Tag key={`changed-${field}`}>{field}</Tag>
@@ -2476,7 +2476,7 @@ export function CrawlFrontierConsole() {
                         {traceSummary.changedFields.length === 0 ? "-" : null}
                       </Space>
                     </Descriptions.Item>
-                    <Descriptions.Item label="Rule hits" span={2}>
+                    <Descriptions.Item label={t("crawlFrontier.console.labels.ruleHits")} span={2}>
                       <Space wrap>
                         {traceSummary.ruleHits.map((rule) => (
                           <Tag key={`rule-${rule}`}>
@@ -2486,7 +2486,7 @@ export function CrawlFrontierConsole() {
                         {traceSummary.ruleHits.length === 0 ? "-" : null}
                       </Space>
                     </Descriptions.Item>
-                    <Descriptions.Item label="Step chain" span={2}>
+                    <Descriptions.Item label={t("crawlFrontier.console.labels.stepChain")} span={2}>
                       <Space wrap size={[4, 4]}>
                         {traceChain.map((step) => (
                           <Tag
@@ -2658,57 +2658,57 @@ export function CrawlFrontierConsole() {
             </Card>
             <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.basics")}>
               <Descriptions size="small" column={2} bordered>
-                <Descriptions.Item label="Canonical URL">{selectedNode.canonicalUrl ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Depth">{selectedNode.depth}</Descriptions.Item>
-                <Descriptions.Item label="Attempts">{selectedNode.attempts}</Descriptions.Item>
-                <Descriptions.Item label="Parent node">{selectedNode.parentNodeId ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Discovered at">{formatDateTime(selectedNode.discoveredAt)}</Descriptions.Item>
-                <Descriptions.Item label="Crawled at">{formatDateTime(selectedNode.crawledAt)}</Descriptions.Item>
-                <Descriptions.Item label="Cluster label">{asString(asRecord(selectedNode.metadata)?.clusterLabel) ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Seed origin">{asString(asRecord(selectedNode.metadata)?.seedOrigin) ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Seed method">{asString(asRecord(selectedNode.metadata)?.seedMethod) ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.canonicalURL")}>{selectedNode.canonicalUrl ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.depth")}>{selectedNode.depth}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.attempts")}>{selectedNode.attempts}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.parentNode")}>{selectedNode.parentNodeId ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.discoveredAt")}>{formatDateTime(selectedNode.discoveredAt)}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.crawledAt")}>{formatDateTime(selectedNode.crawledAt)}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.clusterLabel")}>{asString(asRecord(selectedNode.metadata)?.clusterLabel) ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.seedOrigin")}>{asString(asRecord(selectedNode.metadata)?.seedOrigin) ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.seedMethod")}>{asString(asRecord(selectedNode.metadata)?.seedMethod) ?? "-"}</Descriptions.Item>
               </Descriptions>
             </Card>
             <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.judgment")}>
               <Descriptions size="small" column={2} bordered>
-                <Descriptions.Item label="Score">{formatNumber(selectedNode.score)}</Descriptions.Item>
-                <Descriptions.Item label="Freshness">{formatNumber(selectedNode.freshnessScore)}</Descriptions.Item>
-                <Descriptions.Item label="Judge method">{asString(asRecord(selectedNode.metadata)?.judgeMethod) ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Judge confidence">{formatNumber(asRecord(selectedNode.metadata)?.judgeConfidence)}</Descriptions.Item>
-                <Descriptions.Item label="Judge reason">{asString(asRecord(selectedNode.metadata)?.judgeReason) ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Locale hint">{asString(asRecord(selectedNode.metadata)?.localeHint) ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Selector hints" span={2}><Space wrap>{asStringArray(asRecord(selectedNode.metadata)?.selectorHints).map((hint) => <Tag key={hint}>{hint}</Tag>)}{asStringArray(asRecord(selectedNode.metadata)?.selectorHints).length === 0 ? "-" : null}</Space></Descriptions.Item>
-                <Descriptions.Item label="Rejection reason">{selectedNode.rejectionReason ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Last error">{selectedNode.lastError ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.score")}>{formatNumber(selectedNode.score)}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.freshness")}>{formatNumber(selectedNode.freshnessScore)}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.judgeMethod")}>{asString(asRecord(selectedNode.metadata)?.judgeMethod) ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.judgeConfidence")}>{formatNumber(asRecord(selectedNode.metadata)?.judgeConfidence)}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.judgeReason")}>{asString(asRecord(selectedNode.metadata)?.judgeReason) ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.localeHint")}>{asString(asRecord(selectedNode.metadata)?.localeHint) ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.selectorHints")} span={2}><Space wrap>{asStringArray(asRecord(selectedNode.metadata)?.selectorHints).map((hint) => <Tag key={hint}>{hint}</Tag>)}{asStringArray(asRecord(selectedNode.metadata)?.selectorHints).length === 0 ? "-" : null}</Space></Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.rejectionReason")}>{selectedNode.rejectionReason ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.lastError")}>{selectedNode.lastError ?? "-"}</Descriptions.Item>
               </Descriptions>
             </Card>
             <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.runLinkage")}>
               <Descriptions size="small" column={2} bordered>
-                <Descriptions.Item label="Run">{selectedNode.run.id}</Descriptions.Item>
-                <Descriptions.Item label="Seed URL">{selectedNode.run.seedUrl}</Descriptions.Item>
-                <Descriptions.Item label="Run status">{selectedNode.run.status}</Descriptions.Item>
-                <Descriptions.Item label="Execution mode">{selectedNode.run.executionMode}</Descriptions.Item>
-                <Descriptions.Item label="Profile">{selectedNode.run.profile?.name ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Profile host">{selectedNode.run.profile?.matchHost ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.run")}>{selectedNode.run.id}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.seedURL")}>{selectedNode.run.seedUrl}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.runStatus")}>{selectedNode.run.status}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.executionMode")}>{selectedNode.run.executionMode}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.profile")}>{selectedNode.run.profile?.name ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("crawlFrontier.console.labels.profileHost")}>{selectedNode.run.profile?.matchHost ?? "-"}</Descriptions.Item>
               </Descriptions>
             </Card>
             <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.crawlResult")}>
-              {selectedNode.crawlResult ? <Descriptions size="small" column={2} bordered><Descriptions.Item label="Crawl result ID">{selectedNode.crawlResult.id}</Descriptions.Item><Descriptions.Item label="Fetched at">{formatDateTime(selectedNode.crawlResult.fetchedAt)}</Descriptions.Item><Descriptions.Item label="Source URL">{selectedNode.crawlResult.sourceUrl}</Descriptions.Item><Descriptions.Item label="Markdown ref">{selectedNode.crawlResult.markdownRef}</Descriptions.Item></Descriptions> : <Empty description={t("crawlFrontier.console.nodeDrawer.empty.noCrawlResult")} />}
+              {selectedNode.crawlResult ? <Descriptions size="small" column={2} bordered><Descriptions.Item label={t("crawlFrontier.console.labels.crawlResultID")}>{selectedNode.crawlResult.id}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.fetchedAt")}>{formatDateTime(selectedNode.crawlResult.fetchedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.sourceURL")}>{selectedNode.crawlResult.sourceUrl}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.markdownRef")}>{selectedNode.crawlResult.markdownRef}</Descriptions.Item></Descriptions> : <Empty description={t("crawlFrontier.console.nodeDrawer.empty.noCrawlResult")} />}
             </Card>
             <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.articleExtraction")}>
               {selectedNode.article || selectedNode.processedArticle ? (
                 <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                  {selectedNode.article ? <Descriptions size="small" column={2} bordered><Descriptions.Item label="Article URL">{selectedNode.article.url}</Descriptions.Item><Descriptions.Item label="Crawl at">{formatDateTime(selectedNode.article.crawlAt)}</Descriptions.Item><Descriptions.Item label="Title guess">{selectedNode.article.titleGuess ?? "-"}</Descriptions.Item><Descriptions.Item label="Source label">{selectedNode.article.sourceLabel ?? "-"}</Descriptions.Item><Descriptions.Item label="Language">{selectedNode.article.language ?? "-"}</Descriptions.Item><Descriptions.Item label="Repair applied">{asRecord(selectedNode.article.llmRepair)?.applied === true ? "yes" : "no"}</Descriptions.Item></Descriptions> : null}
-                  {selectedNode.processedArticle ? <Descriptions size="small" column={2} bordered><Descriptions.Item label="Processed title">{selectedNode.processedArticle.title ?? "-"}</Descriptions.Item><Descriptions.Item label="Published at">{formatDateTime(selectedNode.processedArticle.publishedAt)}</Descriptions.Item><Descriptions.Item label="Author">{selectedNode.processedArticle.author ?? "-"}</Descriptions.Item><Descriptions.Item label="Category">{selectedNode.processedArticle.category ?? "-"}</Descriptions.Item><Descriptions.Item label="Quality score">{formatNumber(selectedNode.processedArticle.qualityScore)}</Descriptions.Item><Descriptions.Item label="LLM model">{selectedNode.processedArticle.llmModel ?? "-"}</Descriptions.Item></Descriptions> : null}
+                  {selectedNode.article ? <Descriptions size="small" column={2} bordered><Descriptions.Item label={t("crawlFrontier.console.labels.articleURL")}>{selectedNode.article.url}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.crawlAt")}>{formatDateTime(selectedNode.article.crawlAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.titleGuess")}>{selectedNode.article.titleGuess ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.sourceLabel")}>{selectedNode.article.sourceLabel ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.language")}>{selectedNode.article.language ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.repairApplied")}>{asRecord(selectedNode.article.llmRepair)?.applied === true ? "yes" : "no"}</Descriptions.Item></Descriptions> : null}
+                  {selectedNode.processedArticle ? <Descriptions size="small" column={2} bordered><Descriptions.Item label={t("crawlFrontier.console.labels.processedTitle")}>{selectedNode.processedArticle.title ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.publishedAt")}>{formatDateTime(selectedNode.processedArticle.publishedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.author")}>{selectedNode.processedArticle.author ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.category")}>{selectedNode.processedArticle.category ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.qualityScore")}>{formatNumber(selectedNode.processedArticle.qualityScore)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.llmModel")}>{selectedNode.processedArticle.llmModel ?? "-"}</Descriptions.Item></Descriptions> : null}
                   {selectedNode.extractionSummary ? (
                     <div className="surface-inset">
                       <div className="kicker mb-2">{t("crawlFrontier.console.nodeDrawer.cards.extractionSummary")}</div>
                       <Descriptions size="small" column={2} bordered>
-                        <Descriptions.Item label="Processed status">{selectedNode.extractionSummary.processedStatus ?? "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Quality score">{formatNumber(selectedNode.extractionSummary.qualityScore)}</Descriptions.Item>
-                        <Descriptions.Item label="Extracted fields" span={2}><Space wrap>{selectedNode.extractionSummary.extractedFields.map((field) => <Tag key={`extracted-${field}`}>{field}</Tag>)}{selectedNode.extractionSummary.extractedFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
-                        <Descriptions.Item label="Missing fields" span={2}><Space wrap>{selectedNode.extractionSummary.missingFields.map((field) => <Tag key={`missing-${field}`}>{field}</Tag>)}{selectedNode.extractionSummary.missingFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
-                        <Descriptions.Item label="Removed noise" span={2}><Space wrap>{(selectedNode.extractionSummary.removedNoiseTypes ?? []).map((field) => <Tag key={`noise-${field}`}>{field}</Tag>)}{(selectedNode.extractionSummary.removedNoiseTypes ?? []).length === 0 ? "-" : null}</Space></Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.processedStatus")}>{selectedNode.extractionSummary.processedStatus ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.qualityScore")}>{formatNumber(selectedNode.extractionSummary.qualityScore)}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.extractedFields")} span={2}><Space wrap>{selectedNode.extractionSummary.extractedFields.map((field) => <Tag key={`extracted-${field}`}>{field}</Tag>)}{selectedNode.extractionSummary.extractedFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.missingFields")} span={2}><Space wrap>{selectedNode.extractionSummary.missingFields.map((field) => <Tag key={`missing-${field}`}>{field}</Tag>)}{selectedNode.extractionSummary.missingFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.removedNoise")} span={2}><Space wrap>{(selectedNode.extractionSummary.removedNoiseTypes ?? []).map((field) => <Tag key={`noise-${field}`}>{field}</Tag>)}{(selectedNode.extractionSummary.removedNoiseTypes ?? []).length === 0 ? "-" : null}</Space></Descriptions.Item>
                       </Descriptions>
                     </div>
                   ) : null}
@@ -2716,13 +2716,13 @@ export function CrawlFrontierConsole() {
                     <div className="surface-inset">
                       <div className="kicker mb-2">{t("crawlFrontier.console.nodeDrawer.cards.repairSummary")}</div>
                       <Descriptions size="small" column={2} bordered>
-                        <Descriptions.Item label="Attempted">{selectedNode.repairSummary.attempted ? "yes" : "no"}</Descriptions.Item>
-                        <Descriptions.Item label="Applied">{selectedNode.repairSummary.applied ? "yes" : "no"}</Descriptions.Item>
-                        <Descriptions.Item label="Model">{selectedNode.repairSummary.model ?? "-"}</Descriptions.Item>
-                        <Descriptions.Item label="Latency">{formatNumber(selectedNode.repairSummary.latencyMs, 0)}</Descriptions.Item>
-                        <Descriptions.Item label="Missing fields" span={2}><Space wrap>{selectedNode.repairSummary.missingFields.map((field) => <Tag key={`repair-missing-${field}`}>{field}</Tag>)}{selectedNode.repairSummary.missingFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
-                        <Descriptions.Item label="Repaired fields" span={2}><Space wrap>{selectedNode.repairSummary.repairedFields.map((field) => <Tag key={`repair-applied-${field}`}>{field}</Tag>)}{selectedNode.repairSummary.repairedFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
-                        <Descriptions.Item label="Error" span={2}>{selectedNode.repairSummary.error ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.attempted")}>{selectedNode.repairSummary.attempted ? "yes" : "no"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.applied")}>{selectedNode.repairSummary.applied ? "yes" : "no"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.model")}>{selectedNode.repairSummary.model ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.latency")}>{formatNumber(selectedNode.repairSummary.latencyMs, 0)}</Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.missingFields")} span={2}><Space wrap>{selectedNode.repairSummary.missingFields.map((field) => <Tag key={`repair-missing-${field}`}>{field}</Tag>)}{selectedNode.repairSummary.missingFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.repairedFields")} span={2}><Space wrap>{selectedNode.repairSummary.repairedFields.map((field) => <Tag key={`repair-applied-${field}`}>{field}</Tag>)}{selectedNode.repairSummary.repairedFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
+                        <Descriptions.Item label={t("crawlFrontier.console.labels.error")} span={2}>{selectedNode.repairSummary.error ?? "-"}</Descriptions.Item>
                       </Descriptions>
                     </div>
                   ) : null}
