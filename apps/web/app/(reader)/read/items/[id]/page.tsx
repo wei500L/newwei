@@ -605,7 +605,7 @@ export default function ReaderPage() {
 
         {/* Header */}
         <header className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-4">
+          <h1 className="text-3xl md:text-4xl font-serif font-bold leading-tight mb-4">
             {displayTitle}
           </h1>
 

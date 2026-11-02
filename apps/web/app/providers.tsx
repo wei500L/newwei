@@ -232,6 +232,7 @@ export function AppProviders({ children }: PropsWithChildren) {
     const colorBgElevated = colors.colorBgElevated;
     const colorBgSpotlight = colors.colorBgSpotlight;
     const colorTextPlaceholder = colors.colorTextPlaceholder;
+    const colorBorderSecondary = colors.colorBorderSecondary;
     const cardShadow = shadows.card;
     const modalShadow = shadows.modal;
 
@@ -249,34 +250,28 @@ export function AppProviders({ children }: PropsWithChildren) {
         colorTextPlaceholder,
         colorTextLightSolid: "#f8fafc",
         colorFillSecondary,
-        borderRadius: 10,
+        colorBorderSecondary,
+        borderRadius: 6,
+        borderRadiusLG: 10,
+        borderRadiusSM: 4,
+        fontSize: 14,
         fontFamily:
           "var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         colorBorder,
       },
       components: {
-        Card: {
-          borderRadiusLG: 14,
-          colorBgContainer,
-          boxShadow: cardShadow,
-        },
-        Button: {
-          borderRadius: 8,
-          controlHeight: 36,
-          primaryShadow: "none",
-        },
+        Card: { borderRadiusLG: 10, colorBgContainer, boxShadow: cardShadow, headerFontSize: 15 },
+        Button: { borderRadius: 6, controlHeight: 34, primaryShadow: "none", defaultShadow: "none", dangerShadow: "none" },
         Table: {
           colorBgContainer,
-          borderColor: colorBorder,
+          borderColor: colors.colorBorderSecondary,
+          headerBg: colorFillSecondary,
+          headerColor: colorTextSecondary,
+          rowHoverBg: colorFillSecondary,
         },
-        Menu: {
-          colorBgContainer: "transparent",
-        },
-        Modal: {
-          borderRadiusLG: 14,
-          colorBgElevated,
-          boxShadow: modalShadow,
-        }
+        Menu: { colorBgContainer: "transparent" },
+        Modal: { borderRadiusLG: 10, colorBgElevated, boxShadow: modalShadow },
+        Tabs: { inkBarColor: colorPrimary, itemSelectedColor: colorTextBase },
       }
     };
   }, [themeMode]);

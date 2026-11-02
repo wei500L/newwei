@@ -7,6 +7,7 @@
  * 用 JS 常量。集中于此以消除 providers.tsx 内的硬编码碎片（审计 W6：
  * 主题色/阴影散落在组件里、脱离设计 token）。值与迁移前完全一致，
  * 收敛本身零视觉变化。
+ * FE-UI 批0：与 globals.css 的纸墨 token 一一对应，修改时两处同步
  */
 
 /** antd `theme.token` 中随 light/dark 切换的品牌语义色键。 */
@@ -21,34 +22,37 @@ export interface AntdThemeColors {
   colorBgElevated: string;
   colorBgSpotlight: string;
   colorTextPlaceholder: string;
+  colorBorderSecondary: string;
 }
 
 /** 亮色（defaultAlgorithm）下的 antd 主题色。 */
 export const ANTD_COLORS_LIGHT: AntdThemeColors = {
   colorPrimary: "#1f3b7b",
-  colorBgBase: "#f7f6f2",
-  colorTextBase: "#1f2933",
-  colorTextSecondary: "#475569",
-  colorFillSecondary: "#f1f5f9",
-  colorBorder: "#e2e8f0",
-  colorBgContainer: "#ffffff",
-  colorBgElevated: "rgba(255, 255, 255, 0.98)",
-  colorBgSpotlight: "rgba(15, 23, 42, 0.95)",
-  colorTextPlaceholder: "#64748b",
+  colorBgBase: "#f5f3ee",
+  colorTextBase: "#161b26",
+  colorTextSecondary: "#5a6270",
+  colorFillSecondary: "#efece5",
+  colorBorder: "#d9d4c9",
+  colorBgContainer: "#fffdf9",
+  colorBgElevated: "#fffdf9",
+  colorBgSpotlight: "rgba(22, 27, 38, 0.95)",
+  colorTextPlaceholder: "#7a8190",
+  colorBorderSecondary: "#e3dfd6",
 } as const;
 
 /** 暗色（darkAlgorithm）下的 antd 主题色。 */
 export const ANTD_COLORS_DARK: AntdThemeColors = {
-  colorPrimary: "#6f9bff",
-  colorBgBase: "#0b1220",
-  colorTextBase: "#e2e8f0",
-  colorTextSecondary: "#cbd5e1",
-  colorFillSecondary: "#1e293b",
-  colorBorder: "#334155",
-  colorBgContainer: "rgba(15, 23, 42, 0.82)",
-  colorBgElevated: "rgba(15, 23, 42, 0.95)",
+  colorPrimary: "#8fb0ff",
+  colorBgBase: "#0d1117",
+  colorTextBase: "#e8e4da",
+  colorTextSecondary: "#9aa3af",
+  colorFillSecondary: "#1b222c",
+  colorBorder: "#2c3542",
+  colorBgContainer: "#141a22",
+  colorBgElevated: "#1a212b",
   colorBgSpotlight: "rgba(2, 6, 23, 0.98)",
-  colorTextPlaceholder: "#94a3b8",
+  colorTextPlaceholder: "#7d8692",
+  colorBorderSecondary: "#252d38",
 } as const;
 
 /** Card / Modal 组件的多层 box-shadow 预设。 */
@@ -60,11 +64,11 @@ export interface ShadowPreset {
 /** antd Card/Modal 阴影预设，按主题。 */
 export const SHADOW_PRESETS: { light: ShadowPreset; dark: ShadowPreset } = {
   light: {
-    card: "0 4px 6px rgba(31,59,123,0.04), 0 12px 28px rgba(31,59,123,0.06), 0 24px 48px rgba(31,59,123,0.03)",
-    modal: "0 16px 40px rgba(15, 23, 42, 0.18), 0 24px 64px rgba(31,59,123,0.05)",
+    card: "none",
+    modal: "0 12px 32px rgba(22, 27, 38, 0.14)",
   },
   dark: {
-    card: "0 4px 6px rgba(0,0,0,0.2), 0 12px 28px rgba(2,6,23,0.4), 0 0 48px rgba(99,102,241,0.04)",
-    modal: "0 18px 42px rgba(2, 6, 23, 0.55), 0 0 64px rgba(99,102,241,0.06)",
+    card: "none",
+    modal: "0 16px 40px rgba(0, 0, 0, 0.5)",
   },
 } as const;

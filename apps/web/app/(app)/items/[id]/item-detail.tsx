@@ -1238,6 +1238,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           level={4}
           ellipsis={{ rows: 2 }}
           style={{ margin: 0 }}
+          className="font-serif"
         >
           {displayTitle}
         </Typography.Title>

@@ -1,5 +1,7 @@
 # Web 设计系统使用规范
 
+> FE-UI 批0（2026-11）起视觉方向为「情报编辑台」，详见 docs/refactor/frontend-ui-polish/README.md
+
 > 本文固化 `apps/web` 现有的设计基元与约定。**新代码请复用这些基元，不要各自硬编码**——这是消除「组件视觉碎片化」的根本手段（优于事后再抽壳）。
 
 ## 1. 颜色
@@ -13,6 +15,10 @@
 | 主/辅/强调 | `text-primary` `bg-secondary` `text-accent` | `--primary` `--secondary` `--accent` |
 | 危险/金融涨跌 | `text-destructive` `text-bullish` `text-bearish` | `--destructive` `--bullish` `--bearish` |
 | 边框/输入/焦点环 | `border-border` `ring-ring` | `--border` `--input` `--ring` |
+| 表面 | `bg-surface` | `--surface` |
+| 次级表面 | `bg-surface-muted` | `--surface-muted` |
+| 弱化文字 | `text-muted-foreground` | `--muted-foreground` |
+| 强边框 | `border-border-strong` | `--border-strong` |
 
 **规则**：DOM 元素的颜色优先走这些 token 类，**不要**写 `text-[#xxx]` / `bg-[rgba(...)]` 硬编码。
 
@@ -33,8 +39,8 @@
 ## 2. 尺寸与间距
 
 - **图表/容器高度**：用 `h-viz-xs..h-viz-4xl`（180/260/300/360/400/420/500/520px），别写 `h-[NNpx]`。见 `tailwind.config.ts` 的 `vizHeights`。
-- **圆角**：`rounded`（`--radius` 10px）/ `rounded-lg`（`--radius-lg` 14px），别写 `rounded-[14px]` / `border-radius: 14px`。
-- **面板阴影**：`shadow-panel`（`0 8px 20px rgba(15,23,42,0.08)`），别重复写该任意值。
+- **圆角**：`rounded`（`--radius` 6px）/ `rounded-lg`（`--radius-lg` 10px），别写 `rounded-[14px]` / `border-radius: 14px`。
+- **面板阴影**：`shadow-panel` 映射 `var(--shadow-surface)`，随主题切换（浅色 `0 1px 2px rgba(22,27,38,0.04)` / 暗色 `none`），别重复写该任意值。
 - **间距**：优先 Tailwind 标度类（`p-4` `gap-6`），避免 `[13px]` 之类任意值与 layout 里的 inline `style={{gap:16}}`。
 
 ## 3. 排版
@@ -42,16 +48,26 @@
 - **长文正文**：`text-reading`（16px / 行高 1.75）+ `max-w-measure`（72ch，控制测量宽度）。见 `MarkdownViewer`（`DEFAULT_CLASSES` / `CHAT_CLASSES` 两套基线均已 16px、行高 1.75）。
 - 别用 `text-[14px]` / `text-[12px]` 当正文——用 `text-sm` / `text-xs`（注意：若无 `leading-*` 覆盖，切换会改行高）。
 
-## 4. 卡片表面（已有基元，勿再造壳）
+### 字体分工
+
+- **衬线（`font-serif`）**：仅用于布局级标题（PageHeader h1、文章/头条标题、Today 刊头）。
+- **无衬线（`font-sans`）**：其余全部 UI 文字。
+- **等宽（`font-mono`）+ `tabular-nums`**：数字、时间、代码。
+- **`.kicker`**：11px 大写、`letter-spacing: 0.08em`、muted 色，用于眉题。
+
+## 4. 卡片表面（纸面卡片：实色 + 发丝线）
 
 | 基元 | 用法 | 说明 |
 |------|------|------|
-| `.glass-card`（≡`.content-card`） | `<div className="glass-card ...">` 或 `<Card className="glass-card">` | 玻璃态卡片表面（含 light/dark） |
-| `.glass-panel` | 同上 | 面板变体（透明度/阴影略不同） |
-| `AuraBentoCard`（`components/aura-bento-card.tsx`） | `<AuraBentoCard>{...}</AuraBentoCard>` | 带鼠标 glow 交互的卡片，内部用 `useCardGlow` |
-| `useCardGlow`（`hooks/use-card-glow.ts`） | 给任意卡片加 glow：取 `{ ref, style, onMouseMove }` | glow 逻辑单一真源 |
+| `.glass-card`（≡`.content-card`） | `<div className="glass-card ...">` 或 `<Card className="glass-card">` | 纸面卡片（实色 + 发丝线）：实色纸面表面、1px 发丝线边框、近零阴影（含 light/dark）；类名沿用 |
+| `.glass-panel` | 同上 | 纸面面板变体（实色 + 1px 发丝线边框，近零阴影） |
+| `.surface-inset` | `<div className="surface-inset ...">` | 卡内分区：内凹纸面（用色差/内描边分隔，不套 Card） |
+| `.section-rule` | `<div className="section-rule" />` | 区块顶栏线（2px 墨线 + 上内边距） |
+| `.hairline-b` | `<div className="hairline-b ...">` | 底部发丝线分隔 |
+| `AuraBentoCard`（`components/aura-bento-card.tsx`） | `<AuraBentoCard>{...}</AuraBentoCard>` | 带鼠标 glow 交互的卡片，内部用 `useCardGlow`（批0 起已弃用，仅存量保留） |
+| `useCardGlow`（`hooks/use-card-glow.ts`） | 给任意卡片加 glow：取 `{ ref, style, onMouseMove }` | glow 逻辑单一真源（批0 起已弃用，仅存量保留） |
 
-**规则**：需要玻璃卡片直接用 `.glass-card`/`.glass-panel` 类，叠加各自的 border/padding/尺寸即可；需要 glow 用 `AuraBentoCard` 或 `useCardGlow`。**不需要**再包 `CardBase`——基元已经足够，套壳只增 indirection。
+**规则**：卡片表面一律用纸面卡片（`.glass-card`/`.glass-panel`，实色 + 1px 发丝线 + 近零阴影），叠加各自的 border/padding/尺寸即可；卡内分组用 `.surface-inset` 或 `.hairline-b`，**禁止卡中卡**（不要嵌套 Card）。`AuraBentoCard` / `useCardGlow` 保留但已弃用（批0 起），新代码不要再用；**不需要**再包 `CardBase`——基元已经足够，套壳只增 indirection。
 
 ## 5. 徽章 / 标签
 

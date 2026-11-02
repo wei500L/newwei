@@ -95,12 +95,20 @@ const config: Config = {
         border: 'var(--border)',
         input: 'var(--input)',
         ring: 'var(--ring)',
+        surface: {
+          DEFAULT: 'var(--surface)',
+          muted: 'var(--surface-muted)',
+        },
+        'muted-foreground': 'var(--muted-foreground)',
+        'border-strong': 'var(--border-strong)',
       },
       borderRadius: {
-        lg: 'var(--radius-lg)',
-        DEFAULT: 'var(--radius)',
-        md: 'var(--radius)',
-        sm: 'calc(var(--radius) - 2px)',
+        sm: '4px',
+        DEFAULT: 'var(--radius)',      // 6px
+        md: 'var(--radius)',           // 6px
+        lg: 'var(--radius-lg)',        // 10px
+        xl: '12px',
+        '2xl': '16px',
       },
       fontSize: {
         reading: ['1rem', { lineHeight: '1.75' }],
@@ -110,8 +118,8 @@ const config: Config = {
         measure: 'var(--reading-measure)',
       },
       boxShadow: {
-        // 面板卡片标准阴影（原散落的 shadow-[0_8px_20px_rgba(15,23,42,0.08)]）
-        panel: '0 8px 20px rgba(15,23,42,0.08)',
+        // 面板/卡片标准阴影，随主题切换
+        panel: 'var(--shadow-surface)',
       },
       height: { ...vizHeights },
       minHeight: { ...vizHeights },

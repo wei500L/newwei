@@ -5,9 +5,12 @@
 :root {
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
-  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC",
+    Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji",
+    sans-serif;
+  --font-serif:
+    "Iowan Old Style", "Charter", Georgia, "Source Han Serif SC",
+    "Noto Serif SC", "Songti SC", "STSong", "Times New Roman", serif;
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
@@ -26,8 +29,8 @@
   --rail-item-gap: 0.375rem;       /* rail 组内项间距（gap-1.5） */
   --rail-item-radius: 0.75rem;     /* 导航项圆角（rounded-xl） */
   --nav-drawer-width: 20rem;       /* 移动导航 Drawer 宽度（320px） */
-  --nav-item-fg: #64748b;          /* slate-500：rail 次级图标 */
-  --nav-item-strong-fg: #334155;   /* slate-700：drawer 行文字（正文对比度） */
+  --nav-item-fg: var(--muted-foreground);
+  --nav-item-strong-fg: var(--foreground);
   --nav-item-hover-fg: var(--primary);
   --nav-item-hover-bg: var(--secondary);
   --nav-item-active-bg: var(--primary);
@@ -39,8 +42,16 @@
   --z-content: 0;                  /* 主内容区 */
   --nav-motion-fast: 150ms;        /* 导航项状态过渡 */
 
-  --background: #f7f6f2;
-  --foreground: #1f2933;
+  --background: #f5f3ee;
+  --foreground: #161b26;
+  --surface: #fffdf9;
+  --surface-muted: #f0ede6;
+  --muted-foreground: #5a6270;
+  --border-strong: #161b26;
+  --shadow-surface: 0 1px 2px rgba(22, 27, 38, 0.04);
+  --ticker-bg: #161b26;
+  --ticker-fg: #f5f3ee;
+  --ticker-muted: #a8adb8;
 
   --primary: #1f3b7b;
   --primary-foreground: #ffffff;
@@ -50,28 +61,28 @@
   --bearish: #d95f02;
   --bearish-foreground: #ffffff;
 
-  --secondary: #f1f5f9;
-  --secondary-foreground: #475569;
+  --secondary: #efece5;
+  --secondary-foreground: #4a5261;
 
-  --accent: #d97706;
+  --accent: #b45309;
   --accent-foreground: #ffffff;
 
-  --destructive: #dc2626;
+  --destructive: #b91c1c;
   --destructive-foreground: #ffffff;
 
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #94a3b8;
+  --border: #e3dfd6;
+  --input: #d9d4c9;
+  --ring: #1f3b7b;
 
-  --radius: 10px;
-  --radius-lg: 14px;
+  --radius: 6px;
+  --radius-lg: 10px;
 
   /* Reading & type scale (P1 foundation) — long-form baseline */
   --reading-measure: 72ch; /* optimal line length for readability */
   --reading-size: 1rem; /* 16px body baseline for long-form */
   --reading-leading: 1.75;
 
-  --aura-color-1: rgba(31, 59, 123, 0.08);
+  --aura-color-1: rgba(31, 59, 123, 0.05);
   --aura-color-2: rgba(217, 119, 6, 0.06);
 
   --command-bar-surface: rgba(255, 255, 255, 0.86);
@@ -92,19 +103,27 @@
 }
 
 .dark {
-  --background: #0b1220;
-  --foreground: #e2e8f0;
+  --background: #0d1117;
+  --foreground: #e8e4da;
+  --surface: #141a22;
+  --surface-muted: #1a212b;
+  --muted-foreground: #9aa3af;
+  --border-strong: #e8e4da;
+  --shadow-surface: none;
+  --ticker-bg: #1a212b;
+  --ticker-fg: #e8e4da;
+  --ticker-muted: #9aa3af;
 
-  --primary: #6f9bff;
-  --primary-foreground: #0b1220;
+  --primary: #8fb0ff;
+  --primary-foreground: #0d1117;
 
   --bullish: #34d399;
   --bullish-foreground: #052e16;
   --bearish: #fb923c;
   --bearish-foreground: #431407;
 
-  --secondary: #1e293b;
-  --secondary-foreground: #cbd5e1;
+  --secondary: #1b222c;
+  --secondary-foreground: #c9ced6;
 
   --accent: #f59e0b;
   --accent-foreground: #111827;
@@ -112,11 +131,11 @@
   --destructive: #f87171;
   --destructive-foreground: #111827;
 
-  --border: #334155;
-  --input: #334155;
-  --ring: #60a5fa;
+  --border: #252d38;
+  --input: #2c3542;
+  --ring: #8fb0ff;
 
-  --aura-color-1: rgba(59, 130, 246, 0.2);
+  --aura-color-1: rgba(143, 176, 255, 0.06);
   --aura-color-2: rgba(245, 158, 11, 0.14);
 
   --command-bar-surface: rgba(15, 23, 42, 0.76);
@@ -143,11 +162,6 @@
   --auth-card-border: rgba(100, 116, 139, 0.48);
   --auth-card-shadow:
     0 18px 42px rgba(2, 6, 23, 0.56), 0 0 0 1px rgba(148, 163, 184, 0.08);
-
-  /* App Shell 导航（FE-批2）暗色覆盖：尺寸 token 不变，仅状态色换暗色值。
-     hover/active 面引用 --secondary/--primary，随主题自动切换。 */
-  --nav-item-fg: #94a3b8;          /* slate-400 */
-  --nav-item-strong-fg: #cbd5e1;   /* slate-300 */
 }
 
 @layer base {
@@ -161,8 +175,8 @@
 
   body {
     @apply bg-[var(--background)] text-[var(--foreground)] font-sans antialiased selection:bg-[var(--primary)] selection:text-[var(--primary-foreground)] tabular-nums;
+    font-size: 14px;
     line-height: 1.6;
-    background-color: var(--background);
   }
 
   h1,
@@ -171,7 +185,7 @@
   h4,
   h5,
   h6 {
-    @apply font-semibold tracking-tight text-[var(--foreground)] font-serif;
+    @apply font-semibold tracking-tight text-[var(--foreground)];
   }
 
   code,
@@ -189,52 +203,49 @@
 }
 
 @layer utilities {
-  /* Soft surfaces */
+  /* 纸面表面（FE-UI 批0）：实色 + 发丝线，阴影几乎为零 */
   .glass {
-    @apply bg-white/95 border-b border-[var(--border)];
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
   }
 
   .glass-card,
   .content-card {
-    background:
-      linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4))
-        padding-box,
-      linear-gradient(
-          135deg,
-          rgba(255, 255, 255, 0.7) 0%,
-          rgba(255, 255, 255, 0.2) 50%,
-          rgba(148, 163, 184, 0.1) 100%
-        )
-        border-box;
-    backdrop-filter: blur(28px);
-    -webkit-backdrop-filter: blur(28px);
-    border: 1px solid transparent;
-    box-shadow:
-      0 4px 6px rgba(31, 59, 123, 0.04),
-      0 12px 28px rgba(31, 59, 123, 0.06),
-      0 24px 48px rgba(31, 59, 123, 0.03);
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-surface);
   }
 
   .glass-panel {
-    background:
-      linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45))
-        padding-box,
-      linear-gradient(
-          135deg,
-          rgba(255, 255, 255, 0.8) 0%,
-          rgba(255, 255, 255, 0.2) 40%,
-          rgba(148, 163, 184, 0.1) 100%
-        )
-        border-box;
-    backdrop-filter: blur(28px);
-    -webkit-backdrop-filter: blur(28px);
-    border: 1px solid transparent;
-    box-shadow:
-      0 4px 6px rgba(15, 23, 42, 0.02),
-      0 12px 28px rgba(15, 23, 42, 0.04),
-      0 24px 48px rgba(15, 23, 42, 0.03);
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: var(--radius-lg);
+    box-shadow: none;
+  }
+
+  /* antd Card 与表面类叠用时不出现双边框 */
+  .ant-card.content-card,
+  .ant-card.glass-card,
+  .ant-card.glass-panel {
+    border-color: var(--border);
+  }
+
+  /* FE-UI 批0：纸墨工具类（眉题 / 栏线 / 发丝线 / 内嵌区块） */
+  .kicker {            /* 栏目眉题 */
+    font-size: 11px; line-height: 16px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  .section-rule {      /* 栏线：区块顶部 2px 墨线 */
+    border-top: 2px solid var(--border-strong);
+    padding-top: 12px;
+  }
+  .hairline-b { border-bottom: 1px solid var(--border); }  /* 列表分隔线 */
+  .surface-inset {     /* 卡片里的子区块：用它代替「卡中卡」 */
+    background: var(--surface-muted);
+    border-radius: var(--radius);
+    padding: 12px 16px;
   }
 
   /* ===== App Shell 导航组件类（FE-批2 IA 重构）=====
@@ -1007,51 +1018,6 @@
     border-bottom: 1px solid rgba(148, 163, 184, 0.2);
   }
 
-  .dark .glass {
-    background-color: rgba(15, 23, 42, 0.78);
-    border-color: rgba(51, 65, 85, 0.7);
-  }
-
-  .dark .glass-card,
-  .dark .content-card {
-    background:
-      linear-gradient(rgba(20, 20, 22, 0.6), rgba(20, 20, 22, 0.6)) padding-box,
-      linear-gradient(
-          135deg,
-          rgba(148, 163, 184, 0.3) 0%,
-          rgba(51, 65, 85, 0.15) 50%,
-          rgba(15, 23, 42, 0.1) 100%
-        )
-        border-box;
-    backdrop-filter: blur(32px);
-    -webkit-backdrop-filter: blur(32px);
-    border: 1px solid transparent;
-    box-shadow:
-      0 4px 6px rgba(0, 0, 0, 0.2),
-      0 12px 28px rgba(2, 6, 23, 0.4),
-      0 0 48px rgba(99, 102, 241, 0.04);
-  }
-
-  .dark .glass-panel {
-    background:
-      linear-gradient(rgba(15, 23, 42, 0.65), rgba(15, 23, 42, 0.65))
-        padding-box,
-      linear-gradient(
-          135deg,
-          rgba(255, 255, 255, 0.15) 0%,
-          rgba(255, 255, 255, 0.05) 40%,
-          rgba(0, 0, 0, 0.2) 100%
-        )
-        border-box;
-    backdrop-filter: blur(32px);
-    -webkit-backdrop-filter: blur(32px);
-    border: 1px solid transparent;
-    box-shadow:
-      0 4px 6px rgba(0, 0, 0, 0.2),
-      0 12px 28px rgba(2, 6, 23, 0.4),
-      0 0 48px rgba(99, 102, 241, 0.04);
-  }
-
   .dark .archive-toolbar {
     border-color: rgba(71, 85, 105, 0.72);
     background: linear-gradient(
@@ -1374,10 +1340,6 @@
         rgba(251, 191, 36, 0.2),
         transparent 60%
       );
-  }
-
-  .dark .command-bar-shell.command-bar-shell--active {
-    animation-name: command-bar-shell-glow;
   }
 
   .command-bar-results {

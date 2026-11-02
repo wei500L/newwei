@@ -225,7 +225,7 @@ export function PortalHomeView(props: {
           <p className="text-sm font-semibold uppercase tracking-[0.26em] text-cyan-700">
             Public portal
           </p>
-          <h1 className="mt-3 max-w-3xl text-balance text-4xl font-semibold tracking-tight text-slate-950 sm:text-6xl">
+          <h1 className="mt-3 max-w-3xl text-balance text-4xl font-serif font-semibold tracking-tight text-slate-950 sm:text-6xl">
             Open intelligence stories, organized for ordinary readers.
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
@@ -283,7 +283,7 @@ export function PortalChannelView(props: {
         <p className="text-sm font-semibold uppercase tracking-[0.24em] text-cyan-700">
           Topic channel
         </p>
-        <h1 className="mt-3 text-balance text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+        <h1 className="mt-3 text-balance text-4xl font-serif font-semibold tracking-tight text-slate-950 sm:text-5xl">
           {props.payload.topic}
         </h1>
         <p className="mt-4 text-base leading-8 text-slate-600">
@@ -332,7 +332,7 @@ export function PortalStoryDetailView(props: {
       <article className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
         <div>
           <StoryMeta story={payload.story} />
-          <h1 className="mt-3 text-balance text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+          <h1 className="mt-3 text-balance text-4xl font-serif font-semibold tracking-tight text-slate-950 sm:text-5xl">
             {payload.story.title}
           </h1>
           <p className="mt-5 text-base leading-8 text-slate-600 sm:text-lg">

@@ -9,11 +9,16 @@
  * 值与迁移前逐字符一致，收敛本身零视觉变化。
  */
 
+/** FE-UI 批0：纸面背景——顶部极淡墨蓝晕染，替代动画光斑。用 CSS 变量以随主题切换。 */
+export const PAPER_BACKGROUND_GRADIENT =
+  'radial-gradient(120% 60% at 50% -10%, var(--aura-color-1) 0%, transparent 60%)';
+
 /**
  * AuraBackground 三层径向渐变的主题配色。
  * 每套包含 color1 / color2 / color3，分别注入三个光晕层。
  * default 兜底沿用 CSS 变量（前两层）+ 白色微光（第三层）。
  */
+/** @deprecated FE-UI 批0 后无消费方，留待 UI-5 删除 */
 export const AURA_BACKGROUND_COLORS = {
   finance: {
     color1: 'rgba(245, 158, 11, 0.2)',
@@ -33,6 +38,7 @@ export const AURA_BACKGROUND_COLORS = {
 } as const;
 
 /** AuraBentoCard 鼠标跟随光晕（radial-gradient 中心色）。 */
+/** @deprecated FE-UI 批0 后无消费方，留待 UI-5 删除 */
 export const AURA_CARD_GLOW = 'rgba(255,255,255,0.1)';
 
 /**

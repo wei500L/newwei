@@ -3,6 +3,7 @@
 import type { MouseEvent } from 'react';
 import { useState, useRef } from 'react';
 
+/** @deprecated FE-UI 批0 后无消费方，留待 UI-5 删除 */
 export function useCardGlow() {
   const ref = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState({});
