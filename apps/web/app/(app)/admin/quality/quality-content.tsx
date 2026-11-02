@@ -8,7 +8,9 @@ import {
   Col,
   Divider,
   Grid,
+  Input,
   InputNumber,
+  Modal,
   Popover,
   Progress,
   Row,
@@ -440,6 +442,10 @@ export function QualityContent() {
     useState<string[]>([]);
   const [classificationReviewSubmitting, setClassificationReviewSubmitting] =
     useState(false);
+  const [correctTarget, setCorrectTarget] = useState<
+    { mode: "single"; id: string } | { mode: "batch" } | null
+  >(null);
+  const [correctPath, setCorrectPath] = useState("");
   const [taskLogs, setTaskLogs] = useState<TaskLogRecord[]>([]);
   const [taskLogsSummary, setTaskLogsSummary] =
     useState<TaskLogsSummary | null>(null);
@@ -1718,18 +1724,8 @@ export function QualityContent() {
             size="small"
             type="dashed"
             onClick={() => {
-              const correctedPath = window.prompt(
-                t("quality.classification.review.correct.prompt"),
-                record.predictedCategoryPath || "",
-              );
-              if (!correctedPath || !correctedPath.trim()) {
-                return;
-              }
-              void submitClassificationReviewDecision(
-                record.id,
-                "corrected",
-                correctedPath,
-              );
+              setCorrectPath(record.predictedCategoryPath || "");
+              setCorrectTarget({ mode: "single", id: record.id });
             }}
             loading={classificationReviewSubmitting}
           >
@@ -2562,94 +2558,55 @@ export function QualityContent() {
                   >
                     <Row gutter={[16, 16]}>
                       <Col xs={24} md={8}>
-                        <Card size="small" title="LLM">
-                          <Space direction="vertical" size={4}>
-                            <Typography.Text>
-                              p50:{" "}
-                              {classification.latencyPercentiles.llm.p50Ms ??
-                                "-"}{" "}
-                              ms
-                            </Typography.Text>
-                            <Typography.Text>
-                              p95:{" "}
-                              {classification.latencyPercentiles.llm.p95Ms ??
-                                "-"}{" "}
-                              ms
-                            </Typography.Text>
-                            <Typography.Text>
-                              p99:{" "}
-                              {classification.latencyPercentiles.llm.p99Ms ??
-                                "-"}{" "}
-                              ms
-                            </Typography.Text>
-                            <Typography.Text type="secondary">
-                              sample:{" "}
-                              {classification.latencyPercentiles.llm.sampleSize}
-                            </Typography.Text>
-                          </Space>
-                        </Card>
+                        <div className="surface-inset flex flex-col gap-1">
+                          <p className="kicker m-0">LLM</p>
+                          <span className="font-mono text-sm">
+                            p50 {classification.latencyPercentiles.llm.p50Ms ?? "-"} ms
+                          </span>
+                          <span className="font-mono text-sm">
+                            p95 {classification.latencyPercentiles.llm.p95Ms ?? "-"} ms
+                          </span>
+                          <span className="font-mono text-sm">
+                            p99 {classification.latencyPercentiles.llm.p99Ms ?? "-"} ms
+                          </span>
+                          <span className="font-mono text-xs text-muted-foreground">
+                            sample {classification.latencyPercentiles.llm.sampleSize}
+                          </span>
+                        </div>
                       </Col>
                       <Col xs={24} md={8}>
-                        <Card size="small" title="Embedding">
-                          <Space direction="vertical" size={4}>
-                            <Typography.Text>
-                              p50:{" "}
-                              {classification.latencyPercentiles.embedding
-                                .p50Ms ?? "-"}{" "}
-                              ms
-                            </Typography.Text>
-                            <Typography.Text>
-                              p95:{" "}
-                              {classification.latencyPercentiles.embedding
-                                .p95Ms ?? "-"}{" "}
-                              ms
-                            </Typography.Text>
-                            <Typography.Text>
-                              p99:{" "}
-                              {classification.latencyPercentiles.embedding
-                                .p99Ms ?? "-"}{" "}
-                              ms
-                            </Typography.Text>
-                            <Typography.Text type="secondary">
-                              sample:{" "}
-                              {
-                                classification.latencyPercentiles.embedding
-                                  .sampleSize
-                              }
-                            </Typography.Text>
-                          </Space>
-                        </Card>
+                        <div className="surface-inset flex flex-col gap-1">
+                          <p className="kicker m-0">Embedding</p>
+                          <span className="font-mono text-sm">
+                            p50 {classification.latencyPercentiles.embedding.p50Ms ?? "-"} ms
+                          </span>
+                          <span className="font-mono text-sm">
+                            p95 {classification.latencyPercentiles.embedding.p95Ms ?? "-"} ms
+                          </span>
+                          <span className="font-mono text-sm">
+                            p99 {classification.latencyPercentiles.embedding.p99Ms ?? "-"} ms
+                          </span>
+                          <span className="font-mono text-xs text-muted-foreground">
+                            sample {classification.latencyPercentiles.embedding.sampleSize}
+                          </span>
+                        </div>
                       </Col>
                       <Col xs={24} md={8}>
-                        <Card size="small" title="Rerank">
-                          <Space direction="vertical" size={4}>
-                            <Typography.Text>
-                              p50:{" "}
-                              {classification.latencyPercentiles.rerank.p50Ms ??
-                                "-"}{" "}
-                              ms
-                            </Typography.Text>
-                            <Typography.Text>
-                              p95:{" "}
-                              {classification.latencyPercentiles.rerank.p95Ms ??
-                                "-"}{" "}
-                              ms
-                            </Typography.Text>
-                            <Typography.Text>
-                              p99:{" "}
-                              {classification.latencyPercentiles.rerank.p99Ms ??
-                                "-"}{" "}
-                              ms
-                            </Typography.Text>
-                            <Typography.Text type="secondary">
-                              sample:{" "}
-                              {
-                                classification.latencyPercentiles.rerank
-                                  .sampleSize
-                              }
-                            </Typography.Text>
-                          </Space>
-                        </Card>
+                        <div className="surface-inset flex flex-col gap-1">
+                          <p className="kicker m-0">Rerank</p>
+                          <span className="font-mono text-sm">
+                            p50 {classification.latencyPercentiles.rerank.p50Ms ?? "-"} ms
+                          </span>
+                          <span className="font-mono text-sm">
+                            p95 {classification.latencyPercentiles.rerank.p95Ms ?? "-"} ms
+                          </span>
+                          <span className="font-mono text-sm">
+                            p99 {classification.latencyPercentiles.rerank.p99Ms ?? "-"} ms
+                          </span>
+                          <span className="font-mono text-xs text-muted-foreground">
+                            sample {classification.latencyPercentiles.rerank.sampleSize}
+                          </span>
+                        </div>
                       </Col>
                     </Row>
                     <Space wrap>
@@ -2764,19 +2721,8 @@ export function QualityContent() {
                       disabled={classificationSelectedReviewIds.length === 0}
                       loading={classificationReviewSubmitting}
                       onClick={() => {
-                        const correctedPath = window.prompt(
-                          t(
-                            "quality.classification.review.correct.batchPrompt",
-                          ),
-                          "",
-                        );
-                        if (!correctedPath || !correctedPath.trim()) {
-                          return;
-                        }
-                        void submitClassificationBatchDecision(
-                          "corrected",
-                          correctedPath,
-                        );
+                        setCorrectPath("");
+                        setCorrectTarget({ mode: "batch" });
                       }}
                     >
                       {t("quality.classification.review.batch.correct")}
@@ -2876,6 +2822,45 @@ export function QualityContent() {
           </Tabs.TabPane>
         </Tabs>
       </div>
+      <Modal
+        open={correctTarget !== null}
+        title={
+          correctTarget?.mode === "batch"
+            ? t("quality.classification.review.batch.correct")
+            : t("quality.classification.review.actions.correct")
+        }
+        okButtonProps={{
+          disabled: !correctPath.trim(),
+          loading: classificationReviewSubmitting,
+        }}
+        onCancel={() => setCorrectTarget(null)}
+        onOk={() => {
+          const path = correctPath.trim();
+          if (!path || !correctTarget) return;
+          if (correctTarget.mode === "single") {
+            void submitClassificationReviewDecision(
+              correctTarget.id,
+              "corrected",
+              path,
+            );
+          } else {
+            void submitClassificationBatchDecision("corrected", path);
+          }
+          setCorrectTarget(null);
+        }}
+        destroyOnClose
+      >
+        <Typography.Paragraph type="secondary" className="!mb-2">
+          {correctTarget?.mode === "batch"
+            ? t("quality.classification.review.correct.batchPrompt")
+            : t("quality.classification.review.correct.prompt")}
+        </Typography.Paragraph>
+        <Input
+          value={correctPath}
+          onChange={(e) => setCorrectPath(e.target.value)}
+          autoFocus
+        />
+      </Modal>
     </>
   );
 }
