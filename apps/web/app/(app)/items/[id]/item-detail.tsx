@@ -1463,7 +1463,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 description={t("items.detail.markdownFallbackTooltip")}
               />
             ) : null}
-            <MarkdownViewer markdown={resolvedArticleContent!} />
+            <div className="max-w-[72ch]">
+              <MarkdownViewer markdown={resolvedArticleContent!} />
+            </div>
           </Space>
         ) : (
           <ChartEmptyState
