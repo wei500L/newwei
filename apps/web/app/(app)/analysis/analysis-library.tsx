@@ -22,6 +22,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import {
   buildSavedViewHref,
   formatAnalysisActorName,
@@ -120,14 +121,12 @@ export function AnalysisLibrary() {
   return (
     <div className="flex flex-col gap-4">
       {contextHolder}
-      <Space direction="vertical" size={2}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("analysis.library.title")}
-        </Typography.Title>
+      <div className="flex flex-col gap-1">
+        <SectionHeader title={t("analysis.library.title")} />
         <Typography.Text type="secondary">
           {t("analysis.library.subtitle")}
         </Typography.Text>
-      </Space>
+      </div>
 
       <Card className="content-card">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

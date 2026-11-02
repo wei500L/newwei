@@ -22,6 +22,7 @@ import { useSession } from "next-auth/react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import {
   type KnowledgeGraphImpactAnalysisModel,
   type Query,
@@ -353,13 +354,11 @@ export function KnowledgeGraphImpactContent() {
   }
 
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <div className="flex flex-col gap-6">
       <Card className="content-card">
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <div>
-            <Title level={4} style={{ marginBottom: 8 }}>
-              {t("knowledgeGraph.impact.title")}
-            </Title>
+            <SectionHeader title={t("knowledgeGraph.impact.title")} className="mb-2" />
             <Paragraph type="secondary" style={{ marginBottom: 0 }}>
               {t("knowledgeGraph.impact.description")}
             </Paragraph>
@@ -620,6 +619,6 @@ export function KnowledgeGraphImpactContent() {
           />
         </>
       ) : null}
-    </Space>
+    </div>
   );
 }

@@ -81,6 +81,7 @@ export function MarketContent() {
       activeKey={activeKey}
       onChange={handleChange}
       destroyOnHidden
+      size="small"
       items={tabs.map((tab) => ({
         key: tab.key,
         label: tab.label,

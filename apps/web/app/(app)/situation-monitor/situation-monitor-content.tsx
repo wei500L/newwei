@@ -30,6 +30,7 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
+import { PageHeader } from "@/components/page-header";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -795,12 +796,11 @@ export function SituationMonitorContent() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("pages.situationMonitor.title")}
-        </Typography.Title>
-        <Typography.Text type="secondary">
-          {t("pages.situationMonitor.subtitle")}
-        </Typography.Text>
+        <PageHeader
+          kicker={t("nav.groups.situation")}
+          title={t("pages.situationMonitor.title")}
+          description={t("pages.situationMonitor.subtitle")}
+        />
 
         <Space wrap align="center" style={{ width: "100%" }}>
           <Select

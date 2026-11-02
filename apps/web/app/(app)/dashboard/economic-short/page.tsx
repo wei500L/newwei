@@ -7,7 +7,6 @@ import {
   Row,
   Skeleton,
   Select,
-  Typography,
 } from "antd";
 import type { CallbackDataParams } from "echarts/types/dist/shared";
 import { useState } from "react";
@@ -16,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { ChartDataMeta } from "@/components/chart-data-meta";
 import { ChartStateBanner } from "@/components/chart-state-banner";
 import { DashboardChart } from "@/components/echart";
+import { PageHeader } from "@/components/page-header";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import { resolveLocale } from "@/lib/i18n";
@@ -218,15 +218,17 @@ export default function EconomicShortPage() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ marginBottom: 16 }}>
-        <Typography.Title level={4}>{t("dashboard.economicShort.title")}</Typography.Title>
-        <TimeRangeControls
-          loading={loading}
-          appliedGranularity={appliedGranularity}
-          appliedGranularityRange={appliedGranularityRange}
-        />
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        size="compact"
+        kicker={t("nav.groups.situation")}
+        title={t("dashboard.economicShort.title")}
+      />
+      <TimeRangeControls
+        loading={loading}
+        appliedGranularity={appliedGranularity}
+        appliedGranularityRange={appliedGranularityRange}
+      />
       <ChartStateBanner
         state={chartState}
         hasData={hasData}

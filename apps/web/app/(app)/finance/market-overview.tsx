@@ -1,11 +1,12 @@
 "use client";
 
-import { Card, Skeleton, Typography } from "antd";
+import { Card, Skeleton } from "antd";
 import dynamic from "next/dynamic";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { PageHeader } from "@/components/page-header";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useHeroMetrics } from "@/lib/hero-metrics";
@@ -62,18 +63,16 @@ export function MarketOverview() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("finance.market.overviewTitle")}
-        </Typography.Title>
-        <Typography.Text type="secondary">
-          {t("finance.market.overviewSubtitle")}
-        </Typography.Text>
-        <TimeRangeControls
-          appliedGranularity={appliedHeroGranularityInfo.coarsest}
-          appliedGranularityRange={appliedHeroGranularityInfo.range}
-        />
-      </div>
+      <PageHeader
+        size="compact"
+        kicker={t("nav.groups.situation")}
+        title={t("finance.market.overviewTitle")}
+        description={t("finance.market.overviewSubtitle")}
+      />
+      <TimeRangeControls
+        appliedGranularity={appliedHeroGranularityInfo.coarsest}
+        appliedGranularityRange={appliedHeroGranularityInfo.range}
+      />
 
       {heroAccessState.kind === "forbidden" ? (
         <ChartEmptyState

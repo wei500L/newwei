@@ -1,12 +1,13 @@
 "use client";
 
-import { Col, Row, Skeleton, Typography } from "antd";
+import { Col, Row, Skeleton } from "antd";
 import type { CallbackDataParams } from "echarts/types/dist/shared";
 import { useTranslation } from "react-i18next";
 
 import { ChartDataMeta } from "@/components/chart-data-meta";
 import { ChartStateBanner } from "@/components/chart-state-banner";
 import { DashboardChartCard } from "@/components/dashboard-chart-card";
+import { PageHeader } from "@/components/page-header";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import { ECONOMIC_CHANGE_COLORS } from "@/lib/chart-theme-tokens";
@@ -254,15 +255,17 @@ export default function EconomicMediumPage() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ marginBottom: 16 }}>
-        <Typography.Title level={4}>{t("dashboard.economicMedium.title")}</Typography.Title>
-        <TimeRangeControls
-          loading={loading}
-          appliedGranularity={appliedGranularity}
-          appliedGranularityRange={appliedGranularityRange}
-        />
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        size="compact"
+        kicker={t("nav.groups.situation")}
+        title={t("dashboard.economicMedium.title")}
+      />
+      <TimeRangeControls
+        loading={loading}
+        appliedGranularity={appliedGranularity}
+        appliedGranularityRange={appliedGranularityRange}
+      />
       <ChartStateBanner
         state={chartState}
         hasData={hasData}

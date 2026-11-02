@@ -22,6 +22,7 @@ import { toast } from "sonner";
 
 import { useSystemHealthContext } from "@/app/(app)/components/system-health-context";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { PageHeader } from "@/components/page-header";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { usePendingAction } from "@/hooks/use-pending-action";
@@ -538,6 +539,12 @@ export function DashboardContent() {
 
       {/* Center Column: Market Feed & Visuals */}
       <div className="flex-1 flex flex-col gap-6 min-w-0">
+        <PageHeader
+          size="compact"
+          kicker={t("nav.groups.situation")}
+          title={t("dashboard.tabs.overview")}
+          description={t("dashboard.overview.subtitle")}
+        />
         {/* Time Range */}
         <div className="glass-panel border border-[var(--border)] px-4 py-3">
           <div className="flex items-center justify-between gap-3 mb-2">

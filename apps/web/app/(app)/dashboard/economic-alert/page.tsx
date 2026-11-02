@@ -1,12 +1,13 @@
 "use client";
 
-import { Alert, Col, Row, Skeleton, Typography } from "antd";
+import { Alert, Col, Row, Skeleton } from "antd";
 import type { EChartsOption, SeriesOption } from "echarts";
 import { useTranslation } from "react-i18next";
 
 import { ChartDataMeta } from "@/components/chart-data-meta";
 import { ChartStateBanner } from "@/components/chart-state-banner";
 import { DashboardChartCard } from "@/components/dashboard-chart-card";
+import { PageHeader } from "@/components/page-header";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { useEconomicData } from "@/hooks/useEconomicData";
 import { resolveLocale } from "@/lib/i18n";
@@ -250,15 +251,17 @@ export default function EconomicAlertPage() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ marginBottom: 16 }}>
-        <Typography.Title level={4}>{t("dashboard.economicAlert.title")}</Typography.Title>
-        <TimeRangeControls
-          loading={loading}
-          appliedGranularity={appliedGranularity}
-          appliedGranularityRange={appliedGranularityRange}
-        />
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        size="compact"
+        kicker={t("nav.groups.situation")}
+        title={t("dashboard.economicAlert.title")}
+      />
+      <TimeRangeControls
+        loading={loading}
+        appliedGranularity={appliedGranularity}
+        appliedGranularityRange={appliedGranularityRange}
+      />
       <ChartStateBanner
         state={chartState}
         hasData={hasData}

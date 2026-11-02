@@ -33,6 +33,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { PageHeader } from "@/components/page-header";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import {
   useGetKnowledgeGraphSubgraphQuery,
@@ -797,21 +798,18 @@ export function KnowledgeGraphContent() {
   return (
     <div className="flex flex-col gap-6 pb-6">
       <div className="flex flex-col gap-3">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <Title level={4} style={{ margin: 0 }}>
-              {t("pages.knowledgeGraph.title")}
-            </Title>
-            <Text type="secondary">
-              {t("pages.knowledgeGraph.subtitle")}
-            </Text>
-          </div>
-          {isMobile ? (
-            <Button icon={<FilterOutlined />} onClick={() => setFiltersOpen(true)}>
-              {t("pages.knowledgeGraph.actions.filters")}
-            </Button>
-          ) : null}
-        </div>
+        <PageHeader
+          kicker={t("nav.groups.research")}
+          title={t("pages.knowledgeGraph.title")}
+          description={t("pages.knowledgeGraph.subtitle")}
+          actions={
+            isMobile ? (
+              <Button icon={<FilterOutlined />} onClick={() => setFiltersOpen(true)}>
+                {t("pages.knowledgeGraph.actions.filters")}
+              </Button>
+            ) : undefined
+          }
+        />
         <Space wrap>
           <Tag color="geekblue">
             {t("pages.knowledgeGraph.meta.scope")}:{" "}

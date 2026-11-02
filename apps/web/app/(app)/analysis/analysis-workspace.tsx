@@ -51,6 +51,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { PageHeader } from "@/components/page-header";
 import {
   buildAnalysisSubjectHref,
   formatAnalysisActorName,
@@ -703,34 +704,31 @@ export function AnalysisWorkspace() {
   const activeBoard = boards.find((entry) => entry.id === activeBoardId);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Space direction="vertical" size={2}>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("analysis.workspace.title")}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {t("analysis.workspace.subtitle")}
-          </Typography.Text>
-        </Space>
-        <Space wrap>
-          <Select
-            style={{ minWidth: 220 }}
-            value={activeBoardId ?? undefined}
-            loading={loadingBoards}
-            onChange={setActiveBoardId}
-            options={boardOptions}
-            placeholder="Select board"
-          />
-          <Button icon={<ReloadOutlined />} onClick={() => activeBoardId && loadBoard(activeBoardId)}>
-            Refresh
-          </Button>
-          <Button icon={<PlusOutlined />} disabled={!canWrite} onClick={() => setBoardModalOpen(true)}>
-            New board
-          </Button>
-        </Space>
-      </div>
+      <PageHeader
+        kicker={t("nav.groups.research")}
+        title={t("analysis.workspace.title")}
+        description={t("analysis.workspace.subtitle")}
+        actions={
+          <>
+            <Select
+              className="w-full sm:w-[220px]"
+              value={activeBoardId ?? undefined}
+              loading={loadingBoards}
+              onChange={setActiveBoardId}
+              options={boardOptions}
+              placeholder={t("analysis.workspace.selectBoard")}
+            />
+            <Button icon={<ReloadOutlined />} onClick={() => activeBoardId && loadBoard(activeBoardId)}>
+              {t("common.refresh")}
+            </Button>
+            <Button icon={<PlusOutlined />} disabled={!canWrite} onClick={() => setBoardModalOpen(true)}>
+              {t("analysis.workspace.newBoard")}
+            </Button>
+          </>
+        }
+      />
 
       <Tabs
         defaultActiveKey="board"

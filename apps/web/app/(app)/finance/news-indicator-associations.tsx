@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
+import { SectionHeader } from "@/components/section-header";
 import { captureClientError } from "@/lib/client-telemetry";
 import { normalizeUnit } from "@/lib/economic-units";
 import { formatDateTime, resolveLocale, type SupportedLocale } from "@/lib/i18n";
@@ -579,9 +580,7 @@ export function NewsIndicatorAssociations() {
       {contextHolder}
 
       <div className="flex flex-col gap-1">
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("pages.newsIndicator.title")}
-        </Typography.Title>
+        <SectionHeader title={t("pages.newsIndicator.title")} />
         <Typography.Text type="secondary">
           {t("pages.newsIndicator.subtitle")}
         </Typography.Text>
