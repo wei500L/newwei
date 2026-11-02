@@ -8,7 +8,6 @@ import {
   Card,
   Divider,
   Drawer,
-  Empty,
   List,
   Skeleton,
   Space,
@@ -22,6 +21,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import {
   useNewsEventBriefQuery,
@@ -576,10 +576,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
 
   if (!event) {
     return (
-      <Empty
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description={t("pages.events.drawer.notFound")}
-      />
+      <ChartEmptyState description={t("pages.events.drawer.notFound")} />
     );
   }
 
@@ -689,8 +686,8 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
     const dataSource = points ?? [];
     if (dataSource.length === 0) {
       return (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        <ChartEmptyState
+          presentation="banner"
           description={t("common.notAvailable")}
         />
       );
@@ -715,8 +712,8 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
     const normalized = typeof summary === "string" ? summary.trim() : "";
     if (!normalized) {
       return (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        <ChartEmptyState
+          presentation="banner"
           description={t("common.notAvailable")}
         />
       );
@@ -902,8 +899,8 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                 ) : briefQuery.loading && !brief ? (
                   <Skeleton active paragraph={{ rows: 10 }} />
                 ) : !brief ? (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  <ChartEmptyState
+                    presentation="banner"
                     description={t("pages.events.drawer.briefEmpty")}
                   />
                 ) : (
@@ -1196,8 +1193,8 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                 ) : null}
 
                 {timeline.length === 0 ? (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  <ChartEmptyState
+                    presentation="banner"
                     description={t("pages.events.drawer.timelineEmpty")}
                   />
                 ) : (
@@ -1309,8 +1306,8 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
             label: t("pages.events.drawer.tabs.articles"),
             children:
               items.length === 0 ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                <ChartEmptyState
+                  presentation="banner"
                   description={t("pages.events.drawer.itemsEmpty")}
                 />
               ) : (
@@ -1446,8 +1443,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
         ) : selectedProcessedQuery.loading && selectedProcessedItemId ? (
           <Skeleton active paragraph={{ rows: 10 }} />
         ) : !selectedProcessed ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          <ChartEmptyState
             description={t("pages.events.drawer.articleNotFound")}
           />
         ) : (
@@ -1513,8 +1509,8 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                 <MarkdownViewer markdown={selectedMarkdown} />
               </div>
             ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              <ChartEmptyState
+                presentation="banner"
                 description={t("pages.events.drawer.articleEmpty")}
               />
             )}

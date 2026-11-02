@@ -602,8 +602,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                 const credibilityPercent = toCredibilityPercent(event.credibilityScore);
                 const rowStyle: CSSProperties = {
                   ...resolveEventRowSurface({ heatPercent, isDark, isFutureEvent }),
-                  alignItems: "flex-start",
-                  marginBottom: 14
+                  alignItems: "flex-start"
                 };
 
                 return (
