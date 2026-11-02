@@ -44,6 +44,13 @@
 | UI-8A | [UI-8A-global-leaks.md](UI-8A-global-leaks.md) | 补漏：antd 静态提示跟主题、图表纸墨配色、slate/gray 色阶变暖 | UI-0~7 全部合入 |
 | UI-8B | [UI-8B-newsnow-newshub.md](UI-8B-newsnow-newshub.md) | 补漏：NewsNow 模块与 News Hub 去玻璃/霓虹，修亮色不可见 | UI-0~7 全部合入 |
 | UI-8C | [UI-8C-legacy-css-families.md](UI-8C-legacy-css-families.md) | 补漏：globals/CSS Module 遗留样式族、events-archive、24 个表格滚动等 | UI-0~7 全部合入 |
+| UI-9A | [UI-9A-global-primitives-shell.md](UI-9A-global-primitives-shell.md) | 版面纪律打底：antd 预设色收敛、DataStateBoundary 间距 bug、外壳去玻璃、错误页、阅读正文排版、死代码 | UI-8 全部合入；**先单独合入** |
+| UI-9B | [UI-9B-dashboard.md](UI-9B-dashboard.md) | dashboard：窄列溢出、卡中卡、Tag 墙、战争地图浮层 | UI-9A |
+| UI-9C | [UI-9C-content-main-path.md](UI-9C-content-main-path.md) | Today / Items / Alerts / Search / Events / 归档 / 话题 | UI-9A |
+| UI-9D | [UI-9D-situation-newsnow.md](UI-9D-situation-newsnow.md) | 态势监控 + NewsNow | UI-9A |
+| UI-9E | [UI-9E-admin-crawl.md](UI-9E-admin-crawl.md) | admin + crawl：整页大卡、多层嵌套、窄屏、主按钮、i18n | UI-9A |
+| UI-9F | [UI-9F-settings-shared-components.md](UI-9F-settings-shared-components.md) | components/：settings 面板去卡中卡、共享组件去玻璃 | UI-9A |
+| UI-9G | [UI-9G-remaining-pages.md](UI-9G-remaining-pages.md) | 登录 / 门户 / 助手 / 图谱 / 欢迎 / 安全 / 个人 / 实体 / 订阅 | UI-9A |
 
 ```
 UI-0 ─┬→ UI-1 ─────────┬→ UI-3A ┐
@@ -54,6 +61,8 @@ UI-7 独立
 UI-6 + UI-7 → ┬ UI-8A
               ├ UI-8B   （三者并行，文件互不相交）
               └ UI-8C
+UI-8 → UI-9A → ┬ UI-9B ┬ UI-9C ┬ UI-9D
+                ├ UI-9E ┼ UI-9F ┴ UI-9G   （六者并行，目录互不相交）
 ```
 
 可以并行的组合：UI-1、UI-2A、UI-2B 三者并行（都在 UI-0 合入后开工）；UI-3A、UI-3B、UI-3C 三者并行，它们改的目录互不相交。
@@ -186,6 +195,37 @@ Tailwind 新增的映射（UI-0）：`bg-surface`、`bg-surface-muted`、`text-m
 | 卡片里还要再分组 | `.surface-inset` 或 `<div className="hairline-b pb-3">`。**禁止** Card 里再套 Card |
 | 需要强调的区块标题 | 在 `<SectionHeader>` 上加 `rule`（`.section-rule`） |
 | 监控面板 | `.glass-panel`，类名保留，UI-0 后视觉与 content-card 一致，只是少了阴影 |
+
+### 3.5 版面纪律（UI-9 起强制，所有批次复查时都按这几条判）
+
+**A. 嵌套：一页只有一层卡片**
+- 页面根：`<div className="flex flex-col gap-6">`，子元素是 `PageHeader` + 若干**同级** `content-card`。页面根本身**不得**是 `content-card`。
+- 卡片内部分组：`SectionHeader`（可加 `rule`）+ 内容；或 `.surface-inset`；或 `hairline-b` 分隔的列表。**不得**再放 `<Card>`（包括 `size="small"`、`type="inner"`）、不得再放带 `border + rounded` 的 div 框。
+- 外壳已有边框的容器（如 admin 设置分区的 `.settings-section-shell`）里，面板根节点同样不能是 Card。
+- 间距只靠父级 `gap-*`；子元素**不写** `mb-*` / `mt-*` / `style={{ marginTop|marginBottom }}` / `space-y-*` 与 gap 叠加。
+
+**B. 状态：只用三个原语**
+| 状态 | 用法 |
+|---|---|
+| 首次加载 / 空 / 阻塞错误 / 刷新 / 非阻塞错误 | `<DataStateBoundary state={…} onRetry={…}>` |
+| 卡片或图表内部的空态、错误态 | `<ChartEmptyState>` |
+| 页面或区块顶部的错误条 | `<RequestErrorBanner>` |
+禁止：手写 `<div style={{display:"flex",justifyContent:"center"}}><Spin/></div>`、裸 `<Empty/>`、`<Text type="danger">{error.message}</Text>`、数据为空时 `return null` 让区块消失。
+
+**C. Tag 与颜色：信息中性，只有状态上色**
+- 描述「是什么」的 Tag（主题、实体、来源、地区、类型、模型名、策略名、计数）→ **不传 color**（默认中性）。类别靠前缀文字或图标区分，不靠颜色。
+- 描述「怎么样」的 Tag（成功、失败、警告、进行中、突发、过期）→ 只用 `success` / `warning` / `error` / `processing`。
+- 一行最多 **2 个**带色 Tag。数值不要塞进 Tag，改用 `<span className="font-mono text-xs text-muted-foreground">`。
+- 禁止用 `blue`/`geekblue`/`purple`/`cyan`/`magenta`/`lime`/`volcano`/`gold` 作装饰。
+
+**D. 按钮主次**
+- 一个可视区块（一张卡片 / 一个工具栏 / 一个弹窗 footer）最多 **1 个** `type="primary"`。
+- 「刷新」「重置」「导出」一律 default；列表每行的操作一律 `type="link"` 或 `type="text"`。
+
+**E. 可访问与窄屏**
+- 可点击元素用 `<Link>` / `<Button>`；不得在 `div`/`Tag`/`List.Item` 上直接挂 `onClick` 而不加 `role` + `tabIndex` + `onKeyDown`。
+- 只有图标的按钮必须有 `aria-label`（文本走 `t()`），最好再包 `Tooltip`。
+- 横向控件组（Space / flex）必须能换行（`Space wrap` 或 `flex-wrap`）。`<Col span>` 必须带 `xs={24}`。Modal 宽度写 `"min(Npx, calc(100vw - 32px))"`，不写 `screens.md ? N : "100%"`。
 
 ---
 
