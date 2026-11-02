@@ -1,9 +1,12 @@
 "use client";
 
 import { Skeleton } from 'antd';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 
 import { ChartEmptyState } from '@/components/chart-empty-state';
 import { SectionHeader } from '@/components/section-header';
+import { resolveLocale } from '@/lib/i18n';
 import { classifyRequestError } from '@/lib/request-error';
 
 import type {
@@ -14,8 +17,7 @@ import {
   NewsnowAnalysisAccessKind,
   type NewsnowAnalysisAccessState,
   NewsnowDataState,
-  describeDomesticOpinionEmptyReason,
-  describeHottestAnalysisEmptyReason,
+  NewsnowHottestAnalysisEmptyReason,
 } from '../lib/newsnow-analysis-access';
 import {
   buildDomesticOpinionSparklinePath,
@@ -41,26 +43,52 @@ function formatPercent(value: number): string {
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}`;
 }
 
-function formatHottestAnalysisEmptyDescription(
-  analysis?: NewsnowHottestAnalysisResponse,
+function hottestReasonLabel(
+  reason: NewsnowHottestAnalysisEmptyReason | null | undefined,
+  t: TFunction,
 ): string {
-  const base = describeHottestAnalysisEmptyReason(analysis?.emptyReason);
+  switch (reason) {
+    case NewsnowHottestAnalysisEmptyReason.NoHottestSourcesConfigured:
+      return t('newsnow.hottest.reason.noHottestSourcesConfigured');
+    case NewsnowHottestAnalysisEmptyReason.AllSourcesFailed:
+      return t('newsnow.hottest.reason.allSourcesFailed');
+    case NewsnowHottestAnalysisEmptyReason.NoSourceItems:
+      return t('newsnow.hottest.reason.noSourceItems');
+    case NewsnowHottestAnalysisEmptyReason.NoHotSignals:
+      return t('newsnow.hottest.reason.noHotSignals');
+    case NewsnowHottestAnalysisEmptyReason.NoCandidates:
+    default:
+      return t('newsnow.hottest.reason.noCandidates');
+  }
+}
+
+function formatHottestAnalysisEmptyDescription(
+  analysis: NewsnowHottestAnalysisResponse | undefined,
+  t: TFunction,
+): string {
+  const base = hottestReasonLabel(analysis?.emptyReason, t);
   const diagnostics = analysis?.diagnostics;
 
   if (!diagnostics) {
     return base;
   }
 
-  return `${base} 本轮请求 ${diagnostics.sourcesRequested} 个源，成功 ${diagnostics.sourcesSucceeded} 个，失败 ${diagnostics.sourcesFailed} 个。`;
+  return t('newsnow.hottest.diagnostics', {
+    base,
+    requested: diagnostics.sourcesRequested,
+    ok: diagnostics.sourcesSucceeded,
+    failed: diagnostics.sourcesFailed,
+  });
 }
 
 function formatDomesticOpinionEmptyDescription(
-  domesticOpinion?: NewsnowDomesticOpinionIndexResponse,
+  domesticOpinion: NewsnowDomesticOpinionIndexResponse | undefined,
+  t: TFunction,
 ): string {
-  const base = describeDomesticOpinionEmptyReason(domesticOpinion?.emptyReason);
+  const base = t('newsnow.hottest.reason.domesticNoData');
   const requestedHours = domesticOpinion?.diagnostics.requestedHours ?? 24;
 
-  return `${base} 当前查询窗口为最近 ${requestedHours} 小时。`;
+  return t('newsnow.hottest.domesticDiagnostics', { base, hours: requestedHours });
 }
 
 function ProtectedStateCard({
@@ -72,16 +100,17 @@ function ProtectedStateCard({
   description: string;
   variant: 'empty' | 'permission';
 }) {
+  const { t } = useTranslation();
   return (
     <NewsnowBoardContainer spacing="section" className="block">
       <div className="content-card px-4 py-4 md:px-5">
         <SectionHeader
           className="mb-3"
-          kicker="Hottest Analysis"
-          title="热点候选"
+          kicker={t('newsnow.hottest.kicker')}
+          title={t('newsnow.hottest.title')}
           extra={
             <span className="text-xs text-[var(--muted-foreground)]">
-              热点分析增强
+              {t('newsnow.hottest.enhanced')}
             </span>
           }
         />
@@ -105,6 +134,8 @@ function DomesticOpinionPanel({
   isLoading: boolean;
   isError: boolean;
 }) {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const latest = domesticOpinion?.latest ?? null;
   const trend = domesticOpinion?.trend ?? [];
   const hasResponse = domesticOpinion !== undefined;
@@ -127,17 +158,22 @@ function DomesticOpinionPanel({
 
   return (
     <section className="mb-4 content-card px-4 py-4 md:px-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="kicker">Domestic Pulse</p>
-          <h2 className="mt-1 text-lg font-semibold text-[var(--foreground)]">国内舆情指数</h2>
-          <div className="mt-1 text-xs text-[var(--muted-foreground)]">
-            当前口径基于现有热榜与新闻管道规则算法，未使用{' '}
-            <span className="font-mono text-[11px] text-[var(--muted-foreground)]">embedding</span> /{' '}
-            <span className="font-mono text-[11px] text-[var(--muted-foreground)]">rerank</span>
-          </div>
+      <div>
+        <SectionHeader
+          kicker={t('newsnow.hottest.domesticKicker')}
+          title={t('newsnow.hottest.domesticTitle')}
+          extra={
+            <span className="text-xs text-[var(--muted-foreground)]">
+              {t('newsnow.hottest.domesticBasis')}
+            </span>
+          }
+        />
+        <div className="mt-1 text-xs text-[var(--muted-foreground)]">
+          {t('newsnow.hottest.methodologyPrefix')}{' '}
+          <span className="font-mono text-[11px] text-[var(--muted-foreground)]">embedding</span> /{' '}
+          <span className="font-mono text-[11px] text-[var(--muted-foreground)]">rerank</span>
+          {t('newsnow.hottest.methodologySuffix')}
         </div>
-        <div className="text-xs text-[var(--muted-foreground)]">热榜底座 + 新闻管道补强</div>
       </div>
 
       {isLoading ? (
@@ -146,11 +182,11 @@ function DomesticOpinionPanel({
         </div>
       ) : isError ? (
         <div className="mt-4 rounded bg-[var(--surface-muted)] p-4 text-sm text-[var(--destructive)]">
-          国内舆情指数暂时不可用，热点候选仍会继续刷新。
+          {t('newsnow.hottest.domesticError')}
         </div>
       ) : !hasContent ? (
         <div className="mt-4 rounded bg-[var(--surface-muted)] p-4 text-sm text-[var(--muted-foreground)]">
-          {formatDomesticOpinionEmptyDescription(domesticOpinion)}
+          {formatDomesticOpinionEmptyDescription(domesticOpinion, t)}
         </div>
       ) : latest ? (
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
@@ -161,17 +197,19 @@ function DomesticOpinionPanel({
                   {formatPercent(latest.indexValue)}
                 </div>
                 <div className="mt-2 text-xs text-[var(--secondary-foreground)]/85">
-                  最近桶位 {new Date(latest.bucketStart).toLocaleString('zh-CN', {
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
+                  {t('newsnow.hottest.latestBucket', {
+                    time: new Date(latest.bucketStart).toLocaleString(locale, {
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    }),
                   })}
                 </div>
               </div>
               <div className="min-w-[220px] rounded bg-[var(--surface-muted)] px-3 py-2">
                 <svg
-                  aria-label="国内舆情指数趋势"
+                  aria-label={t('newsnow.hottest.domesticTrendAria')}
                   viewBox="0 0 220 60"
                   className="h-[72px] w-full overflow-visible"
                 >
@@ -191,8 +229,10 @@ function DomesticOpinionPanel({
                   />
                 </svg>
                 <div className="mt-1 text-[11px] text-[var(--secondary-foreground)]/75">
-                  热榜候选 {latestNewsnow?.candidateCount ?? latest.candidateCount} · 管道样本{' '}
-                  {latestPipeline?.articleCount ?? 0}
+                  {t('newsnow.hottest.hotlistCandidatePipeline', {
+                    newsnow: latestNewsnow?.candidateCount ?? latest.candidateCount,
+                    pipeline: latestPipeline?.articleCount ?? 0,
+                  })}
                 </div>
               </div>
             </div>
@@ -231,7 +271,9 @@ function DomesticOpinionPanel({
                   {formatPercent(latestNewsnow?.indexValue ?? 0)}
                 </div>
                 <div className="mt-1 text-[11px] opacity-75">
-                  候选 {latestNewsnow?.candidateCount ?? 0}
+                  {t('newsnow.hottest.hotlistCandidates', {
+                    count: latestNewsnow?.candidateCount ?? 0,
+                  })}
                 </div>
               </div>
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
@@ -240,7 +282,10 @@ function DomesticOpinionPanel({
                   {formatPercent(latestPipeline?.indexValue ?? 0)}
                 </div>
                 <div className="mt-1 text-[11px] opacity-75">
-                  样本 {latestPipeline?.articleCount ?? 0} · 来源 {latestPipeline?.sourceCount ?? 0}
+                  {t('newsnow.hottest.pipelineSamplesSources', {
+                    samples: latestPipeline?.articleCount ?? 0,
+                    sources: latestPipeline?.sourceCount ?? 0,
+                  })}
                 </div>
               </div>
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
@@ -248,7 +293,7 @@ function DomesticOpinionPanel({
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latestPipeline?.sentimentPressure ?? 0)}
                 </div>
-                <div className="mt-1 text-[11px] opacity-75">新闻管道负面压力</div>
+                <div className="mt-1 text-[11px] opacity-75">{t('newsnow.hottest.pipelinePressure')}</div>
               </div>
             </div>
           </div>
@@ -256,10 +301,10 @@ function DomesticOpinionPanel({
           <div className="rounded bg-[var(--surface-muted)] p-4">
             <div>
               <div className="text-xs font-medium text-[var(--secondary-foreground)]/80">
-                高频关键词
+                {t('newsnow.hottest.topKeywords')}
               </div>
               <div className="mt-3 text-[11px] uppercase tracking-[0.2em] text-[var(--secondary-foreground)]/60">
-                热榜关键词
+                {t('newsnow.hottest.hotlistKeywords')}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {newsnowKeywords.slice(0, 6).map((keyword) => (
@@ -272,13 +317,13 @@ function DomesticOpinionPanel({
                 ))}
                 {newsnowKeywords.length === 0 ? (
                   <span className="text-xs text-[var(--secondary-foreground)]/70">
-                    暂无热榜关键词
+                    {t('newsnow.hottest.noHotlistKeywords')}
                   </span>
                 ) : null}
               </div>
 
               <div className="mt-4 text-[11px] uppercase tracking-[0.2em] text-[var(--secondary-foreground)]/60">
-                管道关键词
+                {t('newsnow.hottest.pipelineKeywordsLabel')}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {pipelineKeywords.slice(0, 6).map((keyword) => (
@@ -291,7 +336,7 @@ function DomesticOpinionPanel({
                 ))}
                 {pipelineKeywords.length === 0 ? (
                   <span className="text-xs text-[var(--secondary-foreground)]/70">
-                    暂无管道关键词
+                    {t('newsnow.hottest.noPipelineKeywords')}
                   </span>
                 ) : null}
               </div>
@@ -299,7 +344,7 @@ function DomesticOpinionPanel({
 
             <div className="mt-5">
               <div className="text-xs font-medium text-[var(--secondary-foreground)]/80">
-                主导候选（热榜）
+                {t('newsnow.hottest.topCandidates')}
               </div>
               <div className="mt-3 space-y-2">
                 {(domesticOpinion?.topCandidates ?? []).slice(0, 4).map((candidate) => (
@@ -311,13 +356,16 @@ function DomesticOpinionPanel({
                       {candidate.label}
                     </div>
                     <div className="mt-1 font-mono text-[11px] tabular-nums text-[var(--secondary-foreground)]/75">
-                      评分 {formatPercent(candidate.candidateScore)} · 跨源 {candidate.sourceCount}
+                      {t('newsnow.hottest.scoreSources', {
+                        score: formatPercent(candidate.candidateScore),
+                        sources: candidate.sourceCount,
+                      })}
                     </div>
                   </div>
                 ))}
                 {(domesticOpinion?.topCandidates ?? []).length === 0 ? (
                   <span className="text-xs text-[var(--secondary-foreground)]/70">
-                    暂无主导候选
+                    {t('newsnow.hottest.noTopCandidates')}
                   </span>
                 ) : null}
               </div>
@@ -340,6 +388,7 @@ export function NewsnowHottestCandidates({
   isDomesticOpinionError = false,
   domesticOpinionError,
 }: NewsnowHottestCandidatesProps) {
+  const { t } = useTranslation();
   const topCandidates = selectTopHottestCandidates(analysis?.candidates ?? [], 6);
   const analysisErrorKind = error ? classifyRequestError(error).kind : null;
   const domesticOpinionErrorKind = domesticOpinionError
@@ -366,8 +415,8 @@ export function NewsnowHottestCandidates({
   if (showAuthState) {
     return (
       <ProtectedStateCard
-        title="登录后查看热点分析增强"
-        description="国内舆情指数和跨源热点候选需要登录后才能加载。未登录时仍可浏览原始热榜列表。"
+        title={t('newsnow.hottest.authTitle')}
+        description={t('newsnow.hottest.authDescription')}
         variant="empty"
       />
     );
@@ -376,8 +425,8 @@ export function NewsnowHottestCandidates({
   if (showPermissionState) {
     return (
       <ProtectedStateCard
-        title="需要 items.read 权限"
-        description="国内舆情指数和热点候选属于增强分析能力。当前账号没有 items.read 权限，因此只展示原始热榜。"
+        title={t('newsnow.hottest.permissionTitle')}
+        description={t('newsnow.hottest.permissionDescription')}
         variant="permission"
       />
     );
@@ -400,11 +449,11 @@ export function NewsnowHottestCandidates({
         />
         <SectionHeader
           className="mb-3"
-          kicker="Hottest Analysis"
-          title="热点候选"
+          kicker={t('newsnow.hottest.kicker')}
+          title={t('newsnow.hottest.title')}
           extra={
             <span className="text-xs text-[var(--muted-foreground)]">
-              跨源聚类 / 热度 / 新鲜度
+              {t('newsnow.hottest.subtitle')}
             </span>
           }
         />
@@ -419,16 +468,16 @@ export function NewsnowHottestCandidates({
           </div>
         ) : isError ? (
           <div className="rounded bg-[var(--surface-muted)] p-4 text-sm text-[var(--destructive)]">
-            热点分析暂时不可用，页面仍可继续浏览原始热榜。
+            {t('newsnow.hottest.analysisError')}
           </div>
         ) : topCandidates.length === 0 ? (
           <ChartEmptyState
             title={
               analysis?.dataState === NewsnowDataState.Empty
-                ? '当前没有可展示的热点候选'
-                : '暂无候选热点'
+                ? t('newsnow.hottest.emptyNoData')
+                : t('newsnow.hottest.emptyDefault')
             }
-            description={formatHottestAnalysisEmptyDescription(analysis)}
+            description={formatHottestAnalysisEmptyDescription(analysis, t)}
             variant="empty"
             className="min-h-[220px]"
           />
@@ -441,13 +490,13 @@ export function NewsnowHottestCandidates({
               >
                 <div className="flex flex-wrap items-center gap-2 text-[10px] text-[var(--muted-foreground)]">
                   <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 font-mono tabular-nums">
-                    评分 {formatPercent(candidate.candidateScore)}
+                    {t('newsnow.hottest.score', { score: formatPercent(candidate.candidateScore) })}
                   </span>
                   <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 font-mono tabular-nums">
-                    跨源 {candidate.sourceCount}
+                    {t('newsnow.hottest.sources', { count: candidate.sourceCount })}
                   </span>
                   <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 font-mono tabular-nums">
-                    新鲜 {formatPercent(candidate.freshnessScore)}
+                    {t('newsnow.hottest.freshness', { score: formatPercent(candidate.freshnessScore) })}
                   </span>
                 </div>
                 <h3 className="mt-3 text-sm font-semibold leading-6 text-[var(--foreground)]">

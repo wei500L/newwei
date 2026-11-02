@@ -79,8 +79,8 @@ export default function SsoCallbackPage() {
         if (active) {
           setChallengeError(
             classifyRequestError(error).kind === "network"
-              ? "Connection lost while completing sign-in. Please return to the login page and try again."
-              : "Sign-in could not be completed. Please return to the login page and try again.",
+              ? t("auth.sso.connectionLost")
+              : t("auth.sso.signInFailed"),
           );
         }
       } finally {
@@ -93,7 +93,7 @@ export default function SsoCallbackPage() {
     return () => {
       active = false;
     };
-  }, [handoffToken, router]);
+  }, [handoffToken, router, t]);
 
   useEffect(() => {
     if (!enrollmentChallengeId) {
@@ -119,7 +119,7 @@ export default function SsoCallbackPage() {
       })
       .catch(() => {
         if (active) {
-          setChallengeError("Unable to start MFA enrollment");
+          setChallengeError(t("auth.mfa.enrollmentStartFailed"));
         }
       })
       .finally(() => {
@@ -131,7 +131,7 @@ export default function SsoCallbackPage() {
     return () => {
       active = false;
     };
-  }, [apiClient, enrollmentChallengeId]);
+  }, [apiClient, enrollmentChallengeId, t]);
 
   const onVerify = async (values: { code: string }) => {
     if (!challengeId || mfaLocked) {
@@ -151,12 +151,10 @@ export default function SsoCallbackPage() {
     } catch (error) {
       if (classifyRequestError(error).kind === "rateLimit") {
         setMfaLocked(true);
-        setChallengeError(
-          "Too many MFA verification attempts. Please sign in again.",
-        );
+        setChallengeError(t("auth.login.error.tooManyMfaAttempts"));
         return;
       }
-      setChallengeError("Invalid MFA verification code");
+      setChallengeError(t("auth.mfa.invalidEnrollmentCode"));
     }
   };
 
@@ -184,11 +182,9 @@ export default function SsoCallbackPage() {
     } catch (error) {
       if (classifyRequestError(error).kind === "rateLimit") {
         setEnrollmentLocked(true);
-        setChallengeError(
-          "Too many MFA verification attempts. Please sign in again.",
-        );
+        setChallengeError(t("auth.login.error.tooManyMfaAttempts"));
       } else {
-        setChallengeError("Invalid MFA verification code");
+        setChallengeError(t("auth.mfa.invalidEnrollmentCode"));
       }
     } finally {
       setEnrollmentLoading(false);
@@ -215,7 +211,7 @@ export default function SsoCallbackPage() {
           style={{ marginTop: "1rem" }}
           href="/login"
         >
-          Back to login
+          {t("auth.sso.backToLogin")}
         </Button>
       ) : null}
       {challengeId ? (
@@ -225,15 +221,15 @@ export default function SsoCallbackPage() {
           style={{ marginTop: "1rem" }}
         >
           <Form.Item
-            label="Authenticator code or recovery code"
+            label={t("auth.mfa.codeLabel")}
             name="code"
-            rules={[{ required: true, message: "Enter your MFA code" }]}
+            rules={[{ required: true, message: t("auth.mfa.codeRequired") }]}
           >
             <Input size="large" disabled={mfaLocked} />
           </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" block disabled={mfaLocked}>
-              Verify and continue
+              {t("auth.mfa.verify")}
             </Button>
           </Form.Item>
         </Form>
@@ -243,8 +239,8 @@ export default function SsoCallbackPage() {
           <Alert
             type="info"
             showIcon
-            message="Authenticator setup required"
-            description="Set up your authenticator app, then verify the generated code to finish signing in."
+            message={t("auth.mfa.enrollmentRequiredMessage")}
+            description={t("auth.mfa.enrollmentDescription")}
             style={{ marginBottom: "1rem" }}
           />
           {enrollmentLoading && !enrollmentSetup ? <Spin /> : null}
@@ -263,7 +259,7 @@ export default function SsoCallbackPage() {
               <Alert
                 type="success"
                 showIcon
-                message="Save these recovery codes before continuing"
+                message={t("auth.mfa.saveRecoveryCodes")}
                 style={{ marginBottom: "0.75rem" }}
               />
               <Typography.Paragraph copyable>
@@ -274,16 +270,16 @@ export default function SsoCallbackPage() {
                 block
                 onClick={() => void signInWithPayload(pendingEnrollmentLogin)}
               >
-                Continue
+                {t("auth.mfa.continue")}
               </Button>
             </div>
           ) : (
             <Form layout="vertical" onFinish={onVerifyEnrollment}>
               <Form.Item
-                label="Authenticator code"
+                label={t("auth.mfa.authenticatorCodeLabel")}
                 name="code"
                 rules={[
-                  { required: true, message: "Enter your authenticator code" },
+                  { required: true, message: t("auth.mfa.authenticatorCodeRequired") },
                 ]}
               >
                 <Input size="large" disabled={enrollmentLocked} />
@@ -296,7 +292,7 @@ export default function SsoCallbackPage() {
                   loading={enrollmentLoading}
                   disabled={enrollmentLocked}
                 >
-                  Verify and continue
+                  {t("auth.mfa.verify")}
                 </Button>
               </Form.Item>
             </Form>

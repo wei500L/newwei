@@ -39,12 +39,12 @@ export default function InvitePage() {
         const response = await apiClient.get<InvitePayload>(`auth/invitations/${token}`);
         setInvite(response.data);
       } catch {
-        messageApi.error("Failed to load invite");
+        messageApi.error(t("auth.invite.loadFailed"));
       } finally {
         setLoading(false);
       }
     })();
-  }, [apiClient, messageApi, token]);
+  }, [apiClient, messageApi, t, token]);
 
   if (loading) {
     return (
@@ -63,10 +63,10 @@ export default function InvitePage() {
           type="info"
           showIcon
           style={{ marginBottom: "1rem" }}
-          message={`Join ${invite.org.name} as ${invite.primaryRole.name}`}
+          message={t("auth.invite.joinAs", { org: invite.org.name, role: invite.primaryRole.name })}
         />
       ) : (
-        <Alert type="error" showIcon message="Invite is unavailable" />
+        <Alert type="error" showIcon message={t("auth.invite.unavailable")} />
       )}
       {invite && session?.user?.email === invite.email ? (
         <Button
@@ -77,16 +77,16 @@ export default function InvitePage() {
             setAccepting(true);
             try {
               await apiClient.post(`auth/invitations/${token}/accept-authenticated`);
-              messageApi.success("Invitation accepted. Please sign in again to refresh your organizations.");
+              messageApi.success(t("auth.invite.acceptedSignInAgain"));
               router.push("/login");
             } catch {
-              messageApi.error("Failed to accept invitation");
+              messageApi.error(t("auth.invite.acceptFailed"));
             } finally {
               setAccepting(false);
             }
           }}
         >
-          Accept with current account
+          {t("auth.invite.acceptWithCurrent")}
         </Button>
       ) : invite ? (
         <>
@@ -95,13 +95,16 @@ export default function InvitePage() {
               type="warning"
               showIcon
               style={{ marginBottom: "1rem" }}
-              message={`Signed in as ${session.user.email}. Sign out and sign in with ${invite.email} to accept this invitation.`}
+              message={t("auth.invite.signedInAs", {
+                currentEmail: session.user.email,
+                email: invite.email,
+              })}
               action={
                 <Button
                   size="small"
                   onClick={() => void signOut({ callbackUrl: `/invite/${token}` })}
                 >
-                  Sign out
+                  {t("auth.invite.signOut")}
                 </Button>
               }
             />
@@ -116,28 +119,40 @@ export default function InvitePage() {
               setAccepting(true);
               try {
                 await apiClient.post(`auth/invitations/${token}/accept`, values);
-                messageApi.success("Invitation accepted. You can sign in now.");
+                messageApi.success(t("auth.invite.accepted"));
                 router.push("/login");
               } catch (error) {
                 const info = extractApiError(error);
-                messageApi.error(info.message || "Failed to accept invitation");
+                messageApi.error(info.message || t("auth.invite.acceptFailed"));
               } finally {
                 setAccepting(false);
               }
             }}
           >
-            <Form.Item label="First name" name="firstName" rules={[{ required: true }]}>
+            <Form.Item
+              label={t("auth.invite.firstName")}
+              name="firstName"
+              rules={[{ required: true, message: t("auth.invite.required") }]}
+            >
               <Input size="large" />
             </Form.Item>
-            <Form.Item label="Last name" name="lastName" rules={[{ required: true }]}>
+            <Form.Item
+              label={t("auth.invite.lastName")}
+              name="lastName"
+              rules={[{ required: true, message: t("auth.invite.required") }]}
+            >
               <Input size="large" />
             </Form.Item>
-            <Form.Item label="Password" name="password" rules={[{ required: true }, { min: 8 }]}>
+            <Form.Item
+              label={t("auth.invite.password")}
+              name="password"
+              rules={[{ required: true, message: t("auth.invite.required") }, { min: 8 }]}
+            >
               <Input.Password size="large" />
             </Form.Item>
             <Form.Item>
               <Button type="primary" htmlType="submit" block loading={accepting}>
-                Accept invitation
+                {t("auth.invite.accept")}
               </Button>
             </Form.Item>
           </Form>

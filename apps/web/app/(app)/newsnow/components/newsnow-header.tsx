@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -49,6 +50,7 @@ const realtimeToneClassNames = {
 } as const;
 
 export function NewsnowHeader() {
+  const { t } = useTranslation();
   const pathname = usePathname();
   const isMobile = useIsMobile();
   const { data: metadata } = useNewsMetadata();
@@ -121,6 +123,42 @@ export function NewsnowHeader() {
   );
   const activeSortMode = personalizationState.isPersonalized ? "personalized" : "manual";
   const realtimeTone = realtimeToneClassNames[realtimeSummary.tone];
+  const staticTabLabels: Record<string, string> = {
+    focus: t("newsnow.header.tabFocus"),
+    hottest: t("newsnow.header.tabHottest"),
+    realtime: t("newsnow.header.tabRealtime"),
+    recommended: t("newsnow.header.tabRecommended"),
+  };
+  const utilityLinkLabels: Record<string, string> = {
+    "/news-hub": t("newsnow.header.utilityHub"),
+    "/items": t("newsnow.header.utilityItems"),
+    "/events": t("newsnow.header.utilityEvents"),
+  };
+  const realtimeLabel =
+    realtimeSummary.tone === "offline"
+      ? t("newsnow.header.realtimeOffline")
+      : realtimeSummary.tone === "active"
+        ? t("newsnow.header.realtimeActive")
+        : t("newsnow.header.realtimeIdle");
+  const realtimeDetail =
+    realtimeSummary.tone === "offline"
+      ? realtimeSummary.unreadCount > 0
+        ? t("newsnow.header.realtimeUnhandled", { count: realtimeSummary.unreadCount })
+        : t("newsnow.header.realtimeWaitingReconnect")
+      : realtimeSummary.tone === "active"
+        ? t("newsnow.header.realtimePending", { count: realtimeSummary.unreadCount })
+        : t("newsnow.header.realtimeUpdating");
+  const realtimeTooltip =
+    realtimeSummary.tone === "offline"
+      ? t("newsnow.header.realtimeOfflineTooltip")
+      : t("newsnow.header.realtimeNormalTooltip");
+  const personalizationSummaryText =
+    manualOrderColumnCount > 0
+      ? t("newsnow.header.summaryWithOrder", {
+          samples: affinitySamples,
+          count: manualOrderColumnCount,
+        })
+      : t("newsnow.header.summary", { samples: affinitySamples });
 
   useEffect(() => {
     if (!personalizationState.isPersonalized) {
@@ -133,14 +171,14 @@ export function NewsnowHeader() {
     try {
       await apiClient.delete("user-news-behavior/profile");
       emitNewsnowPersonalizationUpdated({ updatedAt: Date.now() });
-      messageApi.success("行为画像已清空");
+      messageApi.success(t("newsnow.header.clearBehaviorSuccess"));
     } catch (error) {
       captureClientError("Failed to clear NewsNow behavior profile", error);
-      messageApi.error("清空行为画像失败");
+      messageApi.error(t("newsnow.header.clearBehaviorFailed"));
     } finally {
       setClearingBehavior(false);
     }
-  }, [apiClient, messageApi]);
+  }, [apiClient, messageApi, t]);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--background)]">
@@ -160,7 +198,9 @@ export function NewsnowHeader() {
                       : "border-b-2 border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                   }`}
                 >
-                  <span className="truncate">{tab.name}</span>
+                  <span className="truncate">
+                    {tab.isStatic ? staticTabLabels[tab.key] ?? tab.name : tab.name}
+                  </span>
                 </Link>
               ))}
             </nav>
@@ -170,7 +210,7 @@ export function NewsnowHeader() {
                 {NEWSNOW_UTILITY_LINKS.map((link) => (
                   <Link key={link.href} href={link.href}>
                     <span className="inline-flex rounded px-2.5 py-1.5 text-xs font-medium text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]">
-                      {link.label}
+                      {utilityLinkLabels[link.href] ?? link.label}
                     </span>
                   </Link>
                 ))}
@@ -185,7 +225,7 @@ export function NewsnowHeader() {
                 onClick={() => setIsSearchOpen(true)}
                 className="hidden items-center md:inline-flex"
               >
-                搜索
+                {t("common.search")}
               </Button>
             ) : null}
           </div>
@@ -198,13 +238,13 @@ export function NewsnowHeader() {
                 {isRecommendedTab ? null : (
                   <div className={`${controlShellClassName} min-w-0`}>
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                      <span className={controlLabelClassName}>排序</span>
+                      <span className={controlLabelClassName}>{t("newsnow.header.sort")}</span>
                       <Segmented
                         size="small"
                         value={activeSortMode}
                         options={[
-                          { label: "手动", value: "manual" },
-                          { label: "个性化", value: "personalized" },
+                          { label: t("newsnow.header.sortManual"), value: "manual" },
+                          { label: t("newsnow.header.sortPersonalized"), value: "personalized" },
                         ]}
                         onChange={(value) => setSortMode(value as "manual" | "personalized")}
                       />
@@ -214,9 +254,9 @@ export function NewsnowHeader() {
 
                 <div className={`${controlShellClassName} min-w-0`}>
                   <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                    <Tooltip title="跨源标题相同新闻将仅保留首个来源卡片中的条目">
+                    <Tooltip title={t("newsnow.header.dedupeTooltip")}>
                       <div className="inline-flex items-center gap-2">
-                        <span className={controlLabelClassName}>去重</span>
+                        <span className={controlLabelClassName}>{t("newsnow.header.dedupe")}</span>
                         <Switch
                           size="small"
                           checked={hideCrossSourceDuplicates}
@@ -227,15 +267,15 @@ export function NewsnowHeader() {
 
                     <div className="hidden h-7 w-px bg-[var(--border)] sm:block" />
 
-                    <Tooltip title="调整列表密度：紧凑优先信息量，舒适优先可读性。">
+                    <Tooltip title={t("newsnow.header.densityTooltip")}>
                       <div className="inline-flex min-w-0 items-center gap-2">
-                        <span className={controlLabelClassName}>密度</span>
+                        <span className={controlLabelClassName}>{t("newsnow.header.density")}</span>
                         <Segmented
                           size="small"
                           value={densityMode}
                           options={[
-                            { label: "紧凑", value: "compact" },
-                            { label: "舒适", value: "comfortable" },
+                            { label: t("newsnow.header.densityCompact"), value: "compact" },
+                            { label: t("newsnow.header.densityComfortable"), value: "comfortable" },
                           ]}
                           onChange={(value) =>
                             setDensityMode(value as "compact" | "comfortable")
@@ -254,7 +294,7 @@ export function NewsnowHeader() {
                     onClick={() => setIsSearchOpen(true)}
                     className="inline-flex w-full items-center justify-center sm:w-auto"
                   >
-                    搜索
+                    {t("common.search")}
                   </Button>
                 ) : null}
               </div>
@@ -264,7 +304,7 @@ export function NewsnowHeader() {
                   visibility.stackSummaryRow ? "w-full" : "justify-end xl:ml-6"
                 }`}
               >
-                <Tooltip title={realtimeSummary.tooltip}>
+                <Tooltip title={realtimeTooltip}>
                   <div
                     className={`inline-flex items-center gap-2 rounded border px-3 py-2 text-sm ${realtimeTone.shell}`}
                   >
@@ -273,20 +313,20 @@ export function NewsnowHeader() {
                         realtimeSummary.tone === "active" ? "animate-pulse" : ""
                       }`}
                     />
-                    <span className="font-medium">{realtimeSummary.label}</span>
+                    <span className="font-medium">{realtimeLabel}</span>
                     <span
                       className={`rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums ${realtimeTone.badge}`}
                     >
-                      {realtimeSummary.detail}
+                      {realtimeDetail}
                     </span>
                   </div>
                 </Tooltip>
 
                 {personalizationState.showSummary ? (
-                  <Tooltip title="根据本地偏好与行为画像计算个性化排序。重置本地偏好不会清空服务端行为画像。">
+                  <Tooltip title={t("newsnow.header.personalizationTooltip")}>
                     <div className="inline-flex items-center gap-2 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--foreground)]">
-                      <span className="kicker">个性化</span>
-                      <span className="font-medium">{personalizationState.summaryText}</span>
+                      <span className="kicker">{t("newsnow.header.personalizationLabel")}</span>
+                      <span className="font-medium">{personalizationSummaryText}</span>
                     </div>
                   </Tooltip>
                 ) : null}
@@ -305,7 +345,9 @@ export function NewsnowHeader() {
                         : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                     }`}
                   >
-                    {personalizationState.showPanel ? "收起偏好" : "管理偏好"}
+                    {personalizationState.showPanel
+                      ? t("newsnow.header.collapsePrefs")
+                      : t("newsnow.header.managePrefs")}
                   </Button>
                 ) : null}
               </div>
@@ -316,10 +358,10 @@ export function NewsnowHeader() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="space-y-1">
                     <p className="text-sm font-semibold text-[var(--foreground)]">
-                      个性化排序管理
+                      {t("newsnow.header.panelTitle")}
                     </p>
                     <p className="text-xs leading-5 text-[var(--muted-foreground)]">
-                      根据本地偏好与行为画像计算个性化排序。重置本地偏好不会清空服务端行为画像。
+                      {t("newsnow.header.personalizationTooltip")}
                     </p>
                   </div>
 
@@ -330,18 +372,18 @@ export function NewsnowHeader() {
                       onClick={() => resetSourceAffinity()}
                       disabled={affinitySamples === 0}
                     >
-                      重置本地偏好
+                      {t("newsnow.header.resetLocalAffinity")}
                     </Button>
 
                     <Popconfirm
-                      title="清空行为画像"
-                      description="将删除服务端累计的来源/主题/实体偏好分，影响个性化排序。"
-                      okText="确认清空"
-                      cancelText="取消"
+                      title={t("newsnow.header.clearBehaviorTitle")}
+                      description={t("newsnow.header.clearBehaviorDescription")}
+                      okText={t("newsnow.header.confirmClear")}
+                      cancelText={t("common.cancel")}
                       onConfirm={() => handleClearBehaviorProfile()}
                     >
                       <Button size="small" type="text" loading={clearingBehavior}>
-                        清空行为画像
+                        {t("newsnow.header.clearBehavior")}
                       </Button>
                     </Popconfirm>
 
@@ -351,7 +393,7 @@ export function NewsnowHeader() {
                         type="text"
                         onClick={() => resetColumnOrders()}
                       >
-                        清除手动顺序
+                        {t("newsnow.header.resetColumnOrders")}
                       </Button>
                     ) : null}
                   </div>

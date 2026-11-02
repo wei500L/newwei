@@ -30,7 +30,6 @@ import {
   Checkbox,
   DatePicker,
   Drawer,
-  Empty,
   Form,
   Input,
   Modal,
@@ -51,6 +50,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { PageHeader } from "@/components/page-header";
 import {
   buildAnalysisSubjectHref,
@@ -96,21 +96,15 @@ interface ColumnFormValues {
   isDone?: boolean;
 }
 
-const PRIORITY_OPTIONS: { value: AnalysisTaskPriority; label: string; color: string }[] = [
-  { value: "low", label: "Low", color: "default" },
-  { value: "normal", label: "Normal", color: "blue" },
-  { value: "high", label: "High", color: "orange" },
-  { value: "urgent", label: "Urgent", color: "red" },
-];
-
-const SUBJECT_OPTIONS: { value: AnalysisTaskLinkedSubjectType; label: string }[] = [
-  { value: "saved_view", label: "Saved view" },
-  { value: "item", label: "Item" },
-  { value: "event", label: "Event" },
-];
+const PRIORITY_COLORS: Record<AnalysisTaskPriority, string> = {
+  low: "default",
+  normal: "blue",
+  high: "orange",
+  urgent: "red",
+};
 
 function priorityColor(priority: AnalysisTaskPriority) {
-  return PRIORITY_OPTIONS.find((option) => option.value === priority)?.color ?? "default";
+  return PRIORITY_COLORS[priority] ?? "default";
 }
 
 function memberOptions(members: AnalysisMemberSummary[]) {
@@ -144,6 +138,7 @@ function SortableTaskCard({
   locale: ReturnType<typeof resolveLocale>;
   onOpen: (task: AnalysisTaskCard) => void;
 }) {
+  const { t } = useTranslation();
   const {
     attributes,
     listeners,
@@ -153,6 +148,17 @@ function SortableTaskCard({
     isDragging,
   } = useSortable({ id: task.id });
   const linkedHref = buildAnalysisSubjectHref(task.linkedSubjectType, task.linkedSubjectId);
+  const priorityLabels: Record<AnalysisTaskPriority, string> = {
+    low: t("analysis.workspace.priority.low"),
+    normal: t("analysis.workspace.priority.normal"),
+    high: t("analysis.workspace.priority.high"),
+    urgent: t("analysis.workspace.priority.urgent"),
+  };
+  const subjectLabels: Record<AnalysisTaskLinkedSubjectType, string> = {
+    saved_view: t("analysis.workspace.subject.savedView"),
+    item: t("analysis.workspace.subject.item"),
+    event: t("analysis.workspace.subject.event"),
+  };
 
   return (
     <div
@@ -172,6 +178,7 @@ function SortableTaskCard({
           size="small"
           type="text"
           icon={<EditOutlined />}
+          aria-label={t("common.edit")}
           onClick={(event) => {
             event.stopPropagation();
             onOpen(task);
@@ -179,16 +186,12 @@ function SortableTaskCard({
         />
       </div>
       {task.bodyMarkdown ? (
-        <Typography.Paragraph
-          type="secondary"
-          ellipsis={{ rows: 2 }}
-          style={{ marginBottom: 8, marginTop: 6, fontSize: 12 }}
-        >
+        <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} className="mb-2 mt-1.5 text-xs">
           {task.bodyMarkdown}
         </Typography.Paragraph>
       ) : null}
       <Space wrap size={[6, 6]}>
-        <Tag color={priorityColor(task.priority)}>{task.priority}</Tag>
+        <Tag color={priorityColor(task.priority)}>{priorityLabels[task.priority]}</Tag>
         {task.assignee ? (
           <Tag icon={<UserOutlined />}>{formatAnalysisActorName(task.assignee)}</Tag>
         ) : null}
@@ -202,7 +205,9 @@ function SortableTaskCard({
         ) : null}
         {linkedHref ? (
           <Link href={linkedHref} onClick={(event) => event.stopPropagation()}>
-            <Tag color="geekblue">{task.linkedSubjectType}</Tag>
+            <Tag color="geekblue">
+              {task.linkedSubjectType ? subjectLabels[task.linkedSubjectType] : null}
+            </Tag>
           </Link>
         ) : null}
       </Space>
@@ -221,6 +226,7 @@ function BoardColumnView({
   onCreateTask: (columnId: string) => void;
   onOpenTask: (task: AnalysisTaskCard) => void;
 }) {
+  const { t } = useTranslation();
   const { setNodeRef, isOver } = useDroppable({ id: `column:${column.id}` });
 
   return (
@@ -235,11 +241,12 @@ function BoardColumnView({
           <Typography.Text strong>{column.title}</Typography.Text>
           <Tag color={column.color ?? "default"}>{column.tasks.length}</Tag>
         </Space>
-        <Tooltip title="Add task">
+        <Tooltip title={t("analysis.workspace.addTask")}>
           <Button
             size="small"
             type="text"
             icon={<PlusOutlined />}
+            aria-label={t("analysis.workspace.addTask")}
             onClick={() => onCreateTask(column.id)}
           />
         </Tooltip>
@@ -260,7 +267,11 @@ function BoardColumnView({
             ))
           ) : (
             <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-[var(--border)] bg-[var(--surface-muted)] p-4">
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tasks" />
+              <ChartEmptyState
+                presentation="banner"
+                description={t("analysis.workspace.emptyColumn")}
+                className="w-full"
+              />
             </div>
           )}
         </div>
@@ -317,11 +328,11 @@ export function AnalysisWorkspace() {
       );
     } catch (error) {
       captureClientError("Failed to load analysis boards", error);
-      messageApi.error("Failed to load analysis boards.");
+      messageApi.error(t("analysis.workspace.messages.loadBoardsFailed"));
     } finally {
       setLoadingBoards(false);
     }
-  }, [accessToken, apiClient, messageApi]);
+  }, [accessToken, apiClient, messageApi, t]);
 
   const loadBoard = useCallback(
     async (boardId: string) => {
@@ -333,12 +344,12 @@ export function AnalysisWorkspace() {
         setBoard(response.data);
       } catch (error) {
         captureClientError("Failed to load analysis board", error);
-        messageApi.error("Failed to load analysis board.");
+        messageApi.error(t("analysis.workspace.messages.loadBoardFailed"));
       } finally {
         setLoadingBoard(false);
       }
     },
-    [apiClient, messageApi],
+    [apiClient, messageApi, t],
   );
 
   const loadMembers = useCallback(async () => {
@@ -419,17 +430,17 @@ export function AnalysisWorkspace() {
       boardForm.resetFields();
       await loadBoards();
       setActiveBoardId(response.data.id);
-      messageApi.success("Analysis board created.");
+      messageApi.success(t("analysis.workspace.messages.boardCreated"));
     } catch (error) {
       if (typeof error === "object" && error && "errorFields" in error) {
         return;
       }
       captureClientError("Failed to create analysis board", error);
-      messageApi.error("Failed to create analysis board.");
+      messageApi.error(t("analysis.workspace.messages.boardCreateFailed"));
     } finally {
       setSaving(false);
     }
-  }, [apiClient, boardForm, loadBoards, messageApi]);
+  }, [apiClient, boardForm, loadBoards, messageApi, t]);
 
   const openCreateTask = useCallback(
     (columnId?: string) => {
@@ -463,17 +474,17 @@ export function AnalysisWorkspace() {
       taskForm.resetFields();
       await loadBoard(activeBoardId);
       await loadBoards();
-      messageApi.success("Task created.");
+      messageApi.success(t("analysis.workspace.messages.taskCreated"));
     } catch (error) {
       if (typeof error === "object" && error && "errorFields" in error) {
         return;
       }
       captureClientError("Failed to create analysis task", error);
-      messageApi.error("Failed to create task.");
+      messageApi.error(t("analysis.workspace.messages.taskCreateFailed"));
     } finally {
       setSaving(false);
     }
-  }, [activeBoardId, apiClient, loadBoard, loadBoards, messageApi, taskColumnId, taskForm]);
+  }, [activeBoardId, apiClient, loadBoard, loadBoards, messageApi, taskColumnId, taskForm, t]);
 
   const handleUpdateTask = useCallback(async () => {
     if (!editingTask || !activeBoardId) {
@@ -501,17 +512,17 @@ export function AnalysisWorkspace() {
       }
       await loadBoard(activeBoardId);
       await loadBoards();
-      messageApi.success("Task updated.");
+      messageApi.success(t("analysis.workspace.messages.taskUpdated"));
     } catch (error) {
       if (typeof error === "object" && error && "errorFields" in error) {
         return;
       }
       captureClientError("Failed to update analysis task", error);
-      messageApi.error("Failed to update task.");
+      messageApi.error(t("analysis.workspace.messages.taskUpdateFailed"));
     } finally {
       setSaving(false);
     }
-  }, [activeBoardId, apiClient, editTaskForm, editingTask, loadBoard, loadBoards, messageApi]);
+  }, [activeBoardId, apiClient, editTaskForm, editingTask, loadBoard, loadBoards, messageApi, t]);
 
   const handleDeleteTask = useCallback(async () => {
     if (!editingTask || !activeBoardId) {
@@ -523,14 +534,14 @@ export function AnalysisWorkspace() {
       setEditingTask(null);
       await loadBoard(activeBoardId);
       await loadBoards();
-      messageApi.success("Task deleted.");
+      messageApi.success(t("analysis.workspace.messages.taskDeleted"));
     } catch (error) {
       captureClientError("Failed to delete analysis task", error);
-      messageApi.error("Failed to delete task.");
+      messageApi.error(t("analysis.workspace.messages.taskDeleteFailed"));
     } finally {
       setSaving(false);
     }
-  }, [activeBoardId, apiClient, editingTask, loadBoard, loadBoards, messageApi]);
+  }, [activeBoardId, apiClient, editingTask, loadBoard, loadBoards, messageApi, t]);
 
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
@@ -561,10 +572,10 @@ export function AnalysisWorkspace() {
         await loadBoards();
       } catch (error) {
         captureClientError("Failed to move analysis task", error);
-        messageApi.error("Failed to move task.");
+        messageApi.error(t("analysis.workspace.messages.taskMoveFailed"));
       }
     },
-    [activeBoardId, apiClient, board, findTaskColumnId, loadBoard, loadBoards, messageApi],
+    [activeBoardId, apiClient, board, findTaskColumnId, loadBoard, loadBoards, messageApi, t],
   );
 
   const handleCreateColumn = useCallback(async () => {
@@ -582,17 +593,17 @@ export function AnalysisWorkspace() {
       columnForm.resetFields();
       await loadBoard(activeBoardId);
       await loadBoards();
-      messageApi.success("Column added.");
+      messageApi.success(t("analysis.workspace.messages.columnAdded"));
     } catch (error) {
       if (typeof error === "object" && error && "errorFields" in error) {
         return;
       }
       captureClientError("Failed to create analysis column", error);
-      messageApi.error("Failed to add column.");
+      messageApi.error(t("analysis.workspace.messages.columnAddFailed"));
     } finally {
       setSaving(false);
     }
-  }, [activeBoardId, apiClient, columnForm, loadBoard, loadBoards, messageApi]);
+  }, [activeBoardId, apiClient, columnForm, loadBoard, loadBoards, messageApi, t]);
 
   const handleUpdateColumn = useCallback(async () => {
     if (!editingColumn || !activeBoardId) {
@@ -609,13 +620,13 @@ export function AnalysisWorkspace() {
       setEditingColumn(null);
       await loadBoard(activeBoardId);
       await loadBoards();
-      messageApi.success("Column updated.");
+      messageApi.success(t("analysis.workspace.messages.columnUpdated"));
     } catch (error) {
       if (typeof error === "object" && error && "errorFields" in error) {
         return;
       }
       captureClientError("Failed to update analysis column", error);
-      messageApi.error("Failed to update column.");
+      messageApi.error(t("analysis.workspace.messages.columnUpdateFailed"));
     } finally {
       setSaving(false);
     }
@@ -627,6 +638,7 @@ export function AnalysisWorkspace() {
     loadBoard,
     loadBoards,
     messageApi,
+    t,
   ]);
 
   const moveColumn = useCallback(
@@ -650,10 +662,10 @@ export function AnalysisWorkspace() {
         await loadBoard(activeBoardId);
       } catch (error) {
         captureClientError("Failed to reorder analysis columns", error);
-        messageApi.error("Failed to reorder columns.");
+        messageApi.error(t("analysis.workspace.messages.columnReorderFailed"));
       }
     },
-    [activeBoardId, apiClient, board, loadBoard, messageApi],
+    [activeBoardId, apiClient, board, loadBoard, messageApi, t],
   );
 
   const deleteColumn = useCallback(
@@ -663,7 +675,7 @@ export function AnalysisWorkspace() {
       }
       const target = board.columns.find((column) => column.id !== columnId);
       if (!target) {
-        messageApi.error("Cannot delete the last column.");
+        messageApi.error(t("analysis.workspace.messages.cannotDeleteLastColumn"));
         return;
       }
       try {
@@ -672,13 +684,13 @@ export function AnalysisWorkspace() {
         });
         await loadBoard(activeBoardId);
         await loadBoards();
-        messageApi.success("Column deleted.");
+        messageApi.success(t("analysis.workspace.messages.columnDeleted"));
       } catch (error) {
         captureClientError("Failed to delete analysis column", error);
-        messageApi.error("Failed to delete column.");
+        messageApi.error(t("analysis.workspace.messages.columnDeleteFailed"));
       }
     },
-    [activeBoardId, apiClient, board, loadBoard, loadBoards, messageApi],
+    [activeBoardId, apiClient, board, loadBoard, loadBoards, messageApi, t],
   );
 
   const archiveBoard = useCallback(async () => {
@@ -690,12 +702,12 @@ export function AnalysisWorkspace() {
       setActiveBoardId(null);
       setBoard(null);
       await loadBoards();
-      messageApi.success("Board archived.");
+      messageApi.success(t("analysis.workspace.messages.boardArchived"));
     } catch (error) {
       captureClientError("Failed to archive analysis board", error);
-      messageApi.error("Failed to archive board.");
+      messageApi.error(t("analysis.workspace.messages.boardArchiveFailed"));
     }
-  }, [activeBoardId, apiClient, loadBoards, messageApi]);
+  }, [activeBoardId, apiClient, loadBoards, messageApi, t]);
 
   const boardOptions = boards.map((entry) => ({
     value: entry.id,
@@ -735,14 +747,14 @@ export function AnalysisWorkspace() {
         items={[
           {
             key: "board",
-            label: "Board",
+            label: t("analysis.workspace.boardTab"),
             children: (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3 rounded-md border border-[var(--border)] bg-[var(--surface)] p-4 lg:flex-row lg:items-center lg:justify-between">
                   <Space direction="vertical" size={2}>
-                    <Typography.Text strong>{activeBoard?.title ?? "Board"}</Typography.Text>
+                    <Typography.Text strong>{activeBoard?.title ?? t("analysis.workspace.boardFallback")}</Typography.Text>
                     <Typography.Text type="secondary">
-                      {activeBoard?.description || "Org-shared task board for analysis work."}
+                      {activeBoard?.description || t("analysis.workspace.boardDescriptionFallback")}
                     </Typography.Text>
                   </Space>
                   <Space wrap>
@@ -752,18 +764,18 @@ export function AnalysisWorkspace() {
                       disabled={!canWrite || !board?.columns.length}
                       onClick={() => openCreateTask()}
                     >
-                      New task
+                      {t("analysis.workspace.newTask")}
                     </Button>
                     <Button
                       icon={<SettingOutlined />}
                       disabled={!canWrite || !board}
                       onClick={() => setColumnsModalOpen(true)}
                     >
-                      Manage columns
+                      {t("analysis.workspace.manageColumns")}
                     </Button>
-                    <Popconfirm title="Archive this board?" onConfirm={archiveBoard}>
+                    <Popconfirm title={t("analysis.workspace.archiveConfirm")} onConfirm={archiveBoard}>
                       <Button danger icon={<DeleteOutlined />} disabled={!canWrite || boards.length <= 1}>
-                        Archive
+                        {t("analysis.workspace.archive")}
                       </Button>
                     </Popconfirm>
                   </Space>
@@ -786,7 +798,10 @@ export function AnalysisWorkspace() {
                     </DndContext>
                   ) : (
                     <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-10">
-                      <Empty description="No board columns yet." />
+                      <ChartEmptyState
+                        presentation="banner"
+                        description={t("analysis.workspace.emptyBoard")}
+                      />
                     </div>
                   )}
                 </Spin>
@@ -795,7 +810,7 @@ export function AnalysisWorkspace() {
           },
           {
             key: "saved",
-            label: "Saved views",
+            label: t("analysis.workspace.savedViewsTab"),
             children: <AnalysisLibrary />,
           },
         ]}
@@ -803,16 +818,20 @@ export function AnalysisWorkspace() {
 
       <Modal
         open={boardModalOpen}
-        title="Create analysis board"
+        title={t("analysis.workspace.createBoard")}
         onOk={() => void handleCreateBoard()}
         confirmLoading={saving}
         onCancel={() => setBoardModalOpen(false)}
       >
         <Form form={boardForm} layout="vertical">
-          <Form.Item name="title" label="Title" rules={[{ required: true, message: "Enter a title." }]}>
+          <Form.Item
+            name="title"
+            label={t("analysis.workspace.fields.title")}
+            rules={[{ required: true, message: t("analysis.workspace.validation.titleRequired") }]}
+          >
             <Input maxLength={120} />
           </Form.Item>
-          <Form.Item name="description" label="Description">
+          <Form.Item name="description" label={t("analysis.workspace.fields.description")}>
             <Input.TextArea rows={3} maxLength={1000} />
           </Form.Item>
         </Form>
@@ -820,7 +839,7 @@ export function AnalysisWorkspace() {
 
       <Modal
         open={taskModalOpen}
-        title="Create task"
+        title={t("analysis.workspace.createTask")}
         onOk={() => void handleCreateTask()}
         confirmLoading={saving}
         onCancel={() => setTaskModalOpen(false)}
@@ -830,7 +849,7 @@ export function AnalysisWorkspace() {
 
       <Modal
         open={columnsModalOpen}
-        title="Manage columns"
+        title={t("analysis.workspace.manageColumns")}
         width="min(720px, calc(100vw - 32px))"
         footer={null}
         onCancel={() => setColumnsModalOpen(false)}
@@ -843,48 +862,53 @@ export function AnalysisWorkspace() {
             >
               <Space wrap>
                 <Tag color={column.color ?? "default"}>{column.title}</Tag>
-                {column.isDone ? <Tag color="green">Done</Tag> : null}
-                <Typography.Text type="secondary">{column.tasks.length} tasks</Typography.Text>
+                {column.isDone ? <Tag color="green">{t("analysis.workspace.columnDone")}</Tag> : null}
+                <Typography.Text type="secondary">
+                  {t("analysis.workspace.tasksCount", { count: column.tasks.length })}
+                </Typography.Text>
               </Space>
               <Space wrap>
                 <Button size="small" disabled={index === 0} onClick={() => void moveColumn(column.id, -1)}>
-                  Up
+                  {t("analysis.workspace.moveUp")}
                 </Button>
                 <Button
                   size="small"
                   disabled={index === (board?.columns.length ?? 1) - 1}
                   onClick={() => void moveColumn(column.id, 1)}
                 >
-                  Down
+                  {t("analysis.workspace.moveDown")}
                 </Button>
                 <Button size="small" onClick={() => setEditingColumn(column)}>
-                  Edit
+                  {t("analysis.workspace.edit")}
                 </Button>
                 <Popconfirm
-                  title="Delete this column?"
-                  description="Cards will move to the next available column."
+                  title={t("analysis.workspace.deleteColumnConfirm")}
+                  description={t("analysis.workspace.deleteColumnDescription")}
                   onConfirm={() => void deleteColumn(column.id)}
                 >
                   <Button size="small" danger disabled={(board?.columns.length ?? 0) <= 1}>
-                    Delete
+                    {t("common.delete")}
                   </Button>
                 </Popconfirm>
               </Space>
             </div>
           ))}
           <Form form={columnForm} layout="inline">
-            <Form.Item name="title" rules={[{ required: true, message: "Enter a title." }]}>
-              <Input placeholder="Column title" maxLength={80} />
+            <Form.Item
+              name="title"
+              rules={[{ required: true, message: t("analysis.workspace.validation.titleRequired") }]}
+            >
+              <Input placeholder={t("analysis.workspace.columnTitlePlaceholder")} maxLength={80} />
             </Form.Item>
             <Form.Item name="color">
-              <Input placeholder="Color" maxLength={32} />
+              <Input placeholder={t("analysis.workspace.color")} maxLength={32} />
             </Form.Item>
             <Form.Item name="isDone" valuePropName="checked">
-              <Checkbox>Done</Checkbox>
+              <Checkbox>{t("analysis.workspace.columnDone")}</Checkbox>
             </Form.Item>
             <Form.Item>
               <Button type="primary" loading={saving} onClick={() => void handleCreateColumn()}>
-                Add column
+                {t("analysis.workspace.addColumn")}
               </Button>
             </Form.Item>
           </Form>
@@ -893,38 +917,42 @@ export function AnalysisWorkspace() {
 
       <Modal
         open={Boolean(editingColumn)}
-        title="Edit column"
+        title={t("analysis.workspace.editColumn")}
         onOk={() => void handleUpdateColumn()}
         confirmLoading={saving}
         onCancel={() => setEditingColumn(null)}
       >
         <Form form={columnEditForm} layout="vertical">
-          <Form.Item name="title" label="Title" rules={[{ required: true, message: "Enter a title." }]}>
+          <Form.Item
+            name="title"
+            label={t("analysis.workspace.fields.title")}
+            rules={[{ required: true, message: t("analysis.workspace.validation.titleRequired") }]}
+          >
             <Input maxLength={80} />
           </Form.Item>
-          <Form.Item name="color" label="Color">
+          <Form.Item name="color" label={t("analysis.workspace.color")}>
             <Input maxLength={32} />
           </Form.Item>
           <Form.Item name="isDone" valuePropName="checked">
-            <Checkbox>Done</Checkbox>
+            <Checkbox>{t("analysis.workspace.columnDone")}</Checkbox>
           </Form.Item>
         </Form>
       </Modal>
 
       <Drawer
         open={Boolean(editingTask)}
-        title={editingTask?.title ?? "Task"}
+        title={editingTask?.title ?? t("analysis.workspace.taskFallback")}
         width="min(720px, 100vw)"
         onClose={() => setEditingTask(null)}
         extra={
           <Space>
-            <Popconfirm title="Delete this task?" onConfirm={() => void handleDeleteTask()}>
+            <Popconfirm title={t("analysis.workspace.deleteTaskConfirm")} onConfirm={() => void handleDeleteTask()}>
               <Button danger icon={<DeleteOutlined />} disabled={!canWrite}>
-                Delete
+                {t("common.delete")}
               </Button>
             </Popconfirm>
             <Button type="primary" loading={saving} disabled={!canWrite} onClick={() => void handleUpdateTask()}>
-              Save
+              {t("common.save")}
             </Button>
           </Space>
         }
@@ -935,7 +963,7 @@ export function AnalysisWorkspace() {
             <AnnotationPanel
               subjectType="analysis_task"
               subjectId={editingTask.id}
-              title="Task discussion"
+              title={t("analysis.workspace.taskDiscussion")}
             />
           </Space>
         ) : null}
@@ -953,16 +981,33 @@ function TaskForm({
   board: AnalysisBoardDetail | null;
   members: AnalysisMemberSummary[];
 }) {
+  const { t } = useTranslation();
+  const priorityOptions = [
+    { value: "low", label: t("analysis.workspace.priority.low") },
+    { value: "normal", label: t("analysis.workspace.priority.normal") },
+    { value: "high", label: t("analysis.workspace.priority.high") },
+    { value: "urgent", label: t("analysis.workspace.priority.urgent") },
+  ];
+  const subjectOptions = [
+    { value: "saved_view", label: t("analysis.workspace.subject.savedView") },
+    { value: "item", label: t("analysis.workspace.subject.item") },
+    { value: "event", label: t("analysis.workspace.subject.event") },
+  ];
+
   return (
     <Form form={form} layout="vertical" initialValues={{ priority: "normal" }}>
-      <Form.Item name="title" label="Title" rules={[{ required: true, message: "Enter a title." }]}>
+      <Form.Item
+        name="title"
+        label={t("analysis.workspace.fields.title")}
+        rules={[{ required: true, message: t("analysis.workspace.validation.titleRequired") }]}
+      >
         <Input maxLength={160} />
       </Form.Item>
-      <Form.Item name="bodyMarkdown" label="Details">
+      <Form.Item name="bodyMarkdown" label={t("analysis.workspace.fields.details")}>
         <Input.TextArea rows={4} maxLength={10000} />
       </Form.Item>
       <div className="grid gap-3 md:grid-cols-2">
-        <Form.Item name="columnId" label="Column">
+        <Form.Item name="columnId" label={t("analysis.workspace.fields.column")}>
           <Select
             options={board?.columns.map((column) => ({
               value: column.id,
@@ -970,19 +1015,19 @@ function TaskForm({
             }))}
           />
         </Form.Item>
-        <Form.Item name="priority" label="Priority">
-          <Select options={PRIORITY_OPTIONS.map(({ value, label }) => ({ value, label }))} />
+        <Form.Item name="priority" label={t("analysis.workspace.fields.priority")}>
+          <Select options={priorityOptions} />
         </Form.Item>
-        <Form.Item name="assigneeId" label="Assignee">
+        <Form.Item name="assigneeId" label={t("analysis.workspace.fields.assignee")}>
           <Select allowClear options={memberOptions(members)} />
         </Form.Item>
-        <Form.Item name="dueAt" label="Due date">
+        <Form.Item name="dueAt" label={t("analysis.workspace.fields.dueDate")}>
           <DatePicker style={{ width: "100%" }} />
         </Form.Item>
-        <Form.Item name="linkedSubjectType" label="Linked subject">
-          <Select allowClear options={SUBJECT_OPTIONS} />
+        <Form.Item name="linkedSubjectType" label={t("analysis.workspace.fields.linkedSubject")}>
+          <Select allowClear options={subjectOptions} />
         </Form.Item>
-        <Form.Item name="linkedSubjectId" label="Subject ID">
+        <Form.Item name="linkedSubjectId" label={t("analysis.workspace.fields.subjectId")}>
           <Input maxLength={191} prefix={<FolderOpenOutlined />} />
         </Form.Item>
       </div>
