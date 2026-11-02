@@ -1754,7 +1754,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
 
       <Drawer
         open={selectedProcessedItemId !== null}
-        width={900}
+        width="min(900px, 100vw)"
         destroyOnHidden
         onClose={() => {
           setSelectedProcessedItemId(null);

@@ -68,7 +68,7 @@ export function CreateCrawlTaskDrawer({
     <Drawer
       title={title ?? t("crawl.createDrawer.title")}
       placement="right"
-      width={600}
+      width="min(600px, 100vw)"
       open={open}
       onClose={resetAndClose}
       destroyOnHidden

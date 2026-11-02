@@ -605,7 +605,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       }
       open={visible}
       onCancel={onClose}
-      width={1200}
+      width="min(1200px, calc(100vw - 32px))"
       footer={null}
       destroyOnHidden
       centered

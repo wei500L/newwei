@@ -1013,7 +1013,7 @@ export function SpacetimeGeoHeatmap({
           setDrawerOpen(false);
           setArticlePageState({ scopeKey: "", page: 1 });
         }}
-        width={520}
+        width="min(520px, 100vw)"
       >
         <Space size="small" wrap style={{ marginBottom: 12 }}>
           {selectedPoint?.id ? <Tag>id: {selectedPoint.id}</Tag> : null}

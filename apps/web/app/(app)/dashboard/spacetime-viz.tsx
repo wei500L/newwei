@@ -1942,7 +1942,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
         }
         open={timelineDrawerOpen}
         onClose={() => setTimelineDrawerOpen(false)}
-        width={560}
+        width="min(560px, 100vw)"
       >
         {!selectedTimelineEntry ? (
           <Empty

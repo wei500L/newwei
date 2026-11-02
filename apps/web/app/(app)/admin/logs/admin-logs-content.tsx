@@ -1590,7 +1590,7 @@ export function AdminLogsContent() {
       <Drawer
         open={Boolean(detailState)}
         onClose={() => setDetailState(null)}
-        width={720}
+        width="min(720px, 100vw)"
         title={
           detailState?.tab === "task"
             ? t("adminLogs.task.detail.title")

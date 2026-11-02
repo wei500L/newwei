@@ -1703,7 +1703,7 @@ export function CrawlFrontierConsole() {
         title={profileEditor.editing ? t("crawlFrontier.console.profileEditor.editTitle") : t("crawlFrontier.console.profileEditor.createTitle")}
         open={profileEditor.open}
         onClose={() => setProfileEditor({ open: false, editing: null })}
-        width={1120}
+        width="min(1120px, 100vw)"
         extra={<Space><Button onClick={() => setProfileEditor({ open: false, editing: null })}>{t("crawlFrontier.console.actions.close")}</Button><Button type="primary" loading={saving} disabled={!canManage} onClick={() => void profileForm.submit()}>{t("crawlFrontier.console.actions.save")}</Button></Space>}
       >
         <Form layout="vertical" form={profileForm} onFinish={submitProfile}>
@@ -1940,7 +1940,7 @@ export function CrawlFrontierConsole() {
         </Form>
       </Drawer>
 
-      <Modal open={versionsOpen} title={t("crawlFrontier.console.modals.profileVersions")} onCancel={() => { setVersionsOpen(false); setCurrentVersionProfile(null); }} footer={null} width={920}>
+      <Modal open={versionsOpen} title={t("crawlFrontier.console.modals.profileVersions")} onCancel={() => { setVersionsOpen(false); setCurrentVersionProfile(null); }} footer={null} width="min(920px, calc(100vw - 32px))">
         <Table rowKey="id" dataSource={versions} pagination={false} columns={[
           { title: "Version", dataIndex: "version", key: "version", width: 90 },
           { title: "Mode", dataIndex: "executionMode", key: "executionMode", width: 120 },
@@ -1973,7 +1973,7 @@ export function CrawlFrontierConsole() {
           setSelectedWorkflowCandidate(null);
           setSelectedNodeIds([]);
         }}
-        width={1320}
+        width="min(1320px, 100vw)"
       >
         {selectedRun ? (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -2385,7 +2385,7 @@ export function CrawlFrontierConsole() {
         title={t("crawlFrontier.console.workflowCandidate.title")}
         open={Boolean(selectedWorkflowCandidate)}
         onClose={() => setSelectedWorkflowCandidate(null)}
-        width={760}
+        width="min(760px, 100vw)"
       >
         {selectedWorkflowCandidate ? (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -2603,7 +2603,7 @@ export function CrawlFrontierConsole() {
         ) : null}
       </Drawer>
 
-      <Drawer title={t("crawlFrontier.console.nodeDrawer.title")} open={nodeDrawerOpen} onClose={() => { setNodeDrawerOpen(false); setSelectedNode(null); }} width={980}>
+      <Drawer title={t("crawlFrontier.console.nodeDrawer.title")} open={nodeDrawerOpen} onClose={() => { setNodeDrawerOpen(false); setSelectedNode(null); }} width="min(980px, 100vw)">
         {loadingNodeDetail ? (
           <div style={{ display: "flex", justifyContent: "center", padding: "4rem 0" }}><Spin /></div>
         ) : selectedNode ? (

@@ -69,7 +69,7 @@ export function QueueOpsJobDetailModal({
   return (
     <Modal
       open={open}
-      width={760}
+      width="min(760px, calc(100vw - 32px))"
       title={t("ops.queueOps.detail.title")}
       onCancel={onClose}
       footer={

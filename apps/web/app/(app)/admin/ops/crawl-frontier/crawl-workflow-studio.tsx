@@ -2233,7 +2233,7 @@ function WorkflowStudioInner({
         title={t("crawlFrontier.workflowStudio.drawer.candidateExplanation")}
         open={Boolean(candidateDrawer)}
         onClose={() => setCandidateDrawer(null)}
-        width={720}
+        width="min(720px, 100vw)"
       >
         {candidateDrawer ? (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>

@@ -425,7 +425,7 @@ export function KnowledgeGraphReviewPanel() {
         onCancel={() => setDetailsOpen(false)}
         footer={null}
         title={t("settings.knowledgeGraphReview.details.title")}
-        width={820}
+        width="min(820px, calc(100vw - 32px))"
       >
         {detailsRow ? (
           <>
@@ -546,7 +546,7 @@ export function KnowledgeGraphReviewPanel() {
         okButtonProps={{ loading: saving }}
         onOk={submitReview}
         title={t("settings.knowledgeGraphReview.review.title")}
-        width={720}
+        width="min(720px, calc(100vw - 32px))"
         destroyOnHidden
       >
         {reviewTarget ? (

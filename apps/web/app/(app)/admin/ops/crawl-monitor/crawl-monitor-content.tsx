@@ -2045,7 +2045,7 @@ export function CrawlMonitorContent({
         open={Boolean(detailModal)}
         onCancel={closeDetailModal}
         footer={null}
-        width={860}
+        width="min(860px, calc(100vw - 32px))"
         title={
           <Space>
             <Typography.Text>{detailModal?.title}</Typography.Text>

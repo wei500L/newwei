@@ -831,7 +831,7 @@ export function AnalysisWorkspace() {
       <Modal
         open={columnsModalOpen}
         title="Manage columns"
-        width={720}
+        width="min(720px, calc(100vw - 32px))"
         footer={null}
         onCancel={() => setColumnsModalOpen(false)}
       >
@@ -914,7 +914,7 @@ export function AnalysisWorkspace() {
       <Drawer
         open={Boolean(editingTask)}
         title={editingTask?.title ?? "Task"}
-        width={720}
+        width="min(720px, 100vw)"
         onClose={() => setEditingTask(null)}
         extra={
           <Space>

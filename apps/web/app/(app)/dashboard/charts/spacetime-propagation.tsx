@@ -691,7 +691,7 @@ export function SpacetimePropagation({
         title={selectedSource ?? t("dashboard.charts.spacetimePropagation.details")}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        width={520}
+        width="min(520px, 100vw)"
       >
         <Space size="small" wrap style={{ marginBottom: 12 }}>
           {selectedSource ? <Tag color="blue">{selectedSource}</Tag> : null}

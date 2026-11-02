@@ -1977,7 +1977,7 @@ function UserAccessDrawer({
   return (
     <Drawer
       open={open}
-      width={480}
+      width="min(480px, 100vw)"
       title={t('settings.members.editAccessTitle', {
         name: user ? getUserDisplayName(user) : t('settings.members.editAccessFallbackTitle'),
       })}
@@ -2098,7 +2098,7 @@ function UserLoginRecordsDrawer({
   return (
     <Drawer
       open={open}
-      width={520}
+      width="min(520px, 100vw)"
       title={t('settings.members.loginRecordsTitle', {
         name: user ? getUserDisplayName(user) : t('settings.members.loginRecordsFallbackTitle'),
       })}

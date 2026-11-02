@@ -762,7 +762,7 @@ export function NewsIndicatorAssociations() {
 
       <Drawer
         open={selectedId !== null}
-        width={860}
+        width="min(860px, 100vw)"
         destroyOnHidden
         onClose={() => setSelectedId(null)}
         title={t("pages.newsIndicator.drawer.title")}
