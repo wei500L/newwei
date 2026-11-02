@@ -142,6 +142,12 @@ App Shell（TopNav / ActionRail / 移动 Drawer）的尺寸、状态色与动效
 - 原语本身**不含任何文案**——标题、kicker、说明、按钮文案都由调用方传入并走 `t("...")`。
 - `PageHeader` 不依赖 antd（服务端安全组件，无 hooks、无 `"use client"`），RSC 页面与客户端组件都能直接 import。
 
+**KpiStrip（指标条）**：`components/kpi-strip.tsx` 是告警、实体、抓取前沿、搜索遥测共用的 KPI 写法——一张卡、等宽数字、格子之间用发丝竖线分隔。放进已有卡片内部时传 `bare`，不要每处再手写一套。
+
+```tsx
+<KpiStrip items={[{ key: "total", label: t("common.total"), value: 42 }]} />
+```
+
 **最小示例**：
 
 ```tsx

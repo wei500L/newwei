@@ -218,6 +218,8 @@ export default defineConfig({
         "lib/document-title.ts",
         "hooks/use-page-title.ts",
         "components/page-title-sync.tsx",
+        // FE-UI 批13B：KpiStrip 指标条原语
+        "components/kpi-strip.tsx",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {
