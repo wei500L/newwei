@@ -93,7 +93,7 @@ export function WarMapMapSurface({
 
       {showBootOverlay ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="rounded-xl border border-[var(--border)] bg-white/[0.92] px-4 py-3 shadow-lg backdrop-blur dark:bg-slate-950/[0.78] dark:shadow-[0_22px_40px_-30px_rgba(2,6,23,0.9)]">
+          <div className="rounded-lg border border-[var(--border)] bg-surface px-4 py-3 shadow-[var(--shadow-surface)]">
             <Space size={10}>
               <Spin size="small" />
               <Typography.Text>{bootOverlayLabel}</Typography.Text>
@@ -109,7 +109,7 @@ export function WarMapMapSurface({
       ) : null}
 
       {fatalOverlay ? (
-        <div className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-slate-950/[0.72]">
+        <div className="absolute inset-0 z-30 rounded-lg bg-slate-50/60 dark:bg-slate-950/60">
           <ChartEmptyState
             variant="error"
             title={fatalOverlay.title}

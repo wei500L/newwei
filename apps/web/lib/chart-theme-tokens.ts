@@ -68,3 +68,6 @@ export const CHART_DARK_TEXT_COLORS = {
 export const ECONOMIC_CHART_COLORS = { gdp: "#1f3b7b" } as const;
 export const ECONOMIC_CHANGE_COLORS = { positive: "#1b9e77", negative: "#d95f02" } as const; // = --bullish / --bearish
 export const MARKET_PULSE_COLOR = "#0f766e";
+
+// FE-UI 批9B：地图/热力图图例的连续色（低→高），供 DOM 图例的 linear-gradient 使用。
+export const CHART_SEQUENTIAL_LIGHT: readonly string[] = ["#e8eefc", "#6f9bff", "#1f3b7b"];

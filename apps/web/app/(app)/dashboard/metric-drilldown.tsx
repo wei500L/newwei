@@ -21,6 +21,7 @@ import { useMetricDrillDownDetailsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useTheme } from "@/hooks/use-theme";
 import { createApiClient } from "@/lib/api-client";
+import { CHART_SEQUENTIAL_LIGHT } from "@/lib/chart-theme-tokens";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
@@ -594,7 +595,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     <Modal
       title={
         <div className="flex items-center gap-2">
-          <LineChartOutlined className="text-blue-600" />
+          <LineChartOutlined className="text-[var(--primary)]" />
           <span>{title}</span>
           <Badge
             status="processing"
@@ -687,19 +688,25 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                   <div className={surface.mapShellClassName}>
                     <div ref={mapContainerRef} className="h-full w-full" />
                     {!mapReady ? (
-                      <div className="absolute inset-0 flex items-center justify-center bg-white/55 text-slate-500 backdrop-blur-sm dark:bg-slate-950/55 dark:text-slate-300">
+                      <div className="absolute inset-0 flex items-center justify-center bg-slate-50/60 text-muted-foreground dark:bg-slate-950/60">
                         {isGeoJsonLoading ? (
-                          <Spin tip={mapLoadingLabel} />
+                          <span className="inline-flex items-center gap-1.5">
+                            <Spin size="small" />
+                            <span>{mapLoadingLabel}</span>
+                          </span>
                         ) : (
-                          <div className="rounded-full border border-[var(--border)] bg-white/85 px-3 py-1.5 text-xs shadow-sm dark:bg-slate-950/85">
+                          <div className="rounded-full border border-[var(--border)] bg-surface px-3 py-1.5 text-xs shadow-sm">
                             {mapInitializingLabel}
                           </div>
                         )}
                       </div>
                     ) : null}
                     {mapReady && isGeoJsonLoading ? (
-                      <div className="absolute right-3 top-3 rounded-full border border-[var(--border)] bg-white/88 px-3 py-1 text-xs text-slate-600 shadow-sm dark:bg-slate-950/82 dark:text-slate-300">
-                        <Spin tip={mapLoadingLabel} />
+                      <div className="absolute right-3 top-3 rounded-full border border-[var(--border)] bg-surface px-3 py-1 text-xs text-muted-foreground shadow-sm">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Spin size="small" />
+                          <span>{mapLoadingLabel}</span>
+                        </span>
                       </div>
                     ) : null}
                   </div>
@@ -708,7 +715,12 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                 {geoData.length > 0 ? (
                   <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <span>{lowLabel}</span>
-                    <div className="h-2 flex-1 rounded bg-gradient-to-r from-cyan-100 via-sky-300 to-blue-700 dark:from-slate-700 dark:via-cyan-400 dark:to-sky-500" />
+                    <div
+                      className="h-2 flex-1 rounded"
+                      style={{
+                        background: `linear-gradient(to right, ${CHART_SEQUENTIAL_LIGHT.join(", ")})`,
+                      }}
+                    />
                     <span>{highLabel}</span>
                   </div>
                 ) : null}
@@ -772,12 +784,12 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                                       ? "border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-400/35 dark:bg-emerald-400/12 dark:text-emerald-200"
                                       : fact.tone === "bearish"
                                         ? "border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-400/35 dark:bg-amber-400/12 dark:text-amber-200"
-                                        : "border-[var(--border)] bg-white/85 text-slate-600 dark:bg-slate-950/70 dark:text-slate-200";
+                                        : "border-[var(--border)] bg-surface text-muted-foreground";
 
                                   return (
                                     <span
                                       key={`${event.id}-${fact.key}-${fact.value}`}
-                                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium ${toneClassName}`}
+                                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${toneClassName}`}
                                     >
                                       <span className="uppercase tracking-[0.12em] opacity-70">
                                         {label}

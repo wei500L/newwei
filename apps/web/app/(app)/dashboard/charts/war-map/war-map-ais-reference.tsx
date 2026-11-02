@@ -341,7 +341,7 @@ function AisReferenceSection({
   t: WarMapTranslateFn;
 }) {
   return (
-    <div className="mt-4 rounded-2xl border border-[var(--border)] bg-white/70 px-4 py-4 dark:bg-slate-950/55">
+    <div className="mt-4 rounded-lg border border-[var(--border)] bg-surface px-4 py-4">
       <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
         {t("dashboard.charts.warMap.legend.aisTitle")}
       </Typography.Text>

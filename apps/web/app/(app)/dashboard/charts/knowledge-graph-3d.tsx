@@ -794,11 +794,11 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
         <div className="relative">
           <div ref={containerRef} className="h-[380px] w-full" />
           {selectedNode ? (
-            <div className="absolute top-2 right-2 bg-white/90 border border-slate-200 rounded-md px-3 py-2 shadow-sm">
+            <div className="absolute top-2 right-2 bg-surface border border-[var(--border)] rounded-md px-3 py-2 shadow-[var(--shadow-surface)]">
               <div style={{ fontWeight: 600, marginBottom: 2 }}>
                 {selectedNode.name}
               </div>
-              <div style={{ fontSize: 12, color: "#64748b" }}>
+              <div className="text-xs text-muted-foreground">
                 {t("dashboard.charts.knowledgeGraphNodeType")}: {selectedNode.type} |{" "}
                 {t("dashboard.charts.knowledgeGraphNodeDegree")}: {selectedNode.degree}
               </div>

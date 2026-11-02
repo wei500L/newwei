@@ -226,9 +226,9 @@ describe("War Map overlay model（FE-批4B characterization）", () => {
   describe("resolveOverlayButtonClassName", () => {
     it("四种 tone 的 class 前缀与 iconOnly/extra 组合", () => {
       const neutral = resolveOverlayButtonClassName();
-      expect(neutral).toContain("!bg-white");
+      expect(neutral).toContain("!bg-surface");
       const active = resolveOverlayButtonClassName({ tone: "active" });
-      expect(active).toContain("!bg-slate-900");
+      expect(active).toContain("!bg-[var(--foreground)]");
       const ghost = resolveOverlayButtonClassName({ tone: "ghost" });
       expect(ghost).toContain("!bg-transparent");
       const link = resolveOverlayButtonClassName({ tone: "link" });

@@ -44,7 +44,7 @@ export function FeedsSection({
             >
               {card.value}
             </Typography.Text>
-            <Typography.Text type="secondary" className="text-[11px]">
+            <Typography.Text type="secondary" className="text-xs">
               {card.label}
             </Typography.Text>
           </div>

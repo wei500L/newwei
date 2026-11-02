@@ -82,7 +82,7 @@ export function LegendItemsGrid({
           }
           endAdornment={
             activeLegendKey === key ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-600 dark:border-slate-600/80 dark:bg-slate-950/78 dark:text-slate-300">
+              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-surface px-2 py-1 text-xs font-medium text-muted-foreground">
                 <PushpinOutlined />
                 {compact
                   ? null
@@ -115,7 +115,7 @@ export function LegendSectionCard({
   t: WarMapTranslateFn;
 } & WarMapLegendInteractionProps) {
   return (
-    <div className="rounded-[18px] border border-slate-200/75 bg-white/[0.8] px-3.5 py-3 shadow-[0_10px_18px_-20px_rgba(15,23,42,0.1)] dark:border-slate-700/80 dark:bg-slate-950/[0.56] dark:shadow-[0_10px_18px_-20px_rgba(2,6,23,0.56)]">
+    <div className="rounded-lg border border-[var(--border)] bg-surface px-3.5 py-3 shadow-[var(--shadow-surface)]">
       <button
         type="button"
         className="flex w-full items-start justify-between gap-3 text-left"
@@ -134,7 +134,7 @@ export function LegendSectionCard({
             {section.statusLabel ? (
               <Tooltip title={section.statusHint}>
                 <span
-                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none ${resolveLegendSectionStatusClasses(
+                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold leading-none ${resolveLegendSectionStatusClasses(
                     section.statusTone,
                   )}`}
                 >
@@ -146,13 +146,13 @@ export function LegendSectionCard({
           {section.description ? (
             <Typography.Text
               type="secondary"
-              className="mt-1 block text-[11px] leading-[1.15rem]"
+              className="mt-1 block text-xs leading-[1.15rem]"
             >
               {section.description}
             </Typography.Text>
           ) : null}
         </div>
-        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white/88 text-[11px] text-slate-500 dark:border-slate-700/80 dark:bg-slate-950/80 dark:text-slate-300">
+        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-surface text-xs text-muted-foreground">
           {expanded ? <DownOutlined /> : <RightOutlined />}
         </span>
       </button>
@@ -184,14 +184,14 @@ export function LegendInteractionStrip({
   }
 
   return (
-    <div className="rounded-[16px] border border-slate-200/70 bg-white/[0.68] px-3 py-2.5 shadow-[0_8px_16px_-20px_rgba(15,23,42,0.08)] dark:border-slate-700/75 dark:bg-slate-950/[0.48] dark:shadow-[0_8px_16px_-20px_rgba(2,6,23,0.46)]">
+    <div className="rounded-lg border border-[var(--border)] bg-surface px-3 py-2.5 shadow-[var(--shadow-surface)]">
       <div className="min-w-0">
         <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
           {t("dashboard.charts.warMap.legend.interactionTitle")}
         </Typography.Text>
         <Typography.Text
           type="secondary"
-          className="mt-0.5 block text-[10px] leading-[1rem]"
+          className="mt-0.5 block text-xs leading-[1rem]"
         >
           {t("dashboard.charts.warMap.legend.quickLegendHint")}
         </Typography.Text>

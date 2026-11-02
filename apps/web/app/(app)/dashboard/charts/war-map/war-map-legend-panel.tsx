@@ -27,7 +27,7 @@ export function WarMapLegendPanel({
 }: WarMapLegendPanelProps) {
   return (
     <div className="flex h-full min-h-0 max-h-full flex-col">
-      <div className="border-b border-[var(--border)] bg-gradient-to-b from-white to-slate-50/90 px-4 py-3.5 dark:from-slate-950/90 dark:to-slate-900/86">
+      <div className="border-b border-[var(--border)] bg-surface px-4 py-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <Typography.Text
@@ -57,7 +57,7 @@ export function WarMapLegendPanel({
             />
           ) : null}
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {summaryDataLabel ? (
             <span className="truncate">{summaryDataLabel}</span>
           ) : null}

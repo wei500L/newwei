@@ -168,7 +168,7 @@ export function WarMapControlsPanel({
     <div className="flex h-full min-h-0 max-h-full flex-col">
       <div
         ref={headerRef}
-        className={`border-b border-[var(--border)] bg-gradient-to-b from-white to-slate-50/90 dark:from-slate-950/90 dark:to-slate-900/90 ${
+        className={`border-b border-[var(--border)] bg-surface ${
           standaloneLayout ? "px-6 py-5" : "px-4 py-3"
         }`}
       >
@@ -214,7 +214,7 @@ export function WarMapControlsPanel({
           />
         ) : null}
         <div
-          className={`rounded-[20px] border border-[var(--border)] bg-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${standaloneLayout ? "p-2.5" : "p-2"} ${OVERLAY_PANEL_TAB_GRID_CLASS_NAME}`}
+          className={`rounded-lg border border-[var(--border)] bg-surface ${standaloneLayout ? "p-2.5" : "p-2"} ${OVERLAY_PANEL_TAB_GRID_CLASS_NAME}`}
         >
           {header.tabs.map((tab) => {
             const isActive = activeControlsSection === tab.key;
@@ -277,7 +277,7 @@ function LegendSection({
         onLegendItemFocus={legend.onLegendItemFocus}
         t={t}
       />
-      <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/62 px-3 py-2.5 dark:bg-slate-950/48">
+      <div className="rounded-lg border border-dashed border-[var(--border)] bg-surface px-3 py-2.5">
         <Typography.Text type="secondary" className="text-xs">
           {t("dashboard.charts.warMap.legend.radius")}
         </Typography.Text>

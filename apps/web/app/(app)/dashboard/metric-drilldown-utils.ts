@@ -193,18 +193,16 @@ export function resolveMetricDrilldownSurface(isDark: boolean): {
   if (isDark) {
     return {
       panelClassName: 'surface-inset',
-      sectionCardClassName:
-        'h-full border border-slate-700/80 bg-slate-950/[0.72] shadow-[0_20px_40px_-30px_rgba(2,6,23,0.88)]',
+      sectionCardClassName: 'h-full border border-[var(--border)] bg-surface',
       mapShellClassName:
-        'relative h-viz-xl overflow-hidden rounded-xl border border-slate-700/70 bg-slate-950/[0.68]',
+        'relative h-viz-xl overflow-hidden rounded-lg border border-[var(--border)] bg-surface-muted',
     };
   }
 
   return {
     panelClassName: 'surface-inset',
-    sectionCardClassName:
-      'h-full border border-slate-200/80 bg-white/[0.9] shadow-[0_16px_30px_-26px_rgba(15,23,42,0.14)]',
+    sectionCardClassName: 'h-full border border-[var(--border)] bg-surface',
     mapShellClassName:
-      'relative h-viz-xl overflow-hidden rounded-xl border border-slate-200/80 bg-slate-50/90',
+      'relative h-viz-xl overflow-hidden rounded-lg border border-[var(--border)] bg-surface-muted',
   };
 }

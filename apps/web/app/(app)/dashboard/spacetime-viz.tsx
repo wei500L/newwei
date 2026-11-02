@@ -1794,7 +1794,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                     </div>
                   </div>
 
-                  <div className="flex-1 overflow-auto border border-slate-200/60 rounded-md p-3 bg-white/40">
+                  <div className="flex-1 overflow-auto surface-inset">
                     <Space
                       direction="vertical"
                       size={6}

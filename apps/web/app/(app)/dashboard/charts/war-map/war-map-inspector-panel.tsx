@@ -35,15 +35,15 @@ export function WarMapInspectorPanel({
     return null;
   }
 
-  const inspectorHeaderGradient =
+  const inspectorAccentClass =
     selectedInspector.kind === "event" ||
     selectedInspector.kind === "event-cluster"
-      ? "from-amber-50 via-white to-white dark:from-amber-500/10 dark:via-slate-950/95 dark:to-slate-950/[0.92]"
+      ? "border-l-[var(--accent)]"
       : selectedInspector.kind === "flight"
-        ? "from-sky-50 via-white to-white dark:from-sky-500/10 dark:via-slate-950/95 dark:to-slate-950/[0.92]"
+        ? "border-l-[var(--primary)]"
         : selectedInspector.kind === "vessel"
-          ? "from-cyan-50 via-white to-white dark:from-cyan-500/10 dark:via-slate-950/95 dark:to-slate-950/[0.92]"
-          : "from-emerald-50 via-white to-white dark:from-emerald-500/10 dark:via-slate-950/95 dark:to-slate-950/[0.92]";
+          ? "border-l-[var(--border-strong)]"
+          : "border-l-[var(--destructive)]";
 
   const context: WarMapInspectorContentContext = {
     locale,
@@ -61,7 +61,7 @@ export function WarMapInspectorPanel({
         <>
           <InspectorPanelShellHeader
             selectedInspector={selectedInspector}
-            inspectorHeaderGradient={inspectorHeaderGradient}
+            inspectorAccentClass={inspectorAccentClass}
             useDesktopInspector={layout.useDesktopInspector}
             onZoom={actions.onZoom}
             onMinimize={actions.onMinimize}

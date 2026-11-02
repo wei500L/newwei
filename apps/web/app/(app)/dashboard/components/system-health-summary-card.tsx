@@ -173,7 +173,7 @@ export function SystemHealthSummaryCard({
         <p className="max-w-3xl text-sm text-slate-600">{description}</p>
       </div>
       {shouldAllowExpand ? (
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-white/70 text-slate-500">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-surface text-muted-foreground">
           {expanded ? <UpOutlined /> : <DownOutlined />}
         </span>
       ) : null}
@@ -182,7 +182,7 @@ export function SystemHealthSummaryCard({
 
   return (
     <div
-      className={`glass-panel overflow-hidden border border-[var(--border)] p-4 shadow-[0_8px_20px_rgba(15,23,42,0.06)] transition-shadow ${cardPulseClassName}`.trim()}
+      className={`surface-inset overflow-hidden transition-shadow ${cardPulseClassName}`.trim()}
     >
       {shouldAllowExpand ? (
         <button
@@ -219,7 +219,7 @@ export function SystemHealthSummaryCard({
             {counts.map((item) => (
               <div
                 key={item.key}
-                className="rounded-2xl border border-[var(--border)] bg-white/50 px-3 py-2.5"
+                className="surface-inset"
               >
                 <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
                   {t(`dashboard.queue.states.${item.key}`, {
@@ -233,7 +233,7 @@ export function SystemHealthSummaryCard({
             ))}
           </div>
         ) : (
-          <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/35 px-4 py-3 text-sm text-slate-600">
+          <div className="rounded-lg border border-dashed border-[var(--border)] bg-surface px-4 py-3 text-sm text-muted-foreground">
             {t("dashboard.systemStatus.restrictedBody")}
           </div>
         )}

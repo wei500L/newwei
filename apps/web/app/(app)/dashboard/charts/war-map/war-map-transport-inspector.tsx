@@ -142,7 +142,7 @@ export function TransportInspectorContent({
         </Space>
       )}
 
-      <div className="rounded-xl border border-[var(--border)] bg-white/70 px-3 py-3 dark:bg-slate-950/55">
+      <div className="rounded-lg border border-[var(--border)] bg-surface px-3 py-3">
         <Typography.Text
           strong
           className="block text-xs text-slate-700 dark:text-slate-200"

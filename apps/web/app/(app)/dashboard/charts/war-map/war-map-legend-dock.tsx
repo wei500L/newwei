@@ -34,7 +34,7 @@ export function WarMapLegendDock({
 }: WarMapLegendDockProps) {
   return (
     <div className="flex flex-col">
-      <div className="border-b border-[var(--border)] bg-gradient-to-b from-white to-slate-50/90 px-5 py-4 dark:from-slate-950/90 dark:to-slate-900/86">
+      <div className="border-b border-[var(--border)] bg-surface px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <Typography.Text
@@ -50,7 +50,7 @@ export function WarMapLegendDock({
               {t("dashboard.charts.warMap.legend.quickLegendHint")}
             </Typography.Text>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs text-muted-foreground">
             {summaryDataLabel ? (
               <span className="truncate">{summaryDataLabel}</span>
             ) : null}
@@ -100,7 +100,7 @@ function LegendDockSectionCard({
   t: WarMapTranslateFn;
 } & WarMapLegendInteractionProps) {
   return (
-    <div className="flex h-full flex-col rounded-[22px] border border-slate-200/75 bg-white/[0.8] px-5 py-5 shadow-[0_12px_20px_-22px_rgba(15,23,42,0.1)] dark:border-slate-700/80 dark:bg-slate-950/[0.54] dark:shadow-[0_12px_20px_-22px_rgba(2,6,23,0.52)]">
+    <div className="flex h-full flex-col rounded-lg border border-[var(--border)] bg-surface px-5 py-5 shadow-[var(--shadow-surface)]">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <Typography.Text strong className={OVERLAY_SECTION_TITLE_CLASS_NAME}>
@@ -109,7 +109,7 @@ function LegendDockSectionCard({
           {section.statusLabel ? (
             <Tooltip title={section.statusHint}>
               <span
-                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none ${resolveLegendSectionStatusClasses(
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold leading-none ${resolveLegendSectionStatusClasses(
                   section.statusTone,
                 )}`}
               >

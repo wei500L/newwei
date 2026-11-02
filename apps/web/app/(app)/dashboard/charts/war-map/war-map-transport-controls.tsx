@@ -158,7 +158,7 @@ export function TransportSection({
       </div>
       <Button
         type="primary"
-        className="!h-11 !rounded-[16px] !px-4 !text-[13px] !font-semibold"
+        className="!h-11 !rounded-md !px-4 !text-[13px] !font-semibold"
         loading={transport.analysis.submitting}
         disabled={!transport.analysis.allowed}
         onClick={transport.analysis.onSubmit}

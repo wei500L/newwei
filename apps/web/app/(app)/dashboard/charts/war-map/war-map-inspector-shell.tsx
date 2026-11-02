@@ -65,7 +65,7 @@ function inspectorMinimizedKindLabel(
 
 export function InspectorPanelShellHeader({
   selectedInspector,
-  inspectorHeaderGradient,
+  inspectorAccentClass,
   useDesktopInspector,
   onZoom,
   onMinimize,
@@ -73,7 +73,7 @@ export function InspectorPanelShellHeader({
   t,
 }: {
   selectedInspector: SelectedInspector;
-  inspectorHeaderGradient: string;
+  inspectorAccentClass: string;
   useDesktopInspector: boolean;
   onZoom: () => void;
   onMinimize: () => void;
@@ -82,13 +82,13 @@ export function InspectorPanelShellHeader({
 }) {
   return (
     <div
-      className={`border-b border-[var(--border)] bg-gradient-to-br ${inspectorHeaderGradient} px-4 py-4`}
+      className={`border-b border-[var(--border)] bg-surface border-l-[3px] ${inspectorAccentClass} px-4 py-4`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <Typography.Text
             type="secondary"
-            className="block text-[11px] uppercase tracking-[0.14em]"
+            className="kicker block"
           >
             {inspectorKindLabel(selectedInspector, t)}
           </Typography.Text>
@@ -193,7 +193,7 @@ export function InspectorPanelFrame({
   t: WarMapTranslateFn;
 }) {
   const inspectorPanelContent = (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-white/[0.92] shadow-2xl backdrop-blur-xl dark:bg-slate-950/[0.78] dark:shadow-[0_26px_56px_-34px_rgba(2,6,23,0.92)]">
+    <div className="flex h-full flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-surface shadow-[var(--shadow-surface)]">
       {content}
     </div>
   );
@@ -224,7 +224,7 @@ export function InspectorPanelFrame({
           <div className="min-w-0 flex-1">
             <Typography.Text
               type="secondary"
-              className="block text-[11px] uppercase tracking-[0.14em]"
+              className="kicker block"
             >
               {inspectorMinimizedKindLabel(selectedInspector, t)}
             </Typography.Text>

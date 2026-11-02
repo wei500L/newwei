@@ -46,10 +46,10 @@ export function WarMapOverlayQuickLegend({
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <Typography.Text className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+          <Typography.Text className="kicker block">
             {legendLabel}
           </Typography.Text>
-          <Typography.Text className="mt-0.5 block text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+          <Typography.Text className="mt-0.5 block text-xs leading-4 text-muted-foreground">
             {t("dashboard.charts.warMap.legend.quickLegendCompactHint")}
           </Typography.Text>
         </div>
@@ -61,7 +61,7 @@ export function WarMapOverlayQuickLegend({
               tone: "ghost",
               iconOnly: true,
               extraClassName:
-                "!h-8 !min-w-8 !rounded-full !border !border-slate-200/80 !bg-white/[0.76] dark:!border-slate-700/80 dark:!bg-slate-950/[0.68]",
+                "!h-8 !min-w-8 !rounded-full !border !border-[var(--border)] !bg-surface",
             })}
             aria-label={legendLabel}
             icon={<InfoCircleOutlined />}
@@ -90,7 +90,7 @@ export function WarMapOverlayQuickLegend({
             className={resolveOverlayButtonClassName({
               tone: "neutral",
               extraClassName:
-                "!h-9 !justify-start !rounded-xl !px-3 !text-[11px] !font-medium",
+                "!h-9 !justify-start !rounded-md !px-3 !text-xs !font-medium",
             })}
             onClick={onOpenFullLegend}
           >

@@ -1123,7 +1123,7 @@ export function EntityImpactGraph() {
               ]}
             />
             {loading ? (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/40">
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-50/60 dark:bg-slate-950/60">
                 <Skeleton active paragraph={{ rows: 6 }} />
               </div>
             ) : null}
@@ -1135,11 +1135,11 @@ export function EntityImpactGraph() {
                 onContextMenu={(evt) => evt.preventDefault()}
                 onMouseDown={(evt) => evt.stopPropagation()}
               >
-                <div className="min-w-[220px] overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-xl backdrop-blur">
-                  <div className="px-3 py-2 text-xs text-slate-600">
+                <div className="min-w-[220px] overflow-hidden rounded-lg border border-[var(--border)] bg-surface shadow-[var(--shadow-surface)]">
+                  <div className="px-3 py-2 text-xs text-muted-foreground">
                     {contextMenu.nodeName}
                   </div>
-                  <div className="border-t border-slate-200" />
+                  <div className="border-t border-[var(--border)]" />
                   <div className="p-1.5">
                     <Button
                       type="text"
@@ -1254,7 +1254,7 @@ export function EntityImpactGraph() {
       >
         {selectedNodeRecord ? (
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <div className="rounded-lg border border-[var(--border)] bg-surface p-3">
               <Text type="secondary" className="block">
                 {t("dashboard.charts.entityGraph.type")}
                 : {selectedNodeRecord.type}

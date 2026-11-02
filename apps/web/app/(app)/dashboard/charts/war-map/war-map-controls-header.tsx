@@ -39,7 +39,7 @@ export function ControlsHeaderSummary({
   const streamStatus = summaryStatusCards.find((card) => card.key === "stream");
   const dataStatus = summaryStatusCards.find((card) => card.key === "data");
   const containerClassName = compact
-    ? "mt-3 rounded-xl border border-[var(--border)] bg-slate-50/70 px-3 py-3 shadow-[0_8px_20px_-24px_rgba(15,23,42,0.24)] dark:bg-slate-900/60 dark:shadow-[0_12px_26px_-24px_rgba(2,6,23,0.62)]"
+    ? "mt-3 surface-inset"
     : `${OVERLAY_PANEL_SUBTLE_SECTION_CLASS_NAME} mt-4`;
 
   return (

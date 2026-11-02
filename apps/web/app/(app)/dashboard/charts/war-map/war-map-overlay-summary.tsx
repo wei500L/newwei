@@ -41,7 +41,7 @@ export function WarMapOverlayRailSummary({
         ) : null}
         {dataStatus ? (
           <Tooltip title={dataStatus.tooltip}>
-            <span className="inline-flex max-w-[160px] items-center truncate rounded-full border border-[var(--border)] bg-white/[0.92] px-2.5 py-1 text-xs text-slate-700 dark:bg-slate-950/[0.78] dark:text-slate-200">
+            <span className="inline-flex max-w-[160px] items-center truncate rounded-full border border-[var(--border)] bg-surface px-2.5 py-1 text-xs text-muted-foreground">
               {dataLabel}
             </span>
           </Tooltip>
@@ -56,14 +56,14 @@ export function WarMapOverlayRailSummary({
     >
       {streamStatus ? (
         <Tooltip title={streamStatus.tooltip}>
-          <div className="min-w-0 rounded-full border border-slate-200/80 bg-white/[0.92] px-3 py-2 shadow-[0_10px_18px_-18px_rgba(15,23,42,0.2)] dark:border-slate-700/80 dark:bg-slate-950/[0.78] dark:shadow-[0_12px_22px_-18px_rgba(2,6,23,0.7)]">
+          <div className="min-w-0 rounded-full border border-[var(--border)] bg-surface px-3 py-2 shadow-[var(--shadow-surface)]">
             <div className="flex items-center gap-2">
               <span
                 className={`h-2 w-2 rounded-full ${streamStatus.dotClassName}`}
               />
               <Typography.Text
                 type="secondary"
-                className="text-[10px] uppercase tracking-[0.16em]"
+                className="text-xs uppercase tracking-[0.12em]"
               >
                 {streamStatus.label}
               </Typography.Text>
@@ -72,7 +72,7 @@ export function WarMapOverlayRailSummary({
               </Typography.Text>
               <Typography.Text
                 type="secondary"
-                className="max-w-[8rem] truncate text-[10px]"
+                className="max-w-[8rem] truncate text-xs"
               >
                 {streamStatus.detail}
               </Typography.Text>
@@ -81,7 +81,7 @@ export function WarMapOverlayRailSummary({
         </Tooltip>
       ) : null}
       <Tooltip title={dataStatus?.tooltip}>
-        <div className="min-w-0 rounded-full border border-slate-200/80 bg-white/[0.92] px-3 py-2 shadow-[0_10px_18px_-18px_rgba(15,23,42,0.2)] dark:border-slate-700/80 dark:bg-slate-950/[0.78] dark:shadow-[0_12px_22px_-18px_rgba(2,6,23,0.7)]">
+        <div className="min-w-0 rounded-full border border-[var(--border)] bg-surface px-3 py-2 shadow-[var(--shadow-surface)]">
           <div className="flex items-center gap-2">
             {dataStatus ? (
               <span
@@ -90,11 +90,11 @@ export function WarMapOverlayRailSummary({
             ) : null}
             <Typography.Text
               type="secondary"
-              className="text-[10px] uppercase tracking-[0.16em]"
+              className="text-xs uppercase tracking-[0.12em]"
             >
               {dataStatus?.label ?? "Data"}
             </Typography.Text>
-            <span className="max-w-[180px] truncate text-[11px] text-slate-600 dark:text-slate-300">
+            <span className="max-w-[180px] truncate text-xs text-muted-foreground">
               {dataLabel}
             </span>
           </div>

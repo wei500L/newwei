@@ -59,10 +59,10 @@ export function WarMapLayerVisibilityControls({
             key={layerId}
             checked={layerVisibility[layerId]}
             disabled={disabled}
-            className={`!m-0 !inline-flex !min-h-[42px] !w-full !items-center rounded-xl border !px-3 !py-2 transition ${
+            className={`!m-0 !inline-flex !min-h-[42px] !w-full !items-center rounded-lg border !px-3 !py-2 transition ${
               disabled
-                ? "border-slate-200/70 bg-slate-100/70 opacity-60 dark:border-slate-800/80 dark:bg-slate-900/60"
-                : "border-[var(--border)] bg-white/[0.78] shadow-[0_10px_24px_-22px_rgba(15,23,42,0.28)] hover:border-slate-300/85 hover:bg-white dark:bg-slate-950/[0.62] dark:hover:border-slate-500/80 dark:hover:bg-slate-950/80"
+                ? "border-[var(--border)] bg-surface opacity-60"
+                : "border-[var(--border)] bg-surface hover:bg-[var(--secondary)]"
             }`}
             onChange={(event) => {
               onLayerVisible(layerId, event.target.checked);
@@ -143,7 +143,7 @@ export function WarMapAisViewportEmptyBanner({
 }: WarMapAisViewportEmptyBannerProps) {
   return (
     <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2">
-      <div className="rounded-2xl border border-amber-300/75 bg-white/[0.96] px-4 py-3 shadow-[0_18px_40px_-28px_rgba(120,53,15,0.45)] backdrop-blur-md dark:border-amber-400/35 dark:bg-slate-950/[0.84] dark:shadow-[0_22px_44px_-30px_rgba(2,6,23,0.92)]">
+      <div className="rounded-lg border border-[var(--border)] bg-surface px-4 py-3 shadow-[var(--shadow-surface)]">
         <div className="flex items-start gap-3">
           <span className="mt-1 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)] dark:bg-amber-300 dark:shadow-[0_0_0_4px_rgba(252,211,77,0.18)]" />
           <div className="min-w-0">

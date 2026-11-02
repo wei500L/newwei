@@ -764,10 +764,8 @@ export function DashboardContent() {
                       <Statistic
                         title={t("dashboard.stats.totalItems")}
                         value={queueStats ? queueStats.itemCount : "--"}
-                        valueStyle={{
-                          color: queueStats ? "#1f2933" : "#94a3b8",
-                          fontFamily: "var(--font-mono)",
-                        }}
+                        className={queueStats ? "text-[var(--foreground)]" : "text-muted-foreground"}
+                        valueStyle={{ fontFamily: "var(--font-mono)" }}
                       />
                     )}
                   </Card>
@@ -784,10 +782,8 @@ export function DashboardContent() {
                       <Statistic
                         title={t("dashboard.stats.processedItems")}
                         value={queueStats ? queueStats.processedCount : "--"}
-                        valueStyle={{
-                          color: queueStats ? "#1f2933" : "#94a3b8",
-                          fontFamily: "var(--font-mono)",
-                        }}
+                        className={queueStats ? "text-[var(--foreground)]" : "text-muted-foreground"}
+                        valueStyle={{ fontFamily: "var(--font-mono)" }}
                       />
                     )}
                   </Card>
