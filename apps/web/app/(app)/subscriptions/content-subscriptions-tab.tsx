@@ -7,7 +7,6 @@ import {
   Card,
   Checkbox,
   Collapse,
-  Empty,
   Input,
   List,
   Select,
@@ -97,15 +96,15 @@ function getContentSubscriptionKindLabel(
 function getContentSubscriptionKindColor(kind: ContentSubscriptionKind) {
   switch (kind) {
     case "topic":
-      return "blue";
+      return "default";
     case "entity":
-      return "purple";
+      return "default";
     case "source":
-      return "gold";
+      return "default";
     case "keyword":
-      return "green";
+      return "default";
     case "geo":
-      return "cyan";
+      return "default";
   }
 }
 
@@ -773,7 +772,8 @@ export function ContentSubscriptionsTab({
         {loading && !subscriptions ? (
           <Skeleton active paragraph={{ rows: 6 }} />
         ) : subscriptionGroups.length === 0 ? (
-          <Empty
+          <ChartEmptyState
+            presentation="banner"
             description={t("subscriptions.content.currentEmpty")}
           />
         ) : (
@@ -857,7 +857,6 @@ export function ContentSubscriptionsTab({
                                   (name, index) => (
                                     <Tag
                                       key={`${item.id}:owner:${name}:${index}`}
-                                      color="gold"
                                       className="cursor-pointer"
                                       onClick={() => openOwnerMonitor(item)}
                                     >
@@ -868,7 +867,7 @@ export function ContentSubscriptionsTab({
                               : null}
                             {!item.manualMonitorOwned &&
                             item.systemSyncOwned ? (
-                              <Tag color="purple">
+                              <Tag>
                                 {t("situationMonitor.monitors.systemSync")}
                               </Tag>
                             ) : null}
@@ -996,7 +995,8 @@ export function ContentSubscriptionsTab({
           {loadingCatalog && !catalog ? (
             <Skeleton active paragraph={{ rows: 6 }} />
           ) : catalogGroups.length === 0 ? (
-            <Empty
+            <ChartEmptyState
+              presentation="banner"
               description={t("subscriptions.content.catalogEmpty")}
             />
           ) : (
@@ -1138,7 +1138,8 @@ export function ContentSubscriptionsTab({
           {loading && !recommendations ? (
             <Skeleton active paragraph={{ rows: 4 }} />
           ) : (recommendations?.items?.length ?? 0) === 0 ? (
-            <Empty
+            <ChartEmptyState
+              presentation="banner"
               description={t(
                 recommendationsWarning
                   ? "subscriptions.content.recommendationsUnavailable"

@@ -75,15 +75,15 @@ export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
 
   const colorMap: Record<string, string> = {
     slate: "default",
-    blue: "blue",
-    red: "red",
-    green: "green",
-    orange: "orange",
+    blue: "default",
+    red: "default",
+    green: "default",
+    orange: "default",
     gray: "default",
-    indigo: "indigo",
-    emerald: "green",
-    teal: "cyan",
-    yellow: "gold",
+    indigo: "default",
+    emerald: "default",
+    teal: "default",
+    yellow: "default",
   };
 
   return (
@@ -139,7 +139,7 @@ export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
                           {source.name}
                         </span>
                         <Tag
-                          color={colorMap[source.color] || "blue"}
+                          color={colorMap[source.color] || "default"}
                           className="text-[11px]"
                         >
                           {column}

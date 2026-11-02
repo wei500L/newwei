@@ -1,7 +1,7 @@
 'use client';
 
 import { gql, useQuery } from '@apollo/client';
-import { Button, Card, Col, Drawer, Empty, Grid, List, Row, Select, Skeleton, Space, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { Button, Card, Col, Drawer, Grid, List, Row, Select, Skeleton, Space, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -10,6 +10,7 @@ import { NewsCard } from '@/app/(app)/items/components/news-card';
 import { ArticlePublishedTime } from '@/components/article-published-time';
 import { FilterBar } from '@/components/filter-bar';
 import { PageHeader } from '@/components/page-header';
+import { ChartEmptyState } from '@/components/chart-empty-state';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
@@ -400,9 +401,9 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                 label: t('pages.topics.tabs.events'),
                 children:
                   sortedEventGroups.length === 0 ? (
-                    <Empty
+                    <ChartEmptyState
+                      presentation="banner"
                       description={t('pages.topics.eventsEmpty')}
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
                     />
                   ) : (
                     <List
@@ -450,7 +451,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                                 description={
                                   <Space direction="vertical" size={6} style={{ width: '100%' }}>
                                     {group.summary ? (
-                                      <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
+                                      <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} className="!mb-0">
                                         {group.summary}
                                       </Typography.Paragraph>
                                     ) : null}
@@ -514,9 +515,9 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                 label: t('pages.topics.tabs.topics'),
                 children:
                   sortedGroups.length === 0 ? (
-                    <Empty
+                    <ChartEmptyState
+                      presentation="banner"
                       description={t('pages.topics.topicsEmpty')}
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
                     />
                   ) : (
                     <List
@@ -609,7 +610,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
         {selectedEvent ? (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <Space direction="vertical" size={2}>
-              <Typography.Title level={5} style={{ margin: 0 }}>
+              <Typography.Title level={5} className="!m-0">
                 {selectedEventTitle}
               </Typography.Title>
               <Tooltip title={latestAtHelp}>
@@ -654,7 +655,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
               )}
             </Space>
 
-            <Typography.Title level={5} style={{ margin: 0 }}>
+            <Typography.Title level={5} className="!m-0">
               {t('pages.topics.eventDetail.timelineTitle')}
             </Typography.Title>
             <List
@@ -700,7 +701,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                             {ingestedLabel}: {formatDateTime(ingestedAt, locale, DATE_TIME_FORMAT)}
                           </Typography.Text>
                           {item.summary ? (
-                            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }} ellipsis={{ rows: 2 }}>
+                            <Typography.Paragraph type="secondary" className="!mb-0" ellipsis={{ rows: 2 }}>
                               {item.summary}
                             </Typography.Paragraph>
                           ) : null}
@@ -725,7 +726,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
         {selectedTopic ? (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <Space direction="vertical" size={2}>
-              <Typography.Title level={5} style={{ margin: 0 }}>
+              <Typography.Title level={5} className="!m-0">
                 {selectedTopic.topic}
               </Typography.Title>
               <Tooltip title={latestAtHelp}>
@@ -750,14 +751,14 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
               </Space>
             ) : null}
 
-            <Typography.Title level={5} style={{ margin: 0 }}>
+            <Typography.Title level={5} className="!m-0">
               {t('pages.topics.topicDetail.relatedItemsTitle')}
             </Typography.Title>
 
             {selectedTopicItems.length === 0 ? (
-              <Empty
+              <ChartEmptyState
+                presentation="banner"
                 description={t('pages.topics.topicDetail.empty')}
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
               />
             ) : (
               <Row gutter={[16, 16]}>

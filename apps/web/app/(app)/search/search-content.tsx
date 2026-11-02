@@ -8,7 +8,6 @@ import {
   Card,
   Collapse,
   DatePicker,
-  Empty,
   Segmented,
   Select,
   Skeleton,
@@ -37,6 +36,7 @@ import {
   type SearchSuggestionStatus,
 } from "@/components/enhanced-search-box";
 import { PageHeader } from "@/components/page-header";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { useItemFacetsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import { parseSearchHistory, SEARCH_HISTORY_KEY } from "@/lib/search-history";
@@ -134,9 +134,9 @@ const ARCHIVE_REGION_OPTIONS: ArchiveRegion[] = [
   "OTHER",
 ];
 const MATCH_ORIGIN_COLOR: Record<ArchiveMatchOrigin, string> = {
-  LEXICAL: "blue",
-  SEMANTIC: "purple",
-  HYBRID: "geekblue",
+  LEXICAL: "default",
+  SEMANTIC: "default",
+  HYBRID: "default",
 };
 
 const ARCHIVE_DIGEST_QUERY = gql`
@@ -752,14 +752,14 @@ export function SearchContent() {
             />
             {query ? (
               <Tooltip title={query}>
-                <Tag color="blue">
+                <Tag>
                   {t("pages.search.featureCurrentQuery")}
                   : {queryPreview}
                 </Tag>
               </Tooltip>
             ) : null}
             {mode === "headlines" ? (
-              <Tag color="gold">
+              <Tag>
                 <HistoryOutlined />{" "}
                 {t("pages.search.mode.headlinesHint")}
               </Tag>
@@ -868,7 +868,6 @@ export function SearchContent() {
               {hotTopics.map((topic) => (
                 <Tag
                   key={topic.value}
-                  color="blue"
                   className="cursor-pointer"
                   role="button"
                   tabIndex={0}
@@ -1002,8 +1001,8 @@ export function SearchContent() {
                 <Spin />
               </div>
             ) : archiveTotalCount === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              <ChartEmptyState
+                presentation="banner"
                 description={t("pages.search.archive.empty")}
               />
             ) : (
@@ -1050,7 +1049,7 @@ export function SearchContent() {
                                 </Typography.Paragraph>
 
                                 <Space size={[6, 6]} wrap>
-                                  <Tag color="gold">
+                                  <Tag>
                                     {"★".repeat(
                                       Math.max(1, Math.min(item.weight, 5)),
                                     )}
@@ -1076,7 +1075,7 @@ export function SearchContent() {
                                     </Tag>
                                   ) : null}
                                   {relevancePercent !== null ? (
-                                    <Tag color="cyan">
+                                    <Tag>
                                       {t("pages.search.archive.relevance", {
                                         percent: relevancePercent,
                                       })}
@@ -1094,7 +1093,6 @@ export function SearchContent() {
                                       .map((keyword) => (
                                         <Tag
                                           key={`${item.processedArticleId}-${keyword}`}
-                                          color="blue"
                                         >
                                           {keyword}
                                         </Tag>

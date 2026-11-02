@@ -87,7 +87,7 @@ export default function RegisterPage() {
                 <Alert
                   type="info"
                   showIcon
-                  style={{ marginBottom: "1rem" }}
+                  className="!mb-4"
                   message={t("auth.register.joinHint")}
                 />
                 <Form.Item label={t("auth.login.fields.email.label")} name="email" rules={[{ required: true }]}>

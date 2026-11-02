@@ -648,7 +648,7 @@ export default function ReaderPage() {
             <h3 className="text-sm font-semibold mb-2">
               {t("reader.summary")}
             </h3>
-            <Typography.Paragraph style={{ marginBottom: 0 }}>
+            <Typography.Paragraph className="!mb-0">
               {resolvedSummary}
             </Typography.Paragraph>
           </div>

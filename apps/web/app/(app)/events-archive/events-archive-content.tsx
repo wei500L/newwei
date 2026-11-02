@@ -13,7 +13,6 @@ import {
   Card,
   DatePicker,
   Drawer,
-  Empty,
   Grid,
   Input,
   Select,
@@ -27,6 +26,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { PageHeader } from "@/components/page-header";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import dayjs from "@/lib/dayjs";
 import { trackSearchTelemetry } from "@/lib/search-telemetry";
 import { safeHttpUrl } from "@/lib/url";
@@ -1226,16 +1226,19 @@ export function EventsArchiveContent() {
               <Spin />
             </div>
           ) : totalCount === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t("pages.eventsArchive.empty")}
-            >
-              {debouncedSearch.trim().length > 0 ? (
-                <Typography.Text type="secondary">
-                  {t("pages.eventsArchive.emptySearchHint")}
-                </Typography.Text>
-              ) : null}
-            </Empty>
+            <ChartEmptyState
+              presentation="banner"
+              description={
+                <>
+                  {t("pages.eventsArchive.empty")}
+                  {debouncedSearch.trim().length > 0 ? (
+                    <Typography.Text type="secondary">
+                      {t("pages.eventsArchive.emptySearchHint")}
+                    </Typography.Text>
+                  ) : null}
+                </>
+              }
+            />
           ) : (
             <div className="flex flex-col gap-5">
               {VERTICAL_SECTIONS.map((section) => (
@@ -1498,15 +1501,14 @@ export function EventsArchiveContent() {
             : {detailError.message}
           </Typography.Text>
         ) : !detail ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          <ChartEmptyState
             description={t("pages.eventsArchive.detail.notFound")}
           />
         ) : (
           <div className="flex flex-col gap-4 pb-2">
             <section className="content-card p-4">
               <div className="flex flex-col gap-2">
-                <Typography.Title level={5} style={{ margin: 0 }}>
+                <Typography.Title level={5} className="!m-0">
                   {detail.title || untitledArchiveLabel}
                 </Typography.Title>
                 {detail.summary ? (

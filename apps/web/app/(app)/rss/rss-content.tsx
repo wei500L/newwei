@@ -1,13 +1,14 @@
 "use client";
 
 import { gql, useQuery } from "@apollo/client";
-import { Alert, Button, Card, Empty, Radio, Select, Skeleton, Space, Switch, Typography } from "antd";
+import { Alert, Button, Card, Radio, Select, Skeleton, Space, Switch, Typography } from "antd";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { FilterState } from "@/app/(app)/items/components/faceted-search";
 import { PageHeader } from "@/components/page-header";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
@@ -502,7 +503,10 @@ export function RssContent() {
           ) : null}
 
           {sourceUiState.showEmpty ? (
-            <Empty description={t("pages.rss.emptySources")} />
+            <ChartEmptyState
+              presentation="banner"
+              description={t("pages.rss.emptySources")}
+            />
           ) : null}
 
           {showSourceControls ? (

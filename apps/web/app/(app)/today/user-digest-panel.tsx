@@ -511,7 +511,7 @@ export function UserDigestPanel() {
                         description={
                           <div className="flex flex-col gap-2">
                             {event.summary ? (
-                              <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
+                              <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} className="!mb-0">
                                 {event.summary}
                               </Typography.Paragraph>
                             ) : null}
@@ -674,7 +674,7 @@ export function UserDigestPanel() {
           </Form.Item>
 
           {delivery.lastSentAt ? (
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            <Typography.Paragraph type="secondary" className="!mb-0">
               {t("pages.digest.delivery.lastSentAt")}:{" "}
               {formatDateTime(delivery.lastSentAt, locale, { dateStyle: "medium", timeStyle: "short" })}
             </Typography.Paragraph>

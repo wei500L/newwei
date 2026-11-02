@@ -201,14 +201,14 @@ export default function SsoCallbackPage() {
           type="error"
           showIcon
           message={challengeError}
-          style={{ marginTop: "1rem" }}
+          className="!mt-4"
         />
       ) : null}
       {challengeError && !challengeId && !enrollmentChallengeId ? (
         <Button
           type="primary"
           block
-          style={{ marginTop: "1rem" }}
+          className="!mt-4"
           href="/login"
         >
           {t("auth.sso.backToLogin")}
@@ -218,7 +218,7 @@ export default function SsoCallbackPage() {
         <Form
           layout="vertical"
           onFinish={onVerify}
-          style={{ marginTop: "1rem" }}
+          className="!mt-4"
         >
           <Form.Item
             label={t("auth.mfa.codeLabel")}
@@ -235,13 +235,13 @@ export default function SsoCallbackPage() {
         </Form>
       ) : null}
       {enrollmentChallengeId ? (
-        <div style={{ marginTop: "1rem" }}>
+        <div className="mt-4">
           <Alert
             type="info"
             showIcon
             message={t("auth.mfa.enrollmentRequiredMessage")}
             description={t("auth.mfa.enrollmentDescription")}
-            style={{ marginBottom: "1rem" }}
+            className="!mb-4"
           />
           {enrollmentLoading && !enrollmentSetup ? <Spin /> : null}
           {enrollmentSetup ? (
@@ -260,7 +260,7 @@ export default function SsoCallbackPage() {
                 type="success"
                 showIcon
                 message={t("auth.mfa.saveRecoveryCodes")}
-                style={{ marginBottom: "0.75rem" }}
+                className="!mb-3"
               />
               <Typography.Paragraph copyable>
                 {pendingRecoveryCodes.join(", ")}

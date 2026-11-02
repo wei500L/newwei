@@ -1054,7 +1054,7 @@ export function AssistantContent() {
                   aria-label={t('assistant.chat.deleteConversation')}
                 />
                 <div className="ml-2 w-full">
-                  <Space size={6} wrap style={{ marginBottom: 8 }}>
+                  <Space size={6} wrap className="!mb-2">
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${getStatusChipClass(run.status)}`}
                     >
@@ -1261,7 +1261,7 @@ export function AssistantContent() {
 
                     <div className={`${styles.messageEnter} mr-auto min-w-0 max-w-[98%] sm:max-w-[96%] xl:max-w-[93%]`}>
                       <div className={styles.assistantBubble}>
-                        <Space size={8} align="center" style={{ marginBottom: 14 }}>
+                        <Space size={8} align="center" className="!mb-3.5">
                           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs text-white dark:bg-slate-700">
                             <RobotOutlined />
                           </div>
@@ -1284,7 +1284,7 @@ export function AssistantContent() {
                             <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
                               {t('assistant.chat.modelInfoTitle')}
                             </span>
-                            <Space wrap style={{ marginTop: 10 }}>
+                            <Space wrap className="!mt-3">
                               {activeModelInfo?.llmModel ? (
                                 <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/70 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/40">
                                   {t('assistant.chat.modelLabel')}: {activeModelInfo.llmModel}
@@ -1316,7 +1316,7 @@ export function AssistantContent() {
 
                         {activeRun.error ? (
                           <Alert
-                            style={{ marginTop: 16 }}
+                            className="!mt-4"
                             type="error"
                             showIcon
                             icon={<CloseCircleOutlined />}
@@ -1327,7 +1327,7 @@ export function AssistantContent() {
 
                         {activeBlocked ? (
                           <Alert
-                            style={{ marginTop: 16 }}
+                            className="!mt-4"
                             type="warning"
                             showIcon
                             message={t('assistant.blocked.title')}
@@ -1401,7 +1401,7 @@ export function AssistantContent() {
               <div className="border-t border-slate-200/70 px-4 py-3 sm:px-6 sm:py-3.5 dark:border-slate-700/70">
                 {!canRunAssistant ? (
                   <Alert
-                    style={{ marginBottom: 16 }}
+                    className="!mb-4"
                     type="warning"
                     showIcon
                     message={t('common.accessDenied')}

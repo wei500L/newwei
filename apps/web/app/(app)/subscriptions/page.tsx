@@ -53,13 +53,13 @@ import {
 import { ContentSubscriptionsTab } from "./content-subscriptions-tab";
 
 const typeColor: Record<NotificationType, string> = {
-  [NotificationType.CrawlCompleted]: "green",
-  [NotificationType.CrawlFailed]: "red",
-  [NotificationType.AnalysisCompleted]: "blue",
-  [NotificationType.AnalysisFailed]: "red",
-  [NotificationType.OrgInvite]: "purple",
-  [NotificationType.AlertTriggered]: "orange",
-  [NotificationType.System]: "geekblue",
+  [NotificationType.CrawlCompleted]: "success",
+  [NotificationType.CrawlFailed]: "error",
+  [NotificationType.AnalysisCompleted]: "success",
+  [NotificationType.AnalysisFailed]: "error",
+  [NotificationType.OrgInvite]: "default",
+  [NotificationType.AlertTriggered]: "warning",
+  [NotificationType.System]: "default",
 };
 
 const CHANNEL_MODAL_FORM_ID = "subscriptions-channel-form";
@@ -878,7 +878,7 @@ export default function SubscriptionsPage() {
                       <Tag>{rule.severity}</Tag>
                       <Tag>{rule.operator}</Tag>
                       {isRuleMuted ? (
-                        <Tag color="gold">
+                        <Tag color="warning">
                           {t("subscriptions.mutedUntil", {
                             time: ruleMuteUntil?.format("YYYY-MM-DD HH:mm"),
                           })}
@@ -1039,7 +1039,7 @@ export default function SubscriptionsPage() {
                     <Typography.Text strong>{channel.name}</Typography.Text>
                     <Tag>{channel.type}</Tag>
                     {channel.isActive ? (
-                      <Tag color="green">{t("common.enabled")}</Tag>
+                      <Tag color="success">{t("common.enabled")}</Tag>
                     ) : (
                       <Tag color="default">{t("common.disabled")}</Tag>
                     )}
@@ -1154,7 +1154,7 @@ export default function SubscriptionsPage() {
                     <Space direction="vertical" size={0}>
                       {presentation.body ? (
                         <Typography.Paragraph
-                          style={{ marginBottom: 6 }}
+                          className="!mb-2"
                           ellipsis={{ rows: 2, expandable: false }}
                         >
                           {presentation.body}

@@ -62,7 +62,7 @@ export default function InvitePage() {
         <Alert
           type="info"
           showIcon
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
           message={t("auth.invite.joinAs", { org: invite.org.name, role: invite.primaryRole.name })}
         />
       ) : (
@@ -94,7 +94,7 @@ export default function InvitePage() {
             <Alert
               type="warning"
               showIcon
-              style={{ marginBottom: "1rem" }}
+              className="!mb-4"
               message={t("auth.invite.signedInAs", {
                 currentEmail: session.user.email,
                 email: invite.email,
