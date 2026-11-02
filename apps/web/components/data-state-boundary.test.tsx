@@ -150,4 +150,20 @@ describe("DataStateBoundary 状态分派", () => {
     });
     expect(screen.getByRole("status")).toHaveAttribute("aria-label", "正在加载告警");
   });
+
+  // FE-UI 批9A：非阻塞错误态在调用方未传 className 时包裹层用 contents，
+  // 不参与布局，避免打断父级 flex flex-col gap-6 的间距。
+  it("nonBlockingError：无 className 时包裹层用 contents，错误横幅与 children 都可见", () => {
+    renderBoundary({
+      state: { kind: "nonBlockingError", error: new Error("x") },
+    });
+
+    // 错误横幅可见
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    // children 文本可见
+    const wrapper = screen.getByText("data content");
+    expect(wrapper).toBeInTheDocument();
+    // 包裹层默认 contents，子区块仍按父级 gap 排布
+    expect(wrapper).toHaveClass("contents");
+  });
 });

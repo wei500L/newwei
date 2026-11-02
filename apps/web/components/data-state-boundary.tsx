@@ -127,13 +127,13 @@ export function DataStateBoundary({
       return <>{children}</>;
     case "refreshing":
       return (
-        <div aria-busy="true" className={className}>
+        <div aria-busy="true" className={className ?? "contents"}>
           {children}
         </div>
       );
     case "nonBlockingError":
       return (
-        <div className={className}>
+        <div className={className ?? "contents"}>
           <RequestErrorBanner
             error={state.error}
             onRetry={onRetry}
