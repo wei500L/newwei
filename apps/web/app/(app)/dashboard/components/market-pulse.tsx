@@ -370,7 +370,7 @@ export function MarketPulse({
         </span>
         <Space size={6} wrap>
           <Tooltip title={granularityTooltip}>
-            <Tag className="m-0 border-none bg-[var(--surface-muted)] px-2 text-[10px] text-muted-foreground">
+            <Tag className="m-0 border-none bg-[var(--surface-muted)] px-2 text-[11px] text-muted-foreground">
               {granularityTagText}
             </Tag>
           </Tooltip>
@@ -450,7 +450,7 @@ export function MarketPulse({
                         }
                       >
                         <div className={`flex items-center text-[11px] font-black px-2 py-0.5 rounded-full ${trendClass} border border-[var(--border)]`}>
-                          <Icon className="text-[10px]" />
+                          <Icon className="text-[11px]" />
                           <span className="ml-1 tracking-tight">{trendLabel}</span>
                         </div>
                       </Tooltip>
@@ -463,7 +463,7 @@ export function MarketPulse({
                     <Sparkline data={metric.data} color={metric.color} />
                   ) : (
                     <div className="h-[40px] flex items-end">
-                      <Typography.Text className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground italic">
+                      <Typography.Text className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground italic">
                         {metric.hasData
                           ? t("dashboard.hero.insufficientData")
                           : notAvailableLabel}

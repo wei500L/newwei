@@ -239,25 +239,25 @@ function DomesticOpinionPanel({
 
             <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-[var(--secondary-foreground)]/85 md:grid-cols-4">
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
-                <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Attention</div>
+                <div className="text-[11px] uppercase tracking-[0.2em] opacity-60">Attention</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.attentionScore)}
                 </div>
               </div>
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
-                <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Breadth</div>
+                <div className="text-[11px] uppercase tracking-[0.2em] opacity-60">Breadth</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.breadthScore)}
                 </div>
               </div>
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
-                <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Freshness</div>
+                <div className="text-[11px] uppercase tracking-[0.2em] opacity-60">Freshness</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.freshnessScore)}
                 </div>
               </div>
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
-                <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Pressure</div>
+                <div className="text-[11px] uppercase tracking-[0.2em] opacity-60">Pressure</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.sentimentPressure)}
                 </div>
@@ -266,7 +266,7 @@ function DomesticOpinionPanel({
 
             <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-[var(--secondary-foreground)]/85 md:grid-cols-3">
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
-                <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Hotlist</div>
+                <div className="text-[11px] uppercase tracking-[0.2em] opacity-60">Hotlist</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latestNewsnow?.indexValue ?? 0)}
                 </div>
@@ -277,7 +277,7 @@ function DomesticOpinionPanel({
                 </div>
               </div>
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
-                <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Pipeline</div>
+                <div className="text-[11px] uppercase tracking-[0.2em] opacity-60">Pipeline</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latestPipeline?.indexValue ?? 0)}
                 </div>
@@ -289,7 +289,7 @@ function DomesticOpinionPanel({
                 </div>
               </div>
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
-                <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Pipeline Pressure</div>
+                <div className="text-[11px] uppercase tracking-[0.2em] opacity-60">Pipeline Pressure</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
                   {formatPercent(latestPipeline?.sentimentPressure ?? 0)}
                 </div>
@@ -488,7 +488,7 @@ export function NewsnowHottestCandidates({
                 key={candidate.candidateId}
                 className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4"
               >
-                <div className="flex flex-wrap items-center gap-2 text-[10px] text-[var(--muted-foreground)]">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
                   <span className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 font-mono tabular-nums">
                     {t('newsnow.hottest.score', { score: formatPercent(candidate.candidateScore) })}
                   </span>
@@ -507,7 +507,7 @@ export function NewsnowHottestCandidates({
                     {candidate.summary}
                   </p>
                 ) : null}
-                <div className="mt-3 flex flex-wrap gap-1.5 text-[10px]">
+                <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
                   {candidate.themes.slice(0, 3).map((theme) => (
                     <span
                       key={theme}

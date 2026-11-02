@@ -268,7 +268,7 @@ export function AdminContent() {
                 </div>
                 <div className={styles.cardAction}>
                   {t("adminConsole.card.enter")}
-                  <RightOutlined className="ml-1 text-[10px]" />
+                  <RightOutlined className="ml-1 text-[11px]" />
                 </div>
               </Link>
             );
@@ -378,7 +378,7 @@ export function AdminContent() {
                                 </div>
                                 <div className={styles.cardAction}>
                                   {t("adminConsole.card.enter")}
-                                  <RightOutlined className="ml-1 text-[10px]" />
+                                  <RightOutlined className="ml-1 text-[11px]" />
                                 </div>
                               </Link>
                             );

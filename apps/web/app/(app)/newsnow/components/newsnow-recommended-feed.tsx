@@ -197,12 +197,12 @@ function RecommendedFeedItem({ item }: { item: NewsnowRecommendedItem }) {
         <div className="min-w-0 flex-1">
           <div className="kicker flex flex-wrap items-center gap-2">
             <span>{item.sourceName}</span>
-            <span className="rounded-full bg-[var(--foreground)] px-2 py-1 font-mono text-[10px] tracking-[0.08em] tabular-nums text-[var(--background)]">
+            <span className="rounded-full bg-[var(--foreground)] px-2 py-1 font-mono text-[11px] tracking-[0.08em] tabular-nums text-[var(--background)]">
               {t("newsnow.recommended.recommendScore", {
                 score: Math.round(item.score * 100),
               })}
             </span>
-            <span className="rounded-full border border-[var(--border)] px-2 py-1 text-[10px] tracking-[0.08em] text-[var(--accent)]">
+            <span className="rounded-full border border-[var(--border)] px-2 py-1 text-[11px] tracking-[0.08em] text-[var(--accent)]">
               {item.reasonLabel}
             </span>
           </div>

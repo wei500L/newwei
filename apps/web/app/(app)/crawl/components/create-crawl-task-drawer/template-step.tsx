@@ -29,7 +29,7 @@ export function TemplateStep({
       </Typography.Title>
       <Row gutter={[16, 16]}>
         {templates.map((template) => (
-          <Col span={12} key={template.key}>
+          <Col xs={24} sm={12} key={template.key}>
             <button
               type="button"
               aria-pressed={selectedTemplate === template.key}

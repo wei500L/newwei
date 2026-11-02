@@ -439,7 +439,7 @@ export function WarMap({
     ? ["relative", className?.trim()].filter(Boolean).join(" ")
     : resolveWarMapContainerClassName(className);
   const mapViewportClassName = standaloneLayout
-    ? "relative min-h-[24rem] h-[clamp(24rem,56dvh,38rem)] overflow-hidden rounded-[24px] md:h-[clamp(28rem,56dvh,38rem)] xl:h-[clamp(32rem,62dvh,44rem)]"
+    ? "relative min-h-[24rem] h-[clamp(24rem,56dvh,38rem)] overflow-hidden rounded-lg md:h-[clamp(28rem,56dvh,38rem)] xl:h-[clamp(32rem,62dvh,44rem)]"
     : "relative h-full";
 
   if (!inView) {

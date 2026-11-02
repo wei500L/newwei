@@ -1341,6 +1341,7 @@ export const NewsnowCard = memo(function NewsnowCard({
               size="small"
               loading={isFetching || isRefreshing}
               icon={<ReloadOutlined />}
+              aria-label={t("newsnow.card.refreshTooltip")}
               onClick={() => {
                 void handleRefresh();
               }}
@@ -1359,6 +1360,7 @@ export const NewsnowCard = memo(function NewsnowCard({
                 )
               }
               onClick={() => toggleFocus(id)}
+              aria-label={t(isFocused ? "newsnow.search.unfocus" : "newsnow.search.focus")}
               className="h-7 w-7 text-[var(--secondary-foreground)] hover:bg-[var(--background)] hover:text-amber-500"
             />
           </Tooltip>

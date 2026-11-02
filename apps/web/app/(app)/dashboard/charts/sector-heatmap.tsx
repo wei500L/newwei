@@ -423,14 +423,14 @@ export function SectorHeatmap() {
                 <span>
                   {t("dashboard.charts.sectorHeatmapConfigErrorDescription")}
                 </span>
-                <span className="font-mono text-[10px] opacity-80">
+                <span className="font-mono text-[11px] opacity-80">
                   code: DASHBOARD_SECTOR_HEATMAP_FIELD_MAPPING_MISMATCH
                 </span>
                 {fieldMismatch.detail ? (
-                  <span className="font-mono text-[10px] opacity-80">{fieldMismatch.detail}</span>
+                  <span className="font-mono text-[11px] opacity-80">{fieldMismatch.detail}</span>
                 ) : null}
                 {list ? (
-                  <pre className="max-w-[520px] whitespace-pre-wrap text-left font-mono text-[10px] opacity-80">
+                  <pre className="max-w-[520px] whitespace-pre-wrap text-left font-mono text-[11px] opacity-80">
                     {list}
                   </pre>
                 ) : null}

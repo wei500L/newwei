@@ -165,7 +165,7 @@ export function NewsListTimeline({
             >
               {item.title}
             </a>
-            <div className="mt-1 flex items-center gap-1.5 px-2 text-[10px]">
+            <div className="mt-1 flex items-center gap-1.5 px-2 text-[11px]">
               {isFresh ? (
                 <span className="rounded-sm border border-[var(--border)] px-1.5 py-0.5 font-bold text-[var(--accent)]">
                   NEW

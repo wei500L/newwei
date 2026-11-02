@@ -140,7 +140,7 @@ export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
                         </span>
                         <Tag
                           color={colorMap[source.color] || "blue"}
-                          className="text-[10px]"
+                          className="text-[11px]"
                         >
                           {column}
                         </Tag>

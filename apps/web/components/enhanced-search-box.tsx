@@ -546,10 +546,10 @@ export function EnhancedSearchBox({
                 <span>{suggestion.value}</span>
               </span>
               <span className="inline-flex items-center gap-1">
-                <Tag className="text-[10px]" bordered={false}>
+                <Tag className="text-[11px]" bordered={false}>
                   {suggestionTypeLabel(suggestion.type)}
                 </Tag>
-                <Tag className="text-[10px]" bordered={false}>
+                <Tag className="text-[11px]" bordered={false}>
                   {suggestionOriginLabel(suggestion.origin)}
                 </Tag>
               </span>

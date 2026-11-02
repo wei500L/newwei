@@ -1017,7 +1017,7 @@ export function AssistantContent() {
                 role="button"
                 tabIndex={0}
                 aria-pressed={selected}
-                className={`group relative mb-2 w-full overflow-hidden rounded-2xl border px-4 py-3 text-left transition-all last:mb-0 ${
+                className={`group relative mb-2 w-full overflow-hidden rounded-md border px-3 py-2.5 text-left transition-all last:mb-0 ${
                   selected
                     ? 'border-sky-200/80 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.12)] dark:border-sky-400/50 dark:bg-slate-900/85 dark:shadow-[0_10px_30px_rgba(2,6,23,0.55)]'
                     : 'border-transparent bg-white/55 hover:border-slate-200/80 hover:bg-white/80 dark:bg-slate-900/45 dark:hover:border-slate-600/70 dark:hover:bg-slate-900/72'
@@ -1436,7 +1436,7 @@ export function AssistantContent() {
                     placeholder={placeholder}
                     aria-label={t('assistant.chat.inputAriaLabel')}
                     disabled={!canRunAssistant || querySaving}
-                    className={`rounded-2xl px-5 text-[15px] transition-all ${
+                    className={`px-5 transition-all ${
                       composerExpanded ? 'py-4' : 'py-2.5'
                     }`}
                     onPressEnter={(event) => {

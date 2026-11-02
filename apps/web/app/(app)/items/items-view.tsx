@@ -2254,12 +2254,12 @@ export function ItemsView({
         <div className="flex flex-col items-center gap-1">
           <span>{t("items.empty.filteredDescription")}</span>
           {search ? (
-            <span className="font-mono text-[10px] opacity-80">
+            <span className="font-mono text-[11px] opacity-80">
               {t("items.stats.query")}: {search}
             </span>
           ) : null}
           {filterSummary.text ? (
-            <span className="font-mono text-[10px] opacity-80">
+            <span className="font-mono text-[11px] opacity-80">
               {filterSummary.text}
             </span>
           ) : null}

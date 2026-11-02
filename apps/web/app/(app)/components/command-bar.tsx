@@ -196,7 +196,7 @@ export function CommandBar() {
           />
           <div className="ml-2 flex gap-1">
             <kbd
-              className={`hidden h-5 items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-1.5 text-[10px] font-medium text-slate-500 transition-[opacity,transform,background-color,border-color,color] duration-300 dark:border-slate-600/90 dark:bg-slate-800/80 dark:text-slate-300 md:inline-flex ${
+              className={`hidden h-5 items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-1.5 text-[11px] font-medium text-slate-500 transition-[opacity,transform,background-color,border-color,color] duration-300 dark:border-slate-600/90 dark:bg-slate-800/80 dark:text-slate-300 md:inline-flex ${
                 focused ? "pointer-events-none translate-x-1 scale-95 opacity-0" : "translate-x-0 scale-100 opacity-100"
               }`}
             >
@@ -248,12 +248,12 @@ export function CommandBar() {
                         <span className="line-clamp-1 text-sm text-slate-800 transition-colors duration-200 group-hover:text-[var(--primary)] dark:text-slate-100">
                           {edge.node.title}
                         </span>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
                           {externalIdLabel}: {edge.node.meta?.externalId ?? "-"}
                         </span>
                       </div>
                     </div>
-                    <span className="rounded-sm border border-[var(--accent)]/30 px-1.5 py-0.5 text-[10px] text-[var(--accent)]">
+                    <span className="rounded-sm border border-[var(--accent)]/30 px-1.5 py-0.5 text-[11px] text-[var(--accent)]">
                       {statusLabel}
                     </span>
                   </div>

@@ -348,7 +348,7 @@ function NewsCardComponent({
         </div>
       )}
       {item.duplicateOf ? (
-        <div className="text-muted-foreground text-[10px]">
+        <div className="text-muted-foreground text-[11px]">
           {t("items.duplicate.of")}: {item.duplicateOf}
         </div>
       ) : null}
@@ -380,7 +380,7 @@ function NewsCardComponent({
         </div>
       )}
       {llmSummary && (
-        <div className="border-t pt-2 mt-1 text-[10px] text-muted-foreground">
+        <div className="border-t pt-2 mt-1 text-[11px] text-muted-foreground">
           {llmSummary}
         </div>
       )}
@@ -547,6 +547,7 @@ function NewsCardComponent({
                   type="text"
                   size="small"
                   icon={<BookOutlined />}
+                  aria-label={readModeLabel}
                   href={readModeHref}
                 />
               </Tooltip>
@@ -558,6 +559,7 @@ function NewsCardComponent({
                   type="text"
                   size="small"
                   icon={<ShareAltOutlined />}
+                  aria-label={shareLabel}
                   onClick={() => {
                     void shareTrackedNewsLink({
                       title: item.title,

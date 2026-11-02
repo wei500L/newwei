@@ -50,7 +50,7 @@ function DiffBadge({ diff }: { diff: number }) {
 
   return (
     <span
-      className={`pointer-events-none absolute left-[34px] top-[3px] text-[10px] font-bold leading-none opacity-80 transition-opacity ${diff < 0 ? "text-[var(--bullish)]" : "text-[var(--destructive)]"}`}
+      className={`pointer-events-none absolute left-[34px] top-[3px] text-[11px] font-bold leading-none opacity-80 transition-opacity ${diff < 0 ? "text-[var(--bullish)]" : "text-[var(--destructive)]"}`}
     >
       {diff > 0 ? `+${diff}` : diff}
     </span>
@@ -177,7 +177,7 @@ export function NewsListHot({
                   <span className="mt-1 block truncate text-xs leading-4 text-[var(--secondary-foreground)] opacity-80">
                     <ExtraInfo item={item} />
                   </span>
-                  <span className="mt-1 flex items-center gap-1.5 text-[10px]">
+                  <span className="mt-1 flex items-center gap-1.5 text-[11px]">
                     {isFresh ? (
                       <span className="rounded-sm border border-[var(--border)] px-1.5 py-0.5 font-bold text-[var(--accent)]">
                         NEW

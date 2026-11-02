@@ -324,7 +324,7 @@ export function EntityIntelligenceCard({
                     className={`rounded-md border px-3 py-2 text-sm ${
                       isSeed
                         ? "border-blue-500 bg-blue-50 text-blue-900"
-                        : "border-slate-200 bg-white text-slate-700"
+                        : "border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]"
                     }`}
                   >
                     <Text strong={isSeed}>{node.name}</Text>
