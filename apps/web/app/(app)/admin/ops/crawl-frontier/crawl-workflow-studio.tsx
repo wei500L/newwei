@@ -21,7 +21,6 @@ import {
   Collapse,
   Descriptions,
   Drawer,
-  Empty,
   Form,
   Input,
   InputNumber,
@@ -42,6 +41,8 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { SectionHeader } from "@/components/section-header";
 import { createApiClient } from "@/lib/api-client";
 import {
   findUnsupportedWorkflowProxyIssues,
@@ -835,10 +836,10 @@ function WorkflowStudioInner({
           <Tag
             color={
               record.status === "selected"
-                ? "green"
+                ? "success"
                 : record.status === "rejected"
-                  ? "red"
-                  : "blue"
+                  ? "error"
+                  : undefined
             }
           >
             {record.status}
@@ -853,13 +854,13 @@ function WorkflowStudioInner({
           <Space wrap size={[4, 4]}>
             {record.pageType ? <Tag>{record.pageType}</Tag> : null}
             {typeof record.score === "number" ? (
-              <Tag color="blue">{`score:${record.score.toFixed(2)}`}</Tag>
+              <span className="font-mono text-xs text-muted-foreground">{`score ${record.score.toFixed(2)}`}</span>
             ) : null}
             {typeof record.freshnessScore === "number" ? (
-              <Tag color="gold">{`fresh:${record.freshnessScore.toFixed(2)}`}</Tag>
+              <span className="font-mono text-xs text-muted-foreground">{`fresh ${record.freshnessScore.toFixed(2)}`}</span>
             ) : null}
             {typeof record.relevanceScore === "number" ? (
-              <Tag color="purple">{`rel:${record.relevanceScore.toFixed(2)}`}</Tag>
+              <span className="font-mono text-xs text-muted-foreground">{`rel ${record.relevanceScore.toFixed(2)}`}</span>
             ) : null}
           </Space>
         ),
@@ -968,11 +969,8 @@ function WorkflowStudioInner({
                 size="middle"
                 style={{ width: "100%" }}
               >
-                <Card
-                  size="small"
-                  title={t("crawlFrontier.workflowStudio.sections.workflows")}
-                  bodyStyle={{ padding: 12 }}
-                >
+                <section className="surface-inset flex flex-col gap-3">
+                  <SectionHeader title={t("crawlFrontier.workflowStudio.sections.workflows")} />
                   <Select
                     showSearch
                     value={selectedWorkflowId}
@@ -989,7 +987,7 @@ function WorkflowStudioInner({
                   <Space
                     direction="vertical"
                     size={8}
-                    style={{ width: "100%", marginTop: 12 }}
+                    style={{ width: "100%" }}
                   >
                     {selectedWorkflow ? (
                       <>
@@ -1034,20 +1032,17 @@ function WorkflowStudioInner({
                         />
                       </>
                     ) : (
-                      <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      <ChartEmptyState
+                        presentation="banner"
                         description={t(
                           "crawlFrontier.workflowStudio.empty.selectWorkflow",
                         )}
                       />
                     )}
                   </Space>
-                </Card>
-                <Card
-                  size="small"
-                  title={t("crawlFrontier.workflowStudio.sections.compare")}
-                  bodyStyle={{ padding: 12 }}
-                >
+                </section>
+                <section className="surface-inset flex flex-col gap-3">
+                  <SectionHeader title={t("crawlFrontier.workflowStudio.sections.compare")} />
                   <Space
                     direction="vertical"
                     size={10}
@@ -1239,7 +1234,7 @@ function WorkflowStudioInner({
                             ).map((node) => (
                               <div key={`added-${node.id}`} className="hairline-b py-2">
                                 <Space wrap size={[6, 6]}>
-                                  <Tag color="green">
+                                  <Tag color="success">
                                     {t(
                                       "crawlFrontier.workflowStudio.compare.tags.added",
                                     )}
@@ -1256,7 +1251,7 @@ function WorkflowStudioInner({
                             ).map((node) => (
                               <div key={`removed-${node.id}`} className="hairline-b py-2">
                                 <Space wrap size={[6, 6]}>
-                                  <Tag color="red">
+                                  <Tag color="error">
                                     {t(
                                       "crawlFrontier.workflowStudio.compare.tags.removed",
                                     )}
@@ -1278,7 +1273,7 @@ function WorkflowStudioInner({
                                   style={{ width: "100%" }}
                                 >
                                   <Space wrap size={[6, 6]}>
-                                    <Tag color="gold">
+                                    <Tag color="warning">
                                       {t(
                                         "crawlFrontier.workflowStudio.compare.tags.changed",
                                       )}
@@ -1308,12 +1303,12 @@ function WorkflowStudioInner({
                             ) : null}
                           </Space>
                         </div>
-                        <Card
-                          size="small"
-                          title={t(
-                            "crawlFrontier.workflowStudio.compare.cards.edgeDiff",
-                          )}
-                        >
+                        <div className="flex flex-col gap-2">
+                          <p className="kicker m-0">
+                            {t(
+                              "crawlFrontier.workflowStudio.compare.cards.edgeDiff",
+                            )}
+                          </p>
                           <Space
                             direction="vertical"
                             size={8}
@@ -1347,14 +1342,14 @@ function WorkflowStudioInner({
                               </Typography.Text>
                             ) : null}
                           </Space>
-                        </Card>
+                        </div>
                         {compareResult!.bindingImpact ? (
-                          <Card
-                            size="small"
-                            title={t(
-                              "crawlFrontier.workflowStudio.compare.cards.bindingImpact",
-                            )}
-                          >
+                          <div className="flex flex-col gap-2">
+                            <p className="kicker m-0">
+                              {t(
+                                "crawlFrontier.workflowStudio.compare.cards.bindingImpact",
+                              )}
+                            </p>
                             <Space
                               direction="vertical"
                               size={10}
@@ -1384,9 +1379,9 @@ function WorkflowStudioInner({
                                 {compareResult!.bindingImpact.profiles.items
                                   .slice(0, 4)
                                   .map((entry) => (
-                                    <Card
+                                    <div
                                       key={`profile-impact-${entry.id}`}
-                                      size="small"
+                                      className="hairline-b py-2 last:border-b-0"
                                     >
                                       <Space
                                         direction="vertical"
@@ -1394,11 +1389,9 @@ function WorkflowStudioInner({
                                         style={{ width: "100%" }}
                                       >
                                         <Space wrap size={[6, 6]}>
-                                          <Tag color="geekblue">profile</Tag>
+                                          <Tag>profile</Tag>
                                           <Tag>{entry.workflowBindingMode}</Tag>
-                                          <Tag color="cyan">
-                                            {entry.appliesTo}
-                                          </Tag>
+                                          <Tag>{entry.appliesTo}</Tag>
                                         </Space>
                                         <Typography.Text strong>
                                           {entry.name}
@@ -1409,14 +1402,14 @@ function WorkflowStudioInner({
                                           </Typography.Text>
                                         ) : null}
                                       </Space>
-                                    </Card>
+                                    </div>
                                   ))}
                                 {compareResult!.bindingImpact.newsSources.items
                                   .slice(0, 4)
                                   .map((entry) => (
-                                    <Card
+                                    <div
                                       key={`news-impact-${entry.id}`}
-                                      size="small"
+                                      className="hairline-b py-2 last:border-b-0"
                                     >
                                       <Space
                                         direction="vertical"
@@ -1424,11 +1417,9 @@ function WorkflowStudioInner({
                                         style={{ width: "100%" }}
                                       >
                                         <Space wrap size={[6, 6]}>
-                                          <Tag color="purple">news source</Tag>
+                                          <Tag>news source</Tag>
                                           <Tag>{entry.workflowBindingMode}</Tag>
-                                          <Tag color="cyan">
-                                            {entry.appliesTo}
-                                          </Tag>
+                                          <Tag>{entry.appliesTo}</Tag>
                                         </Space>
                                         <Typography.Text strong>
                                           {entry.name}
@@ -1442,11 +1433,11 @@ function WorkflowStudioInner({
                                           </Typography.Text>
                                         ) : null}
                                       </Space>
-                                    </Card>
+                                    </div>
                                   ))}
                               </Space>
                             </Space>
-                          </Card>
+                          </div>
                         ) : null}
                       </Space>
                     ) : (
@@ -1457,12 +1448,9 @@ function WorkflowStudioInner({
                       </Typography.Text>
                     )}
                   </Space>
-                </Card>
-                <Card
-                  size="small"
-                  title={t("crawlFrontier.workflowStudio.sections.nodePalette")}
-                  bodyStyle={{ padding: 12 }}
-                >
+                </section>
+                <section className="surface-inset flex flex-col gap-3">
+                  <SectionHeader title={t("crawlFrontier.workflowStudio.sections.nodePalette")} />
                   <Space wrap size={[8, 8]}>
                     {nodeSchemas.map((schema) => (
                       <Tooltip key={schema.type} title={schema.description}>
@@ -1476,12 +1464,9 @@ function WorkflowStudioInner({
                       </Tooltip>
                     ))}
                   </Space>
-                </Card>
-                <Card
-                  size="small"
-                  title={t("crawlFrontier.workflowStudio.sections.trialRun")}
-                  bodyStyle={{ padding: 12 }}
-                >
+                </section>
+                <section className="surface-inset flex flex-col gap-3">
+                  <SectionHeader title={t("crawlFrontier.workflowStudio.sections.trialRun")} />
                   <Space
                     direction="vertical"
                     size={10}
@@ -1531,14 +1516,13 @@ function WorkflowStudioInner({
                       )}
                     />
                   </Space>
-                </Card>
-                <Card
-                  size="small"
-                  title={t(
-                    "crawlFrontier.workflowStudio.sections.linkedFrontierRuns",
-                  )}
-                  bodyStyle={{ padding: 12 }}
-                >
+                </section>
+                <section className="surface-inset flex flex-col gap-3">
+                  <SectionHeader
+                    title={t(
+                      "crawlFrontier.workflowStudio.sections.linkedFrontierRuns",
+                    )}
+                  />
                   <Space
                     direction="vertical"
                     size={8}
@@ -1552,7 +1536,7 @@ function WorkflowStudioInner({
                       </Typography.Text>
                     ) : (
                       linkedFrontierRuns.slice(0, 6).map((run) => (
-                        <Card key={run.id} size="small">
+                        <div key={run.id} className="hairline-b py-2 last:border-b-0">
                           <Space
                             direction="vertical"
                             size={4}
@@ -1567,36 +1551,34 @@ function WorkflowStudioInner({
                               <Tag
                                 color={
                                   run.status === "completed"
-                                    ? "green"
+                                    ? "success"
                                     : run.status === "failed"
-                                      ? "red"
-                                      : "blue"
+                                      ? "error"
+                                      : undefined
                                 }
                               >
                                 {run.status}
                               </Tag>
                               {run.workflowRunId ? (
-                                <Tag color="geekblue">trace</Tag>
+                                <Tag>trace</Tag>
                               ) : null}
                             </Space>
                             <Typography.Text type="secondary">
                               {new Date(run.createdAt).toLocaleString()}
                             </Typography.Text>
                           </Space>
-                        </Card>
+                        </div>
                       ))
                     )}
                   </Space>
-                </Card>
+                </section>
               </Space>
             </Col>
             <Col xs={24} xl={12}>
-              <Card
-                size="small"
-                title={t("crawlFrontier.workflowStudio.sections.canvas")}
-                styles={{ body: { padding: 0 } }}
-              >
-                <div className="h-[min(720px,70dvh)] bg-[var(--surface-muted)]">
+              <section className="flex flex-col gap-2">
+                <SectionHeader title={t("crawlFrontier.workflowStudio.sections.canvas")} />
+                <div className="overflow-hidden rounded-md border border-[var(--border)]">
+                  <div className="h-[min(720px,70dvh)] bg-[var(--surface-muted)]">
                   {definition ? (
                     <ReactFlow
                       nodes={nodes}
@@ -1617,15 +1599,17 @@ function WorkflowStudioInner({
                     </ReactFlow>
                   ) : (
                     <div className="flex h-full items-center justify-center">
-                      <Empty
+                      <ChartEmptyState
+                        presentation="banner"
                         description={t(
                           "crawlFrontier.workflowStudio.empty.createToEdit",
                         )}
                       />
                     </div>
                   )}
+                  </div>
                 </div>
-              </Card>
+              </section>
             </Col>
             <Col xs={24} xl={7}>
               <Space
@@ -1633,14 +1617,11 @@ function WorkflowStudioInner({
                 size="middle"
                 style={{ width: "100%" }}
               >
-                <Card
-                  size="small"
-                  title={t("crawlFrontier.workflowStudio.sections.inspector")}
-                  bodyStyle={{ padding: 12 }}
-                >
+                <section className="surface-inset flex flex-col gap-3">
+                  <SectionHeader title={t("crawlFrontier.workflowStudio.sections.inspector")} />
                   {!selectedNodeDefinition || !selectedNodeSchema ? (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    <ChartEmptyState
+                      presentation="banner"
                       description={t(
                         "crawlFrontier.workflowStudio.empty.selectNode",
                       )}
@@ -1850,18 +1831,17 @@ function WorkflowStudioInner({
                       })}
                     </Space>
                   )}
-                </Card>
-                <Card
-                  size="small"
-                  title={t(
-                    "crawlFrontier.workflowStudio.sections.workflowSettings",
-                  )}
-                  bodyStyle={{ padding: 12 }}
-                >
+                </section>
+                <section className="surface-inset flex flex-col gap-3">
+                  <SectionHeader
+                    title={t(
+                      "crawlFrontier.workflowStudio.sections.workflowSettings",
+                    )}
+                  />
                   {definition ? (
                     <Form layout="vertical">
                       <Row gutter={[12, 0]}>
-                        <Col span={12}>
+                        <Col xs={24} md={12}>
                           <Form.Item
                             label={t(
                               "crawlFrontier.workflowStudio.settings.executionMode",
@@ -1891,7 +1871,7 @@ function WorkflowStudioInner({
                             />
                           </Form.Item>
                         </Col>
-                        <Col span={12}>
+                        <Col xs={24} md={12}>
                           <Form.Item
                             label={t(
                               "crawlFrontier.workflowStudio.settings.robotsPolicy",
@@ -1921,7 +1901,7 @@ function WorkflowStudioInner({
                         </Col>
                       </Row>
                       <Row gutter={[12, 0]}>
-                        <Col span={12}>
+                        <Col xs={24} md={12}>
                           <Form.Item
                             label={t(
                               "crawlFrontier.workflowStudio.settings.maxDepth",
@@ -1948,7 +1928,7 @@ function WorkflowStudioInner({
                             />
                           </Form.Item>
                         </Col>
-                        <Col span={12}>
+                        <Col xs={24} md={12}>
                           <Form.Item
                             label={t(
                               "crawlFrontier.workflowStudio.settings.maxPages",
@@ -1978,14 +1958,14 @@ function WorkflowStudioInner({
                       </Row>
                     </Form>
                   ) : (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    <ChartEmptyState
+                      presentation="banner"
                       description={t(
                         "crawlFrontier.workflowStudio.empty.noWorkflowSelected",
                       )}
                     />
                   )}
-                </Card>
+                </section>
               </Space>
             </Col>
             </Row>
@@ -1993,13 +1973,11 @@ function WorkflowStudioInner({
         )}
       </Card>
 
-      <Card
-        className="content-card"
-        size="small"
-        title={t("crawlFrontier.workflowStudio.sections.trialResult")}
-      >
+      <section className="content-card flex flex-col gap-4 p-4">
+        <SectionHeader title={t("crawlFrontier.workflowStudio.sections.trialResult")} />
         {!trialResult ? (
-          <Empty
+          <ChartEmptyState
+            presentation="banner"
             description={t(
               "crawlFrontier.workflowStudio.empty.trialResult",
             )}
@@ -2027,23 +2005,15 @@ function WorkflowStudioInner({
             </div>
             <Row gutter={[16, 16]}>
               <Col xs={24} xl={9}>
-                <Card
-                  size="small"
-                  title={t(
-                    "crawlFrontier.workflowStudio.trial.cards.stepTimeline",
-                  )}
-                >
+                <section className="surface-inset flex flex-col gap-3">
+                  <SectionHeader title={t("crawlFrontier.workflowStudio.trial.cards.stepTimeline")} />
                   <Space
                     direction="vertical"
                     size={10}
                     style={{ width: "100%" }}
                   >
                     {trialResult.steps.map((step) => (
-                      <Card
-                        key={step.nodeId}
-                        size="small"
-                        className="bg-surface-muted"
-                      >
+                      <div key={step.nodeId} className="hairline-b py-2 last:border-b-0">
                         <Space
                           direction="vertical"
                           size={4}
@@ -2053,16 +2023,16 @@ function WorkflowStudioInner({
                             <Tag
                               color={
                                 step.status === "completed"
-                                  ? "green"
+                                  ? "success"
                                   : step.status === "failed"
-                                    ? "red"
-                                    : "default"
+                                    ? "error"
+                                    : undefined
                               }
                             >
                               {step.status}
                             </Tag>
                             <Tag>{step.nodeType}</Tag>
-                            <Tag color="blue">{`${step.durationMs}ms`}</Tag>
+                            <span className="font-mono text-xs text-muted-foreground">{`${step.durationMs}ms`}</span>
                           </Space>
                           <Typography.Text strong>{step.label}</Typography.Text>
                           <Typography.Text type="secondary">
@@ -2072,10 +2042,10 @@ function WorkflowStudioInner({
                             <Alert type="error" showIcon message={step.error} />
                           ) : null}
                         </Space>
-                      </Card>
+                      </div>
                     ))}
                   </Space>
-                </Card>
+                </section>
               </Col>
               <Col xs={24} xl={15}>
                 <Space
@@ -2083,12 +2053,8 @@ function WorkflowStudioInner({
                   size="large"
                   style={{ width: "100%" }}
                 >
-                  <Card
-                    size="small"
-                    title={t(
-                      "crawlFrontier.workflowStudio.trial.cards.candidateFlow",
-                    )}
-                  >
+                  <section className="surface-inset flex flex-col gap-3">
+                    <SectionHeader title={t("crawlFrontier.workflowStudio.trial.cards.candidateFlow")} />
                     <Table
                       rowKey="id"
                       columns={candidateColumns}
@@ -2097,13 +2063,9 @@ function WorkflowStudioInner({
                       size="small"
                       scroll={{ x: "max-content" }}
                     />
-                  </Card>
-                  <Card
-                    size="small"
-                    title={t(
-                      "crawlFrontier.workflowStudio.trial.cards.systemEvents",
-                    )}
-                  >
+                  </section>
+                  <section className="surface-inset flex flex-col gap-3">
+                    <SectionHeader title={t("crawlFrontier.workflowStudio.trial.cards.systemEvents")} />
                     <Space
                       direction="vertical"
                       size="middle"
@@ -2117,9 +2079,9 @@ function WorkflowStudioInner({
                         </Typography.Text>
                       ) : (
                         trialResult.systemEvents.map((event, index) => (
-                          <Card
+                          <div
                             key={`${event.eventType}-${index}`}
-                            size="small"
+                            className="hairline-b py-2 last:border-b-0"
                           >
                             <Space
                               direction="vertical"
@@ -2130,10 +2092,10 @@ function WorkflowStudioInner({
                                 <Tag
                                   color={
                                     event.level === "error"
-                                      ? "red"
+                                      ? "error"
                                       : event.level === "warn"
-                                        ? "gold"
-                                        : "blue"
+                                        ? "warning"
+                                        : undefined
                                   }
                                 >
                                   {event.level}
@@ -2146,7 +2108,7 @@ function WorkflowStudioInner({
                                   <Tag>{`node:${event.nodeId}`}</Tag>
                                 ) : null}
                                 {event.triggerReason ? (
-                                  <Tag color="purple">
+                                  <Tag>
                                     {event.triggerReason}
                                   </Tag>
                                 ) : null}
@@ -2160,9 +2122,9 @@ function WorkflowStudioInner({
                               (event.afterCount !== null &&
                                 event.afterCount !== undefined) ? (
                                 <Space wrap size={[4, 4]}>
-                                  <Tag color="blue">{`before:${event.beforeCount ?? 0}`}</Tag>
-                                  <Tag color="geekblue">{`after:${event.afterCount ?? 0}`}</Tag>
-                                  <Tag color="green">{`rescued:${event.rescuedCount ?? 0}`}</Tag>
+                                  <span className="font-mono text-xs text-muted-foreground">{`before ${event.beforeCount ?? 0}`}</span>
+                                  <span className="font-mono text-xs text-muted-foreground">{`after ${event.afterCount ?? 0}`}</span>
+                                  <span className="font-mono text-xs text-muted-foreground">{`rescued ${event.rescuedCount ?? 0}`}</span>
                                 </Space>
                               ) : null}
                               {event.details ? (
@@ -2177,20 +2139,16 @@ function WorkflowStudioInner({
                                 </Typography.Paragraph>
                               ) : null}
                             </Space>
-                          </Card>
+                          </div>
                         ))
                       )}
                     </Space>
-                  </Card>
+                  </section>
                 </Space>
               </Col>
             </Row>
-            <Card
-              size="small"
-              title={t(
-                "crawlFrontier.workflowStudio.trial.cards.parameterSources",
-              )}
-            >
+            <section className="surface-inset flex flex-col gap-3">
+              <SectionHeader title={t("crawlFrontier.workflowStudio.trial.cards.parameterSources")} />
               <Space wrap size={[6, 6]}>
                 {trialResult.parameterSources.length === 0 ? (
                   <Typography.Text type="secondary">
@@ -2206,10 +2164,10 @@ function WorkflowStudioInner({
                   ))
                 )}
               </Space>
-            </Card>
+            </section>
           </Space>
         )}
-      </Card>
+      </section>
 
       <Drawer
         title={t("crawlFrontier.workflowStudio.drawer.candidateExplanation")}
@@ -2219,7 +2177,7 @@ function WorkflowStudioInner({
       >
         {candidateDrawer ? (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
-            <Card size="small">
+            <div className="surface-inset flex flex-col gap-2">
               <Space direction="vertical" size={4} style={{ width: "100%" }}>
                 <Typography.Text strong>
                   {candidateDrawer.title || candidateDrawer.url}
@@ -2231,10 +2189,10 @@ function WorkflowStudioInner({
                   <Tag
                     color={
                       candidateDrawer.status === "selected"
-                        ? "green"
+                        ? "success"
                         : candidateDrawer.status === "rejected"
-                          ? "red"
-                          : "blue"
+                          ? "error"
+                          : undefined
                     }
                   >
                     {candidateDrawer.status}
@@ -2244,15 +2202,15 @@ function WorkflowStudioInner({
                     <Tag>{candidateDrawer.pageType}</Tag>
                   ) : null}
                   {candidateDrawer.rejectedReason ? (
-                    <Tag color="red">{candidateDrawer.rejectedReason}</Tag>
+                    <Tag>{candidateDrawer.rejectedReason}</Tag>
                   ) : null}
                 </Space>
               </Space>
-            </Card>
-            <Card
-              size="small"
-              title={t("crawlFrontier.workflowStudio.drawer.traceSummary")}
-            >
+            </div>
+            <div className="flex flex-col gap-2">
+              <p className="kicker m-0">
+                {t("crawlFrontier.workflowStudio.drawer.traceSummary")}
+              </p>
               {(() => {
                 const summary =
                   buildWorkflowCandidateTraceSummary(candidateDrawer);
@@ -2277,7 +2235,7 @@ function WorkflowStudioInner({
                     <Descriptions.Item label="Rule hits" span={2}>
                       <Space wrap>
                         {summary.ruleHits.map((rule) => (
-                          <Tag key={`rule-${rule}`} color="orange">
+                          <Tag key={`rule-${rule}`}>
                             {rule}
                           </Tag>
                         ))}
@@ -2291,10 +2249,10 @@ function WorkflowStudioInner({
                             key={step.key}
                             color={
                               step.status === "selected"
-                                ? "green"
+                                ? "success"
                                 : step.status === "rejected"
-                                  ? "red"
-                                  : "blue"
+                                  ? "error"
+                                  : undefined
                             }
                           >
                             {`${step.index}. ${step.label}`}
@@ -2305,11 +2263,11 @@ function WorkflowStudioInner({
                   </Descriptions>
                 );
               })()}
-            </Card>
-            <Card
-              size="small"
-              title={t("crawlFrontier.workflowStudio.drawer.trace")}
-            >
+            </div>
+            <div className="flex flex-col gap-2">
+              <p className="kicker m-0">
+                {t("crawlFrontier.workflowStudio.drawer.trace")}
+              </p>
               <Space
                 direction="vertical"
                 size="middle"
@@ -2320,7 +2278,7 @@ function WorkflowStudioInner({
                     const entry = step.entry;
                     const diffRows = buildWorkflowTraceEntryDiffRows(entry);
                     return (
-                      <Card key={step.key} size="small">
+                      <div key={step.key} className="hairline-b py-2 last:border-b-0">
                         <Space
                           direction="vertical"
                           size={4}
@@ -2331,16 +2289,16 @@ function WorkflowStudioInner({
                             <Tag
                               color={
                                 step.status === "selected"
-                                  ? "green"
+                                  ? "success"
                                   : step.status === "rejected"
-                                    ? "red"
-                                    : "blue"
+                                    ? "error"
+                                    : undefined
                               }
                             >
                               {entry.action}
                             </Tag>
                             {step.rejectedReason ? (
-                              <Tag color="red">{step.rejectedReason}</Tag>
+                              <Tag>{step.rejectedReason}</Tag>
                             ) : null}
                             <Typography.Text type="secondary">
                               {new Date(entry.timestamp).toLocaleString()}
@@ -2350,7 +2308,7 @@ function WorkflowStudioInner({
                           {step.deltaSummary.length > 0 ? (
                             <Space wrap size={[4, 4]}>
                               {step.deltaSummary.map((delta) => (
-                                <Tag key={`${step.key}-${delta}`} color="cyan">
+                                <Tag key={`${step.key}-${delta}`}>
                                   {delta}
                                 </Tag>
                               ))}
@@ -2389,7 +2347,6 @@ function WorkflowStudioInner({
                               {entry.ruleHits.map((rule) => (
                                 <Tag
                                   key={`${entry.nodeId}-${rule}`}
-                                  color="orange"
                                 >
                                   {rule}
                                 </Tag>
@@ -2408,12 +2365,12 @@ function WorkflowStudioInner({
                                 children: (
                                   <Row gutter={[12, 12]}>
                                     <Col xs={24} md={12}>
-                                      <Card
-                                        size="small"
-                                        title={t(
-                                          "crawlFrontier.workflowStudio.drawer.before",
-                                        )}
-                                      >
+                                      <div className="flex flex-col gap-2">
+                                        <p className="kicker m-0">
+                                          {t(
+                                            "crawlFrontier.workflowStudio.drawer.before",
+                                          )}
+                                        </p>
                                         <Typography.Paragraph
                                           style={{
                                             marginBottom: 0,
@@ -2425,15 +2382,15 @@ function WorkflowStudioInner({
                                             entry.beforeSnapshot ?? {},
                                           )}
                                         </Typography.Paragraph>
-                                      </Card>
+                                      </div>
                                     </Col>
                                     <Col xs={24} md={12}>
-                                      <Card
-                                        size="small"
-                                        title={t(
-                                          "crawlFrontier.workflowStudio.drawer.after",
-                                        )}
-                                      >
+                                      <div className="flex flex-col gap-2">
+                                        <p className="kicker m-0">
+                                          {t(
+                                            "crawlFrontier.workflowStudio.drawer.after",
+                                          )}
+                                        </p>
                                         <Typography.Paragraph
                                           style={{
                                             marginBottom: 0,
@@ -2443,7 +2400,7 @@ function WorkflowStudioInner({
                                         >
                                           {stringify(entry.afterSnapshot ?? {})}
                                         </Typography.Paragraph>
-                                      </Card>
+                                      </div>
                                     </Col>
                                   </Row>
                                 ),
@@ -2462,12 +2419,12 @@ function WorkflowStudioInner({
                             </Typography.Paragraph>
                           ) : null}
                         </Space>
-                      </Card>
+                      </div>
                     );
                   },
                 )}
               </Space>
-            </Card>
+            </div>
           </Space>
         ) : null}
       </Drawer>
