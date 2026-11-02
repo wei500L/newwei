@@ -415,23 +415,23 @@ const DEFAULT_PROFILE_CONFIG: AnyRecord = {
   freshnessRules: { recentHours: 24, weekHours: 168, monthHours: 720 },
 };
 
-const runStatusColors: Record<CrawlFrontierRunStatus, string> = {
-  pending: "default",
-  queued: "cyan",
-  running: "blue",
-  completed: "green",
-  failed: "red",
-  canceled: "default",
+const runStatusColors: Record<CrawlFrontierRunStatus, string | undefined> = {
+  pending: undefined,
+  queued: "processing",
+  running: "processing",
+  completed: "success",
+  failed: "error",
+  canceled: undefined,
 };
 
-const nodeStatusColors: Record<CrawlFrontierNodeStatus, string> = {
-  pending: "default",
-  queued: "cyan",
-  running: "blue",
-  completed: "green",
-  failed: "red",
-  skipped: "gold",
-  canceled: "default",
+const nodeStatusColors: Record<CrawlFrontierNodeStatus, string | undefined> = {
+  pending: undefined,
+  queued: "processing",
+  running: "processing",
+  completed: "success",
+  failed: "error",
+  skipped: "warning",
+  canceled: undefined,
 };
 
 function isRecord(value: unknown): value is AnyRecord {
@@ -555,17 +555,18 @@ function formatCountSummary(value: unknown) {
 }
 
 function workflowEventColor(level: WorkflowRunEvent["level"]) {
-  if (level === "error") return "red";
-  if (level === "warn") return "gold";
-  return "blue";
+  if (level === "error") return "error";
+  if (level === "warn") return "warning";
+  return undefined;
 }
 
 function workflowStepColor(status: WorkflowRunStep["status"]) {
-  if (status === "completed") return "green";
-  if (status === "failed") return "red";
-  if (status === "running") return "blue";
-  if (status === "queued" || status === "pending") return "cyan";
-  return "default";
+  if (status === "completed") return "success";
+  if (status === "failed") return "error";
+  if (status === "running") return "processing";
+  if (status === "queued") return "processing";
+  if (status === "pending") return undefined;
+  return undefined;
 }
 
 function uniqueStringList(...lists: (string[] | undefined)[]) {
@@ -656,20 +657,20 @@ function summarizeProfileConfig(config: AnyRecord) {
 
 function buildProfileStatusTags(profile: CrawlSiteProfileRecord) {
   const shadow = asRecord(asRecord(profile.config.llmAssist)?.shadow);
-  const tags = [
-    { color: profile.isActive ? "green" : undefined, label: profile.isActive ? "active" : "inactive" },
+  const tags: { color?: string; label: string }[] = [
+    { color: profile.isActive ? "success" : undefined, label: profile.isActive ? "active" : "inactive" },
   ];
   if (typeof shadow?.role === "string") {
-    tags.push({ color: shadow.role === "shadow" ? "purple" : "blue", label: shadow.role });
+    tags.push({ color: undefined, label: shadow.role });
   }
   if (typeof shadow?.state === "string") {
-    tags.push({ color: shadow.state === "published" ? "green" : "gold", label: shadow.state });
+    tags.push({ color: shadow.state === "published" ? "success" : "warning", label: shadow.state });
   }
   if (asRecord(profile.config.llmAssist)?.enabled === true) {
-    tags.push({ color: "cyan", label: "auto-learn" });
+    tags.push({ color: undefined, label: "auto-learn" });
   }
   if (isRecord(asRecord(asRecord(profile.config.llmAssist)?.autoPublishThresholds))) {
-    tags.push({ color: "geekblue", label: "auto-publish" });
+    tags.push({ color: undefined, label: "auto-publish" });
   }
   return tags;
 }
@@ -1421,17 +1422,17 @@ export function CrawlFrontierConsole() {
         const diagnostics = collectRunDiagnostics(record);
         return (
           <Space wrap size={[4, 4]}>
-            {diagnostics.failureKind ? <Tag color="red">{diagnostics.failureKind}</Tag> : null}
-            {diagnostics.runRole ? <Tag color="blue">{diagnostics.runRole}</Tag> : null}
-            {record.workflowRunId ? <Tag color="geekblue">workflow</Tag> : null}
-            {diagnostics.seedStrategy ? <Tag color="green">{`seed:${diagnostics.seedStrategy}`}</Tag> : null}
-            {diagnostics.seedMethod ? <Tag color="lime">{diagnostics.seedMethod}</Tag> : null}
-            {diagnostics.fallbackStage ? <Tag color="gold">{diagnostics.fallbackStage}</Tag> : null}
-            {diagnostics.pendingLlmJobs > 0 ? <Tag color="magenta">{`pending:${diagnostics.pendingLlmJobs}`}</Tag> : null}
-            {diagnostics.shadowProfileId ? <Tag color="purple">shadow-profile</Tag> : null}
-            {diagnostics.judgeCount > 0 ? <Tag color="cyan">{`judge:${diagnostics.judgeCount}`}</Tag> : null}
+            {diagnostics.failureKind ? <Tag color="error">{diagnostics.failureKind}</Tag> : null}
+            {diagnostics.runRole ? <Tag>{diagnostics.runRole}</Tag> : null}
+            {record.workflowRunId ? <Tag>workflow</Tag> : null}
+            {diagnostics.seedStrategy ? <Tag>{`seed:${diagnostics.seedStrategy}`}</Tag> : null}
+            {diagnostics.seedMethod ? <Tag>{diagnostics.seedMethod}</Tag> : null}
+            {diagnostics.fallbackStage ? <Tag>{diagnostics.fallbackStage}</Tag> : null}
+            {diagnostics.pendingLlmJobs > 0 ? <span className="font-mono text-xs text-muted-foreground">{`pending ${diagnostics.pendingLlmJobs}`}</span> : null}
+            {diagnostics.shadowProfileId ? <Tag>shadow-profile</Tag> : null}
+            {diagnostics.judgeCount > 0 ? <span className="font-mono text-xs text-muted-foreground">{`judge ${diagnostics.judgeCount}`}</span> : null}
             {diagnostics.warningFlags.slice(0, 4).map((flag) => (
-              <Tag key={`${record.id}-${flag}`} color="gold">{flag}</Tag>
+              <Tag key={`${record.id}-${flag}`} color="warning">{flag}</Tag>
             ))}
           </Space>
         );
@@ -1478,10 +1479,10 @@ export function CrawlFrontierConsole() {
         const metadata = asRecord(record.metadata);
         return (
           <Space wrap size={[4, 4]}>
-            {asString(metadata?.judgeMethod) ? <Tag color="blue">{String(metadata?.judgeMethod)}</Tag> : null}
-            {asNumber(metadata?.judgeConfidence) !== null ? <Tag color="cyan">{`conf:${formatNumber(metadata?.judgeConfidence)}`}</Tag> : null}
+            {asString(metadata?.judgeMethod) ? <Tag>{String(metadata?.judgeMethod)}</Tag> : null}
+            {asNumber(metadata?.judgeConfidence) !== null ? <span className="font-mono text-xs text-muted-foreground">{`conf ${formatNumber(metadata?.judgeConfidence)}`}</span> : null}
             {asStringArray(metadata?.selectorHints).slice(0, 2).map((hint) => (
-              <Tag key={`${record.id}-${hint}`} color="purple">{hint}</Tag>
+              <Tag key={`${record.id}-${hint}`}>{hint}</Tag>
             ))}
           </Space>
         );
@@ -1494,10 +1495,10 @@ export function CrawlFrontierConsole() {
         const metadata = asRecord(record.metadata);
         return (
           <Space wrap size={[4, 4]}>
-            {asString(metadata?.failureKind) ? <Tag color="red">{String(metadata?.failureKind)}</Tag> : null}
-            {record.rejectionReason ? <Tag color="orange">{record.rejectionReason}</Tag> : null}
+            {asString(metadata?.failureKind) ? <Tag color="error">{String(metadata?.failureKind)}</Tag> : null}
+            {record.rejectionReason ? <Tag>{record.rejectionReason}</Tag> : null}
             {asStringArray(metadata?.warningFlags).slice(0, 3).map((flag) => (
-              <Tag key={`${record.id}-${flag}`} color="gold">{flag}</Tag>
+              <Tag key={`${record.id}-${flag}`} color="warning">{flag}</Tag>
             ))}
           </Space>
         );
@@ -1542,10 +1543,10 @@ export function CrawlFrontierConsole() {
           <Tag
             color={
               record.status === "selected"
-                ? "green"
+                ? "success"
                 : record.status === "rejected"
-                  ? "red"
-                  : "blue"
+                  ? "error"
+                  : undefined
             }
           >
             {record.status}
@@ -1562,13 +1563,13 @@ export function CrawlFrontierConsole() {
             <Space wrap size={[4, 4]}>
               {record.pageType ? <Tag>{record.pageType}</Tag> : null}
               {typeof record.score === "number" ? (
-                <Tag color="blue">{`score:${record.score.toFixed(2)}`}</Tag>
+                <span className="font-mono text-xs text-muted-foreground">{`score ${record.score.toFixed(2)}`}</span>
               ) : null}
               {typeof record.freshnessScore === "number" ? (
-                <Tag color="gold">{`fresh:${record.freshnessScore.toFixed(2)}`}</Tag>
+                <span className="font-mono text-xs text-muted-foreground">{`fresh ${record.freshnessScore.toFixed(2)}`}</span>
               ) : null}
               {traceSummary.ruleHits.slice(0, 2).map((rule) => (
-                <Tag key={`${record.id}-${rule}`} color="purple">
+                <Tag key={`${record.id}-${rule}`}>
                   {rule}
                 </Tag>
               ))}
@@ -1785,7 +1786,7 @@ export function CrawlFrontierConsole() {
                               description={
                                 <Space direction="vertical" size="small" style={{ width: "100%" }}>
                                   <Typography.Text>{profileMatchPreview.draftMatchReason}</Typography.Text>
-                                  <Space wrap>{summarizeProfileConfig(profileMatchPreview.draft.config).map((entry) => <Tag key={`draft-${entry}`} color="blue">{entry}</Tag>)}</Space>
+                                  <Space wrap>{summarizeProfileConfig(profileMatchPreview.draft.config).map((entry) => <Tag key={`draft-${entry}`}>{entry}</Tag>)}</Space>
                                 </Space>
                               }
                             />
@@ -2026,7 +2027,7 @@ export function CrawlFrontierConsole() {
                   {selectedWorkflowRun?.workflowVersion ? (
                     <Tag>{`workflow:v${selectedWorkflowRun.workflowVersion.version}`}</Tag>
                   ) : null}
-                  {selectedRunDiagnostics?.warningFlags.map((flag) => <Tag key={`run-${flag}`} color="gold">{flag}</Tag>)}
+                  {selectedRunDiagnostics?.warningFlags.map((flag) => <Tag key={`run-${flag}`} color="warning">{flag}</Tag>)}
                 </Space>
                 <Typography.Text>{selectedRun.seedUrl}</Typography.Text>
                 <Typography.Text type="secondary">{selectedRun.profile?.name ?? "auto"} / {selectedRun.executionMode}</Typography.Text>
@@ -2082,7 +2083,7 @@ export function CrawlFrontierConsole() {
                       current={-1}
                       items={(selectedRunSummary?.trace ?? []).map((step) => ({
                         title: step.label,
-                        description: <Space direction="vertical" size={4}><Typography.Text>{step.detail ?? "-"}</Typography.Text><Space wrap><Tag color={step.status === "failed" ? "red" : step.status === "warning" ? "gold" : step.status === "active" ? "blue" : step.status === "completed" ? "green" : "default"}>{step.status}</Tag>{(step.tags ?? []).map((entry) => <Tag key={`${step.key}-${entry}`}>{entry}</Tag>)}</Space></Space>,
+                        description: <Space direction="vertical" size={4}><Typography.Text>{step.detail ?? "-"}</Typography.Text><Space wrap><Tag color={step.status === "failed" ? "error" : step.status === "warning" ? "warning" : step.status === "active" ? "processing" : step.status === "completed" ? "success" : undefined}>{step.status}</Tag>{(step.tags ?? []).map((entry) => <Tag key={`${step.key}-${entry}`}>{entry}</Tag>)}</Space></Space>,
                         status: step.status === "failed" ? "error" : step.status === "active" ? "process" : step.status === "completed" ? "finish" : "wait",
                       }))}
                     />
@@ -2206,7 +2207,7 @@ export function CrawlFrontierConsole() {
                                       {step.status}
                                     </Tag>
                                     <Tag>{step.nodeType}</Tag>
-                                    <Tag color="blue">{`${step.durationMs}ms`}</Tag>
+                                    <span className="font-mono text-xs text-muted-foreground">{`${step.durationMs}ms`}</span>
                                   </Space>
                                   <Typography.Text strong>{step.label}</Typography.Text>
                                   <Typography.Text type="secondary">
@@ -2240,7 +2241,8 @@ export function CrawlFrontierConsole() {
                               scroll={{ x: "max-content" }}
                             />
                           </Card>
-                          <Card size="small" title={t("crawlFrontier.console.runDrawer.workflow.systemEventsTitle")}>
+                          <div className="flex flex-col gap-2">
+                            <p className="kicker m-0">{t("crawlFrontier.console.runDrawer.workflow.systemEventsTitle")}</p>
                             <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                               {selectedWorkflowRun.systemEvents.length === 0 ? (
                                 <Typography.Text type="secondary">
@@ -2248,14 +2250,14 @@ export function CrawlFrontierConsole() {
                                 </Typography.Text>
                               ) : (
                                 selectedWorkflowRun.systemEvents.map((event) => (
-                                  <Card key={event.id ?? `${event.eventType}-${event.timestamp}`} size="small">
+                                  <div key={event.id ?? `${event.eventType}-${event.timestamp}`} className="hairline-b py-2 last:border-b-0">
                                     <Space direction="vertical" size={4} style={{ width: "100%" }}>
                                       <Space wrap size={[6, 6]}>
                                         <Tag color={workflowEventColor(event.level)}>{event.level}</Tag>
                                         <Tag>{event.eventType}</Tag>
                                         {event.nodeType ? <Tag>{event.nodeType}</Tag> : null}
                                         {event.triggerReason ? (
-                                          <Tag color="purple">{event.triggerReason}</Tag>
+                                          <Tag>{event.triggerReason}</Tag>
                                         ) : null}
                                       </Space>
                                       <Typography.Text>{event.message}</Typography.Text>
@@ -2265,9 +2267,9 @@ export function CrawlFrontierConsole() {
                                       {(event.beforeCount !== null && event.beforeCount !== undefined) ||
                                       (event.afterCount !== null && event.afterCount !== undefined) ? (
                                         <Space wrap size={[4, 4]}>
-                                          <Tag color="blue">{`before:${event.beforeCount ?? 0}`}</Tag>
-                                          <Tag color="geekblue">{`after:${event.afterCount ?? 0}`}</Tag>
-                                          <Tag color="green">{`rescued:${event.rescuedCount ?? 0}`}</Tag>
+                                          <span className="font-mono text-xs text-muted-foreground">{`before ${event.beforeCount ?? 0}`}</span>
+                                          <span className="font-mono text-xs text-muted-foreground">{`after ${event.afterCount ?? 0}`}</span>
+                                          <span className="font-mono text-xs text-muted-foreground">{`rescued ${event.rescuedCount ?? 0}`}</span>
                                         </Space>
                                       ) : null}
                                       {event.details ? (
@@ -2282,11 +2284,11 @@ export function CrawlFrontierConsole() {
                                         </Typography.Paragraph>
                                       ) : null}
                                     </Space>
-                                  </Card>
+                                  </div>
                                 ))
                               )}
                             </Space>
-                          </Card>
+                          </div>
                         </Space>
                       </Col>
                     </Row>
@@ -2323,7 +2325,7 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label="Judge count">{formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.count, 0)}</Descriptions.Item>
                         <Descriptions.Item label="Avg confidence">{formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.averageConfidence)}</Descriptions.Item>
                       </Descriptions>
-                      <Space wrap size={[4, 4]} style={{ marginTop: 12 }}>{(selectedRunSummary?.warningFlags ?? []).filter((flag) => flag.startsWith("llm_")).map((flag) => <Tag key={flag} color="gold">{flag}</Tag>)}</Space>
+                      <Space wrap size={[4, 4]} style={{ marginTop: 12 }}>{(selectedRunSummary?.warningFlags ?? []).filter((flag) => flag.startsWith("llm_")).map((flag) => <Tag key={flag} color="warning">{flag}</Tag>)}</Space>
                       {canViewLogLinks ? (
                         <Space style={{ marginTop: 12 }}>
                           <Button href={buildLlmLogsHref({ feature: "crawl_frontier_judge", runId: selectedRun.id, ...(selectedRun.profile?.id ? { profileId: selectedRun.profile.id } : {}) })}>View judge logs</Button>
@@ -2390,17 +2392,17 @@ export function CrawlFrontierConsole() {
                     <Row gutter={[16, 16]}>
                       <Col xs={24} lg={8}>
                         <Card size="small" title={t("crawlFrontier.console.runDrawer.repair.repairedFields")}>
-                          <Space wrap>{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.repairedFields) ?? {}).map(([field, count]) => <Tag key={`repair-field-${field}`} color="green">{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.repairedFields) ?? {}).length === 0 ? <Typography.Text type="secondary">No repaired fields recorded.</Typography.Text> : null}</Space>
+                          <Space wrap>{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.repairedFields) ?? {}).map(([field, count]) => <Tag key={`repair-field-${field}`}>{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.repairedFields) ?? {}).length === 0 ? <Typography.Text type="secondary">No repaired fields recorded.</Typography.Text> : null}</Space>
                         </Card>
                       </Col>
                       <Col xs={24} lg={8}>
                         <Card size="small" title={t("crawlFrontier.console.runDrawer.repair.missingFields")}>
-                          <Space wrap>{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.missingFields) ?? {}).map(([field, count]) => <Tag key={`missing-field-${field}`} color="orange">{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.missingFields) ?? {}).length === 0 ? <Typography.Text type="secondary">No missing field diagnostics recorded.</Typography.Text> : null}</Space>
+                          <Space wrap>{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.missingFields) ?? {}).map(([field, count]) => <Tag key={`missing-field-${field}`}>{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.missingFields) ?? {}).length === 0 ? <Typography.Text type="secondary">No missing field diagnostics recorded.</Typography.Text> : null}</Space>
                         </Card>
                       </Col>
                       <Col xs={24} lg={8}>
                         <Card size="small" title={t("crawlFrontier.console.runDrawer.repair.repairErrorsModels")}>
-                          <Space wrap>{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.errors) ?? {}).map(([field, count]) => <Tag key={`repair-error-${field}`} color="red">{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.models) ?? {}).map(([field, count]) => <Tag key={`repair-model-${field}`} color="blue">{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.errors) ?? {}).length === 0 && Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.models) ?? {}).length === 0 ? <Typography.Text type="secondary">No model/error diagnostics recorded.</Typography.Text> : null}</Space>
+                          <Space wrap>{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.errors) ?? {}).map(([field, count]) => <Tag key={`repair-error-${field}`}>{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.entries(asRecord(asRecord(selectedRunSummary?.repairSummary)?.models) ?? {}).map(([field, count]) => <Tag key={`repair-model-${field}`}>{`${field}:${asNumber(count) ?? 0}`}</Tag>)}{Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.errors) ?? {}).length === 0 && Object.keys(asRecord(asRecord(selectedRunSummary?.repairSummary)?.models) ?? {}).length === 0 ? <Typography.Text type="secondary">No model/error diagnostics recorded.</Typography.Text> : null}</Space>
                         </Card>
                       </Col>
                     </Row>
@@ -2432,10 +2434,10 @@ export function CrawlFrontierConsole() {
                   <Tag
                     color={
                       selectedWorkflowCandidate.status === "selected"
-                        ? "green"
+                        ? "success"
                         : selectedWorkflowCandidate.status === "rejected"
-                          ? "red"
-                          : "blue"
+                          ? "error"
+                          : undefined
                     }
                   >
                     {selectedWorkflowCandidate.status}
@@ -2445,7 +2447,7 @@ export function CrawlFrontierConsole() {
                     <Tag>{selectedWorkflowCandidate.pageType}</Tag>
                   ) : null}
                   {selectedWorkflowCandidate.rejectedReason ? (
-                    <Tag color="red">{selectedWorkflowCandidate.rejectedReason}</Tag>
+                    <Tag>{selectedWorkflowCandidate.rejectedReason}</Tag>
                   ) : null}
                 </Space>
               </Space>
@@ -2477,7 +2479,7 @@ export function CrawlFrontierConsole() {
                     <Descriptions.Item label="Rule hits" span={2}>
                       <Space wrap>
                         {traceSummary.ruleHits.map((rule) => (
-                          <Tag key={`rule-${rule}`} color="purple">
+                          <Tag key={`rule-${rule}`}>
                             {rule}
                           </Tag>
                         ))}
@@ -2491,10 +2493,10 @@ export function CrawlFrontierConsole() {
                             key={step.key}
                             color={
                               step.status === "selected"
-                                ? "green"
+                                ? "success"
                                 : step.status === "rejected"
-                                  ? "red"
-                                  : "blue"
+                                  ? "error"
+                                  : undefined
                             }
                           >
                             {`${step.index}. ${step.label}`}
@@ -2519,16 +2521,16 @@ export function CrawlFrontierConsole() {
                         <Tag
                           color={
                             step.status === "selected"
-                              ? "green"
+                              ? "success"
                               : step.status === "rejected"
-                                ? "red"
-                                : "blue"
+                                ? "error"
+                                : undefined
                           }
                         >
                           {entry.action}
                         </Tag>
                         {step.rejectedReason ? (
-                          <Tag color="red">{step.rejectedReason}</Tag>
+                          <Tag>{step.rejectedReason}</Tag>
                         ) : null}
                         <Typography.Text type="secondary">
                           {formatDateTime(entry.timestamp)}
@@ -2538,7 +2540,7 @@ export function CrawlFrontierConsole() {
                       {step.deltaSummary.length > 0 ? (
                         <Space wrap size={[4, 4]}>
                           {step.deltaSummary.map((delta) => (
-                            <Tag key={`${step.key}-${delta}`} color="cyan">
+                            <Tag key={`${step.key}-${delta}`}>
                               {delta}
                             </Tag>
                           ))}
@@ -2568,7 +2570,7 @@ export function CrawlFrontierConsole() {
                       {entry.ruleHits?.length ? (
                         <Space wrap size={[4, 4]}>
                           {entry.ruleHits.map((rule) => (
-                            <Tag key={`${entry.nodeId}-${rule}`} color="orange">
+                            <Tag key={`${entry.nodeId}-${rule}`}>
                               {rule}
                             </Tag>
                           ))}
@@ -2647,8 +2649,8 @@ export function CrawlFrontierConsole() {
                   <Tag>{selectedNode.pageType}</Tag>
                   <Tag>{selectedNode.queueClass}</Tag>
                   <Tag color={nodeStatusColors[selectedNode.status]}>{selectedNode.status}</Tag>
-                  {asString(asRecord(selectedNode.metadata)?.failureKind) ? <Tag color="red">{String(asRecord(selectedNode.metadata)?.failureKind)}</Tag> : null}
-                  {asStringArray(asRecord(selectedNode.metadata)?.warningFlags).map((flag) => <Tag key={`node-${flag}`} color="gold">{flag}</Tag>)}
+                  {asString(asRecord(selectedNode.metadata)?.failureKind) ? <Tag color="error">{String(asRecord(selectedNode.metadata)?.failureKind)}</Tag> : null}
+                  {asStringArray(asRecord(selectedNode.metadata)?.warningFlags).map((flag) => <Tag key={`node-${flag}`} color="warning">{flag}</Tag>)}
                 </Space>
                 <Typography.Text>{selectedNode.url}</Typography.Text>
                 <Typography.Text type="secondary">discovery: {formatPath(selectedNode.metadata?.discoveryPath)} · frontier: {formatPath(selectedNode.metadata?.frontierPath)}</Typography.Text>
@@ -2675,7 +2677,7 @@ export function CrawlFrontierConsole() {
                 <Descriptions.Item label="Judge confidence">{formatNumber(asRecord(selectedNode.metadata)?.judgeConfidence)}</Descriptions.Item>
                 <Descriptions.Item label="Judge reason">{asString(asRecord(selectedNode.metadata)?.judgeReason) ?? "-"}</Descriptions.Item>
                 <Descriptions.Item label="Locale hint">{asString(asRecord(selectedNode.metadata)?.localeHint) ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Selector hints" span={2}><Space wrap>{asStringArray(asRecord(selectedNode.metadata)?.selectorHints).map((hint) => <Tag key={hint} color="purple">{hint}</Tag>)}{asStringArray(asRecord(selectedNode.metadata)?.selectorHints).length === 0 ? "-" : null}</Space></Descriptions.Item>
+                <Descriptions.Item label="Selector hints" span={2}><Space wrap>{asStringArray(asRecord(selectedNode.metadata)?.selectorHints).map((hint) => <Tag key={hint}>{hint}</Tag>)}{asStringArray(asRecord(selectedNode.metadata)?.selectorHints).length === 0 ? "-" : null}</Space></Descriptions.Item>
                 <Descriptions.Item label="Rejection reason">{selectedNode.rejectionReason ?? "-"}</Descriptions.Item>
                 <Descriptions.Item label="Last error">{selectedNode.lastError ?? "-"}</Descriptions.Item>
               </Descriptions>
@@ -2704,9 +2706,9 @@ export function CrawlFrontierConsole() {
                       <Descriptions size="small" column={2} bordered>
                         <Descriptions.Item label="Processed status">{selectedNode.extractionSummary.processedStatus ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Quality score">{formatNumber(selectedNode.extractionSummary.qualityScore)}</Descriptions.Item>
-                        <Descriptions.Item label="Extracted fields" span={2}><Space wrap>{selectedNode.extractionSummary.extractedFields.map((field) => <Tag key={`extracted-${field}`} color="green">{field}</Tag>)}{selectedNode.extractionSummary.extractedFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
-                        <Descriptions.Item label="Missing fields" span={2}><Space wrap>{selectedNode.extractionSummary.missingFields.map((field) => <Tag key={`missing-${field}`} color="orange">{field}</Tag>)}{selectedNode.extractionSummary.missingFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
-                        <Descriptions.Item label="Removed noise" span={2}><Space wrap>{(selectedNode.extractionSummary.removedNoiseTypes ?? []).map((field) => <Tag key={`noise-${field}`} color="purple">{field}</Tag>)}{(selectedNode.extractionSummary.removedNoiseTypes ?? []).length === 0 ? "-" : null}</Space></Descriptions.Item>
+                        <Descriptions.Item label="Extracted fields" span={2}><Space wrap>{selectedNode.extractionSummary.extractedFields.map((field) => <Tag key={`extracted-${field}`}>{field}</Tag>)}{selectedNode.extractionSummary.extractedFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
+                        <Descriptions.Item label="Missing fields" span={2}><Space wrap>{selectedNode.extractionSummary.missingFields.map((field) => <Tag key={`missing-${field}`}>{field}</Tag>)}{selectedNode.extractionSummary.missingFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
+                        <Descriptions.Item label="Removed noise" span={2}><Space wrap>{(selectedNode.extractionSummary.removedNoiseTypes ?? []).map((field) => <Tag key={`noise-${field}`}>{field}</Tag>)}{(selectedNode.extractionSummary.removedNoiseTypes ?? []).length === 0 ? "-" : null}</Space></Descriptions.Item>
                       </Descriptions>
                     </div>
                   ) : null}
@@ -2718,8 +2720,8 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label="Applied">{selectedNode.repairSummary.applied ? "yes" : "no"}</Descriptions.Item>
                         <Descriptions.Item label="Model">{selectedNode.repairSummary.model ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Latency">{formatNumber(selectedNode.repairSummary.latencyMs, 0)}</Descriptions.Item>
-                        <Descriptions.Item label="Missing fields" span={2}><Space wrap>{selectedNode.repairSummary.missingFields.map((field) => <Tag key={`repair-missing-${field}`} color="orange">{field}</Tag>)}{selectedNode.repairSummary.missingFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
-                        <Descriptions.Item label="Repaired fields" span={2}><Space wrap>{selectedNode.repairSummary.repairedFields.map((field) => <Tag key={`repair-applied-${field}`} color="green">{field}</Tag>)}{selectedNode.repairSummary.repairedFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
+                        <Descriptions.Item label="Missing fields" span={2}><Space wrap>{selectedNode.repairSummary.missingFields.map((field) => <Tag key={`repair-missing-${field}`}>{field}</Tag>)}{selectedNode.repairSummary.missingFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
+                        <Descriptions.Item label="Repaired fields" span={2}><Space wrap>{selectedNode.repairSummary.repairedFields.map((field) => <Tag key={`repair-applied-${field}`}>{field}</Tag>)}{selectedNode.repairSummary.repairedFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
                         <Descriptions.Item label="Error" span={2}>{selectedNode.repairSummary.error ?? "-"}</Descriptions.Item>
                       </Descriptions>
                     </div>
