@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
+import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
@@ -2077,46 +2078,50 @@ export function CrawlMonitorContent({
       <Card
         className="content-card"
         title={t("crawl.monitor.dashboardTitle")}
-        extra={
-          <Space>
-            <Button onClick={handleRefreshNow} loading={refreshing}>
-              {t("common.refresh")}
-            </Button>
-            <Segmented
-              value={mode}
-              onChange={(value) => setMode(value as TransportMode)}
-              options={[
-                {
-                  label: t("crawl.monitor.transport.ws"),
-                  value: "ws",
-                  disabled: !wsUrl,
-                },
-                {
-                  label: t("crawl.monitor.transport.polling"),
-                  value: "polling",
-                },
-              ]}
-            />
-            {connectionTag}
-            <Button onClick={handleCopyApi}>
-              {t("crawl.monitor.copyApi")}
-            </Button>
-            <Button onClick={handleCopyWs} disabled={!wsUrl}>
-              {t("crawl.monitor.copyWs")}
-            </Button>
-            <Button onClick={handleCopy} disabled={!normalizedDashboardUrl}>
-              {t("crawl.monitor.copyLink")}
-            </Button>
-            <Button
-              type="primary"
-              onClick={handleOpen}
-              disabled={!normalizedDashboardUrl}
-            >
-              {t("crawl.monitor.openInNewTab")}
-            </Button>
-          </Space>
-        }
       >
+        <FilterBar
+          className="mb-4"
+          actions={
+            <>
+              <Button onClick={handleRefreshNow} loading={refreshing}>
+                {t("common.refresh")}
+              </Button>
+              <Button onClick={handleCopyApi}>
+                {t("crawl.monitor.copyApi")}
+              </Button>
+              <Button onClick={handleCopyWs} disabled={!wsUrl}>
+                {t("crawl.monitor.copyWs")}
+              </Button>
+              <Button onClick={handleCopy} disabled={!normalizedDashboardUrl}>
+                {t("crawl.monitor.copyLink")}
+              </Button>
+              <Button
+                type="primary"
+                onClick={handleOpen}
+                disabled={!normalizedDashboardUrl}
+              >
+                {t("crawl.monitor.openInNewTab")}
+              </Button>
+            </>
+          }
+        >
+          <Segmented
+            value={mode}
+            onChange={(value) => setMode(value as TransportMode)}
+            options={[
+              {
+                label: t("crawl.monitor.transport.ws"),
+                value: "ws",
+                disabled: !wsUrl,
+              },
+              {
+                label: t("crawl.monitor.transport.polling"),
+                value: "polling",
+              },
+            ]}
+          />
+          {connectionTag}
+        </FilterBar>
         {!normalizedDashboardUrl ? (
           <Alert
             type="warning"

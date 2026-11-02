@@ -32,6 +32,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -1669,26 +1670,48 @@ export function CrawlFrontierConsole() {
                     <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.pendingLlm")} value={runStats.pendingLlm} /></Col>
                     <Col xs={12} sm={8} md={4}><Statistic title={t("crawlFrontier.console.runStats.seedFirst")} value={runStats.seedFirst} /></Col>
                   </Row>
-                  <Space wrap style={{ display: "flex", marginTop: 16, alignItems: "flex-end" }}>
-                    <Input.Search
-                      allowClear
-                      value={runFilters.search}
-                      onChange={(event) => setRunFilters((current) => ({ ...current, search: event.target.value }))}
-                      placeholder={t("crawlFrontier.console.placeholders.searchRun")}
-                      style={{ width: 280 }}
-                    />
-                    <Select allowClear placeholder={t("crawlFrontier.console.filters.profile")} style={{ width: 220 }} value={runFilters.profileId} onChange={(value) => setRunFilters((current) => ({ ...current, profileId: value }))} options={profiles.map((profile) => ({ label: profile.name, value: profile.id }))} />
-                    <Select allowClear placeholder={t("crawlFrontier.console.filters.status")} style={{ width: 160 }} value={runFilters.status} onChange={(value) => setRunFilters((current) => ({ ...current, status: value }))} options={["pending", "queued", "running", "completed", "failed", "canceled"].map((value) => ({ label: value, value }))} />
-                    <Select allowClear placeholder={t("crawlFrontier.console.filters.mode")} style={{ width: 160 }} value={runFilters.executionMode} onChange={(value) => setRunFilters((current) => ({ ...current, executionMode: value }))} options={["layered", "native", "hybrid"].map((value) => ({ label: value, value }))} />
-                    <Select allowClear placeholder={t("crawlFrontier.console.filters.runRole")} style={{ width: 160 }} value={runFilters.runRole} onChange={(value) => setRunFilters((current) => ({ ...current, runRole: value }))} options={[{ label: "active", value: "active" }, { label: "shadow", value: "shadow" }]} />
-                    <Select allowClear placeholder={t("crawlFrontier.console.filters.failureKind")} style={{ width: 180 }} value={runFilters.failureKind} onChange={(value) => setRunFilters((current) => ({ ...current, failureKind: value }))} options={["challenge_detected", "ssrf_blocked", "no_frontier_candidates", "network_tunnel_error", "llm_judge_parse_failed"].map((value) => ({ label: value, value }))} />
-                    <Select allowClear placeholder={t("crawlFrontier.console.filters.warningFlag")} style={{ width: 180 }} value={runFilters.warningFlag} onChange={(value) => setRunFilters((current) => ({ ...current, warningFlag: value }))} options={["llm_judge_parse_failed", "llm_judge_circuit_open", "challenge_detected", "ssrf_blocked", "retry_demoted_to_normal"].map((value) => ({ label: value, value }))} />
-                    <Select allowClear placeholder={t("crawlFrontier.console.filters.seedStrategy")} style={{ width: 180 }} value={runFilters.seedStrategy} onChange={(value) => setRunFilters((current) => ({ ...current, seedStrategy: value }))} options={["auto", "seed_first", "frontier_first", "frontier_only"].map((value) => ({ label: value, value }))} />
-                    <Button onClick={() => void loadRuns()}>{t("crawlFrontier.console.actions.refresh")}</Button>
-                    <Button onClick={() => setRunFilters((current) => ({ ...current, search: "", profileId: undefined, status: undefined, executionMode: undefined, runRole: undefined, failureKind: undefined, warningFlag: undefined, seedStrategy: undefined }))}>{t("crawlFrontier.console.actions.reset")}</Button>
-                    {canManage ? <Button type="primary" onClick={() => { runForm.setFieldsValue({ executionMode: "layered", maxDepth: 3, maxPages: 60 }); setRunModalOpen(true); }}>{t("crawlFrontier.console.actions.newRun")}</Button> : null}
-                    {canManage && selectedRunIds.length > 0 ? <Button danger onClick={() => void bulkCancelRuns()}>{t("crawlFrontier.console.actions.cancelSelected")}</Button> : null}
-                  </Space>
+                  <FilterBar
+                    className="mt-4"
+                    actions={
+                      <>
+                        <Button onClick={() => void loadRuns()}>{t("crawlFrontier.console.actions.refresh")}</Button>
+                        <Button onClick={() => setRunFilters((current) => ({ ...current, search: "", profileId: undefined, status: undefined, executionMode: undefined, runRole: undefined, failureKind: undefined, warningFlag: undefined, seedStrategy: undefined }))}>{t("crawlFrontier.console.actions.reset")}</Button>
+                        {canManage ? <Button type="primary" onClick={() => { runForm.setFieldsValue({ executionMode: "layered", maxDepth: 3, maxPages: 60 }); setRunModalOpen(true); }}>{t("crawlFrontier.console.actions.newRun")}</Button> : null}
+                        {canManage && selectedRunIds.length > 0 ? <Button danger onClick={() => void bulkCancelRuns()}>{t("crawlFrontier.console.actions.cancelSelected")}</Button> : null}
+                      </>
+                    }
+                  >
+                    <FilterBar.Item width="lg">
+                      <Input.Search
+                        allowClear
+                        value={runFilters.search}
+                        onChange={(event) => setRunFilters((current) => ({ ...current, search: event.target.value }))}
+                        placeholder={t("crawlFrontier.console.placeholders.searchRun")}
+                        className="w-full"
+                      />
+                    </FilterBar.Item>
+                    <FilterBar.Item width="lg">
+                      <Select allowClear placeholder={t("crawlFrontier.console.filters.profile")} className="w-full" value={runFilters.profileId} onChange={(value) => setRunFilters((current) => ({ ...current, profileId: value }))} options={profiles.map((profile) => ({ label: profile.name, value: profile.id }))} />
+                    </FilterBar.Item>
+                    <FilterBar.Item width="sm">
+                      <Select allowClear placeholder={t("crawlFrontier.console.filters.status")} className="w-full" value={runFilters.status} onChange={(value) => setRunFilters((current) => ({ ...current, status: value }))} options={["pending", "queued", "running", "completed", "failed", "canceled"].map((value) => ({ label: value, value }))} />
+                    </FilterBar.Item>
+                    <FilterBar.Item width="sm">
+                      <Select allowClear placeholder={t("crawlFrontier.console.filters.mode")} className="w-full" value={runFilters.executionMode} onChange={(value) => setRunFilters((current) => ({ ...current, executionMode: value }))} options={["layered", "native", "hybrid"].map((value) => ({ label: value, value }))} />
+                    </FilterBar.Item>
+                    <FilterBar.Item width="sm">
+                      <Select allowClear placeholder={t("crawlFrontier.console.filters.runRole")} className="w-full" value={runFilters.runRole} onChange={(value) => setRunFilters((current) => ({ ...current, runRole: value }))} options={[{ label: "active", value: "active" }, { label: "shadow", value: "shadow" }]} />
+                    </FilterBar.Item>
+                    <FilterBar.Item width="md">
+                      <Select allowClear placeholder={t("crawlFrontier.console.filters.failureKind")} className="w-full" value={runFilters.failureKind} onChange={(value) => setRunFilters((current) => ({ ...current, failureKind: value }))} options={["challenge_detected", "ssrf_blocked", "no_frontier_candidates", "network_tunnel_error", "llm_judge_parse_failed"].map((value) => ({ label: value, value }))} />
+                    </FilterBar.Item>
+                    <FilterBar.Item width="md">
+                      <Select allowClear placeholder={t("crawlFrontier.console.filters.warningFlag")} className="w-full" value={runFilters.warningFlag} onChange={(value) => setRunFilters((current) => ({ ...current, warningFlag: value }))} options={["llm_judge_parse_failed", "llm_judge_circuit_open", "challenge_detected", "ssrf_blocked", "retry_demoted_to_normal"].map((value) => ({ label: value, value }))} />
+                    </FilterBar.Item>
+                    <FilterBar.Item width="md">
+                      <Select allowClear placeholder={t("crawlFrontier.console.filters.seedStrategy")} className="w-full" value={runFilters.seedStrategy} onChange={(value) => setRunFilters((current) => ({ ...current, seedStrategy: value }))} options={["auto", "seed_first", "frontier_first", "frontier_only"].map((value) => ({ label: value, value }))} />
+                    </FilterBar.Item>
+                  </FilterBar>
                 </Card>
                 <Card className="content-card">
                   <Table rowKey="id" columns={runColumns} dataSource={runs} loading={loadingRuns} pagination={{ pageSize: 10 }} rowSelection={canManage ? { selectedRowKeys: selectedRunIds, onChange: (keys) => setSelectedRunIds(keys.map((key) => String(key))), getCheckboxProps: (record) => ({ disabled: record.status === "completed" || record.status === "canceled" }) } : undefined} scroll={{ x: "max-content" }} />

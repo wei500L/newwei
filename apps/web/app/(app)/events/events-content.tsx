@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
 import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useTheme } from "@/hooks/use-theme";
@@ -416,108 +417,104 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
 
       <Card className="content-card">
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col md:flex-row md:items-center gap-3 justify-between">
-            <Space wrap size="small">
-              <Tooltip title={t("pages.events.filters.windowHelp")}>
-                <Space size={6}>
-                  <Typography.Text type="secondary">
-                    {t("pages.events.filters.window")}
-                  </Typography.Text>
-                  <Select
-                    size="small"
-                    value={windowDays}
-                    options={windowOptions}
-                    onChange={(value) => updateFilters({ windowDays: value })}
-                    style={{ minWidth: 140 }}
-                  />
-                </Space>
-              </Tooltip>
+          <FilterBar
+            actions={
+              <Button onClick={() => refetch()} loading={loading}>
+                {t("common.refresh")}
+              </Button>
+            }
+          >
+            <FilterBar.Item
+              width="sm"
+              label={
+                <Tooltip title={t("pages.events.filters.windowHelp")}>
+                  <span>{t("pages.events.filters.window")}</span>
+                </Tooltip>
+              }
+            >
+              <Select
+                size="small"
+                value={windowDays}
+                options={windowOptions}
+                onChange={(value) => updateFilters({ windowDays: value })}
+                className="w-full"
+              />
+            </FilterBar.Item>
 
-              <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.status.label")}</Typography.Text>
-                <Select
-                  size="small"
-                  value={status}
-                  options={statusOptions}
-                  onChange={(value) => updateFilters({ status: value })}
-                  style={{ minWidth: 140 }}
-                />
-              </Space>
+            <FilterBar.Item width="sm" label={t("pages.events.filters.status.label")}>
+              <Select
+                size="small"
+                value={status}
+                options={statusOptions}
+                onChange={(value) => updateFilters({ status: value })}
+                className="w-full"
+              />
+            </FilterBar.Item>
 
-              <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.limit")}</Typography.Text>
-                <Select
-                  size="small"
-                  value={limit}
-                  options={limitOptions}
-                  onChange={(value) => updateFilters({ limit: value })}
-                  style={{ minWidth: 140 }}
-                />
-              </Space>
+            <FilterBar.Item width="sm" label={t("pages.events.filters.limit")}>
+              <Select
+                size="small"
+                value={limit}
+                options={limitOptions}
+                onChange={(value) => updateFilters({ limit: value })}
+                className="w-full"
+              />
+            </FilterBar.Item>
 
-              <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.sort.label")}</Typography.Text>
-                <Select
-                  size="small"
-                  value={sortBy}
-                  options={sortOptions}
-                  onChange={(value) => updateFilters({ sortBy: value })}
-                  style={{ minWidth: 140 }}
-                />
-              </Space>
+            <FilterBar.Item width="sm" label={t("pages.events.filters.sort.label")}>
+              <Select
+                size="small"
+                value={sortBy}
+                options={sortOptions}
+                onChange={(value) => updateFilters({ sortBy: value })}
+                className="w-full"
+              />
+            </FilterBar.Item>
 
-              <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.sourceType.label")}</Typography.Text>
-                <Select
-                  size="small"
-                  value={sourceType}
-                  options={sourceTypeOptions}
-                  onChange={(value) => updateFilters({ sourceType: value })}
-                  style={{ minWidth: 160 }}
-                />
-              </Space>
+            <FilterBar.Item width="md" label={t("pages.events.filters.sourceType.label")}>
+              <Select
+                size="small"
+                value={sourceType}
+                options={sourceTypeOptions}
+                onChange={(value) => updateFilters({ sourceType: value })}
+                className="w-full"
+              />
+            </FilterBar.Item>
 
-              <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.minHeat")}</Typography.Text>
-                <Select
-                  size="small"
-                  value={minHeatScore}
-                  options={minHeatOptions}
-                  onChange={(value) => updateFilters({ minHeatScore: Number(value) })}
-                  style={{ minWidth: 130 }}
-                />
-              </Space>
+            <FilterBar.Item width="sm" label={t("pages.events.filters.minHeat")}>
+              <Select
+                size="small"
+                value={minHeatScore}
+                options={minHeatOptions}
+                onChange={(value) => updateFilters({ minHeatScore: Number(value) })}
+                className="w-full"
+              />
+            </FilterBar.Item>
 
-              <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.events.filters.minCredibility")}</Typography.Text>
-                <Select
-                  size="small"
-                  value={minCredibilityScore}
-                  options={minCredibilityOptions}
-                  onChange={(value) => updateFilters({ minCredibilityScore: Number(value) })}
-                  style={{ minWidth: 150 }}
-                />
-              </Space>
-              {entityFilter ? (
-                <Tag
-                  color="purple"
-                  closable
-                  onClose={(event) => {
-                    event.preventDefault();
-                    updateFilters({ entity: null });
-                  }}
-                >
-                  {t("pages.events.filters.entityActive", {
-                    entity: entityFilter
-                  })}
-                </Tag>
-              ) : null}
-            </Space>
-
-            <Button onClick={() => refetch()} loading={loading}>
-              {t("common.refresh")}
-            </Button>
-          </div>
+            <FilterBar.Item width="md" label={t("pages.events.filters.minCredibility")}>
+              <Select
+                size="small"
+                value={minCredibilityScore}
+                options={minCredibilityOptions}
+                onChange={(value) => updateFilters({ minCredibilityScore: Number(value) })}
+                className="w-full"
+              />
+            </FilterBar.Item>
+            {entityFilter ? (
+              <Tag
+                color="purple"
+                closable
+                onClose={(event) => {
+                  event.preventDefault();
+                  updateFilters({ entity: null });
+                }}
+              >
+                {t("pages.events.filters.entityActive", {
+                  entity: entityFilter
+                })}
+              </Tag>
+            ) : null}
+          </FilterBar>
 
           {error && resolvedData ? (
             <RequestErrorBanner
@@ -614,6 +611,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                   <List.Item
                     key={event.id}
                     style={rowStyle}
+                    className="flex-col items-start gap-2 sm:flex-row sm:items-center"
                     actions={[
                       <Button key="open" type="link" onClick={() => router.push(`/events/${event.id}`)}>
                         {t("pages.events.actions.open")}
@@ -625,9 +623,9 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                   >
                     <List.Item.Meta
                       title={
-                        <div className="flex flex-col gap-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Typography.Text strong style={{ fontSize: 16 }}>
+                        <div className="flex min-w-0 flex-col gap-3">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <Typography.Text strong className="line-clamp-2 text-base font-semibold">
                               {title}
                             </Typography.Text>
                             <Tag>{itemCountLabel}: {event.itemCount}</Tag>

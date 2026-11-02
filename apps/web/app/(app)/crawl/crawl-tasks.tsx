@@ -1484,9 +1484,8 @@ export function CrawlTasksView() {
             />
           ) : null}
           <div
+            className="flex flex-col md:flex-row"
             style={{
-              display: "flex",
-              flexDirection: screens.md ? "row" : "column",
               justifyContent: "space-between",
               alignItems: screens.md ? "center" : "stretch",
               gap: 12,
@@ -1501,8 +1500,8 @@ export function CrawlTasksView() {
               }}
             >
               <Space.Compact
+                className="w-full md:w-[320px]"
                 style={{
-                  width: screens.md ? 320 : "100%",
                   maxWidth: "100%",
                 }}
               >

@@ -752,13 +752,13 @@ export function ContentSubscriptionsTab({
         className="content-card"
         title={t("subscriptions.content.currentTitle")}
         extra={
-          <Space size="small">
+          <Space size="small" wrap>
             <Input.Search
               allowClear
               value={subscriptionQuery}
               onChange={(event) => setSubscriptionQuery(event.target.value)}
               placeholder={t("subscriptions.content.searchPlaceholder")}
-              style={{ width: 260 }}
+              className="w-full sm:w-[260px]"
             />
             <Button
               danger
@@ -921,10 +921,10 @@ export function ContentSubscriptionsTab({
         className="content-card"
         title={t("subscriptions.content.catalogTitle")}
         extra={
-          <Space size="small">
+          <Space size="small" wrap>
             <Select
               value={catalogKind}
-              style={{ width: 140 }}
+              className="w-full sm:w-[140px]"
               options={[
                 {
                   value: "all",
@@ -959,7 +959,7 @@ export function ContentSubscriptionsTab({
               onChange={(event) => setCatalogInput(event.target.value)}
               onSearch={(value) => setCatalogQuery(value)}
               placeholder={t("subscriptions.content.catalogSearch")}
-              style={{ width: 260 }}
+              className="w-full sm:w-[260px]"
             />
             <Button onClick={() => setCatalogQuery(catalogInput)}>
               {t("common.search")}

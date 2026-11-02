@@ -433,6 +433,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                         return (
                           <List.Item
                             key={group.eventId}
+                            className="flex-col items-start gap-2 sm:flex-row sm:items-center"
                             actions={[
                               <Button
                                 key="details"
@@ -452,8 +453,8 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                             >
                               <List.Item.Meta
                                 title={
-                                  <Space size={[6, 6]} wrap>
-                                    <Typography.Text strong>{eventTitle}</Typography.Text>
+                                  <Space className="min-w-0" size={[6, 6]} wrap>
+                                    <Typography.Text strong className="line-clamp-2 text-base font-semibold">{eventTitle}</Typography.Text>
                                     <Tag>
                                       {t('pages.topics.list.countLabel')}: {group.count}
                                     </Tag>
@@ -541,6 +542,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                         return (
                           <List.Item
                             key={group.topic}
+                            className="flex-col items-start gap-2 sm:flex-row sm:items-center"
                             actions={[
                               <Button
                                 key="preview"
@@ -560,8 +562,8 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                             >
                               <List.Item.Meta
                                 title={
-                                  <Space size={[6, 6]} wrap>
-                                    <Typography.Text strong>{group.topic}</Typography.Text>
+                                  <Space className="min-w-0" size={[6, 6]} wrap>
+                                    <Typography.Text strong className="line-clamp-2 text-base font-semibold">{group.topic}</Typography.Text>
                                     <Tag>
                                       {t('pages.topics.list.countLabel')}: {group.count}
                                     </Tag>
@@ -693,8 +695,8 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                   >
                     <List.Item.Meta
                       title={
-                        <Space size="small">
-                          <Typography.Text strong>{item.title ?? selectedEventTitle}</Typography.Text>
+                        <Space size="small" wrap>
+                          <Typography.Text strong className="line-clamp-2">{item.title ?? selectedEventTitle}</Typography.Text>
                           {item.source ? <Tag color="geekblue">{item.source}</Tag> : null}
                         </Space>
                       }
