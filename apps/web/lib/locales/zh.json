@@ -1,5 +1,6 @@
 {
   "auth": {
+    "masthead": "MODULAR · 情报编辑台",
     "sessionExpiredRedirect": "会话已过期，正在跳转登录…",
     "sessionExpired": "会话已过期",
     "login": {
@@ -2105,6 +2106,11 @@
     "today": {
       "title": "今日要闻",
       "subtitle": "快速理解今日重要新闻。",
+      "kicker": "每日简报 · DAILY BRIEFING",
+      "breaking": "突发",
+      "moreBreaking": "还有 {{count}} 条",
+      "headlines": "头条",
+      "myDigest": "我的摘要",
       "noAlerts": "暂无突发预警",
       "marketsStable": "市场运行平稳",
       "breakingAlert": "突发预警",

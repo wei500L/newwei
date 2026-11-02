@@ -7,7 +7,6 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { AuraBentoCard } from "@/components/aura-bento-card";
 import { EmptyDigestSvg } from "@/components/empty-digest-svg";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -324,11 +323,8 @@ export function UserDigestPanel() {
   return (
     <>
       {contextHolder}
-      <AuraBentoCard className="p-4" squish={false}>
-        <div className="flex items-center justify-between mb-4">
-          <Typography.Title level={5} style={{ margin: 0 }}>
-            {t("pages.digest.title")}
-          </Typography.Title>
+      <div className="flex flex-col">
+        <div className="mb-4 flex items-center justify-end">
           <Space>
             <Button onClick={() => loadDigest()} loading={loadingDigest} size="small">
               {t("common.refresh")}
@@ -519,7 +515,7 @@ export function UserDigestPanel() {
             />
           </div>
         )}
-      </AuraBentoCard>
+      </div>
 
       <Modal
         open={modalOpen}

@@ -1,12 +1,11 @@
 "use client";
 
-import { FireOutlined, RiseOutlined } from "@ant-design/icons";
 import { useQuery , gql } from "@apollo/client";
-import { Skeleton, Tag } from "antd";
+import { Skeleton } from "antd";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
-import { AuraBentoCard } from "@/components/aura-bento-card";
+import { SectionHeader } from "@/components/section-header";
 
 const HOT_TOPICS_QUERY = gql`
   query HotTopics($search: String, $filters: ItemsFiltersInput) {
@@ -24,17 +23,6 @@ interface TopicFacet {
   count: number;
 }
 
-function getTrendType(index: number): "hot" | "rising" | "stable" {
-  if (index < 2) return "hot";
-  if (index < 5) return "rising";
-  return "stable";
-}
-
-function formatTrend(count: number): string {
-  if (count >= 100) return "+" + Math.round(count / 10) * 10;
-  return `+${count}`;
-}
-
 export function HotTopics() {
   const { t } = useTranslation();
   const router = useRouter();
@@ -47,12 +35,10 @@ export function HotTopics() {
 
   if (loading) {
     return (
-      <AuraBentoCard className="p-4" squish={false}>
-        <div className="flex items-center gap-2 mb-4 font-semibold text-sm">
-          <FireOutlined className="text-orange-500" /> {t("pages.today.hotTopics")}
-        </div>
+      <section className="flex flex-col gap-3">
+        <SectionHeader kicker="HOT TOPICS" title={t("pages.today.hotTopics")} />
         <Skeleton active paragraph={{ rows: 4 }} />
-      </AuraBentoCard>
+      </section>
     );
   }
 
@@ -61,34 +47,27 @@ export function HotTopics() {
   }
 
   return (
-    <AuraBentoCard className="p-4 flex flex-col" squish={false}>
-      <div className="flex items-center gap-2 mb-3 font-semibold text-sm">
-        <FireOutlined className="text-orange-500" /> {t("pages.today.hotTopics")}
+    <section className="flex flex-col gap-3">
+      <SectionHeader kicker="HOT TOPICS" title={t("pages.today.hotTopics")} />
+      <div className="flex flex-col divide-y divide-[var(--border)]">
+        {topics.map((topic, index) => (
+          <div
+            key={topic.value}
+            className="group flex cursor-pointer items-baseline gap-3 py-2"
+            onClick={() => router.push(`/search?topic=${encodeURIComponent(topic.value)}`)}
+          >
+            <span className="w-5 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm group-hover:underline underline-offset-4">
+              {topic.value}
+            </span>
+            <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+              {topic.count}
+            </span>
+          </div>
+        ))}
       </div>
-      <div className="flex flex-col gap-1">
-        {topics.map((topic, index) => {
-          const trendType = getTrendType(index);
-          const trendColor = trendType === "hot" ? "red" : trendType === "rising" ? "orange" : "green";
-
-          return (
-            <div
-              key={topic.value}
-              className="flex items-center justify-between p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded cursor-pointer transition-colors group"
-              onClick={() => router.push(`/search?topic=${encodeURIComponent(topic.value)}`)}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="text-gray-400 font-mono text-xs w-5">{String(index + 1).padStart(2, "0")}</span>
-                <span className="font-medium text-sm group-hover:text-blue-500 transition-colors truncate">
-                  {topic.value}
-                </span>
-              </div>
-              <Tag color={trendColor} icon={<RiseOutlined />} className="text-[10px] shrink-0">
-                {formatTrend(topic.count)}
-              </Tag>
-            </div>
-          );
-        })}
-      </div>
-    </AuraBentoCard>
+    </section>
   );
 }

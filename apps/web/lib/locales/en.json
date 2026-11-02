@@ -1,5 +1,6 @@
 {
   "auth": {
+    "masthead": "MODULAR · INTELLIGENCE DESK",
     "sessionExpiredRedirect": "Session expired. Redirecting to sign-in…",
     "sessionExpired": "Session expired",
     "login": {
@@ -2105,6 +2106,11 @@
     "today": {
       "title": "Today Brief",
       "subtitle": "Get a quick read on today's most important news.",
+      "kicker": "Daily Briefing",
+      "breaking": "Breaking",
+      "moreBreaking": "{{count}} more",
+      "headlines": "Headlines",
+      "myDigest": "My Digest",
       "noAlerts": "No breaking alerts",
       "marketsStable": "Markets are stable",
       "breakingAlert": "Breaking Alert",

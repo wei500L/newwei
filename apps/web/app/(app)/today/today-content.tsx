@@ -1,13 +1,12 @@
 "use client";
 
-import { Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ItemsView } from "@/app/(app)/items/items-view";
-import { AuraBentoCard } from "@/components/aura-bento-card";
-import { PageHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import dayjs from "@/lib/dayjs";
+import { resolveLocale } from "@/lib/i18n";
 
 import { BreakingAlerts } from "./components/breaking-alerts";
 import { Headlines } from "./components/headlines";
@@ -15,7 +14,7 @@ import { HotTopics } from "./components/hot-topics";
 import { UserDigestPanel } from "./user-digest-panel";
 
 export function TodayContent() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [todayLabel, setTodayLabel] = useState<string>("Today");
   const [todayDateRange, setTodayDateRange] = useState<
     [ReturnType<typeof dayjs>, ReturnType<typeof dayjs>] | undefined
@@ -23,53 +22,73 @@ export function TodayContent() {
 
   useEffect(() => {
     const now = dayjs();
-    setTodayLabel(now.format("dddd, MMMM D"));
+    // dayjs locale 已由 app/providers.tsx 随 i18n 语言设置；这里显式指定，
+    // 避免子组件 effect 早于 Provider effect 执行时首帧拿到英文星期名。
+    const isZh = resolveLocale(i18n.language) === "zh-CN";
+    setTodayLabel(
+      now
+        .locale(isZh ? "zh-cn" : "en")
+        .format(isZh ? "M月D日 dddd" : "dddd, MMMM D"),
+    );
     setTodayDateRange([now.startOf("day"), now.endOf("day")]);
-  }, []);
+  }, [i18n.language]);
 
   return (
     <div className="flex flex-col gap-6 pb-10">
-      {/* Header Section */}
-      <PageHeader
-        kicker={t("nav.groups.today")}
-        title={<span suppressHydrationWarning>{todayLabel}</span>}
-        description={t("pages.today.subtitle")}
-      />
+      {/* 报头（仅 Today 使用，不抽通用组件） */}
+      <header className="flex flex-col gap-2">
+        <p className="kicker m-0">{t("pages.today.kicker")}</p>
+        <h1
+          className="m-0 font-serif text-3xl font-semibold leading-tight tracking-tight md:text-4xl"
+          suppressHydrationWarning
+        >
+          {todayLabel}
+        </h1>
+        <p className="m-0 max-w-measure text-sm text-muted-foreground">
+          {t("pages.today.subtitle")}
+        </p>
+        <div
+          aria-hidden
+          className="mt-2 h-[6px] border-y-2 border-[var(--border-strong)] [border-bottom-width:1px]"
+        />
+      </header>
 
-      {/* Bento Grid Layout */}
+      {/* 突发条 */}
+      <BreakingAlerts />
+
+      {/* 头版栅格：左 7 栏头条 / 右 5 栏热点 + 我的摘要 */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Top: Alerts (Full Width) */}
-        <div className="lg:col-span-12">
-          <BreakingAlerts />
-        </div>
-
-        {/* Left: Headlines + User Digest (7 cols) */}
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
           <Headlines />
-          <UserDigestPanel />
         </div>
 
-        {/* Right: Hot Topics + Feed (5 cols) */}
-        <div className="flex min-w-0 flex-col gap-6 lg:col-span-5">
+        <div className="flex min-w-0 flex-col gap-6 lg:col-span-5 lg:border-l lg:border-[var(--border)] lg:pl-6">
           <HotTopics />
-          <AuraBentoCard squish={false} className="flex min-h-viz-3xl flex-1 flex-col p-4">
-            <Typography.Title level={5}>{t("pages.today.latestFeed")}</Typography.Title>
-            <div className="flex-1 overflow-y-auto rail-scrollbar">
-              <ItemsView
-                surface="none"
-                initialView="feed"
-                emptyStateVariant="today"
-                sortMode="publishedDesc"
-                experiencePreset="reader"
-                density="compact"
-                initialFilters={{
-                  dateRange: todayDateRange
-                }}
-              />
-            </div>
-          </AuraBentoCard>
+          <section className="flex flex-col gap-4 border-t border-[var(--border)] pt-6">
+            <SectionHeader
+              kicker="MY DIGEST"
+              title={t("pages.today.myDigest")}
+            />
+            <UserDigestPanel />
+          </section>
         </div>
       </div>
+
+      {/* 最新信息流（全宽） */}
+      <section className="flex flex-col gap-3">
+        <SectionHeader rule kicker="LATEST" title={t("pages.today.latestFeed")} />
+        <ItemsView
+          surface="none"
+          initialView="feed"
+          emptyStateVariant="today"
+          sortMode="publishedDesc"
+          experiencePreset="reader"
+          density="compact"
+          initialFilters={{
+            dateRange: todayDateRange
+          }}
+        />
+      </section>
     </div>
   );
 }

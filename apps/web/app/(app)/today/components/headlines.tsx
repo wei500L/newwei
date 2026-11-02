@@ -1,14 +1,13 @@
 "use client";
 
-import { ArrowRightOutlined } from "@ant-design/icons";
 import { useQuery , gql } from "@apollo/client";
 import { Skeleton } from "antd";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
 import { resolveArticlePublishedTime } from "@/components/article-published-time";
-import { AuraBentoCard } from "@/components/aura-bento-card";
 import { NewsImage } from "@/components/news-image";
+import { SectionHeader } from "@/components/section-header";
 import dayjs from "@/lib/dayjs";
 import { resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
@@ -77,9 +76,10 @@ export function Headlines() {
 
   if (loading) {
     return (
-      <AuraBentoCard className="overflow-hidden p-0" squish={false}>
-        <Skeleton active paragraph={{ rows: 6 }} className="p-6" />
-      </AuraBentoCard>
+      <section className="flex flex-col gap-3">
+        <SectionHeader kicker="HEADLINES" title={t("pages.today.headlines")} />
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </section>
     );
   }
 
@@ -94,58 +94,48 @@ export function Headlines() {
     formatOptions: { dateStyle: "medium", timeStyle: "short" },
     unknownText: publishedUnknown
   });
+  const heroSource = heroItem.rawPreview?.sourceName;
 
   return (
-    <AuraBentoCard className="overflow-hidden flex flex-col" squish={false}>
-      {/* Hero Section */}
+    <section className="flex flex-col gap-3">
+      <SectionHeader kicker="HEADLINES" title={t("pages.today.headlines")} />
+
+      {/* 头条：图文分离 */}
       <div
-        className="relative w-full group cursor-pointer shrink-0"
+        className="group flex cursor-pointer flex-col gap-2"
         onClick={() => router.push(`/items/${heroItem.id}`)}
       >
-        <NewsImage
-          src={heroThumbnail}
-          alt={heroItem.title}
-          aspectRatio="video"
-          fallback="gradient"
-          fallbackText={heroItem.rawPreview?.sourceName ?? heroItem.title}
-          className="rounded-none"
-          imgClassName="rounded-none"
-          priority
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10" />
+        {heroThumbnail ? (
+          <NewsImage
+            src={heroThumbnail}
+            alt={heroItem.title}
+            aspectRatio="video"
+            fallback="gradient"
+            fallbackText={heroSource ?? heroItem.title}
+            priority
+          />
+        ) : null}
 
-        <div className="absolute bottom-0 left-0 p-6 z-20 w-full">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="bg-blue-500 text-white text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider">
-              {t("pages.today.headline")}
-            </span>
-            {heroItem.rawPreview?.sourceName && (
-              <span className="text-white/70 text-xs">{heroItem.rawPreview.sourceName}</span>
-            )}
-          </div>
-          <h2 className="text-white text-xl md:text-2xl font-bold leading-tight mb-2 group-hover:underline decoration-blue-400 underline-offset-4 transition-all">
-            {heroItem.title}
-          </h2>
-          {heroItem.processedPreview?.summary && (
-            <p className="text-gray-300 text-sm line-clamp-2 mb-3">
-              {heroItem.processedPreview.summary}
-            </p>
-          )}
-          <div className="mb-3">
-            <p className="text-white/85 text-xs m-0">{heroPublished.primaryText}</p>
-            {heroPublished.relativeText ? (
-              <p className="text-white/65 text-xs m-0">{heroPublished.relativeText}</p>
-            ) : null}
-          </div>
-          <div className="flex items-center text-blue-300 text-xs font-medium gap-1">
-            {t("common.readMore")} <ArrowRightOutlined />
-          </div>
-        </div>
+        <p className="kicker m-0 flex flex-wrap items-baseline gap-x-2">
+          {heroSource ? <span>{heroSource}</span> : null}
+          <span>· {heroPublished.primaryText}</span>
+          {heroPublished.relativeText ? <span>· {heroPublished.relativeText}</span> : null}
+        </p>
+
+        <h2 className="m-0 font-serif text-2xl font-semibold leading-snug line-clamp-3 group-hover:underline underline-offset-4">
+          {heroItem.title}
+        </h2>
+
+        {heroItem.processedPreview?.summary ? (
+          <p className="m-0 text-sm text-muted-foreground line-clamp-2">
+            {heroItem.processedPreview.summary}
+          </p>
+        ) : null}
       </div>
 
-      {/* Sub Headlines */}
-      {subItems.length > 0 && (
-        <div className="divide-y divide-gray-100 dark:divide-gray-800">
+      {/* 次条：无图，右侧缩略图 */}
+      {subItems.length > 0 ? (
+        <div className="divide-y divide-[var(--border)]">
           {subItems.map((item) => {
             const itemPublished = resolveArticlePublishedTime({
               publishedAt: item.publishedAt ?? null,
@@ -154,40 +144,41 @@ export function Headlines() {
               unknownText: publishedUnknown
             });
             const itemThumbnail = safeHttpUrl(item.rawPreview?.thumbnail);
+            const itemSource = item.rawPreview?.sourceName;
 
             return (
               <div
                 key={item.id}
-                className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors"
+                className="flex cursor-pointer items-start gap-3 py-3"
                 onClick={() => router.push(`/items/${item.id}`)}
               >
-                <div className="flex items-start gap-3">
-                  <NewsImage
-                    src={itemThumbnail}
-                    alt={item.title}
-                    aspectRatio="square"
-                    fallback="initials"
-                    fallbackText={item.rawPreview?.sourceName ?? item.title}
-                    className="w-12 shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-2 m-0">
-                      {item.title}
-                    </h3>
-                    {item.rawPreview?.sourceName ? (
-                      <p className="text-xs text-muted-foreground mt-1 mb-0">{item.rawPreview.sourceName}</p>
-                    ) : null}
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 mb-0">{itemPublished.primaryText}</p>
-                    {itemPublished.relativeText ? (
-                      <p className="text-xs text-muted-foreground mt-0.5 mb-0">{itemPublished.relativeText}</p>
-                    ) : null}
-                  </div>
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <h3 className="m-0 text-[15px] font-semibold leading-snug line-clamp-2">
+                    {item.title}
+                  </h3>
+                  <p className="m-0 font-mono text-xs text-muted-foreground">
+                    {itemSource ? `${itemSource} · ` : ""}
+                    {itemPublished.primaryText}
+                  </p>
+                  {itemPublished.relativeText ? (
+                    <p className="m-0 font-mono text-xs text-muted-foreground">
+                      {itemPublished.relativeText}
+                    </p>
+                  ) : null}
                 </div>
+                <NewsImage
+                  src={itemThumbnail}
+                  alt={item.title}
+                  aspectRatio="square"
+                  fallback="initials"
+                  fallbackText={itemSource ?? item.title}
+                  className="w-12 shrink-0"
+                />
               </div>
             );
           })}
         </div>
-      )}
-    </AuraBentoCard>
+      ) : null}
+    </section>
   );
 }
