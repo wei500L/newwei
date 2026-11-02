@@ -615,37 +615,25 @@ export function SpacetimePropagation({
 
   return (
     <div className="flex flex-col gap-1">
-      <Space size="small" wrap>
-        <Tag color="default" className="text-xs">
-          Range: {range}
-        </Tag>
-        <Tag color="default" className="text-xs">
-          Window: {windowLabelShort}
-        </Tag>
-        <Tag color="blue" className="text-xs">
-          Link window: {propagation?.windowHours ?? propagationWindowHours}h
-        </Tag>
-        <Tag color="geekblue" className="text-xs">
-          Aggregation: window graph
-        </Tag>
-        <Tag color="green" className="text-xs">
-          Duplicate links: {edgeKindStats.duplicate}
-        </Tag>
-        <Tag color="gold" className="text-xs">
-          Time links: {edgeKindStats.time}
-        </Tag>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
+        <span>{t("dashboard.meta.range")}: {range}</span>
+        <span>{t("dashboard.meta.window")}: {windowLabelShort}</span>
+        <span>{t("dashboard.meta.linkWindow")}: {propagation?.windowHours ?? propagationWindowHours}h</span>
+        <span>{t("dashboard.meta.aggregation")}: {t("dashboard.meta.aggregationWindowGraph")}</span>
+        <span>{t("dashboard.meta.duplicateLinks")}: {edgeKindStats.duplicate}</span>
+        <span>{t("dashboard.meta.timeLinks")}: {edgeKindStats.time}</span>
         {linkedSourceSet.size > 0 ? (
-          <Tag color="cyan" className="text-xs">
+          <span>
             {t("dashboard.charts.spacetimePropagation.linkedSources", {
               count: linkedSourceSet.size
             })}
-          </Tag>
+          </span>
         ) : null}
         {cursorStartIso && cursorEndIso ? (
-          <Tag color="purple" className="text-xs">
-            Cursor: {formatDateTime(cursorStartIso, locale, { dateStyle: "medium" })} -{" "}
+          <span>
+            {t("dashboard.meta.cursor")}: {formatDateTime(cursorStartIso, locale, { dateStyle: "medium" })} -{" "}
             {formatDateTime(cursorEndIso, locale, { dateStyle: "medium" })}
-          </Tag>
+          </span>
         ) : null}
         {degradationStats.hiddenEdges > 0 ? (
           <Tooltip
@@ -657,9 +645,9 @@ export function SpacetimePropagation({
             })}
           >
             <Tag
-              color="orange"
+              color="warning"
               icon={<WarningOutlined />}
-              className="text-xs cursor-help"
+              className="cursor-help"
             >
               {t("dashboard.charts.spacetimePropagation.filtered", {
                 hidden: degradationStats.hiddenEdges,
@@ -669,7 +657,7 @@ export function SpacetimePropagation({
             </Tag>
           </Tooltip>
         ) : null}
-      </Space>
+      </div>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         {t("dashboard.charts.spacetimePropagation.caption")}
       </Typography.Text>

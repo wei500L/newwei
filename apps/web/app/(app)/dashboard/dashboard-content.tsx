@@ -321,7 +321,8 @@ function DashboardStreamStatusLine({
       <span className="text-muted-foreground">|</span>
       <span>
         {t("dashboard.stream.window")}: {range} (
-        {formatDashboardDate(start)} to {formatDashboardDate(end)})
+        {formatDashboardDate(start)} {t("dashboard.meta.to")}{" "}
+        {formatDashboardDate(end)})
       </span>
     </div>
   );
@@ -671,7 +672,7 @@ export function DashboardContent() {
           <div className="lg:col-span-2 flex flex-col gap-3">
             <SectionHeader
               rule
-              kicker="WAR MAP"
+              kicker={t("dashboard.charts.warMap.kicker")}
               title={t("dashboard.charts.warMap.title")}
             />
             <div className="content-card h-viz-3xl overflow-hidden flex flex-col">

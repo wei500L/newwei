@@ -892,33 +892,27 @@ export function SpacetimeGeoHeatmap({
     <>
       <div ref={containerRef} className="h-full flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <Space size="small" wrap>
-            <Tag color={enabled ? "green" : "default"}>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
+            <span>
               {enabled
                 ? t("dashboard.charts.spacetimeGeoHeatmap.active")
                 : t("dashboard.charts.spacetimeGeoHeatmap.inactive")}
-            </Tag>
-            <Tag color="default" className="text-xs">
-              Range: {range}
-            </Tag>
-            <Tag color="default" className="text-xs">
-              Window: {windowLabelShort}
-            </Tag>
-            <Tag color="geekblue" className="text-xs">
-              Aggregation: window (recency-weighted)
-            </Tag>
+            </span>
+            <span>{t("dashboard.meta.range")}: {range}</span>
+            <span>{t("dashboard.meta.window")}: {windowLabelShort}</span>
+            <span>{t("dashboard.meta.aggregation")}: {t("dashboard.meta.aggregationWindowRecency")}</span>
             {includeBuckets && cursorBucketIso ? (
-              <Tag color="purple">
-                {t("dashboard.charts.spacetimeGeoHeatmap.bucket")}
-                : {formatDateTime(cursorBucketIso, locale, { dateStyle: "medium" })}
-              </Tag>
+              <span>
+                {t("dashboard.charts.spacetimeGeoHeatmap.bucket")}:{" "}
+                {formatDateTime(cursorBucketIso, locale, { dateStyle: "medium" })}
+              </span>
             ) : null}
             {updatedAtLabel ? (
-              <Tag>
+              <span>
                 {t("dashboard.updatedAt")}: {updatedAtLabel}
-              </Tag>
+              </span>
             ) : null}
-          </Space>
+          </div>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t("dashboard.charts.spacetimeGeoHeatmap.caption")}
           </Typography.Text>

@@ -405,8 +405,6 @@ export function FinancialCandlestick() {
   const parsedInterval = useMemo(() => parseInterval(data?.interval), [data?.interval]);
   const intervalGranularity = intervalToGranularity(parsedInterval);
   const intervalGranularityLabel = formatGranularityLabelLocalized(intervalGranularity, t);
-  const intervalColor =
-    intervalGranularity === UiTimeGranularity.Unknown ? "default" : "geekblue";
   const intervalDescriptor = data?.interval
     ? `${intervalGranularityLabel} (${data.interval})`
     : intervalGranularityLabel;
@@ -497,82 +495,74 @@ export function FinancialCandlestick() {
   }
 
   return (
-    <div className="relative h-[350px] transition-all duration-300">
-      <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
-        <Tag color="default" className="text-xs">
-          {rangeLabel}: {range}
-        </Tag>
-        <Tag color="default" className="text-xs">
-          {windowLabelText}: {windowLabel}
-        </Tag>
-        <Tag color={intervalColor} className="text-xs">
-          {intervalTagText}
-        </Tag>
-        <Tag color="default" className="text-xs">
+    <div className="flex h-[350px] flex-col gap-2 transition-all duration-300">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
+        <span>{rangeLabel}: {range}</span>
+        <span>{windowLabelText}: {windowLabel}</span>
+        <span>{intervalTagText}</span>
+        <span>
           {t("dashboard.candlestick.candlesCount", {
             count: normalizedPoints.length
           })}
-        </Tag>
+        </span>
         {summaryMetrics?.latestCloseText ? (
-          <Tag color="default" className="text-xs">
+          <span>
             {latestCloseLabelText}: {summaryMetrics.latestCloseText}
-          </Tag>
+          </span>
         ) : null}
         {summaryMetrics?.windowChangeText ? (
-          <Tag color={summaryMetrics.windowChangeColor} className="text-xs">
+          <span>
             {windowChangeLabelText}: {summaryMetrics.windowChangeText}
-          </Tag>
+          </span>
         ) : null}
-        {updatedAtTagText ? (
-          <Tag color="default" className="text-xs">
-            {updatedAtTagText}
-          </Tag>
-        ) : null}
+        {updatedAtTagText ? <span>{updatedAtTagText}</span> : null}
         {latestObservedAtLabel && data?.skippedIncompleteCount ? (
-          <Tag color="processing" className="text-xs">
+          <span>
             {t("dashboard.candlestick.observedThrough", {
               time: latestObservedAtLabel
             })}
-          </Tag>
+          </span>
         ) : null}
         {data?.skippedIncompleteCount ? (
-          <Tag color="orange" className="text-xs">
+          <Tag color="warning">
             {t("dashboard.candlestick.inProgressOmitted", {
               count: data.skippedIncompleteCount
             })}
           </Tag>
         ) : null}
       </div>
-      <DashboardChart
-        option={option}
-        height="100%"
-        exportFilename={buildExportBaseName({
-          base: "financial-candlestick",
-          suffixes: [data.symbol],
-          start: startLabel,
-          end: endLabel,
-          fallback: "chart"
-        })}
-        showExportImage
-        actions={
-          <Space size={8}>
-            <Button
-              size="small"
-              type="default"
-              onClick={handleCsvExport}
-              loading={exportingCsv}
-              disabled={!data || normalizedPoints.length === 0}
-            >
-              {csvLabel}
-            </Button>
-          </Space>
-        }
-      />
-      {isLoading ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <Skeleton active paragraph={{ rows: 4 }} />
-        </div>
-      ) : null}
+      <div className="relative min-h-0 flex-1">
+        <DashboardChart
+          option={option}
+          height="100%"
+          exportFilename={buildExportBaseName({
+            base: "financial-candlestick",
+            suffixes: [data.symbol],
+            start: startLabel,
+            end: endLabel,
+            fallback: "chart"
+          })}
+          showExportImage
+          actions={
+            <Space size={8}>
+              <Button
+                size="small"
+                type="default"
+                onClick={handleCsvExport}
+                loading={exportingCsv}
+                disabled={!data || normalizedPoints.length === 0}
+              >
+                {csvLabel}
+              </Button>
+            </Space>
+          }
+        />
+        {isLoading ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <Skeleton active paragraph={{ rows: 4 }} />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

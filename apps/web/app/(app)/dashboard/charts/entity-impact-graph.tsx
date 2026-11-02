@@ -1002,16 +1002,18 @@ export function EntityImpactGraph() {
                   category;
                 const isActive = selectedCategories.includes(category);
                 return (
-                  <Button
+                  <Tag.CheckableTag
                     key={category}
-                    size="small"
-                    type={isActive ? "primary" : "default"}
+                    checked={isActive}
                     className={`entity-graph-chip entity-graph-chip-${category}`}
-                    disabled={isActive && selectedCategories.length === 1}
-                    onClick={() => toggleCategory(category)}
+                    onChange={() => {
+                      if (!(isActive && selectedCategories.length === 1)) {
+                        toggleCategory(category);
+                      }
+                    }}
                   >
                     {categoryLabel}
-                  </Button>
+                  </Tag.CheckableTag>
                 );
               })}
             </Space>
@@ -1029,20 +1031,22 @@ export function EntityImpactGraph() {
                     : t("dashboard.charts.entityGraph.coOccurrence");
                 const isActive = selectedEdgeTypes.includes(edgeType);
                 return (
-                  <Button
+                  <Tag.CheckableTag
                     key={edgeType}
-                    size="small"
-                    type={isActive ? "primary" : "default"}
+                    checked={isActive}
                     className={`entity-graph-chip ${
                       edgeType === "correlation"
                         ? "entity-graph-chip-correlation"
                         : "entity-graph-chip-cooccurrence"
                     }`}
-                    disabled={isActive && selectedEdgeTypes.length === 1}
-                    onClick={() => toggleEdgeType(edgeType)}
+                    onChange={() => {
+                      if (!(isActive && selectedEdgeTypes.length === 1)) {
+                        toggleEdgeType(edgeType);
+                      }
+                    }}
                   >
                     {edgeLabel}
-                  </Button>
+                  </Tag.CheckableTag>
                 );
               })}
             </Space>

@@ -1600,29 +1600,17 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                   </Typography.Text>
                 </Space>
 
-                <Space wrap size="small" align="center">
-                  <Tag color={playing ? "green" : "default"}>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
+                  <span>
                     {playing
                       ? t("dashboard.charts.spacetimeTimeline.playing")
                       : t("dashboard.charts.spacetimeTimeline.paused")}
-                  </Tag>
+                  </span>
                   {event ? (
-                    <Tag
-                      color={
-                        event.sourceType === "authoritative"
-                          ? "blue"
-                          : "default"
-                      }
-                    >
-                      {sourceTypeLabel(event.sourceType)}
-                    </Tag>
+                    <span>{sourceTypeLabel(event.sourceType)}</span>
                   ) : null}
                   {event ? (
-                    <Tag
-                      color={
-                        event.sourceEvidence?.corroborated ? "cyan" : "default"
-                      }
-                    >
+                    <span>
                       {event.sourceEvidence?.corroborated
                         ? t(
                             "dashboard.charts.spacetimeTimeline.corroboratedTag",
@@ -1630,25 +1618,25 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                         : t(
                             "dashboard.charts.spacetimeTimeline.uncorroboratedTag",
                           )}
-                    </Tag>
+                    </span>
                   ) : null}
                   {effectiveAuthoritativeLock ? (
-                    <Tag color="geekblue">
+                    <span>
                       {t(
                         "dashboard.charts.spacetimeTimeline.authorityThreshold",
                         {
                           count: minAuthoritativeSources ?? 1,
                         },
                       )}
-                    </Tag>
+                    </span>
                   ) : null}
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <span>
                     {event
                       ? resolveEventTitle(event)
                       : t("common.emptyValue")}
-                  </Typography.Text>
+                  </span>
                   {event ? (
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    <span>
                       {t(
                         "dashboard.charts.spacetimeTimeline.sourceEvidenceSummary",
                         {
@@ -1658,9 +1646,9 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                           blog: event.sourceEvidence?.blogSourceCount ?? 0,
                         },
                       )}
-                    </Typography.Text>
+                    </span>
                   ) : null}
-                </Space>
+                </div>
               </Space>
 
               {eventLoading ? (
@@ -1818,7 +1806,7 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                             t("dashboard.charts.spacetimeTimeline.bucket")}
                         </Typography.Text>
                         {cursorStartIso ? (
-                          <Tag color="purple" className="text-xs">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {formatDateTime(cursorStartIso, locale, {
                               dateStyle: "medium",
                             })}{" "}
@@ -1830,25 +1818,25 @@ export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
                                 })}
                               </>
                             ) : null}
-                          </Tag>
+                          </span>
                         ) : null}
                         {cursorGranularityLabel ? (
-                          <Tag color="geekblue" className="text-xs">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {t(
                               "dashboard.charts.spacetimeTimeline.bucketGranularity",
                             )}
                             : {cursorGranularityLabel}
-                          </Tag>
+                          </span>
                         ) : null}
                         {cursorEntry && cursorEntry.aggregatedCount > 1 ? (
-                          <Tag color="blue" className="text-xs">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {t(
                               "dashboard.charts.spacetimeTimeline.aggregatedBuckets",
                               {
                                 count: cursorEntry.aggregatedCount,
                               },
                             )}
-                          </Tag>
+                          </span>
                         ) : null}
                         <Button
                           size="small"

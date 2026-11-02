@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { App, Button, Skeleton, Tag } from "antd";
+import { App, Button, Skeleton, Tag, Tooltip } from "antd";
 import axios from "axios";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
@@ -484,28 +484,23 @@ export function SectorHeatmap() {
           />
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2 px-2">
-        <Tag color="default" className="text-xs">
-          {rangeLabel}: {range}
-        </Tag>
-        <Tag color="default" className="text-xs">
-          {windowLabelText}: {windowLabel}
-        </Tag>
-        <Tag color="default" className="text-xs">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 font-mono text-xs text-muted-foreground">
+        <span>{rangeLabel}: {range}</span>
+        <span>{windowLabelText}: {windowLabel}</span>
+        <span>
           {t("dashboard.charts.dataStats.points")}:{" "}
           {heatmapStats.filteredCells.toLocaleString(locale)} / {heatmapStats.totalCells.toLocaleString(locale)}
-        </Tag>
-        <Tag color="default" className="text-xs">
+        </span>
+        <span>
           {t("dashboard.charts.sectorHeatmapStats.sectors")}:{" "}
           {heatmapStats.uniqueSectors.toLocaleString(locale)}
-        </Tag>
-        <Tag color="default" className="text-xs">
+        </span>
+        <span>
           {t("dashboard.charts.sectorHeatmapStats.grid")}: {heatmapStats.xLabels}x{heatmapStats.yLabels}
-        </Tag>
+        </span>
         {selectedSector ? (
           <Tag
-            className="text-xs"
-            color={heatmapStats.selectedCells === 0 ? "red" : "geekblue"}
+            color={heatmapStats.selectedCells === 0 ? "error" : "default"}
             closable
             onClose={() => setSelectedSector(null)}
           >
@@ -517,22 +512,22 @@ export function SectorHeatmap() {
               : ""}
           </Tag>
         ) : null}
-        <Tag color="geekblue" className="text-xs">
-          {aggregationWindowSnapshot}
-        </Tag>
-        {updatedAtLabel ? (
-          <Tag color="default" className="text-xs">
-            {t("dashboard.updatedAt", {
-              time: updatedAtLabel
-            })}
-          </Tag>
-        ) : null}
+        <Tooltip
+          title={
+            <div className="flex flex-col gap-1">
+              <span>{aggregationWindowSnapshot}</span>
+              {updatedAtLabel ? (
+                <span>{t("dashboard.updatedAt", { time: updatedAtLabel })}</span>
+              ) : null}
+            </div>
+          }
+        >
+          <span className="cursor-help underline decoration-dotted">
+            {t("dashboard.meta.more")}
+          </span>
+        </Tooltip>
         {heatmapWarnings.length > 0 ? (
-          <Tag
-            color="gold"
-            className="text-xs"
-            title={heatmapWarningTitle}
-          >
+          <Tag color="warning" title={heatmapWarningTitle}>
             {t("dashboard.charts.sectorHeatmapFallbackWarning", {
               count: heatmapWarnings.length
             })}

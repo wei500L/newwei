@@ -799,7 +799,8 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
                 {selectedNode.name}
               </div>
               <div style={{ fontSize: 12, color: "#64748b" }}>
-                type: {selectedNode.type} | degree: {selectedNode.degree}
+                {t("dashboard.charts.knowledgeGraphNodeType")}: {selectedNode.type} |{" "}
+                {t("dashboard.charts.knowledgeGraphNodeDegree")}: {selectedNode.degree}
               </div>
             </div>
           ) : null}

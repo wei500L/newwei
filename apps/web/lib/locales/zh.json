@@ -1413,11 +1413,15 @@
       "knowledgeGraphEmptyDescription": "请输入实体名称以加载真实图谱数据",
       "knowledgeGraphNotFoundTitle": "未找到",
       "knowledgeGraphNotFoundDescription": "该实体暂无图谱数据",
+      "knowledgeGraphNotRangeFiltered": "时间：不受范围过滤",
+      "knowledgeGraphNodeType": "类型",
+      "knowledgeGraphNodeDegree": "度数",
       "financialCandlestick": {
         "title": "市场指数"
       },
       "warMap": {
         "title": "区域信号态势图",
+        "kicker": "战争地图",
         "series": "信号",
         "conflictZones": "冲突区域",
         "hotspots": "热点",
@@ -2055,6 +2059,19 @@
       "insightDownVsPrev": "最新值较上一点下降 {{percent}}%。",
       "insightNotEnoughData": "数据不足，无法判断趋势。",
       "insightStable": "序列在近期均值附近保持稳定。"
+    },
+    "meta": {
+      "range": "范围",
+      "window": "窗口",
+      "linkWindow": "关联窗口",
+      "aggregation": "聚合",
+      "aggregationWindowGraph": "窗口图",
+      "aggregationWindowRecency": "窗口（按时间衰减加权）",
+      "duplicateLinks": "重复连边",
+      "timeLinks": "时间连边",
+      "cursor": "游标",
+      "more": "更多",
+      "to": "至"
     },
     "analysisStream": {
       "title": "分析流",
