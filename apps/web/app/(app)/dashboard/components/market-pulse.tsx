@@ -1,10 +1,9 @@
 "use client";
 
 import { ArrowDownOutlined, ArrowUpOutlined, MinusOutlined } from "@ant-design/icons";
-import { Card, Col, Row, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
+import { Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { memo, useMemo, useState, useEffect, useRef } from "react";
-import type { CSSProperties, MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -86,68 +85,52 @@ const MetricValue = ({ value, suffix, hasData }: { value: number | string, suffi
   }, [value]);
 
   const flashClass = flash === "up"
-    ? "bg-[var(--bullish)]/15 text-[var(--bullish)]"
+    ? "bg-emerald-500/10 text-[var(--bullish)]"
     : flash === "down"
-      ? "bg-[var(--bearish)]/15 text-[var(--bearish)]"
+      ? "bg-orange-500/10 text-[var(--bearish)]"
       : "";
 
   return (
-    <span className={`text-4xl font-bold tracking-tight transition-all duration-500 px-1 rounded-md tabular-nums ${flash ? flashClass : hasData ? "text-[var(--foreground)]" : "text-secondary-foreground/30"}`}>
+    <span className={`font-mono text-3xl font-semibold tracking-tight transition-all duration-500 px-1 rounded-md tabular-nums ${flash ? flashClass : hasData ? "text-[var(--foreground)]" : "text-secondary-foreground/30"}`}>
       {typeof value === 'number' ? value.toFixed(1) : value}
       {suffix && <span className="text-sm ml-1.5 text-secondary-foreground/50 font-medium">{suffix}</span>}
     </span>
   );
 };
 
-const AuraMetricCard = ({ 
-  metric, 
-  onClick, 
-  children 
-}: { 
-  metric: HeroMetric, 
-  onClick?: () => void, 
-  children: React.ReactNode 
+function pulseCellBorder(index: number): string {
+  const classes = ["border-[var(--border)]"];
+  if (index % 2 === 1) classes.push("border-l");
+  if (index >= 2) classes.push("border-t");
+  classes.push(index >= 1 ? "md:border-l" : "md:border-l-0");
+  classes.push("md:border-t-0");
+  return classes.join(" ");
+}
+
+const AuraMetricCard = ({
+  metric,
+  onClick,
+  borderClassName = "",
+  children
+}: {
+  metric: HeroMetric,
+  onClick?: () => void,
+  borderClassName?: string,
+  children: React.ReactNode
 }) => {
-  const cardRef = useRef<HTMLDivElement>(null);
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    cardRef.current.style.setProperty(
-      "--market-pulse-x",
-      `${Math.round(e.clientX - rect.left)}px`,
-    );
-    cardRef.current.style.setProperty(
-      "--market-pulse-y",
-      `${Math.round(e.clientY - rect.top)}px`,
-    );
-  };
-
   return (
-    <div 
-      ref={cardRef}
-      onMouseMove={handleMouseMove}
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="relative group overflow-hidden flex flex-col h-full px-5 py-4 transition-all duration-500 cursor-pointer active:scale-[0.98] active:brightness-105 rounded-2xl border-l border-white/10 first:border-l-0"
-      style={
-        {
-          "--market-pulse-x": "50%",
-          "--market-pulse-y": "120px",
-        } as CSSProperties
-      }
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          onClick?.();
+        }
+      }}
+      className={`flex h-full cursor-pointer flex-col gap-1 px-5 py-4 hover:bg-[var(--surface-muted)] ${borderClassName}`.trim()}
     >
-      {/* Hover Glow Effect */}
-      <div 
-        className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-        style={{
-          background: `radial-gradient(400px circle at var(--market-pulse-x) var(--market-pulse-y), ${metric.color}0D, transparent 80%)`,
-        }}
-      />
-      
-      <Typography.Text className="mb-3 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 font-serif group-hover:text-[var(--primary)] transition-colors">
-        {metric.title}
-      </Typography.Text>
-      
+      <p className="kicker m-0">{metric.title}</p>
       {children}
     </div>
   );
@@ -337,25 +320,22 @@ export function MarketPulse({
   const allMissing = metrics.every((metric) => !metric.hasData);
 
   if (loading) {
-    // ... skeleton ...
     return (
-        <div className="mb-6">
-          <Row gutter={[20, 20]}>
-            {[1, 2, 3, 4].map((i) => (
-              <Col xs={24} sm={12} lg={6} key={i}>
-                <Card variant="borderless" className="shadow-sm">
-                  <Skeleton active paragraph={{ rows: 2 }} />
-                </Card>
-              </Col>
-            ))}
-          </Row>
+      <div className="mb-6">
+        <div className="content-card grid grid-cols-2 overflow-hidden p-0 md:grid-cols-4">
+          {[0, 1, 2, 3].map((index) => (
+            <div key={index} className={`px-5 py-4 ${pulseCellBorder(index)}`.trim()}>
+              <Skeleton active paragraph={{ rows: 2 }} />
+            </div>
+          ))}
         </div>
-      );
+      </div>
+    );
   }
 
   if (allMissing) {
     return (
-      <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-panel">
+      <div className="mb-6 content-card p-6">
         <ChartEmptyState title={emptyTitle} description={emptyDescription} />
       </div>
     );
@@ -381,29 +361,30 @@ export function MarketPulse({
   })();
 
   return (
-    <div className="mb-6 glass-panel p-1.5 overflow-hidden">
-      <div className="px-6 pt-5 pb-2 flex items-center justify-between gap-3">
-        <Typography.Text className="text-[11px] font-bold tracking-[0.08em] text-secondary-foreground/50 uppercase">
+    <div className="mb-6 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="kicker">
           {range} ·{" "}
           {formatDateTime(start, locale, { dateStyle: "medium" })} —{" "}
           {formatDateTime(end, locale, { dateStyle: "medium" })}
-        </Typography.Text>
+        </span>
         <Space size={6} wrap>
           <Tooltip title={granularityTooltip}>
-            <Tag className="text-[10px] border-none bg-secondary/60 text-secondary-foreground/80 font-bold px-2 rounded-full backdrop-blur-md">
+            <Tag className="m-0 border-none bg-[var(--surface-muted)] px-2 text-[10px] text-muted-foreground">
               {granularityTagText}
             </Tag>
           </Tooltip>
         </Space>
       </div>
-      
-      <Row gutter={[0, 0]} align="stretch" className="relative z-10">
-        {metrics.map((metric) => (
-          <Col xs={24} sm={12} lg={6} key={metric.key}>
-            <AuraMetricCard 
-              metric={metric} 
-              onClick={() => onMetricClick?.(metric.key)}
-            >
+
+      <div className="content-card grid grid-cols-2 overflow-hidden p-0 md:grid-cols-4">
+        {metrics.map((metric, index) => (
+          <AuraMetricCard
+            key={metric.key}
+            metric={metric}
+            borderClassName={pulseCellBorder(index)}
+            onClick={() => onMetricClick?.(metric.key)}
+          >
               <div className="flex flex-col flex-1">
                 <div className="flex items-baseline gap-2 mb-4">
                   <Tooltip
@@ -453,10 +434,10 @@ export function MarketPulse({
                     const trendLabel = `${Math.abs(trend).toFixed(1)}%`;
                     const trendClass =
                       trend > 0
-                        ? "text-[var(--bullish)] bg-[var(--bullish)]/10"
+                        ? "text-[var(--bullish)] bg-emerald-500/10"
                         : trend < 0
-                          ? "text-[var(--bearish)] bg-[var(--bearish)]/10"
-                          : "text-slate-400 bg-slate-100 dark:bg-slate-800";
+                          ? "text-[var(--bearish)] bg-orange-500/10"
+                          : "text-muted-foreground bg-[var(--surface-muted)]";
                     const Icon = trend > 0 ? ArrowUpOutlined : trend < 0 ? ArrowDownOutlined : MinusOutlined;
                     return (
                       <Tooltip
@@ -468,7 +449,7 @@ export function MarketPulse({
                             : t("dashboard.hero.trendVsPreviousPoint")
                         }
                       >
-                        <div className={`flex items-center text-[11px] font-black px-2 py-0.5 rounded-full ${trendClass} backdrop-blur-sm border border-current/5`}>
+                        <div className={`flex items-center text-[11px] font-black px-2 py-0.5 rounded-full ${trendClass} border border-[var(--border)]`}>
                           <Icon className="text-[10px]" />
                           <span className="ml-1 tracking-tight">{trendLabel}</span>
                         </div>
@@ -477,12 +458,12 @@ export function MarketPulse({
                   })()}
                 </div>
                 
-                <div className="mt-auto pt-2 w-full opacity-40 group-hover:opacity-100 transition-all duration-700 transform group-hover:translate-y-[-2px]">
+                <div className="mt-auto w-full pt-2">
                   {metric.data.length > 1 ? (
                     <Sparkline data={metric.data} color={metric.color} />
                   ) : (
                     <div className="h-[40px] flex items-end">
-                      <Typography.Text className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-widest italic opacity-50">
+                      <Typography.Text className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground italic">
                         {metric.hasData
                           ? t("dashboard.hero.insufficientData")
                           : notAvailableLabel}
@@ -492,9 +473,8 @@ export function MarketPulse({
                 </div>
               </div>
             </AuraMetricCard>
-          </Col>
         ))}
-      </Row>
+      </div>
     </div>
   );
 }

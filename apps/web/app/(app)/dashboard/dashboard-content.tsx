@@ -24,6 +24,7 @@ import { useSystemHealthContext } from "@/app/(app)/components/system-health-con
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RequestErrorBanner } from "@/components/request-error-banner";
+import { SectionHeader } from "@/components/section-header";
 import { TimeRangeControls } from "@/components/time-range-controls";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { formatDashboardDate } from "@/lib/dashboard-time";
@@ -546,9 +547,9 @@ export function DashboardContent() {
           description={t("dashboard.overview.subtitle")}
         />
         {/* Time Range */}
-        <div className="glass-panel border border-[var(--border)] px-4 py-3">
+        <div className="content-card px-4 py-3">
           <div className="flex items-center justify-between gap-3 mb-2">
-            <span className="text-xs text-muted-foreground font-medium">
+            <span className="kicker">
               {t("dashboard.timeRange.title")}
             </span>
             <Space size={8}>
@@ -611,7 +612,7 @@ export function DashboardContent() {
         {/* Hero / Market Pulse */}
         <div className="relative">
           {heroAccessState.kind === "forbidden" ? (
-            <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-panel">
+            <div className="mb-6 content-card p-6">
               <ChartEmptyState
                 className="h-auto"
                 variant="permission"
@@ -620,7 +621,7 @@ export function DashboardContent() {
               />
             </div>
           ) : heroError && !heroHasData ? (
-            <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-panel">
+            <div className="mb-6 content-card p-6">
               <RequestErrorBanner
                 presentation="center"
                 error={heroError}
@@ -667,27 +668,28 @@ export function DashboardContent() {
         {/* Charts Section - Immersive Map & Analytics */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Indicator Map - Dominant Central Feature */}
-          <div className="xl:col-span-2 h-viz-3xl glass-panel border border-[var(--border)] overflow-hidden flex flex-col">
-            <div className="px-5 pt-4">
-              <h3 className="text-lg text-slate-700 dark:text-slate-300">
-                {t("dashboard.charts.warMap.title")}
-              </h3>
-            </div>
-            <div className="min-h-0 flex flex-1">
-              <WarMap
-                className="flex-1"
-                streamState={dashboardStreamState}
-                onEffectiveRangeChange={handleWarMapRealtimeQueryChange}
-                onRealtimeQueryChange={handleWarMapRealtimeQueryChange}
-              />
+          <div className="xl:col-span-2 flex flex-col gap-3">
+            <SectionHeader
+              rule
+              kicker="WAR MAP"
+              title={t("dashboard.charts.warMap.title")}
+            />
+            <div className="content-card h-viz-3xl overflow-hidden flex flex-col">
+              <div className="min-h-0 flex flex-1">
+                <WarMap
+                  className="flex-1"
+                  streamState={dashboardStreamState}
+                  onEffectiveRangeChange={handleWarMapRealtimeQueryChange}
+                  onRealtimeQueryChange={handleWarMapRealtimeQueryChange}
+                />
+              </div>
             </div>
           </div>
 
           {/* Sector Heatmap - Side Panel */}
           <Card
             title={t("dashboard.charts.sectorHeatmap")}
-            className="glass-card h-viz-3xl"
-            variant="borderless"
+            className="content-card h-viz-3xl"
           >
             <SectorHeatmap />
           </Card>
@@ -702,7 +704,7 @@ export function DashboardContent() {
             />
           </div>
           <div className="xl:col-span-1">
-            <Card className="glass-card h-full" variant="borderless">
+            <Card className="content-card h-full">
               <FinancialCandlestick />
             </Card>
           </div>
@@ -713,8 +715,7 @@ export function DashboardContent() {
           <div className="xl:col-span-3">
             <Card
               title={t("dashboard.charts.entityImpactGraph")}
-              className="glass-card"
-              variant="borderless"
+              className="content-card"
             >
               <EntityImpactGraph />
             </Card>
@@ -726,8 +727,7 @@ export function DashboardContent() {
           <div className="xl:col-span-3">
             <Card
               title={t("dashboard.charts.knowledgeGraphTitle")}
-              className="glass-card"
-              variant="borderless"
+              className="content-card"
             >
               <KnowledgeGraph />
             </Card>
