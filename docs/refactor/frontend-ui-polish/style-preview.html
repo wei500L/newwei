@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FE-UI 风格预览 · 情报编辑台</title>
+<style>
+  /* ===== Token：与 README §3.2 一一对应 ===== */
+  :root {
+    --background: #f5f3ee; --surface: #fffdf9; --surface-muted: #f0ede6;
+    --foreground: #161b26; --muted-foreground: #5a6270;
+    --primary: #1f3b7b; --primary-foreground: #fff;
+    --secondary: #efece5; --secondary-foreground: #4a5261;
+    --accent: #b45309; --destructive: #b91c1c;
+    --bullish: #1b9e77; --bearish: #d95f02;
+    --border: #e3dfd6; --border-strong: #161b26; --input: #d9d4c9;
+    --radius: 6px; --radius-lg: 10px;
+    --shadow-surface: 0 1px 2px rgba(22,27,38,.04);
+    --ticker-bg: #161b26; --ticker-fg: #f5f3ee; --ticker-muted: #a8adb8;
+    --aura: rgba(31,59,123,.05);
+    --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    --font-serif: "Iowan Old Style", "Charter", Georgia, "Source Han Serif SC", "Noto Serif SC", "Songti SC", "STSong", serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .dark {
+    --background: #0d1117; --surface: #141a22; --surface-muted: #1a212b;
+    --foreground: #e8e4da; --muted-foreground: #9aa3af;
+    --primary: #8fb0ff; --primary-foreground: #0d1117;
+    --secondary: #1b222c; --secondary-foreground: #c9ced6;
+    --accent: #f59e0b; --destructive: #f87171;
+    --bullish: #34d399; --bearish: #fb923c;
+    --border: #252d38; --border-strong: #e8e4da; --input: #2c3542;
+    --shadow-surface: none;
+    --ticker-bg: #1a212b; --ticker-fg: #e8e4da; --ticker-muted: #9aa3af;
+    --aura: rgba(143,176,255,.06);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-sans); font-size: 14px; line-height: 1.6;
+    color: var(--foreground);
+    background: radial-gradient(120% 60% at 50% -10%, var(--aura) 0%, transparent 60%), var(--background);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums;
+  }
+  h1,h2,h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
+  p { margin: 0; }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* ===== 工具类（README §3.3）===== */
+  .kicker { font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-foreground); }
+  .section-rule { border-top: 2px solid var(--border-strong); padding-top: 12px; }
+  .hairline-b { border-bottom: 1px solid var(--border); }
+  .surface-inset { background: var(--surface-muted); border-radius: var(--radius); padding: 12px 16px; }
+  .content-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-surface); }
+  .serif { font-family: var(--font-serif); }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted-foreground); }
+  .double-rule { height: 6px; border-top: 2px solid var(--border-strong); border-bottom: 1px solid var(--border-strong); }
+  .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .clamp3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* ===== Shell ===== */
+  .ticker { height: 32px; background: var(--ticker-bg); color: var(--ticker-fg); display: flex; align-items: center; overflow: hidden; font-size: 12px; white-space: nowrap; }
+  .ticker-track { display: flex; gap: 32px; padding-left: 24px; animation: tick 40s linear infinite; }
+  .ticker .lbl { color: var(--ticker-muted); font-weight: 600; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin-right: 6px; }
+  .up { color: var(--bullish); } .down { color: var(--bearish); }
+  @keyframes tick { to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .ticker-track { animation: none; } }
+
+  .topnav { height: 64px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; padding: 0 20px; position: sticky; top: 0; z-index: 50; }
+  .brand { font-family: var(--font-serif); font-size: 18px; font-weight: 600; letter-spacing: -.01em; display: flex; align-items: baseline; gap: 8px; }
+  .brand small { font-family: var(--font-sans); }
+  .search { flex: 1; max-width: 560px; margin: 0 auto; height: 36px; border: 1px solid var(--input); border-radius: var(--radius); background: var(--background); display: flex; align-items: center; padding: 0 12px; color: var(--muted-foreground); gap: 8px; }
+  .search kbd { margin-left: auto; font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
+  .btn { height: 34px; padding: 0 14px; border-radius: var(--radius); border: 1px solid var(--input); background: var(--surface); display: inline-flex; align-items: center; gap: 6px; }
+  .btn:hover { background: var(--surface-muted); }
+  .btn-primary { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+  .btn-primary:hover { background: var(--primary); opacity: .92; }
+  .btn-ghost { border-color: transparent; background: transparent; }
+
+  .layout { display: flex; min-height: calc(100vh - 96px); }
+  .rail { width: 72px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 0; border-right: 1px solid var(--border); }
+  .rail .grp { width: 32px; height: 1px; background: var(--border); margin: 6px 0; }
+  .rail a { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: var(--muted-foreground); font-size: 18px; }
+  .rail a:hover { background: var(--secondary); color: var(--primary); }
+  .rail a.active { background: var(--primary); color: var(--primary-foreground); }
+  main { flex: 1; min-width: 0; padding: 24px; }
+  .container { max-width: 1440px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+
+  /* ===== 页面原语 ===== */
+  .page-header { display: flex; flex-direction: column; gap: 12px; }
+  .page-header .row { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .page-header h1 { font-family: var(--font-serif); font-size: 28px; line-height: 1.2; }
+  .page-header .desc { max-width: 72ch; color: var(--muted-foreground); }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; font-size: 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-muted); color: var(--secondary-foreground); }
+  .tag.red { color: var(--destructive); border-color: color-mix(in srgb, var(--destructive) 30%, transparent); background: color-mix(in srgb, var(--destructive) 8%, transparent); }
+  .tag.amber { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .tag.blue { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 30%, transparent); background: color-mix(in srgb, var(--primary) 8%, transparent); }
+  .section-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .section-header h2 { font-size: 15px; }
+  .section-header a { font-size: 13px; color: var(--primary); }
+
+  /* ===== Today 头版 ===== */
+  .masthead h1 { font-family: var(--font-serif); font-size: 40px; line-height: 1.1; }
+  .breaking { display: flex; flex-direction: column; }
+  .breaking .item { display: flex; align-items: baseline; gap: 12px; padding: 8px 0; }
+  .breaking .k { color: var(--destructive); flex-shrink: 0; }
+  .breaking .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .front { display: grid; grid-template-columns: 7fr 5fr; gap: 24px; }
+  .front .right { border-left: 1px solid var(--border); padding-left: 24px; display: flex; flex-direction: column; gap: 24px; }
+  .lead-img { aspect-ratio: 16/9; border-radius: var(--radius); overflow: hidden; background:
+      repeating-linear-gradient(135deg, var(--surface-muted) 0 10px, var(--background) 10px 20px); display: grid; place-items: center; color: var(--muted-foreground); font-size: 12px; border: 1px solid var(--border); }
+  .lead h2 { font-family: var(--font-serif); font-size: 26px; line-height: 1.25; margin: 6px 0 8px; }
+  .lead h2:hover { text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+  .list .row { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .list .row:last-child { border-bottom: 0; }
+  .list h3 { font-size: 15px; line-height: 1.4; }
+  .thumb { width: 64px; height: 48px; flex-shrink: 0; border-radius: 4px; background: repeating-linear-gradient(135deg, var(--surface-muted) 0 6px, var(--background) 6px 12px); border: 1px solid var(--border); }
+  .topics .row { display: flex; align-items: baseline; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .topics .n { width: 20px; color: var(--muted-foreground); font-family: var(--font-mono); }
+  .topics .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topics .c { font-family: var(--font-mono); font-size: 12px; color: var(--muted-foreground); }
+
+  /* ===== Dashboard 数据带 ===== */
+  .pulse { display: grid; grid-template-columns: repeat(4, 1fr); overflow: hidden; padding: 0; }
+  .pulse .cell { padding: 16px 20px; display: flex; flex-direction: column; gap: 4px; border-left: 1px solid var(--border); cursor: pointer; }
+  .pulse .cell:first-child { border-left: 0; }
+  .pulse .cell:hover { background: var(--surface-muted); }
+  .pulse .v { font-family: var(--font-mono); font-size: 30px; font-weight: 600; line-height: 1.1; }
+  .pulse .d { font-family: var(--font-mono); font-size: 12px; }
+  .spark { height: 28px; width: 100%; }
+
+  /* ===== 筛选栏 + 表格 ===== */
+  .filterbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border); }
+  .field { display: flex; flex-direction: column; gap: 4px; width: 180px; }
+  .field.lg { width: 240px; }
+  .field span { font-size: 12px; color: var(--muted-foreground); }
+  .input { height: 34px; border: 1px solid var(--input); border-radius: var(--radius); background: var(--surface); padding: 0 10px; display: flex; align-items: center; color: var(--muted-foreground); justify-content: space-between; }
+  .filterbar .actions { margin-left: auto; display: flex; gap: 8px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 720px; }
+  th { text-align: left; font-weight: 600; font-size: 12px; color: var(--muted-foreground); background: var(--surface-muted); padding: 10px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tr:hover td { background: var(--surface-muted); }
+  tr:last-child td { border-bottom: 0; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+
+  /* ===== 登录卡片 ===== */
+  .auth { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 40px 16px; }
+  .auth .card { width: min(420px, 100%); padding: 32px; }
+  .auth h2 { font-family: var(--font-serif); font-size: 24px; margin-bottom: 4px; }
+  .auth .field { width: 100%; margin-top: 16px; }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+  /* 预览专用切换器 */
+  .toggles { position: fixed; right: 16px; bottom: 16px; z-index: 99; display: flex; gap: 8px; }
+
+  @media (max-width: 1024px) {
+    .front, .split { grid-template-columns: 1fr; }
+    .front .right { border-left: 0; padding-left: 0; }
+    .pulse { grid-template-columns: repeat(2, 1fr); }
+    .pulse .cell:nth-child(n+3) { border-top: 1px solid var(--border); }
+    .pulse .cell:nth-child(3) { border-left: 0; }
+  }
+  @media (max-width: 640px) {
+    .rail { display: none; }
+    main { padding: 16px; }
+    .masthead h1 { font-size: 30px; }
+    .search { display: none; }
+    .field, .field.lg { width: 100%; }
+    .filterbar .actions { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toggles">
+  <button class="btn" onclick="document.documentElement.classList.toggle('dark')">◐ 亮 / 暗</button>
+</div>
+
+<!-- 电讯条 -->
+<div class="ticker" aria-label="市场电讯">
+  <div class="ticker-track">
+    <span><span class="lbl">布伦特</span><span class="mono">82.41</span> <span class="up">▲ 1.24%</span></span>
+    <span><span class="lbl">黄金</span><span class="mono">2,684.10</span> <span class="up">▲ 0.38%</span></span>
+    <span><span class="lbl">美元指数</span><span class="mono">104.12</span> <span class="down">▼ 0.21%</span></span>
+    <span><span class="lbl">沪深300</span><span class="mono">3,912.55</span> <span class="down">▼ 0.64%</span></span>
+    <span><span class="lbl">BTC</span><span class="mono">68,240</span> <span class="up">▲ 2.10%</span></span>
+    <span><span class="lbl">冲突指数</span><span class="mono">72.4</span> <span class="up">▲ 3.2</span></span>
+    <span><span class="lbl">布伦特</span><span class="mono">82.41</span> <span class="up">▲ 1.24%</span></span>
+    <span><span class="lbl">黄金</span><span class="mono">2,684.10</span> <span class="up">▲ 0.38%</span></span>
+    <span><span class="lbl">美元指数</span><span class="mono">104.12</span> <span class="down">▼ 0.21%</span></span>
+    <span><span class="lbl">沪深300</span><span class="mono">3,912.55</span> <span class="down">▼ 0.64%</span></span>
+    <span><span class="lbl">BTC</span><span class="mono">68,240</span> <span class="up">▲ 2.10%</span></span>
+    <span><span class="lbl">冲突指数</span><span class="mono">72.4</span> <span class="up">▲ 3.2</span></span>
+  </div>
+</div>
+
+<!-- 顶栏 -->
+<header class="topnav">
+  <div class="brand">Modular <small class="kicker">Intelligence Desk</small></div>
+  <div class="search">⌕ 搜索事件、实体、来源…<kbd>⌘K</kbd></div>
+  <button class="btn btn-ghost" title="通知">🔔</button>
+  <button class="btn btn-primary">＋ 新建抓取</button>
+</header>
+
+<div class="layout">
+  <nav class="rail" aria-label="主导航">
+    <a class="active" href="#" title="今日">◧</a>
+    <a href="#" title="新闻中枢">☰</a>
+    <a href="#" title="搜索">⌕</a>
+    <span class="grp"></span>
+    <a href="#" title="态势">◎</a>
+    <a href="#" title="事件">⚑</a>
+    <a href="#" title="地图">⌖</a>
+    <span class="grp"></span>
+    <a href="#" title="分析">✎</a>
+    <a href="#" title="告警">⚠</a>
+  </nav>
+
+  <main>
+    <div class="container">
+
+      <!-- ========== A. Today 头版 ========== -->
+      <header class="masthead" style="display:flex;flex-direction:column;gap:8px">
+        <p class="kicker">每日简报 · Daily Briefing</p>
+        <h1>11 月 2 日 星期日</h1>
+        <p class="muted" style="max-width:72ch">今天发生了什么，先看这里，再进入深读。数据更新于 09:42。</p>
+        <div class="double-rule" style="margin-top:8px"></div>
+      </header>
+
+      <section class="breaking" aria-label="突发">
+        <div class="item hairline-b"><span class="kicker k">● 突发</span><span class="t">霍尔木兹海峡附近两艘油轮通信中断，航运保险报价短时上调</span><span class="mono muted" style="font-size:12px">09:31</span></div>
+        <div class="item hairline-b"><span class="kicker k">● 突发</span><span class="t">某央行宣布意外降息 25 个基点，本币汇率快速走弱</span><span class="mono muted" style="font-size:12px">08:57</span></div>
+        <div class="item hairline-b"><span class="kicker k">● 突发</span><span class="t">东欧一处能源设施遭无人机袭击，区域电网负荷告警</span><span class="mono muted" style="font-size:12px">08:12</span></div>
+        <button class="btn-ghost kicker" style="border:0;background:none;text-align:left;padding:8px 0">还有 2 条 ↓</button>
+      </section>
+
+      <div class="front">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="section-header"><div><p class="kicker">Headlines</p><h2>头条</h2></div><a href="#">全部 →</a></div>
+          <article class="lead">
+            <div class="lead-img">头条配图 16:9</div>
+            <p class="kicker" style="margin-top:12px">能源 · 路透社 · 2 小时前</p>
+            <h2 class="clamp3">油价两周来首次突破 82 美元：航运风险溢价回归，市场重新定价中东供应</h2>
+            <p class="muted clamp2">海峡附近的通信中断事件推高了保险报价，期货曲线近端明显走陡。分析人士认为，若事件在 48 小时内未得到澄清，溢价可能进一步扩大。</p>
+          </article>
+          <div class="list">
+            <div class="row"><div style="flex:1;min-width:0"><h3 class="clamp2">欧盟拟扩大关键矿产储备计划，锂与稀土列入首批清单</h3><p class="mono muted" style="font-size:12px;margin-top:4px">金融时报 · 3 小时前</p></div><div class="thumb"></div></div>
+            <div class="row"><div style="flex:1;min-width:0"><h3 class="clamp2">半导体出口新规细则公布，涉及先进封装设备</h3><p class="mono muted" style="font-size:12px;margin-top:4px">财新 · 4 小时前</p></div><div class="thumb"></div></div>
+            <div class="row"><div style="flex:1;min-width:0"><h3 class="clamp2">粮食价格指数连续第三个月回落，但区域分化加剧</h3><p class="mono muted" style="font-size:12px;margin-top:4px">FAO · 5 小时前</p></div><div class="thumb"></div></div>
+          </div>
+        </div>
+
+        <aside class="right">
+          <div>
+            <div class="section-header" style="margin-bottom:4px"><div><p class="kicker">Hot Topics</p><h2>热点</h2></div></div>
+            <div class="topics">
+              <div class="row"><span class="n">1</span><span class="name">中东航运安全</span><span class="c">128 篇</span></div>
+              <div class="row"><span class="n">2</span><span class="name">央行意外降息</span><span class="c">96 篇</span></div>
+              <div class="row"><span class="n">3</span><span class="name">关键矿产储备</span><span class="c">71 篇</span></div>
+              <div class="row"><span class="n">4</span><span class="name">半导体出口管制</span><span class="c">58 篇</span></div>
+              <div class="row"><span class="n">5</span><span class="name">东欧能源设施</span><span class="c">44 篇</span></div>
+            </div>
+          </div>
+          <div class="section-rule">
+            <div class="section-header" style="margin-bottom:12px"><div><p class="kicker">My Digest</p><h2>我的摘要</h2></div><a href="#">设置</a></div>
+            <div class="surface-inset">
+              <p style="font-weight:600;margin-bottom:4px">你关注的 3 个主题今天有 17 条更新</p>
+              <p class="muted">能源供应 9 条 · 汇率 5 条 · 半导体 3 条。最重要的一条是关于海峡航运保险报价的变化。</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- ========== B. Dashboard 数据带 ========== -->
+      <div class="section-rule">
+        <div class="section-header" style="margin-bottom:12px"><div><p class="kicker">Market Pulse</p><h2>态势数据带</h2></div><span class="tag">近 24 小时</span></div>
+        <div class="content-card pulse">
+          <div class="cell"><p class="kicker">冲突指数</p><span class="v">72.4</span><span class="d up">▲ 3.2 较昨日</span>
+            <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--bullish)" stroke-width="1.5" points="0,22 15,20 30,21 45,15 60,16 75,9 100,6"/></svg></div>
+          <div class="cell"><p class="kicker">市场压力</p><span class="v">1.32</span><span class="d down">▼ 0.08</span>
+            <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--bearish)" stroke-width="1.5" points="0,8 15,10 30,9 45,14 60,13 75,18 100,20"/></svg></div>
+          <div class="cell"><p class="kicker">资源紧张度</p><span class="v">58.0</span><span class="d muted">— 持平</span>
+            <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--muted-foreground)" stroke-width="1.5" points="0,14 15,15 30,13 45,14 60,14 75,13 100,14"/></svg></div>
+          <div class="cell"><p class="kicker">供应链</p><span class="v">41.7</span><span class="d up">▲ 1.9</span>
+            <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--bullish)" stroke-width="1.5" points="0,20 15,19 30,17 45,18 60,14 75,13 100,11"/></svg></div>
+        </div>
+      </div>
+
+      <!-- ========== C. 列表页：PageHeader + FilterBar + 表格 ========== -->
+      <div class="page-header hairline-b" style="padding-bottom:16px;margin-top:16px">
+        <a href="#" class="muted" style="font-size:13px">← 返回</a>
+        <div class="row">
+          <div style="min-width:0">
+            <p class="kicker">事件与态势</p>
+            <h1>事件</h1>
+            <p class="desc">自动聚类后的事件流，按影响程度与时间排序。</p>
+            <div class="meta"><span class="tag">UTC+8 北京</span><span class="tag amber">● 实时</span><span class="tag">共 1,284 条</span></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn">↻ 刷新</button><button class="btn btn-primary">＋ 新建监控</button></div>
+        </div>
+      </div>
+
+      <div class="content-card" style="overflow:hidden">
+        <div class="filterbar" role="group">
+          <label class="field lg"><span>关键词</span><div class="input">搜索标题或实体</div></label>
+          <label class="field"><span>状态</span><div class="input">全部 <span>▾</span></div></label>
+          <label class="field"><span>区域</span><div class="input">全部区域 <span>▾</span></div></label>
+          <label class="field"><span>时间</span><div class="input">近 7 天 <span>▾</span></div></label>
+          <div class="actions"><button class="btn btn-ghost">重置</button></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>事件</th><th>状态</th><th>严重度</th><th>区域</th><th>来源数</th><th>最近更新</th></tr></thead>
+            <tbody>
+              <tr><td style="font-weight:500">霍尔木兹海峡油轮通信中断</td><td><span class="dot" style="background:var(--accent)"></span>进行中</td><td><span class="tag red">高</span></td><td>中东</td><td class="mono">42</td><td class="mono muted">09:31</td></tr>
+              <tr><td style="font-weight:500">央行意外降息 25bp</td><td><span class="dot" style="background:var(--accent)"></span>进行中</td><td><span class="tag amber">中</span></td><td>拉美</td><td class="mono">27</td><td class="mono muted">08:57</td></tr>
+              <tr><td style="font-weight:500">能源设施无人机袭击</td><td><span class="dot" style="background:var(--muted-foreground)"></span>已核实</td><td><span class="tag red">高</span></td><td>东欧</td><td class="mono">35</td><td class="mono muted">08:12</td></tr>
+              <tr><td style="font-weight:500">关键矿产储备计划扩大</td><td><span class="dot" style="background:var(--muted-foreground)"></span>已归档</td><td><span class="tag blue">低</span></td><td>欧洲</td><td class="mono">12</td><td class="mono muted">昨天</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ========== D. 登录卡片 ========== -->
+      <div class="section-rule">
+        <div class="section-header"><div><p class="kicker">Auth</p><h2>登录页样式</h2></div></div>
+        <div class="auth">
+          <p class="kicker">Modular · 情报编辑台</p>
+          <div class="double-rule" style="width:192px;margin-top:-12px"></div>
+          <div class="content-card card">
+            <h2>登录</h2>
+            <p class="muted">使用组织账号继续</p>
+            <label class="field"><span>邮箱</span><div class="input">name@company.com</div></label>
+            <label class="field"><span>密码</span><div class="input">••••••••</div></label>
+            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:20px">登录</button>
+            <div style="display:flex;gap:16px;margin-top:12px;font-size:13px"><a href="#" style="color:var(--primary)">注册账号</a><a href="#" style="color:var(--primary)">忘记密码？</a></div>
+          </div>
+          <p class="muted" style="font-size:12px">© Modular</p>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+</body>
+</html>
