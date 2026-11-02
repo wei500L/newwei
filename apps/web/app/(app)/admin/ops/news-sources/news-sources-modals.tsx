@@ -631,7 +631,7 @@ export function NewsSourcesModals({
                     />
                   </Form.Item>
                   <Row gutter={[12, 0]}>
-                    <Col span={12}>
+                    <Col xs={24} sm={12}>
                       <Form.Item
                         name="cronWindowStartHour"
                         label={t("newsSources.fields.cronWindowStartHour")}
@@ -643,7 +643,7 @@ export function NewsSourcesModals({
                         />
                       </Form.Item>
                     </Col>
-                    <Col span={12}>
+                    <Col xs={24} sm={12}>
                       <Form.Item
                         name="cronWindowEndHour"
                         label={t("newsSources.fields.cronWindowEndHour")}
@@ -1120,7 +1120,7 @@ export function NewsSourcesModals({
                 />
               </Form.Item>
               <Row gutter={[12, 0]}>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item
                     name="crawlMarkdownEscapeHtmlMode"
                     label={t("newsSources.fields.crawlMarkdownEscapeHtmlMode")}
@@ -1143,7 +1143,7 @@ export function NewsSourcesModals({
                     />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item
                     name="crawlMarkdownCitationsMode"
                     label={t("newsSources.fields.crawlMarkdownCitationsMode")}
@@ -1343,7 +1343,7 @@ export function NewsSourcesModals({
                 />
               </Form.Item>
               <Row gutter={[12, 0]}>
-                <Col span={8}>
+                <Col xs={24} sm={8}>
                   <Form.Item
                     name="crawlUndetectedMode"
                     label={t("newsSources.fields.crawlUndetectedMode")}
@@ -1367,7 +1367,7 @@ export function NewsSourcesModals({
                     />
                   </Form.Item>
                 </Col>
-                <Col span={8}>
+                <Col xs={24} sm={8}>
                   <Form.Item
                     name="crawlStealthMode"
                     label={t("newsSources.fields.crawlStealthMode")}
@@ -1391,7 +1391,7 @@ export function NewsSourcesModals({
                     />
                   </Form.Item>
                 </Col>
-                <Col span={8}>
+                <Col xs={24} sm={8}>
                   <Form.Item
                     name="crawlAntiBotMode"
                     label={t("newsSources.fields.crawlAntiBotMode")}
@@ -1895,7 +1895,7 @@ export function NewsSourcesModals({
                         {t("newsSources.fields.seedDeepHint")}
                       </Typography.Text>
                       <Row gutter={[12, 0]}>
-                        <Col span={8}>
+                        <Col xs={24} sm={8}>
                           <Form.Item
                             name="seedDeepMaxPages"
                             label={t("newsSources.fields.seedDeepMaxPages")}
@@ -1910,7 +1910,7 @@ export function NewsSourcesModals({
                             />
                           </Form.Item>
                         </Col>
-                        <Col span={8}>
+                        <Col xs={24} sm={8}>
                           <Form.Item
                             name="seedDeepMaxDepth"
                             label={t("newsSources.fields.seedDeepMaxDepth")}
@@ -1925,7 +1925,7 @@ export function NewsSourcesModals({
                             />
                           </Form.Item>
                         </Col>
-                        <Col span={8}>
+                        <Col xs={24} sm={8}>
                           <Form.Item
                             name="seedDeepTimeBudgetSeconds"
                             label={t(
@@ -1941,7 +1941,7 @@ export function NewsSourcesModals({
                         </Col>
                       </Row>
                       <Row gutter={[12, 0]}>
-                        <Col span={8}>
+                        <Col xs={24} sm={8}>
                           <Form.Item
                             name="seedDeepPageConcurrency"
                             label={t(
@@ -1955,7 +1955,7 @@ export function NewsSourcesModals({
                             />
                           </Form.Item>
                         </Col>
-                        <Col span={8}>
+                        <Col xs={24} sm={8}>
                           <Form.Item
                             name="seedDeepScoreThreshold"
                             label={t(
@@ -1973,7 +1973,7 @@ export function NewsSourcesModals({
                             />
                           </Form.Item>
                         </Col>
-                        <Col span={8}>
+                        <Col xs={24} sm={8}>
                           <Form.Item
                             name="seedDeepCandidatePoolSize"
                             label={t(
@@ -2045,7 +2045,7 @@ export function NewsSourcesModals({
       <Modal
         open={opmlModalOpen}
         title={t("newsSources.opml.title")}
-        width={screens.md ? 1120 : "100%"}
+        width="min(1120px, calc(100vw - 32px))"
         onCancel={() => {
           setOpmlModalOpen(false);
           setOpmlImportReport(null);
@@ -2538,7 +2538,7 @@ export function NewsSourcesModals({
       <Modal
         open={previewOpen}
         title={t("newsSources.preview.title")}
-        width={screens.md ? 980 : "100%"}
+        width="min(980px, calc(100vw - 32px))"
         onCancel={() => {
           setPreviewOpen(false);
           setPreviewSource(null);

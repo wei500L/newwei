@@ -7,7 +7,7 @@
  */
 
 import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Space, Typography } from "antd";
+import { Button, Col, Form, Input, Row, Space, Typography } from "antd";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -76,6 +76,7 @@ export function BrowserHeadersCookiesFields() {
                   type="text"
                   icon={<MinusCircleOutlined />}
                   danger
+                  aria-label={t("common.delete")}
                   onClick={() => remove(field.name)}
                 />
               </Space>
@@ -98,41 +99,45 @@ export function BrowserHeadersCookiesFields() {
         {(fields, { add, remove }) => (
           <Space direction="vertical" style={{ width: "100%" }}>
             {fields.map((field) => (
-              <Space
-                key={field.key}
-                align="baseline"
-                style={{ width: "100%" }}
-              >
-                <Form.Item name={[field.name, "name"]} style={{ flex: 1 }}>
-                  <Input
-                    placeholder={t("crawl.browser.cookies.placeholders.name")}
+              <Row key={field.key} gutter={[8, 8]} align="top">
+                <Col xs={24} md={6}>
+                  <Form.Item name={[field.name, "name"]}>
+                    <Input
+                      placeholder={t("crawl.browser.cookies.placeholders.name")}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={6}>
+                  <Form.Item name={[field.name, "value"]}>
+                    <Input
+                      placeholder={t("crawl.browser.cookies.placeholders.value")}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={6}>
+                  <Form.Item name={[field.name, "domain"]}>
+                    <Input
+                      placeholder={t("crawl.browser.cookies.placeholders.domain")}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={4}>
+                  <Form.Item name={[field.name, "path"]}>
+                    <Input
+                      placeholder={t("crawl.browser.cookies.placeholders.path")}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={2}>
+                  <Button
+                    type="text"
+                    icon={<MinusCircleOutlined />}
+                    danger
+                    aria-label={t("common.delete")}
+                    onClick={() => remove(field.name)}
                   />
-                </Form.Item>
-                <Form.Item name={[field.name, "value"]} style={{ flex: 2 }}>
-                  <Input
-                    placeholder={t("crawl.browser.cookies.placeholders.value")}
-                  />
-                </Form.Item>
-                <Form.Item
-                  name={[field.name, "domain"]}
-                  style={{ flex: 1.3 }}
-                >
-                  <Input
-                    placeholder={t("crawl.browser.cookies.placeholders.domain")}
-                  />
-                </Form.Item>
-                <Form.Item name={[field.name, "path"]} style={{ flex: 1 }}>
-                  <Input
-                    placeholder={t("crawl.browser.cookies.placeholders.path")}
-                  />
-                </Form.Item>
-                <Button
-                  type="text"
-                  icon={<MinusCircleOutlined />}
-                  danger
-                  onClick={() => remove(field.name)}
-                />
-              </Space>
+                </Col>
+              </Row>
             ))}
             <Button
               type="dashed"
