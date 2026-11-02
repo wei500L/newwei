@@ -178,6 +178,38 @@ describe("local dev launcher configuration", () => {
     expect(relay.command).toBe("go");
     expect(relay.args).toEqual(["run", "./cmd/ais-relay"]);
   });
+
+  it("starts only the GEV sidecar on :4173 with GLOBE_* mapped and no assistant keys", () => {
+    const plan = buildDevPlan({
+      mode: "globe",
+      repoRoot,
+      fileEnv: {
+        ...exampleEnv,
+        GLOBE_GOOGLE_MAPS_API_KEY: "google-test-key",
+        GLOBE_OPENSKY_AUTH_MODE: "anonymous",
+        OPENAI_API_KEY: "must-not-leak",
+        GEMINI_API_KEY: "must-not-leak",
+      },
+      processEnv: {},
+    });
+
+    expect(plan.children).toHaveLength(1);
+    const [globe] = plan.children;
+    if (!globe) {
+      throw new Error("expected one GEV sidecar child");
+    }
+    expect(globe.name).toBe("globe");
+    expect(globe.cwd).toBe(path.join(repoRoot, "vendor", "gods-eye-view"));
+    expect(globe.command).toBe("npm");
+    expect(globe.args).toEqual(["run", "dev"]);
+    expect(globe.env.PORT).toBe("4173");
+    expect(globe.env.HOST).toBe("127.0.0.1");
+    expect(globe.env.GOOGLE_MAPS_API_KEY).toBe("google-test-key");
+    expect(globe.env.OPENSKY_AUTH_MODE).toBe("anonymous");
+    // The console's assistant keys must never reach the sidecar.
+    expect(globe.env.OPENAI_API_KEY).toBeUndefined();
+    expect(globe.env.GEMINI_API_KEY).toBeUndefined();
+  });
 });
 
 describe("local dev launcher lifecycle", () => {

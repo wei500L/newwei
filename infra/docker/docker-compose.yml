@@ -1302,6 +1302,8 @@ services:
         # Go process serves.
         NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH: ${NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH:-/socket.io-notifications}
         NEXT_PUBLIC_REALTIME_SOCKET_PATH: ${NEXT_PUBLIC_REALTIME_SOCKET_PATH:-/socket.io-realtime}
+        # Baked into the Next routes manifest at build time (see runtime.Dockerfile).
+        GLOBE_SIDECAR_URL: ${GLOBE_SIDECAR_URL:-http://globe-sidecar:4173}
     restart: unless-stopped
     working_dir: /workspace
     # Startup gate uses the resolved API base (API_BASE_URL). With the Go
@@ -1344,6 +1346,10 @@ services:
       # switching browser traffic requires rebuilding the web image with the
       # matching build arg.
       API_BASE_URL: ${API_BASE_URL:-http://api-go:4020}
+      # Base URL the Next rewrites proxy GEV's /api/* and static assets to.
+      # The sidecar is addressed by its compose service name on the shared
+      # network, so this is a container-internal URL (not the host mapping).
+      GLOBE_SIDECAR_URL: http://globe-sidecar:4173
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -1356,12 +1362,57 @@ services:
     depends_on:
       api-go:
         condition: service_healthy
+      # service_started, NOT service_healthy: when the GEV sidecar is down the
+      # rest of the console must keep working. Only the /globe pages degrade.
+      globe-sidecar:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/healthz"]
       interval: ${WEB_HEALTHCHECK_INTERVAL:-30s}
       timeout: 5s
       retries: 20
       start_period: 300s
+
+  # globe-sidecar: gods-eye-view (GEV) runs its Vite dev server as a separate
+  # data-proxy sidecar. It brokers every provider API key and serves the GEV
+  # client plus its /api/* and /models|/events|/scene-assets assets on :4173.
+  # The web console reaches it by its compose service name (GLOBE_SIDECAR_URL)
+  # and Next rewrites transparently proxy the browser's relative requests.
+  #
+  # Deliberately differs from GEV's own compose.yaml in two ways:
+  #   1. NO source bind-mount. The image is a read-only build artifact, so the
+  #      keys come only from the environment below and can never be written
+  #      back into a host `.env` from the GEV settings page.
+  #   2. OPENAI_API_KEY / GEMINI_API_KEY are NOT set: the console's LLM keys
+  #      must never be exposed through the sidecar.
+  # The image's own HEALTHCHECK is inherited from the GEV Dockerfile; do not
+  # redefine it here. Published on loopback only, like every other service.
+  globe-sidecar:
+    <<: *app-hardening
+    build:
+      context: ../../vendor/gods-eye-view
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # Values are interpolated from the compose env file (infra/docker/.env),
+      # which mirrors the root `.env` GLOBE_* entries documented in
+      # .env.example. Leaving the OpenSky / AISStream entries blank is the
+      # intended default (see the .env samples for the two upstream conflicts).
+      GOOGLE_MAPS_API_KEY: ${GLOBE_GOOGLE_MAPS_API_KEY:-}
+      GOOGLE_MAPS_SERVER_API_KEY: ${GLOBE_GOOGLE_MAPS_SERVER_API_KEY:-}
+      AISSTREAM_API_KEY: ${GLOBE_AISSTREAM_API_KEY:-}
+      OPENSKY_AUTH_MODE: ${GLOBE_OPENSKY_AUTH_MODE:-}
+      OPENSKY_CLIENT_ID: ${GLOBE_OPENSKY_CLIENT_ID:-}
+      OPENSKY_CLIENT_SECRET: ${GLOBE_OPENSKY_CLIENT_SECRET:-}
+      FIRMS_MAP_KEY: ${GLOBE_FIRMS_MAP_KEY:-}
+      # Next reaches the sidecar at http://globe-sidecar:4173 on the compose
+      # network, so its Host header must be trusted (format: comma-separated
+      # hostnames added to Vite's localhost/127.0.0.1 defaults; see
+      # build/allowedHosts.js in the vendor tree).
+      GEV_ALLOWED_HOSTS: globe-sidecar
+    ports:
+      - "${DOCKER_PUBLISH_HOST:-127.0.0.1}:4173:4173"
+    logging: *json-file-logging
 
 volumes:
   mysql-data:

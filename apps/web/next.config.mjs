@@ -84,4 +84,82 @@ nextConfig.webpack = (config, context) => {
     : config;
 };
 
+// ---------------------------------------------------------------------------
+// GEV 旁车（gods-eye-view sidecar）代理
+// ---------------------------------------------------------------------------
+// 这份前缀清单来自 GEV 源码扫描：浏览器端代码用相对路径请求 GEV 自己的 Vite
+// 服务端（一个持有各家 API 密钥的数据代理）。这里把它们经 Next rewrites 转发到
+// 独立运行的旁车，避免在 web 进程里保存任何 GEV 服务端密钥。
+//
+// `setup`、`openai`、`gemini`、`realtime` 故意不转发：
+//   - /api/setup   —— 密钥设置入口，绝不能对浏览器暴露；
+//   - /api/openai、/api/gemini、/api/realtime —— 语音 / LLM 通道，不属数据代理范畴。
+//
+// 升级 vendor/gods-eye-view 后必须用下面的命令重新核对清单：
+//   grep -rhoE "['\`\"]/api/[a-zA-Z0-9_-]+" vendor/gods-eye-view/src | sort -u
+const GLOBE_API_PREFIXES = [
+  "google",
+  "transit",
+  "route",
+  "tomtom",
+  "terrain",
+  "vessels",
+  "cctv",
+  "weather",
+  "ghostmaps",
+  "geocode",
+  "fire-perimeters",
+  "radio",
+  "overpass",
+  "military-installations",
+  "military",
+  "mapillary",
+  "gbfs",
+  "flights",
+  "celestrak",
+  "wind",
+  "weather-effects",
+  "regional-brief",
+  "map",
+  "local-receivers",
+  "launches",
+  "gnss-integrity",
+  "firms",
+  "cyclones",
+  "adsbdb",
+];
+const GLOBE_STATIC_PREFIXES = ["models", "events", "scene-assets"];
+const globeSidecarUrl =
+  process.env.GLOBE_SIDECAR_URL ?? "http://127.0.0.1:4173";
+
+// `:path*` 匹配零个或多个路径段，因此 `/api/flights/:path*` 同样匹配不带子路径的
+// `/api/flights`（静态资源前缀的 `/:p/:path*` 也匹配挂载根）。
+const globeRewrites = [
+  ...GLOBE_API_PREFIXES.map((p) => ({
+    source: `/api/${p}/:path*`,
+    destination: `${globeSidecarUrl}/api/${p}/:path*`,
+  })),
+  ...GLOBE_STATIC_PREFIXES.map((p) => ({
+    source: `/${p}/:path*`,
+    destination: `${globeSidecarUrl}/${p}/:path*`,
+  })),
+];
+
+// 合并可能已存在的 rewrites，而不是覆盖它。
+const existingRewrites = nextConfig.rewrites;
+nextConfig.rewrites = async () => {
+  const existing =
+    typeof existingRewrites === "function"
+      ? await existingRewrites()
+      : (existingRewrites ?? []);
+  if (Array.isArray(existing)) {
+    return [...existing, ...globeRewrites];
+  }
+  return {
+    beforeFiles: [...(existing.beforeFiles ?? [])],
+    afterFiles: [...(existing.afterFiles ?? []), ...globeRewrites],
+    fallback: [...(existing.fallback ?? [])],
+  };
+};
+
 export default nextConfig;

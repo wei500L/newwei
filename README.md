@@ -258,10 +258,11 @@ pnpm dev
 | --- | --- | --- | --- |
 | `pnpm dev` | api-go + vector-go + web | 4020 / 4010 / 3000 | API `http://localhost:4020/api`，通知 `/socket.io-notifications`，实时 `/socket.io-realtime`，vector `http://localhost:4010`，AIS `http://localhost:3004` |
 | `pnpm dev:ais-relay` | Go `api-go/cmd/ais-relay` | 3004 | API 侧 `REALTIME_SIGNALS_AIS_BASE_URL` 指向 `http://localhost:3004` |
+| `pnpm dev:globe` | `vendor/gods-eye-view` 的 GEV 旁车（`npm run dev`） | 4173 | 供 web 的 `/globe` 经 Next rewrites 调用；仅绑定 `127.0.0.1` |
 
 资源要求：根 `.env` 至少要有 `JWT_SECRET`、`NEXTAUTH_SECRET`、`DATABASE_URL`（或 `MYSQL_HOST`/`MYSQL_PORT`/`MYSQL_USER`/`MYSQL_PASSWORD`/`MYSQL_DB` 全套，密码必须非空）、`MONGO_URI`、`REDIS_HOST`、`SYSTEM_SETTINGS_ENCRYPTION_KEY`；Go 默认还要求 `AISSTREAM_API_KEY`（仅 `pnpm dev:ais-relay`）和 `VECTOR_INTERNAL_TOKEN`（本地可用 `dev-token`）。`pnpm dev` 只在 `MYSQL_HOST`/`MYSQL_USER`/`MYSQL_PASSWORD`/`MYSQL_DB` 都齐全且 `DATABASE_URL` 为空时按 Nest/Prisma 的契约派生连接串；缺字段就留空，由 api-go 自己的启动校验失败，不会填假值。
 
-`pnpm dev` 是唯一的本地后端链；`pnpm dev:ais-relay` 只单独启动 Go AIS relay。启动器只负责环境加载与进程生命周期，不执行迁移、seed、Docker、真实外部探测或任何写配置动作。
+`pnpm dev` 是唯一的本地后端链；`pnpm dev:ais-relay` 只单独启动 Go AIS relay；`pnpm dev:globe` 只单独启动 3D 地球的 GEV 旁车（固定 :4173），需要 3D 地球时另开一个终端运行，**默认的 `pnpm dev` 不会启动它**。旁车要求 Node ≥ 24 且 `vendor/gods-eye-view/node_modules` 已安装（缺失时按提示执行 `cd vendor/gods-eye-view && npm ci`，启动器不会自动安装）。启动器只负责环境加载与进程生命周期，不执行迁移、seed、Docker、真实外部探测或任何写配置动作。
 
 补充说明：
 
@@ -283,12 +284,13 @@ pnpm dev
 | ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm dev`                                                 | 启动器并行启动 `apps/api-go`、`apps/vector-go`、`apps/web` 的开发服务器（仓库默认链，读取根 `.env`） |
 | `pnpm dev:ais-relay`                                       | 单独启动 Go AIS relay（`apps/api-go/cmd/ais-relay`，默认 :3004）                    |
+| `pnpm dev:globe`                                           | 单独启动 GEV 旁车（`vendor/gods-eye-view`，:4173，仅绑定本机）；3D 地球需要时另开终端 |
 | `pnpm build`                                               | Turbo 构建所有包                                                                    |
 | `pnpm lint` / `pnpm typecheck`                             | 汇总执行 lint 与类型检查（无测试套件，验证依赖静态审查）                            |
 | `pnpm db:migrate`                                          | 通过 `packages/db` 执行 Prisma 迁移（仍是 Node 工具职责）                           |
 | `pnpm db:seed`                                             | 根据 `.env` 的 `SEED_*` 初始化组织、角色与管理员账号                                |
 | `pnpm mongo:indexes`                                       | 显式补齐 Mongo 运行时索引（当前包含 `ProcessedItem` 与 `TaskLog` 热路径索引）       |
-| `pnpm docker:up` / `pnpm docker:logs` / `pnpm docker:down` | 本地完整栈（Docker Compose；默认 api-go / vector-go / ais-relay-go）                |
+| `pnpm docker:up` / `pnpm docker:logs` / `pnpm docker:down` | 本地完整栈（Docker Compose；默认 api-go / vector-go / ais-relay-go / globe-sidecar） |
 | `pnpm codegen`                                             | 运行 GraphQL Code Generator（转发 `apps/web` 的 `generate`，schema 取自 Go 权威 SDL `apps/api-go/internal/graphqlread/schema/schema.gql`） |
 
 ## 项目结构
@@ -551,6 +553,7 @@ pnpm docker:down
 - `4020`：Go API Gateway（api-go）
 - `4011`：Go Vector Service 的宿主发布端口（容器内 4010）
 - `3005`：Go AIS relay 的宿主发布端口（容器内 3004）
+- `4173`：GEV 旁车（globe-sidecar，3D 地球数据代理；仅绑定本机；`pnpm dev:globe` 或 compose 服务）
 - `3306`：MySQL
 - `27017`：MongoDB
 - `6379`：Redis

@@ -320,6 +320,17 @@ export const baseEnvSchema = z.object({
   AIS_RELAY_HEALTH_MIN_POSITION_REPORTS: optionalPositiveIntFromEnv,
   AIS_RELAY_HEALTH_MAX_IGNORED_RATIO_PERCENT: optionalPositiveIntFromEnv,
   AIS_RELAY_HEALTH_MAX_PARSE_ERROR_RATIO_PERCENT: optionalPositiveIntFromEnv,
+  // 3D globe (gods-eye-view sidecar). All optional: the console works without
+  // them, and a blank value is the intended default (keyless adsb.lol / no AIS).
+  GLOBE_SIDECAR_URL: optionalNonEmptyString,
+  NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: optionalNonEmptyString,
+  GLOBE_GOOGLE_MAPS_API_KEY: optionalNonEmptyString,
+  GLOBE_GOOGLE_MAPS_SERVER_API_KEY: optionalNonEmptyString,
+  GLOBE_AISSTREAM_API_KEY: optionalNonEmptyString,
+  GLOBE_OPENSKY_AUTH_MODE: optionalNonEmptyString,
+  GLOBE_OPENSKY_CLIENT_ID: optionalNonEmptyString,
+  GLOBE_OPENSKY_CLIENT_SECRET: optionalNonEmptyString,
+  GLOBE_FIRMS_MAP_KEY: optionalNonEmptyString,
   SYSTEM_SETTINGS_ENCRYPTION_KEY: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),

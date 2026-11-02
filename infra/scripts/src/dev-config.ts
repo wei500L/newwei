@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
  * migration-mode overlay to load.
  */
 
-export type DevMode = "go" | "ais-relay";
+export type DevMode = "go" | "ais-relay" | "globe";
 
 export interface DevChild {
   name: string;
@@ -53,6 +53,38 @@ const DEFAULT_GO_API_PORT = 4020;
 const DEFAULT_VECTOR_PORT = 4010;
 const DEFAULT_WEB_PORT = 3000;
 const DEFAULT_AIS_PORT = 3004;
+/** Fixed port the GEV sidecar listens on; must match Next's rewrite default. */
+const GLOBE_SIDECAR_PORT = 4173;
+
+/**
+ * Map the root `.env` GLOBE_* names onto the provider variables the GEV server
+ * reads (`GOOGLE_MAPS_API_KEY`, `AISSTREAM_API_KEY`, ...). The console's own
+ * `OPENAI_API_KEY` / `GEMINI_API_KEY` are deliberately never forwarded: the
+ * sidecar must not broker the assistant's LLM keys. Empty GLOBE_* values stay
+ * empty so GEV falls back to its keyless providers (adsb.lol / no AIS feed).
+ */
+export function buildGlobeEnv(
+  env: Record<string, string>,
+): Record<string, string> {
+  const mapped: Record<string, string> = {
+    ...env,
+    PORT: String(GLOBE_SIDECAR_PORT),
+    HOST: "127.0.0.1",
+    GOOGLE_MAPS_API_KEY: (env.GLOBE_GOOGLE_MAPS_API_KEY ?? "").trim(),
+    GOOGLE_MAPS_SERVER_API_KEY: (
+      env.GLOBE_GOOGLE_MAPS_SERVER_API_KEY ?? ""
+    ).trim(),
+    AISSTREAM_API_KEY: (env.GLOBE_AISSTREAM_API_KEY ?? "").trim(),
+    OPENSKY_AUTH_MODE: (env.GLOBE_OPENSKY_AUTH_MODE ?? "").trim(),
+    OPENSKY_CLIENT_ID: (env.GLOBE_OPENSKY_CLIENT_ID ?? "").trim(),
+    OPENSKY_CLIENT_SECRET: (env.GLOBE_OPENSKY_CLIENT_SECRET ?? "").trim(),
+    FIRMS_MAP_KEY: (env.GLOBE_FIRMS_MAP_KEY ?? "").trim(),
+  };
+  // The console's assistant keys must never reach the sidecar.
+  delete mapped.OPENAI_API_KEY;
+  delete mapped.GEMINI_API_KEY;
+  return mapped;
+}
 
 /** Parse `.env` text with the same parser the rest of the Node tooling uses. */
 export function parseEnvText(text: string): Record<string, string> {
@@ -213,6 +245,29 @@ export function buildDevPlan(options: BuildDevPlanOptions): DevPlan {
           command: "go",
           args: ["run", "./cmd/ais-relay"],
           env: { ...merged, PORT: port },
+        },
+      ],
+    };
+  }
+
+  if (mode === "globe") {
+    // The GEV sidecar is standalone: it only needs its provider keys, never
+    // the console's database / Redis / assistant configuration. Start from the
+    // merged root `.env` (so PATH and friends are inherited by `npm run dev`)
+    // and overwrite the provider variables from the GLOBE_* names.
+    const merged = mergeEnvironment(fileEnv, {}, processEnv);
+    const env = buildGlobeEnv(merged);
+    return {
+      mode,
+      warnings,
+      children: [
+        {
+          name: "globe",
+          cwd: path.join(repoRoot, "vendor", "gods-eye-view"),
+          // `npm run dev` is GEV's own launcher (vite), exactly as upstream.
+          command: process.platform === "win32" ? "npm.cmd" : "npm",
+          args: ["run", "dev"],
+          env,
         },
       ],
     };

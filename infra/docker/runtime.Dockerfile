@@ -11,6 +11,10 @@ ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4020/api
 ARG NEXT_PUBLIC_GRAPHQL_APQ_ENABLED=true
 ARG NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH=/socket.io-notifications
 ARG NEXT_PUBLIC_REALTIME_SOCKET_PATH=/socket.io-realtime
+# Next evaluates rewrites() during `next build`, so the GEV sidecar destination
+# is baked into the routes manifest. It must be known at build time (a runtime
+# env var alone would not change it); compose passes the container-network URL.
+ARG GLOBE_SIDECAR_URL=http://globe-sidecar:4173
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -33,6 +37,7 @@ ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_PUBLIC_GRAPHQL_APQ_ENABLED=$NEXT_PUBLIC_GRAPHQL_APQ_ENABLED
 ENV NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH=$NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH
 ENV NEXT_PUBLIC_REALTIME_SOCKET_PATH=$NEXT_PUBLIC_REALTIME_SOCKET_PATH
+ENV GLOBE_SIDECAR_URL=$GLOBE_SIDECAR_URL
 ENV NEXT_BUILD_SKIP_QUALITY_CHECKS=true
 
 RUN corepack enable

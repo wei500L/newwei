@@ -10,6 +10,7 @@
     "prepare": "husky install",
     "dev": "tsx infra/scripts/src/dev.mts",
     "dev:ais-relay": "tsx infra/scripts/src/dev.mts ais-relay",
+    "dev:globe": "tsx infra/scripts/src/dev.mts globe",
     "globe:vendor": "tsx infra/scripts/src/globe-vendor.mts",
     "build": "turbo run build",
     "lint": "turbo run lint",
