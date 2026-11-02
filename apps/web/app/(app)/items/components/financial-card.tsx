@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
+import { ECONOMIC_CHANGE_COLORS } from "@/lib/chart-theme-tokens";
 
 const { Title } = Typography;
 
@@ -23,7 +24,9 @@ export function FinancialCard({ item }: FinancialCardProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const isPositive = (item.change ?? 0) >= 0;
-  const color = isPositive ? "#3f8600" : "#cf1322";
+  const chartColor = isPositive
+    ? ECONOMIC_CHANGE_COLORS.positive
+    : ECONOMIC_CHANGE_COLORS.negative;
   const openLabel = t("items.detail.openItem");
 
   const chartOption = item.history
@@ -52,10 +55,10 @@ export function FinancialCard({ item }: FinancialCardProps) {
             showSymbol: false,
             lineStyle: {
               width: 2,
-              color: color,
+              color: chartColor,
             },
             areaStyle: {
-              color: color,
+              color: chartColor,
               opacity: 0.1,
             },
           },
@@ -86,7 +89,10 @@ export function FinancialCard({ item }: FinancialCardProps) {
             <Statistic
               value={Math.abs(item.change)}
               precision={2}
-              valueStyle={{ color: color, fontSize: "16px" }}
+              valueStyle={{
+                color: isPositive ? "var(--bullish)" : "var(--bearish)",
+                fontSize: "16px",
+              }}
               prefix={isPositive ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
               suffix="%"
             />

@@ -2024,7 +2024,10 @@
       "label": "Sentiment",
       "title": "Global Sentiment Trend",
       "aggregateLabel": "Sentiment (aggregate)",
-      "fallbackSeries": "Fallback: aggregated sentiment"
+      "fallbackSeries": "Fallback: aggregated sentiment",
+      "aggregationLabel": "Aggregation",
+      "rangeLabel": "Range",
+      "windowLabel": "Window"
     },
     "dataLatest": {
       "label": "Latest"

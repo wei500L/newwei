@@ -291,14 +291,13 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
   const actualGranularityLabel = formatGranularityLabel(actualGranularity);
   const granularityColor =
     actualGranularity === UiTimeGranularity.Unknown ? "default" : "geekblue";
-  const granularityTagText = `Aggregation: ${actualGranularityLabel}`;
+  const granularityTagText = `${t("dashboard.sentiment.aggregationLabel")}: ${actualGranularityLabel}`;
 
   return (
     <Card 
       title={t("dashboard.sentiment.title")} 
       loading={loading}
-      className="h-full shadow-sm"
-      variant="borderless"
+      className="content-card h-full"
       extra={
         <Space size={6} wrap>
           {isFallbackMode ? (
@@ -307,10 +306,10 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
             </Tag>
           ) : null}
           <Tag color="default" className="text-xs">
-            Range: {range}
+            {t("dashboard.sentiment.rangeLabel")}: {range}
           </Tag>
           <Tag color="default" className="text-xs">
-            Window: {windowLabel}
+            {t("dashboard.sentiment.windowLabel")}: {windowLabel}
           </Tag>
           <Tag color={granularityColor} className="text-xs">
             {granularityTagText}
@@ -318,7 +317,7 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
         </Space>
       }
     >
-      <div className="h-[250px] w-full">
+      <div className="h-viz-sm w-full">
         <DashboardChart option={option} height="100%" theme={theme.echartsTheme} />
       </div>
     </Card>

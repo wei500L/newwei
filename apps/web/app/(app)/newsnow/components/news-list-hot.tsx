@@ -157,7 +157,7 @@ export function NewsListHot({
                 }}
               >
                 <span
-                  className={`mt-[1px] flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] text-[12px] font-bold leading-none ${getRankClass(index)}`}
+                  className={`mt-[1px] flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] text-xs font-bold leading-none ${getRankClass(index)}`}
                 >
                   {index + 1}
                 </span>
@@ -174,7 +174,7 @@ export function NewsListHot({
                   >
                     {item.title}
                   </span>
-                  <span className="mt-1 block truncate text-[11px] leading-4 text-[var(--secondary-foreground)] opacity-80">
+                  <span className="mt-1 block truncate text-xs leading-4 text-[var(--secondary-foreground)] opacity-80">
                     <ExtraInfo item={item} />
                   </span>
                   <span className="mt-1 flex items-center gap-1.5 text-[10px]">
@@ -198,7 +198,7 @@ export function NewsListHot({
                               ? "border-violet-500/20 bg-violet-500/10 text-violet-600 dark:text-violet-300"
                               : badge.tone === "sky"
                                 ? "border-sky-500/20 bg-sky-500/10 text-sky-600 dark:text-sky-300"
-                                : "border-white/10 bg-white/5 text-[var(--secondary-foreground)]";
+                                : "border-[var(--border)] bg-[var(--secondary)] text-[var(--secondary-foreground)]";
                       return (
                         <span
                           key={badge.key}
@@ -242,7 +242,7 @@ export function NewsListHot({
               ) : null}
             </div>
             {!isMobile ? (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-1.5 pl-[36px] text-[11px] text-[var(--secondary-foreground)] opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-1.5 pl-[36px] text-xs text-[var(--secondary-foreground)] opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
                 <a
                   href={href}
                   target="_blank"

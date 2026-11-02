@@ -9,7 +9,7 @@ import {
 } from "@ant-design/icons";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Button, Dropdown, Skeleton, Tooltip, message } from "antd";
+import { App, Button, Dropdown, Skeleton, Tooltip } from "antd";
 import { useRouter } from "next/navigation";
 import {
   memo,
@@ -213,6 +213,7 @@ export const NewsnowCard = memo(function NewsnowCard({
   nowMs,
 }: NewsnowCardProps) {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const router = useRouter();
   const resolveNewsUrl = useResolveNewsUrl();
   const toggleFocus = useNewsnowStore((state) => state.toggleFocus);
@@ -413,20 +414,6 @@ export const NewsnowCard = memo(function NewsnowCard({
     backfaceVisibility: "hidden",
   };
   
-  // Aura color values based on source color, used for the hover glow
-  const auraGlowColorMap: Record<string, string> = {
-    slate: "rgba(148,163,184,0.15)",
-    blue: "rgba(59,130,246,0.15)",
-    red: "rgba(244,63,94,0.15)",
-    green: "rgba(16,185,129,0.15)",
-    orange: "rgba(249,115,22,0.15)",
-    gray: "rgba(161,161,170,0.15)",
-    indigo: "rgba(99,102,241,0.15)",
-    emerald: "rgba(16,185,129,0.15)",
-    teal: "rgba(20,184,166,0.15)",
-    yellow: "rgba(245,158,11,0.15)",
-  };
-  const glowColor = auraGlowColorMap[source.color] || "rgba(59,130,246,0.15)";
   
   const sourceBehaviorKey = useMemo(() => id.trim() || source.name, [id, source.name]);
   const [isSourceHidden, setIsSourceHidden] = useState(() =>
@@ -1054,12 +1041,12 @@ export const NewsnowCard = memo(function NewsnowCard({
         <div className="flex h-full flex-col items-center justify-center space-y-2 p-4 text-center">
           <p className="text-sm font-medium text-[var(--foreground)]">{sourceErrorTitle}</p>
           {sourceErrorMessage ? (
-            <p className="max-w-[28rem] break-all text-[11px] text-[var(--secondary-foreground)]">
+            <p className="max-w-[28rem] break-all text-xs text-[var(--secondary-foreground)]">
               {sourceErrorMessage}
             </p>
           ) : null}
           {runtimeSecretRequiredKeysLabel ? (
-            <p className="max-w-[28rem] break-all text-[11px] text-[var(--secondary-foreground)]">
+            <p className="max-w-[28rem] break-all text-xs text-[var(--secondary-foreground)]">
               {runtimeSecretRequiredKeysLabel}
             </p>
           ) : null}
@@ -1162,16 +1149,6 @@ export const NewsnowCard = memo(function NewsnowCard({
         dragDisabled || isAnyCardDragging ? "" : "hover:-translate-y-1"
       } ${isDragging ? "cursor-grabbing" : ""}`}
     >
-      {/* Hover Glow Effect */}
-      <div
-        className={`pointer-events-none absolute inset-0 transition-opacity duration-500 ${
-          isAnyCardDragging ? "opacity-0" : "opacity-0 group-hover:opacity-100"
-        }`}
-        style={{
-          background: `radial-gradient(600px circle at var(--newsnow-hover-x) var(--newsnow-hover-y), ${glowColor}, transparent 40%)`,
-          zIndex: 0,
-        }}
-      />
       <div
         className={`pointer-events-none absolute inset-x-0 top-0 h-1.5 ${colorClass} ${
           isDragging ? "opacity-100" : "opacity-80"
@@ -1221,7 +1198,7 @@ export const NewsnowCard = memo(function NewsnowCard({
                 </span>
               ) : null}
             </div>
-            <p className="truncate text-[11px] text-[var(--secondary-foreground)]/80 mt-0.5 font-medium">
+            <p className="truncate text-xs text-[var(--secondary-foreground)]/80 mt-0.5 font-medium">
               {updatedText}
             </p>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -1249,7 +1226,7 @@ export const NewsnowCard = memo(function NewsnowCard({
               personalizedCombinedScore > 0 ? (
                 <Tooltip
                   title={
-                    <div className="space-y-0.5 text-[11px] leading-5">
+                    <div className="space-y-0.5 text-xs leading-5">
                       <div>综合分 {personalizedScoreDetail?.combinedScore.toFixed(2)}</div>
                       <div>
                         偏好贡献 {personalizedScoreDetail?.affinityContribution.toFixed(2)}

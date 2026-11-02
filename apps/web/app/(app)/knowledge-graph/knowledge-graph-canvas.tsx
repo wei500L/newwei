@@ -10,6 +10,13 @@ import cytoscape, {
 import fcose from "cytoscape-fcose";
 import { useEffect, useRef } from "react";
 
+import { useTheme } from "@/hooks/use-theme";
+import {
+  DEFAULT_NODE_COLOR,
+  KNOWLEDGE_GRAPH_LABEL_COLORS,
+  KNOWLEDGE_GRAPH_NODE_COLORS,
+} from "@/lib/graph-tokens";
+
 const FCOSE_RUNTIME_KEY = "__modular_knowledge_graph_fcose_registered__";
 
 export type KnowledgeGraphCanvasElement = ElementDefinition;
@@ -37,17 +44,10 @@ function ensureFcoseRegistered() {
 }
 
 function getNodeColor(type: string) {
-  const normalized = type.trim().toLowerCase();
-  const colors: Record<string, string> = {
-    company: "#2563eb",
-    industry: "#16a34a",
-    person: "#f97316",
-    policy: "#dc2626",
-    commodity: "#9333ea",
-    instrument: "#0891b2",
-    organization: "#64748b",
-  };
-  return colors[normalized] ?? "#94a3b8";
+  const normalized = type
+    .trim()
+    .toLowerCase() as keyof typeof KNOWLEDGE_GRAPH_NODE_COLORS;
+  return KNOWLEDGE_GRAPH_NODE_COLORS[normalized] ?? DEFAULT_NODE_COLOR;
 }
 
 function createFcoseLayoutOptions(animate: boolean): LayoutOptions {
@@ -80,6 +80,7 @@ export function KnowledgeGraphCanvas({
 }: KnowledgeGraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
+  const { isDark } = useTheme();
 
   useEffect(() => {
     ensureFcoseRegistered();
@@ -103,7 +104,9 @@ export function KnowledgeGraphCanvas({
             "background-color": (ele: NodeSingular) =>
               getNodeColor(String(ele.data("type") ?? "")),
             label: "data(label)",
-            color: "#0f172a",
+            color: isDark
+              ? KNOWLEDGE_GRAPH_LABEL_COLORS.dark
+              : KNOWLEDGE_GRAPH_LABEL_COLORS.light,
             "font-size": 11,
             "font-weight": (ele: NodeSingular) =>
               ele.data("isSeed") ? 700 : 500,
@@ -178,7 +181,7 @@ export function KnowledgeGraphCanvas({
       cy.destroy();
       cyRef.current = null;
     };
-  }, [elements, onClearSelection, onEdgeSelect, onNodeSelect]);
+  }, [elements, isDark, onClearSelection, onEdgeSelect, onNodeSelect]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -205,7 +208,7 @@ export function KnowledgeGraphCanvas({
   return (
     <div
       ref={containerRef}
-      className="min-h-[640px] rounded-[28px] border border-slate-200/80 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.09),_transparent_45%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.98))]"
+      className="min-h-[min(640px,70dvh)] rounded-lg border border-[var(--border)] bg-[var(--surface-muted)]"
       data-mobile={isMobile ? "true" : "false"}
     />
   );

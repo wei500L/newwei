@@ -158,7 +158,7 @@ function SortableTaskCard({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`rounded-md border border-[var(--border)] bg-white p-3 shadow-sm ${
+      className={`rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 shadow-sm ${
         isDragging ? "opacity-70" : ""
       }`}
       {...attributes}
@@ -259,7 +259,7 @@ function BoardColumnView({
               />
             ))
           ) : (
-            <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-[var(--border)] bg-white/60 p-4">
+            <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-[var(--border)] bg-[var(--surface-muted)] p-4">
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tasks" />
             </div>
           )}
@@ -738,7 +738,7 @@ export function AnalysisWorkspace() {
             label: "Board",
             children: (
               <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-3 rounded-md border border-[var(--border)] bg-white p-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-col gap-3 rounded-md border border-[var(--border)] bg-[var(--surface)] p-4 lg:flex-row lg:items-center lg:justify-between">
                   <Space direction="vertical" size={2}>
                     <Typography.Text strong>{activeBoard?.title ?? "Board"}</Typography.Text>
                     <Typography.Text type="secondary">
@@ -785,7 +785,7 @@ export function AnalysisWorkspace() {
                       </div>
                     </DndContext>
                   ) : (
-                    <div className="rounded-md border border-[var(--border)] bg-white p-10">
+                    <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-10">
                       <Empty description="No board columns yet." />
                     </div>
                   )}

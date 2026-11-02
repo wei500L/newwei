@@ -119,7 +119,7 @@ export function BreakingAlerts() {
           </div>
         </div>
       ))}
-      <p className="text-[10px] text-gray-400 text-center m-0">
+      <p className="text-[10px] text-muted-foreground text-center m-0">
         {t("pages.today.alertsDisclaimer")}
       </p>
     </div>

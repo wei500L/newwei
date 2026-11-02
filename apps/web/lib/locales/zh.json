@@ -2024,7 +2024,10 @@
       "label": "情绪",
       "title": "全球情绪趋势",
       "aggregateLabel": "情绪（聚合）",
-      "fallbackSeries": "回退：使用聚合情绪"
+      "fallbackSeries": "回退：使用聚合情绪",
+      "aggregationLabel": "聚合",
+      "rangeLabel": "范围",
+      "windowLabel": "窗口"
     },
     "dataLatest": {
       "label": "最新"

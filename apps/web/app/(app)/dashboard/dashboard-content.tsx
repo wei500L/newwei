@@ -276,20 +276,20 @@ function DashboardStreamStatusLine({
   }, [streamState.error]);
 
   return (
-    <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
+    <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
       <span
         className={`h-2 w-2 rounded-full ${streamStatusMeta.dotClass} ${streamStatusMeta.pulse ? "animate-pulse" : ""}`}
         aria-hidden="true"
       />
       <span>{streamStatusMeta.label}</span>
-      <span className="text-slate-600">|</span>
+      <span className="text-muted-foreground">|</span>
       <span title={lastUpdateTitle}>
         {t("dashboard.stream.lastUpdate")}:{" "}
         {lastUpdateLabel}
       </span>
       {streamState.status === "live" && streamState.lastMessageAt ? (
         <>
-          <span className="text-slate-600">|</span>
+          <span className="text-muted-foreground">|</span>
           <span title={lastMessageTitle}>
             {t("dashboard.stream.heartbeat")}:{" "}
             {lastMessageLabel}
@@ -298,7 +298,7 @@ function DashboardStreamStatusLine({
       ) : null}
       {streamState.status === "offline" ? (
         <>
-          <span className="text-slate-600">|</span>
+          <span className="text-muted-foreground">|</span>
           <span>
             {t("dashboard.stream.retries")}:{" "}
             {streamState.retryCount}
@@ -307,7 +307,7 @@ function DashboardStreamStatusLine({
       ) : null}
       {errorPreview ? (
         <>
-          <span className="text-slate-600">|</span>
+          <span className="text-muted-foreground">|</span>
           <span
             className="inline-block max-w-[360px] truncate align-bottom text-red-400"
             title={streamState.error}
@@ -317,7 +317,7 @@ function DashboardStreamStatusLine({
           </span>
         </>
       ) : null}
-      <span className="text-slate-600">|</span>
+      <span className="text-muted-foreground">|</span>
       <span>
         {t("dashboard.stream.window")}: {range} (
         {formatDashboardDate(start)} to {formatDashboardDate(end)})
@@ -548,7 +548,7 @@ export function DashboardContent() {
         {/* Time Range */}
         <div className="glass-panel border border-[var(--border)] px-4 py-3">
           <div className="flex items-center justify-between gap-3 mb-2">
-            <span className="text-xs text-slate-600 font-medium">
+            <span className="text-xs text-muted-foreground font-medium">
               {t("dashboard.timeRange.title")}
             </span>
             <Space size={8}>
@@ -586,7 +586,7 @@ export function DashboardContent() {
               streamState={dashboardStreamState}
             />
             <Space>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-muted-foreground">
                 {t("dashboard.systemStatus.title")}
               </span>
               <Switch
@@ -669,7 +669,7 @@ export function DashboardContent() {
           {/* Indicator Map - Dominant Central Feature */}
           <div className="xl:col-span-2 h-viz-3xl glass-panel border border-[var(--border)] overflow-hidden flex flex-col">
             <div className="px-5 pt-4">
-              <h3 className="text-lg text-slate-700">
+              <h3 className="text-lg text-slate-700 dark:text-slate-300">
                 {t("dashboard.charts.warMap.title")}
               </h3>
             </div>

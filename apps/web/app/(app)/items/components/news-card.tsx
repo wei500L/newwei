@@ -332,18 +332,18 @@ function NewsCardComponent({
       </div>
       {qualityScore && (
         <div className="flex justify-between">
-          <span className="text-gray-500">{t("items.columns.quality")}:</span>
+          <span className="text-muted-foreground">{t("items.columns.quality")}:</span>
           <span className="font-medium">{qualityScore}</span>
         </div>
       )}
       {duplicateScore && (
         <div className="flex justify-between">
-          <span className="text-gray-500">{duplicateLabel}:</span>
+          <span className="text-muted-foreground">{duplicateLabel}:</span>
           <span className="font-medium">{duplicateScore}</span>
         </div>
       )}
       {item.duplicateOf ? (
-        <div className="text-gray-400 text-[10px]">
+        <div className="text-muted-foreground text-[10px]">
           {t("items.duplicate.of")}: {item.duplicateOf}
         </div>
       ) : null}
@@ -360,7 +360,7 @@ function NewsCardComponent({
       ) : null}
       {item.llm?.model && (
         <div className="flex justify-between">
-          <span className="text-gray-500">{t("items.metrics.model")}:</span>
+          <span className="text-muted-foreground">{t("items.metrics.model")}:</span>
           <span className="text-gray-600 dark:text-gray-400">
             {item.llm.model}
           </span>
@@ -368,14 +368,14 @@ function NewsCardComponent({
       )}
       {item.llm?.promptVersion && (
         <div className="flex justify-between">
-          <span className="text-gray-500">{t("items.metrics.prompt")}:</span>
+          <span className="text-muted-foreground">{t("items.metrics.prompt")}:</span>
           <span className="text-gray-600 dark:text-gray-400">
             {item.llm.promptVersion}
           </span>
         </div>
       )}
       {llmSummary && (
-        <div className="border-t pt-2 mt-1 text-[10px] text-gray-400">
+        <div className="border-t pt-2 mt-1 text-[10px] text-muted-foreground">
           {llmSummary}
         </div>
       )}
@@ -422,7 +422,7 @@ function NewsCardComponent({
       ) : null}
 
       {highlightSnippets.length > 0 ? (
-        <div className="mb-3 flex flex-col gap-1 rounded-md border border-amber-200 bg-amber-50/70 p-2 text-xs leading-5 text-gray-700">
+        <div className="mb-3 flex flex-col gap-1 rounded-md border border-amber-200 bg-amber-50/70 p-2 text-xs leading-5 text-gray-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
           {highlightSnippets.map((snippet, index) => (
             <div key={`${item.id}-highlight-${index}`}>
               {renderHighlightSnippet(snippet)}
@@ -503,7 +503,7 @@ function NewsCardComponent({
         <Button
           type="text"
           size="small"
-          icon={<InfoCircleOutlined className="text-gray-400" />}
+          icon={<InfoCircleOutlined className="text-muted-foreground" />}
         />
       </Popover>
     </div>
@@ -543,7 +543,7 @@ function NewsCardComponent({
         )}
 
         <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1 text-xs text-gray-400">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <ClockCircleOutlined />
             <span>
               {readingTime} {readingTimeLabel}

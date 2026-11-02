@@ -104,7 +104,7 @@ export function NewsListTimeline({
             className="group relative ml-3.5 border-b border-[var(--border)] pb-2.5 pt-2 last:border-b-0"
           >
             <span className="absolute -left-[18px] top-[12px] h-[7px] w-[7px] rounded-full bg-[var(--primary)] ring-[3px] ring-[var(--background)] shadow-sm" />
-            <div className="mb-1 flex items-center justify-between gap-1.5 text-[11px] leading-4 text-[var(--secondary-foreground)] opacity-80">
+            <div className="mb-1 flex items-center justify-between gap-1.5 text-xs leading-4 text-[var(--secondary-foreground)] opacity-80">
               <div className="flex min-w-0 items-center gap-1.5">
                 <span className="font-medium">{displayTime}</span>
                 <span className="truncate">
@@ -148,7 +148,7 @@ export function NewsListTimeline({
               title={item.extra?.hover}
               className={`block overflow-hidden rounded-xl px-2 py-1.5 text-[var(--foreground)] font-medium transition-colors duration-150 hover:bg-[var(--secondary)]/60 visited:text-[var(--secondary-foreground)] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${
                 isComfortable
-                  ? "text-[14px] leading-[1.45]"
+                  ? "text-sm leading-[1.45]"
                   : "text-[13px] leading-[1.4]"
               } ${
                 isFresh ? "animate-[pulse_1.8s_ease-in-out_1] bg-sky-500/5 ring-1 ring-sky-500/20" : ""
@@ -172,7 +172,7 @@ export function NewsListTimeline({
               ) : null}
             </div>
             {!isMobile ? (
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 text-[11px] text-[var(--secondary-foreground)] opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 text-xs text-[var(--secondary-foreground)] opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
                 <a
                   href={href}
                   target="_blank"

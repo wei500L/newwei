@@ -26,6 +26,9 @@ export const KNOWLEDGE_GRAPH_NODE_COLORS = {
 /** 知识图谱未知节点类型的兜底色。 */
 export const DEFAULT_NODE_COLOR = "#94a3b8";
 
+/** 知识图谱节点标签文字色，随亮 / 暗主题切换。 */
+export const KNOWLEDGE_GRAPH_LABEL_COLORS = { light: "#161b26", dark: "#e8e4da" } as const;
+
 /**
  * 实体影响图按类别的配色（与知识图谱是【不同】的一组）。
  */

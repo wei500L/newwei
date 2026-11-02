@@ -134,7 +134,7 @@ export function Headlines() {
           <div className="mb-3">
             <p className="text-white/85 text-xs m-0">{heroPublished.primaryText}</p>
             {heroPublished.relativeText ? (
-              <p className="text-white/65 text-[11px] m-0">{heroPublished.relativeText}</p>
+              <p className="text-white/65 text-xs m-0">{heroPublished.relativeText}</p>
             ) : null}
           </div>
           <div className="flex items-center text-blue-300 text-xs font-medium gap-1">
@@ -175,11 +175,11 @@ export function Headlines() {
                       {item.title}
                     </h3>
                     {item.rawPreview?.sourceName ? (
-                      <p className="text-xs text-gray-500 mt-1 mb-0">{item.rawPreview.sourceName}</p>
+                      <p className="text-xs text-muted-foreground mt-1 mb-0">{item.rawPreview.sourceName}</p>
                     ) : null}
                     <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 mb-0">{itemPublished.primaryText}</p>
                     {itemPublished.relativeText ? (
-                      <p className="text-[11px] text-gray-500 dark:text-gray-500 mt-0.5 mb-0">{itemPublished.relativeText}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 mb-0">{itemPublished.relativeText}</p>
                     ) : null}
                   </div>
                 </div>

@@ -64,34 +64,34 @@ export default function WelcomePage() {
     >
       <a
         href="#welcome-content"
-        className="sr-only focus:not-sr-only focus:rounded-full focus:bg-white focus:px-4 focus:py-2"
+        className="sr-only focus:not-sr-only focus:rounded-full focus:bg-[var(--surface)] focus:px-4 focus:py-2"
       >
         {t("pages.welcome.skipToChecklist")}
       </a>
 
-      <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-[linear-gradient(135deg,rgba(14,165,233,0.10),rgba(249,115,22,0.10),rgba(255,255,255,0.92))] p-6 shadow-[0_24px_80px_-44px_rgba(15,23,42,0.45)] sm:p-8">
-        <p className="text-sm font-semibold uppercase tracking-[0.26em] text-cyan-700">
+      <section className="content-card p-6 sm:p-8">
+        <p className="kicker">
           {t("pages.welcome.eyebrow")}
         </p>
         <h1
           id="welcome-title"
-          className="mt-3 max-w-3xl text-balance text-3xl font-semibold tracking-tight text-slate-950 sm:text-5xl"
+          className="m-0 mt-2 max-w-3xl font-serif text-3xl font-semibold leading-tight text-[var(--foreground)] sm:text-4xl"
         >
           {t("pages.welcome.title")}
         </h1>
-        <p className="mt-4 max-w-2xl text-base leading-8 text-slate-600">
+        <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">
           {t("pages.welcome.description")}
         </p>
 
         <div className="mt-8 flex flex-wrap items-center gap-4">
-          <div className="min-w-[14rem] flex-1 rounded-[1.4rem] border border-slate-200 bg-white/80 p-4">
-            <div className="flex items-center justify-between text-sm text-slate-500">
+          <div className="min-w-[14rem] flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>{t("pages.welcome.progress")}</span>
               <span>{completedCount}/{ONBOARDING_STEPS.length}</span>
             </div>
-            <div className="mt-3 h-2 rounded-full bg-slate-200">
+            <div className="mt-3 h-2 rounded-full bg-[var(--border)]">
               <div
-                className="h-2 rounded-full bg-slate-950 transition-[width]"
+                className="h-2 rounded-full bg-[var(--foreground)] transition-[width]"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -102,7 +102,7 @@ export default function WelcomePage() {
               completeOnboarding();
               router.push("/today");
             }}
-            className="rounded-full bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
+            className="rounded-full bg-[var(--foreground)] px-5 py-3 text-sm font-medium text-[var(--background)] transition hover:opacity-90"
           >
             {t("pages.welcome.enterWorkspace")}
           </button>
@@ -112,7 +112,7 @@ export default function WelcomePage() {
               dismissOnboarding();
               router.push("/today");
             }}
-            className="rounded-full border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-900 hover:text-slate-950"
+            className="rounded-full border border-[var(--border)] px-5 py-3 text-sm font-medium text-[var(--foreground)] transition hover:border-[var(--border-strong)]"
           >
             {t("pages.welcome.skipForNow")}
           </button>
@@ -128,26 +128,26 @@ export default function WelcomePage() {
             <Link
               key={step}
               href={entry.href}
-              className="group rounded-[1.5rem] border border-slate-200 bg-white/88 p-5 shadow-[0_18px_50px_-38px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:border-slate-900"
+              className="group rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 transition hover:-translate-y-0.5 hover:border-[var(--border-strong)]"
             >
               <div className="flex items-center justify-between gap-4">
-                <span className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
+                <span className="text-sm font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                   {entry.label}
                 </span>
                 <span
                   className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
                     done
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-slate-100 text-slate-500"
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                      : "bg-[var(--surface-muted)] text-muted-foreground"
                   }`}
                 >
                   {done ? t("pages.welcome.status.done") : t("pages.welcome.status.start")}
                 </span>
               </div>
-              <h2 className="mt-4 text-xl font-semibold tracking-tight text-slate-950">
+              <h2 className="mt-4 text-xl font-semibold tracking-tight text-[var(--foreground)]">
                 {entry.title}
               </h2>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
+              <p className="mt-3 text-sm leading-7 text-muted-foreground">
                 {entry.description}
               </p>
             </Link>

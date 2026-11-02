@@ -345,7 +345,7 @@ export function UserDigestPanel() {
           </Space>
         </div>
         {loading && !digest ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: "1.5rem 0" }}>
+          <div className="flex min-h-viz-xs items-center justify-center">
             <Spin />
           </div>
         ) : errorMessage ? (
